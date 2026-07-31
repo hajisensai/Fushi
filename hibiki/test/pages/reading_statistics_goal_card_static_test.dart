@@ -89,7 +89,7 @@ void main() {
     final int actionsIdx = text.indexOf('actions: <Widget>[');
     expect(actionsIdx, greaterThanOrEqualTo(0),
         reason: '页面应有 scaffold actions');
-    final int bodyIdx = text.indexOf('body: _loading', actionsIdx);
+    final int bodyIdx = text.indexOf('body: buildStatPageBody(', actionsIdx);
     expect(bodyIdx, greaterThan(actionsIdx), reason: '应能定位 actions 与 body 边界');
 
     final String actionsRegion = text.substring(actionsIdx, bodyIdx);

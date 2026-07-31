@@ -11,6 +11,7 @@ import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/collection_sync_engine.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_service_config.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/aggregate_sync_service.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
@@ -181,6 +182,11 @@ class SyncRunReport {
   /// 故计入 [needsLocalLibraryRefresh]。
   int collectionsUpdated = 0;
 
+  /// Host-owned external-service preferences imported over the authenticated
+  /// interconnect channel. These require an AppModel preference-cache refresh
+  /// even though no media row was imported.
+  int serviceConfigsImported = 0;
+
   final List<String> errors = <String>[];
   final List<SyncConflict> conflicts = <SyncConflict>[];
 
@@ -205,7 +211,8 @@ class SyncRunReport {
       audiobooksImported > 0 ||
       localAudioImported > 0 ||
       localBookProgressPulled > 0 ||
-      collectionsUpdated > 0;
+      collectionsUpdated > 0 ||
+      serviceConfigsImported > 0;
 
   /// 合并另一条通道的报告到本报告（option B 双通道：云备份 + 互联并行各跑一轮后，
   /// 汇总成单一报告返回）。累加所有计数、拼接错误与冲突列表。
@@ -221,6 +228,7 @@ class SyncRunReport {
     localBookProgressPulled += other.localBookProgressPulled;
     rootSpillFilesRemoved += other.rootSpillFilesRemoved;
     collectionsUpdated += other.collectionsUpdated;
+    serviceConfigsImported += other.serviceConfigsImported;
     errors.addAll(other.errors);
     conflicts.addAll(other.conflicts);
     deletionCandidates.addAll(other.deletionCandidates);
@@ -355,6 +363,7 @@ class SyncOrchestrator {
     final bool isInterconnect = b is InterconnectSyncBackend;
 
     if (isInterconnect) {
+      await _syncServiceConfigLive(report, b);
       // 互联内容（epub）走 live 端点，仅当 syncContent 开时执行。
       // 元数据（进度/统计/有声书位置）由下方 SyncManager 以 syncContent=false 处理。
       if (syncContent) {
@@ -500,6 +509,22 @@ class SyncOrchestrator {
       );
     } catch (e) {
       report.errors.add('aggregate sync: $e');
+    }
+  }
+
+  /// Pulls the host's explicitly allowlisted service configuration. The host is
+  /// authoritative for keys it publishes; no client→host write exists.
+  Future<void> _syncServiceConfigLive(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) async {
+    try {
+      final InterconnectServiceConfigSnapshot? snapshot =
+          await backend.getRemoteServiceConfig();
+      if (snapshot == null) return;
+      report.serviceConfigsImported += await snapshot.applyTo(_db);
+    } catch (e) {
+      report.errors.add('service config live sync: $e');
     }
   }
 

@@ -864,7 +864,11 @@ window.hoshiReader = {
     // (HoshiReaderRestore). Hibiki is InAppWebView, so forward to the same
     // 'onRestoreComplete' handler the paginated/continuous shells use.
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-      window.flutter_inappwebview.callHandler('onRestoreComplete');
+      window.flutter_inappwebview.callHandler(
+        'onRestoreComplete',
+        null,
+        C.navigationGeneration
+      );
     }
   },
   buildNodeOffsets: function() {
@@ -1005,6 +1009,11 @@ window.hoshiReader = {
     } else {
       baseScreens = this.buildBlockScreens();
     }
+    // BUG-1244：纯图片 screen 没有字符范围。有声书逐句跟随按 cue 字符偏移直接跳到
+    // 下一条文字 screen 时会永久略过这种零宽 screen，图片在整次自动播放里都不可见。
+    // 把连续的前导图片附到下一句/下一块一起渲；章尾没有下一句时附到上一屏，保证媒体
+    // 至少随相邻文字出现一次。
+    baseScreens = this.attachMediaScreensToAdjacentText(baseScreens);
     this.baseScreens = baseScreens;
     this.screens = this.mergeSasayakiCrossScreenScreens(baseScreens);
     if (!this.screens.length) {
@@ -1044,6 +1053,61 @@ window.hoshiReader = {
       mediaStop: !!source.mediaStop,
       render: render
     };
+  },
+  attachMediaScreensToAdjacentText: function(screens) {
+    if (!Array.isArray(screens) || !screens.length) return screens || [];
+    var result = [];
+    var pendingMedia = [];
+    for (var i = 0; i < screens.length; i++) {
+      var screen = screens[i];
+      var mediaOnly = !!screen.mediaStop &&
+        this.screenStartCharCount(screen) === this.screenEndCharCount(screen);
+      if (mediaOnly) {
+        pendingMedia.push(screen);
+        continue;
+      }
+      if (pendingMedia.length) {
+        result.push(this.mergeAdjacentScreenParts(pendingMedia.concat([screen])));
+        pendingMedia = [];
+      } else {
+        result.push(screen);
+      }
+    }
+    if (pendingMedia.length) {
+      if (result.length) {
+        var previous = result.pop();
+        result.push(this.mergeAdjacentScreenParts([previous].concat(pendingMedia)));
+      } else {
+        result.push(this.mergeAdjacentScreenParts(pendingMedia));
+      }
+    }
+    return result;
+  },
+  mergeAdjacentScreenParts: function(parts) {
+    var first = parts[0];
+    var last = parts[parts.length - 1];
+    var ids = new Set();
+    parts.forEach(function(part) {
+      (part.ids || new Set()).forEach(function(id) { ids.add(id); });
+    });
+    return this.screenDescriptor({
+      startCharCount: this.screenStartCharCount(first),
+      endCharCount: parts.reduce(function(max, part) {
+        return Math.max(max, this.screenEndCharCount(part));
+      }.bind(this), this.screenEndCharCount(first)),
+      startRawCount: this.screenStartRawCount(first),
+      endRawCount: parts.reduce(function(max, part) {
+        return Math.max(max, this.screenEndRawCount(part));
+      }.bind(this), this.screenEndRawCount(last)),
+      ids: ids,
+      splittable: false,
+      mediaStop: true,
+      render: function() {
+        var fragment = document.createDocumentFragment();
+        parts.forEach(function(part) { fragment.appendChild(part.render()); });
+        return fragment;
+      }
+    });
   },
   normalizedScreenCount: function(value, fallback) {
     var parsed = Number(value);
@@ -2580,6 +2644,11 @@ window.hoshiReader = {
   calculateProgress: function() {
     if (!this.screens.length) return 0;
     return this.progressForScreen(this.screens[this.currentScreenIndex]);
+  },
+  // BUG-1241：VN 的末屏可能与末尾字符共享进度锚；完成态以屏索引为准。
+  isAtEnd: function() {
+    return !!this.screens.length &&
+      this.currentScreenIndex >= this.screens.length - 1;
   },
   screenIndexForProgress: function(progress) {
     if (!this.screens.length) return 0;

@@ -1,40 +1,54 @@
 // Hibiki 浏览器扩展设置：自动连接优先，用户覆盖与字幕偏好存 chrome.storage.local。
 const $ = (id) => document.getElementById(id);
 const D = self.HIBIKI_DEFAULTS || { host: '127.0.0.1', port: 19633, token: '' };
-const subtitleDefaults = Object.freeze({
+const settingDefaults = Object.freeze({
   netflixSubtitlePanel: false,
   subtitleOverlayEnabled: true,
   subtitleDragDropEnabled: true,
   subtitleAutoScroll: true,
-  subtitleAutoPause: false,
-  subtitleCondensedPlayback: false,
   netflixHideNextEpisode: true,
-  // asb 移植（默认关，快捷键默认开）。
-  subtitleAutoPauseAtStart: false,
-  subtitleFastForwardPlayback: false,
-  subtitleHoverPause: false,
+  subtitlePauseOnLookup: false,
+  subtitleOverlayAutoLookup: false,
   subtitleOverlayBlur: false,
   subtitleOverlayAllTracks: false,
-  // 隐藏字幕（Shift+H 也会翻它）：站点原生字幕 + 扩展覆盖层一起藏，实现在 content.js。
+  // 隐藏字幕是实际显示状态；Shift+H 是否接管由独立快捷键开关控制。
   subtitleHidden: false,
-  videoShortcutsEnabled: true,
+  videoShortcutPrevCue: true,
+  videoShortcutNextCue: true,
+  videoShortcutReplayCue: true,
+  videoShortcutTogglePanel: true,
+  videoShortcutToggleSubtitleHide: true,
+  videoShortcutOffsetMinus: true,
+  videoShortcutOffsetPlus: true,
+  videoShortcutOffsetReset: true,
+  videoShortcutCopyCue: true,
+  videoShortcutRateDown: true,
+  videoShortcutRateUp: true,
 });
 const toggleIds = Object.freeze({
   nfSubList: 'netflixSubtitlePanel',
   subtitleOverlayEnabled: 'subtitleOverlayEnabled',
   subtitleDragDropEnabled: 'subtitleDragDropEnabled',
   subtitleAutoScroll: 'subtitleAutoScroll',
-  subtitleAutoPause: 'subtitleAutoPause',
-  subtitleCondensedPlayback: 'subtitleCondensedPlayback',
   nfHideNext: 'netflixHideNextEpisode',
-  subtitleAutoPauseAtStart: 'subtitleAutoPauseAtStart',
-  subtitleFastForwardPlayback: 'subtitleFastForwardPlayback',
-  subtitleHoverPause: 'subtitleHoverPause',
+  subtitlePauseOnLookup: 'subtitlePauseOnLookup',
+  subtitleOverlayAutoLookup: 'subtitleOverlayAutoLookup',
   subtitleOverlayBlur: 'subtitleOverlayBlur',
   subtitleOverlayAllTracks: 'subtitleOverlayAllTracks',
   subtitleHidden: 'subtitleHidden',
-  videoShortcutsEnabled: 'videoShortcutsEnabled',
+  videoShortcutPrevCue: 'videoShortcutPrevCue',
+  videoShortcutNextCue: 'videoShortcutNextCue',
+  videoShortcutReplayCue: 'videoShortcutReplayCue',
+  videoShortcutTogglePanel: 'videoShortcutTogglePanel',
+  videoShortcutToggleSubtitleHide: 'videoShortcutToggleSubtitleHide',
+  videoShortcutOffsetMinus: 'videoShortcutOffsetMinus',
+  videoShortcutOffsetPlus: 'videoShortcutOffsetPlus',
+  videoShortcutOffsetReset: 'videoShortcutOffsetReset',
+  videoShortcutCopyCue: 'videoShortcutCopyCue',
+  videoShortcutRateDown: 'videoShortcutRateDown',
+  videoShortcutRateUp: 'videoShortcutRateUp',
 });
+const shortcutKeys = Object.freeze(Object.values(toggleIds).filter((key) => key.startsWith('videoShortcut')));
 
 let toastTimer = null;
 function toast(message) {
@@ -100,7 +114,10 @@ async function loadSettings() {
   $('port').placeholder = String(D.port || 19633);
   $('token').placeholder = D.token ? '已由 Hibiki 自动配置' : '';
 
-  const keys = ['host', 'port', 'token'].concat(Object.values(toggleIds));
+  // 旧 subtitleHoverPause / videoShortcutsEnabled 只作一次向后兼容读取：
+  // 新键已有显式值时永远优先；旧键不再由 UI 写入。
+  const keys = ['host', 'port', 'token', 'subtitleHoverPause', 'videoShortcutsEnabled']
+    .concat(Object.values(toggleIds));
   const saved = await chrome.storage.local.get(keys);
   if (saved.host != null && saved.host !== '') $('host').value = saved.host;
   if (saved.port != null && saved.port !== 0) $('port').value = saved.port;
@@ -109,7 +126,14 @@ async function loadSettings() {
   for (const [id, key] of Object.entries(toggleIds)) {
     const input = $(id);
     if (!input) continue;
-    input.checked = typeof saved[key] === 'boolean' ? saved[key] : subtitleDefaults[key];
+    let value = saved[key];
+    if (typeof value !== 'boolean' && key === 'subtitlePauseOnLookup') {
+      value = saved.subtitleHoverPause;
+    }
+    if (typeof value !== 'boolean' && shortcutKeys.includes(key)) {
+      value = saved.videoShortcutsEnabled;
+    }
+    input.checked = typeof value === 'boolean' ? value : settingDefaults[key];
     input.addEventListener('change', async () => {
       await chrome.storage.local.set({ [key]: input.checked });
       toast('已更新：' + input.closest('.setting-row').querySelector('strong').textContent);

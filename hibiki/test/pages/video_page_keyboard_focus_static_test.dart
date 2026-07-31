@@ -47,6 +47,27 @@ void main() {
         reason: '非全屏进入视频页后若没有主动聚焦，空格会冒泡到全局 DoNothingIntent 而不是播放/暂停');
   });
 
+  test('慢路径挂载 Video 后必须补一次焦点回收（BUG-1266）', () {
+    // 根因：[_videoFocusNode] 挂在 [Video] 上，而首帧未就绪的首开被 `!_videoReadyToShow`
+    // 挡在 `_buildLoadingBody` 分支——此刻 Video 尚未挂载、节点未 attach，`_applyLoad`
+    // 结尾那次 contentReady 回收对孤儿节点是静默 no-op（请求直接丢失）。若
+    // [_promoteVideoReady] 把 Video 挂上后不补一次回收，焦点会整段滞留在页面之外：
+    // 手柄按键不冒泡经过本页，所有手柄绑定失灵，且没人消费的 B 会被 Android 合成成
+    // BACK 直接退页（用户报「必须先按一下暂停才能正常上下句」「进视频想回退两句却退回桌面」）。
+    final int start = src.indexOf('void _promoteVideoReady() {');
+    expect(start, greaterThanOrEqualTo(0),
+        reason: '慢路径提升汇聚点 _promoteVideoReady 应存在');
+    final int end = src.indexOf('Future<void> _init() async {', start);
+    expect(end, greaterThan(start));
+    final String body = src.substring(start, end);
+
+    expect(
+        body,
+        contains(
+            '_focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady)'),
+        reason: '慢路径把 Video 挂上后必须补一次焦点回收，否则本页整段没有键盘所有者');
+  });
+
   test('存在统一的焦点所有者与判据', () {
     expect(src, contains('PageFocusOwnership _focusOwnership'),
         reason: '归还焦点必须走单一所有者 _focusOwnership，不再各处手写 requestFocus');

@@ -165,6 +165,65 @@ void main() {
     expect(subject.volumeCount, 3);
   });
 
+  test('watched anime list follows every official collection page', () async {
+    final List<http.Request> captured = <http.Request>[];
+    final BangumiApiClient client = BangumiApiClient(
+      accessToken: 'token',
+      userAgent: 'test-agent',
+      client: MockClient((http.Request request) async {
+        captured.add(request);
+        final int offset =
+            int.parse(request.url.queryParameters['offset'] ?? '0');
+        final int id = offset == 0 ? 41 : 42;
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{
+            'total': 51,
+            'limit': 50,
+            'offset': offset,
+            'data': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'subject_id': id,
+                'subject_type': 2,
+                'type': 2,
+                'ep_status': offset == 0 ? 12 : 24,
+                'updated_at': '2026-07-29T12:00:00+08:00',
+                'subject': <String, dynamic>{
+                  'id': id,
+                  'type': 2,
+                  'name': 'Anime $id',
+                  'name_cn': '番剧 $id',
+                  'platform': 'TV',
+                  'eps': offset == 0 ? 12 : 24,
+                  'volumes': 0,
+                  'images': <String, String>{
+                    'medium': 'https://example/$id.jpg',
+                  },
+                },
+              },
+            ],
+          })),
+          200,
+        );
+      }),
+    );
+    addTearDown(client.close);
+
+    final List<BangumiWatchedItem> watched =
+        await client.getWatchedAnime('alice name');
+
+    expect(captured, hasLength(2));
+    expect(captured.first.url.path, '/v0/users/alice%20name/collections');
+    expect(
+        captured.first.url.queryParameters, containsPair('subject_type', '2'));
+    expect(captured.first.url.queryParameters, containsPair('type', '2'));
+    expect(captured.last.url.queryParameters, containsPair('offset', '50'));
+    expect(
+      watched.map((BangumiWatchedItem item) => item.subject.id),
+      <int>[41, 42],
+    );
+    expect(watched.last.episodeProgress, 24);
+  });
+
   test('markEpisodesDone sends one idempotent batch patch', () async {
     late http.Request captured;
     final BangumiApiClient client = BangumiApiClient(

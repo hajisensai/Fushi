@@ -273,6 +273,202 @@ String _sha256Hex(List<int> bytes) {
 int _rotr32(int value, int shift) =>
     ((value >> shift) | (value << (32 - shift))) & _uint32Mask;
 
+final Expando<_MediaUploadCoordinator> _mediaUploadCoordinators =
+    Expando<_MediaUploadCoordinator>('AnkiConnect media upload coordinators');
+
+class _MediaUploadLeaseState {
+  final Set<_MediaUploadTransaction> participants =
+      Set<_MediaUploadTransaction>.identity();
+  bool committed = false;
+  Completer<void> changed = Completer<void>();
+  Future<bool>? cleanupAttempt;
+
+  void notifyChanged() {
+    if (!changed.isCompleted) {
+      changed.complete();
+    }
+    changed = Completer<void>();
+  }
+}
+
+/// Coordinates compensation for the same media filename across concurrent note
+/// transactions that share one AnkiConnect connection.
+///
+/// An existence check can race: two notes may both observe "absent" and upload
+/// the same content-addressed filename. A failed transaction therefore releases
+/// its lease and waits for every peer lease to settle before deleting. Once any
+/// peer commits, the filename remains protected for the lifetime of this
+/// connector so a stale negative existence result can never delete media
+/// referenced by the peer's note.
+class _MediaUploadCoordinator {
+  _MediaUploadCoordinator(this.service);
+
+  final AnkiConnectService service;
+  final Map<String, _MediaUploadLeaseState> _states =
+      <String, _MediaUploadLeaseState>{};
+
+  Future<void> claim(
+    _MediaUploadTransaction transaction,
+    String filename,
+  ) async {
+    _MediaUploadLeaseState state =
+        _states.putIfAbsent(filename, _MediaUploadLeaseState.new);
+    while (state.cleanupAttempt != null) {
+      await state.cleanupAttempt;
+      state = _states.putIfAbsent(filename, _MediaUploadLeaseState.new);
+    }
+    if (state.participants.add(transaction)) {
+      state.notifyChanged();
+    }
+  }
+
+  void commit(_MediaUploadTransaction transaction, String filename) {
+    final _MediaUploadLeaseState? state = _states[filename];
+    if (state == null) return;
+    state.committed = true;
+    state.participants.remove(transaction);
+    state.notifyChanged();
+  }
+
+  Future<bool> rollback(
+    _MediaUploadTransaction transaction,
+    String filename,
+  ) async {
+    final _MediaUploadLeaseState? state = _states[filename];
+    if (state == null) return true;
+    if (state.participants.remove(transaction)) {
+      state.notifyChanged();
+    }
+
+    while (!state.committed && state.participants.isNotEmpty) {
+      final Future<void> changed = state.changed.future;
+      if (!state.committed && state.participants.isNotEmpty) {
+        await changed;
+      }
+    }
+    if (state.committed) return true;
+
+    final Future<bool>? pendingCleanup = state.cleanupAttempt;
+    if (pendingCleanup != null) return pendingCleanup;
+
+    final Completer<bool> cleanup = Completer<bool>();
+    state.cleanupAttempt = cleanup.future;
+    try {
+      await service.deleteMediaFile(filename);
+      _states.remove(filename);
+      cleanup.complete(true);
+    } catch (error, stack) {
+      // Keep the uncommitted state in the coordinator. The owning transaction
+      // retains the filename and retries after every parallel media route has
+      // settled instead of losing the candidate to a non-fatal audio warning.
+      debugPrint(
+        'AnkiConnect media rollback failed for $filename: $error\n$stack',
+      );
+      cleanup.complete(false);
+    } finally {
+      if (identical(state.cleanupAttempt, cleanup.future)) {
+        state.cleanupAttempt = null;
+      }
+    }
+    return cleanup.future;
+  }
+}
+
+/// Tracks content-addressed media created while rendering one note.
+///
+/// Uploads stay parallel, but every filename is checked once before its first
+/// write. Same-filename routes inside the transaction share one upload Future.
+/// A failed upload attempts compensation immediately, while a retained
+/// candidate is retried by [commit] after all routes settle. Cross-transaction
+/// leases prevent a failed note from deleting media committed by a concurrent
+/// peer. Files that existed before this attempt are never deletion candidates.
+class _MediaUploadTransaction {
+  _MediaUploadTransaction(this.service)
+      : coordinator = _mediaUploadCoordinators[service] ??=
+            _MediaUploadCoordinator(service);
+
+  final AnkiConnectService service;
+  final _MediaUploadCoordinator coordinator;
+  final Map<String, Future<bool>> _existenceChecks = <String, Future<bool>>{};
+  final Map<String, Future<void>> _uploads = <String, Future<void>>{};
+  final Set<String> _newFiles = <String>{};
+  final Set<String> _failedFiles = <String>{};
+
+  Future<void> upload({
+    required String filename,
+    required Future<void> Function() write,
+  }) =>
+      _uploads[filename] ??= _upload(filename: filename, write: write);
+
+  Future<void> _upload({
+    required String filename,
+    required Future<void> Function() write,
+  }) async {
+    final bool existedBefore = await (_existenceChecks[filename] ??=
+        service.mediaFileExists(filename));
+    if (!existedBefore) {
+      // Register before the write: a lost storeMediaFile response may still
+      // mean Anki committed the file, so the failure path must try to remove it.
+      _newFiles.add(filename);
+      await coordinator.claim(this, filename);
+    }
+    try {
+      await write();
+    } catch (_) {
+      if (!existedBefore) {
+        _failedFiles.add(filename);
+        if (await coordinator.rollback(this, filename)) {
+          _newFiles.remove(filename);
+          _failedFiles.remove(filename);
+        }
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> rollback() async {
+    for (final String filename in _newFiles.toList(growable: false)) {
+      if (await coordinator.rollback(this, filename)) {
+        _newFiles.remove(filename);
+        _failedFiles.remove(filename);
+      }
+    }
+  }
+
+  Future<void> prepareForNoteWrite() async {
+    // A non-fatal remote-audio route catches its upload error and becomes an
+    // audioWarning. Retry its retained cleanup candidate only after Future.wait
+    // has settled all routes. Keep successful media leased until addNote has a
+    // definite outcome.
+    for (final String filename in _failedFiles.toList(growable: false)) {
+      if (!await coordinator.rollback(this, filename)) {
+        throw StateError(
+          'Could not safely clean up failed Anki media upload: $filename',
+        );
+      }
+      _newFiles.remove(filename);
+      _failedFiles.remove(filename);
+    }
+  }
+
+  void commit() {
+    for (final String filename in _newFiles.toList(growable: false)) {
+      coordinator.commit(this, filename);
+      _newFiles.remove(filename);
+    }
+  }
+}
+
+class _PreparedMinedFields {
+  const _PreparedMinedFields({
+    required this.rendered,
+    required this.mediaTransaction,
+  });
+
+  final RenderedMinedFields rendered;
+  final _MediaUploadTransaction mediaTransaction;
+}
+
 /// 一条笔记的字段改写计划：[before] 是改写前的原值（journal 用来回溯），
 /// [after] 是要写进 Anki 的新值。两者键集相同，只含真正会变的字段。
 class _NoteFieldRewrite {
@@ -463,151 +659,92 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       );
     }
 
-    final rendered = await _renderMinedFields(
+    final _PreparedMinedFields prepared = await _renderMinedFields(
       service: service,
       settings: settings,
       payload: payload,
       context: context,
+      deferMediaCommit: true,
     );
+    final RenderedMinedFields rendered = prepared.rendered;
+    final _MediaUploadTransaction mediaTransaction = prepared.mediaTransaction;
     final Map<String, String> fields = rendered.fields;
     // TODO-779: 单词远程音频下载失败时带可见原因到成功 toast（卡片仍建好）。
     final String? audioWarning = rendered.audioWarning;
 
-    String? addNoteReconcileFieldName;
-    String? addNoteReconcileFieldValue;
-    bool addNoteReconcileAllowed = false;
-    if (!settings.allowDupes) {
-      final firstFieldName =
-          noteType.fields.isNotEmpty ? noteType.fields.first : null;
-      final firstFieldValue =
-          firstFieldName != null ? (fields[firstFieldName] ?? '') : '';
-      if (firstFieldValue.isNotEmpty) {
-        // HBK-AUDIT-060: fail closed. A failed dupe query must not fall through
-        // to addNote as if the entry were unique — that silently bypasses the
-        // no-duplicates guarantee. Surface the failure as an error instead.
-        try {
-          final isDupe = await service.isDuplicate(
-            deckName: deck.name,
-            fieldName: firstFieldName!,
-            fieldValue: firstFieldValue,
-            scope: settings.duplicateScope,
-          );
-          if (isDupe) return const MineOutcome.duplicate();
-          addNoteReconcileFieldName = firstFieldName;
-          addNoteReconcileFieldValue = firstFieldValue;
-          addNoteReconcileAllowed = true;
-        } catch (e, stack) {
-          // TODO-752a：查重失败常因连不上 AnkiConnect（socket/timeout/http）。统一经
-          // [_mineFailureFor]：网络异常按稳定码分类本地化，OS 原文仅进诊断日志，绝不
-          // 把 `$e` 透传给用户。
-          return _mineFailureFor(e, stack);
-        }
-      }
-    }
-
-    // BUG/TODO-062: every Hibiki-mined card gets the `hibiki` tag appended to
-    // the user's configured tags (de-duped, order preserved) via the shared
-    // base helper, so both backends behave identically.
-    final tags = buildNoteTags(
-      settings.tags,
-      source: context.source,
-      includeHibiki: settings.tagIncludeHibiki,
-      includeCategory: settings.tagIncludeCategory,
-      // TODO-681 / BUG-393：调用方按「自动添加书名到标签」开关注入已清洗书名/番名标签
-      // （书籍/视频同语义）；关闭或无标题时为 null，buildNoteTags 不追加。
-      titleTag: context.bookTitleTag,
-      // 合集/系列名标签（同上开关）：视频=播放列表系列名、书籍=所属合集名；不属合集时 null。
-      collectionTag: context.collectionTag,
-    );
-
-    // `fields` only holds entries that rendered to a non-empty value; if it is
-    // empty, nothing rendered and adding the note would create a blank card
-    // reported as success (HBK-AUDIT-018).
-    if (fields.isEmpty) {
-      return MineOutcome.failure(
-        'All fields are empty — refusing to create a blank card. '
-        'Check your note type field mappings.',
-      );
-    }
     try {
-      // TODO-270 A：接住 addNote 返回的 note id，带回 MineOutcome.success，供
-      // 后续「更新已制卡片」（updateMinedNote）按 id 覆盖字段使用。
-      final int? noteId = await service.addNote(
-        deckName: deck.name,
-        modelName: noteType.name,
-        fields: fields,
-        tags: tags,
-        allowDuplicate: settings.allowDupes,
+      // BUG/TODO-062: every Hibiki-mined card gets the `hibiki` tag appended to
+      // the user's configured tags (de-duped, order preserved) via the shared
+      // base helper, so both backends behave identically.
+      final tags = buildNoteTags(
+        settings.tags,
+        source: context.source,
+        includeHibiki: settings.tagIncludeHibiki,
+        includeCategory: settings.tagIncludeCategory,
+        // TODO-681 / BUG-393：调用方按「自动添加书名到标签」开关注入已清洗书名/番名标签
+        // （书籍/视频同语义）；关闭或无标题时为 null，buildNoteTags 不追加。
+        titleTag: context.bookTitleTag,
+        // 合集/系列名标签（同上开关）：视频=播放列表系列名、书籍=所属合集名；不属合集时 null。
+        collectionTag: context.collectionTag,
       );
-      return MineOutcome.success(noteId: noteId, audioWarning: audioWarning);
-    } on AnkiConnectCommitUnknownException catch (e, stack) {
-      if (!addNoteReconcileAllowed ||
-          addNoteReconcileFieldName == null ||
-          addNoteReconcileFieldValue == null) {
+
+      // `fields` only holds entries that rendered to a non-empty value; if it is
+      // empty, nothing rendered and adding the note would create a blank card
+      // reported as success (HBK-AUDIT-018).
+      if (fields.isEmpty) {
+        await mediaTransaction.rollback();
+        return MineOutcome.failure(
+          'All fields are empty — refusing to create a blank card. '
+          'Check your note type field mappings.',
+        );
+      }
+      try {
+        // TODO-270 A：接住 addNote 返回的 note id，带回 MineOutcome.success，供
+        // 后续「更新已制卡片」（updateMinedNote）按 id 覆盖字段使用。
+        final int? noteId = await service.addNote(
+          deckName: deck.name,
+          modelName: noteType.name,
+          fields: fields,
+          tags: tags,
+          allowDuplicate: settings.allowDupes,
+          duplicateScope: settings.duplicateScope,
+        );
+        mediaTransaction.commit();
+        return MineOutcome.success(noteId: noteId, audioWarning: audioWarning);
+      } on AnkiConnectDuplicateException {
+        await mediaTransaction.rollback();
+        return const MineOutcome.duplicate();
+      } on AnkiConnectCommitUnknownException catch (e, stack) {
+        // Without a separate preflight query, a matching note after a lost
+        // response could be either pre-existing or newly created. Do not run
+        // another GUI-thread findNotes query or guess which case occurred.
+        mediaTransaction.commit();
         return MineOutcome.failure(
           _addNoteCommitUnknownMessage(),
           error: e,
           stackTrace: stack,
         );
-      }
-      try {
-        // 刻意**不**传 settings.duplicateScope：这里问的不是「这个词是否已经有卡」，
-        // 而是「我刚 addNote 到 deck.name 的那一张到底落没落下」。放宽到根卡组/整库
-        // 会把别的卡组里的同词旧卡当成刚建成功的那张，把「提交结果未知」误判成成功。
-        final matches = await service.findNotesByField(
-          deckName: deck.name,
-          fieldName: addNoteReconcileFieldName,
-          fieldValue: addNoteReconcileFieldValue,
-        );
-        if (matches.length == 1) {
-          return MineOutcome.success(
-            noteId: matches.single,
-            audioWarning: audioWarning,
-          );
-        }
+      } on AnkiConnectException catch (e, stack) {
+        await mediaTransaction.rollback();
         return MineOutcome.failure(
-          _addNoteCommitUnknownMessage(matchCount: matches.length),
+          'AnkiConnect: ${e.message}',
           error: e,
           stackTrace: stack,
         );
-      } catch (reconcileError, reconcileStack) {
-        return MineOutcome.failure(
-          _addNoteCommitUnknownMessage(
-            extra: 'The follow-up Anki check also failed: $reconcileError',
-          ),
-          error: reconcileError,
-          stackTrace: reconcileStack,
-        );
       }
-    } on AnkiConnectException catch (e, stack) {
-      return MineOutcome.failure(
-        'AnkiConnect: ${e.message}',
-        error: e,
-        stackTrace: stack,
-      );
+    } catch (_) {
+      // Socket/pre-delivery failures are known not to have committed addNote;
+      // any local failure before a confirmed or unknown commit is likewise
+      // safe to compensate. Preserve the original error for mineEntry's mapper.
+      await mediaTransaction.rollback();
+      rethrow;
     }
   }
 
-  String _addNoteCommitUnknownMessage({int? matchCount, String? extra}) {
-    final buffer = StringBuffer(
-      'AnkiConnect may have created the card, but the response was lost.',
-    );
-    if (matchCount == null) {
-      buffer.write(' Hibiki could not uniquely confirm the new note.');
-    } else if (matchCount == 0) {
-      buffer
-          .write(' Hibiki found no matching note, so the result is uncertain.');
-    } else {
-      buffer.write(
-        ' Hibiki found $matchCount matching notes and could not uniquely confirm which one was new.',
-      );
-    }
-    if (extra != null && extra.isNotEmpty) {
-      buffer.write(' $extra');
-    }
-    buffer.write(' Please check Anki before retrying.');
-    return buffer.toString();
-  }
+  String _addNoteCommitUnknownMessage() =>
+      'AnkiConnect may have created the card, but the response was lost. '
+      'Hibiki could not safely confirm the result. Please check Anki before '
+      'retrying.';
 
   /// 把 [payload] + [context] 按 [settings] 的字段映射渲染成 Anki note 字段。
   ///
@@ -621,52 +758,79 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// TODO-270 C1：制卡（[_mineEntryInner]）与更新已制卡片（[updateMinedNote]）
   /// 共用这一段渲染，避免两份漂移。
   ///
-  /// TODO-779：返回 [RenderedMinedFields]（fields + audioWarning）而非裸字段 map，
-  /// 把单词远程音频下载失败的可见原因带给成功分支。
-  Future<RenderedMinedFields> _renderMinedFields({
+  /// TODO-779：渲染结果携带 fields + audioWarning；制卡路径还保留媒体事务，
+  /// 直到 addNote 的确认成功、明确失败或 commit-unknown 结果定案。
+  Future<_PreparedMinedFields> _renderMinedFields({
     required AnkiConnectService service,
     required AnkiSettings settings,
     required AnkiMiningPayload payload,
     required AnkiMiningContext context,
     bool keepEmpty = false,
+    bool deferMediaCommit = false,
   }) async {
+    final _MediaUploadTransaction mediaTransaction =
+        _MediaUploadTransaction(service);
     final List<Future<dynamic>> mediaFutures = <Future<dynamic>>[
       context.coverPath != null
-          ? _storeLocalMedia(service, context.coverPath!, 'hibiki_cover_')
+          ? _storeLocalMedia(
+              service,
+              mediaTransaction,
+              context.coverPath!,
+              'hibiki_cover_',
+            )
           : Future<String?>.value(null),
       context.sasayakiAudioPath != null
           ? _storeLocalMedia(
-              service, context.sasayakiAudioPath!, 'hibiki_audio_')
+              service,
+              mediaTransaction,
+              context.sasayakiAudioPath!,
+              'hibiki_audio_',
+            )
           : Future<String?>.value(null),
       payload.audio.isNotEmpty
-          ? _storeRemoteAudio(service, payload.audio)
+          ? _storeRemoteAudio(service, mediaTransaction, payload.audio)
           : Future<AudioFetchOutcome>.value(const AudioFetchOutcome.none()),
       buildDictionaryMediaTags(
         payload.dictionaryMedia,
-        (media) => _storeDictionaryMedia(service, media),
+        (media) => _storeDictionaryMedia(service, mediaTransaction, media),
       ),
     ];
-    final List<dynamic> mediaResults = await Future.wait(mediaFutures);
-    final String? coverMediaRef = mediaResults[0] as String?;
-    final String? sasayakiMediaRef = mediaResults[1] as String?;
-    final AudioFetchOutcome remoteAudio = mediaResults[2] as AudioFetchOutcome;
-    final Map<String, String> dictionaryMediaTags =
-        mediaResults[3] as Map<String, String>;
+    try {
+      final List<dynamic> mediaResults = await Future.wait(mediaFutures);
+      final String? coverMediaRef = mediaResults[0] as String?;
+      final String? sasayakiMediaRef = mediaResults[1] as String?;
+      final AudioFetchOutcome remoteAudio =
+          mediaResults[2] as AudioFetchOutcome;
+      final Map<String, String> dictionaryMediaTags =
+          mediaResults[3] as Map<String, String>;
 
-    final String? remoteAudioRef = remoteAudio.ref;
-
-    return renderMediaPayload(
-      settings: settings,
-      payload: payload,
-      context: context,
-      coverRef: coverMediaRef != null ? '<img src="$coverMediaRef">' : null,
-      sasayakiRef:
-          sasayakiMediaRef != null ? '[sound:$sasayakiMediaRef]' : null,
-      processedAudio: remoteAudioRef != null ? '[sound:$remoteAudioRef]' : '',
-      dictionaryMediaTags: dictionaryMediaTags,
-      audioWarning: remoteAudio.failureReason,
-      keepEmpty: keepEmpty,
-    );
+      final String? remoteAudioRef = remoteAudio.ref;
+      final RenderedMinedFields rendered = renderMediaPayload(
+        settings: settings,
+        payload: payload,
+        context: context,
+        coverRef: coverMediaRef != null ? '<img src="$coverMediaRef">' : null,
+        sasayakiRef:
+            sasayakiMediaRef != null ? '[sound:$sasayakiMediaRef]' : null,
+        processedAudio: remoteAudioRef != null ? '[sound:$remoteAudioRef]' : '',
+        dictionaryMediaTags: dictionaryMediaTags,
+        audioWarning: remoteAudio.failureReason,
+        keepEmpty: keepEmpty,
+      );
+      await mediaTransaction.prepareForNoteWrite();
+      if (!deferMediaCommit) {
+        mediaTransaction.commit();
+      }
+      return _PreparedMinedFields(
+        rendered: rendered,
+        mediaTransaction: mediaTransaction,
+      );
+    } catch (_) {
+      // Future.wait completes only after every route settles by default, so all
+      // successful parallel writes are known before compensation starts.
+      await mediaTransaction.rollback();
+      rethrow;
+    }
   }
 
   /// TODO-270 C1：更新一张**已存在**的 Hibiki 制卡（[noteId]）的字段。
@@ -703,13 +867,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         );
       }
 
-      final rendered = await _renderMinedFields(
+      final _PreparedMinedFields prepared = await _renderMinedFields(
         service: service,
         settings: settings,
         payload: payload,
         context: context,
         keepEmpty: true,
       );
+      final RenderedMinedFields rendered = prepared.rendered;
       final Map<String, String> fields = rendered.fields;
 
       // 所有映射字段渲染皆空白（含无字段映射）说明会把整卡清空——拒绝。部分字段
@@ -945,34 +1110,70 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       File('${mediaDir.path}${Platform.pathSeparator}$name');
 
   /// 媒体目录里每个文件的字节数（只 stat，不读内容）。
-  Future<Map<String, int>> _scanMediaSizes(Directory mediaDir) async {
+  ///
+  /// collection.media 是 **Anki 拥有的活目录**（媒体同步/媒体检查随时增删
+  /// 文件），列举与 stat 之间文件可能已消失——消失的文件当它从不存在，绝不
+  /// 让一个 FileSystemException 中止整轮（BUG-1262）。
+  Future<Map<String, int>> _scanMediaSizes(
+    Directory mediaDir, {
+    AnkiMediaDedupOnProgress? onProgress,
+  }) async {
     final Map<String, int> sizes = <String, int>{};
     await for (final FileSystemEntity entity
         in mediaDir.list(followLinks: false)) {
       if (entity is! File) continue;
       final String name = entity.uri.pathSegments.last;
       if (name.isEmpty) continue;
-      sizes[name] = await entity.length();
+      try {
+        sizes[name] = await entity.length();
+      } on FileSystemException {
+        continue;
+      }
+      if (sizes.length % 100 == 0) {
+        onProgress?.call(AnkiMediaDedupProgress(
+          stage: AnkiMediaDedupStage.scanning,
+          done: sizes.length,
+        ));
+      }
     }
     return sizes;
   }
 
   /// 只对「大小撞车」的候选算**全文件** sha256（大小不同不可能字节相同）。
   /// 判等永远是全文件哈希 + 删除前逐字节复核，绝不用截断哈希或感知哈希。
+  ///
+  /// 进度在**读文件之前**上报；扫描后被 Anki 删走的文件读不到就跳过（它既
+  /// 当不了保留份也轮不到被删），不中止整轮（BUG-1262）。
   Future<Map<String, String>> _hashSizeCollisions(
     Directory mediaDir,
-    Map<String, int> sizes,
-  ) async {
+    Map<String, int> sizes, {
+    AnkiMediaDedupOnProgress? onProgress,
+    bool Function()? shouldCancel,
+  }) async {
     final Map<int, List<String>> bySize = <int, List<String>>{};
     sizes.forEach(
         (String n, int s) => bySize.putIfAbsent(s, () => <String>[]).add(n));
+    final List<String> candidates = <String>[
+      for (final List<String> names in bySize.values)
+        if (names.length >= 2) ...names,
+    ];
     final Map<String, String> nameToHash = <String, String>{};
-    for (final MapEntry<int, List<String>> entry in bySize.entries) {
-      if (entry.value.length < 2) continue;
-      for (final String name in entry.value) {
+    int done = 0;
+    for (final String name in candidates) {
+      if (shouldCancel?.call() ?? false) break;
+      onProgress?.call(AnkiMediaDedupProgress(
+        stage: AnkiMediaDedupStage.hashing,
+        done: done,
+        total: candidates.length,
+        currentFile: name,
+      ));
+      try {
         final Uint8List bytes = await _mediaFile(mediaDir, name).readAsBytes();
         nameToHash[name] = crypto.sha256.convert(bytes).toString();
+      } on FileSystemException {
+        // 消失的文件不进哈希表 → 不进任何组。
       }
+      done++;
     }
     return nameToHash;
   }
@@ -992,9 +1193,12 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final Map<String, String> out = <String, String>{};
     for (final String name in names) {
       if (!isReferencingMediaFile(name)) continue;
-      final File file = _mediaFile(mediaDir, name);
-      if (!file.existsSync()) continue;
-      out[name] = utf8.decode(await file.readAsBytes(), allowMalformed: true);
+      try {
+        out[name] = utf8.decode(await _mediaFile(mediaDir, name).readAsBytes(),
+            allowMalformed: true);
+      } on FileSystemException {
+        // 扫描后被删走：没有正文就没有引用，跳过（BUG-1262）。
+      }
     }
     return out;
   }
@@ -1002,17 +1206,21 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// 删除前的最后一道闸：把副本与保留份**逐字节**比一遍。
   ///
   /// 哈希已经是全文件 sha256，这一步兜的是「扫描完到删除前文件被改动」的时间
-  /// 差，以及任何哈希实现被换弱时的兜底。读不到或有一个字节不同就绝不删。
+  /// 差，以及任何哈希实现被换弱时的兜底。读不到（含 exists 判断后被删走的
+  /// TOCTOU）或有一个字节不同就绝不删，也绝不抛异常中止整轮（BUG-1262）。
   Future<bool> _mediaBytesIdentical(
     Directory mediaDir,
     String a,
     String b,
   ) async {
-    final File fa = _mediaFile(mediaDir, a);
-    final File fb = _mediaFile(mediaDir, b);
-    if (!fa.existsSync() || !fb.existsSync()) return false;
-    final Uint8List ba = await fa.readAsBytes();
-    final Uint8List bb = await fb.readAsBytes();
+    final Uint8List ba;
+    final Uint8List bb;
+    try {
+      ba = await _mediaFile(mediaDir, a).readAsBytes();
+      bb = await _mediaFile(mediaDir, b).readAsBytes();
+    } on FileSystemException {
+      return false;
+    }
     if (ba.length != bb.length) return false;
     for (int i = 0; i < ba.length; i++) {
       if (ba[i] != bb[i]) return false;
@@ -1089,6 +1297,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   Future<AnkiMediaDedupReport?> runMediaDedup({
     bool dryRun = false,
     Future<void> Function(Map<String, dynamic> entry)? onJournal,
+    AnkiMediaDedupOnProgress? onProgress,
+    bool Function()? shouldCancel,
   }) async {
     final AnkiConnectService service = await _getService();
     final String mediaPath = await service.getMediaDirPath();
@@ -1097,11 +1307,30 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     // 盲扫错误目录。
     if (!mediaDir.existsSync()) return null;
 
-    final Map<String, int> sizes = await _scanMediaSizes(mediaDir);
+    bool cancelled = false;
+    bool checkCancel() =>
+        cancelled = cancelled || (shouldCancel?.call() ?? false);
+
+    onProgress?.call(
+        const AnkiMediaDedupProgress(stage: AnkiMediaDedupStage.scanning));
+    final Map<String, int> sizes =
+        await _scanMediaSizes(mediaDir, onProgress: onProgress);
     final List<MediaDedupGroup> groups = planMediaDedupGroups(
-      await _hashSizeCollisions(mediaDir, sizes),
+      await _hashSizeCollisions(mediaDir, sizes,
+          onProgress: onProgress, shouldCancel: shouldCancel),
       sizes: sizes,
     );
+    if (checkCancel()) {
+      return AnkiMediaDedupReport(
+        dryRun: dryRun,
+        groupCount: groups.length,
+        deletions: const <MediaDedupDeletion>[],
+        notesRewritten: 0,
+        modelsRewritten: 0,
+        skipped: 0,
+        cancelled: true,
+      );
+    }
     // 媒体文件**内部**的引用只作为「不许删」的证据：本轮不改写媒体正文，
     // 所以只要还有人从里面引用，这份副本就留着。
     final Map<String, String> referencingMedia =
@@ -1122,8 +1351,24 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final Set<int> notesRewritten = <int>{};
     final Set<String> modelsRewritten = <String>{};
 
+    final int totalDupes = groups.fold<int>(
+        0, (int sum, MediaDedupGroup g) => sum + g.duplicates.length);
+    int processedDupes = 0;
+    int bytesFreed = 0;
+
+    outer:
     for (final MediaDedupGroup group in groups) {
       for (final String dupe in group.duplicates) {
+        // 取消在副本边界生效：当前副本要么完整处理、要么完全没动，绝不半截。
+        if (checkCancel()) break outer;
+        onProgress?.call(AnkiMediaDedupProgress(
+          stage: AnkiMediaDedupStage.resolving,
+          done: processedDupes,
+          total: totalDupes,
+          currentFile: dupe,
+          bytesFreed: bytesFreed,
+        ));
+        processedDupes++;
         // ── 阶段一：全部判定与计划，一个字节都不写 ────────────────────
         // 顺序是刻意的：先把所有「不许删」的证据收齐再动手。上一版把模板/
         // styling 改写放在判定之前，跳过删除时已经把 Anki 端改脏了（Lapis
@@ -1165,6 +1410,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
         if (dryRun) {
           deletions.add(planned);
+          bytesFreed += planned.bytes;
           notesRewritten.addAll(notePlan.keys);
           modelsRewritten.addAll(
               _modelsReferencing(modelNames, modelTemplates, modelCss, dupe));
@@ -1245,9 +1491,16 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         });
         await service.deleteMediaFile(dupe);
         deletions.add(planned);
+        bytesFreed += planned.bytes;
       }
     }
 
+    onProgress?.call(AnkiMediaDedupProgress(
+      stage: AnkiMediaDedupStage.resolving,
+      done: processedDupes,
+      total: totalDupes,
+      bytesFreed: bytesFreed,
+    ));
     return AnkiMediaDedupReport(
       dryRun: dryRun,
       groupCount: groups.length,
@@ -1255,40 +1508,77 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       notesRewritten: notesRewritten.length,
       modelsRewritten: modelsRewritten.length,
       skipped: skippedCount,
+      cancelled: cancelled,
     );
   }
 
-  Future<String?> _storeLocalMedia(
+  Future<void> _uploadLocalFile(
+    AnkiConnectService service, {
+    required _MediaUploadTransaction mediaTransaction,
+    required File file,
+    required String filename,
+    List<int>? bytes,
+  }) async {
+    await mediaTransaction.upload(
+      filename: filename,
+      write: () async {
+        if (service.canReadLocalMediaPaths) {
+          // Anki is on this machine: send a tiny JSON path instead of inflating
+          // a multi-megabyte GIF by ~33% into base64 and making Anki parse it on
+          // its GUI thread.
+          await service.storeMediaFile(
+            filename: filename,
+            path: file.absolute.path,
+          );
+          return;
+        }
+        await service.storeMediaFile(
+          filename: filename,
+          data: await hibikiAnkiBase64EncodeAsync(
+            bytes ?? await file.readAsBytes(),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<String> _storeLocalMedia(
     AnkiConnectService service,
+    _MediaUploadTransaction mediaTransaction,
     String filePath,
     String prefix,
   ) async {
-    try {
-      final file = File(filePath);
-      if (!file.existsSync()) return null;
-      final bytes = await file.readAsBytes();
-      // BUG-933：sha256 + base64 卸到后台 isolate（大媒体），避免阻塞 UI。
-      final encoded = await hibikiAnkiMediaEncodeForUploadAsync(
-        prefix: prefix,
-        bytes: bytes,
-        sourceName: filePath,
-      );
-      await service.storeMediaFile(
-        filename: encoded.filename,
-        data: encoded.base64Data,
-      );
-      return encoded.filename;
-    } catch (e, stack) {
-      debugPrint('AnkiConnectRepository._storeLocalMedia: $e\n$stack');
-      return null;
+    final file = File(filePath);
+    if (!file.existsSync()) {
+      throw FileSystemException('Mining media file is missing', filePath);
     }
+    final bytes = await file.readAsBytes();
+    // BUG-1227：只算内容哈希定名；本机 Anki 走 path 上传，不再生成巨大 base64。
+    final filename = await hibikiAnkiMediaFilenameForBytesAsync(
+      prefix: prefix,
+      bytes: bytes,
+      sourceName: filePath,
+    );
+    // 上传失败必须向上抛，让 mineEntry 在 addNote 之前失败。绝不能返回 null 后继续
+    // 创建一张无图/无句子音频卡，并把稍后落盘的媒体留成孤儿文件。
+    await _uploadLocalFile(
+      service,
+      mediaTransaction: mediaTransaction,
+      file: file,
+      filename: filename,
+      bytes: bytes,
+    );
+    return filename;
   }
 
   /// TODO-779：返回 [AudioFetchOutcome]（ref 成功 / failureReason 可见失败 / none
   /// 无音频）而非裸 `String?`，让非 200 与异常不再静默落空，而是把原因冒泡到
   /// [MineOutcome.audioWarning] 给用户看。`return null` 的拒绝坏字节语义不变。
   Future<AudioFetchOutcome> _storeRemoteAudio(
-      AnkiConnectService service, String url) async {
+    AnkiConnectService service,
+    _MediaUploadTransaction mediaTransaction,
+    String url,
+  ) async {
     try {
       File? audioFile;
       switch (AnkiAudioRef.classify(url)) {
@@ -1315,18 +1605,20 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           final file = File(AnkiAudioRef.localPath(url));
           if (!file.existsSync()) return const AudioFetchOutcome.none();
           final bytes = await file.readAsBytes();
-          // BUG-933：本地音频 sha256 + base64 卸到后台 isolate。
-          final encoded = await hibikiAnkiMediaEncodeForUploadAsync(
+          final filename = await hibikiAnkiMediaFilenameForBytesAsync(
             prefix: 'hibiki_audio_',
             bytes: bytes,
             sourceName: file.path,
             fallbackExtension: 'mp3',
           );
-          await service.storeMediaFile(
-            filename: encoded.filename,
-            data: encoded.base64Data,
+          await _uploadLocalFile(
+            service,
+            mediaTransaction: mediaTransaction,
+            file: file,
+            filename: filename,
+            bytes: bytes,
           );
-          return AudioFetchOutcome.stored(encoded.filename);
+          return AudioFetchOutcome.stored(filename);
         case AnkiAudioRefKind.remoteUrl:
           final client = HttpClient();
           try {
@@ -1368,12 +1660,12 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       // non-null here; only existence can still fail (missing local file or a
       // download that produced no file).
       if (!audioFile.existsSync()) return const AudioFetchOutcome.none();
-      final bytes = await audioFile.readAsBytes();
       final filename = audioFile.uri.pathSegments.last;
-      // BUG-933：文件名已定（下载时已按 sha256 命名），只剩 base64 卸到后台 isolate。
-      await service.storeMediaFile(
+      await _uploadLocalFile(
+        service,
+        mediaTransaction: mediaTransaction,
+        file: audioFile,
         filename: filename,
-        data: await hibikiAnkiBase64EncodeAsync(bytes),
       );
       return AudioFetchOutcome.stored(filename);
     } catch (e, stack) {
@@ -1418,36 +1710,54 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     return 'mp3';
   }
 
+  /// BUG-1265：返回 `null` 表示「这条词典媒体嵌不进去」，**不是**整次制卡失败。
+  ///
+  /// 词典媒体（gaiji 外字、义项内嵌图）是**装饰性**的，写入方
+  /// `writeDictionaryMediaCache` 按设计就是尽力而为：HoshiDicts 未初始化、
+  /// `getMediaFile` 取不到字节（分卷 MDD 未挂载、词典里本就没这个资源）、写盘失败，
+  /// 三种情况都跳过不写盘，契约是「该条退回 alt 文本，不阻断制卡」。共享的
+  /// [BaseAnkiRepository.buildDictionaryMediaTags] 也据此收 `Future<String?>`：
+  /// null 就不进映射表。AnkiDroid（`_addDictionaryMedia`）与 AnkiMobile
+  /// （`_dictionaryMediaUrl`）都按这个契约返回 null 优雅降级。
+  ///
+  /// 此处曾 `throw FileSystemException`（commit 35e8c96b5「require media before
+  /// adding cards」把封面/句子音频的「缺媒体就别建卡」策略**误扫**到装饰性外字上）：
+  /// 一个取不到字节的外字就让 `mineEntry` 整个抛穿，用户一张卡都建不出来，而同一
+  /// 词条在 AnkiDroid/AnkiMobile 上照常建卡。封面与句子音频仍由 [_storeLocalMedia]
+  /// 抛异常拦住（那两个缺了卡片就没价值），二者是**不同**策略，不要再合并。
   Future<String?> _storeDictionaryMedia(
     AnkiConnectService service,
+    _MediaUploadTransaction mediaTransaction,
     DictionaryMedia media,
   ) async {
-    try {
-      // 命名/目录与主 app 的 writeDictionaryMediaCache 共用同一 helper（防漂移，
-      // 否则文件名对不上→读不到→卡片留坏图）。HBK-AUDIT-062 无扩展名兜底已并入。
-      final filename =
-          ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
-      final file = File('${ankiDictionaryMediaCacheDirPath()}/$filename');
-      if (!file.existsSync()) return null;
-      final bytes = await file.readAsBytes();
-      // BUG-933：外字通常几 KB（走同步分支），偶发大图才卸后台 isolate。
-      await service.storeMediaFile(
-        filename: filename,
-        data: await hibikiAnkiBase64EncodeAsync(bytes),
+    // 命名/目录与主 app 的 writeDictionaryMediaCache 共用同一 helper（防漂移，
+    // 否则文件名对不上→读不到→卡片留坏图）。HBK-AUDIT-062 无扩展名兜底已并入。
+    final filename =
+        ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
+    final file = File('${ankiDictionaryMediaCacheDirPath()}/$filename');
+    if (!file.existsSync()) {
+      debugPrint(
+        'AnkiConnectRepository._storeDictionaryMedia: cache miss for '
+        '${media.dictionary}/${media.path} (${file.path}); '
+        'embedding skipped, card still created',
       );
-      // 返回**裸文件名**（与 AnkiDroid 经 ankiInlineMediaReference 对称）。义项 HTML
-      // 已是 <img src="hoshi_dict_N.ext">，buildMinedFields 用 replaceAll 把 src 里的占位符
-      // 替换成真实文件名；这里若返回完整 <img>/[sound:] 标签会嵌进 src 成
-      // <img src="<img src=...>"> 嵌套坏图（外字不显示）。两端共用 ankiInlineMediaReference
-      // 这一裸化单一真相，杜绝再次漂移回完整标签。
-      final mime = mimeTypeForPath(filename);
-      final wrapped = mime.startsWith('audio/')
-          ? '[sound:$filename]'
-          : '<img src="$filename">';
-      return ankiInlineMediaReference(wrapped);
-    } catch (e, stack) {
-      debugPrint('AnkiConnectRepository._storeDictionaryMedia: $e\n$stack');
       return null;
     }
+    await _uploadLocalFile(
+      service,
+      mediaTransaction: mediaTransaction,
+      file: file,
+      filename: filename,
+    );
+    // 返回**裸文件名**（与 AnkiDroid 经 ankiInlineMediaReference 对称）。义项 HTML
+    // 已是 <img src="hoshi_dict_N.ext">，buildMinedFields 用 replaceAll 把 src 里的占位符
+    // 替换成真实文件名；这里若返回完整 <img>/[sound:] 标签会嵌进 src 成
+    // <img src="<img src=...>"> 嵌套坏图（外字不显示）。两端共用 ankiInlineMediaReference
+    // 这一裸化单一真相，杜绝再次漂移回完整标签。
+    final mime = mimeTypeForPath(filename);
+    final wrapped = mime.startsWith('audio/')
+        ? '[sound:$filename]'
+        : '<img src="$filename">';
+    return ankiInlineMediaReference(wrapped);
   }
 }

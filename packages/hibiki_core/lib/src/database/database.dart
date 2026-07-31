@@ -421,7 +421,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 63;
+  int get schemaVersion => 64;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1267,8 +1267,39 @@ class HibikiDatabase extends _$HibikiDatabase {
             }
           }
           if (from < 63) {
-            // v63（Mihon 漫画扩展生态）：全是独立新表，不改写现有漫画/书架/
+            // v63：删除已废弃的 galgame 全局窗口超分偏好。v62 起超分档位的
+            // 唯一真值是 galgames.upscaling_mode；旧 KV 既不能映射成任一游戏，
+            // 也不能留在 Profile 快照里等切换 Profile 时复活。
+            //
+            // 两张表的清理必须同成同败：onUpgrade 本身不保证把多个裸 SQL 包成
+            // 一个事务，因此这里显式 transaction。第二条 DELETE 若因损坏的历史
+            // schema 失败，第一条也回滚，user_version 仍停在旧版本供修复后重试。
+            // 成功后不留影子副本——这是用户明确要求的不可逆数据删除。
+            const String obsoleteKey = 'galgame_magpie_upscaling_mode';
+            await transaction(() async {
+              if (await _tableExists('preferences')) {
+                await customStatement(
+                  'DELETE FROM preferences WHERE key = ?',
+                  <Object?>[obsoleteKey],
+                );
+              }
+              if (await _tableExists('profile_settings')) {
+                await customStatement(
+                  'DELETE FROM profile_settings '
+                  "WHERE category = 'pref' AND key = ?",
+                  <Object?>[obsoleteKey],
+                );
+              }
+            });
+          }
+          if (from < 64) {
+            // v64（Mihon 漫画扩展生态）：全是独立新表，不改写现有漫画/书架/
             // 来源扫描数据。旧用户升级后五张表为空，表现为「尚未添加扩展仓库」。
+            //
+            // 号位说明：本迁移原本写作 v63，与 develop 上「删除已废弃的 galgame
+            // 全局窗口超分偏好」撞号。两条迁移互不相干且都必须执行，故本条
+            // 顺延到 v64 排在 v63 之后。建表全部由 _tableExists 守卫，幂等，
+            // 且与 v63 之间没有顺序耦合。
             if (!await _tableExists('manga_extension_stores')) {
               await m.createTable(mangaExtensionStores);
             }
@@ -3949,7 +3980,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   // ── galgames / galgame_sources / galgame_sessions (v55 游戏库) ──────
   //
   // 设计见 `docs/design/galgame-library-reina-parity.md`。这里刻意没有统计投影表：
-  // 时长/次数/最后游玩全部现算 GROUP BY（见下面三个聚合方法），一次消掉「投影与
+  // 时长/次数/最后游玩全部现算 GROUP BY（见下面聚合方法），一次消掉「投影与
   // 事实表不一致」的整类 bug。单机规模是几百游戏 × 几千会话，SQLite 毫秒级。
 
   /// 全部游戏，按添加时间升序（与旧 JSON 列表的天然顺序一致，Never break userspace）。
@@ -4050,6 +4081,12 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<int> deleteGalgameSession(int id) =>
       (delete(galgameSessions)..where((t) => t.id.equals(id))).go();
 
+  /// 清空游戏统计，只删除游玩会话事实。
+  ///
+  /// 游戏库（[galgames]）与首页活动时间线（[activityEvents]）是独立用户数据，
+  /// 不能因统计页的「清空」操作被连带删除。
+  Future<int> clearAllGalgameStatistics() => delete(galgameSessions).go();
+
   /// 全库每个游戏的时长合计（秒）+ 会话次数 + 最后游玩毫秒戳。
   ///
   /// 库页排序（按总时长 / 按最后游玩）与详情页 KPI 都吃这一个查询，取代上游的
@@ -4096,6 +4133,28 @@ class HibikiDatabase extends _$HibikiDatabase {
     return <String, int>{
       for (final QueryRow row in rows)
         row.read<String>('date_key'): row.read<int>('total_seconds'),
+    };
+  }
+
+  /// 全部游戏按天的游玩时长（秒）与会话数。
+  ///
+  /// 游戏统计页与首页汇总只认 [galgameSessions] 事实表；`activity_events` 是时间线，
+  /// 不能反过来充当时长统计投影。返回全部历史日期，读取端按今日/周/月窗口筛选。
+  Future<Map<String, (int totalSeconds, int sessionCount)>>
+      getAllGalgameDailyTotals() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT date_key, '
+      'COALESCE(SUM(duration_seconds), 0) AS total_seconds, '
+      'COUNT(*) AS session_count '
+      'FROM galgame_sessions GROUP BY date_key',
+      readsFrom: {galgameSessions},
+    ).get();
+    return <String, (int, int)>{
+      for (final QueryRow row in rows)
+        row.read<String>('date_key'): (
+          row.read<int>('total_seconds'),
+          row.read<int>('session_count'),
+        ),
     };
   }
 

@@ -621,6 +621,10 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   final String head = '''
     $themeVarsJs
     $fontStyleJs
+    // popupRendered is the host reveal gate. Let popup.js wait for the injected
+    // custom font on cold/nested lookups, while keeping the no-custom-font path
+    // synchronous.
+    window.__hibikiDictionaryFontsConfigured = ${fontStyleJs.isNotEmpty};
     $iconFontJs
     $zoomWheelJs
     document.documentElement.style.zoom = '${zoom.toStringAsFixed(4)}';

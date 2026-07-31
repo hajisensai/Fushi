@@ -191,13 +191,33 @@ void main() {
   });
 
   test(
-      'remote video card onLongPress is bound to _showRemoteVideoDialog '
+      'remote video card gates onLongPress and opens _showRemoteVideoDialog '
       '(BUG-416 guard)', () {
     final String src =
         File('lib/src/pages/implementations/home_video_page.dart')
             .readAsStringSync();
-    expect(src, contains('onLongPress: () => _showRemoteVideoDialog(video)'),
-        reason: 'long-press must open the options dialog');
+    final int cardStart = src.indexOf('Widget _buildRemoteVideoCard(');
+    final int cardEnd =
+        src.indexOf('Widget _buildRemoteVideoCover(', cardStart);
+    expect(cardStart, greaterThanOrEqualTo(0));
+    expect(cardEnd, greaterThan(cardStart));
+    final String card = src.substring(cardStart, cardEnd);
+    expect(
+      RegExp(
+        r'onLongPress:\s*_selectionMode\s*\?\s*null\s*:\s*'
+        r'\(\)\s*=>\s*_showRemoteVideoDialog\(video\)',
+      ).hasMatch(card),
+      isTrue,
+      reason: 'normal mode must open the dialog; selection mode must yield '
+          'the gesture to SelectionDragArea',
+    );
+    expect(
+      RegExp(
+        r'onLongPress:[\s\S]{0,160}_(?:openRemote|downloadRemote)\(',
+      ).hasMatch(card),
+      isFalse,
+      reason: 'long-press must neither play nor download directly',
+    );
   });
 }
 

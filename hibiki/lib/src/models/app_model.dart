@@ -658,6 +658,10 @@ class AppModel with ChangeNotifier {
   Future<void> refreshAfterSyncRun(SyncRunReport report) async {
     if (!report.needsLocalLibraryRefresh) return;
 
+    if (report.serviceConfigsImported > 0) {
+      await refreshPrefCache();
+    }
+
     if (report.dictionariesImported > 0) {
       dictRepo.clearDictionariesCache();
       await _rebuildDictPathsCacheAsync();
@@ -716,6 +720,7 @@ class AppModel with ChangeNotifier {
   /// Preference management, extracted from AppModel for testability.
   PreferencesRepository? _prefsRepo;
   PreferencesRepository get prefsRepo => _prefsRepo!;
+  bool get isPreferencesReady => _prefsRepo != null;
 
   /// TODO-855: last prefs-version this process has reconciled its cache against.
   /// Used by [refreshPrefCacheIfChanged] so the warm-reuse :popup process only
@@ -3634,7 +3639,8 @@ class AppModel with ChangeNotifier {
   /// TODO-861③：启动时 check-due 自动更新词典（前台、静默、不弹错）。先用纯函数
   /// [shouldAutoUpdateDictionaries] 守门（未开 / 未到期 / 无可更新 / 正忙 → 直接
   /// 返回），再逐本拉远端 index 比 revision、有新版才下载 force 重导。**失败不中断
-  /// 整批**（逐本 try/catch 收集失败）；至少一本成功才写 `lastDictionaryUpdateAt`。
+  /// 整批**（逐本 try/catch 收集失败）；整批检查完成（无新版也算完成）才写
+  /// `lastDictionaryUpdateAt`，任一本检查/重导失败则不推进时间，留待下次启动重试。
   /// 复用手动更新同款「下载→force 重导（保留 order/hidden/collapsed）」链路。
   Future<void> maybeAutoUpdateDictionaries() async {
     if (!autoUpdateDictionaries) return;
@@ -3650,19 +3656,26 @@ class AppModel with ChangeNotifier {
       return;
     }
     _autoUpdateInProgress = true;
-    int successCount = 0;
+    int completedCount = 0;
     try {
       for (final Dictionary dictionary in updatable) {
         try {
-          final String? remoteRevision =
-              await DictionaryUpdateService.fetchRemoteIndex(
-                  dictionary.indexUrl);
+          final DictionaryRemoteIndexResult remote =
+              await DictionaryUpdateService.fetchRemoteIndexResult(
+            dictionary.indexUrl,
+          );
+          if (!remote.succeeded) {
+            debugPrint('[Hibiki] auto dict update could not check '
+                '${dictionary.name}');
+            continue;
+          }
           if (!DictionaryUpdateService.needsUpdate(
-              dictionary.revision, remoteRevision)) {
+              dictionary.revision, remote.revision)) {
+            completedCount++;
             continue;
           }
           await _autoRedownloadAndReimport(dictionary);
-          successCount++;
+          completedCount++;
         } catch (e, stack) {
           // 单本失败不中断其余（移植 Hoshi 的 failures-collect 语义）。
           ErrorLogService.instance
@@ -3671,8 +3684,12 @@ class AppModel with ChangeNotifier {
               '${dictionary.name}: $e');
         }
       }
-      // 至少一本成功才写时间戳（移植 Hoshi：failures < total 才更新 key）。
-      if (successCount > 0) {
+      // BUG-1281：检查成功且无需更新也是完整成功；旧逻辑只在真正重导过词典时写
+      // 时间，导致长期没有新版的用户永远显示“从未”并在每次启动重复联网。
+      if (didCompleteDictionaryAutoUpdateBatch(
+        totalCount: updatable.length,
+        completedCount: completedCount,
+      )) {
         await prefsRepo.setLastDictionaryUpdateAt(DateTime.now());
       }
     } finally {
@@ -4903,13 +4920,22 @@ class AppModel with ChangeNotifier {
   Future<void> setPopupDictionaryColumns(int columns) =>
       prefsRepo.setPopupDictionaryColumns(columns);
 
-  /// 自动展开词典数默认「跟随最多列数」（用户拍板 2026-07-14）：未显式设过时默认 =
-  /// 当前 [popupDictionaryColumns]（一行几列就默认展开几本，第一行铺满即展开）；用户
-  /// 显式设过一律遵从其存储值。列数改动会带动本默认（用户没单独设过展开数时）。
+  /// 自动展开默认「第一行铺满即展开」（用户拍板 2026-07-14）：未显式设过时默认 1 **行**，
+  /// popup.js 再乘当前有效列数（`autoExpandCount` = rows × cols），所以展开本数天然
+  /// 跟随列数——列数 3 就是第一行那 3 本，列数改了默认也跟着改，正是拍板的语义。
+  ///
+  /// BUG-1271：本默认值原本返回 [popupDictionaryColumns]。拍板当时这个偏好的单位是
+  /// 「本数」，返回列数 = 「第一行铺满」是对的；TODO-845 之后把单位改成了「行数」，
+  /// 却没换算这个默认值，于是它变成 cols **行** × cols 列 = cols² 本 —— 出厂默认
+  /// （列数 3）从意图的 3 本膨胀成 9 本，列数调到 4 就是 16 本。单位是行，「第一行
+  /// 铺满」就只能写 1。
+  ///
+  /// 用户显式设过一律遵从其存储值（存量显式值仍按旧「本数」语义写入，会被当成行数
+  /// 读，见 BUG-1271 备注；滑块可见可自调，故不做静默数据迁移）。
   int get popupAutoExpandDictionaries =>
       prefsRepo.hasExplicitPopupAutoExpandDictionaries
           ? prefsRepo.popupAutoExpandDictionaries
-          : popupDictionaryColumns;
+          : 1;
   Future<void> setPopupAutoExpandDictionaries(int count) =>
       prefsRepo.setPopupAutoExpandDictionaries(count);
 
@@ -5661,6 +5687,10 @@ class AppModel with ChangeNotifier {
   String get mangaOnlineCatalogBaseUrl => prefsRepo.mangaOnlineCatalogBaseUrl;
   Future<void> setMangaOnlineCatalogBaseUrl(String value) =>
       prefsRepo.setMangaOnlineCatalogBaseUrl(value);
+
+  bool get mangaOnlineCatalogEnabled => prefsRepo.mangaOnlineCatalogEnabled;
+  Future<void> setMangaOnlineCatalogEnabled(bool value) =>
+      prefsRepo.setMangaOnlineCatalogEnabled(value);
 
   // TODO-1024 / BUG-479：更新检查结果缓存（缓存优先 + 后台静默刷新）。
   UpdateCheckCacheEntry? get updateCheckCache => prefsRepo.updateCheckCache;

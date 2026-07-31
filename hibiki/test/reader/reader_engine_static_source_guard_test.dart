@@ -210,12 +210,43 @@ void main() {
       final Map<String, dynamic> decoded =
           jsonDecode(literal) as Map<String, dynamic>;
       expect(decoded['initialProgress'], 0.42);
+      expect(decoded['navigationGeneration'], 17);
       expect(decoded['chromeBottomInset'], 64);
       expect(decoded['furiganaMode'], 'toggle');
       expect(decoded['dartPageWidth'], 800);
       expect((decoded['sasayakiCues'] as List<dynamic>).length, 1);
       expect(_sampleConfig().toJsLiteral().contains('"sasayakiCues":null'),
           isTrue);
+    });
+
+    test('三种 shell 回传 immutable navigation generation', () {
+      final String pagination = ReaderPaginationScripts.paginatedShellSource();
+      final String continuous = ReaderPaginationScripts.continuousShellSource();
+      final String vn = ReaderVisualNovelScripts.vnShellScript();
+      for (final String shell in <String>[pagination, continuous, vn]) {
+        expect(shell, contains("'onRestoreComplete'"));
+        expect(
+          shell,
+          contains('C.navigationGeneration'),
+          reason: 'restore 回调必须携带创建当前文档时捕获的代次',
+        );
+      }
+
+      final String navigation = File(
+        'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      final int gate = navigation.indexOf('void _acceptRestoreComplete({');
+      final int effects = navigation.indexOf(
+        "ReaderChapterPerfTrace.mark('jsInitRestore')",
+        gate,
+      );
+      expect(gate, isNonNegative);
+      expect(effects, greaterThan(gate));
+      final String guarded = navigation.substring(gate, effects);
+      expect(guarded, contains('isCurrentReaderRestoreCompletion('));
+      expect(guarded, contains('reportedGeneration: reportedGeneration,'));
+      expect(webview, contains('navigationGeneration: gen,'));
+      expect(webview, contains('reportedGeneration: rawGeneration.toInt(),'));
     });
   });
 
@@ -293,6 +324,7 @@ ProcessResult _runNode(List<String> args) {
 
 ReaderEngineConfig _sampleConfig({String? sasayakiCuesJson}) =>
     ReaderEngineConfig(
+      navigationGeneration: 17,
       continuousMode: false,
       vnMode: false,
       vnClickAdvance: false,

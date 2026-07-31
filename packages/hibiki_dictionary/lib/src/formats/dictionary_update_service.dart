@@ -41,6 +41,34 @@ bool shouldAutoUpdateDictionaries({
   return now.difference(lastUpdate) >= interval.duration;
 }
 
+/// 一轮自动更新是否完整成功。无可更新词典不构成一轮检查；只要有一本远端
+/// index 拉取/解析失败，或发现新版后下载重导失败，[completedCount] 就会小于
+/// [totalCount]，本轮不应推进下次检查时间，确保下次启动继续重试。
+bool didCompleteDictionaryAutoUpdateBatch({
+  required int totalCount,
+  required int completedCount,
+}) {
+  return totalCount > 0 && completedCount == totalCount;
+}
+
+/// 远端词典 index 的结构化拉取结果。
+///
+/// 旧的 nullable revision 把「远端与本地 revision 相同」和「断网/坏 JSON」都压成
+/// 后续的 `needsUpdate == false`，自动更新因此无法判断一轮检查是否真的成功。
+/// [succeeded] 只在拿到非空 revision 时为 true。
+final class DictionaryRemoteIndexResult {
+  const DictionaryRemoteIndexResult.success(String value)
+      : succeeded = true,
+        revision = value;
+
+  const DictionaryRemoteIndexResult.failure()
+      : succeeded = false,
+        revision = null;
+
+  final bool succeeded;
+  final String? revision;
+}
+
 /// TODO-609：在线 revision 比对手动更新词典——纯 Dart 层（零 C++/FFI/schema）。
 ///
 /// C++ importer 把完整 yomitan index.json（含 revision/isUpdatable/indexUrl/
@@ -115,13 +143,15 @@ class DictionaryUpdateService {
     return trimmed.isEmpty ? null : trimmed;
   }
 
-  /// 拉取 [indexUrl] 处的远端 index.json 并取其 revision。任何网络/解析失败一律
-  /// 返回 null（不崩、不误报有更新）。[dio] 可注入便于测试。
-  static Future<String?> fetchRemoteIndex(
+  /// 拉取 [indexUrl] 处的远端 index.json，并区分成功拿到 revision 与网络/解析失败。
+  /// [dio] 可注入便于测试。
+  static Future<DictionaryRemoteIndexResult> fetchRemoteIndexResult(
     String indexUrl, {
     Dio? dio,
   }) async {
-    if (indexUrl.isEmpty) return null;
+    if (indexUrl.isEmpty) {
+      return const DictionaryRemoteIndexResult.failure();
+    }
     final Dio client = dio ?? Dio();
     try {
       final Response<String> resp = await client.get<String>(
@@ -133,12 +163,29 @@ class DictionaryUpdateService {
         ),
       );
       final String? body = resp.data;
-      if (body == null || body.isEmpty) return null;
-      return parseRevisionFromIndexJson(body);
+      if (body == null || body.isEmpty) {
+        return const DictionaryRemoteIndexResult.failure();
+      }
+      final String? revision = parseRevisionFromIndexJson(body);
+      if (revision == null) {
+        return const DictionaryRemoteIndexResult.failure();
+      }
+      return DictionaryRemoteIndexResult.success(revision);
     } catch (_) {
-      return null;
+      return const DictionaryRemoteIndexResult.failure();
     } finally {
       if (dio == null) client.close();
     }
+  }
+
+  /// 兼容手动更新调用点的 nullable revision API。自动更新必须使用
+  /// [fetchRemoteIndexResult]，否则无法区分“已是最新版”和“检查失败”。
+  static Future<String?> fetchRemoteIndex(
+    String indexUrl, {
+    Dio? dio,
+  }) async {
+    final DictionaryRemoteIndexResult result =
+        await fetchRemoteIndexResult(indexUrl, dio: dio);
+    return result.revision;
   }
 }

@@ -246,6 +246,13 @@ enum ShortcutAction {
   videoSpeedUp(ShortcutScope.video, 'video_speed_up'),
   videoSpeedDown(ShortcutScope.video, 'video_speed_down'),
   videoResetSpeed(ShortcutScope.video, 'video_reset_speed'),
+  // 按住临时倍速（用户请求）：与手机长按画面同语义——按下时临时切到长按倍速
+  // （asbplayer 配置 longPressSpeed），松开恢复原速、不落盘。键盘按住需要 keyup
+  // 边沿，SingleActivator 表达不了，故它**不进** CallbackShortcuts activator 表，
+  // 由视频页最外层 Focus.onKeyEvent 读本 action 的绑定自行判定按下/松开（见
+  // video_hibiki_page 的 _handleHoldSpeedKey）；手柄通道退化成按一下开/再按恢复
+  // 的翻转语义（videoActionCallbacks → toggleHoldSpeed）。
+  videoHoldSpeed(ShortcutScope.video, 'video_hold_speed'),
 
   // 字幕/章节跳转
   videoPreviousSubtitle(ShortcutScope.video, 'video_previous_subtitle'),

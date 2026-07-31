@@ -806,6 +806,7 @@ function constructSingleGlossaryHtml(entryIndex) {
     const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     entry.glossaries.forEach(g => {
         if (hiddenDictionaryNames.includes(g.dictionary)) return;
+        if (isRedirectGlossary(g)) return;
         const dictName = g.dictionary;
         const dictChanged = lastDict !== dictName;
         if (dictChanged) {
@@ -863,6 +864,7 @@ function constructGlossaryHtml(entryIndex) {
     const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     entry.glossaries.forEach(g => {
         if (hiddenDictionaryNames.includes(g.dictionary)) return;
+        if (isRedirectGlossary(g)) return;
         const dictName = g.dictionary;
 
         const tempDiv = document.createElement('div');
@@ -946,19 +948,49 @@ function constructFrequencyHtml(frequencies) {
     return result;
 }
 
+function escapePitchText(text) {
+    return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// TODO-688 mining side: Yomitan `ipa`-mode dicts (e.g. English) ship phonetic
+// transcriptions in the pitch group instead of pitch positions. They are the
+// same nature as pitch (phonetic notation), so {pitch-accent-positions} carries
+// them too — that is what makes English cards get their transcription with the
+// default field mappings, no remap needed. Plain pitch-accent dicts (Japanese)
+// have an empty transcriptions array and render byte-identically to before.
 function constructPitchPositionHtml(pitches) {
     if (!pitches?.length) {
         return '';
     }
-    
-    let result = '<ol>';
+
+    let items = '';
     pitches.forEach(pitchGroup => {
         pitchGroup.pitchPositions.forEach(pos => {
-            result += `<li><span style="display:inline;"><span>[</span><span>${pos}</span><span>]</span></span></li>`;
+            items += `<li><span style="display:inline;"><span>[</span><span>${pos}</span><span>]</span></span></li>`;
+        });
+        (pitchGroup.transcriptions || []).forEach(ipa => {
+            items += `<li><span style="display:inline;"><span>[</span><span>${escapePitchText(ipa)}</span><span>]</span></span></li>`;
         });
     });
-    result += '</ol>';
-    return result;
+    // No positions AND no transcriptions: return '' instead of an empty <ol>
+    // shell, so the field is treated as empty and skipped.
+    return items ? `<ol>${items}</ol>` : '';
+}
+
+// Yomitan-named {phonetic-transcriptions}: ONLY the IPA transcriptions, for
+// users who map them to a dedicated note field. '' when no dict provides any.
+function constructPhoneticTranscriptionsHtml(pitches) {
+    if (!pitches?.length) {
+        return '';
+    }
+
+    let items = '';
+    pitches.forEach(pitchGroup => {
+        (pitchGroup.transcriptions || []).forEach(ipa => {
+            items += `<li><span style="display:inline;"><span>[</span><span>${escapePitchText(ipa)}</span><span>]</span></span></li>`;
+        });
+    });
+    return items ? `<ol>${items}</ol>` : '';
 }
 
 function constructPitchCategories(pitches, reading, rules) {
@@ -1287,6 +1319,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const glossaryFirst = Object.values(singleGlossaries)[0] || '';
     const pitchPositions = constructPitchPositionHtml(pitches);
     const pitchCategories = constructPitchCategories(pitches, reading, rules);
+    const phoneticTranscriptions = constructPhoneticTranscriptionsHtml(pitches);
 
     const audioReading = reading || expression;
     let audio = '';
@@ -1328,6 +1361,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         singleGlossaries: JSON.stringify(singleGlossaries),
         pitchPositions,
         pitchCategories,
+        phoneticTranscriptions,
         popupSelectionText,
         audio,
         selectedDictionary: selectedDictionaries[idx]?.name || '',
@@ -1444,9 +1478,17 @@ function showMinedCardActionPanel(matches, options) {
                 if (!busy) finish({ action: 'cancel' });
             }
         };
+        // BUG-1269：宿主页面（阅读器/漫画/视频）往弹窗里装了一座 capture 阶段的输入桥，
+        // 把绑到「关闭词典」等动作的键与鼠标键交回宿主。那座桥在 onLoadStop 就注册，比
+        // 本面板的 capture 监听早得多——不声明「模态开着」它就会抢在上面这个 onKey 前面
+        // 吃掉 Esc，于是用户想关面板却把整个查词窗关了（正是上面那行注释要防的事）。
+        // 深度计数而非布尔：面板可能叠开（↗ 多卡选择套在 ✓ 操作单之上）。
+        window.__hoshiPopupModalDepth = (window.__hoshiPopupModalDepth || 0) + 1;
         const finish = (result) => {
             if (settled) return;
             settled = true;
+            window.__hoshiPopupModalDepth =
+                Math.max(0, (window.__hoshiPopupModalDepth || 1) - 1);
             document.removeEventListener('keydown', onKey, true);
             backdrop.remove();
             if (ownsDocument) rootEl.classList.remove(MINED_ACTION_OPEN_CLASS);
@@ -2128,6 +2170,63 @@ function createPitchSection(pitches, reading) {
     return section;
 }
 
+// Redirect-only dictionary records add no definition: they only point the
+// queried spelling at another headword. English dictionaries encode that
+// intent in a few equivalent ways (a `redirect`/`redirected` definition or term
+// tag, a "Redirected from …" structured-content label, or a `non-lemma` entry
+// whose structured content contains the standalone `redirect` chip). Keep the
+// predicate data-shaped rather than dictionary-name-shaped so the same rule
+// works for LDOCE, OALD, and future imports without per-dictionary branches.
+function redirectMarkerKind(content) {
+    if (typeof content === 'string') {
+        let value = content;
+        const trimmed = value.trim();
+        if ((trimmed.startsWith('{') || trimmed.startsWith('['))) {
+            try {
+                return redirectMarkerKind(JSON.parse(trimmed));
+            } catch (_) {
+                // Not JSON; it may be dictionary HTML, handled as text below.
+            }
+        }
+        value = value
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
+        if (/\bredirected\s+from\b/.test(value)) return 2;
+        if (value === 'redirect') return 1;
+        return 0;
+    }
+    if (Array.isArray(content)) {
+        return content.reduce(
+            (kind, item) => Math.max(kind, redirectMarkerKind(item)), 0);
+    }
+    if (content && typeof content === 'object') {
+        // Yomitan structured-content nodes keep user-visible text below
+        // `content` (and legacy text nodes below `text`). Do not scan style/data
+        // metadata: a CSS class named "redirect" is not a redirect record.
+        if (Object.prototype.hasOwnProperty.call(content, 'content')) {
+            return redirectMarkerKind(content.content);
+        }
+        if (typeof content.text === 'string') {
+            return redirectMarkerKind(content.text);
+        }
+    }
+    return 0;
+}
+
+function isRedirectGlossary(glossary) {
+    if (!glossary) return false;
+    const tags = `${glossary.definitionTags || ''} ${glossary.termTags || ''}`
+        .trim()
+        .toLowerCase();
+    if (/(?:^|\s)redirect(?:ed)?(?:\s|$)/.test(tags)) return true;
+
+    const marker = redirectMarkerKind(glossary.content);
+    if (marker === 2) return true;
+    return marker === 1 && /(?:^|\s)non-lemma(?:\s|$)/.test(tags);
+}
+
 function createGlossarySectionWrapper(entry) {
     // TODO-804: a term dictionary disabled in 词典管理 (its show/hide switch off)
     // is added to hiddenDictionaryNames by the host. Term dictionaries are still
@@ -2141,6 +2240,7 @@ function createGlossarySectionWrapper(entry) {
     const grouped = {};
     entry.glossaries.forEach(g => {
         if (hiddenDictionaryNames.includes(g.dictionary)) return;
+        if (isRedirectGlossary(g)) return;
         if (!grouped[g.dictionary]) grouped[g.dictionary] = [];
         grouped[g.dictionary].push({
             content: g.content,
@@ -2997,14 +3097,23 @@ function autoExpandCount(totalDicts) {
 // to cap the effective column count the same way masonry does. The popup
 // auto-expands the leading `autoExpandCount(totalDicts)` blocks even when
 // collapseDictionaries is on (default 1 row = the historical "only the first
-// dictionary expanded" behaviour at the default single column, where the leading
-// block opened regardless of its per-dictionary collapse flag).
+// dictionary expanded" behaviour at the default single column).
+//
+// BUG-1264: per-dictionary collapse OUTRANKS auto-expand. `collapsedDictionaryNames`
+// is an explicit per-book decision the user made in 词典管理 (one tap per row);
+// autoExpandRows is a bulk default for the books that carry no such decision.
+// Ranking the bulk default first made the per-book toggle a no-op for the leading
+// rows x columns blocks -- at the shipped 3 rows x 3 columns that silently ignored
+// the flag on the first NINE dictionaries, i.e. "I collapsed it and it still opens".
+// So the per-dict flag short-circuits both auto-expand and the global switch; a
+// non-collapsed block still follows the old rule (auto-expanded, or global collapse
+// off). Users can still open a collapsed block by hand -- <details> stays clickable.
 function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts) {
     const details = el('details', { className: 'glossary-group' });
     const perDictCollapsed = (window.collapsedDictionaryNames || []).includes(dictName);
     const autoExpandN = autoExpandCount(totalDicts);
     const autoExpanded = dictIdx < autoExpandN;
-    if (autoExpanded || (!window.collapseDictionaries && !perDictCollapsed)) {
+    if (!perDictCollapsed && (autoExpanded || !window.collapseDictionaries)) {
         details.open = true;
     }
 
@@ -3459,10 +3568,31 @@ function _reportPopupHeight() {
 // 不可做增量 diff）。
 function _firePopupRendered(stillRendering) {
     window._renderInProgress = !!stillRendering;
-    _reportPopupHeight();
-    // 词典方框排列：渲染完成后（含首条 + 其余条两次调用）铺 masonry。masonry 在下一帧
-    // RAF 里跑，跑完会自行 _reportPopupHeight() 复报修正后的高度。
-    window.hoshiRelayoutDictionaries();
+    const generation = window._renderGeneration;
+    const finish = () => {
+        // A newer lookup replaced this DOM while the cold font was decoding.
+        // Its own render signal owns the reveal gate; never let this stale
+        // callback reveal the new card early.
+        if (generation !== window._renderGeneration) return;
+        _reportPopupHeight();
+        // 词典方框排列：渲染完成后（含首条 + 其余条两次调用）铺 masonry。masonry 在下一帧
+        // RAF 里跑，跑完会自行 _reportPopupHeight() 复报修正后的高度。
+        window.hoshiRelayoutDictionaries();
+    };
+
+    // Custom file fonts are injected immediately before renderPopup(), but
+    // FontFace decoding is asynchronous. popupRendered is the host's reveal
+    // gate, so reporting before `document.fonts.ready` exposes one fallback-font
+    // frame in every cold/nested popup. Force style/layout discovery, then keep
+    // the already-hidden layer parked until the configured font is ready. Warm
+    // slots hit an already-resolved promise and only pay one microtask.
+    if (window.__hibikiDictionaryFontsConfigured &&
+        document.fonts && document.fonts.ready) {
+        try { void document.body.offsetWidth; } catch (_) { /* no-op */ }
+        Promise.resolve(document.fonts.ready).then(finish, finish);
+    } else {
+        finish();
+    }
 }
 
 // ===== N 列 masonry 词典方框排列（照抄 Niratan Features/Popup/popup.js layoutMasonry，
@@ -3963,6 +4093,7 @@ window.updatePopupIncremental = function() {
                 const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
                 entry.glossaries.forEach(g => {
                     if (hiddenDictionaryNames.includes(g.dictionary)) return;
+                    if (isRedirectGlossary(g)) return;
                     if (!grouped[g.dictionary]) grouped[g.dictionary] = [];
                     grouped[g.dictionary].push({
                         content: g.content,
@@ -4053,15 +4184,15 @@ window.updatePopupIncremental = function() {
 // element with its own y-overflow) keep native scroll until they hit a boundary,
 // so nested scroll regions are not stolen — only the main document scroll, which
 // is the coarse one, is refined.
-const POPUP_WHEEL_PIXEL_FACTOR = 0.24;      // fraction of the raw px delta (coarse mouse notch)
+const POPUP_WHEEL_PIXEL_FACTOR = 0.48;      // fraction of the raw px delta (coarse mouse notch)
 const POPUP_WHEEL_MAX_VISUAL_STEP = 120;    // px cap after scaling, before zoom
 const POPUP_WHEEL_LINE_HEIGHT = 16;         // px per line for deltaMode === LINE
 // BUG-870: a precision touchpad / high-resolution wheel reports deltaMode=PIXEL
-// with small per-frame deltas; the 0.24 downscale (tuned for a coarse mouse notch,
-// deltaY≈100-120) makes those devices ~4x too slow — the "very hard to scroll"
+// with small per-frame deltas; the coarse-mouse downscale (tuned for a notch,
+// deltaY≈100-120) makes those devices too slow — the "very hard to scroll"
 // symptom. A pixel-mode frame whose |deltaY| is below this many px is treated as a
 // fine device and scrolls ~1:1 (factor 1.0, still zoom-corrected); at/above it is a
-// coarse mouse notch and keeps the 0.24 taming. A mouse notch on WebView2/Chromium
+// coarse mouse notch and keeps the 0.48 taming. A mouse notch on WebView2/Chromium
 // is ≈100px, well above this; slow touchpad frames are well below.
 const POPUP_WHEEL_MOUSE_NOTCH_PX = 60;
 const POPUP_WHEEL_TRACKPAD_FACTOR = 1.0;    // fine devices: natural 1:1, no downscale
@@ -4221,7 +4352,7 @@ const __hibikiPopupWheelListener = (e) => {
     // 已在本监听最顶部解析并早退）；返回 null 时唯一合法「滚 window」的表面是 in-app
     // 弹窗文档（整份文档即弹窗，且无 chrome.runtime）。普通网页上扩展 content script 有
     // chrome.runtime.id，滚轮不在弹窗内已在顶部放行原生滚动：否则整页会被
-    // POPUP_WHEEL_PIXEL_FACTOR(0.24) 降速 + preventDefault 抢走原生滚动。
+    // POPUP_WHEEL_PIXEL_FACTOR(0.48) 降速 + preventDefault 抢走原生滚动。
     e.preventDefault();
     // TODO-1387: carry the sub-pixel remainder across events; BUG-870: also reset
     // the device-class latch here so each new gesture is classified fresh. A
@@ -4241,10 +4372,10 @@ const __hibikiPopupWheelListener = (e) => {
         _popupWheelFineDevice = false;
     }
     _popupWheelResidualAt = nowMs;
-    // BUG-870: the 0.24 downscale is tuned for a COARSE mouse notch (deltaMode
-    // PIXEL, deltaY≈100-120 → visualStep≈24) so a notch does not jump a huge
+    // BUG-870: the 0.48 downscale is tuned for a COARSE mouse notch (deltaMode
+    // PIXEL, deltaY≈100-120 → visualStep≈48) so a notch does not jump a huge
     // chunk. A precision touchpad / hi-res wheel reports small pixel deltas;
-    // applying 0.24 to them makes scrolling ~4x too slow ("very hard to scroll").
+    // applying the coarse-mouse factor to them makes scrolling unnaturally slow.
     // Classify per gesture: a small pixel-mode frame latches the stream as a fine
     // device (kept until the idle reset above, so an occasional large mid-fling
     // frame is not mis-tamed); fine devices scroll ~1:1 (factor 1.0, still divided
@@ -4315,7 +4446,19 @@ function handleGlossaryAnchorClick(event, anchor) {
         return;
     }
     if (/^sound:/i.test(href)) {
-        // 词典发音媒体节点（sound://xxx），不是查词目标；导航已被阻止，播放另属后续能力。
+        // BUG-1261：词典发音媒体节点（sound://xxx）。不是查词目标；导航已被阻止，
+        // 改走与 <img>/gaiji 完全相同的词典媒体字节通道播放：剥掉 sound: 前缀后交给
+        // rewriteDictionaryMediaPath（app 内 → image:// 自定义 scheme，四个宿主表面
+        // 均已注册；浏览器扩展 → 带 token 的 /api/media/dictionary HTTP 端点），
+        // 再用 playWordAudio 播（与单词 ♪ 同一 <audio> 路径：音量/interrupt 语义一致）。
+        // dictName 取最近的 [data-dictionary] 容器（MDX 释义 wrapper 3052 行必设）。
+        const dictNode = anchor.closest('[data-dictionary]');
+        const soundDict = dictNode ? dictNode.getAttribute('data-dictionary') : '';
+        const soundPath = href.replace(/^sound:\/*/i, '');
+        if (soundDict && soundPath) {
+            const soundUrl = rewriteDictionaryMediaPath(soundPath, soundDict);
+            if (soundUrl) playWordAudio(soundUrl);
+        }
         return;
     }
     const query = (anchor.textContent || '').trim();

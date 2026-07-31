@@ -19,8 +19,9 @@ String normalizeQbBaseUrl(String raw) {
 /// 边界正则找 `SID=`，兼容多 cookie 串与属性尾巴（`; path=/` 等）。
 String? extractSidCookie(String? setCookieHeader) {
   if (setCookieHeader == null || setCookieHeader.isEmpty) return null;
-  final RegExpMatch? match =
-      RegExp(r'(?:^|[\s,;])SID=([^;,\s]+)').firstMatch(setCookieHeader);
+  final RegExpMatch? match = RegExp(
+    r'(?:^|[\s,;])SID=([^;,\s]+)',
+  ).firstMatch(setCookieHeader);
   final String? sid = match?.group(1);
   if (sid == null || sid.isEmpty) return null;
   return sid;
@@ -38,16 +39,19 @@ List<TorrentSnapshot> parseQbTorrentInfos(String body) {
       if (e is! Map) continue;
       final dynamic hash = e['hash'];
       if (hash is! String || hash.isEmpty) continue;
-      out.add(TorrentSnapshot(
-        hash: hash,
-        name: e['name'] is String ? e['name'] as String : '',
-        progress: e['progress'] is num ? (e['progress'] as num).toDouble() : 0,
-        state: e['state'] is String ? e['state'] as String : '',
-        savePath: e['save_path'] is String ? e['save_path'] as String : '',
-        contentPath:
-            e['content_path'] is String ? e['content_path'] as String : '',
-        amountLeft: e['amount_left'] is int ? e['amount_left'] as int : -1,
-      ));
+      out.add(
+        TorrentSnapshot(
+          hash: hash,
+          name: e['name'] is String ? e['name'] as String : '',
+          progress:
+              e['progress'] is num ? (e['progress'] as num).toDouble() : 0,
+          state: e['state'] is String ? e['state'] as String : '',
+          savePath: e['save_path'] is String ? e['save_path'] as String : '',
+          contentPath:
+              e['content_path'] is String ? e['content_path'] as String : '',
+          amountLeft: e['amount_left'] is int ? e['amount_left'] as int : -1,
+        ),
+      );
     }
     return out;
   } catch (_) {
@@ -67,12 +71,15 @@ List<TorrentFileEntry> parseQbTorrentFiles(String body) {
       if (e is! Map) continue;
       final dynamic name = e['name'];
       if (name is! String || name.isEmpty) continue;
-      out.add(TorrentFileEntry(
-        name: name,
-        size: e['size'] is int ? e['size'] as int : 0,
-        progress: e['progress'] is num ? (e['progress'] as num).toDouble() : 0,
-        index: e['index'] is int ? e['index'] as int : -1,
-      ));
+      out.add(
+        TorrentFileEntry(
+          name: name,
+          size: e['size'] is int ? e['size'] as int : 0,
+          progress:
+              e['progress'] is num ? (e['progress'] as num).toDouble() : 0,
+          index: e['index'] is int ? e['index'] as int : -1,
+        ),
+      );
     }
     return out;
   } catch (_) {
@@ -200,6 +207,20 @@ class QBittorrentClient {
     );
     if (res == null || res.statusCode != 200) return const <TorrentFileEntry>[];
     return parseQbTorrentFiles(res.body);
+  }
+
+  /// 删除单个种子；默认只移除任务、保留已下载文件。
+  Future<bool> deleteTorrent(String hash, {bool deleteFiles = false}) async {
+    if (hash.isEmpty) return false;
+    final http.Response? res = await _request(
+      'POST',
+      '/api/v2/torrents/delete',
+      form: <String, String>{
+        'hashes': hash,
+        'deleteFiles': deleteFiles ? 'true' : 'false',
+      },
+    );
+    return res != null && res.statusCode == 200;
   }
 
   /// TODO-1961-c：改名种子内文件：`POST /api/v2/torrents/renameFile`

@@ -66,12 +66,34 @@ void main() {
       textThreadKey: 'luna:bad',
       textThreadLabel: 'Luna 0x1000',
       textHookCode: 'HS932@1000',
+      nativeTextThreadId: 0x1000,
     );
     TexthookerService.instance.appendLine(
       '干净台词',
       textThreadKey: 'luna:clean',
       textThreadLabel: 'SiglusEngine 0x2000',
       textHookCode: 'HS932@2000',
+      nativeTextThreadId: 0x2000,
+    );
+    // v12 的下拉行数来自 native 预览区，而非已发布文本环；补齐真实会话会提供的
+    // 预览快照，避免用旧的 DropdownButton 隐藏测宽副本冒充可交互菜单项。
+    TexthookerService.instance.applyTextThreadPreviews(
+      const <TexthookerThreadPreview>[
+        TexthookerThreadPreview(
+          nativeThreadId: 0x1000,
+          text: '坏线程文本',
+          observedLineCount: 1,
+          observedArtifactCount: 1,
+          isArtifact: true,
+        ),
+        TexthookerThreadPreview(
+          nativeThreadId: 0x2000,
+          text: '干净台词',
+          observedLineCount: 1,
+          observedArtifactCount: 0,
+          isArtifact: false,
+        ),
+      ],
     );
     await tester.pumpWidget(
       _wrapPage(const TexthookerPage()),
@@ -94,11 +116,14 @@ void main() {
       find.byKey(const ValueKey<String>('game-text-thread-selector')),
     );
     await tester.pumpAndSettle();
-    // 菜单项标签是「线程名 · 行数」精确串（行卡片元数据不含行数后缀），
-    // 用精确匹配避免命中列表行；取可命中的一份（DropdownMenu 有隐藏测宽副本）。
+    // 点真实 MenuItemButton，避免 `.last` 落到旧 DropdownMenu 的隐藏测宽副本。
+    final Finder cleanThreadItem = find.widgetWithText(
+      MenuItemButton,
+      'SiglusEngine 0x2000 · 1',
+    );
+    expect(cleanThreadItem, findsOneWidget);
     await tester.tap(
-      find.text('SiglusEngine 0x2000 · 1').last,
-      warnIfMissed: false,
+      cleanThreadItem,
     );
     await tester.pumpAndSettle();
 

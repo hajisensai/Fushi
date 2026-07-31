@@ -6,9 +6,9 @@ import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
 import 'package:hibiki/utils.dart';
 
-/// 游戏模块三页（库 / 捕获工作台 / 诊断）共享的枚举翻译映射、时间格式与
-/// 子区导航 tab 行。巡检 PR-1 收敛点：此前 `_audioBackendLabel` 三份拷贝、
-/// `_formatTime` 两份拷贝、section tab chip 行三份拷贝，且多处枚举 `.name`
+/// 游戏模块四页（首页 / 库 / 捕获工作台 / 诊断）共享的枚举翻译映射、时间格式与
+/// 子区分段导航。巡检 PR-1 收敛点：此前 `_audioBackendLabel` 三份拷贝、
+/// `_formatTime` 两份拷贝、section tab 行三份拷贝，且多处枚举 `.name`
 /// 直接上屏（camelCase 英文暴露给 17 语言用户）。
 
 /// 游戏页子区。[dashboard] 是游戏模块的默认首屏（游戏首页/仪表盘），排在最前，
@@ -77,11 +77,10 @@ String formatGameClockTime(DateTime value) {
   return '${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
 }
 
-/// 游戏模块三页共用的子区导航 chip 行（库 / 捕获工作台 / 诊断）。
+/// 游戏模块四页共用的胶囊分段导航（首页 / 库 / 捕获工作台 / 诊断）。
 ///
-/// [focusIdPrefix] 决定三枚 chip 的 focusId（`<prefix>-library` /
-/// `<prefix>-capture` / `<prefix>-diagnostics`），三页各用自己的前缀，
-/// 焦点 id 不冲突且与既有集成测试的 id 兼容。
+/// 四个选项是一个焦点停靠点：左右方向键在控件内切换，鼠标和触摸仍可直接点某段。
+/// [focusIdPrefix] 决定稳定 focusId `<prefix>-sections`，各页前缀互不冲突。
 class GameSectionTabs extends StatelessWidget {
   const GameSectionTabs({
     required this.selected,
@@ -110,45 +109,52 @@ class GameSectionTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return HorizontalDragScrollable(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: <Widget>[
-            HibikiSelectableChip(
-              label: t.game_dashboard,
-              leadingIcon: Icons.dashboard_outlined,
-              selected: selected == GameSection.dashboard,
-              focusId: HibikiFocusId('$focusIdPrefix-dashboard'),
-              onSelected: (_) => (onSelectDashboard ??
-                  () => gameSectionNotifier.value = GameSection.dashboard)(),
-            ),
-            const SizedBox(width: 8),
-            HibikiSelectableChip(
-              label: t.game_library,
-              leadingIcon: Icons.sports_esports_outlined,
-              selected: selected == GameSection.library,
-              focusId: HibikiFocusId('$focusIdPrefix-library'),
-              onSelected: (_) => onSelectLibrary(),
-            ),
-            const SizedBox(width: 8),
-            HibikiSelectableChip(
-              label: t.game_capture_workbench,
-              leadingIcon: Icons.sensors_outlined,
-              selected: selected == GameSection.monitor,
-              focusId: HibikiFocusId('$focusIdPrefix-capture'),
-              onSelected: (_) => onSelectMonitor(),
-            ),
-            const SizedBox(width: 8),
-            HibikiSelectableChip(
-              label: t.game_diagnostics,
-              leadingIcon: Icons.monitor_heart_outlined,
-              selected: selected == GameSection.diagnostics,
-              focusId: HibikiFocusId('$focusIdPrefix-diagnostics'),
-              onSelected: (_) => onSelectDiagnostics(),
-            ),
-          ],
-        ),
+    const List<GameSection> values = GameSection.values;
+    void select(GameSection section) {
+      switch (section) {
+        case GameSection.dashboard:
+          (onSelectDashboard ??
+              () => gameSectionNotifier.value = GameSection.dashboard)();
+          return;
+        case GameSection.library:
+          onSelectLibrary();
+          return;
+        case GameSection.monitor:
+          onSelectMonitor();
+          return;
+        case GameSection.diagnostics:
+          onSelectDiagnostics();
+          return;
+      }
+    }
+
+    return HibikiAdjustableSegmented<GameSection>(
+      values: values,
+      selected: selected,
+      onChanged: select,
+      focusIdPrefix: focusIdPrefix,
+      focusId: HibikiFocusId('$focusIdPrefix-sections'),
+      child: HibikiSegmentedStrip<GameSection>(
+        segments: <ButtonSegment<GameSection>>[
+          ButtonSegment<GameSection>(
+            value: GameSection.dashboard,
+            label: Text(t.game_dashboard),
+          ),
+          ButtonSegment<GameSection>(
+            value: GameSection.library,
+            label: Text(t.game_library),
+          ),
+          ButtonSegment<GameSection>(
+            value: GameSection.monitor,
+            label: Text(t.game_capture_workbench),
+          ),
+          ButtonSegment<GameSection>(
+            value: GameSection.diagnostics,
+            label: Text(t.game_diagnostics),
+          ),
+        ],
+        selected: selected,
+        onChanged: select,
       ),
     );
   }

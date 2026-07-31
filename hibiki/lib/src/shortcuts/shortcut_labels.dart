@@ -103,6 +103,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_speed_down;
       case ShortcutAction.videoResetSpeed:
         return t.shortcut_action_video_reset_speed;
+      case ShortcutAction.videoHoldSpeed:
+        return t.shortcut_action_video_hold_speed;
       case ShortcutAction.videoPreviousFrame:
         return t.shortcut_action_video_previous_frame;
       case ShortcutAction.videoNextFrame:

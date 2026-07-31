@@ -40,7 +40,7 @@ void main() {
     test('解析条目（name 回退 english_name / #id）', () {
       const String body = '''
 [{"id":10,"name":"鬼滅の刃","anilist_id":101922},
- {"id":11,"english_name":"Demon Slayer"},
+ {"id":11,"name":"  ","english_name":"Demon Slayer"},
  {"id":12}]''';
       final List<JimakuEntry> entries = parseJimakuEntries(body);
       expect(entries, hasLength(3));
@@ -75,6 +75,25 @@ void main() {
       expect(const JimakuFile(name: 'a.vtt', url: 'u').isTextSubtitle, isTrue);
       expect(const JimakuFile(name: 'a.zip', url: 'u').isTextSubtitle, isFalse);
       expect(const JimakuFile(name: 'noext', url: 'u').extension, '');
+    });
+
+    test('BUG-1235 inventory 只统计可解析字幕，并汇总集数、语言与未标集号文件', () {
+      final JimakuFileInventory inventory = JimakuFileInventory.fromFiles(
+        const <JimakuFile>[
+          JimakuFile(name: 'Show S01E01.ja.srt', url: 'u1'),
+          JimakuFile(name: 'Show S01E01.zh-cn.ass', url: 'u2'),
+          JimakuFile(name: 'Show S01E02.vtt', url: 'u3'),
+          JimakuFile(name: 'Show extra.ja.srt', url: 'u4'),
+          JimakuFile(name: 'Show S01E03.zip', url: 'u5'),
+        ],
+      );
+
+      expect(inventory.files, hasLength(4));
+      expect(inventory.episodes, <int>{1, 2});
+      expect(inventory.languages, <String>{'ja', 'zh'});
+      expect(inventory.unlabeledCount, 1);
+      expect(inventory.filesForEpisode(1), hasLength(2));
+      expect(inventory.filesForEpisode(3), isEmpty);
     });
   });
 
@@ -234,6 +253,79 @@ void main() {
       final List<JimakuEntry> entries =
           await jc.searchEntries(queryFallbacks: <String>['x']);
       expect(entries.single.name, 'q');
+    });
+  });
+
+  group('JimakuClient.listFiles strict availability check', () {
+    test('默认保持 fail-open，预检查严格模式保留 HTTP 状态码', () async {
+      final JimakuClient jc = JimakuClient(
+        apiKey: 'k',
+        client: MockClient(
+          (http.Request request) async => http.Response('unavailable', 503),
+        ),
+      );
+
+      expect(await jc.listFiles(42), isEmpty);
+      await expectLater(
+        jc.listFiles(42, throwOnError: true),
+        throwsA(
+          isA<JimakuRequestException>().having(
+              (JimakuRequestException e) => e.statusCode, 'status', 503),
+        ),
+      );
+    });
+
+    test('BUG-1235 malformed HTTP 200 严格模式报失败，合法 [] 仍是零字幕', () async {
+      final JimakuClient malformed = JimakuClient(
+        apiKey: 'k',
+        client: MockClient(
+          (http.Request request) async => http.Response('{not-json', 200),
+        ),
+      );
+      addTearDown(malformed.close);
+
+      // 历史调用保持 fail-open。
+      expect(await malformed.listFiles(42), isEmpty);
+      // 但库存预检查不能把 malformed 200 冒充成合法空数组。
+      await expectLater(
+        malformed.listFiles(42, throwOnError: true),
+        throwsA(
+          isA<JimakuRequestException>().having(
+            (JimakuRequestException e) => e.statusCode,
+            'status',
+            isNull,
+          ),
+        ),
+      );
+
+      final JimakuClient validEmpty = JimakuClient(
+        apiKey: 'k',
+        client: MockClient(
+          (http.Request request) async => http.Response('[]', 200),
+        ),
+      );
+      addTearDown(validEmpty.close);
+      expect(
+        await validEmpty.listFiles(42, throwOnError: true),
+        isEmpty,
+      );
+    });
+
+    test('strict 模式拒绝缺 name/url 的数组元素，默认模式仍跳过', () async {
+      final JimakuClient client = JimakuClient(
+        apiKey: 'k',
+        client: MockClient(
+          (http.Request request) async =>
+              http.Response('[{"name":"missing-url"}]', 200),
+        ),
+      );
+      addTearDown(client.close);
+
+      expect(await client.listFiles(42), isEmpty);
+      await expectLater(
+        client.listFiles(42, throwOnError: true),
+        throwsA(isA<JimakuRequestException>()),
+      );
     });
   });
 }

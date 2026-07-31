@@ -385,16 +385,18 @@ class _HomePageState extends BasePageState<HomePage>
     ));
   }
 
-  /// 「查看」→ 逐条清单 + 删除确认 → 真删 → 结果报告。与设置页手动路径同一
-  /// 套弹窗（见 anki_media_dedup_dialogs.dart）。
+  /// 「查看」→ 逐条清单 + 删除确认 → 真删（带进度对话框，可取消）→ 结果
+  /// 报告。与设置页手动路径同一套弹窗（见 anki_media_dedup_dialogs.dart）。
   Future<void> _reviewAutoDedupPlan(AnkiMediaDedupReport plan) async {
     if (!mounted) return;
     final bool confirmed =
         await showAnkiMediaDedupPlanDialog(context, plan, offerDelete: true);
     if (!confirmed || !mounted) return;
-    final AnkiMediaDedupReport? result =
-        await AnkiMediaDedupRunner(ref.read(ankiRepositoryProvider))
-            .runNow(dryRun: false);
+    final AnkiMediaDedupReport? result = await runAnkiMediaDedupWithProgress(
+      context,
+      AnkiMediaDedupRunner(ref.read(ankiRepositoryProvider)),
+      dryRun: false,
+    );
     if (result == null || !mounted) return;
     await showAnkiMediaDedupReportDialog(context, result);
   }

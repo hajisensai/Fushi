@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -41,6 +42,20 @@ void main() {
 
   Map<String, dynamic> bodyOf(http.Request request) =>
       jsonDecode(request.body) as Map<String, dynamic>;
+
+  group('local media path capability', () {
+    test('recognizes localhost and IPv4/IPv6 loopback', () {
+      expect(ankiConnectHostIsLoopback('localhost'), isTrue);
+      expect(ankiConnectHostIsLoopback('127.0.0.1'), isTrue);
+      expect(ankiConnectHostIsLoopback('::1'), isTrue);
+      expect(ankiConnectHostIsLoopback('[::1]'), isTrue);
+    });
+
+    test('does not expose local paths to a remote AnkiConnect host', () {
+      expect(ankiConnectHostIsLoopback('192.0.2.10'), isFalse);
+      expect(ankiConnectHostIsLoopback('anki.example.com'), isFalse);
+    });
+  });
 
   group('request envelope', () {
     test('posts to the configured host/port over http', () async {
@@ -254,7 +269,15 @@ void main() {
       expect(note['fields'],
           <String, dynamic>{'Expression': '勉強', 'Reading': 'べんきょう'});
       expect(note['tags'], <String>['hibiki', 'mined']);
-      expect((note['options'] as Map)['allowDuplicate'], isTrue);
+      expect(note['options'], <String, dynamic>{
+        'allowDuplicate': true,
+        'duplicateScope': 'deck',
+        'duplicateScopeOptions': <String, dynamic>{
+          'deckName': 'Mining',
+          'checkChildren': true,
+          'checkAllModels': true,
+        },
+      });
     });
 
     test('defaults allowDuplicate to false', () async {
@@ -269,7 +292,15 @@ void main() {
         result: 1,
       );
       final note = (bodyOf(issued.single)['params'] as Map)['note'] as Map;
-      expect((note['options'] as Map)['allowDuplicate'], isFalse);
+      expect(note['options'], <String, dynamic>{
+        'allowDuplicate': false,
+        'duplicateScope': 'deck',
+        'duplicateScopeOptions': <String, dynamic>{
+          'deckName': 'D',
+          'checkChildren': true,
+          'checkAllModels': true,
+        },
+      });
     });
 
     test('throws when addNote returns a null id with no error', () async {
@@ -300,7 +331,7 @@ void main() {
           sink: issued,
           error: 'cannot create note because it is a duplicate',
         ),
-        throwsA(isA<AnkiConnectException>()),
+        throwsA(isA<AnkiConnectDuplicateException>()),
       );
     });
   });
@@ -318,6 +349,33 @@ void main() {
       final params = body['params'] as Map;
       expect(params['filename'], 'hibiki_audio_abc.mp3');
       expect(params['data'], 'QUJD');
+    });
+
+    test('mediaFileExists uses an exact-name getMediaFilesNames query',
+        () async {
+      final issued = <http.Request>[];
+      final bool exists = await withMock(
+        (s) => s.mediaFileExists('hibiki_cover_abc.gif'),
+        sink: issued,
+        result: <String>[
+          'hibiki_cover_abc.gif',
+          'hibiki_cover_abc.gif.bak',
+        ],
+      );
+      final body = bodyOf(issued.single);
+      expect(body['action'], 'getMediaFilesNames');
+      expect((body['params'] as Map)['pattern'], 'hibiki_cover_abc.gif');
+      expect(exists, isTrue);
+    });
+
+    test('mediaFileExists does not accept a neighbouring glob result',
+        () async {
+      final bool exists = await withMock(
+        (s) => s.mediaFileExists('hibiki_cover_abc.gif'),
+        sink: <http.Request>[],
+        result: <String>['hibiki_cover_abc.gif.bak'],
+      );
+      expect(exists, isFalse);
     });
   });
 
@@ -395,6 +453,35 @@ void main() {
           AnkiConnectService(host: '127.0.0.1', port: 8765, client: client));
     }
 
+    test('default transport tags a failed connection before HTTP delivery',
+        () async {
+      final ServerSocket reservation =
+          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final int closedPort = reservation.port;
+      await reservation.close();
+      final AnkiConnectService service = AnkiConnectService(
+        host: InternetAddress.loopbackIPv4.address,
+        port: closedPort,
+        timeout: const Duration(seconds: 1),
+        connectionTimeout: const Duration(milliseconds: 200),
+      );
+
+      await expectLater(
+        service.addNote(
+          deckName: 'D',
+          modelName: 'M',
+          fields: const <String, String>{'F': 'v'},
+        ),
+        throwsA(
+          isA<AnkiConnectPreDeliveryException>().having(
+            (AnkiConnectPreDeliveryException e) => e.cause,
+            'cause',
+            isA<SocketException>(),
+          ),
+        ),
+      );
+    });
+
     test('retries on errno-coded connection drop (osError path)', () async {
       // Mirrors package:http's _ClientSocketException: implements both
       // ClientException and SocketException, so the service reads osError. The
@@ -464,17 +551,17 @@ void main() {
       expect(f.attempts.length, 1);
     });
 
-    test('retries addNote on a pre-delivery write failure (request not sent)',
+    test('retries addNote on a transport-tagged pre-delivery failure',
         () async {
-      // BUG-091: this is the real user failure — the first mine after an idle
-      // period reuses a stale pooled socket and the write() fails instantly
-      // ("Write failed", errno 10053). The request never reached Anki, so no
-      // note was created and re-sending on a fresh connection is dup-safe.
+      // A phase-aware transport may tag a failure before it starts the request
+      // stream. The tag, not "Write failed" text or errno, makes one retry safe.
       final f = flakyClient(
         failTimes: 1,
-        exception: http.ClientException(
-            'ClientException with SocketException: Write failed '
-            '(OS Error: ..., errno = 10053), address = localhost, port = 8765'),
+        exception: AnkiConnectPreDeliveryException(
+          'write failed before the request started',
+          Uri.parse('http://127.0.0.1:8765'),
+          const SocketException('Write failed'),
+        ),
         okResult: 555,
       );
       final int? id = await run(
@@ -488,6 +575,210 @@ void main() {
       expect(f.attempts.length, 2, reason: 'initial write fails + one retry');
       expect(id, 555);
     });
+
+    test('pre-delivery connection timeout retries safely, then surfaces',
+        () async {
+      final f = flakyClient(
+        failTimes: 99,
+        exception: AnkiConnectPreDeliveryException(
+          'connection establishment timed out',
+          Uri.parse('http://127.0.0.1:8765'),
+          TimeoutException('connect deadline exceeded'),
+        ),
+      );
+      await expectLater(
+        run(
+          f.client,
+          (s) => s.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
+          ),
+        ),
+        throwsA(
+          isA<AnkiConnectPreDeliveryException>().having(
+            (AnkiConnectPreDeliveryException e) => e.cause,
+            'cause',
+            isA<TimeoutException>(),
+          ),
+        ),
+      );
+      expect(
+        f.attempts.length,
+        2,
+        reason: 'connect timeout is pre-delivery, so one retry is safe',
+      );
+    });
+
+    test('delivery-ambiguous addNote timeout is commit-unknown, no retry',
+        () async {
+      final f = flakyClient(
+        failTimes: 99,
+        exception: TimeoutException('response deadline exceeded'),
+      );
+      await expectLater(
+        run(
+          f.client,
+          (s) => s.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
+          ),
+        ),
+        throwsA(
+          isA<AnkiConnectCommitUnknownException>()
+              .having((e) => e.action, 'action', 'addNote')
+              .having(
+                (e) => e.cause,
+                'cause',
+                isA<TimeoutException>(),
+              ),
+        ),
+      );
+      expect(
+        f.attempts.length,
+        1,
+        reason: 'an overall response timeout may follow a committed addNote',
+      );
+    });
+
+    test('delivered-body socket timeout is commit-unknown despite connect text',
+        () async {
+      final _DrainThenSocketTimeoutClient client =
+          _DrainThenSocketTimeoutClient();
+      await expectLater(
+        run(
+          client,
+          (s) => s.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
+          ),
+        ),
+        throwsA(
+          isA<AnkiConnectCommitUnknownException>()
+              .having((e) => e.action, 'action', 'addNote')
+              .having(
+                (e) => e.cause,
+                'cause',
+                isA<_FakeClientSocketException>(),
+              ),
+        ),
+      );
+      expect(
+        client.attempts,
+        1,
+        reason: 'public socket type/text/errno cannot prove pre-delivery',
+      );
+    });
+
+    test('delivered-body plain ClientException text is commit-unknown',
+        () async {
+      final _DrainThenPlainClientTimeoutClient client =
+          _DrainThenPlainClientTimeoutClient();
+      await expectLater(
+        run(
+          client,
+          (s) => s.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
+          ),
+        ),
+        throwsA(
+          isA<AnkiConnectCommitUnknownException>()
+              .having((e) => e.action, 'action', 'addNote')
+              .having(
+                (e) => e.cause,
+                'cause',
+                isA<http.ClientException>(),
+              ),
+        ),
+      );
+      expect(
+        client.attempts,
+        1,
+        reason: 'ClientException text cannot prove a connect-phase failure',
+      );
+    });
+
+    test('delivered-body bare SocketException is commit-unknown', () async {
+      final _DrainThenBareSocketTimeoutClient client =
+          _DrainThenBareSocketTimeoutClient();
+      await expectLater(
+        run(
+          client,
+          (s) => s.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
+          ),
+        ),
+        throwsA(
+          isA<AnkiConnectCommitUnknownException>()
+              .having((e) => e.action, 'action', 'addNote')
+              .having(
+                (e) => e.cause,
+                'cause',
+                isA<SocketException>(),
+              ),
+        ),
+      );
+      expect(
+        client.attempts,
+        1,
+        reason: 'a bare socket type/text/errno cannot prove pre-delivery',
+      );
+    });
+
+    final List<(String, Object)> taggedRetryResponseFailures =
+        <(String, Object)>[
+      (
+        'bare SocketException',
+        const SocketException(
+          'Connection timed out',
+          osError: OSError('Connection timed out', 10060),
+        ),
+      ),
+      ('bare TimeoutException', TimeoutException('response deadline exceeded')),
+      (
+        'plain ClientException with connect text',
+        http.ClientException('Connection timed out'),
+      ),
+      (
+        'ClientException+SocketException with connect text and errno',
+        _FakeClientSocketException(
+          'Connection timed out',
+          osError: const OSError('Connection timed out', 10060),
+        ),
+      ),
+    ];
+    for (final (String label, Object failure) in taggedRetryResponseFailures) {
+      test('tagged first failure then $label is commit-unknown', () async {
+        final _TaggedThenAmbiguousFailureClient client =
+            _TaggedThenAmbiguousFailureClient(failure);
+        await expectLater(
+          run(
+            client,
+            (s) => s.addNote(
+              deckName: 'D',
+              modelName: 'M',
+              fields: const <String, String>{'F': 'v'},
+            ),
+          ),
+          throwsA(
+            isA<AnkiConnectCommitUnknownException>()
+                .having((e) => e.action, 'action', 'addNote')
+                .having((e) => e.cause, 'cause', same(failure)),
+          ),
+        );
+        expect(
+          client.attempts,
+          2,
+          reason: 'only the tagged first failure is safe to retry',
+        );
+      });
+    }
 
     test(
         'classifies response-phase addNote reset as unknown commit without retry',
@@ -554,4 +845,64 @@ class _FakeClientSocketException
   @override
   String toString() => 'ClientException with SocketException: $message'
       '${osError != null ? ' ($osError)' : ''}';
+}
+
+class _DrainThenSocketTimeoutClient extends http.BaseClient {
+  int attempts = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    attempts += 1;
+    await request.finalize().drain<void>();
+    throw _FakeClientSocketException(
+      'Connection timed out',
+      osError: const OSError('Connection timed out', 10060),
+    );
+  }
+}
+
+class _DrainThenPlainClientTimeoutClient extends http.BaseClient {
+  int attempts = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    attempts += 1;
+    await request.finalize().drain<void>();
+    throw http.ClientException('Connection timed out', request.url);
+  }
+}
+
+class _DrainThenBareSocketTimeoutClient extends http.BaseClient {
+  int attempts = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    attempts += 1;
+    await request.finalize().drain<void>();
+    throw const SocketException(
+      'Connection timed out',
+      osError: OSError('Connection timed out', 10060),
+    );
+  }
+}
+
+class _TaggedThenAmbiguousFailureClient extends http.BaseClient {
+  _TaggedThenAmbiguousFailureClient(this.secondFailure);
+
+  final Object secondFailure;
+  int attempts = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    attempts += 1;
+    if (attempts == 1) {
+      throw AnkiConnectPreDeliveryException(
+        'connection failed before request delivery',
+        request.url,
+        TimeoutException('connect deadline exceeded'),
+      );
+    }
+    await request.finalize().drain<void>();
+    throw secondFailure;
+  }
 }

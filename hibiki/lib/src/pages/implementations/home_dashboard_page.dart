@@ -1,6 +1,5 @@
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
@@ -13,8 +12,10 @@ import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/display_title.dart';
+import 'package:hibiki/src/media/media_cover_source.dart';
 import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_labels.dart';
+import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_service.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_repository.dart';
@@ -249,6 +250,114 @@ class _DailyGoalDialogState extends State<_DailyGoalDialog> {
   }
 }
 
+class _BangumiWatchedDialog extends StatefulWidget {
+  const _BangumiWatchedDialog({
+    required this.service,
+    required this.onOpenSubject,
+  });
+
+  final MediaTrackingService service;
+  final Future<void> Function(int subjectId) onOpenSubject;
+
+  @override
+  State<_BangumiWatchedDialog> createState() => _BangumiWatchedDialogState();
+}
+
+class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
+  late final Future<List<BangumiWatchedItem>> _watched =
+      widget.service.loadWatchedAnime();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: <Widget>[
+          const Icon(Icons.visibility_outlined),
+          const SizedBox(width: 12),
+          Expanded(child: Text(t.media_tracking_watched_title)),
+        ],
+      ),
+      content: SizedBox(
+        width: 640,
+        height: MediaQuery.sizeOf(context).height * 0.6,
+        child: FutureBuilder<List<BangumiWatchedItem>>(
+          future: _watched,
+          builder: (
+            BuildContext context,
+            AsyncSnapshot<List<BangumiWatchedItem>> snapshot,
+          ) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Text(
+                  t.media_tracking_watched_load_failed(
+                    error: snapshot.error!,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              );
+            }
+            final List<BangumiWatchedItem> watched =
+                snapshot.data ?? const <BangumiWatchedItem>[];
+            if (watched.isEmpty) {
+              return Center(child: Text(t.media_tracking_watched_empty));
+            }
+            return ListView.separated(
+              itemCount: watched.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (BuildContext context, int index) {
+                final BangumiWatchedItem item = watched[index];
+                final String? coverUrl = item.subject.coverUrl;
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: SizedBox(
+                    width: 42,
+                    height: 56,
+                    child: coverUrl == null
+                        ? const Icon(Icons.movie_outlined)
+                        : ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: Image.network(
+                              coverUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  const Icon(Icons.broken_image_outlined),
+                            ),
+                          ),
+                  ),
+                  title: Text(
+                    item.subject.displayName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    t.media_tracking_watched_progress(
+                      n: item.episodeProgress,
+                    ),
+                  ),
+                  trailing: Tooltip(
+                    message: t.media_tracking_open_subject,
+                    child: const Icon(Icons.open_in_new, size: 18),
+                  ),
+                  onTap: () => unawaited(widget.onOpenSubject(item.subject.id)),
+                );
+              },
+            );
+          },
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(t.dialog_close),
+        ),
+      ],
+    );
+  }
+}
+
 /// 仪表盘内容最大宽度（逻辑像素）：超宽屏限宽居中，避免每个区块被拉成大片空白。
 const double _kDashboardMaxWidth = 1600;
 
@@ -256,6 +365,9 @@ const double _kDashboardMaxWidth = 1600;
 /// 概览，不是映射管理器）。有失败的条目由
 /// [MediaTrackingStatus.mappingsProblemFirst] 排到最前，不会被这个上限挤掉。
 const int _kTrackingMappingLimit = 5;
+
+/// 首页卡最多直接摊开的待手动关联条目数；完整清单在「管理关联」页。
+const int _kTrackingUnlinkedLimit = 5;
 
 class _HomeDashboardPageState
     extends BaseModuleTabPageState<HomeDashboardPage> {
@@ -443,9 +555,12 @@ class _HomeDashboardPageState
         await db.getAllReadingStatistics();
     final List<VideoWatchStatisticRow> watch =
         await db.getAllVideoWatchStatistics();
-    // 游戏活动日聚合（activity_events 的 game 事件，热力图「游戏」档数据源）。
-    final List<(String, int, int)> gameDaily =
+    // 游戏文本字数仍取 hook 活动事件；游玩时长必须取 galgame_sessions 事实表。
+    // activity_events 只描述时间线，不能兼任游戏时长统计投影。
+    final List<(String, int, int)> gameActivityDaily =
         await db.getActivityDailyTotals(kActivityGame);
+    final Map<String, (int totalSeconds, int sessionCount)> gameSessionDaily =
+        await db.getAllGalgameDailyTotals();
     // P4：游戏库整表（日明细/时间轴的游戏显示名反查）。仓储缓存与表恒一致，
     // 未载入过才真查 DB（毫秒级）；load() 会 notify → 本页监听器防抖重载一次
     // 后 isLoaded=true，不再形成回环。
@@ -496,9 +611,12 @@ class _HomeDashboardPageState
     }
     final Map<String, int> gameChars = <String, int>{};
     final Map<String, int> gameTimeMs = <String, int>{};
-    for (final (String dateKey, int charsDelta, int durationMs) in gameDaily) {
+    for (final (String dateKey, int charsDelta, int _) in gameActivityDaily) {
       gameChars[dateKey] = (gameChars[dateKey] ?? 0) + charsDelta;
-      gameTimeMs[dateKey] = (gameTimeMs[dateKey] ?? 0) + durationMs;
+    }
+    for (final MapEntry<String, (int totalSeconds, int sessionCount)> entry
+        in gameSessionDaily.entries) {
+      gameTimeMs[entry.key] = entry.value.$1 * 1000;
     }
     final Map<String, int> charsByDay = <String, int>{};
     final Map<String, int> timeMsByDay = <String, int>{};
@@ -1280,34 +1398,43 @@ class _HomeDashboardPageState
     );
   }
 
-  /// 视频封面：coverPath 存在则 [Image.file]，否则占位图标。
+  /// 视频封面：来源解析与游戏/剧集列表共用 [resolveMediaCoverImage]。
   Widget _videoCover(HibikiDesignTokens tokens, VideoBookRow video) {
-    final String? path = video.coverPath;
-    if (path != null && path.isNotEmpty && File(path).existsSync()) {
-      return Image.file(
-        File(path),
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) =>
-            _coverPlaceholder(tokens, Icons.movie_outlined),
-      );
-    }
-    return _coverPlaceholder(tokens, Icons.movie_outlined);
+    return _localCover(
+      tokens,
+      kind: MediaKind.video,
+      path: video.coverPath,
+    );
   }
 
-  /// 游戏封面（BUG-1111 / BUG-1112）：`galgames.coverPath` 存在则 [Image.file]，
-  /// 否则占位图标。与 [_videoCover] 同一形态——封面是本机文件路径（目录扫描 /
-  /// exe 内嵌图标 / 刮削下载三种来源都落成本地文件），不走网络取图。
+  /// 游戏封面（BUG-1111 / BUG-1112）：目录扫描 / exe 图标 / 刮削最终都落到
+  /// `galgames.coverPath`，显示侧交给统一来源解析器，不在页面重复同步文件探测。
   Widget _gameCover(HibikiDesignTokens tokens, GalgameEntry game) {
-    final String? path = game.coverPath;
-    if (path != null && path.isNotEmpty && File(path).existsSync()) {
-      return Image.file(
-        File(path),
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) =>
-            _coverPlaceholder(tokens, Icons.videogame_asset_outlined),
-      );
+    return _localCover(
+      tokens,
+      kind: MediaKind.game,
+      path: game.coverPath,
+    );
+  }
+
+  Widget _localCover(
+    HibikiDesignTokens tokens, {
+    required MediaKind kind,
+    required String? path,
+  }) {
+    final ImageProvider? provider = resolveMediaCoverImage(
+      kind: kind,
+      localPath: path,
+    );
+    if (provider == null) {
+      return _coverPlaceholder(tokens, mediaCoverFallbackIcon(kind));
     }
-    return _coverPlaceholder(tokens, Icons.videogame_asset_outlined);
+    return Image(
+      image: provider,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) =>
+          _coverPlaceholder(tokens, mediaCoverFallbackIcon(kind)),
+    );
   }
 
   /// 封面占位：中性底色 + 图标。
@@ -1405,8 +1532,11 @@ class _HomeDashboardPageState
             // surfaces.group 在暗色主题下几乎同色（两个相邻的 surface 容器
             // 色阶）——「没活动的那些周」等于没画，观感是左边一大片死黑。改用
             // 色阶更高的 surfaces.overlay 才和卡底拉开对比，空周照样是
-            // GitHub 式浅格子。
+            // GitHub 式浅格子。BUG-1276：黑色/自定义主题仍可能把 surface 色阶
+            // 压得过近，因此再用 outlineVariant 描边兜底；即使填充与卡底同色，
+            // 53 周空格也不会重新融进背景。
             emptyColor: tokens.surfaces.overlay,
+            emptyBorderColor: tokens.surfaces.outline,
             // 气泡 = 日期 · 字数 · 学习时长（时长为 0 的旧数据/纯导入日不显示
             // 时长段），字数与时长都跟随当前来源筛选。
             valueLabel: (String dateKey, int chars) {
@@ -1630,29 +1760,12 @@ class _HomeDashboardPageState
   /// 游戏活动标题 → 显示名（P4）：先按 [mediaKey]（galgames.id）精确命中，
   /// 再按「落库时的标题快照 == 库内条目任一已知名」兜底（老事件无 mediaKey），
   /// 最后回落快照原文。查找委托 [displayTitleForGame]。
-  /// 按 `galgames.id` 反查本页已加载的游戏；找不到返回 null（已删除条目的历史
-  /// 活动行仍会渲染，只是没有封面/新名可用）。
-  GalgameEntry? _gameById(String? id) {
-    if (id == null || id.isEmpty) return null;
-    for (final GalgameEntry g in _games) {
-      if (g.id == id) return g;
-    }
-    return null;
-  }
-
   String _gameDisplayTitle(String rawTitle, {String? mediaKey}) {
-    GalgameEntry? entry = _gameById(mediaKey);
-    if (entry == null) {
-      for (final GalgameEntry g in _games) {
-        if (g.name == rawTitle ||
-            g.displayName == rawTitle ||
-            g.metadata.name == rawTitle ||
-            g.metadata.nameCn == rawTitle) {
-          entry = g;
-          break;
-        }
-      }
-    }
+    final GalgameEntry? entry = findGalgameForActivity(
+      _games,
+      mediaKey: mediaKey,
+      title: rawTitle,
+    );
     return displayTitleForGame(entry: entry, rawTitle: rawTitle);
   }
 
@@ -1978,7 +2091,25 @@ class _HomeDashboardPageState
     Map<String, VideoBookRow> videosByUid,
   ) {
     final String? key = entry.mediaKey;
-    if (key != null && key.isNotEmpty) {
+    if (entry.mediaType == kActivityMediaGame) {
+      // 新事件用 galgames.id；旧启动事件曾写 exePath，attach 事件还可能只有标题。
+      // 统一反查器兼容三者，封面和显示名因此命中同一个 GalgameEntry。
+      final GalgameEntry? game = findGalgameForActivity(
+        _games,
+        mediaKey: key,
+        title: entry.title,
+      );
+      if (game != null) {
+        return ClipRRect(
+          borderRadius: HibikiBorderRadius.card,
+          child: SizedBox(
+            width: 40,
+            height: 56,
+            child: _gameCover(tokens, game),
+          ),
+        );
+      }
+    } else if (key != null && key.isNotEmpty) {
       if (entry.mediaType == kActivityMediaVideo) {
         final VideoBookRow? video = videosByUid[key];
         if (video != null) {
@@ -1988,21 +2119,6 @@ class _HomeDashboardPageState
               width: 68,
               height: 40,
               child: _videoCover(tokens, video),
-            ),
-          );
-        }
-      } else if (entry.mediaType == kActivityMediaGame) {
-        // BUG-1112：游戏此前被硬编码进「回退图标」分支，时间轴上只有一个小图标，
-        // 而书与视频都有封面（用户报「活动里面没有封面」）。游戏封面就在
-        // `galgames.coverPath`（本机文件），按 mediaKey = galgames.id 反查即可。
-        final GalgameEntry? game = _gameById(key);
-        if (game != null) {
-          return ClipRRect(
-            borderRadius: HibikiBorderRadius.card,
-            child: SizedBox(
-              width: 40,
-              height: 56,
-              child: _gameCover(tokens, game),
             ),
           );
         }
@@ -2174,20 +2290,48 @@ class _HomeDashboardPageState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(Icons.person_outline, size: 18, color: scheme.primary),
-              SizedBox(width: tokens.spacing.gap / 2),
-              Expanded(
-                child: Text(
-                  status.accountName.isEmpty
-                      ? t.media_tracking_account
-                      : status.accountName,
-                  style: tokens.type.listTitle,
-                  overflow: TextOverflow.ellipsis,
+          Tooltip(
+            message: t.media_tracking_watched_show,
+            child: InkWell(
+              onTap: () => unawaited(_showBangumiWatched()),
+              borderRadius: HibikiBorderRadius.card,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  vertical: tokens.spacing.gap / 2,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.person_outline,
+                      size: 18,
+                      color: scheme.primary,
+                    ),
+                    SizedBox(width: tokens.spacing.gap / 2),
+                    Expanded(
+                      child: Text(
+                        status.accountName.isEmpty
+                            ? t.media_tracking_account
+                            : status.accountName,
+                        style: tokens.type.listTitle,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      t.media_tracking_watched_show,
+                      style: tokens.type.metadata.copyWith(
+                        color: scheme.primary,
+                      ),
+                    ),
+                    SizedBox(width: tokens.spacing.gap / 4),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: scheme.primary,
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
           SizedBox(height: tokens.spacing.gap / 2),
           Text(summary.join(' · '), style: tokens.type.metadata),
@@ -2213,20 +2357,52 @@ class _HomeDashboardPageState
 
           SizedBox(height: tokens.spacing.gap),
 
-          // 第二段：一条映射都没有 → 完成事件根本进不了 outbox，必须说清原因，
-          // 否则「已连接 + 零待办 + 全部已发送」看起来像一切正常。
-          if (status.mappings.isEmpty)
-            Text(t.media_tracking_unlinked_hint, style: tokens.type.metadata)
-          else
-            // 第三段：逐条条目。失败原因挂在对应行上（有失败的排在最前），不另开
-            // 一段——否则同一个条目在「失败」和「已关联」里各出现一次。
-            for (final MediaTrackingMappingRow mapping
-                in status.mappingsProblemFirst.take(_kTrackingMappingLimit))
-              _buildTrackingMappingRow(
-                tokens,
-                mapping,
-                status.failureByMappingId[mapping.id],
+          // 本地历史与映射是两个独立口径：先明确列出已有进度但仍没关联的条目。
+          // 旧文案只在映射表为空时泛泛说“其余需手动关联”，既没写出“哪些”，
+          // 又把“零映射”误当成“零历史”。
+          if (status.unlinked.isNotEmpty) ...<Widget>[
+            Text(
+              t.media_tracking_manual_required_count(n: status.unlinked.length),
+              style: tokens.type.listTitle.copyWith(color: scheme.error),
+            ),
+            SizedBox(height: tokens.spacing.gap / 4),
+            Text(
+              t.media_tracking_manual_required_hint,
+              style: tokens.type.metadata,
+            ),
+            for (final MediaTrackingUnlinkedItem item
+                in status.unlinked.take(_kTrackingUnlinkedLimit))
+              _buildTrackingUnlinkedRow(tokens, item),
+            if (status.unlinked.length > _kTrackingUnlinkedLimit)
+              TextButton(
+                onPressed: _openTrackingSettings,
+                child: Text(
+                  t.media_tracking_more_manual_required(
+                    n: status.unlinked.length - _kTrackingUnlinkedLimit,
+                  ),
+                ),
               ),
+          ] else if (status.mappings.isEmpty)
+            Text(
+              t.media_tracking_no_local_history,
+              style: tokens.type.metadata,
+            ),
+
+          // 已关联条目仍保留作同步诊断；失败原因挂在对应行上并排到最前。
+          for (final MediaTrackingMappingRow mapping
+              in status.mappingsProblemFirst.take(_kTrackingMappingLimit))
+            _buildTrackingMappingRow(
+              tokens,
+              mapping,
+              status.failureByMappingId[mapping.id],
+            ),
+          for (final String error in status.automaticMappingErrors)
+            Text(
+              '${t.media_tracking_last_error}: $error',
+              style: tokens.type.metadata.copyWith(color: scheme.error),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
 
           SizedBox(height: tokens.spacing.gap),
           Wrap(
@@ -2243,6 +2419,12 @@ class _HomeDashboardPageState
                     : const Icon(Icons.sync),
                 label: Text(t.media_tracking_sync_now),
               ),
+              if (status.automaticMappingMissCount > 0)
+                FilledButton.tonalIcon(
+                  onPressed: _trackingSyncBusy ? null : _retryTrackingMappings,
+                  icon: const Icon(Icons.refresh),
+                  label: Text(t.media_tracking_retry_mapping),
+                ),
               TextButton.icon(
                 onPressed: _openTrackingSettings,
                 icon: const Icon(Icons.tune),
@@ -2251,6 +2433,47 @@ class _HomeDashboardPageState
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTrackingUnlinkedRow(
+    HibikiDesignTokens tokens,
+    MediaTrackingUnlinkedItem item,
+  ) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: _openTrackingSettings,
+      borderRadius: HibikiBorderRadius.card,
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(Icons.link_off, size: 18, color: scheme.error),
+            SizedBox(width: tokens.spacing.gap / 2),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    item.mediaTitle,
+                    style: tokens.type.listTitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    '${trackingKindLabel(item.kind.value)} · '
+                    '${t.media_tracking_manual_required}',
+                    style: tokens.type.metadata.copyWith(color: scheme.error),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(width: tokens.spacing.gap / 2),
+            const Icon(Icons.chevron_right, size: 18),
+          ],
+        ),
       ),
     );
   }
@@ -2324,6 +2547,16 @@ class _HomeDashboardPageState
     );
   }
 
+  Future<void> _showBangumiWatched() async {
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) => _BangumiWatchedDialog(
+        service: ref.read(appProvider).mediaTrackingService,
+        onOpenSubject: _openBangumiSubject,
+      ),
+    );
+  }
+
   void _openTrackingSettings() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -2352,6 +2585,47 @@ class _HomeDashboardPageState
         );
     } catch (e, stack) {
       ErrorLogService.instance.log('HomeDashboardPage.syncTracking', e, stack);
+    } finally {
+      if (mounted) setState(() => _trackingSyncBusy = false);
+    }
+  }
+
+  /// 自动匹配重试：由服务层清掉对应 miss 退避并重新调用原匹配解析器；结果必须明确
+  /// 回显，不能把「按钮被 10 分钟退避挡住」伪装成成功。
+  Future<void> _retryTrackingMappings() async {
+    setState(() => _trackingSyncBusy = true);
+    try {
+      final MediaTrackingMappingRetryResult result = await ref
+          .read(appProvider)
+          .mediaTrackingService
+          .retryAutomaticMappings();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              !result.matchedAny
+                  ? t.media_tracking_retry_no_match
+                  : (result.syncResult?.isSuccess ?? false)
+                      ? t.media_tracking_retry_matched
+                      : t.media_tracking_sync_failed,
+            ),
+          ),
+        );
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'HomeDashboardPage.retryTrackingMappings',
+        e,
+        stack,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text(t.media_tracking_sync_failed)),
+          );
+      }
     } finally {
       if (mounted) setState(() => _trackingSyncBusy = false);
     }

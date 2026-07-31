@@ -51,7 +51,7 @@
             <label class="setting-row" for="subtitleOverlayAllTracks">
               <span class="setting-copy">
                 <strong>所有字幕轨都用扩展覆盖层显示</strong>
-                <small>站点检测到的字幕轨也叠到视频上，配合防剧透模糊与悬停暂停使用。</small>
+                <small>站点检测到的字幕轨也叠到视频上，配合防剧透模糊与悬浮字幕查词使用。</small>
               </span>
               <span class="switch"><input id="subtitleOverlayAllTracks" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
@@ -69,58 +69,107 @@
               </span>
               <span class="switch"><input id="subtitleHidden" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
-            <label class="setting-row" for="subtitleHoverPause">
+            <label class="setting-row" for="subtitlePauseOnLookup">
               <span class="setting-copy">
-                <strong>悬停字幕时暂停</strong>
-                <small>鼠标移到覆盖层字幕上自动暂停，移开继续播放，方便查词。</small>
+                <strong>查词时暂停</strong>
+                <small>从网页、字幕列表或悬浮字幕发起查词时暂停当前视频；查完后由你继续播放。</small>
               </span>
-              <span class="switch"><input id="subtitleHoverPause" type="checkbox"><span aria-hidden="true"></span></span>
+              <span class="switch"><input id="subtitlePauseOnLookup" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="subtitleOverlayAutoLookup">
+              <span class="setting-copy">
+                <strong>悬浮字幕自动查词</strong>
+                <small>鼠标移到悬浮字幕里的词上就自动查词，无需按住 Shift 或点击。</small>
+              </span>
+              <span class="switch"><input id="subtitleOverlayAutoLookup" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
           </div>
         </section>
 
-        <section class="section" aria-labelledby="playback-heading">
+        <section class="section" aria-labelledby="shortcut-heading">
           <div class="section-heading compact">
             <div>
-              <p class="section-kicker">沉浸播放</p>
-              <h2 id="playback-heading">播放模式</h2>
+              <p class="section-kicker">按键控制</p>
+              <h2 id="shortcut-heading">视频快捷键</h2>
             </div>
           </div>
           <div class="setting-list">
-            <label class="setting-row" for="subtitleAutoPause">
+            <label class="setting-row" for="videoShortcutPrevCue">
               <span class="setting-copy">
-                <strong>每句结束时自动暂停</strong>
-                <small>只在字幕句结束时暂停，方便精读和查词。</small>
+                <strong>上一句字幕</strong>
+                <small>←</small>
               </span>
-              <span class="switch"><input id="subtitleAutoPause" type="checkbox"><span aria-hidden="true"></span></span>
+              <span class="switch"><input id="videoShortcutPrevCue" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
-            <label class="setting-row" for="subtitleCondensedPlayback">
+            <label class="setting-row" for="videoShortcutNextCue">
               <span class="setting-copy">
-                <strong>精简播放</strong>
-                <small>自动跳过当前字幕轨中较长的无字幕区间。</small>
+                <strong>下一句字幕</strong>
+                <small>→</small>
               </span>
-              <span class="switch"><input id="subtitleCondensedPlayback" type="checkbox"><span aria-hidden="true"></span></span>
+              <span class="switch"><input id="videoShortcutNextCue" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
-            <label class="setting-row" for="subtitleAutoPauseAtStart">
+            <label class="setting-row" for="videoShortcutReplayCue">
               <span class="setting-copy">
-                <strong>自动暂停改在句首</strong>
-                <small>开启「自动暂停」时改为每句开播即暂停（先猜再听），默认是句尾暂停。</small>
+                <strong>重播本句</strong>
+                <small>↑</small>
               </span>
-              <span class="switch"><input id="subtitleAutoPauseAtStart" type="checkbox"><span aria-hidden="true"></span></span>
+              <span class="switch"><input id="videoShortcutReplayCue" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
-            <label class="setting-row" for="subtitleFastForwardPlayback">
+            <label class="setting-row" for="videoShortcutTogglePanel">
               <span class="setting-copy">
-                <strong>快进无字幕段</strong>
-                <small>无字幕区间以 2.7 倍速播过（保留画面连续性），进句自动恢复原速。</small>
+                <strong>打开或关闭字幕列表</strong>
+                <small>Shift+S</small>
               </span>
-              <span class="switch"><input id="subtitleFastForwardPlayback" type="checkbox"><span aria-hidden="true"></span></span>
+              <span class="switch"><input id="videoShortcutTogglePanel" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
-            <label class="setting-row" for="videoShortcutsEnabled">
+            <label class="setting-row" for="videoShortcutToggleSubtitleHide">
               <span class="setting-copy">
-                <strong>视频页快捷键</strong>
-                <small>←/→ 上一句/下一句 · ↑ 重播本句 · Shift+P/O/F 暂停/精简/快进 · Shift+S 面板 · Shift+H 隐藏字幕 · Ctrl+Shift+←/→/↓ 偏移 · Ctrl+Shift+Z 复制字幕 · Ctrl+Shift+[ ] 变速。<br>制卡快捷键 Ctrl+Enter（查词弹窗打开时按下＝点弹窗里的「＋」）不受本开关影响。</small>
+                <strong>隐藏或显示字幕</strong>
+                <small>Shift+H</small>
               </span>
-              <span class="switch"><input id="videoShortcutsEnabled" type="checkbox"><span aria-hidden="true"></span></span>
+              <span class="switch"><input id="videoShortcutToggleSubtitleHide" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="videoShortcutOffsetMinus">
+              <span class="setting-copy">
+                <strong>字幕提前 100 毫秒</strong>
+                <small>Ctrl+Shift+←</small>
+              </span>
+              <span class="switch"><input id="videoShortcutOffsetMinus" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="videoShortcutOffsetPlus">
+              <span class="setting-copy">
+                <strong>字幕延后 100 毫秒</strong>
+                <small>Ctrl+Shift+→</small>
+              </span>
+              <span class="switch"><input id="videoShortcutOffsetPlus" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="videoShortcutOffsetReset">
+              <span class="setting-copy">
+                <strong>重置字幕偏移</strong>
+                <small>Ctrl+Shift+↓</small>
+              </span>
+              <span class="switch"><input id="videoShortcutOffsetReset" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="videoShortcutCopyCue">
+              <span class="setting-copy">
+                <strong>复制当前字幕</strong>
+                <small>Ctrl+Shift+Z</small>
+              </span>
+              <span class="switch"><input id="videoShortcutCopyCue" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="videoShortcutRateDown">
+              <span class="setting-copy">
+                <strong>降低播放速度</strong>
+                <small>Ctrl+Shift+[</small>
+              </span>
+              <span class="switch"><input id="videoShortcutRateDown" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="videoShortcutRateUp">
+              <span class="setting-copy">
+                <strong>提高播放速度</strong>
+                <small>Ctrl+Shift+]</small>
+              </span>
+              <span class="switch"><input id="videoShortcutRateUp" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
           </div>
         </section>

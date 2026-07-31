@@ -78,6 +78,27 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     _contentReadyDeadline = null;
   }
 
+  void _acceptRestoreComplete({
+    required int reportedGeneration,
+    Object? perfSnapshot,
+  }) {
+    if (!mounted ||
+        !isCurrentReaderRestoreCompletion(
+          reportedGeneration: reportedGeneration,
+          currentGeneration: _navigateGeneration,
+          expectedGeneration: _restoreExpectedGeneration,
+        )) {
+      debugPrint(
+        '[ReaderHibiki] stale onRestoreComplete: '
+        'reported=$reportedGeneration expected=$_restoreExpectedGeneration '
+        'current=$_navigateGeneration',
+      );
+      return;
+    }
+    ReaderChapterPerfTrace.noteJs(perfSnapshot);
+    _onRestoreComplete();
+  }
+
   void _onRestoreComplete() {
     ReaderChapterPerfTrace.mark('jsInitRestore');
     // BUG-438 / TODO-889：恢复完成=内容真正就绪，清掉兜底 deadline，下次导航拿新窗口。
@@ -86,13 +107,6 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // 挡住随后的残余滚轮/惯性在新章边界二次跨章（滚轮离散事件在长加载期间不续窗的真因）。
     _noteChapterTurnSettledIfPending();
     if (!mounted) {
-      return;
-    }
-    if (_restoreExpectedGeneration != _navigateGeneration) {
-      debugPrint(
-        '[ReaderHibiki] stale onRestoreComplete: '
-        'expected=$_restoreExpectedGeneration current=$_navigateGeneration',
-      );
       return;
     }
     _restoreInFlight = false;
@@ -384,13 +398,22 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     required int charOffset,
     int charOffsetEnd = -1,
     String? fragment,
+    String? preciseLocateJs,
   }) {
     _restoreExpectedGeneration = ++_navigateGeneration;
-    // TODO-1309：新一次导航开始 → 作废上一次排队但未消费的章内精确定位（文本搜索
-    // 跳转）。用户在搜索跳转恢复途中翻页/再跳，旧的 scrollToSearchMatch 不该落到新章
-    // （代际守卫同样兜底，这里从源头清掉，belt-and-suspenders）。_navigateToChapterAndWait
-    // 在本方法返回后才写入本次的 pending，故不会误清本次。
-    _pendingPreciseLocate = null;
+    // BUG-1231 / TODO-1309：新导航先作废上一代的章内精确定位，再把本次定位绑定到
+    // 已递增的导航代际。绑定必须与导航状态初始化同处、且发生在 loadUrl 之前：
+    // InAppWebViewController.loadUrl 的 Future 在部分平台会等到页面生命周期已推进后才返回，
+    // 若调用方 await loadUrl 后才写 pending，onRestoreComplete 可能已经消费过空值，最终只
+    // 落到目标章章首且没有搜索高亮。用户在恢复途中翻页/再跳时，新一次 _beginNavigation
+    // 仍会从源头顶掉旧 pending；代际守卫继续兜底。
+    _preciseLocateQueue.clear();
+    if (preciseLocateJs != null) {
+      _preciseLocateQueue.replace(
+        generation: _navigateGeneration,
+        js: preciseLocateJs,
+      );
+    }
     if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
       _restoreCompleter!.complete(false);
     }
@@ -433,6 +456,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     ReaderChapterPerfTrace.abort();
     _isNavigatingToChapter = false;
     _restoreInFlight = false;
+    _preciseLocateQueue.clear();
     if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
       _restoreCompleter!.complete(false);
     }
@@ -460,8 +484,12 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     int? charOffset,
     int charOffsetEnd = -1,
     bool manual = false,
+    String? preciseLocateJs,
   }) async {
-    if (_book == null || index < 0 || index >= _book!.chapters.length) {
+    if (!mounted ||
+        _book == null ||
+        index < 0 ||
+        index >= _book!.chapters.length) {
       return;
     }
     if (_controller == null) {
@@ -497,6 +525,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       progress: progress,
       charOffset: charOffset ?? -1,
       charOffsetEnd: charOffsetEnd,
+      preciseLocateJs: preciseLocateJs,
     );
     _lastProgressCharOffset = _initialCharOffset;
 
@@ -537,15 +566,8 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         progress: progress,
         charOffset: charOffset,
         charOffsetEnd: charOffsetEnd,
-        manual: manual);
-    if (preciseLocateJs != null) {
-      // 绑定本次导航代际（_beginNavigation 刚在 _navigateToChapter 里递增）：并发导航
-      // 顶掉后代际不匹配 → 消费时丢弃，绝不把搜索命中定位应用到错误章节。设在
-      // _navigateToChapter 之后（代际已定）、restore 完成之前（章节装载异步，
-      // _onRestoreComplete 稍后才触发），故稳被本次 _onRestoreComplete 消费。
-      _pendingPreciseLocate =
-          (generation: _navigateGeneration, js: preciseLocateJs);
-    }
+        manual: manual,
+        preciseLocateJs: preciseLocateJs);
     final bool success = await _restoreCompleter?.future.timeout(
           const Duration(seconds: 10),
           onTimeout: () {
@@ -574,13 +596,13 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   /// 代际守卫：`pending.generation != _navigateGeneration` = 被更晚的导航顶掉 → 丢弃，
   /// 绝不把搜索命中定位应用到错误章节。消费一次即清空（无论应用与否）。
   Future<void> _applyPendingPreciseLocate() async {
-    final ({int generation, String js})? pending = _pendingPreciseLocate;
-    if (pending == null) return;
-    _pendingPreciseLocate = null;
-    if (pending.generation != _navigateGeneration) return;
-    if (!mounted || _controller == null) return;
+    final String? js = _preciseLocateQueue.consume(
+      generation: _navigateGeneration,
+      canApply: mounted && _controller != null,
+    );
+    if (js == null) return;
     try {
-      await _controller!.evaluateJavascript(source: pending.js);
+      await _controller!.evaluateJavascript(source: js);
     } catch (e, stack) {
       ErrorLogService.instance
           .log('ReaderHibiki._applyPendingPreciseLocate', e, stack);
@@ -796,6 +818,9 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     final String html =
         buildSpreadPageHtml(leftUrl: leftUrl, rightUrl: rightUrl);
 
+    // BUG-1280：置位必须在 loadData 之前——`onLoadStop` 可能在 await 返回前就
+    // 派发，晚置位等于守卫对这一次加载失效。
+    _spreadDocumentLoaded = true;
     _isNavigatingToChapter = true;
     try {
       await _controller!.loadData(

@@ -17,7 +17,7 @@ class MediaSourcesPage extends StatefulWidget {
   /// 'video' | 'book' | 'manga'。
   final String mediaKind;
 
-  /// 库页视图导航条（由 [MediaLibraryShell] 传入，落在页头 bottom 槽）。
+  /// 库页视图导航条（由 [MediaLibraryShell] 传入，作为页头主内容与动作同一行）。
   final Widget? navigation;
 
   @override
@@ -36,19 +36,7 @@ class _MediaSourcesPageState extends State<MediaSourcesPage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!isCupertinoPlatform(context))
-            HibikiPageHeader(
-              title: t.media_source_manage_title,
-              actions: <Widget>[
-                HibikiIconButton(
-                  tooltip: t.media_source_add,
-                  label: t.media_source_add,
-                  icon: Icons.create_new_folder_outlined,
-                  onTap: () => _viewKey.currentState?.addSource(),
-                ),
-              ],
-              bottom: widget.navigation,
-            ),
+          if (!isCupertinoPlatform(context)) _buildHeader(),
           Expanded(
             child: MediaSourcesView(
               key: _viewKey,
@@ -58,6 +46,28 @@ class _MediaSourcesPageState extends State<MediaSourcesPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildHeader() {
+    final List<Widget> actions = <Widget>[
+      HibikiIconButton(
+        tooltip: t.media_source_add,
+        label: t.media_source_add,
+        icon: Icons.create_new_folder_outlined,
+        onTap: () => _viewKey.currentState?.addSource(),
+      ),
+    ];
+    final Widget? navigation = widget.navigation;
+    if (navigation != null) {
+      return HibikiPageHeader.customTitle(
+        title: navigation,
+        actions: actions,
+      );
+    }
+    return HibikiPageHeader(
+      title: t.media_source_manage_title,
+      actions: actions,
     );
   }
 }

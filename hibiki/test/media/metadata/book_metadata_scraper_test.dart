@@ -37,16 +37,19 @@ void main() {
       expect(c.originalTitle, isNull);
     });
 
-    test('缺 large 用 common；无任何封面 → 跳过该条', () {
+    test('缺 large 用 common 原图；无任何封面 → 跳过该条', () {
       const String body = '''
 {"data":[
-  {"id":2,"name":"A","images":{"common":"https://img/c.jpg"}},
+  {"id":2,"name":"A","images":{"common":"https://lain.bgm.tv/pic/cover/c/a/b/c.jpg"}},
   {"id":3,"name":"B","images":{}},
   {"id":4,"name":"C"}
 ]}''';
       final List<BookScrapeCandidate> list = parseBookSearchResponse(body);
       expect(list, hasLength(1)); // 只有 id=2 有封面
-      expect(list.first.coverUrl, 'https://img/c.jpg');
+      expect(
+        list.first.coverUrl,
+        'https://lain.bgm.tv/pic/cover/l/a/b/c.jpg',
+      );
     });
 
     test('data 缺失/非数组 → 空列表（不抛）；非法 JSON → 抛', () {

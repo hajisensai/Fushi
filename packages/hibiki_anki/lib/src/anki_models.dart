@@ -410,6 +410,7 @@ class AnkiMiningPayload {
     this.singleGlossaries = const {},
     this.pitchPositions = '',
     this.pitchCategories = '',
+    this.phoneticTranscriptions = '',
     this.popupSelectionText = '',
     this.audio = '',
     this.selectedDictionary = '',
@@ -457,6 +458,7 @@ class AnkiMiningPayload {
       singleGlossaries: singleGlossaries,
       pitchPositions: json['pitchPositions'] as String? ?? '',
       pitchCategories: json['pitchCategories'] as String? ?? '',
+      phoneticTranscriptions: json['phoneticTranscriptions'] as String? ?? '',
       popupSelectionText: json['popupSelectionText'] as String? ?? '',
       audio: json['audio'] as String? ?? '',
       selectedDictionary: json['selectedDictionary'] as String? ?? '',
@@ -474,6 +476,11 @@ class AnkiMiningPayload {
   final Map<String, String> singleGlossaries;
   final String pitchPositions;
   final String pitchCategories;
+
+  /// Yomitan `ipa`-mode 词典的音标（IPA）HTML；纯声调（positions）词典恒为空。
+  /// `{pitch-accent-positions}` 已默认并入音标（popup.js 制卡侧），本字段只服务
+  /// 想把音标单独映射到独立字段的用户（Yomitan 命名 `{phonetic-transcriptions}`）。
+  final String phoneticTranscriptions;
   final String popupSelectionText;
   final String audio;
   final String selectedDictionary;
@@ -630,6 +637,8 @@ class AnkiHandlebarRenderer {
         return payload.pitchPositions;
       case '{pitch-accent-categories}':
         return payload.pitchCategories;
+      case '{phonetic-transcriptions}':
+        return payload.phoneticTranscriptions;
       case '{document-title}':
         return context.documentTitle ?? '';
       // {card-image} 是通用图片键（书籍封面 / 视频 GIF 共用，语义中性、名副其实）：
@@ -721,6 +730,7 @@ class AnkiHandlebarOptions {
     '{frequency-harmonic-rank}',
     '{pitch-accent-positions}',
     '{pitch-accent-categories}',
+    '{phonetic-transcriptions}',
     '{document-title}',
     '{card-image}',
     '{book-cover}',

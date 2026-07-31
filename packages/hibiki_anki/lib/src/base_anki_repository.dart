@@ -206,10 +206,16 @@ abstract class BaseAnkiRepository {
   /// styling 里的引用统一改指保留份 → 复核引用清干净后删除多余副本。
   /// **绝不重编码任何文件**。[dryRun] = 只扫描规划，不改动。[onJournal] 在
   /// 每次真实改写/删除**之前**收到一条可回溯记录（调用方负责落盘）。
+  /// [onProgress] 每个文件/副本边界报一次进度（长任务，UI 靠它画进度条）；
+  /// [shouldCancel] 在每个副本边界检查，返回 true 则干净停下并返回
+  /// `cancelled: true` 的部分结果（已做的改写/删除保留，不回滚——引用永远先
+  /// 改指保留份，任何时刻停下都自洽）。
   /// **默认实现 = 优雅降级**：返回 null。
   Future<AnkiMediaDedupReport?> runMediaDedup({
     bool dryRun = false,
     Future<void> Function(Map<String, dynamic> entry)? onJournal,
+    AnkiMediaDedupOnProgress? onProgress,
+    bool Function()? shouldCancel,
   }) async =>
       null;
 
@@ -465,6 +471,7 @@ abstract class BaseAnkiRepository {
       singleGlossaries: payload.singleGlossaries,
       pitchPositions: payload.pitchPositions,
       pitchCategories: payload.pitchCategories,
+      phoneticTranscriptions: payload.phoneticTranscriptions,
       popupSelectionText: payload.popupSelectionText,
       audio: processedAudio,
       selectedDictionary: payload.selectedDictionary,

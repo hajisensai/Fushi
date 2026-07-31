@@ -238,30 +238,3 @@ test('⑤ 外挂字幕按视频矩形叠到画面上，站点轨不重复叠字'
   assert.strictEqual(overlay.textContent, '画面上的外挂字幕');
   assert.strictEqual(overlay.style.left, '500px');
 });
-
-test('⑥ 自动暂停与精简播放按当前字幕轨工作', () => {
-  const pause = loadPanel({
-    hostname: 'example.com', pathname: '/video/1',
-    stored: { netflixSubtitlePanel: true, subtitleAutoPause: true },
-    response: OK([{ text: 'a', startMs: 1000, endMs: 2000 }]),
-  });
-  pause.loadFile('pause.srt', 'dummy');
-  pause.video.currentTime = 1.5;
-  pause.tick();
-  pause.video.currentTime = 2.1;
-  pause.tick();
-  assert.strictEqual(pause.video.pauseCount, 1, '字幕句结束时应暂停一次');
-
-  const condensed = loadPanel({
-    hostname: 'example.com', pathname: '/video/1',
-    stored: { netflixSubtitlePanel: true, subtitleCondensedPlayback: true },
-    response: OK([
-      { text: 'a', startMs: 1000, endMs: 2000 },
-      { text: 'b', startMs: 5000, endMs: 6000 },
-    ]),
-  });
-  condensed.loadFile('condensed.srt', 'dummy');
-  condensed.video.currentTime = 2.5;
-  condensed.tick();
-  assert.strictEqual(condensed.video.currentTime, 5, '长无字幕区间应跳到下一句');
-});

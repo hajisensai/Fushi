@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1193 条。点号进各自文件。
+> 共 1247 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -38,9 +38,63 @@
 | [BUG-1294](bugs/BUG-1294-mihon-extension-catalog-restart.md) | ✅ | ✅ | 漫画扩展重启后可下载目录消失且无法安装新扩展 |
 | [BUG-1293](bugs/BUG-1293-mihon-online-ocr-niratan-parity.md) | ✅ | ✅ | Mihon 在线漫画 OCR 横竖排错位且加载缓存调度未对齐 Niratan |
 | [BUG-1292](bugs/BUG-1292-mihon-detail-layout.md) | ✅ | ✅ | Mihon 漫画详情页路由触发布局断言 |
+| [BUG-1291](bugs/BUG-1291-destructive-confirm-checkbox-truncated.md) | ✅ | ✅ | 销毁确认弹窗勾选行文案被单行省略号截断 |
+| [BUG-1290](bugs/BUG-1290-bangumi-dashboard-history.md) | ✅ | ✅ | Bangumi 首页卡把映射误当观看历史且不列待手动关联条目 |
+| [BUG-1289](bugs/BUG-1289-youtube-caption-track-labels-ambiguous.md) | ✅ | ✅ | YouTube 字幕轨标签退化成语言码且人工/ASR 重名，无法分辨选哪条 |
+| [BUG-1288](bugs/BUG-1288-android-video-resume-seek-overwritten.md) | ✅ | ✅ | 安卓视频进入后被踢回开头：恢复 seek 被 loadfile 覆盖 |
+| [BUG-1287](bugs/BUG-1287-gal-loopback-flush-no-settle.md) | ✅ | ✅ | galgame 查词/制卡时语音只到句子前半段：loopback 提前收束后不再补全 |
+| [BUG-1286](bugs/BUG-1286-gal-lookup-hook-revoked.md) | ✅ | ✅ | galgame 查词浮窗点击失效：低级鼠标钩子被系统吊销后不再重装 |
+| [BUG-1285](bugs/BUG-1285-subtitle-plain-mode-inline-color.md) | ✅ | ✅ | 纯字幕模式下行内 \c 主色穿透导致 OP 字幕变黑 |
+| [BUG-1284](bugs/BUG-1284-activity-game-cover.md) | ✅ | ✅ | 游戏活动身份不统一导致封面缺失 |
+| [BUG-1283](bugs/BUG-1283-nested-popup-custom-font-flash.md) | ✅ | ✅ | 嵌套查词显示前闪过系统字体 |
+| [BUG-1282](bugs/BUG-1282-dictionary-redirect-only-entries.md) | ✅ | ✅ | redirect-only 词典条目混入真实释义结果 |
+| [BUG-1281](bugs/BUG-1281-dict-auto-update-last-check.md) | ✅ | ✅ | 词典自动更新检查成功但无新版时永远显示从未并重复检查 |
+| [BUG-1280](bugs/BUG-1280-spread-chrome-unreachable.md) | ✅ | ✅ | 双页 spread 页唤不出底栏、退不出书 |
+| [BUG-1279](bugs/BUG-1279-ext-nested-lookup-inplace.md) | ✅ | ✅ | 浏览器扩展嵌套查词会关掉旧弹窗、跳位并重画原文高亮 |
+| [BUG-1278](bugs/BUG-1278-download-settings-content-left.md) | ✅ | ✅ | 下载设置宽屏内容整体贴左且开关被推到远端 |
+| [BUG-1277](bugs/BUG-1277-reader-navigation-after-dispose.md) | ✅ | ✅ | 有声书跨章等待后触发已销毁 State 重绘 |
+| [BUG-1276](bugs/BUG-1276-dashboard-heatmap-dark-contrast.md) | ✅ | ✅ | 黑色主题下学习活动热力图空周融进背景 |
+| [BUG-1275](bugs/BUG-1275-anti-leech-blacklist-range-ban.md) | ✅ | ✅ | 反吸血身份黑名单命中升级整段连坐封禁 |
+| [BUG-1274](bugs/BUG-1274-anti-leech-blacklist-download-phase.md) | ✅ | ✅ | 反吸血身份黑名单下载期无差别封禁 |
+| [BUG-1272](bugs/BUG-1272-bangumi-scrape-no-retry.md) | 🚧 | 🚧 | Bangumi 刮削单次请求无重试，链路丢连接直接失败 |
+| [BUG-1271](bugs/BUG-1271-popup-autoexpand-rows-unit-mismatch.md) | ✅ | ✅ | 自动展开默认值按本数写进行数槽位，出厂默认从3本变9本 |
+| [BUG-1270](bugs/BUG-1270-youtube-live-subtitle-seek-duplicate.md) | ✅ | ✅ | YouTube 实时字幕回跳后重复且累积成长段 |
+| [BUG-1269](bugs/BUG-1269-dismiss-dict-popup-surface-input.md) | ✅ | ✅ | 关闭词典的快捷键/鼠标键在弹窗表面仍然无效 |
+| [BUG-1268](bugs/BUG-1268-youtube-quality-entry-self-locked.md) | ✅ | ✅ | YouTube 画质入口自锁：设置面板画质行永不显示 |
+| [BUG-1267](bugs/BUG-1267-gal-attach-missing-luna-pchooks.md) | ✅ | ✅ | 捕获窗口(attach)模式硬编码不装 LunaHook PC hooks，Unity 游戏中途对接抓不到文本 |
+| [BUG-1266](bugs/BUG-1266-gamepad-b-hijacked-by-back.md) | ✅ | ✅ | 手柄 B 被 Android 系统返回兜底抢占，改键无效；视频页首帧就绪前手柄键全失灵 |
+| [BUG-1265](bugs/BUG-1265-anki-gaiji-cache-miss-aborts-mine.md) | ✅ | ✅ | AnkiConnect 制卡：词典外字缓存缺失导致整张卡建不出来 |
+| [BUG-1264](bugs/BUG-1264-popup-perdict-collapse-outranked.md) | ✅ | ✅ | 每本词典的折叠开关对前 N 本无效（被自动展开覆盖） |
+| [BUG-1263](bugs/BUG-1263-anki-dedup-progress-cancel.md) | ✅ | ✅ | Anki媒体去重真删与扫描为分钟级长任务却无进度不可取消且期间Anki无响应 |
+| [BUG-1262](bugs/BUG-1262-anki-dedup-vanished-file-aborts.md) | ✅ | ✅ | 媒体文件在扫描快照后消失导致整轮去重PathNotFoundException中止 |
+| [BUG-1261](bugs/BUG-1261-oald-mdd-parts-sound-play.md) | ✅ | ✅ | MDX 分卷 MDD 未挂载 + 词典内 sound:// 发音点击无反应（OALD） |
+| [BUG-1260](bugs/BUG-1260-sync-progress-blank-and-silent-noop.md) | ✅ | ✅ | 同步进度条只有线没有字 + 零通道空转静默收尾 |
+| [BUG-1250](bugs/BUG-1250-stream-import-hides-progress.md) | ✅ | ✅ | 边下边播提前入库把下载任务直接标成已完成并丢失进度 |
+| [BUG-1249](bugs/BUG-1249-download-empty-result-reason.md) | ✅ | ✅ | 下载发现把空响应或损坏 RSS 伪装成无结果且不说明筛选原因 |
+| [BUG-1247](bugs/BUG-1247-gal-unity-text-source-isolation.md) | ✅ | ✅ | Unity TextMesh 停顿拆句且绕过文本线程选择 |
+| [BUG-1246](bugs/BUG-1246-galgame-helper-version-drift.md) | ✅ | ✅ | 随包 helper 已更新但完整旧安装被直接放行，native 修复永远不生效 |
+| [BUG-1245](bugs/BUG-1245-vn-reveal-chrome-also-advances.md) | ✅ | ✅ | VN唤出悬浮底栏时误同时推进 |
+| [BUG-1244](bugs/BUG-1244-vn-media-screen-skipped.md) | ✅ | ✅ | VN独立图片屏被逐句跳转永久略过 |
+| [BUG-1243](bugs/BUG-1243-audiobook-clip-multicue-export.md) | ✅ | ✅ | 有声书片段导出多句退化并附带多余音频文件 |
+| [BUG-1242](bugs/BUG-1242-dictionary-popup-scroll-gesture-stall.md) | ✅ | ✅ | 查词弹窗横滑手势阻塞正文滚动 |
+| [BUG-1241](bugs/BUG-1241-reader-terminal-not-completed.md) | ✅ | ✅ | 阅读器末页停在99%不自动标记读完 |
+| [BUG-1240](bugs/BUG-1240-audiobook-stop-overwrites-position.md) | ✅ | ✅ | 有声书退出停止后位置被零覆盖 |
+| [BUG-1239](bugs/BUG-1239-video-ime-fullwidth-space.md) | ✅ | ✅ | 全角空格在视频页仍无法播放暂停 |
+| [BUG-1238](bugs/BUG-1238-clipboard-lookup-audio.md) | ✅ | ✅ | 剪贴板变更查词不应自动播放音频 |
+| [BUG-1237](bugs/BUG-1237-popup-touch-copy-actionmode-finished.md) | ✅ | ✅ | 查词弹窗触屏复制经已结束 ActionMode 失效 |
+| [BUG-1236](bugs/BUG-1236-reader-selection-menu-modal-blocks-handles.md) | ✅ | ✅ | 移动端阅读器选区菜单阻断手柄拖动 |
+| [BUG-1235](bugs/BUG-1235-jimaku-batch-availability.md) | ✅ | ✅ | 合集字幕匹配无法区分来源与逐集可用性 |
+| [BUG-1234](bugs/BUG-1234-cover-match-source-state.md) | ✅ | ✅ | 封面匹配切换来源会自动重搜并保留旧来源结果 |
+| [BUG-1233](bugs/BUG-1233-book-import-repeated-archive-probe.md) | ✅ | ✅ | 书籍导入重复整包判定 EPUB 载体 |
 | [BUG-1232](bugs/BUG-1232-mihon-sidecar-exit-leak.md) | ✅ | ✅ | 桌面关闭后 Mihon Java sidecar 残留 |
+| [BUG-1231](bugs/BUG-1231-cross-chapter-search-locate-race.md) | ✅ | ✅ | 跨章节书内搜索只跳到章首且不高亮 |
 | [BUG-1230](bugs/BUG-1230-manga-popup-ocr-direction.md) | ✅ | ✅ | 漫画查词弹窗未按 OCR 文字方向避让 |
+| [BUG-1229](bugs/BUG-1229-dictionary-css-draft.md) | ✅ | ✅ | 自定义 CSS 遮罩退出丢失草稿且关闭即保存 |
+| [BUG-1228](bugs/BUG-1228-video-mining-queue.md) | ✅ | ✅ | 连续视频制卡未串行且换集可能污染在途任务 |
+| [BUG-1227](bugs/BUG-1227-anki-media-upload-orphan.md) | ✅ | ✅ | 大 GIF 上传超时被吞后仍创建无图卡并留下孤儿媒体 |
+| [BUG-1226](bugs/BUG-1226-anki-mining-ui-thread-stall.md) | ✅ | ✅ | 制卡前查重导致 Anki 未响应 |
 | [BUG-1225](bugs/BUG-1225-shm-reader-write-access-must-stay.md) | ✅ | ✅ | 读端共享内存写权限不可收紧：SelectTextThread 的原子写落在只读页上会崩 |
+| [BUG-1224](bugs/BUG-1224-video-desktop-seekbar-click-stolen-by-subtitle.md) | ✅ | ✅ | 桌面视频点进度条被字幕吸走成查词 |
 | [BUG-1221](bugs/BUG-1221-manga-path-case-folded.md) | ✅ | ✅ | 漫画页图解析把路径折成小写，制卡封面名被小写化且大小写敏感平台缺页 |
 | [BUG-1220](bugs/BUG-1220-bangumi-sync-invisible.md) | ✅ | ✅ | Bangumi 同步链路全静默：看完了没反应且无处查看 |
 | [BUG-1219](bugs/BUG-1219-scrape-failure-detail.md) | ✅ | ✅ | 封面刮削失败只给一句笼统提示，完整报错被吞到错误日志 |
@@ -67,7 +121,7 @@
 | [BUG-1196](bugs/BUG-1196-galgame-helper-drop-network-download.md) | ✅ | ✅ | 删除 helper 网络下载与后台自更新，只保留随主包归档 |
 | [BUG-1195](bugs/BUG-1195-vn-blank-tap-blocks-chrome.md) | ✅ | ✅ | 视觉小说模式点空白只翻页，控制栏（菜单）永远唤不出 |
 | [BUG-1194](bugs/BUG-1194-collection-reorder-nonvideo-order.md) | ✅ | ✅ | 视频合集详情页拖拽排序打乱非 video 成员的跨种类顺序 |
-| [BUG-1193](bugs/BUG-1193-galgame-luna-nonwinner-threads-dropped.md) | 🚧 | 🚧 | primed 后非赢家 hook 线程被 native 丢弃，无法像 LunaTranslator 那样切换 |
+| [BUG-1193](bugs/BUG-1193-galgame-luna-nonwinner-threads-dropped.md) | ✅ | ✅ | primed 后非赢家 hook 线程被 native 丢弃，无法像 LunaTranslator 那样切换 |
 | [BUG-1192](bugs/BUG-1192-galgame-steam-drm-load-error.md) | 🚧 | 🚧 | Steam 游戏直接启动撞 DRM 报 Application load error 3 |
 | [BUG-1191](bugs/BUG-1191-galgame-upscaling-per-game.md) | ✅ | ✅ | 窗口超分改为每游戏一档，入口挪进游戏卡右键菜单 |
 | [BUG-1190](bugs/BUG-1190-jimaku-title-dropdown-no-research.md) | ✅ | ✅ | 换番剧名后字幕来源不刷新 |

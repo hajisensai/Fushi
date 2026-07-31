@@ -871,10 +871,14 @@ void main() {
               'with appUiScale, not ordinary page chrome (same content rationale '
               'as the allowlisted sibling subtitle jump panel).',
       'lib/src/media/video/video_episode_panel.dart':
-          'Episode list panel (TODO-638) renders episode index + title rows '
-              'as video-subsystem content in a push-aside sidebar mirroring '
-              'the allowlisted sibling chapter panel; row font size scales '
+          'Episode list panel renders episode index + title cards as '
+              'video-subsystem content in a bottom overlay rail; row font size scales '
               'with appUiScale, not ordinary page chrome.',
+      'lib/src/media/video/video_episode_rail.dart':
+          'Shared episode rail renders 16:9 media cover frames, episode titles '
+              'and playback state as video-subsystem content in the player overlay '
+              'and collection hero; card typography scales with appUiScale in the '
+              'player, the same reviewed content exception as video_episode_panel.',
       'lib/src/media/video/video_side_panel.dart':
           'Video translucent side-panel scaffold (favorite sentences list etc.) '
               'renders video-subsystem overlay chrome; lock toggle (TODO-611) '
@@ -1161,6 +1165,20 @@ void main() {
       reason: 'Route ordinary visual chrome through shared MD3 components, or '
           'add a reviewed allowlist reason for true content exceptions.',
     );
+  });
+
+  test('scrape failure detail uses the shared MD3 card and design tokens', () {
+    final String source = File(
+      'lib/src/media/metadata/scrape_failure_view.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('HibikiCard('));
+    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, contains('tokens.surfaces.overlay'));
+    expect(source, contains('tokens.radii.cardRadius'));
+    expect(source, contains('tokens.spacing.gap'));
+    expect(source, isNot(contains('surfaceContainerHighest')));
+    expect(source, isNot(contains('BorderRadius.circular(')));
   });
 
   test('reader history hover overlays use design tokens', () {

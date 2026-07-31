@@ -60,4 +60,18 @@ class SerialJobQueue {
 
     return completer.future;
   }
+
+  /// 与 [enqueue] 相同地串行执行，但任务失败时把原始异常交还调用方，而不是构造
+  /// 降级结果。队列链本身仍会归位，所以下一个任务不会被前一个失败毒化。
+  Future<T> enqueueRethrowing<T>(
+    Future<T> Function() job, {
+    void Function(Object error, StackTrace stack)? onError,
+  }) {
+    return enqueue<T>(
+      job,
+      buildFailure: (Object error, StackTrace stack) =>
+          Error.throwWithStackTrace(error, stack),
+      onError: onError,
+    );
+  }
 }

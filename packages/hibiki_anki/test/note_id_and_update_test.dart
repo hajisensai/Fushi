@@ -29,6 +29,9 @@ class _RecordingService extends AnkiConnectService {
   final List<Map<String, String>> addNoteCalls = <Map<String, String>>[];
 
   @override
+  Future<bool> mediaFileExists(String filename) async => false;
+
+  @override
   Future<void> storeMediaFile({
     required String filename,
     String? data,
@@ -45,6 +48,7 @@ class _RecordingService extends AnkiConnectService {
     List<String>? tags,
     Map<String, String>? mediaFiles,
     bool allowDuplicate = false,
+    AnkiDuplicateScope duplicateScope = AnkiDuplicateScope.deck,
   }) async {
     addNoteCalls.add(Map<String, String>.from(fields));
     return addNoteId;

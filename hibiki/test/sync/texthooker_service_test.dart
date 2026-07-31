@@ -1,6 +1,21 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 
+TexthookerThreadPreview preview({
+  required int threadId,
+  required String text,
+  required int lineCount,
+  int artifactCount = 0,
+  bool isArtifact = false,
+}) =>
+    TexthookerThreadPreview(
+      nativeThreadId: threadId,
+      text: text,
+      observedLineCount: lineCount,
+      observedArtifactCount: artifactCount,
+      isArtifact: isArtifact,
+    );
+
 void main() {
   setUp(() => TexthookerService.instance.clear());
 
@@ -400,5 +415,152 @@ void main() {
     expect(disambiguated.map((t) => t.key).toList(),
         threads.map((t) => t.key).toList());
     expect(disambiguated[0].lineCount, 160);
+  });
+
+  group('v12 线程预览区', () {
+    // 未被选中的线程在文本环里一行都没有（v12 取消了自动选线程），它们能不能在选择器里
+    // 显示内容、能不能被排序、能不能被跨会话记忆认回，全靠预览区这一份独立数据。
+    test('预览让未发布的线程也有内容和行数', () {
+      final TexthookerService svc = TexthookerService.instance;
+      svc.registerTextThread(
+        key: 'luna:aa',
+        label: 'TextRender · 0x1',
+        nativeThreadId: 111,
+      );
+
+      // 只发现、无预览：既没有已发布行，也没有观测行。
+      TexthookerTextThread thread = svc.textThreads.single;
+      expect(thread.lineCount, 0);
+      expect(thread.observedLineCount, 0);
+      expect(thread.displayPreviewText, isNull);
+      expect(thread.hasObservedLines, isFalse);
+
+      svc.applyTextThreadPreviews(<TexthookerThreadPreview>[
+        preview(
+          threadId: 111,
+          text: '可愛らしい声がオレを呼び止める。',
+          lineCount: 7,
+        ),
+      ]);
+
+      thread = svc.textThreads.single;
+      // 已发布行数仍是 0 —— 这条线程没被选中，本就不该有已发布行。
+      expect(thread.lineCount, 0);
+      // 但观测行数和预览文本到位了，用户因此能判断该不该选它。
+      expect(thread.observedLineCount, 7);
+      expect(thread.previewText, '可愛らしい声がオレを呼び止める。');
+      expect(thread.displayPreviewText, '可愛らしい声がオレを呼び止める。');
+      expect(thread.hasObservedLines, isTrue);
+    });
+
+    test('线程发现事件不得抹掉已有预览', () {
+      final TexthookerService svc = TexthookerService.instance;
+      svc.registerTextThread(key: 'luna:aa', label: 'A', nativeThreadId: 111);
+      svc.applyTextThreadPreviews(<TexthookerThreadPreview>[
+        preview(
+          threadId: 111,
+          text: 'keep me',
+          lineCount: 3,
+        ),
+      ]);
+      // ThreadCreate 会在同一条线程上重复触发。
+      svc.registerTextThread(key: 'luna:aa', label: 'A', nativeThreadId: 111);
+      expect(svc.textThreads.single.previewText, 'keep me');
+      expect(svc.textThreads.single.observedLineCount, 3);
+    });
+
+    test('排序：有观测行的排前面，脏线程排后面', () {
+      final TexthookerService svc = TexthookerService.instance;
+      svc.registerTextThread(
+          key: 'luna:empty', label: 'Empty', nativeThreadId: 1);
+      svc.registerTextThread(
+          key: 'luna:dirty', label: 'Dirty', nativeThreadId: 2);
+      svc.registerTextThread(
+          key: 'luna:clean', label: 'Clean', nativeThreadId: 3);
+      svc.applyTextThreadPreviews(<TexthookerThreadPreview>[
+        // 逐字重绘型 hook：行多但绝大多数是伪影。
+        preview(
+          threadId: 2,
+          text: '男男男男男子子',
+          lineCount: 90,
+          artifactCount: 80,
+          isArtifact: true,
+        ),
+        preview(
+          threadId: 3,
+          text: '「あの……保科君」',
+          lineCount: 9,
+        ),
+      ]);
+
+      final List<String> order =
+          svc.textThreads.map((TexthookerTextThread t) => t.key).toList();
+      // 干净线程第一，脏线程仍然可见（对齐 Luna：不藏，只是排后面），空线程垫底。
+      expect(order, <String>['luna:clean', 'luna:dirty', 'luna:empty']);
+    });
+
+    test('applyTextThreadPreviews 是替换不是合并', () {
+      final TexthookerService svc = TexthookerService.instance;
+      svc.registerTextThread(key: 'luna:a', label: 'A', nativeThreadId: 1);
+      svc.applyTextThreadPreviews(<TexthookerThreadPreview>[
+        preview(
+          threadId: 1,
+          text: 'first',
+          lineCount: 2,
+        ),
+      ]);
+      expect(svc.textThreads.single.previewText, 'first');
+
+      // 空快照（helper 重启/会话切换）必须让预览消失，而不是留着上一局的残影。
+      svc.applyTextThreadPreviews(const <TexthookerThreadPreview>[]);
+      expect(svc.textThreads.single.previewText, isNull);
+      expect(svc.textThreads.single.observedLineCount, 0);
+    });
+
+    test('无变化的快照不触发通知', () {
+      final TexthookerService svc = TexthookerService.instance;
+      svc.registerTextThread(key: 'luna:a', label: 'A', nativeThreadId: 1);
+      final List<TexthookerThreadPreview> snapshot = <TexthookerThreadPreview>[
+        preview(
+          threadId: 1,
+          text: 'same',
+          lineCount: 5,
+          artifactCount: 1,
+        ),
+      ];
+      svc.applyTextThreadPreviews(snapshot);
+
+      int notifications = 0;
+      void listener() => notifications++;
+      svc.addListener(listener);
+      // 轮询每 400ms 一次，内容没变就重建下拉会让选择器一直闪。
+      svc.applyTextThreadPreviews(snapshot);
+      expect(notifications, 0);
+      svc.applyTextThreadPreviews(<TexthookerThreadPreview>[
+        preview(
+          threadId: 1,
+          text: 'changed',
+          lineCount: 6,
+          artifactCount: 1,
+        ),
+      ]);
+      expect(notifications, 1);
+      svc.removeListener(listener);
+    });
+
+    test('clear 一并清掉预览（thread id 含 processId，跨会话不可复用）', () {
+      final TexthookerService svc = TexthookerService.instance;
+      svc.registerTextThread(key: 'luna:a', label: 'A', nativeThreadId: 1);
+      svc.applyTextThreadPreviews(<TexthookerThreadPreview>[
+        preview(
+          threadId: 1,
+          text: 'stale',
+          lineCount: 4,
+        ),
+      ]);
+      svc.clear();
+      svc.registerTextThread(key: 'luna:a', label: 'A', nativeThreadId: 1);
+      expect(svc.textThreads.single.previewText, isNull);
+    });
   });
 }

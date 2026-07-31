@@ -314,15 +314,21 @@ void main() {
     );
   });
 
-  testWidgets('长按视频卡弹出封面背景动作面板（管理动作、无播放）', (WidgetTester tester) async {
+  /// 打开某张卡的动作面板。触屏和桌面长按都走同一条管理菜单链路。
+  Future<void> openCardMenu(WidgetTester tester, Finder card) async {
+    await tester.longPress(card);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('触屏未进选择态长按视频卡弹管理菜单，不进入多选', (WidgetTester tester) async {
     await seedTaggedVideo();
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.longPress(find.byType(HibikiCard).first);
-    await tester.pumpAndSettle();
+    await openCardMenu(tester, find.byType(HibikiCard).first);
 
-    // 长按只做管理动作；播放仍由卡片点击负责。
+    expect(find.text(t.batch_selected_count(n: 1)), findsNothing,
+        reason: '触屏必须先点明确的「选择」入口，长按不能暗中进入多选');
     expect(find.byType(HibikiDialogFrame), findsOneWidget);
     expect(find.text(t.tag_label), findsOneWidget);
     expect(find.text(t.video_rename), findsOneWidget);
@@ -335,6 +341,24 @@ void main() {
     expect(find.text(t.add_to_collection), findsOneWidget);
     expect(find.text(t.dialog_delete), findsOneWidget);
     expect(find.text(t.dialog_read), findsNothing);
+  });
+
+  testWidgets('桌面长按本地视频卡仍弹同一动作面板，不进入多选', (WidgetTester tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      await seedTaggedVideo();
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, find.byType(HibikiCard).first);
+
+      expect(find.text(t.batch_selected_count(n: 1)), findsNothing);
+      expect(find.byType(HibikiDialogFrame), findsOneWidget);
+      expect(find.text(t.video_rename), findsOneWidget);
+      expect(find.text(t.add_to_collection), findsOneWidget);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('桌面右键（次按钮）本地视频卡弹出同一动作面板（BUG-758）', (WidgetTester tester) async {
@@ -532,7 +556,7 @@ void main() {
         reason: 'video/1 被批量删除，video/2 保留');
   });
 
-  testWidgets('长按菜单单删会回收本视频 app-owned 封面字幕与内嵌字幕缓存',
+  testWidgets('卡片菜单单删会回收本视频 app-owned 封面字幕与内嵌字幕缓存',
       (WidgetTester tester) async {
     resetAppOwnedVideoAssetDirs();
     final deleted = await seedVideoWithAssets(
@@ -567,9 +591,8 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester
-        .longPress(find.byKey(const ValueKey<String>('home_video_video/1')));
-    await tester.pumpAndSettle();
+    await openCardMenu(
+        tester, find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.tap(find.text(t.dialog_delete).last);
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.dialog_delete).last);

@@ -149,6 +149,52 @@ bool isReferencingMediaFile(String filename) {
       .contains(filename.substring(dot + 1).toLowerCase());
 }
 
+/// 去重进行到哪个阶段（进度回调用）。
+///
+/// 940 个副本的真删 = 数千次串行 AnkiConnect 请求，分钟级长任务；没有阶段化
+/// 进度，UI 只能给用户一个「假死」。阶段顺序固定：scanning → hashing →
+/// resolving。
+enum AnkiMediaDedupStage {
+  /// 枚举媒体目录、记录每个文件的字节数。
+  scanning,
+
+  /// 对「大小撞车」的候选算全文件哈希（读文件内容）。
+  hashing,
+
+  /// 逐个副本判定引用并（真跑时）改写/删除。
+  resolving,
+}
+
+/// 一次进度快照。[total] == 0 表示该阶段总量未知（只报「活着 + 已处理数」）。
+class AnkiMediaDedupProgress {
+  const AnkiMediaDedupProgress({
+    required this.stage,
+    this.done = 0,
+    this.total = 0,
+    this.currentFile,
+    this.bytesFreed = 0,
+  });
+
+  final AnkiMediaDedupStage stage;
+
+  /// 当前阶段已完成的条目数。
+  final int done;
+
+  /// 当前阶段总条目数（0 = 未知）。
+  final int total;
+
+  /// 正在处理的文件名（hashing / resolving 阶段有值）。
+  final String? currentFile;
+
+  /// 已释放（干跑 = 将释放）的累计字节数。
+  final int bytesFreed;
+}
+
+/// 进度回调：每个文件/副本边界同步触发一次，实现必须轻量（UI 侧只该更新一个
+/// ValueNotifier）。
+typedef AnkiMediaDedupOnProgress = void Function(
+    AnkiMediaDedupProgress progress);
+
 /// 一轮去重的结果汇总（UI 报告 + 日志）。
 class AnkiMediaDedupReport {
   const AnkiMediaDedupReport({
@@ -158,6 +204,7 @@ class AnkiMediaDedupReport {
     required this.notesRewritten,
     required this.modelsRewritten,
     required this.skipped,
+    this.cancelled = false,
   });
 
   /// true = 只扫描规划，没有改写/删除任何东西。
@@ -178,6 +225,10 @@ class AnkiMediaDedupReport {
   /// 因引用清不干净等原因跳过删除的副本数（宁可留着也不冒险）。
   final int skipped;
 
+  /// true = 用户中途取消，数字只统计取消前已完成的部分；已做的改写/删除
+  /// 保留（引用永远先改指保留份，任何时刻停下都不会出现悬空引用）。
+  final bool cancelled;
+
   /// 实际删除（[dryRun] 时 = 将会删除）的多余副本数。
   int get duplicatesRemoved => deletions.length;
 
@@ -193,6 +244,7 @@ class AnkiMediaDedupReport {
         'notesRewritten': notesRewritten,
         'modelsRewritten': modelsRewritten,
         'skipped': skipped,
+        'cancelled': cancelled,
         'deletions': deletions
             .map((MediaDedupDeletion d) => d.toJson())
             .toList(growable: false),

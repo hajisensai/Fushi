@@ -97,8 +97,9 @@ Map<String, PlanSubtitle> pairSubtitlesToVideos(
 
   // 规则 ②：恰好 1v1 且任一方集号缺失（双方都有但不等 → 规则 ③ 不配）。
   if (out.isEmpty && videoAbsolutePaths.length == 1 && subtitles.length == 1) {
-    final int? videoEp =
-        parseVideoFilename(p.basename(videoAbsolutePaths.first)).episode;
+    final int? videoEp = parseVideoFilename(
+      p.basename(videoAbsolutePaths.first),
+    ).episode;
     final int? subEp = subtitles.first.episode;
     if (videoEp == null || subEp == null) {
       out[videoAbsolutePaths.first] = subtitles.first;
@@ -158,11 +159,13 @@ class AnimeDownloadService {
 
   /// 默认后端工厂：外接 qBittorrent WebUI（AppModel 不传工厂时走这里）。
   static TorrentBackend _defaultBackendFactory(QbConnectionConfig config) {
-    return QbTorrentBackend(QBittorrentClient(
-      baseUrl: config.baseUrl,
-      username: config.username,
-      password: config.password,
-    ));
+    return QbTorrentBackend(
+      QBittorrentClient(
+        baseUrl: config.baseUrl,
+        username: config.username,
+        password: config.password,
+      ),
+    );
   }
 
   final AnimeDownloadPlanStore store;
@@ -196,6 +199,9 @@ class AnimeDownloadService {
 
   Timer? _timer;
   bool _ticking = false;
+  final Map<String, Future<void>> _planOperationTails =
+      <String, Future<void>>{};
+  final Map<String, Future<bool>> _importNowInFlight = <String, Future<bool>>{};
 
   /// 下载中计划的实时进度（planId → 0.0~1.0），每轮 tick 从后端快照
   /// [TorrentSnapshot.progress] 透传（服务本就轮询 listTorrents，UI 不再另建
@@ -239,11 +245,26 @@ class AnimeDownloadService {
 
   /// 边下边播（提前入库）：不等种子完成，立刻按计划入库。顺序下载模式下视频
   /// 从下载初期即可顺序播放；还没下到的集在库里表现为缺失态，下载补齐后自然
-  /// 可播。成功后计划标 imported，完成轮询自然跳过，不会重复入库。
+  /// 可播。成功后只标 [AnimeDownloadPlan.importedEarly]，计划仍保持 downloading，
+  /// 继续轮询真实进度；真正完成后才转 imported，且不会重复导入视频。
   ///
   /// 预检种子元数据已解析出视频文件（磁力刚添加时文件列表为空——此时直接
   /// 返回 false 且**不动计划状态**，避免误标 failed）。返回 true = 已入库。
-  Future<bool> importNow(String planId) async {
+  Future<bool> importNow(String planId) {
+    final Future<bool>? existing = _importNowInFlight[planId];
+    if (existing != null) return existing;
+    late final Future<bool> operation;
+    operation = _runPlanSerial<bool>(planId, () => _importNowUnlocked(planId))
+        .whenComplete(() {
+      if (identical(_importNowInFlight[planId], operation)) {
+        _importNowInFlight.remove(planId);
+      }
+    });
+    _importNowInFlight[planId] = operation;
+    return operation;
+  }
+
+  Future<bool> _importNowUnlocked(String planId) async {
     final QbConnectionConfig? config = _configProvider();
     if (config == null || !config.isConfigured) return false;
     final List<AnimeDownloadPlan> plans = await store.loadAll();
@@ -271,10 +292,21 @@ class AnimeDownloadService {
       if (info == null) return false;
       // 预检：元数据未解析（文件列表还空）时不入库、不动计划状态。
       final List<TorrentFileEntry> files = await client.listFiles(info.hash);
-      final (List<String> v, List<String> b) =
-          _classifyContent(plan, info, files);
-      if (v.isEmpty && b.isEmpty) return false;
-      await _finishPlan(client, plan, info);
+      final (List<String> videos, _) = _classifyContent(plan, info, files);
+      if (videos.isEmpty) return false;
+      if (!info.isComplete) {
+        _publishProgress(<String, double>{
+          ...downloadProgress.value,
+          plan.id: info.progress.clamp(0.0, 1.0).toDouble(),
+        });
+      }
+      await _finishPlan(
+        client,
+        plan,
+        info,
+        keepDownloading: !info.isComplete,
+        importBooks: info.isComplete,
+      );
     } catch (_) {
       return false;
     } finally {
@@ -283,10 +315,51 @@ class AnimeDownloadService {
     final List<AnimeDownloadPlan> after = await store.loadAll();
     for (final AnimeDownloadPlan p in after) {
       if (p.id == planId) {
-        return p.status == AnimeDownloadPlan.statusImported;
+        return p.status == AnimeDownloadPlan.statusImported || p.importedEarly;
       }
     }
     return false;
+  }
+
+  /// 删除计划并在后端支持时真实取消种子。与 importNow/tick 共用 per-plan
+  /// 串行边界，避免「删除后旧 tick 晚回又 save 把计划复活」。
+  Future<bool> deletePlan(String planId, {bool deleteFiles = false}) =>
+      _runPlanSerial<bool>(planId, () async {
+        final QbConnectionConfig? config = _configProvider();
+        if (config != null && config.isConfigured) {
+          final TorrentBackend backend = _backendFactory(config);
+          try {
+            if (backend is TorrentRemovalBackend) {
+              await backend.removeTorrent(planId, deleteFiles: deleteFiles);
+            }
+          } finally {
+            backend.close();
+          }
+        }
+        await store.delete(planId);
+        return !(await store.loadAll()).any(
+          (AnimeDownloadPlan plan) => plan.id == planId,
+        );
+      });
+
+  Future<T> _runPlanSerial<T>(
+    String planId,
+    Future<T> Function() operation,
+  ) async {
+    final Future<void> previous =
+        _planOperationTails[planId] ?? Future<void>.value();
+    final Completer<void> done = Completer<void>();
+    final Future<void> tail = done.future;
+    _planOperationTails[planId] = tail;
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      done.complete();
+      if (identical(_planOperationTails[planId], tail)) {
+        _planOperationTails.remove(planId);
+      }
+    }
   }
 
   Future<void> _tickOnce() async {
@@ -322,29 +395,60 @@ class AnimeDownloadService {
       final Map<String, double> progressNext = <String, double>{
         for (final AnimeDownloadPlan plan in pending)
           if (byHash[plan.id.toLowerCase()] case final TorrentSnapshot info
-              when !info.isComplete)
+              when !info.isComplete && !info.isFailure)
             plan.id: info.progress.clamp(0.0, 1.0).toDouble(),
       };
       _publishProgress(progressNext);
 
       for (final AnimeDownloadPlan plan in pending) {
         final TorrentSnapshot? info = byHash[plan.id.toLowerCase()];
-        if (info == null) {
-          // 用户在 qb 里删了种子：超时标 failed，否则等下轮（可能刚添加还没上列表）。
-          if (nowMs - plan.createdAtMs > torrentMissingTimeout.inMilliseconds) {
-            await store.save(plan.copyWith(
-              status: AnimeDownloadPlan.statusFailed,
-              failReason: 'torrent missing',
-            ));
+        await _runPlanSerial<void>(plan.id, () async {
+          final AnimeDownloadPlan? current = await _loadDownloadingPlan(
+            plan.id,
+          );
+          if (current == null) return;
+          if (info == null) {
+            // 用户在后端删了种子：超时才失败，否则等下轮（可能刚添加还没上列表）。
+            // 这条写路径也必须处于 per-plan 串行边界；否则 deletePlan 删完 JSON 后，
+            // 旧 tick 仍可能拿着 stale plan 晚回 save，把已删任务复活。
+            if (nowMs - current.createdAtMs >
+                torrentMissingTimeout.inMilliseconds) {
+              await store.save(
+                current.copyWith(
+                  status: AnimeDownloadPlan.statusFailed,
+                  failReason: 'torrent missing',
+                ),
+              );
+            }
+            return;
           }
-          continue;
-        }
-        if (!info.isComplete) continue;
-        await _finishPlan(client, plan, info);
+          if (info.isFailure) {
+            await store.save(
+              current.copyWith(
+                status: AnimeDownloadPlan.statusFailed,
+                failReason: 'torrent backend state: ${info.state}',
+                importInProgress: false,
+              ),
+            );
+            return;
+          }
+          if (!info.isComplete) return;
+          await _finishPlan(client, current, info);
+        });
       }
     } finally {
       client.close();
     }
+  }
+
+  Future<AnimeDownloadPlan?> _loadDownloadingPlan(String planId) async {
+    for (final AnimeDownloadPlan plan in await store.loadAll()) {
+      if (plan.id == planId &&
+          plan.status == AnimeDownloadPlan.statusDownloading) {
+        return plan;
+      }
+    }
+    return null;
   }
 
   /// 按计划 [AnimeDownloadPlan.contentKind] 把已完成文件分流成（视频, 书）两组
@@ -368,16 +472,25 @@ class AnimeDownloadService {
     }
   }
 
-  /// 单个计划的完成处理：按内容类型分流 → 视频落 sidecar + 视频库入库、书走
-  /// 阅读库入库 → 状态落盘（任一入库成功即 imported；全失败 failed，不重试）。
+  /// 单个计划的处理：按内容类型分流 → 视频落 sidecar + 视频库入库、书走
+  /// 阅读库入库 → 状态落盘。
+  ///
+  /// [keepDownloading] 只用于「边下边播」：视频入库成功后记录
+  /// [AnimeDownloadPlan.importedEarly]，但保留 downloading 状态与进度轮询。真实
+  /// 完成 tick 再进来时跳过重复视频导入，只补书籍分流并把状态转 imported。
   Future<void> _finishPlan(
     TorrentBackend client,
     AnimeDownloadPlan plan,
-    TorrentSnapshot info,
-  ) async {
+    TorrentSnapshot info, {
+    bool keepDownloading = false,
+    bool importBooks = true,
+  }) async {
     final List<TorrentFileEntry> files = await client.listFiles(info.hash);
-    final (List<String> videos, List<String> books) =
-        _classifyContent(plan, info, files);
+    final (List<String> videos, List<String> books) = _classifyContent(
+      plan,
+      info,
+      files,
+    );
 
     AnimeDownloadImportOutcome? outcome;
     int booksImported = 0;
@@ -391,15 +504,22 @@ class AnimeDownloadService {
     if (videos.isNotEmpty) {
       resolved = await _resolveSubtitles(plan, videos);
       await _placeSidecars(videos, resolved.subtitles);
-      try {
-        outcome = await _importer(resolved, videos);
-      } catch (e) {
-        importError = 'video import failed: $e';
+      if (!plan.importedEarly) {
+        resolved = resolved.copyWith(importInProgress: true);
+        if (await store.save(resolved)) {
+          try {
+            outcome = await _importer(resolved, videos);
+          } catch (e) {
+            importError = 'video import failed: $e';
+          }
+        } else {
+          importError = 'video import marker persist failed';
+        }
       }
     }
 
     // 书：走阅读库入库回调（epub）。
-    if (books.isNotEmpty) {
+    if (importBooks && books.isNotEmpty) {
       final Future<int?> Function(AnimeDownloadPlan, List<String>)?
           bookImporter = _bookImporter;
       if (bookImporter == null) {
@@ -413,17 +533,37 @@ class AnimeDownloadService {
       }
     }
 
-    final bool imported = outcome != null || booksImported > 0;
+    if (keepDownloading) {
+      // 提前入库失败不应把仍在正常下载的任务标成 failed；保留下载状态，用户可
+      // 稍后再试。字幕解析结论仍落盘，避免下一次重复网络决策。
+      await store.save(
+        resolved.copyWith(
+          importedEarly: outcome != null || plan.importedEarly,
+          collectionId: outcome?.collectionId,
+          importInProgress: false,
+        ),
+      );
+      return;
+    }
+
+    final bool imported =
+        plan.importedEarly || outcome != null || booksImported > 0;
     if (imported) {
-      await store.save(resolved.copyWith(
-        status: AnimeDownloadPlan.statusImported,
-        collectionId: outcome?.collectionId,
-      ));
+      await store.save(
+        resolved.copyWith(
+          status: AnimeDownloadPlan.statusImported,
+          collectionId: outcome?.collectionId,
+          importInProgress: false,
+        ),
+      );
     } else {
-      await store.save(resolved.copyWith(
-        status: AnimeDownloadPlan.statusFailed,
-        failReason: importError ?? 'import failed',
-      ));
+      await store.save(
+        resolved.copyWith(
+          status: AnimeDownloadPlan.statusFailed,
+          failReason: importError ?? 'import failed',
+          importInProgress: false,
+        ),
+      );
     }
   }
 
@@ -452,8 +592,10 @@ class AnimeDownloadService {
       );
     }
     try {
-      final ResolvedPlanSubtitles result =
-          await resolver(plan, videoAbsolutePaths);
+      final ResolvedPlanSubtitles result = await resolver(
+        plan,
+        videoAbsolutePaths,
+      );
       if (result.subtitles.isEmpty) {
         return plan.copyWith(
           subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
@@ -490,8 +632,10 @@ class AnimeDownloadService {
     List<String> videoAbsolutePaths,
     List<PlanSubtitle> subtitles,
   ) async {
-    final Map<String, PlanSubtitle> pairs =
-        pairSubtitlesToVideos(videoAbsolutePaths, subtitles);
+    final Map<String, PlanSubtitle> pairs = pairSubtitlesToVideos(
+      videoAbsolutePaths,
+      subtitles,
+    );
     for (final MapEntry<String, PlanSubtitle> entry in pairs.entries) {
       try {
         final File target = File(sidecarPathFor(entry.key, entry.value));

@@ -351,6 +351,19 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          // 列表标题与下方 _LanDiscoveryWidget 的「局域网设备」同级对齐：section 标题
+          // 「连接到其他设备」罩着两个 widget，此前本列表裸露无题，空列表时更是只剩一个
+          // 孤零零的「添加」按钮，用户不知道这块是什么、该怎么连。
+          Text(t.interconnect_peer_list_title,
+              style: theme.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          if (_urls.isEmpty)
+            Text(
+              t.interconnect_peer_list_empty,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
           if (_urls.isNotEmpty)
             // 自实现的 HibikiReorderableColumn 而非 SDK ReorderableListView：
             // 整棵树活在 HibikiAppUiScale 的 Transform.scale 之下，而 SDK 的

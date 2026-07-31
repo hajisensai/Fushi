@@ -10,6 +10,9 @@ class _RecordingAnkiConnectService extends AnkiConnectService {
   final List<Map<String, String>> addedNotes = <Map<String, String>>[];
 
   @override
+  Future<bool> mediaFileExists(String filename) async => false;
+
+  @override
   Future<void> storeMediaFile({
     required String filename,
     String? data,
@@ -26,6 +29,7 @@ class _RecordingAnkiConnectService extends AnkiConnectService {
     List<String>? tags,
     Map<String, String>? mediaFiles,
     bool allowDuplicate = false,
+    AnkiDuplicateScope duplicateScope = AnkiDuplicateScope.deck,
   }) async {
     addedNotes.add(Map<String, String>.from(fields));
     return addedNotes.length;

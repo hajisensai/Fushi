@@ -18,9 +18,11 @@ class _FakeClient extends MokuroMoeClient {
 
   final List<MokuroMoeSeries> library;
   Exception? libraryError;
+  int fetchCalls = 0;
 
   @override
   Future<List<MokuroMoeSeries>> fetchLibrary() async {
+    fetchCalls++;
     final Exception? error = libraryError;
     if (error != null) throw error;
     return library;
@@ -102,6 +104,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('よつばと!'), findsOneWidget);
     expect(find.text('ヨコハマ買い出し紀行'), findsNothing);
+    q.queue.dispose();
+  });
+
+  testWidgets('来源关闭时不请求目录，正文显示开启提示', (WidgetTester tester) async {
+    final q = makeQueue();
+    final _FakeClient client = _FakeClient(_library);
+    await tester.pumpWidget(wrap(MokuroMoeCatalogDialog(
+      db: db,
+      clientOverride: client,
+      queueOverride: q.queue,
+      enabledOverride: false,
+    )));
+    await tester.pumpAndSettle();
+
+    expect(client.fetchCalls, 0);
+    expect(find.text(t.manga_online_source_disabled), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
     q.queue.dispose();
   });
 

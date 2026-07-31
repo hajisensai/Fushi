@@ -282,6 +282,13 @@ class ShortcutDefaults {
     ShortcutAction.videoResetSpeed: _kb([
       _key(LogicalKeyboardKey.backspace),
     ]),
+    // 按住临时倍速（对齐手机长按画面）：默认裸 E——video co-active 组内空闲
+    // （A/J=快退、D/I=快进、C/S/F/M/L/B/H/R/Z/X/P 等均已占用），且在 WASD 手位旁
+    // 便于长按。键盘-only：手柄绑定退化成翻转语义（按一下开/再按恢复），默认不绑，
+    // 用户可在设置里自绑。
+    ShortcutAction.videoHoldSpeed: _kb([
+      _key(LogicalKeyboardKey.keyE),
+    ]),
     ShortcutAction.videoPreviousFrame: _kb([
       _key(LogicalKeyboardKey.comma),
     ]),

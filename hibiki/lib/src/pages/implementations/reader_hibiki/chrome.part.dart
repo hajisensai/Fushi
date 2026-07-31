@@ -164,8 +164,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // BUG-1218：真实路径保留大小写（越界判据仍走 canonicalize），否则大小写敏感
     // 平台上图片查看器/分享取不到 EPUB 内插图。
     final String joined = p.join(_extractDir!, epubPath);
-    if (!p.isWithin(
-        p.canonicalize(_extractDir!), p.canonicalize(joined))) {
+    if (!p.isWithin(p.canonicalize(_extractDir!), p.canonicalize(joined))) {
       return null;
     }
     final String filePath = p.normalize(joined);
@@ -439,102 +438,135 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       return;
     }
 
+    // BUG-1236：这里必须是非模态 OverlayEntry。showMenu 会 push 带全屏
+    // ModalBarrier 的 PopupRoute，菜单在场时 WebView 里的选区手柄收不到触摸。
+    _selectionActionData = data;
+    if (_selectionActionBarEntry != null) {
+      _selectionActionBarEntry!.markNeedsBuild();
+      return;
+    }
+    final OverlayState? overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    final OverlayEntry entry = OverlayEntry(
+      builder: (BuildContext overlayContext) =>
+          _buildSelectionActionBar(overlayContext),
+    );
+    _selectionActionBarEntry = entry;
+    overlay.insert(entry);
+  }
+
+  void _removeSelectionActionBar() {
+    _selectionActionBarEntry
+      ?..remove()
+      ..dispose();
+    _selectionActionBarEntry = null;
+    _selectionActionData = null;
+  }
+
+  Widget _buildSelectionActionBar(BuildContext overlayContext) {
+    final ReaderSelectionData? data = _selectionActionData;
+    if (data == null) return const SizedBox.shrink();
+
+    final RenderBox? overlayBox =
+        Overlay.of(overlayContext).context.findRenderObject() as RenderBox?;
+    if (overlayBox == null || !overlayBox.hasSize) {
+      return const SizedBox.shrink();
+    }
+    final Size overlaySize = overlayBox.size;
+    final double menuScale = _readerImageMenuScale;
+    final double barHeight = kMinInteractiveDimension * menuScale;
+    const double gap = 8;
+    const double handleReserve = 32 + gap;
+
     final RenderBox? webBox =
         _webViewKey.currentContext?.findRenderObject() as RenderBox?;
     final Map<String, double>? r = data.rect;
-    // Anchor just below the selection's start glyph (WebView-local coords).
-    final Offset localAnchor = r != null
-        ? Offset(r['x'] ?? 0, (r['y'] ?? 0) + (r['height'] ?? 0))
-        : Offset(
-            MediaQuery.of(context).size.width / 2,
-            MediaQuery.of(context).size.height / 2,
-          );
-    final Offset global = webBox?.localToGlobal(localAnchor) ?? localAnchor;
-    final RenderBox overlay =
-        Overlay.of(context).context.findRenderObject()! as RenderBox;
-    final Offset anchor = overlay.globalToLocal(global);
-    final double menuScale = _readerImageMenuScale;
+    double selectionTop;
+    double selectionBottom;
+    if (r != null && webBox != null) {
+      final Offset topGlobal = webBox.localToGlobal(
+        Offset(r['x'] ?? 0, r['y'] ?? 0),
+      );
+      selectionTop = overlayBox.globalToLocal(topGlobal).dy;
+      selectionBottom = selectionTop + (r['height'] ?? 0);
+    } else {
+      selectionTop = overlaySize.height / 2;
+      selectionBottom = selectionTop;
+    }
 
-    // TODO-1366: mobile drag-select "export clip" -- same gate (book has audio
-    // cues) and same backend as the desktop right-click / native ActionMode
-    // menus, driven from the app-drawn selection payload instead of a native
-    // selection (mobile touch never builds one, TODO-1279).
+    double top = selectionTop - gap - barHeight;
+    if (top < gap) {
+      top = selectionBottom + handleReserve;
+    }
+    top = top.clamp(
+      gap,
+      (overlaySize.height - barHeight - gap).clamp(gap, double.infinity),
+    );
+
     final bool hasAudio = _audiobookController != null &&
         _audiobookController!.chapterCueCount > 0;
-    final List<PopupMenuEntry<String>> items = <PopupMenuEntry<String>>[
-      PopupMenuItem<String>(
-        value: 'search',
-        height: kMinInteractiveDimension * menuScale,
-        padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(Icons.search_outlined, size: 18.0 * menuScale),
-            SizedBox(width: 12.0 * menuScale),
-            Text(t.search, style: TextStyle(fontSize: 14.0 * menuScale)),
-          ],
-        ),
-      ),
-      PopupMenuItem<String>(
-        value: 'copy',
-        height: kMinInteractiveDimension * menuScale,
-        padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(Icons.copy_outlined, size: 18.0 * menuScale),
-            SizedBox(width: 12.0 * menuScale),
-            Text(t.copy, style: TextStyle(fontSize: 14.0 * menuScale)),
-          ],
-        ),
-      ),
-      // BUG-854：选区菜单补「收藏」——与桌面底栏 / 查词弹窗顶栏的收藏句子
-      // （`_toggleFavoriteSentence`）同一后端，仅入口不同。触屏从不建原生选区
-      // （TODO-1279），旧菜单只有查词 / 复制 / 导出，无从收藏当前句；此项填平缺口。
-      PopupMenuItem<String>(
-        value: 'favorite',
-        height: kMinInteractiveDimension * menuScale,
-        padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(Icons.star_border, size: 18.0 * menuScale),
-            SizedBox(width: 12.0 * menuScale),
-            Text(t.action_favorite,
-                style: TextStyle(fontSize: 14.0 * menuScale)),
-          ],
-        ),
-      ),
-      if (hasAudio)
-        PopupMenuItem<String>(
-          value: 'export',
-          height: kMinInteractiveDimension * menuScale,
-          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+    final ThemeData theme = Theme.of(overlayContext);
+
+    Widget button(IconData icon, String label, String action) {
+      return InkWell(
+        onTap: () => _runSelectionAction(action),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: 12.0 * menuScale,
+            vertical: 10.0 * menuScale,
+          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.movie_creation_outlined, size: 18.0 * menuScale),
-              SizedBox(width: 12.0 * menuScale),
-              Text(t.audiobook_export_clip,
-                  style: TextStyle(fontSize: 14.0 * menuScale)),
+              Icon(icon, size: 18.0 * menuScale),
+              SizedBox(width: 8.0 * menuScale),
+              Text(label, style: TextStyle(fontSize: 14.0 * menuScale)),
             ],
           ),
         ),
-    ];
+      );
+    }
 
-    final String? action = await showMenu<String>(
-      context: context,
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
-        Offset.zero & overlay.size,
+    return Positioned(
+      left: gap,
+      right: gap,
+      top: top,
+      child: Align(
+        alignment: Alignment.center,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Material(
+            elevation: 6,
+            color: theme.popupMenuTheme.color ??
+                theme.colorScheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(8.0 * menuScale),
+            clipBehavior: Clip.antiAlias,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                button(Icons.search_outlined, t.search, 'search'),
+                button(Icons.copy_outlined, t.copy, 'copy'),
+                if (isAndroidPlatform)
+                  button(Icons.share_outlined, t.share, 'share'),
+                if (isAndroidPlatform)
+                  button(Icons.travel_explore, t.selection_web_search,
+                      'webSearch'),
+                button(Icons.star_border, t.action_favorite, 'favorite'),
+                if (hasAudio)
+                  button(Icons.movie_creation_outlined, t.audiobook_export_clip,
+                      'export'),
+              ],
+            ),
+          ),
+        ),
       ),
-      constraints: BoxConstraints(
-        minWidth: 112.0 * menuScale,
-        maxWidth: 280.0 * menuScale,
-      ),
-      menuPadding: EdgeInsets.symmetric(vertical: 8.0 * menuScale),
-      items: items,
     );
+  }
+
+  Future<void> _runSelectionAction(String action) async {
+    final ReaderSelectionData? data = _selectionActionData;
+    if (data == null) return;
+    _removeSelectionActionBar();
     if (!mounted) return;
     switch (action) {
       case 'search':
@@ -550,6 +582,22 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       case 'copy':
         await Clipboard.setData(ClipboardData(text: data.text));
         HibikiToast.show(msg: t.copied_to_clipboard);
+        await _clearReaderAppSelection();
+        return;
+      case 'share':
+        final bool shared =
+            await SelectionExternalActions.instance.shareText(data.text);
+        if (mounted && !shared) {
+          HibikiToast.show(msg: t.selection_share_failed);
+        }
+        await _clearReaderAppSelection();
+        return;
+      case 'webSearch':
+        final bool opened =
+            await SelectionExternalActions.instance.searchWeb(data.text);
+        if (mounted && !opened) {
+          HibikiToast.show(msg: t.selection_web_search_unavailable);
+        }
         await _clearReaderAppSelection();
         return;
       case 'favorite':
@@ -568,11 +616,6 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         await _clearReaderAppSelection();
         return;
       default:
-        // TODO-1366: dismissing the menu no longer cancels the selection -- keep
-        // the highlight + grips live so the user can drag a handle to adjust the
-        // range and re-open the menu (lookup only on an explicit confirm). Any
-        // later tap clears it: tap on text -> selectText clears + looks up; tap
-        // on empty -> onTapEmpty -> _clearReaderAppSelection.
         return;
     }
   }
@@ -581,6 +624,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   // without touching any native selection. Best-effort: a half-torn-down WebView
   // throws MissingPluginException on eval; swallow it (nothing to clear).
   Future<void> _clearReaderAppSelection() async {
+    _removeSelectionActionBar();
     try {
       await _controller?.evaluateJavascript(
         source: ReaderSelectionScripts.clearInvocation(),
@@ -712,6 +756,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   /// 整段拖选区间，隐藏它们但保留收敛后的查词高亮供弹窗用。半销毁 WebView 上 eval 抛异常，
   /// 吞掉（无手柄可隐藏）。
   Future<void> _hideReaderSelectionHandles() async {
+    _removeSelectionActionBar();
     try {
       await _controller?.evaluateJavascript(
         source: 'window.hoshiSelection.hideSelectionHandles()',
@@ -1063,9 +1108,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   /// 处理 → VN 点击推进到章末就卡住。现在走 [_paginate] 这个唯一翻页入口，跨章
   /// （[_handlePageTurnLimit]）/ 节流 / caret 重锚全部与滑动、键盘路径一致。
   ///
-  /// **悬浮态下唤栏不吃掉这一下的翻页**（见 [readerVnBlankTapAction] 的长注释）：底栏
-  /// 的自动收起计时是在用户读这一屏时走完的，若「不可见就只唤栏」，慢读的人每屏都要点
-  /// 两下——那比原来的「菜单叫不出来」被撞到得更频繁。
+  /// BUG-1245：悬浮底栏已隐藏时，这一下只唤栏、不推进。用户看到“底栏出来”的同时
+  /// 丢掉当前句属于双重副作用；底栏已经可见时，下一次空白点击才推进。
   void _handleVnBlankTap() {
     if (_lyricsMode) return;
     // 与 onTapEmpty 同语义：有可见查词弹窗时，本次点击只清弹窗栈（BUG-072 续播 /
@@ -1079,18 +1123,16 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // 本次 pointer 手势把 OS 焦点交给了 WebView，不夺回 Flutter _focusNode 就收不到
     // ESC（BUG-136）。翻页与唤栏两条分支都要。
     _focusOwnership.reclaim(FocusReclaimCause.gesture);
-    switch (readerVnBlankTapAction(
-      chromeExpanded: _showChrome,
-      bottomBarFloating: _bottomBarFloating,
-    )) {
-      case ReaderVnBlankTapAction.expandChrome:
-        _toggleChrome();
-      case ReaderVnBlankTapAction.advanceAndRevealChrome:
-        _revealFloatingChromeForVnAdvance();
-        unawaited(_paginate(ReaderNavigationDirection.forward));
-      case ReaderVnBlankTapAction.advance:
-        unawaited(_paginate(ReaderNavigationDirection.forward));
-    }
+    dispatchReaderVnBlankTapAction(
+      readerVnBlankTapAction(
+        chromeExpanded: _showChrome,
+        bottomBarFloating: _bottomBarFloating,
+        transientVisible: _chromeTransientVisible,
+      ),
+      expandChrome: _toggleChrome,
+      revealChrome: _revealFloatingChromeForVnAdvance,
+      advance: () => unawaited(_paginate(ReaderNavigationDirection.forward)),
+    );
   }
 
   /// TODO-693: appUiScale（整体界面缩放）变化时把连续模式阅读位置重锚回原字符，避免
@@ -1517,32 +1559,46 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         epubBook: _book,
         chapterLabel: _currentChapterLabel(),
         onSearchJump: (BookSearchResult result, String query) async {
-          if (_book == null || _controller == null) return;
-          if (result.sectionIndex != _currentChapter) {
-            // TODO-1309：跨章搜索跳转把「章内定位」排进导航的原子恢复链（settle 之后应用），
-            // 不再在 restore 完成微任务里抢发被 settle-reflow / 连续重锚采样冲回章首（双跳，
-            // 首跳只到章节）。去掉旧的首跳失败早退分支——旧代码首跳超时/代际 stale 时会停在
-            // 章首、要点第二次才走「同章直接 restore」才生效；现在定位随恢复落定 settle
-            // 之后由 _applyPendingPreciseLocate 确定性应用。文本命中无法用分数烘进 shell，故走
-            // preciseLocateJs 队列（书签/收藏用 progress 烘进导航）。
-            await _navigateToChapterAndWait(
-              result.sectionIndex,
-              manual: true,
-              preciseLocateJs:
-                  ReaderPaginationScripts.scrollToSearchMatchInvocation(
-                query,
-                result.charOffset,
-              ),
-            );
-            return;
-          }
-          // 同章：章节已 settle，直接定位（既有正常路径，双跳的「第二次点」本就走这里）。
-          await _controller!.evaluateJavascript(
-            source: ReaderPaginationScripts.scrollToSearchMatchInvocation(
-              query,
-              result.charOffset,
-            ),
+          if (!mounted || _book == null || _controller == null) return;
+          final String preciseLocateJs =
+              ReaderPaginationScripts.scrollToSearchMatchInvocation(
+            query,
+            result.charOffset,
           );
+          final ReaderSearchJumpAction action = decideReaderSearchJump(
+            targetChapter: result.sectionIndex,
+            currentChapter: _currentChapter,
+            restoreInFlight: _restoreInFlight,
+            readerContentReady: _readerContentReady,
+          );
+          switch (action) {
+            case ReaderSearchJumpAction.navigate:
+              // TODO-1309：跨章搜索跳转把「章内定位」排进导航的原子恢复链（settle 之后应用），
+              // 不再在 restore 完成微任务里抢发被 settle-reflow / 连续重锚采样冲回章首（双跳，
+              // 首跳只到章节）。去掉旧的首跳失败早退分支——旧代码首跳超时/代际 stale 时会停在
+              // 章首、要点第二次才走「同章直接 restore」才生效；现在定位随恢复落定 settle
+              // 之后由 _applyPendingPreciseLocate 确定性应用。文本命中无法用分数烘进 shell，故走
+              // preciseLocateJs 队列（书签/收藏用 progress 烘进导航）。
+              await _navigateToChapterAndWait(
+                result.sectionIndex,
+                manual: true,
+                preciseLocateJs: preciseLocateJs,
+              );
+              return;
+            case ReaderSearchJumpAction.replacePending:
+              // _currentChapter 在 loadUrl 前就切到逻辑目标章。DOM 尚未 ready 时再次选择
+              // 同章结果，必须更新本导航代际的 pending；直接 evaluate 会命中旧 DOM，
+              // 且首条 pending 会在 restore settle 后反过来覆盖用户最后一次选择。
+              _preciseLocateQueue.replace(
+                generation: _navigateGeneration,
+                js: preciseLocateJs,
+              );
+              return;
+            case ReaderSearchJumpAction.evaluateNow:
+              // 同章且 DOM 已 settle：直接定位（既有正常路径）。
+              await _controller!.evaluateJavascript(source: preciseLocateJs);
+              return;
+          }
         },
         favoriteSentences: favorites,
         favoritePositionLabel: _favoritePositionLabel,

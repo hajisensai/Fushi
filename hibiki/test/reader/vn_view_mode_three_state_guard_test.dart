@@ -262,9 +262,10 @@ void main() {
           );
         }
         expect(
-          vnScripts.contains("callHandler('onRestoreComplete')"),
+          _hasGenerationAwareRestoreCall(vnScripts),
           isTrue,
-          reason: 'VN restore must forward to onRestoreComplete handler',
+          reason: 'VN restore must forward handler + perf placeholder + the '
+              'document navigation generation',
         );
         // The live native bridge CALL must be gone (the bridge name may still
         // appear in explanatory comments, so scan comment-stripped code).
@@ -336,4 +337,11 @@ String _stripLineComments(String source) {
     final int idx = line.indexOf('//');
     return idx >= 0 ? line.substring(0, idx) : line;
   }).join('\n');
+}
+
+bool _hasGenerationAwareRestoreCall(String source) {
+  return RegExp(
+    r"callHandler\(\s*'onRestoreComplete'\s*,\s*null\s*,\s*"
+    r'C\.navigationGeneration\s*\)',
+  ).hasMatch(_stripLineComments(source));
 }

@@ -83,5 +83,11 @@ final class FloatingDictPluginRegistrant {
         } catch (Exception e) {
             Log.e(TAG, "Error registering plugin url_launcher_android", e);
         }
+        try {
+            flutterEngine.getPlugins().add(
+                new dev.fluttercommunity.plus.share.SharePlusPlugin());
+        } catch (Exception e) {
+            Log.e(TAG, "Error registering plugin share_plus", e);
+        }
     }
 }

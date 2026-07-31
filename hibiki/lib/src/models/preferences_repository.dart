@@ -243,7 +243,8 @@ class PreferencesRepository extends ChangeNotifier {
   // ── dictionary auto-update (TODO-861③, ported from Hoshi 94d0c41) ────
   //
   // 启动时 check-due 自动更新词典。interval 存 enum `.name`（daily/weekly/monthly），
-  // lastUpdate 存 ISO8601 字符串（'' = 从未更新）。默认 autoUpdate=false（opt-in，
+  // lastUpdate 存上次完整成功检查的 ISO8601 字符串（'' = 从未成功检查）。沿用既有
+  // 持久化 key 兼容旧数据。默认 autoUpdate=false（opt-in，
   // 向后兼容，不在升级后静默联网/自动下载重导词典；用户须主动开启）、weekly。
   // MVP 只做启动 check-due，无计费网络门控（本仓库无 connectivity 依赖）。
 
@@ -264,7 +265,7 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 上次成功更新时间（ISO8601）；解析失败/未设 → null（= 从未更新）。
+  /// 上次完整成功检查时间（ISO8601）；解析失败/未设 → null（= 从未成功检查）。
   DateTime? get lastDictionaryUpdateAt {
     final String raw =
         getPref('last_dictionary_update_at', defaultValue: '') as String;
@@ -1828,6 +1829,16 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Whether the mokuro.moe internet catalog participates in manga browsing.
+  /// Defaults to true to preserve the pre-source-toggle behaviour.
+  bool get mangaOnlineCatalogEnabled =>
+      getPref('manga_online_catalog_enabled', defaultValue: true) as bool;
+
+  Future<void> setMangaOnlineCatalogEnabled(bool value) async {
+    await setPref('manga_online_catalog_enabled', value);
+    notifyListeners();
+  }
+
   // 旧版单框 Gemini 云端识别的三对 getter/setter（`manga_cloud_ocr_enabled` /
   // `manga_cloud_ocr_api_key` / `manga_cloud_ocr_model`）随 PR#474 删掉框选补扫
   // 实现后已零消费方，本轮一并清掉（BUG-1164）。
@@ -1843,9 +1854,9 @@ class PreferencesRepository extends ChangeNotifier {
   // 游戏**的原生分辨率：同一个人手上既有 800×600 的老 gal，也有本身就 1080p 的新作。
   // 档位已改为每游戏一档，存在 galgame 库那一行（`galgames.upscaling_mode`）。
   //
-  // ⚠️ 存量设备里可能写过的 `galgame_magpie_upscaling_mode` 行**不删也不迁移**：
-  // 全局值没法映射成「每个游戏各自开不开」，硬迁移只会让一批游戏被莫名其妙打开超分。
-  // 新结构一律从「关闭」起步，用户按游戏自己开。
+  // v63 精确删除存量 `galgame_magpie_upscaling_mode` live 行及其 pref Profile
+  // 副本，不迁移到任何游戏；旧 Profile apply/JSON import 也会拒绝它复活。全局值
+  // 无法映射成「每个游戏各自开不开」，新结构仍一律从关闭起步，用户按游戏自己开。
 
   /// AniList/Nyaa/Jimaku requests: auto (env > enabled system proxy > direct),
   /// explicit direct, or a user-provided host:port proxy.

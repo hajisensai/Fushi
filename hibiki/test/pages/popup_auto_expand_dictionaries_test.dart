@@ -156,6 +156,54 @@ void main() {
             '(legacy getter name, value is the row count)');
   });
 
+  // BUG-1264: the per-dictionary collapse flag (词典管理 行首开关 →
+  // window.collapsedDictionaryNames) is an EXPLICIT per-book decision;
+  // autoExpandRows is a bulk default for books carrying no such decision.
+  // Ranking auto-expand first silently voided the toggle on the leading
+  // rows × columns blocks (3×3 in the shipped default = the first NINE books).
+  // Asserted on all three popup.js mirrors, and read out of the函数体 (not the
+  // whole file) so a stray comment restating the expression can never fake it.
+  test('per-dictionary collapse outranks auto-expand (three mirrors)', () {
+    const Map<String, String> mirrors = <String, String>{
+      'app popup': 'assets/popup/popup.js',
+      'extension vendor (assets)': 'assets/browser_extension/vendor/popup.js',
+      'extension vendor (tools)': '../tools/browser-extension/vendor/popup.js',
+    };
+
+    for (final MapEntry<String, String> mirror in mirrors.entries) {
+      final File file = File(mirror.value);
+      expect(file.existsSync(), isTrue,
+          reason: '${mirror.key}: ${mirror.value} must exist');
+      final String js = file.readAsStringSync();
+
+      final int fn = js.indexOf('function createGlossarySection(');
+      expect(fn, greaterThanOrEqualTo(0),
+          reason: '${mirror.key}: createGlossarySection must exist');
+      // The open decision sits in the first few lines of the body; slice a
+      // window that excludes the leading doc comment entirely.
+      final String body = js.substring(fn, fn + 700);
+
+      expect(
+        body.contains(
+            'if (!perDictCollapsed && (autoExpanded || !window.collapseDictionaries))'),
+        isTrue,
+        reason: '${mirror.key}: the per-dict collapse flag must short-circuit '
+            'the open decision BEFORE auto-expand / the global switch '
+            '(regression: `autoExpanded || (!collapseDictionaries && '
+            '!perDictCollapsed)` made the per-book toggle a no-op for the '
+            'leading rows x columns blocks)',
+      );
+      // The flag itself must still be sourced from the injected name list.
+      expect(
+        body.contains(
+            'const perDictCollapsed = (window.collapsedDictionaryNames || []).includes(dictName)'),
+        isTrue,
+        reason: '${mirror.key}: perDictCollapsed must read the injected '
+            'collapsedDictionaryNames list',
+      );
+    }
+  });
+
   test('preference clamps 0..6 with default 1 (backward compatible)', () {
     final String prefs = File(
       'lib/src/models/preferences_repository.dart',

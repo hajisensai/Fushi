@@ -13,6 +13,9 @@ class JimakuEntryPicker extends StatelessWidget {
     required this.entries,
     required this.selectedEntryId,
     required this.onSelected,
+    this.inventories = const <int, JimakuFileInventory>{},
+    this.loadingEntryIds = const <int>{},
+    this.failedEntryIds = const <int>{},
     this.enabled = true,
     super.key,
   });
@@ -20,6 +23,9 @@ class JimakuEntryPicker extends StatelessWidget {
   final List<JimakuEntry> entries;
   final int? selectedEntryId;
   final ValueChanged<JimakuEntry> onSelected;
+  final Map<int, JimakuFileInventory> inventories;
+  final Set<int> loadingEntryIds;
+  final Set<int> failedEntryIds;
   final bool enabled;
 
   @override
@@ -35,26 +41,11 @@ class JimakuEntryPicker extends StatelessWidget {
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: <Widget>[
-            for (final JimakuEntry entry in entries)
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 320),
-                child: ChoiceChip(
-                  label: Text(
-                    entry.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  tooltip: entry.name,
-                  selected: selectedEntryId == entry.id,
-                  onSelected: enabled ? (_) => onSelected(entry) : null,
-                ),
-              ),
-          ],
-        ),
+        for (final JimakuEntry entry in entries)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _buildEntryChoice(context, entry),
+          ),
         const SizedBox(height: 6),
         Text(
           t.video_jimaku_source_hint,
@@ -62,6 +53,126 @@ class JimakuEntryPicker extends StatelessWidget {
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
       ],
+    );
+  }
+
+  Widget _buildEntryChoice(BuildContext context, JimakuEntry entry) {
+    final ThemeData theme = Theme.of(context);
+    final bool selected = selectedEntryId == entry.id;
+    return Material(
+      key: ValueKey<String>('jimaku_entry_${entry.id}'),
+      color: selected
+          ? theme.colorScheme.secondaryContainer
+          : theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: selected
+              ? theme.colorScheme.primary
+              : theme.colorScheme.outlineVariant,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: enabled ? () => onSelected(entry) : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Icon(
+                  selected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  size: 20,
+                  color: selected
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      entry.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      <String>[
+                        'Jimaku #${entry.id}',
+                        if (entry.anilistId != null)
+                          'AniList #${entry.anilistId}',
+                      ].join(' · '),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    _buildInventorySummary(theme, entry.id),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInventorySummary(ThemeData theme, int entryId) {
+    if (loadingEntryIds.contains(entryId)) {
+      return Row(
+        children: <Widget>[
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 6),
+          Text(t.video_jimaku_source_loading, style: theme.textTheme.bodySmall),
+        ],
+      );
+    }
+    if (failedEntryIds.contains(entryId)) {
+      return Text(
+        t.video_jimaku_source_failed,
+        style:
+            theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+      );
+    }
+    final JimakuFileInventory? inventory = inventories[entryId];
+    if (inventory == null) {
+      return Text(
+        t.video_jimaku_source_hint,
+        style: theme.textTheme.bodySmall
+            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      );
+    }
+    if (inventory.files.isEmpty) {
+      return Text(
+        t.video_jimaku_no_results,
+        style:
+            theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+      );
+    }
+    final String languages = inventory.languages.isEmpty
+        ? t.video_jimaku_language_unknown
+        : inventory.languages.map(jimakuLanguageLabel).join(' / ');
+    return Text(
+      t.video_jimaku_source_summary(
+        files: inventory.files.length,
+        episodes: inventory.episodes.length,
+        languages: languages,
+      ),
+      style: theme.textTheme.bodySmall
+          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
     );
   }
 }

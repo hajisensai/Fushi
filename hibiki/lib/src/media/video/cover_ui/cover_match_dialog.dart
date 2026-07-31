@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;
+import 'package:hibiki/src/media/metadata/credential_redaction.dart'
+    show redactCredentialsInText;
 import 'package:hibiki/src/media/metadata/scrape_failure_view.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
@@ -116,6 +118,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   List<ScrapeCandidate> _results = const <ScrapeCandidate>[];
   bool _searching = false;
   bool _searched = false;
+  int _searchGeneration = 0;
 
   /// 上一次搜索失败的异常（null = 没失败）。BUG-1176：「搜不到」和「搜不了」是两回
   /// 事，失败必须有出口——失败态在结果区显示错误行 + 可行动原因，绝不塌缩成
@@ -130,6 +133,10 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
 
   /// 正在应用的候选（用于在其「使用」按钮上显示转圈；null = 无进行中应用）。
   ScrapeCandidate? _applyingCandidate;
+
+  /// 上一次应用失败的安全详情。应用链可能抛出带请求 URL 的异常，先脱敏再同时送入
+  /// 错误日志与 [ScrapeFailureView]，避免「界面安全、日志仍泄露」的半修复。
+  ({Object error, String detail})? _applyFailure;
 
   @override
   void initState() {
@@ -168,6 +175,8 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   Future<void> _search() async {
     final String keyword = _queryCtrl.text.trim();
     if (keyword.isEmpty) return;
+    final int generation = ++_searchGeneration;
+    final ScrapeSource source = _source;
     // 添加/修改 Bangumi 映射：贴条目 URL = 直接按 id 取该条目改绑（跳过关键词
     // 搜索与 TMDB key 门，无论当前在哪个数据源分段）。
     final String? mappedSubjectId = parseBangumiSubjectUrl(keyword);
@@ -176,6 +185,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
         _searching = true;
         _searched = true;
         _searchFailure = null;
+        _applyFailure = null;
       });
       List<ScrapeCandidate> results = const <ScrapeCandidate>[];
       Object? failure;
@@ -192,7 +202,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
             .log('CoverMatchDialog.fetchBangumiCandidateById', e, stack);
         failure = e;
       }
-      if (!mounted) return;
+      if (!mounted || generation != _searchGeneration) return;
       setState(() {
         _results = results;
         _searching = false;
@@ -201,8 +211,14 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
       return;
     }
     // TMDB 分段但无 key：展开输入行，不搜。
-    if (_source == ScrapeSource.tmdb && _storedTmdbKey().isEmpty) {
-      setState(() => _showTmdbKeyField = true);
+    if (source == ScrapeSource.tmdb && _storedTmdbKey().isEmpty) {
+      setState(() {
+        _showTmdbKeyField = true;
+        _results = const <ScrapeCandidate>[];
+        _searched = false;
+        _searchFailure = null;
+        _applyFailure = null;
+      });
       HibikiToast.show(msg: t.video_scrape_tmdb_key_required);
       return;
     }
@@ -210,17 +226,18 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
       _searching = true;
       _searched = true;
       _searchFailure = null;
+      _applyFailure = null;
     });
     List<ScrapeCandidate> results = const <ScrapeCandidate>[];
     Object? failure;
     try {
-      results = await _searchSource(keyword);
+      results = await _searchSource(keyword, source);
     } catch (e, stack) {
       // 同上：搜索失败与「零结果」必须分开，否则用户以为片名搜不到而放弃重试。
       ErrorLogService.instance.log('CoverMatchDialog.search', e, stack);
       failure = e;
     }
-    if (!mounted) return;
+    if (!mounted || generation != _searchGeneration) return;
     setState(() {
       _results = results;
       _searching = false;
@@ -239,8 +256,11 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
 
   /// TMDB 分段用当前 key 现建 client 搜索（服务注入的 client 可能因启动时无 key 而为
   /// null；此处支持用户中途填入 key 后立即可搜）；其余源走注入的 service。
-  Future<List<ScrapeCandidate>> _searchSource(String keyword) async {
-    if (_source == ScrapeSource.tmdb) {
+  Future<List<ScrapeCandidate>> _searchSource(
+    String keyword,
+    ScrapeSource source,
+  ) async {
+    if (source == ScrapeSource.tmdb) {
       final String key = _storedTmdbKey();
       if (key.isEmpty) return const <ScrapeCandidate>[];
       final TmdbClient client = TmdbClient(apiKey: key);
@@ -253,13 +273,13 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     // 纯数字输入既可能是 Bangumi subject id（用户改绑映射）也可能就是标题
     // （如动画《86》）：两路依次都试，id 直取命中置顶、与同 id 搜索结果去重——
     // 不牺牲任何一种意图。
-    if (_source == ScrapeSource.bangumi && RegExp(r'^\d+$').hasMatch(keyword)) {
+    if (source == ScrapeSource.bangumi && RegExp(r'^\d+$').hasMatch(keyword)) {
       List<ScrapeCandidate> searched = const <ScrapeCandidate>[];
       Object? searchError;
       StackTrace? searchStack;
       try {
         searched = await widget.service
-            .searchCandidates(source: _source, keyword: keyword);
+            .searchCandidates(source: source, keyword: keyword);
       } catch (e, stack) {
         // 单路失败只是降级（另一路还可能有结果），不打扰用户；但要留取证痕迹，
         // 否则「数字关键词结果时多时少」无从查起。
@@ -294,7 +314,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
         ...searched.where((ScrapeCandidate c) => c.entryId != directId),
       ];
     }
-    return widget.service.searchCandidates(source: _source, keyword: keyword);
+    return widget.service.searchCandidates(source: source, keyword: keyword);
   }
 
   MatchConfidence? _confidenceFor(ScrapeCandidate candidate) {
@@ -312,9 +332,10 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     setState(() {
       _applying = true;
       _applyingCandidate = candidate;
+      _applyFailure = null;
     });
     final CoverMatchCollectionTarget? collection = widget.collection;
-    Object? failure;
+    ({Object error, String detail})? failure;
     try {
       if (collection != null) {
         // 合集入口：下载 → 只写合集自有封面列。**刻意不调
@@ -337,10 +358,12 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
         );
       }
     } catch (e, stack) {
-      // 走下方失败分支——绝不吞成静默无反馈。原始原因进错误日志，界面只给
-      // 「失败了 + 大概因为什么」，不把堆栈抛到用户面前。
-      ErrorLogService.instance.log('CoverMatchDialog.applyCandidate', e, stack);
-      failure = e;
+      // 走下方失败分支——绝不吞成静默无反馈。与搜索失败共用完整详情视图；
+      // 日志和界面都只接收同一份脱敏文本，避免异常 URL 的 query 凭据泄露。
+      final String detail = redactCredentialsInText(e.toString());
+      ErrorLogService.instance
+          .log('CoverMatchDialog.applyCandidate', detail, stack);
+      failure = (error: e, detail: detail);
     }
     if (!mounted) return;
     if (failure != null) {
@@ -348,10 +371,8 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
       setState(() {
         _applying = false;
         _applyingCandidate = null;
+        _applyFailure = failure;
       });
-      HibikiToast.show(
-        msg: '${t.video_scrape_apply_failed}\n${_failureReason(failure)}',
-      );
       return;
     }
     // 成功：刷新库页 + 关弹窗 + 成功提示。onApplied 单独 guard，任何异常都不得阻断关闭
@@ -391,6 +412,15 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
             _buildSearchRow(),
             const SizedBox(height: 8),
             _buildSourceSelector(),
+            const SizedBox(height: 6),
+            Text(
+              collection == null
+                  ? t.video_scrape_manual_match_hint
+                  : t.video_scrape_collection_match_hint,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
             if (_showTmdbKeyField) ...<Widget>[
               const SizedBox(height: 8),
               _buildTmdbKeyRow(),
@@ -418,6 +448,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
                     n: widget.collectionMemberUids.length,
                   ),
                 ),
+                subtitle: Text(t.video_scrape_apply_to_collection_hint),
               ),
           ],
         ),
@@ -479,12 +510,20 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
         showSelectedIcon: false,
         onSelectionChanged: (Set<ScrapeSource> selected) {
           final ScrapeSource next = selected.first;
+          if (next == _source) return;
           setState(() {
+            // 切来源只改变搜索目标，不替用户立刻发网络请求。旧来源结果必须同时清空，
+            // 否则 TMDB 无 key 时仍挂着 Bangumi 候选，看起来像「TMDB 也有数据」。
+            _searchGeneration++;
             _source = next;
+            _results = const <ScrapeCandidate>[];
+            _searching = false;
+            _searched = false;
+            _searchFailure = null;
+            _applyFailure = null;
             _showTmdbKeyField =
                 next == ScrapeSource.tmdb && _storedTmdbKey().isEmpty;
           });
-          _search();
         },
       ),
     );
@@ -506,10 +545,16 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
         const SizedBox(width: 8),
         FilledButton(
           onPressed: () async {
-            await _saveTmdbKey(_tmdbKeyCtrl.text);
-            if (!mounted) return;
-            setState(
-                () => _showTmdbKeyField = _tmdbKeyCtrl.text.trim().isEmpty);
+            final String key = _tmdbKeyCtrl.text;
+            final ScrapeSource source = _source;
+            final int generation = _searchGeneration;
+            await _saveTmdbKey(key);
+            if (!mounted ||
+                source != _source ||
+                generation != _searchGeneration) {
+              return;
+            }
+            setState(() => _showTmdbKeyField = key.trim().isEmpty);
             await _search();
           },
           child: Text(t.video_scrape_tmdb_key_save),
@@ -522,16 +567,46 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     if (_searching) {
       return const Center(child: CircularProgressIndicator());
     }
+    if (_source == ScrapeSource.tmdb &&
+        _storedTmdbKey().isEmpty &&
+        !_searched) {
+      return Center(
+        child: Text(
+          t.video_scrape_tmdb_key_empty,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+      );
+    }
     final Object? failure = _searchFailure;
     if (failure != null) return _buildSearchFailure(failure);
     if (_searched && _results.isEmpty) {
       return Center(child: Text(t.video_scrape_no_results));
     }
+    final ({Object error, String detail})? applyFailure = _applyFailure;
+    final int firstCandidateIndex = applyFailure == null ? 0 : 1;
     return ListView.separated(
-      itemCount: _results.length,
+      key: ValueKey<String>(
+        applyFailure == null
+            ? 'cover_match_results'
+            : 'cover_match_apply_failure',
+      ),
+      itemCount: _results.length + firstCandidateIndex,
       separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (BuildContext context, int index) =>
-          _buildCandidateTile(theme, _results[index]),
+      itemBuilder: (BuildContext context, int index) {
+        if (applyFailure != null && index == 0) {
+          return ScrapeFailureView(
+            title: t.video_scrape_apply_failed,
+            reason: _failureReason(applyFailure.error),
+            detail: applyFailure.detail,
+          );
+        }
+        return _buildCandidateTile(
+          theme,
+          _results[index - firstCandidateIndex],
+        );
+      },
     );
   }
 
@@ -548,6 +623,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   Widget _buildCandidateTile(ThemeData theme, ScrapeCandidate candidate) {
     final MatchConfidence? confidence = _confidenceFor(candidate);
     final List<String> metaParts = <String>[
+      '${_sourceLabel(candidate.source)} #${candidate.entryId}',
       if (candidate.year != null) '${candidate.year}',
       if (candidate.type != ScrapeEntryType.unknown) candidate.type.name,
       if (candidate.ratingText != null) candidate.ratingText!,
@@ -555,6 +631,9 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     // 自绘 Row（不用 ListTile.subtitle 叠两行——会撞 ListTile 固定 subtitle 高度而
     // 竖向溢出）：缩略图 + 标题/元信息/置信度纵列 + 「使用」按钮。
     return Padding(
+      key: ValueKey<String>(
+        'cover_match_candidate_${candidate.source.name}_${candidate.entryId}',
+      ),
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -595,6 +674,15 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
         ],
       ),
     );
+  }
+
+  String _sourceLabel(ScrapeSource source) {
+    return switch (source) {
+      ScrapeSource.bangumi => 'Bangumi',
+      ScrapeSource.tmdb => 'TMDB',
+      ScrapeSource.offlineDb => t.video_scrape_source_offline,
+      ScrapeSource.manualUrl => 'URL',
+    };
   }
 
   Widget _buildThumb(ThemeData theme, String url) {

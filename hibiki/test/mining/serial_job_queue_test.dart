@@ -99,4 +99,26 @@ void main() {
         );
     expect(r2, 'still-ok');
   });
+
+  test('enqueueRethrowing 保留原始异常且后续任务继续', () async {
+    final SerialJobQueue queue = SerialJobQueue();
+
+    await expectLater(
+      queue.enqueueRethrowing<String>(
+        () async => throw StateError('original failure'),
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (StateError error) => error.message,
+          'message',
+          'original failure',
+        ),
+      ),
+    );
+
+    expect(
+      await queue.enqueueRethrowing<String>(() async => 'next'),
+      'next',
+    );
+  });
 }

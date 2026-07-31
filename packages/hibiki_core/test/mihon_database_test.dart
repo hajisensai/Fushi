@@ -14,7 +14,7 @@ void main() {
 
   test('v63 stores Mihon identity and preferences without integer coercion',
       () async {
-    expect(database.schemaVersion, 63);
+    expect(database.schemaVersion, 64);
     await database.upsertMangaExtensionStore(
       MangaExtensionStoresCompanion.insert(
         indexUrl: 'https://repo.example/index.json',

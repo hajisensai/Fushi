@@ -47,6 +47,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
 
   Future<void> _loadChapterDirectly(int index) async {
     final String url = _chapterUrl(index);
+    // BUG-1280：交给 WebView 的是正文章节文档，清 spread 标记（见字段注释）。
+    // spread 的兜底降级路径 `_loadSpreadPage` → `_loadChapterDirectly` 也经过
+    // 这里，所以标记不会泄漏成「以为还在双页」。
+    _spreadDocumentLoaded = false;
     _isNavigatingToChapter = true;
     try {
       await _controller!.loadUrl(
@@ -162,8 +166,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     final String joinedPath = p.join(_extractDir!, epubPath);
     final String normExtractDir = p.normalize(_extractDir!);
     final String filePath = p.normalize(joinedPath);
-    if (!p.isWithin(
-        p.canonicalize(_extractDir!), p.canonicalize(joinedPath))) {
+    if (!p.isWithin(p.canonicalize(_extractDir!), p.canonicalize(joinedPath))) {
       return _forbidden('path traversal blocked: $epubPath');
     }
     final File file = File(filePath);
@@ -557,8 +560,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     try {
       // BUG-1218：真实 stat 路径保留大小写（越界判据仍走 canonicalize）。
       final String joined = p.join(extractDir, relativeHref);
-      if (!p.isWithin(
-          p.canonicalize(extractDir), p.canonicalize(joined))) {
+      if (!p.isWithin(p.canonicalize(extractDir), p.canonicalize(joined))) {
         return 0;
       }
       final String filePath = p.normalize(joined);
@@ -608,7 +610,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   ///
   /// 这里聚齐的就是**改动前逐个插进脚本源码的那些值**——现在改成一份小 JSON 随
   /// boot 下发，引擎运行时读取。新增 per-nav 参数一律加在这里，不得回到脚本里插值。
-  ReaderEngineConfig _buildReaderEngineConfig({String? sasayakiCuesJson}) {
+  ReaderEngineConfig _buildReaderEngineConfig({
+    required int navigationGeneration,
+    String? sasayakiCuesJson,
+  }) {
     final ReaderSettings s = _settings!;
     // TODO-113: 滑动翻页距离阈值随灵敏度系数缩放。基础值 44px（纯距离触发）/ 22px
     // （配合速度的快速短滑触发），系数 1.0 = 默认「轻快」手感，越大越迟钝（需滑得更远）。
@@ -639,6 +644,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     _paginatedWidth = screenSize.width;
     _paginatedHeight = screenSize.height;
     return ReaderEngineConfig(
+      navigationGeneration: navigationGeneration,
       continuousMode: continuousMode,
       vnMode: vnMode,
       vnClickAdvance: vnMode && vnClickAdvanceM0ForceOn,
@@ -1476,13 +1482,23 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       total = 0;
       while (node = walker.nextNode()) total += r.countChars(node.textContent);
     }
-    if (total <= 0) return '';
+    // 纯图片章没有可匹配字符，但可能仍有多张分页图片。只有真实到达该章物理末端时
+    // 才返回一个合成的 1/1 完成快照；中间图片页继续返空，由现有图片进度 UI 兜底，
+    // 避免一进纯图片末章就提前标完。
+    if (total <= 0) {
+      var mediaAtEnd = typeof r.isAtEnd === 'function' && r.isAtEnd();
+      return mediaAtEnd ? '1,1,-1' : '';
+    }
     // BUG-162: 第三段 = section 内精确绝对字符偏移（视口首字符），落 DB char_offset
     // 作退出再进的恢复锚（成熟 getFirstVisibleCharOffset/scrollToCharOffset 路径）。
     // caretRangeFromPoint 失败时返 -1 → Dart 当「无精确偏移」回退分数。
     var off = (typeof r.getFirstVisibleCharOffset === 'function')
         ? r.getFirstVisibleCharOffset() : -1;
-    return Math.round(p * total) + ',' + total + ',' + off;
+    // BUG-1241：阅读进度分数描述的是「视口首字符」，不是「是否到达末页」。
+    // 到达分页末页 / 连续物理末端 / VN 末屏时把持久分子钳到 total，使自动完成和
+    // 阅读统计都得到明确终态；中间页仍保留原字符级进度。
+    var atEnd = typeof r.isAtEnd === 'function' && r.isAtEnd();
+    return (atEnd ? total : Math.round(p * total)) + ',' + total + ',' + off;
   };
   // BUG-213: 章内原生滚动（连续模式 window 滚动 / 分页模式触摸/trackpad/键盘箭头
   // 落 body 的原生滚动）没有进度回传通道，进度条要等 10s 轮询或翻章才更新。这里给
@@ -1687,6 +1703,39 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
                     await _clearReaderAppSelection();
                   },
                 ),
+                if (isAndroidPlatform)
+                  ContextMenuItem(
+                    id: 4,
+                    title: t.share,
+                    action: () async {
+                      final String? text = await _controller?.getSelectedText();
+                      if (text == null || text.isEmpty) return;
+                      final bool shared = await SelectionExternalActions
+                          .instance
+                          .shareText(text);
+                      if (mounted && !shared) {
+                        HibikiToast.show(msg: t.selection_share_failed);
+                      }
+                      await _clearReaderAppSelection();
+                    },
+                  ),
+                if (isAndroidPlatform)
+                  ContextMenuItem(
+                    id: 5,
+                    title: t.selection_web_search,
+                    action: () async {
+                      final String? text = await _controller?.getSelectedText();
+                      if (text == null || text.isEmpty) return;
+                      final bool opened = await SelectionExternalActions
+                          .instance
+                          .searchWeb(text);
+                      if (mounted && !opened) {
+                        HibikiToast.show(
+                            msg: t.selection_web_search_unavailable);
+                      }
+                      await _clearReaderAppSelection();
+                    },
+                  ),
               ],
             ),
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
@@ -1813,12 +1862,24 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
 
         controller.addJavaScriptHandler(
           handlerName: 'onRestoreComplete',
-          // args[0] = JS 侧 perfSnapshot()（跨章分段计时诊断，见
-          // ReaderChapterPerfTrace）；恢复流程本身不依赖它，缺失/为空都无碍，故在
-          // handler 里就地消费，不进 _onRestoreComplete 的签名。
+          // args[0] = JS 侧 perfSnapshot()；args[1] = 文档安装引擎时捕获的
+          // navigationGeneration。代次缺失/失配一律不能完成当前 restore，更不能
+          // 消费当前代 pending。
           callback: (List<dynamic> args) {
-            ReaderChapterPerfTrace.noteJs(args.isEmpty ? null : args.first);
-            _onRestoreComplete();
+            if (args.length < 2 || args[1] is! num) {
+              debugPrint('[ReaderHibiki] onRestoreComplete missing generation');
+              return;
+            }
+            final num rawGeneration = args[1] as num;
+            if (!rawGeneration.isFinite ||
+                rawGeneration != rawGeneration.toInt()) {
+              debugPrint('[ReaderHibiki] onRestoreComplete invalid generation');
+              return;
+            }
+            _acceptRestoreComplete(
+              reportedGeneration: rawGeneration.toInt(),
+              perfSnapshot: args.first,
+            );
           },
         );
 
@@ -1953,6 +2014,33 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onLyricsTapEmpty',
           callback: (_) {
             if (!_lyricsMode) return;
+            if (isDictionaryShown) {
+              clearDictionaryResult();
+              return;
+            }
+            if (_anyChromeFloating) {
+              _handleFloatingChromeReveal();
+            } else {
+              _toggleChrome();
+            }
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
+          },
+        );
+
+        // BUG-1280：双页 spread 空白点击的专用桥，与上面的歌词桥同族。spread 是
+        // [buildSpreadPageHtml] 生成的独立文档，HTML 本身不含正文 hoshiReader 的
+        // onTap/onTapEmpty，自带手势只有「点图片 → onImageTap」（弹图片查看器）。
+        // 底栏一收起，spread 页就再没有唤出通道 → 看不到返回按钮 → 退不出书。
+        // （修复前 Android 因 baseUrl 被保留而被误注入过正文引擎，见
+        // _onChapterLoadComplete 的 spread 守卫；那条误注入已堵掉，本桥现在是两个
+        // 平台上唯一且语义一致的唤出通道。）
+        // 与歌词同理，这里对隐藏的底栏**无条件唤出/收起**——不看
+        // tapEmptyToHideChrome（那开关管的是正文点空白是否收起底栏；spread 没有别的
+        // 唤出途径，绝不能被它关死）。收尾 reclaim 阅读焦点：本次 pointer 手势把 OS
+        // 焦点交给了 WebView，不夺回 Flutter _focusNode 就收不到 ESC（BUG-136）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onSpreadTapEmpty',
+          callback: (_) {
             if (isDictionaryShown) {
               clearDictionaryResult();
               return;
@@ -2114,6 +2202,18 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onImageTap',
           callback: (args) {
             if (args.isEmpty) return;
+            // BUG-1280：点图片同样把 OS 焦点交给了 WebView，不 reclaim 则看完图
+            // pop 回来后 ESC 退不出书（BUG-136 同族）。在 spread 页尤其致命：两张
+            // 整页图铺满视口，点击几乎必然命中 img，于是「唤不出底栏」与「ESC 失效」
+            // 同时成立，两条退出通道一起死——所以本轮先修这一条。
+            //
+            // 口径更正：onImageTap **不是**「全阅读器唯一没 reclaim 的手势入口」。
+            // 同族至今仍有 7 处 JS 桥零 reclaim：onSelectionMenu、onImageRevealed、
+            // onImageContextMenu、onImageLongPress、onCueTap、onPointerSeek、
+            // onLyricsPointerSeek。其中 onImageRevealed / onImageContextMenu /
+            // onImageLongPress / onCueTap 连兄弟桥兜底都没有。本轮只修 spread 退出
+            // 路径必经的这一条，其余未覆盖——别把这里当作「此族已清干净」的证据。
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
             _openImageViewer(args[0] as String);
           },
         );
@@ -2350,6 +2450,30 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
   }
 
   Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {
+    // BUG-1280（平台分叉守卫）：spread 独立文档绝不注入正文引擎。
+    //
+    // `_loadSpreadPage` 传给 `loadData` 的 baseUrl 与 `_chapterUrl(_currentChapter)`
+    // **逐字相同**，而上面 `onLoadStop` 的陈旧判据只比 `Uri.path`。于是同一份代码
+    // 在两个平台走出相反的分支：
+    //   - Windows fork 的 `loadData` 原生侧只取 data、丢掉 baseUrl
+    //     （`webview_channel_delegate.cpp` → `NavigateToString`），文档 URL 变
+    //     `about:blank`，path 为空 → 判 stale → 从来没走到这里；
+    //   - Android 的 `loadDataWithBaseURL` 保留 baseUrl，path 完全相等 → 判据放行
+    //     → 此前会把整份 `readerEngineSource` 注进 spread 文档。
+    // 后果是 spread 文档上同时挂着引擎的 `onTapEmpty` 和本页自带的
+    // `onSpreadTapEmpty`：一次空白点两个桥都收到，`onSpreadTapEmpty` 无条件翻转、
+    // `onTapEmpty` 在悬浮态/开了「点空白隐藏控制栏」时也翻转一次，两次翻转互相抵消
+    // → 底栏还是唤不出来，比没修更难查。
+    //
+    // 正确的模型是：spread 是独立文档（同歌词、VN），它的就绪与手势由它自己的
+    // `spreadReady` / `onSpreadTapEmpty` 桥负责，正文引擎、有声书桥、章节高亮对
+    // 「两张整页图、正文 ≤20 字」的 image-only 章都无意义。Windows 早就是这个行为，
+    // 这里把 Android 拉齐，而不是给 Android 再加一层特例。
+    if (_spreadDocumentLoaded) {
+      debugPrint('[ReaderHibiki] onChapterLoadComplete: spread document, '
+          'skipping body engine injection');
+      return;
+    }
     if (_lyricsMode) {
       if (!_readerContentReady) {
         // BUG-438 / TODO-889：歌词模式内容就绪，清兜底 deadline，下次导航拿新窗口。
@@ -2408,8 +2532,10 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       // per-nav 参数走 config，引擎源码按 view-mode memoized。两半拼成**一次**
       // evaluateJavascript 发出去——注入通道与执行时刻都与改动前逐字相同，省掉的是
       // Dart 侧每章重新拼装 + 压缩近万行（实测 buildSetupScript 中位数 9ms）。
-      final ReaderEngineConfig engineConfig =
-          _buildReaderEngineConfig(sasayakiCuesJson: sasayakiCuesJson);
+      final ReaderEngineConfig engineConfig = _buildReaderEngineConfig(
+        navigationGeneration: gen,
+        sasayakiCuesJson: sasayakiCuesJson,
+      );
       final String engineSource = readerEngineSource(
         vnMode: engineConfig.vnMode,
         continuousMode: engineConfig.continuousMode,

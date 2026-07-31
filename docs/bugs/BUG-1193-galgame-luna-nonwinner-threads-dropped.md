@@ -26,8 +26,55 @@
 - **测试影响面指错**：原稿说要改 `luna_text_replay_test.cpp:170-215`，那段是 BUG-1159 的 face 用例、走不到 winner 门控；真正依赖 winner 行为的是 `tests/fixtures/luna_thread_selection.tsv`。
 - **🔴 一引擎一任务**：`LunaTextSelector` 是**引擎无关**的公共层，删 winner 门控是**全引擎行为变更**，不是「修一个 KiriKiriZ 症状」。按根 `CLAUDE.md` 与 `docs/agent/galgame-hooking.md`，动它必须有跨引擎负向测试，且每个受影响引擎的支持状态都要重新按证据门评估。
 
-- **[ ] ① 未修复** —— 方案需按上述四条重做；在真机量出「放开门控后单句产行数」与 `HIBIKI_LUNA_DIAG` 语言/hook_code 对应关系之前，不要动 `ShouldWrite`。
-- **[ ] ② 未加自动化测试** —— 至少需要：`tests/fixtures/luna_thread_selection.tsv` 的 winner 行为用例改写、「文本环被逐字重绘 hook 挤满时候选不得丢失」的负向用例、跨引擎负向测试。
+### 🔵 读 LunaTranslator 源码后的定案（2026-07-29）
+
+上面「其余待补证据」里那条『日文/中文来自不同 hook 是推断，未验证』**已经有确定答案**，来自上游源码
+（`HIllya51/LunaTranslator@v10.16.1.2`，与本仓 vendored DLL 同版本，`KiriKiri.cpp` 字节数一致）：
+
+1. **`EmbedKrkrZ` 带 `NO_CONTEXT`**（`engine32/KiriKiri.cpp:1544`），而 `texthook.cc:364` 有
+   `if (hp.type & (NO_CONTEXT | FIXING_SPLIT)) lpRetn = 0;` —— ctx 被强制清零后才组装
+   `ThreadParam tp{pid, address, lpRetn, lpSplit}`。**该 hook 的全部输出永远落在同一个 tp 上**，
+   中文与日文的 ThreadParam 逐字节相同。→ 猜测 (b)「同 hook 不同 ctx2」**排除**；
+   → 也意味着**在这条线程内部分不开中日**，任何"分线程"的做法都治不了它。
+2. **译文会经同一 hook 回流并被上报**：`texthook.cc:393` 的顺序是 `TextOutput(...)` 在前、内嵌替换
+   （`EMBED_AFTER_NEW` 改 `*plpdatain` 指针）在后；被替换的串会被游戏再走一遍流程再次撞上该 hook，
+   `checktranslatedok`（`embed_util.cc:267`）靠 `translatecache` 认出"这是我自己产的译文"后**只清
+   `EMBED_ABLE` 位、不 `__leave`**，因此译文照样被上报。原文/译文同线程交替是 Luna 架构下的已知现象。
+3. **Luna 采集层零淘汰**：`LunaHost/host.cpp:222-243` 每个 `ThreadParam` 一个 `TextThread`，全路径无
+   winner 分支；去重复（`textthread.cpp:5-12` `RemoveRepetition`）是**线程内部**的。Luna 能"正确分开"
+   靠的是**不丢弃**——用户切到 `TextRender` 那条纯日文线程即可，不是靠什么分离算法。
+
+**结论**：原始诉求（不丢非赢家线程）方向正确，但必须解掉 256 槽挤压与死结，且不能指望它能分开
+EmbedKrkrZ 内部的中日文。
+
+- **[x] ① 已修复** —— IPC v12（`native/galgame_hook/include/voice_hook_ipc.h`）新增**线程预览区**，并
+  取消 injector 自动选线程：
+  - **数据结构层解掉 256 槽挤压**：旧结构里文本环是唯一文本出口，同时伺候两个诉求相反的消费者——
+    语音配对要高信噪的单条线程，选择器要每条线程都有样本。v12 把二者拆开：文本环语义不变（仍只装
+    当前生效线程，配对/loopback 路径逐字节不受影响），新增的 `ThreadPreviewSlot` **按 thread_id 认领
+    固定槽**、每线程一条。按线程分槽而非全局取模，逐字重绘型 hook 只能覆盖自己的槽，**挤压跨线程
+    发生在结构上不可能**——不是加护栏，是让那种情况不存在。
+  - **死结随自动选线程一起消失**：原方案的死结来自「Dart 自动选线程 → 回写 `selected_text_thread_id`
+    → 重新激活过滤」。v12 不再有任何自动选择（`luna_text_selector.h` 的 winner 统计整体删除，
+    `ShouldWrite` → `AcceptsLine`），选择只来自用户显式操作或 profile `prefer=`，回环不存在。
+  - **`preferred_hook_codes` 快路已覆盖**：预览写入点在所有门控之前（`injector_main.cpp` 的
+    `WriteThreadPreview`，与 `NoteFace` 同一位置），profile 命中的游戏同样有预览。
+  - **跨会话记忆不被锁死**：`_maybeRestoreTextThread` 的消歧判据从已发布行数改为
+    `TexthookerTextThread.observedLineCount`（预览槽的 `line_count`，含被过滤/门控丢弃的行）。取消
+    自动选线程后已发布行数在用户选定前恒为 0，不换判据会让记忆永远无法恢复、每局都要重选。
+  - 消费端：`windows/runner` 新增 `PollThreadPreviews` + `pollThreadPreviews` MethodChannel；Dart 侧
+    `TexthookerService.applyTextThreadPreviews`，线程下拉的行数/预览改读观测值，空选项文案改为
+    `game_text_thread_unset`（不选 = 不发布，旧文案「全部线程」会误导）。
+- **[x] ② 已加自动化测试** ——
+  - `native/galgame_hook/tests/luna_text_replay_test.cpp`：新增「反复喂 16 行干净行也不得自动放行」
+    的守卫（防自动选线程以任何形式回归）+ face 登记必须在未选择阶段就发生；原 face/跨引擎/split H 码
+    负向用例改用 `AcceptsLine`。
+  - `native/galgame_hook/tests/fixtures/luna_thread_selection.tsv`：按 v12 契约重写（`hook_code` 列
+    随判定一并移除），`manual_thread==0` 全部期望不发布。
+  - `hibiki/test/sync/texthooker_service_test.dart`：新增 `v12 线程预览区` 6 例（未发布线程也有内容/
+    发现事件不抹预览/脏线程排序/替换非合并/无变化不通知/clear 清预览）。
+  - `hibiki/test/tools/voice_hook_ipc_contract_test.dart`：版本锁 11→12，新增预览区常量与结构体的
+    两侧同步守卫。
 - **备注**：
   - 修复须改 native 并**重新构建双架构 helper + 重发 release**，用户机上的 `voice_hook/x86` 才会拿到；开工前须按根 `CLAUDE.md` 读 `docs/agent/galgame-hooking.md` 并走证据门。
   - 本条从 PR#516 撤出单列（原 PR 只做超分改动 + Steam 定位），理由即上述四条。

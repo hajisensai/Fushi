@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
@@ -7,6 +5,8 @@ import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
+import 'package:hibiki/src/media/media_cover_source.dart';
+import 'package:hibiki/src/media/video/video_episode_rail.dart';
 import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_batch_dialog.dart';
 import 'package:hibiki/utils.dart';
@@ -55,6 +55,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   late String _name;
   List<VideoBookRow> _members = const <VideoBookRow>[];
   bool _loading = true;
+  bool _showAllEpisodes = false;
 
   @override
   HibikiDatabase get detailDatabase => widget.database;
@@ -90,6 +91,51 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             completed: r.completedAt != null,
           ),
       ]);
+
+  int get _watchedCount =>
+      _members.where((VideoBookRow row) => row.completedAt != null).length;
+
+  List<VideoEpisodeEntry> get _episodeEntries => <VideoEpisodeEntry>[
+        for (final VideoBookRow row in _members)
+          VideoEpisodeEntry(
+            title: row.title,
+            cover: resolveMediaCoverImage(
+              kind: MediaKind.video,
+              localPath: row.coverPath,
+            ),
+            completed: row.completedAt != null,
+            started: row.lastPositionMs > 0 && row.completedAt == null,
+          ),
+      ];
+
+  ImageProvider? get _heroCover {
+    final String? collectionCover = widget.collection.coverPath;
+    if (collectionCover != null && collectionCover.isNotEmpty) {
+      return resolveMediaCoverImage(
+        kind: MediaKind.video,
+        localPath: collectionCover,
+        decodeWidth: 1600,
+      );
+    }
+    if (_members.isEmpty) return null;
+    final String? continueCover = _members[_continueIndex].coverPath;
+    String? fallbackCover =
+        continueCover?.isNotEmpty == true ? continueCover : null;
+    if (fallbackCover == null) {
+      for (final VideoBookRow row in _members) {
+        final String? candidate = row.coverPath;
+        if (candidate != null && candidate.isNotEmpty) {
+          fallbackCover = candidate;
+          break;
+        }
+      }
+    }
+    return resolveMediaCoverImage(
+      kind: MediaKind.video,
+      localPath: fallbackCover,
+      decodeWidth: 1600,
+    );
+  }
 
   /// 把当前 [_members] 顺序一次落盘（sortIndex 全表回写）。库页合集行与播放器
   /// 换集读同一 `getCollectionItems`，落盘即三处同序（层次 C 单一真相源）。
@@ -228,12 +274,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Widget _episodeThumb(VideoBookRow ep, ColorScheme cs) {
     const double w = 96;
     const double h = 54;
-    final String? cover = ep.coverPath;
-    if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
+    final ImageProvider? cover = resolveMediaCoverImage(
+      kind: MediaKind.video,
+      localPath: ep.coverPath,
+    );
+    if (cover != null) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: Image.file(
-          File(cover),
+        borderRadius: HibikiBorderRadius.card,
+        child: Image(
+          image: cover,
           width: w,
           height: h,
           fit: BoxFit.cover,
@@ -251,49 +300,359 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         height: h,
         decoration: BoxDecoration(
           color: cs.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: HibikiBorderRadius.card,
         ),
         child: Icon(Icons.movie_outlined, color: cs.onSurfaceVariant, size: 20),
       );
 
+  Widget _buildHero(
+    BuildContext context,
+    ColorScheme cs,
+    HibikiDesignTokens tokens,
+  ) {
+    final Size screen = MediaQuery.sizeOf(context);
+    final double height = (screen.height * 0.62).clamp(400.0, 600.0);
+    final ImageProvider? cover = _heroCover;
+    final VideoBookRow episode = _members[_continueIndex];
+    final bool rtl = Directionality.of(context) == TextDirection.rtl;
+    return SizedBox(
+      height: height,
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          ColoredBox(color: cs.surfaceContainerHighest),
+          if (cover != null)
+            Image(
+              image: cover,
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+              errorBuilder: (_, __, ___) =>
+                  ColoredBox(color: cs.surfaceContainerHighest),
+            ),
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: <double>[0, 0.48, 1],
+                colors: <Color>[
+                  Color(0x52000000),
+                  Color(0x22000000),
+                  Color(0xE8000000),
+                ],
+              ),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: rtl ? Alignment.centerRight : Alignment.centerLeft,
+                end: rtl ? Alignment.centerLeft : Alignment.centerRight,
+                stops: const <double>[0, 0.66, 1],
+                colors: const <Color>[
+                  Color(0xC9000000),
+                  Color(0x26000000),
+                  Color(0x7A000000),
+                ],
+              ),
+            ),
+          ),
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                kToolbarHeight + tokens.spacing.gap,
+                tokens.spacing.page,
+                tokens.spacing.section,
+              ),
+              child: Align(
+                alignment: AlignmentDirectional.bottomStart,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 680),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        _name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style:
+                            Theme.of(context).textTheme.displaySmall?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.08,
+                                ),
+                      ),
+                      SizedBox(height: tokens.spacing.gap),
+                      Text(
+                        t.collection_watched_progress(
+                          done: _watchedCount,
+                          total: _members.length,
+                        ),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Colors.white.withValues(alpha: 0.78),
+                              fontWeight: FontWeight.w500,
+                            ),
+                      ),
+                      SizedBox(height: tokens.spacing.card),
+                      Text(
+                        t.collection_continue_progress(n: _continueIndex + 1),
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: Colors.white.withValues(alpha: 0.82),
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      SizedBox(height: tokens.spacing.gap / 2),
+                      Text(
+                        episode.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                      SizedBox(height: tokens.spacing.card),
+                      FilledButton.icon(
+                        icon: const Icon(Icons.play_arrow_rounded),
+                        label: Text(t.collection_play),
+                        onPressed: () => widget.onOpenEpisode(episode),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEpisodeSection(
+    BuildContext context,
+    ColorScheme cs,
+    HibikiDesignTokens tokens,
+  ) {
+    return Padding(
+      padding: EdgeInsets.only(
+        top: tokens.spacing.section,
+        bottom: tokens.spacing.section,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    t.video_episode_list,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () =>
+                      setState(() => _showAllEpisodes = !_showAllEpisodes),
+                  icon: Icon(
+                    _showAllEpisodes
+                        ? Icons.keyboard_arrow_up
+                        : Icons.view_list_outlined,
+                  ),
+                  label: Text(
+                    _showAllEpisodes
+                        ? t.collection_collapse
+                        : t.collection_view_all,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: tokens.spacing.rowVertical),
+          VideoEpisodeRail(
+            key: const ValueKey<String>('collection-episode-rail'),
+            episodes: _episodeEntries,
+            currentIndex: _continueIndex,
+            onTapEpisode: (int index) => widget.onOpenEpisode(_members[index]),
+            colorScheme: cs,
+            fontSize: 14,
+            cardWidth:
+                (MediaQuery.sizeOf(context).width * 0.24).clamp(168.0, 232.0),
+            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeOut,
+            child: _showAllEpisodes
+                ? Padding(
+                    key: const ValueKey<String>('episode-management-list'),
+                    padding: EdgeInsets.fromLTRB(
+                      tokens.spacing.page,
+                      tokens.spacing.section,
+                      tokens.spacing.page,
+                      0,
+                    ),
+                    child: _buildEpisodeManagementList(cs, tokens),
+                  )
+                : const SizedBox.shrink(
+                    key: ValueKey<String>('episode-management-collapsed'),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEpisodeManagementList(
+    ColorScheme cs,
+    HibikiDesignTokens tokens,
+  ) {
+    return HibikiReorderableColumn(
+      itemCount: _members.length,
+      keyForIndex: (int i) => ValueKey<String>(_members[i].bookUid),
+      onReorder: _onReorder,
+      spacing: tokens.spacing.gap,
+      itemBuilder: (BuildContext context, int i) {
+        final VideoBookRow episode = _members[i];
+        final bool completed = episode.completedAt != null;
+        final bool started = episode.lastPositionMs > 0;
+        final bool isContinue = i == _continueIndex;
+        final Widget row = Material(
+          key: ValueKey<String>('collection-episode-row-${episode.bookUid}'),
+          color: isContinue
+              ? cs.primaryContainer.withValues(alpha: 0.35)
+              : cs.surfaceContainerLow,
+          borderRadius: HibikiBorderRadius.card,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            canRequestFocus: false,
+            onTap: () => widget.onOpenEpisode(episode),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: tokens.spacing.rowHorizontal,
+                vertical: tokens.spacing.rowVertical,
+              ),
+              child: Row(
+                children: <Widget>[
+                  SizedBox(
+                    width: tokens.spacing.gap * 4,
+                    child: Text(
+                      '${i + 1}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: cs.onSurfaceVariant),
+                    ),
+                  ),
+                  SizedBox(width: tokens.spacing.rowVertical),
+                  _episodeThumb(episode, cs),
+                  SizedBox(width: tokens.spacing.rowVertical),
+                  Expanded(
+                    child: Text(
+                      episode.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (completed)
+                    Icon(Icons.check_circle, color: cs.primary, size: 20)
+                  else if (started)
+                    Icon(
+                      Icons.play_circle_outline,
+                      color: cs.onSurfaceVariant,
+                      size: 20,
+                    ),
+                  SizedBox(width: tokens.spacing.gap / 2),
+                  HibikiIconButton(
+                    tooltip: t.collection_remove_member,
+                    icon: Icons.remove_circle_outline,
+                    size: 18,
+                    onTap: () => _removeEpisode(episode),
+                  ),
+                  SizedBox(width: tokens.spacing.gap / 2),
+                  Icon(
+                    Icons.drag_handle,
+                    color: cs.onSurfaceVariant,
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        if (HibikiFocusRoot.maybeControllerOf(context) == null) return row;
+        return Actions(
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                widget.onOpenEpisode(episode);
+                return null;
+              },
+            ),
+          },
+          child: HibikiFocusTarget(
+            id: HibikiFocusId('collection-episode-${episode.bookUid}'),
+            child: row,
+          ),
+        );
+      },
+    );
+  }
+
   /// [availableWidth] 是这条 AppBar 实际拿到的约束宽（由 [LayoutBuilder] 下发）。
-  AppBar _buildAppBar(double availableWidth) => AppBar(
-        title: Text(_name, maxLines: 1, overflow: TextOverflow.ellipsis),
-        // BUG-1184：5 个动作 + 返回键在 320dp 上吃掉约 296px，合集名只剩二十几像素、
-        // 等于完全看不见。窄屏把后 4 个收进溢出菜单，排序保持一眼可点。
-        actions: narrowAwareAppBarActions(
-          availableWidth: availableWidth,
-          alwaysVisible: <Widget>[_buildSortMenu()],
-          collapsible: <HibikiAppBarAction>[
-            HibikiAppBarAction(
-              icon: Icons.subtitles_outlined,
-              label: t.video_jimaku_batch_title,
-              onPressed: _members.isEmpty ? null : _fetchCollectionSubtitles,
-            ),
-            HibikiAppBarAction(
-              icon: Icons.drive_file_rename_outline,
-              label: t.rename_collection,
-              onPressed: renameDetailCollection,
-            ),
-            HibikiAppBarAction(
-              icon: Icons.sell_outlined,
-              label: t.tag_label,
-              onPressed: editDetailCollectionTags,
-            ),
-            HibikiAppBarAction(
-              icon: Icons.delete_outline,
-              label: t.delete_collection,
-              onPressed: _delete,
-            ),
-          ],
-        ),
-      );
+  AppBar _buildAppBar(double availableWidth) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool cinematic = !_loading && _members.isNotEmpty;
+    return AppBar(
+      title: cinematic
+          ? null
+          : Text(_name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      backgroundColor: cinematic ? const Color(0x42000000) : cs.surface,
+      foregroundColor: cinematic ? Colors.white : cs.onSurface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      // BUG-1184：5 个动作 + 返回键在 320dp 上吃掉约 296px，合集名只剩二十几像素、
+      // 等于完全看不见。窄屏把后 4 个收进溢出菜单，排序保持一眼可点。
+      actions: narrowAwareAppBarActions(
+        availableWidth: availableWidth,
+        alwaysVisible: <Widget>[_buildSortMenu()],
+        collapsible: <HibikiAppBarAction>[
+          HibikiAppBarAction(
+            icon: Icons.subtitles_outlined,
+            label: t.video_jimaku_batch_title,
+            onPressed: _members.isEmpty ? null : _fetchCollectionSubtitles,
+          ),
+          HibikiAppBarAction(
+            icon: Icons.drive_file_rename_outline,
+            label: t.rename_collection,
+            onPressed: renameDetailCollection,
+          ),
+          HibikiAppBarAction(
+            icon: Icons.sell_outlined,
+            label: t.tag_label,
+            onPressed: editDetailCollectionTags,
+          ),
+          HibikiAppBarAction(
+            icon: Icons.delete_outline,
+            label: t.delete_collection,
+            onPressed: _delete,
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final bool cinematic = !_loading && _members.isNotEmpty;
     return Scaffold(
+      extendBodyBehindAppBar: cinematic,
       // BUG-1186：动作要不要折叠，得看这条 AppBar 自己拿到多宽，而不是整窗多宽。
       // 包一层 [LayoutBuilder] 把局部约束喂给 [narrowAwareAppBarActions]；高度就是
       // [AppBar] 无 bottom 时的默认 preferredSize（kToolbarHeight），Scaffold 仍会
@@ -305,150 +664,34 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               _buildAppBar(constraints.maxWidth),
         ),
       ),
-      body: SafeArea(
-        child: _loading
-            ? Center(child: adaptiveIndicator(context: context))
-            : _members.isEmpty
-                ? HibikiPlaceholderMessage(
+      body: _loading
+          ? SafeArea(
+              child: Center(child: adaptiveIndicator(context: context)),
+            )
+          : _members.isEmpty
+              ? SafeArea(
+                  child: HibikiPlaceholderMessage(
                     icon: Icons.collections_bookmark_outlined,
                     message: t.collection_empty,
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      buildDetailTagChips(),
-                      Padding(
-                        padding: EdgeInsets.all(tokens.spacing.rowVertical),
-                        child: Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: FilledButton.icon(
-                            icon: const Icon(Icons.play_arrow),
-                            label: Text(t.collection_play),
-                            onPressed: () =>
-                                widget.onOpenEpisode(_members[_continueIndex]),
-                          ),
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      Expanded(
-                        // 排序交互重设计层次 B1：拖拽精修。BUG-778：SDK 的
-                        // ReorderableListView 拖拽代理用「全局坐标−overlay 原点」
-                        // 纯平移，不认祖先 Transform.scale（HibikiAppUiScale 的
-                        // 浏览器式整体缩放）——界面大小≠100% 时拖动位置按
-                        // (1−s)×距离 漂移。换自实现的 HibikiReorderableColumn
-                        // （浮层渲染在列表自身 Stack、指针经 globalToLocal 消
-                        // 祖先缩放，词典排序/媒体源排序同款）。整行拖拽：鼠标
-                        // 按下即拖、触摸长按；行尾拖柄图标保留为视觉提示。
-                        // onReorder 落盘 sortIndex 后库页行/播放器换集立即同序。
-                        child: SingleChildScrollView(
-                          child: HibikiReorderableColumn(
-                            itemCount: _members.length,
-                            keyForIndex: (int i) =>
-                                ValueKey<String>(_members[i].bookUid),
-                            onReorder: _onReorder,
-                            itemBuilder: (BuildContext _, int i) {
-                              final VideoBookRow ep = _members[i];
-                              final bool completed = ep.completedAt != null;
-                              final bool started = ep.lastPositionMs > 0;
-                              final bool isContinue = i == _continueIndex;
-                              // 用 InkWell+Row（非 ListTile）保持 MD3 设计系统一致；
-                              // VideoBooks 不存总时长无法算集内百分比 → 只标「已看完 /
-                              // 看过一半 / 未看」三态图标，不画误导性进度条。
-                              final Widget row = Material(
-                                color: isContinue
-                                    ? cs.primaryContainer
-                                        .withValues(alpha: 0.35)
-                                    : Colors.transparent,
-                                child: InkWell(
-                                  canRequestFocus: false,
-                                  onTap: () => widget.onOpenEpisode(ep),
-                                  child: Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: tokens.spacing.rowHorizontal,
-                                      vertical: tokens.spacing.rowVertical,
-                                    ),
-                                    child: Row(
-                                      children: <Widget>[
-                                        SizedBox(
-                                          width: tokens.spacing.gap * 4,
-                                          child: Text(
-                                            '${i + 1}',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                                color: cs.onSurfaceVariant),
-                                          ),
-                                        ),
-                                        SizedBox(
-                                            width: tokens.spacing.rowVertical),
-                                        // Jellyfin 式：每集独立视频各自的封面缩略图（16:9
-                                        // 抽帧；无封面时占位）。
-                                        _episodeThumb(ep, cs),
-                                        SizedBox(
-                                            width: tokens.spacing.rowVertical),
-                                        Expanded(
-                                          child: Text(
-                                            ep.title,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        if (completed)
-                                          Icon(Icons.check_circle,
-                                              color: cs.primary, size: 20)
-                                        else if (started)
-                                          Icon(Icons.play_circle_outline,
-                                              color: cs.onSurfaceVariant,
-                                              size: 20),
-                                        SizedBox(width: tokens.spacing.gap / 2),
-                                        // 逐集移出（整理页删除后的唯一入口）。
-                                        HibikiIconButton(
-                                          tooltip: t.collection_remove_member,
-                                          icon: Icons.remove_circle_outline,
-                                          size: 18,
-                                          onTap: () => _removeEpisode(ep),
-                                        ),
-                                        SizedBox(width: tokens.spacing.gap / 2),
-                                        // 拖柄图标：纯视觉提示（整行可拖，见类注释）。
-                                        Icon(
-                                          Icons.drag_handle,
-                                          color: cs.onSurfaceVariant,
-                                          size: 20,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                              // 巡检 PR-3：剧集行接入手柄/键盘方向焦点（裸 InkWell
-                              // 不进 Hibiki 焦点系统，手柄用户到不了任何一集）。
-                              // Enter / 手柄 A 与鼠标点击同路径开该集。
-                              if (HibikiFocusRoot.maybeControllerOf(context) ==
-                                  null) {
-                                return row;
-                              }
-                              return Actions(
-                                actions: <Type, Action<Intent>>{
-                                  ActivateIntent:
-                                      CallbackAction<ActivateIntent>(
-                                    onInvoke: (_) {
-                                      widget.onOpenEpisode(ep);
-                                      return null;
-                                    },
-                                  ),
-                                },
-                                child: HibikiFocusTarget(
-                                  id: HibikiFocusId(
-                                      'collection-episode-${ep.bookUid}'),
-                                  child: row,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                    ],
                   ),
-      ),
+                )
+              : CustomScrollView(
+                  slivers: <Widget>[
+                    SliverToBoxAdapter(
+                      child: _buildHero(context, cs, tokens),
+                    ),
+                    SliverToBoxAdapter(child: buildDetailTagChips()),
+                    SliverToBoxAdapter(
+                      child: _buildEpisodeSection(context, cs, tokens),
+                    ),
+                    SliverSafeArea(
+                      top: false,
+                      sliver: SliverToBoxAdapter(
+                        child: SizedBox(height: tokens.spacing.page),
+                      ),
+                    ),
+                  ],
+                ),
     );
   }
 }

@@ -2,6 +2,57 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+String _extractInvocation(String source, String invocation, {int startAt = 0}) {
+  final int invocationStart = source.indexOf(invocation, startAt);
+  if (invocationStart < 0) return '';
+  final int openParen = source.indexOf('(', invocationStart);
+  if (openParen < 0) return '';
+
+  int depth = 0;
+  for (int index = openParen; index < source.length; index++) {
+    switch (source[index]) {
+      case '(':
+        depth++;
+        break;
+      case ')':
+        depth--;
+        if (depth == 0) {
+          return source.substring(invocationStart, index + 1);
+        }
+        break;
+    }
+  }
+  return '';
+}
+
+int _occurrences(String source, String token) {
+  int count = 0;
+  int start = 0;
+  while (true) {
+    final int index = source.indexOf(token, start);
+    if (index < 0) return count;
+    count++;
+    start = index + token.length;
+  }
+}
+
+List<String> _libraryHeaderGuardProblems(String header) {
+  final List<String> problems = <String>[];
+  if (!header.contains('title: GameSectionTabs(')) {
+    problems.add('missing segmented title');
+  }
+  if (!header.contains('actions: <Widget>[')) {
+    problems.add('missing actions block');
+  }
+  if (_occurrences(header, 'onTap: _openStatistics') != 1) {
+    problems.add('statistics action must appear exactly once');
+  }
+  if (_occurrences(header, 'onTap: _showMonitor') != 0) {
+    problems.add('duplicate capture action');
+  }
+  return problems;
+}
+
 /// 源码扫描守卫（游戏库页 UX 收敛）：
 ///
 /// 用户反馈游戏库页顶部两张大卡（「捕获工具已就绪…打开捕获工作台」/
@@ -43,8 +94,57 @@ void main() {
     });
 
     test('库页顶部不再放与页签冗余的捕获图标钮', () {
-      expect(src.contains('HibikiIconButton'), isFalse,
-          reason: '顶部「捕获工作台」图标钮与 GameSectionTabs 页签冗余，应删除');
+      final int libraryStart = src.indexOf('Widget _buildLibrary(');
+      expect(libraryStart, greaterThanOrEqualTo(0));
+      final String header = _extractInvocation(
+        src,
+        'HibikiPageHeader.customTitle',
+        startAt: libraryStart,
+      );
+      expect(header, isNotEmpty, reason: '必须提取完整库页 header 调用，不能在 title 前截断');
+      expect(
+        _libraryHeaderGuardProblems(header),
+        isEmpty,
+        reason: '完整 actions 块只允许一个统计动作，不得重复捕获入口',
+      );
+    });
+
+    test('动作守卫能杀死丢动作、重复动作与捕获入口回潮变异', () {
+      final int libraryStart = src.indexOf('Widget _buildLibrary(');
+      final String header = _extractInvocation(
+        src,
+        'HibikiPageHeader.customTitle',
+        startAt: libraryStart,
+      );
+      expect(header, isNotEmpty);
+
+      final String missingAction = header.replaceFirst(
+          'onTap: _openStatistics', 'onTap: _showDiagnostics');
+      expect(
+        _libraryHeaderGuardProblems(missingAction),
+        contains('statistics action must appear exactly once'),
+        reason: '删掉唯一统计动作的 mutation 必须变红',
+      );
+
+      final String duplicateAction = header.replaceFirst(
+        'onTap: _openStatistics',
+        'onTap: _openStatistics /* mutation */ onTap: _openStatistics',
+      );
+      expect(
+        _libraryHeaderGuardProblems(duplicateAction),
+        contains('statistics action must appear exactly once'),
+        reason: '重复统计动作的 mutation 必须变红',
+      );
+
+      final String duplicateCapture = header.replaceFirst(
+        'onTap: _openStatistics',
+        'onTap: _openStatistics /* mutation */ onTap: _showMonitor',
+      );
+      expect(
+        _libraryHeaderGuardProblems(duplicateCapture),
+        contains('duplicate capture action'),
+        reason: '把捕获入口重新塞回 actions 的 mutation 必须变红',
+      );
     });
 
     test('诊断细节（序号缺口 / 端点连通）不再出现在库页', () {

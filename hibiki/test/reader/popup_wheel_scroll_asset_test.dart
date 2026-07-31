@@ -38,21 +38,21 @@ void main() {
     expect(js, contains('deltaPx * factor'));
   });
 
-  test('uses a browser-like wheel pixel factor below the old coarse step', () {
+  test('uses a balanced coarse-mouse factor below the native step', () {
     final factor = parseNumberConstant('POPUP_WHEEL_PIXEL_FACTOR');
 
-    expect(factor, greaterThanOrEqualTo(0.12),
-        reason: 'The factor must stay positive enough for touchpad inertia and '
-            'long dictionary entries to remain usable.');
-    expect(factor, lessThan(0.35),
-        reason: 'TODO-460 asks for a smaller per-notch distance than the old '
-            'BUG-260 factor.');
+    expect(factor, greaterThanOrEqualTo(0.4),
+        reason: 'The old 0.24 factor moved only about 24px per mouse notch and '
+            'felt too slow in the app-external lookup window.');
+    expect(factor, lessThan(0.65),
+        reason: 'The refined path must remain clearly below the native full '
+            'step so one notch does not become chunky again.');
   });
 
-  // BUG-870: the 0.24 factor is only for a COARSE mouse notch. A precision
+  // BUG-870: POPUP_WHEEL_PIXEL_FACTOR is only for a COARSE mouse notch. A precision
   // touchpad / hi-res wheel reports small pixel deltas; the handler must classify
   // a small pixel-mode frame as a fine device and scroll it ~1:1 (factor 1.0),
-  // otherwise the 0.24 taming makes touchpad scrolling ~4x too slow. A gesture
+  // otherwise coarse-mouse taming makes touchpad scrolling too slow. A gesture
   // latches its device class so a large mid-fling frame is not mis-tamed.
   test('classifies fine devices and scrolls them ~1:1 (BUG-870)', () {
     final trackpadFactor = parseNumberConstant('POPUP_WHEEL_TRACKPAD_FACTOR');
@@ -66,7 +66,7 @@ void main() {
     expect(notchPx, lessThan(100),
         reason: 'and below a WebView2/Chromium mouse notch (≈100px)');
 
-    // The per-frame factor is chosen by device class, not hard-coded to 0.24.
+    // The per-frame factor is chosen by device class, not applied universally.
     expect(js, contains('const fineFrame ='));
     expect(js, contains('_popupWheelFineDevice'),
         reason: 'the gesture must latch its device class to avoid mis-taming a '

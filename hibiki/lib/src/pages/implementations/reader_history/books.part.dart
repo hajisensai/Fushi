@@ -385,43 +385,28 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   bool _isSrtCollectionMember(String uid) =>
       _primaryCollectionByEntry.containsKey(MediaKind.srt.compositeKey(uid));
 
-  void _selectAll() {
-    _rebuild(() {
-      // 散卡：只选未折进合集的可见书（折进的成员由整合集选中，不单独勾）。
-      for (final item in _visibleEpubBooks) {
-        if (_isEpubCollectionMember(_parseBookKey(item.mediaIdentifier))) {
-          continue;
-        }
-        _selectedKeys.add(item.mediaIdentifier);
-      }
-      for (final book in _visibleSrtBooks) {
-        if (_isSrtCollectionMember(book.uid)) continue;
-        _selectedKeys.add('srt_${book.uid}');
-      }
-      _selectedCollectionIds.addAll(_visibleCollectionIds);
-    });
-  }
-
-  void _invertSelection() {
-    _rebuild(() {
-      final Set<String> allKeys = {
+  /// 全选 / 反选的候选散卡键：只含未折进合集的可见书（折进的成员由整合集选中，
+  /// 不单独勾）。两处共用同一份资格判据，避免全选与反选口径漂开。
+  Set<String> _selectableLooseKeys() => <String>{
         for (final item in _visibleEpubBooks)
           if (!_isEpubCollectionMember(_parseBookKey(item.mediaIdentifier)))
             item.mediaIdentifier,
         for (final book in _visibleSrtBooks)
           if (!_isSrtCollectionMember(book.uid)) 'srt_${book.uid}',
       };
-      final Set<String> inverted = allKeys.difference(_selectedKeys);
-      _selectedKeys
-        ..clear()
-        ..addAll(inverted);
-      final Set<int> allCollections = _visibleCollectionIds.toSet();
-      final Set<int> invertedCollections =
-          allCollections.difference(_selectedCollectionIds);
-      _selectedCollectionIds
-        ..clear()
-        ..addAll(invertedCollections);
-    });
+
+  void _selectAll() {
+    _rebuild(() => _selection.selectAll(
+          loose: _selectableLooseKeys(),
+          collections: _visibleCollectionIds,
+        ));
+  }
+
+  void _invertSelection() {
+    _rebuild(() => _selection.invert(
+          loose: _selectableLooseKeys(),
+          collections: _visibleCollectionIds,
+        ));
   }
 
   Widget _buildBatchActionBar() {
@@ -517,6 +502,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   /// - 选中散卡 → 删媒体本体（EPUB/SRT，现状语义）；
   /// - 混选 → 确认框文案写明「删 N 个媒体、解散 M 个合集」。
   Future<void> _batchDeleteConfirm() async {
+    // 先剔幽灵键再取数：确认框里的 N / M 必须是真会被删的条数。
+    if (!await _pruneStaleSelection() || !mounted) return;
     final int mediaCount = _selectedKeys.length;
     final int collectionCount = _selectedCollectionIds.length;
     if (mediaCount == 0 && collectionCount == 0) return;
@@ -597,7 +584,52 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     HibikiToast.show(msg: successMsg);
   }
 
+  /// 批量操作前把选中集收敛到真实存在的条目上，真剔掉了就明说。
+  ///
+  /// 与视频库同一纪律（见 `home_video_page._pruneStaleSelection`）：选中集不随库
+  /// 变化剪枝，多选态期间同步下架 / 别处删除都会留下幽灵键，落库时撞外键——打标签
+  /// 会把弹窗卡死在 loading、组合会静默失败、确认框数字是虚数。
+  ///
+  /// 存在性全集取**全库**而非可见集：被搜索或标签筛掉的书仍然存在，用户先勾后筛
+  /// 是合法用法，不该被悄悄剔掉。
+  ///
+  /// 返回剔完后是否还有东西可做。
+  Future<bool> _pruneStaleSelection() async {
+    if (_selection.isEmpty) return false;
+    final HibikiDatabase db = appModel.database;
+    // 存在性真值必须取自**书架选择键的来源表**，不是名字相近的 `media_items`：
+    // 书架 EPUB 卡的选择键是 `ReaderHibikiSource.mediaIdentifierFor(bookKey)`，
+    // bookKey 的真值在 `epub_books`（`hibikiBooksProvider` 也是从这里取的）；
+    // `getAllMediaItems()` 是另一张表、另一套 mediaIdentifier 语义，拿它做判据
+    // 会把全部选中项误判成幽灵键而整批剔光。
+    final List<EpubBookRow> epubBooks = await db.getAllEpubBooks();
+    final List<SrtBook> srtBooks = await SrtBookRepository(db).listAll();
+    final List<MediaCollectionRow> collections =
+        await db.getAllMediaCollections();
+    if (!mounted) return false;
+    final int dropped = _selection.retainExisting(
+      loose: <String>{
+        for (final EpubBookRow row in epubBooks)
+          ReaderHibikiSource.mediaIdentifierFor(row.bookKey),
+        for (final SrtBook book in srtBooks) 'srt_${book.uid}',
+      },
+      collections: <int>{for (final MediaCollectionRow c in collections) c.id},
+    );
+    if (dropped == 0) return _selection.isNotEmpty;
+    _rebuild(() {});
+    HibikiToast.show(
+      msg: t.batch_selection_stale_skipped(
+        n: dropped + _selection.length,
+        m: dropped,
+      ),
+    );
+    return _selection.isNotEmpty;
+  }
+
   Future<void> _batchShowTagPicker() async {
+    // 幽灵键会让 bookTags 外键插入抛异常，弹窗把落库 await 在 loading 态里，
+    // 一抛就永远转圈（卡死）。必须在开弹窗前剔干净。
+    if (!await _pruneStaleSelection() || !mounted) return;
     final allTags = ref.read(allTagsProvider).valueOrNull;
     if (allTags == null || allTags.isEmpty) {
       HibikiToast.show(msg: t.tag_no_tags_hint);
@@ -625,6 +657,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   /// - 恰 1 合集 + 若干散卡 → 散卡并入该合集（[_combineAddToExisting]，不弹命名）；
   /// - ≥2 合集（可带散卡）→ 合并成一个（[_combineMergeCollections]，默认名=成员最多合集名）。
   Future<void> _batchCombineIntoSeries() async {
+    // 幽灵键会让 addToCollection 撞外键且无人 catch（用户只看到「点了没反应」）。
+    if (!await _pruneStaleSelection() || !mounted) return;
     final List<int> collectionIds = _selectedCollectionIds.toList()..sort();
     final List<ShelfEntryRef> looseRefs = <ShelfEntryRef>[
       for (final String key in _selectedKeys)
@@ -978,14 +1012,10 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
           audioPaths: files.audios,
         );
       case DropIntent.importNewManga:
-        // 漫画（.mokuro / .cbz / 页图目录）走与书同一个导入对话框——它的导入分派
-        // 早已认得这几种载体（mokuro → MangaImporter、cbz/图片型 zip →
-        // MangaArchiveImporter、目录 → importFromImageFolder），拖入只负责把路径
-        // 预填进去，不重复一套导入逻辑。
-        _openBookImportPrefilled(
-          epubPath: files.mangas.first,
-          subtitlePath: null,
-        );
+        // 漫画（.mokuro / .cbz / 页图目录 / 图片型 zip）走漫画自己的导入对话框。
+        // 决策层本来就把漫画和书分成了两个 intent，此前两个 intent 却落到同一个
+        // 对话框；现在落点跟着 intent 走，载体身份不再在半路丢失。
+        _openMangaImportPrefilled(mangaPath: files.mangas.first);
       case DropIntent.unsupportedMangaArchive:
         debugPrint(
           '[hibiki-drop] [reader-shelf] intent=unsupportedMangaArchive',
@@ -1046,6 +1076,23 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         initialEpubPath: epubPath,
         initialSubtitlePath: subtitlePath,
         initialAudioPaths: audioPaths.isEmpty ? null : audioPaths,
+      ),
+    );
+    if (imported == true && mounted) {
+      _refreshSrtBooks();
+      ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    }
+  }
+
+  /// 拖入漫画 → 打开 [MangaImportDialog]，预填漫画路径（目录 / .cbz / .mokuro /
+  /// 图片型 zip）。刷新范式与 [_openBookImportPrefilled] 一致：漫画与书共用
+  /// `EpubBooks` 表和同一块书架，故失效的 provider 也相同。
+  Future<void> _openMangaImportPrefilled({required String mangaPath}) async {
+    final bool? imported = await showAppDialog<bool>(
+      context: context,
+      builder: (_) => MangaImportDialog(
+        db: appModel.database,
+        initialPath: mangaPath,
       ),
     );
     if (imported == true && mounted) {

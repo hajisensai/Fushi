@@ -26,6 +26,22 @@ class AudiobookPlayerController extends ChangeNotifier {
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<void>? _noisySub;
 
+  /// 主播放器的 play 激活串行尾。退出路径必须等激活完成后再采样位置和 stop，
+  /// 否则 just_audio 的平台切换会出现 play→stop 交错。
+  Future<void> _playActivationTail = Future<void>.value();
+
+  /// 位置写入串行尾。周期写、后台 flush、最终 stop flush 共用一条队列，确保旧写入
+  /// 不会在最终位置之后完成并反向覆盖数据库/缓存。
+  Future<void> _positionWriteTail = Future<void>.value();
+
+  bool _stopRequested = false;
+  Future<void>? _stopPlaybackFuture;
+  bool _teardownDone = false;
+
+  /// 测试注入：模拟 stop 平台层抛错，验证 disposeAndRelease 仍完成资源收束。
+  @visibleForTesting
+  Future<void> Function()? debugStopMainPlayerForTesting;
+
   List<File> _audioFiles = [];
 
   List<File> get audioFiles => _audioFiles;
@@ -324,8 +340,67 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   Timer? _imagePauseTimer;
 
+  /// TODO-2389：[awaitImageChapterPause] 的在途 Completer。它必须是控制器字段而
+  /// 不是局部变量——否则唯一能完成它的只有 [_imagePauseTimer] 回调，而该定时器在
+  /// 全文 7 处被 cancel（[triggerImagePause] / [awaitImageChapterPause] 自身重入 /
+  /// [load] / [play] / [pause] / [stopPlayback] / [_teardownForDispose]），每一处
+  /// 都会让 `await done.future` 永久挂起 → reader 的
+  /// `_pauseThroughImageOnlyChapters` 的 finally 永不执行 →
+  /// `setImageChapterPauseActive(false)` 不执行 → 进程级 `_imageChapterPauseActive`
+  /// 卡 true → [notifySectionRestoreCompleted] 永久早退 → cue 驱动的跨章推进直到
+  /// 下次 [load] 新有声书前彻底失效。
+  Completer<void>? _imageChapterPauseCompleter;
+
+  /// TODO-2389：双 epoch。reader 级（换书/停止/销毁）与单次图片章停留级各一个。
+  /// 作废一轮停留时**先递增 epoch 再 complete**，被唤醒的旧续体只能收尾返回，
+  /// 不得恢复播放或改状态（否则「取消」变成「立刻恢复播放」）。
+  int _readerTransitionEpoch = 0;
+  int _imageChapterPauseEpoch = 0;
+
   /// 当前是否处于图片暂停等待中。
-  bool get isImagePaused => _imagePauseTimer?.isActive ?? false;
+  ///
+  /// 跨章停留（[awaitImageChapterPause]）在「已 pause、定时器尚未武装」的窗口里
+  /// 没有 Timer，只有 Completer，也必须算作等待中。
+  bool get isImagePaused =>
+      (_imagePauseTimer?.isActive ?? false) ||
+      _imageChapterPauseCompleter != null;
+
+  bool _ownsImageChapterPause({
+    required int readerTransitionEpoch,
+    required int imageChapterPauseEpoch,
+  }) {
+    return readerTransitionEpoch == _readerTransitionEpoch &&
+        imageChapterPauseEpoch == _imageChapterPauseEpoch;
+  }
+
+  /// 结束当前 await-based 图片章停留，但绝不由失效 continuation 恢复播放。
+  ///
+  /// Timer 与 Completer 必须成对处理：只 cancel Timer 会让
+  /// [awaitImageChapterPause] 永久挂起；只 complete Completer 又会让旧 await 续体
+  /// 继续跑到恢复播放。先递增 epoch，再 complete，使续体只能收尾返回。
+  ///
+  /// **所有** cancel [_imagePauseTimer] 的位置都必须走本方法（或
+  /// [_invalidateReaderTransition]），不得再出现裸 `_imagePauseTimer?.cancel()`；
+  /// 守卫见 `test/media/audiobook/image_chapter_pause_cancel_test.dart`。
+  void _invalidateImageChapterPause() {
+    _imageChapterPauseEpoch++;
+    _imagePauseTimer?.cancel();
+    _imagePauseTimer = null;
+    final Completer<void>? pending = _imageChapterPauseCompleter;
+    _imageChapterPauseCompleter = null;
+    if (pending != null && !pending.isCompleted) {
+      pending.complete();
+    }
+  }
+
+  /// reader 级作废：换书 / 停止播放 / 销毁控制器。控制器是进程级会话对象，
+  /// 可被相邻两个 reader State 复用，此处递增 reader epoch 让上一个 owner 的
+  /// 在途停留续体彻底失效。
+  void _invalidateReaderTransition() {
+    _readerTransitionEpoch++;
+    _invalidateImageChapterPause();
+    _readerMovedDuringImagePause = false;
+  }
 
   /// BUG-890：图片等待（自动暂停）窗口内用户是否手动翻页离开了插图那句。
   /// 图片等待到点自动恢复播放时，若为真则**不**强制把 reader 拽回音频位
@@ -356,7 +431,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   void triggerImagePause() {
     final int sec = imagePauseSec.value;
     if (sec <= 0 || !_player.playing) return;
-    _imagePauseTimer?.cancel();
+    // TODO-2389：成对作废（cancel Timer + complete 在途 Completer）。
+    _invalidateImageChapterPause();
     // BUG-890：新一轮图片等待开始，复位“窗口内是否手动翻页”标志。
     _readerMovedDuringImagePause = false;
     unawaited(_player.pause());
@@ -366,7 +442,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       final bool readerMoved = _readerMovedDuringImagePause;
       _readerMovedDuringImagePause = false;
       if (!_player.playing) {
-        unawaited(_player.play());
+        unawaited(_activateMainPlayer());
         // 暂停时视口停在插图上；恢复后把视口拉回当前 cue（插图后那句），
         // 让 reader 的 _onCueChanged 以 forceReveal 续上 audio-follow（snapReaderToAudio
         // 内部会 notifyListeners）。
@@ -403,24 +479,71 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 本方法主动 `pause()`→等待→`play()`，不照搬那条「非播放即早退」守卫（它防的是
   /// 用户已手动暂停时不该再被图片暂停二次接管，与本路径语义不同）。仍受
   /// `imagePauseSec > 0` 门控：等于 0（图片等待关）时直接返回，调用方按原跨章直跳。
+  ///
+  /// TODO-2389（挂起根因）：本方法必须在**任何**取消点都能返回，否则 reader 的
+  /// `_pauseThroughImageOnlyChapters` 的 finally 永不执行，跨章推进永久失效。
+  /// 在途状态记在 [_imageChapterPauseCompleter] + 双 epoch 上，取消点统一走
+  /// [_invalidateImageChapterPause] / [_invalidateReaderTransition]。
+  ///
+  /// TODO-2369（不得阻塞到播放停止）：末尾恢复播放用 `unawaited`，见那里的注释。
   Future<void> awaitImageChapterPause() async {
     final int sec = imagePauseSec.value;
     if (sec <= 0) return;
-    _imagePauseTimer?.cancel();
+    // 自身重入：上一轮停留成对作废，本轮拿新 epoch。
+    _invalidateImageChapterPause();
+    final int readerTransitionEpoch = _readerTransitionEpoch;
+    final int imageChapterPauseEpoch = _imageChapterPauseEpoch;
+    final Completer<void> done = Completer<void>();
+    _imageChapterPauseCompleter = done;
+
     if (_player.playing) {
-      await _player.pause();
+      // `_player.pause()` 要等平台确认；本轮若在这段窗口里被作废（用户按暂停 /
+      // 退出阅读器 / 换书），done 已被完成，这里不再干等平台。
+      await Future.any<void>(<Future<void>>[
+        _player.pause(),
+        done.future,
+      ]);
+    }
+    if (!_ownsImageChapterPause(
+      readerTransitionEpoch: readerTransitionEpoch,
+      imageChapterPauseEpoch: imageChapterPauseEpoch,
+    )) {
+      return;
     }
     notifyListeners();
-    final Completer<void> done = Completer<void>();
     _imagePauseTimer = Timer(Duration(seconds: sec), () {
+      if (!_ownsImageChapterPause(
+        readerTransitionEpoch: readerTransitionEpoch,
+        imageChapterPauseEpoch: imageChapterPauseEpoch,
+      )) {
+        return;
+      }
       _imagePauseTimer = null;
+      if (identical(_imageChapterPauseCompleter, done)) {
+        _imageChapterPauseCompleter = null;
+      }
       if (!done.isCompleted) done.complete();
     });
     await done.future;
+    if (!_ownsImageChapterPause(
+      readerTransitionEpoch: readerTransitionEpoch,
+      imageChapterPauseEpoch: imageChapterPauseEpoch,
+    )) {
+      return;
+    }
     // 停留结束恢复播放，让 cue 推进继续把文字带到下一章。reader 侧在跨章序列收尾
     // 时统一 notify / reanchor，这里只负责恢复播放时钟。
     if (!_player.playing) {
-      await _player.play();
+      // TODO-2369：不能 await。本方法的契约是「这一张整章插图停留结束」，不是
+      // 「播放已重新建立」；把二者绑在一起就把 reader 的跨章 finally 押在了播放
+      // 激活上。just_audio 的 `play()` Future 在若干寻常路径上**永远不会完成**：
+      // 音频会话激活被拒（来电/音频焦点被抢）时走 else 分支，playCompleter 从不
+      // complete 而末尾仍 `await playCompleter.future`；`_sendPlayRequest` 也会在
+      // `playing` 已翻回 false 时 defensive-return 丢掉 completer。一旦挂住，
+      // `setImageChapterPauseActive(false)` 永不执行，跨章推进永久失效。
+      // 仍然走 [_activateMainPlayer]（不得退回裸 `_player.play()`），保留
+      // `_stopRequested` 门与 `_playActivationTail` 串行化（BUG-1240）。
+      unawaited(_activateMainPlayer());
     }
     notifyListeners();
   }
@@ -540,11 +663,11 @@ class AudiobookPlayerController extends ChangeNotifier {
     followAudio.value = initialFollowAudio;
     delayMs.value = initialDelayMs;
     imagePauseSec.value = initialImagePauseSec;
-    _imagePauseTimer?.cancel();
-    _imagePauseTimer = null;
+    // TODO-2389：换书是 reader 级作废——成对处理 Timer/Completer 并让上一本书的
+    // 在途停留续体彻底失效（顺带复位 _readerMovedDuringImagePause）。
+    _invalidateReaderTransition();
     _hasPlayedOnce = false;
     _forceNextReveal = false;
-    _readerMovedDuringImagePause = false;
     _chapterTransition = false;
     _imageChapterPauseActive = false;
 
@@ -640,11 +763,28 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// （周期路径仍 fire-and-forget，不 await）。
   Future<void> Function(String bookKey, int positionMs)? onPositionWrite;
 
+  Future<void> _enqueuePositionWrite(String uid, int posMs) {
+    final Future<void> Function(String bookKey, int positionMs)? write =
+        onPositionWrite;
+    if (write == null) return _positionWriteTail;
+
+    final Future<void> operation =
+        _positionWriteTail.then<void>((_) => write(uid, posMs));
+    // 尾链必须自行恢复，某一次写失败不能让所有后续 flush 永久短路；调用方仍拿到
+    // 原始 operation，因此显式 flush/stop 可以观察并上抛本次错误。
+    _positionWriteTail = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return operation;
+  }
+
   /// 把当前播放位置写入持久化存储。对齐上游：**每整秒变化一次**就写。
   /// 125ms tick 触发 8 次里只有 1 次真的落库，IO 成本和上游等价。
   ///
   /// 调用时机：cue 变化（_updateCurrentCue）、暂停、dispose。
   void _maybeSavePosition({bool force = false}) {
+    if (_stopRequested) return;
     final String? uid = _audiobook?.bookKey;
     if (uid == null) return;
     final int posMs = _player.position.inMilliseconds;
@@ -653,7 +793,16 @@ class AudiobookPlayerController extends ChangeNotifier {
       return;
     }
     _lastSavedWholeSec = wholeSec;
-    unawaited(onPositionWrite?.call(uid, posMs));
+    unawaited(
+      _enqueuePositionWrite(uid, posMs).catchError(
+        (Object error, StackTrace stack) {
+          debugPrint(
+            '[AudiobookPlayerController] periodic position write failed: '
+            '$error\n$stack',
+          );
+        },
+      ),
+    );
   }
 
   /// 强制把当前播放位置同步写入持久层并 **await 到落库**。
@@ -666,10 +815,13 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 窗口里把当前位置 await 写穿，保证退到后台那一刻的进度可靠落库。
   Future<void> flushPosition() async {
     final String? uid = _audiobook?.bookKey;
-    if (uid == null) return;
+    if (uid == null) {
+      await _positionWriteTail;
+      return;
+    }
     final int posMs = _player.position.inMilliseconds;
     _lastSavedWholeSec = posMs ~/ 1000;
-    await onPositionWrite?.call(uid, posMs);
+    await _enqueuePositionWrite(uid, posMs);
   }
 
   /// 切换章节后更新当前章节的 cue 列表。
@@ -728,10 +880,8 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 开始播放。
   ///
-  /// 不 await `_player.play()`：just_audio 的 `play()` 返回的 Future 在播放
-  /// **结束或暂停**时才完成，await 会让调用方误以为播放迟迟没启动。真正的
-  /// 播放状态翻转通过 [_playingSub] 订阅 `playingStream` 拿到，立刻触发
-  /// `notifyListeners()`，按钮图标不需要等网络/缓冲。
+  /// 等待 just_audio 的平台 play 请求被接受。调用者仍可 fire-and-forget 本方法，
+  /// 但控制器会保留激活 Future，令 [stopPlayback] 在采样/停止前等待它 settle。
   Future<void> play() async {
     // 对齐 Sasayaki：首次 play 之后才允许跨章自动翻页。打开书 / 恢复
     // 位置阶段 cue 与 reader 当前章不一致是常态，不应在用户没按播放时
@@ -741,18 +891,33 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 用户在图片自动暂停窗口内手动播放：取消待恢复计时器并把视口从插图拉回当前
     // cue（否则计时器到点见已在播放而跳过 snap，视口卡在插图上直到下次 cue 推进）。
     // 手动按播放是显式“继续听书”手势，仍 snap；只复位 BUG-890 的窗口内翻页标志。
-    if (_imagePauseTimer != null) {
-      _imagePauseTimer!.cancel();
-      _imagePauseTimer = null;
+    // TODO-2389：跨章停留在「已 pause、定时器未武装」的窗口里只有 Completer 没有
+    // Timer，用 isImagePaused 覆盖两种在途形态，并成对作废。
+    if (isImagePaused) {
+      _invalidateImageChapterPause();
       _readerMovedDuringImagePause = false;
       snapReaderToAudio();
     }
-    unawaited(_player.play());
+    await _activateMainPlayer();
+  }
+
+  Future<void> _activateMainPlayer() {
+    if (_stopRequested) return Future<void>.value();
+    final Future<void> operation = _playActivationTail.then<void>((_) async {
+      if (_stopRequested) return;
+      await _player.play();
+    });
+    _playActivationTail = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return operation;
   }
 
   Future<void> pause() async {
-    _imagePauseTimer?.cancel();
-    _imagePauseTimer = null;
+    // TODO-2389：用户在插图停留期按暂停——成对作废，让 awaitImageChapterPause
+    // 的 await 立刻返回（且续体因 epoch 不匹配不会把播放又恢复回去）。
+    _invalidateImageChapterPause();
     _readerMovedDuringImagePause = false;
     _resumeMainAfterClip = false;
     await _player.pause();
@@ -896,7 +1061,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       _currentCue = cue;
       notifyListeners();
     }
-    unawaited(_player.play());
+    unawaited(_activateMainPlayer());
   }
 
   /// 从指定 cue 开始连续播放（不暂停）。
@@ -909,7 +1074,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     await skipToCue(cue);
     if (!_player.playing) {
       _hasPlayedOnce = true;
-      unawaited(_player.play());
+      unawaited(_activateMainPlayer());
     }
   }
 
@@ -1529,8 +1694,8 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   // ── 生命周期 ───────────────────────────────────────────────────────────────
 
-  /// 真正停播（止声）：停掉主播放器与 clip 播放器并释放其 native 解码器，
-  /// 再强制落库当前位置。供退出/停止会话路径在 [dispose] 之前 `await`。
+  /// 真正停播（止声）：先把主播放器仍持有的当前位置写穿，再停掉主播放器与
+  /// clip 播放器并释放其 native 解码器。供退出/停止会话路径在 [dispose] 之前 `await`。
   ///
   /// 根因（BUG-278 / TODO-367）：会话停止路径 [AudiobookSession.stop] 此前是
   /// `await controller.pause(); controller.dispose();`。`pause()`（just_audio
@@ -1543,16 +1708,63 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 「先 stop 再 dispose」一致。把它做成可 `await`：先 stop settle 完平台切换，
   /// 再让调用方 dispose，避免「stop 的异步平台切换」与「dispose 置 `_disposed`」
   /// 交错触发 just_audio 内部状态机崩溃。`_clipPlayer` 同理。
-  Future<void> stopPlayback() async {
-    _imagePauseTimer?.cancel();
-    _imagePauseTimer = null;
+  Future<void> stopPlayback() {
+    final Future<void>? existing = _stopPlaybackFuture;
+    if (existing != null) return existing;
+    // 同步立 fence，挡住 stop 调用后同一 event-loop 内到来的新 play/tick。
+    _stopRequested = true;
+    return _stopPlaybackFuture = _stopPlaybackOnce();
+  }
+
+  Future<void> _stopPlaybackOnce() async {
+    // TODO-2389：退出阅读器是 reader 级作废（`_stopRequested` 已同步立起，续体
+    // 即便被唤醒也不得恢复播放）。
+    _invalidateReaderTransition();
     _resumeMainAfterClip = false;
     final AudioPlayer? clip = _clipPlayer;
-    await Future.wait<void>(<Future<void>>[
-      _player.stop(),
-      if (clip != null) clip.stop(),
-    ]);
-    _maybeSavePosition(force: true);
+
+    Object? firstError;
+    StackTrace? firstStack;
+    void remember(Object error, StackTrace stack) {
+      firstError ??= error;
+      firstStack ??= stack;
+    }
+
+    // BUG-1240：先等任何未 await 的 play 平台激活 settle，才允许采样与 stop。
+    try {
+      await _playActivationTail;
+    } catch (error, stack) {
+      remember(error, stack);
+    }
+
+    // 捕获 live position → 等所有旧写入 → 写穿最终值。之后绝不再采样 position，
+    // 因为 just_audio stop 会归零。
+    try {
+      await flushPosition();
+    } catch (error, stack) {
+      remember(error, stack);
+    }
+
+    // 即使 play 或持久层失败，也必须尽力停掉两个播放器；错误在资源收束后再抛。
+    try {
+      final Future<void> Function()? stopForTesting =
+          debugStopMainPlayerForTesting;
+      await (stopForTesting?.call() ?? _player.stop());
+    } catch (error, stack) {
+      remember(error, stack);
+    }
+    if (clip != null) {
+      try {
+        await clip.stop();
+      } catch (error, stack) {
+        remember(error, stack);
+      }
+    }
+
+    final Object? error = firstError;
+    if (error != null) {
+      Error.throwWithStackTrace(error, firstStack!);
+    }
   }
 
   /// 测试钩子：主播放器是否处于播放态（just_audio 公开状态）。
@@ -1583,20 +1795,50 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///
   /// 与 [dispose] 二选一调用（都会 `super.dispose()`，不得对同一实例都调）。
   Future<void> disposeAndRelease() async {
+    Object? firstError;
+    StackTrace? firstStack;
+    try {
+      await stopPlayback();
+    } catch (error, stack) {
+      firstError = error;
+      firstStack = stack;
+    }
     _teardownForDispose();
     // 先 await clip / 主播放器的底层释放——句柄真放掉再返回（迁移 rename 前提）。
-    await _clipPlayer?.dispose();
+    try {
+      await _clipPlayer?.dispose();
+    } catch (error, stack) {
+      firstError ??= error;
+      firstStack ??= stack;
+    }
     _clipPlayer = null;
-    await _player.dispose();
-    super.dispose();
+    try {
+      await _player.dispose();
+    } catch (error, stack) {
+      firstError ??= error;
+      firstStack ??= stack;
+    } finally {
+      super.dispose();
+    }
+    final Object? error = firstError;
+    if (error != null) {
+      Error.throwWithStackTrace(error, firstStack!);
+    }
   }
 
   /// [dispose] 与 [disposeAndRelease] 共用的同步清理（取消订阅/定时器、dispose
   /// 各 notifier、force-flush 位置）；不含底层播放器释放（两条路径对它处理不同：
   /// 同步 fire-and-forget vs 可 await 释放）。
   void _teardownForDispose() {
-    _maybeSavePosition(force: true);
-    _imagePauseTimer?.cancel();
+    if (_teardownDone) return;
+    _teardownDone = true;
+    // stopPlayback 已写穿最终 live position；stop 后再 force-save 会把归零值覆盖回去。
+    if (!_stopRequested) {
+      _maybeSavePosition(force: true);
+    }
+    // TODO-2389：销毁是 reader 级作废；只 cancel Timer 会让在途
+    // awaitImageChapterPause 永久挂起（且它的续体绝不能在 dispose 后 notify）。
+    _invalidateReaderTransition();
     _positionSub?.cancel();
     _playingSub?.cancel();
     _noisySub?.cancel();
@@ -1656,7 +1898,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
     if (resumeMain && _resumeMainAfterClip) {
       _resumeMainAfterClip = false;
-      unawaited(_player.play());
+      unawaited(_activateMainPlayer());
     }
   }
 }

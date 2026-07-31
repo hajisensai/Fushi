@@ -150,14 +150,14 @@ void main() {
           reason:
               'opaque 外层应在最外、救场层 _withSubtitleListCursorReveal 在其内（opaque annotation 包整列）');
 
-      // 选集侧栏：此前**完全无** cursor-reveal 覆盖，r5 必须补 opaque 外层。
-      final int epStart = src.indexOf('Widget _episodeSidePanel(');
+      // 选集横向轨道：仍需 opaque cursor 外层，鼠标移入卡片后必须恢复 basic。
+      final int epStart = src.indexOf('Widget _episodeOverlayPanel(');
       expect(epStart, greaterThanOrEqualTo(0));
       final int epEnd = src.indexOf('\n  Widget ', epStart + 1);
       final String epBody =
           src.substring(epStart, epEnd > epStart ? epEnd : src.length);
       expect(epBody.contains('_withSidePanelOpaqueCursor('), isTrue,
-          reason: 'r5：选集侧栏外层必须补声明式 opaque cursor 包裹（此前裸奔 = 选集列表光标隐藏）');
+          reason: '选集轨道外层必须有声明式 opaque cursor 包裹');
       final int epOpaqueIdx = epBody.indexOf('_withSidePanelOpaqueCursor(');
       final int epPanelIdx = epBody.indexOf('VideoEpisodePanel(');
       expect(epPanelIdx, greaterThan(epOpaqueIdx),

@@ -1,9 +1,14 @@
-# hook_code	thread_id	manual_thread	text	expected_write
-bad	1	0	menu	1
-bad	1	0	load	1
-good	2	0	dialogue	0
-bad	1	0	AABBCC	0
-good	2	0	clean-line	1
-bad	1	1	manual-line	1
-bad	1	1	AABBCC	0
-good	2	0	clean-again	1
+# thread_id	manual_thread	text	expected_write
+#
+# 文本环准入的黄金表（v12）。契约：manual_thread==0（用户尚未为本游戏选定线程）时
+# **一行都不发布**，无论文本多干净、也无论该线程已经出过多少行。旧实现在这里会按
+# hookcode 统计 clean/dirty 自动锁定「赢家」并放行——那正是 BUG-1193 里用户被锁死在
+# 猜错线程上的成因，故 hook_code 列已随判定一起移除。伪影行任何情况下都不进文本环。
+1	0	menu	0
+1	0	load	0
+2	0	dialogue	0
+2	0	clean-line	0
+1	1	manual-line	1
+1	1	AABBCC	0
+2	1	other-thread	0
+1	1	clean-again	1

@@ -23,7 +23,14 @@ void main() {
     expect(shell.contains('restoreToCharOffset(C.initialCharOffset)'), isTrue);
     expect(shell.contains('revealSpeed: C.vnRevealSpeed,'), isTrue);
     expect(shell.contains('screenMode: C.vnScreenMode,'), isTrue);
-    expect(shell.contains("callHandler('onRestoreComplete')"), isTrue);
+    expect(
+      _hasGenerationAwareRestoreCall(
+        _extractBraceBlock(shell, 'notifyRestoreComplete: function()'),
+      ),
+      isTrue,
+      reason: 'VN restore notification must send handler + perf placeholder + '
+          'the immutable document generation',
+    );
     // 整份 shell 被包成运行时可复用的安装函数（引擎静态化的前提）。
     expect(shell.contains('window.__hoshiShells.vn = function(C) {'), isTrue);
   });
@@ -106,31 +113,96 @@ void main() {
       'BUG-513①: VN initialize readyPromise has a .catch that still fires '
       'notifyRestoreComplete (fail-open, never a permanent mask)', () {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
-    // The happy-path notify exists.
+    final String notifyBody =
+        _extractBraceBlock(shell, 'notifyRestoreComplete: function()');
     expect(
-      shell.contains("callHandler('onRestoreComplete')"),
+      _hasGenerationAwareRestoreCall(notifyBody),
       isTrue,
-      reason: 'notifyRestoreComplete must forward to onRestoreComplete',
+      reason: 'notifyRestoreComplete must forward the document generation',
     );
+    final String initializeBody =
+        _extractBraceBlock(shell, 'initialize: function()');
     // A .catch handler must exist on the initialize promise chain.
+    const String catchMarker = '.catch((error) => {';
+    final int catchIdx = initializeBody.indexOf(catchMarker);
     expect(
-      shell.contains('.catch((error) => {'),
-      isTrue,
+      catchIdx,
+      greaterThanOrEqualTo(0),
       reason: 'initialize readyPromise must catch failures',
+    );
+    final String happyBody = initializeBody.substring(0, catchIdx);
+    expect(
+      happyBody.contains('this.notifyRestoreComplete();'),
+      isTrue,
+      reason: 'initialize happy path must fire notifyRestoreComplete',
     );
     // Inside the catch, notifyRestoreComplete must still be called so the Dart
     // loading mask is released even when a build step throws.
-    final int catchIdx = shell.indexOf('.catch((error) => {');
-    expect(catchIdx, greaterThanOrEqualTo(0));
-    final int chainEnd = shell.indexOf('return this.readyPromise;', catchIdx);
-    expect(chainEnd, greaterThan(catchIdx),
-        reason:
-            'catch must sit inside initialize before returning readyPromise');
-    final String catchBody = shell.substring(catchIdx, chainEnd);
+    final String catchBody = _extractBraceBlock(
+      initializeBody,
+      catchMarker,
+    );
     expect(
       catchBody.contains('this.notifyRestoreComplete();'),
       isTrue,
       reason: 'catch branch must still fire notifyRestoreComplete (fail-open)',
+    );
+  });
+
+  test(
+      'restore handler validates and gates the reported document generation '
+      'before settling Dart state', () {
+    final String webview = File(
+      'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+    ).readAsStringSync();
+    final String callback = _extractRestoreHandlerCallback(webview);
+
+    expect(
+      RegExp(
+        r'args\.length\s*<\s*2\s*\|\|\s*args\[1\]\s+is!\s+num',
+      ).hasMatch(callback),
+      isTrue,
+      reason: 'Dart handler must reject a missing/non-numeric generation',
+    );
+    expect(
+      callback.contains('rawGeneration.isFinite') &&
+          callback.contains('rawGeneration != rawGeneration.toInt()'),
+      isTrue,
+      reason: 'Dart handler must reject non-finite/fractional generations',
+    );
+    expect(
+      RegExp(
+        r'_acceptRestoreComplete\(\s*'
+        r'reportedGeneration:\s*rawGeneration\.toInt\(\),\s*'
+        r'perfSnapshot:\s*args\.first,\s*\)',
+      ).hasMatch(callback),
+      isTrue,
+      reason: 'only the validated generation may enter the restore gate',
+    );
+
+    final String navigation = File(
+      'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+    ).readAsStringSync();
+    final int gateStart = navigation.indexOf('void _acceptRestoreComplete({');
+    final int settleStart =
+        navigation.indexOf('void _onRestoreComplete()', gateStart);
+    expect(gateStart, greaterThanOrEqualTo(0));
+    expect(settleStart, greaterThan(gateStart));
+    final String gate = navigation.substring(gateStart, settleStart);
+    expect(
+      RegExp(
+        r'isCurrentReaderRestoreCompletion\(\s*'
+        r'reportedGeneration:\s*reportedGeneration,\s*'
+        r'currentGeneration:\s*_navigateGeneration,\s*'
+        r'expectedGeneration:\s*_restoreExpectedGeneration,\s*\)',
+      ).hasMatch(gate),
+      isTrue,
+      reason: 'Dart must compare reported, current, and expected generations',
+    );
+    expect(
+      gate.indexOf('isCurrentReaderRestoreCompletion('),
+      lessThan(gate.indexOf('_onRestoreComplete();')),
+      reason: 'generation gate must run before restore side effects settle',
     );
   });
 
@@ -211,6 +283,33 @@ void main() {
     );
   });
 
+  test('BUG-1244 zero-width media screens attach to adjacent VN text', () {
+    final String shell = ReaderVisualNovelScripts.vnShellScript();
+    final int buildAt = shell.indexOf('buildScreens: function()');
+    final int attachAt = shell.indexOf(
+      'baseScreens = this.attachMediaScreensToAdjacentText(baseScreens);',
+      buildAt,
+    );
+    final int cueMergeAt =
+        shell.indexOf('this.mergeSasayakiCrossScreenScreens(baseScreens)');
+    expect(attachAt, greaterThan(buildAt));
+    expect(
+      attachAt,
+      lessThan(cueMergeAt),
+      reason: '图片必须先并入相邻文字屏，再按 cue 合屏；否则逐句跳转仍会略过图片屏',
+    );
+    expect(
+      shell,
+      contains(
+        'this.screenStartCharCount(screen) === this.screenEndCharCount(screen)',
+      ),
+      reason: '只有没有字符锚的纯媒体屏需要附加，正常文字/图片混排屏不得被重排',
+    );
+    expect(shell, contains('pendingMedia.concat([screen])'));
+    expect(shell, contains('[previous].concat(pendingMedia)'),
+        reason: '章尾无下一句时必须挂到上一屏，仍然不能永久不可见');
+  });
+
   // BUG-718：VN 模式按字符偏移恢复（restoreToCharOffset）时整页空白。根因——
   // restoreToCharOffset 只由 boot 块之后的 host-compat shim IIFE 挂上，而 boot 的
   // `if (document.readyState==='complete')` 分支在 setup 脚本注入时同步调用
@@ -257,4 +356,56 @@ void main() {
         reason:
             'engine-assembled VN shell must keep shim-before-boot ordering');
   });
+}
+
+String _extractRestoreHandlerCallback(String source) {
+  const String handlerMarker = "handlerName: 'onRestoreComplete'";
+  final int handlerStart = source.indexOf(handlerMarker);
+  expect(
+    handlerStart,
+    greaterThanOrEqualTo(0),
+    reason: 'Dart must register the onRestoreComplete handler',
+  );
+  final int callbackStart = source.indexOf('callback:', handlerStart);
+  expect(
+    callbackStart,
+    greaterThan(handlerStart),
+    reason: 'onRestoreComplete must have a callback',
+  );
+  return _extractBraceBlockAt(source, callbackStart);
+}
+
+String _extractBraceBlock(String source, String marker) {
+  final int markerStart = source.indexOf(marker);
+  expect(
+    markerStart,
+    greaterThanOrEqualTo(0),
+    reason: 'missing source marker: $marker',
+  );
+  return _extractBraceBlockAt(source, markerStart);
+}
+
+String _extractBraceBlockAt(String source, int start) {
+  final int bodyStart = source.indexOf('{', start);
+  expect(bodyStart, greaterThanOrEqualTo(0), reason: 'missing block body');
+  int depth = 0;
+  for (int index = bodyStart; index < source.length; index++) {
+    final String char = source[index];
+    if (char == '{') {
+      depth++;
+    } else if (char == '}') {
+      depth--;
+      if (depth == 0) {
+        return source.substring(bodyStart, index + 1);
+      }
+    }
+  }
+  fail('source block braces are unbalanced');
+}
+
+bool _hasGenerationAwareRestoreCall(String source) {
+  return RegExp(
+    r"callHandler\(\s*'onRestoreComplete'\s*,\s*null\s*,\s*"
+    r'C\.navigationGeneration\s*\)',
+  ).hasMatch(source);
 }

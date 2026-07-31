@@ -416,7 +416,10 @@ class GlobalLookupController {
       // 制卡 `{sentence}` 兜底（sentenceContext），但 showSentenceBanner:false
       // 让 root 卡不贴横幅。只有剪切板自动唤出的瞬态窗（dispatcher）才带横幅。
       await _lookupExternal(text,
-          sentence: sentence, showSentenceBanner: false, miningHandler: null);
+          sentence: sentence,
+          showSentenceBanner: false,
+          autoRead: true,
+          miningHandler: null);
     } catch (e, st) {
       glog('hotkey: EXCEPTION $e\n$st');
     }
@@ -447,6 +450,7 @@ class GlobalLookupController {
     Rect? anchorScreenRect,
     bool showSentenceBanner = true,
     bool passiveStream = false,
+    bool autoRead = true,
     OverlayMiningHandler? miningHandler,
   }) async {
     final String term = text.trim();
@@ -481,6 +485,7 @@ class GlobalLookupController {
         sentence: sentence,
         anchorScreenRect: anchorScreenRect,
         showSentenceBanner: showSentenceBanner,
+        autoRead: autoRead,
         miningHandler: miningHandler);
     return true;
   }
@@ -539,6 +544,7 @@ class GlobalLookupController {
     required String sentence,
     Rect? anchorScreenRect,
     bool showSentenceBanner = true,
+    required bool autoRead,
     OverlayMiningHandler? miningHandler,
   }) async {
     final AppModel? model = _appModel;
@@ -672,7 +678,9 @@ class GlobalLookupController {
       await _renderStack();
       glog('lookup: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
           'workCss=${_screenWorkW}x$_screenWorkH rendered');
-      _autoReadFirstEntry(model, result);
+      if (autoRead) {
+        _autoReadFirstEntry(model, result);
+      }
       // TODO-1079 (B) — READY-DRIVEN reveal fallback (was a blind 450ms timeout).
       // The real reveal is host-driven (overlaySize -> _applyOverlayBox). This
       // safety only fires when that never arrives (true render failure), and it

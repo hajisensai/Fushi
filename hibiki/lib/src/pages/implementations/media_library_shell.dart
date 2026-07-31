@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/utils.dart';
 
 /// 库页视图种类：一个顶层 tab 内部的几个平级视图。
@@ -28,11 +29,10 @@ enum MediaLibraryViewKind {
 
 /// 一个视图的声明：显示名 + 内容构建器。
 ///
-/// [builder] 收到的 `navigation` 就是本壳的分段条。**视图必须把它放进自己页头的
-/// `bottom` 槽**，而不是由壳在外层再包一层页头——三个库页（书架 / 视频 / 漫画）的
-/// 页头各自带着本域的标题与动作按钮（导入 / 合集 / 统计…），外层再加一个页头就成了
-/// 双标题。让分段条下沉到各视图页头，标题与动作保持原样，而分段条在所有域里的位置
-/// 完全一致。
+/// [builder] 收到的 `navigation` 就是本壳的分段条。**视图必须把它作为自己页头的
+/// 自定义主内容**，与右侧动作按钮同一行，而不是由壳在外层再包一层页头——三个库页
+/// （书架 / 视频 / 漫画）各自拥有导入 / 合集 / 统计等动作，外层再加页头会形成双层
+/// chrome。分段条取代重复的大标题后，所有媒体域的导航与动作都处在同一高度。
 class MediaLibraryViewSpec {
   const MediaLibraryViewSpec({
     required this.kind,
@@ -138,6 +138,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
       selected: selected,
       onChanged: _select,
       focusIdPrefix: widget.focusIdPrefix,
+      focusId: HibikiFocusId('${widget.focusIdPrefix}-sections'),
       child: HibikiSegmentedStrip<MediaLibraryViewKind>(
         segments: <ButtonSegment<MediaLibraryViewKind>>[
           for (final MediaLibraryViewSpec spec in views)

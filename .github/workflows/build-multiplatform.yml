@@ -21,6 +21,7 @@ on:
       - 'native/**'
       - 'ci/**'
       - 'third_party/**'
+      - 'tools/build_magpie_slim.ps1'
       - '.github/workflows/build-multiplatform.yml'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -847,7 +848,7 @@ jobs:
           # 源包若被掉包而不先验，我们的侧车就成了给污染产物背书的东西。
           # 只出 x64：ARM64 用户极少且能跑 x64 模拟，为它多背 4.7 MB 不划算，
           # 那条路继续走按需下载。
-          powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_magpie_slim.ps1
+          pwsh -NoProfile -ExecutionPolicy Bypass -File tools/build_magpie_slim.ps1
           if ($LASTEXITCODE -ne 0) { throw "build_magpie_slim.ps1 failed ($LASTEXITCODE)" }
           $sourceDir = Join-Path $PWD 'dist'
           $targetDir = Join-Path $PWD 'hibiki\build\windows\x64\runner\Debug\magpie_bundle'

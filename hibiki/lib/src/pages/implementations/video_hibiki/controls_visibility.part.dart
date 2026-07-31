@@ -122,7 +122,7 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
     // BUG-371：[_subtitleListVisible] 不再纳入门控——字幕跳转列表是 push-aside 侧栏
     // （把画面挤窄到左侧、不遮控制条），开列表时控制条应继续在被挤窄的画面上可见可用，
     // 不像真 overlay（[_videoSidePanel]）那样盖住控制条需强制隐藏。仅沉浸锁 / 真 overlay
-    // 面板 / 剧集列表（其 push-aside 但仍占右栏）/ 编辑态压制。
+    // 面板 / 剧集横向轨道 / 编辑态压制。
     final bool gated = _immersiveLocked.value ||
         _videoSidePanel.value != null ||
         _episodeListVisible.value ||
@@ -279,8 +279,8 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
     );
   }
 
-  /// 给 push-aside 侧栏兄弟列（字幕列表 [_subtitleJumpSidePanel] / 选集列表
-  /// [_episodeSidePanel]）包一层**声明式** `MouseRegion(opaque: true, cursor: basic)`
+  /// 给视频旁的浏览表面（字幕列表 [_subtitleJumpSidePanel] / 选集横向轨道
+  /// [_episodeOverlayPanel]）包一层**声明式** `MouseRegion(opaque: true, cursor: basic)`
   /// 外层——BUG-391 r5 的**根因修**（不是前几轮的救场 onEnter 直发）。
   ///
   /// 根因机理：侧栏是 [_videoWithSubtitlePanel] 的 Row 兄弟列，几何上不在视频列那条

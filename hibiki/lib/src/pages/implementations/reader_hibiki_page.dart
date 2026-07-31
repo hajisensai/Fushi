@@ -60,6 +60,7 @@ import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/image_reveal_key.dart';
 import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
+import 'package:hibiki/src/reader/reader_search_navigation.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
@@ -70,6 +71,7 @@ import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
+import 'package:hibiki/src/platform/selection_external_actions.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/utils/misc/coalesced_async_runner.dart';
@@ -517,6 +519,22 @@ html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
     img.addEventListener('click',function(){
       window.flutter_inappwebview.callHandler('onImageTap',img.src);
     });
+  });
+  // BUG-1280：spread 是第四种独立文档（继歌词 BUG-756、VN BUG-1195 之后），HTML 本身
+  // 不含正文 hoshiReader 的 onTap/onTapEmpty，自带的手势只有「点图片 → onImageTap」。
+  // 底栏一收起就没有唤出通道 → 看不到返回按钮 → 退不出这本书。
+  //
+  // 注意这条在修复前**分平台**：Windows 的 loadData 丢 baseUrl，onLoadStop 判 stale，
+  // 正文引擎从不注入，spread 页确实一个唤出通道都没有；Android 保留 baseUrl，判据放行，
+  // 正文引擎（含 onTapEmpty）被误注进来，反而"意外"有过一条受 tapEmptyToHideChrome
+  // 门控的通道。那条误注入已由 _onChapterLoadComplete 的 spread 守卫堵掉（见其注释），
+  // 所以两个平台现在都只剩下面这一条、且语义一致的专桥。
+  //
+  // 修法镜像歌词的 onLyricsTapEmpty：图片以外（letterbox 留白 / 页缝）的点击走专桥
+  // 给 Dart，由 Dart 判唤出还是收起（chrome 可见性的真值只在 Dart 侧）。
+  document.addEventListener('click', function(e){
+    if (e && e.target && e.target.tagName === 'IMG') return;
+    window.flutter_inappwebview.callHandler('onSpreadTapEmpty');
   });
   var signaled = false;
   function signalReady(){
@@ -1099,13 +1117,35 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   ({String? bookKey, String? title})? get lookupBookIdentity =>
       (bookKey: widget.bookKey, title: _book?.title);
   EpubSpreadMap? _spreadMap;
+
+  /// BUG-1280：**上一次交给 WebView 的文档是不是 spread 独立文档**
+  /// （[buildSpreadPageHtml]，两张整页 `<img>`，无正文 `hoshiReader`）。
+  ///
+  /// 写点是**三个**，正好是把文档交给 WebView 的三个装载原语：`_loadSpreadPage`
+  /// 置位，`_loadChapterDirectly` 与 **`_loadLyricsPage`** 复位。所以它跟踪的是
+  /// 「WebView 里现在是什么文档」，而不是「spread map 存不存在」
+  /// （`_spreadMap != null` 在整本书生命周期为真，分不出当前这一页是双页还是普通章）。
+  ///
+  /// **歌词那处最容易漏，本 PR 实现时就漏过**：不在 `_loadLyricsPage` 复位，从双页
+  /// 页面切进歌词模式时本标记会残留为真，`_onChapterLoadComplete` 的 spread 守卫把
+  /// 歌词分支一起挡掉 → 歌词永远不就绪。新增装载点必须同步写它。
+  ///
+  /// 存在的理由是 `onLoadStop` 的陈旧判据只比 URL 的 path，而 `_loadSpreadPage`
+  /// 传的 baseUrl 与 `_chapterUrl(_currentChapter)` 逐字相同 → 该判据**分不出**
+  /// spread 文档和正文章节，于是在保留 baseUrl 的平台上会把整份正文引擎注进
+  /// spread 文档。详见 `_onChapterLoadComplete` 的守卫注释。
+  bool _spreadDocumentLoaded = false;
   ReaderSettings? _settings;
   String? _extractDir;
 
   /// 库内 part 文件（extension）改状态的入口：扩展不被视作 State 子类实例成员，
   /// 直接调 @protected 的 setState 会报 invalid_use_of_protected_member。由本 State
-  /// 子类持有的这个转发器统一承接，零行为变化（仅转发）。
-  void _rebuild(VoidCallback fn) => setState(fn);
+  /// 子类持有的这个转发器统一承接。part 中的异步回调可能在 route dispose 后才返回；
+  /// 此时状态已不可再更新，统一在转发边界丢弃，避免晚到回调触发 setState-after-dispose。
+  void _rebuild(VoidCallback fn) {
+    if (!mounted) return;
+    setState(fn);
+  }
 
   /// 同 [_rebuild] 的理由：part 扩展不被视作 State 子类实例成员，直接读写
   /// `BaseSourcePageState` 的 @protected 弹窗栈成员会报 invalid_use_of_protected_member。
@@ -1134,6 +1174,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool _readerContentReady = false;
   bool _hasEverLoaded = false;
   bool _readerTextContextMenuActive = false;
+  // BUG-1236：移动端长按拖选后的非模态选区操作条。旧 showMenu 的全屏
+  // ModalBarrier 会截断 WebView 手柄触摸；OverlayEntry 只让按钮区域命中。
+  OverlayEntry? _selectionActionBarEntry;
+  ReaderSelectionData? _selectionActionData;
   bool _restoreInFlight = false;
   bool _isNavigatingToChapter = false;
   // TODO-1037：跨章推进经过的「纯图片章逐个停留」序列在途时为真，防重入跨章导航。
@@ -1162,7 +1206,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // _applyPendingPreciseLocate 在恢复落定且 settle 之后消费。代际用于并发导航去重（顶掉后
   // 代际不匹配即丢弃，不误用到别的章）。null=无待处理。书签/收藏/字符跳转把分数烘进导航
   // （_navigateToChapterAndWait 的 progress），单次原子恢复直接落点，不入本队列。
-  ({int generation, String js})? _pendingPreciseLocate;
+  final ReaderPreciseLocateQueue _preciseLocateQueue =
+      ReaderPreciseLocateQueue();
 
   double _stableTopInset = 0;
   double _stableBottomInset = 0;
@@ -2018,6 +2063,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   @override
   void dispose() {
+    // Search navigation can still be awaiting restore while the route closes.
+    // Complete it as failed now (and clear its precise-locate request) instead
+    // of leaving the callback alive until the 10-second timeout.
+    _failNavigation();
     assert(() {
       ReaderHibikiPage.debugEvaluateJavascript = null;
       ReaderHibikiPage.debugCaptureWebView = null;
@@ -2041,6 +2090,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _exitFlushCallback = null;
     }
     WidgetsBinding.instance.removeObserver(this);
+    _removeSelectionActionBar();
     _progressPollTimer?.cancel();
     _saveDebounce?.cancel();
     _scrollProgressThrottleTimer?.cancel();
@@ -3071,6 +3121,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _focusOwnership.reclaim(FocusReclaimCause.popupRendered);
     }
   }
+
+  /// BUG-1071 复诉：上面的焦点 reclaim 只在**弹窗渲染那一刻**成立。用户与弹窗交互
+  /// 一次（滚动看释义 / 点释义 / 点发音）OS 焦点就回到原生 WebView，之后按键必然
+  /// 再次失效；而绑到「关闭词典」的**鼠标键**从一开始就只有 `onPointerSeek` 一个
+  /// 消费者，只覆盖「点在弹窗矩形之外的正文区」——点词后弹窗恰好贴在光标旁，按侧键
+  /// 时指针几乎必然落在弹窗上，事件被弹窗吃掉，全程无反应。
+  ///
+  /// 故让弹窗自己把这些输入交回来：键盘与鼠标同一条通道，token 表由注册表当前绑定
+  /// 实时导出（改键立即生效）。
+  @override
+  ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.reader;
+
+  @override
+  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
+      const <ShortcutAction>{ShortcutAction.readerDismissDict};
 
   // ── DictionaryCaretHost ───────────────────────────────────────────
   // The reader is the host for its [_caret] state machine: it supplies the

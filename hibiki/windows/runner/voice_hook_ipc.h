@@ -6,16 +6,22 @@
 #include <cstdint>
 #include <string>
 
+#include "../../../native/galgame_hook/include/thread_preview_ipc.h"
+
 // galgame 一键制卡 C 阶段（docs/specs/galgame-mining）—— 引擎级 voice/text hook 共享内存契约的
 // **host 端副本**（真相源在独立仓库 hibiki-hook 的 `include/voice_hook_ipc.h`，须同步）。
 // v2：音频环形 + 文本环（hook 抓的台词行）+ 语音 clip 索引（按句切的语音片段，含时间戳供配对）。
 // v6：clip 索引之后追加 loopback 混音环 + 时间戳↔环位置标记表（无引擎专属纯人声 hook 时的兜底）。
 // v10：文本槽追加事件类型，透传 Luna ThreadCreate，使尚无台词的候选线程也可被选择。
+// v12：追加「线程预览区」并取消 injector 自动选线程。文本环仍只装**当前生效线程**（配对路径
+//     不受影响），每条线程的最近一行改由预览区按线程分槽保存，供选择器展示——两个诉求相反的
+//     消费者不再抢同一块 256 槽 FIFO。LunaHost 与游戏内 native adapter 还会使用
+//     `thread_preview_ipc.h` 声明的互斥槽分区，避免跨进程 writer 争抢同一槽。
 // 读共享内存不是注入、不被杀软标记，可安全进 hibiki.exe。契约用 magic/version 版本化。
 namespace hibiki_voice_hook {
 
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
-constexpr uint32_t kSharedVersion = 11;
+constexpr uint32_t kSharedVersion = 12;
 constexpr uint32_t kStableIpcVersion = 1;
 constexpr uint32_t kLunaBridgeAbiVersion = 1;
 constexpr uint32_t kLunaVendoredVersion = 0x0A100102;  // 10.16.1.2
@@ -159,7 +165,9 @@ struct SharedHeader {
   uint32_t clip_region_offset;
   volatile uint64_t text_write_count;
   volatile uint64_t clip_write_count;
-  volatile uint64_t selected_text_thread_id;  // 0=自动；非0=用户选择的 TextSlot::thread_id
+  // 0=尚未选定（v12 起**不再有"自动选线程"**，此时文本环恒空，由 UI 引导用户从预览区挑）；
+  // 非 0 = 用户选定的 TextSlot::thread_id。
+  volatile uint64_t selected_text_thread_id;
   volatile uint32_t luna_active;  // LunaHook 出干净行后 =1，游戏内 GDI 文本 hook 让位（见 native 头注释）
   uint32_t reserved_luna;         // 32 位引擎诊断位（已满，loopback 另立字段）
   volatile uint32_t hook_diagnostics;
@@ -179,6 +187,13 @@ struct SharedHeader {
   uint32_t loopback_diag;
   volatile uint64_t loopback_total_written;
   volatile uint64_t loopback_marker_count;
+  // ── v12 线程预览区（布局最尾，前面各区偏移一个都不动）──
+  uint32_t thread_preview_offset;
+  uint32_t thread_preview_slot_count;
+  // 单调累计预览变更次数（含 partial TextMesh 快照）。只用于判断「有没有新预览」；
+  // 预览槽本身按
+  // thread_id 寻址，**不**靠这个序号定位（与 text_write_count 语义不同，勿照搬取模那套）。
+  volatile uint64_t thread_preview_write_count;
 };
 #pragma pack(pop)
 

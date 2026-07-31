@@ -47,6 +47,43 @@ class JimakuFile {
   int? get episode => parseSubtitleEpisode(name);
 }
 
+/// 一个 Jimaku 条目下可供 UI 预览的文本字幕清单。
+///
+/// 合集批量下载弹窗在用户真正点「下载全部」前先列一次条目文件，用这份清单回答两个
+/// 关键问题：这个来源到底有什么字幕、合集里的哪几集能精确匹配。只统计 Hibiki 能解析
+/// 的文本字幕；压缩包/图片字幕不会被误报成「可用」。
+class JimakuFileInventory {
+  JimakuFileInventory._(this.files)
+      : episodes = <int>{
+          for (final JimakuFile file in files)
+            if (file.episode != null) file.episode!,
+        },
+        languages = <String>{
+          for (final JimakuFile file in files)
+            if (detectSubtitleLanguage(file.name) != null)
+              detectSubtitleLanguage(file.name)!,
+        },
+        unlabeledCount =
+            files.where((JimakuFile file) => file.episode == null).length;
+
+  factory JimakuFileInventory.fromFiles(Iterable<JimakuFile> files) {
+    return JimakuFileInventory._(
+      files
+          .where((JimakuFile file) => file.isTextSubtitle)
+          .toList(growable: false),
+    );
+  }
+
+  final List<JimakuFile> files;
+  final Set<int> episodes;
+  final Set<String> languages;
+  final int unlabeledCount;
+
+  List<JimakuFile> filesForEpisode(int episode) => files
+      .where((JimakuFile file) => file.episode == episode)
+      .toList(growable: false);
+}
+
 /// 从字幕文件名启发式解析集号。复用 [parseVideoFilename] 的集号识别规则（`SxxEyy` /
 /// CJK `第N話` / `EP/E` / `- N` / 结尾裸数字），但先剥掉字幕扩展名（srt/ass/ssa/vtt）
 /// 与可选的语言子标签（`.ja` / `.zh-cn` 等），使 `Show - 12.ja.srt` 这类文件名也能
@@ -82,10 +119,15 @@ List<JimakuEntry> parseJimakuEntries(String body) {
       if (e is! Map) continue;
       final dynamic id = e['id'];
       if (id is! int) continue;
+      final String primaryName = (e['name'] as String?)?.trim() ?? '';
+      final String englishName = (e['english_name'] as String?)?.trim() ?? '';
       out.add(JimakuEntry(
         id: id,
-        name:
-            (e['name'] as String?) ?? (e['english_name'] as String?) ?? '#$id',
+        name: primaryName.isNotEmpty
+            ? primaryName
+            : englishName.isNotEmpty
+                ? englishName
+                : '#$id',
         anilistId: e['anilist_id'] as int?,
       ));
     }
@@ -214,17 +256,36 @@ String? _languageFromToken(String rawToken) {
   return table[token.split('-').first];
 }
 
-/// 解析 Jimaku files 响应（JSON 数组）为 [JimakuFile] 列表。纯函数，容错。
-List<JimakuFile> parseJimakuFiles(String body) {
+/// 解析 Jimaku files 响应（JSON 数组）为 [JimakuFile] 列表。
+///
+/// 默认沿用历史 fail-open 语义；库存预检查传 [strict] 时，非法 JSON、非数组顶层或
+/// 缺少必需 name/url 的元素都属于响应结构失败，必须抛出
+/// [JimakuRequestException]，不能与合法空数组混成同一个「零字幕」状态。
+List<JimakuFile> parseJimakuFiles(String body, {bool strict = false}) {
   try {
     final dynamic json = jsonDecode(body);
-    if (json is! List) return const <JimakuFile>[];
+    if (json is! List) {
+      throw const FormatException('Jimaku files response is not a JSON array');
+    }
     final List<JimakuFile> out = <JimakuFile>[];
-    for (final dynamic f in json) {
-      if (f is! Map) continue;
+    for (int index = 0; index < json.length; index++) {
+      final dynamic f = json[index];
+      if (f is! Map) {
+        if (strict) {
+          throw FormatException('Jimaku file at index $index is not an object');
+        }
+        continue;
+      }
       final dynamic name = f['name'];
       final dynamic url = f['url'];
-      if (name is! String || url is! String) continue;
+      if (name is! String || url is! String) {
+        if (strict) {
+          throw FormatException(
+            'Jimaku file at index $index is missing name or url',
+          );
+        }
+        continue;
+      }
       out.add(JimakuFile(
         name: name,
         url: url,
@@ -232,10 +293,36 @@ List<JimakuFile> parseJimakuFiles(String body) {
       ));
     }
     return out;
-  } catch (e) {
+  } catch (e, stack) {
     // fail-open：解析失败返回空列表（同旧行为），补 diagnostic 便于排障。
     ErrorLogService.instance.logDiagnostic('JimakuClient.parseJimakuFiles', e);
+    if (strict) {
+      Error.throwWithStackTrace(
+        const JimakuRequestException('invalid list files response'),
+        stack,
+      );
+    }
     return const <JimakuFile>[];
+  }
+}
+
+/// Jimaku 请求失败。默认客户端路径仍可 fail-open；需要向用户区分「零结果」与「请求
+/// 失败」的界面可通过 `throwOnError: true` 保留这个异常。
+class JimakuRequestException implements Exception {
+  const JimakuRequestException(
+    this.message, {
+    this.statusCode,
+  });
+
+  final String message;
+  final int? statusCode;
+
+  @override
+  String toString() {
+    final int? status = statusCode;
+    return status == null
+        ? 'JimakuRequestException: $message'
+        : 'JimakuRequestException($status): $message';
   }
 }
 
@@ -318,15 +405,31 @@ class JimakuClient {
   /// [episode] 非空时附 `episode=<n>` query，由 Jimaku 服务端**按文件名启发式**只返回
   /// 匹配该集的文件（文档原文：best-effort guess based off filename matching）；为空时
   /// 不带该 query，行为 = 旧路径（列全部文件，向后兼容）。
-  Future<List<JimakuFile>> listFiles(int entryId, {int? episode}) async {
+  Future<List<JimakuFile>> listFiles(
+    int entryId, {
+    int? episode,
+    bool throwOnError = false,
+  }) async {
     try {
       final Uri uri = buildListFilesUri(_base, entryId, episode: episode);
       final http.Response res = await _client.get(uri, headers: _headers);
-      if (res.statusCode != 200) return const <JimakuFile>[];
-      return parseJimakuFiles(utf8.decode(res.bodyBytes, allowMalformed: true));
-    } catch (e) {
+      if (res.statusCode != 200) {
+        if (throwOnError) {
+          throw JimakuRequestException(
+            'list files for entry $entryId failed',
+            statusCode: res.statusCode,
+          );
+        }
+        return const <JimakuFile>[];
+      }
+      return parseJimakuFiles(
+        utf8.decode(res.bodyBytes, allowMalformed: true),
+        strict: throwOnError,
+      );
+    } catch (e, stack) {
       // fail-open：预期可失败的网络路径，返回空列表（同旧行为），补 diagnostic。
       ErrorLogService.instance.logDiagnostic('JimakuClient.listFiles', e);
+      if (throwOnError) Error.throwWithStackTrace(e, stack);
       return const <JimakuFile>[];
     }
   }

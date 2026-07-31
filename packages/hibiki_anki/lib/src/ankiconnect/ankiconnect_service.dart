@@ -11,6 +11,10 @@ class AnkiConnectService {
   final String host;
   final int port;
 
+  /// Whether this endpoint runs on the same machine and can read a local path
+  /// passed to AnkiConnect's `storeMediaFile`.
+  bool get canReadLocalMediaPaths => ankiConnectHostIsLoopback(host);
+
   /// AnkiConnect API key. When the AnkiConnect add-on has `apiKey` configured,
   /// every request must carry a matching `key`; otherwise it replies with
   /// "valid api key must be provided". Empty means no key (the default).
@@ -50,20 +54,51 @@ class AnkiConnectService {
         _timeout = timeout,
         _connectionTimeout = connectionTimeout;
 
-  /// Default HTTP client with an explicit **connection-establishment** timeout.
+  /// Default HTTP client with a phase-tagged connection-establishment timeout.
   ///
   /// BUG-665: the bare `http.Client()` had no connection timeout, so when the
   /// configured AnkiConnect host is unreachable/black-holed (wrong host, VPN
   /// down, firewall dropping SYNs, a remote host that never answers) the connect
   /// phase dangled up to the full [_timeout] response budget before the combined
   /// `.timeout` killed it as an opaque `TimeoutException: Future not completed`.
-  /// Bounding the connect phase separately (mirrors [syncHttpClient] in
-  /// sync_http.dart) makes an unreachable host fail fast with a clean
-  /// SocketException — classified as a connection error with an actionable
-  /// "is Anki running?" hint — instead of making a remote/extension mine wait
-  /// the whole response budget on every doomed AnkiConnect call.
-  static http.Client _defaultClient(Duration connectionTimeout) =>
-      IOClient(HttpClient()..connectionTimeout = connectionTimeout);
+  /// package:http wraps connect, request-delivery, and response-header socket
+  /// failures in the same public exception shape. Its message and errno cannot
+  /// prove delivery phase. The connection factory is the only layer that knows
+  /// no HTTP request exists yet, so only failures raised there receive the
+  /// explicit [AnkiConnectPreDeliveryException] marker.
+  static http.Client _defaultClient(Duration connectionTimeout) {
+    final HttpClient ioClient = HttpClient()
+      ..connectionTimeout = null
+      ..connectionFactory = (
+        Uri url,
+        String? proxyHost,
+        int? proxyPort,
+      ) async {
+        final String targetHost = proxyHost ?? url.host;
+        final int targetPort = proxyPort ?? url.port;
+        try {
+          final Socket socket = await Socket.connect(
+            targetHost,
+            targetPort,
+            timeout: connectionTimeout,
+          );
+          return ConnectionTask.fromSocket(
+            Future<Socket>.value(socket),
+            socket.destroy,
+          );
+        } catch (error, stackTrace) {
+          Error.throwWithStackTrace(
+            AnkiConnectPreDeliveryException(
+              'AnkiConnect connection failed before the HTTP request started',
+              url,
+              error,
+            ),
+            stackTrace,
+          );
+        }
+      };
+    return IOClient(ioClient);
+  }
 
   Future<dynamic> _request(String action,
       [Map<String, dynamic>? params]) async {
@@ -106,7 +141,12 @@ class AnkiConnectService {
       );
     }
     if (result['error'] != null) {
-      throw AnkiConnectException(result['error'].toString());
+      final String message = result['error'].toString();
+      if (action == 'addNote' &&
+          message == 'cannot create note because it is a duplicate') {
+        throw AnkiConnectDuplicateException(message);
+      }
+      throw AnkiConnectException(message);
     }
     return result['result'];
   }
@@ -115,16 +155,16 @@ class AnkiConnectService {
   /// package:http wraps the write *and* the response-header read in one try, so
   /// a connection drop can surface *after* the request reached AnkiConnect —
   /// re-sending `addNote`/`createModel` would then create a duplicate card or
-  /// hit "model already exists". So we retry these only on a *pre-delivery
-  /// write failure* (the request provably never left the client — see
-  /// [_isPreDeliveryWriteFailure] / BUG-091), never on a response-phase drop.
+  /// hit "model already exists". So we retry these only when the transport
+  /// supplies an [AnkiConnectPreDeliveryException], never from a public socket
+  /// type, errno, message, or response-phase drop.
   /// Every other action (version/deckNames/modelNames/modelFieldNames/
   /// findNotes/storeMediaFile/createDeck) is idempotent, so re-sending on any
   /// connection drop has no side effect.
   static const Set<String> _nonIdempotentActions = {'addNote', 'createModel'};
 
-  /// Posts [body] to AnkiConnect, retrying exactly once on a dropped connection
-  /// — but only when [idempotent].
+  /// Posts [body] to AnkiConnect, retrying exactly once for idempotent
+  /// connection drops or an explicitly marked pre-delivery failure.
   ///
   /// BUG-065: AnkiConnect's minimal HTTP server closes idle keep-alive
   /// connections. The persistent [http.Client] pools connections and can hand a
@@ -138,14 +178,10 @@ class AnkiConnectService {
   /// java.net.http). Genuine refusals/timeouts are not connection-drops and fall
   /// through to the caller (a retry would not help).
   ///
-  /// BUG-091: idempotent actions retry on *any* connection drop. Non-idempotent
-  /// actions (addNote/createModel) retry only on a *pre-delivery write failure*
-  /// — when the `write()` itself failed, the request bytes never reached
-  /// AnkiConnect, so no note/model was created and re-sending cannot duplicate.
-  /// A response-phase drop (write succeeded, the read reset) is still surfaced,
-  /// because the server may already have processed the request. This fixes the
-  /// real failure where the first mine after an idle period reuses a stale
-  /// pooled socket → instant "Write failed (errno 10053)" with no retry.
+  /// BUG-091: idempotent actions retry on recognised connection drops.
+  /// Non-idempotent actions retry only on a transport-issued pre-delivery
+  /// marker. All public ClientException/SocketException shapes are ambiguous:
+  /// package:http can emit the same type after the request was fully delivered.
   Future<http.Response> _postWithStaleConnectionRetry(
     String body, {
     required String action,
@@ -155,43 +191,51 @@ class AnkiConnectService {
       return await _post(body);
     } on http.ClientException catch (e) {
       final bool retryable =
-          idempotent ? _isConnectionDrop(e) : _isPreDeliveryWriteFailure(e);
+          idempotent ? _isConnectionDrop(e) : _isPreDeliveryFailure(e);
       if (retryable) {
         try {
           return await _post(body);
         } on http.ClientException catch (retryError) {
-          if (!idempotent &&
-              _isConnectionDrop(retryError) &&
-              !_isPreDeliveryWriteFailure(retryError)) {
+          if (!idempotent && !_isPreDeliveryFailure(retryError)) {
+            throw AnkiConnectCommitUnknownException(action, retryError);
+          }
+          rethrow;
+        } on SocketException catch (retryError) {
+          if (!idempotent) {
+            throw AnkiConnectCommitUnknownException(action, retryError);
+          }
+          rethrow;
+        } on TimeoutException catch (retryError) {
+          if (!idempotent) {
             throw AnkiConnectCommitUnknownException(action, retryError);
           }
           rethrow;
         }
       }
-      if (!idempotent &&
-          _isConnectionDrop(e) &&
-          !_isPreDeliveryWriteFailure(e)) {
+      if (!idempotent && !_isPreDeliveryFailure(e)) {
+        throw AnkiConnectCommitUnknownException(action, e);
+      }
+      rethrow;
+    } on SocketException catch (e) {
+      if (!idempotent) {
+        throw AnkiConnectCommitUnknownException(action, e);
+      }
+      rethrow;
+    } on TimeoutException catch (e) {
+      // `_post` starts its overall timeout only after handing the request to
+      // package:http. Without a connect/write-phase exception there is no proof
+      // that addNote stayed local: Anki may have consumed it and created the
+      // note while the response hung. Treat that delivery-ambiguous timeout as
+      // commit-unknown and never blindly retry the non-idempotent action.
+      if (!idempotent) {
         throw AnkiConnectCommitUnknownException(action, e);
       }
       rethrow;
     }
   }
 
-  /// True only for a connection drop that happened *while writing the request*,
-  /// proving the server never received a complete request — so re-sending even
-  /// a non-idempotent action (addNote/createModel) cannot create a duplicate.
-  ///
-  /// dart:io raises "Write failed" from the `write()` syscall path and "Broken
-  /// pipe" (EPIPE) when the peer closed its read end mid-write; both mean the
-  /// request was not delivered. A response-phase reset surfaces as "Connection
-  /// reset"/"closed" without the write signature, and is deliberately NOT
-  /// matched here (it could be post-delivery). The errno alone can't tell write
-  /// from read phase, so this gates on the message text — the only reliable
-  /// pre-/post-delivery discriminator.
-  static bool _isPreDeliveryWriteFailure(http.ClientException e) {
-    final String message = e.message.toLowerCase();
-    return message.contains('write failed') || message.contains('broken pipe');
-  }
+  static bool _isPreDeliveryFailure(http.ClientException e) =>
+      e is AnkiConnectPreDeliveryException;
 
   Future<http.Response> _post(String body) {
     return _client.post(
@@ -212,6 +256,7 @@ class AnkiConnectService {
   /// implements both [http.ClientException] and [SocketException], so [osError]
   /// is usually reachable here.
   static bool _isConnectionDrop(http.ClientException e) {
+    if (e is AnkiConnectPreDeliveryException) return true;
     if (e is SocketException) {
       final int? code = (e as SocketException).osError?.errorCode;
       if (code != null) {
@@ -288,15 +333,22 @@ class AnkiConnectService {
     List<String>? tags,
     Map<String, String>? mediaFiles,
     bool allowDuplicate = false,
+    AnkiDuplicateScope duplicateScope = AnkiDuplicateScope.deck,
   }) async {
-    // AnkiConnect rejects duplicates by default; allowDuplicate must be sent
-    // explicitly or the user's "allow duplicates" setting has no effect.
+    // Let addNote perform the duplicate check atomically. AnkiConnect implements
+    // this path as a first-field checksum lookup, whereas a separate findNotes
+    // field query runs synchronously on Anki's GUI thread and can make Anki
+    // appear frozen on a large/busy collection.
     final result = await _request('addNote', {
       'note': {
         'deckName': deckName,
         'modelName': modelName,
         'fields': fields,
-        'options': {'allowDuplicate': allowDuplicate},
+        'options': _addNoteDuplicateOptions(
+          deckName: deckName,
+          allowDuplicate: allowDuplicate,
+          scope: duplicateScope,
+        ),
         if (tags != null) 'tags': tags,
       },
     });
@@ -360,6 +412,25 @@ class AnkiConnectService {
       if (data != null) 'data': data,
       if (path != null) 'path': path,
     });
+  }
+
+  /// Whether [filename] already exists in the active profile's media folder.
+  ///
+  /// `getMediaFilesNames` avoids downloading the file just to distinguish a
+  /// content-addressed shared file from one created by the current mining
+  /// attempt. The exact-name check also prevents glob results from being
+  /// mistaken for the requested file.
+  Future<bool> mediaFileExists(String filename) async {
+    final result = await _request('getMediaFilesNames', {
+      'pattern': filename,
+    });
+    if (result is! List) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for getMediaFilesNames '
+        '(expected a list)',
+      );
+    }
+    return result.any((dynamic value) => value.toString() == filename);
   }
 
   // ── 媒体维护（字节级去重）────────────────────────────────────────────
@@ -558,6 +629,9 @@ String _escapeAnkiQuery(String value) => value.replaceAll('"', '\\"');
 /// 区分超时与连接失败，再按异常类型兜底。这是 checkConnection / mineEntry 共用的单一来源，
 /// 取代各处对 SocketException / http.ClientException 的 toString() 透传。
 String classifyAnkiConnectError(Object error) {
+  if (error is AnkiConnectPreDeliveryException) {
+    return classifyAnkiConnectError(error.cause);
+  }
   if (error is TimeoutException) {
     return AnkiErrorCode.connectionTimeout;
   }
@@ -594,6 +668,16 @@ String ankiConnectErrorHint(String code, {String? host, int? port}) {
   }
 }
 
+bool ankiConnectHostIsLoopback(String host) {
+  final String normalized = host.trim().toLowerCase();
+  if (normalized == 'localhost') return true;
+  final String unbracketed =
+      normalized.startsWith('[') && normalized.endsWith(']')
+          ? normalized.substring(1, normalized.length - 1)
+          : normalized;
+  return InternetAddress.tryParse(unbracketed)?.isLoopback ?? false;
+}
+
 /// 由查重范围 [scope] 解析出的 Anki 搜索卡组子句；空串 = 不限卡组（整个收藏集）。
 ///
 /// Anki 的 `deck:X` **本来就包含** X 的子卡组，但不含父卡组与兄弟子卡组——这正是
@@ -619,6 +703,32 @@ String ankiDuplicateDeckFilter(String deckName, AnkiDuplicateScope scope) {
   }
 }
 
+Map<String, Object> _addNoteDuplicateOptions({
+  required String deckName,
+  required bool allowDuplicate,
+  required AnkiDuplicateScope scope,
+}) {
+  final bool collectionWide = scope == AnkiDuplicateScope.collection;
+  final String scopedDeckName = switch (scope) {
+    AnkiDuplicateScope.deck => deckName,
+    AnkiDuplicateScope.deckRoot => deckName.split('::').first,
+    AnkiDuplicateScope.collection => '',
+  };
+  return <String, Object>{
+    'allowDuplicate': allowDuplicate,
+    'duplicateScope': collectionWide ? 'collection' : 'deck',
+    'duplicateScopeOptions': <String, Object>{
+      if (!collectionWide && scopedDeckName.isNotEmpty)
+        'deckName': scopedDeckName,
+      'checkChildren': !collectionWide,
+      // The old field query was not restricted to the selected note type.
+      // Preserve that cross-model scope while switching to AnkiConnect's
+      // indexed primary-field checksum lookup.
+      'checkAllModels': true,
+    },
+  };
+}
+
 String _fieldValueQuery({
   required String deckName,
   required String fieldName,
@@ -633,11 +743,30 @@ String _fieldValueQuery({
   return deckFilter.isEmpty ? fieldTerm : '$deckFilter $fieldTerm';
 }
 
+/// Transport proof that no HTTP request was started.
+///
+/// Generic [http.ClientException], [SocketException], errno, and message text
+/// are intentionally insufficient: package:http exposes the same shape for
+/// response-phase failures after a request may have committed.
+class AnkiConnectPreDeliveryException extends http.ClientException {
+  AnkiConnectPreDeliveryException(
+    super.message,
+    super.uri,
+    this.cause,
+  );
+
+  final Object cause;
+}
+
 class AnkiConnectException implements Exception {
   final String message;
   AnkiConnectException(this.message);
   @override
   String toString() => 'AnkiConnectException: $message';
+}
+
+class AnkiConnectDuplicateException extends AnkiConnectException {
+  AnkiConnectDuplicateException(super.message);
 }
 
 class AnkiConnectCommitUnknownException extends AnkiConnectException {

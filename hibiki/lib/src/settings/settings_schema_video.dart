@@ -856,6 +856,41 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
+          // 副字幕垂直位置：与上面的主字幕位置**同量纲、各自独立**（此前两层共用
+          // `bottomPadding` 一个字段——主字幕拿它当底距、置顶的副字幕拿它当顶距，调一个
+          // 必然把另一个也拽走）。value 在用户没单独调过时回落到主字幕位置（显示成
+          // 「当前跟随主字幕」的那个值），一拖即写入 secondaryBottomPadding、从此解耦。
+          SettingsSliderItem(
+            id: 'video.subtitle.position_secondary',
+            title: t.video_setting_subtitle_position_secondary,
+            icon: Icons.height_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 145,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            min: 0,
+            max: 240,
+            divisions: 24,
+            value: (SettingsContext settingsContext) {
+              final VideoSubtitleStyle s =
+                  currentVideoSubtitleStyle(settingsContext);
+              return (s.secondaryBottomPadding ?? s.bottomPadding)
+                  .clamp(0, 240);
+            },
+            onChanged: (SettingsContext settingsContext, double v) {
+              previewVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(secondaryBottomPadding: v),
+              );
+            },
+            onChangeEnd: (SettingsContext settingsContext, double v) async {
+              await commitVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(secondaryBottomPadding: v),
+              );
+            },
+          ),
           // ── Jimaku（在线字幕源）───────────────────────────────────────────
           // 此前 API key 只能在三个对话框（视频字幕 / 番剧下载 / 批量匹配）里就地填，
           // 设置页压根没有入口；下载对话框那个还只在 key 为空时才显示，key 填错了
@@ -971,15 +1006,20 @@ SettingsDestination buildVideoDestination() {
       // video_settings_actions.dart（settings/ 不引播放器依赖）。
       SettingsSection(
         items: <SettingsItem>[
-          // TODO-1158：HLS 多档画质入口（仅当前流是 HLS master 时显示）。
+          // TODO-1158：多档画质入口（HLS master 或 YouTube 流时显示）。
+          //
+          // BUG-1268：判据**只看 [onOpenQuality] 是否接线**，不再叠加
+          // `qualityOptionCount > 0`。页面侧 `onOpenQuality` 已经是
+          // `_hasQualityMenu ? _showQualityMenu : null`（HLS master 或 YouTube 流才非
+          // null），已是「有画质菜单」的准确语义；而 [qualityOptionCount] 对 YouTube 是
+          // **懒解析**结果——档位要等用户点开菜单触发 `getManifest` 才有，点开之前恒 0。
+          // 两个条件与一起就成了自锁：要显示入口得先有档位、要有档位得先点入口，于是
+          // YouTube 播放时这一行**永远不出现**，桌面端只剩右键菜单（它用的是
+          // `_hasQualityMenu`，判据本就不一致），移动端则彻底没有调画质的入口。
           SettingsCustomItem(
             id: 'video.player.quality_entry',
-            visible: (SettingsContext c) {
-              final int count =
-                  videoQuickSettingsHostOf(c)?.qualityOptionCount ?? 0;
-              return count > 0 &&
-                  videoQuickSettingsHostOf(c)?.onOpenQuality != null;
-            },
+            visible: (SettingsContext c) =>
+                videoQuickSettingsHostOf(c)?.onOpenQuality != null,
             video: VideoPlacement(group: VideoGroup.playback, order: 10),
             builder: buildVideoQualityEntryRow,
           ),

@@ -102,4 +102,45 @@ void main() {
       );
     });
   });
+
+  group('BUG-1284：游戏库启动把稳定活动身份传进会话控制器', () {
+    void expectActivityIdentity({
+      required String path,
+      required String signature,
+      required String gameExpression,
+    }) {
+      final String body = methodBody(readStripped(path), signature);
+      expect(
+        body,
+        contains('gameId: $gameExpression.id'),
+        reason: '$signature 必须把 galgames.id 传给 launchGame，不能回退 exePath。',
+      );
+      expect(
+        body,
+        contains('gameTitle: $gameExpression.displayName'),
+        reason: '$signature 必须同步传当前显示名，不能另造一套文件名标题。',
+      );
+    }
+
+    test('游戏库与游戏首页传 game.id / displayName', () {
+      expectActivityIdentity(
+        path: 'lib/src/pages/implementations/games_library_page.dart',
+        signature: 'Future<void> _launchGame(GalgameEntry game)',
+        gameExpression: 'game',
+      );
+      expectActivityIdentity(
+        path: 'lib/src/pages/implementations/galgame_home_page.dart',
+        signature: 'Future<void> _launchGame(GalgameEntry game)',
+        gameExpression: 'game',
+      );
+    });
+
+    test('捕获工作台命中库条目时传同一活动身份', () {
+      expectActivityIdentity(
+        path: 'lib/src/pages/implementations/texthooker_page.dart',
+        signature: 'Future<void> _launchGalgameEngineHook()',
+        gameExpression: 'known?',
+      );
+    });
+  });
 }

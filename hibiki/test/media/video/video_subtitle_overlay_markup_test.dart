@@ -120,8 +120,11 @@ void main() {
     Text fillOff = tester
         .widgetList<Text>(find.text('A'))
         .firstWhere((Text t) => t.style?.foreground == null);
-    // Inline \c red is a legacy span style -> applies even when off.
-    expect(fillOff.style?.color, const Color(0xFFFF0000));
+    // BUG-1285 契约变更：inline \c 曾作为「legacy span style」在 OFF 时照样生效——那是纯
+    // 字幕模式里最后一条穿透的颜色通道（\3c/\1a/cueStyle 主色/\t/卡拉 OK 副色早已全部
+    // 门控），多层卡拉 OK 的 OP 歌词因此被渲染成黑字。OFF 现在一律用用户 textColor。
+    expect(fillOff.style?.color, const Color(0xFF112233),
+        reason: 'OFF = 纯字幕模式：行内 \\c 不得穿透，填充色恒为用户 textColor');
     // \fn is gated by respectAssStyle -> off keeps unified font family.
     expect(fillOff.style?.fontFamily, 'UnifiedFont');
 

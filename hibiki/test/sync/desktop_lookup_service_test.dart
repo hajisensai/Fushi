@@ -61,6 +61,11 @@ void main() {
     );
     expect(
         DesktopLookupService.instance.pendingRequest?.showSourcePanel, isTrue);
+    expect(
+      DesktopLookupService.instance.pendingRequest?.allowsAutomaticAudio,
+      isFalse,
+      reason: '剪贴板内容变化不代表用户要求播放声音',
+    );
     expect(n, 1);
     DesktopLookupService.instance.submitText('見る');
     expect(n, 1);
@@ -92,6 +97,11 @@ void main() {
     );
     expect(
         DesktopLookupService.instance.pendingRequest?.showSourcePanel, isTrue);
+    expect(
+      DesktopLookupService.instance.pendingRequest?.allowsAutomaticAudio,
+      isTrue,
+      reason: '显式点词可继续遵循自动朗读偏好',
+    );
     expect(n, 1);
 
     // 显式再查同一个词：必须越过去重再次排队（剪贴板被动 submitText 会去重，

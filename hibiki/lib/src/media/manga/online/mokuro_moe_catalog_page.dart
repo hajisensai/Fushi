@@ -26,7 +26,7 @@ class MokuroMoeCatalogPage extends ConsumerStatefulWidget {
   /// 保持无 provider 依赖（接线守卫测试能纯构造它，不必搭一整套 ProviderScope）。
   final HibikiDatabase? db;
 
-  /// 库页视图导航条（由 `MediaLibraryShell` 传入，落在页头 bottom 槽）。
+  /// 库页视图导航条（由 `MediaLibraryShell` 传入，作为页头主内容与动作同一行）。
   final Widget? navigation;
 
   @override
@@ -47,6 +47,7 @@ class _MokuroMoeCatalogPageState extends ConsumerState<MokuroMoeCatalogPage> {
 
   @override
   Widget build(BuildContext context) {
+    final AppModel appModel = ref.watch(appProvider);
     // 与书架 / 视频 / 来源同构：DesktopContentLayout + HibikiPageHeader，
     // 外层 Scaffold 由 HomePage 提供。
     return DesktopContentLayout(
@@ -60,17 +61,41 @@ class _MokuroMoeCatalogPageState extends ConsumerState<MokuroMoeCatalogPage> {
                 BuildContext context,
                 MokuroMoeCatalogSnapshot snapshot,
                 Widget? child,
-              ) =>
-                  HibikiPageHeader(
-                title: t.manga_online_catalog_title,
-                subtitle: snapshot.seriesName,
-                bottom: widget.navigation,
-              ),
+              ) {
+                final Widget? navigation = widget.navigation;
+                if (navigation != null) {
+                  final String? seriesName = snapshot.seriesName;
+                  return HibikiPageHeader.customTitle(
+                    title: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        navigation,
+                        if (seriesName != null && seriesName.trim().isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              seriesName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }
+                return HibikiPageHeader(
+                  title: t.manga_online_catalog_title,
+                  subtitle: snapshot.seriesName,
+                );
+              },
             ),
           Expanded(
             child: MokuroMoeCatalogView(
-              db: widget.db ?? ref.read(appProvider).database,
+              db: widget.db ?? appModel.database,
               embedded: true,
+              enabledOverride: appModel.mangaOnlineCatalogEnabled,
               snapshotNotifier: _snapshot,
             ),
           ),

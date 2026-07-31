@@ -110,21 +110,29 @@ void main() {
       );
     });
 
-    test('ankiconnect_repository.dart 媒体上传接入 Async 变体', () {
+    test('ankiconnect_repository.dart 本机走 path、远端才走后台 base64', () {
       final String src =
           _pkgFile('lib/src/ankiconnect/ankiconnect_repository.dart')
               .readAsStringSync();
-      // 正向守卫：三个后台 helper 都被真实调用（调用点已接入），而非仅定义。
-      // 定义各出现 1 次，接入后调用点使总数 >1。
       expect(
         RegExp(r'hibikiAnkiMediaEncodeForUploadAsync\(').allMatches(src).length,
-        greaterThanOrEqualTo(2),
-        reason: '_storeLocalMedia / _storeRemoteAudio 应接入合并编码 helper',
+        1,
+        reason: '合并编码 helper 只保留 API 定义；本机媒体不得再构造整份 base64',
+      );
+      expect(
+        src,
+        contains('service.canReadLocalMediaPaths'),
+        reason: '本机/远端 AnkiConnect 必须分流',
+      );
+      expect(
+        src,
+        contains('path: file.absolute.path'),
+        reason: '本机 Anki 应直接读取临时媒体路径，避免巨大 JSON',
       );
       expect(
         RegExp(r'hibikiAnkiBase64EncodeAsync\(').allMatches(src).length,
         greaterThanOrEqualTo(2),
-        reason: '远端音频 / 词典外字上传应接入 base64 后台 helper',
+        reason: '远端 AnkiConnect 仍须保留后台 base64 回退',
       );
       expect(
         RegExp(r'hibikiAnkiMediaFilenameForBytesAsync\(').hasMatch(src),

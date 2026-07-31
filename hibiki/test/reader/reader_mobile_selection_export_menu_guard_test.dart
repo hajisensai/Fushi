@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// TODO-1366：手机拖选选区菜单补「导出片段」守卫（自绘拖选 TODO-1317/BUG-624 的遗留缺口）。
 ///
-/// 手机长按拖选出的是 **app 自绘选区**（`onSelectionMenu` -> Flutter `showMenu`，即
+/// 手机长按拖选出的是 **app 自绘选区**（`onSelectionMenu` -> Flutter 非模态操作条，即
 /// `_handleSelectionMenu`），此前只有「查词 / 复制」，缺桌面右键 / 原生 ActionMode 早有的
 /// 「导出片段」。本守卫钉死：
 ///   ① 手机拖选菜单含「导出片段」（`t.audiobook_export_clip`），与桌面同 i18n key，且同门控
@@ -34,7 +34,7 @@ void main() {
     test('_handleSelectionMenu 菜单项含 export + 查词 + 复制', () {
       final String body = _between(chrome, 'Future<void> _handleSelectionMenu(',
           'Future<void> _clearReaderAppSelection(');
-      expect(body, contains("value: 'export'"), reason: '缺「导出片段」菜单项');
+      expect(body, contains("'export'"), reason: '缺「导出片段」操作项');
       expect(body, contains('t.audiobook_export_clip'),
           reason: '导出项必须复用桌面同一 i18n key');
       // 门控：本书有音频 cue 才出现（与桌面 _showReaderTextContextMenu 同判据）。

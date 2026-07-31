@@ -39,12 +39,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   List<ReadingStatisticRow> _allStats = [];
 
-  /// 视频与游戏的原始统计（与书内阅读一起构成同一个字数/时长口径）。「按书」列表
-  /// 仍只列书，这两源只进 KPI / 汇总 / 趋势 / 目标进度与「各来源」卡。
-  List<VideoWatchStatisticRow> _videoStats = <VideoWatchStatisticRow>[];
-  List<(String, int, int)> _gameDaily = <(String, int, int)>[];
-
-  /// 逐来源逐日合计（[aggregateStatSourceDaily] 的产物），四个来源同形状。
+  /// 阅读域逐日合计：普通书与漫画同属阅读统计，视频和游戏由各自统计页负责。
   Map<StatBreakdownSource, Map<String, StatSourceTotals>> _sourceDaily =
       <StatBreakdownSource, Map<String, StatSourceTotals>>{};
 
@@ -133,10 +128,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     try {
       final db = appModelNoUpdate.database;
       _allStats = await db.getAllReadingStatistics();
-      // 口径统一：视频字幕字数/观看时长、游戏 hook 文本字数/游玩时长与书内阅读
-      // 同属一个学习总量（首页每日目标一直是这个口径，统计页此前漏了两源）。
-      _videoStats = await db.getAllVideoWatchStatistics();
-      _gameDaily = await db.getActivityDailyTotals(kActivityGame);
       // 书身份（'epub' / 'pdf' / 'manga'）：统计行只存 title，靠 epub_books 反查，
       // 用来把漫画从「阅读」里拆出来单列（页数是漫画独有的第三个量纲）。整表只查
       // 一次，下面的 title→bookKey（合集归属用）复用同一批行。
@@ -147,8 +138,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       _sourceDaily = aggregateStatSourceDaily(
         reading: _allStats,
         formatByTitle: formatByTitle,
-        video: _videoStats,
-        gameDaily: _gameDaily,
+        video: const <VideoWatchStatisticRow>[],
+        gameDaily: const <(String, int, int)>[],
       );
       _computeAggregates();
       final DateTime now = DateTime.now();
@@ -237,9 +228,14 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final dailyMap = <String, StatDayData>{};
     final bookMap = <String, _BookData>{};
 
-    // 窗口合计走四来源合并后的逐日表（书 + 漫画 + 视频 + 游戏），与首页每日目标
-    // 同一个分子；「按书」列表仍只用 reading_statistics 行（视频/游戏不是书）。
-    for (final Map<String, StatSourceTotals> byDay in _sourceDaily.values) {
+    // 阅读统计只合并阅读域的普通书与漫画。视频 / 游戏有各自统计页，不进入本页
+    // KPI、趋势、目标进度或活跃天数。
+    for (final StatBreakdownSource source in const <StatBreakdownSource>[
+      StatBreakdownSource.book,
+      StatBreakdownSource.manga,
+    ]) {
+      final Map<String, StatSourceTotals> byDay =
+          _sourceDaily[source] ?? const <String, StatSourceTotals>{};
       byDay.forEach((String dateKey, StatSourceTotals totals) {
         _allChars += totals.chars;
         _allMs += totals.timeMs;
@@ -282,10 +278,18 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       _dailyData.add(dailyMap[key] ?? StatDayData(dateKey: key));
     }
 
-    // 总览：活跃天数 = 任一来源有数据的 distinct dateKey（看了视频、玩了游戏的那天
-    // 也是学习日，不该因为没读书就断签）；日期范围 = min/max dateKey（dateKey 零填充
-    // 可字典序比较）。
-    final Set<String> activeDayKeys = allStatSourceDateKeys(_sourceDaily);
+    // 总览活跃天数只取阅读域日期；dateKey 零填充，可直接字典序比较。
+    final Set<String> activeDayKeys = <String>{};
+    for (final StatBreakdownSource source in const <StatBreakdownSource>[
+      StatBreakdownSource.book,
+      StatBreakdownSource.manga,
+    ]) {
+      for (final MapEntry<String, StatSourceTotals> entry
+          in (_sourceDaily[source] ?? const <String, StatSourceTotals>{})
+              .entries) {
+        if (!entry.value.isEmpty) activeDayKeys.add(entry.key);
+      }
+    }
     _streak = computeReadingStreak(activeDayKeys, now);
     if (activeDayKeys.isEmpty) {
       _firstDateKey = null;
@@ -322,11 +326,14 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     }
   }
 
-  /// 按当前窗口重算四来源合计（纯内存，不重查 DB）。
+  /// 按当前窗口重算阅读域来源合计（普通书 + 漫画，纯内存，不重查 DB）。
   void _recomputeBreakdown() {
     final bool Function(String) inWindow = _breakdownPredicate();
     _breakdownTotals = <StatBreakdownSource, StatSourceTotals>{
-      for (final StatBreakdownSource source in StatBreakdownSource.values)
+      for (final StatBreakdownSource source in const <StatBreakdownSource>[
+        StatBreakdownSource.book,
+        StatBreakdownSource.manga,
+      ])
         source: sumStatSourceTotals(
           _sourceDaily[source] ?? const <String, StatSourceTotals>{},
           inWindow,
@@ -419,21 +426,16 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           onTap: _confirmAndClearAll,
         ),
       ],
-      body: _loading
-          // BasePage 家族历史样式（25×25 主色圈），参数化保留、视觉不变。
-          ? buildLoading(size: 25, color: theme.colorScheme.primary)
-          : _error != null
-              ? buildError(error: _error)
-              // 空态判据是**四来源皆空**：只看视频 / 只玩游戏的用户此前会被判成
-              // 「暂无数据」，明明有学习记录却什么也看不到。
-              : (_allStats.isEmpty && _videoStats.isEmpty && _gameDaily.isEmpty)
-                  ? Center(
-                      child: HibikiPlaceholderMessage(
-                        icon: Icons.bar_chart_outlined,
-                        message: t.stat_no_data,
-                      ),
-                    )
-                  : _buildContent(),
+      body: buildStatPageBody(
+        loading: _loading,
+        error: _error,
+        isEmpty: _allStats.isEmpty,
+        loadingBuilder: () =>
+            buildLoading(size: 25, color: theme.colorScheme.primary),
+        errorBuilder: (String error) => buildError(error: error),
+        emptyMessage: t.stat_no_data,
+        contentBuilder: _buildContent,
+      ),
     );
   }
 
@@ -602,15 +604,14 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  /// 「各来源」卡：四个来源各自的两个量纲（字数 + 时长），漫画额外显示页数。
-  ///
-  /// 用户要的「游戏、漫画等加上支持」落在这里：统计页此前只有书内阅读，视频字幕
-  /// 与游戏文本的字数、漫画的页数都没有去处。空来源（从没看过视频 / 没玩过游戏）
-  /// 整行不渲染，装了也不用的人看不到噪音。
+  /// 阅读域「各来源」卡：普通书与漫画各自的字数 + 时长，漫画额外显示页数。
   Widget _buildSourceBreakdown() {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final List<Widget> rows = <Widget>[];
-    for (final StatBreakdownSource source in StatBreakdownSource.values) {
+    for (final StatBreakdownSource source in const <StatBreakdownSource>[
+      StatBreakdownSource.book,
+      StatBreakdownSource.manga,
+    ]) {
       final StatSourceTotals totals =
           _breakdownTotals[source] ?? StatSourceTotals();
       if (totals.isEmpty) continue;
@@ -701,103 +702,43 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   Widget _buildSummaryCards() {
-    final tokens = HibikiDesignTokens.of(context);
-    final double gap = tokens.spacing.gap + tokens.spacing.gap / 2;
-
-    // 四个汇总面板：今天 / 本周 / 本月 / 全部。
-    final List<Widget> panels = <Widget>[
-      _summaryStatPanel(t.stat_today, _todayChars, _todayMs, _lookup.today,
-          _mined.today, _favorited.today, _favoritedSentences.today),
-      _summaryStatPanel(t.stat_this_week, _weekChars, _weekMs, _lookup.week,
-          _mined.week, _favorited.week, _favoritedSentences.week),
-      _summaryStatPanel(t.stat_this_month, _monthChars, _monthMs, _lookup.month,
-          _mined.month, _favorited.month, _favoritedSentences.month),
-      _summaryStatPanel(t.stat_all_time, _allChars, _allMs, _lookup.all,
-          _mined.all, _favorited.all, _favoritedSentences.all),
-    ];
-
-    return Padding(
-      padding: EdgeInsets.all(tokens.spacing.card),
-      // BUG-1184：原先是两个写死的双列 Row，没有窄屏回退（同页的 _buildMidSection
-      // 早就有 wide 标志会堆叠，汇总卡一直漏了）。320dp 屏上每格只剩约 132px、
-      // 扣掉卡片内边距只有约 100px 的文字宽，而每个面板要放 7 行「标签: 数值」——
-      // 每一行都被迫折成两三行，读起来像一团乱码。窄屏改单列。
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          // 双列每格需要约 180px 才放得下一行「标签: 数值」，加上列间距即约 380。
-          final bool twoColumns =
-              !constraints.maxWidth.isFinite || constraints.maxWidth >= 380;
-          if (!twoColumns) {
-            return Column(
-              children: <Widget>[
-                for (int i = 0; i < panels.length; i++) ...<Widget>[
-                  if (i > 0) SizedBox(height: gap),
-                  panels[i],
-                ],
-              ],
-            );
-          }
-          return Column(
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Expanded(child: panels[0]),
-                  SizedBox(width: gap),
-                  Expanded(child: panels[1]),
-                ],
-              ),
-              SizedBox(height: gap),
-              Row(
-                children: <Widget>[
-                  Expanded(child: panels[2]),
-                  SizedBox(width: gap),
-                  Expanded(child: panels[3]),
-                ],
-              ),
-            ],
-          );
-        },
-      ),
+    return buildStatPeriodSummaryGrid(
+      context,
+      <StatPeriodSummary>[
+        _periodSummary(t.stat_today, _todayChars, _todayMs, _lookup.today,
+            _mined.today, _favorited.today, _favoritedSentences.today),
+        _periodSummary(t.stat_this_week, _weekChars, _weekMs, _lookup.week,
+            _mined.week, _favorited.week, _favoritedSentences.week),
+        _periodSummary(t.stat_this_month, _monthChars, _monthMs, _lookup.month,
+            _mined.month, _favorited.month, _favoritedSentences.month),
+        _periodSummary(t.stat_all_time, _allChars, _allMs, _lookup.all,
+            _mined.all, _favorited.all, _favoritedSentences.all),
+      ],
     );
   }
 
-  Widget _summaryStatPanel(String label, int chars, int ms, int lookup,
-      int mined, int favorited, int favoritedSentences) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final tokens = HibikiDesignTokens.of(context);
-    final TextStyle? subStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: colorScheme.onSurfaceVariant,
-        );
-    return HibikiCard(
-      child: Padding(
-        padding: EdgeInsets.zero,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    )),
-            SizedBox(height: tokens.spacing.gap),
-            Text(_formatChars(chars),
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: colorScheme.onSurface,
-                      fontWeight: FontWeight.bold,
-                    )),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text(formatStatTime(ms), style: subStyle),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text('${t.stat_lookup}: $lookup', style: subStyle),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text('${t.stat_mined}: $mined', style: subStyle),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text('${t.stat_favorited}: $favorited', style: subStyle),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text('${t.stat_favorited_sentence}: $favoritedSentences',
-                style: subStyle),
-          ],
+  StatPeriodSummary _periodSummary(
+    String label,
+    int chars,
+    int ms,
+    int lookup,
+    int mined,
+    int favorited,
+    int favoritedSentences,
+  ) {
+    return StatPeriodSummary(
+      label: label,
+      primaryValue: _formatChars(chars),
+      lines: <StatSummaryLine>[
+        StatSummaryLine(value: formatStatTime(ms)),
+        StatSummaryLine(label: t.stat_lookup, value: '$lookup'),
+        StatSummaryLine(label: t.stat_mined, value: '$mined'),
+        StatSummaryLine(label: t.stat_favorited, value: '$favorited'),
+        StatSummaryLine(
+          label: t.stat_favorited_sentence,
+          value: '$favoritedSentences',
         ),
-      ),
+      ],
     );
   }
 

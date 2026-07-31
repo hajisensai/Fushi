@@ -50,6 +50,8 @@ void main() {
       Uri.parse('http://127.0.0.1:${server.port}/api/pair/v2/confirm');
   Uri capabilitiesUri() =>
       Uri.parse('http://127.0.0.1:${server.port}/api/capabilities');
+  Uri serviceConfigUri() => Uri.parse(
+      'http://127.0.0.1:${server.port}/api/interconnect/service-config');
 
   Future<String> startSession(String clientNonce,
       {String? clientDeviceId}) async {
@@ -112,6 +114,24 @@ void main() {
     expect(await authProbe('shared-token'), 200);
     // 随机错误 token 被拒。
     expect(await authProbe('bogus-token'), 401);
+  });
+
+  test('service config refuses plaintext HTTP even for a paired peer',
+      () async {
+    await startServer();
+    final String sid =
+        await startSession('cn-secure', clientDeviceId: 'device-secure');
+    final String peerToken = await confirm(sid);
+
+    final http.Response response = await http.get(
+      serviceConfigUri(),
+      headers: <String, String>{
+        'Authorization':
+            'Basic ${base64Encode(utf8.encode('hibiki:$peerToken'))}',
+      },
+    );
+    expect(response.statusCode, 403);
+    expect(response.body, contains('HTTPS required'));
   });
 
   test('revoking a peer token rejects it on the next request', () async {

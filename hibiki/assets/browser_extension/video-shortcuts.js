@@ -1,8 +1,7 @@
-// asb 移植：视频页快捷键（content script 隔离世界，manifest bundle 里排在 subtitle-panel.js
-// 之后加载）。键位与 asbplayer 默认键对齐（差异见 README「快捷键」表）：
+// 视频页快捷键（content script 隔离世界，manifest bundle 里排在 subtitle-panel.js
+// 之后加载）。每个动作在 options 里有独立开关：
 //   ←/→        上一句 / 下一句字幕（仅当前视频有字幕轨时接管，否则放行给站点）
 //   ↑           回当前句句首重播
-//   Shift+P/O/F 开关 自动暂停 / 精简播放 / 快进无字幕段
 //   Shift+S     开关字幕列表面板
 //   Shift+H     隐藏/显示字幕（站点原生字幕 + 扩展覆盖层，与 app 内视频页同键）
 //   Ctrl+Enter  制卡（等同点查词弹窗里的「＋」；判定不在本文件，见 vendor/popup.js）
@@ -11,7 +10,7 @@
 //   Ctrl+Shift+[ / ]  播放速度 −0.25x / ＋0.25x
 // 判定是纯函数 decide()（node 可测）；执行端是 subtitle-panel.js 暴露的
 // window.hibikiSubtitleShortcut(action)（面板持有轨/偏移/模式状态），播放速度直接操作 <video>。
-// 输入框/可编辑区一律放行；options 的 videoShortcutsEnabled（默认开）可整体关闭。
+// 输入框/可编辑区一律放行；旧 videoShortcutsEnabled 只作为升级时各动作的缺省值。
 (function (root, factory) {
   var api = factory();
   try { if (typeof module !== 'undefined' && module.exports) module.exports = api; } catch (_) { /* no-op */ }
@@ -26,14 +25,17 @@
     if (ev.alt) return null;
     var key = ev.key || '';
     var code = ev.code || '';
+    function result(action) {
+      return !ctx.bindings || ctx.bindings[action] !== false ? { action: action } : null;
+    }
     if (ev.ctrl && ev.shift) {
-      if (key === 'ArrowLeft') return ctx.hasTrack ? { action: 'offset-minus' } : null;
-      if (key === 'ArrowRight') return ctx.hasTrack ? { action: 'offset-plus' } : null;
-      if (key === 'ArrowDown') return ctx.hasTrack ? { action: 'offset-reset' } : null;
-      if (code === 'KeyZ') return ctx.hasTrack ? { action: 'copy-cue' } : null;
+      if (key === 'ArrowLeft') return ctx.hasTrack ? result('offset-minus') : null;
+      if (key === 'ArrowRight') return ctx.hasTrack ? result('offset-plus') : null;
+      if (key === 'ArrowDown') return ctx.hasTrack ? result('offset-reset') : null;
+      if (code === 'KeyZ') return ctx.hasTrack ? result('copy-cue') : null;
       // 括号键在 Shift 下 e.key 会变成 '{' / '}'，用布局无关的 e.code。
-      if (code === 'BracketLeft') return { action: 'rate-down' };
-      if (code === 'BracketRight') return { action: 'rate-up' };
+      if (code === 'BracketLeft') return result('rate-down');
+      if (code === 'BracketRight') return result('rate-up');
       return null;
     }
     if (ev.ctrl) return null;
@@ -42,17 +44,14 @@
       // YouTube 自带轨）+ 扩展自绘覆盖层，而 hasTrack 问的是「扩展这边有没有加载过字幕轨」。
       // 二者正交——绝大多数用户是在看站点原生字幕、根本没往扩展里挂轨，若卡在 hasTrack 后面，
       // 这个键在最主要的使用场景下会永远不触发。与 app 的 videoToggleSubtitleHide 默认键一致。
-      if (code === 'KeyH') return { action: 'toggle-subtitle-hide' };
+      if (code === 'KeyH') return result('toggle-subtitle-hide');
       if (!ctx.hasTrack) return null;
-      if (code === 'KeyP') return { action: 'toggle-autopause' };
-      if (code === 'KeyO') return { action: 'toggle-condensed' };
-      if (code === 'KeyF') return { action: 'toggle-fastforward' };
-      if (code === 'KeyS') return { action: 'toggle-panel' };
+      if (code === 'KeyS') return result('toggle-panel');
       return null;
     }
-    if (key === 'ArrowLeft') return ctx.hasTrack ? { action: 'prev-cue' } : null;
-    if (key === 'ArrowRight') return ctx.hasTrack ? { action: 'next-cue' } : null;
-    if (key === 'ArrowUp') return ctx.hasTrack ? { action: 'replay-cue' } : null;
+    if (key === 'ArrowLeft') return ctx.hasTrack ? result('prev-cue') : null;
+    if (key === 'ArrowRight') return ctx.hasTrack ? result('next-cue') : null;
+    if (key === 'ArrowUp') return ctx.hasTrack ? result('replay-cue') : null;
     return null;
   }
 
@@ -69,21 +68,53 @@
 (function () {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   var api = (typeof self !== 'undefined' ? self : window).HIBIKI_VIDEO_SHORTCUTS;
-  var enabled = true;
+  var bindingKeys = {
+    'prev-cue': 'videoShortcutPrevCue',
+    'next-cue': 'videoShortcutNextCue',
+    'replay-cue': 'videoShortcutReplayCue',
+    'toggle-panel': 'videoShortcutTogglePanel',
+    'toggle-subtitle-hide': 'videoShortcutToggleSubtitleHide',
+    'offset-minus': 'videoShortcutOffsetMinus',
+    'offset-plus': 'videoShortcutOffsetPlus',
+    'offset-reset': 'videoShortcutOffsetReset',
+    'copy-cue': 'videoShortcutCopyCue',
+    'rate-down': 'videoShortcutRateDown',
+    'rate-up': 'videoShortcutRateUp',
+  };
+  var rawSettings = Object.create(null);
+  var bindings = Object.create(null);
 
-  function applyEnabled(saved) {
-    // 缺省/非 false 一律视为开启（默认开）。
-    enabled = !(saved && saved.videoShortcutsEnabled === false);
+  function applySettings(saved) {
+    saved = saved || {};
+    for (var k in saved) rawSettings[k] = saved[k];
+    var legacyEnabled = rawSettings.videoShortcutsEnabled !== false;
+    for (var action in bindingKeys) {
+      var value = rawSettings[bindingKeys[action]];
+      bindings[action] = typeof value === 'boolean' ? value : legacyEnabled;
+    }
   }
   try {
-    var p = chrome.storage.local.get('videoShortcutsEnabled');
-    if (p && typeof p.then === 'function') p.then(applyEnabled, function () {});
-    else chrome.storage.local.get('videoShortcutsEnabled', applyEnabled);
+    var keys = ['videoShortcutsEnabled'];
+    for (var action in bindingKeys) keys.push(bindingKeys[action]);
+    var p = chrome.storage.local.get(keys, applySettings);
+    if (p && typeof p.then === 'function') p.then(applySettings, function () {});
   } catch (_) {}
   try {
     chrome.storage.onChanged.addListener(function (changes, area) {
-      if (area !== 'local' || !changes || !changes.videoShortcutsEnabled) return;
-      enabled = changes.videoShortcutsEnabled.newValue !== false;
+      if (area !== 'local' || !changes) return;
+      var patch = {};
+      var changed = false;
+      if (changes.videoShortcutsEnabled) {
+        patch.videoShortcutsEnabled = changes.videoShortcutsEnabled.newValue;
+        changed = true;
+      }
+      for (var action in bindingKeys) {
+        var key = bindingKeys[action];
+        if (!changes[key]) continue;
+        patch[key] = changes[key].newValue;
+        changed = true;
+      }
+      if (changed) applySettings(patch);
     });
   } catch (_) {}
 
@@ -136,9 +167,10 @@
         editable: isEditable(e.target),
       },
       {
-        enabled: enabled,
+        enabled: true,
         hasVideo: !!document.querySelector('video'),
         hasTrack: hasTrackForVideo(),
+        bindings: bindings,
       });
     if (!decision) return;
     var handled = false;

@@ -327,6 +327,49 @@ GalgameEntry? findGalgameByExePath(
   return null;
 }
 
+/// 把一条游戏活动反查回游戏库条目。
+///
+/// 新活动的 [mediaKey] 统一写 `galgames.id`；历史版本曾把 exe 绝对路径写进同一字段，
+/// attach 模式则可能完全没有 key。因此读取顺序固定为：
+///
+/// 1. `galgames.id`；
+/// 2. 旧 exe 路径（复用 [findGalgameByExePath] 的 Windows 路径归一）；
+/// 3. 活动落库时的标题快照（本地名 / 当前显示名 / 元数据名与别名 / exe 文件名）。
+///
+/// 这层兼容必须集中在领域模型旁边，首页 Activity 与游戏首页时间线共用；否则一个页面
+/// 能显示历史活动封面、另一个页面仍只剩占位图标。
+GalgameEntry? findGalgameForActivity(
+  List<GalgameEntry> games, {
+  String? mediaKey,
+  required String title,
+}) {
+  final String key = mediaKey?.trim() ?? '';
+  if (key.isNotEmpty) {
+    for (final GalgameEntry game in games) {
+      if (game.id == key) return game;
+    }
+    final GalgameEntry? byExePath = findGalgameByExePath(games, key);
+    if (byExePath != null) return byExePath;
+  }
+
+  final String snapshot = title.trim();
+  if (snapshot.isEmpty) return null;
+  for (final GalgameEntry game in games) {
+    final Iterable<String?> knownTitles = <String?>[
+      game.displayName,
+      game.name,
+      game.metadata.name,
+      game.metadata.nameCn,
+      ...game.metadata.aliases,
+      galgameNameFromExe(game.exePath),
+    ];
+    if (knownTitles.any((String? value) => value?.trim() == snapshot)) {
+      return game;
+    }
+  }
+  return null;
+}
+
 /// 把用户输入的一整行启动参数拆成 argv token，规则与 Windows `CommandLineToArgvW`
 /// 一致（injector 侧再按同一套规则逐个重新转义写进 `lpCommandLine`，往返无损）：
 ///

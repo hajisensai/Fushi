@@ -1,10 +1,12 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/metadata/book_cover_scrape_dialog.dart';
 import 'package:hibiki/src/media/metadata/book_metadata_scraper.dart';
+import 'package:hibiki/src/media/metadata/transport_retry.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -62,7 +64,12 @@ void main() {
     final BookMetadataScraper scraper = BookMetadataScraper(
       client: MockClient((http.Request req) async {
         calls++;
-        if (calls == 1) throw http.ClientException('network down');
+        // BUG-1272 起传输失败会自动重试 [kTransportMaxAttempts] 次，所以要让整轮
+        // 搜索都失败，必须打满一整轮尝试；只失败一次的话现在会被自动重试救回来，
+        // 用户根本看不到错误行（这正是本次修复的目的）。手动重试从下一轮开始成功。
+        if (calls <= kTransportMaxAttempts) {
+          throw http.ClientException('network down');
+        }
         return http.Response.bytes(
           utf8.encode('{"data":[{"id":1,"name":"Yotsuba to!",'
               '"images":{"large":"https://i/l.jpg"}}]}'),
@@ -131,6 +138,23 @@ void main() {
   // BUG-1219：两句折叠文案只回答「我该做什么」，不回答「到底怎么了」。完整异常串必须
   // 留在出错的地方，并且可一键复制上报（与视频封面匹配弹窗共用 ScrapeFailureView）。
   testWidgets('BUG-1219 搜索失败在弹窗内直出完整技术详情 + 可复制', (WidgetTester tester) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (MethodCall call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map<Object?, Object?>)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
     final BookMetadataScraper scraper = BookMetadataScraper(
       client: MockClient((http.Request req) async =>
           throw http.ClientException("Failed host lookup: 'api.bgm.tv'")),
@@ -151,12 +175,17 @@ void main() {
     await tester.tap(
         find.byKey(const ValueKey<String>('scrape_failure_detail_toggle')));
     await tester.pumpAndSettle();
-    expect(
-      find.byWidgetPredicate((Widget w) =>
-          w is SelectableText && (w.data ?? '').contains('api.bgm.tv')),
-      findsOneWidget,
-    );
+    final Finder detailFinder = find.byWidgetPredicate((Widget w) =>
+        w is SelectableText && (w.data ?? '').contains('api.bgm.tv'));
+    expect(detailFinder, findsOneWidget);
     expect(find.text(t.copy_error), findsOneWidget);
+
+    // 「复制错误」写出的必须是界面里这段完整详情，而不是折叠原因或截断文本。
+    final String detail =
+        tester.widget<SelectableText>(detailFinder).data ?? '';
+    await tester.tap(find.text(t.copy_error));
+    await tester.pump();
+    expect(copied, detail);
   });
 
   testWidgets('BUG-1219 源站 HTTP 500 的详情里带得到状态码', (WidgetTester tester) async {

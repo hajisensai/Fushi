@@ -267,6 +267,50 @@ void main() {
     expect(repo.minedContext!.coverPath, endsWith('.jpg'));
   });
 
+  test('large GIF keeps the selected quality and is not size-downgraded',
+      () async {
+    final repo = _FakeRepo();
+    final List<({int fps, int width})> calls = <({int fps, int width})>[];
+    Future<String?> largeGif({
+      required String inputPath,
+      required int startMs,
+      required int endMs,
+      required String outputPath,
+      int fps = 8,
+      int width = 320,
+      FfmpegFailureReporter? onFailure,
+      String? tlsPinSha256,
+    }) async {
+      calls.add((fps: fps, width: width));
+      await File(outputPath).writeAsBytes(List<int>.filled(5 * 1024 * 1024, 0));
+      return outputPath;
+    }
+
+    final res = await build(
+      gif: largeGif,
+      audio: okAudio,
+      frame: okFrame,
+    ).mine(
+      const ImmersionMiningRequest(
+        source: AnkiMiningSource.video,
+        fields: {'expression': 'x'},
+        mediaSource: '/v.mp4',
+        clipStartMs: 0,
+        clipEndMs: 4000,
+        sentence: 's',
+      ),
+      compression: MiningMediaCompression.highFidelity,
+      tempDir: tmp.path,
+      repo: repo,
+    );
+
+    expect(calls, <({int fps, int width})>[(fps: 12, width: 720)]);
+    expect(res.degradedToStill, isFalse);
+    expect(repo.minedContext!.coverPath, endsWith('immersion_clip.gif'));
+    expect(File(repo.minedContext!.coverPath!).lengthSync(),
+        greaterThan(4 * 1024 * 1024));
+  });
+
   test('requireAudio && audio missing -> abort, no mine', () async {
     final repo = _FakeRepo();
     final res = await build(gif: okGif, audio: nullAudio, frame: nullFrame)

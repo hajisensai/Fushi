@@ -6,6 +6,29 @@ import 'package:xml/xml.dart';
 
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 
+const String _nyaaNamespace = 'https://nyaa.si/xmlns/nyaa';
+
+/// 严格搜索契约的稳定错误码。调用方可以按 [code] 区分「空响应、编码、XML、
+/// RSS 结构、字段」而不必解析第三方 parser 的易变错误文本。
+enum NyaaFeedErrorCode {
+  emptyBody,
+  unsupportedEncoding,
+  invalidUtf8,
+  malformedXml,
+  notRss,
+  missingStructure,
+  invalidNamespace,
+  missingField,
+  invalidField,
+}
+
+class NyaaFeedFormatException extends FormatException {
+  NyaaFeedFormatException(this.code, String detail)
+      : super('Nyaa RSS ${code.name}: $detail');
+
+  final NyaaFeedErrorCode code;
+}
+
 /// Nyaa 磁链标准 tracker 列表（nyaa.si 站点磁链默认附带的公开 tracker）。
 const List<String> kNyaaTrackers = <String>[
   'http://nyaa.tracker.wf:7777/announce',
@@ -87,7 +110,8 @@ class NyaaTorrent {
   /// 由 infoHash 构造的磁力链接（附 nyaa 标准 tracker 列表）。
   String get magnet {
     final StringBuffer sb = StringBuffer(
-        'magnet:?xt=urn:btih:$infoHash&dn=${Uri.encodeComponent(title)}');
+      'magnet:?xt=urn:btih:$infoHash&dn=${Uri.encodeComponent(title)}',
+    );
     for (final String tracker in kNyaaTrackers) {
       sb.write('&tr=${Uri.encodeComponent(tracker)}');
     }
@@ -206,13 +230,20 @@ DateTime? parseNyaaPubDate(String raw) {
 List<NyaaTorrent> parseNyaaRss(String body) {
   if (body.trim().isEmpty) return const <NyaaTorrent>[];
   try {
-    final XmlDocument doc = XmlDocument.parse(body);
-    final List<NyaaTorrent> out = <NyaaTorrent>[];
-    for (final XmlElement item in doc.findAllElements('item')) {
-      final String title = _childText(item, 'title');
-      if (title.isEmpty) continue;
-      final String sizeText = _childText(item, 'size');
-      out.add(NyaaTorrent(
+    return _parseNyaaDocument(XmlDocument.parse(body));
+  } catch (_) {
+    return const <NyaaTorrent>[];
+  }
+}
+
+List<NyaaTorrent> _parseNyaaDocument(XmlDocument doc) {
+  final List<NyaaTorrent> out = <NyaaTorrent>[];
+  for (final XmlElement item in doc.findAllElements('item')) {
+    final String title = _childText(item, 'title');
+    if (title.isEmpty) continue;
+    final String sizeText = _childText(item, 'size');
+    out.add(
+      NyaaTorrent(
         title: title,
         torrentUrl: _childText(item, 'link'),
         pageUrl: _childText(item, 'guid'),
@@ -226,12 +257,130 @@ List<NyaaTorrent> parseNyaaRss(String body) {
         trusted: _childText(item, 'trusted') == 'Yes',
         remake: _childText(item, 'remake') == 'Yes',
         pubDate: parseNyaaPubDate(_childText(item, 'pubDate')),
-      ));
-    }
-    return out;
-  } catch (_) {
-    return const <NyaaTorrent>[];
+      ),
+    );
   }
+  return out;
+}
+
+List<NyaaTorrent> _parseNyaaDocumentStrict(XmlDocument doc) {
+  final XmlElement root = doc.rootElement;
+  if (root.name.local != 'rss') {
+    throw NyaaFeedFormatException(
+      NyaaFeedErrorCode.notRss,
+      'root element must be <rss>',
+    );
+  }
+  final List<XmlElement> channels = root.childElements
+      .where((XmlElement element) => element.name.local == 'channel')
+      .toList(growable: false);
+  if (channels.length != 1) {
+    throw NyaaFeedFormatException(
+      NyaaFeedErrorCode.missingStructure,
+      'feed must contain exactly one direct <channel>',
+    );
+  }
+
+  final List<NyaaTorrent> out = <NyaaTorrent>[];
+  for (final XmlElement item in channels.single.childElements.where(
+    (XmlElement element) => element.name.local == 'item',
+  )) {
+    String requiredRssField(String name) {
+      final String value = _childTextInNamespace(item, name, null);
+      if (value.isEmpty) {
+        throw NyaaFeedFormatException(
+          NyaaFeedErrorCode.missingField,
+          'item is missing <$name>',
+        );
+      }
+      return value;
+    }
+
+    String requiredNyaaField(String name) {
+      final XmlElement? element = _childElement(item, name);
+      if (element == null || element.innerText.trim().isEmpty) {
+        throw NyaaFeedFormatException(
+          NyaaFeedErrorCode.missingField,
+          'item is missing nyaa:$name',
+        );
+      }
+      if (element.name.namespaceUri != _nyaaNamespace) {
+        throw NyaaFeedFormatException(
+          NyaaFeedErrorCode.invalidNamespace,
+          '$name must use $_nyaaNamespace',
+        );
+      }
+      return element.innerText.trim();
+    }
+
+    final String title = requiredRssField('title');
+    final String torrentUrl = requiredRssField('link');
+    final String pageUrl = requiredRssField('guid');
+    final String infoHash = requiredNyaaField('infoHash');
+    if (!RegExp(r'^[0-9a-fA-F]{40}$').hasMatch(infoHash)) {
+      throw NyaaFeedFormatException(
+        NyaaFeedErrorCode.invalidField,
+        'nyaa:infoHash must be 40 hexadecimal characters',
+      );
+    }
+
+    final String sizeText = _childTextInNamespace(item, 'size', _nyaaNamespace);
+    out.add(
+      NyaaTorrent(
+        title: title,
+        torrentUrl: torrentUrl,
+        pageUrl: pageUrl,
+        infoHash: infoHash,
+        seeders: _optionalNyaaInt(item, 'seeders'),
+        leechers: _optionalNyaaInt(item, 'leechers'),
+        downloads: _optionalNyaaInt(item, 'downloads'),
+        sizeText: sizeText,
+        sizeBytes: parseNyaaSize(sizeText),
+        categoryId: _childTextInNamespace(item, 'categoryId', _nyaaNamespace),
+        trusted:
+            _childTextInNamespace(item, 'trusted', _nyaaNamespace) == 'Yes',
+        remake: _childTextInNamespace(item, 'remake', _nyaaNamespace) == 'Yes',
+        pubDate: parseNyaaPubDate(_childTextInNamespace(item, 'pubDate', null)),
+      ),
+    );
+  }
+  return out;
+}
+
+int _optionalNyaaInt(XmlElement item, String name) {
+  final XmlElement? element = _childElement(item, name);
+  if (element == null) return 0;
+  if (element.name.namespaceUri != _nyaaNamespace) {
+    throw NyaaFeedFormatException(
+      NyaaFeedErrorCode.invalidNamespace,
+      '$name must use $_nyaaNamespace',
+    );
+  }
+  final String value = element.innerText.trim();
+  final int? parsed = int.tryParse(value);
+  if (parsed == null || parsed < 0) {
+    throw NyaaFeedFormatException(
+      NyaaFeedErrorCode.invalidField,
+      'nyaa:$name must be a non-negative integer',
+    );
+  }
+  return parsed;
+}
+
+XmlElement? _childElement(XmlElement item, String local) {
+  for (final XmlElement child in item.childElements) {
+    if (child.name.local == local) return child;
+  }
+  return null;
+}
+
+String _childTextInNamespace(XmlElement item, String local, String? namespace) {
+  for (final XmlElement child in item.childElements) {
+    if (child.name.local == local && child.name.namespaceUri == namespace) {
+      return child.innerText.trim();
+    }
+  }
+  return '';
 }
 
 /// 取 [item] 下本地名为 [local] 的第一个子元素文本（去首尾空白）；没有返回空串。
@@ -257,7 +406,8 @@ class NyaaClient {
   /// 按关键词搜索种子。网络错误 / 非 200 **抛出**（`ClientException` /
   /// `SocketException` / `HandshakeException` 等），由调用方决定展示或记录：
   /// 以前这里吞错返回空列表，真实网络故障（如站点被墙、代理未配）会被
-  /// 误报成「无结果」，用户无从判断。RSS 内容坏损仍宽容（[parseNyaaRss]）。
+  /// 误报成「无结果」，用户无从判断。空响应 / 损坏 RSS 同样抛
+  /// [FormatException]；只有结构有效、确实没有 `<item>` 才返回空列表。
   Future<List<NyaaTorrent>> search(
     String query, {
     String category = '1_0',
@@ -276,9 +426,56 @@ class NyaaClient {
     if (res.statusCode != 200) {
       throw http.ClientException('HTTP ${res.statusCode}', uri);
     }
-    // Nyaa RSS 是 UTF-8 但常不声明 charset，http 的 res.body 会按 latin1 解码 →
-    // 日文标题变乱码（如「ソ・ラ・ノ・ヲ・ト」→「Soã»Ra...」）。显式按 UTF-8 解码。
-    return parseNyaaRss(utf8.decode(res.bodyBytes, allowMalformed: true));
+    final String? declaredCharset = RegExp(
+      r'''charset\s*=\s*['"]?([^;'"\s]+)''',
+      caseSensitive: false,
+    ).firstMatch(res.headers['content-type'] ?? '')?.group(1)?.toLowerCase();
+    if (declaredCharset != null &&
+        declaredCharset != 'utf-8' &&
+        declaredCharset != 'utf8') {
+      throw NyaaFeedFormatException(
+        NyaaFeedErrorCode.unsupportedEncoding,
+        'HTTP declared $declaredCharset; UTF-8 is required',
+      );
+    }
+
+    // Nyaa RSS 是 UTF-8但常不声明 charset；必须严格解码，损坏字节不能被 U+FFFD
+    // 替换后继续冒充有效结果。
+    final String body;
+    try {
+      body = utf8.decode(res.bodyBytes);
+    } on FormatException {
+      throw NyaaFeedFormatException(
+        NyaaFeedErrorCode.invalidUtf8,
+        'body contains invalid UTF-8 bytes',
+      );
+    }
+    if (body.trim().isEmpty) {
+      throw NyaaFeedFormatException(
+        NyaaFeedErrorCode.emptyBody,
+        'response body was empty',
+      );
+    }
+    try {
+      final XmlDocument doc = XmlDocument.parse(body);
+      final String? xmlEncoding = doc.declaration?.encoding?.toLowerCase();
+      if (xmlEncoding != null &&
+          xmlEncoding != 'utf-8' &&
+          xmlEncoding != 'utf8') {
+        throw NyaaFeedFormatException(
+          NyaaFeedErrorCode.unsupportedEncoding,
+          'XML declared $xmlEncoding; UTF-8 is required',
+        );
+      }
+      return _parseNyaaDocumentStrict(doc);
+    } on NyaaFeedFormatException {
+      rethrow;
+    } on XmlException catch (error) {
+      throw NyaaFeedFormatException(
+        NyaaFeedErrorCode.malformedXml,
+        error.message,
+      );
+    }
   }
 
   void close() => _client.close();

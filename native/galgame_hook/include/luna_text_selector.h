@@ -182,58 +182,46 @@ inline bool LunaSelectedThreadAccepts(uint64_t manually_selected,
   return selected_face != 0 && selected_face == face_id;
 }
 
+// 文本环（Ring A）的准入判定。
+//
+// BUG-1193 / v12：这里**不再有"自动选干净线程"**。旧实现按 hookcode 统计 clean/dirty，
+// 累计够 3 行干净就锁定赢家，此后只发布赢家的行。它撑住了很长一段时间，但有两个无法
+// 在本层解决的问题：
+//   ① 猜错就没有出路。赢家一旦锁定，其余线程在采集端就被丢弃，用户在 UI 里看到的是
+//     一堆没有内容的空壳线程，"选不动"——这正是用户报的症状；
+//   ② 它把"哪条是台词"这个只有用户能回答的问题，交给了一个字符级启发式。带汉化补丁的
+//     KiriKiri 上这个启发式必然失败：原文和译文经由**同一个 hook**（EmbedKrkrZ 带
+//     NO_CONTEXT，ctx 被强制清零）流出，两种语言的 ThreadParam 逐字节相同，任何统计
+//     都不可能把它们分开。
+// v12 的答案是不猜：没有显式选择就不发布，由 UI 引导用户从**线程预览区**（见
+// voice_hook_ipc.h ThreadPreviewSlot）挑一条。预览区按线程分槽，不受本判定影响，所以
+// "让用户看见所有线程"和"文本环只装选定线程"不再互相排斥——这是删掉赢家逻辑的前提。
+//
+// 唯一准入来源是用户选定的 selected_text_thread_id。profile 的 `prefer=` 只保留为旧配置
+// 元数据，v12 不得据此绕过显式选择。
 class LunaTextSelector {
  public:
-  // [face_id] 是不含 ctx/ctx2 的 hook 面 id（见 LunaSelectedThreadAccepts）。传 0 表示
-  // 调用方无法提供，此时手动选择退化为精确 thread_id 匹配。
-  bool ShouldWrite(const std::wstring& hook_code, uint64_t thread_id,
-                   bool artifact, uint64_t manually_selected,
+  // 判定本行是否写入文本环。[face_id] 是不含 ctx 的 hook 面 id（见
+  // LunaSelectedThreadAccepts）；传 0 表示调用方无法提供，此时退化为精确 thread_id 匹配。
+  //
+  // [manually_selected] 为 0 表示用户尚未为本游戏选定线程：**返回 false**，一行都不发布。
+  // 这是有意的——见类注释。伪影行任何情况下都不进文本环（预览区另有 artifact 标记位，
+  // 脏线程在 UI 里仍然看得见，不会被藏掉）。
+  bool AcceptsLine(uint64_t thread_id, bool artifact, uint64_t manually_selected,
                    uint64_t face_id = 0) {
     NoteFace(thread_id, face_id);
-    Stats& stats = stats_[hook_code];
-    if (artifact) ++stats.dirty;
-    else ++stats.clean;
-
-    const std::wstring* best = nullptr;
-    const std::wstring* pristine = nullptr;
-    uint64_t best_clean = 0;
-    uint64_t pristine_clean = 0;
-    uint64_t total_clean = 0;
-    for (const auto& entry : stats_) {
-      const uint64_t clean = entry.second.clean;
-      const uint64_t dirty = entry.second.dirty;
-      total_clean += clean;
-      if (clean == 0) continue;
-      if (dirty == 0 && clean > pristine_clean) {
-        pristine = &entry.first;
-        pristine_clean = clean;
-      }
-      if (clean >= dirty && clean > best_clean) {
-        best = &entry.first;
-        best_clean = clean;
-      }
-    }
-    const std::wstring* winner = pristine != nullptr ? pristine : best;
-    if (total_clean >= 3 && winner != nullptr) {
-      primed_ = true;
-      selected_hook_ = *winner;
-    }
-
     if (artifact) return false;
-    if (manually_selected != 0) {
-      return LunaSelectedThreadAccepts(manually_selected, thread_id,
-                                       FaceOf(manually_selected), face_id);
-    }
-    return !primed_ || hook_code == selected_hook_;
+    if (manually_selected == 0) return false;
+    return LunaSelectedThreadAccepts(manually_selected, thread_id,
+                                     FaceOf(manually_selected), face_id);
   }
 
   // 登记一条 thread_id → face 映射。
   //
-  // BUG-1159：这一步必须对**每一行**做，且必须早于所有过滤分支。injector 侧
-  // 的 preferred_hook_codes 快路根本不进选择器；如果只在 ShouldWrite 里登记，
-  // 那些行的 thread 就永远没有 face。而跨会话记忆恢复（Dart `_maybeRestoreTextThread`）
-  // 正是从「本会话已出过 >= 3 行」的线程里挑一条写进 `selected_text_thread_id`，
-  // 若那几行走的是快路，FaceOf 会返回 0 → 退回精确匹配 → 原症状原样复现。
+  // BUG-1159：这一步必须对**每一行**做，且必须早于准入判定。未选择阶段的行只进入
+  // 预览区、不进入文本环；跨会话记忆恢复（Dart `_maybeRestoreTextThread`）会从
+  // 「本会话已出过 >= 3 行」的线程里挑一条写进 `selected_text_thread_id`，所以这些
+  // 预览行也必须提前登记 face。
   // 登记在全路径完成后，「选定线程已出过 >= 3 行」就硬性蕴含「face 已知」。
   void NoteFace(uint64_t thread_id, uint64_t face_id) {
     if (face_id != 0 && thread_id != 0) thread_face_[thread_id] = face_id;
@@ -245,24 +233,12 @@ class LunaTextSelector {
     return it == thread_face_.end() ? 0 : it->second;
   }
 
-  void Reset() {
-    stats_.clear();
-    thread_face_.clear();
-    selected_hook_.clear();
-    primed_ = false;
-  }
+  void Reset() { thread_face_.clear(); }
 
  private:
-  struct Stats {
-    uint64_t clean = 0;
-    uint64_t dirty = 0;
-  };
-  std::map<std::wstring, Stats> stats_;
   // thread_id → hook 面 id。只增不删：一次会话内 hook 面数量有界（每个 hook 的每个
   // 调用上下文一条），且必须跨「用户选定线程」之前/之后都能查到。
   std::map<uint64_t, uint64_t> thread_face_;
-  std::wstring selected_hook_;
-  bool primed_ = false;
 };
 
 }  // namespace hibiki_voice_hook

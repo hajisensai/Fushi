@@ -5,3 +5,4 @@
 - **[x] ② 已加自动化测试** — `hibiki/test/reader/popup_wheel_speed_asset_test.dart`：三份 popup.js 均含读取 `__hoshiPopupWheelSpeed` 且乘入 factor 的源码守卫；`popup_settings_injection` 测试断言注入该全局；`browser_extension_theme_colors` 测试断言 theme map 含 `--hibiki-wheel-speed`。提交：e413d2d58
 - **集成补丁**：merge 时发现 `buildPopupStaticSettingsJs` 新读 `appModel.popupWheelSpeed`，但既有 fake `PushDedupAppModel`（`dictionary_popup_push_dedup_test.dart`）未覆盖该 getter，真 getter 走 `prefsRepo!` 抛 Null check 使 `_pushResults` 中断（pushCount 归零，BUG-712 守卫红）。已按其它注入 getter 同法在该 fake 覆盖 `popupWheelSpeed => 1.0`。
 - **备注**：默认 1.0 倍率与改前行为逐帧一致（粗鼠标 0.24、触控板 1.0）；倍率同乘两类设备，作为统一「滚轮速度」旋钮。
+- **2026-07-29 跟进**：用户实测 app 外查词窗口的鼠标滚轮默认仍偏慢。链路核对确认 native 覆盖窗原样转发 `WHEEL_DELTA`，`buildFrameSettingsJs` 也已注入同一 `popupWheelSpeed`；慢感来自粗鼠标固定 `0.24` 系数，一格约只移动 24 visual px。将粗鼠标基准校准为 `0.48`（约 48 visual px，仍明显低于 WebView2 原生整格），保留单帧 120px 上限与用户 0.5–5.0 倍率。触控板/高分辨率滚轮仍走独立 `1.0` fine-device 路径，速度不变；三份 `popup.js` 镜像同步。

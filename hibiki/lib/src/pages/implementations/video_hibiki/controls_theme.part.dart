@@ -86,6 +86,14 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
       buttonBarButtonColor: _videoChromeAccent(cs),
       buttonBarHeight: _videoButtonBarHeight,
       buttonBarButtonSize: _videoControlIconSize,
+      // BUG-1224：进度条触摸热区高与「骑按钮行上沿的下压量」显式传入（取值 = fork 原本
+      // 的默认 36 / 16，桌面渲染逐像素不变）。目的是让**控制条实际布局**与**字幕避让计算**
+      // 读同一份常量：此前避让只让出一个按钮行高，而热区上缘其实还高出 36−16=20px，字幕
+      // 恰好压住那条带 → 点进度条上缘被字幕 glyph 命中层吸走成查词（seek 收不到指针）。
+      seekBarContainerHeight:
+          _VideoHibikiPageState._videoDesktopSeekBarContainerHeight,
+      seekBarBottomButtonBarOverlap:
+          _VideoHibikiPageState._videoDesktopSeekBarButtonBarOverlap,
       keyboardShortcuts: _videoKeyboardShortcuts(controller),
       primaryButtonBar: const <Widget>[],
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮和标题均从用户布局
