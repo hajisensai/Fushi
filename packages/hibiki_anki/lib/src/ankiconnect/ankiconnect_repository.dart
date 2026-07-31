@@ -1621,7 +1621,22 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     return 'mp3';
   }
 
-  Future<String> _storeDictionaryMedia(
+  /// BUG-1265：返回 `null` 表示「这条词典媒体嵌不进去」，**不是**整次制卡失败。
+  ///
+  /// 词典媒体（gaiji 外字、义项内嵌图）是**装饰性**的，写入方
+  /// `writeDictionaryMediaCache` 按设计就是尽力而为：HoshiDicts 未初始化、
+  /// `getMediaFile` 取不到字节（分卷 MDD 未挂载、词典里本就没这个资源）、写盘失败，
+  /// 三种情况都跳过不写盘，契约是「该条退回 alt 文本，不阻断制卡」。共享的
+  /// [BaseAnkiRepository.buildDictionaryMediaTags] 也据此收 `Future<String?>`：
+  /// null 就不进映射表。AnkiDroid（`_addDictionaryMedia`）与 AnkiMobile
+  /// （`_dictionaryMediaUrl`）都按这个契约返回 null 优雅降级。
+  ///
+  /// 此处曾 `throw FileSystemException`（commit 35e8c96b5「require media before
+  /// adding cards」把封面/句子音频的「缺媒体就别建卡」策略**误扫**到装饰性外字上）：
+  /// 一个取不到字节的外字就让 `mineEntry` 整个抛穿，用户一张卡都建不出来，而同一
+  /// 词条在 AnkiDroid/AnkiMobile 上照常建卡。封面与句子音频仍由 [_storeLocalMedia]
+  /// 抛异常拦住（那两个缺了卡片就没价值），二者是**不同**策略，不要再合并。
+  Future<String?> _storeDictionaryMedia(
     AnkiConnectService service,
     _MediaUploadTransaction mediaTransaction,
     DictionaryMedia media,
@@ -1632,7 +1647,12 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
     final file = File('${ankiDictionaryMediaCacheDirPath()}/$filename');
     if (!file.existsSync()) {
-      throw FileSystemException('Dictionary media file is missing', file.path);
+      debugPrint(
+        'AnkiConnectRepository._storeDictionaryMedia: cache miss for '
+        '${media.dictionary}/${media.path} (${file.path}); '
+        'embedding skipped, card still created',
+      );
+      return null;
     }
     await _uploadLocalFile(
       service,
