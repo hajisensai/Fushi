@@ -1698,6 +1698,10 @@ window.hibikiResetAutoLookupDedupe = function () {
 // TODO-1185：嵌套查词——点释义里的词（词典交叉引用 a[href]）。popup.js 的 a.onclick →
 // callHandler('onLinkClick', query) → bridge-shim → 这里。用该词**重发一次 lookup**，在同一
 // #entries-container 重渲染（yomitan 式单弹窗内导航），对齐 app 的「点释义里的词继续查」。
+// BUG-1261：走 hibikiRenderNested（只换内容），不再走 hibikiRender 的完整首查词路径——弹窗
+// 的位置、尺寸、原文高亮、入场淡入全部原样保持。子词的匹配长度（result.bestLength）在这里
+// 没有任何用处：它是「原文里命中了几个字」的量，而嵌套查的词根本不在原文里，拿它去截原文
+// 选区正是修复前把原文高亮和弹窗落点一起算错的原因。
 window.__hibikiOnLinkClick = function (query) {
   const term = (query || '').trim();
   if (!term) return;
@@ -1707,12 +1711,13 @@ window.__hibikiOnLinkClick = function (query) {
       try { if (chrome.runtime.lastError) return; } catch (_) { return; }
       if (!resp || !resp.ok) { hibikiShowConnectionFailure(resp); return; }
       if (!resp.data || !resp.data.popupJson) return;
-      const best = resp.data.result && typeof resp.data.result.bestLength === 'number'
-        ? resp.data.result.bestLength : 0;
-      const termLen = best > 0 ? best : term.length;
       window.audioSources = Array.isArray(resp.data.audioSources) ? resp.data.audioSources : [];
       window.needsAudio = true;
-      hibikiRender(resp.data.popupJson, termLen, resp.data.theme);
+      // 同词去重状态跟着**弹窗当前显示的词**走：弹窗里已经是子词了，鼠标再回到原文那个父词
+      // 上就是一次真正的换词，必须能重查。不更新的话 hibikiLastTerm 还停在父词，mousemove
+      // 的同词去重会把它当「还在同一个词上」直接 return，用户从嵌套查词回不到原词。
+      hibikiLastTerm = term;
+      hibikiRenderNested(resp.data.popupJson, resp.data.theme);
     });
   } catch (_) { /* 扩展上下文失效：静默 */ }
 };
@@ -1888,53 +1893,86 @@ function hibikiEnsureResizeGrip() {
   if (hibikiResizeGrip.parentNode !== parent) parent.appendChild(hibikiResizeGrip);
 }
 
+// BUG-1261：把「换弹窗内容」从「建立弹窗几何」里拆出来。首次查词两件事都要做；嵌套查词
+// （弹窗内点释义里的词）只该换内容——原文里被查的词一个字都没变，重算它的高亮与落点纯属
+// 无中生有。三个入口共用这一份内容渲染，行为不再各写一遍。
+function hibikiRenderEntries(popupJson) {
+  try { window.lookupEntries = JSON.parse(popupJson); }
+  catch (_) { window.lookupEntries = []; }
+  window._noResultsMessage = 'No results';
+  window.__hibikiOnTapOutside = hibikiRemoveContainer;
+  if (typeof window.renderPopup === 'function') window.renderPopup();
+}
+
+// 把查词响应下发的主题变量套到弹窗上。applyBox=false 时只套颜色/行为类变量，**不碰 host 的
+// 尺寸盒**（width/maxWidth/maxHeight/zoom）——嵌套查词是原地换内容，弹窗尺寸以及 place() 按
+// 「不遮被查词」夹出来的 maxHeight 必须原样保持；重写尺寸盒会把那次夹取悄悄丢掉。
+function hibikiApplyTheme(c, theme, applyBox) {
+  if (!theme || typeof theme !== 'object') return;
+  for (const k in theme) {
+    if (typeof theme[k] === 'string') c.style.setProperty(k, theme[k]);
+  }
+  // BUG-688：data-theme 也跟 app 主题（--hibiki-color-scheme），覆盖 hibikiEnsureContainer
+  // 里基于宿主页 prefers-color-scheme 的初值。否则 app 浅色 + 宿主页深色时，content.css 的
+  // [data-theme="dark"] 块给黑底/白字，却套上 app 浅色的 --md-* 米白 surface = 主题分裂
+  // （用户报「和 app 内完全不一样」：黑底 + 米卡 + 灰字）。主题单一来源于 app，与 in-app 一致。
+  const cs = theme['--hibiki-color-scheme'];
+  if (cs === 'dark' || cs === 'light') c.setAttribute('data-theme', cs);
+  // 多列词典（masonry）根因修：popup.js 的 dictColumns() 与 updateEffectiveDictColumns()
+  // 都从 document.documentElement 读 --dict-columns（in-app 时 documentElement 就是弹窗自身
+  // 文档，注入在那里）。扩展里弹窗挂在宿主页的 shadow root，上面把 --dict-columns 连同其它
+  // theme 变量 setProperty 到 #entries-container（c）——masonry 读 documentElement 读不到 →
+  // 恒 1 列，且 updateEffectiveDictColumns 把 --dict-columns-effective 算成 1 写回
+  // documentElement 又继承进 grid，连 CSS grid 兜底也塌成单列（用户报「浏览器多列不生效」）。
+  // 这里把列数额外落到宿主页 documentElement（与 in-app dictionary_popup_webview 同源、整数
+  // 字符串），让 masonry 读数、effective 收敛、grid 继承三条路径全部命中。命名空间自定义属性，
+  // 宿主页 CSS 不消费，无副作用。
+  const dictCols = theme['--dict-columns'];
+  if (typeof dictCols === 'string' && dictCols) {
+    try {
+      document.documentElement.style.setProperty('--dict-columns', dictCols);
+    } catch (_) { /* 宿主页禁写 style 时静默：多列退化为单列，不崩查词 */ }
+  }
+  // 「滑动关闭」偏好（app enableSwipeToClose）随 theme 下发（'1'/'0'）；置位后弹窗宿主上已挂的
+  // 水平拖关手势才真正关窗（缺该 key = 旧 app，保持关闭，向后兼容）。
+  hibikiSwipeCloseEnabled = theme['--hibiki-swipe-close'] === '1';
+  // BUG-1026：查词弹窗滚轮速度倍率随 theme 下发（app popupWheelSpeed）→ 设同名全局供
+  // popup.js 的 wheel 监听器读（content/popup 同隔离世界共享 window）。非法/缺失 → 1.0。
+  {
+    const ws = parseFloat(theme['--hibiki-wheel-speed']);
+    window.__hoshiPopupWheelSpeed = (isFinite(ws) && ws > 0) ? ws : 1;
+  }
+  // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
+  if (applyBox && hibikiHost) {
+    hibikiHost.style.width = theme['--hibiki-popup-max-width'] || '400px';
+    hibikiHost.style.maxWidth = 'calc(100vw - 16px)';
+    hibikiHost.style.maxHeight =
+        'min(' + (theme['--hibiki-popup-max-height'] || '360px') + ', 80vh)';
+    hibikiHost.style.zoom = theme['--hibiki-popup-zoom'] || '1';
+  }
+}
+
+// BUG-1261：嵌套查词的渲染入口——**只换内容**。不重算原文高亮、不重新 place、不重走入场
+// 淡入、不重写尺寸盒。语义与 yomitan 的单弹窗内导航一致（本实现的既定设计也是「没有前进
+// 后退，就是嵌套查词」）：用户视线停在弹窗上，弹窗就不该动；原文里被查的词没变，它的高亮
+// 就不该变。修复前这里走的是下面 hibikiRender 的完整路径，代价是弹窗先压成透明、归零到屏
+// 幕左上角、再按**子词长度**截原文选区算出的锚点搬回原文旁边重新淡入——用户看到的就是
+// 「点了释义里的词，旧弹窗被关掉了」。
+function hibikiRenderNested(popupJson, theme) {
+  // 请求在途期间弹窗已被关掉（点完链接又点了页面别处 / 滑动关窗 / 进出全屏重建失败）：直接
+  // 丢弃这次嵌套结果。**不能**走 hibikiEnsureContainer 凭空重建——嵌套渲染不 place，重建出来
+  // 的弹窗会没有落点地钉在屏幕左上角；而且用户已经明确关掉了弹窗，它就不该再弹回来。
+  if (!hibikiHost || !hibikiContainer) return;
+  hibikiApplyTheme(hibikiContainer, theme, false);
+  hibikiRenderEntries(popupJson);
+}
+
 function hibikiRender(popupJson, termLen, theme, anchorRect) {
   const c = hibikiEnsureContainer();
   // BUG-530：查词响应带回当前 app 主题色（--md-*），套到弹窗容器上，弹窗实时跟随用户主题
-  // （改主题下次查词即变）。无 theme 时用 popup.css 里的深色兜底。
-  if (theme && typeof theme === 'object') {
-    for (const k in theme) {
-      if (typeof theme[k] === 'string') c.style.setProperty(k, theme[k]);
-    }
-    // BUG-688：data-theme 也跟 app 主题（--hibiki-color-scheme），覆盖 hibikiEnsureContainer
-    // 里基于宿主页 prefers-color-scheme 的初值。否则 app 浅色 + 宿主页深色时，content.css 的
-    // [data-theme="dark"] 块给黑底/白字，却套上 app 浅色的 --md-* 米白 surface = 主题分裂
-    // （用户报「和 app 内完全不一样」：黑底 + 米卡 + 灰字）。主题单一来源于 app，与 in-app 一致。
-    const cs = theme['--hibiki-color-scheme'];
-    if (cs === 'dark' || cs === 'light') c.setAttribute('data-theme', cs);
-    // 多列词典（masonry）根因修：popup.js 的 dictColumns() 与 updateEffectiveDictColumns()
-    // 都从 document.documentElement 读 --dict-columns（in-app 时 documentElement 就是弹窗自身
-    // 文档，注入在那里）。扩展里弹窗挂在宿主页的 shadow root，上面把 --dict-columns 连同其它
-    // theme 变量 setProperty 到 #entries-container（c）——masonry 读 documentElement 读不到 →
-    // 恒 1 列，且 updateEffectiveDictColumns 把 --dict-columns-effective 算成 1 写回
-    // documentElement 又继承进 grid，连 CSS grid 兜底也塌成单列（用户报「浏览器多列不生效」）。
-    // 这里把列数额外落到宿主页 documentElement（与 in-app dictionary_popup_webview 同源、整数
-    // 字符串），让 masonry 读数、effective 收敛、grid 继承三条路径全部命中。命名空间自定义属性，
-    // 宿主页 CSS 不消费，无副作用。
-    const dictCols = theme['--dict-columns'];
-    if (typeof dictCols === 'string' && dictCols) {
-      try {
-        document.documentElement.style.setProperty('--dict-columns', dictCols);
-      } catch (_) { /* 宿主页禁写 style 时静默：多列退化为单列，不崩查词 */ }
-    }
-    // 「滑动关闭」偏好（app enableSwipeToClose）随 theme 下发（'1'/'0'）；置位后弹窗宿主上已挂的
-    // 水平拖关手势才真正关窗（缺该 key = 旧 app，保持关闭，向后兼容）。
-    hibikiSwipeCloseEnabled = theme['--hibiki-swipe-close'] === '1';
-    // BUG-1026：查词弹窗滚轮速度倍率随 theme 下发（app popupWheelSpeed）→ 设同名全局供
-    // popup.js 的 wheel 监听器读（content/popup 同隔离世界共享 window）。非法/缺失 → 1.0。
-    {
-      const ws = parseFloat(theme['--hibiki-wheel-speed']);
-      window.__hoshiPopupWheelSpeed = (isFinite(ws) && ws > 0) ? ws : 1;
-    }
-    // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
-    if (hibikiHost) {
-      hibikiHost.style.width = theme['--hibiki-popup-max-width'] || '400px';
-      hibikiHost.style.maxWidth = 'calc(100vw - 16px)';
-      hibikiHost.style.maxHeight =
-          'min(' + (theme['--hibiki-popup-max-height'] || '360px') + ', 80vh)';
-      hibikiHost.style.zoom = theme['--hibiki-popup-zoom'] || '1';
-    }
-  }
+  // （改主题下次查词即变）。无 theme 时用 popup.css 里的深色兜底。首次查词要建立弹窗几何，
+  // 故连尺寸盒一并套上（applyBox=true）；嵌套查词走 hibikiRenderNested，不碰尺寸盒。
+  hibikiApplyTheme(c, theme, true);
   // TODO-1272：被查词高亮改为「扩展自绘覆盖层」，取词的视口 rects 也一并作弹窗锚点（不再贴鼠标坐标）。
   // 旧实现走 selection.js highlightSelection 的 DOM 包裹路径（<span class="hoshi-dict-highlight">
   // 直接改宿主页文本节点）：动态站点（React/Vue/视频字幕逐帧重渲染）框架 diff / MutationObserver
@@ -1957,11 +1995,7 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
   // 弹窗直接放词处会溢出到浏览器窗口外/被裁（用户报「弹窗进到浏览器外面」）。
   c.style.visibility = 'hidden';
   if (hibikiHost) { hibikiHost.style.left = '0px'; hibikiHost.style.top = '0px'; }
-  try { window.lookupEntries = JSON.parse(popupJson); }
-  catch (_) { window.lookupEntries = []; }
-  window._noResultsMessage = 'No results';
-  window.__hibikiOnTapOutside = hibikiRemoveContainer;
-  if (typeof window.renderPopup === 'function') window.renderPopup();
+  hibikiRenderEntries(popupJson);
   const place = () => {
     // BUG-688：量 host 的 rect（被 max-height 夹住=可见尺寸），不是容器（overflow:visible=全内容
     // 高度，会把弹窗错误地翻到词上方）。host 无则回落容器。
