@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/interconnect_service_config.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
 import 'package:hibiki/src/sync/remote_cover_fetcher.dart';
 import 'package:hibiki/src/sync/remote_library_source.dart';
@@ -676,6 +677,35 @@ class InterconnectSyncBackend extends SyncBackend
   /// host 根 origin（folder 路径是 `${_apiBase}/$kSyncRootFolderName/`，
   /// 故 /api 端点在 `${_apiBase}/api/...`）。
   String get _apiBase => _ops!.baseUrl;
+
+  /// Pulls the host-owned service configuration over the pinned HTTPS session.
+  /// Old hosts return 404 and are treated as not supporting the capability.
+  /// HTTP/shared-token sessions are rejected by the server rather than silently
+  /// downgrading API keys to plaintext transport.
+  Future<InterconnectServiceConfigSnapshot?> getRemoteServiceConfig() async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/interconnect/service-config',
+    );
+    final HttpClientResponse res = await req.close();
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    _ops!.checkStatus(
+      res.statusCode,
+      'GET /api/interconnect/service-config',
+    );
+    final String body = await res.transform(utf8.decoder).join();
+    final Object? decoded = jsonDecode(body);
+    if (decoded is! Map) {
+      throw const FormatException('Invalid service config response');
+    }
+    return InterconnectServiceConfigSnapshot.fromJson(
+      decoded.cast<String, Object?>(),
+    );
+  }
 
   /// TODO-1235（TODO-961 回归）：把对端封面拉成字节，复用互联其余流量同一条钉扎
   /// 通路——[_ops.buildRequest] 对 https 用 pinned client（证书指纹相等才接受自签），

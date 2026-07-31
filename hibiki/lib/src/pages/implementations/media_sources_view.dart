@@ -28,6 +28,7 @@ import 'package:hibiki/src/media/source_library/source_library_row.dart';
 import 'package:hibiki/src/media/source_library/source_library_scanner.dart';
 import 'package:hibiki/src/sync/ftp_sync_backend.dart';
 import 'package:hibiki/src/sync/sftp_sync_backend.dart';
+import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
@@ -63,6 +64,12 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// null = 仍在加载；非 null = 已加载（可能为空列表）。
   List<SourceLibraryRow>? _rows;
 
+  /// Virtual sources are not `media_sources` scan roots. They are composed into
+  /// this view so "Sources" describes every origin that can supply the media
+  /// experience instead of only local folders.
+  bool? _interconnectEnabled;
+  bool? _mangaOnlineCatalogEnabled;
+
   /// 每个来源 id → 当前**累计拥有**的媒体条目数（TODO-1036）。
   /// 与列表一起加载，避免逐行 FutureBuilder 抖动。来源不在 map 里时回退 0。
   final Map<int, int> _cumulativeCount = <int, int>{};
@@ -97,10 +104,18 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   Future<void> _load() async {
     final List<SourceLibraryRow> rows =
         await _db.getMediaSourcesByKind(widget.mediaKind);
+    final bool interconnectEnabled =
+        await SyncRepository(_db).isInterconnectEnabled();
+    final bool mangaOnlineCatalogEnabled = await _db.getPrefTyped<bool>(
+      'manga_online_catalog_enabled',
+      true,
+    );
     final Map<int, int> counts = await _loadCumulativeCounts(rows);
     if (!mounted) return;
     setState(() {
       _rows = rows;
+      _interconnectEnabled = interconnectEnabled;
+      _mangaOnlineCatalogEnabled = mangaOnlineCatalogEnabled;
       _cumulativeCount
         ..clear()
         ..addAll(counts);
@@ -135,17 +150,48 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
   Widget _buildBody(HibikiDesignTokens tokens) {
     final List<SourceLibraryRow>? rows = _rows;
-    if (rows == null) {
+    final bool? interconnectEnabled = _interconnectEnabled;
+    final bool? mangaOnlineCatalogEnabled = _mangaOnlineCatalogEnabled;
+    if (rows == null ||
+        interconnectEnabled == null ||
+        mangaOnlineCatalogEnabled == null) {
       return buildLoading(padding: const EdgeInsets.all(24));
     }
-    if (rows.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(t.media_source_no_sources, textAlign: TextAlign.center),
+    final List<Widget> sourceRows = <Widget>[
+      _buildVirtualSourceRow(
+        tokens,
+        icon: Icons.devices_outlined,
+        title: t.audio_source_hibiki_interconnect,
+        subtitle: t.interconnect_enable_hint,
+        value: interconnectEnabled,
+        onChanged: _setInterconnectEnabled,
+      ),
+      if (widget.mediaKind == 'manga')
+        _buildVirtualSourceRow(
+          tokens,
+          icon: Icons.public_outlined,
+          title: 'Mokuro.moe',
+          subtitle: _appModel.isPreferencesReady
+              ? _appModel.mangaOnlineCatalogBaseUrl
+              : 'https://mokuro.moe',
+          value: mangaOnlineCatalogEnabled,
+          onChanged: _setMangaOnlineCatalogEnabled,
         ),
-      );
-    }
+      if (rows.isNotEmpty) ...<Widget>[
+        Padding(
+          padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+          child: const Divider(height: 1),
+        ),
+        _buildFolderRows(tokens, rows),
+      ],
+    ];
+    return Column(children: sourceRows);
+  }
+
+  Widget _buildFolderRows(
+    HibikiDesignTokens tokens,
+    List<SourceLibraryRow> rows,
+  ) {
     // 自实现的 HibikiReorderableColumn（局部坐标长按拖拽，消祖先 HibikiAppUiScale
     // 缩放），与 LocalAudioSourcesDialog 同款，而非 SDK ReorderableListView。
     return HibikiReorderableColumn(
@@ -162,6 +208,74 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       itemBuilder: (BuildContext context, int index) =>
           _buildRow(tokens, rows[index]),
     );
+  }
+
+  Widget _buildVirtualSourceRow(
+    HibikiDesignTokens tokens, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, color: cs.onSurfaceVariant),
+          SizedBox(width: tokens.spacing.gap),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(title, style: theme.textTheme.titleSmall),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          adaptiveSwitch(
+            context: context,
+            value: value,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _setInterconnectEnabled(bool value) async {
+    setState(() => _interconnectEnabled = value);
+    try {
+      await SyncRepository(_db).setInterconnectEnabled(value);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _interconnectEnabled = !value);
+    }
+  }
+
+  Future<void> _setMangaOnlineCatalogEnabled(bool value) async {
+    setState(() => _mangaOnlineCatalogEnabled = value);
+    try {
+      if (_appModel.isPreferencesReady) {
+        await _appModel.setMangaOnlineCatalogEnabled(value);
+      } else {
+        await _db.setPrefTyped<bool>('manga_online_catalog_enabled', value);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _mangaOnlineCatalogEnabled = !value);
+    }
   }
 
   Widget _buildRow(HibikiDesignTokens tokens, SourceLibraryRow row) {

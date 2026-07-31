@@ -1829,6 +1829,16 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Whether the mokuro.moe internet catalog participates in manga browsing.
+  /// Defaults to true to preserve the pre-source-toggle behaviour.
+  bool get mangaOnlineCatalogEnabled =>
+      getPref('manga_online_catalog_enabled', defaultValue: true) as bool;
+
+  Future<void> setMangaOnlineCatalogEnabled(bool value) async {
+    await setPref('manga_online_catalog_enabled', value);
+    notifyListeners();
+  }
+
   // 旧版单框 Gemini 云端识别的三对 getter/setter（`manga_cloud_ocr_enabled` /
   // `manga_cloud_ocr_api_key` / `manga_cloud_ocr_model`）随 PR#474 删掉框选补扫
   // 实现后已零消费方，本轮一并清掉（BUG-1164）。

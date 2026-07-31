@@ -2762,6 +2762,7 @@
   "manga_import_detected_title": "这看起来是漫画",
   "manga_import_detected_confirm": "按漫画导入",
   "manga_import_detected_message": "「$name」是漫画文件，将走漫画导入流程，而不是书籍导入流程。",
+  "manga_online_source_disabled": "此互联网来源已关闭，请在「来源」中开启后浏览目录。",
   "selection_web_search": "网页搜索",
   "selection_web_search_unavailable": "没有可用的网页搜索应用。",
   "selection_share_failed": "无法打开分享面板。",
