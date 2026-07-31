@@ -905,7 +905,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
   }
 
-  /// AnkiConnect 传输层被证实不可达后，查重探测的短路冷却窗（BUG-1299）。
+  /// AnkiConnect 传输层被证实不可达后，查重探测的短路冷却窗（BUG-1302）。
   ///
   /// **必须是静态的**：`platformServices.createAnkiRepository()` 每次调用都新建一个
   /// [AnkiConnectRepository]（`AnkiConnectRepository.new` 直接当工厂用），
@@ -931,7 +931,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async {
-    // 不可达冷却窗内直接判「非重复」（BUG-1299）。查重是渲染路径上**逐词条**发起的
+    // 不可达冷却窗内直接判「非重复」（BUG-1302）。查重是渲染路径上**逐词条**发起的
     // 装饰性探测：popup.js 的 createEntryHeader 对结果里每个词条都发一次 duplicateCheck
     // 桥调用，AnkiConnect 主机被防火墙静默丢包 / VPN 断开 / 配成了远程不在线的主机时，
     // 每次都要挂满连接超时（5s，BUG-665 已把连接阶段单独绑定），N 个词条就是 N 条

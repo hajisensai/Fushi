@@ -1,7 +1,7 @@
-## BUG-1301 · 词典引擎 freq/pitch 在截断前富化：中间结果被重复富化约 3 倍（实测微优化，非秒级根因）
+## BUG-1304 · 词典引擎 freq/pitch 在截断前富化：中间结果被重复富化约 3 倍（实测微优化，非秒级根因）
 
 - **报告**：2026-07-31（用户：「词典出来的速度特别特别慢……某些用户电脑上出来要 4-5 秒」，并附词典管理截图：释义词典 **7 本以上**，含 Pixiv / Nico_Pixiv 这类超大词典，另有汉字/词频/音调三类）
-- **真实性**：✅ 真 bug（真的在做重复工作），但 **⚠️ 量级被初稿严重夸大，已按 Release 实测改写**。初稿写「`query_raw` 约 1600 次/查」「无用富化是有效工作量的三到四个数量级」，独立复核 + 本轮双版本实测把这两个数字都推翻了：真实是 `query_raw` **69 次/查**、富化放大 **2.94×**、端到端**约 5–9%（绝对值 ~10 微秒）**。**这条不解释用户报的 4-5 秒**——见下方「量级实测」与 [BUG-1299](BUG-1299-lookup-blocking-network-timeouts.md) 的收尾判断。它仍是 BUG-717 当年自己记下「已识别但未做」的那条（`docs/bugs/BUG-717-lookup-latency-half-second.md:15`：「C++ 引擎微优化（freq/pitch 截断后富化、排序键预计算）……留作后续」），按「微优化」的定位保留。
+- **真实性**：✅ 真 bug（真的在做重复工作），但 **⚠️ 量级被初稿严重夸大，已按 Release 实测改写**。初稿写「`query_raw` 约 1600 次/查」「无用富化是有效工作量的三到四个数量级」，独立复核 + 本轮双版本实测把这两个数字都推翻了：真实是 `query_raw` **69 次/查**、富化放大 **2.94×**、端到端**约 5–9%（绝对值 ~10 微秒）**。**这条不解释用户报的 4-5 秒**——见下方「量级实测」与 [BUG-1302](BUG-1302-lookup-blocking-network-timeouts.md) 的收尾判断。它仍是 BUG-717 当年自己记下「已识别但未做」的那条（`docs/bugs/BUG-717-lookup-latency-half-second.md:15`：「C++ 引擎微优化（freq/pitch 截断后富化、排序键预计算）……留作后续」），按「微优化」的定位保留。
 
   - **根因：富化被放在三层笛卡尔积的最内层，而结果在最外层才被截断。**
     `native/hoshidicts/hoshidicts_src/lookup.cpp:49-54` 是三层嵌套：
@@ -56,6 +56,6 @@
   - 覆盖：`lookup(猫)` 平常形式、`lookup(猫が)`（更长输入 → 真的跑多轮 `query_raw`，正是被抽掉富化的那个循环）、`lookup(猫, max_results=1)`（强制 `resize` 真截断，证明 pitch 富化跑在存活集上），三种情况都断言 frequency 值、pitch positions、以及 glossary 已 materialize。
   - **变异实测**：① 注释掉 `enrich_pitch` 调用 → 三处断言全红（`term has no pitches`）；② 注释掉 `enrich_freq` 调用 → 三处断言全红（`term has no frequencies`）。均用反向 `sed` 替换还原（不用 `git checkout --`），还原后核验零 `MUTANT` 残留、全套 19/19 恢复绿。
 - **备注**：
-  - 与 [BUG-1299](BUG-1299-lookup-blocking-network-timeouts.md)（网络超时阻塞，解释「4-5 秒」）、[BUG-1300](BUG-1300-hoshidicts-hash-probe-unbounded.md)（无界探测，解释「卡死」）同轮，是同一句用户报告拆出的三条独立根因。本条解释「**词典装得越多越慢**」。
+  - 与 [BUG-1302](BUG-1302-lookup-blocking-network-timeouts.md)（网络超时阻塞，解释「4-5 秒」）、[BUG-1303](BUG-1303-hoshidicts-hash-probe-unbounded.md)（无界探测，解释「卡死」）同轮，是同一句用户报告拆出的三条独立根因。本条解释「**词典装得越多越慢**」。
   - 同轮在引擎里定位到、但**本轮未动**的其它线性成本（留作后续，收益递减排序）：`maxResults=200`（`app_model.dart:1242`）导致每次查词 ~200×词典本数 条 zstd 解压，且 vendored zstd `ZSTD_HEAPMODE=1` 使**每次解压各 malloc 一个约 30KB 的 DCtx**；排序比较器 `get_freq_values_for_dict`（`lookup.cpp:24-41`）在**每一次两两比较**里新建并排序 vector；`text_processor::process` 每个 scan 候选都重建整条 7 个 `std::function` 的处理器链；18 种语言的去屈折规则（8084 条）合并进同一张表，使 `max_suffix_length_` 被韩语拉到约 15 码点，查 3 字日语词每个递归节点仍要构造并哈希约 28 个字符串；`lookup.cpp:45` 的 `std::map` 键是完整 `std::string` 拷贝。
   - 引擎侧**没有任何 mutex**（全仓 grep 确认），所以查词慢与锁竞争无关；C++ 层也**零查询缓存**，缓存全在 Dart 侧（`app_model.dart:3862/3879`）。

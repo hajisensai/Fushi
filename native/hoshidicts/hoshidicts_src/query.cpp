@@ -176,7 +176,7 @@ void DictionaryQuery::add_kanji_dict(const std::string& path) {
 
 std::vector<TermResult> DictionaryQuery::query(const std::string& expression) const {
   auto results = query_raw(expression);
-  // query_raw() no longer enriches (BUG-1301); this single-expression entry
+  // query_raw() no longer enriches (BUG-1304); this single-expression entry
   // point does it itself so its contract is unchanged.
   query_freq(results);
   query_pitch(results);
@@ -262,7 +262,7 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
     }
   }
 
-  // BUG-1301: deliberately NOT enriched here. See the note on query_raw() in
+  // BUG-1304: deliberately NOT enriched here. See the note on query_raw() in
   // query.hpp -- Lookup::lookup() calls this ~69 times per user lookup
   // (measured), and frequency/pitch enrichment belongs on the surviving set.
   return term_map | std::views::values | std::views::as_rvalue | std::ranges::to<std::vector>();

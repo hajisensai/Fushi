@@ -1,14 +1,14 @@
-// BUG-1301 guard: Lookup::lookup() must still surface frequency AND pitch on
+// BUG-1304 guard: Lookup::lookup() must still surface frequency AND pitch on
 // the results it returns, after the enrichment was moved OUT of query_raw().
 //
 // Why a separate test from freq_pitch_import_query_test: every pre-existing
 // freq/pitch test drives `DictionaryQuery::query()` — the single-expression
 // entry point. Nothing exercised `Lookup::lookup()`, which is the path the app
-// actually calls on every user lookup, and which is exactly the path BUG-1301
+// actually calls on every user lookup, and which is exactly the path BUG-1304
 // changed. Without this file the whole suite stays green even if lookup() came
 // back with frequencies/pitches stripped.
 //
-// What BUG-1301 changed: query_raw() used to call query_freq()+query_pitch() on
+// What BUG-1304 changed: query_raw() used to call query_freq()+query_pitch() on
 // its intermediate results. lookup() invokes query_raw() once per
 // (scan candidate x text variant x deinflection) — ~69 times per user lookup
 // (measured) — so every intermediate term hit every frequency and

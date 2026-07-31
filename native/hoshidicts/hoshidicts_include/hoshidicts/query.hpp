@@ -103,10 +103,10 @@ class DictionaryQuery {
  private:
   friend class Lookup;
 
-  // BUG-1301: query_raw() returns terms WITHOUT frequency/pitch enrichment.
+  // BUG-1304: query_raw() returns terms WITHOUT frequency/pitch enrichment.
   // Lookup::lookup() calls it once per (scan candidate x text variant x
   // deinflection) -- ~69 times per user lookup, measured, not the ~1600 the
-  // first draft of BUG-1301 extrapolated from the loop bounds -- and enriching
+  // first draft of BUG-1304 extrapolated from the loop bounds -- and enriching
   // inside it meant every intermediate term hit every frequency and pitch
   // dictionary (each with its own JSON parse), only for most of that work to be
   // thrown away by the dedup + partial_sort + resize that follow.

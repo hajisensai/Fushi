@@ -82,7 +82,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
 
   auto results = result_map | std::views::values | std::views::as_rvalue | std::ranges::to<std::vector>();
 
-  // BUG-1301: frequency enrichment happens ONCE here, on the deduplicated set,
+  // BUG-1304: frequency enrichment happens ONCE here, on the deduplicated set,
   // instead of inside every query_raw() call above (which runs once per
   // scan-candidate x text-variant x deinflection -- ~69 times per user lookup,
   // measured, each one hitting every frequency dictionary with its own JSON
@@ -141,7 +141,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
 
   // Pitch is not read by the comparator, so it waits until after the resize:
   // only the <=max_results terms the user actually receives get enriched
-  // (BUG-1301).
+  // (BUG-1304).
   for (auto& r : results) {
     query_.enrich_pitch(r.term);
     query_.materialize(r.term);

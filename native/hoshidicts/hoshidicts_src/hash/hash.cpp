@@ -16,7 +16,7 @@ linear::linear() : ptr_(std::make_unique<table>()) {};
 linear::~linear() = default;
 
 uint64_t linear::operator()(std::string_view key) const {
-  // BUG-1300: a table with no free slot (corrupt/truncated capacity, or a
+  // BUG-1303: a table with no free slot (corrupt/truncated capacity, or a
   // bloom false positive on a full table) used to spin here forever with the
   // FFI call still on the stack -- the UI isolate calls lookup() synchronously,
   // so that is a hard app hang, not a slow lookup. Bound the probe by the
@@ -84,7 +84,7 @@ std::vector<uint64_t> linear::populated() const {
 }
 
 void linear::load(uint8_t* ptr, size_t size) {
-  // BUG-1300: the capacity is a bare uint32 read straight out of the mapped
+  // BUG-1303: the capacity is a bare uint32 read straight out of the mapped
   // file. Trusting it unconditionally means a truncated / partially written /
   // corrupt hash.table makes every probe walk past the end of the mapping
   // (EXCEPTION_IN_PAGE_ERROR on Windows, SIGSEGV elsewhere) -- and a capacity

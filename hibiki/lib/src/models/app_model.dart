@@ -3963,7 +3963,7 @@ class AppModel with ChangeNotifier {
     return DictionarySearchResult(searchTerm: searchTerm);
   }
 
-  /// 远端词典「全部配对候选不可达」后的冷却截止时刻（BUG-1299）；null = 不在冷却中。
+  /// 远端词典「全部配对候选不可达」后的冷却截止时刻（BUG-1302）；null = 不在冷却中。
   /// 只被 [_searchRemoteDictionary] 读写，单 isolate 内无并发写。
   DateTime? _remoteDictionaryUnreachableUntil;
 
@@ -3980,7 +3980,7 @@ class AppModel with ChangeNotifier {
     required int maximumTerms,
   }) async {
     if (!remoteLookupEnabled) return null;
-    // 配对设备被证实不可达后的冷却窗内直接短路（BUG-1299）。远端查词排在本地
+    // 配对设备被证实不可达后的冷却窗内直接短路（BUG-1302）。远端查词排在本地
     // 缓存**之前**，不短路的话设备离线/换网/休眠时每次查词都要重付一遍
     // 「3s × 候选数」的传输层超时——这是「某些机器上查词 4-5 秒」的主因。
     final DateTime? until = _remoteDictionaryUnreachableUntil;

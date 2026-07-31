@@ -68,11 +68,11 @@ add_hoshi_test(dict_name_uaf_e2e_test dict_name_uaf_e2e_test.cpp)
 add_hoshi_test(media_import_query_test media_import_query_test.cpp)
 add_hoshi_test(freq_pitch_import_query_test freq_pitch_import_query_test.cpp)
 add_hoshi_test(freq_pitch_merge_query_test freq_pitch_merge_query_test.cpp)
-# BUG-1301: the two tests above drive DictionaryQuery::query(); this one drives
+# BUG-1304: the two tests above drive DictionaryQuery::query(); this one drives
 # Lookup::lookup(), the path the app actually calls and the one whose freq/pitch
 # enrichment moved out of query_raw().
 add_hoshi_test(lookup_freq_pitch_enrichment_test lookup_freq_pitch_enrichment_test.cpp)
-# BUG-1300: damaged hash.table must not hang (unbounded probe) or read OOB.
+# BUG-1303: damaged hash.table must not hang (unbounded probe) or read OOB.
 # A hang here is a frozen app, so cap the case well under the ctest default.
 add_hoshi_test(hash_truncated_table_guard_test hash_truncated_table_guard_test.cpp)
 set_tests_properties(hash_truncated_table_guard_test PROPERTIES TIMEOUT 60)

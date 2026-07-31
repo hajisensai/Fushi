@@ -1,7 +1,7 @@
-## BUG-1299 · 查词弹窗被网络超时阻塞数秒（远端查词 remote-first + 逐词条 AnkiConnect 查重）
+## BUG-1302 · 查词弹窗被网络超时阻塞数秒（远端查词 remote-first + 逐词条 AnkiConnect 查重）
 
 - **报告**：2026-07-31（用户：「词典出来的速度特别特别慢，还有可能卡死，某些用户电脑上出来要 4-5 秒」）
-- **真实性**：✅ 真 bug。沿真实代码路径全链审计（触发 → Dart 调用链 → C++ 引擎 → 弹窗渲染）后确认，「某些用户电脑」不是玄学，而是**两条只在特定配置下才付费的秒级网络超时**。⚠️ 独立复核后**收窄了结论**：只有根因① 真的压在阻塞路径上（3s/候选，短路在缓存之前），根因② 是脱链异步、只拖慢 ✓/+ 徽章（见下），**不解释「弹窗 4-5 秒才出来」**。BUG-717 三轮优化后开发机端到端 40-66ms，与用户报的 4-5 秒差约 100 倍——开了远程查词的用户差的就是根因①（引擎侧的词典数线性放大另见 [BUG-1301](BUG-1301-engine-freq-pitch-enrich-before-truncate.md)，挂死另见 [BUG-1300](BUG-1300-hoshidicts-hash-probe-unbounded.md)）。
+- **真实性**：✅ 真 bug。沿真实代码路径全链审计（触发 → Dart 调用链 → C++ 引擎 → 弹窗渲染）后确认，「某些用户电脑」不是玄学，而是**两条只在特定配置下才付费的秒级网络超时**。⚠️ 独立复核后**收窄了结论**：只有根因① 真的压在阻塞路径上（3s/候选，短路在缓存之前），根因② 是脱链异步、只拖慢 ✓/+ 徽章（见下），**不解释「弹窗 4-5 秒才出来」**。BUG-717 三轮优化后开发机端到端 40-66ms，与用户报的 4-5 秒差约 100 倍——开了远程查词的用户差的就是根因①（引擎侧的词典数线性放大另见 [BUG-1304](BUG-1304-engine-freq-pitch-enrich-before-truncate.md)，挂死另见 [BUG-1303](BUG-1303-hoshidicts-hash-probe-unbounded.md)）。
 
   - **根因①：远端查词排在本地缓存之前，且是全仓唯一不消费不可达信号的调用点**
     `hibiki/lib/src/models/app_model.dart:3843-3865` 的 remote-first 分支在 `buildSearchCacheKey` / `getCachedSearch` **之前** await 远端：
@@ -29,14 +29,14 @@
   - `hibiki/test/anki/anki_duplicate_check_cooldown_test.dart`（新增）：传输层死主机只探测一次、冷却窗内**零 HTTP 请求**；冷却跨 repository 实例共享（模拟 `createAnkiRepository()` 每词条新建）；**可达主机答业务错误不进冷却**（防「短路把查重永久搞坏」）；成功探测立即清冷却；冷却窗有界（≤1 分钟）。
 - **备注**：
   - 用户截图确认弹窗形态是「**外壳已显示、内容区整块空白**」，即弹窗在等 `popupRendered` 等不到、被兜底超时硬 reveal 成空壳（in-app failsafe 1.8s `dictionary_popup_controller.dart:120`；app 外 ready-safety 阶梯 450ms×7=3.15s `global_lookup_controller.dart:126-127`）。这两个兜底是症状的显示器，不是根因，本轮未动。
-  - 用户另一张截图显示其**释义词典有 7 本以上**（含 Pixiv / Nico_Pixiv 这类超大词典），另有汉字/词频/音调三类——这条放大的是 [BUG-1301](BUG-1301-engine-freq-pitch-enrich-before-truncate.md) 的引擎侧线性成本，与本条网络超时并列、互不替代。
+  - 用户另一张截图显示其**释义词典有 7 本以上**（含 Pixiv / Nico_Pixiv 这类超大词典），另有汉字/词频/音调三类——这条放大的是 [BUG-1304](BUG-1304-engine-freq-pitch-enrich-before-truncate.md) 的引擎侧线性成本，与本条网络超时并列、互不替代。
   - **⚠️ 这三条能否解释用户报的 4-5 秒？——实测后的诚实答案：只解释了一部分人，剩下的还没定位。**
 
     | 根因 | 是否阻塞弹窗出现 | 实测量级 | 能否单独解释 4-5s |
     |---|---|---|---|
     | ① 远端查词 remote-first | **是**（await 在缓存与本地 FFI 之前） | 3s/候选 × 候选数 | **能**——但仅限**开了远程查词**的用户（`remote_lookup_enabled` 默认 false）且配对设备离线/换网/休眠 |
     | ② AnkiConnect 逐词条查重 | **否**（同步 `createEntryHeader` 里的脱链 `.then`，不参与 `popupRendered`） | 5s/词条，纯浪费 | **不能**——只拖 ✓/+ 徽章 |
-    | ③ 引擎 freq/pitch 富化位置 | 是（在同步 FFI 里） | **约 10 微秒**（0.182→0.173 ms，见 [BUG-1301](BUG-1301-engine-freq-pitch-enrich-before-truncate.md) 实测） | **不能**——差 5 个数量级 |
+    | ③ 引擎 freq/pitch 富化位置 | 是（在同步 FFI 里） | **约 10 微秒**（0.182→0.173 ms，见 [BUG-1304](BUG-1304-engine-freq-pitch-enrich-before-truncate.md) 实测） | **不能**——差 5 个数量级 |
 
     **关键实测事实：C++ 引擎单次查词只有约 0.2 ms**（7 本词条词典 × 150k 条、3 本频率、2 本音调、`max_results=200`、page cache 热）。所以「词典装得多导致引擎变慢到秒级」这个前提**被推翻了**——引擎不是 4-5 秒的所在地。
     **⇒ 如果这位用户没开远程查词，本轮三条一条都解释不了他的 4-5 秒。** 缺的下一步是**在真机上按阶段插桩**（触发 → `searchDictionary` 返回 → popupJson 构建完成 → WebView2 `popupRendered`），把秒级耗时定位到具体阶段，再立新 bug。当前最强的待查嫌疑（用户截图「外壳已显示、内容区整块空白」正指向渲染/桥这一段，不指向引擎）：popupJson 每次重建 + 跨 WebView 桥传输（单条实测 54-231KB）、WebView2 首次查词冷启动与字体解码、带图词典逐张同步 FFI 取媒体、词典对话框勾选触发的整引擎重建，以及连续 Shift-hover 无 debounce 造成的同步 FFI 排队。以上都在下面的未修清单里，本轮**均未测量、未修**。
