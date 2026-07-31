@@ -202,6 +202,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     final String mime = isHtmlDocument ? 'text/html' : extMime;
 
     if (mime == 'text/css') {
+      // 插入后按插入序逐出最老条目（[_kSanitizedCssCacheLimit] 封顶，见字段注释）。
+      while (_sanitizedCssCache.length >=
+              _ReaderHibikiPageState._kSanitizedCssCacheLimit &&
+          !_sanitizedCssCache.containsKey(filePath)) {
+        _sanitizedCssCache.remove(_sanitizedCssCache.keys.first);
+      }
       data = _sanitizedCssCache.putIfAbsent(filePath, () {
         // HBK-AUDIT-118: tolerate non-UTF-8 CSS bytes instead of throwing.
         final String cssText = utf8.decode(data, allowMalformed: true);
@@ -480,18 +486,15 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     });
   }
 
-  /// [EpubBook.isImageOnlyChapter] 要 parse 整章 HTML，而章节 HTML 在一次阅读会话里
-  /// 不变，故按章号记忆化。章号非法 / 书未就绪时返回 true（保守走 eager，宁可慢一点也
-  /// 不冒「该 eager 的图被挂 lazy」导致分页几何塌缩的风险）。
+  /// 章号非法 / 书未就绪时返回 true（保守走 eager，宁可慢一点也不冒「该 eager 的图
+  /// 被挂 lazy」导致分页几何塌缩的风险）；其余委托 [EpubBook.isImageOnlyChapter]——
+  /// 记忆化已下沉到数据拥有者，本拦截器热路径与 spread 配对 / 边缘分析 / 预取共享
+  /// 同一份按章缓存，不再各存一份。
   bool _isImageOnlyChapterCached(int chapterIndex) {
     if (chapterIndex < 0) return true;
     final EpubBook? book = _book;
     if (book == null) return true;
-    final bool? cached = _imageOnlyChapterCache[chapterIndex];
-    if (cached != null) return cached;
-    final bool value = book.isImageOnlyChapter(chapterIndex);
-    _imageOnlyChapterCache[chapterIndex] = value;
-    return value;
+    return book.isImageOnlyChapter(chapterIndex);
   }
 
   /// TODO-perf（跨章·图片）：把下一章的插图预热进 WebView 的 HTTP 缓存。

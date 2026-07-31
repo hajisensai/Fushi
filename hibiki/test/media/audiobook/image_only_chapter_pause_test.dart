@@ -200,8 +200,11 @@ void main() {
           reason: 'imagePauseSec=0 时不停留');
       expect(body.contains('_imagePauseTimer'), isTrue,
           reason: '复用 triggerImagePause 同一 Timer 字段，不新造定时器语义');
+      // 恢复原语随 PR#583 审查从 `_player.play()` 改为 `_activateMainPlayer()`
+      // （统一主播放器激活入口），守卫跟进锚点；不变量不变：主动暂停→等待→恢复。
       expect(
-          body.contains('_player.pause()') && body.contains('_player.play()'),
+          body.contains('_player.pause()') &&
+              body.contains('_activateMainPlayer()'),
           isTrue,
           reason: '主动暂停→等待→恢复，复用同一暂停/恢复原语');
     });

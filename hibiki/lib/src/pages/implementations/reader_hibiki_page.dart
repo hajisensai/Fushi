@@ -1218,6 +1218,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   List<int> _chapterCharCounts = [];
   List<int> _chapterCumulativeChars = [];
 
+  /// 书自带 CSS 的净化结果缓存（拦截器热路径，键 = 文件绝对路径）。与
+  /// [_sanitizedHtmlCache] 对称封顶：HTML 侧早有 LRU 上限，这侧此前无上限，
+  /// 超多 CSS 的书翻遍全书后按路径无限累积。CSS 不随主题/字号变
+  /// （_reloadWithCurrentSettings 整体清），逐出后重算无正确性影响。
+  static const int _kSanitizedCssCacheLimit = 24;
   final Map<String, Uint8List> _sanitizedCssCache = {};
 
   // BUG-270 (TODO-296 B): cross-chapter LRU cache of fully sanitized + style-
@@ -1229,11 +1234,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   static const int _kChapterHtmlCacheLimit = 6;
   final LinkedHashMap<String, Uint8List> _sanitizedHtmlCache =
       LinkedHashMap<String, Uint8List>();
-
-  /// TODO-perf（跨章·图片）：`EpubBook.isImageOnlyChapter` 每次都要 parse 整章 HTML，
-  /// 而它的答案在一次阅读会话里不变（章节文件不变）。按章号记忆化，避免拦截器热路径
-  /// （每次跨章 + 每次预取）重复解析。换书会连同本 State 一起重建。
-  final Map<int, bool> _imageOnlyChapterCache = <int, bool>{};
 
   /// TODO-perf（跨章·图片）预热配额（PR#469 审查）：`_prefetchAdjacentChapterImages`
   /// 把整解码后的位图塞进 WebView 图片缓存，整页插图书（1600×2400 PNG × N）在移动端
@@ -1660,6 +1660,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // 并行起跑把 profile/settings 的 DB 往返与 EPUB 解析 isolate 重叠，缩短白屏。
     final Future<void> profileSettingsFuture = _resolveProfileAndSettings(db);
     final Future<_BookLocateResult> bookLocateFuture = _locateBookOnDisk(db);
+    // TODO-131 同思路：恢复位置只按 bookKey 查（与 profile / EPUB 解析 / 音频槽
+    // 均无依赖），此前却串行排在整条 init 链末尾。提前起跑与解析重叠，消费点仍在
+    // 原位置 await（书签跳转分支不消费）。ignore() 防「书不在盘上」等早退路径把
+    // 它留成未处理异步错误；正常路径 await 时错误照常抛给 _initBook 的兜底。
+    final Future<ReaderPosition?> savedPositionFuture =
+        widget.initialBookmarkJump != null
+            ? Future<ReaderPosition?>.value(null)
+            : ReaderPositionRepository(db).findByBookKey(widget.bookKey);
+    savedPositionFuture.ignore();
 
     await profileSettingsFuture;
     if (!mounted) return;
@@ -1711,8 +1720,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // 使书架总字数与后续统计随之对齐 hoshi。
       _applyCharCounts(charsFromDb);
       if (bookRow != null &&
-          !chaptersJsonCharCaliberIsCurrent(
+          chaptersJsonCharCaliberIsCurrent(
               bookRow.chaptersJson, _book!.chapters.length)) {
+        // 当前口径计数兼作 isImageOnlyChapter 的免解析短路提示（方向安全性见
+        // [EpubBook.setChapterCharCountHints]）；旧口径方向无保证，不注入，
+        // 等后台重算落定后由 _recomputeCharCountsInBackground 补上。
+        _book!.setChapterCharCountHints(charsFromDb);
+      } else {
         _recomputeCharCountsInBackground();
       }
     } else {
@@ -1767,8 +1781,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           'charAnchor=$_initialCharOffset '
           'preserveSavedPosition=$_suppressPositionPersist');
     } else {
-      final ReaderPositionRepository repo = ReaderPositionRepository(db);
-      final ReaderPosition? saved = await repo.findByBookKey(widget.bookKey);
+      final ReaderPosition? saved = await savedPositionFuture;
       if (!mounted) return;
       debugPrint('[ReaderHibiki] restore lookup: bookKey=${widget.bookKey} '
           'saved=$saved section=${saved?.sectionIndex} '
@@ -1871,6 +1884,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         return;
       }
       _applyCharCounts(counts);
+      // 新口径计数落定：补注 isImageOnlyChapter 的免解析短路提示（开书时旧口径
+      // 未注入的书由此补齐，后续 spread 重建/预取不再逐章解析）。
+      book.setChapterCharCountHints(counts);
       _sessionMaxAbsoluteChars = _absoluteCharPosition(_lastProgressValue);
       // TODO-1192: 把新口径计数回写 chaptersJson（含 charCaliber 标记），使书架总
       // 字数与下次开书都用新口径，避免每次开书都重算（旧书 / v1 书一次性升级）。

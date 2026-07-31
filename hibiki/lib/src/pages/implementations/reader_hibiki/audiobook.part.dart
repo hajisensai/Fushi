@@ -245,6 +245,11 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       _srtBookUid = null;
       _srtCueChapterMap = null;
       _srtChapterRanges = null;
+      // 缓存生命周期 = 音频槽绑定：detach 即失效，重接后由
+      // _primeAudioCuesForCurrentBook 重灌（_prepareSasayakiCuesJson 复用它，
+      // 不再每章重查全书 cue）。
+      _cachedAllCues = null;
+      _cachedSasayaki = false;
     }
     if (forceReload && session.isActive) {
       // 导入了新音频：必须重 load，stop 旧会话让 session.start 走全新加载分支。
