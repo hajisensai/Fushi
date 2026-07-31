@@ -16,14 +16,15 @@
 #           PR_SWEEP_SELF（默认 hajisensai）/ PR_SWEEP_LIMIT（默认 40）
 # 输出供值班 PM 与看板对照：「自动处理」区每行都应有对应 todo（按 PR 号/分支名
 # grep 看板），没有就建（--file 已自动建）；「外部 PR」区只读不动。
-# open PR 的 todo 标题尾部记录落板时的 head commit（`[head <sha9>]`，机器可反解）；
-# 后续巡检发现同一 PR head 变了（推了新 commit）→ 落一条「有新 commit」增量 todo，
-# 引用原 TODO 和 old→new sha，让更新不被「已有 todo」去重吞掉。旧格式（无 [head]）
-# 的存量 todo 视为已跟踪（不刷屏）。
-# **去重按「这个 head 有没有落过板」判，不按 todo 死活判**：已 done 的行同样算落过板。
+# 落板的 todo 标题尾部记录 head commit（`[head <sha9>]`，机器可反解，open/merged 同）。
+# **去重判据（2026-08-01 定）：同一 PR 的同一 head commit 只落板一次，推了新 commit
+# 才再发**——已发布的 (PR, sha) 对持久记在 DB 同目录的 pr_sweep_published.tsv 台账
+# （append-only），**与看板行的死活彻底解耦**：done / 归档 / 直接删行都不再触发重建。
 # 否则「关掉重复/已完成行」这个清理动作本身就是循环的燃料——下轮 sweep 看不到任何行，
 # 又建一条一模一样的（2026-07-31 实测 PR#539/#602/#608/#618/#619 全被复制成 2~3 条，
 # 已合并的 PR#615 更是关一次涨一次 behind 地重建）。head 真变了仍照建增量单。
+# 看板标题里的 [head] 标记降级为**迁移期的第二真值源**：台账缺该对时补记（seed-board /
+# seed-live / seed-done，仅在台账对该 PR 零记录时做一次），之后一律以台账为准。
 #
 # **「内容有没有进 $BASE」按内容判，不按 commit SHA 判**：本仓 integration 大量走
 # rebase / cherry-pick / 自建 merge commit，PR 分支上的 commit SHA 与真正落进 $BASE
@@ -41,6 +42,9 @@
 # 🔴 判据不可用一律 fail-open（无 git / fetch 不到 objects / $BASE 解析不出 -> 按未落地走
 # 旧行为）。「PR 关了但改动没进 $BASE」必须照旧被重新落板（PR#41 教训），绝不允许为了
 # 消噪音把这条护栏一起关掉。
+# PR#41 那条护栏在台账判据下改为**只报不重建**：同一 head 已发过板又被标 done、而内容
+# 判据仍说没进 $BASE，不再每轮复制一条新 todo（那正是循环本身），改在末尾「已 done 但
+# 内容仍未落地」区单列，人核后要么删远端分支、要么真合进去。分支一推新 commit 就照常发新单。
 set -uo pipefail
 
 FILE_MODE=0
@@ -238,12 +242,16 @@ if not rows:
     print("已落板 0 条；已存在跳过 0 条（本轮无自动处理项）")
     sys.exit(0)
 
-# 去重：一次 list（全部未归档行，含 done 未归档）复用给所有项。
-# 判据 = PR 号紧跟「] TODO-N 」出现在标题开头（别的 todo 正文顺带提及 "PR#42"
-# 不算已跟踪，对抗审查抓过的误抑制），**且该 todo 未 done**——只被 done 单跟踪的 PR
-# 会被重新落板：done 只代表「有人关了这条」，不代表 commit 真进了 develop（PR#41 假
-# 完成教训：原始合并落了 v38、合并后新推的 v39 没落却被手动标 done，旧去重把 done 单
-# 当已跟踪永久抑制，缺口再没被重捞）。只要检测阶段判定 commit 不在 base，就持续建 todo。
+# 去重（2026-08-01 判据重定）：**同一 PR 的同一 head commit 只落板一次，有新
+# commit 才再发**。已发布 (PR, sha) 对持久记在 DB 同目录的 pr_sweep_published.tsv
+# 台账（append-only），与看板行状态解耦：done/归档/删行都不再触发重建。此前判据
+# 只认未 done 行、done 单按当前 head 重捞（PR#41 假完成教训的过度矫正），结果把
+# 重复行清成 done 反而喂出重建循环（清掉→下轮判「从没落过板」→原样重建；已 MERGED
+# 的 PR 反复被捞成疑似陈旧，behind 上涨只是 develop 自己在前进）。假完成防护改由
+# sha 承担：同 commit 标 done 视为已处置不复捞，分支真有新 commit 必然再发新单。
+# PR 号匹配仍要求紧跟「] TODO-N 」出现在标题开头（正文顺带提及 "PR#42" 不算），
+# 一次 list（全部未归档行，含 done 未归档）复用给所有项。
+# 台账缺失/不全时用看板既有 [head] 标记 + 旧格式单按当前 head 补记（seed）平滑迁移。
 lp = run_cli(["list"])
 if lp.returncode != 0:
     sys.stderr.write("vibe-coxswain list 失败（rc=%s）：%s\n"
@@ -269,8 +277,8 @@ archived_listing = alp.stdout if alp.returncode == 0 else ""
 
 # PR#41 不得匹配 PR#410：号后接非数字守卫（空格/全角括号/半角括号/句读都放行）。
 _PR_TODO_RE = re.compile(r"\] TODO-(\d+) PR#(\d+)(?![0-9])")
-# open todo 标题尾部记录的落板 head（`[head <sha>]`）；取行内**最后一个**匹配，
-# 防 PR 标题正文恰好包含同格式片段时读错。
+# 落板 todo 标题尾部记录的 head（`[head <sha>]`，open/merged 同）；取行内**最后
+# 一个**匹配，防 PR 标题正文恰好包含同格式片段时读错。
 _HEAD_RE = re.compile(r"\[head ([0-9a-f]{7,40})\]")
 
 
@@ -302,17 +310,6 @@ def entries(num: str) -> list:
     return out
 
 
-def prior_done(num: str) -> bool:
-    """该 PR 曾有 done 单却又被检出未落地 = 那条是假完成（关了但 commit 没进 base）。
-
-    只给 merged 路径的「非陈旧分支」用：能走到这里说明**内容判据**（bash 侧 git cherry）
-    已经认定确有 commit 的内容不在 base（不是「SHA 对不上」，是 patch-id 也找不到等价物），
-    这时还被标 done 就是真假完成，必须重新落板（PR#41 教训）。open 路径和陈旧分支不看
-    这个——它们的重复落板本身就是噪音源。
-    """
-    return any(done for _t, _s, done in entries(num))
-
-
 def same_head(a: str, b: str) -> bool:
     """短/长 sha 前缀互认（本脚本记 9 位；防历史/手改单长度不一时误判「更新了」）。"""
     return a.startswith(b) or b.startswith(a)
@@ -331,35 +328,88 @@ def landed_marked(num: str, cur: str) -> bool:
     return False
 
 today: str = datetime.date.today().isoformat()
+
+# 发布台账：与 board.db 同目录，行 = PR号\tsha\tTODO-N\t来源\t日期（append-only）。
+ledger_path: str = os.path.join(os.path.dirname(os.path.abspath(db_path)),
+                                "pr_sweep_published.tsv")
+published: dict = {}  # PR 号 -> 已发布过的 head sha 集合
+try:
+    with open(ledger_path, encoding="utf-8") as fh:
+        for _ln in fh:
+            _p = _ln.rstrip("\n").split("\t")
+            if len(_p) >= 2 and _p[0] and _p[1]:
+                published.setdefault(_p[0], set()).add(_p[1])
+except OSError:
+    pass  # 首轮无台账：由 seed 从看板既有单补记
+
+
+def ledger_add(num: str, sha: str, todo: str, note: str) -> None:
+    """记账 (PR, sha) 已发布。写失败只警告不中断：本轮照常落板，下轮至多重发一条。"""
+    published.setdefault(num, set()).add(sha)
+    try:
+        with open(ledger_path, "a", encoding="utf-8") as fh:
+            fh.write("%s\t%s\tTODO-%s\t%s\t%s\n" % (num, sha, todo, note, today))
+    except OSError as exc:
+        sys.stderr.write("台账写入失败 %s：%s\n" % (ledger_path, exc))
+
+
+def covered(num: str, cur: str) -> bool:
+    """(PR, cur) 是否已发布过：先查台账，再查看板标题里的 [head] 记录（迁移期
+    台账缺该对时补记，防这些行日后归档、台账失忆重发）。"""
+    if any(same_head(s, cur) for s in published.get(num, ())):
+        return True
+    for t, sha, _d in entries(num):
+        if sha is not None and same_head(sha, cur):
+            ledger_add(num, cur, t, "seed-board")
+            return True
+    return False
+
+
 added: list = []
 skipped: int = 0
 failed: int = 0
+false_done: list = []  # 已发过板 + 行全 done/归档，但内容判据仍说没进 base（只报不重建）
 try:
     stale_behind = int(os.environ.get("PR_SWEEP_STALE_BEHIND", "20"))
 except ValueError:
     stale_behind = 20  # 环境变量给了非数字：退回默认，绝不因此崩落板
 for kind, num, title, branch, ahead, oldsha, newsha, behind in rows:
+    cur = newsha  # 检测阶段写进 newsha 列的当前 head 短 sha（open/merged 同列）
     # 人工已核「内容由等价补丁落地」（bash 侧内容判据判不出来的那类）→ 本 head 不再落板。
-    # 放在最前面：它是对事实的断言，比任何 head/done 推断都强。
-    if landed_marked(num, newsha):
+    # 放在最前面：它是对事实的断言，比任何台账/head/done 推断都强，也不该污染台账。
+    if landed_marked(num, cur):
         skipped += 1
         continue
-    tracked = entries(num)                        # 该 PR 的**所有**既有 todo（含 done）
-    live = [e for e in tracked if not e[2]]       # 其中未 done 的
-    fresh_update = False  # open PR 落板后又推新 commit 的增量单（不加重捞后缀）
+    ents = entries(num)
+    live = [e for e in ents if not e[2]]   # 未 done 的既有 todo
+    done_ents = [e for e in ents if e[2]]  # 已 done / 已归档的既有 todo
+    if cur and covered(num, cur):  # 同 PR 同 commit 只发布一次——发过即永久跳过
+        skipped += 1
+        # 看板上有行、但活着的一条都没有（全 done/归档），而内容判据仍说没进 base
+        # = 疑似假完成：只报不重建（PR#41 教训，但不再靠「关一条建一条」喊——那是
+        # 循环本身）。
+        if ents and not live:
+            false_done.append("PR#%s @ %s（%s）" % (num, cur, kind))
+        continue
+    fresh_update = False  # open PR 原单未 done 又推新 commit 的增量单
+    _done_with_sha = [e for e in done_ents if e[1] is not None]
+    # 同 PR 最近一条带 sha 的 done 单：head 又前进时新单只覆盖其后 commit
+    prev_done = max(_done_with_sha, key=lambda e: int(e[0])) if _done_with_sha else None
     if kind == "open":
-        cur = newsha  # 检测阶段写进 newsha 列的当前 head 短 sha
-        if tracked:
-            # 任一既有 todo（含 done）无 sha 记录（旧格式，无从判断）或记的就是当前 head
-            # → 这个 head 已经落过板、已被处理过，再建纯噪音，跳过。
-            if not cur or any(sha is None or same_head(sha, cur)
-                              for _t, sha, _d in tracked):
+        if live:
+            if not cur or any(sha is None for _t, sha, _d in live):
+                # 旧格式 live 单（无 sha 记录）：视为已跟踪；补记台账，让它被
+                # 关掉/归档后同一 commit 也不再重建
+                if cur:
+                    ledger_add(num, cur, live[-1][0], "seed-live")
                 skipped += 1
                 continue
-            # 全部记录的 head 都不是当前 head = 落板后又推了新 commit → 增量 todo。
-            # prev 取**所有行里编号最大的**那条（最近一次落板，不管它 done 没 done）。
+            # live 单的 sha 全不是当前 head（相同的已被 covered 挡掉）→ 增量 todo。
+            # prev 取**所有带 sha 的行里编号最大的**那条（最近一次落板，不管它 done 没
+            # done）：人看到的「上一次」就是它，live 已保证至少有一条带 sha。
             fresh_update = True
-            prev_todo, prev_sha, _d = max(tracked, key=lambda e: int(e[0]))
+            prev_todo, prev_sha, _d = max([e for e in ents if e[1] is not None],
+                                          key=lambda e: int(e[0]))
             todo_title = ("PR#%s 有新 commit：%s（head %s→%s）[head %s]"
                           % (num, title, prev_sha, cur, cur))
             acceptance = ("【验收】PR#%s 在 TODO-%s 落板（head %s）后又推了新 commit"
@@ -369,6 +419,13 @@ for kind, num, title, branch, ahead, oldsha, newsha, behind in rows:
                           % (num, prev_todo, prev_sha, cur, today))
             next_val = ("分支 %s @ %s（原 TODO-%s @ %s）"
                         % (branch, cur, prev_todo, prev_sha))
+        elif done_ents and cur and not _done_with_sha and num not in published:
+            # 全是旧格式 done 单（无 sha 可比）且台账对该 PR 零记录（迁移期一次性）：
+            # 用户已处置——按当前 head 记账跳过，不再重建（此前这里被判「从没落过板」
+            # 而原样重捞，用户清理反而喂循环）。台账一旦有记录，新 head 走正常发布。
+            ledger_add(num, cur, done_ents[-1][0], "seed-done")
+            skipped += 1
+            continue
         else:
             todo_title = "PR#%s 审查合并：%s" % (num, title)
             if cur:  # 标题尾部记录落板时 head，供后续巡检做更新检测
@@ -377,18 +434,29 @@ for kind, num, title, branch, ahead, oldsha, newsha, behind in rows:
                           "integration owner 合并 %s → CI 绿 → 关 PR、清远端分支。"
                           "来源：pr_sweep --file 自动落板 %s。" % (base, today))
             next_val = "分支 %s" % branch + (" @ %s" % cur if cur else "")
+    elif live:  # merged：有未 done todo 即已跟踪；补记台账（关单后同 commit 不重建）
+        if cur:
+            ledger_add(num, cur, live[-1][0], "seed-live")
+        skipped += 1
+        continue
+    elif done_ents and cur and not _done_with_sha and num not in published:
+        # merged 旧格式 done 单（历史 merged 单不带 [head]）且台账零记录（迁移期
+        # 一次性）：按当前 head 记账跳过——这正是「已 MERGED 却每轮被重捞成疑似
+        # 陈旧」死循环的断点；台账有记录后分支再推新 commit 走正常发布。
+        ledger_add(num, cur, done_ents[-1][0], "seed-done")
+        skipped += 1
+        continue
     else:  # merged：合并后更新。behind 大 = 分支陈旧/被后续工作取代（PR#68 死循环教训）：
            # 标题与验收指向「删远端分支」而非「再合并」，避免只关不删导致每轮重报。
         stale = behind.isdigit() and int(behind) >= stale_behind
-        # 去重分两档：
-        #  · 有未 done 行 → 跳过（旧行为，任何档都成立）。
-        #  · 陈旧分支（behind ≥ 阈值）额外：有**任何**既有行（含 done）就跳过。分支合并后
-        #    不再前进而 base 继续前进，behind 只会单调变大，关掉一条下轮必以更大的 behind
-        #    重建成「新」单（PR#615：behind 125 关掉 → 重建成 behind 130）。报一次够了；
-        #    真要清就删远端分支，那样本项永久消失。
-        #  · 非陈旧（behind 小 + ahead>0 = 确有内容不在 base）保留 prior_done 重捞：那才是
-        #    真·未落地内容被假完成关掉，必须继续喊（PR#41 教训）。
-        if live or (stale and tracked):
+        # 主判据已是台账（同 head 只发一次），这里只补一条**无 sha 可判**时的兜底：
+        # 陈旧分支（behind ≥ 阈值）只要看板上还有任何既有行（含 done/归档）就跳过。
+        # 分支合并后不再前进而 base 继续前进，behind 只会单调变大，关掉一条下轮必以更大的
+        # behind 重建成「新」单（PR#615：behind 125 关掉 → 重建成 behind 130）。报一次够了；
+        # 真要清就删远端分支，那样本项永久消失。
+        # 非陈旧（behind 小 + ahead>0 = 确有内容不在 base）不加这层：那才是真·未落地内容，
+        # 台账没发过就该发一次（发过则由 covered 挡住，只在末尾报告区喊，PR#41 教训）。
+        if stale and ents:
             skipped += 1
             continue
         if stale:
@@ -405,11 +473,14 @@ for kind, num, title, branch, ahead, oldsha, newsha, behind in rows:
             acceptance = ("【验收】逐个 commit 核实内容是否已以其它形式进 %s："
                           "未进 → 走门禁再合并；已进/已废弃 → 删远端分支并注明。"
                           "来源：pr_sweep --file 自动落板 %s。" % (base, today))
+        if cur:  # 标题尾部记录分支现 head：归档后台账 + 标题双源判重
+            todo_title += " [head %s]" % cur
         next_val = "%s→%s（behind %s）" % (oldsha, newsha, behind)
-    # 增量单不算重捞（原 todo 还活着，只是 head 前进了）；其余路径维持旧行为
-    if not fresh_update and prior_done(num):  # 曾被标 done 又检出未落地 → 明说是假完成重捞，别让人以为是新单
-        acceptance += ("（⚠️重捞：此 PR 之前有 done 单，但 commit 仍不在 %s——"
-                       "上次「已完成」是假完成，本轮按当前 head 重新落板。）" % base)
+    # 有带 sha 的 done 前单而 head 又前进了 → 新单只覆盖增量，别推翻已处置结论
+    if not fresh_update and prev_done is not None:
+        acceptance += ("（此 PR 的 TODO-%s 已按 head %s 处置过（done），本单只因其后"
+                       "又推了新 commit（现 head %s）——只看增量 diff。）"
+                       % (prev_done[0], prev_done[1], cur or "?"))
     ap = run_cli(["add", todo_title, "--status", "todo"])
     m = re.search(r"TODO-(\d+)", ap.stdout or "")
     if ap.returncode != 0 or m is None:
@@ -425,6 +496,8 @@ for kind, num, title, branch, ahead, oldsha, newsha, behind in rows:
                              % (field, todo_num, (sp.stderr or sp.stdout).strip()))
             failed += 1
     added.append("TODO-" + todo_num)
+    if cur:  # 记账：此 (PR, head) 已发布——之后该单无论 done/归档/删都不重建
+        ledger_add(num, cur, todo_num, kind)
     # 同轮防重：追加完整标题（带 PR 号 + [head sha]），entries() 重扫时能读到
     listing += "\n] TODO-%s %s" % (todo_num, todo_title)
 
@@ -432,6 +505,12 @@ if added:
     print("已落板 %d 条：%s；已存在跳过 %d 条" % (len(added), "、".join(added), skipped))
 else:
     print("已落板 0 条；已存在跳过 %d 条" % skipped)
+if false_done:
+    # 只报不重建：这些 PR 的看板行全被关掉了，但内容判据仍说 commit 不在 base。
+    print("⚠️ 已 done 但内容仍未落地（本 head 已发过板·不重复落板·人核后删远端分支或真合进 %s）："
+          % base)
+    for item in false_done:
+        print("   " + item)
 if failed:
     sys.stderr.write("本轮 %d 次落板写入失败——面板任务记 fail，下轮重试\n" % failed)
     sys.exit(3)  # 非零：失败可见性与 gh 拉取失败(exit 3)对齐，别静默绿
