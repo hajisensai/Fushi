@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1299 守卫：竖版海报封面在「继续 / 继续观看 / 合集详情」三处消费端必须
 /// 走 [PortraitCoverImage] 槽向自适应，禁止回退成硬编码 fit 的裸 `Image.file`。
 ///
@@ -59,10 +61,17 @@ void main() {
         reason: '$fn 必须委托给 _localCover（统一来源解析 + 槽向自适应渲染），'
             '不得自己另写一套封面渲染（BUG-1299）',
       );
+      // 判据必须用带标识符边界的匹配，不能用裸子串 'Image('：
+      // - 裸子串漏掉 `Image.file(` / `Image.memory(` / `Image.network(` /
+      //   `Image.asset(`（`Image` 后是 `.` 不是 `(`），而 BUG-1272 的原始回归形态
+      //   正是「自己写一条 Image.file(..., fit: BoxFit.cover) 硬编码封面槽特例」；
+      // - 裸子串又会误伤 `PortraitCoverImage(`（含子串 `Image(`），把本守卫要求的
+      //   正确写法判成违规。两个方向都由 [containsIdentifierCall] 堵上。
       expect(
-        body,
-        isNot(contains('Image(')),
-        reason: '$fn 不得绕过 _localCover 直接构造 Image',
+        containsIdentifierCall(body, 'Image'),
+        isFalse,
+        reason: '$fn 不得绕过 _localCover 直接构造 Image'
+            '（含 Image.file / Image.memory / Image.network / Image.asset）',
       );
     }
   });

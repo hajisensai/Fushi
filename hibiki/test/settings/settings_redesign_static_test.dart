@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import '../sync/sync_settings_schema_source_corpus.dart';
 
 String readNormalizedSource(String path) {
@@ -227,7 +228,15 @@ void main() {
 
     expect(source, isNot(contains('adaptiveAlertDialog(')));
     expect(source, isNot(contains('CupertinoAlertDialog(')));
-    expect(source, isNot(contains('AlertDialog(')));
+    // 裸子串 'AlertDialog(' 有两个毛病：① 它同时被上面两个更长的名字包含，把两条
+    // 断言变成冗余；② 它匹配不到 `AlertDialog.adaptive(`（本仓真实在用的写法，
+    // 见 media_sources_view.dart / log_uploader.dart），旧工厂以命名构造器形式
+    // 复活就完全绕过。带标识符边界 + 吃命名构造器的匹配同时解决两点。
+    expect(
+      containsIdentifierCall(source, 'AlertDialog'),
+      isFalse,
+      reason: 'adaptive_widgets 不得再自造 AlertDialog（含 AlertDialog.adaptive）',
+    );
   });
 
   test('legacy standalone display settings page is removed', () {

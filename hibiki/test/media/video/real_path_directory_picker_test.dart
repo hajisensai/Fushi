@@ -10,6 +10,15 @@ import 'package:flutter_test/flutter_test.dart';
 /// 1) 两个导入入口必须调统一的 `pickRealDirectoryPath` / `pickRealFilePath`。
 /// 2) helper 自身按平台分支（安卓走权限 + 原生 SAF 通道，非安卓维持 getDirectoryPath /
 ///    pickFiles），且自绘浏览器 `_RealPathBrowser` 已彻底移除。
+/// 「真实路径入口」的**全部**导出名。单数/复数是两个真实存在的入口
+/// （`pickRealFilePath` / `pickRealFilePaths`），裸子串 `'pickRealFilePath('`
+/// 匹配不到复数版（后面是 `s` 不是 `(`）——回归成 `pickRealFilePaths(...).first`
+/// 会让下面的禁止型断言全部假绿。禁止判据必须逐个名字扫。
+const List<String> kRealPathFileEntries = <String>[
+  'pickRealFilePath(',
+  'pickRealFilePaths(',
+];
+
 void main() {
   group('source guards: import folder uses unified real-path picker', () {
     test('video_import_dialog._pickFolder calls pickRealDirectoryPath', () {
@@ -118,11 +127,13 @@ void main() {
         isTrue,
         reason: '字幕导入即被解析消费，维持系统文件选择器（board 1360 用户诉求）',
       );
-      expect(
-        pickSubtitle.contains('pickRealFilePath('),
-        isFalse,
-        reason: '_pickSubtitle 不得再走真实路径入口（board 1360 回退系统选择器）',
-      );
+      for (final String entry in kRealPathFileEntries) {
+        expect(
+          pickSubtitle.contains(entry),
+          isFalse,
+          reason: '_pickSubtitle 不得再走真实路径入口 $entry（board 1360 回退系统选择器）',
+        );
+      }
     });
 
     test('audiobook audio/subtitle rows use file picker helper', () {
@@ -165,21 +176,25 @@ void main() {
         reason: '有声书对齐字幕/SMIL/JSON 导入即被消费，维持系统文件选择器（board 1360）；'
             'iOS .srt UTI 过滤问题由 helper 内部处理',
       );
-      expect(
-        audiobookAlignment.contains('pickRealFilePath('),
-        isFalse,
-        reason: '_pickAlignment 不得再走真实路径入口（board 1360 回退系统选择器）',
-      );
+      for (final String entry in kRealPathFileEntries) {
+        expect(
+          audiobookAlignment.contains(entry),
+          isFalse,
+          reason: '_pickAlignment 不得再走真实路径入口 $entry（board 1360 回退系统选择器）',
+        );
+      }
       expect(
         bookSubtitle.contains('pickSystemFilePath('),
         isTrue,
         reason: '书籍导入字幕导入即被消费，维持系统文件选择器（board 1360），和视频字幕一致',
       );
-      expect(
-        bookSubtitle.contains('pickRealFilePath('),
-        isFalse,
-        reason: '_pickSubtitle 不得再走真实路径入口（board 1360 回退系统选择器）',
-      );
+      for (final String entry in kRealPathFileEntries) {
+        expect(
+          bookSubtitle.contains(entry),
+          isFalse,
+          reason: '_pickSubtitle 不得再走真实路径入口 $entry（board 1360 回退系统选择器）',
+        );
+      }
     });
 
     test('production code never opens iOS media library via FileType.audio',
