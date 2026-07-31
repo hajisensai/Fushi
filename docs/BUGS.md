@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1246 条。点号进各自文件。
+> 共 1247 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1305](bugs/BUG-1305-delete-confirm-disclosure.md) | ✅ | ✅ | 删除确认文案与真实删除范围对不上（书架递归删解压目录+有声书；合集正文说反话） |
 | [BUG-1298](bugs/BUG-1298-collection-hero-portrait-cover.md) | ✅ | ✅ | 合集详情页 hero 用竖版刮削海报时被 BoxFit.cover 裁成中间一条 |
 | [BUG-1297](bugs/BUG-1297-danmaku-scroll-exit.md) | ✅ | ✅ | 滚动弹幕退场突兀：没滑出屏幕就被整条抹掉 |
 | [BUG-1295](bugs/BUG-1295-qb-test-connection-undiagnosable.md) | ✅ | ✅ | qB测试连接失败无法自查且本机免密被登录门卡死 |

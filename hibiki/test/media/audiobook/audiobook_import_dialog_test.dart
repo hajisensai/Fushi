@@ -59,8 +59,8 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text(t.audiobook_remove_confirm), findsOneWidget);
-    expect(find.text(t.audiobook_remove), findsOneWidget);
+    expect(find.text(t.audiobook_delete_confirm), findsOneWidget);
+    expect(find.text(t.audiobook_delete), findsOneWidget);
     expect(find.text(t.dialog_delete), findsOneWidget);
   });
 }

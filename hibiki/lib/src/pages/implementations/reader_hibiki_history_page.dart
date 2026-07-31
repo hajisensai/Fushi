@@ -60,6 +60,7 @@ import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:hibiki/src/sync/cloud_remote_book_client.dart';
+import 'package:hibiki/src/sync/deletion_disclosure.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
@@ -1697,6 +1698,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       },
       onDeleteMembersMedia: _deleteCollectionMembersMedia,
       deleteMembersCheckboxLabel: t.delete_collection_also_books,
+      deleteMembersDisclosure: buildDeletionDisclosure(
+        target: DeletionDisclosureTarget.shelfBook,
+      ),
     );
   }
 
@@ -1848,12 +1852,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Future<DeleteScope?> _confirmMediaDelete({
     required String title,
     required String message,
+    DeletionDisclosure? disclosure,
   }) async {
     final DeleteScope? scope = await showAppDialog<DeleteScope>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: title,
         message: message,
+        disclosure: disclosure,
         onConfirm: (DeleteScope s) => Navigator.pop(ctx, s),
       ),
     );

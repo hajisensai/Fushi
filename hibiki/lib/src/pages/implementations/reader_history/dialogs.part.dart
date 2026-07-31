@@ -12,6 +12,7 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
     required this.message,
     required this.onConfirm,
     this.showSyncScope = true,
+    this.disclosure,
     super.key,
   });
 
@@ -19,6 +20,9 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
   final String message;
   final ValueChanged<DeleteScope> onConfirm;
   final bool showSyncScope;
+
+  /// 逐项披露真实删除范围；null 表示该入口暂未接入结构化披露。
+  final DeletionDisclosure? disclosure;
 
   @override
   State<ReaderHistoryDeleteDialog> createState() =>
@@ -55,6 +59,10 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(widget.message, style: tokens.type.listSubtitle),
+            if (widget.disclosure != null) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              DeletionDisclosureView(disclosure: widget.disclosure!),
+            ],
             if (widget.showSyncScope) ...[
               SizedBox(height: tokens.spacing.gap),
               AdaptiveSettingsRow(
