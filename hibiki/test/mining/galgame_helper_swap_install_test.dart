@@ -102,6 +102,33 @@ void main() {
       expect(names.where(kGalgameHelperStalePattern.hasMatch), isEmpty,
           reason: '回滚后 .stale 必须已改回原名');
     });
+
+    test('旧 dst 让位后新 src 落位失败也回滚当前项', () async {
+      write(target, 'a.dll', 'old-a');
+      write(staging, 'a.dll', 'new-a');
+
+      await expectLater(
+        galgameHelperSwapInstall(
+          staging: staging,
+          target: target,
+          onBeforeReplace: (String relativePath) {
+            expect(relativePath, 'a.dll');
+            // 使用真实临时目录制造后续 rename/copy 同时失败：回调返回后 installer
+            // 已进入该项流程，旧 dst 会先让位；修复前当前项尚未入账，旧文件会丢失。
+            File(p.join(staging.path, relativePath)).deleteSync();
+          },
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(read(target, 'a.dll'), 'old-a');
+      final List<String> names = target
+          .listSync(recursive: true)
+          .whereType<File>()
+          .map((File file) => p.basename(file.path))
+          .toList();
+      expect(names.where(kGalgameHelperStalePattern.hasMatch), isEmpty);
+    });
   });
 
   group('galgameHelperSweepStaleFiles', () {
