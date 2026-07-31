@@ -1118,6 +1118,22 @@ class VideoPlayerController extends ChangeNotifier
       buildSubtitleSuppressionProperties(),
     );
     if (!_isCurrentLoad(player, loadToken)) return; // open 前抑制下发后换片/销毁。
+
+    // BUG-1270：恢复位置必须在 **open 之前**作为加载参数（libmpv `start`）下发，而不是
+    // 等 open 返回后再 seek。media_kit 的 `open()` 把真正触发加载的 `playlist-pos` 写在
+    // 命令序列最后且不等它完成；open 后发的 seek 会被随后完成的 loadfile 按 `start`
+    // （默认 0）覆盖 → 「闪过断点那一帧又跳回开头」。详见 [applyMpvStartPosition] 文档。
+    //
+    // 此处 duration 尚不可知，故按 intent 先算一次（[resolveEpisodeStart] 的 duration=null
+    // 分支已把 manualPrevious/autoAdvance 归 0，不会给「本就该从头」的入口设 start）；
+    // near-end 判定要等 open 后真实 duration，在下面复核并按需拉回 0。
+    final int requestedStartMs = initialPositionMs < 0 ? 0 : initialPositionMs;
+    final int preloadStartMs =
+        resolveEpisodeStart(startIntent, requestedStartMs, null);
+    final bool startArmed =
+        await applyMpvStartPosition(player, preloadStartMs);
+    if (!_isCurrentLoad(player, loadToken)) return; // start 下发后换片/销毁。
+
     await player.open(
       Media(
         sourceUri,
@@ -1190,17 +1206,14 @@ class VideoPlayerController extends ChangeNotifier
     _lastSpeed = initialSpeed;
     await player.setRate(initialSpeed);
     if (!_isCurrentLoad(player, loadToken)) return; // 设速率后换片/销毁。
-    // 恢复上次位置。media_kit 在 open(play:false) 后 player 未必立即可 seek（内部
-    // position 仍 0），此时 seek 会被丢弃，随后 tick 读到 0 会把真实进度覆盖成 0。
-    // 故：① 等 player 可 seek（duration ready），用真实 duration 按入口 intent
-    //     决定目标集是否应从头开始；② 设 _restoreTargetMs 守护，seek 落地前禁止
-    //     任何写入点用过渡期小值覆盖真实进度。
-    final int requestedStartMs = initialPositionMs < 0 ? 0 : initialPositionMs;
-    int resolvedStartMs = resolveEpisodeStart(
-      startIntent,
-      requestedStartMs,
-      null,
-    );
+    // 恢复上次位置。主路径已由上面的 `start` 加载参数（[applyMpvStartPosition]）完成
+    // ——mpv 在 loadfile 时就定位到断点，不存在「加载完再 seek」的竞态。这里只做两件
+    // 收尾：① 用真实 duration 复核 near-end（open 前不可知），命中则把 mpv 拉回 0；
+    // ② 非 libmpv 后端（[startArmed] 为 false）回退到既有的 open 后 seek 路径。
+    //
+    // [_restoreTargetMs] 守护保留：它挡的是「seek 未落地期间用过渡期小值覆盖真实进度」，
+    // 与本次修复正交，回退路径与慢设备仍需要它（BUG-179 的有界宽限一并保留）。
+    int resolvedStartMs = preloadStartMs;
     if (resolvedStartMs > 0) {
       await _waitUntilSeekable(player);
       if (!_isCurrentLoad(player, loadToken)) return; // 等待期间换片：放弃这次恢复
@@ -1210,11 +1223,25 @@ class VideoPlayerController extends ChangeNotifier
         player.state.duration.inMilliseconds,
       );
     }
+    // `start` 是全局选项，会影响该 Player 后续每一次 loadfile（换集 / 画质切档复用同一
+    // 实例）。本次定位已由 open 消费掉，立即复位，绝不让下一集继承上一集的起播秒数。
+    if (startArmed) {
+      await clearMpvStartPosition(player);
+      if (!_isCurrentLoad(player, loadToken)) return; // 复位后换片/销毁。
+    }
     if (resolvedStartMs > 0) {
       _restoreTargetMs = resolvedStartMs;
       _restoreGuardTicksLeft = _restoreGuardGraceTicks;
+      // startArmed 时 mpv 已停在断点，这次 seek 是幂等对齐（position 已到位，守护会在
+      // 首个 tick 立即解除）；非 libmpv 回退路径则靠它完成恢复。
       await player.seek(Duration(milliseconds: resolvedStartMs));
     } else {
+      // near-end 复核翻转（open 前按断点设了 start，真实 duration 显示已快看完）：
+      // mpv 此刻停在断点，必须显式拉回 0，否则用户看到的是「从结尾几秒开始」。
+      if (startArmed) {
+        await player.seek(Duration.zero);
+        if (!_isCurrentLoad(player, loadToken)) return; // 拉回 0 后换片/销毁。
+      }
       _restoreTargetMs = null;
       _restoreGuardTicksLeft = 0;
     }
