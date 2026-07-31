@@ -176,10 +176,10 @@ void main() {
     // 后（语义等价、仍是文件背书的 ImageProvider），锚点凭空消失、守卫误报红。
     final String thumbBody =
         methodBody(detailSrc, 'Widget _episodeThumb(VideoBookRow ep');
-    expect(thumbBody.contains('ep.coverPath'), isTrue,
+    expect(containsCodeLine(thumbBody, 'ep.coverPath'), isTrue,
         reason: '缩略图必须取该集自身的 coverPath（每集独立视频各有封面），'
             '不得回退成整个合集共用一张封面');
-    expect(thumbBody.contains('_thumbPlaceholder('), isTrue,
+    expect(containsCodeLine(thumbBody, '_thumbPlaceholder('), isTrue,
         reason: '无封面 / 读取失败必须退占位图，不得留空或抛');
   });
 
