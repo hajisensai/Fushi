@@ -139,6 +139,20 @@ class MaterialDesktopVideoControlsThemeData {
   /// Height of the seek bar [Container].
   final double seekBarContainerHeight;
 
+  /// Hibiki patch (BUG-1224): how far the seek bar is pushed **down** so that it
+  /// rides on the top edge of the bottom button bar (only applied when
+  /// [bottomButtonBar] is non-empty). Upstream hard-coded this as
+  /// `Transform.translate(offset: Offset(0, 16))`, which made the seek bar's
+  /// [seekBarContainerHeight]-tall transparent hit area stick out
+  /// `seekBarContainerHeight - 16` above the button bar with no way for the host
+  /// to know about it. Hibiki's subtitle overlay must lift the subtitle clear of
+  /// that hit area (otherwise a click meant for the seek bar is absorbed by the
+  /// subtitle's glyph-priority hit test and turns into a dictionary lookup), so
+  /// the value has to be readable from the theme instead of buried in the widget
+  /// tree. Default keeps the upstream 16.0 (no visual change).
+  /// See third_party/media_kit_video/PATCHES.md.
+  final double seekBarBottomButtonBarOverlap;
+
   /// [Color] of the seek bar.
   final Color seekBarColor;
 
@@ -268,6 +282,8 @@ class MaterialDesktopVideoControlsThemeData {
     this.seekBarHeight = 3.2,
     this.seekBarHoverHeight = 5.6,
     this.seekBarContainerHeight = 36.0,
+    // Hibiki patch (BUG-1224): was a hard-coded `Offset(0, 16)` in build().
+    this.seekBarBottomButtonBarOverlap = 16.0,
     this.seekBarColor = const Color(0x3DFFFFFF),
     this.seekBarHoverColor = const Color(0x3DFFFFFF),
     this.seekBarPositionColor = const Color(0xFFFF0000),
@@ -313,6 +329,7 @@ class MaterialDesktopVideoControlsThemeData {
     double? seekBarHeight,
     double? seekBarHoverHeight,
     double? seekBarContainerHeight,
+    double? seekBarBottomButtonBarOverlap,
     Color? seekBarColor,
     Color? seekBarHoverColor,
     Color? seekBarPositionColor,
@@ -368,6 +385,8 @@ class MaterialDesktopVideoControlsThemeData {
       seekBarHoverHeight: seekBarHoverHeight ?? this.seekBarHoverHeight,
       seekBarContainerHeight:
           seekBarContainerHeight ?? this.seekBarContainerHeight,
+      seekBarBottomButtonBarOverlap:
+          seekBarBottomButtonBarOverlap ?? this.seekBarBottomButtonBarOverlap,
       seekBarColor: seekBarColor ?? this.seekBarColor,
       seekBarHoverColor: seekBarHoverColor ?? this.seekBarHoverColor,
       seekBarPositionColor: seekBarPositionColor ?? this.seekBarPositionColor,
@@ -871,10 +890,20 @@ class _MaterialDesktopVideoControlsState
                                       ),
                                       if (_theme(context).displaySeekBar)
                                         Transform.translate(
+                                          // Hibiki patch (BUG-1224): the push-down
+                                          // amount now comes from the theme
+                                          // ([seekBarBottomButtonBarOverlap],
+                                          // default = upstream 16.0) so the host
+                                          // can compute the seek bar's real hit
+                                          // area and lift subtitles clear of it.
                                           offset: _theme(context)
                                                   .bottomButtonBar
                                                   .isNotEmpty
-                                              ? const Offset(0.0, 16.0)
+                                              ? Offset(
+                                                  0.0,
+                                                  _theme(context)
+                                                      .seekBarBottomButtonBarOverlap,
+                                                )
                                               : Offset.zero,
                                           child: MaterialDesktopSeekBar(
                                             // Hibiki patch (TODO-669): forward
