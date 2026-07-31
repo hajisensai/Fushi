@@ -5,14 +5,14 @@
   "channel": "debug",
   "prerelease": true,
   "releaseSequence": 9531,
-  "notes": "Automated desktop debug-channel build from develop @ fbb1092. Push releases are always prerelease and never Latest.",
+  "notes": "Automated release-signed debug-channel build from develop @ fbb1092. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "hibiki-1.3.1-debug.9526-9a4ca3d-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.1-debug.9526-9a4ca3d-debug.apk",
-      "releaseSequence": 9526,
-      "tag": "v1.3.1-debug.9526+9a4ca3d",
-      "version": "1.3.1-debug.9526"
+      "name": "hibiki-1.3.1-debug.9531-fbb1092-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.1-debug.9531-fbb1092-debug.apk",
+      "releaseSequence": 9531,
+      "tag": "v1.3.1-debug.9531+fbb1092",
+      "version": "1.3.1-debug.9531"
     },
     {
       "name": "hibiki-1.3.1-debug.9531-ios.ipa",
