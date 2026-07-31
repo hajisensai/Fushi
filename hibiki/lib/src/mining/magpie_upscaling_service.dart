@@ -28,11 +28,6 @@ import 'package:hibiki/src/mining/magpie_installer.dart';
 import 'package:hibiki/src/mining/magpie_scaling_channel.dart';
 import 'package:hibiki/src/mining/magpie_upscaling.dart';
 
-/// 转出确认回调的入参类型：它是本服务对外契约的一部分（[MagpieUpscalingService] 的
-/// `confirmDownload` 签名用它），调用方不该为了一个参数类型再去 import 安装器。
-export 'package:hibiki/src/mining/magpie_installer.dart'
-    show MagpieDownloadPrompt;
-
 /// 发出 QUIT 之后等 Magpie 自己退出的上限。超时就直接 kill 我们自己起的那个进程。
 ///
 /// 为什么必须有 kill 兜底：`App::InitMessages()` 只对 `WM_MAGPIE_SHOWME` 调了
@@ -71,10 +66,10 @@ enum MagpieUpscalingStatus {
   /// 用户关掉了超分。
   disabled,
 
-  /// 想用但用不上（`installedOnly` 且没装 / 非 Windows / 用户拒绝了下载）。
+  /// 想用但用不上（`installedOnly` 且没装 / 非 Windows）。
   unavailable,
 
-  /// 正在准备（下载 / 写配置 / 拉起进程）。
+  /// 正在准备（安装随包归档 / 写配置 / 拉起进程）。
   preparing,
 
   /// 已按自动缩放 profile 拉起 Magpie —— 游戏窗口到前台就该自动全屏超分。
@@ -83,8 +78,17 @@ enum MagpieUpscalingStatus {
   /// Magpie 起来了，但**没能配置自动缩放**，用户得自己按 Magpie 热键（默认 Win+Shift+A）。
   hotkeyOnly,
 
-  /// 起不来（下载失败 / 进程拉不起来）。已静默降级，不影响会话。
+  /// 起不来（随包校验失败 / 进程拉不起来）。已静默降级，不影响会话。
   failed,
+}
+
+/// 超分失败中需要直接告诉用户的交付错误。
+enum MagpieUpscalingFailureReason {
+  /// 正式 Windows 包承诺携带的 Magpie 归档不存在，说明安装包不完整。
+  bundleMissing,
+
+  /// 随包归档或摘要损坏，不能继续安装。
+  bundleInvalid,
 }
 
 /// 一次超分尝试的完整结果（含降级原因），给 UI 与日志用。
@@ -93,6 +97,7 @@ class MagpieUpscalingReport {
   const MagpieUpscalingReport({
     required this.status,
     this.profileSkipReason,
+    this.failureReason,
     this.detail,
     this.scalingActive = false,
   });
@@ -110,6 +115,7 @@ class MagpieUpscalingReport {
       MagpieUpscalingReport(
         status: status,
         profileSkipReason: profileSkipReason,
+        failureReason: failureReason,
         detail: detail,
         scalingActive: scalingActive ?? this.scalingActive,
       );
@@ -117,12 +123,16 @@ class MagpieUpscalingReport {
   /// 没能写自动缩放 profile 的原因；写成功或压根没走到这步时为 null。
   final MagpieProfileSkipReason? profileSkipReason;
 
+  /// 需要向用户明确报告的交付错误；普通启动失败为 null。
+  final MagpieUpscalingFailureReason? failureReason;
+
   /// 人类可读的补充说明（异常文本等），只进日志不进 UI 文案。
   final String? detail;
 
   @override
   String toString() => 'MagpieUpscalingReport($status, '
-      'skip=$profileSkipReason, scaling=$scalingActive, detail=$detail)';
+      'skip=$profileSkipReason, failure=$failureReason, '
+      'scaling=$scalingActive, detail=$detail)';
 }
 
 /// 我们起的那个 Magpie 进程的最小句柄。
@@ -170,7 +180,6 @@ abstract class MagpieWin32Bridge {
 class MagpieUpscalingService extends ChangeNotifier {
   MagpieUpscalingService({
     required MagpieUpscalingMode Function() modeReader,
-    Future<bool> Function(MagpieDownloadPrompt prompt)? confirmDownload,
     MagpieWin32Bridge? bridge,
     MagpieInstaller Function()? installerFactory,
     Future<MagpieProcessHandle> Function(
@@ -183,7 +192,6 @@ class MagpieUpscalingService extends ChangeNotifier {
     Duration? bootstrapTimeout,
     bool Function()? bundledMagpieRunningProbe,
   })  : _modeReader = modeReader,
-        _confirmDownload = confirmDownload,
         _bridge = bridge,
         _installerFactory = installerFactory ?? MagpieInstaller.new,
         _processLauncher = processLauncher ?? _defaultLauncher,
@@ -201,7 +209,6 @@ class MagpieUpscalingService extends ChangeNotifier {
   /// 取那一行 —— 服务对 DB、prefs、UI 全部零依赖，这是它能被单测直接构造的原因。
   final MagpieUpscalingMode Function() _modeReader;
 
-  final Future<bool> Function(MagpieDownloadPrompt prompt)? _confirmDownload;
   final MagpieWin32Bridge? _bridge;
   final MagpieInstaller Function() _installerFactory;
   final Future<MagpieProcessHandle> Function(String, List<String>)
@@ -222,9 +229,6 @@ class MagpieUpscalingService extends ChangeNotifier {
 
   /// 本次会话写进配置的身份，收尾时按它把 autoScale 关回去。
   MagpieWindowIdentity? _appliedIdentity;
-
-  /// 用户本次 app 生命周期内已经拒绝过下载 —— 别每开一局游戏就弹一次框。
-  bool _downloadDeclined = false;
 
   /// 同一时刻只允许一条编排在跑（开/收互斥），避免收尾与启动交叉。
   Future<void> _gate = Future<void>.value();
@@ -362,8 +366,8 @@ class MagpieUpscalingService extends ChangeNotifier {
     if (_ownedProcess != null) return; // 已经起过，幂等
     final MagpieUpscalingMode mode = _readMode();
     // 「已装」= 我们自己的产物装好了 **或** 机器上已经跑着一个 Magpie（用户自装的）。
-    // 后者也算，否则 `installedOnly` 会在用户明明开着 Magpie 时报 unavailable，而
-    // `auto` 会去下一份多余的 10MB。两个探测都是零网络零副作用。
+    // 后者也算，否则 `installedOnly` 会在用户明明开着 Magpie 时报 unavailable。
+    // 两个探测都是零网络零副作用。
     final bool bundledInstalled = _isWindows && MagpieInstaller.isInstalled();
     final bool externalRunning = _isWindows && _safeIsMagpieRunning();
     final MagpieBackend backend = resolveMagpieBackend(
@@ -381,11 +385,12 @@ class MagpieUpscalingService extends ChangeNotifier {
       case MagpieBackend.unavailable:
         _report = const MagpieUpscalingReport(
           status: MagpieUpscalingStatus.unavailable,
-          detail: 'magpie not installed and download disabled by setting',
+          detail:
+              'magpie not installed and bundled install disabled by setting',
         );
         return;
-      case MagpieBackend.needsDownload:
-        if (!await _ensureDownloaded()) return;
+      case MagpieBackend.needsBundledInstall:
+        if (!await _ensureBundledInstalled()) return;
       case MagpieBackend.installed:
         break;
     }
@@ -484,24 +489,14 @@ class MagpieUpscalingService extends ChangeNotifier {
     }
   }
 
-  /// 交互路径的按需下载。**零网络探测发生在确认框之前**（BUG-1076 的教训）：
-  /// `ensureInstalled` 已装时直接返回，未装时立刻弹框、大小探测在后台跑。
-  Future<bool> _ensureDownloaded() async {
-    final Future<bool> Function(MagpieDownloadPrompt)? confirm =
-        _confirmDownload;
-    if (confirm == null || _downloadDeclined) {
-      _report = const MagpieUpscalingReport(
-        status: MagpieUpscalingStatus.unavailable,
-        detail: 'no download confirmation handler, or user already declined',
-      );
-      return false;
-    }
+  /// 只从 Hibiki 随包归档安装；缺包或损坏是交付错误，绝不触发网络。
+  Future<bool> _ensureBundledInstalled() async {
     _report = const MagpieUpscalingReport(
       status: MagpieUpscalingStatus.preparing,
     );
     MagpieInstallResult result;
     try {
-      result = await _installerFactory().ensureInstalled(confirm: confirm);
+      result = await _installerFactory().ensureInstalled();
     } catch (e) {
       _report = MagpieUpscalingReport(
         status: MagpieUpscalingStatus.failed,
@@ -513,28 +508,18 @@ class MagpieUpscalingService extends ChangeNotifier {
       case MagpieInstallResult.alreadyInstalled:
       case MagpieInstallResult.installed:
         return true;
-      case MagpieInstallResult.declined:
-        _downloadDeclined = true;
+      case MagpieInstallResult.bundleMissing:
         _report = const MagpieUpscalingReport(
-          status: MagpieUpscalingStatus.unavailable,
-          detail: 'user declined the download',
-        );
-        return false;
-      case MagpieInstallResult.downloadFailed:
-        // 可重试：直连与所有镜像都没拿到 zip（离线 / 被墙 / 404）。**不**置
-        // _downloadDeclined —— 那面旗子的语义是「用户说了不要」，网络不通不是用户的意思，
-        // 下一局仍应再试一次。
-        _report = MagpieUpscalingReport(
           status: MagpieUpscalingStatus.failed,
-          detail: 'install result: ${result.name} (retryable)',
+          failureReason: MagpieUpscalingFailureReason.bundleMissing,
+          detail: 'required bundled magpie archive is missing',
         );
         return false;
       case MagpieInstallResult.verificationFailed:
-        // 拿不到直连 GitHub 的 sha256 侧车，或 zip 与侧车摘要不符：东西下下来了但**不可信**。
-        // 与 downloadFailed 分开报，免得把「不可信」和「没下到」混成一句话。
         _report = MagpieUpscalingReport(
           status: MagpieUpscalingStatus.failed,
-          detail: 'install result: ${result.name} (integrity)',
+          failureReason: MagpieUpscalingFailureReason.bundleInvalid,
+          detail: 'bundled install result: ${result.name} (integrity)',
         );
         return false;
       case MagpieInstallResult.failed:

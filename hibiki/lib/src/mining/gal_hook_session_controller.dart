@@ -8,6 +8,7 @@ import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_char_count.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
 import 'package:hibiki/src/mining/galgame_hook_code_profile.dart';
+import 'package:hibiki/src/mining/galgame_play_tracker.dart';
 import 'package:hibiki/src/mining/serial_job_queue.dart';
 import 'package:hibiki/src/mining/galgame_system_ui_filter.dart';
 import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
@@ -530,6 +531,17 @@ typedef GalEngineSourceFactory = EngineHookGalAudioSource Function({
 typedef GalLoopbackSourceFactory = LoopbackGalAudioSource Function();
 typedef GalTargetWow64Probe = Future<bool?> Function(int pid);
 typedef GalExe32BitProbe = Future<bool?> Function(String path);
+
+/// BUG-1267 — 由 **PID** 反查目标进程的 exe 绝对路径。
+///
+/// attach（捕获窗口 / 引擎重试）路径此前没有这条查询，于是
+/// [shouldUseLunaPcHooksForExecutable] 唯一的输入拿不到，两个调用点就把
+/// `lunaPcHooks` 直接写死成 `false`——**「判据取不到」被实现成了「判为否」**。
+/// 后果是 Unity/IL2CPP 与 Siglus 目标只要不是由 Hibiki 亲自拉起，就永远不补装
+/// LunaHook 通用 PC hooks，文本线程一条都抓不到（injector 报 `text=0`）。
+/// exe 路径本来就能从 PID 拿到（`QueryFullProcessImageNameW`），补上这条查询即可
+/// 让两条路径共用同一套判据，而不是各自猜。
+typedef GalTargetImagePathProbe = String? Function(int pid);
 typedef GalWindowListLoader = Future<List<ExternalWindowInfo>> Function();
 typedef GalInjectorResolver = String? Function({required bool is32Bit});
 
@@ -543,6 +555,7 @@ class GalHookSessionController extends ChangeNotifier {
     GalEngineSourceFactory? engineSourceFactory,
     GalLoopbackSourceFactory? loopbackSourceFactory,
     GalTargetWow64Probe? targetWow64Probe,
+    GalTargetImagePathProbe? targetImagePathProbe,
     GalExe32BitProbe? exe32BitProbe,
     GalWindowListLoader? windowListLoader,
     GalInjectorResolver? injectorResolver,
@@ -582,6 +595,7 @@ class GalHookSessionController extends ChangeNotifier {
             loopbackSourceFactory ?? LoopbackGalAudioSource.new,
         _targetWow64Probe =
             targetWow64Probe ?? EngineHookGalAudioSource.targetIsWow64,
+        _targetImagePathProbe = targetImagePathProbe ?? _defaultTargetImagePath,
         _exe32BitProbe = exe32BitProbe ?? EngineHookGalAudioSource.exeIs32Bit,
         _windowListLoader =
             windowListLoader ?? WindowCaptureChannel.listWindows,
@@ -633,6 +647,7 @@ class GalHookSessionController extends ChangeNotifier {
   final GalEngineSourceFactory _engineSourceFactory;
   final GalLoopbackSourceFactory _loopbackSourceFactory;
   final GalTargetWow64Probe _targetWow64Probe;
+  final GalTargetImagePathProbe _targetImagePathProbe;
   final GalExe32BitProbe _exe32BitProbe;
   final GalWindowListLoader _windowListLoader;
   final GalInjectorResolver _injectorResolver;
@@ -658,22 +673,20 @@ class GalHookSessionController extends ChangeNotifier {
   List<TexthookerTextThread> get textThreads =>
       _textService.textThreadsSince(_state.sessionStartedAt);
 
-  /// 捕获工作台当前应展示的行。捕获中只看本次会话，避免上一个进程的 Luna 线程/台词
-  /// 混进当前选择；「全部线程」再折叠同一渲染瞬间的跨线程双写。底层 buffer 不删。
+  /// 捕获工作台当前应展示的正式行。没有选择时只允许下拉里的候选预览可见，
+  /// 正式台词、浮窗、配对和制卡都必须为空；底层诊断 buffer 不删。
   List<TexthookerLineEntry> get workbenchLines {
+    final String? selectedKey = selectedTextThreadKey;
+    if (selectedKey == null) return const <TexthookerLineEntry>[];
     final DateTime? startedAt = _state.sessionStartedAt;
     Iterable<TexthookerLineEntry> scoped =
-        _textService.entriesForTextThread(selectedTextThreadKey);
+        _textService.entriesForTextThread(selectedKey);
     if (startedAt != null) {
       scoped = scoped.where(
         (TexthookerLineEntry entry) => !entry.receivedAt.isBefore(startedAt),
       );
     }
-    final List<TexthookerLineEntry> materialized =
-        scoped.toList(growable: false);
-    return selectedTextThreadKey == null
-        ? collapseParallelTextThreadDuplicates(materialized)
-        : List<TexthookerLineEntry>.unmodifiable(materialized);
+    return List<TexthookerLineEntry>.unmodifiable(scoped);
   }
 
   String? get selectedTextThreadKey {
@@ -699,10 +712,13 @@ class GalHookSessionController extends ChangeNotifier {
   /// 制卡只允许消费这里的行，防止跨会话或跨线程借用上下文。
   List<TexthookerLineEntry> get selectedSessionLines {
     final DateTime? startedAt = _state.sessionStartedAt;
-    if (startedAt == null) return const <TexthookerLineEntry>[];
+    final String? selectedKey = selectedTextThreadKey;
+    if (startedAt == null || selectedKey == null) {
+      return const <TexthookerLineEntry>[];
+    }
     return List<TexthookerLineEntry>.unmodifiable(
       _textService
-          .entriesForTextThread(selectedTextThreadKey)
+          .entriesForTextThread(selectedKey)
           .where((entry) => !entry.receivedAt.isBefore(startedAt)),
     );
   }
@@ -851,6 +867,33 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
+  /// 复用 [GalgameWindowsProcessProbe]（`QueryFullProcessImageNameW`）而不是再写
+  /// 第四份 FFI 封装。probe 会 `DynamicLibrary.open`，因此**只在真的要查时**才实例化
+  /// 并缓存——非 Windows 直接返回 null，让判据回落到与旧行为一致的「不装 PC hooks」。
+  static GalgameProcessProbe? _sharedProcessProbe;
+
+  static String? _defaultTargetImagePath(int pid) {
+    if (!Platform.isWindows || pid <= 0) return null;
+    try {
+      return (_sharedProcessProbe ??= GalgameWindowsProcessProbe())
+          .processImagePath(pid);
+    } on Object {
+      return null;
+    }
+  }
+
+  /// BUG-1267 — attach 路径的 `lunaPcHooks` 判据。
+  ///
+  /// 与 launch 路径**共用** [shouldUseLunaPcHooksForExecutable]：判据本身只认 exe
+  /// 路径（basename 白名单 + 同目录 `UnityPlayer.dll`），launch 有路径、attach 也能
+  /// 从 PID 查到，没有任何理由让两条路径给出不同答案。查不到路径时返回 false —— 这
+  /// 与修复前的硬编码行为一致，所以「探测失败」不会比旧版更糟，只会不再更好。
+  bool _lunaPcHooksForPid(int pid) {
+    final String? imagePath = _targetImagePathProbe(pid);
+    if (imagePath == null || imagePath.isEmpty) return false;
+    return shouldUseLunaPcHooksForExecutable(imagePath);
+  }
+
   static String? defaultInjectorResolver({required bool is32Bit}) {
     if (!Platform.isWindows) return null;
     try {
@@ -960,7 +1003,8 @@ class GalHookSessionController extends ChangeNotifier {
         targetPid: window.pid,
         launchExe: null,
         injectorPath: injector,
-        lunaPcHooks: false,
+        // BUG-1267 — 从 PID 反查 exe 后走与 launch 相同的判据，别再写死 false。
+        lunaPcHooks: _lunaPcHooksForPid(window.pid),
       );
       await _attachPersistedHookProfiles(engine);
       final PcmFormat? format = await engine.start();
@@ -1038,12 +1082,16 @@ class GalHookSessionController extends ChangeNotifier {
   /// 拉起游戏并注入。
   ///
   /// [launchArguments] 是用户为该游戏配置的启动参数（已按 Windows 规则拆成 argv
-  /// token，见 `parseGameLaunchArguments`），[workdir] 是工作目录。两者都可省略：
-  /// 省略即维持旧行为（不发 `--arg` / 不发 `--workdir`，injector 缺省用 exe 所在目录）。
+  /// token，见 `parseGameLaunchArguments`），[workdir] 是工作目录。[gameId] 必须是
+  /// `galgames.id`，[gameTitle] 是当前库内显示名；游戏库入口应同时传入，使活动事件
+  /// 使用与封面/详情反查相同的稳定身份。裸 exe 启动可以省略二者，此时活动仍保留
+  /// exe 文件名快照，但 mediaKey 留空，不能再把路径伪装成 `galgames.id`。
   Future<GalHookLaunchResult> launchGame(
     String executablePath, {
     List<String> launchArguments = const <String>[],
     String workdir = '',
+    String? gameId,
+    String? gameTitle,
   }) async {
     final int generation = ++_operationGeneration;
     await _stopSources();
@@ -1074,10 +1122,14 @@ class GalHookSessionController extends ChangeNotifier {
         textSignalReceived: false,
       ),
     );
-    // launch 模式可执行文件路径是稳定 id：文件名去扩展名作游戏名，路径作 mediaKey。
+    final String normalizedTitle = gameTitle?.trim() ?? '';
+    // 活动 mediaKey 的跨层契约统一为 galgames.id。历史版本写过 exePath，读取侧保留
+    // 兼容；新写入不再延续一字段两种身份的歧义。
     _beginActivitySession(
-      title: _displayNameForExecutable(executablePath),
-      mediaKey: executablePath,
+      title: normalizedTitle.isEmpty
+          ? _displayNameForExecutable(executablePath)
+          : normalizedTitle,
+      mediaKey: gameId,
     );
     // 降级策略必须在这里恢复，不能搭 [_applyTrackMemory] 的便车：资源模式压根不枚举
     // 音轨（native 只枚举 PCM 环），等音轨快照就等不到，用户上次选的「禁止降级」会
@@ -1857,7 +1909,7 @@ class GalHookSessionController extends ChangeNotifier {
       'text',
       selected ? 'text.thread_selected' : 'text.thread_select_failed',
       threadId == null || threadId == 0
-          ? 'Automatic text-thread selection enabled'
+          ? 'Text thread selection cleared'
           : 'Text thread selected',
       details: <String, Object?>{
         'threadId': threadId ?? 0,
@@ -2217,7 +2269,7 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
-  /// 用户显式选定/取消文本线程后同步持久化（null = 自动，清掉记忆）。
+  /// 用户显式选定/取消文本线程后同步持久化（null = 未选择，清掉记忆）。
   void _persistTextThread(TexthookerTextThread? thread) {
     if (!_ensureCaptureMemoryLoaded()) return;
     final String? fingerprint =
@@ -3058,7 +3110,8 @@ class GalHookSessionController extends ChangeNotifier {
         targetPid: pid,
         launchExe: null,
         injectorPath: injector,
-        lunaPcHooks: false,
+        // BUG-1267 — 引擎重试同样走 PID→exe 判据，否则重试会把首次的 PC hooks 丢掉。
+        lunaPcHooks: _lunaPcHooksForPid(pid),
       );
       await _attachPersistedHookProfiles(engine);
       final PcmFormat? format = await engine.start();
@@ -3909,7 +3962,14 @@ class GalHookSessionController extends ChangeNotifier {
   /// 提前收束 [lineId] 的延迟冻结：按**真实已等待时长**回取，而不是白等满窗口。
   /// 制卡（用户现在就要这段声音）与引擎 PCM 升格（音源即将换走）都用它。
   /// 已经冻过 / 没排过的行是 no-op。
-  Future<void> _flushLoopbackFreeze(String lineId) async {
+  ///
+  /// BUG-1287 — 「现在就要」不等于「就此定格」。用户在台词播到中后段才查词/制卡时，
+  /// elapsedMs 可能只有一秒多，回取到的自然只有这句语音的前半段。旧实现在这里
+  /// `timer.cancel()` 之后就再也不碰这一行，那半句话被永久钉死。因此收束之后按**原
+  /// 到期时刻**补排一次补全（[_scheduleLoopbackSettle]）：立刻给出能用的，窗口真正
+  /// 到点后若拿到更长的再覆盖。这与引擎 PCM 路径的 [_settleLineUtterance] 是同一条
+  /// 纪律，Loopback 此前缺了对称的这一半。
+  Future<void> _flushLoopbackFreeze(String lineId, {bool settle = true}) async {
     final Timer? timer = _loopbackFreezeTimers.remove(lineId);
     if (timer == null) return;
     timer.cancel();
@@ -3925,12 +3985,66 @@ class GalHookSessionController extends ChangeNotifier {
         .clamp(_loopbackMinBackMs, _loopbackRingCapacityMs)
         .toInt();
     await _cacheLoopbackForLine(entry, backMs: backMs);
+    if (settle) {
+      _scheduleLoopbackSettle(entry, elapsedMs: elapsedMs);
+    }
+  }
+
+  /// BUG-1287 — 为提前收束过的 [entry] 补排「窗口到点再取一次完整长度」。
+  ///
+  /// 复用 [_loopbackFreezeTimers] 装这只定时器，因此会话结束 / 禁止降级
+  /// （[_cancelLoopbackFreezes]）、用户补录与选轨（各自 remove 该 lineId）都能像取消
+  /// 普通冻结一样把它取消掉，不需要第二套生命周期。
+  void _scheduleLoopbackSettle(
+    TexthookerLineEntry entry, {
+    required int elapsedMs,
+  }) {
+    // 已经等满窗口才收束的，补全取不到任何新东西。
+    final int remainingMs = _loopbackFreezeDelay.inMilliseconds - elapsedMs;
+    if (remainingMs <= 0) return;
+    if (!_state.audioFallbackPolicy.allowsLoopback ||
+        _audioSource is! LoopbackGalAudioSource ||
+        !isLineInCurrentSession(entry) ||
+        _isUserAdjudicated(entry.id) ||
+        _loopbackFreezeTimers.containsKey(entry.id)) {
+      return;
+    }
+    // 完整窗口 = 原本延迟冻结会用的 backMs，等价于取 `[t0-preRoll, t0+delay]`。
+    final int fullBackMs =
+        _loopbackFreezeDelay.inMilliseconds + _loopbackPreRollMs;
+    _loopbackFreezeTimers[entry.id] =
+        Timer(Duration(milliseconds: remainingMs), () {
+      _loopbackFreezeTimers.remove(entry.id);
+      unawaited(
+        _audioQueue.enqueue<bool>(
+          () async {
+            await _cacheLoopbackForLine(
+              entry,
+              backMs: fullBackMs,
+              onlyIfLonger: true,
+            );
+            return true;
+          },
+          buildFailure: (Object error, StackTrace stack) => false,
+          onError: (Object error, StackTrace stack) => _record(
+            GalHookEventSeverity.error,
+            'match',
+            'audio.loopback_settle_exception',
+            'Delayed loopback settle failed',
+            details: <String, Object?>{'lineId': entry.id, 'error': '$error'},
+          ),
+        ),
+      );
+    });
   }
 
   /// 收束所有待冻结行（音源即将被换走时调用；此刻还持有旧 Loopback）。
+  ///
+  /// 这里**不补排** BUG-1287 的补全：补全靠的就是这个 Loopback 源再多录一会儿，而
+  /// 调用方的下一步正是把它换掉——排了也只会在到点时被音源检查挡掉，白留一只定时器。
   Future<void> _flushAllLoopbackFreezes() async {
     for (final String lineId in _loopbackFreezeTimers.keys.toList()) {
-      await _flushLoopbackFreeze(lineId);
+      await _flushLoopbackFreeze(lineId, settle: false);
     }
   }
 
@@ -3946,6 +4060,9 @@ class GalHookSessionController extends ChangeNotifier {
   Future<void> _cacheLoopbackForLine(
     TexthookerLineEntry entry, {
     required int backMs,
+    // BUG-1287 — 补全模式（[_scheduleLoopbackSettle]）：这一取是**锦上添花**，只有
+    // 拿到更长的切片才覆盖，取空或取短都保持已冻结的结果不动。普通冻结走 false。
+    bool onlyIfLonger = false,
   }) async {
     final GalAudioSource? source = _audioSource;
     if (source is! LoopbackGalAudioSource ||
@@ -3960,8 +4077,18 @@ class GalHookSessionController extends ChangeNotifier {
     try {
       final GalAudioSlice? slice = await source.grabRecent(backMs);
       if (slice == null || slice.isEmpty || _audioSource != source) {
-        _markLineAudioMissing(entry.id, 'loopback_line_slice_unavailable');
+        // BUG-1287 — 补全取空只说明「这次没拿到更好的」，提前收束时冻下来的那段短
+        // 语音仍然有效。把它标 missing 等于用一次失败的加取，毁掉一份已经能用的音频。
+        if (!onlyIfLonger) {
+          _markLineAudioMissing(entry.id, 'loopback_line_slice_unavailable');
+        }
         return;
+      }
+      if (onlyIfLonger) {
+        final GalAudioSlice? existing = _lineVoiceCache[entry.id];
+        if (existing != null && slice.pcm.length <= existing.pcm.length) {
+          return;
+        }
       }
       _lineVoiceCache[entry.id] = slice;
       _trimCache(_lineVoiceCache);

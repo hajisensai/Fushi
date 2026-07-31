@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/sync/sync_activity.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
@@ -63,6 +64,46 @@ String syncProgressLine(SyncProgress p) {
   final String head = '$phase (${p.itemIndex + 1}/${p.itemTotal})';
   final String? title = p.title;
   return (title == null || title.isEmpty) ? head : '$head $title';
+}
+
+/// 没有阶段 tick 可显示时的兜底行 —— 说清这轮同步**是谁**。
+///
+/// 全量 sweep 在第一个阶段 tick 之前有一整段准备期（等锁 / 读开关 / 走网络鉴权），
+/// 合集与单本两条路径则全程没有阶段结构。以前这三种情况一律显示空白，进度条成了
+/// 一条无法解读的线。
+String syncActivityLine(SyncActivity a) {
+  switch (a.kind) {
+    case SyncActivityKind.fullSweep:
+      return t.sync_progress_preparing;
+    case SyncActivityKind.collections:
+      return t.sync_progress_collections;
+    case SyncActivityKind.singleBook:
+      final String? title = a.title;
+      return (title == null || title.isEmpty)
+          ? t.sync_progress_book
+          : t.sync_progress_book_titled(title: title);
+  }
+}
+
+/// 上一轮同步的结局行（设置页「立即同步」在空闲时显示）。
+///
+/// 关键的是 [SyncOutcomeReason.noChannels]：一条通道都没通过认证意味着**什么也
+/// 没同步**，而在补上这行之前它与正常跑完在界面上完全同形。
+String syncOutcomeLine(SyncRunOutcome o) {
+  switch (o.reason) {
+    case SyncOutcomeReason.completed:
+      return t.sync_last_completed(count: o.channelsRun);
+    case SyncOutcomeReason.noChannels:
+      return t.sync_last_no_channels;
+    case SyncOutcomeReason.nothingToSync:
+      return t.sync_last_nothing;
+    case SyncOutcomeReason.autoDisabled:
+      return t.sync_last_auto_disabled;
+    case SyncOutcomeReason.cooledDown:
+      return t.sync_last_cooled_down;
+    case SyncOutcomeReason.failed:
+      return t.sync_last_failed;
+  }
 }
 
 /// 手动同步在 UI 层的**单一入口**：跑 [runManualFullSync]，再统一处理三种 outcome

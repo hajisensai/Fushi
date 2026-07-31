@@ -41,34 +41,36 @@ class VideoBookRepository {
   /// 读回时由 [scrapeMetadata] 反序列化——JSON 编解码只在本仓库层出现一次，
   /// 展示层和刮削层都只见领域对象 [ScrapeMetadata]。
   Future<void> saveScrapeMetadata(String bookUid, ScrapeMetadata meta) {
-    return _db.upsertVideoScrapeMeta(VideoScrapeMetaCompanion.insert(
-      bookUid: bookUid,
-      source: meta.source.name,
-      subjectId: meta.subjectId,
-      title: meta.title,
-      originalTitle: Value<String?>(meta.originalTitle),
-      summary: Value<String?>(meta.summary),
-      airDate: Value<String?>(meta.airDate),
-      rating: Value<double?>(meta.rating),
-      ratingCount: Value<int?>(meta.ratingCount),
-      episodeCount: Value<int?>(meta.episodeCount),
-      tagsJson: Value<String?>(
-        meta.tags.isEmpty
-            ? null
-            : jsonEncode(<Map<String, Object?>>[
-                for (final ScrapeTag t in meta.tags) t.toJson(),
-              ]),
+    return _db.upsertVideoScrapeMeta(
+      VideoScrapeMetaCompanion.insert(
+        bookUid: bookUid,
+        source: meta.source.name,
+        subjectId: meta.subjectId,
+        title: meta.title,
+        originalTitle: Value<String?>(meta.originalTitle),
+        summary: Value<String?>(meta.summary),
+        airDate: Value<String?>(meta.airDate),
+        rating: Value<double?>(meta.rating),
+        ratingCount: Value<int?>(meta.ratingCount),
+        episodeCount: Value<int?>(meta.episodeCount),
+        tagsJson: Value<String?>(
+          meta.tags.isEmpty
+              ? null
+              : jsonEncode(<Map<String, Object?>>[
+                  for (final ScrapeTag t in meta.tags) t.toJson(),
+                ]),
+        ),
+        infoboxJson: Value<String?>(
+          meta.infobox.isEmpty
+              ? null
+              : jsonEncode(<Map<String, Object?>>[
+                  for (final ScrapeInfoboxEntry e in meta.infobox) e.toJson(),
+                ]),
+        ),
+        detailUrl: Value<String?>(meta.detailUrl),
+        scrapedAt: DateTime.now(),
       ),
-      infoboxJson: Value<String?>(
-        meta.infobox.isEmpty
-            ? null
-            : jsonEncode(<Map<String, Object?>>[
-                for (final ScrapeInfoboxEntry e in meta.infobox) e.toJson(),
-              ]),
-      ),
-      detailUrl: Value<String?>(meta.detailUrl),
-      scrapedAt: DateTime.now(),
-    ));
+    );
   }
 
   /// 读一本视频的条目资料；未刮过返回 null。JSON 列损坏时该列降级为空列表（其余
@@ -143,8 +145,9 @@ class VideoBookRepository {
         mediaType: kActivityMediaVideo,
         title: title,
         mediaKey: bookUid,
-        dateKey:
-            HibikiTimeFormat.dayKey(DateTime.fromMillisecondsSinceEpoch(nowMs)),
+        dateKey: HibikiTimeFormat.dayKey(
+          DateTime.fromMillisecondsSinceEpoch(nowMs),
+        ),
         timestampMs: nowMs,
       );
     } catch (e) {
@@ -177,8 +180,11 @@ class VideoBookRepository {
     required Map<String, int> remoteAddedAt,
     Map<String, int> remoteTombstones = const <String, int>{},
   }) =>
-      _db.mergeRemoteVideoTags(bookUid,
-          remoteAddedAt: remoteAddedAt, remoteTombstones: remoteTombstones);
+      _db.mergeRemoteVideoTags(
+        bookUid,
+        remoteAddedAt: remoteAddedAt,
+        remoteTombstones: remoteTombstones,
+      );
 
   /// 统一合集 Phase 2：把一个多集播放列表拆成 N 条独立 VideoBooks 行 + 一个 playlist
   /// [MediaCollections]（成员按序）。是「导入时拆集」的单一真相源，与 v38 迁移
@@ -192,23 +198,41 @@ class VideoBookRepository {
     required String collectionName,
     required List<PlaylistEntry> entries,
     int? sourceId,
+    bool reuseExistingPaths = false,
   }) async {
-    final Set<String> taken =
-        (await listAll()).map((VideoBookRow r) => r.bookUid).toSet();
     final List<String> epUids = <String>[];
     int collectionId = 0;
     await _db.transaction(() async {
+      final List<VideoBookRow> existingBooks = await listAll();
+      final Set<String> taken =
+          existingBooks.map((VideoBookRow r) => r.bookUid).toSet();
       for (final PlaylistEntry e in entries) {
-        final String uid =
-            coreUniqueVideoBookUid(coreSingleVideoBookUid(e.path), taken);
+        if (reuseExistingPaths) {
+          VideoBookRow? existing;
+          final String normalized = normalizeVideoPath(e.path);
+          for (final VideoBookRow row in existingBooks) {
+            if (normalizeVideoPath(row.videoPath) == normalized) {
+              existing = row;
+              break;
+            }
+          }
+          if (existing != null) {
+            epUids.add(existing.bookUid);
+            continue;
+          }
+        }
+        final String uid = coreUniqueVideoBookUid(
+          coreSingleVideoBookUid(e.path),
+          taken,
+        );
         taken.add(uid);
         epUids.add(uid);
         await saveVideoBook(
           VideoBooksCompanion(
             bookUid: Value(uid),
-            title: Value(e.title.isNotEmpty
-                ? e.title
-                : p.basenameWithoutExtension(e.path)),
+            title: Value(
+              e.title.isNotEmpty ? e.title : p.basenameWithoutExtension(e.path),
+            ),
             videoPath: Value(e.path),
             lastPositionMs: Value(e.positionMs),
             embeddedSubtitleTrack: const Value<int?>(0),
@@ -216,9 +240,14 @@ class VideoBookRepository {
           ),
           sourceId: sourceId,
         );
+        if (reuseExistingPaths) {
+          existingBooks.add((await _db.getVideoBookByBookUid(uid))!);
+        }
       }
-      collectionId = await _db.createMediaCollection(collectionName,
-          collectionType: 'playlist');
+      collectionId = await _db.createMediaCollection(
+        collectionName,
+        collectionType: 'playlist',
+      );
       for (final String uid in epUids) {
         await _db.addToCollection(collectionId, MediaKind.video, uid);
       }
@@ -250,8 +279,9 @@ class VideoBookRepository {
     int? sourceId,
   }) async {
     // 当前成员 bookUid → 其稳定基身份（用于与清单按基身份对齐）。
-    final List<MediaCollectionItemRow> items =
-        await _db.getCollectionItems(collectionId);
+    final List<MediaCollectionItemRow> items = await _db.getCollectionItems(
+      collectionId,
+    );
     final Map<String, String> memberBaseByUid = <String, String>{};
     for (final MediaCollectionItemRow item in items) {
       if (item.mediaType != MediaKind.video.dbValue) continue;
@@ -279,9 +309,9 @@ class VideoBookRepository {
         await saveVideoBook(
           VideoBooksCompanion(
             bookUid: Value(uid),
-            title: Value(e.title.isNotEmpty
-                ? e.title
-                : p.basenameWithoutExtension(e.path)),
+            title: Value(
+              e.title.isNotEmpty ? e.title : p.basenameWithoutExtension(e.path),
+            ),
             videoPath: Value(e.path),
             lastPositionMs: Value(e.positionMs),
             embeddedSubtitleTrack: const Value<int?>(0),
@@ -377,15 +407,18 @@ class VideoBookRepository {
     if (videoPath == null && subtitleSource == null) {
       return Future<void>.value();
     }
-    return (_db.update(_db.videoBooks)
-          ..where((tbl) => tbl.bookUid.equals(bookUid)))
-        .write(VideoBooksCompanion(
-      videoPath:
-          videoPath == null ? const Value.absent() : Value<String>(videoPath),
-      subtitleSource: subtitleSource == null
-          ? const Value.absent()
-          : Value<String?>(subtitleSource),
-    ));
+    return (_db.update(
+      _db.videoBooks,
+    )..where((tbl) => tbl.bookUid.equals(bookUid)))
+        .write(
+      VideoBooksCompanion(
+        videoPath:
+            videoPath == null ? const Value.absent() : Value<String>(videoPath),
+        subtitleSource: subtitleSource == null
+            ? const Value.absent()
+            : Value<String?>(subtitleSource),
+      ),
+    );
   }
 
   /// TODO-1961-d：把库里落在 [fromPath] 下的路径整体重映射到 [toPath]，
@@ -419,19 +452,22 @@ class VideoBookRepository {
     await _db.transaction(() async {
       for (final MapEntry<String, VideoPathRemap> entry in pending.entries) {
         final VideoPathRemap remap = entry.value;
-        await (_db.update(_db.videoBooks)
-              ..where((tbl) => tbl.bookUid.equals(entry.key)))
-            .write(VideoBooksCompanion(
-          videoPath: remap.videoPath == null
-              ? const Value.absent()
-              : Value<String>(remap.videoPath!),
-          subtitleSource: remap.subtitleSource == null
-              ? const Value.absent()
-              : Value<String?>(remap.subtitleSource),
-          secondarySubtitleSource: remap.secondarySubtitleSource == null
-              ? const Value.absent()
-              : Value<String?>(remap.secondarySubtitleSource),
-        ));
+        await (_db.update(
+          _db.videoBooks,
+        )..where((tbl) => tbl.bookUid.equals(entry.key)))
+            .write(
+          VideoBooksCompanion(
+            videoPath: remap.videoPath == null
+                ? const Value.absent()
+                : Value<String>(remap.videoPath!),
+            subtitleSource: remap.subtitleSource == null
+                ? const Value.absent()
+                : Value<String?>(remap.subtitleSource),
+            secondarySubtitleSource: remap.secondarySubtitleSource == null
+                ? const Value.absent()
+                : Value<String?>(remap.secondarySubtitleSource),
+          ),
+        );
       }
     });
     return pending.length;
@@ -459,9 +495,13 @@ class VideoBookRepository {
   /// 同款四态编码（外挂绝对路径 / `embedded:<n>` / `off:` / null）。副字幕由 libmpv
   /// `secondary-sid` 自渲染（不进 cue 流，不可查词），故无 cue，独立于 cue 事务写入。
   Future<void> updateSecondarySubtitleSource(
-          String bookUid, String? secondarySubtitleSource) =>
+    String bookUid,
+    String? secondarySubtitleSource,
+  ) =>
       _db.updateVideoBookSecondarySubtitleSource(
-          bookUid, secondarySubtitleSource);
+        bookUid,
+        secondarySubtitleSource,
+      );
 
   /// 更新用户选中的音轨 id（libmpv `AudioTrack.id`；清除存 null）。
   Future<void> updateAudioTrackId(String bookUid, String? audioTrackId) =>
@@ -470,13 +510,17 @@ class VideoBookRepository {
   /// 更新系列（合集）级音轨偏好（schema v52，同系列音轨记忆）。合集内任一集选音轨
   /// 写这里，全系列共享；null=清除（加载回退各集 per-book / libmpv 默认）。
   Future<void> updateCollectionAudioTrackId(
-          int collectionId, String? audioTrackId) =>
+    int collectionId,
+    String? audioTrackId,
+  ) =>
       _db.updateMediaCollectionAudioTrackId(collectionId, audioTrackId);
 
   /// 更新系列（合集）级字幕调轴（音画延迟毫秒，schema v52，同系列调轴记忆）。合集内
   /// 任一集调轴写这里，全系列共享；null=清除（加载回退各集 per-book / 0）。
   Future<void> updateCollectionSubtitleDelayMs(
-          int collectionId, int? delayMs) =>
+    int collectionId,
+    int? delayMs,
+  ) =>
       _db.updateMediaCollectionSubtitleDelayMs(collectionId, delayMs);
 
   /// 更新视频封面图绝对路径（书架/视频库长按菜单手动设置封面）。
@@ -505,8 +549,11 @@ class VideoBookRepository {
     // 标记、其他设备逐条确认后也删。keepLocalOnly 不记，避免删本地→回写墓碑循环。best-effort。
     if (scope == DeleteScope.syncEverywhere) {
       try {
-        await _db.writeSyncDeletionTombstone(SyncTombstoneKind.video.dbValue,
-            bookUid, DateTime.now().millisecondsSinceEpoch);
+        await _db.writeSyncDeletionTombstone(
+          SyncTombstoneKind.video.dbValue,
+          bookUid,
+          DateTime.now().millisecondsSinceEpoch,
+        );
       } catch (_) {
         // best-effort：记账失败不影响视频已删。
       }
@@ -565,7 +612,7 @@ class VideoBookRepository {
         stillReferencedSubtitlePaths: refs.subtitles,
       );
       await VideoStorage.gcOrphanCovers(referencedCoverPaths: refs.covers);
-      if (!await isVideoPathReferenced(
+      if (!await isDuplicateVideoPath(
         deletedVideoPath,
         excludeBookUid: deletedBookUid,
       )) {
@@ -626,7 +673,7 @@ class VideoBookRepository {
   /// [externalVideoBookUid] 同款语义），因此 Windows 上 `D:\Foo\bar.mkv` 与
   /// `D:/Foo/bar.mkv`（file_picker 原始路径 vs argv 路径分隔符不一致）视为同一
   /// 文件命中同一行——既覆盖新写入行也覆盖存的是未归一路径的旧库内导入行。
-  /// 与 [isVideoPathReferenced] 同一比对语义（后者即据此实现），是「同一物理
+  /// 与 [isDuplicateVideoPath] 同一比对语义（后者即据此实现），是「同一物理
   /// 文件是否已入库」的单一真相源。外部「打开方式」入库前用它复用库内已导入的
   /// 同文件 bookUid，避免派生 `video/ext/<sha1>` 第二身份重复插行（TODO-903）。
   ///
@@ -646,7 +693,7 @@ class VideoBookRepository {
     return null;
   }
 
-  Future<bool> isVideoPathReferenced(
+  Future<bool> isDuplicateVideoPath(
     String videoPath, {
     String? excludeBookUid,
   }) async =>
@@ -674,7 +721,9 @@ class VideoBookRepository {
   }) =>
       _db.transaction(() async {
         await _db.replaceCuesForBook(
-            bookUid, cues.map(AudioCue.toCompanion).toList());
+          bookUid,
+          cues.map(AudioCue.toCompanion).toList(),
+        );
         await _db.updateVideoBookSubtitleSource(bookUid, subtitleSource);
       });
 }

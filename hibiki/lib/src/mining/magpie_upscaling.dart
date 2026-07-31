@@ -53,10 +53,10 @@ const String kMagpieHibikiProfilePrefix = 'Hibiki: ';
 /// 与 `anime_download_config.dart` 的 `auto/builtin/external/off` 同范式，但这里**没有
 /// builtin/external 二选一**：Magpie 只有一份，区别只在「谁装的」。三态就够。
 enum MagpieUpscalingMode {
-  /// 自动：优先用机器上已有的 Magpie；没有就按需下载我们的自编产物（需用户确认）。
+  /// 自动：优先用机器上已有的 Magpie；没有就启用 Hibiki 随包内置版本。
   auto,
 
-  /// 只用已装的：机器上没有 Magpie 就直接不超分，**绝不联网**。
+  /// 只用已装的：机器上没有 Magpie 就直接不超分，不解压 Hibiki 的随包版本。
   installedOnly,
 
   /// 关闭。
@@ -129,8 +129,8 @@ enum MagpieBackend {
   /// 用机器上已有的 Magpie（用户自装的，或我们之前装的）。
   installed,
 
-  /// 需要先下载我们的自编产物（要弹确认框）。
-  needsDownload,
+  /// 需要从 Hibiki 随包归档安装内置版本（零网络、零确认框）。
+  needsBundledInstall,
 
   /// 想用但用不上：`installedOnly` 且机器上没装。静默降级，不打扰用户。
   unavailable,
@@ -138,8 +138,8 @@ enum MagpieBackend {
 
 /// **纯函数**：三态开关 + 探测结果 → 本次会话的后端。
 ///
-/// 优先级刻意是「已装 > 下载」：用户机器上已有 Magpie（自装的官方版，或我们上次装的）时
-/// 直接用，绝不为了用自己的产物而重复下载 10MB。
+/// 优先级刻意是「已装 > 随包安装」：用户机器上已有 Magpie（自装的官方版，或我们上次
+/// 装的）时直接用，没装才从 Hibiki 自带归档就地安装。
 MagpieBackend resolveMagpieBackend({
   required MagpieUpscalingMode mode,
   required bool isWindows,
@@ -156,7 +156,7 @@ MagpieBackend resolveMagpieBackend({
     case MagpieUpscalingMode.auto:
       return installedAvailable
           ? MagpieBackend.installed
-          : MagpieBackend.needsDownload;
+          : MagpieBackend.needsBundledInstall;
   }
 }
 

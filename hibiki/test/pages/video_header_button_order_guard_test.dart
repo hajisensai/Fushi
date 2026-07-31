@@ -21,21 +21,47 @@ void main() {
   final File shelfSrc =
       File('lib/src/pages/implementations/reader_hibiki_history_page.dart');
 
-  /// 截取某文件中 [_buildPageHeader] 方法体内 `actions: <Widget>[ ... ]` 区间的源码，
-  /// 顺序断言只在该区间内做，避免命中页面其它位置的同名 tooltip / 图标。
+  /// 截取某文件中 [_buildPageHeader] 方法体内 actions 列表字面量的源码，顺序断言只在
+  /// 该区间内做，避免命中页面其它位置的同名 tooltip / 图标。
+  ///
+  /// 两种等价写法都认：内联的 `actions: <Widget>[`，以及先落成局部变量再传的
+  /// `List<Widget> actions = <Widget>[`（页头统一成 [HibikiPageHeader] 后走后者）。
+  /// 区间终点用方括号配对求出，而不是「下一个 `],`」——后者在列表以 `];` 收尾时会
+  /// 直接越过方法体，把断言范围放大到整个文件。
   String headerActionsBlock(File file) {
     final String text = file.readAsStringSync();
     final int headerIdx = text.indexOf('_buildPageHeader');
     expect(headerIdx, greaterThanOrEqualTo(0),
         reason: '${file.path} 应定义 _buildPageHeader');
-    final int actionsIdx = text.indexOf('actions: <Widget>[', headerIdx);
+    int actionsIdx =
+        text.indexOf('List<Widget> actions = <Widget>[', headerIdx);
+    final int inlineIdx = text.indexOf('actions: <Widget>[', headerIdx);
+    if (actionsIdx < 0 || (inlineIdx >= 0 && inlineIdx < actionsIdx)) {
+      actionsIdx = inlineIdx;
+    }
     expect(actionsIdx, greaterThanOrEqualTo(0),
-        reason: '${file.path} 的 _buildPageHeader 应有 actions: <Widget>[');
-    // actions 列表以下一个 `],` 收尾——足够覆盖三个按钮，且不会跨出方法体。
-    final int closeIdx = text.indexOf('],', actionsIdx);
-    expect(closeIdx, greaterThan(actionsIdx),
+        reason: '${file.path} 的 _buildPageHeader 应有 actions 列表字面量'
+            '（`actions: <Widget>[` 或 `List<Widget> actions = <Widget>[`）');
+    final int openIdx = text.indexOf('[', actionsIdx);
+    expect(openIdx, greaterThanOrEqualTo(0),
+        reason: '${file.path} 的 actions 列表应有起始方括号');
+    int depth = 0;
+    int closeIdx = -1;
+    for (int i = openIdx; i < text.length; i++) {
+      final String ch = text[i];
+      if (ch == '[') {
+        depth++;
+      } else if (ch == ']') {
+        depth--;
+        if (depth == 0) {
+          closeIdx = i;
+          break;
+        }
+      }
+    }
+    expect(closeIdx, greaterThan(openIdx),
         reason: '${file.path} 的 actions 列表应正常闭合');
-    return text.substring(actionsIdx, closeIdx);
+    return text.substring(openIdx, closeIdx);
   }
 
   /// 在区间内按 tooltip 标识取相对位置；找不到返回 -1。

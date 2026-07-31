@@ -38,9 +38,12 @@ class _FakeBackend implements TorrentBackend {
   Future<List<TorrentSnapshot>> listTorrents({String? category}) async =>
       torrents;
 
+  /// 种子内文件清单；默认空（多数用例只关心进度表）。`importNow` 路径需要至少
+  /// 一个可识别视频，否则服务在发布进度之前就提前返回。
+  List<TorrentFileEntry> files = const <TorrentFileEntry>[];
+
   @override
-  Future<List<TorrentFileEntry>> listFiles(String torrentId) async =>
-      const <TorrentFileEntry>[];
+  Future<List<TorrentFileEntry>> listFiles(String torrentId) async => files;
 
   @override
   void close() {}
@@ -58,7 +61,13 @@ class _FakeBackend implements TorrentBackend {
       const TorrentStorageResult.failure('not supported by fake');
 }
 
-TorrentSnapshot _snapshot({required double progress, required String state}) {
+TorrentSnapshot _snapshot({
+  required double progress,
+  required String state,
+  int downRateBps = 0,
+  int upRateBps = 0,
+  int downloadedBytes = 0,
+}) {
   return TorrentSnapshot(
     hash: _kHash,
     name: 'torrent',
@@ -67,6 +76,9 @@ TorrentSnapshot _snapshot({required double progress, required String state}) {
     savePath: '',
     contentPath: '',
     amountLeft: state == 'downloading' ? 100 : 0,
+    downRateBps: downRateBps,
+    upRateBps: upRateBps,
+    downloadedBytes: downloadedBytes,
   );
 }
 
@@ -137,6 +149,112 @@ void main() {
     // pending 清零后，下一轮 tick 保持空表。
     await service.tick();
     expect(service.downloadProgress.value, isEmpty);
+  });
+
+  test('tick 同步发布速度/流量观测值到 downloadStats（BUG-1294）', () async {
+    backend.torrents = <TorrentSnapshot>[
+      _snapshot(
+        progress: 0.42,
+        state: 'downloading',
+        downRateBps: 1048576,
+        upRateBps: 2048,
+        downloadedBytes: 4096,
+      ),
+    ];
+    await service.tick();
+    final DownloadTaskStats stats = service.downloadStats.value[_kHash]!;
+    expect(stats.progress, 0.42);
+    expect(stats.downRateBps, 1048576);
+    expect(stats.upRateBps, 2048);
+    expect(stats.downloadedBytes, 4096);
+
+    // 种子从后端消失 → stats 同步清空（与 downloadProgress 键集合一致）。
+    backend.torrents = <TorrentSnapshot>[];
+    await service.tick();
+    expect(service.downloadStats.value, isEmpty);
+  });
+
+  // BUG-1296：`_publishProgress` 是**无条件覆盖** downloadStats，而 importNow 那条
+  // 路径此前只传进度、stats 走默认空 map → 一次「立即导入」把全表观测值抹掉，
+  // 任务行退成不定进度环（UI 侧的百分比也一并没了）直到下一轮 tick 才恢复。
+  // 契约：任何发布点都不得把别处刚发布的观测值降级成空。
+  test('importNow 发布进度时不清空 downloadStats（BUG-1296）', () async {
+    backend.torrents = <TorrentSnapshot>[
+      _snapshot(
+        progress: 0.42,
+        state: 'downloading',
+        downRateBps: 1048576,
+        upRateBps: 2048,
+        downloadedBytes: 4096,
+      ),
+    ];
+    await service.tick();
+    expect(service.downloadStats.value[_kHash]?.downRateBps, 1048576);
+
+    // 种子里有可识别视频 → importNow 会走到「未完成也先发进度」那一支。
+    backend.files = const <TorrentFileEntry>[
+      TorrentFileEntry(
+          name: 'Test Anime - 01.mkv', size: 100, progress: 0.42, index: 0),
+    ];
+    await service.importNow(_kHash);
+
+    expect(
+      service.downloadProgress.value[_kHash],
+      0.42,
+      reason: 'importNow 仍应发布进度',
+    );
+    expect(
+      service.downloadStats.value[_kHash]?.downRateBps,
+      1048576,
+      reason: 'importNow 手上就有 TorrentSnapshot，不得把观测值清成空表',
+    );
+  });
+
+  test('轮询周期决策：内置引擎 + 有活跃下载才提频（BUG-1294）', () {
+    const QbConnectionConfig embedded =
+        QbConnectionConfig(backend: QbConnectionConfig.backendEmbedded);
+    const Duration idle = Duration(seconds: 20);
+
+    expect(
+      AnimeDownloadService.resolvePollInterval(
+        config: embedded,
+        hasActiveDownloads: true,
+        isDesktop: true,
+        idle: idle,
+      ),
+      AnimeDownloadService.activeInterval,
+    );
+    // 无活跃下载 → 保持常规周期。
+    expect(
+      AnimeDownloadService.resolvePollInterval(
+        config: embedded,
+        hasActiveDownloads: false,
+        isDesktop: true,
+        idle: idle,
+      ),
+      idle,
+    );
+    // 外接 qb：每 tick 都是一次全新 WebUI 登录，提频会放大失败计数
+    // （qb 默认 5 次封 IP），恒用常规周期。
+    expect(
+      AnimeDownloadService.resolvePollInterval(
+        config: _kConfig,
+        hasActiveDownloads: true,
+        isDesktop: true,
+        idle: idle,
+      ),
+      idle,
+    );
+    // 未配置 → 常规周期。
+    expect(
+      AnimeDownloadService.resolvePollInterval(
+        config: null,
+        hasActiveDownloads: true,
+        isDesktop: true,
+        idle: idle,
+      ),
+      idle,
+    );
   });
 
   test('后端未配置时清空进度表', () async {

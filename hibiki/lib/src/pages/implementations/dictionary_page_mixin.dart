@@ -14,10 +14,12 @@ import 'package:hibiki/src/lookup/effective_lookup_size.dart';
 import 'package:hibiki/src/pages/base_source_page.dart'
     show lookupHighlightCharCount;
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult, DictionaryPopupWebViewState;
 import 'package:hibiki/src/pages/implementations/sentence_context_dialog.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
@@ -56,6 +58,40 @@ mixin DictionaryPageMixin {
   /// 收藏/制卡计入统计时的来源标识。默认 [kStatSourceBook]（书内阅读、独立查词页
   /// 都归书籍统计）；视频页覆写为 [kStatSourceVideo]，使收藏/制卡落各自统计。
   String get dictionarySourceType => kStatSourceBook;
+
+  /// BUG-1269：本页的快捷键作用域。非空即启用「弹窗内输入交回宿主」的桥。
+  ///
+  /// 词典弹窗是纯原生 WebView：指针落在它上面时，键盘与鼠标事件只存在于弹窗 DOM
+  /// 里，宿主的 Flutter `Focus` / `Listener` 一个都收不到。点词后弹窗恰好贴在光标旁，
+  /// 所以这是常态——不装这座桥，「关掉词典」的键与鼠标键在弹窗持焦时全部落空。
+  ///
+  /// 与 `BaseSourcePage` 的同名钩子是同一套契约（两个宿主各建一次
+  /// [DictionaryPopupLayer]，此处保持对称）。
+  ShortcutScope? get dictionaryPopupInputScope => null;
+
+  /// 弹窗可见时仍要生效的动作。token 表由注册表**当前**绑定实时导出，改键立即跟随。
+  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
+      const <ShortcutAction>{};
+
+  /// 当前要下发给弹窗的输入表。作用域缺席时为空表——空表**仍会**注入，用来清掉热槽
+  /// WebView 上残留的旧表。
+  DictionaryPopupInputSpec get dictionaryPopupInputSpec =>
+      dictionaryPopupInputScope == null
+          ? const DictionaryPopupInputSpec()
+          : dictionaryPopupInputSpecFor(
+              registry: mixinAppModel.shortcutRegistry,
+              actions: dictionaryPopupForwardedActions,
+            );
+
+  /// 弹窗回传 token 的落地点。
+  ///
+  /// 默认 no-op：本 mixin 的关栈入口（[popNestedPopupAt]）需要调用方持有的
+  /// [DictionaryPopupController]，mixin 自身拿不到，故不在这里替宿主决定怎么关。
+  /// 声明了 [dictionaryPopupInputScope] 的宿主必须覆写它（视频页覆写成「只关顶层」，
+  /// 与 `guardVideoShortcutsWithPopupDismiss` 同一执行体）。用
+  /// [resolveDictionaryPopupInputToken] 把 token 解析成动作——那与键盘路径是同一个
+  /// `resolve*`，改键对两条路径同时生效。
+  void onDictionaryPopupInputToken(String token) {}
 
   /// 查词浮层顶部可选的 header 行（如视频「收藏当前字幕句」星标）。默认 null（书内查词
   /// 已有自己的 [BaseSourcePageState.buildPopupAudioControls]，不走 mixin；独立查词页 /
@@ -628,6 +664,12 @@ mixin DictionaryPageMixin {
         isDark: isDark,
         overrideFillColor: mixinAppModel.overrideDictionaryColor,
         onDismiss: () => onPop(index),
+        // BUG-1269：弹窗是原生 WebView，指针落上去后宿主收不到键盘/鼠标——把宿主
+        // 声明的那些输入交回来（表由注册表当前绑定实时导出，改键立即跟随）。
+        inputSpec: dictionaryPopupInputSpec,
+        onHostInputToken: dictionaryPopupInputScope == null
+            ? null
+            : onDictionaryPopupInputToken,
         // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
         enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
         // TODO-407①：顶层仍渲染"X 关闭"，走既有关闭汇聚点 onPop(0)
@@ -655,6 +697,10 @@ mixin DictionaryPageMixin {
             controller.endSearchUi();
             setState(() {});
           }
+          // 选词光标跟随（videoEnterCaret）：层渲染完成后交给页面钩子，视频页据此
+          // 把光标 transfer 进刚显示的顶层弹窗（BaseSourcePageState 家族的
+          // onDictionaryPopupRendered 同语义；mixin 家族此前没有该钩子）。
+          onNestedPopupRendered(index);
         },
         // TODO-058 fail-safe：WebView 加载失败也走同一翻可见路径（不卡死）。
         onRenderError: () {
@@ -947,4 +993,9 @@ mixin DictionaryPageMixin {
     if (index < 0 || index >= controller.entries.length - 1) return; // 无后代
     setState(() => controller.truncateTo(index + 1));
   }
+
+  /// 某弹窗层 WebView 渲染完成（reveal 之后）的可覆写钩子——mixin 家族版的
+  /// [BaseSourcePageState.onDictionaryPopupRendered]。视频页覆写它把选词光标
+  /// transfer 进刚显示的顶层弹窗（videoEnterCaret）；不覆写 = 历史行为不变。
+  void onNestedPopupRendered(int index) {}
 }

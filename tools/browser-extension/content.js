@@ -146,9 +146,11 @@ function hibikiNetflixId() {
   const m = location.pathname.match(/\/watch\/(\d+)/);
   return m ? m[1] : null;
 }
-function hibikiVideoTimeMs() {
-  const v = document.querySelector('video');
-  return v && typeof v.currentTime === 'number' ? Math.round(v.currentTime * 1000) : 0;
+function hibikiVideoTimeMs(video) {
+  const v = video || document.querySelector('video');
+  return v && typeof v.currentTime === 'number' && Number.isFinite(v.currentTime)
+    ? Math.round(v.currentTime * 1000)
+    : null;
 }
 function hibikiSubtitleTextNow() {
   // Netflix: .player-timedtext；YouTube: .ytp-caption-segment / .captions-text。
@@ -162,16 +164,36 @@ function hibikiSubtitleTextNow() {
   }
   return '';
 }
-// 当前正在显示的字幕（视频时间）：文本 + 出现时的视频时间。end 在字幕变化时定格。
-let hibikiCurText = '';
-let hibikiCurStartV = 0;
-let hibikiLastSampleV = 0;
-// 最近若干句 {text, startV, endV}（视频时间），供倒退/入队时按文本回取已知完整窗。
-const hibikiCueHist = [];
-function hibikiPushCueV(text, startV, endV) {
+const HIBIKI_LIVE_CUE_MAX_MS = 12000;
+const HIBIKI_LIVE_LANG = 'live';
+let hibikiSamplerGeneration = 0;
+let hibikiSamplerState = null;
+
+function hibikiNewSamplerState(video, key, replayPending) {
+  return {
+    video: video,
+    key: key,
+    generation: ++hibikiSamplerGeneration,
+    lastDomText: '',
+    curText: '',
+    curStartV: 0,
+    lastSampleV: 0,
+    cueHist: [],
+    liveCue: null,
+    liveCueReplay: false,
+    replayPending: !!replayPending,
+    seeking: false,
+    onSeeking: null,
+    onSeeked: null,
+  };
+}
+
+// 最近若干句 {text, startV, endV}（视频时间）只属于当前视频元素代际，避免
+// SPA 换视频或播放器 remount 后按旧视频文本回取时间窗。
+function hibikiPushCueV(state, text, startV, endV) {
   if (!text || endV <= startV) return;
-  hibikiCueHist.push({ text: text, startV: startV, endV: endV });
-  if (hibikiCueHist.length > 80) hibikiCueHist.shift();
+  state.cueHist.push({ text: text, startV: startV, endV: endV });
+  if (state.cueHist.length > 80) state.cueHist.shift();
 }
 function hibikiIsProgressiveCueUpdate(previousText, nextText) {
   if (!previousText || !nextText || nextText.length <= previousText.length) return false;
@@ -180,43 +202,159 @@ function hibikiIsProgressiveCueUpdate(previousText, nextText) {
   return nextText.indexOf(previousText) === 0;
 }
 
+function hibikiFinishSamplerCue(state, endV) {
+  if (!state) return;
+  if (state.curText && typeof endV === 'number' && endV > state.curStartV) {
+    hibikiPushCueV(state, state.curText, state.curStartV, endV);
+  }
+  hibikiLiveCueEnd(state, endV);
+  state.lastDomText = '';
+  state.curText = '';
+  state.curStartV = 0;
+}
+
+function hibikiDetachSamplerVideo(state) {
+  if (!state || !state.video || typeof state.video.removeEventListener !== 'function') return;
+  try { state.video.removeEventListener('seeking', state.onSeeking); } catch (_) {}
+  try { state.video.removeEventListener('seeked', state.onSeeked); } catch (_) {}
+}
+
+function hibikiBindSamplerVideo(state) {
+  if (!state || !state.video || typeof state.video.addEventListener !== 'function') return;
+  state.onSeeking = function () {
+    if (hibikiSamplerState !== state) return;
+    if (!state.seeking) hibikiFinishSamplerCue(state, state.lastSampleV);
+    state.seeking = true;
+    state.replayPending = true;
+  };
+  state.onSeeked = function () {
+    if (hibikiSamplerState !== state) return;
+    // 某些播放器会在 content script 绑定较晚时只被我们观察到 seeked；仍须用
+    // 最后一个真实采样时间定格旧 cue，不能把目标时间当旧句 end。
+    if (!state.seeking) hibikiFinishSamplerCue(state, state.lastSampleV);
+    state.seeking = false;
+    state.replayPending = true;
+  };
+  try { state.video.addEventListener('seeking', state.onSeeking); } catch (_) {}
+  try { state.video.addEventListener('seeked', state.onSeeked); } catch (_) {}
+}
+
+function hibikiHasRecordedLiveTrack(key) {
+  const track = hibikiEpisodeCues[key + '|' + HIBIKI_LIVE_LANG];
+  return !!(track && track.length);
+}
+
+function hibikiSyncSamplerLifecycle() {
+  const video = document.querySelector('video');
+  if (!video) {
+    // player 销毁后只用最后一个真实视频时间定格；绝不把缺失播放器映射成 t=0。
+    if (hibikiSamplerState) {
+      hibikiFinishSamplerCue(hibikiSamplerState, hibikiSamplerState.lastSampleV);
+      hibikiDetachSamplerVideo(hibikiSamplerState);
+      hibikiSamplerState = null;
+    }
+    return null;
+  }
+  const key = hibikiVideoKey();
+  if (!hibikiSamplerState ||
+      hibikiSamplerState.video !== video ||
+      hibikiSamplerState.key !== key) {
+    const previous = hibikiSamplerState;
+    const replayKnownTrack =
+      !!(previous && previous.key === key) ||
+      hibikiHasRecordedLiveTrack(key);
+    if (previous) {
+      hibikiFinishSamplerCue(previous, previous.lastSampleV);
+      hibikiDetachSamplerVideo(previous);
+    }
+    // 同 key remount，或 A→B→A 回到已有 live 轨时，首个真实快照按只读 replay
+    // 对照旧轨；真正未见过的 key 则建立新轨，不能复用旧代引用。
+    hibikiSamplerState = hibikiNewSamplerState(video, key, replayKnownTrack);
+    hibikiBindSamplerVideo(hibikiSamplerState);
+  }
+  return hibikiSamplerState;
+}
+
 function hibikiSampleCue() {
-  const nowV = hibikiVideoTimeMs();
-  const jumped = hibikiLastSampleV && (nowV < hibikiLastSampleV - 400 || nowV > hibikiLastSampleV + 1500);
-  hibikiLastSampleV = nowV;
+  const state = hibikiSyncSamplerLifecycle();
+  if (!state) return;
+  const nowV = hibikiVideoTimeMs(state.video);
+  if (nowV === null) return;
+
+  // seek 只认播放器生命周期信号。采样停顿/后台节流造成的正向时间间隔不是 seek，
+  // 不能把正常逐字后缀扔进只读 replay。
+  if (state.video.seeking === true) {
+    if (!state.seeking) hibikiFinishSamplerCue(state, state.lastSampleV);
+    state.seeking = true;
+    state.replayPending = true;
+    return;
+  }
+  if (state.seeking) {
+    state.seeking = false;
+    state.replayPending = true;
+  }
+  state.lastSampleV = nowV;
   const text = hibikiSubtitleTextNow();
-  if (jumped) {
-    hibikiCurText = text;
-    hibikiCurStartV = text ? nowV : 0;
-    hibikiLiveCueStart(text, nowV); // TODO-1363：seek 后的新句也入 live 轨（空文本时清掉悬挂引用）
+
+  if (state.replayPending) {
+    // seek/remount 后字幕 DOM 可能短暂为空；等第一份真实快照再消费 replay 门。
+    if (!text) return;
+    state.replayPending = false;
+    state.lastDomText = text;
+    state.curText = text;
+    state.curStartV = nowV;
+    hibikiLiveCueStart(state, text, nowV, true);
     return;
   }
-  if (text === hibikiCurText) return;
-  if (hibikiIsProgressiveCueUpdate(hibikiCurText, text) &&
-      hibikiLiveCueUpdate(hibikiCurText, text, nowV)) {
-    hibikiCurText = text;
+  if (text === state.lastDomText) return;
+  if (hibikiIsProgressiveCueUpdate(state.lastDomText, text)) {
+    const addedText = text.slice(state.lastDomText.length);
+    state.lastDomText = text;
+    // 回放已经采过的区间：只跟进页面快照，不改旧 cue，也不把逐字扩长误插成新行。
+    if (state.liveCueReplay) {
+      state.curText += addedText;
+      return;
+    }
+    // YouTube 自动字幕在同一 DOM 节点中逐字扩长；12 秒内追加到当前行。
+    if (state.liveCue && nowV - state.liveCue.startMs < HIBIKI_LIVE_CUE_MAX_MS) {
+      state.curText += addedText;
+      hibikiLiveCueAppend(state, addedText, nowV);
+      return;
+    }
+    // DOM 长时间不换节点时，按新增后缀切成下一行，避免整段视频被吞进一个超长 cue。
+    if (state.curText) {
+      hibikiPushCueV(state, state.curText, state.curStartV, nowV);
+      hibikiLiveCueEnd(state, nowV);
+    }
+    state.curText = addedText.replace(/^\s+/, '');
+    state.curStartV = state.curText ? nowV : 0;
+    if (state.curText) hibikiLiveCueStart(state, state.curText, nowV, false);
     return;
   }
-  if (hibikiCurText) {
-    hibikiPushCueV(hibikiCurText, hibikiCurStartV, nowV); // 上一句定格
-    hibikiLiveCueEnd(hibikiCurText, nowV); // TODO-1363：live 轨同句定格真实 end
+  if (state.curText) {
+    hibikiPushCueV(state, state.curText, state.curStartV, nowV); // 上一句定格
+    hibikiLiveCueEnd(state, nowV); // TODO-1363：live 轨同句定格真实 end
   }
-  hibikiCurText = text;
-  hibikiCurStartV = text ? nowV : 0;
-  if (text) hibikiLiveCueStart(text, nowV); // TODO-1363：新句出现即入 live 轨（暂定 end）
+  state.lastDomText = text;
+  state.curText = text;
+  state.curStartV = text ? nowV : 0;
+  if (text) hibikiLiveCueStart(state, text, nowV, false); // TODO-1363：新句出现即入 live 轨（暂定 end）
 }
 // 当前句的视频时间窗：命中历史（倒退回看过的句）用其完整 [startV,endV]；否则用当前 start +
 // 现在的视频时间作暂定 end（Netflix 回放时会按字幕变化重新定 end；YouTube 用此窗即可）。
 function hibikiCurrentCueWindowV() {
-  if (!hibikiCurText) {
-    const last = hibikiCueHist[hibikiCueHist.length - 1];
+  const state = hibikiSamplerState;
+  if (!state) return null;
+  if (!state.curText) {
+    const last = state.cueHist[state.cueHist.length - 1];
     return last ? { text: last.text, startV: last.startV, endV: last.endV } : null;
   }
-  for (let i = hibikiCueHist.length - 1; i >= 0; i--) {
-    if (hibikiCueHist[i].text === hibikiCurText) return { text: hibikiCueHist[i].text, startV: hibikiCueHist[i].startV, endV: hibikiCueHist[i].endV };
+  for (let i = state.cueHist.length - 1; i >= 0; i--) {
+    if (state.cueHist[i].text === state.curText) return { text: state.cueHist[i].text, startV: state.cueHist[i].startV, endV: state.cueHist[i].endV };
   }
-  const endV = Math.max(hibikiCurStartV + 1200, hibikiVideoTimeMs());
-  return { text: hibikiCurText, startV: hibikiCurStartV, endV: endV };
+  const nowV = hibikiVideoTimeMs(state.video);
+  const endV = Math.max(state.curStartV + 1200, nowV === null ? state.curStartV : nowV);
+  return { text: state.curText, startV: state.curStartV, endV: endV };
 }
 try { setInterval(hibikiSampleCue, 200); } catch (_) {}
 
@@ -295,7 +433,6 @@ try { window.postMessage({ __hibikiStream: 'replayCues' }, '/'); } catch (_) {}
 //   b) DOM 字幕采样升格 live 轨——hibikiSampleCue 已在采字幕（YouTube .ytp-caption-segment /
 //      Netflix .player-timedtext 等既有通道），把采到的句子按视频时间有序去重进 `${videoKey}|live`
 //      轨，边看边长（YouTube 自绘字幕不走 textTracks，靠这条）。
-const HIBIKI_LIVE_LANG = 'live';
 function hibikiVideoKey() {
   const site = hibikiSite();
   if (site === 'netflix') {
@@ -336,35 +473,55 @@ function hibikiSortedCueInsert(cues, cue) {
   return true;
 }
 
-// live 轨：句子出现即入轨（暂定 end，勾选开关立刻有内容可显示），句子结束时定格真实 end。
-let hibikiLiveCue = null; // 当前显示句在 live 轨里的对象引用
-function hibikiLiveCueStart(text, startV) {
-  if (!text) { hibikiLiveCue = null; return; }
-  const key = hibikiVideoKey() + '|' + HIBIKI_LIVE_LANG;
+// live cue/replay 引用只保存在 hibikiSamplerState 当前代际；SPA/video remount 后旧引用不可达。
+function hibikiCueTextRelated(a, b) {
+  return a === b || a.indexOf(b) === 0 || b.indexOf(a) === 0;
+}
+function hibikiLiveCueStart(state, text, startV, allowReplay) {
+  if (!text) {
+    state.liveCue = null;
+    state.liveCueReplay = false;
+    return;
+  }
+  const key = state.key + '|' + HIBIKI_LIVE_LANG;
   const track = hibikiEpisodeCues[key] || (hibikiEpisodeCues[key] = []);
+  if (allowReplay) {
+    // 真实 seek 或同 key 的新 video 代际回到已采区间时，页面先给较短快照、再逐字扩长；
+    // 只读 replay 只由这两个明确生命周期事件开启，普通采样停顿不会误入。
+    for (const existing of track) {
+      if (startV < existing.startMs - 750 || startV > existing.endMs + 750) continue;
+      if (!hibikiCueTextRelated(existing.text, text)) continue;
+      state.liveCue = null;
+      state.liveCueReplay = true;
+      return;
+    }
+  }
   const cue = { startMs: startV, endMs: startV + 1500, text: text };
   if (hibikiSortedCueInsert(track, cue)) {
-    hibikiLiveCue = cue;
+    state.liveCue = cue;
+    state.liveCueReplay = false;
     hibikiNotifyPanel(key);
   } else {
-    hibikiLiveCue = null; // 回放已见过的句：不重复入轨，也不动旧句窗
+    state.liveCue = null; // 已见过的句：不重复入轨，也不动旧句窗
+    state.liveCueReplay = true;
   }
 }
-function hibikiLiveCueUpdate(previousText, nextText, nowV) {
-  if (!hibikiLiveCue || hibikiLiveCue.text !== previousText) return false;
-  hibikiLiveCue.text = nextText;
+function hibikiLiveCueAppend(state, addedText, nowV) {
+  if (!state.liveCue || state.liveCueReplay || !addedText) return false;
+  state.liveCue.text += addedText;
   // 句子仍在屏幕上时保持一个向后的暂定窗；真正换句/清空时由 hibikiLiveCueEnd 定格。
-  hibikiLiveCue.endMs = Math.max(hibikiLiveCue.endMs, nowV + 1500);
-  const key = hibikiVideoKey() + '|' + HIBIKI_LIVE_LANG;
+  state.liveCue.endMs = Math.max(state.liveCue.endMs, nowV + 1500);
+  const key = state.key + '|' + HIBIKI_LIVE_LANG;
   hibikiNotifyPanel(key);
   return true;
 }
 
-function hibikiLiveCueEnd(text, endV) {
-  if (hibikiLiveCue && hibikiLiveCue.text === text && endV > hibikiLiveCue.startMs) {
-    hibikiLiveCue.endMs = endV;
+function hibikiLiveCueEnd(state, endV) {
+  if (state.liveCue && typeof endV === 'number' && endV > state.liveCue.startMs) {
+    state.liveCue.endMs = endV;
   }
-  hibikiLiveCue = null;
+  state.liveCue = null;
+  state.liveCueReplay = false;
 }
 
 // a) textTracks 全量收割：轮询增量（cue 随流加载渐增，条数长了才重建该轨）。kind 只收
@@ -1541,6 +1698,10 @@ window.hibikiResetAutoLookupDedupe = function () {
 // TODO-1185：嵌套查词——点释义里的词（词典交叉引用 a[href]）。popup.js 的 a.onclick →
 // callHandler('onLinkClick', query) → bridge-shim → 这里。用该词**重发一次 lookup**，在同一
 // #entries-container 重渲染（yomitan 式单弹窗内导航），对齐 app 的「点释义里的词继续查」。
+// BUG-1279：走 hibikiRenderNested（只换内容），不再走 hibikiRender 的完整首查词路径——弹窗
+// 的位置、尺寸、原文高亮、入场淡入全部原样保持。子词的匹配长度（result.bestLength）在这里
+// 没有任何用处：它是「原文里命中了几个字」的量，而嵌套查的词根本不在原文里，拿它去截原文
+// 选区正是修复前把原文高亮和弹窗落点一起算错的原因。
 window.__hibikiOnLinkClick = function (query) {
   const term = (query || '').trim();
   if (!term) return;
@@ -1550,12 +1711,13 @@ window.__hibikiOnLinkClick = function (query) {
       try { if (chrome.runtime.lastError) return; } catch (_) { return; }
       if (!resp || !resp.ok) { hibikiShowConnectionFailure(resp); return; }
       if (!resp.data || !resp.data.popupJson) return;
-      const best = resp.data.result && typeof resp.data.result.bestLength === 'number'
-        ? resp.data.result.bestLength : 0;
-      const termLen = best > 0 ? best : term.length;
       window.audioSources = Array.isArray(resp.data.audioSources) ? resp.data.audioSources : [];
       window.needsAudio = true;
-      hibikiRender(resp.data.popupJson, termLen, resp.data.theme);
+      // 同词去重状态跟着**弹窗当前显示的词**走：弹窗里已经是子词了，鼠标再回到原文那个父词
+      // 上就是一次真正的换词，必须能重查。不更新的话 hibikiLastTerm 还停在父词，mousemove
+      // 的同词去重会把它当「还在同一个词上」直接 return，用户从嵌套查词回不到原词。
+      hibikiLastTerm = term;
+      hibikiRenderNested(resp.data.popupJson, resp.data.theme);
     });
   } catch (_) { /* 扩展上下文失效：静默 */ }
 };
@@ -1731,53 +1893,86 @@ function hibikiEnsureResizeGrip() {
   if (hibikiResizeGrip.parentNode !== parent) parent.appendChild(hibikiResizeGrip);
 }
 
+// BUG-1279：把「换弹窗内容」从「建立弹窗几何」里拆出来。首次查词两件事都要做；嵌套查词
+// （弹窗内点释义里的词）只该换内容——原文里被查的词一个字都没变，重算它的高亮与落点纯属
+// 无中生有。三个入口共用这一份内容渲染，行为不再各写一遍。
+function hibikiRenderEntries(popupJson) {
+  try { window.lookupEntries = JSON.parse(popupJson); }
+  catch (_) { window.lookupEntries = []; }
+  window._noResultsMessage = 'No results';
+  window.__hibikiOnTapOutside = hibikiRemoveContainer;
+  if (typeof window.renderPopup === 'function') window.renderPopup();
+}
+
+// 把查词响应下发的主题变量套到弹窗上。applyBox=false 时只套颜色/行为类变量，**不碰 host 的
+// 尺寸盒**（width/maxWidth/maxHeight/zoom）——嵌套查词是原地换内容，弹窗尺寸以及 place() 按
+// 「不遮被查词」夹出来的 maxHeight 必须原样保持；重写尺寸盒会把那次夹取悄悄丢掉。
+function hibikiApplyTheme(c, theme, applyBox) {
+  if (!theme || typeof theme !== 'object') return;
+  for (const k in theme) {
+    if (typeof theme[k] === 'string') c.style.setProperty(k, theme[k]);
+  }
+  // BUG-688：data-theme 也跟 app 主题（--hibiki-color-scheme），覆盖 hibikiEnsureContainer
+  // 里基于宿主页 prefers-color-scheme 的初值。否则 app 浅色 + 宿主页深色时，content.css 的
+  // [data-theme="dark"] 块给黑底/白字，却套上 app 浅色的 --md-* 米白 surface = 主题分裂
+  // （用户报「和 app 内完全不一样」：黑底 + 米卡 + 灰字）。主题单一来源于 app，与 in-app 一致。
+  const cs = theme['--hibiki-color-scheme'];
+  if (cs === 'dark' || cs === 'light') c.setAttribute('data-theme', cs);
+  // 多列词典（masonry）根因修：popup.js 的 dictColumns() 与 updateEffectiveDictColumns()
+  // 都从 document.documentElement 读 --dict-columns（in-app 时 documentElement 就是弹窗自身
+  // 文档，注入在那里）。扩展里弹窗挂在宿主页的 shadow root，上面把 --dict-columns 连同其它
+  // theme 变量 setProperty 到 #entries-container（c）——masonry 读 documentElement 读不到 →
+  // 恒 1 列，且 updateEffectiveDictColumns 把 --dict-columns-effective 算成 1 写回
+  // documentElement 又继承进 grid，连 CSS grid 兜底也塌成单列（用户报「浏览器多列不生效」）。
+  // 这里把列数额外落到宿主页 documentElement（与 in-app dictionary_popup_webview 同源、整数
+  // 字符串），让 masonry 读数、effective 收敛、grid 继承三条路径全部命中。命名空间自定义属性，
+  // 宿主页 CSS 不消费，无副作用。
+  const dictCols = theme['--dict-columns'];
+  if (typeof dictCols === 'string' && dictCols) {
+    try {
+      document.documentElement.style.setProperty('--dict-columns', dictCols);
+    } catch (_) { /* 宿主页禁写 style 时静默：多列退化为单列，不崩查词 */ }
+  }
+  // 「滑动关闭」偏好（app enableSwipeToClose）随 theme 下发（'1'/'0'）；置位后弹窗宿主上已挂的
+  // 水平拖关手势才真正关窗（缺该 key = 旧 app，保持关闭，向后兼容）。
+  hibikiSwipeCloseEnabled = theme['--hibiki-swipe-close'] === '1';
+  // BUG-1026：查词弹窗滚轮速度倍率随 theme 下发（app popupWheelSpeed）→ 设同名全局供
+  // popup.js 的 wheel 监听器读（content/popup 同隔离世界共享 window）。非法/缺失 → 1.0。
+  {
+    const ws = parseFloat(theme['--hibiki-wheel-speed']);
+    window.__hoshiPopupWheelSpeed = (isFinite(ws) && ws > 0) ? ws : 1;
+  }
+  // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
+  if (applyBox && hibikiHost) {
+    hibikiHost.style.width = theme['--hibiki-popup-max-width'] || '400px';
+    hibikiHost.style.maxWidth = 'calc(100vw - 16px)';
+    hibikiHost.style.maxHeight =
+        'min(' + (theme['--hibiki-popup-max-height'] || '360px') + ', 80vh)';
+    hibikiHost.style.zoom = theme['--hibiki-popup-zoom'] || '1';
+  }
+}
+
+// BUG-1279：嵌套查词的渲染入口——**只换内容**。不重算原文高亮、不重新 place、不重走入场
+// 淡入、不重写尺寸盒。语义与 yomitan 的单弹窗内导航一致（本实现的既定设计也是「没有前进
+// 后退，就是嵌套查词」）：用户视线停在弹窗上，弹窗就不该动；原文里被查的词没变，它的高亮
+// 就不该变。修复前这里走的是下面 hibikiRender 的完整路径，代价是弹窗先压成透明、归零到屏
+// 幕左上角、再按**子词长度**截原文选区算出的锚点搬回原文旁边重新淡入——用户看到的就是
+// 「点了释义里的词，旧弹窗被关掉了」。
+function hibikiRenderNested(popupJson, theme) {
+  // 请求在途期间弹窗已被关掉（点完链接又点了页面别处 / 滑动关窗 / 进出全屏重建失败）：直接
+  // 丢弃这次嵌套结果。**不能**走 hibikiEnsureContainer 凭空重建——嵌套渲染不 place，重建出来
+  // 的弹窗会没有落点地钉在屏幕左上角；而且用户已经明确关掉了弹窗，它就不该再弹回来。
+  if (!hibikiHost || !hibikiContainer) return;
+  hibikiApplyTheme(hibikiContainer, theme, false);
+  hibikiRenderEntries(popupJson);
+}
+
 function hibikiRender(popupJson, termLen, theme, anchorRect) {
   const c = hibikiEnsureContainer();
   // BUG-530：查词响应带回当前 app 主题色（--md-*），套到弹窗容器上，弹窗实时跟随用户主题
-  // （改主题下次查词即变）。无 theme 时用 popup.css 里的深色兜底。
-  if (theme && typeof theme === 'object') {
-    for (const k in theme) {
-      if (typeof theme[k] === 'string') c.style.setProperty(k, theme[k]);
-    }
-    // BUG-688：data-theme 也跟 app 主题（--hibiki-color-scheme），覆盖 hibikiEnsureContainer
-    // 里基于宿主页 prefers-color-scheme 的初值。否则 app 浅色 + 宿主页深色时，content.css 的
-    // [data-theme="dark"] 块给黑底/白字，却套上 app 浅色的 --md-* 米白 surface = 主题分裂
-    // （用户报「和 app 内完全不一样」：黑底 + 米卡 + 灰字）。主题单一来源于 app，与 in-app 一致。
-    const cs = theme['--hibiki-color-scheme'];
-    if (cs === 'dark' || cs === 'light') c.setAttribute('data-theme', cs);
-    // 多列词典（masonry）根因修：popup.js 的 dictColumns() 与 updateEffectiveDictColumns()
-    // 都从 document.documentElement 读 --dict-columns（in-app 时 documentElement 就是弹窗自身
-    // 文档，注入在那里）。扩展里弹窗挂在宿主页的 shadow root，上面把 --dict-columns 连同其它
-    // theme 变量 setProperty 到 #entries-container（c）——masonry 读 documentElement 读不到 →
-    // 恒 1 列，且 updateEffectiveDictColumns 把 --dict-columns-effective 算成 1 写回
-    // documentElement 又继承进 grid，连 CSS grid 兜底也塌成单列（用户报「浏览器多列不生效」）。
-    // 这里把列数额外落到宿主页 documentElement（与 in-app dictionary_popup_webview 同源、整数
-    // 字符串），让 masonry 读数、effective 收敛、grid 继承三条路径全部命中。命名空间自定义属性，
-    // 宿主页 CSS 不消费，无副作用。
-    const dictCols = theme['--dict-columns'];
-    if (typeof dictCols === 'string' && dictCols) {
-      try {
-        document.documentElement.style.setProperty('--dict-columns', dictCols);
-      } catch (_) { /* 宿主页禁写 style 时静默：多列退化为单列，不崩查词 */ }
-    }
-    // 「滑动关闭」偏好（app enableSwipeToClose）随 theme 下发（'1'/'0'）；置位后弹窗宿主上已挂的
-    // 水平拖关手势才真正关窗（缺该 key = 旧 app，保持关闭，向后兼容）。
-    hibikiSwipeCloseEnabled = theme['--hibiki-swipe-close'] === '1';
-    // BUG-1026：查词弹窗滚轮速度倍率随 theme 下发（app popupWheelSpeed）→ 设同名全局供
-    // popup.js 的 wheel 监听器读（content/popup 同隔离世界共享 window）。非法/缺失 → 1.0。
-    {
-      const ws = parseFloat(theme['--hibiki-wheel-speed']);
-      window.__hoshiPopupWheelSpeed = (isFinite(ws) && ws > 0) ? ws : 1;
-    }
-    // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
-    if (hibikiHost) {
-      hibikiHost.style.width = theme['--hibiki-popup-max-width'] || '400px';
-      hibikiHost.style.maxWidth = 'calc(100vw - 16px)';
-      hibikiHost.style.maxHeight =
-          'min(' + (theme['--hibiki-popup-max-height'] || '360px') + ', 80vh)';
-      hibikiHost.style.zoom = theme['--hibiki-popup-zoom'] || '1';
-    }
-  }
+  // （改主题下次查词即变）。无 theme 时用 popup.css 里的深色兜底。首次查词要建立弹窗几何，
+  // 故连尺寸盒一并套上（applyBox=true）；嵌套查词走 hibikiRenderNested，不碰尺寸盒。
+  hibikiApplyTheme(c, theme, true);
   // TODO-1272：被查词高亮改为「扩展自绘覆盖层」，取词的视口 rects 也一并作弹窗锚点（不再贴鼠标坐标）。
   // 旧实现走 selection.js highlightSelection 的 DOM 包裹路径（<span class="hoshi-dict-highlight">
   // 直接改宿主页文本节点）：动态站点（React/Vue/视频字幕逐帧重渲染）框架 diff / MutationObserver
@@ -1800,11 +1995,7 @@ function hibikiRender(popupJson, termLen, theme, anchorRect) {
   // 弹窗直接放词处会溢出到浏览器窗口外/被裁（用户报「弹窗进到浏览器外面」）。
   c.style.visibility = 'hidden';
   if (hibikiHost) { hibikiHost.style.left = '0px'; hibikiHost.style.top = '0px'; }
-  try { window.lookupEntries = JSON.parse(popupJson); }
-  catch (_) { window.lookupEntries = []; }
-  window._noResultsMessage = 'No results';
-  window.__hibikiOnTapOutside = hibikiRemoveContainer;
-  if (typeof window.renderPopup === 'function') window.renderPopup();
+  hibikiRenderEntries(popupJson);
   const place = () => {
     // BUG-688：量 host 的 rect（被 max-height 夹住=可见尺寸），不是容器（overflow:visible=全内容
     // 高度，会把弹窗错误地翻到词上方）。host 无则回落容器。

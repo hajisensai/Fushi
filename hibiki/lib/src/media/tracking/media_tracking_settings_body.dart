@@ -106,7 +106,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
     if (mounted) setState(() => _busy = false);
   }
 
-  Future<void> _addMapping() async {
+  Future<void> _addMapping({MediaTrackingUnlinkedItem? initial}) async {
     if (!widget.appModel.mediaTrackingService.isConfigured) {
       _message(t.media_tracking_token_required);
       return;
@@ -116,6 +116,8 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
       builder: (BuildContext context) => _AddMappingDialog(
         database: widget.appModel.database,
         service: widget.appModel.mediaTrackingService,
+        initialMediaType: initial?.mediaType,
+        initialMediaKey: initial?.mediaKey,
       ),
     );
     if (saved != null) {
@@ -230,11 +232,36 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
             AdaptiveSettingsRow(
               title: t.media_tracking_add_mapping,
               trailing: FilledButton.icon(
-                onPressed: _busy ? null : _addMapping,
+                onPressed: _busy ? null : () => _addMapping(),
                 icon: const Icon(Icons.add_link),
                 label: Text(t.media_tracking_add_mapping),
               ),
             ),
+            if (status != null && status.unlinked.isNotEmpty) ...<Widget>[
+              AdaptiveSettingsRow(
+                title: t.media_tracking_manual_required_count(
+                  n: status.unlinked.length,
+                ),
+                subtitle: t.media_tracking_manual_required_hint,
+                titleMaxLines: 3,
+                subtitleMaxLines: 4,
+                icon: Icons.link_off,
+                showIcon: true,
+              ),
+              for (final MediaTrackingUnlinkedItem item in status.unlinked)
+                AdaptiveSettingsRow(
+                  title: item.mediaTitle,
+                  subtitle: '${trackingKindLabel(item.kind.value)} · '
+                      '${t.media_tracking_manual_required}',
+                  titleMaxLines: 3,
+                  subtitleMaxLines: 2,
+                  trailing: TextButton.icon(
+                    onPressed: _busy ? null : () => _addMapping(initial: item),
+                    icon: const Icon(Icons.add_link),
+                    label: Text(t.media_tracking_add_mapping),
+                  ),
+                ),
+            ],
             if (_mappings.isEmpty)
               AdaptiveSettingsRow(
                 title: t.media_tracking_no_mappings,
@@ -292,10 +319,14 @@ class _AddMappingDialog extends StatefulWidget {
   const _AddMappingDialog({
     required this.database,
     required this.service,
+    this.initialMediaType,
+    this.initialMediaKey,
   });
 
   final HibikiDatabase database;
   final MediaTrackingService service;
+  final TrackingMediaType? initialMediaType;
+  final String? initialMediaKey;
 
   @override
   State<_AddMappingDialog> createState() => _AddMappingDialogState();
@@ -372,7 +403,15 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
       _targets = targets;
       _busy = false;
     });
-    if (targets.isNotEmpty) _selectTarget(targets.first);
+    if (targets.isNotEmpty) {
+      final _LocalTrackingTarget initial = targets.firstWhere(
+        (_LocalTrackingTarget target) =>
+            target.type == widget.initialMediaType &&
+            target.key == widget.initialMediaKey,
+        orElse: () => targets.first,
+      );
+      _selectTarget(initial);
+    }
   }
 
   void _selectTarget(_LocalTrackingTarget target) {

@@ -34,8 +34,9 @@ List<String> sortVideoPathsByEpisode(List<String> paths) {
 /// 封面/绑定失败不影响入库结果（best-effort），入库本体失败返回 null（由
 /// [AnimeDownloadService] 把计划标 failed）。
 Future<AnimeDownloadImportOutcome?> Function(
-        AnimeDownloadPlan plan, List<String> videoAbsolutePaths)
-    buildAnimeDownloadImporter(HibikiDatabase db) {
+  AnimeDownloadPlan plan,
+  List<String> videoAbsolutePaths,
+) buildAnimeDownloadImporter(HibikiDatabase db) {
   final VideoBookRepository repo = VideoBookRepository(db);
   return (AnimeDownloadPlan plan, List<String> videoAbsolutePaths) async {
     if (videoAbsolutePaths.isEmpty) return null;
@@ -43,6 +44,10 @@ Future<AnimeDownloadImportOutcome?> Function(
     final ({int collectionId, List<String> episodeUids}) result =
         await repo.importSplitPlaylist(
       collectionName: plan.seriesTitle,
+      // plan JSON 与 Drift 无法做同一事务；若进程在 DB 提交后、计划 flag
+      // 回写前崩溃，重启会重放 importer。以归一化视频路径作稳定业务键并在
+      // importSplitPlaylist 的单事务内复用条目/合集，重放只补状态、不重复副作用。
+      reuseExistingPaths: true,
       entries: <PlaylistEntry>[
         for (final String path in sorted) PlaylistEntry(title: '', path: path),
       ],
@@ -52,7 +57,9 @@ Future<AnimeDownloadImportOutcome?> Function(
     if (plan.anilistId != null) {
       try {
         await db.setMediaCollectionAnilistId(
-            result.collectionId, plan.anilistId);
+          result.collectionId,
+          plan.anilistId,
+        );
       } catch (_) {}
     }
 
@@ -78,7 +85,9 @@ Future<AnimeDownloadImportOutcome?> Function(
           // ⚠️ 唯一落库点：MediaCollections.coverSource 持久化 'video|<uid>'，
           // compositeKey 生成串与历史手写插值逐字节一致。
           await db.updateMediaCollectionCover(
-              result.collectionId, MediaKind.video.compositeKey(firstUid));
+            result.collectionId,
+            MediaKind.video.compositeKey(firstUid),
+          );
         }
       } catch (_) {}
     }

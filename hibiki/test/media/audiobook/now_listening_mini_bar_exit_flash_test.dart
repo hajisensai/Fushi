@@ -293,7 +293,7 @@ void main() {
 
   test(
       'AudiobookSession.stop clears book/controller and notifies before the '
-      'first await (TODO-831 方案3)', () async {
+      'slow teardown (TODO-831 方案3)', () async {
     installPlatform();
     final _MiniBarAppModel appModel = _MiniBarAppModel();
     addTearDown(appModel.dispose);
@@ -331,14 +331,32 @@ void main() {
     session.addListener(listener);
     addTearDown(() => session.removeListener(listener));
 
-    // 触发 stop 但**不 await**：捕捉到第一个 await 边界之前的同步快照。
+    // 触发 stop 但**不 await**。stop() 自 PR#583 起经生命周期串行队列
+    // （`_enqueueLifecycle`，保证旧控制器 stop/dispose 完成后新一代才发布），
+    // 清空 + notify 的同步段从「stop() 的同步前缀」挪到了「队列派发的那一跳」。
+    // 队列空闲时那一跳就是一个 microtask —— 早于任何一帧，迷你条不会闪。
+    // 本测试钉的是**不变量**而非那条已过时的实现细节：清空 + notify 必须发生在
+    // 慢速 teardown（stopPlayback → disposeAndRelease → surfaces，依赖真实平台
+    // 定时器/流事件才 settle）之前，而不是拖到 stop 全部跑完。
+    bool stopSettled = false;
     final Future<void> stopping = session.stop();
+    unawaited(stopping.then((_) => stopSettled = true));
 
-    // 同步段已跑完：book/controller 置空且通知过一次。
+    // 只排干 microtask（不推进真实时间），慢速 teardown 无法在此期间 settle。
+    int hops = 0;
+    while (notifyBefore == 0 && hops < 8) {
+      hops++;
+      await Future<void>.value();
+    }
+
     expect(notifyBefore, greaterThanOrEqualTo(1),
-        reason: 'stop 同步清空后必须立即 notifyListeners（方案3）');
-    expect(bookAtNotify, isNull, reason: '首个 await 前监听者就该见到空 book');
-    expect(controllerAtNotify, isNull, reason: '首个 await 前监听者就该见到空 controller');
+        reason: 'stop 清空会话后必须立即 notifyListeners（方案3），不得拖到 teardown 之后');
+    expect(stopSettled, isFalse,
+        reason: '这次 notify 必须早于慢速 teardown 完成，否则迷你条会在退出期间残留');
+    expect(bookAtNotify, isNull, reason: '首个通知里监听者就该见到空 book');
+    expect(controllerAtNotify, isNull, reason: '首个通知里监听者就该见到空 controller');
+    expect(session.book, isNull, reason: '慢速 teardown 前会话字段已清空');
+    expect(session.controller, isNull, reason: '慢速 teardown 前会话字段已清空');
 
     await stopping;
     expect(session.isActive, isFalse);

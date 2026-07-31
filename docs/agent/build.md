@@ -101,13 +101,21 @@ galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendore
   放进 Debug bundle 的 `galgame_helper/` 验证布局；`release-desktop.yml` 放进 Release bundle 的同名
   目录，Inno Setup 的 `recursesubdirs` 将其纳入安装器。`check_release_policy.ps1` 守卫这条链，禁止
   后续“构建仍绿但安装器漏带 helper”。
-- **稳定下载 URL**（按 tag 而非 run 号；app 端 slug 为 `kGalgameHelperRepo = 'hajisensai/hibiki'`）：
+- **历史下载 URL**（只服务已经发布的旧客户端；新客户端不再使用）：
   `https://github.com/hajisensai/hibiki/releases/download/voice-hook-helper/voice_hook_<arch>.zip`（+ `.sha256`）。
 - **老客户端不断供**：已发布版本的 app 把 `hajisensai/hibiki-hook` 编进了常量，会继续从那个仓库取
   helper。**`hajisensai/hibiki-hook` 仓库与其 `voice-hook-helper` release 必须保留、不得删除**
   （Never break userspace）；它只作为老客户端的下载宿主冻结，新开发一律在本仓 `native/galgame_hook/`。
-- **app 端安装/更新**：开 galgame 需要注入器却缺失时，`GalgameHelperInstaller`（`hibiki/lib/src/mining/
+- **app 端安装**：开 galgame 需要注入器却缺失时，`GalgameHelperInstaller`（`hibiki/lib/src/mining/
   galgame_helper_installer.dart`）先读取 exe 同级 `galgame_helper/voice_hook_<arch>.zip` 与侧车，校验
   SHA-256 后解压/换入 `voice_hook/<arch>/`，全程零网络、零下载确认；正式 Windows 主包必须命中此路。
-  开发构建/旧包没有随包归档时，才回退原有确认框 → 系统代理/gh 镜像下载 → 可信 GitHub 侧车校验。
-  已安装版本的后台更新仍走固定 release；离线取不到更新时保留当前完整版本，不阻塞游戏启动。
+  开发构建/旧包没有随包归档时提示更新/重新构建 Hibiki，**不回退网络**；已安装版本也没有后台自更新。
+- **Magpie 同样随包唯一来源**（BUG-1292）：两个 Windows workflow 用
+  `tools/build_magpie_slim.ps1` 生成 `Magpie-hibiki-slim-x64.zip` + `.sha256`，放进
+  `magpie_bundle/`。`MagpieInstaller` 校验后换入 `magpie/`；ARM64 Windows 走系统 x64 模拟。
+  缺包、损坏和旧构建会直接报告“安装包不完整/内置组件校验失败”，没有下载确认、镜像兜底
+  或后台自更新；正式 Windows 包出现该错误即属于打包或安装损坏。
+  与 helper 同款，`hibiki/windows/CMakeLists.txt` 有一条 `install(FILES ... OPTIONAL)`
+  从仓库根 `dist/` 把归档拷进 bundle，**开发构建也能拿到**（先跑一次
+  `pwsh -File tools/build_magpie_slim.ps1`）；`tool/check_release_policy.ps1` 守住两个
+  Windows workflow 的组包步骤、`magpie_bundle/` 载荷目录和 sha256 侧车。

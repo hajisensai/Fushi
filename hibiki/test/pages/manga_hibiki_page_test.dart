@@ -563,7 +563,8 @@ void main() {
         reason: '导航键必须独占给 Dart');
     expect(script, contains('if (e.repeat) return;'),
         reason: '按住方向键不得堆翻页风暴（本页既有语义）');
-    expect(script, contains("callHandler('onMangaNavigationKey', e.key)"));
+    expect(script, contains("callHandler('onMangaNavigationKey', _hit)"),
+        reason: '回传的是命中的 token（裸键时与 e.key 同值），不再是原始 e.key');
   });
 
   test('高频翻页在异步窗口加载期间累积并按净位移排空', () async {

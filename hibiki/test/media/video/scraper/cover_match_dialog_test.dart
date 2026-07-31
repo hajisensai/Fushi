@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -92,6 +93,21 @@ class _StubScraperService extends CoverScraperService {
   }
 }
 
+class _DelayedPreferencesRepository extends PreferencesRepository {
+  _DelayedPreferencesRepository(super.database);
+
+  Completer<void>? tmdbKeyWriteGate;
+
+  @override
+  Future<void> setPref(String key, dynamic value) async {
+    final Completer<void>? gate = tmdbKeyWriteGate;
+    if (key == kVideoScraperTmdbApiKeyPref && gate != null) {
+      await gate.future;
+    }
+    await super.setPref(key, value);
+  }
+}
+
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -119,6 +135,7 @@ void main() {
   late VideoBookRepository repo;
   late Directory tmp;
   late AppModel appModel;
+  late _DelayedPreferencesRepository prefs;
   late PlatformServices platformServices;
 
   setUp(() async {
@@ -127,7 +144,7 @@ void main() {
     db = HibikiDatabase.forTesting(NativeDatabase.memory());
     repo = VideoBookRepository(db);
     tmp = await Directory.systemTemp.createTemp('hibiki_poster_match_');
-    final PreferencesRepository prefs = PreferencesRepository(db);
+    prefs = _DelayedPreferencesRepository(db);
     await prefs.loadFromDb();
     platformServices = testPlatformServices();
     appModel = AppModel(platformServices)
@@ -243,6 +260,7 @@ void main() {
     expect(find.text('My Anime'), findsWidgets);
     // 置信度徽标（高匹配）。
     expect(find.text(t.video_scrape_confidence_high), findsOneWidget);
+    expect(find.textContaining('Bangumi #42'), findsOneWidget);
 
     // 点「使用」→ 回调应用（桩为纯内存记账，pumpAndSettle 即可驱动）。
     await tester.tap(find.text(t.video_scrape_use).first);
@@ -252,6 +270,110 @@ void main() {
     expect(service.appliedUids, <String>['video/my_anime']);
     // 弹窗应用后关闭。
     expect(find.text(t.video_scrape_use), findsNothing);
+  });
+
+  testWidgets('BUG-1234 切换来源清空旧结果且不自动搜索；TMDB 无 key 不显示 Bangumi 数据',
+      (WidgetTester tester) async {
+    final VideoBookRow book = await seed();
+    final _StubScraperService service = buildService();
+
+    await tester.pumpWidget(wrap(CoverMatchDialog(
+      service: service,
+      book: book,
+      collectionMemberUids: const <String>['video/my_anime'],
+      onApplied: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    expect(service.searchCalls, 1);
+    expect(
+      find.byKey(
+        const ValueKey<String>('cover_match_candidate_bangumi_42'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text(t.video_scrape_manual_match_hint), findsOneWidget);
+
+    await tester.tap(find.text('TMDB'));
+    await tester.pump();
+
+    // 切换本身不发请求，旧 Bangumi 候选也不能冒充 TMDB 结果。
+    expect(service.searchCalls, 1);
+    expect(
+      find.byKey(
+        const ValueKey<String>('cover_match_candidate_bangumi_42'),
+      ),
+      findsNothing,
+    );
+    expect(find.text(t.video_scrape_tmdb_key_empty), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is TextField &&
+            widget.decoration?.hintText == t.video_scrape_tmdb_key_hint,
+      ),
+      findsOneWidget,
+    );
+
+    // 切回 Bangumi 仍等用户明确点搜索，不暗中再次请求。
+    await tester.tap(find.text('Bangumi'));
+    await tester.pump();
+    expect(service.searchCalls, 1);
+    expect(find.text(t.video_scrape_tmdb_key_empty), findsNothing);
+    await tester.tap(find.text(t.video_scrape_search));
+    await tester.pumpAndSettle();
+    expect(service.searchCalls, 2);
+    expect(
+      find.byKey(
+        const ValueKey<String>('cover_match_candidate_bangumi_42'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('BUG-1234 保存 TMDB key 未完成时切来源，旧 continuation 不得搜索新来源',
+      (WidgetTester tester) async {
+    final VideoBookRow book = await seed();
+    final _StubScraperService service = buildService();
+
+    await tester.pumpWidget(wrap(CoverMatchDialog(
+      service: service,
+      book: book,
+      collectionMemberUids: const <String>['video/my_anime'],
+      onApplied: () {},
+    )));
+    await tester.pumpAndSettle();
+    expect(service.searchCalls, 1);
+
+    await tester.tap(find.text('TMDB'));
+    await tester.pump();
+    final Finder keyField = find.byWidgetPredicate(
+      (Widget widget) =>
+          widget is TextField &&
+          widget.decoration?.hintText == t.video_scrape_tmdb_key_hint,
+    );
+    await tester.enterText(keyField, 'delayed-tmdb-key');
+
+    final Completer<void> writeGate = Completer<void>();
+    prefs.tmdbKeyWriteGate = writeGate;
+    await tester.tap(find.text(t.video_scrape_tmdb_key_save));
+    await tester.pump();
+
+    // 持久化尚未完成时切回 Bangumi：来源切换必须立即生效且不自动搜索。
+    await tester.tap(find.text('Bangumi'));
+    await tester.pump();
+    expect(service.searchCalls, 1);
+
+    // 放行旧 Save continuation。旧实现会在这里对当前 Bangumi 再调一次 _search()。
+    writeGate.complete();
+    await tester.pumpAndSettle();
+    expect(service.searchCalls, 1);
+    expect(
+      find.byKey(
+        const ValueKey<String>('cover_match_candidate_bangumi_42'),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('TODO-2284 应用失败直出完整脱敏详情，候选保留可重试', (WidgetTester tester) async {
@@ -570,6 +692,7 @@ void main() {
       find.byKey(const ValueKey<String>('cover_match_apply_collection')),
     );
     expect(toggle.value, isFalse, reason: '他点的就是这一集，别替他改整个合集');
+    expect(find.text(t.video_scrape_apply_to_collection_hint), findsOneWidget);
 
     await tester.tap(find.text(t.video_scrape_use).first);
     await tester.pumpAndSettle();

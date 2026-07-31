@@ -3,8 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
+import 'package:hibiki/src/pages/implementations/game_shared.dart';
 import 'package:hibiki/src/pages/implementations/home_game_page.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
+import 'package:hibiki/utils.dart';
+
+import '../../integration_test/helpers/focus_driver.dart';
 
 Widget _testLibrary(
   BuildContext _,
@@ -17,6 +21,24 @@ Widget _testLibrary(
 /// 断言仍要在「库」子区上验证。用桩 dashboard 绕开首页对 appProvider 的依赖，并在
 /// setUp 里把 IndexedStack 起始子区切到库（与旧默认行为等价）。
 Widget _stubDashboard(BuildContext _, VoidCallback __) => const SizedBox();
+
+Widget _testMonitorWithSections(
+  BuildContext _,
+  VoidCallback onShowLibrary,
+) {
+  return HibikiPageHeader.customTitle(
+    title: GameSectionTabs(
+      selected: GameSection.monitor,
+      focusIdPrefix: 'game-capture-tab',
+      onSelectDashboard: () =>
+          gameSectionNotifier.value = GameSection.dashboard,
+      onSelectLibrary: onShowLibrary,
+      onSelectMonitor: () {},
+      onSelectDiagnostics: () =>
+          gameSectionNotifier.value = GameSection.diagnostics,
+    ),
+  );
+}
 
 void main() {
   setUp(() {
@@ -83,14 +105,15 @@ void main() {
     expect(disposeCount, 0);
   });
 
-  testWidgets('library opens real diagnostics section via section tab',
+  testWidgets('800x600 diagnostics section is reachable through managed focus',
       (WidgetTester tester) async {
-    // 诊断总览大卡已删除，诊断页现只经顶部页签进入（焦点驱动激活，与 itest 一致）。
+    await tester.binding.setSurfaceSize(const Size(800, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
         home: HibikiFocusRoot(
           child: HomeGamePage(
-            monitorBuilder: (_, __) => const SizedBox(),
+            monitorBuilder: _testMonitorWithSections,
             libraryBuilder: _testLibrary,
             dashboardBuilder: _stubDashboard,
           ),
@@ -102,15 +125,48 @@ void main() {
     final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
       tester.element(find.byType(HomeGamePage)),
     );
+    final Finder gameSections =
+        find.byType(HibikiAdjustableSegmented<GameSection>);
+    expect(gameSections, findsOneWidget);
+    expect(
+      find.descendant(
+        of: gameSections,
+        matching: find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is SingleChildScrollView &&
+              widget.scrollDirection == Axis.horizontal,
+        ),
+      ),
+      findsOneWidget,
+      reason: '800px 页头下完整四分段必须保留真实横滚容器',
+    );
     expect(
       controller.requestById(
-        const HibikiFocusId('game-library-tab-diagnostics'),
+        const HibikiFocusId('game-library-tab-sections'),
       ),
       isTrue,
     );
     await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    expect(
+      controller.primaryFocusIsManagedTarget,
+      isTrue,
+      reason: '不能仅改 activeId；真实 Flutter 焦点必须落在分段目标',
+    );
+
+    final FocusDriver driver = FocusDriver(tester);
+    await driver.adjust(steps: 1);
+    expect(find.byKey(HomeGamePage.monitorKey), findsOneWidget);
+
+    expect(
+      controller.requestById(
+        const HibikiFocusId('game-capture-tab-sections'),
+      ),
+      isTrue,
+      reason: '切到捕获页后，新的稳定分段 ID 必须可聚焦',
+    );
     await tester.pump();
+    expect(controller.primaryFocusIsManagedTarget, isTrue);
+    await driver.adjust(steps: 1);
 
     expect(find.byKey(HomeGamePage.diagnosticsKey), findsOneWidget);
     expect(find.byIcon(Icons.account_tree_outlined), findsOneWidget);
@@ -137,12 +193,12 @@ void main() {
     );
     expect(
       controller.requestById(
-        const HibikiFocusId('game-library-tab-capture'),
+        const HibikiFocusId('game-library-tab-sections'),
       ),
       isTrue,
     );
     await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
     expect(find.text('focused-monitor'), findsOneWidget);

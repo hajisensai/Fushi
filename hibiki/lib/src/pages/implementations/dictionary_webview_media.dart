@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/src/dictionary/dictionary_media_types.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
@@ -24,23 +25,38 @@ const List<String> dictionaryMediaCustomSchemes = <String>[
 /// 读不到、外字退化成 alt 文本（明鏡义项序号显示成烂 alt「3分の2」）。本函数补上写缓存
 /// 这一环：用 [HoshiDicts.getMediaFile] 取字节、按与 repo 共用的命名写盘。
 ///
-/// 幂等：已存在的缓存文件跳过。HoshiDicts 未初始化 / 字节取不到 / 写盘失败均静默跳过
+/// 幂等：已存在的缓存文件跳过。HoshiDicts 未初始化 / 字节取不到 / 写盘失败均跳过
 /// （该条媒体退回 alt 文本，不阻断制卡）。
+///
+/// BUG-1265：跳过**必须留痕**。这三条跳过路径以前只有一句不含原因的 debugPrint
+/// （甚至直接 `return`），于是「缓存里没有这个文件」在日志里毫无前因；下游 repo 报
+/// 「Dictionary media file is missing」时无从判断是词典取不到字节、还是根本没走到
+/// 写入方。现在每条跳过都带原因进 [ErrorLogService]（用户上传的报错日志里能看到），
+/// 一条媒体一行，只在真出问题时才产生。
 Future<void> writeDictionaryMediaCache(String dictionaryMediaJson) async {
   if (dictionaryMediaJson.isEmpty || dictionaryMediaJson == '[]') return;
-  if (!HoshiDicts.isInitialized) return;
   final List<dynamic> entries;
   try {
     entries = jsonDecode(dictionaryMediaJson) as List<dynamic>;
-  } catch (_) {
+  } catch (e, stack) {
+    _logDictionaryMediaSkip('payload JSON 解析失败: $e', stack);
     return;
   }
   if (entries.isEmpty) return;
 
+  // 未初始化的判断放在「确实有媒体要写」之后：无媒体时不该产生噪音日志。
+  if (!HoshiDicts.isInitialized) {
+    _logDictionaryMediaSkip(
+      'HoshiDicts 未初始化，${entries.length} 条词典媒体未落盘（卡片将缺外字）',
+    );
+    return;
+  }
+
   final Directory dir = Directory(ankiDictionaryMediaCacheDirPath());
   try {
     if (!dir.existsSync()) dir.createSync(recursive: true);
-  } catch (_) {
+  } catch (e, stack) {
+    _logDictionaryMediaSkip('缓存目录 ${dir.path} 创建失败: $e', stack);
     return;
   }
 
@@ -48,19 +64,33 @@ Future<void> writeDictionaryMediaCache(String dictionaryMediaJson) async {
     if (raw is! Map) continue;
     final String dict = raw['dictionary']?.toString() ?? '';
     final String path = raw['path']?.toString() ?? '';
-    if (dict.isEmpty || path.isEmpty) continue;
+    if (dict.isEmpty || path.isEmpty) {
+      _logDictionaryMediaSkip('媒体条目缺 dictionary/path，无法定位字节: $raw');
+      continue;
+    }
     final File file =
         File('${dir.path}/${ankiDictionaryMediaCacheFilename(dict, path)}');
     if (file.existsSync()) continue; // 幂等：已缓存。
     try {
       final Uint8List? bytes = HoshiDicts.instance.getMediaFile(dict, path);
-      if (bytes != null && bytes.isNotEmpty) {
-        await file.writeAsBytes(bytes, flush: true);
+      if (bytes == null || bytes.isEmpty) {
+        // 最常见的一条：词典里取不到这个资源（分卷 MDD 未挂载、资源名对不上、
+        // 词典已删除重导）。以前这里连 debugPrint 都没有。
+        _logDictionaryMediaSkip('词典「$dict」取不到媒体字节: $path');
+        continue;
       }
-    } catch (e) {
-      debugPrint('[DictionaryMedia] cache write failed for $dict/$path: $e');
+      await file.writeAsBytes(bytes, flush: true);
+    } catch (e, stack) {
+      _logDictionaryMediaSkip('写盘失败 $dict/$path: $e', stack);
     }
   }
+}
+
+/// 词典媒体落盘跳过的统一留痕口：debugPrint（开发期）+ [ErrorLogService]（随用户
+/// 上传的报错日志一起回来）。跳过只降级这一条媒体，不抛、不阻断制卡。
+void _logDictionaryMediaSkip(String reason, [StackTrace? stack]) {
+  debugPrint('[DictionaryMedia] $reason');
+  ErrorLogService.instance.log('DictionaryMedia.cache', reason, stack);
 }
 
 WebResourceResponse? dictionaryMediaWebResourceResponse(Uri url) {

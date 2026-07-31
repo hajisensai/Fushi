@@ -8,6 +8,7 @@ import 'package:hibiki/utils.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:hibiki/src/anki/lapis_backup_retention.dart';
+import 'package:hibiki/src/anki/lapis_style_editor_page.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/anki/lapis_template_service.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart'
@@ -123,11 +124,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 onChanged: (int v) => vm.setLapisFontScalePercent(v),
               ),
               AdaptiveSettingsRow(
-                icon: Icons.code_outlined,
+                icon: Icons.palette_outlined,
                 showIcon: true,
-                title: t.anki_lapis_custom_css,
-                subtitle: t.anki_lapis_custom_css_hint,
-                onTap: () => _editLapisCustomCss(settings, vm),
+                title: t.anki_lapis_visual_editor,
+                subtitle: t.anki_lapis_visual_editor_hint,
+                onTap: () => _openLapisStyleEditor(settings, vm),
               ),
               AdaptiveSettingsRow(
                 icon: Icons.brush_outlined,
@@ -532,51 +533,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   // ── Lapis 样式客制化 ─────────────────────────────────────────────────
 
-  Future<void> _editLapisCustomCss(
-      AnkiSettings settings, AnkiViewModel vm) async {
-    final TextEditingController controller =
-        TextEditingController(text: settings.lapisCustomCss);
-    try {
-      await _showLapisCustomCssDialog(controller, vm);
-    } finally {
-      // 保存路径抛错（写偏好失败）时也必须释放 controller，否则 Flutter 的
-      // leak tracking 会把它记成泄漏，且每次打开都多留一个 listener。
-      controller.dispose();
-    }
-  }
-
-  Future<void> _showLapisCustomCssDialog(
-      TextEditingController controller, AnkiViewModel vm) async {
-    final String? result = await showDialog<String>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: Text(t.anki_lapis_custom_css),
-        content: SizedBox(
-          width: 560,
-          child: TextField(
-            controller: controller,
-            autofocus: true,
-            minLines: 8,
-            maxLines: 16,
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(fontFamily: 'monospace'),
-            decoration: const InputDecoration(
-              hintText: '.front-vocab { color: #8ab4f8; }',
-            ),
-          ),
+  Future<void> _openLapisStyleEditor(
+    AnkiSettings settings,
+    AnkiViewModel vm,
+  ) async {
+    final String? result = await Navigator.of(context).push<String>(
+      adaptivePageRoute<String>(
+        context: context,
+        builder: (BuildContext context) => LapisStyleEditorPage(
+          initialCustomCss: settings.lapisCustomCss,
+          fontScalePercent: settings.lapisFontScalePercent,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(t.dialog_cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: Text(t.dialog_save),
-          ),
-        ],
       ),
     );
     if (result != null) await vm.setLapisCustomCss(result);
@@ -748,7 +715,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     await showAnkiMediaDedupReportDialog(context, result);
   }
 
-  /// 跑一遍去重（干跑或真跑）。后端不支持 / 出错时给出提示并返回 null。
+  /// 跑一遍去重（干跑或真跑），带模态进度对话框与取消（BUG-1263）。
+  /// 后端不支持 / 出错 / 干跑被取消时给出提示并返回 null；真跑被取消时正常
+  /// 返回报告（结果弹窗里说明只统计已完成部分）。
   Future<AnkiMediaDedupReport?> _runDedupPass(
     AnkiViewModel vm, {
     required bool dryRun,
@@ -757,7 +726,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     setState(() => _dedupBusy = true);
     AnkiMediaDedupReport? report;
     try {
-      report = await vm.mediaDedupRunner.runNow(dryRun: dryRun);
+      report = await runAnkiMediaDedupWithProgress(
+        context,
+        vm.mediaDedupRunner,
+        dryRun: dryRun,
+      );
     } catch (e) {
       messenger.showSnackBar(
           SnackBar(content: Text(t.anki_dedup_failed(error: '$e'))));
@@ -767,6 +740,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     }
     if (report == null) {
       messenger.showSnackBar(SnackBar(content: Text(t.anki_dedup_unavailable)));
+      return null;
+    }
+    if (report.cancelled && dryRun) {
+      // 干跑被取消：清单不完整，摊出来只会误导用户。
+      messenger.showSnackBar(SnackBar(content: Text(t.anki_dedup_cancelled)));
       return null;
     }
     return report;
@@ -1069,6 +1047,8 @@ String _ankiHandlebarBaseLabel(String option) {
       return t.handlebar_pitch_accent_positions;
     case '{pitch-accent-categories}':
       return t.handlebar_pitch_accent_categories;
+    case '{phonetic-transcriptions}':
+      return t.handlebar_phonetic_transcriptions;
     case '{document-title}':
       return t.handlebar_document_title;
     case '{card-image}':

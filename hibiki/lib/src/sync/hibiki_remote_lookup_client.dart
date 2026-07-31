@@ -10,8 +10,10 @@ import 'package:http/http.dart' as http;
 /// 「配对设备不可达」。与「设备可达但没有这个词的结果」（返回 null，含
 /// 404/405/非 2xx/正常空结果）在传输层严格区分，供上层（WordAudioResolver）
 /// 对 hibiki-remote 音频源做失败冷却（对齐 remoteAudio 源的 TODO-1057/BUG-488
-/// 机制）。目前只有音频路径 [HibikiRemoteLookupClient.lookupAudioUrl] 抛出；
-/// 词典路径 [HibikiRemoteLookupClient.searchDictionary] 行为零变化。
+/// 机制）。音频路径 [HibikiRemoteLookupClient.lookupAudioUrl] 与词典路径
+/// [HibikiRemoteLookupClient.searchDictionary] 现在**对称**抛出：词典路径此前是
+/// 全仓唯一不消费 `allUnreachable` 的调用点，导致配对设备离线时每次查词都要把
+/// 「3s × 候选数」重付一遍（BUG-1302）。
 class RemoteLookupUnreachableError implements Exception {
   RemoteLookupUnreachableError(this.message);
 
@@ -20,6 +22,14 @@ class RemoteLookupUnreachableError implements Exception {
   @override
   String toString() => 'RemoteLookupUnreachableError: $message';
 }
+
+/// 远端**词典**查询在「全部配对候选传输层不可达」后的失败冷却窗（BUG-1302）。
+///
+/// 与音频源的 `kRemoteAudioFailureCooldown`（45s，`word_audio_resolver.dart`）同
+/// 量级同语义：设备被证实死了之后，冷却窗内不再重复付「3s × 候选数」的连接超时。
+/// 设备活着时行为完全不变——冷却只由 [RemoteLookupUnreachableError] 触发，
+/// 「可达但无结果」不进冷却。
+const Duration kRemoteDictionaryFailureCooldown = Duration(seconds: 45);
 
 class HibikiRemoteLookupClient {
   HibikiRemoteLookupClient({
@@ -39,6 +49,16 @@ class HibikiRemoteLookupClient {
   final InterconnectPostTransport _transport;
   final Duration _timeout;
 
+  /// 查远端词典。三种结局（与 [lookupAudioUrl] 对称）：
+  /// - 返回结果：某候选可达且有词条；
+  /// - 返回 null：可达但无结果（含 404/405/非 2xx/空结果），或根本未配对；
+  /// - 抛 [RemoteLookupUnreachableError]：所有已启用候选全部传输层失败
+  ///   （连接拒绝/超时/DNS）——「配对设备死了」，供上层计入失败冷却。
+  ///
+  /// 为什么词典路径也必须抛（BUG-1302）：远端查词排在本地缓存**之前**
+  /// （`AppModel.searchDictionary` 的 remote-first 语义），配对设备离线/换网/
+  /// 休眠时每次查词都要把「3s × 候选数」全额付一遍，且因为短路在缓存之前，
+  /// 重复查同一个词也不例外——这正是用户报的「某些机器上查词要 4-5 秒」。
   Future<DictionarySearchResult?> searchDictionary({
     required String term,
     required bool wildcards,
@@ -52,7 +72,12 @@ class HibikiRemoteLookupClient {
         'maximumTerms': maximumTerms,
       },
     );
-    // 词典路径不消费 allUnreachable：失败面维持原样（返回 null），零行为变化。
+    if (outcome.allUnreachable) {
+      throw RemoteLookupUnreachableError(
+        'all enabled paired candidates failed at the transport layer '
+        '(connection refused / timeout / DNS) for /api/lookup/dictionary',
+      );
+    }
     final Map<String, dynamic>? json = outcome.json;
     if (json == null || json['type'] != 'dictionaryResult') return null;
     final dynamic resultJson = json['result'];

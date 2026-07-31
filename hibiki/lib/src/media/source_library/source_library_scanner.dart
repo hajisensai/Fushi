@@ -415,7 +415,7 @@ class SourceLibraryScanner {
   /// BUG-443: silent same-title dedup, mirroring [_importVideos]. Manual single-
   /// file import asks the user (or auto-suffixes to `X (2)`), but a batch folder
   /// scan must NOT re-import already-imported books as `X (2)`. We pass
-  /// `skipIfExists: true` so [EpubImporter.importFromPath] reuses the existing
+  /// `DuplicatePolicy.skip()` so [EpubImporter.importFromPath] reuses the existing
   /// `sanitizeTtuFilename` identity key: on a collision it throws
   /// [DuplicateImportCancelledException], which we catch per book and skip
   /// (not counted, not an error). The within-isolate parse + DB read picks up
@@ -436,7 +436,7 @@ class SourceLibraryScanner {
           epubTmp ??= Directory.systemTemp.createTempSync('m1c_scan_books_');
           localEpub = await fs.copyToLocal(item.epubPath, epubTmp.path);
         }
-        // skipIfExists:true reuses the sanitizeTtuFilename identity key so a
+        // DuplicatePolicy.skip() reuses the sanitizeTtuFilename identity key so a
         // re-scan / same-batch duplicate throws DuplicateImportCancelledException
         // (caught below) instead of a silent "X (2)" (BUG-443). The returned
         // bookKey is the audiobook anchor when a sidecar audio attaches.
@@ -445,7 +445,7 @@ class SourceLibraryScanner {
           filePath: localEpub,
           fileName: p.basename(item.epubPath),
           sourceId: sourceId,
-          skipIfExists: true,
+          policy: const DuplicatePolicy.skip(),
         );
         count++;
         // TODO-946：同目录有同名字幕 + 音频 -> 复用对话框抽出的非 UI 落库 service
@@ -535,7 +535,9 @@ class SourceLibraryScanner {
           db: _db,
           mokuroPath: item.mokuroPath,
           sourceId: sourceId,
-          skipIfExists: true,
+          // 后台扫描无人值守：命中重复即抛 DuplicateImportCancelledException
+          // 由下面 catch 静默跳过（与 book 分支 :448 同一态，BUG-443 语义不变）。
+          policy: const DuplicatePolicy.skip(),
         );
         count++;
       } on DuplicateImportCancelledException catch (e) {
@@ -567,7 +569,7 @@ class SourceLibraryScanner {
         existingRows.map((VideoBookRow r) => r.bookUid).toSet();
     // TODO-1237 ②: existing physical paths (normalized) for re-scan dedup — a
     // folder re-scan must SKIP files already imported instead of suffixing
-    // `X (2)` duplicates (mirrors _importBooks' skipIfExists, BUG-443). Grown as
+    // `X (2)` duplicates (mirrors _importBooks' skip policy, BUG-443). Grown as
     // we insert so a same-batch duplicate path is skipped too.
     final Set<String> existingPaths = existingRows
         .map((VideoBookRow r) => normalizeVideoPath(r.videoPath))
@@ -671,7 +673,7 @@ class SourceLibraryScanner {
   ///
   /// Re-scan dedup: there is no single playlist row to key on any more, so the
   /// manifest is deduped on whether its FIRST episode's path is already imported
-  /// ([VideoBookRepository.isVideoPathReferenced], same key the dialog folder
+  /// ([VideoBookRepository.isDuplicateVideoPath], same key the dialog folder
   /// import uses) — a re-scan of an already-imported folder skips it. Unlike the
   /// old first-episode key this now runs after parse (parsing a small manifest
   /// on re-scan is cheap); correctness of idempotency wins over the micro-cost.

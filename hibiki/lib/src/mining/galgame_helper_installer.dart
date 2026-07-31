@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
@@ -68,10 +67,9 @@ List<String> galgameHelperMissingFiles(
   String arch,
   Iterable<String> presentFiles,
 ) {
-  final Set<String> present =
-      presentFiles
-          .map((String name) => name.replaceAll('\\', '/').toLowerCase())
-          .toSet();
+  final Set<String> present = presentFiles
+      .map((String name) => name.replaceAll('\\', '/').toLowerCase())
+      .toSet();
   return galgameHelperRequiredFiles(arch)
       .where((String name) =>
           !present.contains(name.replaceAll('\\', '/').toLowerCase()))
@@ -144,8 +142,8 @@ String galgameHelperRequireVerifiedSha(String? sha, String arch) {
 }
 
 /// 已装 helper 的版本标记文件名：装成功后在 `voice_hook/<arch>/` 写入该 zip 的 sha256。
-/// 自更新已删（BUG-1196），它现在纯粹是「这份 helper 是哪个包装的」的可诊断痕迹；随包
-/// 摘要变化时 `ensureInjector` 走的是清单缺失判据，不读它。放在 arch 目录内随 helper 一起清理。
+/// 自更新已删（BUG-1196），它现在绑定「这份 helper 是当前主包随附的哪一版」：
+/// `ensureInjector` 会用它与已校验的随包摘要对账。放在 arch 目录内随 helper 一起清理。
 String galgameHelperMarkerName() => 'installed.sha256';
 
 /// 换入时旧文件的改名后缀：`<name>.stale`（占用时递增 `.stale1`…）。被进程映射的 DLL
@@ -177,6 +175,35 @@ class _GalgameHelperSwapOp {
   final String? asidePath;
 }
 
+/// 换入失败后，连回滚本身也无法完整恢复旧目录。
+///
+/// 正常换入失败且回滚成功时仍原样抛出最初异常；只有回滚失败才使用本类型，避免把已经不再
+/// 满足「完整旧版或完整新版」的严重状态伪装成普通文件占用错误。
+class GalgameHelperRollbackException implements Exception {
+  GalgameHelperRollbackException({
+    required this.cause,
+    required List<Object> rollbackFailures,
+  }) : rollbackFailures = List<Object>.unmodifiable(rollbackFailures);
+
+  final Object cause;
+  final List<Object> rollbackFailures;
+
+  @override
+  String toString() => 'GalgameHelperRollbackException(cause: $cause, '
+      'rollback failures: ${rollbackFailures.join('; ')})';
+}
+
+/// 一次性读取的随包归档快照。字节列表不可修改；摘要校验和解压只能消费这一份副本。
+class _VerifiedGalgameHelperBundle {
+  const _VerifiedGalgameHelperBundle({
+    required this.sha,
+    required this.bytes,
+  });
+
+  final String sha;
+  final List<int> bytes;
+}
+
 /// staging → target 的**换入式安装**（首装/修复/后台更新三条路径共用）：逐文件先把 target
 /// 里的旧文件 rename 成 `.stale` 让位（被映射的 DLL 可改名不可覆盖——旧实现就地覆盖写，
 /// 撞上被占用的 `hibiki_voice_hook.dll` 会半途失败留下混版本残局，是 BUG-1076 的次生根因），
@@ -196,6 +223,7 @@ Future<void> galgameHelperSwapInstall({
       .listSync(recursive: true, followLinks: false)
       .whereType<File>()
       .toList();
+  newFiles.sort((File a, File b) => a.path.compareTo(b.path));
   final List<_GalgameHelperSwapOp> done = <_GalgameHelperSwapOp>[];
   try {
     for (final File src in newFiles) {
@@ -217,6 +245,9 @@ Future<void> galgameHelperSwapInstall({
         dst.renameSync(aside.path);
         asidePath = aside.path;
       }
+      // 当前项必须在任一可能失败的新文件落位动作之前入账；否则旧 dst 已让位后若
+      // rename/copy 失败，catch 看不到本项，旧文件会永久留在 .stale。
+      done.add(_GalgameHelperSwapOp(newPath: dst.path, asidePath: asidePath));
       try {
         src.renameSync(dst.path);
       } on FileSystemException {
@@ -226,19 +257,30 @@ Future<void> galgameHelperSwapInstall({
           src.deleteSync();
         } catch (_) {}
       }
-      done.add(_GalgameHelperSwapOp(newPath: dst.path, asidePath: asidePath));
     }
-  } catch (_) {
+  } catch (cause) {
+    final List<Object> rollbackFailures = <Object>[];
     for (final _GalgameHelperSwapOp op in done.reversed) {
       try {
-        File(op.newPath).deleteSync();
-      } catch (_) {}
+        final File installed = File(op.newPath);
+        if (installed.existsSync()) installed.deleteSync();
+      } catch (e) {
+        rollbackFailures.add(e);
+      }
       final String? aside = op.asidePath;
       if (aside != null) {
         try {
           File(aside).renameSync(op.newPath);
-        } catch (_) {}
+        } catch (e) {
+          rollbackFailures.add(e);
+        }
       }
+    }
+    if (rollbackFailures.isNotEmpty) {
+      throw GalgameHelperRollbackException(
+        cause: cause,
+        rollbackFailures: rollbackFailures,
+      );
     }
     rethrow;
   }
@@ -317,8 +359,89 @@ class GalgameHelperInstaller {
     return galgameHelperMissingFiles(arch, present);
   }
 
+  /// 一次读取并完整校验随包资产。返回对象中的 bytes 是后续唯一允许解压的只读快照。
+  Future<_VerifiedGalgameHelperBundle?> _readVerifiedBundledHelper(
+    String arch,
+  ) async {
+    final Directory bundle = _bundledDirectory();
+    final File zip = File(p.join(bundle.path, galgameHelperZipName(arch)));
+    final File sidecar = File('${zip.path}.sha256');
+    final bool hasZip = zip.existsSync();
+    final bool hasSidecar = sidecar.existsSync();
+    if (!hasZip && !hasSidecar) return null;
+    if (!hasZip || !hasSidecar) {
+      throw GalgameHelperInstallException(
+        GalgameHelperInstallFailure.verificationFailed,
+        'bundled helper incomplete ($arch): zip=$hasZip sidecar=$hasSidecar',
+      );
+    }
+    final String sha = galgameHelperRequireVerifiedSha(
+      await sidecar.readAsString(),
+      arch,
+    );
+    final List<int> bytes = List<int>.unmodifiable(await zip.readAsBytes());
+    final String actualSha = sha256.convert(bytes).toString();
+    if (!sha256Matches(sha, actualSha)) {
+      throw GalgameHelperInstallException(
+        GalgameHelperInstallFailure.verificationFailed,
+        'bundled helper sha256 mismatch ($arch): '
+        'expected $sha, actual $actualSha',
+      );
+    }
+    return _VerifiedGalgameHelperBundle(sha: sha, bytes: bytes);
+  }
+
+  Future<String?> _installedMarkerSha(String arch) async {
+    final File marker = _markerFile(arch);
+    if (!marker.existsSync()) return null;
+    try {
+      final String? parsed = parseSha256Sidecar(await marker.readAsString());
+      if (parsed == null) {
+        _log('installed marker invalid ($arch)');
+      }
+      return parsed;
+    } catch (e) {
+      _log('installed marker unreadable ($arch): $e');
+      return null;
+    }
+  }
+
+  /// 已有完整 helper 也必须对齐当前主包随附版本（BUG-1246）。
+  ///
+  /// 两份随包资产都不存在只可能是旧包或未构建 native 资产的开发构建；此时允许继续使用
+  /// 完整旧安装。只要当前主包带了归档，就以侧车摘要为版本身份：标记缺失/损坏/不同均先
+  /// 完整校验归档，再原子换入，不能让旧 native 组件绕过 app/helper 的版本绑定。
+  Future<bool> _ensureBundledVersion(String arch) async {
+    final List<String> missing = _missingInstalledFiles(arch);
+    // 即便 marker 相同也要校验当前 app 随附 zip 的真实字节；否则损坏或被替换的 zip 可借
+    // marker fast path 绕过「摘要不符必须 fail closed」的发布边界。
+    final _VerifiedGalgameHelperBundle? bundle =
+        await _readVerifiedBundledHelper(arch);
+    if (missing.isEmpty) {
+      if (bundle == null) return true;
+      final String? installedSha = await _installedMarkerSha(arch);
+      if (installedSha != null && sha256Matches(installedSha, bundle.sha)) {
+        return true;
+      }
+      _log(
+        'installed helper version differs from bundle ($arch): '
+        'installed=${installedSha ?? 'missing'} bundled=${bundle.sha}',
+      );
+    }
+
+    if (bundle == null) return false;
+    await _installVerifiedSnapshot(
+      arch: arch,
+      verifiedBytes: bundle.bytes,
+      sha: bundle.sha,
+      sourceLabel: 'bundle',
+    );
+    return _missingInstalledFiles(arch).isEmpty;
+  }
+
   /// 确保对应架构注入器就位。**全程零网络、零确认框**（BUG-1196）：
-  /// - 完整安装 → true；
+  /// - 完整安装且版本标记与随包归档一致 → true；
+  /// - 完整安装但版本不同/无标记 → 用当前随包归档原子更新；
   /// - 缺失或残缺（旧装只有 injector、缺 Luna 或 Locale Emulator）→ 用随主包发布的
   ///   已校验归档安装/修复 → 复检通过 true；
   /// - 随包归档缺失（开发构建 / 早于随包发布的旧包）或校验、换入失败 → false
@@ -336,65 +459,34 @@ class GalgameHelperInstaller {
     // 等在途换入（若有）落定再检查文件，绝不读到半换入状态；平时门是已完成 future，零开销。
     await _extractionGate;
     if (!context.mounted) return false;
-    if (_missingInstalledFiles(arch).isEmpty) return true;
-
-    // Windows 主包随附两架构 zip + 各自 SHA-256 侧车，首装与修复都在本地完成。
-    bool bundled = false;
+    bool ensured = false;
     try {
-      bundled = await _installBundledHelper(arch);
+      ensured = await _ensureBundledVersion(arch);
     } catch (e) {
-      // 归档在但坏了（摘要不符 / 清单不全 / 换入失败）：绝不安装，也绝不静默。
+      // 归档在但坏了（摘要不符 / 清单不全 / 换入失败）：保留完整旧目录但拒绝启动，
+      // 绝不能把不属于当前 app 版本的 native 组件冒充成已更新。
       _log('bundled install rejected ($arch): $e');
     }
     if (!context.mounted) return false;
-
-    final List<String> missingAfter = _missingInstalledFiles(arch);
-    if (bundled && missingAfter.isEmpty) return true;
-    if (bundled) {
-      _log('bundled install incomplete ($arch): ${missingAfter.join(', ')}');
-    }
+    if (ensured) return true;
     HibikiToast.show(
-      msg: bundled
-          ? t.game_helper_install_incomplete
-          : t.game_helper_bundle_missing,
+      msg: t.game_helper_bundle_missing,
     );
     return false;
   }
 
   /// 从主包内的归档安装。返回 false 只表示当前构建没有随附该架构归档（开发/旧包），调用方
-  /// 可回退网络；只要 zip 或侧车任一存在，就必须完整校验，残缺/摘要不符会抛校验失败。
+  /// 可继续使用完整旧安装；只要 zip 或侧车任一存在，就必须完整校验，残缺/摘要不符会抛
+  /// 校验失败。
   Future<bool> _installBundledHelper(String arch) async {
-    final Directory bundle = _bundledDirectory();
-    final File zip = File(p.join(bundle.path, galgameHelperZipName(arch)));
-    final File sidecar = File('${zip.path}.sha256');
-    final bool hasZip = zip.existsSync();
-    final bool hasSidecar = sidecar.existsSync();
-    if (!hasZip && !hasSidecar) return false;
-    if (!hasZip || !hasSidecar) {
-      throw GalgameHelperInstallException(
-        GalgameHelperInstallFailure.verificationFailed,
-        'bundled helper incomplete ($arch): zip=$hasZip sidecar=$hasSidecar',
-      );
-    }
+    final _VerifiedGalgameHelperBundle? bundle =
+        await _readVerifiedBundledHelper(arch);
+    if (bundle == null) return false;
 
-    final String sha = galgameHelperRequireVerifiedSha(
-      await sidecar.readAsString(),
-      arch,
-    );
-    final String actualSha = sha256.convert(await zip.readAsBytes()).toString();
-    if (!sha256Matches(sha, actualSha)) {
-      throw GalgameHelperInstallException(
-        GalgameHelperInstallFailure.verificationFailed,
-        'bundled helper sha256 mismatch ($arch): '
-        'expected $sha, actual $actualSha',
-      );
-    }
-
-    await _installVerifiedZip(
+    await _installVerifiedSnapshot(
       arch: arch,
-      zip: zip,
-      sha: sha,
-      deleteArchiveOnSuccess: false,
+      verifiedBytes: bundle.bytes,
+      sha: bundle.sha,
       sourceLabel: 'bundle',
     );
     return true;
@@ -405,22 +497,27 @@ class GalgameHelperInstaller {
   Future<bool> installBundledHelperForTesting(String arch) =>
       _installBundledHelper(arch);
 
-  /// 已通过 SHA-256 的 zip 共用安装尾段：解压到 staging → 清单验证 → 原子换入 → 标记。
-  /// 网络临时归档成功后清理；主包内归档必须保留，供另一架构或后续修复继续使用。
-  Future<void> _installVerifiedZip({
+  /// 测试入口：覆盖「完整但旧的安装」也会按随包摘要自动换入的真实启动前路径。
+  @visibleForTesting
+  Future<bool> ensureBundledVersionForTesting(String arch) async {
+    await _extractionGate;
+    return _ensureBundledVersion(arch);
+  }
+
+  /// 已通过 SHA-256 的只读快照安装尾段：解压到 staging → 清单验证 → 原子换入 → 标记。
+  Future<void> _installVerifiedSnapshot({
     required String arch,
-    required File zip,
+    required List<int> verifiedBytes,
     required String sha,
-    required bool deleteArchiveOnSuccess,
     required String sourceLabel,
-    File? part,
   }) async {
     // 解压到 staging 临时目录（保留 x64 unity_audio_runtime/ 子目录结构），先在
     //    staging 里验完清单再换入——坏包/缺文件在触碰安装目录之前就被拒。
     final Directory staging =
         await Directory.systemTemp.createTemp('hibiki_voice_hook_staging_');
     try {
-      final Set<String> extractedFiles = await _extractZip(zip, staging);
+      final Set<String> extractedFiles =
+          await _extractVerifiedBytes(verifiedBytes, staging);
       final List<String> missingFromPackage =
           galgameHelperMissingFiles(arch, extractedFiles);
       if (missingFromPackage.isNotEmpty) {
@@ -454,16 +551,6 @@ class GalgameHelperInstaller {
       }
 
       _log('installed $arch from $sourceLabel (sha256 $sha)');
-
-      if (deleteArchiveOnSuccess) {
-        // 清理网络临时 zip（best-effort；失败路径不清，保留续传现场）。
-        try {
-          if (await zip.exists()) await zip.delete();
-          if (part != null && await part.exists()) await part.delete();
-        } catch (e) {
-          _log('temp cleanup failed ($arch): $e');
-        }
-      }
     } finally {
       try {
         if (staging.existsSync()) staging.deleteSync(recursive: true);
@@ -473,15 +560,17 @@ class GalgameHelperInstaller {
     }
   }
 
-  /// 解压 zip 到 [targetDir]（staging 临时目录——**不**直接写安装目录，换入走
+  /// 解压已校验的 [verifiedBytes] 到 [targetDir]（staging 临时目录——**不**直接写安装目录，换入走
   /// [galgameHelperSwapInstall]）。用 archive 包 ZipDecoder；写字节用 file.content
   /// getter（archive 3.6.1 下 ArchiveFile.decompress(out) 会写 0 字节，见
   /// sync_asset_package_service.dart 注释，故取 content 字节直接写）。只写常规文件、保留
   /// 相对目录结构，并拒绝绝对路径或逃出目标目录的条目以防 zip-slip。
-  Future<Set<String>> _extractZip(File zip, Directory targetDir) async {
+  Future<Set<String>> _extractVerifiedBytes(
+    List<int> verifiedBytes,
+    Directory targetDir,
+  ) async {
     await targetDir.create(recursive: true);
-    final Uint8List bytes = await zip.readAsBytes();
-    final Archive archive = ZipDecoder().decodeBytes(bytes);
+    final Archive archive = ZipDecoder().decodeBytes(verifiedBytes);
     final String targetRoot = p.normalize(targetDir.absolute.path);
     final Set<String> extractedFiles = <String>{};
     for (final ArchiveFile entry in archive) {

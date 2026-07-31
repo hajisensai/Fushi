@@ -2,9 +2,10 @@
 // path). This test covers two levels:
 //   1) mdx_reader::parse_mdd returns each record byte-exact (incl. embedded NUL)
 //      with its raw path key -- no transcoding, no NUL stripping, no @@@LINK.
-//   2) end-to-end: importing Foo.mdx auto-mounts a sibling Foo.mdd into the same
-//      dictionary dir, and DictionaryQuery::get_media_file returns the bytes via
-//      the normalized path -- exactly the image:// scheme the popup consumes.
+//   2) end-to-end: importing Foo.mdx auto-mounts sibling Foo.mdd PLUS numbered
+//      overflow parts Foo.1.mdd / Foo.2.mdd (BUG-1261) into one merged media
+//      store, and DictionaryQuery::get_media_file returns the bytes via the
+//      normalized path -- exactly the image:// scheme the popup consumes.
 //
 // Red/green: revert parse_mdd (binary records) or import_mdx's sibling mount and
 // the retrieved blob is empty / wrong -> FAIL.
@@ -61,16 +62,27 @@ int main() {
     }
   }
 
-  // --- Part 2: import Foo.mdx + sibling Foo.mdd -> queryable media ---------
+  // --- Part 2: import Foo.mdx + sibling Foo.mdd + numbered overflow parts ---
+  // BUG-1261: MDict splits large media across Foo.mdd / Foo.1.mdd / Foo.2.mdd
+  // (OALD ships all pronunciation mp3 in the numbered parts). All parts must
+  // merge into ONE media.bin/media.idx: every key from every part retrievable.
+  // Red/green: revert collect_sibling_mdd_paths -> uk/us mp3 missing; revert
+  // the merged single-index write (per-part truncation) -> img/a.png missing.
   const std::string base = hoshi_test::temp_dir() + "/hoshi_mdd";
   std::filesystem::create_directories(std::filesystem::u8path(base));
   const std::string mdx_path = base + "/M.mdx";
-  const std::string mdd_path = base + "/M.mdd";
   const std::string out_dir = base + "/out";
+
+  const std::string mp3_uk("\xFF\xFB\x90\x00UK-FRAME\x00\x01", 12);
+  const std::string mp3_us("\xFF\xFB\x90\x00US-FRAME\xFE", 11);
 
   write_file(mdx_path,
              mdx_fixture::build_mdx_plain("MediaDict", {{"apple", "<img src=\"img/a.png\">def"}}));
-  write_file(mdd_path, mdx_fixture::build_mdd_plain("MediaDict", {{mdd_key, png}}));
+  write_file(base + "/M.mdd", mdx_fixture::build_mdd_plain("MediaDict", {{mdd_key, png}}));
+  write_file(base + "/M.1.mdd",
+             mdx_fixture::build_mdd_plain("MediaDict", {{"\\uk\\apple.mp3", mp3_uk}}));
+  write_file(base + "/M.2.mdd",
+             mdx_fixture::build_mdd_plain("MediaDict", {{"\\us\\apple.mp3", mp3_us}}));
 
   ImportResult r = dictionary_importer::import(mdx_path, out_dir);
   if (!r.success) {
@@ -78,12 +90,20 @@ int main() {
   } else {
     DictionaryQuery q;
     q.add_term_dict(out_dir + "/" + r.title);
-    std::vector<char> blob = q.get_media_file(r.title, "img/a.png");
-    if (blob.empty()) {
-      fail("get_media_file returned empty (mdd not mounted / path not normalized)");
-    } else if (std::string(blob.begin(), blob.end()) != png) {
-      fail("get_media_file returned wrong bytes");
-    }
+    auto expect_media = [&](const char* path, const std::string& want, const char* what) {
+      std::vector<char> blob = q.get_media_file(r.title, path);
+      if (blob.empty()) {
+        std::fprintf(stderr, "FAIL %s: get_media_file empty (part not mounted / index clobbered)\n",
+                     what);
+        ++g_fail;
+      } else if (std::string(blob.begin(), blob.end()) != want) {
+        std::fprintf(stderr, "FAIL %s: wrong bytes\n", what);
+        ++g_fail;
+      }
+    };
+    expect_media("img/a.png", png, "main .mdd blob");
+    expect_media("uk/apple.mp3", mp3_uk, "numbered part .1.mdd blob");
+    expect_media("us/apple.mp3", mp3_us, "numbered part .2.mdd blob");
   }
 
   if (g_fail) {

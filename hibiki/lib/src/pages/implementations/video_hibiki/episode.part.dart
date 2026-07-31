@@ -1,7 +1,7 @@
 // GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch4).
 part of '../video_hibiki_page.dart';
 
-/// episode (剧集 push-aside 侧栏 + 自动连播倒计时) domain methods extracted via
+/// episode (剧集底部横向轨道 + 自动连播倒计时) domain methods extracted via
 /// part-of (TODO-590 batch4); shared private scope. Behaviour-preserving: bodies
 /// are verbatim copies — this domain references no `setState(` (so no `_rebuild(`
 /// forwarding). UI 巡检 PR-4 后 [_buildAutoAdvanceOverlay] 引用了一个 host
@@ -12,7 +12,7 @@ part of '../video_hibiki_page.dart';
 /// `_episodeListVisible` / `_autoAdvanceCountdownNotifier` notifiers, their
 /// timers/fields, and the `_episodes` / `_currentEpisode` playlist state stay in
 /// the main shell; the build-subtree parent `_videoWithSubtitlePanel` (subtitle
-/// domain) keeps calling the extracted `_episodeSidePanel` through shared private
+/// domain) keeps calling the extracted `_episodeOverlayPanel` through shared private
 /// scope.
 extension _VideoEpisode on _VideoHibikiPageState {
   void _handlePlaybackCompleted() {
@@ -158,26 +158,22 @@ extension _VideoEpisode on _VideoHibikiPageState {
     );
   }
 
-  /// 剧集列表入口（控制条剧集按钮）。TODO-638：从 `showModalBottomSheet`（底部弹层）
-  /// 改成与字幕列表同款的 push-aside 侧栏——翻转 [_toggleEpisodeList]，与其它侧栏视觉
-  /// 统一、不挡画面。保留方法名 `_showEpisodeList` 作为控制条入口（_handleVideoControlTap
-  /// 的 episodeList 分支调它），呈现改为侧栏 toggle。
+  /// 剧集列表入口（控制条剧集按钮）。保留 `_showEpisodeList` 作为控制条入口，
+  /// 呈现层由 [_episodeOverlayPanel] 在视频底部画非模态横向轨道。
   void _showEpisodeList() {
     _toggleEpisodeList();
   }
 
-  /// 翻转剧集列表 push-aside 侧栏可见性（TODO-638；控制条剧集按钮入口）。
+  /// 翻转剧集横向轨道可见性（控制条剧集按钮入口）。
   ///
-  /// 与字幕列表（[_toggleSubtitleJumpList]）同范式：push-aside 布局
-  /// （[_videoWithSubtitlePanel] / [_episodeListVisible]，`Row[Expanded(video), 面板列]`）
-  /// 真把画面挤窄到左侧、不浮层遮挡。与其它侧栏互斥：开剧集列表先关字幕列表
-  /// （[_subtitleListVisible]）与任何打开的浮层（[_videoSidePanel]）——同一时刻右栏只占
-  /// 其一，避免两个 push-aside 侧栏分占右栏。打开时唤醒控制条让用户看到入口。
+  /// 与字幕列表（[_toggleSubtitleJumpList]）保持互斥：开剧集轨道先关字幕列表
+  /// （[_subtitleListVisible]）与任何打开的浮层（[_videoSidePanel]），避免多个
+  /// 浏览/设置表面同时争抢视频空间。打开时唤醒控制条让用户看到入口。
   void _toggleEpisodeList() {
     final bool next = !_episodeListVisible.value;
     if (next) {
       _clearRailHover();
-      // 与浮层互斥：开 push-aside 剧集列表前关掉任何打开的浮层（设置/音轨/倍速等）。
+      // 与浮层互斥：开剧集轨道前关掉任何打开的浮层（设置/音轨/倍速等）。
       _hideVideoControlEditOverlay(revealControls: false);
       // 与字幕列表互斥：同一时刻右栏只占其一。
       if (_subtitleListVisible.value) {
@@ -194,7 +190,7 @@ extension _VideoEpisode on _VideoHibikiPageState {
     }
   }
 
-  /// 关闭 push-aside 剧集列表（TODO-638）。**三条关闭路径的单一真相源**：面板头部 ×
+  /// 关闭剧集轨道。**三条关闭路径的单一真相源**：面板头部 ×
   /// 按钮（[VideoEpisodePanel.onClose]）、Esc 键、控制条剧集按钮（后两者经
   /// [_toggleEpisodeList] 的关闭分支）都调它，避免「关闭副作用各写一份」分叉。关闭时
   /// 必须：隐藏列表（[_episodeListVisible]）、唤回控制条（[_pokeControlsVisible]）、把焦点
@@ -207,17 +203,13 @@ extension _VideoEpisode on _VideoHibikiPageState {
   }
 
   /// 点剧集列表里某集：切到该集（复用 [_switchEpisode]）。换集后保持列表常驻（用户可
-  /// 连续浏览/切集），与 asbplayer 风格的常驻侧栏一致；当前集高亮由面板按 currentIndex
+  /// 连续浏览/切集）；当前集高亮由面板按 currentIndex
   /// 自动跟随。
   void _handleEpisodeListTap(int index) {
     _pokeControlsVisible();
     _switchEpisode(index, intent: EpisodeStartIntent.listSelect);
   }
 
-  /// [_videoWithSubtitlePanel] 的剧集列表 push-aside 面板列（TODO-638）。与
-  /// [_subtitleJumpSidePanel] 同结构：[AnimatedSize] 让列宽在 0 ↔ panelWidth 平滑伸缩，
-  /// 可见时渲染 [VideoEpisodePanel]，隐藏时收成 0（[ClipRect] + [OverflowBox] 保证伸缩
-  /// 动画里内容布局稳定）。与字幕列表互斥，故两列同时只有一列非零宽。
   /// 把内部集表示 [_PlaylistEpisodeRef] 解析成面板要的 [VideoEpisodeEntry]。
   ///
   /// 封面来源判断**不在这里手写分支**——统一走 [resolveMediaCoverImage]：本地集给
@@ -242,51 +234,54 @@ extension _VideoEpisode on _VideoHibikiPageState {
     ];
   }
 
-  Widget _episodeSidePanel(bool visible) {
+  /// 剧集列表改为覆盖在**视频底部**的横向轨道：画面继续作为沉浸式背景，不把
+  /// 16:9 视频挤成窄栏。字幕跳转列表仍是 push-aside；两者沿用既有互斥状态。
+  ///
+  /// 隐藏态留在树里做 slide + fade，经 [FadingChromeGate] 保证不可见层不吃画面点击
+  /// **且不可聚焦**（BUG-1301：旧实现只有 [IgnorePointer]，挡不住焦点遍历——手柄
+  /// 浏览剧集卡片后关面板，焦点滞留在 opacity=0 的卡片 InkWell 上，焦点环在画面上
+  /// 画出一个空框）。× / Esc / 控制条按钮仍全部经 [_closeEpisodeList]，关闭副作用不分叉。
+  Widget _episodeOverlayPanel(bool visible) {
     final ColorScheme cs = _videoChromeColorScheme(context);
-    final double screenWidth = MediaQuery.sizeOf(context).width;
-    final double panelWidth = (screenWidth * 0.28).clamp(240.0, 420.0);
-    return AnimatedSize(
-      // eink 下归零（墨水屏残影，UI 巡检 PR-4）。
-      duration: einkSafeDuration(context, const Duration(milliseconds: 200)),
-      curve: Curves.easeOut,
-      alignment: Alignment.centerLeft,
-      child: SizedBox(
-        width: visible ? panelWidth : 0,
-        // BUG-391 r5 根因修：选集列表此前**完全无** cursor-reveal 覆盖（字幕列表有救场层但选集
-        // 列表裸奔），整列最外层补一层与字幕侧栏同款声明式 opaque MouseRegion（cursor:basic）——
-        // 让 MouseTracker 把侧栏列视为独立 annotation、鼠标进列即进干净 basic 会话，绕开「视频列
-        // none 会话残留 + lastSession 去重」竞态（见 _withSidePanelOpaqueCursor）。隐藏时透传
-        // SizedBox.shrink（零宽、无 region）。
-        child: visible
-            ? _withSidePanelOpaqueCursor(
-                ClipRect(
-                  child: OverflowBox(
-                    alignment: Alignment.centerLeft,
-                    minWidth: panelWidth,
-                    maxWidth: panelWidth,
-                    child: SafeArea(
-                      left: false,
-                      child: VideoEpisodePanel(
-                        key: const ValueKey<String>('video-episode-panel'),
-                        episodes: _episodePanelEntries(),
-                        currentIndex: _currentEpisode,
-                        onTapEpisode: _handleEpisodeListTap,
-                        onClose: _closeEpisodeList,
-                        colorScheme: cs,
-                        title: t.video_episode_list,
-                        emptyHint: t.video_episode_list_empty,
-                        fontSize: 14 * _videoUiScale,
-                        width: panelWidth,
-                      ),
-                    ),
-                  ),
-                ),
-              )
-            : const SizedBox.shrink(),
+    final double panelHeight = (220 * _videoUiScale).clamp(200.0, 360.0);
+    final Duration duration =
+        einkSafeDuration(context, const Duration(milliseconds: 220));
+    return PositionedDirectional(
+      start: 0,
+      end: 0,
+      bottom: 0,
+      child: FadingChromeGate(
+        visible: visible,
+        duration: duration,
+        curve: Curves.easeOut,
+        child: AnimatedSlide(
+          offset: visible ? Offset.zero : const Offset(0, 0.18),
+          duration: duration,
+          curve: Curves.easeOutCubic,
+          child: _withSidePanelOpaqueCursor(
+            SafeArea(
+              top: false,
+              child: VideoEpisodePanel(
+                key: const ValueKey<String>('video-episode-panel'),
+                episodes: _episodePanelEntries(),
+                currentIndex: _currentEpisode,
+                onTapEpisode: _handleEpisodeListTap,
+                onClose: _closeEpisodeList,
+                colorScheme: cs,
+                title: t.video_episode_list,
+                emptyHint: t.video_episode_list_empty,
+                fontSize: 14 * _videoUiScale,
+                height: panelHeight,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
+
+  // BUG-1301 note: 上面的 [FadingChromeGate] 同时承担旧 IgnorePointer + AnimatedOpacity
+  // 的职责（少一层嵌套），几何与动画时序不变。
 
   /// 自动连播倒计时 overlay（TODO-639）。一集播完且自动连播开关开着时，画面右下角弹出
   /// 「N 秒后播放下一集」+「取消」可点按钮；点取消调 [_cancelAutoAdvanceCountdown] 停在

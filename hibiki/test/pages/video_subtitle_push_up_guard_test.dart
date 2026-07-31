@@ -115,7 +115,12 @@ void main() {
       '_videoSeekBarButtonGap',
       // BUG-901：移动 reserve 抬到「进度条**触摸热区**上缘 + 呼吸间距」——热区含可见轨道
       // 上方那段透明可点 seek 区，字幕命中区要整体清出它才不与 seek 重叠误触。
-      '_videoSeekBarContainerHeight',
+      // BUG-1224：必须取**当前平台 theme 真实生效**的热区高（桌面 36 不随缩放 / 移动
+      // 40×缩放），退回裸 `_videoSeekBarContainerHeight` 会在桌面用移动端的值算热区上缘。
+      '_activeSeekBarContainerHeight',
+      // BUG-1224：桌面进度条被下压骑按钮行上沿，热区上缘 = 按钮行高 − 下压量 + 热区高；
+      // 漏掉这项就退回「只让一个按钮行高」、字幕重新压住热区上缘 20px 带。
+      '_activeSeekBarButtonBarOverlap',
       '_videoSubtitleSeekBarBreathingGap',
       '_videoBottomChromeBaseline',
       '_videoBottomSystemInset()',
@@ -131,6 +136,56 @@ void main() {
     expect(body, isNot(contains('_videoSeekBarTrackHeight')),
         reason: 'reserve 不应再只用可见轨道高 _videoSeekBarTrackHeight'
             '（字幕落进进度条透明热区、点击挨太近误触，BUG-901 改用触摸热区全高）');
+  });
+
+  test('BUG-1224：桌面 theme 与字幕避让读同一份进度条几何，fork 下压量不再是写死常量', () {
+    // 根因：桌面 seek bar 的透明触摸热区高 seekBarContainerHeight（36），又被
+    // Transform.translate 向下压 16 骑到按钮行上沿 → 热区上缘比按钮行高再高 20px。旧实现
+    // 里这两个数一个是 fork 构造器默认（页面没传）、一个是 fork build() 里写死的
+    // `const Offset(0.0, 16.0)`，页面**无从得知**，于是避让只让出一个按钮行高、字幕恰好
+    // 压住热区上缘那条带，点进度条被字幕 glyph 命中层吸走成查词。
+    final File forkSrc = File(
+      '../third_party/media_kit_video/lib/media_kit_video_controls/'
+      'src/controls/material_desktop.dart',
+    );
+    expect(forkSrc.existsSync(), isTrue,
+        reason: 'vendored media_kit_video fork 应存在');
+    final String fork = forkSrc.readAsStringSync();
+    // fork 必须把下压量提成主题字段并真的用它——退回写死 `Offset(0.0, 16.0)` → 本条红。
+    expect(fork, contains('final double seekBarBottomButtonBarOverlap'),
+        reason: 'fork 桌面主题必须暴露 seekBarBottomButtonBarOverlap，'
+            '否则宿主算不出进度条真实热区上缘（BUG-1224）');
+    // 下压偏移本身必须由主题字段构成（不是文件里别处随便提一下这个名字就算数）。
+    expect(
+        RegExp(r'Offset\(\s*0\.0,\s*_theme\(context\)\s*\.\s*'
+                r'seekBarBottomButtonBarOverlap')
+            .hasMatch(fork),
+        isTrue,
+        reason:
+            '进度条下压偏移必须读主题字段 seekBarBottomButtonBarOverlap，不得写死常量（BUG-1224）');
+    // 热区高同理：Listener 包裹的透明命中容器必须用主题值（宿主传什么就是什么）。
+    expect(
+        RegExp(r'height:\s*_theme\(context\)\s*\.\s*seekBarContainerHeight')
+            .hasMatch(fork),
+        isTrue,
+        reason: '进度条透明命中容器高必须读主题 seekBarContainerHeight（BUG-1224）');
+    expect(fork.contains('const Offset(0.0, 16.0)'), isFalse,
+        reason: '不应残留写死的 16px 下压常量（宿主看不见 → 避让算错，BUG-1224）');
+    // 页面必须显式把同一份常量喂给桌面 theme（而非依赖 fork 构造器默认值漂移）。
+    // theme 在 `extension on _VideoHibikiPageState` 里，静态常量须限定类名，故容忍该前缀。
+    expect(
+        RegExp(r'seekBarContainerHeight:\s*(?:_VideoHibikiPageState\.)?\s*'
+                r'_videoDesktopSeekBarContainerHeight')
+            .hasMatch(src),
+        isTrue,
+        reason: '桌面 theme 必须显式传热区高，与字幕避让同源（BUG-1224）');
+    expect(
+        RegExp(r'seekBarBottomButtonBarOverlap:\s*'
+                r'(?:_VideoHibikiPageState\.)?\s*'
+                r'_videoDesktopSeekBarButtonBarOverlap')
+            .hasMatch(src),
+        isTrue,
+        reason: '桌面 theme 必须显式传下压量，与字幕避让同源（BUG-1224）');
   });
 
   test('桌面 hover 包裹层 non-opaque 下探 media_kit 自己的 MouseRegion（TODO-364）', () {

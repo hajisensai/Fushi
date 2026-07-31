@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/sync/deletion_disclosure.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
@@ -33,6 +34,7 @@ class HibikiDestructiveConfirmDialog extends StatefulWidget {
     this.leadingIcon = Icons.delete_outline,
     this.checkboxLabel,
     this.checkboxInitialValue = false,
+    this.checkedDisclosure,
     super.key,
   });
 
@@ -48,6 +50,14 @@ class HibikiDestructiveConfirmDialog extends StatefulWidget {
   final String? checkboxLabel;
 
   final bool checkboxInitialValue;
+
+  /// 勾选框被勾上后追加渲染的「会被删除 / 会被保留」逐项披露。
+  ///
+  /// 根因（BUG-1305）：本对话框的正文 [message] 与勾选行是两个静态节点，勾选翻转
+  /// 语义时正文不跟随。合集删除因此出现「删除合集不会删除其中的视频」与「同时删除
+  /// 其中的书」同屏并存，而代码按勾选递归删了每本书的解压目录和有声书目录。披露挂
+  /// 在勾选状态上，正文才不会再和实际行为说反话。
+  final DeletionDisclosure? checkedDisclosure;
 
   @override
   State<HibikiDestructiveConfirmDialog> createState() =>
@@ -90,6 +100,14 @@ class _HibikiDestructiveConfirmDialogState
               HibikiListItem(
                 density: HibikiListDensity.compact,
                 padding: EdgeInsets.zero,
+                // BUG-1291：勾选文案是整句解释（「同时删除其中的视频（保留你的
+                // 原始视频文件）」），不是列表里的标题短语。[HibikiListItem] 的
+                // titleMaxLines 默认 1 + ellipsis，在 420 宽的对话框里会把括号
+                // 里的免责说明整段吃掉，用户读到的是「…保留你的原始视…」——恰好
+                // 是最需要看清的那半句。此处父容器高度自由（外层
+                // [HibikiDialogFrame] 默认 scrollable），放开行数不会像
+                // BUG-1184 的固定高容器那样撑破布局。
+                titleMaxLines: 3,
                 title: Text(widget.checkboxLabel!),
                 // 勾选状态由整行 onTap 驱动；Checkbox 本身既不接指针也不进
                 // 焦点遍历（单站点契约，行即唯一停靠点）。
@@ -103,6 +121,12 @@ class _HibikiDestructiveConfirmDialogState
                 ),
                 onTap: () => setState(() => _checked = !_checked),
               ),
+              if (_checked && widget.checkedDisclosure != null) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                DeletionDisclosureView(
+                  disclosure: widget.checkedDisclosure!,
+                ),
+              ],
             ],
           ],
         ),

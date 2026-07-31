@@ -269,6 +269,13 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   Future<AnkiMediaDedupReport?> runMediaDedup({
     bool dryRun = false,
     Future<void> Function(Map<String, dynamic> entry)? onJournal,
+    AnkiMediaDedupOnProgress? onProgress,
+    bool Function()? shouldCancel,
   }) =>
-      _local.runMediaDedup(dryRun: dryRun, onJournal: onJournal);
+      _local.runMediaDedup(
+        dryRun: dryRun,
+        onJournal: onJournal,
+        onProgress: onProgress,
+        shouldCancel: shouldCancel,
+      );
 }

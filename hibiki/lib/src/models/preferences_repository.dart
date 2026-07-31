@@ -243,7 +243,8 @@ class PreferencesRepository extends ChangeNotifier {
   // ── dictionary auto-update (TODO-861③, ported from Hoshi 94d0c41) ────
   //
   // 启动时 check-due 自动更新词典。interval 存 enum `.name`（daily/weekly/monthly），
-  // lastUpdate 存 ISO8601 字符串（'' = 从未更新）。默认 autoUpdate=false（opt-in，
+  // lastUpdate 存上次完整成功检查的 ISO8601 字符串（'' = 从未成功检查）。沿用既有
+  // 持久化 key 兼容旧数据。默认 autoUpdate=false（opt-in，
   // 向后兼容，不在升级后静默联网/自动下载重导词典；用户须主动开启）、weekly。
   // MVP 只做启动 check-due，无计费网络门控（本仓库无 connectivity 依赖）。
 
@@ -264,7 +265,7 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 上次成功更新时间（ISO8601）；解析失败/未设 → null（= 从未更新）。
+  /// 上次完整成功检查时间（ISO8601）；解析失败/未设 → null（= 从未成功检查）。
   DateTime? get lastDictionaryUpdateAt {
     final String raw =
         getPref('last_dictionary_update_at', defaultValue: '') as String;
@@ -1825,6 +1826,16 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setMangaOnlineCatalogBaseUrl(String value) async {
     await setPref('manga_online_catalog_base_url', value);
+    notifyListeners();
+  }
+
+  /// Whether the mokuro.moe internet catalog participates in manga browsing.
+  /// Defaults to true to preserve the pre-source-toggle behaviour.
+  bool get mangaOnlineCatalogEnabled =>
+      getPref('manga_online_catalog_enabled', defaultValue: true) as bool;
+
+  Future<void> setMangaOnlineCatalogEnabled(bool value) async {
+    await setPref('manga_online_catalog_enabled', value);
     notifyListeners();
   }
 

@@ -6,10 +6,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
 import 'package:hibiki/src/media/torrent/download_save_root.dart';
+import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+
+/// 下载设置表单在宽屏下的最大内容宽度。
+///
+/// 卡片表面仍由设置详情页铺满 pane；这里只把同属一组的标题、说明、按钮、输入框
+/// 和开关收在一起，避免左侧文案与最右侧操作控件隔着整块 4K 详情面板。
+const double kTorrentSettingsContentMaxWidth = 560;
 
 /// 下载后端配置（后端二选一 + qb 连接 / 内置引擎限速·上传·做种·内存·连接数）。
 /// 从「设置→视频」搬到「下载」页——下载既已独立成页，配置就该在页内，不再埋进
@@ -72,25 +79,35 @@ class _TorrentSettingsSectionState
   }
 
   /// 测试与下载后端的连通性（按当前配置解析后端；qb = WebUI 版本号）。
-  /// 成功 snack 显示版本，失败提示检查地址/账号。
+  /// 成功 snack 显示版本；失败时透传后端给的具体原因（BUG-1295：网络不通/
+  /// 账密错/qb 封 IP 此前折叠成同一句「检查地址与账号密码」，无从自查）。
   Future<void> _probeConnection() async {
     if (_probing) return;
     setState(() => _probing = true);
     final TorrentBackend backend =
         ref.read(appProvider).createTorrentBackend(_config);
     String? version;
+    String? failure;
     try {
       version = await backend.probeConnection();
     } finally {
+      if (version == null && backend is QbTorrentBackend) {
+        failure = backend.lastProbeFailure;
+      }
       backend.close();
     }
     if (!mounted) return;
     setState(() => _probing = false);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(version == null
-          ? t.download_test_connection_failed
-          : t.download_test_connection_ok(version: version)),
-    ));
+    final String message;
+    if (version != null) {
+      message = t.download_test_connection_ok(version: version);
+    } else if (failure != null && failure.isNotEmpty) {
+      message = t.download_test_connection_failed_reason(message: failure);
+    } else {
+      message = t.download_test_connection_failed;
+    }
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// TODO-1961：选新的下载目录。校验不过**不写**配置，直接 snack 报原因（不静默）。
@@ -300,7 +317,7 @@ class _TorrentSettingsSectionState
     final bool isQb = backend == QbConnectionConfig.backendQbittorrent;
     final bool isEmbedded = backend == QbConnectionConfig.backendEmbedded;
 
-    return Column(
+    final Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _sectionLabel(theme, t.download_network_proxy_section),
@@ -633,6 +650,18 @@ class _TorrentSettingsSectionState
           ],
         ],
       ],
+    );
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints:
+            const BoxConstraints(maxWidth: kTorrentSettingsContentMaxWidth),
+        child: SizedBox(
+          key: const ValueKey<String>('torrent-settings-content'),
+          width: double.infinity,
+          child: content,
+        ),
+      ),
     );
   }
 }

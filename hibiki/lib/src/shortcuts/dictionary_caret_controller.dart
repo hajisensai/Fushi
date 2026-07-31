@@ -7,12 +7,16 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 /// on the reader content, or — after a dictionary lookup — on the top popup,
 /// following the popup stack as the user looks up deeper words and backs out.
 ///
-/// [lyrics] only ever appears on the reader (audiobook lyrics mode); video, the
-/// home dictionary tab and the standalone popup window only use [none] / [popup]
-/// (and, where applicable, their own primary surface). Keeping all four values
-/// in one enum lets every dictionary-bearing surface share the same caret state
-/// machine ([DictionaryCaretController]).
-enum CaretSurface { none, reader, popup, lyrics }
+/// [lyrics] only ever appears on the reader (audiobook lyrics mode). [video] is
+/// the video page's subtitle overlay (a Flutter widget surface, not a WebView —
+/// its cursor is a grapheme-entry index into [VideoSubtitleOverlay]'s per-char
+/// registry, driven by the page). The home dictionary tab and the standalone
+/// popup window only use [none] / [popup]. Keeping all values in one enum lets
+/// every dictionary-bearing surface share the same caret state machine
+/// ([DictionaryCaretController]); like [lyrics], the [video] primary ring stays
+/// visible while the cursor is transferred onto a popup (the subtitle highlight
+/// marks which word was looked up).
+enum CaretSurface { none, reader, popup, lyrics, video }
 
 /// Side-effect seams the caret state machine needs from its host page. The
 /// controller owns the *state* and the popup-transition *algorithm*; the host

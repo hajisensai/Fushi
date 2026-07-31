@@ -71,6 +71,7 @@ class MokuroMoeCatalogView extends ConsumerStatefulWidget {
     required this.db,
     this.clientOverride,
     this.queueOverride,
+    this.enabledOverride,
     this.embedded = false,
     this.onClose,
     this.snapshotNotifier,
@@ -85,6 +86,10 @@ class MokuroMoeCatalogView extends ConsumerStatefulWidget {
 
   /// 测试用队列（null = 取 [AppModel.mokuroMoeDownloadQueue] 共享实例）。
   final MokuroMoeDownloadQueue? queueOverride;
+
+  /// Source gate. Production hosts normally pass/read the AppModel preference;
+  /// tests can provide it explicitly without constructing an AppModel.
+  final bool? enabledOverride;
 
   /// false = 对话框语境（正文尺寸受外层约束、动作按钮由对话框 footer 提供）；
   /// true = 页面语境（正文撑满可用空间、动作按钮画在 View 内部底行）。
@@ -108,6 +113,7 @@ class MokuroMoeCatalogView extends ConsumerStatefulWidget {
 class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
   late final MokuroMoeClient _client;
   late final MokuroMoeDownloadQueue _queue;
+  late bool _enabled;
   final TextEditingController _searchCtrl = TextEditingController();
 
   _CatalogStage _stage = _CatalogStage.browse;
@@ -136,6 +142,10 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
   @override
   void initState() {
     super.initState();
+    _enabled = widget.enabledOverride ??
+        (widget.clientOverride != null && widget.queueOverride != null
+            ? true
+            : ref.read(appProvider).mangaOnlineCatalogEnabled);
     _client = widget.clientOverride ??
         MokuroMoeClient(
           baseUrl: ref.read(appProvider).mangaOnlineCatalogBaseUrl,
@@ -150,8 +160,30 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
       ),
     );
     _queue.addListener(_onQueueChanged);
-    unawaited(_loadLibrary());
-    unawaited(_loadExistingBooks());
+    if (_enabled) {
+      unawaited(_loadLibrary());
+      unawaited(_loadExistingBooks());
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant MokuroMoeCatalogView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final bool? nextOverride = widget.enabledOverride;
+    if (nextOverride == null || nextOverride == _enabled) return;
+    _enabled = nextOverride;
+    if (_enabled) {
+      unawaited(_loadLibrary());
+      unawaited(_loadExistingBooks());
+    } else {
+      _library = null;
+      _loadError = null;
+      _loading = false;
+      _series = null;
+      _selectedVolumes.clear();
+      _stage = _CatalogStage.browse;
+      _publishSnapshot();
+    }
   }
 
   @override
@@ -279,6 +311,28 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    if (!_enabled) {
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.all(tokens.spacing.gap * 2),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(
+                Icons.public_off_outlined,
+                color: tokens.surfaces.onVariant,
+              ),
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                t.manga_online_source_disabled,
+                style: tokens.type.listSubtitle,
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final Widget body = _stage == _CatalogStage.browse
         ? _buildBrowse(tokens)
         : _buildSeries(tokens);

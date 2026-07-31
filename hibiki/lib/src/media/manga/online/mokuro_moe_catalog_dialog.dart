@@ -21,6 +21,7 @@ class MokuroMoeCatalogDialog extends StatefulWidget {
     required this.db,
     this.clientOverride,
     this.queueOverride,
+    this.enabledOverride,
     super.key,
   });
 
@@ -32,6 +33,9 @@ class MokuroMoeCatalogDialog extends StatefulWidget {
 
   /// 测试用队列（null = 取 AppModel.mokuroMoeDownloadQueue 共享实例）。
   final MokuroMoeDownloadQueue? queueOverride;
+
+  /// Test/embedding source gate. Null reads the live AppModel preference.
+  final bool? enabledOverride;
 
   @override
   State<MokuroMoeCatalogDialog> createState() => _MokuroMoeCatalogDialogState();
@@ -67,6 +71,7 @@ class _MokuroMoeCatalogDialogState extends State<MokuroMoeCatalogDialog> {
         db: widget.db,
         clientOverride: widget.clientOverride,
         queueOverride: widget.queueOverride,
+        enabledOverride: widget.enabledOverride,
         embedded: false,
         onClose: _close,
         snapshotNotifier: _snapshot,

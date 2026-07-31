@@ -372,3 +372,34 @@ throttle above is unchanged and complementary (it bounds build/relayout
 frequency, the boundary bounds raster area).
 
 Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_repaint_boundary_test.dart`.
+
+## BUG-1224: expose the desktop seek-bar push-down as a theme field (`seekBarBottomButtonBarOverlap`)
+
+`MaterialDesktopVideoControls` stacks the bottom chrome as a `Column`
+(seek bar, then button bar) anchored to the bottom edge, and pushes the seek bar
+**down** with a hard-coded `Transform.translate(offset: Offset(0.0, 16.0))` so
+its thin visible track rides on the top edge of the button bar. The seek bar's
+clickable area is not the track, though: it is a fully transparent
+`seekBarContainerHeight`-tall (default 36) `Container` wrapped in a bare
+`Listener`, with the track centred inside it. Net effect: the clickable area
+spans `[buttonBarHeight - 16, buttonBarHeight - 16 + 36]` above the video's
+bottom edge, i.e. it sticks out **20 logical pixels above the button bar** — and
+nothing outside this file could know that, because one number was a constructor
+default the host never passed and the other was a literal inside `build()`.
+
+Hibiki draws its own subtitles (`VideoSubtitleOverlay`) above the controls and,
+since BUG-838, absorbs pointers that land on a subtitle glyph so a lookup tap is
+not stolen by the seek bar's bare `Listener`. With the subtitle's controls-visible
+avoidance stopping at `buttonBarHeight`, the subtitle sat exactly on that 20px
+band: hovering it still showed the seek preview thumbnail (hover goes through a
+non-opaque `MouseRegion`), but pressing there was absorbed by the subtitle and
+turned into a dictionary lookup while the seek never fired.
+
+The patch adds `seekBarBottomButtonBarOverlap` (default `16.0`, so the rendered
+layout is unchanged) to `MaterialDesktopVideoControlsThemeData` + `copyWith`, and
+`Transform.translate` now reads it. Hibiki passes the same constant to the theme
+and to `videoSubtitleControlsReserve`, so the controls layout and the subtitle
+avoidance are computed from one source instead of two guesses.
+
+Source-guard test: `hibiki/test/pages/video_subtitle_push_up_guard_test.dart`
+(`BUG-1224：桌面 theme 与字幕避让读同一份进度条几何…`).

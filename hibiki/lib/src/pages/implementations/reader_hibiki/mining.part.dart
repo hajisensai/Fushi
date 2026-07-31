@@ -432,9 +432,6 @@ extension _ReaderMining on _ReaderHibikiPageState {
   }
 
   Future<String?> _prepareSasayakiCuesJson() async {
-    _cachedAllCues = null;
-    _cachedSasayaki = false;
-
     // BUG-395：逐句高亮策略判据归一到「cue 是否 sasayaki 编码」（与 playback 端
     // SasayakiMatchCodec.tryDecode 同一判据），不再用 _srtBookUid（音频格式=srt）
     // 当代理。旧代码在 _srtBookUid!=null 时**无条件 return null**：但「普通 EPUB +
@@ -443,16 +440,26 @@ extension _ReaderMining on _ReaderHibikiPageState {
     // 恒空）→ 每次 highlightSasayakiCue 都 RETURN_NULL_no_segments，正文无任何跟随
     // 高亮（章节级跟随仍正常，因其走 cue 解码的 sectionIndex，不依赖 DOM range）。
     // SRT 与普通有声书两源在 _loadHighlightCues 之后判据完全一致。
-    final List<AudioCue>? allCues = await _loadHighlightCues();
+    //
+    // 性能（首帧路径）：全书 cue 在 _resolveAudioSlot → _primeAudioCuesForCurrentBook
+    // 已查过并缓存进 _cachedAllCues；本方法此前每次章节加载都先清缓存再重查一遍
+    // 全书 cue（纯重复 DB 往返，串行挡在引擎注入之前），且清缓存后若加载失败会让
+    // _injectAudiobookBridge 静默拿到 null 跳过 cue 装载。缓存生命周期 = 音频槽绑定
+    // （_resolveAudioSlot 的 detach 块清、prime 重灌），这里直接复用，仅缓存缺失时
+    // 兜底加载。
+    List<AudioCue>? allCues = _cachedAllCues;
     if (allCues == null) {
-      debugPrint('[sasayaki-hl] prepareCues path=NONE '
-          '(srtUid=null, audiobookKey=null) -> return null');
-      return null;
+      allCues = await _loadHighlightCues();
+      if (allCues == null) {
+        debugPrint('[sasayaki-hl] prepareCues path=NONE '
+            '(srtUid=null, audiobookKey=null) -> return null');
+        return null;
+      }
+      _cachedAllCues = allCues;
+      _cachedSasayaki = allCues.any(
+        (c) => SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
+      );
     }
-    _cachedAllCues = allCues;
-    _cachedSasayaki = allCues.any(
-      (c) => SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
-    );
 
     final String pathTag = _srtBookUid != null ? 'SRT' : 'AUDIOBOOK';
     if (!_cachedSasayaki) {

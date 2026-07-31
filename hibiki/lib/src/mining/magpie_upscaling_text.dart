@@ -40,8 +40,7 @@ String magpieUpscalingStatusLabel(MagpieUpscalingReport report) =>
           ? t.game_upscaling_status_active
           : t.game_upscaling_status_manual,
       MagpieUpscalingStatus.hotkeyOnly => t.game_upscaling_status_manual,
-      MagpieUpscalingStatus.unavailable =>
-        t.game_upscaling_status_unavailable,
+      MagpieUpscalingStatus.unavailable => t.game_upscaling_status_unavailable,
       MagpieUpscalingStatus.failed => t.game_upscaling_status_failed,
       MagpieUpscalingStatus.idle ||
       MagpieUpscalingStatus.disabled ||
@@ -61,6 +60,13 @@ String? magpieUpscalingActionHint(MagpieUpscalingReport report) {
     case MagpieUpscalingStatus.unavailable:
       return t.game_upscaling_hint_not_installed;
     case MagpieUpscalingStatus.failed:
+      return switch (report.failureReason) {
+        MagpieUpscalingFailureReason.bundleMissing =>
+          t.game_upscaling_error_bundle_missing,
+        MagpieUpscalingFailureReason.bundleInvalid =>
+          t.game_upscaling_error_bundle_invalid,
+        null => null,
+      };
     case MagpieUpscalingStatus.idle:
     case MagpieUpscalingStatus.disabled:
     case MagpieUpscalingStatus.preparing:

@@ -28,6 +28,7 @@ const List<String> _videoHibikiPageFiles = <String>[
   'lib/src/pages/implementations/video_hibiki/lookup_mining.part.dart',
   'lib/src/pages/implementations/video_hibiki/fullscreen.part.dart',
   'lib/src/pages/implementations/video_hibiki/layout.part.dart',
+  'lib/src/pages/implementations/video_hibiki/subtitle_caret.part.dart',
 ];
 
 /// TODO-1000: the media-degradation ladder (GIF -> cue-time still frame ->

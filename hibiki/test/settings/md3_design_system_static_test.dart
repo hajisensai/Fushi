@@ -271,12 +271,6 @@ void main() {
       't.game_waveform_select_title',
       't.game_waveform_range_label',
     ],
-    'lib/src/mining/magpie_download_confirm.dart': <String>[
-      'showAppDialog<bool>(',
-      'HibikiDialogFrame',
-      'HibikiModalSheetFrame',
-      'adaptiveDialogAction',
-    ],
     // 刮削二跳收口后，详情页的刮削 UI 全部委托统一弹窗（galgame_scrape_dialog）。
     'lib/src/pages/implementations/galgame_detail_page.dart': <String>[
       'showGalgameScrapeDialog(',
@@ -605,10 +599,6 @@ void main() {
         'AlertDialog(',
         '选择音频范围',
       ],
-      'lib/src/mining/magpie_download_confirm.dart': <String>[
-        'showDialog<',
-        'AlertDialog(',
-      ],
       'lib/src/pages/implementations/galgame_detail_page.dart': <String>[
         'showDialog<',
         'AlertDialog(',
@@ -681,10 +671,6 @@ void main() {
           'Token source owns app radii and semantic surface roles.',
       'lib/src/utils/components/hibiki_material_components.dart':
           'Shared MD3 component implementation may map tokens to framework widgets.',
-      'lib/src/utils/components/galgame_poster_card.dart':
-          'Shared galgame poster-card component maps radius/typography/color '
-              'tokens to framework widgets; the class name PosterCard trips the '
-              'crude Card( substring scan.',
       'lib/src/utils/components/settings_shared.dart':
           'Shared adaptive settings primitives own compact settings controls.',
       'lib/src/utils/components/hibiki_dropdown.dart':
@@ -871,10 +857,14 @@ void main() {
               'with appUiScale, not ordinary page chrome (same content rationale '
               'as the allowlisted sibling subtitle jump panel).',
       'lib/src/media/video/video_episode_panel.dart':
-          'Episode list panel (TODO-638) renders episode index + title rows '
-              'as video-subsystem content in a push-aside sidebar mirroring '
-              'the allowlisted sibling chapter panel; row font size scales '
+          'Episode list panel renders episode index + title cards as '
+              'video-subsystem content in a bottom overlay rail; row font size scales '
               'with appUiScale, not ordinary page chrome.',
+      'lib/src/media/video/video_episode_rail.dart':
+          'Shared episode rail renders 16:9 media cover frames, episode titles '
+              'and playback state as video-subsystem content in the player overlay '
+              'and collection hero; card typography scales with appUiScale in the '
+              'player, the same reviewed content exception as video_episode_panel.',
       'lib/src/media/video/video_side_panel.dart':
           'Video translucent side-panel scaffold (favorite sentences list etc.) '
               'renders video-subsystem overlay chrome; lock toggle (TODO-611) '
@@ -895,6 +885,21 @@ void main() {
               'adaptiveSlider / AdaptiveSettingsTextField).',
       'lib/src/media/video/video_danmaku_overlay.dart':
           'Danmaku overlay renders timed video content text, not app chrome.',
+      'lib/src/media/video/video_danmaku_text_metrics.dart':
+          'BUG-1297/PR#627 danmaku font-size single source of truth, shared '
+              'by rendering (video_danmaku_overlay) and geometry measurement '
+              '(VideoDanmakuTextMetrics.widthOf -> video_danmaku_layout). The '
+              'file is headless: no Widget/build/BuildContext/Theme.of at all, '
+              'and its only fontSize: is kVideoDanmakuBaseFontSize * the user '
+              'fontScale preference inside the videoDanmakuTextStyle factory - '
+              'timed video content typography, the same reviewed exception '
+              'class as the video_danmaku_overlay entry it was extracted from '
+              'and the user-configurable subtitle caption font size in '
+              'video_hibiki/layout.part.dart. Routing it through a shared MD3 '
+              'type role would break the contract the file documents '
+              '(inherit: false, so the host DefaultTextStyle cannot desync '
+              'measurement from render) and reintroduce the measure-18px / '
+              'render-20px drift that made danmaku vanish mid-screen.',
       'lib/src/media/video/video_thumbnail_preview_overlay.dart':
           'TODO-669 hover/seek thumbnail preview overlay: thumbnail frame corner '
               'radius (BorderRadius.circular(6*uiScale)) and timestamp bubble '

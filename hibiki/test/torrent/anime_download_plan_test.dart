@@ -24,10 +24,7 @@ AnimeDownloadPlan _fullPlan() {
         stagedPath: '/tmp/subs/One Piece 01.ja.srt',
         language: 'ja',
       ),
-      PlanSubtitle(
-        fileName: 'extra.ass',
-        stagedPath: '/tmp/subs/extra.ass',
-      ),
+      PlanSubtitle(fileName: 'extra.ass', stagedPath: '/tmp/subs/extra.ass'),
     ],
     status: AnimeDownloadPlan.statusDownloading,
   );
@@ -42,8 +39,9 @@ void main() {
         password: 'secret',
         category: 'anime',
       );
-      final QbConnectionConfig? decoded =
-          decodeQbConnectionConfig(encodeQbConnectionConfig(config));
+      final QbConnectionConfig? decoded = decodeQbConnectionConfig(
+        encodeQbConnectionConfig(config),
+      );
       expect(decoded, isNotNull);
       expect(decoded!.baseUrl, 'http://127.0.0.1:8080');
       expect(decoded.username, 'admin');
@@ -60,12 +58,14 @@ void main() {
     });
 
     test('category 缺失/为空回退默认 hibiki', () {
-      final QbConnectionConfig? decoded =
-          decodeQbConnectionConfig('{"baseUrl":"http://x"}');
+      final QbConnectionConfig? decoded = decodeQbConnectionConfig(
+        '{"baseUrl":"http://x"}',
+      );
       expect(decoded, isNotNull);
       expect(decoded!.category, 'hibiki');
-      final QbConnectionConfig? decoded2 =
-          decodeQbConnectionConfig('{"baseUrl":"http://x","category":""}');
+      final QbConnectionConfig? decoded2 = decodeQbConnectionConfig(
+        '{"baseUrl":"http://x","category":""}',
+      );
       expect(decoded2!.category, 'hibiki');
     });
 
@@ -76,8 +76,9 @@ void main() {
       expect(config.isConfigured, isTrue);
       expect(config.category, 'hibiki');
       // 显式外接 qb 但没填地址 → 未配置。
-      const QbConnectionConfig qbEmpty =
-          QbConnectionConfig(backend: QbConnectionConfig.backendQbittorrent);
+      const QbConnectionConfig qbEmpty = QbConnectionConfig(
+        backend: QbConnectionConfig.backendQbittorrent,
+      );
       expect(qbEmpty.isConfigured, isFalse);
       final QbConnectionConfig edited = qbEmpty.copyWith(baseUrl: 'http://x');
       expect(edited.isConfigured, isTrue);
@@ -89,8 +90,9 @@ void main() {
   group('AnimeDownloadPlan codec', () {
     test('roundtrip 保持全部字段（含 null 可空字段）', () {
       final AnimeDownloadPlan plan = _fullPlan();
-      final AnimeDownloadPlan? decoded =
-          decodeAnimeDownloadPlan(encodeAnimeDownloadPlan(plan));
+      final AnimeDownloadPlan? decoded = decodeAnimeDownloadPlan(
+        encodeAnimeDownloadPlan(plan),
+      );
       expect(decoded, isNotNull);
       expect(decoded!.id, plan.id);
       expect(decoded.createdAtMs, plan.createdAtMs);
@@ -103,6 +105,8 @@ void main() {
       expect(decoded.status, AnimeDownloadPlan.statusDownloading);
       expect(decoded.failReason, isNull);
       expect(decoded.collectionId, isNull);
+      expect(decoded.importedEarly, isFalse);
+      expect(decoded.importInProgress, isFalse);
       expect(decoded.subtitles, hasLength(2));
       expect(decoded.subtitles.first.episode, 1);
       expect(decoded.subtitles.first.language, 'ja');
@@ -116,10 +120,32 @@ void main() {
         status: AnimeDownloadPlan.statusImported,
         collectionId: 42,
       );
-      final AnimeDownloadPlan? decoded =
-          decodeAnimeDownloadPlan(encodeAnimeDownloadPlan(imported));
+      final AnimeDownloadPlan? decoded = decodeAnimeDownloadPlan(
+        encodeAnimeDownloadPlan(imported),
+      );
       expect(decoded!.status, AnimeDownloadPlan.statusImported);
       expect(decoded.collectionId, 42);
+    });
+
+    test('roundtrip 保持边下边播/持久入库 marker；老 JSON 默认 false', () {
+      final AnimeDownloadPlan streaming = _fullPlan().copyWith(
+        importedEarly: true,
+        importInProgress: true,
+        collectionId: 42,
+      );
+      final AnimeDownloadPlan? decoded = decodeAnimeDownloadPlan(
+        encodeAnimeDownloadPlan(streaming),
+      );
+      expect(decoded!.status, AnimeDownloadPlan.statusDownloading);
+      expect(decoded.importedEarly, isTrue);
+      expect(decoded.importInProgress, isTrue);
+      expect(decoded.collectionId, 42);
+
+      final AnimeDownloadPlan? legacy = decodeAnimeDownloadPlan(
+        <String, dynamic>{'id': 'legacy'},
+      );
+      expect(legacy!.importedEarly, isFalse);
+      expect(legacy.importInProgress, isFalse);
     });
 
     test('缺 id 返回 null；空 Map 返回 null', () {
@@ -133,16 +159,17 @@ void main() {
     });
 
     test('缺字段用安全默认值；坏字幕条目逐条跳过', () {
-      final AnimeDownloadPlan? decoded =
-          decodeAnimeDownloadPlan(<String, dynamic>{
-        'id': 'hash1',
-        'createdAtMs': 'not int',
-        'subtitles': <dynamic>[
-          'not a map',
-          <String, dynamic>{'fileName': 'a.srt'}, // 缺 stagedPath → 跳过
-          <String, dynamic>{'fileName': 'b.srt', 'stagedPath': '/tmp/b.srt'},
-        ],
-      });
+      final AnimeDownloadPlan? decoded = decodeAnimeDownloadPlan(
+        <String, dynamic>{
+          'id': 'hash1',
+          'createdAtMs': 'not int',
+          'subtitles': <dynamic>[
+            'not a map',
+            <String, dynamic>{'fileName': 'a.srt'}, // 缺 stagedPath → 跳过
+            <String, dynamic>{'fileName': 'b.srt', 'stagedPath': '/tmp/b.srt'},
+          ],
+        },
+      );
       expect(decoded, isNotNull);
       expect(decoded!.createdAtMs, 0);
       expect(decoded.seriesTitle, '');
@@ -176,8 +203,9 @@ void main() {
     test('save 后 loadAll 读回；不留 .tmp 残骸', () async {
       final AnimeDownloadPlan plan = _fullPlan();
       await store.save(plan);
-      final File file =
-          File(p.join(store.baseDir.path, 'plans', '${plan.id}.json'));
+      final File file = File(
+        p.join(store.baseDir.path, 'plans', '${plan.id}.json'),
+      );
       expect(file.existsSync(), isTrue);
       expect(File('${file.path}.tmp').existsSync(), isFalse);
 
@@ -190,10 +218,12 @@ void main() {
     test('save 覆盖同 id 计划（状态推进落盘）', () async {
       final AnimeDownloadPlan plan = _fullPlan();
       await store.save(plan);
-      await store.save(plan.copyWith(
-        status: AnimeDownloadPlan.statusImported,
-        collectionId: 7,
-      ));
+      await store.save(
+        plan.copyWith(
+          status: AnimeDownloadPlan.statusImported,
+          collectionId: 7,
+        ),
+      );
       final List<AnimeDownloadPlan> loaded = await store.loadAll();
       expect(loaded, hasLength(1));
       expect(loaded.single.status, AnimeDownloadPlan.statusImported);
@@ -201,22 +231,30 @@ void main() {
     });
 
     test('loadAll 跳过坏文件，按 createdAtMs 升序', () async {
-      final AnimeDownloadPlan older =
-          _fullPlan().copyWith(id: 'older', createdAtMs: 100);
-      final AnimeDownloadPlan newer =
-          _fullPlan().copyWith(id: 'newer', createdAtMs: 200);
+      final AnimeDownloadPlan older = _fullPlan().copyWith(
+        id: 'older',
+        createdAtMs: 100,
+      );
+      final AnimeDownloadPlan newer = _fullPlan().copyWith(
+        id: 'newer',
+        createdAtMs: 200,
+      );
       await store.save(newer);
       await store.save(older);
       final Directory plansDir = Directory(p.join(store.baseDir.path, 'plans'));
       File(p.join(plansDir.path, 'garbage.json')).writeAsStringSync('not json');
-      File(p.join(plansDir.path, 'array.json'))
-          .writeAsStringSync(jsonEncode(<int>[1, 2]));
-      File(p.join(plansDir.path, 'noid.json'))
-          .writeAsStringSync(jsonEncode(<String, dynamic>{'seriesTitle': 'x'}));
+      File(
+        p.join(plansDir.path, 'array.json'),
+      ).writeAsStringSync(jsonEncode(<int>[1, 2]));
+      File(
+        p.join(plansDir.path, 'noid.json'),
+      ).writeAsStringSync(jsonEncode(<String, dynamic>{'seriesTitle': 'x'}));
 
       final List<AnimeDownloadPlan> loaded = await store.loadAll();
-      expect(loaded.map((AnimeDownloadPlan e) => e.id).toList(),
-          <String>['older', 'newer']);
+      expect(loaded.map((AnimeDownloadPlan e) => e.id).toList(), <String>[
+        'older',
+        'newer',
+      ]);
     });
 
     test('subsDirFor 布局 = baseDir/subs/<id>', () {
@@ -230,14 +268,17 @@ void main() {
       // 默认（番剧）= video。
       expect(_fullPlan().contentKind, AnimeDownloadPlan.kindVideo);
       // round-trip 保留 book。
-      final AnimeDownloadPlan book =
-          _fullPlan().copyWith(contentKind: AnimeDownloadPlan.kindBook);
-      final AnimeDownloadPlan decoded =
-          decodeAnimeDownloadPlan(encodeAnimeDownloadPlan(book))!;
+      final AnimeDownloadPlan book = _fullPlan().copyWith(
+        contentKind: AnimeDownloadPlan.kindBook,
+      );
+      final AnimeDownloadPlan decoded = decodeAnimeDownloadPlan(
+        encodeAnimeDownloadPlan(book),
+      )!;
       expect(decoded.contentKind, AnimeDownloadPlan.kindBook);
       // 老计划（JSON 无 contentKind 字段）→ video（向后兼容）。
-      final AnimeDownloadPlan legacy =
-          decodeAnimeDownloadPlan(<String, dynamic>{'id': 'x', 'magnet': 'm'})!;
+      final AnimeDownloadPlan legacy = decodeAnimeDownloadPlan(
+        <String, dynamic>{'id': 'x', 'magnet': 'm'},
+      )!;
       expect(legacy.contentKind, AnimeDownloadPlan.kindVideo);
     });
 

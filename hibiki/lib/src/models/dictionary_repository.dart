@@ -268,14 +268,16 @@ class DictionaryRepository {
     _dictionarySearchCache[searchTerm] = result;
   }
 
-  List<HoshiLookupResult>? getCachedFfiLookup(String searchTerm) =>
-      _ffiLookupCache[searchTerm];
+  /// [cacheKey] 由 `buildFfiLookupCacheKey` 生成，**含引擎结果上限**——不是裸
+  /// searchTerm。上限进了键，load-more 的更大上限才不会命中上一轮的短结果集。
+  List<HoshiLookupResult>? getCachedFfiLookup(String cacheKey) =>
+      _ffiLookupCache[cacheKey];
 
-  void cacheFfiLookup(String searchTerm, List<HoshiLookupResult> results) {
+  void cacheFfiLookup(String cacheKey, List<HoshiLookupResult> results) {
     _ffiLookupCache.maxBytes = _isLowMemory()
         ? ffiLookupCacheMaxBytesLowMemory
         : ffiLookupCacheMaxBytes;
-    _ffiLookupCache[searchTerm] = results;
+    _ffiLookupCache[cacheKey] = results;
   }
 
   // ── dictionary history ───────────────────────────────────────────────

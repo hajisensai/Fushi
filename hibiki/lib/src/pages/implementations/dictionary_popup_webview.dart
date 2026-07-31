@@ -10,6 +10,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:hibiki/src/pages/implementations/popup_settings_injection.dart';
 import 'package:hibiki/src/platform/selection_external_actions.dart';
@@ -93,7 +94,8 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onTopPullReleased,
     this.onRendered,
     this.onRenderError,
-    this.onHostNavigationKey,
+    this.inputSpec = const DictionaryPopupInputSpec(),
+    this.onHostInputToken,
     this.nudgeSurfaceOnRender = false,
   });
 
@@ -199,11 +201,20 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 立即把该层翻可见（加载失败也显示空壳，至少不卡死「点查词什么都不出」）。
   final VoidCallback? onRenderError;
 
-  /// Optional host-level navigation bridge. Native popup WebViews can own the
-  /// desktop keyboard focus, so an interested host (currently the manga
-  /// reader) receives navigation keys directly from JavaScript instead of
-  /// relying on an ancestor Flutter [Focus] node.
-  final ValueChanged<String>? onHostNavigationKey;
+  /// 弹窗内要交回宿主的输入集合（键盘 token + 鼠标按钮），由宿主从快捷键注册表
+  /// 实时导出（见 [dictionaryPopupInputSpecFor]）。
+  ///
+  /// 弹窗是纯原生 WebView：指针一落在它上面，键盘与鼠标事件就只存在于弹窗 DOM 里，
+  /// 宿主的 Flutter `Focus` / `Listener` 全部收不到。点词后弹窗恰好贴在光标旁，所以
+  /// 这是常态——「关闭词典」的鼠标键与快捷键失灵都源于此（BUG-1071 复诉）。
+  ///
+  /// 空 spec（默认）= 不拦任何输入，与本桥存在前的行为一致。
+  final DictionaryPopupInputSpec inputSpec;
+
+  /// [inputSpec] 命中时弹窗回传的 token（键盘 `Ctrl+KeyD` / 鼠标 `Mouse3`）。
+  /// 宿主用 [resolveDictionaryPopupInputToken] 解析成动作后执行，与键盘路径共用同一
+  /// 个 `resolve*`，保证改键对两条路径同时生效。
+  final ValueChanged<String>? onHostInputToken;
 
   /// TODO-1152：内容渲染完成（`popupRendered`）后是否补一次「表面重绘 nudge」。
   /// 仅用于把 WebView 撑满一块固定大区域（如 in-app 查词页的结果区，[Expanded] 全高）
@@ -358,32 +369,21 @@ class DictionaryPopupWebViewState
 })();
 ''';
 
-  /// Installs one capture-phase keyboard bridge and only toggles its runtime
-  /// gate on subsequent injections. The gate keeps every non-manga popup's
-  /// existing keyboard behavior unchanged.
+  /// 安装 capture 阶段的键盘 + 鼠标桥；后续注入只热更新 token 表（listener 只装
+  /// 一次）。热槽 WebView 跨查词长期存活，用户随时可能改键，故表必须可更新——
+  /// 旧版把键表冻结在首次注入的闭包里，改键后弹窗持焦时仍按老键位响应。
   @visibleForTesting
-  static String debugHostNavigationKeyScript(bool enabled) => '''
-(function(){
-  window.__hibikiHostNavigationKeysEnabled = $enabled;
-  if (window.__hibikiHostNavigationKeysInstalled) return;
-  window.__hibikiHostNavigationKeysInstalled = true;
-  document.addEventListener('keydown', function(e) {
-    if (!window.__hibikiHostNavigationKeysEnabled || e.repeat) return;
-    var key = e.key === 'Esc' ? 'Escape' : e.key;
-    if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'Escape') return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    try {
-      window.flutter_inappwebview.callHandler('hostNavigationKey', key);
-    } catch (err) {}
-  }, true);
-})();
-''';
+  static String debugHostInputBridgeScript(DictionaryPopupInputSpec spec) =>
+      dictionaryPopupInputBridgeScript(spec);
 
-  void _setHostNavigationKeysEnabled() {
+  void _setHostInputBridge() {
     if (_controller == null || !_ready) return;
     _controller!.evaluateJavascript(
-      source: debugHostNavigationKeyScript(widget.onHostNavigationKey != null),
+      source: dictionaryPopupInputBridgeScript(
+        widget.onHostInputToken == null
+            ? const DictionaryPopupInputSpec()
+            : widget.inputSpec,
+      ),
     );
   }
 
@@ -766,9 +766,12 @@ JSON.stringify((function(){
     if (oldWidget.hasChildPopup != widget.hasChildPopup) {
       _setHasChildPopupJs(widget.hasChildPopup);
     }
-    if ((oldWidget.onHostNavigationKey == null) !=
-        (widget.onHostNavigationKey == null)) {
-      _setHostNavigationKeysEnabled();
+    // 键表随用户改键而变，故比较 spec 本身而不是「回调有没有」——只比回调会让改键
+    // 在弹窗持焦时不生效（BUG-1071 复诉的一半）。
+    if ((oldWidget.onHostInputToken == null) !=
+            (widget.onHostInputToken == null) ||
+        oldWidget.inputSpec != widget.inputSpec) {
+      _setHostInputBridge();
     }
   }
 
@@ -1391,11 +1394,11 @@ JSON.stringify((function(){
         );
 
         controller.addJavaScriptHandler(
-          handlerName: 'hostNavigationKey',
+          handlerName: kDictionaryPopupInputHandler,
           callback: (args) {
             final Object? value = args.isEmpty ? null : args.first;
             if (value is String) {
-              widget.onHostNavigationKey?.call(value);
+              widget.onHostInputToken?.call(value);
             }
             return null;
           },
@@ -2010,8 +2013,11 @@ JSON.stringify((function(){
         // TODO-1353: 装一次 Ctrl+滚轮缩放监听（幂等 guard；warm 热槽也只装一次）。
         controller.evaluateJavascript(source: _zoomWheelJs);
         controller.evaluateJavascript(
-          source:
-              debugHostNavigationKeyScript(widget.onHostNavigationKey != null),
+          source: dictionaryPopupInputBridgeScript(
+            widget.onHostInputToken == null
+                ? const DictionaryPopupInputSpec()
+                : widget.inputSpec,
+          ),
         );
         controller
             .evaluateJavascript(source: ReaderCaretScripts.source())

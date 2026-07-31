@@ -437,7 +437,7 @@ void main() {
       MangaImporter.importFromMokuroPath(
         db: db,
         mokuroPath: second,
-        onDuplicateTitle: (String _) async => DuplicateTitleResolution.cancel,
+        policy: DuplicatePolicy.ask((String _) async => DuplicateChoice.cancel),
       ),
       throwsA(isA<DuplicateImportCancelledException>()),
     );

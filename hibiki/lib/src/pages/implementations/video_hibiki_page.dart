@@ -45,6 +45,8 @@ import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
         resolveYoutubeCaptionTracks,
         resolveYoutubeCaptionCues,
         pickBestYoutubeCaptionTrack,
+        // BUG-1289：字幕轨选择器的显示标签合成（可读语言名 + ASR/翻译标注）。
+        youtubeCaptionTrackLabel,
         YoutubeVideoVariant,
         YoutubeVariantSet,
         resolveYoutubeVideoVariants,
@@ -74,10 +76,14 @@ import 'package:hibiki/src/focus/page_focus_ownership.dart';
 import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
 // TODO-1342：视频播放器手柄映射。GamepadButtonIntent（桌面轮询派发）+ GamepadButton
 // （原生按键归一）+ ShortcutAction/ShortcutScope（video 作用域绑定解析）。
+import 'package:hibiki/src/shortcuts/dictionary_caret_controller.dart'
+    show CaretSurface, DictionaryCaretController, DictionaryCaretHost;
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
-    show GamepadButtonIntent, focusedEditableText;
+    show GamepadButtonIntent, GamepadLongPressIntent, focusedEditableText;
 import 'package:hibiki/src/shortcuts/input_binding.dart'
     show GamepadButton, InputBinding;
+import 'package:hibiki/src/shortcuts/reader_caret_router.dart'
+    show CaretAction, ReaderCaretRouter;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart'
     show ShortcutAction, ShortcutScope;
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
@@ -111,6 +117,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult, DictionaryPopupWebViewState;
@@ -135,6 +142,7 @@ import 'package:hibiki/src/platform/windows_ime_space_channel.dart';
 import 'package:hibiki/src/platform/windows_ime_space_dispatch.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
+import 'package:hibiki/src/utils/components/fading_chrome_gate.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 
@@ -154,6 +162,7 @@ part 'video_hibiki/controls_theme.part.dart';
 part 'video_hibiki/speed.part.dart';
 part 'video_hibiki/lookup_favorite.part.dart';
 part 'video_hibiki/lookup_mining.part.dart';
+part 'video_hibiki/subtitle_caret.part.dart';
 part 'video_hibiki/fullscreen.part.dart';
 part 'video_hibiki/layout.part.dart';
 
@@ -487,13 +496,17 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   /// 查词浮层关闭后是否应恢复播放：仅当浮层栈**已全部关闭**（[stackEmpty]）且本次确实
   /// 是因查词而由我们暂停了正在播放的视频（[pausedForLookup]）。两条件缺一不可——关掉
   /// 递归查词的子层但父层仍在（栈非空）不恢复；查词前本就暂停的视频（未置位）也不恢复。
+  /// [caretHoldsPause]（videoEnterCaret）：字级选词光标仍激活时**不**恢复——用户关掉
+  /// 浮层后往往还要移动光标继续查下一个词，恢复播放会让 cue 换掉、光标失锚；暂停由
+  /// 光标会话接管，退出光标时按同一 [pausedForLookup] 标记恢复（单一恢复真相源）。
   /// 纯函数：与 [_VideoHibikiPageState._popNestedPopupAt] 共用，供单测直接验证（BUG-072）。
   @visibleForTesting
   static bool shouldResumeAfterLookupDismiss({
     required bool stackEmpty,
     required bool pausedForLookup,
+    bool caretHoldsPause = false,
   }) =>
-      stackEmpty && pausedForLookup;
+      stackEmpty && pausedForLookup && !caretHoldsPause;
 
   /// 点查词浮层外的 dismiss barrier 命中了字幕字符时，是否应「换词」（对该字符重新查词、
   /// 替换可见浮层）而非「逐层关顶层」（TODO-758 / BUG-410，纯函数供单测）。
@@ -659,7 +672,7 @@ class _VideoControlPopoverPlacement {
 
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     with DictionaryPageMixin, WidgetsBindingObserver
-    implements VideoHibikiTestHooks {
+    implements VideoHibikiTestHooks, DictionaryCaretHost {
   // 控制条尺寸基线（界面缩放 ×1.0 时的值）。视频页整页被
   // [HibikiAppUiScaleNeutralizer] 中和回 scale=1.0（保证 WebView 查词坐标一致），
   // 故 media_kit 控制条不会自动吃全局「界面大小」——这些基线再乘 [_videoUiScale]
@@ -726,15 +739,44 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// reserve 抬到「轨道上缘 + 本间距」让字幕底缘恰骑进度条上方一点点（不被遮、也不像
   /// 旧版用整段热区高那样顶飞 ~47×缩放 的空白）。随界面缩放。
   static const double _videoSubtitleSeekBarBreathingBase = 8;
+
+  /// **桌面**控制条进度条触摸热区高度（BUG-1224）。桌面 theme 此前不覆盖
+  /// `seekBarContainerHeight`、吃 media_kit fork 的构造器默认 36；现在显式传同一个值，
+  /// 让「控制条实际用的热区高」与「字幕避让算的热区高」是同一个真相源，不再靠猜 fork
+  /// 默认值（fork 改默认值 → 避让会跟着漂，本 bug 的隐蔽处之一）。取值仍是 36 且**不随
+  /// 缩放**，与改动前的桌面渲染逐像素一致（本次只修避让，不动控制条外观）。
+  static const double _videoDesktopSeekBarContainerHeight = 36;
+
+  /// **桌面**进度条被向下压、骑到按钮行上沿的重叠量（BUG-1224）。media_kit fork 桌面
+  /// 控制条用 `Transform.translate` 把进度条整体下压这么多，于是它 36px 高的透明触摸热区
+  /// 只有下半截落在按钮行里、上半截（36 − 16 = 20px）探出到按钮行**上方**——正是字幕
+  /// 底缘所在处。fork 侧已把这个量提成主题字段 `seekBarBottomButtonBarOverlap`（默认同为
+  /// 16），本值同时喂给 theme 和字幕避让，两边不会各自漂。不随缩放（与 fork 原常量一致）。
+  static const double _videoDesktopSeekBarButtonBarOverlap = 16;
+
   static const double _videoControlPopoverGapBase = 8;
 
   /// 进度条与按钮条竖直间距，随界面大小缩放（TODO-156）。
   double get _videoSeekBarButtonGap =>
       _videoSeekBarButtonGapBase * _videoUiScale;
 
-  /// 进度条触摸热区高度，随界面大小缩放（TODO-157）。
+  /// 进度条触摸热区高度，随界面大小缩放（TODO-157）。**移动** theme 用。
   double get _videoSeekBarContainerHeight =>
       _videoSeekBarContainerHeightBase * _videoUiScale;
+
+  /// 当前平台控制条**实际生效**的进度条触摸热区高度（BUG-1224）：桌面 theme 传
+  /// [_videoDesktopSeekBarContainerHeight]（36，不随缩放），移动 theme 传
+  /// [_videoSeekBarContainerHeight]（40×缩放）。字幕避让必须按**这个**值算，用错平台的
+  /// 值就会算出错的热区上缘、字幕重新压进 seek 命中区。
+  double get _activeSeekBarContainerHeight => _isDesktopVideoControls
+      ? _videoDesktopSeekBarContainerHeight
+      : _videoSeekBarContainerHeight;
+
+  /// 当前平台进度条骑按钮行上沿的重叠量（BUG-1224）：桌面 =
+  /// [_videoDesktopSeekBarButtonBarOverlap]；移动端进度条被 `seekBarMargin.bottom` 整体
+  /// 抬到按钮行**上方**、不下压，故为 0。
+  double get _activeSeekBarButtonBarOverlap =>
+      _isDesktopVideoControls ? _videoDesktopSeekBarButtonBarOverlap : 0;
 
   /// 进度条拖动滑块尺寸，随界面大小缩放（TODO-157）。
   double get _videoSeekBarThumbSize =>
@@ -1418,6 +1460,61 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 视频自动播起来；递归查词（已暂停，`isPlaying==false`）不会覆写它（BUG-072）。
   bool _pausedForLookup = false;
 
+  /// 字级选词光标状态机（videoEnterCaret）：复用阅读器抽出的
+  /// [DictionaryCaretController]（TODO-387 预留的跨页面复用点）。主面 =
+  /// [CaretSurface.video]（字幕 overlay 登记表下标 [_subtitleCaretEntry]），查词后
+  /// transfer 进顶层弹窗（[CaretSurface.popup]），与阅读器共用弹窗 caret 全套。
+  /// 域方法见 video_hibiki/subtitle_caret.part.dart。
+  late final DictionaryCaretController _videoCaret =
+      DictionaryCaretController(this);
+
+  /// 选词光标当前停的字幕字符登记表下标（传给 [VideoSubtitleOverlay.caretEntryIndex]
+  /// 画光标环）；null = 主面无锚（未激活，或字幕 gap 期环隐藏）。
+  int? _subtitleCaretEntry;
+
+  /// 光标会话的「暂停 → 再播放」迁移追踪；null = 无进行中的光标会话。见
+  /// [SubtitleCaretPauseTracker]（初值必须来自进入时的播放态，否则本就暂停的视频
+  /// 进光标后自动退出永久失效）。
+  SubtitleCaretPauseTracker? _caretPauseTracker;
+
+  /// 光标会话内当前活动 cue 集合签名（跳句/seek 后重锚判据）。
+  String _caretCueSignature = '';
+
+  // ── DictionaryCaretHost（选词光标状态机的宿主 seam）─────────────────
+
+  @override
+  bool get caretHostMounted => mounted;
+
+  @override
+  DictionaryPopupWebViewState? get caretTopPopupState {
+    final int idx = _topVisiblePopupIndex;
+    if (idx < 0 || idx >= _popup.entries.length) return null;
+    return _popup.entries[idx].webViewKey.currentState;
+  }
+
+  @override
+  int get caretTopVisiblePopupIndex => _topVisiblePopupIndex;
+
+  @override
+  void caretSetState(VoidCallback fn) {
+    if (!mounted) return;
+    setState(fn);
+  }
+
+  @override
+  void caretExitPrimaryRing() {
+    // video 主面的光标环（字幕字符高亮）在 transfer 进弹窗时**保留**——标记正在查
+    // 的词（对齐 lyrics 面语义）。控制器只对 CaretSurface.reader 调本方法，此处
+    // 防御性 no-op。
+  }
+
+  /// 弹窗层渲染完成（DictionaryPageMixin 钩子）：光标激活时把它 transfer 进刚显示
+  /// 的顶层弹窗（与阅读器 onDictionaryPopupRendered → controller 同链路）。
+  @override
+  void onNestedPopupRendered(int index) {
+    _videoCaret.onDictionaryPopupRendered(index);
+  }
+
   /// 当前查词所在字幕句是否已被收藏（驱动查词浮层顶部收藏星标的实心/空心）。每次
   /// [_lookupAt] 成功后据 [_lastLookupSentence] 异步刷新。视频句子收藏走与书内同一
   /// [FavoriteSentenceRepository]（preferences JSON），来源标 [kFavoriteSentenceSourceVideo]。
@@ -1572,6 +1669,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 长按拖动调速的基准速（长按起点的固定加速速，TODO-338）。非空表示正处于一次长按
   /// 调速手势中；横向拖动以此为基准连续加减，松手清空。
   double? _longPressDragBaseSpeed;
+
+  /// 键盘按住/手柄翻转的临时倍速是否进行中（用户请求：与手机长按画面同语义）。
+  /// 与手势长按共用 [_longPressPreviousSpeed] 恢复位，此标志区分恢复权归属：
+  /// true 时恢复只走 [_releaseHoldSpeed]，手势松手不越权恢复。
+  bool _holdSpeedActive = false;
+
+  /// 键盘按住临时倍速的触发键（非空 = 正按住中）。keyup/repeat 只按此键识别、
+  /// 不看修饰键，按住期间先松修饰键也不会把倍速卡在加速态。
+  LogicalKeyboardKey? _holdSpeedTriggerKey;
 
   /// TODO-1154：长按倍速指示徽章的跟随锚点（局部坐标，即 GestureDetector/Stack 同一坐标系
   /// 的 `details.localPosition`）+ 当前速度。非空时在指针上方渲染「Nx」徽章跟手移动
@@ -1835,6 +1941,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _controller?.removeListener(_promoteVideoReadyOnFirstFrame);
     if (!mounted) return;
     setState(() => _videoReadyToShow = true);
+    // BUG-1266：慢路径必须在这里**补一次**焦点回收，否则本页整段时间都没有键盘所有者。
+    //
+    // [_videoFocusNode] 挂在 [Video] 上（`layout.part.dart`），而 [_buildScaffold] 用
+    // `!_videoReadyToShow` 把首帧未就绪的首开挡在 [_buildLoadingBody] 分支——此刻
+    // [Video] 尚未挂载，节点还没 attach 到焦点树。`_openVideo` 结尾那次
+    // `reclaimAfterFrame(contentReady)` 正好落在这个窗口里，对孤儿节点
+    // `requestFocus()` 是**静默 no-op**（请求直接丢失，无任何报错）。等这里把
+    // [Video] 挂上、节点终于 attach 时，却没有人再请求一次焦点，于是焦点滞留在
+    // 页面之外：手柄按键不冒泡经过 [_wrapVideoGamepadControls]，本页所有手柄绑定
+    // （上一句/下一句/播放暂停…）全部失灵，直到用户随便点一下画面触发
+    // [FocusReclaimCause.gesture] 才恢复——正是用户报的「必须先按一下暂停才能
+    // 正常上下句」。更糟的是这段窗口里手柄 B 没人消费，会被 Android 合成成 BACK
+    // 直接退页（见 [_swallowUnboundGamepadBack]）。
+    //
+    // 快路径（load 返回即出画）不进本方法，其 contentReady 那次回收时 [Video] 已挂载、
+    // 本就有效，行为不变。
+    _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
     // BUG-839：慢路径就绪后触发「换集保持全屏」的重进全屏（仅 initialFullscreen 新页生效）。
     _scheduleInitialFullscreenIfNeeded();
   }
@@ -3730,11 +3853,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     setState(() => _popup.dismissAt(index));
     final bool stackEmpty = !_hasVisiblePopup;
+    // videoEnterCaret：光标跟随弹窗栈——还有可见层则跟到新顶层；全关且光标在弹窗
+    // 面上则回落字幕主面（环留在原字符上，保持暂停继续选词）。
+    if (_videoCaret.active) {
+      if (!stackEmpty) {
+        _videoCaret.onDictionaryStackChanged();
+      } else if (_videoCaret.onPopup) {
+        _videoCaret.setSurface(CaretSurface.video);
+      }
+    }
     if (VideoHibikiPage.shouldResumeAfterLookupDismiss(
       // "Effectively empty" = no visible popup; the hidden warm slot doesn't
       // block resume.
       stackEmpty: stackEmpty,
       pausedForLookup: _pausedForLookup,
+      // 光标仍激活 = 用户还在选词，暂停由光标会话接管（退出光标时恢复）。
+      caretHoldsPause: _videoCaretActive,
     )) {
       _pausedForLookup = false;
       unawaited(_controller?.play());
@@ -3944,14 +4078,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // BUG-924：词典浮层可见时，任一视频快捷键先关顶层浮层（对齐阅读器），否则穿透去控制
     // 后台视频（用户报「视频里关不掉词典」「按 d 竟然快进」）。守卫是纯函数，逻辑集中在
     // [guardVideoShortcutsWithPopupDismiss]，此处只提供页面态谓词与关浮层动作。
+    // videoEnterCaret：选词光标激活期，注册表已绑的无修饰光标键（方向键/Enter/Esc）
+    // 先走光标动作、不跑原动作（裸方向键不再 seek/调音量）。包在浮层守卫**之外**
+    // ——光标在弹窗面上时方向键要在弹窗里移动光标，而不是被「任一键先关浮层」吞掉。
     final Map<ShortcutActivator, VoidCallback> guarded =
-        guardVideoShortcutsWithPopupDismiss(
-      buildVideoPlayerShortcutsFromRegistry(
-        appModel.shortcutRegistry,
-        _buildVideoShortcutActions(controller),
+        guardVideoShortcutsWithSubtitleCaret(
+      guardVideoShortcutsWithPopupDismiss(
+        buildVideoPlayerShortcutsFromRegistry(
+          appModel.shortcutRegistry,
+          _buildVideoShortcutActions(controller),
+        ),
+        isPopupVisible: () => _hasVisiblePopup,
+        dismissPopup: _dismissTopVisiblePopup,
       ),
-      isPopupVisible: () => _hasVisiblePopup,
-      dismissPopup: _dismissTopVisiblePopup,
+      isCaretActive: () => _videoCaretActive,
+      runCaretKey: _runCaretKeyboardKey,
     );
     // 制卡键（ShortcutAction.popupMineEntry，默认 Ctrl+Enter）**合并在守卫之后**，这是
     // 关键：上面那层守卫的前提是「视频 scope 没有任何作用于浮层本身的快捷键」，所以浮层
@@ -3983,6 +4124,37 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 同款逐层关调用，index 0 保留隐藏热槽 BUG-092）。键盘 / 手柄 / 裸空格三条输入通道在
   /// 浮层可见时统一调它先关浮层。
   void _dismissTopVisiblePopup() => _popNestedPopupAt(_topVisiblePopupIndex);
+
+  /// BUG-1269：上面那三条输入通道全部走 Flutter 焦点，而词典浮层是**纯原生 WebView**
+  /// ——点词后浮层就贴在光标旁，指针一落上去，键盘与鼠标事件就只存在于浮层 DOM 里，
+  /// 这三条通道一条都收不到。于是「视频里关不掉词典」在浮层持焦时原样复发（BUG-924
+  /// 只修好了 Flutter 持焦的那一半）。让浮层自己把这些输入交回来。
+  @override
+  ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.video;
+
+  /// 与 [guardVideoShortcutsWithPopupDismiss] 同语义：浮层可见时**任一**已映射的视频
+  /// 快捷键都先关顶层浮层。故整份 video scope 都要转发——弹窗内动作
+  /// （dictionaryPopup scope 的切词条 / 制卡）由 [dictionaryPopupInputSpecFor] 统一减掉，
+  /// 不会被抢走，与守卫把制卡键排在守卫之外是同一条边界。
+  @override
+  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
+      ShortcutAction.actionsForScope(ShortcutScope.video).toSet();
+
+  /// 视频的语义是「关**顶层**浮层」（逐层关，保留隐藏热槽 BUG-092），不是清整栈，
+  /// 故不走基类默认的 `clearDictionaryResult()`，改用与守卫完全同一个执行体。
+  @override
+  void onDictionaryPopupInputToken(String token) {
+    final ShortcutAction? action = resolveDictionaryPopupInputToken(
+      registry: appModel.shortcutRegistry,
+      token: token,
+      scope: ShortcutScope.video,
+    );
+    if (action == null) return;
+    // videoEnterCaret：选词光标激活期不再「任一键先关浮层」（那会把正在手柄导航
+    // 的弹窗关掉）；Enter=对光标查词/激活、Esc=光标语义退层，其余吞掉。
+    if (_handleCaretPopupInputToken(action)) return;
+    _dismissTopVisiblePopup();
+  }
 
   /// TODO-1342：视频播放器动作回调集合的单一构造点。键盘
   /// （[buildVideoPlayerShortcutsFromRegistry]）与手柄（[_handleVideoGamepadButton]
@@ -4063,6 +4235,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       resetSpeed: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_setSpeed(1.0)),
       ),
+      // 手柄通道的按住临时倍速（键盘通道不经此表，见 _handleHoldSpeedKey）：
+      // 手柄没有可靠的松开事件管线，退化成按一下开/再按恢复的翻转语义。
+      toggleHoldSpeed: () => _runWhenImmersiveAllowsShortcuts(_toggleHoldSpeed),
       previousFrame: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(controller.frameStep(forward: false)),
       ),
@@ -4145,6 +4320,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       alignSubtitleToNext: () => _runWhenImmersiveAllowsShortcuts(
         () => _snapSubtitleDelayToCue(next: true),
       ),
+      // videoEnterCaret：进入字级选词光标 / 已激活时对光标字符查词（双语义，
+      // 沉浸查词门控在 _enterSubtitleCaret 内按 _immersiveAllowsLookup 判）。
+      enterCaret: () => _handleEnterCaretAction(controller),
       escape: () {
         if (_videoControlEditMode.value) {
           _hideVideoControlEditOverlay(revealControls: false);
@@ -4190,6 +4368,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   bool _handleVideoGamepadButton(GamepadButton button) {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return false;
+    // videoEnterCaret：选词光标激活期，方向/确认/退出等在注册表解析**之前**截获
+    // （阅读器 caret.part 同款 contextual 路由）；未激活返回 false 走正常解析
+    // （进入光标本身是注册表动作 videoEnterCaret，经下方 callback 执行）。
+    if (_handleCaretGamepadButton(button)) return true;
     final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
       button,
       scope: ShortcutScope.video,
@@ -4290,6 +4472,95 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  /// 按住临时倍速的键盘入口（用户请求：与手机长按画面同语义——按下加速、松开
+  /// 恢复）。按住语义需要 keyup 边沿，SingleActivator/CallbackShortcuts 表达不了，
+  /// 故该动作的键盘绑定不进 activator 表（见 [buildVideoPlayerShortcutsFromRegistry]），
+  /// 由本页最外层 [Focus] 的 onKeyEvent 直接判定：状态机是纯函数
+  /// [resolveHoldSpeedKeyTransition]，绑定命中是 [keyDownMatchesHoldSpeed]（都在
+  /// video_player_shortcuts.dart，可单测）。
+  ///
+  /// 与其它视频键语义对齐：词典浮层可见时先关浮层不执行（BUG-924 同款）；进入
+  /// 动作过 [_runWhenImmersiveAllowsShortcuts] 沉浸锁门控；文本框持焦时不接管。
+  /// keyup/repeat 只按触发键识别（不看修饰键/门控），保证任何情况下松开都能恢复。
+  KeyEventResult _handleHoldSpeedKey(KeyEvent event) {
+    final bool matches = event is KeyDownEvent &&
+        _controller != null &&
+        keyDownMatchesHoldSpeed(
+          appModel.shortcutRegistry,
+          event,
+          hasEditableFocus: focusedEditableText() != null,
+        );
+    switch (resolveHoldSpeedKeyTransition(
+      event: event,
+      activeTriggerKey: _holdSpeedTriggerKey,
+      matchesHoldSpeedBinding: matches,
+    )) {
+      case HoldSpeedKeyTransition.none:
+        return KeyEventResult.ignored;
+      case HoldSpeedKeyTransition.swallow:
+        return KeyEventResult.handled;
+      case HoldSpeedKeyTransition.release:
+        _holdSpeedTriggerKey = null;
+        _releaseHoldSpeed();
+        return KeyEventResult.handled;
+      case HoldSpeedKeyTransition.engage:
+        // BUG-924 同语义：浮层可见时任何视频键先关顶层浮层、不执行原动作。
+        if (_hasVisiblePopup) {
+          _dismissTopVisiblePopup();
+          return KeyEventResult.handled;
+        }
+        _holdSpeedTriggerKey = event.logicalKey;
+        _runWhenImmersiveAllowsShortcuts(_engageHoldSpeed);
+        return KeyEventResult.handled;
+    }
+  }
+
+  /// [ShortcutAction.videoEnterCaret] 的实时键盘 activator（注册表可重映射，桌面
+  /// 默认 Enter）。`includeRepeats: false` = press-edge-only：长按不连发查词。
+  Iterable<ShortcutActivator> _videoEnterCaretActivators() =>
+      appModel.shortcutRegistry
+          .bindingsFor(ShortcutAction.videoEnterCaret)
+          .keyboardBindings
+          .map((InputBinding b) => b.toActivator(includeRepeats: false));
+
+  /// videoEnterCaret 的键盘**进入**通道，挂在页面最外层 [Focus]（窗口与全屏共用
+  /// 同一个 [_wrapVideoGamepadControls]，两种模式行为一致）。
+  ///
+  /// 为什么不放进 media_kit 的 `keyboardShortcuts`：那是一个包住整个 controls 子树
+  /// 的 [CallbackShortcuts]，activator 一匹配就返回 handled，Enter 从此再也到不了
+  /// WidgetsApp 的 Enter→ActivateIntent —— 底栏 / 顶栏每个按钮的「焦点确认」被整片
+  /// 吃掉（本 app 裸空格已被中和，Enter 是唯一确认键，见 CLAUDE.md）。
+  ///
+  /// 判据交给纯函数 [decideVideoEnterCaretKey]：焦点归属直接读
+  /// [_videoFocusNode]`.hasPrimaryFocus`（画面持焦），不额外维护一份状态——这与
+  /// [_focusOwnership] 的 [PageFocusOwnership] 模型是同一个真相源（它 reclaim 的
+  /// 就是这个节点），焦点落到控制条按钮上时 `hasPrimaryFocus` 自然为 false。
+  /// 与阅读器 `caret.part.dart` 的 `_isCaretEntryTrigger` 是同一条 contextual 范式。
+  bool _handleVideoEnterCaretKey(KeyEvent event) {
+    final VideoEnterCaretKeyDecision decision = decideVideoEnterCaretKey(
+      event: event,
+      enterActivators: _videoEnterCaretActivators(),
+      keyboardState: HardwareKeyboard.instance,
+      caretActive: _videoCaretActive,
+      hasEditableFocus: focusedEditableText() != null,
+      hasVisiblePopup: _hasVisiblePopup,
+      videoSurfaceHoldsFocus: _videoFocusNode.hasPrimaryFocus,
+    );
+    switch (decision) {
+      case VideoEnterCaretKeyDecision.notTrigger:
+      case VideoEnterCaretKeyDecision.passThrough:
+        return false;
+      case VideoEnterCaretKeyDecision.dismissPopup:
+        _dismissTopVisiblePopup();
+        return true;
+      case VideoEnterCaretKeyDecision.enterCaret:
+        final VideoPlayerController? controller = _controller;
+        if (controller == null) return false;
+        _handleEnterCaretAction(controller);
+        return true;
+    }
+  }
+
   /// TODO-1342：把整页子树包进手柄输入层。外层 [Actions] 接桌面轮询派发的
   /// [GamepadButtonIntent]；内层 [Focus] 只旁观 Android 原生手柄按键的冒泡（不夺焦、
   /// 不参与焦点遍历，故不干扰 [_videoFocusNode] 的键盘持焦与既有 [autofocus] 时序）。
@@ -4300,11 +4571,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           onInvoke: (GamepadButtonIntent intent) =>
               _handleVideoGamepadButton(intent.button),
         ),
+        // 手柄长按 A：选词光标在弹窗面上时等价阅读器「长按标记词典」；其余情况
+        // 返回 false 交回 GamepadService 全局兜底（与阅读器同款接线）。
+        GamepadLongPressIntent: CallbackAction<GamepadLongPressIntent>(
+          onInvoke: (GamepadLongPressIntent intent) =>
+              _handleCaretGamepadLongPress(intent.button),
+        ),
       },
       child: Focus(
         canRequestFocus: false,
         skipTraversal: true,
         onKeyEvent: (FocusNode node, KeyEvent event) {
+          // videoEnterCaret：选词光标激活期，接住未进注册表 activator 表的光标键
+          // （Tab / [ ] / , . / 未绑定的方向键与 Esc 等；已绑键在内层
+          // guardVideoShortcutsWithSubtitleCaret 就被接管，不会冒泡到这里）。
+          if (_handleCaretUnboundKey(event)) {
+            return KeyEventResult.handled;
+          }
+          // videoEnterCaret 的**进入**通道（光标未激活时）。刻意不走内层
+          // media_kit `keyboardShortcuts`：那层一旦匹配就无条件消费，会把控制条
+          // 按钮的 Enter 确认整片吃掉（见 [_handleVideoEnterCaretKey]）。
+          if (_handleVideoEnterCaretKey(event)) {
+            return KeyEventResult.handled;
+          }
           // BUG-880：Shift 按下瞬间在最后指针位置反查字幕字符立即查词，根治「光标停在词上
           // 不动、按 Shift 却不触发」（查词只在鼠标移动的 hover 事件上派发）。不消费按键，
           // Shift 组合键 / 其它快捷键行为不变。
@@ -4312,6 +4601,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               (event.logicalKey == LogicalKeyboardKey.shiftLeft ||
                   event.logicalKey == LogicalKeyboardKey.shiftRight)) {
             _triggerShiftLookupAtLastPointer();
+          }
+          // 按住临时倍速（按下加速/松开恢复）需要 keyup 边沿，绑定不进内层
+          // activator 表，在此按注册表绑定判定按下/松开（见 _handleHoldSpeedKey）。
+          if (_handleHoldSpeedKey(event) == KeyEventResult.handled) {
+            return KeyEventResult.handled;
           }
           // BUG-853：IME 改写成 process 的裸空格上浮到此，先按物理键还原播放/暂停；
           // 其余键交回手柄原生入口，行为不变。
@@ -5310,7 +5604,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // BUG-901：用**触摸热区全高**（进度条真正可点目标，含可见轨道上方那段透明 seek
       // 命中区）+ 呼吸间距，让字幕命中区整体骑在进度条整段可点区上方，与 seek 不重叠。
       // 只让可见轨道高（旧 TODO-568）会让字幕落进那段透明热区、两命中区在同一竞技场误触。
-      seekBarContainerHeight: _videoSeekBarContainerHeight,
+      // BUG-1224：必须取**当前平台 theme 真实生效**的热区高（桌面 36 不随缩放 / 移动
+      // 40×缩放），并减去桌面把进度条下压骑按钮行上沿的重叠量，才是真的热区上缘。
+      seekBarContainerHeight: _activeSeekBarContainerHeight,
+      seekBarBottomButtonBarOverlap: _activeSeekBarButtonBarOverlap,
       subtitleBreathingGap: _videoSubtitleSeekBarBreathingGap,
       bottomChromeBaseline: _videoBottomChromeBaseline,
       bottomSystemInset: _videoBottomSystemInset(),

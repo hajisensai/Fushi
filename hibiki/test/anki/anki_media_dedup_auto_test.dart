@@ -21,15 +21,23 @@ class _TempDirRunner extends AnkiMediaDedupRunner {
 }
 
 class _FakeRepo extends BaseAnkiRepository {
-  _FakeRepo({required this.settings, this.deletions = 1});
+  _FakeRepo(
+      {required this.settings, this.deletions = 1, this.cancelled = false});
 
   AnkiSettings settings;
 
   /// 干跑清单里有几条（0 = 没有重复）。
   final int deletions;
 
+  /// 返回的报告是否标记为「中途取消」。
+  final bool cancelled;
+
   /// 每次 runMediaDedup 的 dryRun 取值，按调用顺序记录。
   final List<bool> dedupCalls = <bool>[];
+
+  /// runner 是否把进度/取消回调透传下来（BUG-1263 的管道守卫）。
+  bool receivedOnProgress = false;
+  bool receivedShouldCancel = false;
 
   @override
   bool get supportsMediaMaintenance => true;
@@ -44,8 +52,12 @@ class _FakeRepo extends BaseAnkiRepository {
   Future<AnkiMediaDedupReport?> runMediaDedup({
     bool dryRun = false,
     Future<void> Function(Map<String, dynamic> entry)? onJournal,
+    AnkiMediaDedupOnProgress? onProgress,
+    bool Function()? shouldCancel,
   }) async {
     dedupCalls.add(dryRun);
+    receivedOnProgress = receivedOnProgress || onProgress != null;
+    receivedShouldCancel = receivedShouldCancel || shouldCancel != null;
     return AnkiMediaDedupReport(
       dryRun: dryRun,
       groupCount: deletions == 0 ? 0 : 1,
@@ -57,6 +69,7 @@ class _FakeRepo extends BaseAnkiRepository {
       notesRewritten: 0,
       modelsRewritten: 0,
       skipped: 0,
+      cancelled: cancelled,
     );
   }
 
@@ -224,6 +237,31 @@ void main() {
     });
   });
 
+  test('BUG-1263：取消的真删轮不推进时间戳（下次自动扫描照常到期）', () async {
+    final _FakeRepo repo =
+        _FakeRepo(settings: const AnkiSettings(), cancelled: true);
+
+    final AnkiMediaDedupReport? report = await _TempDirRunner(repo, dir)
+        .runNow(dryRun: false, onProgress: (AnkiMediaDedupProgress p) {});
+
+    expect(report!.cancelled, isTrue);
+    expect(repo.settings.lastMediaDedupAtMs, isNull);
+    expect(repo.settings.lastMediaDedupScanAtMs, isNull);
+  });
+
+  test('BUG-1263：runNow 把进度/取消回调透传到仓库层（干跑与真跑都要）', () async {
+    for (final bool dryRun in <bool>[true, false]) {
+      final _FakeRepo repo = _FakeRepo(settings: const AnkiSettings());
+      await _TempDirRunner(repo, dir).runNow(
+        dryRun: dryRun,
+        onProgress: (AnkiMediaDedupProgress p) {},
+        shouldCancel: () => false,
+      );
+      expect(repo.receivedOnProgress, isTrue, reason: 'dryRun=$dryRun');
+      expect(repo.receivedShouldCancel, isTrue, reason: 'dryRun=$dryRun');
+    }
+  });
+
   test('源码守卫：启动自动路径本身不得直接真删', () {
     final String source =
         File('lib/src/pages/implementations/home_page.dart').readAsStringSync();
@@ -234,7 +272,11 @@ void main() {
     expect(reviewStart, greaterThan(autoStart));
     final String autoBody = source.substring(autoStart, reviewStart);
     // 真删只能出现在「用户点了查看 → 确认弹窗」之后的 _reviewAutoDedupPlan 里。
+    // 无论旧拼写 runNow(dryRun: false) 还是进度包装
+    // runAnkiMediaDedupWithProgress(..., dryRun: false)，自动路径正文一律不得
+    // 出现真删调用。
     expect(autoBody.contains('runNow(dryRun: false)'), isFalse);
+    expect(autoBody.contains('dryRun: false'), isFalse);
     expect(
       source
           .substring(reviewStart)

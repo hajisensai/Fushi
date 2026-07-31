@@ -1736,9 +1736,24 @@ class HibikiPageHeader extends StatelessWidget {
     this.bottom,
     this.padding,
     this.compact = false,
-  });
+  }) : titleWidget = null;
 
-  final String title;
+  /// 用任意组件占据页头主位。适合把分段导航直接放进页头动作同一行，避免再渲染
+  /// 一个重复标题；自定义标题与 [subtitle] 互斥。
+  const HibikiPageHeader.customTitle({
+    required Widget title,
+    super.key,
+    this.leading,
+    this.actions = const <Widget>[],
+    this.padding,
+    this.compact = false,
+  })  : title = null,
+        titleWidget = title,
+        subtitle = null,
+        bottom = null;
+
+  final String? title;
+  final Widget? titleWidget;
   final String? subtitle;
   final Widget? leading;
   final List<Widget> actions;
@@ -1779,6 +1794,28 @@ class HibikiPageHeader extends StatelessWidget {
         );
     final String? resolvedSubtitle =
         subtitle == null || subtitle!.trim().isEmpty ? null : subtitle;
+    final Widget resolvedTitle = titleWidget ??
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              title!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: tokens.type.pageTitle,
+            ),
+            if (resolvedSubtitle != null)
+              Padding(
+                padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+                child: Text(
+                  resolvedSubtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.listSubtitle,
+                ),
+              ),
+          ],
+        );
 
     return Padding(
       padding: resolvedPadding,
@@ -1788,28 +1825,9 @@ class HibikiPageHeader extends StatelessWidget {
           _HibikiPageHeaderRow(
             tokens: tokens,
             leading: leading,
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: tokens.type.pageTitle,
-                ),
-                if (resolvedSubtitle != null)
-                  Padding(
-                    padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
-                    child: Text(
-                      resolvedSubtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: tokens.type.listSubtitle,
-                    ),
-                  ),
-              ],
-            ),
+            title: resolvedTitle,
             actions: actions.isEmpty ? null : _buildActionRow(tokens),
+            centerVertically: titleWidget != null,
           ),
           if (bottom != null)
             Padding(
@@ -1857,12 +1875,14 @@ class _HibikiPageHeaderRow extends StatelessWidget {
     required this.title,
     required this.leading,
     required this.actions,
+    required this.centerVertically,
   });
 
   final HibikiDesignTokens tokens;
   final Widget title;
   final Widget? leading;
   final Widget? actions;
+  final bool centerVertically;
 
   @override
   Widget build(BuildContext context) {
@@ -1937,7 +1957,9 @@ class _HibikiPageHeaderRow extends StatelessWidget {
         }
 
         return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: centerVertically
+              ? CrossAxisAlignment.center
+              : CrossAxisAlignment.start,
           children: children,
         );
       },

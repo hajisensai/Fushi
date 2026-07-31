@@ -342,15 +342,16 @@ void main() {
       final AntiLeechEngine engine = AntiLeechEngine(
         config: const AntiLeechConfig(banTimeMs: 10000),
       );
+      // BUG-1274/1275 契约变更：身份黑名单仅做种期生效，且登记单 IP /32。
       engine.evaluate(
         <PeerSnapshot>[peer(peerId: '-SD0100-abcdefabcdef')],
-        ctx(),
+        ctx(isSeeding: true),
         nowMs: 1000,
       );
-      expect(engine.bannedCidrs, contains('1.2.3.0/24'));
+      expect(engine.bannedCidrs, contains('1.2.3.4/32'));
       // 未到期（1000+10000=11000）→ 不解封。
       expect(engine.pruneExpired(10999), isFalse);
-      expect(engine.bannedCidrs, contains('1.2.3.0/24'));
+      expect(engine.bannedCidrs, contains('1.2.3.4/32'));
       // 到期 → 解封。
       expect(engine.pruneExpired(11000), isTrue);
       expect(engine.bannedCidrs, isEmpty);
@@ -359,11 +360,11 @@ void main() {
       final AntiLeechEngine perm = AntiLeechEngine();
       perm.evaluate(
         <PeerSnapshot>[peer(peerId: '-SD0100-abcdefabcdef')],
-        ctx(),
+        ctx(isSeeding: true),
         nowMs: 1000,
       );
       expect(perm.pruneExpired(999999999), isFalse);
-      expect(perm.bannedCidrs, contains('1.2.3.0/24'));
+      expect(perm.bannedCidrs, contains('1.2.3.4/32'));
     });
   });
 
@@ -372,14 +373,16 @@ void main() {
 
     setUp(() => engine = AntiLeechEngine());
 
-    test('迅雷 peerId 做种时 → ban(xunleiSeeding)', () {
+    test('迅雷 peerId 做种时 → ban（BUG-1274 后走统一黑名单路径）', () {
+      // 契约变更（BUG-1274）：旧迅雷特例消除，-XL 命中普通 peerIdBlacklist，
+      // 引擎不再产生 BanReason.xunleiSeeding；做种期封的行为与原特例等价。
       final Map<String, BanVerdict> r = engine.evaluate(
         <PeerSnapshot>[peer(peerId: '-XL0012-abcdefabcdef')],
         ctx(isSeeding: true),
         nowMs: 0,
       );
       expect(r['1.2.3.4']!.banned, isTrue);
-      expect(r['1.2.3.4']!.reason, BanReason.xunleiSeeding);
+      expect(r['1.2.3.4']!.reason, BanReason.peerIdBlacklist);
     });
 
     test('迅雷 peerId 非做种 → allow（可能是正常下载者）', () {
@@ -391,7 +394,8 @@ void main() {
       expect(r['1.2.3.4']!.banned, isFalse);
     });
 
-    test('client 以 thunder 开头也走迅雷特例', () {
+    test('client 以 thunder 开头：下载期放行、做种期封（与原特例等价）', () {
+      // 契约变更（BUG-1274）：thunder 关键词命中普通 clientBlacklist。
       final PeerSnapshot p = peer(client: 'Thunder 11.3.1');
       expect(
         engine.evaluate(<PeerSnapshot>[p], ctx(isSeeding: false),
@@ -403,23 +407,31 @@ void main() {
         ctx(isSeeding: true),
         nowMs: 0,
       );
-      expect(r['1.2.4.4']!.reason, BanReason.xunleiSeeding);
+      expect(r['1.2.4.4']!.reason, BanReason.clientBlacklist);
     });
 
-    test('非迅雷 peerId 前缀 -SD 直接 ban（与做种无关）', () {
-      final Map<String, BanVerdict> r = engine.evaluate(
+    test('peerId 前缀 -SD：下载期放行、做种期 ban（BUG-1274 契约变更）', () {
+      // 旧契约「与做种无关直接 ban」已废：下载期封 peer 只减少自己的数据源。
+      final Map<String, BanVerdict> r0 = engine.evaluate(
         <PeerSnapshot>[peer(peerId: '-SD0100-abcdefabcdef')],
         ctx(isSeeding: false),
         nowMs: 0,
       );
-      expect(r['1.2.3.4']!.banned, isTrue);
-      expect(r['1.2.3.4']!.reason, BanReason.peerIdBlacklist);
+      expect(r0['1.2.3.4']!.banned, isFalse);
+      final Map<String, BanVerdict> r1 = engine.evaluate(
+        <PeerSnapshot>[peer(peerId: '-SD0100-abcdefabcdef')],
+        ctx(isSeeding: true),
+        nowMs: 0,
+      );
+      expect(r1['1.2.3.4']!.banned, isTrue);
+      expect(r1['1.2.3.4']!.reason, BanReason.peerIdBlacklist);
     });
 
-    test('client 含 thunder（非开头）→ ban(clientBlacklist)', () {
+    test('client 含 thunder（非开头）做种期 → ban(clientBlacklist)', () {
+      // BUG-1274 契约变更：身份判定只在做种期跑，用例改为做种上下文。
       final Map<String, BanVerdict> r = engine.evaluate(
         <PeerSnapshot>[peer(client: 'Fake thunder mod')],
-        ctx(isSeeding: false),
+        ctx(isSeeding: true),
         nowMs: 0,
       );
       expect(r['1.2.3.4']!.banned, isTrue);
@@ -508,24 +520,25 @@ void main() {
       expect(r2['1.2.3.5']!.cidr, '1.2.3.0/24');
     });
 
-    test('连坐优先于黑名单：同段黑名单 peer 报 autoRangeBan', () {
-      // 先用黑名单 ban 登记 9.9.9.0/24。
+    test('连坐优先于黑名单：已封 IP 重连报 autoRangeBan', () {
+      // BUG-1275 后身份 ban 只登记 /32，同段邻居不再连坐；改用同 IP 重连
+      // 验证规则 ① 仍优先于 ②。
       engine.evaluate(
         <PeerSnapshot>[peer(ip: '9.9.9.1', peerId: '-SD0100-abcdefabcdef')],
-        ctx(),
+        ctx(isSeeding: true),
         nowMs: 0,
       );
-      // 同段另一个黑名单 peer：规则 ① 先命中。
       final Map<String, BanVerdict> r = engine.evaluate(
-        <PeerSnapshot>[peer(ip: '9.9.9.2', peerId: '-SD0100-abcdefabcdef')],
-        ctx(),
+        <PeerSnapshot>[peer(ip: '9.9.9.1', peerId: '-SD0100-abcdefabcdef')],
+        ctx(isSeeding: true),
         nowMs: 1000,
       );
-      expect(r['9.9.9.2']!.reason, BanReason.autoRangeBan);
+      expect(r['9.9.9.1']!.reason, BanReason.autoRangeBan);
+      expect(r['9.9.9.1']!.cidr, '9.9.9.1/32');
     });
 
-    test('黑名单优先于 PCB 且不受宽限窗口保护', () {
-      // 首见即判（PCB 此时还在宽限窗口内）。
+    test('做种期黑名单优先于 PCB 且不受宽限窗口保护', () {
+      // 首见即判（PCB 此时还在宽限窗口内）。BUG-1274 后需做种上下文。
       final Map<String, BanVerdict> r = engine.evaluate(
         <PeerSnapshot>[
           peer(
@@ -534,27 +547,174 @@ void main() {
             reportedProgress: 0.05,
           ),
         ],
-        ctx(),
+        ctx(isSeeding: true),
         nowMs: 0,
       );
       expect(r['1.2.3.4']!.reason, BanReason.peerIdBlacklist);
     });
 
-    test('IPv6 peer 被 ban 后同 /60 段连坐', () {
-      engine.evaluate(
-        <PeerSnapshot>[
-          peer(ip: '2001:db8:aaaa:bbf5::1', peerId: '-SD0100-abcdefabcdef'),
-        ],
-        ctx(),
-        nowMs: 0,
+    test('IPv6 peer 被行为规则（PCB）ban 后同 /60 段连坐', () {
+      // BUG-1275 后身份 ban 不再登记段；行为类（PCB）仍走段默认。用
+      // progressCheat 驱动，验证 IPv6 /60 连坐对行为类保持不变。
+      final PeerSnapshot cheat = peer(
+        ip: '2001:db8:aaaa:bbf5::1',
+        totalUpload: 50 * kMiB,
+        reportedProgress: 0.05,
       );
+      engine.evaluate(<PeerSnapshot>[cheat], ctx(), nowMs: 0);
+      final Map<String, BanVerdict> r0 =
+          engine.evaluate(<PeerSnapshot>[cheat], ctx(), nowMs: 60000);
+      expect(r0['2001:db8:aaaa:bbf5::1']!.reason, BanReason.progressCheat);
       final Map<String, BanVerdict> r = engine.evaluate(
         <PeerSnapshot>[peer(ip: '2001:db8:aaaa:bbf9::2')],
         ctx(),
-        nowMs: 1000,
+        nowMs: 61000,
       );
       expect(r['2001:db8:aaaa:bbf9::2']!.reason, BanReason.autoRangeBan);
       expect(r['2001:db8:aaaa:bbf9::2']!.cidr, '2001:db8:aaaa:bbf0:0:0:0:0/60');
+    });
+  });
+  group('身份黑名单相位与粒度（BUG-1274 / BUG-1275）', () {
+    const int t0 = 1000;
+    const int t1 = t0 + 60000;
+
+    test('BUG-1274：下载期 -SD 放行且继续走 PCB（伪造进度照样被封）', () {
+      final AntiLeechEngine engine = AntiLeechEngine();
+      // 黑名单身份 + 作弊数值：下载期不因身份封，但 PCB 出宽限后照封。
+      final PeerSnapshot p = peer(
+        peerId: '-SD0100-abcdefabcdef',
+        totalUpload: 50 * kMiB,
+        reportedProgress: 0.05,
+      );
+      final Map<String, BanVerdict> r0 =
+          engine.evaluate(<PeerSnapshot>[p], ctx(isSeeding: false), nowMs: t0);
+      expect(r0['1.2.3.4']!.banned, isFalse);
+      final Map<String, BanVerdict> r1 =
+          engine.evaluate(<PeerSnapshot>[p], ctx(isSeeding: false), nowMs: t1);
+      expect(r1['1.2.3.4']!.reason, BanReason.progressCheat);
+    });
+
+    test('BUG-1274：下载期 xfplay / dandanplay client 放行', () {
+      final AntiLeechEngine engine = AntiLeechEngine();
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[
+          peer(ip: '1.1.1.1', client: 'XfPlay 5.0'),
+          peer(ip: '1.1.1.2', client: 'dandanplay/1.2'),
+        ],
+        ctx(isSeeding: false),
+        nowMs: 0,
+      );
+      expect(r['1.1.1.1']!.banned, isFalse);
+      expect(r['1.1.1.2']!.banned, isFalse);
+    });
+
+    test('BUG-1274：做种期同类身份照封', () {
+      final AntiLeechEngine engine = AntiLeechEngine();
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[
+          peer(ip: '1.1.1.1', peerId: '-SD0100-abcdefabcdef'),
+          peer(ip: '2.1.1.1', client: 'XfPlay 5.0'),
+          peer(ip: '3.1.1.1', client: 'dandanplay/1.2'),
+        ],
+        ctx(isSeeding: true),
+        nowMs: 0,
+      );
+      expect(r['1.1.1.1']!.reason, BanReason.peerIdBlacklist);
+      expect(r['2.1.1.1']!.reason, BanReason.clientBlacklist);
+      expect(r['3.1.1.1']!.reason, BanReason.clientBlacklist);
+    });
+
+    test('BUG-1274：做种期但 totalDownload≥豁免阈值 → 不因身份封', () {
+      final AntiLeechEngine engine = AntiLeechEngine();
+      // 默认 ignoreByDownloadedBytes = 100MiB；它喂过我们 200MiB。
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[
+          peer(peerId: '-SD0100-abcdefabcdef', totalDownload: 200 * kMiB),
+        ],
+        ctx(isSeeding: true),
+        nowMs: 0,
+      );
+      expect(r['1.2.3.4']!.banned, isFalse);
+
+      // 豁免关闭（0）时不豁免 → 照封。
+      final AntiLeechEngine noExempt = AntiLeechEngine(
+        config: const AntiLeechConfig(ignoreByDownloadedBytes: 0),
+      );
+      final Map<String, BanVerdict> r2 = noExempt.evaluate(
+        <PeerSnapshot>[
+          peer(peerId: '-SD0100-abcdefabcdef', totalDownload: 200 * kMiB),
+        ],
+        ctx(isSeeding: true),
+        nowMs: 0,
+      );
+      expect(r2['1.2.3.4']!.reason, BanReason.peerIdBlacklist);
+    });
+
+    test('BUG-1275：身份命中登记单 IP /32，同段其它 IP 不连坐', () {
+      final AntiLeechEngine engine = AntiLeechEngine();
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[peer(peerId: '-SD0100-abcdefabcdef')],
+        ctx(isSeeding: true),
+        nowMs: 0,
+      );
+      expect(r['1.2.3.4']!.cidr, '1.2.3.4/32');
+      expect(engine.bannedCidrs, contains('1.2.3.4/32'));
+      expect(engine.bannedCidrs, isNot(contains('1.2.3.0/24')));
+      // 同 /24 的正常邻居下轮不被 AutoRangeBan 连坐。
+      final Map<String, BanVerdict> r2 = engine.evaluate(
+        <PeerSnapshot>[peer(ip: '1.2.3.5')],
+        ctx(isSeeding: true),
+        nowMs: 1000,
+      );
+      expect(r2['1.2.3.5']!.banned, isFalse);
+    });
+
+    test('BUG-1275：IPv6 身份命中登记 /128，同 /60 邻居不连坐', () {
+      final AntiLeechEngine engine = AntiLeechEngine();
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[
+          peer(ip: '2001:db8:aaaa:bbf5::1', peerId: '-SD0100-abcdefabcdef'),
+        ],
+        ctx(isSeeding: true),
+        nowMs: 0,
+      );
+      expect(
+        r['2001:db8:aaaa:bbf5::1']!.cidr,
+        '2001:db8:aaaa:bbf5:0:0:0:1/128',
+      );
+      final Map<String, BanVerdict> r2 = engine.evaluate(
+        <PeerSnapshot>[peer(ip: '2001:db8:aaaa:bbf9::2')],
+        ctx(isSeeding: true),
+        nowMs: 1000,
+      );
+      expect(r2['2001:db8:aaaa:bbf9::2']!.banned, isFalse);
+    });
+
+    test('BUG-1274：迅雷 -XL 走统一路径后行为与原特例等价', () {
+      final AntiLeechEngine engine = AntiLeechEngine();
+      // 下载期放行（原特例语义），且作弊数值仍会被 PCB 封。
+      final PeerSnapshot xl = peer(
+        peerId: '-XL0012-abcdefabcdef',
+        totalUpload: 50 * kMiB,
+        reportedProgress: 0.05,
+      );
+      final Map<String, BanVerdict> r0 =
+          engine.evaluate(<PeerSnapshot>[xl], ctx(isSeeding: false), nowMs: t0);
+      expect(r0['1.2.3.4']!.banned, isFalse);
+      final Map<String, BanVerdict> r1 =
+          engine.evaluate(<PeerSnapshot>[xl], ctx(isSeeding: false), nowMs: t1);
+      expect(r1['1.2.3.4']!.reason, BanReason.progressCheat);
+
+      // 做种期封（原特例语义），reason 从 xunleiSeeding 变为统一黑名单值。
+      final AntiLeechEngine seeding = AntiLeechEngine();
+      final Map<String, BanVerdict> r2 = seeding.evaluate(
+        <PeerSnapshot>[peer(ip: '4.3.2.1', peerId: '-XL0012-abcdefabcdef')],
+        ctx(isSeeding: true),
+        nowMs: 0,
+      );
+      expect(r2['4.3.2.1']!.banned, isTrue);
+      expect(r2['4.3.2.1']!.reason, BanReason.peerIdBlacklist);
+      expect(r2['4.3.2.1']!.cidr, '4.3.2.1/32');
     });
   });
 }

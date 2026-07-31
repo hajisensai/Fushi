@@ -16,9 +16,15 @@ void main() {
 
     final List<PlaylistEntry> entries = <PlaylistEntry>[
       const PlaylistEntry(
-          title: 'E1', path: '/v/Show E01.mkv', positionMs: 1000),
+        title: 'E1',
+        path: '/v/Show E01.mkv',
+        positionMs: 1000,
+      ),
       const PlaylistEntry(
-          title: 'E2', path: '/v/Show E02.mkv', positionMs: 2000),
+        title: 'E2',
+        path: '/v/Show E02.mkv',
+        positionMs: 2000,
+      ),
       const PlaylistEntry(title: '', path: '/v/Show E03.mkv'),
     ];
 
@@ -26,8 +32,11 @@ void main() {
         .importSplitPlaylist(collectionName: 'Show', entries: entries);
 
     // 每集 uid = video/<集文件名>，有序返回。
-    expect(result.episodeUids,
-        <String>['video/Show E01', 'video/Show E02', 'video/Show E03']);
+    expect(result.episodeUids, <String>[
+      'video/Show E01',
+      'video/Show E02',
+      'video/Show E03',
+    ]);
 
     final List<VideoBookRow> rows = await repo.listAll();
     expect(rows, hasLength(3));
@@ -45,14 +54,51 @@ void main() {
     }
 
     // playlist 合集：type=playlist，名=Show，成员按序 = 各集 uid。
-    final MediaCollectionRow collection =
-        (await db.getMediaCollectionById(result.collectionId))!;
+    final MediaCollectionRow collection = (await db.getMediaCollectionById(
+      result.collectionId,
+    ))!;
     expect(collection.collectionType, 'playlist');
     expect(collection.name, 'Show');
-    final List<MediaCollectionItemRow> members =
-        await db.getCollectionItems(result.collectionId);
-    expect(members.map((MediaCollectionItemRow m) => m.entryKey).toList(),
-        result.episodeUids);
+    final List<MediaCollectionItemRow> members = await db.getCollectionItems(
+      result.collectionId,
+    );
+    expect(
+      members.map((MediaCollectionItemRow m) => m.entryKey).toList(),
+      result.episodeUids,
+    );
+  });
+
+  test('下载 importer 崩溃重放：归一化路径作业务键，单事务不重复媒体/合集/成员', () async {
+    final HibikiDatabase db = _memDb();
+    addTearDown(db.close);
+    final VideoBookRepository repo = VideoBookRepository(db);
+    const List<PlaylistEntry> first = <PlaylistEntry>[
+      PlaylistEntry(title: 'E1', path: r'D:\Downloads\Show E01.mkv'),
+      PlaylistEntry(title: 'E2', path: r'D:\Downloads\Show E02.mkv'),
+    ];
+    const List<PlaylistEntry> replay = <PlaylistEntry>[
+      PlaylistEntry(title: 'E1', path: 'D:/Downloads/Show E01.mkv'),
+      PlaylistEntry(title: 'E2', path: 'D:/Downloads/Show E02.mkv'),
+    ];
+
+    final ({int collectionId, List<String> episodeUids}) initial =
+        await repo.importSplitPlaylist(
+      collectionName: 'Show',
+      entries: first,
+      reuseExistingPaths: true,
+    );
+    final ({int collectionId, List<String> episodeUids}) restarted =
+        await repo.importSplitPlaylist(
+      collectionName: 'Show',
+      entries: replay,
+      reuseExistingPaths: true,
+    );
+
+    expect(restarted.collectionId, initial.collectionId);
+    expect(restarted.episodeUids, initial.episodeUids);
+    expect(await repo.listAll(), hasLength(2));
+    expect(await db.getAllMediaCollections(), hasLength(1));
+    expect(await db.getCollectionItems(initial.collectionId), hasLength(2));
   });
 
   test('删某集清合集引用；删空则合集自删', () async {
@@ -71,23 +117,33 @@ void main() {
 
     await repo.deleteVideoBook(result.episodeUids.first);
     expect(
-        (await db.getCollectionItems(result.collectionId))
-            .map((MediaCollectionItemRow m) => m.entryKey),
-        <String>[result.episodeUids[1]]);
+      (await db.getCollectionItems(
+        result.collectionId,
+      ))
+          .map((MediaCollectionItemRow m) => m.entryKey),
+      <String>[result.episodeUids[1]],
+    );
     expect(await db.getMediaCollectionById(result.collectionId), isNotNull);
 
     await repo.deleteVideoBook(result.episodeUids[1]);
-    expect(await db.getMediaCollectionById(result.collectionId), isNull,
-        reason: '移空后 playlist 合集自删');
+    expect(
+      await db.getMediaCollectionById(result.collectionId),
+      isNull,
+      reason: '移空后 playlist 合集自删',
+    );
   });
 
   group('reconcileSplitPlaylist：重扫按清单对齐成员（BUG-830）', () {
     /// 取合集当前成员对应的 videoPath 集（成员引用 bookUid → VideoBook.videoPath）。
     Future<Set<String>> memberPaths(
-        HibikiDatabase db, VideoBookRepository repo, int collectionId) async {
+      HibikiDatabase db,
+      VideoBookRepository repo,
+      int collectionId,
+    ) async {
       final Set<String> out = <String>{};
-      for (final MediaCollectionItemRow m
-          in await db.getCollectionItems(collectionId)) {
+      for (final MediaCollectionItemRow m in await db.getCollectionItems(
+        collectionId,
+      )) {
         final VideoBookRow? row = await repo.getByBookUid(m.entryKey);
         if (row != null) out.add(row.videoPath);
       }
@@ -120,12 +176,17 @@ void main() {
       expect(recon.added, 1);
       expect(recon.removed, 1);
 
-      expect(await memberPaths(db, repo, result.collectionId),
-          <String>{'/v/Show E02.mkv', '/v/Show E03.mkv'});
+      expect(await memberPaths(db, repo, result.collectionId), <String>{
+        '/v/Show E02.mkv',
+        '/v/Show E03.mkv',
+      });
 
       // 移出清单的 E01 只解绑，VideoBook 本体保留（保观看进度，非破坏性）。
-      expect(await repo.getByBookUid('video/Show E01'), isNotNull,
-          reason: '移出清单的集只 removeFromCollection，不删 VideoBook 本体');
+      expect(
+        await repo.getByBookUid('video/Show E01'),
+        isNotNull,
+        reason: '移出清单的集只 removeFromCollection，不删 VideoBook 本体',
+      );
       // 未变的 E02 不重建、E03 只新建一条 → 总 3 本（E01 保留 + E02 + E03）。
       expect((await repo.listAll()).length, 3);
     });
@@ -144,13 +205,17 @@ void main() {
 
       final ({int added, int removed}) recon =
           await repo.reconcileSplitPlaylist(
-              collectionId: result.collectionId, entries: entries);
+        collectionId: result.collectionId,
+        entries: entries,
+      );
       expect(recon.added, 0);
       expect(recon.removed, 0);
       // 未变集不重跑 importSplitPlaylist → 不撞 uid 加后缀造重复行（旧代码整体跳过之因）。
       expect((await repo.listAll()).length, 2);
-      expect(await memberPaths(db, repo, result.collectionId),
-          <String>{'/v/a.mkv', '/v/b.mkv'});
+      expect(await memberPaths(db, repo, result.collectionId), <String>{
+        '/v/a.mkv',
+        '/v/b.mkv',
+      });
     });
 
     test('整批替换清单 → 先加后删，合集不被移空自删', () async {
@@ -179,10 +244,15 @@ void main() {
       expect(recon.removed, 2);
 
       // 先加新集让合集非空、再删旧集 → 合集绝不瞬时空掉被「移空自删」误删。
-      expect(await db.getMediaCollectionById(result.collectionId), isNotNull,
-          reason: '先加后删，整批替换不误删合集');
-      expect(await memberPaths(db, repo, result.collectionId),
-          <String>{'/v/c.mkv', '/v/d.mkv'});
+      expect(
+        await db.getMediaCollectionById(result.collectionId),
+        isNotNull,
+        reason: '先加后删，整批替换不误删合集',
+      );
+      expect(await memberPaths(db, repo, result.collectionId), <String>{
+        '/v/c.mkv',
+        '/v/d.mkv',
+      });
     });
   });
 }

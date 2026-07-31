@@ -19,16 +19,22 @@ void main() {
       expect(spaceBridge, contains('{capture: true}'));
     });
 
-    test('命中才 preventDefault 并回传 handler + 命中的 key', () {
+    test('命中才 preventDefault 并回传 handler + 命中的 token', () {
       expect(spaceBridge, contains('e.preventDefault()'));
-      expect(spaceBridge, contains("callHandler('onSpaceKey', e.key)"));
+      expect(spaceBridge, contains("callHandler('onSpaceKey', _hit)"));
     });
 
-    test('放行修饰键组合（否则吃掉 Shift+Space / Ctrl+Space 的改键语义）', () {
-      expect(
-        spaceBridge,
-        contains('e.ctrlKey || e.shiftKey || e.altKey || e.metaKey'),
-      );
+    test('修饰键并入 token 前缀（裸表天然放行组合键，组合表能真拦到）', () {
+      // 契约变更（非回归）：旧版用「带任一修饰键就 return」的独立分支放行，代价是
+      // 绑成 Ctrl+D 之类的动作在 WebView 持焦时**永远**收不到。现在修饰键拼进
+      // token 前缀，裸表放行组合键只是「不命中」的自然结果，而 'Ctrl+KeyD' 这样的
+      // 表能真正拦到。两侧行为由 webview_key_bridge_behavior_test 真跑 JS 验证。
+      expect(spaceBridge, contains("if (e.ctrlKey) mods += 'Ctrl+';"));
+      expect(spaceBridge, contains("if (e.shiftKey) mods += 'Shift+';"));
+      expect(spaceBridge, contains("if (e.altKey) mods += 'Alt+';"));
+      expect(spaceBridge, contains("if (e.metaKey) mods += 'Meta+';"));
+      expect(spaceBridge, isNot(contains('e.ctrlKey || e.shiftKey')),
+          reason: '旧的「有修饰键就整体放行」分支必须消失，否则组合键绑定仍然死');
     });
 
     test('放行 IME 组字（否则破坏日文输入）', () {
@@ -41,9 +47,18 @@ void main() {
       expect(spaceBridge, contains('t.isContentEditable'));
     });
 
-    test('只拦声明的键', () {
-      expect(spaceBridge, contains("_hoshiBridgeKeys = [' ']"));
-      expect(spaceBridge, contains('_hoshiBridgeKeys.indexOf(e.key) === -1'));
+    test('只拦声明的键（token 表按 handler 挂在 window 上，可热更新）', () {
+      expect(spaceBridge,
+          contains("window['__hoshiKeyBridgeKeys_onSpaceKey'] = [' ']"));
+      expect(spaceBridge,
+          contains("window['__hoshiKeyBridgeKeys_onSpaceKey'] || []"));
+    });
+
+    test('e.key 与 e.code 双通道（注册表 token 用 DOM code 命名）', () {
+      // InputBinding 的键名（'Space' / 'KeyD' / 'Escape'）逐字就是 DOM code，
+      // 而老宿主传的是 e.key（' '）。两个候选都要试，否则二选一必有一边失效。
+      expect(spaceBridge, contains('out.push(mods + e.key)'));
+      expect(spaceBridge, contains('out.push(mods + e.code)'));
     });
 
     test('多键宿主生成完整键表', () {
@@ -51,9 +66,11 @@ void main() {
         handlerName: 'onMangaKey',
         keys: const <String>['ArrowLeft', 'ArrowRight', ' '],
       );
-      expect(multi,
-          contains("_hoshiBridgeKeys = ['ArrowLeft', 'ArrowRight', ' ']"));
-      expect(multi, contains("callHandler('onMangaKey', e.key)"));
+      expect(
+          multi,
+          contains(
+              "window['__hoshiKeyBridgeKeys_onMangaKey'] = ['ArrowLeft', 'ArrowRight', ' ']"));
+      expect(multi, contains("callHandler('onMangaKey', _hit)"));
     });
 
     test('默认转发长按（阅读器语义），forwardRepeats:false 时丢弃', () {
@@ -97,12 +114,16 @@ void main() {
         handlerName: 'onWeird',
         keys: const <String>["'", r'\'],
       );
-      expect(weird, contains(r"_hoshiBridgeKeys = ['\'', '\\']"));
+      expect(weird,
+          contains(r"window['__hoshiKeyBridgeKeys_onWeird'] = ['\'', '\\']"));
     });
 
-    test('键表关在 IIFE 闭包里，不是脚本级全局 var', () {
-      // 全局 var 时后注入的桥会把先注入的键表整个覆盖掉（两个 listener 却都还在），
-      // 表现为「某一页的键突然全不响应」。闭包隔离是这条不变式的唯一保证。
+    test('键表槽按 handlerName 派生，装在 window 上（可热更新且互不覆盖）', () {
+      // 契约变更（非回归）：键表从 IIFE 闭包里的 `var` 挪到按 handlerName 派生的
+      // window 槽。闭包版的键表在首次注入时**冻结**——查词弹窗这类热槽 WebView 跨
+      // 查词长期存活，用户改键后宿主重新注入也换不掉旧表，弹窗持焦时仍按老键位
+      // 响应（BUG-1071 复诉的一半）。挂 window 槽后每次注入覆盖表、listener 仍只装
+      // 一次；槽名带 handlerName，所以两份桥依旧互不覆盖。
       expect(
         spaceBridge.trimLeft(),
         startsWith(';(function () {'),
@@ -110,10 +131,15 @@ void main() {
       );
       expect(spaceBridge.trimRight(), endsWith('})();'));
       final int open = spaceBridge.indexOf('(function () {');
-      final int decl = spaceBridge.indexOf('var _hoshiBridgeKeys');
+      final int decl =
+          spaceBridge.indexOf("window['__hoshiKeyBridgeKeys_onSpaceKey'] =");
+      final int install =
+          spaceBridge.indexOf("window['__hoshiKeyBridgeInstalled_onSpaceKey']");
       final int close = spaceBridge.lastIndexOf('})();');
       expect(decl, greaterThan(open));
-      expect(decl, lessThan(close), reason: '键表声明必须落在 IIFE 体内');
+      expect(decl, lessThan(close), reason: '键表赋值必须落在 IIFE 体内');
+      expect(decl, lessThan(install),
+          reason: '键表必须在幂等 return 之前赋值，否则第二次注入换不掉表');
     });
 
     test('同一 document 注入两份桥时，两份键表互不覆盖', () {
@@ -127,11 +153,39 @@ void main() {
         keys: const <String>['ArrowLeft', 'ArrowRight'],
       );
       final String both = '$reader\n$manga';
-      expect(both, contains("_hoshiBridgeKeys = [' ']"));
-      expect(both, contains("_hoshiBridgeKeys = ['ArrowLeft', 'ArrowRight']"));
+      expect(
+          both, contains("window['__hoshiKeyBridgeKeys_onSpaceKey'] = [' ']"));
+      expect(
+          both,
+          contains(
+              "window['__hoshiKeyBridgeKeys_onMangaKey'] = ['ArrowLeft', 'ArrowRight']"));
       expect('(function () {'.allMatches(both).length, 2,
-          reason: '每份桥各自一个闭包，键表不共享作用域');
+          reason: '每份桥各自一个 IIFE');
       expect('})();'.allMatches(both).length, 2);
+    });
+
+    test('鼠标监听按 installMouseListeners 生成（默认宿主零变化）', () {
+      // 弹窗必须恒装鼠标 listener：用户「现在没绑鼠标键、之后才绑上」时，表会从空
+      // 变非空，listener 却只装一次——所以开关不能挂在 mouseButtons 是否为空上。
+      expect(spaceBridge, isNot(contains("addEventListener('mousedown'")),
+          reason: '只用键盘的老宿主不得平白多出鼠标监听');
+
+      final String withMouse = webViewKeyBridgeScript(
+        handlerName: 'hostInputToken',
+        keys: const <String>['Escape'],
+        installMouseListeners: true,
+      );
+      expect(withMouse, contains("addEventListener('mousedown'"));
+      expect(withMouse,
+          contains("callHandler('hostInputToken', 'Mouse' + e.button)"));
+      expect(withMouse, contains('e.button === 0'), reason: '左键是选词/查词，绝不能被桥抢走');
+      expect(withMouse, contains("addEventListener('auxclick'"),
+          reason: '侧键要压掉浏览器历史导航默认行为');
+      expect(withMouse, contains("addEventListener('contextmenu'"),
+          reason: '绑到右键时要压掉原生菜单');
+      expect(withMouse,
+          contains("window['__hoshiKeyBridgeButtons_hostInputToken'] = []"),
+          reason: '未声明按钮时仍要下发空表，用于清掉热槽上残留的旧表');
     });
   });
 }

@@ -106,8 +106,20 @@ class EmbeddedTorrentHost {
   /// 每个种子进入做种阶段的时刻（做种时长上限判定基准）。
   final Map<String, int> _seedStartMs = <String, int>{};
 
-  /// 已下发的 per-torrent 上传模式（避免无变化时重复 FFI 调用）。
-  final Map<String, bool> _appliedUpload = <String, bool>{};
+  /// 已下发的会话级上传开关（null = 尚未下发；避免每 tick 重复 FFI）。
+  /// BUG-1293：「关上传」的正确原语是会话级 unchoke 槽位清零，不是
+  /// upload_mode（那是「停止下载」，正好相反）。
+  bool? _appliedSessionUploadEnabled;
+
+  /// 已下发的 per-torrent 暂停状态（做种超限/关上传时停止做种用）。
+  final Map<String, bool> _appliedPaused = <String, bool>{};
+
+  /// 是否已做过一次性「清 upload_mode 残留」治愈（BUG-1293：旧版本给种子打上
+  /// 的 upload_mode flag 会随 resume 复活，掐死下载；开机清一次即可）。
+  bool _healedUploadMode = false;
+
+  /// 底层 DLL 不支持上传策略原语时只记一次日志（避免每 tick 刷屏）。
+  bool _loggedUploadControlUnsupported = false;
 
   /// 底层引擎版本串（诊断/probe 用）。
   String get libtorrentVersion => _engine.libtorrentVersion();
@@ -158,6 +170,28 @@ class EmbeddedTorrentHost {
   }
 
   static int _defaultClockMs() => DateTime.now().millisecondsSinceEpoch;
+
+  /// 仅测试用：用现成 engine/session（可为 fromLookup 假绑定）构造宿主，
+  /// 跳过 DLL 加载与 resume 恢复。存在的理由与
+  /// `apply_limits_local_peers_test` 相同：要 DLL 的用例在 CI 整组 skip，
+  /// 上传策略「绝不下发 upload_mode、关上传走 unchoke/pause」这条命脉
+  /// （BUG-1293）必须有任何环境都会跑的用例守着。
+  @visibleForTesting
+  static EmbeddedTorrentHost forTesting({
+    required EmbeddedTorrentEngine engine,
+    required EmbeddedTorrentSession session,
+    required String baseSavePath,
+    required String resumeDir,
+    int Function()? clockMs,
+  }) {
+    return EmbeddedTorrentHost._(
+      engine: engine,
+      session: session,
+      saveRoots: TorrentSaveRoots(active: baseSavePath),
+      resumeDir: resumeDir,
+      clockMs: clockMs ?? _defaultClockMs,
+    );
+  }
 
   /// 缓存的能力探测结果（DLL 只需加载一次，`DynamicLibrary` 也无法卸载）。
   static bool? _availabilityCache;
@@ -305,7 +339,12 @@ class EmbeddedTorrentHost {
 
   /// 应用会话级设置（qb 关键项：端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/
   /// 上传槽）到常驻 session。config 变更/启动时由 AppModel 调用。
+  ///
+  /// native 侧会把 `maxUploadSlots > 0` 写进 unchoke_slots_limit——这会覆盖
+  /// [sweepUploadPolicy] 下发的「关上传 = 0 槽位」，所以这里把已下发缓存置空，
+  /// 让下一次 sweep（AppModel 在本调用之后紧接着 setUploadPolicy）重新裁决。
   bool applySessionSettings(QbConnectionConfig config) {
+    _appliedSessionUploadEnabled = null;
     return _session.applySessionSettings(
       listenPort: config.listenPort,
       enableDht: config.enableDht,
@@ -419,20 +458,72 @@ class EmbeddedTorrentHost {
     sweepUploadPolicy();
   }
 
-  /// 上传/做种策略扫描：按 [torrent_upload_policy] 算出每个种子的期望上传状态
-  /// （总开关关 / 做种超时 / 分享率达标 → 停传），仅在期望状态变化时下发
-  /// `setUploadMode`（避免每 tick 重复 FFI）。返回本轮实际改变的种子数。
-  /// 与 [sweepAntiLeech] 同在 `AnimeDownloadService` 每 tick 调用。异常静默吞。
+  /// 上传/做种策略扫描（BUG-1293 重写）。
+  ///
+  /// 旧实现把「不上传」翻译成 per-torrent `setUploadMode(enabled: false)`，而
+  /// libtorrent 的 `upload_mode` flag 语义是「不再发出 piece 请求」= **停止
+  /// 下载**——默认关上传的用户所有种子在 add 后一个 tick 内下载速率归零。
+  ///
+  /// 现映射（policy 本身不变，见 [shouldAllowUpload]）：
+  /// - **会话级**：总开关 [QbConnectionConfig.uploadEnabled] 关 →
+  ///   [EmbeddedTorrentSession.setUnchokeSlots] 清零（不给任何 peer unchoke
+  ///   槽位 = 停止上传 payload；我们的下载请求是协议消息，不受影响）。开 →
+  ///   还原为用户的 maxUploadSlots（未设则 libtorrent 默认）。
+  ///   下载中种子的「不上传」只会由总开关触发（policy 对下载中恒 allow），
+  ///   所以会话级开关足以覆盖，无需 per-torrent 原语。
+  /// - **per-torrent**：做种（isFinished）超时/分享率达标/总开关关 →
+  ///   [EmbeddedTorrentSession.pauseTorrent]（数据已完整，暂停只停做种，
+  ///   与 qb 到达分享率后暂停同语义）；条件解除 → resume。
+  ///   **绝不 pause 未完成的种子**（那才是真的掐死下载）。
+  ///
+  /// 老 DLL 没有新原语时整体降级为不动作（宁可上传也不掐下载），只记一次日志。
+  /// 每 tick 由 `AnimeDownloadService` 调用；仅状态变化时下发 FFI。异常静默吞。
+  /// 返回本轮实际改变的对象数（会话开关算 1，每个种子算 1）。
   int sweepUploadPolicy() {
     try {
       final int nowMs = _clockMs();
       int changed = 0;
+
+      // 一次性治愈：清掉旧版本/旧 resume 打在种子上的 upload_mode 残留
+      // （新旧 DLL 对 enabled: true 都是「只清 flag」，幂等且无副作用）。
+      if (!_healedUploadMode) {
+        if (_session.setUploadMode(enabled: true)) {
+          _healedUploadMode = true;
+        }
+      }
+
+      if (!_session.supportsUploadControl) {
+        if (!_loggedUploadControlUnsupported) {
+          _loggedUploadControlUnsupported = true;
+          debugPrint('[torrent] upload policy skipped: bundled DLL lacks '
+              'ht_set_unchoke_slots/ht_pause_torrent (upload stays enabled; '
+              'downloads unaffected)');
+        }
+        return 0;
+      }
+
+      // ① 会话级总开关。
+      final bool uploadEnabled = _uploadConfig.uploadEnabled;
+      if (_appliedSessionUploadEnabled != uploadEnabled) {
+        final int slots = uploadEnabled
+            ? (_uploadConfig.maxUploadSlots > 0
+                ? _uploadConfig.maxUploadSlots
+                : -1)
+            : 0;
+        if (_session.setUnchokeSlots(slots)) {
+          _appliedSessionUploadEnabled = uploadEnabled;
+          changed++;
+        }
+      }
+
+      // ② per-torrent：只对已完成（做种）种子暂停/恢复。
       final Set<String> live = <String>{};
       for (final HtTorrentStatus t in _session.listTorrents()) {
         live.add(t.id);
         if (t.isSeeding) {
           _seedStartMs.putIfAbsent(t.id, () => nowMs);
         }
+        if (!t.isFinished) continue;
         final int? startMs = _seedStartMs[t.id];
         final int elapsedMs = startMs == null ? 0 : nowMs - startMs;
         final bool allow = shouldAllowUpload(
@@ -444,16 +535,17 @@ class EmbeddedTorrentHost {
             seedingElapsedMs: elapsedMs,
           ),
         );
-        if (_appliedUpload[t.id] != allow) {
-          if (_session.setUploadMode(infoHash: t.id, enabled: allow)) {
-            _appliedUpload[t.id] = allow;
+        final bool wantPaused = !allow;
+        if (_appliedPaused[t.id] != wantPaused) {
+          if (_session.pauseTorrent(t.id, pause: wantPaused)) {
+            _appliedPaused[t.id] = wantPaused;
             changed++;
           }
         }
       }
       // 清理已移除种子的残留状态。
       _seedStartMs.removeWhere((String k, int v) => !live.contains(k));
-      _appliedUpload.removeWhere((String k, bool v) => !live.contains(k));
+      _appliedPaused.removeWhere((String k, bool v) => !live.contains(k));
       return changed;
     } on Object {
       return 0;

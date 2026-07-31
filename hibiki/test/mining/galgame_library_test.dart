@@ -78,11 +78,11 @@ void main() {
     });
   });
 
-  group('filterDroppedGameExes', () {
+  group('filterOutDuplicateGameExes', () {
     GalgameEntry entryFor(String exe) => newGalgameEntryFromExe(exe);
 
     test('只保留 .exe（大小写无关），非 exe 与空路径被过滤', () {
-      final List<String> out = filterDroppedGameExes(
+      final List<String> out = filterOutDuplicateGameExes(
         const <GalgameEntry>[],
         <String>[
           r'D:\g\a.exe',
@@ -96,7 +96,7 @@ void main() {
     });
 
     test('批内重复去重且保序（大小写 / 斜杠归一）', () {
-      final List<String> out = filterDroppedGameExes(
+      final List<String> out = filterOutDuplicateGameExes(
         const <GalgameEntry>[],
         <String>[
           r'D:\g\a.exe',
@@ -112,7 +112,7 @@ void main() {
       final List<GalgameEntry> existing = <GalgameEntry>[
         entryFor(r'D:\g\a.exe'),
       ];
-      final List<String> out = filterDroppedGameExes(
+      final List<String> out = filterOutDuplicateGameExes(
         existing,
         <String>[r'd:/G/A.EXE', r'D:\g\c.exe'],
       );
@@ -121,11 +121,12 @@ void main() {
 
     test('全部重复 / 无 exe 时返回空', () {
       expect(
-        filterDroppedGameExes(const <GalgameEntry>[], <String>[r'x\y.txt']),
+        filterOutDuplicateGameExes(
+            const <GalgameEntry>[], <String>[r'x\y.txt']),
         isEmpty,
       );
       expect(
-        filterDroppedGameExes(
+        filterOutDuplicateGameExes(
           <GalgameEntry>[entryFor(r'D:\g\a.exe')],
           <String>[r'D:\g\a.exe'],
         ),

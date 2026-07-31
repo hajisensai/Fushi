@@ -51,11 +51,12 @@ void main() {
             'searchDictionary，没有任何 UI 呈现）；② _searchRemoteDictionary 是 '
             'searchDictionary 自己的远端分支，不是独立入口；③ '
             '_setupFloatingDictHandlers.onSearch 是 Android 悬浮词典的 native 通道 '
-            'handler——**待产品拍板**，见下面 floating_dict_page 那条同一取舍。',
+            'handler。用户已明确决定「不用接」自动朗读：该窗浮在别的 app 上层，'
+            '查词后突然出声会打扰当前应用，故保持静音；剪贴板面板的主动查词路径不受此豁免影响。',
     'lib/src/pages/implementations/floating_dict_page.dart':
-        'Android 悬浮词典页的搜索框查词。同为「手动输入」的 home_dictionary_page 是朗读的，'
-            '故行为并不一致；但悬浮词典是浮在别的 app 上层的小窗，突然出声更打扰，'
-            '该不该自动朗读是产品取舍——**待产品拍板**，定了再从本表挪进 wiredSurfaces。',
+        'Android 悬浮词典页的搜索框查词。用户已明确决定「不用接」自动朗读：'
+            '该窗浮在别的 app 上层，查词后突然出声会打扰当前应用，故有意保持静音；'
+            '此豁免不包含剪贴板面板点字换根或嵌套查词，那两条主动路径仍须按偏好朗读。',
     'lib/src/pages/implementations/home_page.dart':
         'resumed 生命周期里用固定的 helloWorld 串 + useCache:false 预热词典引擎，'
             '不是用户查词，也没有结果呈现。',
@@ -145,11 +146,25 @@ void main() {
         'FIXME',
         'n/a',
         'N/A',
-        '待补'
+        '待补',
+        '待产品拍板',
+        '待拍板',
       ]) {
         expect(why.contains(placeholder), false,
             reason: '${e.key} 的豁免理由是占位符（含 "$placeholder"），等于没写');
       }
+    }
+  });
+
+  test('Android 悬浮词典的静音豁免已按用户决定终稿化', () {
+    for (final String path in <String>[
+      'lib/src/models/app_model.dart',
+      'lib/src/pages/implementations/floating_dict_page.dart',
+    ]) {
+      expect(wiredSurfaces, isNot(contains(path)),
+          reason: '$path 属于用户已决定保持静音的 Android 悬浮词典路径');
+      expect(exemptCallSites[path], contains('用户已明确决定「不用接」'),
+          reason: '$path 的豁免必须记录终稿决定，不能退回待拍板占位文案');
     }
   });
 }

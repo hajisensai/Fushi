@@ -182,6 +182,12 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
       blur: ReaderHibikiSource.instance.lyricsBlur,
     );
 
+    // BUG-1280：歌词是第三个把文档交给 WebView 的地方（另两个是
+    // `_loadChapterDirectly` 和 `_loadSpreadPage`）。不在这里复位，从双页页面切进
+    // 歌词模式时 `_spreadDocumentLoaded` 会残留为真，`_onChapterLoadComplete` 的
+    // spread 守卫把歌词分支一起挡掉 → 歌词永远不就绪。标记的含义是「WebView 里
+    // 现在是不是 spread 文档」，所以每个装载点都必须写它。
+    _spreadDocumentLoaded = false;
     await _controller!.loadData(
       data: html,
       mimeType: 'text/html',

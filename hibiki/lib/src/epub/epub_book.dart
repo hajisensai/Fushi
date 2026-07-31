@@ -39,9 +39,33 @@ class EpubBook {
   /// by spine (reading order) then by DOM order within each chapter. Built once
   /// on first [images] access and cached; the illustration set is immutable for
   /// the lifetime of an opened book. Kept *out* of the constructor so [EpubBook]
-  /// stays an immutable value type (all declared fields final) -- this is the one
-  /// derived cache, never assigned from outside.
+  /// stays an immutable value type (all declared fields final) -- derived caches
+  /// like this one and [_imageOnlyChapterMemo] are never constructor inputs.
   List<EpubImageRef>? _images;
+
+  /// 按章号记忆化的 [isImageOnlyChapter] 结果。章节文件在一本已打开的书的生命周期
+  /// 内不变，答案恒定；spread 配对（[EpubSpreadMap]）、边缘分析
+  /// （EpubSpreadAnalyzer）、章节服务与预取会对同一章反复提问，未记忆化时每问一次
+  /// 就是一次整章 html_parser 全 DOM 解析（主 isolate）。缓存收在数据拥有者这里，
+  /// 所有调用方（含旧页面级缓存覆盖不到的 spread/analyzer 路径）统一受益。
+  final Map<int, bool> _imageOnlyChapterMemo = <int, bool>{};
+
+  /// 每章「实义字符数」提示（[kChapterCharCountCaliber] 当前口径，见
+  /// [chapterCharacterCount]），用于 [isImageOnlyChapter] 免解析短路。
+  ///
+  /// 方向安全性：该口径只数假名/汉字/字母数字（标点/空白剔除、振假名剥离），
+  /// 恒 ≤ [_chapterPlainTextFromBody] 的纯文本长度；因此
+  /// `hint > _imageChapterMaxTextChars` ⇒ 纯文本必超阈值 ⇒ 必非纯图片章，
+  /// 无需读盘/解析。hint ≤ 阈值（含 0 占位）不能反推，回落全量解析。
+  /// **只接受当前口径的计数**——旧口径可能计入振假名等而高估，破坏上述单向推理。
+  List<int>? _charCountHints;
+
+  /// 注入 [kChapterCharCountCaliber] 当前口径的每章字数（来自导入期落库的
+  /// chaptersJson 或后台重算），供 [isImageOnlyChapter] 免解析短路。调用方负责
+  /// 保证口径正确；长度与 [chapters] 不符时超界章节按无提示处理。
+  void setChapterCharCountHints(List<int> counts) {
+    _charCountHints = counts;
+  }
 
   Uint8List? readResource(String path) {
     final String normalized = normalizeHref(path);
@@ -122,10 +146,21 @@ class EpubBook {
   /// a real prose chapter from ever being absorbed.
   bool isImageOnlyChapter(int index) {
     if (index < 0 || index >= chapters.length) return false;
+    final bool? memo = _imageOnlyChapterMemo[index];
+    if (memo != null) return memo;
+    // 字数提示短路（方向安全性见 [_charCountHints]）：实义字数已超阈值的正文章
+    // 直接判非纯图片章，免去读盘 + 全 DOM 解析——纯文字书的 spread 分析由此
+    // 从「逐章解析全书」降为纯内存比较。
+    final List<int>? hints = _charCountHints;
+    if (hints != null &&
+        index < hints.length &&
+        hints[index] > _imageChapterMaxTextChars) {
+      return _imageOnlyChapterMemo[index] = false;
+    }
     final html_dom.Document doc = html_parser.parse(chapters[index].html);
-    if (_chapterImageRefs(doc).isEmpty) return false;
-    return _chapterPlainTextFromBody(doc.body).length <=
-        _imageChapterMaxTextChars;
+    final bool value = _chapterImageRefs(doc).isNotEmpty &&
+        _chapterPlainTextFromBody(doc.body).length <= _imageChapterMaxTextChars;
+    return _imageOnlyChapterMemo[index] = value;
   }
 
   /// The first chapter-relative image reference of chapter [index] (see

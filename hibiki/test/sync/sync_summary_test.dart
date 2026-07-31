@@ -66,6 +66,11 @@ void main() {
         (SyncRunReport()..localAudioImported = 1).needsLocalLibraryRefresh,
         isTrue,
       );
+      expect(
+        (SyncRunReport()..serviceConfigsImported = 1).needsLocalLibraryRefresh,
+        isTrue,
+        reason: 'imported preferences require an AppModel cache refresh',
+      );
     });
 
     test('is false when sync only exported or changed remote data', () {
@@ -78,6 +83,13 @@ void main() {
             .needsLocalLibraryRefresh,
         isFalse,
       );
+    });
+
+    test('mergeFrom preserves service-config imports', () {
+      final SyncRunReport combined = SyncRunReport();
+      combined.mergeFrom(SyncRunReport()..serviceConfigsImported = 2);
+      expect(combined.serviceConfigsImported, 2);
+      expect(combined.needsLocalLibraryRefresh, isTrue);
     });
   });
 }

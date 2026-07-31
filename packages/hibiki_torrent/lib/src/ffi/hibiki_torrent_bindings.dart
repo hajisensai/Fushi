@@ -151,8 +151,9 @@ class HibikiTorrentBindings {
     }
   }
 
-  /// 上传模式开关（做种总开关，per-torrent 或全量）。info_hash 空串=全量；
-  /// upload_enabled 非 0=允许上传、0=停止上传但保连接。1 成功 0 失败。
+  /// 【已废弃】历史上传开关（BUG-1293：旧 DLL 把 0 实现成置 upload_mode =
+  /// 停止下载）。新 DLL 里 upload_enabled 非 0 = 清 upload_mode（治愈残留）、
+  /// 0 = no-op。新代码走 [ht_set_unchoke_slots] / [ht_pause_torrent]。
   int ht_set_upload_mode(
     ffi.Pointer<ffi.Void> session,
     ffi.Pointer<ffi.Char> info_hash,
@@ -167,6 +168,64 @@ class HibikiTorrentBindings {
               ffi.Int)>>('ht_set_upload_mode');
   late final _ht_set_upload_mode = _ht_set_upload_modePtr.asFunction<
       int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 会话级 unchoke 槽位（BUG-1293 的「关上传」正确原语）：slots >= 0 精确
+  /// 设置（0 = 停止上传 payload，下载不受影响）；slots < 0 恢复默认。
+  /// 1 成功 0 失败。调用前必须先看 [hasUploadControl]（旧 DLL 无此符号）。
+  int ht_set_unchoke_slots(
+    ffi.Pointer<ffi.Void> session,
+    int slots,
+  ) {
+    return _ht_set_unchoke_slots(session, slots);
+  }
+
+  late final _ht_set_unchoke_slotsPtr = _lookup<
+          ffi.NativeFunction<ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int)>>(
+      'ht_set_unchoke_slots');
+  late final _ht_set_unchoke_slots = _ht_set_unchoke_slotsPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, int)>();
+
+  /// 种子暂停/恢复（做种停止的正确原语）。info_hash 空串 = 全量；pause 非 0 =
+  /// 清 auto_managed 再 pause、0 = 恢复 auto_managed 并 resume。1 成功 0 失败。
+  /// 调用前必须先看 [hasUploadControl]（旧 DLL 无此符号）。
+  int ht_pause_torrent(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    int pause,
+  ) {
+    return _ht_pause_torrent(session, info_hash, pause);
+  }
+
+  late final _ht_pause_torrentPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+              ffi.Int)>>('ht_pause_torrent');
+  late final _ht_pause_torrent = _ht_pause_torrentPtr.asFunction<
+      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 已加载的库里是否同时有 [ht_set_unchoke_slots] 与 [ht_pause_torrent]
+  /// （上传策略两个原语一起用，缺一即整体降级）。
+  ///
+  /// 与 [hasApplyLimitsEx] 同理：随包 DLL 是 vendored 预编译产物，Dart 侧
+  /// 更新了、DLL 没重编的组合真实存在。符号缺失时上传策略降级为「不动
+  /// 任何 flag」——宁可继续上传，也绝不用 upload_mode 掐死下载（BUG-1293）。
+  late final bool hasUploadControl = _probeUploadControl();
+
+  bool _probeUploadControl() {
+    try {
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Int Function(
+                  ffi.Pointer<ffi.Void>, ffi.Int)>>('ht_set_unchoke_slots');
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+                  ffi.Int)>>('ht_pause_torrent');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
 
   /// 应用内存占用设置（<=0 保持默认）。1 成功 0 失败。
   int ht_apply_memory_settings(

@@ -687,7 +687,8 @@ void main() {
     );
   });
 
-  testWidgets('BUG-1112：活动时间轴的游戏条目渲染封面，不再只有回退图标', (WidgetTester tester) async {
+  testWidgets('BUG-1112/BUG-1284：旧 exePath 活动身份也能反查并渲染游戏封面',
+      (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -705,14 +706,15 @@ void main() {
       playedAt: now,
       coverPath: cover.path,
     );
-    // 时间轴的游戏行：mediaKey = galgames.id（据此反查封面）。
+    // 历史启动链路把 exePath 误写进 mediaKey，而且路径大小写/分隔符不一定一致；
+    // 活动展示必须兼容回查，不能只认 galgames.id。
     await db.addActivityEvent(
       eventType: kActivityGame,
       mediaType: kActivityMediaGame,
       title: '有封面的游戏',
       dateKey: HibikiTimeFormat.dayKey(now),
       timestampMs: now.millisecondsSinceEpoch,
-      mediaKey: 'g-3',
+      mediaKey: r'\ABS\G-3.EXE',
       durationMs: 60000,
     );
 
@@ -720,16 +722,25 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    // 修复前游戏走「回退原类型图标」分支，时间轴上不会有任何 Image.file。
+    // 修复前 `_gameById(mediaKey)` 拿 exePath 去比 id，时间轴上不会有任何本地封面。
     // 必须收进「活动」区块：同一只游戏同时在「继续」与「最近添加」里各有一张
-    // `_gameCover`，裸 FileImage 谓词会被它们兜住——把 _activityLeading 的 game 分支
+    // `_gameCover`，裸本地 Image 谓词会被它们兜住——把 _activityLeading 的 game 分支
     // 删光也照样绿（实测过的假阳性）。
+    // BUG-1299 后 `_gameCover` 走 [PortraitCoverImage]：朝向不合槽时同图再渲染一张
+    // 模糊垫底，活动条里的 Image 数量因此可能 >1，数量断言放宽为 ≥1；但**谓词仍要求
+    // ResizeImage 包 FileImage**（`resolveMediaCoverImage` 的解码上限口径），
+    // 不放宽成裸 FileImage，否则少了这层就测不出来源解析被绕过。
     final Finder fileImages = inSection(
       t.home_activity,
-      find.byWidgetPredicate((Widget w) => w is Image && w.image is FileImage),
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is Image &&
+            w.image is ResizeImage &&
+            (w.image as ResizeImage).imageProvider is FileImage,
+      ),
     );
-    expect(fileImages, findsOneWidget,
-        reason: '游戏活动条应渲染 galgames.coverPath 封面（BUG-1112）');
+    expect(fileImages, findsWidgets,
+        reason: '游戏活动条应兼容旧 exePath 并渲染 galgames.coverPath 封面（BUG-1284）');
   });
 
   testWidgets('BUG-1112：点活动时间轴的游戏条切到「游戏」tab，不再落到视频 tab',
@@ -1098,7 +1109,7 @@ void main() {
       );
     });
 
-    testWidgets('已连接但零关联：说清「所以什么都不会同步」，不是一切正常', (WidgetTester tester) async {
+    testWidgets('已连接但没有本地历史：不再显示泛化的零关联警告', (WidgetTester tester) async {
       useWideSurface(tester);
       await connect();
       await tester.pumpWidget(buildApp());
@@ -1110,7 +1121,38 @@ void main() {
       // 从未同步必须与「同步过零待办」区分：成功即删 outbox 行，两者否则同形。
       expect(
           find.textContaining(t.media_tracking_never_synced), findsOneWidget);
-      expect(find.text(t.media_tracking_unlinked_hint), findsOneWidget);
+      expect(find.text(t.media_tracking_no_local_history), findsOneWidget);
+      expect(find.text(t.media_tracking_watched_show), findsOneWidget);
+    });
+
+    testWidgets('以前看完但未映射的视频会明确列为需要手动关联', (WidgetTester tester) async {
+      useWideSurface(tester);
+      await connect();
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'old-video',
+          title: '以前看过的番剧',
+          videoPath: 'C:/video/old.mkv',
+          completedAt: Value<DateTime?>(DateTime.now()),
+        ),
+      );
+
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('以前看过的番剧'), findsOneWidget);
+      expect(
+        find.text(
+          '${t.media_tracking_anime} · '
+          '${t.media_tracking_manual_required}',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(t.media_tracking_manual_required_count(n: 1)),
+        findsOneWidget,
+      );
     });
 
     testWidgets('已关联条目列出本地标题 + Bangumi 条目名，并给出打开入口',
@@ -1139,7 +1181,7 @@ void main() {
         find.textContaining(t.media_tracking_linked_count(n: 1)),
         findsOneWidget,
       );
-      expect(find.text(t.media_tracking_unlinked_hint), findsNothing);
+      expect(find.text(t.media_tracking_no_local_history), findsNothing);
     });
 
     testWidgets('上报失败：退避窗口内也照说失败原因', (WidgetTester tester) async {

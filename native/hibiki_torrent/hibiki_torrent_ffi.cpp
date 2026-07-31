@@ -338,6 +338,9 @@ char* add_with_params(lt::session* ses, lt::add_torrent_params params,
   // add 即启动：默认旗标带 paused，起始瞬间会丢弃 connect_peer 且无
   // tracker/DHT 时无从再发现 peer；本引擎的 add 语义就是「开始下载」。
   params.flags &= ~lt::torrent_flags::paused;
+  // BUG-1293：upload_mode = 「只上不下」（停止下载）。旧版本误用它表达
+  // 「关上传」，用户的 resume/重复 add 参数里可能带着残留，进来一律清掉。
+  params.flags &= ~lt::torrent_flags::upload_mode;
   lt::error_code ec;
   lt::torrent_handle h = ses->add_torrent(std::move(params), ec);
   if (ec == lt::errors::duplicate_torrent && h.is_valid()) {
@@ -541,14 +544,68 @@ HT_EXPORT int ht_set_upload_mode(void* session, const char* info_hash,
                                  int upload_enabled) {
   if (session == nullptr) return 0;
   try {
+    // BUG-1293：torrent_flags::upload_mode 的 libtorrent 语义是「不再发出任何
+    // piece 请求」= 只上不下（磁盘写失败时引擎自己会置它以停止下载保做种），
+    // 与旧实现宣称的「只下不上」正好相反 —— 置上它 = 掐死下载。
+    // 因此本函数：允许上传时**清除**该 flag（治愈历史 resume/旧版本留下的
+    // 残留）；禁止上传时 no-op 恒成功（正确原语是 ht_set_unchoke_slots /
+    // ht_pause_torrent，旧 Dart 调进来时宁可继续上传也绝不掐死下载）。
     const bool allow = upload_enabled != 0;
-    // upload_mode = 只下不上：allow 时清除、否则置位。
     const auto apply = [allow](lt::torrent_handle h) {
       if (!h.is_valid()) return;
-      if (allow) {
-        h.unset_flags(lt::torrent_flags::upload_mode);
+      if (allow) h.unset_flags(lt::torrent_flags::upload_mode);
+    };
+    const bool all = info_hash == nullptr || info_hash[0] == '\0';
+    if (all) {
+      for (lt::torrent_handle h : as_session(session)->get_torrents()) {
+        apply(h);
+      }
+      return 1;
+    }
+    lt::torrent_handle h = find_torrent(as_session(session), info_hash);
+    if (!h.is_valid()) return 0;
+    apply(h);
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+HT_EXPORT int ht_set_unchoke_slots(void* session, int slots) {
+  if (session == nullptr) return 0;
+  try {
+    lt::settings_pack sp;
+    if (slots < 0) {
+      sp.set_int(lt::settings_pack::unchoke_slots_limit,
+                 lt::default_settings().get_int(
+                     lt::settings_pack::unchoke_slots_limit));
+    } else {
+      // 0 = 不给任何 peer unchoke 槽位 = 会话级停止上传 payload。我们发出的
+      // piece 请求是协议消息、不占 unchoke 槽，下载不受影响（BUG-1293 的
+      // 「关上传」正确原语；upload_mode 是反的，见 ht_set_upload_mode）。
+      sp.set_int(lt::settings_pack::unchoke_slots_limit, slots);
+    }
+    as_session(session)->apply_settings(std::move(sp));
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+HT_EXPORT int ht_pause_torrent(void* session, const char* info_hash,
+                               int pause) {
+  if (session == nullptr) return 0;
+  try {
+    const bool want_pause = pause != 0;
+    const auto apply = [want_pause](lt::torrent_handle h) {
+      if (!h.is_valid()) return;
+      if (want_pause) {
+        // auto_managed 的种子会被队列管理器自动 resume，必须先清。
+        h.unset_flags(lt::torrent_flags::auto_managed);
+        h.pause();
       } else {
-        h.set_flags(lt::torrent_flags::upload_mode);
+        h.set_flags(lt::torrent_flags::auto_managed);
+        h.resume();
       }
     };
     const bool all = info_hash == nullptr || info_hash[0] == '\0';
@@ -1185,6 +1242,9 @@ HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir) {
       // 与 add_with_params 同一语义：本引擎的 add = 「开始跑」。resume 里
       // 存的 paused 旗标必须清掉，否则加回来是暂停态，既不续传也不做种。
       params.flags &= ~lt::torrent_flags::paused;
+      // BUG-1293：旧版本把「关上传」误写成置 upload_mode（实际语义是停止
+      // 下载），已升级用户的 resume 里可能带着残留 flag，加载时一律治愈。
+      params.flags &= ~lt::torrent_flags::upload_mode;
       lt::error_code add_ec;
       lt::torrent_handle h = ses->add_torrent(std::move(params), add_ec);
       if ((add_ec && add_ec != lt::errors::duplicate_torrent) ||

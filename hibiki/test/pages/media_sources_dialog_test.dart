@@ -1,5 +1,5 @@
 // TODO-817 M1c MediaSourcesDialog widget 行为 + 源码守卫测试：
-//  (1) 空库 -> 显示 media_source_no_sources。
+//  (1) 空扫描根仍显示 Hibiki 互联；漫画还显示独立可开关的 Mokuro.moe。
 //  (2) 预置 video 来源 -> 按 sortOrder 渲染 label/rootPath/统计文案。
 //  (3) lastScanError != null -> 显示 media_source_scan_error。
 //  (4) 移除来源 -> 确认对话框含 media_source_remove_keeps_media；确认后该来源消失，
@@ -111,11 +111,41 @@ Future<void> _seedBook(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('empty library shows no-sources message', (tester) async {
+  testWidgets('empty scan-root list still shows Hibiki Interconnect',
+      (tester) async {
     final HibikiDatabase db = _memDb();
     addTearDown(db.close);
     await _pumpDialog(tester, db, 'video');
-    expect(find.text('No sources yet'), findsOneWidget);
+    expect(find.text('Hibiki Interconnect'), findsOneWidget);
+    expect(find.text('No sources yet'), findsNothing);
+  });
+
+  testWidgets('manga sources compose interconnect, internet and every folder',
+      (tester) async {
+    final HibikiDatabase db = _memDb();
+    addTearDown(db.close);
+    await _seedSource(
+      db,
+      label: 'Manga A',
+      mediaKind: 'manga',
+      rootPath: r'D:\manga\a',
+      sortOrder: 0,
+    );
+    await _seedSource(
+      db,
+      label: 'Manga B',
+      mediaKind: 'manga',
+      rootPath: r'D:\manga\b',
+      sortOrder: 1,
+    );
+    await _pumpDialog(tester, db, 'manga');
+
+    expect(find.text('Hibiki Interconnect'), findsOneWidget);
+    expect(find.text('Mokuro.moe'), findsOneWidget);
+    expect(find.text('Manga A'), findsOneWidget);
+    expect(find.text(r'D:\manga\a'), findsOneWidget);
+    expect(find.text('Manga B'), findsOneWidget);
+    expect(find.text(r'D:\manga\b'), findsOneWidget);
   });
 
   testWidgets('video sources render label / rootPath / count + last scan',

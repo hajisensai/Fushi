@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 统一合集 Phase 6 守卫：锁死「Jellyfin 式统一合集」架构的四条不变量（源码守卫）。
 ///
 /// 书籍 + 视频共用 MediaCollections/MediaCollectionItems 引用表；播放列表 = 合集（本地多
@@ -167,8 +169,18 @@ void main() {
     final String detailSrc = detail.readAsStringSync();
     expect(detailSrc.contains('_episodeThumb'), isTrue,
         reason: 'playlist 详情页剧集行必须带每集封面缩略图');
-    expect(detailSrc.contains('Image.file'), isTrue,
-        reason: '缩略图用集自身 coverPath 的 Image.file（无封面退占位）');
+    // 锚点锁的是**契约**（缩略图取该集自己的 coverPath、无封面退占位），不是某种
+    // 具体渲染写法。旧判据 `contains('Image.file')` 把实现写法当契约：BUG-1299 把
+    // `_episodeThumb` 从裸 `Image.file(...) + BoxFit.cover` 改成
+    // `resolveMediaCoverImage(...)` + `PortraitCoverImage(landscapeSlot: true)`
+    // 后（语义等价、仍是文件背书的 ImageProvider），锚点凭空消失、守卫误报红。
+    final String thumbBody =
+        methodBody(detailSrc, 'Widget _episodeThumb(VideoBookRow ep');
+    expect(containsCodeLine(thumbBody, 'ep.coverPath'), isTrue,
+        reason: '缩略图必须取该集自身的 coverPath（每集独立视频各有封面），'
+            '不得回退成整个合集共用一张封面');
+    expect(containsCodeLine(thumbBody, '_thumbPlaceholder('), isTrue,
+        reason: '无封面 / 读取失败必须退占位图，不得留空或抛');
   });
 
   test('排序交互重设计：死权重零读取 + 排序菜单 + 成员序单一真相源 + 详情页就地排序', () {

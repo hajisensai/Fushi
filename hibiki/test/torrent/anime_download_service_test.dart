@@ -31,36 +31,52 @@ class _FakeQb {
   int infoRequests = 0;
   int filesRequests = 0;
   int factoryCalls = 0;
+  int deleteRequests = 0;
   String? lastInfoCategory;
+  Completer<void>? infoRequestStarted;
+  Future<void>? infoResponseGate;
   List<Map<String, dynamic>> torrents = <Map<String, dynamic>>[];
   List<Map<String, dynamic>> files = <Map<String, dynamic>>[];
 
   late final MockClient mock = MockClient((http.Request request) async {
     final String path = request.url.path;
     if (path == '/api/v2/auth/login') {
-      return http.Response('Ok.', 200,
-          headers: <String, String>{'set-cookie': 'SID=fake123; path=/'});
+      return http.Response(
+        'Ok.',
+        200,
+        headers: <String, String>{'set-cookie': 'SID=fake123; path=/'},
+      );
     }
     if (path == '/api/v2/torrents/info') {
       infoRequests++;
       lastInfoCategory = request.url.queryParameters['category'];
+      final Completer<void>? started = infoRequestStarted;
+      if (started != null && !started.isCompleted) started.complete();
+      final Future<void>? gate = infoResponseGate;
+      if (gate != null) await gate;
       return http.Response(jsonEncode(torrents), 200);
     }
     if (path == '/api/v2/torrents/files') {
       filesRequests++;
       return http.Response(jsonEncode(files), 200);
     }
+    if (path == '/api/v2/torrents/delete') {
+      deleteRequests++;
+      return http.Response('', 200);
+    }
     return http.Response('not found', 404);
   });
 
   TorrentBackend newBackend(QbConnectionConfig config) {
     factoryCalls++;
-    return QbTorrentBackend(QBittorrentClient(
-      baseUrl: config.baseUrl,
-      username: config.username,
-      password: config.password,
-      client: mock,
-    ));
+    return QbTorrentBackend(
+      QBittorrentClient(
+        baseUrl: config.baseUrl,
+        username: config.username,
+        password: config.password,
+        client: mock,
+      ),
+    );
   }
 }
 
@@ -114,11 +130,23 @@ void main() {
       final List<String> videos =
           resolveVideoAbsolutePaths(info, const <TorrentFileEntry>[
         TorrentFileEntry(
-            name: 'Show/Show - 01.mkv', size: 1, progress: 1, index: 0),
+          name: 'Show/Show - 01.mkv',
+          size: 1,
+          progress: 1,
+          index: 0,
+        ),
         TorrentFileEntry(
-            name: 'Show/Show - 02.MP4', size: 1, progress: 1, index: 1),
+          name: 'Show/Show - 02.MP4',
+          size: 1,
+          progress: 1,
+          index: 1,
+        ),
         TorrentFileEntry(
-            name: 'Show/readme.txt', size: 1, progress: 1, index: 2),
+          name: 'Show/readme.txt',
+          size: 1,
+          progress: 1,
+          index: 2,
+        ),
       ]);
       expect(videos, <String>[
         p.join('/dl', 'Show/Show - 01.mkv'),
@@ -136,8 +164,10 @@ void main() {
         contentPath: '/dl/movie.mkv',
         amountLeft: 0,
       );
-      expect(resolveVideoAbsolutePaths(single, const <TorrentFileEntry>[]),
-          <String>['/dl/movie.mkv']);
+      expect(
+        resolveVideoAbsolutePaths(single, const <TorrentFileEntry>[]),
+        <String>['/dl/movie.mkv'],
+      );
 
       const TorrentSnapshot nonVideo = TorrentSnapshot(
         hash: _kHash,
@@ -148,26 +178,35 @@ void main() {
         contentPath: '/dl/archive.zip',
         amountLeft: 0,
       );
-      expect(resolveVideoAbsolutePaths(nonVideo, const <TorrentFileEntry>[]),
-          isEmpty);
+      expect(
+        resolveVideoAbsolutePaths(nonVideo, const <TorrentFileEntry>[]),
+        isEmpty,
+      );
     });
   });
 
   group('pairSubtitlesToVideos', () {
     const PlanSubtitle ep1Ja = PlanSubtitle(
-        episode: 1,
-        fileName: 's01.ja.srt',
-        stagedPath: '/s/1.srt',
-        language: 'ja');
+      episode: 1,
+      fileName: 's01.ja.srt',
+      stagedPath: '/s/1.srt',
+      language: 'ja',
+    );
     const PlanSubtitle ep1Zh = PlanSubtitle(
-        episode: 1,
-        fileName: 's01.zh.srt',
-        stagedPath: '/s/1zh.srt',
-        language: 'zh');
-    const PlanSubtitle ep2 =
-        PlanSubtitle(episode: 2, fileName: 's02.srt', stagedPath: '/s/2.srt');
-    const PlanSubtitle noEp =
-        PlanSubtitle(fileName: 'movie.ass', stagedPath: '/s/m.ass');
+      episode: 1,
+      fileName: 's01.zh.srt',
+      stagedPath: '/s/1zh.srt',
+      language: 'zh',
+    );
+    const PlanSubtitle ep2 = PlanSubtitle(
+      episode: 2,
+      fileName: 's02.srt',
+      stagedPath: '/s/2.srt',
+    );
+    const PlanSubtitle noEp = PlanSubtitle(
+      fileName: 'movie.ass',
+      stagedPath: '/s/m.ass',
+    );
 
     test('规则①：集号相等配对；同集多字幕取第一个', () {
       final Map<String, PlanSubtitle> pairs = pairSubtitlesToVideos(
@@ -192,7 +231,9 @@ void main() {
       // 视频有集号、字幕无集号：也直接配对。
       expect(
         pairSubtitlesToVideos(
-            <String>['/v/Show - 01.mkv'], <PlanSubtitle>[noEp]),
+          <String>['/v/Show - 01.mkv'],
+          <PlanSubtitle>[noEp],
+        ),
         <String, PlanSubtitle>{'/v/Show - 01.mkv': noEp},
       );
     });
@@ -201,31 +242,40 @@ void main() {
       // 1v1 双方都有集号但不等 → 不配。
       expect(
         pairSubtitlesToVideos(
-            <String>['/v/Show - 01.mkv'], <PlanSubtitle>[ep2]),
+          <String>['/v/Show - 01.mkv'],
+          <PlanSubtitle>[ep2],
+        ),
         isEmpty,
       );
       // 多视频 + 无集号字幕 → 不配。
       expect(
-        pairSubtitlesToVideos(<String>['/v/Show - 01.mkv', '/v/Show - 02.mkv'],
-            <PlanSubtitle>[noEp]),
+        pairSubtitlesToVideos(
+          <String>['/v/Show - 01.mkv', '/v/Show - 02.mkv'],
+          <PlanSubtitle>[noEp],
+        ),
         isEmpty,
       );
-      expect(pairSubtitlesToVideos(const <String>[], <PlanSubtitle>[ep1Ja]),
-          isEmpty);
       expect(
-          pairSubtitlesToVideos(
-              <String>['/v/Show - 01.mkv'], const <PlanSubtitle>[]),
-          isEmpty);
+        pairSubtitlesToVideos(const <String>[], <PlanSubtitle>[ep1Ja]),
+        isEmpty,
+      );
+      expect(
+        pairSubtitlesToVideos(<String>[
+          '/v/Show - 01.mkv',
+        ], const <PlanSubtitle>[]),
+        isEmpty,
+      );
     });
   });
 
   group('sidecarPathFor', () {
     test('带语言：<视频目录>/<视频名去扩展>.<lang>.<字幕扩展>', () {
       const PlanSubtitle sub = PlanSubtitle(
-          episode: 1,
-          fileName: 'Show 01.ASS',
-          stagedPath: '/s/x.ass',
-          language: 'ja');
+        episode: 1,
+        fileName: 'Show 01.ASS',
+        stagedPath: '/s/x.ass',
+        language: 'ja',
+      );
       expect(
         sidecarPathFor(p.join('/dl', 'Show', 'Show - 01.mkv'), sub),
         p.join('/dl', 'Show', 'Show - 01.ja.ass'),
@@ -233,14 +283,18 @@ void main() {
     });
 
     test('language null 省略 lang 段；字幕无扩展退化 .srt', () {
-      const PlanSubtitle sub =
-          PlanSubtitle(fileName: 'Show 01.srt', stagedPath: '/s/x.srt');
+      const PlanSubtitle sub = PlanSubtitle(
+        fileName: 'Show 01.srt',
+        stagedPath: '/s/x.srt',
+      );
       expect(
         sidecarPathFor(p.join('/dl', 'Show - 01.mkv'), sub),
         p.join('/dl', 'Show - 01.srt'),
       );
-      const PlanSubtitle noExt =
-          PlanSubtitle(fileName: 'noext', stagedPath: '/s/noext');
+      const PlanSubtitle noExt = PlanSubtitle(
+        fileName: 'noext',
+        stagedPath: '/s/noext',
+      );
       expect(
         sidecarPathFor(p.join('/dl', 'Show - 01.mkv'), noExt),
         p.join('/dl', 'Show - 01.srt'),
@@ -255,7 +309,9 @@ void main() {
     late List<(AnimeDownloadPlan, List<String>)> importCalls;
     late List<(AnimeDownloadPlan, List<String>)> bookImportCalls;
     Future<AnimeDownloadImportOutcome?> Function(
-        AnimeDownloadPlan, List<String>)? importerOverride;
+      AnimeDownloadPlan,
+      List<String>,
+    )? importerOverride;
     Future<int?> Function(AnimeDownloadPlan, List<String>)?
         bookImporterOverride;
     late List<(AnimeDownloadPlan, List<String>)> subtitleResolverCalls;
@@ -274,8 +330,9 @@ void main() {
             : (AnimeDownloadPlan plan, List<String> videos) async {
                 subtitleResolverCalls.add((plan, videos));
                 final Future<ResolvedPlanSubtitles> Function(
-                        AnimeDownloadPlan, List<String>)? override =
-                    subtitleResolverOverride;
+                  AnimeDownloadPlan,
+                  List<String>,
+                )? override = subtitleResolverOverride;
                 if (override != null) return override(plan, videos);
                 return const ResolvedPlanSubtitles.failed('not stubbed');
               },
@@ -322,15 +379,18 @@ void main() {
       await store.save(_plan());
       await buildService(config: () => null).tick();
       await buildService(
-          config: () => const QbConnectionConfig(
-              backend: QbConnectionConfig.backendQbittorrent)).tick();
+        config: () => const QbConnectionConfig(
+          backend: QbConnectionConfig.backendQbittorrent,
+        ),
+      ).tick();
       expect(qb.factoryCalls, 0);
       expect(importCalls, isEmpty);
     });
 
     test('无 downloading 计划不建连接', () async {
-      await store
-          .save(_plan().copyWith(status: AnimeDownloadPlan.statusImported));
+      await store.save(
+        _plan().copyWith(status: AnimeDownloadPlan.statusImported),
+      );
       await buildService().tick();
       expect(qb.factoryCalls, 0);
     });
@@ -352,8 +412,10 @@ void main() {
       await buildService().tick();
       expect(importCalls, isEmpty);
       expect(qb.filesRequests, 0);
-      expect((await store.loadAll()).single.status,
-          AnimeDownloadPlan.statusDownloading);
+      expect(
+        (await store.loadAll()).single.status,
+        AnimeDownloadPlan.statusDownloading,
+      );
     });
 
     // ========================================================================
@@ -381,10 +443,12 @@ void main() {
     test('BUG-1206 pending 计划：完成时才补取，resolver 拿到的是包内真实视频路径', () async {
       final (String savePath, List<Map<String, dynamic>> files) =
           completedSeasonPack();
-      await store.save(_plan().copyWith(
-        jimakuEntryId: 7,
-        subtitleStatus: AnimeDownloadPlan.subtitlePending,
-      ));
+      await store.save(
+        _plan().copyWith(
+          jimakuEntryId: 7,
+          subtitleStatus: AnimeDownloadPlan.subtitlePending,
+        ),
+      );
       qb.torrents = <Map<String, dynamic>>[
         _torrentJson(savePath: savePath, contentPath: p.join(savePath, 'Show')),
       ];
@@ -398,10 +462,11 @@ void main() {
         File(staged).writeAsStringSync('cue');
         return ResolvedPlanSubtitles.ok(<PlanSubtitle>[
           PlanSubtitle(
-              episode: 3,
-              fileName: 'Show - 03.ja.srt',
-              stagedPath: staged,
-              language: 'ja'),
+            episode: 3,
+            fileName: 'Show - 03.ja.srt',
+            stagedPath: staged,
+            language: 'ja',
+          ),
         ]);
       };
 
@@ -413,19 +478,18 @@ void main() {
           subtitleResolverCalls.single;
       expect(calledPlan.jimakuEntryId, 7);
       expect(videos, hasLength(12));
-      expect(
-        videos.map(p.basename),
-        contains('[Grp] Show - 03 [1080p].mkv'),
-      );
+      expect(videos.map(p.basename), contains('[Grp] Show - 03 [1080p].mkv'));
       // ② 反查结果真的贴成了第 3 集的 sidecar（不是第 1 集，也不是全都贴）。
       expect(
-        File(p.join(savePath, 'Show', '[Grp] Show - 03 [1080p].ja.srt'))
-            .existsSync(),
+        File(
+          p.join(savePath, 'Show', '[Grp] Show - 03 [1080p].ja.srt'),
+        ).existsSync(),
         isTrue,
       );
       expect(
-        File(p.join(savePath, 'Show', '[Grp] Show - 01 [1080p].ja.srt'))
-            .existsSync(),
+        File(
+          p.join(savePath, 'Show', '[Grp] Show - 01 [1080p].ja.srt'),
+        ).existsSync(),
         isFalse,
       );
       // ③ 计划落成 resolved 并带上真配好的字幕。
@@ -438,25 +502,31 @@ void main() {
     test('BUG-1206 反查一条都不配 → 落 unavailable + 原因，视频照常入库', () async {
       final (String savePath, List<Map<String, dynamic>> files) =
           completedSeasonPack();
-      await store.save(_plan().copyWith(
-        jimakuEntryId: 7,
-        jimakuEntryName: 'Wrong Season Entry',
-        subtitleStatus: AnimeDownloadPlan.subtitlePending,
-      ));
+      await store.save(
+        _plan().copyWith(
+          jimakuEntryId: 7,
+          jimakuEntryName: 'Wrong Season Entry',
+          subtitleStatus: AnimeDownloadPlan.subtitlePending,
+        ),
+      );
       qb.torrents = <Map<String, dynamic>>[
         _torrentJson(savePath: savePath, contentPath: p.join(savePath, 'Show')),
       ];
       qb.files = files;
-      subtitleResolverOverride = (_, __) async =>
-          const ResolvedPlanSubtitles.failed(
-              'no jimaku file matches the pack episodes');
+      subtitleResolverOverride =
+          (_, __) async => const ResolvedPlanSubtitles.failed(
+                'no jimaku file matches the pack episodes',
+              );
 
       await buildService().tick();
 
       final AnimeDownloadPlan saved = (await store.loadAll()).single;
       expect(saved.subtitleStatus, AnimeDownloadPlan.subtitleUnavailable);
-      expect(saved.subtitleNote, 'no jimaku file matches the pack episodes',
-          reason: '不能静默：原因要落进计划，任务行才显示得出来');
+      expect(
+        saved.subtitleNote,
+        'no jimaku file matches the pack episodes',
+        reason: '不能静默：原因要落进计划，任务行才显示得出来',
+      );
       expect(saved.subtitles, isEmpty);
       // 字幕没配上不该把整个下载判失败——视频还是要进库。
       expect(saved.status, AnimeDownloadPlan.statusImported);
@@ -471,9 +541,17 @@ void main() {
       final String staged = p.join(subsDir.path, 'legacy 05.srt');
       File(staged).writeAsStringSync('legacy cue');
       // 老计划反序列化后 subtitleStatus = resolved（decode 的兼容分支）。
-      await store.save(_plan(subtitles: <PlanSubtitle>[
-        PlanSubtitle(episode: 5, fileName: 'legacy 05.srt', stagedPath: staged),
-      ]).copyWith(subtitleStatus: AnimeDownloadPlan.subtitleResolved));
+      await store.save(
+        _plan(
+          subtitles: <PlanSubtitle>[
+            PlanSubtitle(
+              episode: 5,
+              fileName: 'legacy 05.srt',
+              stagedPath: staged,
+            ),
+          ],
+        ).copyWith(subtitleStatus: AnimeDownloadPlan.subtitleResolved),
+      );
       qb.torrents = <Map<String, dynamic>>[
         _torrentJson(savePath: savePath, contentPath: p.join(savePath, 'Show')),
       ];
@@ -483,21 +561,26 @@ void main() {
 
       expect(subtitleResolverCalls, isEmpty, reason: '老计划的字幕是既有数据，绝不能重取或覆盖');
       expect(
-        File(p.join(savePath, 'Show', '[Grp] Show - 05 [1080p].srt'))
-            .readAsStringSync(),
+        File(
+          p.join(savePath, 'Show', '[Grp] Show - 05 [1080p].srt'),
+        ).readAsStringSync(),
         'legacy cue',
       );
-      expect((await store.loadAll()).single.subtitles.single.fileName,
-          'legacy 05.srt');
+      expect(
+        (await store.loadAll()).single.subtitles.single.fileName,
+        'legacy 05.srt',
+      );
     });
 
     test('BUG-1206 没接 resolver 时 pending 计划落 unavailable，不静默', () async {
       final (String savePath, List<Map<String, dynamic>> files) =
           completedSeasonPack();
-      await store.save(_plan().copyWith(
-        jimakuEntryId: 7,
-        subtitleStatus: AnimeDownloadPlan.subtitlePending,
-      ));
+      await store.save(
+        _plan().copyWith(
+          jimakuEntryId: 7,
+          subtitleStatus: AnimeDownloadPlan.subtitlePending,
+        ),
+      );
       qb.torrents = <Map<String, dynamic>>[
         _torrentJson(savePath: savePath, contentPath: p.join(savePath, 'Show')),
       ];
@@ -520,13 +603,18 @@ void main() {
       final String savePath = p.join(tempDir.path, 'downloads');
       Directory(savePath).createSync(recursive: true);
 
-      await store.save(_plan(subtitles: <PlanSubtitle>[
-        PlanSubtitle(
-            episode: 1,
-            fileName: 'Show 01.ja.srt',
-            stagedPath: staged,
-            language: 'ja'),
-      ]));
+      await store.save(
+        _plan(
+          subtitles: <PlanSubtitle>[
+            PlanSubtitle(
+              episode: 1,
+              fileName: 'Show 01.ja.srt',
+              stagedPath: staged,
+              language: 'ja',
+            ),
+          ],
+        ),
+      );
       // 种子 hash 用大写：验证与计划 id 的比对是大小写不敏感的。
       qb.torrents = <Map<String, dynamic>>[
         _torrentJson(
@@ -557,12 +645,14 @@ void main() {
       expect(importCalls.single.$2, <String>[expectedVideo]);
 
       final String sidecar = sidecarPathFor(
-          expectedVideo,
-          PlanSubtitle(
-              episode: 1,
-              fileName: 'Show 01.ja.srt',
-              stagedPath: staged,
-              language: 'ja'));
+        expectedVideo,
+        PlanSubtitle(
+          episode: 1,
+          fileName: 'Show 01.ja.srt',
+          stagedPath: staged,
+          language: 'ja',
+        ),
+      );
       expect(File(sidecar).existsSync(), isTrue);
       expect(File(sidecar).readAsStringSync(), 'subtitle content');
 
@@ -580,21 +670,27 @@ void main() {
       final String savePath = p.join(tempDir.path, 'downloads');
       final String video = p.join(savePath, 'Show - 01.mkv');
       const PlanSubtitle sub = PlanSubtitle(
-          episode: 1,
-          fileName: 'Show 01.ja.srt',
-          stagedPath: '',
-          language: 'ja');
+        episode: 1,
+        fileName: 'Show 01.ja.srt',
+        stagedPath: '',
+        language: 'ja',
+      );
       final String sidecar = sidecarPathFor(video, sub);
       File(sidecar).createSync(recursive: true);
       File(sidecar).writeAsStringSync('user edited');
 
-      await store.save(_plan(subtitles: <PlanSubtitle>[
-        PlanSubtitle(
-            episode: 1,
-            fileName: 'Show 01.ja.srt',
-            stagedPath: staged,
-            language: 'ja'),
-      ]));
+      await store.save(
+        _plan(
+          subtitles: <PlanSubtitle>[
+            PlanSubtitle(
+              episode: 1,
+              fileName: 'Show 01.ja.srt',
+              stagedPath: staged,
+              language: 'ja',
+            ),
+          ],
+        ),
+      );
       qb.torrents = <Map<String, dynamic>>[
         _torrentJson(savePath: savePath, contentPath: video),
       ];
@@ -609,8 +705,10 @@ void main() {
 
       await buildService().tick();
       expect(File(sidecar).readAsStringSync(), 'user edited');
-      expect((await store.loadAll()).single.status,
-          AnimeDownloadPlan.statusImported);
+      expect(
+        (await store.loadAll()).single.status,
+        AnimeDownloadPlan.statusImported,
+      );
     });
 
     // BUG-1189 跟进：去重键必须**语言无关**。本 PR 让 detectSubtitleLanguage 认出
@@ -633,21 +731,30 @@ void main() {
 
       // 本轮要落位的是带语言段的新名字 —— 与老档不同名，旧的「同名跳过」拦不住。
       const PlanSubtitle sub = PlanSubtitle(
-          episode: 1,
-          fileName: 'Show 01.ja.srt',
-          stagedPath: '',
-          language: 'ja');
+        episode: 1,
+        fileName: 'Show 01.ja.srt',
+        stagedPath: '',
+        language: 'ja',
+      );
       final String langSidecar = sidecarPathFor(video, sub);
-      expect(langSidecar, isNot(legacySidecar),
-          reason: '前提：两者不同名，否则这条用例证明不了语言无关去重');
+      expect(
+        langSidecar,
+        isNot(legacySidecar),
+        reason: '前提：两者不同名，否则这条用例证明不了语言无关去重',
+      );
 
-      await store.save(_plan(subtitles: <PlanSubtitle>[
-        PlanSubtitle(
-            episode: 1,
-            fileName: 'Show 01.ja.srt',
-            stagedPath: staged,
-            language: 'ja'),
-      ]));
+      await store.save(
+        _plan(
+          subtitles: <PlanSubtitle>[
+            PlanSubtitle(
+              episode: 1,
+              fileName: 'Show 01.ja.srt',
+              stagedPath: staged,
+              language: 'ja',
+            ),
+          ],
+        ),
+      );
       qb.torrents = <Map<String, dynamic>>[
         _torrentJson(savePath: savePath, contentPath: video),
       ];
@@ -662,10 +769,16 @@ void main() {
 
       await buildService().tick();
 
-      expect(File(langSidecar).existsSync(), isFalse,
-          reason: '该集已有 sidecar，不得再写第二份');
-      expect(File(legacySidecar).readAsStringSync(), 'legacy subtitle',
-          reason: '老档可能是用户手放/手改的，绝不覆盖或删除');
+      expect(
+        File(langSidecar).existsSync(),
+        isFalse,
+        reason: '该集已有 sidecar，不得再写第二份',
+      );
+      expect(
+        File(legacySidecar).readAsStringSync(),
+        'legacy subtitle',
+        reason: '老档可能是用户手放/手改的，绝不覆盖或删除',
+      );
 
       // 默认选中的确定答案：目录里始终只有一份 sidecar，所以「默认选中悄悄切档」
       // 这件事根本不会发生 —— pickSidecar 无论学习语言是什么都只能挑到老档。
@@ -675,12 +788,15 @@ void main() {
           .map((File f) => p.basename(f.path))
           .toList();
       expect(
-        listSidecarSubtitles('Show - 01', dirFiles),
-        <String>['Show - 01.srt'],
-        reason: '同一集有且只有一份 sidecar',
-      );
+          listSidecarSubtitles('Show - 01', dirFiles),
+          <String>[
+            'Show - 01.srt',
+          ],
+          reason: '同一集有且只有一份 sidecar');
       expect(
-          pickSidecar('Show - 01', dirFiles, langCode: 'ja'), 'Show - 01.srt');
+        pickSidecar('Show - 01', dirFiles, langCode: 'ja'),
+        'Show - 01.srt',
+      );
     });
 
     test('该集本来没有任何 sidecar 时照常落位（去重不得误伤首次下载）', () async {
@@ -696,13 +812,18 @@ void main() {
       Directory(savePath).createSync(recursive: true);
       File(p.join(savePath, 'Show - 02.srt')).writeAsStringSync('other ep');
 
-      await store.save(_plan(subtitles: <PlanSubtitle>[
-        PlanSubtitle(
-            episode: 1,
-            fileName: 'Show 01.ja.srt',
-            stagedPath: staged,
-            language: 'ja'),
-      ]));
+      await store.save(
+        _plan(
+          subtitles: <PlanSubtitle>[
+            PlanSubtitle(
+              episode: 1,
+              fileName: 'Show 01.ja.srt',
+              stagedPath: staged,
+              language: 'ja',
+            ),
+          ],
+        ),
+      );
       qb.torrents = <Map<String, dynamic>>[
         _torrentJson(savePath: savePath, contentPath: video),
       ];
@@ -717,9 +838,11 @@ void main() {
 
       await buildService().tick();
 
-      expect(File(p.join(savePath, 'Show - 01.ja.srt')).readAsStringSync(),
-          'fresh content',
-          reason: '本集无 sidecar → 必须正常落位；别集的字幕不该挡住它');
+      expect(
+        File(p.join(savePath, 'Show - 01.ja.srt')).readAsStringSync(),
+        'fresh content',
+        reason: '本集无 sidecar → 必须正常落位；别集的字幕不该挡住它',
+      );
     });
 
     test('importer 抛异常 → 计划标 failed 不重试', () async {
@@ -760,18 +883,22 @@ void main() {
     test('种子丢失：超 48h 标 failed(torrent missing)，未超跳过等下轮', () async {
       final int nowMs = DateTime.now().millisecondsSinceEpoch;
       await store.save(_plan(id: 'b' * 40, createdAtMs: nowMs - 1000));
-      await store.save(_plan(
-        id: 'c' * 40,
-        createdAtMs: nowMs - const Duration(hours: 49).inMilliseconds,
-      ));
+      await store.save(
+        _plan(
+          id: 'c' * 40,
+          createdAtMs: nowMs - const Duration(hours: 49).inMilliseconds,
+        ),
+      );
       qb.torrents = <Map<String, dynamic>>[]; // qb 列表为空 = 都被删了。
 
       await buildService().tick();
       final List<AnimeDownloadPlan> plans = await store.loadAll();
-      final AnimeDownloadPlan fresh =
-          plans.singleWhere((AnimeDownloadPlan e) => e.id == 'b' * 40);
-      final AnimeDownloadPlan stale =
-          plans.singleWhere((AnimeDownloadPlan e) => e.id == 'c' * 40);
+      final AnimeDownloadPlan fresh = plans.singleWhere(
+        (AnimeDownloadPlan e) => e.id == 'b' * 40,
+      );
+      final AnimeDownloadPlan stale = plans.singleWhere(
+        (AnimeDownloadPlan e) => e.id == 'c' * 40,
+      );
       expect(fresh.status, AnimeDownloadPlan.statusDownloading);
       expect(stale.status, AnimeDownloadPlan.statusFailed);
       expect(stale.failReason, 'torrent missing');
@@ -787,7 +914,8 @@ void main() {
       final int nowMs = DateTime.now().millisecondsSinceEpoch;
       await store.save(_plan()); // 会走到 importer 并卡在 gate 上。
       await store.save(
-          _plan(id: 'd' * 40, createdAtMs: nowMs)); // 种子缺席，保持 downloading。
+        _plan(id: 'd' * 40, createdAtMs: nowMs),
+      ); // 种子缺席，保持 downloading。
       qb.torrents = <Map<String, dynamic>>[
         _torrentJson(contentPath: '/dl/movie.mkv', savePath: '/dl'),
       ];
@@ -834,20 +962,23 @@ void main() {
         final bool ok = await buildService().importNow(_kHash);
         expect(ok, isFalse);
         expect(importCalls, isEmpty);
-        expect((await store.loadAll()).single.status,
-            AnimeDownloadPlan.statusDownloading);
+        expect(
+          (await store.loadAll()).single.status,
+          AnimeDownloadPlan.statusDownloading,
+        );
       });
 
-      test('未完成但文件已解析 → 提前入库成功，后续 tick 不重复导入', () async {
+      test('未完成但文件已解析 → 提前入库后继续跟踪进度，完成时不重复导入', () async {
         final String savePath = p.join(tempDir.path, 'downloads');
         Directory(savePath).createSync(recursive: true);
         await store.save(_plan());
         qb.torrents = <Map<String, dynamic>>[
           _torrentJson(
-              state: 'downloading',
-              progress: 0.2,
-              amountLeft: 800,
-              savePath: savePath),
+            state: 'downloading',
+            progress: 0.2,
+            amountLeft: 800,
+            savePath: savePath,
+          ),
         ];
         qb.files = <Map<String, dynamic>>[
           <String, dynamic>{'name': 'Show 01.mkv', 'size': 1, 'progress': 0.5},
@@ -856,12 +987,43 @@ void main() {
         expect(await service.importNow(_kHash), isTrue);
         expect(importCalls, hasLength(1));
         expect(importCalls.single.$2.single, p.join(savePath, 'Show 01.mkv'));
-        expect((await store.loadAll()).single.status,
-            AnimeDownloadPlan.statusImported);
-        // 已 imported：tick 不再有 downloading 计划，不建连接、不重复导入。
-        final int factoryCallsBefore = qb.factoryCalls;
+        AnimeDownloadPlan saved = (await store.loadAll()).single;
+        expect(saved.status, AnimeDownloadPlan.statusDownloading);
+        expect(saved.importedEarly, isTrue);
+        expect(saved.collectionId, 42);
+        expect(service.downloadProgress.value[_kHash], 0.2);
+
+        // 提前入库不是下载完成：后续 tick 继续刷新真实进度，且不重复导入。
+        qb.torrents = <Map<String, dynamic>>[
+          _torrentJson(
+            state: 'downloading',
+            progress: 0.55,
+            amountLeft: 450,
+            savePath: savePath,
+          ),
+        ];
         await service.tick();
-        expect(qb.factoryCalls, factoryCallsBefore);
+        expect(importCalls, hasLength(1));
+        expect(service.downloadProgress.value[_kHash], 0.55);
+        expect(
+          (await store.loadAll()).single.status,
+          AnimeDownloadPlan.statusDownloading,
+        );
+
+        // 真正完成后才转 imported；提前入库的视频仍不重复导入。
+        qb.torrents = <Map<String, dynamic>>[
+          _torrentJson(
+            state: 'stalledUP',
+            progress: 1,
+            amountLeft: 0,
+            savePath: savePath,
+          ),
+        ];
+        await service.tick();
+        saved = (await store.loadAll()).single;
+        expect(saved.status, AnimeDownloadPlan.statusImported);
+        expect(saved.importedEarly, isTrue);
+        expect(saved.collectionId, 42);
         expect(importCalls, hasLength(1));
       });
 
@@ -870,8 +1032,132 @@ void main() {
         await store.save(_plan());
         qb.torrents = <Map<String, dynamic>>[]; // 种子不在 qb。
         expect(await buildService().importNow(_kHash), isFalse);
-        expect((await store.loadAll()).single.status,
-            AnimeDownloadPlan.statusDownloading);
+        expect(
+          (await store.loadAll()).single.status,
+          AnimeDownloadPlan.statusDownloading,
+        );
+      });
+
+      test('并发 importNow single-flight：importer 只执行一次', () async {
+        final String savePath = p.join(tempDir.path, 'downloads');
+        Directory(savePath).createSync(recursive: true);
+        await store.save(_plan());
+        qb.torrents = <Map<String, dynamic>>[
+          _torrentJson(
+            state: 'downloading',
+            progress: 0.2,
+            amountLeft: 800,
+            savePath: savePath,
+          ),
+        ];
+        qb.files = <Map<String, dynamic>>[
+          <String, dynamic>{'name': 'Show 01.mkv', 'size': 1, 'progress': 0.2},
+        ];
+        final Completer<void> release = Completer<void>();
+        importerOverride = (AnimeDownloadPlan plan, List<String> videos) async {
+          await release.future;
+          return const AnimeDownloadImportOutcome(collectionId: 42);
+        };
+        final AnimeDownloadService service = buildService();
+        final Future<bool> first = service.importNow(_kHash);
+        final Future<bool> second = service.importNow(_kHash);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(importCalls, hasLength(1));
+        release.complete();
+        expect(await Future.wait(<Future<bool>>[first, second]), <bool>[
+          true,
+          true,
+        ]);
+        expect(importCalls, hasLength(1));
+      });
+
+      test('early 后暂停/恢复/失败保持入库正交，删除真实取消且不复活', () async {
+        final String savePath = p.join(tempDir.path, 'downloads');
+        Directory(savePath).createSync(recursive: true);
+        await store.save(_plan());
+        qb.files = <Map<String, dynamic>>[
+          <String, dynamic>{'name': 'Show 01.mkv', 'size': 1, 'progress': 0.2},
+        ];
+        qb.torrents = <Map<String, dynamic>>[
+          _torrentJson(
+            state: 'downloading',
+            progress: 0.2,
+            amountLeft: 800,
+            savePath: savePath,
+          ),
+        ];
+        final AnimeDownloadService service = buildService();
+        expect(await service.importNow(_kHash), isTrue);
+
+        qb.torrents = <Map<String, dynamic>>[
+          _torrentJson(
+            state: 'pausedDL',
+            progress: 0.55,
+            amountLeft: 450,
+            savePath: savePath,
+          ),
+        ];
+        await service.tick();
+        AnimeDownloadPlan saved = (await store.loadAll()).single;
+        expect(saved.status, AnimeDownloadPlan.statusDownloading);
+        expect(saved.importedEarly, isTrue);
+        expect(service.downloadProgress.value[_kHash], 0.55);
+
+        qb.torrents = <Map<String, dynamic>>[
+          _torrentJson(
+            state: 'downloading',
+            progress: 0.7,
+            amountLeft: 300,
+            savePath: savePath,
+          ),
+        ];
+        await service.tick();
+        expect(service.downloadProgress.value[_kHash], 0.7);
+        expect(importCalls, hasLength(1));
+
+        qb.torrents = <Map<String, dynamic>>[
+          _torrentJson(
+            state: 'error',
+            progress: 0.7,
+            amountLeft: 300,
+            savePath: savePath,
+          ),
+        ];
+        await service.tick();
+        saved = (await store.loadAll()).single;
+        expect(saved.status, AnimeDownloadPlan.statusFailed);
+        expect(saved.importedEarly, isTrue);
+        expect(saved.failReason, contains('error'));
+
+        expect(await service.deletePlan(_kHash), isTrue);
+        expect(await store.loadAll(), isEmpty);
+        expect(qb.deleteRequests, 1);
+        await service.tick();
+        expect(await store.loadAll(), isEmpty, reason: '晚到 tick 不得复活已删计划');
+      });
+
+      test('删除与 missing-torrent 旧 tick 并发：删除完成后 stale 写不得复活计划', () async {
+        await store.save(_plan(createdAtMs: 1));
+        qb.torrents = <Map<String, dynamic>>[];
+        final Completer<void> infoStarted = Completer<void>();
+        final Completer<void> releaseInfo = Completer<void>();
+        qb.infoRequestStarted = infoStarted;
+        qb.infoResponseGate = releaseInfo.future;
+        final AnimeDownloadService service = buildService();
+
+        final Future<void> staleTick = service.tick();
+        await infoStarted.future;
+        expect(await service.deletePlan(_kHash), isTrue);
+        expect(await store.loadAll(), isEmpty);
+
+        releaseInfo.complete();
+        await staleTick;
+        expect(
+          await store.loadAll(),
+          isEmpty,
+          reason: '超时 missing 分支也必须重读计划并服从 per-plan 串行边界',
+        );
+        expect(qb.deleteRequests, 1);
       });
     });
 
@@ -898,8 +1184,9 @@ void main() {
         await buildService().tick();
         expect(importCalls, isEmpty); // 视频入库未触发
         expect(bookImportCalls, hasLength(1));
-        expect(
-            bookImportCalls.single.$2, <String>[p.join('/dl', 'A Book.epub')]);
+        expect(bookImportCalls.single.$2, <String>[
+          p.join('/dl', 'A Book.epub'),
+        ]);
         final AnimeDownloadPlan saved = (await store.loadAll()).single;
         expect(saved.status, AnimeDownloadPlan.statusImported);
         expect(saved.collectionId, isNull); // 书无合集
@@ -916,20 +1203,24 @@ void main() {
           <String, dynamic>{
             'name': 'Show - 01.mkv',
             'size': 9,
-            'progress': 1.0
+            'progress': 1.0,
           },
           <String, dynamic>{'name': 'Bonus.epub', 'size': 9, 'progress': 1.0},
           <String, dynamic>{'name': 'readme.txt', 'size': 1, 'progress': 1.0},
         ];
         await buildService().tick();
         expect(importCalls, hasLength(1));
-        expect(
-            importCalls.single.$2, <String>[p.join(savePath, 'Show - 01.mkv')]);
+        expect(importCalls.single.$2, <String>[
+          p.join(savePath, 'Show - 01.mkv'),
+        ]);
         expect(bookImportCalls, hasLength(1));
-        expect(bookImportCalls.single.$2,
-            <String>[p.join(savePath, 'Bonus.epub')]);
-        expect((await store.loadAll()).single.status,
-            AnimeDownloadPlan.statusImported);
+        expect(bookImportCalls.single.$2, <String>[
+          p.join(savePath, 'Bonus.epub'),
+        ]);
+        expect(
+          (await store.loadAll()).single.status,
+          AnimeDownloadPlan.statusImported,
+        );
       });
 
       test('book 计划书库回调返回 0 → 标 failed', () async {
@@ -943,8 +1234,10 @@ void main() {
           <String, dynamic>{'name': 'A Book.epub', 'size': 9, 'progress': 1.0},
         ];
         await buildService().tick();
-        expect((await store.loadAll()).single.status,
-            AnimeDownloadPlan.statusFailed);
+        expect(
+          (await store.loadAll()).single.status,
+          AnimeDownloadPlan.statusFailed,
+        );
       });
     });
 
@@ -966,8 +1259,10 @@ void main() {
           ]),
           <String>[p.join('/dl', 'a.epub')],
         );
-        expect(resolveBookAbsolutePaths(info, const <TorrentFileEntry>[]),
-            <String>['/dl/x.epub']);
+        expect(
+          resolveBookAbsolutePaths(info, const <TorrentFileEntry>[]),
+          <String>['/dl/x.epub'],
+        );
       });
     });
   });

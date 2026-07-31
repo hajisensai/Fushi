@@ -49,8 +49,10 @@ const double kVideoControlsTopReserve = _kButtonBarHeight;
 ///
 /// 故 reserve 必须 = 进度条上缘真实高度（按平台几何加总）×缩放，且 > 默认基线 75 才能
 /// 让取下限真正抬升字幕盖过进度条。本函数把这套几何收敛成纯函数（页面与测试同源调用）：
-/// - 桌面：进度条骑按钮行上沿 → reserve = 一个按钮行高（[buttonBarHeight]），保持
-///   BUG-228「只让出进度条那一条、不抬过整条按钮行」的桌面观感，但现在随缩放变化；
+/// - 桌面：进度条骑按钮行上沿（再被下压 [seekBarBottomButtonBarOverlap]）→ reserve =
+///   `[buttonBarHeight] − overlap + [seekBarContainerHeight] + [subtitleBreathingGap]`
+///   （= 触摸热区上缘 + 呼吸，BUG-1224；旧版只让一个按钮行高 = 压住热区上半截误触）。
+///   仍守 BUG-228「不抬过整条按钮行 + 离底 margin（旧 98）」：scale=1.0 时为 84 < 98；
 /// - 移动：进度条整体被抬到按钮行上方 → reserve = [bottomChromeBaseline] + 系统底部
 ///   inset + [buttonBarHeight] + [seekBarButtonGap] + **进度条触摸热区全高**
 ///   [seekBarContainerHeight] + 字幕呼吸间距 [subtitleBreathingGap]（= 进度条**触摸热区
@@ -71,32 +73,44 @@ const double kVideoControlsTopReserve = _kButtonBarHeight;
 /// 收窄 `_videoSeekBarContainerHeight`（进度条可点热区）或 [subtitleBreathingGap] 即可，
 /// 但不能退回只让可见轨道高——那会重新让两命中区重叠（本 bug 根因）。
 ///
+/// BUG-1224（桌面同源缺口）：BUG-901 只修了移动分支，桌面分支仍 `return buttonBarHeight`
+/// ——那是**可见轨道**所在高度，不是进度条**可点热区**的上缘。桌面 seek bar 的透明命中容器
+/// 高 `seekBarContainerHeight`（fork 默认 36），且被 `Transform.translate` 向下压
+/// [seekBarBottomButtonBarOverlap]（默认 16）骑到按钮行上沿，于是热区实际占
+/// `[buttonBarHeight - overlap, buttonBarHeight - overlap + containerHeight]`——**上缘比
+/// 按钮行高再高 20px**。字幕底缘停在 `buttonBarHeight` 就恰好压住这段热区的上半截，而字幕层
+/// 在 Stack 上层且对 glyph 命中主动吸收指针（`_GlyphPriorityHitTest`，BUG-838），指针根本
+/// 到不了 seek 的裸 `Listener` → 用户点进度条上缘那条带 = 弹查词、seek 被吞（悬停缩略图
+/// 预览却照常出现，因为 hover 走 non-opaque MouseRegion 不被吸收，「看得见能点、点下去
+/// 却是查词」）。故桌面分支与移动分支同一口径：让出**热区上缘** + 呼吸间距。
+///
 /// 几何项均来自 `video_hibiki_page.dart` 的同名控制条 getter（已 ×uiScale）；本函数不再
 /// 二次乘 uiScale，由调用方传入已缩放值，避免双重缩放。[bottomChromeBaseline] 是不随
 /// 缩放的离底基线常量（与页面 `_videoBottomChromeBaseline` 一致），故在此显式加上而非
-/// 乘缩放。
+/// 乘缩放。[seekBarContainerHeight] / [seekBarBottomButtonBarOverlap] 必须传**当前平台
+/// 控制主题真实生效**的值（两套 theme 取值不同，见页面 `_activeSeekBarContainerHeight`）。
 double videoSubtitleControlsReserve({
   required bool isDesktop,
   required double buttonBarHeight,
   required double seekBarButtonGap,
   required double seekBarContainerHeight,
+  required double seekBarBottomButtonBarOverlap,
   required double subtitleBreathingGap,
   required double bottomChromeBaseline,
   required double bottomSystemInset,
 }) {
-  if (isDesktop) {
-    // 桌面进度条骑按钮行上沿：让出一个（已缩放的）按钮行高即可（BUG-228）。
-    return buttonBarHeight;
-  }
-  // 移动进度条**触摸热区上缘** = 离底基线 + 系统 inset + 按钮行 + 进度条/按钮间距 +
-  // 触摸热区全高；再加字幕呼吸间距让字幕命中区整体骑在进度条整段可点区上方，不与 seek
-  // 命中区重叠（BUG-901：只让可见轨道高会落进热区上方那段透明可点区、误触）。
-  return bottomChromeBaseline +
-      bottomSystemInset +
-      buttonBarHeight +
-      seekBarButtonGap +
-      seekBarContainerHeight +
-      subtitleBreathingGap;
+  // 进度条**触摸热区下缘**离视频底边的高度：桌面 seek bar 直接骑按钮行上沿（再下压
+  // overlap），移动端被 `seekBarMargin.bottom` 整体抬到按钮行上方。这是两平台唯一真正的
+  // 布局差异；差异之上的安全不变量（字幕必须清出整段热区）无分支、两平台同一条。
+  final double hotzoneBottom = isDesktop
+      ? buttonBarHeight - seekBarBottomButtonBarOverlap
+      : bottomChromeBaseline +
+          bottomSystemInset +
+          buttonBarHeight +
+          seekBarButtonGap;
+  // 热区上缘 + 呼吸间距：字幕命中区整体骑在进度条整段可点区上方，不与 seek 命中区重叠
+  // （BUG-901 移动 / BUG-1224 桌面）。
+  return hotzoneBottom + seekBarContainerHeight + subtitleBreathingGap;
 }
 
 /// 控制条可见时**顶部锚字幕**要让出的「顶栏下缘距视频顶边的高度」（逻辑像素），与
@@ -222,6 +236,7 @@ class VideoSubtitleStyle {
     required this.backgroundColor,
     required this.backgroundOpacity,
     required this.bottomPadding,
+    this.secondaryBottomPadding,
   });
 
   static const int defaultFontWeight = 700;
@@ -282,6 +297,17 @@ class VideoSubtitleStyle {
   final double backgroundOpacity;
   final double bottomPadding;
 
+  /// 副字幕层的**独立**位置基线（距其锚点边的距离；纯 SRT 副字幕强制置顶时即顶距）。
+  ///
+  /// null = 跟随 [bottomPadding]（历史行为、旧数据零迁移）：此前主副两层共用同一个
+  /// [bottomPadding] 字段——主字幕拿它当底距、副字幕（强制置顶）拿它当顶距，调一个
+  /// 必然把另一个也拽走，用户没法把主字幕压低同时把副字幕抬高。分成两条基线后，
+  /// [VideoSubtitleOverlay] 按层取值（见 `_layerBaseline`），两层各自独立。
+  ///
+  /// 只有用户真正拖过「副字幕垂直位置」才写具体值；没拖过恒为 null、逐字沿用主字幕
+  /// 位置（Never break userspace：老用户外观像素级不变）。
+  final double? secondaryBottomPadding;
+
   VideoSubtitleStyle copyWith({
     double? fontSize,
     Color? textColor,
@@ -291,6 +317,9 @@ class VideoSubtitleStyle {
     Color? backgroundColor,
     double? backgroundOpacity,
     double? bottomPadding,
+    // null = 不改（保持当前值，含「仍跟随主字幕」的 null 态）。设置面板拖动副字幕位置
+    // 时才传具体值；无「改回跟随」的入口，故不需要 backgroundColor 那样的 reset 标志。
+    double? secondaryBottomPadding,
     // [backgroundColor] 与 null 语义冲突：`null` 既是「不改」又是「显式清空跟随默认黑」。
     // 用显式 [resetBackgroundColor] 标志区分——true 时把 [backgroundColor] 强制清成 null
     // （回到 [kDefaultSubtitleBackgroundColor] 固定默认），供设置面板「默认（黑）」选项用。
@@ -307,6 +336,8 @@ class VideoSubtitleStyle {
           : (backgroundColor ?? this.backgroundColor),
       backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
       bottomPadding: bottomPadding ?? this.bottomPadding,
+      secondaryBottomPadding:
+          secondaryBottomPadding ?? this.secondaryBottomPadding,
     );
   }
 
@@ -341,6 +372,8 @@ class VideoSubtitleStyle {
         'backgroundColor': s.backgroundColor?.toARGB32(),
         'backgroundOpacity': s.backgroundOpacity,
         'bottomPadding': s.bottomPadding,
+        // null（从未单独调过副字幕位置）也照写：decode 侧 null → 继续跟随主字幕。
+        'secondaryBottomPadding': s.secondaryBottomPadding,
       });
 
   static VideoSubtitleStyle decode(String? json) {
@@ -400,6 +433,13 @@ class VideoSubtitleStyle {
         ).clamp(0.0, 1.0),
         bottomPadding:
             num2d(d['bottomPadding'], defaults.bottomPadding).clamp(0, 400),
+        // 缺字段（旧数据）/ 非数字 → null = 副字幕继续跟随主字幕位置（旧外观不变）。
+        secondaryBottomPadding: d['secondaryBottomPadding'] is num
+            ? (d['secondaryBottomPadding'] as num)
+                .toDouble()
+                .clamp(0, 400)
+                .toDouble()
+            : null,
       );
     } catch (_) {
       return defaults;

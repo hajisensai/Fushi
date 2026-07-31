@@ -39,6 +39,138 @@ class VideoSubtitleHitTester {
   /// 容差——查词浮层 dismiss barrier 用它区分「点空白想关闭」与「点字上想切词」。
   SubtitleCharHit? hitTest(Offset globalPos, {bool exactOnly = false}) =>
       _impl?.call(globalPos, exactOnly: exactOnly);
+
+  // ── 字级选词光标视图（手柄查词，videoEnterCaret）────────────────────────
+  //
+  // 与 [bindHitTest] 同范式：overlay 每帧 build 把「按登记表下标读几何/命中」的实现
+  // 绑进来，页面持同一句柄驱动选词光标（进入锚点、方向移动、A 确认查词）。光标本身
+  // 只是页面持有的一个 entry 下标，几何真相源始终在 overlay 的字符登记表。
+
+  int Function()? _entryCountImpl;
+  SubtitleCharHit? Function(int entryIndex)? _entryHitImpl;
+  List<Rect> Function()? _entryRectsImpl;
+  int Function()? _caretAnchorImpl;
+
+  void bindCaretView({
+    required int Function() entryCount,
+    required SubtitleCharHit? Function(int entryIndex) hitAt,
+    required List<Rect> Function() entryRects,
+    required int Function() anchorEntry,
+  }) {
+    _entryCountImpl = entryCount;
+    _entryHitImpl = hitAt;
+    _entryRectsImpl = entryRects;
+    _caretAnchorImpl = anchorEntry;
+  }
+
+  /// 当前帧登记的字幕字符总数（主 + 副字幕活动集）。overlay 未绑定 / 无字幕时为 0。
+  int caretEntryCount() => _entryCountImpl?.call() ?? 0;
+
+  /// 按登记表下标取 (整句, grapheme 下标, 字符全局矩形)——选词光标 A 确认查词用，
+  /// 复用点击查词的同一命中内核（[_charHitByEntryIndex]）。越界 / 模糊返回 null。
+  SubtitleCharHit? caretHitAt(int entryIndex) =>
+      _entryHitImpl?.call(entryIndex);
+
+  /// 全部登记字符的全局矩形（模糊字符为 [Rect.zero]），供 [moveSubtitleCaretEntry]
+  /// 做方向移动。
+  List<Rect> caretEntryRects() => _entryRectsImpl?.call() ?? const <Rect>[];
+
+  /// 进入选词模式的锚点下标：主字幕层第一个可见（非模糊）字符；主层全模糊/为空时
+  /// 回退任意层第一个可见字符；无可选字符返回 -1（页面据此拒绝进入并提示）。
+  int caretAnchorEntry() => _caretAnchorImpl?.call() ?? -1;
+}
+
+/// 选词光标的一次方向移动（手柄 D-pad / 键盘方向键，物理方向）。
+enum SubtitleCaretMove { left, right, up, down }
+
+/// 在一组字符矩形里按物理方向移动选词光标（纯函数，可测）。
+///
+/// [rects] 是 overlay 当前帧全部登记字符的全局矩形（模糊字符为 [Rect.zero]，恒跳过）；
+/// [current] 是当前光标 entry 下标。返回移动后的下标；无处可去（行首再左 / 末字再右 /
+/// 已是最上/下一行）或输入非法时返回 [current] 原地不动——光标绝不越界、绝不消失。
+///
+/// 左/右 = 取**同一行**（垂直中心落在当前字符高度带内）水平方向紧邻的可见字符；
+/// 行尽头原地不动（换行交给上/下，语义可预期、不绕圈）。
+/// 上/下 = 先取该方向上**最近的行**（按垂直中心距离聚类），行内取水平中心最近者——
+/// 与全局焦点遍历的方向语义一致，跨主/副字幕层也成立（几何驱动，不关心层归属）。
+int moveSubtitleCaretEntry(
+  List<Rect> rects,
+  int current,
+  SubtitleCaretMove move,
+) {
+  if (current < 0 || current >= rects.length) return current;
+  final Rect cur = rects[current];
+  if (cur == Rect.zero) return current;
+
+  bool sameRow(Rect r) =>
+      (r.center.dy - cur.center.dy).abs() < (cur.height + r.height) / 4;
+
+  switch (move) {
+    case SubtitleCaretMove.left:
+    case SubtitleCaretMove.right:
+      // 同一行内：取水平方向紧邻的可见字符（按几何位置，不依赖登记序——重叠 cue
+      // 的登记序与视觉序可能不同）。
+      final bool forward = move == SubtitleCaretMove.right;
+      int best = -1;
+      double bestDx = double.infinity;
+      for (int i = 0; i < rects.length; i++) {
+        if (i == current) continue;
+        final Rect r = rects[i];
+        if (r == Rect.zero || !sameRow(r)) continue;
+        final double dx =
+            forward ? r.center.dx - cur.center.dx : cur.center.dx - r.center.dx;
+        if (dx <= 0) continue;
+        if (dx < bestDx) {
+          bestDx = dx;
+          best = i;
+        }
+      }
+      // 行尽头：原地不动（换行交给上/下方向键）。
+      return best >= 0 ? best : current;
+    case SubtitleCaretMove.up:
+    case SubtitleCaretMove.down:
+      return _nearestInDirection(rects, current, cur,
+          vertical: true, positive: move == SubtitleCaretMove.down);
+  }
+}
+
+/// [moveSubtitleCaretEntry] 的跨行/跨盒兜底：在 [vertical] 轴的 [positive] 方向上找
+/// 「主轴最近的一行/一列，行列内副轴中心最近」的可见字符；该方向没有任何字符返回
+/// [current]。
+int _nearestInDirection(
+  List<Rect> rects,
+  int current,
+  Rect cur, {
+  required bool vertical,
+  required bool positive,
+}) {
+  int best = -1;
+  double bestMajor = double.infinity;
+  double bestMinor = double.infinity;
+  for (int i = 0; i < rects.length; i++) {
+    if (i == current) continue;
+    final Rect r = rects[i];
+    if (r == Rect.zero) continue;
+    final double major = vertical
+        ? (positive ? r.center.dy - cur.center.dy : cur.center.dy - r.center.dy)
+        : (positive
+            ? r.center.dx - cur.center.dx
+            : cur.center.dx - r.center.dx);
+    // 主轴必须真的在目标方向上（至少越过半个字符高/宽，排除同行/同列邻居）。
+    final double minStep = vertical ? cur.height / 2 : cur.width / 2;
+    if (major < minStep) continue;
+    final double minor = vertical
+        ? (r.center.dx - cur.center.dx).abs()
+        : (r.center.dy - cur.center.dy).abs();
+    // 先比主轴（最近的行/列），主轴几乎相同（同一行内）再比副轴。
+    if (major < bestMajor - 0.5 ||
+        ((major - bestMajor).abs() <= 0.5 && minor < bestMinor)) {
+      bestMajor = major;
+      bestMinor = minor;
+      best = i;
+    }
+  }
+  return best >= 0 ? best : current;
 }
 
 /// 按全局坐标在一组字符屏幕矩形里反查命中的字符下标（纯函数，可测）。
@@ -158,6 +290,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.hoverAutoLookupEnabled = false,
     this.onHoverChanged,
     this.hitTester,
+    this.caretEntryIndex,
     this.isCueFavorited,
     this.blurEnabled = false,
     this.subtitleHidden = false,
@@ -171,6 +304,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.backgroundColor,
     this.backgroundOpacity = 0,
     this.bottomPadding = 75,
+    this.secondaryBottomPadding,
     this.controlsVisible,
     this.controlsBottomReserve = kVideoControlsBottomReserve,
     this.controlsTopReserve = kVideoControlsTopReserve,
@@ -210,6 +344,12 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 可选的字符命中句柄：build 时把按全局坐标反查字符的实现绑进来，供查词浮层的
   /// dismiss barrier「点同句换词保持暂停」用（见 [VideoSubtitleHitTester]）。
   final VideoSubtitleHitTester? hitTester;
+
+  /// 选词光标（手柄查词，videoEnterCaret）当前停在的登记表下标；null = 光标未激活。
+  /// 命中该下标的字符外画一圈主题色光标环（与阅读器 hoshiCaret 环同语义）。下标由
+  /// 页面驱动（进入锚点 / [moveSubtitleCaretEntry] 移动），几何真相源在本 overlay 的
+  /// 登记表；越界（cue 已切换等）不画环，页面在下一次输入时重锚。
+  final int? caretEntryIndex;
 
   /// 当前字幕句是否已收藏（TODO-301 / BUG-264）。非 null 时，当前句已收藏会在字幕盒
   /// 起始处显示一枚实心星标记（与字幕列表行的收藏标记同语义）。null（测试 / 有声书等
@@ -260,6 +400,14 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// [controlsVisible] 在控制条可见时对 [controlsBottomReserve] 取下限（max），此处只是
   /// 用户手选的基线位置。
   final double bottomPadding;
+
+  /// 副字幕层的**独立**位置基线（[VideoSubtitleStyle.secondaryBottomPadding]）。
+  ///
+  /// null = 跟随 [bottomPadding]（历史行为）。非 null 时副字幕层的锚点边距改用本值：
+  /// 强制置顶的纯 SRT 副字幕用它当**顶距**，带自带底部锚点的副字幕用它当底距。主字幕层
+  /// 恒用 [bottomPadding]，两层不再互相牵动（此前共用一个字段，调主字幕位置会把副字幕
+  /// 一起挪走）。控制条 / 顶栏避让照旧对各自基线取下限（max），语义不变。
+  final double? secondaryBottomPadding;
 
   /// media_kit 控制条当前是否可见（TODO-129/161）。非 null 时驱动字幕动态避让：可见时
   /// 字幕底部 padding 取 `max([bottomPadding], [controlsBottomReserve])`（字幕底缘骑到
@@ -524,6 +672,28 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     );
   }
 
+  /// 选词光标视图（手柄查词）：全部登记字符的全局矩形（模糊字符 [Rect.zero]），
+  /// 供 [moveSubtitleCaretEntry] 做方向移动。与 [_hitEntryIndexAt] 同一几何口径。
+  List<Rect> _caretEntryRects() {
+    return <Rect>[
+      for (final _SubtitleCharEntry e in _charEntries)
+        e.blurred ? Rect.zero : _globalRectOf(e.context),
+    ];
+  }
+
+  /// 选词光标进入锚点：主字幕层第一个可见（非模糊、已布局）字符；主层不可用时回退
+  /// 任意层第一个可见字符；无可选字符返回 -1（模糊未显形 / 无字幕，页面拒绝进入）。
+  int _caretAnchorEntry() {
+    int fallback = -1;
+    for (int i = 0; i < _charEntries.length; i++) {
+      final _SubtitleCharEntry e = _charEntries[i];
+      if (e.blurred || _globalRectOf(e.context) == Rect.zero) continue;
+      if (!e.isSecondary) return i;
+      if (fallback < 0) fallback = i;
+    }
+    return fallback;
+  }
+
   /// 桌面 Shift-鼠标悬停查词（TODO-756a）。仅在 [VideoSubtitleOverlay.onCharHover] 注册时由
   /// [MouseRegion.onHover] 调；语义与阅读器 `onShiftHover`（`webview.part.dart`）一致：
   /// 按住 Shift 在字幕字符上移动即对命中字符走查词。移动端无 OS hover、自然不触发。
@@ -639,6 +809,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // 时 hitTest 返回 null（barrier 走 dismiss）。TODO-1312：登记表二维（主 + 副字幕）。
         _charEntries.clear();
         widget.hitTester?.bindHitTest(_charHitTest);
+        // 选词光标视图与命中句柄同帧绑定（同一登记表真相源）。
+        widget.hitTester?.bindCaretView(
+          entryCount: () => _charEntries.length,
+          hitAt: _charHitByEntryIndex,
+          entryRects: _caretEntryRects,
+          anchorEntry: _caretAnchorEntry,
+        );
 
         // 主字幕活动集（重叠 cue 全渲染，TODO-1312）。遮蔽模式「隐藏」时主层不渲染
         // （TODO-840 Part B）——只影响底部主字幕，不影响副字幕 / 查词 / 字幕列表。
@@ -768,7 +945,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // （KFX/多层特效把一句拆成多条同时事件，样式被统一后只剩裸文本拷贝，同位叠印成
         // 乱字——正是「样式不尊重、位置却尊重」的半吊子语义的病根；文本互异的堆叠分行）。
         final List<(String, List<AudioCue>)> groups = widget.respectAssStyle
-            ? _groupMainCuesByPosition(cues)
+            ? _groupMainCuesByPosition(cues, isSecondary: isSecondary)
             : <(String, List<AudioCue>)>[('plain', _uniqueByText(cues))];
 
         final List<(String, Widget)> positioned = <(String, Widget)>[
@@ -845,11 +1022,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 顺序。同组的 cue 共享一个位置、竖排堆叠；不同组各自独立定位，从而顶部歌词与底部对白
   /// 不再被裹挟到同一处。返回每组的 (分组键, cue 列表)（组内顺序即活动集顺序；分组键给
   /// [_syncGroupSlots] 作跨帧槽位状态的身份，TODO-1372）。
-  List<(String, List<AudioCue>)> _groupMainCuesByPosition(List<AudioCue> cues) {
+  /// [isSecondary]：本次分组属于哪一层——底部基线折叠判据要拿**该层**的用户基线
+  /// （[_layerBaseline]）当阈值，否则副字幕的分组会钉在主字幕基线上、与它自己的渲染基线
+  /// 脱节。分组键只在层内使用（调用方已加 `m|` / `s|` 前缀），两层同形键不会互串。
+  List<(String, List<AudioCue>)> _groupMainCuesByPosition(List<AudioCue> cues,
+      {required bool isSecondary}) {
     final Map<String, List<AudioCue>> byKey = <String, List<AudioCue>>{};
     final List<(String, List<AudioCue>)> order = <(String, List<AudioCue>)>[];
     for (final AudioCue cue in cues) {
-      final String key = _positionKey(cue.markup);
+      final String key = _positionKey(cue.markup, isSecondary: isSecondary);
       final List<AudioCue>? existing = byKey[key];
       if (existing != null) {
         existing.add(cue);
@@ -866,7 +1047,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 一个堆叠组（竖排分行）；同文本的多层拷贝（卡拉OK特效层，BUG-833，通常 \pos / 顶部锚点，
     // 不落底部基线桶）不合并，仍各自成组同位叠画出特效。
     final List<(String, List<AudioCue>)> grouped =
-        _mergeBottomBaselineGroups(order);
+        _mergeBottomBaselineGroups(order, isSecondary: isSecondary);
     // 组内按 MarginV 升序稳定排序：折进同一基线桶的底部双语（JP MarginV=4 + CH MarginV=30）
     // 竖排堆叠时，MarginV 小的贴锚点（底部锚组 slot0 在底）、大的在上，复现 libass「MarginV
     // 越大离底越远」的相对次序，不再依赖字幕文件里 JP/CH 的书写先后（本 BUG 的次序保证）。
@@ -901,8 +1082,10 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 桶内出现重复文本（同句多层拷贝=卡拉OK特效层，应同位叠画不拆行）则整桶不合并，保持
   /// [_positionKey] 原分组（各层同位叠画，BUG-833 不回归）。非底部 / 带显式位置的组原样保留。
   List<(String, List<AudioCue>)> _mergeBottomBaselineGroups(
-    List<(String, List<AudioCue>)> order,
-  ) {
+    List<(String, List<AudioCue>)> order, {
+    required bool isSecondary,
+  }) {
+    final double userBase = _layerBaseline(isSecondary);
     bool isBottomBaselineFolded(AudioCue cue) {
       final SubtitleMarkup? m = cue.markup;
       if (m == null) return true; // 纯 SRT / 无 markup：底部居中、无 MarginV → 折叠
@@ -912,7 +1095,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       if (v != SubtitleVAlign.bottom) return false;
       final double? mv = m.cueStyle?.marginV;
       if (mv == null || mv <= 0) return true;
-      return mv <= widget.bottomPadding;
+      return mv <= userBase;
     }
 
     // 按水平锚点分桶收集底部基线折叠组的 order 下标（组内 cue 同键、同折叠态，取代表判断）。
@@ -987,7 +1170,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 使它们同组、竖排堆叠（libass 的碰撞下推同效果），不再叠印。真正超出基线（标题
   /// MarginV=400 等）才保留各自 authored 高度（TODO-1341 行为不变）。顶部/中部锚点无 max
   /// 夹逻辑（[_paddingFor] 直接用 scaledMarginV），保持按原始 MarginV 分键。
-  String _positionKey(SubtitleMarkup? markup) {
+  String _positionKey(SubtitleMarkup? markup, {required bool isSecondary}) {
     final SubtitlePos? pf = markup?.posFraction;
     final SubtitleAnchor? a = markup?.anchor;
     final int av = (a?.vertical ?? SubtitleVAlign.bottom).index;
@@ -1026,7 +1209,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       // 碰撞下推同效果），只有真正的高位标题（大 MarginV，如 400）才独立占 authored 高度
       // （TODO-1341 不回归）。以原始值入键（而非缩放 round），组身份也不随显示尺寸漂移，
       // 跨帧槽位状态（[_syncGroupSlots]）不因窗口缩放churn。
-      mv = mvRaw <= widget.bottomPadding ? -1 : mvRaw.round();
+      mv = mvRaw <= _layerBaseline(isSecondary) ? -1 : mvRaw.round();
     } else {
       mv = mvRaw.round();
     }
@@ -1186,7 +1369,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return Align(
       alignment: _alignFor(anchor),
       child: _anchoredPadded(
-          anchor, content, scaledMarginV, scaledMarginL, scaledMarginR),
+          anchor, content, scaledMarginV, scaledMarginL, scaledMarginR,
+          isSecondary: isSecondary),
     );
   }
 
@@ -1329,15 +1513,36 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     Widget charWidget(int i) {
       return Builder(
         builder: (BuildContext charContext) {
+          int entryIndex = -1;
           if (registerHits) {
+            entryIndex = _charEntries.length;
             _charEntries.add(_SubtitleCharEntry(
               sentence: text,
               graphemeIndex: i,
               context: charContext,
               blurred: blurred,
+              isSecondary: isSecondary,
             ));
           }
-          return _buildSubtitleChar(chars[i], i, markup, cue);
+          final Widget ch = _buildSubtitleChar(chars[i], i, markup, cue);
+          // 选词光标环（手柄查词）：光标停在本字符时外画一圈主题色圆角框。
+          // foregroundDecoration 画在字形之上、不改变布局几何（字幕排版零位移）。
+          // 登记与画环同帧同源（entryIndex 即登记序），不存在几何滞后。
+          if (entryIndex >= 0 &&
+              !blurred &&
+              widget.caretEntryIndex == entryIndex) {
+            return Container(
+              foregroundDecoration: BoxDecoration(
+                border: Border.all(
+                  color: Theme.of(charContext).colorScheme.primary,
+                  width: 2,
+                ),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: ch,
+            );
+          }
+          return ch;
         },
       );
     }
@@ -1736,8 +1941,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 投影由 [_buildSubtitleChar] 挂到本样式上；尊重 .ass 时描边由其底层 stroke [Text] 单独
   /// 承载、.ass \shad 硬投影由本方法的 `shadows` 提供（BUG-323 / TODO-569 / TODO-1105）。
   ///
-  /// respectAssStyle 关：只应用行内 `\i \b \u \s \c \fs` 这些历史就支持的 span 样式，字体 /
-  /// 字号 / 颜色的基线恒为用户统一样式，与历史像素级一致。
+  /// respectAssStyle 关 = **纯字幕模式**（BUG-915/1264）：**颜色语义整体归零**——行内 `\c`
+  /// / `\1c` 主色与 `\3c` 描边色（[_resolveStroke]）、`\1a` 填充透明度、cueStyle 主色、`\t`
+  /// 颜色动画、卡拉 OK SecondaryColour（[_applyDynamicFill]）同源门控，一律回落用户
+  /// textColor。只保留行内 `\i \b \u \s` 这些**文本语义**与历史 `\fs` 裸像素字号；字体 /
+  /// 字号 / 颜色的基线恒为用户统一样式。
   /// respectAssStyle 开：字体名 / 主色 / 字号 / 粗斜下删线优先取 .ass 值（行内 span >
   /// [SubtitleCueStyle] cue 默认 > 用户统一样式，TODO-1105）。字体缺字时仍挂
   /// [_subtitleCjkFallback] 兜底。
@@ -1844,7 +2052,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 基线色）。多层卡拉 OK 光晕层 `\1a&HFF&` 抹透明填充、只留模糊描边成辉光；描边层
     // 由 [_buildSubtitleChar] 单独构建，不受本透明度影响（ASS \1a 仅主填充语义）。
     final double? fillOp = respect ? span.fillOpacity : null;
-    Color? spanColor = span.colorArgb != null ? Color(span.colorArgb!) : null;
+    // 行内 `\c`/`\1c` 主色**必须与 respect 同源门控**（BUG-1285）：纯字幕模式下这是最后一条
+    // 穿透的颜色通道——兄弟属性（\3c 描边色、\1a 填充透明度、cueStyle 主色、\t 颜色动画、
+    // 卡拉 OK SecondaryColour）早已全部门控，唯独它按「历史 span 样式」放行。多层卡拉 OK
+    // 的 OP 歌词被 [_uniqueByText] 去重后只留发现顺序第一条（通常是最底的描边/光晕层），
+    // 那层的 `\c` 是黑色、而给它兜底的白描边 \3c 与透明填充 \1a 又都被正确门控掉 → 整句
+    // 渲染成裸黑字（用户报「关掉尊重字幕自带样式后 OP 字幕变黑」）。开关文案明示「关闭则
+    // 一律使用你的外观设置」，故这里归零回落 baseColor（用户 textColor）。
+    Color? spanColor =
+        (respect && span.colorArgb != null) ? Color(span.colorArgb!) : null;
     if (fillOp != null) {
       spanColor = (spanColor ?? baseColor).withValues(alpha: fillOp);
     }
@@ -2184,6 +2400,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return Alignment(x, y);
   }
 
+  /// 该层的**用户位置基线**：主字幕恒 [VideoSubtitleOverlay.bottomPadding]，副字幕在用户
+  /// 单独调过（[VideoSubtitleOverlay.secondaryBottomPadding] 非 null）时用自己的值、否则
+  /// 跟随主字幕（历史行为）。位置计算全部经此取值，不再有第二处直读 `widget.bottomPadding`
+  /// 的层无关分支——这正是「调主字幕位置把副字幕一起挪走」的根因。
+  double _layerBaseline(bool isSecondary) =>
+      isSecondary && widget.secondaryBottomPadding != null
+          ? widget.secondaryBottomPadding!
+          : widget.bottomPadding;
+
   /// 顶部锚点用顶部 padding、中部不加、底部按 [controlsVisible] 取避让下限。
   ///
   /// 底部锚点避让是「字幕底缘 ≥ 控制条顶缘」的约束，故控制条可见时底部 padding 取
@@ -2195,14 +2420,19 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 在控制条可见时真正被抬升盖过被抬高的移动进度条。用户手选高位（> reserve）时 max 取其
   /// 值、不被避让改写；手选低位（< reserve）时控制条可见仍抬到 reserve 躲进度条、隐藏落回
   /// 原值。避让只对底部锚点生效——控制条在底部，顶部 / 中部字幕不会被进度条遮挡。
+  ///
+  /// [isSecondary] 决定取哪条用户基线（[_layerBaseline]）：主字幕恒 [bottomPadding]，
+  /// 副字幕在用户单独调过后用 [secondaryBottomPadding]。避让/MarginV 的 max 语义两层同构。
   EdgeInsets _paddingFor(SubtitleAnchor? a, bool controlsVisible,
-      double? scaledMarginV, double? scaledMarginL, double? scaledMarginR) {
+      double? scaledMarginV, double? scaledMarginL, double? scaledMarginR,
+      {required bool isSecondary}) {
     final SubtitleVAlign v = a?.vertical ?? SubtitleVAlign.bottom;
-    // 底部锚点基线：用户 bottomPadding 与 ASS 缩放 MarginV 取**较大值**（单调抬升——绝不低于
+    // 本层的用户基线：主字幕恒 bottomPadding，副字幕在用户单独调过时用自己的基线。
+    final double userBase = _layerBaseline(isSecondary);
+    // 底部锚点基线：用户基线与 ASS 缩放 MarginV 取**较大值**（单调抬升——绝不低于
     // 用户基线，保 TODO-129/161/238 控制条避让不回归；作者用大 MarginV 要求更高时才抬）。
-    final double bottomBase = scaledMarginV == null
-        ? widget.bottomPadding
-        : math.max(widget.bottomPadding, scaledMarginV);
+    final double bottomBase =
+        scaledMarginV == null ? userBase : math.max(userBase, scaledMarginV);
     // ASS MarginL/MarginR 水平边距：Align 内侧 padding 恰是 ASS 排版盒语义——居中对齐时
     // 盒宽 = 文本 + L + R、Align 居中该盒 → 文本中心右移 (L-R)/2；左/右对齐时文本起点 /
     // 终点分别落在 L / 宽-R。无边距恒 0（srt/vtt 像素级不变）。
@@ -2225,7 +2455,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           left: left,
           right: right,
           top: () {
-            final double topBase = scaledMarginV ?? widget.bottomPadding;
+            final double topBase = scaledMarginV ?? userBase;
             return controlsVisible
                 ? math.max(topBase, widget.controlsTopReserve)
                 : topBase;
@@ -2243,12 +2473,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 见 [_paddingFor]）。取下限而非加法，故基线 < 控制条高时不会把字幕顶飞、手选高位也
   /// 不被改写（同一字段无特例分支）。
   Widget _anchoredPadded(SubtitleAnchor? anchor, Widget child,
-      double? scaledMarginV, double? scaledMarginL, double? scaledMarginR) {
+      double? scaledMarginV, double? scaledMarginL, double? scaledMarginR,
+      {required bool isSecondary}) {
     final ValueListenable<bool>? visible = widget.controlsVisible;
     if (visible == null) {
       return Padding(
           padding: _paddingFor(
-              anchor, false, scaledMarginV, scaledMarginL, scaledMarginR),
+              anchor, false, scaledMarginV, scaledMarginL, scaledMarginR,
+              isSecondary: isSecondary),
           child: child);
     }
     return ValueListenableBuilder<bool>(
@@ -2259,7 +2491,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
           padding: _paddingFor(anchor, controlsVisible, scaledMarginV,
-              scaledMarginL, scaledMarginR),
+              scaledMarginL, scaledMarginR,
+              isSecondary: isSecondary),
           child: padded,
         );
       },
@@ -2356,6 +2589,7 @@ class _SubtitleCharEntry {
     required this.graphemeIndex,
     required this.context,
     required this.blurred,
+    required this.isSecondary,
   });
 
   /// 该字符所属的整条 cue 文本（查词 / 制卡取整句用）。
@@ -2370,6 +2604,9 @@ class _SubtitleCharEntry {
   /// 该字符所在层是否模糊（听力沉浸主层模糊时为 true）——模糊字符不参与命中反查
   /// （与点击不查词一致），命中扫描时按 [Rect.zero] 跳过。
   final bool blurred;
+
+  /// 是否属于副字幕层。选词光标进入锚点优先选主字幕层（副字幕是翻译参考）。
+  final bool isSecondary;
 }
 
 /// [_VideoSubtitleOverlayState._groupSlots] 的一格（TODO-1372/BUG-698）：槽主 cue + 是否

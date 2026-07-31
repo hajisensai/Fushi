@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/sync/deletion_disclosure.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/sync_conflict_prompter.dart'
     show ConflictSource;
@@ -13,17 +14,27 @@ Future<DeleteScope?> showDeleteScopeConfirm(
   BuildContext context, {
   required String title,
   required String message,
+  DeletionDisclosure? disclosure,
 }) {
   return showAppDialog<DeleteScope>(
     context: context,
-    builder: (_) => _DeleteScopeConfirmDialog(title: title, message: message),
+    builder: (_) => _DeleteScopeConfirmDialog(
+      title: title,
+      message: message,
+      disclosure: disclosure,
+    ),
   );
 }
 
 class _DeleteScopeConfirmDialog extends StatefulWidget {
-  const _DeleteScopeConfirmDialog({required this.title, required this.message});
+  const _DeleteScopeConfirmDialog({
+    required this.title,
+    required this.message,
+    this.disclosure,
+  });
   final String title;
   final String message;
+  final DeletionDisclosure? disclosure;
 
   @override
   State<_DeleteScopeConfirmDialog> createState() =>
@@ -51,6 +62,10 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(widget.message, style: tokens.type.listSubtitle),
+            if (widget.disclosure != null) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              DeletionDisclosureView(disclosure: widget.disclosure!),
+            ],
             SizedBox(height: tokens.spacing.gap),
             AdaptiveSettingsRow(
               title: t.delete_scope_sync_everywhere,

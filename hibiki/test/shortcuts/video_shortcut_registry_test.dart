@@ -25,6 +25,7 @@ VideoPlayerShortcutActions _recordingActions(List<String> log) {
     speedUp: () => log.add('speedUp'),
     speedDown: () => log.add('speedDown'),
     resetSpeed: () => log.add('resetSpeed'),
+    toggleHoldSpeed: () => log.add('toggleHoldSpeed'),
     previousFrame: () => log.add('previousFrame'),
     nextFrame: () => log.add('nextFrame'),
     screenshot: () => log.add('screenshot'),
@@ -47,6 +48,7 @@ VideoPlayerShortcutActions _recordingActions(List<String> log) {
     subtitleDelayDecrease: () => log.add('subtitleDelayDecrease'),
     alignSubtitleToPrev: () => log.add('alignSubtitleToPrev'),
     alignSubtitleToNext: () => log.add('alignSubtitleToNext'),
+    enterCaret: () => log.add('enterCaret'),
     escape: () => log.add('escape'),
   );
 }

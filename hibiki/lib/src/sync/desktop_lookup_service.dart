@@ -46,6 +46,10 @@ class DesktopLookupRequest {
   final DesktopLookupForegroundPolicy foregroundPolicy;
   final bool showSourcePanel;
 
+  /// 剪贴板内容变化是环境输入，不代表用户要求播放声音；全局热键与显式点词
+  /// 是用户主动发起的查词，可继续遵循 autoReadOnLookup 偏好。
+  bool get allowsAutomaticAudio => origin != DesktopLookupOrigin.clipboard;
+
   /// 被动连续文本流：Hibiki 在**没有收到任何指向自己的用户动作**时被环境喂进来的文本
   /// （galgame 台词 hook / 外部 texthooker 每 ~400ms 往剪贴板灌一条新台词，由
   /// [DesktopLookupService.processClipboardText] 的剪贴板监听接住），而不是用户的一次性

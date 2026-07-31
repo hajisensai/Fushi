@@ -106,6 +106,7 @@ class MediaTrackingStatus {
     required this.unauthorized,
     required this.pending,
     required this.mappings,
+    required this.unlinked,
     required this.failures,
     required this.automaticMappingMissCount,
     required this.automaticMappingErrors,
@@ -121,6 +122,7 @@ class MediaTrackingStatus {
     unauthorized: false,
     pending: 0,
     mappings: <MediaTrackingMappingRow>[],
+    unlinked: <MediaTrackingUnlinkedItem>[],
     failures: <MediaTrackingFailure>[],
     automaticMappingMissCount: 0,
     automaticMappingErrors: <String>[],
@@ -142,6 +144,9 @@ class MediaTrackingStatus {
 
   /// 用户可见的映射（已滤掉 bookChapter 伴随映射，它不是独立条目）。
   final List<MediaTrackingMappingRow> mappings;
+
+  /// 本地已经看过/读过/设置过游玩状态，但仍没有映射的条目。
+  final List<MediaTrackingUnlinkedItem> unlinked;
   final List<MediaTrackingFailure> failures;
 
   /// 本会话内仍处于 10 分钟自动匹配退避的本地条目数。
@@ -382,6 +387,7 @@ class MediaTrackingService {
           .where((MediaTrackingMappingRow row) =>
               row.mediaType != TrackingMediaType.bookChapter.value)
           .toList(growable: false),
+      unlinked: await _repository.listUnlinkedHistory(),
       failures: <MediaTrackingFailure>[
         for (final PendingTrackingUpdate update in pending)
           if ((update.outbox.lastError ?? '').trim().isNotEmpty)
@@ -415,6 +421,21 @@ class MediaTrackingService {
         keyword: keyword,
         subjectType: bangumiSubjectTypeOf(kind),
       );
+    } finally {
+      api.close();
+    }
+  }
+
+  /// 拉取当前账号在 Bangumi 标记为「看过」的全部动画收藏。
+  ///
+  /// 不从本地映射反推：映射只记录 Hibiki 建过的关联，会永久漏掉用户接入 Hibiki
+  /// 之前的历史。账号入口必须直接以 Bangumi 收藏列表为真相源。
+  Future<List<BangumiWatchedItem>> loadWatchedAnime() async {
+    if (!isConfigured) return const <BangumiWatchedItem>[];
+    final BangumiTrackingApi api = _apiFactory(accessToken);
+    try {
+      final BangumiUser user = await api.getMe();
+      return api.getWatchedAnime(user.username);
     } finally {
       api.close();
     }
@@ -622,34 +643,38 @@ class MediaTrackingService {
     final MediaTrackingMappingRow? mapping =
         await _ensureAutoBookMapping(bookKey);
     if (mapping == null) return;
-    // null = 按页翻的书（PDF / 漫画），没有章的概念。此时**一律不产出 chapter
-    // 模式进度**：旧实现会把当前页码当已读章数写进用户的 Bangumi 公开记录。
-    final int? logicalChapterProgress =
-        await _repository.loadBookChapterProgress(
+    final TrackingProgressMode? progressMode =
+        TrackingProgressMode.tryParse(mapping.progressMode);
+    if (progressMode == null) return;
+    final BookTrackingSnapshot snapshot =
+        await _repository.loadBookTrackingSnapshot(
       bookKey: bookKey,
       fallbackProgress: completedChapterCount,
     );
-    final bool isVolume =
-        mapping.progressMode == TrackingProgressMode.volume.value;
-    final MediaTrackingMappingRow? chapterMapping =
-        isVolume && mapping.kind == TrackingKind.novel.value
-            ? await _ensureBookChapterMapping(mapping)
-            : null;
-    // 按页翻的书（PDF / 漫画）没有章：卷模式仍可如实上报「读完/未读完」，但 chapter
-    // 模式一律**整条不发**——报 0 也是往用户的 Bangumi 公开记录里写一个错数。
-    if (!isVolume && logicalChapterProgress == null) return;
+    final int? localProgress = resolveBookTrackingLocalProgress(
+      format: snapshot.format,
+      progressMode: progressMode,
+      chapterProgress: snapshot.chapterProgress,
+      completed: completed,
+    );
+    if (localProgress == null) return;
+    final bool isVolume = progressMode == TrackingProgressMode.volume;
+    final MediaTrackingMappingRow? chapterMapping = isVolume &&
+            mapping.kind == TrackingKind.novel.value &&
+            snapshot.chapterProgress != null
+        ? await _ensureBookChapterMapping(mapping)
+        : null;
     await _enqueueAndSync(
       mediaType: TrackingMediaType.book,
       mediaKey: bookKey,
-      // 卷模式的 offset 就是当前卷号：在读时减一只报告此前已读卷，读完才计入本卷。
-      localProgress: isVolume ? (completed ? 0 : -1) : logicalChapterProgress!,
+      localProgress: localProgress,
       completed: completed,
     );
-    if (chapterMapping == null || logicalChapterProgress == null) return;
+    if (chapterMapping == null) return;
     await _enqueueAndSync(
       mediaType: TrackingMediaType.bookChapter,
       mediaKey: bookKey,
-      localProgress: logicalChapterProgress,
+      localProgress: snapshot.chapterProgress!,
       // 章节伴随映射只负责 ep_status；整部作品是否读完由主卷映射判断。
       completed: false,
     );
@@ -799,10 +824,10 @@ class MediaTrackingService {
         final AutoBookTrackingSource? source =
             await _repository.loadAutoBookSource(bookKey);
         if (source == null) return null;
-        final TrackingKind kind =
-            BookFormat.parseOrEpub(source.format) == BookFormat.manga
-                ? TrackingKind.manga
-                : TrackingKind.novel;
+        final BookFormat format = BookFormat.parseOrEpub(source.format);
+        final TrackingKind kind = format == BookFormat.manga
+            ? TrackingKind.manga
+            : TrackingKind.novel;
         final _PreparedTrackingTitle prepared =
             _prepareTrackingTitle(source.title);
         final List<BangumiSubject> subjects = await searchSubjects(
@@ -812,7 +837,7 @@ class MediaTrackingService {
         final BangumiSubject? subject =
             _uniqueHighConfidenceSubject(prepared.query, subjects, kind);
         if (subject == null) return null;
-        final bool trackAsVolume = kind == TrackingKind.manga ||
+        final bool trackAsVolume = format.isPagedImageBook ||
             prepared.volumeNumber != null ||
             subject.volumeCount > 1;
         return _repository.saveMappingIfAbsent(
@@ -825,7 +850,11 @@ class MediaTrackingService {
           progressMode: trackAsVolume
               ? TrackingProgressMode.volume
               : TrackingProgressMode.chapter,
-          progressOffset: trackAsVolume ? (prepared.volumeNumber ?? 1) : 0,
+          // 用户选择的 PDF 口径是“一本算一卷”：文件名即使带“第 3 卷”也不能据此
+          // 推断前两卷已读。漫画仍保留卷号识别；手动映射的 offset 也不会被自动路径覆盖。
+          progressOffset: format == BookFormat.pdf
+              ? 1
+              : (trackAsVolume ? (prepared.volumeNumber ?? 1) : 0),
         );
       },
     );

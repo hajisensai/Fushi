@@ -126,13 +126,13 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
               : _controller.events;
           return Column(
             children: <Widget>[
-              HibikiPageHeader(
-                title: t.game_diagnostics,
-                subtitle: t.game_diagnostics_subtitle,
-                leading: HibikiIconButton(
-                  icon: Icons.arrow_back,
-                  tooltip: t.game_back_to_capture,
-                  onTap: widget.onShowCapture,
+              HibikiPageHeader.customTitle(
+                title: GameSectionTabs(
+                  selected: GameSection.diagnostics,
+                  focusIdPrefix: 'game-diagnostics-tab',
+                  onSelectLibrary: widget.onShowLibrary,
+                  onSelectMonitor: widget.onShowCapture,
+                  onSelectDiagnostics: () {},
                 ),
                 actions: <Widget>[
                   // BUG-1027：「刷新音轨」已就近移入「活跃音轨」卡片标题行；
@@ -143,13 +143,6 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
                     onTap: _controller.clearEvents,
                   ),
                 ],
-                bottom: GameSectionTabs(
-                  selected: GameSection.diagnostics,
-                  focusIdPrefix: 'game-diagnostics-tab',
-                  onSelectLibrary: widget.onShowLibrary,
-                  onSelectMonitor: widget.onShowCapture,
-                  onSelectDiagnostics: () {},
-                ),
               ),
               Expanded(
                 child: SingleChildScrollView(

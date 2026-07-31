@@ -90,7 +90,7 @@ abstract final class MangaArchiveImporter {
     required HibikiDatabase db,
     required String archivePath,
     String? title,
-    DuplicateTitleCallback? onDuplicateTitle,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
   }) async {
     final Archive archive = _decode(archivePath);
@@ -130,7 +130,7 @@ abstract final class MangaArchiveImporter {
         title: title?.trim().isNotEmpty == true
             ? title
             : p.basenameWithoutExtension(archivePath),
-        onDuplicateTitle: onDuplicateTitle,
+        policy: policy,
         onProgress: onProgress,
       );
     } finally {

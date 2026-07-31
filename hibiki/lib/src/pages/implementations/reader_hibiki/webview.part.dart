@@ -47,6 +47,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
 
   Future<void> _loadChapterDirectly(int index) async {
     final String url = _chapterUrl(index);
+    // BUG-1280：交给 WebView 的是正文章节文档，清 spread 标记（见字段注释）。
+    // spread 的兜底降级路径 `_loadSpreadPage` → `_loadChapterDirectly` 也经过
+    // 这里，所以标记不会泄漏成「以为还在双页」。
+    _spreadDocumentLoaded = false;
     _isNavigatingToChapter = true;
     try {
       await _controller!.loadUrl(
@@ -202,6 +206,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     final String mime = isHtmlDocument ? 'text/html' : extMime;
 
     if (mime == 'text/css') {
+      // 插入后按插入序逐出最老条目（[_kSanitizedCssCacheLimit] 封顶，见字段注释）。
+      while (_sanitizedCssCache.length >=
+              _ReaderHibikiPageState._kSanitizedCssCacheLimit &&
+          !_sanitizedCssCache.containsKey(filePath)) {
+        _sanitizedCssCache.remove(_sanitizedCssCache.keys.first);
+      }
       data = _sanitizedCssCache.putIfAbsent(filePath, () {
         // HBK-AUDIT-118: tolerate non-UTF-8 CSS bytes instead of throwing.
         final String cssText = utf8.decode(data, allowMalformed: true);
@@ -447,10 +457,16 @@ extension _ReaderWebView on _ReaderHibikiPageState {
 
   // BUG-270: warm the LRU with the next chapter (in reading direction) so a
   // forward page-turn that crosses a chapter boundary hits the cache instead of
-  // paying disk read + decode + sanitize + inject. Runs off the UI frame; skips
-  // when already cached, already in flight, or settings/book not ready. Reads on
-  // the main isolate (sanitizeXhtml is sync) but only one chapter at a time, and
-  // the result is dropped if the page was disposed or styles changed meanwhile.
+  // paying disk read + decode + sanitize + inject. Skips when already cached,
+  // already in flight, or settings/book not ready.
+  //
+  // 调度纪律（渐进重建 phase2）：旧实现用 scheduleMicrotask + 同步读盘——microtask
+  // 在当前任务展开后**立刻**执行，读盘+净化全落在同一帧内（还恰好在等
+  // onRestoreComplete 的窗口里），「Runs off the UI frame」是错觉；同步执行也让
+  // _prefetchingHtmlPath 在飞守卫形同虚设（同步不可能重入）。现改事件队列任务 +
+  // 异步 IO：当前帧先收尾，IO 让出主 isolate，净化（单章 ms 级 sync CPU）保留；
+  // 真异步后按 _styleEpoch 丢弃跨样式失效的过期结果（styleTag 烤进缓存条目），
+  // 在飞守卫此时才真正有防重入意义。
   void _prefetchAdjacentChapter(int index) {
     if (_settings == null) return;
     final String? filePath = _chapterFilePath(index);
@@ -458,16 +474,18 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     if (_sanitizedHtmlCache.containsKey(filePath)) return;
     if (_prefetchingHtmlPath == filePath) return;
     _prefetchingHtmlPath = filePath;
-    scheduleMicrotask(() {
+    final int styleEpochAtStart = _styleEpoch;
+    unawaited(Future<void>(() async {
       try {
         if (!mounted || _settings == null) return;
         if (_sanitizedHtmlCache.containsKey(filePath)) return;
         final File file = File(filePath);
-        if (!file.existsSync()) return;
-        final Uint8List raw = file.readAsBytesSync();
+        if (!await file.exists()) return;
+        final Uint8List raw = await file.readAsBytes();
+        if (!mounted || _settings == null) return;
         final Uint8List built =
             _buildSanitizedChapterHtmlBytes(raw, chapterIndex: index);
-        if (!mounted) return;
+        if (!mounted || _styleEpoch != styleEpochAtStart) return;
         _putChapterHtml(filePath, built);
       } catch (e, stack) {
         ErrorLogService.instance
@@ -477,21 +495,18 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           _prefetchingHtmlPath = null;
         }
       }
-    });
+    }));
   }
 
-  /// [EpubBook.isImageOnlyChapter] 要 parse 整章 HTML，而章节 HTML 在一次阅读会话里
-  /// 不变，故按章号记忆化。章号非法 / 书未就绪时返回 true（保守走 eager，宁可慢一点也
-  /// 不冒「该 eager 的图被挂 lazy」导致分页几何塌缩的风险）。
+  /// 章号非法 / 书未就绪时返回 true（保守走 eager，宁可慢一点也不冒「该 eager 的图
+  /// 被挂 lazy」导致分页几何塌缩的风险）；其余委托 [EpubBook.isImageOnlyChapter]——
+  /// 记忆化已下沉到数据拥有者，本拦截器热路径与 spread 配对 / 边缘分析 / 预取共享
+  /// 同一份按章缓存，不再各存一份。
   bool _isImageOnlyChapterCached(int chapterIndex) {
     if (chapterIndex < 0) return true;
     final EpubBook? book = _book;
     if (book == null) return true;
-    final bool? cached = _imageOnlyChapterCache[chapterIndex];
-    if (cached != null) return cached;
-    final bool value = book.isImageOnlyChapter(chapterIndex);
-    _imageOnlyChapterCache[chapterIndex] = value;
-    return value;
+    return book.isImageOnlyChapter(chapterIndex);
   }
 
   /// TODO-perf（跨章·图片）：把下一章的插图预热进 WebView 的 HTTP 缓存。
@@ -2023,6 +2038,33 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           },
         );
 
+        // BUG-1280：双页 spread 空白点击的专用桥，与上面的歌词桥同族。spread 是
+        // [buildSpreadPageHtml] 生成的独立文档，HTML 本身不含正文 hoshiReader 的
+        // onTap/onTapEmpty，自带手势只有「点图片 → onImageTap」（弹图片查看器）。
+        // 底栏一收起，spread 页就再没有唤出通道 → 看不到返回按钮 → 退不出书。
+        // （修复前 Android 因 baseUrl 被保留而被误注入过正文引擎，见
+        // _onChapterLoadComplete 的 spread 守卫；那条误注入已堵掉，本桥现在是两个
+        // 平台上唯一且语义一致的唤出通道。）
+        // 与歌词同理，这里对隐藏的底栏**无条件唤出/收起**——不看
+        // tapEmptyToHideChrome（那开关管的是正文点空白是否收起底栏；spread 没有别的
+        // 唤出途径，绝不能被它关死）。收尾 reclaim 阅读焦点：本次 pointer 手势把 OS
+        // 焦点交给了 WebView，不夺回 Flutter _focusNode 就收不到 ESC（BUG-136）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onSpreadTapEmpty',
+          callback: (_) {
+            if (isDictionaryShown) {
+              clearDictionaryResult();
+              return;
+            }
+            if (_anyChromeFloating) {
+              _handleFloatingChromeReveal();
+            } else {
+              _toggleChrome();
+            }
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
+          },
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'onSwipe',
           callback: (List<dynamic> args) {
@@ -2171,6 +2213,18 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onImageTap',
           callback: (args) {
             if (args.isEmpty) return;
+            // BUG-1280：点图片同样把 OS 焦点交给了 WebView，不 reclaim 则看完图
+            // pop 回来后 ESC 退不出书（BUG-136 同族）。在 spread 页尤其致命：两张
+            // 整页图铺满视口，点击几乎必然命中 img，于是「唤不出底栏」与「ESC 失效」
+            // 同时成立，两条退出通道一起死——所以本轮先修这一条。
+            //
+            // 口径更正：onImageTap **不是**「全阅读器唯一没 reclaim 的手势入口」。
+            // 同族至今仍有 7 处 JS 桥零 reclaim：onSelectionMenu、onImageRevealed、
+            // onImageContextMenu、onImageLongPress、onCueTap、onPointerSeek、
+            // onLyricsPointerSeek。其中 onImageRevealed / onImageContextMenu /
+            // onImageLongPress / onCueTap 连兄弟桥兜底都没有。本轮只修 spread 退出
+            // 路径必经的这一条，其余未覆盖——别把这里当作「此族已清干净」的证据。
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
             _openImageViewer(args[0] as String);
           },
         );
@@ -2407,6 +2461,30 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
   }
 
   Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {
+    // BUG-1280（平台分叉守卫）：spread 独立文档绝不注入正文引擎。
+    //
+    // `_loadSpreadPage` 传给 `loadData` 的 baseUrl 与 `_chapterUrl(_currentChapter)`
+    // **逐字相同**，而上面 `onLoadStop` 的陈旧判据只比 `Uri.path`。于是同一份代码
+    // 在两个平台走出相反的分支：
+    //   - Windows fork 的 `loadData` 原生侧只取 data、丢掉 baseUrl
+    //     （`webview_channel_delegate.cpp` → `NavigateToString`），文档 URL 变
+    //     `about:blank`，path 为空 → 判 stale → 从来没走到这里；
+    //   - Android 的 `loadDataWithBaseURL` 保留 baseUrl，path 完全相等 → 判据放行
+    //     → 此前会把整份 `readerEngineSource` 注进 spread 文档。
+    // 后果是 spread 文档上同时挂着引擎的 `onTapEmpty` 和本页自带的
+    // `onSpreadTapEmpty`：一次空白点两个桥都收到，`onSpreadTapEmpty` 无条件翻转、
+    // `onTapEmpty` 在悬浮态/开了「点空白隐藏控制栏」时也翻转一次，两次翻转互相抵消
+    // → 底栏还是唤不出来，比没修更难查。
+    //
+    // 正确的模型是：spread 是独立文档（同歌词、VN），它的就绪与手势由它自己的
+    // `spreadReady` / `onSpreadTapEmpty` 桥负责，正文引擎、有声书桥、章节高亮对
+    // 「两张整页图、正文 ≤20 字」的 image-only 章都无意义。Windows 早就是这个行为，
+    // 这里把 Android 拉齐，而不是给 Android 再加一层特例。
+    if (_spreadDocumentLoaded) {
+      debugPrint('[ReaderHibiki] onChapterLoadComplete: spread document, '
+          'skipping body engine injection');
+      return;
+    }
     if (_lyricsMode) {
       if (!_readerContentReady) {
         // BUG-438 / TODO-889：歌词模式内容就绪，清兜底 deadline，下次导航拿新窗口。

@@ -6,11 +6,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
+import 'package:hibiki/src/media/torrent/anime_download_service.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/torrent/nyaa_client.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
+import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -64,8 +66,9 @@ class _MemPlanStore extends AnimeDownloadPlanStore {
   }
 
   @override
-  Future<void> save(AnimeDownloadPlan plan) async {
+  Future<bool> save(AnimeDownloadPlan plan) async {
     plans[plan.id] = plan;
+    return true;
   }
 
   @override
@@ -110,20 +113,34 @@ class _FakeBackend implements TorrentBackend {
   // 假装成功——真要测这条链路的用例应当显式覆盖它。
   @override
   Future<TorrentStorageResult> renameFile(
-          String torrentId, int fileIndex, String newPath) async =>
+    String torrentId,
+    int fileIndex,
+    String newPath,
+  ) async =>
       const TorrentStorageResult.failure('not supported by fake');
 
   @override
   Future<TorrentStorageResult> moveStorage(
-          String torrentId, String newSavePath) async =>
+    String torrentId,
+    String newSavePath,
+  ) async =>
       const TorrentStorageResult.failure('not supported by fake');
 }
 
 class _FakeAppModel extends AppModel {
-  _FakeAppModel() : super(testPlatformServices());
+  _FakeAppModel() : super(testPlatformServices()) {
+    service = AnimeDownloadService(
+      store: store,
+      configProvider: () => qbConnectionConfig,
+      backendFactory: (_) => backend,
+      importer: (_, __) async =>
+          const AnimeDownloadImportOutcome(collectionId: 42),
+    );
+  }
 
   final _MemPlanStore store = _MemPlanStore();
   final _FakeBackend backend = _FakeBackend();
+  late final AnimeDownloadService service;
 
   @override
   String get jimakuApiKey => 'key';
@@ -141,6 +158,9 @@ class _FakeAppModel extends AppModel {
   AnimeDownloadPlanStore? get animeDownloadPlanStore => store;
 
   @override
+  AnimeDownloadService? get animeDownloadService => service;
+
+  @override
   TorrentBackend createTorrentBackend(QbConnectionConfig config) => backend;
 }
 
@@ -154,34 +174,37 @@ void main() {
   ) async {
     final _FakeAppModel appModel = _FakeAppModel();
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[
-        appProvider.overrideWith((ref) => appModel),
-      ],
-      child: TranslationProvider(
-        child: MaterialApp(
-          navigatorKey: navKey,
-          home: const Scaffold(body: Center(child: Text('base-route'))),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+        child: TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navKey,
+            home: const Scaffold(body: Center(child: Text('base-route'))),
+          ),
         ),
       ),
-    ));
+    );
     return (appModel, navKey);
   }
 
-  testWidgets('embedded 推送成功不 pop 宿主路由，复位搜番阶段并刷新任务区',
-      (WidgetTester tester) async {
+  testWidgets('embedded 推送成功不 pop 宿主路由，复位搜番阶段并刷新任务区', (
+    WidgetTester tester,
+  ) async {
     final (_FakeAppModel appModel, GlobalKey<NavigatorState> navKey) =
         await pumpHost(tester);
 
-    navKey.currentState!.push(MaterialPageRoute<void>(
-      builder: (BuildContext context) => const Scaffold(
-        body: AnimeDownloadDialog(
-          embedded: true,
-          debugInitialMedia: _kMedia,
-          debugInitialTorrent: _kTorrent,
+    navKey.currentState!.push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => const Scaffold(
+          body: AnimeDownloadDialog(
+            embedded: true,
+            debugInitialMedia: _kMedia,
+            debugInitialTorrent: _kTorrent,
+          ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     // 直达确认推送阶段。
@@ -199,24 +222,161 @@ void main() {
     expect(find.text(t.anime_download_search_hint), findsOneWidget);
 
     // 计划已落盘且任务区计数刷新。
-    expect(appModel.store.plans[_kHash]?.status,
-        AnimeDownloadPlan.statusDownloading);
+    expect(
+      appModel.store.plans[_kHash]?.status,
+      AnimeDownloadPlan.statusDownloading,
+    );
     expect(appModel.backend.addCalls, 1);
     expect(find.text('${t.anime_download_tasks} (1)'), findsOneWidget);
+  });
+
+  testWidgets('early task 在 800x600/窄屏保留真实进度与生命周期语义，隐藏重复 import', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    for (final Size size in <Size>[
+      const Size(800, 600),
+      const Size(360, 600),
+    ]) {
+      tester.view.physicalSize = size;
+      final (_FakeAppModel appModel, GlobalKey<NavigatorState> navKey) =
+          await pumpHost(tester);
+      appModel.store.plans[_kHash] = AnimeDownloadPlan(
+        id: _kHash,
+        createdAtMs: 1,
+        seriesTitle:
+            'A deliberately long translated series title that must remain usable',
+        torrentTitle:
+            '[Group] A deliberately long torrent title - 01 [2160p HDR]',
+        magnet: 'magnet:?xt=urn:btih:$_kHash',
+        qbCategory: 'hibiki',
+        importedEarly: true,
+        collectionId: 42,
+      );
+      appModel.service.downloadProgress.value = <String, double>{_kHash: 0.55};
+
+      navKey.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext context) => const Scaffold(
+            body: AnimeDownloadDialog(
+              embedded: true,
+              tasksOnly: true,
+              showTasks: false,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('55%'), findsOneWidget);
+      expect(find.text(t.anime_download_streaming_ready), findsOneWidget);
+      expect(find.byTooltip(t.anime_download_play_now), findsNothing);
+      expect(find.byTooltip(t.anime_download_relocate), findsOneWidget);
+      expect(find.byTooltip(t.anime_download_delete), findsOneWidget);
+      final HibikiIconButton deleteButton = tester.widget<HibikiIconButton>(
+        find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is HibikiIconButton &&
+              widget.tooltip == t.anime_download_delete,
+        ),
+      );
+      expect(deleteButton.icon, Icons.delete_outline);
+      expect(deleteButton.onTap, isNotNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    }
+  });
+
+  // BUG-1296：百分比与确定进度环的存活条件必须是「有进度」，不是「有完整观测
+  // 值」。BUG-1294 把任务行整个搬到 downloadStats 之后，任何只发布进度不发布观测
+  // 值的路径（`importNow`）都会让百分比直接消失。这里正反两面各钉一次。
+  testWidgets('任务行：只有进度也渲染百分比；有观测值才追加速度/流量（BUG-1296）', (
+    WidgetTester tester,
+  ) async {
+    final (_FakeAppModel appModel, GlobalKey<NavigatorState> navKey) =
+        await pumpHost(tester);
+    appModel.store.plans[_kHash] = AnimeDownloadPlan(
+      id: _kHash,
+      createdAtMs: 1,
+      seriesTitle: 'Test Anime',
+      torrentTitle: '[Group] Test Anime - 01 [1080p]',
+      magnet: 'magnet:?xt=urn:btih:$_kHash',
+      qbCategory: 'hibiki',
+      status: AnimeDownloadPlan.statusDownloading,
+    );
+    // 只有进度、没有观测值（= importNow 刚发布完的那一瞬间）。
+    appModel.service.downloadProgress.value = <String, double>{_kHash: 0.55};
+
+    navKey.currentState!.push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => const Scaffold(
+          body: AnimeDownloadDialog(
+            embedded: true,
+            tasksOnly: true,
+            showTasks: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.text('55%'),
+      findsOneWidget,
+      reason: '观测值缺席时百分比不能跟着消失（只少速度/流量后缀）',
+    );
+    expect(
+      tester
+          .widget<CircularProgressIndicator>(
+            find.byType(CircularProgressIndicator),
+          )
+          .value,
+      0.55,
+      reason: '确定进度环同样只依赖进度',
+    );
+
+    // 观测值到位 → 同一行追加速度与累计流量，百分比仍在最前。
+    appModel.service.downloadStats.value = <String, DownloadTaskStats>{
+      _kHash: const DownloadTaskStats(
+        progress: 0.55,
+        downRateBps: 1048576,
+        upRateBps: 0,
+        downloadedBytes: 0,
+        uploadedBytes: 0,
+        numPeers: 0,
+      ),
+    };
+    await tester.pump();
+
+    expect(find.text('55%'), findsNothing);
+    expect(
+      find.textContaining('55% · ↓ '),
+      findsOneWidget,
+      reason: 'BUG-1294 的速度/流量是百分比之后的追加段，不是替换',
+    );
   });
 
   testWidgets('独立对话框模式推送成功仍关闭自身（向后兼容）', (WidgetTester tester) async {
     final (_FakeAppModel appModel, GlobalKey<NavigatorState> navKey) =
         await pumpHost(tester);
 
-    navKey.currentState!.push(MaterialPageRoute<void>(
-      builder: (BuildContext context) => const Scaffold(
-        body: AnimeDownloadDialog(
-          debugInitialMedia: _kMedia,
-          debugInitialTorrent: _kTorrent,
+    navKey.currentState!.push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => const Scaffold(
+          body: AnimeDownloadDialog(
+            debugInitialMedia: _kMedia,
+            debugInitialTorrent: _kTorrent,
+          ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
     expect(find.text(t.anime_download_push), findsOneWidget);
 
@@ -226,8 +386,10 @@ void main() {
     // 对话框路由已关闭，回到宿主。
     expect(find.byType(AnimeDownloadDialog), findsNothing);
     expect(find.text('base-route'), findsOneWidget);
-    expect(appModel.store.plans[_kHash]?.status,
-        AnimeDownloadPlan.statusDownloading);
+    expect(
+      appModel.store.plans[_kHash]?.status,
+      AnimeDownloadPlan.statusDownloading,
+    );
   });
 
   testWidgets('失败任务行直显失败原因并可重试（复位 downloading）', (WidgetTester tester) async {
@@ -244,11 +406,12 @@ void main() {
       failReason: 'video import failed: boom',
     );
 
-    navKey.currentState!.push(MaterialPageRoute<void>(
-      builder: (BuildContext context) => const Scaffold(
-        body: AnimeDownloadDialog(embedded: true),
+    navKey.currentState!.push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) =>
+            const Scaffold(body: AnimeDownloadDialog(embedded: true)),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     // 展开任务折叠区。
@@ -265,7 +428,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(appModel.backend.addCalls, 1);
-    expect(appModel.store.plans[_kHash]?.status,
-        AnimeDownloadPlan.statusDownloading);
+    expect(
+      appModel.store.plans[_kHash]?.status,
+      AnimeDownloadPlan.statusDownloading,
+    );
   });
 }

@@ -675,6 +675,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         executable,
         launchArguments: known?.launchArgumentTokens ?? const <String>[],
         workdir: known?.workdir ?? '',
+        gameId: known?.id,
+        gameTitle: known?.displayName,
       );
       if (!mounted) return;
       // 与游戏库页共用同一条结果播报（BUG-1089）。旧实现在这里自己判 `boundWindow`
@@ -924,21 +926,29 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final List<TexthookerLineEntry> lines = _session.workbenchLines;
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
     if (widget.embedded) {
+      final List<Widget> actions =
+          _buildToolbarActions(context, embedded: true);
+      final Widget? sectionTabs = _buildSectionTabs();
       return Column(
         children: <Widget>[
-          HibikiPageHeader(
-            title: t.game_capture_workbench,
-            subtitle: t.game_capture_description,
-            leading: widget.onShowLibrary == null
-                ? null
-                : HibikiIconButton(
-                    icon: Icons.arrow_back,
-                    tooltip: t.game_back_to_library,
-                    onTap: widget.onShowLibrary,
-                  ),
-            actions: _buildToolbarActions(context, embedded: true),
-            bottom: _buildSectionTabs(),
-          ),
+          if (sectionTabs != null)
+            HibikiPageHeader.customTitle(
+              title: sectionTabs,
+              actions: actions,
+            )
+          else
+            HibikiPageHeader(
+              title: t.game_capture_workbench,
+              subtitle: t.game_capture_description,
+              leading: widget.onShowLibrary == null
+                  ? null
+                  : HibikiIconButton(
+                      icon: Icons.arrow_back,
+                      tooltip: t.game_back_to_library,
+                      onTap: widget.onShowLibrary,
+                    ),
+              actions: actions,
+            ),
           Expanded(
             child: _buildMonitorBody(
               context,

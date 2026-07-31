@@ -71,14 +71,30 @@ HT_EXPORT int ht_apply_limits_ex(void* session, int download_bps,
                                  int upload_bps, int connections_limit,
                                  int limit_local_peers);
 
-// 设置上传模式（做种/上传总开关，per-torrent 或全量）：
-// [info_hash] 为空串/NULL = 对 session 内所有种子生效；否则仅该种子。
-// [upload_enabled] 非 0 = 允许上传（清除 upload_mode）；0 = 停止上传但保持
-// 连接与下载（置 torrent_flags::upload_mode，libtorrent 正规「只下不上」）。
-// 注意：速率设 0 是「不限速」而非「禁传」，真正关上传必须走本函数。
-// 返回 1 成功、0 失败（session 无效 / 指定种子不存在）。
+// 【已废弃，勿在新代码调用】历史上传开关。BUG-1293：旧实现把「关上传」翻译成
+// 置 torrent_flags::upload_mode，但该 flag 的 libtorrent 语义是「不再发出任何
+// piece 请求」= **只上不下、停止下载**，与本函数宣称的「只下不上」正好相反 ——
+// 默认关上传的用户所有种子在 add 后 20s 内被打上此 flag，下载速率归零。
+// 现实现：[upload_enabled] 非 0 = 清除 upload_mode（治愈历史 resume 里的残留
+// flag）；0 = **no-op 恒成功**（绝不再置 upload_mode——宁可上传也不能掐死下载；
+// 旧 Dart + 新 DLL 的组合按此降级）。正确原语见 ht_set_unchoke_slots（会话级
+// 停上传）与 ht_pause_torrent（做种停止）。返回 1 成功、0 失败。
 HT_EXPORT int ht_set_upload_mode(void* session, const char* info_hash,
                                  int upload_enabled);
+
+// 会话级 unchoke 槽位（BUG-1293 的「关上传」正确原语）：
+// [slots] >= 0 精确设置 settings_pack::unchoke_slots_limit（0 = 不给任何 peer
+// unchoke 槽位 = 会话级停止上传 payload；我们发出的 piece 请求是协议消息，
+// 不占 unchoke 槽，下载不受影响）；[slots] < 0 恢复 libtorrent 出厂默认。
+// 返回 1 成功、0 失败。
+HT_EXPORT int ht_set_unchoke_slots(void* session, int slots);
+
+// 种子暂停/恢复（做种停止的正确原语；per-torrent 或全量）：
+// [info_hash] 空串/NULL = 对 session 内所有种子生效；否则仅该种子。
+// [pause] 非 0 = 清 auto_managed 再 pause（不清的话队列管理器会自动恢复）；
+// 0 = 恢复 auto_managed 并 resume。返回 1 成功、0 失败（种子不存在）。
+HT_EXPORT int ht_pause_torrent(void* session, const char* info_hash,
+                               int pause);
 
 // 应用内存占用相关 session 设置（把 libtorrent 压进内存预算，避免「有多少内存
 // 吃多少」）：各字段 <=0 时保持 libtorrent 默认，>0 时设置。

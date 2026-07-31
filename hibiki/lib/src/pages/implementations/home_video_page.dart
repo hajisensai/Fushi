@@ -132,7 +132,7 @@ class HomeVideoPage extends BaseModuleTabPage {
 
   final VideoBookRepository repo;
 
-  /// 库页视图导航条（由 [MediaLibraryShell] 传入，落在页头 bottom 槽）。
+  /// 库页视图导航条（由 [MediaLibraryShell] 传入，作为页头主内容与动作同一行）。
   /// 本页被独立使用时为 null，页头与此前逐像素一致。
   final Widget? navigation;
   final Future<RemoteVideoClient?> Function()? remoteVideoClientLoader;
@@ -2247,10 +2247,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         children: <Widget>[
           ClipRRect(
             borderRadius: HibikiBorderRadius.card,
+            // BUG-1299：hero 封面改竖版 2:3 海报槽（刮削海报在旧 148×84 横槽里
+            // 两侧露灰带）；横版截帧由 poster 路径的 [PortraitCoverImage] 垫底。
             child: SizedBox(
-              width: 148,
-              height: 84,
-              child: _buildCover(hero),
+              width: 80,
+              height: 120,
+              child: _buildCover(hero, poster: true),
             ),
           ),
           SizedBox(width: tokens.spacing.gap + 4),
@@ -2319,10 +2321,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         children: <Widget>[
           ClipRRect(
             borderRadius: HibikiBorderRadius.card,
+            // BUG-1299：与本地 hero 同款竖版 2:3 海报槽。
             child: SizedBox(
-              width: 148,
-              height: 84,
-              child: _buildRemoteVideoCover(video),
+              width: 80,
+              height: 120,
+              child: _buildRemoteVideoCover(video, poster: true),
             ),
           ),
           SizedBox(width: tokens.spacing.gap + 4),
@@ -3019,53 +3022,60 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// （统计 + 导入），保证标题字号与按钮位置三 tab 一致。与书架一致仅在非 Cupertino
   /// 渲染（Cupertino 走平台导航，由 HomePage 外壳承担）。
   Widget _buildPageHeader(bool canImport) {
+    final List<Widget> actions = <Widget>[
+      // 图标顺序与书架完全一致：导入 → 收藏夹 → 统计。书架
+      // [reader_hibiki_history_page._buildPageHeader] 把导入按钮放在第一位
+      // （buildBookImportButton），收藏夹、统计紧随其后；视频 tab 照此对齐
+      // （TODO-162：此前视频把导入放在末尾，与书架不一致）。视频导入仍受
+      // [canImport] 门控（仅视频 tab 才有导入入口），这里只调整位置不改门控。
+      // 宽窗（非 compact）时四个动作展开成「图标+文字」药丸（用户 mockup：把
+      // 「导入视频、媒体库」等按钮可展开时展开）；窄窗自动回落纯图标。
+      if (canImport)
+        HibikiIconButton(
+          tooltip: t.video_import_action,
+          label: t.video_import_action,
+          icon: Icons.add,
+          onTap: _openImport,
+        ),
+      // 「番剧下载」不再占页头：它是下载子系统的入口，在「下载」页
+      // （downloads_page）里有完整入口，视频库页头只留库管理动作。
+      // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
+      // 按钮就是同一件事的两个入口。只有本页被独立使用（无导航条）时才保留按钮。
+      if (canImport && widget.navigation == null)
+        HibikiIconButton(
+          tooltip: t.media_source_manage_title,
+          label: t.media_source_manage_title,
+          icon: Icons.folder_copy_outlined,
+          onTap: _openManageSources,
+        ),
+      HibikiIconButton(
+        tooltip: t.collections,
+        label: t.collections,
+        icon: Icons.collections_bookmark_outlined,
+        onTap: _openCollections,
+      ),
+      HibikiIconButton(
+        tooltip: t.video_statistics,
+        label: t.video_statistics,
+        icon: Icons.bar_chart_outlined,
+        onTap: _openStatistics,
+      ),
+      // 「批量匹配海报」按钮已删：刮削改为进页面 / 新视频入库时后台自动跑
+      // （[_maybeAutoScrape]），不再需要用户手动触发整库任务。单本纠错仍在长按
+      // 菜单的「在线匹配海报」。
+      // 「刷新」按钮已删：下拉刷新（[_pullToRefresh]）仍是手动同步入口，页头不再
+      // 为它单占一格。
+    ];
+    final Widget? navigation = widget.navigation;
+    if (navigation != null) {
+      return HibikiPageHeader.customTitle(
+        title: navigation,
+        actions: actions,
+      );
+    }
     return HibikiPageHeader(
       title: t.nav_video,
-      bottom: widget.navigation,
-      actions: <Widget>[
-        // 图标顺序与书架完全一致：导入 → 收藏夹 → 统计。书架
-        // [reader_hibiki_history_page._buildPageHeader] 把导入按钮放在第一位
-        // （buildBookImportButton），收藏夹、统计紧随其后；视频 tab 照此对齐
-        // （TODO-162：此前视频把导入放在末尾，与书架不一致）。视频导入仍受
-        // [canImport] 门控（仅视频 tab 才有导入入口），这里只调整位置不改门控。
-        // 宽窗（非 compact）时四个动作展开成「图标+文字」药丸（用户 mockup：把
-        // 「导入视频、媒体库」等按钮可展开时展开）；窄窗自动回落纯图标。
-        if (canImport)
-          HibikiIconButton(
-            tooltip: t.video_import_action,
-            label: t.video_import_action,
-            icon: Icons.add,
-            onTap: _openImport,
-          ),
-        // 「番剧下载」不再占页头：它是下载子系统的入口，在「下载」页
-        // （downloads_page）里有完整入口，视频库页头只留库管理动作。
-        // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
-        // 按钮就是同一件事的两个入口。只有本页被独立使用（无导航条）时才保留按钮。
-        if (canImport && widget.navigation == null)
-          HibikiIconButton(
-            tooltip: t.media_source_manage_title,
-            label: t.media_source_manage_title,
-            icon: Icons.folder_copy_outlined,
-            onTap: _openManageSources,
-          ),
-        HibikiIconButton(
-          tooltip: t.collections,
-          label: t.collections,
-          icon: Icons.collections_bookmark_outlined,
-          onTap: _openCollections,
-        ),
-        HibikiIconButton(
-          tooltip: t.video_statistics,
-          label: t.video_statistics,
-          icon: Icons.bar_chart_outlined,
-          onTap: _openStatistics,
-        ),
-        // 「批量匹配海报」按钮已删：刮削改为进页面 / 新视频入库时后台自动跑
-        // （[_maybeAutoScrape]），不再需要用户手动触发整库任务。单本纠错仍在长按
-        // 菜单的「在线匹配海报」。
-        // 「刷新」按钮已删：下拉刷新（[_pullToRefresh]）仍是手动同步入口，页头不再
-        // 为它单占一格。
-      ],
+      actions: actions,
     );
   }
 
@@ -3811,8 +3821,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// [poster] = true：主网格 2:3 竖版槽位，走 [PortraitCoverImage]（横版截帧模糊
-  /// 垫底 + contain 前景）；false：hero / 长按菜单等 16:9 语境保持原渲染。
+  /// [poster] = true：主网格 / 继续观看 hero 的 2:3 竖版槽位（BUG-1299 起 hero
+  /// 也走此路径），走 [PortraitCoverImage]（横版截帧模糊垫底 + contain 前景）；
+  /// false：长按菜单等 16:9 语境保持原渲染。
   Widget _buildCover(VideoBookRow book, {bool poster = false}) {
     final String? cover = book.coverPath;
     // 保留同步 existsSync 短路：对已知不存在的封面直接占位，避免对缺失文件发起

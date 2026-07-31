@@ -25,8 +25,14 @@ void main() {
     expect(idx, greaterThan(-1), reason: 'play() 必须存在');
     final int end = src.indexOf('Future<void> pause()', idx);
     final String body = src.substring(idx, end > idx ? end : idx + 600);
-    expect(body, contains('_imagePauseTimer'),
-        reason: '手动 play 须取消待恢复的图片暂停计时器（否则计时器到点不 snap）');
+    // TODO-2389：判据从「碰过 _imagePauseTimer」升级为「成对作废」。只 cancel
+    // Timer 不 complete Completer 会让 awaitImageChapterPause 永久挂起，所以取消
+    // 动作统一收敛到 _invalidateImageChapterPause()。
+    expect(body, contains('_invalidateImageChapterPause()'),
+        reason: '手动 play 须成对作废待恢复的图片暂停（Timer + Completer），'
+            '否则计时器到点不 snap，且跨章停留的 await 永久挂起');
+    expect(body, contains('isImagePaused'),
+        reason: '在途判据须覆盖「已 pause、定时器尚未武装」的 Completer-only 窗口');
     expect(body, contains('snapReaderToAudio'),
         reason: '手动 play 须把视口从插图拉回当前 cue');
   });

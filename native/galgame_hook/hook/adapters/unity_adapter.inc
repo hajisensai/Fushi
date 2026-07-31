@@ -99,9 +99,11 @@ using UnityTextMeshSetText = void (*)(void*, void*, const void*);
 UnityTextMeshSetText g_orig_UnityTextMeshSetText = nullptr;
 using NaninovelRevealableSetText = void (*)(void*, void*, const void*);
 NaninovelRevealableSetText g_orig_NaninovelRevealableSetText = nullptr;
-wchar_t g_unity_text_mesh_line[501] = {0};
-int g_unity_text_mesh_line_length = 0;
-ULONGLONG g_unity_text_mesh_last_tick = 0;
+hibiki_voice_hook::UnityTextMeshReassembler<501>
+    g_unity_text_mesh_reassembler;
+bool g_unity_sasasa_text_mesh_profile = false;
+bool g_unity_text_profile_initialized = false;
+alignas(8) volatile uint64_t g_unity_preview_generation = 0;
 
 int InvokeUnityInt(const void* method, void* instance) {
   if (method == nullptr || instance == nullptr ||
@@ -148,11 +150,14 @@ bool CopyUnityClipName(void* clip, wchar_t* out, size_t out_chars) {
   return true;
 }
 
-void RecordUnityTextBuffer(void* text_component, const wchar_t* clean,
-                           int length, const char* hook_name,
-                           const wchar_t* hook_code) {
+void WriteUnityTextEvent(uint64_t thread_id, void* text_component,
+                         const wchar_t* clean, int length,
+                         const char* hook_name, const wchar_t* hook_code,
+                         uint32_t event_kind) {
   if (!g_capture_enabled || g_header == nullptr || g_text_base == nullptr ||
-      text_component == nullptr || clean == nullptr || length <= 0) {
+      thread_id == 0 ||
+      (event_kind == hibiki_voice_hook::kTextEventLine &&
+       (clean == nullptr || length <= 0))) {
     return;
   }
 
@@ -163,18 +168,25 @@ void RecordUnityTextBuffer(void* text_component, const wchar_t* clean,
       static_cast<size_t>(index % kTextSlotCount) * kTextSlotBytes;
   auto* text_slot = reinterpret_cast<TextSlot*>(slot);
   memset(text_slot, 0, sizeof(TextSlot));
-  uint32_t byte_length = static_cast<uint32_t>(length) * sizeof(wchar_t);
+  uint32_t byte_length =
+      clean == nullptr || length <= 0
+          ? 0
+          : static_cast<uint32_t>(length) * sizeof(wchar_t);
   uint32_t max_bytes = kTextSlotBytes - static_cast<uint32_t>(sizeof(TextSlot));
   max_bytes -= max_bytes % sizeof(wchar_t);
   if (byte_length > max_bytes) byte_length = max_bytes;
-  memcpy(slot + sizeof(TextSlot), clean, byte_length);
+  if (byte_length != 0) {
+    memcpy(slot + sizeof(TextSlot), clean, byte_length);
+  }
   text_slot->timestamp_ms = GetTickCount64();
   text_slot->byte_len = byte_length;
   text_slot->is_utf8 = 0;
-  text_slot->thread_id = reinterpret_cast<uint64_t>(text_component);
+  text_slot->thread_id = thread_id;
+  text_slot->thread_address = reinterpret_cast<uint64_t>(text_component);
   text_slot->thread_context = reinterpret_cast<uint64_t>(text_component);
   text_slot->process_id = GetCurrentProcessId();
   text_slot->source_kind = hibiki_voice_hook::kTextSourceUnityTmp;
+  text_slot->event_kind = event_kind;
   const size_t hook_name_capacity = sizeof(text_slot->hook_name) - 1;
   const size_t hook_name_length =
       hook_name == nullptr ? 0 : strnlen_s(hook_name, hook_name_capacity);
@@ -194,6 +206,101 @@ void RecordUnityTextBuffer(void* text_component, const wchar_t* clean,
   MemoryBarrier();
   text_slot->seq = static_cast<uint64_t>(reserved);
   g_header->text_hooked = 1;
+}
+
+bool WriteUnityThreadPreview(uint64_t thread_id, const wchar_t* clean,
+                             int length, bool completed_line,
+                             const char* hook_name,
+                             const wchar_t* hook_code,
+                             void* text_component) {
+  if (!g_capture_enabled || g_header == nullptr || thread_id == 0 ||
+      clean == nullptr || length <= 0 ||
+      g_header->thread_preview_offset == 0) {
+    return false;
+  }
+
+  if (g_cs_ready) EnterCriticalSection(&g_cs);
+  auto* all_slots = reinterpret_cast<hibiki_voice_hook::ThreadPreviewSlot*>(
+      reinterpret_cast<uint8_t*>(g_header) +
+      g_header->thread_preview_offset);
+  const uint32_t total_count =
+      (std::min)(g_header->thread_preview_slot_count,
+                 hibiki_voice_hook::kThreadPreviewCount);
+  if (total_count <= hibiki_voice_hook::kNativeThreadPreviewStart) {
+    if (g_cs_ready) LeaveCriticalSection(&g_cs);
+    return false;
+  }
+  auto* native_slots =
+      all_slots + hibiki_voice_hook::kNativeThreadPreviewStart;
+  const uint32_t native_count =
+      (std::min)(total_count - hibiki_voice_hook::kNativeThreadPreviewStart,
+                 hibiki_voice_hook::kNativeThreadPreviewCount);
+  auto* preview = hibiki_voice_hook::FindThreadPreviewSlot(
+      native_slots, native_count, thread_id);
+  if (preview == nullptr) {
+    // Native Unity components do not have a reliable ThreadRemove callback.
+    // Recycle the oldest non-selected candidate instead of permanently
+    // blinding the selector after 16 historical menu/text components.
+    const uint64_t selected =
+        hibiki_voice_hook::SelectedTextThreadId(g_header);
+    for (uint32_t i = 0; i < native_count; ++i) {
+      auto* candidate = &native_slots[i];
+      if (candidate->thread_id == selected) continue;
+      if (preview == nullptr ||
+          candidate->timestamp_ms < preview->timestamp_ms) {
+        preview = candidate;
+      }
+    }
+    if (preview == nullptr) {
+      if (g_cs_ready) LeaveCriticalSection(&g_cs);
+      return false;
+    }
+  }
+
+  const bool discovered = preview->thread_id != thread_id;
+  const uint64_t generation =
+      hibiki_voice_hook::NextThreadPreviewGeneration(
+          &g_unity_preview_generation);
+  hibiki_voice_hook::BeginThreadPreviewWrite(preview, generation);
+  if (discovered) {
+    preview->line_count = 0;
+    preview->artifact_count = 0;
+  }
+  preview->thread_id = thread_id;
+  if (completed_line) preview->line_count++;
+  const uint32_t max_bytes =
+      hibiki_voice_hook::kThreadPreviewTextChars * sizeof(wchar_t);
+  uint32_t byte_length = static_cast<uint32_t>(length) * sizeof(wchar_t);
+  if (byte_length > max_bytes) byte_length = max_bytes;
+  ZeroMemory(preview->text, sizeof(preview->text));
+  memcpy(preview->text, clean, byte_length);
+  preview->byte_len = byte_length;
+  preview->event_flags = 0;
+  preview->timestamp_ms = GetTickCount64();
+  hibiki_voice_hook::PublishThreadPreviewWrite(preview, generation);
+  hibiki_voice_hook::PublishThreadPreviewChange(
+      &g_header->thread_preview_write_count);
+  if (g_cs_ready) LeaveCriticalSection(&g_cs);
+
+  if (discovered) {
+    WriteUnityTextEvent(
+        thread_id, text_component, nullptr, 0, hook_name, hook_code,
+        hibiki_voice_hook::kTextEventThreadDiscovered);
+  }
+  return true;
+}
+
+void PublishUnityText(uint64_t thread_id, void* text_component,
+                      const wchar_t* clean, int length, bool completed_line,
+                      const char* hook_name, const wchar_t* hook_code) {
+  WriteUnityThreadPreview(thread_id, clean, length, completed_line, hook_name,
+                          hook_code, text_component);
+  if (!completed_line ||
+      !hibiki_voice_hook::IsExactTextThreadSelected(g_header, thread_id)) {
+    return;
+  }
+  WriteUnityTextEvent(thread_id, text_component, clean, length, hook_name,
+                      hook_code, hibiki_voice_hook::kTextEventLine);
 }
 
 void RecordUnityTmpText(void* text_component, void* string_object,
@@ -231,44 +338,62 @@ void RecordUnityTmpText(void* text_component, void* string_object,
     }
   }
   if (length == 0 || meaningful == 0 || (!has_cjk && meaningful < 2)) return;
-  RecordUnityTextBuffer(text_component, clean, length, hook_name, hook_code);
+  const uint64_t thread_id = hibiki_voice_hook::NativeTextThreadIdFrom(
+      reinterpret_cast<uint64_t>(text_component), hook_code, hook_name);
+  PublishUnityText(thread_id, text_component, clean, length, true, hook_name,
+                   hook_code);
 }
 
 void FlushUnityTextMeshLine() {
-  if (g_unity_text_mesh_line_length <= 0) return;
-  RecordUnityTextBuffer(
-      static_cast<void*>(g_unity_text_mesh_line), g_unity_text_mesh_line,
-      g_unity_text_mesh_line_length, "Unity TextMesh line",
-      L"UnityEngine.TextMesh.set_text(glyphs)");
-  memset(g_unity_text_mesh_line, 0, sizeof(g_unity_text_mesh_line));
-  g_unity_text_mesh_line_length = 0;
+  if (g_unity_text_mesh_reassembler.empty()) return;
+  constexpr char kHookName[] = "Unity TextMesh line";
+  constexpr wchar_t kHookCode[] =
+      L"UnityEngine.TextMesh.set_text(glyphs)";
+  const uint64_t thread_id =
+      hibiki_voice_hook::NativeTextThreadIdFrom(0, kHookCode, kHookName);
+  PublishUnityText(thread_id, nullptr, g_unity_text_mesh_reassembler.text(),
+                   g_unity_text_mesh_reassembler.length(), true, kHookName,
+                   kHookCode);
+  g_unity_text_mesh_reassembler.Reset();
 }
 
-void RecordUnityTextMesh(void* string_object) {
-  if (g_il2cpp_string_chars == nullptr || g_il2cpp_string_length == nullptr) {
+void RecordUnityTextMesh(void* text_component, void* string_object) {
+  if (!g_capture_enabled || g_il2cpp_string_chars == nullptr ||
+      g_il2cpp_string_length == nullptr) {
+    return;
+  }
+  if (!g_unity_sasasa_text_mesh_profile) {
+    RecordUnityTmpText(text_component, string_object, "Unity TextMesh",
+                       L"UnityEngine.TextMesh.set_text");
     return;
   }
   const wchar_t* chars =
       string_object == nullptr ? nullptr : g_il2cpp_string_chars(string_object);
   const int source_length =
       string_object == nullptr ? 0 : g_il2cpp_string_length(string_object);
-  const ULONGLONG now = GetTickCount64();
   if (g_cs_ready) EnterCriticalSection(&g_cs);
-  if (g_unity_text_mesh_line_length > 0 &&
-      now - g_unity_text_mesh_last_tick > 250) {
-    FlushUnityTextMeshLine();
+  if (!g_capture_enabled) {
+    if (g_cs_ready) LeaveCriticalSection(&g_cs);
+    return;
   }
   for (int i = 0; chars != nullptr && i < source_length; ++i) {
     const wchar_t c = chars[i];
-    if (c == L'\u3000' || c == L'\r' || c == L'\n') {
+    if (g_unity_text_mesh_reassembler.ShouldTerminate(c, true)) {
       FlushUnityTextMeshLine();
       continue;
     }
-    if (c < 0x20 || g_unity_text_mesh_line_length >= 500) continue;
-    g_unity_text_mesh_line[g_unity_text_mesh_line_length++] = c;
+    if (!g_unity_text_mesh_reassembler.Append(c)) continue;
+    constexpr char kHookName[] = "Unity TextMesh line";
+    constexpr wchar_t kHookCode[] =
+        L"UnityEngine.TextMesh.set_text(glyphs)";
+    const uint64_t thread_id =
+        hibiki_voice_hook::NativeTextThreadIdFrom(0, kHookCode, kHookName);
+    PublishUnityText(thread_id, nullptr,
+                     g_unity_text_mesh_reassembler.text(),
+                     g_unity_text_mesh_reassembler.length(), false, kHookName,
+                     kHookCode);
   }
   if (source_length == 0) FlushUnityTextMeshLine();
-  g_unity_text_mesh_last_tick = now;
   if (g_cs_ready) LeaveCriticalSection(&g_cs);
 }
 
@@ -545,7 +670,7 @@ void Detour_UnityUiTextSetText(void* self, void* text, const void* method) {
 void Detour_UnityTextMeshSetText(void* self, void* text,
                                  const void* method) {
   g_orig_UnityTextMeshSetText(self, text, method);
-  RecordUnityTextMesh(text);
+  RecordUnityTextMesh(self, text);
 }
 
 void Detour_NaninovelRevealableSetText(void* self, void* text,
@@ -622,6 +747,16 @@ bool HasCurrentProcessTopLevelWindow() {
 }
 
 bool TryHookUnityIl2CppAudio() {
+  if (!g_unity_text_profile_initialized) {
+    wchar_t executable_path[MAX_PATH] = {0};
+    const DWORD path_length =
+        GetModuleFileNameW(nullptr, executable_path, MAX_PATH);
+    g_unity_sasasa_text_mesh_profile =
+        path_length != 0 && path_length < MAX_PATH &&
+        hibiki_voice_hook::UsesSasasaLegacyTextMeshTerminator(
+            executable_path);
+    g_unity_text_profile_initialized = true;
+  }
   const bool audio_ready =
       g_orig_UnityAudioSourcePlay != nullptr ||
       g_orig_UnityAudioSourcePlayOneShot1 != nullptr ||

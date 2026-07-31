@@ -360,6 +360,44 @@ void main() {
     expect(statisticsTop, importTop);
   });
 
+  testWidgets(
+      'HibikiPageHeader custom title aligns segmented navigation with actions',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        SizedBox(
+          width: 520,
+          child: HibikiPageHeader.customTitle(
+            padding: EdgeInsets.zero,
+            title: SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: const <ButtonSegment<String>>[
+                ButtonSegment<String>(value: 'library', label: Text('书架')),
+                ButtonSegment<String>(value: 'sources', label: Text('来源')),
+              ],
+              selected: const <String>{'library'},
+              onSelectionChanged: (_) {},
+            ),
+            actions: <Widget>[
+              HibikiIconButton(
+                tooltip: 'Import',
+                icon: Icons.library_add_outlined,
+                onTap: () {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('书架'), findsOneWidget);
+    expect(find.text('来源'), findsOneWidget);
+    expect(
+      tester.getCenter(find.byType(SegmentedButton<String>)).dy,
+      tester.getCenter(find.byIcon(Icons.library_add_outlined)).dy,
+    );
+  });
+
   // BUG（页头药丸挤标题）：带 label 的动作是否展开成「图标+文字」药丸，必须按
   // **页头本地可用宽**（而非整窗宽）判定。桌面带导航栏 / 分栏时整窗 expanded（≥840）
   // 但页头本地宽只到 medium，旧实现按整窗宽（[MediaQuery.sizeOf]）误展开 4 个药丸，

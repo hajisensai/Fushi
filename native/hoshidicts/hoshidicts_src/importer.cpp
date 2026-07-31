@@ -779,29 +779,32 @@ std::vector<char> build_offset_index(std::vector<std::pair<uint64_t, uint64_t>>&
 // yomitan-zip writer and the .mdd writer so the on-disk media format stays
 // byte-identical (the query side binary-searches media.idx by path). Returns
 // false if the record was skipped (path too long).
-bool append_media_record(std::ofstream& media, uint32_t& write_pos,
-                         std::vector<std::pair<std::string, uint32_t>>& index_entries,
+// write_pos is u64 to match the on-disk u64 record offsets: multi-part MDD
+// dictionaries (OALD ships ~3.7GB of mp3) sit right under the u32 cliff, and a
+// u32 accumulator would wrap silently past 4GB -> garbage offsets in media.idx.
+bool append_media_record(std::ofstream& media, uint64_t& write_pos,
+                         std::vector<std::pair<std::string, uint64_t>>& index_entries,
                          std::string path, const void* blob, size_t blob_size) {
   path = hoshidicts::normalize_media_path(std::move(path));
   if (path.size() > std::numeric_limits<uint16_t>::max()) {
     HOSHI_LOGW("media path too long (%zu bytes), skipping", path.size());
     return false;
   }
-  uint32_t record_start = write_pos;
+  uint64_t record_start = write_pos;
   std::vector<char> buf;
   write_val<uint16_t>(buf, static_cast<uint16_t>(path.size()));
   write_str(buf, path);
   write_val<uint32_t>(buf, static_cast<uint32_t>(blob_size));
   write_bytes(buf, blob, blob_size);
   media.write(buf.data(), static_cast<std::streamsize>(buf.size()));
-  write_pos += static_cast<uint32_t>(buf.size());
+  write_pos += buf.size();
   index_entries.emplace_back(std::move(path), record_start);
   return true;
 }
 
 // Finalize media.idx: [u32 count][u64 record_offset x count], sorted by path.
 void write_media_idx(std::ofstream& media_idx,
-                     std::vector<std::pair<std::string, uint32_t>>& index_entries) {
+                     std::vector<std::pair<std::string, uint64_t>>& index_entries) {
   std::ranges::sort(index_entries);
   std::vector<char> index_buf;
   write_val<uint32_t>(index_buf, static_cast<uint32_t>(index_entries.size()));
@@ -823,8 +826,8 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
   setup_stream_exceptions(media_idx);
 
   size_t media_count = 0;
-  uint32_t write_pos = 0;
-  std::vector<std::pair<std::string, uint32_t>> index_entries;
+  uint64_t write_pos = 0;
+  std::vector<std::pair<std::string, uint64_t>> index_entries;
   int media_seq = 0;
   for (int file_index : files) {
     // write_media runs on its own std::async thread (in parallel with the term/
@@ -847,43 +850,82 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
   return media_count;
 }
 
-// Import an .mdd (MDX media companion) into an already-written dictionary
-// directory, producing media.bin/media.idx that the query side + popup image://
-// scheme consume unchanged. Media failure never aborts the host dictionary.
-size_t import_mdd_into(const std::string& mdd_path, const std::string& dict_dir) {
-  std::ifstream f(hoshi::fs_path(mdd_path), std::ios::binary | std::ios::ate);
-  if (!f) return 0;
-  auto n = f.tellg();
-  if (n <= 0) return 0;
-  std::vector<uint8_t> data(static_cast<size_t>(n));
-  f.seekg(0);
-  f.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(n));
-
-  std::vector<MddEntry> media;
-  try {
-    media = mdx_reader::parse_mdd(data.data(), data.size());
-  } catch (const std::exception& e) {
-    HOSHI_LOGW("mdd parse failed (%s), continuing without media", e.what());
-    return 0;
-  }
-  if (media.empty()) return 0;
-
-  std::ofstream mbin(hoshi::fs_path(dict_dir + "/media.bin"), std::ios::binary);
-  std::ofstream midx(hoshi::fs_path(dict_dir + "/media.idx"), std::ios::binary);
-  setup_stream_exceptions(mbin);
-  setup_stream_exceptions(midx);
-
+// Import one or more .mdd files (MDX media companions) into an already-written
+// dictionary directory, producing media.bin/media.idx that the query side +
+// popup image:// scheme consume unchanged. All parts merge into ONE sorted
+// index -- the query side binary-searches a single media.idx, so writing per
+// file would truncate the previous part's store. Files are parsed one at a
+// time so peak memory stays one part (BUG-1261: OALD's parts total ~3.7GB).
+// Media failure never aborts the host dictionary; an unreadable/broken part is
+// skipped and the rest still mount.
+size_t import_mdd_into(const std::vector<std::string>& mdd_paths, const std::string& dict_dir) {
+  std::ofstream mbin;
+  std::ofstream midx;
+  bool opened = false;
   size_t count = 0;
-  uint32_t write_pos = 0;
-  std::vector<std::pair<std::string, uint32_t>> index_entries;
-  for (auto& m : media) {
-    if (append_media_record(mbin, write_pos, index_entries, std::move(m.path), m.blob.data(),
-                            m.blob.size())) {
-      count++;
+  uint64_t write_pos = 0;
+  std::vector<std::pair<std::string, uint64_t>> index_entries;
+
+  for (const auto& mdd_path : mdd_paths) {
+    std::ifstream f(hoshi::fs_path(mdd_path), std::ios::binary | std::ios::ate);
+    if (!f) continue;
+    auto n = f.tellg();
+    if (n <= 0) continue;
+    std::vector<uint8_t> data(static_cast<size_t>(n));
+    f.seekg(0);
+    f.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(n));
+
+    std::vector<MddEntry> media;
+    try {
+      media = mdx_reader::parse_mdd(data.data(), data.size());
+    } catch (const std::exception& e) {
+      HOSHI_LOGW("mdd parse failed (%s), continuing without this part", e.what());
+      continue;
+    }
+    if (media.empty()) continue;
+
+    // Lazily create the store on the first non-empty part: zero usable parts
+    // must leave no (empty) media.bin/media.idx behind, same as before.
+    if (!opened) {
+      mbin.open(hoshi::fs_path(dict_dir + "/media.bin"), std::ios::binary);
+      midx.open(hoshi::fs_path(dict_dir + "/media.idx"), std::ios::binary);
+      setup_stream_exceptions(mbin);
+      setup_stream_exceptions(midx);
+      opened = true;
+    }
+    for (auto& m : media) {
+      if (append_media_record(mbin, write_pos, index_entries, std::move(m.path), m.blob.data(),
+                              m.blob.size())) {
+        count++;
+      }
     }
   }
+
+  if (!opened) return 0;
   write_media_idx(midx, index_entries);
   return count;
+}
+
+// MDict convention: media lives in Foo.mdd plus numbered overflow parts
+// Foo.1.mdd / Foo.2.mdd / ... (large dictionaries -- OALD splits ~3.7GB of
+// pronunciation mp3 across three numbered parts). Parts are strictly
+// sequential, so stop at the first gap. BUG-1261: only Foo.mdd was mounted,
+// leaving every blob in the numbered parts (all OALD audio + example images)
+// unreachable.
+std::vector<std::string> collect_sibling_mdd_paths(const std::string& mdx_path) {
+  std::vector<std::string> mdd_paths;
+  auto mdd_path = hoshi::fs_path(mdx_path);
+  mdd_path.replace_extension(".mdd");
+  if (std::filesystem::exists(mdd_path)) {
+    mdd_paths.push_back(hoshi::fs_to_utf8(mdd_path));
+  }
+  for (int part = 1;; ++part) {
+    auto part_path = hoshi::fs_path(mdx_path);
+    part_path.replace_extension("." + std::to_string(part) + ".mdd");
+    if (!std::filesystem::exists(part_path)) break;
+    mdd_paths.push_back(hoshi::fs_to_utf8(part_path));
+  }
+  return mdd_paths;
 }
 
 ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
@@ -1020,14 +1062,14 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
 
   ImportResult result = dictionary_importer::write_simple_dict(title, entries, output_dir, styles_css);
 
-  // Auto-mount the media companion (Foo.mdx -> Foo.mdd) into the same dict dir,
-  // so <img>/<link> in the glossaries resolve via the image:// media scheme.
+  // Auto-mount the media companions (Foo.mdx -> Foo.mdd + numbered overflow
+  // parts Foo.N.mdd) into the same dict dir, so <img>/<link>/sound:// in the
+  // glossaries resolve via the image:// media scheme.
   // Media is best-effort: a missing/broken .mdd never fails the dictionary.
   if (result.success) {
-    auto mdd_path = hoshi::fs_path(mdx_path);
-    mdd_path.replace_extension(".mdd");
-    if (std::filesystem::exists(mdd_path)) {
-      import_mdd_into(hoshi::fs_to_utf8(mdd_path), output_dir + "/" + result.title);
+    std::vector<std::string> mdd_paths = collect_sibling_mdd_paths(mdx_path);
+    if (!mdd_paths.empty()) {
+      import_mdd_into(mdd_paths, output_dir + "/" + result.title);
     }
   }
 
@@ -1061,8 +1103,18 @@ ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
     out.write(content.data(), static_cast<std::streamsize>(content.size()));
   };
 
-  // Extract the .mdx plus its sibling media (.mdd) / stylesheet (.css), renamed
-  // to share the .mdx stem, so import_mdx's sibling auto-mount finds them.
+  // Extract the .mdx plus its sibling media (.mdd, incl. numbered overflow
+  // parts Foo.N.mdd) / stylesheet (.css), flattened next to the .mdx so
+  // import_mdx's sibling auto-mount (collect_sibling_mdd_paths) finds them.
+  auto is_numbered_part_stem = [&stem](const std::string& fstem) {
+    // "Foo.3" for stem "Foo": stem + '.' + at least one digit, digits only.
+    if (fstem.size() < stem.size() + 2) return false;
+    if (fstem.compare(0, stem.size(), stem) != 0 || fstem[stem.size()] != '.') return false;
+    for (size_t k = stem.size() + 1; k < fstem.size(); ++k) {
+      if (fstem[k] < '0' || fstem[k] > '9') return false;
+    }
+    return true;
+  };
   extract(mdx_index, mdx_filename);
   for (size_t i = 0; i < zip.entries.size(); i++) {
     if (static_cast<int>(i) == mdx_index) continue;
@@ -1071,8 +1123,9 @@ ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
     std::string fn = hoshi::fs_to_utf8(hoshi::fs_path(name).filename());
     std::string ext = hoshi::fs_to_utf8(hoshi::fs_path(fn).extension());
     std::string fstem = hoshi::fs_to_utf8(hoshi::fs_path(fn).stem());
-    if ((ext == ".mdd" || ext == ".css") && fstem == stem) {
-      extract(static_cast<int>(i), stem + ext);
+    if ((ext == ".mdd" && (fstem == stem || is_numbered_part_stem(fstem))) ||
+        (ext == ".css" && fstem == stem)) {
+      extract(static_cast<int>(i), fstem + ext);
     }
   }
 

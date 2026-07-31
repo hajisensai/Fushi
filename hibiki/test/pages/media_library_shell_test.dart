@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
 import 'package:hibiki/utils.dart';
 
@@ -176,6 +177,36 @@ void main() {
     // 全树自始至终只有一个分段条。
     expect(find.byType(HibikiAdjustableSegmented<MediaLibraryViewKind>),
         findsOneWidget);
+  });
+
+  testWidgets('分段导航注册可由 controller.requestById 定位的稳定 ID',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: HibikiFocusRoot(
+            child: MediaLibraryShell(
+              focusIdPrefix: 'test-library-view',
+              views: <MediaLibraryViewSpec>[
+                spec(0, MediaLibraryViewKind.library, '书架'),
+                spec(1, MediaLibraryViewKind.sources, '来源'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      tester.element(find.byType(MediaLibraryShell)),
+    );
+    const HibikiFocusId sectionsId =
+        HibikiFocusId('test-library-view-sections');
+    expect(controller.requestById(sectionsId), isTrue);
+    await tester.pump();
+    expect(controller.activeId, sectionsId);
+    expect(controller.primaryFocusIsManagedTarget, isTrue);
   });
 
   testWidgets('只有一个视图时不显示导航条（不放空壳 tab）', (WidgetTester tester) async {

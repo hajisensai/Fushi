@@ -13,6 +13,11 @@ class TorrentSnapshot {
     required this.savePath,
     required this.contentPath,
     required this.amountLeft,
+    this.downRateBps = 0,
+    this.upRateBps = 0,
+    this.downloadedBytes = 0,
+    this.uploadedBytes = 0,
+    this.numPeers = 0,
   });
 
   /// 种子 infohash（小写十六进制），后续查文件列表用。
@@ -36,6 +41,22 @@ class TorrentSnapshot {
   /// 剩余待下载字节数；解析不出为 -1（= 未知，不当作完成）。
   final int amountLeft;
 
+  /// 实时下载速率（字节/秒）。BUG-1294：native/qb 一直导出这些字段，此前在
+  /// 本抽象层被整体丢弃，UI 无从显示速度/流量。
+  final int downRateBps;
+
+  /// 实时上传速率（字节/秒）。
+  final int upRateBps;
+
+  /// 累计下载字节（流量显示用）。
+  final int downloadedBytes;
+
+  /// 累计上传字节。
+  final int uploadedBytes;
+
+  /// 当前连接的 peer 数。
+  final int numPeers;
+
   /// 做种/完成类状态：数据已全部落盘，只在做种或做种停止。
   static const Set<String> _seedingStates = <String>{
     'uploading',
@@ -47,10 +68,7 @@ class TorrentSnapshot {
   };
 
   /// 错误类状态：即使进度显示 100% 也不视为可用完成态。
-  static const Set<String> _errorStates = <String>{
-    'error',
-    'missingFiles',
-  };
+  static const Set<String> _errorStates = <String>{'error', 'missingFiles'};
 
   /// 是否已下载完成：state 属于做种类直接算完成；否则要求进度打满
   /// （`progress >= 1.0` 或 `amountLeft == 0`）且 state 不是 error 类。
@@ -59,6 +77,16 @@ class TorrentSnapshot {
     if (_errorStates.contains(state)) return false;
     return progress >= 1.0 || amountLeft == 0;
   }
+
+  /// 后端已明确进入不可继续的错误态。暂停态不是失败：暂停/恢复后计划仍继续
+  /// downloading，并保留实时进度。
+  bool get isFailure => _errorStates.contains(state);
+}
+
+/// 支持真实取消/删除种子的后端能力。单独拆接口，避免只读 fake 被迫伪造支持；
+/// qBittorrent 与内置引擎都实现，调用方仅在 capability 存在时触发。
+abstract interface class TorrentRemovalBackend implements TorrentBackend {
+  Future<bool> removeTorrent(String torrentId, {bool deleteFiles = false});
 }
 
 /// 种子内的单个文件（后端无关）。

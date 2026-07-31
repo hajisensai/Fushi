@@ -44,6 +44,11 @@ void main() {
     expect(tail.contains('request.text,'), isTrue);
     expect(tail.contains('sentence: request.text,'), isTrue,
         reason: '整句作 root 卡句子横幅 + 制卡 sentence 字段');
+    expect(
+      tail.contains('autoRead: request.allowsAutomaticAudio,'),
+      isTrue,
+      reason: '剪贴板变化必须把禁止自动朗读的来源语义传进瞬态覆盖窗',
+    );
   });
 
   test('main.dart 启动顺序：dispatcher 先挂监听，再启剪贴板服务', () {

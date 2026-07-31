@@ -1,4 +1,6 @@
-﻿import 'package:flutter/foundation.dart';
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/anki/anki_view_model.dart';
@@ -6,6 +8,88 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
+
+/// Serializes Profile application with temporary draft persistence.
+///
+/// A scope check on its own is racy: Profile application may start after Save
+/// checks the scope, or Save may run against an intermediate AppModel while a
+/// Profile is being applied. Both operations therefore use this same lock.
+class ProfileDraftCoordinator {
+  Object _draftScope = Object();
+  Future<void> _tail = Future<void>.value();
+
+  Object get draftScope => _draftScope;
+
+  void invalidateDrafts() {
+    _draftScope = Object();
+  }
+
+  Future<T> _exclusive<T>(Future<T> Function() action) {
+    final Future<void> previous = _tail;
+    final Completer<void> release = Completer<void>();
+    _tail = release.future;
+
+    return (() async {
+      await previous;
+      try {
+        return await action();
+      } finally {
+        release.complete();
+      }
+    })();
+  }
+
+  Future<T> runProfileChange<T>(Future<T> Function() action) {
+    return _runProfileMutation((_ProfileDraftMutation mutation) async {
+      mutation.invalidateDrafts();
+      return action();
+    });
+  }
+
+  Future<T> _runProfileMutation<T>(
+    Future<T> Function(_ProfileDraftMutation mutation) action,
+  ) {
+    return _exclusive(() async {
+      final _ProfileDraftMutation mutation = _ProfileDraftMutation(this);
+      try {
+        return await action(mutation);
+      } finally {
+        mutation.finish();
+      }
+    });
+  }
+
+  Future<bool> saveDraftIfCurrent(
+    Object expectedScope,
+    Future<void> Function() save,
+  ) {
+    return _exclusive(() async {
+      if (!identical(expectedScope, _draftScope)) return false;
+      await save();
+      return true;
+    });
+  }
+}
+
+class _ProfileDraftMutation {
+  _ProfileDraftMutation(this._coordinator);
+
+  final ProfileDraftCoordinator _coordinator;
+  bool _invalidatesDrafts = false;
+
+  void invalidateDrafts() {
+    if (_invalidatesDrafts) return;
+    _invalidatesDrafts = true;
+    _coordinator.invalidateDrafts();
+  }
+
+  void finish() {
+    if (!_invalidatesDrafts) return;
+    // A dialog opened while settings were being applied observed an
+    // intermediate AppModel and must not survive the completed change.
+    _coordinator.invalidateDrafts();
+  }
+}
 
 class ProfileUiState {
   const ProfileUiState({
@@ -41,8 +125,11 @@ class ProfileUiState {
 }
 
 class ProfileViewModel extends StateNotifier<ProfileUiState> {
-  ProfileViewModel(this._repo, this._onProfileApplied)
-      : super(const ProfileUiState()) {
+  ProfileViewModel(
+    this._repo,
+    this._onProfileApplied,
+    this._profileDraftCoordinator,
+  ) : super(const ProfileUiState()) {
     _load();
   }
 
@@ -56,6 +143,12 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   final ProfileRepository _repo;
   final Future<void> Function() _onProfileApplied;
+  final ProfileDraftCoordinator _profileDraftCoordinator;
+
+  Future<T> _whileInvalidatingProfileDrafts<T>(
+    Future<T> Function() action,
+  ) =>
+      _profileDraftCoordinator.runProfileChange(action);
 
   Future<void> _load() async {
     state = state.copyWith(isLoading: true);
@@ -72,24 +165,26 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   Future<void> reload() => _load();
 
-  Future<void> switchProfile(int profileId) async {
-    await _repo.snapshotCurrentSettings(state.activeProfileId);
-    await _repo.setActiveProfileId(profileId);
-    await _repo.applyProfile(profileId);
-    state = state.copyWith(activeProfileId: profileId);
-    await _onProfileApplied();
-  }
+  Future<void> switchProfile(int profileId) =>
+      _whileInvalidatingProfileDrafts(() async {
+        await _repo.snapshotCurrentSettings(state.activeProfileId);
+        await _repo.setActiveProfileId(profileId);
+        await _repo.applyProfile(profileId);
+        state = state.copyWith(activeProfileId: profileId);
+        await _onProfileApplied();
+      });
 
-  Future<void> createProfile(String name) async {
-    await _repo.snapshotCurrentSettings(state.activeProfileId);
-    final newId = await _repo.createProfile(name);
-    await _repo.snapshotCurrentSettings(newId);
-    await _repo.setActiveProfileId(newId);
-    state = state.copyWith(
-      profiles: await _repo.getAllProfiles(),
-      activeProfileId: newId,
-    );
-  }
+  Future<void> createProfile(String name) =>
+      _whileInvalidatingProfileDrafts(() async {
+        await _repo.snapshotCurrentSettings(state.activeProfileId);
+        final newId = await _repo.createProfile(name);
+        await _repo.snapshotCurrentSettings(newId);
+        await _repo.setActiveProfileId(newId);
+        state = state.copyWith(
+          profiles: await _repo.getAllProfiles(),
+          activeProfileId: newId,
+        );
+      });
 
   Future<void> copyProfile(int sourceId, String newName) async {
     if (sourceId == state.activeProfileId) {
@@ -106,16 +201,25 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     state = state.copyWith(profiles: await _repo.getAllProfiles());
   }
 
-  Future<void> deleteProfile(int id) async {
-    final previousActiveId = state.activeProfileId;
-    await _repo.deleteProfile(id);
-    final profiles = await _repo.getAllProfiles();
-    final activeId = await _repo.getActiveProfileId();
-    state = state.copyWith(profiles: profiles, activeProfileId: activeId);
-    if (activeId != previousActiveId) {
-      await _onProfileApplied();
-    }
-  }
+  Future<void> deleteProfile(int id) => _profileDraftCoordinator
+          ._runProfileMutation((_ProfileDraftMutation mutation) async {
+        // This repository read must happen after acquiring the same lock used
+        // by switch/create/Save. State may still describe the previous Profile
+        // while an earlier switch has already updated the repository.
+        final int previousActiveId = await _repo.getActiveProfileId();
+        final bool deletesActiveProfile = id == previousActiveId;
+        if (deletesActiveProfile) {
+          mutation.invalidateDrafts();
+        }
+
+        await _repo.deleteProfile(id);
+        final profiles = await _repo.getAllProfiles();
+        final activeId = await _repo.getActiveProfileId();
+        state = state.copyWith(profiles: profiles, activeProfileId: activeId);
+        if (deletesActiveProfile && activeId != previousActiveId) {
+          await _onProfileApplied();
+        }
+      });
 
   Future<void> setMediaTypeBinding(
       ProfileMediaKind mediaType, int? profileId) async {
@@ -153,20 +257,31 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     String json, {
     ProfileImportMode mode = ProfileImportMode.createNew,
     int? targetProfileId,
-  }) async {
-    final int writtenId = await _repo.importProfileFromJson(
-      json,
-      mode: mode,
-      targetProfileId: targetProfileId,
-    );
-    state = state.copyWith(profiles: await _repo.getAllProfiles());
-    if (mode == ProfileImportMode.overwrite &&
-        writtenId == state.activeProfileId) {
-      await _repo.applyProfile(writtenId);
-      await _onProfileApplied();
-    }
-    return writtenId;
-  }
+  }) =>
+      _profileDraftCoordinator
+          ._runProfileMutation((_ProfileDraftMutation mutation) async {
+        // Do not decide this from [state] before entering the lock: a queued
+        // switch can make [targetProfileId] active before the overwrite runs.
+        final int activeProfileId = await _repo.getActiveProfileId();
+        final bool overwritesActiveProfile =
+            mode == ProfileImportMode.overwrite &&
+                targetProfileId == activeProfileId;
+        if (overwritesActiveProfile) {
+          mutation.invalidateDrafts();
+        }
+
+        final int writtenId = await _repo.importProfileFromJson(
+          json,
+          mode: mode,
+          targetProfileId: targetProfileId,
+        );
+        state = state.copyWith(profiles: await _repo.getAllProfiles());
+        if (overwritesActiveProfile && writtenId == activeProfileId) {
+          await _repo.applyProfile(writtenId);
+          await _onProfileApplied();
+        }
+        return writtenId;
+      });
 }
 
 final hibikiDatabaseProvider = Provider<HibikiDatabase>((ref) {
@@ -180,9 +295,22 @@ final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
   return ProfileRepository(db, ankiRepo);
 });
 
+/// 临时 UI 草稿所绑定的 Profile 应用代次。
+///
+/// 它刻意独立于 [ProfileViewModel] 的异步初始加载：首次加载期间
+/// `activeProfileId` 会从 -1 变成真实 id，但 AppModel 并未切换 Profile，
+/// 因而不应误杀用户刚输入的草稿。只有真正应用/替换 Profile 的操作才轮换
+/// 这个对象。它还串行化 Profile 应用与草稿保存，封住单次 scope guard 后的
+/// 异步交叉写入窗口。
+final profileDraftCoordinatorProvider = Provider<ProfileDraftCoordinator>(
+  (ref) => ProfileDraftCoordinator(),
+);
+
 final profileViewModelProvider =
     StateNotifierProvider<ProfileViewModel, ProfileUiState>((ref) {
   final repo = ref.watch(profileRepositoryProvider);
+  final ProfileDraftCoordinator profileDraftCoordinator =
+      ref.watch(profileDraftCoordinatorProvider);
   Future<void> onApplied() async {
     ref.invalidate(ankiViewModelProvider);
     final appModel = ref.read(appProvider);
@@ -194,5 +322,5 @@ final profileViewModelProvider =
     await ReaderHibikiSource.readerSettings?.refreshFromDb();
   }
 
-  return ProfileViewModel(repo, onApplied);
+  return ProfileViewModel(repo, onApplied, profileDraftCoordinator);
 });

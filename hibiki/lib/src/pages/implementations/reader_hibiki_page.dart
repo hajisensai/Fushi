@@ -520,6 +520,22 @@ html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
       window.flutter_inappwebview.callHandler('onImageTap',img.src);
     });
   });
+  // BUG-1280：spread 是第四种独立文档（继歌词 BUG-756、VN BUG-1195 之后），HTML 本身
+  // 不含正文 hoshiReader 的 onTap/onTapEmpty，自带的手势只有「点图片 → onImageTap」。
+  // 底栏一收起就没有唤出通道 → 看不到返回按钮 → 退不出这本书。
+  //
+  // 注意这条在修复前**分平台**：Windows 的 loadData 丢 baseUrl，onLoadStop 判 stale，
+  // 正文引擎从不注入，spread 页确实一个唤出通道都没有；Android 保留 baseUrl，判据放行，
+  // 正文引擎（含 onTapEmpty）被误注进来，反而"意外"有过一条受 tapEmptyToHideChrome
+  // 门控的通道。那条误注入已由 _onChapterLoadComplete 的 spread 守卫堵掉（见其注释），
+  // 所以两个平台现在都只剩下面这一条、且语义一致的专桥。
+  //
+  // 修法镜像歌词的 onLyricsTapEmpty：图片以外（letterbox 留白 / 页缝）的点击走专桥
+  // 给 Dart，由 Dart 判唤出还是收起（chrome 可见性的真值只在 Dart 侧）。
+  document.addEventListener('click', function(e){
+    if (e && e.target && e.target.tagName === 'IMG') return;
+    window.flutter_inappwebview.callHandler('onSpreadTapEmpty');
+  });
   var signaled = false;
   function signalReady(){
     if (signaled) return;
@@ -885,6 +901,24 @@ bool chaptersJsonCharCaliberIsCurrent(
   return true;
 }
 
+/// BUG-285 / BUG-162（TODO-575 路线·渐进重建 phase2）：位置落库参数归一化，从
+/// `_persistPosition` 凿出的纯函数（替换脆弱源码扫描守卫，真行为测见
+/// reader_position_save_args_test.dart）。
+/// - 分数进度量化为 normCharOffset ∈ [0,10000]（round 定点，恢复端 /10000 还原）。
+/// - charOffset >= 0 写精确锚；< 0（WebView 当帧算不出精确偏移的瞬态）必须映射成
+///   null——ReaderPositionRepository.save 收到 null 才会「同 section 保留既有精确
+///   锚、仅跨 section 失效」；透传 -1 会把精确锚覆盖成 -1，恢复/有声书跨章重锚
+///   退化到章首分数粒度（BUG-285 的回归形态）。
+({int normCharOffset, int? charOffset}) readerPositionSaveArgs({
+  required double progress,
+  required int charOffset,
+}) {
+  return (
+    normCharOffset: (progress * 10000).round(),
+    charOffset: charOffset >= 0 ? charOffset : null,
+  );
+}
+
 /// TODO-575 批1: 把 reader 里散落的 5 处 `rgba(...)` 生成统一成一个纯函数。
 ///
 /// 契约对齐（零行为变化）：通道一律 `(channel * 255.0).round().clamp(0, 255)`
@@ -1101,13 +1135,35 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   ({String? bookKey, String? title})? get lookupBookIdentity =>
       (bookKey: widget.bookKey, title: _book?.title);
   EpubSpreadMap? _spreadMap;
+
+  /// BUG-1280：**上一次交给 WebView 的文档是不是 spread 独立文档**
+  /// （[buildSpreadPageHtml]，两张整页 `<img>`，无正文 `hoshiReader`）。
+  ///
+  /// 写点是**三个**，正好是把文档交给 WebView 的三个装载原语：`_loadSpreadPage`
+  /// 置位，`_loadChapterDirectly` 与 **`_loadLyricsPage`** 复位。所以它跟踪的是
+  /// 「WebView 里现在是什么文档」，而不是「spread map 存不存在」
+  /// （`_spreadMap != null` 在整本书生命周期为真，分不出当前这一页是双页还是普通章）。
+  ///
+  /// **歌词那处最容易漏，本 PR 实现时就漏过**：不在 `_loadLyricsPage` 复位，从双页
+  /// 页面切进歌词模式时本标记会残留为真，`_onChapterLoadComplete` 的 spread 守卫把
+  /// 歌词分支一起挡掉 → 歌词永远不就绪。新增装载点必须同步写它。
+  ///
+  /// 存在的理由是 `onLoadStop` 的陈旧判据只比 URL 的 path，而 `_loadSpreadPage`
+  /// 传的 baseUrl 与 `_chapterUrl(_currentChapter)` 逐字相同 → 该判据**分不出**
+  /// spread 文档和正文章节，于是在保留 baseUrl 的平台上会把整份正文引擎注进
+  /// spread 文档。详见 `_onChapterLoadComplete` 的守卫注释。
+  bool _spreadDocumentLoaded = false;
   ReaderSettings? _settings;
   String? _extractDir;
 
   /// 库内 part 文件（extension）改状态的入口：扩展不被视作 State 子类实例成员，
   /// 直接调 @protected 的 setState 会报 invalid_use_of_protected_member。由本 State
-  /// 子类持有的这个转发器统一承接，零行为变化（仅转发）。
-  void _rebuild(VoidCallback fn) => setState(fn);
+  /// 子类持有的这个转发器统一承接。part 中的异步回调可能在 route dispose 后才返回；
+  /// 此时状态已不可再更新，统一在转发边界丢弃，避免晚到回调触发 setState-after-dispose。
+  void _rebuild(VoidCallback fn) {
+    if (!mounted) return;
+    setState(fn);
+  }
 
   /// 同 [_rebuild] 的理由：part 扩展不被视作 State 子类实例成员，直接读写
   /// `BaseSourcePageState` 的 @protected 弹窗栈成员会报 invalid_use_of_protected_member。
@@ -1218,6 +1274,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   List<int> _chapterCharCounts = [];
   List<int> _chapterCumulativeChars = [];
 
+  /// 书自带 CSS 的净化结果缓存（拦截器热路径，键 = 文件绝对路径）。与
+  /// [_sanitizedHtmlCache] 对称封顶：HTML 侧早有 LRU 上限，这侧此前无上限，
+  /// 超多 CSS 的书翻遍全书后按路径无限累积。CSS 不随主题/字号变
+  /// （_reloadWithCurrentSettings 整体清），逐出后重算无正确性影响。
+  static const int _kSanitizedCssCacheLimit = 24;
   final Map<String, Uint8List> _sanitizedCssCache = {};
 
   // BUG-270 (TODO-296 B): cross-chapter LRU cache of fully sanitized + style-
@@ -1229,11 +1290,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   static const int _kChapterHtmlCacheLimit = 6;
   final LinkedHashMap<String, Uint8List> _sanitizedHtmlCache =
       LinkedHashMap<String, Uint8List>();
-
-  /// TODO-perf（跨章·图片）：`EpubBook.isImageOnlyChapter` 每次都要 parse 整章 HTML，
-  /// 而它的答案在一次阅读会话里不变（章节文件不变）。按章号记忆化，避免拦截器热路径
-  /// （每次跨章 + 每次预取）重复解析。换书会连同本 State 一起重建。
-  final Map<int, bool> _imageOnlyChapterCache = <int, bool>{};
 
   /// TODO-perf（跨章·图片）预热配额（PR#469 审查）：`_prefetchAdjacentChapterImages`
   /// 把整解码后的位图塞进 WebView 图片缓存，整页插图书（1600×2400 PNG × N）在移动端
@@ -1252,6 +1308,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   String? _prefetchingHtmlPath;
 
   String? _cachedStyleTag;
+
+  /// 样式代际：[_invalidateStyleCache] 每次自增。真异步预取（读盘/净化期间样式
+  /// 可能变更）据此丢弃过期结果——styleTag 烤进缓存条目，旧代际结果入缓存=脏数据
+  /// （用户刚换的字号/主题被预取章悄悄换回旧样式）。
+  int _styleEpoch = 0;
 
   Timer? _saveDebounce;
 
@@ -1636,6 +1697,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       ErrorLogService.instance.log('ReaderHibiki._initBook', e, stack);
       if (!mounted) return;
       HibikiToast.show(msg: t.reader_open_failed);
+      // BUG-782 同款并发退出合流：init 失败自动退与用户手动退（PopScope 的
+      // onPopInvokedWithResult）可能同窗竞发，两条各自 pop 会连退两级把书架也
+      // 弹掉。共用同一把 _popInProgress 锁：用户已在退出就让用户路径收尾，这里
+      // 不再补刀；本路径 pop 后页面随即 dispose，锁无需复位。
+      if (_popInProgress) return;
+      _popInProgress = true;
       Navigator.of(context).pop();
     }
   }
@@ -1660,6 +1727,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // 并行起跑把 profile/settings 的 DB 往返与 EPUB 解析 isolate 重叠，缩短白屏。
     final Future<void> profileSettingsFuture = _resolveProfileAndSettings(db);
     final Future<_BookLocateResult> bookLocateFuture = _locateBookOnDisk(db);
+    // TODO-131 同思路：恢复位置只按 bookKey 查（与 profile / EPUB 解析 / 音频槽
+    // 均无依赖），此前却串行排在整条 init 链末尾。提前起跑与解析重叠，消费点仍在
+    // 原位置 await（书签跳转分支不消费）。ignore() 防「书不在盘上」等早退路径把
+    // 它留成未处理异步错误；正常路径 await 时错误照常抛给 _initBook 的兜底。
+    final Future<ReaderPosition?> savedPositionFuture =
+        widget.initialBookmarkJump != null
+            ? Future<ReaderPosition?>.value(null)
+            : ReaderPositionRepository(db).findByBookKey(widget.bookKey);
+    savedPositionFuture.ignore();
 
     await profileSettingsFuture;
     if (!mounted) return;
@@ -1670,6 +1746,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (!located.exists) {
       debugPrint('[ReaderHibiki] book ${widget.bookKey} not found on disk');
       HibikiToast.show(msg: t.book_file_not_found);
+      // 与 _initBook catch 同款 _popInProgress 合流（防与用户手动退出竞发连退两级）。
+      if (_popInProgress) return;
+      _popInProgress = true;
       Navigator.of(context).pop();
       return;
     }
@@ -1711,8 +1790,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // 使书架总字数与后续统计随之对齐 hoshi。
       _applyCharCounts(charsFromDb);
       if (bookRow != null &&
-          !chaptersJsonCharCaliberIsCurrent(
+          chaptersJsonCharCaliberIsCurrent(
               bookRow.chaptersJson, _book!.chapters.length)) {
+        // 当前口径计数兼作 isImageOnlyChapter 的免解析短路提示（方向安全性见
+        // [EpubBook.setChapterCharCountHints]）；旧口径方向无保证，不注入，
+        // 等后台重算落定后由 _recomputeCharCountsInBackground 补上。
+        _book!.setChapterCharCountHints(charsFromDb);
+      } else {
         _recomputeCharCountsInBackground();
       }
     } else {
@@ -1767,8 +1851,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           'charAnchor=$_initialCharOffset '
           'preserveSavedPosition=$_suppressPositionPersist');
     } else {
-      final ReaderPositionRepository repo = ReaderPositionRepository(db);
-      final ReaderPosition? saved = await repo.findByBookKey(widget.bookKey);
+      final ReaderPosition? saved = await savedPositionFuture;
       if (!mounted) return;
       debugPrint('[ReaderHibiki] restore lookup: bookKey=${widget.bookKey} '
           'saved=$saved section=${saved?.sectionIndex} '
@@ -1871,6 +1954,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         return;
       }
       _applyCharCounts(counts);
+      // 新口径计数落定：补注 isImageOnlyChapter 的免解析短路提示（开书时旧口径
+      // 未注入的书由此补齐，后续 spread 重建/预取不再逐章解析）。
+      book.setChapterCharCountHints(counts);
       _sessionMaxAbsoluteChars = _absoluteCharPosition(_lastProgressValue);
       // TODO-1192: 把新口径计数回写 chaptersJson（含 charCaliber 标记），使书架总
       // 字数与下次开书都用新口径，避免每次开书都重算（旧书 / v1 书一次性升级）。
@@ -2177,6 +2263,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           );
           break;
         case CaretSurface.none:
+        // video 面属于视频页，阅读器不可能持有——防御性忽略。
+        case CaretSurface.video:
           break;
       }
     }
@@ -2572,6 +2660,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   void _invalidateStyleCache() {
     _cachedStyleTag = null;
+    _styleEpoch++;
     // BUG-270: cached chapter HTML bakes in the styleTag, so any style change
     // must drop it — the next served chapter then rebuilds with the fresh tag.
     _sanitizedHtmlCache.clear();
@@ -3083,6 +3172,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _focusOwnership.reclaim(FocusReclaimCause.popupRendered);
     }
   }
+
+  /// BUG-1071 复诉：上面的焦点 reclaim 只在**弹窗渲染那一刻**成立。用户与弹窗交互
+  /// 一次（滚动看释义 / 点释义 / 点发音）OS 焦点就回到原生 WebView，之后按键必然
+  /// 再次失效；而绑到「关闭词典」的**鼠标键**从一开始就只有 `onPointerSeek` 一个
+  /// 消费者，只覆盖「点在弹窗矩形之外的正文区」——点词后弹窗恰好贴在光标旁，按侧键
+  /// 时指针几乎必然落在弹窗上，事件被弹窗吃掉，全程无反应。
+  ///
+  /// 故让弹窗自己把这些输入交回来：键盘与鼠标同一条通道，token 表由注册表当前绑定
+  /// 实时导出（改键立即生效）。
+  @override
+  ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.reader;
+
+  @override
+  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
+      const <ShortcutAction>{ShortcutAction.readerDismissDict};
 
   // ── DictionaryCaretHost ───────────────────────────────────────────
   // The reader is the host for its [_caret] state machine: it supplies the

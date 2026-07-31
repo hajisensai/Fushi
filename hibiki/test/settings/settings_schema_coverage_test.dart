@@ -300,6 +300,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Background opacity': 'test/media/video/video_subtitle_style_test.dart',
   'video/Vertical position':
       'test/media/video/video_subtitle_style_test.dart + test/pages/video_subtitle_push_up_guard_test.dart',
+  // PR#610「主/副字幕垂直位置分开调节」新增的副字幕位置滑杆（与上面主字幕
+  // 'Vertical position' 同量纲、各自独立）。写 prefsRepo（changed=true），生效点在
+  // VideoSubtitleOverlay 副字幕层的真几何（_layerBaseline），需真播放器 + media_kit，
+  // 本 harness 的 video 分组无适用探针（主字幕位置同理登记）。由专项测试四层咬住：
+  // overlay 真几何两层各吃各自基线 / 改一层不牵动另一层 / null=跟随主字幕 /
+  // 持久化 round-trip，外加「设置滑杆 → style → 视频页 → overlay」接线源码守卫
+  // （群④）——否则删掉滑杆或断掉 layout.part.dart 传参时几何测试照样全绿。
+  'video/Secondary subtitle position':
+      'test/media/video/video_subtitle_secondary_position_test.dart '
+          '(①②③ overlay 真几何/跟随/持久化 + ④ 设置滑杆→视频页→overlay 接线守卫)',
   'video/Show danmaku':
       'test/media/video/video_danmaku_settings_test.dart + test/pages/video_danmaku_wiring_guard_test.dart',
   'video/Online Dandanplay match':

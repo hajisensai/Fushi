@@ -14,10 +14,11 @@ import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 
 /// 制卡快捷键（用户请求：「点那个加号的动作」要能用键盘触发，app 内 / app 外 / 浏览器都要）。
 ///
-/// 三处表面共用同一份 popup.js（加号只有那一颗 `.mine-button`），所以只做**一个**动作
-/// [ShortcutAction.popupMineEntry]，按**键盘焦点归属**分三条互斥执行路径：
+/// 各表面复用同一套 popup.js 制卡入口（加号只有那一颗 `.mine-button`），
+/// 按**键盘焦点归属**分三条互斥执行路径：
 ///   · app 内 → Dart 派发（阅读器沿用 readerCreateCardFromPopup；视频页本次补上）
-///   · app 外裸 WebView2 → 绑定序列化注入 popup.js，JS 自己判定
+///   · app 外裸 WebView2 → 只有点入后可聚焦的剪贴板面板能收键；瞬态覆盖窗
+///     带 WS_EX_NOACTIVATE，保持无快捷键
 ///   · 浏览器扩展 → 没有注入通道，吃 popup.js 内置默认
 ///
 /// 本文件锁两件事：绑定表序列化的**值**，以及三条路径「各归各」的**接线**。
@@ -151,6 +152,21 @@ void main() {
   });
 
   group('接线守卫（源码扫描）', () {
+    test('README 区分可聚焦面板与 NOACTIVATE 瞬态窗，且两份镜像一致', () {
+      final String tools =
+          File('../tools/browser-extension/README.md').readAsStringSync();
+      final String bundled =
+          File('assets/browser_extension/README.md').readAsStringSync();
+      expect(bundled, tools, reason: '扩展 README 的 tools 源与 app 内镜像必须同步');
+      expect(tools, contains('只有在用户点入并获得键盘焦点后'));
+      expect(tools, contains('WS_EX_NOACTIVATE'));
+      expect(tools, contains('没有制卡快捷键'));
+      expect(tools, contains('不注册全局热键'));
+      expect(tools, isNot(contains('三端同源')), reason: '共享渲染代码不等于三个表面都能收到键盘事件');
+      expect(tools, isNot(contains('app 内 / app 外全局查词窗共用同一个可改键动作')),
+          reason: '瞬态 no-activate 查词窗没有快捷键，不能宣称 app 外全局共用');
+    });
+
     test('popup.js：读注入表、null 关掉自己，且只复用既有的加号点击入口', () {
       final String js = File('assets/popup/popup.js').readAsStringSync();
       expect(js, contains('window.__hoshiPopupKeyBindings'));

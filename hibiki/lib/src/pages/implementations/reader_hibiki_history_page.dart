@@ -60,6 +60,7 @@ import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:hibiki/src/sync/cloud_remote_book_client.dart';
+import 'package:hibiki/src/sync/deletion_disclosure.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
@@ -124,7 +125,7 @@ class ReaderHibikiHistoryPage extends HistoryReaderPage {
   /// 两个入口仍复用本页的搜索、排序、标签、合集、进度和删除管线，不另建数据表。
   final bool mangaOnly;
 
-  /// 库页视图导航条（由 [MediaLibraryShell] 传入，落在页头 bottom 槽）。
+  /// 库页视图导航条（由 [MediaLibraryShell] 传入，作为页头主内容与动作同一行）。
   /// 本页作为独立页面使用时为 null，页头与此前逐像素一致。
   final Widget? navigation;
 
@@ -636,62 +637,69 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _buildPageHeader() {
+    final List<Widget> actions = <Widget>[
+      // 宽窗（非 compact）时动作展开成「图标+文字」药丸（与视频 tab 页头一致，
+      // 用户 mockup：导入书籍 / 来源 / 合集 / 阅读统计带文字外显）；窄窗回落纯图标。
+      // 漫画库和书架是同一页面的两种壳，但导入的是两种载体，故按钮指向两个不同
+      // 的对话框——不再是「同一个框换个 label」。
+      if (_mangaOnly)
+        MangaHibikiSource.instance.buildMangaImportButton(
+          context: context,
+          ref: ref,
+          appModel: appModel,
+          focusId: kShelfImportFocusId,
+          label: t.manga_import_action,
+        )
+      else
+        mediaSource.buildBookImportButton(
+          context: context,
+          ref: ref,
+          appModel: appModel,
+          focusId: kShelfImportFocusId,
+          label: t.srt_import,
+        ),
+      // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
+      // 按钮就是同一件事的两个入口。书架独立使用（无导航条）时才保留书籍来源按钮；
+      // 漫画入口由专属导入对话框负责，不复用书籍来源管理。
+      if (_pageWidget.navigation == null && !_mangaOnly)
+        _headerAction(
+          tooltip: t.media_source_manage_title,
+          icon: Icons.folder_copy_outlined,
+          onTap: _openManageSources,
+        ),
+      // 漫画「在线目录」入口已从书架移除（属漫画域，入口收敛到下载页）；
+      // mokuro.moe 下载队列监听仍保留在 initState——下载页触发的后台落库
+      // 依赖它刷新书架。
+      // 视频导入入口**只属于视频 tab**（HomeVideoPage），书架不放视频导入——
+      // 书架是书的地方。这里保留编译期常量门控（默认关）只为旧调试路径，运行时
+      // 实验开关不再在书架放出视频导入（用户反馈：书架不该有视频导入入口）。
+      if (kVideoImportEnabled)
+        _headerAction(
+          tooltip: t.video_import_action,
+          icon: Icons.movie_outlined,
+          onTap: _openVideoImport,
+        ),
+      _headerAction(
+        tooltip: t.collections,
+        icon: Icons.collections_bookmark_outlined,
+        onTap: _openCollections,
+      ),
+      _headerAction(
+        tooltip: t.reading_statistics,
+        icon: Icons.bar_chart_outlined,
+        onTap: _openReadingStatistics,
+      ),
+    ];
+    final Widget? navigation = _pageWidget.navigation;
+    if (navigation != null) {
+      return HibikiPageHeader.customTitle(
+        title: navigation,
+        actions: actions,
+      );
+    }
     return HibikiPageHeader(
       title: _mangaOnly ? t.manga_library : t.books,
-      bottom: _pageWidget.navigation,
-      actions: <Widget>[
-        // 宽窗（非 compact）时动作展开成「图标+文字」药丸（与视频 tab 页头一致，
-        // 用户 mockup：导入书籍 / 来源 / 合集 / 阅读统计带文字外显）；窄窗回落纯图标。
-        // 漫画库和书架是同一页面的两种壳，但导入的是两种载体，故按钮指向两个不同
-        // 的对话框——不再是「同一个框换个 label」。
-        if (_mangaOnly)
-          MangaHibikiSource.instance.buildMangaImportButton(
-            context: context,
-            ref: ref,
-            appModel: appModel,
-            focusId: kShelfImportFocusId,
-            label: t.manga_import_action,
-          )
-        else
-          mediaSource.buildBookImportButton(
-            context: context,
-            ref: ref,
-            appModel: appModel,
-            focusId: kShelfImportFocusId,
-            label: t.srt_import,
-          ),
-        // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
-        // 按钮就是同一件事的两个入口。书架独立使用（无导航条）时才保留书籍来源按钮；
-        // 漫画入口由专属导入对话框负责，不复用书籍来源管理。
-        if (_pageWidget.navigation == null && !_mangaOnly)
-          _headerAction(
-            tooltip: t.media_source_manage_title,
-            icon: Icons.folder_copy_outlined,
-            onTap: _openManageSources,
-          ),
-        // 漫画「在线目录」入口已从书架移除（属漫画域，入口收敛到下载页）；
-        // mokuro.moe 下载队列监听仍保留在 initState——下载页触发的后台落库
-        // 依赖它刷新书架。
-        // 视频导入入口**只属于视频 tab**（HomeVideoPage），书架不放视频导入——
-        // 书架是书的地方。这里保留编译期常量门控（默认关）只为旧调试路径，运行时
-        // 实验开关不再在书架放出视频导入（用户反馈：书架不该有视频导入入口）。
-        if (kVideoImportEnabled)
-          _headerAction(
-            tooltip: t.video_import_action,
-            icon: Icons.movie_outlined,
-            onTap: _openVideoImport,
-          ),
-        _headerAction(
-          tooltip: t.collections,
-          icon: Icons.collections_bookmark_outlined,
-          onTap: _openCollections,
-        ),
-        _headerAction(
-          tooltip: t.reading_statistics,
-          icon: Icons.bar_chart_outlined,
-          onTap: _openReadingStatistics,
-        ),
-      ],
+      actions: actions,
     );
   }
 
@@ -1690,6 +1698,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       },
       onDeleteMembersMedia: _deleteCollectionMembersMedia,
       deleteMembersCheckboxLabel: t.delete_collection_also_books,
+      deleteMembersDisclosure: buildDeletionDisclosure(
+        target: DeletionDisclosureTarget.shelfBook,
+      ),
     );
   }
 
@@ -1841,12 +1852,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Future<DeleteScope?> _confirmMediaDelete({
     required String title,
     required String message,
+    DeletionDisclosure? disclosure,
   }) async {
     final DeleteScope? scope = await showAppDialog<DeleteScope>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: title,
         message: message,
+        disclosure: disclosure,
         onConfirm: (DeleteScope s) => Navigator.pop(ctx, s),
       ),
     );

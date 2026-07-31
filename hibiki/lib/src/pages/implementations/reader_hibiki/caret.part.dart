@@ -650,6 +650,9 @@ extension _ReaderCaret on _ReaderHibikiPageState {
       case CaretSurface.popup:
         _caretTopPopupState?.caretExit();
         break;
+      case CaretSurface.video:
+        // 阅读器页面不可能持有 video 面（它属于视频页），防御性 no-op。
+        break;
     }
     _rebuild(() {
       _caretSurface = CaretSurface.none;

@@ -8,6 +8,7 @@ import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
 import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
+import 'package:hibiki/src/sync/sync_activity.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
@@ -31,7 +32,48 @@ final ValueNotifier<bool> syncInProgress = ValueNotifier<bool>(false);
 /// the single-book auto-sync path, which has no phase structure → indeterminate).
 final ValueNotifier<SyncProgress?> syncProgress =
     ValueNotifier<SyncProgress?>(null);
+
+/// 在飞的这轮同步的**身份**。null = 没有同步在跑。
+///
+/// [syncProgress] 只在编排器真进入某个阶段后才有值，而每轮同步在那之前还有一整段
+/// 准备期（等互斥锁 → 读开关 → 冷却判断 → 走网络鉴权），合集/单本两条轻量路径更是
+/// 从头到尾都没有阶段结构。缺了这一层，界面上「在准备」「在跑轻量同步」「所有通道
+/// 都没认证过、正在空转」三种现实完全同形。UI 拿不到阶段 tick 时退化到这一层。
+final ValueNotifier<SyncActivity?> syncActivity =
+    ValueNotifier<SyncActivity?>(null);
+
+/// 最近结束的那轮同步的**结局**，供设置页非打断式地显示「上次同步」。
+///
+/// 在此之前，通道全没通过认证（什么也没同步）与正常跑完在 UI 上无从区分：两者都是
+/// 进度条转一会儿然后消失。自动路径尤其不能靠 SnackBar 补救（退出书同步必须静默，
+/// TODO-132 诉求B），所以结局落成状态而不是提示。
+final ValueNotifier<SyncRunOutcome?> lastSyncOutcome =
+    ValueNotifier<SyncRunOutcome?>(null);
 final Set<String> _syncingIds = {};
+
+/// 登记一轮同步开始：递增在飞计数并公布它的身份。
+///
+/// 四条同步路径（开机自动 sweep / 手动全量 / 合集轻量 / 单本）**必须**经这一对
+/// [_beginSyncActivity]、[_endSyncActivity] 维护全局状态，不得再各自手写 notifier
+/// 赋值。之前那份四处重复正是「合集与单本路径的 finally 漏清 [syncProgress]」的
+/// 来源：全量 sweep 结束时若还有别的同步在飞就不清，而那两条路径自己也不清，于是
+/// 上一轮的阶段文字会残留到下一轮开头闪一下。
+void _beginSyncActivity(SyncActivity activity) {
+  _activeSyncs++;
+  syncActivity.value = activity;
+  syncInProgress.value = true;
+}
+
+/// 登记一轮同步结束：公布结局，并在最后一个在飞同步退出时清空瞬时状态。
+void _endSyncActivity(SyncRunOutcome outcome) {
+  _activeSyncs--;
+  lastSyncOutcome.value = outcome;
+  syncInProgress.value = _activeSyncs > 0;
+  if (_activeSyncs == 0) {
+    syncProgress.value = null;
+    syncActivity.value = null;
+  }
+}
 
 // HBK-AUDIT-049: cloud backends (GoogleDrive/Dropbox/OneDrive/WebDAV/SMB) are
 // process-wide singletons holding mutable shared state (_accessToken,
@@ -285,19 +327,27 @@ Future<void> _runAutoSyncAll({
 }) async {
   if (!_syncingIds.add('__all__')) return;
 
-  _activeSyncs++;
-  syncInProgress.value = true;
+  _beginSyncActivity(const SyncActivity(SyncActivityKind.fullSweep));
+  // 默认 failed：只有走到判定点才会被改写，异常路径原样留下「失败了」这个事实。
+  SyncOutcomeReason reason = SyncOutcomeReason.failed;
+  int channelsRun = 0;
 
   try {
     // HBK-AUDIT-049: serialize the actual sync work so it never overlaps a
     // per-book sync mutating the same singleton backend state.
     await _autoSyncMutex.withLock(() async {
       final repo = SyncRepository(db);
-      if (!await repo.isAutoSyncEnabled()) return;
+      if (!await repo.isAutoSyncEnabled()) {
+        reason = SyncOutcomeReason.autoDisabled;
+        return;
+      }
 
       final lastSync = await repo.getLastSyncMs();
       final now = DateTime.now().millisecondsSinceEpoch;
-      if (lastSync != null && (now - lastSync) < _syncCooldownMs) return;
+      if (lastSync != null && (now - lastSync) < _syncCooldownMs) {
+        reason = SyncOutcomeReason.cooledDown;
+        return;
+      }
 
       // option B 双通道：依次跑云备份通道 + 互联通道（若启用），互不排斥。每条通道
       // 各自认证成功才实际跑；未配置的通道 no-op（_runSyncChannel 返回 null）。
@@ -318,10 +368,16 @@ Future<void> _runAutoSyncAll({
           onProgress: (SyncProgress p) => syncProgress.value = p,
         );
         if (report == null) continue;
+        channelsRun++;
         logSyncReportErrors(report);
         await onPostRun?.call(report);
         onReport?.call(report, channel.backend);
       }
+      // 一条通道都没跑起来 = 本轮什么也没同步。以前这里静默收尾，界面上与「正常
+      // 跑完」完全同形（进度条转一会儿消失），用户无从判断到底同没同步。
+      reason = channelsRun > 0
+          ? SyncOutcomeReason.completed
+          : SyncOutcomeReason.noChannels;
     });
   } catch (e) {
     developer.log(
@@ -331,9 +387,12 @@ Future<void> _runAutoSyncAll({
     );
   } finally {
     _syncingIds.remove('__all__');
-    _activeSyncs--;
-    syncInProgress.value = _activeSyncs > 0;
-    if (_activeSyncs == 0) syncProgress.value = null;
+    _endSyncActivity(SyncRunOutcome(
+      kind: SyncActivityKind.fullSweep,
+      reason: reason,
+      channelsRun: channelsRun,
+      finishedAt: DateTime.now().millisecondsSinceEpoch,
+    ));
   }
 }
 
@@ -381,8 +440,9 @@ Future<ManualSyncResult> runManualFullSync({
   if (!_syncingIds.add('__all__')) {
     return const ManualSyncResult(ManualSyncOutcome.busy);
   }
-  _activeSyncs++;
-  syncInProgress.value = true;
+  _beginSyncActivity(const SyncActivity(SyncActivityKind.fullSweep));
+  SyncOutcomeReason reason = SyncOutcomeReason.failed;
+  int channelsRun = 0;
   try {
     return await _autoSyncMutex.withLock(() async {
       final repo = SyncRepository(db);
@@ -412,14 +472,17 @@ Future<ManualSyncResult> runManualFullSync({
           },
         );
         if (report == null) continue;
+        channelsRun++;
         logSyncReportErrors(report);
         await onPostRun?.call(report);
         merged.mergeFrom(report);
         channelReports.add(ManualSyncChannelReport(channel.backend, report));
       }
       if (channelReports.isEmpty) {
+        reason = SyncOutcomeReason.noChannels;
         return const ManualSyncResult(ManualSyncOutcome.notConfigured);
       }
+      reason = SyncOutcomeReason.completed;
       return ManualSyncResult(
         ManualSyncOutcome.completed,
         merged,
@@ -428,9 +491,12 @@ Future<ManualSyncResult> runManualFullSync({
     });
   } finally {
     _syncingIds.remove('__all__');
-    _activeSyncs--;
-    syncInProgress.value = _activeSyncs > 0;
-    if (_activeSyncs == 0) syncProgress.value = null;
+    _endSyncActivity(SyncRunOutcome(
+      kind: SyncActivityKind.fullSweep,
+      reason: reason,
+      channelsRun: channelsRun,
+      finishedAt: DateTime.now().millisecondsSinceEpoch,
+    ));
   }
 }
 
@@ -499,12 +565,16 @@ Future<void> _runCollectionsSync({required HibikiDatabase db}) async {
     return;
   }
   if (!_syncingIds.add('__collections__')) return;
-  _activeSyncs++;
-  syncInProgress.value = true;
+  _beginSyncActivity(const SyncActivity(SyncActivityKind.collections));
+  SyncOutcomeReason reason = SyncOutcomeReason.failed;
+  int channelsRun = 0;
   try {
     await _autoSyncMutex.withLock(() async {
       final repo = SyncRepository(db);
-      if (!await repo.isAutoSyncEnabled()) return;
+      if (!await repo.isAutoSyncEnabled()) {
+        reason = SyncOutcomeReason.autoDisabled;
+        return;
+      }
       for (final SyncChannel channel
           in await enabledSyncChannelBackends(repo)) {
         final SyncBackend backend = channel.backend;
@@ -530,8 +600,12 @@ Future<void> _runCollectionsSync({required HibikiDatabase db}) async {
           onLocalAudioImported: (LocalAudioPackageContents _) async {},
         );
         final SyncRunReport report = await orchestrator.runCollectionsOnly();
+        channelsRun++;
         logSyncReportErrors(report);
       }
+      reason = channelsRun > 0
+          ? SyncOutcomeReason.completed
+          : SyncOutcomeReason.noChannels;
     });
   } catch (e) {
     developer.log(
@@ -541,8 +615,12 @@ Future<void> _runCollectionsSync({required HibikiDatabase db}) async {
     );
   } finally {
     _syncingIds.remove('__collections__');
-    _activeSyncs--;
-    syncInProgress.value = _activeSyncs > 0;
+    _endSyncActivity(SyncRunOutcome(
+      kind: SyncActivityKind.collections,
+      reason: reason,
+      channelsRun: channelsRun,
+      finishedAt: DateTime.now().millisecondsSinceEpoch,
+    ));
   }
 }
 
@@ -557,8 +635,9 @@ Future<void> _runAutoSync({
   if (_syncingIds.contains('__all__')) return;
   if (!_syncingIds.add(mediaIdentifier)) return;
 
-  _activeSyncs++;
-  syncInProgress.value = true;
+  _beginSyncActivity(const SyncActivity(SyncActivityKind.singleBook));
+  SyncOutcomeReason reason = SyncOutcomeReason.failed;
+  int channelsRun = 0;
 
   try {
     // HBK-AUDIT-049: serialize against any other in-flight auto-sync (other
@@ -566,10 +645,20 @@ Future<void> _runAutoSync({
     // token/api/folder cache is never mutated concurrently.
     await _autoSyncMutex.withLock(() async {
       final repo = SyncRepository(db);
-      if (!await repo.isAutoSyncEnabled()) return;
+      if (!await repo.isAutoSyncEnabled()) {
+        reason = SyncOutcomeReason.autoDisabled;
+        return;
+      }
 
       final book = await db.getEpubBook(bookKey);
-      if (book == null) return;
+      if (book == null) {
+        // 书没了（导入记录被删/清库）——本轮无对象可同步，与「跑完了」不是一回事。
+        reason = SyncOutcomeReason.nothingToSync;
+        return;
+      }
+      // 拿到书才有书名可显示；入口时只有 mediaIdentifier。
+      syncActivity.value =
+          const SyncActivity(SyncActivityKind.singleBook).withTitle(book.title);
 
       final syncStats = await repo.isSyncStatsEnabled();
       final syncAudioBook = await repo.isSyncAudioBookEnabled();
@@ -587,6 +676,7 @@ Future<void> _runAutoSync({
         await backend.restoreAuth(repo);
         if (!await backend.isAuthenticated) continue;
 
+        channelsRun++;
         final manager = SyncManager(db: db, backend: backend);
         final result = await manager.syncBook(
           book: book,
@@ -621,6 +711,9 @@ Future<void> _runAutoSync({
           onReport(report, backend);
         }
       }
+      reason = channelsRun > 0
+          ? SyncOutcomeReason.completed
+          : SyncOutcomeReason.noChannels;
     });
   } catch (e) {
     developer.log(
@@ -630,7 +723,11 @@ Future<void> _runAutoSync({
     );
   } finally {
     _syncingIds.remove(mediaIdentifier);
-    _activeSyncs--;
-    syncInProgress.value = _activeSyncs > 0;
+    _endSyncActivity(SyncRunOutcome(
+      kind: SyncActivityKind.singleBook,
+      reason: reason,
+      channelsRun: channelsRun,
+      finishedAt: DateTime.now().millisecondsSinceEpoch,
+    ));
   }
 }
