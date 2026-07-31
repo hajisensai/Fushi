@@ -2764,5 +2764,6 @@
   "manga_import_detected_message": "「$name」是漫画文件，将走漫画导入流程，而不是书籍导入流程。",
   "selection_web_search": "网页搜索",
   "selection_web_search_unavailable": "没有可用的网页搜索应用。",
-  "selection_share_failed": "无法打开分享面板。"
+  "selection_share_failed": "无法打开分享面板。",
+  "video_setting_subtitle_position_secondary": "副字幕垂直位置"
 }

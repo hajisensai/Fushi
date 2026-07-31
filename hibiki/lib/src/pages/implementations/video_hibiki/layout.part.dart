@@ -387,6 +387,11 @@ extension _VideoLayout on _VideoHibikiPageState {
                           ),
                           backgroundOpacity: _subtitleStyle.backgroundOpacity,
                           bottomPadding: _subtitleStyle.bottomPadding,
+                          // 副字幕独立位置：null = 用户没单独调过，overlay 内回落到
+                          // bottomPadding（历史行为）。非 null 时副字幕层用自己的基线，
+                          // 主字幕位置滑杆不再把副字幕一起挪走。
+                          secondaryBottomPadding:
+                              _subtitleStyle.secondaryBottomPadding,
                           // 控制条可见性驱动动态避让（TODO-129）：进度条出现时字幕底缘对
                           // 进度条上缘取下限（max，非加法——BUG-226 防顶飞）、隐藏落回。全屏
                           // 复用同一 builder + ValueNotifier，故窗口与全屏都跟随（BUG-120 同源）。
