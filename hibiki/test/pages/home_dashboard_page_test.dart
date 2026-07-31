@@ -1105,7 +1105,7 @@ void main() {
       );
     });
 
-    testWidgets('已连接但零关联：说清「所以什么都不会同步」，不是一切正常', (WidgetTester tester) async {
+    testWidgets('已连接但没有本地历史：不再显示泛化的零关联警告', (WidgetTester tester) async {
       useWideSurface(tester);
       await connect();
       await tester.pumpWidget(buildApp());
@@ -1117,7 +1117,38 @@ void main() {
       // 从未同步必须与「同步过零待办」区分：成功即删 outbox 行，两者否则同形。
       expect(
           find.textContaining(t.media_tracking_never_synced), findsOneWidget);
-      expect(find.text(t.media_tracking_unlinked_hint), findsOneWidget);
+      expect(find.text(t.media_tracking_no_local_history), findsOneWidget);
+      expect(find.text(t.media_tracking_watched_show), findsOneWidget);
+    });
+
+    testWidgets('以前看完但未映射的视频会明确列为需要手动关联', (WidgetTester tester) async {
+      useWideSurface(tester);
+      await connect();
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'old-video',
+          title: '以前看过的番剧',
+          videoPath: 'C:/video/old.mkv',
+          completedAt: Value<DateTime?>(DateTime.now()),
+        ),
+      );
+
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('以前看过的番剧'), findsOneWidget);
+      expect(
+        find.text(
+          '${t.media_tracking_anime} · '
+          '${t.media_tracking_manual_required}',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(t.media_tracking_manual_required_count(n: 1)),
+        findsOneWidget,
+      );
     });
 
     testWidgets('已关联条目列出本地标题 + Bangumi 条目名，并给出打开入口',
@@ -1146,7 +1177,7 @@ void main() {
         find.textContaining(t.media_tracking_linked_count(n: 1)),
         findsOneWidget,
       );
-      expect(find.text(t.media_tracking_unlinked_hint), findsNothing);
+      expect(find.text(t.media_tracking_no_local_history), findsNothing);
     });
 
     testWidgets('上报失败：退避窗口内也照说失败原因', (WidgetTester tester) async {

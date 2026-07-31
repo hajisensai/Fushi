@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1235 条。点号进各自文件。
+> 共 1236 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1290](bugs/BUG-1290-bangumi-dashboard-history.md) | ✅ | ✅ | Bangumi 首页卡把映射误当观看历史且不列待手动关联条目 |
 | [BUG-1289](bugs/BUG-1289-youtube-caption-track-labels-ambiguous.md) | ✅ | ✅ | YouTube 字幕轨标签退化成语言码且人工/ASR 重名，无法分辨选哪条 |
 | [BUG-1288](bugs/BUG-1288-android-video-resume-seek-overwritten.md) | ✅ | ✅ | 安卓视频进入后被踢回开头：恢复 seek 被 loadfile 覆盖 |
 | [BUG-1287](bugs/BUG-1287-gal-loopback-flush-no-settle.md) | ✅ | ✅ | galgame 查词/制卡时语音只到句子前半段：loopback 提前收束后不再补全 |

@@ -26,6 +26,7 @@ class _FakeBangumiApi implements BangumiTrackingApi {
   final List<int> patchSubjectIds = <int>[];
   final List<List<int>> episodePatches = <List<int>>[];
   List<BangumiSubject> searchResults = const <BangumiSubject>[];
+  List<BangumiWatchedItem> watched = const <BangumiWatchedItem>[];
   final List<({String keyword, int subjectType})> searches =
       <({String keyword, int subjectType})>[];
 
@@ -38,6 +39,13 @@ class _FakeBangumiApi implements BangumiTrackingApi {
   Future<BangumiUser> getMe() async {
     _throwIfNeeded();
     return const BangumiUser(username: 'alice', nickname: 'Alice');
+  }
+
+  @override
+  Future<List<BangumiWatchedItem>> getWatchedAnime(String username) async {
+    _throwIfNeeded();
+    expect(username, 'alice');
+    return watched;
   }
 
   @override
@@ -130,6 +138,29 @@ void main() {
   tearDown(() async {
     preferences.dispose();
     await db.close();
+  });
+
+  test('账号入口直接读取 Bangumi 全量看过，不从本地映射反推', () async {
+    api.watched = const <BangumiWatchedItem>[
+      BangumiWatchedItem(
+        subject: BangumiSubject(
+          id: 42,
+          type: 2,
+          name: 'Old anime',
+          nameCn: '以前看过的番剧',
+          platform: 'TV',
+          episodeCount: 12,
+          volumeCount: 0,
+        ),
+        episodeProgress: 12,
+        updatedAt: null,
+      ),
+    ];
+
+    final List<BangumiWatchedItem> watched = await service.loadWatchedAnime();
+
+    expect(await repository.listMappings(), isEmpty);
+    expect(watched.single.subject.displayName, '以前看过的番剧');
   });
 
   test('anime sync creates doing collection and marks all episodes to progress',

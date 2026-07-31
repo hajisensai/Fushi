@@ -74,6 +74,29 @@ class BangumiUserCollection {
   final int volumeProgress;
 }
 
+/// Bangumi 账号收藏列表中的一条「看过」动画。
+///
+/// 这不是本地映射：用户在接入 Hibiki 之前已经在 Bangumi 标记过的条目也会出现，
+/// 正是首页账号入口需要展示的完整远端历史。
+class BangumiWatchedItem {
+  const BangumiWatchedItem({
+    required this.subject,
+    required this.episodeProgress,
+    required this.updatedAt,
+  });
+
+  final BangumiSubject subject;
+  final int episodeProgress;
+  final DateTime? updatedAt;
+}
+
+typedef BangumiWatchedPage = ({
+  List<BangumiWatchedItem> items,
+  int total,
+  int limit,
+  int offset,
+});
+
 Map<String, dynamic>? _map(dynamic value) {
   if (value is! Map) return null;
   return value.map(
@@ -159,6 +182,38 @@ BangumiUserCollection parseBangumiCollection(String body) {
   );
 }
 
+BangumiWatchedPage parseBangumiWatchedPage(String body) {
+  final Map<String, dynamic>? root = _map(jsonDecode(body));
+  if (root == null) {
+    throw const FormatException('Invalid Bangumi collection page');
+  }
+  final List<BangumiWatchedItem> items = <BangumiWatchedItem>[];
+  final dynamic data = root['data'];
+  if (data is List) {
+    for (final dynamic item in data) {
+      final Map<String, dynamic>? collection = _map(item);
+      if (collection == null || _int(collection['type']) != 2) continue;
+      final Map<String, dynamic>? subjectValue = _map(collection['subject']);
+      if (subjectValue == null) continue;
+      final BangumiSubject? subject = _parseBangumiSubjectValue(subjectValue);
+      if (subject == null || subject.type != 2) continue;
+      items.add(
+        BangumiWatchedItem(
+          subject: subject,
+          episodeProgress: _int(collection['ep_status']),
+          updatedAt: DateTime.tryParse(_string(collection['updated_at'])),
+        ),
+      );
+    }
+  }
+  return (
+    items: items,
+    total: _int(root['total'], items.length),
+    limit: _int(root['limit'], items.length),
+    offset: _int(root['offset']),
+  );
+}
+
 ({List<BangumiEpisode> episodes, int total}) parseBangumiEpisodes(String body) {
   final Map<String, dynamic>? root = _map(jsonDecode(body));
   if (root == null) throw const FormatException('Invalid Bangumi episodes');
@@ -185,6 +240,8 @@ BangumiUserCollection parseBangumiCollection(String body) {
 
 abstract interface class BangumiTrackingApi {
   Future<BangumiUser> getMe();
+
+  Future<List<BangumiWatchedItem>> getWatchedAnime(String username);
 
   Future<List<BangumiSubject>> searchSubjects({
     required String keyword,
@@ -256,6 +313,35 @@ class BangumiApiClient implements BangumiTrackingApi {
     );
     _require(response, const <int>{200});
     return parseBangumiUser(_body(response));
+  }
+
+  @override
+  Future<List<BangumiWatchedItem>> getWatchedAnime(String username) async {
+    const int pageSize = 50;
+    int offset = 0;
+    int total = pageSize;
+    final List<BangumiWatchedItem> all = <BangumiWatchedItem>[];
+    final String encodedUsername = Uri.encodeComponent(username);
+    while (offset < total) {
+      final Uri uri = Uri.parse(
+        '$apiBase/v0/users/$encodedUsername/collections',
+      ).replace(
+        queryParameters: <String, String>{
+          'subject_type': '2',
+          'type': '2',
+          'limit': '$pageSize',
+          'offset': '$offset',
+        },
+      );
+      final http.Response response = await _client.get(uri, headers: _headers);
+      _require(response, const <int>{200});
+      final BangumiWatchedPage page = parseBangumiWatchedPage(_body(response));
+      all.addAll(page.items);
+      total = page.total;
+      if (page.items.isEmpty) break;
+      offset += page.limit > 0 ? page.limit : page.items.length;
+    }
+    return all;
   }
 
   @override
