@@ -284,6 +284,21 @@ class AudiobookSession extends ChangeNotifier {
   }
 
   /// 显式停止会话：dispose 控制器、隐藏悬浮窗、清媒体通知、取消订阅。
+  ///
+  /// **契约（BUG-1273）**：调用方**不得**在「用户按返回」这类交互关键路径上 await
+  /// 本方法。它返回的 Future 覆盖 [_stopInternal] 全程——排队等前序生命周期操作
+  /// （[_enqueueLifecycle]）+ 停 native 播放器 + 销毁解码器 + 关悬浮窗/通知。这段
+  /// 耗时不可控，而且**只有播放态才真正干活**（没播放时 native 平台压根没激活，
+  /// 停止几乎瞬时返回），所以 await 它的交互路径只在播放中卡住。
+  ///
+  /// 阅读器退出（`onSourcePagePop`）改为 `unawaited(stop())`：会话可见状态
+  /// （`isActive` / `book`，书架 NowListeningMiniBar 读它）在 [_stopInternal] 的
+  /// 首段就清空并 `notifyListeners()`，那一步只隔一个微任务、远早于 pop 动画首帧，
+  /// TODO-831 的「不闪播放条」不受影响；native 资源释放与「用户已经离开这一页」
+  /// 没有因果关系，不该挡着 `nav.pop()`。
+  ///
+  /// 需要「资源真已释放」语义的调用方（如数据根迁移 TODO-1212，rename 前必须确认
+  /// 音频文件句柄已放）才 await 全程。
   Future<void> stop() async {
     await _enqueueLifecycle<void>(_stopInternal);
   }
