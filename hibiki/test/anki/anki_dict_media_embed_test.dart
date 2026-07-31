@@ -135,8 +135,11 @@ void main() {
         '../packages/hibiki_anki/lib/src/ankiconnect/ankiconnect_repository.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n');
       // 锚定方法定义（而非调用点 `_storeDictionaryMedia(service, media)`）。
-      final int start = src.indexOf('Future<String> _storeDictionaryMedia(');
-      expect(start, greaterThan(0));
+      // BUG-1265：返回类型是 `Future<String?>`——null = 这条词典媒体嵌不进去，
+      // 只降级它一条，与 AnkiDroid/AnkiMobile 及 buildDictionaryMediaTags 同契约。
+      final int start = src.indexOf('Future<String?> _storeDictionaryMedia(');
+      expect(start, greaterThan(0),
+          reason: '_storeDictionaryMedia 必须返回 Future<String?>（BUG-1265 降级契约）');
       // This is the final method in the repository class. Match its closing
       // brace plus the class brace so an inner guard block cannot truncate the
       // extracted method body.
@@ -147,6 +150,12 @@ void main() {
       // 不允许把完整 <img>/[sound:] 标签直接塞进 dictionaryMediaTags。
       expect(body, isNot(contains("return '<img")));
       expect(body, isNot(contains("return '[sound:")));
+      // BUG-1265：缓存缺失只能 return null 降级这一条，绝不能抛异常拖垮整次制卡
+      // （封面/句子音频的「缺媒体就别建卡」策略在 _storeLocalMedia，两者不是一回事）。
+      expect(body, isNot(contains('throw ')),
+          reason: '词典媒体缺失必须降级返回 null，不得抛异常中止 mineEntry（BUG-1265）');
+      expect(body, contains('return null;'),
+          reason: '缺失分支必须显式 return null，交给 buildDictionaryMediaTags 跳过');
     });
   });
 

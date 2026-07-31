@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1219 条。点号进各自文件。
+> 共 1220 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -45,6 +45,7 @@
 | [BUG-1271](bugs/BUG-1271-popup-autoexpand-rows-unit-mismatch.md) | ✅ | ✅ | 自动展开默认值按本数写进行数槽位，出厂默认从3本变9本 |
 | [BUG-1270](bugs/BUG-1270-youtube-live-subtitle-seek-duplicate.md) | ✅ | ✅ | YouTube 实时字幕回跳后重复且累积成长段 |
 | [BUG-1266](bugs/BUG-1266-gamepad-b-hijacked-by-back.md) | ✅ | ✅ | 手柄 B 被 Android 系统返回兜底抢占，改键无效；视频页首帧就绪前手柄键全失灵 |
+| [BUG-1265](bugs/BUG-1265-anki-gaiji-cache-miss-aborts-mine.md) | ✅ | ✅ | AnkiConnect 制卡：词典外字缓存缺失导致整张卡建不出来 |
 | [BUG-1264](bugs/BUG-1264-popup-perdict-collapse-outranked.md) | ✅ | ✅ | 每本词典的折叠开关对前 N 本无效（被自动展开覆盖） |
 | [BUG-1261](bugs/BUG-1261-oald-mdd-parts-sound-play.md) | ✅ | ✅ | MDX 分卷 MDD 未挂载 + 词典内 sound:// 发音点击无反应（OALD） |
 | [BUG-1260](bugs/BUG-1260-sync-progress-blank-and-silent-noop.md) | ✅ | ✅ | 同步进度条只有线没有字 + 零通道空转静默收尾 |
