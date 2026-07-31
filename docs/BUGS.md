@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1220 条。点号进各自文件。
+> 共 1223 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1287](bugs/BUG-1287-gal-loopback-flush-no-settle.md) | ✅ | ✅ | galgame 查词/制卡时语音只到句子前半段：loopback 提前收束后不再补全 |
+| [BUG-1286](bugs/BUG-1286-gal-lookup-hook-revoked.md) | ✅ | ✅ | galgame 查词浮窗点击失效：低级鼠标钩子被系统吊销后不再重装 |
 | [BUG-1285](bugs/BUG-1285-subtitle-plain-mode-inline-color.md) | ✅ | ✅ | 纯字幕模式下行内 \c 主色穿透导致 OP 字幕变黑 |
 | [BUG-1284](bugs/BUG-1284-activity-game-cover.md) | ✅ | ✅ | 游戏活动身份不统一导致封面缺失 |
 | [BUG-1283](bugs/BUG-1283-nested-popup-custom-font-flash.md) | ✅ | ✅ | 嵌套查词显示前闪过系统字体 |
@@ -44,6 +46,7 @@
 | [BUG-1276](bugs/BUG-1276-dashboard-heatmap-dark-contrast.md) | ✅ | ✅ | 黑色主题下学习活动热力图空周融进背景 |
 | [BUG-1271](bugs/BUG-1271-popup-autoexpand-rows-unit-mismatch.md) | ✅ | ✅ | 自动展开默认值按本数写进行数槽位，出厂默认从3本变9本 |
 | [BUG-1270](bugs/BUG-1270-youtube-live-subtitle-seek-duplicate.md) | ✅ | ✅ | YouTube 实时字幕回跳后重复且累积成长段 |
+| [BUG-1267](bugs/BUG-1267-gal-attach-missing-luna-pchooks.md) | ✅ | ✅ | 捕获窗口(attach)模式硬编码不装 LunaHook PC hooks，Unity 游戏中途对接抓不到文本 |
 | [BUG-1266](bugs/BUG-1266-gamepad-b-hijacked-by-back.md) | ✅ | ✅ | 手柄 B 被 Android 系统返回兜底抢占，改键无效；视频页首帧就绪前手柄键全失灵 |
 | [BUG-1265](bugs/BUG-1265-anki-gaiji-cache-miss-aborts-mine.md) | ✅ | ✅ | AnkiConnect 制卡：词典外字缓存缺失导致整张卡建不出来 |
 | [BUG-1264](bugs/BUG-1264-popup-perdict-collapse-outranked.md) | ✅ | ✅ | 每本词典的折叠开关对前 N 本无效（被自动展开覆盖） |
