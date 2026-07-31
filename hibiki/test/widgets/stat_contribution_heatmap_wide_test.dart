@@ -199,7 +199,7 @@ void main() {
     expect(calls, <(String, int)>[(todayKey, 123)]);
   });
 
-  testWidgets('BUG-1247：空格四边内描边可见、中心仍黑且 spacing 不受污染',
+  testWidgets('BUG-1276：空格四边内描边可见、中心仍黑且 spacing 不受污染',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -236,7 +236,7 @@ void main() {
     expect(_alpha(_pixelAt(raster, 14, 6)), 0);
   });
 
-  testWidgets('BUG-1247：active levels 1..4 不得收到 level-0 outline',
+  testWidgets('BUG-1276：active levels 1..4 不得收到 level-0 outline',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -271,7 +271,7 @@ void main() {
     }
   });
 
-  testWidgets('BUG-1247：null border 保持旧的纯填充像素', (WidgetTester tester) async {
+  testWidgets('BUG-1276：null border 保持旧的纯填充像素', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -294,7 +294,7 @@ void main() {
     _expectNearColor(_pixelAt(raster, 0, 6), legacyEmpty);
   });
 
-  testWidgets('BUG-1247：dark、light 与 e-ink 调色板保持 fill/outline 角色',
+  testWidgets('BUG-1276：dark、light 与 e-ink 调色板保持 fill/outline 角色',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -357,7 +357,7 @@ void main() {
     }
   });
 
-  testWidgets('BUG-1247：常见 raster DPR 下 outline 保持可见且中心不变亮',
+  testWidgets('BUG-1276：常见 raster DPR 下 outline 保持可见且中心不变亮',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -391,7 +391,7 @@ void main() {
     }
   });
 
-  testWidgets('BUG-1247：窄屏、53周自然宽与超宽布局均有界且无溢出', (WidgetTester tester) async {
+  testWidgets('BUG-1276：窄屏、53周自然宽与超宽布局均有界且无溢出', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(2400, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);

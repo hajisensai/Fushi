@@ -1411,7 +1411,7 @@ class _HomeDashboardPageState
             // surfaces.group 在暗色主题下几乎同色（两个相邻的 surface 容器
             // 色阶）——「没活动的那些周」等于没画，观感是左边一大片死黑。改用
             // 色阶更高的 surfaces.overlay 才和卡底拉开对比，空周照样是
-            // GitHub 式浅格子。BUG-1247：黑色/自定义主题仍可能把 surface 色阶
+            // GitHub 式浅格子。BUG-1276：黑色/自定义主题仍可能把 surface 色阶
             // 压得过近，因此再用 outlineVariant 描边兜底；即使填充与卡底同色，
             // 53 周空格也不会重新融进背景。
             emptyColor: tokens.surfaces.overlay,
