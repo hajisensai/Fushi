@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1244 条。点号进各自文件。
+> 共 1245 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1298](bugs/BUG-1298-collection-hero-portrait-cover.md) | ✅ | ✅ | 合集详情页 hero 用竖版刮削海报时被 BoxFit.cover 裁成中间一条 |
 | [BUG-1295](bugs/BUG-1295-qb-test-connection-undiagnosable.md) | ✅ | ✅ | qB测试连接失败无法自查且本机免密被登录门卡死 |
 | [BUG-1294](bugs/BUG-1294-download-tasks-no-speed-traffic.md) | ✅ | ✅ | 下载任务行无速度与流量显示 |
 | [BUG-1293](bugs/BUG-1293-embedded-upload-mode-kills-download.md) | ✅ | ✅ | 内置引擎默认关上传误用upload_mode掐死下载 |
