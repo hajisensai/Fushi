@@ -85,6 +85,64 @@ void main() {
     expect(a == b, isFalse, reason: '不同 book 的同名字幕落盘不得互相覆盖');
   });
 
+  group('canDownloadJimakuInventory', () {
+    final JimakuFileInventory nonEmpty = JimakuFileInventory.fromFiles(
+      <JimakuFile>[_f('Show - 01.ja.srt')],
+    );
+    final JimakuFileInventory empty =
+        JimakuFileInventory.fromFiles(const <JimakuFile>[]);
+
+    test('仅预检查成功且非空的当前来源可下载', () {
+      expect(
+        canDownloadJimakuInventory(
+          selectedEntryId: 7,
+          inventories: <int, JimakuFileInventory>{7: nonEmpty},
+          loadingEntryIds: const <int>{},
+          failedEntryIds: const <int>{},
+        ),
+        isTrue,
+      );
+    });
+
+    test('未选、loading、failed、合法空库存都禁用', () {
+      bool canDownload({
+        int? selectedEntryId = 7,
+        Map<int, JimakuFileInventory> inventories =
+            const <int, JimakuFileInventory>{},
+        Set<int> loading = const <int>{},
+        Set<int> failed = const <int>{},
+      }) =>
+          canDownloadJimakuInventory(
+            selectedEntryId: selectedEntryId,
+            inventories: inventories,
+            loadingEntryIds: loading,
+            failedEntryIds: failed,
+          );
+
+      expect(canDownload(selectedEntryId: null), isFalse);
+      expect(
+        canDownload(
+          inventories: <int, JimakuFileInventory>{7: nonEmpty},
+          loading: const <int>{7},
+        ),
+        isFalse,
+      );
+      expect(
+        canDownload(
+          inventories: <int, JimakuFileInventory>{7: nonEmpty},
+          failed: const <int>{7},
+        ),
+        isFalse,
+      );
+      expect(
+        canDownload(
+          inventories: <int, JimakuFileInventory>{7: empty},
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('runJimakuBatch（编排，MockClient 注入）', () {
     late Directory tempDir;
 
@@ -176,6 +234,64 @@ void main() {
       );
       expect(results[0].status, JimakuBatchStatus.done);
       expect(results[1].status, JimakuBatchStatus.noMatch);
+    });
+
+    test('HTTP 请求失败记 failed，不得 fail-open 冒充 noMatch', () async {
+      final JimakuClient client = JimakuClient(
+        apiKey: 'k',
+        client: MockClient(
+          (http.Request req) async => http.Response('unavailable', 503),
+        ),
+      );
+      addTearDown(client.close);
+
+      final List<JimakuBatchItem> results = await runJimakuBatch(
+        client: client,
+        entryIds: <int>[7],
+        targets: <JimakuBatchTarget>[
+          _t('video/a', '/v/Show - 01.mkv'),
+        ],
+        saveDirectory: tempDir.path,
+      );
+
+      expect(results.single.status, JimakuBatchStatus.failed);
+      expect(results.single.message, contains('JimakuRequestException(503)'));
+    });
+
+    test('malformed HTTP 200 记 failed；合法 [] 的 noMatch 语义不变', () async {
+      final JimakuClient malformed = JimakuClient(
+        apiKey: 'k',
+        client: MockClient(
+          (http.Request req) async => http.Response('{not-json', 200),
+        ),
+      );
+      addTearDown(malformed.close);
+      final List<JimakuBatchItem> malformedResults = await runJimakuBatch(
+        client: malformed,
+        entryIds: <int>[7],
+        targets: <JimakuBatchTarget>[
+          _t('video/a', '/v/Show - 01.mkv'),
+        ],
+        saveDirectory: tempDir.path,
+      );
+      expect(malformedResults.single.status, JimakuBatchStatus.failed);
+
+      final JimakuClient validEmpty = JimakuClient(
+        apiKey: 'k',
+        client: MockClient(
+          (http.Request req) async => http.Response('[]', 200),
+        ),
+      );
+      addTearDown(validEmpty.close);
+      final List<JimakuBatchItem> emptyResults = await runJimakuBatch(
+        client: validEmpty,
+        entryIds: <int>[7],
+        targets: <JimakuBatchTarget>[
+          _t('video/a', '/v/Show - 01.mkv'),
+        ],
+        saveDirectory: tempDir.path,
+      );
+      expect(emptyResults.single.status, JimakuBatchStatus.noMatch);
     });
   });
 }

@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1236 条。点号进各自文件。
+> 共 1238 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -76,6 +76,8 @@
 | [BUG-1238](bugs/BUG-1238-clipboard-lookup-audio.md) | ✅ | ✅ | 剪贴板变更查词不应自动播放音频 |
 | [BUG-1237](bugs/BUG-1237-popup-touch-copy-actionmode-finished.md) | ✅ | ✅ | 查词弹窗触屏复制经已结束 ActionMode 失效 |
 | [BUG-1236](bugs/BUG-1236-reader-selection-menu-modal-blocks-handles.md) | ✅ | ✅ | 移动端阅读器选区菜单阻断手柄拖动 |
+| [BUG-1235](bugs/BUG-1235-jimaku-batch-availability.md) | ✅ | ✅ | 合集字幕匹配无法区分来源与逐集可用性 |
+| [BUG-1234](bugs/BUG-1234-cover-match-source-state.md) | ✅ | ✅ | 封面匹配切换来源会自动重搜并保留旧来源结果 |
 | [BUG-1233](bugs/BUG-1233-book-import-repeated-archive-probe.md) | ✅ | ✅ | 书籍导入重复整包判定 EPUB 载体 |
 | [BUG-1231](bugs/BUG-1231-cross-chapter-search-locate-race.md) | ✅ | ✅ | 跨章节书内搜索只跳到章首且不高亮 |
 | [BUG-1229](bugs/BUG-1229-dictionary-css-draft.md) | ✅ | ✅ | 自定义 CSS 遮罩退出丢失草稿且关闭即保存 |
