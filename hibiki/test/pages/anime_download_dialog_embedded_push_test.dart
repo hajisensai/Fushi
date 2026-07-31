@@ -293,6 +293,76 @@ void main() {
     }
   });
 
+  // BUG-1296：百分比与确定进度环的存活条件必须是「有进度」，不是「有完整观测
+  // 值」。BUG-1294 把任务行整个搬到 downloadStats 之后，任何只发布进度不发布观测
+  // 值的路径（`importNow`）都会让百分比直接消失。这里正反两面各钉一次。
+  testWidgets('任务行：只有进度也渲染百分比；有观测值才追加速度/流量（BUG-1296）', (
+    WidgetTester tester,
+  ) async {
+    final (_FakeAppModel appModel, GlobalKey<NavigatorState> navKey) =
+        await pumpHost(tester);
+    appModel.store.plans[_kHash] = AnimeDownloadPlan(
+      id: _kHash,
+      createdAtMs: 1,
+      seriesTitle: 'Test Anime',
+      torrentTitle: '[Group] Test Anime - 01 [1080p]',
+      magnet: 'magnet:?xt=urn:btih:$_kHash',
+      qbCategory: 'hibiki',
+      status: AnimeDownloadPlan.statusDownloading,
+    );
+    // 只有进度、没有观测值（= importNow 刚发布完的那一瞬间）。
+    appModel.service.downloadProgress.value = <String, double>{_kHash: 0.55};
+
+    navKey.currentState!.push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => const Scaffold(
+          body: AnimeDownloadDialog(
+            embedded: true,
+            tasksOnly: true,
+            showTasks: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.text('55%'),
+      findsOneWidget,
+      reason: '观测值缺席时百分比不能跟着消失（只少速度/流量后缀）',
+    );
+    expect(
+      tester
+          .widget<CircularProgressIndicator>(
+            find.byType(CircularProgressIndicator),
+          )
+          .value,
+      0.55,
+      reason: '确定进度环同样只依赖进度',
+    );
+
+    // 观测值到位 → 同一行追加速度与累计流量，百分比仍在最前。
+    appModel.service.downloadStats.value = <String, DownloadTaskStats>{
+      _kHash: const DownloadTaskStats(
+        progress: 0.55,
+        downRateBps: 1048576,
+        upRateBps: 0,
+        downloadedBytes: 0,
+        uploadedBytes: 0,
+        numPeers: 0,
+      ),
+    };
+    await tester.pump();
+
+    expect(find.text('55%'), findsNothing);
+    expect(
+      find.textContaining('55% · ↓ '),
+      findsOneWidget,
+      reason: 'BUG-1294 的速度/流量是百分比之后的追加段，不是替换',
+    );
+  });
+
   testWidgets('独立对话框模式推送成功仍关闭自身（向后兼容）', (WidgetTester tester) async {
     final (_FakeAppModel appModel, GlobalKey<NavigatorState> navKey) =
         await pumpHost(tester);

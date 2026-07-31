@@ -1750,39 +1750,54 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           ],
         ),
         const SizedBox(height: 4),
-        _buildJimakuManualSearch(theme),
-        if (_jimakuEntries.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 8),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 148),
-            child: SingleChildScrollView(
-              child: JimakuEntryPicker(
-                entries: _jimakuEntries,
-                selectedEntryId: _selectedJimakuEntry?.id,
-                enabled: !_pushing && !_jimakuLoading,
-                onSelected: _selectJimakuEntry,
-              ),
+        // BUG-1309：中段（手动搜索 → 条目选择器 → 语言 → 开关 → 字幕列表）是
+        // **一个**可滚动区，不是两块互相抢高度的弹性块。此前条目选择器按自然高度
+        // 排（上限 148），字幕列表拿剩下的 `Expanded`；`JimakuEntryPicker` 换成整宽
+        // 卡片后剩余高度掉到 62px，说明行折行就直接 RenderFlex 溢出，列表被压成
+        // 0 高度——用户在「确认推送」这一步反而看不到要下哪些字幕。收进单一滚动区
+        // 后没有任何一块会被压成 0，底部按钮组仍然贴底。
+        Expanded(
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _buildJimakuManualSearch(theme),
+                if (_jimakuEntries.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 8),
+                  // BUG-1309：不再套 `ConstrainedBox(maxHeight: 148)` + 内层滚动。
+                  // 那个 148 的窗口本来只是为了给下面的字幕列表腾高度；中段整体可滚
+                  // 之后它就成了纯负担——嵌套滚动，而且第二条起的卡片被 ClipRect 切掉
+                  // 一半，连点都点不中（命中测试落在 RenderClipRect 上）。
+                  JimakuEntryPicker(
+                    entries: _jimakuEntries,
+                    selectedEntryId: _selectedJimakuEntry?.id,
+                    enabled: !_pushing && !_jimakuLoading,
+                    onSelected: _selectJimakuEntry,
+                  ),
+                  const SizedBox(height: 8),
+                  JimakuLanguagePicker(
+                    selectedLanguage: _jimakuPreferredLanguage,
+                    enabled: !_pushing && !_jimakuLoading,
+                    onSelected: _selectJimakuLanguage,
+                  ),
+                ],
+                const SizedBox(height: 4),
+                if (_chosenSubs.isNotEmpty)
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(t.anime_download_include_subs),
+                    value: _includeSubs,
+                    onChanged: _pushing
+                        ? null
+                        : (bool value) => setState(() => _includeSubs = value),
+                  ),
+                _buildChosenSubsList(theme),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          JimakuLanguagePicker(
-            selectedLanguage: _jimakuPreferredLanguage,
-            enabled: !_pushing && !_jimakuLoading,
-            onSelected: _selectJimakuLanguage,
-          ),
-        ],
-        const SizedBox(height: 4),
-        if (_chosenSubs.isNotEmpty)
-          SwitchListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            title: Text(t.anime_download_include_subs),
-            value: _includeSubs,
-            onChanged: _pushing
-                ? null
-                : (bool value) => setState(() => _includeSubs = value),
-          ),
-        Expanded(child: _buildChosenSubsList(theme)),
+        ),
         const SizedBox(height: 8),
         Builder(
           builder: (BuildContext context) {
@@ -1980,6 +1995,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           blockedTorrent != null && _jimakuSeasonBlockedFor(blockedTorrent);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           if (seasonBlocked)
             _buildSubsHintRow(
@@ -1989,7 +2005,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                 season: blockedTorrent.season ?? 1,
               ),
             ),
-          Expanded(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -2022,6 +2039,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         torrent != null && _subtitleEpisodesUnverified(torrent);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         _buildSubsHintRow(
           theme,
@@ -2034,7 +2052,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             Icons.help_outline,
             t.anime_download_subs_episodes_unverified,
           ),
-        Expanded(child: _buildChosenSubsListView(theme)),
+        _buildChosenSubsListView(theme),
       ],
     );
   }
@@ -2062,7 +2080,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   }
 
   Widget _buildChosenSubsListView(ThemeData theme) {
+    // BUG-1309：由确认阶段中段那一个 `SingleChildScrollView` 统一滚动，本列表只
+    // 按内容撑高（否则嵌套两层滚动，且高度不足时条目根本不构建 → 用户看不见）。
     return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: _chosenSubs.length,
       itemBuilder: (BuildContext context, int i) {
         final (int? episode, JimakuFile file) = _chosenSubs[i];
@@ -2205,21 +2227,28 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       final AnimeDownloadService? service =
           ref.read(appProvider).animeDownloadService;
       if (service != null) {
-        // BUG-1294：订阅完整观测值（进度 + 速度/流量），不再只有百分比。
-        return ValueListenableBuilder<Map<String, DownloadTaskStats>>(
-          valueListenable: service.downloadStats,
-          builder:
-              (BuildContext context, Map<String, DownloadTaskStats> stats, _) =>
-                  _buildPlanRowInner(theme, plan, stats[plan.id]),
+        // BUG-1296：百分比与确定进度环只认 [AnimeDownloadService.downloadProgress]
+        // ——它是恒发布的规范通道。BUG-1294 的速度/流量走 downloadStats，只是**增强
+        // 位**：拿不到观测值时少一截后缀即可，不能把百分比一起吞掉（`_importNowUnlocked`
+        // 那条路径就会短暂只发进度不发观测值）。
+        return ValueListenableBuilder<Map<String, double>>(
+          valueListenable: service.downloadProgress,
+          builder: (BuildContext context, Map<String, double> progress, _) =>
+              ValueListenableBuilder<Map<String, DownloadTaskStats>>(
+            valueListenable: service.downloadStats,
+            builder: (BuildContext context,
+                    Map<String, DownloadTaskStats> stats, _) =>
+                _buildPlanRowInner(
+                    theme, plan, progress[plan.id], stats[plan.id]),
+          ),
         );
       }
     }
-    return _buildPlanRowInner(theme, plan, null);
+    return _buildPlanRowInner(theme, plan, null, null);
   }
 
-  Widget _buildPlanRowInner(
-      ThemeData theme, AnimeDownloadPlan plan, DownloadTaskStats? stats) {
-    final double? progress = stats?.progress;
+  Widget _buildPlanRowInner(ThemeData theme, AnimeDownloadPlan plan,
+      double? progress, DownloadTaskStats? stats) {
     final ColorScheme scheme = theme.colorScheme;
     final bool eink = isEinkTheme(context);
     final bool downloading = plan.status == AnimeDownloadPlan.statusDownloading;
@@ -2251,11 +2280,16 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     };
     // BUG-1294：进度百分比之外补速度与累计流量（单位串是纯数字/符号，无需
     // i18n key）。速率为 0 时仍显示（「0 B/s 卡住了」本身就是有效信息）。
-    final String? progressText = (downloading && stats != null)
-        ? '${(stats.progress * 100).toStringAsFixed(0)}% · '
-            '↓ ${HibikiByteFormat.speed(stats.downRateBps.toDouble())} · '
-            '↑ ${HibikiByteFormat.speed(stats.upRateBps.toDouble())} · '
-            '${HibikiByteFormat.bytes(stats.downloadedBytes)}'
+    // BUG-1296：百分比只依赖 progress；观测值缺席就只渲染百分比，不整条消失。
+    final String? progressText = (downloading && progress != null)
+        ? <String>[
+            '${(progress * 100).toStringAsFixed(0)}%',
+            if (stats != null) ...<String>[
+              '↓ ${HibikiByteFormat.speed(stats.downRateBps.toDouble())}',
+              '↑ ${HibikiByteFormat.speed(stats.upRateBps.toDouble())}',
+              HibikiByteFormat.bytes(stats.downloadedBytes),
+            ],
+          ].join(' · ')
         : null;
     final String? failReason =
         (failed && (plan.failReason?.isNotEmpty ?? false))

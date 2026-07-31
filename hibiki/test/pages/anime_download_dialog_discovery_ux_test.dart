@@ -14,7 +14,10 @@ import 'package:hibiki/src/media/torrent/nyaa_client.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
+import 'package:hibiki/src/pages/implementations/jimaku_entry_picker.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -544,11 +547,22 @@ void main() {
     });
     await pumpDialog(tester, appModel, torrent: _kTorrent);
 
-    bool selected(String name) => tester
-        .widgetList<ChoiceChip>(find.byType(ChoiceChip))
-        .where((ChoiceChip chip) => (chip.label as Text).data == name)
-        .single
-        .selected;
+    // 判据锚点更新（原契约不变）：条目选择器早已不是 `ChoiceChip` —— `384ccc09f`
+    // 把它统一到共享 `HibikiCard`（单选圆点 + 主色描边），文件里仅剩的 `ChoiceChip`
+    // 是下面的语言选择器，所以按 chip label 取条目必然 `Bad state: No element`。
+    // 要守的契约还是那一条「谁被选中」，换成读用户真正看到的那张卡的 `selected`
+    // （与 `JimakuEntryPicker.selectedEntryId` 同源，且比读 model 更贴近渲染）。
+    bool selected(String name) {
+      final JimakuEntryPicker picker =
+          tester.widget<JimakuEntryPicker>(find.byType(JimakuEntryPicker));
+      final JimakuEntry entry =
+          picker.entries.singleWhere((JimakuEntry e) => e.name == name);
+      return tester
+          .widget<HibikiCard>(
+            find.byKey(ValueKey<String>('jimaku_entry_${entry.id}')),
+          )
+          .selected;
+    }
 
     // 首搜：自动选中首条。
     await tester.tap(find.byTooltip(t.anime_download_search).last);
@@ -862,6 +876,97 @@ void main() {
       find.text(t.anime_download_subs_season_mismatch(season: 1)),
       findsNothing,
     );
+  });
+
+  // BUG-1309：确认阶段中段曾经是「条目选择器按自然高度排 + 字幕列表吃剩余
+  // Expanded」。`JimakuEntryPicker` 换成整宽卡片后剩余高度掉到 62px：说明行一折行
+  // 就 `RenderFlex overflowed by 10.0 pixels`（用户看到黄黑条纹），列表被压成 0 高
+  // 度，一条字幕都不显示——而这一步的全部意义就是让用户确认要下哪些字幕。
+  //
+  // 判据钉两件事，缺一不可：**不许有溢出异常**，且**每一条字幕都真的构建出来**。
+  // 只断言最后一条即可覆盖「列表高度不足 → 后面的条目不进 viewport 也就不构建」。
+  testWidgets('BUG-1309 确认阶段：窄窗口下不溢出，且字幕条目全部可见', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    // 整季包 → 两行说明（时序 + 集号未核对），正是原先撑爆 62px 的组合。
+    const NyaaTorrent seasonPack = NyaaTorrent(
+      title: '[Grp] Test Anime S01 Batch [1080p]',
+      torrentUrl: '',
+      pageUrl: '',
+      infoHash: 'dddddddddddddddddddddddddddddddddddddddd',
+      seeders: 10,
+      leechers: 0,
+      downloads: 0,
+      sizeText: '10 GiB',
+      sizeBytes: null,
+      categoryId: '1_2',
+      trusted: false,
+      remake: false,
+      pubDate: null,
+    );
+
+    for (final Size size in <Size>[
+      const Size(800, 600),
+      const Size(360, 640),
+    ]) {
+      tester.view.physicalSize = size;
+      final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {
+        final String url = req.url.toString();
+        if (url.contains('/entries/search')) {
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode(<Map<String, Object>>[
+                // 两个条目：单条目时选择器矮，覆盖不到「选择器把列表挤没」。
+                <String, Object>{'id': 71, 'name': 'Season Entry A'},
+                <String, Object>{'id': 72, 'name': 'Season Entry B'},
+              ]),
+            ),
+            200,
+          );
+        }
+        if (url.contains('/files')) {
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode(<Map<String, Object>>[
+                for (int ep = 1; ep <= 3; ep++)
+                  <String, Object>{
+                    'name': 'Test Anime - 0$ep.ja.srt',
+                    'url': 'https://jimaku.cc/f/$ep.srt',
+                  },
+              ]),
+            ),
+            200,
+          );
+        }
+        return http.Response('', 404);
+      });
+
+      await pumpDialog(tester, appModel, torrent: seasonPack);
+      await tester.tap(find.byTooltip(t.anime_download_search).last);
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: '$size：确认阶段不许有 RenderFlex 溢出（用户会看到黄黑溢出条纹）',
+      );
+      expect(
+        find.text(t.anime_download_subs_episodes_unverified),
+        findsOneWidget,
+        reason: '$size：整季包的「集号未核对」说明行必须还在',
+      );
+      for (int ep = 1; ep <= 3; ep++) {
+        expect(
+          find.text('Test Anime - 0$ep.ja.srt'),
+          findsOneWidget,
+          reason: '$size：第 $ep 条字幕必须真的构建出来（列表不能被压成 0 高度）',
+        );
+      }
+    }
   });
 }
 
