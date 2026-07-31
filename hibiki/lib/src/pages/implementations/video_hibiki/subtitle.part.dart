@@ -779,7 +779,7 @@ extension _VideoSubtitle on _VideoHibikiPageState {
 
   /// TODO-1302 track-list-first：字幕轨选择器行的显示名。
   ///
-  /// BUG-1265：语言名走 [youtubeCaptionLanguageLabel]（而非直接读
+  /// BUG-1267：语言名走 [youtubeCaptionLanguageLabel]（而非直接读
   /// [YoutubeCaptionTrack.languageName]），并**显式标注自动生成轨**。旧实现依赖两条在
   /// androidVr 路径上不成立的假设，两条都会让用户「选不出哪条是哪条」：
   ///  1. 「YouTube 会给本地化名」——实测 androidVr player response 的 `languageName` 恒 null，

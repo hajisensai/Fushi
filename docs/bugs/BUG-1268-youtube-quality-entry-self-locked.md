@@ -1,4 +1,4 @@
-## BUG-1266 · YouTube 画质入口自锁：设置面板画质行永不显示
+## BUG-1268 · YouTube 画质入口自锁：设置面板画质行永不显示
 
 - **报告**：2026-07-31（用户：「app内对油管适配极差 …… 不能调画质」）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/settings/settings_schema_video.dart:977-982`（旧代码），
@@ -54,4 +54,4 @@ YouTube 上暴露。
   并反向钉住「无画质菜单（`onOpenQuality == null`）→ 行隐藏」。变异实测：把谓词改回
   `count > 0 && ...` 时该测试失败。
 
-- **备注**：同轮修复见 [BUG-1265](BUG-1265-youtube-caption-track-labels-ambiguous.md)（同一份用户报告的字幕轨部分）。
+- **备注**：同轮修复见 [BUG-1267](BUG-1267-youtube-caption-track-labels-ambiguous.md)（同一份用户报告的字幕轨部分）。

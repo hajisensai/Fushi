@@ -1,4 +1,4 @@
-## BUG-1265 · YouTube 字幕轨标签退化成语言码且人工/ASR 重名，无法分辨选哪条
+## BUG-1267 · YouTube 字幕轨标签退化成语言码且人工/ASR 重名，无法分辨选哪条
 
 - **报告**：2026-07-31（用户：「app内对油管适配极差 字幕有问题 不能选字幕是哪」）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/media/video/youtube_source_resolver.dart:936`
@@ -54,5 +54,5 @@ response **不返回 `name.simpleText`**。
   `es-419`/`pt-BR` 地区括注正确、以及**同语言人工轨与 ASR 轨的最终标签互不相同**
   （回归这条即撞回原 bug）。
 
-- **备注**：同轮修复见 [BUG-1266](BUG-1266-youtube-quality-entry-self-locked.md)（同一份用户报告的画质部分）。
+- **备注**：同轮修复见 [BUG-1268](BUG-1268-youtube-quality-entry-self-locked.md)（同一份用户报告的画质部分）。
   用户还提到「字幕有问题」，该项现象描述不足、未复现，另行确认，不并入本条。

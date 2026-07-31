@@ -1,4 +1,4 @@
-// BUG-1266：YouTube 播放时设置面板「播放」分类里的画质入口行永远不出现。
+// BUG-1268：YouTube 播放时设置面板「播放」分类里的画质入口行永远不出现。
 //
 // 自锁链：行的 visible 谓词曾要求 `qualityOptionCount > 0`，而 YouTube 的画质档是**懒解析**
 // 的——只有点开画质菜单（即点这一行）触发 getManifest 之后 `_youtubeVariants` 才非空，在那
@@ -43,7 +43,7 @@ Future<VideoSheetHarness> _pumpPlaybackCategory(
 }
 
 void main() {
-  testWidgets('YouTube 懒解析前（档位数 0）画质入口仍可见并可点 —— BUG-1266 回归门', (
+  testWidgets('YouTube 懒解析前（档位数 0）画质入口仍可见并可点 —— BUG-1268 回归门', (
     WidgetTester tester,
   ) async {
     int opened = 0;

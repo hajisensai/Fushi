@@ -800,7 +800,7 @@ class YoutubeCaptionTrack {
       );
 }
 
-/// 语言主码 → 母语写法显示名（BUG-1265）。表外回退原码大写，见 [youtubeCaptionLanguageLabel]。
+/// 语言主码 → 母语写法显示名（BUG-1267）。表外回退原码大写，见 [youtubeCaptionLanguageLabel]。
 ///
 /// 各语言用其母语写法（`日本語` / `English` / `Español`），与 app 界面语言无关，故不走
 /// i18n——与 jimaku_client.dart 的 `jimakuLanguageLabel` 同款取舍，但覆盖面按 YouTube 字幕轨的真实语言分布铺开
@@ -830,7 +830,7 @@ const Map<String, String> _kYoutubeCaptionLanguageNames = <String, String>{
   'fil': 'Filipino',
 };
 
-/// 纯函数：一条字幕轨的**语言显示名**（BUG-1265）。
+/// 纯函数：一条字幕轨的**语言显示名**（BUG-1267）。
 ///
 /// 根因背景：app 的字幕轨表走 ANDROID_VR innertube player response（见 [_fetchCaptionTracks]，
 /// web 端 timedtext 已被 proof-of-origin 拦死，只剩这条路）。**该 client 的 player response
@@ -855,7 +855,7 @@ String youtubeCaptionLanguageLabel(YoutubeCaptionTrack track) {
   return region.isEmpty ? base : '$base (${region.toUpperCase()})';
 }
 
-/// 纯函数：一条字幕轨在**字幕轨选择器里的最终显示标签**（BUG-1265）。
+/// 纯函数：一条字幕轨在**字幕轨选择器里的最终显示标签**（BUG-1267）。
 ///
 /// 不变式：**同一视频内 trackKey 不同的两条轨，标签必须不同**——否则用户在列表里看到两行
 /// 一模一样的文字，无从选择（原 bug 正是同语言的人工轨与 ASR 轨都显示成裸 `en`）。轨的身份

@@ -1,4 +1,4 @@
-// BUG-1265：YouTube 字幕轨标签退化成语言码 + 人工/ASR 重名，用户「不知道该选哪条」。
+// BUG-1267：YouTube 字幕轨标签退化成语言码 + 人工/ASR 重名，用户「不知道该选哪条」。
 //
 // 这里钉住的是**轨的呈现**，不是 cue 解析（cue 侧另有 youtube_source_resolver_test.dart）。
 // 用例数据取自真实抓包：androidVr innertube player response 对 `dQw4w9WgXcQ` 返回 6 条轨，

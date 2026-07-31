@@ -973,7 +973,7 @@ SettingsDestination buildVideoDestination() {
         items: <SettingsItem>[
           // TODO-1158：多档画质入口（HLS master 或 YouTube 流时显示）。
           //
-          // BUG-1266：判据**只看 [onOpenQuality] 是否接线**，不再叠加
+          // BUG-1268：判据**只看 [onOpenQuality] 是否接线**，不再叠加
           // `qualityOptionCount > 0`。页面侧 `onOpenQuality` 已经是
           // `_hasQualityMenu ? _showQualityMenu : null`（HLS master 或 YouTube 流才非
           // null），已是「有画质菜单」的准确语义；而 [qualityOptionCount] 对 YouTube 是
