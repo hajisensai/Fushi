@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 
+import '../helpers/source_scan_helpers.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
 /// TODO-761（方案 B）：播放列表中的视频制卡，`documentTitle`（渲染到 Anki
@@ -104,7 +105,9 @@ void main() {
   group('源码守卫：制卡 documentTitle 经播放列表感知 helper', () {
     late String src;
     setUpAll(() {
-      src = readVideoHibikiSource();
+      // 必须先剥行注释：否则把 helper 调用降级成注释、生产改回裸 `_title`，
+      // 下面的 contains 仍会命中注释里的字面量而假绿。
+      src = stripLineComments(readVideoHibikiSource());
     });
 
     test('_init 播放列表分支记合集名到 _playlistTitle', () {
