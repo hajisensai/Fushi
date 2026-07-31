@@ -22,6 +22,7 @@ VideoPlayerShortcutActions _recordingVideoActions(List<String> log) {
     speedUp: () => record('speedUp'),
     speedDown: () => record('speedDown'),
     resetSpeed: () => record('resetSpeed'),
+    toggleHoldSpeed: () => record('toggleHoldSpeed'),
     previousFrame: () => record('previousFrame'),
     nextFrame: () => record('nextFrame'),
     screenshot: () => record('screenshot'),
