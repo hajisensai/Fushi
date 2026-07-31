@@ -89,43 +89,40 @@ String buildLapisStylePreviewHtml({
           </div>
           <div id="primary"
                data-hibiki-lapis-targets="primary-definition definition-content">
-            <ol class="yomitan-glossary">
-              <li data-dictionary="明鏡国語辞典 第三版"
-                  data-hibiki-lapis-targets="dictionary-entry">
-                <i data-hibiki-lapis-targets="dictionary-name">明鏡国語辞典</i>
-                <div class="dict-group__tag-list">
-                  <span class="dict-group__tag"
-                        data-hibiki-lapis-targets="part-of-speech">他動詞</span>
-                </div>
-                <div class="dict-group__glossary">
-                  物を口に入れ、かんで飲み込む。
-                  <span data-sc-content="example-sentence"
-                        data-hibiki-lapis-targets="definition-example">
-                    例：朝食を食べる。
+            <div class="yomitan-glossary" style="text-align: left;">
+              <ol>
+                <li data-dictionary="明鏡国語辞典 第三版"
+                    data-hibiki-lapis-targets="dictionary-entry">
+                  <i data-hibiki-lapis-targets="dictionary-name">(他動詞, 明鏡国語辞典 第三版)</i>
+                  <span>
+                    物を口に入れ、かんで飲み込む。
+                    <span data-sc-content="example-sentence"
+                          data-hibiki-lapis-targets="definition-example">
+                      例：朝食を食べる。
+                    </span>
                   </span>
-                </div>
-              </li>
-            </ol>
+                </li>
+              </ol>
+            </div>
           </div>
           <div id="glossaries"
                data-hibiki-lapis-targets="glossaries definition-content">
-            <ol>
-              <li data-details="JMdict"
-                  data-hibiki-lapis-targets="dictionary-entry">
-                <i data-hibiki-lapis-targets="dictionary-name">JMdict</i>
-                <div class="dict-group__tag-list">
-                  <span class="dict-group__tag"
-                        data-hibiki-lapis-targets="part-of-speech">Ichidan verb</span>
-                </div>
-                <div class="dict-group__glossary">
-                  <ul><li>to eat; to consume</li><li>to live on</li></ul>
-                  <span data-sc-content="example"
-                        data-hibiki-lapis-targets="definition-example">
-                    パンを食べる — to eat bread
+            <div class="yomitan-glossary" style="text-align: left;">
+              <ol>
+                <li data-dictionary="JMdict"
+                    data-hibiki-lapis-targets="dictionary-entry">
+                  <i data-hibiki-lapis-targets="dictionary-name">(v1, vt, JMdict)</i>
+                  <span>
+                    <ul><li>to eat; to consume</li><li>to live on</li></ul>
                   </span>
-                </div>
-              </li>
-            </ol>
+                </li>
+                <li data-dictionary="新和英大辞典"
+                    data-hibiki-lapis-targets="dictionary-entry">
+                  <i data-hibiki-lapis-targets="dictionary-name">(新和英大辞典)</i>
+                  <span>パンを食べる — to eat bread</span>
+                </li>
+              </ol>
+            </div>
           </div>
         </div>
       </div>

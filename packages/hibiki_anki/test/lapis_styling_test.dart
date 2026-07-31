@@ -212,10 +212,12 @@ void main() {
         round.ruleFor(LapisVisualField.expression).alignment,
         LapisVisualTextAlign.center,
       );
+      expect(round.managedFirst, isFalse);
       expect(
         composeLapisVisualStyleSheet(
           freeformCss: round.freeformCss,
           rules: round.rules,
+          managedFirst: round.managedFirst,
         ),
         css,
       );
@@ -233,11 +235,128 @@ void main() {
       );
     });
 
-    test('损坏或不完整的托管区段按自由 CSS 原样保留', () {
+    test('缺 END 标记的托管区段按自由 CSS 原样保留', () {
       const String broken = '$lapisVisualCssBeginMarker\n.bad { color: red; }';
       final LapisVisualStyleSheet sheet = splitLapisVisualStyleSheet(broken);
       expect(sheet.freeformCss, broken);
       expect(sheet.rules, isEmpty);
+    });
+
+    // 下面两条守的是 splitLapisVisualStyleSheet 里另外两条 fail-safe 分支
+    // （CONFIG 注释缺失 / CONFIG JSON 坏掉）。它们的存在理由就是「宁可留垃圾
+    // 也不丢数据」——把 freeformCss 置空能让用户整段手写 CSS 在打开一次编辑器
+    // 后人间蒸发，所以必须逐条钉死，不能只守「缺 END」那一条。
+    test('CONFIG 注释缺失时整段原样保留（不销毁用户手写 CSS）', () {
+      const String before = '.mine-before { color: #111111; }';
+      const String after = '.mine-after { color: #222222; }';
+      const String broken = '$before\n\n'
+          '$lapisVisualCssBeginMarker\n'
+          '.front-vocab {\n  color: #333333 !important;\n}\n'
+          '$lapisVisualCssEndMarker\n\n'
+          '$after';
+      final LapisVisualStyleSheet sheet = splitLapisVisualStyleSheet(broken);
+      expect(sheet.freeformCss, broken);
+      expect(sheet.freeformCss, contains(before));
+      expect(sheet.freeformCss, contains(after));
+      expect(sheet.rules, isEmpty);
+    });
+
+    test('CONFIG JSON 损坏时整段原样保留（不销毁用户手写 CSS）', () {
+      const String before = '.mine-before { color: #111111; }';
+      const String after = '.mine-after { color: #222222; }';
+      const String broken = '$before\n\n'
+          '$lapisVisualCssBeginMarker\n'
+          '/* HIBIKI-LAPIS-VISUAL-CONFIG {"expression": */\n'
+          '$lapisVisualCssEndMarker\n\n'
+          '$after';
+      final LapisVisualStyleSheet sheet = splitLapisVisualStyleSheet(broken);
+      expect(sheet.freeformCss, broken);
+      expect(sheet.freeformCss, contains(before));
+      expect(sheet.freeformCss, contains(after));
+      expect(sheet.rules, isEmpty);
+    });
+
+    test('CONFIG 是合法 JSON 但不是对象时整段原样保留', () {
+      const String mine = '.mine { color: #111111; }';
+      const String broken = '$lapisVisualCssBeginMarker\n'
+          '/* HIBIKI-LAPIS-VISUAL-CONFIG [1,2,3] */\n'
+          '$lapisVisualCssEndMarker\n\n'
+          '$mine';
+      final LapisVisualStyleSheet sheet = splitLapisVisualStyleSheet(broken);
+      expect(sheet.freeformCss, broken);
+      expect(sheet.freeformCss, contains(mine));
+      expect(sheet.rules, isEmpty);
+    });
+
+    test('用户写在托管区段之后的 CSS 保存后仍在托管区段之后（覆盖不被静默推翻）', () {
+      const String override = '.main-def {\n'
+          '  background-color: #101010 !important;\n'
+          '}';
+      final String managedOnly = composeLapisVisualStyleSheet(
+        freeformCss: '',
+        rules: const <LapisVisualField, LapisVisualRule>{
+          LapisVisualField.definitionBox:
+              LapisVisualRule(backgroundColorHex: '#FFF0A6'),
+        },
+      );
+      final String stored = '$managedOnly\n\n$override';
+
+      final LapisVisualStyleSheet sheet = splitLapisVisualStyleSheet(stored);
+      expect(sheet.freeformCss, override);
+      expect(sheet.managedFirst, isTrue);
+
+      final String saved = composeLapisVisualStyleSheet(
+        freeformCss: sheet.freeformCss,
+        rules: sheet.rules,
+        managedFirst: sheet.managedFirst,
+      );
+      // 逐字节等于存进来的样子：位置没被搬动，最后一句仍然是用户的覆盖。
+      expect(saved, stored);
+      expect(
+        saved.indexOf(lapisVisualCssEndMarker),
+        lessThan(saved.indexOf(override)),
+      );
+    });
+
+    test('托管区段之前的用户 CSS 保存后仍在之前（默认布局不变）', () {
+      const String freeform = '.custom { line-height: 1.8; }';
+      final String stored = composeLapisVisualStyleSheet(
+        freeformCss: freeform,
+        rules: const <LapisVisualField, LapisVisualRule>{
+          LapisVisualField.definitionBox:
+              LapisVisualRule(backgroundColorHex: '#FFF0A6'),
+        },
+      );
+      final LapisVisualStyleSheet sheet = splitLapisVisualStyleSheet(stored);
+      expect(sheet.managedFirst, isFalse);
+      expect(
+        composeLapisVisualStyleSheet(
+          freeformCss: sheet.freeformCss,
+          rules: sheet.rules,
+          managedFirst: sheet.managedFirst,
+        ),
+        stored,
+      );
+    });
+
+    test('自由 CSS 的首尾空白与缩进原样保留（不再被 trim）', () {
+      const String freeform = '  .custom { color: red; }\n\n';
+      final String stored = composeLapisVisualStyleSheet(
+        freeformCss: freeform,
+        rules: const <LapisVisualField, LapisVisualRule>{
+          LapisVisualField.expression: LapisVisualRule(bold: true),
+        },
+      );
+      expect(stored, startsWith(freeform));
+      expect(splitLapisVisualStyleSheet(stored).freeformCss, freeform);
+      // 无托管规则时同样逐字节原样返回。
+      expect(
+        composeLapisVisualStyleSheet(
+          freeformCss: freeform,
+          rules: const <LapisVisualField, LapisVisualRule>{},
+        ),
+        freeform,
+      );
     });
 
     test('残缺旧标记不会吞掉其后的新托管区段或手写 CSS', () {
@@ -253,20 +372,137 @@ void main() {
       expect(round.ruleFor(LapisVisualField.sentence).bold, isTrue);
     });
 
-    test('每个可视字段都有稳定 selector 与对应字号变量', () {
+    // 这张表是「可视编辑器改的到底是真卡上的哪个元素」的唯一断言。旧版本只断言
+    // `isNotEmpty` + `contains('font-size: calc(')`，任何编造的 selector 都能混
+    // 过去（真机改了没反应、预览却有效果）。所以这里逐字段钉死 selector 字面量与
+    // 字号变量字面量：真实 DOM 依据见 lapisVisualSelector 的文档注释。
+    const Map<LapisVisualField, String> expectedSelectors =
+        <LapisVisualField, String>{
+      LapisVisualField.expression: '.front-vocab, .vocab',
+      LapisVisualField.reading: '.pitch',
+      LapisVisualField.sentence:
+          '#hint, .front-sentence, .sentence, .sentence-alt',
+      LapisVisualField.definitionInfo: '.def-info',
+      LapisVisualField.definitionBox: '.main-def',
+      LapisVisualField.definitionContent: '.main-def > .definition > div',
+      LapisVisualField.selectedDefinition: '#selection',
+      LapisVisualField.primaryDefinition: '#primary',
+      LapisVisualField.glossaries: '#glossaries',
+      LapisVisualField.dictionaryEntry:
+          '#primary li[data-dictionary], #glossaries li[data-dictionary]',
+      LapisVisualField.dictionaryName: '.definition li[data-dictionary] > i',
+      LapisVisualField.definitionExample:
+          '.definition [data-sc-content|="example-sentence"]',
+    };
+
+    /// 字段 → 110% 缩放时必须逐字节出现的字号规则。选择器与变量名任意一处写错
+    /// 都会让这里对不上。
+    const Map<LapisVisualField, List<String>> expectedFontRules =
+        <LapisVisualField, List<String>>{
+      LapisVisualField.expression: <String>[
+        '.front-vocab {\n  font-size: calc(var(--vocab-font-size) * 1.10)'
+            ' !important;\n}',
+        '.vocab {\n  font-size: calc(var(--back-vocab-font-size) * 1.10)'
+            ' !important;\n}',
+      ],
+      LapisVisualField.reading: <String>[
+        '.pitch {\n  font-size: calc(var(--info-font-size) * 1.10)'
+            ' !important;\n}',
+      ],
+      LapisVisualField.sentence: <String>[
+        '#hint {\n  font-size: calc(var(--hint-font-size) * 1.10)'
+            ' !important;\n}',
+        '.front-sentence {\n  font-size: calc(var(--sentence-font-size) * 1.10)'
+            ' !important;\n}',
+        '.sentence, .sentence-alt {\n'
+            '  font-size: calc(var(--back-sentence-font-size) * 1.10)'
+            ' !important;\n}',
+      ],
+      LapisVisualField.definitionInfo: <String>[
+        '.def-info {\n  font-size: calc(0.9rem * 1.10) !important;\n}',
+      ],
+      LapisVisualField.definitionBox: <String>[
+        '.main-def {\n  font-size: calc(var(--main-def-size) * 1.10)'
+            ' !important;\n}',
+      ],
+      LapisVisualField.definitionContent: <String>[
+        '.main-def > .definition > div {\n'
+            '  font-size: calc(var(--main-def-size) * 1.10) !important;\n}',
+      ],
+      LapisVisualField.selectedDefinition: <String>[
+        '#selection {\n  font-size: calc(var(--main-def-size) * 1.10)'
+            ' !important;\n}',
+      ],
+      LapisVisualField.primaryDefinition: <String>[
+        '#primary {\n  font-size: calc(var(--main-def-size) * 1.10)'
+            ' !important;\n}',
+      ],
+      LapisVisualField.glossaries: <String>[
+        '#glossaries {\n  font-size: calc(var(--main-def-size) * 1.10)'
+            ' !important;\n}',
+      ],
+      LapisVisualField.dictionaryEntry: <String>[
+        '#primary li[data-dictionary], #glossaries li[data-dictionary] {\n'
+            '  font-size: calc(var(--main-def-size) * 1.10) !important;\n}',
+      ],
+      LapisVisualField.dictionaryName: <String>[
+        '.definition li[data-dictionary] > i {\n'
+            '  font-size: calc(var(--main-def-size) * 1.10) !important;\n}',
+      ],
+      LapisVisualField.definitionExample: <String>[
+        '.definition [data-sc-content|="example-sentence"] {\n'
+            '  font-size: calc(var(--main-def-size) * 1.10) !important;\n}',
+      ],
+    };
+
+    test('每个可视字段绑定真实 Lapis selector 与字号变量', () {
+      // 新增字段忘了登记 → 直接红，不给「先加字段、以后再补断言」的口子。
+      expect(expectedSelectors.keys.toSet(), LapisVisualField.values.toSet());
+      expect(expectedFontRules.keys.toSet(), LapisVisualField.values.toSet());
+
       for (final LapisVisualField field in LapisVisualField.values) {
+        expect(
+          lapisVisualSelector(field),
+          expectedSelectors[field],
+          reason: '${field.wireName} 的 selector 与真实 Lapis DOM 对不上',
+        );
         final String css = composeLapisVisualStyleSheet(
           freeformCss: '',
           rules: <LapisVisualField, LapisVisualRule>{
             field: const LapisVisualRule(fontScalePercent: 110),
           },
         );
-        expect(lapisVisualSelector(field), isNotEmpty);
-        expect(css, contains('font-size: calc('));
+        for (final String rule in expectedFontRules[field]!) {
+          expect(css, contains(rule),
+              reason: '${field.wireName} 缺字号规则:\n$rule');
+        }
         expect(
           splitLapisVisualStyleSheet(css).ruleFor(field).fontScalePercent,
           110,
         );
+      }
+    });
+
+    test('selector 里不出现 Hibiki 自产卡从不产出的结构', () {
+      // 这些锚点只存在于 vendored Lapis CSS（服务 JPMN 导入卡）与旧预览 mock：
+      // popup.js 的 constructGlossaryHtml 永远产出
+      // `div.yomitan-glossary > ol > li[data-dictionary] > (i + span)`。
+      const List<String> neverProduced = <String>[
+        'data-details',
+        'dict-group',
+        'data-sc-content="part-of-speech"',
+        '#primary > div',
+        '#glossaries > div',
+      ];
+      for (final LapisVisualField field in LapisVisualField.values) {
+        final String selector = lapisVisualSelector(field);
+        for (final String dead in neverProduced) {
+          expect(
+            selector,
+            isNot(contains(dead)),
+            reason: '${field.wireName} 用了自产卡不存在的锚点 $dead',
+          );
+        }
       }
     });
 

@@ -41,8 +41,7 @@ enum LapisVisualField {
   glossaries('glossaries'),
   dictionaryEntry('dictionary-entry'),
   dictionaryName('dictionary-name'),
-  definitionExample('definition-example'),
-  partOfSpeech('part-of-speech');
+  definitionExample('definition-example');
 
   const LapisVisualField(this.wireName);
 
@@ -256,14 +255,41 @@ class LapisVisualStyleSheet {
   const LapisVisualStyleSheet({
     required this.freeformCss,
     required this.rules,
+    this.managedFirst = false,
   });
 
   final String freeformCss;
   final Map<LapisVisualField, LapisVisualRule> rules;
 
+  /// 托管区段原本是否排在用户自由 CSS **之前**。托管区段全部带 `!important`
+  /// （见 [_buildLapisVisualFieldCss]，必须压过 Lapis 自己的高特异性规则），
+  /// 所以谁排在后面直接决定谁说了算。把这一位带出来、再由 [composeLapisVisualStyleSheet]
+  /// 原样写回，用户刻意写在托管块之后的覆盖才不会被保存动作静默搬到前面去。
+  final bool managedFirst;
+
   LapisVisualRule ruleFor(LapisVisualField field) =>
       rules[field] ?? const LapisVisualRule();
 }
+
+/// 托管区段与自由 CSS 之间的分隔符。[splitLapisVisualStyleSheet] 只剥掉**恰好
+/// 一处**该分隔符，用户自己写的空行/缩进原样保留。
+const String _lapisVisualBlockSeparator = '\n\n';
+
+LapisVisualStyleSheet _lapisVisualAllFreeform(String customCss) =>
+    LapisVisualStyleSheet(
+      freeformCss: customCss,
+      rules: const <LapisVisualField, LapisVisualRule>{},
+    );
+
+String _withoutLapisSeparatorSuffix(String value) =>
+    value.endsWith(_lapisVisualBlockSeparator)
+        ? value.substring(0, value.length - _lapisVisualBlockSeparator.length)
+        : value;
+
+String _withoutLapisSeparatorPrefix(String value) =>
+    value.startsWith(_lapisVisualBlockSeparator)
+        ? value.substring(_lapisVisualBlockSeparator.length)
+        : value;
 
 /// 从现有自定义 CSS 中拆出可视化托管区段。区段损坏时返回「全部是自由 CSS」，
 /// 绝不因为打开编辑器就吞掉用户手写内容。
@@ -271,22 +297,12 @@ LapisVisualStyleSheet splitLapisVisualStyleSheet(String customCss) {
   // 取最后一个 BEGIN：若用户自由 CSS 里恰有残缺旧标记，后续新增的完整托管块
   // 仍能独立解析，不会把前面的手写内容一起误吃掉。
   final int begin = customCss.lastIndexOf(lapisVisualCssBeginMarker);
-  if (begin < 0) {
-    return LapisVisualStyleSheet(
-      freeformCss: customCss,
-      rules: const <LapisVisualField, LapisVisualRule>{},
-    );
-  }
+  if (begin < 0) return _lapisVisualAllFreeform(customCss);
   final int end = customCss.indexOf(
     lapisVisualCssEndMarker,
     begin + lapisVisualCssBeginMarker.length,
   );
-  if (end < 0) {
-    return LapisVisualStyleSheet(
-      freeformCss: customCss,
-      rules: const <LapisVisualField, LapisVisualRule>{},
-    );
-  }
+  if (end < 0) return _lapisVisualAllFreeform(customCss);
 
   final String managedBody = customCss.substring(
     begin + lapisVisualCssBeginMarker.length,
@@ -296,12 +312,10 @@ LapisVisualStyleSheet splitLapisVisualStyleSheet(String customCss) {
     r'/\* HIBIKI-LAPIS-VISUAL-CONFIG (.*?) \*/',
     dotAll: true,
   ).firstMatch(managedBody);
-  if (configMatch == null) {
-    return LapisVisualStyleSheet(
-      freeformCss: customCss,
-      rules: const <LapisVisualField, LapisVisualRule>{},
-    );
-  }
+  // fail-safe：区段有成对标记但没有 CONFIG 注释（旧版本残留 / 用户手改坏了）。
+  // 宁可把整段当自由 CSS 留着长垃圾，也不能把用户手写内容吞掉。
+  // 守卫见 lapis_styling_test.dart『CONFIG 注释缺失时整段原样保留』。
+  if (configMatch == null) return _lapisVisualAllFreeform(customCss);
 
   try {
     final Object? decoded = jsonDecode(configMatch.group(1)!);
@@ -318,27 +332,40 @@ LapisVisualStyleSheet splitLapisVisualStyleSheet(String customCss) {
       }
     }
     final int afterEnd = end + lapisVisualCssEndMarker.length;
+    final String before =
+        _withoutLapisSeparatorSuffix(customCss.substring(0, begin));
+    final String after =
+        _withoutLapisSeparatorPrefix(customCss.substring(afterEnd));
+    // 用户把 CSS 写在托管块之后 = 他要的就是「压过托管块」。记住这个位置，
+    // 保存时原样写回。两侧都有内容时统一收到托管块之后——只会让用户的 CSS
+    // 更靠后（优先级只升不降），不会把任何一条覆盖降级。
+    final bool managedFirst = after.trim().isNotEmpty;
     final String freeform = <String>[
-      customCss.substring(0, begin).trim(),
-      customCss.substring(afterEnd).trim(),
-    ].where((String part) => part.isNotEmpty).join('\n\n');
+      if (before.trim().isNotEmpty) before,
+      if (after.trim().isNotEmpty) after,
+    ].join(_lapisVisualBlockSeparator);
     return LapisVisualStyleSheet(
       freeformCss: freeform,
+      managedFirst: managedFirst,
       rules: Map<LapisVisualField, LapisVisualRule>.unmodifiable(rules),
     );
   } on FormatException {
-    return LapisVisualStyleSheet(
-      freeformCss: customCss,
-      rules: const <LapisVisualField, LapisVisualRule>{},
-    );
+    // fail-safe：CONFIG 里的 JSON 坏了（手改 / 旧格式 / 截断）。同上，整段留着。
+    // 守卫见 lapis_styling_test.dart『CONFIG JSON 损坏时整段原样保留』。
+    return _lapisVisualAllFreeform(customCss);
   }
 }
 
-/// 把可视化规则写回自定义 CSS。自由 CSS 在前、托管区段在后，因此用户在界面
-/// 上刚调的值与预览一致；高级用户仍可删除托管区段并完全接管。
+/// 把可视化规则写回自定义 CSS。
+///
+/// [managedFirst] 由 [splitLapisVisualStyleSheet] 带出（新建时默认 false =
+/// 自由 CSS 在前、托管区段在后）。**保存动作不得移动用户 CSS 相对托管区段的
+/// 位置**：托管区段整块 `!important`，把用户写在后面的覆盖搬到前面就等于静默
+/// 推翻他的改动。自由 CSS 本身逐字节原样写回，首尾空白不再被 trim。
 String composeLapisVisualStyleSheet({
   required String freeformCss,
   required Map<LapisVisualField, LapisVisualRule> rules,
+  bool managedFirst = false,
 }) {
   final Map<String, Object?> config = <String, Object?>{};
   final List<String> cssRules = <String>[];
@@ -348,18 +375,17 @@ String composeLapisVisualStyleSheet({
     config[field.wireName] = rule.toJson();
     cssRules.addAll(_buildLapisVisualFieldCss(field, rule));
   }
-  final String custom = freeformCss.trim();
-  if (config.isEmpty) return custom;
+  if (config.isEmpty) return freeformCss;
   final String managed = <String>[
     lapisVisualCssBeginMarker,
     '$_lapisVisualConfigPrefix${jsonEncode(config)} */',
     ...cssRules,
     lapisVisualCssEndMarker,
   ].join('\n');
-  return <String>[
-    if (custom.isNotEmpty) custom,
-    managed,
-  ].join('\n\n');
+  if (freeformCss.trim().isEmpty) return managed;
+  return managedFirst
+      ? '$managed$_lapisVisualBlockSeparator$freeformCss'
+      : '$freeformCss$_lapisVisualBlockSeparator$managed';
 }
 
 List<String> _buildLapisVisualFieldCss(
@@ -406,30 +432,44 @@ List<String> _buildLapisVisualFieldCss(
   return result;
 }
 
-/// 可视化目标对应的真实 Lapis selector。只依赖模板结构和语义属性，不绑定词典名称。
+/// 可视化目标对应的真实 Lapis selector。
+///
+/// **判据是 Hibiki 自产卡的真实 DOM，不是预览里好看的 mock。** 释义字段由
+/// `popup.js` 的 `constructGlossaryHtml` / `constructSingleGlossaryHtml` 产出，
+/// 形状恒为：
+/// `#glossaries > div.yomitan-glossary > ol > li[data-dictionary] > (i + span)`
+/// （`#primary` 同形）。因此：
+/// * `#primary > div` / `#glossaries > div` 命中的是 `.yomitan-glossary` **整块
+///   外壳**，不是单条词典条目 —— 条目锚点只能是 `li[data-dictionary]`；
+/// * `#primary > div > i` 是 Yomitan 老式「单词典无 ol」格式的路径，Hibiki 产物
+///   永远匹配不到（`<i>` 在 `li` 里）；
+/// * `li[data-details]` 是 JPMN 导入卡的特征（Lapis 模板脚本据此识别），Hibiki
+///   从不产出；
+/// * `dict-group__*` 全部只存在于 vendored Lapis CSS 与旧预览 mock 中，产出侧
+///   零处 —— 「词性」在真实产物里是拼进词典名那个 `<i>` 的纯文本
+///   （`(vt, 明鏡国語辞典)`），**没有独立元素可选**，所以不提供该字段。
+///
+/// 正面例句：Hibiki 卡型默认 `IsWordAndSentenceCard`，正面句子落在 `#hint`，
+/// 只打 `.front-sentence` 会漏掉唯一的实际形态。
+///
+/// 守卫见 `lapis_styling_test.dart`『每个可视字段绑定真实 Lapis selector 与字号
+/// 变量』——selector 与字号变量逐字面量登记，改错一个即红。
 String lapisVisualSelector(LapisVisualField field) => switch (field) {
       LapisVisualField.expression => '.front-vocab, .vocab',
       LapisVisualField.reading => '.pitch',
-      LapisVisualField.sentence => '.front-sentence, .sentence, .sentence-alt',
+      LapisVisualField.sentence =>
+        '#hint, .front-sentence, .sentence, .sentence-alt',
       LapisVisualField.definitionInfo => '.def-info',
       LapisVisualField.definitionBox => '.main-def',
       LapisVisualField.definitionContent => '.main-def > .definition > div',
       LapisVisualField.selectedDefinition => '#selection',
       LapisVisualField.primaryDefinition => '#primary',
       LapisVisualField.glossaries => '#glossaries',
-      LapisVisualField.dictionaryEntry => '#primary > div, #glossaries > div, '
-          '.definition li[data-dictionary], .definition li[data-details]',
-      LapisVisualField.dictionaryName =>
-        '#primary > div > i, #glossaries > div > i, '
-            '.definition li[data-dictionary] > i, '
-            '.definition li[data-details] > i, '
-            '.definition .dict-group__tag--dict',
+      LapisVisualField.dictionaryEntry =>
+        '#primary li[data-dictionary], #glossaries li[data-dictionary]',
+      LapisVisualField.dictionaryName => '.definition li[data-dictionary] > i',
       LapisVisualField.definitionExample =>
-        '.definition [data-sc-content|="example-sentence"], '
-            '.definition [data-sc-content="example"]',
-      LapisVisualField.partOfSpeech => '.definition .dict-group__tag-list '
-          '.dict-group__tag:not(.dict-group__tag--dict), '
-          '.definition [data-sc-content="part-of-speech"]',
+        '.definition [data-sc-content|="example-sentence"]',
     };
 
 List<MapEntry<String, String>> _lapisVisualFontTargets(
@@ -444,6 +484,7 @@ List<MapEntry<String, String>> _lapisVisualFontTargets(
           MapEntry<String, String>('.pitch', 'var(--info-font-size)'),
         ],
       LapisVisualField.sentence => const <MapEntry<String, String>>[
+          MapEntry<String, String>('#hint', 'var(--hint-font-size)'),
           MapEntry<String, String>(
             '.front-sentence',
             'var(--sentence-font-size)',
@@ -489,12 +530,6 @@ List<MapEntry<String, String>> _lapisVisualFontTargets(
       LapisVisualField.definitionExample => <MapEntry<String, String>>[
           MapEntry<String, String>(
             lapisVisualSelector(LapisVisualField.definitionExample),
-            'var(--main-def-size)',
-          ),
-        ],
-      LapisVisualField.partOfSpeech => <MapEntry<String, String>>[
-          MapEntry<String, String>(
-            lapisVisualSelector(LapisVisualField.partOfSpeech),
             'var(--main-def-size)',
           ),
         ],

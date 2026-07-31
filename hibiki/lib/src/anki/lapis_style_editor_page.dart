@@ -39,6 +39,11 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   late final TextEditingController _advancedCssController;
   late final String _initialComposedCss;
   late final Map<LapisVisualField, LapisVisualRule> _rules;
+
+  /// 打开时托管区段相对用户自由 CSS 的位置，保存时原样写回（见
+  /// [composeLapisVisualStyleSheet]）。托管区段整块 `!important`，把用户写在
+  /// 它之后的覆盖搬到前面就等于静默推翻用户改动。
+  late final bool _managedFirst;
   LapisVisualField _selectedField = LapisVisualField.expression;
   bool _showBack = true;
   bool _allowPop = false;
@@ -65,6 +70,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
     final LapisVisualStyleSheet sheet =
         splitLapisVisualStyleSheet(widget.initialCustomCss);
     _rules = Map<LapisVisualField, LapisVisualRule>.of(sheet.rules);
+    _managedFirst = sheet.managedFirst;
     _advancedCssController = TextEditingController(text: sheet.freeformCss)
       ..addListener(_handleAdvancedCssChanged);
     _initialComposedCss = _composeCustomCss();
@@ -82,6 +88,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   String _composeCustomCss() => composeLapisVisualStyleSheet(
         freeformCss: _advancedCssController.text,
         rules: _rules,
+        managedFirst: _managedFirst,
       );
 
   bool get _isDirty => _composeCustomCss() != _initialComposedCss;
@@ -280,10 +287,9 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
       label: t.anki_lapis_visual_preview,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerLowest,
+          color: tokens.surfaces.page,
           borderRadius: tokens.radii.cardRadius,
-          border:
-              Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+          border: Border.all(color: tokens.surfaces.outline),
         ),
         child: ClipRRect(
           borderRadius: tokens.radii.cardRadius,
@@ -402,7 +408,6 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
                       LapisVisualField.dictionaryEntry,
                       LapisVisualField.dictionaryName,
                       LapisVisualField.definitionExample,
-                      LapisVisualField.partOfSpeech,
                     ])
                       HibikiSelectableChip(
                         label: _fieldLabel(field),
@@ -431,6 +436,24 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
               ),
             ],
           ),
+          if (_fieldNote(_selectedField) case final String note)
+            Padding(
+              padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: tokens.surfaces.onVariant,
+                  ),
+                  SizedBox(width: tokens.spacing.gap),
+                  Expanded(
+                    child: Text(note, style: tokens.type.listSubtitle),
+                  ),
+                ],
+              ),
+            ),
           Text(
             t.anki_lapis_visual_font_size(
               percent: rule.fontScalePercent,
@@ -704,8 +727,16 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
           t.anki_lapis_visual_field_dictionary_name,
         LapisVisualField.definitionExample =>
           t.anki_lapis_visual_field_definition_example,
-        LapisVisualField.partOfSpeech =>
-          t.anki_lapis_visual_field_part_of_speech,
+      };
+
+  /// 字段在真卡上的可见性/结构限制。预览是理想卡，真卡不一定长这样——把差异
+  /// 说清楚，别让用户以为改了没生效是 bug。
+  String? _fieldNote(LapisVisualField field) => switch (field) {
+        LapisVisualField.definitionInfo =>
+          t.anki_lapis_visual_field_definition_info_note,
+        LapisVisualField.dictionaryName =>
+          t.anki_lapis_visual_field_dictionary_name_note,
+        _ => null,
       };
 
   List<String> _targetPath(LapisVisualField field) {
@@ -738,7 +769,6 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
         LapisVisualField.dictionaryEntry,
         LapisVisualField.dictionaryName,
         LapisVisualField.definitionExample,
-        LapisVisualField.partOfSpeech,
       }.contains(field);
 
   Widget _buildTargetGroup({
@@ -811,8 +841,9 @@ class _LapisColorChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color color = colorHex == null
-        ? colors.surfaceContainerHighest
+        ? tokens.surfaces.overlay
         : Color(int.parse(colorHex!.substring(1), radix: 16) | 0xFF000000);
     return Tooltip(
       message: tooltip,
