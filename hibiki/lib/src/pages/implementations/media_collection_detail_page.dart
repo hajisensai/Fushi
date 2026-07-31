@@ -56,9 +56,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   late String _name;
   List<VideoBookRow> _members = const <VideoBookRow>[];
 
-  /// v64 分季：video 成员 bookUid → 分组键（null = 未分组）。与 [_members] 同批
-  /// 装载；全部非 null 且 ≥2 组时列表按季分节渲染。
-  Map<String, String?> _groupKeyByUid = const <String, String?>{};
+  /// 分季：video 成员 bookUid → 分组键，**由文件名现场派生**（不落库，见
+  /// collection_season_groups.dart 的数据模型说明）。≥2 组时列表按季分节渲染，
+  /// 存量合集零迁移即生效。
+  Map<String, String> _groupKeyByUid = const <String, String>{};
   bool _loading = true;
 
   @override
@@ -81,15 +82,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   Future<void> _reload() async {
     final List<VideoBookRow> members = await widget.loadMembers();
-    final List<MediaCollectionItemRow> items =
-        await widget.database.getCollectionItems(widget.collection.id);
     if (!mounted) return;
     setState(() {
       _members = members;
-      _groupKeyByUid = <String, String?>{
-        for (final MediaCollectionItemRow item in items)
-          if (item.mediaType == MediaKind.video.dbValue)
-            item.entryKey: item.groupKey,
+      _groupKeyByUid = <String, String>{
+        for (final VideoBookRow r in members)
+          r.bookUid: collectionGroupKeyForFilename(r.videoPath),
       };
       _loading = false;
     });
@@ -126,9 +124,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   String? get _continueUid =>
       _members.isEmpty ? null : _members[_continueIndex].bookUid;
 
-  /// 「按季分组」（v64）：按文件名重算各集季/集 → 重排（季→集→标题，PV/特典殿后）
-  /// 并写分组键。落库后列表按季分节；解析规则与导入分组同源。
-  Future<void> _groupBySeason() async {
+  /// 「按季排序」：按文件名重排全表（季→集→标题，PV/特典殿后）并落盘。分节
+  /// **展示**本身是派生的、随时生效，本动作只负责把乱序列表整理成分季连续。
+  Future<void> _sortBySeason() async {
     if (_members.isEmpty) return;
     final CollectionSeasonRegroup<VideoBookRow> regroup =
         regroupMembersBySeason<VideoBookRow>(
@@ -136,22 +134,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       filenameOf: (VideoBookRow r) => r.videoPath,
       titleOf: (VideoBookRow r) => r.title,
     );
-    await widget.database.setCollectionItemGroupKeys(
-      widget.collection.id,
-      <CollectionMemberKey, String?>{
-        for (final VideoBookRow r in _members)
-          (mediaType: MediaKind.video.dbValue, entryKey: r.bookUid):
-              regroup.keyOf[r],
-      },
-    );
-    if (!mounted) return;
-    setState(() {
-      _members = regroup.ordered;
-      _groupKeyByUid = <String, String?>{
-        for (final VideoBookRow r in regroup.ordered)
-          r.bookUid: regroup.keyOf[r],
-      };
-    });
+    setState(() => _members = regroup.ordered);
     await _persistOrder();
   }
 
@@ -300,12 +283,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           availableWidth: availableWidth,
           alwaysVisible: <Widget>[_buildSortMenu()],
           collapsible: <HibikiAppBarAction>[
-            // v64：多季播放列表「在合集里面分开」——按文件名季/集重排 + 写分组键，
-            // 列表随之按季分节（单季合集执行后无可见变化，幂等）。
+            // 多季播放列表「在合集里面分开」的排序补充：分节展示是派生的、随时
+            // 生效，本动作只把乱序列表整理成季→集连续（单季合集执行后无可见
+            // 变化，幂等）。
             HibikiAppBarAction(
               icon: Icons.segment,
-              label: t.collection_group_by_season,
-              onPressed: _members.isEmpty ? null : _groupBySeason,
+              label: t.collection_sort_by_season,
+              onPressed: _members.isEmpty ? null : _sortBySeason,
             ),
             HibikiAppBarAction(
               icon: Icons.subtitles_outlined,
@@ -395,8 +379,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 剧集列表：分季合集（全部成员已分组且 ≥2 组，v64）按季分节渲染、节内独立
   /// 拖拽；其余保持单一平铺可拖拽列表（历史行为，零变化）。
   Widget _buildEpisodeList(HibikiDesignTokens tokens, ColorScheme cs) {
-    if (!isMultiSeasonGrouped(
-        _members.map((VideoBookRow r) => _groupKeyByUid[r.bookUid]))) {
+    if (!isMultiSeasonGrouped(_members.map((VideoBookRow r) =>
+        _groupKeyByUid[r.bookUid] ?? kCollectionExtrasGroupKey))) {
       return _buildReorderableSection(tokens, cs, _members, sections: null);
     }
     final List<CollectionSeasonSection<VideoBookRow>> sections =

@@ -7,10 +7,11 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
-/// v64 合集内分季（用户拍板「多季直接在合集里面分开」）：
-/// - 未分组合集保持平铺列表（零变化）；
-/// - 「按季分组」动作按文件名重排（季→集，PV/特典殿后）并写分组键，真写穿 DB；
-/// - 已分组（≥2 组）合集按季分节渲染分节标题；
+/// 合集内分季（用户拍板「多季直接在合集里面分开」，根本性修法=分组按文件名
+/// **现场派生**、不落库）：
+/// - 多季合集**进入即分节**（存量合集零迁移、无需任何动作）；
+/// - 单季合集保持平铺列表（零变化）；
+/// - 「按季排序」动作把乱序列表整理成季→集连续并真写穿 DB；
 /// - 节内拖拽重排把各节按显示顺序拼回全序落盘。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -18,18 +19,8 @@ void main() {
   late HibikiDatabase db;
   late int collectionId;
 
-  /// 加入顺序故意乱序：S02E01, S01E01, Fan Disc, S01E02。
-  const List<(String, String)> seeds = <(String, String)>[
-    ('video/s2e1', 'Show S02E01'),
-    ('video/s1e1', 'Show S01E01'),
-    ('video/pv', 'Show Fan Disc'),
-    ('video/s1e2', 'Show S01E02'),
-  ];
-
-  setUp(() async {
-    LocaleSettings.setLocale(AppLocale.zhCn);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
-    for (final (String uid, String title) in seeds) {
+  Future<void> seed(List<(String, String)> rows) async {
+    for (final (String uid, String title) in rows) {
       await db.upsertVideoBook(VideoBooksCompanion(
         bookUid: Value(uid),
         title: Value(title),
@@ -38,26 +29,25 @@ void main() {
     }
     collectionId =
         await db.createMediaCollection('Show', collectionType: 'playlist');
+    for (final (String uid, _) in rows) {
+      await db.addToCollection(collectionId, MediaKind.video, uid);
+    }
+  }
+
+  /// 加入顺序故意乱序：S02E01, S01E01, Fan Disc, S01E02。
+  Future<void> seedMultiSeason() => seed(const <(String, String)>[
+        ('video/s2e1', 'Show S02E01'),
+        ('video/s1e1', 'Show S01E01'),
+        ('video/pv', 'Show Fan Disc'),
+        ('video/s1e2', 'Show S01E02'),
+      ]);
+
+  setUp(() async {
+    LocaleSettings.setLocale(AppLocale.zhCn);
+    db = HibikiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() => db.close());
-
-  Future<void> addAll({bool withGroupKeys = false}) async {
-    for (final (String uid, String title) in seeds) {
-      await db.addToCollection(
-        collectionId,
-        MediaKind.video,
-        uid,
-        groupKey: withGroupKeys
-            ? (title.contains('S02')
-                ? 's2'
-                : title.contains('S01')
-                    ? 's1'
-                    : 'extras')
-            : null,
-      );
-    }
-  }
 
   Future<List<VideoBookRow>> loadMembers() async {
     final List<MediaCollectionItemRow> items =
@@ -77,12 +67,6 @@ void main() {
             in await db.getCollectionItems(collectionId))
           it.entryKey,
       ];
-
-  Future<Map<String, String?>> persistedGroupKeys() async => <String, String?>{
-        for (final MediaCollectionItemRow it
-            in await db.getCollectionItems(collectionId))
-          it.entryKey: it.groupKey,
-      };
 
   Widget buildApp() => TranslationProvider(
         child: MaterialApp(
@@ -104,26 +88,42 @@ void main() {
         ),
       );
 
-  testWidgets('未分组合集：平铺列表，无分节标题（零变化）', (WidgetTester tester) async {
+  void useWideSurface(WidgetTester tester) {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await addAll();
+  }
+
+  testWidgets('多季合集进入即分节（分组派生自文件名，存量零迁移、无需任何动作）', (WidgetTester tester) async {
+    useWideSurface(tester);
+    await seedMultiSeason();
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('第 1 季'), findsOneWidget);
+    expect(find.text('第 2 季'), findsOneWidget);
+    expect(find.text('PV·特典'), findsOneWidget);
+  });
+
+  testWidgets('单季合集：平铺列表，无分节标题（零变化）', (WidgetTester tester) async {
+    useWideSurface(tester);
+    await seed(const <(String, String)>[
+      ('video/e1', 'Show 01'),
+      ('video/e2', 'Show 02'),
+    ]);
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
     expect(find.text('第 1 季'), findsNothing);
     expect(find.text('PV·特典'), findsNothing);
-    expect(find.text('Show S02E01'), findsOneWidget);
+    expect(find.text('Show 01'), findsOneWidget);
   });
 
-  testWidgets('「按季分组」：季→集重排 + 分组键真写穿 DB，列表按季分节', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await addAll();
+  testWidgets('「按季排序」：季→集重排、PV/特典殿后，真写穿 sortIndex',
+      (WidgetTester tester) async {
+    useWideSurface(tester);
+    await seedMultiSeason();
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
@@ -133,40 +133,14 @@ void main() {
     expect(
       await persistedOrder(),
       <String>['video/s1e1', 'video/s1e2', 'video/s2e1', 'video/pv'],
-      reason: '季升序→集升序，PV/特典殿后，且真写穿 sortIndex',
+      reason: '季升序→集升序，PV/特典殿后，且真写穿 sortIndex（不是只动内存）',
     );
-    expect(await persistedGroupKeys(), <String, String?>{
-      'video/s1e1': 's1',
-      'video/s1e2': 's1',
-      'video/s2e1': 's2',
-      'video/pv': 'extras',
-    });
-    expect(find.text('第 1 季'), findsOneWidget);
-    expect(find.text('第 2 季'), findsOneWidget);
-    expect(find.text('PV·特典'), findsOneWidget);
-  });
-
-  testWidgets('已分组合集进入即分节渲染（不需要重跑动作）', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await addAll(withGroupKeys: true);
-    await tester.pumpWidget(buildApp());
-    await tester.pumpAndSettle();
-
-    expect(find.text('第 1 季'), findsOneWidget);
-    expect(find.text('第 2 季'), findsOneWidget);
-    expect(find.text('PV·特典'), findsOneWidget);
   });
 
   testWidgets('分节视图节内拖拽：各节按显示顺序拼回全序落盘', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await addAll(withGroupKeys: true);
-    // 先把顺序整理成分季连续（s1e1, s1e2, s2e1, pv），使分节与全序一致。
+    useWideSurface(tester);
+    await seedMultiSeason();
+    // 先整理成分季连续（s1e1, s1e2, s2e1, pv），使分节与全序一致。
     await db.reorderCollectionItems(collectionId, <CollectionMemberKey>[
       for (final String uid in <String>[
         'video/s1e1',

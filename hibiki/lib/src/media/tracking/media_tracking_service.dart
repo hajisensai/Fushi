@@ -561,10 +561,11 @@ class MediaTrackingService {
     required int episodeIndex,
     bool seriesCompleted = false,
   }) async {
-    // v64 分季合集（≥2 组）：「整合集 → 单个 Bangumi 条目」结构性失真——Bangumi
-    // 一季一条目，合集下标当集数会把 S02E01 报成 E13、完结误报给第一季条目。此时
-    // 绕开合集级映射（保留不改写，只不再使用），一律走按集通道（季度感知刮削
-    // subject + 文件名季内集号）。
+    // 多季合集（分组按各集文件名现场派生，≥2 组即算，存量合集零迁移生效）：
+    // 「整合集 → 单个 Bangumi 条目」结构性失真——Bangumi 一季一条目，合集下标当
+    // 集数会把 S02E01 报成 E13、完结误报给第一季条目。此时绕开合集级映射（保留
+    // 不改写，只不再使用），一律走按集通道（季度感知刮削 subject + 文件名季内
+    // 集号）。
     bool multiSeason = false;
     if (collectionId != null) {
       multiSeason = isMultiSeasonGrouped(

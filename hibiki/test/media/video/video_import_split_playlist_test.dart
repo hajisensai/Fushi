@@ -185,33 +185,4 @@ void main() {
           <String>{'/v/c.mkv', '/v/d.mkv'});
     });
   });
-
-  test('v64 分季：导入即按文件名固化分组键（多季 + PV 各归各组）', () async {
-    final HibikiDatabase db = _memDb();
-    addTearDown(db.close);
-    final VideoBookRepository repo = VideoBookRepository(db);
-
-    final ({int collectionId, List<String> episodeUids}) result =
-        await repo.importSplitPlaylist(
-      collectionName: 'Show',
-      entries: const <PlaylistEntry>[
-        PlaylistEntry(title: '', path: '/v/Show S01E01.mkv'),
-        PlaylistEntry(title: '', path: '/v/Show S02E01.mkv'),
-        PlaylistEntry(title: '', path: '/v/Show Fan Disc.mkv'),
-      ],
-    );
-
-    final List<MediaCollectionItemRow> members =
-        await db.getCollectionItems(result.collectionId);
-    expect(
-      <String, String?>{
-        for (final MediaCollectionItemRow m in members) m.entryKey: m.groupKey,
-      },
-      <String, String?>{
-        result.episodeUids[0]: 's1',
-        result.episodeUids[1]: 's2',
-        result.episodeUids[2]: 'extras',
-      },
-    );
-  });
 }

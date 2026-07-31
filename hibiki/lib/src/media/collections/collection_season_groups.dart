@@ -2,14 +2,19 @@ import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 
-/// 合集内分季分组（schema v64 `media_collection_items.group_key`）的**单一真相源**：
-/// 键派生规则、多组判定、分节构建、按季重排。纯函数无 IO，便于单测。
+/// 合集内分季分组的**单一真相源**：键派生规则、多组判定、分节构建、按季重排。
+/// 纯函数无 IO，便于单测。
 ///
 /// 背景（用户拍板「多季直接在合集里面分开」）：文件夹导入按剥掉季号后的系列名
 /// 分组，S01/S02/PV 天生混进同一个 playlist 合集；而 Bangumi 一季一条目，「整合集
-/// 映射 + 合集下标当集数」会把 S02E01 报成 E13、完结误报给第一季条目。分组键把
-/// 「这一集属于哪一季」固化成合集成员标签：详情页据此分节展示，tracking 据此绕开
-/// 结构性失真的合集级映射（改走季度感知的按集通道）。
+/// 映射 + 合集下标当集数」会把 S02E01 报成 E13、完结误报给第一季条目。
+///
+/// **分组是文件名的纯函数，不是持久化状态**——一律在读取时从 `videoPath` 现场
+/// 派生，不落库。存储方案（曾试过 `group_key` 列）会制造三个本可不存在的问题：
+/// 存量合集要手动补键、旧成员 null 新成员有键的「半截态」、跨端同步对端无键退化。
+/// 派生让全部存量/新导入/同步来的多季合集**立即**获得同一语义，零迁移零手动。
+/// 消费点：详情页分节展示、tracking 绕开结构性失真的合集级映射（改走季度感知的
+/// 按集通道）。
 
 /// 解析不出集号的成员（PV / 特典 / 电影加映）的分组键。
 const String kCollectionExtrasGroupKey = 'extras';
@@ -32,17 +37,14 @@ int? seasonNumberOfGroupKey(String groupKey) {
   return int.tryParse(groupKey.substring(1));
 }
 
-/// 多季判定：**全部**成员已分组（非 null）且组数 ≥ 2 才算。部分分组（旧数据里
-/// 混进新导入的集）不启用分季语义——半截状态下分节 UI 与上报口径都会漂。
-bool isMultiSeasonGrouped(Iterable<String?> keys) {
+/// 多季判定：派生出的组数 ≥ 2（单季、纯电影、全 PV 都是单组 → 不启用分季语义）。
+bool isMultiSeasonGrouped(Iterable<String> keys) {
   final Set<String> distinct = <String>{};
-  bool any = false;
-  for (final String? key in keys) {
-    if (key == null) return false;
-    any = true;
+  for (final String key in keys) {
     distinct.add(key);
+    if (distinct.length >= 2) return true;
   }
-  return any && distinct.length >= 2;
+  return false;
 }
 
 /// 一个分节：组键 + 按全局顺序保留相对序的成员。
@@ -86,8 +88,8 @@ class CollectionSeasonRegroup<T> {
   final Map<T, String> keyOf;
 }
 
-/// 对合集成员按文件名重算季/集：产出新排序与分组键（调用方据此落盘
-/// `reorderCollectionItems` + `setCollectionItemGroupKeys`）。
+/// 对合集成员按文件名重算季/集：产出新排序与分组键（「按季排序」动作据此
+/// 经 `reorderCollectionItems` 落盘新序；键仅供展示层复用，不落库）。
 CollectionSeasonRegroup<T> regroupMembersBySeason<T>({
   required List<T> members,
   required String Function(T member) filenameOf,

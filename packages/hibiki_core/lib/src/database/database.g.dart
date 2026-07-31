@@ -13686,15 +13686,9 @@ class $MediaCollectionItemsTable extends MediaCollectionItems
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
-  static const VerificationMeta _groupKeyMeta =
-      const VerificationMeta('groupKey');
-  @override
-  late final GeneratedColumn<String> groupKey = GeneratedColumn<String>(
-      'group_key', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns =>
-      [collectionId, mediaType, entryKey, sortIndex, groupKey];
+      [collectionId, mediaType, entryKey, sortIndex];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -13730,10 +13724,6 @@ class $MediaCollectionItemsTable extends MediaCollectionItems
       context.handle(_sortIndexMeta,
           sortIndex.isAcceptableOrUnknown(data['sort_index']!, _sortIndexMeta));
     }
-    if (data.containsKey('group_key')) {
-      context.handle(_groupKeyMeta,
-          groupKey.isAcceptableOrUnknown(data['group_key']!, _groupKeyMeta));
-    }
     return context;
   }
 
@@ -13751,8 +13741,6 @@ class $MediaCollectionItemsTable extends MediaCollectionItems
           .read(DriftSqlType.string, data['${effectivePrefix}entry_key'])!,
       sortIndex: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}sort_index'])!,
-      groupKey: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}group_key']),
     );
   }
 
@@ -13778,18 +13766,11 @@ class MediaCollectionItemRow extends DataClass
 
   /// 合集内序：playlist 的播放顺序 / collection 的展示顺序。
   final int sortIndex;
-
-  /// 合集内分组键（v64，多季播放列表「合集内分开」）：`s<季号>`（如 `s1`/`s2`）
-  /// 或 `extras`（解析不出集号的 PV/特典）。null = 未分组（旧数据 / 非视频成员）。
-  /// 只是**分节标签**，与 [sortIndex] 正交：重排/一键整理不改它，重新分组动作
-  /// 统一改写。派生规则单一真相源在 app 层 `collection_season_groups.dart`。
-  final String? groupKey;
   const MediaCollectionItemRow(
       {required this.collectionId,
       required this.mediaType,
       required this.entryKey,
-      required this.sortIndex,
-      this.groupKey});
+      required this.sortIndex});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -13797,9 +13778,6 @@ class MediaCollectionItemRow extends DataClass
     map['media_type'] = Variable<String>(mediaType);
     map['entry_key'] = Variable<String>(entryKey);
     map['sort_index'] = Variable<int>(sortIndex);
-    if (!nullToAbsent || groupKey != null) {
-      map['group_key'] = Variable<String>(groupKey);
-    }
     return map;
   }
 
@@ -13809,9 +13787,6 @@ class MediaCollectionItemRow extends DataClass
       mediaType: Value(mediaType),
       entryKey: Value(entryKey),
       sortIndex: Value(sortIndex),
-      groupKey: groupKey == null && nullToAbsent
-          ? const Value.absent()
-          : Value(groupKey),
     );
   }
 
@@ -13823,7 +13798,6 @@ class MediaCollectionItemRow extends DataClass
       mediaType: serializer.fromJson<String>(json['mediaType']),
       entryKey: serializer.fromJson<String>(json['entryKey']),
       sortIndex: serializer.fromJson<int>(json['sortIndex']),
-      groupKey: serializer.fromJson<String?>(json['groupKey']),
     );
   }
   @override
@@ -13834,7 +13808,6 @@ class MediaCollectionItemRow extends DataClass
       'mediaType': serializer.toJson<String>(mediaType),
       'entryKey': serializer.toJson<String>(entryKey),
       'sortIndex': serializer.toJson<int>(sortIndex),
-      'groupKey': serializer.toJson<String?>(groupKey),
     };
   }
 
@@ -13842,14 +13815,12 @@ class MediaCollectionItemRow extends DataClass
           {int? collectionId,
           String? mediaType,
           String? entryKey,
-          int? sortIndex,
-          Value<String?> groupKey = const Value.absent()}) =>
+          int? sortIndex}) =>
       MediaCollectionItemRow(
         collectionId: collectionId ?? this.collectionId,
         mediaType: mediaType ?? this.mediaType,
         entryKey: entryKey ?? this.entryKey,
         sortIndex: sortIndex ?? this.sortIndex,
-        groupKey: groupKey.present ? groupKey.value : this.groupKey,
       );
   MediaCollectionItemRow copyWithCompanion(MediaCollectionItemsCompanion data) {
     return MediaCollectionItemRow(
@@ -13859,7 +13830,6 @@ class MediaCollectionItemRow extends DataClass
       mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
       entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
       sortIndex: data.sortIndex.present ? data.sortIndex.value : this.sortIndex,
-      groupKey: data.groupKey.present ? data.groupKey.value : this.groupKey,
     );
   }
 
@@ -13869,15 +13839,13 @@ class MediaCollectionItemRow extends DataClass
           ..write('collectionId: $collectionId, ')
           ..write('mediaType: $mediaType, ')
           ..write('entryKey: $entryKey, ')
-          ..write('sortIndex: $sortIndex, ')
-          ..write('groupKey: $groupKey')
+          ..write('sortIndex: $sortIndex')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(collectionId, mediaType, entryKey, sortIndex, groupKey);
+  int get hashCode => Object.hash(collectionId, mediaType, entryKey, sortIndex);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -13885,8 +13853,7 @@ class MediaCollectionItemRow extends DataClass
           other.collectionId == this.collectionId &&
           other.mediaType == this.mediaType &&
           other.entryKey == this.entryKey &&
-          other.sortIndex == this.sortIndex &&
-          other.groupKey == this.groupKey);
+          other.sortIndex == this.sortIndex);
 }
 
 class MediaCollectionItemsCompanion
@@ -13895,14 +13862,12 @@ class MediaCollectionItemsCompanion
   final Value<String> mediaType;
   final Value<String> entryKey;
   final Value<int> sortIndex;
-  final Value<String?> groupKey;
   final Value<int> rowid;
   const MediaCollectionItemsCompanion({
     this.collectionId = const Value.absent(),
     this.mediaType = const Value.absent(),
     this.entryKey = const Value.absent(),
     this.sortIndex = const Value.absent(),
-    this.groupKey = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MediaCollectionItemsCompanion.insert({
@@ -13910,7 +13875,6 @@ class MediaCollectionItemsCompanion
     required String mediaType,
     required String entryKey,
     this.sortIndex = const Value.absent(),
-    this.groupKey = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : collectionId = Value(collectionId),
         mediaType = Value(mediaType),
@@ -13920,7 +13884,6 @@ class MediaCollectionItemsCompanion
     Expression<String>? mediaType,
     Expression<String>? entryKey,
     Expression<int>? sortIndex,
-    Expression<String>? groupKey,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -13928,7 +13891,6 @@ class MediaCollectionItemsCompanion
       if (mediaType != null) 'media_type': mediaType,
       if (entryKey != null) 'entry_key': entryKey,
       if (sortIndex != null) 'sort_index': sortIndex,
-      if (groupKey != null) 'group_key': groupKey,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -13938,14 +13900,12 @@ class MediaCollectionItemsCompanion
       Value<String>? mediaType,
       Value<String>? entryKey,
       Value<int>? sortIndex,
-      Value<String?>? groupKey,
       Value<int>? rowid}) {
     return MediaCollectionItemsCompanion(
       collectionId: collectionId ?? this.collectionId,
       mediaType: mediaType ?? this.mediaType,
       entryKey: entryKey ?? this.entryKey,
       sortIndex: sortIndex ?? this.sortIndex,
-      groupKey: groupKey ?? this.groupKey,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -13965,9 +13925,6 @@ class MediaCollectionItemsCompanion
     if (sortIndex.present) {
       map['sort_index'] = Variable<int>(sortIndex.value);
     }
-    if (groupKey.present) {
-      map['group_key'] = Variable<String>(groupKey.value);
-    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -13981,7 +13938,6 @@ class MediaCollectionItemsCompanion
           ..write('mediaType: $mediaType, ')
           ..write('entryKey: $entryKey, ')
           ..write('sortIndex: $sortIndex, ')
-          ..write('groupKey: $groupKey, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -30933,7 +30889,6 @@ typedef $$MediaCollectionItemsTableCreateCompanionBuilder
   required String mediaType,
   required String entryKey,
   Value<int> sortIndex,
-  Value<String?> groupKey,
   Value<int> rowid,
 });
 typedef $$MediaCollectionItemsTableUpdateCompanionBuilder
@@ -30942,7 +30897,6 @@ typedef $$MediaCollectionItemsTableUpdateCompanionBuilder
   Value<String> mediaType,
   Value<String> entryKey,
   Value<int> sortIndex,
-  Value<String?> groupKey,
   Value<int> rowid,
 });
 
@@ -30986,9 +30940,6 @@ class $$MediaCollectionItemsTableFilterComposer
   ColumnFilters<int> get sortIndex => $composableBuilder(
       column: $table.sortIndex, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get groupKey => $composableBuilder(
-      column: $table.groupKey, builder: (column) => ColumnFilters(column));
-
   $$MediaCollectionsTableFilterComposer get collectionId {
     final $$MediaCollectionsTableFilterComposer composer = $composerBuilder(
         composer: this,
@@ -31028,9 +30979,6 @@ class $$MediaCollectionItemsTableOrderingComposer
   ColumnOrderings<int> get sortIndex => $composableBuilder(
       column: $table.sortIndex, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get groupKey => $composableBuilder(
-      column: $table.groupKey, builder: (column) => ColumnOrderings(column));
-
   $$MediaCollectionsTableOrderingComposer get collectionId {
     final $$MediaCollectionsTableOrderingComposer composer = $composerBuilder(
         composer: this,
@@ -31069,9 +31017,6 @@ class $$MediaCollectionItemsTableAnnotationComposer
 
   GeneratedColumn<int> get sortIndex =>
       $composableBuilder(column: $table.sortIndex, builder: (column) => column);
-
-  GeneratedColumn<String> get groupKey =>
-      $composableBuilder(column: $table.groupKey, builder: (column) => column);
 
   $$MediaCollectionsTableAnnotationComposer get collectionId {
     final $$MediaCollectionsTableAnnotationComposer composer = $composerBuilder(
@@ -31124,7 +31069,6 @@ class $$MediaCollectionItemsTableTableManager extends RootTableManager<
             Value<String> mediaType = const Value.absent(),
             Value<String> entryKey = const Value.absent(),
             Value<int> sortIndex = const Value.absent(),
-            Value<String?> groupKey = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               MediaCollectionItemsCompanion(
@@ -31132,7 +31076,6 @@ class $$MediaCollectionItemsTableTableManager extends RootTableManager<
             mediaType: mediaType,
             entryKey: entryKey,
             sortIndex: sortIndex,
-            groupKey: groupKey,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -31140,7 +31083,6 @@ class $$MediaCollectionItemsTableTableManager extends RootTableManager<
             required String mediaType,
             required String entryKey,
             Value<int> sortIndex = const Value.absent(),
-            Value<String?> groupKey = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               MediaCollectionItemsCompanion.insert(
@@ -31148,7 +31090,6 @@ class $$MediaCollectionItemsTableTableManager extends RootTableManager<
             mediaType: mediaType,
             entryKey: entryKey,
             sortIndex: sortIndex,
-            groupKey: groupKey,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0

@@ -2766,6 +2766,6 @@
   "selection_web_search_unavailable": "No app can search the web.",
   "selection_share_failed": "Could not open the share sheet.",
   "collection_group_extras": "Extras & PV",
-  "collection_group_by_season": "Group by season",
-  "collection_group_season": "Season $n"
+  "collection_group_season": "Season $n",
+  "collection_sort_by_season": "Sort by season"
 }
