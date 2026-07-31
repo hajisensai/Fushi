@@ -35,7 +35,7 @@ class BangumiMetadataAdapter implements GalgameMetadataAdapter {
     GalgameRateLimiter? rateLimiter,
     String? accessToken,
     String baseUrl = 'https://api.bgm.tv/v0',
-    Duration timeout = const Duration(seconds: 15),
+    Duration timeout = kBangumiRequestTimeout,
   }) : _rateLimiter = rateLimiter ?? GalgameRateLimiter() {
     _api = BangumiApiClient(
       client: client,
