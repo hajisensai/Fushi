@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
+import 'package:hibiki/src/media/collections/collection_season_groups.dart';
 import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
 import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
@@ -54,6 +55,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     with CollectionDetailShared<MediaCollectionDetailPage> {
   late String _name;
   List<VideoBookRow> _members = const <VideoBookRow>[];
+
+  /// v64 分季：video 成员 bookUid → 分组键（null = 未分组）。与 [_members] 同批
+  /// 装载；全部非 null 且 ≥2 组时列表按季分节渲染。
+  Map<String, String?> _groupKeyByUid = const <String, String?>{};
   bool _loading = true;
 
   @override
@@ -76,9 +81,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   Future<void> _reload() async {
     final List<VideoBookRow> members = await widget.loadMembers();
+    final List<MediaCollectionItemRow> items =
+        await widget.database.getCollectionItems(widget.collection.id);
     if (!mounted) return;
     setState(() {
       _members = members;
+      _groupKeyByUid = <String, String?>{
+        for (final MediaCollectionItemRow item in items)
+          if (item.mediaType == MediaKind.video.dbValue)
+            item.entryKey: item.groupKey,
+      };
       _loading = false;
     });
   }
@@ -109,14 +121,37 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     widget.onChanged();
   }
 
-  /// 拖拽精修：HibikiReorderableColumn 语义（newIndex 即最终下标，无 SDK
-  /// ReorderableListView 的「移除前下标」修正）→ 内存 move → 落盘。
-  Future<void> _onReorder(int oldIndex, int newIndex) async {
-    if (oldIndex == newIndex) return;
-    final List<VideoBookRow> next = List<VideoBookRow>.of(_members);
-    final VideoBookRow moved = next.removeAt(oldIndex);
-    next.insert(newIndex, moved);
-    setState(() => _members = next);
+  /// 续播成员的 uid（分节视图里行的节内下标对不上全局 [_continueIndex]，高亮
+  /// 统一按 uid 判定）。
+  String? get _continueUid =>
+      _members.isEmpty ? null : _members[_continueIndex].bookUid;
+
+  /// 「按季分组」（v64）：按文件名重算各集季/集 → 重排（季→集→标题，PV/特典殿后）
+  /// 并写分组键。落库后列表按季分节；解析规则与导入分组同源。
+  Future<void> _groupBySeason() async {
+    if (_members.isEmpty) return;
+    final CollectionSeasonRegroup<VideoBookRow> regroup =
+        regroupMembersBySeason<VideoBookRow>(
+      members: _members,
+      filenameOf: (VideoBookRow r) => r.videoPath,
+      titleOf: (VideoBookRow r) => r.title,
+    );
+    await widget.database.setCollectionItemGroupKeys(
+      widget.collection.id,
+      <CollectionMemberKey, String?>{
+        for (final VideoBookRow r in _members)
+          (mediaType: MediaKind.video.dbValue, entryKey: r.bookUid):
+              regroup.keyOf[r],
+      },
+    );
+    if (!mounted) return;
+    setState(() {
+      _members = regroup.ordered;
+      _groupKeyByUid = <String, String?>{
+        for (final VideoBookRow r in regroup.ordered)
+          r.bookUid: regroup.keyOf[r],
+      };
+    });
     await _persistOrder();
   }
 
@@ -265,6 +300,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           availableWidth: availableWidth,
           alwaysVisible: <Widget>[_buildSortMenu()],
           collapsible: <HibikiAppBarAction>[
+            // v64：多季播放列表「在合集里面分开」——按文件名季/集重排 + 写分组键，
+            // 列表随之按季分节（单季合集执行后无可见变化，幂等）。
+            HibikiAppBarAction(
+              icon: Icons.segment,
+              label: t.collection_group_by_season,
+              onPressed: _members.isEmpty ? null : _groupBySeason,
+            ),
             HibikiAppBarAction(
               icon: Icons.subtitles_outlined,
               label: t.video_jimaku_batch_title,
@@ -341,114 +383,186 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                         // 按下即拖、触摸长按；行尾拖柄图标保留为视觉提示。
                         // onReorder 落盘 sortIndex 后库页行/播放器换集立即同序。
                         child: SingleChildScrollView(
-                          child: HibikiReorderableColumn(
-                            itemCount: _members.length,
-                            keyForIndex: (int i) =>
-                                ValueKey<String>(_members[i].bookUid),
-                            onReorder: _onReorder,
-                            itemBuilder: (BuildContext _, int i) {
-                              final VideoBookRow ep = _members[i];
-                              final bool completed = ep.completedAt != null;
-                              final bool started = ep.lastPositionMs > 0;
-                              final bool isContinue = i == _continueIndex;
-                              // 用 InkWell+Row（非 ListTile）保持 MD3 设计系统一致；
-                              // VideoBooks 不存总时长无法算集内百分比 → 只标「已看完 /
-                              // 看过一半 / 未看」三态图标，不画误导性进度条。
-                              final Widget row = Material(
-                                color: isContinue
-                                    ? cs.primaryContainer
-                                        .withValues(alpha: 0.35)
-                                    : Colors.transparent,
-                                child: InkWell(
-                                  canRequestFocus: false,
-                                  onTap: () => widget.onOpenEpisode(ep),
-                                  child: Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: tokens.spacing.rowHorizontal,
-                                      vertical: tokens.spacing.rowVertical,
-                                    ),
-                                    child: Row(
-                                      children: <Widget>[
-                                        SizedBox(
-                                          width: tokens.spacing.gap * 4,
-                                          child: Text(
-                                            '${i + 1}',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                                color: cs.onSurfaceVariant),
-                                          ),
-                                        ),
-                                        SizedBox(
-                                            width: tokens.spacing.rowVertical),
-                                        // Jellyfin 式：每集独立视频各自的封面缩略图（16:9
-                                        // 抽帧；无封面时占位）。
-                                        _episodeThumb(ep, cs),
-                                        SizedBox(
-                                            width: tokens.spacing.rowVertical),
-                                        Expanded(
-                                          child: Text(
-                                            ep.title,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        if (completed)
-                                          Icon(Icons.check_circle,
-                                              color: cs.primary, size: 20)
-                                        else if (started)
-                                          Icon(Icons.play_circle_outline,
-                                              color: cs.onSurfaceVariant,
-                                              size: 20),
-                                        SizedBox(width: tokens.spacing.gap / 2),
-                                        // 逐集移出（整理页删除后的唯一入口）。
-                                        HibikiIconButton(
-                                          tooltip: t.collection_remove_member,
-                                          icon: Icons.remove_circle_outline,
-                                          size: 18,
-                                          onTap: () => _removeEpisode(ep),
-                                        ),
-                                        SizedBox(width: tokens.spacing.gap / 2),
-                                        // 拖柄图标：纯视觉提示（整行可拖，见类注释）。
-                                        Icon(
-                                          Icons.drag_handle,
-                                          color: cs.onSurfaceVariant,
-                                          size: 20,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                              // 巡检 PR-3：剧集行接入手柄/键盘方向焦点（裸 InkWell
-                              // 不进 Hibiki 焦点系统，手柄用户到不了任何一集）。
-                              // Enter / 手柄 A 与鼠标点击同路径开该集。
-                              if (HibikiFocusRoot.maybeControllerOf(context) ==
-                                  null) {
-                                return row;
-                              }
-                              return Actions(
-                                actions: <Type, Action<Intent>>{
-                                  ActivateIntent:
-                                      CallbackAction<ActivateIntent>(
-                                    onInvoke: (_) {
-                                      widget.onOpenEpisode(ep);
-                                      return null;
-                                    },
-                                  ),
-                                },
-                                child: HibikiFocusTarget(
-                                  id: HibikiFocusId(
-                                      'collection-episode-${ep.bookUid}'),
-                                  child: row,
-                                ),
-                              );
-                            },
-                          ),
+                          child: _buildEpisodeList(tokens, cs),
                         ),
                       ),
                     ],
                   ),
       ),
     );
+  }
+
+  /// 剧集列表：分季合集（全部成员已分组且 ≥2 组，v64）按季分节渲染、节内独立
+  /// 拖拽；其余保持单一平铺可拖拽列表（历史行为，零变化）。
+  Widget _buildEpisodeList(HibikiDesignTokens tokens, ColorScheme cs) {
+    if (!isMultiSeasonGrouped(
+        _members.map((VideoBookRow r) => _groupKeyByUid[r.bookUid]))) {
+      return _buildReorderableSection(tokens, cs, _members, sections: null);
+    }
+    final List<CollectionSeasonSection<VideoBookRow>> sections =
+        buildCollectionSeasonSections<VideoBookRow>(
+      members: _members,
+      keyOf: (VideoBookRow r) => _groupKeyByUid[r.bookUid],
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (final CollectionSeasonSection<VideoBookRow> section
+            in sections) ...<Widget>[
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.rowHorizontal,
+              tokens.spacing.gap,
+              tokens.spacing.rowHorizontal,
+              tokens.spacing.gap / 2,
+            ),
+            child: Text(
+              _groupLabel(section.groupKey),
+              key: ValueKey<String>('collection_group_${section.groupKey}'),
+              style: tokens.type.sectionLabel,
+            ),
+          ),
+          _buildReorderableSection(tokens, cs, section.items,
+              sections: sections),
+        ],
+      ],
+    );
+  }
+
+  /// 分组键 → 分节标题（`s<N>` → 「第 N 季」；其余 → PV·特典）。
+  String _groupLabel(String groupKey) {
+    final int? season = seasonNumberOfGroupKey(groupKey);
+    return season == null
+        ? t.collection_group_extras
+        : t.collection_group_season(n: season);
+  }
+
+  /// 一节（或平铺全表）的可拖拽列表。[sections] 非 null = 分季视图：重排后由
+  /// [_onReorderWithin] 把各节按显示顺序拼回全序落盘。
+  Widget _buildReorderableSection(
+    HibikiDesignTokens tokens,
+    ColorScheme cs,
+    List<VideoBookRow> sectionMembers, {
+    required List<CollectionSeasonSection<VideoBookRow>>? sections,
+  }) {
+    return HibikiReorderableColumn(
+      itemCount: sectionMembers.length,
+      keyForIndex: (int i) => ValueKey<String>(sectionMembers[i].bookUid),
+      onReorder: (int from, int to) =>
+          _onReorderWithin(sectionMembers, sections, from, to),
+      itemBuilder: (BuildContext _, int i) {
+        final VideoBookRow ep = sectionMembers[i];
+        final bool completed = ep.completedAt != null;
+        final bool started = ep.lastPositionMs > 0;
+        // 分节视图里 i 是节内下标，续播高亮按 uid 对齐全局
+        // continueMemberIndex（平铺视图两者等价）。
+        final bool isContinue = ep.bookUid == _continueUid;
+        // 用 InkWell+Row（非 ListTile）保持 MD3 设计系统一致；
+        // VideoBooks 不存总时长无法算集内百分比 → 只标「已看完 /
+        // 看过一半 / 未看」三态图标，不画误导性进度条。
+        final Widget row = Material(
+          color: isContinue
+              ? cs.primaryContainer.withValues(alpha: 0.35)
+              : Colors.transparent,
+          child: InkWell(
+            canRequestFocus: false,
+            onTap: () => widget.onOpenEpisode(ep),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: tokens.spacing.rowHorizontal,
+                vertical: tokens.spacing.rowVertical,
+              ),
+              child: Row(
+                children: <Widget>[
+                  SizedBox(
+                    width: tokens.spacing.gap * 4,
+                    child: Text(
+                      '${i + 1}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: cs.onSurfaceVariant),
+                    ),
+                  ),
+                  SizedBox(width: tokens.spacing.rowVertical),
+                  // Jellyfin 式：每集独立视频各自的封面缩略图（16:9
+                  // 抽帧；无封面时占位）。
+                  _episodeThumb(ep, cs),
+                  SizedBox(width: tokens.spacing.rowVertical),
+                  Expanded(
+                    child: Text(
+                      ep.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (completed)
+                    Icon(Icons.check_circle, color: cs.primary, size: 20)
+                  else if (started)
+                    Icon(Icons.play_circle_outline,
+                        color: cs.onSurfaceVariant, size: 20),
+                  SizedBox(width: tokens.spacing.gap / 2),
+                  // 逐集移出（整理页删除后的唯一入口）。
+                  HibikiIconButton(
+                    tooltip: t.collection_remove_member,
+                    icon: Icons.remove_circle_outline,
+                    size: 18,
+                    onTap: () => _removeEpisode(ep),
+                  ),
+                  SizedBox(width: tokens.spacing.gap / 2),
+                  // 拖柄图标：纯视觉提示（整行可拖，见类注释）。
+                  Icon(
+                    Icons.drag_handle,
+                    color: cs.onSurfaceVariant,
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        // 巡检 PR-3：剧集行接入手柄/键盘方向焦点（裸 InkWell
+        // 不进 Hibiki 焦点系统，手柄用户到不了任何一集）。
+        // Enter / 手柄 A 与鼠标点击同路径开该集。
+        if (HibikiFocusRoot.maybeControllerOf(context) == null) {
+          return row;
+        }
+        return Actions(
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                widget.onOpenEpisode(ep);
+                return null;
+              },
+            ),
+          },
+          child: HibikiFocusTarget(
+            id: HibikiFocusId('collection-episode-${ep.bookUid}'),
+            child: row,
+          ),
+        );
+      },
+    );
+  }
+
+  /// 节内重排：[sections] 为 null（平铺）时新序即全序；分季视图把被拖节替换成
+  /// 新序、其余节原样，按显示顺序拼回全序，再走 [_persistOrder] 落盘。
+  Future<void> _onReorderWithin(
+    List<VideoBookRow> sectionMembers,
+    List<CollectionSeasonSection<VideoBookRow>>? sections,
+    int from,
+    int to,
+  ) async {
+    if (from == to) return;
+    final List<VideoBookRow> next = List<VideoBookRow>.of(sectionMembers);
+    final VideoBookRow moved = next.removeAt(from);
+    next.insert(to, moved);
+    setState(() {
+      _members = sections == null
+          ? next
+          : <VideoBookRow>[
+              for (final CollectionSeasonSection<VideoBookRow> s in sections)
+                ...(identical(s.items, sectionMembers) ? next : s.items),
+            ];
+    });
+    await _persistOrder();
   }
 }

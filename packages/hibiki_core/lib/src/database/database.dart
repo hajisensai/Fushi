@@ -416,7 +416,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 63;
+  int get schemaVersion => 64;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1286,6 +1286,20 @@ class HibikiDatabase extends _$HibikiDatabase {
                 );
               }
             });
+          }
+          if (from < 64) {
+            // v64（多季播放列表合集内分季）：media_collection_items 加 group_key
+            // 分节标签列（`s<季号>` / `extras`，见 tables.dart 注释）。
+            //
+            // 无损迁移：nullable 无默认，既有全部行回填 NULL = 未分组 = 详情页
+            // 维持平铺列表、tracking 维持原语义（Never break userspace）；新导入
+            // 与「按季分组」动作才写值。守卫幂等（fresh DB 由 onCreate 建好，
+            // 重复升级 _columnExists 短路 no-op）。
+            if (await _tableExists('media_collection_items') &&
+                !await _columnExists('media_collection_items', 'group_key')) {
+              await m.addColumn(
+                  mediaCollectionItems, mediaCollectionItems.groupKey);
+            }
           }
         },
         onCreate: (m) async {
@@ -3161,15 +3175,19 @@ class HibikiDatabase extends _$HibikiDatabase {
   /// 再删掉，防复活变成禁重加）。
   ///
   /// P5：本机已知种类的类型化入口；转移/合并对端未知种类走 [addToCollectionRaw]。
+  /// [groupKey] 见 [MediaCollectionItems.groupKey]（v64 分节标签，null=未分组）。
   Future<void> addToCollection(
-          int collectionId, MediaKind mediaType, String entryKey) =>
-      addToCollectionRaw(collectionId, mediaType.dbValue, entryKey);
+          int collectionId, MediaKind mediaType, String entryKey,
+          {String? groupKey}) =>
+      addToCollectionRaw(collectionId, mediaType.dbValue, entryKey,
+          groupKey: groupKey);
 
   /// [addToCollection] 的裸串版：合集合并/转移把**现有成员行原样搬家**时用——
   /// 行值可能是对端未来新增的未知种类（或旧值域残留），tryParse 丢弃会静默丢
   /// 成员（Never break userspace）。新增本机成员一律走类型化 [addToCollection]。
   Future<void> addToCollectionRaw(
-          int collectionId, String mediaType, String entryKey) =>
+          int collectionId, String mediaType, String entryKey,
+          {String? groupKey}) =>
       transaction(() async {
         final int next = await _nextCollectionSortIndex(collectionId);
         await into(mediaCollectionItems).insert(
@@ -3178,6 +3196,7 @@ class HibikiDatabase extends _$HibikiDatabase {
             mediaType: mediaType,
             entryKey: entryKey,
             sortIndex: Value(next),
+            groupKey: Value(groupKey),
           ),
           mode: InsertMode.insertOrIgnore,
         );
@@ -3285,6 +3304,24 @@ class HibikiDatabase extends _$HibikiDatabase {
             .write(MediaCollectionsCompanion(
           orderUpdatedAt: Value(DateTime.now().millisecondsSinceEpoch),
         ));
+      });
+
+  /// 批量改写合集成员的分组键（v64「按季分组」动作 / 导入补分组）。[keys] 只需
+  /// 点名要改的成员（成员键 → 新 groupKey，显式 null = 清组）；未点名成员不动。
+  /// 单事务全成或全回滚。分组是**分节标签**不是人为改序，不 bump orderUpdatedAt。
+  Future<void> setCollectionItemGroupKeys(
+          int collectionId, Map<CollectionMemberKey, String?> keys) =>
+      transaction(() async {
+        for (final MapEntry<CollectionMemberKey, String?> e in keys.entries) {
+          await (update(mediaCollectionItems)
+                ..where((t) =>
+                    t.collectionId.equals(collectionId) &
+                    t.mediaType.equals(e.key.mediaType) &
+                    t.entryKey.equals(e.key.entryKey)))
+              .write(MediaCollectionItemsCompanion(
+            groupKey: Value(e.value),
+          ));
+        }
       });
 
   /// 删条目时清其全部合集引用（逻辑外键无 DB cascade，删书路径主动调用）；被清空的

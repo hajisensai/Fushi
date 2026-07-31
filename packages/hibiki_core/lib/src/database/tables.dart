@@ -904,6 +904,12 @@ class MediaCollectionItems extends Table {
   /// 合集内序：playlist 的播放顺序 / collection 的展示顺序。
   IntColumn get sortIndex => integer().withDefault(const Constant(0))();
 
+  /// 合集内分组键（v64，多季播放列表「合集内分开」）：`s<季号>`（如 `s1`/`s2`）
+  /// 或 `extras`（解析不出集号的 PV/特典）。null = 未分组（旧数据 / 非视频成员）。
+  /// 只是**分节标签**，与 [sortIndex] 正交：重排/一键整理不改它，重新分组动作
+  /// 统一改写。派生规则单一真相源在 app 层 `collection_season_groups.dart`。
+  TextColumn get groupKey => text().nullable()();
+
   /// 复合主键：同一合集内一条目一行（允许跨合集重复）。
   @override
   Set<Column> get primaryKey => {collectionId, mediaType, entryKey};

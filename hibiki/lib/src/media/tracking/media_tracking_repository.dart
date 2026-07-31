@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:drift/drift.dart';
+import 'package:hibiki/src/media/collections/collection_season_groups.dart'
+    show isMultiSeasonGrouped;
 import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -353,6 +355,17 @@ class MediaTrackingRepository {
     );
   }
 
+  /// 合集 video 成员的分组键列（v64 分季，语义见 collection_season_groups.dart）。
+  /// service 据此判定「多季合集」并绕开结构性失真的合集级映射。
+  Future<List<String?>> loadCollectionVideoGroupKeys(int collectionId) async {
+    final List<MediaCollectionItemRow> items =
+        await _db.getCollectionItems(collectionId);
+    return <String?>[
+      for (final MediaCollectionItemRow item in items)
+        if (item.mediaType == MediaKind.video.dbValue) item.groupKey,
+    ];
+  }
+
   Future<AutoBookTrackingSource?> loadAutoBookSource(String bookKey) async {
     final EpubBookRow? book = await _db.getEpubBook(bookKey);
     if (book == null) return null;
@@ -501,6 +514,14 @@ class MediaTrackingRepository {
               .where((MediaCollectionItemRow item) =>
                   item.mediaType == MediaKind.video.dbValue)
               .toList(growable: false);
+      // v64 分季合集：整合集映射结构性失真（Bangumi 一季一条目，合集下标当集数
+      // 会把第二季完结报给第一季 subject）。补发跳过合集级映射，按集映射的补发
+      // 由上面的 video 分支承担。
+      if (isMultiSeasonGrouped(<String?>[
+        for (final MediaCollectionItemRow item in items) item.groupKey,
+      ])) {
+        continue;
+      }
       int highestCompletedIndex = -1;
       int latestCompletedAt = 0;
       for (int index = 0; index < items.length; index++) {

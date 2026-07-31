@@ -139,8 +139,9 @@ class _FailingWriteDatabase extends HibikiDatabase {
   Future<void> addToCollection(
     int collectionId,
     MediaKind mediaType,
-    String entryKey,
-  ) async {
+    String entryKey, {
+    String? groupKey,
+  }) async {
     throw StateError('simulated collection write failure');
   }
 }
