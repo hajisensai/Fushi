@@ -31,8 +31,42 @@ enum AudiobookClipBoundaryKind {
   /// 它命中的那一段或返回 null，永远不会拼出跨文件区间。两类在 M1 都走兜底提示，不导出。
   unsupportedRange,
 
+  /// BUG-1262：区间有效但超时长上限 [kAudiobookClipMaxDurationMs]。此前该情况被并进
+  /// [unsupportedRange]，用户看到的却是「跨章或跨音频文件」——同章长选区被误报跨章。
+  /// 分类层必须把「太长」与「解析不出」分开，调用方才能给出诚实文案。
+  tooLong,
+
   /// 可导出：拿到单 cue / 单文件的有效区间。
   exportable,
+}
+
+/// D4：片段视频时长安全上限（单一真相源，单句/多句两条分类路径共用）。
+///
+/// BUG-1262：从 120s 提到 300s——上限最初防的是「巨型编码」：移动端彼时只有 MJPEG
+/// （帧内 JPEG，30 秒 ≈ 200MB）。桌面 H.264（BUG-809）与移动 MPEG-4（BUG-1264）都有
+/// 帧间压缩后，逐句高亮的大量重复帧压到近零字节，体积不再是约束；剩余成本（序列帧
+/// 落盘数、编码时长）由 [clipExportFps] 的总帧数预算与合成超时随时长缩放兜住。
+/// ⚠️ 改这个值必须同步 `audiobook_export_clip_too_long` 的 i18n 文案（写死「5 分钟」）。
+const int kAudiobookClipMaxDurationMs = 300 * 1000;
+
+/// 动态逐句高亮导出的帧率：按片段时长收敛，总帧数封顶。
+///
+/// BUG-713 把 fps 提到 24（Δ≈41.7ms，高亮量化误差降到不可感知）；BUG-1262 上限放宽到
+/// 300s 后，24fps × 300s = 7200 帧序列帧落盘（每帧一张整幅 JPEG 复制）会把临时盘吃到
+/// GB 级。这里以 **120s×24fps=2880 帧**（提限前的既有最坏情况）为总帧数预算：短片段
+/// 保持 24fps 的高亮精度，长片段按预算逐级降 fps（300s → 9fps，Δ≈111ms——长片段
+/// 里可感知但可接受，换来的是导出根本可能）。纯函数、可单测。
+int clipExportFps({
+  required int durationMs,
+  int maxFps = 24,
+  int minFps = 6,
+  int maxFrames = 2880,
+}) {
+  if (durationMs <= 0) {
+    return maxFps;
+  }
+  final int byBudget = (maxFrames * 1000 / durationMs).floor();
+  return byBudget.clamp(minFps, maxFps);
 }
 
 /// 选区 → 整句 cue 区间的判定结果（M1，纯数据）。
@@ -58,12 +92,17 @@ class AudiobookClipBoundaryResult {
 /// - [audioFileCount]：本会话可用音频文件数（控制器 `audioFiles?.length`，无音频传 0）。
 /// - [sentenceRange]：`_sentenceAudioRangeFor(...)` 已算出的单 cue / 单文件区间（可空）。
 ///
-/// 判定顺序固定（先空选区 → 再无音频 → 再无区间 → 否则可导出），保证每个分支互斥、
-/// 可被单测逐一命中。**不**在这里访问任何可变 reader 状态，便于纯函数测试。
+/// 判定顺序固定（先空选区 → 再无音频 → 再无区间 → 再超时长 → 否则可导出），保证每个
+/// 分支互斥、可被单测逐一命中。**不**在这里访问任何可变 reader 状态，便于纯函数测试。
+///
+/// BUG-1262：超 [maxDurationMs] 从 [AudiobookClipBoundaryKind.unsupportedRange] 拆成
+/// [AudiobookClipBoundaryKind.tooLong]——「太长」与「跨章/跨文件」是两种事实，共用文案
+/// 会把同章长选区误报成跨章。上限判定收进分类层（此前散在 UI 层 D4 特判）。
 AudiobookClipBoundaryResult classifyAudiobookClipSelection({
   required String selectedText,
   required int audioFileCount,
   required AudioPlaybackRange? sentenceRange,
+  int maxDurationMs = kAudiobookClipMaxDurationMs,
 }) {
   if (selectedText.trim().isEmpty) {
     return const AudiobookClipBoundaryResult(
@@ -82,6 +121,11 @@ AudiobookClipBoundaryResult classifyAudiobookClipSelection({
       range.endMs <= range.startMs) {
     return const AudiobookClipBoundaryResult(
       kind: AudiobookClipBoundaryKind.unsupportedRange,
+    );
+  }
+  if (range.endMs - range.startMs > maxDurationMs) {
+    return const AudiobookClipBoundaryResult(
+      kind: AudiobookClipBoundaryKind.tooLong,
     );
   }
   return AudiobookClipBoundaryResult(
@@ -136,12 +180,13 @@ class AudiobookClipShareAttachment {
 
 List<AudiobookClipShareAttachment> audiobookClipMobileShareAttachments({
   required String videoPath,
-  required bool useH264,
 }) {
+  // BUG-1264：移动端产物从 MJPEG/.mov 换 MPEG-4/.mp4 后，两端容器统一为 mp4，
+  // mime 不再按编码器分叉。
   return <AudiobookClipShareAttachment>[
     AudiobookClipShareAttachment(
       path: videoPath,
-      mimeType: useH264 ? 'video/mp4' : 'video/quicktime',
+      mimeType: 'video/mp4',
     ),
   ];
 }
@@ -278,14 +323,15 @@ class AudiobookClipMultiCueResult {
 /// 整段完整音频窗口——**单一真相源**，多句路径不再自己拼窗口，避免与音频裁剪窗口漂移。
 /// [cueStartEndMs] 是每句 `(text, startMs, endMs)`（原始 cue，未加 padding），供逐句高亮。
 ///
-/// 判定顺序与单句版一致（空选区 → 无音频 → 无区间 → 否则可导出）。多句按**全局时长**
-/// 判上限 [maxDurationMs]；超限走 unsupportedRange（回退单句静态）。
+/// 判定顺序与单句版一致（空选区 → 无音频 → 无区间 → 超时长 → 否则可导出）。多句按
+/// **全局时长**判上限 [maxDurationMs]；超限归 [AudiobookClipBoundaryKind.tooLong]
+/// （BUG-1262：与「解析不出区间」分开，调用方据此给诚实文案）。
 AudiobookClipMultiCueResult classifyAudiobookClipMultiCue({
   required String selectedText,
   required int audioFileCount,
   required AudioPlaybackRange? globalRange,
   required List<AudiobookClipCueSpan> cueSpans,
-  int maxDurationMs = 120 * 1000,
+  int maxDurationMs = kAudiobookClipMaxDurationMs,
 }) {
   if (selectedText.trim().isEmpty) {
     return const AudiobookClipMultiCueResult(
@@ -301,10 +347,14 @@ AudiobookClipMultiCueResult classifyAudiobookClipMultiCue({
       cueSpans.isEmpty ||
       globalRange.audioFileIndex < 0 ||
       globalRange.audioFileIndex >= audioFileCount ||
-      globalRange.endMs <= globalRange.startMs ||
-      globalRange.endMs - globalRange.startMs > maxDurationMs) {
+      globalRange.endMs <= globalRange.startMs) {
     return const AudiobookClipMultiCueResult(
       kind: AudiobookClipBoundaryKind.unsupportedRange,
+    );
+  }
+  if (globalRange.endMs - globalRange.startMs > maxDurationMs) {
+    return const AudiobookClipMultiCueResult(
+      kind: AudiobookClipBoundaryKind.tooLong,
     );
   }
   return AudiobookClipMultiCueResult(
@@ -319,20 +369,25 @@ AudiobookClipMultiCueResult classifyAudiobookClipMultiCue({
 // ─────────────────────────────────────────────────────────────────────────
 // TODO-945 M4：把文本图 + 音频片段（AAC）合成成一段短视频。
 //
-// 编码器按后端能力分流（[_clipVideoCodecArgs]，BUG-809）：
+// 编码器按后端能力分流（[_clipVideoCodecArgs]，BUG-809 / BUG-1264）：
 // - 桌面 ffmpeg-min 自 `e039cf760`（2026-07-07，TODO-1257）已编入 `libx264`（H.264）+
 //   `mp4` muxer → 桌面用 `-c:v libx264` + `.mp4`：**带帧间压缩**，逐句高亮跟随里大量
 //   重复帧压到近零字节，30 秒片段从旧 mjpeg 的 ~200MB 降到几 MB，且 .mp4 任意播放器/
 //   浏览器/社交平台可直接打开。
-// - 移动端自编 ffmpeg-kit **min** 变体无外部 GPL 库（无 libx264），仍用 `-c:v mjpeg`
-//   （Motion JPEG，帧内 JPEG）+ `.mov` 容器。GIF 无音轨故排除。
+// - 移动端自编 ffmpeg-kit **min** 变体无外部 GPL 库（无 libx264），用 libavcodec
+//   **原生 `mpeg4`**（MPEG-4 Part 2）+ `.mp4`（BUG-1264；旧 mjpeg/.mov 无帧间压缩、
+//   30 秒 ≈ 200MB，且大量安卓播放器/接收端无 MJPEG 解码 → 黑屏/不可播）。AAR 实证
+//   （arm64/iOS framework 同证）：`mpeg4videoenc` 的 AVClass 字符串 `MPEG4 encoder` +
+//   `mpegvideo_enc.c`/`motion_est.c`/`ratecontrol.c` 均在 .rodata；movenc（mov/mp4/
+//   ipod 家族 muxer）与 `faststart` 同在——**无需重编 AAR**。MPEG-4 Part 2 解码是
+//   Android/iOS 硬解基线，任意系统播放器可直接播。
 // 两条路径都 `-c:a aac`；单图路径 `-loop 1` + `-shortest`，序列帧路径 `-framerate`。
 //
 // ⚠️ 容器（D-MUXER，BUG-460）：`.mov`/`.mp4` 都需要能同时装视频+音频流的 mov/mp4
 // muxer；精简 ffmpeg-min build（`--disable-everything`）原本只编入 adts/gif/mjpeg/
 // image2 单流 muxer，写这类容器会 exit -22（EINVAL）。`mov`+`mp4` 均已加进
 // `tool/ffmpeg-min/build-ffmpeg-min.sh` 的 MUXERS 白名单（AAC 入 mov/mp4 自动经已编入
-// 的 `aac_adtstoasc` bsf）；本路径依赖重编后的 ffmpeg-min 产物随桌面发布更新。
+// 的 `aac_adtstoasc` bsf）；移动 AAR 的 movenc 同段实证已确认。
 // ─────────────────────────────────────────────────────────────────────────
 
 /// 片段视频合成的失败原因。
@@ -373,7 +428,7 @@ class AudiobookClipSynthResult {
   bool get isSuccess => outputPath != null && failure == null;
 }
 
-/// 纯函数：构建「静态图 + 音频 → mjpeg/.mov 短视频」的 ffmpeg 参数表。可单测。
+/// 纯函数：构建「静态图 + 音频 → h264/mpeg4 .mp4 短视频」的 ffmpeg 参数表。可单测。
 ///
 /// 关键参数与理由：
 /// - `-f image2 -loop 1 -i img`：把单张 **JPEG** 图当无限循环视频流（静态画面）。显式
@@ -386,17 +441,16 @@ class AudiobookClipSynthResult {
 ///   桌面 ffmpeg-min 同样含 mjpeg decoder（build-ffmpeg-min.sh DECODERS 列 `mjpeg`），
 ///   故把静止文本帧统一喂 JPEG，两端都走已存在的 mjpeg 解码，不再触碰缺失的 png。
 /// - `-i audio`：音频输入。两输入默认映射（无显式 -map，单流无歧义）。
-/// - `-c:v mjpeg`：**捆绑包唯一带音轨容器可用的视频编码器**（D-CODEC，非 libx264）。
-/// - `-q:v 2 -pix_fmt [pixFmt]`（TODO-1147）：mjpeg 近最佳 qscale 消除默认 qscale 二次
-///   有损；[pixFmt] 桌面传 `yuvj444p`（去色度下采样，保彩色文字边缘），移动端保守传
-///   `yuvj420p`（自编 ffmpeg-kit min 的 mjpeg encoder 收 444 需真机验合成不 exit）。
+/// - 编码器（BUG-1264）：桌面 [h264]=true 走 `libx264`；移动 [h264]=false 走 libavcodec
+///   原生 `mpeg4`（MPEG-4 Part 2，AAR 实证已编入）——两端都有帧间压缩 + 系统硬解基线，
+///   旧 mjpeg（体积巨大 + 大量移动播放器无解码器）不再使用。
 /// - `-c:a aac`：音频转 AAC（捆绑包唯一音频编码器，与桌面音频裁剪同源）。
 /// - `-shortest`：以较短的输入（音频）定时长——图是无限 loop，必须靠音频收尾。
 /// - `-r [fps]`：低帧率（静态画面无需高帧率，省体积/编码时间）。
 /// - `-vf scale=...:force_original_aspect_ratio=decrease,pad=...`：把图缩放进
-///   [width]×[height] 并居中黑边填充，保证输出维度恒定且为偶数（mjpeg 要求）。
+///   [width]×[height] 并居中黑边填充，保证输出维度恒定且为偶数（yuv420p 要求）。
 ///
-/// 注意 mjpeg 不接受奇数维度；[width]/[height] 由调用方传偶数（720×1280 天然偶数）。
+/// 注意 yuv420p 不接受奇数维度；[width]/[height] 由调用方传偶数（720×1280 天然偶数）。
 /// [imagePath] 必须指向 JPEG 内容（调用方经 [encodeClipTextFrameAsJpg] 落盘 `.jpg`）。
 List<String> buildFfmpegImageAudioToVideoArgs({
   required String imagePath,
@@ -405,7 +459,6 @@ List<String> buildFfmpegImageAudioToVideoArgs({
   int width = 1080,
   int height = 1920,
   int fps = 12,
-  String pixFmt = 'yuvj444p',
   bool h264 = false,
 }) {
   // pad 居中黑边：scale 先按比例缩进框内，再 pad 到精确 WxH（偶数维度安全）。
@@ -427,7 +480,7 @@ List<String> buildFfmpegImageAudioToVideoArgs({
     '0:v:0',
     '-map',
     '1:a:0',
-    ..._clipVideoCodecArgs(h264: h264, pixFmt: pixFmt),
+    ..._clipVideoCodecArgs(h264: h264),
     '-r',
     '$fps',
     '-vf',
@@ -439,22 +492,20 @@ List<String> buildFfmpegImageAudioToVideoArgs({
   ];
 }
 
-/// BUG-809：按后端能力选视频编码器。桌面 ffmpeg-min 自 `e039cf760`（2026-07-07）
-/// 已编入 `libx264`（H.264）+ `mp4` muxer，故桌面导出用 [h264]=true 走 H.264：带
-/// 帧间压缩（P/B 帧），逐句高亮跟随里大量重复帧压到近零字节，30 秒片段从 mjpeg 的
-/// ~200MB 降到几 MB，容器换 `.mp4`（任意播放器/浏览器/社交平台可直接打开）。
-/// 移动端自编 ffmpeg-kit **min** 变体无外部 GPL 库（无 libx264），[h264] 保持 false
-/// 走原 `mjpeg`（帧内 JPEG，体积大但两端都能编）。
+/// BUG-809 / BUG-1264：按后端能力选视频编码器。桌面 ffmpeg-min 自 `e039cf760`
+/// （2026-07-07）已编入 `libx264`（H.264）+ `mp4` muxer，故桌面导出用 [h264]=true 走
+/// H.264；移动端自编 ffmpeg-kit **min** 变体无外部 GPL 库（无 libx264），[h264]=false
+/// 走 libavcodec 原生 `mpeg4`（MPEG-4 Part 2，AAR .rodata 实证 `MPEG4 encoder`
+/// AVClass 已编入）。两条路径都有帧间压缩（P 帧把逐句高亮的大量重复帧压到近零字节）、
+/// 都进 `.mp4` 容器、都是移动系统硬解基线——旧 `mjpeg`（帧内 JPEG，30 秒 ≈ 200MB 且
+/// 大量安卓播放器根本没有 MJPEG 解码器 → 黑屏）不再使用。
 ///
 /// - H.264：`-preset veryfast`（桌面导出体感快，文字/纯色底压缩率仍极高）+ `-crf 20`
-///   （高质量近视觉无损）+ `-pix_fmt yuv420p`（最大兼容，非 mjpeg 的 yuvj*）+
-///   `-movflags +faststart`（moov 前置，边下边播/网页直开）。
-/// - mjpeg：`-q:v 2`（近最佳 qscale 消二次有损）+ [pixFmt]（桌面 yuvj444p / 移动
-///   yuvj420p，TODO-1147）。
-List<String> _clipVideoCodecArgs({
-  required bool h264,
-  required String pixFmt,
-}) {
+///   （高质量近视觉无损）。
+/// - MPEG-4 Part 2：`-q:v 2`（近最佳 qscale，文字边缘保真；无 crf 概念）。
+/// - 共同：`-pix_fmt yuv420p`（两编码器/全平台硬解的最大兼容色度）+
+///   `-movflags +faststart`（moov 前置，边下边播/接收端秒开）。
+List<String> _clipVideoCodecArgs({required bool h264}) {
   if (h264) {
     return const <String>[
       '-c:v',
@@ -469,13 +520,15 @@ List<String> _clipVideoCodecArgs({
       '+faststart',
     ];
   }
-  return <String>[
+  return const <String>[
     '-c:v',
-    'mjpeg',
+    'mpeg4',
     '-q:v',
     '2',
     '-pix_fmt',
-    pixFmt,
+    'yuv420p',
+    '-movflags',
+    '+faststart',
   ];
 }
 
@@ -519,7 +572,7 @@ Future<Uint8List?> encodeClipTextFrameAsJpgAsync(
   );
 }
 
-/// 纯函数：构建「逐帧 JPEG 序列 + 音频 → mjpeg/.mov 短视频」的 ffmpeg 参数表（可单测）。
+/// 纯函数：构建「逐帧 JPEG 序列 + 音频 → h264/mpeg4 .mp4 短视频」的 ffmpeg 参数表（可单测）。
 ///
 /// TODO-1115 动态高亮跟随：捆绑 ffmpeg-min **无 overlay/drawtext/concat/subtitles
 /// filter**，所以逐句高亮只能靠 Flutter 侧逐帧渲 PNG，ffmpeg 只做「读序列帧 + 拼音频」。
@@ -532,19 +585,21 @@ Future<Uint8List?> encodeClipTextFrameAsJpgAsync(
 /// [encodeClipTextFrameAsJpg] 重编码为 jpeg 落盘（`frame_%04d.jpg`），两端 image2 序列帧
 /// 都走已存在的 mjpeg 解码，绝不触碰缺失的 png decoder（否则移动端合成 exit 1）。
 ///
-/// 关键参数与理由（沿用单图版 D-CODEC 天花板：仅 mjpeg 视频 + aac 音频）：
+/// 关键参数与理由：
 /// - `-framerate <fps> -i <framesDir>/<pattern>`：image2 demuxer 按 [fps] 读序列帧。
 ///   **不用** `-loop 1`（那是单张静态图）；序列帧本身携带时间轴。
 /// - `-i audio`：完整音频输入。
-/// - `-c:v mjpeg` / `-q:v 2` / `-pix_fmt [pixFmt]`（TODO-1147）：捆绑包唯一带音轨容器
-///   可用的视频编码器（非 libx264）+ 近最佳 qscale + 桌面 444 / 移动 420 见单图版。
+/// - 编码器（BUG-1264）：桌面 [h264]=true 走 `libx264`；移动走原生 `mpeg4`（见
+///   [_clipVideoCodecArgs]）。序列帧**输入**仍必须是 JPEG（BUG-543：两端都无 png
+///   decoder，靠 mjpeg decoder 解 JPEG 输入——输入解码与输出编码是两回事）。
 /// - `-c:a aac`：捆绑包唯一音频编码器。
 /// - `-shortest`：以较短输入收尾（帧数×1/fps 与音频时长对齐时二者相近，防尾端错位）。
-/// - `-vf scale=...:pad=...`：缩放+黑边填充到精确偶数维度（mjpeg 要求偶数维度）。
+/// - `-vf scale=...:pad=...`：缩放+黑边填充到精确偶数维度（yuv420p 要求偶数维度）。
 ///
-/// **天花板守卫**：绝不含 libx264/h264/concat/overlay/drawtext，且序列帧输入必为 JPEG
-/// （非需 png decoder 的 .png）——由 audiobook_clip_synth_test 断言。序列帧 JPEG 已由渲染层
-/// 按每帧 highlightCueIndex 逐帧生成后经 [encodeClipTextFrameAsJpg] 重编码。
+/// **天花板守卫**：移动路径绝不含 libx264，且两路径绝不含 concat/overlay/drawtext
+/// filter、序列帧输入必为 JPEG（非需 png decoder 的 .png）——由 audiobook_clip_synth_test
+/// 断言。序列帧 JPEG 已由渲染层按每帧 highlightCueIndex 逐帧生成后经
+/// [encodeClipTextFrameAsJpg] 重编码。
 List<String> buildFfmpegImageSeqAudioToVideoArgs({
   required String framesDir,
   required String audioPath,
@@ -553,7 +608,6 @@ List<String> buildFfmpegImageSeqAudioToVideoArgs({
   int width = 1080,
   int height = 1920,
   int fps = 12,
-  String pixFmt = 'yuvj444p',
   bool h264 = false,
 }) {
   final String filter = 'scale=$width:$height:'
@@ -578,8 +632,9 @@ List<String> buildFfmpegImageSeqAudioToVideoArgs({
     '0:v:0',
     '-map',
     '1:a:0',
-    // BUG-809：桌面 h264（带帧间压缩，逐句高亮的大量重复帧压到近零）/ 移动 mjpeg。
-    ..._clipVideoCodecArgs(h264: h264, pixFmt: pixFmt),
+    // BUG-809/BUG-1264：桌面 h264 / 移动 mpeg4，两端都带帧间压缩（逐句高亮的大量
+    // 重复帧压到近零）。
+    ..._clipVideoCodecArgs(h264: h264),
     '-vf',
     filter,
     '-c:a',
@@ -590,7 +645,7 @@ List<String> buildFfmpegImageSeqAudioToVideoArgs({
 }
 
 /// 把 [imagePath]（文本图）+ [audioPath]（片段音频）合成成 [outputPath]
-/// （mjpeg/.mov 短视频）。返回成功/失败结果，绝不对调用方抛。
+/// （h264/mpeg4 .mp4 短视频）。返回成功/失败结果，绝不对调用方抛。
 ///
 /// 镜像 [exportVideoClipViaFfmpeg]：有界超时、失败/超时清理半成品、ffmpeg 真因尾段
 /// 写日志 + 回传 detail。[backend] 仅供测试注入，生产用 [resolveFfmpegBackend]。
@@ -601,7 +656,6 @@ Future<AudiobookClipSynthResult> synthAudiobookClipVideoViaFfmpeg({
   int width = 1080,
   int height = 1920,
   int fps = 12,
-  String pixFmt = 'yuvj444p',
   bool h264 = false,
   FfmpegBackend? backend,
   Duration timeout = const Duration(minutes: 3),
@@ -625,7 +679,6 @@ Future<AudiobookClipSynthResult> synthAudiobookClipVideoViaFfmpeg({
         width: width,
         height: height,
         fps: fps,
-        pixFmt: pixFmt,
         h264: h264,
       ),
       timeout,
@@ -667,7 +720,7 @@ Future<AudiobookClipSynthResult> synthAudiobookClipVideoViaFfmpeg({
 }
 
 /// TODO-1115：把 [framesDir] 里的 JPEG 序列帧（`frame_%04d.jpg`，BUG-543）+ [audioPath] 完整音频
-/// 合成成 [outputPath]（mjpeg/.mov 逐句高亮跟随短视频）。镜像
+/// 合成成 [outputPath]（h264/mpeg4 .mp4 逐句高亮跟随短视频）。镜像
 /// [synthAudiobookClipVideoViaFfmpeg]：有界超时、失败/超时清理半成品、ffmpeg 真因写日志，
 /// 绝不对调用方抛。序列帧由渲染层按帧计划落盘（[buildFfmpegImageSeqAudioToVideoArgs]）。
 Future<AudiobookClipSynthResult> synthAudiobookClipFrameSeqVideoViaFfmpeg({
@@ -678,7 +731,6 @@ Future<AudiobookClipSynthResult> synthAudiobookClipFrameSeqVideoViaFfmpeg({
   int width = 1080,
   int height = 1920,
   int fps = 12,
-  String pixFmt = 'yuvj444p',
   bool h264 = false,
   FfmpegBackend? backend,
   Duration timeout = const Duration(minutes: 3),
@@ -703,7 +755,6 @@ Future<AudiobookClipSynthResult> synthAudiobookClipFrameSeqVideoViaFfmpeg({
         width: width,
         height: height,
         fps: fps,
-        pixFmt: pixFmt,
         h264: h264,
       ),
       timeout,

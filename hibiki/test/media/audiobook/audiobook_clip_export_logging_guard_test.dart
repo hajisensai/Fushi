@@ -117,6 +117,7 @@ void main() {
     int countFailureToasts(String body) =>
         't.audiobook_export_clip_failed'.allMatches(body).length +
         't.audiobook_export_clip_unsupported_range'.allMatches(body).length +
+        't.audiobook_export_clip_too_long'.allMatches(body).length +
         't.audiobook_export_clip_no_text'.allMatches(body).length +
         't.audiobook_export_clip_no_selection'.allMatches(body).length;
 

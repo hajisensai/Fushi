@@ -144,17 +144,18 @@ void main() {
     expect(code.contains('encodeClipTextFrameAsJpg'), isTrue);
   });
 
-  // BUG-809：桌面导出用 H.264 + .mp4（带帧间压缩解决「30 秒 200MB」+ 通用容器），
-  // 移动端保持 mjpeg/.mov（自编 ffmpeg-kit min 无 libx264）。守卫 caller 真按 isDesktop
-  // 分流编码器/容器，两条合成调用都透传 h264，且输出扩展名跟随。
-  test('BUG-809: caller wires desktop h264/.mp4, keeps mobile mjpeg/.mov', () {
+  // BUG-809/BUG-1264：桌面导出用 H.264，移动端用原生 mpeg4（旧 mjpeg/.mov 体积巨大
+  // 且大量移动播放器无 MJPEG 解码器）。两端容器统一 .mp4。守卫 caller 真按 isDesktop
+  // 分流编码器，两条合成调用都透传 h264，且输出容器不再回到 .mov。
+  test('BUG-809/BUG-1264: desktop h264 + mobile mpeg4, both in .mp4', () {
     final String code = File(
       'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
     ).readAsStringSync();
-    // 编码器/容器按桌面能力分流。
+    // 编码器按桌面能力分流；容器统一 mp4。
     expect(code.contains('useH264'), isTrue);
-    expect(code.contains("videoExt = useH264 ? 'mp4' : 'mov'"), isTrue);
-    // 输出文件用动态扩展名（不再硬编码 .mov）。
+    expect(code.contains("videoExt = 'mp4'"), isTrue);
+    expect(code.contains("'mov'"), isFalse,
+        reason: 'mobile output must be .mp4 (mpeg4), never MJPEG/.mov again');
     expect(code.contains(r"File('$base.$videoExt')"), isTrue);
     expect(code.contains(r"File('$base.mov')"), isFalse,
         reason: 'output container must follow the codec, not hardcode .mov');

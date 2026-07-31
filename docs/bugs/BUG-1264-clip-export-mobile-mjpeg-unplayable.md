@@ -1,0 +1,13 @@
+## BUG-1264 · 移动端导出片段MJPEG-MOV体积巨大且普遍无法播放
+- **报告**：2026-07-31（用户：「手机导出渲染有问题，基本不可用」）。
+- **真实性**：✅ 真 bug。`hibiki/lib/src/media/audiobook/audiobook_clip_export.dart:398-424`（修复前 `_clipVideoCodecArgs`）+ `audiobook.part.dart:1331`（修复前 `videoExt = useH264 ? 'mp4' : 'mov'`）：移动端产物是 `-c:v mjpeg` + `.mov`——①MJPEG 无帧间压缩，30 秒 ≈ 200MB（BUG-809 实测口径），逐句高亮的重复帧全是整幅 JPEG；②MJPEG 不在 Android/iOS 系统解码基线里，大量播放器/接收端（系统相册、聊天工具）解不出视频轨 → 黑屏/「渲染有问题」，基本不可用。BUG-809 只把桌面换成 H.264，移动端因「自编 ffmpeg-kit min 无 libx264」保留 MJPEG——但这是个**过时前提**：
+  - AAR 实证（`third_party/ffmpeg_kit_flutter/android/libs/ffmpeg-kit.aar` arm64 `libavcodec.so` .rodata）：`MPEG4 encoder`（`ff_mpeg4_encoder` 的 AVClass 名）+ `mpegvideo_enc.c`/`motion_est.c`/`ratecontrol.c`/`msmpeg4enc.c` 编译单元俱在——libavcodec **原生 mpeg4 编码器已编入**（无需外部 GPL 库）；`libavformat.so` 有 movenc（`mov/mp4/tgp/psp/tg2/ipod/ismv/f4v muxer`）+ `faststart`。iOS `libavcodec.framework` 同证。**无需重编任何二进制**。
+  - MPEG-4 Part 2 解码是 Android/iOS 硬解基线，任意系统播放器可直接播。
+- **[x] ① 已修复** —（见本分支提交）
+  - `_clipVideoCodecArgs`：移动分支 `mjpeg` → `mpeg4`（`-q:v 2` 文字保真 + `-pix_fmt yuv420p` + `-movflags +faststart`）；`pixFmt` 参数与 yuvj 色域整条移除（两端色度由编码器内定，消掉桌面/移动分叉特例）。
+  - `audiobook.part.dart`：容器统一 `const videoExt = 'mp4'`；移动分享 mime 恒 `video/mp4`（`audiobookClipMobileShareAttachments` 去掉 `useH264` 分叉参数）。
+  - 序列帧**输入**仍是 JPEG（BUG-543 契约不变：输入解码走 mjpeg decoder，与输出编码器无关）。
+- **[x] ② 已加自动化测试** —（见本分支提交）
+  - `hibiki/test/media/audiobook/audiobook_clip_synth_test.dart`：单图与序列帧移动默认路径钉 `-c:v mpeg4` + `-q:v 2` + `yuv420p` + `+faststart`，且绝不含 `libx264`/`mjpeg`（输出编码器回流即红）；yuvj* 色域不得回流。
+  - `audiobook_clip_export_contract_test.dart`：移动分享单附件 mime `video/mp4`；`audiobook_clip_vertical_webview_guard_test.dart`：容器统一 `.mp4`、`'mov'` 字面量清零。
+- **备注**：结论依据 AAR/framework 静态实证（编码器 AVClass + 编译单元 + muxer 字符串），移动真机端到端合成/播放复测缺口记 next。若用户「渲染有问题」另有所指（文字卡片版式而非视频不可播），需带具体截图另立 bug。

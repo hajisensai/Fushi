@@ -1,0 +1,13 @@
+## BUG-1262 · 片段导出超时长上限被误报为跨章且上限过紧
+- **报告**：2026-07-31（用户：「电脑上较长片段导出会说跨章」）。
+- **真实性**：✅ 真 bug。超时长上限与「解析不出区间」共用同一条误导文案：
+  - `hibiki/lib/src/pages/implementations/reader_hibiki/audiobook.part.dart:1127`（修复前）：exportable 分支内 D4 特判 `range.endMs - range.startMs > _kAudiobookClipMaxDurationMs`（120s）→ 弹 `audiobook_export_clip_unsupported_range`（「该选区暂不支持导出（跨章或跨音频文件）」）。同章长选区被误报「跨章」，正是用户看到的现象。
+  - `hibiki/lib/src/media/audiobook/audiobook_clip_export.dart:249`（修复前）：`classifyAudiobookClipMultiCue` 把 `> maxDurationMs` 并进 `unsupportedRange` 复合条件，同样丢失「太长」这一事实。
+  - 上限本身也过紧：120s 防的是「巨型编码」——移动端彼时只有 MJPEG（30 秒 ≈ 200MB）。桌面 H.264（BUG-809）与移动 MPEG-4（BUG-1264）都带帧间压缩后，体积不再是约束。
+- **[x] ① 已修复** —（见本分支提交）
+  - `audiobook_clip_export.dart`：新增 `AudiobookClipBoundaryKind.tooLong`；单句 `classifyAudiobookClipSelection` 与多句 `classifyAudiobookClipMultiCue` 都把超限归 `tooLong`（上限判定收进分类层，UI 层 D4 散装特判删除）；上限常量收敛为单一真相源 `kAudiobookClipMaxDurationMs` 并放宽到 300s。
+  - `audiobook.part.dart`：dispatcher 新增 `tooLong` 分支 → 专属诚实文案 `audiobook_export_clip_too_long`（「选区音频过长，暂不支持导出（上限 5 分钟）」，i18n_sync 全 17 语言）+ `ReaderHibiki.exportClip.rangeTooLong` 日志。
+  - 提限的资源兜底：动态逐句高亮帧率改 `clipExportFps`（总帧数封顶 2880 = 提限前 120s×24fps 最坏情况；≤120s 恒 24fps 保 BUG-713 精度，300s → 9fps）；ffmpeg 合成超时随片段时长缩放（3 分钟托底 + 1×时长），长片段不再被固定 3 分钟超时误杀。
+- **[x] ② 已加自动化测试** —（见本分支提交）
+  - `hibiki/test/media/audiobook/audiobook_clip_export_too_long_bug1262_test.dart`：①超限 → `tooLong`、恰在上限 → `exportable`、null/退化区间仍 `unsupportedRange`（单句+多句）；②常量=5 分钟且 en/zh 文案写「5 minutes/5 分钟」（漂移当场红）；③dispatcher 的 tooLong 分支弹专属文案、绝不再弹跨章文案（源码扫描）；④`clipExportFps` 帧数预算（短片段 24fps、300s ≤2880 帧、下限 6）。
+- **备注**：与 BUG-475（零时长退化区间误报跨章）同一文案家族但不同根因：475 修的是上游产生退化区间，本 bug 修的是分类层把「太长」也塞进同一分支。真机长选区导出复测缺口记 next。
