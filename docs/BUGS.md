@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1253 条。点号进各自文件。
+> 共 1255 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1309](bugs/BUG-1309-anime-download-confirm-subs-squeezed.md) | ✅ | ✅ | 下载弹窗确认阶段：Jimaku 选择器挤掉字幕列表，RenderFlex 溢出 10px 且只剩不到一条可见 |
 | [BUG-1305](bugs/BUG-1305-delete-confirm-disclosure.md) | ✅ | ✅ | 删除确认文案与真实删除范围对不上（书架递归删解压目录+有声书；合集正文说反话） |
 | [BUG-1304](bugs/BUG-1304-engine-freq-pitch-enrich-before-truncate.md) | ✅ | ✅ | 词典引擎 freq/pitch 在截断前富化：中间结果被重复富化约 3 倍（实测微优化，非秒级根因） |
 | [BUG-1303](bugs/BUG-1303-hoshidicts-hash-probe-unbounded.md) | ✅ | ✅ | 词典 hash 探测无界循环 + load() 零边界校验：损坏词典可致查词永久挂死/越界读 |
@@ -42,6 +43,7 @@
 | [BUG-1299](bugs/BUG-1299-continue-cover-portrait-crop.md) | ✅ | ✅ | 竖版海报封面在继续/继续观看/合集详情被裁切或留灰带 |
 | [BUG-1298](bugs/BUG-1298-collection-hero-portrait-cover.md) | ✅ | ✅ | 合集详情页 hero 用竖版刮削海报时被 BoxFit.cover 裁成中间一条 |
 | [BUG-1297](bugs/BUG-1297-danmaku-scroll-exit.md) | ✅ | ✅ | 滚动弹幕退场突兀：没滑出屏幕就被整条抹掉 |
+| [BUG-1296](bugs/BUG-1296-anime-download-task-row-progress-lost.md) | ✅ | ✅ | 下载任务行百分比/确定进度环依赖 downloadStats，「立即导入」一跑就整列消失 |
 | [BUG-1295](bugs/BUG-1295-qb-test-connection-undiagnosable.md) | ✅ | ✅ | qB测试连接失败无法自查且本机免密被登录门卡死 |
 | [BUG-1294](bugs/BUG-1294-download-tasks-no-speed-traffic.md) | ✅ | ✅ | 下载任务行无速度与流量显示 |
 | [BUG-1293](bugs/BUG-1293-embedded-upload-mode-kills-download.md) | ✅ | ✅ | 内置引擎默认关上传误用upload_mode掐死下载 |

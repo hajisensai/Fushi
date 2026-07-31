@@ -38,9 +38,12 @@ class _FakeBackend implements TorrentBackend {
   Future<List<TorrentSnapshot>> listTorrents({String? category}) async =>
       torrents;
 
+  /// 种子内文件清单；默认空（多数用例只关心进度表）。`importNow` 路径需要至少
+  /// 一个可识别视频，否则服务在发布进度之前就提前返回。
+  List<TorrentFileEntry> files = const <TorrentFileEntry>[];
+
   @override
-  Future<List<TorrentFileEntry>> listFiles(String torrentId) async =>
-      const <TorrentFileEntry>[];
+  Future<List<TorrentFileEntry>> listFiles(String torrentId) async => files;
 
   @override
   void close() {}
@@ -169,6 +172,42 @@ void main() {
     backend.torrents = <TorrentSnapshot>[];
     await service.tick();
     expect(service.downloadStats.value, isEmpty);
+  });
+
+  // BUG-1296：`_publishProgress` 是**无条件覆盖** downloadStats，而 importNow 那条
+  // 路径此前只传进度、stats 走默认空 map → 一次「立即导入」把全表观测值抹掉，
+  // 任务行退成不定进度环（UI 侧的百分比也一并没了）直到下一轮 tick 才恢复。
+  // 契约：任何发布点都不得把别处刚发布的观测值降级成空。
+  test('importNow 发布进度时不清空 downloadStats（BUG-1296）', () async {
+    backend.torrents = <TorrentSnapshot>[
+      _snapshot(
+        progress: 0.42,
+        state: 'downloading',
+        downRateBps: 1048576,
+        upRateBps: 2048,
+        downloadedBytes: 4096,
+      ),
+    ];
+    await service.tick();
+    expect(service.downloadStats.value[_kHash]?.downRateBps, 1048576);
+
+    // 种子里有可识别视频 → importNow 会走到「未完成也先发进度」那一支。
+    backend.files = const <TorrentFileEntry>[
+      TorrentFileEntry(
+          name: 'Test Anime - 01.mkv', size: 100, progress: 0.42, index: 0),
+    ];
+    await service.importNow(_kHash);
+
+    expect(
+      service.downloadProgress.value[_kHash],
+      0.42,
+      reason: 'importNow 仍应发布进度',
+    );
+    expect(
+      service.downloadStats.value[_kHash]?.downRateBps,
+      1048576,
+      reason: 'importNow 手上就有 TorrentSnapshot，不得把观测值清成空表',
+    );
   });
 
   test('轮询周期决策：内置引擎 + 有活跃下载才提频（BUG-1294）', () {
