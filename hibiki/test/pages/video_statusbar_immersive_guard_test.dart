@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 源码守卫（TODO-158 / BUG-219）：视频页系统栏沉浸**持续隐藏**。
 ///
 /// 这与控制条 UI 锁（`_immersiveLocked`，见 video_immersive_lock_guard_test）是两回事：
@@ -33,19 +35,15 @@ void main() {
   });
 
   test('① 视频页定义 _applyVideoImmersiveMode：移动端门控 + immersiveSticky', () {
-    final int idx =
-        src.indexOf('Future<void> _applyVideoImmersiveMode() async {');
-    expect(idx, greaterThanOrEqualTo(0),
-        reason: '视频页应自带 _applyVideoImmersiveMode（持有系统栏沉浸所有权）');
-    final int end = src.indexOf('  }', idx);
-    final String body = src.substring(idx, end);
+    final String body =
+        methodBody(src, 'Future<void> _applyVideoImmersiveMode() async {');
     expect(
-      body.contains('if (!isMobilePlatform) return;'),
+      containsCodeLine(body, 'if (!isMobilePlatform) return;'),
       isTrue,
       reason: '沉浸模式必须 isMobilePlatform 门控（桌面无系统栏，no-op）',
     );
     expect(
-      body.contains(
+      containsCodeLine(body,
           'SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky)'),
       isTrue,
       reason: '应设 immersiveSticky 隐藏系统栏（与既有基线一致，上划临时露栏后自动重隐）',
@@ -53,12 +51,12 @@ void main() {
   });
 
   test('② initState 显式调用 _applyVideoImmersiveMode（不再只靠 openMedia 一次性）', () {
-    final int initIdx = src.indexOf('void initState() {');
-    expect(initIdx, greaterThanOrEqualTo(0));
-    final int initEnd = src.indexOf('  }', initIdx);
-    final String initBody = src.substring(initIdx, initEnd);
+    // 旧写法用 `src.indexOf('  }', initIdx)` 当右边界：initState 里一旦出现嵌套块
+    // （`if (Platform.isWindows) { ... }` 的收尾行 `    }` 里就含 `'  }'`），窗口
+    // 会被截断在那儿，后面的接线全部看不见 → 守卫塌掉误报。改花括号配对。
+    final String initBody = methodBody(src, 'void initState() {');
     expect(
-      initBody.contains('_applyVideoImmersiveMode()'),
+      containsCodeLine(initBody, '_applyVideoImmersiveMode()'),
       isTrue,
       reason: 'initState 必须显式自设沉浸，让所有权归视频页（而非依赖 openMedia 的一次性传递）',
     );
@@ -68,15 +66,21 @@ void main() {
     final int lifeIdx =
         src.indexOf('void didChangeAppLifecycleState(AppLifecycleState state)');
     expect(lifeIdx, greaterThanOrEqualTo(0));
-    final int resumedIdx =
-        src.indexOf('case AppLifecycleState.resumed:', lifeIdx);
-    expect(resumedIdx, greaterThan(lifeIdx), reason: '应有 resumed 分支');
-    // 下界：resumed 之后下一个 case（detached）或 switch 结束。
-    final int nextCaseIdx =
-        src.indexOf('case AppLifecycleState.detached:', resumedIdx);
-    final String resumedBody = src.substring(resumedIdx, nextCaseIdx);
+    // 右边界取 resumed 之后的下一个同级标签；找不到时退到文件末尾，不会像裸
+    // indexOf 返回 -1 那样让 substring 抛 RangeError。
+    final String resumedBody = switchCaseBody(
+      src,
+      'case AppLifecycleState.resumed:',
+      searchFrom: lifeIdx,
+      nextLabels: const <String>[
+        'case AppLifecycleState.detached:',
+        'case AppLifecycleState.inactive:',
+        'case AppLifecycleState.paused:',
+        'case AppLifecycleState.hidden:',
+      ],
+    );
     expect(
-      resumedBody.contains('_applyVideoImmersiveMode()'),
+      containsCodeLine(resumedBody, '_applyVideoImmersiveMode()'),
       isTrue,
       reason: 'resumed 必须重申沉浸：回前台后 Android 恢复系统栏，不重申就「隐了又冒出来」',
     );
