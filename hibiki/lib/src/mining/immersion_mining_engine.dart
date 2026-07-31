@@ -19,6 +19,7 @@ typedef GifExtractor = Future<String?> Function({
   int fps,
   int width,
   MiningAnimatedFormat format,
+  bool diagnosticOnly,
   FfmpegFailureReporter? onFailure,
   String? tlsPinSha256,
 });
@@ -179,15 +180,14 @@ class ImmersionMiningEngine {
                   MiningAnimatedFormat.gif,
                 ];
       for (final MiningAnimatedFormat attempt in attempts) {
-        // 顶格档下 gifFps/gifWidth 是 0（源直通哨兵，只有 AVIF 声明得起）。换格式重试时
-        // 必须改用**该格式自己**的顶格档参数，否则会把「源分辨率 + 源帧率」原样喂给 GIF
-        // ——那正是 BUG-1039 实测 54 MB / 撞 120 秒超时 / AnkiConnect 卡死的配置。
-        // 规则对三种格式一致（AVIF 的 maxTier* 本就是 0/0，代入后不变），不是特例分支。
-        final int fps =
-            compression.gifFps == 0 ? attempt.maxTierFps : compression.gifFps;
-        final int width = compression.gifWidth == 0
-            ? attempt.maxTierWidth
-            : compression.gifWidth;
+        // 档位参数一律夹到**本次尝试的格式**自己声明的顶格档上限。顶格档下
+        // compression.gifFps/gifWidth 是按用户所选格式解析出来的（AVIF = 24/1440），
+        // 换格式重试时若原样沿用，就会把这组参数喂给 GIF —— GIF 无帧间压缩，那正是
+        // BUG-1039 实测 54 MB / 撞 120 秒超时 / AnkiConnect 卡死的配置。
+        // 夹取对三种格式、四个档位一致（低档的有限值本就低于任何上限，代入后不变），
+        // 不是特例分支。
+        final int fps = attempt.capFps(compression.gifFps);
+        final int width = attempt.capWidth(compression.gifWidth);
         final String? out = await _gif(
           inputPath: src,
           startMs: req.clipStartMs,
@@ -197,6 +197,8 @@ class ImmersionMiningEngine {
           fps: fps,
           width: width,
           format: attempt,
+          // 还有降级尝试在后面 → 这次失败是预期内的能力探测，只记诊断日志。
+          diagnosticOnly: attempt != attempts.last,
           onFailure: reportCover,
           tlsPinSha256: req.mediaSourceTlsPinSha256,
         );

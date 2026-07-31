@@ -143,17 +143,36 @@ void main() {
       final String src = File(
         'lib/src/mining/immersion_mining_engine.dart',
       ).readAsStringSync();
-      // 动图链路。档位仍必须被读出并喂给抽取器，但**不再是**直接
-      // `fps: compression.gifFps`：顶格档的 0 哨兵（源分辨率+源帧率，只有 AVIF 声明
-      // 得起）在换格式重试时必须替换成目标格式自己的顶格档参数，否则会把源直通喂给
-      // GIF —— 正是 BUG-1039 那个 54 MB / 撞 120 秒超时的配置。故断言拆成两半：
-      // ① 档位被读；② 替换存在。只锁 ① 会漏掉 ② 被删除的回归。
-      expect(src.contains('compression.gifFps'), isTrue);
-      expect(src.contains('compression.gifWidth'), isTrue);
-      expect(src.contains('attempt.maxTierFps'), isTrue,
-          reason: '换格式重试必须换用目标格式的顶格档参数（BUG-1039）');
-      expect(src.contains('attempt.maxTierWidth'), isTrue,
-          reason: '换格式重试必须换用目标格式的顶格档参数（BUG-1039）');
+      // 动图链路。重构后源码里已没有 `fps: compression.gifFps` 这个字面量，但本守卫要
+      // 锁的契约一个字没变：**喂进抽取器的帧率/宽度必须来自 compression 档位，不得被
+      // 硬编码**。若只是把断言字面量改成「源码里有 `fps: fps`」，守卫就退化成「有这行
+      // 字」——把 `fps: fps` 换成 `fps: 8` 照样绿。故沿调用链锁三段：
+      //   ① `_gif(` 实参里的 fps/width 是局部变量而非字面量；
+      //   ② 这两个局部变量确实由 `compression.gifFps` / `compression.gifWidth` 派生；
+      //   ③ 派生时夹到「本次尝试格式」自己的顶格档上限——换格式重试若沿用上一个格式的
+      //      参数，就是 BUG-1039 那个 54 MB / 撞 120 秒超时 / AnkiConnect 卡死的配置。
+      final Match? gifCall =
+          RegExp(r'await _gif\(([\s\S]*?)\n\s*\);').firstMatch(src);
+      expect(gifCall, isNotNull, reason: '动图链路必须经注入的 _gif 抽取器');
+      final String gifArgs = gifCall!.group(1)!;
+      expect(RegExp(r'\bfps:\s*fps\b').hasMatch(gifArgs), isTrue,
+          reason: '喂进抽取器的帧率必须是档位派生出的局部变量，不得硬编码');
+      expect(RegExp(r'\bwidth:\s*width\b').hasMatch(gifArgs), isTrue,
+          reason: '喂进抽取器的宽度必须是档位派生出的局部变量，不得硬编码');
+      expect(RegExp(r'final int fps\s*=[^;]*compression\.gifFps').hasMatch(src),
+          isTrue,
+          reason: 'fps 必须从 compression.gifFps 派生');
+      expect(
+          RegExp(r'final int width\s*=[^;]*compression\.gifWidth')
+              .hasMatch(src),
+          isTrue,
+          reason: 'width 必须从 compression.gifWidth 派生');
+      expect(RegExp(r'final int fps\s*=[^;]*attempt\.capFps').hasMatch(src),
+          isTrue,
+          reason: '换格式重试必须夹到目标格式自己的顶格档上限（BUG-1039）');
+      expect(RegExp(r'final int width\s*=[^;]*attempt\.capWidth').hasMatch(src),
+          isTrue,
+          reason: '换格式重试必须夹到目标格式自己的顶格档上限（BUG-1039）');
       // 截图链路。
       expect(src.contains('maxLongEdge: compression.screenshotMaxLongEdge'),
           isTrue);

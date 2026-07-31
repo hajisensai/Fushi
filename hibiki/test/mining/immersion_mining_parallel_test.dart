@@ -93,6 +93,7 @@ void main() {
       int fps = 8,
       int width = 320,
       MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+      bool diagnosticOnly = false,
       dynamic onFailure,
       String? tlsPinSha256,
     }) async {
@@ -140,6 +141,7 @@ void main() {
       int fps = 8,
       int width = 320,
       MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+      bool diagnosticOnly = false,
       dynamic onFailure,
       String? tlsPinSha256,
     }) async {
