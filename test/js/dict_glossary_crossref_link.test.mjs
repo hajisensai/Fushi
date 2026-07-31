@@ -24,6 +24,13 @@ const POPUP_URL = new URL(
   import.meta.url,
 );
 const src = readFileSync(POPUP_URL, "utf8");
+// BUG-1261：sound:// 播放走真实 rewriteDictionaryMediaPath（dict-media.js，app 变体），
+// 整段注入以验到最终 image:// URL 的构造，而不是桩出一个假 URL。
+const DICT_MEDIA_URL = new URL(
+  "../../hibiki/assets/popup/dict-media.js",
+  import.meta.url,
+);
+const dictMediaSrc = readFileSync(DICT_MEDIA_URL, "utf8");
 
 // 提取 `function handleGlossaryAnchorClick(...) { ... }` 整段。函数体内的闭合大括号都带缩进
 // （`    }` / `    });`），唯一顶格的 `\n}` 是函数收尾，非贪婪匹配到它即止。
@@ -39,8 +46,9 @@ function extract(name) {
 const handlerSrc = extract("handleGlossaryAnchorClick");
 
 /**
- * 在 jsdom 页面里注入真实 handleGlossaryAnchorClick + 桩，点击首个 <a>，回收结果。
- * 返回 { prevented, linkCalls, externalCalls, extHitCalls }。
+ * 在 jsdom 页面里注入真实 handleGlossaryAnchorClick + 真实 dict-media.js + 桩，
+ * 点击首个 <a>，回收结果。
+ * 返回 { prevented, linkCalls, externalCalls, extHitCalls, playCalls }。
  */
 function clickAnchor(anchorHtml) {
   const dom = new JSDOM(
@@ -53,11 +61,16 @@ function clickAnchor(anchorHtml) {
     linkCalls: [],
     externalCalls: [],
     extHitCalls: 0,
+    playCalls: [],
   };
   // 桩：记录被调情况。
   win.openExternalLink = (url) => results.externalCalls.push(url);
   win.markGlobalLookupExtHit = () => {
     results.extHitCalls++;
+  };
+  win.playWordAudio = (url) => {
+    results.playCalls.push(url);
+    return Promise.resolve(true);
   };
   win.flutter_inappwebview = {
     callHandler: (name, ...args) => {
@@ -65,8 +78,8 @@ function clickAnchor(anchorHtml) {
     },
   };
   // 把真实函数装进这个 window 作用域（它引用 openExternalLink / markGlobalLookupExtHit /
-  // window.flutter_inappwebview 这些全局）。
-  win.eval(`${handlerSrc}\nwindow.__handleGlossaryAnchorClick = handleGlossaryAnchorClick;`);
+  // rewriteDictionaryMediaPath / playWordAudio / window.flutter_inappwebview 这些全局）。
+  win.eval(`${dictMediaSrc}\n${handlerSrc}\nwindow.__handleGlossaryAnchorClick = handleGlossaryAnchorClick;`);
 
   const anchor = win.document.querySelector("a[href]");
   assert.ok(anchor, "测试 fixture 缺少 <a href>");
@@ -101,10 +114,30 @@ test("BUG-767 外链：交给 openExternalLink，不误当查词", () => {
   assert.equal(r.linkCalls.length, 0, "外链不应触发 onLinkClick");
 });
 
-test("BUG-767 发音媒体节点 sound://：阻止导航但不查词", () => {
-  const r = clickAnchor(`<a href="sound://word.spx">🔊</a>`);
+test("BUG-1261 发音媒体节点 sound://：阻止导航、不查词，经词典媒体通道播放", () => {
+  // 真实形态（OALD）：发音锚点在 data-dictionary 词典容器内（popup.js 渲染 MDX
+  // 释义时必设，见 dictWrapper.setAttribute('data-dictionary', ...)）。
+  const r = clickAnchor(
+    `<div data-dictionary="OALD"><a href="sound://uk/apple.mp3">🔊</a></div>`,
+  );
   assert.equal(r.prevented, true, "sound:// 也必须阻止默认导航");
   assert.equal(r.linkCalls.length, 0, "发音节点不是查词目标");
+  assert.equal(r.externalCalls.length, 0);
+  // 播放守卫：剥掉 sound:// 前缀 → rewriteDictionaryMediaPath → app 内 image://
+  // 词典媒体 scheme（与 <img>/gaiji 同一字节通道，四个宿主表面均已注册）。
+  assert.equal(r.playCalls.length, 1, "sound:// 点击必须触发一次播放");
+  assert.equal(
+    r.playCalls[0],
+    "image://?dictionary=OALD&path=uk%2Fapple.mp3",
+    "播放 URL 应是 image:// 词典媒体 scheme + 编码后的资源路径",
+  );
+});
+
+test("BUG-1261 sound:// 缺 data-dictionary 容器：只阻止导航，不播放不崩", () => {
+  const r = clickAnchor(`<a href="sound://word.mp3">🔊</a>`);
+  assert.equal(r.prevented, true);
+  assert.equal(r.playCalls.length, 0, "无词典归属时不该盲播");
+  assert.equal(r.linkCalls.length, 0);
   assert.equal(r.externalCalls.length, 0);
 });
 
