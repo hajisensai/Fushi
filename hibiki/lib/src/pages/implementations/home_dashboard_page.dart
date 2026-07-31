@@ -1,6 +1,5 @@
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
@@ -13,6 +12,7 @@ import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/display_title.dart';
+import 'package:hibiki/src/media/media_cover_source.dart';
 import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_labels.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_service.dart';
@@ -1286,34 +1286,43 @@ class _HomeDashboardPageState
     );
   }
 
-  /// 视频封面：coverPath 存在则 [Image.file]，否则占位图标。
+  /// 视频封面：来源解析与游戏/剧集列表共用 [resolveMediaCoverImage]。
   Widget _videoCover(HibikiDesignTokens tokens, VideoBookRow video) {
-    final String? path = video.coverPath;
-    if (path != null && path.isNotEmpty && File(path).existsSync()) {
-      return Image.file(
-        File(path),
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) =>
-            _coverPlaceholder(tokens, Icons.movie_outlined),
-      );
-    }
-    return _coverPlaceholder(tokens, Icons.movie_outlined);
+    return _localCover(
+      tokens,
+      kind: MediaKind.video,
+      path: video.coverPath,
+    );
   }
 
-  /// 游戏封面（BUG-1111 / BUG-1112）：`galgames.coverPath` 存在则 [Image.file]，
-  /// 否则占位图标。与 [_videoCover] 同一形态——封面是本机文件路径（目录扫描 /
-  /// exe 内嵌图标 / 刮削下载三种来源都落成本地文件），不走网络取图。
+  /// 游戏封面（BUG-1111 / BUG-1112）：目录扫描 / exe 图标 / 刮削最终都落到
+  /// `galgames.coverPath`，显示侧交给统一来源解析器，不在页面重复同步文件探测。
   Widget _gameCover(HibikiDesignTokens tokens, GalgameEntry game) {
-    final String? path = game.coverPath;
-    if (path != null && path.isNotEmpty && File(path).existsSync()) {
-      return Image.file(
-        File(path),
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) =>
-            _coverPlaceholder(tokens, Icons.videogame_asset_outlined),
-      );
+    return _localCover(
+      tokens,
+      kind: MediaKind.game,
+      path: game.coverPath,
+    );
+  }
+
+  Widget _localCover(
+    HibikiDesignTokens tokens, {
+    required MediaKind kind,
+    required String? path,
+  }) {
+    final ImageProvider? provider = resolveMediaCoverImage(
+      kind: kind,
+      localPath: path,
+    );
+    if (provider == null) {
+      return _coverPlaceholder(tokens, mediaCoverFallbackIcon(kind));
     }
-    return _coverPlaceholder(tokens, Icons.videogame_asset_outlined);
+    return Image(
+      image: provider,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) =>
+          _coverPlaceholder(tokens, mediaCoverFallbackIcon(kind)),
+    );
   }
 
   /// 封面占位：中性底色 + 图标。
@@ -1639,29 +1648,12 @@ class _HomeDashboardPageState
   /// 游戏活动标题 → 显示名（P4）：先按 [mediaKey]（galgames.id）精确命中，
   /// 再按「落库时的标题快照 == 库内条目任一已知名」兜底（老事件无 mediaKey），
   /// 最后回落快照原文。查找委托 [displayTitleForGame]。
-  /// 按 `galgames.id` 反查本页已加载的游戏；找不到返回 null（已删除条目的历史
-  /// 活动行仍会渲染，只是没有封面/新名可用）。
-  GalgameEntry? _gameById(String? id) {
-    if (id == null || id.isEmpty) return null;
-    for (final GalgameEntry g in _games) {
-      if (g.id == id) return g;
-    }
-    return null;
-  }
-
   String _gameDisplayTitle(String rawTitle, {String? mediaKey}) {
-    GalgameEntry? entry = _gameById(mediaKey);
-    if (entry == null) {
-      for (final GalgameEntry g in _games) {
-        if (g.name == rawTitle ||
-            g.displayName == rawTitle ||
-            g.metadata.name == rawTitle ||
-            g.metadata.nameCn == rawTitle) {
-          entry = g;
-          break;
-        }
-      }
-    }
+    final GalgameEntry? entry = findGalgameForActivity(
+      _games,
+      mediaKey: mediaKey,
+      title: rawTitle,
+    );
     return displayTitleForGame(entry: entry, rawTitle: rawTitle);
   }
 
@@ -1987,7 +1979,25 @@ class _HomeDashboardPageState
     Map<String, VideoBookRow> videosByUid,
   ) {
     final String? key = entry.mediaKey;
-    if (key != null && key.isNotEmpty) {
+    if (entry.mediaType == kActivityMediaGame) {
+      // 新事件用 galgames.id；旧启动事件曾写 exePath，attach 事件还可能只有标题。
+      // 统一反查器兼容三者，封面和显示名因此命中同一个 GalgameEntry。
+      final GalgameEntry? game = findGalgameForActivity(
+        _games,
+        mediaKey: key,
+        title: entry.title,
+      );
+      if (game != null) {
+        return ClipRRect(
+          borderRadius: HibikiBorderRadius.card,
+          child: SizedBox(
+            width: 40,
+            height: 56,
+            child: _gameCover(tokens, game),
+          ),
+        );
+      }
+    } else if (key != null && key.isNotEmpty) {
       if (entry.mediaType == kActivityMediaVideo) {
         final VideoBookRow? video = videosByUid[key];
         if (video != null) {
@@ -1997,21 +2007,6 @@ class _HomeDashboardPageState
               width: 68,
               height: 40,
               child: _videoCover(tokens, video),
-            ),
-          );
-        }
-      } else if (entry.mediaType == kActivityMediaGame) {
-        // BUG-1112：游戏此前被硬编码进「回退图标」分支，时间轴上只有一个小图标，
-        // 而书与视频都有封面（用户报「活动里面没有封面」）。游戏封面就在
-        // `galgames.coverPath`（本机文件），按 mediaKey = galgames.id 反查即可。
-        final GalgameEntry? game = _gameById(key);
-        if (game != null) {
-          return ClipRRect(
-            borderRadius: HibikiBorderRadius.card,
-            child: SizedBox(
-              width: 40,
-              height: 56,
-              child: _gameCover(tokens, game),
             ),
           );
         }

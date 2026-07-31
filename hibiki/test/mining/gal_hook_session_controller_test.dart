@@ -1283,6 +1283,77 @@ void main() {
     endpoints.dispose();
   });
 
+  test('游戏库启动活动统一写 galgames.id 与当前显示名，不再把 exePath 当 mediaKey', () async {
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 1000,
+          text: '統一された活動',
+          threadId: 1,
+          hookName: 'Unity',
+        ),
+      ],
+    );
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+    controller.attachActivityDatabase(() => db);
+
+    final GalHookLaunchResult result = await controller.launchGame(
+      r'D:\Games\LegacyName.exe',
+      gameId: 'galgame-row-42',
+      gameTitle: '统一后的显示名',
+    );
+    expect(result.launched, isTrue);
+    for (int i = 0; i < 40 && service.entries.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(service.entries, hasLength(1));
+
+    await controller.stopCapture();
+    List<ActivityEventRow> rows = const <ActivityEventRow>[];
+    for (int i = 0; i < 40 && rows.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      rows =
+          await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
+    }
+    expect(rows, hasLength(1));
+    expect(rows.single.title, '统一后的显示名');
+    expect(rows.single.mediaKey, 'galgame-row-42');
+    expect(rows.single.mediaKey, isNot(r'D:\Games\LegacyName.exe'));
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   test('BUG-1085：重复台词/标点不计入字数，引擎计数后外部通道行不再双计', () async {
     final HibikiDatabase db =
         HibikiDatabase.forTesting(NativeDatabase.memory());

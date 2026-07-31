@@ -687,7 +687,8 @@ void main() {
     );
   });
 
-  testWidgets('BUG-1112：活动时间轴的游戏条目渲染封面，不再只有回退图标', (WidgetTester tester) async {
+  testWidgets('BUG-1112/BUG-1284：旧 exePath 活动身份也能反查并渲染游戏封面',
+      (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -705,14 +706,15 @@ void main() {
       playedAt: now,
       coverPath: cover.path,
     );
-    // 时间轴的游戏行：mediaKey = galgames.id（据此反查封面）。
+    // 历史启动链路把 exePath 误写进 mediaKey，而且路径大小写/分隔符不一定一致；
+    // 活动展示必须兼容回查，不能只认 galgames.id。
     await db.addActivityEvent(
       eventType: kActivityGame,
       mediaType: kActivityMediaGame,
       title: '有封面的游戏',
       dateKey: HibikiTimeFormat.dayKey(now),
       timestampMs: now.millisecondsSinceEpoch,
-      mediaKey: 'g-3',
+      mediaKey: r'\ABS\G-3.EXE',
       durationMs: 60000,
     );
 
@@ -720,16 +722,21 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    // 修复前游戏走「回退原类型图标」分支，时间轴上不会有任何 Image.file。
+    // 修复前 `_gameById(mediaKey)` 拿 exePath 去比 id，时间轴上不会有任何本地封面。
     // 必须收进「活动」区块：同一只游戏同时在「继续」与「最近添加」里各有一张
-    // `_gameCover`，裸 FileImage 谓词会被它们兜住——把 _activityLeading 的 game 分支
+    // `_gameCover`，裸本地 Image 谓词会被它们兜住——把 _activityLeading 的 game 分支
     // 删光也照样绿（实测过的假阳性）。
     final Finder fileImages = inSection(
       t.home_activity,
-      find.byWidgetPredicate((Widget w) => w is Image && w.image is FileImage),
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is Image &&
+            w.image is ResizeImage &&
+            (w.image as ResizeImage).imageProvider is FileImage,
+      ),
     );
     expect(fileImages, findsOneWidget,
-        reason: '游戏活动条应渲染 galgames.coverPath 封面（BUG-1112）');
+        reason: '游戏活动条应兼容旧 exePath 并渲染 galgames.coverPath 封面（BUG-1284）');
   });
 
   testWidgets('BUG-1112：点活动时间轴的游戏条切到「游戏」tab，不再落到视频 tab',

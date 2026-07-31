@@ -127,5 +127,28 @@ void main() {
       expect(findGalgameByExePath(games, ''), isNull);
       expect(findGalgameByExePath(<GalgameEntry>[], r'D:\a.exe'), isNull);
     });
+
+    test('活动身份统一兼容新 id、旧 exePath 与无 key 标题快照', () {
+      expect(
+        findGalgameForActivity(games, mediaKey: 'a', title: '旧标题')?.id,
+        'a',
+      );
+      expect(
+        findGalgameForActivity(
+          games,
+          mediaKey: r'd:/games/b/B.EXE',
+          title: '旧标题',
+        )?.id,
+        'b',
+      );
+      expect(
+        findGalgameForActivity(games, title: 'a')?.id,
+        'a',
+      );
+      expect(
+        findGalgameForActivity(games, mediaKey: 'missing', title: 'missing'),
+        isNull,
+      );
+    });
   });
 }
