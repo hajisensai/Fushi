@@ -726,6 +726,10 @@ void main() {
     // 必须收进「活动」区块：同一只游戏同时在「继续」与「最近添加」里各有一张
     // `_gameCover`，裸本地 Image 谓词会被它们兜住——把 _activityLeading 的 game 分支
     // 删光也照样绿（实测过的假阳性）。
+    // BUG-1299 后 `_gameCover` 走 [PortraitCoverImage]：朝向不合槽时同图再渲染一张
+    // 模糊垫底，活动条里的 Image 数量因此可能 >1，数量断言放宽为 ≥1；但**谓词仍要求
+    // ResizeImage 包 FileImage**（`resolveMediaCoverImage` 的解码上限口径），
+    // 不放宽成裸 FileImage，否则少了这层就测不出来源解析被绕过。
     final Finder fileImages = inSection(
       t.home_activity,
       find.byWidgetPredicate(
@@ -735,7 +739,7 @@ void main() {
             (w.image as ResizeImage).imageProvider is FileImage,
       ),
     );
-    expect(fileImages, findsOneWidget,
+    expect(fileImages, findsWidgets,
         reason: '游戏活动条应兼容旧 exePath 并渲染 galgames.coverPath 封面（BUG-1284）');
   });
 

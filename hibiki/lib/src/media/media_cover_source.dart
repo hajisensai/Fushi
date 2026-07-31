@@ -14,8 +14,8 @@
 ///
 /// - **写入**：`MediaCoverService`（选图 / 覆盖 / 落盘 / 缓存驱逐）。
 /// - **来源解析**：本文件。
-/// - **渲染**：`PosterCoverImage`（竖图 cover / 横图模糊垫底 + contain），它明确
-///   「不关心来源」，接收本文件解析出的 provider。
+/// - **渲染**：`PortraitCoverImage`（朝向合槽 cover / 不合槽模糊垫底 + contain），
+///   它明确「不关心来源」，接收本文件解析出的 provider。
 ///
 /// # 互联（远端）封面
 ///

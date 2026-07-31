@@ -45,4 +45,4 @@
   用 backdrop 而海报只喂 2:3 网格卡）需要 schema bump + 刮削源改造，未在本轮范围内；本修复是那条
   路落地后的天然回落路径，不冲突。
 
-  同源但不同槽向的既有条目见 BUG-1272（三处硬编码封面槽绕过 `PortraitCoverImage`）。
+  同源但不同槽向的既有条目见 BUG-1299（三处硬编码封面槽绕过 `PortraitCoverImage`）。
