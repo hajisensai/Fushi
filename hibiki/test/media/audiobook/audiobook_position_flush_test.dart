@@ -18,6 +18,10 @@ import 'package:just_audio_platform_interface/just_audio_platform_interface.dart
 /// 这条测试钉住 flushPosition 的两个关键性质：
 ///  1) 即使整秒没变也 **force** 写（不被周期节流吞掉）；
 ///  2) 返回的 Future **await 到写库真正完成**（durability 保证）。
+///
+/// 位置值断言一律走 [_LivePositionWindow]，**不要**写 `equals(70000)` 这类精确
+/// 相等——理由见该类文档（just_audio 的 position 按墙钟外推，精确相等在满载机器
+/// 上必然随机红）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -121,6 +125,8 @@ void main() {
 
     // Advance playback to 3s: the periodic save persists the position once the
     // whole-second changes (the playing position extrapolates a few ms past).
+    final _LivePositionWindow advancedTo3s =
+        _LivePositionWindow.openedBefore(3000);
     plat.player!.emit(3000, ProcessingStateMessage.ready, playing: true);
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(writes.where((int w) => w >= 3000), isNotEmpty,
@@ -131,12 +137,13 @@ void main() {
     // write so a subsequent kill keeps the progress.
     writes.clear();
     await c.flushPosition();
-    // Exactly one write, carrying the live position within the same 3s window
-    // (the playing position extrapolates a few ms past the emitted 3000).
+    // Exactly one write, carrying the live position extrapolated from the
+    // emitted 3000 (see [_LivePositionWindow] for why this is a window and not
+    // an equality).
     expect(writes, hasLength(1),
         reason: 'background flush must write once despite the per-second '
             'throttle');
-    expect(writes.single, inInclusiveRange(3000, 3999),
+    expect(writes.single, advancedTo3s.matcher,
         reason: 'background flush must persist the latest position');
   });
 
@@ -200,6 +207,8 @@ void main() {
     final AudiobookPlayerController c = AudiobookPlayerController();
     addTearDown(c.dispose);
 
+    final _LivePositionWindow loadedAt65s =
+        _LivePositionWindow.openedBefore(65000);
     await c.load(
       audiobook: ab(),
       audioFiles: <File>[makeFile('hibiki-stop-position-queue.mp3')],
@@ -221,19 +230,28 @@ void main() {
 
     final Future<void> oldFlush = c.flushPosition();
     await firstWriteStarted.future;
+    final _LivePositionWindow jumpedTo70s =
+        _LivePositionWindow.openedBefore(70000);
     plat.player!.emit(70000, ProcessingStateMessage.ready, playing: false);
     await Future<void>.delayed(Duration.zero);
 
     final Future<void> stop = c.stopPlayback();
     await Future<void>.delayed(Duration.zero);
-    expect(started, <int>[65000],
+    // 这一条才是队列不变量：位置值多少无关，关键是**只有一个**写入起跑。
+    expect(started, hasLength(1),
         reason: 'the final write must queue behind the older in-flight write');
+    // 窗口在这里定格复用，后面不再随测试后半程一起变宽。
+    final Matcher preJumpPosition = loadedAt65s.matcher;
+    expect(started.single, preJumpPosition,
+        reason: 'the in-flight write must carry the pre-jump live position');
 
     allowFirstWrite.complete();
     await oldFlush;
     await stop;
-    expect(started.first, 65000);
-    expect(started.skip(1), everyElement(70000));
+    expect(started.first, preJumpPosition);
+    expect(started.skip(1), everyElement(jumpedTo70s.matcher),
+        reason: 'every write queued after the jump must carry the new '
+            'position, never the stale pre-jump one');
     expect(completed, started,
         reason: 'DB/cache completion order must match capture order');
   });
@@ -286,6 +304,45 @@ void main() {
       reason: '释放后不得再用归零位置覆盖刚写穿的值',
     );
   });
+}
+
+/// 播放位置断言的**物理上界**计算器。
+///
+/// just_audio 播放中的 `AudioPlayer.position` 是按墙钟外推出来的：
+///
+///     position = 最近一次平台事件的 updatePosition
+///              + (DateTime.now() − 该事件的 updateTime) × speed
+///
+/// （just_audio 0.9.x `AudioPlayer._getPositionFor`）。所以控制器写出去的位置
+/// **永远不可能精确等于**测试 emit 的那个整数：从 emit 到控制器采样之间过了多少
+/// 真实时间，写出去的值就大多少毫秒。机器一满载，70000 就变成 70001，
+/// `equals(70000)` 必然随机红——坏的是**判据**，不是被测代码。
+///
+/// 这里不拍脑袋加一个 ±N 的容差，而是用 just_audio 自己那把钟（`DateTime.now`）
+/// 量出「事件发生之前」到「断言之时」这段真实经过时间 `elapsed`，得到该值在物理上
+/// 唯一允许的闭区间：
+///
+///     [baseMs, baseMs + elapsed]
+///
+/// 下界 = 外推量非负；上界 = 采样时刻不可能晚于断言时刻，而 `speed` 是默认的 1.0，
+/// 所以外推毫秒数不可能超过 `elapsed`。机器越慢区间越宽，恰好抵消外推变大，因此
+/// 不会 flaky；同时任何**来源错误**的值——stop 归零后的 0、上一段位置 65000、
+/// 压根没写——都落在窗口之外，守卫强度不变（见本文件的变异实测）。
+class _LivePositionWindow {
+  /// 必须在触发该位置的平台事件 **之前** 构造：只有 `_openedAt` 不晚于事件的
+  /// `updateTime`，上界才成立。
+  _LivePositionWindow.openedBefore(this.baseMs) : _openedAt = DateTime.now();
+
+  /// 平台事件里那个精确的位置（外推的起点）。
+  final int baseMs;
+
+  final DateTime _openedAt;
+
+  /// 在断言点求值：截至此刻，外推最多只能走到 `baseMs + elapsed`。
+  Matcher get matcher => inInclusiveRange(
+        baseMs,
+        baseMs + DateTime.now().difference(_openedAt).inMilliseconds,
+      );
 }
 
 class _FakePlatform extends JustAudioPlatform {
