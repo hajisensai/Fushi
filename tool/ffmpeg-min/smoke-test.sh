@@ -135,6 +135,27 @@ run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   -loop 0 "$WORK/cue.gif"
 assert_nonempty "$WORK/cue.gif"
 
+# 制卡封面动图的另外两种格式（默认已是 AVIF）。参数形态与
+# desktop_audio_clipper.dart 的 buildFfmpegClipAnimatedArgs 一致：真彩格式不需要
+# 调色板，滤镜退化成单趟 fps,scale，编码器各自显式指定。
+# 少了 libsvtav1 / libwebp / avif / webp muxer 中任何一项，这两条就会当场失败——
+# 「编译过了」不等于「用户选的格式能产出」，Dart 侧的 fail-open 会把这种缺失
+# 静默降级成 GIF，只有这里能抓住。
+echo "[ffmpeg-min-smoke] exporting cue WebP and AVIF"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" -an \
+  -vf "fps=12,scale=160:-2:flags=lanczos" \
+  -c:v libwebp_anim -lossless 0 -q:v 75 -pix_fmt yuv420p \
+  -loop 0 "$WORK/cue.webp"
+assert_nonempty "$WORK/cue.webp"
+
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" -an \
+  -vf "fps=12,scale=160:-2:flags=lanczos" \
+  -c:v libsvtav1 -preset 8 -crf 32 -pix_fmt yuv420p \
+  -loop 0 "$WORK/cue.avif"
+assert_nonempty "$WORK/cue.avif"
+
 run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   -ss 0.100 -i "$MP4_FIXTURE" -an \
   -frames:v 1 -update 1 "$WORK/frame.jpg"

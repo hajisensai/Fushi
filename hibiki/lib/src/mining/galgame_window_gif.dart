@@ -3,28 +3,45 @@ import 'dart:typed_data';
 
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart'
     show FfmpegRunResult, resolveFfmpegBackend;
+import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+    show animatedEncoderArgs;
+import 'package:hibiki/src/mining/immersion_mining_request.dart'
+    show MiningAnimatedFormat;
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 
-/// galgame 一键制卡「画面」默认动图（短 GIF，抓角色口型/眨眼）：连续对绑定窗口抓多帧
-/// 静态截图，再用**复用的桌面 ffmpeg 后端**（`resolveFfmpegBackend()`，与
-/// `desktop_audio_clipper.dart` 里 `extractClipGifViaFfmpeg` 走的是同一后端解析——
-/// 覆盖 `HIBIKI_FFMPEG` > 程序旁捆绑 > PATH）编码成两趟调色板 GIF。
+/// 捕获产物：字节 + **实际编码成的格式**。
+///
+/// 必须把格式带出来，不能让调用方按「用户选了什么」去拼文件名——[captureWindowGifBytes]
+/// 内部会在首选格式编码失败时降级 GIF，两者可以不一致。若调用方自行拼名，就会出现
+/// `external_window.avif` 里装着 GIF 字节：Anki 按扩展名判 MIME，卡片直接显示不出来。
+typedef GalWindowAnimatedCapture = ({
+  Uint8List bytes,
+  MiningAnimatedFormat format,
+});
+
+/// galgame 一键制卡「画面」动图（抓角色口型/眨眼）：连续对绑定窗口抓多帧静态截图，
+/// 再用**复用的桌面 ffmpeg 后端**（`resolveFfmpegBackend()`，与 `desktop_audio_clipper.dart`
+/// 里 `extractClipGifViaFfmpeg` 走的是同一后端解析——覆盖 `HIBIKI_FFMPEG` > 程序旁捆绑
+/// > PATH）按 [format] 编码（默认格式由用户偏好给出，见 [MiningAnimatedFormat]）。
 ///
 /// 纯 Dart + ffmpeg，**不碰 native**（帧捕获仍走既有 [WindowCaptureChannel.captureWindow]，
 /// 那是仅有的窗口捕获通道）。**fail-open**：任一步失败（捕获帧不足 / ffmpeg 缺失 / 编码
 /// 失败 / 任何异常）都返回 null 而不抛，交给调用方回退到单帧截图（Never break）。
 ///
 /// [hwnd] 目标窗口句柄；[frames] 尝试抓的帧数；[intervalMs] 帧间隔（WGC 捕获本身有延迟，
-/// 帧率尽力而为）；[fps] 输出 GIF 帧率；[maxWidth] 输出 GIF 最大宽度（高度按比例）。
+/// 帧率尽力而为）；[fps] 输出帧率；[maxWidth] 输出最大宽度（高度按比例）。
 /// 抓到 <2 帧时返回 null（单帧不成动图，交回退）。
-Future<Uint8List?> captureWindowGifBytes({
+Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
   required int hwnd,
   int frames = 10,
   int intervalMs = 120,
   int fps = 8,
   int maxWidth = 480,
+  // 动图编码格式。默认 [MiningAnimatedFormat.gif] = 旧行为逐字等价（未传的既有调用点
+  // 与测试不受影响）；真实调用点传用户偏好 `gal_mining_animated_format`。
+  MiningAnimatedFormat format = MiningAnimatedFormat.gif,
 }) async {
   // 只在桌面有 CLI ffmpeg 时可用；移动端无 CLI ffmpeg，直接回退单帧（且外部窗口捕获
   // 本就只有 Windows）。不做平台早退硬编码——ffmpeg 后端跑不起来时下面自然 fail-open。
@@ -73,37 +90,41 @@ Future<Uint8List?> captureWindowGifBytes({
     }
 
     final String inputPattern = p.join(tempDir.path, 'frame_%03d.png');
-    final String outputPath = p.join(tempDir.path, 'out.gif');
-    // 两趟调色板（palettegen/paletteuse）避免低质抖动，与视频 cue GIF 同款质量策略。
-    // `-framerate <fps>` 指定图像序列输入帧率；`fps=<fps>` 归一输出帧率；`scale=W:-1`
-    // 按宽度等比缩放。
-    final String filter = 'fps=$fps,scale=$maxWidth:-1:flags=lanczos,'
-        'split[a][b];[a]palettegen[p];[b][p]paletteuse';
-    final List<String> args = <String>[
-      '-y',
-      '-framerate',
-      '$fps',
-      '-i',
-      inputPattern,
-      '-vf',
-      filter,
-      outputPath,
-    ];
 
-    final FfmpegRunResult result =
-        await resolveFfmpegBackend().run(args, const Duration(seconds: 60));
-    final File output = File(outputPath);
-    if (result.returnCode == 0 &&
-        output.existsSync() &&
-        output.lengthSync() > 0) {
-      return await output.readAsBytes();
+    // 首选用户所选格式；失败则降级 GIF 再试一次。这不是「重试掩盖症状」——两次调用
+    // 的**参数不同**，第二次是能力降级：捆绑 ffmpeg 若来自旧版本包，没有 libsvtav1 /
+    // libwebp 编码器（见 tool/ffmpeg-min/build-ffmpeg-min.sh），首选格式必然失败而
+    // GIF 恒可用。降级只做一次，且只在首选不是 GIF 时发生。
+    final List<MiningAnimatedFormat> attempts =
+        format == MiningAnimatedFormat.gif
+            ? <MiningAnimatedFormat>[MiningAnimatedFormat.gif]
+            : <MiningAnimatedFormat>[format, MiningAnimatedFormat.gif];
+
+    for (final MiningAnimatedFormat attempt in attempts) {
+      final String outputPath =
+          p.join(tempDir.path, 'out.${attempt.fileExtension}');
+      final List<String> args = buildGalWindowAnimatedArgs(
+        format: attempt,
+        inputPattern: inputPattern,
+        outputPath: outputPath,
+        fps: fps,
+        maxWidth: maxWidth,
+      );
+      final FfmpegRunResult result =
+          await resolveFfmpegBackend().run(args, const Duration(seconds: 60));
+      final File output = File(outputPath);
+      if (result.returnCode == 0 &&
+          output.existsSync() &&
+          output.lengthSync() > 0) {
+        return (bytes: await output.readAsBytes(), format: attempt);
+      }
+      // 编码失败 / 超时（returnCode==null）：记日志。非末次则继续降级尝试。
+      ErrorLogService.instance.log(
+        'captureWindowGifBytes',
+        '${attempt.wireName} encode failed: ${result.failureSummary}',
+        StackTrace.current,
+      );
     }
-    // 编码失败 / 超时（returnCode==null）：记日志后 fail-open。
-    ErrorLogService.instance.log(
-      'captureWindowGifBytes',
-      'gif encode failed: ${result.failureSummary}',
-      StackTrace.current,
-    );
     return null;
   } on ProcessException catch (e, stack) {
     // ffmpeg 不可用（移动端无 CLI / 未捆绑 / 不在 PATH）：优雅回退单帧。
@@ -113,11 +134,57 @@ Future<Uint8List?> captureWindowGifBytes({
     ErrorLogService.instance.log('captureWindowGifBytes', e, stack);
     return null;
   } finally {
-    // 清理临时目录（含帧 PNG 与 GIF），best-effort。
+    // 清理临时目录（含帧 PNG 与动图产物），best-effort。
     if (tempDir != null) {
       try {
         await tempDir.delete(recursive: true);
       } catch (_) {}
     }
   }
+}
+
+/// 纯函数：构建「PNG 帧序列 → 循环动图」的 ffmpeg 参数表（可单测）。
+///
+/// 与视频侧的 `buildFfmpegClipAnimatedArgs` 是**两条独立链路**，不强行合并：输入形态
+/// 不同（这里是 `-framerate N -i frame_%03d.png` 图像序列，那边是带 `-ss/-t` 的视频
+/// 时间窗），硬合并只会造出一个两边都用不顺的参数集。共享的只有「按格式选编码器」这条
+/// 规则，它由 [MiningAnimatedFormat] 承载。
+///
+/// - GIF：`fps,scale` + 两趟调色板（`palettegen`/`paletteuse`）避免抖动。
+/// - WebP/AVIF：真彩，无需调色板，滤镜退化为 `fps,scale` 单遍。
+///
+/// `scale=W:-1` 按宽度等比缩放。⚠️ GIF 对高度奇偶不敏感，但 AVIF/WebP 编码器要求偶数
+/// 维度，故非 GIF 分支用 `-2`（等比且取偶）而非 `-1`。
+///
+/// 三条分支的参数形态已在带 libsvtav1/libwebp 的真实 ffmpeg 上验证可产出非空文件
+/// （见 `tool/ffmpeg-min/smoke-test.sh` 的同款命令）。**但入库的 ffmpeg-min 尚未含这两个
+/// 编码器**——须重跑 `.github/workflows/ffmpeg-min.yml` 并重新 vendor exe，在那之前
+/// AVIF/WebP 会走 [captureWindowGifBytes] 的降级路径落回 GIF。
+List<String> buildGalWindowAnimatedArgs({
+  required MiningAnimatedFormat format,
+  required String inputPattern,
+  required String outputPath,
+  required int fps,
+  required int maxWidth,
+}) {
+  final bool isGif = format == MiningAnimatedFormat.gif;
+  final String scale = isGif
+      ? 'scale=$maxWidth:-1:flags=lanczos'
+      : 'scale=$maxWidth:-2:flags=lanczos';
+  final String filter = isGif
+      ? 'fps=$fps,$scale,split[a][b];[a]palettegen[p];[b][p]paletteuse'
+      : 'fps=$fps,$scale';
+  return <String>[
+    '-y',
+    '-framerate',
+    '$fps',
+    '-i',
+    inputPattern,
+    '-vf',
+    filter,
+    // 编码器参数与视频 cue 动图**共用同一处真相源**，两条链路不各持一份。
+    ...animatedEncoderArgs(format),
+    if (format != MiningAnimatedFormat.gif) ...<String>['-loop', '0'],
+    outputPath,
+  ];
 }

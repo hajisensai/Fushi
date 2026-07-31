@@ -2855,5 +2855,12 @@
   "anki_lapis_visual_padding": "Inner spacing",
   "anki_lapis_visual_margin": "Outer spacing",
   "anki_lapis_visual_field_definition_info_note": "Only visible on cards that keep more than one definition block; single-definition cards hide it.",
-  "anki_lapis_visual_field_dictionary_name_note": "On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately."
+  "anki_lapis_visual_field_dictionary_name_note": "On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.",
+  "mining_animated_format_avif": "AVIF (smallest)",
+  "mining_animated_format_webp": "WebP (wider support)",
+  "mining_animated_format_gif": "GIF (most compatible)",
+  "video_mining_animated_format": "Video card animation format",
+  "video_mining_animated_format_hint": "AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.",
+  "gal_mining_animated_format": "Game card animation format",
+  "gal_mining_animated_format_hint": "Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs."
 }

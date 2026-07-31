@@ -2855,5 +2855,12 @@
   "anki_lapis_visual_padding": "内边距",
   "anki_lapis_visual_margin": "外边距",
   "anki_lapis_visual_field_definition_info_note": "仅在保留多段释义的卡片上可见；只有一段释义的卡片不会显示。",
-  "anki_lapis_visual_field_dictionary_name_note": "Hibiki 生成的卡片把词性标签和词典名放在同一个标签里，两者无法分开设置样式。"
+  "anki_lapis_visual_field_dictionary_name_note": "Hibiki 生成的卡片把词性标签和词典名放在同一个标签里，两者无法分开设置样式。",
+  "mining_animated_format_avif": "AVIF（体积最小）",
+  "mining_animated_format_webp": "WebP（兼容性更广）",
+  "mining_animated_format_gif": "GIF（兼容性最好）",
+  "video_mining_animated_format": "视频制卡动图格式",
+  "video_mining_animated_format_hint": "同画质下 AVIF 体积远小于 GIF，也是唯一在最高清晰度档保留源分辨率与源帧率的格式。捆绑的编码器产不出时会自动回退 GIF。",
+  "gal_mining_animated_format": "游戏制卡动图格式",
+  "gal_mining_animated_format_hint": "与视频制卡同样的格式，但分开保存：galgame 一句台词内画面基本静止，取舍不同。"
 }

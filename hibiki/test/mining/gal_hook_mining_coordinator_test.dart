@@ -5,8 +5,10 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
+import 'package:hibiki/src/mining/galgame_window_gif.dart'
+    show GalWindowAnimatedCapture;
 import 'package:hibiki/src/mining/immersion_mining_request.dart'
-    show VideoMiningImageMode;
+    show MiningAnimatedFormat, VideoMiningImageMode;
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
@@ -100,7 +102,9 @@ void main() {
       required String sentence,
       required String outputExtension,
     })? audio,
-    Future<Uint8List?> Function({required int hwnd})? gif,
+    Future<GalWindowAnimatedCapture?> Function(
+            {required int hwnd, MiningAnimatedFormat format})?
+        gif,
     Future<WindowCaptureResult> Function(int hwnd)? still,
     Future<Directory> Function()? tempFactory,
   }) =>
@@ -117,8 +121,11 @@ void main() {
             }) async =>
                 Uint8List.fromList(<int>[7, 8, 9]),
         captureGif: gif ??
-            ({required int hwnd}) async =>
-                Uint8List.fromList(<int>[71, 73, 70]),
+            (
+                    {required int hwnd,
+                    MiningAnimatedFormat format =
+                        MiningAnimatedFormat.gif}) async =>
+                (bytes: Uint8List.fromList(<int>[71, 73, 70]), format: format),
         captureStill: still ??
             (int hwnd) async => WindowCaptureResult(
                   pngBytes: Uint8List.fromList(<int>[80, 78, 71]),
@@ -191,7 +198,10 @@ void main() {
     final _RecordingRepo pngRepo = _RecordingRepo();
     final GalHookMiningResult pngResult = await coordinator(
       validator: (_) => true,
-      gif: ({required int hwnd}) async => null,
+      gif: (
+              {required int hwnd,
+              MiningAnimatedFormat format = MiningAnimatedFormat.gif}) async =>
+          null,
     ).mineLine(
       lineId: entry.id,
       fields: const <String, String>{'expression': '画面'},
@@ -206,7 +216,10 @@ void main() {
     final _RecordingRepo failedRepo = _RecordingRepo();
     final GalHookMiningResult failed = await coordinator(
       validator: (_) => true,
-      gif: ({required int hwnd}) async => null,
+      gif: (
+              {required int hwnd,
+              MiningAnimatedFormat format = MiningAnimatedFormat.gif}) async =>
+          null,
       still: (int hwnd) async =>
           const WindowCaptureResult(error: 'window disappeared'),
     ).mineLine(
@@ -228,9 +241,11 @@ void main() {
 
     final GalHookMiningResult result = await coordinator(
       validator: (_) => true,
-      gif: ({required int hwnd}) async {
+      gif: (
+          {required int hwnd,
+          MiningAnimatedFormat format = MiningAnimatedFormat.gif}) async {
         gifCalls++;
-        return Uint8List.fromList(<int>[1, 2, 3]);
+        return (bytes: Uint8List.fromList(<int>[1, 2, 3]), format: format);
       },
     ).mineLine(
       lineId: entry.id,
@@ -279,7 +294,10 @@ void main() {
 
     final GalHookMiningResult result = await coordinator(
       validator: (_) => true,
-      gif: ({required int hwnd}) async => Uint8List(0),
+      gif: (
+              {required int hwnd,
+              MiningAnimatedFormat format = MiningAnimatedFormat.gif}) async =>
+          null,
     ).mineLine(
       lineId: entry.id,
       fields: const <String, String>{'expression': '降格'},
@@ -300,9 +318,11 @@ void main() {
     int audioCalls = 0;
     final GalHookMiningResult result = await coordinator(
       validator: (_) => false,
-      gif: ({required int hwnd}) async {
+      gif: (
+          {required int hwnd,
+          MiningAnimatedFormat format = MiningAnimatedFormat.gif}) async {
         gifCalls++;
-        return Uint8List(0);
+        return null;
       },
       audio: ({
         required String lineId,
@@ -310,7 +330,7 @@ void main() {
         required String outputExtension,
       }) async {
         audioCalls++;
-        return Uint8List(0);
+        return null;
       },
     ).mineLine(
       lineId: entry.id,

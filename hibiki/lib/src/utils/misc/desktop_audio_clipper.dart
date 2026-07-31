@@ -6,6 +6,10 @@ import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
     show kYoutubeStreamReplayUserAgent;
 import 'package:hibiki/src/media/video/video_clip_exporter.dart'
     show resolveAudioMapIndex;
+// 动图格式枚举与 VideoMiningImageMode 同住 mining 侧（两者都是「制卡封面怎么取」的
+// 取值域）。本文件只消费它选编码器参数，不反向依赖 mining 逻辑，无环。
+import 'package:hibiki/src/mining/immersion_mining_request.dart'
+    show MiningAnimatedFormat;
 import 'package:http/http.dart' as http;
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:meta/meta.dart';
@@ -201,8 +205,8 @@ Future<String?> materializeRemoteAudioViaRangeDownload({
 /// 不可变值对象（纯数据，可单测、可在隔离中构造）。各底层纯函数（[buildFfmpegClipArgs]
 /// / [buildFfmpegClipGifArgs] / [downsampleCardScreenshot]）仍接收原始可选参数，本类只是
 /// 调用点选档时的参数捆绑，不让纯函数读全局偏好。最高档用 [screenshotMaxLongEdge] == 0
-/// 表示「不缩放」（截图原图直通），由底层纯函数解读；**GIF 侧没有 0 哨兵档**（BUG-1039，
-/// 见 [imageTiers]），任何档位的 [gifFps]/[gifWidth] 都是有限值。
+/// 表示「不缩放」（截图原图直通），由底层纯函数解读；动图侧的 0 哨兵只有 **AVIF** 在顶格
+/// 档产出（WebP/GIF 任何档位都是有限值），依据见 [MiningAnimatedFormat] 与 [resolve]。
 class MiningMediaCompression {
   const MiningMediaCompression({
     required this.audioChannels,
@@ -219,12 +223,12 @@ class MiningMediaCompression {
   /// 音频比特率（`-b:a`，如 `'64k'`）。
   final String audioBitrate;
 
-  /// cue 封面 GIF 帧率（`fps=`）。**0 = 源帧率**（不加 fps 滤镜）。BUG-1039 后已无档位
-  /// 产出 0——GIF 侧全档有限值；纯函数仍支持 0 供直接调用方使用。
+  /// cue 封面动图帧率（`fps=`）。**0 = 源帧率**（不加 fps 滤镜）。只有「顶格档 + AVIF」
+  /// 会产出 0（见 [resolve]）；WebP/GIF 全档恒为有限值。
   final int gifFps;
 
-  /// cue 封面 GIF 宽度（`scale=W:-2`）。**0 = 源分辨率**（不加 scale 滤镜）。同上，
-  /// BUG-1039 后已无档位产出 0。
+  /// cue 封面动图宽度（`scale=W:-2`）。**0 = 源分辨率**（不加 scale 滤镜）。同 [gifFps]：
+  /// 仅顶格档 + AVIF 产出 0。
   final int gifWidth;
 
   /// 帧截图封面降采样长边（px）。**0 = 不缩放**（最高档，原图字节直通）。
@@ -240,6 +244,11 @@ class MiningMediaCompression {
   /// （`maxLongEdge` 用 0 哨兵）；**GIF** 走 [gifMaxTierFps]/[gifMaxTierWidth] 的封顶档。
   /// BUG-1039 前这一档叫「原片」，但它对 GIF 已不再是源分辨率/源帧率——只有截图仍是
   /// 原图，故改名为「最高」：只承诺是滑块顶格，不承诺具体保真度。
+  ///
+  /// ⚠️ 顶格档这两个 gif 字段是 `0` 占位，**永远被 [resolve] 用格式自己声明的
+  /// [MiningAnimatedFormat.maxTierFps]/[MiningAnimatedFormat.maxTierWidth] 覆写**。
+  /// 下面那段爆炸分析对 GIF（与实测同样慢的 WebP）永远成立，只有 AVIF 例外——它在源
+  /// 分辨率下比 GIF 还快 3.4 倍，实测表见 [MiningAnimatedFormat]。
   ///
   /// BUG-1039：这一档过去对 GIF 也用 0 哨兵（源分辨率 + 源帧率），这是把「截图」的
   /// 语义错套到「动图」上——截图原图直通只是几 MB 的一张 JPEG，而 GIF 是 8-bit 调色板
@@ -257,17 +266,22 @@ class MiningMediaCompression {
     (gifFps: 8, gifWidth: 480, maxLongEdge: 1000, quality: 90), // 1 标准（默认=旧压缩档）
     (gifFps: 12, gifWidth: 720, maxLongEdge: 2000, quality: 95), // 2 高清（=旧高保真档）
     (
-      gifFps: gifMaxTierFps,
-      gifWidth: gifMaxTierWidth,
+      gifFps: 0,
+      gifWidth: 0,
       maxLongEdge: 0,
       quality: 100
-    ), // 3 最高（截图原图直通；GIF 封顶，BUG-1039）
+    ), // 3 最高（截图原图直通；动图参数由格式声明，见下）
   ];
 
-  /// BUG-1039：最高档 GIF 的封顶帧率 / 宽度。GIF 无帧间压缩，不存在可用的「源分辨率+
-  /// 源帧率」档；这两个值是「仍明显优于高清档、且体积与耗时可控」的实测折中。
-  static const int gifMaxTierFps = 12;
-  static const int gifMaxTierWidth = 960;
+  /// 顶格档的动图参数**不在本表里**——它由 [MiningAnimatedFormat.maxTierFps] /
+  /// [MiningAnimatedFormat.maxTierWidth] 每格式各自声明，[resolve] 直接查。本表档 3 的
+  /// 两个 gif 字段写 `0` 只是占位，永远被覆写。
+  ///
+  /// 这么分是因为顶格档的含义本就随格式变（AVIF 源直通 / WebP·GIF 封顶，实测依据见
+  /// [MiningAnimatedFormat] 文档），把它塞进一张与格式无关的表只会逼 [resolve] 长出
+  /// 「谁是特例」的分支。
+  static int get gifMaxTierFps => MiningAnimatedFormat.gif.maxTierFps;
+  static int get gifMaxTierWidth => MiningAnimatedFormat.gif.maxTierWidth;
 
   /// 音频质量有序档位（索引 0..2）：低→高。
   /// 档 0 = 旧压缩档（单声道 64k），档 1 = 旧高保真档（立体声 128k），档 2 = 最高（立体声
@@ -317,20 +331,33 @@ class MiningMediaCompression {
     screenshotQuality: 95,
   );
 
-  /// 据图片/GIF 清晰度档 [imageTier] + 音频质量档 [audioTier] 组装媒体档（越界自动夹取）。
+  /// 据图片/动图清晰度档 [imageTier] + 音频质量档 [audioTier] 组装媒体档（越界自动夹取）。
+  ///
+  /// 顶格档（[imageTierMax]）的动图参数取自 [format] 自己声明的
+  /// [MiningAnimatedFormat.maxTierFps]/[MiningAnimatedFormat.maxTierWidth]——AVIF 是
+  /// `0/0`（源分辨率 + 源帧率，真·原图档），WebP/GIF 是封顶值。判据不是「有没有帧间
+  /// 压缩」而是「源直通跑不跑得动」，实测依据见 [MiningAnimatedFormat] 文档。
+  ///
+  /// 低三档与格式无关：它们的有限值对三种编码器同样有意义，不按格式分叉，免得同一个
+  /// 滑块位置在不同格式下含义漂开。截图侧的原图直通语义自始至终没变。
+  ///
+  /// 默认 [MiningAnimatedFormat.gif] 让未传 format 的既有调用点/测试逐字节等价。
   static MiningMediaCompression resolve({
     required int imageTier,
     required int audioTier,
+    MiningAnimatedFormat format = MiningAnimatedFormat.gif,
   }) {
+    final int tier = _clampImageTier(imageTier);
     final ({int gifFps, int gifWidth, int maxLongEdge, int quality}) img =
-        imageTiers[_clampImageTier(imageTier)];
+        imageTiers[tier];
     final ({int channels, String bitrate}) aud =
         audioTiers[_clampAudioTier(audioTier)];
+    final bool topTier = tier == imageTierMax;
     return MiningMediaCompression(
       audioChannels: aud.channels,
       audioBitrate: aud.bitrate,
-      gifFps: img.gifFps,
-      gifWidth: img.gifWidth,
+      gifFps: topTier ? format.maxTierFps : img.gifFps,
+      gifWidth: topTier ? format.maxTierWidth : img.gifWidth,
       screenshotMaxLongEdge: img.maxLongEdge,
       screenshotQuality: img.quality,
     );
@@ -725,19 +752,75 @@ List<String> buildFfmpegClipGifArgs({
   int maxDurationMs = 10000,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+}) =>
+    buildFfmpegClipAnimatedArgs(
+      format: MiningAnimatedFormat.gif,
+      inputPath: inputPath,
+      startMs: startMs,
+      endMs: endMs,
+      outputPath: outputPath,
+      fps: fps,
+      width: width,
+      maxDurationMs: maxDurationMs,
+      tlsPinSha256: tlsPinSha256,
+    );
+
+/// 纯函数：构建「cue 时间窗 → 循环动图」的 ffmpeg 参数表，按 [format] 分派编码器。
+/// [buildFfmpegClipGifArgs] 是本函数 `format: gif` 的薄委托（旧调用点/测试逐字等价）。
+///
+/// 三种格式共享同一段输入定位与时长 clamp，只在**滤镜链 + 编码器**上分叉：
+/// - [MiningAnimatedFormat.gif]：`split→palettegen→paletteuse` 双遍调色板（8-bit 调色板
+///   格式必须靠它避免抖动），无编码器参数（muxer 按 `.gif` 扩展名选 native gif 编码器）。
+/// - [MiningAnimatedFormat.webp]：真彩，**不需要调色板**，滤镜退化成 `fps,scale` 单遍
+///   （顺带省掉 GIF 那一遍全量重解码）。编码器 `libwebp_anim`。
+/// - [MiningAnimatedFormat.avif]：同样单遍滤镜，编码器 `libsvtav1`（选它而非 libaom：
+///   本负载是 16–48 帧的短片，延迟比压缩率重要，且静态链接体积约 3–5MB 对 5–9MB）。
+///
+/// 三条分支的参数形态已在带 libsvtav1/libwebp 的真实 ffmpeg 上跑通（1080p30 源 4 秒窗，
+/// 480px·8fps：AVIF 36 KB / WebP 163 KB / GIF 471 KB）。**但入库的 `ffmpeg-min` 尚未含
+/// 这两个编码器**（见 `tool/ffmpeg-min/build-ffmpeg-min.sh`）——须重跑
+/// `.github/workflows/ffmpeg-min.yml` 并重新 vendor exe。在那之前调用点的 fail-open
+/// 会把 AVIF/WebP 降级回 GIF，卡照样制得出来，只是用户选的格式暂不生效。
+///
+/// `-2` 让高度按宽度等比且取偶（三种编码器都要求偶数维度）。`-ss`/`-t` 置于 `-i` 前做
+/// 快速输入定位（多 GB 剧集不从 0 解码）。时长 clamp 到 `(0, maxDurationMs]`。
+List<String> buildFfmpegClipAnimatedArgs({
+  required MiningAnimatedFormat format,
+  required String inputPath,
+  required int startMs,
+  required int endMs,
+  required String outputPath,
+  int fps = 8,
+  int width = 320,
+  int maxDurationMs = 10000,
+  String? tlsPinSha256,
 }) {
   final double startSeconds = (startMs < 0 ? 0 : startMs) / 1000.0;
   final int rawDur = endMs - startMs;
   final int clampedDur =
       rawDur > maxDurationMs ? maxDurationMs : (rawDur < 1 ? 1 : rawDur);
   final double durationSeconds = clampedDur / 1000.0;
-  // [fps]<=0 / [width]<=0 表示「源帧率 / 源分辨率」（BUG-1039 后无档位再传 0，仅供直接调用方）：
-  // 对应滤镜前缀整段省略（不降帧、不缩放），仅保留 palettegen/paletteuse 双遍避免抖动。
+  // [fps]<=0 / [width]<=0 表示「源帧率 / 源分辨率」（原图档，仅帧间压缩格式开放——见
+  // MiningMediaCompression.imageTiers 档 3 与 BUG-1039）：对应滤镜段整段省略。
   final StringBuffer pre = StringBuffer();
   if (fps > 0) pre.write('fps=$fps,');
   if (width > 0) pre.write('scale=$width:-2:flags=lanczos,');
-  final String filter =
-      '${pre}split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse';
+
+  // GIF 走 filter_complex（palettegen 需要分流），webp/avif 单链走 -vf。两者不能混用
+  // 同一个开关：filter_complex 里写不出裸 `-vf` 的等价链而不引入多余的 split。
+  final List<String> filterArgs;
+  if (format == MiningAnimatedFormat.gif) {
+    filterArgs = <String>[
+      '-filter_complex',
+      '${pre}split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse',
+    ];
+  } else {
+    final String chain = pre.isEmpty
+        ? 'null' // 原图档：不降帧不缩放，但 -vf 不接受空串，用 null 滤镜占位。
+        : pre.toString().substring(0, pre.length - 1); // 去掉尾逗号
+    filterArgs = <String>['-vf', chain];
+  }
+
   return <String>[
     '-y',
     ...buildFfmpegRemoteInputArgs(inputPath, tlsPinSha256: tlsPinSha256),
@@ -748,17 +831,63 @@ List<String> buildFfmpegClipGifArgs({
     '-i',
     inputPath,
     '-an',
-    '-filter_complex',
-    filter,
+    ...filterArgs,
+    ...animatedEncoderArgs(format),
     '-loop',
     '0',
     outputPath,
   ];
 }
 
-/// 把 [inputPath] 的 `[startMs, endMs)` 段导出成循环 GIF 到 [outputPath]（见
-/// [buildFfmpegClipGifArgs]）。成功返回 [outputPath]，否则 null（范围非法 / 输入缺失 /
-/// ffmpeg 不存在（移动端无 CLI ffmpeg）/ 编码无输出）——调用方据此回退单帧截图。
+/// 按格式给出编码器参数段。**视频 cue 动图与 galgame 窗口动图共用这一处**，避免两条
+/// 链路各持一份会漂开的编码参数。
+///
+/// GIF 返回空：native gif 编码器由 `.gif` 扩展名自动选中，显式 `-c:v gif` 与现状字节
+/// 不等价（会改变既有卡片的产出），故不加。
+///
+/// 为什么质量是**定值而非跟随清晰度档**：清晰度档（[MiningMediaCompression.imageTiers]）
+/// 对动图历来只调分辨率与帧率——GIF 是调色板格式，本就没有有损质量旋钮。把档位的
+/// `quality`（80..100，为截图 JPEG 设计）接到这里会让顶格档变成 CRF 0（近无损），叠加
+/// 顶格档的源分辨率+源帧率直通就是体积失控，正是 BUG-1039 那类「更高档 = 不可用配置」。
+/// 下面两个值是实测折中（1080p30 源 4 秒窗：AVIF 36 KB、WebP 163 KB，同窗 GIF 471 KB）。
+List<String> animatedEncoderArgs(MiningAnimatedFormat format) {
+  switch (format) {
+    case MiningAnimatedFormat.gif:
+      return const <String>[];
+    case MiningAnimatedFormat.webp:
+      return const <String>[
+        '-c:v',
+        'libwebp_anim',
+        '-lossless',
+        '0',
+        '-q:v',
+        '75',
+        '-pix_fmt',
+        'yuv420p',
+      ];
+    case MiningAnimatedFormat.avif:
+      return const <String>[
+        '-c:v',
+        'libsvtav1',
+        // preset 8：SVT-AV1 的 0(慢/小)–13(快/大) 刻度上偏快的一档。本负载只有几十帧，
+        // 更慢的 preset 省不下多少字节却成倍拉长用户按下制卡后的等待。
+        '-preset',
+        '8',
+        '-crf',
+        '32',
+        '-pix_fmt',
+        'yuv420p',
+      ];
+  }
+}
+
+/// 把 [inputPath] 的 `[startMs, endMs)` 段导出成循环动图到 [outputPath]（见
+/// [buildFfmpegClipAnimatedArgs]）。成功返回 [outputPath]，否则 null（范围非法 / 输入缺失 /
+/// ffmpeg 不存在（移动端无 CLI ffmpeg）/ 编码无输出）——调用方据此降级（换格式重试或
+/// 回退单帧截图）。
+///
+/// [format] 决定编码器与 muxer；**调用方必须让 [outputPath] 的扩展名与之一致**
+/// （ffmpeg 按扩展名选 muxer），否则会写出名不副实的容器。
 ///
 /// 镜像 [extractAudioSegmentViaFfmpeg]：有界超时、失败/超时清理半成品、对调用方不抛。
 Future<String?> extractClipGifViaFfmpeg({
@@ -771,6 +900,8 @@ Future<String?> extractClipGifViaFfmpeg({
   // 传高保真档（720px/12fps，与 app 内视频制卡共用档位）。
   int fps = 8,
   int width = 320,
+  // 动图编码格式。默认 gif = 旧行为逐字等价（未传的既有调用点/测试不受影响）。
+  MiningAnimatedFormat format = MiningAnimatedFormat.gif,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
 }) async {
@@ -783,7 +914,8 @@ Future<String?> extractClipGifViaFfmpeg({
   try {
     output.parent.createSync(recursive: true);
     final FfmpegRunResult result = await _runFfmpeg(
-      buildFfmpegClipGifArgs(
+      buildFfmpegClipAnimatedArgs(
+        format: format,
         inputPath: inputPath,
         startMs: startMs,
         endMs: endMs,

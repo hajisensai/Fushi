@@ -515,11 +515,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       compression: MiningMediaCompression.resolve(
         imageTier: mixinAppModel.miningImageQuality,
         audioTier: mixinAppModel.miningAudioQuality,
+        // 顶格档的动图参数随格式变，必须一并传入解析（见 MiningAnimatedFormat）。
+        format: mixinAppModel.galMiningAnimatedFormat,
       ),
       repo: repo,
       updateNoteId: updateNoteId,
       addTitleTag: mixinAppModel.autoAddBookNameToTags,
       imageMode: mixinAppModel.galMiningImageMode,
+      animatedFormat: mixinAppModel.galMiningAnimatedFormat,
     );
     if (result.aborted) {
       HibikiToast.showMine(

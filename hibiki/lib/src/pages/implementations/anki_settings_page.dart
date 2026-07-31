@@ -12,7 +12,7 @@ import 'package:hibiki/src/anki/lapis_style_editor_page.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/anki/lapis_template_service.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart'
-    show VideoMiningImageMode;
+    show MiningAnimatedFormat, VideoMiningImageMode;
 import 'package:hibiki/src/profile/profile_selector.dart';
 
 /// Anki 设置正文（无脚手架）。直接平铺进「制卡」设置 destination 详情页
@@ -321,7 +321,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             _buildMiningImageQualityRow(),
             _buildMiningAudioQualityRow(),
             _buildVideoMiningImageModePicker(),
+            _buildVideoMiningAnimatedFormatPicker(),
             _buildGalMiningImageModePicker(),
+            _buildGalMiningAnimatedFormatPicker(),
           ],
         ),
       ],
@@ -453,6 +455,58 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       },
     );
   }
+
+  /// 动图**编码格式**，与上面两个「封面模式」正交：模式决定用不用动图，格式决定动图
+  /// 怎么编码。视频 / gal 各存一份（同 image mode 的分法）。
+  ///
+  /// 三档共用一套 option 文案（[t.mining_animated_format_avif] 等）——格式本身的含义与
+  /// 场景无关，没必要为两个页面各写一份会漂开的文案。
+  Widget _buildAnimatedFormatPicker({
+    required String title,
+    required String subtitle,
+    required MiningAnimatedFormat selected,
+    required void Function(MiningAnimatedFormat) onChanged,
+  }) {
+    return AdaptiveSettingsPickerRow<MiningAnimatedFormat>(
+      title: title,
+      subtitle: subtitle,
+      icon: Icons.animation_outlined,
+      controlBelow: true,
+      selected: selected,
+      options: [
+        AdaptiveSettingsPickerOption<MiningAnimatedFormat>(
+          value: MiningAnimatedFormat.avif,
+          label: t.mining_animated_format_avif,
+        ),
+        AdaptiveSettingsPickerOption<MiningAnimatedFormat>(
+          value: MiningAnimatedFormat.webp,
+          label: t.mining_animated_format_webp,
+        ),
+        AdaptiveSettingsPickerOption<MiningAnimatedFormat>(
+          value: MiningAnimatedFormat.gif,
+          label: t.mining_animated_format_gif,
+        ),
+      ],
+      onChanged: (MiningAnimatedFormat format) {
+        onChanged(format);
+        setState(() {});
+      },
+    );
+  }
+
+  Widget _buildVideoMiningAnimatedFormatPicker() => _buildAnimatedFormatPicker(
+        title: t.video_mining_animated_format,
+        subtitle: t.video_mining_animated_format_hint,
+        selected: appModel.videoMiningAnimatedFormat,
+        onChanged: appModel.setVideoMiningAnimatedFormat,
+      );
+
+  Widget _buildGalMiningAnimatedFormatPicker() => _buildAnimatedFormatPicker(
+        title: t.gal_mining_animated_format,
+        subtitle: t.gal_mining_animated_format_hint,
+        selected: appModel.galMiningAnimatedFormat,
+        onChanged: appModel.setGalMiningAnimatedFormat,
+      );
 
   Widget _buildFetchTile(AnkiUiState uiState, AnkiViewModel vm) {
     // Lapis 创建在途时 vm 的 isFetching 也为 true（vm 内部复用同一 flag）；
