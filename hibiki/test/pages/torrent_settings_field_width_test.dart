@@ -14,7 +14,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../helpers/test_platform_services.dart';
 
-// BUG-1084 / BUG-1227 守卫：设置详情卡片按用户拍板填满整宽（无 960 面板限宽），
+// BUG-1084 / BUG-1278 守卫：设置详情卡片按用户拍板填满整宽（无 960 面板限宽），
 // 但下载设置表单自身应在 4K pane 内按 560px 居中，避免说明与按钮贴住详情页左端、
 // Switch 被推到最右端。输入框在表单内继续限制为 480px；窄 pane 下两层限制均退化
 // 为填满可用宽度。
@@ -90,7 +90,7 @@ Widget _harness({required double paneWidth}) {
 void main() {
   testWidgets(
       'wide pane: content centers at 560 and fields cap at 480 '
-      '(BUG-1084, BUG-1227)', (WidgetTester tester) async {
+      '(BUG-1084, BUG-1278)', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(2600, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
