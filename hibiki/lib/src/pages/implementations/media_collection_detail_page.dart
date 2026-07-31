@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
+import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
 import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_batch_dialog.dart';
+import 'package:hibiki/src/utils/cover_image.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -222,9 +224,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     Navigator.of(context).maybePop();
   }
 
-  /// 单集封面缩略图（16:9）：有封面文件则 [Image.file]，否则 letterbox 占位图标。
+  /// 单集封面缩略图（16:9 槽）：有封面文件则渲染，否则 letterbox 占位图标。
   /// 每集是独立视频行，[VideoBookRow.coverPath] 由导入 / 后台补齐（home_video_page
-  /// `_maybeBackfillCovers`）逐集抽帧填充。
+  /// `_maybeBackfillCovers`）逐集抽帧填充；刮削可把它覆盖成 2:3 竖版海报——
+  /// BUG-1262：走 [PortraitCoverImage] 的横槽自适应（横版截帧铺满、竖版海报
+  /// 模糊垫底 + contain），不再 `BoxFit.cover` 把海报裁成中间一条。
   Widget _episodeThumb(VideoBookRow ep, ColorScheme cs) {
     const double w = 96;
     const double h = 54;
@@ -232,14 +236,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(4),
-        child: Image.file(
-          File(cover),
+        child: SizedBox(
           width: w,
           height: h,
-          fit: BoxFit.cover,
-          // 抽帧文件损坏 / 读取失败时退回占位，绝不抛。
-          errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
-              _thumbPlaceholder(w, h, cs),
+          child: PortraitCoverImage(
+            image: resizedFileImage(File(cover)),
+            landscapeSlot: true,
+            // 抽帧文件损坏 / 读取失败时退回占位，绝不抛。
+            errorBuilder: (BuildContext _) => _thumbPlaceholder(w, h, cs),
+          ),
         ),
       );
     }

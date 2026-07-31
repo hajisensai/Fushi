@@ -2247,10 +2247,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         children: <Widget>[
           ClipRRect(
             borderRadius: HibikiBorderRadius.card,
+            // BUG-1262：hero 封面改竖版 2:3 海报槽（刮削海报在旧 148×84 横槽里
+            // 两侧露灰带）；横版截帧由 poster 路径的 [PortraitCoverImage] 垫底。
             child: SizedBox(
-              width: 148,
-              height: 84,
-              child: _buildCover(hero),
+              width: 80,
+              height: 120,
+              child: _buildCover(hero, poster: true),
             ),
           ),
           SizedBox(width: tokens.spacing.gap + 4),
@@ -2319,10 +2321,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         children: <Widget>[
           ClipRRect(
             borderRadius: HibikiBorderRadius.card,
+            // BUG-1262：与本地 hero 同款竖版 2:3 海报槽。
             child: SizedBox(
-              width: 148,
-              height: 84,
-              child: _buildRemoteVideoCover(video),
+              width: 80,
+              height: 120,
+              child: _buildRemoteVideoCover(video, poster: true),
             ),
           ),
           SizedBox(width: tokens.spacing.gap + 4),
@@ -3811,8 +3814,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// [poster] = true：主网格 2:3 竖版槽位，走 [PortraitCoverImage]（横版截帧模糊
-  /// 垫底 + contain 前景）；false：hero / 长按菜单等 16:9 语境保持原渲染。
+  /// [poster] = true：主网格 / 继续观看 hero 的 2:3 竖版槽位（BUG-1262 起 hero
+  /// 也走此路径），走 [PortraitCoverImage]（横版截帧模糊垫底 + contain 前景）；
+  /// false：长按菜单等 16:9 语境保持原渲染。
   Widget _buildCover(VideoBookRow book, {bool poster = false}) {
     final String? cover = book.coverPath;
     // 保留同步 existsSync 短路：对已知不存在的封面直接占位，避免对缺失文件发起

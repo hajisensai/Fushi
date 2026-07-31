@@ -720,15 +720,23 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    // 修复前游戏走「回退原类型图标」分支，时间轴上不会有任何 Image.file。
+    // 修复前游戏走「回退原类型图标」分支，时间轴上不会有任何文件封面。
     // 必须收进「活动」区块：同一只游戏同时在「继续」与「最近添加」里各有一张
-    // `_gameCover`，裸 FileImage 谓词会被它们兜住——把 _activityLeading 的 game 分支
+    // `_gameCover`，裸文件封面谓词会被它们兜住——把 _activityLeading 的 game 分支
     // 删光也照样绿（实测过的假阳性）。
-    final Finder fileImages = inSection(
-      t.home_activity,
-      find.byWidgetPredicate((Widget w) => w is Image && w.image is FileImage),
-    );
-    expect(fileImages, findsOneWidget,
+    // BUG-1262 后 `_gameCover` 走 resizedFileImage（ResizeImage 包 FileImage）+
+    // PortraitCoverImage（不合槽时同图再渲染一张模糊垫底），谓词解包 ResizeImage、
+    // 数量断言放宽为 ≥1。
+    bool isFileCover(Widget w) {
+      if (w is! Image) return false;
+      final ImageProvider provider = w.image;
+      return provider is FileImage ||
+          (provider is ResizeImage && provider.imageProvider is FileImage);
+    }
+
+    final Finder fileImages =
+        inSection(t.home_activity, find.byWidgetPredicate(isFileCover));
+    expect(fileImages, findsWidgets,
         reason: '游戏活动条应渲染 galgames.coverPath 封面（BUG-1112）');
   });
 

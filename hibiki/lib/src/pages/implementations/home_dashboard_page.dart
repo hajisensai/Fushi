@@ -18,6 +18,7 @@ import 'package:hibiki/src/media/tracking/media_tracking_labels.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_service.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_repository.dart';
+import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/base_module_tab_page.dart';
@@ -34,6 +35,7 @@ import 'package:hibiki/src/sync/remote_cover_image.dart';
 import 'package:hibiki/src/sync/remote_library_cache.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
+import 'package:hibiki/src/utils/cover_image.dart';
 import 'package:hibiki/src/utils/misc/dashboard_remote_merge.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -259,11 +261,12 @@ const int _kTrackingMappingLimit = 5;
 
 class _HomeDashboardPageState
     extends BaseModuleTabPageState<HomeDashboardPage> {
-  /// 「继续」横滑行：卡片封面等高，书竖版 5:7 / 视频横版 16:9 由宽度区分（同一行
-  /// 混排不同宽度，Jellyfin 式）。行总高 = 封面 + 标题/副标题两行文字块。
+  /// 「继续」横滑行：三类条目统一竖版海报槽（BUG-1262）。视频封面可能是刮削
+  /// 落地的 2:3 竖版海报，旧「书竖 5:7 / 视频横 16:9」混排会把海报裁成中间一条；
+  /// 现在与视频库主网格同源走 [PortraitCoverImage]——竖图铺满、横版截帧模糊
+  /// 垫底，宽度特例随之消灭。行总高 = 封面 + 标题/副标题两行文字块。
   static const double _kContinueCoverHeight = 132;
-  static const double _kContinueBookCoverWidth = 94; // ≈132×5/7 竖版
-  static const double _kContinueVideoCoverWidth = 234; // ≈132×16/9 横版
+  static const double _kContinueCoverWidth = 94; // ≈132×5/7 竖版
 
   /// 「继续」横滑行的总高：封面 + 两行标题 + 一行副标题 + 行间距。
   ///
@@ -1164,9 +1167,8 @@ class _HomeDashboardPageState
     AppModel appModel,
     _ContinueEntry entry,
   ) {
-    // 视频是横版 16:9，书与游戏都是竖版封面（galgame 封面同为竖版海报）。
-    final double coverWidth =
-        entry.isVideo ? _kContinueVideoCoverWidth : _kContinueBookCoverWidth;
+    // BUG-1262：三类条目统一竖版槽（见 [_kContinueCoverWidth] 注释）。
+    const double coverWidth = _kContinueCoverWidth;
     // BUG-1111：游戏没有阅读百分比（无完成度概念），状态段只标类型，不能套用
     // 书的「阅读 · x%」——否则一律显示「阅读 · 0%」。
     String status = switch (entry.kind) {
@@ -1279,37 +1281,44 @@ class _HomeDashboardPageState
     if (coverUrl == null || coverUrl.isEmpty || fetcher == null) {
       return _coverPlaceholder(tokens, icon);
     }
-    return Image(
+    // BUG-1262：远端封面横竖不可知（host 侧可能是截帧也可能是海报），槽向自适应。
+    return PortraitCoverImage(
       image: RemoteCoverImage(coverUrl, fetcher, cacheKey: remote.id),
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => _coverPlaceholder(tokens, icon),
+      errorBuilder: (BuildContext _) => _coverPlaceholder(tokens, icon),
     );
   }
 
-  /// 视频封面：coverPath 存在则 [Image.file]，否则占位图标。
-  Widget _videoCover(HibikiDesignTokens tokens, VideoBookRow video) {
+  /// 视频封面：coverPath 存在则渲染，否则占位图标。BUG-1262：封面可能是抽帧
+  /// （16:9 横）也可能是刮削海报（2:3 竖），走 [PortraitCoverImage] 槽向自适应，
+  /// 不再 `BoxFit.cover` 硬裁。[landscapeSlot] 跟随调用方槽位朝向（继续卡竖版 /
+  /// 活动条视频缩略 68×40 横版）。
+  Widget _videoCover(
+    HibikiDesignTokens tokens,
+    VideoBookRow video, {
+    bool landscapeSlot = false,
+  }) {
     final String? path = video.coverPath;
     if (path != null && path.isNotEmpty && File(path).existsSync()) {
-      return Image.file(
-        File(path),
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) =>
+      return PortraitCoverImage(
+        image: resizedFileImage(File(path)),
+        landscapeSlot: landscapeSlot,
+        errorBuilder: (BuildContext _) =>
             _coverPlaceholder(tokens, Icons.movie_outlined),
       );
     }
     return _coverPlaceholder(tokens, Icons.movie_outlined);
   }
 
-  /// 游戏封面（BUG-1111 / BUG-1112）：`galgames.coverPath` 存在则 [Image.file]，
-  /// 否则占位图标。与 [_videoCover] 同一形态——封面是本机文件路径（目录扫描 /
-  /// exe 内嵌图标 / 刮削下载三种来源都落成本地文件），不走网络取图。
+  /// 游戏封面（BUG-1111 / BUG-1112）：`galgames.coverPath` 存在则渲染，否则占位
+  /// 图标。与 [_videoCover] 同一形态——封面是本机文件路径（目录扫描 / exe 内嵌
+  /// 图标 / 刮削下载三种来源都落成本地文件），不走网络取图；渲染同走
+  /// [PortraitCoverImage]（exe 图标是方图，cover 硬裁会糊，垫底完整显示）。
   Widget _gameCover(HibikiDesignTokens tokens, GalgameEntry game) {
     final String? path = game.coverPath;
     if (path != null && path.isNotEmpty && File(path).existsSync()) {
-      return Image.file(
-        File(path),
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) =>
+      return PortraitCoverImage(
+        image: resizedFileImage(File(path)),
+        errorBuilder: (BuildContext _) =>
             _coverPlaceholder(tokens, Icons.videogame_asset_outlined),
       );
     }
@@ -1993,7 +2002,8 @@ class _HomeDashboardPageState
             child: SizedBox(
               width: 68,
               height: 40,
-              child: _videoCover(tokens, video),
+              // BUG-1262：横版槽，判定方向随槽走（海报垫底、截帧铺满）。
+              child: _videoCover(tokens, video, landscapeSlot: true),
             ),
           );
         }
