@@ -1464,7 +1464,8 @@ void main() {
   });
 
   group('v64 多季分组合集：绕开结构性失真的合集级映射', () {
-    /// S01×2 + S02×1 的多季 playlist（分组键 s1/s1/s2），返回 collectionId。
+    /// S01×2 + S02×1 的多季 playlist（分组由 videoPath 文件名派生），返回
+    /// collectionId。
     Future<int> seedMultiSeason() async {
       for (final (String uid, String title) in <(String, String)>[
         ('s1e1', 'Adachi to Shimamura S01E01'),
@@ -1481,9 +1482,9 @@ void main() {
         'Adachi to Shimamura',
         collectionType: 'playlist',
       );
-      await db.addToCollection(cid, MediaKind.video, 's1e1', groupKey: 's1');
-      await db.addToCollection(cid, MediaKind.video, 's1e2', groupKey: 's1');
-      await db.addToCollection(cid, MediaKind.video, 's2e1', groupKey: 's2');
+      await db.addToCollection(cid, MediaKind.video, 's1e1');
+      await db.addToCollection(cid, MediaKind.video, 's1e2');
+      await db.addToCollection(cid, MediaKind.video, 's2e1');
       return cid;
     }
 
@@ -1560,8 +1561,8 @@ void main() {
       }
       final int cid = await db.createMediaCollection('Solo Show',
           collectionType: 'playlist');
-      await db.addToCollection(cid, MediaKind.video, 'e1', groupKey: 's1');
-      await db.addToCollection(cid, MediaKind.video, 'e2', groupKey: 's1');
+      await db.addToCollection(cid, MediaKind.video, 'e1');
+      await db.addToCollection(cid, MediaKind.video, 'e2');
       await seedCollectionMapping(cid);
       api.episodes = const <BangumiEpisode>[
         BangumiEpisode(id: 11, type: 0, sort: 1),
@@ -1594,7 +1595,7 @@ void main() {
         title: 'Adachi to Shimamura Fan Disc',
         videoPath: 'C:/anime/Adachi to Shimamura Fan Disc.mkv',
       ));
-      await db.addToCollection(cid, MediaKind.video, 'pv', groupKey: 'extras');
+      await db.addToCollection(cid, MediaKind.video, 'pv');
 
       await service.recordVideoCompleted(
         bookUid: 'pv',

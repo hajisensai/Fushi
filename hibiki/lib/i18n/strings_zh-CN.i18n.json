@@ -2766,6 +2766,6 @@
   "selection_web_search_unavailable": "没有可用的网页搜索应用。",
   "selection_share_failed": "无法打开分享面板。",
   "collection_group_extras": "PV·特典",
-  "collection_group_by_season": "按季分组",
-  "collection_group_season": "第 $n 季"
+  "collection_group_season": "第 $n 季",
+  "collection_sort_by_season": "按季排序"
 }

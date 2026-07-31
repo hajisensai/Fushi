@@ -51,19 +51,16 @@ void main() {
 
   group('isMultiSeasonGrouped', () {
     test('空 → false',
-        () => expect(isMultiSeasonGrouped(const <String?>[]), false));
-    test('单组 → false', () {
-      expect(isMultiSeasonGrouped(const <String?>['s1', 's1']), false);
+        () => expect(isMultiSeasonGrouped(const <String>[]), false));
+    test('单组（单季/纯电影/全 PV）→ false', () {
+      expect(isMultiSeasonGrouped(const <String>['s1', 's1']), false);
     });
     test('两组 → true', () {
-      expect(isMultiSeasonGrouped(const <String?>['s1', 's2']), true);
-    });
-    test('含未分组成员（旧数据半截状态）→ false，不启用分季语义', () {
-      expect(isMultiSeasonGrouped(const <String?>['s1', null, 's2']), false);
+      expect(isMultiSeasonGrouped(const <String>['s1', 's2']), true);
     });
     test('季 + PV 两组也算多组', () {
       expect(
-        isMultiSeasonGrouped(const <String?>['s1', kCollectionExtrasGroupKey]),
+        isMultiSeasonGrouped(const <String>['s1', kCollectionExtrasGroupKey]),
         true,
       );
     });

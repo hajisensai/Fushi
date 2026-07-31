@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 47073 (2769 per locale)
 ///
-/// Built on 2026-07-31 at 05:27 UTC
+/// Built on 2026-07-31 at 06:53 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3719,8 +3719,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get selection_web_search_unavailable => 'No app can search the web.';
   String get selection_share_failed => 'Could not open the share sheet.';
   String get collection_group_extras => 'Extras & PV';
-  String get collection_group_by_season => 'Group by season';
   String collection_group_season({required Object n}) => 'Season ${n}';
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -10056,9 +10056,9 @@ class _StringsAr extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -16462,9 +16462,9 @@ class _StringsDe extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -22884,9 +22884,9 @@ class _StringsEs extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -29317,9 +29317,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -35679,9 +35679,9 @@ class _StringsId extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -42087,9 +42087,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -48312,9 +48312,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -54539,9 +54539,9 @@ class _StringsKo extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -60927,9 +60927,9 @@ class _StringsNl extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -67328,9 +67328,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -73713,9 +73713,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -80046,9 +80046,9 @@ class _StringsTh extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -86411,9 +86411,9 @@ class _StringsTr extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -92761,9 +92761,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 // Path: <root>
@@ -98662,9 +98662,9 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get collection_group_extras => 'PV·特典';
   @override
-  String get collection_group_by_season => '按季分组';
-  @override
   String collection_group_season({required Object n}) => '第 ${n} 季';
+  @override
+  String get collection_sort_by_season => '按季排序';
 }
 
 // Path: <root>
@@ -104808,9 +104808,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get collection_group_extras => 'Extras & PV';
   @override
-  String get collection_group_by_season => 'Group by season';
-  @override
   String collection_group_season({required Object n}) => 'Season ${n}';
+  @override
+  String get collection_sort_by_season => 'Sort by season';
 }
 
 /// Flat map(s) containing all translations.
@@ -110480,10 +110480,10 @@ extension on _StringsEn {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -116151,10 +116151,10 @@ extension on _StringsAr {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -121843,10 +121843,10 @@ extension on _StringsDe {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -127534,10 +127534,10 @@ extension on _StringsEs {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -133231,10 +133231,10 @@ extension on _StringsFr {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -138910,10 +138910,10 @@ extension on _StringsId {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -144604,10 +144604,10 @@ extension on _StringsIt {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -150260,10 +150260,10 @@ extension on _StringsJa {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -155920,10 +155920,10 @@ extension on _StringsKo {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -161607,10 +161607,10 @@ extension on _StringsNl {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -167291,10 +167291,10 @@ extension on _StringsPtBr {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -172980,10 +172980,10 @@ extension on _StringsRu {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -178653,10 +178653,10 @@ extension on _StringsTh {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -184335,10 +184335,10 @@ extension on _StringsTr {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -190012,10 +190012,10 @@ extension on _StringsVi {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
@@ -195642,10 +195642,10 @@ extension on _StringsZhCn {
         return '无法打开分享面板。';
       case 'collection_group_extras':
         return 'PV·特典';
-      case 'collection_group_by_season':
-        return '按季分组';
       case 'collection_group_season':
         return ({required Object n}) => '第 ${n} 季';
+      case 'collection_sort_by_season':
+        return '按季排序';
       default:
         return null;
     }
@@ -201293,10 +201293,10 @@ extension on _StringsZhHk {
         return 'Could not open the share sheet.';
       case 'collection_group_extras':
         return 'Extras & PV';
-      case 'collection_group_by_season':
-        return 'Group by season';
       case 'collection_group_season':
         return ({required Object n}) => 'Season ${n}';
+      case 'collection_sort_by_season':
+        return 'Sort by season';
       default:
         return null;
     }
