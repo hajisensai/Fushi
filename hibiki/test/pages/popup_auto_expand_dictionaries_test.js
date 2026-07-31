@@ -218,5 +218,54 @@ function isOpen(opts, dictName, dictIdx, totalDicts) {
     assert.strictEqual(isOpen(opts, 'D1', 1, 8), false, 'narrow: idx1 collapsed (1 fitted column)');
   }
 
+  // --- BUG-1264: an explicit per-dictionary collapse OUTRANKS auto-expand. ---
+  // 词典管理 的每行折叠开关是用户对该本书的显式决定；autoExpandRows 只是给
+  // 「没有显式决定」的词典用的批量默认值。让批量默认压过显式决定，等于把折叠
+  // 开关在前 rows×columns 本上变成空操作 —— 用户实际配置 3 行 × 3 列 时，前 9 本
+  // 无论点多少次折叠都照样展开。
+  {
+    const opts = {
+      collapseDictionaries: true,
+      autoExpandRows: 3,
+      dictColumns: 3,
+      collapsedDictionaryNames: ['Meikyou', 'Shougakukan'],
+    };
+    // Inside the auto-expand region (idx 0..8 at 3x3) — the flag must still win.
+    assert.strictEqual(isOpen(opts, 'Meikyou', 0, 9), false,
+      'per-dict collapsed beats auto-expand at idx0');
+    assert.strictEqual(isOpen(opts, 'Shougakukan', 4, 9), false,
+      'per-dict collapsed beats auto-expand mid-region');
+    // Books WITHOUT the flag keep the old auto-expand behaviour (no regression).
+    assert.strictEqual(isOpen(opts, 'Daijirin', 0, 9), true,
+      'unflagged dictionary still auto-expands at idx0');
+    assert.strictEqual(isOpen(opts, 'Daijirin', 8, 9), true,
+      'unflagged dictionary still auto-expands at the last expanded slot');
+    assert.strictEqual(isOpen(opts, 'Daijirin', 9, 12), false,
+      'unflagged dictionary past the region stays collapsed');
+  }
+  // The flag also wins when the GLOBAL collapse switch is off — that path used to
+  // be the only one honouring it, and must keep honouring it.
+  {
+    const opts = {
+      collapseDictionaries: false,
+      autoExpandRows: 1,
+      dictColumns: 1,
+      collapsedDictionaryNames: ['Meikyou'],
+    };
+    assert.strictEqual(isOpen(opts, 'Meikyou', 0, 4), false,
+      'global collapse off: per-dict flag still collapses');
+    assert.strictEqual(isOpen(opts, 'Meikyou', 3, 4), false,
+      'global collapse off: per-dict flag collapses outside the region too');
+    assert.strictEqual(isOpen(opts, 'Daijirin', 3, 4), true,
+      'global collapse off: unflagged dictionary stays open');
+  }
+  // rows=0 + no flags must stay collapsed (guards against the fix accidentally
+  // inverting into "anything unflagged opens").
+  {
+    const opts = { collapseDictionaries: true, autoExpandRows: 0, dictColumns: 3 };
+    assert.strictEqual(isOpen(opts, 'D0', 0, 9), false,
+      'rows=0 unflagged: still collapsed after the precedence fix');
+  }
+
   console.log('popup_auto_expand_dictionaries_test.js: all assertions passed');
 })();

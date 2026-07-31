@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1215 条。点号进各自文件。
+> 共 1217 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -41,7 +41,9 @@
 | [BUG-1278](bugs/BUG-1278-download-settings-content-left.md) | ✅ | ✅ | 下载设置宽屏内容整体贴左且开关被推到远端 |
 | [BUG-1277](bugs/BUG-1277-reader-navigation-after-dispose.md) | ✅ | ✅ | 有声书跨章等待后触发已销毁 State 重绘 |
 | [BUG-1276](bugs/BUG-1276-dashboard-heatmap-dark-contrast.md) | ✅ | ✅ | 黑色主题下学习活动热力图空周融进背景 |
+| [BUG-1271](bugs/BUG-1271-popup-autoexpand-rows-unit-mismatch.md) | ✅ | ✅ | 自动展开默认值按本数写进行数槽位，出厂默认从3本变9本 |
 | [BUG-1270](bugs/BUG-1270-youtube-live-subtitle-seek-duplicate.md) | ✅ | ✅ | YouTube 实时字幕回跳后重复且累积成长段 |
+| [BUG-1264](bugs/BUG-1264-popup-perdict-collapse-outranked.md) | ✅ | ✅ | 每本词典的折叠开关对前 N 本无效（被自动展开覆盖） |
 | [BUG-1261](bugs/BUG-1261-oald-mdd-parts-sound-play.md) | ✅ | ✅ | MDX 分卷 MDD 未挂载 + 词典内 sound:// 发音点击无反应（OALD） |
 | [BUG-1260](bugs/BUG-1260-sync-progress-blank-and-silent-noop.md) | ✅ | ✅ | 同步进度条只有线没有字 + 零通道空转静默收尾 |
 | [BUG-1250](bugs/BUG-1250-stream-import-hides-progress.md) | ✅ | ✅ | 边下边播提前入库把下载任务直接标成已完成并丢失进度 |

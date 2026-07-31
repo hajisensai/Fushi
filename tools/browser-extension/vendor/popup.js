@@ -3057,14 +3057,23 @@ function autoExpandCount(totalDicts) {
 // to cap the effective column count the same way masonry does. The popup
 // auto-expands the leading `autoExpandCount(totalDicts)` blocks even when
 // collapseDictionaries is on (default 1 row = the historical "only the first
-// dictionary expanded" behaviour at the default single column, where the leading
-// block opened regardless of its per-dictionary collapse flag).
+// dictionary expanded" behaviour at the default single column).
+//
+// BUG-1264: per-dictionary collapse OUTRANKS auto-expand. `collapsedDictionaryNames`
+// is an explicit per-book decision the user made in 词典管理 (one tap per row);
+// autoExpandRows is a bulk default for the books that carry no such decision.
+// Ranking the bulk default first made the per-book toggle a no-op for the leading
+// rows x columns blocks -- at the shipped 3 rows x 3 columns that silently ignored
+// the flag on the first NINE dictionaries, i.e. "I collapsed it and it still opens".
+// So the per-dict flag short-circuits both auto-expand and the global switch; a
+// non-collapsed block still follows the old rule (auto-expanded, or global collapse
+// off). Users can still open a collapsed block by hand -- <details> stays clickable.
 function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts) {
     const details = el('details', { className: 'glossary-group' });
     const perDictCollapsed = (window.collapsedDictionaryNames || []).includes(dictName);
     const autoExpandN = autoExpandCount(totalDicts);
     const autoExpanded = dictIdx < autoExpandN;
-    if (autoExpanded || (!window.collapseDictionaries && !perDictCollapsed)) {
+    if (!perDictCollapsed && (autoExpanded || !window.collapseDictionaries)) {
         details.open = true;
     }
 
