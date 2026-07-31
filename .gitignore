@@ -98,6 +98,11 @@ docs/项目负责人提示词 copy
 .claude/settings.local.json
 .superpowers/
 
+# 本地 vibe-coxswain 看板（SQLite 二进制，每轮多次写入、多 agent 并发改，
+# 真相源见 CLAUDE.local.md「看板 vibe-coxswain」章节）。根级锚定，避免误伤
+# 子目录里的同名路径。
+/.vibe-coxswain/
+
 # Local-only agent notes (private remote-build / sync details: SSH host, IP, ports)
 AGENTS.local.md
 CLAUDE.local.md
