@@ -319,7 +319,13 @@ class ReaderSettings {
   Future<void> setPageColumns(int v) => _set<int>('ttu_page_columns', v);
 
   /// `off`, `on`, or `auto`.
-  String get spreadMode => _get<String>('ttu_spread_mode', 'auto');
+  ///
+  /// BUG-1280：默认从 `auto` 改为 `off`。`auto` 会在打开书时按 OPF 元数据 /
+  /// 边缘匹配**自动**把相邻整页图章节配对成双页展开，用户没主动选过就被切进一种
+  /// 手势契约完全不同的独立文档（[buildSpreadPageHtml]，无正文 hoshiReader）。
+  /// 双页展开保留为显式选项（阅读器快捷设置里的 off/on/auto 三选一），只是不再
+  /// 是没设置过的用户的默认落点。已显式设过本键的用户读到的是自己的存值，不受影响。
+  String get spreadMode => _get<String>('ttu_spread_mode', 'off');
   Future<void> setSpreadMode(String v) => _set<String>('ttu_spread_mode', v);
 
   /// `ltr` or `rtl`.

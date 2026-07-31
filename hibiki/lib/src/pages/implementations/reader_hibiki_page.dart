@@ -520,6 +520,15 @@ html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
       window.flutter_inappwebview.callHandler('onImageTap',img.src);
     });
   });
+  // BUG-1280：spread 是第四种独立文档（继歌词 BUG-756、VN BUG-1195 之后），没有正文
+  // hoshiReader 的 onTap/onTapEmpty。此前它唯一的手势是「点图片 → onImageTap」，
+  // 于是底栏一收起就再没有任何唤出通道——用户看不到返回按钮，就退不出这本书。
+  // 修法镜像歌词的 onLyricsTapEmpty：图片以外（letterbox 留白 / 页缝）的点击走专桥
+  // 给 Dart，由 Dart 判唤出还是收起（chrome 可见性的真值只在 Dart 侧）。
+  document.addEventListener('click', function(e){
+    if (e && e.target && e.target.tagName === 'IMG') return;
+    window.flutter_inappwebview.callHandler('onSpreadTapEmpty');
+  });
   var signaled = false;
   function signalReady(){
     if (signaled) return;

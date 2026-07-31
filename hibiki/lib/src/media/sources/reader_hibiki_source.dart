@@ -1577,9 +1577,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  // BUG-1280：默认与 [ReaderSettings.spreadMode] 同为 'off'（两处必须一致，否则
+  // readerSettings 未就绪时读到的默认与阅读器实际用的默认相反）。
   String get ttuSpreadMode =>
       readerSettings?.spreadMode ??
-      getPreference<String>(key: 'ttu_spread_mode', defaultValue: 'auto');
+      getPreference<String>(key: 'ttu_spread_mode', defaultValue: 'off');
   Future<void> setTtuSpreadMode(String v) async {
     await (readerSettings?.setSpreadMode(v) ??
         setPreference<String>(key: 'ttu_spread_mode', value: v));

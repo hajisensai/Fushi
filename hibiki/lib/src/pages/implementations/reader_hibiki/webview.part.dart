@@ -2023,6 +2023,30 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           },
         );
 
+        // BUG-1280：双页 spread 空白点击的专用桥，与上面的歌词桥同族。spread 是
+        // [buildSpreadPageHtml] 生成的独立文档，没有正文 hoshiReader 的
+        // onTap/onTapEmpty，此前唯一手势是「点图片 → onImageTap」（弹图片查看器）。
+        // 底栏一收起，spread 页就再没有任何唤出通道 → 看不到返回按钮 → 退不出书。
+        // 与歌词同理，这里对隐藏的底栏**无条件唤出/收起**——不看
+        // tapEmptyToHideChrome（那开关管的是正文点空白是否收起底栏；spread 没有别的
+        // 唤出途径，绝不能被它关死）。收尾 reclaim 阅读焦点：本次 pointer 手势把 OS
+        // 焦点交给了 WebView，不夺回 Flutter _focusNode 就收不到 ESC（BUG-136）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onSpreadTapEmpty',
+          callback: (_) {
+            if (isDictionaryShown) {
+              clearDictionaryResult();
+              return;
+            }
+            if (_anyChromeFloating) {
+              _handleFloatingChromeReveal();
+            } else {
+              _toggleChrome();
+            }
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
+          },
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'onSwipe',
           callback: (List<dynamic> args) {
@@ -2171,6 +2195,11 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onImageTap',
           callback: (args) {
             if (args.isEmpty) return;
+            // BUG-1280：点图片同样把 OS 焦点交给了 WebView，此前这条路径是全阅读器
+            // 唯一没 reclaim 的手势入口 → 看完图 pop 回来后 ESC 退不出书（BUG-136
+            // 同族）。在 spread 页尤其致命：两张整页图铺满视口，点击几乎必然命中
+            // img，于是「唤不出底栏」与「ESC 失效」同时成立，两条退出通道一起死。
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
             _openImageViewer(args[0] as String);
           },
         );
