@@ -239,6 +239,18 @@ class AudiobookSession extends ChangeNotifier {
   }
 
   /// 显式停止会话：dispose 控制器、隐藏悬浮窗、清媒体通知、取消订阅。
+  ///
+  /// **契约（BUG-845）**：本方法的**同步首段**（第一个 `await` 之前）必须完成
+  /// 「会话可见状态归零」——清空 `_reader` / `_controller` / `_book` 并
+  /// `notifyListeners()`。因为调用方（阅读器退出路径 `onSourcePagePop`）是
+  /// `unawaited(stop())`：Dart 里 async 函数在首个 await 之前同步执行，所以
+  /// fire-and-forget 也能让下层书架在 pop 动画首帧看到空会话（TODO-831 的
+  /// 「不闪播放条」靠的是这一段，**不是**靠 await 完成）。
+  ///
+  /// 第一个 await 之后的部分（停 native 播放器、销毁解码器、关悬浮窗/通知）耗时
+  /// 不可控且**只有播放态才真正干活**，任何调用方都不得把它放进「用户按返回」的
+  /// 关键路径上 await（否则播放中返回会被静默吞掉，见 BUG-845）。
+  /// 需要「资源真已释放」语义的调用方（如数据根迁移，TODO-1212）才 await 全程。
   Future<void> stop() async {
     final AudiobookPlayerController? controller = _controller;
     _reader = null;
