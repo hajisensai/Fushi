@@ -2765,6 +2765,7 @@
   "selection_web_search": "Search the web",
   "selection_web_search_unavailable": "No app can search the web.",
   "selection_share_failed": "Could not open the share sheet.",
+  "handlebar_phonetic_transcriptions": "Phonetic transcriptions",
   "sync_progress_preparing": "Preparing sync",
   "sync_progress_collections": "Syncing collections",
   "sync_progress_book": "Syncing book",

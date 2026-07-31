@@ -948,19 +948,49 @@ function constructFrequencyHtml(frequencies) {
     return result;
 }
 
+function escapePitchText(text) {
+    return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// TODO-688 mining side: Yomitan `ipa`-mode dicts (e.g. English) ship phonetic
+// transcriptions in the pitch group instead of pitch positions. They are the
+// same nature as pitch (phonetic notation), so {pitch-accent-positions} carries
+// them too — that is what makes English cards get their transcription with the
+// default field mappings, no remap needed. Plain pitch-accent dicts (Japanese)
+// have an empty transcriptions array and render byte-identically to before.
 function constructPitchPositionHtml(pitches) {
     if (!pitches?.length) {
         return '';
     }
-    
-    let result = '<ol>';
+
+    let items = '';
     pitches.forEach(pitchGroup => {
         pitchGroup.pitchPositions.forEach(pos => {
-            result += `<li><span style="display:inline;"><span>[</span><span>${pos}</span><span>]</span></span></li>`;
+            items += `<li><span style="display:inline;"><span>[</span><span>${pos}</span><span>]</span></span></li>`;
+        });
+        (pitchGroup.transcriptions || []).forEach(ipa => {
+            items += `<li><span style="display:inline;"><span>[</span><span>${escapePitchText(ipa)}</span><span>]</span></span></li>`;
         });
     });
-    result += '</ol>';
-    return result;
+    // No positions AND no transcriptions: return '' instead of an empty <ol>
+    // shell, so the field is treated as empty and skipped.
+    return items ? `<ol>${items}</ol>` : '';
+}
+
+// Yomitan-named {phonetic-transcriptions}: ONLY the IPA transcriptions, for
+// users who map them to a dedicated note field. '' when no dict provides any.
+function constructPhoneticTranscriptionsHtml(pitches) {
+    if (!pitches?.length) {
+        return '';
+    }
+
+    let items = '';
+    pitches.forEach(pitchGroup => {
+        (pitchGroup.transcriptions || []).forEach(ipa => {
+            items += `<li><span style="display:inline;"><span>[</span><span>${escapePitchText(ipa)}</span><span>]</span></span></li>`;
+        });
+    });
+    return items ? `<ol>${items}</ol>` : '';
 }
 
 function constructPitchCategories(pitches, reading, rules) {
@@ -1289,6 +1319,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const glossaryFirst = Object.values(singleGlossaries)[0] || '';
     const pitchPositions = constructPitchPositionHtml(pitches);
     const pitchCategories = constructPitchCategories(pitches, reading, rules);
+    const phoneticTranscriptions = constructPhoneticTranscriptionsHtml(pitches);
 
     const audioReading = reading || expression;
     let audio = '';
@@ -1330,6 +1361,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         singleGlossaries: JSON.stringify(singleGlossaries),
         pitchPositions,
         pitchCategories,
+        phoneticTranscriptions,
         popupSelectionText,
         audio,
         selectedDictionary: selectedDictionaries[idx]?.name || '',

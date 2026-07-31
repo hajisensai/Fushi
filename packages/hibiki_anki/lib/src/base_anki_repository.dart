@@ -465,6 +465,7 @@ abstract class BaseAnkiRepository {
       singleGlossaries: payload.singleGlossaries,
       pitchPositions: payload.pitchPositions,
       pitchCategories: payload.pitchCategories,
+      phoneticTranscriptions: payload.phoneticTranscriptions,
       popupSelectionText: payload.popupSelectionText,
       audio: processedAudio,
       selectedDictionary: payload.selectedDictionary,

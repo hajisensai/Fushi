@@ -386,6 +386,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       singleGlossaries: payload.singleGlossaries,
       pitchPositions: payload.pitchPositions,
       pitchCategories: payload.pitchCategories,
+      phoneticTranscriptions: payload.phoneticTranscriptions,
       popupSelectionText: payload.popupSelectionText,
       audio: audio.fieldValue,
       selectedDictionary: payload.selectedDictionary,
