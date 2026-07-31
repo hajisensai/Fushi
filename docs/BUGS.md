@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1262](bugs/BUG-1262-continue-cover-portrait-crop.md) | ✅ | ✅ | 竖版海报封面在继续/继续观看/合集详情被裁切或留灰带 |
+| [BUG-1272](bugs/BUG-1272-continue-cover-portrait-crop.md) | ✅ | ✅ | 竖版海报封面在继续/继续观看/合集详情被裁切或留灰带 |
 | [BUG-1246](bugs/BUG-1246-galgame-helper-version-drift.md) | ✅ | ✅ | 随包 helper 已更新但完整旧安装被直接放行，native 修复永远不生效 |
 | [BUG-1245](bugs/BUG-1245-vn-reveal-chrome-also-advances.md) | ✅ | ✅ | VN唤出悬浮底栏时误同时推进 |
 | [BUG-1244](bugs/BUG-1244-vn-media-screen-skipped.md) | ✅ | ✅ | VN独立图片屏被逐句跳转永久略过 |

@@ -227,7 +227,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 单集封面缩略图（16:9 槽）：有封面文件则渲染，否则 letterbox 占位图标。
   /// 每集是独立视频行，[VideoBookRow.coverPath] 由导入 / 后台补齐（home_video_page
   /// `_maybeBackfillCovers`）逐集抽帧填充；刮削可把它覆盖成 2:3 竖版海报——
-  /// BUG-1262：走 [PortraitCoverImage] 的横槽自适应（横版截帧铺满、竖版海报
+  /// BUG-1272：走 [PortraitCoverImage] 的横槽自适应（横版截帧铺满、竖版海报
   /// 模糊垫底 + contain），不再 `BoxFit.cover` 把海报裁成中间一条。
   Widget _episodeThumb(VideoBookRow ep, ColorScheme cs) {
     const double w = 96;

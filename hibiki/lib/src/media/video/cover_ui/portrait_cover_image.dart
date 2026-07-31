@@ -2,7 +2,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
-/// 槽向自适应封面（Kazumi 式，用户拍板 2026-07-24 统一竖版；BUG-1262 推广为
+/// 槽向自适应封面（Kazumi 式，用户拍板 2026-07-24 统一竖版；BUG-1272 推广为
 /// 横竖槽通用）。
 ///
 /// 外层由调用方给定槽位区域（主网格是 `AspectRatio(aspectRatio: 2 / 3)`），本组件
@@ -38,7 +38,7 @@ class PortraitCoverImage extends StatefulWidget {
   final WidgetBuilder? errorBuilder;
 
   /// 槽位朝向：false = 竖版槽（默认，主网格 2:3），横图垫底；true = 横版槽
-  /// （合集详情 16:9 单集缩略图等），竖图垫底（BUG-1262）。
+  /// （合集详情 16:9 单集缩略图等），竖图垫底（BUG-1272）。
   final bool landscapeSlot;
 
   /// 竖图判定阈值：宽高比 ≤ 此值直接 cover（海报 2:3≈0.67，留裕量收到 0.85）。

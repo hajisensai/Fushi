@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-1262 守卫：竖版海报封面在「继续 / 继续观看 / 合集详情」三处消费端必须
+/// BUG-1272 守卫：竖版海报封面在「继续 / 继续观看 / 合集详情」三处消费端必须
 /// 走 [PortraitCoverImage] 槽向自适应，禁止回退成硬编码 fit 的裸 `Image.file`。
 ///
 /// 根因：刮削会把 2:3 竖版海报写进 `video_books.cover_path`（与 16:9 抽帧同列
@@ -26,7 +26,7 @@ void main() {
       source,
       isNot(contains('_kContinueVideoCoverWidth')),
       reason: '「继续」卡的视频专属 16:9 宽度特例已消灭（三类条目统一竖版槽），'
-          '不得回退（BUG-1262）',
+          '不得回退（BUG-1272）',
     );
     for (final String fn in <String>[
       'Widget _videoCover(',
@@ -37,7 +37,7 @@ void main() {
       expect(
         body,
         contains('PortraitCoverImage('),
-        reason: '$fn 必须走 PortraitCoverImage 槽向自适应（BUG-1262）',
+        reason: '$fn 必须走 PortraitCoverImage 槽向自适应（BUG-1272）',
       );
       expect(
         body,
@@ -58,7 +58,7 @@ void main() {
         body,
         contains('poster: true'),
         reason: '$fn 封面必须走 poster 竖版槽路径（PortraitCoverImage 自适应），'
-            '旧 148×84 横槽会让竖版海报两侧露灰带（BUG-1262）',
+            '旧 148×84 横槽会让竖版海报两侧露灰带（BUG-1272）',
       );
     }
   });
@@ -70,7 +70,7 @@ void main() {
     expect(
       body,
       contains('PortraitCoverImage('),
-      reason: '_episodeThumb 必须走 PortraitCoverImage（BUG-1262）',
+      reason: '_episodeThumb 必须走 PortraitCoverImage（BUG-1272）',
     );
     expect(
       body,

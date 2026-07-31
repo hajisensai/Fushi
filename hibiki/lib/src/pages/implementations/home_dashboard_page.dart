@@ -261,7 +261,7 @@ const int _kTrackingMappingLimit = 5;
 
 class _HomeDashboardPageState
     extends BaseModuleTabPageState<HomeDashboardPage> {
-  /// 「继续」横滑行：三类条目统一竖版海报槽（BUG-1262）。视频封面可能是刮削
+  /// 「继续」横滑行：三类条目统一竖版海报槽（BUG-1272）。视频封面可能是刮削
   /// 落地的 2:3 竖版海报，旧「书竖 5:7 / 视频横 16:9」混排会把海报裁成中间一条；
   /// 现在与视频库主网格同源走 [PortraitCoverImage]——竖图铺满、横版截帧模糊
   /// 垫底，宽度特例随之消灭。行总高 = 封面 + 标题/副标题两行文字块。
@@ -1167,7 +1167,7 @@ class _HomeDashboardPageState
     AppModel appModel,
     _ContinueEntry entry,
   ) {
-    // BUG-1262：三类条目统一竖版槽（见 [_kContinueCoverWidth] 注释）。
+    // BUG-1272：三类条目统一竖版槽（见 [_kContinueCoverWidth] 注释）。
     const double coverWidth = _kContinueCoverWidth;
     // BUG-1111：游戏没有阅读百分比（无完成度概念），状态段只标类型，不能套用
     // 书的「阅读 · x%」——否则一律显示「阅读 · 0%」。
@@ -1281,14 +1281,14 @@ class _HomeDashboardPageState
     if (coverUrl == null || coverUrl.isEmpty || fetcher == null) {
       return _coverPlaceholder(tokens, icon);
     }
-    // BUG-1262：远端封面横竖不可知（host 侧可能是截帧也可能是海报），槽向自适应。
+    // BUG-1272：远端封面横竖不可知（host 侧可能是截帧也可能是海报），槽向自适应。
     return PortraitCoverImage(
       image: RemoteCoverImage(coverUrl, fetcher, cacheKey: remote.id),
       errorBuilder: (BuildContext _) => _coverPlaceholder(tokens, icon),
     );
   }
 
-  /// 视频封面：coverPath 存在则渲染，否则占位图标。BUG-1262：封面可能是抽帧
+  /// 视频封面：coverPath 存在则渲染，否则占位图标。BUG-1272：封面可能是抽帧
   /// （16:9 横）也可能是刮削海报（2:3 竖），走 [PortraitCoverImage] 槽向自适应，
   /// 不再 `BoxFit.cover` 硬裁。[landscapeSlot] 跟随调用方槽位朝向（继续卡竖版 /
   /// 活动条视频缩略 68×40 横版）。
@@ -2002,7 +2002,7 @@ class _HomeDashboardPageState
             child: SizedBox(
               width: 68,
               height: 40,
-              // BUG-1262：横版槽，判定方向随槽走（海报垫底、截帧铺满）。
+              // BUG-1272：横版槽，判定方向随槽走（海报垫底、截帧铺满）。
               child: _videoCover(tokens, video, landscapeSlot: true),
             ),
           );

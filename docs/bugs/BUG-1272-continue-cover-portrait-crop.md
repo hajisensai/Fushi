@@ -1,4 +1,4 @@
-## BUG-1262 · 竖版海报封面在继续/继续观看/合集详情被裁切或留灰带
+## BUG-1272 · 竖版海报封面在继续/继续观看/合集详情被裁切或留灰带
 - **报告**：2026-07-31（用户：截图报「如果是海报，在继续里面和继续观看里面渲染有问题」）
 - **真实性**：✅ 真 bug。刮削（Bangumi/TMDB）会把竖版 2:3 海报写进 `video_books.cover_path`（与抽帧封面同路径同列，无横竖标记），但三处消费端都是硬编码横版槽 + 固定 fit，全部绕过了视频库主网格已在用的自适应组件 `PortraitCoverImage`：
   - 首页「继续」卡：视频条目走 234×132 的 16:9 槽 + `BoxFit.cover`（`hibiki/lib/src/pages/implementations/home_dashboard_page.dart:1290`，`_videoCover`），竖版海报上下被裁掉约 62% 只剩中间一条；

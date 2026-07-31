@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
 
-/// BUG-1262：[PortraitCoverImage] 槽向自适应行为（此前该组件零测试覆盖）。
+/// BUG-1272：[PortraitCoverImage] 槽向自适应行为（此前该组件零测试覆盖）。
 ///
 /// 四象限契约：
 /// - 竖槽 + 竖图（海报 2:3）→ `BoxFit.cover` 铺满，无模糊垫底；
@@ -85,7 +85,7 @@ void main() {
     expect(find.byType(ImageFiltered), findsNothing);
   });
 
-  testWidgets('横槽 + 竖图（BUG-1262 主诉）：模糊垫底 + contain，不再裁成中间一条',
+  testWidgets('横槽 + 竖图（BUG-1272 主诉）：模糊垫底 + contain，不再裁成中间一条',
       (WidgetTester tester) async {
     await pumpCover(tester,
         imageWidth: 20, imageHeight: 30, landscapeSlot: true);

@@ -724,7 +724,7 @@ void main() {
     // 必须收进「活动」区块：同一只游戏同时在「继续」与「最近添加」里各有一张
     // `_gameCover`，裸文件封面谓词会被它们兜住——把 _activityLeading 的 game 分支
     // 删光也照样绿（实测过的假阳性）。
-    // BUG-1262 后 `_gameCover` 走 resizedFileImage（ResizeImage 包 FileImage）+
+    // BUG-1272 后 `_gameCover` 走 resizedFileImage（ResizeImage 包 FileImage）+
     // PortraitCoverImage（不合槽时同图再渲染一张模糊垫底），谓词解包 ResizeImage、
     // 数量断言放宽为 ≥1。
     bool isFileCover(Widget w) {
