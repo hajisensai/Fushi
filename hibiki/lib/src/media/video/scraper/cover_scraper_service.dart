@@ -26,6 +26,7 @@ import 'package:hibiki/src/media/video/scraper/offline_index.dart';
 import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/scraper/sidecar_scanner.dart';
+import 'package:hibiki/src/media/video/scraper/title_normalizer.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
 import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -82,6 +83,23 @@ class ScrapeSkippedNoTitle extends ScrapeOutcome {
 }
 
 /// 批量时因封面来源受保护（manual/sidecar/已刮削）而跳过。
+/// 一次标题解析的匹配结果，[CoverScraperService] 的目录级缓存单元。
+///
+/// [uniqueExactTitle] = [decision] 的候选（标题或任一别名）归一化后与解析标题
+/// **完全相等**，且本次实际查询过的候选里**只有它一个**这样的条目。综合分
+/// [MatchConfidence.high] 只说明「分够了」（[MatchScorer] 允许标题相似度 0.70 +
+/// 年份吻合就上 0.85 线），不等于「标题就是这一部」——无人值守整库重刮要覆盖
+/// 已有封面时，判据必须是这个而不是分数。
+class _ResolvedMatch {
+  const _ResolvedMatch(this.decision, {required this.uniqueExactTitle});
+
+  static const _ResolvedMatch none =
+      _ResolvedMatch(null, uniqueExactTitle: false);
+
+  final MatchDecision? decision;
+  final bool uniqueExactTitle;
+}
+
 class ScrapeSkippedProtected extends ScrapeOutcome {
   const ScrapeSkippedProtected(this.origin);
 
@@ -180,10 +198,16 @@ class CoverScraperService {
 
   /// 单本刮削。见类注释的数据流；[applyHighConfidence]=false 时即便 high 也只返回
   /// [ScrapeNeedsConfirm]（供「预览不落盘」场景）。
+  ///
+  /// [requireUniqueExactTitle]=true 时自动落盘的判据从「综合分 high」收紧成
+  /// 「唯一归一化精确标题」（见 [_ResolvedMatch]），近似命中一律降级成
+  /// [ScrapeNeedsConfirm] 留给人工确认。默认 false：既有自动刮削只覆盖抽帧封面，
+  /// 判据不变。
   Future<ScrapeOutcome> scrapeOne(
     VideoBookRow book, {
     bool applyHighConfidence = true,
-    Map<String, MatchDecision?>? decisionCache,
+    bool requireUniqueExactTitle = false,
+    Map<String, _ResolvedMatch>? decisionCache,
   }) async {
     final String path = book.videoPath;
     if (path.isEmpty || _isRemotePath(path)) {
@@ -220,8 +244,9 @@ class CoverScraperService {
       return _applyResolved(
         book,
         parsed,
-        decisionCache[cacheKey],
+        decisionCache[cacheKey]!,
         applyHighConfidence: applyHighConfidence,
+        requireUniqueExactTitle: requireUniqueExactTitle,
       );
     }
 
@@ -236,7 +261,10 @@ class CoverScraperService {
           parsed: parsed,
           candidate: aliasCandidate,
         );
-        decisionCache?[cacheKey] = aliasDecision;
+        // 别名是用户此前在弹窗里亲手认定的条目身份，不是猜的：它天然满足
+        // 「唯一精确」，重刮时应当把用户的选择原样恢复回去。
+        decisionCache?[cacheKey] =
+            _ResolvedMatch(aliasDecision, uniqueExactTitle: true);
         if (applyHighConfidence) {
           final String coverPath = await _applyCandidate(
             bookUid: book.bookUid,
@@ -253,13 +281,14 @@ class CoverScraperService {
     }
 
     // ⑤ 逐源匹配（离线 → Bangumi → TMDB），停在首个 high。
-    final MatchDecision? best = await _resolveBestDecision(parsed);
-    decisionCache?[cacheKey] = best;
+    final _ResolvedMatch resolved = await _resolveBestDecision(parsed);
+    decisionCache?[cacheKey] = resolved;
     return _applyResolved(
       book,
       parsed,
-      best,
+      resolved,
       applyHighConfidence: applyHighConfidence,
+      requireUniqueExactTitle: requireUniqueExactTitle,
     );
   }
 
@@ -269,12 +298,19 @@ class CoverScraperService {
   /// 已刮削一律跳过（[rescrapeScraped]=true 时才重刮已刮削的）。逐本 yield 进度；
   /// 单本网络异常记 [ScrapeFailed] 继续，不中断整批。同目录成员共享解析结果缓存，
   /// 避免重复搜索。
+  ///
+  /// [requireUniqueExactTitle]=true 时自动落盘判据收紧成「唯一归一化精确标题」。
+  /// 用户手动触发的整库重刮（[rescrapeScraped]=true）必须开它：那条路会覆盖
+  /// `CoverOrigin.scraped`，而**用户在匹配弹窗里亲手选定的封面同样记为 scraped**
+  /// （[applyCandidateToBooks]），综合分 high 的近似命中足以把用户的正确选择改掉。
+  /// 与书 / 漫画 / 游戏三域的 `uniqueExactScrapeTitleMatch` 同一判据。
   Stream<BatchScrapeProgress> scrapeLibrary(
     List<VideoBookRow> books, {
     bool rescrapeScraped = false,
+    bool requireUniqueExactTitle = false,
   }) async* {
-    final Map<String, MatchDecision?> decisionCache =
-        <String, MatchDecision?>{};
+    final Map<String, _ResolvedMatch> decisionCache =
+        <String, _ResolvedMatch>{};
     for (int i = 0; i < books.length; i++) {
       final VideoBookRow book = books[i];
       ScrapeOutcome outcome;
@@ -297,6 +333,7 @@ class CoverScraperService {
           } else {
             outcome = await scrapeOne(
               book,
+              requireUniqueExactTitle: requireUniqueExactTitle,
               decisionCache: decisionCache,
             );
           }
@@ -319,19 +356,20 @@ class CoverScraperService {
   /// 的简介，比配错封面更难被一眼发现）。
   Future<void> _scrapeMetadataOnly(
     VideoBookRow book,
-    Map<String, MatchDecision?> decisionCache,
+    Map<String, _ResolvedMatch> decisionCache,
   ) async {
     final ParsedMediaName? parsed = _mergedParse(book.videoPath);
     if (parsed == null || parsed.title.isEmpty) return;
     final String cacheKey = parsed.title;
 
-    final MatchDecision? decision;
+    final _ResolvedMatch resolved;
     if (decisionCache.containsKey(cacheKey)) {
-      decision = decisionCache[cacheKey];
+      resolved = decisionCache[cacheKey]!;
     } else {
-      decision = await _resolveBestDecision(parsed);
-      decisionCache[cacheKey] = decision;
+      resolved = await _resolveBestDecision(parsed);
+      decisionCache[cacheKey] = resolved;
     }
+    final MatchDecision? decision = resolved.decision;
     if (decision == null || decision.confidence != MatchConfidence.high) {
       return;
     }
@@ -548,13 +586,21 @@ class CoverScraperService {
   Future<ScrapeOutcome> _applyResolved(
     VideoBookRow book,
     ParsedMediaName parsed,
-    MatchDecision? decision, {
+    _ResolvedMatch resolved, {
     required bool applyHighConfidence,
+    required bool requireUniqueExactTitle,
   }) async {
+    final MatchDecision? decision = resolved.decision;
     if (decision == null) return const ScrapeNoMatch();
     switch (decision.confidence) {
       case MatchConfidence.high:
         if (!applyHighConfidence) {
+          return ScrapeNeedsConfirm(<MatchDecision>[decision]);
+        }
+        // 无人值守整库重刮：high 只说明综合分够（标题相似度 0.70 + 年份吻合即达
+        // 0.85 线），不足以覆盖一张已经存在的封面。近似命中降级成待确认，交给
+        // 单卡「在线匹配封面」由用户亲自拍板。
+        if (requireUniqueExactTitle && !resolved.uniqueExactTitle) {
           return ScrapeNeedsConfirm(<MatchDecision>[decision]);
         }
         final String coverPath = await _applyCandidate(
@@ -576,10 +622,22 @@ class CoverScraperService {
 
   /// 逐源匹配：离线库（有则先）→ Bangumi → TMDB（非 null 或电影提示时）。逐层取
   /// [MatchScorer.best]，命中 high 立即返回；否则保留全程最高分决策。
-  Future<MatchDecision?> _resolveBestDecision(ParsedMediaName parsed) async {
+  Future<_ResolvedMatch> _resolveBestDecision(ParsedMediaName parsed) async {
+    final String normalizedQuery = TitleNormalizer.normalize(parsed.title);
+    // 归一化精确命中的**条目身份**集合（source/entryId 去重：同一条目在同一次
+    // 搜索里重复出现不算歧义）。只统计本轮真正查过的源——命中 high 提前返回时
+    // 后面的源根本没查，也就谈不上「那里还有一个同名条目」。
+    final Set<String> exactEntryKeys = <String>{};
     MatchDecision? best;
 
     MatchDecision? consider(List<ScrapeCandidate> candidates) {
+      if (normalizedQuery.isNotEmpty) {
+        for (final ScrapeCandidate candidate in candidates) {
+          if (_isExactTitle(normalizedQuery, candidate)) {
+            exactEntryKeys.add('${candidate.source.name}/${candidate.entryId}');
+          }
+        }
+      }
       final MatchDecision? d =
           MatchScorer.best(parsed: parsed, candidates: candidates);
       if (d == null) return best;
@@ -587,21 +645,41 @@ class CoverScraperService {
       return best;
     }
 
+    _ResolvedMatch finish() {
+      final MatchDecision? decision = best;
+      if (decision == null) return _ResolvedMatch.none;
+      final bool unique = exactEntryKeys.length == 1 &&
+          _isExactTitle(normalizedQuery, decision.candidate);
+      return _ResolvedMatch(decision, uniqueExactTitle: unique);
+    }
+
     // 离线库（纯内存，无网络，优先）。
     if (_offline != null) {
       consider(_offline.search(parsed.title));
-      if (best?.confidence == MatchConfidence.high) return best;
+      if (best?.confidence == MatchConfidence.high) return finish();
     }
 
     // Bangumi 主源。
     consider(await _bangumi.search(parsed.title));
-    if (best?.confidence == MatchConfidence.high) return best;
+    if (best?.confidence == MatchConfidence.high) return finish();
 
     // TMDB 补充源（有 key，或有电影提示时优先补 TMDB）。
     if (_tmdb != null) {
       consider(await _tmdb.search(parsed.title, year: parsed.year));
     }
-    return best;
+    return finish();
+  }
+
+  /// 候选的标题或任一别名归一化后与 [normalizedQuery] 完全相等。
+  static bool _isExactTitle(String normalizedQuery, ScrapeCandidate candidate) {
+    if (normalizedQuery.isEmpty) return false;
+    if (TitleNormalizer.normalize(candidate.title) == normalizedQuery) {
+      return true;
+    }
+    for (final String alias in candidate.aliases) {
+      if (TitleNormalizer.normalize(alias) == normalizedQuery) return true;
+    }
+    return false;
   }
 
   /// 别名命中：重搜对应源，按 entryId 过滤取回具体候选（含海报 URL）；无则 null。
