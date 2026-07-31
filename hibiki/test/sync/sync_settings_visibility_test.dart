@@ -316,6 +316,10 @@ void main() {
       expect(idsOf(dest.sections[0]), <String>['interconnect.enabled']);
       expect(dest.sections[0].visible, isNull,
           reason: 'the enable toggle must always be visible');
+      // 角色模型用法说明（哪台开服务器、哪台连接、角色互斥）挂在总开关区 footer，
+      // 是整页唯一一处讲清 client/host 分工的文案，不得静默丢失。
+      expect(dest.sections[0].footer, isNotNull,
+          reason: 'the enable section must keep the role-model usage note');
       expect(idsOf(dest.sections[1]),
           <String>['sync.hibiki_server_config', 'sync.lan_devices']);
       expect(dest.sections[1].visible, isNotNull);

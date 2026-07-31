@@ -2777,5 +2777,8 @@
   "sync_last_failed": "Last sync: failed",
   "anime_download_no_results_detail": "The service responded successfully but returned 0 items. Query: $query; filters: $filters. Try another title or loosen the filters.",
   "anime_download_streaming_ready": "In library · download continues",
-  "anime_download_unfiltered": "No Trusted filter"
+  "anime_download_unfiltered": "No Trusted filter",
+  "interconnect_enable_footer": "How to use: turn on \"Host server\" below on the device that holds your library, then pair from \"Connect to other devices\" on the other device. Each device can act as only one role at a time — server or client.",
+  "interconnect_peer_list_title": "Added peers",
+  "interconnect_peer_list_empty": "No peers added yet. Tap a device under \"LAN devices\" below to pair automatically, or tap \"Add\" to enter an address manually."
 }

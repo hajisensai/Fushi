@@ -383,8 +383,11 @@ SettingsDestination buildInterconnectDestination() {
     icon: Icons.devices_outlined,
     sections: <SettingsSection>[
       // 互联总开关（独立于云备份后端，二者可并存）。开关常显；关闭时下方配置区隐藏，
-      // 副标题说明互联与云同步互不排斥。
+      // 副标题说明互联与云同步互不排斥。footer 用一句话讲清角色模型（哪台开服务器、
+      // 哪台连接、角色互斥）——此前整页没有任何地方交代这一点，用户面对平铺的
+      // client/host 两大区不知道该在哪台设备上动哪个开关。
       SettingsSection(
+        footer: t.interconnect_enable_footer,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'interconnect.enabled',
