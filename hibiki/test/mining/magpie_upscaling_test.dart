@@ -635,14 +635,17 @@ void main() {
 
     test('installedOnly 且没装 → unavailable，零网络', () async {
       // 安装目录不存在（真实 MagpieInstaller.isInstalled() 在测试环境必为 false）。
+      // `installedOnly` 是用户自己选的「只用机器上已有的」，没有就是没有 —— 这不是
+      // 交付错误，所以停在 unavailable，**不**升级成 failed。
       final MagpieUpscalingService service = build(
         mode: MagpieUpscalingMode.installedOnly,
       );
       await service.onGameWindowReady(hwnd: 1234);
       expect(service.report.status, MagpieUpscalingStatus.unavailable);
+      expect(service.report.failureReason, isNull);
     });
 
-    test('auto 但随包归档缺失 → unavailable，绝不联网', () async {
+    test('auto 但随包归档缺失 → failed/bundleMissing，绝不联网', () async {
       final MagpieUpscalingService service = MagpieUpscalingService(
         modeReader: () => MagpieUpscalingMode.auto,
         bridge: FakeBridge(),
@@ -653,7 +656,11 @@ void main() {
             throw StateError('不该走到这'),
       );
       await service.onGameWindowReady(hwnd: 1234);
-      expect(service.report.status, MagpieUpscalingStatus.unavailable);
+      // BUG-1246：`auto` 承诺「用内置的那份」，随包归档缺失就是**安装包不完整**，
+      // 不是「这台机器暂时没这个功能」。降级成 unavailable 会把交付错误伪装成常态。
+      expect(service.report.status, MagpieUpscalingStatus.failed);
+      expect(service.report.failureReason,
+          MagpieUpscalingFailureReason.bundleMissing);
     });
 
     test('会话结束是幂等的空操作（从没启动过超分时）', () async {
@@ -804,21 +811,31 @@ void main() {
         'MagpieProfileSkipReason',
         'MagpieUpscalingFailureReason',
       ];
+      // failureReason 这一维以前没被遍历过，于是 BUG-1246 新加的两条交付错误文案完全
+      // 不在守卫范围内 —— 「failed verification」里的 failed 就是 MagpieUpscalingStatus
+      // 的枚举名。三维全遍历才守得住。
       for (final MagpieUpscalingStatus status in MagpieUpscalingStatus.values) {
         for (final MagpieProfileSkipReason? skip in <MagpieProfileSkipReason?>[
           null,
           ...MagpieProfileSkipReason.values
         ]) {
-          final MagpieUpscalingReport r = report(status, skip: skip);
-          final String text =
-              '${magpieUpscalingStatusLabel(r)} ${magpieUpscalingActionHint(r) ?? ''}';
-          expect(text.trim(), isNotEmpty);
-          for (final String token in internal) {
-            expect(
-              text.contains(token),
-              isFalse,
-              reason: '「$text」泄漏了内部标识符 $token',
-            );
+          for (final MagpieUpscalingFailureReason? failure
+              in <MagpieUpscalingFailureReason?>[
+            null,
+            ...MagpieUpscalingFailureReason.values
+          ]) {
+            final MagpieUpscalingReport r =
+                report(status, skip: skip, failure: failure);
+            final String text =
+                '${magpieUpscalingStatusLabel(r)} ${magpieUpscalingActionHint(r) ?? ''}';
+            expect(text.trim(), isNotEmpty);
+            for (final String token in internal) {
+              expect(
+                text.contains(token),
+                isFalse,
+                reason: '「$text」泄漏了内部标识符 $token',
+              );
+            }
           }
         }
       }

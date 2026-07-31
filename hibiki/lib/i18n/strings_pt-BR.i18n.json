@@ -2736,7 +2736,7 @@
   "game_helper_bundle_missing": "The galgame hook helper is not bundled with this build. Update Hibiki to get it.",
   "game_upscaling_pick_title": "Window upscaling for $name",
   "game_upscaling_pick_body": "Upscales this game window with Magpie while a capture session is running. Set per game - it only helps for games whose native resolution is lower than your screen. Uses your GPU.",
-  "game_upscaling_hint_not_installed": "Magpie is unavailable. Use Auto to enable Hibiki's bundled version; if it is still unavailable, update or reinstall Hibiki.",
+  "game_upscaling_hint_not_installed": "Magpie is not ready. Set window upscaling to Auto to use the copy bundled with Hibiki; if it still does not start, update or reinstall Hibiki.",
   "media_source_count_manga": "$n volumes",
   "library_view_shelf": "Shelf",
   "library_view_browse": "Browse",
@@ -2855,5 +2855,5 @@
   "anki_lapis_visual_field_definition_info_note": "Only visible on cards that keep more than one definition block; single-definition cards hide it.",
   "anki_lapis_visual_field_dictionary_name_note": "On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.",
   "game_upscaling_error_bundle_missing": "Hibiki installation is incomplete: the bundled Magpie component is missing. Reinstall or update Hibiki.",
-  "game_upscaling_error_bundle_invalid": "The bundled Magpie component is corrupted or failed verification. Reinstall or update Hibiki."
+  "game_upscaling_error_bundle_invalid": "The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki."
 }

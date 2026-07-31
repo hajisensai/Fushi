@@ -68,32 +68,12 @@ const List<String> kMagpieRequiredDirs = <String>['effects'];
 /// 已装版本标记文件名：装成功后写入随包 zip 的 sha256，供诊断与损坏排查。
 String magpieMarkerName() => 'installed.sha256';
 
-/// Windows 主包只携带 x64 精简包。ARM64 Windows 可通过系统的 x64 模拟运行它，因此
-/// 生产安装路径也固定取 x64，不再为了另一个切片联网。
+/// Windows 主包只携带 x64 精简包，安装路径**恒取它**。ARM64 Windows 通过系统的 x64
+/// 模拟运行同一份产物，不再有第二个切片，所以也不再需要探测机器架构：BUG-1246 之前
+/// 的 `magpieArchForProcessorArchitecture` / `magpieCurrentArch` 只服务于「按架构选下载
+/// URL」，下载链路删掉后它们就是死代码，一并删除（想恢复架构分发得先恢复第二个随包
+/// 切片，那是构建侧的事）。
 const String kMagpieBundledArch = 'x64';
-
-/// **纯函数**：由 Windows 的 `PROCESSOR_ARCHITECTURE` / `PROCESSOR_ARCHITEW6432` 环境变量
-/// 判定当前机器架构。ARM64 Windows 上以 x64 模拟运行的进程，其 `PROCESSOR_ARCHITECTURE`
-/// 报 AMD64，真实机器架构落在 `PROCESSOR_ARCHITEW6432` —— 两者任一为 ARM64 即取 ARM64。
-/// 判定不出来一律回落 x64（ARM64 上可模拟运行，属可用降级，绝不因认不出机器就装不上）。
-String magpieArchForProcessorArchitecture(
-  String? procArch,
-  String? procArchW6432,
-) {
-  bool isArm64(String? value) =>
-      value != null && value.trim().toUpperCase() == 'ARM64';
-  if (isArm64(procArchW6432) || isArm64(procArch)) return 'ARM64';
-  return 'x64';
-}
-
-/// 当前进程环境下的机器架构（仅诊断与兼容测试使用）。
-String magpieCurrentArch({Map<String, String>? environment}) {
-  final Map<String, String> env = environment ?? Platform.environment;
-  return magpieArchForProcessorArchitecture(
-    env['PROCESSOR_ARCHITECTURE'],
-    env['PROCESSOR_ARCHITEW6432'],
-  );
-}
 
 /// 返回缺少的必需根文件名；按 Windows 规则忽略大小写。
 List<String> magpieMissingFiles(Iterable<String> presentFiles) {

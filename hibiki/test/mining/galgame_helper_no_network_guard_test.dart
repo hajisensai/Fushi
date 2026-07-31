@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 // 复用同款字符级注释剥除器，避免文档/行/块注释里的示例文字污染静态守卫。
 import '../sync/desktop_lookup_foreground_guard_static_test.dart'
     show stripDartComments;
+import 'offline_installer_guard.dart';
 
 /// BUG-1196 静态守卫：**galgame helper 安装器不得联网**。
 ///
@@ -26,21 +27,14 @@ void main() {
       stripDartComments(File(path).readAsStringSync());
 
   group('helper 安装器不得联网', () {
-    test('安装器源码里没有任何 HTTP 客户端 / 下载入口', () {
-      final String src = readStripped(installer);
-      for (final String needle in <String>[
-        'HttpClient',
-        'applyUpdateProxy',
-        'ResumableDownload',
-        'https://',
-      ]) {
-        expect(
-          src.contains(needle),
-          isFalse,
-          reason: 'helper 随主包发布，安装器不该出现「$needle」——'
-              '它注入用户游戏进程的原生代码，联网取包即 BUG-1103 的攻击面',
-        );
-      }
+    // 🔴 判据是「可达通道」而不是几个字面串：import 白名单 + 归一化后的能力名扫描。
+    // 为什么必须这样，见 offline_installer_guard.dart 顶部（旧的字面量黑名单挡不住
+    // `import 'package:http/http.dart'` + `Uri.parse('htt' 'ps://…')` 这种最自然的写法）。
+    test('安装器的依赖面与符号面都不含任何网络通道', () {
+      expectOfflineInstaller(
+        path: installer,
+        allowedImports: kGalgameHelperInstallerImports,
+      );
     });
 
     test('后台静默自更新已删除，且 main.dart 不再调用', () {
@@ -64,17 +58,15 @@ void main() {
     });
 
     test('Magpie 也只认随包归档，内置组件不恢复下载兜底', () {
-      final String magpie =
-          readStripped('lib/src/mining/magpie_installer.dart');
-      for (final String needle in <String>[
-        'HttpClient',
-        'ResumableDownload',
-        'https://',
-        'updateInstalledMagpieInBackground',
-      ]) {
-        expect(magpie.contains(needle), isFalse, reason: needle);
-      }
-      expect(magpie.contains('_installBundledMagpie'), isTrue);
+      expectOfflineInstaller(
+        path: 'lib/src/mining/magpie_installer.dart',
+        allowedImports: kMagpieInstallerImports,
+      );
+      expect(
+        readStripped('lib/src/mining/magpie_installer.dart')
+            .contains('_installBundledMagpie'),
+        isTrue,
+      );
     });
   });
 }

@@ -88,8 +88,9 @@ void main() {
   group('服务按每局读档', () {
     /// 走 **Windows 分支**（`isWindowsOverride: true`）：非 Windows 下任何档位都被平台
     /// 判据压成 `disabled`，那样「读到 off」和「读到 auto」就分不开，断言等于没断言。
-    /// Windows 分支里 off → disabled、auto → unavailable（测试宿主没有随包归档，
-    /// 且绝不联网补取），两者可分。
+    /// Windows 分支里 off → disabled、auto → failed + bundleMissing（测试宿主没有随包
+    /// 归档，且绝不联网补取 —— BUG-1246 之后缺随包是**交付错误**而不是「暂时不可用」），
+    /// 两者可分。
     MagpieUpscalingService build(MagpieUpscalingMode Function() modeReader) =>
         MagpieUpscalingService(
           modeReader: modeReader,
@@ -102,11 +103,13 @@ void main() {
           },
         );
 
-    test('读到 auto → unavailable（证明这套替身分得清 auto 和 off）', () async {
+    test('读到 auto → failed/bundleMissing（证明这套替身分得清 auto 和 off）', () async {
       final MagpieUpscalingService service =
           build(() => MagpieUpscalingMode.auto);
       await service.onGameWindowReady(hwnd: 1234);
-      expect(service.report.status, MagpieUpscalingStatus.unavailable);
+      expect(service.report.status, MagpieUpscalingStatus.failed);
+      expect(service.report.failureReason,
+          MagpieUpscalingFailureReason.bundleMissing);
     });
 
     test('读到 off → disabled，一次都不碰安装器/进程', () async {

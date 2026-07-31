@@ -115,3 +115,7 @@ galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendore
   `magpie_bundle/`。`MagpieInstaller` 校验后换入 `magpie/`；ARM64 Windows 走系统 x64 模拟。
   缺包、损坏和旧构建会直接报告“安装包不完整/内置组件校验失败”，没有下载确认、镜像兜底
   或后台自更新；正式 Windows 包出现该错误即属于打包或安装损坏。
+  与 helper 同款，`hibiki/windows/CMakeLists.txt` 有一条 `install(FILES ... OPTIONAL)`
+  从仓库根 `dist/` 把归档拷进 bundle，**开发构建也能拿到**（先跑一次
+  `pwsh -File tools/build_magpie_slim.ps1`）；`tool/check_release_policy.ps1` 守住两个
+  Windows workflow 的组包步骤、`magpie_bundle/` 载荷目录和 sha256 侧车。

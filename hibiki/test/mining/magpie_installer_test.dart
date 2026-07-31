@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/magpie_installer.dart';
 import 'package:path/path.dart' as p;
 
+import 'offline_installer_guard.dart';
+
 List<int> _buildZip(Map<String, List<int>> entries) {
   final Archive archive = Archive();
   entries.forEach((String name, List<int> bytes) {
@@ -16,13 +18,17 @@ List<int> _buildZip(Map<String, List<int>> entries) {
 
 void main() {
   group('架构与随包契约', () {
-    test('机器架构探测仍可诊断 ARM64，但生产随包固定使用 x64', () {
-      expect(magpieArchForProcessorArchitecture('AMD64', 'ARM64'), 'ARM64');
-      expect(magpieArchForProcessorArchitecture('ARM64', null), 'ARM64');
-      expect(magpieArchForProcessorArchitecture('AMD64', null), 'x64');
+    test('随包只有 x64 一个切片，安装路径恒取它', () {
+      // 只剩一个切片之后，「探测机器架构」没有任何消费者（ARM64 走系统 x64 模拟）。
+      // 恢复架构分发必须先恢复第二个随包产物，不是在客户端加一个探测函数。
       expect(kMagpieBundledArch, 'x64');
       expect(magpieBundledZipName(kMagpieBundledArch),
           'Magpie-hibiki-slim-x64.zip');
+      expect(
+        File('lib/src/mining/magpie_installer.dart').readAsStringSync(),
+        isNot(contains('PROCESSOR_ARCHITECTURE')),
+        reason: '架构探测是下载链路的遗留物，随下载一起删掉了',
+      );
     });
 
     test('随包目录与安装目录分开', () {
@@ -141,20 +147,30 @@ void main() {
   });
 
   group('零网络源码守卫（BUG-1246）', () {
-    test('安装器没有 HTTP、下载器、远端 URL 或后台更新入口', () {
-      final String source =
-          File('lib/src/mining/magpie_installer.dart').readAsStringSync();
-      for (final String forbidden in <String>[
-        'HttpClient',
-        'ResumableDownload',
-        'applyUpdateProxy',
-        'https://',
-        'confirmDownload',
-        'updateInstalledMagpieInBackground',
-        'magpieDownloadUrl',
-      ]) {
-        expect(source, isNot(contains(forbidden)), reason: forbidden);
-      }
+    // 判据是 import 白名单 + 归一化后的能力名扫描，不是几个字面串 ——
+    // 理由与实测的绕过写法见 offline_installer_guard.dart 顶部。
+    test('安装器的依赖面与符号面都不含任何网络通道', () {
+      expectOfflineInstaller(
+        path: 'lib/src/mining/magpie_installer.dart',
+        allowedImports: kMagpieInstallerImports,
+      );
+    });
+
+    test('跨模块复用只 show 四个纯工具函数，不给旁路留口子', () {
+      // helper 安装器是 Magpie 唯一的项目内依赖。这里若退化成整包 import（或多 show
+      // 一个符号），对面新加的任何东西都会自动出现在 Magpie 的可达面上。
+      // 折掉换行/缩进再比，免得 dart format 的换行策略变一次就假红。
+      final String source = File('lib/src/mining/magpie_installer.dart')
+          .readAsStringSync()
+          .replaceAll(RegExp(r'\s+'), ' ');
+      expect(
+        source,
+        contains(
+            "import 'package:hibiki/src/mining/galgame_helper_installer.dart' "
+            'show galgameHelperSwapInstall, galgameHelperSweepStaleFiles, '
+            'parseSha256Sidecar, sha256Matches;'),
+        reason: '复用面必须逐个点名；退化成整包 import 就等于把对面的全部符号拉进来',
+      );
     });
 
     test('ensureInstalled 只调用随包安装，缺包明确返回 bundleMissing', () {

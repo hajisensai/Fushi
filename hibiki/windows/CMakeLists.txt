@@ -155,6 +155,28 @@ foreach(_helper_file ${HIBIKI_GALGAME_HELPER_FILES})
     COMPONENT Runtime OPTIONAL)
 endforeach()
 
+# === Magpie 随包精简归档（可选，本地/CI 事先构建）===
+# 与上面的 helper 规则同源同理由（BUG-1246）：Magpie 删掉下载链路之后，`magpie_bundle/`
+# 只由 CI 在 `flutter build windows` 之后的一个独立 YAML 步骤拷贝，于是 `flutter run` /
+# `flutter build windows --debug` 出来的 exe 旁边永远没有这个目录，`_installBundledMagpie`
+# 在 `if (!hasZip && !hasSidecar) return false;` 当场返回 false —— 开发构建里窗口超分
+# **恒为 bundleMissing**，等于开发模式下这个功能完全用不了、也没法验证。
+#
+# 产物来自 repo 根 `dist/`（tools/build_magpie_slim.ps1 的默认 OutputDir），与 release
+# 同源、同文件名、同目标目录；CI 那步照旧保留，它跑在本规则之后，是幂等覆盖。
+# OPTIONAL 同样必需：判定发生在 install 时而非 configure 时，没跑过组包脚本的机器照常
+# `flutter build windows` 成功，只是超分报「安装包不完整」——与今天的行为一致。
+# 要在本地拿到它：仓库根跑 `pwsh -File tools/build_magpie_slim.ps1`。
+set(HIBIKI_MAGPIE_BUNDLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../dist")
+set(HIBIKI_MAGPIE_BUNDLE_FILES
+  "Magpie-hibiki-slim-x64.zip"
+  "Magpie-hibiki-slim-x64.zip.sha256")
+foreach(_magpie_file ${HIBIKI_MAGPIE_BUNDLE_FILES})
+  install(FILES "${HIBIKI_MAGPIE_BUNDLE_DIR}/${_magpie_file}"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}/magpie_bundle"
+    COMPONENT Runtime OPTIONAL)
+endforeach()
+
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.
 set(FLUTTER_ASSET_DIR_NAME "flutter_assets")

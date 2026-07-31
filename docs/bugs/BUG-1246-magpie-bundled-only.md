@@ -14,10 +14,29 @@
     `needsBundledInstall`；删除下载确认注入和 `magpie_download_confirm.dart`。
   - 超分档位文案改成“启用 Hibiki 内置版本，不需要下载”；“仅用已装”明确表示不解压
     Hibiki 内置版本，避免两个档位继续围绕已经不存在的下载行为解释。
+  - 删掉随下载链路一起失去消费者的 `magpieArchForProcessorArchitecture` /
+    `magpieCurrentArch`：只剩一个 x64 切片之后，“探测机器架构”没有任何调用方。
+  - `hibiki/windows/CMakeLists.txt` 增加与 helper 同款的 `install(FILES ... OPTIONAL)`，
+    把 `dist/Magpie-hibiki-slim-x64.zip[.sha256]` 拷进 bundle 的 `magpie_bundle/`。
+    此前该目录**只**由 CI 的独立 YAML 步骤创建，于是 `flutter run` / debug 构建出来的
+    exe 旁边永远没有它，超分在开发构建里恒 `bundleMissing`、根本没法验证。
+  - `tool/check_release_policy.ps1` 补 `magpie_bundle` 断言（组包脚本 + 载荷目录 +
+    sha256 侧车，两个 Windows workflow 各一套）：下载链路删干净之后，随包归档是超分
+    **唯一**的安装来源，漏带它会构建全绿而用户侧恒报“安装包不完整”。
 - **[x] ② 已加自动化测试** —
-  - `hibiki/test/mining/magpie_installer_test.dart` 增加零网络源码守卫，禁止 `HttpClient`、
-    `ResumableDownload`、远端 URL、确认回调和后台更新入口回流，并钉住缺包返回值。
-  - `hibiki/test/mining/galgame_helper_no_network_guard_test.dart` 扩展到 Magpie；
-    `magpie_bundled_install_test.dart` 保留随包摘要/清单及 debug/release 组包契约。
-- **备注**：按用户要求不等待 Windows 编译与安装包真机验收；本轮只跑定向 Flutter 测试、
-  i18n/BUG 守卫和静态分析。正式包仍由现有 workflow 生成并携带 4.72 MB 精简归档。
+  - `hibiki/test/mining/offline_installer_guard.dart`（新增，helper 与 Magpie 共用）：
+    判据从**字面量黑名单**升级为**可达通道**检查 —— import 白名单 + 折叠字符串拼接后的
+    能力名扫描（`Uri` / `Http*` / `*Socket` / `download` / `dio` …）。旧守卫只扫
+    `HttpClient` / `https://` 这几个串，而 app 直接依赖 `http` 与 `dio`，于是
+    `import 'package:http/http.dart'` + `Uri.parse('htt' 'ps://…')` 这条**最自然的**写法
+    整条穿过守卫、测试全绿（已实测复现）。
+  - `magpie_installer_test.dart` / `galgame_helper_no_network_guard_test.dart` 改用共享
+    判据，并钉住跨模块复用只 `show` 四个纯工具函数（退化成整包 import 等于把对面全部
+    符号拉进可达面）。
+  - `magpie_upscaling_test.dart` 的 BUG-1100 文案守卫补上 `failureReason` 这一维：新增的
+    两条交付错误文案原本完全不在遍历范围内。
+  - 行为断言同步到新契约：`auto` 缺随包 → `failed` + `bundleMissing`（交付错误），
+    `installedOnly` 没装 → 仍是 `unavailable`（用户自己选的档位，不是交付错误）。
+- **状态**：`implemented_unverified`。按用户要求不等待 Windows 编译与安装包真机验收；
+  本轮只跑定向 Flutter 测试、i18n/BUG 守卫和静态分析，**没有一次真机执行**，不得据此
+  宣称“窗口超分已修好/已支持”。正式包仍由现有 workflow 生成并携带 4.72 MB 精简归档。

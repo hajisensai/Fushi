@@ -145,6 +145,24 @@ $multiplatformWorkflow = Read-RepoFile '.github/workflows/build-multiplatform.ym
 Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 'native/galgame_hook/tools/build_distribution.ps1 -RunTests' 'Windows CI must exercise the same bundled helper build as release'
 Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 'Debug\galgame_helper' 'Windows debug bundle must exercise the offline helper payload layout'
 
+# BUG-1246: Magpie has no download path left, so the bundled slim archive is the
+# ONLY way window upscaling can ever install. If a Windows workflow stops
+# building or copying it, the build still goes green and every user gets
+# "Hibiki installation is incomplete" at runtime -- exactly the class of silent
+# packaging regression this guard exists for. Same shape as the helper rules
+# above: build step + payload directory, in BOTH Windows workflows.
+$magpieBundleWorkflows = @{
+  '.github/workflows/release-desktop.yml'    = @{ Content = $desktopWorkflow; Payload = 'Release\magpie_bundle' }
+  '.github/workflows/build-multiplatform.yml' = @{ Content = $multiplatformWorkflow; Payload = 'Debug\magpie_bundle' }
+}
+foreach ($relativePath in $magpieBundleWorkflows.Keys) {
+  $entry = $magpieBundleWorkflows[$relativePath]
+  $content = $entry.Content
+  Require-Text $relativePath $content 'tools/build_magpie_slim.ps1' 'Windows bundles must build the slim Magpie archive from the in-tree script (BUG-1217/BUG-1246)'
+  Require-Text $relativePath $content $entry.Payload 'Windows bundle payload must contain magpie_bundle/ or window upscaling can never install (BUG-1246)'
+  Require-Text $relativePath $content 'Magpie-hibiki-slim-x64.zip.sha256' 'the bundled Magpie archive must ship with its sha256 sidecar; the installer refuses an unverified package (BUG-1246)'
+}
+
 $buildDoc = Read-RepoFile 'docs/agent/build.md'
 Require-Text 'docs/agent/build.md' $buildDoc 'cross-workflow release sequence' 'durable docs must describe the shared sequence rule'
 Require-Text 'docs/agent/build.md' $buildDoc 'git rev-list --count HEAD' 'durable docs must name the sequence source'
