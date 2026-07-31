@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1201 条。点号进各自文件。
+> 共 1202 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1264](bugs/BUG-1264-popup-perdict-collapse-outranked.md) | ✅ | ✅ | 每本词典的折叠开关对前 N 本无效（被自动展开覆盖） |
 | [BUG-1246](bugs/BUG-1246-galgame-helper-version-drift.md) | ✅ | ✅ | 随包 helper 已更新但完整旧安装被直接放行，native 修复永远不生效 |
 | [BUG-1245](bugs/BUG-1245-vn-reveal-chrome-also-advances.md) | ✅ | ✅ | VN唤出悬浮底栏时误同时推进 |
 | [BUG-1244](bugs/BUG-1244-vn-media-screen-skipped.md) | ✅ | ✅ | VN独立图片屏被逐句跳转永久略过 |
