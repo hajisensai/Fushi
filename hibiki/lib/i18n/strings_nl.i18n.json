@@ -2764,5 +2764,14 @@
   "manga_import_detected_message": "\"$name\" is a manga file, so it will go through the manga importer instead of the book importer.",
   "selection_web_search": "Search the web",
   "selection_web_search_unavailable": "No app can search the web.",
-  "selection_share_failed": "Could not open the share sheet."
+  "selection_share_failed": "Could not open the share sheet.",
+  "anki_dedup_progress_title": "Deduplicating media",
+  "anki_dedup_progress_scanning": "Scanning media folder… ($count files found)",
+  "anki_dedup_progress_hashing": "Comparing same-size files… ($done / $total)",
+  "anki_dedup_progress_resolving": "Processing duplicates… ($done / $total)",
+  "anki_dedup_progress_freed": "Freed $size so far",
+  "anki_dedup_cancelling": "Cancelling…",
+  "anki_dedup_cancelled": "Deduplication cancelled; completed changes are kept.",
+  "anki_dedup_report_cancelled_note": "Cancelled early — the numbers below only cover what was completed.",
+  "anki_dedup_plan_busy_note": "Anki may be unresponsive while this runs; avoid using Anki until it finishes."
 }

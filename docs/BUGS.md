@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1200 条。点号进各自文件。
+> 共 1202 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1263](bugs/BUG-1263-anki-dedup-progress-cancel.md) | ✅ | ✅ | Anki媒体去重真删与扫描为分钟级长任务却无进度不可取消且期间Anki无响应 |
+| [BUG-1262](bugs/BUG-1262-anki-dedup-vanished-file-aborts.md) | ✅ | ✅ | 媒体文件在扫描快照后消失导致整轮去重PathNotFoundException中止 |
 | [BUG-1245](bugs/BUG-1245-vn-reveal-chrome-also-advances.md) | ✅ | ✅ | VN唤出悬浮底栏时误同时推进 |
 | [BUG-1244](bugs/BUG-1244-vn-media-screen-skipped.md) | ✅ | ✅ | VN独立图片屏被逐句跳转永久略过 |
 | [BUG-1243](bugs/BUG-1243-audiobook-clip-multicue-export.md) | ✅ | ✅ | 有声书片段导出多句退化并附带多余音频文件 |

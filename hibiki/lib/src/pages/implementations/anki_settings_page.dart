@@ -748,7 +748,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     await showAnkiMediaDedupReportDialog(context, result);
   }
 
-  /// 跑一遍去重（干跑或真跑）。后端不支持 / 出错时给出提示并返回 null。
+  /// 跑一遍去重（干跑或真跑），带模态进度对话框与取消（BUG-1263）。
+  /// 后端不支持 / 出错 / 干跑被取消时给出提示并返回 null；真跑被取消时正常
+  /// 返回报告（结果弹窗里说明只统计已完成部分）。
   Future<AnkiMediaDedupReport?> _runDedupPass(
     AnkiViewModel vm, {
     required bool dryRun,
@@ -757,7 +759,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     setState(() => _dedupBusy = true);
     AnkiMediaDedupReport? report;
     try {
-      report = await vm.mediaDedupRunner.runNow(dryRun: dryRun);
+      report = await runAnkiMediaDedupWithProgress(
+        context,
+        vm.mediaDedupRunner,
+        dryRun: dryRun,
+      );
     } catch (e) {
       messenger.showSnackBar(
           SnackBar(content: Text(t.anki_dedup_failed(error: '$e'))));
@@ -767,6 +773,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     }
     if (report == null) {
       messenger.showSnackBar(SnackBar(content: Text(t.anki_dedup_unavailable)));
+      return null;
+    }
+    if (report.cancelled && dryRun) {
+      // 干跑被取消：清单不完整，摊出来只会误导用户。
+      messenger.showSnackBar(SnackBar(content: Text(t.anki_dedup_cancelled)));
       return null;
     }
     return report;

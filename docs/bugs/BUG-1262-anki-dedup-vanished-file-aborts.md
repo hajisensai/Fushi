@@ -1,0 +1,6 @@
+## BUG-1262 · 媒体文件在扫描快照后消失导致整轮去重PathNotFoundException中止
+- **报告**：2026-07-31（用户截图：去重失败：PathNotFoundException: Cannot open file …\collection.media\引っ掛かる_ヒッカカ＼ル_4_NHK-2016-local-….mp3 (OS Error: 系统找不到指定的文件, errno = 2)）
+- **真实性**：✅ 真 bug。`collection.media` 是 Anki 拥有的活目录（AnkiWeb 媒体同步 / 检查媒体 / 回收随时增删文件），而 `packages/hibiki_anki/lib/src/ankiconnect/ankiconnect_repository.dart` 的 `_scanMediaSizes`（stat）与 `_hashSizeCollisions`（readAsBytes）对「列举后文件消失」零容错，一个文件读不到就把整轮去重炸掉；`_readReferencingMedia` / `_mediaBytesIdentical` 的 `existsSync` 判断也有 exists→read 的 TOCTOU 窗口。已用独立探针排除文件名编码根因：含全角 `＼`(U+FF3C)、`%`、结尾空格等文件名经「目录枚举 → 重新打开」往返在 Windows 上完全正常，报错文件就是在快照后真的消失了。
+- **[x] ① 已修复** — 把「目录快照会过期」建模进全部四个文件读取点：`_scanMediaSizes` stat 失败跳过该文件；`_hashSizeCollisions` 读失败该文件不进哈希表（不进任何组，其大小组其余成员照常处理）；`_readReferencingMedia` 读失败跳过；`_mediaBytesIdentical` 改为 try-read（消灭 exists→read TOCTOU），读不到按「不同」处理 → 保守跳过不删。任一文件消失都不再中止整轮。
+- **[x] ② 已加自动化测试** — `packages/hibiki_anki/test/anki_media_dedup_orchestration_test.dart`：「哈希前文件被 Anki 删走 → 跳过该文件，整轮不炸」（借进度回调在读前精确删文件）与「逐字节复核时副本已消失 → 跳过不删、不炸」。
+- **备注**：探针脚本验证于 2026-07-31（Dart `Directory.list` → `entity.uri.pathSegments.last` → 重开，特殊字符文件名全部往返成功）；用户看到该错误时可能已有部分副本删除/改写完成——引用永远先改指保留份，中止点之前的改动自洽，无需回滚。

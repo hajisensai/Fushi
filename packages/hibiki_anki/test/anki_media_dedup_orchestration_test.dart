@@ -393,6 +393,132 @@ void main() {
     expectEveryReferenceResolves(service, <String>['_lib.js', 'lib.js']);
   });
 
+  test('BUG-1262：哈希前文件被 Anki 删走 → 跳过该文件，整轮不炸', () async {
+    // 正常组照删；ghost 组的一个成员在「扫描列举之后、读内容之前」消失
+    // （模拟 Anki 媒体同步/媒体检查并发删文件）。修复前这里直接
+    // PathNotFoundException 把整轮炸掉。
+    writeMedia('a.jpg', <int>[1, 2, 3]);
+    writeMedia('bbbb.jpg', <int>[1, 2, 3]);
+    writeMedia('ghost1.bin', <int>[4, 4, 4, 4]);
+    writeMedia('ghost2.bin', <int>[4, 4, 4, 4]);
+    final _FakeAnkiConnectService service = _FakeAnkiConnectService(
+      mediaDirPath: mediaDir.path,
+      notes: <int, Map<String, String>>{
+        1: <String, String>{'Front': '<img src="bbbb.jpg">'},
+      },
+    );
+    final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
+
+    final AnkiMediaDedupReport? report = await repo.runMediaDedup(
+      // 进度在读文件**之前**上报：借它精确制造「列举到读之间被删」。
+      onProgress: (AnkiMediaDedupProgress p) {
+        if (p.stage == AnkiMediaDedupStage.hashing &&
+            p.currentFile == 'ghost2.bin') {
+          final File f =
+              File('${mediaDir.path}${Platform.pathSeparator}ghost2.bin');
+          if (f.existsSync()) f.deleteSync();
+        }
+      },
+    );
+
+    expect(report, isNotNull);
+    expect(report!.cancelled, isFalse);
+    // 消失的 ghost2 不进组：ghost1 安然无恙，正常组照常去重。
+    expect(report.deletions.map((MediaDedupDeletion d) => d.filename),
+        <String>['bbbb.jpg']);
+    expect(mediaExists('ghost1.bin'), isTrue);
+    expect(service.deleted, <String>['bbbb.jpg']);
+  });
+
+  test('BUG-1262：逐字节复核时副本已消失 → 跳过不删、不炸', () async {
+    writeMedia('a.jpg', <int>[1, 2, 3]);
+    writeMedia('bbbb.jpg', <int>[1, 2, 3]);
+    final _FakeAnkiConnectService service = _FakeAnkiConnectService(
+      mediaDirPath: mediaDir.path,
+      notes: <int, Map<String, String>>{
+        1: <String, String>{'Front': '<img src="bbbb.jpg">'},
+      },
+      // 哈希算完之后把副本删掉：复核读不到 → 保守跳过。
+      onFindNotes: () async =>
+          File('${mediaDir.path}${Platform.pathSeparator}bbbb.jpg')
+              .deleteSync(),
+    );
+    final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
+
+    final AnkiMediaDedupReport? report = await repo.runMediaDedup();
+
+    expect(report!.deletions, isEmpty);
+    expect(report.skipped, 1);
+    expect(service.deleted, isEmpty);
+    // 判定阶段就拦下：笔记一个字都没改。
+    expect(service.notes[1]!['Front'], '<img src="bbbb.jpg">');
+  });
+
+  test('BUG-1263：取消在副本边界干净生效，部分结果如实报告', () async {
+    // 两个独立重复组（大小不同不会混组）。第一份删完后请求取消：第二份必须
+    // 原封不动，报告 cancelled = true 且数字只覆盖已完成部分。
+    writeMedia('a.jpg', <int>[1, 2, 3]);
+    writeMedia('bbbb.jpg', <int>[1, 2, 3]);
+    writeMedia('c.png', <int>[5, 6, 7, 8]);
+    writeMedia('dddd.png', <int>[5, 6, 7, 8]);
+    final _FakeAnkiConnectService service = _FakeAnkiConnectService(
+      mediaDirPath: mediaDir.path,
+      notes: <int, Map<String, String>>{
+        1: <String, String>{'Front': '<img src="bbbb.jpg">'},
+        2: <String, String>{'Front': '<img src="dddd.png">'},
+      },
+    );
+    final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
+
+    final AnkiMediaDedupReport? report = await repo.runMediaDedup(
+      shouldCancel: () => service.deleted.isNotEmpty,
+    );
+
+    expect(report!.cancelled, isTrue);
+    expect(report.deletions, hasLength(1));
+    expect(service.deleted, hasLength(1));
+    // 两份副本恰好一份被删、一份完好（组处理顺序是文件名确定序，但断言不
+    // 依赖它）。
+    final int survivors =
+        <String>['bbbb.jpg', 'dddd.png'].where(mediaExists).length;
+    expect(survivors, 1);
+    expect(report.bytesSaved, report.deletions.single.bytes);
+  });
+
+  test('BUG-1263：进度按 scanning → hashing → resolving 推进且计数自洽', () async {
+    writeMedia('a.jpg', <int>[1, 2, 3]);
+    writeMedia('bbbb.jpg', <int>[1, 2, 3]);
+    final _FakeAnkiConnectService service = _FakeAnkiConnectService(
+      mediaDirPath: mediaDir.path,
+      notes: <int, Map<String, String>>{
+        1: <String, String>{'Front': '<img src="bbbb.jpg">'},
+      },
+    );
+    final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
+    final List<AnkiMediaDedupProgress> events = <AnkiMediaDedupProgress>[];
+
+    await repo.runMediaDedup(onProgress: events.add);
+
+    final List<AnkiMediaDedupStage> stages =
+        events.map((AnkiMediaDedupProgress p) => p.stage).toList();
+    // 阶段只前进不回退。
+    int rank(AnkiMediaDedupStage s) => AnkiMediaDedupStage.values.indexOf(s);
+    for (int i = 1; i < stages.length; i++) {
+      expect(rank(stages[i]), greaterThanOrEqualTo(rank(stages[i - 1])),
+          reason: '阶段回退：${stages[i - 1]} -> ${stages[i]}');
+    }
+    // 哈希阶段覆盖两个大小撞车候选。
+    final AnkiMediaDedupProgress lastHash = events.lastWhere(
+        (AnkiMediaDedupProgress p) => p.stage == AnkiMediaDedupStage.hashing);
+    expect(lastHash.total, 2);
+    // 末次事件是 resolving 完成态：1/1，已释放 3 字节。
+    final AnkiMediaDedupProgress last = events.last;
+    expect(last.stage, AnkiMediaDedupStage.resolving);
+    expect(last.done, 1);
+    expect(last.total, 1);
+    expect(last.bytesFreed, 3);
+  });
+
   test('journal 记下改写前的原值与删除条目（出事能还原）', () async {
     writeMedia('a.jpg', <int>[1, 2, 3]);
     writeMedia('bbbb.jpg', <int>[1, 2, 3]);

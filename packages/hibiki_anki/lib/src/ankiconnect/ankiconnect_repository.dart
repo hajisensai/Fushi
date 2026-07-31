@@ -1110,34 +1110,70 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       File('${mediaDir.path}${Platform.pathSeparator}$name');
 
   /// 媒体目录里每个文件的字节数（只 stat，不读内容）。
-  Future<Map<String, int>> _scanMediaSizes(Directory mediaDir) async {
+  ///
+  /// collection.media 是 **Anki 拥有的活目录**（媒体同步/媒体检查随时增删
+  /// 文件），列举与 stat 之间文件可能已消失——消失的文件当它从不存在，绝不
+  /// 让一个 FileSystemException 中止整轮（BUG-1262）。
+  Future<Map<String, int>> _scanMediaSizes(
+    Directory mediaDir, {
+    AnkiMediaDedupOnProgress? onProgress,
+  }) async {
     final Map<String, int> sizes = <String, int>{};
     await for (final FileSystemEntity entity
         in mediaDir.list(followLinks: false)) {
       if (entity is! File) continue;
       final String name = entity.uri.pathSegments.last;
       if (name.isEmpty) continue;
-      sizes[name] = await entity.length();
+      try {
+        sizes[name] = await entity.length();
+      } on FileSystemException {
+        continue;
+      }
+      if (sizes.length % 100 == 0) {
+        onProgress?.call(AnkiMediaDedupProgress(
+          stage: AnkiMediaDedupStage.scanning,
+          done: sizes.length,
+        ));
+      }
     }
     return sizes;
   }
 
   /// 只对「大小撞车」的候选算**全文件** sha256（大小不同不可能字节相同）。
   /// 判等永远是全文件哈希 + 删除前逐字节复核，绝不用截断哈希或感知哈希。
+  ///
+  /// 进度在**读文件之前**上报；扫描后被 Anki 删走的文件读不到就跳过（它既
+  /// 当不了保留份也轮不到被删），不中止整轮（BUG-1262）。
   Future<Map<String, String>> _hashSizeCollisions(
     Directory mediaDir,
-    Map<String, int> sizes,
-  ) async {
+    Map<String, int> sizes, {
+    AnkiMediaDedupOnProgress? onProgress,
+    bool Function()? shouldCancel,
+  }) async {
     final Map<int, List<String>> bySize = <int, List<String>>{};
     sizes.forEach(
         (String n, int s) => bySize.putIfAbsent(s, () => <String>[]).add(n));
+    final List<String> candidates = <String>[
+      for (final List<String> names in bySize.values)
+        if (names.length >= 2) ...names,
+    ];
     final Map<String, String> nameToHash = <String, String>{};
-    for (final MapEntry<int, List<String>> entry in bySize.entries) {
-      if (entry.value.length < 2) continue;
-      for (final String name in entry.value) {
+    int done = 0;
+    for (final String name in candidates) {
+      if (shouldCancel?.call() ?? false) break;
+      onProgress?.call(AnkiMediaDedupProgress(
+        stage: AnkiMediaDedupStage.hashing,
+        done: done,
+        total: candidates.length,
+        currentFile: name,
+      ));
+      try {
         final Uint8List bytes = await _mediaFile(mediaDir, name).readAsBytes();
         nameToHash[name] = crypto.sha256.convert(bytes).toString();
+      } on FileSystemException {
+        // 消失的文件不进哈希表 → 不进任何组。
       }
+      done++;
     }
     return nameToHash;
   }
@@ -1157,9 +1193,12 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final Map<String, String> out = <String, String>{};
     for (final String name in names) {
       if (!isReferencingMediaFile(name)) continue;
-      final File file = _mediaFile(mediaDir, name);
-      if (!file.existsSync()) continue;
-      out[name] = utf8.decode(await file.readAsBytes(), allowMalformed: true);
+      try {
+        out[name] = utf8.decode(await _mediaFile(mediaDir, name).readAsBytes(),
+            allowMalformed: true);
+      } on FileSystemException {
+        // 扫描后被删走：没有正文就没有引用，跳过（BUG-1262）。
+      }
     }
     return out;
   }
@@ -1167,17 +1206,21 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// 删除前的最后一道闸：把副本与保留份**逐字节**比一遍。
   ///
   /// 哈希已经是全文件 sha256，这一步兜的是「扫描完到删除前文件被改动」的时间
-  /// 差，以及任何哈希实现被换弱时的兜底。读不到或有一个字节不同就绝不删。
+  /// 差，以及任何哈希实现被换弱时的兜底。读不到（含 exists 判断后被删走的
+  /// TOCTOU）或有一个字节不同就绝不删，也绝不抛异常中止整轮（BUG-1262）。
   Future<bool> _mediaBytesIdentical(
     Directory mediaDir,
     String a,
     String b,
   ) async {
-    final File fa = _mediaFile(mediaDir, a);
-    final File fb = _mediaFile(mediaDir, b);
-    if (!fa.existsSync() || !fb.existsSync()) return false;
-    final Uint8List ba = await fa.readAsBytes();
-    final Uint8List bb = await fb.readAsBytes();
+    final Uint8List ba;
+    final Uint8List bb;
+    try {
+      ba = await _mediaFile(mediaDir, a).readAsBytes();
+      bb = await _mediaFile(mediaDir, b).readAsBytes();
+    } on FileSystemException {
+      return false;
+    }
     if (ba.length != bb.length) return false;
     for (int i = 0; i < ba.length; i++) {
       if (ba[i] != bb[i]) return false;
@@ -1254,6 +1297,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   Future<AnkiMediaDedupReport?> runMediaDedup({
     bool dryRun = false,
     Future<void> Function(Map<String, dynamic> entry)? onJournal,
+    AnkiMediaDedupOnProgress? onProgress,
+    bool Function()? shouldCancel,
   }) async {
     final AnkiConnectService service = await _getService();
     final String mediaPath = await service.getMediaDirPath();
@@ -1262,11 +1307,30 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     // 盲扫错误目录。
     if (!mediaDir.existsSync()) return null;
 
-    final Map<String, int> sizes = await _scanMediaSizes(mediaDir);
+    bool cancelled = false;
+    bool checkCancel() =>
+        cancelled = cancelled || (shouldCancel?.call() ?? false);
+
+    onProgress?.call(
+        const AnkiMediaDedupProgress(stage: AnkiMediaDedupStage.scanning));
+    final Map<String, int> sizes =
+        await _scanMediaSizes(mediaDir, onProgress: onProgress);
     final List<MediaDedupGroup> groups = planMediaDedupGroups(
-      await _hashSizeCollisions(mediaDir, sizes),
+      await _hashSizeCollisions(mediaDir, sizes,
+          onProgress: onProgress, shouldCancel: shouldCancel),
       sizes: sizes,
     );
+    if (checkCancel()) {
+      return AnkiMediaDedupReport(
+        dryRun: dryRun,
+        groupCount: groups.length,
+        deletions: const <MediaDedupDeletion>[],
+        notesRewritten: 0,
+        modelsRewritten: 0,
+        skipped: 0,
+        cancelled: true,
+      );
+    }
     // 媒体文件**内部**的引用只作为「不许删」的证据：本轮不改写媒体正文，
     // 所以只要还有人从里面引用，这份副本就留着。
     final Map<String, String> referencingMedia =
@@ -1287,8 +1351,24 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final Set<int> notesRewritten = <int>{};
     final Set<String> modelsRewritten = <String>{};
 
+    final int totalDupes = groups.fold<int>(
+        0, (int sum, MediaDedupGroup g) => sum + g.duplicates.length);
+    int processedDupes = 0;
+    int bytesFreed = 0;
+
+    outer:
     for (final MediaDedupGroup group in groups) {
       for (final String dupe in group.duplicates) {
+        // 取消在副本边界生效：当前副本要么完整处理、要么完全没动，绝不半截。
+        if (checkCancel()) break outer;
+        onProgress?.call(AnkiMediaDedupProgress(
+          stage: AnkiMediaDedupStage.resolving,
+          done: processedDupes,
+          total: totalDupes,
+          currentFile: dupe,
+          bytesFreed: bytesFreed,
+        ));
+        processedDupes++;
         // ── 阶段一：全部判定与计划，一个字节都不写 ────────────────────
         // 顺序是刻意的：先把所有「不许删」的证据收齐再动手。上一版把模板/
         // styling 改写放在判定之前，跳过删除时已经把 Anki 端改脏了（Lapis
@@ -1330,6 +1410,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
         if (dryRun) {
           deletions.add(planned);
+          bytesFreed += planned.bytes;
           notesRewritten.addAll(notePlan.keys);
           modelsRewritten.addAll(
               _modelsReferencing(modelNames, modelTemplates, modelCss, dupe));
@@ -1410,9 +1491,16 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         });
         await service.deleteMediaFile(dupe);
         deletions.add(planned);
+        bytesFreed += planned.bytes;
       }
     }
 
+    onProgress?.call(AnkiMediaDedupProgress(
+      stage: AnkiMediaDedupStage.resolving,
+      done: processedDupes,
+      total: totalDupes,
+      bytesFreed: bytesFreed,
+    ));
     return AnkiMediaDedupReport(
       dryRun: dryRun,
       groupCount: groups.length,
@@ -1420,6 +1508,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       notesRewritten: notesRewritten.length,
       modelsRewritten: modelsRewritten.length,
       skipped: skippedCount,
+      cancelled: cancelled,
     );
   }
 
