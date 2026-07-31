@@ -33,8 +33,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1315](bugs/BUG-1315-texthooker-threadless-lines-never-published.md) | ✅ | ✅ | 未选线程门控把无线程身份的行（WebSocket/Textractor 端点）永久丢弃 |
 | [BUG-1311](bugs/BUG-1311-interconnect-service-config-403-on-plaintext.md) | ✅ | ✅ | 互联同步每轮都报「认证失败」：明文 host 上无条件请求 service-config |
-| [BUG-1309](bugs/BUG-1309-texthooker-threadless-lines-never-published.md) | ✅ | ✅ | 未选线程门控把无线程身份的行（WebSocket/Textractor 端点）永久丢弃 |
 | [BUG-1305](bugs/BUG-1305-delete-confirm-disclosure.md) | ✅ | ✅ | 删除确认文案与真实删除范围对不上（书架递归删解压目录+有声书；合集正文说反话） |
 | [BUG-1304](bugs/BUG-1304-engine-freq-pitch-enrich-before-truncate.md) | ✅ | ✅ | 词典引擎 freq/pitch 在截断前富化：中间结果被重复富化约 3 倍（实测微优化，非秒级根因） |
 | [BUG-1303](bugs/BUG-1303-hoshidicts-hash-probe-unbounded.md) | ✅ | ✅ | 词典 hash 探测无界循环 + load() 零边界校验：损坏词典可致查词永久挂死/越界读 |

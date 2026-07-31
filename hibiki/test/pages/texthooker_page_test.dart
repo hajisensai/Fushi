@@ -139,7 +139,7 @@ void main() {
     expect(find.textContaining('坏'), findsNothing);
   });
 
-  testWidgets('BUG-1309：无线程身份的行不受线程选择门控，未选线程也必须发布',
+  testWidgets('BUG-1315：无线程身份的行不受线程选择门控，未选线程也必须发布',
       (WidgetTester tester) async {
     // 带线程身份的行：v12 起未被显式选中就不发布。
     TexthookerService.instance.appendLine(

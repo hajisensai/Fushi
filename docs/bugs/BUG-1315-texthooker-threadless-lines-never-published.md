@@ -1,4 +1,4 @@
-## BUG-1309 · 未选线程门控把无线程身份的行（WebSocket/Textractor 端点）永久丢弃
+## BUG-1315 · 未选线程门控把无线程身份的行（WebSocket/Textractor 端点）永久丢弃
 - **报告**：2026-08-01（用户：develop 全量体检，主行=2452 第①②④组）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/mining/gal_hook_session_controller.dart:678-690`
   （修复前）的 `workbenchLines`：`if (selectedKey == null) return const <TexthookerLineEntry>[];`
@@ -24,7 +24,7 @@
   带线程身份的行仍须 `key == selectedKey`（BUG-1193 契约逐字保持），
   无线程身份的行无条件放行。四种组合由一条谓词覆盖，特殊情况消失。
 - **[x] ② 已加自动化测试** — `hibiki/test/pages/texthooker_page_test.dart`
-  新增「BUG-1309：无线程身份的行不受线程选择门控，未选线程也必须发布」：
+  新增「BUG-1315：无线程身份的行不受线程选择门控，未选线程也必须发布」：
   同一页面同时喂一条带 `textThreadKey` 的 hook 行和一条 WebSocket 行，
   断言前者**不可见**（守住 BUG-1193）、后者**可见**（守住本 bug）。
   两条断言同在一个用例里，任一方向的回归都会红。
