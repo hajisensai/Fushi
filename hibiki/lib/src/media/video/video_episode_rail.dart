@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/misc/platform_utils.dart';
 
 /// 横向剧集轨道的一条展示数据。
 ///
@@ -96,21 +97,34 @@ class _VideoEpisodeRailState extends State<VideoEpisodeRail> {
     final double cardHeight = widget.cardWidth * 9 / 16;
     return SizedBox(
       height: cardHeight,
-      child: ListView.separated(
+      // 剧集轨是横向滚动区，桌面上两条输入都得显式接通（BUG-1306）：
+      // * [WheelToHorizontalScroll]：物理滚轮发的是 (0, dy)，而 Scrollable 按自身轴
+      //   取分量（横向只取 dx），裸滚轮对横向区完全没反应（BUG-1214）；
+      // * [HorizontalDragScrollable]：默认 MaterialScrollBehavior 的 dragDevices
+      //   不含鼠标，按住左键左右拖毫无反应（用户实报）。
+      // 合集横排行 / 标签栏 / 首页横排早已包了这两件，本轨此前漏包 —— 同样的横向
+      // 滚动区在库页能拖、进了详情页就拖不动。
+      child: WheelToHorizontalScroll(
         controller: _controller,
-        scrollDirection: Axis.horizontal,
-        padding: widget.padding,
-        itemCount: widget.episodes.length,
-        separatorBuilder: (_, __) => const SizedBox(width: _gap),
-        itemBuilder: (BuildContext context, int index) => _EpisodeRailCard(
-          key: ValueKey<String>('video-episode-card-$index'),
-          entry: widget.episodes[index],
-          index: index,
-          selected: index == widget.currentIndex,
-          width: widget.cardWidth,
-          fontSize: widget.fontSize,
-          colorScheme: widget.colorScheme,
-          onTap: () => widget.onTapEpisode(index),
+        child: HorizontalDragScrollable(
+          child: ListView.separated(
+            controller: _controller,
+            scrollDirection: Axis.horizontal,
+            physics: desktopAwareScrollPhysics(),
+            padding: widget.padding,
+            itemCount: widget.episodes.length,
+            separatorBuilder: (_, __) => const SizedBox(width: _gap),
+            itemBuilder: (BuildContext context, int index) => _EpisodeRailCard(
+              key: ValueKey<String>('video-episode-card-$index'),
+              entry: widget.episodes[index],
+              index: index,
+              selected: index == widget.currentIndex,
+              width: widget.cardWidth,
+              fontSize: widget.fontSize,
+              colorScheme: widget.colorScheme,
+              onTap: () => widget.onTapEpisode(index),
+            ),
+          ),
         ),
       ),
     );

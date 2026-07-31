@@ -14,6 +14,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/metadata/credential_redaction.dart';
 import 'package:hibiki/src/media/video/cover_ui/cover_match_dialog.dart';
 import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
+import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
 import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
@@ -626,8 +627,11 @@ void main() {
       collection: CoverMatchCollectionTarget(
         id: collectionId,
         name: '我的合集',
-        applyCover: (String coverPath) =>
-            db.updateMediaCollectionCoverPath(collectionId, coverPath),
+        // BUG-1305 起注入的是整份刮削产物（封面 + 横版背景 + 条目资料），生产落库
+        // 走 applyCollectionScrape。本用例锁的仍是 BUG-1211 那条不变量：合集入口
+        // 只写合集自己，成员一个不碰。
+        applyScrape: (CollectionScrapeResult result) =>
+            applyCollectionScrape(db, collectionId, result),
       ),
     )));
     await tester.pumpAndSettle();
