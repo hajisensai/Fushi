@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 
 /// BUG-717 ②：内联 popup HTML（Windows/iOS 路径，约 300KB 含 69KB css）此前在
@@ -70,22 +71,39 @@ void main() {
         reason: '资产重装载必须清空 HTML memo，不得回吐旧 css 的产物');
   });
 
-  test('host navigation bridge is gated, idempotent, and captures page keys',
-      () {
-    final String enabled =
-        DictionaryPopupWebViewState.debugHostNavigationKeyScript(true);
-    final String disabled =
-        DictionaryPopupWebViewState.debugHostNavigationKeyScript(false);
+  test('popup input bridge carries the host spec and stays idempotent', () {
+    // BUG-1071 复诉：旧桥的键表硬编码 ArrowLeft/ArrowRight/Escape、且被
+    // capturesDictionaryPopupNavigationKeys 门控成漫画页专属，阅读器/视频页压根没装
+    // ——「关闭词典」的鼠标键与快捷键在弹窗持焦时因此全无反应。现在表由宿主按注册表
+    // 当前绑定下发。行为面（谁被转发、改键跟不跟随）由 test/focus/
+    // webview_key_bridge_behavior_test.dart 真跑 JS 验证，这里只锁注入面。
+    final String bound = DictionaryPopupWebViewState.debugHostInputBridgeScript(
+      const DictionaryPopupInputSpec(
+        keyTokens: <String>['Escape', 'Ctrl+KeyD'],
+        mouseButtons: <int>[3],
+      ),
+    );
+    final String empty = DictionaryPopupWebViewState.debugHostInputBridgeScript(
+      const DictionaryPopupInputSpec(),
+    );
 
-    expect(enabled, contains('__hibikiHostNavigationKeysEnabled = true'));
-    expect(disabled, contains('__hibikiHostNavigationKeysEnabled = false'));
-    expect(enabled, contains('__hibikiHostNavigationKeysInstalled'));
-    expect(enabled, contains("'ArrowLeft'"));
-    expect(enabled, contains("'ArrowRight'"));
-    expect(enabled, contains("'Escape'"));
-    expect(enabled, contains('preventDefault()'));
-    expect(enabled, contains('stopImmediatePropagation()'));
-    expect(enabled, contains("callHandler('hostNavigationKey', key)"));
-    expect(enabled, contains("addEventListener('keydown'"));
+    expect(bound, contains("'Escape', 'Ctrl+KeyD'"),
+        reason: '宿主声明的键（含组合键）必须原样进表');
+    expect(bound,
+        contains("window['__hoshiKeyBridgeButtons_hostInputToken'] = [3]"),
+        reason: '鼠标绑定必须进表——弹窗表面此前完全没有非左键通道');
+    expect(
+        empty, contains("window['__hoshiKeyBridgeKeys_hostInputToken'] = []"),
+        reason: '空表也要下发，用于清掉热槽 WebView 上残留的旧表');
+    expect(
+        bound, contains("window['__hoshiKeyBridgeInstalled_hostInputToken']"),
+        reason: '幂等安装守卫：热槽反复注入不得叠加 listener');
+    expect(bound, contains('if (e.repeat) return;'),
+        reason: '按住关词典键不该逐层关掉整条弹窗栈');
+    expect(bound, contains('stopImmediatePropagation()'),
+        reason: '交给宿主的输入不能再被 popup.js 自己的监听二次响应');
+    expect(bound, contains("callHandler('hostInputToken', _hit)"));
+    expect(bound, contains("addEventListener('keydown'"));
+    expect(bound, contains("addEventListener('mousedown'"));
   });
 }

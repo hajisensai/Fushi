@@ -1446,9 +1446,17 @@ function showMinedCardActionPanel(matches, options) {
                 if (!busy) finish({ action: 'cancel' });
             }
         };
+        // BUG-1269：宿主页面（阅读器/漫画/视频）往弹窗里装了一座 capture 阶段的输入桥，
+        // 把绑到「关闭词典」等动作的键与鼠标键交回宿主。那座桥在 onLoadStop 就注册，比
+        // 本面板的 capture 监听早得多——不声明「模态开着」它就会抢在上面这个 onKey 前面
+        // 吃掉 Esc，于是用户想关面板却把整个查词窗关了（正是上面那行注释要防的事）。
+        // 深度计数而非布尔：面板可能叠开（↗ 多卡选择套在 ✓ 操作单之上）。
+        window.__hoshiPopupModalDepth = (window.__hoshiPopupModalDepth || 0) + 1;
         const finish = (result) => {
             if (settled) return;
             settled = true;
+            window.__hoshiPopupModalDepth =
+                Math.max(0, (window.__hoshiPopupModalDepth || 1) - 1);
             document.removeEventListener('keydown', onKey, true);
             backdrop.remove();
             if (ownsDocument) rootEl.classList.remove(MINED_ACTION_OPEN_CLASS);

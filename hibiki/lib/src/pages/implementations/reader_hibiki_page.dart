@@ -3088,6 +3088,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
   }
 
+  /// BUG-1071 复诉：上面的焦点 reclaim 只在**弹窗渲染那一刻**成立。用户与弹窗交互
+  /// 一次（滚动看释义 / 点释义 / 点发音）OS 焦点就回到原生 WebView，之后按键必然
+  /// 再次失效；而绑到「关闭词典」的**鼠标键**从一开始就只有 `onPointerSeek` 一个
+  /// 消费者，只覆盖「点在弹窗矩形之外的正文区」——点词后弹窗恰好贴在光标旁，按侧键
+  /// 时指针几乎必然落在弹窗上，事件被弹窗吃掉，全程无反应。
+  ///
+  /// 故让弹窗自己把这些输入交回来：键盘与鼠标同一条通道，token 表由注册表当前绑定
+  /// 实时导出（改键立即生效）。
+  @override
+  ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.reader;
+
+  @override
+  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
+      const <ShortcutAction>{ShortcutAction.readerDismissDict};
+
   // ── DictionaryCaretHost ───────────────────────────────────────────
   // The reader is the host for its [_caret] state machine: it supplies the
   // popup-stack view and the `setState` / reader-ring side effects, while the

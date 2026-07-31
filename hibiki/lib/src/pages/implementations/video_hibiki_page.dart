@@ -111,6 +111,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult, DictionaryPopupWebViewState;
@@ -4029,6 +4030,34 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 同款逐层关调用，index 0 保留隐藏热槽 BUG-092）。键盘 / 手柄 / 裸空格三条输入通道在
   /// 浮层可见时统一调它先关浮层。
   void _dismissTopVisiblePopup() => _popNestedPopupAt(_topVisiblePopupIndex);
+
+  /// BUG-1269：上面那三条输入通道全部走 Flutter 焦点，而词典浮层是**纯原生 WebView**
+  /// ——点词后浮层就贴在光标旁，指针一落上去，键盘与鼠标事件就只存在于浮层 DOM 里，
+  /// 这三条通道一条都收不到。于是「视频里关不掉词典」在浮层持焦时原样复发（BUG-924
+  /// 只修好了 Flutter 持焦的那一半）。让浮层自己把这些输入交回来。
+  @override
+  ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.video;
+
+  /// 与 [guardVideoShortcutsWithPopupDismiss] 同语义：浮层可见时**任一**已映射的视频
+  /// 快捷键都先关顶层浮层。故整份 video scope 都要转发——弹窗内动作
+  /// （dictionaryPopup scope 的切词条 / 制卡）由 [dictionaryPopupInputSpecFor] 统一减掉，
+  /// 不会被抢走，与守卫把制卡键排在守卫之外是同一条边界。
+  @override
+  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
+      ShortcutAction.actionsForScope(ShortcutScope.video).toSet();
+
+  /// 视频的语义是「关**顶层**浮层」（逐层关，保留隐藏热槽 BUG-092），不是清整栈，
+  /// 故不走基类默认的 `clearDictionaryResult()`，改用与守卫完全同一个执行体。
+  @override
+  void onDictionaryPopupInputToken(String token) {
+    final ShortcutAction? action = resolveDictionaryPopupInputToken(
+      registry: appModel.shortcutRegistry,
+      token: token,
+      scope: ShortcutScope.video,
+    );
+    if (action == null) return;
+    _dismissTopVisiblePopup();
+  }
 
   /// TODO-1342：视频播放器动作回调集合的单一构造点。键盘
   /// （[buildVideoPlayerShortcutsFromRegistry]）与手柄（[_handleVideoGamepadButton]
