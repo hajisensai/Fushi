@@ -166,13 +166,14 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @protected
   void onDismissBarrierPointerSignal(PointerSignalEvent event) {}
 
-  /// 本页面的快捷键作用域。非空即启用「弹窗内输入交回宿主」的桥
-  /// （[dictionaryPopupForwardedActions] 决定交回哪些）。
+  /// 本页面的快捷键作用域。非空即启用「弹窗内输入交回宿主」的桥，交回的是这个
+  /// scope 的**全部**绑定（见 [dictionaryPopupInputSpec]）。
   ///
   /// 词典弹窗是纯原生 WebView：指针落在它上面时，键盘与鼠标事件只存在于弹窗 DOM
   /// 里，宿主的 Flutter `Focus` / `Listener` 一个都收不到。点词后弹窗恰好贴在光标
   /// 旁，所以这是常态——不装这座桥，「关闭词典」的鼠标键永远无反应、快捷键则在与
-  /// 弹窗交互过一次之后失效（BUG-1071 复诉的两个症状）。
+  /// 弹窗交互过一次之后失效（BUG-1071 复诉的两个症状），而**同一条通道上的其余
+  /// 快捷键**（翻页 / 有声书控制 / 播放暂停）同样全部落空。
   @protected
   ShortcutScope? get dictionaryPopupInputScope => null;
 
