@@ -417,9 +417,15 @@ class AnimeDownloadService {
       final (List<String> videos, _) = _classifyContent(plan, info, files);
       if (videos.isEmpty) return false;
       if (!info.isComplete) {
+        // BUG-1296：这里手上就有完整快照，必须把观测值一起带上。`_publishProgress`
+        // 是无条件覆盖 `downloadStats`，只传进度等于把**全表**的速度/流量清空，
+        // 任务行要一直等到下一轮 tick 才恢复。
         _publishProgress(<String, double>{
           ...downloadProgress.value,
           plan.id: info.progress.clamp(0.0, 1.0).toDouble(),
+        }, <String, DownloadTaskStats>{
+          ...downloadStats.value,
+          plan.id: DownloadTaskStats.fromSnapshot(info),
         });
       }
       await _finishPlan(
