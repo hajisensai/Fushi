@@ -185,8 +185,7 @@ void main() {
 
     final double at1x = await travel(1.0);
     final double at2x = await travel(2.0);
-    expect(at2x, greaterThan(at1x),
-        reason: '倍速时按帧外推更快，弹幕单帧左移更远');
+    expect(at2x, greaterThan(at1x), reason: '倍速时按帧外推更快，弹幕单帧左移更远');
   });
 
   testWidgets('scroll danmaku is monotonic: backward raw jitter never reverses',
@@ -214,8 +213,65 @@ void main() {
     raw = 1950; // 播放器时钟小幅回退（<1s，非 seek）
     await tester.pump(const Duration(milliseconds: 16));
     final double l2 = scrollLeft(tester, 'x');
-    expect(l2, lessThanOrEqualTo(l1),
-        reason: 'raw 小幅回退时弹幕只进不退（消除来回跳动）');
+    expect(l2, lessThanOrEqualTo(l1), reason: 'raw 小幅回退时弹幕只进不退（消除来回跳动）');
+  });
+
+  testWidgets('scroll danmaku has left the viewport on its last rendered frame',
+      (WidgetTester tester) async {
+    // BUG-1297：在**真实渲染宽度**上验证退场——弹幕停止渲染的那一帧，它的文本框
+    // 必须已经整体越过视口左边界，而不是右半截还挂在画面里被整条抹掉。
+    const String text = 'とても長いコメントですとても長いコメントです';
+    await _pump(
+      tester,
+      VideoDanmakuOverlay(
+        items: <VideoDanmakuItem>[_item(0, text)],
+        enabled: true,
+        maxActive: 20,
+        // 暂停：插值冻结在真值，几何完全由 positionMs 决定。
+        positionMs: () => 8000,
+        isPlaying: () => false,
+        speed: () => 1.0,
+      ),
+    );
+
+    final Rect viewport = tester.getRect(find.byType(VideoDanmakuOverlay));
+    final Rect rendered = tester.getRect(find.text(text));
+    expect(
+      rendered.right,
+      lessThanOrEqualTo(viewport.left + 0.01),
+      reason: '最后一帧文本右边缘应已越过视口左边界，下一帧移出活动集才不会突兀',
+    );
+  });
+
+  testWidgets('scroll danmaku stays fully opaque all the way out',
+      (WidgetTester tester) async {
+    Future<double> opacityAt(int positionMs) async {
+      await _pump(
+        tester,
+        VideoDanmakuOverlay(
+          items: <VideoDanmakuItem>[_item(0, 'コメント')],
+          enabled: true,
+          maxActive: 20,
+          positionMs: () => positionMs,
+          isPlaying: () => false,
+          speed: () => 1.0,
+        ),
+      );
+      return tester
+          .widget<Opacity>(
+            find
+                .ancestor(
+                  of: find.text('コメント'),
+                  matching: find.byType(Opacity),
+                )
+                .first,
+          )
+          .opacity;
+    }
+
+    expect(await opacityAt(4000), 1.0);
+    expect(await opacityAt(7600), 1.0, reason: '旧实现在此处已开始渐隐（progress>0.88）');
+    expect(await opacityAt(8000), 1.0, reason: '退场靠位移，不靠渐隐');
   });
 
   testWidgets('large backward raw (seek) re-aligns danmaku position',
@@ -237,7 +293,6 @@ void main() {
     raw = 1000;
     await tester.pump(const Duration(milliseconds: 16));
     final double after = scrollLeft(tester, 'x');
-    expect(after, greaterThan(before),
-        reason: 'seek 回退是真正的位置跳变，弹幕对齐真值（更靠右）');
+    expect(after, greaterThan(before), reason: 'seek 回退是真正的位置跳变，弹幕对齐真值（更靠右）');
   });
 }
