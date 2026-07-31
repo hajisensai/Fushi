@@ -99,8 +99,15 @@ class _ScrapeBatchDialogState extends State<ScrapeBatchDialog> {
       summary = await widget.runner((ScrapeBatchProgress progress) {
         if (mounted) setState(() => _progress = progress);
       });
-    } catch (_) {
-      summary = const ScrapeBatchSummary(failed: 1);
+    } catch (e, stack) {
+      // 各域 runner 的逐项异常已在内层 try 里计成 failed；能抛到这里的是收尾
+      // 动作（刷新 provider / 重建页面）或流本身。旧实现直接拿
+      // `ScrapeBatchSummary(failed: 1)` 盖掉累计值：500 本已真实写盘，收尾报错就
+      // 成了「应用 0 / 失败 1」，计数与真实写入彻底脱节。这里以最后一次进度
+      // 回调的累计值为准（它只在逐项落定后上报），不再凭空造一个
+      // failed——四类计数只描述条目，非条目级异常走错误日志。
+      ErrorLogService.instance.log('ScrapeBatchDialog.run', e, stack);
+      summary = _progress?.summary ?? const ScrapeBatchSummary();
     }
     if (!mounted) return;
     setState(() {

@@ -171,16 +171,18 @@ Future<void> _downloadScrapedCover({
   final String? coverUrl = (draft.coverUrl?.trim().isNotEmpty ?? false)
       ? draft.coverUrl
       : candidate.coverUrl;
-  final String? existingPath = repo.byId(gameId)?.coverPath;
-  final bool hasUsableCoverFile = existingPath != null &&
-      existingPath.isNotEmpty &&
-      await File(existingPath).exists();
-  final bool shouldDownload = replaceExistingCover
-      ? shouldDownloadExplicitScrapedCover(coverUrl: coverUrl)
-      : shouldAutoDownloadScrapedCover(
-          hasUsableCoverFile: hasUsableCoverFile,
-          coverUrl: coverUrl,
-        );
+  final bool shouldDownload;
+  if (replaceExistingCover) {
+    shouldDownload = shouldDownloadExplicitScrapedCover(coverUrl: coverUrl);
+  } else {
+    final String? existingPath = repo.byId(gameId)?.coverPath;
+    shouldDownload = shouldAutoDownloadScrapedCover(
+      hasUsableCoverFile: existingPath != null &&
+          existingPath.isNotEmpty &&
+          await File(existingPath).exists(),
+      coverUrl: coverUrl,
+    );
+  }
   if (!shouldDownload) return;
   final String? saved = await downloadGalgameCoverToFile(
     gameId: gameId,
