@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
+import 'package:hibiki/src/media/video/video_danmaku_text_metrics.dart';
 
 @immutable
 class VideoDanmakuLayoutEntry {
@@ -11,12 +12,18 @@ class VideoDanmakuLayoutEntry {
     required this.item,
     required this.lane,
     required this.position,
+    required this.width,
     required this.opacity,
   });
 
   final VideoDanmakuItem item;
   final int lane;
   final Offset position;
+
+  /// 文本实测渲染宽度（px）。滚动弹幕右边缘 = `position.dx + width`，是判断
+  /// 「是否真的滑出视口」的唯一依据。
+  final double width;
+
   final double opacity;
 }
 
@@ -44,7 +51,10 @@ class VideoDanmakuLayout {
     Duration fixedDuration = kDefaultVideoDanmakuFixedDuration,
     double fontScale = 1.0,
     double areaFraction = 1.0,
+    VideoDanmakuTextMetrics? metrics,
   }) {
+    final VideoDanmakuTextMetrics textMetrics =
+        metrics ?? VideoDanmakuTextMetrics.shared;
     if (items.isEmpty ||
         viewportSize.width <= 0 ||
         viewportSize.height <= 0 ||
@@ -114,11 +124,12 @@ class VideoDanmakuLayout {
         scrollDuration,
         fixedDuration,
       );
+      // 实测渲染宽度（非估算）：滚动弹幕的行程是「视口宽 + 自身宽」，progress 走到
+      // 1 的同一刻它离开活动集，所以宽度算少了就会在文本右半截还可见时被整条抹掉。
+      final double width = textMetrics.widthOf(activeItem.item.text, fontScale);
       final double x = switch (activeItem.item.mode) {
-        VideoDanmakuMode.scroll => viewportSize.width -
-            (viewportSize.width +
-                    _estimatedWidth(activeItem.item.text, fontScale)) *
-                progress,
+        VideoDanmakuMode.scroll =>
+          viewportSize.width - (viewportSize.width + width) * progress,
         VideoDanmakuMode.top => viewportSize.width * 0.5,
         VideoDanmakuMode.bottom => viewportSize.width * 0.5,
       };
@@ -129,7 +140,8 @@ class VideoDanmakuLayout {
         item: activeItem.item,
         lane: lane,
         position: Offset(x, y),
-        opacity: _opacityFor(progress),
+        width: width,
+        opacity: _opacityFor(activeItem.item.mode, progress),
       ));
       nextFreeMs[lane] = activeItem.item.startMs + 900;
     }
@@ -166,13 +178,16 @@ class VideoDanmakuLayout {
     return (activeItem.elapsedMs / durationMs).clamp(0.0, 1.0).toDouble();
   }
 
-  static double _opacityFor(double progress) {
+  /// 末段淡出**只属于固定弹幕**（top/bottom）：它们不移动，不淡出就是凭空消失。
+  ///
+  /// 滚动弹幕恒为不透明，靠位移一路滑到视口左侧之外、由 Stack 裁掉——这才是自然的
+  /// 退场。旧实现对滚动弹幕也套同一条淡出曲线，而 `progress = 0.88` 时短弹幕往往
+  /// 还在画面里（`x = 视口宽 - (视口宽 + 文本宽) * 0.88`），于是它在屏幕中间就渐隐没了。
+  static double _opacityFor(VideoDanmakuMode mode, double progress) {
+    if (mode == VideoDanmakuMode.scroll) return 1;
     if (progress < 0.88) return 1;
     return ((1 - progress) / 0.12).clamp(0.0, 1.0).toDouble();
   }
-
-  static double _estimatedWidth(String text, double fontScale) =>
-      (text.runes.length * 18.0 * fontScale).clamp(36.0, 720.0).toDouble();
 
   /// 二分（lowerBound）：在按 startMs 升序的 [items] 中返回第一个
   /// `startMs >= target` 的下标；不存在则返回 `items.length`。
