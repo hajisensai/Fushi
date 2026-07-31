@@ -770,10 +770,10 @@ class _BookImportDialogState extends State<BookImportDialog>
   // ── 导入 ────────────────────────────────────────────────────────────────
 
   /// 同名书弹窗回调，喂给 [EpubImporter]。是→加后缀，否/关闭→取消这本书。
-  Future<DuplicateTitleResolution> _onDuplicateTitle(
+  Future<DuplicateChoice> _askOnDuplicate(
     String proposedTitle,
   ) async {
-    if (!mounted) return DuplicateTitleResolution.cancel;
+    if (!mounted) return DuplicateChoice.cancel;
     final bool? keep = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
@@ -791,9 +791,7 @@ class _BookImportDialogState extends State<BookImportDialog>
         ],
       ),
     );
-    return keep == true
-        ? DuplicateTitleResolution.addSuffix
-        : DuplicateTitleResolution.cancel;
+    return keep == true ? DuplicateChoice.suffix : DuplicateChoice.cancel;
   }
 
   Future<void> _doImport() async {
@@ -890,7 +888,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           db: widget.db,
           filePath: epubPath,
           fileName: '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub',
-          onDuplicateTitle: _onDuplicateTitle,
+          policy: DuplicatePolicy.ask(_askOnDuplicate),
         );
         debugPrint(
             '[hibiki-import] subtitleBook: EPUB import done, key=$bookKey');
@@ -992,7 +990,7 @@ class _BookImportDialogState extends State<BookImportDialog>
         filePath: _epubPath!,
         fileName: _epubName ?? p.basename(_epubPath!),
         title: title,
-        onDuplicateTitle: _onDuplicateTitle,
+        policy: DuplicatePolicy.ask(_askOnDuplicate),
       );
       reportProgress(1, t.import_step_done);
       return;
@@ -1010,7 +1008,7 @@ class _BookImportDialogState extends State<BookImportDialog>
         db: widget.db,
         bytes: bytes,
         fileName: filename,
-        onDuplicateTitle: _onDuplicateTitle,
+        policy: DuplicatePolicy.ask(_askOnDuplicate),
       );
     } else {
       reportProgress(0.5, t.import_step_importing_epub);
@@ -1018,7 +1016,7 @@ class _BookImportDialogState extends State<BookImportDialog>
         db: widget.db,
         filePath: _epubPath!,
         fileName: _epubName ?? p.basename(_epubPath!),
-        onDuplicateTitle: _onDuplicateTitle,
+        policy: DuplicatePolicy.ask(_askOnDuplicate),
       );
     }
 
@@ -1053,7 +1051,7 @@ class _BookImportDialogState extends State<BookImportDialog>
         db: widget.db,
         bytes: importBytes,
         fileName: importFilename,
-        onDuplicateTitle: _onDuplicateTitle,
+        policy: DuplicatePolicy.ask(_askOnDuplicate),
       );
     } else {
       reportProgress(0.2, t.import_step_importing_epub);
@@ -1061,7 +1059,7 @@ class _BookImportDialogState extends State<BookImportDialog>
         db: widget.db,
         filePath: _epubPath!,
         fileName: _epubName ?? p.basename(_epubPath!),
-        onDuplicateTitle: _onDuplicateTitle,
+        policy: DuplicatePolicy.ask(_askOnDuplicate),
       );
     }
 

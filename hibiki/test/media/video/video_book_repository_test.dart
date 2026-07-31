@@ -459,8 +459,7 @@ void main() {
   });
   test(
       'findByVideoPath returns the row referencing a physical file; '
-      'isVideoPathReferenced delegates to it (TODO-903 dedup source)',
-      () async {
+      'isDuplicateVideoPath delegates to it (TODO-903 dedup source)', () async {
     final db = HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
@@ -476,15 +475,15 @@ void main() {
     final hit = await repo.findByVideoPath('/library/movie.mkv');
     expect(hit, isNotNull);
     expect(hit!.bookUid, 'video/movie.mkv');
-    expect(await repo.isVideoPathReferenced('/library/movie.mkv'), isTrue);
+    expect(await repo.isDuplicateVideoPath('/library/movie.mkv'), isTrue);
 
     // 未入库路径无匹配。
     expect(await repo.findByVideoPath('/elsewhere/other.mkv'), isNull);
-    expect(await repo.isVideoPathReferenced('/elsewhere/other.mkv'), isFalse);
+    expect(await repo.isDuplicateVideoPath('/elsewhere/other.mkv'), isFalse);
 
     // 空路径不匹配（守卫提前返回）。
     expect(await repo.findByVideoPath(''), isNull);
-    expect(await repo.isVideoPathReferenced(''), isFalse);
+    expect(await repo.isDuplicateVideoPath(''), isFalse);
 
     // excludeBookUid 跳过自身：删除/自比对时该行不护住自己。
     expect(
@@ -511,7 +510,7 @@ void main() {
     final forward = await repo.findByVideoPath('D:/Foo/bar.mp4');
     expect(forward, isNotNull);
     expect(forward!.bookUid, 'video/bar.mp4');
-    expect(await repo.isVideoPathReferenced('D:/Foo/bar.mp4'), isTrue);
+    expect(await repo.isDuplicateVideoPath('D:/Foo/bar.mp4'), isTrue);
 
     // 含冗余路径段（`.` / `..`）也归一命中同一行。
     final redundant = await repo.findByVideoPath('D:/Foo/./sub/../bar.mp4');

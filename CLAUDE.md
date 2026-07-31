@@ -71,6 +71,9 @@
 | 墓碑删除时刻 | `deletedAt` | removedAt |
 | 媒体种类值域 | 各域独立枚举（`MediaKind`/`ActivityMediaKind`/`StatSourceKind`/`ProfileMediaKind`/`SyncTombstoneKind`/`SourceLibraryKind`/`SentenceSourceKind`），跨域换算走 `media_kind_mappings.dart`，禁 UI 层裸字符串比较/bool 降维 | — |
 | 搜索匹配 | `matchesMediaSearch`/`filterByMediaSearch`（统一归一化） | 裸 `toLowerCase().contains` 做用户可见搜索 |
+| 重复条目**处置策略** | 单参 `DuplicatePolicy` 三态：交互式单条 `.ask(cb)` / 批量后台 `.skip()` / 程序化留副本 `.suffix()`。三种差异**有意**（交互预算不同），不要再往一起合，但必须显式声明 | `bool skipIfExists` + `DuplicateTitleCallback?` 两参编码三态；`onDuplicateTitle` 作参数名 |
+| 重复**判据**（这东西是否已在库） | `isDuplicate*` / `filterOutDuplicate*` | `isVideoPathReferenced`、`filterDroppedGameExes` |
+| 用户对重复的选择 | `DuplicateChoice{suffix, cancel}`（与策略词同形） | `DuplicateTitleResolution{addSuffix, cancel}` |
 | i18n key | `<域>_<子域名词>_<动作/状态>`（动词在尾）+ 英文 sentence case；改名必须 `i18n_sync --rename` | 手改 json；新增 `games_`/`ttu_` 前缀 key |
 
 ## Galgame Hook 硬规则
