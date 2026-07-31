@@ -1,4 +1,4 @@
-## BUG-1231 · 漫画双页模式制卡图片取错成跨页首页
+## BUG-1296 · 漫画双页模式制卡图片取错成跨页首页
 - **报告**：2026-07-29（用户：制卡图片选择错误）
 - **真实性**：✅ 真 bug。漫画页容器已有精确的 0-based `data-page`，但
   `hibiki/lib/src/reader/reader_selection_scripts.dart:1102` 构造选区 payload

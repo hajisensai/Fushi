@@ -1,4 +1,4 @@
-## BUG-1227 · Mihon 在线漫画 OCR 横竖排错位且加载缓存调度未对齐 Niratan
+## BUG-1293 · Mihon 在线漫画 OCR 横竖排错位且加载缓存调度未对齐 Niratan
 - **报告**：2026-07-29（用户）
 - **真实性**：✅ 真 bug。`manga_hibiki_page.dart` 给未知在线页统一写死
   `1000×1400`，而 `manga_overlay_html.dart` 用该尺寸决定页容器比例和 OCR 百分比映射；

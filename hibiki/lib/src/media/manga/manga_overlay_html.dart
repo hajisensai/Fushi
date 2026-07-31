@@ -82,7 +82,7 @@ String mangaOcrBoxesHtml(MokuroImage page) {
 /// Resolve the complete sentence represented by every OCR block on a page.
 ///
 /// Google Lens often emits one paragraph per *vertical column*, not per speech
-/// bubble. For example, the real One Piece page behind BUG-1229 produced four
+/// bubble. For example, the real One Piece page behind BUG-1295 produced four
 /// neighbouring blocks `だいじょうぶ` (ruby), `大丈夫`, `だよな`, `?`.
 /// Rendering each paragraph as an isolated `<p>` made mining capture only the
 /// clicked column. This routine joins only geometrically adjacent columns/rows

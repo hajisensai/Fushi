@@ -145,7 +145,7 @@ void main() {
     });
 
     test('Lens 拆开的竖排气泡合成整句，并排除窄假名注音', () {
-      // 取自 BUG-1229 用户实际 Lens 缓存 page-000003.jpg 的块形状：
+      // 取自 BUG-1295 用户实际 Lens 缓存 page-000003.jpg 的块形状：
       // 「大丈夫だよな?」被拆成注音 + 三个正文列。
       const MokuroImage page = MokuroImage(
         url: 'page-000003.jpg',
