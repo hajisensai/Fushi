@@ -183,9 +183,15 @@ void main() {
       );
     });
 
+    // BUG-1271：「自动展开默认跟随列数」的**意图**没变（第一行铺满即展开），变的是
+    // 它在哪一层实现。这个偏好的单位在 TODO-845 之后是「行」，popup.js 的
+    // autoExpandCount 已经在乘有效列数了；Dart 侧再返回列数，就成了 cols 行 × cols 列
+    // = cols² 本（出厂列数 3 → 9 本，列数 4 → 16 本）。单位是行，「第一行铺满」只能是 1，
+    // 乘法交给 popup.js 那一处唯一的 rows × cols。故本守卫从「默认 = 列数」改为
+    // 「默认 = 1 行」，并显式禁止把 popupDictionaryColumns 塞回行数槽位。
     test(
         '源码守卫：popupDictionaryColumns 桌面 + 移动默认都传 3；'
-        '自动展开数默认跟随列数（= popupDictionaryColumns）', () {
+        '自动展开数默认 1 行（本数由 popup.js 的 rows × cols 跟随列数）', () {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();
       // 列数 getter 必须显式把桌面 + 移动默认都抬到 3（宽屏手机也能多列，窄屏视口收敛兜底）。
@@ -198,7 +204,7 @@ void main() {
           reason: '「最多列数」桌面默认必须是 3');
       expect(colBody.contains('mobileDefault: 3'), isTrue,
           reason: '「最多列数」移动默认也放宽到 3（宽屏手机多列、窄屏自动收回）');
-      // 自动展开数 getter：未显式设过时默认 = popupDictionaryColumns（跟随列数）。
+      // 自动展开 getter：未显式设过时默认 1 **行**（BUG-1271）。
       final int expAt = src.indexOf('int get popupAutoExpandDictionaries =>');
       expect(expAt, isNonNegative);
       final int expEnd = src.indexOf(';', expAt);
@@ -206,10 +212,14 @@ void main() {
       final String expBody = src.substring(expAt, expEnd);
       expect(expBody.contains('hasExplicitPopupAutoExpandDictionaries'), isTrue,
           reason: '显式设过一律遵从存储值');
-      expect(expBody.contains('popupDictionaryColumns'), isTrue,
-          reason: '自动展开数默认必须跟随列数（= popupDictionaryColumns）');
+      expect(RegExp(r':\s*1\s*$').hasMatch(expBody.trimRight()), isTrue,
+          reason: 'BUG-1271：单位是「行」，默认必须是 1 行（第一行铺满）；'
+              '本数跟随列数由 popup.js 的 autoExpandCount = rows × cols 负责');
+      expect(expBody.contains('popupDictionaryColumns'), isFalse,
+          reason: 'BUG-1271：把列数塞进行数槽位 → cols 行 × cols 列 = cols² 本，'
+              '出厂列数 3 时默认展开从意图的 3 本膨胀成 9 本');
       expect(expBody.contains('resolvePopupDesktopDefault'), isFalse,
-          reason: '自动展开数不再走平台 2/1 默认，改为跟随列数');
+          reason: '自动展开数不走平台 2/1 默认');
     });
   });
 }
