@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_webview_render.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// TODO-1147 option A guard: vertical clip frames render via the offscreen
 /// WebView true-vertical path (writing-mode: vertical-rl + per-sentence sasayaki
 /// highlight), never the old unreadable RotatedBox; screenshots still feed the
@@ -162,5 +164,44 @@ void main() {
     // 两条合成路径（静态 + 动态序列帧）都把 h264 透传下去。
     expect(code.contains('h264: useH264'), isTrue);
     expect(code.contains('h264: isDesktop'), isTrue);
+  });
+
+  // 上面那条只断言字面量 `h264: useH264` / `h264: isDesktop` 存在，**没有任何断言钉住
+  // useH264 这个变量绑定到什么**。审查用变异实测证明了这个洞：把
+  // `final bool useH264 = isDesktop;` 改成 `= true`，片段导出守卫全簇 57 tests 全绿、
+  // 无人报警——而那个改动会让移动端去用 libx264，移动 ffmpeg-kit 里实证没有该编码器
+  // （configure 无 --enable-gpl / --enable-libx264），真机必然 Unknown encoder、导出直接失败。
+  // 这条守卫把「谁决定用 H.264」钉死在平台判据上。
+  test('BUG-809/BUG-1264: useH264 绑定到 isDesktop，isDesktop 绑定到平台判据', () {
+    final String src = File(
+      'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    final String body =
+        methodBody(src, 'Future<void> _runAudiobookClipPipeline({');
+
+    final RegExp useH264Decl = RegExp(r'\bbool\s+useH264\s*=\s*([^;]+);');
+    final List<RegExpMatch> h264 = useH264Decl.allMatches(body).toList();
+    expect(h264, hasLength(1), reason: '导出管线里 useH264 必须有且只有一处声明，改名请同步本守卫');
+    expect(
+      h264.single.group(1)!.trim(),
+      'isDesktop',
+      reason: 'BUG-1264：H.264 只在桌面可用（移动 ffmpeg-kit 无 libx264，实证）。'
+          'useH264 一旦绑成常量或掺进移动端条件，移动导出真机必 Unknown encoder；'
+          '而这在测试里是静默的——本守卫就是那次变异漏网的补丁',
+    );
+
+    final RegExp isDesktopDecl = RegExp(r'\bbool\s+isDesktop\s*=\s*([^;]+);');
+    final List<RegExpMatch> desktop = isDesktopDecl.allMatches(body).toList();
+    expect(desktop, hasLength(1), reason: '导出管线里 isDesktop 必须有且只有一处声明');
+    final String desktopRhs = desktop.single.group(1)!;
+    for (final String platform in <String>[
+      'Platform.isWindows',
+      'Platform.isMacOS',
+      'Platform.isLinux',
+    ]) {
+      expect(desktopRhs, contains(platform),
+          reason: 'isDesktop 必须由真实平台判据推出，不得钉成常量——'
+              '否则 useH264 绑对了也没用');
+    }
   });
 }

@@ -366,6 +366,39 @@ AudiobookClipMultiCueResult classifyAudiobookClipMultiCue({
   );
 }
 
+/// BUG-1262：多句分类结果 → 应当**透传给单句分类器**的音频窗口。
+///
+/// 调度层（`_buildAudiobookClipPlan` / `_exportAudiobookClip`）此前用一个 `return null`
+/// 把两种完全不同的事实压成同一个信号：
+/// - 「结构上根本没解析出窗口」（emptySelection / noAudio / unsupportedRange）；
+/// - 「窗口解析出来了，只是超过时长上限」（[AudiobookClipBoundaryKind.tooLong]）。
+///
+/// 于是超长多句选区回落到 `_currentSentenceAudioRange()` 的**单句锚**：要么静默导出
+/// 「整段文字的卡片 + 只有一句声音」，要么单句锚也解析不出而弹出误导的「跨章或跨音频
+/// 文件」——这正是用户报的「电脑上较长片段导出会说跨章」。把分类层拆出 tooLong 枚举
+/// 并不能修它，因为信号在到达分类层之前就已经被销毁了。
+///
+/// 修法不是加一条信号通道，而是**不再销毁数据**：tooLong 时把超限窗口原样透出去，
+/// 单句分类器拿到同一个 >上限 的窗口会自行判成 [AudiobookClipBoundaryKind.tooLong]，
+/// 直接走诚实文案分支——调用侧零新增分支。返回 null 才表示「回落单句锚」。
+AudioPlaybackRange? audiobookClipPlanRange({
+  required AudiobookClipBoundaryKind kind,
+  required AudioPlaybackRange? globalRange,
+}) {
+  switch (kind) {
+    case AudiobookClipBoundaryKind.exportable:
+    case AudiobookClipBoundaryKind.tooLong:
+      // 两者的窗口都是选区的真实音频范围，都必须透传：exportable 用来裁剪，
+      // tooLong 用来让单句分类器复判出诚实的「太长」。
+      return globalRange;
+    case AudiobookClipBoundaryKind.emptySelection:
+    case AudiobookClipBoundaryKind.noAudio:
+    case AudiobookClipBoundaryKind.unsupportedRange:
+      // 这三类多句路径压根没拿到可信窗口，回落单句锚是既有正确行为。
+      return null;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // TODO-945 M4：把文本图 + 音频片段（AAC）合成成一段短视频。
 //

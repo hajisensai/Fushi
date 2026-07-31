@@ -1054,16 +1054,17 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // 旧顺序先用 currentSentence 的单句 range 做分类，随后才建多句计划，导致最终传给
     // ffmpeg 的仍是第一句窗口；动态计划又优先拿 cachedSentenceRange，覆盖了跨句选区
     // span，因而退化成「只有第一句声音 + 整段静态高亮」。
-    _AudiobookClipDynamicPlan? dynamicPlan = _buildAudiobookClipPlan(
-      audioFileCount: audioFileCount,
-    );
-    final AudioPlaybackRange? sentenceRange = dynamicPlan == null
-        ? _currentSentenceAudioRange()
-        : AudioPlaybackRange(
-            audioFileIndex: dynamicPlan.audioFileIndex,
-            startMs: dynamicPlan.globalStartMs,
-            endMs: dynamicPlan.globalEndMs,
-          );
+    final ({
+      _AudiobookClipDynamicPlan? plan,
+      AudioPlaybackRange? range
+    }) clipPlan = _buildAudiobookClipPlan(audioFileCount: audioFileCount);
+    _AudiobookClipDynamicPlan? dynamicPlan = clipPlan.plan;
+    // BUG-1262：多句路径解析出的整段窗口是唯一真相源——**即使它超上限**（此时 plan 为
+    // 空、逐句高亮不可用）也必须拿它去分类，分类器会据此判 tooLong 走诚实文案。旧写法
+    // 在 plan 为空时一律回落 _currentSentenceAudioRange() 的单句锚，把「太长」洗成
+    // 「可导出」（静默产出全文卡片 + 一句声音）或「跨章」（误导提示）。
+    final AudioPlaybackRange? sentenceRange =
+        clipPlan.range ?? _currentSentenceAudioRange();
 
     final AudiobookClipBoundaryResult result = classifyAudiobookClipSelection(
       selectedText: selectedText,
@@ -1225,11 +1226,12 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   /// 单一真相源：[globalRange] 用 [clipExportGlobalRange]（首句 head-padded ..
   /// 末句尾 padding 放宽到 [kClipExportTailPadMs]，中间句连续不被 tailCap 切），供音频
   /// 裁剪与帧计划共用，避免二者窗口漂移。
-  _AudiobookClipDynamicPlan? _buildAudiobookClipPlan({
+  ({_AudiobookClipDynamicPlan? plan, AudioPlaybackRange? range})
+      _buildAudiobookClipPlan({
     required int audioFileCount,
   }) {
     final AudiobookPlayerController? ctrl = _audiobookController;
-    if (ctrl == null) return null;
+    if (ctrl == null) return (plan: null, range: null);
     final ({int offset, int length, String text})? selection =
         _cachedSelectionRange;
     // BUG-1243：导出入口的主锚是用户真实选区；只有没有原生选区（普通点词导出）时
@@ -1260,7 +1262,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       sentenceNormCharOffset: resolvedSelection.offset,
       sentenceNormCharLength: resolvedSelection.length,
     );
-    if (span.isEmpty) return null;
+    if (span.isEmpty) return (plan: null, range: null);
 
     final AudioPlaybackRange? globalRange = clipExportGlobalRange(
       span: span,
@@ -1281,7 +1283,15 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       globalRange: globalRange,
       cueSpans: cueSpans,
     );
-    if (!result.isExportable) return null;
+    // BUG-1262：分类不可导出时**不能**一律 `return null` —— 那会把「窗口超上限」
+    // 和「压根没窗口」压成同一个信号，超长选区因此回落单句锚，产出「整段文字的卡片 +
+    // 只有一句声音」或弹出误导的「跨章」提示。[audiobookClipPlanRange] 只在真的没窗口
+    // 时才返回 null；tooLong 的超限窗口原样透出去，由单句分类器复判成诚实的「太长」。
+    final AudioPlaybackRange? planRange = audiobookClipPlanRange(
+      kind: result.kind,
+      globalRange: globalRange,
+    );
+    if (!result.isExportable) return (plan: null, range: planRange);
 
     // Aligned cues are subtitle data, not necessarily the exact EPUB text the
     // user selected. Mismatches must use the static exact-selection card.
@@ -1309,13 +1319,16 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       cueNormStarts: cueNormStarts,
       images: _cachedSelectionImages,
     );
-    return _AudiobookClipDynamicPlan(
-      audioFileIndex: result.audioFileIndex,
-      globalStartMs: result.globalStartMs,
-      globalEndMs: result.globalEndMs,
-      cueSpans: result.cueSpans,
-      cueTextMatches: cueTextMatches,
-      imagesByCueIndex: imagesByCueIndex,
+    return (
+      plan: _AudiobookClipDynamicPlan(
+        audioFileIndex: result.audioFileIndex,
+        globalStartMs: result.globalStartMs,
+        globalEndMs: result.globalEndMs,
+        cueSpans: result.cueSpans,
+        cueTextMatches: cueTextMatches,
+        imagesByCueIndex: imagesByCueIndex,
+      ),
+      range: planRange,
     );
   }
 

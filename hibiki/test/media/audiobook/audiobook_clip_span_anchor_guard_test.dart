@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// TODO-1278 守卫：有声书片段导出误报「跨章或跨音频文件」。
 ///
 /// 根因：导出侧的音频位置锚点（[_currentSentenceAudioRange] /
@@ -84,8 +86,11 @@ void main() {
     test(
         '_buildAudiobookClipPlan anchors via _miningSpanRange, not raw '
         '_cachedSentenceRange', () {
-      final String body = fnBody(
-          audiobookPart, '_AudiobookClipDynamicPlan? _buildAudiobookClipPlan(');
+      // BUG-1262：构造器返回类型改成记录 ({plan, range})，签名不再以 `(` 结尾；
+      // 改用共享 methodBody（会跳过命名参数表）。`_buildAudiobookClipPlan({` 只匹配
+      // 定义，调用点是 `_buildAudiobookClipPlan(audioFileCount:`，不会撞。
+      final String body =
+          methodBody(audiobookPart, '_buildAudiobookClipPlan({');
       expect(body.contains('_miningSpanRange()'), isTrue,
           reason: '动态多句计划的 span 定位必须经 _miningSpanRange() 取锚点。');
       expect(body.contains('_cachedSentenceRange'), isFalse,

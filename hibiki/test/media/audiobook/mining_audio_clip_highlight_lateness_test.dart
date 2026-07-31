@@ -1,8 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_clip_export.dart';
 import 'package:hibiki/src/media/audiobook/mining_audio_clip.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
+
+import '../../helpers/source_guard.dart';
 
 /// BUG-713 守卫：有声书导出片段「逐句高亮进度慢了」的根因是**帧量化残差**——
 /// [clipFramePlan] 用帧中心（round）采样，句起点 S 的高亮在视频时刻 `round(S/Δ)·Δ`
@@ -14,8 +17,10 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 /// 1. 行为（红→绿）：给定一批跨多个「相位偏移」的 cue，导出高亮相对音频的**最大滞后**
 ///    严格 ≤ Δ/2 = 500/fps；fps=12 时该上限 >40ms（旧行为可感知），fps=24 时 ≤21ms
 ///    （不可感知）——量化提 fps 确实把滞后压到阈下。
-/// 2. 源码守卫：动态导出路径 [_synthDynamicClipVideo] 的导出 fps 常量 ≥ 24，防止有人
-///    改回 12（或更低）令帧量化滞后回归。
+/// 2. 受控来源契约：[clipExportFps] 在 ≤120s 恒返 24fps（BUG-1262 放宽上限后
+///    长片段按总帧数预算降 fps，但短片段精度不退）。
+/// 3. 源码守卫：动态导出路径 [_synthDynamicClipVideo] 的 fps **来自** [clipExportFps]，
+///    并禁止 <24 的裸字面量——防有人改回 12fps 令帧量化滞后回归。
 void main() {
   group('BUG-713 导出高亮帧量化滞后', () {
     // 每个 cue 高亮在导出视频里**首次出现**的帧时刻（相对 globalStart，ms）。
@@ -86,17 +91,54 @@ void main() {
       );
     });
 
-    test('源码守卫：动态导出路径 fps 常量 ≥ 24（防退回 12fps 帧量化滞后）', () {
-      final String body = File(
+    // 受控来源本身的数值契约。BUG-713 真正要守的是「短片段的 Δ 足够小」，而 Δ=1000/fps
+    // 由 [clipExportFps] 唯一决定 —— 所以下界断言挂在这个纯函数上，是**行为**判据，
+    // 不依赖生产代码写成什么形态。
+    test('clipExportFps 契约：≤120s 恒 24fps（Δ≈41.7ms → 最大滞后 ≤21ms）', () {
+      for (final int durationMs in <int>[
+        0,
+        1,
+        1000,
+        30 * 1000,
+        60 * 1000,
+        120 * 1000,
+      ]) {
+        expect(clipExportFps(durationMs: durationMs), 24,
+            reason: 'BUG-713：${durationMs}ms 片段的导出 fps 必须是 24；'
+                '降到 12 会让约一半 cue 高亮晚最多 ~42ms 重现「进度慢」');
+      }
+      // BUG-1262 把上限放宽到 300s 后长片段按总帧数预算降 fps —— 允许降，但必须有下界，
+      // 且总帧数不超过提限前的既有最坏情况（120s×24fps=2880 帧）。
+      final int fps300 = clipExportFps(durationMs: 300 * 1000);
+      expect(fps300, greaterThanOrEqualTo(6), reason: '长片段 fps 仍需有下界，不能降到不可看');
+      expect(fps300 * 300, lessThanOrEqualTo(2880),
+          reason: '总帧数必须落在 2880 预算内（序列帧落盘量 = 提限前的最坏情况）');
+    });
+
+    // 源码守卫锚在**契约**上，不锚实现写法。
+    // 旧写法 `RegExp(r'const int fps = (\d+);')` + `expect(matches, isNotEmpty)` 是典型的
+    // 「要求型字面量锚点」：BUG-1262 把生产代码从 `const int fps = 24;` 改成
+    // `final int fps = clipExportFps(...)` 后匹配集直接变空、当场红 —— 那不是行为退化，
+    // 是守卫自身塌掉（换匹配器也救不了，因为被锚的对象本身消失了）。
+    // 新判据：动态导出路径的 fps 必须**由受控来源 clipExportFps 派生**（数值下界由上面
+    // 那条行为断言钉住），并禁止任何把 fps 直接钉成 <24 字面量的写法。
+    test('源码守卫：动态导出 fps 来自 clipExportFps，且无 <24 的裸字面量', () {
+      final String src = File(
               'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart')
           .readAsStringSync()
           .replaceAll('\r\n', '\n');
-      final RegExp fpsDecl = RegExp(r'const int fps = (\d+);');
-      final Iterable<RegExpMatch> matches = fpsDecl.allMatches(body);
-      expect(matches, isNotEmpty, reason: '未找到导出 fps 常量声明，测试锚点可能已漂移，请更新守卫');
-      for (final RegExpMatch m in matches) {
-        final int fps = int.parse(m.group(1)!);
-        expect(fps, greaterThanOrEqualTo(24),
+      final String body =
+          methodBody(src, 'Future<bool> _synthDynamicClipVideo(');
+      expect(
+        containsIdentifierCall(body, 'clipExportFps'),
+        isTrue,
+        reason: 'BUG-713/BUG-1262：动态导出路径的 fps 必须来自受控来源 clipExportFps(...)，'
+            '不得回到裸字面量。改名 clipExportFps 请同步本守卫与上面的行为断言',
+      );
+      // 禁止型判据：允许零命中（当前实现就是零），一旦命中就必须 ≥24。
+      final RegExp literalFps = RegExp(r'\bint\s+fps\s*=\s*(\d+)\s*;');
+      for (final RegExpMatch m in literalFps.allMatches(body)) {
+        expect(int.parse(m.group(1)!), greaterThanOrEqualTo(24),
             reason: 'BUG-713：导出 fps 必须 ≥24 以把逐句高亮滞后压到 ≤Δ/2≈21ms；'
                 '回到 12fps 会让约一半 cue 高亮晚最多 ~42ms 重现「进度慢」');
       }

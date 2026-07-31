@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// BUG-1263：字幕对齐文本与 EPUB 真实选区不一致（ruby/措辞/空白差异，长选区几乎必现）
 /// 时，`_buildAudiobookClipPlan` 曾直接丢弃整个计划——连同**整段音频窗**一起丢。静态
 /// 回退于是退回 currentSentence 单句锚，产出「全文卡片 + 只有第一句声音」。
@@ -52,10 +54,10 @@ void main() {
 
   test('plan builder keeps the plan (and its audio window) on text mismatch',
       () {
-    final String body = fnBody(
-      part,
-      '_AudiobookClipDynamicPlan? _buildAudiobookClipPlan(',
-    );
+    // BUG-1262：构造器改成返回 (plan, range) 记录后签名不再以 `(` 结尾，改用共享
+    // methodBody（它会跳过命名参数表）；`_buildAudiobookClipPlan({` 只匹配定义，
+    // 调用点是 `_buildAudiobookClipPlan(audioFileCount:`，不会撞。
+    final String body = methodBody(part, '_buildAudiobookClipPlan({');
     final int matchAt = body.indexOf('audiobookClipCueTextMatchesSelection(');
     expect(matchAt, greaterThanOrEqualTo(0), reason: 'BUG-968 的一致性判定必须保留');
     // 一致性判定之后不得再出现 return null：不一致只降级高亮，绝不丢整段音频窗。
@@ -79,9 +81,15 @@ void main() {
     final int nullAfterGate =
         body.indexOf('dynamicPlan = null;', gateMatch!.start);
     expect(nullAfterGate, greaterThan(gateMatch.start));
-    // 窗口来源不回退：sentenceRange 在计划非空时必须取计划的整段起止。
-    expect(body, contains('dynamicPlan.globalStartMs'));
-    expect(body, contains('dynamicPlan.globalEndMs'));
+    // 窗口来源不回退：sentenceRange 必须取计划算出的整段窗口，只有计划**真的没窗口**
+    // 时才回落单句锚。BUG-1262 之后窗口由 clipPlan.range 直接给出（超上限时 plan 为空
+    // 但窗口仍有效），不再从 dynamicPlan.global* 反推。
+    expect(
+      containsCodeLine(body, 'clipPlan.range ?? _currentSentenceAudioRange()'),
+      isTrue,
+      reason: 'BUG-1263/BUG-1262：整段窗口必须来自多句计划；无条件回落单句锚会把长选区'
+          '音频塌缩成一句，或把「太长」洗成「可导出」',
+    );
   });
 
   test('plan model carries the cueTextMatches contract field', () {
