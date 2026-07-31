@@ -29,11 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1260 条。点号进各自文件。
+> 共 1263 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1319](bugs/BUG-1319-collection-delete-cover-leak.md) | ✅ | ✅ | 删合集只有 1/6 入口回收自有封面：其余五条只删 DB 行，路径随行永久丢失、GC 又扫不到该子目录 = 确定性空间泄漏 |
+| [BUG-1318](bugs/BUG-1318-tracking-mapping-stale-after-format-change.md) | 🚧 | 🚧 | 转化后 Bangumi 映射不复核：epub→manga 后进度静默永久停报 |
+| [BUG-1317](bugs/BUG-1317-override-title-key-source-asymmetry.md) | 🚧 | 🚧 | 漫画/PDF 书改名后首页与统计仍显示旧名：override 键读写不同源 |
+| [BUG-1316](bugs/BUG-1316-reader-route-ignores-live-format.md) | ✅ | ✅ | 跳回原文按写死的 EPUB 源打开：漫画/PDF 书用错阅读器 |
 | [BUG-1315](bugs/BUG-1315-texthooker-threadless-lines-never-published.md) | ✅ | ✅ | 未选线程门控把无线程身份的行（WebSocket/Textractor 端点）永久丢弃 |
 | [BUG-1311](bugs/BUG-1311-interconnect-service-config-403-on-plaintext.md) | ✅ | ✅ | 互联同步每轮都报「认证失败」：明文 host 上无条件请求 service-config |
 | [BUG-1309](bugs/BUG-1309-anime-download-confirm-subs-squeezed.md) | ✅ | ✅ | 下载弹窗确认阶段：Jimaku 选择器挤掉字幕列表，RenderFlex 溢出 10px 且只剩不到一条可见 |
