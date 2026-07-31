@@ -62,11 +62,19 @@ library;
 /// 监听。默认 false：只用键盘的宿主生成的脚本里完全不含鼠标块（零行为变化）。
 /// 注意它与 [mouseButtons] 是否为空**无关**——弹窗要在「用户当前没绑鼠标键、之后
 /// 才绑上」时也能生效，listener 必须恒装、只让表变。
+///
+/// [deferToPopupModal] 为 true 时，`window.__hoshiPopupModalDepth > 0`（popup.js 里
+/// 有模态面板开着，如「已制卡动作」面板）期间整座桥让位。**查词弹窗必须打开它**：
+/// 桥是 capture 阶段且在 `onLoadStop` 就注册，比模态自己的 capture 监听早得多，不
+/// 让位就会抢走模态的 Escape——用户想关面板，结果整个查词窗被关掉（popup.js 那处
+/// 监听的注释正是「面板自己吃掉 Esc，否则会把整个查词窗一起关了」）。与放行输入框 /
+/// IME 同一类守卫：弹窗内有更高优先级的消费者时，宿主不抢。
 String webViewKeyBridgeScript({
   required String handlerName,
   List<String> keys = const <String>[],
   List<int> mouseButtons = const <int>[],
   bool installMouseListeners = false,
+  bool deferToPopupModal = false,
   bool forwardRepeats = true,
   bool stopPropagation = false,
 }) {
@@ -83,12 +91,17 @@ String webViewKeyBridgeScript({
       _jsStringLiteral('__hoshiKeyBridgeButtons_$handlerName');
   final String repeatGuard =
       forwardRepeats ? '' : '\n    if (e.repeat) return;';
+  // 模态让位对键盘与鼠标同时成立：面板开着时点它上面的按钮，侧键也不该把整个查词窗
+  // 关掉。故各监听体内统一先判这一条。
+  const String modalGuard =
+      '\n    if ((window.__hoshiPopupModalDepth || 0) > 0) return;';
+  final String popupModalGuard = deferToPopupModal ? modalGuard : '';
   final String propagationGuard =
       stopPropagation ? '\n    e.stopImmediatePropagation();' : '';
   final String mouseListeners = installMouseListeners
       ? '''
   document.addEventListener('mousedown', function(e) {
-    if (!e || e.button === 0) return;
+    if (!e || e.button === 0) return;$popupModalGuard
     if ((window[$buttonsVar] || []).indexOf(e.button) === -1) return;
     e.preventDefault();$propagationGuard
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
@@ -96,11 +109,13 @@ String webViewKeyBridgeScript({
     }
   }, {capture: true});
   document.addEventListener('auxclick', function(e) {
-    if (!e || (window[$buttonsVar] || []).indexOf(e.button) === -1) return;
+    if (!e) return;$popupModalGuard
+    if ((window[$buttonsVar] || []).indexOf(e.button) === -1) return;
     e.preventDefault();$propagationGuard
   }, {capture: true});
   document.addEventListener('contextmenu', function(e) {
-    if (!e || (window[$buttonsVar] || []).indexOf(2) === -1) return;
+    if (!e) return;$popupModalGuard
+    if ((window[$buttonsVar] || []).indexOf(2) === -1) return;
     e.preventDefault();$propagationGuard
   }, {capture: true});
 '''
@@ -124,7 +139,7 @@ String webViewKeyBridgeScript({
   }
   document.addEventListener('keydown', function(e) {
     if (!e) return;
-    if (e.isComposing) return;$repeatGuard
+    if (e.isComposing) return;$repeatGuard$popupModalGuard
     var t = e.target;
     if (t) {
       var tag = t.tagName ? t.tagName.toUpperCase() : '';

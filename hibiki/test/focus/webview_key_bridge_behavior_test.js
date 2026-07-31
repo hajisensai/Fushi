@@ -187,7 +187,37 @@ function key(over) {
   assert.deepStrictEqual(env.calls, [], '空表不得拦截任何输入');
 }
 
-// ---- 9. 老宿主（阅读器空格桥）语义零变化 ---------------------------------
+// ---- 9. 模态让位：面板开着时整座桥不抢输入 -------------------------------
+{
+  const env = makeEnv();
+  run(env, scripts.escapeAndMouseBack);
+
+  // popup.js 的「已制卡动作」面板开着时会把深度 +1。桥是 capture 且在 onLoadStop
+  // 就注册，比面板自己的 capture 监听早得多——不让位就会抢走面板的 Esc，用户想关
+  // 面板结果整个查词窗被关掉。
+  env.sandbox.window.__hoshiPopupModalDepth = 1;
+  const esc = dispatch(env, 'keydown', key());
+  assert.deepStrictEqual(env.calls, [],
+    '模态开着时 Esc 必须留给面板自己');
+  assert.ok(!esc.defaultPrevented,
+    '让位必须彻底：连 preventDefault 都不能做，否则面板收到的是个已被处理的事件');
+
+  dispatch(env, 'mousedown', { button: 3 });
+  assert.deepStrictEqual(env.calls, [],
+    '鼠标键同样让位——点面板上的按钮不该把查词窗关掉');
+
+  // 面板叠开再逐层关闭（↗ 多卡选择套在 ✓ 操作单之上）：深度归零才恢复。
+  env.sandbox.window.__hoshiPopupModalDepth = 2;
+  dispatch(env, 'keydown', key());
+  assert.deepStrictEqual(env.calls, [], '嵌套面板期间仍让位');
+
+  env.sandbox.window.__hoshiPopupModalDepth = 0;
+  dispatch(env, 'keydown', key());
+  assert.deepStrictEqual(env.calls, [['hostInputToken', 'Escape']],
+    '面板全关后必须恢复转发');
+}
+
+// ---- 10. 老宿主（阅读器空格桥）语义零变化 --------------------------------
 {
   const env = makeEnv();
   run(env, scripts.legacySpace);
@@ -211,6 +241,13 @@ function key(over) {
 
   assert.strictEqual((env.listeners.mousedown || []).length, 0,
     '只用键盘的宿主不得生成鼠标监听（零行为变化）');
+
+  // 老宿主是正文 WebView，那里没有 popup 模态概念，不该被这个全局影响。
+  env.sandbox.window.__hoshiPopupModalDepth = 1;
+  env.calls.length = 0;
+  dispatch(env, 'keydown', key({ key: ' ', code: 'Space' }));
+  assert.deepStrictEqual(env.calls, [['onSpaceKey', ' ']],
+    '未开 deferToPopupModal 的宿主不得被 popup 模态标志影响');
 }
 
 console.log('all assertions passed');

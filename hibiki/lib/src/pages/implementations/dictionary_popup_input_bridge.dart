@@ -63,20 +63,38 @@ class DictionaryPopupInputSpec {
 /// 注册表尚未装载（[HibikiShortcutRegistry.isLoaded] 为 false）时返回空 spec：那时
 /// `bindingsFor` 对每个动作都返回空集，与「用户主动清空了绑定」在数据上不可区分，
 /// 按空表下发即可（弹窗侧不拦任何键），等装载完成宿主会再注入一次真表。
+///
+/// **恒减去 [ShortcutScope.dictionaryPopup] 已占用的绑定**：切词条 / 制卡是**弹窗内**
+/// 的动作，必须在弹窗里生效，宿主不能把它们抢走。这条是不变式而不是各宿主的选项——
+/// 视频页尤其需要：它的 dismiss 语义是「浮层可见时**任一**已映射的视频快捷键先关浮层」
+/// （BUG-924），整个 video scope 都要转发，与弹窗内动作撞键的概率最高。放在数据层做
+/// 减法，JS 侧就不必再判一次 scope。
 DictionaryPopupInputSpec dictionaryPopupInputSpecFor({
   required HibikiShortcutRegistry registry,
   required Iterable<ShortcutAction> actions,
 }) {
   if (!registry.isLoaded) return const DictionaryPopupInputSpec();
+
+  final Set<String> reservedKeys = <String>{};
+  final Set<int> reservedButtons = <int>{};
+  for (final ShortcutAction action
+      in ShortcutAction.actionsForScope(ShortcutScope.dictionaryPopup)) {
+    final ShortcutBindingSet bindings = registry.bindingsFor(action);
+    reservedKeys.addAll(bindings.keyboardBindings.map((b) => b.serialize()));
+    reservedButtons.addAll(bindings.mouseBindings.map((b) => b.button));
+  }
+
   final List<String> keys = <String>[];
   final List<int> buttons = <int>[];
   for (final ShortcutAction action in actions) {
     final ShortcutBindingSet bindings = registry.bindingsFor(action);
     for (final InputBinding kb in bindings.keyboardBindings) {
       final String token = kb.serialize();
+      if (reservedKeys.contains(token)) continue;
       if (!keys.contains(token)) keys.add(token);
     }
     for (final MouseBinding mb in bindings.mouseBindings) {
+      if (reservedButtons.contains(mb.button)) continue;
       if (!buttons.contains(mb.button)) buttons.add(mb.button);
     }
   }
@@ -126,6 +144,7 @@ String dictionaryPopupInputBridgeScript(DictionaryPopupInputSpec spec) =>
       keys: spec.keyTokens,
       mouseButtons: spec.mouseButtons,
       installMouseListeners: true,
+      deferToPopupModal: true,
       forwardRepeats: false,
       stopPropagation: true,
     );
