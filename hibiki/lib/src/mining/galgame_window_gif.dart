@@ -118,12 +118,19 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
           output.lengthSync() > 0) {
         return (bytes: await output.readAsBytes(), format: attempt);
       }
-      // 编码失败 / 超时（returnCode==null）：记日志。非末次则继续降级尝试。
-      ErrorLogService.instance.log(
-        'captureWindowGifBytes',
-        '${attempt.wireName} encode failed: ${result.failureSummary}',
-        StackTrace.current,
-      );
+      // 编码失败 / 超时（returnCode==null）。**非末次尝试只记诊断日志**：捆绑的
+      // ffmpeg 缺 libsvtav1/libwebp 时首选格式是 100% 必然失败的，随后降级 GIF 会
+      // 成功、卡照样建得出来。把这条必然发生的能力探测写进用户可见错误日志，等于
+      // 每制一张卡就塞一条「错误」。末次（GIF 也失败）才是真失败，仍进错误日志。
+      final String summary =
+          '${attempt.wireName} encode failed: ${result.failureSummary}';
+      if (attempt == attempts.last) {
+        ErrorLogService.instance
+            .log('captureWindowGifBytes', summary, StackTrace.current);
+      } else {
+        ErrorLogService.instance.logDiagnostic('captureWindowGifBytes',
+            '$summary (falling back to ${MiningAnimatedFormat.gif.wireName})');
+      }
     }
     return null;
   } on ProcessException catch (e, stack) {

@@ -265,6 +265,63 @@ void main() {
     );
   });
 
+  // 捕获内部在编码器缺失时会**降级 GIF**，此时「用户所选格式」与「实际产出格式」不同。
+  // 文件名必须跟实际产出：按所选格式拼名会写出 `external_window.avif` 里装 GIF 字节，
+  // Anki 按扩展名判 MIME，卡片直接显示不出来。
+  //
+  // ⚠️ 假件必须返回一个**与请求不同**的格式。此前所有 gal 假件都写 `format: format`
+  // 原样回传，「实际产出」与「用户所选」恒等，这条契约永远区分不出来（真空洞）。
+  test('cover name follows the produced format, not the requested one',
+      () async {
+    final TexthookerLineEntry entry = service.appendLine('降格した台詞')!;
+
+    // ① 捕获内部降级：请求 avif，实际只编出 gif。
+    final _RecordingRepo degradedRepo = _RecordingRepo();
+    MiningAnimatedFormat? requested;
+    final GalHookMiningResult degraded = await coordinator(
+      validator: (_) => true,
+      gif: (
+          {required int hwnd,
+          MiningAnimatedFormat format = MiningAnimatedFormat.gif}) async {
+        requested = format;
+        return (
+          bytes: Uint8List.fromList(<int>[71, 73, 70]),
+          format: MiningAnimatedFormat.gif,
+        );
+      },
+    ).mineLine(
+      lineId: entry.id,
+      fields: const <String, String>{'expression': '降格'},
+      compression: MiningMediaCompression.compressed,
+      repo: degradedRepo,
+      animatedFormat: MiningAnimatedFormat.avif,
+    );
+
+    expect(degraded.success, isTrue);
+    expect(requested, MiningAnimatedFormat.avif, reason: '用户所选格式必须透传给捕获');
+    expect(degradedRepo.contexts.single.coverPath, endsWith('.gif'),
+        reason: '实际产出是 GIF，若跟用户所选拼成 .avif 就是名不副实的容器');
+    expect(degraded.degradedToStill, isFalse, reason: '换格式不是降级为静态图');
+
+    // ② 没降级：请求 avif、实际产出 avif → 名字是 .avif。两条一起才把「跟实际产出」
+    // 与「跟用户所选」这两种实现区分开——只有 ① 会被「恒返回 gif」的假实现蒙混。
+    final _RecordingRepo okRepo = _RecordingRepo();
+    await coordinator(
+      validator: (_) => true,
+      gif: (
+              {required int hwnd,
+              MiningAnimatedFormat format = MiningAnimatedFormat.gif}) async =>
+          (bytes: Uint8List.fromList(<int>[0, 0, 0, 32]), format: format),
+    ).mineLine(
+      lineId: entry.id,
+      fields: const <String, String>{'expression': '降格'},
+      compression: MiningMediaCompression.compressed,
+      repo: okRepo,
+      animatedFormat: MiningAnimatedFormat.avif,
+    );
+    expect(okRepo.contexts.single.coverPath, endsWith('.avif'));
+  });
+
   test('gif is still the default when imageMode is omitted', () async {
     final TexthookerLineEntry entry = service.appendLine('動画の台詞')!;
     final _RecordingRepo repo = _RecordingRepo();
