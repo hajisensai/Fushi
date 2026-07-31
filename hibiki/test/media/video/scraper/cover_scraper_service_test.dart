@@ -351,6 +351,202 @@ void main() {
     expect(events[1].outcome, isA<ScrapeFailed>());
   });
 
+  // ── BUG-1307：手动整库重刮的自动落盘判据 ────────────────────────────
+  //
+  // 页头「全部刮削」是唯一开 rescrapeScraped: true 的路径，会解锁覆盖
+  // CoverOrigin.scraped。而用户在匹配弹窗里亲手选定的封面写的**也是** scraped
+  // （applyCandidateToBooks → _applyCandidate），两者在 cover_meta 里无法区分，
+  // 所以覆盖判据必须是「唯一归一化精确标题」，不能是综合分 high。
+
+  /// 建一本已带封面、且封面来源记为 scraped（= 用户在弹窗里确认过）的书。
+  Future<VideoBookRow> seedConfirmed(String bookUid, String videoPath) async {
+    await seed(bookUid: bookUid, videoPath: videoPath);
+    final File existing = File(p.join(tmp.path, videoCoverFileName(bookUid)));
+    await existing.writeAsBytes(_fakePng);
+    await repo.updateCover(bookUid, existing.path);
+    await coverMeta.set(bookUid, const CoverMeta(origin: CoverOrigin.scraped));
+    return (await repo.getByBookUid(bookUid))!;
+  }
+
+  test('BUG-1307 手动整库重刮：唯一归一化精确标题才自动落盘', () async {
+    final VideoBookRow book = await seedConfirmed(
+      'video/exact_one',
+      p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
+    );
+    final String before = book.coverPath!;
+    final CoverScraperService svc = build(
+      offline: offlineWith(const OfflineAnimeRecord(
+        title: 'Attack on Titan',
+        type: ScrapeEntryType.tv,
+        episodes: 25,
+        picture: 'https://img/aot.png',
+        sourceId: 'mal/16498',
+      )),
+    );
+
+    final List<BatchScrapeProgress> events = await svc.scrapeLibrary(
+      <VideoBookRow>[book],
+      rescrapeScraped: true,
+      requireUniqueExactTitle: true,
+    ).toList();
+
+    expect(events.single.outcome, isA<ScrapeApplied>());
+    final CoverMeta? meta = await coverMeta.get('video/exact_one');
+    expect(meta?.entryId, 'mal/16498', reason: '唯一精确命中应真正落盘');
+    expect(before, isNotEmpty);
+  });
+
+  test('BUG-1307 手动整库重刮：多个同名精确候选不自动覆盖，降级待确认', () async {
+    final VideoBookRow book = await seedConfirmed(
+      'video/exact_two',
+      p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
+    );
+    final String before = book.coverPath!;
+    // 同名不同作（重制/不同源同名条目）：综合分都是 1.0 的 high，但「是哪一部」
+    // 无法判定，绝不能替用户拍板去覆盖一张已经存在的封面。
+    final CoverScraperService svc = build(
+      offline: OfflineIndex(const <OfflineAnimeRecord>[
+        OfflineAnimeRecord(
+          title: 'Attack on Titan',
+          type: ScrapeEntryType.tv,
+          episodes: 25,
+          picture: 'https://img/aot_a.png',
+          sourceId: 'mal/16498',
+        ),
+        OfflineAnimeRecord(
+          title: 'Attack on Titan',
+          type: ScrapeEntryType.tv,
+          episodes: 12,
+          picture: 'https://img/aot_b.png',
+          sourceId: 'mal/99999',
+        ),
+      ]),
+    );
+
+    final List<BatchScrapeProgress> events = await svc.scrapeLibrary(
+      <VideoBookRow>[book],
+      rescrapeScraped: true,
+      requireUniqueExactTitle: true,
+    ).toList();
+
+    expect(events.single.outcome, isA<ScrapeNeedsConfirm>());
+    final VideoBookRow after = (await repo.getByBookUid('video/exact_two'))!;
+    expect(after.coverPath, before, reason: '已有封面不得被覆盖');
+    final CoverMeta? meta = await coverMeta.get('video/exact_two');
+    expect(meta?.origin, CoverOrigin.scraped);
+    expect(meta?.entryId, isNull, reason: '没落盘就不该写条目身份');
+  });
+
+  test('BUG-1307 手动整库重刮：高分近似（非精确）候选降级待确认，不覆盖', () async {
+    final VideoBookRow book = await seedConfirmed(
+      'video/approx',
+      p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
+    );
+    final String before = book.coverPath!;
+    // 标题相似度足够高（token dice 0.857 ≥ 0.85）→ MatchScorer 判 high，
+    // 但归一化后并不相等。旧判据（只看 high）会当场覆盖用户已确认的封面。
+    final CoverScraperService svc = build(
+      offline: offlineWith(const OfflineAnimeRecord(
+        title: 'Attack on Titan Final',
+        type: ScrapeEntryType.tv,
+        episodes: 16,
+        picture: 'https://img/aot_final.png',
+        sourceId: 'mal/40028',
+      )),
+    );
+
+    final List<BatchScrapeProgress> events = await svc.scrapeLibrary(
+      <VideoBookRow>[book],
+      rescrapeScraped: true,
+      requireUniqueExactTitle: true,
+    ).toList();
+
+    expect(
+      events.single.outcome,
+      isA<ScrapeNeedsConfirm>(),
+      reason: '近似命中只能进待确认，不能无人值守覆盖',
+    );
+    final VideoBookRow after = (await repo.getByBookUid('video/approx'))!;
+    expect(after.coverPath, before);
+  });
+
+  test('BUG-1307 手动整库重刮：精确候选存在但按分数落选时，同样不自动落盘', () async {
+    // 「唯一精确」必须落在**获胜候选**身上：库里恰好有一条精确同名条目，却因为
+    // 年份/集数加分被另一条近似条目挤下去时，落盘的会是那条近似的——只数
+    // 「精确条目有几个」而不校验赢家是不是它，闸门就是漏的。
+    final VideoBookRow book = await seedConfirmed(
+      'video/exact_loses',
+      p.join(
+          'anime', 'Attack on Titan (2013)', 'Attack on Titan (2013) - 01.mkv'),
+    );
+    final String before = book.coverPath!;
+    final CoverScraperService svc = build(
+      offline: OfflineIndex(const <OfflineAnimeRecord>[
+        // 精确同名，但没有年份/集数可加分。
+        OfflineAnimeRecord(
+          title: 'Attack on Titan',
+          type: ScrapeEntryType.tv,
+          picture: 'https://img/aot_exact.png',
+          sourceId: 'mal/16498',
+        ),
+        // 近似标题，靠年份吻合 + 集数命中把综合分顶到精确条目之上。
+        OfflineAnimeRecord(
+          title: 'Attack on Titan Final',
+          type: ScrapeEntryType.tv,
+          episodes: 16,
+          year: 2013,
+          picture: 'https://img/aot_final.png',
+          sourceId: 'mal/40028',
+        ),
+      ]),
+    );
+
+    final List<BatchScrapeProgress> events = await svc.scrapeLibrary(
+      <VideoBookRow>[book],
+      rescrapeScraped: true,
+      requireUniqueExactTitle: true,
+    ).toList();
+
+    final ScrapeOutcome outcome = events.single.outcome;
+    expect(
+      outcome,
+      isA<ScrapeNeedsConfirm>(),
+      reason: '获胜候选不是那条精确同名的，不能无人值守落盘',
+    );
+    expect(
+      (outcome as ScrapeNeedsConfirm).candidates.single.candidate.entryId,
+      'mal/40028',
+      reason: '前提校验：按分数获胜的确实是近似那条，否则本用例没测到东西',
+    );
+    final VideoBookRow after = (await repo.getByBookUid('video/exact_loses'))!;
+    expect(after.coverPath, before);
+  });
+
+  test('BUG-1307 默认（自动刮削路径）判据不变：高分近似仍落抽帧封面', () async {
+    // 防过度收敛：requireUniqueExactTitle 默认 false，既有 _maybeAutoScrape
+    // 只覆盖 autoFrame 封面，判据仍是综合分 high。
+    final VideoBookRow book = await seed(
+      bookUid: 'video/auto_frame',
+      videoPath: p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
+    );
+    final CoverScraperService svc = build(
+      offline: offlineWith(const OfflineAnimeRecord(
+        title: 'Attack on Titan Final',
+        type: ScrapeEntryType.tv,
+        episodes: 16,
+        picture: 'https://img/aot_final.png',
+        sourceId: 'mal/40028',
+      )),
+    );
+
+    final List<BatchScrapeProgress> events =
+        await svc.scrapeLibrary(<VideoBookRow>[book]).toList();
+
+    expect(events.single.outcome, isA<ScrapeApplied>());
+    final CoverMeta? meta = await coverMeta.get('video/auto_frame');
+    expect(meta?.entryId, 'mal/40028');
+  });
+
   test('sidecar 覆盖已有封面后双键驱逐旧解码缓存（BUG-1118）', () async {
     final Directory lib = await Directory.systemTemp.createTemp('sidecar_ev_');
     addTearDown(() async {

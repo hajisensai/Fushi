@@ -1853,9 +1853,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 页头「全部刮削」：显式重跑整库在线刮削。已在线刮过的封面允许刷新，
-  /// 手动封面和 sidecar 封面仍由 [CoverScraperService] 保护；中匹配只计入待确认，
-  /// 不会因为一键任务就自动覆盖。
+  /// 页头「全部刮削」：显式重跑整库在线刮削。手动封面和 sidecar 封面由
+  /// [CoverScraperService] 保护；已在线刮过的封面允许刷新，但只能被
+  /// **唯一归一化精确标题**覆盖（`requireUniqueExactTitle`）——用户在匹配弹窗里
+  /// 亲手选定的封面同样记为 `CoverOrigin.scraped`，不能被一个综合分够线的
+  /// 近似命中改掉。近似命中只计入待确认，与书 / 漫画 / 游戏三域同一判据。
   Future<void> _scrapeAllVideos() async {
     final List<VideoBookRow> books = await widget.repo.listAll();
     if (!mounted) return;
@@ -1875,6 +1877,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             in bundle.service.scrapeLibrary(
           books,
           rescrapeScraped: true,
+          requireUniqueExactTitle: true,
         )) {
           final ScrapeBatchItemResult result = switch (progress.outcome) {
             ScrapeApplied() => ScrapeBatchItemResult.applied,
