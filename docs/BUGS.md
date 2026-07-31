@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1206 条。点号进各自文件。
+> 共 1207 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -38,6 +38,7 @@
 | [BUG-1277](bugs/BUG-1277-reader-navigation-after-dispose.md) | ✅ | ✅ | 有声书跨章等待后触发已销毁 State 重绘 |
 | [BUG-1276](bugs/BUG-1276-dashboard-heatmap-dark-contrast.md) | ✅ | ✅ | 黑色主题下学习活动热力图空周融进背景 |
 | [BUG-1270](bugs/BUG-1270-youtube-live-subtitle-seek-duplicate.md) | ✅ | ✅ | YouTube 实时字幕回跳后重复且累积成长段 |
+| [BUG-1260](bugs/BUG-1260-sync-progress-blank-and-silent-noop.md) | ✅ | ✅ | 同步进度条只有线没有字 + 零通道空转静默收尾 |
 | [BUG-1246](bugs/BUG-1246-galgame-helper-version-drift.md) | ✅ | ✅ | 随包 helper 已更新但完整旧安装被直接放行，native 修复永远不生效 |
 | [BUG-1245](bugs/BUG-1245-vn-reveal-chrome-also-advances.md) | ✅ | ✅ | VN唤出悬浮底栏时误同时推进 |
 | [BUG-1244](bugs/BUG-1244-vn-media-screen-skipped.md) | ✅ | ✅ | VN独立图片屏被逐句跳转永久略过 |
