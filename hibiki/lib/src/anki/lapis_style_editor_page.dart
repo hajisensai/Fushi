@@ -529,24 +529,16 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             t.anki_lapis_visual_select_field,
             style: tokens.type.sectionLabel,
           ),
-          SizedBox(height: tokens.spacing.gap),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Icon(
-                Icons.account_tree_outlined,
-                size: 18,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              SizedBox(width: tokens.spacing.gap),
-              Expanded(
-                child: Text(
-                  _selectedTargetPath.join('  ›  '),
-                  style: tokens.type.listSubtitle,
-                ),
-              ),
-            ],
+          SizedBox(height: tokens.spacing.gap / 2),
+          // 「不知道怎么用」的正面回答：说清「选中的就是下面控件在改的东西」。
+          Text(
+            t.anki_lapis_visual_select_field_hint,
+            style: tokens.type.listSubtitle,
           ),
+          SizedBox(height: tokens.spacing.gap),
+          // 当前目标做成一条实底横幅：原来只是一行细灰字的面包屑，在一排 chip
+          // 里根本看不出「现在选的是哪个」（用户反馈「右排的不明显」）。
+          _buildCurrentTargetBanner(tokens),
           SizedBox(height: tokens.spacing.card),
           _buildTargetGroup(
             tokens: tokens,
@@ -937,6 +929,51 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   /// 这种回避式特例。
   List<String> get _selectedTargetSources =>
       _selectedBlock?.fields ?? lapisVisualFieldSources(_selectedField);
+
+  /// 「正在编辑 · <路径>」横幅。
+  ///
+  /// 选中态原本只体现在一排 chip 里某个的底色上，外加一行细灰字面包屑——在深色
+  /// 主题下几乎看不出来（用户反馈「右排的不明显」）。用实底容器 + 主色把当前
+  /// 目标单独拎出来，选中态就不再依赖用户去分辨哪个 chip 稍亮一点。
+  Widget _buildCurrentTargetBanner(HibikiDesignTokens tokens) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.gap,
+        vertical: tokens.spacing.gap / 2,
+      ),
+      decoration: BoxDecoration(
+        color: colors.primaryContainer,
+        borderRadius: tokens.radii.cardRadius,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(
+            Icons.edit_outlined,
+            size: 16,
+            color: colors.onPrimaryContainer,
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                style: tokens.type.listSubtitle
+                    .copyWith(color: colors.onPrimaryContainer),
+                children: <InlineSpan>[
+                  TextSpan(text: '${t.anki_lapis_visual_editing_now}  '),
+                  TextSpan(
+                    text: _selectedTargetPath.join('  ›  '),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   /// 字段在真卡上的可见性说明——只对内置字段有意义，自定义区域没有这类限制。
   String? get _selectedFieldNote =>
