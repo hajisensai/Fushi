@@ -192,6 +192,7 @@ if (-not $env:HIBIKI_BOOTSTRAP_SKIP_NETCHECK) {
             Write-Warning "预检没连通 pub.dev（直连，10s 超时），且当前没有配置任何代理。可能只是抖动，继续往下跑；接下来若 pub get 卡住或报 socket error，按下面的办法配代理后重跑。"
             Write-Host (Get-ProxyHelpText) -ForegroundColor DarkYellow
         }
+        Write-Host "（本机就该直连、这条预检恒误报的话，设 HIBIKI_BOOTSTRAP_SKIP_NETCHECK=1 可整个跳过预检。）" -ForegroundColor DarkGray
     }
 }
 
