@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1315 条。点号进各自文件。
+> 共 1316 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1406](bugs/BUG-1406-libmpv-ffmpeg-version-guard-first-match.md) | ✅ | ✅ | libmpv FFmpeg 版本守卫只校验第一个匹配，单 ABI 静默降级不报红 |
+| [BUG-1400](bugs/BUG-1400-appaths-prefs-channel-fakeasync-deadlock.md) | ✅ | ✅ | AppPaths 解析穿真实 prefs 通道，fake async 相位一次调用钉死整个 isolate（互联下载登记测试 flaky） |
 | [BUG-1394](bugs/BUG-1394-cover-write-guard-cross-file.md) | ✅ | ✅ | 封面写盘守卫的跨文件派生覆盖洞：番剧下载封面绕过 BUG-1118 收口 |
 | [BUG-1393](bugs/BUG-1393-collection-member-poster.md) | ✅ | ✅ | 合集子篇被自动刮成作品级竖版海报，且作品海报被整个丢弃 |
 | [BUG-1392](bugs/BUG-1392-md3-chrome-guard-collection-prs.md) | ✅ | ✅ | 合集三 PR 绕过 MD3 页面 chrome 守卫：CheckboxListTile / 手抄封面角标 / 硬编码 fontSize 直接把 develop 打红 |

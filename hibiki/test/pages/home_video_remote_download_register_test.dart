@@ -16,6 +16,7 @@ import 'package:hibiki/src/sync/interconnect_download_manager.dart';
 import 'package:hibiki/src/sync/remote_library_source.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -53,6 +54,18 @@ void main() {
   late VideoBookRepository repo;
 
   setUp(() async {
+    // BUG-1400（本文件此前 flaky，第三个用例约 20% 概率红在 `expect(row, isNotNull)`）：
+    // 登记链路要经 [AppPaths.videoSubtitlesDirectory] 派生字幕落点，而 `AppPaths` 的每次
+    // 根解析都 await `SharedPreferences.getInstance()`。不装 mock 时该调用落到**真实**
+    // 平台通道，应答只能由真实事件循环投递；`testWidgets` 的 fake async 相位里投递不到，
+    // 而 `SharedPreferences` 把首次调用的 completer 记在**进程级静态字段**上——于是一次
+    // 在 fake async 相位发起的解析会把整个 isolate 的 prefs 永久钉死，后面所有 `AppPaths`
+    // 解析（包括 `runAsync` 里的下载登记链）都 join 这条死 future 而挂住，任务停在
+    // running、行永远写不出来。装上 mock 后应答在**进程内**以 microtask 完成，fake async
+    // 相位内即解析完毕，跨相位依赖被彻底消除（守卫见
+    // `test/storage/app_paths_fakeasync_prefs_channel_test.dart`）。
+    // 同目录 20+ 个 `home_video_*` / `galgame_*` widget 测试早已是这个约定，本文件漏了。
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.en);
     db = HibikiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
