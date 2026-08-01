@@ -1118,7 +1118,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// （ffprobe 探测内嵌轨 + 同目录外挂）按此 key 记忆：同一视频重开「字幕」分类直接
   /// 用缓存渲染，不再每次重跑 ffprobe 显加载条、也不再把已枚举出的字幕轨先清空重来
   /// （用户报「字幕轨每次都要加载、明明没可加载的地方；之前有的字幕还会消失要等」）。
-  /// null=尚未为当前视频枚举 / 已失效（换视频、导入新字幕档）→ 下次打开重新枚举。
+  /// null=尚未为当前视频枚举 / 已失效（换视频）→ 下次打开重新枚举。BUG-1329：导入或
+  /// 下载新字幕档**不**作废这个 key（那会换来一整趟无谓的容器重探 + 长时间加载条），
+  /// 新档由 `_registerImportedSubtitleSource` 就地并入 `_subtitleMenuSources`。
   String? _subtitleMenuSourcesPath;
 
   /// 当前视频是否有内封章节（TODO-424）：控制条章节入口按钮的显隐门控。章节列表是

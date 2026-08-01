@@ -2232,7 +2232,7 @@
   "video_jimaku_downloaded": "تم تنزيل الترجمة وتطبيقها",
   "video_jimaku_episode": "Episode (optional)",
   "video_jimaku_episode_hint": "Leave empty to list all",
-  "video_jimaku_fetch": "جلب الترجمات تلقائيًا (Jimaku)",
+  "video_jimaku_fetch": "جلب الترجمات (Jimaku)",
   "video_jimaku_filter": "تصفية النتائج (مثل WEBRip وBD)",
   "video_jimaku_find_sources": "Find subtitles",
   "video_jimaku_language": "Language",
@@ -2920,5 +2920,7 @@
   "download_airing_calendar_episode_label": "Ep ${episode}",
   "download_airing_calendar_week_prev": "Previous week",
   "download_airing_calendar_week_next": "Next week",
-  "download_airing_calendar_week_empty": "Nothing airing this week"
+  "download_airing_calendar_week_empty": "Nothing airing this week",
+  "video_jimaku_format": "Format",
+  "video_jimaku_format_all": "All"
 }

@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1277 条。点号进各自文件。
+> 共 1278 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1329](bugs/BUG-1329-video-subtitle-menu-not-refreshed-after-download.md) | ✅ | ✅ | 下载/导入字幕后字幕轨列表不刷新，且重新枚举时长时间挂加载条 |
 | [BUG-1328](bugs/BUG-1328-ui-font-chain-collapsed-to-single-family.md) | ✅ | ✅ | 界面字体回退链被压成单值：中文默认字形难看、日文缺字逐字乱回退、用户第2条字体永不生效 |
 | [BUG-1327](bugs/BUG-1327-video-context-dialog-barrier.md) | ✅ | ✅ | 视频页制卡上下文对话框被查词浮层 barrier 吃掉点击 |
 | [BUG-1326](bugs/BUG-1326-popup-ctx-modal-args-stringified.md) | ✅ | ✅ | 调整上下文回点制卡永远点第一个词条 |

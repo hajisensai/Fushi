@@ -2232,7 +2232,7 @@
   "video_jimaku_downloaded": "字幕已下载并应用",
   "video_jimaku_episode": "集数（可选）",
   "video_jimaku_episode_hint": "留空列出全部",
-  "video_jimaku_fetch": "自动获取字幕（Jimaku）",
+  "video_jimaku_fetch": "获取字幕（Jimaku）",
   "video_jimaku_filter": "筛选结果（如 WEBRip、BD）",
   "video_jimaku_find_sources": "查找字幕",
   "video_jimaku_language": "语言",
@@ -2920,5 +2920,7 @@
   "download_airing_calendar_episode_label": "第 ${episode} 集",
   "download_airing_calendar_week_prev": "上一周",
   "download_airing_calendar_week_next": "下一周",
-  "download_airing_calendar_week_empty": "本周没有相关放送"
+  "download_airing_calendar_week_empty": "本周没有相关放送",
+  "video_jimaku_format": "类型",
+  "video_jimaku_format_all": "全部"
 }
