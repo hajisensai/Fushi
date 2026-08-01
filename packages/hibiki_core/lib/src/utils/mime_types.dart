@@ -45,6 +45,11 @@ const Map<String, String> kMimeTypeByExtension = <String, String>{
   'png': 'image/png',
   'gif': 'image/gif',
   'webp': 'image/webp',
+  // 制卡封面动图的默认格式（`MiningAnimatedFormat.avif`）。缺项 = BUG-1122 原样复发：
+  // 封面按 [kFallbackMimeType]（octet-stream）下发，AnkiMobile 本地媒体服务器与
+  // AnkiDroid 入库的 Content-Type 都是错的，对端 WebView 拒绝内联渲染 → 卡上永久破图
+  // 且无任何日志（编码器缺失有 fail-open 降级，渲染端不支持没有）。
+  'avif': 'image/avif',
   'svg': 'image/svg+xml',
   // ── 字体 ──
   'woff': 'font/woff',

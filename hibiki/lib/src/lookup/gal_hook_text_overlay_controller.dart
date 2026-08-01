@@ -625,10 +625,16 @@ class GalHookTextOverlayController extends ChangeNotifier {
       compression: MiningMediaCompression.resolve(
         imageTier: model.miningImageQuality,
         audioTier: model.miningAudioQuality,
+        format: model.galMiningAnimatedFormat,
       ),
       repo: repo,
       updateNoteId: updateNoteId,
       addTitleTag: model.autoAddBookNameToTags,
+      // gal 制卡有两个入口：本浮窗与 texthooker 页。两处必须逐字同形地透传同一组
+      // 偏好，否则同一个设置在一个入口生效、另一个入口静默用默认值（协调器的
+      // `imageMode`/`animatedFormat` 默认 gif 会把漏传吞成「看着正常的旧行为」）。
+      imageMode: model.galMiningImageMode,
+      animatedFormat: model.galMiningAnimatedFormat,
     );
     if (result.aborted) {
       HibikiToast.showMine(

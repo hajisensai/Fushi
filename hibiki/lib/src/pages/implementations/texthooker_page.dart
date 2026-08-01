@@ -516,6 +516,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         imageTier: mixinAppModel.miningImageQuality,
         audioTier: mixinAppModel.miningAudioQuality,
         // 顶格档的动图参数随格式变，必须一并传入解析（见 MiningAnimatedFormat）。
+        // gal 窗口动图当前不吃清晰度档（`captureWindowGifBytes` 用自己的
+        // fps/maxWidth），所以这里传不传都一样——传是为了让两个 gal 入口与视频侧
+        // 逐字同形，免得哪天 gal 接上档位时又漏一处。
         format: mixinAppModel.galMiningAnimatedFormat,
       ),
       repo: repo,

@@ -837,6 +837,8 @@ const Map<String, String> kAnkiMimeTypeByExtension = <String, String>{
   'png': 'image/png',
   'gif': 'image/gif',
   'webp': 'image/webp',
+  // 制卡封面动图的默认格式（`MiningAnimatedFormat.avif`），见 hibiki_core 侧同项注释。
+  'avif': 'image/avif',
   'svg': 'image/svg+xml',
   // ── 字体 ──
   'woff': 'font/woff',

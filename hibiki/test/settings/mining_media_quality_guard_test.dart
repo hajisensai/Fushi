@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/mining/immersion_mining_request.dart'
+    show MiningAnimatedFormat;
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -226,6 +228,79 @@ void main() {
           reason: '「原片」是名不副实的旧名，不得复活');
       expect(src.contains('t.mining_audio_quality_native'), isFalse,
           reason: '「原片」是名不副实的旧名，不得复活');
+    });
+
+    // 动图格式偏好的**接线**守卫。默认值（`MiningAnimatedFormat.gif`）铺在
+    // `mineLine` / `ImmersionMiningRequest` / `resolve` 三处形参上，是为了让未改的
+    // 既有调用点逐字节等价——代价是**漏传不会报错，只会静默退回旧行为**：用户在设置
+    // 里选了 AVIF，某个入口照样出 GIF，没有任何日志。gal 制卡的浮窗入口一度就是这样
+    // 漏的（texthooker 入口接了、浮窗入口没接，同一个偏好两种结果）。
+    //
+    // 这条锁的是「每个真实入口都显式透传偏好」，不是「源码里有这行字」：断言的是
+    // `<形参>: <AppModel 偏好 getter>` 的配对，把值换成字面量或换成另一个域的偏好
+    // 都会红。
+    test('每个制卡入口都显式透传动图格式偏好（漏传只会静默退回 GIF）', () {
+      // 入口源码 -> (该入口该用的 AppModel 偏好 getter, 该入口持有 AppModel 的变量名)
+      const Map<String, (String, String)> entries = <String, (String, String)>{
+        'lib/src/pages/implementations/video_hibiki/lookup_mining.part.dart': (
+          'videoMiningAnimatedFormat',
+          'appModel',
+        ),
+        'lib/src/pages/implementations/texthooker_page.dart': (
+          'galMiningAnimatedFormat',
+          'mixinAppModel',
+        ),
+        'lib/src/lookup/gal_hook_text_overlay_controller.dart': (
+          'galMiningAnimatedFormat',
+          'model',
+        ),
+      };
+      entries.forEach((String path, (String, String) wiring) {
+        final (String getter, String owner) = wiring;
+        final String src = File(path).readAsStringSync();
+        final String pref = '$owner.$getter';
+        // 允许把偏好先落成局部变量再传（视频入口要传两处，本来就该只读一次）。
+        // 允许集 = 偏好本身 + 所有**由该偏好初始化**的 MiningAnimatedFormat 局部变量；
+        // 换成字面量、换成另一个域的偏好、换成无关局部变量都不在集里 → 红。
+        final Set<String> allowed = <String>{pref};
+        for (final RegExpMatch m in RegExp(
+                r'final MiningAnimatedFormat (\w+)\s*=\s*([^;]*);',
+                multiLine: true)
+            .allMatches(src)) {
+          if (m.group(2)!.contains(pref)) allowed.add(m.group(1)!);
+        }
+        for (final String param in <String>['format', 'animatedFormat']) {
+          final Iterable<String> actual = RegExp('\\b$param:\\s*([\\w.]+)')
+              .allMatches(src)
+              .map((RegExpMatch m) => m.group(1)!);
+          expect(
+            actual.isNotEmpty && actual.every(allowed.contains),
+            isTrue,
+            reason: '$path 的 `$param:` 实参必须是 $pref（或由它派生的局部变量），'
+                '实际是 ${actual.isEmpty ? "（一个都没传）" : actual.toSet()}；'
+                '漏传时形参默认 gif，用户选的格式静默失效',
+          );
+        }
+      });
+    });
+
+    // 动图格式是「文件长什么样」，它必须能被 MIME 表认出来。编码器缺失有 fail-open
+    // 降级兜底，**渲染端认不出没有任何兜底**：卡已经写进 Anki 了，用户看到的是永久
+    // 破图。`.webp` 缺项就是 BUG-1122 的原始形态，`.avif` 是同一个坑的下一个入口。
+    test('每种动图格式的扩展名都在两张 MIME 表里（BUG-1122 同款）', () {
+      final String core = File(
+        '../packages/hibiki_core/lib/src/utils/mime_types.dart',
+      ).readAsStringSync();
+      final String anki = File(
+        '../packages/hibiki_anki/lib/src/anki_models.dart',
+      ).readAsStringSync();
+      for (final MiningAnimatedFormat format in MiningAnimatedFormat.values) {
+        final String ext = format.fileExtension;
+        expect(RegExp("'$ext':\\s*'image/").hasMatch(core), isTrue,
+            reason: 'hibiki_core 的 MIME 表缺 $ext（$format 的产出扩展名）');
+        expect(RegExp("'$ext':\\s*'image/").hasMatch(anki), isTrue,
+            reason: 'hibiki_anki 的 MIME 镜像表缺 $ext（$format 的产出扩展名）');
+      }
     });
   });
 }
