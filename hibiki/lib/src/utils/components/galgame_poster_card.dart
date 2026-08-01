@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/components/shelf_card_widgets.dart';
 
 /// galgame 竖版海报卡（对齐 ReinaManager 库页/首页的卡片观感，见
 /// `docs/design/galgame-library-reina-visual-parity.md` §1）。
@@ -81,18 +82,26 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
 
     final Widget cover = _buildCover(context, colors);
 
+    final TextStyle? titleStyle = theme.textTheme.titleSmall?.copyWith(
+      fontWeight: FontWeight.w600,
+      color: widget.selected ? colors.primary : colors.onSurface,
+    );
     final Widget titleText = Padding(
       padding: const EdgeInsets.fromLTRB(6, 8, 6, 2),
-      child: Text(
-        widget.title,
-        // BUG-1184：galgame 名普遍 20 字以上，窄屏卡宽只有约 136px，单行只看得到
-        // 开头六七个字。封面在 [Flexible] 里，标题变高只是等量压缩封面、不会溢出。
+      // TODO-2490：两行仍放不下的长游戏名，桌面悬停显示完整标题；触屏走卡片
+      // 长按菜单（标题不限行）看全名。
+      child: ShelfTitleOverflowTooltip(
+        title: widget.title,
+        style: titleStyle,
         maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        textAlign: TextAlign.center,
-        style: theme.textTheme.titleSmall?.copyWith(
-          fontWeight: FontWeight.w600,
-          color: widget.selected ? colors.primary : colors.onSurface,
+        child: Text(
+          widget.title,
+          // BUG-1184：galgame 名普遍 20 字以上，窄屏卡宽只有约 136px，单行只看得到
+          // 开头六七个字。封面在 [Flexible] 里，标题变高只是等量压缩封面、不会溢出。
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: titleStyle,
         ),
       ),
     );

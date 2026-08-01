@@ -45,6 +45,10 @@ class ShelfCardFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final TextStyle style = tokens.type.metadata.copyWith(
+      color: tokens.surfaces.onSurface,
+      fontWeight: FontWeight.w600,
+    );
     return Padding(
       padding: EdgeInsetsDirectional.fromSTEB(
         tokens.spacing.gap * 0.75,
@@ -54,15 +58,19 @@ class ShelfCardFooter extends StatelessWidget {
       ),
       child: Align(
         alignment: Alignment.topCenter,
-        child: Text(
-          title,
-          overflow: TextOverflow.ellipsis,
+        // TODO-2490：两行仍放不下的长书名，桌面悬停显示完整标题；触屏侧的全名
+        // 兜底是长按菜单（MediaItemDialogFrame 标题已不限行）。
+        child: ShelfTitleOverflowTooltip(
+          title: title,
+          style: style,
           maxLines: 2,
-          textAlign: TextAlign.center,
-          softWrap: true,
-          style: tokens.type.metadata.copyWith(
-            color: tokens.surfaces.onSurface,
-            fontWeight: FontWeight.w600,
+          child: Text(
+            title,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+            textAlign: TextAlign.center,
+            softWrap: true,
+            style: style,
           ),
         ),
       ),
@@ -205,6 +213,66 @@ class ShelfFileCover extends StatelessWidget {
       image: resizedFileImage(File(path)),
       alignment: alignment,
       fit: fit,
+    );
+  }
+}
+
+/// 卡片标题溢出提示（TODO-2490）：三库页卡片标题统一「最多两行 + 省略号」
+/// （BUG-1184），但两行仍放不下的长名此前没有任何看全名的途径。本组件用与
+/// 内部 [Text] 相同的 [style] / [maxLines] 先测量
+/// （[TextPainter.didExceedMaxLines]，与 `hibiki_marquee.dart` 的溢出探测同
+/// 范式），**仅溢出时**才包 [Tooltip]：
+///
+/// - 桌面：鼠标悬停气泡显示完整标题；
+/// - 触屏：不新造交互——`triggerMode: manual` 不注册点按/长按识别器，不与
+///   卡片自身的长按菜单抢手势竞技场；长按菜单（`MediaItemDialogFrame`）标题
+///   不限行，是触屏侧的看全名路径；
+/// - 读屏：[Text] 语义本就携带完整字符串，`excludeFromSemantics` 避免重复播报。
+class ShelfTitleOverflowTooltip extends StatelessWidget {
+  const ShelfTitleOverflowTooltip({
+    required this.title,
+    required this.style,
+    required this.maxLines,
+    required this.child,
+    super.key,
+  });
+
+  /// 完整标题（Tooltip 消息），与 [child] 里 Text 的 data 同源。
+  final String title;
+
+  /// 与 [child] 里 Text 相同的样式——测量必须同参，否则溢出判定失真。
+  final TextStyle? style;
+
+  /// 与 [child] 里 Text 相同的行数上限。
+  final int maxLines;
+
+  /// 实际渲染的标题 [Text]（省略号截断的那份）。
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (!constraints.hasBoundedWidth) return child;
+        // 与 [Text] 相同的样式合成路径（inherit 时并入 DefaultTextStyle）。
+        final TextStyle effective =
+            DefaultTextStyle.of(context).style.merge(style);
+        final TextPainter painter = TextPainter(
+          text: TextSpan(text: title, style: effective),
+          maxLines: maxLines,
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout(maxWidth: constraints.maxWidth);
+        final bool overflowed = painter.didExceedMaxLines;
+        painter.dispose();
+        if (!overflowed) return child;
+        return Tooltip(
+          message: title,
+          triggerMode: TooltipTriggerMode.manual,
+          excludeFromSemantics: true,
+          child: child,
+        );
+      },
     );
   }
 }
