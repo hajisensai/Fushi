@@ -48,6 +48,17 @@ String buildLapisStylePreviewHtml({
     background: var(--bg-elevated);
     border-radius: 5px;
   }
+  /* `.audio-buttons-alt` 出厂带 font-size: 0（真卡里放的是 svg 回放按钮），
+     预览用文字占位，必须自己把字号写回来才看得见。 */
+  .hibiki-preview-audio {
+    display: inline-block;
+    font-size: 1rem;
+    line-height: 1.6;
+    padding-inline: 0.5em;
+    border: 1px solid var(--fg-subtle);
+    border-radius: 5px;
+    color: var(--fg-subtle);
+  }
 </style>
 </head>
 <body class="card card1$bodyModeClass">
@@ -69,13 +80,18 @@ String buildLapisStylePreviewHtml({
           <div class="vocab" data-hibiki-lapis-targets="expression"><ruby>食<rt>た</rt></ruby>べる</div>
           <div class="info">
             <div class="pitch" data-hibiki-lapis-targets="reading">たべる【2】</div>
+            <div class="audio-buttons"><span class="hibiki-preview-audio">▶ AUDIO</span></div>
           </div>
         </div>
-        <div class="dh-image"><div class="hibiki-preview-picture">IMAGE</div></div>
+        <div class="dh-image">
+          <div class="image"><div class="hibiki-preview-picture">IMAGE</div></div>
+        </div>
       </div>
       <br>
       <div class="sentence" data-hibiki-lapis-targets="sentence">
+        <div class="image-alt"><div class="hibiki-preview-picture">IMAGE</div></div>
         私は毎朝パンを<b>食べる</b>。
+        <div class="audio-buttons-alt"><span class="hibiki-preview-audio">▶ AUDIO</span></div>
       </div>
       <div class="def-info" data-hibiki-lapis-targets="definition-info">
         First Definition 1/3
@@ -126,6 +142,11 @@ String buildLapisStylePreviewHtml({
           </div>
         </div>
       </div>
+      <div class="sentence-alt" data-hibiki-lapis-targets="sentence">
+        <div class="image-alt"><div class="hibiki-preview-picture">IMAGE</div></div>
+        私は毎朝パンを<b>食べる</b>。
+        <div class="audio-buttons-alt"><span class="hibiki-preview-audio">▶ AUDIO</span></div>
+      </div>
     </main>
   </div>
 </section>
@@ -133,6 +154,31 @@ String buildLapisStylePreviewHtml({
 document.getElementById('lapis-style').textContent = ${_jsonForScript(css)};
 window.hibikiLapisEditor = {
   selectedField: null,
+  // 与 LapisNoteType.back 的 userSettings() 同一套判据：读 :root 上的 user
+  // settings 变量，去引号小写后写成 #lapis 的 data-* 属性——布局全靠这些属性
+  // 选中 vendored CSS 里的切换规则。真卡只在加载时跑一次；预览每次注入新 CSS
+  // 后都要重跑，否则改了位置看不到变化。
+  applyLayout: function() {
+    var styles = getComputedStyle(document.documentElement);
+    var options = [
+      '--main-picture-position',
+      '--sentence-position',
+      '--audio-buttons',
+      '--sentence-furigana',
+      '--glossary-separator'
+    ];
+    var nodes = document.querySelectorAll('[id="lapis"]');
+    for (var i = 0; i < options.length; i++) {
+      var opt = options[i];
+      var value = styles.getPropertyValue(opt)
+        .replace(/^['"]|['"]\$/g, '')
+        .trim()
+        .toLowerCase();
+      for (var n = 0; n < nodes.length; n++) {
+        nodes[n].setAttribute('data-' + opt.slice(2), value);
+      }
+    }
+  },
   showSide: function(side) {
     document.querySelectorAll('[data-side]').forEach(function(element) {
       element.hidden = element.dataset.side !== side;
@@ -172,12 +218,32 @@ document.addEventListener('click', function(event) {
     window.flutter_inappwebview.callHandler('selectLapisVisualField', field);
   }
 });
+window.hibikiLapisEditor.applyLayout();
 window.hibikiLapisEditor.showSide(${_jsonForScript(showBack ? 'back' : 'front')});
 window.hibikiLapisEditor.selectField(${_jsonForScript(selectedField.wireName)});
 </script>
 </body>
 </html>''';
 }
+
+/// 编辑器每次改动后重放到预览 WebView 的脚本。
+///
+/// 与首屏内联脚本的**收尾四步逐字对应**，是同一份契约的单一真相源：注入新 CSS
+/// → 重跑布局映射 → 切正/背面 → 重新高亮选中区域。顺序不能动：`applyLayout`
+/// 读的是 computed style，CSS 没落地就读到旧值；漏掉它则改了区块位置要重新载入
+/// 页面才看得到效果（守卫见 `lapis_style_preview_test.dart`『刷新脚本按同一顺序
+/// 重放布局』）。
+String buildLapisStylePreviewRefreshScript({
+  required String css,
+  required LapisVisualField selectedField,
+  required bool showBack,
+}) =>
+    '''
+document.getElementById('lapis-style').textContent = ${_jsonForScript(css)};
+window.hibikiLapisEditor.applyLayout();
+window.hibikiLapisEditor.showSide(${_jsonForScript(showBack ? 'back' : 'front')});
+window.hibikiLapisEditor.selectField(${_jsonForScript(selectedField.wireName)});
+''';
 
 String _jsonForScript(String value) =>
     jsonEncode(value).replaceAll('<', r'\u003C');
