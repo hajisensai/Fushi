@@ -2890,5 +2890,19 @@
   "anki_lapis_visual_mapping_hint": "填充选中区域的 Anki 字段；改动随样式一起保存。",
   "anki_lapis_visual_mapping_none": "该区域由模板自己绘制，没有对应字段。",
   "anki_lapis_visual_color_custom": "自定义",
-  "anki_lapis_visual_color_picker_title": "选择颜色"
+  "anki_lapis_visual_color_picker_title": "选择颜色",
+  "anki_lapis_visual_blocks": "自定义区域",
+  "anki_lapis_visual_blocks_hint": "把已有字段摆到卡片的其它位置。只改显示，不新增也不删除 Anki 字段。",
+  "anki_lapis_visual_block_add": "添加区域",
+  "anki_lapis_visual_block_delete": "删除区域",
+  "anki_lapis_visual_block_name": "区域 $index",
+  "anki_lapis_visual_block_anchor": "在卡片上的位置",
+  "anki_lapis_visual_block_anchor_top": "卡片顶部",
+  "anki_lapis_visual_block_anchor_above_sentence": "单词区下方",
+  "anki_lapis_visual_block_anchor_above_definition": "例句下方",
+  "anki_lapis_visual_block_anchor_below_definition": "释义框下方",
+  "anki_lapis_visual_block_anchor_bottom": "卡片底部",
+  "anki_lapis_visual_block_fields": "这里显示的字段",
+  "anki_lapis_visual_block_no_fields": "还没选字段",
+  "anki_lapis_visual_block_needs_note_type": "先选好卡片类型才能挑字段。"
 }

@@ -134,10 +134,20 @@ class LapisTemplateService {
     final AnkiNoteTypeDefinition? def =
         await _repository.readNoteTypeDefinition(LapisNoteType.modelName);
     if (def == null) return LapisApplyResult.notFound;
-    final LapisStylingDecision decision = decideLapisStylingAction(
-      ankiCss: def.css,
-      expectedCss: expected,
-      lastAppliedSha: settings.lapisAppliedCssSha,
+    final String expectedBack =
+        composeLapisBackTemplate(settings.lapisCustomBlocks);
+    final LapisStylingDecision templateDecision = decideLapisTemplateAction(
+      def: def,
+      expectedBack: expectedBack,
+      lastAppliedSha: settings.lapisAppliedTemplateSha,
+    );
+    final LapisStylingDecision decision = _mergeLapisDecisions(
+      decideLapisStylingAction(
+        ankiCss: def.css,
+        expectedCss: expected,
+        lastAppliedSha: settings.lapisAppliedCssSha,
+      ),
+      templateDecision,
     );
     if (decision == LapisStylingDecision.upToDate) {
       // 内容已一致但指纹可能还没记（老装置首次升级）：补记。基线指纹同理——
@@ -155,8 +165,27 @@ class LapisTemplateService {
     if (decision == LapisStylingDecision.foreignEdit && !force) {
       return LapisApplyResult.needsConfirm;
     }
-    await _pushStyling(def, expected);
+    await _pushCustomization(def, expected, expectedBack);
     return LapisApplyResult.applied;
+  }
+
+  /// 样式与模板两份判定合成一份：**取更保守的那个**。
+  ///
+  /// 任一侧疑似手改 → 整体 foreignEdit（要用户确认），因为一次 Apply 会同时写
+  /// 两边；只有两边都已是最新才算 upToDate。
+  static LapisStylingDecision _mergeLapisDecisions(
+    LapisStylingDecision css,
+    LapisStylingDecision template,
+  ) {
+    if (css == LapisStylingDecision.foreignEdit ||
+        template == LapisStylingDecision.foreignEdit) {
+      return LapisStylingDecision.foreignEdit;
+    }
+    if (css == LapisStylingDecision.upToDate &&
+        template == LapisStylingDecision.upToDate) {
+      return LapisStylingDecision.upToDate;
+    }
+    return LapisStylingDecision.safeUpdate;
   }
 
   /// 启动自动迁移：**只有 Hibiki 出厂基线真的变了**才自动备份并推送新
@@ -274,10 +303,28 @@ class LapisTemplateService {
       if (!templatesOk) {
         throw StateError('Backend rejected card template update');
       }
+      // 恢复出来的模板同样是 Hibiki 亲手写进去的，记下指纹——否则下次 Apply 会
+      // 把自己刚写的内容当成「疑似手改」，凭空多弹一次确认框。
+      final AnkiCardTemplate? card = def.templates
+          .where((AnkiCardTemplate t) => t.name == LapisNoteType.cardName)
+          .firstOrNull;
+      await _repository.updateSettings(
+        (AnkiSettings s) => s.copyWith(
+          lapisAppliedTemplateSha: card == null
+              ? null
+              : lapisCssSha256(normalizeCssForCompare(card.back)),
+          clearLapisAppliedTemplateSha: card == null,
+        ),
+      );
     }
   }
 
-  /// 备份 [def] → 推送 [css] → 记指纹。写模板的唯一通道（备份门在这里）。
+  /// 备份 [def] → 推送 [css] → 记指纹。启动自动迁移专用：**只写 styling**。
+  ///
+  /// 自动路径刻意不碰卡模板——模板写坏是「卡片内容不显示」，这种后果不该由一条
+  /// 用户没点过的自动路径承担。模板只经用户显式 Apply 落地（见
+  /// [_pushCustomization]）。vendored 背面模板将来升级时也一样：等用户点 Apply，
+  /// 与「Apply 是用户内容写进 Anki 的唯一闸门」一致。
   Future<void> _pushStyling(AnkiNoteTypeDefinition def, String css) async {
     await _writeBackupFile(def);
     final bool ok = await _repository.updateNoteTypeStyling(def.name, css);
@@ -285,6 +332,45 @@ class LapisTemplateService {
     await _repository.updateSettings((AnkiSettings s) => s.copyWith(
           lapisAppliedCssSha: lapisCssSha256(css),
           lapisMigratedBaselineSha: currentLapisBaselineSha,
+        ));
+  }
+
+  /// 显式 Apply 的写入通道：备份 → styling → 卡模板，**每步成功就立刻记自己的
+  /// 指纹**。
+  ///
+  /// 两个指纹分开记而不是等两步都成功再一起记：任一步失败时，已落地的那步的
+  /// Hibiki 侧状态与 Anki 端保持一致，重试只会重做真正没成功的那一步。合并记录
+  /// 反而会让重试把已经正确的一边再判成「要更新」。
+  ///
+  /// 先 styling 后模板：模板写入是风险更高的一步，放在后面能让它失败时前一步
+  /// 处于已知一致状态；失败照抛给 UI，绝不静默降级成「应用成功」。
+  Future<void> _pushCustomization(
+    AnkiNoteTypeDefinition def,
+    String css,
+    String back,
+  ) async {
+    await _writeBackupFile(def);
+    final bool stylingOk =
+        await _repository.updateNoteTypeStyling(def.name, css);
+    if (!stylingOk) throw StateError('Backend rejected styling update');
+    await _repository.updateSettings((AnkiSettings s) => s.copyWith(
+          lapisAppliedCssSha: lapisCssSha256(css),
+          lapisMigratedBaselineSha: currentLapisBaselineSha,
+        ));
+
+    final bool templatesOk = await _repository.updateNoteTypeTemplates(
+      def.name,
+      <AnkiCardTemplate>[
+        AnkiCardTemplate(
+          name: LapisNoteType.cardName,
+          front: LapisNoteType.front,
+          back: back,
+        ),
+      ],
+    );
+    if (!templatesOk) throw StateError('Backend rejected card template update');
+    await _repository.updateSettings((AnkiSettings s) => s.copyWith(
+          lapisAppliedTemplateSha: lapisCssSha256(normalizeCssForCompare(back)),
         ));
   }
 

@@ -507,10 +507,16 @@ LapisVisualStyleSheet splitLapisVisualStyleSheet(String customCss) {
 /// 自由 CSS 在前、托管区段在后）。**保存动作不得移动用户 CSS 相对托管区段的
 /// 位置**：托管区段整块 `!important`，把用户写在后面的覆盖搬到前面就等于静默
 /// 推翻他的改动。自由 CSS 本身逐字节原样写回，首尾空白不再被 trim。
+/// [extraManagedCss]：由**别处的真相源**派生、但同样归 Hibiki 托管的规则（当前
+/// 是自定义区域的样式，真相源在 `AnkiSettings.lapisCustomBlocks`）。它们只进
+/// 托管区段正文、**不进 CONFIG**——CONFIG 是回读用的，把派生物也写进去就成了
+/// 双真相源，删区域时必然留孤儿。托管区段正文本来每次就整块重生成，所以回读时
+/// 丢掉它们是正确行为。
 String composeLapisVisualStyleSheet({
   required String freeformCss,
   required Map<LapisVisualField, LapisVisualRule> rules,
   LapisVisualLayout layout = const LapisVisualLayout(),
+  List<String> extraManagedCss = const <String>[],
   bool managedFirst = false,
 }) {
   final Map<String, Object?> config = <String, Object?>{};
@@ -525,7 +531,8 @@ String composeLapisVisualStyleSheet({
     config[field.wireName] = rule.toJson();
     cssRules.addAll(_buildLapisVisualFieldCss(field, rule));
   }
-  if (config.isEmpty) return freeformCss;
+  cssRules.addAll(extraManagedCss);
+  if (config.isEmpty && cssRules.isEmpty) return freeformCss;
   final String managed = <String>[
     lapisVisualCssBeginMarker,
     '$_lapisVisualConfigPrefix${jsonEncode(config)} */',
@@ -623,32 +630,39 @@ List<String> lapisVisualFieldSources(LapisVisualField field) => switch (field) {
         ],
     };
 
+/// 一条可视规则的 CSS 声明（不含 selector 与字号——字号要按目标换算不同基准变量）。
+///
+/// 抽出来是为了让自定义区域（`lapis_blocks.dart`）与内置字段共用同一套声明生成：
+/// 两边分别手写就会漂开，出现「区域支持边框、字段不支持」这类无理由的差异。
+/// 整块 `!important` 是刚需——必须压过 Lapis 自己的高特异性规则。
+List<String> lapisVisualDeclarations(LapisVisualRule rule) => <String>[
+      if (rule.bold) '  font-weight: 700 !important;',
+      if (rule.alignment != null)
+        '  text-align: ${rule.alignment!.cssValue} !important;',
+      if (rule.colorHex != null) '  color: ${rule.colorHex} !important;',
+      if (rule.lineHeightPercent != null)
+        '  line-height: ${(rule.lineHeightPercent! / 100).toStringAsFixed(2)} !important;',
+      if (rule.backgroundColorHex != null)
+        '  background-color: ${rule.backgroundColorHex} !important;',
+      if (rule.borderWidthPx != null) ...<String>[
+        '  border-style: solid !important;',
+        '  border-width: ${rule.borderWidthPx}px !important;',
+      ],
+      if (rule.borderColorHex != null)
+        '  border-color: ${rule.borderColorHex} !important;',
+      if (rule.borderRadiusPx != null)
+        '  border-radius: ${rule.borderRadiusPx}px !important;',
+      if (rule.paddingPx != null) '  padding: ${rule.paddingPx}px !important;',
+      if (rule.marginBlockPx != null)
+        '  margin-block: ${rule.marginBlockPx}px !important;',
+    ];
+
 List<String> _buildLapisVisualFieldCss(
   LapisVisualField field,
   LapisVisualRule rule,
 ) {
   final String selector = lapisVisualSelector(field);
-  final List<String> declarations = <String>[
-    if (rule.bold) '  font-weight: 700 !important;',
-    if (rule.alignment != null)
-      '  text-align: ${rule.alignment!.cssValue} !important;',
-    if (rule.colorHex != null) '  color: ${rule.colorHex} !important;',
-    if (rule.lineHeightPercent != null)
-      '  line-height: ${(rule.lineHeightPercent! / 100).toStringAsFixed(2)} !important;',
-    if (rule.backgroundColorHex != null)
-      '  background-color: ${rule.backgroundColorHex} !important;',
-    if (rule.borderWidthPx != null) ...<String>[
-      '  border-style: solid !important;',
-      '  border-width: ${rule.borderWidthPx}px !important;',
-    ],
-    if (rule.borderColorHex != null)
-      '  border-color: ${rule.borderColorHex} !important;',
-    if (rule.borderRadiusPx != null)
-      '  border-radius: ${rule.borderRadiusPx}px !important;',
-    if (rule.paddingPx != null) '  padding: ${rule.paddingPx}px !important;',
-    if (rule.marginBlockPx != null)
-      '  margin-block: ${rule.marginBlockPx}px !important;',
-  ];
+  final List<String> declarations = lapisVisualDeclarations(rule);
   final List<String> result = <String>[];
   if (declarations.isNotEmpty) {
     result.add('$selector {\n${declarations.join('\n')}\n}');

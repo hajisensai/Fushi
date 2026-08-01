@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -26,12 +28,17 @@ class LapisVisualEditorResult {
   const LapisVisualEditorResult({
     required this.customCss,
     required this.fieldMappings,
+    this.blocks = const <LapisCustomBlock>[],
   });
 
   final String customCss;
 
   /// Anki 字段名 → Hibiki 占位符。只含**本次被改过**的字段，调用方逐条写回即可。
   final Map<String, String> fieldMappings;
+
+  /// 自定义区域的**完整**列表（不是 diff）：区域的增删改都在这一份里表达，
+  /// 调用方整份覆盖存回即可。
+  final List<LapisCustomBlock> blocks;
 }
 
 /// Lapis 卡片的可视化编辑入口：样式 + 区块位置 + 字段映射。
@@ -44,6 +51,7 @@ class LapisStyleEditorPage extends StatefulWidget {
     required this.fontScalePercent,
     this.noteTypeFields = const <String>[],
     this.initialFieldMappings = const <String, String>{},
+    this.initialBlocks = const <LapisCustomBlock>[],
     this.pickHandlebar,
     this.previewBuilder,
     super.key,
@@ -58,6 +66,9 @@ class LapisStyleEditorPage extends StatefulWidget {
 
   /// 当前 Anki 字段 → 占位符映射。
   final Map<String, String> initialFieldMappings;
+
+  /// 已配置的自定义区域。
+  final List<LapisCustomBlock> initialBlocks;
 
   /// 为 null = 不提供映射编辑（例如未连接 Anki）。
   final LapisHandlebarPicker? pickHandlebar;
@@ -75,6 +86,12 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   late final String _initialComposedCss;
   late final Map<LapisVisualField, LapisVisualRule> _rules;
   late LapisVisualLayout _layout;
+  late List<LapisCustomBlock> _blocks;
+  late final String _initialBlocksJson;
+
+  /// 非 null = 当前编辑的是这个自定义区域（与 [_selectedField] 互斥）。样式
+  /// 控件读写它自己的 rule，所以区域不需要另一套样式 UI。
+  String? _selectedBlockId;
 
   /// 本次改过的字段映射（Anki 字段名 → 占位符），保存时才回传。
   final Map<String, String> _mappingEdits = <String, String>{};
@@ -110,6 +127,8 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
         splitLapisVisualStyleSheet(widget.initialCustomCss);
     _rules = Map<LapisVisualField, LapisVisualRule>.of(sheet.rules);
     _layout = sheet.layout;
+    _blocks = List<LapisCustomBlock>.of(widget.initialBlocks);
+    _initialBlocksJson = jsonEncode(lapisBlocksToJson(_blocks));
     _managedFirst = sheet.managedFirst;
     _advancedCssController = TextEditingController(text: sheet.freeformCss)
       ..addListener(_handleAdvancedCssChanged);
@@ -129,18 +148,32 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
         freeformCss: _advancedCssController.text,
         rules: _rules,
         layout: _layout,
+        extraManagedCss: buildLapisBlocksCss(_blocks),
         managedFirst: _managedFirst,
       );
 
   bool get _isDirty =>
-      _composeCustomCss() != _initialComposedCss || _mappingEdits.isNotEmpty;
+      _composeCustomCss() != _initialComposedCss ||
+      _mappingEdits.isNotEmpty ||
+      jsonEncode(lapisBlocksToJson(_blocks)) != _initialBlocksJson;
+
+  /// 当前选中的自定义区域；没选区域时为 null。
+  LapisCustomBlock? get _selectedBlock => _selectedBlockId == null
+      ? null
+      : _blocks
+          .firstWhereOrNull((LapisCustomBlock b) => b.id == _selectedBlockId);
 
   /// 字段当前占位符：本次改过的优先，否则取进页面时的值。
   String _mappingFor(String ankiField) =>
       _mappingEdits[ankiField] ?? widget.initialFieldMappings[ankiField] ?? '';
 
   LapisVisualRule get _selectedRule =>
-      _rules[_selectedField] ?? const LapisVisualRule();
+      _selectedBlock?.rule ?? _rules[_selectedField] ?? const LapisVisualRule();
+
+  /// 选中目标是不是一个「框」（能设边框/圆角/内外边距）。自定义区域本身就是个
+  /// div，恒为 true。
+  bool get _selectedSupportsBoxLayout =>
+      _selectedBlockId != null || _selectedField.supportsBoxLayout;
 
   void _handleAdvancedCssChanged() {
     setState(() {});
@@ -148,8 +181,13 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   }
 
   void _selectField(LapisVisualField field) {
-    if (_selectedField == field && (_showBack || !field.backOnly)) return;
+    if (_selectedField == field &&
+        _selectedBlockId == null &&
+        (_showBack || !field.backOnly)) {
+      return;
+    }
     setState(() {
+      _selectedBlockId = null;
       _selectedField = field;
       if (field.backOnly) _showBack = true;
     });
@@ -157,12 +195,61 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   }
 
   void _updateSelectedRule(LapisVisualRule rule) {
+    final String? blockId = _selectedBlockId;
     setState(() {
-      if (rule.isDefault) {
+      if (blockId != null) {
+        // 区域样式内嵌在区域自己身上——删区域时样式一起没，不留孤儿规则。
+        _blocks = _blocks
+            .map((LapisCustomBlock b) =>
+                b.id == blockId ? b.copyWith(rule: rule) : b)
+            .toList();
+      } else if (rule.isDefault) {
         _rules.remove(_selectedField);
       } else {
         _rules[_selectedField] = rule;
       }
+    });
+    _refreshPreview();
+  }
+
+  void _selectBlock(String id) {
+    if (_selectedBlockId == id) return;
+    setState(() {
+      _selectedBlockId = id;
+      _showBack = true; // 自定义区域只在背面。
+    });
+    _refreshPreview();
+  }
+
+  void _addBlock() {
+    final String id = nextLapisBlockId(_blocks);
+    setState(() {
+      _blocks = <LapisCustomBlock>[
+        ..._blocks,
+        LapisCustomBlock(
+          id: id,
+          anchor: LapisBlockAnchor.belowDefinition,
+          fields: const <String>[],
+        ),
+      ];
+      _selectedBlockId = id;
+      _showBack = true;
+    });
+    _refreshPreview();
+  }
+
+  void _removeBlock(String id) {
+    setState(() {
+      _blocks = _blocks.where((LapisCustomBlock b) => b.id != id).toList();
+      if (_selectedBlockId == id) _selectedBlockId = null;
+    });
+    _refreshPreview();
+  }
+
+  void _updateBlock(String id, LapisCustomBlock Function(LapisCustomBlock) f) {
+    setState(() {
+      _blocks =
+          _blocks.map((LapisCustomBlock b) => b.id == id ? f(b) : b).toList();
     });
     _refreshPreview();
   }
@@ -207,6 +294,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           css: css,
           selectedField: _selectedField,
           showBack: _showBack,
+          selectedBlockId: _selectedBlockId,
         ),
       );
     } catch (_) {
@@ -244,6 +332,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
         LapisVisualEditorResult(
           customCss: _composeCustomCss(),
           fieldMappings: Map<String, String>.of(_mappingEdits),
+          blocks: List<LapisCustomBlock>.of(_blocks),
         ),
       );
 
@@ -383,6 +472,8 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           selectedField: _selectedField,
           showBack: _showBack,
           darkMode: Theme.of(context).brightness == Brightness.dark,
+          blocks: _blocks,
+          selectedBlockId: _selectedBlockId,
         ),
         mimeType: 'text/html',
         encoding: 'utf-8',
@@ -401,8 +492,16 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           callback: (List<dynamic> arguments) {
             final Object? raw = arguments.isEmpty ? null : arguments.first;
             if (raw is! String) return null;
+            if (!mounted) return null;
+            final String? blockId = lapisBlockIdFromPreviewTarget(raw);
+            if (blockId != null) {
+              if (_blocks.any((LapisCustomBlock b) => b.id == blockId)) {
+                _selectBlock(blockId);
+              }
+              return null;
+            }
             final LapisVisualField? field = LapisVisualField.fromWireName(raw);
-            if (field != null && mounted) _selectField(field);
+            if (field != null) _selectField(field);
             return null;
           },
         );
@@ -433,7 +532,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
               SizedBox(width: tokens.spacing.gap),
               Expanded(
                 child: Text(
-                  _targetPath(_selectedField).join('  ›  '),
+                  _selectedTargetPath.join('  ›  '),
                   style: tokens.type.listSubtitle,
                 ),
               ),
@@ -492,12 +591,13 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             ],
           ),
           _buildLayoutSection(tokens),
+          _buildBlocksSection(tokens),
           SizedBox(height: tokens.spacing.card),
           Row(
             children: <Widget>[
               Expanded(
                 child: Text(
-                  _fieldLabel(_selectedField),
+                  _selectedTargetLabel,
                   style: tokens.type.listTitle,
                 ),
               ),
@@ -509,7 +609,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
               ),
             ],
           ),
-          if (_fieldNote(_selectedField) case final String note)
+          if (_selectedFieldNote case final String note)
             Padding(
               padding: EdgeInsets.only(bottom: tokens.spacing.gap),
               child: Row(
@@ -626,7 +726,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
               rule.copyWith(backgroundColorHex: colorHex),
             ),
           ),
-          if (_selectedField.supportsBoxLayout) ...<Widget>[
+          if (_selectedSupportsBoxLayout) ...<Widget>[
             SizedBox(height: tokens.spacing.card),
             ExpansionTile(
               tilePadding: EdgeInsets.zero,
@@ -751,6 +851,17 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
         _ => null,
       };
 
+  /// 当前编辑目标的面包屑。
+  List<String> get _selectedTargetPath {
+    final LapisCustomBlock? block = _selectedBlock;
+    if (block == null) return _targetPath(_selectedField);
+    return <String>[
+      t.anki_lapis_visual_blocks,
+      _blockAnchorLabel(block.anchor),
+      _selectedTargetLabel,
+    ];
+  }
+
   List<String> _targetPath(LapisVisualField field) {
     if (const <LapisVisualField>{
       LapisVisualField.expression,
@@ -807,6 +918,151 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           ),
         ],
       );
+
+  /// 字段在真卡上的可见性说明——只对内置字段有意义，自定义区域没有这类限制。
+  String? get _selectedFieldNote =>
+      _selectedBlockId != null ? null : _fieldNote(_selectedField);
+
+  /// 当前编辑目标的显示名：自定义区域优先。
+  String get _selectedTargetLabel {
+    final LapisCustomBlock? block = _selectedBlock;
+    if (block == null) return _fieldLabel(_selectedField);
+    return t.anki_lapis_visual_block_name(
+      index: _blocks.indexOf(block) + 1,
+    );
+  }
+
+  String _blockAnchorLabel(LapisBlockAnchor anchor) => switch (anchor) {
+        LapisBlockAnchor.top => t.anki_lapis_visual_block_anchor_top,
+        LapisBlockAnchor.aboveSentence =>
+          t.anki_lapis_visual_block_anchor_above_sentence,
+        LapisBlockAnchor.aboveDefinition =>
+          t.anki_lapis_visual_block_anchor_above_definition,
+        LapisBlockAnchor.belowDefinition =>
+          t.anki_lapis_visual_block_anchor_below_definition,
+        LapisBlockAnchor.bottom => t.anki_lapis_visual_block_anchor_bottom,
+      };
+
+  /// 自定义区域：列表 + 新建 + （选中时）位置与字段编辑。
+  ///
+  /// 区域**只改显示**——它把卡型里已有的字段摆到另一个位置，不新增也不删除任何
+  /// Anki 字段。所以新建/删除区域都不会让 Anki 要求 full sync，更不会删掉卡片
+  /// 数据；这也是为什么这里没有「新建字段」入口。
+  Widget _buildBlocksSection(HibikiDesignTokens tokens) {
+    final LapisCustomBlock? selected = _selectedBlock;
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: EdgeInsets.only(bottom: tokens.spacing.gap),
+      leading: const Icon(Icons.dashboard_outlined),
+      title: Text(t.anki_lapis_visual_blocks),
+      subtitle: Text(t.anki_lapis_visual_blocks_hint),
+      initiallyExpanded: _blocks.isNotEmpty,
+      children: <Widget>[
+        for (final LapisCustomBlock block in _blocks)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            selected: block.id == _selectedBlockId,
+            leading: const Icon(Icons.crop_free_outlined),
+            title: Text(
+              t.anki_lapis_visual_block_name(
+                index: _blocks.indexOf(block) + 1,
+              ),
+            ),
+            subtitle: Text(
+              block.fields.isEmpty
+                  ? t.anki_lapis_visual_block_no_fields
+                  : '${_blockAnchorLabel(block.anchor)} · '
+                      '${block.fields.join(' / ')}',
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: t.anki_lapis_visual_block_delete,
+              onPressed: () => _removeBlock(block.id),
+            ),
+            onTap: () => _selectBlock(block.id),
+          ),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            onPressed: _addBlock,
+            icon: const Icon(Icons.add),
+            label: Text(t.anki_lapis_visual_block_add),
+          ),
+        ),
+        if (selected != null) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          DropdownMenu<String>(
+            key: ValueKey<String>(
+              'lapis-block-anchor-${selected.id}-${selected.anchor.wireName}',
+            ),
+            expandedInsets: EdgeInsets.zero,
+            initialSelection: selected.anchor.wireName,
+            label: Text(t.anki_lapis_visual_block_anchor),
+            dropdownMenuEntries: <DropdownMenuEntry<String>>[
+              for (final LapisBlockAnchor anchor in LapisBlockAnchor.values)
+                DropdownMenuEntry<String>(
+                  value: anchor.wireName,
+                  label: _blockAnchorLabel(anchor),
+                ),
+            ],
+            onSelected: (String? value) {
+              final LapisBlockAnchor? anchor =
+                  value == null ? null : LapisBlockAnchor.fromWireName(value);
+              if (anchor == null) return;
+              _updateBlock(
+                selected.id,
+                (LapisCustomBlock b) => b.copyWith(anchor: anchor),
+              );
+            },
+          ),
+          SizedBox(height: tokens.spacing.card),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              t.anki_lapis_visual_block_fields,
+              style: tokens.type.listSubtitle,
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          if (widget.noteTypeFields.isEmpty)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                t.anki_lapis_visual_block_needs_note_type,
+                style: tokens.type.listSubtitle,
+              ),
+            )
+          else
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Wrap(
+                spacing: tokens.spacing.gap,
+                runSpacing: tokens.spacing.gap,
+                children: <Widget>[
+                  // 候选只来自**当前卡型**：区域摆的是已有字段，列一个卡型里
+                  // 不存在的名字只会生成一段永远为空的 handlebar。
+                  for (final String field in widget.noteTypeFields)
+                    HibikiSelectableChip(
+                      label: field,
+                      selected: selected.fields.contains(field),
+                      onSelected: (_) => _updateBlock(
+                        selected.id,
+                        (LapisCustomBlock b) => b.copyWith(
+                          fields: b.fields.contains(field)
+                              ? (b.fields
+                                  .where((String f) => f != field)
+                                  .toList())
+                              : <String>[...b.fields, field],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ],
+    );
+  }
 
   /// 卡片区块位置。三项都直接映射 vendored Lapis 自己的 user settings 变量
   /// （见 [LapisVisualLayout]）——空值 = 不覆写 = 保持出厂布局。
@@ -919,6 +1175,9 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   /// 选中区域由哪些 Anki 字段填充。只列**当前卡型真有**的字段：用户选的不是
   /// Lapis 时这里自然空掉，不会把 Lapis 的字段名写到别的卡型头上。
   Widget _buildFieldMappingSection(HibikiDesignTokens tokens) {
+    // 选中自定义区域时不显示：区域显示哪些字段由它自己的字段选择器决定，
+    // 两个都摆出来会让「这里改的到底是哪一层」变得含糊。
+    if (_selectedBlockId != null) return const SizedBox.shrink();
     if (widget.pickHandlebar == null || widget.noteTypeFields.isEmpty) {
       return const SizedBox.shrink();
     }
