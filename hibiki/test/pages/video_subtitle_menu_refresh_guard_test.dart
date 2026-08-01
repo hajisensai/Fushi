@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
 /// BUG-1329 的静态守卫：下载 / 导入字幕后，字幕轨列表必须**当场**多出那一条，而不是
@@ -12,19 +13,28 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   final String src = readVideoHibikiSource();
 
-  /// 剥掉整行注释。源码扫描守卫若把注释也算数，「把调用点注释掉」这种改动就能原样
-  /// 骗过它（本仓已被这类假绿咬过多次）；所以下面所有 contains 断言都跑在纯代码上。
-  String codeOnly(String source) => source
-      .split('\n')
-      .where((String line) => !line.trimLeft().startsWith('//'))
-      .join('\n');
+  /// 掩掉注释后的同一份语料。源码扫描守卫若把注释也算数，「把调用点注释掉」这种
+  /// 改动就能原样骗过它（本仓已被这类假绿咬过多次）；下面所有 contains 断言都跑在
+  /// 纯代码上。
+  ///
+  /// 用共享 helper 而不是手写「丢掉整行以 // 起的行」：后者只堵住行注释，
+  /// `/* _registerImportedSubtitleSource(downloaded) */` 这种块注释一概放行——
+  /// 把实现删光、只在块注释里留下那串字面量，守卫照样绿（实测验证过的假绿）。
+  /// 掩码还是**等长**的，下面 region 的 indexOf 下标与原文一致。
+  final String code = maskCommentsAndScriptLines(src);
 
+  /// 取 [startSig] 到 [endSig] 之间的**代码**（注释已掩成等长空白）。
+  ///
+  /// 边界在**原文**上定位、内容从**掩码串**上切：本文件有一个 endSig 就是一行文档
+  /// 注释（`/// 选中某副字幕源`），在掩码串里它已经变成空白、`indexOf` 会返回 -1。
+  /// 两串等长同构是这里能这么干的前提——掩码只把字符换成空白，绝不增删，所以同一
+  /// 组下标在两串上指向同一个位置。
   String region(String startSig, String endSig) {
     final int start = src.indexOf(startSig);
     expect(start, greaterThanOrEqualTo(0), reason: 'missing $startSig');
     final int end = src.indexOf(endSig, start + startSig.length);
     expect(end, greaterThan(start), reason: 'missing $endSig after $startSig');
-    return codeOnly(src.substring(start, end));
+    return code.substring(start, end);
   }
 
   test('BUG-1329: Jimaku 下载完把新档就地并入字幕轨列表', () {
