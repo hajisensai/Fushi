@@ -8,6 +8,8 @@ import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart'
     show RemoteLookupUnreachableError;
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/local_audio_db.dart'
+    show LocalAudioUnavailableError;
 
 /// 弱网下的连接超时上限：从 5s 放宽到 8s，减少慢握手被误判为失败（TODO-1057）。
 const Duration kRemoteAudioConnectTimeout = Duration(seconds: 8);
@@ -178,9 +180,14 @@ class WordAudioResolver {
   }
 
   Future<String?> _resolveLocal(String expression, String reading) async {
-    final Map<String, dynamic>? info =
-        await queryLocalAudio(expression, reading);
-    return _extractLocal(info);
+    try {
+      final Map<String, dynamic>? info =
+          await queryLocalAudio(expression, reading);
+      return await _extractLocal(info);
+    } on LocalAudioUnavailableError catch (e, stack) {
+      _logLocalAudioUnavailable(e, stack, expression);
+      return null;
+    }
   }
 
   Future<String?> _resolveLocalAt(
@@ -188,9 +195,38 @@ class WordAudioResolver {
     String reading,
     int dbIndex,
   ) async {
-    final Map<String, dynamic>? info =
-        await queryLocalAudioByDbIndex(expression, reading, dbIndex);
-    return _extractLocal(info, fallbackDbIndex: dbIndex);
+    try {
+      final Map<String, dynamic>? info =
+          await queryLocalAudioByDbIndex(expression, reading, dbIndex);
+      return await _extractLocal(info, fallbackDbIndex: dbIndex);
+    } on LocalAudioUnavailableError catch (e, stack) {
+      _logLocalAudioUnavailable(e, stack, expression);
+      return null;
+    }
+  }
+
+  /// 本地库这次**没答上**（撞锁 / 查询预算耗尽）：与「库里真没这个词」是两回事。
+  ///
+  /// BUG-1413：旧实现下这两件事都是一个裸 `null`，`resolveConfigured` 只能一视同仁
+  /// 跳到下一源，最终用户看到「暂无发音」，且**整条链一条日志都没有**（500ms 预算
+  /// 先于库自己的 3s `busy_timeout` 到点，sqlite 的异常压根没机会抛出来）。现在记一条
+  /// 用户可见的错误日志（设置 → 诊断 → 错误日志），再跳下一源。
+  ///
+  /// 刻意**不**做重试、**不**计入 [_markRemoteSourceFailed] 那套失败冷却：冷却是给
+  /// 「连不上的死源」设计的，而本地库忙是瞬态的（绑定期建索引结束就恢复）——把一个
+  /// 马上就能用的库额外禁用 45s，等于把小问题放大成「这段时间该库全哑」。
+  static void _logLocalAudioUnavailable(
+    LocalAudioUnavailableError e,
+    StackTrace stack,
+    String expression,
+  ) {
+    ErrorLogService.instance.log(
+      'WordAudioResolver.localAudio 本地音频库未能应答'
+      '（$expression / ${e.reason.name}）：本次跳过该库，'
+      '这不代表库里没有这个词的发音',
+      e,
+      stack,
+    );
   }
 
   Future<String?> _extractLocal(

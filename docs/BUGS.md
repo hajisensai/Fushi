@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1317 条。点号进各自文件。
+> 共 1318 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1413](bugs/BUG-1413-local-audio-busy-swallowed-as-miss.md) | ✅ | ✅ | 本地音频库 SQLITE_BUSY 被吞成与「真没这词」同形的 null |
 | [BUG-1412](bugs/BUG-1412-activity-identity-gates.md) | ✅ | ✅ | 游戏活动身份回退过宽：同名条目取第一个 / 脏 key 误绑封面 |
 | [BUG-1406](bugs/BUG-1406-libmpv-ffmpeg-version-guard-first-match.md) | ✅ | ✅ | libmpv FFmpeg 版本守卫只校验第一个匹配，单 ABI 静默降级不报红 |
 | [BUG-1400](bugs/BUG-1400-appaths-prefs-channel-fakeasync-deadlock.md) | ✅ | ✅ | AppPaths 解析穿真实 prefs 通道，fake async 相位一次调用钉死整个 isolate（互联下载登记测试 flaky） |

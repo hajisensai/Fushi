@@ -177,6 +177,11 @@ class TtsChannel {
           }
           return null;
         });
+      } on LocalAudioUnavailableError {
+        // BUG-1413：库这次没答上（撞锁）必须穿透到 WordAudioResolver。在这里吞成
+        // null 就又与「库里真没这个词」同形了——那正是本条要消除的东西。
+        // 自定义异常可原样跨 Isolate.run 边界回到本 isolate（已实测）。
+        rethrow;
       } catch (e, stack) {
         ErrorLogService.instance.log('TtsChannel.queryLocalAudio', e, stack);
         return null;
@@ -217,6 +222,8 @@ class TtsChannel {
               source: source,
               cacheDir: Directory(cacheDirPath),
             ));
+      } on LocalAudioUnavailableError {
+        rethrow; // 同 [queryLocalAudio]（BUG-1413）：没答上 ≠ 没有音频。
       } catch (e, stack) {
         ErrorLogService.instance.log('TtsChannel.extractLocalAudio', e, stack);
         return null;

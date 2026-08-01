@@ -9,6 +9,60 @@ import 'package:sqlite3/sqlite3.dart';
 
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
+/// 本地音频库这次**没能给出答案**的原因。共同点：库里到底有没有这个词，
+/// 这次**根本没查出来**——与「库读到了、里面确实没有」是两件事。
+enum LocalAudioUnavailableReason {
+  /// 库文件被并发写者独占（`SQLITE_BUSY` / `SQLITE_LOCKED`），等满
+  /// `busy_timeout` 仍没拿到共享锁。最典型的写者就是我们自己绑定期的
+  /// [LocalAudioDb.ensureIndexes]（大库建索引可达数秒）。
+  busy,
+
+  /// 调用方的查询预算先于库自己的 `busy_timeout` 到点——库还在忙，
+  /// 只是我们不等了。**预算耗尽不是「这个词没有发音」的判据。**
+  timedOut,
+}
+
+/// 一次本地音频库读操作没能给出答案：忙 / 预算耗尽。
+///
+/// 根因修复（BUG-1413）：[LocalAudioDb.queryMeta] / [LocalAudioDb.extractBlob]
+/// 旧实现把 `SQLITE_BUSY` 和「查不到行」都压成同一个 `null`，调用方无从区分，
+/// 用户只看到「暂无发音」，无从知道其实是数据库正忙。把「没有答案」从一个
+/// **值**改成一个**类型**后，它与「没有这个词」在编译期就分开了，
+/// 调用方不可能再无意中把两者当成一回事。
+///
+/// 与远端音源的 `RemoteLookupUnreachableError` 是同一套分工：
+/// 「不可达 / 没答上」抛异常，「可达但确实没有音频」返回 null。
+class LocalAudioUnavailableError implements Exception {
+  const LocalAudioUnavailableError({
+    required this.reason,
+    this.dbPath = '',
+    this.detail = '',
+  });
+
+  final LocalAudioUnavailableReason reason;
+
+  /// 出问题的库路径；预算耗尽（[LocalAudioUnavailableReason.timedOut]）时调用方
+  /// 通常只知道 dbIndex 拿不到路径，留空。
+  final String dbPath;
+
+  /// 底层错误的可读描述（如 sqlite 的 `SqliteException` 文本），供错误日志排查。
+  final String detail;
+
+  @override
+  String toString() {
+    final String where = dbPath.isEmpty ? '' : ' db=$dbPath';
+    final String why = detail.isEmpty ? '' : ' ($detail)';
+    return 'LocalAudioUnavailableError(${reason.name})$where$why';
+  }
+}
+
+/// `SQLITE_BUSY` / `SQLITE_LOCKED`：库被别的连接占着，这次没读成。
+/// `resultCode` 是主结果码（`extendedResultCode & 0xFF`），故 `BUSY_SNAPSHOT`
+/// 之类的扩展码也一并归入。
+bool _isBusy(SqliteException e) =>
+    e.resultCode == 5 /* SQLITE_BUSY */ ||
+    e.resultCode == 6 /* SQLITE_LOCKED */;
+
 /// Pure-Dart reader for the Yomitan "Local Audio Server" SQLite databases used
 /// for term-pronunciation audio.
 ///
@@ -226,6 +280,22 @@ class LocalAudioDb {
         }
       }
       return best; // 全被过滤 → null（该库无启用源命中）
+    } on SqliteException catch (e, stack) {
+      // BUG-1413：撞锁**不是**「库里没这个词」。旧实现在这里 `return null`，与上面
+      // 三处真·未命中的 null 完全同形，调用方（WordAudioResolver）只能当 miss 处理
+      // → 用户看到「暂无发音」，无从知道数据库正忙。抛可区分的类型，让「没有答案」
+      // 走独立路径；只读连接的 busy_timeout 已经等过了，这里不再重试、不加延迟。
+      if (_isBusy(e)) {
+        throw LocalAudioUnavailableError(
+          reason: LocalAudioUnavailableReason.busy,
+          dbPath: dbPath,
+          detail: '$e',
+        );
+      }
+      // 其余 sqlite 错误（缺表 / 损坏 / 无权限）是**稳定**故障，不是瞬态：库要么
+      // 一直答不了要么导入时就被 [isUsableAudioSource] 拦下。保持既有 log + null。
+      ErrorLogService.instance.log('LocalAudioDb.queryMeta', e, stack);
+      return null;
     } catch (e, stack) {
       ErrorLogService.instance.log('LocalAudioDb.queryMeta', e, stack);
       return null;
@@ -285,6 +355,19 @@ class LocalAudioDb {
       out.parent.createSync(recursive: true);
       out.writeAsBytesSync(data);
       return out.path;
+    } on SqliteException catch (e, stack) {
+      // 同 [queryMeta]（BUG-1413）：撞锁是「这次没取成」，不是「这个词条没有音频」。
+      // 旧实现的 null 会让 WordAudioResolver 跳过该库继续下一源，最终同样落到
+      // 「暂无发音」且用户完全无从分辨。
+      if (_isBusy(e)) {
+        throw LocalAudioUnavailableError(
+          reason: LocalAudioUnavailableReason.busy,
+          dbPath: dbPath,
+          detail: '$e',
+        );
+      }
+      ErrorLogService.instance.log('LocalAudioDb.extractBlob', e, stack);
+      return null;
     } catch (e, stack) {
       ErrorLogService.instance.log('LocalAudioDb.extractBlob', e, stack);
       return null;

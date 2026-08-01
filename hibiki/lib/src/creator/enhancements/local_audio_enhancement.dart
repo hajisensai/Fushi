@@ -7,8 +7,10 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/utils/misc/local_audio_db.dart'
+    show LocalAudioUnavailableError;
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart'
-    show resolveLookupAudioUrl;
+    show kLocalAudioQueryBudget, resolveLookupAudioUrl;
 import 'package:hibiki/utils.dart';
 
 /// BUG-1005：把 [resolveLookupAudioUrl] 解析出的单词音频 ref 物化成本地 [File] 供 Anki 落
@@ -125,6 +127,21 @@ class LocalAudioEnhancement extends AudioEnhancement {
     );
   }
 
+  /// 本地音频库这次没应答（撞锁 / 查询预算耗尽）时记一条用户可见的错误日志
+  /// （设置 → 诊断 → 错误日志），而不是静默把它当成「这个词没有发音」。
+  static void _logLocalAudioSkipped(
+    String term,
+    Object error,
+    StackTrace stack,
+  ) {
+    ErrorLogService.instance.log(
+      'LocalAudioEnhancement 本地音频库未能应答（$term）：'
+      '本次落远端音源 / TTS 兜底，这不代表库里没有这个词的发音',
+      error,
+      stack,
+    );
+  }
+
   Future<File?> _generateAudio(
       AppModel appModel, String term, String reading) async {
     // 1. Local audio database (Yomitan SQLite): query metadata, then extract
@@ -135,7 +152,7 @@ class LocalAudioEnhancement extends AudioEnhancement {
     try {
       final info = await TtsChannel.instance
           .queryLocalAudio(term, reading)
-          .timeout(const Duration(milliseconds: 500));
+          .timeout(kLocalAudioQueryBudget);
       if (info != null) {
         final int dbIndex = (info['dbIndex'] as int?) ?? 0;
         final path = await TtsChannel.instance.extractLocalAudio(
@@ -148,8 +165,14 @@ class LocalAudioEnhancement extends AudioEnhancement {
           if (file.existsSync()) return file;
         }
       }
-    } on TimeoutException {
-      // Fall through
+    } on TimeoutException catch (e, stack) {
+      // BUG-1413：预算耗尽＝本地库**没答上**，不是「这个词没有发音」。仍旧落到
+      // step 2 / step 3 兜底（行为不变），但必须留痕：旧实现这里是整条制卡链上
+      // 最静默的一处——音频字段空且无任何提示，用户与开发者都看不出库当时在忙。
+      _logLocalAudioSkipped(term, e, stack);
+    } on LocalAudioUnavailableError catch (e, stack) {
+      // 库明确报了撞锁（BUG-1413）：同样只是这次没取到，继续兜底而不是崩制卡。
+      _logLocalAudioSkipped(term, e, stack);
     }
 
     // 2. BUG-1005：配置的音频源（含**远程发音源** forvo/jpod101/hibikiRemote）——与查词

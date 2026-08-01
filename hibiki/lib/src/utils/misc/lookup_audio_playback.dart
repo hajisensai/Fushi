@@ -7,8 +7,23 @@ import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/utils/misc/audio_mime.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/local_audio_db.dart'
+    show LocalAudioUnavailableError, LocalAudioUnavailableReason;
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/word_audio_resolver.dart';
+
+/// 单次本地音频库查询的**预算**上限：超过就不再等，把控制权还给 UI
+/// （自动发音不能为了一个库把查词卡住）。
+///
+/// ⚠️ 这个值比 [LocalAudioDb] 只读连接自己的 `busy_timeout = 3000` **短**，
+/// 所以库一旦真被占用，永远是这里先到点——[LocalAudioDb] 的 BUSY 分类根本
+/// 来不及触发。因此预算耗尽必须**也**归成 [LocalAudioUnavailableError]
+/// （BUG-1413）：旧实现 `return null` 与「库里真没这个词」同形，而且连一条
+/// 日志都没有，是整条链上最静默的一个 fail-open 出口。
+///
+/// 预算本身不改（保持既有 500ms 手感）——改的是「预算耗尽」的**含义**：
+/// 它是「没查出来」，不是「查出来没有」。
+const Duration kLocalAudioQueryBudget = Duration(milliseconds: 500);
 
 /// Resolves and plays the audio for [expression] / [reading] exactly like Hoshi:
 /// enabled sources only, no TTS fallback.
@@ -47,18 +62,22 @@ Future<String?> resolveLookupAudioUrl(
       try {
         return await TtsChannel.instance
             .queryLocalAudio(expression, reading)
-            .timeout(const Duration(milliseconds: 500));
+            .timeout(kLocalAudioQueryBudget);
       } on TimeoutException {
-        return null;
+        throw const LocalAudioUnavailableError(
+          reason: LocalAudioUnavailableReason.timedOut,
+        );
       }
     },
     queryLocalAudioByDbIndex: (expression, reading, dbIndex) async {
       try {
         return await TtsChannel.instance
             .queryLocalAudio(expression, reading, dbIndex: dbIndex)
-            .timeout(const Duration(milliseconds: 500));
+            .timeout(kLocalAudioQueryBudget);
       } on TimeoutException {
-        return null;
+        throw const LocalAudioUnavailableError(
+          reason: LocalAudioUnavailableReason.timedOut,
+        );
       }
     },
     extractLocalAudio: TtsChannel.instance.extractLocalAudio,
