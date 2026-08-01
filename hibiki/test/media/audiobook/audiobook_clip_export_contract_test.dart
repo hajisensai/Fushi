@@ -78,7 +78,6 @@ void main() {
           imagePath: '/card.jpg',
           audioPath: '/clip.aac',
           outputPath: '/clip.mp4',
-          h264: true,
         ),
       );
     });
@@ -89,13 +88,12 @@ void main() {
           framesDir: '/frames',
           audioPath: '/clip.aac',
           outputPath: '/clip.mp4',
-          h264: true,
         ),
       );
     });
 
     test('BUG-1243 mobile share exposes one self-contained video only', () {
-      // BUG-1322：移动产物统一 MPEG-4/.mp4，mime 恒 video/mp4（不再按编码器分叉）。
+      // TODO-2357：两端产物统一 H.264/.mp4，mime 恒 video/mp4（不再按编码器分叉）。
       final List<AudiobookClipShareAttachment> attachments =
           audiobookClipMobileShareAttachments(
         videoPath: '/tmp/clip.mp4',

@@ -18,7 +18,10 @@ rootProject.allprojects {
     repositories {
         google()
         mavenCentral()
-        // Hibiki: 自编最小 ffmpeg-kit AAR（arthenica 源码 NDK r25 重编，修 API36 崩溃）
+        // Hibiki: 自编最小 ffmpeg-kit AAR（arthenica 源码 NDK r25 重编，修 API36 崩溃）。
+        // TODO-2357 起带 --enable-gpl --enable-x264（片段导出全平台 H.264），产物有效许可
+        // 为 GPLv3（与 Hibiki 自身一致）；重编流程见 ../patches/README.md，能力守卫见
+        // hibiki/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart
         flatDir { dirs ffmpegKitVendorLibs }
     }
 }

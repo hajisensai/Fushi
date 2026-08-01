@@ -146,50 +146,41 @@ void main() {
     expect(code.contains('encodeClipTextFrameAsJpg'), isTrue);
   });
 
-  // BUG-809/BUG-1322：桌面导出用 H.264，移动端用原生 mpeg4（旧 mjpeg/.mov 体积巨大
-  // 且大量移动播放器无 MJPEG 解码器）。两端容器统一 .mp4。守卫 caller 真按 isDesktop
-  // 分流编码器，两条合成调用都透传 h264，且输出容器不再回到 .mov。
-  test('BUG-809/BUG-1322: desktop h264 + mobile mpeg4, both in .mp4', () {
+  // BUG-809/BUG-1322/TODO-2357：两端容器统一 .mp4，且输出容器跟着编码器走、不得硬编
+  // 回 .mov（那是 mjpeg 时代的产物）。
+  test('BUG-809/TODO-2357: output container is .mp4, never .mov', () {
     final String code = File(
       'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
     ).readAsStringSync();
-    // 编码器按桌面能力分流；容器统一 mp4。
-    expect(code.contains('useH264'), isTrue);
     expect(code.contains("videoExt = 'mp4'"), isTrue);
     expect(code.contains("'mov'"), isFalse,
-        reason: 'mobile output must be .mp4 (mpeg4), never MJPEG/.mov again');
+        reason: 'output must be .mp4, never MJPEG/.mov again');
     expect(code.contains(r"File('$base.$videoExt')"), isTrue);
     expect(code.contains(r"File('$base.mov')"), isFalse,
         reason: 'output container must follow the codec, not hardcode .mov');
-    // 两条合成路径（静态 + 动态序列帧）都把 h264 透传下去。
-    expect(code.contains('h264: useH264'), isTrue);
-    expect(code.contains('h264: isDesktop'), isTrue);
   });
 
-  // 上面那条只断言字面量 `h264: useH264` / `h264: isDesktop` 存在，**没有任何断言钉住
-  // useH264 这个变量绑定到什么**。审查用变异实测证明了这个洞：把
-  // `final bool useH264 = isDesktop;` 改成 `= true`，片段导出守卫全簇 57 tests 全绿、
-  // 无人报警——而那个改动会让移动端去用 libx264，移动 ffmpeg-kit 里实证没有该编码器
-  // （configure 无 --enable-gpl / --enable-libx264），真机必然 Unknown encoder、导出直接失败。
-  // 这条守卫把「谁决定用 H.264」钉死在平台判据上。
-  test('BUG-809/BUG-1322: useH264 绑定到 isDesktop，isDesktop 绑定到平台判据', () {
+  // TODO-2357 契约反转：移动端 ffmpeg-kit 重编入 libx264 后，编码器**不再有平台分支**。
+  //
+  // 历史：这里原本钉的是 `useH264 = isDesktop`——因为移动端当时没有 libx264，谁把它改成
+  // 常量 true，移动端真机就会 Unknown encoder。PR#607 审查的变异实测正是靠这条抓洞的。
+  // 现在两端同一个编码器，那条判据不再成立，取而代之的是**禁止型**守卫：任何形式的
+  // 「按平台选编码器」重新出现都必须当场红。这不是放松，是把约束挪到了新的正确位置——
+  // 旧约束（移动端不许用 libx264）如今是错的，留着会阻止正确实现。
+  test('TODO-2357: 编码器无平台分支，参数表是单一常量', () {
     final String src = File(
       'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
     ).readAsStringSync().replaceAll('\r\n', '\n');
     final String body =
         methodBody(src, 'Future<void> _runAudiobookClipPipeline({');
 
-    final RegExp useH264Decl = RegExp(r'\bbool\s+useH264\s*=\s*([^;]+);');
-    final List<RegExpMatch> h264 = useH264Decl.allMatches(body).toList();
-    expect(h264, hasLength(1), reason: '导出管线里 useH264 必须有且只有一处声明，改名请同步本守卫');
-    expect(
-      h264.single.group(1)!.trim(),
-      'isDesktop',
-      reason: 'BUG-1322：H.264 只在桌面可用（移动 ffmpeg-kit 无 libx264，实证）。'
-          'useH264 一旦绑成常量或掺进移动端条件，移动导出真机必 Unknown encoder；'
-          '而这在测试里是静默的——本守卫就是那次变异漏网的补丁',
-    );
+    // 编码器开关及其透传必须彻底消失。
+    expect(RegExp(r'\buseH264\b').hasMatch(body), isFalse,
+        reason: 'TODO-2357：编码器平台开关已消除，重新出现即说明分支被加回来了');
+    expect(RegExp(r'\bh264\s*:').hasMatch(body), isFalse,
+        reason: '合成参数表不再接受 h264 开关，透传实参必须一并删除');
 
+    // isDesktop 仍存在，但只准用于产物落盘/清理，不得再参与编码器选择。
     final RegExp isDesktopDecl = RegExp(r'\bbool\s+isDesktop\s*=\s*([^;]+);');
     final List<RegExpMatch> desktop = isDesktopDecl.allMatches(body).toList();
     expect(desktop, hasLength(1), reason: '导出管线里 isDesktop 必须有且只有一处声明');
@@ -200,8 +191,21 @@ void main() {
       'Platform.isLinux',
     ]) {
       expect(desktopRhs, contains(platform),
-          reason: 'isDesktop 必须由真实平台判据推出，不得钉成常量——'
-              '否则 useH264 绑对了也没用');
+          reason: 'isDesktop 必须由真实平台判据推出（它仍决定存盘 vs 系统分享）');
     }
+
+    // 参数表本体：必须是单一常量列表，且不含任何条件分支。
+    final String exportSrc =
+        File('lib/src/media/audiobook/audiobook_clip_export.dart')
+            .readAsStringSync()
+            .replaceAll('\r\n', '\n');
+    expect(
+      exportSrc.contains('const List<String> _clipVideoCodecArgs = <String>['),
+      isTrue,
+      reason: '编码器参数表必须是单一 const 列表——一旦退回带参函数，'
+          '平台分支就有地方藏了',
+    );
+    expect(exportSrc.contains("'mpeg4'"), isFalse,
+        reason: 'mpeg4 规格上限低于 1080×1920，会静默产出解不了的文件，不得回流');
   });
 }

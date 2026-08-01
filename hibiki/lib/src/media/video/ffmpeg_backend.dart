@@ -607,7 +607,8 @@ class CliFfmpegBackend implements FfmpegBackend {
 }
 
 /// 移动端（Android/iOS）后端：进程内调用「自编」的 ffmpeg-kit（arthenica 源码 +
-/// NDK r25 重编的最小变体，无外部 GPL 库），经其 `package:ffmpeg_kit_flutter` API 跑
+/// NDK r25 重编的最小变体；TODO-2357 起带 `--enable-gpl --enable-x264`，产物许可为
+/// GPLv3，与 Hibiki 自身一致），经其 `package:ffmpeg_kit_flutter` API 跑
 /// 同一套 ffmpeg 命令。替代崩溃的第三方预编译 ffmpeg-kit 变体（其
 /// `libffmpegkit_abidetect.so` 在 Android 16/API36 JNI_OnLoad 返回非法版本，启动即崩，
 /// BUG-122）。自编 AAR vendored 在 third_party/ffmpeg_kit_flutter/android/libs。
