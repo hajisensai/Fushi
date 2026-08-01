@@ -3,8 +3,8 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/video/video_episode_rail.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
+import 'package:hibiki/src/utils/components/hibiki_reorderable_grid.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// 合集内分季（用户拍板「多季直接在合集里面分开」；分组是**文件名的纯函数、
@@ -29,10 +29,11 @@ void main() {
 
   tearDown(() => db.close());
 
-  /// 剧集轨里的标题（顶部大图也会渲染「续播集」标题，不限定范围会误判）。
+  /// 集列表里的标题（顶部大图也会渲染「续播集」标题，不限定范围会误判）。
+  /// hayase 式集卡的标题带「N. 」前缀，故用 textContaining。
   Finder railText(String title) => find.descendant(
-        of: find.byType(VideoEpisodeRail),
-        matching: find.text(title),
+        of: find.byType(HibikiReorderableGrid),
+        matching: find.textContaining(title),
       );
 
   Future<void> seed(
@@ -114,18 +115,18 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
   }
 
-  testWidgets('多季合集：首屏（不展开折叠列表）就能看见季 tab，且按季升序、特典殿后',
+  testWidgets('多季合集：首屏就能看见季 tab 与默认展开的集列表，tab 按季升序、特典殿后',
       (WidgetTester tester) async {
     useTallSurface(tester);
     await seedMultiSeason();
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    // 管理列表仍是折叠态 —— 证明分季不是藏在展开区里。
+    // hayase 式改版（TODO-2491）：集列表默认全量可见，不再有折叠的管理列表。
     expect(
-      find.byKey(const ValueKey<String>('episode-management-collapsed')),
+      find.byType(HibikiReorderableGrid),
       findsOneWidget,
-      reason: '季 tab 必须在默认折叠的管理列表之外，用户进页面即可见',
+      reason: '集列表（宽卡网格）必须默认可见，无需任何展开动作',
     );
     final Finder tabs = find.byKey(const ValueKey<String>(
       'collection-season-tabs',
