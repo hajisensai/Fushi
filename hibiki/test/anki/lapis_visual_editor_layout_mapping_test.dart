@@ -335,6 +335,106 @@ void main() {
     });
   });
 
+  group('区域内的字段映射', () {
+    /// 装一个已选中自定义区域的编辑器。
+    Future<void> pumpWithSelectedBlock(
+      WidgetTester tester, {
+      required List<String> blockFields,
+      LapisHandlebarPicker? pickHandlebar,
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LapisStyleEditorPage(
+            initialCustomCss: '',
+            fontScalePercent: 100,
+            noteTypeFields: LapisNoteType.fields,
+            initialFieldMappings: LapisNoteType.defaultFieldMappings,
+            initialBlocks: <LapisCustomBlock>[
+              LapisCustomBlock(
+                id: 'b1',
+                anchor: LapisBlockAnchor.bottom,
+                fields: blockFields,
+              ),
+            ],
+            pickHandlebar: pickHandlebar ?? (_, __) async => null,
+            previewBuilder: (_, __, ___) => const SizedBox.expand(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.anki_lapis_visual_block_name(index: 1)));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('选中区域时映射区照常在，列的是这个区域选中的字段', (WidgetTester tester) async {
+      useWideWindow(tester);
+      await pumpWithSelectedBlock(
+        tester,
+        blockFields: const <String>['Frequency', 'MiscInfo'],
+      );
+
+      // 「这块显示哪些字段」与「这些字段各装什么」是正交的两层，必须同时可见。
+      expect(find.text(t.anki_lapis_visual_block_fields), findsOneWidget);
+      expect(find.text(t.anki_field_mappings), findsOneWidget);
+      // 映射行 = 区域自己选中的字段（chips 里也有同名文本，故用 findsWidgets）。
+      expect(find.text('Frequency'), findsWidgets);
+      expect(find.text('{frequencies}'), findsOneWidget);
+      expect(find.text('{document-title}'), findsOneWidget);
+      // 不属于这个区域的字段不该出现映射行。
+      expect(find.text('{expression}'), findsNothing);
+    });
+
+    testWidgets('区域还没选字段时说「还没选字段」，不谎称模板自绘', (WidgetTester tester) async {
+      useWideWindow(tester);
+      await pumpWithSelectedBlock(tester, blockFields: const <String>[]);
+
+      expect(find.text(t.anki_lapis_visual_block_no_fields), findsWidgets);
+      expect(
+        find.text(t.anki_lapis_visual_mapping_none),
+        findsNothing,
+        reason: '区域「还没挑字段」被说成「模板自绘、没有字段」，用户会以为坏了',
+      );
+    });
+
+    testWidgets('在区域里改映射同样随保存回传', (WidgetTester tester) async {
+      useWideWindow(tester);
+      final List<String> asked = <String>[];
+      final LapisVisualEditorResult? result = await openEditorAndSave(
+        tester,
+        initialCustomCss: '',
+        noteTypeFields: LapisNoteType.fields,
+        initialFieldMappings: LapisNoteType.defaultFieldMappings,
+        initialBlocks: const <LapisCustomBlock>[
+          LapisCustomBlock(
+            id: 'b1',
+            anchor: LapisBlockAnchor.bottom,
+            fields: <String>['MiscInfo'],
+          ),
+        ],
+        pickHandlebar: (String field, String current) async {
+          asked.add(field);
+          return '{frequencies}';
+        },
+        interact: (WidgetTester tester) async {
+          await tester.tap(find.text(t.anki_lapis_visual_block_name(index: 1)));
+          await tester.pumpAndSettle();
+          // 映射行在滚动区里，先滚过去再点，否则 tap 静默 miss。
+          final Finder row = find.text('{document-title}');
+          await tester.ensureVisible(row);
+          await tester.pumpAndSettle();
+          await tester.tap(row);
+          await tester.pumpAndSettle();
+        },
+      );
+
+      expect(asked, <String>['MiscInfo']);
+      expect(result, isNotNull);
+      expect(result!.fieldMappings, <String, String>{
+        'MiscInfo': '{frequencies}',
+      });
+    });
+  });
+
   group('调色板', () {
     testWidgets('文字颜色能取预设之外的任意色并写进 CSS', (WidgetTester tester) async {
       useWideWindow(tester);

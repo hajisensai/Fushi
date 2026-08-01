@@ -84,6 +84,32 @@ void main() {
     expect(body, contains('anki_lapis_restore_failed'));
   });
 
+  test('设置页的字段映射区默认折叠（主入口已是可视化编辑器）', () {
+    // 字段映射现在在可视化编辑器里按选中目标就地调整；设置页这份按卡型逐字段
+    // 平铺的列表退成兜底/全量视图。折叠而不是删掉——非 Lapis 卡型没有可视化
+    // 编辑器可用，这里仍是唯一能配映射的地方。
+    //
+    // 取 `title: t.anki_field_mappings` 之后、本次 AdaptiveSettingsSection 收尾
+    // 之前那一段，避免把相邻 section 的参数算进来。
+    final int titleAt = source.indexOf('title: t.anki_field_mappings');
+    expect(titleAt, greaterThanOrEqualTo(0), reason: '字段映射区没了？');
+    final int childrenAt = source.indexOf('_buildFieldMappings', titleAt);
+    expect(childrenAt, greaterThan(titleAt));
+    final String section = source.substring(titleAt, childrenAt);
+    expect(section, contains('collapsible: true'));
+    expect(
+      section,
+      contains('initiallyExpanded: false'),
+      reason: '默认展开就等于没折叠',
+    );
+    expect(
+      section,
+      contains('SettingsSectionTitlePlacement.inside'),
+      reason: 'AdaptiveSettingsSection 只在标题内嵌时才认 collapsible，'
+          '标题在外面的话折叠参数被静默忽略、看不出任何区别',
+    );
+  });
+
   test('LapisStyleEditorPage 随页面 dispose 高级 CSS controller', () {
     final String body = _methodBody(editorSource, 'dispose');
     expect(body, contains('_advancedCssController'));
