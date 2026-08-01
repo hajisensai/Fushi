@@ -102,7 +102,7 @@ void main() {
   });
 
   group('SyncTombstoneKind（sync_deletion_tombstones.media_type）', () {
-    test('dbValue 集合守卫：4 资产 + 2 收藏集合，恰为 6 值', () {
+    test('dbValue 集合守卫：5 资产 + 2 收藏集合，恰为 7 值', () {
       expect(
         SyncTombstoneKind.values
             .map((SyncTombstoneKind k) => k.dbValue)
@@ -110,6 +110,10 @@ void main() {
         <String>{
           'book',
           'audiobook',
+          // BUG-1338（PR#666「从所有设备删除」死角根治）新增：字幕书自己的墓碑
+          // 种类。它落库串是 'srtbook'，与 ProfileMediaKind 的同名串同形但分属
+          // 两个值域，跨域换算仍走 media_kind_mappings。
+          'srtbook',
           'video',
           'localaudio',
           'favoriteword',
@@ -118,6 +122,7 @@ void main() {
       );
       expect(SyncTombstoneKind.book.dbValue, 'book');
       expect(SyncTombstoneKind.audiobook.dbValue, 'audiobook');
+      expect(SyncTombstoneKind.srtbook.dbValue, 'srtbook');
       expect(SyncTombstoneKind.video.dbValue, 'video');
       expect(SyncTombstoneKind.localaudio.dbValue, 'localaudio');
       expect(SyncTombstoneKind.favoriteword.dbValue, 'favoriteword');
@@ -127,10 +132,11 @@ void main() {
           SyncTombstoneKind.favoritesentence.dbValue);
     });
 
-    test('tryParse：六个已知值命中，null/未知/它域串返 null 不抛', () {
+    test('tryParse：七个已知值命中，null/未知/它域串返 null 不抛', () {
       expect(SyncTombstoneKind.tryParse('book'), SyncTombstoneKind.book);
       expect(
           SyncTombstoneKind.tryParse('audiobook'), SyncTombstoneKind.audiobook);
+      expect(SyncTombstoneKind.tryParse('srtbook'), SyncTombstoneKind.srtbook);
       expect(SyncTombstoneKind.tryParse('video'), SyncTombstoneKind.video);
       expect(SyncTombstoneKind.tryParse('localaudio'),
           SyncTombstoneKind.localaudio);
