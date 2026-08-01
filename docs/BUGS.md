@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1282 条。点号进各自文件。
+> 共 1283 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1339](bugs/BUG-1339-clip-export-mobile-h264-encoder.md) | ✅ | ✅ | 移动端片段导出缺 H.264 编码器导致静默产出不可播文件 |
 | [BUG-1338](bugs/BUG-1338-delete-everywhere-srt-and-no-backend.md) | ✅ | ✅ | 「从所有设备删除」两个死角：纯字幕书无效、无同步后端时静默无效 |
 | [BUG-1332](bugs/BUG-1332-video-pos-subtitle-no-controls-dodge.md) | ✅ | ✅ | 带 \pos 的字幕不避让控制条、盖住暂停键 |
 | [BUG-1331](bugs/BUG-1331-video-ass-vertical-font-not-supported.md) | ✅ | ✅ | \fn@ 竖排字体未支持导致整行躺倒出屏 |
