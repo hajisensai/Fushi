@@ -184,6 +184,14 @@ class HtTorrentStatus {
     required this.isFinished,
     required this.isSeeding,
     required this.sequential,
+    this.numSeeds = -1,
+    this.numConnections = -1,
+    this.numComplete = -1,
+    this.numIncomplete = -1,
+    this.isPaused = false,
+    this.activeDurationSeconds = -1,
+    this.seedingDurationSeconds = -1,
+    this.finishedDurationSeconds = -1,
   });
 
   final String id;
@@ -217,6 +225,32 @@ class HtTorrentStatus {
   final bool isSeeding;
   final bool sequential;
 
+  /// TODO-2482 详情批次（老 DLL 的 JSON 缺这些键时取安全默认 -1/false）。
+  ///
+  /// 已连接的 seed 数。
+  final int numSeeds;
+
+  /// 连接数（含握手中，>= [numPeers]）。
+  final int numConnections;
+
+  /// tracker scrape 的 swarm 总 seed 数（未 scrape 到 = -1）。
+  final int numComplete;
+
+  /// tracker scrape 的 swarm 总 leecher 数。
+  final int numIncomplete;
+
+  /// 引擎侧 paused flag（宿主的用户暂停真相在 Dart 侧，这里只是引擎观测）。
+  final bool isPaused;
+
+  /// 活跃总时长（秒，跨会话由 fastResume 累计）。
+  final int activeDurationSeconds;
+
+  /// 做种总时长（秒）。
+  final int seedingDurationSeconds;
+
+  /// 完成后总时长（秒）。
+  final int finishedDurationSeconds;
+
   factory HtTorrentStatus._fromJson(Map<String, dynamic> json) {
     return HtTorrentStatus(
       id: json['id'] as String? ?? '',
@@ -237,6 +271,15 @@ class HtTorrentStatus {
       isFinished: json['is_finished'] == true,
       isSeeding: json['is_seeding'] == true,
       sequential: json['sequential'] == true,
+      numSeeds: (json['num_seeds'] as num?)?.toInt() ?? -1,
+      numConnections: (json['num_connections'] as num?)?.toInt() ?? -1,
+      numComplete: (json['num_complete'] as num?)?.toInt() ?? -1,
+      numIncomplete: (json['num_incomplete'] as num?)?.toInt() ?? -1,
+      isPaused: json['is_paused'] == true,
+      activeDurationSeconds: (json['active_duration'] as num?)?.toInt() ?? -1,
+      seedingDurationSeconds: (json['seeding_duration'] as num?)?.toInt() ?? -1,
+      finishedDurationSeconds:
+          (json['finished_duration'] as num?)?.toInt() ?? -1,
     );
   }
 }
@@ -295,6 +338,8 @@ class HtPeerInfo {
     required this.upSpeed,
     required this.downSpeed,
     required this.remoteInterested,
+    this.flagsBits = 0,
+    this.sourceBits = 0,
   });
 
   final String ip;
@@ -315,6 +360,14 @@ class HtPeerInfo {
   final int downSpeed;
   final bool remoteInterested;
 
+  /// TODO-2482：桥自定义的稳定 peer flags 位掩码（bit 含义见
+  /// `hibiki_torrent.h` 的 ht_torrent_peers 契约；老 DLL 缺键 = 0）。
+  final int flagsBits;
+
+  /// peer 来源位掩码（bit0 tracker/bit1 dht/bit2 pex/bit3 lsd/
+  /// bit4 fastResume/bit5 incoming）。
+  final int sourceBits;
+
   factory HtPeerInfo._fromJson(Map<String, dynamic> json) {
     return HtPeerInfo(
       ip: json['ip'] as String? ?? '',
@@ -327,6 +380,148 @@ class HtPeerInfo {
       upSpeed: (json['up_speed'] as num?)?.toInt() ?? 0,
       downSpeed: (json['down_speed'] as num?)?.toInt() ?? 0,
       remoteInterested: json['remote_interested'] == true,
+      flagsBits: (json['flags'] as num?)?.toInt() ?? 0,
+      sourceBits: (json['source'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// TODO-2482：某种子的单个 tracker（native `ht_torrent_trackers` 单项）。
+class HtTrackerInfo {
+  const HtTrackerInfo({
+    required this.url,
+    required this.tier,
+    required this.working,
+    required this.updating,
+    required this.fails,
+    required this.lastError,
+    required this.message,
+    required this.scrapeComplete,
+    required this.scrapeIncomplete,
+    required this.scrapeDownloaded,
+  });
+
+  final String url;
+  final int tier;
+
+  /// 任一 endpoint 已成功 announce 且当前无错。
+  final bool working;
+
+  /// 任一 endpoint 正在等 tracker 响应。
+  final bool updating;
+
+  /// 连续失败次数（各 endpoint 取最大）。
+  final int fails;
+
+  /// 最近失败的 error_code 文本（空 = 无）。
+  final String lastError;
+
+  /// tracker 返回的错误/警告原文（空 = 无）。
+  final String message;
+
+  /// scrape 的 swarm seed 数（-1 = 未返回）。
+  final int scrapeComplete;
+
+  /// scrape 的 swarm leecher 数。
+  final int scrapeIncomplete;
+
+  /// scrape 的累计完成下载数。
+  final int scrapeDownloaded;
+
+  factory HtTrackerInfo._fromJson(Map<String, dynamic> json) {
+    return HtTrackerInfo(
+      url: json['url'] as String? ?? '',
+      tier: (json['tier'] as num?)?.toInt() ?? 0,
+      working: json['working'] == true,
+      updating: json['updating'] == true,
+      fails: (json['fails'] as num?)?.toInt() ?? 0,
+      lastError: json['last_error'] as String? ?? '',
+      message: json['message'] as String? ?? '',
+      scrapeComplete: (json['scrape_complete'] as num?)?.toInt() ?? -1,
+      scrapeIncomplete: (json['scrape_incomplete'] as num?)?.toInt() ?? -1,
+      scrapeDownloaded: (json['scrape_downloaded'] as num?)?.toInt() ?? -1,
+    );
+  }
+}
+
+/// TODO-2482：一条端口映射回执（native `ht_session_status` 内嵌）。
+class HtPortMapping {
+  const HtPortMapping({
+    required this.transport,
+    required this.protocol,
+    required this.externalPort,
+    required this.ok,
+    required this.error,
+  });
+
+  /// `upnp` | `natpmp`。
+  final String transport;
+
+  /// `tcp` | `udp` | ''（error 回执不带协议）。
+  final String protocol;
+  final int externalPort;
+  final bool ok;
+  final String error;
+
+  factory HtPortMapping._fromJson(Map<String, dynamic> json) {
+    return HtPortMapping(
+      transport: json['transport'] as String? ?? '',
+      protocol: json['protocol'] as String? ?? '',
+      externalPort: (json['external_port'] as num?)?.toInt() ?? 0,
+      ok: json['ok'] == true,
+      error: json['error'] as String? ?? '',
+    );
+  }
+}
+
+/// TODO-2482：会话协议状态快照（native `ht_session_status`）。
+class HtSessionStatus {
+  const HtSessionStatus({
+    required this.listenPort,
+    required this.dhtRunning,
+    required this.dhtNodes,
+    required this.lsdEnabled,
+    required this.upnpEnabled,
+    required this.natpmpEnabled,
+    required this.pexEnabled,
+    required this.downRate,
+    required this.upRate,
+    required this.portMappings,
+  });
+
+  final int listenPort;
+  final bool dhtRunning;
+
+  /// DHT 路由表节点数（-1 = 尚未统计到；native 非阻塞，首轮为 -1）。
+  final int dhtNodes;
+  final bool lsdEnabled;
+  final bool upnpEnabled;
+  final bool natpmpEnabled;
+  final bool pexEnabled;
+
+  /// 会话级全局速率（字节/秒，含协议开销；-1 = 未知）。
+  final int downRate;
+  final int upRate;
+  final List<HtPortMapping> portMappings;
+
+  factory HtSessionStatus._fromJson(Map<String, dynamic> json) {
+    final Object? mappings = json['port_mappings'];
+    return HtSessionStatus(
+      listenPort: (json['listen_port'] as num?)?.toInt() ?? 0,
+      dhtRunning: json['dht_running'] == true,
+      dhtNodes: (json['dht_nodes'] as num?)?.toInt() ?? -1,
+      lsdEnabled: json['lsd_enabled'] == true,
+      upnpEnabled: json['upnp_enabled'] == true,
+      natpmpEnabled: json['natpmp_enabled'] == true,
+      pexEnabled: json['pex_enabled'] == true,
+      downRate: (json['down_rate'] as num?)?.toInt() ?? -1,
+      upRate: (json['up_rate'] as num?)?.toInt() ?? -1,
+      portMappings: mappings is List
+          ? mappings
+              .whereType<Map<String, dynamic>>()
+              .map(HtPortMapping._fromJson)
+              .toList(growable: false)
+          : const <HtPortMapping>[],
     );
   }
 }
@@ -791,6 +986,71 @@ class EmbeddedTorrentSession {
     } finally {
       malloc.free(id);
     }
+  }
+
+  /// TODO-2482：底层库是否具备详情批次原语（trackers/文件优先级/会话状态）。
+  /// 老的预编译 DLL 没有这些符号时为 false，详情查询应整体降级为 null。
+  bool get supportsDetailInfo => _b.hasDetailInfo;
+
+  /// TODO-2482：某种子的 tracker 列表；种子不存在/库不支持返回 null。
+  /// 纯 DHT 磁力（无 tracker）返回空列表。
+  List<HtTrackerInfo>? torrentTrackers(String infoHash) {
+    if (isClosed || !_b.hasDetailInfo) return null;
+    final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
+    try {
+      final Object? json =
+          _engine._consumeJson(_b.ht_torrent_trackers(_session, id));
+      if (json is! Map<String, dynamic> || json['ok'] != true) return null;
+      final Object? trackers = json['trackers'];
+      if (trackers is! List) return null;
+      return trackers
+          .whereType<Map<String, dynamic>>()
+          .map(HtTrackerInfo._fromJson)
+          .toList(growable: false);
+    } finally {
+      malloc.free(id);
+    }
+  }
+
+  /// TODO-2482：每个文件的下载优先级（0~7，下标 = 文件 index）；
+  /// 元数据未就绪/种子不存在/库不支持返回 null。
+  List<int>? getFilePriorities(String infoHash) {
+    if (isClosed || !_b.hasDetailInfo) return null;
+    final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
+    try {
+      final Object? json =
+          _engine._consumeJson(_b.ht_get_file_priorities(_session, id));
+      if (json is! Map<String, dynamic> || json['ok'] != true) return null;
+      final Object? priorities = json['priorities'];
+      if (priorities is! List) return null;
+      return priorities
+          .whereType<num>()
+          .map((num p) => p.toInt())
+          .toList(growable: false);
+    } finally {
+      malloc.free(id);
+    }
+  }
+
+  /// TODO-2482：设置单个文件的下载优先级（0~7，0 = 不下载）。
+  /// 库不支持（老 DLL）返回 false。
+  bool setFilePriority(String infoHash, int fileIndex, int priority) {
+    if (isClosed || !_b.hasDetailInfo) return false;
+    final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
+    try {
+      return _b.ht_set_file_priority(_session, id, fileIndex, priority) == 1;
+    } finally {
+      malloc.free(id);
+    }
+  }
+
+  /// TODO-2482：会话协议状态。非阻塞：native 只收割已到的统计 alert，
+  /// 首轮 dhtNodes/速率为 -1，下一轮轮询即有值。库不支持返回 null。
+  HtSessionStatus? sessionStatus() {
+    if (isClosed || !_b.hasDetailInfo) return null;
+    final Object? json = _engine._consumeJson(_b.ht_session_status(_session));
+    if (json is! Map<String, dynamic> || json['ok'] != true) return null;
+    return HtSessionStatus._fromJson(json);
   }
 
   /// 用 CIDR 列表整体重建 session 的 ip_filter（空列表 = 清空）。已连接的

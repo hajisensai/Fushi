@@ -14,6 +14,7 @@
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/address.hpp>
 #include <libtorrent/alert_types.hpp>
+#include <libtorrent/announce_entry.hpp>
 #include <libtorrent/bencode.hpp>
 #include <libtorrent/create_torrent.hpp>
 #include <libtorrent/download_priority.hpp>
@@ -22,8 +23,10 @@
 #include <libtorrent/magnet_uri.hpp>
 #include <libtorrent/peer_class.hpp>
 #include <libtorrent/read_resume_data.hpp>
+#include <libtorrent/portmap.hpp>
 #include <libtorrent/session.hpp>
 #include <libtorrent/session_params.hpp>
+#include <libtorrent/session_stats.hpp>
 #include <libtorrent/settings_pack.hpp>
 #include <libtorrent/socket.hpp>
 #include <libtorrent/torrent_flags.hpp>
@@ -32,6 +35,7 @@
 #include <libtorrent/version.hpp>
 #include <libtorrent/write_resume_data.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
@@ -39,6 +43,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -182,6 +187,31 @@ struct ht_session_ctx {
   // 在飞（Dart 侧是同步 FFI 调用，天然串行），故一个槽足够，不必建队列。
   StorageOp rename_op;
   StorageOp move_op;
+
+  // ── TODO-2482：会话统计快照（drain_alerts 收割，ht_session_status 读）──
+
+  // 最近一次 dht_stats_alert 的路由表节点总数（-1 = 尚未收到过）。
+  int dht_nodes = -1;
+
+  // 最近一次 session_stats_alert 的累计收发字节（-1 = 尚未采样过）与采样
+  // 时刻；相邻两次采样差分出会话级速率（含协议开销，正是「session 级」
+  // 想要的口径）。
+  std::int64_t last_recv_bytes = -1;
+  std::int64_t last_sent_bytes = -1;
+  lt::clock_type::time_point last_stats_at{};
+  int down_rate = -1;
+  int up_rate = -1;
+
+  // 一次端口映射回执（portmap_alert / portmap_error_alert）。
+  struct PortMapResult {
+    bool ok = false;
+    int external_port = 0;
+    std::string error;
+  };
+
+  // (transport, protocol) → 最近一次回执。error 回执不带协议，protocol 记
+  // -1。session 生命周期内条目只覆盖不删除（映射结果本就是「最近状态」）。
+  std::map<std::pair<int, int>, PortMapResult> portmaps;
 };
 
 ht_session_ctx* as_ctx(void* session) {
@@ -264,6 +294,55 @@ void drain_alerts(ht_session_ctx* ctx) {
       if (ctx->move_op.pending > 0 && ctx->move_op.handle == mf->handle) {
         ctx->move_op.settle(false, mf->error.message());
       }
+      continue;
+    }
+    // TODO-2482：会话统计（ht_session_status 的数据面）。
+    if (const auto* ds = lt::alert_cast<lt::dht_stats_alert>(a)) {
+      int nodes = 0;
+      for (const lt::dht_routing_bucket& b : ds->routing_table) {
+        nodes += b.num_nodes;
+      }
+      ctx->dht_nodes = nodes;
+      continue;
+    }
+    if (const auto* ss = lt::alert_cast<lt::session_stats_alert>(a)) {
+      // metric 下标在同一 libtorrent 版本内恒定，查一次缓存住。
+      static const int recv_idx = lt::find_metric_idx("net.recv_bytes");
+      static const int sent_idx = lt::find_metric_idx("net.sent_bytes");
+      const auto counters = ss->counters();
+      if (recv_idx >= 0 && sent_idx >= 0 &&
+          recv_idx < int(counters.size()) && sent_idx < int(counters.size())) {
+        const std::int64_t recv = counters[recv_idx];
+        const std::int64_t sent = counters[sent_idx];
+        const lt::clock_type::time_point now = ss->timestamp();
+        if (ctx->last_recv_bytes >= 0) {
+          const std::int64_t dt_ms =
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                  now - ctx->last_stats_at)
+                  .count();
+          if (dt_ms > 0) {
+            const std::int64_t down =
+                (recv - ctx->last_recv_bytes) * 1000 / dt_ms;
+            const std::int64_t up = (sent - ctx->last_sent_bytes) * 1000 / dt_ms;
+            ctx->down_rate = down > 0 ? int(down) : 0;
+            ctx->up_rate = up > 0 ? int(up) : 0;
+          }
+        }
+        ctx->last_recv_bytes = recv;
+        ctx->last_sent_bytes = sent;
+        ctx->last_stats_at = now;
+      }
+      continue;
+    }
+    if (const auto* pm = lt::alert_cast<lt::portmap_alert>(a)) {
+      ctx->portmaps[{int(pm->map_transport), int(pm->map_protocol)}] =
+          ht_session_ctx::PortMapResult{true, pm->external_port, std::string()};
+      continue;
+    }
+    if (const auto* pe = lt::alert_cast<lt::portmap_error_alert>(a)) {
+      // error 回执不带协议，协议位记 -1（JSON 侧导出为空串）。
+      ctx->portmaps[{int(pe->map_transport), -1}] =
+          ht_session_ctx::PortMapResult{false, 0, pe->error.message()};
       continue;
     }
   }
@@ -375,10 +454,12 @@ HT_EXPORT void* ht_session_create(const char* listen_interfaces,
     sp.set_bool(lt::settings_pack::enable_natpmp, false);
     // piece 完成事件（下载顺序证据/边下边播缓冲）+ 状态/错误告警 +
     // storage（save_resume_data_alert 属此类，TODO-1961-a 的完成信号）。
+    // port_mapping：UPnP/NAT-PMP 映射回执（TODO-2482 ht_session_status）。
     sp.set_int(lt::settings_pack::alert_mask,
                lt::alert_category::status | lt::alert_category::error |
                    lt::alert_category::piece_progress |
-                   lt::alert_category::storage);
+                   lt::alert_category::storage |
+                   lt::alert_category::port_mapping);
     return new ht_session_ctx(std::move(sp));
   } catch (...) {
     return nullptr;
@@ -747,6 +828,19 @@ HT_EXPORT char* ht_list_torrents(void* session) {
       out += ",\"uploaded\":" + std::to_string(st.all_time_upload);
       out += ",\"downloaded\":" + std::to_string(st.all_time_download);
       out += ",\"num_peers\":" + std::to_string(st.num_peers);
+      // TODO-2482 详情批次：连接拆分 + swarm scrape + 引擎侧暂停 + 时长。
+      out += ",\"num_seeds\":" + std::to_string(st.num_seeds);
+      out += ",\"num_connections\":" + std::to_string(st.num_connections);
+      out += ",\"num_complete\":" + std::to_string(st.num_complete);
+      out += ",\"num_incomplete\":" + std::to_string(st.num_incomplete);
+      const bool paused = bool(st.flags & lt::torrent_flags::paused);
+      out += std::string(",\"is_paused\":") + (paused ? "true" : "false");
+      out += ",\"active_duration\":" +
+             std::to_string(std::int64_t(st.active_duration.count()));
+      out += ",\"seeding_duration\":" +
+             std::to_string(std::int64_t(st.seeding_duration.count()));
+      out += ",\"finished_duration\":" +
+             std::to_string(std::int64_t(st.finished_duration.count()));
       out += std::string(",\"has_metadata\":") +
              (st.has_metadata ? "true" : "false");
       out += std::string(",\"is_finished\":") +
@@ -888,6 +982,56 @@ HT_EXPORT int ht_apply_first_last_priority(void* session,
   }
 }
 
+namespace {
+
+// TODO-2482：把 libtorrent 的 peer flags 重映射成**本桥自定义的稳定位掩码**
+// （契约见头文件 ht_torrent_peers 注释）。不直接导出 libtorrent 内部位值：
+// 那是实现细节，上游挪位（历史上发生过，如 queued 废弃）会静默改变 wire
+// 含义；这里逐位显式点名，桥的契约就钉死了。
+std::uint32_t stable_peer_flags(const lt::peer_info& pi) {
+  std::uint32_t out = 0;
+  const auto put = [&](lt::peer_flags_t bit, int shift) {
+    if (pi.flags & bit) out |= std::uint32_t(1) << shift;
+  };
+  put(lt::peer_info::interesting, 0);
+  put(lt::peer_info::choked, 1);
+  put(lt::peer_info::remote_interested, 2);
+  put(lt::peer_info::remote_choked, 3);
+  put(lt::peer_info::supports_extensions, 4);
+  put(lt::peer_info::outgoing_connection, 5);
+  put(lt::peer_info::handshake, 6);
+  put(lt::peer_info::connecting, 7);
+  put(lt::peer_info::on_parole, 8);
+  put(lt::peer_info::seed, 9);
+  put(lt::peer_info::optimistic_unchoke, 10);
+  put(lt::peer_info::snubbed, 11);
+  put(lt::peer_info::upload_only, 12);
+  put(lt::peer_info::endgame_mode, 13);
+  put(lt::peer_info::holepunched, 14);
+  put(lt::peer_info::utp_socket, 15);
+  put(lt::peer_info::ssl_socket, 16);
+  put(lt::peer_info::rc4_encrypted, 17);
+  put(lt::peer_info::plaintext_encrypted, 18);
+  return out;
+}
+
+// 同上：peer 来源位掩码（bit4 = fastResume，命名对齐 qb）。
+std::uint32_t stable_peer_source(const lt::peer_info& pi) {
+  std::uint32_t out = 0;
+  const auto put = [&](lt::peer_source_flags_t bit, int shift) {
+    if (pi.source & bit) out |= std::uint32_t(1) << shift;
+  };
+  put(lt::peer_info::tracker, 0);
+  put(lt::peer_info::dht, 1);
+  put(lt::peer_info::pex, 2);
+  put(lt::peer_info::lsd, 3);
+  put(lt::peer_info::resume_data, 4);
+  put(lt::peer_info::incoming, 5);
+  return out;
+}
+
+}  // namespace
+
 HT_EXPORT char* ht_torrent_peers(void* session, const char* info_hash) {
   if (session == nullptr) return json_error("session is null");
   try {
@@ -922,6 +1066,9 @@ HT_EXPORT char* ht_torrent_peers(void* session, const char* info_hash) {
       out += std::string(",\"remote_interested\":") +
              (bool(pi.flags & lt::peer_info::remote_interested) ? "true"
                                                                 : "false");
+      // TODO-2482：详情页 Peers tab 的 flags/source 稳定位掩码。
+      out += ",\"flags\":" + std::to_string(stable_peer_flags(pi));
+      out += ",\"source\":" + std::to_string(stable_peer_source(pi));
       out += '}';
     }
     out += "]}";
@@ -1268,6 +1415,171 @@ HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir) {
     return json_error(e.what());
   } catch (...) {
     return json_error("unknown error in ht_load_resume_dir");
+  }
+}
+
+// ── TODO-2482：任务详情批次 ─────────────────────────────────────────
+
+HT_EXPORT char* ht_torrent_trackers(void* session, const char* info_hash) {
+  if (session == nullptr) return json_error("session is null");
+  try {
+    lt::torrent_handle h = find_torrent(as_session(session), info_hash);
+    if (!h.is_valid()) return json_error("torrent not found");
+    const std::vector<lt::announce_entry> trackers = h.trackers();
+    std::string out = "{\"ok\":true,\"trackers\":[";
+    bool first = true;
+    for (const lt::announce_entry& ae : trackers) {
+      if (!first) out += ',';
+      first = false;
+      // 逐 endpoint（多网卡）× 协议（v1/v2）聚合：working 取「任一成功」、
+      // fails/scrape 取最大、错误文本取首个非空 —— 详情页要的是「这个
+      // tracker 整体好不好使」，不是逐 socket 的调试细节。
+      bool working = false;
+      bool updating = false;
+      int fails = 0;
+      int scrape_complete = -1;
+      int scrape_incomplete = -1;
+      int scrape_downloaded = -1;
+      std::string last_error;
+      std::string message;
+      for (const lt::announce_endpoint& ep : ae.endpoints) {
+        for (const lt::protocol_version v :
+             {lt::protocol_version::V1, lt::protocol_version::V2}) {
+          const lt::announce_infohash& ih = ep.info_hashes[v];
+          // start_sent = 至少成功 announce 过一次；无错且不在失败计数中
+          // 才算「当前工作」。从未联系过的协议槽（纯 v1 种子的 v2 槽）
+          // start_sent 恒 false，自然不计入。
+          if (ih.start_sent && ih.fails == 0 && !ih.last_error) working = true;
+          if (ih.updating) updating = true;
+          fails = std::max(fails, int(ih.fails));
+          scrape_complete = std::max(scrape_complete, ih.scrape_complete);
+          scrape_incomplete = std::max(scrape_incomplete, ih.scrape_incomplete);
+          scrape_downloaded = std::max(scrape_downloaded, ih.scrape_downloaded);
+          if (last_error.empty() && ih.last_error) {
+            last_error = ih.last_error.message();
+          }
+          if (message.empty()) message = ih.message;
+        }
+      }
+      out += '{';
+      append_json_str_field(out, "url", ae.url);
+      out += ",\"tier\":" + std::to_string(int(ae.tier));
+      out += std::string(",\"working\":") + (working ? "true" : "false");
+      out += std::string(",\"updating\":") + (updating ? "true" : "false");
+      out += ",\"fails\":" + std::to_string(fails);
+      out += ',';
+      append_json_str_field(out, "last_error", last_error);
+      out += ',';
+      append_json_str_field(out, "message", message);
+      out += ",\"scrape_complete\":" + std::to_string(scrape_complete);
+      out += ",\"scrape_incomplete\":" + std::to_string(scrape_incomplete);
+      out += ",\"scrape_downloaded\":" + std::to_string(scrape_downloaded);
+      out += '}';
+    }
+    out += "]}";
+    return dup_string(out);
+  } catch (const std::exception& e) {
+    return json_error(e.what());
+  } catch (...) {
+    return json_error("unknown error in ht_torrent_trackers");
+  }
+}
+
+HT_EXPORT char* ht_get_file_priorities(void* session, const char* info_hash) {
+  if (session == nullptr) return json_error("session is null");
+  try {
+    lt::torrent_handle h = find_torrent(as_session(session), info_hash);
+    if (!h.is_valid()) return json_error("torrent not found");
+    if (!h.torrent_file()) return json_error("no metadata");
+    const std::vector<lt::download_priority_t> priorities =
+        h.get_file_priorities();
+    std::string out = "{\"ok\":true,\"priorities\":[";
+    for (std::size_t i = 0; i < priorities.size(); ++i) {
+      if (i > 0) out += ',';
+      out += std::to_string(int(static_cast<std::uint8_t>(priorities[i])));
+    }
+    out += "]}";
+    return dup_string(out);
+  } catch (const std::exception& e) {
+    return json_error(e.what());
+  } catch (...) {
+    return json_error("unknown error in ht_get_file_priorities");
+  }
+}
+
+HT_EXPORT int ht_set_file_priority(void* session, const char* info_hash,
+                                   int file_index, int priority) {
+  if (session == nullptr || file_index < 0 || priority < 0 || priority > 7) {
+    return 0;
+  }
+  try {
+    lt::torrent_handle h = find_torrent(as_session(session), info_hash);
+    if (!h.is_valid()) return 0;
+    std::shared_ptr<const lt::torrent_info> ti = h.torrent_file();
+    if (!ti) return 0;
+    if (file_index >= ti->num_files()) return 0;
+    h.file_priority(lt::file_index_t(file_index),
+                    lt::download_priority_t(std::uint8_t(priority)));
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+HT_EXPORT char* ht_session_status(void* session) {
+  if (session == nullptr) return json_error("session is null");
+  try {
+    ht_session_ctx* ctx = as_ctx(session);
+    // 发出统计请求（回执异步）后只收割已到的 alert —— 本函数**不等待**，
+    // 首轮拿 -1、下一轮轮询自然有值（契约见头文件；同步等会卡 UI isolate）。
+    ctx->ses.post_dht_stats();
+    ctx->ses.post_session_stats();
+    drain_alerts(ctx);
+    const lt::settings_pack sp = ctx->ses.get_settings();
+    std::string out = "{\"ok\":true";
+    out += ",\"listen_port\":" + std::to_string(int(ctx->ses.listen_port()));
+    out += std::string(",\"dht_running\":") +
+           (ctx->ses.is_dht_running() ? "true" : "false");
+    out += ",\"dht_nodes\":" + std::to_string(ctx->dht_nodes);
+    out += std::string(",\"lsd_enabled\":") +
+           (sp.get_bool(lt::settings_pack::enable_lsd) ? "true" : "false");
+    out += std::string(",\"upnp_enabled\":") +
+           (sp.get_bool(lt::settings_pack::enable_upnp) ? "true" : "false");
+    out += std::string(",\"natpmp_enabled\":") +
+           (sp.get_bool(lt::settings_pack::enable_natpmp) ? "true" : "false");
+    // 本桥建 session 一律带默认插件（含 ut_pex），无运行时开关。
+    out += ",\"pex_enabled\":true";
+    out += ",\"down_rate\":" + std::to_string(ctx->down_rate);
+    out += ",\"up_rate\":" + std::to_string(ctx->up_rate);
+    out += ",\"port_mappings\":[";
+    bool first = true;
+    for (const auto& entry : ctx->portmaps) {
+      if (!first) out += ',';
+      first = false;
+      const int transport = entry.first.first;
+      const int protocol = entry.first.second;
+      out += '{';
+      append_json_str_field(
+          out, "transport",
+          transport == int(lt::portmap_transport::upnp) ? "upnp" : "natpmp");
+      out += ',';
+      const char* proto_label =
+          protocol == int(lt::portmap_protocol::tcp)
+              ? "tcp"
+              : (protocol == int(lt::portmap_protocol::udp) ? "udp" : "");
+      append_json_str_field(out, "protocol", proto_label);
+      out += ",\"external_port\":" + std::to_string(entry.second.external_port);
+      out += std::string(",\"ok\":") + (entry.second.ok ? "true" : "false");
+      out += ',';
+      append_json_str_field(out, "error", entry.second.error);
+      out += '}';
+    }
+    out += "]}";
+    return dup_string(out);
+  } catch (const std::exception& e) {
+    return json_error(e.what());
+  } catch (...) {
+    return json_error("unknown error in ht_session_status");
   }
 }
 

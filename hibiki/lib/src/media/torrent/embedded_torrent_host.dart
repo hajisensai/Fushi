@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -114,11 +115,17 @@ class EmbeddedTorrentHost {
   /// 已下发的 per-torrent 暂停状态（做种超限/关上传时停止做种用）。
   final Map<String, bool> _appliedPaused = <String, bool>{};
 
-  /// TODO-2481：用户显式暂停的种子（infohash 小写）。与策略暂停
+  /// TODO-2481/2482：用户显式暂停的种子（infohash 小写）。与策略暂停
   /// [_appliedPaused] 分开记：[sweepUploadPolicy] 对这里的种子整体跳过，
-  /// 不得替用户 resume。仅内存态 —— 重启后 `ht_load_resume_dir` 会清
-  /// paused 旗标（native 契约「加回来即开始跑」），暂停不跨会话持久，
-  /// 持久化留给 D2（native 导出 is_paused / 计划级落盘）。
+  /// 不得替用户 resume。
+  ///
+  /// TODO-2482 起**跨会话持久**：落盘 `<resumeDir>/user_paused.json`
+  /// （见 [readUserPausedFile]），[restoreFromResume] 加回种子后按它补
+  /// pause。选宿主落盘而不是 native 保留 paused 旗标，理由：① native
+  /// 「add 即开始跑」契约不动，老 DLL/新 Dart 组合行为不漂；② 引擎的
+  /// paused 旗标分不清「用户按的」与「策略按的」——策略暂停恢复条件解除
+  /// 后应自动 resume，混进一个旗标就没法裁决了；用户意图本来就是 app 态，
+  /// 真相源在宿主。
   final Set<String> _userPaused = <String>{};
 
   /// 是否已做过一次性「清 upload_mode 残留」治愈（BUG-1293：旧版本给种子打上
@@ -253,10 +260,35 @@ class EmbeddedTorrentHost {
       if (ids.isNotEmpty) {
         debugPrint('[torrent] restored ${ids.length} torrent(s) from resume');
       }
+      _restoreUserPaused(ids);
       return ids.length;
     } on Object catch (e) {
       debugPrint('[torrent] resume restore failed: $e');
       return 0;
+    }
+  }
+
+  /// TODO-2482：按落盘的用户暂停集把刚加回来的种子重新按下暂停。
+  ///
+  /// `ht_load_resume_dir` 的契约是「加回来即开始跑」（清 paused 旗标），
+  /// 所以用户暂停必须在这里补执行。只认本轮真的加回来的 [restoredIds]：
+  /// 计划已删/resume 已丢的种子不在 session 里，pause 必然失败，顺手把
+  /// 无主暂停记录剪掉再写回盘。add 与 pause 之间种子有一瞬是跑态（可能
+  /// 发出 announce），这是该方案的已知代价，换来 native 契约零变更。
+  void _restoreUserPaused(List<String> restoredIds) {
+    final Set<String> wanted = readUserPausedFile(_resumeDir);
+    if (wanted.isEmpty) return;
+    final Set<String> restored = <String>{
+      for (final String id in restoredIds) id.toLowerCase(),
+    };
+    for (final String id in wanted) {
+      if (!restored.contains(id)) continue;
+      if (_session.pauseTorrent(id, pause: true)) {
+        _userPaused.add(id);
+      }
+    }
+    if (!setEquals(_userPaused, wanted)) {
+      writeUserPausedFile(_resumeDir, _userPaused);
     }
   }
 
@@ -410,6 +442,8 @@ class EmbeddedTorrentHost {
     final String id = infoHash.toLowerCase();
     if (!_session.pauseTorrent(id, pause: true)) return false;
     _userPaused.add(id);
+    // TODO-2482：用户暂停跨会话持久（真相源在宿主，落盘随 fastResume 目录）。
+    writeUserPausedFile(_resumeDir, _userPaused);
     return true;
   }
 
@@ -421,6 +455,7 @@ class EmbeddedTorrentHost {
     if (!_session.pauseTorrent(id, pause: false)) return false;
     _userPaused.remove(id);
     _appliedPaused.remove(id);
+    writeUserPausedFile(_resumeDir, _userPaused);
     return true;
   }
 
@@ -597,7 +632,12 @@ class EmbeddedTorrentHost {
       // 清理已移除种子的残留状态。
       _seedStartMs.removeWhere((String k, int v) => !live.contains(k));
       _appliedPaused.removeWhere((String k, bool v) => !live.contains(k));
+      final int pausedBefore = _userPaused.length;
       _userPaused.removeWhere((String k) => !live.contains(k));
+      // 种子被删掉时把它的用户暂停记录一并从盘上剪掉（与内存同步）。
+      if (_userPaused.length != pausedBefore) {
+        writeUserPausedFile(_resumeDir, _userPaused);
+      }
       return changed;
     } on Object {
       return 0;
@@ -672,6 +712,52 @@ int pruneResumeFiles({
     return removed;
   }
   return removed;
+}
+
+/// TODO-2482：用户暂停集落盘文件名（放 resume 目录旁，跟数据根走 ——
+/// 它和 fastResume 一样描述「哪些种子该处于什么态」这一 app 状态）。
+const String kUserPausedFileName = 'user_paused.json';
+
+/// 读用户暂停集（`<resumeDir>/user_paused.json`，JSON 字符串数组，
+/// infohash 小写）。文件不存在/坏 JSON 返回空集 —— 暂停态丢了顶多是
+/// 种子恢复跑（用户可再按一次），不是数据损坏，不值得为它失败。
+///
+/// 顶层函数而非宿主私有方法：与 [pruneResumeFiles] 同理，让这条持久化
+/// 契约能在没有原生 DLL 的环境（含 CI）被直接测到。
+Set<String> readUserPausedFile(String resumeDir) {
+  try {
+    final File file = File(p.join(resumeDir, kUserPausedFileName));
+    if (!file.existsSync()) return <String>{};
+    final Object? json = jsonDecode(file.readAsStringSync());
+    if (json is! List) return <String>{};
+    return <String>{
+      for (final Object? id in json)
+        if (id is String && id.isNotEmpty) id.toLowerCase(),
+    };
+  } on Object catch (e) {
+    debugPrint('[torrent] user paused read failed: $e');
+    return <String>{};
+  }
+}
+
+/// 原子写用户暂停集（先写 `.tmp` 再 rename，与 native resume 落盘同姿态，
+/// 绝不留半个文件）。失败 [debugPrint] 不抛（下一次状态变更会再写）。
+void writeUserPausedFile(String resumeDir, Set<String> infoHashes) {
+  try {
+    final Directory dir = Directory(resumeDir);
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    final String target = p.join(resumeDir, kUserPausedFileName);
+    final File tmp = File('$target.tmp');
+    tmp.writeAsStringSync(
+      jsonEncode(<String>[
+        for (final String id in infoHashes) id.toLowerCase(),
+      ]),
+      flush: true,
+    );
+    tmp.renameSync(target);
+  } on Object catch (e) {
+    debugPrint('[torrent] user paused write failed: $e');
+  }
 }
 
 /// 平台默认内置 DLL 路径解析：flutter runner 把 native 依赖放在可执行文件

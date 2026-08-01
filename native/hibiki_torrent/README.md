@@ -41,6 +41,14 @@ hibiki/lib/src/media/torrent/
 持久化（TODO-1961-a）：`ht_save_resume_data` / `ht_load_resume_dir`。
 存储整理（TODO-1961-c）：`ht_rename_file` / `ht_move_storage`（都是同步等回执的
 封装；改名/移动由引擎自己做，故做种不断）。
+任务详情（TODO-2482）：`ht_torrent_trackers` / `ht_get_file_priorities` /
+`ht_set_file_priority` / `ht_session_status`（非阻塞：post 统计请求后只收割
+已到的 alert，首轮 dht_nodes/速率为 -1）；`ht_list_torrents` 补
+num_seeds/num_connections/num_complete/num_incomplete/is_paused/三个
+duration，`ht_torrent_peers` 补 flags/source 稳定位掩码（与 libtorrent 内部
+位值解耦，契约钉在头文件注释里）。用户暂停的跨会话持久**不在 native**：
+宿主把用户暂停集落盘 `<resumeDir>/user_paused.json`（`ht_load_resume_dir`
+「加回来即开始跑」契约不动，引擎旗标也分不清用户暂停与策略暂停）。
 出参 JSON 一律 `ht_free_string` 释放；详细契约见 `hibiki_torrent.h` 注释。
 
 ### 关键语义（踩过的坑，别再踩）

@@ -22,6 +22,7 @@ import 'package:hibiki/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_entry_picker.dart';
 import 'package:hibiki/src/pages/implementations/download_actions.dart';
 import 'package:hibiki/src/pages/implementations/downloads_page.dart';
+import 'package:hibiki/src/pages/implementations/torrent_detail_dialog.dart';
 import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
@@ -2405,6 +2406,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     return HibikiListItem(
       density: HibikiListDensity.compact,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      // TODO-2482：行点击 = 打开任务详情（四 tab）。详情对话框自己探测
+      // 后端能力并降级，这里不做前置门槛。
+      onTap: () => _openTaskDetail(plan),
       subtitleMaxLines: plan.importedEarly ? 5 : 3,
       // BUG-1184：番剧名 + 种子名都很长，而这一行右侧还挂着最多 3 个操作按钮，窄屏
       // 上标题只剩百来像素。行高自由（在可滚动列表里，只有 minHeight 下限），放宽到
@@ -2496,6 +2500,14 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           ),
         ],
       ),
+    );
+  }
+
+  /// TODO-2482：打开任务详情对话框（入口 = 任务行点击）。
+  void _openTaskDetail(AnimeDownloadPlan plan) {
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext context) => TorrentTaskDetailDialog(plan: plan),
     );
   }
 

@@ -3,7 +3,11 @@ import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 
 /// [TorrentBackend] 的外接 qBittorrent 实现：纯转发适配器，把接口语义
 /// 一一映射到 [QBittorrentClient] 的 WebUI 调用，不加任何额外逻辑。
-class QbTorrentBackend implements TorrentRemovalBackend, TorrentPauseBackend {
+class QbTorrentBackend
+    implements
+        TorrentRemovalBackend,
+        TorrentPauseBackend,
+        TorrentDetailBackend {
   QbTorrentBackend(this._client);
 
   final QBittorrentClient _client;
@@ -110,6 +114,57 @@ class QbTorrentBackend implements TorrentRemovalBackend, TorrentPauseBackend {
       error: error,
     );
   }
+
+  /// TODO-2482：qb WebUI API v2（qBittorrent 4.1+）从一开始就带全部详情
+  /// 端点（peers/trackers/files/filePrio/transfer/pieceStates），能力恒可用。
+  @override
+  bool get detailAvailable => true;
+
+  @override
+  Future<List<TorrentPeerDetail>?> listPeers(String torrentId) =>
+      _client.fetchTorrentPeers(torrentId);
+
+  @override
+  Future<List<TorrentTrackerDetail>?> listTrackers(String torrentId) =>
+      _client.fetchTrackers(torrentId);
+
+  @override
+  Future<List<TorrentFilePriority>?> filePriorities(String torrentId) =>
+      _client.fetchFilePriorities(torrentId);
+
+  /// 中性优先级 → qb filePrio 写值：skip=0 / normal=1 / high=6
+  /// （与 [TorrentFilePriority] 的 doc 注释映射一致；读侧 1/4/5 都归
+  /// normal，写侧统一写 1）。
+  static int _qbPriorityValue(TorrentFilePriority priority) {
+    switch (priority) {
+      case TorrentFilePriority.skip:
+        return 0;
+      case TorrentFilePriority.normal:
+        return 1;
+      case TorrentFilePriority.high:
+        return 6;
+    }
+  }
+
+  @override
+  Future<bool> setFilePriority(
+    String torrentId,
+    int fileIndex,
+    TorrentFilePriority priority,
+  ) =>
+      _client.setFilePriority(
+        hash: torrentId,
+        fileIndexes: <int>[fileIndex],
+        priority: _qbPriorityValue(priority),
+      );
+
+  @override
+  Future<TorrentSessionStatusInfo?> sessionStatus() =>
+      _client.fetchSessionStatus();
+
+  @override
+  Future<TorrentPieceStates?> pieceStates(String torrentId) =>
+      _client.fetchPieceStates(torrentId);
 
   @override
   void close() => _client.close();
