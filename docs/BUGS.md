@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1291 条。点号进各自文件。
+> 共 1292 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -37,6 +37,7 @@
 | [BUG-1340](bugs/BUG-1340-mihon-extension-catalog-restart.md) | ✅ | ✅ | 漫画扩展重启后可下载目录消失且无法安装新扩展 |
 | [BUG-1339](bugs/BUG-1339-clip-export-mobile-h264-encoder.md) | ✅ | ✅ | 移动端片段导出缺 H.264 编码器导致静默产出不可播文件 |
 | [BUG-1338](bugs/BUG-1338-delete-everywhere-srt-and-no-backend.md) | ✅ | ✅ | 「从所有设备删除」两个死角：纯字幕书无效、无同步后端时静默无效 |
+| [BUG-1337](bugs/BUG-1337-video-subtitle-list-per-char-karaoke.md) | ✅ | ✅ | 字幕列表把 OP 逐字卡拉OK 列成整屏单字 |
 | [BUG-1336](bugs/BUG-1336-mihon-online-ocr-niratan-parity.md) | ✅ | ✅ | Mihon 在线漫画 OCR 横竖排错位且加载缓存调度未对齐 Niratan |
 | [BUG-1335](bugs/BUG-1335-video-subtitle-first-frame-font-scale-jump.md) | ✅ | ✅ | 字幕出现后位置动一下才正常（高分屏，特定句子） |
 | [BUG-1334](bugs/BUG-1334-manga-card-wrong-spread-page.md) | ✅ | ✅ | 漫画双页模式制卡图片取错成跨页首页 |
