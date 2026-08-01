@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -66,6 +65,26 @@ class _StubScraperService extends CoverScraperService {
   final List<Object?> applyErrors = <Object?>[];
   int searchCalls = 0;
 
+  /// 多源聚合用的**逐源**桩数据。非空时接管 [searchCandidates]，[candidates] /
+  /// [searchErrors] 那条单源老路径不再生效——两套刻意不混用，否则「这条断言到底
+  /// 命中哪条桩」要靠猜。
+  final Map<ScrapeSource, List<ScrapeCandidate>> perSourceCandidates =
+      <ScrapeSource, List<ScrapeCandidate>>{};
+
+  /// 逐源失败注入：命中的源抛该异常，其余源照常返回候选。
+  final Map<ScrapeSource, Object> perSourceErrors = <ScrapeSource, Object>{};
+
+  /// 覆盖「本次构建有哪些可用源」。基类按注入的 client 是否为 null 推导，桩里不真
+  /// 造 client，故直接给答案。
+  List<ScrapeSource>? sourcesOverride;
+
+  /// 记录每个源各被查了几次（断言「一次搜索把所有源都查了」）。
+  final Map<ScrapeSource, int> searchCallsBySource = <ScrapeSource, int>{};
+
+  @override
+  List<ScrapeSource> get availableSearchSources =>
+      sourcesOverride ?? super.availableSearchSources;
+
   @override
   Future<List<ScrapeCandidate>> searchCandidates({
     required ScrapeSource source,
@@ -73,6 +92,12 @@ class _StubScraperService extends CoverScraperService {
     int? year,
   }) async {
     searchCalls++;
+    searchCallsBySource[source] = (searchCallsBySource[source] ?? 0) + 1;
+    if (perSourceCandidates.isNotEmpty || perSourceErrors.isNotEmpty) {
+      final Object? error = perSourceErrors[source];
+      if (error != null) Error.throwWithStackTrace(error, StackTrace.current);
+      return perSourceCandidates[source] ?? const <ScrapeCandidate>[];
+    }
     final Object? error =
         searchErrors.isEmpty ? null : searchErrors.removeAt(0);
     if (error != null) Error.throwWithStackTrace(error, StackTrace.current);
@@ -92,21 +117,6 @@ class _StubScraperService extends CoverScraperService {
     for (final String uid in bookUids) {
       await repo.updateCover(uid, 'stub-applied-${candidate.entryId}.jpg');
     }
-  }
-}
-
-class _DelayedPreferencesRepository extends PreferencesRepository {
-  _DelayedPreferencesRepository(super.database);
-
-  Completer<void>? tmdbKeyWriteGate;
-
-  @override
-  Future<void> setPref(String key, dynamic value) async {
-    final Completer<void>? gate = tmdbKeyWriteGate;
-    if (key == kVideoScraperTmdbApiKeyPref && gate != null) {
-      await gate.future;
-    }
-    await super.setPref(key, value);
   }
 }
 
@@ -137,7 +147,7 @@ void main() {
   late VideoBookRepository repo;
   late Directory tmp;
   late AppModel appModel;
-  late _DelayedPreferencesRepository prefs;
+  late PreferencesRepository prefs;
   late PlatformServices platformServices;
 
   setUp(() async {
@@ -146,7 +156,7 @@ void main() {
     db = HibikiDatabase.forTesting(NativeDatabase.memory());
     repo = VideoBookRepository(db);
     tmp = await Directory.systemTemp.createTemp('hibiki_poster_match_');
-    prefs = _DelayedPreferencesRepository(db);
+    prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     platformServices = testPlatformServices();
     appModel = AppModel(platformServices)
@@ -296,10 +306,51 @@ void main() {
     expect(find.text(t.video_scrape_use), findsNothing);
   });
 
-  testWidgets('BUG-1234 切换来源清空旧结果且不自动搜索；TMDB 无 key 不显示 Bangumi 数据',
-      (WidgetTester tester) async {
+  // 契约变更（取代旧的两条 BUG-1234「切换来源 / TMDB key 输入」用例）：数据源选择器
+  // 与 TMDB key 输入行已从弹窗移除——用户不再选源、也不在这里配 key（内置 key +
+  // 设置页逃生口）。旧用例守的是已不存在的行为，故删除而非修补。
+  testWidgets('多源聚合：一次搜索查全部可用源，候选合并进同一列表且无来源选择器', (WidgetTester tester) async {
     final VideoBookRow book = await seed();
     final _StubScraperService service = buildService();
+    service.sourcesOverride = <ScrapeSource>[
+      ScrapeSource.bangumi,
+      ScrapeSource.tmdb,
+      ScrapeSource.anilist,
+      ScrapeSource.jikan,
+    ];
+    service.perSourceCandidates
+      ..[ScrapeSource.bangumi] = const <ScrapeCandidate>[
+        ScrapeCandidate(
+          source: ScrapeSource.bangumi,
+          entryId: '42',
+          title: 'My Anime',
+          posterUrl: 'https://img/b42.png',
+        ),
+      ]
+      ..[ScrapeSource.tmdb] = const <ScrapeCandidate>[
+        ScrapeCandidate(
+          source: ScrapeSource.tmdb,
+          entryId: '77',
+          title: 'My Anime',
+          posterUrl: 'https://img/t77.png',
+        ),
+      ]
+      ..[ScrapeSource.anilist] = const <ScrapeCandidate>[
+        ScrapeCandidate(
+          source: ScrapeSource.anilist,
+          entryId: '99',
+          title: 'マイアニメ',
+          posterUrl: 'https://img/a99.png',
+        ),
+      ]
+      ..[ScrapeSource.jikan] = const <ScrapeCandidate>[
+        ScrapeCandidate(
+          source: ScrapeSource.jikan,
+          entryId: '55',
+          title: 'マイアニメ',
+          posterUrl: 'https://img/j55.png',
+        ),
+      ];
 
     await tester.pumpWidget(wrap(CoverMatchDialog(
       service: service,
@@ -308,56 +359,56 @@ void main() {
       onApplied: () {},
     )));
     await tester.pumpAndSettle();
-    expect(service.searchCalls, 1);
-    expect(
-      find.byKey(
-        const ValueKey<String>('cover_match_candidate_bangumi_42'),
-      ),
-      findsOneWidget,
-    );
-    expect(find.text(t.video_scrape_manual_match_hint), findsOneWidget);
 
-    await tester.tap(find.text('TMDB'));
-    await tester.pump();
+    // 一次搜索 = 每个可用源各查一次（不是只查「当前选中的那个」）。
+    expect(service.searchCallsBySource[ScrapeSource.bangumi], 1);
+    expect(service.searchCallsBySource[ScrapeSource.tmdb], 1);
+    expect(service.searchCallsBySource[ScrapeSource.anilist], 1);
+    expect(service.searchCallsBySource[ScrapeSource.jikan], 1);
 
-    // 切换本身不发请求，旧 Bangumi 候选也不能冒充 TMDB 结果。
-    expect(service.searchCalls, 1);
-    expect(
-      find.byKey(
-        const ValueKey<String>('cover_match_candidate_bangumi_42'),
-      ),
-      findsNothing,
-    );
-    expect(find.text(t.video_scrape_tmdb_key_empty), findsOneWidget);
-    expect(
-      find.byWidgetPredicate(
-        (Widget widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText == t.video_scrape_tmdb_key_hint,
-      ),
-      findsOneWidget,
-    );
+    // 四个源的候选同时在列表里（跨源不去重：同一部片的不同语言条目都要留）。
+    //
+    // 必须 scrollUntilVisible 而非直接 find：结果区是 ListView.separated（懒构建），
+    // 四条候选高于弹窗可视区，末条根本没被 build——直接断言会把「渲染在下面」误判成
+    // 「没合并进来」。断言顺序与排序后的列表顺序一致（同分按源顺序稳定排），故一路
+    // 向下滚即可，不必来回找。
+    final Finder resultList = find.byType(Scrollable).last;
+    for (final String key in <String>[
+      'cover_match_candidate_bangumi_42',
+      'cover_match_candidate_tmdb_77',
+      'cover_match_candidate_anilist_99',
+      'cover_match_candidate_jikan_55',
+    ]) {
+      await tester.scrollUntilVisible(
+        find.byKey(ValueKey<String>(key)),
+        120,
+        scrollable: resultList,
+      );
+      expect(find.byKey(ValueKey<String>(key)), findsOneWidget,
+          reason: '$key 应出现在聚合列表里');
+    }
 
-    // 切回 Bangumi 仍等用户明确点搜索，不暗中再次请求。
-    await tester.tap(find.text('Bangumi'));
-    await tester.pump();
-    expect(service.searchCalls, 1);
-    expect(find.text(t.video_scrape_tmdb_key_empty), findsNothing);
-    await tester.tap(find.text(t.video_scrape_search));
-    await tester.pumpAndSettle();
-    expect(service.searchCalls, 2);
-    expect(
-      find.byKey(
-        const ValueKey<String>('cover_match_candidate_bangumi_42'),
-      ),
-      findsOneWidget,
-    );
+    // 来源选择器必须不复存在——它正是本次要消除的那个「用户必须先做的选择」。
+    expect(find.byType(SegmentedButton<ScrapeSource>), findsNothing);
   });
 
-  testWidgets('BUG-1234 保存 TMDB key 未完成时切来源，旧 continuation 不得搜索新来源',
-      (WidgetTester tester) async {
+  testWidgets('多源聚合：部分源失败只降级，其余源候选照常展示且不出失败行', (WidgetTester tester) async {
     final VideoBookRow book = await seed();
     final _StubScraperService service = buildService();
+    service.sourcesOverride = <ScrapeSource>[
+      ScrapeSource.bangumi,
+      ScrapeSource.tmdb,
+    ];
+    service.perSourceCandidates[ScrapeSource.bangumi] = const <ScrapeCandidate>[
+      ScrapeCandidate(
+        source: ScrapeSource.bangumi,
+        entryId: '42',
+        title: 'My Anime',
+        posterUrl: 'https://img/b42.png',
+      ),
+    ];
+    service.perSourceErrors[ScrapeSource.tmdb] =
+        const ScrapeNetworkException('tmdb down', statusCode: 503);
 
     await tester.pumpWidget(wrap(CoverMatchDialog(
       service: service,
@@ -366,37 +417,38 @@ void main() {
       onApplied: () {},
     )));
     await tester.pumpAndSettle();
-    expect(service.searchCalls, 1);
 
-    await tester.tap(find.text('TMDB'));
-    await tester.pump();
-    final Finder keyField = find.byWidgetPredicate(
-      (Widget widget) =>
-          widget is TextField &&
-          widget.decoration?.hintText == t.video_scrape_tmdb_key_hint,
-    );
-    await tester.enterText(keyField, 'delayed-tmdb-key');
-
-    final Completer<void> writeGate = Completer<void>();
-    prefs.tmdbKeyWriteGate = writeGate;
-    await tester.tap(find.text(t.video_scrape_tmdb_key_save));
-    await tester.pump();
-
-    // 持久化尚未完成时切回 Bangumi：来源切换必须立即生效且不自动搜索。
-    await tester.tap(find.text('Bangumi'));
-    await tester.pump();
-    expect(service.searchCalls, 1);
-
-    // 放行旧 Save continuation。旧实现会在这里对当前 Bangumi 再调一次 _search()。
-    writeGate.complete();
-    await tester.pumpAndSettle();
-    expect(service.searchCalls, 1);
+    // 活着的源有结果 → 用户看到候选，而不是一句「搜索失败」（BUG-1176 分界的多源推广）。
     expect(
-      find.byKey(
-        const ValueKey<String>('cover_match_candidate_bangumi_42'),
-      ),
-      findsNothing,
+      find.byKey(const ValueKey<String>('cover_match_candidate_bangumi_42')),
+      findsOneWidget,
     );
+    expect(find.text(t.video_scrape_search_failed), findsNothing);
+    expect(find.text(t.video_scrape_no_results), findsNothing);
+  });
+
+  testWidgets('多源聚合：全部源失败才出可见失败行', (WidgetTester tester) async {
+    final VideoBookRow book = await seed();
+    final _StubScraperService service = buildService();
+    service.sourcesOverride = <ScrapeSource>[
+      ScrapeSource.bangumi,
+      ScrapeSource.tmdb,
+    ];
+    service.perSourceErrors
+      ..[ScrapeSource.bangumi] = const ScrapeNetworkException('bangumi down')
+      ..[ScrapeSource.tmdb] = const ScrapeNetworkException('tmdb down');
+
+    await tester.pumpWidget(wrap(CoverMatchDialog(
+      service: service,
+      book: book,
+      collectionMemberUids: const <String>['video/my_anime'],
+      onApplied: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    // 全挂 = 真搜不了：出失败行 + 可行动原因，绝不塌缩成「无匹配」。
+    expect(find.text(t.video_scrape_search_failed), findsOneWidget);
+    expect(find.text(t.video_scrape_no_results), findsNothing);
   });
 
   testWidgets('BUG-1251 手动输入的标准标题作为置信度评分标题', (WidgetTester tester) async {

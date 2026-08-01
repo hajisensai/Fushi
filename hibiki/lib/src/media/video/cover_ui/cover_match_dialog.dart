@@ -14,13 +14,8 @@ import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart'
     show proposedCollectionRename;
 import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
-import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart' show VideoBookRow;
-
-/// TMDB API key 偏好键（存 Drift `preferences` 表，不改 schema）。
-const String kVideoScraperTmdbApiKeyPref = 'video_scraper_tmdb_api_key';
 
 /// 「在线匹配封面」弹窗打开时的**合集入口**标识（BUG-1211）。
 ///
@@ -63,9 +58,14 @@ class CoverMatchCollectionTarget {
 
 /// 「在线匹配封面」弹窗。
 ///
-/// 搜索框预填**解析后的标题**（非原始文件名）；数据源分段选择 Bangumi / TMDB /
-/// 离线库（已装载才出现）；候选列表带海报缩略图 + 标题 + 年份/类型 + 评分 + 置信度
-/// 徽标（对每个候选跑 [MatchScorer.score]），「使用」即下载落封面。
+/// 搜索框预填**解析后的标题**（非原始文件名）；**并发查全部可用数据源**（离线库 /
+/// Bangumi / TMDB / AniList / MAL）并按置信度合并排序 —— 用户不选源、也不配 key。
+/// 候选列表带海报缩略图 + 标题 + 来源 + 年份/类型 + 评分 + 置信度徽标（对每个候选跑
+/// [MatchScorer.score]），「使用」即下载落封面。
+///
+/// 「不让用户选源」是**有意的产品决定**：选源要求用户预先知道「这部番在哪个站收录得
+/// 更全」，那是本该由程序承担的知识。来源仍显示在每条候选上（配错可溯源），只是不再
+/// 是一个必须先做的**选择**。
 ///
 /// 两种入口语义**互斥**：
 /// - [collection] 非 null = 合集入口：只写合集自有封面，成员一个不动；
@@ -127,8 +127,6 @@ class CoverMatchDialog extends ConsumerStatefulWidget {
 
 class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   late final TextEditingController _queryCtrl;
-  late final TextEditingController _tmdbKeyCtrl;
-  late ScrapeSource _source;
   ParsedMediaName? _parsed;
 
   List<ScrapeCandidate> _results = const <ScrapeCandidate>[];
@@ -145,7 +143,6 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   /// 事，失败必须有出口——失败态在结果区显示错误行 + 可行动原因，绝不塌缩成
   /// 「无匹配」空态骗用户以为条目不存在。
   Object? _searchFailure;
-  bool _showTmdbKeyField = false;
 
   /// 单集入口下「同时应用到本合集全部 N 集」勾选态。合集入口不显示该勾选、也不读它
   /// （合集入口只改合集自有封面，BUG-1211）。
@@ -166,9 +163,6 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     final String prefill =
         _parsed?.title.isNotEmpty == true ? _parsed!.title : widget.book.title;
     _queryCtrl = TextEditingController(text: prefill);
-    _tmdbKeyCtrl = TextEditingController(text: _storedTmdbKey());
-    // 默认数据源：Bangumi（主源）。
-    _source = ScrapeSource.bangumi;
     // 首帧后自动搜一次（预填标题直接出结果，省一次手动点击）。
     WidgetsBinding.instance.addPostFrameCallback((_) => _search());
   }
@@ -176,30 +170,15 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   @override
   void dispose() {
     _queryCtrl.dispose();
-    _tmdbKeyCtrl.dispose();
     super.dispose();
-  }
-
-  String _storedTmdbKey() {
-    final AppModel app = ref.read(appProvider);
-    return app.prefsRepo.getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '')
-        as String;
-  }
-
-  Future<void> _saveTmdbKey(String key) async {
-    await ref
-        .read(appProvider)
-        .prefsRepo
-        .setPref(kVideoScraperTmdbApiKeyPref, key.trim());
   }
 
   Future<void> _search() async {
     final String keyword = _queryCtrl.text.trim();
     if (keyword.isEmpty) return;
     final int generation = ++_searchGeneration;
-    final ScrapeSource source = _source;
-    // 添加/修改 Bangumi 映射：贴条目 URL = 直接按 id 取该条目改绑（跳过关键词
-    // 搜索与 TMDB key 门，无论当前在哪个数据源分段）。
+    // 添加/修改 Bangumi 映射：贴条目 URL = 直接按 id 取该条目改绑（跳过多源搜索，
+    // 用户已经显式指名了要哪一条）。
     final String? mappedSubjectId = parseBangumiSubjectUrl(keyword);
     if (mappedSubjectId != null) {
       setState(() {
@@ -232,19 +211,6 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
       });
       return;
     }
-    // TMDB 分段但无 key：展开输入行，不搜。
-    if (source == ScrapeSource.tmdb && _storedTmdbKey().isEmpty) {
-      setState(() {
-        _showTmdbKeyField = true;
-        _results = const <ScrapeCandidate>[];
-        _scoringQuery = null;
-        _searched = false;
-        _searchFailure = null;
-        _applyFailure = null;
-      });
-      HibikiToast.show(msg: t.video_scrape_tmdb_key_required);
-      return;
-    }
     setState(() {
       _searching = true;
       _searched = true;
@@ -254,7 +220,14 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     List<ScrapeCandidate> results = const <ScrapeCandidate>[];
     Object? failure;
     try {
-      results = await _searchSource(keyword, source);
+      final ({List<ScrapeCandidate> results, Object? failure}) outcome =
+          await _searchAllSources(keyword);
+      results = outcome.results;
+      failure = outcome.failure;
+      if (failure != null) {
+        ErrorLogService.instance
+            .log('CoverMatchDialog.search', failure, StackTrace.current);
+      }
     } catch (e, stack) {
       // 同上：搜索失败与「零结果」必须分开，否则用户以为片名搜不到而放弃重试。
       ErrorLogService.instance.log('CoverMatchDialog.search', e, stack);
@@ -278,77 +251,122 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     return status == null ? t.scrape_reason_network : t.scrape_reason_server;
   }
 
-  /// TMDB 分段用当前 key 现建 client 搜索（服务注入的 client 可能因启动时无 key 而为
-  /// null；此处支持用户中途填入 key 后立即可搜）；其余源走注入的 service。
-  Future<List<ScrapeCandidate>> _searchSource(
+  /// **并发查全部可用源并合并排序** —— 用户不必再挑数据源。
+  ///
+  /// 部分源失败只留取证痕迹、静默降级（其余源结果照常展示）；**全部源都失败**才把
+  /// 异常抛给 [_search] 出可见失败态。这条分界是 BUG-1176 的「搜不到 ≠ 搜不了」在
+  /// 多源下的推广：任一源还活着，用户就该看到它的候选，而不是一句「搜索失败」。
+  /// 返回值里的 `failure` 非 null = **全部源都失败**（真搜不了）。刻意用返回值而非
+  /// 抛异常：各源的失败原因是 `Object`（底层异常类型不受本层约束），把它重新 throw
+  /// 出去既触发 `only_throw_errors`，也让「全失败」这个**正常控制流**伪装成异常。
+  Future<({List<ScrapeCandidate> results, Object? failure})> _searchAllSources(
     String keyword,
-    ScrapeSource source,
   ) async {
-    if (source == ScrapeSource.tmdb) {
-      final String key = _storedTmdbKey();
-      if (key.isEmpty) return const <ScrapeCandidate>[];
-      final TmdbClient client = TmdbClient(apiKey: key);
-      try {
-        return await client.search(keyword, year: _parsed?.year);
-      } finally {
-        client.close();
-      }
+    final AggregatedSearchResult aggregated =
+        await widget.service.searchAllSources(
+      keyword: keyword,
+      year: _parsed?.year,
+    );
+
+    // 逐源失败明细进诊断日志：界面上看不见（不打扰），但「某源结果时有时无」必须可查。
+    for (final MapEntry<ScrapeSource, Object> entry
+        in aggregated.failures.entries) {
+      ErrorLogService.instance.logDiagnostic(
+        'CoverMatchDialog.searchAllSources',
+        '${entry.key.name} search failed: ${entry.value}',
+      );
     }
-    // 纯数字输入既可能是 Bangumi subject id（用户改绑映射）也可能就是标题
-    // （如动画《86》）：两路依次都试，id 直取命中置顶、与同 id 搜索结果去重——
-    // 不牺牲任何一种意图。
-    if (source == ScrapeSource.bangumi && RegExp(r'^\d+$').hasMatch(keyword)) {
-      List<ScrapeCandidate> searched = const <ScrapeCandidate>[];
-      Object? searchError;
-      StackTrace? searchStack;
-      try {
-        searched = await widget.service
-            .searchCandidates(source: source, keyword: keyword);
-      } catch (e, stack) {
-        // 单路失败只是降级（另一路还可能有结果），不打扰用户；但要留取证痕迹，
-        // 否则「数字关键词结果时多时少」无从查起。
-        searchError = e;
-        searchStack = stack;
-        ErrorLogService.instance.logDiagnostic(
-          'CoverMatchDialog.searchCandidates',
-          'numeric keyword search failed: $e',
-        );
-      }
+    if (aggregated.allFailed) {
+      return (
+        results: const <ScrapeCandidate>[],
+        failure: aggregated.anyFailure
+      );
+    }
+
+    List<ScrapeCandidate> results =
+        _sortByScore(aggregated.candidates, keyword);
+
+    // 纯数字输入既可能是 Bangumi subject id（用户改绑映射）也可能就是标题（如动画
+    // 《86》）：关键词搜索已在上面跑过，这里再补一次 id 直取，命中则置顶去重——
+    // 不牺牲任何一种意图。直取失败只是降级（关键词那路可能已有结果），不抛。
+    if (RegExp(r'^\d+$').hasMatch(keyword)) {
       ScrapeCandidate? direct;
-      Object? directError;
       try {
         direct = await widget.service.fetchBangumiCandidateById(keyword);
       } catch (e) {
-        directError = e;
         ErrorLogService.instance.logDiagnostic(
           'CoverMatchDialog.fetchBangumiCandidateById',
           'numeric keyword direct fetch failed: $e',
         );
       }
-      // 两路都失败 = 真搜不了：带原始栈重抛给 _search 出可见失败态；只有一路失败
-      // 才算可静默降级。
-      if (searchError != null && directError != null) {
-        Error.throwWithStackTrace(
-            searchError, searchStack ?? StackTrace.current);
+      if (direct != null) {
+        final String directKey = '${direct.source.name}/${direct.entryId}';
+        results = <ScrapeCandidate>[
+          direct,
+          ...results.where((ScrapeCandidate c) =>
+              '${c.source.name}/${c.entryId}' != directKey),
+        ];
       }
-      if (direct == null) return searched;
-      final String directId = direct.entryId;
-      return <ScrapeCandidate>[
-        direct,
-        ...searched.where((ScrapeCandidate c) => c.entryId != directId),
-      ];
     }
-    return widget.service.searchCandidates(source: source, keyword: keyword);
+    return (results: results, failure: null);
   }
 
-  MatchConfidence? _confidenceFor(ScrapeCandidate candidate) {
+  /// 按「置信度 → 标题相似度」降序重排聚合结果。
+  ///
+  /// 排序是「用户不用关心数据源」的**前提**：聚合后候选天然按源分块，不排的话用户
+  /// 要在几十条里自己找，等于把选源的负担换成了翻列表的负担。排序替他做了选择。
+  ///
+  /// 稳定排序（[List.sort] 非稳定，故显式带 index 兜底）：同分候选保持源顺序，
+  /// 否则每次搜索同一关键词的列表次序都可能变，用户会以为结果在跳。
+  List<ScrapeCandidate> _sortByScore(
+    List<ScrapeCandidate> candidates,
+    String keyword,
+  ) {
+    final ParsedMediaName scoringParsed = _scoringParsedFor(keyword);
+    final List<({ScrapeCandidate candidate, MatchDecision decision, int index})>
+        scored =
+        <({ScrapeCandidate candidate, MatchDecision decision, int index})>[];
+    for (int i = 0; i < candidates.length; i++) {
+      scored.add((
+        candidate: candidates[i],
+        decision: widget.service
+            .scoreCandidate(parsed: scoringParsed, candidate: candidates[i]),
+        index: i,
+      ));
+    }
+    scored.sort((
+      ({ScrapeCandidate candidate, MatchDecision decision, int index}) a,
+      ({ScrapeCandidate candidate, MatchDecision decision, int index}) b,
+    ) {
+      // MatchConfidence 声明序即 high → medium → low，index 直接就是优先级。
+      final int byConfidence =
+          a.decision.confidence.index.compareTo(b.decision.confidence.index);
+      if (byConfidence != 0) return byConfidence;
+      final int byScore =
+          b.decision.titleScore.compareTo(a.decision.titleScore);
+      if (byScore != 0) return byScore;
+      return a.index.compareTo(b.index);
+    });
+    return scored
+        .map((({
+                  ScrapeCandidate candidate,
+                  MatchDecision decision,
+                  int index
+                }) e) =>
+            e.candidate)
+        .toList();
+  }
+
+  /// 构造打分用的 [ParsedMediaName]：标题取 [query]（用户对「要匹配什么」的显式
+  /// 纠正），年份/季/集等结构化线索仍沿用路径解析结果。
+  ///
+  /// 抽出来是因为**排序与徽标必须用同一份打分输入**——两处各拼一次的话，一旦有人
+  /// 只改了其中一处，就会出现「列表按 A 排、徽标按 B 显示」的自相矛盾。
+  ParsedMediaName _scoringParsedFor(String query) {
     final ParsedMediaName? parsed = _parsed;
-    final String query = _scoringQuery?.trim() ?? '';
-    if (parsed == null && query.isEmpty) return null;
-    final ParsedMediaName scoringParsed = ParsedMediaName(
-      // 手动搜索是用户对“要匹配什么”的显式纠正，置信度必须按搜索框当前值算；
-      // 年份/季/集等结构化线索仍沿用路径解析结果。
-      title: query.isNotEmpty ? query : parsed!.title,
+    final String trimmed = query.trim();
+    return ParsedMediaName(
+      title: trimmed.isNotEmpty ? trimmed : (parsed?.title ?? ''),
       secondaryTitle: parsed?.secondaryTitle,
       episode: parsed?.episode,
       season: parsed?.season,
@@ -357,8 +375,17 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
       resolution: parsed?.resolution,
       isMovieHint: parsed?.isMovieHint ?? false,
     );
+  }
+
+  MatchConfidence? _confidenceFor(ScrapeCandidate candidate) {
+    final ParsedMediaName? parsed = _parsed;
+    final String query = _scoringQuery?.trim() ?? '';
+    if (parsed == null && query.isEmpty) return null;
     return widget.service
-        .scoreCandidate(parsed: scoringParsed, candidate: candidate)
+        .scoreCandidate(
+          parsed: _scoringParsedFor(query),
+          candidate: candidate,
+        )
         .confidence;
   }
 
@@ -463,8 +490,6 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             _buildSearchRow(),
-            const SizedBox(height: 8),
-            _buildSourceSelector(),
             const SizedBox(height: 6),
             Text(
               collection == null
@@ -474,13 +499,9 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-            if (_showTmdbKeyField) ...<Widget>[
-              const SizedBox(height: 8),
-              _buildTmdbKeyRow(),
-            ],
             const SizedBox(height: 8),
             // Flexible（而非固定高）：AlertDialog content 高度受视口上界约束，固定
-            // 320 会与搜索行/分段/勾选叠加溢出；让结果区吃剩余空间即可。
+            // 320 会与搜索行/勾选叠加溢出；让结果区吃剩余空间即可。
             Flexible(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: 120),
@@ -538,100 +559,9 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     );
   }
 
-  Widget _buildSourceSelector() {
-    final List<ButtonSegment<ScrapeSource>> segments =
-        <ButtonSegment<ScrapeSource>>[
-      const ButtonSegment<ScrapeSource>(
-        value: ScrapeSource.bangumi,
-        label: Text('Bangumi'),
-      ),
-      const ButtonSegment<ScrapeSource>(
-        value: ScrapeSource.tmdb,
-        label: Text('TMDB'),
-      ),
-      if (widget.service.hasOfflineIndex)
-        ButtonSegment<ScrapeSource>(
-          value: ScrapeSource.offlineDb,
-          label: Text(t.video_scrape_source_offline),
-        ),
-    ];
-    return SizedBox(
-      width: double.infinity,
-      child: SegmentedButton<ScrapeSource>(
-        segments: segments,
-        selected: <ScrapeSource>{_source},
-        showSelectedIcon: false,
-        onSelectionChanged: (Set<ScrapeSource> selected) {
-          final ScrapeSource next = selected.first;
-          if (next == _source) return;
-          setState(() {
-            // 切来源只改变搜索目标，不替用户立刻发网络请求。旧来源结果必须同时清空，
-            // 否则 TMDB 无 key 时仍挂着 Bangumi 候选，看起来像「TMDB 也有数据」。
-            _searchGeneration++;
-            _source = next;
-            _results = const <ScrapeCandidate>[];
-            _scoringQuery = null;
-            _searching = false;
-            _searched = false;
-            _searchFailure = null;
-            _applyFailure = null;
-            _showTmdbKeyField =
-                next == ScrapeSource.tmdb && _storedTmdbKey().isEmpty;
-          });
-        },
-      ),
-    );
-  }
-
-  Widget _buildTmdbKeyRow() {
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: TextField(
-            controller: _tmdbKeyCtrl,
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: t.video_scrape_tmdb_key_hint,
-              border: const OutlineInputBorder(),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        FilledButton(
-          onPressed: () async {
-            final String key = _tmdbKeyCtrl.text;
-            final ScrapeSource source = _source;
-            final int generation = _searchGeneration;
-            await _saveTmdbKey(key);
-            if (!mounted ||
-                source != _source ||
-                generation != _searchGeneration) {
-              return;
-            }
-            setState(() => _showTmdbKeyField = key.trim().isEmpty);
-            await _search();
-          },
-          child: Text(t.video_scrape_tmdb_key_save),
-        ),
-      ],
-    );
-  }
-
   Widget _buildResults(ThemeData theme) {
     if (_searching) {
       return const Center(child: CircularProgressIndicator());
-    }
-    if (_source == ScrapeSource.tmdb &&
-        _storedTmdbKey().isEmpty &&
-        !_searched) {
-      return Center(
-        child: Text(
-          t.video_scrape_tmdb_key_empty,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-      );
     }
     final Object? failure = _searchFailure;
     if (failure != null) return _buildSearchFailure(failure);
@@ -730,12 +660,16 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     );
   }
 
+  /// 结果行的来源标签。用户**不用选**数据源，但必须**看得见**候选来自哪——配错时
+  /// 能溯源，也解释了「为什么同一部片出现了两条」（不同源的不同语言条目）。
+  ///
+  /// 站点专有名词统一取 [kScrapeSourceLabels]（不进 i18n，17 种语言写法相同）；
+  /// 离线库是本地概念，是这里唯一需要翻译的一项。
   String _sourceLabel(ScrapeSource source) {
     return switch (source) {
-      ScrapeSource.bangumi => 'Bangumi',
-      ScrapeSource.tmdb => 'TMDB',
       ScrapeSource.offlineDb => t.video_scrape_source_offline,
       ScrapeSource.manualUrl => 'URL',
+      _ => kScrapeSourceLabels[source] ?? source.name,
     };
   }
 

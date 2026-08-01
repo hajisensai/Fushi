@@ -23,8 +23,10 @@ import 'package:hibiki/src/media/video/cover_ui/cover_match_dialog.dart';
 import 'package:hibiki/src/media/video/cover_ui/scrape_info_dialog.dart';
 import 'package:hibiki/src/media/metadata/scrape_batch.dart';
 import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
+import 'package:hibiki/src/media/video/scraper/anilist_client.dart';
 import 'package:hibiki/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
+import 'package:hibiki/src/media/video/scraper/jikan_client.dart';
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
 import 'package:hibiki/src/media/video/scraper/offline_index.dart';
 import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
@@ -32,6 +34,7 @@ import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
 import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
+import 'package:hibiki/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -1797,10 +1800,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final Directory scraperDir =
         Directory(p.join(covers.parent.path, 'video_scraper'));
     await scraperDir.create(recursive: true);
-    final String tmdbKey = ref
+    // 用户自填 key 优先，其次内置 key（[resolveTmdbApiKey]）。两者皆空才没有 TMDB
+    // 源——fresh clone / fork 构建没内置 key 时的正常降级，不是错误。
+    final String userTmdbKey = ref
         .read(appProvider)
         .prefsRepo
         .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
+    final String tmdbKey = resolveTmdbApiKey(userTmdbKey);
     CoverScraperService make(OfflineIndex? offline) => CoverScraperService(
           repository: widget.repo,
           coverMetaStore: CoverMetaStore(covers),
@@ -1808,6 +1814,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           bangumiClient: BangumiClient(),
           coverDownloader: CoverDownloader(),
           tmdbClient: tmdbKey.isEmpty ? null : TmdbClient(apiKey: tmdbKey),
+          // AniList / Jikan 零 key 门槛，恒可用——没有「配了才有」这回事。
+          aniListClient: AniListClient(),
+          jikanClient: JikanClient(),
           offlineIndex: offline,
           coversDirectory: covers,
         );

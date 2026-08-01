@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 49249 (2897 per locale)
+/// Strings: 49232 (2896 per locale)
 ///
-/// Built on 2026-08-01 at 05:20 UTC
+/// Built on 2026-08-01 at 05:54 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3089,9 +3089,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_scrape_source_offline => 'Offline';
   String get video_scrape_summary => 'Synopsis';
   String get video_scrape_tags => 'Tags';
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API key';
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  String get video_scrape_tmdb_key_save => 'Save';
   String get video_scrape_use => 'Use';
   String get video_scrape_view_subject => 'View on Bangumi';
   String get video_screenshot => 'Screenshot';
@@ -3746,8 +3743,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   String get selection_web_search => 'Search the web';
@@ -3922,6 +3917,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'New name: ${name}';
   String get video_scrape_collection_rename_keep => 'Keep current name';
   String get video_scrape_collection_rename_confirm => 'Rename';
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -9169,12 +9169,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -10295,9 +10289,6 @@ class _StringsAr extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -10590,6 +10581,14 @@ class _StringsAr extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -15895,12 +15894,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -17030,9 +17023,6 @@ class _StringsDe extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -17325,6 +17315,14 @@ class _StringsDe extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -22644,12 +22642,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -23781,9 +23773,6 @@ class _StringsEs extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -24076,6 +24065,14 @@ class _StringsEs extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -29406,12 +29403,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -30543,9 +30534,6 @@ class _StringsFr extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -30838,6 +30826,14 @@ class _StringsFr extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -36106,12 +36102,6 @@ class _StringsId extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -37234,9 +37224,6 @@ class _StringsId extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -37529,6 +37516,14 @@ class _StringsId extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -42836,12 +42831,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -43971,9 +43960,6 @@ class _StringsIt extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -44266,6 +44252,14 @@ class _StringsIt extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -49418,12 +49412,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -50525,9 +50513,6 @@ class _StringsJa extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -50820,6 +50805,14 @@ class _StringsJa extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -55971,12 +55964,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -57081,9 +57068,6 @@ class _StringsKo extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -57376,6 +57360,14 @@ class _StringsKo extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -62667,12 +62659,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -63798,9 +63784,6 @@ class _StringsNl extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -64093,6 +64076,14 @@ class _StringsNl extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -69394,12 +69385,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -70528,9 +70513,6 @@ class _StringsPtBr extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -70823,6 +70805,14 @@ class _StringsPtBr extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -76112,12 +76102,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -77242,9 +77226,6 @@ class _StringsRu extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -77537,6 +77518,14 @@ class _StringsRu extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -82780,12 +82769,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -83904,9 +83887,6 @@ class _StringsTh extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -84199,6 +84179,14 @@ class _StringsTh extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -89470,12 +89458,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -90598,9 +90580,6 @@ class _StringsTr extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -90893,6 +90872,14 @@ class _StringsTr extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -96153,12 +96140,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -97277,9 +97258,6 @@ class _StringsVi extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -97572,6 +97550,14 @@ class _StringsVi extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -102473,12 +102459,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get video_scrape_tags => '标签';
   @override
-  String get video_scrape_tmdb_key_hint => '输入 TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB 需要 API Key';
-  @override
-  String get video_scrape_tmdb_key_save => '保存';
-  @override
   String get video_scrape_use => '使用';
   @override
   String get video_scrape_view_subject => '在 Bangumi 查看';
@@ -103505,9 +103485,6 @@ class _StringsZhCn extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       '这会把同一张封面写到每一集；只有确实需要统一单集封面时才开启。';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      '先保存 TMDB API Key，再点“搜索”。这里不会混入其他来源的结果。';
-  @override
   String get manga_online_source_disabled => '此互联网来源已关闭，请在「来源」中开启后浏览目录。';
   @override
   String get selection_web_search => '网页搜索';
@@ -103777,6 +103754,14 @@ class _StringsZhCn extends _StringsEn {
   String get video_scrape_collection_rename_keep => '保留当前名称';
   @override
   String get video_scrape_collection_rename_confirm => '重命名';
+  @override
+  String get video_setting_tmdb_key => '自定义 TMDB API Key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      '可留空，默认用内置 Key。仅当刮削失效或你想用自己的配额时才需要填写。';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 // Path: <root>
@@ -108859,12 +108844,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_scrape_tags => 'Tags';
   @override
-  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
-  @override
-  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
-  @override
-  String get video_scrape_tmdb_key_save => 'Save';
-  @override
   String get video_scrape_use => 'Use';
   @override
   String get video_scrape_view_subject => 'View on Bangumi';
@@ -109957,9 +109936,6 @@ class _StringsZhHk extends _StringsEn {
   String get video_scrape_apply_to_collection_hint =>
       'This writes the same cover to every episode. Leave it off unless that is intentional.';
   @override
-  String get video_scrape_tmdb_key_empty =>
-      'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
-  @override
   String get manga_online_source_disabled =>
       'This internet source is disabled. Enable it in Sources to browse the catalog.';
   @override
@@ -110252,6 +110228,14 @@ class _StringsZhHk extends _StringsEn {
   String get video_scrape_collection_rename_keep => 'Keep current name';
   @override
   String get video_scrape_collection_rename_confirm => 'Rename';
+  @override
+  String get video_setting_tmdb_key => 'Custom TMDB API key';
+  @override
+  String get video_setting_tmdb_key_hint =>
+      'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+  @override
+  String get about_tmdb_attribution =>
+      'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 }
 
 /// Flat map(s) containing all translations.
@@ -114980,12 +114964,6 @@ extension on _StringsEn {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -115949,8 +115927,6 @@ extension on _StringsEn {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -116202,6 +116178,12 @@ extension on _StringsEn {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -120927,12 +120909,6 @@ extension on _StringsAr {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -121897,8 +121873,6 @@ extension on _StringsAr {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -122150,6 +122124,12 @@ extension on _StringsAr {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -126896,12 +126876,6 @@ extension on _StringsDe {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -127867,8 +127841,6 @@ extension on _StringsDe {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -128120,6 +128092,12 @@ extension on _StringsDe {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -132866,12 +132844,6 @@ extension on _StringsEs {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -133836,8 +133808,6 @@ extension on _StringsEs {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -134089,6 +134059,12 @@ extension on _StringsEs {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -138840,12 +138816,6 @@ extension on _StringsFr {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -139811,8 +139781,6 @@ extension on _StringsFr {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -140064,6 +140032,12 @@ extension on _StringsFr {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -144798,12 +144772,6 @@ extension on _StringsId {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -145768,8 +145736,6 @@ extension on _StringsId {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -146021,6 +145987,12 @@ extension on _StringsId {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -150768,12 +150740,6 @@ extension on _StringsIt {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -151739,8 +151705,6 @@ extension on _StringsIt {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -151992,6 +151956,12 @@ extension on _StringsIt {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -156704,12 +156674,6 @@ extension on _StringsJa {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -157672,8 +157636,6 @@ extension on _StringsJa {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -157925,6 +157887,12 @@ extension on _StringsJa {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -162640,12 +162608,6 @@ extension on _StringsKo {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -163609,8 +163571,6 @@ extension on _StringsKo {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -163862,6 +163822,12 @@ extension on _StringsKo {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -168602,12 +168568,6 @@ extension on _StringsNl {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -169574,8 +169534,6 @@ extension on _StringsNl {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -169827,6 +169785,12 @@ extension on _StringsNl {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -174566,12 +174530,6 @@ extension on _StringsPtBr {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -175536,8 +175494,6 @@ extension on _StringsPtBr {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -175789,6 +175745,12 @@ extension on _StringsPtBr {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -180533,12 +180495,6 @@ extension on _StringsRu {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -181503,8 +181459,6 @@ extension on _StringsRu {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -181756,6 +181710,12 @@ extension on _StringsRu {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -186483,12 +186443,6 @@ extension on _StringsTh {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -187453,8 +187407,6 @@ extension on _StringsTh {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -187706,6 +187658,12 @@ extension on _StringsTh {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -192441,12 +192399,6 @@ extension on _StringsTr {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -193412,8 +193364,6 @@ extension on _StringsTr {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -193665,6 +193615,12 @@ extension on _StringsTr {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -198397,12 +198353,6 @@ extension on _StringsVi {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -199367,8 +199317,6 @@ extension on _StringsVi {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -199620,6 +199568,12 @@ extension on _StringsVi {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -204311,12 +204265,6 @@ extension on _StringsZhCn {
         return '简介';
       case 'video_scrape_tags':
         return '标签';
-      case 'video_scrape_tmdb_key_hint':
-        return '输入 TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB 需要 API Key';
-      case 'video_scrape_tmdb_key_save':
-        return '保存';
       case 'video_scrape_use':
         return '使用';
       case 'video_scrape_view_subject':
@@ -205272,8 +205220,6 @@ extension on _StringsZhCn {
         return '这里只替换合集封面，不会修改各集封面或条目资料。切换来源后，点“搜索”才会请求该来源。';
       case 'video_scrape_apply_to_collection_hint':
         return '这会把同一张封面写到每一集；只有确实需要统一单集封面时才开启。';
-      case 'video_scrape_tmdb_key_empty':
-        return '先保存 TMDB API Key，再点“搜索”。这里不会混入其他来源的结果。';
       case 'manga_online_source_disabled':
         return '此互联网来源已关闭，请在「来源」中开启后浏览目录。';
       case 'selection_web_search':
@@ -205522,6 +205468,12 @@ extension on _StringsZhCn {
         return '保留当前名称';
       case 'video_scrape_collection_rename_confirm':
         return '重命名';
+      case 'video_setting_tmdb_key':
+        return '自定义 TMDB API Key';
+      case 'video_setting_tmdb_key_hint':
+        return '可留空，默认用内置 Key。仅当刮削失效或你想用自己的配额时才需要填写。';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
@@ -210230,12 +210182,6 @@ extension on _StringsZhHk {
         return 'Synopsis';
       case 'video_scrape_tags':
         return 'Tags';
-      case 'video_scrape_tmdb_key_hint':
-        return 'Enter TMDB API Key';
-      case 'video_scrape_tmdb_key_required':
-        return 'TMDB requires an API key';
-      case 'video_scrape_tmdb_key_save':
-        return 'Save';
       case 'video_scrape_use':
         return 'Use';
       case 'video_scrape_view_subject':
@@ -211197,8 +211143,6 @@ extension on _StringsZhHk {
         return 'This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.';
       case 'video_scrape_apply_to_collection_hint':
         return 'This writes the same cover to every episode. Leave it off unless that is intentional.';
-      case 'video_scrape_tmdb_key_empty':
-        return 'Save a TMDB API key, then press Search. Results from other sources are not shown here.';
       case 'manga_online_source_disabled':
         return 'This internet source is disabled. Enable it in Sources to browse the catalog.';
       case 'selection_web_search':
@@ -211450,6 +211394,12 @@ extension on _StringsZhHk {
         return 'Keep current name';
       case 'video_scrape_collection_rename_confirm':
         return 'Rename';
+      case 'video_setting_tmdb_key':
+        return 'Custom TMDB API key';
+      case 'video_setting_tmdb_key_hint':
+        return 'Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.';
+      case 'about_tmdb_attribution':
+        return 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
       default:
         return null;
     }
