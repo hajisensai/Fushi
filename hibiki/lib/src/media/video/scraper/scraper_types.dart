@@ -68,6 +68,10 @@ class ScrapeCandidate {
     this.type = ScrapeEntryType.unknown,
     this.episodeCount,
     required this.posterUrl,
+    this.backdropUrl,
+    this.summary,
+    this.rating,
+    this.ratingCount,
     this.detailUrl,
     this.ratingText,
   });
@@ -89,8 +93,25 @@ class ScrapeCandidate {
   /// 总集数（离线库/API 提供时），用于集数一致性校验。
   final int? episodeCount;
 
-  /// 海报图 URL（下载层负责落地到 video_covers/）。
+  /// 海报图 URL（下载层负责落地到 video_covers/）。竖版 2:3。
   final String posterUrl;
+
+  /// **横版背景图** URL（16:9），供详情页宽幅 hero 用；无则 null（BUG-1298/1299）。
+  ///
+  /// 只有 TMDB 提供（`backdrop_path`，且**就在搜索响应里**，不需要额外请求）。
+  /// Bangumi / 离线库只有竖版海报，恒为 null —— 那条路 hero 回落到海报 + 模糊垫底。
+  final String? backdropUrl;
+
+  /// 简介。TMDB 的 `overview` 随搜索响应一起返回，故候选就能带上；Bangumi 的简介
+  /// 要另拉详情端点（[ScrapeMetadata]），候选阶段为 null。
+  ///
+  /// 这是「候选只带够打分的轻量字段」原则的**有意例外**：对没有详情端点的源
+  /// （TMDB / 离线库），搜索响应就是它资料的全部来源，不在这里接住就永远丢失。
+  final String? summary;
+
+  /// 评分数值 0~10 与评分人数（[ratingText] 是它的展示化文本，二者不重复解析）。
+  final double? rating;
+  final int? ratingCount;
 
   /// 条目详情页 URL（UI「查看条目」用），可为 null。
   final String? detailUrl;
@@ -204,6 +225,30 @@ class ScrapeMetadata {
 
   /// 条目详情页 URL。
   final String? detailUrl;
+}
+
+/// 合集刮削一次落地的全部产物（BUG-1310）。
+///
+/// 合集刮削此前只产出一张海报路径（`downloadCollectionCover` 返回 String），资料与
+/// 横版背景无处安放。本类型把三样东西一次带回给调用方写库：封面、横版背景、条目资料。
+///
+/// 为什么由调用方写库而不是本层直接写：刮削 service 刻意不持有 [HibikiDatabase]
+/// （见 `cover_scraper_service.dart` 顶注），不该为几列写入把整个数据库拖进它的依赖面。
+class CollectionScrapeResult {
+  const CollectionScrapeResult({
+    required this.coverPath,
+    this.backdropPath,
+    required this.metadata,
+  });
+
+  /// 竖版海报本地路径（必有——没有海报的候选在匹配层就被滤掉了）。
+  final String coverPath;
+
+  /// 横版背景本地路径；源没有横版图（Bangumi / 离线库）或下载失败时为 null。
+  final String? backdropPath;
+
+  /// 条目资料（Bangumi 走详情端点取全量；其余源由候选自身降级拼出）。
+  final ScrapeMetadata metadata;
 }
 
 /// 打分置信度分级。

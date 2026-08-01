@@ -38,6 +38,12 @@ class TmdbClient {
   /// 按需降采样，不会因原图更大而变慢展示。
   static const String posterBase = 'https://image.tmdb.org/t/p/original';
 
+  /// TMDB 横版背景基址（详情页宽幅 hero 用，BUG-1298）。
+  ///
+  /// 与海报同取 `original`：hero 跨整屏宽，桌面 4K 下物理宽可达 3840px，缩略档
+  /// 放上去就是一片糊。落盘无损，渲染层 `resizedFileImage` 自会按需降采样。
+  static const String backdropBase = 'https://image.tmdb.org/t/p/original';
+
   /// 搜索关键词 [keyword]（[year] 仅用于占位/未来精确化，multi 端点本身不接受 year）。
   ///
   /// 网络失败 / 非 2xx / JSON 异常 → 抛 [ScrapeNetworkException]。
@@ -136,6 +142,12 @@ ScrapeCandidate? _mapTmdbResult(Map<String, Object?> result) {
   final double vote = _asDouble(result['vote_average']) ?? 0.0;
   final String? ratingText =
       vote > 0 ? 'TMDB ${vote.toStringAsFixed(1)}' : null;
+  final Object? voteCount = result['vote_count'];
+
+  // 横版背景：TMDB 搜索响应本就带 `backdrop_path`，此前整条被丢弃 —— 详情页宽幅
+  // hero 于是只能拿 2:3 海报硬撑，被裁成中间一条（BUG-1298）。缺失是常态（冷门
+  // 条目常无背景图），故 nullable 而非跳过该候选：海报才是刮削的必需品。
+  final String? backdropPath = _nonEmptyString(result['backdrop_path']);
 
   final String entryId = '${result['id']}';
 
@@ -147,6 +159,13 @@ ScrapeCandidate? _mapTmdbResult(Map<String, Object?> result) {
     year: year,
     type: type,
     posterUrl: '${TmdbClient.posterBase}$posterPath',
+    backdropUrl:
+        backdropPath == null ? null : '${TmdbClient.backdropBase}$backdropPath',
+    // TMDB 没有独立详情端点接入本流水线，搜索响应里的 overview 是它简介的唯一
+    // 来源；丢在这里就等于 TMDB 刮出来的条目永远没有简介。
+    summary: _nonEmptyString(result['overview']),
+    rating: vote > 0 ? vote : null,
+    ratingCount: voteCount is num && voteCount > 0 ? voteCount.toInt() : null,
     detailUrl: 'https://www.themoviedb.org/$mediaType/$entryId',
     ratingText: ratingText,
   );

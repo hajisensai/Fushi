@@ -946,6 +946,7 @@ class DataRootMigrator {
         }
         await _rebaseGalgames(db, docs);
         await _rebaseMediaCollections(db, docs);
+        await _rebaseCollectionScrapeMeta(db, docs);
         await _rebaseMediaItems(db, docs);
         await _rebasePreferences(db, docs, newSupportRoot);
         await _rebaseProfileSettings(db, docs, newSupportRoot);
@@ -1080,6 +1081,29 @@ class DataRootMigrator {
       await db.customStatement(
         'UPDATE media_collections SET cover_path = ? WHERE id = ?',
         <Object?>[newCover, c.id],
+      );
+    }
+  }
+
+  /// collection_scrape_meta：backdrop_path
+  /// （`<documents>/video_covers/collections/<id>_backdrop.jpg`）。BUG-1310 合集横版
+  /// 背景，与上面的 media_collections.cover_path 同目录同型 —— 不改写 = 换数据根后
+  /// 详情页 hero 背景变死链，静默退回海报模糊垫底，用户看到背景「自己没了」。
+  /// source / tags_json / infobox_json / detail_url 不是本机路径，绝不改写。
+  static Future<void> _rebaseCollectionScrapeMeta(
+    HibikiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
+      final CollectionScrapeMetaRow? meta =
+          await db.getCollectionScrapeMeta(c.id);
+      if (meta == null) continue;
+      final String? newBackdrop = docs.rebaseNullable(meta.backdropPath);
+      if (newBackdrop == meta.backdropPath) continue;
+      await db.customStatement(
+        'UPDATE collection_scrape_meta SET backdrop_path = ? '
+        'WHERE collection_id = ?',
+        <Object?>[newBackdrop, c.id],
       );
     }
   }

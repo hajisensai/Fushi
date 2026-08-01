@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 63);
-    expect(db.schemaVersion, 63);
+    expect(version.read<int>('user_version'), 64);
+    expect(db.schemaVersion, 64);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -185,8 +185,20 @@ void main() {
           .read<String>('payload'),
       'untouched',
     );
-    expect(await _tableSqlFromDrift(db), schemaBefore,
-        reason: 'v63 只能删行，不得 ALTER/DROP/create/rebuild 或留影子表');
+    // 本用例 seed 的是 v62 库，因此这一次打开会连跑 v63 **和** v64（后者新建
+    // collection_scrape_meta，BUG-1310）。断言据此拆成两半，原意图一分不弱化：
+    //  ① 既有表逐张全文比对 —— v63 只能删行，不得 ALTER/DROP/rebuild 或留影子表；
+    //  ② 新增表必须**恰好**是 v64 那一张 —— v63 自己仍然一张表都不许建。
+    final Map<String, String> schemaAfter = await _tableSqlFromDrift(db);
+    for (final MapEntry<String, String> entry in schemaBefore.entries) {
+      expect(schemaAfter[entry.key], entry.value,
+          reason: 'v63 只能删行，不得 ALTER/DROP/rebuild 既有表 ${entry.key}');
+    }
+    expect(
+      schemaAfter.keys.toSet().difference(schemaBefore.keys.toSet()),
+      <String>{'collection_scrape_meta'},
+      reason: '除 v64 的 collection_scrape_meta 外，升级不得新增任何表',
+    );
   });
 
   test('v63 is idempotent when the obsolete rows are already absent', () async {
@@ -203,7 +215,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 63);
+    expect(version.read<int>('user_version'), 64);
   });
 
   test(
@@ -235,7 +247,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 63);
+      expect(probe.select('PRAGMA user_version').first.values.first, 64);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '

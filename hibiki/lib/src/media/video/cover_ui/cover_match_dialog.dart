@@ -7,8 +7,11 @@ import 'package:hibiki/src/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
 import 'package:hibiki/src/media/metadata/scrape_cover_preview.dart';
 import 'package:hibiki/src/media/metadata/scrape_failure_view.dart';
+import 'package:hibiki/src/media/video/cover_ui/collection_rename_confirm_dialog.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
+import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart'
+    show proposedCollectionRename;
 import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
@@ -27,13 +30,14 @@ const String kVideoScraperTmdbApiKeyPref = 'video_scraper_tmdb_api_key';
 /// - 「使用」只写合集自有封面（[applyCover]），**一个成员都不碰**；
 /// - 不出「同时应用到本合集全部 N 集」勾选——合集入口下那个选项本身就是错的。
 ///
-/// [applyCover] 由调用方注入（生产 = 写 `MediaCollections.coverPath`），弹窗因此不必
-/// 持有 [HibikiDatabase]，widget 测试也能直接断言「写了合集、没写成员」。
+/// [applyScrape] 由调用方注入（生产 = 写 `MediaCollections.coverPath` +
+/// `collection_scrape_meta` + 回写合集名），弹窗因此不必持有 [HibikiDatabase]，
+/// widget 测试也能直接断言「写了合集、没写成员」。
 class CoverMatchCollectionTarget {
   const CoverMatchCollectionTarget({
     required this.id,
     required this.name,
-    required this.applyCover,
+    required this.applyScrape,
   });
 
   /// `MediaCollections.id`（下载落点文件名由它派生）。
@@ -42,8 +46,19 @@ class CoverMatchCollectionTarget {
   /// 合集名（弹窗标题用）。
   final String name;
 
-  /// 把已落地的封面绝对路径写进合集行。
-  final Future<void> Function(String coverPath) applyCover;
+  /// 把整份刮削产物（封面 + 横版背景 + 条目资料）写进合集（BUG-1310）。
+  ///
+  /// 从原先的 `applyCover(String coverPath)` 扩成整份结果：只传封面路径的签名
+  /// 结构性地决定了「合集刮削只能有一张图」——资料和背景根本没有参数位可传，
+  /// 这正是详情页除标题外一片空白的源头。
+  ///
+  /// [confirmedTitle] 是**用户在确认弹窗里亲眼看过并点了确认的那个名字**；null =
+  /// 用户没确认（或压根不需要问），此时只换封面 + 写资料行，合集名一字不动、也不
+  /// 产生旧名同步墓碑。参数 required：调用方必须显式表态，静默改名无路可走。
+  final Future<void> Function(
+    CollectionScrapeResult result, {
+    required String? confirmedTitle,
+  }) applyScrape;
 }
 
 /// 「在线匹配封面」弹窗。
@@ -360,14 +375,30 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     ({Object error, String detail})? failure;
     try {
       if (collection != null) {
-        // 合集入口：下载 → 只写合集自有封面列。**刻意不调
+        // 合集入口：下载封面 + 横版背景 + 拉条目资料 → 只写合集自己。**刻意不调
         // applyCandidateToBooks**——那条路会逐成员写 cover_path / cover_meta /
         // video_scrape_meta，正是用户否决的「改合集封面却刷了每一集」（BUG-1211）。
-        final String coverPath = await widget.service.downloadCollectionCover(
+        final CollectionScrapeResult result =
+            await widget.service.applyCandidateToCollection(
           collectionId: collection.id,
           candidate: candidate,
         );
-        await collection.applyCover(coverPath);
+        // 改名要单独问一次（BUG-1310 复议）：换封面和改名是两件事，后者还会经同步
+        // 把其他设备上的旧名副本删掉。用户不确认 → confirmedTitle 保持 null，
+        // 落库层只写封面 + 资料行。弹窗期间 _applying 仍为 true，重复点「使用」进不来。
+        final String? proposed = proposedCollectionRename(
+          currentName: collection.name,
+          scrapedTitle: result.metadata.title,
+        );
+        String? confirmedTitle;
+        if (proposed != null && mounted) {
+          confirmedTitle = await showCollectionRenameConfirmDialog(
+            context: context,
+            currentName: collection.name,
+            proposedName: proposed,
+          );
+        }
+        await collection.applyScrape(result, confirmedTitle: confirmedTitle);
       } else {
         final List<String> targets =
             _applyToCollection && widget.collectionMemberUids.length > 1

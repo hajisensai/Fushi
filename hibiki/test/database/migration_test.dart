@@ -1079,7 +1079,7 @@ void main() {
       // now 31 (v30 series/shelf_entries + v31 hibiki_paired_peers). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 63,
+      expect(db.schemaVersion, 64,
           reason: 'global schemaVersion is now 38 (TODO-616 v30 + TODO-1017 '
               'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones + '
               'TODO-1157 v35 stream_spec_json + TODO-1252 v36 favorite_words '
@@ -1156,7 +1156,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 63,
+      expect(db.schemaVersion, 64,
           reason:
               'TODO-1288 bumps schema to v37 (audiobook srt_books self-heal)');
 
@@ -1316,7 +1316,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 63,
+      expect(db.schemaVersion, 64,
           reason: 'global schemaVersion is now 38 (…v35 + TODO-1252 v36 + '
               'TODO-1288 v37 audiobook srt_books self-heal + v38 unified '
               'media_collections); v29->v30 '
@@ -1367,7 +1367,7 @@ void main() {
           .map((r) => r.data['name'] as String)
           .toSet();
       expect(tableNames, containsAll(['series', 'shelf_entries']));
-      expect(db.schemaVersion, 63);
+      expect(db.schemaVersion, 64);
     });
 
     test(
@@ -1376,7 +1376,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 63,
+      expect(db.schemaVersion, 64,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -1410,7 +1410,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 63,
+      expect(db.schemaVersion, 64,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -1450,7 +1450,7 @@ void main() {
     test('fresh DB (v35) has video_books.stream_spec_json column (TODO-1157)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 63);
+      expect(db.schemaVersion, 64);
       final cols =
           await db.customSelect("PRAGMA table_info('video_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1481,7 +1481,7 @@ void main() {
 
     test('fresh DB (v45) has media_collections.anilist_id column', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 63);
+      expect(db.schemaVersion, 64);
       final cols =
           await db.customSelect("PRAGMA table_info('media_collections')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1515,7 +1515,7 @@ void main() {
 
     test('fresh DB (v46) has epub_books.completed_at column', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 63);
+      expect(db.schemaVersion, 64);
       final cols =
           await db.customSelect("PRAGMA table_info('epub_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1527,7 +1527,7 @@ void main() {
         'fresh DB (v36) has favorite_words.book_key + title columns (TODO-1252)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 63);
+      expect(db.schemaVersion, 64);
       final cols =
           await db.customSelect("PRAGMA table_info('favorite_words')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1556,5 +1556,93 @@ void main() {
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
     });
+
+    // BUG-1310：v64 新增 collection_scrape_meta（合集级刮削资料的宿主）。
+    //
+    // 纯新增表、不动任何既有表/列，所以这条只需锁两点：升级后表真的建出来了，
+    // 且既有合集行**一行不少、一列不改**（升级绝不能碰用户数据）。
+    test('fresh DB (v64) has collection_scrape_meta table', () async {
+      final db = await _openDb();
+      expect(db.schemaVersion, 64);
+      final rows = await db
+          .customSelect(
+              "SELECT name FROM sqlite_master WHERE type='table' AND name='collection_scrape_meta'")
+          .get();
+      expect(rows, hasLength(1),
+          reason: 'fresh createAll must include v64 collection_scrape_meta');
+    });
+
+    test(
+        'real v63->v64 creates collection_scrape_meta, preserves collections, '
+        'bumps user_version (BUG-1310)', () async {
+      final db = await _openV63DbWithoutCollectionScrapeMeta();
+
+      final tables = await db
+          .customSelect(
+              "SELECT name FROM sqlite_master WHERE type='table' AND name='collection_scrape_meta'")
+          .get();
+      expect(tables, hasLength(1), reason: 'from<64 分支必须建出新表');
+
+      // 既有合集数据原样保留（升级只加表，不碰用户数据）。
+      final row = await db.getMediaCollectionById(1);
+      expect(row, isNotNull);
+      expect(row!.name, 'Bocchi the Rock!');
+      expect(row.coverPath, '/old/cover.jpg');
+
+      // 未刮过 → 空表；写入后可读回（新表真的可用，不只是建了个壳）。
+      expect(await db.getCollectionScrapeMeta(1), isNull);
+      await db.upsertCollectionScrapeMeta(
+        CollectionScrapeMetaCompanion.insert(
+          collectionId: const Value(1),
+          source: 'tmdb',
+          subjectId: '100',
+          title: '孤独摇滚！',
+          scrapedAt: DateTime(2026),
+        ),
+      );
+      expect((await db.getCollectionScrapeMeta(1))!.title, '孤独摇滚！');
+
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
+    });
   });
+}
+
+/// 打开一个 `user_version = 63` 的库：有 media_collections 及其数据，但**没有**
+/// collection_scrape_meta，强制 HibikiDatabase 打开时跑真实的
+/// `if (from < 64) createTable(collectionScrapeMeta)` 分支（BUG-1310）。
+///
+/// from=63 时迁移阶梯上只有 `from < 64` 这一个条件成立，因此这里只需备齐该分支
+/// 触碰到的表，不必重建整个 v63 schema。
+Future<HibikiDatabase> _openV63DbWithoutCollectionScrapeMeta() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        rawDb.execute('''
+CREATE TABLE media_collections (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  collection_type TEXT NOT NULL DEFAULT 'collection',
+  cover_source TEXT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  order_updated_at INTEGER NOT NULL DEFAULT 0,
+  anilist_id INTEGER NULL,
+  audio_track_id TEXT NULL,
+  subtitle_delay_ms INTEGER NULL,
+  cover_path TEXT NULL
+);
+''');
+        rawDb.execute(
+          'INSERT INTO media_collections (id, name, collection_type, '
+          'sort_order, created_at, order_updated_at, cover_path) '
+          "VALUES (1, 'Bocchi the Rock!', 'playlist', 0, 0, 0, "
+          "'/old/cover.jpg')",
+        );
+        rawDb.execute('PRAGMA user_version = 63');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
 }

@@ -313,6 +313,25 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   PathRebaseColumn('VideoScrapeMeta', 'detailUrl', PathRebaseKind.notAPath,
       '远端条目详情页 URL，不是本机路径。'),
 
+  // ── collection_scrape_meta（合集级刮削资料，schema v64 / BUG-1310）────
+  PathRebaseColumn('CollectionScrapeMeta', 'source', PathRebaseKind.notAPath,
+      'ScrapeSource 枚举名（bangumi/tmdb/...），不是路径。'),
+  PathRebaseColumn('CollectionScrapeMeta', 'tagsJson', PathRebaseKind.notAPath,
+      '标签 JSON 数组，无路径。'),
+  PathRebaseColumn('CollectionScrapeMeta', 'infoboxJson',
+      PathRebaseKind.notAPath, 'infobox JSON 数组，无路径。'),
+  PathRebaseColumn('CollectionScrapeMeta', 'detailUrl', PathRebaseKind.notAPath,
+      '远端条目详情页 URL，不是本机路径。'),
+  PathRebaseColumn(
+      'CollectionScrapeMeta',
+      'backdropPath',
+      PathRebaseKind.documentsRooted,
+      'BUG-1310 合集横版背景：<documents>/video_covers/collections/'
+          '<id>_backdrop.jpg（与同表兄弟 media_collections.cover_path 同目录、'
+          '同落盘入口 cover_scraper_service.dart applyCandidateToCollection）。'
+          '与 media_collections.cover_path 完全同型 → 不改写 = 换数据根后详情页'
+          'hero 背景变死链，静默退回海报模糊垫底，用户看到背景「自己没了」。'),
+
   // ── galgames ──────────────────────────────────────────────────────
   PathRebaseColumn('Galgames', 'exePath', PathRebaseKind.externalUserPath,
       '用户外部游戏安装位置（hook 注入目标），不在数据根内。'),

@@ -15,6 +15,7 @@ import 'package:hibiki/src/media/metadata/credential_redaction.dart';
 import 'package:hibiki/src/media/metadata/scrape_cover_preview.dart';
 import 'package:hibiki/src/media/video/cover_ui/cover_match_dialog.dart';
 import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
+import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
 import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
@@ -678,8 +679,19 @@ void main() {
       collection: CoverMatchCollectionTarget(
         id: collectionId,
         name: '我的合集',
-        applyCover: (String coverPath) =>
-            db.updateMediaCollectionCoverPath(collectionId, coverPath),
+        // BUG-1310 起注入的是整份刮削产物（封面 + 横版背景 + 条目资料），生产落库
+        // 走 applyCollectionScrape。本用例锁的仍是 BUG-1211 那条不变量：合集入口
+        // 只写合集自己，成员一个不碰。
+        applyScrape: (
+          CollectionScrapeResult result, {
+          required String? confirmedTitle,
+        }) =>
+            applyCollectionScrape(
+          db,
+          collectionId,
+          result,
+          confirmedTitle: confirmedTitle,
+        ),
       ),
     )));
     await tester.pumpAndSettle();
@@ -702,6 +714,18 @@ void main() {
       await tester.tap(find.text(t.video_scrape_use).first);
       await Future<void>.delayed(const Duration(milliseconds: 300));
     });
+    // 只 pump 固定帧数不用 pumpAndSettle：候选列表里的海报缩略图是 Image.network，
+    // 在测试环境里永不完成，pumpAndSettle 会一路等到超时（弹窗本身早就上来了）。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // BUG-1310 复议：改名要单独确认。本用例锁的是 BUG-1211（封面写给谁），
+    // 故选「保留当前名称」，让合集名那条路径整条不参与。
+    expect(find.text(t.video_scrape_collection_rename_title), findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.tap(find.text(t.video_scrape_collection_rename_keep));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
     await tester.pump();
 
     // ① 合集自己的封面真写穿 DB，且文件真落地。
@@ -722,6 +746,83 @@ void main() {
     }
     // ③ 成员批量写入路径根本没被调用（不是「写了又写回去」）。
     expect(service.appliedUids, isEmpty);
+
+    // ④ BUG-1310 契约 ①：拒绝改名 → 合集名一字不动，且不产生任何旧名同步墓碑
+    //    （墓碑会被同步出去删掉其他设备上的旧名副本，那是不可撤销的）。
+    expect(row.name, '我的合集');
+    expect(
+      await db.select(db.collectionMemberTombstones).get(),
+      isEmpty,
+      reason: '用户拒绝了改名，却写了合集墓碑 → 其他设备上的旧名副本会被删',
+    );
+  });
+
+  // BUG-1310 复议：改名前必须弹确认，明示「旧名 → 新名」。这里锁**确认分支**：
+  // 用户看过两行、点了「重命名」，名字才真被改写。
+  testWidgets('BUG-1310 合集入口：改名前弹确认，确认后才改名', (WidgetTester tester) async {
+    final VideoBookRow book = await seed();
+    final _StubScraperService service = buildService();
+    final int collectionId =
+        await db.createMediaCollection('我的合集', collectionType: 'collection');
+    await db.addToCollection(collectionId, MediaKind.video, book.bookUid);
+    String? passedConfirmedTitle;
+
+    await tester.pumpWidget(wrap(CoverMatchDialog(
+      service: service,
+      book: book,
+      collectionMemberUids: <String>[book.bookUid],
+      onApplied: () {},
+      collection: CoverMatchCollectionTarget(
+        id: collectionId,
+        name: '我的合集',
+        applyScrape: (
+          CollectionScrapeResult result, {
+          required String? confirmedTitle,
+        }) {
+          passedConfirmedTitle = confirmedTitle;
+          return applyCollectionScrape(
+            db,
+            collectionId,
+            result,
+            confirmedTitle: confirmedTitle,
+          );
+        },
+      ),
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.runAsync(() async {
+      await tester.tap(find.text(t.video_scrape_use).first);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    // 同上：候选缩略图是永不完成的 Image.network，只能 pump 固定帧。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // 弹窗两行都在：只显示新名的话用户无从判断这次改动是什么。
+    expect(find.text(t.video_scrape_collection_rename_title), findsOneWidget);
+    expect(
+      find.text(t.video_scrape_collection_rename_from(name: '我的合集')),
+      findsOneWidget,
+      reason: '必须显示旧名，否则「旧名 → 新名」只剩一半',
+    );
+    expect(
+      find.text(t.video_scrape_collection_rename_to(name: 'My Anime')),
+      findsOneWidget,
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(find.text(t.video_scrape_collection_rename_confirm));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pump();
+
+    // 落库层拿到的正是用户眼前看到的那个名字（不是弹窗外另算一遍）。
+    expect(passedConfirmedTitle, 'My Anime');
+    final MediaCollectionRow? row =
+        await db.getMediaCollectionById(collectionId);
+    expect(row!.name, 'My Anime');
+    expect(row.coverPath, isNotNull, reason: '确认改名不影响封面照常落地');
   });
 
   testWidgets('单集入口：标题不带合集名 + 默认只改这一集', (WidgetTester tester) async {

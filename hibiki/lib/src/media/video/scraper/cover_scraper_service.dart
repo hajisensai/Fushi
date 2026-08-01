@@ -31,6 +31,7 @@ import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
 import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_storage.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
 import 'package:hibiki_core/hibiki_core.dart' show VideoBookRow;
@@ -536,15 +537,85 @@ class CoverScraperService {
   }
 
   /// 非 Bangumi 源的降级资料：只用候选里已有的字段，不编造缺失内容。
+  ///
+  /// TMDB 的简介 / 评分随搜索响应一起回来（见 `tmdb_client.dart`），所以这条降级路
+  /// **不再**是「只有标题和年份」的空壳——那些字段以前是有的，只是没人接。
   static ScrapeMetadata _metadataFromCandidate(ScrapeCandidate candidate) {
     return ScrapeMetadata(
       source: candidate.source,
       subjectId: candidate.entryId,
       title: candidate.title,
       originalTitle: candidate.aliases.isEmpty ? null : candidate.aliases.first,
+      summary: candidate.summary,
       airDate: candidate.year == null ? null : '${candidate.year}',
+      rating: candidate.rating,
+      ratingCount: candidate.ratingCount,
       episodeCount: candidate.episodeCount,
       detailUrl: candidate.detailUrl,
+    );
+  }
+
+  /// 合集刮削：一次拿齐封面 + 横版背景 + 条目资料（BUG-1310）。
+  ///
+  /// 取代原先只下海报的 [downloadCollectionCover]。三样产物一并返回给调用方落库，
+  /// 本层仍不碰 [HibikiDatabase]（见类顶注）。
+  ///
+  /// **只写合集自己**：刻意不调 [applyCandidateToBooks]——那条路会逐成员写
+  /// cover_path / cover_meta / video_scrape_meta，正是用户否决的「改合集封面却刷了
+  /// 每一集」（BUG-1211）。合集的资料属于合集这一个容器。
+  ///
+  /// 失败语义分两级：
+  /// * 海报下载失败 → 抛（没有封面这次刮削就是失败的，与旧行为一致）；
+  /// * 背景下载失败 → **咽掉并留 null**。背景是锦上添花，不能让一张可有可无的图
+  ///   把已经成功的封面 + 资料整体拖失败；hero 自会回落到海报 + 模糊垫底。
+  /// * 资料详情端点失败 → 由候选降级拼一份（[_metadataFromCandidate]），保证
+  ///   「刮过就有行」，不至于每次进详情页都当成没刮过。
+  Future<CollectionScrapeResult> applyCandidateToCollection({
+    required int collectionId,
+    required ScrapeCandidate candidate,
+  }) async {
+    final Directory covers =
+        _collectionCoversDirectory ?? await VideoStorage.collectionCoversDir();
+    final String coverPath = await _downloader.downloadCover(
+      url: candidate.posterUrl,
+      bookUid: '$collectionId',
+      coversDirectory: covers,
+    );
+
+    String? backdropPath;
+    final String? backdropUrl = candidate.backdropUrl;
+    if (backdropUrl != null && backdropUrl.isNotEmpty) {
+      try {
+        // 文件名后缀 `_backdrop` 与海报同目录不同名：collections/<id>.jpg 是竖版，
+        // collections/<id>_backdrop.jpg 是横版，各自独立可重下。
+        backdropPath = await _downloader.downloadCover(
+          url: backdropUrl,
+          bookUid: '${collectionId}_backdrop',
+          coversDirectory: covers,
+        );
+      } catch (e, stack) {
+        // 见上：背景失败不升级为整体失败，但必须留日志——否则「有的合集有背景有的
+        // 没有」永远查不出是源没图还是下载挂了。
+        ErrorLogService.instance
+            .log('CoverScraperService.collectionBackdrop', e, stack);
+      }
+    }
+
+    ScrapeMetadata metadata;
+    if (candidate.source == ScrapeSource.bangumi) {
+      try {
+        metadata = await _bangumi.fetchSubject(candidate.entryId);
+      } on ScrapeNetworkException {
+        metadata = _metadataFromCandidate(candidate);
+      }
+    } else {
+      metadata = _metadataFromCandidate(candidate);
+    }
+
+    return CollectionScrapeResult(
+      coverPath: coverPath,
+      backdropPath: backdropPath,
+      metadata: metadata,
     );
   }
 

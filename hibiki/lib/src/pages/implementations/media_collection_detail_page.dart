@@ -10,6 +10,8 @@ import 'package:hibiki/src/media/collections/collection_season_groups.dart';
 import 'package:hibiki/src/media/media_cover_source.dart';
 import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
+import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/video_episode_rail.dart';
 import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_batch_dialog.dart';
@@ -81,6 +83,20 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 用户手选的 tab —— 重排 / 移出成员不得把他弹回别的季。
   bool _seasonSelectionInitialized = false;
 
+  /// 合集行的**当前**快照（DB 才是真相源）。
+  ///
+  /// `widget.collection` 是进页那一刻的副本：刮削会改写它的 `name` 与 `coverPath`，
+  /// 只认进页副本会让详情页停在旧文件夹名 + 旧封面。首帧为 null（还没读到），此时
+  /// 回落 `widget.collection` —— 与本改动前逐帧相同。
+  MediaCollectionRow? _collectionRow;
+
+  /// 合集级刮削资料（简介/评分/放送/标签，schema v64）；未刮过为 null —— 此时 hero
+  /// 回落到「只有标题 + 进度」的旧形态，与本功能引入前一致（BUG-1310）。
+  ScrapeMetadata? _scrapeMeta;
+
+  /// 横版背景本地路径；仅 TMDB 源有，Bangumi / 离线库恒为 null。
+  String? _backdropPath;
+
   @override
   HibikiDatabase get detailDatabase => widget.database;
   @override
@@ -107,6 +123,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   Future<void> _reload() async {
     final List<VideoBookRow> members = await widget.loadMembers();
+    // 刮削资料与合集行一起重取：刮削**经用户确认后可能回写合集名**
+    //（`applyCollectionScrape` 的 confirmedTitle），而 widget.collection 是进页时的
+    // 快照，只认它会让详情页标题停在旧文件夹名。
+    final CollectionScrapeMetaRow? metaRow =
+        await widget.database.getCollectionScrapeMeta(widget.collection.id);
+    final ({ScrapeMetadata metadata, String? backdropPath})? decoded =
+        decodeCollectionScrapeMeta(metaRow);
+    final MediaCollectionRow? fresh =
+        await widget.database.getMediaCollectionById(widget.collection.id);
     if (!mounted) return;
     setState(() {
       _members = members;
@@ -115,6 +140,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           r.bookUid: collectionGroupKeyForFilename(r.videoPath),
       };
       _rebuildSections();
+      _scrapeMeta = decoded?.metadata;
+      _backdropPath = decoded?.backdropPath;
+      if (fresh != null) {
+        _collectionRow = fresh;
+        _name = fresh.name;
+      }
       _loading = false;
     });
   }
@@ -227,8 +258,29 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           ),
       ];
 
+  /// hero 背景的**横版**图源（BUG-1298 的数据层根治）。
+  ///
+  /// hero 是约 2.7:1 的宽幅槽，理应喂横图。刮削若拿到了 TMDB 的 `backdrop_path`
+  /// 就落在这里，槽向天然吻合、直接 cover 铺满即可。
+  ///
+  /// 返回 null = 该源没有横版图（Bangumi / 离线库只有竖版海报，恒为 null），此时
+  /// 背景回落到海报 + [LandscapeCoverImage] 的模糊垫底。那不是权宜之计，是这些源
+  /// 的常态路径。
+  ImageProvider? get _heroBackdrop {
+    final String? path = _backdropPath;
+    if (path == null || path.isEmpty) return null;
+    return resolveMediaCoverImage(
+      kind: MediaKind.video,
+      localPath: path,
+      // 背景横跨整屏，4K 桌面下物理宽可达 3840；比海报的 1600 给得更宽。
+      decodeWidth: 2560,
+    );
+  }
+
   ImageProvider? get _heroCover {
-    final String? collectionCover = widget.collection.coverPath;
+    // 读 DB 快照而非进页副本：刮削刚写进去的新封面必须立刻生效（见 [_collectionRow]）。
+    final String? collectionCover =
+        (_collectionRow ?? widget.collection).coverPath;
     if (collectionCover != null && collectionCover.isNotEmpty) {
       return resolveMediaCoverImage(
         kind: MediaKind.video,
@@ -518,16 +570,31 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         ),
       ),
     ];
+    final ImageProvider? backdrop = _heroBackdrop;
     return SizedBox(
       height: height,
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
           ColoredBox(color: cs.surfaceContainerHighest),
-          // 合集封面列（`MediaCollections.coverPath`）同时承载导入抽帧的 16:9 横图
-          // 与刮削写入的 2:3 竖版海报，故朝向判定交给 [LandscapeCoverImage]：横图
-          // 照旧 cover 铺满，竖版海报走模糊垫底 + 靠右完整显示（BUG-1298）。
-          if (cover != null)
+          // 背景分两条路，取决于**这次刮削的源有没有横版图**：
+          // ① 有 backdrop（TMDB）→ 槽向天然吻合，直接 cover 铺满，海报另以独立
+          //    2:3 卡片出现在左侧（Jellyfin 式，各就各位）；
+          // ② 无 backdrop（Bangumi / 离线库 / 未刮削）→ 只有 2:3 海报或 16:9 抽帧
+          //    可用，朝向判定交给 [LandscapeCoverImage]：横图 cover 铺满，竖版海报
+          //    模糊垫底 + 靠右完整显示（BUG-1298）。此时不再另放海报卡，否则同一张
+          //    图在同一屏出现两次。
+          if (backdrop != null) ...<Widget>[
+            Image(
+              key: const ValueKey<String>('collection-hero-backdrop'),
+              image: backdrop,
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+              errorBuilder: (_, __, ___) =>
+                  ColoredBox(color: cs.surfaceContainerHighest),
+            ),
+            ...overlays,
+          ] else if (cover != null)
             LandscapeCoverImage(
               key: const ValueKey<String>('collection-hero-cover'),
               image: cover,
@@ -552,69 +619,234 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                 tokens.spacing.page,
                 tokens.spacing.section,
               ),
-              child: Align(
-                alignment: AlignmentDirectional.bottomStart,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 680),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final Widget info = ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 680),
+                    child: _buildHeroInfo(context, tokens, episode),
+                  );
+                  // 海报卡只在「有横版背景 + 宽度够」时出现：窄屏放不下 2:3 卡还要
+                  // 留 680 给文字，挤压的结果是标题被压成一列竖排字。
+                  final bool showPoster = backdrop != null &&
+                      cover != null &&
+                      constraints.maxWidth >= 720;
+                  if (!showPoster) {
+                    return Align(
+                      alignment: AlignmentDirectional.bottomStart,
+                      child: info,
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: <Widget>[
-                      Text(
-                        _name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style:
-                            Theme.of(context).textTheme.displaySmall?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.08,
-                                ),
-                      ),
-                      SizedBox(height: tokens.spacing.gap),
-                      Text(
-                        t.collection_watched_progress(
-                          done: _watchedCount,
-                          total: _members.length,
+                      _buildHeroPosterCard(cover, height),
+                      SizedBox(width: tokens.spacing.section),
+                      Expanded(
+                        child: Align(
+                          alignment: AlignmentDirectional.bottomStart,
+                          child: info,
                         ),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.78),
-                              fontWeight: FontWeight.w500,
-                            ),
-                      ),
-                      SizedBox(height: tokens.spacing.card),
-                      Text(
-                        t.collection_continue_progress(n: _continueIndex + 1),
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.82),
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ),
-                      SizedBox(height: tokens.spacing.gap / 2),
-                      Text(
-                        episode.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                      SizedBox(height: tokens.spacing.card),
-                      FilledButton.icon(
-                        icon: const Icon(Icons.play_arrow_rounded),
-                        label: Text(t.collection_play),
-                        onPressed: () => widget.onOpenEpisode(episode),
                       ),
                     ],
-                  ),
-                ),
+                  );
+                },
               ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// hero 左侧的竖版海报卡（仅在有横版背景时出现，见 [_buildHero]）。
+  ///
+  /// 2:3 是海报的**正确槽向**——这才是 BUG-1298 的正解：不是把海报硬塞进宽幅槽再想
+  /// 办法补救，而是让宽幅槽拿横图、让海报回到它自己的比例里。
+  Widget _buildHeroPosterCard(ImageProvider cover, double heroHeight) {
+    final double posterHeight = (heroHeight * 0.62).clamp(180.0, 340.0);
+    return ClipRRect(
+      borderRadius: HibikiBorderRadius.card,
+      child: SizedBox(
+        key: const ValueKey<String>('collection-hero-poster'),
+        height: posterHeight,
+        width: posterHeight * 2 / 3,
+        child: PortraitCoverImage(image: cover),
+      ),
+    );
+  }
+
+  /// hero 文字区：标题 / 原名 / 元数据行 / 标签 / 简介 / 继续看 / 播放。
+  ///
+  /// 刮削资料缺失时逐项跳过（不占位、不显示「未知」）：未刮过的合集看到的就是引入
+  /// 本功能前的老形态——标题 + 进度 + 播放，逐像素不变（Never break userspace）。
+  Widget _buildHeroInfo(
+    BuildContext context,
+    HibikiDesignTokens tokens,
+    VideoBookRow episode,
+  ) {
+    final TextTheme text = Theme.of(context).textTheme;
+    final ScrapeMetadata? meta = _scrapeMeta;
+    final String? originalTitle = meta?.originalTitle;
+    final String? summary = meta?.summary?.trim();
+    final String metaLine = _heroMetaLine(meta);
+    final List<ScrapeTag> scrapeTags = _heroScrapeTags(meta);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          _name,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: text.displaySmall?.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            height: 1.08,
+          ),
+        ),
+        // 原名与合集名相同就不重复占一行（刮削回写后二者常常一致）。
+        if (originalTitle != null &&
+            originalTitle.isNotEmpty &&
+            originalTitle != _name) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap / 2),
+          Text(
+            originalTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: text.bodyMedium?.copyWith(
+              color: Colors.white.withValues(alpha: 0.72),
+            ),
+          ),
+        ],
+        SizedBox(height: tokens.spacing.gap),
+        Text(
+          metaLine,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: text.bodyMedium?.copyWith(
+            color: Colors.white.withValues(alpha: 0.82),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        if (scrapeTags.isNotEmpty) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          _buildHeroTagChips(scrapeTags),
+        ],
+        if (summary != null && summary.isNotEmpty) ...<Widget>[
+          SizedBox(height: tokens.spacing.card),
+          // Flexible + ellipsis：简介长度不可控，hero 高度是钳死的，必须让它先收缩
+          // 再截断，否则长简介直接把 Column 撑出 RenderFlex overflow。
+          Flexible(
+            child: Text(
+              summary,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: text.bodyMedium?.copyWith(
+                color: Colors.white.withValues(alpha: 0.78),
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+        SizedBox(height: tokens.spacing.card),
+        Text(
+          '${t.collection_continue_progress(n: _continueIndex + 1)}  ·  '
+          '${episode.title}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: text.labelLarge?.copyWith(
+            color: Colors.white.withValues(alpha: 0.82),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        SizedBox(height: tokens.spacing.card),
+        FilledButton.icon(
+          icon: const Icon(Icons.play_arrow_rounded),
+          label: Text(t.collection_play),
+          onPressed: () => widget.onOpenEpisode(episode),
+        ),
+      ],
+    );
+  }
+
+  /// 元数据行：`2023 · 全 12 话 · ★ 8.1 · 1234 人评分 · 已看完 0/12`。
+  ///
+  /// 逐项存在才拼（缺的不留空档、不写「未知」）。观看进度恒在——它不依赖刮削，是
+  /// 本页固有信息，未刮过的合集这一行就只剩它，与旧形态一致。
+  String _heroMetaLine(ScrapeMetadata? meta) {
+    final List<String> parts = <String>[];
+    final String? year = _heroYear(meta?.airDate);
+    if (year != null) parts.add(year);
+    final int? episodeCount = meta?.episodeCount;
+    if (episodeCount != null && episodeCount > 0) {
+      parts.add(t.collection_hero_total_episodes(count: episodeCount));
+    }
+    final double? rating = meta?.rating;
+    if (rating != null && rating > 0) {
+      parts.add('★ ${rating.toStringAsFixed(1)}');
+      final int? votes = meta?.ratingCount;
+      if (votes != null && votes > 0) {
+        parts.add(t.video_scrape_rating_votes(count: votes));
+      }
+    }
+    parts.add(
+      t.collection_watched_progress(
+        done: _watchedCount,
+        total: _members.length,
+      ),
+    );
+    return parts.join('  ·  ');
+  }
+
+  /// hero 展示的**作品标签**（题材/类型，来自刮削源，按热度降序取前 6）。
+  ///
+  /// 与合集自己的**用户标签**（`buildDetailTagChips`，hero 下方那排）是两条正交轴：
+  /// 这里是「这部作品是什么题材」（源给的，只读），那里是「我把它归到哪些自建分类」
+  /// （用户建的，可增删）。两者都该有，不互相取代。
+  List<ScrapeTag> _heroScrapeTags(ScrapeMetadata? meta) {
+    final List<ScrapeTag> tags = meta?.tags ?? const <ScrapeTag>[];
+    return tags.take(6).toList();
+  }
+
+  /// 作品标签 chips。
+  ///
+  /// 用 [Wrap] 而不是单行 Row：标签长短不一，钳成一行会让第二个起就被 ellipsis 吃掉。
+  /// 取前 6 个已使最坏情况稳定在两行内，配合调用方的 [Flexible] 不会撑爆 hero。
+  Widget _buildHeroTagChips(List<ScrapeTag> tags) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: <Widget>[
+        for (final ScrapeTag tag in tags)
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              child: Text(
+                tag.name,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.2,
+                  color: Colors.white.withValues(alpha: 0.88),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 从 `YYYY-MM-DD` / `YYYY` 取年份；取不到返回 null（源常见残缺日期，不补造）。
+  static String? _heroYear(String? airDate) {
+    if (airDate == null || airDate.length < 4) return null;
+    final String head = airDate.substring(0, 4);
+    return int.tryParse(head) == null ? null : head;
   }
 
   Widget _buildEpisodeSection(

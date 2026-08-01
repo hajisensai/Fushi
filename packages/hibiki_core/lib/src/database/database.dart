@@ -392,6 +392,7 @@ _MergedTagState _mergeTagClocks(
   ActivityEvents,
   ClipboardHistory,
   VideoScrapeMeta,
+  CollectionScrapeMeta,
   MediaTrackingMappings,
   MediaTrackingOutbox,
   Galgames,
@@ -416,7 +417,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 63;
+  int get schemaVersion => 64;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1286,6 +1287,22 @@ class HibikiDatabase extends _$HibikiDatabase {
                 );
               }
             });
+          }
+          if (from < 64) {
+            // v64（BUG-1310）：新增 collection_scrape_meta —— 合集级刮削资料的
+            // 宿主。此前元数据只有 video_scrape_meta（主键 bookUid）这一个宿主，
+            // 而简介/评分/放送/标签属于「一部作品」= 合集，于是合集刮削只能下一张
+            // 海报就结束，详情页除标题和进度外一片空白。
+            //
+            // 纯新增表，不动任何既有表/列：旧库升级后本表为空 = 全部合集未刮削，
+            // 详情页回落到「只有标题 + 进度」的旧形态，逐像素不变（Never break
+            // userspace）；用户重刮一次即回填。
+            //
+            // 幂等：fresh DB 已由 onCreate 的 createAll 建好，重复升级时
+            // _tableExists 短路 no-op。
+            if (!await _tableExists('collection_scrape_meta')) {
+              await m.createTable(collectionScrapeMeta);
+            }
           }
         },
         onCreate: (m) async {
@@ -2543,6 +2560,34 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<void> deleteVideoScrapeMeta(String bookUid) => (delete(videoScrapeMeta)
         ..where(($VideoScrapeMetaTable t) => t.bookUid.equals(bookUid)))
       .go();
+
+  // ── collection_scrape_meta（合集级刮削资料，schema v64 / BUG-1310）────────
+
+  /// 写入/覆盖合集刮削资料（同 collectionId 覆盖，重刮即替换）。
+  Future<void> upsertCollectionScrapeMeta(CollectionScrapeMetaCompanion meta) =>
+      into(collectionScrapeMeta).insertOnConflictUpdate(meta);
+
+  /// 取合集刮削资料；未刮过返回 null（详情页据此回落到「只有标题 + 进度」的旧形态）。
+  Future<CollectionScrapeMetaRow?> getCollectionScrapeMeta(int collectionId) =>
+      (select(collectionScrapeMeta)
+            ..where(($CollectionScrapeMetaTable t) =>
+                t.collectionId.equals(collectionId)))
+          .getSingleOrNull();
+
+  /// 监听单个合集的刮削资料。详情页据此在刮削落库后自动重建 hero，无需手动刷新
+  /// （与合集封面同一次写入事务，用户点「使用」后资料与背景图一起出现）。
+  Stream<CollectionScrapeMetaRow?> watchCollectionScrapeMeta(int collectionId) =>
+      (select(collectionScrapeMeta)
+            ..where(($CollectionScrapeMetaTable t) =>
+                t.collectionId.equals(collectionId)))
+          .watchSingleOrNull();
+
+  /// 删除合集刮削资料（「重新刮削」前先清，或纠错后作废）。
+  Future<void> deleteCollectionScrapeMeta(int collectionId) =>
+      (delete(collectionScrapeMeta)
+            ..where(($CollectionScrapeMetaTable t) =>
+                t.collectionId.equals(collectionId)))
+          .go();
 
   /// 监听视频库 uid 集合。插入/删除行时发出更新后的 uid 列表；库页据此在任意
   /// 导入路径（页内 / 拖拽 / 外部「用 Hibiki 打开」/ 远端下载）落库后自动重查，

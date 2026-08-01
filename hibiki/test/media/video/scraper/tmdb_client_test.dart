@@ -98,4 +98,46 @@ void main() {
       );
     });
   });
+
+  // BUG-1310：TMDB 搜索响应本就带 backdrop_path / overview / vote_count，此前整条
+  // 丢弃 —— 于是详情页宽幅 hero 没有横图可用（只能拿 2:3 海报硬撑，BUG-1298），
+  // 简介和评分人数也永远是空的。TMDB 没有接进本流水线的详情端点，搜索响应就是它
+  // 全部资料的唯一来源，在这里不接住就等于永久丢失。
+  group('TMDB 富字段映射 — BUG-1310', () {
+    test('读 backdrop_path / overview / vote_count', () {
+      const String body = '''
+{"results":[
+  {"media_type":"tv","id":100,"name":"转生王女","original_name":"転生王女",
+   "poster_path":"/p.jpg","backdrop_path":"/bd.jpg","overview":"一部关于魔法的故事。",
+   "first_air_date":"2023-01-04","vote_average":8.2,"vote_count":1234}
+]}''';
+      final ScrapeCandidate c = parseTmdbMultiResponse(body).single;
+
+      expect(
+        c.backdropUrl,
+        'https://image.tmdb.org/t/p/original/bd.jpg',
+        reason: '横版背景必须用 original 档：hero 跨整屏，4K 下缩略档就是一片糊',
+      );
+      expect(c.summary, '一部关于魔法的故事。');
+      expect(c.rating, 8.2);
+      expect(c.ratingCount, 1234);
+    });
+
+    test('缺 backdrop_path / overview 时为 null，但候选仍保留', () {
+      // 冷门条目常无背景图 —— 那不该让整个候选作废（海报才是刮削的必需品）。
+      const String body = '''
+{"results":[
+  {"media_type":"movie","id":200,"title":"某片","poster_path":"/p.jpg",
+   "release_date":"2020-01-01","vote_average":0}
+]}''';
+      final ScrapeCandidate c = parseTmdbMultiResponse(body).single;
+
+      expect(c.backdropUrl, isNull);
+      expect(c.summary, isNull);
+      expect(c.posterUrl, 'https://image.tmdb.org/t/p/original/p.jpg',
+          reason: '无背景图不得使候选作废');
+      expect(c.rating, isNull, reason: 'vote_average=0 是「没人评过」，不是 0 分');
+      expect(c.ratingCount, isNull);
+    });
+  });
 }

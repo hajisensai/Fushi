@@ -1124,6 +1124,82 @@ class RevealedImages extends Table {
   Set<Column> get primaryKey => {bookKey, imageKey};
 }
 
+// ── collection_scrape_meta ──────────────────────────────────────────
+// 合集条目刮削元数据（schema v64，BUG-1310）：一个合集一行。
+//
+// 为什么不是复用 [VideoScrapeMeta]：那张表主键是 bookUid、外键指向 VideoBooks，
+// 承载的是**单集**资料。而简介 / 评分 / 放送日期 / 标签本质属于「一部作品」——
+// 在统一合集模型里，「一部作品」就是合集，不是它的第 7 集。合集此前没有元数据
+// 宿主，于是合集刮削只能下一张海报就结束（`cover_match_dialog` 的合集分支），
+// 用户看到的详情页除了标题和进度什么都没有。
+//
+// 也不是往 [MediaCollections] 加十来个可空列：与 VideoScrapeMeta 同一条理由——
+// 刮削资料是**可重建的缓存**（删了重刮即可），合集主表是用户数据（名字/排序/
+// 音轨偏好）。分表让「清空刮削缓存」= 一条 DELETE，且不撑大合集主表行宽。
+//
+// 删合集经 FK cascade 连带清本表。空表 = 全部未刮削（旧库升级后行为与旧版一致，
+// Never break userspace）。
+@DataClassName('CollectionScrapeMetaRow')
+class CollectionScrapeMeta extends Table {
+  /// 合集身份（= MediaCollections.id）。删合集 cascade 清本表。
+  IntColumn get collectionId =>
+      integer().references(MediaCollections, #id, onDelete: KeyAction.cascade)();
+
+  /// 来源（`ScrapeSource.name`：bangumi / tmdb / offlineDb / manualUrl）。
+  TextColumn get source => text()();
+
+  /// 源内条目 id（Bangumi subject id / TMDB id），字符串化存储。
+  TextColumn get subjectId => text()();
+
+  /// 条目主标题（中文优先）。合集名回写用它，但**本列独立保存**：用户事后手动改
+  /// 合集名不该篡改「刮到的条目叫什么」这一事实（重刮判据 / 展示原始条目名要它）。
+  TextColumn get title => text()();
+
+  /// 原名（日文原题）；与 [title] 相同或缺失时为 null。
+  TextColumn get originalTitle => text().nullable()();
+
+  /// 条目简介（含换行）。
+  TextColumn get summary => text().nullable()();
+
+  /// 放送开始日期 `YYYY-MM-DD`。存字符串而非 DateTime：源数据常见只精确到年或
+  /// 年月的残缺日期，转 DateTime 会凭空补月/日造假（与 VideoScrapeMeta 同规矩）。
+  TextColumn get airDate => text().nullable()();
+
+  /// 评分（0~10）与评分人数。
+  RealColumn get rating => real().nullable()();
+  IntColumn get ratingCount => integer().nullable()();
+
+  /// 总话数。
+  IntColumn get episodeCount => integer().nullable()();
+
+  /// 标签 JSON 数组：`[{"name":"日常","count":1234}]`（按热度降序）。
+  TextColumn get tagsJson => text().nullable()();
+
+  /// infobox JSON 数组：`[{"key":"导演","value":"..."}]`（摊平，值为数组时用 `/`
+  /// 连接）。存原始 key 名，展示层不翻译。
+  TextColumn get infoboxJson => text().nullable()();
+
+  /// **横版背景图**绝对路径（BUG-1298 的数据层根治）。
+  ///
+  /// 详情页 hero 是约 2.7:1 的宽幅槽，而 [MediaCollections.coverPath] 存的是 2:3
+  /// 竖版海报——把海报 cover 进宽槽要放大 4.5 倍、只剩中间 26%。根治办法是让宽槽
+  /// 有自己的横版图源：TMDB 的 `backdrop_path` 就在搜索响应里（同一次请求，零额外
+  /// 开销）。落在 `video_covers/collections/<id>_backdrop.jpg`。
+  ///
+  /// NULL = 该源没有横版图（Bangumi 只提供竖版海报，永远为 NULL）。此时 hero 回落
+  /// 到海报 + `LandscapeCoverImage` 的模糊垫底——那不是补丁，是 Bangumi 源的常态路径。
+  TextColumn get backdropPath => text().nullable()();
+
+  /// 条目详情页 URL，供「查看条目」跳转。
+  TextColumn get detailUrl => text().nullable()();
+
+  /// 本行写入时间（重刮判据 / 展示「资料更新于」）。
+  DateTimeColumn get scrapedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {collectionId};
+}
+
 // ── video_scrape_meta ───────────────────────────────────────────────
 // 视频条目刮削元数据（「抄 Bangumi」）：一本视频书一行，存的是**条目级**资料
 // （简介/评分/放送/话数/标签/制作人员），不是文件级资料。封面图仍落
