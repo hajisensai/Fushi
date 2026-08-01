@@ -295,8 +295,9 @@ class MediaItemDialogFrame extends StatelessWidget {
               children: <Widget>[
                 Text(
                   title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  // TODO-2490：本弹窗是库页卡片长按/右键「看全名」的兜底路径——
+                  // 卡上标题最多两行省略，这里再截断则超长条目名到处都看不全。
+                  // 外层 HibikiDialogFrame 默认可滚动且限高，不会撑出屏。
                   style: tokens.type.pageTitle.copyWith(
                     color: colors.onSurface,
                     fontWeight: FontWeight.w700,

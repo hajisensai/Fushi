@@ -2690,12 +2690,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               children: <Widget>[
                 Padding(
                   padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
-                  child: Text(
-                    collection.name,
-                    // BUG-1184：与同网格的散卡标题同规格（两行）。
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  // TODO-2490：两行仍放不下时，桌面悬停显示完整合集名。
+                  child: ShelfTitleOverflowTooltip(
+                    title: collection.name,
                     style: Theme.of(context).textTheme.bodyMedium,
+                    maxLines: 2,
+                    child: Text(
+                      collection.name,
+                      // BUG-1184：与同网格的散卡标题同规格（两行）。
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   ),
                 ),
                 Flexible(
@@ -2910,12 +2916,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  child: Text(
-                    video.title,
-                    // BUG-1184：远端视频占位卡与本地散卡同规格（两行）。
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  // TODO-2490：两行仍放不下时，桌面悬停显示完整标题。
+                  child: ShelfTitleOverflowTooltip(
+                    title: video.title,
                     style: Theme.of(context).textTheme.bodyMedium,
+                    maxLines: 2,
+                    child: Text(
+                      video.title,
+                      // BUG-1184：远端视频占位卡与本地散卡同规格（两行）。
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   ),
                 ),
               ],
@@ -3640,13 +3652,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               children: <Widget>[
                 Padding(
                   padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
-                  child: Text(
-                    book.title,
-                    // BUG-1184：窄屏卡宽只有约 154px，单行放不下一个日文剧名。
-                    // 文字块高度已按两行标题算出（[_videoCardTextBlock]）。
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  // TODO-2490：两行仍放不下时，桌面悬停显示完整标题；触屏长按
+                  // 菜单（MediaItemDialogFrame 标题不限行）看全名。
+                  child: ShelfTitleOverflowTooltip(
+                    title: book.title,
                     style: Theme.of(context).textTheme.bodyMedium,
+                    maxLines: 2,
+                    child: Text(
+                      book.title,
+                      // BUG-1184：窄屏卡宽只有约 154px，单行放不下一个日文剧名。
+                      // 文字块高度已按两行标题算出（[_videoCardTextBlock]）。
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   ),
                 ),
                 // UI v2 Phase D：观看进度文字外显（mockup 卡片下的进度/上次观看行）。
