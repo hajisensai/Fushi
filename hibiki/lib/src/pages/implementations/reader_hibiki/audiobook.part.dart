@@ -1160,7 +1160,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         }
         // D4 时长上限已收进 classifyAudiobookClipSelection（BUG-1320，tooLong 分支
         // 在上面给诚实文案），此处不再有散装特判。
-        // M2-M5：裁音频 → 渲文本图 → h264/mpeg4 .mp4 合成 → 分享/存盘。异步推进，
+        // M2-M5：裁音频 → 渲文本图 → H.264 .mp4 合成 → 分享/存盘。异步推进，
         // 先给一个反馈 toast；失败在管线内各自 toast。防重入：导出进行中再点直接忽略。
         if (_audiobookClipExporting) return;
         // BUG-1321：字幕措辞与 EPUB 选区不一致时禁用逐句高亮（静态精确选区卡，
@@ -1334,7 +1334,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
 
   /// TODO-945 M2-M5：把已验证的 {文本, 音频文件, 起止 ms} 走完整管线——裁音频片段
   /// （M2，复用 [extractAudioSegmentViaFfmpeg]）→ 文本离屏渲 PNG（M3，复用
-  /// [renderAudiobookClipTextToPng]）→ 图+音频合成 h264/mpeg4 .mp4（M4，复用
+  /// [renderAudiobookClipTextToPng]）→ 图+音频合成 H.264 .mp4（M4，复用
   /// [synthAudiobookClipVideoViaFfmpeg]）→ 分享/存盘（M5，桌面 FilePicker / 移动
   /// Share）。任一步失败各自 toast，绝不崩。临时文件落 systemTemp，桌面导出后清理。
   Future<void> _runAudiobookClipPipeline({
@@ -1361,11 +1361,11 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     Directory? framesDir;
     final bool isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
-    // BUG-809：桌面走 H.264（ffmpeg-min 已编入 libx264）；BUG-1322：移动走 libavcodec
-    // 原生 mpeg4（MPEG-4 Part 2，AAR 实证已编入）——旧 mjpeg/.mov 无帧间压缩（30 秒
-    // ≈ 200MB）且大量移动播放器无 MJPEG 解码器，导出产物基本不可播。两端统一 .mp4
-    // 容器（faststart），任意播放器/接收端可直接打开。
-    final bool useH264 = isDesktop;
+    // TODO-2357：**全平台 H.264**，无编码器平台分支。移动端 ffmpeg-kit 已重编入
+    // libx264（--enable-gpl --enable-x264），与桌面 ffmpeg-min 同一个编码器；此前
+    // 的移动 mpeg4 回退（BUG-1322）规格上限低于本导出的 1080×1920，会静默产出解不了
+    // 的文件，与更早的 mjpeg/.mov（BUG-809）同型失败。两端统一 .mp4 容器（faststart）。
+    // isDesktop 仍用于产物落盘位置与清理策略（桌面存盘 / 移动走系统分享），与编码无关。
     const String videoExt = 'mp4';
     try {
       final Directory tmpDir = await getTemporaryDirectory();
@@ -1518,8 +1518,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           outputPath: videoFile.path,
           width: layout.width,
           height: layout.height,
-          // BUG-809/BUG-1322：桌面 h264 / 移动 mpeg4，色度统一 yuv420p（编码器内定）。
-          h264: useH264,
+          // TODO-2357：全平台 libx264，色度统一 yuv420p（编码器参数内定）。
           timeout: synthTimeout,
         );
         if (!synth.isSuccess || synth.outputPath == null) {
@@ -1545,7 +1544,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       if (isDesktop) {
         final String? savePath = await FilePicker.platform.saveFile(
           dialogTitle: t.audiobook_export_clip,
-          // BUG-809：桌面导出 .mp4（h264，通用可直接播放）。
+          // BUG-809：桌面导出 .mp4（H.264，通用可直接播放）。
           fileName: 'audiobook_clip_$stamp.$videoExt',
           type: FileType.custom,
           allowedExtensions: <String>[videoExt],
@@ -1720,7 +1719,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     }
     if (frameNo == 0) return false;
 
-    // image2 序列帧 + 完整音频 → h264/mpeg4 .mp4。
+    // image2 序列帧 + 完整音频 → H.264 .mp4。
     final AudiobookClipSynthResult synth =
         await synthAudiobookClipFrameSeqVideoViaFfmpeg(
       framesDir: framesDir.path,
@@ -1729,9 +1728,8 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       width: layout.width,
       height: layout.height,
       fps: fps,
-      // BUG-809/BUG-1322：桌面 h264 / 移动 mpeg4，两端帧间压缩把逐句高亮的重复帧
+      // TODO-2357：全平台 libx264，帧间压缩把逐句高亮的重复帧
       // 压到近零；色度统一 yuv420p（编码器内定）。
-      h264: isDesktop,
       timeout: timeout,
     );
     if (!synth.isSuccess || synth.outputPath == null) {

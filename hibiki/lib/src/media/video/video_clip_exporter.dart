@@ -154,6 +154,11 @@ List<String> buildFfmpegVideoClipExportArgs({
 /// mp4 muxer 也在白名单里；重编码后任何可解码的源都能落成通用可播的 .mp4，杜绝
 /// 「输出跟随源容器 → matroska/webm muxer 缺失 → exit -22 EINVAL」（BUG-917/460）。
 ///
+/// TODO-2357：这里的 `libx264` **无平台分支**，而移动端 ffmpeg-kit 此前并未编入 x264
+/// ——即本函数在手机上一旦被触发（copy 快路径失败的源），必然 `Unknown encoder
+/// 'libx264'` 硬失败。移动端 ffmpeg-kit 重编入 x264 后这条兜底路径在两端才真正等价，
+/// 无需再为移动端加特例分支。
+///
 /// `-pix_fmt yuv420p` 把 10-bit / 4:2:2 等源统一降到 8-bit 4:2:0（浏览器/播放器通吃）；
 /// `-movflags +faststart` 把 moov 前移便于边下边播。音频选择沿用与 copy 路径同一套
 /// [resolveAudioMapIndex] 边界判定（越界回退默认轨，尾随 `?` 兜底，BUG-345）。
