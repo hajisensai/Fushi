@@ -71,8 +71,7 @@ void main() {
           reason: 'maskCssComments 是等长掩码，长度必须守恒');
       expect(stripped, isNot(rawCss),
           reason: 'CSS 应含注释，_stripCssComments 必须真的把注释掩掉了');
-      expect(stripped.contains('/*'), isFalse,
-          reason: '掩码后不该再有块注释起始标记');
+      expect(stripped.contains('/*'), isFalse, reason: '掩码后不该再有块注释起始标记');
     });
   });
 }

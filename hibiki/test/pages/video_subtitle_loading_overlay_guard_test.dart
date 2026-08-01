@@ -53,7 +53,8 @@ void main() {
     // try/finally 到 hide 之间多写两行（如加一条 OSD 提示）就会把 hide 挤出旧
     // 窗口，要求型断言凭空变红。下界仍保持在 show 处，「show 之后才出现的
     // try/finally/hide」这条语义不放松（不是拿整个方法体去 contains）。
-    final String method = methodBody(src, 'Future<bool> _selectSubtitleSource(');
+    final String method =
+        methodBody(src, 'Future<bool> _selectSubtitleSource(');
     final int loadAt = method.indexOf('loadCuesForSource(source, videoPath');
     expect(loadAt, greaterThan(-1), reason: '缺 loadCuesForSource 抽取调用');
 

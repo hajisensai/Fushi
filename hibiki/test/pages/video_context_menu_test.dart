@@ -71,8 +71,8 @@ void main() {
 
     test('菜单关闭后归还键盘焦点', () {
       expect(
-          secondaryTap
-              .contains('_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'),
+          secondaryTap.contains(
+              '_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'),
           isTrue,
           reason: '覆盖层夺焦后不会自动归还，菜单关闭须经 _focusOwnership 归还');
     });
@@ -85,8 +85,8 @@ void main() {
     // 方法签名」当右边界。原来退而用「方法自身的 2 空格闭合」截断，赌的是菜单项列表里
     // 不出现同样缩进的 `}`；现在直接用花括号配对取整个方法体，赌注消失，同样覆盖整份
     // 菜单项列表、不被新增菜单项 / 注释挤出（TODO-389）。
-    final String items =
-        methodBody(page, 'List<PopupMenuEntry<VoidCallback>> _buildVideoContextMenuItems(');
+    final String items = methodBody(page,
+        'List<PopupMenuEntry<VoidCallback>> _buildVideoContextMenuItems(');
 
     test('含播放/暂停', () {
       expect(items.contains('t.video_menu_play_pause'), isTrue);

@@ -58,8 +58,7 @@ void main() {
 
   test('RenderJson 不盲发 ExecuteScript：同步+异步 HRESULT 都要检查并触发自愈', () {
     // 函数体用花括号配对取（methodBody 对 C++ 同样适用），不再是「到下一个左对齐 `}`」。
-    final String body =
-        methodBody(cpp, 'void GlobalLookupWindow::RenderJson(');
+    final String body = methodBody(cpp, 'void GlobalLookupWindow::RenderJson(');
     expect(
         body.contains(
             'ExecuteScript(Utf8ToWide(full_script).c_str(), nullptr)'),

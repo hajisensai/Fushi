@@ -486,7 +486,6 @@ class _JsMasker {
 String _maskJs(String source, {required bool maskLiteralContent}) =>
     _JsMasker(source, maskLiteralContent: maskLiteralContent).run();
 
-
 /// 把 **JS 源码**里的 `//` 行注释与 `/* */` 块注释换成等长空白，串 / 模板串 /
 /// 正则字面量的内容原样保留。
 ///
@@ -535,8 +534,7 @@ List<List<int>> _tripleQuotedSpans(String src) {
 String maskCommentsAndScriptLines(String source) {
   final List<String> chars = maskComments(source).split('');
   for (final List<int> span in _tripleQuotedSpans(source)) {
-    final String masked =
-        maskJsComments(source.substring(span[0], span[1]));
+    final String masked = maskJsComments(source.substring(span[0], span[1]));
     for (int k = 0; k < masked.length; k++) {
       // JS 掩码只会把字符变空白，不会引入新内容：原本已被 Dart 掩掉的位置保持空白。
       if (masked[k] == ' ' || masked[k] == '\n') chars[span[0] + k] = masked[k];
@@ -586,9 +584,8 @@ String methodBody(
   SourceLexicon lexicon = SourceLexicon.dart,
 }) {
   // 找签名：只掩码注释（签名可能落在被扫描的字符串语料里，串要保留）。
-  final String searchable = lexicon == SourceLexicon.js
-      ? maskJsComments(src)
-      : maskComments(src);
+  final String searchable =
+      lexicon == SourceLexicon.js ? maskJsComments(src) : maskComments(src);
   // 配对：注释与字符串都掩掉，只剩真结构。
   final String structural = lexicon == SourceLexicon.js
       ? maskJsCommentsAndStrings(src)

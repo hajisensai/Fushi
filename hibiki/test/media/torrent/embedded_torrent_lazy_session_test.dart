@@ -62,7 +62,7 @@ void main() {
 
     test('后端工厂在真要用时才懒建（且仅内置后端路径）', () {
       final String body =
-          _memberBody(appModel, 'TorrentBackend _torrentBackendFor(');
+          methodBody(appModel, 'TorrentBackend _torrentBackendFor(');
       expect(body.contains('_ensureEmbeddedTorrentHost()'), isTrue,
           reason: 'BUG-1053：内置后端路径必须走懒建入口');
       expect(
@@ -72,18 +72,19 @@ void main() {
     });
 
     test('就绪判定走能力探测，不再等价于「已开 session」', () {
-      final int i = appModel.indexOf('bool get isEmbeddedTorrentReady');
-      expect(i, greaterThanOrEqualTo(0));
-      final String body = appModel.substring(i, i + 400);
+      // 窗口=该表达式体成员的完整声明（顶层分号收口），不是 `+400` 定长窗口：
+      // getter 一旦多包一层三元或换行，probeAvailable 就漂出窗口、断言凭空变假。
+      final String body =
+          _expressionBodyMember(appModel, 'bool get isEmbeddedTorrentReady');
       expect(body.contains('EmbeddedTorrentHost.probeAvailable()'), isTrue,
           reason: 'BUG-1053：就绪判定若仍要求 session 存在，启动就又得开 session');
     });
 
     test('probeAvailable 只加载引擎，绝不创建 session', () {
-      final int i = host.indexOf('static bool probeAvailable(');
-      expect(i, greaterThanOrEqualTo(0));
-      final int end = host.indexOf('\n  }', i);
-      final String body = host.substring(i, end > i ? end : i + 1200);
+      // 窗口=方法体（花括号配对）。原写法是「找下一个 `\n  }`，找不到就退定长 1200」：
+      // 前半赌方法体里不出现同缩进闭合行，后半的静默兜底更是假绿温床——探测体一长，
+      // 下面两条 isFalse 就只扫前 1200 字符，后面真写了 session.open( 也照样绿。
+      final String body = methodBody(host, 'static bool probeAvailable(');
       expect(body.contains('EmbeddedTorrentEngine.open('), isTrue);
       expect(body.contains('EmbeddedTorrentSession.open('), isFalse,
           reason: 'BUG-1053：探测里建 session 就等于没修');
@@ -98,7 +99,7 @@ void main() {
       expect(hits.length, 1,
           reason:
               'BUG-1053：AppModel 里 open() 只应出现在 _ensureEmbeddedTorrentHost');
-      final String ensure = _memberBody(
+      final String ensure = methodBody(
           appModel, 'EmbeddedTorrentHost? _ensureEmbeddedTorrentHost()');
       expect(ensure.contains('EmbeddedTorrentHost.open('), isTrue);
     });

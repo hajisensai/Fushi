@@ -119,7 +119,8 @@ final b = \'\'\'{ js }\'\'\';
     });
 
     test('HTML 注释里的 <script> 不算真标签', () {
-      const String html = '<!-- <script src="fake.js"> --><meta charset="utf-8">';
+      const String html =
+          '<!-- <script src="fake.js"> --><meta charset="utf-8">';
       expect(maskHtmlComments(html).contains('<script'), isFalse);
     });
   });
@@ -361,8 +362,7 @@ final String js = \'\'\'
 
   group('maskJsComments：JS 专用词法（模板串 / 正则 / 行尾注释）', () {
     test('等长且行数守恒', () {
-      const String js =
-          'const a = `x \${v}`; // t\n/* b */ const c = 2;\n';
+      const String js = 'const a = `x \${v}`; // t\n/* b */ const c = 2;\n';
       expect(maskJsComments(js).length, js.length);
       expect(maskJsComments(js).split('\n').length, js.split('\n').length);
       expect(maskJsCommentsAndStrings(js).length, js.length);
