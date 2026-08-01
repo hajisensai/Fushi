@@ -29,13 +29,18 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1284 条。点号进各自文件。
+> 共 1291 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1340](bugs/BUG-1340-mihon-extension-catalog-restart.md) | ✅ | ✅ | 漫画扩展重启后可下载目录消失且无法安装新扩展 |
+| [BUG-1339](bugs/BUG-1339-mihon-detail-layout.md) | ✅ | ✅ | Mihon 漫画详情页路由触发布局断言 |
 | [BUG-1339](bugs/BUG-1339-clip-export-mobile-h264-encoder.md) | ✅ | ✅ | 移动端片段导出缺 H.264 编码器导致静默产出不可播文件 |
 | [BUG-1338](bugs/BUG-1338-delete-everywhere-srt-and-no-backend.md) | ✅ | ✅ | 「从所有设备删除」两个死角：纯字幕书无效、无同步后端时静默无效 |
+| [BUG-1336](bugs/BUG-1336-mihon-online-ocr-niratan-parity.md) | ✅ | ✅ | Mihon 在线漫画 OCR 横竖排错位且加载缓存调度未对齐 Niratan |
 | [BUG-1335](bugs/BUG-1335-video-subtitle-first-frame-font-scale-jump.md) | ✅ | ✅ | 字幕出现后位置动一下才正常（高分屏，特定句子） |
+| [BUG-1334](bugs/BUG-1334-manga-card-wrong-spread-page.md) | ✅ | ✅ | 漫画双页模式制卡图片取错成跨页首页 |
+| [BUG-1333](bugs/BUG-1333-manga-sentence-fragmented-blocks.md) | ✅ | ✅ | 漫画 Lens 同一气泡被拆成多列导致制卡句子残缺 |
 | [BUG-1332](bugs/BUG-1332-video-pos-subtitle-no-controls-dodge.md) | ✅ | ✅ | 带 \pos 的字幕不避让控制条、盖住暂停键 |
 | [BUG-1331](bugs/BUG-1331-video-ass-vertical-font-not-supported.md) | ✅ | ✅ | \fn@ 竖排字体未支持导致整行躺倒出屏 |
 | [BUG-1330](bugs/BUG-1330-remote-mining-animated-format.md) | ✅ | ✅ | 浏览器扩展远端制卡（YouTube/Netflix）不吃制卡图片格式偏好，恒出 GIF |
@@ -125,7 +130,9 @@
 | [BUG-1235](bugs/BUG-1235-jimaku-batch-availability.md) | ✅ | ✅ | 合集字幕匹配无法区分来源与逐集可用性 |
 | [BUG-1234](bugs/BUG-1234-cover-match-source-state.md) | ✅ | ✅ | 封面匹配切换来源会自动重搜并保留旧来源结果 |
 | [BUG-1233](bugs/BUG-1233-book-import-repeated-archive-probe.md) | ✅ | ✅ | 书籍导入重复整包判定 EPUB 载体 |
+| [BUG-1232](bugs/BUG-1232-mihon-sidecar-exit-leak.md) | ✅ | ✅ | 桌面关闭后 Mihon Java sidecar 残留 |
 | [BUG-1231](bugs/BUG-1231-cross-chapter-search-locate-race.md) | ✅ | ✅ | 跨章节书内搜索只跳到章首且不高亮 |
+| [BUG-1230](bugs/BUG-1230-manga-popup-ocr-direction.md) | ✅ | ✅ | 漫画查词弹窗未按 OCR 文字方向避让 |
 | [BUG-1229](bugs/BUG-1229-dictionary-css-draft.md) | ✅ | ✅ | 自定义 CSS 遮罩退出丢失草稿且关闭即保存 |
 | [BUG-1228](bugs/BUG-1228-video-mining-queue.md) | ✅ | ✅ | 连续视频制卡未串行且换集可能污染在途任务 |
 | [BUG-1227](bugs/BUG-1227-anki-media-upload-orphan.md) | ✅ | ✅ | 大 GIF 上传超时被吞后仍创建无图卡并留下孤儿媒体 |
