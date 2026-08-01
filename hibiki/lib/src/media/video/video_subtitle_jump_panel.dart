@@ -12,6 +12,99 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 String formatCueTimestamp(int startMs) =>
     HibikiTimeFormat.clock(Duration(milliseconds: startMs < 0 ? 0 : startMs));
 
+/// 把 ASS **逐字卡拉OK 事件**合并回整句（TODO-1384）。纯函数，列表与测试同源。
+///
+/// 背景：OP/ED 卡拉OK 常把一句歌词拆成每字一条独立 `Dialogue`，各带自己的 `\pos`，靠
+/// 坐标在画面上拼成一行（用户片源每集 175 条）：
+///
+/// ```
+/// {\an7\pos(461,672)\fad(250,250)}手
+/// {\an7\pos(491,672)\fad(250,250)}を
+/// {\an7\pos(521,672)\fad(250,250)}伸
+/// ```
+///
+/// 字幕列表按事件 1:1 列行，于是整屏都是单字行——既读不出句子，逐字行的查词/制卡也只能
+/// 拿到一个字。合并**只作用于字幕列表**：渲染层必须保留逐字事件（每字有各自的 `\pos` 与
+/// 淡入淡出时刻），两者消费同一份 cue 的不同视图。
+///
+/// 判据刻意收窄，宁可漏合也不错合（错合会把正常双语/多行字幕并成一行）。同组要求：
+/// - 每条都带 `\pos`（无 `\pos` 的常规对白永不参与）；
+/// - 文本是**单个 grapheme**（多字事件已是完整句，不该被并）；
+/// - 同一行：`\pos` 的 y 分数相等（容差 [_kSameRowEps]）且同 ASS Layer；
+/// - 时间上与本组已累积的区间**有重叠**（同一句歌词逐字入场；跨句的下一行不重叠 → 断组）；
+/// - 组内至少 2 条（单条不构成「被拆开的句子」）。
+///
+/// 组内按 `\pos` 的 x 分数升序拼接文本（复现 libass 的画面横向顺序，而非文件顺序）。
+/// 返回两张表：
+/// - `byRep`：代表行 raw（该组在原列表中的**首个下标**）→ 合成 [AudioCue]（`startMs` 取
+///   组内最小、`endMs` 取最大，其余字段沿用代表行）；
+/// - `repByRaw`：组内**每个**成员 raw → 该组代表行 raw，供列表把「当前播放句落在某个单字
+///   事件上」映射回唯一渲染的整句行（复用既有代表行机制，高亮/自动滚动零改动）。
+///
+/// 合成 cue 是**真 [AudioCue] 对象**而非显示层字符串，故列表的查词、收藏、制卡、搜索
+/// 全部自动作用于整句——收藏判据是 `(text, startMs)` 值语义，不依赖对象身份。
+({Map<int, AudioCue> byRep, Map<int, int> repByRaw}) mergePerCharacterCueGroups(
+    List<AudioCue> cues) {
+  const double kSameRowEps = 0.001;
+  final Map<int, AudioCue> merged = <int, AudioCue>{};
+  final Map<int, int> repByRaw = <int, int>{};
+
+  bool isPerCharCue(AudioCue c) =>
+      c.markup?.posFraction != null && c.text.characters.length == 1;
+
+  int i = 0;
+  while (i < cues.length) {
+    if (!isPerCharCue(cues[i])) {
+      i++;
+      continue;
+    }
+    final AudioCue head = cues[i];
+    final SubtitlePos headPos = head.markup!.posFraction!;
+    final int headLayer = head.markup?.layer ?? 0;
+    final List<AudioCue> group = <AudioCue>[head];
+    int spanStart = head.startMs;
+    int spanEnd = head.endMs;
+
+    int j = i + 1;
+    while (j < cues.length) {
+      final AudioCue c = cues[j];
+      if (!isPerCharCue(c)) break;
+      final SubtitlePos p = c.markup!.posFraction!;
+      if ((c.markup?.layer ?? 0) != headLayer) break;
+      if ((p.yFraction - headPos.yFraction).abs() > kSameRowEps) break;
+      // 与本组已累积区间不重叠 → 是下一句，断组。
+      if (c.startMs > spanEnd || c.endMs < spanStart) break;
+      group.add(c);
+      if (c.startMs < spanStart) spanStart = c.startMs;
+      if (c.endMs > spanEnd) spanEnd = c.endMs;
+      j++;
+    }
+
+    if (group.length >= 2) {
+      final List<AudioCue> ordered = List<AudioCue>.of(group)
+        ..sort((AudioCue a, AudioCue b) => a.markup!.posFraction!.xFraction
+            .compareTo(b.markup!.posFraction!.xFraction));
+      for (int k = i; k < j; k++) {
+        repByRaw[k] = i;
+      }
+      merged[i] = AudioCue()
+        ..bookKey = head.bookKey
+        ..chapterHref = head.chapterHref
+        ..sentenceIndex = head.sentenceIndex
+        ..textFragmentId = head.textFragmentId
+        ..text = ordered.map((AudioCue c) => c.text).join()
+        ..startMs = spanStart
+        ..endMs = spanEnd
+        ..audioFileIndex = head.audioFileIndex
+        // markup 不继承：合成句没有单一的 \pos / \fad，渲染层也不消费本结果
+        // （列表只用 text/时间）。留 null 避免下游误以为它有作者位置。
+        ..markup = null;
+    }
+    i = j > i ? j : i + 1;
+  }
+  return (byRep: merged, repByRaw: repByRaw);
+}
+
 /// 字幕列表行**时间戳列宽度**（TODO-567 / TODO-1200）。纯函数，页面与测试同源。
 ///
 /// 时间戳用 tabular figures 单行不换行渲染，列宽须容下最宽的时间戳字符串，否则文本溢出到
@@ -421,6 +514,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   int _cachedDedupCuesLength = -1;
   List<int> _cachedDedupIndexes = const <int>[];
   Map<int, int> _cachedRepresentativeByRaw = const <int, int>{};
+
+  /// TODO-1384：代表行 raw → 该行的**合成整句 cue**（ASS 逐字卡拉OK 事件合并，判据见
+  /// [mergePerCharacterCueGroups]）。与 [_cachedDedupCues] 同生命周期、同一次遍历刷新。
+  /// 非逐字行不在表内，[_rowCue] 回落原 cue（既有行为逐像素不变）。
+  Map<int, AudioCue> _cachedMergedByRep = const <int, AudioCue>{};
   List<AudioCue>? _cachedSelectedCues;
   int _cachedSelectedCuesLength = -1;
   int _cachedSelectedCount = 0;
@@ -571,7 +669,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     double offset = 0;
     for (int i = 0; i < visibleIndex; i++) {
       final int rawIndex = visibleIndexes[i];
-      final AudioCue cue = cues[rawIndex];
+      final AudioCue cue = _rowCue(cues, rawIndex);
       offset += _rowExtentForCue(
         cue,
         rowWidth,
@@ -786,7 +884,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       rowWidth,
     );
     final double rowExtent = _rowExtentForCue(
-      cues[currentIndex],
+      _rowCue(cues, currentIndex),
       rowWidth,
       // 目标行就是当前播放句，渲染时必加粗。
       bold: true,
@@ -863,7 +961,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // BUG-841：只数去重后的代表行，与 selected 档实际渲染的行一一对应。
     int count = 0;
     for (final int i in _dedupedRawIndexes(cues)) {
-      if (_isCueSelectedForCard(cues[i])) count++;
+      if (_isCueSelectedForCard(_rowCue(cues, i))) count++;
     }
     _cachedSelectedCues = cues;
     _cachedSelectedCuesLength = cues.length;
@@ -879,7 +977,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // BUG-841：只数去重后的代表行，与 favorites 档实际渲染的行一一对应。
     int count = 0;
     for (final int i in _dedupedRawIndexes(cues)) {
-      if (widget.isCueFavorited(cues[i])) count++;
+      if (widget.isCueFavorited(_rowCue(cues, i))) count++;
     }
     return count;
   }
@@ -896,7 +994,19 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final List<int> reps = <int>[];
     final Map<String, int> firstByKey = <String, int>{};
     final Map<int, int> repByRaw = <int, int>{};
+    // TODO-1384：先把 ASS 逐字卡拉OK 事件合并成整句组（判据见
+    // [mergePerCharacterCueGroups]）。组内非组首成员直接映射到组首、不进 reps——它与
+    // 下面按 `(startMs, 文本)` 的重复折叠是**同一个代表行机制**的两种成因，故共用一张
+    // repByRaw 表：当前播放句落在任一单字事件上，都能定位回那唯一渲染的整句行。
+    final ({Map<int, AudioCue> byRep, Map<int, int> repByRaw}) mergedGroups =
+        mergePerCharacterCueGroups(cues);
     for (int i = 0; i < cues.length; i++) {
+      final int? mergedRep = mergedGroups.repByRaw[i];
+      if (mergedRep != null) {
+        repByRaw[i] = mergedRep;
+        if (mergedRep == i) reps.add(i);
+        continue;
+      }
       final AudioCue cue = cues[i];
       final String key = '${cue.startMs}\u0000${cue.text}';
       final int? rep = firstByKey[key];
@@ -912,7 +1022,19 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _cachedDedupCuesLength = cues.length;
     _cachedDedupIndexes = reps;
     _cachedRepresentativeByRaw = repByRaw;
+    _cachedMergedByRep = mergedGroups.byRep;
     return reps;
+  }
+
+  /// 某个**代表行**在列表里实际呈现/交互所用的 cue（TODO-1384）。逐字卡拉OK 组返回
+  /// 合成的整句 cue，其余行返回原 cue（既有行为逐像素不变）。
+  ///
+  /// 列表内一切「这一行是什么」的读取都必须经此单一入口——行文本、行高测量、点击跳转、
+  /// 逐字查词、收藏 toggle、制卡选择全部同源，才不会出现「列表显示整句、制卡只拿到一个
+  /// 字」的割裂。
+  AudioCue _rowCue(List<AudioCue> cues, int rawIndex) {
+    _dedupedRawIndexes(cues);
+    return _cachedMergedByRep[rawIndex] ?? cues[rawIndex];
   }
 
   /// 把任意 raw 下标（可能是被折叠的重复项）映射到其代表行 raw 下标（BUG-841）。当前
@@ -952,13 +1074,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       case VideoSubtitleListFilter.favorites:
         indexes = <int>[
           for (final int i in base)
-            if (widget.isCueFavorited(cues[i])) i,
+            if (widget.isCueFavorited(_rowCue(cues, i))) i,
         ];
         break;
       case VideoSubtitleListFilter.selected:
         indexes = <int>[
           for (final int i in base)
-            if (_isCueSelectedForCard(cues[i])) i,
+            if (_isCueSelectedForCard(_rowCue(cues, i))) i,
         ];
         break;
     }
@@ -1021,6 +1143,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _cachedDedupCuesLength = -1;
     _cachedDedupIndexes = const <int>[];
     _cachedRepresentativeByRaw = const <int, int>{};
+    // 与 dedup 表同生命周期（同一次遍历产出）：漏清会让换轨/换片后的列表拿到上一份
+    // 字幕的合成整句（TODO-1384）。
+    _cachedMergedByRep = const <int, AudioCue>{};
   }
 
   void _retainRowKeyFor(int? rawIndex) {
@@ -1096,7 +1221,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                                 return null;
                               }
                               final int rawIndex = visibleIndexes[i];
-                              final AudioCue cue = cues[rawIndex];
+                              final AudioCue cue = _rowCue(cues, rawIndex);
                               return _rowExtentForCue(
                                 cue,
                                 dimensions.crossAxisExtent,
@@ -1106,7 +1231,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                             itemCount: visibleIndexes.length,
                             itemBuilder: (BuildContext _, int i) {
                               final int rawIndex = visibleIndexes[i];
-                              final AudioCue cue = cues[rawIndex];
+                              final AudioCue cue = _rowCue(cues, rawIndex);
                               final bool selected = rawIndex == currentIndex;
                               final bool trackKey =
                                   selected || rawIndex == _scrollTargetRawIndex;
