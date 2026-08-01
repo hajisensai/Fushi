@@ -374,23 +374,45 @@ void main([List<String> args = const <String>[]]) {
       lowMemory: appModel.lowMemoryMode,
     )) {
       unawaited(Future(() async {
+        // 预热持有的是进程级资源（一个 headless WebView = 一个 chromium
+        // renderer 子进程），销毁必须有确定终点，不能只挂在 onLoadStop 这条
+        // 成功路径上：回调不来就是永久泄漏一个 renderer，而 renderer 被 OOM
+        // kill 且 onRenderProcessGone 无人接管时，Android 默认会连整个 app
+        // 进程一起杀（CI Android appSmoke 连续 4 次死于此）。终点交给
+        // WebViewPrewarmSession 收口：载入完成 / 载入失败 / renderer 死亡 /
+        // 超时兜底，先到者胜、只 dispose 一次。
+        late final HeadlessInAppWebView warmup;
+        final WebViewPrewarmSession session = WebViewPrewarmSession(
+          disposeWebView: () => warmup.dispose(),
+          onFinished: (String reason) =>
+              debugPrint('[Hibiki] WebView engine pre-warm ended: $reason'),
+        );
         try {
           // 桌面端等首帧，保证 Flutter view 已 attach（WebView2 前提）。
           if (isDesktopPlatform) {
             await WidgetsBinding.instance.endOfFrame;
           }
-          late final HeadlessInAppWebView warmup;
           warmup = HeadlessInAppWebView(
             initialUrlRequest: URLRequest(url: WebUri('about:blank')),
             onLoadStop: (controller, url) async {
+              // 100ms 让 onLoadStop 的回调栈先出栈再销毁：这是原实现就有的
+              // 保守做法（桌面 WebView2 上在回调里同步 dispose 曾不稳），
+              // 不是等待载入的重试窗口——真正的终点保证在 session 那边。
               await Future.delayed(const Duration(milliseconds: 100));
-              await warmup.dispose();
-              debugPrint('[Hibiki] WebView engine pre-warmed');
+              await session.finish('loaded');
             },
+            onReceivedError: (controller, request, error) =>
+                session.finish('load error: ${error.type}'),
+            // 接管 renderer 死亡：Android 侧只要注册了这个回调，
+            // InAppWebViewClient 就返回 true，chromium 不再连坐杀 app 进程。
+            onRenderProcessGone: (controller, detail) =>
+                session.finish('renderer gone (didCrash=${detail.didCrash})'),
           );
           await warmup.run();
+          session.armTimeout();
         } catch (e) {
           debugPrint('[Hibiki] WebView warmup failed (non-fatal): $e');
+          await session.finish('run failed: $e');
         }
       }));
     }
