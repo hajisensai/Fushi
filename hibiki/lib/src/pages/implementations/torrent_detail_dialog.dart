@@ -136,11 +136,12 @@ class _TorrentTaskDetailDialogState
           pieces = await detail?.pieceStates(widget.plan.id) ?? pieces;
         case 1:
           files = await backend.listFiles(widget.plan.id);
-          priorities = await detail?.filePriorities(widget.plan.id);
+          priorities =
+              await detail?.filePriorities(widget.plan.id) ?? priorities;
         case 2:
-          peers = await detail?.listPeers(widget.plan.id);
+          peers = await detail?.listPeers(widget.plan.id) ?? peers;
         case 3:
-          trackers = await detail?.listTrackers(widget.plan.id);
+          trackers = await detail?.listTrackers(widget.plan.id) ?? trackers;
       }
       if (!mounted) return;
       setState(() {
