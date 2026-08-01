@@ -83,6 +83,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Engine game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     for (int i = 0; i < 40 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -146,6 +149,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Engine game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     for (int i = 0; i < 40 && service.entries.length < 2; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -203,6 +209,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Engine game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     for (int i = 0; i < 200 && service.entries.length < 2; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -249,6 +258,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Engine game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     for (int i = 0; i < 200 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -305,6 +317,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Engine game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     for (int i = 0; i < 200 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }

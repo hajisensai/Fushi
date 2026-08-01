@@ -1419,6 +1419,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
               timestampMs: ts,
               text: text,
               threadId: (e['threadId'] as int?) ?? 0,
+              faceId: (e['faceId'] as int?) ?? 0,
               threadAddress: (e['threadAddress'] as int?) ?? 0,
               threadContext: (e['threadContext'] as int?) ?? 0,
               threadContext2: (e['threadContext2'] as int?) ?? 0,
@@ -1949,6 +1950,7 @@ class GalHookedLine {
     required this.timestampMs,
     required this.text,
     this.threadId = 0,
+    this.faceId = 0,
     this.threadAddress = 0,
     this.threadContext = 0,
     this.threadContext2 = 0,
@@ -1963,6 +1965,13 @@ class GalHookedLine {
   final int timestampMs;
   final String text;
   final int threadId;
+
+  /// hook「面」id（native 算好的、不含 ctx 的身份，见 luna_text_selector.h）。
+  ///
+  /// v13 起 native 采集期不再按选定线程丢行，过滤挪到消费期；这个字段是**挪过去仍然等价**
+  /// 的前提：同一 hook 面在不同剧情分支下调用点 ctx 会变、[threadId] 随之变，只按 threadId
+  /// 精确匹配会把整段台词丢掉（BUG-1159）。0 = 写者没提供（GDI/Unity 等）。
+  final int faceId;
   final int threadAddress;
   final int threadContext;
   final int threadContext2;

@@ -161,51 +161,27 @@ void WriteUnityTextEvent(uint64_t thread_id, void* text_component,
     return;
   }
 
-  const LONGLONG reserved = InterlockedIncrement64(
-      reinterpret_cast<volatile LONGLONG*>(&g_header->text_write_count));
-  const uint64_t index = static_cast<uint64_t>(reserved) - 1;
-  uint8_t* slot = g_text_base +
-      static_cast<size_t>(index % kTextSlotCount) * kTextSlotBytes;
-  auto* text_slot = reinterpret_cast<TextSlot*>(slot);
-  memset(text_slot, 0, sizeof(TextSlot));
-  uint32_t byte_length =
-      clean == nullptr || length <= 0
-          ? 0
-          : static_cast<uint32_t>(length) * sizeof(wchar_t);
-  uint32_t max_bytes = kTextSlotBytes - static_cast<uint32_t>(sizeof(TextSlot));
-  max_bytes -= max_bytes % sizeof(wchar_t);
-  if (byte_length > max_bytes) byte_length = max_bytes;
-  if (byte_length != 0) {
-    memcpy(slot + sizeof(TextSlot), clean, byte_length);
-  }
-  text_slot->timestamp_ms = GetTickCount64();
-  text_slot->byte_len = byte_length;
-  text_slot->is_utf8 = 0;
-  text_slot->thread_id = thread_id;
-  text_slot->thread_address = reinterpret_cast<uint64_t>(text_component);
-  text_slot->thread_context = reinterpret_cast<uint64_t>(text_component);
-  text_slot->process_id = GetCurrentProcessId();
-  text_slot->source_kind = hibiki_voice_hook::kTextSourceUnityTmp;
-  text_slot->event_kind = event_kind;
-  const size_t hook_name_capacity = sizeof(text_slot->hook_name) - 1;
-  const size_t hook_name_length =
-      hook_name == nullptr ? 0 : strnlen_s(hook_name, hook_name_capacity);
-  text_slot->hook_name_len = static_cast<uint32_t>(hook_name_length);
-  if (hook_name_length != 0) {
-    memcpy(text_slot->hook_name, hook_name, hook_name_length);
-  }
-  const size_t hook_code_capacity =
-      sizeof(text_slot->hook_code) / sizeof(wchar_t) - 1;
-  const size_t hook_code_length =
-      hook_code == nullptr ? 0 : wcsnlen_s(hook_code, hook_code_capacity);
-  text_slot->hook_code_len = static_cast<uint32_t>(hook_code_length);
-  if (hook_code_length != 0) {
-    memcpy(text_slot->hook_code, hook_code,
-           hook_code_length * sizeof(wchar_t));
-  }
-  MemoryBarrier();
-  text_slot->seq = static_cast<uint64_t>(reserved);
-  g_header->text_hooked = 1;
+  // v13：写进本组件自己那条道（游戏内 writer 用高段下标）。认领与道内占号在 g_cs 下串行，
+  // 与预览槽认领同一把锁、同一套下标分区。
+  hibiki_voice_hook::TextLaneWrite write;
+  write.thread_id = thread_id;
+  write.thread_address = reinterpret_cast<uint64_t>(text_component);
+  write.thread_context = reinterpret_cast<uint64_t>(text_component);
+  write.process_id = GetCurrentProcessId();
+  write.source_kind = hibiki_voice_hook::kTextSourceUnityTmp;
+  write.event_kind = event_kind;
+  write.is_utf8 = 0;
+  write.text = (clean == nullptr || length <= 0) ? nullptr : clean;
+  write.byte_len = (clean == nullptr || length <= 0)
+                       ? 0
+                       : static_cast<uint32_t>(length) * sizeof(wchar_t);
+  write.hook_name = hook_name;
+  write.hook_code = hook_code;
+  if (g_cs_ready) EnterCriticalSection(&g_cs);
+  hibiki_voice_hook::WriteTextLaneEvent(
+      g_header, hibiki_voice_hook::kNativeThreadPreviewStart,
+      hibiki_voice_hook::kTextLaneCount, write);
+  if (g_cs_ready) LeaveCriticalSection(&g_cs);
 }
 
 bool WriteUnityThreadPreview(uint64_t thread_id, const wchar_t* clean,
@@ -295,10 +271,10 @@ void PublishUnityText(uint64_t thread_id, void* text_component,
                       const char* hook_name, const wchar_t* hook_code) {
   WriteUnityThreadPreview(thread_id, clean, length, completed_line, hook_name,
                           hook_code, text_component);
-  if (!completed_line ||
-      !hibiki_voice_hook::IsExactTextThreadSelected(g_header, thread_id)) {
-    return;
-  }
+  // v13：只有"这是不是一条完整行"仍然是采集期判据（半截快照进道会挤掉本组件自己的真行）。
+  // "是不是选定线程"已不在采集期判断——每个组件写自己那条道，挤不到别人；选定线程由消费方
+  // 使用。旧实现在这里 return，等于 Unity 上非选定组件的台词从未被采集，换组件也追不回来。
+  if (!completed_line) return;
   WriteUnityTextEvent(thread_id, text_component, clean, length, hook_name,
                       hook_code, hibiki_voice_hook::kTextEventLine);
 }

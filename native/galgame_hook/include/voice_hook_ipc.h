@@ -43,7 +43,20 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //         native adapter 使用互斥槽分区，跨进程 writer 不会争抢同一槽。
 //     预览区按线程分槽而不是全局 FIFO，所以逐字重绘型 hook 只能覆盖它自己的槽，**物理上挤不掉
 //     别的线程**——"挤压"从"要小心防"变成结构上不可能，这正是自动赢家门控得以退役的前提。
-constexpr uint32_t kSharedVersion = 12;
+// v13：文本区从**一块 256 槽全局 FIFO**改成**按线程分道**，并取消采集期的选定线程过滤。
+//     v12 只把"线程选择器"这个消费者搬进了按线程分槽的预览区；文本环本身仍是全局 FIFO，
+//     它当时不被挤爆，只是因为**同一时刻只有一条线程在写**（未选定就一行都不发），不是
+//     结构上挤不动。所以"放开非胜出线程"在 v12 上依然会复现 BUG-1159 的失败链：逐字重绘型
+//     hook 几秒刷穿 256 槽 → 配对候选被挤出环 → kExpired → 整段降级 system_loopback。
+//     v13 让每条线程写**自己那条道**，道内覆盖只吃掉自己的旧行，物理上挤不掉别人：
+//       * 道下标与线程预览槽下标**取同一个值**，认领沿用预览区那套跨进程互斥分区
+//         （Luna 在 injector 进程用低段，游戏内 native adapter 用高段），认领逻辑只有一份；
+//       * TextSlot::seq 仍是**全局发布序**（host `pollText(fromSeq)` 契约逐字节不变），
+//         新增 lane_seq 作道内完成标记；
+//       * selected_text_thread_id 从"采集期过滤器"降级为"消费期指定"：native 不再丢弃任何
+//         行，只由消费方（host 的文本消费点、游戏内 kirikiri 配对候选扫描）决定取哪条道。
+//         这同时解开了旧方案的死结——Dart 回写选定线程不再等于让 native 重新开始丢行。
+constexpr uint32_t kSharedVersion = 13;
 constexpr uint32_t kStableIpcVersion = 1;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
@@ -51,10 +64,16 @@ constexpr uint32_t kStableIpcVersion = 1;
 constexpr uint32_t kRingSeconds = 60;
 constexpr uint32_t kMaxRingBytes = 64u * 1024u * 1024u;  // ≤64MB（spec C 阶段预算）
 
-// 文本事件环：最近 kTextSlotCount 个台词/线程发现事件，循环覆盖。每槽固定 kTextSlotBytes 字节
-// （TextSlot 头 + 紧跟的文本字节）。v6 保留 Luna ThreadParam / hook 名称与 hookcode；v10 再透传
-// Luna ThreadCreate，使被自动赢家过滤、尚无已发布台词的 TextRender 等线程也能先出现在选择器里。
-constexpr uint32_t kTextSlotCount = 256;
+// 文本事件区（v13 按线程分道）：kTextLaneCount 条道，每道 kTextLaneSlotCount 个槽循环覆盖。
+// 每槽固定 kTextSlotBytes 字节（TextSlot 头 + 紧跟的文本字节）。v6 保留 Luna ThreadParam /
+// hook 名称与 hookcode；v10 再透传 Luna ThreadCreate，使尚无已发布台词的 TextRender 等线程
+// 也能先出现在选择器里。
+//
+// kTextSlotCount 保留为**总槽数**（供整区尺寸计算与 host 的"最多能回溯多少条"上界），语义从
+// "全局 FIFO 长度"变成"所有道加起来的容量"——它不再参与寻址，寻址一律走 TextLaneSlotAt。
+constexpr uint32_t kTextLaneSlotCount = 8;
+constexpr uint32_t kTextLaneCount = kThreadPreviewCount;  // 与预览槽同下标同分区
+constexpr uint32_t kTextSlotCount = kTextLaneCount * kTextLaneSlotCount;
 constexpr uint32_t kTextSlotBytes = 2048;
 constexpr uint32_t kTextHookNameChars = 64;
 constexpr uint32_t kTextHookCodeChars = 128;
@@ -172,11 +191,12 @@ constexpr uint32_t kMaxLoopbackBytes = 16u * 1024u * 1024u;  // ≤16MB（32 位
 // 时间戳↔环位置标记表槽数。loopback 线程每 ~200ms 记一条 {tick, total}；60s → 300 条，512 留余。
 constexpr uint32_t kLoopbackMarkerCount = 512;
 
-// 文本事件槽：seq==全局 text_write_count 对应值时该槽有效；event_kind==kTextEventLine 时，文本
-// 紧跟本头之后（kTextSlotBytes-头长）；线程发现事件的 byte_len 为 0、只携带线程元数据。
+// 文本事件槽：lane_seq==该道 TextLane::write_count 对应值时该槽有效（v13 起道内校验，不再拿
+// 全局序号取模）；event_kind==kTextEventLine 时，文本紧跟本头之后（kTextSlotBytes-头长）；
+// 线程发现事件的 byte_len 为 0、只携带线程元数据。
 #pragma pack(push, 8)
 struct TextSlot {
-  volatile uint64_t seq;    // 写入序号（0=空；等于所在 text_write_count 快照即有效）
+  volatile uint64_t seq;    // 全局发布序（host 的 pollText 游标就是它；0=空）
   uint64_t timestamp_ms;    // GetTickCount64() 写入时刻（与语音 clip 配对用）
   uint32_t byte_len;        // 文本有效字节数（<= kTextSlotBytes - sizeof(TextSlot)）
   uint32_t is_utf8;         // 1=UTF-8，0=UTF-16LE
@@ -190,9 +210,28 @@ struct TextSlot {
   uint32_t hook_code_len;   // hook_code 有效 wchar 数（不含结尾 0）
   uint32_t event_kind;      // kTextEvent*；0 保持旧写者默认语义为台词行
   uint32_t event_flags;     // 预留（当前线程发现事件写 Luna embedable 到 bit 0）
+  // hook「面」id（不含 ctx，见 luna_text_selector.h 的 LunaTextFaceIdFrom）。
+  //
+  // v13 把选定线程的过滤从采集期挪到消费期，这个字段是**挪过去还能等价**的前提：旧的
+  // native 过滤按 hook 面放行（同一 hook 面换调用点 ctx 会变、thread_id 随之变，精确匹配
+  // 会把整段台词丢掉——BUG-1159）。消费方只有拿到同一个 face id，才能复刻同样的放行判据，
+  // 而不是在 Dart 里照抄一遍 FNV 哈希（那又是一个漂移源）。0 = 写者无法提供。
+  uint64_t face_id;
+  uint64_t lane_seq;        // 道内序号（v13 完成标记：==该道 write_count 快照即有效），**最后**写
   char hook_name[kTextHookNameChars];
   wchar_t hook_code[kTextHookCodeChars];
   // 紧跟文本字节。
+};
+
+// v13 文本道表头：每条线程一条道，位于文本区最前面，槽区紧随其后。
+//
+// 认领纪律与线程预览槽**完全一致**（下标同一套）：writer 先由进程内锁串行化，再按 thread_id
+// 线性查找/认领；Luna（injector 进程）与游戏内 native adapter 使用互斥的下标区段，跨进程
+// writer 因此不会争抢同一条道——进程内 CRITICAL_SECTION 串不住另一个进程，这是 v12 已经踩过
+// 的坑，v13 不重新发明。
+struct TextLane {
+  volatile uint64_t thread_id;    // 0=空道（回收后允许出现空洞，查找必须扫完整张表）
+  volatile uint64_t write_count;  // 道内单调写入数（reader 据此定位有效槽区间）
 };
 
 // 语音 clip 记录：一段独立语音片段在音频环形里的位置 + 时刻 + 格式。host 按文本时间戳找最近
@@ -232,8 +271,9 @@ struct LoopbackMarker {
 
 // 共享内存头。injector 创建并清零、填各区偏移；hook DLL 注入后填格式、持续更新计数。
 // volatile 字段跨进程无锁单写单读。绝不在此放指针（跨进程地址无意义）。
-// 内存布局：[SharedHeader][音频环形 ring_capacity][文本环 kTextSlotCount*kTextSlotBytes]
+// 内存布局：[SharedHeader][音频环形 ring_capacity][文本区 TextRegionBytes()]
 //           [clip 索引 kClipCount*sizeof(VoiceClip)]，各区偏移由 injector 填进 header。
+// 文本区自 v13 起是 [TextLane 表][按道分块的槽区]，寻址一律走 TextLaneSlotAt。
 struct SharedHeader {
   uint32_t magic;           // = kSharedMagic
   uint32_t version;         // = kSharedVersion
@@ -293,8 +333,223 @@ struct SharedHeader {
   // 预览槽本身按
   // thread_id 寻址，不靠这个序号定位（与文本环的 text_write_count 语义不同，勿照搬）。
   volatile uint64_t thread_preview_write_count;
+  // ── v13 文本分道（injector 填，冗余便于 reader 自洽；道表位于 text_region_offset 处）──
+  // 布局：[TextLane 表 text_lane_count 条][槽区 text_lane_count*text_lane_slot_count*kTextSlotBytes]
+  uint32_t text_lane_count;
+  uint32_t text_lane_slot_count;
 };
 #pragma pack(pop)
+
+// ── v13 文本分道寻址（写侧/读侧唯一实现，谁都不许自己再算一遍偏移）────────────────
+//
+// 整区尺寸：道表 + 槽区。injector 按此分配并填 text_region_offset / text_lane_*。
+inline constexpr uint64_t TextRegionBytes(uint32_t lane_count,
+                                          uint32_t lane_slot_count) {
+  return static_cast<uint64_t>(lane_count) * sizeof(TextLane) +
+         static_cast<uint64_t>(lane_count) * lane_slot_count * kTextSlotBytes;
+}
+
+inline TextLane* TextLanesOf(SharedHeader* header) {
+  if (header == nullptr || header->text_region_offset == 0) return nullptr;
+  return reinterpret_cast<TextLane*>(reinterpret_cast<uint8_t*>(header) +
+                                     header->text_region_offset);
+}
+
+inline const TextLane* TextLanesOf(const SharedHeader* header) {
+  if (header == nullptr || header->text_region_offset == 0) return nullptr;
+  return reinterpret_cast<const TextLane*>(
+      reinterpret_cast<const uint8_t*>(header) + header->text_region_offset);
+}
+
+// 槽区起点 = 道表之后。
+inline uint64_t TextSlotAreaOffset(const SharedHeader* header) {
+  return static_cast<uint64_t>(header->text_region_offset) +
+         static_cast<uint64_t>(header->text_lane_count) * sizeof(TextLane);
+}
+
+// 第 [lane] 条道、道内序号 [lane_seq]（从 1 起）对应的槽。lane_seq 在道内取模覆盖。
+inline uint8_t* TextLaneSlotAt(SharedHeader* header, uint32_t lane,
+                               uint64_t lane_seq) {
+  if (header == nullptr || lane >= header->text_lane_count ||
+      header->text_lane_slot_count == 0 || lane_seq == 0) {
+    return nullptr;
+  }
+  const uint64_t index_in_lane = (lane_seq - 1) % header->text_lane_slot_count;
+  const uint64_t offset =
+      TextSlotAreaOffset(header) +
+      (static_cast<uint64_t>(lane) * header->text_lane_slot_count +
+       index_in_lane) *
+          kTextSlotBytes;
+  return reinterpret_cast<uint8_t*>(header) + static_cast<size_t>(offset);
+}
+
+inline const uint8_t* TextLaneSlotAt(const SharedHeader* header, uint32_t lane,
+                                     uint64_t lane_seq) {
+  return TextLaneSlotAt(const_cast<SharedHeader*>(header), lane, lane_seq);
+}
+
+// 在 [begin, end) 区段里按 thread_id 查找/认领一条道。调用方持 writer 锁。
+// 回收会产生空洞，因此必须扫完整个区段以优先找回已有 id（与 FindThreadPreviewSlot 同款纪律）。
+// 区段用于隔离跨进程 writer：Luna 用低段、游戏内 native adapter 用高段。
+inline TextLane* FindTextLane(TextLane* lanes, uint32_t begin, uint32_t end,
+                              uint64_t thread_id, uint32_t* lane_index_out) {
+  if (lanes == nullptr || thread_id == 0) return nullptr;
+  TextLane* first_empty = nullptr;
+  uint32_t first_empty_index = 0;
+  for (uint32_t i = begin; i < end; ++i) {
+    if (lanes[i].thread_id == thread_id) {
+      if (lane_index_out != nullptr) *lane_index_out = i;
+      return &lanes[i];
+    }
+    if (lanes[i].thread_id == 0 && first_empty == nullptr) {
+      first_empty = &lanes[i];
+      first_empty_index = i;
+    }
+  }
+  if (first_empty != nullptr && lane_index_out != nullptr) {
+    *lane_index_out = first_empty_index;
+  }
+  return first_empty;
+}
+
+// 按**全局发布序**枚举当前仍留在各道里的文本槽（只收 seq > [after_seq] 的）。
+//
+// 分道之后「读最近 N 条」不再是对一个全局序号取模，而是遍历各道再归并。读侧不止一个
+// （host 的 PollText、诊断探针 ring_probe），归并写两遍就会两边行为漂开——所以实现只放
+// 这里一份。插入排序，条数上界是总槽数（几百），无分配。
+//
+// 返回写入 [out] 的条数。[capacity] 不足时保留**序号最大**的那批（最近的行）。
+inline uint32_t CollectTextSlotsBySeq(const SharedHeader* header,
+                                      const TextSlot** out, uint32_t capacity,
+                                      uint64_t after_seq) {
+  if (header == nullptr || out == nullptr || capacity == 0) return 0;
+  const TextLane* lanes = TextLanesOf(header);
+  if (lanes == nullptr) return 0;
+  const uint32_t lane_slots = header->text_lane_slot_count;
+  if (lane_slots == 0) return 0;
+  uint32_t count = 0;
+  for (uint32_t lane = 0; lane < header->text_lane_count; ++lane) {
+    if (lanes[lane].thread_id == 0) continue;
+    const uint64_t written = lanes[lane].write_count;
+    if (written == 0) continue;
+    const uint64_t first =
+        written > lane_slots ? written - lane_slots + 1 : 1;
+    for (uint64_t lane_seq = first; lane_seq <= written; ++lane_seq) {
+      const auto* slot =
+          reinterpret_cast<const TextSlot*>(TextLaneSlotAt(header, lane,
+                                                           lane_seq));
+      // 道内校验：lane_seq 对不上 = 已被本道后来的行覆盖，或还没发布完。
+      if (slot == nullptr || slot->lane_seq != lane_seq) continue;
+      const uint64_t seq = slot->seq;
+      if (seq <= after_seq) continue;
+      if (count < capacity) {
+        out[count++] = slot;
+        // 从尾部往前冒泡到位（out 始终按 seq 升序，out[0] 恒为最旧）。
+        for (uint32_t i = count - 1; i > 0; --i) {
+          if (out[i - 1]->seq <= out[i]->seq) break;
+          const TextSlot* tmp = out[i - 1];
+          out[i - 1] = out[i];
+          out[i] = tmp;
+        }
+      } else if (out[0]->seq < seq) {
+        out[0] = slot;  // 满了就顶掉当前最旧的那条，再从头冒泡回位
+        for (uint32_t i = 0; i + 1 < capacity; ++i) {
+          if (out[i]->seq <= out[i + 1]->seq) break;
+          const TextSlot* tmp = out[i];
+          out[i] = out[i + 1];
+          out[i + 1] = tmp;
+        }
+      }
+    }
+  }
+  return count;
+}
+
+// 一次文本事件写入的全部输入。三个写侧（injector 的 Luna 回调、游戏内 GDI/TextRender、
+// 游戏内 Unity）字段集合不同，但**寻址与发布纪律必须只有一份实现**，否则分道的不变量
+// （只能覆盖自己那条道）会随第四个写侧被悄悄破坏。
+struct TextLaneWrite {
+  uint64_t thread_id = 0;
+  uint64_t face_id = 0;
+  uint64_t thread_address = 0;
+  uint64_t thread_context = 0;
+  uint64_t thread_context2 = 0;
+  uint32_t process_id = 0;
+  uint32_t source_kind = kTextSourceUnknown;
+  uint32_t event_kind = kTextEventLine;
+  uint32_t event_flags = 0;
+  uint32_t is_utf8 = 0;
+  const void* text = nullptr;  // 文本字节（按 is_utf8 解释）；线程发现事件可为空
+  uint32_t byte_len = 0;
+  const char* hook_name = nullptr;
+  const wchar_t* hook_code = nullptr;
+};
+
+// 把一条文本事件写进 [thread_id] 自己那条道。返回全局发布序（0 = 没写成：道满/参数非法）。
+//
+// 调用方持**自己进程内**的 writer 锁（认领与道内占号要互斥）；跨进程隔离靠 [lane_begin,
+// lane_end) 区段划分，不靠锁。写序：认领道 → 原子占全局序 → 原子占道内序 → 填字段与文本 →
+// **最后**写 lane_seq 作完成标记（reader 校验 lane_seq 才取该槽；x86/x64 store 有序，
+// 前面的数据写对 reader 先于 lane_seq 可见）。
+inline uint64_t WriteTextLaneEvent(SharedHeader* header, uint32_t lane_begin,
+                                   uint32_t lane_end,
+                                   const TextLaneWrite& write) {
+  if (header == nullptr || write.thread_id == 0) return 0;
+  TextLane* lanes = TextLanesOf(header);
+  if (lanes == nullptr || header->text_lane_count == 0) return 0;
+  const uint32_t end = (lane_end < header->text_lane_count)
+                           ? lane_end
+                           : header->text_lane_count;
+  if (lane_begin >= end) return 0;
+  uint32_t lane_index = 0;
+  TextLane* lane = FindTextLane(lanes, lane_begin, end, write.thread_id,
+                                &lane_index);
+  if (lane == nullptr) return 0;  // 道满：丢弃本行，绝不去踩别人的道
+  lane->thread_id = write.thread_id;
+  const uint64_t global_seq = static_cast<uint64_t>(InterlockedIncrement64(
+      reinterpret_cast<volatile LONGLONG*>(&header->text_write_count)));
+  const uint64_t lane_seq = static_cast<uint64_t>(InterlockedIncrement64(
+      reinterpret_cast<volatile LONGLONG*>(&lane->write_count)));
+  uint8_t* slot = TextLaneSlotAt(header, lane_index, lane_seq);
+  if (slot == nullptr) return 0;
+  auto* ts = reinterpret_cast<TextSlot*>(slot);
+  memset(ts, 0, sizeof(TextSlot));
+  uint32_t max_bytes = kTextSlotBytes - static_cast<uint32_t>(sizeof(TextSlot));
+  max_bytes -= (max_bytes % static_cast<uint32_t>(sizeof(wchar_t)));
+  uint32_t byte_len = write.text == nullptr ? 0 : write.byte_len;
+  if (byte_len > max_bytes) byte_len = max_bytes;
+  if (byte_len != 0) memcpy(slot + sizeof(TextSlot), write.text, byte_len);
+  ts->seq = global_seq;
+  ts->timestamp_ms = GetTickCount64();
+  ts->byte_len = byte_len;
+  ts->is_utf8 = write.is_utf8;
+  ts->thread_id = write.thread_id;
+  ts->face_id = write.face_id;
+  ts->thread_address = write.thread_address;
+  ts->thread_context = write.thread_context;
+  ts->thread_context2 = write.thread_context2;
+  ts->process_id = write.process_id;
+  ts->source_kind = write.source_kind;
+  ts->event_kind = write.event_kind;
+  ts->event_flags = write.event_flags;
+  if (write.hook_name != nullptr) {
+    size_t n = 0;
+    while (n < kTextHookNameChars - 1 && write.hook_name[n] != '\0') ++n;
+    memcpy(ts->hook_name, write.hook_name, n);
+    ts->hook_name[n] = '\0';
+    ts->hook_name_len = static_cast<uint32_t>(n);
+  }
+  if (write.hook_code != nullptr) {
+    size_t n = 0;
+    while (n < kTextHookCodeChars - 1 && write.hook_code[n] != L'\0') ++n;
+    memcpy(ts->hook_code, write.hook_code, n * sizeof(wchar_t));
+    ts->hook_code[n] = L'\0';
+    ts->hook_code_len = static_cast<uint32_t>(n);
+  }
+  ts->lane_seq = lane_seq;  // 完成标记，最后写
+  if (header->text_hooked == 0) header->text_hooked = 1;
+  return global_seq;
+}
 
 inline uint64_t SelectedTextThreadId(const SharedHeader* header) {
   if (header == nullptr) return 0;
@@ -308,6 +563,13 @@ inline bool IsExactTextThreadSelected(const SharedHeader* header,
 
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");
 static_assert(sizeof(TextSlot) % 8 == 0, "TextSlot must stay 8-aligned");
+static_assert(sizeof(TextLane) % 8 == 0, "TextLane must stay 8-aligned");
+// 道数与预览槽数必须同值：两者共用同一套下标与同一套跨进程互斥分区，分开就会有一侧
+// 越界或两个进程认领到同一条道。
+static_assert(kTextLaneCount == kThreadPreviewCount,
+              "text lanes and thread previews must share one index space");
+static_assert(sizeof(TextSlot) < kTextSlotBytes,
+              "TextSlot header must leave room for payload bytes");
 static_assert(sizeof(VoiceClip) % 8 == 0, "VoiceClip must stay 8-aligned");
 static_assert(sizeof(UnityVoiceEvent) % 8 == 0,
               "UnityVoiceEvent must stay 8-aligned");

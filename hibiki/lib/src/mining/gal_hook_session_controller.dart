@@ -791,6 +791,15 @@ class GalHookSessionController extends ChangeNotifier {
   String? _lastObservedLineId;
   String? _selectedTextThreadKey;
   int? _selectedNativeTextThreadId;
+
+  /// 选定线程的 hook「面」id（native 算好的，随文本行带上来）。
+  ///
+  /// v13 起 native 采集期不再按选定线程丢行（每条线程写自己那条道，挤压结构上不可能），
+  /// 过滤挪到本类的文本消费点。要**等价**替换旧的 native 过滤，就必须复刻它的判据：
+  /// 精确 threadId 命中，或同一 hook 面命中——同一 hook 面在不同剧情分支下调用点 ctx 会变、
+  /// thread_id 随之变，只按 threadId 精确匹配会把整段台词丢掉（BUG-1159 的原始症状）。
+  /// face 从选定线程自己的行里学到，未见过为 0（此时退化为精确匹配，与旧实现同语义）。
+  int _selectedTextThreadFaceId = 0;
   final SerialJobQueue _audioQueue = SerialJobQueue();
   final Set<String> _loopbackCacheInFlight = <String>{};
 
@@ -999,6 +1008,7 @@ class GalHookSessionController extends ChangeNotifier {
     if (!_isWindows || generation != _operationGeneration) return;
     _selectedTextThreadKey = null;
     _selectedNativeTextThreadId = null;
+    _selectedTextThreadFaceId = 0;
     _setState(
       _state.copyWith(
         phase: GalHookSessionPhase.resolving,
@@ -1136,6 +1146,7 @@ class GalHookSessionController extends ChangeNotifier {
     }
     _selectedTextThreadKey = null;
     _selectedNativeTextThreadId = null;
+    _selectedTextThreadFaceId = 0;
     _setState(
       _state.copyWith(
         phase: GalHookSessionPhase.resolving,
@@ -1899,6 +1910,80 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
+  /// 本行是否属于当前选定的文本线程（v13 消费期过滤，等价于旧的 native 采集期门控）。
+  ///
+  /// 判据逐条对应 native 的 `LunaSelectedThreadAccepts`：
+  /// * 未选定线程 → 一行都不放行（与 v12 起的 UX 一致：由 UI 引导用户从线程预览里挑）；
+  /// * 精确 threadId 命中 → 放行，并顺手记下它的 hook 面；
+  /// * 同一 hook 面命中 → 放行（BUG-1159：同 hook 面换调用点会让 threadId 变）。
+  bool _acceptsLineFromSelectedThread(GalHookedLine line) {
+    final int? selected = _selectedNativeTextThreadId;
+    if (selected == null || selected == 0) return false;
+    if (line.threadId == selected) {
+      if (line.faceId != 0) _selectedTextThreadFaceId = line.faceId;
+      return true;
+    }
+    return _selectedTextThreadFaceId != 0 &&
+        line.faceId == _selectedTextThreadFaceId;
+  }
+
+  /// 换线程后，把该线程留在**自己那条道**里的历史行补进工作台（v13 分道的直接收益）。
+  ///
+  /// v12 之前非选定线程的行在采集期就被丢了，选错线程 = 那段台词永远追不回来，只能重打
+  /// 一遍剧情。v13 每条线程都在写自己的道，所以「刚才漏掉的那几句」其实还在共享内存里：
+  /// 选中它的那一刻按道回捞即可。回捞只补**文本**（游标之前的行），不重放音频抓取——
+  /// 那些行的时刻早已过去，硬跑一遍只会给每句都盖上「疑似漏抓」的红标；真要补音频，
+  /// 逐句重录（[startLineRecapture]）是既有且更准的入口。
+  Future<void> _recoverSelectedThreadHistory() async {
+    final EngineHookGalAudioSource? engine = _engineSource;
+    final int? selected = _selectedNativeTextThreadId;
+    if (engine == null || selected == null || selected == 0) return;
+    if (_lastTextSeq <= 0) return; // 还没消费过任何行，没有「之前」可补
+    final GalTextPoll? poll = await engine.pollText(0);
+    if (poll == null || engine != _engineSource) return;
+    final Set<int> appended = _lineTextEventIdCache.values.toSet();
+    final List<GalHookedLine> history = poll.lines
+        .where((GalHookedLine line) =>
+            line.eventKind == GalTextEventKind.line &&
+            line.seq <= _lastTextSeq &&
+            !appended.contains(line.seq) &&
+            line.text.trim().isNotEmpty &&
+            !isGalgameSystemUiLine(line.text) &&
+            _acceptsLineFromSelectedThread(line))
+        .toList()
+      ..sort((GalHookedLine a, GalHookedLine b) => a.seq.compareTo(b.seq));
+    if (history.isEmpty) return;
+    for (final GalHookedLine line in history) {
+      final TexthookerLineEntry? entry = _textService.appendLine(
+        line.text,
+        source: TexthookerLineSource.engineHook,
+        sourceLabel: 'engine_hook',
+        sourceSequence: line.seq,
+        hookTimestampMs: line.timestampMs,
+        textThreadKey: line.textThreadKey,
+        textThreadLabel: line.textThreadLabel,
+        textHookCode: line.hookCode.isEmpty ? null : line.hookCode,
+        nativeTextThreadId: line.threadId == 0 ? null : line.threadId,
+        audioStatus: TexthookerLineAudioStatus.unavailable,
+      );
+      if (entry == null) continue;
+      _lineTimestampCache[entry.id] = line.timestampMs;
+      _lineTextEventIdCache[entry.id] = line.seq;
+    }
+    _trimCache(_lineTimestampCache);
+    _trimCache(_lineTextEventIdCache);
+    _record(
+      GalHookEventSeverity.info,
+      'text',
+      'text.thread_history_recovered',
+      'Recovered buffered lines from the newly selected text thread',
+      details: <String, Object?>{
+        'threadId': selected,
+        'lines': history.length,
+      },
+    );
+  }
+
   /// 选择文本线程。
   ///
   /// [remember] = true（用户在 UI 里主动选）时把选择写进每游戏记忆，并锁死本会话的
@@ -1918,6 +2003,10 @@ class GalHookSessionController extends ChangeNotifier {
           threadKey == null || threadKey.isEmpty ? null : threadKey;
       _selectedNativeTextThreadId =
           threadId == null || threadId == 0 ? null : threadId;
+      // 换线程就必须丢掉上一条线程的 hook 面，否则旧 face 会继续放行旧线程的行。
+      _selectedTextThreadFaceId = 0;
+      // 新线程在被选中之前写进自己那条道的行，现在补回来（v13 分道的直接收益）。
+      await _recoverSelectedThreadHistory();
       if (remember) {
         // 用户已亲自表态：本会话不再自动恢复，并把这次选择记成新的真值。
         _textThreadMemoryApplied = true;
@@ -3314,6 +3403,15 @@ class GalHookSessionController extends ChangeNotifier {
             'Text sequence gap detected',
             details: <String, Object?>{'from': cursor, 'to': line.seq},
           );
+        }
+        // v13 消费期线程过滤。native 现在把**每条线程**的行都写进各自的道（这正是"多抓
+        // 文本"要的：换线程后旧行仍在、选错线程不再等于那段语音永久孤儿），所以喂进
+        // texthooker / 配对 / 制卡之前必须在这里挑出选定线程的行——否则工作台会被所有
+        // hook 线程的文本灌满。判据与旧 native 门控等价，见 [_selectedTextThreadFaceId]。
+        if (line.eventKind == GalTextEventKind.line &&
+            !_acceptsLineFromSelectedThread(line)) {
+          cursor = line.seq;
+          continue;
         }
         if (line.eventKind == GalTextEventKind.threadDiscovered) {
           final String? threadKey = line.textThreadKey;

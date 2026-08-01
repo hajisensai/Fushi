@@ -400,6 +400,9 @@ void main() {
         engine: engine,
       );
       await controller.launchGame(r'D:\Games\fake.exe');
+      // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+      // 「选了哪条线程」因此成了本用例的显式前提。
+      await controller.selectTextThread(5);
 
       // (a) 候选轨在该句时刻有能量但整句抓取失败 -> 疑似漏抓，保留告警红标。
       engine.tracks = <GalAudioTrack>[

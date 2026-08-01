@@ -392,23 +392,26 @@ void VoiceHookReader::PollText(uint64_t from_seq,
   if (count <= from_seq) {
     return;
   }
-  const uint32_t slots = hibiki_voice_hook::kTextSlotCount;
+  // v13：文本按线程分道，全局序号不再能取模定位槽。改成**遍历各道**、取本道内仍在的、
+  // 全局序大于游标的行，最后按全局序排序——Dart 侧拿到的仍是一串按 seq 升序的新行，
+  // `pollText(fromSeq)` 契约逐字节不变。
+  //
+  // 一条道只覆盖自己的旧行，所以「某条逐字重绘线程刷得飞快」只会吃掉它自己的历史，
+  // 别的线程（尤其是配对候选那条）一行都不少——这正是分道要买的东西。
   const uint32_t slot_bytes = hibiki_voice_hook::kTextSlotBytes;
-  const uint8_t* base =
-      reinterpret_cast<const uint8_t*>(h) + h->text_region_offset;
-  // 只取最近 slots 条（更旧的已被覆盖）。
-  uint64_t start = from_seq;
-  if (count > slots && start < count - slots) {
-    start = count - slots;
-  }
-  for (uint64_t seq = start + 1; seq <= count; seq++) {
-    const uint32_t idx = static_cast<uint32_t>((seq - 1) % slots);
-    const auto* slot = reinterpret_cast<const hibiki_voice_hook::TextSlot*>(
-        base + static_cast<size_t>(idx) * slot_bytes);
-    if (slot->seq != seq) {
-      continue;  // 已被后来的行覆盖
-    }
-    uint32_t blen = slot->byte_len;
+  // 归并实现只有契约头里那一份（诊断探针 ring_probe 用的是同一个函数）。
+  static const hibiki_voice_hook::TextSlot*
+      slots[hibiki_voice_hook::kTextSlotCount];
+  const uint32_t found = hibiki_voice_hook::CollectTextSlotsBySeq(
+      h, slots, hibiki_voice_hook::kTextSlotCount, from_seq);
+  for (uint32_t idx = 0; idx < found; idx++) {
+    {
+      const hibiki_voice_hook::TextSlot* slot = slots[idx];
+      const uint64_t seq = slot->seq;
+      if (seq > count) {
+        continue;  // 半写槽读到越界序号
+      }
+      uint32_t blen = slot->byte_len;
     const uint32_t maxb =
         slot_bytes - static_cast<uint32_t>(sizeof(hibiki_voice_hook::TextSlot));
     if (blen > maxb) {
@@ -420,6 +423,7 @@ void VoiceHookReader::PollText(uint64_t from_seq,
     line.seq = seq;
     line.timestamp_ms = slot->timestamp_ms;
     line.thread_id = slot->thread_id;
+    line.face_id = slot->face_id;
     line.thread_address = slot->thread_address;
     line.thread_context = slot->thread_context;
     line.thread_context2 = slot->thread_context2;
@@ -441,6 +445,7 @@ void VoiceHookReader::PollText(uint64_t from_seq,
       line.utf8 = WideToUtf8(reinterpret_cast<const wchar_t*>(txt), wlen);
     }
     out.push_back(std::move(line));
+    }
   }
 }
 

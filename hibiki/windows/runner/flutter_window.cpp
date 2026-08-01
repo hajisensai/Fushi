@@ -1867,6 +1867,8 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                  flutter::EncodableValue(ln.utf8)},
                 {flutter::EncodableValue("threadId"),
                  flutter::EncodableValue(static_cast<int64_t>(ln.thread_id))},
+                {flutter::EncodableValue("faceId"),
+                 flutter::EncodableValue(static_cast<int64_t>(ln.face_id))},
                 {flutter::EncodableValue("threadAddress"),
                  flutter::EncodableValue(
                      static_cast<int64_t>(ln.thread_address))},
