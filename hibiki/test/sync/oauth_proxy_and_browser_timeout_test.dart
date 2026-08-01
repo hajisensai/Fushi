@@ -6,6 +6,8 @@ import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/utils/net/app_proxy.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1348：谷歌云盘桌面登录在开着代理的机器上必然失败。
 ///
 /// 用户日志里同一次排查出现两种失败，各修各的根因：
@@ -136,10 +138,12 @@ void main() {
     });
 
     test('错误文案层按 kind 分派，不再让字符串猜测抢先', () {
-      // 必须剥注释再比位置：本仓的注释里就写着这两个片段（解释当年为什么错），
-      // 直接 indexOf 会命中注释而不是代码，守卫就变成了在给自己的文档排序。
+      // 必须先掩注释再比位置：本仓的注释里就写着这两个片段（解释当年为什么错），
+      // 直接 indexOf 会命中注释而不是代码，守卫就变成了在给自己的文档排序。用共享的
+      // maskComments（等长掩码）而不是删除式剥离——删行会让后面 indexOf 出来的下标
+      // 与原文错位，比出来的先后顺序就不再是源码里的先后顺序。
       final String source =
-          _stripDartComments(read('lib/src/sync/sync_error_messages.dart'));
+          maskComments(read('lib/src/sync/sync_error_messages.dart'));
       final int typedIdx =
           source.indexOf('error.kind != SyncAuthFailureKind.credentials');
       final int guessIdx = source.indexOf("l.contains('auth')");
@@ -157,19 +161,6 @@ void main() {
               '两处任一不配合，授权码就永远回不来');
     });
   });
-}
-
-/// 去掉 `//` 行注释与 `/* */` 块注释，只留可执行代码。
-///
-/// 源码扫描守卫比对的是**代码**里的事实；本仓的注释常常逐字引用被修掉的旧写法（好让后人
-/// 知道当年错在哪），不剥注释的守卫会被这些引用命中，从而对着文档下结论。
-String _stripDartComments(String source) {
-  final String withoutBlocks =
-      source.replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '');
-  return withoutBlocks.split('\n').map((String line) {
-    final int idx = line.indexOf('//');
-    return idx < 0 ? line : line.substring(0, idx);
-  }).join('\n');
 }
 
 /// 只捕获 `findProxy` 的最小 [HttpClient] 桩。

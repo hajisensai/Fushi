@@ -25,7 +25,7 @@
 
 ### 修复
 
-- **[x] ① 已修复** — commit `<pending>`
+- **[x] ① 已修复** — commit `21ae9500c`
   - 代理层从 `update_checker_net.dart`（part）提取为独立库 `hibiki/lib/src/utils/net/app_proxy.dart`，`applyUpdateProxy` → `applyAppProxy`。这是全应用唯一的出站代理真相源，更新检查 / 云同步 / torrent 下载共用。
   - 新增进程级 `appUserProxyReader`，`AppModel._initialiseOnce()` 偏好装载后接到 `prefsRepo.updateCustomProxy`。同步层单例拿不到 `AppModel`，靠沿调用链穿 `userProxy` 参数迟早会漏一处（漏一处 = 一条不走代理的暗路，本 bug 即是）。
   - `sync_http.dart` 新增 `createSyncHttpClient()`（独占）/ `obtainSyncHttpClient()`（共享惰性单例）/ `resetSyncHttpClient()`，两个工厂都装 `applyAppProxy` + `kSyncConnectionTimeout`。`syncHttpClient` 顶层同步单例删除——它是同步构造的，而代理解析要跑 `reg query`/`scutil`/`gsettings`，这正是它当年没有代理的原因。Dropbox / OneDrive / PKCE 共 15 处调用点改走异步取用。
@@ -37,9 +37,10 @@
 - **[x] ② 已加自动化测试** — `hibiki/test/sync/oauth_proxy_and_browser_timeout_test.dart`（11 例）
   - 行为层：`appUserProxyReader` 设值后 `applyAppProxy(client)` 对 `https://oauth2.googleapis.com/token` 解析出 `PROXY host:port`（即「代理配置能否到达同步层」这条真链路）；显式 `userProxy` 仍优先；非法值 fail-open 不切网。
   - 行为层：`friendlySyncError(SyncAuthError(..., browserTimeout))` == `t.sync_err_browser_timeout` 且 ≠ `t.sync_err_auth_expired`；三种 kind 各说各的话；真正的 401 仍说「登录已过期」（无误伤）。
-  - 源码守卫：`google_drive_auth.dart` 无裸 `http.Client()` 且恰好 3 处 `createSyncHttpClient()`；`sync_http.dart` 两个工厂都装代理 + 超时且有 `resetSyncHttpClient`；loopback 超时带 kind；类型分派排在字符串猜测之前（比位置前先剥注释，否则会命中解释历史错误的注释本身）；Google 用 `127.0.0.1`。
+  - 源码守卫：`google_drive_auth.dart` 无裸 `http.Client()` 且恰好 3 处 `createSyncHttpClient()`；`sync_http.dart` 两个工厂都装代理 + 超时且有 `resetSyncHttpClient`；loopback 超时带 kind；类型分派排在字符串猜测之前（比位置前先用共享 `test/helpers/source_guard.dart` 的 `maskComments` 等长掩码——否则会命中解释历史错误的注释本身；等长掩码而非删除式剥离，删行会让 `indexOf` 下标与原文错位，比出来的先后就不是源码里的先后）；Google 用 `127.0.0.1`。
   - `update_checker_structure_guard_test.dart` 调头守新不变式：代理实现**禁止**回流 part。
-  - 6 个守卫全部做过变异实测（逐条改坏 → 见红 → 反向替换还原），无一假绿。
+  - 6 个守卫全部做过变异实测（逐条改坏 → 见红 → 反向替换还原），无一假绿；改用 `maskComments` 后对该守卫重做了一次变异，仍见红。
+  - 全量：`dart run tool/flutter_test_failures.dart --no-pub` → `FLUTTER TEST VERDICT: PASSED - 16783 tests ran, all tests passed`。
 
 - **备注**：
   - WebDAV / FTP / SFTP 未接代理，有意为之——它们指向用户自建服务器（常在局域网或自有域名），强行套代理反而会断掉本来通的连接。
