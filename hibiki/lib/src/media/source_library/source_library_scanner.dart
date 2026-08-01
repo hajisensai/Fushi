@@ -749,6 +749,17 @@ class SourceLibraryScanner {
         // 记入 map：同一次扫描里遇到第二个同名清单时走 reconcile，不再重导致重复。
         existingPlaylistIds[collectionName] = result.collectionId;
 
+        // BUG-1351：扫描首导的新 playlist 合集也是用户入库（用户把新清单放进扫描根
+        // 再扫描——对常用 m3u8 清单库的用户这就是主导入路径），整本记 1 条 added
+        // 活动事件（title=合集名、mediaKey=首集 uid，与对话框 / 拖拽导入同粒度）。
+        // 重扫走上面的 reconcile 分支天然不 emit；散装单视频扫描仍保持静默（首扫可
+        // 达数百文件，逐条 emit 才是刷屏）。best-effort：方法内自捕获异常，只 log
+        // 不影响导入。
+        await _videoRepo.recordVideoImportActivity(
+          bookUid: result.episodeUids.first,
+          title: collectionName,
+        );
+
         // TODO-1237 ①: cover from the first USABLE episode (local ffmpeg only),
         // applied to the first episode row; mobile / any failure -> null cover,
         // never aborts the scan.
