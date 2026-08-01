@@ -112,20 +112,15 @@ SettingsDestination buildSystemDestination() {
           // endorsed, certified, or otherwise approved by TMDB.` —— 旧措辞
           // "not endorsed or certified" 少了 "or otherwise approved"，不是原句。
           //
-          // ⚠️ 尚缺官方 logo 图：条款同时要求展示 TMDB logo（须从
-          // themoviedb.org/about/logos-attribution 取原图，不得改色/改比例/翻转/旋转）。
-          // 补上 logo 资源后把这一项换成带图的行；在那之前本行只满足了文字部分。
-          SettingsActionItem(
+          // logo 部分见 [_buildTmdbAttributionRow]：条款同时要求展示 TMDB 标识，
+          // 原图已逐字节入库（assets/attribution/tmdb/，provenance 见该目录
+          // README.md）。文字与 logo 是**一对合约义务**——删 about_tmdb_attribution
+          // 前不要先删 logo，反之亦然；要走一起走（连同内置 key 一并移除时）。
+          SettingsCustomItem(
             id: 'system.tmdb_attribution',
-            title: 'TMDB',
-            subtitle: t.about_tmdb_attribution,
+            searchTitle: 'TMDB',
             icon: Icons.movie_outlined,
-            onTap: (_) async {
-              await launchUrl(
-                Uri.parse('https://www.themoviedb.org/'),
-                mode: LaunchMode.externalApplication,
-              );
-            },
+            builder: _buildTmdbAttributionRow,
           ),
         ],
       ),
@@ -374,6 +369,55 @@ String _selectedUpdateChannel(SettingsContext settingsContext) {
   if (settingsContext.appModel.updateDebugChannel) return 'debug';
   if (settingsContext.appModel.updateBetaChannel) return 'beta';
   return 'stable';
+}
+
+/// TMDB 官方标识（`Primary short (blue)`）在包内的路径。
+///
+/// 这张 PNG 由 themoviedb.org/about/logos-attribution 下发的**矢量原图**栅格化而来；
+/// 原图 `assets/attribution/tmdb/blue_square_1.svg` 逐字节入库存证（sha256 即 TMDB
+/// 直链文件名里那串摘要）。之所以不直接渲染 SVG：Flutter 唯一现实的 SVG 方案
+/// `flutter_svg` 不支持 CSS，而 TMDB 原图把唯一填充写在 `<style>` 类里，解析后渐变
+/// 全丢、整个标识渲染成纯黑——那本身就是「改色」。栅格化只做尺寸映射，未改色 /
+/// 改比例 / 翻转 / 旋转 / 裁剪。来源、哈希、配方与守卫见同目录 README.md 与
+/// `test/settings/tmdb_attribution_test.dart`。
+@visibleForTesting
+const String kTmdbLogoAsset = 'assets/attribution/tmdb/logo_tmdb.png';
+
+/// logo 展示高度（dp）。与设置行左侧图标徽标（`HibikiBadge` 18+6*2 = 30）同量级，
+/// 远小于应用自身 logo 的任何展示尺寸——TMDB 条款要求展示其标识，但它不得比本应用
+/// 自己的标识更显眼。
+const double _kTmdbLogoHeight = 24;
+
+/// 原图 viewBox 是 `0 0 190.24 81.52`；宽度按该比例算死，配合 [BoxFit.contain]
+/// 保证任何主题/文字缩放下都不会被拉伸变形（改比例同样是条款禁止项）。
+const double _kTmdbLogoWidth = _kTmdbLogoHeight * 190.24 / 81.52;
+
+/// TMDB 署名行：官方标识 + 条款原句免责声明，点击跳官网。
+///
+/// 用 [SettingsCustomItem] 而不是 [SettingsActionItem]，只因为 schema 的 `icon`
+/// 槽是 `IconData`、放不下一张图；行本体仍是共享的 [AdaptiveSettingsRow]，
+/// 焦点/密度/折叠行为与其它设置行完全一致。
+Widget _buildTmdbAttributionRow(SettingsContext settingsContext) {
+  return AdaptiveSettingsRow(
+    title: 'TMDB',
+    subtitle: t.about_tmdb_attribution,
+    icon: Icons.movie_outlined,
+    showIcon: true,
+    trailing: SizedBox(
+      height: _kTmdbLogoHeight,
+      width: _kTmdbLogoWidth,
+      child: Image.asset(
+        kTmdbLogoAsset,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.medium,
+        semanticLabel: 'TMDB',
+      ),
+    ),
+    onTap: () async => launchUrl(
+      Uri.parse('https://www.themoviedb.org/'),
+      mode: LaunchMode.externalApplication,
+    ),
+  );
 }
 
 Widget _buildRuntimeAppVersionRow(SettingsContext settingsContext) {
