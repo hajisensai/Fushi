@@ -10,6 +10,8 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:hibiki/src/media/video/scraper/collection_member_policy.dart'
+    show multiMemberCollectionIdByVideoUid;
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart'
     show ScrapeInfoboxEntry, ScrapeMetadata, ScrapeSource, ScrapeTag;
 import 'package:hibiki/src/media/video/video_path_migration.dart';
@@ -126,14 +128,15 @@ class VideoBookRepository {
     return out;
   }
 
-  /// v49：记录一条「added」活动事件，喂首页 Activity 时间轴。**只在用户明示导入
-  /// 视频成功后**由 [VideoImportDialog] 显式调用（单文件 / 文件夹单集 / 播放列表首集 /
-  /// 流媒体各调一次；播放列表整本只调一次，title=合集名、mediaKey=首集 uid）——刻意
-  /// **不放进 [saveVideoBook]**，让自动库扫描（source_library_scanner，批量）、远端打开
-  /// （home_video_page，打开≠导入）、云同步（app_model_library_host_service）等非明示
-  /// 导入路径天然不 emit，避免刷屏或语义错误（对齐 EpubImporter 只在用户导入管线
-  /// emit 的做法）。timestamp/dateKey 用调用时刻。best-effort：记账失败只 log，不影响
-  /// 视频已导入。
+  /// v49：记录一条「added」活动事件，喂首页 Activity 时间轴。**只在用户导入视频
+  /// 成功后**调用：[VideoImportDialog] 各路径（单文件 / 文件夹单集 / 播放列表首集 /
+  /// 流媒体各调一次；播放列表整本只调一次，title=合集名、mediaKey=首集 uid），以及
+  /// 扫描首导的新 playlist 合集（source_library_scanner，BUG-1351：用户把新清单放进
+  /// 扫描根就是入库动作，整本 1 条；重扫 reconcile 不 emit）——刻意**不放进
+  /// [saveVideoBook]**，让散装文件批量扫描、远端打开（home_video_page，打开≠导入）、
+  /// 云同步（app_model_library_host_service）等路径天然不 emit，避免刷屏或语义错误
+  /// （对齐 EpubImporter 只在用户导入管线 emit 的做法）。timestamp/dateKey 用调用
+  /// 时刻。best-effort：记账失败只 log，不影响视频已导入。
   Future<void> recordVideoImportActivity({
     required String bookUid,
     required String title,
@@ -343,6 +346,21 @@ class VideoBookRepository {
   Future<MediaCollectionRow?> getMediaCollectionById(int id) =>
       _db.getMediaCollectionById(id);
 
+  /// 统一合集：全部合集（存量子篇海报清理判「哪些合集已有自有封面」用）。
+  Future<List<MediaCollectionRow>> getAllMediaCollections() =>
+      _db.getAllMediaCollections();
+
+  /// 合集子篇 → 所属多成员合集 id：属于任一**成员数 ≥2** 合集的视频条目。自动
+  /// 刮削据此对子篇**不落作品级海报**、并把海报改落到这个 collectionId 上（判据
+  /// 与理由见 [multiMemberCollectionIdByVideoUid]）。
+  Future<Map<String, int>> multiMemberCollectionIds() async =>
+      multiMemberCollectionIdByVideoUid(await _db.getAllCollectionItems());
+
+  /// 统一合集：写合集**自有**封面绝对路径（`MediaCollections.coverPath`）。
+  /// 作品级竖版海报的唯一归宿（用户 2026-08-02）。
+  Future<void> updateMediaCollectionCoverPath(int id, String? coverPath) =>
+      _db.updateMediaCollectionCoverPath(id, coverPath);
+
   Future<List<VideoBookRow>> listAll() => _db.allVideoBooks();
 
   /// 监听视频库行集合（uid）变化，供库页在任意导入路径（页内 / 拖拽 / 外部
@@ -526,6 +544,9 @@ class VideoBookRepository {
   /// 更新视频封面图绝对路径（书架/视频库长按菜单手动设置封面）。
   Future<void> updateCover(String bookUid, String coverPath) =>
       _db.updateVideoBookCover(bookUid, coverPath);
+
+  /// 清空视频封面图路径（存量子篇作品海报摘除，见 `member_cover_cleanup.dart`）。
+  Future<void> clearCover(String bookUid) => _db.clearVideoBookCover(bookUid);
 
   /// 更新视频/播放列表标题（视频库长按菜单「重命名」）。
   Future<void> updateTitle(String bookUid, String title) =>

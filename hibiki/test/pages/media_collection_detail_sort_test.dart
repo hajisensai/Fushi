@@ -92,26 +92,32 @@ void main() {
         ),
       );
 
-  testWidgets('默认展示沉浸式合集信息与横向剧集轨道，点卡打开对应集', (WidgetTester tester) async {
+  testWidgets('默认展示沉浸式合集信息与展开的集列表，点集卡打开对应集', (WidgetTester tester) async {
     VideoBookRow? opened;
     await tester.pumpWidget(
         buildApp(onOpenEpisode: (VideoBookRow row) => opened = row));
     await tester.pumpAndSettle();
 
     expect(find.text('某番剧'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey<String>('collection-episode-rail')),
-      findsOneWidget,
-    );
-    final ListView rail = tester.widget<ListView>(find.descendant(
-      of: find.byKey(const ValueKey<String>('collection-episode-rail')),
-      matching: find.byType(ListView),
-    ));
-    expect(rail.scrollDirection, Axis.horizontal);
+    // hayase 式改版（TODO-2491）：集列表（宽卡网格）默认全量可见，旧横滚轨已移除。
+    expect(find.byKey(const ValueKey<String>('episode-list')), findsOneWidget);
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('video-episode-card-1')));
-    await tester.pump();
+    final Finder a10Card = find.byKey(
+      const ValueKey<String>('collection-episode-row-video/a10'),
+    );
+    await tester.scrollUntilVisible(
+      a10Card,
+      240,
+      scrollable: find
+          .descendant(
+            of: find.byType(CustomScrollView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(a10Card);
+    await tester.pumpAndSettle();
     expect(opened?.bookUid, 'video/a10');
   });
 
@@ -152,11 +158,8 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(t.collection_view_all));
-    await tester.pumpAndSettle();
-
-    // BUG-778 后拖拽走 HibikiReorderableColumn：触摸 = 长按整行起拖（鼠标即
-    // 拖）。三行从上到下 = Beta / 第10话 / 第9话；长按首行（Beta）往下拖两行。
+    // BUG-778 后拖拽走 HibikiReorderableGrid：触摸 = 长按整卡起拖（鼠标即
+    // 拖）。三卡从上到下 = Beta / 第10话 / 第9话；长按首卡（Beta）往下拖两卡。
     final Finder betaRow = find.byKey(
       const ValueKey<String>('collection-episode-row-video/beta'),
     );
@@ -174,7 +177,8 @@ void main() {
     final TestGesture gesture =
         await tester.startGesture(tester.getCenter(betaRow));
     await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
-    for (int step = 0; step < 5; step++) {
+    // 集卡高 128 + 间距 12：中心要落进第 3 个槽（Δy ≈ 2×140），拖 7×40=280。
+    for (int step = 0; step < 7; step++) {
       await gesture.moveBy(const Offset(0, 40));
       await tester.pump(const Duration(milliseconds: 16));
     }
@@ -252,10 +256,7 @@ void main() {
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text(t.collection_view_all));
-      await tester.pumpAndSettle();
-
-      // 可见三行仍是 Beta / 第10话 / 第9话（非 video 成员不渲染）。首行拖到末尾 →
+      // 可见三卡仍是 Beta / 第10话 / 第9话（非 video 成员不渲染）。首卡拖到末尾 →
       // 可见新序 a10 / a9 / beta，依次填回原来的三个 video 槽位（下标 0/2/4）。
       final Finder betaRow = find.byKey(
         const ValueKey<String>('collection-episode-row-video/beta'),
@@ -274,7 +275,7 @@ void main() {
       final TestGesture gesture =
           await tester.startGesture(tester.getCenter(betaRow));
       await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
-      for (int step = 0; step < 5; step++) {
+      for (int step = 0; step < 7; step++) {
         await gesture.moveBy(const Offset(0, 40));
         await tester.pump(const Duration(milliseconds: 16));
       }

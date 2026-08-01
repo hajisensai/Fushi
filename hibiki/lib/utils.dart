@@ -42,6 +42,9 @@ export 'src/utils/misc/render_backend_service.dart';
 export 'src/utils/misc/debug_log_service.dart';
 export 'src/utils/misc/show_app_dialog.dart';
 export 'src/utils/misc/update_checker.dart';
+// 全应用出站代理解析层。原先是 update_checker 的 part（随上一行一起被导出），BUG-1348
+// 把它提成独立库供同步层复用，故这里显式补一条 export，消费方 import 路径零变化。
+export 'src/utils/net/app_proxy.dart';
 export 'src/utils/misc/update_check_cache.dart';
 export 'src/utils/misc/hibiki_toast.dart';
 export 'src/utils/misc/webview_asset_url.dart';

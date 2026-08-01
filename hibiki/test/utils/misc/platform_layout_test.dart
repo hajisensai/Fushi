@@ -1,7 +1,21 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
+
+import '../../sync/desktop_lookup_foreground_guard_static_test.dart'
+    show stripDartComments;
+
+/// 页面壳里「自己补横向内边距」的判据：`padding:` 位置上出现一个横向 EdgeInsets，
+/// 且取自 `spacing.page`（设计 token，不是散落魔数）。
+bool _hasOwnHorizontalInset(String code) {
+  return RegExp(
+    r'padding:\s*EdgeInsets\.symmetric\(\s*horizontal:[^;]{0,120}?spacing\.page',
+    dotAll: true,
+  ).hasMatch(code);
+}
 
 void main() {
   group('windowSizeClassOf', () {
@@ -143,17 +157,77 @@ void main() {
 
     test('adds desktop breathing room without changing compact padding', () {
       expect(
-        desktopContentPadding(WindowSizeClass.compact),
+        desktopContentPadding(
+          WindowSizeClass.compact,
+          DesktopContentKind.dictionary,
+        ),
         EdgeInsets.zero,
       );
       expect(
-        desktopContentPadding(WindowSizeClass.medium),
+        desktopContentPadding(
+          WindowSizeClass.medium,
+          DesktopContentKind.dictionary,
+        ),
         const EdgeInsets.symmetric(horizontal: 16),
       );
       expect(
-        desktopContentPadding(WindowSizeClass.expanded),
+        desktopContentPadding(
+          WindowSizeClass.expanded,
+          DesktopContentKind.settings,
+        ),
         const EdgeInsets.symmetric(horizontal: 24),
       );
+    });
+
+    test('reader shelf (media wall) is full-bleed at every size class', () {
+      // 用户实报「首页左右强制的间距」：媒体墙类页面（书架/视频/游戏/漫画目录/
+      // 来源页）卡片自带内边距，宽屏不再叠 16/24px 强制侧向留白。
+      for (final WindowSizeClass sizeClass in WindowSizeClass.values) {
+        expect(
+          desktopContentPadding(sizeClass, DesktopContentKind.readerShelf),
+          EdgeInsets.zero,
+        );
+      }
+    });
+
+    test('readerShelf 零留白后，两个裸内容页必须自带横向内边距', () {
+      // 共享侧向留白归零，是因为媒体墙**卡片自带内边距**。但这两页的内容体
+      // （MediaSourcesView / MokuroMoeCatalogView）是裸的文字行与搜索框 + 封面网格，
+      // 自身零内边距——共享留白一撤就直接贴窗口边 0px。所以它们必须在页面壳里自己
+      // 补，量级与其余媒体墙页一致（这里取 spacing.page，与同页 HibikiPageHeader 的
+      // 横向内边距同源，标题与正文左缘对齐）。注释先剥掉，防止说明文字假绿。
+      for (final ({String path, String label}) page
+          in const <({String path, String label})>[
+        (
+          path: 'lib/src/pages/implementations/media_sources_page.dart',
+          label: '来源页',
+        ),
+        (
+          path: 'lib/src/media/manga/online/mokuro_moe_catalog_page.dart',
+          label: 'mokuro 在线目录页',
+        ),
+      ]) {
+        final String code =
+            stripDartComments(File(page.path).readAsStringSync());
+        expect(
+          code.contains('DesktopContentKind.readerShelf'),
+          isTrue,
+          reason: '${page.label} 不再是 readerShelf 页，本守卫需重新定标',
+        );
+        expect(
+          _hasOwnHorizontalInset(code),
+          isTrue,
+          reason: '${page.label} 自身无横向内边距，桌面上会贴窗口边 0px',
+        );
+        // 变异自检：把内边距摘掉守卫必须转红。
+        expect(
+          _hasOwnHorizontalInset(
+            code.replaceAll('spacing.page', 'spacing.nothing'),
+          ),
+          isFalse,
+          reason: '${page.label} 的守卫必须能被摘掉内边距的 mutation 杀红',
+        );
+      }
     });
 
     test('keeps compact dialog fields usable', () {
@@ -213,6 +287,32 @@ void main() {
       // TODO-1352：dictionary 宽屏改为 full-bleed（null 上限），子内容宽度
       // = 屏幕 1600 - 2×24 侧向留白 = 1552（不再锁 1040→992）。
       expect(tester.getSize(find.byKey(childKey)).width, 1552);
+    });
+
+    testWidgets('reader shelf spans edge-to-edge on wide desktop', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1600, 200);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        const Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: double.infinity,
+            height: double.infinity,
+            child: DesktopContentLayout(
+              kind: DesktopContentKind.readerShelf,
+              child: SizedBox.expand(key: childKey),
+            ),
+          ),
+        ),
+      );
+
+      // 媒体墙类页面零侧向留白（用户实报「首页左右强制的间距」）：宽屏子内容
+      // 宽度 = 整屏 1600，不再扣 2×24。
+      expect(tester.getSize(find.byKey(childKey)).width, 1600);
     });
 
     testWidgets('keeps compact content full width without desktop padding', (

@@ -27,9 +27,22 @@ bool get isDesktopOAuthPlatform =>
 /// [port] of 0 binds an ephemeral port (use when the provider accepts any
 /// loopback port, e.g. Microsoft Entra). Pass a fixed port for providers that
 /// require an exact redirect-URI match (e.g. Dropbox).
+///
+/// [host] is the hostname written into the redirect URI. The server always
+/// binds the IPv4 loopback interface, so `127.0.0.1` (RFC 8252 §7.3's
+/// recommended form) is the honest, literal description of where the browser
+/// must land. `localhost` — the default, kept because Dropbox and Entra have
+/// that exact string registered — is a *name* that has to survive resolution
+/// and proxy routing first: on Windows it usually resolves to `::1` before
+/// `127.0.0.1`, and a proxy in global mode whose bypass list omits it will
+/// happily forward the callback to the proxy instead of to this server. Either
+/// way the code never arrives and the flow dies on [timeout] (BUG-1348).
+/// Providers that accept any loopback redirect (Google desktop clients) should
+/// pass `127.0.0.1`.
 Future<DesktopOAuthResult> runDesktopOAuthLoopback({
   required Uri Function(String redirectUri) buildAuthUrl,
   int port = 0,
+  String host = 'localhost',
   Duration timeout = const Duration(minutes: 5),
 }) async {
   final HttpServer server;
@@ -43,7 +56,7 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
   try {
     // No trailing slash: providers match the redirect URI string exactly, and
     // the browser still hits this server at path "/" regardless.
-    final redirectUri = 'http://localhost:${server.port}';
+    final redirectUri = 'http://$host:${server.port}';
     final authUrl = buildAuthUrl(redirectUri);
 
     if (!await launchUrl(authUrl, mode: LaunchMode.externalApplication)) {
@@ -74,8 +87,15 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
     try {
       return await completer.future.timeout(
         timeout,
-        onTimeout: () =>
-            throw SyncAuthError('Timed out waiting for authorization'),
+        onTimeout: () => throw SyncAuthError(
+          'Timed out waiting for authorization',
+          // Typed, not guessed: the message contains "authorization", which the
+          // error-message mapper's `contains('auth')` branch used to swallow as
+          // "sign-in expired" — telling the user to re-authenticate when the
+          // real problem is that the browser callback never reached us
+          // (BUG-1348).
+          kind: SyncAuthFailureKind.browserTimeout,
+        ),
       );
     } finally {
       await subscription.cancel();

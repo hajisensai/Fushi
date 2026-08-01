@@ -18,6 +18,8 @@
 /// reused by the reader chrome + its guards.
 library;
 
+import 'package:flutter/painting.dart';
+
 /// Clamps a stored auto-hide duration (milliseconds) into a sane range. `0` is
 /// not allowed (the surface would vanish instantly on reveal); the slider min is
 /// 1s and max 10s. Non-finite / out-of-range values degrade to the 3s default.
@@ -86,6 +88,38 @@ double bottomChromeReserve({
 }) {
   if (!barOccupiesLayout || floating) return 0;
   return chromeHeight;
+}
+
+/// BUG-379 / BUG-1343 / BUG-1381：**独立 HTML 文档**（歌词模式 [LyricsModeHtml]、
+/// spread 整页图）的 WebView 四周留白，是「阅读器页给独立文档留多少空间」的唯一真相源。
+///
+/// 为什么独立文档要 Flutter 侧留白、正文不用：正文经 `_applyChromeInsets` 把预留高
+/// 下发给 `window.hoshiReader`，由页内 CSS 收缩 body；独立 HTML 没有这个桥，
+/// `_applyChromeInsets` 对它整体 early-return，于是只能由 Flutter 侧收缩视口本身。
+///
+///  * **底部**（BUG-379）：歌词 WebView 原本 `Positioned.fill` 铺满全屏，底栏
+///    （`_buildAudiobookBar`，bottom:0）盖在其上，歌词文档级 CSS 滚动条沿整屏高度绘制，
+///    底部一段被画进底栏区域 → 看上去像「进度条跑进底栏」。留 [bottomReserve] 后视口
+///    不再与底栏重叠。[chromeOccupiesLayout] 就是底栏的占位条件
+///    （`_hasEverLoaded && _showChrome`，与 [bottomChromeReserve] 同一门控），
+///    [bottomReserve] 已含悬浮态恒 0 的语义（悬浮不占正文位置）。
+///    spread 不需要底部留白：它没有文档级滚动条，底栏叠在整页图上是既有可接受形态。
+///  * **顶部**（BUG-1343）：macOS 顶部 DragToMoveArea 叠在 WebView 之上，独立文档若不
+///    缩进，首行歌词 / 整页图会落到拖拽区下面且无法交互。[titlebarInset] 在非 macOS 恒 0。
+///
+/// 返回 [EdgeInsets.zero] 表示「无需任何留白」，调用方据此跳过 `Padding` 包装。
+EdgeInsets independentDocumentInsets({
+  required bool lyricsMode,
+  required bool spreadDocumentLoaded,
+  required bool chromeOccupiesLayout,
+  required double bottomReserve,
+  required double titlebarInset,
+}) {
+  final bool independentDocument = lyricsMode || spreadDocumentLoaded;
+  return EdgeInsets.only(
+    top: independentDocument ? titlebarInset : 0,
+    bottom: lyricsMode && chromeOccupiesLayout ? bottomReserve : 0,
+  );
 }
 
 /// Whether the top progress strip should be painted right now.

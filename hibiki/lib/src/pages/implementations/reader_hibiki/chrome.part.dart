@@ -386,6 +386,10 @@ extension _ReaderChrome on _ReaderHibikiPageState {
               selection: HibikiTextSelection(text: selectedText),
             );
           }
+          // BUG-1344：状态/夹图提取完成后、打开弹窗前清原生选区。否则 WKWebView
+          // 失焦时会留下灰色高亮，直到切换应用才触发下一次重绘。
+          await _clearReaderAppSelection();
+          if (!mounted) return;
           await searchDictionaryResult(
               searchTerm: selectedText, selectionRect: rect);
           if (mounted) _checkFavoriteStatus();
@@ -621,8 +625,13 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   }
 
   // Clear the reader's app-drawn selection (hoshi-selection CSS Custom Highlight)
-  // without touching any native selection. Best-effort: a half-torn-down WebView
-  // throws MissingPluginException on eval; swallow it (nothing to clear).
+  // *and* the native selection with it: ReaderSelectionScripts.clearInvocation()
+  // runs hoshiSelection.clearSelection(), whose first statement is
+  // `window.getSelection()?.removeAllRanges()` (reader_selection_scripts.dart
+  // `clearSelection`). BUG-1344 depends on that — WKWebView otherwise paints the
+  // defocused native selection as a grey block that survives app switching.
+  // Best-effort: a half-torn-down WebView throws MissingPluginException on eval;
+  // swallow it (nothing to clear).
   Future<void> _clearReaderAppSelection() async {
     _removeSelectionActionBar();
     try {
@@ -1862,7 +1871,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
               );
 
     return Positioned(
-      top: _stableTopInset,
+      top: _stableTopInset + _macosWindowTitlebarInset,
       left: 16,
       right: 16,
       child: Align(

@@ -1,0 +1,6 @@
+## BUG-1351 · 扫描导入新播放列表合集不落 added 活动事件
+- **真实性**：✅ 真 bug（对「以 m3u8 清单库扫描为主导入路径」的用户，入库在首页活动时间轴上完全不可见）。根因 `hibiki/lib/src/media/source_library/source_library_scanner.dart:743-748`（修前行号）：`_importPlaylists` 首导新 playlist 合集走 `importSplitPlaylist` 后不调 `VideoBookRepository.recordVideoImportActivity`——该方法按 `video_book_repository.dart:129-135` 的旧契约只由 `VideoImportDialog` 调用，「自动库扫描批量、避免刷屏」被一刀切成全静默。生产库证据：2026-07-31 用户把新 m3u8 放进扫描根导入 Seven Mortal Sins 52 集（合集 75，命名=清单 basename，与 `_importPlaylists` 的命名唯一吻合；该目录不是任何登记扫描根之外的对话框导入，且对话框各路径均有 emit），activity_events 里视频 added 事件全库为 0 条。
+- **报告**：2026-08-02（用户：首页的活动没有跟进——含最近入库不出现）
+- **[x] ① 已修复** — `_importPlaylists` 首导分支（`existingPlaylistIds` 记账后）补调 `recordVideoImportActivity(bookUid=首集 uid, title=合集名)`，与对话框/拖拽导入同粒度（整本 1 条）；重扫走 reconcile 分支天然不 emit；散装单视频扫描保持静默（首扫可达数百文件，逐条 emit 才是原契约担心的刷屏）。同步更新 `video_book_repository.dart` 的方法契约注释。提交：见本分支。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/source_library/source_library_scanner_test.dart`（TODO-1237 组）：①首导 1 个 playlist 合集断言恰 1 条 added 事件（title=合集名、mediaKey=首集 uid）；②重扫 reconcile 不重复 emit（仍 1 条）；③散装单视频扫描零事件（守住不刷屏边界）。
+- **备注**：姊妹缺口——番剧下载完成自动入库（`anime_download_importer.dart:41-96`）同样不 emit（07-29 入库 13 集零事件），该文件被并行线独占，停在诊断移交（见回报）。显示层同轮修 BUG-1350。

@@ -620,6 +620,41 @@ class HibikiTorrentBindings {
       ffi.Pointer<ffi.Char> Function(
           ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
 
+  /// TODO-2526：每个 piece 的下载优先级（诊断/测试用，0~7，下标=piece
+  /// index）；返回 malloc JSON（ht_free_string 释放）。调用前先看
+  /// [hasPiecePriorities]。
+  ffi.Pointer<ffi.Char> ht_get_piece_priorities(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+  ) {
+    return _ht_get_piece_priorities(session, info_hash);
+  }
+
+  late final _ht_get_piece_prioritiesPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_get_piece_priorities');
+  late final _ht_get_piece_priorities = _ht_get_piece_prioritiesPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// TODO-2526：已加载的库是否导出 ht_get_piece_priorities。**独立探测**、
+  /// 不并进 [hasDetailInfo]：随包旧 DLL 有详情四符号但没有本符号时，详情页
+  /// 不该整体降级；缺本符号只影响 piece 优先级读取（返回 null）。
+  late final bool hasPiecePriorities = _probePiecePriorities();
+
+  bool _probePiecePriorities() {
+    try {
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+                  ffi.Pointer<ffi.Char>)>>('ht_get_piece_priorities');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
   /// TODO-2482：设置单个文件的下载优先级（0~7，0=不下载）。1 成功 0 失败。
   /// 调用前先看 [hasDetailInfo]。
   int ht_set_file_priority(
@@ -639,8 +674,9 @@ class HibikiTorrentBindings {
       int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int, int)>();
 
   /// TODO-2482：会话协议状态（DHT/LSD/端口映射/监听端口/会话级速率）。
-  /// 非阻塞（首轮统计字段可能为 -1，下一轮轮询即有值）；返回 malloc JSON
-  /// （ht_free_string 释放）。调用前先看 [hasDetailInfo]。
+  /// 非阻塞：dht_nodes 首轮 -1、下一轮即有值；速率要到**第三轮**才有值
+  /// （第二轮收割到首个采样只够建基线，第三轮才差分得出）。返回 malloc
+  /// JSON（ht_free_string 释放）。调用前先看 [hasDetailInfo]。
   ffi.Pointer<ffi.Char> ht_session_status(ffi.Pointer<ffi.Void> session) {
     return _ht_session_status(session);
   }

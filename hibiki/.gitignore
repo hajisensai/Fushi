@@ -59,6 +59,9 @@ ui-*.xml
 # TODO-942: Kenney Input Prompts controller icons (CC0) are bundled assets
 # and MUST be tracked despite the blanket *.png ignore above.
 !assets/gamepad/**
+# TODO-2525: TMDB 官方署名 logo 是合约义务素材（Terms of Use 第 3 节），必须入库，
+# 同样不受上面的 *.png 全局忽略影响。来源/哈希见 assets/attribution/tmdb/README.md。
+!assets/attribution/tmdb/*.png
 test_screenshots/
 
 # Codex test outputs

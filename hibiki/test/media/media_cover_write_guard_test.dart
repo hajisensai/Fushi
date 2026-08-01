@@ -13,9 +13,19 @@
 // 豁免（记录在案）：
 // - media_cover_service.dart：收口自身。
 // - media/video/video_cover_extractor.dart：导入期首写产线（ffmpeg 子进程直写
-//   目标路径 / 流媒体缩略图下载），目标路径此前无解码缓存，见其库注释。
+//   目标路径），Dart 侧无字节可交给收口，见其库注释。
 // - lib/src/sync/**：互联层远端封面（remote_cover_image / remote_cover_cache，
 //   协议字段 coverUrl 冻结）是网络缓存，本轮不收编（见 MediaCoverService 类注释）。
+//
+// ③（BUG-1394 补的覆盖洞）**豁免是逐函数的，不是整文件的**。②/① 都是「同一个
+//    文件里同时出现派生 + 裸写」才报，于是「派生点与写盘点跨文件」两边都逃：
+//    anime_download_importer.dart 派生了 videoCoverFileName 目的地但自己不写盘
+//    （→ ② 的 rawWrite 不命中直接放行），真正的裸 writeAsBytes 在被整文件豁免的
+//    video_cover_extractor.dart 里（→ ② 的白名单直接 continue）。结果是给「导入
+//    期首写」开的豁免被三个**覆盖写**调用点（番剧下载重放、流媒体换封面、导入
+//    弹窗重取）复用，同路径重下后 UI 命中旧解码缓存 = 显示旧图，守卫全绿。
+//    这条把豁免收成「白名单文件里**哪些函数**可以裸写」的显式清单：新增裸写函数
+//    或把已收口的函数改回裸写都会红。
 
 import 'dart:io';
 
@@ -69,7 +79,8 @@ void main() {
     const Set<String> allowed = <String>{
       // 收口自身。
       'lib/src/media/media_cover_service.dart',
-      // 导入期首写产线（ffmpeg 直写 / 缩略图下载），见其库注释。
+      // 导入期首写产线（ffmpeg 子进程直写目标路径），见其库注释。缩略图下载路
+      // 已收口，本条豁免的实际边界由下面第 ③ 条逐函数钉死（BUG-1394）。
       'lib/src/media/video/video_cover_extractor.dart',
     };
     final List<String> offenders = <String>[];
@@ -88,6 +99,49 @@ void main() {
         reason: '这些文件推导了封面目的地路径且有原始写盘调用，但没有经 '
             'MediaCoverService.applyCoverFile/applyCoverBytes 收口（BUG-1118 '
             '的「落盘后忘 evict」正是这么回归的）：\n${offenders.join('\n')}');
+  });
+
+  test('白名单文件的裸写豁免逐函数登记（跨文件派生+写盘的覆盖洞，BUG-1394）', () {
+    // 白名单文件里**允许**裸写封面的函数全名单。空 = 该文件已无裸写。
+    // 新增裸写函数、或把已收口的函数改回裸 writeAsBytes，都会让本用例红。
+    const Map<String, Set<String>> allowedRawWriters = <String, Set<String>>{
+      // 收口自身：两个入口的 .tmp 写 + rename 就是收口实现本体。
+      'lib/src/media/media_cover_service.dart': <String>{
+        'applyCoverFile',
+        'applyCoverBytes',
+      },
+      // ffmpeg 两条路由子进程写盘，Dart 侧无字节；下载路已改走
+      // MediaCoverService.applyCoverBytes，故本文件不该再有任何裸写。
+      'lib/src/media/video/video_cover_extractor.dart': <String>{},
+    };
+    final RegExp rawWrite =
+        RegExp(r'writeAsBytes\(|\.copy\(|\.rename\(|openWrite\(');
+    final RegExp lineComment = RegExp(r'//.*$');
+    // 顶层声明 / 类成员声明的行首标识（`static Future<void> applyCoverBytes({`、
+    // `Future<String?> downloadVideoCoverToPath({` 等）：缩进 ≤2 且缩进之后**立刻**
+    // 是标识符，取 `(` / `{` 前的最后一个标识符为函数名。缩进阈值把函数体里的
+    // `if (...) {` / `} catch (_) {` 这类控制流挡在外面（它们缩进 ≥4，且行首不是
+    // 「类型 空格 名字」的形状）。
+    final RegExp declaration =
+        RegExp(r'^ {0,2}(?:static )?(?:[\w<>?,]+ )+(\w+)\s*[({]');
+
+    allowedRawWriters.forEach((String path, Set<String> allowed) {
+      final List<String> lines = File(path).readAsLinesSync();
+      final Set<String> found = <String>{};
+      String current = '<file-scope>';
+      for (final String line in lines) {
+        final RegExpMatch? decl = declaration.firstMatch(line);
+        if (decl != null) current = decl.group(1)!;
+        if (rawWrite.hasMatch(line.replaceAll(lineComment, ''))) {
+          found.add(current);
+        }
+      }
+      expect(found, allowed,
+          reason: '$path 里的裸写封面函数与登记名单不符。豁免是逐函数的：'
+              '「导入期首写」的理由只对 ffmpeg 子进程写盘成立，Dart 侧有字节的路'
+              '（被覆盖写场景跨文件复用）必须走 MediaCoverService.applyCoverBytes。\n'
+              '实际=$found 登记=$allowed');
+    });
   });
 
   test('收口方法本体存在且包含「写盘→驱逐」结构', () {

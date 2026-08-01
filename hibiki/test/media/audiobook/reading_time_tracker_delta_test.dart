@@ -33,7 +33,8 @@ ReadingTimeTracker _makeTracker(
   HibikiDatabase db, {
   ReadingTimeDelta? onDelta,
 }) {
-  final ReadingTimeTracker tracker = ReadingTimeTracker(db, onDelta: onDelta);
+  final ReadingTimeTracker tracker =
+      ReadingTimeTracker(db, format: BookFormat.epub, onDelta: onDelta);
   addTearDown(() async {
     tracker.dispose();
     await Future<void>.delayed(const Duration(milliseconds: 120));

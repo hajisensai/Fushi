@@ -128,6 +128,27 @@ class EmbeddedTorrentHost {
   /// 真相源在宿主。
   final Set<String> _userPaused = <String>{};
 
+  /// TODO-2526：暂停记录里「本轮瞬时加载失败但 `.resume` 还在盘上」的部分。
+  /// 与 [_userPaused]（本会话已真实按下暂停的种子）分开持有：这些种子不在
+  /// session 里，无处可 pause，但用户意图仍然有效 —— 下次启动加载成功时
+  /// 必须还能按暂停落。所有写盘点经 [_persistUserPaused] 把两者并集写出，
+  /// 否则任何一处「拿内存集整写覆盖文件」都会把这些记录冲掉。
+  ///
+  /// 两个消费点（都表达「用户最新动作否决了旧暂停记录」）：
+  /// - [sweepUploadPolicy]：记录的种子出现在 session 里 = 用户本会话把它
+  ///   重新 add 回来了（restore 只在启动跑一次），最新意图是「跑」；
+  /// - [resumeTorrentByUser]：显式恢复必须连这里的记录一起清，否则并集
+  ///   写盘仍记暂停，下次启动吞掉这次恢复。
+  final Set<String> _pausedAwaitingRestore = <String>{};
+
+  /// 用户暂停集的唯一写盘出口（[_userPaused] ∪ [_pausedAwaitingRestore]）。
+  void _persistUserPaused() {
+    writeUserPausedFile(
+      _resumeDir,
+      _userPaused.union(_pausedAwaitingRestore),
+    );
+  }
+
   /// 是否已做过一次性「清 upload_mode 残留」治愈（BUG-1293：旧版本给种子打上
   /// 的 upload_mode flag 会随 resume 复活，掐死下载；开机清一次即可）。
   bool _healedUploadMode = false;
@@ -271,10 +292,14 @@ class EmbeddedTorrentHost {
   /// TODO-2482：按落盘的用户暂停集把刚加回来的种子重新按下暂停。
   ///
   /// `ht_load_resume_dir` 的契约是「加回来即开始跑」（清 paused 旗标），
-  /// 所以用户暂停必须在这里补执行。只认本轮真的加回来的 [restoredIds]：
-  /// 计划已删/resume 已丢的种子不在 session 里，pause 必然失败，顺手把
-  /// 无主暂停记录剪掉再写回盘。add 与 pause 之间种子有一瞬是跑态（可能
+  /// 所以用户暂停必须在这里补执行。add 与 pause 之间种子有一瞬是跑态（可能
   /// 发出 announce），这是该方案的已知代价，换来 native 契约零变更。
+  ///
+  /// TODO-2526：无主记录的剪除判据是「resume 目录里是否还有对应 `.resume`
+  /// 文件」（见 [retainUserPausedRecords]），**不是**「本轮是否加载成功」——
+  /// 加载失败可能是瞬时的（文件被占用/坏一次），按加载结果剪会让下次成功
+  /// 加载的种子以跑态复活，用户按过的暂停凭空消失。文件还在但没加载成功的
+  /// 记录进 [_pausedAwaitingRestore] 保留。
   void _restoreUserPaused(List<String> restoredIds) {
     final Set<String> wanted = readUserPausedFile(_resumeDir);
     if (wanted.isEmpty) return;
@@ -287,8 +312,16 @@ class EmbeddedTorrentHost {
         _userPaused.add(id);
       }
     }
-    if (!setEquals(_userPaused, wanted)) {
-      writeUserPausedFile(_resumeDir, _userPaused);
+    final Set<String> keep = retainUserPausedRecords(
+      resumeDir: _resumeDir,
+      wanted: wanted,
+      restoredIds: restoredIds,
+    );
+    _pausedAwaitingRestore
+      ..clear()
+      ..addAll(keep.difference(restored));
+    if (!setEquals(keep, wanted)) {
+      _persistUserPaused();
     }
   }
 
@@ -443,7 +476,7 @@ class EmbeddedTorrentHost {
     if (!_session.pauseTorrent(id, pause: true)) return false;
     _userPaused.add(id);
     // TODO-2482：用户暂停跨会话持久（真相源在宿主，落盘随 fastResume 目录）。
-    writeUserPausedFile(_resumeDir, _userPaused);
+    _persistUserPaused();
     return true;
   }
 
@@ -454,8 +487,12 @@ class EmbeddedTorrentHost {
     final String id = infoHash.toLowerCase();
     if (!_session.pauseTorrent(id, pause: false)) return false;
     _userPaused.remove(id);
+    // TODO-2526：该种子可能带着 awaiting 暂停记录（启动瞬时加载失败）又被
+    // 用户重新 add 进 session —— 显式恢复必须两处记录都清，否则并集写盘
+    // 仍记暂停，下次启动把用户这次恢复吞掉、强制按回暂停。
+    _pausedAwaitingRestore.remove(id);
     _appliedPaused.remove(id);
-    writeUserPausedFile(_resumeDir, _userPaused);
+    _persistUserPaused();
     return true;
   }
 
@@ -634,9 +671,19 @@ class EmbeddedTorrentHost {
       _appliedPaused.removeWhere((String k, bool v) => !live.contains(k));
       final int pausedBefore = _userPaused.length;
       _userPaused.removeWhere((String k) => !live.contains(k));
+      // TODO-2526：awaiting 记录的种子出现在 live 里 = 用户本会话把它重新
+      // add 回来了（restore 只在启动跑一次，不会二次入 session）——最新
+      // 意图是「跑」，旧暂停记录随之作废。不清的话它整个会话跑态、下次
+      // 启动却被按回暂停，吞掉用户的重新添加。
+      final int awaitingBefore = _pausedAwaitingRestore.length;
+      _pausedAwaitingRestore.removeWhere(live.contains);
       // 种子被删掉时把它的用户暂停记录一并从盘上剪掉（与内存同步）。
-      if (_userPaused.length != pausedBefore) {
-        writeUserPausedFile(_resumeDir, _userPaused);
+      // 只剪 [_userPaused]（本会话在 session 里出现过的）；不在 live 里的
+      // [_pausedAwaitingRestore] 记录不能据此误剪，它们的去留由下次启动
+      // 的 .resume 文件存在性裁决。
+      if (_userPaused.length != pausedBefore ||
+          _pausedAwaitingRestore.length != awaitingBefore) {
+        _persistUserPaused();
       }
       return changed;
     } on Object {
@@ -738,6 +785,31 @@ Set<String> readUserPausedFile(String resumeDir) {
     debugPrint('[torrent] user paused read failed: $e');
     return <String>{};
   }
+}
+
+/// TODO-2526：重启恢复时用户暂停集里哪些记录该保留。
+///
+/// 判据：种子本轮真的加回来了（在 [restoredIds] 里），**或** resume 目录里
+/// 还有它的 `<infohash>.resume` 文件。后者覆盖「瞬时加载失败」——文件还在
+/// 说明任务没被删，暂停意图必须保留到下次成功加载；只有文件已不存在
+/// （计划已删/已被剪枝）才是真无主。
+///
+/// 顶层函数而非宿主私有方法：与 [pruneResumeFiles] 同理，让这条不变量能在
+/// 没有原生 DLL 的环境（含 CI）被直接测到。比对一律小写归一。
+Set<String> retainUserPausedRecords({
+  required String resumeDir,
+  required Set<String> wanted,
+  required Iterable<String> restoredIds,
+}) {
+  final Set<String> restored = <String>{
+    for (final String id in restoredIds) id.toLowerCase(),
+  };
+  return <String>{
+    for (final String id in wanted)
+      if (restored.contains(id.toLowerCase()) ||
+          File(p.join(resumeDir, '${id.toLowerCase()}.resume')).existsSync())
+        id.toLowerCase(),
+  };
 }
 
 /// 原子写用户暂停集（先写 `.tmp` 再 rename，与 native resume 落盘同姿态，

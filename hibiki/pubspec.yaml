@@ -1,7 +1,7 @@
 name: hibiki
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 1.3.1+1112
+version: 1.3.1+1138
 environment:
   sdk: ">=3.5.0 <4.0.0"
   flutter: "^3.41.6"
@@ -274,6 +274,10 @@ flutter:
   uses-material-design: true
 
   assets:
+    # TMDB 官方 logo（合约署名素材）。逐文件登记而非整目录，是为了只打包实际渲染
+    # 的 PNG，把同目录的矢量原图 blue_square_1.svg（provenance 真相源）与 README.md
+    # （来源/哈希/禁改说明 + 栅格化配方）留在仓库里、不进应用包。
+    - assets/attribution/tmdb/logo_tmdb.png
     - assets/browser_extension/
     - assets/browser_extension/vendor/
     - assets/gamepad/xbox/

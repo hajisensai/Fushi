@@ -144,6 +144,18 @@ class TtsChannel {
         for (final LocalAudioDbConfig c in _desktopDbConfigs)
           (path: c.path, order: List<String>.of(c.sourceOrder)),
       ];
+      // 绑定期 [setLocalAudioDbs] 对同一批库文件 unawaited 派出了
+      // [LocalAudioDb.ensureIndexes]——那是**我们自己**开的 readWrite 连接。
+      // 在它收尾前发查询，两条连接就在同一个 inode 上抢锁：CREATE INDEX 提交
+      // 阶段持独占锁，只读连接的 busy_timeout 一到点就 SQLITE_BUSY，被
+      // [LocalAudioDb.queryMeta] 的 catch 吞成 null——与「库里真没这个词」
+      // 完全同形，用户看到「暂无发音」（BUG-1365）。in-flight 写有现成的
+      // per-path 完成信号，读端排在它后面即可，不靠 busy_timeout 赌赢。
+      // 无在途任务时是一次立即完成的 Future，零额外成本。
+      await Future.wait(<Future<void>>[
+        for (int i = start; i < end && i < configs.length; i++)
+          if (i >= 0) LocalAudioDb.waitForPendingIndexing(configs[i].path),
+      ]);
       try {
         return await Isolate.run(() {
           for (int i = start; i < end && i < configs.length; i++) {
@@ -194,6 +206,10 @@ class TtsChannel {
       // 字符串，Directory 在 worker isolate 内重建）。
       final Directory dir = await getTemporaryDirectory();
       final String cacheDirPath = dir.path;
+      // 同 [queryLocalAudio]：blob 读取也必须排在自家绑定期建索引之后，否则
+      // 撞上 CREATE INDEX 的独占锁 → busy 超时 → extractBlob catch 吞成 null
+      // ＝已查到词条却「音频提取失败」（BUG-1365）。
+      await LocalAudioDb.waitForPendingIndexing(dbPath);
       try {
         return await Isolate.run(() => LocalAudioDb.extractBlob(
               dbPath: dbPath,

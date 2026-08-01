@@ -144,14 +144,40 @@ void main() {
     }
   });
 
-  test('net part owns the URL / proxy / network-classification layer', () {
+  test('net part owns the URL / network-classification layer', () {
     final String source = read(net);
     expect(source, contains('List<String> updateCheckUrls('));
     expect(source, contains('fetchFirstSuccessfulBody('));
-    expect(source, contains('applyUpdateProxy('));
-    expect(source, contains('parseWindowsRegistryProxy('));
     expect(source, contains('isExpectedUpdateNetworkFailure('));
     expect(source, contains('hostLabelForUpdateUrl('));
+  });
+
+  /// BUG-1348：代理解析层从本 part 搬进了独立库 `src/utils/net/app_proxy.dart`。
+  ///
+  /// 搬家的理由就是这套守卫自己钉死的那条不变式——「part 文件不得自带 import」。代理是
+  /// 进程级网络出口策略，同步层（GoogleDriveAuth 的 token 交换）必须用同一套出口，可
+  /// part 没法被外部按需 import，于是同步层只能裸连，在开着代理的机器上必然
+  /// `errno = 121` 超时。守卫随之调头：**禁止**代理实现回流到 part 里。
+  test('the proxy layer lives in its own library, not in the net part', () {
+    const String appProxy = 'lib/src/utils/net/app_proxy.dart';
+    expect(File(appProxy).existsSync(), isTrue,
+        reason: '$appProxy must exist — the sync layer imports it directly');
+
+    final String proxySource = read(appProxy);
+    expect(proxySource, contains('Future<void> applyAppProxy('));
+    expect(proxySource, contains('parseWindowsRegistryProxy('));
+    expect(proxySource, contains('String? normalizeUserProxyHostPort('));
+    // 进程级真相源：没有它，同步层又得沿调用链穿 userProxy 参数（穿漏一处 = 一条暗路）。
+    expect(proxySource, contains('String Function() appUserProxyReader'));
+
+    final String netSource = read(net);
+    expect(netSource, isNot(contains('Future<void> applyAppProxy(')),
+        reason: 'the proxy implementation must not move back into the part; '
+            'part files cannot be imported by the sync layer (BUG-1348)');
+    expect(netSource,
+        isNot(contains('Map<String, String> parseWindowsRegistryProxy(')),
+        reason:
+            'ditto — the Windows registry parser belongs to app_proxy.dart');
   });
 
   test('download part owns the multi-segment download engine', () {

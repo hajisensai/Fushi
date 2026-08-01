@@ -506,7 +506,15 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // 以 entry 身份钉住整层。
       key: ObjectKey(entry),
       pos: Rect.fromLTWH(0, 0, cardSize.width, cardSize.height),
-      visible: entry.visible,
+      // BUG-797/1040/1327/1364 同族收口：查词浮层的**每个**子项都必须与
+      // [DictionaryPageMixin.lookupPopupHiddenByDialog] 相与。本表面（安卓独立查词窗）
+      // 今天恰好接不出对话框——`_buildLayer` 没传 `onMinedCardAction` / `onOpenInAnki` /
+      // `onOpenSentenceContextModal`，唯三会调 `runWithLookupPopupHidden` 的入口都不在，
+      // 于是计数恒 0、本条件恒真。但「安全」来自这个**非局部**的接线巧合，而不是本层
+      // 自身：哪天给这里补上制卡动作对话框，安卓原生 WebView 平台视图会立刻按 airspace
+      // 盖住它（BUG-797 的原始症状，且这窗就是安卓专用）。故在此显式接线，让不变量由
+      // 本层自己持有（守卫 test/pages/lookup_overlay_dialog_gate_guard_test.dart）。
+      visible: entry.visible && !lookupPopupHiddenByDialog,
       screen: MediaQuery.sizeOf(context),
       child: layer,
     );

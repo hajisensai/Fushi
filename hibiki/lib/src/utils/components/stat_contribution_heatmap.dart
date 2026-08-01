@@ -1,6 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 
+/// 每屏**最少**列数（周数）。见 [StatContributionHeatmap.weeks]。
+const int kStatHeatmapMinWeeks = 17;
+
+/// 每屏**最多**列数（周数）= GitHub 式「一年」。见 [StatContributionHeatmap.maxWeeks]。
+const int kStatHeatmapMaxWeeks = 53;
+
+/// 单格自然边长（逻辑像素）。见 [StatContributionHeatmap.cell]。
+const double kStatHeatmapCell = 12;
+
+/// 单格放大上限（逻辑像素）。见 [StatContributionHeatmap.maxCell]。
+const double kStatHeatmapMaxCell = 18;
+
+/// 格间距（逻辑像素）。见 [StatContributionHeatmap.spacing]。
+const double kStatHeatmapSpacing = 3;
+
+/// 网格「铺到头」的自然最大宽度（逻辑像素；默认配置下 = 53×18 + 52×3 = 1110）。
+///
+/// 组件有**两道**天然封顶，宿主再宽也只会在网格右侧空出来：
+/// - 列数封顶 [kStatHeatmapMaxWeeks]（一年）——再加列就是大片空周，正是 BUG-1073
+///   病灶 1「左边一大片死黑」；
+/// - 列数封顶后富余宽度分摊给格子边长，但格子封顶 [kStatHeatmapMaxCell]——再放大
+///   就不是热力图而是一排大方块。
+///
+/// 所以**宿主容器要按本值限宽**，不能让卡片跟着窗口拉满：首页整页 1600 限宽撤掉后，
+/// 3840 逻辑宽下热力图卡宽 2244 而网格仍只有 1110，右侧空出 1134px——BUG-1073
+/// 症状 3（区块宽度用不满）在超宽屏复发。消费者调本函数，不要各自抄常量。
+double statHeatmapMaxGridWidth({
+  int maxWeeks = kStatHeatmapMaxWeeks,
+  double maxCell = kStatHeatmapMaxCell,
+  double spacing = kStatHeatmapSpacing,
+}) =>
+    maxWeeks * maxCell + (maxWeeks - 1) * spacing;
+
 /// GitHub 式「贡献热力图」的一天格子：日期键 + 当日活动值 + 强度等级。
 ///
 /// [dateKey] 为 null 表示占位格（当前周里今天之后的未来日，不落在窗口内），渲染成
@@ -45,7 +78,7 @@ class StatHeatmapModel {
 StatHeatmapModel buildStatHeatmap({
   required Map<String, int> valueByDateKey,
   required DateTime now,
-  int weeks = 17,
+  int weeks = kStatHeatmapMinWeeks,
   int weekOffset = 0,
 }) {
   final DateTime today = DateTime(now.year, now.month, now.day);
@@ -108,7 +141,7 @@ StatHeatmapModel buildStatHeatmap({
 int maxHeatmapPageOffset({
   required Map<String, int> valueByDateKey,
   required DateTime now,
-  int weeks = 17,
+  int weeks = kStatHeatmapMinWeeks,
 }) {
   if (valueByDateKey.isEmpty || weeks <= 0) return 0;
   String? minKey;
@@ -172,11 +205,11 @@ class StatContributionHeatmap extends StatefulWidget {
     super.key,
     this.emptyBorderColor,
     this.onDaySelected,
-    this.weeks = 17,
-    this.maxWeeks = 53,
-    this.cell = 12,
-    this.maxCell = 18,
-    this.spacing = 3,
+    this.weeks = kStatHeatmapMinWeeks,
+    this.maxWeeks = kStatHeatmapMaxWeeks,
+    this.cell = kStatHeatmapCell,
+    this.maxCell = kStatHeatmapMaxCell,
+    this.spacing = kStatHeatmapSpacing,
   });
 
   /// 日期键（`2026-06-07`）→ 当日活动值（视频=观看毫秒 / 阅读=字数）的全量映射。

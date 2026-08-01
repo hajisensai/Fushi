@@ -196,9 +196,9 @@ void main() {
     test('reserve truth source: _readerTopOffset uses _topProgressReserve', () {
       expect(
         src.contains(
-            '_readerTopOffset => _stableTopInset + _topProgressReserve'),
+            '_stableTopInset + _macosWindowTitlebarInset + _topProgressReserve'),
         isTrue,
-        reason: '顶部预留必须经派生 getter（关进度回收空白），不得无条件加 18px',
+        reason: '顶部预留必须经派生 getter（关进度回收空白），并避开 macOS 拖拽区',
       );
       expect(
         src.contains(

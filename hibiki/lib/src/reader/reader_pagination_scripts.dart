@@ -30,6 +30,43 @@ class ReaderPageStep {
   final double targetScroll;
 }
 
+/// Groups the many horizontal wheel ticks emitted by one macOS trackpad swipe
+/// into one page-turn intent.
+///
+/// The gate belongs to the reader State rather than the WebView document, so a
+/// chapter navigation in the middle of momentum cannot reset it and admit a
+/// second page turn. A tick that belongs to an already-claimed gesture moves the
+/// trailing edge; only a full quiet interval starts the next gesture.
+class ReaderWheelGestureGate {
+  /// 最后一个**属于某个已认领手势**的 tick 时刻。被丢弃、翻不动页的 tick 不属于
+  /// 任何手势，不写这里（见 [shouldStartNewGesture] 的 [canTurnPage]）。
+  DateTime? _lastTickAt;
+
+  /// BUG-1380：手势 token 的消费必须晚于「这一 tick 确实能翻页」的确认。
+  ///
+  /// [canTurnPage] 由调用方给出（阅读器侧是 `!_paginationInFlight`）：为 false 时
+  /// 这一 tick 已知落不了地（换章加载 / restore 在飞），于是**不认领新手势**——
+  /// 否则整段惯性的首个 tick 白白吃掉 token，加载落定后的后续 tick 全部在闸门早退，
+  /// 用户这一次滑动零反馈。返回值仍是纯查询「本 tick 不属于已认领的手势」，让调用方
+  /// 把 tick 继续送进下游（跨章冷却窗要靠这些 tick 续窗）。
+  ///
+  /// 已在手势内的 tick（返回 false）无条件滑动 trailing edge：它属于已认领的手势，
+  /// 延长静默窗正是闸门的本意。
+  bool shouldStartNewGesture({
+    required DateTime now,
+    required Duration settleInterval,
+    required bool canTurnPage,
+  }) {
+    final DateTime? lastTickAt = _lastTickAt;
+    final bool startsNewGesture =
+        lastTickAt == null || now.difference(lastTickAt) >= settleInterval;
+    if (!startsNewGesture || canTurnPage) {
+      _lastTickAt = now;
+    }
+    return startsNewGesture;
+  }
+}
+
 /// 一条 sasayaki cue 的运行时定位输入：归一化原文 [needle]、匹配时算出的
 /// 归一化偏移提示 [hint]、提示长度 [length]（仅在未命中回落时用于推进游标）。
 class SasayakiCueHint {
@@ -506,10 +543,11 @@ class ReaderPaginationScripts {
   ///
   /// [deltaY]/[deltaX] = wheel 事件的滚动增量。主轴取绝对值更大的那个，>0 = forward。
   @visibleForTesting
-  static String wheelPaginateDir(
+  static String? wheelPaginateDir(
       {required double deltaY, required double deltaX}) {
-    final bool forward = deltaY > 0 || deltaX > 0;
-    return forward
+    final double delta = deltaY.abs() >= deltaX.abs() ? deltaY : deltaX;
+    if (delta == 0) return null;
+    return delta > 0
         ? ReaderNavigationDirection.forward.jsValue
         : ReaderNavigationDirection.backward.jsValue;
   }

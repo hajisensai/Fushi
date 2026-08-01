@@ -155,7 +155,7 @@ class DropboxSyncBackend extends SyncBackend
     // Revoke the token.
     if (_accessToken != null) {
       try {
-        await syncHttpClient.post(
+        await (await obtainSyncHttpClient()).post(
           Uri.parse('$_apiBase/auth/token/revoke'),
           headers: {'Authorization': 'Bearer $_accessToken'},
         );
@@ -224,7 +224,7 @@ class DropboxSyncBackend extends SyncBackend
 
   Future<http.Response> _apiPost(
       String endpoint, Map<String, dynamic>? body) async {
-    final resp = await syncHttpClient.post(
+    final resp = await (await obtainSyncHttpClient()).post(
       Uri.parse('$_apiBase$endpoint'),
       headers: _authHeaders,
       body: body != null ? jsonEncode(body) : null,
@@ -451,7 +451,7 @@ class DropboxSyncBackend extends SyncBackend
     request.headers['Authorization'] = 'Bearer $_accessToken';
     request.headers['Dropbox-API-Arg'] = apiArg;
 
-    final streamedResp = await syncHttpClient.send(request);
+    final streamedResp = await (await obtainSyncHttpClient()).send(request);
     if (streamedResp.statusCode >= 400) {
       throw SyncBackendError(
           'Download failed: HTTP ${streamedResp.statusCode}');
@@ -563,7 +563,7 @@ class DropboxSyncBackend extends SyncBackend
 
   Future<dynamic> _downloadFileJson(String fileId) async {
     final apiArg = jsonEncode({'path': fileId});
-    final resp = await syncHttpClient.post(
+    final resp = await (await obtainSyncHttpClient()).post(
       Uri.parse('$_contentBase/files/download'),
       headers: {
         'Authorization': 'Bearer $_accessToken',
@@ -599,7 +599,7 @@ class DropboxSyncBackend extends SyncBackend
       'mute': true,
     });
 
-    final resp = await syncHttpClient.post(
+    final resp = await (await obtainSyncHttpClient()).post(
       Uri.parse('$_contentBase/files/upload'),
       headers: {
         'Authorization': 'Bearer $_accessToken',

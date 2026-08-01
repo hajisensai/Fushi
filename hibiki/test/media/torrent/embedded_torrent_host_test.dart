@@ -139,7 +139,8 @@ void main() {
       );
       await _pollUntil(
         () => host.backendView().listTorrents().then(
-            (List<TorrentSnapshot> t) => t.isNotEmpty && t.single.progress >= 0),
+            (List<TorrentSnapshot> t) =>
+                t.isNotEmpty && t.single.progress >= 0),
         timeout: const Duration(seconds: 30),
         what: 'torrent to appear',
       );
@@ -168,6 +169,132 @@ void main() {
 
       // ④ 剪光之后再恢复：没有任何东西可加回来。
       expect(host.restoreFromResume(const <String>{}), 0);
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  // ── TODO-2526：awaiting 暂停记录 vs 用户本会话的最新动作 ─────────────
+  //
+  // 前置剧情都一样：上会话用户按过暂停（user_paused.json 记着），本次启动
+  // 该种子的 .resume 还在但内容坏掉（瞬时加载失败）→ 记录进 awaiting 保留。
+  // 随后用户把同一种子重新 add 回来 —— 用户最新动作必须赢过旧暂停记录。
+
+  test(
+    'an awaiting paused record must not override an explicit user resume',
+    () async {
+      final EmbeddedTorrentEngine rigEngine =
+          EmbeddedTorrentEngine.open(libraryPath: libPath!);
+      final LocalSeedRig rig = await LocalSeedRig.start(
+          engine: rigEngine, workDir: tempDir, contentBytes: 256 * 1024);
+      addTearDown(rig.dispose);
+
+      final String resumeDir = p.join(tempDir.path, 'resume');
+      Directory(resumeDir).createSync(recursive: true);
+      writeUserPausedFile(resumeDir, <String>{rig.infoHash});
+      // 非 bencode 内容：ht_load_resume_dir 加载必失败，但文件存在。
+      File(p.join(resumeDir, '${rig.infoHash}.resume'))
+          .writeAsBytesSync(<int>[0x58, 0x58, 0x58]);
+
+      final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
+        libraryPath: libPath,
+        baseSavePath: p.join(tempDir.path, 'content'),
+        resumeDir: resumeDir,
+        listenInterfaces: '127.0.0.1:0',
+        enableDht: false,
+        clockMs: () => _fakeClock,
+      );
+      expect(host, isNotNull);
+      addTearDown(host!.dispose);
+
+      // 启动恢复：加载 0 个，但暂停记录必须保留（.resume 还在 = 瞬时失败）。
+      expect(host.restoreFromResume(<String>{rig.infoHash}), 0);
+      expect(readUserPausedFile(resumeDir), contains(rig.infoHash));
+
+      // 用户本会话把同一种子重新 add 回来。
+      expect(
+        await host
+            .backendView()
+            .addTorrent(rig.torrentPath, category: 'hibiki-anime'),
+        isTrue,
+      );
+      await _pollUntil(
+        () => host
+            .backendView()
+            .listTorrents()
+            .then((List<TorrentSnapshot> t) => t.isNotEmpty),
+        timeout: const Duration(seconds: 30),
+        what: 'torrent to appear after re-add',
+      );
+
+      // 用户显式恢复：写盘后绝不能仍记着暂停 —— 否则下次启动把这次恢复
+      // 吞掉、强制按回暂停。
+      expect(host.resumeTorrentByUser(rig.infoHash), isTrue);
+      expect(
+        readUserPausedFile(resumeDir),
+        isNot(contains(rig.infoHash)),
+        reason: 'explicit user resume must clear the awaiting record too — '
+            'the union persist would otherwise re-pause it on next boot',
+      );
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    'sweep clears an awaiting paused record once the user re-adds the torrent',
+    () async {
+      final EmbeddedTorrentEngine rigEngine =
+          EmbeddedTorrentEngine.open(libraryPath: libPath!);
+      final LocalSeedRig rig = await LocalSeedRig.start(
+          engine: rigEngine, workDir: tempDir, contentBytes: 256 * 1024);
+      addTearDown(rig.dispose);
+
+      final String resumeDir = p.join(tempDir.path, 'resume');
+      Directory(resumeDir).createSync(recursive: true);
+      writeUserPausedFile(resumeDir, <String>{rig.infoHash});
+      File(p.join(resumeDir, '${rig.infoHash}.resume'))
+          .writeAsBytesSync(<int>[0x58, 0x58, 0x58]);
+
+      final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
+        libraryPath: libPath,
+        baseSavePath: p.join(tempDir.path, 'content'),
+        resumeDir: resumeDir,
+        listenInterfaces: '127.0.0.1:0',
+        enableDht: false,
+        clockMs: () => _fakeClock,
+      );
+      expect(host, isNotNull);
+      addTearDown(host!.dispose);
+
+      expect(host.restoreFromResume(<String>{rig.infoHash}), 0);
+      expect(readUserPausedFile(resumeDir), contains(rig.infoHash));
+
+      expect(
+        await host
+            .backendView()
+            .addTorrent(rig.torrentPath, category: 'hibiki-anime'),
+        isTrue,
+      );
+      await _pollUntil(
+        () => host
+            .backendView()
+            .listTorrents()
+            .then((List<TorrentSnapshot> t) => t.isNotEmpty),
+        timeout: const Duration(seconds: 30),
+        what: 'torrent to appear after re-add',
+      );
+
+      // 种子重新出现在 session 里（只能是用户主动 add）——下一轮 sweep
+      // 应把 awaiting 记录当场作废，而不是让它整个会话跑态、下次启动又被
+      // 按回暂停。
+      host.sweepUploadPolicy();
+      expect(
+        readUserPausedFile(resumeDir),
+        isNot(contains(rig.infoHash)),
+        reason: 'a re-added torrent means the user wants it running — the '
+            'stale paused record must not survive the sweep',
+      );
     },
     skip: skip,
     timeout: const Timeout(Duration(minutes: 2)),

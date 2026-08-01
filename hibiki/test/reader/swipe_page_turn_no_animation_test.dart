@@ -117,17 +117,19 @@ void main() {
 
     // 连续模式分支必须存在，且先于分页翻页通道（轴向冲突的根因门控）。
     // TODO-737：分页滚轮已从 onSwipe 改为新 handler onWheelPaginate（方向脱钩
-    // invertSwipeDirection），故分页翻页通道的标记从 callHandler('onSwipe' 改为
-    // callHandler('onWheelPaginate'。
+    // invertSwipeDirection）。BUG-1342 后 handler 调用在跨 document helper 中，wheel
+    // listener 的分页通道标记是 _handlePagedWheelTick(e)。
     final int guardIdx = wheelBlock.indexOf('if (hoshiContinuousMode)');
     expect(guardIdx, greaterThanOrEqualTo(0),
         reason: 'wheel must branch on continuous mode before the paginated '
             'onWheelPaginate page-turn');
 
-    final int swipeIdx = wheelBlock.indexOf("callHandler('onWheelPaginate'");
+    final int swipeIdx = wheelBlock.indexOf('_handlePagedWheelTick(e)');
     expect(swipeIdx, greaterThan(guardIdx),
         reason:
             'continuous-mode branch must precede the onWheelPaginate page-turn');
+    expect(src, contains("callHandler('onWheelPaginate'"),
+        reason: 'paged wheel helper must still bridge to the Dart handler');
     // 分页滚轮不再经 onSwipe（那是触摸/鼠标拖动专用，受 invertSwipeDirection 管）。
     expect(wheelBlock, isNot(contains("callHandler('onSwipe'")),
         reason: 'TODO-737: 滚轮翻页改走 onWheelPaginate，wheel 块内不得再回传 onSwipe');

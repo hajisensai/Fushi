@@ -59,6 +59,65 @@ void main() {
     expect((await db.getAllFavoriteWords()).length, 1);
   });
 
+  test('hourly formats: materialize splits, old-peer totals lift unattributed',
+      () async {
+    // v67：本地按写入面分桶（epub 20s + manga 10s，同一小时）。
+    final HibikiDatabase db = await _freshDb('agg_hourly_fmt_');
+    addTearDown(db.close);
+    await db.addHourlyReadingTime(
+        dateKey: '2026-06-01',
+        hour: 9,
+        deltaMs: 20000,
+        format: BookFormat.epub);
+    await db.addHourlyReadingTime(
+        dateKey: '2026-06-01',
+        hour: 9,
+        deltaMs: 10000,
+        format: BookFormat.manga);
+
+    final AggregateSyncService svc = AggregateSyncService(db);
+    final AggregateSnapshot snap = await svc.materializeLocalSnapshot();
+    // 旧 wire 字段 = 该小时全部阅读面之和（旧端看到的语义与拆分前一致）；
+    // 拆分数据走 readingHourlyByFormat。
+    expect(snap.readingHourly.single.durationMs, 30000);
+    expect(snap.readingHourlyByFormat, hasLength(2));
+
+    // 自我重放幂等：不产生未区分桶、不改变任何行。
+    await svc.applySnapshotToLocal(snap);
+    expect(await db.getHourlyLogsForDate('2026-06-01'), hasLength(2));
+
+    // 旧端 peer 只带逐时总量 45s（不带 format）：与本地 30s 之差 15s 无法归因
+    // 到任何写入面 → 落 ''（未区分）桶；已归因的 epub/manga 桶原样不动。
+    const AggregateSnapshot oldPeer = AggregateSnapshot(
+      readingHourly: <HourlyRecord>[
+        HourlyRecord(dateKey: '2026-06-01', hour: 9, durationMs: 45000),
+      ],
+    );
+    final AggregateSnapshot merged =
+        AggregateSyncService.mergeSnapshots(snap, oldPeer);
+    await svc.applySnapshotToLocal(merged);
+    List<ReadingHourlyLogRow> logs =
+        await db.getHourlyLogsForDate('2026-06-01');
+    expect(logs, hasLength(3));
+    expect(
+        logs
+            .singleWhere((l) => l.format == BookFormat.epub.dbValue)
+            .readingTimeMs,
+        20000);
+    expect(
+        logs
+            .singleWhere((l) => l.format == BookFormat.manga.dbValue)
+            .readingTimeMs,
+        10000);
+    expect(logs.singleWhere((l) => l.format.isEmpty).readingTimeMs, 15000);
+
+    // 重复应用同一 merged 快照：差额为 0，幂等（不虚增未区分桶）。
+    await svc.applySnapshotToLocal(merged);
+    logs = await db.getHourlyLogsForDate('2026-06-01');
+    expect(logs, hasLength(3));
+    expect(logs.singleWhere((l) => l.format.isEmpty).readingTimeMs, 15000);
+  });
+
   test('first sync with empty namespace uploads own snapshot, no crash',
       () async {
     final HibikiDatabase db = await _freshDb('agg_first_');

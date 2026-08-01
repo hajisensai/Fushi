@@ -281,7 +281,7 @@ class UpdateChecker {
       client.connectionTimeout = const Duration(seconds: 10);
       // 走系统/环境代理：用户开着 clash/v2ray 时检查请求经其出口直连 api.github.com
       // （纯 GFW 下唯一可成功路径，BUG-292）。无代理则等价直连，不破坏镜像回退。
-      await applyUpdateProxy(client, userProxy: customProxy);
+      await applyAppProxy(client, userProxy: customProxy);
 
       // TODO-821：把「强断在途连接」回调登记进检查中断令牌——`cancelActiveCheck()` 被调时
       // 立即 close(force: true) 断开所有在途 socket，正在 await 的并发候选请求即刻抛错跳出，
@@ -933,7 +933,7 @@ class UpdateChecker {
       client.idleTimeout = const Duration(seconds: 60);
       // 下载同样走系统/环境代理（与检查一致）：直连/镜像不通时经用户代理出口下载。
       // 手填代理同检查阶段优先（TODO-871/862）：全部下载入口都把 customProxy 透到这里。
-      await applyUpdateProxy(client, userProxy: customProxy);
+      await applyAppProxy(client, userProxy: customProxy);
 
       // TODO-808：把「强断在途连接」回调登记进取消令牌——用户点「取消」时立即
       // close(force: true) 断开所有在途 socket，正在 await 的建连/读流即刻抛错跳出，

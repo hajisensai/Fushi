@@ -76,7 +76,7 @@ const Map<String, String> _bannedCapabilities = <String, String>{
   r'\b[Dd]io\b': 'package:dio',
   r'[Dd]ownload': '下载入口（含 ResumableDownload / confirmDownload / *DownloadUrl）',
   r'\bfetch[A-Z]': '远端抓取入口',
-  r'applyUpdateProxy': '镜像代理候选',
+  r'applyAppProxy': '镜像代理候选（BUG-1348 改名前叫 applyUpdateProxy）',
   r'InBackground': '后台静默自更新入口',
 };
 

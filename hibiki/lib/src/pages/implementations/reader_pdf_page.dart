@@ -160,6 +160,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     // BUG-1052：小时桶与每书/每日时长共用这一个带 gap 守卫的时钟（同 EPUB 侧）。
     _readingTimeTracker ??= ReadingTimeTracker(
       db,
+      format: BookFormat.pdf,
       onDelta: (int deltaMs) => _sessionReadingMs += deltaMs,
     )..start();
     return _PdfBookLoad(path: path, row: row);

@@ -820,7 +820,11 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
 
     // BUG-1280：置位必须在 loadData 之前——`onLoadStop` 可能在 await 返回前就
     // 派发，晚置位等于守卫对这一次加载失效。
-    _spreadDocumentLoaded = true;
+    if (!_spreadDocumentLoaded) {
+      _rebuild(() {
+        _spreadDocumentLoaded = true;
+      });
+    }
     _isNavigatingToChapter = true;
     try {
       await _controller!.loadData(
@@ -1287,6 +1291,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   void _ensureReadingTimeTracker() {
     _readingTimeTracker ??= ReadingTimeTracker(
       appModel.database,
+      format: BookFormat.epub,
       onDelta: (int deltaMs) => _sessionReadingMs += deltaMs,
     );
     _readingTimeTracker!.start();

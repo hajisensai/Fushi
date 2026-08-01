@@ -16,8 +16,11 @@
   Android `--disable-mediacodec`，且当前 FFmpeg 6.0 **根本没有** `h264_mediacodec`
   编码器（那是 6.1 才加入的）。
 - **许可**：`--enable-gpl` 让产物从 LGPLv3 变为 **GPLv3**。Hibiki 自身即 GPL-3.0，两者
-  一致；`android.sh` / `ios.sh` 会自动写入 `LICENSE.GPLv3` 与 `license_x264.txt`。
+  一致；`android.sh` / `ios.sh` 会自动写入产物内的 `LICENSE.GPLv3` 与 `license_x264.txt`
+  （那是 AAR/xcframework **内部**的文件名，由上游脚本决定，别跟着本仓文件名改）。
   桌面 `tool/ffmpeg-min/build-ffmpeg-min.sh` 早已同样处理。
+  ⚠️ vendor 回本仓时，GPLv3 正文落在包根 **`LICENSE-GPLv3.txt`**（不是 `LICENSE.GPLv3`），
+  详见下面「本仓对上游 podspec 的改动」。
 - **务必保留 `--enable-openssl`**：min 变体默认不含任何 TLS 后端，漏掉它会让远端制卡的
   `https://` 输入回到 `Protocol not found`（BUG-891）。**并在重编前重新应用下面的
   cert-pin 补丁**——补丁打在 ffmpeg 源码上，不随 configure 走。
@@ -46,6 +49,43 @@ arm64e 切片会先成功**，很容易误判成"iOS 编好了"。装法：`brew
 vendor 之后**必须**跑一遍 `ffmpeg_kit_mobile_recipe_guard_test.dart`：它静态抠二进制内嵌的
 configure 串与 libavcodec 里的 `libx264` / `x264 - core` 符号，确认"配方声明的"和"真链进去的"
 一致，并复核 cert-pin 补丁与 GPL 许可文件未回退。
+
+## 本仓对上游 podspec 的改动（同步上游时必须重放）
+
+`third_party/ffmpeg_kit_flutter` 是 vendored 包（`hibiki/pubspec.yaml` 的 `dependency_overrides`
+用 `path:` 指进来），下列改动**不在上游**，重新 vendor 上游版本时会被冲掉，必须逐条重放：
+
+| 文件 | 改动 | 原因 |
+|---|---|---|
+| `ios/ffmpeg_kit_flutter.podspec` | 删掉 `ffmpeg-kit-ios-*` 的 cocoapods 依赖与全部 subspec，改用 `s.vendored_frameworks` 指向 `ios/Frameworks/*.xcframework` | 上游 pod 已停服（BUG-122） |
+| `ios/ffmpeg_kit_flutter.podspec` | `s.license = { :type => 'GPL-3.0', :file => '../LICENSE-GPLv3.txt' }`；包根 GPLv3 正文文件名是 `LICENSE-GPLv3.txt` | 见下 |
+| `android/libs/ffmpeg-kit.aar`、`ios/Frameworks/*.xcframework` | 换成本仓自编（`--enable-gpl --enable-x264 --enable-openssl` + cert-pin 补丁）产物 | TODO-2357 / BUG-891 |
+
+### 为什么许可文件叫 `LICENSE-GPLv3.txt`（BUG-1373）
+
+cocoapods-core 的 `Specification::Linter#_validate_license` 按**扩展名**判定许可文件类型：
+
+```ruby
+if file && Pathname.new(file).extname !~ /^(\.(txt|md|markdown|))?$/i
+  results.add_error('license', 'Invalid file type')
+end
+```
+
+只放行「无扩展名 / `.txt` / `.md` / `.markdown`」。曾经的 `LICENSE.GPLv3` 其 `extname` 是
+`.GPLv3`，不在白名单里，于是 `pod install` 在**校验阶段**就断：
+
+```
+[!] The `ffmpeg_kit_flutter` pod failed to validate due to 1 error:
+    - ERROR | license: Invalid file type
+```
+
+文件本身一直存在，**不是路径缺失，是文件名类型不被认**。改名纯粹为过 CocoaPods 校验，
+**许可结论仍是 GPLv3（`--enable-gpl --enable-x264` 的合规义务），不得借机降回 LGPLv3**。
+包根另有一份上游原件 `LICENSE`（LGPLv3），供 `macos/ffmpeg_kit_flutter.podspec` 使用——
+macOS 走 cocoapods 上游**非 GPL** 预编译包，指向 LGPLv3 是对的，两个文件不要合并。
+
+守卫：`hibiki/test/tools/ffmpeg_kit_podspec_license_guard_test.dart`（源码扫描，Windows 可跑，
+CocoaPods 那条正则是照抄的）。
 
 ## 背景（BUG-891）
 

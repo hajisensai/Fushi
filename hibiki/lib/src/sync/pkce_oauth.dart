@@ -55,7 +55,7 @@ class PkceOAuthFlow {
     required String redirectUri,
     required String verifier,
   }) async {
-    final response = await syncHttpClient.post(
+    final response = await (await obtainSyncHttpClient()).post(
       Uri.parse(tokenEndpoint),
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: {
@@ -83,7 +83,7 @@ class PkceOAuthFlow {
   /// not return a new refresh token; [PkceTokens.refreshToken] is null when the
   /// response omits it (callers keep their existing one in that case).
   Future<PkceTokens> refreshTokens({required String refreshToken}) async {
-    final response = await syncHttpClient.post(
+    final response = await (await obtainSyncHttpClient()).post(
       Uri.parse(tokenEndpoint),
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: {

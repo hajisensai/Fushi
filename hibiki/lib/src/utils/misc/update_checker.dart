@@ -27,6 +27,10 @@ import 'package:hibiki/src/utils/misc/mac_update_handoff.dart';
 import 'package:hibiki/src/utils/misc/platform_updater.dart';
 import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
 import 'package:hibiki/src/utils/misc/update_handoff.dart';
+// 代理解析层（applyAppProxy / normalizeUserProxyHostPort 等）已提取为独立库
+// `src/utils/net/app_proxy.dart`（BUG-1348）：part 契约禁止 part 内 import，而同步层也要
+// 用同一套代理出口，故它不能再住在 net part 里。这里不单独 import——utils.dart 已经
+// re-export 它（再写一条会触发 unnecessary_import，CI 把 warning 当致命）。
 import 'package:hibiki/utils.dart';
 
 part 'update_checker_net.dart';

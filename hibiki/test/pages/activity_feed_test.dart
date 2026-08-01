@@ -160,6 +160,113 @@ void main() {
           <String>['C', 'B']);
     });
 
+    // BUG-1350：拆集后视频行的 title 是裸集号（S01E01），同日看两部不同作品的
+    // 同集号必须按 mediaKey 分开成两条——旧实现按 title 合并，先看的那部整条消失
+    // （复刻 2026-07-31 真实数据：Seven Mortal Sins S01E01 + Tensei Oujo S01E01）。
+    test('BUG-1350：同日同集号跨作品按 mediaKey 分开，不互吞', () {
+      final int base = DateTime(2026, 7, 31, 21).millisecondsSinceEpoch;
+      final List<ActivityDateGroup> groups =
+          aggregateActivityEvents(<ActivityEventRow>[
+        _ev(
+            eventType: kActivityWatch,
+            mediaType: 'video',
+            title: 'S01E01',
+            mediaKey: 'video/Seven Mortal Sins - S01E01',
+            dateKey: '2026-07-31',
+            timestampMs: base,
+            durationMs: 18718),
+        _ev(
+            eventType: kActivityWatch,
+            mediaType: 'video',
+            title: 'S01E01',
+            mediaKey: 'video/Tensei Oujo - S01E01',
+            dateKey: '2026-07-31',
+            timestampMs: base + const Duration(hours: 2).inMilliseconds,
+            durationMs: 1019979),
+      ]);
+      expect(groups, hasLength(1));
+      final List<ActivityEntry> entries = groups.first.entries;
+      expect(entries, hasLength(2),
+          reason: '不同 mediaKey 不得因 title 同为 S01E01 被合并');
+      // 组内按最近时刻倒序：Tensei（更晚）在前，各自保留自己的身份与时长。
+      expect(entries[0].mediaKey, 'video/Tensei Oujo - S01E01');
+      expect(entries[0].totalDurationMs, 1019979);
+      expect(entries[1].mediaKey, 'video/Seven Mortal Sins - S01E01');
+      expect(entries[1].totalDurationMs, 18718);
+    });
+
+    test('BUG-1350：同 mediaKey 多 session 仍合并（title 快照变化也不拆开）', () {
+      final int base = DateTime(2026, 7, 31, 9).millisecondsSinceEpoch;
+      final List<ActivityDateGroup> groups =
+          aggregateActivityEvents(<ActivityEventRow>[
+        _ev(
+            eventType: kActivityWatch,
+            mediaType: 'video',
+            title: 'S01E01',
+            mediaKey: 'video/X - S01E01',
+            dateKey: '2026-07-31',
+            timestampMs: base,
+            durationMs: 100),
+        _ev(
+            eventType: kActivityWatch,
+            mediaType: 'video',
+            title: 'X 第一集', // 改名后的快照：身份仍是同一 mediaKey
+            mediaKey: 'video/X - S01E01',
+            dateKey: '2026-07-31',
+            timestampMs: base + const Duration(hours: 2).inMilliseconds,
+            durationMs: 200),
+      ]);
+      final List<ActivityEntry> entries = groups.single.entries;
+      expect(entries, hasLength(1), reason: '同一媒体同日合并成一条');
+      expect(entries.single.totalDurationMs, 300);
+      expect(entries.single.sessionCount, 2);
+    });
+
+    test('BUG-1350：无 mediaKey 的老行回退 title 合并（兼容不回退）', () {
+      final int base = DateTime(2026, 7, 18, 9).millisecondsSinceEpoch;
+      final List<ActivityDateGroup> groups =
+          aggregateActivityEvents(<ActivityEventRow>[
+        _ev(
+            eventType: kActivityGame,
+            mediaType: 'game',
+            title: 'G',
+            dateKey: '2026-07-18',
+            timestampMs: base,
+            charsDelta: 10),
+        _ev(
+            eventType: kActivityGame,
+            mediaType: 'game',
+            title: 'G',
+            dateKey: '2026-07-18',
+            timestampMs: base + 60000,
+            charsDelta: 20),
+      ]);
+      expect(groups.single.entries, hasLength(1));
+      expect(groups.single.entries.single.totalChars, 30);
+    });
+
+    test('BUG-1350：同 title 同类型跨 mediaType 不合并', () {
+      final int base = DateTime(2026, 7, 18, 9).millisecondsSinceEpoch;
+      final List<ActivityDateGroup> groups =
+          aggregateActivityEvents(<ActivityEventRow>[
+        _ev(
+            eventType: kActivityAdded,
+            mediaType: 'book',
+            title: 'Same',
+            mediaKey: 'Same',
+            dateKey: '2026-07-18',
+            timestampMs: base),
+        _ev(
+            eventType: kActivityAdded,
+            mediaType: 'video',
+            title: 'Same',
+            mediaKey: 'Same',
+            dateKey: '2026-07-18',
+            timestampMs: base + 1000),
+      ]);
+      expect(groups.single.entries, hasLength(2), reason: '书与视频即使同名同键也各自成条');
+    });
+
     test('空输入返回空列表', () {
       expect(aggregateActivityEvents(const <ActivityEventRow>[]), isEmpty);
     });

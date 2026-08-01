@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
-import 'package:hibiki/src/utils/misc/update_checker.dart';
+import 'package:hibiki/src/utils/net/app_proxy.dart';
 
 /// 下载网络链路（AniList / Nyaa / Jimaku）单次请求的**整体**超时上限。
 ///
@@ -96,7 +96,7 @@ Future<void> applyDownloadNetworkProxy(
 ) async {
   final String? fixedDirective = fixedDownloadProxyDirective(config);
   if (fixedDirective == null) {
-    await applyUpdateProxy(client);
+    await applyAppProxy(client);
     return;
   }
   client.findProxy = (_) => fixedDirective;

@@ -7,6 +7,7 @@ import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart'
     show buildDataStorageLocationSection;
+import 'package:hibiki/src/sync/sync_http.dart';
 import 'package:hibiki/src/utils/misc/crash_dump_locator.dart';
 import 'package:hibiki/src/utils/misc/platform_updater.dart';
 import 'package:hibiki/utils.dart';
@@ -111,20 +112,23 @@ SettingsDestination buildSystemDestination() {
           // endorsed, certified, or otherwise approved by TMDB.` —— 旧措辞
           // "not endorsed or certified" 少了 "or otherwise approved"，不是原句。
           //
-          // ⚠️ 尚缺官方 logo 图：条款同时要求展示 TMDB logo（须从
-          // themoviedb.org/about/logos-attribution 取原图，不得改色/改比例/翻转/旋转）。
-          // 补上 logo 资源后把这一项换成带图的行；在那之前本行只满足了文字部分。
-          SettingsActionItem(
+          // logo 部分见 [_buildTmdbAttributionRow]：条款同时要求展示 TMDB 标识，
+          // 原图已逐字节入库（assets/attribution/tmdb/，provenance 见该目录
+          // README.md）。文字与 logo 是**一对合约义务**——删 about_tmdb_attribution
+          // 前不要先删 logo，反之亦然；要走一起走（连同内置 key 一并移除时）。
+          SettingsCustomItem(
             id: 'system.tmdb_attribution',
-            title: 'TMDB',
+            searchTitle: 'TMDB',
+            // 免责声明正文同时挂在 schema 上：custom 行的正文由 builder 自绘
+            //（settings_schema_widgets 的 switch 只调 builder，不读 title/
+            // subtitle/icon），所以这里的 subtitle 是**纯搜索元数据、零渲染影响**
+            // ——filterSettingsEntries 的 haystack 取 `item.subtitle`，不挂就只剩
+            // searchTitle 'TMDB' 可搜，用户搜声明正文里的词（endorsed / certified
+            // / approved）搜不到这一行。同款用法见 settings_search 里
+            // bodySearchEntries 的合成项。
             subtitle: t.about_tmdb_attribution,
             icon: Icons.movie_outlined,
-            onTap: (_) async {
-              await launchUrl(
-                Uri.parse('https://www.themoviedb.org/'),
-                mode: LaunchMode.externalApplication,
-              );
-            },
+            builder: _buildTmdbAttributionRow,
           ),
         ],
       ),
@@ -230,6 +234,10 @@ SettingsDestination buildSystemDestination() {
             onChanged: (SettingsContext settingsContext, String value) async {
               final String trimmed = value.trim();
               await settingsContext.appModel.setUpdateCustomProxy(trimmed);
+              // 云同步的共享 client 在首次使用时就把代理解析结果固化进 findProxy 了，
+              // 不丢弃它，用户改完代理仍走旧出口——那等于这条设置对同步不生效
+              // （BUG-1348）。更新检查每次新建 client，不受影响。
+              resetSyncHttpClient();
               // 非空且无法归一成合法 host:port → 提示（仍保存原串，运行时忽略）。
               if (trimmed.isNotEmpty &&
                   normalizeUserProxyHostPort(trimmed) == null) {
@@ -369,6 +377,76 @@ String _selectedUpdateChannel(SettingsContext settingsContext) {
   if (settingsContext.appModel.updateDebugChannel) return 'debug';
   if (settingsContext.appModel.updateBetaChannel) return 'beta';
   return 'stable';
+}
+
+/// TMDB 官方标识（`Primary short (blue)`）在包内的路径。
+///
+/// 这张 PNG 由 themoviedb.org/about/logos-attribution 下发的**矢量原图**栅格化而来；
+/// 原图 `assets/attribution/tmdb/blue_square_1.svg` 逐字节入库存证（sha256 即 TMDB
+/// 直链文件名里那串摘要）。之所以不直接渲染 SVG：Flutter 唯一现实的 SVG 方案
+/// `flutter_svg` 不支持 CSS，而 TMDB 原图把唯一填充写在 `<style>` 类里，解析后渐变
+/// 全丢、整个标识渲染成纯黑——那本身就是「改色」。栅格化只做尺寸映射，未改色 /
+/// 改比例 / 翻转 / 旋转 / 裁剪。来源、哈希、配方与守卫见同目录 README.md 与
+/// `test/settings/tmdb_attribution_test.dart`。
+@visibleForTesting
+const String kTmdbLogoAsset = 'assets/attribution/tmdb/logo_tmdb.png';
+
+/// logo 展示高度（dp）；宽度见 [_kTmdbLogoWidth]（24 × 190.24/81.52 ≈ 56.0）。
+///
+/// 条款要求展示 TMDB 标识，但它**不得比本应用自己的标识更显眼**。这条义务的实测
+/// 依据（数字均可按下列位置复核）：
+///
+/// - 同一行左侧的图标徽标是 30dp：`_SettingsIcon` 在 Material 下走
+///   `HibikiBadge(size: 18, padding: EdgeInsets.all(6))`，18+6*2 = 30
+///   （`utils/components/settings_shared.dart`）。24dp 与之同量级。
+/// - 应用自身图标在 Flutter widget 树里**只有一个真渲染点**：设置 › 外观 ›
+///   应用图标 的预设瓦片（`miscellaneous_settings_page.dart` 的 `_AppIconTile`）。
+///   `SizedBox.square(72)` 扣掉 `HibikiCard` 描边的 1dp 内缩与 `gap/2 = 4` 的
+///   双侧 padding，图片实得 62×62dp。TMDB 标识 24dp 高 = 其 38.7%；面积
+///   24×56.0 ≈ 1344dp²，是其 3844dp² 的 35%——两个维度都更小，满足条款的
+///   "less prominent"。
+/// - 除此之外应用图标一处都不画：本文件上方的关于分区只有版本文字，首页
+///   dashboard 与 home 外壳零图片，侧栏 rail 的 `leading` 槽
+///   （`utils/adaptive/adaptive_navigation.dart`）只有形参没有任何实参，
+///   loading/splash 只传颜色不传图，`AppModel.appIcon`（`models/app_model.dart`）
+///   是零读点死字段。且预设瓦片那一页仅 Android/Windows 可见，其余三端应用图标
+///   的渲染点数为 0。
+///
+/// 所以旧注释那句「远小于应用自身 logo 的**任何**展示尺寸」结论对、依据错：可比
+/// 的展示尺寸全仓只有 62×62dp 这一个。调整本值前请重跑上述核对——这段是「不得更
+/// 显眼」的唯一书面依据，守卫只能钉住上限（≤32dp），钉不住依据本身。
+const double _kTmdbLogoHeight = 24;
+
+/// 原图 viewBox 是 `0 0 190.24 81.52`；宽度按该比例算死，配合 [BoxFit.contain]
+/// 保证任何主题/文字缩放下都不会被拉伸变形（改比例同样是条款禁止项）。
+const double _kTmdbLogoWidth = _kTmdbLogoHeight * 190.24 / 81.52;
+
+/// TMDB 署名行：官方标识 + 条款原句免责声明，点击跳官网。
+///
+/// 用 [SettingsCustomItem] 而不是 [SettingsActionItem]，只因为 schema 的 `icon`
+/// 槽是 `IconData`、放不下一张图；行本体仍是共享的 [AdaptiveSettingsRow]，
+/// 焦点/密度/折叠行为与其它设置行完全一致。
+Widget _buildTmdbAttributionRow(SettingsContext settingsContext) {
+  return AdaptiveSettingsRow(
+    title: 'TMDB',
+    subtitle: t.about_tmdb_attribution,
+    icon: Icons.movie_outlined,
+    showIcon: true,
+    trailing: SizedBox(
+      height: _kTmdbLogoHeight,
+      width: _kTmdbLogoWidth,
+      child: Image.asset(
+        kTmdbLogoAsset,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.medium,
+        semanticLabel: 'TMDB',
+      ),
+    ),
+    onTap: () async => launchUrl(
+      Uri.parse('https://www.themoviedb.org/'),
+      mode: LaunchMode.externalApplication,
+    ),
+  );
 }
 
 Widget _buildRuntimeAppVersionRow(SettingsContext settingsContext) {

@@ -102,9 +102,15 @@ class ActivityDateGroup {
 
 /// 纯函数：把事件流聚合成「按日期倒序分组、每组内条目按最近时刻倒序」的时间线。
 ///
-/// 分组键 = (dateKey, title, eventType)。同键事件合并：时长/字数求和；session 数按
-/// [sessionGap] 归并；latestTimestampMs 取最大。added 事件无时长，session 数按同样
-/// 归并（通常 1）。输入不要求有序。
+/// 分组键 = (设备, dateKey, eventType, mediaType, mediaKey??title)。同键事件合并：
+/// 时长/字数求和；session 数按 [sessionGap] 归并；latestTimestampMs 取最大。added
+/// 事件无时长，session 数按同样归并（通常 1）。输入不要求有序。
+///
+/// BUG-1350：合并身份必须优先 mediaKey（书=bookKey / 视频=bookUid / 游戏=id）——
+/// title 只是落库时的显示快照，拆集后的视频行标题是裸集号（`S01E01`），同日看两部
+/// 不同作品的第一集会被 title 键错误合并成一条、mediaKey 取最晚事件，先看的那部在
+/// 时间轴上整条消失。老行 / 远端旧 host 行无 mediaKey 时回退 title（真实数据里同组
+/// 不混 null 与非 null——同一媒体同一天的行来自同一写入端）。
 List<ActivityDateGroup> aggregateActivityEvents(
   List<ActivityEventRow> events, {
   Duration sessionGap = kActivitySessionGap,
@@ -118,8 +124,8 @@ List<ActivityDateGroup> aggregateActivityEvents(
     // 设备来源进分组键：互联对端事件与本机事件**不合并**（provenance 优先——
     // 标明设备来源后混并无法归属），各自成条各带标签。分隔符沿用 NUL（标题可含任意可见字符）。
     final String? device = sourceDeviceOf?.call(e);
-    final String key =
-        '${device ?? ''}\u0000${e.dateKey}\u0000${e.eventType}\u0000${e.title}';
+    final String key = '${device ?? ''}\u0000${e.dateKey}\u0000${e.eventType}'
+        '\u0000${e.mediaType}\u0000${e.mediaKey ?? e.title}';
     (byKey[key] ??= <ActivityEventRow>[]).add(e);
     deviceByKey[key] = device;
   }
@@ -148,7 +154,8 @@ List<ActivityDateGroup> aggregateActivityEvents(
       stamps.add(e.timestampMs);
     }
     entries.add(ActivityEntry(
-      title: group.first.title,
+      // 标题快照与 mediaKey 同取向：都取组内最新一行（改名当天显示新名）。
+      title: group.last.title,
       eventType: group.first.eventType,
       mediaType: group.first.mediaType,
       mediaKey: mediaKey,

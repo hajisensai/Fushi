@@ -20,6 +20,8 @@ import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
 import 'package:hibiki/src/media/video/scraper/anilist_client.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
 import 'package:hibiki/src/media/video/scraper/jikan_client.dart';
+import 'package:hibiki/src/media/video/scraper/collection_member_policy.dart'
+    show multiMemberCollectionIdByVideoUid;
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
 import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
 import 'package:hibiki/src/media/video/scraper/match_scorer.dart';
@@ -36,7 +38,8 @@ import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
-import 'package:hibiki_core/hibiki_core.dart' show VideoBookRow;
+import 'package:hibiki_core/hibiki_core.dart'
+    show MediaCollectionRow, VideoBookRow;
 import 'package:path/path.dart' as p;
 
 /// slim 缓存落盘文件名（与原始库同目录）。
@@ -199,6 +202,10 @@ class CoverScraperService {
   final Map<String, ScrapeMetadata> _metadataCache = <String, ScrapeMetadata>{};
   final Set<String> _metadataFailed = <String>{};
 
+  /// 本实例内已尝试过「子篇海报改投合集封面」的 collectionId（成功或失败都记）。
+  /// 26 集番只该发一次海报下载，也不该整季逐集重试同一个打不通的 CDN。
+  final Set<int> _collectionCoverAttempted = <int>{};
+
   /// 是否已装载离线库（供 UI 决定是否显示「离线」来源徽标 / 下载入口）。
   bool get hasOfflineIndex => _offline != null;
 
@@ -326,12 +333,26 @@ class CoverScraperService {
   /// [rescrapeScraped] 只解锁「要不要覆盖**自动**刮来的旧结果」，它**不是**
   /// 「覆盖一切」——用户亲手选定的封面（[CoverOrigin.userScraped]，见
   /// [applyCandidateToBooks]）在任何开关下都不会被动（BUG-1325）。
+  ///
+  /// 合集子篇（成员数 ≥2 的合集成员，判据 [multiMemberCollectionIdByVideoUid]）
+  /// 在本层**一律不落成员封面**、任何开关都解不开——但那张作品海报**不被丢弃**，
+  /// 而是改落到它所属合集的自有封面（[_promoteCollectionCover] →
+  /// `MediaCollections.coverPath`）。用户 2026-08-02 的口径是「作品海报只归合集
+  /// 封面」，不是「作品海报消失」：只闸不改投会让多集合集卡从显示海报退化成显示
+  /// 首集抽帧。子篇成员封面保持抽帧缩略图或集级剧照（EpisodeScrapeService），两
+  /// 者都没有就保持无封面。用户在弹窗亲手匹配（[applyCandidateToBooks]）不经此闸。
   Stream<BatchScrapeProgress> scrapeLibrary(
     List<VideoBookRow> books, {
     bool rescrapeScraped = false,
   }) async* {
     final Map<String, _ResolvedMatch> decisionCache =
         <String, _ResolvedMatch>{};
+    // 子篇归属每批取一次（全量单查询，消 N+1）；含 sidecar 在内的整条 scrapeOne
+    // 封面流水线对子篇都不放行——目录级 poster.jpg 刷满整季与在线海报同症
+    // （Kodi/Jellyfin 生态单集图约定是 -thumb 而非 -poster，此处整体跳过实际不
+    // 损失单集 sidecar）。
+    final Map<String, int> memberCollectionIds =
+        await _repo.multiMemberCollectionIds();
     for (int i = 0; i < books.length; i++) {
       final VideoBookRow book = books[i];
       ScrapeOutcome outcome;
@@ -342,20 +363,30 @@ class CoverScraperService {
           final CoverMeta? meta = await _coverMeta.get(book.bookUid);
           final CoverOrigin origin = meta?.origin ?? CoverOrigin.autoFrame;
           final CoverOverwritePolicy policy = origin.batchOverwritePolicy;
-          final bool allowed = switch (policy) {
-            CoverOverwritePolicy.free => true,
-            CoverOverwritePolicy.rescrapeOnly ||
-            CoverOverwritePolicy.legacyStrict =>
-              rescrapeScraped,
-            CoverOverwritePolicy.never => false,
-          };
+          final int? memberCollectionId = memberCollectionIds[book.bookUid];
+          final bool allowed = memberCollectionId == null &&
+              switch (policy) {
+                CoverOverwritePolicy.free => true,
+                CoverOverwritePolicy.rescrapeOnly ||
+                CoverOverwritePolicy.legacyStrict =>
+                  rescrapeScraped,
+                CoverOverwritePolicy.never => false,
+              };
           if (!allowed) {
             outcome = ScrapeSkippedProtected(origin);
             // 封面受保护 ≠ 条目资料也不要。手动设过封面、或目录里有 poster.jpg
             // 的库（整理过的库很常见）此前会被整本跳过、永远刮不到简介/评分；
             // 这里补一次**只刮资料不碰封面**的匹配。outcome 仍报
             // ScrapeSkippedProtected（说的是封面），既有语义不变。
-            await _scrapeMetadataOnly(book, decisionCache);
+            final MatchDecision? decision =
+                await _scrapeMetadataOnly(book, decisionCache);
+            // 子篇：同一次匹配得到的作品海报改投合集自有封面（不重下、不碰成员）。
+            if (memberCollectionId != null && decision != null) {
+              await _promoteCollectionCover(
+                memberCollectionId,
+                decision.candidate,
+              );
+            }
           } else {
             outcome = await scrapeOne(
               book,
@@ -378,15 +409,18 @@ class CoverScraperService {
   }
 
   /// 只刮**条目资料**、绝不碰封面：给封面来源受保护（manual / sidecar / 已刮）的
-  /// 书补资料用。走与封面刮削同一套解析 + 匹配 + 打分，但只在 high 置信度落资料
-  /// ——medium 在封面侧要人工确认，资料侧同理不能自作主张（配错条目 = 一整篇别人
-  /// 的简介，比配错封面更难被一眼发现）。
-  Future<void> _scrapeMetadataOnly(
+  /// 书、以及合集子篇补资料用。走与封面刮削同一套解析 + 匹配 + 打分，但只在 high
+  /// 置信度落资料——medium 在封面侧要人工确认，资料侧同理不能自作主张（配错条目
+  /// = 一整篇别人的简介，比配错封面更难被一眼发现）。
+  ///
+  /// 返回本次采信的 high 决策（无匹配 / 置信度不足返回 null），供调用方复用同一
+  /// 次匹配的海报改投合集封面——不返回就得为同一本再解析+搜索一遍。
+  Future<MatchDecision?> _scrapeMetadataOnly(
     VideoBookRow book,
     Map<String, _ResolvedMatch> decisionCache,
   ) async {
     final ParsedMediaName? parsed = _mergedParse(book.videoPath);
-    if (parsed == null || parsed.title.isEmpty) return;
+    if (parsed == null || parsed.title.isEmpty) return null;
     final String cacheKey = parsed.title;
 
     final _ResolvedMatch resolved;
@@ -398,12 +432,46 @@ class CoverScraperService {
     }
     final MatchDecision? decision = resolved.decision;
     if (decision == null || decision.confidence != MatchConfidence.high) {
-      return;
+      return null;
     }
     await _persistMetadata(
       bookUids: <String>[book.bookUid],
       candidate: decision.candidate,
     );
+    return decision;
+  }
+
+  /// 子篇的作品海报改投**所属合集的自有封面**（用户 2026-08-02：作品海报只归合集
+  /// 封面）。整条流水线里唯一会因为「这本是子篇」而发生的写入，且只写合集那一行。
+  ///
+  /// 三条不变量：
+  /// * **不覆盖已有合集封面**——用户手动刮过的合集（`applyCollectionScrape`）或
+  ///   上一集已改投过的，自动路径一律让路；
+  /// * **一合集一次**（[_collectionCoverAttempted]）——26 集番不该发 26 次海报下
+  ///   载；失败也记，避免整季逐集重试同一个打不通的 CDN；
+  /// * **失败不升级**——本轮 outcome 已是 `ScrapeSkippedProtected`（说的是成员封
+  ///   面），合集封面下载失败不该把它翻成 `ScrapeFailed` 误导 UI，只记日志。
+  Future<void> _promoteCollectionCover(
+    int collectionId,
+    ScrapeCandidate candidate,
+  ) async {
+    if (candidate.posterUrl.isEmpty) return;
+    if (!_collectionCoverAttempted.add(collectionId)) return;
+    try {
+      final MediaCollectionRow? row =
+          await _repo.getMediaCollectionById(collectionId);
+      if (row == null) return;
+      final String? existing = row.coverPath;
+      if (existing != null && existing.isNotEmpty) return;
+      final String coverPath = await downloadCollectionCover(
+        collectionId: collectionId,
+        candidate: candidate,
+      );
+      await _repo.updateMediaCollectionCoverPath(collectionId, coverPath);
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('CoverScraperService.promoteCollectionCover', e, stack);
+    }
   }
 
   // ── 公开：手动匹配（UI 弹窗用）─────────────────────────────────

@@ -141,7 +141,11 @@ jobs:
           cp hibiki/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
         fi
         if [ -n "$TMDB_API_KEY" ]; then
-          sed -i "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+          # -i.bak（后缀紧贴 -i）是 GNU sed 与 BSD/macOS sed 通用的就地编辑写法；
+          # 裸 -i 只在 GNU sed 下成立。本 job 跑 ubuntu，但写法与 build-multiplatform
+          # 的五处保持一致，避免被复制进 macos 作业后固定变红。
+          sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+          rm -f "$dst.bak"
         fi
 
     # TODO-1208: cache the resolved pub packages so pub get is near-instant on a

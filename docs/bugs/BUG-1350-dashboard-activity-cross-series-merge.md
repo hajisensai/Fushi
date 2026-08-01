@@ -1,0 +1,6 @@
+## BUG-1350 · 首页活动时间轴同日同集号跨作品被合并吞掉观看记录
+- **报告**：2026-08-02（用户：首页的活动没有跟进——当天实机看过的合集（已看 1 集）在活动时间轴上不出现）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/activity_feed.dart:121-122`（修前行号）：`aggregateActivityEvents` 的分组键是 `(设备, dateKey, eventType, title)`，其中 title 是落库时的**显示快照**。统一合集 Phase 2 拆集后，每集 VideoBook 的 title 是裸集号（`S01E01`），同一天看两部不同作品的同集号会被合并成一条；条目 `mediaKey` 取组内最晚事件 → 先看那部的观看在时间轴上整条消失。生产库实锤 3 次（2026-07-23 / 07-28 / 07-31）：07-31 用户先看 Seven Mortal Sins S01E01（3 个 session，共约 3.5 分钟）再看 Tensei Oujo S01E01（3 个 session），6 行合成一条、身份被 Tensei 占据，Seven Mortal Sins（用户截图里「已看 1 集」的那部）在活动流上不可见。写入端（`VideoWatchTracker.stop` → `addActivityEvent`）经生产库核对**完好**：活动行与 `video_watch_statistics` 逐日吻合。
+- **[x] ① 已修复** — 分组身份改为 `(设备, dateKey, eventType, mediaType, mediaKey??title)`：mediaKey（书=bookKey / 视频=bookUid / 游戏=id）是稳定媒体身份，优先于 title 快照；无 mediaKey 的老行 / 旧 host 远端行回退 title（生产库核对：无「同组混 null 与非 null mediaKey」的数据）。附带收益：同媒体改名后 title 快照不同的多 session 现在正确合并；同名跨 mediaType 不再互并。提交：见本分支。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/activity_feed_test.dart`：①复刻 07-31 真实数据形状（同日同 `S01E01` 两 mediaKey → 两条、各自身份/时长不互吞）；②同 mediaKey 改名快照仍合并（sessionCount=2）；③无 mediaKey 回退 title 合并；④同名同类型跨 mediaType 不合并。
+- **备注**：并发根因 BUG-1351（扫描导入不落 added 事件）同轮修复；番剧下载导入不落 added 事件在并行线文件域内，另行移交（见回报）。
