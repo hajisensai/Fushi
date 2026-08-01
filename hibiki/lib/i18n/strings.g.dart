@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 51391 (3023 per locale)
 ///
-/// Built on 2026-08-01 at 09:43 UTC
+/// Built on 2026-08-01 at 12:08 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3658,8 +3658,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get media_tracking_manage_links => 'Manage links';
   String get media_tracking_last_error => 'Last error';
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   String get game_upscaling_installed_only_hint =>
@@ -4063,6 +4061,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get mihon_add_to_bookshelf => 'Add to manga shelf';
   String get mihon_in_bookshelf => 'In manga shelf';
   String get media_source_local_roots => 'Local scan roots';
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -10295,9 +10295,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -10998,6 +10995,9 @@ class _StringsAr extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -17297,9 +17297,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -18000,6 +17997,9 @@ class _StringsDe extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -24314,9 +24314,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -25017,6 +25014,9 @@ class _StringsEs extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -31343,9 +31343,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -32046,6 +32043,9 @@ class _StringsFr extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -38301,9 +38301,6 @@ class _StringsId extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -39004,6 +39001,9 @@ class _StringsId extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -45305,9 +45305,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -46008,6 +46005,9 @@ class _StringsIt extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -52126,9 +52126,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -52829,6 +52826,9 @@ class _StringsJa extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -58949,9 +58949,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -59652,6 +59649,9 @@ class _StringsKo extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -65933,9 +65933,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -66636,6 +66633,9 @@ class _StringsNl extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -72930,9 +72930,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -73633,6 +73630,9 @@ class _StringsPtBr extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -79911,9 +79911,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -80614,6 +80611,9 @@ class _StringsRu extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -86840,9 +86840,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -87543,6 +87540,9 @@ class _StringsTh extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -93801,9 +93801,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -94504,6 +94501,9 @@ class _StringsTr extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -100747,9 +100747,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -101450,6 +101447,9 @@ class _StringsVi extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 // Path: <root>
@@ -107251,9 +107251,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => '制卡（加号）';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      '捕获组件版本与 Hibiki 不一致，请更新或重新安装 galgame 捕获组件。';
-  @override
   String get game_upscaling_auto_hint =>
       '优先使用机器上正在运行的 Magpie；否则启用 Hibiki 内置版本，不需要下载。';
   @override
@@ -107913,6 +107910,9 @@ class _StringsZhCn extends _StringsEn {
   String get mihon_in_bookshelf => '已加入漫画书架';
   @override
   String get media_source_local_roots => '本地扫描根';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      '捕获组件与本体版本不一致。捕获组件已内置在 Hibiki 里、随本体一起更新，请更新 Hibiki 到最新版；若已是最新版，请把这条提示反馈给我们。';
 }
 
 // Path: <root>
@@ -113952,9 +113952,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get shortcut_action_popup_mine_entry => 'Create card (mine)';
   @override
-  String get game_hook_reason_protocol_mismatch =>
-      'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
-  @override
   String get game_upscaling_auto_hint =>
       'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
   @override
@@ -114655,6 +114652,9 @@ class _StringsZhHk extends _StringsEn {
   String get mihon_in_bookshelf => 'In manga shelf';
   @override
   String get media_source_local_roots => 'Local scan roots';
+  @override
+  String get game_hook_reason_protocol_mismatch =>
+      'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
 }
 
 /// Flat map(s) containing all translations.
@@ -120236,8 +120236,6 @@ extension on _StringsEn {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -120857,6 +120855,8 @@ extension on _StringsEn {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -126436,8 +126436,6 @@ extension on _StringsAr {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -127057,6 +127055,8 @@ extension on _StringsAr {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -132658,8 +132658,6 @@ extension on _StringsDe {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -133279,6 +133277,8 @@ extension on _StringsDe {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -138879,8 +138879,6 @@ extension on _StringsEs {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -139500,6 +139498,8 @@ extension on _StringsEs {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -145106,8 +145106,6 @@ extension on _StringsFr {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -145727,6 +145725,8 @@ extension on _StringsFr {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -151315,8 +151315,6 @@ extension on _StringsId {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -151936,6 +151934,8 @@ extension on _StringsId {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -157538,8 +157538,6 @@ extension on _StringsIt {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -158159,6 +158157,8 @@ extension on _StringsIt {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -163723,8 +163723,6 @@ extension on _StringsJa {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -164344,6 +164342,8 @@ extension on _StringsJa {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -169912,8 +169912,6 @@ extension on _StringsKo {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -170533,6 +170531,8 @@ extension on _StringsKo {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -176129,8 +176129,6 @@ extension on _StringsNl {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -176750,6 +176748,8 @@ extension on _StringsNl {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -182343,8 +182343,6 @@ extension on _StringsPtBr {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -182964,6 +182962,8 @@ extension on _StringsPtBr {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -188562,8 +188562,6 @@ extension on _StringsRu {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -189183,6 +189181,8 @@ extension on _StringsRu {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -194764,8 +194764,6 @@ extension on _StringsTh {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -195385,6 +195383,8 @@ extension on _StringsTh {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -200975,8 +200975,6 @@ extension on _StringsTr {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -201596,6 +201594,8 @@ extension on _StringsTr {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -207182,8 +207182,6 @@ extension on _StringsVi {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -207803,6 +207801,8 @@ extension on _StringsVi {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }
@@ -213342,8 +213342,6 @@ extension on _StringsZhCn {
         return '上次错误';
       case 'shortcut_action_popup_mine_entry':
         return '制卡（加号）';
-      case 'game_hook_reason_protocol_mismatch':
-        return '捕获组件版本与 Hibiki 不一致，请更新或重新安装 galgame 捕获组件。';
       case 'game_upscaling_auto_hint':
         return '优先使用机器上正在运行的 Magpie；否则启用 Hibiki 内置版本，不需要下载。';
       case 'game_upscaling_installed_only_hint':
@@ -213957,6 +213955,8 @@ extension on _StringsZhCn {
         return '已加入漫画书架';
       case 'media_source_local_roots':
         return '本地扫描根';
+      case 'game_hook_reason_protocol_mismatch':
+        return '捕获组件与本体版本不一致。捕获组件已内置在 Hibiki 里、随本体一起更新，请更新 Hibiki 到最新版；若已是最新版，请把这条提示反馈给我们。';
       default:
         return null;
     }
@@ -219516,8 +219516,6 @@ extension on _StringsZhHk {
         return 'Last error';
       case 'shortcut_action_popup_mine_entry':
         return 'Create card (mine)';
-      case 'game_hook_reason_protocol_mismatch':
-        return 'The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.';
       case 'game_upscaling_auto_hint':
         return 'Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.';
       case 'game_upscaling_installed_only_hint':
@@ -220137,6 +220135,8 @@ extension on _StringsZhHk {
         return 'In manga shelf';
       case 'media_source_local_roots':
         return 'Local scan roots';
+      case 'game_hook_reason_protocol_mismatch':
+        return 'The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.';
       default:
         return null;
     }

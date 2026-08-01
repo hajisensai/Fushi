@@ -2,46 +2,44 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-void main() {
-  test('host recognizes generic resource-audio readiness', () {
-    final String source = File(
-      'windows/runner/voice_hook_ipc.h',
-    ).readAsStringSync();
+/// 契约头的唯一真相源。host 读侧曾有一份手抄副本（`windows/runner/voice_hook_ipc.h`），
+/// 本文件当时就是对着副本断言的——而副本的 `HasReadyGameResourceAudio` 漏掉了 Tyrano /
+/// BGI / Artemis / CatSystem2 / Malie 五个引擎的 ready 位，本测试却绿着：断言只手点了
+/// ffmpeg 与 VisualArts 两条，漏的那五条不在名单里。副本已删（host 直接编真相源），
+/// 断言也一并搬到真相源，并把丢过的五条补进名单。
+const String kIpcHeaderPath = '../native/galgame_hook/include/voice_hook_ipc.h';
 
-    expect(
-      source,
-      contains(
-        'constexpr uint32_t kDiagFfmpegResourceHooksReady = 0x00010000u;',
-      ),
-    );
-    expect(
-      source,
-      contains(
-        '(hook_diagnostics & kDiagFfmpegResourceHooksReady) != 0',
-      ),
-    );
-    expect(
-      source,
-      contains(
-        'constexpr uint32_t kDiagVisualArtsOvkHooksReady = 0x00040000u;',
-      ),
-    );
-    expect(
-      source,
-      contains(
-        '(hook_diagnostics & kDiagVisualArtsOvkHooksReady) != 0',
-      ),
-    );
+void main() {
+  test('资源音频就绪判据覆盖每个有资源 hook 的引擎（含副本漏掉的五个）', () {
+    final String source = File(kIpcHeaderPath).readAsStringSync();
+    final int at = source.indexOf('bool HasReadyGameResourceAudio(');
+    expect(at, greaterThan(0), reason: '扫不到就绪判据函数 —— 判红，别让空集假绿');
+    final int end = source.indexOf('\n}', at);
+    expect(end, greaterThan(at), reason: '扫不到函数体结尾 —— 判红');
+    final String body = source.substring(at, end);
+
+    // 少一条 = 该引擎资源 hook 装好了，host 仍判「没有逐句语音」→ 退回整机混音。
+    for (final String bit in <String>[
+      'kDiagKirikiriVoiceStreamHookReady',
+      'kDiagSiglusOvkHooksReady',
+      'kDiagFfmpegResourceHooksReady',
+      'kDiagVisualArtsOvkHooksReady',
+      'kDiagTyranoAsarHooksReady',
+      'kDiagBgiArcHooksReady',
+      'kDiagArtemisPfsHooksReady',
+      'kDiagCatSystem2PcmHooksReady',
+      'kDiagMalieLibpHooksReady',
+      'kDiagUnityResourceExtractorReady',
+    ]) {
+      expect(body, contains(bit), reason: '$bit 不在资源音频就绪判据里');
+      expect(source, contains('constexpr uint32_t $bit ='),
+          reason: '$bit 没在契约头里定义');
+    }
     expect(source, contains('constexpr uint32_t kSharedVersion = 12;'));
   });
 
   test('host and native share the v12 thread preview seqlock contract', () {
-    final String hostHeader = File(
-      'windows/runner/voice_hook_ipc.h',
-    ).readAsStringSync();
-    final String nativeHeader = File(
-      '../native/galgame_hook/include/voice_hook_ipc.h',
-    ).readAsStringSync();
+    final String nativeHeader = File(kIpcHeaderPath).readAsStringSync();
     final String sharedHeader = File(
       '../native/galgame_hook/include/thread_preview_ipc.h',
     ).readAsStringSync();
@@ -49,13 +47,8 @@ void main() {
       'windows/runner/voice_hook_reader.cpp',
     ).readAsStringSync();
 
-    // 布局只定义一次，host 直接包含 native 共用头，避免镜像漂移和重复代码。
-    expect(
-      hostHeader,
-      contains(
-        '#include "../../../native/galgame_hook/include/thread_preview_ipc.h"',
-      ),
-    );
+    // 布局只定义一次：契约头自己包含预览区共用头，host 读侧直接编这份契约头
+    // （host 不得再有副本，守卫见 test/mining/gal_ipc_contract_single_source_test.dart）。
     expect(nativeHeader, contains('#include "thread_preview_ipc.h"'));
     expect(
       sharedHeader,
@@ -82,10 +75,10 @@ void main() {
       ),
     );
     expect(sharedHeader, contains('struct ThreadPreviewSlot {'));
-    expect(hostHeader, contains('uint32_t thread_preview_offset;'));
-    expect(hostHeader, contains('uint32_t thread_preview_slot_count;'));
+    expect(nativeHeader, contains('uint32_t thread_preview_offset;'));
+    expect(nativeHeader, contains('uint32_t thread_preview_slot_count;'));
     expect(
-      hostHeader,
+      nativeHeader,
       contains('volatile uint64_t thread_preview_write_count;'),
     );
     // 预览槽必须带不受门控影响的行计数，否则跨会话记忆恢复没有消歧依据。
