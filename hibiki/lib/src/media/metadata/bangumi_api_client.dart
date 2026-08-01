@@ -190,6 +190,36 @@ class BangumiApiClient {
     );
   }
 
+  /// `GET /subjects/{id}/subjects`：拉条目的关联条目列表（前传/续集/番外/剧场版
+  /// 等，`relation` 字段为源侧中文关系词）。TODO-2484 合集「相关作品」用。
+  Future<BangumiRawResponse> fetchSubjectRelations(String subjectId) {
+    final Uri uri = Uri.parse('$baseUrl/subjects/$subjectId/subjects');
+    return _run(
+      () => _client.get(uri, headers: _headers()).timeout(timeout),
+    );
+  }
+
+  /// `GET /episodes?subject_id={id}&type=0`：拉条目的**正篇**分集列表（分页）。
+  /// TODO-2491 集级刮削用。`type=0` = 本篇（滤掉 SP/OP/ED），与追番模块的
+  /// `getMainEpisodes` 同口径；分页由调用方按响应 `total`/`offset` 驱动。
+  Future<BangumiRawResponse> fetchSubjectEpisodes(
+    String subjectId, {
+    int limit = 200,
+    int offset = 0,
+  }) {
+    final Uri uri = Uri.parse('$baseUrl/episodes').replace(
+      queryParameters: <String, String>{
+        'subject_id': subjectId,
+        'type': '0',
+        'limit': '${limit.clamp(1, 200)}',
+        'offset': '$offset',
+      },
+    );
+    return _run(
+      () => _client.get(uri, headers: _headers()).timeout(timeout),
+    );
+  }
+
   Future<BangumiRawResponse> _run(
     Future<http.Response> Function() send,
   ) async {

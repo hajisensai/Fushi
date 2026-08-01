@@ -399,6 +399,7 @@ _MergedTagState _mergeTagClocks(
   GalgameSources,
   GalgameSessions,
   GalgameTagMappings,
+  CollectionRelations,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
@@ -417,7 +418,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 64;
+  int get schemaVersion => 65;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1302,6 +1303,26 @@ class HibikiDatabase extends _$HibikiDatabase {
             // _tableExists 短路 no-op。
             if (!await _tableExists('collection_scrape_meta')) {
               await m.createTable(collectionScrapeMeta);
+            }
+          }
+          if (from < 65) {
+            // v65（TODO-2484/2491）：
+            // ① 新增 collection_relations —— 合集「相关作品」边表（Bangumi
+            //    subject relations / TMDB tv seasons 与 movie
+            //    belongs_to_collection 的落地宿主）。纯新增表：旧库升级后本表
+            //    为空 = 全部合集无相关作品数据，UI 不渲染该区块，逐像素不变；
+            //    重刮一次即回填（Never break userspace）。
+            // ② video_scrape_meta 加 episode_number 列 —— 集级刮削对齐后的
+            //    源侧集号。纯 ADD COLUMN，列 nullable 且无 DEFAULT → 既有全部
+            //    行回填 NULL = 旧的作品级资料，消费方按 NULL 走旧行为。
+            // 幂等：fresh DB 已由 onCreate 的 createAll 建好，重复升级时
+            // _tableExists / _columnExists 短路 no-op。
+            if (!await _tableExists('collection_relations')) {
+              await m.createTable(collectionRelations);
+            }
+            if (await _tableExists('video_scrape_meta') &&
+                !await _columnExists('video_scrape_meta', 'episode_number')) {
+              await m.addColumn(videoScrapeMeta, videoScrapeMeta.episodeNumber);
             }
           }
         },
@@ -2576,7 +2597,8 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   /// 监听单个合集的刮削资料。详情页据此在刮削落库后自动重建 hero，无需手动刷新
   /// （与合集封面同一次写入事务，用户点「使用」后资料与背景图一起出现）。
-  Stream<CollectionScrapeMetaRow?> watchCollectionScrapeMeta(int collectionId) =>
+  Stream<CollectionScrapeMetaRow?> watchCollectionScrapeMeta(
+          int collectionId) =>
       (select(collectionScrapeMeta)
             ..where(($CollectionScrapeMetaTable t) =>
                 t.collectionId.equals(collectionId)))
@@ -2588,6 +2610,87 @@ class HibikiDatabase extends _$HibikiDatabase {
             ..where(($CollectionScrapeMetaTable t) =>
                 t.collectionId.equals(collectionId)))
           .go();
+
+  // ── collection_relations（合集相关作品，schema v65 / TODO-2484）──────
+
+  /// 整体替换某合集的相关作品边（重刮即替换）。
+  ///
+  /// 事务内 delete + insert 而非逐条 upsert：关系列表来自源的一次完整响应，
+  /// 逐条 upsert 会留下上次刮削已不存在的残边（源侧撤销的关联永远删不掉）。
+  Future<void> replaceCollectionRelations(
+    int collectionId,
+    List<CollectionRelationsCompanion> relations,
+  ) =>
+      transaction(() async {
+        await (delete(collectionRelations)
+              ..where(($CollectionRelationsTable t) =>
+                  t.collectionId.equals(collectionId)))
+            .go();
+        for (final CollectionRelationsCompanion c in relations) {
+          await into(collectionRelations).insert(c);
+        }
+      });
+
+  /// 按展示顺序（sortIndex → id）列出某合集的相关作品。
+  Future<List<CollectionRelationRow>> getCollectionRelations(
+    int collectionId,
+  ) =>
+      (select(collectionRelations)
+            ..where(($CollectionRelationsTable t) =>
+                t.collectionId.equals(collectionId))
+            ..orderBy([
+              ($CollectionRelationsTable t) =>
+                  OrderingTerm(expression: t.sortIndex),
+              ($CollectionRelationsTable t) => OrderingTerm(expression: t.id),
+            ]))
+          .get();
+
+  /// 监听某合集的相关作品（详情页据此在刮削落库后自动出现该区块）。
+  Stream<List<CollectionRelationRow>> watchCollectionRelations(
+    int collectionId,
+  ) =>
+      (select(collectionRelations)
+            ..where(($CollectionRelationsTable t) =>
+                t.collectionId.equals(collectionId))
+            ..orderBy([
+              ($CollectionRelationsTable t) =>
+                  OrderingTerm(expression: t.sortIndex),
+              ($CollectionRelationsTable t) => OrderingTerm(expression: t.id),
+            ]))
+          .watch();
+
+  /// 删除某合集的全部相关作品边（「重新刮削」前先清，或纠错后作废）。
+  Future<void> deleteCollectionRelations(int collectionId) =>
+      (delete(collectionRelations)
+            ..where(($CollectionRelationsTable t) =>
+                t.collectionId.equals(collectionId)))
+          .go();
+
+  /// 升级绑定：把一条纯刮削目标边绑定为本地合集（[targetCollectionId] 传 null
+  /// 即解绑退回纯刮削态）。
+  Future<void> bindCollectionRelationTarget(
+    int relationId,
+    int? targetCollectionId,
+  ) =>
+      (update(collectionRelations)
+            ..where(($CollectionRelationsTable t) => t.id.equals(relationId)))
+          .write(CollectionRelationsCompanion(
+        targetCollectionId: Value<int?>(targetCollectionId),
+      ));
+
+  /// 反查：已把 (source, subjectId) 刮成资料的本地合集 id 列表（抓取层用它把
+  /// 「纯刮削目标」自动升级绑定为本地合集）。
+  Future<List<int>> collectionIdsByScrapeSubject(
+    String source,
+    String subjectId,
+  ) async {
+    final List<CollectionScrapeMetaRow> rows =
+        await (select(collectionScrapeMeta)
+              ..where(($CollectionScrapeMetaTable t) =>
+                  t.source.equals(source) & t.subjectId.equals(subjectId)))
+            .get();
+    return <int>[for (final CollectionScrapeMetaRow r in rows) r.collectionId];
+  }
 
   /// 监听视频库 uid 集合。插入/删除行时发出更新后的 uid 列表；库页据此在任意
   /// 导入路径（页内 / 拖拽 / 外部「用 Hibiki 打开」/ 远端下载）落库后自动重查，

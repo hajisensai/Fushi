@@ -1142,8 +1142,8 @@ class RevealedImages extends Table {
 @DataClassName('CollectionScrapeMetaRow')
 class CollectionScrapeMeta extends Table {
   /// 合集身份（= MediaCollections.id）。删合集 cascade 清本表。
-  IntColumn get collectionId =>
-      integer().references(MediaCollections, #id, onDelete: KeyAction.cascade)();
+  IntColumn get collectionId => integer()
+      .references(MediaCollections, #id, onDelete: KeyAction.cascade)();
 
   /// 来源（`ScrapeSource.name`：bangumi / tmdb / offlineDb / manualUrl）。
   TextColumn get source => text()();
@@ -1256,11 +1256,74 @@ class VideoScrapeMeta extends Table {
   /// 条目详情页 URL（`https://bgm.tv/subject/<id>`），供「查看条目」跳转。
   TextColumn get detailUrl => text().nullable()();
 
+  /// 集号（v65 / TODO-2491）：集级刮削按文件名解析的集号与源的分集列表对齐后写入
+  /// （TMDB `episode_number` / Bangumi `sort`）。NULL = 本行是旧的**作品级**资料
+  /// （v54~v64 的自动刮削把整部作品的简介写进每个文件），或集级刮削未能从文件名
+  /// 解出集号。存对齐后的**源侧集号**而非文件名原文，便于重刮时按号更新。
+  IntColumn get episodeNumber => integer().nullable()();
+
   /// 本行写入时间（重刮判据 / 展示「资料更新于」）。
   DateTimeColumn get scrapedAt => dateTime()();
 
   @override
   Set<Column> get primaryKey => {bookUid};
+}
+
+// ── collection_relations ────────────────────────────────────────────
+// 合集相关作品（v65 / TODO-2484）：一行 = 「某合集 → 一部相关作品」的有向边，
+// 来自刮削源的关联数据（Bangumi subject relations / TMDB tv seasons 与
+// movie belongs_to_collection）。目标两态：
+//   - 纯刮削：只有 (source, subjectId, title, coverUrl/coverPath)，本地库里还没有
+//     对应合集，UI 只能展示 + 跳源详情页；
+//   - 已绑定：targetCollectionId 非空，点击可直接跳本地合集。
+// 两态不是两张表：绑定只是在纯刮削行上补一个本地 id（「升级绑定」），身份仍由
+// (collectionId, source, subjectId) 决定。
+//
+// 与 [CollectionScrapeMeta] 同族：可重建的刮削缓存（删了重刮即回填），删除合集
+// FK cascade 连带清边；目标合集被删则 setNull 退回纯刮削态（刮削事实还在，只是
+// 本地绑定失效——这正是「目标两态」的语义，不需要墓碑）。
+@DataClassName('CollectionRelationRow')
+class CollectionRelations extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// 边的起点：本地合集。删合集 cascade 清边。
+  IntColumn get collectionId => integer()
+      .references(MediaCollections, #id, onDelete: KeyAction.cascade)();
+
+  /// 关系类型，wire 值固定小写下划线：`prequel`（前传）/ `sequel`（续集）/
+  /// `side_story`（番外/外传）/ `movie`（剧场版）/ `spin_off`（衍生）/ `other`。
+  /// 源侧的中文/自由文本关系词在抓取层映射成这六个值再落库，UI 不解析源词。
+  TextColumn get relationType => text()();
+
+  /// 同一合集内的展示顺序（抓取层按源返回顺序编号，0-based 致密）。
+  IntColumn get sortIndex => integer().withDefault(const Constant(0))();
+
+  /// 已绑定态：目标在本地库中的合集 id。纯刮削态为 NULL；目标合集被删自动
+  /// setNull 退回纯刮削态。
+  IntColumn get targetCollectionId => integer()
+      .nullable()
+      .references(MediaCollections, #id, onDelete: KeyAction.setNull)();
+
+  /// 目标条目来源（`ScrapeSource.name`：bangumi / tmdb）。
+  TextColumn get source => text()();
+
+  /// 目标条目在源内的 id（Bangumi subject id / TMDB id 或季 id），字符串化。
+  TextColumn get subjectId => text()();
+
+  /// 目标条目标题（源侧中文优先）。
+  TextColumn get title => text()();
+
+  /// 目标封面远程 URL（未下载时 UI 可按需拉取）。
+  TextColumn get coverUrl => text().nullable()();
+
+  /// 目标封面本地路径（抓取层下载落地后回填）。
+  TextColumn get coverPath => text().nullable()();
+
+  /// 同一合集下同一源内条目只此一边（重复刮削按此去重）。
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {collectionId, source, subjectId},
+      ];
 }
 
 // ── galgames ────────────────────────────────────────────────────────

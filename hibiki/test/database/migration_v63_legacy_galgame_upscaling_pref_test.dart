@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 64);
-    expect(db.schemaVersion, 64);
+    expect(version.read<int>('user_version'), 65);
+    expect(db.schemaVersion, 65);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -196,8 +196,9 @@ void main() {
     }
     expect(
       schemaAfter.keys.toSet().difference(schemaBefore.keys.toSet()),
-      <String>{'collection_scrape_meta'},
-      reason: '除 v64 的 collection_scrape_meta 外，升级不得新增任何表',
+      <String>{'collection_scrape_meta', 'collection_relations'},
+      reason: '除 v64 的 collection_scrape_meta 与 v65 的 collection_relations '
+          '外，升级不得新增任何表',
     );
   });
 
@@ -215,7 +216,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 64);
+    expect(version.read<int>('user_version'), 65);
   });
 
   test(
@@ -247,7 +248,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 64);
+      expect(probe.select('PRAGMA user_version').first.values.first, 65);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '

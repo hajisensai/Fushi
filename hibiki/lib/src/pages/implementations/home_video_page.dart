@@ -28,6 +28,7 @@ import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
 import 'package:hibiki/src/media/video/scraper/offline_index.dart';
 import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
+import 'package:hibiki/src/media/video/scraper/collection_relations_scrape.dart';
 import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
 import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
@@ -3507,15 +3508,56 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         applyScrape: (
           CollectionScrapeResult result, {
           required String? confirmedTitle,
-        }) =>
-            applyCollectionScrape(
-          db,
-          collection.id,
-          result,
-          confirmedTitle: confirmedTitle,
-        ),
+        }) async {
+          await applyCollectionScrape(
+            db,
+            collection.id,
+            result,
+            confirmedTitle: confirmedTitle,
+          );
+          // TODO-2484：同一次刮削顺带拉「相关作品」。fire-and-forget——弹窗
+          // 主流程（封面+资料）已落库成功，关系区块是增量数据，拉取失败只记
+          // 日志、下次重刮补齐，不把弹窗关闭卡在第二轮网络请求上。
+          unawaited(_scrapeCollectionRelations(db, collection.id));
+        },
       ),
     );
+  }
+
+  /// 合集刮削后的「相关作品」拉取（TODO-2484）。独立函数：applyScrape 闭包只管
+  /// 触发；失败（含逐源错误）统一进 ErrorLogService，不上 UI。
+  Future<void> _scrapeCollectionRelations(
+    HibikiDatabase db,
+    int collectionId,
+  ) async {
+    final String tmdbKey = ref
+        .read(appProvider)
+        .prefsRepo
+        .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
+    final BangumiClient bangumi = BangumiClient();
+    final TmdbClient? tmdb =
+        tmdbKey.isEmpty ? null : TmdbClient(apiKey: tmdbKey);
+    try {
+      final CollectionRelationsScrapeReport report =
+          await scrapeCollectionRelations(
+        db: db,
+        collectionId: collectionId,
+        bangumi: bangumi,
+        tmdb: tmdb,
+      );
+      for (final MapEntry<String, String> entry
+          in report.sourceErrors.entries) {
+        ErrorLogService.instance.log(
+          'CollectionRelations.${entry.key}',
+          entry.value,
+        );
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('CollectionRelations', e, stack);
+    } finally {
+      bangumi.close();
+      tmdb?.close();
+    }
   }
 
   /// 合集右键「为合集获取字幕」：与合集详情页 AppBar 同一 [JimakuBatchDialog]
