@@ -1,4 +1,4 @@
-## BUG-1248 · 互联 service-config 在 HTTP 上泄露 peer token 并接受伪 host 配置
+## BUG-1356 · 互联 service-config 在 HTTP 上泄露 peer token 并接受伪 host 配置
 - **报告**：2026-07-29（PR #582 独立安全审查）
 - **真实性**：✅ 真 bug。`hibiki/lib/src/sync/interconnect_sync_backend.dart:685`
   在解析 peer 地址后直接进入 `hibiki/lib/src/sync/webdav_ops.dart:74` 构造带

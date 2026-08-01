@@ -1,4 +1,4 @@
-## BUG-1249 · 同步导入 Mokuro 配置后已打开 Sources 行仍显示旧状态
+## BUG-1357 · 同步导入 Mokuro 配置后已打开 Sources 行仍显示旧状态
 - **报告**：2026-07-29（PR #582 独立审查）
 - **真实性**：✅ 真 bug。同步导入沿
   `hibiki/lib/src/sync/interconnect_service_config.dart:82` 写入允许项，并由
