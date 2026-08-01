@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -50,6 +51,49 @@ void main() {
       final Size textSize = tester.getSize(find.text(longTitle));
       expect(textSize.height, greaterThan(14 * 1.5),
           reason: '长标题必须完整换行到第二行，而非单行省略');
+    });
+
+    // 真正的功能守卫：只断言 Tooltip 节点存在 + message 正确是假绿——那只证明
+    // 挂上了，没证明「桌面悬停能看到全名」。这里驱动真实鼠标指针 hover 到标题上，
+    // 断言 overlay 里确实弹出了带完整标题的气泡（此时 longTitle 在树上出现两处：
+    // 卡上省略号截断的那份 + overlay 气泡里的那份）。
+    testWidgets('鼠标悬停在溢出标题上真弹出全名气泡（manual 不挡 hover）',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        host(
+          width: 140,
+          child: const ShelfTitleOverflowTooltip(
+            title: longTitle,
+            style: TextStyle(fontSize: 14),
+            maxLines: 2,
+            child: Text(
+              longTitle,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 14),
+            ),
+          ),
+        ),
+      );
+      expect(find.text(longTitle), findsOneWidget, reason: '悬停前只有卡上截断的那份标题');
+
+      final TestGesture gesture =
+          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await tester.pump();
+      await gesture.moveTo(tester.getCenter(find.text(longTitle)));
+      // Tooltip 的 waitDuration/淡入动画走完。
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.text(longTitle), findsNWidgets(2),
+          reason: '悬停后 overlay 必须多出一份完整标题的气泡，否则桌面「看全名」是死的');
+      final Tooltip tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+      expect(tooltip.message, longTitle);
+
+      await gesture.moveTo(Offset.zero);
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text(longTitle), findsOneWidget, reason: '移开鼠标后气泡应收起');
     });
 
     testWidgets('不溢出的短标题不挂 Tooltip', (WidgetTester tester) async {
