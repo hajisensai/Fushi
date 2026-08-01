@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/misc/platform_utils.dart';
 
 /// 横向剧集轨道的一条展示数据。
 ///
@@ -96,21 +97,27 @@ class _VideoEpisodeRailState extends State<VideoEpisodeRail> {
     final double cardHeight = widget.cardWidth * 9 / 16;
     return SizedBox(
       height: cardHeight,
-      child: ListView.separated(
-        controller: _controller,
-        scrollDirection: Axis.horizontal,
-        padding: widget.padding,
-        itemCount: widget.episodes.length,
-        separatorBuilder: (_, __) => const SizedBox(width: _gap),
-        itemBuilder: (BuildContext context, int index) => _EpisodeRailCard(
-          key: ValueKey<String>('video-episode-card-$index'),
-          entry: widget.episodes[index],
-          index: index,
-          selected: index == widget.currentIndex,
-          width: widget.cardWidth,
-          fontSize: widget.fontSize,
-          colorScheme: widget.colorScheme,
-          onTap: () => widget.onTapEpisode(index),
+      // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排轨道用鼠标
+      // 左右拖会毫无反应。与合集行 / 标签栏一样统一走共享件放开 mouse/trackpad/
+      // stylus 拖动；触屏行为不变。轨道内只有卡片 InkWell（点击），没有依赖横拖
+      // 的手势，不存在竞技场之争。
+      child: HorizontalDragScrollable(
+        child: ListView.separated(
+          controller: _controller,
+          scrollDirection: Axis.horizontal,
+          padding: widget.padding,
+          itemCount: widget.episodes.length,
+          separatorBuilder: (_, __) => const SizedBox(width: _gap),
+          itemBuilder: (BuildContext context, int index) => _EpisodeRailCard(
+            key: ValueKey<String>('video-episode-card-$index'),
+            entry: widget.episodes[index],
+            index: index,
+            selected: index == widget.currentIndex,
+            width: widget.cardWidth,
+            fontSize: widget.fontSize,
+            colorScheme: widget.colorScheme,
+            onTap: () => widget.onTapEpisode(index),
+          ),
         ),
       ),
     );
