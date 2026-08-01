@@ -22,7 +22,7 @@
 
 ### 修复
 
-- **[x] ① 已修复** — commit `PENDING_COMMIT`
+- **[x] ① 已修复** — commit `f87d7c40a`
   - 新增 `hibiki/lib/src/models/app_ui_font_chain.dart`：纯函数 `appUiFontChain()`，按
     `[用户自定义字体（全部，按序）] + [显示语言的系统字体] + [其余 CJK 语言字体]` 构造链，
     平台可注入（Windows / Apple / Noto 三套家族名，繁简分开）。
