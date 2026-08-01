@@ -3049,5 +3049,6 @@
   "collection_episode_scrape_failed": "Episode scrape failed: $error",
   "collection_episode_rename_apply": "Rename $n episodes",
   "collection_split_done": "Split into $n collections",
-  "collection_episode_watched_at": "Watched to $position"
+  "collection_episode_watched_at": "Watched to $position",
+  "collection_episode_bangumi_open_failed": "Could not resolve the episode on Bangumi: $error"
 }

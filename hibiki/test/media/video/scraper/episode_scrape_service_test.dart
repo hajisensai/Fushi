@@ -109,6 +109,22 @@ void main() {
           <int>[1, 2]);
       expect(page.episodes.first.title, '第一话');
     });
+
+    test('抽取源侧章节 id（bgm.tv/ep/<id> 外链用），缺失容错为 null', () {
+      final ({
+        List<BangumiEpisodeInfo> episodes,
+        int rawCount,
+        int total
+      }) page = parseBangumiEpisodesResponse(jsonEncode(<String, Object?>{
+        'total': 2,
+        'data': <Object?>[
+          <String, Object?>{'id': 1234, 'sort': 1, 'name': 'Ep1'},
+          <String, Object?>{'sort': 2, 'name': 'Ep2'},
+        ],
+      }));
+      expect(page.episodes.first.id, 1234);
+      expect(page.episodes.last.id, isNull);
+    });
   });
 
   group('bangumi episode alignment', () {

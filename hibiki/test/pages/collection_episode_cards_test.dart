@@ -134,6 +134,54 @@ void main() {
     expect(c2.dy, greaterThan(c1.dy));
   });
 
+  testWidgets('「在 Bangumi 打开本集」菜单项：仅 Bangumi 绑定的合集出现',
+      (WidgetTester tester) async {
+    useSurface(tester, const Size(1280, 1600));
+    await db.upsertCollectionScrapeMeta(CollectionScrapeMetaCompanion.insert(
+      collectionId: Value<int>(collectionId),
+      source: 'bangumi',
+      subjectId: '100',
+      title: 'Show',
+      scrapedAt: DateTime(2026),
+    ));
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(cardOf('video/e1')),
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryButton,
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.collection_episode_open_bangumi), findsOneWidget,
+        reason: 'Bangumi 绑定合集的集卡菜单必须有外链项（TODO-2488 降级实现）');
+  });
+
+  testWidgets('未刮削合集：集卡菜单不出现 Bangumi 外链项', (WidgetTester tester) async {
+    useSurface(tester, const Size(1280, 1600));
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(cardOf('video/e1')),
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryButton,
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.collection_episode_open_bangumi), findsNothing);
+    expect(find.text(t.collection_episode_download), findsOneWidget,
+        reason: '下载本集不依赖刮削绑定，恒在');
+    // 关掉菜单，别把打开的菜单留给下一个用例。
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('集卡右键菜单「移出合集」真移出（管理能力收进菜单不丢失）', (WidgetTester tester) async {
     useSurface(tester, const Size(1280, 1600));
     await tester.pumpWidget(buildApp());

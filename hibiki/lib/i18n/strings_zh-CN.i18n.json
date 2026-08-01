@@ -3049,5 +3049,6 @@
   "collection_episode_scrape_failed": "分集刮削失败：$error",
   "collection_episode_rename_apply": "重命名 $n 集",
   "collection_split_done": "已拆分为 $n 个合集",
-  "collection_episode_watched_at": "看到 $position"
+  "collection_episode_watched_at": "看到 $position",
+  "collection_episode_bangumi_open_failed": "解析 Bangumi 章节失败：$error"
 }

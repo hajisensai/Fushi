@@ -40,6 +40,7 @@ import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/utils/components/hibiki_reorderable_grid.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// 统一合集 Phase 4：合集详情页（Jellyfin 式）。playlist 合集 = 有序剧集列表：点某集从
 /// 该集开始播放（带剧集面板 / 上下集 / 连播，调用方经 playlistCollectionId 打开播放器）；
@@ -650,6 +651,46 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         initialSearchQuery: anilistId == null ? collection.name : null,
       ),
     );
+  }
+
+  /// 本合集是否绑定 Bangumi 刮削源（「在 Bangumi 打开本集」菜单项的显示门）。
+  bool get _boundToBangumi => _scrapeMeta?.source == ScrapeSource.bangumi;
+
+  /// 「在 Bangumi 打开本集」（TODO-2488 降级实现）：Bangumi API v0 **没有**公开的
+  /// 章节吐槽接口（全量 spec 零 comment 端点；吐槽只存在于未文档化的私有
+  /// next.bgm.tv p1 API），不自建社区功能——降级为外链：经公开无鉴权的
+  /// `/v0/episodes` 把集号解析成章节 id，浏览器打开 `bgm.tv/ep/<id>`；解析不到
+  /// （集号缺失/源无该集）明示提示并退到条目页；网络失败明示错误、同样退条目页。
+  Future<void> _openEpisodeOnBangumi(VideoBookRow episode) async {
+    final ScrapeMetadata? meta = _scrapeMeta;
+    if (meta == null) return;
+    final int? episodeNumber = _episodeNumberOf(episode);
+    final BangumiClient bangumi = BangumiClient();
+    int? episodeId;
+    try {
+      if (episodeNumber != null) {
+        for (final BangumiEpisodeInfo info
+            in await bangumi.fetchSubjectEpisodes(meta.subjectId)) {
+          if (info.episodeNumber == episodeNumber) {
+            episodeId = info.id;
+            break;
+          }
+        }
+        if (episodeId == null) {
+          HibikiToast.show(msg: t.collection_episode_bangumi_not_found);
+        }
+      }
+    } on ScrapeNetworkException catch (e) {
+      HibikiToast.show(
+        msg: t.collection_episode_bangumi_open_failed(error: e.toString()),
+      );
+    } finally {
+      bangumi.close();
+    }
+    final String url = episodeId != null
+        ? 'https://bgm.tv/ep/$episodeId'
+        : 'https://bgm.tv/subject/${meta.subjectId}';
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
   /// 「补齐缺集」：按文件名集号找 1..max 的第一个缺口；无内部缺口但刮削话数
@@ -1501,6 +1542,18 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             ],
           ),
         ),
+        // 仅 Bangumi 绑定的合集出现（TMDB/未刮削没有对应的公开章节页可开）。
+        if (_boundToBangumi)
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.openBangumi,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.open_in_new, size: 20),
+                const SizedBox(width: 12),
+                Text(t.collection_episode_open_bangumi),
+              ],
+            ),
+          ),
         PopupMenuItem<_EpisodeMenuAction>(
           value: _EpisodeMenuAction.removeFromCollection,
           child: Row(
@@ -1517,6 +1570,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     switch (action) {
       case _EpisodeMenuAction.download:
         _openDownloadDialog(episodeNumber: _episodeNumberOf(episode));
+      case _EpisodeMenuAction.openBangumi:
+        await _openEpisodeOnBangumi(episode);
       case _EpisodeMenuAction.removeFromCollection:
         await _removeEpisode(episode);
       case null:
@@ -1659,4 +1714,4 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 }
 
 /// 集卡上下文菜单动作。
-enum _EpisodeMenuAction { download, removeFromCollection }
+enum _EpisodeMenuAction { download, openBangumi, removeFromCollection }
