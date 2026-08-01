@@ -49,8 +49,9 @@ import 'package:hibiki_core/hibiki_core.dart';
 ///   [aggregateActivityEvents] 聚合成「按日期分组」的时间线，顶部按类别筛选。
 ///
 /// 分栏（BUG-1073 后）：宽屏（`constraints.maxWidth >= 900`）= 主列（flex 3：学习活动
-/// → 继续 → 最近添加）+ 侧列（flex 2：Activity 时间轴），整体限宽
-/// [_kDashboardMaxWidth] 居中；窄屏单列堆叠。书与阅读位置走 Riverpod provider
+/// → 继续 → 最近添加）+ 侧列（flex 2：Activity 时间轴），随窗口铺满（旧 1600px
+/// 限宽居中已撤——用户实报「首页左右强制的间距」）；窄屏单列堆叠。书与阅读位置走
+/// Riverpod provider
 /// （响应式）；视频与活动事件在 [initState] 一次性异步载入到本地状态（视频列表天然是
 /// Future）。
 class HomeDashboardPage extends BaseModuleTabPage {
@@ -359,9 +360,6 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
     );
   }
 }
-
-/// 仪表盘内容最大宽度（逻辑像素）：超宽屏限宽居中，避免每个区块被拉成大片空白。
-const double _kDashboardMaxWidth = 1600;
 
 /// Bangumi 同步卡最多列出的已关联条目数（超出的去设置页看全量；首页卡片是状态
 /// 概览，不是映射管理器）。有失败的条目由
@@ -882,19 +880,7 @@ class _HomeDashboardPageState
         }
         return ListView(
           padding: EdgeInsets.all(tokens.spacing.card),
-          children: <Widget>[
-            // 超宽屏（4K/带鱼屏）限宽居中：再宽下去只是把每个区块拉稀，不增信息量。
-            // heightFactor: 1 让 Align 在 ListView 的无界高度里收敛到内容高度。
-            Align(
-              alignment: Alignment.topCenter,
-              heightFactor: 1,
-              child: ConstrainedBox(
-                constraints:
-                    const BoxConstraints(maxWidth: _kDashboardMaxWidth),
-                child: body,
-              ),
-            ),
-          ],
+          children: <Widget>[body],
         );
       },
     );

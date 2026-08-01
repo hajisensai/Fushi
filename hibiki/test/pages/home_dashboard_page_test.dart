@@ -972,7 +972,8 @@ void main() {
     );
   });
 
-  testWidgets('BUG-1073 超宽屏（1920）：内容限宽居中，不再左右拉满', (WidgetTester tester) async {
+  testWidgets('超宽屏（1920）：内容随窗口铺满，不再限宽居中（撤 BUG-1073 的 1600px 上限）',
+      (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1920, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -983,10 +984,11 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    // 可用宽 > 1600 时内容居中：左侧留白远大于页面 padding（20）。
+    // 用户实报「首页左右强制的间距」：旧 1600px 限宽居中在 1920 宽下左侧凭空
+    // 挤出 ~140px 空带。撤限宽后内容左缘只剩页面 padding + 卡片内边距。
     expect(
       tester.getTopLeft(find.text(t.reading_activity)).dx,
-      greaterThan(100),
+      lessThan(100),
     );
   });
 

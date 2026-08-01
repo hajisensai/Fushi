@@ -143,17 +143,37 @@ void main() {
 
     test('adds desktop breathing room without changing compact padding', () {
       expect(
-        desktopContentPadding(WindowSizeClass.compact),
+        desktopContentPadding(
+          WindowSizeClass.compact,
+          DesktopContentKind.dictionary,
+        ),
         EdgeInsets.zero,
       );
       expect(
-        desktopContentPadding(WindowSizeClass.medium),
+        desktopContentPadding(
+          WindowSizeClass.medium,
+          DesktopContentKind.dictionary,
+        ),
         const EdgeInsets.symmetric(horizontal: 16),
       );
       expect(
-        desktopContentPadding(WindowSizeClass.expanded),
+        desktopContentPadding(
+          WindowSizeClass.expanded,
+          DesktopContentKind.settings,
+        ),
         const EdgeInsets.symmetric(horizontal: 24),
       );
+    });
+
+    test('reader shelf (media wall) is full-bleed at every size class', () {
+      // 用户实报「首页左右强制的间距」：媒体墙类页面（书架/视频/游戏/漫画目录/
+      // 来源页）卡片自带内边距，宽屏不再叠 16/24px 强制侧向留白。
+      for (final WindowSizeClass sizeClass in WindowSizeClass.values) {
+        expect(
+          desktopContentPadding(sizeClass, DesktopContentKind.readerShelf),
+          EdgeInsets.zero,
+        );
+      }
     });
 
     test('keeps compact dialog fields usable', () {
@@ -213,6 +233,32 @@ void main() {
       // TODO-1352：dictionary 宽屏改为 full-bleed（null 上限），子内容宽度
       // = 屏幕 1600 - 2×24 侧向留白 = 1552（不再锁 1040→992）。
       expect(tester.getSize(find.byKey(childKey)).width, 1552);
+    });
+
+    testWidgets('reader shelf spans edge-to-edge on wide desktop', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1600, 200);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        const Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: double.infinity,
+            height: double.infinity,
+            child: DesktopContentLayout(
+              kind: DesktopContentKind.readerShelf,
+              child: SizedBox.expand(key: childKey),
+            ),
+          ),
+        ),
+      );
+
+      // 媒体墙类页面零侧向留白（用户实报「首页左右强制的间距」）：宽屏子内容
+      // 宽度 = 整屏 1600，不再扣 2×24。
+      expect(tester.getSize(find.byKey(childKey)).width, 1600);
     });
 
     testWidgets('keeps compact content full width without desktop padding', (
