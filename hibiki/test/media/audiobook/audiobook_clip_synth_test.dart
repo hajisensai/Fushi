@@ -7,25 +7,27 @@ import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
 import 'package:image/image.dart' as img;
 
 void main() {
-  group('buildFfmpegImageAudioToVideoArgs (TODO-945 M4, mobile mpeg4/.mp4)',
-      () {
-    // BUG-1322：移动端默认（h264=false）走 libavcodec 原生 mpeg4（MPEG-4 Part 2）。
-    // AAR .rodata 实证已编入（`MPEG4 encoder` AVClass + mpegvideo_enc/motion_est/
-    // ratecontrol），movenc（mp4）与 faststart 同在。旧 mjpeg（30 秒 ≈ 200MB 且大量
-    // 移动播放器无 MJPEG 解码器 → 黑屏）绝不再当输出编码器。libx264 仍不在 AAR 里，
-    // 谁在移动分支换 libx264 必须当场红。
-    test('mobile default uses mpeg4 video + aac audio, never libx264/mjpeg',
-        () {
+  group('buildFfmpegImageAudioToVideoArgs (TODO-945 M4, H.264/.mp4)', () {
+    // TODO-2357：**全平台统一 libx264**，参数表不再有平台开关。移动端 ffmpeg-kit 已重编
+    // 入 x264（--enable-gpl --enable-x264，AAR 实证含 `libx264` 精确串 + `x264 - core`
+    // 版本串）。此前的移动 mpeg4 回退（BUG-1322）规格上限低于 1080×1920，编得出但设备
+    // 可能解不了且 ffmpeg 仍 exit 0（静默产坏文件）；更早的 mjpeg（30 秒 ≈ 200MB + 大量
+    // 移动播放器无解码器 → 黑屏，BUG-809）同型。两者都绝不得再作输出编码器。
+    test('all platforms use libx264 + aac, never mpeg4/mjpeg', () {
       final List<String> args = buildFfmpegImageAudioToVideoArgs(
         imagePath: '/tmp/text.jpg',
         audioPath: '/tmp/clip.aac',
         outputPath: '/tmp/out.mp4',
       );
-      expect(args, containsAllInOrder(<String>['-c:v', 'mpeg4']));
+      expect(args, containsAllInOrder(<String>['-c:v', 'libx264']));
       expect(args, containsAllInOrder(<String>['-c:a', 'aac']));
-      expect(args, isNot(contains('libx264')));
+      expect(args, isNot(contains('mpeg4')));
       expect(args, isNot(contains('mjpeg')));
-      expect(args, isNot(contains('h264')));
+      // 硬件编码器同样不得出现：当前两端 ffmpeg 均未编入（iOS --disable-videotoolbox /
+      // Android --disable-mediacodec），写进去就是运行时 Unknown encoder。
+      expect(args, isNot(contains('h264_videotoolbox')));
+      expect(args, isNot(contains('h264_mediacodec')));
+      expect(args, isNot(contains('h264_v4l2m2m')));
     });
 
     test('loops the static image and is audio-bounded (-loop 1 + -shortest)',
@@ -62,45 +64,48 @@ void main() {
       expect(args.last, '/out.mov');
     });
 
-    // BUG-1322：mpeg4 钉近最佳 qscale（-q:v 2，文字边缘保真）+ yuv420p（全平台硬解
-    // 基线色度）+ faststart（moov 前置，接收端秒开）。
-    test('mobile default pins -q:v 2 + yuv420p + faststart', () {
+    // TODO-2357：H.264 钉 crf 20（高质量近视觉无损）+ preset veryfast + yuv420p
+    // （全平台硬解基线色度，也是 H.264 High profile 的基线要求）+ faststart。
+    // `-q:v` 是 mpeg4/mjpeg 的 qscale，H.264 用 crf——它回流即说明编码器被换回去了。
+    test('pins -preset veryfast + -crf 20 + yuv420p + faststart, no qscale', () {
       final List<String> args = buildFfmpegImageAudioToVideoArgs(
         imagePath: '/i.jpg',
         audioPath: '/a.aac',
         outputPath: '/o.mp4',
       );
+      expect(args, containsAllInOrder(<String>['-preset', 'veryfast']));
+      expect(args, containsAllInOrder(<String>['-crf', '20']));
       expect(args, containsAllInOrder(<String>['-pix_fmt', 'yuv420p']));
       expect(args, containsAllInOrder(<String>['-movflags', '+faststart']));
-      final int qIdx = args.indexOf('-q:v');
-      expect(qIdx, greaterThanOrEqualTo(0),
-          reason: 'mpeg4 must pin a low qscale to keep text edges sharp');
-      expect(args[qIdx + 1], '2');
+      expect(args, isNot(contains('-q:v')));
       // 旧 mjpeg 的 yuvj* 色域不得回流。
       expect(args, isNot(contains('yuvj444p')));
       expect(args, isNot(contains('yuvj420p')));
     });
 
-    // BUG-809：桌面 ffmpeg-min 已编入 libx264+mp4，h264=true 走 H.264（带帧间压缩，
-    // 30 秒片段从 mjpeg ~200MB 降到几 MB）+ .mp4 通用容器；mjpeg 的 qscale/yuvj* 不再出现。
-    test('h264=true switches to libx264 + crf + yuv420p + faststart (BUG-809)',
-        () {
-      final List<String> args = buildFfmpegImageAudioToVideoArgs(
+    // TODO-2357 承重守卫：单图与序列帧两条合成路径必须产出**逐字节相同**的编码器参数段。
+    // 此前两条路径各自透传 h264 开关，PR#607 的变异实测就抓到过「只改一条」的空洞
+    // （useH264 改 true 而序列帧路径仍绑 isDesktop，57 个测试无人报警）。参数表统一到
+    // 单一常量后，这条断言把「两条路径不得再分叉」钉死。
+    test('static and sequence paths emit identical codec args (TODO-2357)', () {
+      final List<String> still = buildFfmpegImageAudioToVideoArgs(
         imagePath: '/i.jpg',
-        audioPath: '/a.m4a',
+        audioPath: '/a.aac',
         outputPath: '/o.mp4',
-        h264: true,
       );
-      expect(args, containsAllInOrder(<String>['-c:v', 'libx264']));
-      expect(args, containsAllInOrder(<String>['-crf', '20']));
-      expect(args, containsAllInOrder(<String>['-pix_fmt', 'yuv420p']));
-      expect(args, containsAllInOrder(<String>['-movflags', '+faststart']));
-      expect(args, containsAllInOrder(<String>['-c:a', 'aac']));
-      // H.264 路径绝不掺 mjpeg 的 qscale / yuvj* 色域。
-      expect(args, isNot(contains('mjpeg')));
-      expect(args, isNot(contains('-q:v')));
-      expect(args, isNot(contains('yuvj444p')));
-      expect(args, isNot(contains('yuvj420p')));
+      final List<String> seq = buildFfmpegImageSeqAudioToVideoArgs(
+        framesDir: '/frames',
+        audioPath: '/a.aac',
+        outputPath: '/o.mp4',
+      );
+      List<String> codecSegment(List<String> args) {
+        final int start = args.indexOf('-c:v');
+        expect(start, greaterThanOrEqualTo(0));
+        return args.sublist(start, start + 10);
+      }
+
+      expect(codecSegment(still), codecSegment(seq));
+      expect(codecSegment(still), contains('libx264'));
     });
   });
 
@@ -194,18 +199,17 @@ void main() {
       expect(args, isNot(contains('-loop')));
     });
 
-    test('mobile seq uses mpeg4 + aac, never libx264/mjpeg/concat/overlay', () {
+    test('seq uses libx264 + aac, never mpeg4/mjpeg/concat/overlay', () {
       final List<String> args = buildFfmpegImageSeqAudioToVideoArgs(
         framesDir: '/f',
         audioPath: '/a.aac',
         outputPath: '/o.mp4',
       );
-      // BUG-1322：移动序列帧输出走原生 mpeg4；AAR 无 libx264，也无
+      // TODO-2357：序列帧路径与单图路径同走 libx264（全平台）；两端 ffmpeg 均无
       // concat/overlay/drawtext filter（逐句高亮靠逐帧 JPEG，非 ffmpeg filter）。
-      expect(args, containsAllInOrder(<String>['-c:v', 'mpeg4']));
+      expect(args, containsAllInOrder(<String>['-c:v', 'libx264']));
       expect(args, containsAllInOrder(<String>['-c:a', 'aac']));
-      expect(args, isNot(contains('libx264')));
-      expect(args, isNot(contains('h264')));
+      expect(args, isNot(contains('mpeg4')));
       expect(args, isNot(contains('mjpeg')));
       expect(args, isNot(contains('concat')));
       expect(args, isNot(contains('overlay')));
@@ -246,8 +250,8 @@ void main() {
       );
     });
 
-    // BUG-1322：序列帧移动路径同样钉 mpeg4 的 -q:v 2 + yuv420p + faststart。
-    test('mobile seq pins -q:v 2 + yuv420p + faststart', () {
+    // TODO-2357：序列帧路径同样钉 H.264 的 crf/preset，mpeg4 的 qscale 不得回流。
+    test('seq pins -crf 20 + yuv420p + faststart, no qscale', () {
       final List<String> def = buildFfmpegImageSeqAudioToVideoArgs(
         framesDir: '/f',
         audioPath: '/a.aac',
@@ -255,23 +259,21 @@ void main() {
       );
       expect(def, containsAllInOrder(<String>['-pix_fmt', 'yuv420p']));
       expect(def, containsAllInOrder(<String>['-movflags', '+faststart']));
-      final int qIdx = def.indexOf('-q:v');
-      expect(qIdx, greaterThanOrEqualTo(0));
-      expect(def[qIdx + 1], '2');
+      expect(def, containsAllInOrder(<String>['-crf', '20']));
+      expect(def, isNot(contains('-q:v')));
       expect(def, isNot(contains('yuvj444p')));
       expect(def, isNot(contains('yuvj420p')));
     });
 
-    // BUG-809：序列帧路径（逐句高亮跟随）h264=true 同样走 libx264 —— 这是「30 秒
-    // 200MB」的主战场：动态路径把母帧按帧计划复制成大量连续重复帧，mjpeg 每帧都是
-    // 独立整张 JPEG（无帧间压缩）故体积巨大；libx264 的 P 帧把重复帧压到近零字节。
-    test('seq h264=true uses libx264 (interframe compression) + faststart', () {
+    // BUG-809：序列帧路径（逐句高亮跟随）是「30 秒 200MB」的主战场：动态路径把母帧按
+    // 帧计划复制成大量连续重复帧，mjpeg 每帧都是独立整张 JPEG（无帧间压缩）故体积巨大；
+    // libx264 的 P 帧把重复帧压到近零字节。TODO-2357 起移动端亦然。
+    test('seq keeps interframe libx264 + faststart while reading frames', () {
       final List<String> args = buildFfmpegImageSeqAudioToVideoArgs(
         framesDir: '/f',
         audioPath: '/a.aac',
         outputPath: '/o.mp4',
         fps: 24,
-        h264: true,
       );
       expect(args, containsAllInOrder(<String>['-c:v', 'libx264']));
       expect(args, containsAllInOrder(<String>['-crf', '20']));
