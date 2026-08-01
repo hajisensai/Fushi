@@ -4,6 +4,10 @@ import 'dart:ui' as ui;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_schema_system.dart';
+import 'package:hibiki/src/settings/settings_search.dart';
+import 'package:hibiki/utils.dart';
 
 /// TODO-2525：TMDB 署名 = **合约义务**（Terms of Use 第 3 节），署名文字 + 官方标识
 /// 缺一不可，且标识不得改色 / 改比例 / 翻转 / 旋转 / 裁剪。
@@ -81,12 +85,45 @@ void main() {
     // 比例锁：宽度由原图 viewBox 算死 + BoxFit.contain，杜绝拉伸变形。
     expect(schema, contains('_kTmdbLogoHeight * 190.24 / 81.52'));
     expect(schema, contains('fit: BoxFit.contain'));
-    // 显眼度上限：24dp 与设置行图标徽标同量级；应用自身 logo 在任何位置都更大。
+    // 显眼度上限：24dp 与设置行图标徽标（`HibikiBadge` 18+6*2 = 30dp）同量级；
+    // 应用自身图标在 Flutter 里唯一的渲染点是设置 › 外观 › 应用图标的预设瓦片
+    // （62×62dp），逐条依据见 `_kTmdbLogoHeight` 的文档注释。
     final RegExp height = RegExp(r'_kTmdbLogoHeight = (\d+(?:\.\d+)?)');
     final RegExpMatch? m = height.firstMatch(schema);
     expect(m, isNotNull);
     expect(double.parse(m!.group(1)!), lessThanOrEqualTo(32),
         reason: 'TMDB 标识不得比应用自身 logo 更显眼');
+  });
+
+  test('免责声明正文进设置搜索索引（搜条款里的词也能命中这一行）', () {
+    final SettingsDestination system = buildSystemDestination();
+    final SettingsItem tmdb = <SettingsItem>[
+      for (final SettingsSection s in system.sections) ...s.items,
+    ].firstWhere((SettingsItem i) => i.id == 'system.tmdb_attribution');
+
+    // custom 行 title 恒空，靠 searchTitle opt-in 才进索引。
+    expect(settingsItemSearchTitle(tmdb), 'TMDB');
+    // 声明正文必须挂在 schema 的 subtitle 上：filterSettingsEntries 的 haystack
+    // 取 item.subtitle。行改成 SettingsCustomItem 时曾漏掉它，导致只剩 'TMDB'
+    // 可搜、声明正文里的词全搜不到（复核残项②）。
+    expect(tmdb.subtitle, t.about_tmdb_attribution);
+
+    // 端到端：用只存在于声明正文、不存在于 searchTitle 的词检索，必须命中本行
+    // ——命中只可能经 subtitle 通道，故本断言直接钉住上面的接线真的生效。
+    const String needle = 'otherwise approved';
+    expect(t.about_tmdb_attribution, contains(needle),
+        reason: '条款原句须逐字保留（TMDB Terms of Use 第 3 节）');
+    expect(needle.toLowerCase(), isNot(contains('tmdb')),
+        reason: '检索词若含 TMDB 就会经 searchTitle 命中，测不到 subtitle 通道');
+    expect(
+      filterSettingsEntries(
+        <SettingsSearchEntry>[
+          SettingsSearchEntry(destination: system, item: tmdb),
+        ],
+        needle,
+      ).map((SettingsSearchEntry e) => e.item.id),
+      contains('system.tmdb_attribution'),
+    );
   });
 
   testWidgets('打包的 PNG 是原图的忠实栅格化：比例一致、背景透明、配色零越界', (WidgetTester tester) async {

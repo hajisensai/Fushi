@@ -119,6 +119,14 @@ SettingsDestination buildSystemDestination() {
           SettingsCustomItem(
             id: 'system.tmdb_attribution',
             searchTitle: 'TMDB',
+            // 免责声明正文同时挂在 schema 上：custom 行的正文由 builder 自绘
+            //（settings_schema_widgets 的 switch 只调 builder，不读 title/
+            // subtitle/icon），所以这里的 subtitle 是**纯搜索元数据、零渲染影响**
+            // ——filterSettingsEntries 的 haystack 取 `item.subtitle`，不挂就只剩
+            // searchTitle 'TMDB' 可搜，用户搜声明正文里的词（endorsed / certified
+            // / approved）搜不到这一行。同款用法见 settings_search 里
+            // bodySearchEntries 的合成项。
+            subtitle: t.about_tmdb_attribution,
             icon: Icons.movie_outlined,
             builder: _buildTmdbAttributionRow,
           ),
@@ -383,9 +391,30 @@ String _selectedUpdateChannel(SettingsContext settingsContext) {
 @visibleForTesting
 const String kTmdbLogoAsset = 'assets/attribution/tmdb/logo_tmdb.png';
 
-/// logo 展示高度（dp）。与设置行左侧图标徽标（`HibikiBadge` 18+6*2 = 30）同量级，
-/// 远小于应用自身 logo 的任何展示尺寸——TMDB 条款要求展示其标识，但它不得比本应用
-/// 自己的标识更显眼。
+/// logo 展示高度（dp）；宽度见 [_kTmdbLogoWidth]（24 × 190.24/81.52 ≈ 56.0）。
+///
+/// 条款要求展示 TMDB 标识，但它**不得比本应用自己的标识更显眼**。这条义务的实测
+/// 依据（数字均可按下列位置复核）：
+///
+/// - 同一行左侧的图标徽标是 30dp：`_SettingsIcon` 在 Material 下走
+///   `HibikiBadge(size: 18, padding: EdgeInsets.all(6))`，18+6*2 = 30
+///   （`utils/components/settings_shared.dart`）。24dp 与之同量级。
+/// - 应用自身图标在 Flutter widget 树里**只有一个真渲染点**：设置 › 外观 ›
+///   应用图标 的预设瓦片（`miscellaneous_settings_page.dart` 的 `_AppIconTile`）。
+///   `SizedBox.square(72)` 扣掉 `HibikiCard` 描边的 1dp 内缩与 `gap/2 = 4` 的
+///   双侧 padding，图片实得 62×62dp。TMDB 标识 24dp 高 = 其 38.7%；面积
+///   24×56.0 ≈ 1344dp²，是其 3844dp² 的 35%——两个维度都更小，满足条款的
+///   "less prominent"。
+/// - 除此之外应用图标一处都不画：本文件上方的关于分区只有版本文字，首页
+///   dashboard 与 home 外壳零图片，侧栏 rail 的 `leading` 槽
+///   （`utils/adaptive/adaptive_navigation.dart`）只有形参没有任何实参，
+///   loading/splash 只传颜色不传图，`AppModel.appIcon`（`models/app_model.dart`）
+///   是零读点死字段。且预设瓦片那一页仅 Android/Windows 可见，其余三端应用图标
+///   的渲染点数为 0。
+///
+/// 所以旧注释那句「远小于应用自身 logo 的**任何**展示尺寸」结论对、依据错：可比
+/// 的展示尺寸全仓只有 62×62dp 这一个。调整本值前请重跑上述核对——这段是「不得更
+/// 显眼」的唯一书面依据，守卫只能钉住上限（≤32dp），钉不住依据本身。
 const double _kTmdbLogoHeight = 24;
 
 /// 原图 viewBox 是 `0 0 190.24 81.52`；宽度按该比例算死，配合 [BoxFit.contain]
