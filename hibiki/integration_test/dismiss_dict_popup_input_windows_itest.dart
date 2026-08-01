@@ -263,8 +263,7 @@ void main() {
         reason: '根 Overlay → Navigator → App 的冒泡链本来就不经过宿主页面 Focus');
   });
 
-  testWidgets('第一层（焦点在宿主页面上）同一键仍走宿主原链关闭 —— 无回归',
-      (WidgetTester tester) async {
+  testWidgets('第一层（焦点在宿主页面上）同一键仍走宿主原链关闭 —— 无回归', (WidgetTester tester) async {
     final _HostLog log = await _pumpHost(tester, registry, spec);
     final FocusDriver driver = FocusDriver(tester);
 
@@ -286,8 +285,7 @@ void main() {
     expect(log.tokens, isEmpty);
   });
 
-  testWidgets('弹窗表面按鼠标侧键 → 真的关掉，且只触发一次（无双触发）',
-      (WidgetTester tester) async {
+  testWidgets('弹窗表面按鼠标侧键 → 真的关掉，且只触发一次（无双触发）', (WidgetTester tester) async {
     final _HostLog log = await _pumpHost(tester, registry, spec);
 
     // 指针本身就是被测对象（这条路径不可能靠焦点驱动复现），故必须发真指针事件；
