@@ -70,4 +70,49 @@ void main() {
     writeUserPausedFile(nested, <String>{'aa'});
     expect(readUserPausedFile(nested), <String>{'aa'});
   });
+
+  group('retainUserPausedRecords（TODO-2526：重启恢复时的记录去留判据）', () {
+    test('瞬时加载失败但 .resume 还在 → 记录保留；文件已不存在 → 剪', () {
+      // aa：加载成功；bb：加载失败但 .resume 在盘上（瞬时失败）；
+      // cc：加载失败且文件已不存在（计划已删，真无主）。
+      File(p.join(tempDir.path, 'aa.resume')).writeAsStringSync('x');
+      File(p.join(tempDir.path, 'bb.resume')).writeAsStringSync('x');
+      final Set<String> keep = retainUserPausedRecords(
+        resumeDir: tempDir.path,
+        wanted: <String>{'aa', 'bb', 'cc'},
+        restoredIds: <String>['aa'],
+      );
+      expect(keep, <String>{'aa', 'bb'},
+          reason: 'bb 的 .resume 还在 —— 剪掉它，下次成功加载就会以跑态复活，'
+              '用户按过的暂停凭空消失');
+    });
+
+    test('加载成功的记录保留，不依赖 .resume 文件是否存在', () {
+      // 极端时序：加载成功后文件被剪 —— in-session 是更强的存活证据。
+      final Set<String> keep = retainUserPausedRecords(
+        resumeDir: tempDir.path,
+        wanted: <String>{'aa'},
+        restoredIds: <String>['aa'],
+      );
+      expect(keep, <String>{'aa'});
+    });
+
+    test('restoredIds 大小写归一（infohash 大小写只是书写差异）', () {
+      final Set<String> keep = retainUserPausedRecords(
+        resumeDir: tempDir.path,
+        wanted: <String>{'aabb01'},
+        restoredIds: <String>['AABB01'],
+      );
+      expect(keep, <String>{'aabb01'});
+    });
+
+    test('resume 目录不存在：只有本轮加载成功的保留', () {
+      final Set<String> keep = retainUserPausedRecords(
+        resumeDir: p.join(tempDir.path, 'nope'),
+        wanted: <String>{'aa', 'bb'},
+        restoredIds: <String>['bb'],
+      );
+      expect(keep, <String>{'bb'});
+    });
+  });
 }
