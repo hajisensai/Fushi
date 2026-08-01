@@ -91,4 +91,15 @@ void main() {
         reason: 'TODO-1375 (2): an inset change must re-feed the WebView '
             'pagination geometry so fullscreen re-layout uses the live inset.');
   });
+
+  test('BUG-1343 windowed macOS reader exposes a draggable titlebar strip', () {
+    // 默认 auto=MD3 时根部不会挂 MacosWindow/ToolBar，但 NSWindow 仍是透明标题栏 +
+    // full-size content。Reader 必须自己提供稳定可抓区，不能让 WebView 吞满顶边。
+    expect(reader, contains('package:window_manager/window_manager.dart'));
+    expect(reader, contains('DragToMoveArea('));
+    expect(reader, contains("'hoshi_reader_window_drag_area'"));
+    expect(reader, contains('kMacTitleBarHeight'));
+    expect(reader, contains('_macosWindowTitlebarInset'));
+    expect(reader, contains('_readerTopOffset =>'));
+  });
 }

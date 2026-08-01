@@ -668,6 +668,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       debugLogging: DebugLogService.instance.enabled,
       swipeDistThreshold: swipeThresholds.dist,
       swipeFastDistThreshold: swipeThresholds.fastDist,
+      wheelPageTurnInterval: ReaderHibikiSource.instance.wheelPageTurnInterval,
       furiganaMode: s.furiganaMode,
       caretColor: _caretRingColorCss(),
       caretInsetTop: _readerTopOffset,
@@ -1365,6 +1366,36 @@ install: function(C) {
   // 再来一次才真正跨章，消除「还没到章首就切上一章」。与纯函数
   // ReaderPaginationScripts.continuousWheelBoundaryEmit 同款语义。
   var _wheelBoundaryArmed = null;
+  // BEGIN PAGED_WHEEL_GESTURE_HELPER
+  // BUG-1342：macOS 触控板一次物理滑动会产生持续 1s+ 的 wheel 惯性 tick。Dart
+  // `_paginate` 的固定窗口 rate-limit 会在同一条惯性流里每隔 450ms 再次放行，造成
+  // 一划翻 3~4 页。这里在分页输入边界按「尾沿静默」聚合 burst：首 tick 只发一次，
+  // 后续 tick 仅续租解锁 timer；整段静默满用户配置间隔后才认作下一次手势。
+  // 这不是旧 TODO-737 的重复固定窗口节流：Dart 入口仍保留唯一 rate-limit，负责不同
+  // 输入源之间的保护；本 helper 只把平台的多 tick 物理手势归一为一个语义意图。
+  var _pagedWheelGestureActive = false;
+  var _pagedWheelGestureSettleTimer = 0;
+  function _endPagedWheelGesture() {
+    _pagedWheelGestureActive = false;
+    _pagedWheelGestureSettleTimer = 0;
+  }
+  function _handlePagedWheelGesture(e) {
+    // 斜向触控板事件取绝对值更大的主轴。旧 OR 判据会把
+    // deltaX=-50/deltaY=+1 错判为 forward；零 delta 噪声直接忽略。
+    var delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    if (delta === 0) return;
+    e.preventDefault();
+    if (_pagedWheelGestureSettleTimer) {
+      clearTimeout(_pagedWheelGestureSettleTimer);
+    }
+    _pagedWheelGestureSettleTimer =
+        setTimeout(_endPagedWheelGesture, C.wheelPageTurnInterval);
+    if (_pagedWheelGestureActive) return;
+    _pagedWheelGestureActive = true;
+    var direction = delta > 0 ? 'forward' : 'backward';
+    window.flutter_inappwebview.callHandler('onWheelPaginate', direction);
+  }
+  // END PAGED_WHEEL_GESTURE_HELPER
   // TODO-656: 横排连续模式放行原生滚动时，记上一拍 scrollTop，下一拍无变化（原生卡
   // 在边界滚不动）才算到边界——替代瞬时 scrollTop<=2 几何。-1 = 尚无基线（首拍不卡）。
   var _wheelLastScrollPos = -1;
@@ -1460,10 +1491,9 @@ install: function(C) {
     // 产「语义意图」(forward/backward)，方向 deltaY>0=forward 对齐连续滚轮(沿书写轴
     // delta>0=前进)，不再经 onSwipe 被 invertSwipeDirection(默认 true) 连坐反向。
     // 节流统一到 Dart 侧 _paginate 入口时间戳闸门（throttleMs: wheelPageTurnInterval），
-    // JS 不再自持 _wheelTimer。invertSwipeDirection 从此只管触摸滑动 / 鼠标拖动。
-    var forward = (e.deltaY > 0 || e.deltaX > 0);
-    window.flutter_inappwebview.callHandler('onWheelPaginate', forward ? 'forward' : 'backward');
-    e.preventDefault();
+    // JS 不再自持固定窗口 _wheelTimer。尾沿 gesture helper 只负责把平台惯性 burst
+    // 归一为一次意图；invertSwipeDirection 仍只管触摸滑动 / 鼠标拖动。
+    _handlePagedWheelGesture(e);
   }, {passive: false});
   var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
   document.addEventListener('mousemove', function(e) {

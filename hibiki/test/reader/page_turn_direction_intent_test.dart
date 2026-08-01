@@ -14,10 +14,10 @@ import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 /// 连续滚轮（沿书写轴 delta>0=前进）一致，消除「分页滚轮方向反了」的根因（裸符号
 /// `deltaY<0=forward` + onSwipe 经 invert 默认 true 连坐的完整链）。
 ///
-/// 这是 JS wheel 监听里 `var forward = (e.deltaY > 0 || e.deltaX > 0)` 的纯 Dart 影子
+/// 这是 JS wheel 手势聚合器「取绝对值更大的主轴，零位移忽略」的纯 Dart 影子
 /// （headless WebView 不可用，按项目范式：纯函数单测 + 源码守卫）。
 void main() {
-  String dir({required double deltaY, required double deltaX}) =>
+  String? dir({required double deltaY, required double deltaX}) =>
       ReaderPaginationScripts.wheelPaginateDir(deltaY: deltaY, deltaX: deltaX);
 
   group('wheelPaginateDir: deltaY>0 = forward (对齐连续滚轮，不再 deltaY<0)', () {
@@ -37,10 +37,13 @@ void main() {
       expect(dir(deltaY: 0, deltaX: -50), 'backward');
     });
 
-    test('zero delta defaults to backward (no positive component)', () {
-      // 调用方在 JS 端不会用 0 delta 触发翻页（wheelDelta===0 已早返回），此处只锁
-      // 纯函数的确定性：无正向分量 = backward。
-      expect(dir(deltaY: 0, deltaX: 0), 'backward');
+    test('opposite-sign diagonal input follows the dominant axis', () {
+      expect(dir(deltaY: 1, deltaX: -50), 'backward');
+      expect(dir(deltaY: -1, deltaX: 50), 'forward');
+    });
+
+    test('zero delta is ignored', () {
+      expect(dir(deltaY: 0, deltaX: 0), isNull);
     });
   });
 

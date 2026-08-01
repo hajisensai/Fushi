@@ -506,10 +506,11 @@ class ReaderPaginationScripts {
   ///
   /// [deltaY]/[deltaX] = wheel 事件的滚动增量。主轴取绝对值更大的那个，>0 = forward。
   @visibleForTesting
-  static String wheelPaginateDir(
+  static String? wheelPaginateDir(
       {required double deltaY, required double deltaX}) {
-    final bool forward = deltaY > 0 || deltaX > 0;
-    return forward
+    final double delta = deltaY.abs() >= deltaX.abs() ? deltaY : deltaX;
+    if (delta == 0) return null;
+    return delta > 0
         ? ReaderNavigationDirection.forward.jsValue
         : ReaderNavigationDirection.backward.jsValue;
   }

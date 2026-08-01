@@ -335,6 +335,7 @@ ReaderEngineConfig _sampleConfig({String? sasayakiCuesJson}) =>
       debugLogging: false,
       swipeDistThreshold: 44,
       swipeFastDistThreshold: 22,
+      wheelPageTurnInterval: 450,
       furiganaMode: 'toggle',
       caretColor: 'rgba(0,0,0,0.5)',
       caretInsetTop: 0,
