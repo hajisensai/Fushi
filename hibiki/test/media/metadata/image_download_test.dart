@@ -39,9 +39,116 @@ final class _RequestAbortTrackingClient extends http.BaseClient {
   }
 }
 
+/// 记录每次请求拿到的 abort trigger，并在其触发时把请求判为已中止。
+///
+/// 用来钉「整轮下载共享同一个截止」：多次尝试必须拿到**同一个** trigger 实例，
+/// 且到点时全部在飞请求一次性被中止。
+final class _AbortTriggerCapturingClient extends http.BaseClient {
+  final List<Future<void>> triggers = <Future<void>>[];
+  int abortCount = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    final Completer<http.StreamedResponse> pending =
+        Completer<http.StreamedResponse>();
+    if (request case http.Abortable(:final Future<void>? abortTrigger)
+        when abortTrigger != null) {
+      triggers.add(abortTrigger);
+      unawaited(
+        abortTrigger.whenComplete(() {
+          abortCount++;
+          if (!pending.isCompleted) {
+            pending.completeError(http.RequestAbortedException(request.url));
+          }
+        }),
+      );
+    }
+    return pending.future;
+  }
+
+  @override
+  void close() {}
+}
+
 void main() {
-  test('原图下载截止时间为 100 秒', () {
+  test('原图下载总预算为 100 秒', () {
     expect(kCoverImageDownloadTimeout, const Duration(seconds: 100));
+  });
+
+  group('CoverDownloadDeadline', () {
+    test('到点：置位 isExpired 并触发共享 abortTrigger', () {
+      fakeAsync((FakeAsync async) {
+        final CoverDownloadDeadline deadline =
+            CoverDownloadDeadline(const Duration(seconds: 10));
+        bool aborted = false;
+        unawaited(deadline.abortTrigger.then((void _) => aborted = true));
+
+        async.elapse(const Duration(seconds: 9));
+        async.flushMicrotasks();
+        expect(deadline.isExpired, isFalse);
+        expect(aborted, isFalse);
+
+        async.elapse(const Duration(seconds: 1));
+        async.flushMicrotasks();
+        expect(deadline.isExpired, isTrue);
+        expect(aborted, isTrue);
+
+        deadline.dispose();
+      });
+    });
+
+    test('dispose 后不再到点，也不留空跑的定时器', () {
+      fakeAsync((FakeAsync async) {
+        final CoverDownloadDeadline deadline =
+            CoverDownloadDeadline(const Duration(seconds: 10));
+        deadline.dispose();
+
+        async.elapse(const Duration(seconds: 30));
+        async.flushMicrotasks();
+        expect(deadline.isExpired, isFalse);
+        expect(async.pendingTimers, isEmpty);
+      });
+    });
+
+    test('同一 deadline 的多次尝试共用同一个 abortTrigger，到点一次性全中止', () {
+      fakeAsync((FakeAsync async) {
+        final _AbortTriggerCapturingClient client =
+            _AbortTriggerCapturingClient();
+        final CoverDownloadDeadline deadline =
+            CoverDownloadDeadline(const Duration(seconds: 10));
+
+        void ignoreOutcome(Future<http.Response> attempt) {
+          unawaited(
+            attempt.then<void>(
+              (http.Response _) {},
+              onError: (Object _, StackTrace __) {},
+            ),
+          );
+        }
+
+        ignoreOutcome(fetchCoverImageResponse(
+            client, Uri.parse('https://example.invalid/1'),
+            deadline: deadline));
+        ignoreOutcome(fetchCoverImageResponse(
+            client, Uri.parse('https://example.invalid/2'),
+            deadline: deadline));
+        async.flushMicrotasks();
+
+        expect(client.triggers, hasLength(2));
+        expect(
+          identical(client.triggers[0], client.triggers[1]),
+          isTrue,
+          reason: '重试不得各自重新计时：每次尝试必须挂在同一个总截止上',
+        );
+        expect(client.abortCount, 0);
+
+        async.elapse(const Duration(seconds: 10));
+        async.flushMicrotasks();
+        expect(client.abortCount, 2, reason: '到点必须真正中止底层传输，而非只让等待层放弃');
+
+        deadline.dispose();
+      });
+    });
   });
 
   group('looksLikeImageBytes', () {

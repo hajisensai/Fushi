@@ -27,38 +27,98 @@ class ImageDownloadException implements Exception {
       : 'ImageDownloadException($statusCode): $message';
 }
 
-/// 远端封面原图下载的统一截止时间。
+/// 远端封面原图下载的统一**总预算**（含其全部传输重试）。
 ///
 /// 原图通常比候选列表缩略图大，弱网或代理链路下 30 秒容易在响应完成前误杀；
 /// 100 秒仍是有界等待，同时给高分辨率封面留出足够传输时间。
+///
+/// 注意语义：这是**整轮下载**的截止，不是「每次尝试」的截止。见
+/// [CoverDownloadDeadline]。
 const Duration kCoverImageDownloadTimeout = Duration(seconds: 100);
 
-/// 发送一个受 [timeout] 约束、可在截止时取消底层传输的封面 GET 请求。
+/// 一次封面下载（**含其全部传输重试**）共享的唯一截止。
+///
+/// 旧口径是「每次尝试各自计时」：传输重试最多 3 次（BUG-1272）× 单次 100 秒
+/// （BUG-1248）= 最坏 300 秒转圈，界面上与卡死无法区分（TODO-2341）。现在整轮下载
+/// 只有这一个截止，重试**分享**同一份预算：
+///
+/// - 到点由唯一的 [Timer] 触发唯一的 [abortTrigger]，在飞的请求 / 响应流被 package:http
+///   的 [http.AbortableRequest] **真正中止**——这是 BUG-1248 的核心性质：只让等待层
+///   放弃而底层继续传，孤儿连接会越堆越多，绝不能退化；
+/// - 同时把 [isExpired] 置位，重试循环据此停手，不再发起新的尝试（预算用尽即整体失败）。
+///
+/// 已知并接受的代价：链路特别慢时重试次数用不满。
+///
+/// 用完必须 [dispose] 取消定时器（成功路径同样要，否则空跑一个 100 秒的 Timer）。
+final class CoverDownloadDeadline {
+  CoverDownloadDeadline(this.budget) {
+    // 预算可能在两次尝试之间（退避期）耗尽，此时没有任何等待方；先挂一个吞错
+    // handler，免得 [expiration] 变成未处理的异步异常。等待方会另行挂自己的。
+    _expiration.future.ignore();
+    _timer = Timer(budget, _expire);
+  }
+
+  /// 整轮下载（含全部重试与退避）的总预算。
+  final Duration budget;
+
+  final Completer<void> _abort = Completer<void>();
+  final Completer<Never> _expiration = Completer<Never>();
+  late final Timer _timer;
+  bool _expired = false;
+
+  /// 交给每次尝试的 [http.Abortable.abortTrigger]：**所有尝试共用同一个**，
+  /// 因此到点时正在传输的那一次会被真正 abort。
+  Future<void> get abortTrigger => _abort.future;
+
+  /// 到点抛 [TimeoutException] 的 Future，永不正常完成。
+  ///
+  /// 必须与 [abortTrigger] 分开：abort 会让底层传输以 `RequestAbortedException`
+  /// 结束，若只靠它，等待方拿到的究竟是「超时」还是「连接被中止」就取决于微任务
+  /// 顺序。[_expire] 保证先完成本 Future 再触发 abort，超时语义因此是确定的。
+  Future<Never> get expiration => _expiration.future;
+
+  /// 预算是否已耗尽。重试循环据此停手。
+  bool get isExpired => _expired;
+
+  void _expire() {
+    _expired = true;
+    // 顺序即契约：先让等待方拿到 TimeoutException，再中止底层传输。
+    if (!_expiration.isCompleted) {
+      _expiration.completeError(
+        TimeoutException('cover image download timed out', budget),
+        StackTrace.current,
+      );
+    }
+    if (!_abort.isCompleted) _abort.complete();
+  }
+
+  /// 取消截止定时器。到点后再调用无副作用（已到点的事实不回滚）。
+  void dispose() => _timer.cancel();
+}
+
+/// 发送一次受 [deadline] 约束、可在截止时取消底层传输的封面 GET 请求。
 ///
 /// 单独给 Future 加 `timeout` 只会停止等待，源 HTTP 请求和响应流仍可能继续。本 helper
-/// 改用 package:http 的 [http.AbortableRequest]：截止回调先触发 abort，再向调用方抛
-/// [TimeoutException]。默认 IOClient 会据此中止未完成请求或取消正在读取的响应流；
-/// client 本身不关闭，因此视频侧的复用 client 及调用方注入 client 的所有权不变。
+/// 改用 package:http 的 [http.AbortableRequest]，abort trigger 直接取自共享的
+/// [deadline]：到点即 abort 底层传输，同时向调用方抛 [TimeoutException]。默认 IOClient
+/// 会据此中止未完成请求或取消正在读取的响应流；client 本身不关闭，因此视频侧的复用
+/// client 及调用方注入 client 的所有权不变。
 Future<http.Response> fetchCoverImageResponse(
   http.Client client,
   Uri url, {
-  Duration timeout = kCoverImageDownloadTimeout,
+  required CoverDownloadDeadline deadline,
 }) {
-  final Completer<void> abort = Completer<void>();
   final http.AbortableRequest request = http.AbortableRequest(
     'GET',
     url,
-    abortTrigger: abort.future,
+    abortTrigger: deadline.abortTrigger,
   );
   final Future<http.Response> response =
       client.send(request).then(http.Response.fromStream);
-  return response.timeout(
-    timeout,
-    onTimeout: () {
-      if (!abort.isCompleted) abort.complete();
-      throw TimeoutException('cover image download timed out', timeout);
-    },
-  );
+  // Future.any：谁先完成谁说了算，后到的错误被静默丢弃（不会变成未处理异常）。
+  // 截止分支只负责「告诉等待层超时」，abort 本身由共享 trigger 负责；两者的先后
+  // 由 [CoverDownloadDeadline._expire] 固定，因此超时语义不受微任务顺序影响。
+  return Future.any(<Future<http.Response>>[response, deadline.expiration]);
 }
 
 /// 下载 [url] 指向的图片到临时文件，返回该文件。
@@ -68,6 +128,7 @@ Future<http.Response> fetchCoverImageResponse(
 /// - 校验：HTTP 2xx + 图片内容（Content-Type 以 `image/` 开头，或字节魔数是
 ///   JPEG/PNG/WebP/GIF）。非图片 → 抛 [ImageDownloadException]。
 /// - 文件名按 URL 派生（同 URL 复下覆盖同一临时文件，不堆垃圾）。
+/// - [timeout]：整轮下载的总预算（本函数不重试，因此就是这一次尝试的截止）。
 Future<File> downloadImageToTempFile(
   String url, {
   http.Client? client,
@@ -75,13 +136,14 @@ Future<File> downloadImageToTempFile(
   Duration timeout = kCoverImageDownloadTimeout,
 }) async {
   final http.Client httpClient = client ?? http.Client();
+  final CoverDownloadDeadline deadline = CoverDownloadDeadline(timeout);
   try {
     final http.Response response;
     try {
       response = await fetchCoverImageResponse(
         httpClient,
         Uri.parse(url),
-        timeout: timeout,
+        deadline: deadline,
       );
     } on TimeoutException {
       throw const ImageDownloadException('image download timed out');
@@ -109,6 +171,7 @@ Future<File> downloadImageToTempFile(
     await file.writeAsBytes(bytes, flush: true);
     return file;
   } finally {
+    deadline.dispose();
     if (client == null) httpClient.close();
   }
 }

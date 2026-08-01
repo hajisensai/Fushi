@@ -35,25 +35,34 @@ const Duration kTransportRetryBackoff = Duration(milliseconds: 400);
 ///
 /// 全部失败时**原样抛出最后一次的异常与堆栈**（不包装、不改写），使调用方既有的
 /// 异常映射与文案保持不变。[sleep] 供测试注入，避免真实等待。
+///
+/// [shouldGiveUp]：可选的「再试也没意义了」判据，除次数上限外的第二个停手条件。
+/// 调用方用它接入**跨重试共享的总预算**（封面下载的
+/// `CoverDownloadDeadline`，TODO-2341）：预算耗尽即整体失败，不再发起新的尝试。
+/// 每次失败后、以及每次退避等待之后都会重新求值——退避本身也吃预算。不传则行为不变。
 Future<T> runWithTransportRetry<T>(
   Future<T> Function() send, {
   int maxAttempts = kTransportMaxAttempts,
   Duration backoff = kTransportRetryBackoff,
   Future<void> Function(Duration delay)? sleep,
+  bool Function()? shouldGiveUp,
 }) async {
   assert(maxAttempts > 0, 'maxAttempts 必须为正');
   final Future<void> Function(Duration delay) delay =
       sleep ?? (Duration d) => Future<void>.delayed(d);
+  final bool Function() giveUp = shouldGiveUp ?? () => false;
 
   for (int attempt = 1;; attempt++) {
     try {
       return await send();
     } catch (error, stack) {
-      // 用尽次数：把最后一次失败原样交还调用方（含堆栈），不吞不换。
-      if (attempt >= maxAttempts) {
+      // 用尽次数或用尽预算：把最后一次失败原样交还调用方（含堆栈），不吞不换。
+      if (attempt >= maxAttempts || giveUp()) {
         Error.throwWithStackTrace(error, stack);
       }
+      await delay(backoff * attempt);
+      // 退避期间预算也可能耗尽，此时同样不再发起新尝试。
+      if (giveUp()) Error.throwWithStackTrace(error, stack);
     }
-    await delay(backoff * attempt);
   }
 }
