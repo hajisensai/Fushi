@@ -1447,7 +1447,6 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           framesDir: framesDir,
           audioClip: audioClip,
           videoFile: videoFile,
-          isDesktop: isDesktop,
           timeout: synthTimeout,
         );
         if (!dynamicOk) {
@@ -1601,7 +1600,6 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     required Directory framesDir,
     required File audioClip,
     required File videoFile,
-    required bool isDesktop,
     required Duration timeout,
   }) async {
     // BUG-713（用户回访「导出片段高亮进度慢了」根因·帧量化残差）：逐句高亮切换被帧

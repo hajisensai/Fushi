@@ -211,5 +211,45 @@ void main() {
       expect(configuration.contains('--enable-libx265'), isFalse,
           reason: '扫到了本不该存在的开关，说明判据失真（匹配到了别处的字节）');
     });
+
+    // 移动端与桌面 ffmpeg-min 的**结构性差异**：桌面是 `--disable-everything` +
+    // 逐项白名单（所以桌面守卫能逐个比对 encoder/muxer 清单），移动端则是「不带外部库
+    // 的全量 libavcodec」——原生 codec/muxer 一个没删。
+    //
+    // 为什么把这个前提单独钉住：Dart 侧有一批「某原生组件一定在」的隐含假设（mov/mp4
+    // muxer、aac encoder、mov_text 字幕编码器、image2 demuxer…），它们的正确性**全部
+    // 依赖这个前提**，而不是各自被单独验证过。这些组件在二进制里无法用字符串可靠证实
+    // ——codec descriptor 名字表与是否编入无关，扫到名字不等于编进来了（BUG-1057 就是
+    // 这样假绿的），所以逐个断言只会制造假绿。
+    //
+    // 能可靠断言的是这个**前提本身**：一旦有人把移动端也改成白名单模式，这里当场红，
+    // 提醒去重审上面那批假设，而不是等用户报"导出成功但没字幕"（BUG-1058 的形态）。
+    test('编码器/封装器仍是全量保留（Dart 侧那批隐含假设的前提）', () {
+      final File aarFile = File(
+        '${root.path}/third_party/ffmpeg_kit_flutter/android/libs/'
+        'ffmpeg-kit.aar',
+      );
+      final Archive aar = ZipDecoder().decodeBytes(aarFile.readAsBytesSync());
+      final String configuration = _embeddedConfiguration(
+        aar.findFile('jni/arm64-v8a/libavutil.so')!.content as List<int>,
+        'arm64-v8a libavutil.so',
+      );
+      for (final String pruning in <String>[
+        '--disable-everything',
+        '--disable-encoders',
+        '--disable-decoders',
+        '--disable-muxers',
+        '--disable-demuxers',
+        '--disable-filters',
+      ]) {
+        expect(
+          configuration.contains(pruning),
+          isFalse,
+          reason: '移动端 configure 出现了 $pruning——原生组件不再全量保留。'
+              'Dart 侧依赖「mov/mp4 muxer、aac encoder、mov_text、image2 demuxer 一定在」'
+              '的地方必须逐一重审，否则会退化成静默降级（BUG-1058 形态）',
+        );
+      }
+    });
   });
 }
