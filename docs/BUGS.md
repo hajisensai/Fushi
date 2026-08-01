@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1307 条。点号进各自文件。
+> 共 1308 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1386](bugs/BUG-1386-webview-renderer-gone-kills-app.md) | ✅ | ✅ | Android renderer 被回收时未接管 onRenderProcessGone，整个 app 被系统杀掉 |
 | [BUG-1373](bugs/BUG-1373-ios-pod-install-license-file-type.md) | ✅ | ✅ | iOS pod install 断在 license 校验：LICENSE.GPLv3 扩展名不被 CocoaPods 接受 |
 | [BUG-1372](bugs/BUG-1372-android-appsmoke-prewarm-webview-renderer-kills-app.md) | ✅ | ✅ | Android appSmoke：预热 headless WebView 永不销毁，renderer 被 OOM kill 后连坐杀整个 app 进程 |
 | [BUG-1365](bugs/BUG-1365-local-audio-query-races-binding-index-build.md) | ✅ | ✅ | 桌面本地音频查询与绑定期建索引竞态：撞锁被吞成 null＝「暂无发音」（CI flaky） |

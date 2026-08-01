@@ -49,6 +49,7 @@ import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
+import 'package:hibiki/src/webview/webview_death_guard.dart';
 import 'package:hibiki/utils.dart';
 
 /// Manga reader implementation owned by the standalone manga module.
@@ -599,6 +600,33 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   /// 窗口文档加载的所有权闸门：generation 与 ready 锁只能经它读写，迟到的旧回调
   /// 不能解开新窗口的锁（BUG-1170），页面销毁时在飞加载被显式放弃（BUG-1171）。
   final MangaWindowLoadGate _windowGate = MangaWindowLoadGate();
+
+  /// renderer 死亡处置（救命动作 = 下面 [InAppWebView.onRenderProcessGone] 传了
+  /// 非 null 回调，否则 Android 会连坐杀掉整个 app）。
+  ///
+  /// 抢救三件事，缺一都会在重建后出错：
+  /// - `_flushPosition()`：600ms debounce（[_recordProgress]）里还没落盘的页码；
+  /// - `_windowGate.abandon()`：renderer 死时若有 `loadData` 在飞，它的 ready 锁
+  ///   永远等不到 `onLoadStop`，会挂满 10s 超时再从 `unawaited` 调用点抛未捕获
+  ///   异步异常（BUG-1171 同源），并且 `_navigating` 会卡 true 让重建后的
+  ///   `_loadInitialWindow()` 直接早退成白屏；
+  /// - `_controller = null`：报废的 controller 上 `evaluateJavascript` 只会抛。
+  ///
+  /// 重建安全性：恢复锚是 `_currentSpread` / `_currentFraction`，它们由 JS 的
+  /// `onMangaScroll` / `onMangaTurn` 实时更新，永远是**当前真实位置**，不是进入
+  /// 本章时的快照 —— 所以重建后 `onWebViewCreated → _loadInitialWindow() →
+  /// _markWindowReady()` 把同一个 spread 重新应用回去，不会写回退的进度。
+  late final WebViewDeathGuard _webViewDeathGuard = WebViewDeathGuard(
+    surface: 'manga_reader',
+    flushBeforeRebuild: () async {
+      _windowGate.abandon();
+      _controller = null;
+      await _flushPosition();
+    },
+    afterRebuild: () {
+      if (mounted) setState(() {});
+    },
+  );
 
   /// 旧选区 payload 的制卡卡图回退：当前 spread 首页图的绝对文件路径。新 payload
   /// 会以 [_miningPageIndex] 精确定位 OCR 命中的页，不能用此值覆盖。
@@ -2896,6 +2924,15 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         ),
       );
     }
+    // 重建 key 挂在 WebView **之上**：`manga_webview` 这个 ValueKey 是集成测试
+    // finder 的锚点，不能随代次变化。
+    return KeyedSubtree(
+      key: _webViewDeathGuard.rebuildKey,
+      child: _buildWebViewSurface(),
+    );
+  }
+
+  Widget _buildWebViewSurface() {
     return InAppWebView(
       key: const ValueKey<String>('manga_webview'),
       initialSettings: InAppWebViewSettings(
@@ -3008,6 +3045,13 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       onLoadStop: (InAppWebViewController controller, WebUri? url) async {
         await _markWindowReady(controller);
       },
+      // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
+      onRenderProcessGone:
+          (InAppWebViewController _, RenderProcessGoneDetail detail) =>
+              unawaited(_webViewDeathGuard.handleDeath(
+        didCrash: detail.didCrash,
+        rendererPriorityAtExit: detail.rendererPriorityAtExit,
+      )),
     );
   }
 

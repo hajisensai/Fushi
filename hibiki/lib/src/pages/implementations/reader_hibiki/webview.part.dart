@@ -2455,6 +2455,16 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       onConsoleMessage: (controller, msg) {
         debugPrint('[WebView] ${msg.message}');
       },
+      // 非 null 本身就是救命动作：Android 上 renderer 被 OOM 回收时，
+      // `InAppWebViewClientCompat.onRenderProcessGone` 只有拿到非 null 回调才
+      // `return true`；否则默认动作是把整个 app 进程一起杀掉。这里的处置刻意
+      // **不重建**（见 [_webViewDeathGuard] 的注释：恢复锚陈旧会把进度写回退）。
+      onRenderProcessGone:
+          (InAppWebViewController _, RenderProcessGoneDetail detail) =>
+              unawaited(_webViewDeathGuard.handleDeath(
+        didCrash: detail.didCrash,
+        rendererPriorityAtExit: detail.rendererPriorityAtExit,
+      )),
     );
     // KeyedSubtree carries [_webViewKey] (a GlobalKey) on the InAppWebView's own
     // render subtree so [onDismissBarrierHover] can read the WebView's RenderBox

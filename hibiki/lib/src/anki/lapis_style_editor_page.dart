@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:hibiki/src/webview/webview_death_guard.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 
@@ -87,6 +88,21 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   bool _showBack = true;
   bool _allowPop = false;
   InAppWebViewController? _previewController;
+
+  /// renderer 死亡处置（救命动作 = 下面 [InAppWebView.onRenderProcessGone] 传了
+  /// 非 null 回调，否则 Android 会连坐杀掉整个 app）。
+  ///
+  /// 这块预览是**纯只读渲染**：用户编辑的规则/布局/自由 CSS 全在本 State 的
+  /// `_rules` / `_layout` / `_advancedCssController` 里，`_save()` 一个字节都不
+  /// 从 WebView 取。所以重建零损失，flush 只需丢掉报废的 controller，
+  /// `onLoadStop → _refreshPreview()` 会把预览自愈回来。
+  late final WebViewDeathGuard _previewDeathGuard = WebViewDeathGuard(
+    surface: 'lapis_style_preview',
+    flushBeforeRebuild: () async => _previewController = null,
+    afterRebuild: () {
+      if (mounted) setState(() {});
+    },
+  );
 
   static const List<String> _colorChoices = <String>[
     '#2F6B5F',
@@ -376,6 +392,13 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
       fontScalePercent: widget.fontScalePercent,
       customCss: _composeCustomCss(),
     );
+    return KeyedSubtree(
+      key: _previewDeathGuard.rebuildKey,
+      child: _buildWebPreviewSurface(css),
+    );
+  }
+
+  Widget _buildWebPreviewSurface(String css) {
     return InAppWebView(
       initialData: InAppWebViewInitialData(
         data: buildLapisStylePreviewHtml(
@@ -408,6 +431,13 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
         );
       },
       onLoadStop: (_, __) => _refreshPreview(),
+      // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
+      onRenderProcessGone:
+          (InAppWebViewController _, RenderProcessGoneDetail detail) =>
+              unawaited(_previewDeathGuard.handleDeath(
+        didCrash: detail.didCrash,
+        rendererPriorityAtExit: detail.rendererPriorityAtExit,
+      )),
     );
   }
 

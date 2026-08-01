@@ -7,6 +7,7 @@ import 'package:flutter/painting.dart' show Color;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/webview/webview_death_guard.dart';
 
 /// TODO-1167：单帧 takeScreenshot 的超时上限，对齐 load 的 8s 语义（截图原来无超时，
 /// 卡死会永久挂住整条导出管线 → 表现为卡死/ANR）。
@@ -168,6 +169,20 @@ Future<void> renderAudiobookClipFramesViaWebView({
   final Size size = Size(layout.width.toDouble(), layout.height.toDouble());
   final Completer<void> loaded = Completer<void>();
   HeadlessInAppWebView? headless;
+  // renderer 子进程死了：这条导出管线**不能重建**（一次性离屏渲染，重开一遍
+  // 也只会在同样的内存压力下再死一次），只能立刻收尾让调用方回退单句静态。
+  // 但 `onRenderProcessGone` 这个回调**必须传**——Java 侧
+  // (`InAppWebViewClientCompat.onRenderProcessGone`) 只有拿到非 null 回调才
+  // `return true`，否则默认动作是杀掉整个 app 进程。
+  bool rendererDead = false;
+  final WebViewDeathGuard deathGuard = WebViewDeathGuard(
+    surface: 'audiobook_clip_offscreen',
+    flushBeforeRebuild: () async {
+      rendererDead = true;
+      // 解开 8s 等待：renderer 已死，onLoadStop 永远不会来了。
+      if (!loaded.isCompleted) loaded.complete();
+    },
+  );
 
   try {
     headless = HeadlessInAppWebView(
@@ -188,6 +203,12 @@ Future<void> renderAudiobookClipFramesViaWebView({
       onLoadStop: (InAppWebViewController controller, WebUri? url) {
         if (!loaded.isCompleted) loaded.complete();
       },
+      onRenderProcessGone:
+          (InAppWebViewController _, RenderProcessGoneDetail detail) =>
+              unawaited(deathGuard.handleDeath(
+        didCrash: detail.didCrash,
+        rendererPriorityAtExit: detail.rendererPriorityAtExit,
+      )),
     );
     await headless.run();
 
@@ -204,6 +225,17 @@ Future<void> renderAudiobookClipFramesViaWebView({
         'offscreen vertical clip WebView never reported onLoadStop within 8s (segments=${segments.length})',
         StackTrace.current,
       );
+    }
+    if (rendererDead) {
+      ErrorLogService.instance.log(
+        'AudiobookClipWebViewRender.rendererGone',
+        'offscreen vertical clip renderer died before layout '
+            '(segments=${segments.length}); falling back to static',
+        StackTrace.current,
+      );
+      // 发一帧 null 让调用方回退单句静态（与 noController 分支同一契约）。
+      await onFrame(indices.first, null);
+      return;
     }
 
     try {
@@ -231,6 +263,18 @@ Future<void> renderAudiobookClipFramesViaWebView({
     await Future<void>.delayed(const Duration(milliseconds: 32));
 
     for (final int idx in indices) {
+      if (rendererDead) {
+        // renderer 死在逐帧循环中途：剩下的 evaluateJavascript/takeScreenshot
+        // 只会抛或挂满超时，直接以 null 帧收尾让调用方回退。
+        ErrorLogService.instance.log(
+          'AudiobookClipWebViewRender.rendererGone',
+          'offscreen vertical clip renderer died mid-loop (frame=$idx, '
+              'segments=${segments.length}); falling back to static',
+          StackTrace.current,
+        );
+        await onFrame(idx, null);
+        return;
+      }
       await controller.evaluateJavascript(
         source: 'window.__clipSetActive && window.__clipSetActive($idx);',
       );
