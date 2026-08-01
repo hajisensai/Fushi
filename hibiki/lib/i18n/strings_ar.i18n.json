@@ -2921,5 +2921,5 @@
   "video_jimaku_format_all": "All",
   "video_setting_tmdb_key": "Custom TMDB API key",
   "video_setting_tmdb_key_hint": "Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.",
-  "about_tmdb_attribution": "This product uses the TMDB API but is not endorsed or certified by TMDB."
+  "about_tmdb_attribution": "This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB."
 }

@@ -2921,5 +2921,5 @@
   "video_jimaku_format_all": "全部",
   "video_setting_tmdb_key": "自定义 TMDB API Key",
   "video_setting_tmdb_key_hint": "可留空，默认用内置 Key。仅当刮削失效或你想用自己的配额时才需要填写。",
-  "about_tmdb_attribution": "This product uses the TMDB API but is not endorsed or certified by TMDB."
+  "about_tmdb_attribution": "This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB."
 }
