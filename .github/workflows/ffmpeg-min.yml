@@ -42,7 +42,10 @@ jobs:
 
       - name: Install deps (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg nasm yasm pkg-config zlib1g-dev libx264-dev libgnutls28-dev libsvtav1-dev libwebp-dev
+        # Debian/Ubuntu 把 SVT-AV1 拆成 common / enc / dec 三个 dev 包，`--enable-libsvtav1`
+        # 找的 `SvtAv1Enc.pc` 只在 libsvtav1enc-dev 里；只装 libsvtav1-dev 会在 configure
+        # 阶段报 "SvtAv1Enc >= 0.9.0 not found using pkg-config"。
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg nasm yasm pkg-config zlib1g-dev libx264-dev libgnutls28-dev libsvtav1-dev libsvtav1enc-dev libwebp-dev
 
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
