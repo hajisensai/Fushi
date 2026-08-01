@@ -34,7 +34,7 @@ class SyncBackendError implements Exception {
   String toString() => 'SyncBackendError: $message';
 }
 
-/// 鉴权类失败的两种**互不相同**的语义（BUG-1323）。
+/// 鉴权类失败的三种**互不相同**的语义（BUG-1323 / BUG-1348）。
 ///
 /// 压成同一条 `SyncAuthError('Authentication failed')` 会把 [forbidden] 误报成
 /// [credentials]：「服务端按策略拒绝了这次请求」被说成「登录已过期」，
@@ -48,6 +48,17 @@ enum SyncAuthFailureKind {
   /// 可操作项 = 看服务端给出的原因（如「service config 必须走 HTTPS」），
   /// **不是**去动凭据；把用户登出只会毁掉一个好端端的会话。
   forbidden,
+
+  /// 桌面 loopback 流程里**浏览器的授权回调始终没回到 app**（等待超时）。BUG-1348：
+  /// 这跟凭据毫无关系——用户可能压根没在浏览器里点完，也可能点完了但发往
+  /// `http://127.0.0.1:<port>` 的回调被全局代理吞掉。可操作项 = 重试并让代理放行回环
+  /// 地址，**不是**「重新登录」。
+  ///
+  /// 单独立一个枚举值的原因：这条错误的消息里带 "authorization" 字样，而
+  /// `sync_error_messages.dart` 曾按 `contains('auth')` 猜类型，于是它被抢先判成
+  /// 「登录已过期」——把「浏览器没回来」说成「凭据坏了」，把用户指向完全错误的修复
+  /// 方向。判据是类型，不是字符串。
+  browserTimeout,
 }
 
 class SyncAuthError implements Exception {

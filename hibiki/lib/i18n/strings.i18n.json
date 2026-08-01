@@ -1865,7 +1865,7 @@
   "sync_err_not_configured": "Google sync credentials are not configured in this build.",
   "sync_err_quota": "Cloud storage is full (quota reached).",
   "sync_err_scope_upgrade": "Sync permissions changed — please sign in to Google again to continue syncing.",
-  "sync_err_timeout": "Connection timed out — the server did not respond in time.",
+  "sync_err_timeout": "Connection timed out — the server did not respond in time. Check your network or proxy settings.",
   "sync_error": "Sync error: $message",
   "sync_exit_warning": "Sync is still in progress. Exiting now may cause data loss.",
   "sync_exit_warning_title": "Sync in progress",
@@ -2059,10 +2059,10 @@
   "update_check_failed": "Update check failed",
   "update_checking_now": "Checking for updates…",
   "update_connecting": "Connecting…",
-  "update_custom_proxy_auto_hint": "Leave blank to use environment variables, then the enabled system proxy.",
+  "update_custom_proxy_auto_hint": "Used for update checks, cloud sync and downloads. Leave blank to use environment variables, then the enabled system proxy.",
   "update_custom_proxy_hint": "host:port, e.g. 127.0.0.1:7890 (IPv4/host only)",
   "update_custom_proxy_invalid": "Invalid proxy. Use host:port",
-  "update_custom_proxy_label": "Custom update proxy",
+  "update_custom_proxy_label": "Custom network proxy",
   "update_debug_channel": "Debug update channel",
   "update_debug_channel_warning": "Debug channel builds may be unstable. Use at your own risk.",
   "update_download": "Download",
@@ -3051,5 +3051,6 @@
   "collection_episode_watched_at": "Watched to $position",
   "collection_episode_bangumi_open_failed": "Could not resolve the episode on Bangumi: $error",
   "collection_episode_rename_partial": "Renamed $n episodes, $m failed",
-  "collection_episode_bangumi_not_found": "Episode not found on Bangumi; opened the subject page instead"
+  "collection_episode_bangumi_not_found": "Episode not found on Bangumi; opened the subject page instead",
+  "sync_err_browser_timeout": "The browser never returned the authorization. Retry, and make sure your proxy lets 127.0.0.1 through."
 }

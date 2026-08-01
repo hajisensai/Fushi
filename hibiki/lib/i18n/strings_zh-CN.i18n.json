@@ -1865,7 +1865,7 @@
   "sync_err_not_configured": "此构建未配置谷歌同步凭据。",
   "sync_err_quota": "云端存储空间已满（配额已用尽）。",
   "sync_err_scope_upgrade": "同步权限已更新，请重新登录 Google 账号以继续同步。",
-  "sync_err_timeout": "连接超时——服务器未在限定时间内响应。",
+  "sync_err_timeout": "连接超时——服务器未在限定时间内响应。请检查网络或代理设置。",
   "sync_error": "同步错误：$message",
   "sync_exit_warning": "同步尚未完成，现在退出可能会丢失数据。",
   "sync_exit_warning_title": "同步进行中",
@@ -2059,10 +2059,10 @@
   "update_check_failed": "检查更新失败",
   "update_checking_now": "正在检查更新…",
   "update_connecting": "正在连接更新源…",
-  "update_custom_proxy_auto_hint": "留空时自动读取环境变量，再读取已启用的系统代理。",
+  "update_custom_proxy_auto_hint": "用于更新检查、云同步和下载。留空时自动读取环境变量，再读取已启用的系统代理。",
   "update_custom_proxy_hint": "host:port，例如 127.0.0.1:7890（仅 IPv4/域名）",
   "update_custom_proxy_invalid": "代理格式无效，请用 host:port",
-  "update_custom_proxy_label": "自定义更新代理",
+  "update_custom_proxy_label": "自定义网络代理",
   "update_debug_channel": "调试更新通道",
   "update_debug_channel_warning": "调试通道的构建可能不稳定。使用风险自负。",
   "update_download": "下载",
@@ -3051,5 +3051,6 @@
   "collection_episode_watched_at": "看到 $position",
   "collection_episode_bangumi_open_failed": "解析 Bangumi 章节失败：$error",
   "collection_episode_rename_partial": "已重命名 $n 集 · $m 集失败",
-  "collection_episode_bangumi_not_found": "未找到对应集，已打开条目页"
+  "collection_episode_bangumi_not_found": "未找到对应集，已打开条目页",
+  "sync_err_browser_timeout": "浏览器授权没有返回到应用。请重试，并确认代理放行了本机回环地址 127.0.0.1。"
 }

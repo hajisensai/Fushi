@@ -211,7 +211,7 @@ class OneDriveSyncBackend extends SyncBackend
       };
 
   Future<http.Response> _graphGet(String path) async {
-    final resp = await syncHttpClient.get(
+    final resp = await (await obtainSyncHttpClient()).get(
       Uri.parse('$_apiBase$path'),
       headers: _authHeaders,
     );
@@ -221,7 +221,7 @@ class OneDriveSyncBackend extends SyncBackend
 
   Future<http.Response> _graphPost(
       String path, Map<String, dynamic> body) async {
-    final resp = await syncHttpClient.post(
+    final resp = await (await obtainSyncHttpClient()).post(
       Uri.parse('$_apiBase$path'),
       headers: _authHeaders,
       body: jsonEncode(body),
@@ -232,7 +232,7 @@ class OneDriveSyncBackend extends SyncBackend
 
   Future<http.Response> _graphPut(String path, List<int> bytes,
       {String contentType = 'application/octet-stream'}) async {
-    final resp = await syncHttpClient.put(
+    final resp = await (await obtainSyncHttpClient()).put(
       Uri.parse('$_apiBase$path'),
       headers: {
         'Authorization': 'Bearer $_accessToken',
@@ -245,7 +245,7 @@ class OneDriveSyncBackend extends SyncBackend
   }
 
   Future<http.Response> _graphDelete(String path) async {
-    final resp = await syncHttpClient.delete(
+    final resp = await (await obtainSyncHttpClient()).delete(
       Uri.parse('$_apiBase$path'),
       headers: {'Authorization': 'Bearer $_accessToken'},
     );
@@ -467,7 +467,7 @@ class OneDriveSyncBackend extends SyncBackend
     }
 
     final request = http.Request('GET', Uri.parse(downloadUrl));
-    final streamedResp = await syncHttpClient.send(request);
+    final streamedResp = await (await obtainSyncHttpClient()).send(request);
     if (streamedResp.statusCode >= 400) {
       throw SyncBackendError(
           'Download failed: HTTP ${streamedResp.statusCode}');
@@ -568,8 +568,8 @@ class OneDriveSyncBackend extends SyncBackend
     String? url = '$_apiBase$firstPath';
 
     while (url != null) {
-      final resp =
-          await syncHttpClient.get(Uri.parse(url), headers: _authHeaders);
+      final resp = await (await obtainSyncHttpClient())
+          .get(Uri.parse(url), headers: _authHeaders);
       _checkResponse(resp, 'GET $firstPath');
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
       items.addAll((json['value'] as List).cast<Map<String, dynamic>>());
@@ -587,7 +587,8 @@ class OneDriveSyncBackend extends SyncBackend
       throw SyncBackendError('No download URL for item $fileId');
     }
 
-    final resp = await syncHttpClient.get(Uri.parse(downloadUrl));
+    final resp =
+        await (await obtainSyncHttpClient()).get(Uri.parse(downloadUrl));
     if (resp.statusCode >= 400) {
       throw SyncBackendError('Download failed: HTTP ${resp.statusCode}');
     }

@@ -3051,5 +3051,6 @@
   "collection_episode_watched_at": "Watched to $position",
   "collection_episode_bangumi_open_failed": "Could not resolve the episode on Bangumi: $error",
   "collection_episode_rename_partial": "Renamed $n episodes, $m failed",
-  "collection_episode_bangumi_not_found": "Episode not found on Bangumi; opened the subject page instead"
+  "collection_episode_bangumi_not_found": "Episode not found on Bangumi; opened the subject page instead",
+  "sync_err_browser_timeout": "The browser never returned the authorization. Retry, and make sure your proxy lets 127.0.0.1 through."
 }

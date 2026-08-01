@@ -4,10 +4,12 @@ import 'package:hibiki/utils.dart';
 /// Localized friendly clause for a known error class, or null if the error is
 /// not one we recognize (caller decides the fallback).
 String? _friendlyClause(Object error) {
-  // BUG-1323：403「服务端按策略拒绝」有类型可用，不必再猜字符串。必须放在
-  // 最前面：下面那条 `error is SyncAuthError && l.contains('auth')` 会把任何带
-  // 'auth' 字样的鉴权错误都说成「登录已过期」——而 403 的凭据是好的。
-  if (error is SyncAuthError && error.isForbidden) {
+  // BUG-1323 / BUG-1348：凡是**有类型可依**的鉴权失败都在这里一次分派掉，绝不落到
+  // 下面的字符串猜测区。下面那条 `error is SyncAuthError && l.contains('auth')` 会把
+  // 任何带 'auth' 字样的鉴权错误都说成「登录已过期」——403 的凭据是好的，而
+  // 「Timed out waiting for **authorization**」压根不是凭据问题（浏览器回调没回来），
+  // 两者都会被它误捕。
+  if (error is SyncAuthError && error.kind != SyncAuthFailureKind.credentials) {
     return friendlySyncAuthFailure(error.kind, error.serverReason);
   }
   final String msg =
@@ -94,10 +96,18 @@ String? _friendlyClause(Object error) {
 /// 参数只取 [SyncAuthFailureKind] 与服务端原因两个基元，故本文件不需要反向
 /// 依赖 sync_orchestrator（错误文案层不该知道同步编排层的存在）。
 String friendlySyncAuthFailure(SyncAuthFailureKind kind, String? serverReason) {
-  if (kind != SyncAuthFailureKind.forbidden) return t.sync_err_auth_expired;
-  final String? reason = serverReason;
-  if (reason == null || reason.isEmpty) return t.sync_err_forbidden;
-  return t.sync_err_forbidden_detail(reason: reason);
+  switch (kind) {
+    case SyncAuthFailureKind.credentials:
+      return t.sync_err_auth_expired;
+    case SyncAuthFailureKind.browserTimeout:
+      // BUG-1348：浏览器授权页没能把回调送回 app。凭据没坏，叫用户「重新登录」只会让他
+      // 把同一条死路再走一遍——要说的是「回调没回来，让代理放行本机回环」。
+      return t.sync_err_browser_timeout;
+    case SyncAuthFailureKind.forbidden:
+      final String? reason = serverReason;
+      if (reason == null || reason.isEmpty) return t.sync_err_forbidden;
+      return t.sync_err_forbidden_detail(reason: reason);
+  }
 }
 
 String _rawMessage(Object error) => error is SyncBackendError

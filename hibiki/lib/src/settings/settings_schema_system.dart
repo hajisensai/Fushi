@@ -7,6 +7,7 @@ import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart'
     show buildDataStorageLocationSection;
+import 'package:hibiki/src/sync/sync_http.dart';
 import 'package:hibiki/src/utils/misc/crash_dump_locator.dart';
 import 'package:hibiki/src/utils/misc/platform_updater.dart';
 import 'package:hibiki/utils.dart';
@@ -230,6 +231,10 @@ SettingsDestination buildSystemDestination() {
             onChanged: (SettingsContext settingsContext, String value) async {
               final String trimmed = value.trim();
               await settingsContext.appModel.setUpdateCustomProxy(trimmed);
+              // 云同步的共享 client 在首次使用时就把代理解析结果固化进 findProxy 了，
+              // 不丢弃它，用户改完代理仍走旧出口——那等于这条设置对同步不生效
+              // （BUG-1348）。更新检查每次新建 client，不受影响。
+              resetSyncHttpClient();
               // 非空且无法归一成合法 host:port → 提示（仍保存原串，运行时忽略）。
               if (trimmed.isNotEmpty &&
                   normalizeUserProxyHostPort(trimmed) == null) {

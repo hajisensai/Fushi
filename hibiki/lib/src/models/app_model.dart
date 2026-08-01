@@ -2138,6 +2138,11 @@ class AppModel with ChangeNotifier {
         mediaHistoryRepo.loadFromDb(),
       ]);
       prefsRepo.addListener(notifyListeners);
+      // 代理是**进程级**网络出口配置，却只存在偏好里；同步层的单例（GoogleDriveAuth 等）
+      // 拿不到 AppModel，以前就只能各自裸连——BUG-1348 的谷歌云盘登录超时正是如此。偏好
+      // 一装载好就把进程级读取器接上去，此后任何 applyAppProxy(client) 都自动拿到同一个值，
+      // 不必沿调用链穿参（穿漏一处 = 一条不走代理的暗路）。
+      appUserProxyReader = () => prefsRepo.updateCustomProxy;
       _applyMemoryPolicy();
       _mediaTrackingService = MediaTrackingService(
         repository: MediaTrackingRepository(_database),
