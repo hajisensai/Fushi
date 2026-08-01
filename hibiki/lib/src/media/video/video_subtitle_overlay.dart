@@ -1337,21 +1337,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       // \pos 绝对定位：把字幕盒的 \an 锚点精确落到映射坐标（\pos 覆盖 MarginV）。
       final SubtitleAnchor anchor = posMarkup!.anchor ??
           const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center);
-      return Stack(
-        children: <Widget>[
-          Positioned(
-            left: posScreen.dx,
-            top: posScreen.dy,
-            child: FractionalTranslation(
-              translation: Offset(
-                -_hFrac(anchor.horizontal),
-                -_vFrac(anchor.vertical),
-              ),
-              child: content,
-            ),
-          ),
-        ],
-      );
+      return _absolutePositioned(posScreen, anchor, content);
     }
     // 无 \pos：纯 SRT 副字幕强制顶部锚点；否则按 markup 锚点（null → 历史底居中）。
     final SubtitleAnchor? anchor = forceTop
@@ -2500,6 +2486,57 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     );
   }
 
+  /// `\pos` / `\move` 绝对定位盒：把字幕盒的 `\an` 锚点落到 [posScreen]，并与锚点分支
+  /// （[_anchoredPadded] → [_paddingFor]）**共用同一条 chrome 避让契约**。
+  ///
+  /// BUG-1330 根因：避让原先挂在「锚点定位分支」上而不是「字幕层」上——带 `\pos` 的 cue
+  /// 直接走裸 [Positioned] 返回，[controlsVisible] / reserve 一概不参与，于是 OP 卡拉OK 那种
+  /// `{\an7\pos(461,672)}`（672/720 = 画面 93.3%，正是进度条那一条）的逐字歌词恒被控制条
+  /// 压住、且画在 chrome 之上盖掉暂停键。定位方式是**实现细节**，「UI 赢重叠」是产品契约，
+  /// 契约不该随分支消失。
+  ///
+  /// 语义与 [_paddingFor] 严格同构——**取下限、不是加法、只单向移动**：
+  /// - 盒底探进底部 chrome 带才上抬到恰骑其上缘（`min`，绝不把高位盒往下拽）；
+  /// - 盒顶探进顶部 chrome 带才下压到其下缘（`max`，绝不把低位盒往上顶）；
+  /// - 两者都不成立时坐标逐像素等于作者 `\pos`（招牌 / 画面中部特效外观不变）。
+  ///
+  /// 水平方向**不做任何钳制**：`\pos` 的 x 是作者语义，横向出屏另有根因（`\fn@…` 竖排
+  /// 字体前缀未支持），钳到屏内只会把那个 bug 盖住。
+  ///
+  /// 无 [VideoSubtitleOverlay.controlsVisible]（测试 / 有声书 / 无控制条）时避让进度恒 0，
+  /// 与历史像素级一致。控制条显隐用 [TweenAnimationBuilder] 在「作者位」与「避让位」之间
+  /// 插值，时长/曲线与锚点分支的 [AnimatedPadding] 同源，两条分支跟手感一致。
+  Widget _absolutePositioned(
+      Offset posScreen, SubtitleAnchor anchor, Widget content) {
+    final double anchorFx = _hFrac(anchor.horizontal);
+    final double anchorFy = _vFrac(anchor.vertical);
+    Widget layout(double dodgeProgress) => CustomSingleChildLayout(
+          delegate: _AbsoluteCueLayoutDelegate(
+            pos: posScreen,
+            anchorFx: anchorFx,
+            anchorFy: anchorFy,
+            topReserve: widget.controlsTopReserve,
+            bottomReserve: widget.controlsBottomReserve,
+            dodgeProgress: dodgeProgress,
+          ),
+          child: content,
+        );
+
+    final ValueListenable<bool>? visible = widget.controlsVisible;
+    if (visible == null) return layout(0);
+    return ValueListenableBuilder<bool>(
+      valueListenable: visible,
+      builder: (BuildContext _, bool controlsVisible, Widget? child) {
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: controlsVisible ? 1.0 : 0.0),
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          builder: (BuildContext _, double t, Widget? __) => layout(t),
+        );
+      },
+    );
+  }
+
   /// 把 [charContext] 对应字符的局部布局矩形转成全局屏幕矩形（弹窗定位用）。
   /// 无 RenderBox 时退化成 [Rect.zero]，调用方有 fallback。
   static Rect _globalRectOf(BuildContext charContext) {
@@ -2508,6 +2545,91 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final Offset topLeft = ro.localToGlobal(Offset.zero);
     return topLeft & ro.size;
   }
+}
+
+/// `\pos` / `\move` 绝对定位盒的最终左上角（容器局部坐标）。纯函数，几何真相源。
+///
+/// [pos] 是 `\pos` 映射到容器的锚点；[anchorFx]/[anchorFy] 是 `\an` 锚点在盒内的比例
+/// （左/上=0、中=0.5、右/下=1），故作者位 = `pos - (anchorFx*w, anchorFy*h)`。
+///
+/// [dodgeProgress] ∈ [0,1] 是控制条可见度（0=隐藏，1=完全可见）：在作者位与避让位之间
+/// 线性插值，供淡入淡出期跟随。避让语义与 [VideoSubtitleOverlayState._paddingFor] 同构
+/// ——对 chrome 带**取下限、单向移动**，不是加法：
+/// - 盒底越过 `height - bottomReserve` 才上抬（`math.min`，高位盒不被拽下）；
+/// - 盒顶越过 `topReserve` 才下压（`math.max`，低位盒不被顶上）；
+/// - 带高不足以容纳字幕盒时顶部优先（结果确定，不来回抖）。
+///
+/// 水平坐标恒为作者位（`\pos` 的 x 是作者语义，不钳制）。
+@visibleForTesting
+Offset resolveAbsoluteCueOffset({
+  required Offset pos,
+  required Size container,
+  required Size child,
+  required double anchorFx,
+  required double anchorFy,
+  required double topReserve,
+  required double bottomReserve,
+  required double dodgeProgress,
+}) {
+  final double rawX = pos.dx - anchorFx * child.width;
+  final double rawY = pos.dy - anchorFy * child.height;
+  if (dodgeProgress <= 0) return Offset(rawX, rawY);
+  double dodgedY = rawY;
+  // 底部 chrome（进度条 + 按钮行）：只上抬，抬到盒底恰骑其上缘。
+  final double bandBottom = container.height - bottomReserve;
+  dodgedY = math.min(dodgedY, bandBottom - child.height);
+  // 顶部 chrome（标题栏 + 右上角菜单，BUG-1069 同契约）：只下压，压到其下缘。
+  dodgedY = math.max(dodgedY, topReserve);
+  final double t = dodgeProgress.clamp(0.0, 1.0).toDouble();
+  return Offset(rawX, rawY + (dodgedY - rawY) * t);
+}
+
+/// [resolveAbsoluteCueOffset] 的布局壳：`\pos` 盒需要**子盒真实尺寸**才能判断「盒底是否
+/// 探进控制条」，故不能用 [Positioned] + [FractionalTranslation]（两者都在布局前定位）。
+class _AbsoluteCueLayoutDelegate extends SingleChildLayoutDelegate {
+  const _AbsoluteCueLayoutDelegate({
+    required this.pos,
+    required this.anchorFx,
+    required this.anchorFy,
+    required this.topReserve,
+    required this.bottomReserve,
+    required this.dodgeProgress,
+  });
+
+  final Offset pos;
+  final double anchorFx;
+  final double anchorFy;
+  final double topReserve;
+  final double bottomReserve;
+  final double dodgeProgress;
+
+  // 字幕盒按内容自然尺寸排版（与旧 Positioned(child:) 的无界宽同义）：不被层尺寸拉伸，
+  // 也不因避让而换行重排——避让只挪位置，不改变盒的排版结果。
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      const BoxConstraints();
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) =>
+      resolveAbsoluteCueOffset(
+        pos: pos,
+        container: size,
+        child: childSize,
+        anchorFx: anchorFx,
+        anchorFy: anchorFy,
+        topReserve: topReserve,
+        bottomReserve: bottomReserve,
+        dodgeProgress: dodgeProgress,
+      );
+
+  @override
+  bool shouldRelayout(_AbsoluteCueLayoutDelegate old) =>
+      pos != old.pos ||
+      anchorFx != old.anchorFx ||
+      anchorFy != old.anchorFy ||
+      topReserve != old.topReserve ||
+      bottomReserve != old.bottomReserve ||
+      dodgeProgress != old.dodgeProgress;
 }
 
 /// GDI 全名尾部**字重后缀** → [FontWeight]；不是字重后缀返回 null。纯函数可单测。
