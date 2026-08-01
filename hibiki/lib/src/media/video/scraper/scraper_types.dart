@@ -4,13 +4,20 @@
 /// ① sidecar 识别（poster.jpg / tvshow.nfo，零网络）
 /// ② 文件名/目录名解析（anitomy 式规则，产出 [ParsedMediaName]）
 /// ③ 标题归一化（繁简/全半角/罗马数字季度/副标题拆分）
-/// ④ 匹配（离线别名库 → Bangumi → TMDB，产出 [ScrapeCandidate]）
+/// ④ 匹配（离线别名库 → Bangumi → TMDB → AniList → Jikan，产出 [ScrapeCandidate]）
 /// ⑤ 打分校验（[MatchScorer] 产出 [MatchDecision]，置信度分级）
+///
+/// 第 ④ 层有**两种代价模型**，服务两种场景，不要合并：
+/// - 自动刮削按上面的顺序**逐层兜底**、命中 high 立即停（批量刮 500 本不能每本发 5 个
+///   请求）——`CoverScraperService._resolveBestDecision`；
+/// - 手动匹配弹窗**并发查全部可用源**再合并排序（用户在等，要一次看全）——
+///   `CoverScraperService.searchAllSources`，产出 [AggregatedSearchResult]。
 ///
 /// 本文件只放跨模块共享的纯数据类型，**不放任何实现逻辑**；
 /// 各层实现见同目录 `filename_parser.dart` / `title_normalizer.dart` /
 /// `offline_index.dart` / `match_scorer.dart` / `bangumi_client.dart` /
-/// `tmdb_client.dart` / `sidecar_scanner.dart` / `cover_scraper_service.dart`。
+/// `tmdb_client.dart` / `anilist_client.dart` / `jikan_client.dart` /
+/// `sidecar_scanner.dart` / `cover_scraper_service.dart`。
 library;
 
 /// 从文件名/目录名解析出的结构化信息（解析层输出）。
@@ -52,7 +59,23 @@ class ParsedMediaName {
 }
 
 /// 候选条目来源。
-enum ScrapeSource { offlineDb, bangumi, tmdb, manualUrl }
+///
+/// 全部持久化都按 **name** 走（`ScrapeSource.values.asNameMap()`，见 [CoverMeta]、
+/// `alias_cache.dart`、`video_book_repository.dart`），不按 index —— 因此新增来源
+/// 可插在任意位置，旧数据不会错位。
+enum ScrapeSource { offlineDb, bangumi, tmdb, anilist, jikan, manualUrl }
+
+/// 各来源的展示名（结果列表来源徽标用）。
+///
+/// 刻意**不进 i18n**：这些是第三方站点的专有名词，17 种语言里都是同一个拉丁字母
+/// 写法，翻译它们只会让 `i18n_sync` 多 17 份完全一样的值。离线库是本地概念，是
+/// 唯一需要翻译的，故由调用方单独取 `t.video_scrape_source_offline`。
+const Map<ScrapeSource, String> kScrapeSourceLabels = <ScrapeSource, String>{
+  ScrapeSource.bangumi: 'Bangumi',
+  ScrapeSource.tmdb: 'TMDB',
+  ScrapeSource.anilist: 'AniList',
+  ScrapeSource.jikan: 'MAL',
+};
 
 /// 条目类型（用于打分时与 [ParsedMediaName.isMovieHint] 互验）。
 enum ScrapeEntryType { tv, movie, ova, special, unknown }
@@ -249,6 +272,36 @@ class CollectionScrapeResult {
 
   /// 条目资料（Bangumi 走详情端点取全量；其余源由候选自身降级拼出）。
   final ScrapeMetadata metadata;
+}
+
+/// 多源并发聚合搜索的结果（手动匹配弹窗用）。
+///
+/// 存在的理由是**把「部分源挂了」与「全部源都挂了」分开**：前者只是降级（其余源的
+/// 候选照常可用，用户根本不需要知道），后者才是「搜不了」必须给可见失败态
+/// （BUG-1176 的分界）。把失败折成一个 `bool hasError` 就会二选一地丢掉其中一半语义。
+class AggregatedSearchResult {
+  const AggregatedSearchResult({
+    required this.candidates,
+    required this.failures,
+    required this.queriedSources,
+  });
+
+  /// 合并后的候选（同源内按 entryId 去重，跨源不去重）。
+  final List<ScrapeCandidate> candidates;
+
+  /// 失败的源 → 原始异常。空 map = 全部源都成功。
+  final Map<ScrapeSource, Object> failures;
+
+  /// 本轮真正查过的源。判「全失败」必须拿它当分母——用全体枚举当分母会把
+  /// 「压根没配 TMDB」误算成「TMDB 失败了」。
+  final List<ScrapeSource> queriedSources;
+
+  /// 是否全部查过的源都失败了（= 真的搜不了，UI 出失败态）。
+  bool get allFailed =>
+      queriedSources.isNotEmpty && failures.length == queriedSources.length;
+
+  /// 任取一个失败异常（全失败时给 UI 折成可行动原因用）。
+  Object? get anyFailure => failures.isEmpty ? null : failures.values.first;
 }
 
 /// 打分置信度分级。

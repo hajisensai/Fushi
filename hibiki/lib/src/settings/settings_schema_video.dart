@@ -7,6 +7,7 @@ import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_settings_actions.dart';
 import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:hibiki/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
@@ -234,6 +235,29 @@ SettingsDestination buildVideoDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setVideoAutoScrape(value);
             },
+          ),
+          // 自定义 TMDB API key —— **内置 key 的逃生口**，不是必填项。
+          //
+          // 刮削默认用随包内置的项目 key（见 tmdb_default_key.dart），绝大多数用户
+          // 永远不需要碰这里。留这个入口只为两种情况：① 内置 key 被 TMDB 吊销/限流
+          // 时用户能自救；② 用户想用自己的配额。留空 = 用内置 key。
+          //
+          // secret: true → 明文遮蔽 + 眼睛按钮，与其它 API key 项一致。
+          SettingsTextItem(
+            id: 'video.library.tmdb_api_key',
+            title: t.video_setting_tmdb_key,
+            subtitle: t.video_setting_tmdb_key_hint,
+            icon: Icons.key_outlined,
+            secret: true,
+            value: (SettingsContext settingsContext) => settingsContext
+                    .appModel.prefsRepo
+                    .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '')
+                as String,
+            onChanged: (SettingsContext settingsContext, String value) async =>
+                settingsContext.appModel.prefsRepo.setPref(
+              kVideoScraperTmdbApiKeyPref,
+              value.trim(),
+            ),
           ),
         ],
       ),
