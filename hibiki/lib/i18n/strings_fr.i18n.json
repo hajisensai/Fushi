@@ -2958,5 +2958,6 @@
   "download_airing_calendar_week_next": "Next week",
   "download_airing_calendar_week_empty": "Nothing airing this week",
   "video_jimaku_format": "Format",
-  "video_jimaku_format_all": "All"
+  "video_jimaku_format_all": "All",
+  "media_source_local_roots": "Local scan roots"
 }

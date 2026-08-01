@@ -163,7 +163,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: <Widget>[
-                _sectionTitle(t.media_source_manage_title),
+                _sectionTitle(t.media_source_local_roots),
                 const SizedBox(height: 8),
                 MediaSourcesView(
                   key: _localSourcesKey,

@@ -2958,5 +2958,6 @@
   "download_airing_calendar_week_next": "下一周",
   "download_airing_calendar_week_empty": "本周没有相关放送",
   "video_jimaku_format": "类型",
-  "video_jimaku_format_all": "全部"
+  "video_jimaku_format_all": "全部",
+  "media_source_local_roots": "本地扫描根"
 }
