@@ -29,9 +29,9 @@ REPO="${CI_SWEEP_REPO:-hajisensai/hibiki}"
 SELF="${CI_SWEEP_SELF:-hajisensai}"
 DAYS="${CI_SWEEP_DAYS:-3}"
 LIMIT="${CI_SWEEP_LIMIT:-50}"
-# fake-ip DNS 下 gh 直连必超时——与 tool/board / tool/pr_sweep.sh 同款自动挂本机代理。
-export HTTPS_PROXY="${HTTPS_PROXY:-http://127.0.0.1:34151}"
-export HTTP_PROXY="${HTTP_PROXY:-${HTTPS_PROXY}}"
+# fake-ip DNS 下 gh 直连必超时——需要代理。解析顺序见 tool/proxy_env.sh：
+# 调用方环境变量 > HIBIKI_BOOTSTRAP_PROXY > tool/bootstrap.local.env > 不设（照常跑）。
+source "$(dirname "${BASH_SOURCE[0]}")/proxy_env.sh"
 export PYTHONUTF8=1   # Windows GBK 控制台下内嵌 python 打中文不乱码
 
 # 自动落板项收集成 TSV（runid\tconclusion\tworkflow\tbranch\tsha9\turl\ttitle）；
