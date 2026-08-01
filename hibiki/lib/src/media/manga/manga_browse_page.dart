@@ -116,6 +116,7 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
               padding: const EdgeInsets.all(16),
               children: <Widget>[
                 HibikiCard(
+                  padding: EdgeInsets.zero,
                   child: HibikiListItem(
                     leading: const Icon(Icons.auto_stories_outlined),
                     title: Text(t.mihon_source_browse_mokuro),
@@ -126,6 +127,7 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
                 ),
                 for (final MangaOnlineSourceRow source in sources)
                   HibikiCard(
+                    padding: EdgeInsets.zero,
                     child: HibikiListItem(
                       leading: CircleAvatar(
                         child: Text(

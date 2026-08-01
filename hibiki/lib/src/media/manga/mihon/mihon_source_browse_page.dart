@@ -259,28 +259,27 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
             return HibikiCard(
               padding: EdgeInsets.zero,
               onTap: () => _openDetails(manga),
-              child: ClipRRect(
-                borderRadius: HibikiBorderRadius.card,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Expanded(
-                      child: MihonSourceImage(
-                        runtime: widget.manager.runtime,
-                        context: _sourceContext!,
-                        url: manga.coverUrl,
-                      ),
+              // HibikiCard 内部已用 Material(clipBehavior: antiAlias) 按同一
+              // 圆角 token 裁剪，这里不再多包一层 ClipRRect。
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Expanded(
+                    child: MihonSourceImage(
+                      runtime: widget.manager.runtime,
+                      context: _sourceContext!,
+                      url: manga.coverUrl,
                     ),
-                    Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Text(
-                        manga.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Text(
+                      manga.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             );
           },
@@ -519,6 +518,7 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
                     const SizedBox(height: 8),
                     for (final MihonChapter chapter in _chapters)
                       HibikiCard(
+                        padding: EdgeInsets.zero,
                         child: HibikiListItem(
                           title: Text(chapter.name),
                           subtitle: chapter.scanlator?.isNotEmpty == true

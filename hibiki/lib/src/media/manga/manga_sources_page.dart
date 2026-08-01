@@ -210,6 +210,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     int index,
   ) {
     return HibikiCard(
+      padding: EdgeInsets.zero,
       child: HibikiListItem(
         leading: Switch.adaptive(
           value: source.enabled,
