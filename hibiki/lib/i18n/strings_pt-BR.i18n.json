@@ -2890,5 +2890,19 @@
   "anki_lapis_visual_mapping_hint": "Anki fields that fill the selected area. Changes are saved together with the style.",
   "anki_lapis_visual_mapping_none": "This area is drawn by the template itself and has no field of its own.",
   "anki_lapis_visual_color_custom": "Custom",
-  "anki_lapis_visual_color_picker_title": "Pick a color"
+  "anki_lapis_visual_color_picker_title": "Pick a color",
+  "anki_lapis_visual_blocks": "Custom areas",
+  "anki_lapis_visual_blocks_hint": "Show existing fields somewhere else on the card. Display only: no Anki field is added or deleted.",
+  "anki_lapis_visual_block_add": "Add area",
+  "anki_lapis_visual_block_delete": "Delete area",
+  "anki_lapis_visual_block_name": "Area $index",
+  "anki_lapis_visual_block_anchor": "Position on the card",
+  "anki_lapis_visual_block_anchor_top": "Top of the card",
+  "anki_lapis_visual_block_anchor_above_sentence": "Below the word",
+  "anki_lapis_visual_block_anchor_above_definition": "Below the sentence",
+  "anki_lapis_visual_block_anchor_below_definition": "Below the definitions",
+  "anki_lapis_visual_block_anchor_bottom": "Bottom of the card",
+  "anki_lapis_visual_block_fields": "Fields shown here",
+  "anki_lapis_visual_block_no_fields": "No fields selected yet",
+  "anki_lapis_visual_block_needs_note_type": "Pick a note type first to choose fields."
 }

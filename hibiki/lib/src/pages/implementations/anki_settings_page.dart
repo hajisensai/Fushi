@@ -550,6 +550,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           fontScalePercent: settings.lapisFontScalePercent,
           noteTypeFields: noteTypeFields,
           initialFieldMappings: settings.fieldMappings,
+          initialBlocks: settings.lapisCustomBlocks,
           pickHandlebar: noteTypeFields.isEmpty
               ? null
               : (String field, String currentValue) =>
@@ -559,6 +560,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     );
     if (result == null) return;
     await vm.setLapisCustomCss(result.customCss);
+    await vm.setLapisCustomBlocks(result.blocks);
     for (final MapEntry<String, String> entry in result.fieldMappings.entries) {
       await vm.updateFieldMapping(entry.key, entry.value);
     }

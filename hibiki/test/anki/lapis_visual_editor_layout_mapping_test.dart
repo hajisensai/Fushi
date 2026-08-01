@@ -244,6 +244,97 @@ void main() {
     });
   });
 
+  group('自定义区域', () {
+    testWidgets('新建区域 → 选字段 → 保存整份回传', (WidgetTester tester) async {
+      useWideWindow(tester);
+
+      final LapisVisualEditorResult? result = await openEditorAndSave(
+        tester,
+        initialCustomCss: '',
+        noteTypeFields: LapisNoteType.fields,
+        interact: (WidgetTester tester) async {
+          await _expand(tester, t.anki_lapis_visual_blocks);
+          await tester.tap(find.text(t.anki_lapis_visual_block_add));
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text('MiscInfo'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('MiscInfo'));
+          await tester.pumpAndSettle();
+        },
+      );
+
+      expect(result, isNotNull);
+      expect(result!.blocks.length, 1);
+      expect(result.blocks.single.fields, <String>['MiscInfo']);
+      // 区域是模板层的东西，不该顺手往 CSS 里写字段规则。
+      expect(result.customCss, contains('hibiki-block'));
+    });
+
+    testWidgets('删除区域后它的样式一起消失，不留孤儿规则', (WidgetTester tester) async {
+      useWideWindow(tester);
+      const List<LapisCustomBlock> initial = <LapisCustomBlock>[
+        LapisCustomBlock(
+          id: 'b1',
+          anchor: LapisBlockAnchor.bottom,
+          fields: <String>['MiscInfo'],
+          rule: LapisVisualRule(bold: true),
+        ),
+      ];
+      final LapisVisualEditorResult? result = await openEditorAndSave(
+        tester,
+        initialCustomCss: '',
+        noteTypeFields: LapisNoteType.fields,
+        initialBlocks: initial,
+        interact: (WidgetTester tester) async {
+          // 已有区域时该折叠区默认就是展开的，不能再点一次（会收起）。
+          await tester.tap(find.byIcon(Icons.delete_outline).first);
+          await tester.pumpAndSettle();
+        },
+      );
+
+      expect(result, isNotNull);
+      expect(result!.blocks, isEmpty);
+      expect(
+        result.customCss,
+        isNot(contains('data-hibiki-block')),
+        reason: '区域删了但它的 CSS 规则还留着（孤儿规则）',
+      );
+    });
+
+    testWidgets('选中区域时样式控件作用于区域本身，不误改内置字段', (WidgetTester tester) async {
+      useWideWindow(tester);
+      const List<LapisCustomBlock> initial = <LapisCustomBlock>[
+        LapisCustomBlock(
+          id: 'b1',
+          anchor: LapisBlockAnchor.bottom,
+          fields: <String>['MiscInfo'],
+        ),
+      ];
+      final LapisVisualEditorResult? result = await openEditorAndSave(
+        tester,
+        initialCustomCss: '',
+        noteTypeFields: LapisNoteType.fields,
+        initialBlocks: initial,
+        interact: (WidgetTester tester) async {
+          await tester.tap(find.text(t.anki_lapis_visual_block_name(index: 1)));
+          await tester.pumpAndSettle();
+          // 复用同一个「粗体」开关——区域没有另一套样式 UI。
+          await toggleBold(tester);
+        },
+      );
+
+      expect(result, isNotNull);
+      expect(result!.blocks.single.rule.bold, isTrue);
+      // 内置字段（默认选中的「单词」）不该被顺带改掉。
+      expect(
+        splitLapisVisualStyleSheet(result.customCss)
+            .ruleFor(LapisVisualField.expression)
+            .bold,
+        isFalse,
+      );
+    });
+  });
+
   group('调色板', () {
     testWidgets('文字颜色能取预设之外的任意色并写进 CSS', (WidgetTester tester) async {
       useWideWindow(tester);
