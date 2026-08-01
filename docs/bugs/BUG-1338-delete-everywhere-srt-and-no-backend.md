@@ -66,7 +66,14 @@
     **各测一遍**（它们是两份独立实现，只修一个是这类死角最常见的复发方式）+ 一条端到端
     （传零配置真 DB → 弹窗自己查出无通道并收起勾选框）。
 
-- **备注**：i18n 新增 1 键 `delete_scope_no_channel`（经 `tool/i18n_sync.dart` ×17 语言）。
+- **备注**：全量套件跑出的既有守卫 `reader_history_batch_delete_count_guard_test.dart`（BUG-439）
+  被本次改动碰红：它断言的是字面量 `await repo.delete(uid)`，而 SRT 分支新增了具名参数
+  `propagateDeletion:`，于是一次**合法的签名扩展**被误报成「SRT 分支不再经 repo 删除」。
+  已改成前缀匹配 `await repo.delete(uid`；BUG-439 真正的不变量（`if (removed > 0) deleted++`
+  门控计数器）**一字未改**，并已变异实测（拆掉该门控 → 守卫在第 33 行精确变红）确认放宽锚点
+  没有把守卫改成摆设。
+
+  i18n 新增 1 键 `delete_scope_no_channel`（经 `tool/i18n_sync.dart` ×17 语言）。
   向前兼容由既有设计保证：老版本 app 读到 `srtbook` 远端标记时 `SyncTombstoneKind.tryParse`
   返回 null，`_applyConfirmedDeletions` 走 `case null` 跳过并留痕，不会误删。
   **刻意不动**：`_deleteCollectionMembersMedia`（合集删成员本体）那条路径的弹窗是「也删成员
