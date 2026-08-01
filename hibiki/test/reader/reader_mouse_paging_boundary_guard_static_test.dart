@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// 源码守卫（headless WebView 不可用，锁注入 JS 行为）：
@@ -91,17 +92,22 @@ void main() {
           reason: '不得再用瞬时 scrollTop<=2 几何');
       expect(wheel, isNot(contains('_wheelLastScrollPos')),
           reason: '不得再用相邻拍位置推算（时序坏 → 横排中部误翻）');
+      // 连续分支自己的主轴归一（wheelDelta 取绝对值更大的轴）。分页侧同款判据在
+      // _handlePagedWheelTick 里单独守（见下方 TODO-737 组），两处不得再互相顶包。
+      expect(wheel, contains('Math.abs(e.deltaY) >= Math.abs(e.deltaX)'),
+          reason: '连续模式 wheelDelta 也按绝对值更大的主轴取，斜向触控板不误判方向');
     });
   });
 
-  // TODO-737 守卫（4 必补点 #2：删 _wheelTimer 不变红=盲区，这里显式断言）。
+  // TODO-737 / BUG-1342 守卫：Dart 入口仍是唯一 rate-limit；横向触控板 burst
+  // 由跨 document 的 Dart State 聚合，普通纵向鼠标滚轮维持既有 rate-limit 语义。
   // 行为变更声明：分页滚轮方向从此脱钩 invertSwipeDirection——该开关只管触摸滑动 /
   // 鼠标拖动（onSwipe 路径），不再管滚轮。滚轮翻页改走新 handler onWheelPaginate，
   // 节流闸门统一到 Dart 侧 _paginate / onBoundarySwipe 的 _lastPaginateTime 时间戳。
   group(
       'TODO-737 wheel input unify: direction decoupled + single throttle gate',
       () {
-    test('JS wheel block no longer self-throttles via _wheelTimer', () {
+    test('JS wheel block reports dominant axis but owns no gesture state', () {
       final String wheel = _listenerBlock(setupScript, 'wheel');
       // 只锁「代码形态」（赋值/读取），不锁注释文本——注释里解释「不再自持 _wheelTimer」
       // 是允许的；真正回归是 setTimeout 节流代码复活。
@@ -112,20 +118,49 @@ void main() {
           reason: 'TODO-737：JS _wheelTimer 读取门控已删，不得复活');
       expect(wheel, isNot(contains('var _wheelTimer')),
           reason: 'TODO-737：JS _wheelTimer 声明已删，不得复活');
+      expect(wheel, contains('_handlePagedWheelTick(e)'),
+          reason: '分页 wheel tick 必须回传方向与主轴给跨章节 Dart 闸门');
+      expect(setupScript, isNot(contains('_pagedWheelGestureSettleTimer')),
+          reason: 'JS document 切章即销毁，不得持有手势 session');
+      expect(setupScript, isNot(contains('_pagedWheelGestureActive')));
     });
 
     test('paged wheel emits onWheelPaginate (not onSwipe)', () {
       final String wheel = _listenerBlock(setupScript, 'wheel');
-      expect(wheel, contains("callHandler('onWheelPaginate'"),
+      // 假绿修复（PR#670 复核）：分页主轴/方向判据必须锚进 _handlePagedWheelTick
+      // **方法体内部**。旧写法对整份 setupScript 取 contains，命中的是**连续模式分支**
+      // 里同名的 `Math.abs(e.deltaY) >= Math.abs(e.deltaX)`（基底就存在，与本守卫要守的
+      // 分页侧无关）；把分页侧改回旧裸符号判据时 21 条 wheel 守卫全绿 = 零覆盖。
+      final String tick = methodBody(
+        setupScript,
+        'function _handlePagedWheelTick(e)',
+        lexicon: SourceLexicon.js,
+      );
+      expect(containsCodeLine(tick, "callHandler('onWheelPaginate'"), isTrue,
           reason: '分页滚轮翻页改走 onWheelPaginate（产语义意图 forward/backward）');
+      expect(containsCodeLine(tick, "horizontal ? 'horizontal' : 'vertical'"),
+          isTrue,
+          reason: '主轴须一并回传，Dart 侧才能只对横向触控板 burst 开跨章节手势闸门');
+      // 主轴判据：按绝对值更大的轴取 delta，斜向 tick 不得被次轴符号带偏。
+      expect(containsCodeLine(tick, 'Math.abs(e.deltaX) > Math.abs(e.deltaY)'),
+          isTrue,
+          reason: '分页滚轮必须按绝对值更大的主轴判横/纵，不能任一轴为正就前进');
+      expect(
+          containsCodeLine(
+              tick, 'var delta = horizontal ? e.deltaX : e.deltaY'),
+          isTrue,
+          reason: 'delta 必须取自主轴本身，而不是固定读 deltaY');
+      // 方向归一：主轴 delta>0=forward（对齐连续滚轮 delta>0=前进），消除旧裸符号
+      // deltaY<0=forward 与连续相反的方向矛盾。
+      expect(
+          containsCodeLine(tick, "delta > 0 ? 'forward' : 'backward'"), isTrue,
+          reason: '方向只由主轴 delta 的符号决定');
+      expect(containsCodeLine(tick, 'e.deltaY > 0 || e.deltaX > 0'), isFalse,
+          reason: '旧的「任一轴为正就前进」裸符号判据（BUG-1342 根因）必须移除');
+      expect(containsCodeLine(tick, 'e.deltaY < 0 || e.deltaX > 0'), isFalse,
+          reason: '旧的 deltaY<0=forward 裸符号（方向矛盾根因）必须移除');
       expect(wheel, isNot(contains("callHandler('onSwipe'")),
           reason: 'wheel 块不得再回传 onSwipe（onSwipe 专属触摸/鼠标拖动）');
-      // 方向归一：deltaY>0=forward（对齐连续滚轮 delta>0=前进），消除旧裸符号
-      // deltaY<0=forward 与连续相反的方向矛盾。
-      expect(wheel, contains('var forward = (e.deltaY > 0 || e.deltaX > 0)'),
-          reason: 'TODO-737：分页滚轮方向归一为 deltaY>0=forward，对齐连续滚轮');
-      expect(wheel, isNot(contains('e.deltaY < 0 || e.deltaX > 0')),
-          reason: '旧的 deltaY<0=forward 裸符号（方向矛盾根因）必须移除');
     });
 
     test('arm-then-fire 二次确认仍完整（删 _wheelTimer 不回归 BUG-369）', () {
@@ -158,6 +193,15 @@ void main() {
           reason: '滚轮翻页经 _paginate 入口节流闸门（throttleMs: wheelPageTurnInterval）');
       expect(body, contains('wheelPageTurnInterval'),
           reason: '滚轮 throttleMs 源是 wheelPageTurnInterval');
+      expect(body, contains("axis == 'horizontal'"),
+          reason: '只有横向触控板手势进入跨章节 burst 闸门');
+      expect(body, contains('_pagedWheelGestureGate.shouldStartNewGesture'),
+          reason: '手势 session 必须属于 reader State，切章后仍在');
+      // BUG-1380：token 只能在这一 tick 真能落地翻页时消费。handler 必须把
+      // _paginationInFlight 交给闸门，否则换章加载期的首个 tick 白吃 token，
+      // 整段惯性的后续 tick 全在闸门早退 → 用户这一次滑动零反馈。
+      expect(body, contains('canTurnPage: !_paginationInFlight'),
+          reason: 'BUG-1380：闸门必须知道这一 tick 能否翻页，才决定是否消费手势 token');
     });
 
     test(

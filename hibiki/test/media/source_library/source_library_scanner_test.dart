@@ -626,6 +626,16 @@ ep2.mp4
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
       expect(after.mediaCount, 1, reason: '1 个 playlist 合集导入');
       expect(after.lastScanError, isNull);
+
+      // BUG-1351：扫描首导的新 playlist 合集要落 1 条 added 活动事件（整本一条，
+      // title=合集名、mediaKey=首集 uid），喂首页 Activity 时间轴。
+      final List<ActivityEventRow> events =
+          await db.getRecentActivityEvents(limit: 10);
+      expect(events, hasLength(1), reason: '首导 1 个 playlist 合集 = 1 条 added 事件');
+      expect(events.single.eventType, 'added');
+      expect(events.single.mediaType, 'video');
+      expect(events.single.title, 'series');
+      expect(events.single.mediaKey, 'video/ep1');
     });
 
     test('empty / comment-only m3u8 imports nothing (skipped, no error)',
@@ -691,6 +701,11 @@ ep2.mp4
       final SourceLibraryRow afterSrc = (await db.getMediaSourceById(sid))!;
       expect(afterSrc.mediaCount, 0,
           reason: 'second scan reports 0 newly-imported media');
+
+      // BUG-1351 边界：散装单视频扫描保持静默（首扫可达数百文件，逐条 emit 才是
+      // 刷屏）——added 活动事件只给 playlist 合集首导。
+      expect(await db.getRecentActivityEvents(limit: 10), isEmpty,
+          reason: '散装文件扫描不 emit added 事件');
     });
 
     // TODO-1237 ②: re-scanning a folder whose only manifest is a playlist must
@@ -731,6 +746,10 @@ ep2.mp4
       final SourceLibraryRow afterSrc = (await db.getMediaSourceById(sid))!;
       expect(afterSrc.mediaCount, 0,
           reason: 'second scan reports 0 newly-imported playlists');
+
+      // BUG-1351：重扫走 reconcile 分支，不重复 emit added 事件——仍只有首导那 1 条。
+      expect(await db.getRecentActivityEvents(limit: 10), hasLength(1),
+          reason: '重扫不重复记 added 活动事件');
     });
 
     // TODO-1237 ②: the user's real bug — a manifest whose EPISODE PATHS change

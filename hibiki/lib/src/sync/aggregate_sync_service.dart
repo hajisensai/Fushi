@@ -171,6 +171,10 @@ class AggregateSyncService {
       readingStats: _mergeReadingStats(local.readingStats, remote.readingStats),
       videoStats: _mergeVideoStats(local.videoStats, remote.videoStats),
       readingHourly: _mergeHourly(local.readingHourly, remote.readingHourly),
+      readingHourlyByFormat: _mergeHourlyFormats(
+        local.readingHourlyByFormat,
+        remote.readingHourlyByFormat,
+      ),
       videoHourly: _mergeHourly(local.videoHourly, remote.videoHourly),
       miningStats: _mergeMining(local.miningStats, remote.miningStats),
       lookupMiningCounters: _mergeLookupMining(
@@ -286,6 +290,55 @@ class AggregateSyncService {
         HourlyRecord(
           dateKey: idById[e.key]!.dateKey,
           hour: idById[e.key]!.hour,
+          durationMs: e.value,
+        ),
+    ];
+  }
+
+  /// 把按 format 分桶的本地行折叠成 {dateKey, hour} 逐时总量（旧 wire 形状，
+  /// 见 materializeLocalSnapshot 的 readingHourly 注释）。
+  static List<HourlyRecord> _foldHourlyTotals(List<ReadingHourlyLogRow> rows) {
+    final Map<String, int> sums = <String, int>{};
+    final Map<String, (String, int)> hourByKey = <String, (String, int)>{};
+    for (final ReadingHourlyLogRow r in rows) {
+      final String key = '${r.dateKey}|${r.hour}';
+      sums[key] = (sums[key] ?? 0) + r.readingTimeMs;
+      hourByKey[key] = (r.dateKey, r.hour);
+    }
+    return <HourlyRecord>[
+      for (final MapEntry<String, int> e in sums.entries)
+        HourlyRecord(
+          dateKey: hourByKey[e.key]!.$1,
+          hour: hourByKey[e.key]!.$2,
+          durationMs: e.value,
+        ),
+    ];
+  }
+
+  /// 按写入面拆分的逐时桶（{dateKey, hour, format}，v67）：与 [_mergeHourly]
+  /// 同款 MAX 折叠，只是 key 多了 format 一维。
+  static List<HourlyFormatRecord> _mergeHourlyFormats(
+    List<HourlyFormatRecord> local,
+    List<HourlyFormatRecord> remote,
+  ) {
+    final Map<String, int> localMap = <String, int>{
+      for (final HourlyFormatRecord r in local) r.key: r.durationMs,
+    };
+    final Map<String, int> remoteMap = <String, int>{
+      for (final HourlyFormatRecord r in remote) r.key: r.durationMs,
+    };
+    final Map<String, HourlyFormatRecord> idById = <String, HourlyFormatRecord>{
+      for (final HourlyFormatRecord r in local) r.key: r,
+      for (final HourlyFormatRecord r in remote) r.key: r,
+    };
+    final Map<String, int> mergedMap =
+        AggregateMergeService.mergeMaxCounters(localMap, remoteMap);
+    return <HourlyFormatRecord>[
+      for (final MapEntry<String, int> e in mergedMap.entries)
+        HourlyFormatRecord(
+          dateKey: idById[e.key]!.dateKey,
+          hour: idById[e.key]!.hour,
+          format: idById[e.key]!.format,
           durationMs: e.value,
         ),
     ];
@@ -410,11 +463,16 @@ class AggregateSyncService {
             lastModified: r.lastModified,
           ),
       ],
-      readingHourly: <HourlyRecord>[
+      // 旧 wire 形状 = 逐时总量：v67 起本地行按 format 分桶，这里先按
+      // {dateKey, hour} 折叠回「该小时全部阅读面之和」，旧端看到的字节语义与
+      // 拆分前完全一致；拆分数据走下面的 readingHourlyByFormat。
+      readingHourly: _foldHourlyTotals(readingHourly),
+      readingHourlyByFormat: <HourlyFormatRecord>[
         for (final ReadingHourlyLogRow r in readingHourly)
-          HourlyRecord(
+          HourlyFormatRecord(
             dateKey: r.dateKey,
             hour: r.hour,
+            format: r.format,
             durationMs: r.readingTimeMs,
           ),
       ],
@@ -498,12 +556,40 @@ class AggregateSyncService {
         lastModified: Value(r.lastModified),
       ));
     }
-    for (final HourlyRecord r in snapshot.readingHourly) {
+    // v67 两步落库，顺序有意：
+    // ① 先落按写入面拆分的桶（新端互相之间的完整拆分数据；OVERWRITE 落
+    //    Dart 侧已折好的 MAX 绝对值，format 裸串逐字节透传）。
+    for (final HourlyFormatRecord r in snapshot.readingHourlyByFormat) {
       await _db.setReadingHourlyLog(
         dateKey: r.dateKey,
         hour: r.hour,
         readingTimeMs: r.durationMs,
+        format: r.format,
       );
+    }
+    // ② 再做逐时总量的差额归因：旧端上传只有总量（不带 format），其中超出
+    //    本地该小时全部 format 桶之和的部分无法归因到任何写入面，累加进 ''
+    //    （未区分）桶。数学上 sum_f MAX_d ≥ MAX_d sum_f，全新端环境差额恒
+    //    ≤ 0（绝不虚增）；重复应用同一快照差额为 0（幂等，与本方法其余
+    //    family 的 MAX/union 保证一致）。
+    if (snapshot.readingHourly.isNotEmpty) {
+      final Map<String, int> localSums = <String, int>{};
+      for (final ReadingHourlyLogRow row
+          in await _db.getAllReadingHourlyLogs()) {
+        final String key = '${row.dateKey}|${row.hour}';
+        localSums[key] = (localSums[key] ?? 0) + row.readingTimeMs;
+      }
+      for (final HourlyRecord r in snapshot.readingHourly) {
+        final int deficit =
+            r.durationMs - (localSums['${r.dateKey}|${r.hour}'] ?? 0);
+        if (deficit > 0) {
+          await _db.addUnattributedHourlyReadingTime(
+            dateKey: r.dateKey,
+            hour: r.hour,
+            deltaMs: deficit,
+          );
+        }
+      }
     }
     for (final HourlyRecord r in snapshot.videoHourly) {
       await _db.setVideoHourlyLog(

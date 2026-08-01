@@ -19,6 +19,7 @@ class AggregateSnapshot {
     this.readingStats = const <ReadingStatRecord>[],
     this.videoStats = const <VideoStatRecord>[],
     this.readingHourly = const <HourlyRecord>[],
+    this.readingHourlyByFormat = const <HourlyFormatRecord>[],
     this.videoHourly = const <HourlyRecord>[],
     this.miningStats = const <MiningRecord>[],
     this.lookupMiningCounters = const <LookupMiningRecord>[],
@@ -44,7 +45,17 @@ class AggregateSnapshot {
 
   final List<ReadingStatRecord> readingStats;
   final List<VideoStatRecord> videoStats;
+
+  /// 阅读逐时**总量**（{dateKey, hour} 每桶一行 = 该小时全部阅读面之和）。
+  /// 旧 wire 形状原样保留：不带 format 的旧端只认识这个 key，合并语义逐字节
+  /// 不变（Never break userspace）。新端把它当「旧世界视角的小时总量」，应用
+  /// 时只用来做差额归因（见 AggregateSyncService.applySnapshotToLocal）。
   final List<HourlyRecord> readingHourly;
+
+  /// 阅读逐时**按写入面拆分**（{dateKey, hour, format} 每桶一行，v67）。加字段
+  /// 走 additive-field 兼容不变量（见 [currentVersion] 注释）：旧端忽略本 key
+  /// 且其上传不携带 → 新端把缺失当空列表，靠 [readingHourly] 差额归因兜底。
+  final List<HourlyFormatRecord> readingHourlyByFormat;
   final List<HourlyRecord> videoHourly;
   final List<MiningRecord> miningStats;
 
@@ -61,6 +72,7 @@ class AggregateSnapshot {
       readingStats.isEmpty &&
       videoStats.isEmpty &&
       readingHourly.isEmpty &&
+      readingHourlyByFormat.isEmpty &&
       videoHourly.isEmpty &&
       miningStats.isEmpty &&
       lookupMiningCounters.isEmpty &&
@@ -75,6 +87,9 @@ class AggregateSnapshot {
             videoStats.map((VideoStatRecord r) => r.toJson()).toList(),
         'readingHourly':
             readingHourly.map((HourlyRecord r) => r.toJson()).toList(),
+        'readingHourlyByFormat': readingHourlyByFormat
+            .map((HourlyFormatRecord r) => r.toJson())
+            .toList(),
         'videoHourly': videoHourly.map((HourlyRecord r) => r.toJson()).toList(),
         'miningStats': miningStats.map((MiningRecord r) => r.toJson()).toList(),
         'lookupMiningCounters': lookupMiningCounters
@@ -106,6 +121,8 @@ class AggregateSnapshot {
           _decodeList(json['readingStats'], ReadingStatRecord.fromJson),
       videoStats: _decodeList(json['videoStats'], VideoStatRecord.fromJson),
       readingHourly: _decodeList(json['readingHourly'], HourlyRecord.fromJson),
+      readingHourlyByFormat: _decodeList(
+          json['readingHourlyByFormat'], HourlyFormatRecord.fromJson),
       videoHourly: _decodeList(json['videoHourly'], HourlyRecord.fromJson),
       miningStats: _decodeList(json['miningStats'], MiningRecord.fromJson),
       lookupMiningCounters: _decodeList(
@@ -256,6 +273,45 @@ class HourlyRecord {
     return HourlyRecord(
       dateKey: dateKey,
       hour: _asInt(json['hour']),
+      durationMs: _asInt(json['durationMs']),
+    );
+  }
+}
+
+/// One reading hourly-log bucket keyed by {dateKey, hour, format} (v67 拆分维度
+/// 的 wire 形状)。[format] 是写入面身份（`BookFormat.dbValue`；`''` = 历史未区分
+/// 桶），逐字节透传——未来新增格式值在旧端也原样保留、不折叠。
+class HourlyFormatRecord {
+  const HourlyFormatRecord({
+    required this.dateKey,
+    required this.hour,
+    required this.format,
+    required this.durationMs,
+  });
+
+  final String dateKey;
+  final int hour;
+  final String format;
+  final int durationMs;
+
+  /// 长度前缀防歧义（风格同 [MiningRecord.key]）：format 是自由串。
+  String get key => '${format.length}:$format|$dateKey|$hour';
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'dateKey': dateKey,
+        'hour': hour,
+        'format': format,
+        'durationMs': durationMs,
+      };
+
+  static HourlyFormatRecord? fromJson(Map<String, Object?> json) {
+    final Object? dateKey = json['dateKey'];
+    final Object? format = json['format'];
+    if (dateKey is! String || format is! String) return null;
+    return HourlyFormatRecord(
+      dateKey: dateKey,
+      hour: _asInt(json['hour']),
+      format: format,
       durationMs: _asInt(json['durationMs']),
     );
   }

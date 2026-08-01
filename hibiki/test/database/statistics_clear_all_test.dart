@@ -17,7 +17,8 @@ Future<void> _seedReadingStats(HibikiDatabase db) async {
       title: 'A', dateKey: '2026-07-05', charsRead: 100, timeMs: 6000);
   await db.addReadingStatistic(
       title: 'B', dateKey: '2026-07-06', charsRead: 50, timeMs: 3000);
-  await db.addHourlyReadingTime(dateKey: '2026-07-05', hour: 10, deltaMs: 6000);
+  await db.addHourlyReadingTime(
+      dateKey: '2026-07-05', hour: 10, deltaMs: 6000, format: BookFormat.epub);
   await db.addLookupCount(
       bookKey: 'book/A', title: 'A', sourceType: 'book', dateKey: '2026-07-05');
   await db.addMineCountPerBook(

@@ -92,11 +92,21 @@ class _MokuroMoeCatalogPageState extends ConsumerState<MokuroMoeCatalogPage> {
               },
             ),
           Expanded(
-            child: MokuroMoeCatalogView(
-              db: widget.db ?? appModel.database,
-              embedded: true,
-              enabledOverride: appModel.mangaOnlineCatalogEnabled,
-              snapshotNotifier: _snapshot,
+            // 正文自带内边距：readerShelf 的 desktopContentPadding 已恒为零
+            // （PR#675 撤强制侧向留白），而 [MokuroMoeCatalogView] 自身零内边距，
+            // 桌面上搜索框与封面网格会直接贴窗口边。留白取 spacing.page，与上方
+            // [HibikiPageHeader] 的横向内边距同源（对话框语境走
+            // [MokuroMoeCatalogDialog]，由 ImportDialogFrame 供内边距，不受影响）。
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: HibikiDesignTokens.of(context).spacing.page,
+              ),
+              child: MokuroMoeCatalogView(
+                db: widget.db ?? appModel.database,
+                embedded: true,
+                enabledOverride: appModel.mangaOnlineCatalogEnabled,
+                snapshotNotifier: _snapshot,
+              ),
             ),
           ),
         ],

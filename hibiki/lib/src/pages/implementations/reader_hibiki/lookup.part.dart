@@ -74,16 +74,14 @@ extension _ReaderLookup on _ReaderHibikiPageState {
       _pausedForLookup = false;
       _audiobookController?.play();
     }
-    // TODO-678（BUG-005 同根因）：本方法被 onAllPopupsDismissed fire-and-forget
-    // 调用（不 await），半销毁 WebView 上 evaluateJavascript 抛 MissingPluginException
-    // 会逃当前 zone。把 eval 收进 _clearSelectionJs() 的 try/catch，对齐
-    // onSettingsChangedLive / onLayoutReloadLive 成例（清选区失败 no-op）。
-    unawaited(_clearSelectionJs());
+    // BUG-1344：DOM/CSS 选区由整栈关闭的异步收尾显式 await；不能在这里
+    // fire-and-forget 后马上 reclaim 焦点，否则 macOS WKWebView 会把失焦灰选区绘在
+    // 清理完成之前并残帧。
   }
 
   /// 清除 WebView 内的选区高亮（[ReaderSelectionScripts.clearInvocation]）。
   /// 半销毁 WebView 上 evaluateJavascript 抛 MissingPluginException，就地吞掉并
-  /// 记日志：调用方 [_clearLookupState] 是 fire-and-forget，异常否则会逃 zone。
+  /// 记日志：调用方会 await，但平台视图销毁竞态仍应 no-op，不能阻断焦点归还。
   Future<void> _clearSelectionJs() async {
     try {
       await _controller?.evaluateJavascript(

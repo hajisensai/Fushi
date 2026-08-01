@@ -418,7 +418,16 @@ class GalgameHelperInstaller {
     final _VerifiedGalgameHelperBundle? bundle =
         await _readVerifiedBundledHelper(arch);
     if (missing.isEmpty) {
-      if (bundle == null) return true;
+      if (bundle == null) {
+        // 这是**唯一**能让「已装组件」与本体版本漂开的口子：本包没带归档时无从对账，只能
+        // 沿用历史遗留的完整安装（开发构建 / 早于随包发布的旧包）。放行是有意的（否则开发
+        // 构建直接不能用），但必须留痕：真漂开时用户看到的是运行期 `protocol_mismatch`，
+        // 而那一刻已经在游戏启动之后，只有这行日志能说清「本体压根没带组件来对账」。
+        _log(
+            'bundled archive absent ($arch): keeping existing install unchecked '
+            '(dev build or pre-bundle package; version binding not provable)');
+        return true;
+      }
       final String? installedSha = await _installedMarkerSha(arch);
       if (installedSha != null && sha256Matches(installedSha, bundle.sha)) {
         return true;

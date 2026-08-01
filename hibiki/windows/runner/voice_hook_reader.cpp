@@ -7,7 +7,15 @@
 #include <mutex>
 #include <string>
 
-#include "voice_hook_ipc.h"
+// 🔴 IPC 契约**只有一份真相源**：`native/galgame_hook/include/voice_hook_ipc.h`。
+// 这里曾经放一份 host 端手抄副本（`runner/voice_hook_ipc.h`），注释还写着「真相源在独立仓库
+// hibiki-hook，须同步」——那个仓库早已合进本仓，人工同步这一步就成了纯粹的漂移源：本体
+// hibiki.exe 编副本、内置 helper 编真相源，两边一旦不同步，读侧就会拿旧契约去判新 helper。
+// 实际已经漂开过：副本里的 `HasReadyGameResourceAudio` 漏了 Tyrano/BGI/Artemis/CatSystem2/
+// Malie 五个引擎的 ready 位，这些引擎资源 hook 装好了本体也判 `raw_voice_ready=false`，
+// 直接退回整机混音。副本已删除，改为直接 include 真相源——两侧编同一组常量与同一份结构布局，
+// 版本漂移在结构上不再可能（守卫见 test/mining/gal_ipc_contract_single_source_test.dart）。
+#include "../../../native/galgame_hook/include/voice_hook_ipc.h"
 
 // galgame 一键制卡 C 阶段 —— 引擎-hook 共享内存读侧实现。见 voice_hook_reader.h。
 // 纯 Win32 文件映射，无 COM、无异常（runner 以 _HAS_EXCEPTIONS=0 编译，全程句柄/契约校验）。

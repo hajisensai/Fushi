@@ -210,8 +210,16 @@ struct ht_session_ctx {
   };
 
   // (transport, protocol) → 最近一次回执。error 回执不带协议，protocol 记
-  // -1。session 生命周期内条目只覆盖不删除（映射结果本就是「最近状态」）。
+  // -1。条目表达「最近状态」：同键覆盖；此外**同 transport 的成功回执会
+  // 删掉该 transport 的失败条目**（TODO-2526）—— 失败键 (transport,-1) 与
+  // 成功键 (transport,proto) 不同，光靠覆盖清不掉，一次瞬时失败会在详情
+  // 页永久残留一条陈旧失败行。
   std::map<std::pair<int, int>, PortMapResult> portmaps;
+
+  // TODO-2526：drain_alerts 收到 file_prio_alert 的累计数。
+  // ht_set_file_priority 用它有界等待「文件优先级已在磁盘线程落地」的回执
+  // （回执处理里会重放首尾提优），保证函数返回时重放已排队。
+  std::uint64_t file_prio_events = 0;
 };
 
 ht_session_ctx* as_ctx(void* session) {
@@ -236,6 +244,35 @@ std::string best_hash_hex(const lt::info_hash_t& ih) {
     out += kHex[b & 0x0f];
   }
   return out;
+}
+
+// 首尾 piece 提优公共实现（起播优化，qb firstLastPiecePrio 等价物）。
+// **跳过 priority=0（不下载）的文件**：对已跳过文件的首尾块提优等于强制
+// 下载用户明确不要的内容（TODO-2526 复核点名的陷阱）。
+// 返回 1 = 已应用、0 = 元数据未就绪。
+int apply_first_last_boost(lt::torrent_handle& h) {
+  std::shared_ptr<const lt::torrent_info> ti = h.torrent_file();
+  if (!ti) return 0;
+  const lt::file_storage& fs = ti->files();
+  const std::int64_t piece_len = ti->piece_length();
+  if (piece_len <= 0) return 0;
+  const std::vector<lt::download_priority_t> file_prios =
+      h.get_file_priorities();
+  for (int i = 0; i < ti->num_files(); ++i) {
+    const lt::file_index_t idx(i);
+    if (std::size_t(i) < file_prios.size() &&
+        file_prios[std::size_t(i)] == lt::dont_download) {
+      continue;
+    }
+    const std::int64_t size = fs.file_size(idx);
+    if (size <= 0) continue;
+    const std::int64_t offset = fs.file_offset(idx);
+    const int first = int(offset / piece_len);
+    const int last = int((offset + size - 1) / piece_len);
+    h.piece_priority(lt::piece_index_t(first), lt::top_priority);
+    h.piece_priority(lt::piece_index_t(last), lt::top_priority);
+  }
+  return 1;
 }
 
 // **唯一**的 alert 收割点：pop 一次，按类型分派进 ctx 的各队列，其余丢弃。
@@ -334,7 +371,25 @@ void drain_alerts(ht_session_ctx* ctx) {
       }
       continue;
     }
+    if (const auto* fp = lt::alert_cast<lt::file_prio_alert>(a)) {
+      // TODO-2526：文件优先级在磁盘线程落地后的完成回执。libtorrent 随
+      // 落地按新文件优先级重算该文件覆盖的 piece 优先级，会把首尾提优
+      // （起播优化）冲掉 —— 收到回执说明重算已发生，在这里重放。
+      // 无条件重放（不查「这个种子是否开过 firstLastPiecePrio」）：宿主
+      // 所有 add 路径一律开启该开关，桥不为不存在的组合维护 per-torrent
+      // 状态；helper 自己会跳过 priority=0 的文件（含刚设为 0 的），
+      // 不会强制下载用户已跳过的内容。
+      ctx->file_prio_events++;
+      if (fp->handle.is_valid()) {
+        lt::torrent_handle h = fp->handle;
+        apply_first_last_boost(h);
+      }
+      continue;
+    }
     if (const auto* pm = lt::alert_cast<lt::portmap_alert>(a)) {
+      // 成功 = 该 transport 的映射已恢复；把它此前的失败条目（键
+      // (transport,-1)，见 portmaps 注释）一并清掉，否则永久残留。
+      ctx->portmaps.erase({int(pm->map_transport), -1});
       ctx->portmaps[{int(pm->map_transport), int(pm->map_protocol)}] =
           ht_session_ctx::PortMapResult{true, pm->external_port, std::string()};
       continue;
@@ -961,22 +1016,7 @@ HT_EXPORT int ht_apply_first_last_priority(void* session,
   try {
     lt::torrent_handle h = find_torrent(as_session(session), info_hash);
     if (!h.is_valid()) return -1;
-    std::shared_ptr<const lt::torrent_info> ti = h.torrent_file();
-    if (!ti) return 0;
-    const lt::file_storage& fs = ti->files();
-    const std::int64_t piece_len = ti->piece_length();
-    if (piece_len <= 0) return 0;
-    for (int i = 0; i < ti->num_files(); ++i) {
-      const lt::file_index_t idx(i);
-      const std::int64_t size = fs.file_size(idx);
-      if (size <= 0) continue;
-      const std::int64_t offset = fs.file_offset(idx);
-      const int first = int(offset / piece_len);
-      const int last = int((offset + size - 1) / piece_len);
-      h.piece_priority(lt::piece_index_t(first), lt::top_priority);
-      h.piece_priority(lt::piece_index_t(last), lt::top_priority);
-    }
-    return 1;
+    return apply_first_last_boost(h);
   } catch (...) {
     return -1;
   }
@@ -1507,6 +1547,28 @@ HT_EXPORT char* ht_get_file_priorities(void* session, const char* info_hash) {
   }
 }
 
+HT_EXPORT char* ht_get_piece_priorities(void* session, const char* info_hash) {
+  if (session == nullptr) return json_error("session is null");
+  try {
+    lt::torrent_handle h = find_torrent(as_session(session), info_hash);
+    if (!h.is_valid()) return json_error("torrent not found");
+    if (!h.torrent_file()) return json_error("no metadata");
+    const std::vector<lt::download_priority_t> priorities =
+        h.get_piece_priorities();
+    std::string out = "{\"ok\":true,\"priorities\":[";
+    for (std::size_t i = 0; i < priorities.size(); ++i) {
+      if (i > 0) out += ',';
+      out += std::to_string(int(static_cast<std::uint8_t>(priorities[i])));
+    }
+    out += "]}";
+    return dup_string(out);
+  } catch (const std::exception& e) {
+    return json_error(e.what());
+  } catch (...) {
+    return json_error("unknown error in ht_get_piece_priorities");
+  }
+}
+
 HT_EXPORT int ht_set_file_priority(void* session, const char* info_hash,
                                    int file_index, int priority) {
   if (session == nullptr || file_index < 0 || priority < 0 || priority > 7) {
@@ -1518,8 +1580,37 @@ HT_EXPORT int ht_set_file_priority(void* session, const char* info_hash,
     std::shared_ptr<const lt::torrent_info> ti = h.torrent_file();
     if (!ti) return 0;
     if (file_index >= ti->num_files()) return 0;
+    ht_session_ctx* ctx = as_ctx(session);
+    const std::uint64_t seen = ctx->file_prio_events;
     h.file_priority(lt::file_index_t(file_index),
                     lt::download_priority_t(std::uint8_t(priority)));
+    // TODO-2526：libtorrent 2.x 的文件优先级经**磁盘线程**异步落地，随后
+    // 才重算该文件覆盖的 piece 优先级、把首尾提优（起播优化）冲掉；完成
+    // 回执是 file_prio_alert，drain_alerts 收到它时重放提优（那是「重算
+    // 已发生」的唯一可靠信号 —— 写完立即重放会先落地、再被重算覆盖，
+    // 实测顺序如此）。这里有界等待回执，保证本函数返回时重放已排队，
+    // 不依赖调用方之后是否轮询某个会收割 alert 的入口。
+    //
+    // 预算 1s 而不是更长：正常回执毫秒级；但 libtorrent 契约（alert_types
+    // 的 file_prio_alert 注释）写明磁盘操作**失败时不发本 alert**、改发
+    // file_error_alert —— 该路径必吃满预算，而本调用跑在 UI isolate 上，
+    // 长预算就是长冻结（BUG-1285 同型教训）。超时本就非致命：优先级已
+    // 写入，重放由后续任意收割（详情页秒级轮询）兜底。
+    //
+    // 释放条件是**全局**计数器 file_prio_events，不按种子配对：多种子并发
+    // 改优先级时 A 的回执会提前放行 B 的调用 —— 后果与超时路径相同（B 的
+    // 重放由后续 drain 兜底），且 Dart 侧同 isolate 同步 FFI 天然串行，
+    // 不为不存在的并发建 per-torrent 回执簿。
+    const std::chrono::steady_clock::time_point deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+    while (ctx->file_prio_events == seen) {
+      const std::chrono::steady_clock::time_point now =
+          std::chrono::steady_clock::now();
+      if (now >= deadline) break;
+      ctx->ses.wait_for_alert(
+          std::chrono::duration_cast<lt::time_duration>(deadline - now));
+      drain_alerts(ctx);
+    }
     return 1;
   } catch (...) {
     return 0;
@@ -1530,8 +1621,10 @@ HT_EXPORT char* ht_session_status(void* session) {
   if (session == nullptr) return json_error("session is null");
   try {
     ht_session_ctx* ctx = as_ctx(session);
-    // 发出统计请求（回执异步）后只收割已到的 alert —— 本函数**不等待**，
-    // 首轮拿 -1、下一轮轮询自然有值（契约见头文件；同步等会卡 UI isolate）。
+    // 发出统计请求（回执异步）后只收割已到的 alert —— 本函数**不等待**
+    // （同步等会卡 UI isolate）。dht_nodes 首轮 -1、下一轮即有值；速率要到
+    // **第三轮**才有值：首轮回执未到、第二轮收割到首个采样只够建基线，
+    // 第三轮才差分得出（契约见头文件）。
     ctx->ses.post_dht_stats();
     ctx->ses.post_session_stats();
     drain_alerts(ctx);

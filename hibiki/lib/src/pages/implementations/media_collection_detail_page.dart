@@ -1,4 +1,7 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+
+import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
@@ -8,15 +11,36 @@ import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
 import 'package:hibiki/src/media/collections/collection_season_groups.dart';
 import 'package:hibiki/src/media/media_cover_source.dart';
+import 'package:hibiki/src/media/video/anilist_client.dart' show AniListMedia;
+import 'package:hibiki/src/media/video/cover_ui/episode_rename_confirm_dialog.dart';
 import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
+import 'package:hibiki/src/media/video/scraper/collection_relations_scrape.dart'
+    show CollectionRelationType;
 import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
+import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
+import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
+import 'package:hibiki/src/media/video/scraper/episode_rename.dart';
+import 'package:hibiki/src/media/video/scraper/episode_scrape_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/media/video/video_episode_rail.dart';
+import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
+import 'package:hibiki/src/media/video/scraper/tmdb_default_key.dart';
+import 'package:hibiki/src/media/video/video_storage.dart';
+import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_filename_parser.dart';
+import 'package:hibiki/src/media/video/video_library_overview.dart'
+    show formatVideoPosition;
+import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
 import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
+import 'package:hibiki/src/pages/implementations/collection_relations_section.dart';
+import 'package:hibiki/src/pages/implementations/collection_split_dialog.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_batch_dialog.dart';
+import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
+import 'package:hibiki/src/utils/components/hibiki_reorderable_grid.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// 统一合集 Phase 4：合集详情页（Jellyfin 式）。playlist 合集 = 有序剧集列表：点某集从
 /// 该集开始播放（带剧集面板 / 上下集 / 连播，调用方经 playlistCollectionId 打开播放器）；
@@ -60,10 +84,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     with
         CollectionDetailShared<MediaCollectionDetailPage>,
         TickerProviderStateMixin {
+  /// 集列表宽卡固定高（16:9 缩略图 + 两行简介刚好放下；列宽随可用宽自适应）。
+  static const double _kEpisodeCardHeight = 128;
+
+  /// 集列表切两列的最小可用宽（用户点名 hayase 的宽屏两列形态，TODO-2491）。
+  static const double _kEpisodeTwoColumnMinWidth = 900;
+
   late String _name;
   List<VideoBookRow> _members = const <VideoBookRow>[];
   bool _loading = true;
-  bool _showAllEpisodes = false;
 
   /// 分季：video 成员 bookUid → 分组键，**由 videoPath 文件名现场派生**（不落库，
   /// 数据模型见 collection_season_groups.dart）。路径不随重排变化，故只在
@@ -96,6 +125,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 横版背景本地路径；仅 TMDB 源有，Bangumi / 离线库恒为 null。
   String? _backdropPath;
+
+  /// 集级刮削资料（TODO-2491）：bookUid → `video_scrape_meta` 行，**只含
+  /// `episodeNumber` 非空**（真·集级）的行。旧作品级行（v54~v64 把整部简介写进
+  /// 每个文件）不进这里——集名/集简介上卡只认集级资料，其余回落文件名现状。
+  Map<String, VideoScrapeMetaRow> _episodeMetaByUid =
+      const <String, VideoScrapeMetaRow>{};
 
   @override
   HibikiDatabase get detailDatabase => widget.database;
@@ -130,6 +165,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await widget.database.getCollectionScrapeMeta(widget.collection.id);
     final ({ScrapeMetadata metadata, String? backdropPath})? decoded =
         decodeCollectionScrapeMeta(metaRow);
+    // 集级刮削资料（一集一行、episodeNumber 非空才算集级；见 [_episodeMetaByUid]）。
+    final Map<String, VideoScrapeMetaRow> episodeMeta =
+        <String, VideoScrapeMetaRow>{};
+    for (final VideoBookRow member in members) {
+      final VideoScrapeMetaRow? row =
+          await widget.database.getVideoScrapeMeta(member.bookUid);
+      if (row != null && row.episodeNumber != null) {
+        episodeMeta[member.bookUid] = row;
+      }
+    }
     final MediaCollectionRow? fresh =
         await widget.database.getMediaCollectionById(widget.collection.id);
     if (!mounted) return;
@@ -140,6 +185,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           r.bookUid: collectionGroupKeyForFilename(r.videoPath),
       };
       _rebuildSections();
+      _episodeMetaByUid = episodeMeta;
       _scrapeMeta = decoded?.metadata;
       _backdropPath = decoded?.backdropPath;
       if (fresh != null) {
@@ -214,13 +260,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 当前 tab 下应展示的剧集（无 tab 时就是全表）。
   List<VideoBookRow> get _visibleMembers => _selectedSection?.items ?? _members;
 
-  /// 续播集在**当前可见列表**里的下标；不在本季则 -1（轨道不高亮也不自动滚）。
-  int get _visibleContinueIndex {
-    final String? uid = _continueUid;
-    if (uid == null) return -1;
-    return _visibleMembers.indexWhere((VideoBookRow r) => r.bookUid == uid);
-  }
-
   int get _continueIndex => continueMemberIndex(<CollectionMemberProgress>[
         for (final VideoBookRow r in _members)
           CollectionMemberProgress(
@@ -245,18 +284,27 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   int get _watchedCount =>
       _members.where((VideoBookRow row) => row.completedAt != null).length;
 
-  List<VideoEpisodeEntry> get _episodeEntries => <VideoEpisodeEntry>[
-        for (final VideoBookRow row in _visibleMembers)
-          VideoEpisodeEntry(
-            title: row.title,
-            cover: resolveMediaCoverImage(
-              kind: MediaKind.video,
-              localPath: row.coverPath,
-            ),
-            completed: row.completedAt != null,
-            started: row.lastPositionMs > 0 && row.completedAt == null,
-          ),
-      ];
+  /// 展示用集名（TODO-2491）：集级刮削行的 title。集名缺失时集级刮削会把**作品名**
+  /// 回填进 title（那不是集名，与 episode_rename.dart 同判据），此时不当集名用。
+  /// 无集级资料 → null，调用方回落 [VideoBookRow.title]（文件名现状，零变化）。
+  String? _scrapedEpisodeTitle(VideoBookRow row) {
+    final VideoScrapeMetaRow? meta = _episodeMetaByUid[row.bookUid];
+    if (meta == null) return null;
+    final String title = meta.title.trim();
+    if (title.isEmpty) return null;
+    if (title == _scrapeMeta?.title) return null;
+    return title;
+  }
+
+  /// 集卡展示名：优先集级刮削集名，回落条目标题（文件名）。
+  String _episodeDisplayTitle(VideoBookRow row) =>
+      _scrapedEpisodeTitle(row) ?? row.title;
+
+  /// 集简介（集级刮削 summary；无 → null 不占位）。
+  String? _episodeSummary(VideoBookRow row) {
+    final String? summary = _episodeMetaByUid[row.bookUid]?.summary?.trim();
+    return (summary == null || summary.isEmpty) ? null : summary;
+  }
 
   /// hero 背景的**横版**图源（BUG-1298 的数据层根治）。
   ///
@@ -441,6 +489,262 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
+  /// 「刮削分集资料」（TODO-2491）：EpisodeScrapeService 按合集刮削绑定批量拉
+  /// 每集集名/简介/放送日期（TMDB 还把剧照落为集封面），toast 报成功/跳过统计。
+  /// 前置：合集已刮削（collection_scrape_meta 有行），否则提示先刮合集。
+  /// TMDB key 直读偏好表（本页无 Riverpod）：用户自填优先，其次内置 key，与封面
+  /// 刮削同一取值规则（resolveTmdbApiKey）。
+  Future<void> _scrapeEpisodes() async {
+    final CollectionScrapeMetaRow? meta =
+        await widget.database.getCollectionScrapeMeta(widget.collection.id);
+    if (!mounted) return;
+    if (meta == null) {
+      HibikiToast.show(msg: t.collection_episode_scrape_unbound);
+      return;
+    }
+    final String tmdbKey = resolveTmdbApiKey(
+      await widget.database.getPref(kVideoScraperTmdbApiKeyPref) ?? '',
+    );
+    final BangumiClient bangumi = BangumiClient();
+    final TmdbClient? tmdb =
+        tmdbKey.isEmpty ? null : TmdbClient(apiKey: tmdbKey);
+    try {
+      final EpisodeScrapeService service = EpisodeScrapeService(
+        db: widget.database,
+        bangumiClient: bangumi,
+        tmdbClient: tmdb,
+        coverDownloader: CoverDownloader(),
+        coverMetaStore: CoverMetaStore(await VideoStorage.coversDir()),
+      );
+      final EpisodeScrapeOutcome outcome =
+          await service.scrapeCollectionEpisodes(widget.collection.id);
+      if (!mounted) return;
+      if (outcome.updated == 0 && outcome.errors.isNotEmpty) {
+        // 源级失败（网络/无 key/movie 无分集）：如实报错，不装作「0 集成功」。
+        HibikiToast.show(
+          msg: t.collection_episode_scrape_failed(
+            error: outcome.errors.values.first,
+          ),
+        );
+        return;
+      }
+      HibikiToast.show(
+        msg: t.collection_episode_scrape_result(
+          updated: outcome.updated,
+          skipped: outcome.unmatched,
+        ),
+      );
+      await _reload();
+      widget.onChanged();
+    } finally {
+      bangumi.close();
+      tmdb?.close();
+    }
+  }
+
+  /// 「按刮削重命名各集」（TODO-2491）：dryRun 拿旧名→新名对照表 → 勾选确认
+  /// 弹窗 → 对勾选子集逐条写穿 `video_books.title`（与库页手动重命名同一落库
+  /// 口）。空对照直接提示无可改（未刮集级资料 / 名字已一致）。
+  Future<void> _renameEpisodesFromScrape() async {
+    final List<EpisodeRenameProposal> proposals =
+        await renameCollectionEpisodes(
+      db: widget.database,
+      collectionId: widget.collection.id,
+      dryRun: true,
+    );
+    if (!mounted) return;
+    if (proposals.isEmpty) {
+      HibikiToast.show(msg: t.collection_episode_rename_empty);
+      return;
+    }
+    final List<EpisodeRenameProposal>? chosen =
+        await showEpisodeRenameConfirmDialog(
+      context: context,
+      proposals: proposals,
+    );
+    if (chosen == null || chosen.isEmpty || !mounted) return;
+    // 逐条落库、逐条计数：单条失败不打断批次也**不静默**——用户必须分得清
+    // 「全改完」和「改了一半」（复核意见：部分失败不得报成功数=勾选数）。
+    int renamed = 0;
+    Object? firstError;
+    for (final EpisodeRenameProposal proposal in chosen) {
+      try {
+        await widget.database
+            .updateVideoBookTitle(proposal.bookUid, proposal.newTitle);
+        renamed++;
+      } catch (e) {
+        firstError ??= e;
+      }
+    }
+    if (!mounted) return;
+    if (firstError != null) {
+      HibikiToast.show(
+        msg: t.collection_episode_rename_partial(
+          n: renamed,
+          m: chosen.length - renamed,
+        ),
+      );
+    } else {
+      HibikiToast.show(msg: t.collection_episode_rename_apply(n: renamed));
+    }
+    await _reload();
+    widget.onChanged();
+  }
+
+  /// 打开「相关作品」里已绑定的本地合集详情（airing_calendar 同范式：本页只有
+  /// database，成员解析与进播放器都自包含，不依赖调用方注入新回调——两个既有
+  /// 调用方零改动）。onChanged 透传：相关合集里的改动同样该刷新库页。
+  Future<void> _openRelatedCollection(int targetCollectionId) async {
+    final MediaCollectionRow? target =
+        await widget.database.getMediaCollectionById(targetCollectionId);
+    if (target == null || !mounted) return;
+    final VideoBookRepository repo = VideoBookRepository(widget.database);
+    Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => MediaCollectionDetailPage(
+          database: widget.database,
+          collection: target,
+          loadMembers: () async {
+            final List<MediaCollectionItemRow> items =
+                await widget.database.getCollectionItems(target.id);
+            final List<VideoBookRow> rows = <VideoBookRow>[];
+            for (final MediaCollectionItemRow item in items) {
+              if (item.mediaType != MediaKind.video.dbValue) continue;
+              final VideoBookRow? row = await repo.getByBookUid(item.entryKey);
+              if (row != null) rows.add(row);
+            }
+            return rows;
+          },
+          onOpenEpisode: (VideoBookRow episode) {
+            Navigator.push<void>(
+              context,
+              adaptivePageRoute<void>(
+                context: context,
+                builder: (_) => VideoHibikiPage.neutralized(
+                  bookUid: episode.bookUid,
+                  repo: repo,
+                  playlistCollectionId: target.id,
+                ),
+              ),
+            );
+          },
+          onChanged: widget.onChanged,
+        ),
+      ),
+    );
+  }
+
+  /// 「相关作品 → 去下载」：预填关系边标题打开番剧下载对话框（搜番段）。
+  void _downloadRelation(CollectionRelationRow relation) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => AnimeDownloadDialog(
+        showTasks: false,
+        initialSearchQuery: relation.title,
+      ),
+    );
+  }
+
+  /// 文件名解出的集号；解不出回落集级刮削行的 episodeNumber（两者都无 → null）。
+  int? _episodeNumberOf(VideoBookRow episode) =>
+      parseVideoFilename(p.basename(episode.videoPath)).episode ??
+      _episodeMetaByUid[episode.bookUid]?.episodeNumber;
+
+  /// 打开下载对话框（TODO-2485）：合集绑了 anilistId → 本地合成 [AniListMedia]
+  /// （id + 合集名，零网络）直达选种段并预填集号；未绑定 → 回落预填合集名的
+  /// 搜番段。[episodeNumber] null = 不按集过滤。
+  void _openDownloadDialog({required int? episodeNumber}) {
+    final MediaCollectionRow collection = _collectionRow ?? widget.collection;
+    final int? anilistId = collection.anilistId;
+    showDialog<void>(
+      context: context,
+      builder: (_) => AnimeDownloadDialog(
+        showTasks: false,
+        initialMedia: anilistId == null
+            ? null
+            : AniListMedia(id: anilistId, romaji: collection.name),
+        initialEpisode: anilistId == null ? null : episodeNumber,
+        initialSearchQuery: anilistId == null ? collection.name : null,
+      ),
+    );
+  }
+
+  /// 本合集是否绑定 Bangumi 刮削源（「在 Bangumi 打开本集」菜单项的显示门）。
+  bool get _boundToBangumi => _scrapeMeta?.source == ScrapeSource.bangumi;
+
+  /// 「在 Bangumi 打开本集」（TODO-2488 降级实现）：Bangumi API v0 **没有**公开的
+  /// 章节吐槽接口（全量 spec 零 comment 端点；吐槽只存在于未文档化的私有
+  /// next.bgm.tv p1 API），不自建社区功能——降级为外链：经公开无鉴权的
+  /// `/v0/episodes` 把集号解析成章节 id，浏览器打开 `bgm.tv/ep/<id>`；解析不到
+  /// （集号缺失/源无该集）明示提示并退到条目页；网络失败明示错误、同样退条目页。
+  Future<void> _openEpisodeOnBangumi(VideoBookRow episode) async {
+    final ScrapeMetadata? meta = _scrapeMeta;
+    if (meta == null) return;
+    final int? episodeNumber = _episodeNumberOf(episode);
+    final BangumiClient bangumi = BangumiClient();
+    int? episodeId;
+    try {
+      if (episodeNumber != null) {
+        for (final BangumiEpisodeInfo info
+            in await bangumi.fetchSubjectEpisodes(meta.subjectId)) {
+          if (info.episodeNumber == episodeNumber) {
+            episodeId = info.id;
+            break;
+          }
+        }
+        if (episodeId == null) {
+          HibikiToast.show(msg: t.collection_episode_bangumi_not_found);
+        }
+      } else {
+        // 集号都解析不出（文件名无集号且无集级刮削）：同样明示降级去向，
+        // 不静默换成条目页（复核意见）。
+        HibikiToast.show(msg: t.collection_episode_bangumi_not_found);
+      }
+    } on ScrapeNetworkException catch (e) {
+      HibikiToast.show(
+        msg: t.collection_episode_bangumi_open_failed(error: e.toString()),
+      );
+    } finally {
+      bangumi.close();
+    }
+    final String url = episodeId != null
+        ? 'https://bgm.tv/ep/$episodeId'
+        : 'https://bgm.tv/subject/${meta.subjectId}';
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  }
+
+  /// 「补齐缺集」：按文件名集号找 1..max 的第一个缺口；无内部缺口但刮削话数
+  /// 大于 max → 下一集（max+1）。真没有缺集（或一集集号都解不出）→ 提示。
+  void _fillMissingEpisodes() {
+    final Set<int> present = <int>{
+      for (final VideoBookRow member in _members)
+        if (parseVideoFilename(p.basename(member.videoPath)).episode
+            case final int episode)
+          episode,
+    };
+    int? firstMissing;
+    if (present.isNotEmpty) {
+      final int maxEpisode = present.reduce((int a, int b) => a > b ? a : b);
+      for (int i = 1; i <= maxEpisode; i++) {
+        if (!present.contains(i)) {
+          firstMissing = i;
+          break;
+        }
+      }
+      final int episodeCount = _scrapeMeta?.episodeCount ?? 0;
+      if (firstMissing == null && episodeCount > maxEpisode) {
+        firstMissing = maxEpisode + 1;
+      }
+    }
+    if (firstMissing == null) {
+      HibikiToast.show(msg: t.collection_episode_no_missing);
+      return;
+    }
+    _openDownloadDialog(episodeNumber: firstMissing);
+  }
+
   /// 逐集「移出合集」（整理排序页删除后本页是视频侧唯一移出入口）：确认 →
   /// [HibikiDatabase.removeFromCollection]（空合集自动删）→ 重载；合集被清空则
   /// 退回上层。条目本身绝不删除。
@@ -461,6 +765,114 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       return;
     }
     await _reload();
+  }
+
+  /// 「按季拆分合集」（TODO-2489）：多季合集逐季建新合集、成员按季加入映射，
+  /// 新合集间自动写前传/续作关系链；原合集按勾选保留（成员不动，作全系列入口）
+  /// 或删除。
+  ///
+  /// 一个事务包住「建合集 + 成员映射 + 关系链」——无半拆状态；且天然可重入
+  ///（createMediaCollection 撞 (name, type) 复用、addToCollection INSERT OR
+  /// IGNORE、replaceCollectionRelations 整体替换）。「保留原合集 = 成员不动」而
+  /// 非「变空壳」：removeFromCollection* 清空即自动删合集，空壳在数据模型上不存
+  /// 在；成员本就允许多归属，拆分只是**新增**每季的归属映射，不动原映射。删除
+  /// 原合集在事务外走 deleteMediaCollectionWithAssets（含文件 IO，语义与
+  /// 「删除合集」菜单一致：只解链 + 回收合集自有封面，绝不删条目）。
+  Future<void> _splitBySeason() async {
+    if (!_hasSeasonTabs) return;
+    final List<CollectionSeasonSection<VideoBookRow>> sections = _sections;
+    final CollectionSplitChoice? choice = await showCollectionSplitDialog(
+      context: context,
+      sections: <CollectionSplitPlanSection>[
+        for (final CollectionSeasonSection<VideoBookRow> section in sections)
+          CollectionSplitPlanSection(
+            defaultName: '$_name ${_groupLabel(section.groupKey)}',
+            memberTitles: <String>[
+              for (final VideoBookRow row in section.items)
+                _episodeDisplayTitle(row),
+            ],
+          ),
+      ],
+    );
+    if (choice == null || !mounted) return;
+    final List<int> newIds = <int>[];
+    await widget.database.transaction(() async {
+      for (int i = 0; i < sections.length; i++) {
+        final int id = await widget.database.createMediaCollection(
+          choice.names[i],
+          collectionType: 'playlist',
+        );
+        for (final VideoBookRow row in sections[i].items) {
+          await widget.database
+              .addToCollection(id, MediaKind.video, row.bookUid);
+        }
+        newIds.add(id);
+      }
+      // 前传/续作链：只连真实季（extras 组无先后语义，不入链）。source 用
+      // 'local'（本地拆分产生的边，非刮削源），subjectId 用 'collection:<目标id>'
+      // ——与唯一键 (collectionId, source, subjectId) 天然兼容且稳定可重入。
+      final List<int> seasonIndexes = <int>[
+        for (int i = 0; i < sections.length; i++)
+          if (seasonNumberOfGroupKey(sections[i].groupKey) != null) i,
+      ];
+      for (int k = 0; k < seasonIndexes.length; k++) {
+        final int i = seasonIndexes[k];
+        final List<CollectionRelationsCompanion> edges =
+            <CollectionRelationsCompanion>[];
+        if (k > 0) {
+          final int prev = seasonIndexes[k - 1];
+          edges.add(_localRelationEdge(
+            collectionId: newIds[i],
+            type: CollectionRelationType.prequel,
+            targetCollectionId: newIds[prev],
+            title: choice.names[prev],
+            sortIndex: edges.length,
+          ));
+        }
+        if (k < seasonIndexes.length - 1) {
+          final int next = seasonIndexes[k + 1];
+          edges.add(_localRelationEdge(
+            collectionId: newIds[i],
+            type: CollectionRelationType.sequel,
+            targetCollectionId: newIds[next],
+            title: choice.names[next],
+            sortIndex: edges.length,
+          ));
+        }
+        await widget.database.replaceCollectionRelations(newIds[i], edges);
+      }
+    });
+    if (!choice.keepOriginal) {
+      await deleteMediaCollectionWithAssets(
+          widget.database, widget.collection.id);
+    }
+    if (!mounted) return;
+    widget.onChanged();
+    HibikiToast.show(msg: t.collection_split_done(n: newIds.length));
+    if (!choice.keepOriginal) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    await _reload();
+  }
+
+  /// 本地拆分产生的关系边（source='local'，subjectId='collection:<目标id>'）。
+  CollectionRelationsCompanion _localRelationEdge({
+    required int collectionId,
+    required CollectionRelationType type,
+    required int targetCollectionId,
+    required String title,
+    required int sortIndex,
+  }) {
+    return CollectionRelationsCompanion.insert(
+      collectionId: collectionId,
+      relationType: type.wire,
+      sortIndex: Value<int>(sortIndex),
+      targetCollectionId: Value<int?>(targetCollectionId),
+      source: 'local',
+      subjectId: 'collection:$targetCollectionId',
+      title: title,
+    );
   }
 
   Future<void> _delete() async {
@@ -493,9 +905,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// `_maybeBackfillCovers`）逐集抽帧填充；刮削可把它覆盖成 2:3 竖版海报——
   /// BUG-1299：走 [PortraitCoverImage] 的横槽自适应（横版截帧铺满、竖版海报
   /// 模糊垫底 + contain），不再 `BoxFit.cover` 把海报裁成中间一条。
-  Widget _episodeThumb(VideoBookRow ep, ColorScheme cs) {
-    const double w = 96;
-    const double h = 54;
+  Widget _episodeThumb(
+    VideoBookRow ep,
+    ColorScheme cs, {
+    double w = 96,
+    double h = 54,
+  }) {
     final ImageProvider? cover = resolveMediaCoverImage(
       kind: MediaKind.video,
       localPath: ep.coverPath,
@@ -688,13 +1103,27 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final ScrapeMetadata? meta = _scrapeMeta;
     final String? originalTitle = meta?.originalTitle;
     final String? summary = meta?.summary?.trim();
-    final String metaLine = _heroMetaLine(meta);
+    final String? airDate = meta?.airDate?.trim();
     final List<ScrapeTag> scrapeTags = _heroScrapeTags(meta);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
+        // 放送日期行（hayase 式：小字压在大标题上方）。未刮过没有 → 不占位。
+        if (airDate != null && airDate.isNotEmpty) ...<Widget>[
+          Text(
+            airDate,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: text.labelMedium?.copyWith(
+              color: Colors.white.withValues(alpha: 0.7),
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap / 2),
+        ],
         Text(
           _name,
           maxLines: 2,
@@ -720,15 +1149,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           ),
         ],
         SizedBox(height: tokens.spacing.gap),
-        Text(
-          metaLine,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: text.bodyMedium?.copyWith(
-            color: Colors.white.withValues(alpha: 0.82),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
+        // 徽标行（hayase 式）：观看进度恒在（不依赖刮削），话数/评分有刮削资料
+        // 才逐项出现（缺的不占位、不写「未知」）。
+        _buildHeroBadgeChips(_heroBadgeParts(meta)),
         if (scrapeTags.isNotEmpty) ...<Widget>[
           SizedBox(height: tokens.spacing.gap),
           _buildHeroTagChips(scrapeTags),
@@ -740,7 +1163,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           Flexible(
             child: Text(
               summary,
-              maxLines: 3,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: text.bodyMedium?.copyWith(
                 color: Colors.white.withValues(alpha: 0.78),
@@ -770,14 +1193,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
-  /// 元数据行：`2023 · 全 12 话 · ★ 8.1 · 1234 人评分 · 已看完 0/12`。
+  /// 徽标行内容：`全 12 话` / `★ 8.1` / `1234 人评分` / `已看完 0/12`。
   ///
-  /// 逐项存在才拼（缺的不留空档、不写「未知」）。观看进度恒在——它不依赖刮削，是
-  /// 本页固有信息，未刮过的合集这一行就只剩它，与旧形态一致。
-  String _heroMetaLine(ScrapeMetadata? meta) {
+  /// 逐项存在才出（缺的不留空档、不写「未知」）。观看进度恒在——它不依赖刮削，是
+  /// 本页固有信息，未刮过的合集这一行就只剩它，与旧形态一致。年份不进徽标：
+  /// 放送日期已单独一行压在标题上方（[_buildHeroInfo]）。
+  List<String> _heroBadgeParts(ScrapeMetadata? meta) {
     final List<String> parts = <String>[];
-    final String? year = _heroYear(meta?.airDate);
-    if (year != null) parts.add(year);
     final int? episodeCount = meta?.episodeCount;
     if (episodeCount != null && episodeCount > 0) {
       parts.add(t.collection_hero_total_episodes(count: episodeCount));
@@ -796,7 +1218,38 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         total: _members.length,
       ),
     );
-    return parts.join('  ·  ');
+    return parts;
+  }
+
+  /// 徽标 chips（hayase 式胶囊；与作品标签 chips 同形但语义不同：这排是**数字
+  /// 事实**——话数/评分/进度，那排是题材标签）。
+  Widget _buildHeroBadgeChips(List<String> parts) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: <Widget>[
+        for (final String part in parts)
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.32),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              child: Text(
+                part,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.2,
+                  color: Colors.white.withValues(alpha: 0.92),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   /// hero 展示的**作品标签**（题材/类型，来自刮削源，按热度降序取前 6）。
@@ -842,13 +1295,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
-  /// 从 `YYYY-MM-DD` / `YYYY` 取年份；取不到返回 null（源常见残缺日期，不补造）。
-  static String? _heroYear(String? airDate) {
-    if (airDate == null || airDate.length < 4) return null;
-    final String head = airDate.substring(0, 4);
-    return int.tryParse(head) == null ? null : head;
-  }
-
   Widget _buildEpisodeSection(
     BuildContext context,
     ColorScheme cs,
@@ -864,77 +1310,29 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         children: <Widget>[
           Padding(
             padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    t.video_episode_list,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+            child: Text(
+              t.video_episode_list,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
-                ),
-                TextButton.icon(
-                  onPressed: () =>
-                      setState(() => _showAllEpisodes = !_showAllEpisodes),
-                  icon: Icon(
-                    _showAllEpisodes
-                        ? Icons.keyboard_arrow_up
-                        : Icons.view_list_outlined,
-                  ),
-                  label: Text(
-                    _showAllEpisodes
-                        ? t.collection_collapse
-                        : t.collection_view_all,
-                  ),
-                ),
-              ],
             ),
           ),
-          // 多季合集：季 tab 紧贴标题行、在**默认展开**的剧集轨之上——用户一进
-          // 详情页就看得见分季，不需要先展开下面那条折叠的管理列表。
+          // 多季合集：季 tab 紧贴标题行、在集列表之上——用户一进详情页就看得见分季。
           if (_hasSeasonTabs) _buildSeasonTabs(context, cs, tokens),
           SizedBox(height: tokens.spacing.rowVertical),
-          VideoEpisodeRail(
-            // 换季时轨道要连滚动位置一起重来（沿用旧 State 会停在上一季的
-            // 偏移上），故 key 带上当前季。
+          // hayase 式宽列表卡（TODO-2491 用户拍板）：每集一张横向卡（16:9 缩略图 +
+          // 「N. 集名」+ 集简介 + 观看进度），**默认全量可见、不再折叠**；宽屏两列。
+          // 旧的横滚剧集轨已移除：列表默认展开后轨道与列表讲同一份内容（轨道无简介/
+          // 进度，信息严格少于列表），续播定位由 hero 播放按钮 + 列表续播卡高亮承载，
+          // 两处并存只剩重复。轨道组件保留给播放器内剧集面板（video_episode_panel）。
+          Padding(
+            // key 带当前季：换季时整段列表重建，不复用上一季的拖拽 State。
             key: ValueKey<String>(
-              'collection-episode-rail'
+              'episode-list'
               '${_selectedSection == null ? '' : '-${_selectedSection!.groupKey}'}',
             ),
-            episodes: _episodeEntries,
-            currentIndex: _visibleContinueIndex,
-            onTapEpisode: (int index) =>
-                widget.onOpenEpisode(_visibleMembers[index]),
-            colorScheme: cs,
-            fontSize: 14,
-            cardWidth:
-                (MediaQuery.sizeOf(context).width * 0.24).clamp(168.0, 232.0),
             padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-          ),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeOut,
-            child: _showAllEpisodes
-                ? Padding(
-                    // key 带当前季：换季时整段管理列表重建，不复用上一季的
-                    // 拖拽 State。
-                    key: ValueKey<String>(
-                      'episode-management-list'
-                      '${_selectedSection == null ? '' : '-${_selectedSection!.groupKey}'}',
-                    ),
-                    padding: EdgeInsets.fromLTRB(
-                      tokens.spacing.page,
-                      tokens.spacing.section,
-                      tokens.spacing.page,
-                      0,
-                    ),
-                    child: _buildEpisodeManagementList(cs, tokens),
-                  )
-                : const SizedBox.shrink(
-                    key: ValueKey<String>('episode-management-collapsed'),
-                  ),
+            child: _buildEpisodeGrid(cs, tokens),
           ),
         ],
       ),
@@ -973,101 +1371,234 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
-  Widget _buildEpisodeManagementList(
+  /// 集列表（hayase 式宽卡网格）：宽度 ≥ [_kEpisodeTwoColumnMinWidth] 两列，
+  /// 否则一列。拖拽重排/右键/长按菜单由 [HibikiReorderableGrid] 统一接管（鼠标
+  /// 按住即拖 + 右键菜单；触摸长按起拖、原地松手出菜单——BUG-778 缩放安全一族）。
+  /// 分季时只列本季（[_visibleMembers]），拖拽是节内重排，由 [_onReorder] 拼回
+  /// 全序落盘。
+  Widget _buildEpisodeGrid(ColorScheme cs, HibikiDesignTokens tokens) {
+    final List<VideoBookRow> visible = _visibleMembers;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        const double spacing = 12;
+        final int columns =
+            constraints.maxWidth >= _kEpisodeTwoColumnMinWidth ? 2 : 1;
+        final double columnWidth =
+            (constraints.maxWidth - spacing * (columns - 1)) / columns;
+        return HibikiReorderableGrid(
+          itemCount: visible.length,
+          crossAxisCount: columns,
+          childAspectRatio: columnWidth / _kEpisodeCardHeight,
+          crossAxisSpacing: spacing,
+          mainAxisSpacing: spacing,
+          feedbackBorderRadius: HibikiBorderRadius.card,
+          keyForIndex: (int i) =>
+              ValueKey<String>('collection-episode-row-${visible[i].bookUid}'),
+          onReorder: _onReorder,
+          onActivateItem: (int i) => widget.onOpenEpisode(visible[i]),
+          onContextMenu: (int i, Offset globalPosition) =>
+              _showEpisodeMenu(visible[i], globalPosition),
+          itemBuilder: (BuildContext context, int i) =>
+              _buildEpisodeCard(context, visible[i], i, cs, tokens),
+        );
+      },
+    );
+  }
+
+  /// 单张集卡：左 16:9 缩略图 + 右「N. 集名」/集简介两行/观看状态，底部进度条。
+  ///
+  /// 进度条只画**真实事实**：看完 → 满格；`VideoBooks` 不持久化视频总时长
+  /// （TODO-1346 同一约束），看了一半算不出百分比——不造假条，改在状态行给
+  /// 「看到 mm:ss」（lastPositionMs 是真数据）。
+  ///
+  /// 纯视觉（手势归 [HibikiReorderableGrid]），故整卡 [IgnorePointer]；键盘/手柄
+  /// 焦点不走指针，[HibikiFocusTarget] 照常可聚焦、Enter 开播。
+  Widget _buildEpisodeCard(
+    BuildContext context,
+    VideoBookRow episode,
+    int index,
     ColorScheme cs,
     HibikiDesignTokens tokens,
   ) {
-    // 分季时管理列表也只列本季（与上方轨道同一份 [_visibleMembers]），拖拽是
-    // 节内重排，由 [_onReorder] 拼回全序落盘。
-    final List<VideoBookRow> visible = _visibleMembers;
-    return HibikiReorderableColumn(
-      itemCount: visible.length,
-      keyForIndex: (int i) => ValueKey<String>(visible[i].bookUid),
-      onReorder: _onReorder,
-      spacing: tokens.spacing.gap,
-      itemBuilder: (BuildContext context, int i) {
-        final VideoBookRow episode = visible[i];
-        final bool completed = episode.completedAt != null;
-        final bool started = episode.lastPositionMs > 0;
-        final bool isContinue = episode.bookUid == _continueUid;
-        final Widget row = Material(
-          key: ValueKey<String>('collection-episode-row-${episode.bookUid}'),
-          color: isContinue
-              ? cs.primaryContainer.withValues(alpha: 0.35)
-              : cs.surfaceContainerLow,
-          borderRadius: HibikiBorderRadius.card,
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            canRequestFocus: false,
-            onTap: () => widget.onOpenEpisode(episode),
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: tokens.spacing.rowHorizontal,
-                vertical: tokens.spacing.rowVertical,
-              ),
+    final bool completed = episode.completedAt != null;
+    final bool started = episode.lastPositionMs > 0 && !completed;
+    final bool isContinue = episode.bookUid == _continueUid;
+    final String? summary = _episodeSummary(episode);
+    const double pad = 10;
+    const double thumbHeight = _kEpisodeCardHeight - pad * 2;
+    const double thumbWidth = thumbHeight * 16 / 9;
+    final Widget card = IgnorePointer(
+      child: Material(
+        color: isContinue
+            ? cs.primaryContainer.withValues(alpha: 0.35)
+            : cs.surfaceContainerLow,
+        borderRadius: HibikiBorderRadius.card,
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.all(pad),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  SizedBox(
-                    width: tokens.spacing.gap * 4,
-                    child: Text(
-                      '${i + 1}',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: cs.onSurfaceVariant),
-                    ),
-                  ),
-                  SizedBox(width: tokens.spacing.rowVertical),
-                  _episodeThumb(episode, cs),
+                  _episodeThumb(episode, cs, w: thumbWidth, h: thumbHeight),
                   SizedBox(width: tokens.spacing.rowVertical),
                   Expanded(
-                    child: Text(
-                      episode.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          '${index + 1}. ${_episodeDisplayTitle(episode)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        // 集简介两行（集级刮削 summary；无则不占位）。
+                        if (summary != null) ...<Widget>[
+                          SizedBox(height: tokens.spacing.gap / 2),
+                          Text(
+                            summary,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.3,
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                        const Spacer(),
+                        Row(
+                          children: <Widget>[
+                            if (completed)
+                              Icon(
+                                Icons.check_circle,
+                                color: cs.primary,
+                                size: 16,
+                              )
+                            else if (started) ...<Widget>[
+                              Icon(
+                                Icons.play_circle_outline,
+                                color: cs.onSurfaceVariant,
+                                size: 16,
+                              ),
+                              SizedBox(width: tokens.spacing.gap / 2),
+                              Text(
+                                t.collection_episode_watched_at(
+                                  position: formatVideoPosition(
+                                    episode.lastPositionMs,
+                                  ),
+                                ),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
                     ),
-                  ),
-                  if (completed)
-                    Icon(Icons.check_circle, color: cs.primary, size: 20)
-                  else if (started)
-                    Icon(
-                      Icons.play_circle_outline,
-                      color: cs.onSurfaceVariant,
-                      size: 20,
-                    ),
-                  SizedBox(width: tokens.spacing.gap / 2),
-                  HibikiIconButton(
-                    tooltip: t.collection_remove_member,
-                    icon: Icons.remove_circle_outline,
-                    size: 18,
-                    onTap: () => _removeEpisode(episode),
-                  ),
-                  SizedBox(width: tokens.spacing.gap / 2),
-                  Icon(
-                    Icons.drag_handle,
-                    color: cs.onSurfaceVariant,
-                    size: 20,
                   ),
                 ],
               ),
             ),
-          ),
-        );
-        if (HibikiFocusRoot.maybeControllerOf(context) == null) return row;
-        return Actions(
-          actions: <Type, Action<Intent>>{
-            ActivateIntent: CallbackAction<ActivateIntent>(
-              onInvoke: (_) {
-                widget.onOpenEpisode(episode);
-                return null;
-              },
-            ),
-          },
-          child: HibikiFocusTarget(
-            id: HibikiFocusId('collection-episode-${episode.bookUid}'),
-            child: row,
-          ),
-        );
-      },
+            if (completed)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: LinearProgressIndicator(
+                  value: 1,
+                  minHeight: 3,
+                  backgroundColor: Colors.transparent,
+                  color: cs.primary,
+                ),
+              ),
+          ],
+        ),
+      ),
     );
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) return card;
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            widget.onOpenEpisode(episode);
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusTarget(
+        id: HibikiFocusId('collection-episode-${episode.bookUid}'),
+        child: card,
+      ),
+    );
+  }
+
+  /// 集卡上下文菜单（右键 / 触摸长按原地松手）。坐标经 Overlay `globalToLocal`
+  /// 消掉 HibikiAppUiScale 缩放（BUG-781 同族纪律）。管理能力从旧管理列表的行内
+  /// 按钮收进本菜单（拖拽排序仍是直接拖卡）。
+  Future<void> _showEpisodeMenu(
+    VideoBookRow episode,
+    Offset globalPosition,
+  ) async {
+    final RenderObject? overlay =
+        Overlay.of(context).context.findRenderObject();
+    if (overlay is! RenderBox) return;
+    final Offset anchor = overlay.globalToLocal(globalPosition);
+    final _EpisodeMenuAction? action = await showMenu<_EpisodeMenuAction>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromPoints(anchor, anchor),
+        Offset.zero & overlay.size,
+      ),
+      items: <PopupMenuEntry<_EpisodeMenuAction>>[
+        PopupMenuItem<_EpisodeMenuAction>(
+          value: _EpisodeMenuAction.download,
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.download_outlined, size: 20),
+              const SizedBox(width: 12),
+              Text(t.collection_episode_download),
+            ],
+          ),
+        ),
+        // 仅 Bangumi 绑定的合集出现（TMDB/未刮削没有对应的公开章节页可开）。
+        if (_boundToBangumi)
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.openBangumi,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.open_in_new, size: 20),
+                const SizedBox(width: 12),
+                Text(t.collection_episode_open_bangumi),
+              ],
+            ),
+          ),
+        PopupMenuItem<_EpisodeMenuAction>(
+          value: _EpisodeMenuAction.removeFromCollection,
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.remove_circle_outline, size: 20),
+              const SizedBox(width: 12),
+              Text(t.collection_remove_member),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (!mounted) return;
+    switch (action) {
+      case _EpisodeMenuAction.download:
+        _openDownloadDialog(episodeNumber: _episodeNumberOf(episode));
+      case _EpisodeMenuAction.openBangumi:
+        await _openEpisodeOnBangumi(episode);
+      case _EpisodeMenuAction.removeFromCollection:
+        await _removeEpisode(episode);
+      case null:
+        break;
+    }
   }
 
   /// [availableWidth] 是这条 AppBar 实际拿到的约束宽（由 [LayoutBuilder] 下发）。
@@ -1099,6 +1630,29 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             icon: Icons.subtitles_outlined,
             label: t.video_jimaku_batch_title,
             onPressed: _members.isEmpty ? null : _fetchCollectionSubtitles,
+          ),
+          // 集级刮削两连：先刮分集资料，再（可选）按刮削结果批量改集名。
+          HibikiAppBarAction(
+            icon: Icons.movie_filter_outlined,
+            label: t.collection_episode_scrape,
+            onPressed: _members.isEmpty ? null : _scrapeEpisodes,
+          ),
+          HibikiAppBarAction(
+            icon: Icons.format_list_numbered,
+            label: t.collection_episode_rename,
+            onPressed: _members.isEmpty ? null : _renameEpisodesFromScrape,
+          ),
+          // 「补齐缺集」（TODO-2485）：按文件名集号找缺口，预填第一个缺集开下载。
+          HibikiAppBarAction(
+            icon: Icons.playlist_add,
+            label: t.collection_episode_fill_missing,
+            onPressed: _members.isEmpty ? null : _fillMissingEpisodes,
+          ),
+          // 「按季拆分合集」（TODO-2489）：仅多季合集可用（单季拆分无意义）。
+          HibikiAppBarAction(
+            icon: Icons.call_split,
+            label: t.collection_split_by_season,
+            onPressed: _hasSeasonTabs ? _splitBySeason : null,
           ),
           HibikiAppBarAction(
             icon: Icons.drive_file_rename_outline,
@@ -1155,6 +1709,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                       child: _buildHero(context, cs, tokens),
                     ),
                     SliverToBoxAdapter(child: buildDetailTagChips()),
+                    // 相关作品横滚（TODO-2484）：hero 之下、剧集区之上；无关系边
+                    // 整块不渲染（区块内部判空）。
+                    SliverToBoxAdapter(
+                      child: CollectionRelationsSection(
+                        database: widget.database,
+                        collectionId: widget.collection.id,
+                        onOpenCollection: (int id) =>
+                            _openRelatedCollection(id),
+                        onDownload: _downloadRelation,
+                      ),
+                    ),
                     SliverToBoxAdapter(
                       child: _buildEpisodeSection(context, cs, tokens),
                     ),
@@ -1169,3 +1734,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 }
+
+/// 集卡上下文菜单动作。
+enum _EpisodeMenuAction { download, openBangumi, removeFromCollection }

@@ -66,4 +66,31 @@ void main() {
     expect(copyRegion, contains('_clearReaderAppSelection()'),
         reason: 'BUG-927 回退：移动端原生菜单 copy 复制后也要清选区，与桌面右键对齐');
   });
+
+  test('BUG-1344：非 Windows 原生菜单查词先采状态、再清选区、最后搜索', () {
+    final String src = webview.readAsStringSync().replaceAll('\r\n', '\n');
+    final int menu = src.indexOf('ContextMenuItem(\n                  id: 1,');
+    expect(menu, isNonNegative);
+    final String body = src.substring(menu, menu + 1900);
+    final int capture = body.indexOf('_fillLookupStateFromNativeSelection()');
+    final int clear = body.indexOf('await _clearReaderAppSelection()');
+    final int search = body.indexOf('await searchDictionaryResult(');
+    expect(capture, isNonNegative);
+    expect(clear, greaterThan(capture),
+        reason: '必须先采完句子/选区 payload，才能清 native selection');
+    expect(search, greaterThan(clear), reason: '打开查词弹窗前清灰色原生选区，不能等到关窗才消失');
+  });
+
+  test('BUG-1344：Windows Flutter 右键查词也在搜索前清原生选区', () {
+    final String src = chrome.readAsStringSync().replaceAll('\r\n', '\n');
+    final int action = src.indexOf("case 'search':");
+    expect(action, isNonNegative);
+    final String body = src.substring(action, action + 1500);
+    final int capture = body.indexOf('_fillLookupStateFromNativeSelection()');
+    final int clear = body.indexOf('await _clearReaderAppSelection()');
+    final int search = body.indexOf('await searchDictionaryResult(');
+    expect(capture, isNonNegative);
+    expect(clear, greaterThan(capture));
+    expect(search, greaterThan(clear));
+  });
 }

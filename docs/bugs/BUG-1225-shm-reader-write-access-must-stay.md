@@ -15,7 +15,7 @@ BUG-1216（共享内存打不开只说一句「请重启 Hibiki」）的根治�
 
 - `hibiki/windows/runner/voice_hook_reader.cpp:446`
   `InterlockedExchange64(reinterpret_cast<volatile LONGLONG*>(&h->selected_text_thread_id), ...)`
-- 目标字段在**映射内**：`hibiki/windows/runner/voice_hook_ipc.h:162`
+- 目标字段在**映射内**：`native/galgame_hook/include/voice_hook_ipc.h`（契约唯一真相源；host 侧手抄副本已删）
   `volatile uint64_t selected_text_thread_id;`
 - 同处 `voice_hook_reader.cpp:442` 的 `SharedHeader* h` 是全文件**唯一**非 const 的 header 指针，
   首轮也一并漏看。

@@ -55,10 +55,18 @@ class ReadingTimeTracker {
   /// 被生命周期 resumed / 章节恢复完成等多处无条件重置，重置前那段前台阅读时长直接蒸发。
   /// 现在两条账目共用**同一个**带 [isContinuousReadingGap] 守卫的时钟：本 tracker 记小时
   /// 桶，[onDelta] 把同一增量喂给会话累计器，任何重置都不再能吃掉时长。
-  ReadingTimeTracker(this._database, {ReadingTimeDelta? onDelta})
-      : _onDelta = onDelta;
+  ReadingTimeTracker(
+    this._database, {
+    required BookFormat format,
+    ReadingTimeDelta? onDelta,
+  })  : _format = format,
+        _onDelta = onDelta;
 
   final HibikiDatabase _database;
+
+  /// 写入面身份（EPUB / PDF / 漫画阅读器各自固定一种），随每个小时桶落库——
+  /// 缺了它时段数据在写入时就被跨面加总、永久分不开（v67 修复的根因）。
+  final BookFormat _format;
   final ReadingTimeDelta? _onDelta;
   Timer? _timer;
   DateTime? _tickStart;
@@ -112,7 +120,8 @@ class ReadingTimeTracker {
 
   void _write(String dateKey, int hour, int deltaMs) {
     _database
-        .addHourlyReadingTime(dateKey: dateKey, hour: hour, deltaMs: deltaMs)
+        .addHourlyReadingTime(
+            dateKey: dateKey, hour: hour, deltaMs: deltaMs, format: _format)
         .catchError((Object e, StackTrace stack) {
       debugPrint('ReadingTimeTracker.write: $e\n$stack');
       debugPrint('[reading-time-tracker] write error: $e');

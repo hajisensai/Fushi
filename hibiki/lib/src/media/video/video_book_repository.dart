@@ -126,14 +126,15 @@ class VideoBookRepository {
     return out;
   }
 
-  /// v49：记录一条「added」活动事件，喂首页 Activity 时间轴。**只在用户明示导入
-  /// 视频成功后**由 [VideoImportDialog] 显式调用（单文件 / 文件夹单集 / 播放列表首集 /
-  /// 流媒体各调一次；播放列表整本只调一次，title=合集名、mediaKey=首集 uid）——刻意
-  /// **不放进 [saveVideoBook]**，让自动库扫描（source_library_scanner，批量）、远端打开
-  /// （home_video_page，打开≠导入）、云同步（app_model_library_host_service）等非明示
-  /// 导入路径天然不 emit，避免刷屏或语义错误（对齐 EpubImporter 只在用户导入管线
-  /// emit 的做法）。timestamp/dateKey 用调用时刻。best-effort：记账失败只 log，不影响
-  /// 视频已导入。
+  /// v49：记录一条「added」活动事件，喂首页 Activity 时间轴。**只在用户导入视频
+  /// 成功后**调用：[VideoImportDialog] 各路径（单文件 / 文件夹单集 / 播放列表首集 /
+  /// 流媒体各调一次；播放列表整本只调一次，title=合集名、mediaKey=首集 uid），以及
+  /// 扫描首导的新 playlist 合集（source_library_scanner，BUG-1351：用户把新清单放进
+  /// 扫描根就是入库动作，整本 1 条；重扫 reconcile 不 emit）——刻意**不放进
+  /// [saveVideoBook]**，让散装文件批量扫描、远端打开（home_video_page，打开≠导入）、
+  /// 云同步（app_model_library_host_service）等路径天然不 emit，避免刷屏或语义错误
+  /// （对齐 EpubImporter 只在用户导入管线 emit 的做法）。timestamp/dateKey 用调用
+  /// 时刻。best-effort：记账失败只 log，不影响视频已导入。
   Future<void> recordVideoImportActivity({
     required String bookUid,
     required String title,

@@ -1079,7 +1079,7 @@ void main() {
       // now 31 (v30 series/shelf_entries + v31 hibiki_paired_peers). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 66,
+      expect(db.schemaVersion, 67,
           reason: 'global schemaVersion is now 38 (TODO-616 v30 + TODO-1017 '
               'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones + '
               'TODO-1157 v35 stream_spec_json + TODO-1252 v36 favorite_words '
@@ -1156,7 +1156,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 66,
+      expect(db.schemaVersion, 67,
           reason:
               'TODO-1288 bumps schema to v37 (audiobook srt_books self-heal)');
 
@@ -1316,7 +1316,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 66,
+      expect(db.schemaVersion, 67,
           reason: 'global schemaVersion is now 38 (…v35 + TODO-1252 v36 + '
               'TODO-1288 v37 audiobook srt_books self-heal + v38 unified '
               'media_collections); v29->v30 '
@@ -1367,7 +1367,7 @@ void main() {
           .map((r) => r.data['name'] as String)
           .toSet();
       expect(tableNames, containsAll(['series', 'shelf_entries']));
-      expect(db.schemaVersion, 66);
+      expect(db.schemaVersion, 67);
     });
 
     test(
@@ -1376,7 +1376,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 66,
+      expect(db.schemaVersion, 67,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -1410,7 +1410,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 66,
+      expect(db.schemaVersion, 67,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -1450,7 +1450,7 @@ void main() {
     test('fresh DB (v35) has video_books.stream_spec_json column (TODO-1157)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 66);
+      expect(db.schemaVersion, 67);
       final cols =
           await db.customSelect("PRAGMA table_info('video_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1481,7 +1481,7 @@ void main() {
 
     test('fresh DB (v45) has media_collections.anilist_id column', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 66);
+      expect(db.schemaVersion, 67);
       final cols =
           await db.customSelect("PRAGMA table_info('media_collections')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1515,7 +1515,7 @@ void main() {
 
     test('fresh DB (v46) has epub_books.completed_at column', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 66);
+      expect(db.schemaVersion, 67);
       final cols =
           await db.customSelect("PRAGMA table_info('epub_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1527,7 +1527,7 @@ void main() {
         'fresh DB (v36) has favorite_words.book_key + title columns (TODO-1252)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 66);
+      expect(db.schemaVersion, 67);
       final cols =
           await db.customSelect("PRAGMA table_info('favorite_words')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1563,7 +1563,7 @@ void main() {
     // 且既有合集行**一行不少、一列不改**（升级绝不能碰用户数据）。
     test('fresh DB (v64) has collection_scrape_meta table', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 66);
+      expect(db.schemaVersion, 67);
       final rows = await db
           .customSelect(
               "SELECT name FROM sqlite_master WHERE type='table' AND name='collection_scrape_meta'")
@@ -1605,6 +1605,43 @@ void main() {
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
     });
+
+    test('v66 -> v67 rebuilds reading_hourly_logs with format dimension',
+        () async {
+      final db = await _openV66DbWithLegacyReadingHourlyLogs();
+
+      // 既有行零丢失，format 落 ''（历史未区分——写入时信息已丢，不猜身份）。
+      final legacy = await db.getHourlyLogsForDate('2026-07-01');
+      expect(legacy, hasLength(2));
+      expect(legacy.map((l) => l.format).toSet(), {''});
+      expect(legacy.singleWhere((l) => l.hour == 9).readingTimeMs, 1800000);
+      expect(legacy.singleWhere((l) => l.hour == 10).readingTimeMs, 600000);
+
+      // 新唯一键 {dateKey, hour, format}：同一小时不同写入面各自成行，与
+      // 历史 '' 行共存互不冲突。
+      await db.addHourlyReadingTime(
+        dateKey: '2026-07-01',
+        hour: 9,
+        deltaMs: 300000,
+        format: BookFormat.manga,
+      );
+      final after = await db.getHourlyLogsForDate('2026-07-01');
+      expect(after, hasLength(3));
+      expect(
+          after
+              .singleWhere((l) => l.format.isEmpty && l.hour == 9)
+              .readingTimeMs,
+          1800000);
+      expect(
+        after
+            .singleWhere((l) => l.format == BookFormat.manga.dbValue)
+            .readingTimeMs,
+        300000,
+      );
+
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
+    });
   });
 }
 
@@ -1640,6 +1677,37 @@ CREATE TABLE media_collections (
           "'/old/cover.jpg')",
         );
         rawDb.execute('PRAGMA user_version = 63');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
+/// 打开一个 `user_version = 66` 的库：reading_hourly_logs 还是旧形状（无 format
+/// 列、唯一键 {date_key, hour}）且已有跨面加总过的历史行，强制 HibikiDatabase
+/// 打开时跑真实的 `if (from < 67) alterTable(readingHourlyLogs)` 重建分支。
+///
+/// from=66 时迁移阶梯上只有 `from < 67` 这一个条件成立，因此只备齐该分支触碰
+/// 的表（风格同 [_openV63DbWithoutCollectionScrapeMeta]）。
+Future<HibikiDatabase> _openV66DbWithLegacyReadingHourlyLogs() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        rawDb.execute('''
+CREATE TABLE reading_hourly_logs (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  date_key TEXT NOT NULL,
+  hour INTEGER NOT NULL,
+  reading_time_ms INTEGER NOT NULL,
+  UNIQUE (date_key, hour)
+);
+''');
+        rawDb.execute(
+          'INSERT INTO reading_hourly_logs (date_key, hour, reading_time_ms) '
+          "VALUES ('2026-07-01', 9, 1800000), ('2026-07-01', 10, 600000)",
+        );
+        rawDb.execute('PRAGMA user_version = 66');
       },
     ),
   );

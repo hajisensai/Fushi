@@ -83,6 +83,7 @@ void main() {
             dateKey: '2026-05-17',
             hour: 14,
             deltaMs: msPerCall,
+            format: BookFormat.epub,
           ),
         ),
       );
@@ -102,12 +103,14 @@ void main() {
             dateKey: '2026-05-17',
             hour: 10,
             deltaMs: 100,
+            format: BookFormat.epub,
           ),
         for (int i = 0; i < n; i++)
           db.addHourlyReadingTime(
             dateKey: '2026-05-17',
             hour: 11,
             deltaMs: 200,
+            format: BookFormat.epub,
           ),
       ]);
 

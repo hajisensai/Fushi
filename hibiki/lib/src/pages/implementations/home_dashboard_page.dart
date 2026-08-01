@@ -49,8 +49,9 @@ import 'package:hibiki_core/hibiki_core.dart';
 ///   [aggregateActivityEvents] 聚合成「按日期分组」的时间线，顶部按类别筛选。
 ///
 /// 分栏（BUG-1073 后）：宽屏（`constraints.maxWidth >= 900`）= 主列（flex 3：学习活动
-/// → 继续 → 最近添加）+ 侧列（flex 2：Activity 时间轴），整体限宽
-/// [_kDashboardMaxWidth] 居中；窄屏单列堆叠。书与阅读位置走 Riverpod provider
+/// → 继续 → 最近添加）+ 侧列（flex 2：Activity 时间轴），随窗口铺满（旧 1600px
+/// 限宽居中已撤——用户实报「首页左右强制的间距」）；窄屏单列堆叠。书与阅读位置走
+/// Riverpod provider
 /// （响应式）；视频与活动事件在 [initState] 一次性异步载入到本地状态（视频列表天然是
 /// Future）。
 class HomeDashboardPage extends BaseModuleTabPage {
@@ -359,9 +360,6 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
     );
   }
 }
-
-/// 仪表盘内容最大宽度（逻辑像素）：超宽屏限宽居中，避免每个区块被拉成大片空白。
-const double _kDashboardMaxWidth = 1600;
 
 /// Bangumi 同步卡最多列出的已关联条目数（超出的去设置页看全量；首页卡片是状态
 /// 概览，不是映射管理器）。有失败的条目由
@@ -882,19 +880,7 @@ class _HomeDashboardPageState
         }
         return ListView(
           padding: EdgeInsets.all(tokens.spacing.card),
-          children: <Widget>[
-            // 超宽屏（4K/带鱼屏）限宽居中：再宽下去只是把每个区块拉稀，不增信息量。
-            // heightFactor: 1 让 Align 在 ListView 的无界高度里收敛到内容高度。
-            Align(
-              alignment: Alignment.topCenter,
-              heightFactor: 1,
-              child: ConstrainedBox(
-                constraints:
-                    const BoxConstraints(maxWidth: _kDashboardMaxWidth),
-                child: body,
-              ),
-            ),
-          ],
+          children: <Widget>[body],
         );
       },
     );
@@ -1523,7 +1509,7 @@ class _HomeDashboardPageState
   Widget _buildHeatmapCard(HibikiDesignTokens tokens) {
     final Map<String, int> charsByDay = _heatmapCharsByDay();
     final Map<String, int> timeMsByDay = _heatmapTimeMsByDay();
-    return _sectionCard(
+    final Widget card = _sectionCard(
       tokens,
       title: t.reading_activity,
       header: _filterChips<int>(
@@ -1568,6 +1554,23 @@ class _HomeDashboardPageState
           SizedBox(height: tokens.spacing.gap),
           _buildDailyGoalRow(tokens),
         ],
+      ),
+    );
+    // 热力图是全仪表盘唯一有**天然最大宽度**的区块：网格列数封顶「一年」、格子边长
+    // 封顶 maxCell，铺到 [statHeatmapMaxGridWidth]（1110）就到头了。整页 1600 限宽撤
+    // 掉后（PR#675），3840 逻辑宽下这张卡被拉到 2244，而网格仍是 1110——右侧空出
+    // 1134px，正是 BUG-1073 症状 3 在超宽屏复发。修法不是把整页限宽加回来（用户实报
+    // 「首页左右强制的间距」要的就是铺满），而是只给这一块按内容的自然上限封顶，并
+    // 左对齐保持与主列其余区块左边缘对齐。1920 及以下主列本就窄于该上限，此处无效果。
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      // ListView 给的高度约束无界，heightFactor: 1 让 Align 收敛到内容高度。
+      heightFactor: 1,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: statHeatmapMaxGridWidth() + 2 * _sectionCardInset(tokens),
+        ),
+        child: card,
       ),
     );
   }
@@ -2652,6 +2655,10 @@ class _HomeDashboardPageState
   // ── 共享外壳 ────────────────────────────────────────────────────────────
 
   /// 统一的分区卡：标题（+ 可选右侧 header 控件）+ 内容，套 group 底色圆角。
+  /// [_sectionCard] 的内边距。单独抽出来是因为 [_buildHeatmapCard] 要按「网格自然
+  /// 最大宽度 + 两侧内边距」给卡片限宽，两处必须用同一个值。
+  double _sectionCardInset(HibikiDesignTokens tokens) => tokens.spacing.gap + 4;
+
   Widget _sectionCard(
     HibikiDesignTokens tokens, {
     required String title,
@@ -2666,7 +2673,7 @@ class _HomeDashboardPageState
         ),
       ),
       child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.gap + 4),
+        padding: EdgeInsets.all(_sectionCardInset(tokens)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,

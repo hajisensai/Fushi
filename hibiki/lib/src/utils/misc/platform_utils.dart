@@ -210,20 +210,29 @@ double? desktopContentMaxWidth(
   return switch (kind) {
     // UI v2：取消书架/视频库在宽屏上的 1280px 内容宽上限（用户实报「莫名的左右
     // 宽度上限」）。合集横排行/卡片网格是媒体墙布局，随窗口放宽天然多排一列，
-    // 居中锁窄反而两侧留白。与查词页 TODO-1352 同款 full-bleed 分支（仍保留
-    // desktopContentPadding 的 16/24px 侧向留白，不贴边）。
+    // 居中锁窄反而两侧留白。侧向留白也为零（见 [desktopContentPadding]），
+    // 卡片自带内边距，真正 full-bleed。
     DesktopContentKind.readerShelf => null,
     // TODO-1352: 取消查词页（nav「查词」）在宽屏上的强制内容宽度上限。此前 1040px 把
     // 查词结果区 WebView 居中锁死在窄栏，宽屏两侧大片留白、用户无法让词典正文占满。
-    // 返回 null 让 [DesktopContentLayout] 走 full-bleed 分支（仍保留 24px 侧向留白，
-    // 不贴边），词典正文随窗口放宽（可容纳更多 --dict-columns 与更长释义）。嵌套查词
-    // 弹窗渲染在根 Overlay、独立走 popupMaxWidth，不受此项影响。
+    // 返回 null 让 [DesktopContentLayout] 走 full-bleed 分支（词典正文是文字流，
+    // 仍保留 16/24px 侧向留白不贴边），词典正文随窗口放宽（可容纳更多
+    // --dict-columns 与更长释义）。嵌套查词弹窗渲染在根 Overlay、独立走
+    // popupMaxWidth，不受此项影响。
     DesktopContentKind.dictionary => null,
     DesktopContentKind.settings => 960,
   };
 }
 
-EdgeInsets desktopContentPadding(WindowSizeClass sizeClass) {
+/// [DesktopContentLayout] 的侧向留白。媒体墙类页面（[DesktopContentKind.readerShelf]：
+/// 书架/视频/游戏/漫画目录/来源页）恒为零——卡片自带内边距，宽屏上再叠 16/24px
+/// 强制侧向留白只是在侧栏与内容间挤出一条空带（用户实报「首页左右强制的间距」）。
+/// 查词/设置是文字流正文，贴边可读性差，宽屏保留 16/24px。
+EdgeInsets desktopContentPadding(
+  WindowSizeClass sizeClass,
+  DesktopContentKind kind,
+) {
+  if (kind == DesktopContentKind.readerShelf) return EdgeInsets.zero;
   return switch (sizeClass) {
     WindowSizeClass.compact => EdgeInsets.zero,
     WindowSizeClass.medium => const EdgeInsets.symmetric(horizontal: 16),
@@ -299,7 +308,7 @@ class DesktopContentLayout extends StatelessWidget {
         );
         final double? maxWidth = desktopContentMaxWidth(sizeClass, kind);
         final Widget padded = Padding(
-          padding: desktopContentPadding(sizeClass),
+          padding: desktopContentPadding(sizeClass, kind),
           child: child,
         );
         if (maxWidth == null) return padded;

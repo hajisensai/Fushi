@@ -96,15 +96,26 @@ void main() {
     );
   });
 
-  test('_clearLookupState dispatches selection-clear eval via unawaited', () {
-    // _clearLookupState 被 onAllPopupsDismissed fire-and-forget 调用，清选区 eval
-    // 必须经 unawaited(_clearSelectionJs())（helper 内 try/catch），不能裸 fire-and-forget
-    // 让 await 边界后的异常无主逃 zone。
-    expect(
-      src,
-      contains('unawaited(_clearSelectionJs())'),
-      reason: '_clearLookupState 必须经 unawaited(_clearSelectionJs()) 派发清选区 '
-          'eval（helper 内 try/catch），勿退回裸 _controller?.evaluateJavascript。',
+  test('BUG-1344 popup dismissal awaits clear before reclaiming focus', () {
+    final int start = src.indexOf(
+      'Future<void> _finishLookupSessionAfterPopupsDismissed(',
     );
+    expect(start, isNonNegative, reason: '整栈关闭必须有可等待的异步收尾 helper');
+    final int end = src.indexOf('\n  }', start);
+    expect(end, greaterThan(start));
+    final String body = src.substring(start, end);
+    final int clear = body.indexOf('await _clearSelectionJs()');
+    final int mounted = body.indexOf('if (!mounted');
+    final int reclaim = body.indexOf(
+      '_focusOwnership.reclaim(FocusReclaimCause.popupDismissed)',
+    );
+    expect(clear, isNonNegative);
+    expect(mounted, greaterThan(clear), reason: '异步清理回来必须重新检查页面/会话是否仍有效');
+    expect(reclaim, greaterThan(mounted),
+        reason: 'WKWebView 清选区必须完成后才能抢回焦点，避免灰色选区残帧');
+    expect(body, contains('isDictionaryShown'),
+        reason: '等待期间若新查词弹窗已打开，不得由旧会话抢回焦点');
+    expect(body, contains('activeLookupGeneration != dismissedGeneration'),
+        reason: '新查词尚在加载、弹窗未 visible 时也必须由 lookup generation 挡住旧收尾');
   });
 }

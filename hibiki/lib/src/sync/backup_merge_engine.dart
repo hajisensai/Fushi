@@ -142,8 +142,12 @@ class BackupMergeEngine {
       if (_wants('statistics')) {
         await _mergeReadingStatistics();
         await _mergeVideoWatchStatistics();
-        await _mergeHourlyLogs('reading_hourly_logs', 'reading_time_ms');
-        await _mergeHourlyLogs('video_hourly_logs', 'watch_time_ms');
+        // 阅读时段表 v67 起多一维 format（备份 DB 在 ATTACH 前已迁到当前
+        // schema，两侧必有此列）；视频时段表仍是 {dateKey, hour} 两维。
+        await _mergeHourlyLogs('reading_hourly_logs', 'reading_time_ms',
+            keyColumns: const <String>['date_key', 'hour', 'format']);
+        await _mergeHourlyLogs('video_hourly_logs', 'watch_time_ms',
+            keyColumns: const <String>['date_key', 'hour']);
         await _mergeMiningStatistics();
         await _mergeLookupMiningCounters();
         await _mergeFavoriteWords();
@@ -600,22 +604,32 @@ class BackupMergeEngine {
     );
   }
 
-  /// Hourly logs MAX-union per {dateKey, hour}. [valueColumn] is the single
-  /// duration column (reading_time_ms / watch_time_ms).
-  Future<void> _mergeHourlyLogs(String table, String valueColumn) async {
+  /// Hourly logs MAX-union per [keyColumns]（阅读表 {date_key, hour, format}，
+  /// 视频表 {date_key, hour}）。[valueColumn] is the single duration column
+  /// (reading_time_ms / watch_time_ms).
+  Future<void> _mergeHourlyLogs(
+    String table,
+    String valueColumn, {
+    required List<String> keyColumns,
+  }) async {
+    final String keyList = keyColumns.join(', ');
+    final String tEqS =
+        keyColumns.map((String c) => 't.$c = s.$c').join(' AND ');
+    final String sEqTable =
+        keyColumns.map((String c) => 's.$c = $table.$c').join(' AND ');
     await _db.customStatement(
-      'INSERT INTO $table (date_key, hour, $valueColumn) '
-      'SELECT date_key, hour, $valueColumn FROM $_srcAlias.$table AS s '
+      'INSERT INTO $table ($keyList, $valueColumn) '
+      'SELECT $keyList, $valueColumn FROM $_srcAlias.$table AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM $table AS t '
-      'WHERE t.date_key = s.date_key AND t.hour = s.hour)',
+      'WHERE $tEqS)',
     );
     await _db.customStatement(
       'UPDATE $table SET '
       '$valueColumn = MAX($valueColumn, ('
       'SELECT s.$valueColumn FROM $_srcAlias.$table AS s '
-      'WHERE s.date_key = $table.date_key AND s.hour = $table.hour)) '
+      'WHERE $sEqTable)) '
       'WHERE EXISTS (SELECT 1 FROM $_srcAlias.$table AS s '
-      'WHERE s.date_key = $table.date_key AND s.hour = $table.hour)',
+      'WHERE $sEqTable)',
     );
   }
 

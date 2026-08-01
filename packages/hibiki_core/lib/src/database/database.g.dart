@@ -4681,7 +4681,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   /// `epubPath`=PDF 绝对路径、`extractDir`=占位、`chapterCount`=页数、`chaptersJson`=`'[]'`。
   final String format;
 
-  /// 漫画阅读模式覆盖（漫画 OCR，v52）：`null`=按页图长宽比自动判定（默认，横长跨页
+  /// 漫画阅读模式覆盖（漫画 OCR，v53）：`null`=按页图长宽比自动判定（默认，横长跨页
   /// 走 `'spread'` 双页布局、纵长走 `'webtoon'` 长条纵向连读）；非 null 为用户手动覆盖，
   /// 取值 `'spread'`（跨页/翻页）或 `'webtoon'`（长条纵向）。仅 `format='manga'` 的行有意义，
   /// 其它书身份恒 null。null 语义即「跟随自动判定」，与显式取值区分。
@@ -6085,8 +6085,16 @@ class $ReadingHourlyLogsTable extends ReadingHourlyLogs
   late final GeneratedColumn<int> readingTimeMs = GeneratedColumn<int>(
       'reading_time_ms', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _formatMeta = const VerificationMeta('format');
   @override
-  List<GeneratedColumn> get $columns => [id, dateKey, hour, readingTimeMs];
+  late final GeneratedColumn<String> format = GeneratedColumn<String>(
+      'format', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, dateKey, hour, readingTimeMs, format];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -6121,6 +6129,10 @@ class $ReadingHourlyLogsTable extends ReadingHourlyLogs
     } else if (isInserting) {
       context.missing(_readingTimeMsMeta);
     }
+    if (data.containsKey('format')) {
+      context.handle(_formatMeta,
+          format.isAcceptableOrUnknown(data['format']!, _formatMeta));
+    }
     return context;
   }
 
@@ -6128,7 +6140,7 @@ class $ReadingHourlyLogsTable extends ReadingHourlyLogs
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
-        {dateKey, hour},
+        {dateKey, hour, format},
       ];
   @override
   ReadingHourlyLogRow map(Map<String, dynamic> data, {String? tablePrefix}) {
@@ -6142,6 +6154,8 @@ class $ReadingHourlyLogsTable extends ReadingHourlyLogs
           .read(DriftSqlType.int, data['${effectivePrefix}hour'])!,
       readingTimeMs: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}reading_time_ms'])!,
+      format: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}format'])!,
     );
   }
 
@@ -6157,11 +6171,19 @@ class ReadingHourlyLogRow extends DataClass
   final String dateKey;
   final int hour;
   final int readingTimeMs;
+
+  /// v67：写入面身份（`BookFormat.dbValue`：'epub' / 'pdf' / 'manga'）。此前没有
+  /// 任何身份列，EPUB / PDF / 漫画同一小时的时长在写入时就被加成一行，永久分不开；
+  /// 日级 `reading_statistics` 靠 title→format 反查能拆，时段表拆不开只因缺这列。
+  /// `''` = v67 前的历史行（写入时信息已丢，如实标未区分）以及云同步里旧端贡献的
+  /// 无法归因差额（见 aggregate_sync_service 的 deficit-lift）。
+  final String format;
   const ReadingHourlyLogRow(
       {required this.id,
       required this.dateKey,
       required this.hour,
-      required this.readingTimeMs});
+      required this.readingTimeMs,
+      required this.format});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -6169,6 +6191,7 @@ class ReadingHourlyLogRow extends DataClass
     map['date_key'] = Variable<String>(dateKey);
     map['hour'] = Variable<int>(hour);
     map['reading_time_ms'] = Variable<int>(readingTimeMs);
+    map['format'] = Variable<String>(format);
     return map;
   }
 
@@ -6178,6 +6201,7 @@ class ReadingHourlyLogRow extends DataClass
       dateKey: Value(dateKey),
       hour: Value(hour),
       readingTimeMs: Value(readingTimeMs),
+      format: Value(format),
     );
   }
 
@@ -6189,6 +6213,7 @@ class ReadingHourlyLogRow extends DataClass
       dateKey: serializer.fromJson<String>(json['dateKey']),
       hour: serializer.fromJson<int>(json['hour']),
       readingTimeMs: serializer.fromJson<int>(json['readingTimeMs']),
+      format: serializer.fromJson<String>(json['format']),
     );
   }
   @override
@@ -6199,16 +6224,22 @@ class ReadingHourlyLogRow extends DataClass
       'dateKey': serializer.toJson<String>(dateKey),
       'hour': serializer.toJson<int>(hour),
       'readingTimeMs': serializer.toJson<int>(readingTimeMs),
+      'format': serializer.toJson<String>(format),
     };
   }
 
   ReadingHourlyLogRow copyWith(
-          {int? id, String? dateKey, int? hour, int? readingTimeMs}) =>
+          {int? id,
+          String? dateKey,
+          int? hour,
+          int? readingTimeMs,
+          String? format}) =>
       ReadingHourlyLogRow(
         id: id ?? this.id,
         dateKey: dateKey ?? this.dateKey,
         hour: hour ?? this.hour,
         readingTimeMs: readingTimeMs ?? this.readingTimeMs,
+        format: format ?? this.format,
       );
   ReadingHourlyLogRow copyWithCompanion(ReadingHourlyLogsCompanion data) {
     return ReadingHourlyLogRow(
@@ -6218,6 +6249,7 @@ class ReadingHourlyLogRow extends DataClass
       readingTimeMs: data.readingTimeMs.present
           ? data.readingTimeMs.value
           : this.readingTimeMs,
+      format: data.format.present ? data.format.value : this.format,
     );
   }
 
@@ -6227,13 +6259,14 @@ class ReadingHourlyLogRow extends DataClass
           ..write('id: $id, ')
           ..write('dateKey: $dateKey, ')
           ..write('hour: $hour, ')
-          ..write('readingTimeMs: $readingTimeMs')
+          ..write('readingTimeMs: $readingTimeMs, ')
+          ..write('format: $format')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, dateKey, hour, readingTimeMs);
+  int get hashCode => Object.hash(id, dateKey, hour, readingTimeMs, format);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -6241,7 +6274,8 @@ class ReadingHourlyLogRow extends DataClass
           other.id == this.id &&
           other.dateKey == this.dateKey &&
           other.hour == this.hour &&
-          other.readingTimeMs == this.readingTimeMs);
+          other.readingTimeMs == this.readingTimeMs &&
+          other.format == this.format);
 }
 
 class ReadingHourlyLogsCompanion extends UpdateCompanion<ReadingHourlyLogRow> {
@@ -6249,17 +6283,20 @@ class ReadingHourlyLogsCompanion extends UpdateCompanion<ReadingHourlyLogRow> {
   final Value<String> dateKey;
   final Value<int> hour;
   final Value<int> readingTimeMs;
+  final Value<String> format;
   const ReadingHourlyLogsCompanion({
     this.id = const Value.absent(),
     this.dateKey = const Value.absent(),
     this.hour = const Value.absent(),
     this.readingTimeMs = const Value.absent(),
+    this.format = const Value.absent(),
   });
   ReadingHourlyLogsCompanion.insert({
     this.id = const Value.absent(),
     required String dateKey,
     required int hour,
     required int readingTimeMs,
+    this.format = const Value.absent(),
   })  : dateKey = Value(dateKey),
         hour = Value(hour),
         readingTimeMs = Value(readingTimeMs);
@@ -6268,12 +6305,14 @@ class ReadingHourlyLogsCompanion extends UpdateCompanion<ReadingHourlyLogRow> {
     Expression<String>? dateKey,
     Expression<int>? hour,
     Expression<int>? readingTimeMs,
+    Expression<String>? format,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (dateKey != null) 'date_key': dateKey,
       if (hour != null) 'hour': hour,
       if (readingTimeMs != null) 'reading_time_ms': readingTimeMs,
+      if (format != null) 'format': format,
     });
   }
 
@@ -6281,12 +6320,14 @@ class ReadingHourlyLogsCompanion extends UpdateCompanion<ReadingHourlyLogRow> {
       {Value<int>? id,
       Value<String>? dateKey,
       Value<int>? hour,
-      Value<int>? readingTimeMs}) {
+      Value<int>? readingTimeMs,
+      Value<String>? format}) {
     return ReadingHourlyLogsCompanion(
       id: id ?? this.id,
       dateKey: dateKey ?? this.dateKey,
       hour: hour ?? this.hour,
       readingTimeMs: readingTimeMs ?? this.readingTimeMs,
+      format: format ?? this.format,
     );
   }
 
@@ -6305,6 +6346,9 @@ class ReadingHourlyLogsCompanion extends UpdateCompanion<ReadingHourlyLogRow> {
     if (readingTimeMs.present) {
       map['reading_time_ms'] = Variable<int>(readingTimeMs.value);
     }
+    if (format.present) {
+      map['format'] = Variable<String>(format.value);
+    }
     return map;
   }
 
@@ -6314,7 +6358,8 @@ class ReadingHourlyLogsCompanion extends UpdateCompanion<ReadingHourlyLogRow> {
           ..write('id: $id, ')
           ..write('dateKey: $dateKey, ')
           ..write('hour: $hour, ')
-          ..write('readingTimeMs: $readingTimeMs')
+          ..write('readingTimeMs: $readingTimeMs, ')
+          ..write('format: $format')
           ..write(')'))
         .toString();
   }
@@ -17862,7 +17907,7 @@ class VideoScrapeMetaRow extends DataClass
   /// 条目详情页 URL（`https://bgm.tv/subject/<id>`），供「查看条目」跳转。
   final String? detailUrl;
 
-  /// 集号（v65 / TODO-2491）：集级刮削按文件名解析的集号与源的分集列表对齐后写入
+  /// 集号（v66 / TODO-2491）：集级刮削按文件名解析的集号与源的分集列表对齐后写入
   /// （TMDB `episode_number` / Bangumi `sort`）。NULL = 本行是旧的**作品级**资料
   /// （v54~v64 的自动刮削把整部作品的简介写进每个文件），或集级刮削未能从文件名
   /// 解出集号。存对齐后的**源侧集号**而非文件名原文，便于重刮时按号更新。
@@ -28619,6 +28664,7 @@ typedef $$ReadingHourlyLogsTableCreateCompanionBuilder
   required String dateKey,
   required int hour,
   required int readingTimeMs,
+  Value<String> format,
 });
 typedef $$ReadingHourlyLogsTableUpdateCompanionBuilder
     = ReadingHourlyLogsCompanion Function({
@@ -28626,6 +28672,7 @@ typedef $$ReadingHourlyLogsTableUpdateCompanionBuilder
   Value<String> dateKey,
   Value<int> hour,
   Value<int> readingTimeMs,
+  Value<String> format,
 });
 
 class $$ReadingHourlyLogsTableFilterComposer
@@ -28648,6 +28695,9 @@ class $$ReadingHourlyLogsTableFilterComposer
 
   ColumnFilters<int> get readingTimeMs => $composableBuilder(
       column: $table.readingTimeMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get format => $composableBuilder(
+      column: $table.format, builder: (column) => ColumnFilters(column));
 }
 
 class $$ReadingHourlyLogsTableOrderingComposer
@@ -28671,6 +28721,9 @@ class $$ReadingHourlyLogsTableOrderingComposer
   ColumnOrderings<int> get readingTimeMs => $composableBuilder(
       column: $table.readingTimeMs,
       builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get format => $composableBuilder(
+      column: $table.format, builder: (column) => ColumnOrderings(column));
 }
 
 class $$ReadingHourlyLogsTableAnnotationComposer
@@ -28693,6 +28746,9 @@ class $$ReadingHourlyLogsTableAnnotationComposer
 
   GeneratedColumn<int> get readingTimeMs => $composableBuilder(
       column: $table.readingTimeMs, builder: (column) => column);
+
+  GeneratedColumn<String> get format =>
+      $composableBuilder(column: $table.format, builder: (column) => column);
 }
 
 class $$ReadingHourlyLogsTableTableManager extends RootTableManager<
@@ -28728,24 +28784,28 @@ class $$ReadingHourlyLogsTableTableManager extends RootTableManager<
             Value<String> dateKey = const Value.absent(),
             Value<int> hour = const Value.absent(),
             Value<int> readingTimeMs = const Value.absent(),
+            Value<String> format = const Value.absent(),
           }) =>
               ReadingHourlyLogsCompanion(
             id: id,
             dateKey: dateKey,
             hour: hour,
             readingTimeMs: readingTimeMs,
+            format: format,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
             required String dateKey,
             required int hour,
             required int readingTimeMs,
+            Value<String> format = const Value.absent(),
           }) =>
               ReadingHourlyLogsCompanion.insert(
             id: id,
             dateKey: dateKey,
             hour: hour,
             readingTimeMs: readingTimeMs,
+            format: format,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

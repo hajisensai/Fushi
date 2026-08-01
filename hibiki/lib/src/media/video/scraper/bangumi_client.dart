@@ -220,10 +220,15 @@ class BangumiRelatedSubject {
 class BangumiEpisodeInfo {
   const BangumiEpisodeInfo({
     required this.episodeNumber,
+    this.id,
     this.title,
     this.airDate,
     this.summary,
   });
+
+  /// 源侧章节 id（`/v0/episodes` 的 `id`；拼 `bgm.tv/ep/<id>` 外链用）。
+  /// 旧调用方不读它，可选参数向后兼容；缺失为 null。
+  final int? id;
 
   /// 正篇集号（源侧 `sort`；非整数的特殊话数在解析层跳过）。
   final int episodeNumber;
@@ -314,6 +319,7 @@ List<BangumiRelatedSubject> parseBangumiRelatedSubjects(String body) {
       if (episodeNumber.toDouble() != sort || episodeNumber <= 0) continue;
       episodes.add(BangumiEpisodeInfo(
         episodeNumber: episodeNumber,
+        id: _asInt(item['id']),
         title:
             _nonEmptyString(item['name_cn']) ?? _nonEmptyString(item['name']),
         airDate: _nonEmptyString(item['airdate']),

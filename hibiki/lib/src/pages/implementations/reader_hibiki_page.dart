@@ -16,6 +16,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
@@ -87,6 +88,7 @@ import 'package:hibiki/src/utils/misc/hibiki_share.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:window_manager/window_manager.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/hibiki_color.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
@@ -1366,6 +1368,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 时间戳语义（读 throttleMs 即生效，无残留 timer）。删了 JS _wheelTimer 双处后，
   // 这是滚轮/音量键翻页的唯一节流真相源。
   DateTime? _lastPaginateTime;
+  // BUG-1342：macOS 横向触控板的一次物理滑动会产生持续 1s+ 的 wheel tick。
+  // 此 gate 活在 reader State，跨 WebView 文档/章节导航持续存在；只作用于横向主轴，
+  // 纵向鼠标滚轮仍保留既有的固定窗口节流手感。
+  final ReaderWheelGestureGate _pagedWheelGestureGate =
+      ReaderWheelGestureGate();
   // TODO-1229 v2：跨章去抖时间戳（独立于 _lastPaginateTime 的章内节流）。BUG-568 案A
   // 的 _paginationInFlight 守卫只覆盖「换章加载+restore」这一段瞬态窗口，而 _lastPaginateTime
   // 节流窗口锚定在手势起点(第一 tick)。滚轮/触控板一次连续惯性手势会持续产生 tick 达
@@ -1603,7 +1610,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// 状态机；都不悬浮时走纯挤压旧路径，无 timer）。
   bool get _anyChromeFloating => _topProgressFloating || _bottomBarFloating;
 
-  double get _readerTopOffset => _stableTopInset + _topProgressReserve;
+  /// BUG-1343：macOS 的 NSWindow 全局启用了透明标题栏 + full-size content，而默认 MD3 根壳
+  /// 不挂 MacosWindow/ToolBar。阅读器需自行保留一条可拖拽标题栏，否则原生 WebView
+  /// 吞满顶边后窗口没有稳定抓手。其它平台严格为 0。
+  double get _macosWindowTitlebarInset =>
+      Platform.isMacOS ? kMacTitleBarHeight : 0;
+
+  double get _readerTopOffset =>
+      _stableTopInset + _macosWindowTitlebarInset + _topProgressReserve;
 
   double get _readerBottomReserve => _bottomChromeReserve + _stableBottomInset;
 
@@ -1614,7 +1628,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _bottomChromeReserve > 0 ? _readerBottomReserve : 0;
 
   @override
-  double get popupTopReserve => _stableTopInset;
+  double get popupTopReserve => _stableTopInset + _macosWindowTitlebarInset;
 
   @override
   bool get popupVerticalWriting =>
@@ -2587,6 +2601,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                           ),
                         ),
                       ),
+                    if (Platform.isMacOS)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: kMacTitleBarHeight,
+                        child: DragToMoveArea(
+                          child: ColoredBox(
+                            key: const ValueKey<String>(
+                              'hoshi_reader_window_drag_area',
+                            ),
+                            color: bgColor,
+                          ),
+                        ),
+                      ),
                     _buildTopProgressBar(),
                     buildDictionary(),
                     // The bottom chrome returns a Positioned; it MUST stay a direct
@@ -2610,24 +2639,25 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return Center(child: adaptiveIndicator(context: context));
     }
     final Widget webView = _buildWebView();
-    // BUG-379: 歌词模式（LyricsModeHtml）是独立 HTML，没有 window.hoshiReader，
-    // _applyChromeInsets 对它整体 early-return，正文那套「告诉 WebView 底栏预留高度」
-    // 的机制对歌词页完全失效。于是歌词 WebView 仍 Positioned.fill 铺满全屏，底栏
-    // （_buildAudiobookBar，bottom:0）盖在其上，歌词文档级 CSS 滚动条（主题化的细条）
-    // 沿整屏高度绘制，底部一段被绘制进底栏区域，看上去像「进度条跑进底栏里」。
-    //
-    // 正文模式滚动条被原生关闭（verticalScrollBarEnabled:false）且 body 经 setChromeInsets
-    // 推离底栏，所以不暴露此问题；唯独歌词页两条都不成立。这里在 Flutter 侧把歌词 WebView
-    // 收缩到底栏之上（底栏可见时留 _readerBottomReserve），视口本身不再与底栏重叠，
-    // CSS 滚动条自然只画在歌词区域内。底栏可见条件与 _buildBottomChrome / popupBottomReserve
-    // 保持一致（_hasEverLoaded && _showChrome），_showChrome 切换会触发 _rebuild 重建本树。
-    if (_lyricsMode && _hasEverLoaded && _showChrome) {
-      return Padding(
-        padding: EdgeInsets.only(bottom: _readerBottomReserve),
-        child: webView,
-      );
-    }
-    return webView;
+    // BUG-379 / BUG-1343：歌词模式（LyricsModeHtml）与 spread 整页图都是独立 HTML，
+    // 没有 window.hoshiReader，_applyChromeInsets 对它们整体 early-return，正文那套
+    // 「告诉 WebView 预留多少」的机制对它们失效，只能由 Flutter 侧收缩视口本身。
+    // 留多少是 [independentDocumentInsets] 说了算（单一真相源，行为单测直接钉它）；
+    // 这里只负责喂当前状态并按结果包 Padding。
+    // BUG-1381：底部预留曾以 `EdgeInsets.only(bottom: _readerBottomReserve)` 这个**写法**
+    // 被静态守卫钉住，PR#670 把顶/底两笔留白合成一个 Padding 后写法变了、行为没变，
+    // 守卫却红了。改由纯函数承载契约后，守卫钉的是「预留来自它」而非某种拼写。
+    // _showChrome / _hasEverLoaded 切换会触发 _rebuild 重建本树。
+    final EdgeInsets independentDocumentPadding = independentDocumentInsets(
+      lyricsMode: _lyricsMode,
+      spreadDocumentLoaded: _spreadDocumentLoaded,
+      // 底栏占位条件与 _buildBottomChrome / popupBottomReserve 一致。
+      chromeOccupiesLayout: _hasEverLoaded && _showChrome,
+      bottomReserve: _readerBottomReserve,
+      titlebarInset: _macosWindowTitlebarInset,
+    );
+    if (independentDocumentPadding == EdgeInsets.zero) return webView;
+    return Padding(padding: independentDocumentPadding, child: webView);
   }
 
   String _buildStyleTag() {
@@ -3100,6 +3130,25 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // 清过，这里兜住「攒了几句但没制卡就关掉」的情况。
     _miningDraft.clear();
     _clearLookupState();
+    final int dismissedGeneration = activeLookupGeneration;
+    unawaited(
+      _finishLookupSessionAfterPopupsDismissed(dismissedGeneration),
+    );
+  }
+
+  /// BUG-1344：macOS WKWebView 的 evaluateJavascript 通过异步 method-channel completion
+  /// 落地。必须等原生选区 + CSS Highlight 真正清完后再 requestFocus；旧顺序先抢
+  /// Flutter 焦点，会先绘出失焦灰选区，迟到的 JS 清理没有下一次 surface invalidation，
+  /// 直到切应用才消失。等待期间若页面销毁或新查词已打开，则旧会话不得抢回焦点。
+  Future<void> _finishLookupSessionAfterPopupsDismissed(
+    int dismissedGeneration,
+  ) async {
+    await _clearSelectionJs();
+    if (!mounted ||
+        activeLookupGeneration != dismissedGeneration ||
+        isDictionaryShown) {
+      return;
+    }
     // Return Flutter focus to the reading content. The dismissed popup's WebView
     // held the keyboard/gamepad focus, so without this the reader receives no key
     // events after the popup closes and the user is stuck with no way back in.

@@ -160,9 +160,16 @@ class ReadingHourlyLogs extends Table {
   IntColumn get hour => integer()();
   IntColumn get readingTimeMs => integer()();
 
+  /// v67：写入面身份（`BookFormat.dbValue`：'epub' / 'pdf' / 'manga'）。此前没有
+  /// 任何身份列，EPUB / PDF / 漫画同一小时的时长在写入时就被加成一行，永久分不开；
+  /// 日级 `reading_statistics` 靠 title→format 反查能拆，时段表拆不开只因缺这列。
+  /// `''` = v67 前的历史行（写入时信息已丢，如实标未区分）以及云同步里旧端贡献的
+  /// 无法归因差额（见 aggregate_sync_service 的 deficit-lift）。
+  TextColumn get format => text().withDefault(const Constant(''))();
+
   @override
   List<Set<Column>> get uniqueKeys => [
-        {dateKey, hour},
+        {dateKey, hour, format},
       ];
 }
 
@@ -278,7 +285,7 @@ class DictionaryHistory extends Table {
 // ── clipboard_history ───────────────────────────────────────────────
 // 桌面「剪贴板复制历史」——查词面板/瞬态浮窗的历史按钮读取。position 保存内存
 // List 的顺序（tail=最新），content=去重后的复制文本，copiedAt=复制时刻毫秒戳。
-// 建表由 database.dart onUpgrade v49 负责；写入走 ClipboardHistoryRepository 的
+// 建表由 database.dart onUpgrade v50 负责；写入走 ClipboardHistoryRepository 的
 // replaceAll（delete + batch insert），无需 autoIncrement id。
 @DataClassName('ClipboardHistoryRow')
 class ClipboardHistory extends Table {
@@ -356,7 +363,7 @@ class EpubBooks extends Table {
   /// `epubPath`=PDF 绝对路径、`extractDir`=占位、`chapterCount`=页数、`chaptersJson`=`'[]'`。
   TextColumn get format => text().withDefault(const Constant('epub'))();
 
-  /// 漫画阅读模式覆盖（漫画 OCR，v52）：`null`=按页图长宽比自动判定（默认，横长跨页
+  /// 漫画阅读模式覆盖（漫画 OCR，v53）：`null`=按页图长宽比自动判定（默认，横长跨页
   /// 走 `'spread'` 双页布局、纵长走 `'webtoon'` 长条纵向连读）；非 null 为用户手动覆盖，
   /// 取值 `'spread'`（跨页/翻页）或 `'webtoon'`（长条纵向）。仅 `format='manga'` 的行有意义，
   /// 其它书身份恒 null。null 语义即「跟随自动判定」，与显式取值区分。
@@ -1256,7 +1263,7 @@ class VideoScrapeMeta extends Table {
   /// 条目详情页 URL（`https://bgm.tv/subject/<id>`），供「查看条目」跳转。
   TextColumn get detailUrl => text().nullable()();
 
-  /// 集号（v65 / TODO-2491）：集级刮削按文件名解析的集号与源的分集列表对齐后写入
+  /// 集号（v66 / TODO-2491）：集级刮削按文件名解析的集号与源的分集列表对齐后写入
   /// （TMDB `episode_number` / Bangumi `sort`）。NULL = 本行是旧的**作品级**资料
   /// （v54~v64 的自动刮削把整部作品的简介写进每个文件），或集级刮削未能从文件名
   /// 解出集号。存对齐后的**源侧集号**而非文件名原文，便于重刮时按号更新。
@@ -1270,7 +1277,7 @@ class VideoScrapeMeta extends Table {
 }
 
 // ── collection_relations ────────────────────────────────────────────
-// 合集相关作品（v65 / TODO-2484）：一行 = 「某合集 → 一部相关作品」的有向边，
+// 合集相关作品（v66 / TODO-2484）：一行 = 「某合集 → 一部相关作品」的有向边，
 // 来自刮削源的关联数据（Bangumi subject relations / TMDB tv seasons 与
 // movie belongs_to_collection）。目标两态：
 //   - 纯刮削：只有 (source, subjectId, title, coverUrl/coverPath)，本地库里还没有
@@ -1468,7 +1475,7 @@ class GalgameSessions extends Table {
 }
 
 // ── galgame_tag_mappings ────────────────────────────────────────────
-/// v57（BUG-1113「游戏没有标签」）：游戏 ↔ **用户标签** 多对多映射。标签定义复用
+/// v59（BUG-1113「游戏没有标签」）：游戏 ↔ **用户标签** 多对多映射。标签定义复用
 /// 共享的 [BookTags]，与 EPUB（[BookTagMappings]）、SRT（[SrtBookTagMappings]）、
 /// 视频（[VideoBookTagMappings]）、合集（[CollectionTagMappings]）**同一个标签池**
 /// ——这正是本表存在的理由：上层筛选栏 / 标签管理页早已是四种媒体共用，唯独游戏
@@ -1502,7 +1509,9 @@ class GalgameTagMappings extends Table {
 }
 
 // ── manga_extension_stores ──────────────────────────────────────────
-/// v63：用户自行添加的 Mihon 扩展仓库。Hibiki 不预置第三方仓库。
+/// v65：用户自行添加的 Mihon 扩展仓库。Hibiki 不预置第三方仓库。
+/// （本迁移在 PR 分支上先后写作 v63 / v64，两次都与 develop 已落地的迁移撞号，
+///  最终顺延到 v65；见 database.dart 的 `if (from < 65)` 块。）
 @DataClassName('MangaExtensionStoreRow')
 class MangaExtensionStores extends Table {
   /// 仓库入口 URL 同时是稳定身份；更新时 URL 不随仓库显示名变化。

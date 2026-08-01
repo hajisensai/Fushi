@@ -12,9 +12,20 @@ void main() {
 
   tearDown(() => database.close());
 
-  test('v63 stores Mihon identity and preferences without integer coercion',
+  test('v65 stores Mihon identity and preferences without integer coercion',
       () async {
-    expect(database.schemaVersion, 65);
+    // 本用例的契约是「Mihon 五张表按声明类型存取、不做整数强转」，前提只有
+    // 一条：这五张表已经进入 schema，即当前版本 >= 引入它们的 v65。
+    //
+    // 这里刻意**不写等值断言**。等值断言把一个与本用例无关的全局常量钉死在
+    // 这里，每次 schema bump 都要跟着改：本行历史上已被动改过 63 -> 64 -> 65，
+    // 第四次（65 -> 66，PR#663 的 collection_relations / episode_number）漏改
+    // 直接把 develop 的 CI `Run package tests` 打红——因为本仓约定的本地全量
+    // 门只跑 `hibiki/` 那套，`packages/` 下的字面量拿不到同一次批量替换。
+    // 「当前 schema 恰好是第几版」的等值守卫属于迁移阶梯测试
+    // （`hibiki/test/database/migration_*.dart`），不属于这里。
+    expect(database.schemaVersion, greaterThanOrEqualTo(65),
+        reason: 'v65 = Mihon 漫画扩展生态五张表；低于此版本本用例的表还不存在');
     await database.upsertMangaExtensionStore(
       MangaExtensionStoresCompanion.insert(
         indexUrl: 'https://repo.example/index.json',

@@ -374,23 +374,45 @@ void main([List<String> args = const <String>[]]) {
       lowMemory: appModel.lowMemoryMode,
     )) {
       unawaited(Future(() async {
+        // 预热持有的是进程级资源（一个 headless WebView = 一个 chromium
+        // renderer 子进程），销毁必须有确定终点，不能只挂在 onLoadStop 这条
+        // 成功路径上：回调不来就是永久泄漏一个 renderer，而 renderer 被 OOM
+        // kill 且 onRenderProcessGone 无人接管时，Android 默认会连整个 app
+        // 进程一起杀（CI Android appSmoke 连续 4 次死于此）。终点交给
+        // WebViewPrewarmSession 收口：载入完成 / 载入失败 / renderer 死亡 /
+        // 超时兜底，先到者胜、只 dispose 一次。
+        late final HeadlessInAppWebView warmup;
+        final WebViewPrewarmSession session = WebViewPrewarmSession(
+          disposeWebView: () => warmup.dispose(),
+          onFinished: (String reason) =>
+              debugPrint('[Hibiki] WebView engine pre-warm ended: $reason'),
+        );
         try {
           // 桌面端等首帧，保证 Flutter view 已 attach（WebView2 前提）。
           if (isDesktopPlatform) {
             await WidgetsBinding.instance.endOfFrame;
           }
-          late final HeadlessInAppWebView warmup;
           warmup = HeadlessInAppWebView(
             initialUrlRequest: URLRequest(url: WebUri('about:blank')),
             onLoadStop: (controller, url) async {
+              // 100ms 让 onLoadStop 的回调栈先出栈再销毁：这是原实现就有的
+              // 保守做法（桌面 WebView2 上在回调里同步 dispose 曾不稳），
+              // 不是等待载入的重试窗口——真正的终点保证在 session 那边。
               await Future.delayed(const Duration(milliseconds: 100));
-              await warmup.dispose();
-              debugPrint('[Hibiki] WebView engine pre-warmed');
+              await session.finish('loaded');
             },
+            onReceivedError: (controller, request, error) =>
+                session.finish('load error: ${error.type}'),
+            // 接管 renderer 死亡：Android 侧只要注册了这个回调，
+            // InAppWebViewClient 就返回 true，chromium 不再连坐杀 app 进程。
+            onRenderProcessGone: (controller, detail) =>
+                session.finish('renderer gone (didCrash=${detail.didCrash})'),
           );
           await warmup.run();
+          session.armTimeout();
         } catch (e) {
           debugPrint('[Hibiki] WebView warmup failed (non-fatal): $e');
+          await session.finish('run failed: $e');
         }
       }));
     }
@@ -1538,14 +1560,22 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                           appModel.experimentalFocusNavigationEnabled,
                       registry: appModel.shortcutRegistry,
 
-                      // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/首页
-                      // 开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无挂起请求时
-                      // 整层 IgnorePointer 透传，不抢任何页面的命中测试。
-                      child: Stack(
-                        children: <Widget>[
-                          child!,
-                          const FloatingLyricLookupHost(),
-                        ],
+                      // BUG-1349（第二处根因）：焦点导航层（HibikiFocusRoot 的
+                      // fallbackNode）必须在全局导航层**之内**。键事件沿焦点树
+                      // 冒泡：fallbackNode 若在 wrapWithGlobalNavigation 之外，
+                      // 零受管目标页把焦点回收到兜底节点后，Esc/全局快捷键根本
+                      // 到不了全局处理器——整个全局键处理静默失效。
+                      child: _wrapFocusNavigation(
+                        enabled: appModel.experimentalFocusNavigationEnabled,
+                        // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/
+                        // 首页开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无
+                        // 挂起请求时整层 IgnorePointer 透传，不抢任何页面的命中测试。
+                        child: Stack(
+                          children: <Widget>[
+                            child!,
+                            const FloatingLyricLookupHost(),
+                          ],
+                        ),
                       ),
                     );
                     if (isMacosPlatform(context)) {
@@ -1597,13 +1627,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                         ),
                       );
                     }
-                    return HibikiAppUiScale(
-                      scale: uiScale,
-                      child: _wrapFocusNavigation(
-                        enabled: appModel.experimentalFocusNavigationEnabled,
-                        child: navigation,
-                      ),
-                    );
+                    return HibikiAppUiScale(scale: uiScale, child: navigation);
                   },
                 ),
               ),
@@ -1630,6 +1654,11 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
 /// **恒定挂载，行为按实验开关门控**。禁用时 [HibikiFocusRoot.maybeControllerOf]
 /// 返回 null（各组件据此走原生焦点遍历，语义与「未包裹」时代逐字节一致）、
 /// 焦点环不绘制。
+///
+/// **挂载位置纪律（BUG-1349）**：本层必须位于 [wrapWithGlobalNavigation]
+/// **之内**——fallbackNode 是可聚焦节点，键事件沿焦点树只向祖先冒泡；挂在全局
+/// 导航层之外时，零受管目标页把焦点回收到兜底节点后，Esc / 全局快捷键全部
+/// 到不了全局处理器（详情页 Esc 失效正是此故障 + escape 解析遮蔽的叠加）。
 ///
 /// 用户实报（2026-07-22）：旧实现按开关插/拔这两层——切「键盘/手柄焦点导航」
 /// 开关时整棵 app 子树因结构变化被重挂载，被切的 Switch 以新状态直接 mount，

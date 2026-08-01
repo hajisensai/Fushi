@@ -16,6 +16,8 @@ import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
+import '../../helpers/source_guard.dart';
+
 AudioCue _cueOf(String raw) {
   final SubtitleMarkup m =
       parseSubtitleMarkup(raw, playResX: 1280, playResY: 720);
@@ -136,22 +138,41 @@ void main() {
     final String src = File('lib/src/media/video/video_subtitle_overlay.dart')
         .readAsStringSync();
 
+    /// 🔴 这两条断言必须锚在**调用方的方法体**里，不能对整份源码裸 `contains`。
+    ///
+    /// 两个名字的**声明**就在这份源码里（`bool isAssVerticalFontName(` 在文件尾、
+    /// `Widget _applyVerticalGlyphRotation(` 在 `_buildCueBox` 之后），所以
+    /// `src.contains('isAssVerticalFontName(')` 会被声明自己喂饱——把唯一的调用点
+    /// 删干净，守卫照样全绿，等于这条守卫在守自己。合入前变异实测已复现该假绿。
+    ///
+    /// `containsCodeLine` 另外掩掉注释，注释里提一嘴函数名也不算数。
     test('@ 前缀剥离处必须仍有竖排语义的承接方（不得只剥不接）', () {
       expect(src, contains("name.startsWith('@') ? name.substring(1) : name"),
           reason: '家族名解析仍应剥 @（DirectWrite 家族名不含 @）');
-      expect(src, contains('isAssVerticalFontName('),
-          reason: '剥掉的竖排语义必须有人承接，否则回到 BUG-1331');
-      expect(src, contains('_applyVerticalGlyphRotation('),
-          reason: '字形预旋转必须真的作用到字符渲染上');
+
+      // 承接方①：字形预旋转必须真的被字符构建路径调用（调用点在 _buildCueBox 内）。
+      final String cueBoxBody = methodBody(src, 'Widget _buildCueBox(');
+      expect(
+          containsCodeLine(cueBoxBody, '_applyVerticalGlyphRotation('), isTrue,
+          reason: '字形预旋转必须真的作用到字符渲染上：'
+              '_buildCueBox 里没有调用点 = 剥了 @ 却没人转字形，回到 BUG-1331');
+
+      // 承接方②：预旋转内部必须真的据 @ 前缀判据决定转不转。
+      final String rotationBody =
+          methodBody(src, 'Widget _applyVerticalGlyphRotation(');
+      expect(containsCodeLine(rotationBody, 'isAssVerticalFontName('), isTrue,
+          reason: '预旋转必须据 isAssVerticalFontName 判据放行，'
+              '否则要么全转（非 @ 字体也躺倒）要么全不转（回到 BUG-1331）');
     });
 
+    /// 窗口用 [methodBody] 按花括号配对取，不再拿**下一个方法的注释文本**当结束锚
+    /// （原实现是 `src.indexOf('\n  /// span 级静态', fn)`）：那句注释被改写或那个方法
+    /// 被挪走，窗口就断在错误位置——守卫会在与竖排毫无关系的改动下炸掉或悄悄扩窗。
     test('预旋转方向锁死为逆时针 90°（-π/2）', () {
-      final int fn = src.indexOf('Widget _applyVerticalGlyphRotation(');
-      expect(fn, greaterThanOrEqualTo(0));
-      final int fnEnd = src.indexOf('\n  /// span 级静态', fn);
-      expect(fnEnd, greaterThan(fn));
-      final String body = src.substring(fn, fnEnd);
-      expect(body, contains('Transform.rotate(angle: -math.pi / 2'),
+      final String body =
+          methodBody(src, 'Widget _applyVerticalGlyphRotation(');
+      expect(containsCodeLine(body, 'Transform.rotate(angle: -math.pi / 2'),
+          isTrue,
           reason: '方向写反（+π/2）会让字形与 \\frz270 叠成 180°，字倒立');
     });
   });

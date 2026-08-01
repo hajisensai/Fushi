@@ -43,17 +43,35 @@ KeyEventResult _handleGlobalEscape(
   if (nav == null || !nav.canPop()) return KeyEventResult.ignored;
 
   // The focused widget lives in the top-most route; resolve its route so we can
-  // tell a full page apart from a popup. The focus root is the authoritative
-  // source once installed; raw primary focus is kept as an unrooted fallback.
+  // tell a full page apart from a popup. The focus root's active target and the
+  // raw primary focus are BOTH candidates: the controller's [activeContext] is
+  // only authoritative while a managed target is live — on a page with zero
+  // managed targets it falls back to the HibikiFocusRoot's own fallback node,
+  // which sits ABOVE the [Navigator] and therefore resolves NO route at all
+  // (BUG-1349: Escape went dead on the collection detail page whenever focus
+  // navigation was enabled). Take the first candidate that resolves to a real
+  // route instead of letting an unrooted fallback shadow a perfectly good
+  // primary focus.
   final BuildContext? navigationContext = navigatorKey.currentContext;
   final HibikiFocusController? controller = navigationContext == null
       ? null
       : HibikiFocusRoot.maybeControllerOf(navigationContext, listen: false);
-  final BuildContext? focused =
-      controller?.activeContext ?? FocusManager.instance.primaryFocus?.context;
-  if (focused == null) return KeyEventResult.ignored;
-  final ModalRoute<dynamic>? route = ModalRoute.of(focused);
-  if (route == null || route is PopupRoute) return KeyEventResult.ignored;
+  ModalRoute<dynamic>? route;
+  for (final BuildContext? candidate in <BuildContext?>[
+    controller?.activeContext,
+    FocusManager.instance.primaryFocus?.context,
+  ]) {
+    if (candidate == null || !candidate.mounted) continue;
+    route = ModalRoute.of(candidate);
+    if (route != null) break;
+  }
+  // A popup keeps the framework's own Escape handling (incl. intentionally
+  // non-dismissible dialogs) — only a POSITIVELY identified popup defers.
+  // Unresolvable (focus parked above the Navigator on the focus root's
+  // fallback node) is NOT a popup: when a dialog owns focus the framework
+  // consumes Escape before it ever bubbles here, so the top route in the
+  // unresolvable case is a full page and must pop.
+  if (route is PopupRoute) return KeyEventResult.ignored;
 
   nav.maybePop();
   return KeyEventResult.handled;

@@ -1032,8 +1032,29 @@ class EmbeddedTorrentSession {
     }
   }
 
+  /// TODO-2526：每个 piece 的下载优先级（0~7，下标 = piece index；诊断/
+  /// 测试用）。元数据未就绪/种子不存在/库不支持（老 DLL 缺符号）返回 null。
+  List<int>? getPiecePriorities(String infoHash) {
+    if (isClosed || !_b.hasPiecePriorities) return null;
+    final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
+    try {
+      final Object? json =
+          _engine._consumeJson(_b.ht_get_piece_priorities(_session, id));
+      if (json is! Map<String, dynamic> || json['ok'] != true) return null;
+      final Object? priorities = json['priorities'];
+      if (priorities is! List) return null;
+      return priorities
+          .whereType<num>()
+          .map((num p) => p.toInt())
+          .toList(growable: false);
+    } finally {
+      malloc.free(id);
+    }
+  }
+
   /// TODO-2482：设置单个文件的下载优先级（0~7，0 = 不下载）。
-  /// 库不支持（老 DLL）返回 false。
+  /// 库不支持（老 DLL）返回 false。写成功后 native 会对该种子重放一次
+  /// 首尾 piece 提优（跳过 priority=0 的文件），见头文件契约（TODO-2526）。
   bool setFilePriority(String infoHash, int fileIndex, int priority) {
     if (isClosed || !_b.hasDetailInfo) return false;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
@@ -1045,7 +1066,8 @@ class EmbeddedTorrentSession {
   }
 
   /// TODO-2482：会话协议状态。非阻塞：native 只收割已到的统计 alert，
-  /// 首轮 dhtNodes/速率为 -1，下一轮轮询即有值。库不支持返回 null。
+  /// dhtNodes 首轮 -1、下一轮即有值；速率要到**第三轮**才有值（第二轮
+  /// 收割到首个采样只够建基线，第三轮才差分得出）。库不支持返回 null。
   HtSessionStatus? sessionStatus() {
     if (isClosed || !_b.hasDetailInfo) return null;
     final Object? json = _engine._consumeJson(_b.ht_session_status(_session));

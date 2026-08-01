@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/aggregate_sync_service.dart';
 import 'package:hibiki_audio/hibiki_audio.dart' show FavoriteSentence;
+import 'package:hibiki_core/hibiki_core.dart' show BookFormat;
 
 AggregateSnapshot _sample() => AggregateSnapshot(
       readingStats: const <ReadingStatRecord>[
@@ -26,6 +27,12 @@ AggregateSnapshot _sample() => AggregateSnapshot(
       ],
       readingHourly: const <HourlyRecord>[
         HourlyRecord(dateKey: '2026-06-01', hour: 9, durationMs: 60000),
+      ],
+      readingHourlyByFormat: const <HourlyFormatRecord>[
+        HourlyFormatRecord(
+            dateKey: '2026-06-01', hour: 9, format: 'epub', durationMs: 40000),
+        HourlyFormatRecord(
+            dateKey: '2026-06-01', hour: 9, format: 'manga', durationMs: 20000),
       ],
       videoHourly: const <HourlyRecord>[
         HourlyRecord(dateKey: '2026-06-01', hour: 20, durationMs: 30000),
@@ -80,6 +87,21 @@ void main() {
       expect(back.videoStats.single.watchTimeMs, 30000);
       expect(back.readingHourly.single.durationMs, 60000);
       expect(back.readingHourly.single.hour, 9);
+      expect(back.readingHourlyByFormat, hasLength(2));
+      expect(
+        back.readingHourlyByFormat
+            .singleWhere(
+                (HourlyFormatRecord r) => r.format == BookFormat.epub.dbValue)
+            .durationMs,
+        40000,
+      );
+      expect(
+        back.readingHourlyByFormat
+            .singleWhere(
+                (HourlyFormatRecord r) => r.format == BookFormat.manga.dbValue)
+            .durationMs,
+        20000,
+      );
       expect(back.videoHourly.single.durationMs, 30000);
       expect(back.miningStats.single.count, 3);
       expect(back.miningStats.single.sourceType, 'book');
@@ -256,6 +278,72 @@ void main() {
           ba.readingStats.single.readingTimeMs);
       expect(ab.readingStats.single.charactersRead, 250);
       expect(ab.readingStats.single.readingTimeMs, 60000);
+    });
+
+    test('hourly-by-format MAX per {dateKey, hour, format}; totals untouched',
+        () {
+      // 同一 {dateKey, hour} 下不同 format 是不同桶：各自 MAX，不互相折叠；
+      // 逐时总量字段 readingHourly 保持旧 wire 语义（{dateKey, hour} MAX）。
+      const AggregateSnapshot a = AggregateSnapshot(
+        readingHourly: <HourlyRecord>[
+          HourlyRecord(dateKey: 'd', hour: 9, durationMs: 30000),
+        ],
+        readingHourlyByFormat: <HourlyFormatRecord>[
+          HourlyFormatRecord(
+              dateKey: 'd', hour: 9, format: 'epub', durationMs: 20000),
+          HourlyFormatRecord(
+              dateKey: 'd', hour: 9, format: 'manga', durationMs: 10000),
+        ],
+      );
+      const AggregateSnapshot b = AggregateSnapshot(
+        readingHourly: <HourlyRecord>[
+          HourlyRecord(dateKey: 'd', hour: 9, durationMs: 25000),
+        ],
+        readingHourlyByFormat: <HourlyFormatRecord>[
+          HourlyFormatRecord(
+              dateKey: 'd', hour: 9, format: 'epub', durationMs: 25000),
+        ],
+      );
+      final AggregateSnapshot ab = AggregateSyncService.mergeSnapshots(a, b);
+      final AggregateSnapshot ba = AggregateSyncService.mergeSnapshots(b, a);
+      expect(ab.readingHourly.single.durationMs, 30000);
+      expect(ab.readingHourlyByFormat, hasLength(2));
+      expect(
+        ab.readingHourlyByFormat
+            .singleWhere(
+                (HourlyFormatRecord r) => r.format == BookFormat.epub.dbValue)
+            .durationMs,
+        25000, // MAX(20000, 25000)
+      );
+      expect(
+        ab.readingHourlyByFormat
+            .singleWhere(
+                (HourlyFormatRecord r) => r.format == BookFormat.manga.dbValue)
+            .durationMs,
+        10000, // 只有 a 携带，原样并入
+      );
+      // 可交换性。
+      expect(
+        ba.readingHourlyByFormat
+            .singleWhere(
+                (HourlyFormatRecord r) => r.format == BookFormat.epub.dbValue)
+            .durationMs,
+        25000,
+      );
+    });
+
+    test('an OLD payload missing readingHourlyByFormat defaults it to empty',
+        () {
+      // 旧端上传只有逐时总量：byFormat 缺失 → 空列表，其余 family 照常折叠。
+      final AggregateSnapshot snap =
+          AggregateSnapshot.fromJson(<String, Object?>{
+        'version': AggregateSnapshot.currentVersion,
+        'readingHourly': <Object?>[
+          <String, Object?>{'dateKey': 'd', 'hour': 9, 'durationMs': 1000},
+        ],
+      });
+      expect(snap.readingHourly.single.durationMs, 1000);
+      expect(snap.readingHourlyByFormat, isEmpty);
     });
 
     test('lookup/mine counters MAX both columns; bookKey prefers non-null', () {

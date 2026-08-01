@@ -14,6 +14,7 @@ import 'package:http/http.dart' as http;
 import 'package:hibiki/src/sync/desktop_oauth.dart';
 import 'package:hibiki/src/sync/google_drive_sync_space.dart';
 import 'package:hibiki/src/sync/google_oauth_secret.dart';
+import 'package:hibiki/src/sync/sync_http.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 
 class GoogleDriveAuthError implements Exception {
@@ -201,9 +202,15 @@ class GoogleDriveAuth {
     // (whose refreshCredentials carries the refresh token forward).
     final verifier = _createCodeVerifier();
     final challenge = _codeChallenge(verifier);
-    final baseClient = http.Client();
+    final http.Client baseClient = await createSyncHttpClient();
     try {
       final result = await runDesktopOAuthLoopback(
+        // 回环 **IP** 而非 `localhost`：Google 的桌面客户端接受任意回环 redirect（无需
+        // 在 Console 预注册精确 URI），所以这里可以直接用 RFC 8252 §7.3 推荐的字面 IP，
+        // 绕开「`localhost` 先解析到 ::1」和「全局代理 bypass 列表不含 localhost 就把回调
+        // 转发给代理」这两条会让授权码永远回不来的路（BUG-1348 日志里 2 次 loopback
+        // 超时）。Dropbox / Entra 注册的是 `localhost` 字符串，仍走默认值。
+        host: '127.0.0.1',
         buildAuthUrl: (redirectUri) => _buildDesktopAuthUrl(
           redirectUri: redirectUri,
           challenge: challenge,
@@ -321,7 +328,7 @@ class GoogleDriveAuth {
     final saved = await repo.getDesktopCredentials();
     if (saved == null) return false;
 
-    final http.Client baseClient = http.Client();
+    final http.Client baseClient = await createSyncHttpClient();
     try {
       final credentials = _deserializeCredentials(saved);
       if (credentials.refreshToken == null) {
@@ -383,7 +390,7 @@ class GoogleDriveAuth {
       return;
     }
 
-    final baseClient = http.Client();
+    final http.Client baseClient = await createSyncHttpClient();
     try {
       final refreshed = await auth_io.refreshCredentials(
         _desktopClientId,
