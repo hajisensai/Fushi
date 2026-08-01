@@ -76,20 +76,37 @@ void main() {
     }
   });
 
-  test('视频首页「继续观看」hero：本地/远端封面都走 poster 竖版槽', () {
+  test('视频首页横滚行/hero：封面都走槽向自适应组件（BUG-1299 血缘）', () {
+    // TODO-2486 起旧「继续观看 hero」换形为 hero 轮播 + 横滚行：横滚行卡封面
+    // 必须走 PortraitCoverImage 槽向自适应（landscapeSlot 按探测朝向注入），
+    // hero 轮播背景必须走 LandscapeCoverImage（竖版海报模糊垫底）——两者都不得
+    // 回退到硬编码 fit 的裸 Image（旧 148×84 横槽让竖版海报两侧露灰带的祖病）。
     final String source = File(videoHomePath).readAsStringSync();
-    for (final String fn in <String>[
-      'Widget _buildContinueHero(',
-      'Widget _buildContinueHeroRemote(',
-    ]) {
-      final String body = _stripLineComments(_functionSource(source, fn));
-      expect(
-        body,
-        contains('poster: true'),
-        reason: '$fn 封面必须走 poster 竖版槽路径（PortraitCoverImage 自适应），'
-            '旧 148×84 横槽会让竖版海报两侧露灰带（BUG-1299）',
-      );
-    }
+    final String rowCard = _stripLineComments(
+        _functionSource(source, 'Widget _buildRowMediaCard('));
+    expect(
+      rowCard,
+      contains('PortraitCoverImage('),
+      reason: '横滚行卡封面必须走 PortraitCoverImage 槽向自适应（BUG-1299）',
+    );
+    expect(
+      rowCard,
+      contains('landscapeSlot:'),
+      reason: '横滚行卡封面槽向必须随探测朝向注入（TODO-2486 朝向自适应）',
+    );
+    expect(
+      containsIdentifierCall(rowCard, 'Image'),
+      isFalse,
+      reason: '横滚行卡不得绕过槽向组件直接构造 Image',
+    );
+    final String heroPage =
+        _stripLineComments(_functionSource(source, 'Widget _buildHeroPage('));
+    expect(
+      heroPage,
+      contains('LandscapeCoverImage('),
+      reason: 'hero 轮播背景必须走 LandscapeCoverImage（竖版海报模糊垫底 + '
+          'overlays 层序保文字可读，BUG-1298 血缘）',
+    );
   });
 
   test('合集详情单集缩略图：走 PortraitCoverImage 横槽自适应', () {

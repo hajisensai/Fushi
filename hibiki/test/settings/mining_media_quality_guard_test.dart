@@ -9,6 +9,8 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-1650 守卫：制卡图片/GIF 清晰度 + 音频质量两滑块（替代旧「压缩」开关）。
 ///
 /// 锁住四层契约（不依赖真机 / WebView / ffmpeg）：
@@ -145,36 +147,35 @@ void main() {
       final String src = File(
         'lib/src/mining/immersion_mining_engine.dart',
       ).readAsStringSync();
-      // 动图链路。重构后源码里已没有 `fps: compression.gifFps` 这个字面量，但本守卫要
-      // 锁的契约一个字没变：**喂进抽取器的帧率/宽度必须来自 compression 档位，不得被
-      // 硬编码**。若只是把断言字面量改成「源码里有 `fps: fps`」，守卫就退化成「有这行
-      // 字」——把 `fps: fps` 换成 `fps: 8` 照样绿。故沿调用链锁三段：
-      //   ① `_gif(` 实参里的 fps/width 是局部变量而非字面量；
-      //   ② 这两个局部变量确实由 `compression.gifFps` / `compression.gifWidth` 派生；
+      // 动图链路。契约一个字没变：**喂进抽取器的帧率/宽度必须来自 compression 档位，
+      // 不得被硬编码**，且换格式重试时必须夹到目标格式自己的顶格档上限。沿调用链锁三段：
+      //   ① 实参里的 fps/width 不是字面量；
+      //   ② 它们确实由 `compression.gifFps` / `compression.gifWidth` 派生；
       //   ③ 派生时夹到「本次尝试格式」自己的顶格档上限——换格式重试若沿用上一个格式的
       //      参数，就是 BUG-1039 那个 54 MB / 撞 120 秒超时 / AnkiConnect 卡死的配置。
-      final Match? gifCall =
-          RegExp(r'await _gif\(([\s\S]*?)\n\s*\);').firstMatch(src);
-      expect(gifCall, isNotNull, reason: '动图链路必须经注入的 _gif 抽取器');
-      final String gifArgs = gifCall!.group(1)!;
-      expect(RegExp(r'\bfps:\s*fps\b').hasMatch(gifArgs), isTrue,
-          reason: '喂进抽取器的帧率必须是档位派生出的局部变量，不得硬编码');
-      expect(RegExp(r'\bwidth:\s*width\b').hasMatch(gifArgs), isTrue,
-          reason: '喂进抽取器的宽度必须是档位派生出的局部变量，不得硬编码');
-      expect(RegExp(r'final int fps\s*=[^;]*compression\.gifFps').hasMatch(src),
+      //
+      // 锚点从调用形态换成**方法体**：BUG-1330（远端制卡接上动图格式偏好）把逐次抽取
+      // 搬进 extractAnimatedClipWithFallback，引擎侧只剩 `extractor: _gif`，全文件再无
+      // 原来那个调用形态，正则返回 null，守卫在**代码改对了的那一刻**炸掉（兄弟守卫
+      // video_mining_context_guard_test 当时已改锚，本条被漏掉，develop 上一直红着）。
+      // 锚方法体与调用形态无关；三段判据一条不减，而且比原来更强——不再要求「先派生成
+      // 局部变量」这个中间形态，直接要求实参本身就是 compression 派生且按 attempt 夹取。
+      final String fallbackBody = methodBody(
+        src,
+        'Future<AnimatedClipExtraction?> extractAnimatedClipWithFallback(',
+      );
+      expect(fallbackBody.contains('await extractor('), isTrue,
+          reason: '动图链路必须经注入的抽取器（引擎侧传 extractor: _gif）');
+      expect(fallbackBody.contains('fps: attempt.capFps(compression.gifFps)'),
           isTrue,
-          reason: 'fps 必须从 compression.gifFps 派生');
+          reason: '帧率必须由 compression.gifFps 派生并夹到本次格式上限（BUG-1039）');
       expect(
-          RegExp(r'final int width\s*=[^;]*compression\.gifWidth')
-              .hasMatch(src),
+          fallbackBody
+              .contains('width: attempt.capWidth(compression.gifWidth)'),
           isTrue,
-          reason: 'width 必须从 compression.gifWidth 派生');
-      expect(RegExp(r'final int fps\s*=[^;]*attempt\.capFps').hasMatch(src),
-          isTrue,
-          reason: '换格式重试必须夹到目标格式自己的顶格档上限（BUG-1039）');
-      expect(RegExp(r'final int width\s*=[^;]*attempt\.capWidth').hasMatch(src),
-          isTrue,
-          reason: '换格式重试必须夹到目标格式自己的顶格档上限（BUG-1039）');
+          reason: '宽度必须由 compression.gifWidth 派生并夹到本次格式上限（BUG-1039）');
+      expect(src.contains('extractor: _gif'), isTrue,
+          reason: '引擎必须把自己注入的 _gif 抽取器交给 fallback 链，测试才能替身');
       // 截图链路。
       expect(src.contains('maxLongEdge: compression.screenshotMaxLongEdge'),
           isTrue);

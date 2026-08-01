@@ -98,7 +98,9 @@ void main() {
       );
 
   Future<void> pumpPage(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 800);
+    // TODO-2486：顶部新增 hero 轮播（最高 420），800 高视口下墙卡中心会落到
+    // 视口之外、tap 判 miss；抬高视口让墙完整可见。
+    tester.view.physicalSize = const Size(1280, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -136,8 +138,10 @@ void main() {
       reason: '合集成员卡不在库页（封面卡形态），无从单独勾选',
     );
 
-    // 点合集卡 → 整合集入选中集，底栏计数 = 1。
-    await tester.tap(find.text('合集甲'));
+    // 点合集卡 → 整合集入选中集，底栏计数 = 1。（TODO-2486：hero 轮播也显示
+    // 合集名，裸文本 finder 歧义，按墙卡 key 点。）
+    await tester
+        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$cid')));
     await tester.pumpAndSettle();
     expect(find.text(t.batch_selected_count(n: 1)), findsOneWidget,
         reason: '整卡勾选把合集计入选中集');
@@ -185,7 +189,9 @@ void main() {
     await pumpPage(tester);
     await enterSelectionMode(tester);
 
-    await tester.tap(find.text('合集乙')); // 选合集
+    // TODO-2486：hero 也显示合集名，按墙卡 key 选合集。
+    await tester
+        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$cid')));
     await tester.pumpAndSettle();
     await tester
         .tap(find.byKey(const ValueKey<String>('home_video_video/looseL')));
@@ -222,9 +228,12 @@ void main() {
     await pumpPage(tester);
     await enterSelectionMode(tester);
 
-    await tester.tap(find.text('小集'));
+    // TODO-2486：hero 也显示合集名，按墙卡 key 选合集。
+    await tester
+        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$small')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('大集'));
+    await tester
+        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$big')));
     await tester.pumpAndSettle();
 
     await tester
@@ -261,7 +270,8 @@ void main() {
 
     await pumpPage(tester);
     await enterSelectionMode(tester);
-    await tester.tap(find.text('待解散'));
+    await tester
+        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$cid')));
     await tester.pumpAndSettle();
 
     await tester
@@ -289,7 +299,8 @@ void main() {
 
     await pumpPage(tester);
     await enterSelectionMode(tester);
-    await tester.tap(find.text('某合集'));
+    await tester
+        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$cid')));
     await tester.pumpAndSettle();
     await tester
         .tap(find.byKey(const ValueKey<String>('home_video_video/looseL')));
@@ -300,5 +311,41 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(t.batch_delete_mixed_confirm(n: 1, m: 1)), findsOneWidget,
         reason: '混选确认文案含媒体数 + 合集数');
+  });
+
+  testWidgets('TODO-2486 多选纪律：横滚行卡不开播不勾选、hero 按钮禁用',
+      (WidgetTester tester) async {
+    await seedVideo('video/ep1', '第1集');
+    // 入库时刻 = 现在 → 「最近添加」横滚行出现（14 天窗口）。
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('video/fresh'),
+      title: const Value('新片'),
+      videoPath: const Value('/abs/fresh.mp4'),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+    ));
+    final int cid = await db.createMediaCollection('合集甲');
+    await db.addToCollection(cid, MediaKind.video, 'video/ep1');
+
+    await pumpPage(tester);
+    final Finder recentCard =
+        find.byKey(const ValueKey<String>('home_video_recent_video/fresh'));
+    expect(recentCard, findsOneWidget, reason: '前置：最近添加行须出现');
+
+    await enterSelectionMode(tester);
+    // 行卡是墙内容的快捷镜像、不参与勾选：多选态点击不得开播（弹进播放器会把
+    // 批量操作打断）也不得改变选中计数。
+    await tester.tap(recentCard, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.byType(HomeVideoPage), findsOneWidget,
+        reason: '多选态点行卡不得推走库页（不开播）');
+    expect(find.text(t.batch_selected_count(n: 0)), findsOneWidget,
+        reason: '行卡不参与勾选，计数保持 0');
+    // hero 两按钮多选态渲染禁用（onPressed=null），背景导航同门控。
+    final OutlinedButton heroDetail = tester.widget<OutlinedButton>(
+        find.byKey(ValueKey<String>('home_video_hero_detail_$cid')));
+    expect(heroDetail.onPressed, isNull, reason: '多选态 hero「详情」必须禁用');
+    final FilledButton heroContinue = tester.widget<FilledButton>(
+        find.byKey(ValueKey<String>('home_video_hero_continue_$cid')));
+    expect(heroContinue.onPressed, isNull, reason: '多选态 hero 续播必须禁用');
   });
 }

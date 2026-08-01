@@ -11,5 +11,9 @@ const Map<String, String> kBannedCommentStripPatterns = <String, String>{
   r"startsWith('//')": 'maskComments / containsCodeLine（JS 语料用 maskJsComments）',
   r'startsWith("//")': 'maskComments / containsCodeLine',
   r"replaceAll(RegExp(r'/\*": 'maskCssComments（等长掩码，别用删除式）',
+  // PR#664 复核坐实的第 23 个手写形态：正则删除式只剥 // 行注释——块注释照样
+  // 放行（锚点塞 /* */ 即假绿），且删除式改变下标。键取正则字面量本身：调用链
+  // （source.replaceAll(...)）会被 dart format 折行，锚在单行稳定的部分。
+  r"RegExp(r'//[^\n]*": 'maskComments（共享词法掩码，行+块注释一起掩）',
   r"replaceAll(RegExp(r'<!--": 'maskHtmlComments（等长掩码，别用删除式）',
 };

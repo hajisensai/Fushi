@@ -1134,15 +1134,26 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               children: <Widget>[
                 Text(t.book_continue_reading, style: tokens.type.sectionLabel),
                 SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  // BUG-1108：与同卡封面（getDisplayThumbnailFromMediaItem）同源，
-                  // 经 getDisplayTitleFromMediaItem 应用编辑弹窗写入的 override
-                  // 书名；直读 DB 原始列 hero.title 会在改名后仍显示旧名。
-                  mediaSource.getDisplayTitleFromMediaItem(hero),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: tokens.type.listTitle,
-                ),
+                // TODO-2497：两行仍放不下时，桌面悬停显示完整书名（与库页卡
+                // 标题同款 ShelfTitleOverflowTooltip）。
+                // BUG-1108：与同卡封面（getDisplayThumbnailFromMediaItem）同源，
+                // 经 getDisplayTitleFromMediaItem 应用编辑弹窗写入的 override
+                // 书名；直读 DB 原始列 hero.title 会在改名后仍显示旧名。
+                Builder(builder: (BuildContext context) {
+                  final String heroTitle =
+                      mediaSource.getDisplayTitleFromMediaItem(hero);
+                  return ShelfTitleOverflowTooltip(
+                    title: heroTitle,
+                    style: tokens.type.listTitle,
+                    maxLines: 2,
+                    child: Text(
+                      heroTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: tokens.type.listTitle,
+                    ),
+                  );
+                }),
                 SizedBox(height: tokens.spacing.gap / 2),
                 Text(
                   t.book_read_progress(percent: percent),
