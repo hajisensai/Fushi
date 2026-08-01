@@ -130,16 +130,21 @@ void main() {
       return match!.group(1)!;
     }
 
-    test('zh-CN / en 都只让用户更新本体，不提「重新安装捕获组件」', () {
+    test('zh-CN / en 的处置必须是真能做的动作，不提「重新安装捕获组件」', () {
       const String key = 'game_hook_reason_protocol_mismatch';
       final String zh = valueOf('strings_zh-CN.i18n.json', key);
       final String en = valueOf('strings.i18n.json', key);
+      // ① 没有独立的组件安装包可重装（BUG-1196 起零网络、随主包内置）。
       expect(zh, isNot(contains('重新安装')), reason: '没有独立的捕获组件安装包可重装，这句处置是空头支票');
       expect(en.toLowerCase(), isNot(contains('reinstall')),
           reason: 'no standalone capture component exists to reinstall');
-      expect(zh, contains('Hibiki'), reason: '必须把处置指向本体（组件随本体内置更新）');
-      expect(en.toLowerCase(), contains('update hibiki'),
-          reason: 'the only real action is updating the app itself');
+      // ② 也不能只让用户「更新本体」：本体已是最新时照样能撞上这条——游戏进程里还挂着
+      //    上一次注入的旧组件。第一处置必须是重开游戏，这才是那个局面下唯一有效的动作。
+      expect(zh, contains('重开'), reason: '本体最新也可能撞上：游戏进程里挂着旧组件，只能重开游戏清掉');
+      expect(en.toLowerCase(), contains('launch it again'),
+          reason: 'restarting the game is the only fix when the game process '
+              'still holds the previous component');
+      expect(zh, contains('Hibiki'), reason: '要说清组件是内置的，用户没有单独装它这一步');
     });
   });
 }

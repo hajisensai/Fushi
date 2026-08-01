@@ -3021,5 +3021,5 @@
   "mihon_add_to_bookshelf": "Add to manga shelf",
   "mihon_in_bookshelf": "In manga shelf",
   "media_source_local_roots": "Local scan roots",
-  "game_hook_reason_protocol_mismatch": "The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version."
+  "game_hook_reason_protocol_mismatch": "The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component."
 }

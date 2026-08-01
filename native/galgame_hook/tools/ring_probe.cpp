@@ -82,18 +82,14 @@ double PeakAmplitude(const std::vector<uint8_t>& buf, uint32_t bits,
 
 // 导出文本环里所有台词行到 stdout：每行 `seq|ts_ms|utf8文本`。供外层做卡的句子来源。
 void DumpText(const SharedHeader* h) {
-  const uint64_t count = h->text_write_count;
-  const uint32_t slots = hibiki_voice_hook::kTextSlotCount;
-  const uint32_t slot_bytes = hibiki_voice_hook::kTextSlotBytes;
-  const uint8_t* base =
-      reinterpret_cast<const uint8_t*>(h) + h->text_region_offset;
-  const uint64_t start = (count > slots) ? count - slots : 0;
-  for (uint64_t seq = start + 1; seq <= count; seq++) {
-    const auto* slot = reinterpret_cast<const hibiki_voice_hook::TextSlot*>(
-        base + static_cast<size_t>((seq - 1) % slots) * slot_bytes);
-    if (slot->seq != seq || slot->byte_len == 0) {
-      continue;
-    }
+  // v13：文本按线程分道，寻址与归并只有契约头里那一份实现（host 读侧用的是同一个函数）。
+  static const hibiki_voice_hook::TextSlot*
+      slots[hibiki_voice_hook::kTextSlotCount];
+  const uint32_t found = hibiki_voice_hook::CollectTextSlotsBySeq(
+      h, slots, hibiki_voice_hook::kTextSlotCount, 0);
+  for (uint32_t i = 0; i < found; ++i) {
+    const auto* slot = slots[i];
+    if (slot->byte_len == 0) continue;
     char u8[1400] = {0};
     const uint8_t* txt = reinterpret_cast<const uint8_t*>(slot) +
                          sizeof(hibiki_voice_hook::TextSlot);
@@ -106,25 +102,22 @@ void DumpText(const SharedHeader* h) {
                           static_cast<int>(slot->byte_len / 2), u8,
                           sizeof(u8) - 1, nullptr, nullptr);
     }
-    printf("%llu|%llu|%s\n", static_cast<unsigned long long>(seq),
+    printf("%llu|%llu|%s\n", static_cast<unsigned long long>(slot->seq),
            static_cast<unsigned long long>(slot->timestamp_ms), u8);
   }
   fflush(stdout);
 }
 
 void DumpTextMeta(const SharedHeader* h) {
-  const uint64_t count = h->text_write_count;
-  const uint8_t* base = reinterpret_cast<const uint8_t*>(h) +
-                        h->text_region_offset;
-  const uint64_t start = count > hibiki_voice_hook::kTextSlotCount
-                             ? count - hibiki_voice_hook::kTextSlotCount
-                             : 0;
-  for (uint64_t seq = start + 1; seq <= count; ++seq) {
-    const auto* slot = reinterpret_cast<const hibiki_voice_hook::TextSlot*>(
-        base + static_cast<size_t>((seq - 1) %
-                                   hibiki_voice_hook::kTextSlotCount) *
-                   hibiki_voice_hook::kTextSlotBytes);
-    if (slot->seq != seq || slot->byte_len == 0) continue;
+  // v13：按线程分道枚举（实现见契约头 CollectTextSlotsBySeq，host 读侧共用）。
+  static const hibiki_voice_hook::TextSlot*
+      meta_slots[hibiki_voice_hook::kTextSlotCount];
+  const uint32_t meta_found = hibiki_voice_hook::CollectTextSlotsBySeq(
+      h, meta_slots, hibiki_voice_hook::kTextSlotCount, 0);
+  for (uint32_t mi = 0; mi < meta_found; ++mi) {
+    const auto* slot = meta_slots[mi];
+    const uint64_t seq = slot->seq;
+    if (slot->byte_len == 0) continue;
     char text[1400] = {0};
     const uint8_t* raw = reinterpret_cast<const uint8_t*>(slot) +
                          sizeof(hibiki_voice_hook::TextSlot);
@@ -151,18 +144,14 @@ void DumpTextMeta(const SharedHeader* h) {
 }
 
 void DumpTextEvents(const SharedHeader* h) {
-  const uint64_t count = h->text_write_count;
-  const uint8_t* base = reinterpret_cast<const uint8_t*>(h) +
-                        h->text_region_offset;
-  const uint64_t start = count > hibiki_voice_hook::kTextSlotCount
-                             ? count - hibiki_voice_hook::kTextSlotCount
-                             : 0;
-  for (uint64_t seq = start + 1; seq <= count; ++seq) {
-    const auto* slot = reinterpret_cast<const hibiki_voice_hook::TextSlot*>(
-        base + static_cast<size_t>((seq - 1) %
-                                   hibiki_voice_hook::kTextSlotCount) *
-                   hibiki_voice_hook::kTextSlotBytes);
-    if (slot->seq != seq) continue;
+  // v13：同上，按线程分道枚举。
+  static const hibiki_voice_hook::TextSlot*
+      evt_slots[hibiki_voice_hook::kTextSlotCount];
+  const uint32_t evt_found = hibiki_voice_hook::CollectTextSlotsBySeq(
+      h, evt_slots, hibiki_voice_hook::kTextSlotCount, 0);
+  for (uint32_t ei = 0; ei < evt_found; ++ei) {
+    const auto* slot = evt_slots[ei];
+    const uint64_t seq = slot->seq;
     char text[1400] = {0};
     if (slot->byte_len != 0) {
       const uint8_t* raw = reinterpret_cast<const uint8_t*>(slot) +

@@ -174,10 +174,13 @@ void main() {
       );
     });
 
-    test('injector 在已初始化路径的准入判定前登记 face（跨会话恢复路径）', () {
-      // Dart 的 _maybeRestoreTextThread 只从「本会话已出过 >= 3 行」的线程里挑一条写进
-      // selected_text_thread_id。face 必须在 AcceptsLine 读取注册表前登记；否则本行
-      // 第一次出现的新 ctx 仍会退回精确匹配，跨会话恢复后的第一句被静默丢掉。
+    test('injector 仍为每一行登记 face（v13 消费期按 hook 面放行的唯一来源）', () {
+      // BUG-1159：同一 hook 面在不同剧情分支下调用点 ctx 会变，thread_id 随之变，只按
+      // thread_id 精确匹配会把整段台词丢掉。v13 把选定线程的过滤从采集期挪到消费期
+      // （native 每条线程写自己那条道、一行不丢），放行判据也跟着挪到 Dart 的文本消费点；
+      // 它按 face 放行，而 face 是 native 在这里算好、随 TextSlot::face_id 带出去的。
+      // 所以这条登记必须继续为**每一行**执行——漏一行，那一行的 face 就是 0，消费期只能
+      // 退回精确匹配，BUG-1159 原样复发。
       final int fnStart = injectorSource.indexOf('bool LunaShouldWriteLine(');
       expect(fnStart, greaterThanOrEqualTo(0),
           reason: '找不到 LunaShouldWriteLine——face 登记守卫失去依据');
@@ -188,20 +191,22 @@ void main() {
       expect(fnEnd, greaterThan(fnStart));
       final String body =
           maskComments(injectorSource.substring(fnStart, fnEnd));
-      // 两个位置都在（剥过注释的）函数体内取：既挡住「调用被注释掉」的假绿，也挡住
-      // 「函数体里没有、却命中了文件后面别处那一处」的越界命中。
+      // 位置在（剥过注释的）函数体内取：挡住「调用被注释掉」的假绿，也挡住「函数体里
+      // 没有、却命中了文件后面别处那一处」的越界命中。
       final int noteAt =
           body.indexOf('g_lunaTextSelector.NoteFace(thread_id, face_id);');
-      final int acceptsAt = body.indexOf('g_lunaTextSelector.AcceptsLine(');
       expect(noteAt, greaterThanOrEqualTo(0),
           reason: 'LunaShouldWriteLine 必须显式调用 NoteFace 登记 hook 面');
-      expect(acceptsAt, greaterThanOrEqualTo(0),
-          reason: 'LunaShouldWriteLine 必须通过 selector 做显式线程准入');
+      // v13：采集期不得再做选定线程准入 —— 在这里丢掉的行，用户换线程后永远追不回来。
       expect(
-        noteAt,
-        lessThan(acceptsAt),
-        reason: 'face 登记必须早于 AcceptsLine，否则首次出现的新 ctx 会被精确匹配拒绝',
+        body,
+        isNot(contains('g_lunaTextSelector.AcceptsLine(')),
+        reason: '选定线程过滤已挪到消费期（见 GalHookSessionController.'
+            '_acceptsLineFromSelectedThread）；采集期再丢行就白分道了',
       );
+      // face 登记必须**无条件**发生在伪影判定之外的路径上，否则伪影线程一转正就没有 face。
+      expect(body.indexOf('is_artifact'), lessThan(noteAt),
+          reason: '伪影行先挡掉，其余每一行都要登记 face');
     });
   });
 }

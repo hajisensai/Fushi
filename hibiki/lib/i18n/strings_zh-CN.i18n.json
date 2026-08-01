@@ -3021,5 +3021,5 @@
   "mihon_add_to_bookshelf": "加入漫画书架",
   "mihon_in_bookshelf": "已加入漫画书架",
   "media_source_local_roots": "本地扫描根",
-  "game_hook_reason_protocol_mismatch": "捕获组件与本体版本不一致。捕获组件已内置在 Hibiki 里、随本体一起更新，请更新 Hibiki 到最新版；若已是最新版，请把这条提示反馈给我们。"
+  "game_hook_reason_protocol_mismatch": "捕获组件与本体版本不一致。组件已内置在 Hibiki 里，不需要单独安装：先彻底关掉游戏再重开一次（游戏进程里可能还挂着上一次注入的旧组件）。若重开后仍提示不一致，说明这份 Hibiki 没带上与之匹配的组件。"
 }

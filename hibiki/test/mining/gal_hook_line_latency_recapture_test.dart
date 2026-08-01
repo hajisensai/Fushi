@@ -67,6 +67,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     await waitUntil(() => service.entries.length >= 2);
 
     expect(
@@ -113,6 +116,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     await waitUntil(() => engine.pollCalls >= 8);
     expect(
       engine.readinessCalls,
@@ -167,6 +173,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     final TexthookerLineEntry line = service.appendLine(
       '補録したい台詞',
       source: TexthookerLineSource.websocket,
@@ -249,6 +258,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     final TexthookerLineEntry line = service.appendLine(
       '会話終了時の台詞',
       source: TexthookerLineSource.websocket,

@@ -285,6 +285,9 @@ void main() {
       (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
       isTrue,
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(3);
     // 资源模式会话把 `_audioSource` 指向 loopback（原始资源是首选，混音只是兜底），
     // 于是没有配对资源的句子在旧实现里必然拿到一段整机混音 = 纯 BGM。
     final TexthookerLineEntry entry = service.appendLine('無声のモノローグ')!;
@@ -377,6 +380,9 @@ void main() {
       (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
       isTrue,
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(3);
     controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
     for (int i = 0; i < 40 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
@@ -572,6 +578,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 8, pid: 909, title: '9nine'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(9);
     for (int i = 0; i < 20 && service.textThreads.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -637,6 +646,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'Test Game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(9);
     for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -791,6 +803,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 9, pid: 28140, title: 'anemoi'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     expect(controller.state.audioBackend, GalHookAudioBackend.gameResource);
     expect(controller.state.audioFormat, isNull,
         reason: 'resource-only readiness must not be presented as fake PCM');
@@ -883,6 +898,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 21, pid: 2200, title: 'RealLive fixture'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(19);
     for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -942,6 +960,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 11, pid: 22812, title: '9-nine'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(4948456556519461331);
     expect(controller.state.audioBackend, GalHookAudioBackend.systemLoopback);
 
     for (int i = 0;
@@ -1022,6 +1043,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Engine game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -1128,6 +1152,9 @@ void main() {
       (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
       isTrue,
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(1);
     expect(controller.state.boundWindow, isNull);
     expect(controller.state.phase, GalHookSessionPhase.degraded);
     expect(controller.state.fallbackReason, 'window_not_found');
@@ -1188,6 +1215,9 @@ void main() {
       (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
       isTrue,
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(1);
     await controller.stopCapture(keepBinding: false);
     windows = const <ExternalWindowInfo>[
       ExternalWindowInfo(hwnd: 34, pid: 4242, title: '天使☆騒々 RE-BOOT!'),
@@ -1254,6 +1284,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(1);
     for (int i = 0; i < 40 && service.entries.length < 2; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -1332,6 +1365,9 @@ void main() {
       gameId: 'galgame-row-42',
       gameTitle: '统一后的显示名',
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(1);
     expect(result.launched, isTrue);
     for (int i = 0; i < 40 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
@@ -1414,6 +1450,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(1);
     for (int i = 0; i < 40 && service.entries.length < 3; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }

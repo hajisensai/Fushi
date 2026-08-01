@@ -664,73 +664,55 @@ uint64_t LunaTextFaceId(const wchar_t* hookcode, const char* hookname,
                                                hookcode, hookname);
 }
 
+// Luna 侧写者状态。**必须定义在所有写路径之前**：v13 起写文本道也要在这把锁下认领，
+// 与预览槽认领共用同一把锁、同一套下标分区。
+hibiki_voice_hook::LunaTextSelector g_lunaTextSelector;
+CRITICAL_SECTION g_lunaSelectCs;
+bool g_lunaSelectCsInit = false;
+alignas(8) volatile uint64_t g_lunaPreviewGeneration = 0;
+
 void WriteLunaTextEvent(SharedHeader* header, const wchar_t* hookcode,
                         const char* hookname, const LunaThreadParam& tp,
-                        uint64_t thread_id, uint32_t event_kind,
-                        uint32_t event_flags, const wchar_t* text, int wlen) {
+                        uint64_t thread_id, uint64_t face_id,
+                        uint32_t event_kind, uint32_t event_flags,
+                        const wchar_t* text, int wlen) {
   if (header == nullptr ||
       (event_kind == hibiki_voice_hook::kTextEventLine &&
        (text == nullptr || wlen <= 0))) {
     return;
   }
-  uint8_t* text_base =
-      reinterpret_cast<uint8_t*>(header) + header->text_region_offset;
-  const LONGLONG reserved = InterlockedIncrement64(
-      reinterpret_cast<volatile LONGLONG*>(&header->text_write_count));
-  const uint64_t idx = static_cast<uint64_t>(reserved) - 1;
-  uint8_t* slot =
-      text_base + static_cast<size_t>(idx % kTextSlotCount) * kTextSlotBytes;
-  auto* ts = reinterpret_cast<TextSlot*>(slot);
-  memset(ts, 0, sizeof(TextSlot));
-  uint32_t max_bytes = kTextSlotBytes - static_cast<uint32_t>(sizeof(TextSlot));
-  max_bytes -= (max_bytes % static_cast<uint32_t>(sizeof(wchar_t)));  // wchar 边界
-  uint32_t byte_len = text == nullptr || wlen <= 0
-                          ? 0
-                          : static_cast<uint32_t>(wlen) *
-                                static_cast<uint32_t>(sizeof(wchar_t));
-  if (byte_len > max_bytes) {
-    byte_len = max_bytes;  // 截断到槽容量
-  }
-  if (byte_len != 0) {
-    memcpy(slot + sizeof(TextSlot), text, byte_len);
-  }
-  ts->timestamp_ms = GetTickCount64();
-  ts->byte_len = byte_len;
-  ts->is_utf8 = 0;  // UTF-16LE
-  ts->thread_id = thread_id;
-  ts->thread_address = tp.addr;
-  ts->thread_context = tp.ctx;
-  ts->thread_context2 = tp.ctx2;
-  ts->process_id = tp.processId;
-  ts->source_kind = hibiki_voice_hook::kTextSourceLuna;
-  ts->event_kind = event_kind;
-  ts->event_flags = event_flags;
-  if (hookname != nullptr) {
-    const size_t n = (std::min)(strlen(hookname),
-                                static_cast<size_t>(
-                                    hibiki_voice_hook::kTextHookNameChars - 1));
-    memcpy(ts->hook_name, hookname, n);
-    ts->hook_name[n] = '\0';
-    ts->hook_name_len = static_cast<uint32_t>(n);
-  }
-  if (hookcode != nullptr) {
-    const size_t n = (std::min)(wcslen(hookcode),
-                                static_cast<size_t>(
-                                    hibiki_voice_hook::kTextHookCodeChars - 1));
-    memcpy(ts->hook_code, hookcode, n * sizeof(wchar_t));
-    ts->hook_code[n] = L'\0';
-    ts->hook_code_len = static_cast<uint32_t>(n);
-  }
-  ts->seq = static_cast<uint64_t>(reserved);  // 完成标记，最后写
-  if (header->text_hooked == 0) {
-    header->text_hooked = 1;  // 首次 flush：文本 hook proof-of-life
-  }
+  // v13：写进本线程自己那条道（Luna 在 injector 进程，用低段下标）。认领要与 ShouldWrite
+  // 共用同一把进程内锁；跨进程隔离由区段划分保证，见 voice_hook_ipc.h 的分道注释。
+  hibiki_voice_hook::TextLaneWrite write;
+  write.thread_id = thread_id;
+  write.face_id = face_id;
+  write.thread_address = tp.addr;
+  write.thread_context = tp.ctx;
+  write.thread_context2 = tp.ctx2;
+  write.process_id = tp.processId;
+  write.source_kind = hibiki_voice_hook::kTextSourceLuna;
+  write.event_kind = event_kind;
+  write.event_flags = event_flags;
+  write.is_utf8 = 0;  // UTF-16LE
+  write.text = (text == nullptr || wlen <= 0) ? nullptr : text;
+  write.byte_len = (text == nullptr || wlen <= 0)
+                       ? 0
+                       : static_cast<uint32_t>(wlen) *
+                             static_cast<uint32_t>(sizeof(wchar_t));
+  write.hook_name = hookname;
+  write.hook_code = hookcode;
+  const bool locked = g_lunaSelectCsInit;
+  if (locked) EnterCriticalSection(&g_lunaSelectCs);
+  hibiki_voice_hook::WriteTextLaneEvent(
+      header, 0, hibiki_voice_hook::kLunaThreadPreviewCount, write);
+  if (locked) LeaveCriticalSection(&g_lunaSelectCs);
 }
 
 void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
                        const char* hookname, const LunaThreadParam& tp,
-                       uint64_t thread_id, const wchar_t* text, int wlen) {
-  WriteLunaTextEvent(header, hookcode, hookname, tp, thread_id,
+                       uint64_t thread_id, uint64_t face_id,
+                       const wchar_t* text, int wlen) {
+  WriteLunaTextEvent(header, hookcode, hookname, tp, thread_id, face_id,
                      hibiki_voice_hook::kTextEventLine, 0, text, wlen);
 }
 
@@ -738,11 +720,9 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
 // LunaHook 对同一个游戏常同时装多条 hook，同一句对白会被多条各回传一次：只有一条
 // 干净，其余是坏 hook 产生的伪影（整串重复 / 每字重复 N 次）。
 //
-// v12 起**不再自动挑赢家**：只有用户为本游戏显式选定的线程（selected_text_thread_id）
-// 才能写进文本环，profile 的 `prefer=` 不再绕过选择，其余一行不发布。理由见
-// luna_text_selector.h 的 LunaTextSelector 类注释。所有线程（含未选中的）仍会经
-// WriteThreadPreview 进预览区，用户据此挑选——"看得见"与"只装选定线程"由两块内存分别
-// 承担，不再互相排斥。
+// v12 起不再自动挑赢家；v13 起连"只发布选定线程"也一并取消：每条线程写自己那条道，
+// 挤压结构上不可能，采集期没有任何理由再丢行。选定线程只在消费侧使用。伪影仍在写入前
+// 剔除（它们会挤掉本线程自己的真台词）。理由见 voice_hook_ipc.h 的 v13 分道注释。
 //
 // EmbedKrkrZ 的精确完整行双写先折叠成第一份；其他引擎保持原过滤语义。
 // 伪影判别（纯函数）：给定规范化后的 [text,len]，判断是否为坏 hook 的重复伪影。
@@ -750,11 +730,6 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
 //     长度相等且 >=2 → 伪影（捕获每字×2/×3/×10 等）。
 // 其余为“干净”。
 // 线程准入的纯逻辑位于 luna_text_selector.h；运行时只负责跨回调加锁和读取手动选择值。
-hibiki_voice_hook::LunaTextSelector g_lunaTextSelector;
-CRITICAL_SECTION g_lunaSelectCs;
-bool g_lunaSelectCsInit = false;
-alignas(8) volatile uint64_t g_lunaPreviewGeneration = 0;
-
 // v12：把本行记进该线程的预览槽。**必须在任何过滤/门控之前调用**——预览区存在的意义
 // 就是让用户看见那些没被发布的线程；只记已发布行等于什么都没做。
 //
@@ -814,25 +789,21 @@ void WriteThreadPreview(SharedHeader* header, uint64_t thread_id,
 // selected_text_thread_id 仍为 0、UI 显示未选择时，profile 快路却会在后台悄悄发布文本。
 bool LunaShouldWriteLine(uint64_t thread_id, bool is_artifact,
                          uint64_t face_id) {
-  const uint64_t manually_selected =
-      hibiki_voice_hook::SelectedTextThreadId(g_luna.header);
-  if (!g_lunaSelectCsInit) {
-    // 锁未初始化（理论上不该发生）时也遵守 v12 的"没显式选择就不发布"，否则这条退路会
-    // 变成一个悄悄恢复旧行为的后门。face 匹配需要锁保护的注册表，这里只能精确匹配。
-    return !is_artifact && manually_selected != 0 &&
-           manually_selected == thread_id;
+  // v13：采集期**不再有选定线程过滤**。每条线程写自己那条道，挤压在结构上已不可能，
+  // 于是"只发布选定线程"这条丢数据的规则失去了存在理由——它当初存在只是为了保护那块
+  // 256 槽全局 FIFO 里的配对候选。选定线程改由消费方使用（host 的文本消费点、游戏内
+  // kirikiri 配对候选扫描），native 侧一行都不丢。
+  //
+  // 唯一仍然拦下的是伪影行（逐字重绘产生的半截串）：它们不是台词，进道只会挤掉本线程
+  // 自己的真台词。伪影线程本身在预览区照样看得见（那里另有 artifact 标记位）。
+  if (is_artifact) return false;
+  // face 登记仍然要做：跨会话记忆恢复与同 hook 面兄弟线程的判定都依赖它（BUG-1159）。
+  if (g_lunaSelectCsInit) {
+    EnterCriticalSection(&g_lunaSelectCs);
+    g_lunaTextSelector.NoteFace(thread_id, face_id);
+    LeaveCriticalSection(&g_lunaSelectCs);
   }
-  // BUG-1159：face 登记必须**先于准入判定**。Dart 跨会话记忆恢复会在未选择阶段
-  // 根据预览行数挑线程；这些行不进文本环，但仍必须提前登记 face，才能在恢复选定后
-  // 接受同一 hook 面的兄弟线程。
-  EnterCriticalSection(&g_lunaSelectCs);
-  g_lunaTextSelector.NoteFace(thread_id, face_id);
-  LeaveCriticalSection(&g_lunaSelectCs);
-  EnterCriticalSection(&g_lunaSelectCs);
-  const bool should_write = g_lunaTextSelector.AcceptsLine(
-      thread_id, is_artifact, manually_selected, face_id);
-  LeaveCriticalSection(&g_lunaSelectCs);
-  return should_write;
+  return true;
 }
 
 // ── Luna_Start 的回调实现（__cdecl 默认约定）─────────────────────────────────
@@ -912,8 +883,8 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
         g_luna.header->luna_active = 1;
       }
       if (LunaShouldWriteLine(thread_id, artifact, face_id)) {
-        WriteLunaTextLine(g_luna.header, hookcode, hookname, tp, thread_id, text,
-                          normalized_len);
+        WriteLunaTextLine(g_luna.header, hookcode, hookname, tp, thread_id,
+                          face_id, text, normalized_len);
       }
     }
   }
@@ -955,6 +926,7 @@ void LunaThreadCreate(const wchar_t* hookcode, const char* hookname,
   const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
   WriteLunaTextEvent(
       g_luna.header, hookcode, hookname, tp, thread_id,
+      LunaTextFaceId(hookcode, hookname, tp),
       hibiki_voice_hook::kTextEventThreadDiscovered, embedable ? 1u : 0u,
       nullptr, 0);
 }
@@ -1361,8 +1333,10 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   //          [clip 索引 kClipCount*sizeof(VoiceClip)][loopback 环 loopback_capacity]
   //          [loopback 标记表 kLoopbackMarkerCount*sizeof(LoopbackMarker)]
   //          [线程预览区 kThreadPreviewCount*sizeof(ThreadPreviewSlot)]。各区偏移下面填进 header。
-  const uint64_t text_region_bytes =
-      static_cast<uint64_t>(kTextSlotCount) * kTextSlotBytes;
+  // v13：文本区 = 道表 + 按道分块的槽区（尺寸算法与寻址同在契约头，写读两侧共用一份）。
+  const uint64_t text_region_bytes = hibiki_voice_hook::TextRegionBytes(
+      hibiki_voice_hook::kTextLaneCount,
+      hibiki_voice_hook::kTextLaneSlotCount);
   const uint64_t clip_region_bytes =
       static_cast<uint64_t>(kClipCount) * sizeof(VoiceClip);
   const uint64_t loopback_marker_bytes =
@@ -1422,6 +1396,9 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     // 文本环紧随音频环形；clip 索引紧随文本环。hook DLL 据此偏移定位两区。
     header->text_region_offset = expected_text_offset;
     header->clip_region_offset = expected_clip_offset;
+    // v13 分道参数：写侧认领道、读侧定位槽都只认 header 里这两个值（冗余但让 reader 自洽）。
+    header->text_lane_count = hibiki_voice_hook::kTextLaneCount;
+    header->text_lane_slot_count = hibiki_voice_hook::kTextLaneSlotCount;
     // v9：loopback 环紧随 clip 索引；标记表紧随 loopback 环。
     header->loopback_ring_offset =
         static_cast<uint32_t>(header->clip_region_offset + clip_region_bytes);
