@@ -34,6 +34,11 @@ struct VoiceHookStatus {
   bool audio_hooks_ready = false;  // 首轮音频导出 hook 探测是否已完成
   bool raw_voice_ready = false;  // 游戏资源逐句音频 hook 已就绪（可无 PCM 格式）
   bool ok = false;           // 映射有效且格式已就绪（音频格式已填）
+  // v13 文本分道的两个容量事实。必须一路带到 UI/诊断：道用尽的症状（某些线程的台词
+  // 就是不来）与 v13 要根治的 256 槽挤压完全同形，没有这两个数，真机上分不出
+  // 「分道没生效」和「道不够用」。
+  int64_t text_lane_recycles = 0;   // 回收过多少次最久未写的非选定道
+  int64_t text_lane_overflows = 0;  // 连可回收的道都没有、只能丢弃的行数
 };
 
 // [VoiceHookReader::Open] 失败的**结构化原因**。
