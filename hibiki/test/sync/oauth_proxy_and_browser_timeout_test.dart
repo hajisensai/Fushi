@@ -2,11 +2,21 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/sync/manual_sync_ui.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
+import 'package:hibiki/src/sync/sync_http.dart';
 import 'package:hibiki/src/utils/net/app_proxy.dart';
+import 'package:http/http.dart' as http;
 
 import '../helpers/source_guard.dart';
+
+/// 读一份仓库内源码（守卫用）。测试从 `hibiki/` 包根跑，故一律相对包根寻址。
+String _read(String path) {
+  final File f = File(path);
+  expect(f.existsSync(), isTrue, reason: '$path 不存在（请从 hibiki/ 包根跑测试）');
+  return f.readAsStringSync();
+}
 
 /// BUG-1348：谷歌云盘桌面登录在开着代理的机器上必然失败。
 ///
@@ -159,6 +169,105 @@ void main() {
       expect(source, contains("host: '127.0.0.1'"),
           reason: 'localhost 要先过 DNS（Windows 上先解析 ::1）和代理 bypass 列表，'
               '两处任一不配合，授权码就永远回不来');
+    });
+  });
+
+  group('新增 kind 不得被「非 A 即 B」判据默默归错边（BUG-1348 收口）', () {
+    // browserTimeout 是本轮**新加**的第三个 SyncAuthFailureKind。加值本身安全，
+    // 危险的是既有的二元判据：`!error.isForbidden` 读作「不是 403 就是凭据坏了」，
+    // 新值一进来就被判成「该登出」，而编译器一声不吭。
+    test('每个 SyncAuthFailureKind 都要显式登记登出决定', () {
+      const Map<SyncAuthFailureKind, bool> signOutByKind =
+          <SyncAuthFailureKind, bool>{
+        // 凭据真的不可用了：不登出，账号行就退不回「未登录」（TODO-836）。
+        SyncAuthFailureKind.credentials: true,
+        // 403：凭据已被接受，只是这一次请求被策略拒了（BUG-1323）。
+        SyncAuthFailureKind.forbidden: false,
+        // 浏览器回调没回到 app：跟凭据无关，登出只会连坐一个可能仍有效的会话。
+        SyncAuthFailureKind.browserTimeout: false,
+      };
+      expect(
+        signOutByKind.keys.toSet(),
+        equals(SyncAuthFailureKind.values.toSet()),
+        reason: '新增 SyncAuthFailureKind 必须在这里显式写出它该不该登出 —— '
+            '默认归到某一边正是本条守卫要拦的事',
+      );
+      signOutByKind.forEach((SyncAuthFailureKind kind, bool expected) {
+        expect(
+          shouldSignOutOnAuthError(SyncAuthError('x', kind: kind)),
+          equals(expected),
+          reason: '$kind 的登出决定与登记表不符',
+        );
+      });
+    });
+
+    test('同步层不得再用 `!....isForbidden` 这种二元投影做判据', () {
+      // 掩注释再扫：本仓注释里就写着 `!error.isForbidden`（解释当年为什么错），
+      // 裸扫会命中注释，守卫就退化成在检查自己的文档。
+      final RegExp negatedProjection = RegExp(r'!\s*[\w.]*\.isForbidden');
+      final List<String> offenders = <String>[];
+      for (final FileSystemEntity entity
+          in Directory('lib/src/sync').listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        if (negatedProjection
+            .hasMatch(maskComments(entity.readAsStringSync()))) {
+          offenders.add(entity.path);
+        }
+      }
+      expect(offenders, isEmpty,
+          reason: '取反的 bool 投影把枚举压成两态，第三个值只会被默默归边；'
+              '按值 switch，让编译器替你抓漏');
+    });
+
+    test('登出判据按值分派，三个 kind 一个不落地出现在源码里', () {
+      final String source =
+          maskComments(_read('lib/src/sync/manual_sync_ui.dart'));
+      final int decisionIdx = source.indexOf('bool shouldSignOutOnAuthError(');
+      expect(decisionIdx, greaterThanOrEqualTo(0));
+      final String decision = source.substring(decisionIdx);
+      for (final SyncAuthFailureKind kind in SyncAuthFailureKind.values) {
+        expect(decision, contains('SyncAuthFailureKind.${kind.name}'),
+            reason: '${kind.name} 没有出现在登出判据里 —— 它被某个默认分支吞了');
+      }
+    });
+  });
+
+  group('共享 sync client：并发首调不得各建一个（BUG-1348 收口）', () {
+    late String Function() savedReader;
+
+    setUp(() {
+      savedReader = appUserProxyReader;
+      // 短路掉 reg query / scutil / gsettings，测的是缓存语义不是平台探测。
+      appUserProxyReader = () => '127.0.0.1:7890';
+      resetSyncHttpClient();
+    });
+    tearDown(() {
+      resetSyncHttpClient();
+      appUserProxyReader = savedReader;
+    });
+
+    test('两个后端同时首调，拿到同一个 client', () async {
+      // 关键在于**不 await 第一个就发第二个**：这正是 OneDrive 与 Dropbox 同时启动
+      // 一轮同步的形状。缓存成品（`_x ??= await create()`）时，第一个 await 交出执行权
+      // 的窗口里第二个调用仍看到 null，于是各建一个，先落地的那个从此无人能 close。
+      final Future<http.Client> first = obtainSyncHttpClient();
+      final Future<http.Client> second = obtainSyncHttpClient();
+      expect(identical(await first, await second), isTrue,
+          reason: '并发首调必须共享同一次构造，否则被覆盖的那个 client 永久泄漏');
+    });
+
+    test('reset 之后重建，且新旧不是同一个', () async {
+      final http.Client before = await obtainSyncHttpClient();
+      resetSyncHttpClient();
+      final http.Client after = await obtainSyncHttpClient();
+      expect(identical(before, after), isFalse,
+          reason: '改完代理还复用旧出口，等于这个修复对用户不生效');
+    });
+
+    test('缓存的是 in-flight future，不是成品 client', () {
+      final String source = maskComments(_read('lib/src/sync/sync_http.dart'));
+      expect(source, contains('Future<http.Client>? _sharedClient'),
+          reason: '缓存成品就一定有「await 期间的第二次首调」这个窗口');
     });
   });
 }

@@ -8,8 +8,24 @@
 /// 授权码，app 这半程走直连换不到 token。part 文件契约禁止 part 内 import，同步层没法
 /// 复用它，于是同一台机器上「更新检查能走代理、云同步不能」。
 ///
-/// 故本层提取为**独立库**，成为全应用唯一的代理出口真相源：更新检查 / 云同步 /
-/// torrent 下载都 import 这里，不再各自实现或各自绕过。
+/// 故本层提取为**独立库**：代理**怎么解析**（`env > GUI 系统代理 > DIRECT`、用户手填优先、
+/// PAC 降级）全应用只有这一份实现，接代理的调用方一律 import 这里，不再各自重写一遍优先级。
+///
+/// **⚠️ 覆盖面：它是「代理解析」的唯一实现，不等于「全应用出站流量都走代理」。**
+/// 当前真正调用 [applyAppProxy] 的只有三条链路：
+///   1. **云同步的 OAuth / 云盘 API** —— `sync/sync_http.dart` 的 `createSyncHttpClient` /
+///      `obtainSyncHttpClient`（Google Drive / OneDrive / Dropbox / PKCE 共用）；
+///   2. **更新检查与更新包下载** —— `utils/misc/update_checker_net.dart` /
+///      `update_checker_release.dart`；
+///   3. **下载发现（AniList / Nyaa / Jimaku / 放送日历）** —— `media/torrent/
+///      download_network_proxy.dart` 的 `auto` 模式（`direct` / `custom` 是用户显式选定的
+///      固定出口，按设计不经这里）。
+///
+/// 其余出站点仍是裸 `http.Client()` / `HttpClient()` / `Dio()`，**不经本层**：互联/局域网
+/// peer 与配对探测、WebDAV / FTP / SFTP 后端、日志上传、弹幕（dandanplay）、刮削
+/// （TMDB / Jikan / AniList / Bangumi / VNDB / 封面下载）、词典 / 字体 / shader / OCR 模型
+/// 下载、漫画在线源、youtube_explode。要给其中某条链路接上代理是**另一件事**：得逐条判断
+/// 它到底该不该走代理（局域网互联走代理只会更坏），而不是在本文件里改一行就完事。
 library;
 
 import 'dart:convert';

@@ -37,17 +37,44 @@ Future<http.Client> createSyncHttpClient() async {
 ///
 /// **不要 `close()` 它**（那会掐断其他后端正在用的连接）；需要独占所有权时用
 /// [createSyncHttpClient]。
-Future<http.Client> obtainSyncHttpClient() async =>
-    _sharedClient ??= await createSyncHttpClient();
+///
+/// 缓存的是 **`Future<http.Client>` 而不是 `http.Client`**：代理解析是异步的（要跑
+/// `reg query` / `scutil` / `gsettings`），缓存成品的话 `_x ??= await create()` 里那个
+/// `await` 就是一个交出执行权的窗口 —— 两个后端同时首调会各建一个 client，先落地的那个
+/// 被后落地的覆盖，从此没有任何引用能 `close()` 它（`resetSyncHttpClient` 也只看得到
+/// 后者），连接与 socket 就此泄漏。缓存 in-flight future 则让并发首调共享同一次构造。
+Future<http.Client> obtainSyncHttpClient() {
+  final Future<http.Client>? cached = _sharedClient;
+  if (cached != null) return cached;
+  late final Future<http.Client> creating;
+  creating = createSyncHttpClient().onError<Object>(
+    (Object error, StackTrace stackTrace) {
+      // 构造失败不能被永久钉进缓存：`await` 版本失败时压根没写缓存，下次调用会重试，
+      // 这里必须保住同一行为，否则一次瞬时失败会让之后每次取用都复读同一个错误。
+      // 只在缓存仍指向本次构造时清，免得踩掉期间 reset 后新建的那个。
+      if (identical(_sharedClient, creating)) _sharedClient = null;
+      Error.throwWithStackTrace(error, stackTrace);
+    },
+  );
+  _sharedClient = creating;
+  return creating;
+}
 
-http.Client? _sharedClient;
+Future<http.Client>? _sharedClient;
 
 /// 丢弃共享 client，让下次调用按**当前**代理设置重建。
 ///
 /// 用户在设置里改了代理却仍走旧出口，就等于这个修复对他不生效；缓存必须能失效。
 void resetSyncHttpClient() {
-  _sharedClient?.close();
+  final Future<http.Client>? pending = _sharedClient;
   _sharedClient = null;
+  // 可能仍在构造中，所以是 `then` 而不是直接 `close()`：正在建的那个也必须被关掉，
+  // 否则「改代理」这一下就漏一个 client。构造失败的错误已经报给了当初的调用方，
+  // 这里吞掉只是避免它变成 unhandled async error。
+  pending?.then(
+    (http.Client client) => client.close(),
+    onError: (Object _) {},
+  );
 }
 
 /// Stream [file] as the body of a pre-configured [request] (headers/content
