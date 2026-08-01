@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1297 条。点号进各自文件。
+> 共 1298 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -37,6 +37,7 @@
 | [BUG-1352](bugs/BUG-1352-ci-package-tests-schema-literal.md) | ✅ | ✅ | CI Run package tests 红：packages 侧 schemaVersion 等值断言漏跟 v66 |
 | [BUG-1351](bugs/BUG-1351-scan-playlist-import-no-added-activity.md) | ✅ | ✅ | 扫描导入新播放列表合集不落 added 活动事件 |
 | [BUG-1350](bugs/BUG-1350-dashboard-activity-cross-series-merge.md) | ✅ | ✅ | 首页活动时间轴同日同集号跨作品被合并吞掉观看记录 |
+| [BUG-1349](bugs/BUG-1349-collection-detail-escape-dead.md) | ✅ | ✅ | 合集详情页按Esc不退出（焦点导航开启时全局Esc解析不到路由被吞） |
 | [BUG-1345](bugs/BUG-1345-gal-ipc-contract-host-copy-drift.md) | ✅ | ✅ | galgame 捕获报「捕获组件版本与 Hibiki 不一致」：IPC 契约在 host 侧有手抄副本，且处置指向已不存在的动作 |
 | [BUG-1341](bugs/BUG-1341-mihon-detail-layout.md) | ✅ | ✅ | Mihon 漫画详情页路由触发布局断言 |
 | [BUG-1340](bugs/BUG-1340-mihon-extension-catalog-restart.md) | ✅ | ✅ | 漫画扩展重启后可下载目录消失且无法安装新扩展 |

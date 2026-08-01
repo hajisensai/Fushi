@@ -1538,14 +1538,22 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                           appModel.experimentalFocusNavigationEnabled,
                       registry: appModel.shortcutRegistry,
 
-                      // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/首页
-                      // 开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无挂起请求时
-                      // 整层 IgnorePointer 透传，不抢任何页面的命中测试。
-                      child: Stack(
-                        children: <Widget>[
-                          child!,
-                          const FloatingLyricLookupHost(),
-                        ],
+                      // BUG-1349（第二处根因）：焦点导航层（HibikiFocusRoot 的
+                      // fallbackNode）必须在全局导航层**之内**。键事件沿焦点树
+                      // 冒泡：fallbackNode 若在 wrapWithGlobalNavigation 之外，
+                      // 零受管目标页把焦点回收到兜底节点后，Esc/全局快捷键根本
+                      // 到不了全局处理器——整个全局键处理静默失效。
+                      child: _wrapFocusNavigation(
+                        enabled: appModel.experimentalFocusNavigationEnabled,
+                        // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/
+                        // 首页开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无
+                        // 挂起请求时整层 IgnorePointer 透传，不抢任何页面的命中测试。
+                        child: Stack(
+                          children: <Widget>[
+                            child!,
+                            const FloatingLyricLookupHost(),
+                          ],
+                        ),
                       ),
                     );
                     if (isMacosPlatform(context)) {
@@ -1597,13 +1605,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                         ),
                       );
                     }
-                    return HibikiAppUiScale(
-                      scale: uiScale,
-                      child: _wrapFocusNavigation(
-                        enabled: appModel.experimentalFocusNavigationEnabled,
-                        child: navigation,
-                      ),
-                    );
+                    return HibikiAppUiScale(scale: uiScale, child: navigation);
                   },
                 ),
               ),
@@ -1630,6 +1632,11 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
 /// **恒定挂载，行为按实验开关门控**。禁用时 [HibikiFocusRoot.maybeControllerOf]
 /// 返回 null（各组件据此走原生焦点遍历，语义与「未包裹」时代逐字节一致）、
 /// 焦点环不绘制。
+///
+/// **挂载位置纪律（BUG-1349）**：本层必须位于 [wrapWithGlobalNavigation]
+/// **之内**——fallbackNode 是可聚焦节点，键事件沿焦点树只向祖先冒泡；挂在全局
+/// 导航层之外时，零受管目标页把焦点回收到兜底节点后，Esc / 全局快捷键全部
+/// 到不了全局处理器（详情页 Esc 失效正是此故障 + escape 解析遮蔽的叠加）。
 ///
 /// 用户实报（2026-07-22）：旧实现按开关插/拔这两层——切「键盘/手柄焦点导航」
 /// 开关时整棵 app 子树因结构变化被重挂载，被切的 Switch 以新状态直接 mount，

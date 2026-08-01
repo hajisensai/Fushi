@@ -205,8 +205,9 @@ void main() {
     // `_episodeThumb` 从裸 `Image.file(...) + BoxFit.cover` 改成
     // `resolveMediaCoverImage(...)` + `PortraitCoverImage(landscapeSlot: true)`
     // 后（语义等价、仍是文件背书的 ImageProvider），锚点凭空消失、守卫误报红。
-    final String thumbBody =
-        methodBody(detailSrc, 'Widget _episodeThumb(VideoBookRow ep');
+    // 锚只到方法名：TODO-2491 集卡改版给 _episodeThumb 加了可选宽高参数，签名
+    // 被 dart format 折行，带参数的单行锚会凭空失配（同上「写法当契约」教训）。
+    final String thumbBody = methodBody(detailSrc, 'Widget _episodeThumb(');
     expect(containsCodeLine(thumbBody, 'ep.coverPath'), isTrue,
         reason: '缩略图必须取该集自身的 coverPath（每集独立视频各有封面），'
             '不得回退成整个合集共用一张封面');
