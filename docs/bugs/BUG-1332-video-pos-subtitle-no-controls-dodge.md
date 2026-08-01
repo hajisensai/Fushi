@@ -1,4 +1,4 @@
-## BUG-1330 · 带 \pos 的字幕不避让控制条、盖住暂停键
+## BUG-1332 · 带 \pos 的字幕不避让控制条、盖住暂停键
 
 - **报告**：2026-08-01（用户：底栏出现时字幕不跟着移动；字幕层级比暂停键还高）
 - **真实性**：✅ 真 bug，根因 `hibiki/lib/src/media/video/video_subtitle_overlay.dart:1335`（旧 `\pos` 分支直接 `return Stack(Positioned(...))`）
@@ -37,7 +37,7 @@ Dialogue: 0,0:00:41.35,0:00:44.48,OP_JP,,0,0,0,,{\an7\pos(461,672)\fad(250,250)\
 
 ### 修复
 
-- **[x] ① 已修复** — commit `75e9ad012`
+- **[x] ① 已修复** — commit `ab30df130`
   - 几何真相源抽成纯函数 `resolveAbsoluteCueOffset()`（`video_subtitle_overlay.dart`），
     与 `_paddingFor` **严格同构**：取下限、不是加法、只单向移动。
     - 盒底越过 `height - bottomReserve` 才上抬（`math.min`，高位盒不被拽下）；

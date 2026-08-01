@@ -1,4 +1,4 @@
-// BUG-1330：带 `\pos` 的字幕不避让控制条、画在暂停键之上。
+// BUG-1332：带 `\pos` 的字幕不避让控制条、画在暂停键之上。
 //
 // 用户片源真值（[Nekomoe kissaten&VCB-Studio] Tensei Oujo to Tensai Reijou no Mahou
 // Kakumei，PlayResX 1280 / PlayResY 720）：
@@ -49,7 +49,7 @@ void main() {
         dodgeProgress: dodgeProgress,
       );
 
-  group('\\pos 绝对定位盒的 chrome 避让（BUG-1330）', () {
+  group('\\pos 绝对定位盒的 chrome 避让（BUG-1332）', () {
     test('控制条隐藏时逐像素等于作者 \\pos（不改变既有外观）', () {
       final Offset o = resolve(dodgeProgress: 0);
       expect(o.dy, closeTo(1008, 0.01), reason: '\\an7 顶锚：盒顶就落在 \\pos 的 y 上');
@@ -131,7 +131,7 @@ void main() {
     final String src = File('lib/src/media/video/video_subtitle_overlay.dart')
         .readAsStringSync();
 
-    test('\\pos 分支不得退回裸 Positioned（那正是 BUG-1330 的形状）', () {
+    test('\\pos 分支不得退回裸 Positioned（那正是 BUG-1332 的形状）', () {
       final int branch = src.indexOf('final Offset? posScreen = _posScreen(');
       expect(branch, greaterThanOrEqualTo(0), reason: '\\pos 定位分支应存在');
       final int branchEnd = src.indexOf('    // 无 \\pos：', branch);

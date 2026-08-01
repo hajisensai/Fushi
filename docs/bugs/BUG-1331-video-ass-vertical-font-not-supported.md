@@ -29,7 +29,7 @@ GDI/VSFilter 约定：字体名以 `@` 开头 = **竖排字体**，其字形逆�
 
 ### 修复
 
-- **[x] ① 已修复** — commit `feb566548`
+- **[x] ① 已修复** — commit `d2676f42a`
   - 新增判据纯函数 `isAssVerticalFontName()` 与渲染侧 `_applyVerticalGlyphRotation()`：
     对 `@` 字体的**每个字形**绕自身中心逆时针转 90°（`Transform.rotate(-π/2)`；Flutter Z 轴
     视觉正方向为顺时针，取负与 `_applyAssTransform` 里 `\frz` 的取负同源）。
@@ -60,4 +60,4 @@ GDI/VSFilter 约定：字体名以 `@` 开头 = **竖排字体**，其字形逆�
 
 ### 相关
 
-- BUG-1330：同批用户报告的另一条（带 `\pos` 的字幕不避让控制条），根因不同、已单独修复。
+- BUG-1332：同批用户报告的另一条（带 `\pos` 的字幕不避让控制条），根因不同、已单独修复。

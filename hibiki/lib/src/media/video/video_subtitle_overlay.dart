@@ -2530,7 +2530,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// `\pos` / `\move` 绝对定位盒：把字幕盒的 `\an` 锚点落到 [posScreen]，并与锚点分支
   /// （[_anchoredPadded] → [_paddingFor]）**共用同一条 chrome 避让契约**。
   ///
-  /// BUG-1330 根因：避让原先挂在「锚点定位分支」上而不是「字幕层」上——带 `\pos` 的 cue
+  /// BUG-1332 根因：避让原先挂在「锚点定位分支」上而不是「字幕层」上——带 `\pos` 的 cue
   /// 直接走裸 [Positioned] 返回，[controlsVisible] / reserve 一概不参与，于是 OP 卡拉OK 那种
   /// `{\an7\pos(461,672)}`（672/720 = 画面 93.3%，正是进度条那一条）的逐字歌词恒被控制条
   /// 压住、且画在 chrome 之上盖掉暂停键。定位方式是**实现细节**，「UI 赢重叠」是产品契约，
