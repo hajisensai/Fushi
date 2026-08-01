@@ -145,13 +145,13 @@ void main() {
       expect(RegExp(r'MPV_XCFRAMEWORKS_SHA256SUM=[0-9a-f]{64}').hasMatch(mk),
           isTrue,
           reason: '$plat SHA256 must stay pinned for the swapped tarball.');
-      // NOTE: macOS/iOS are knowingly still on media-kit's FFmpeg 6.0 build.
-      // The darwin fork at 6.1.6 exists and builds, but its xcframeworks had not
-      // been published when this landed, so the FFmpeg-version assertion that
-      // Android already enforces (expectPatchedFfmpeg) is deliberately NOT
-      // applied here yet -- asserting it now would just make the suite red
-      // without changing what ships. Add it together with the Makefile repoint;
-      // until then macOS/iOS remain exposed to the 6.0 issues in TODO-1137.
+      // Mirrored into our own permanent release for the same reason Windows is:
+      // upstream assets get pruned or retagged, and the media-kit originals are
+      // built against FFmpeg 6.0 regardless.
+      expect(mk.contains('media-kit/libmpv-darwin-build'), isFalse,
+          reason: '$plat must not pull media-kit\'s own release: those are '
+              'built against FFmpeg 6.0 (TODO-1137).');
+      expectPatchedFfmpeg(mk, plat);
     }
   });
 

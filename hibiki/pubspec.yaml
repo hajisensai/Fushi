@@ -213,10 +213,13 @@ dependency_overrides:
   #
   # TODO-1137: every media-kit release, full flavor included, is built against
   # FFmpeg 6.0 (2023-02) — off the maintenance branches, no security backports,
-  # and this is the library that decodes whatever file the user opens. Android is
-  # therefore built from our own fork at FFmpeg 6.1.6 (6.1 LTS tip) and mirrored
-  # into the permanent `vendor-libmpv` release. macOS/iOS are still on media-kit's
-  # 6.0 build and remain exposed until the darwin xcframeworks are published.
+  # and this is the library that decodes whatever file the user opens. All three
+  # are therefore built from our own forks at FFmpeg 6.1.6 (6.1 LTS tip) and
+  # mirrored into the permanent `vendor-libmpv` release: Android from
+  # libmpv-android-video-build, macOS/iOS from libmpv-darwin-build, both on the
+  # `hibiki/ffmpeg-6.1.6` branch. Staying inside 6.x keeps the FFmpeg API stable,
+  # so mpv itself is unchanged (7.x would force a mpv bump, which in turn makes
+  # libplacebo a hard dependency neither build repo has).
   # See each package's Makefile / build.gradle for the repoint + checksums.
   media_kit_libs_macos_video:
     path: ../third_party/media_kit_libs_macos_video
