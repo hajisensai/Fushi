@@ -893,7 +893,8 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       }
     }
 
-    _readingTimeTracker ??= ReadingTimeTracker(db)..start();
+    _readingTimeTracker ??= ReadingTimeTracker(db, format: BookFormat.manga)
+      ..start();
     _sessionStartTime = DateTime.now();
 
     final int restoredSpread =
@@ -1130,7 +1131,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     restoredPage =
         restoredPage.clamp(0, math.max(0, payload.images.length - 1));
 
-    _readingTimeTracker ??= ReadingTimeTracker(appModel.database)..start();
+    _readingTimeTracker ??=
+        ReadingTimeTracker(appModel.database, format: BookFormat.manga)
+          ..start();
     _sessionStartTime = DateTime.now();
     final MangaReaderSession? previousSession = _pageSession;
     _pageSession = pageSession;

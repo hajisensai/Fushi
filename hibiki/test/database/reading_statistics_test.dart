@@ -1,4 +1,4 @@
-﻿import 'package:drift/native.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -131,6 +131,7 @@ void main() {
         dateKey: '2026-05-16',
         hour: 14,
         deltaMs: 30000,
+        format: BookFormat.epub,
       );
 
       final logs = await db.getHourlyLogsForDate('2026-05-16');
@@ -145,17 +146,99 @@ void main() {
         dateKey: '2026-05-16',
         hour: 14,
         deltaMs: 10000,
+        format: BookFormat.epub,
       );
 
       await db.addHourlyReadingTime(
         dateKey: '2026-05-16',
         hour: 14,
         deltaMs: 5000,
+        format: BookFormat.epub,
       );
 
       final logs = await db.getHourlyLogsForDate('2026-05-16');
       expect(logs, hasLength(1));
       expect(logs.single.readingTimeMs, 15000);
+    });
+
+    test('same hour different formats stay separate rows (v67)', () async {
+      final db = await _openDb();
+      await db.addHourlyReadingTime(
+        dateKey: '2026-05-16',
+        hour: 15,
+        deltaMs: 1200000,
+        format: BookFormat.epub,
+      );
+      await db.addHourlyReadingTime(
+        dateKey: '2026-05-16',
+        hour: 15,
+        deltaMs: 600000,
+        format: BookFormat.manga,
+      );
+
+      final logs = await db.getHourlyLogsForDate('2026-05-16');
+      expect(logs, hasLength(2));
+      final epub = logs.singleWhere((l) => l.format == BookFormat.epub.dbValue);
+      final manga =
+          logs.singleWhere((l) => l.format == BookFormat.manga.dbValue);
+      expect(epub.readingTimeMs, 1200000);
+      expect(manga.readingTimeMs, 600000);
+    });
+
+    test('unattributed bucket accumulates under empty format', () async {
+      final db = await _openDb();
+      await db.addUnattributedHourlyReadingTime(
+        dateKey: '2026-05-16',
+        hour: 16,
+        deltaMs: 4000,
+      );
+      await db.addUnattributedHourlyReadingTime(
+        dateKey: '2026-05-16',
+        hour: 16,
+        deltaMs: 2000,
+      );
+
+      final logs = await db.getHourlyLogsForDate('2026-05-16');
+      expect(logs, hasLength(1));
+      expect(logs.single.format, '');
+      expect(logs.single.readingTimeMs, 6000);
+    });
+
+    test('setReadingHourlyLog overwrites per (dateKey, hour, format)',
+        () async {
+      final db = await _openDb();
+      // 模拟未来版本 wire 里的新格式值：必须逐字节透传，不折叠进已知枚举。
+      const String futureFormat = 'future_format';
+      await db.setReadingHourlyLog(
+        dateKey: '2026-05-16',
+        hour: 17,
+        readingTimeMs: 9000,
+        format: 'epub',
+      );
+      await db.setReadingHourlyLog(
+        dateKey: '2026-05-16',
+        hour: 17,
+        readingTimeMs: 7000,
+        format: futureFormat,
+      );
+      await db.setReadingHourlyLog(
+        dateKey: '2026-05-16',
+        hour: 17,
+        readingTimeMs: 9500,
+        format: 'epub',
+      );
+
+      final logs = await db.getHourlyLogsForDate('2026-05-16');
+      expect(logs, hasLength(2));
+      expect(
+          logs
+              .singleWhere((l) => l.format == BookFormat.epub.dbValue)
+              .readingTimeMs,
+          9500);
+      expect(
+        logs.singleWhere((l) => l.format == futureFormat).readingTimeMs,
+        7000,
+      );
     });
 
     test('different hours create separate logs', () async {
@@ -164,11 +247,13 @@ void main() {
         dateKey: '2026-05-16',
         hour: 10,
         deltaMs: 5000,
+        format: BookFormat.epub,
       );
       await db.addHourlyReadingTime(
         dateKey: '2026-05-16',
         hour: 11,
         deltaMs: 3000,
+        format: BookFormat.epub,
       );
 
       final logs = await db.getHourlyLogsForDate('2026-05-16');

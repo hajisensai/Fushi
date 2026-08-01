@@ -423,7 +423,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 66;
+  int get schemaVersion => 67;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1355,6 +1355,24 @@ class HibikiDatabase extends _$HibikiDatabase {
             if (await _tableExists('video_scrape_meta') &&
                 !await _columnExists('video_scrape_meta', 'episode_number')) {
               await m.addColumn(videoScrapeMeta, videoScrapeMeta.episodeNumber);
+            }
+          }
+          if (from < 67) {
+            // v67：reading_hourly_logs 加 format 列（写入面身份，
+            // `BookFormat.dbValue`），唯一键 {dateKey,hour} → {dateKey,hour,format}。
+            // 此前时段表没有任何身份列，EPUB / PDF / 漫画同一小时的时长写入时就被
+            // 加成一行、永久分不开（日级 reading_statistics 靠 title→format 能拆，
+            // 只有时段表拆不开）。唯一键变更须重建表，走 alterTable 按当前 Dart
+            // 定义重建 + 按列名拷贝，既有行 format 落列默认 ''（= 历史未区分——
+            // 信息在写入时已丢，如实标注，不猜身份）；全部旧行 format 同为 ''，
+            // 新唯一键下仍互不冲突，零丢行。_columnExists 双守卫：从 v1 起的完整
+            // 阶梯里本表以最新定义建出（已含此列），重复升级短路 no-op（风格同 v39）。
+            if (await _tableExists('reading_hourly_logs') &&
+                !await _columnExists('reading_hourly_logs', 'format')) {
+              await m.alterTable(TableMigration(
+                readingHourlyLogs,
+                newColumns: [readingHourlyLogs.format],
+              ));
             }
           }
         },
@@ -3935,14 +3953,48 @@ class HibikiDatabase extends _$HibikiDatabase {
       select(readingStatistics).get();
 
   // ── reading hourly logs ─────────────────────────────────────────
+  /// ACCUMULATE：把 [deltaMs] 累加进 (dateKey, hour, format) 桶。[format] 是写入
+  /// 面身份（EPUB / PDF / 漫画阅读器各报各的），v67 起时段数据按它可拆。
   Future<void> addHourlyReadingTime({
     required String dateKey,
     required int hour,
     required int deltaMs,
+    required BookFormat format,
+  }) =>
+      _addHourlyReadingTimeRaw(
+        dateKey: dateKey,
+        hour: hour,
+        deltaMs: deltaMs,
+        format: format.dbValue,
+      );
+
+  /// 云聚合同步专用：把旧端（不带 format 的 wire 快照）贡献的、无法归因到任何
+  /// 写入面的逐时差额累加进 `''`（未区分）桶。普通写入面一律走带 [BookFormat]
+  /// 的 [addHourlyReadingTime]，不得用本方法制造新的未区分数据。
+  Future<void> addUnattributedHourlyReadingTime({
+    required String dateKey,
+    required int hour,
+    required int deltaMs,
+  }) =>
+      _addHourlyReadingTimeRaw(
+        dateKey: dateKey,
+        hour: hour,
+        deltaMs: deltaMs,
+        format: '',
+      );
+
+  Future<void> _addHourlyReadingTimeRaw({
+    required String dateKey,
+    required int hour,
+    required int deltaMs,
+    required String format,
   }) =>
       transaction(() async {
         final existing = await (select(readingHourlyLogs)
-              ..where((t) => t.dateKey.equals(dateKey) & t.hour.equals(hour)))
+              ..where((t) =>
+                  t.dateKey.equals(dateKey) &
+                  t.hour.equals(hour) &
+                  t.format.equals(format)))
             .getSingleOrNull();
         if (existing != null) {
           await (update(readingHourlyLogs)
@@ -3956,6 +4008,7 @@ class HibikiDatabase extends _$HibikiDatabase {
               dateKey: dateKey,
               hour: hour,
               readingTimeMs: deltaMs,
+              format: Value(format),
             ),
           );
         }
@@ -3969,23 +4022,31 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<List<ReadingHourlyLogRow>> getAllReadingHourlyLogs() =>
       select(readingHourlyLogs).get();
 
-  /// OVERWRITE 语义：把 (dateKey, hour) 桶设为绝对值 [readingTimeMs]。云聚合合并
-  /// 已在 Dart 侧算好 MAX，这里直接落绝对值（对照 [addHourlyReadingTime] 的累加）。
+  /// OVERWRITE 语义：把 (dateKey, hour, format) 桶设为绝对值 [readingTimeMs]。
+  /// 云聚合合并已在 Dart 侧算好 MAX，这里直接落绝对值（对照
+  /// [addHourlyReadingTime] 的累加）。[format] 收裸串而非 [BookFormat]：wire 快照
+  /// 可能来自带未来新格式值的新版本端，本方法逐字节保存、不得折叠成已知枚举。
   Future<void> setReadingHourlyLog({
     required String dateKey,
     required int hour,
     required int readingTimeMs,
+    required String format,
   }) =>
       into(readingHourlyLogs).insert(
         ReadingHourlyLogsCompanion.insert(
           dateKey: dateKey,
           hour: hour,
           readingTimeMs: readingTimeMs,
+          format: Value(format),
         ),
         onConflict: DoUpdate(
           (_) =>
               ReadingHourlyLogsCompanion(readingTimeMs: Value(readingTimeMs)),
-          target: [readingHourlyLogs.dateKey, readingHourlyLogs.hour],
+          target: [
+            readingHourlyLogs.dateKey,
+            readingHourlyLogs.hour,
+            readingHourlyLogs.format,
+          ],
         ),
       );
 

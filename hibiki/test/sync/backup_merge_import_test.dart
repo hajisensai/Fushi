@@ -130,6 +130,76 @@ void main() {
     expect(rows.single.readingTimeMs, 9000); // max(6000, 9000)
   });
 
+  test('hourly logs MAX-union per {dateKey, hour, format}; video stays 2-key',
+      () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = HibikiDatabase(curDir.path);
+    await cur.addHourlyReadingTime(
+        dateKey: '2026-01-01',
+        hour: 9,
+        deltaMs: 20000,
+        format: BookFormat.epub);
+    await cur.addHourlyReadingTime(
+        dateKey: '2026-01-01',
+        hour: 9,
+        deltaMs: 10000,
+        format: BookFormat.manga);
+    await cur.addVideoHourlyWatchTime(
+        dateKey: '2026-01-01', hour: 21, deltaMs: 1000);
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = HibikiDatabase(srcDir.path);
+    await src.addHourlyReadingTime(
+        dateKey: '2026-01-01',
+        hour: 9,
+        deltaMs: 30000,
+        format: BookFormat.epub);
+    // 迁移自旧库的未区分行（format=''）也是普通一桶，照常并入。
+    await src.addUnattributedHourlyReadingTime(
+        dateKey: '2026-01-01', hour: 10, deltaMs: 5000);
+    await src.addVideoHourlyWatchTime(
+        dateKey: '2026-01-01', hour: 21, deltaMs: 4000);
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+    // Re-import the SAME backup again — must stay idempotent.
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+
+    final after = HibikiDatabase(curDir.path);
+    addTearDown(after.close);
+    final rows = await after.getAllReadingHourlyLogs();
+    expect(rows, hasLength(3));
+    expect(
+      rows
+          .singleWhere(
+              (r) => r.hour == 9 && r.format == BookFormat.epub.dbValue)
+          .readingTimeMs,
+      30000, // MAX(20000, 30000)，不 SUM
+    );
+    expect(
+      rows
+          .singleWhere(
+              (r) => r.hour == 9 && r.format == BookFormat.manga.dbValue)
+          .readingTimeMs,
+      10000, // 仅本机持有，原样保留
+    );
+    expect(
+      rows.singleWhere((r) => r.hour == 10 && r.format.isEmpty).readingTimeMs,
+      5000, // 仅备份持有，原样并入
+    );
+    final videoRows = await after.getAllVideoHourlyLogs();
+    expect(videoRows.single.watchTimeMs, 4000); // MAX(1000, 4000)
+  });
+
   test('reading statistics: many titles under one dateKey are NOT folded',
       () async {
     final curDir = await _tempDir('mg_cur_');

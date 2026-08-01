@@ -1291,6 +1291,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   void _ensureReadingTimeTracker() {
     _readingTimeTracker ??= ReadingTimeTracker(
       appModel.database,
+      format: BookFormat.epub,
       onDelta: (int deltaMs) => _sessionReadingMs += deltaMs,
     );
     _readingTimeTracker!.start();

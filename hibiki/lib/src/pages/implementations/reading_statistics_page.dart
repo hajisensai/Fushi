@@ -203,7 +203,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     _hourlyMs = List.filled(24, 0);
     for (final row in rows) {
       if (row.hour >= 0 && row.hour < 24) {
-        _hourlyMs[row.hour] = row.readingTimeMs;
+        // v67 起同一小时按写入面（format）分多行，图表口径是全部阅读面合计，
+        // 必须累加——赋值会只剩最后一行（单一 format 的值）。
+        _hourlyMs[row.hour] += row.readingTimeMs;
       }
     }
   }

@@ -160,9 +160,16 @@ class ReadingHourlyLogs extends Table {
   IntColumn get hour => integer()();
   IntColumn get readingTimeMs => integer()();
 
+  /// v65：写入面身份（`BookFormat.dbValue`：'epub' / 'pdf' / 'manga'）。此前没有
+  /// 任何身份列，EPUB / PDF / 漫画同一小时的时长在写入时就被加成一行，永久分不开；
+  /// 日级 `reading_statistics` 靠 title→format 反查能拆，时段表拆不开只因缺这列。
+  /// `''` = v65 前的历史行（写入时信息已丢，如实标未区分）以及云同步里旧端贡献的
+  /// 无法归因差额（见 aggregate_sync_service 的 deficit-lift）。
+  TextColumn get format => text().withDefault(const Constant(''))();
+
   @override
   List<Set<Column>> get uniqueKeys => [
-        {dateKey, hour},
+        {dateKey, hour, format},
       ];
 }
 
