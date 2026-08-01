@@ -33,6 +33,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1353](bugs/BUG-1353-ci-macos-bsd-sed-inplace.md) | ✅ | ✅ | CI macos/ios 作业固定红：TMDB key 注入用了 GNU-only 的裸 sed -i |
+| [BUG-1352](bugs/BUG-1352-ci-package-tests-schema-literal.md) | ✅ | ✅ | CI Run package tests 红：packages 侧 schemaVersion 等值断言漏跟 v66 |
 | [BUG-1351](bugs/BUG-1351-scan-playlist-import-no-added-activity.md) | ✅ | ✅ | 扫描导入新播放列表合集不落 added 活动事件 |
 | [BUG-1350](bugs/BUG-1350-dashboard-activity-cross-series-merge.md) | ✅ | ✅ | 首页活动时间轴同日同集号跨作品被合并吞掉观看记录 |
 | [BUG-1345](bugs/BUG-1345-gal-ipc-contract-host-copy-drift.md) | ✅ | ✅ | galgame 捕获报「捕获组件版本与 Hibiki 不一致」：IPC 契约在 host 侧有手抄副本，且处置指向已不存在的动作 |

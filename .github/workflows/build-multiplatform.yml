@@ -146,7 +146,15 @@ jobs:
             cp hibiki/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
           fi
           if [ -n "$TMDB_API_KEY" ]; then
-            sed -i "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+            # -i.bak（后缀紧贴 -i，中间不留空格）是 GNU sed 与 BSD/macOS sed
+            # 都接受的唯一就地编辑写法。裸 `sed -i "脚本" 文件` 只在 GNU sed 下
+            # 成立：BSD sed 的 -i 必须带备份后缀，会把紧跟的脚本吃成后缀、再把
+            # 文件名当脚本，于是 macos/ios 作业固定报
+            # `sed: 1: "hibiki/lib/src/media/vi ...": extra characters at the
+            # end of h command`。五处 TMDB 注入统一用同一种写法，别再从 ubuntu
+            # 作业复制出裸 -i。
+            sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+            rm -f "$dst.bak"
           fi
       # TODO-1208: cache resolved pub packages (miss auto-rebuilds; apply-patches
       # is idempotent so a warm cache is safe).
@@ -328,7 +336,15 @@ jobs:
             cp hibiki/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
           fi
           if [ -n "$TMDB_API_KEY" ]; then
-            sed -i "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+            # -i.bak（后缀紧贴 -i，中间不留空格）是 GNU sed 与 BSD/macOS sed
+            # 都接受的唯一就地编辑写法。裸 `sed -i "脚本" 文件` 只在 GNU sed 下
+            # 成立：BSD sed 的 -i 必须带备份后缀，会把紧跟的脚本吃成后缀、再把
+            # 文件名当脚本，于是 macos/ios 作业固定报
+            # `sed: 1: "hibiki/lib/src/media/vi ...": extra characters at the
+            # end of h command`。五处 TMDB 注入统一用同一种写法，别再从 ubuntu
+            # 作业复制出裸 -i。
+            sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+            rm -f "$dst.bak"
           fi
       # TODO-1208: cache resolved pub packages (miss auto-rebuilds; apply-patches
       # is idempotent so a warm cache is safe).
@@ -508,7 +524,15 @@ jobs:
             cp hibiki/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
           fi
           if [ -n "$TMDB_API_KEY" ]; then
-            sed -i "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+            # -i.bak（后缀紧贴 -i，中间不留空格）是 GNU sed 与 BSD/macOS sed
+            # 都接受的唯一就地编辑写法。裸 `sed -i "脚本" 文件` 只在 GNU sed 下
+            # 成立：BSD sed 的 -i 必须带备份后缀，会把紧跟的脚本吃成后缀、再把
+            # 文件名当脚本，于是 macos/ios 作业固定报
+            # `sed: 1: "hibiki/lib/src/media/vi ...": extra characters at the
+            # end of h command`。五处 TMDB 注入统一用同一种写法，别再从 ubuntu
+            # 作业复制出裸 -i。
+            sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+            rm -f "$dst.bak"
           fi
       # TODO-1208: cache resolved pub packages (miss auto-rebuilds; apply-patches
       # is idempotent so a warm cache is safe).
@@ -672,7 +696,15 @@ jobs:
             cp hibiki/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
           fi
           if [ -n "$TMDB_API_KEY" ]; then
-            sed -i "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+            # -i.bak（后缀紧贴 -i，中间不留空格）是 GNU sed 与 BSD/macOS sed
+            # 都接受的唯一就地编辑写法。裸 `sed -i "脚本" 文件` 只在 GNU sed 下
+            # 成立：BSD sed 的 -i 必须带备份后缀，会把紧跟的脚本吃成后缀、再把
+            # 文件名当脚本，于是 macos/ios 作业固定报
+            # `sed: 1: "hibiki/lib/src/media/vi ...": extra characters at the
+            # end of h command`。五处 TMDB 注入统一用同一种写法，别再从 ubuntu
+            # 作业复制出裸 -i。
+            sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+            rm -f "$dst.bak"
           fi
       # TODO-1208: cache resolved pub packages (miss auto-rebuilds; apply-patches
       # is idempotent so a warm cache is safe).
@@ -808,7 +840,15 @@ jobs:
             cp hibiki/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
           fi
           if [ -n "$TMDB_API_KEY" ]; then
-            sed -i "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+            # -i.bak（后缀紧贴 -i，中间不留空格）是 GNU sed 与 BSD/macOS sed
+            # 都接受的唯一就地编辑写法。裸 `sed -i "脚本" 文件` 只在 GNU sed 下
+            # 成立：BSD sed 的 -i 必须带备份后缀，会把紧跟的脚本吃成后缀、再把
+            # 文件名当脚本，于是 macos/ios 作业固定报
+            # `sed: 1: "hibiki/lib/src/media/vi ...": extra characters at the
+            # end of h command`。五处 TMDB 注入统一用同一种写法，别再从 ubuntu
+            # 作业复制出裸 -i。
+            sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+            rm -f "$dst.bak"
           fi
       # TODO-1208: Windows Dart pub cache defaults to %LOCALAPPDATA%\Pub\Cache.
       - name: Cache pub packages
