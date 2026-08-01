@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 49487 (2911 per locale)
+/// Strings: 49521 (2913 per locale)
 ///
-/// Built on 2026-08-01 at 12:28 UTC
+/// Built on 2026-08-01 at 13:49 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3810,7 +3810,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get anki_lapis_visual_front => 'Front';
   String get anki_lapis_visual_back => 'Back';
   String get anki_lapis_visual_preview => 'Lapis card preview';
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   String get anki_lapis_visual_reset_field => 'Reset field';
   String anki_lapis_visual_font_size({required Object percent}) =>
       'Font size: ${percent}%';
@@ -3934,6 +3934,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Lapis restored to factory defaults';
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -10413,7 +10416,7 @@ class _StringsAr extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -10628,6 +10631,11 @@ class _StringsAr extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -17174,7 +17182,7 @@ class _StringsDe extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -17389,6 +17397,11 @@ class _StringsDe extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -23951,7 +23964,7 @@ class _StringsEs extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -24166,6 +24179,11 @@ class _StringsEs extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -30739,7 +30757,7 @@ class _StringsFr extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -30954,6 +30972,11 @@ class _StringsFr extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -37456,7 +37479,7 @@ class _StringsId extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -37671,6 +37694,11 @@ class _StringsId extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -44219,7 +44247,7 @@ class _StringsIt extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -44434,6 +44462,11 @@ class _StringsIt extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -50799,7 +50832,7 @@ class _StringsJa extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -51014,6 +51047,11 @@ class _StringsJa extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -57381,7 +57419,7 @@ class _StringsKo extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -57596,6 +57634,11 @@ class _StringsKo extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -64124,7 +64167,7 @@ class _StringsNl extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -64339,6 +64382,11 @@ class _StringsNl extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -70880,7 +70928,7 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -71095,6 +71143,11 @@ class _StringsPtBr extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -77620,7 +77673,7 @@ class _StringsRu extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -77835,6 +77888,11 @@ class _StringsRu extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -84308,7 +84366,7 @@ class _StringsTh extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -84523,6 +84581,11 @@ class _StringsTh extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -91028,7 +91091,7 @@ class _StringsTr extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -91243,6 +91306,11 @@ class _StringsTr extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -97733,7 +97801,7 @@ class _StringsVi extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -97948,6 +98016,11 @@ class _StringsVi extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 // Path: <root>
@@ -103978,7 +104051,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis 卡片预览';
   @override
-  String get anki_lapis_visual_select_field => '选择要高亮的字段';
+  String get anki_lapis_visual_select_field => '选择要编辑的部分';
   @override
   String get anki_lapis_visual_reset_field => '重置字段';
   @override
@@ -104173,6 +104246,11 @@ class _StringsZhCn extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       '恢复失败：${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      '点预览里的任意部分，或从下面挑一个。选中的就是下方那些控件正在编辑的对象。';
+  @override
+  String get anki_lapis_visual_editing_now => '正在编辑';
 }
 
 // Path: <root>
@@ -110459,7 +110537,7 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get anki_lapis_visual_preview => 'Lapis card preview';
   @override
-  String get anki_lapis_visual_select_field => 'Select a field to highlight';
+  String get anki_lapis_visual_select_field => 'Choose what to edit';
   @override
   String get anki_lapis_visual_reset_field => 'Reset field';
   @override
@@ -110674,6 +110752,11 @@ class _StringsZhHk extends _StringsEn {
   @override
   String anki_lapis_restore_factory_failed({required Object error}) =>
       'Restore failed: ${error}';
+  @override
+  String get anki_lapis_visual_select_field_hint =>
+      'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+  @override
+  String get anki_lapis_visual_editing_now => 'Editing';
 }
 
 /// Flat map(s) containing all translations.
@@ -116461,7 +116544,7 @@ extension on _StringsEn {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -116645,6 +116728,10 @@ extension on _StringsEn {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -122430,7 +122517,7 @@ extension on _StringsAr {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -122614,6 +122701,10 @@ extension on _StringsAr {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -128421,7 +128512,7 @@ extension on _StringsDe {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -128605,6 +128696,10 @@ extension on _StringsDe {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -134411,7 +134506,7 @@ extension on _StringsEs {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -134595,6 +134690,10 @@ extension on _StringsEs {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -140407,7 +140506,7 @@ extension on _StringsFr {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -140591,6 +140690,10 @@ extension on _StringsFr {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -146385,7 +146488,7 @@ extension on _StringsId {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -146569,6 +146672,10 @@ extension on _StringsId {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -152377,7 +152484,7 @@ extension on _StringsIt {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -152561,6 +152668,10 @@ extension on _StringsIt {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -158331,7 +158442,7 @@ extension on _StringsJa {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -158515,6 +158626,10 @@ extension on _StringsJa {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -164289,7 +164404,7 @@ extension on _StringsKo {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -164473,6 +164588,10 @@ extension on _StringsKo {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -170275,7 +170394,7 @@ extension on _StringsNl {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -170459,6 +170578,10 @@ extension on _StringsNl {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -176258,7 +176381,7 @@ extension on _StringsPtBr {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -176442,6 +176565,10 @@ extension on _StringsPtBr {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -182246,7 +182373,7 @@ extension on _StringsRu {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -182430,6 +182557,10 @@ extension on _StringsRu {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -188217,7 +188348,7 @@ extension on _StringsTh {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -188401,6 +188532,10 @@ extension on _StringsTh {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -194197,7 +194332,7 @@ extension on _StringsTr {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -194381,6 +194516,10 @@ extension on _StringsTr {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -200173,7 +200312,7 @@ extension on _StringsVi {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -200357,6 +200496,10 @@ extension on _StringsVi {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
@@ -206097,7 +206240,7 @@ extension on _StringsZhCn {
       case 'anki_lapis_visual_preview':
         return 'Lapis 卡片预览';
       case 'anki_lapis_visual_select_field':
-        return '选择要高亮的字段';
+        return '选择要编辑的部分';
       case 'anki_lapis_visual_reset_field':
         return '重置字段';
       case 'anki_lapis_visual_font_size':
@@ -206280,6 +206423,10 @@ extension on _StringsZhCn {
         return 'Lapis 已恢复出厂状态';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => '恢复失败：${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return '点预览里的任意部分，或从下面挑一个。选中的就是下方那些控件正在编辑的对象。';
+      case 'anki_lapis_visual_editing_now':
+        return '正在编辑';
       default:
         return null;
     }
@@ -212045,7 +212192,7 @@ extension on _StringsZhHk {
       case 'anki_lapis_visual_preview':
         return 'Lapis card preview';
       case 'anki_lapis_visual_select_field':
-        return 'Select a field to highlight';
+        return 'Choose what to edit';
       case 'anki_lapis_visual_reset_field':
         return 'Reset field';
       case 'anki_lapis_visual_font_size':
@@ -212229,6 +212376,10 @@ extension on _StringsZhHk {
         return 'Lapis restored to factory defaults';
       case 'anki_lapis_restore_factory_failed':
         return ({required Object error}) => 'Restore failed: ${error}';
+      case 'anki_lapis_visual_select_field_hint':
+        return 'Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.';
+      case 'anki_lapis_visual_editing_now':
+        return 'Editing';
       default:
         return null;
     }
