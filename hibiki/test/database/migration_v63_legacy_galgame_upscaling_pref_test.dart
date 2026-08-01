@@ -203,9 +203,10 @@ void main() {
         'manga_online_sources',
         'manga_source_preferences',
         'manga_trusted_signers',
+        'collection_relations',
       },
-      reason: '除 v64 的 collection_scrape_meta 与 v65 的 Mihon 五表外，'
-          '升级不得新增任何表',
+      reason: '除 v64 的 collection_scrape_meta、v65 的 Mihon 五表与 v66 的 '
+          'collection_relations 外，升级不得新增任何表',
     );
   });
 

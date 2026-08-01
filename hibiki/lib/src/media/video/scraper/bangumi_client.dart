@@ -124,8 +124,204 @@ class BangumiClient {
     return parseBangumiSubjectDetailAsCandidate(response.body);
   }
 
+  /// 拉取条目的关联条目列表 `GET /v0/subjects/{id}/subjects`（TODO-2484 合集
+  /// 「相关作品」）。只保留动画（type 2）与三次元（type 6）条目——关联列表里的
+  /// 原声集/广播剧/书籍对视频合集无用，在解析层滤掉。
+  ///
+  /// 网络失败 / 非 2xx / JSON 异常 → 抛 [ScrapeNetworkException]。
+  Future<List<BangumiRelatedSubject>> fetchSubjectRelations(
+    String subjectId,
+  ) async {
+    final BangumiRawResponse response;
+    try {
+      response = await _api.fetchSubjectRelations(subjectId);
+    } on BangumiTransportException catch (e) {
+      throw ScrapeNetworkException('Bangumi relations ${e.message}');
+    }
+    if (!response.isOk) {
+      throw ScrapeNetworkException(
+        'Bangumi relations HTTP ${response.statusCode}',
+        statusCode: response.statusCode,
+      );
+    }
+    return parseBangumiRelatedSubjects(response.body);
+  }
+
+  /// 拉取条目的**正篇**分集列表 `GET /v0/episodes?subject_id=&type=0`（TODO-2491
+  /// 集级刮削），内部按响应 `total` 分页拉全。
+  ///
+  /// 网络失败 / 非 2xx / JSON 异常 → 抛 [ScrapeNetworkException]。
+  Future<List<BangumiEpisodeInfo>> fetchSubjectEpisodes(
+    String subjectId,
+  ) async {
+    final List<BangumiEpisodeInfo> all = <BangumiEpisodeInfo>[];
+    int offset = 0;
+    while (true) {
+      final BangumiRawResponse response;
+      try {
+        response = await _api.fetchSubjectEpisodes(subjectId, offset: offset);
+      } on BangumiTransportException catch (e) {
+        throw ScrapeNetworkException('Bangumi episodes ${e.message}');
+      }
+      if (!response.isOk) {
+        throw ScrapeNetworkException(
+          'Bangumi episodes HTTP ${response.statusCode}',
+          statusCode: response.statusCode,
+        );
+      }
+      final ({
+        List<BangumiEpisodeInfo> episodes,
+        int rawCount,
+        int total
+      }) page = parseBangumiEpisodesResponse(response.body);
+      all.addAll(page.episodes);
+      // offset 必须按**源返回的原始条数**推进，不能按过滤后的 episodes 长度：
+      // 一页若全被过滤（非整数 sort 的脏数据页），按过滤后长度推进会原地踏步
+      // 或提前 break，把后面还没拉的正常页整段丢掉。
+      offset += page.rawCount;
+      // 空页兜底：错误负载/total 虚高时防死循环。
+      if (page.rawCount == 0 || offset >= page.total) break;
+    }
+    return all;
+  }
+
   /// 关闭内部 client（若为默认自建）。测试注入的 mock client 由调用方自行管理。
   void close() => _api.close();
+}
+
+/// Bangumi 关联条目（`/v0/subjects/{id}/subjects` 单项的领域投影）。
+class BangumiRelatedSubject {
+  const BangumiRelatedSubject({
+    required this.subjectId,
+    required this.subjectType,
+    required this.relation,
+    required this.title,
+    this.coverUrl,
+  });
+
+  /// 关联条目的 subject id（字符串化）。
+  final String subjectId;
+
+  /// Bangumi 条目类型（2=动画 / 6=三次元；解析层已滤掉其余类型）。
+  final int subjectType;
+
+  /// 源侧关系词原文（`续集` / `前传` / `番外篇` …），映射到落库枚举由
+  /// `collection_relations_scrape.dart` 的 `mapBangumiRelation` 负责。
+  final String relation;
+
+  /// 标题（`name_cn` 非空优先，否则 `name`）。
+  final String title;
+
+  /// 封面 URL（`images.large` → `common` 逐级回退），可缺失。
+  final String? coverUrl;
+}
+
+/// Bangumi 分集（`/v0/episodes` 单项的领域投影，只收正篇 type=0）。
+class BangumiEpisodeInfo {
+  const BangumiEpisodeInfo({
+    required this.episodeNumber,
+    this.title,
+    this.airDate,
+    this.summary,
+  });
+
+  /// 正篇集号（源侧 `sort`；非整数的特殊话数在解析层跳过）。
+  final int episodeNumber;
+
+  /// 集名（`name_cn` 非空优先，否则 `name`）；两者皆空为 null。
+  final String? title;
+
+  /// 放送日期 `YYYY-MM-DD` 原文。
+  final String? airDate;
+
+  /// 集简介（`desc`）。
+  final String? summary;
+}
+
+/// 纯函数：解析 `/v0/subjects/{id}/subjects` 响应（顶层 JSON 数组）。
+///
+/// 只保留动画（type 2）/三次元（type 6）条目；缺 id/标题/relation 的项跳过。
+/// JSON 结构异常 → 抛 [ScrapeNetworkException]。
+List<BangumiRelatedSubject> parseBangumiRelatedSubjects(String body) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(body);
+  } catch (e) {
+    throw ScrapeNetworkException('Bangumi relations JSON decode failed: $e');
+  }
+  if (decoded is! List<Object?>) {
+    throw const ScrapeNetworkException('Bangumi relations not a JSON array');
+  }
+  final List<BangumiRelatedSubject> related = <BangumiRelatedSubject>[];
+  for (final Object? item in decoded) {
+    if (item is! Map<String, Object?>) continue;
+    final int? type = _asInt(item['type']);
+    // 原声集/书籍等对视频合集无用，只留动画(2)/三次元(6)。
+    if (type == null || (type != 2 && type != 6)) continue;
+    final Object? id = item['id'];
+    if (id is! int) continue;
+    final String? relation = _nonEmptyString(item['relation']);
+    if (relation == null) continue;
+    final String? title =
+        _nonEmptyString(item['name_cn']) ?? _nonEmptyString(item['name']);
+    if (title == null) continue;
+    String? coverUrl;
+    final Object? images = item['images'];
+    if (images is Map<String, Object?>) {
+      coverUrl =
+          _nonEmptyString(images['large']) ?? _nonEmptyString(images['common']);
+    }
+    related.add(BangumiRelatedSubject(
+      subjectId: '$id',
+      subjectType: type,
+      relation: relation,
+      title: title,
+      coverUrl: coverUrl,
+    ));
+  }
+  return related;
+}
+
+/// 纯函数：解析 `/v0/episodes` 分页响应，返回本页分集 + 源侧 total +
+/// **原始条数** [rawCount]（分页 offset 必须按它推进——过滤后的 episodes
+/// 长度会在脏数据页上把 offset 卡住）。
+///
+/// `sort` 非整数（25.5 之类的番外话数混进正篇的历史脏数据）跳过；缺 sort 跳过。
+/// JSON 结构异常 → 抛 [ScrapeNetworkException]。
+({List<BangumiEpisodeInfo> episodes, int rawCount, int total})
+    parseBangumiEpisodesResponse(
+  String body,
+) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(body);
+  } catch (e) {
+    throw ScrapeNetworkException('Bangumi episodes JSON decode failed: $e');
+  }
+  if (decoded is! Map<String, Object?>) {
+    throw const ScrapeNetworkException('Bangumi episodes not a JSON object');
+  }
+  final int total = _asInt(decoded['total']) ?? 0;
+  final Object? items = decoded['data'];
+  final int rawCount = items is List<Object?> ? items.length : 0;
+  final List<BangumiEpisodeInfo> episodes = <BangumiEpisodeInfo>[];
+  if (items is List<Object?>) {
+    for (final Object? item in items) {
+      if (item is! Map<String, Object?>) continue;
+      final double? sort = _asDouble(item['sort']);
+      if (sort == null) continue;
+      final int episodeNumber = sort.toInt();
+      if (episodeNumber.toDouble() != sort || episodeNumber <= 0) continue;
+      episodes.add(BangumiEpisodeInfo(
+        episodeNumber: episodeNumber,
+        title:
+            _nonEmptyString(item['name_cn']) ?? _nonEmptyString(item['name']),
+        airDate: _nonEmptyString(item['airdate']),
+        summary: _nonEmptyString(item['desc']),
+      ));
+    }
+  }
+  return (episodes: episodes, rawCount: rawCount, total: total);
 }
 
 /// 纯函数：把 Bangumi `/v0/subjects/{id}` **详情**响应体解析为 [ScrapeCandidate]

@@ -17651,6 +17651,12 @@ class $VideoScrapeMetaTable extends VideoScrapeMeta
   late final GeneratedColumn<String> detailUrl = GeneratedColumn<String>(
       'detail_url', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _episodeNumberMeta =
+      const VerificationMeta('episodeNumber');
+  @override
+  late final GeneratedColumn<int> episodeNumber = GeneratedColumn<int>(
+      'episode_number', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
   static const VerificationMeta _scrapedAtMeta =
       const VerificationMeta('scrapedAt');
   @override
@@ -17672,6 +17678,7 @@ class $VideoScrapeMetaTable extends VideoScrapeMeta
         tagsJson,
         infoboxJson,
         detailUrl,
+        episodeNumber,
         scrapedAt
       ];
   @override
@@ -17752,6 +17759,12 @@ class $VideoScrapeMetaTable extends VideoScrapeMeta
       context.handle(_detailUrlMeta,
           detailUrl.isAcceptableOrUnknown(data['detail_url']!, _detailUrlMeta));
     }
+    if (data.containsKey('episode_number')) {
+      context.handle(
+          _episodeNumberMeta,
+          episodeNumber.isAcceptableOrUnknown(
+              data['episode_number']!, _episodeNumberMeta));
+    }
     if (data.containsKey('scraped_at')) {
       context.handle(_scrapedAtMeta,
           scrapedAt.isAcceptableOrUnknown(data['scraped_at']!, _scrapedAtMeta));
@@ -17793,6 +17806,8 @@ class $VideoScrapeMetaTable extends VideoScrapeMeta
           .read(DriftSqlType.string, data['${effectivePrefix}infobox_json']),
       detailUrl: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}detail_url']),
+      episodeNumber: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}episode_number']),
       scrapedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}scraped_at'])!,
     );
@@ -17847,6 +17862,12 @@ class VideoScrapeMetaRow extends DataClass
   /// 条目详情页 URL（`https://bgm.tv/subject/<id>`），供「查看条目」跳转。
   final String? detailUrl;
 
+  /// 集号（v65 / TODO-2491）：集级刮削按文件名解析的集号与源的分集列表对齐后写入
+  /// （TMDB `episode_number` / Bangumi `sort`）。NULL = 本行是旧的**作品级**资料
+  /// （v54~v64 的自动刮削把整部作品的简介写进每个文件），或集级刮削未能从文件名
+  /// 解出集号。存对齐后的**源侧集号**而非文件名原文，便于重刮时按号更新。
+  final int? episodeNumber;
+
   /// 本行写入时间（重刮判据 / 展示「资料更新于」）。
   final DateTime scrapedAt;
   const VideoScrapeMetaRow(
@@ -17863,6 +17884,7 @@ class VideoScrapeMetaRow extends DataClass
       this.tagsJson,
       this.infoboxJson,
       this.detailUrl,
+      this.episodeNumber,
       required this.scrapedAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -17897,6 +17919,9 @@ class VideoScrapeMetaRow extends DataClass
     }
     if (!nullToAbsent || detailUrl != null) {
       map['detail_url'] = Variable<String>(detailUrl);
+    }
+    if (!nullToAbsent || episodeNumber != null) {
+      map['episode_number'] = Variable<int>(episodeNumber);
     }
     map['scraped_at'] = Variable<DateTime>(scrapedAt);
     return map;
@@ -17934,6 +17959,9 @@ class VideoScrapeMetaRow extends DataClass
       detailUrl: detailUrl == null && nullToAbsent
           ? const Value.absent()
           : Value(detailUrl),
+      episodeNumber: episodeNumber == null && nullToAbsent
+          ? const Value.absent()
+          : Value(episodeNumber),
       scrapedAt: Value(scrapedAt),
     );
   }
@@ -17955,6 +17983,7 @@ class VideoScrapeMetaRow extends DataClass
       tagsJson: serializer.fromJson<String?>(json['tagsJson']),
       infoboxJson: serializer.fromJson<String?>(json['infoboxJson']),
       detailUrl: serializer.fromJson<String?>(json['detailUrl']),
+      episodeNumber: serializer.fromJson<int?>(json['episodeNumber']),
       scrapedAt: serializer.fromJson<DateTime>(json['scrapedAt']),
     );
   }
@@ -17975,6 +18004,7 @@ class VideoScrapeMetaRow extends DataClass
       'tagsJson': serializer.toJson<String?>(tagsJson),
       'infoboxJson': serializer.toJson<String?>(infoboxJson),
       'detailUrl': serializer.toJson<String?>(detailUrl),
+      'episodeNumber': serializer.toJson<int?>(episodeNumber),
       'scrapedAt': serializer.toJson<DateTime>(scrapedAt),
     };
   }
@@ -17993,6 +18023,7 @@ class VideoScrapeMetaRow extends DataClass
           Value<String?> tagsJson = const Value.absent(),
           Value<String?> infoboxJson = const Value.absent(),
           Value<String?> detailUrl = const Value.absent(),
+          Value<int?> episodeNumber = const Value.absent(),
           DateTime? scrapedAt}) =>
       VideoScrapeMetaRow(
         bookUid: bookUid ?? this.bookUid,
@@ -18010,6 +18041,8 @@ class VideoScrapeMetaRow extends DataClass
         tagsJson: tagsJson.present ? tagsJson.value : this.tagsJson,
         infoboxJson: infoboxJson.present ? infoboxJson.value : this.infoboxJson,
         detailUrl: detailUrl.present ? detailUrl.value : this.detailUrl,
+        episodeNumber:
+            episodeNumber.present ? episodeNumber.value : this.episodeNumber,
         scrapedAt: scrapedAt ?? this.scrapedAt,
       );
   VideoScrapeMetaRow copyWithCompanion(VideoScrapeMetaCompanion data) {
@@ -18033,6 +18066,9 @@ class VideoScrapeMetaRow extends DataClass
       infoboxJson:
           data.infoboxJson.present ? data.infoboxJson.value : this.infoboxJson,
       detailUrl: data.detailUrl.present ? data.detailUrl.value : this.detailUrl,
+      episodeNumber: data.episodeNumber.present
+          ? data.episodeNumber.value
+          : this.episodeNumber,
       scrapedAt: data.scrapedAt.present ? data.scrapedAt.value : this.scrapedAt,
     );
   }
@@ -18053,6 +18089,7 @@ class VideoScrapeMetaRow extends DataClass
           ..write('tagsJson: $tagsJson, ')
           ..write('infoboxJson: $infoboxJson, ')
           ..write('detailUrl: $detailUrl, ')
+          ..write('episodeNumber: $episodeNumber, ')
           ..write('scrapedAt: $scrapedAt')
           ..write(')'))
         .toString();
@@ -18073,6 +18110,7 @@ class VideoScrapeMetaRow extends DataClass
       tagsJson,
       infoboxJson,
       detailUrl,
+      episodeNumber,
       scrapedAt);
   @override
   bool operator ==(Object other) =>
@@ -18091,6 +18129,7 @@ class VideoScrapeMetaRow extends DataClass
           other.tagsJson == this.tagsJson &&
           other.infoboxJson == this.infoboxJson &&
           other.detailUrl == this.detailUrl &&
+          other.episodeNumber == this.episodeNumber &&
           other.scrapedAt == this.scrapedAt);
 }
 
@@ -18108,6 +18147,7 @@ class VideoScrapeMetaCompanion extends UpdateCompanion<VideoScrapeMetaRow> {
   final Value<String?> tagsJson;
   final Value<String?> infoboxJson;
   final Value<String?> detailUrl;
+  final Value<int?> episodeNumber;
   final Value<DateTime> scrapedAt;
   final Value<int> rowid;
   const VideoScrapeMetaCompanion({
@@ -18124,6 +18164,7 @@ class VideoScrapeMetaCompanion extends UpdateCompanion<VideoScrapeMetaRow> {
     this.tagsJson = const Value.absent(),
     this.infoboxJson = const Value.absent(),
     this.detailUrl = const Value.absent(),
+    this.episodeNumber = const Value.absent(),
     this.scrapedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -18141,6 +18182,7 @@ class VideoScrapeMetaCompanion extends UpdateCompanion<VideoScrapeMetaRow> {
     this.tagsJson = const Value.absent(),
     this.infoboxJson = const Value.absent(),
     this.detailUrl = const Value.absent(),
+    this.episodeNumber = const Value.absent(),
     required DateTime scrapedAt,
     this.rowid = const Value.absent(),
   })  : bookUid = Value(bookUid),
@@ -18162,6 +18204,7 @@ class VideoScrapeMetaCompanion extends UpdateCompanion<VideoScrapeMetaRow> {
     Expression<String>? tagsJson,
     Expression<String>? infoboxJson,
     Expression<String>? detailUrl,
+    Expression<int>? episodeNumber,
     Expression<DateTime>? scrapedAt,
     Expression<int>? rowid,
   }) {
@@ -18179,6 +18222,7 @@ class VideoScrapeMetaCompanion extends UpdateCompanion<VideoScrapeMetaRow> {
       if (tagsJson != null) 'tags_json': tagsJson,
       if (infoboxJson != null) 'infobox_json': infoboxJson,
       if (detailUrl != null) 'detail_url': detailUrl,
+      if (episodeNumber != null) 'episode_number': episodeNumber,
       if (scrapedAt != null) 'scraped_at': scrapedAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -18198,6 +18242,7 @@ class VideoScrapeMetaCompanion extends UpdateCompanion<VideoScrapeMetaRow> {
       Value<String?>? tagsJson,
       Value<String?>? infoboxJson,
       Value<String?>? detailUrl,
+      Value<int?>? episodeNumber,
       Value<DateTime>? scrapedAt,
       Value<int>? rowid}) {
     return VideoScrapeMetaCompanion(
@@ -18214,6 +18259,7 @@ class VideoScrapeMetaCompanion extends UpdateCompanion<VideoScrapeMetaRow> {
       tagsJson: tagsJson ?? this.tagsJson,
       infoboxJson: infoboxJson ?? this.infoboxJson,
       detailUrl: detailUrl ?? this.detailUrl,
+      episodeNumber: episodeNumber ?? this.episodeNumber,
       scrapedAt: scrapedAt ?? this.scrapedAt,
       rowid: rowid ?? this.rowid,
     );
@@ -18261,6 +18307,9 @@ class VideoScrapeMetaCompanion extends UpdateCompanion<VideoScrapeMetaRow> {
     if (detailUrl.present) {
       map['detail_url'] = Variable<String>(detailUrl.value);
     }
+    if (episodeNumber.present) {
+      map['episode_number'] = Variable<int>(episodeNumber.value);
+    }
     if (scrapedAt.present) {
       map['scraped_at'] = Variable<DateTime>(scrapedAt.value);
     }
@@ -18286,6 +18335,7 @@ class VideoScrapeMetaCompanion extends UpdateCompanion<VideoScrapeMetaRow> {
           ..write('tagsJson: $tagsJson, ')
           ..write('infoboxJson: $infoboxJson, ')
           ..write('detailUrl: $detailUrl, ')
+          ..write('episodeNumber: $episodeNumber, ')
           ..write('scrapedAt: $scrapedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -24192,6 +24242,550 @@ class MangaTrustedSignersCompanion
   }
 }
 
+class $CollectionRelationsTable extends CollectionRelations
+    with TableInfo<$CollectionRelationsTable, CollectionRelationRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CollectionRelationsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _collectionIdMeta =
+      const VerificationMeta('collectionId');
+  @override
+  late final GeneratedColumn<int> collectionId = GeneratedColumn<int>(
+      'collection_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES media_collections (id) ON DELETE CASCADE'));
+  static const VerificationMeta _relationTypeMeta =
+      const VerificationMeta('relationType');
+  @override
+  late final GeneratedColumn<String> relationType = GeneratedColumn<String>(
+      'relation_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _sortIndexMeta =
+      const VerificationMeta('sortIndex');
+  @override
+  late final GeneratedColumn<int> sortIndex = GeneratedColumn<int>(
+      'sort_index', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _targetCollectionIdMeta =
+      const VerificationMeta('targetCollectionId');
+  @override
+  late final GeneratedColumn<int> targetCollectionId = GeneratedColumn<int>(
+      'target_collection_id', aliasedName, true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES media_collections (id) ON DELETE SET NULL'));
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+      'source', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _subjectIdMeta =
+      const VerificationMeta('subjectId');
+  @override
+  late final GeneratedColumn<String> subjectId = GeneratedColumn<String>(
+      'subject_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _coverUrlMeta =
+      const VerificationMeta('coverUrl');
+  @override
+  late final GeneratedColumn<String> coverUrl = GeneratedColumn<String>(
+      'cover_url', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _coverPathMeta =
+      const VerificationMeta('coverPath');
+  @override
+  late final GeneratedColumn<String> coverPath = GeneratedColumn<String>(
+      'cover_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        collectionId,
+        relationType,
+        sortIndex,
+        targetCollectionId,
+        source,
+        subjectId,
+        title,
+        coverUrl,
+        coverPath
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'collection_relations';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<CollectionRelationRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('collection_id')) {
+      context.handle(
+          _collectionIdMeta,
+          collectionId.isAcceptableOrUnknown(
+              data['collection_id']!, _collectionIdMeta));
+    } else if (isInserting) {
+      context.missing(_collectionIdMeta);
+    }
+    if (data.containsKey('relation_type')) {
+      context.handle(
+          _relationTypeMeta,
+          relationType.isAcceptableOrUnknown(
+              data['relation_type']!, _relationTypeMeta));
+    } else if (isInserting) {
+      context.missing(_relationTypeMeta);
+    }
+    if (data.containsKey('sort_index')) {
+      context.handle(_sortIndexMeta,
+          sortIndex.isAcceptableOrUnknown(data['sort_index']!, _sortIndexMeta));
+    }
+    if (data.containsKey('target_collection_id')) {
+      context.handle(
+          _targetCollectionIdMeta,
+          targetCollectionId.isAcceptableOrUnknown(
+              data['target_collection_id']!, _targetCollectionIdMeta));
+    }
+    if (data.containsKey('source')) {
+      context.handle(_sourceMeta,
+          source.isAcceptableOrUnknown(data['source']!, _sourceMeta));
+    } else if (isInserting) {
+      context.missing(_sourceMeta);
+    }
+    if (data.containsKey('subject_id')) {
+      context.handle(_subjectIdMeta,
+          subjectId.isAcceptableOrUnknown(data['subject_id']!, _subjectIdMeta));
+    } else if (isInserting) {
+      context.missing(_subjectIdMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('cover_url')) {
+      context.handle(_coverUrlMeta,
+          coverUrl.isAcceptableOrUnknown(data['cover_url']!, _coverUrlMeta));
+    }
+    if (data.containsKey('cover_path')) {
+      context.handle(_coverPathMeta,
+          coverPath.isAcceptableOrUnknown(data['cover_path']!, _coverPathMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {collectionId, source, subjectId},
+      ];
+  @override
+  CollectionRelationRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return CollectionRelationRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      collectionId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}collection_id'])!,
+      relationType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}relation_type'])!,
+      sortIndex: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sort_index'])!,
+      targetCollectionId: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}target_collection_id']),
+      source: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source'])!,
+      subjectId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}subject_id'])!,
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      coverUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}cover_url']),
+      coverPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}cover_path']),
+    );
+  }
+
+  @override
+  $CollectionRelationsTable createAlias(String alias) {
+    return $CollectionRelationsTable(attachedDatabase, alias);
+  }
+}
+
+class CollectionRelationRow extends DataClass
+    implements Insertable<CollectionRelationRow> {
+  final int id;
+
+  /// 边的起点：本地合集。删合集 cascade 清边。
+  final int collectionId;
+
+  /// 关系类型，wire 值固定小写下划线：`prequel`（前传）/ `sequel`（续集）/
+  /// `side_story`（番外/外传）/ `movie`（剧场版）/ `spin_off`（衍生）/ `other`。
+  /// 源侧的中文/自由文本关系词在抓取层映射成这六个值再落库，UI 不解析源词。
+  final String relationType;
+
+  /// 同一合集内的展示顺序（抓取层按源返回顺序编号，0-based 致密）。
+  final int sortIndex;
+
+  /// 已绑定态：目标在本地库中的合集 id。纯刮削态为 NULL；目标合集被删自动
+  /// setNull 退回纯刮削态。
+  final int? targetCollectionId;
+
+  /// 目标条目来源（`ScrapeSource.name`：bangumi / tmdb）。
+  final String source;
+
+  /// 目标条目在源内的 id（Bangumi subject id / TMDB id 或季 id），字符串化。
+  final String subjectId;
+
+  /// 目标条目标题（源侧中文优先）。
+  final String title;
+
+  /// 目标封面远程 URL（未下载时 UI 可按需拉取）。
+  final String? coverUrl;
+
+  /// 目标封面本地路径（抓取层下载落地后回填）。
+  final String? coverPath;
+  const CollectionRelationRow(
+      {required this.id,
+      required this.collectionId,
+      required this.relationType,
+      required this.sortIndex,
+      this.targetCollectionId,
+      required this.source,
+      required this.subjectId,
+      required this.title,
+      this.coverUrl,
+      this.coverPath});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['collection_id'] = Variable<int>(collectionId);
+    map['relation_type'] = Variable<String>(relationType);
+    map['sort_index'] = Variable<int>(sortIndex);
+    if (!nullToAbsent || targetCollectionId != null) {
+      map['target_collection_id'] = Variable<int>(targetCollectionId);
+    }
+    map['source'] = Variable<String>(source);
+    map['subject_id'] = Variable<String>(subjectId);
+    map['title'] = Variable<String>(title);
+    if (!nullToAbsent || coverUrl != null) {
+      map['cover_url'] = Variable<String>(coverUrl);
+    }
+    if (!nullToAbsent || coverPath != null) {
+      map['cover_path'] = Variable<String>(coverPath);
+    }
+    return map;
+  }
+
+  CollectionRelationsCompanion toCompanion(bool nullToAbsent) {
+    return CollectionRelationsCompanion(
+      id: Value(id),
+      collectionId: Value(collectionId),
+      relationType: Value(relationType),
+      sortIndex: Value(sortIndex),
+      targetCollectionId: targetCollectionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(targetCollectionId),
+      source: Value(source),
+      subjectId: Value(subjectId),
+      title: Value(title),
+      coverUrl: coverUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverUrl),
+      coverPath: coverPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverPath),
+    );
+  }
+
+  factory CollectionRelationRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return CollectionRelationRow(
+      id: serializer.fromJson<int>(json['id']),
+      collectionId: serializer.fromJson<int>(json['collectionId']),
+      relationType: serializer.fromJson<String>(json['relationType']),
+      sortIndex: serializer.fromJson<int>(json['sortIndex']),
+      targetCollectionId: serializer.fromJson<int?>(json['targetCollectionId']),
+      source: serializer.fromJson<String>(json['source']),
+      subjectId: serializer.fromJson<String>(json['subjectId']),
+      title: serializer.fromJson<String>(json['title']),
+      coverUrl: serializer.fromJson<String?>(json['coverUrl']),
+      coverPath: serializer.fromJson<String?>(json['coverPath']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'collectionId': serializer.toJson<int>(collectionId),
+      'relationType': serializer.toJson<String>(relationType),
+      'sortIndex': serializer.toJson<int>(sortIndex),
+      'targetCollectionId': serializer.toJson<int?>(targetCollectionId),
+      'source': serializer.toJson<String>(source),
+      'subjectId': serializer.toJson<String>(subjectId),
+      'title': serializer.toJson<String>(title),
+      'coverUrl': serializer.toJson<String?>(coverUrl),
+      'coverPath': serializer.toJson<String?>(coverPath),
+    };
+  }
+
+  CollectionRelationRow copyWith(
+          {int? id,
+          int? collectionId,
+          String? relationType,
+          int? sortIndex,
+          Value<int?> targetCollectionId = const Value.absent(),
+          String? source,
+          String? subjectId,
+          String? title,
+          Value<String?> coverUrl = const Value.absent(),
+          Value<String?> coverPath = const Value.absent()}) =>
+      CollectionRelationRow(
+        id: id ?? this.id,
+        collectionId: collectionId ?? this.collectionId,
+        relationType: relationType ?? this.relationType,
+        sortIndex: sortIndex ?? this.sortIndex,
+        targetCollectionId: targetCollectionId.present
+            ? targetCollectionId.value
+            : this.targetCollectionId,
+        source: source ?? this.source,
+        subjectId: subjectId ?? this.subjectId,
+        title: title ?? this.title,
+        coverUrl: coverUrl.present ? coverUrl.value : this.coverUrl,
+        coverPath: coverPath.present ? coverPath.value : this.coverPath,
+      );
+  CollectionRelationRow copyWithCompanion(CollectionRelationsCompanion data) {
+    return CollectionRelationRow(
+      id: data.id.present ? data.id.value : this.id,
+      collectionId: data.collectionId.present
+          ? data.collectionId.value
+          : this.collectionId,
+      relationType: data.relationType.present
+          ? data.relationType.value
+          : this.relationType,
+      sortIndex: data.sortIndex.present ? data.sortIndex.value : this.sortIndex,
+      targetCollectionId: data.targetCollectionId.present
+          ? data.targetCollectionId.value
+          : this.targetCollectionId,
+      source: data.source.present ? data.source.value : this.source,
+      subjectId: data.subjectId.present ? data.subjectId.value : this.subjectId,
+      title: data.title.present ? data.title.value : this.title,
+      coverUrl: data.coverUrl.present ? data.coverUrl.value : this.coverUrl,
+      coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CollectionRelationRow(')
+          ..write('id: $id, ')
+          ..write('collectionId: $collectionId, ')
+          ..write('relationType: $relationType, ')
+          ..write('sortIndex: $sortIndex, ')
+          ..write('targetCollectionId: $targetCollectionId, ')
+          ..write('source: $source, ')
+          ..write('subjectId: $subjectId, ')
+          ..write('title: $title, ')
+          ..write('coverUrl: $coverUrl, ')
+          ..write('coverPath: $coverPath')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, collectionId, relationType, sortIndex,
+      targetCollectionId, source, subjectId, title, coverUrl, coverPath);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CollectionRelationRow &&
+          other.id == this.id &&
+          other.collectionId == this.collectionId &&
+          other.relationType == this.relationType &&
+          other.sortIndex == this.sortIndex &&
+          other.targetCollectionId == this.targetCollectionId &&
+          other.source == this.source &&
+          other.subjectId == this.subjectId &&
+          other.title == this.title &&
+          other.coverUrl == this.coverUrl &&
+          other.coverPath == this.coverPath);
+}
+
+class CollectionRelationsCompanion
+    extends UpdateCompanion<CollectionRelationRow> {
+  final Value<int> id;
+  final Value<int> collectionId;
+  final Value<String> relationType;
+  final Value<int> sortIndex;
+  final Value<int?> targetCollectionId;
+  final Value<String> source;
+  final Value<String> subjectId;
+  final Value<String> title;
+  final Value<String?> coverUrl;
+  final Value<String?> coverPath;
+  const CollectionRelationsCompanion({
+    this.id = const Value.absent(),
+    this.collectionId = const Value.absent(),
+    this.relationType = const Value.absent(),
+    this.sortIndex = const Value.absent(),
+    this.targetCollectionId = const Value.absent(),
+    this.source = const Value.absent(),
+    this.subjectId = const Value.absent(),
+    this.title = const Value.absent(),
+    this.coverUrl = const Value.absent(),
+    this.coverPath = const Value.absent(),
+  });
+  CollectionRelationsCompanion.insert({
+    this.id = const Value.absent(),
+    required int collectionId,
+    required String relationType,
+    this.sortIndex = const Value.absent(),
+    this.targetCollectionId = const Value.absent(),
+    required String source,
+    required String subjectId,
+    required String title,
+    this.coverUrl = const Value.absent(),
+    this.coverPath = const Value.absent(),
+  })  : collectionId = Value(collectionId),
+        relationType = Value(relationType),
+        source = Value(source),
+        subjectId = Value(subjectId),
+        title = Value(title);
+  static Insertable<CollectionRelationRow> custom({
+    Expression<int>? id,
+    Expression<int>? collectionId,
+    Expression<String>? relationType,
+    Expression<int>? sortIndex,
+    Expression<int>? targetCollectionId,
+    Expression<String>? source,
+    Expression<String>? subjectId,
+    Expression<String>? title,
+    Expression<String>? coverUrl,
+    Expression<String>? coverPath,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (collectionId != null) 'collection_id': collectionId,
+      if (relationType != null) 'relation_type': relationType,
+      if (sortIndex != null) 'sort_index': sortIndex,
+      if (targetCollectionId != null)
+        'target_collection_id': targetCollectionId,
+      if (source != null) 'source': source,
+      if (subjectId != null) 'subject_id': subjectId,
+      if (title != null) 'title': title,
+      if (coverUrl != null) 'cover_url': coverUrl,
+      if (coverPath != null) 'cover_path': coverPath,
+    });
+  }
+
+  CollectionRelationsCompanion copyWith(
+      {Value<int>? id,
+      Value<int>? collectionId,
+      Value<String>? relationType,
+      Value<int>? sortIndex,
+      Value<int?>? targetCollectionId,
+      Value<String>? source,
+      Value<String>? subjectId,
+      Value<String>? title,
+      Value<String?>? coverUrl,
+      Value<String?>? coverPath}) {
+    return CollectionRelationsCompanion(
+      id: id ?? this.id,
+      collectionId: collectionId ?? this.collectionId,
+      relationType: relationType ?? this.relationType,
+      sortIndex: sortIndex ?? this.sortIndex,
+      targetCollectionId: targetCollectionId ?? this.targetCollectionId,
+      source: source ?? this.source,
+      subjectId: subjectId ?? this.subjectId,
+      title: title ?? this.title,
+      coverUrl: coverUrl ?? this.coverUrl,
+      coverPath: coverPath ?? this.coverPath,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (collectionId.present) {
+      map['collection_id'] = Variable<int>(collectionId.value);
+    }
+    if (relationType.present) {
+      map['relation_type'] = Variable<String>(relationType.value);
+    }
+    if (sortIndex.present) {
+      map['sort_index'] = Variable<int>(sortIndex.value);
+    }
+    if (targetCollectionId.present) {
+      map['target_collection_id'] = Variable<int>(targetCollectionId.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (subjectId.present) {
+      map['subject_id'] = Variable<String>(subjectId.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (coverUrl.present) {
+      map['cover_url'] = Variable<String>(coverUrl.value);
+    }
+    if (coverPath.present) {
+      map['cover_path'] = Variable<String>(coverPath.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CollectionRelationsCompanion(')
+          ..write('id: $id, ')
+          ..write('collectionId: $collectionId, ')
+          ..write('relationType: $relationType, ')
+          ..write('sortIndex: $sortIndex, ')
+          ..write('targetCollectionId: $targetCollectionId, ')
+          ..write('source: $source, ')
+          ..write('subjectId: $subjectId, ')
+          ..write('title: $title, ')
+          ..write('coverUrl: $coverUrl, ')
+          ..write('coverPath: $coverPath')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -24289,6 +24883,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $MangaSourcePreferencesTable(this);
   late final $MangaTrustedSignersTable mangaTrustedSigners =
       $MangaTrustedSignersTable(this);
+  late final $CollectionRelationsTable collectionRelations =
+      $CollectionRelationsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -24352,7 +24948,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         mangaExtensions,
         mangaOnlineSources,
         mangaSourcePreferences,
-        mangaTrustedSigners
+        mangaTrustedSigners,
+        collectionRelations
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -24523,6 +25120,20 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('galgame_tag_mappings', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('media_collections',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('collection_relations', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('media_collections',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('collection_relations', kind: UpdateKind.update),
             ],
           ),
         ],
@@ -36757,6 +37368,7 @@ typedef $$VideoScrapeMetaTableCreateCompanionBuilder = VideoScrapeMetaCompanion
   Value<String?> tagsJson,
   Value<String?> infoboxJson,
   Value<String?> detailUrl,
+  Value<int?> episodeNumber,
   required DateTime scrapedAt,
   Value<int> rowid,
 });
@@ -36775,6 +37387,7 @@ typedef $$VideoScrapeMetaTableUpdateCompanionBuilder = VideoScrapeMetaCompanion
   Value<String?> tagsJson,
   Value<String?> infoboxJson,
   Value<String?> detailUrl,
+  Value<int?> episodeNumber,
   Value<DateTime> scrapedAt,
   Value<int> rowid,
 });
@@ -36843,6 +37456,9 @@ class $$VideoScrapeMetaTableFilterComposer
 
   ColumnFilters<String> get detailUrl => $composableBuilder(
       column: $table.detailUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get episodeNumber => $composableBuilder(
+      column: $table.episodeNumber, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<DateTime> get scrapedAt => $composableBuilder(
       column: $table.scrapedAt, builder: (column) => ColumnFilters(column));
@@ -36915,6 +37531,10 @@ class $$VideoScrapeMetaTableOrderingComposer
   ColumnOrderings<String> get detailUrl => $composableBuilder(
       column: $table.detailUrl, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get episodeNumber => $composableBuilder(
+      column: $table.episodeNumber,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get scrapedAt => $composableBuilder(
       column: $table.scrapedAt, builder: (column) => ColumnOrderings(column));
 
@@ -36984,6 +37604,9 @@ class $$VideoScrapeMetaTableAnnotationComposer
   GeneratedColumn<String> get detailUrl =>
       $composableBuilder(column: $table.detailUrl, builder: (column) => column);
 
+  GeneratedColumn<int> get episodeNumber => $composableBuilder(
+      column: $table.episodeNumber, builder: (column) => column);
+
   GeneratedColumn<DateTime> get scrapedAt =>
       $composableBuilder(column: $table.scrapedAt, builder: (column) => column);
 
@@ -37045,6 +37668,7 @@ class $$VideoScrapeMetaTableTableManager extends RootTableManager<
             Value<String?> tagsJson = const Value.absent(),
             Value<String?> infoboxJson = const Value.absent(),
             Value<String?> detailUrl = const Value.absent(),
+            Value<int?> episodeNumber = const Value.absent(),
             Value<DateTime> scrapedAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
@@ -37062,6 +37686,7 @@ class $$VideoScrapeMetaTableTableManager extends RootTableManager<
             tagsJson: tagsJson,
             infoboxJson: infoboxJson,
             detailUrl: detailUrl,
+            episodeNumber: episodeNumber,
             scrapedAt: scrapedAt,
             rowid: rowid,
           ),
@@ -37079,6 +37704,7 @@ class $$VideoScrapeMetaTableTableManager extends RootTableManager<
             Value<String?> tagsJson = const Value.absent(),
             Value<String?> infoboxJson = const Value.absent(),
             Value<String?> detailUrl = const Value.absent(),
+            Value<int?> episodeNumber = const Value.absent(),
             required DateTime scrapedAt,
             Value<int> rowid = const Value.absent(),
           }) =>
@@ -37096,6 +37722,7 @@ class $$VideoScrapeMetaTableTableManager extends RootTableManager<
             tagsJson: tagsJson,
             infoboxJson: infoboxJson,
             detailUrl: detailUrl,
+            episodeNumber: episodeNumber,
             scrapedAt: scrapedAt,
             rowid: rowid,
           ),
@@ -40909,6 +41536,436 @@ typedef $$MangaTrustedSignersTableProcessedTableManager = ProcessedTableManager<
     ),
     MangaTrustedSignerRow,
     PrefetchHooks Function()>;
+typedef $$CollectionRelationsTableCreateCompanionBuilder
+    = CollectionRelationsCompanion Function({
+  Value<int> id,
+  required int collectionId,
+  required String relationType,
+  Value<int> sortIndex,
+  Value<int?> targetCollectionId,
+  required String source,
+  required String subjectId,
+  required String title,
+  Value<String?> coverUrl,
+  Value<String?> coverPath,
+});
+typedef $$CollectionRelationsTableUpdateCompanionBuilder
+    = CollectionRelationsCompanion Function({
+  Value<int> id,
+  Value<int> collectionId,
+  Value<String> relationType,
+  Value<int> sortIndex,
+  Value<int?> targetCollectionId,
+  Value<String> source,
+  Value<String> subjectId,
+  Value<String> title,
+  Value<String?> coverUrl,
+  Value<String?> coverPath,
+});
+
+final class $$CollectionRelationsTableReferences extends BaseReferences<
+    _$HibikiDatabase, $CollectionRelationsTable, CollectionRelationRow> {
+  $$CollectionRelationsTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $MediaCollectionsTable _collectionIdTable(_$HibikiDatabase db) =>
+      db.mediaCollections.createAlias(
+          'collection_relations__collection_id__media_collections__id');
+
+  $$MediaCollectionsTableProcessedTableManager get collectionId {
+    final $_column = $_itemColumn<int>('collection_id')!;
+
+    final manager =
+        $$MediaCollectionsTableTableManager($_db, $_db.mediaCollections)
+            .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_collectionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $MediaCollectionsTable _targetCollectionIdTable(_$HibikiDatabase db) =>
+      db.mediaCollections.createAlias(
+          'collection_relations__target_collection_id__media_collections__id');
+
+  $$MediaCollectionsTableProcessedTableManager? get targetCollectionId {
+    final $_column = $_itemColumn<int>('target_collection_id');
+    if ($_column == null) return null;
+    final manager =
+        $$MediaCollectionsTableTableManager($_db, $_db.mediaCollections)
+            .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_targetCollectionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$CollectionRelationsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $CollectionRelationsTable> {
+  $$CollectionRelationsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get relationType => $composableBuilder(
+      column: $table.relationType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sortIndex => $composableBuilder(
+      column: $table.sortIndex, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get source => $composableBuilder(
+      column: $table.source, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get subjectId => $composableBuilder(
+      column: $table.subjectId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get coverUrl => $composableBuilder(
+      column: $table.coverUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get coverPath => $composableBuilder(
+      column: $table.coverPath, builder: (column) => ColumnFilters(column));
+
+  $$MediaCollectionsTableFilterComposer get collectionId {
+    final $$MediaCollectionsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableFilterComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$MediaCollectionsTableFilterComposer get targetCollectionId {
+    final $$MediaCollectionsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.targetCollectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableFilterComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$CollectionRelationsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $CollectionRelationsTable> {
+  $$CollectionRelationsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get relationType => $composableBuilder(
+      column: $table.relationType,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sortIndex => $composableBuilder(
+      column: $table.sortIndex, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get source => $composableBuilder(
+      column: $table.source, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get subjectId => $composableBuilder(
+      column: $table.subjectId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get coverUrl => $composableBuilder(
+      column: $table.coverUrl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get coverPath => $composableBuilder(
+      column: $table.coverPath, builder: (column) => ColumnOrderings(column));
+
+  $$MediaCollectionsTableOrderingComposer get collectionId {
+    final $$MediaCollectionsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableOrderingComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$MediaCollectionsTableOrderingComposer get targetCollectionId {
+    final $$MediaCollectionsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.targetCollectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableOrderingComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$CollectionRelationsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $CollectionRelationsTable> {
+  $$CollectionRelationsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get relationType => $composableBuilder(
+      column: $table.relationType, builder: (column) => column);
+
+  GeneratedColumn<int> get sortIndex =>
+      $composableBuilder(column: $table.sortIndex, builder: (column) => column);
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<String> get subjectId =>
+      $composableBuilder(column: $table.subjectId, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get coverUrl =>
+      $composableBuilder(column: $table.coverUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get coverPath =>
+      $composableBuilder(column: $table.coverPath, builder: (column) => column);
+
+  $$MediaCollectionsTableAnnotationComposer get collectionId {
+    final $$MediaCollectionsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$MediaCollectionsTableAnnotationComposer get targetCollectionId {
+    final $$MediaCollectionsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.targetCollectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$CollectionRelationsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $CollectionRelationsTable,
+    CollectionRelationRow,
+    $$CollectionRelationsTableFilterComposer,
+    $$CollectionRelationsTableOrderingComposer,
+    $$CollectionRelationsTableAnnotationComposer,
+    $$CollectionRelationsTableCreateCompanionBuilder,
+    $$CollectionRelationsTableUpdateCompanionBuilder,
+    (CollectionRelationRow, $$CollectionRelationsTableReferences),
+    CollectionRelationRow,
+    PrefetchHooks Function({bool collectionId, bool targetCollectionId})> {
+  $$CollectionRelationsTableTableManager(
+      _$HibikiDatabase db, $CollectionRelationsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CollectionRelationsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CollectionRelationsTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$CollectionRelationsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<int> collectionId = const Value.absent(),
+            Value<String> relationType = const Value.absent(),
+            Value<int> sortIndex = const Value.absent(),
+            Value<int?> targetCollectionId = const Value.absent(),
+            Value<String> source = const Value.absent(),
+            Value<String> subjectId = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<String?> coverUrl = const Value.absent(),
+            Value<String?> coverPath = const Value.absent(),
+          }) =>
+              CollectionRelationsCompanion(
+            id: id,
+            collectionId: collectionId,
+            relationType: relationType,
+            sortIndex: sortIndex,
+            targetCollectionId: targetCollectionId,
+            source: source,
+            subjectId: subjectId,
+            title: title,
+            coverUrl: coverUrl,
+            coverPath: coverPath,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required int collectionId,
+            required String relationType,
+            Value<int> sortIndex = const Value.absent(),
+            Value<int?> targetCollectionId = const Value.absent(),
+            required String source,
+            required String subjectId,
+            required String title,
+            Value<String?> coverUrl = const Value.absent(),
+            Value<String?> coverPath = const Value.absent(),
+          }) =>
+              CollectionRelationsCompanion.insert(
+            id: id,
+            collectionId: collectionId,
+            relationType: relationType,
+            sortIndex: sortIndex,
+            targetCollectionId: targetCollectionId,
+            source: source,
+            subjectId: subjectId,
+            title: title,
+            coverUrl: coverUrl,
+            coverPath: coverPath,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$CollectionRelationsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: (
+              {collectionId = false, targetCollectionId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (collectionId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.collectionId,
+                    referencedTable: $$CollectionRelationsTableReferences
+                        ._collectionIdTable(db),
+                    referencedColumn: $$CollectionRelationsTableReferences
+                        ._collectionIdTable(db)
+                        .id,
+                  ) as T;
+                }
+                if (targetCollectionId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.targetCollectionId,
+                    referencedTable: $$CollectionRelationsTableReferences
+                        ._targetCollectionIdTable(db),
+                    referencedColumn: $$CollectionRelationsTableReferences
+                        ._targetCollectionIdTable(db)
+                        .id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$CollectionRelationsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $CollectionRelationsTable,
+    CollectionRelationRow,
+    $$CollectionRelationsTableFilterComposer,
+    $$CollectionRelationsTableOrderingComposer,
+    $$CollectionRelationsTableAnnotationComposer,
+    $$CollectionRelationsTableCreateCompanionBuilder,
+    $$CollectionRelationsTableUpdateCompanionBuilder,
+    (CollectionRelationRow, $$CollectionRelationsTableReferences),
+    CollectionRelationRow,
+    PrefetchHooks Function({bool collectionId, bool targetCollectionId})>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -41037,4 +42094,6 @@ class $HibikiDatabaseManager {
           _db, _db.mangaSourcePreferences);
   $$MangaTrustedSignersTableTableManager get mangaTrustedSigners =>
       $$MangaTrustedSignersTableTableManager(_db, _db.mangaTrustedSigners);
+  $$CollectionRelationsTableTableManager get collectionRelations =>
+      $$CollectionRelationsTableTableManager(_db, _db.collectionRelations);
 }

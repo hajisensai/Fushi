@@ -83,8 +83,278 @@ class TmdbClient {
     return parseTmdbMultiResponse(utf8.decode(response.bodyBytes));
   }
 
+  /// 拉取 tv 条目详情 `GET /3/tv/{id}`（TODO-2484：季列表作合集「相关作品」；
+  /// TODO-2491：确认条目是 tv）。404（条目不存在）→ null。
+  ///
+  /// 其余网络失败 / 非 2xx / JSON 异常 → 抛 [ScrapeNetworkException]。
+  Future<TmdbTvDetail?> fetchTvDetail(String tvId) async {
+    final String? body = await _getJsonOrNullOn404('/tv/$tvId', 'TMDB tv');
+    return body == null ? null : parseTmdbTvDetail(body);
+  }
+
+  /// 拉取 tv 某一季的分集列表 `GET /3/tv/{id}/season/{n}`（TODO-2491 集级
+  /// 刮削）。404（该季不存在）→ 空列表（调用方按「源无此季」计未匹配）。
+  Future<List<TmdbEpisodeInfo>> fetchSeasonEpisodes(
+    String tvId,
+    int seasonNumber,
+  ) async {
+    final String? body = await _getJsonOrNullOn404(
+        '/tv/$tvId/season/$seasonNumber', 'TMDB season');
+    return body == null
+        ? const <TmdbEpisodeInfo>[]
+        : parseTmdbSeasonEpisodes(body);
+  }
+
+  /// 拉取 movie 条目的所属系列引用 `GET /3/movie/{id}` 的
+  /// `belongs_to_collection`（TODO-2484）。条目 404 或不属于任何系列 → null。
+  Future<TmdbMovieCollectionRef?> fetchMovieCollectionRef(
+    String movieId,
+  ) async {
+    final String? body =
+        await _getJsonOrNullOn404('/movie/$movieId', 'TMDB movie');
+    return body == null ? null : parseTmdbMovieCollectionRef(body);
+  }
+
+  /// 拉取 TMDB 系列（collection）的成员列表 `GET /3/collection/{id}`
+  /// （TODO-2484：movie 合集的「相关作品」）。404 → 空列表。
+  Future<List<TmdbCollectionPart>> fetchCollectionParts(
+    String tmdbCollectionId,
+  ) async {
+    final String? body = await _getJsonOrNullOn404(
+        '/collection/$tmdbCollectionId', 'TMDB collection');
+    return body == null
+        ? const <TmdbCollectionPart>[]
+        : parseTmdbCollectionParts(body);
+  }
+
+  /// 共享 GET：`https://api.themoviedb.org/3<path>?language=zh-CN&api_key=…`。
+  /// 404 返回 null（各端点自定语义）；其余非 2xx / 网络失败抛
+  /// [ScrapeNetworkException]。异常 message 统一 [redactCredentialsInText]
+  /// 脱敏——TMDB 是 key-in-query，`http.ClientException.toString()` 会带完整
+  /// URL（BUG-1219 红线，与 [search] 同源收口）。
+  Future<String?> _getJsonOrNullOn404(String path, String what) async {
+    final Uri uri = Uri.parse('https://api.themoviedb.org/3$path')
+        .replace(queryParameters: <String, String>{
+      'language': 'zh-CN',
+      'api_key': _apiKey,
+    });
+    final http.Response response;
+    try {
+      response = await _client.get(
+        uri,
+        headers: const <String, String>{'Accept': 'application/json'},
+      ).timeout(_timeout);
+    } on TimeoutException {
+      throw ScrapeNetworkException('$what timed out');
+    } catch (e) {
+      throw ScrapeNetworkException(
+        redactCredentialsInText('$what request failed: $e'),
+      );
+    }
+    if (response.statusCode == 404) return null;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ScrapeNetworkException(
+        '$what HTTP ${response.statusCode}',
+        statusCode: response.statusCode,
+      );
+    }
+    return utf8.decode(response.bodyBytes);
+  }
+
   /// 关闭内部 client（若为默认自建）。
   void close() => _client.close();
+}
+
+/// TMDB 条目种类（tv / movie）。合集绑定的 subjectId 是纯数字，两个 id 空间
+/// 独立且会撞号，必须由 [tmdbKindFromDetailUrl]（detailUrl 里带 `/tv/` 或
+/// `/movie/`）或调用方上下文判定，不能按 id 猜。
+enum TmdbSubjectKind { tv, movie }
+
+/// 纯函数：从 TMDB detailUrl（`https://www.themoviedb.org/tv/123` 式）解析
+/// 条目种类；不是 TMDB 详情 URL → null。
+TmdbSubjectKind? tmdbKindFromDetailUrl(String? detailUrl) {
+  if (detailUrl == null) return null;
+  final Uri? uri = Uri.tryParse(detailUrl.trim());
+  if (uri == null || !uri.host.endsWith('themoviedb.org')) return null;
+  final List<String> segments = uri.pathSegments;
+  if (segments.isEmpty) return null;
+  return switch (segments.first) {
+    'tv' => TmdbSubjectKind.tv,
+    'movie' => TmdbSubjectKind.movie,
+    _ => null,
+  };
+}
+
+/// TMDB tv 详情投影：季列表（TODO-2484 相关作品用）。
+class TmdbTvDetail {
+  const TmdbTvDetail({required this.name, required this.seasons});
+
+  final String? name;
+  final List<TmdbSeasonRef> seasons;
+}
+
+/// TMDB tv 的一季。
+class TmdbSeasonRef {
+  const TmdbSeasonRef({
+    required this.seasonId,
+    required this.seasonNumber,
+    required this.name,
+    this.airDate,
+    this.posterPath,
+  });
+
+  /// 季自身的 TMDB id（全局唯一，与 tv id 不同空间），字符串化。
+  final String seasonId;
+
+  /// 季号（0 = 特别篇）。
+  final int seasonNumber;
+
+  final String name;
+  final String? airDate;
+  final String? posterPath;
+}
+
+/// TMDB 分集（`/3/tv/{id}/season/{n}` 的 `episodes[]` 投影）。
+class TmdbEpisodeInfo {
+  const TmdbEpisodeInfo({
+    required this.episodeNumber,
+    this.title,
+    this.summary,
+    this.airDate,
+    this.stillPath,
+  });
+
+  final int episodeNumber;
+  final String? title;
+  final String? summary;
+  final String? airDate;
+
+  /// 剧照相对路径（`/xxx.jpg`），完整 URL = [TmdbClient.posterBase] + 本值。
+  final String? stillPath;
+}
+
+/// TMDB movie 的所属系列引用（`belongs_to_collection`）。
+class TmdbMovieCollectionRef {
+  const TmdbMovieCollectionRef({required this.collectionId, this.name});
+
+  /// TMDB collection id，字符串化。
+  final String collectionId;
+  final String? name;
+}
+
+/// TMDB 系列成员（`/3/collection/{id}` 的 `parts[]` 投影）。
+class TmdbCollectionPart {
+  const TmdbCollectionPart({
+    required this.movieId,
+    required this.title,
+    this.releaseDate,
+    this.posterPath,
+  });
+
+  /// 成员 movie id，字符串化。
+  final String movieId;
+  final String title;
+  final String? releaseDate;
+  final String? posterPath;
+}
+
+/// 纯函数：解析 `/3/tv/{id}` 响应为 [TmdbTvDetail]。JSON 结构异常 → 抛
+/// [ScrapeNetworkException]。
+TmdbTvDetail parseTmdbTvDetail(String body) {
+  final Map<String, Object?> decoded = _decodeObject(body, 'TMDB tv');
+  final List<TmdbSeasonRef> seasons = <TmdbSeasonRef>[];
+  final Object? seasonsNode = decoded['seasons'];
+  if (seasonsNode is List<Object?>) {
+    for (final Object? item in seasonsNode) {
+      if (item is! Map<String, Object?>) continue;
+      final Object? id = item['id'];
+      final Object? number = item['season_number'];
+      final String? name = _nonEmptyString(item['name']);
+      if (id is! int || number is! int || name == null) continue;
+      seasons.add(TmdbSeasonRef(
+        seasonId: '$id',
+        seasonNumber: number,
+        name: name,
+        airDate: _nonEmptyString(item['air_date']),
+        posterPath: _nonEmptyString(item['poster_path']),
+      ));
+    }
+  }
+  return TmdbTvDetail(name: _nonEmptyString(decoded['name']), seasons: seasons);
+}
+
+/// 纯函数：解析 `/3/tv/{id}/season/{n}` 响应的分集列表。缺 `episode_number`
+/// 的项跳过。JSON 结构异常 → 抛 [ScrapeNetworkException]。
+List<TmdbEpisodeInfo> parseTmdbSeasonEpisodes(String body) {
+  final Map<String, Object?> decoded = _decodeObject(body, 'TMDB season');
+  final Object? episodesNode = decoded['episodes'];
+  final List<TmdbEpisodeInfo> episodes = <TmdbEpisodeInfo>[];
+  if (episodesNode is List<Object?>) {
+    for (final Object? item in episodesNode) {
+      if (item is! Map<String, Object?>) continue;
+      final Object? number = item['episode_number'];
+      if (number is! int || number <= 0) continue;
+      episodes.add(TmdbEpisodeInfo(
+        episodeNumber: number,
+        title: _nonEmptyString(item['name']),
+        summary: _nonEmptyString(item['overview']),
+        airDate: _nonEmptyString(item['air_date']),
+        stillPath: _nonEmptyString(item['still_path']),
+      ));
+    }
+  }
+  return episodes;
+}
+
+/// 纯函数：从 `/3/movie/{id}` 响应取 `belongs_to_collection`；不属于任何系列
+/// → null。JSON 结构异常 → 抛 [ScrapeNetworkException]。
+TmdbMovieCollectionRef? parseTmdbMovieCollectionRef(String body) {
+  final Map<String, Object?> decoded = _decodeObject(body, 'TMDB movie');
+  final Object? node = decoded['belongs_to_collection'];
+  if (node is! Map<String, Object?>) return null;
+  final Object? id = node['id'];
+  if (id is! int) return null;
+  return TmdbMovieCollectionRef(
+    collectionId: '$id',
+    name: _nonEmptyString(node['name']),
+  );
+}
+
+/// 纯函数：解析 `/3/collection/{id}` 响应的成员电影列表。缺 id/标题的项跳过。
+/// JSON 结构异常 → 抛 [ScrapeNetworkException]。
+List<TmdbCollectionPart> parseTmdbCollectionParts(String body) {
+  final Map<String, Object?> decoded = _decodeObject(body, 'TMDB collection');
+  final Object? partsNode = decoded['parts'];
+  final List<TmdbCollectionPart> parts = <TmdbCollectionPart>[];
+  if (partsNode is List<Object?>) {
+    for (final Object? item in partsNode) {
+      if (item is! Map<String, Object?>) continue;
+      final Object? id = item['id'];
+      final String? title = _nonEmptyString(item['title']);
+      if (id is! int || title == null) continue;
+      parts.add(TmdbCollectionPart(
+        movieId: '$id',
+        title: title,
+        releaseDate: _nonEmptyString(item['release_date']),
+        posterPath: _nonEmptyString(item['poster_path']),
+      ));
+    }
+  }
+  return parts;
+}
+
+/// 解 JSON 顶层对象；非对象/解码失败 → 抛 [ScrapeNetworkException]。
+Map<String, Object?> _decodeObject(String body, String what) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(body);
+  } catch (e) {
+    throw ScrapeNetworkException('$what JSON decode failed: $e');
+  }
+  if (decoded is! Map<String, Object?>) {
+    throw ScrapeNetworkException('$what response not a JSON object');
+  }
+  return decoded;
 }
 
 /// 纯函数：解析 TMDB `/search/multi` 响应，滤掉非 tv/movie，缺 poster_path 跳过。
