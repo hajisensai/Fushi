@@ -14,6 +14,8 @@ import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart
 import 'package:hibiki/src/sync/deletion_disclosure.dart';
 import 'package:hibiki/src/sync/deletion_prompt.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
+
+import '../pages/reader_history_source_corpus.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 void main() {
@@ -61,6 +63,43 @@ void main() {
       await tester.pump();
 
       expect(got, DeleteScope.keepLocalOnly);
+    });
+  });
+
+  /// 源码守卫：每一个会摆出「从所有设备删除」勾选框的入口，都必须先问过通道判据。
+  ///
+  /// 这条守卫是**被真实疏漏催生的**：初版修复只接了 `_confirmMediaDelete` 与三个
+  /// `showDeleteScopeConfirm` 调用点，漏掉了书架批删 `_batchDeleteConfirm` 里第二个
+  /// `ReaderHistoryDeleteDialog` 构造点——它继续无条件显示那个兑现不了的勾选框。
+  /// 死角②的复发方式就是「又冒出一个没接线的入口」，所以按入口数量而非行为来钉。
+  group('入口覆盖源码守卫（TODO-2470 死角②）', () {
+    test('每个 ReaderHistoryDeleteDialog 构造点都显式传 showSyncScope', () {
+      final String source = readReaderHistorySource();
+      // 语料含 dialogs.part.dart 里的类声明本身（`const ReaderHistoryDeleteDialog({`），
+      // 它不是调用点，要从计数里剔掉。
+      final int ctorCount =
+          'ReaderHistoryDeleteDialog('.allMatches(source).length -
+              'const ReaderHistoryDeleteDialog('.allMatches(source).length;
+      final int gatedCount = 'showSyncScope:'.allMatches(source).length;
+
+      expect(ctorCount, greaterThan(0), reason: '书架页必须存在删除确认框构造点');
+      expect(
+        gatedCount,
+        ctorCount,
+        reason: '有 $ctorCount 个构造点但只有 $gatedCount 处传了 showSyncScope——'
+            '漏接的那个入口会在没有任何同步通道时继续显示「从所有设备删除」，'
+            '正是 TODO-2470 死角②的复发形态',
+      );
+    });
+
+    test('每个 showDeleteScopeConfirm 调用点都显式传 db', () {
+      final String source = readReaderHistorySource();
+      // 书架页自身不用通用弹窗；断言写成「有调用就必须带 db」，防止将来
+      // 有人在此页新引入一个不查判据的调用点。
+      final int calls = 'showDeleteScopeConfirm('.allMatches(source).length;
+      if (calls == 0) return;
+      expect('db:'.allMatches(source).length, greaterThanOrEqualTo(calls),
+          reason: '通用删除弹窗必须传 db，否则它无从得知本机有没有传播通道');
     });
   });
 

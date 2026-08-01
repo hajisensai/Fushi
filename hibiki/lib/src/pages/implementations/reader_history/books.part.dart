@@ -512,6 +512,13 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         : mediaCount == 0
             ? t.batch_dissolve_confirm(m: collectionCount)
             : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
+    // TODO-2470 死角②：勾选框只在它真能兑现时才摆出来，两个条件缺一不可——
+    //   ① 本轮真会删媒体本体（纯解散合集 mediaCount==0 只解除分组，scope 无处可用，
+    //      合集自身的删除传播走 collection_sync_engine；与视频页同一判断）；
+    //   ② 本机存在删除传播通道（纯本地零网络判据）。
+    final bool canSyncEverywhere = mediaCount > 0 &&
+        await hasDeletionPropagationChannel(SyncRepository(appModel.database));
+    if (!mounted) return;
     final DeleteScope? scope = await showAppDialog<DeleteScope>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
@@ -524,6 +531,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
             : buildDeletionDisclosure(
                 target: DeletionDisclosureTarget.shelfBook,
               ),
+        showSyncScope: canSyncEverywhere,
         onConfirm: (DeleteScope s) => Navigator.pop(ctx, s),
       ),
     );
