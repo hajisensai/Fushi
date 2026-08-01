@@ -399,9 +399,16 @@ class DictionaryPopupWebViewState
   /// 安装 capture 阶段的键盘 + 鼠标桥；后续注入只热更新 token 表（listener 只装
   /// 一次）。热槽 WebView 跨查词长期存活，用户随时可能改键，故表必须可更新——
   /// 旧版把键表冻结在首次注入的闭包里，改键后弹窗持焦时仍按老键位响应。
+  ///
+  /// [hostOwnsPointer] 透传给生成器：守卫必须显式声明是哪条指针所有权下的脚本，
+  /// 否则同一份断言在 Windows（指针归宿主、桥不装鼠标监听）与 Linux CI 上测的不是
+  /// 同一件事（BUG-1347）。
   @visibleForTesting
-  static String debugHostInputBridgeScript(DictionaryPopupInputSpec spec) =>
-      dictionaryPopupInputBridgeScript(spec);
+  static String debugHostInputBridgeScript(
+    DictionaryPopupInputSpec spec, {
+    bool? hostOwnsPointer,
+  }) =>
+      dictionaryPopupInputBridgeScript(spec, hostOwnsPointer: hostOwnsPointer);
 
   void _setHostInputBridge() {
     if (_controller == null || !_ready) return;

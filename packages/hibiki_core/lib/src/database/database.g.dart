@@ -4681,7 +4681,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   /// `epubPath`=PDF 绝对路径、`extractDir`=占位、`chapterCount`=页数、`chaptersJson`=`'[]'`。
   final String format;
 
-  /// 漫画阅读模式覆盖（漫画 OCR，v52）：`null`=按页图长宽比自动判定（默认，横长跨页
+  /// 漫画阅读模式覆盖（漫画 OCR，v53）：`null`=按页图长宽比自动判定（默认，横长跨页
   /// 走 `'spread'` 双页布局、纵长走 `'webtoon'` 长条纵向连读）；非 null 为用户手动覆盖，
   /// 取值 `'spread'`（跨页/翻页）或 `'webtoon'`（长条纵向）。仅 `format='manga'` 的行有意义，
   /// 其它书身份恒 null。null 语义即「跟随自动判定」，与显式取值区分。

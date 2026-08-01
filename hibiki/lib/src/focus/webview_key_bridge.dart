@@ -78,9 +78,14 @@ String webViewKeyBridgeScript({
   bool forwardRepeats = true,
   bool stopPropagation = false,
 }) {
+  // 空键表 + 不装鼠标监听**是合法的**：脚本每次注入都覆盖 window 上的 token 表，
+  // 宿主靠「注入空 spec」来清掉热槽 WebView 上残留的旧表（弹窗跨查词长期存活）。
+  // 此前这里断言「没键又没鼠标就是死代码」，那在指针归宿主的平台上会直接把清表
+  // 注入打成断言失败（BUG-1269 复诉）。真正的死代码是**一次都没装过 listener 又
+  // 永远没有表**，那不是本函数能判定的。
   assert(
-    keys.isNotEmpty || installMouseListeners,
-    'a keyboard-only bridge with no keys would be dead code',
+    keys.isNotEmpty || installMouseListeners || mouseButtons.isEmpty,
+    'a bridge with mouse tokens but no mouse listeners can never fire them',
   );
   final String keyList = keys.map(_jsStringLiteral).join(', ');
   final String buttonList = mouseButtons.join(', ');

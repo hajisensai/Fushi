@@ -1,11 +1,13 @@
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/utils.dart';
 
@@ -446,6 +448,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onRenderError,
     this.inputSpec = const DictionaryPopupInputSpec(),
     this.onHostInputToken,
+    this.debugHostOwnsPointer,
     this.headerWidget,
     this.overlayWidget,
     this.isDark = false,
@@ -544,6 +547,10 @@ class DictionaryPopupLayer extends StatelessWidget {
 
   /// [inputSpec] 命中时弹窗回传的 token。
   final ValueChanged<String>? onHostInputToken;
+
+  /// 仅测试注入：覆盖 [hostOwnsDictionaryPopupPointerInput]（默认 null = 按运行平台）。
+  @visibleForTesting
+  final bool? debugHostOwnsPointer;
   final Widget? headerWidget;
   final Widget? overlayWidget;
   final bool isDark;
@@ -691,7 +698,83 @@ class DictionaryPopupLayer extends StatelessWidget {
             child: content,
           );
 
-    return _maybeWrapResizeGrip(shell);
+    return _maybeWrapHostKeyInput(
+      _maybeWrapHostPointerInput(_maybeWrapResizeGrip(shell)),
+    );
+  }
+
+  /// BUG-1347 键盘那一半：Flutter 焦点落在弹窗子树里时，把绑到宿主动作的按键交回宿主。
+  ///
+  /// 「第一层有效、嵌套无效」就断在焦点链上：视频/首页查词把整棵浮层挂在**根 Overlay**
+  /// （为了盖过 media_kit 全屏路由），而宿主的快捷键入口是**页面自己那层**
+  /// `Focus(onKeyEvent:)`。用户点弹窗里的词唤出嵌套层时，平台视图会把 Flutter 焦点
+  /// 请求过去（`custom_platform_view` 的 `onPointerDown` → `requestFocus`），此后
+  /// `KeyEvent` 沿 根 Overlay → Navigator → App 冒泡，**永远到不了**宿主页面的 `Focus`
+  /// ——不只是关词典，整条宿主快捷键通道都断。第一层之所以有效，只是因为它是从页面里
+  /// 点出来的、焦点还留在页面上。
+  ///
+  /// 在弹窗层自己挂 `Focus` 接住即可：命中就交回宿主并消费，未命中返回 `ignored`
+  /// 继续冒泡（弹窗在页面 `Stack` 里的宿主——如阅读器——照旧走它原本那条链，不双触发）。
+  /// `canRequestFocus: false` + `skipTraversal`：本节点只做拦截，不参与遍历、不抢焦点。
+  ///
+  /// 与弹窗内的 JS 桥天然互斥，故**不需要平台判据**：按键只会到达其中一个——DOM 收得到
+  /// keydown 的平台（Android 等原生 WebView），Flutter 这边根本收不到 `KeyEvent`。
+  Widget _maybeWrapHostKeyInput(Widget child) {
+    final ValueChanged<String>? sink = onHostInputToken;
+    if (sink == null || inputSpec.keyTokens.isEmpty) return child;
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (FocusNode node, KeyEvent event) {
+        // 只在按下沿触发：关词典是一次性动作，按住不该逐层关掉整条弹窗栈
+        // （与 JS 桥的 `forwardRepeats: false` 同语义）。
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        final String? token = dictionaryPopupKeyToken(
+          key: event.logicalKey,
+          modifiers: activeModifierKeys(),
+          spec: inputSpec,
+        );
+        if (token == null) return KeyEventResult.ignored;
+        sink(token);
+        return KeyEventResult.handled;
+      },
+      child: child,
+    );
+  }
+
+  /// BUG-1269 复诉（鼠标键那一半）：在**宿主拥有指针**的平台（Windows，见
+  /// [hostOwnsDictionaryPopupPointerInput]）就地消费绑到弹窗表面的鼠标键。
+  ///
+  /// 为什么不能只靠弹窗里的 JS 桥：Windows 的 WebView2 是无窗口 composition 模式，
+  /// 指针先到 Flutter 再由 fork 转发进去，而 fork 的 `PointerButton` 枚举里**没有**
+  /// 侧键——后退/前进在转发前就被折成 `none` 丢掉。于是「关闭词典」绑侧键时，弹窗
+  /// DOM 里根本不会发生 `mousedown`，桥永远拿不到 `Mouse3`/`Mouse4`。而指针明明已经
+  /// 到过 Flutter：这里旁听同一次按下即可，不必让 native 把它送进 WebView 再绕回来
+  /// （那样还会顺带打开 Chromium 的「侧键=历史后退」，阅读器正文换章有历史会乱跳）。
+  ///
+  /// 只旁听、不消费：[Listener] 默认 `deferToChild`，且不做任何 hit-test 拦截，
+  /// WebView 的正常点击 / 划词 / 滑动关闭 / 尺寸把手全部照旧（Never break userspace）。
+  /// 命中后走的 token 与 JS 桥**完全同形**（`Mouse<n>`），汇进同一个
+  /// [onHostInputToken] → 同一个 resolve → 同一个宿主落地入口，没有第二套语义。
+  Widget _maybeWrapHostPointerInput(Widget child) {
+    final ValueChanged<String>? sink = onHostInputToken;
+    // 判据默认取运行平台；测试显式注入，否则同一份守卫在 Windows 上过、Linux CI 上
+    // 静默变成另一条分支（本机绿 / CI 绿但测的不是同一件事）。
+    final bool byHost =
+        debugHostOwnsPointer ?? hostOwnsDictionaryPopupPointerInput;
+    if (sink == null || !byHost) return child;
+    return Listener(
+      onPointerDown: (PointerDownEvent event) {
+        if (event.kind != PointerDeviceKind.mouse) return;
+        final String? token = dictionaryPopupPointerToken(
+          buttons: event.buttons,
+          spec: inputSpec,
+        );
+        if (token == null) return;
+        sink(token);
+      },
+      child: child,
+    );
   }
 
   /// 尺寸拖拽（Phase B）：仅当 [showResizeGrip] 且已接线 [onResizeUpdate] 时，在弹窗

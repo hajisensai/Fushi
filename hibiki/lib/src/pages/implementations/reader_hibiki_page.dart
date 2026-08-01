@@ -2674,34 +2674,25 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return Center(child: adaptiveIndicator(context: context));
     }
     final Widget webView = _buildWebView();
-    // BUG-379: 歌词模式（LyricsModeHtml）是独立 HTML，没有 window.hoshiReader，
-    // _applyChromeInsets 对它整体 early-return，正文那套「告诉 WebView 底栏预留高度」
-    // 的机制对歌词页完全失效。于是歌词 WebView 仍 Positioned.fill 铺满全屏，底栏
-    // （_buildAudiobookBar，bottom:0）盖在其上，歌词文档级 CSS 滚动条（主题化的细条）
-    // 沿整屏高度绘制，底部一段被绘制进底栏区域，看上去像「进度条跑进底栏里」。
-    //
-    // 正文模式滚动条被原生关闭（verticalScrollBarEnabled:false）且 body 经 setChromeInsets
-    // 推离底栏，所以不暴露此问题；唯独歌词页两条都不成立。这里在 Flutter 侧把歌词 WebView
-    // 收缩到底栏之上（底栏可见时留 _readerBottomReserve），视口本身不再与底栏重叠，
-    // CSS 滚动条自然只画在歌词区域内。底栏可见条件与 _buildBottomChrome / popupBottomReserve
-    // 保持一致（_hasEverLoaded && _showChrome），_showChrome 切换会触发 _rebuild 重建本树。
-    // BUG-1343：歌词 / spread 都是独立 HTML，不读取正文引擎的 chromeTopInset。
-    // macOS 顶部 DragToMoveArea 叠在 WebView 之上时，独立文档必须由 Flutter 侧缩进，
-    // 否则首行歌词或整页图会落到拖拽区下面且无法交互。
-    final double independentDocumentTopInset =
-        (_lyricsMode || _spreadDocumentLoaded) ? _macosWindowTitlebarInset : 0;
-    final double lyricsBottomInset =
-        _lyricsMode && _hasEverLoaded && _showChrome ? _readerBottomReserve : 0;
-    if (independentDocumentTopInset > 0 || lyricsBottomInset > 0) {
-      return Padding(
-        padding: EdgeInsets.only(
-          top: independentDocumentTopInset,
-          bottom: lyricsBottomInset,
-        ),
-        child: webView,
-      );
-    }
-    return webView;
+    // BUG-379 / BUG-1343：歌词模式（LyricsModeHtml）与 spread 整页图都是独立 HTML，
+    // 没有 window.hoshiReader，_applyChromeInsets 对它们整体 early-return，正文那套
+    // 「告诉 WebView 预留多少」的机制对它们失效，只能由 Flutter 侧收缩视口本身。
+    // 留多少是 [independentDocumentInsets] 说了算（单一真相源，行为单测直接钉它）；
+    // 这里只负责喂当前状态并按结果包 Padding。
+    // BUG-1381：底部预留曾以 `EdgeInsets.only(bottom: _readerBottomReserve)` 这个**写法**
+    // 被静态守卫钉住，PR#670 把顶/底两笔留白合成一个 Padding 后写法变了、行为没变，
+    // 守卫却红了。改由纯函数承载契约后，守卫钉的是「预留来自它」而非某种拼写。
+    // _showChrome / _hasEverLoaded 切换会触发 _rebuild 重建本树。
+    final EdgeInsets independentDocumentPadding = independentDocumentInsets(
+      lyricsMode: _lyricsMode,
+      spreadDocumentLoaded: _spreadDocumentLoaded,
+      // 底栏占位条件与 _buildBottomChrome / popupBottomReserve 一致。
+      chromeOccupiesLayout: _hasEverLoaded && _showChrome,
+      bottomReserve: _readerBottomReserve,
+      titlebarInset: _macosWindowTitlebarInset,
+    );
+    if (independentDocumentPadding == EdgeInsets.zero) return webView;
+    return Padding(padding: independentDocumentPadding, child: webView);
   }
 
   String _buildStyleTag() {

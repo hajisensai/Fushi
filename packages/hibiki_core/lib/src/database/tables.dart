@@ -285,7 +285,7 @@ class DictionaryHistory extends Table {
 // ── clipboard_history ───────────────────────────────────────────────
 // 桌面「剪贴板复制历史」——查词面板/瞬态浮窗的历史按钮读取。position 保存内存
 // List 的顺序（tail=最新），content=去重后的复制文本，copiedAt=复制时刻毫秒戳。
-// 建表由 database.dart onUpgrade v49 负责；写入走 ClipboardHistoryRepository 的
+// 建表由 database.dart onUpgrade v50 负责；写入走 ClipboardHistoryRepository 的
 // replaceAll（delete + batch insert），无需 autoIncrement id。
 @DataClassName('ClipboardHistoryRow')
 class ClipboardHistory extends Table {
@@ -363,7 +363,7 @@ class EpubBooks extends Table {
   /// `epubPath`=PDF 绝对路径、`extractDir`=占位、`chapterCount`=页数、`chaptersJson`=`'[]'`。
   TextColumn get format => text().withDefault(const Constant('epub'))();
 
-  /// 漫画阅读模式覆盖（漫画 OCR，v52）：`null`=按页图长宽比自动判定（默认，横长跨页
+  /// 漫画阅读模式覆盖（漫画 OCR，v53）：`null`=按页图长宽比自动判定（默认，横长跨页
   /// 走 `'spread'` 双页布局、纵长走 `'webtoon'` 长条纵向连读）；非 null 为用户手动覆盖，
   /// 取值 `'spread'`（跨页/翻页）或 `'webtoon'`（长条纵向）。仅 `format='manga'` 的行有意义，
   /// 其它书身份恒 null。null 语义即「跟随自动判定」，与显式取值区分。
@@ -1475,7 +1475,7 @@ class GalgameSessions extends Table {
 }
 
 // ── galgame_tag_mappings ────────────────────────────────────────────
-/// v57（BUG-1113「游戏没有标签」）：游戏 ↔ **用户标签** 多对多映射。标签定义复用
+/// v59（BUG-1113「游戏没有标签」）：游戏 ↔ **用户标签** 多对多映射。标签定义复用
 /// 共享的 [BookTags]，与 EPUB（[BookTagMappings]）、SRT（[SrtBookTagMappings]）、
 /// 视频（[VideoBookTagMappings]）、合集（[CollectionTagMappings]）**同一个标签池**
 /// ——这正是本表存在的理由：上层筛选栏 / 标签管理页早已是四种媒体共用，唯独游戏
@@ -1509,7 +1509,9 @@ class GalgameTagMappings extends Table {
 }
 
 // ── manga_extension_stores ──────────────────────────────────────────
-/// v63：用户自行添加的 Mihon 扩展仓库。Hibiki 不预置第三方仓库。
+/// v65：用户自行添加的 Mihon 扩展仓库。Hibiki 不预置第三方仓库。
+/// （本迁移在 PR 分支上先后写作 v63 / v64，两次都与 develop 已落地的迁移撞号，
+///  最终顺延到 v65；见 database.dart 的 `if (from < 65)` 块。）
 @DataClassName('MangaExtensionStoreRow')
 class MangaExtensionStores extends Table {
   /// 仓库入口 URL 同时是稳定身份；更新时 URL 不随仓库显示名变化。

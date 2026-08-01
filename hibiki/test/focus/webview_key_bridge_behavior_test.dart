@@ -29,18 +29,28 @@ void main() {
           reason: 'behavior harness ${harness.path} must exist');
 
       // 生成各用例的真实脚本——与生产注入走的是同一个生成函数，不是手抄的副本。
+      //
+      // 本用例验证的是**弹窗内 JS 桥**的行为，故显式声明「指针归 WebView」
+      // （`hostOwnsPointer: false`）。不写死这一条的话，脚本里有没有鼠标监听会随
+      // 跑测试的机器变（Windows 上指针归宿主、桥不装鼠标监听），同一份守卫在本机和
+      // Linux CI 上测的就不是同一件事——Windows 直接红，CI 绿（BUG-1269 复诉）。
+      // Windows 那条路由宿主侧的 dictionary_popup_pointer_input_test 覆盖。
       final Map<String, String> scripts = <String, String>{
         'escapeAndMouseBack': dictionaryPopupInputBridgeScript(
           const DictionaryPopupInputSpec(
             keyTokens: <String>['Escape'],
             mouseButtons: <int>[3],
           ),
+          hostOwnsPointer: false,
         ),
         'ctrlKeyD': dictionaryPopupInputBridgeScript(
           const DictionaryPopupInputSpec(keyTokens: <String>['Ctrl+KeyD']),
+          hostOwnsPointer: false,
         ),
-        'emptySpec':
-            dictionaryPopupInputBridgeScript(const DictionaryPopupInputSpec()),
+        'emptySpec': dictionaryPopupInputBridgeScript(
+          const DictionaryPopupInputSpec(),
+          hostOwnsPointer: false,
+        ),
         'legacySpace': webViewKeyBridgeScript(
           handlerName: 'onSpaceKey',
           keys: const <String>[' '],
