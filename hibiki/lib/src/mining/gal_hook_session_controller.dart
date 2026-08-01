@@ -1927,6 +1927,42 @@ class GalHookSessionController extends ChangeNotifier {
         line.faceId == _selectedTextThreadFaceId;
   }
 
+  /// v13 文本分道的容量压力上报（每次计数增长各播一次，不刷屏）。
+  ///
+  /// 为什么必须报：道用尽时的症状——某些线程的台词就是不来——与 v13 要根治的 256 槽挤压
+  /// **完全同形**，真机上光看现象分不出「分道没生效」还是「64 条道不够用」。而放开非胜出
+  /// 线程本身就抬高了道满概率（以前只有选定线程占道，现在每条线程都占一条），把它做成
+  /// 静默丢弃等于把要修的病换个地方藏起来。
+  ///
+  /// 两级分开报：`recycle` 是降级但没丢行（顶掉了最久没写的非选定道），`overflow` 是**真丢了行**。
+  int _reportedLaneRecycles = 0;
+  int _reportedLaneOverflows = 0;
+
+  void _reportTextLanePressure(EngineHookGalAudioSource engine) {
+    final int recycles = engine.textLaneRecycles;
+    final int overflows = engine.textLaneOverflows;
+    if (recycles > _reportedLaneRecycles) {
+      _reportedLaneRecycles = recycles;
+      _record(
+        GalHookEventSeverity.info,
+        'text',
+        'text.lane_recycled',
+        'Text lanes exhausted; recycled the least recently used non-selected lane',
+        details: <String, Object?>{'recycles': recycles},
+      );
+    }
+    if (overflows > _reportedLaneOverflows) {
+      _reportedLaneOverflows = overflows;
+      _record(
+        GalHookEventSeverity.warning,
+        'text',
+        'text.lane_overflow',
+        'Text lanes exhausted with nothing recyclable; lines were dropped',
+        details: <String, Object?>{'overflows': overflows},
+      );
+    }
+  }
+
   /// 换线程后，把该线程留在**自己那条道**里的历史行补进工作台（v13 分道的直接收益）。
   ///
   /// v12 之前非选定线程的行在采集期就被丢了，选错线程 = 那段台词永远追不回来，只能重打
@@ -3373,6 +3409,7 @@ class GalHookSessionController extends ChangeNotifier {
     try {
       await _refreshReadinessThrottled(engine);
       if (engine != _engineSource) return;
+      _reportTextLanePressure(engine);
       // v12：预览区与文本环是两份独立数据，必须各poll各的。文本环在用户选定线程之前
       // 恒空，只轮询它会让选择器永远是一列空壳——那正是本次要修的症状。
       await _pollThreadPreviews(engine);

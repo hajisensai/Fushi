@@ -31,6 +31,14 @@
     按 hook 面放行，否则同一 hook 面换调用点就整段丢词（BUG-1159 原样复发）；
   - 换线程后立即回捞该道历史（`_recoverSelectedThreadHistory`），漏掉的台词不必重打剧情；
   - 读侧归并只有 `CollectTextSlotsBySeq` 一份实现（host `PollText` 与 `ring_probe` 三个 dump 共用）。
+  - **复核后追加两处必修**（用户复核 c97f668d3 查出）：① `lane_seq` 是最后写的完成标记却非
+    volatile、写侧无屏障——改为 `volatile` + `AtomicStorePreview64` 发布（全栅栏且 64 位不可
+    撕裂，x86 上普通写会被拆成两次 32 位写），读侧同步改原子读；② 道用尽原本**静默丢弃且无
+    计数**，而 v13 放开非胜出线程正是抬高道满概率的改动、症状又与它要根治的 256 槽挤压完全
+    同形，真机无法区分——改为两级降级 + 两个计数：先回收最久未写的**非选定**道
+    （`text_lane_recycle_count`，选定线程那条道是配对路径输入，任何情况下不得被顶掉），
+    无可回收才丢弃（`text_lane_overflow_count`）；两个计数经 `VoiceHookStatus` → channel →
+    `EngineHookGalAudioSource` 一路到会话事件（`text.lane_recycled` / `text.lane_overflow`）。
   设计与取舍见 `docs/specs/galgame-mining/text-lane-v13.md`。
 - **[x] ② 已加自动化测试** —
   - native `tests/text_lane_ipc_test.cpp`（新增 ctest 目标）：逐字重绘线程写 5000 行后

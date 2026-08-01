@@ -99,6 +99,55 @@ void main() {
     );
   });
 
+  test('v13：lane_seq 是完成标记，必须 volatile + 原子发布 + 最后写', () {
+    // 完成标记是跨进程可见性的分界线。普通写有两个真实风险：编译器把它提到 payload
+    // 之前（reader 读到半写槽），x86 上 64 位普通写被拆成两次 32 位写而撕裂。
+    // 同文件里 VoiceClip::seq / LoopbackMarker::seq / ThreadPreviewSlot::seq 全是 volatile，
+    // lane_seq 没有理由例外。
+    final String header = File(kIpcHeaderPath).readAsStringSync();
+    expect(header, contains('volatile uint64_t lane_seq;'),
+        reason: 'lane_seq 是完成标记，必须 volatile');
+
+    final int writeAt = header.indexOf('inline uint64_t WriteTextLaneEvent(');
+    expect(writeAt, greaterThan(0), reason: '扫不到写侧实现 —— 判红，别让空集假绿');
+    final int writeEnd = header.indexOf('\n}', writeAt);
+    expect(writeEnd, greaterThan(writeAt));
+    final String writeBody = header.substring(writeAt, writeEnd);
+    final int publishAt =
+        writeBody.indexOf('AtomicStorePreview64(&ts->lane_seq');
+    expect(publishAt, greaterThan(0),
+        reason: 'lane_seq 必须用 Interlocked 发布（全栅栏 + 不可撕裂），不能裸写');
+    // 最后写：payload 的任意一处写都必须排在发布之前。取 byte_len 作代表——它决定
+    // reader 读多少字节，排在发布之后就是最直接的半写窗口。
+    expect(writeBody.indexOf('ts->byte_len = byte_len;'), lessThan(publishAt),
+        reason: '完成标记必须是**最后**写，否则 reader 会读到半写槽');
+
+    final int readAt = header.indexOf('inline uint32_t CollectTextSlotsBySeq(');
+    expect(readAt, greaterThan(0), reason: '扫不到读侧归并 —— 判红');
+    final int readEnd = header.indexOf('\n}', readAt);
+    expect(readEnd, greaterThan(readAt));
+    expect(header.substring(readAt, readEnd),
+        contains('AtomicLoadPreview64(&slot->lane_seq)'),
+        reason: '读侧同样不能裸读 64 位标记（x86 会撕裂）');
+  });
+
+  test('v13：道用尽必须可降级且可观测，不得静默丢弃', () {
+    // 道满的症状与 v13 要根治的 256 槽挤压完全同形；而放开非胜出线程本身抬高了道满
+    // 概率。静默丢弃 = 把要修的病换个地方藏起来。
+    final String header = File(kIpcHeaderPath).readAsStringSync();
+    expect(header, contains('volatile uint64_t text_lane_recycle_count;'));
+    expect(header, contains('volatile uint64_t text_lane_overflow_count;'));
+    final int writeAt = header.indexOf('inline uint64_t WriteTextLaneEvent(');
+    final int writeEnd = header.indexOf('\n}', writeAt);
+    final String body = header.substring(writeAt, writeEnd);
+    expect(body, contains('text_lane_overflow_count'), reason: '丢弃行必须计数');
+    expect(body, contains('text_lane_recycle_count'),
+        reason: '回收非选定道必须计数（这是压力的第一级）');
+    // 选定线程那条道是配对路径的输入，任何情况下不得被顶掉。
+    expect(body, contains('if (lanes[i].thread_id == selected) continue;'),
+        reason: '回收时必须跳过选定线程那条道');
+  });
+
   test('v13：采集期不再有任何线程过滤，只挡伪影（挤压已由分道解决）', () {
     final String injector = File(
       '../native/galgame_hook/injector/injector_main.cpp',

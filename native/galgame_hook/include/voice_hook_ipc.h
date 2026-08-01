@@ -217,7 +217,13 @@ struct TextSlot {
   // 会把整段台词丢掉——BUG-1159）。消费方只有拿到同一个 face id，才能复刻同样的放行判据，
   // 而不是在 Dart 里照抄一遍 FNV 哈希（那又是一个漂移源）。0 = 写者无法提供。
   uint64_t face_id;
-  uint64_t lane_seq;        // 道内序号（v13 完成标记：==该道 write_count 快照即有效），**最后**写
+  // 道内序号，兼**完成标记**：==该道 write_count 快照即有效，**最后**写。
+  //
+  // 必须 volatile 且必须用 AtomicStorePreview64 发布（与预览槽 seq、VoiceClip::seq、
+  // LoopbackMarker::seq 同一套纪律）：它是跨进程可见性的分界线。普通写有两个真实风险——
+  // 编译器可以把它提到 payload 之前（reader 就会读到半写槽），x86 上 64 位普通写还可能被
+  // 拆成两次 32 位写而撕裂。Interlocked 系是全栅栏且不可撕裂，一次解决两个。
+  volatile uint64_t lane_seq;
   char hook_name[kTextHookNameChars];
   wchar_t hook_code[kTextHookCodeChars];
   // 紧跟文本字节。
@@ -232,6 +238,9 @@ struct TextSlot {
 struct TextLane {
   volatile uint64_t thread_id;    // 0=空道（回收后允许出现空洞，查找必须扫完整张表）
   volatile uint64_t write_count;  // 道内单调写入数（reader 据此定位有效槽区间）
+  // 最近一次写入时刻（GetTickCount64）。道用尽时按它挑最久没动的**非选定**道回收——
+  // 见 WriteTextLaneEvent 的道满处置。
+  volatile uint64_t last_write_ms;
 };
 
 // 语音 clip 记录：一段独立语音片段在音频环形里的位置 + 时刻 + 格式。host 按文本时间戳找最近
@@ -337,8 +346,26 @@ struct SharedHeader {
   // 布局：[TextLane 表 text_lane_count 条][槽区 text_lane_count*text_lane_slot_count*kTextSlotBytes]
   uint32_t text_lane_count;
   uint32_t text_lane_slot_count;
+  // 道用尽时的两个计数（host 必须能把「道满」和「hook 压根没出文本」分开）。
+  //
+  // 为什么非有不可：v13 放开非胜出线程**本身就抬高了道满概率**（以前只有选定线程在写，
+  // 现在每条线程都要占一条道）。而道满的症状——某些线程的台词就是不来——与它要根治的
+  // 256 槽挤压**完全同形**。没有这两个数，真机上根本分不出「分道没生效」和「道不够用」，
+  // 等于把要修的病换个地方藏起来。
+  volatile uint64_t text_lane_recycle_count;   // 回收了一条最久未写的非选定道
+  volatile uint64_t text_lane_overflow_count;  // 连可回收的道都没有，本行被丢弃
 };
 #pragma pack(pop)
+
+inline uint64_t SelectedTextThreadId(const SharedHeader* header) {
+  if (header == nullptr) return 0;
+  return AtomicLoadPreview64(&header->selected_text_thread_id);
+}
+
+inline bool IsExactTextThreadSelected(const SharedHeader* header,
+                                      uint64_t thread_id) {
+  return thread_id != 0 && SelectedTextThreadId(header) == thread_id;
+}
 
 // ── v13 文本分道寻址（写侧/读侧唯一实现，谁都不许自己再算一遍偏移）────────────────
 //
@@ -439,7 +466,11 @@ inline uint32_t CollectTextSlotsBySeq(const SharedHeader* header,
           reinterpret_cast<const TextSlot*>(TextLaneSlotAt(header, lane,
                                                            lane_seq));
       // 道内校验：lane_seq 对不上 = 已被本道后来的行覆盖，或还没发布完。
-      if (slot == nullptr || slot->lane_seq != lane_seq) continue;
+      // 原子读：写侧用 Interlocked 发布，读侧照样不能裸读（x86 上 64 位裸读会撕裂）。
+      if (slot == nullptr ||
+          AtomicLoadPreview64(&slot->lane_seq) != lane_seq) {
+        continue;
+      }
       const uint64_t seq = slot->seq;
       if (seq <= after_seq) continue;
       if (count < capacity) {
@@ -504,7 +535,38 @@ inline uint64_t WriteTextLaneEvent(SharedHeader* header, uint32_t lane_begin,
   uint32_t lane_index = 0;
   TextLane* lane = FindTextLane(lanes, lane_begin, end, write.thread_id,
                                 &lane_index);
-  if (lane == nullptr) return 0;  // 道满：丢弃本行，绝不去踩别人的道
+  if (lane == nullptr) {
+    // 道用尽。**绝不静默丢弃**：那样的症状（某些线程的台词就是不来）与 v13 要根治的
+    // 256 槽挤压完全同形，真机上分不出是分道没生效还是道不够用。
+    //
+    // 处置分两级，两级都留计数：
+    //  ① 回收最久没写过的**非选定**道 —— 选定线程那条道是配对路径的输入，任何情况下
+    //     都不能被顶掉；被回收的线程只是暂时失去历史，它下一行会重新认领一条道，仍然
+    //     在预览区里看得见、仍然可选（预览区另有自己的槽，不受此处影响）。
+    //  ② 连一条可回收的都没有（全被选定线程占着，理论上只有 1 条）才丢弃本行。
+    // write_count 跨回收保持单调：重置它会让新占用者的 lane_seq 与上一任的残留槽撞号，
+    // reader 会把旧行当成新行的有效槽。残留槽本身无害——每个槽自带 thread_id，消费方
+    // 按线程过滤，不会张冠李戴。
+    const uint64_t selected = SelectedTextThreadId(header);
+    TextLane* victim = nullptr;
+    uint32_t victim_index = 0;
+    for (uint32_t i = lane_begin; i < end; ++i) {
+      if (lanes[i].thread_id == selected) continue;
+      if (victim == nullptr || lanes[i].last_write_ms < victim->last_write_ms) {
+        victim = &lanes[i];
+        victim_index = i;
+      }
+    }
+    if (victim == nullptr) {
+      InterlockedIncrement64(reinterpret_cast<volatile LONGLONG*>(
+          &header->text_lane_overflow_count));
+      return 0;
+    }
+    InterlockedIncrement64(reinterpret_cast<volatile LONGLONG*>(
+        &header->text_lane_recycle_count));
+    lane = victim;
+    lane_index = victim_index;
+  }
   lane->thread_id = write.thread_id;
   const uint64_t global_seq = static_cast<uint64_t>(InterlockedIncrement64(
       reinterpret_cast<volatile LONGLONG*>(&header->text_write_count)));
@@ -546,19 +608,12 @@ inline uint64_t WriteTextLaneEvent(SharedHeader* header, uint32_t lane_begin,
     ts->hook_code[n] = L'\0';
     ts->hook_code_len = static_cast<uint32_t>(n);
   }
-  ts->lane_seq = lane_seq;  // 完成标记，最后写
+  lane->last_write_ms = ts->timestamp_ms;
+  // 完成标记，**最后**写：Interlocked 是全栅栏（前面的 payload 写对 reader 必先可见）
+  // 且 64 位不可撕裂（x86 上普通写会被拆成两次 32 位写）。与预览槽 seq 同一套纪律。
+  AtomicStorePreview64(&ts->lane_seq, lane_seq);
   if (header->text_hooked == 0) header->text_hooked = 1;
   return global_seq;
-}
-
-inline uint64_t SelectedTextThreadId(const SharedHeader* header) {
-  if (header == nullptr) return 0;
-  return AtomicLoadPreview64(&header->selected_text_thread_id);
-}
-
-inline bool IsExactTextThreadSelected(const SharedHeader* header,
-                                      uint64_t thread_id) {
-  return thread_id != 0 && SelectedTextThreadId(header) == thread_id;
 }
 
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");

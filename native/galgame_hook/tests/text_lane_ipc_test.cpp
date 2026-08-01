@@ -159,8 +159,19 @@ void TestWriterSegmentsNeverShareALane() {
     Check(WriteLine(h, 0, luna_end, 0x8000 + i, L"luna") != 0,
           "Luna 段内每条线程都应认领到道");
   }
-  Check(WriteLine(h, 0, luna_end, 0x9999, L"overflow") == 0,
-        "Luna 段满了就丢弃本行，绝不越界去踩 native 段");
+  // Luna 段满了之后仍然写得进（回收本段内最久没写的道），但**绝不越界**去踩 native 段：
+  // 越界就等于两个进程的 writer 抢同一条道，进程内的锁串不住另一个进程。
+  Check(WriteLine(h, 0, luna_end, 0x9999, L"overflow") != 0,
+        "段内满了应回收本段的道，而不是丢弃");
+  {
+    const TextLane* all = hibiki_voice_hook::TextLanesOf(h);
+    bool inside_luna_segment = false;
+    for (uint32_t i = 0; i < kTextLaneCount; ++i) {
+      if (all[i].thread_id != 0x9999) continue;
+      inside_luna_segment = i < luna_end;
+    }
+    Check(inside_luna_segment, "Luna 段的回收不得越界到 native 段");
+  }
 
   Check(WriteLine(h, native_begin, kTextLaneCount, 0x7777, L"native") != 0,
         "native 段仍有空道可用（没被 Luna 段占走）");
@@ -190,6 +201,58 @@ void TestGlobalSequenceStaysMonotonicAcrossLanes() {
   Check(h->text_write_count == previous, "header 上的总数与最后一条发布序一致");
 }
 
+// 道用尽必须**可观测且可降级**，不能静默丢弃。
+//
+// 道满的症状（某些线程的台词就是不来）与 v13 要根治的 256 槽挤压完全同形；而放开非胜出
+// 线程本身抬高了道满概率。所以：先回收最久没写的**非选定**道（计数），选定线程那条道
+// 任何情况下不许被顶掉（它是配对路径的输入），实在无可回收才丢弃（另一个计数）。
+void TestLaneExhaustionIsRecycledAndCounted() {
+  FakeMapping mapping;
+  SharedHeader* h = mapping.header();
+  const uint32_t luna_end = hibiki_voice_hook::kLunaThreadPreviewCount;
+  const uint64_t kSelected = 0x5555;
+  h->selected_text_thread_id = kSelected;
+
+  // 选定线程先占一条道，且让它成为**最久没写**的那条（后面所有线程都比它新）。
+  Check(WriteLine(h, 0, luna_end, kSelected, L"配対候補") != 0, "选定线程应认领到道");
+  // 其余道占满：注意 last_write_ms 用的是 GetTickCount64，同一毫秒内可能相等，
+  // 因此判据只看「选定线程那条道没被顶掉」，不依赖具体挑中了哪一条。
+  for (uint32_t i = 1; i < luna_end; ++i) {
+    Check(WriteLine(h, 0, luna_end, 0x8000 + i, L"other") != 0,
+          "空道用完之前每条线程都应认领到道");
+  }
+  Check(h->text_lane_recycle_count == 0, "还没满就不该有回收");
+  Check(h->text_lane_overflow_count == 0, "还没满就不该有丢弃");
+
+  // 再来一条新线程：道已满 → 必须回收一条非选定道，且计数 +1、本行仍然写成功。
+  Check(WriteLine(h, 0, luna_end, 0x9001, L"newcomer") != 0,
+        "道满时应回收一条非选定道，而不是丢弃本行");
+  Check(h->text_lane_recycle_count == 1, "回收必须计数（真机据此分辨道不够用）");
+  Check(h->text_lane_overflow_count == 0, "还有可回收的道时不该记丢弃");
+
+  // 选定线程那条道必须还在，且内容没被顶掉——它是配对路径的输入。
+  const std::vector<std::wstring> selected_lines = ReadLane(h, kSelected);
+  Check(selected_lines.size() == 1 && selected_lines[0] == L"配対候補",
+        "选定线程那条道任何情况下不得被回收");
+
+  // 极端：所有道都归选定线程（无可回收）→ 只能丢弃，且必须计数。
+  FakeMapping full;
+  SharedHeader* fh = full.header();
+  fh->selected_text_thread_id = kSelected;
+  for (uint32_t i = 0; i < luna_end; ++i) {
+    WriteLine(fh, 0, luna_end, kSelected, L"same thread");
+  }
+  // 同一线程只占一条道，这里再把剩余道用别的线程占满，然后把它们全设成选定线程。
+  for (uint32_t i = 1; i < luna_end; ++i) {
+    WriteLine(fh, 0, luna_end, 0x7000 + i, L"filler");
+  }
+  hibiki_voice_hook::TextLane* lanes = hibiki_voice_hook::TextLanesOf(fh);
+  for (uint32_t i = 0; i < luna_end; ++i) lanes[i].thread_id = kSelected;
+  Check(WriteLine(fh, 0, luna_end, 0x9002, L"dropped") == 0,
+        "无可回收的道时本行只能丢弃");
+  Check(fh->text_lane_overflow_count == 1, "丢弃必须计数，绝不静默");
+}
+
 }  // namespace
 
 int main() {
@@ -197,6 +260,7 @@ int main() {
   TestLaneKeepsMostRecentLines();
   TestWriterSegmentsNeverShareALane();
   TestGlobalSequenceStaysMonotonicAcrossLanes();
+  TestLaneExhaustionIsRecycledAndCounted();
   if (g_failures != 0) {
     fprintf(stderr, "text lane ipc test failures: %d\n", g_failures);
     return 1;
