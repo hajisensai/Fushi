@@ -94,16 +94,15 @@ void main() {
     });
   });
 
-  // TODO-737 / BUG-1342 守卫：Dart 入口仍是唯一 rate-limit；JS 只允许保留
-  // 「尾沿静默后解锁」的手势 burst 聚合器，不得复活固定窗口重复放行的旧节流器。
+  // TODO-737 / BUG-1342 守卫：Dart 入口仍是唯一 rate-limit；横向触控板 burst
+  // 由跨 document 的 Dart State 聚合，普通纵向鼠标滚轮维持既有 rate-limit 语义。
   // 行为变更声明：分页滚轮方向从此脱钩 invertSwipeDirection——该开关只管触摸滑动 /
   // 鼠标拖动（onSwipe 路径），不再管滚轮。滚轮翻页改走新 handler onWheelPaginate，
   // 节流闸门统一到 Dart 侧 _paginate / onBoundarySwipe 的 _lastPaginateTime 时间戳。
   group(
       'TODO-737 wheel input unify: direction decoupled + single throttle gate',
       () {
-    test('JS wheel block uses a trailing-edge gesture lock, not old throttle',
-        () {
+    test('JS wheel block reports dominant axis but owns no gesture state', () {
       final String wheel = _listenerBlock(setupScript, 'wheel');
       // 只锁「代码形态」（赋值/读取），不锁注释文本——注释里解释「不再自持 _wheelTimer」
       // 是允许的；真正回归是 setTimeout 节流代码复活。
@@ -114,21 +113,18 @@ void main() {
           reason: 'TODO-737：JS _wheelTimer 读取门控已删，不得复活');
       expect(wheel, isNot(contains('var _wheelTimer')),
           reason: 'TODO-737：JS _wheelTimer 声明已删，不得复活');
-      expect(wheel, contains('_handlePagedWheelGesture(e)'),
-          reason: '分页 wheel tick 必须先聚合成一次物理手势，再回传语义翻页');
-      expect(setupScript, contains('_pagedWheelGestureSettleTimer'));
-      expect(
-          setupScript, contains('clearTimeout(_pagedWheelGestureSettleTimer)'));
-      expect(
-          setupScript,
-          contains(
-              'setTimeout(_endPagedWheelGesture, C.wheelPageTurnInterval)'));
+      expect(wheel, contains('_handlePagedWheelTick(e)'),
+          reason: '分页 wheel tick 必须回传方向与主轴给跨章节 Dart 闸门');
+      expect(setupScript, isNot(contains('_pagedWheelGestureSettleTimer')),
+          reason: 'JS document 切章即销毁，不得持有手势 session');
+      expect(setupScript, isNot(contains('_pagedWheelGestureActive')));
     });
 
     test('paged wheel emits onWheelPaginate (not onSwipe)', () {
       final String wheel = _listenerBlock(setupScript, 'wheel');
       expect(setupScript, contains("callHandler('onWheelPaginate'"),
           reason: '分页滚轮翻页改走 onWheelPaginate（产语义意图 forward/backward）');
+      expect(setupScript, contains("horizontal ? 'horizontal' : 'vertical'"));
       expect(wheel, isNot(contains("callHandler('onSwipe'")),
           reason: 'wheel 块不得再回传 onSwipe（onSwipe 专属触摸/鼠标拖动）');
       // 方向归一：deltaY>0=forward（对齐连续滚轮 delta>0=前进），消除旧裸符号
@@ -170,6 +166,10 @@ void main() {
           reason: '滚轮翻页经 _paginate 入口节流闸门（throttleMs: wheelPageTurnInterval）');
       expect(body, contains('wheelPageTurnInterval'),
           reason: '滚轮 throttleMs 源是 wheelPageTurnInterval');
+      expect(body, contains("axis == 'horizontal'"),
+          reason: '只有横向触控板手势进入跨章节 burst 闸门');
+      expect(body, contains('_pagedWheelGestureGate.shouldStartNewGesture'),
+          reason: '手势 session 必须属于 reader State，切章后仍在');
     });
 
     test(

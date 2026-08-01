@@ -19,6 +19,9 @@ void main() {
   final String reader = File(
     'lib/src/pages/implementations/reader_hibiki_page.dart',
   ).readAsStringSync();
+  final String readerChrome = File(
+    'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+  ).readAsStringSync();
 
   test('macOS fullscreen toggles through the single NSWindow owner', () {
     // 根因：window_manager.setFullScreen 与 macos_window_utils（NSWindow.delegate
@@ -101,5 +104,14 @@ void main() {
     expect(reader, contains('kMacTitleBarHeight'));
     expect(reader, contains('_macosWindowTitlebarInset'));
     expect(reader, contains('_readerTopOffset =>'));
+    expect(reader, contains('_lyricsMode || _spreadDocumentLoaded'),
+        reason: '不注入正文引擎的歌词/spread 文档也必须避开顶部拖拽区');
+    expect(reader, contains('top: independentDocumentTopInset'),
+        reason: '独立文档由 Flutter 侧真实缩进，不能只改正文 CSS inset');
+    expect(
+      readerChrome,
+      contains('_stableTopInset + _macosWindowTitlebarInset'),
+      reason: '顶部进度 pill 必须落在 drag strip 下方，不能盖住拖动区或交通灯',
+    );
   });
 }

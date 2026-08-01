@@ -1368,6 +1368,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 时间戳语义（读 throttleMs 即生效，无残留 timer）。删了 JS _wheelTimer 双处后，
   // 这是滚轮/音量键翻页的唯一节流真相源。
   DateTime? _lastPaginateTime;
+  // BUG-1342：macOS 横向触控板的一次物理滑动会产生持续 1s+ 的 wheel tick。
+  // 此 gate 活在 reader State，跨 WebView 文档/章节导航持续存在；只作用于横向主轴，
+  // 纵向鼠标滚轮仍保留既有的固定窗口节流手感。
+  final ReaderWheelGestureGate _pagedWheelGestureGate =
+      ReaderWheelGestureGate();
   // TODO-1229 v2：跨章去抖时间戳（独立于 _lastPaginateTime 的章内节流）。BUG-568 案A
   // 的 _paginationInFlight 守卫只覆盖「换章加载+restore」这一段瞬态窗口，而 _lastPaginateTime
   // 节流窗口锚定在手势起点(第一 tick)。滚轮/触控板一次连续惯性手势会持续产生 tick 达
@@ -2645,9 +2650,19 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // 收缩到底栏之上（底栏可见时留 _readerBottomReserve），视口本身不再与底栏重叠，
     // CSS 滚动条自然只画在歌词区域内。底栏可见条件与 _buildBottomChrome / popupBottomReserve
     // 保持一致（_hasEverLoaded && _showChrome），_showChrome 切换会触发 _rebuild 重建本树。
-    if (_lyricsMode && _hasEverLoaded && _showChrome) {
+    // BUG-1343：歌词 / spread 都是独立 HTML，不读取正文引擎的 chromeTopInset。
+    // macOS 顶部 DragToMoveArea 叠在 WebView 之上时，独立文档必须由 Flutter 侧缩进，
+    // 否则首行歌词或整页图会落到拖拽区下面且无法交互。
+    final double independentDocumentTopInset =
+        (_lyricsMode || _spreadDocumentLoaded) ? _macosWindowTitlebarInset : 0;
+    final double lyricsBottomInset =
+        _lyricsMode && _hasEverLoaded && _showChrome ? _readerBottomReserve : 0;
+    if (independentDocumentTopInset > 0 || lyricsBottomInset > 0) {
       return Padding(
-        padding: EdgeInsets.only(bottom: _readerBottomReserve),
+        padding: EdgeInsets.only(
+          top: independentDocumentTopInset,
+          bottom: lyricsBottomInset,
+        ),
         child: webView,
       );
     }
@@ -3124,16 +3139,25 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // 清过，这里兜住「攒了几句但没制卡就关掉」的情况。
     _miningDraft.clear();
     _clearLookupState();
-    unawaited(_finishLookupSessionAfterPopupsDismissed());
+    final int dismissedGeneration = activeLookupGeneration;
+    unawaited(
+      _finishLookupSessionAfterPopupsDismissed(dismissedGeneration),
+    );
   }
 
   /// BUG-1344：macOS WKWebView 的 evaluateJavascript 通过异步 method-channel completion
   /// 落地。必须等原生选区 + CSS Highlight 真正清完后再 requestFocus；旧顺序先抢
   /// Flutter 焦点，会先绘出失焦灰选区，迟到的 JS 清理没有下一次 surface invalidation，
   /// 直到切应用才消失。等待期间若页面销毁或新查词已打开，则旧会话不得抢回焦点。
-  Future<void> _finishLookupSessionAfterPopupsDismissed() async {
+  Future<void> _finishLookupSessionAfterPopupsDismissed(
+    int dismissedGeneration,
+  ) async {
     await _clearSelectionJs();
-    if (!mounted || isDictionaryShown) return;
+    if (!mounted ||
+        activeLookupGeneration != dismissedGeneration ||
+        isDictionaryShown) {
+      return;
+    }
     // Return Flutter focus to the reading content. The dismissed popup's WebView
     // held the keyboard/gamepad focus, so without this the reader receives no key
     // events after the popup closes and the user is stuck with no way back in.

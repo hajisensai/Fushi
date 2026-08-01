@@ -98,7 +98,7 @@ void main() {
 
   test('BUG-1344 popup dismissal awaits clear before reclaiming focus', () {
     final int start = src.indexOf(
-      'Future<void> _finishLookupSessionAfterPopupsDismissed()',
+      'Future<void> _finishLookupSessionAfterPopupsDismissed(',
     );
     expect(start, isNonNegative, reason: '整栈关闭必须有可等待的异步收尾 helper');
     final int end = src.indexOf('\n  }', start);
@@ -115,5 +115,7 @@ void main() {
         reason: 'WKWebView 清选区必须完成后才能抢回焦点，避免灰色选区残帧');
     expect(body, contains('isDictionaryShown'),
         reason: '等待期间若新查词弹窗已打开，不得由旧会话抢回焦点');
+    expect(body, contains('activeLookupGeneration != dismissedGeneration'),
+        reason: '新查词尚在加载、弹窗未 visible 时也必须由 lookup generation 挡住旧收尾');
   });
 }
