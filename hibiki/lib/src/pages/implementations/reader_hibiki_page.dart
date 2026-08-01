@@ -2644,7 +2644,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // 「告诉 WebView 预留多少」的机制对它们失效，只能由 Flutter 侧收缩视口本身。
     // 留多少是 [independentDocumentInsets] 说了算（单一真相源，行为单测直接钉它）；
     // 这里只负责喂当前状态并按结果包 Padding。
-    // BUG-1372：底部预留曾以 `EdgeInsets.only(bottom: _readerBottomReserve)` 这个**写法**
+    // BUG-1381：底部预留曾以 `EdgeInsets.only(bottom: _readerBottomReserve)` 这个**写法**
     // 被静态守卫钉住，PR#670 把顶/底两笔留白合成一个 Padding 后写法变了、行为没变，
     // 守卫却红了。改由纯函数承载契约后，守卫钉的是「预留来自它」而非某种拼写。
     // _showChrome / _hasEverLoaded 切换会触发 _rebuild 重建本树。

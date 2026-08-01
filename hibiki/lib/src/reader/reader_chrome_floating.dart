@@ -90,7 +90,7 @@ double bottomChromeReserve({
   return chromeHeight;
 }
 
-/// BUG-379 / BUG-1343 / BUG-1372：**独立 HTML 文档**（歌词模式 [LyricsModeHtml]、
+/// BUG-379 / BUG-1343 / BUG-1381：**独立 HTML 文档**（歌词模式 [LyricsModeHtml]、
 /// spread 整页图）的 WebView 四周留白，是「阅读器页给独立文档留多少空间」的唯一真相源。
 ///
 /// 为什么独立文档要 Flutter 侧留白、正文不用：正文经 `_applyChromeInsets` 把预留高

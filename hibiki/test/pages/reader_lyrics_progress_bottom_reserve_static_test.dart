@@ -13,7 +13,7 @@ import 'reader_hibiki_page_source_corpus.dart';
 /// 文档级 CSS 滚动条（主题化的细条）沿整屏高度绘制，底部一段被绘制进底栏区域 → 看上去
 /// 像「进度条跑进底栏」。修复：底栏可见时把歌词 WebView 收缩 `_readerBottomReserve`。
 ///
-/// BUG-1372：**这个守卫本身**曾把契约写成实现拼写
+/// BUG-1381：**这个守卫本身**曾把契约写成实现拼写
 /// `body.contains('EdgeInsets.only(bottom: _readerBottomReserve)')`。PR#670（BUG-1343）
 /// 给独立文档补顶部 macOS 标题栏缩进，把顶/底两笔留白合成同一个 `EdgeInsets.only(top:…,
 /// bottom:…)`——底部预留分毫未变，守卫却在 develop 上红了。这是本仓已定案的 B 类

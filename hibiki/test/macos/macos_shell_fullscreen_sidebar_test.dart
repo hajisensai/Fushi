@@ -106,7 +106,7 @@ void main() {
     expect(reader, contains('kMacTitleBarHeight'));
     expect(reader, contains('_macosWindowTitlebarInset'));
     expect(reader, contains('_readerTopOffset =>'));
-    // BUG-1372：这两条原本钉的是 `_lyricsMode || _spreadDocumentLoaded` 和局部变量名
+    // BUG-1381：这两条原本钉的是 `_lyricsMode || _spreadDocumentLoaded` 和局部变量名
     // `top: independentDocumentTopInset` 两个**实现拼写**——与它们同一方法体里那条
     // `EdgeInsets.only(bottom: _readerBottomReserve)` 守卫同属 B 类「要求型」锚点，
     // `_buildBody` 一重构就凭空变红（行为分毫未变）。独立文档缩进多少现由纯函数
