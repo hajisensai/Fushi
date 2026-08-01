@@ -1,0 +1,8 @@
+# vendored ffmpeg-kit 产物是二进制，必须禁用任何行尾/编码转换与 diff。
+#
+# 这里的 framework 二进制（libavcodec / libavutil / ...）**没有扩展名**，此前只靠
+# git 的 `text=auto` 内容嗅探躲过 CRLF 转换。嗅探对含 NUL 的文件确实有效，但那是
+# 启发式，不是声明——一旦某个产物恰好不触发嗅探，71MB 的 framework 会被静默改写成
+# 无法链接的垃圾，且症状远离原因。显式声明成本为零。
+android/libs/*.aar binary
+ios/Frameworks/** binary
