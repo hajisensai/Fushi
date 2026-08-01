@@ -1867,8 +1867,12 @@ JSON.stringify((function(){
                 if (widget.onOpenSentenceContextModal == null) return null;
                 int entryIndex = 0;
                 String matched = '';
-                if (args.isNotEmpty && args[0] is Map) {
-                  final Map<dynamic, dynamic> data = args[0] as Map;
+                // BUG-1326：popup.js 现在传对象；老的扩展 vendor 副本（用户装在浏览器
+                // 里、与 app 不同步更新）还可能传 JSON 字符串。两种形态都解析，否则
+                // entryIndex 静默退化成 0 → 确认制卡永远点第一个词条。
+                final Map<dynamic, dynamic>? data =
+                    decodeBridgeMap(args.isEmpty ? null : args[0]);
+                if (data != null) {
                   entryIndex = (data['entryIndex'] as num?)?.toInt() ?? 0;
                   matched = data['matched']?.toString() ?? '';
                 }
@@ -2347,6 +2351,28 @@ JSON.stringify((function(){
 /// `{source, message, stack}`）。source 前缀成 `PopupJs.<source>` 写进 [ErrorLogService]，
 /// stack 非空时经 [StackTrace.fromString] 还原成栈（[ErrorLogService.log] 会序列化落盘，
 /// 复用 TODO-1383 的串行落盘链），空则不带栈。绝不吞——目的就是让 JS 报错在错误日志页可见。
+/// BUG-1326：把 JS 桥送来的单个参数解析成 Map。
+///
+/// popup.js 的 `callHandler` 一律传**对象**，宿主收到 `Map`。但浏览器扩展的 vendor 副本
+/// 是用户自己装在浏览器里的、与 app 不同步更新，老副本可能仍传 `JSON.stringify(...)` 的
+/// 字符串；只认 `is Map` 会让字段静默退化成默认值（`openSentenceContextModal` 的
+/// `entryIndex` 退化成 0 → 确认制卡永远点第一个词条，用户只看到「没反应」）。
+///
+/// 认三种形态：`Map` 原样、JSON 对象字符串解出 Map、其余（含 null / JSON 数组 / 非法串）
+/// 返回 null 让调用方走自己的默认值。纯函数、可单测。
+Map<dynamic, dynamic>? decodeBridgeMap(Object? raw) {
+  if (raw is Map) return raw;
+  if (raw is String && raw.isNotEmpty) {
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is Map) return decoded;
+    } catch (_) {
+      // 不是 JSON：按「没有参数」处理，调用方用默认值。
+    }
+  }
+  return null;
+}
+
 void logPopupJsError(ErrorLogService errorLogService, List<dynamic> rawArgs) {
   final Object? raw = rawArgs.isNotEmpty ? rawArgs.first : null;
   final Map<Object?, Object?> payload =

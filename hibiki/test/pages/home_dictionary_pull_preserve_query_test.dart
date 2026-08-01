@@ -228,12 +228,22 @@ void main() {
           'touch drags.',
     );
     // TODO-931：外点遮罩同样改用 _hasVisiblePopup（隐藏热槽不该挂遮罩）。
+    // BUG-1327：判据收口到 shouldShowLookupDismissBarrier，并额外接对话框门控
+    // （对话框期间浮层挂在根 Overlay 会把落在对话框上的点击吃掉）。原意图不变：
+    // 遮罩只为「可见弹窗 / 搜索中」而挂，不是结果区的通用手势捕手。
     expect(
       resultBody,
-      contains('_hasVisiblePopup || _popup.isSearchingUi'),
+      contains('shouldShowLookupDismissBarrier('),
       reason:
           'The outside-tap shield should exist only for visible popup state, '
           'not as a general result-body gesture catcher.',
+    );
+    expect(resultBody, contains('hasVisiblePopup: _hasVisiblePopup'));
+    expect(resultBody, contains('isSearching: _popup.isSearchingUi'));
+    expect(
+      resultBody,
+      contains('hiddenByDialog: lookupPopupHiddenByDialog'),
+      reason: 'BUG-1327：对话框打开期间必须连遮罩一起撤，否则对话框点不动且一点就关栈。',
     );
   });
 

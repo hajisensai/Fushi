@@ -2859,9 +2859,14 @@ function createEntryHeader(entry, idx) {
                     idx = Array.prototype.indexOf.call(siblings, entryEl);
                     if (idx < 0) idx = 0;
                 }
+                // BUG-1326：参数必须原样传**对象**（与本文件其余 callHandler 一致）。
+                // 之前这里独一份地 JSON.stringify 了，宿主 handler 只认 Map（args[0] is
+                // Map），于是 entryIndex 恒退化成 0、matched 恒为空——「确认制卡」永远去
+                // 点第一个词条的按钮（用户在第 2+ 个词条上点，看到的就是「没反应」），
+                // 当前句里的词也不高亮。
                 window.flutter_inappwebview.callHandler(
                     'openSentenceContextModal',
-                    JSON.stringify({ entryIndex: idx, matched: matched }));
+                    { entryIndex: idx, matched: matched });
             },
         });
         setButtonIcon(adjustBtn, 'tune');

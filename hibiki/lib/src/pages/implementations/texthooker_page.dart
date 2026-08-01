@@ -25,6 +25,7 @@ import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/game_shared.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:hibiki/src/sync/texthooker_service.dart';
@@ -1653,7 +1654,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       // TODO-1052：查词浮层显示（或搜索中）时叠一层全屏 dismiss barrier——点真空白关一层
       // （逐层关，与其它表面同语义），桌面开滑动关闭时水平拖过阈亦关一层。texthooker 原
       // 先无 barrier（点外面关不掉浮层）；本层是附加的关闭手势，不改逐词查词点击本身。
-      if (_popup.hasVisiblePopup || _popup.isSearchingUi)
+      // BUG-1327：对话框期间连 barrier 一起撤——浮层子树挂在根 Overlay，排在
+      // showAppDialog 推的路由之上，全屏 barrier 会把落在对话框上的点击吃掉并判成
+      // 「点弹窗外面」关栈。判据收口在 [shouldShowLookupDismissBarrier]。
+      if (shouldShowLookupDismissBarrier(
+        hasVisiblePopup: _popup.hasVisiblePopup,
+        isSearching: _popup.isSearchingUi,
+        hiddenByDialog: lookupPopupHiddenByDialog,
+      ))
         Positioned.fill(
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
