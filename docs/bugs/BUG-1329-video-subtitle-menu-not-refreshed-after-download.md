@@ -20,9 +20,14 @@
      顶部挂 `LinearProgressIndicator`，旧行还在、新行没有 —— 正是截图里的样子。而这趟重探
      带来的唯一新信息，就是我们手里那个已知路径的外挂文件。
 
-  同一批还修掉一个能让加载条**永久**转下去的真实泄漏：`_applyYoutubeCaptionTrack` 里
-  `_subtitleMenuLoading = true` 之后靠三条各自复位的 return 路径收尾，`resolveYoutubeCaptionCues`
-  抛错那条谁也走不到，标志永久留在 true，且再无入口能关掉它。
+  同一批顺手补掉一处**结构性**加载态泄漏（诚实标注可达性）：`_applyYoutubeCaptionTrack` 里
+  `_subtitleMenuLoading = true` 之后靠三条各自复位的 return 路径收尾，一旦
+  `resolveYoutubeCaptionCues` 抛出，谁也走不到，标志永久留在 true 且再无入口能关掉它。
+  **但复核发现这条当前不可从网络/解析失败触发**：`resolveYoutubeCaptionCues` 自己带
+  `catch (_) { return const <AudioCue>[]; }`（`youtube_source_resolver.dart:979`）把 body 里
+  的一切都吞成空 cue，仅剩 `YoutubeHttpClient()` 构造与 `http.close()` 两条极窄的抛出面。
+  所以这是**防御性收敛**，不是已复现的用户症状；价值在于那层 blanket catch 一旦被收窄
+  （它本身就是个该收窄的东西），泄漏立刻变成活的。加载态收进 try/finally 后与之解耦。
 
 - **[x] ① 已修复** — `_registerImportedSubtitleSource(path)` 取代缓存作废式刷新：新档是 app 自己
   刚写下的外挂文件，路径与标签都在手里，直接插进 `_subtitleMenuSources` 首位（与

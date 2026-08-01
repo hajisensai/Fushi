@@ -35,6 +35,17 @@ void main() {
     expect(body.contains('_registerImportedSubtitleSource(downloaded)'), isTrue,
         reason: '下载几乎总是从已经打开的「字幕」分类里发起的，只清缓存 key 不会有任何'
             '事件把它重新枚举出来 → 用户看不到自己刚下载的字幕（BUG-1329）');
+    // 并入必须是 `applied` 判定之后的**无条件**语句：文件已经落盘了，即使这次解析不出
+    // cue（坏档 / 编码问题）也该出现在列表里。把它塞回 `if (applied)` 里就退回旧症状
+    // 「下载完什么都没多出来」，而上面那条 contains 断言照样绿——所以这里另钉一次。
+    final int applied = body.indexOf('final bool applied =');
+    expect(applied, greaterThanOrEqualTo(0), reason: 'missing applied result');
+    final int register =
+        body.indexOf('_registerImportedSubtitleSource(downloaded)', applied);
+    final String between = body.substring(applied, register);
+    expect(between.contains('if ('), isFalse,
+        reason: '并入不得按 applied（或任何别的条件）门控：未成功应用的下载档同样要出现'
+            '在字幕轨列表里，否则用户只能猜自己有没有下成功（BUG-1329）');
   });
 
   test('BUG-1329: 导入外挂字幕后把新档就地并入字幕轨列表', () {
