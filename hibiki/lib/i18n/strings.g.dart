@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 49402 (2906 per locale)
+/// Strings: 49487 (2911 per locale)
 ///
-/// Built on 2026-08-01 at 07:18 UTC
+/// Built on 2026-08-01 at 12:28 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3925,6 +3925,15 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get anki_lapis_visual_block_no_fields => 'No fields selected yet';
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -10605,6 +10614,20 @@ class _StringsAr extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -17352,6 +17375,20 @@ class _StringsDe extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -24115,6 +24152,20 @@ class _StringsEs extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -30889,6 +30940,20 @@ class _StringsFr extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -37592,6 +37657,20 @@ class _StringsId extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -44341,6 +44420,20 @@ class _StringsIt extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -50907,6 +51000,20 @@ class _StringsJa extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -57475,6 +57582,20 @@ class _StringsKo extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -64204,6 +64325,20 @@ class _StringsNl extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -70946,6 +71081,20 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -77672,6 +77821,20 @@ class _StringsRu extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -84346,6 +84509,20 @@ class _StringsTh extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -91052,6 +91229,20 @@ class _StringsTr extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -97743,6 +97934,20 @@ class _StringsVi extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 // Path: <root>
@@ -103955,6 +104160,19 @@ class _StringsZhCn extends _StringsEn {
   String get anki_lapis_visual_block_no_fields => '还没选字段';
   @override
   String get anki_lapis_visual_block_needs_note_type => '先选好卡片类型才能挑字段。';
+  @override
+  String get anki_lapis_restore_factory => '恢复出厂 Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      '用 Hibiki 内置版本覆盖 Anki 里的 Lapis 卡型（样式与正反面模板），并清空这里的全部客制化。';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      '这会用 Hibiki 内置版本覆盖 Anki 里 Lapis 的样式与正反面模板，并把字号、自定义 CSS、自定义区域全部重置。执行前会先自动备份当前状态。卡片数据不受影响。';
+  @override
+  String get anki_lapis_restore_factory_done => 'Lapis 已恢复出厂状态';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      '恢复失败：${error}';
 }
 
 // Path: <root>
@@ -110442,6 +110660,20 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get anki_lapis_visual_block_needs_note_type =>
       'Pick a note type first to choose fields.';
+  @override
+  String get anki_lapis_restore_factory => 'Restore factory Lapis';
+  @override
+  String get anki_lapis_restore_factory_hint =>
+      'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+  @override
+  String get anki_lapis_restore_factory_confirm =>
+      'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+  @override
+  String get anki_lapis_restore_factory_done =>
+      'Lapis restored to factory defaults';
+  @override
+  String anki_lapis_restore_factory_failed({required Object error}) =>
+      'Restore failed: ${error}';
 }
 
 /// Flat map(s) containing all translations.
@@ -116403,6 +116635,16 @@ extension on _StringsEn {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -122362,6 +122604,16 @@ extension on _StringsAr {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -128343,6 +128595,16 @@ extension on _StringsDe {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -134323,6 +134585,16 @@ extension on _StringsEs {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -140309,6 +140581,16 @@ extension on _StringsFr {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -146277,6 +146559,16 @@ extension on _StringsId {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -152259,6 +152551,16 @@ extension on _StringsIt {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -158203,6 +158505,16 @@ extension on _StringsJa {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -164151,6 +164463,16 @@ extension on _StringsKo {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -170127,6 +170449,16 @@ extension on _StringsNl {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -176100,6 +176432,16 @@ extension on _StringsPtBr {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -182078,6 +182420,16 @@ extension on _StringsRu {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -188039,6 +188391,16 @@ extension on _StringsTh {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -194009,6 +194371,16 @@ extension on _StringsTr {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -199975,6 +200347,16 @@ extension on _StringsVi {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
@@ -205888,6 +206270,16 @@ extension on _StringsZhCn {
         return '还没选字段';
       case 'anki_lapis_visual_block_needs_note_type':
         return '先选好卡片类型才能挑字段。';
+      case 'anki_lapis_restore_factory':
+        return '恢复出厂 Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return '用 Hibiki 内置版本覆盖 Anki 里的 Lapis 卡型（样式与正反面模板），并清空这里的全部客制化。';
+      case 'anki_lapis_restore_factory_confirm':
+        return '这会用 Hibiki 内置版本覆盖 Anki 里 Lapis 的样式与正反面模板，并把字号、自定义 CSS、自定义区域全部重置。执行前会先自动备份当前状态。卡片数据不受影响。';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis 已恢复出厂状态';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => '恢复失败：${error}';
       default:
         return null;
     }
@@ -211827,6 +212219,16 @@ extension on _StringsZhHk {
         return 'No fields selected yet';
       case 'anki_lapis_visual_block_needs_note_type':
         return 'Pick a note type first to choose fields.';
+      case 'anki_lapis_restore_factory':
+        return 'Restore factory Lapis';
+      case 'anki_lapis_restore_factory_hint':
+        return 'Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.';
+      case 'anki_lapis_restore_factory_confirm':
+        return 'This overwrites the Lapis styling and card templates in Anki with Hibiki\'s bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.';
+      case 'anki_lapis_restore_factory_done':
+        return 'Lapis restored to factory defaults';
+      case 'anki_lapis_restore_factory_failed':
+        return ({required Object error}) => 'Restore failed: ${error}';
       default:
         return null;
     }
