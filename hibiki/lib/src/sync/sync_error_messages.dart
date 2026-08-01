@@ -4,6 +4,12 @@ import 'package:hibiki/utils.dart';
 /// Localized friendly clause for a known error class, or null if the error is
 /// not one we recognize (caller decides the fallback).
 String? _friendlyClause(Object error) {
+  // BUG-1323：403「服务端按策略拒绝」有类型可用，不必再猜字符串。必须放在
+  // 最前面：下面那条 `error is SyncAuthError && l.contains('auth')` 会把任何带
+  // 'auth' 字样的鉴权错误都说成「登录已过期」——而 403 的凭据是好的。
+  if (error is SyncAuthError && error.isForbidden) {
+    return friendlySyncAuthFailure(error.kind, error.serverReason);
+  }
   final String msg =
       error is SyncBackendError ? error.message : _rawMessage(error);
   final String l = msg.toLowerCase();
@@ -80,6 +86,18 @@ String? _friendlyClause(Object error) {
     return t.sync_err_network;
   }
   return null;
+}
+
+/// 一条鉴权失败的**可操作**句子。抛出的 [SyncAuthError] 与报告里沉淀下来的
+/// `SyncAuthFailure` 共用同一套措辞，免得同一件事在两条路径上说两种话。
+///
+/// 参数只取 [SyncAuthFailureKind] 与服务端原因两个基元，故本文件不需要反向
+/// 依赖 sync_orchestrator（错误文案层不该知道同步编排层的存在）。
+String friendlySyncAuthFailure(SyncAuthFailureKind kind, String? serverReason) {
+  if (kind != SyncAuthFailureKind.forbidden) return t.sync_err_auth_expired;
+  final String? reason = serverReason;
+  if (reason == null || reason.isEmpty) return t.sync_err_forbidden;
+  return t.sync_err_forbidden_detail(reason: reason);
 }
 
 String _rawMessage(Object error) => error is SyncBackendError

@@ -2868,5 +2868,7 @@
   "audiobook_delete_confirm": "Delete the attached audiobook? Its audio files are removed from this device.",
   "delete_collection_confirm": "Only the grouping is removed. The items in it are kept.",
   "shortcut_action_video_enter_caret": "Enter subtitle lookup cursor",
-  "audiobook_export_clip_too_long": "Selection audio is too long to export (limit: 5 minutes)"
+  "audiobook_export_clip_too_long": "Selection audio is too long to export (limit: 5 minutes)",
+  "sync_err_forbidden": "The server refused this request. Your sign-in is fine - check the server's settings.",
+  "sync_err_forbidden_detail": "The server refused this request: $reason (your sign-in is fine)"
 }

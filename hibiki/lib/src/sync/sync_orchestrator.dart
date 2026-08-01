@@ -188,6 +188,15 @@ class SyncRunReport {
   int serviceConfigsImported = 0;
 
   final List<String> errors = <String>[];
+
+  /// 本轮遇到的**鉴权类**失败，带类型（去重后）。BUG-1324。
+  ///
+  /// [errors] 是扇平成字符串的日志行：异常一旦拼进去，「凭据真的不对」和
+  /// 「服务端因别的原因拒绝」就再也分不出来了；而 UI 只数了个
+  /// `errors.length` 就变成「N 项失败」，等于把两件事押成同一句废话。
+  /// 本列表把类型保留到 UI，与 [errors] **并存**（日志行一字不变）。
+  final List<SyncAuthFailure> authFailures = <SyncAuthFailure>[];
+
   final List<SyncConflict> conflicts = <SyncConflict>[];
 
   /// 本轮消费远端删除标记算出的 deleteLocal 候选（远端已删 ∧ 本地仍在库，且
@@ -230,9 +239,64 @@ class SyncRunReport {
     collectionsUpdated += other.collectionsUpdated;
     serviceConfigsImported += other.serviceConfigsImported;
     errors.addAll(other.errors);
+    for (final SyncAuthFailure f in other.authFailures) {
+      _addAuthFailure(f);
+    }
     conflicts.addAll(other.conflicts);
     deletionCandidates.addAll(other.deletionCandidates);
   }
+
+  /// 记一条维度/条目级失败。
+  ///
+  /// 字符串照旧进 [errors]（`'$label: $error'` —— 与改动前逐字相同，
+  /// 既有日志/断言一行不变）；它若是 [SyncAuthError]，**额外**在
+  /// [authFailures] 里留一份带类型的。信息只增不减。
+  void noteError(String label, Object error) {
+    errors.add('$label: $error');
+    if (error is! SyncAuthError) return;
+    _addAuthFailure(SyncAuthFailure(
+      label: label,
+      kind: error.kind,
+      message: error.message,
+      serverReason: error.serverReason,
+    ));
+  }
+
+  /// 按（kind, message, serverReason）去重：一次 401 会让一轮里几百本书逐本
+  /// 失败，用户只需要知道「凭据被拒了」一次。label 不进去重键（它只是
+  /// 第一个撞上的现场），否则去重就形同虚设。
+  void _addAuthFailure(SyncAuthFailure failure) {
+    final bool seen = authFailures.any((SyncAuthFailure f) =>
+        f.kind == failure.kind &&
+        f.message == failure.message &&
+        f.serverReason == failure.serverReason);
+    if (!seen) authFailures.add(failure);
+  }
+}
+
+/// 一次鉴权类同步失败，带着它的真实语义（BUG-1324）。
+///
+/// 与 [SyncAuthError] 同形，但是一个**值**：它要跨 orchestrator → 报告 → UI
+/// 三层活下来，而异常在第一个 catch 里就死了。
+class SyncAuthFailure {
+  const SyncAuthFailure({
+    required this.label,
+    required this.kind,
+    required this.message,
+    this.serverReason,
+  });
+
+  /// 出错的维度/条目标签，与 [SyncRunReport.errors] 里那一行同前缀。
+  final String label;
+
+  final SyncAuthFailureKind kind;
+  final String message;
+
+  /// 服务端给出的拒绝原因原文（只有 403 常带）。
+  final String? serverReason;
+
+  /// 服务端按策略拒绝（403），而不是凭据不被接受（401）。
+  bool get isForbidden => kind == SyncAuthFailureKind.forbidden;
 }
 
 /// Orchestrates sync across any [SyncBackend].
@@ -508,7 +572,7 @@ class SyncOrchestrator {
         deviceId: deviceId,
       );
     } catch (e) {
-      report.errors.add('aggregate sync: $e');
+      report.noteError('aggregate sync', e);
     }
   }
 
@@ -524,7 +588,7 @@ class SyncOrchestrator {
       if (snapshot == null) return;
       report.serviceConfigsImported += await snapshot.applyTo(_db);
     } catch (e) {
-      report.errors.add('service config live sync: $e');
+      report.noteError('service config live sync', e);
     }
   }
 
@@ -548,7 +612,7 @@ class SyncOrchestrator {
         pushMerged: backend.putRemoteAggregate,
       );
     } catch (e) {
-      report.errors.add('aggregate live sync: $e');
+      report.noteError('aggregate live sync', e);
     }
   }
 
@@ -642,12 +706,16 @@ class SyncOrchestrator {
           // 基线越过未读知识造成误判）。任一情况都绝不整轮 return。
           if (isOwn) {
             ownCorrupt = true;
-            report.errors.add('own collections manifest "${e.name}" unreadable;'
-                ' republishing from local+peers this run (self-heal): $err');
+            report.noteError(
+                'own collections manifest "${e.name}" unreadable;'
+                ' republishing from local+peers this run (self-heal)',
+                err);
           } else {
             skippedPeer = true;
-            report.errors.add('peer collections manifest "${e.name}" '
-                'unreadable; skipped this run (baseline held): $err');
+            report.noteError(
+                'peer collections manifest "${e.name}" '
+                'unreadable; skipped this run (baseline held)',
+                err);
           }
         }
       }
@@ -700,7 +768,7 @@ class SyncOrchestrator {
         await repo.setCollectionsSyncBaselineMs(nextBaseline);
       }
     } catch (e) {
-      report.errors.add('collections sync: $e');
+      report.noteError('collections sync', e);
     }
   }
 
@@ -761,7 +829,7 @@ class SyncOrchestrator {
       }
       await repo.setCollectionsSyncBaselineMs(nextBaseline);
     } catch (e) {
-      report.errors.add('collections live sync: $e');
+      report.noteError('collections live sync', e);
     }
   }
 
@@ -853,7 +921,7 @@ class SyncOrchestrator {
         try {
           json = await _backend.getJsonAsset(e.id);
         } catch (err) {
-          report.errors.add('deletion tombstone "${e.name}" unreadable: $err');
+          report.noteError('deletion tombstone "${e.name}" unreadable', err);
           continue;
         }
         final parsed = parseDeletionTombstoneJson(json);
@@ -892,7 +960,7 @@ class SyncOrchestrator {
         }
       }
     } catch (e) {
-      report.errors.add('deletion tombstones sync: $e');
+      report.noteError('deletion tombstones sync', e);
     }
   }
 
@@ -945,7 +1013,7 @@ class SyncOrchestrator {
         }
       }
     } catch (e) {
-      report.errors.add('deletion tombstones live sync: $e');
+      report.noteError('deletion tombstones live sync', e);
     }
   }
 
@@ -1096,7 +1164,7 @@ class SyncOrchestrator {
             tagTombstones: mergedTagTombstones,
           );
         } catch (e) {
-          report.errors.add('video "${v.title}": $e');
+          report.noteError('video "${v.title}"', e);
         }
         index++;
       }
@@ -1113,7 +1181,7 @@ class SyncOrchestrator {
             ns, kSyncVideosManifestName, merged.toJson());
       }
     } catch (e) {
-      report.errors.add('video assets sync: $e');
+      report.noteError('video assets sync', e);
     }
   }
 
@@ -1199,7 +1267,7 @@ class SyncOrchestrator {
           report.booksImported++;
         }
       } catch (e) {
-        report.errors.add('import book "${folder.name}": $e');
+        report.noteError('import book "${folder.name}"', e);
       }
     }
   }
@@ -1284,7 +1352,7 @@ class SyncOrchestrator {
               fileFraction: f),
         );
       } catch (e) {
-        report.errors.add('live push book "$title": $e');
+        report.noteError('live push book "$title"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -1356,7 +1424,7 @@ class SyncOrchestrator {
           report.localBookProgressPulled++;
         }
       } catch (e) {
-        report.errors.add('live book progress "${book.title}": $e');
+        report.noteError('live book progress "${book.title}"', e);
       }
     }
   }
@@ -1414,7 +1482,7 @@ class SyncOrchestrator {
           await writeBackLocal(key, winner.positionMs, winner.updatedAtMs);
         }
       } catch (e) {
-        report.errors.add('$errorLabel "$key": $e');
+        report.noteError('$errorLabel "$key"', e);
       }
     }
   }
@@ -1659,7 +1727,7 @@ class SyncOrchestrator {
         );
         report.dictionariesImported++;
       } catch (e) {
-        report.errors.add('pull dictionary "$name": $e');
+        report.noteError('pull dictionary "$name"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -1685,7 +1753,7 @@ class SyncOrchestrator {
                 fileFraction: f));
         report.dictionariesExported++;
       } catch (e) {
-        report.errors.add('push dictionary "$name": $e');
+        report.noteError('push dictionary "$name"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -1745,7 +1813,7 @@ class SyncOrchestrator {
                 fileFraction: f));
         report.dictionariesExported++;
       } catch (e) {
-        report.errors.add('export dictionary "${d.name}": $e');
+        report.noteError('export dictionary "${d.name}"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -1777,7 +1845,7 @@ class SyncOrchestrator {
         );
         report.dictionariesImported++;
       } catch (err) {
-        report.errors.add('import dictionary "${e.name}": $err');
+        report.noteError('import dictionary "${e.name}"', err);
       } finally {
         _safeDelete(tmp);
       }
@@ -1839,7 +1907,7 @@ class SyncOrchestrator {
           report.localAudioImported++;
         }
       } catch (e) {
-        report.errors.add('live pull local audio "$name": $e');
+        report.noteError('live pull local audio "$name"', e);
       } finally {
         _safeDelete(tmp);
         _safeDelete(stagingDb);
@@ -1880,7 +1948,7 @@ class SyncOrchestrator {
         );
         report.localAudioExported++;
       } catch (e) {
-        report.errors.add('live push local audio "$name": $e');
+        report.noteError('live push local audio "$name"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -1980,7 +2048,7 @@ class SyncOrchestrator {
         );
         report.audiobooksExported++;
       } catch (e) {
-        report.errors.add('live push audiobook "$key": $e');
+        report.noteError('live push audiobook "$key"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -2009,7 +2077,7 @@ class SyncOrchestrator {
         );
         report.audiobooksImported++;
       } catch (e) {
-        report.errors.add('live pull audiobook "$key": $e');
+        report.noteError('live pull audiobook "$key"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -2101,7 +2169,7 @@ class SyncOrchestrator {
           report.videosExported++;
           videoOk = true;
         } catch (e) {
-          report.errors.add('live push video "${v.title}": $e');
+          report.noteError('live push video "${v.title}"', e);
         }
       }
       // 字幕跟着视频走：视频本轮失败就不推字幕（host 侧无行可挂）。
@@ -2141,7 +2209,7 @@ class SyncOrchestrator {
             .putRemoteVideoSubtitle(row.bookUid, sub, suffix: suffix);
         if (!supported) return false;
       } catch (e) {
-        report.errors.add('live push subtitle "${p.basename(sub.path)}": $e');
+        report.noteError('live push subtitle "${p.basename(sub.path)}"', e);
       }
     }
     return true;
@@ -2235,7 +2303,7 @@ class SyncOrchestrator {
                 fileFraction: f));
         report.localAudioExported++;
       } catch (e) {
-        report.errors.add('export local audio "${d.displayName}": $e');
+        report.noteError('export local audio "${d.displayName}"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -2271,7 +2339,7 @@ class SyncOrchestrator {
           report.localAudioImported++;
         }
       } catch (err) {
-        report.errors.add('import local audio "${e.name}": $err');
+        report.noteError('import local audio "${e.name}"', err);
       } finally {
         _safeDelete(tmp);
         _safeDelete(stagingDb);
@@ -2330,7 +2398,7 @@ class SyncOrchestrator {
           report.audiobooksExported++;
         }
       } catch (e) {
-        report.errors.add('audiobook "${book.title}": $e');
+        report.noteError('audiobook "${book.title}"', e);
       } finally {
         _safeDelete(tmp);
       }
@@ -2359,7 +2427,7 @@ class SyncOrchestrator {
     try {
       children = await _backend.listChildren(root);
     } catch (e) {
-      report.errors.add('prune root spill (list root): $e');
+      report.noteError('prune root spill (list root)', e);
       return;
     }
     for (final AssetEntry e in children) {
@@ -2368,7 +2436,7 @@ class SyncOrchestrator {
         await _backend.deleteAsset(e.id);
         report.rootSpillFilesRemoved++;
       } catch (err) {
-        report.errors.add('prune root spill "${e.name}": $err');
+        report.noteError('prune root spill "${e.name}"', err);
       }
     }
   }
