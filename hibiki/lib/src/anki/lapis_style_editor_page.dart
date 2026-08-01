@@ -941,8 +941,8 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           style: tokens.type.listSubtitle,
         ),
         for (final String ankiField in present)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
+          HibikiListItem(
+            padding: EdgeInsets.zero,
             title: Text(ankiField),
             subtitle: Text(
               _mappingFor(ankiField).isEmpty
