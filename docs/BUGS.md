@@ -79,6 +79,7 @@
 | [BUG-1276](bugs/BUG-1276-dashboard-heatmap-dark-contrast.md) | ✅ | ✅ | 黑色主题下学习活动热力图空周融进背景 |
 | [BUG-1275](bugs/BUG-1275-anti-leech-blacklist-range-ban.md) | ✅ | ✅ | 反吸血身份黑名单命中升级整段连坐封禁 |
 | [BUG-1274](bugs/BUG-1274-anti-leech-blacklist-download-phase.md) | ✅ | ✅ | 反吸血身份黑名单下载期无差别封禁 |
+| [BUG-1273](bugs/BUG-1273-reader-back-swallowed-while-audiobook-playing.md) | ✅ | ✅ | 有声书播放中侧滑返回无效（退出链 await 停播放器） |
 | [BUG-1272](bugs/BUG-1272-bangumi-scrape-no-retry.md) | 🚧 | 🚧 | Bangumi 刮削单次请求无重试，链路丢连接直接失败 |
 | [BUG-1271](bugs/BUG-1271-popup-autoexpand-rows-unit-mismatch.md) | ✅ | ✅ | 自动展开默认值按本数写进行数槽位，出厂默认从3本变9本 |
 | [BUG-1270](bugs/BUG-1270-youtube-live-subtitle-seek-duplicate.md) | ✅ | ✅ | YouTube 实时字幕回跳后重复且累积成长段 |

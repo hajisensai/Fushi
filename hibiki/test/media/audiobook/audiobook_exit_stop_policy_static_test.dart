@@ -70,34 +70,17 @@ void main() {
     );
   });
 
-  // TODO-831：退出即停的时机从 dispose 提前到 onSourcePagePop（被 onWillPop
-  // await，pop 动画开始前完成），让书架 NowListeningMiniBar 从首帧就见空会话、
-  // 不闪播放条。这里钉住该提前的 await stop 在偏好门控内存在；dispose 的兜底
-  // unawaited(stop()) 由上面三条守卫继续钉。
-  test('onSourcePagePop awaits a guarded stop on exit (TODO-831)', () {
-    final RegExpMatch? body = RegExp(
-      r'Future<void> onSourcePagePop\(\) async \{(.*?)\n  \}',
-      dotAll: true,
-    ).firstMatch(src);
-    expect(body, isNotNull, reason: '找不到 onSourcePagePop 方法体');
-    final String pop = body!.group(1)!;
-    expect(
-      RegExp(
-        r'if\s*\(\s*!appModel\.audiobookBackgroundPlay\s*\)\s*\{[\s\S]*?'
-        r'await\s+appModel\.audiobookSession\.stop\(\)',
-      ).hasMatch(pop),
-      isTrue,
-      reason: '退出即停必须在 onSourcePagePop 里按 !audiobookBackgroundPlay '
-          '门控 await stop（pop 动画前止声，消除迷你条闪播放条）',
-    );
-  });
-
-  // W1（TODO-831 复核）：onSourcePagePop 被 onWillPop await，若 stop 在桌面释放
-  // native 解码器时抛平台异常，异常会沿 onWillPop → onPopInvokedWithResult 逃逸，
-  // 导致 nav.pop() 不执行（用户退不出阅读器）。这里钉住 await stop 被 try/catch
-  // 包裹、异常记到 ErrorLogService、catch 后照常退出（与 dispose 路径 catchError
-  // 对齐）；防止未来重构把这层错误守卫去掉。
-  test('onSourcePagePop guards stop() with try/catch + ErrorLogService (W1)',
+  // TODO-831：退出即停的时机从 dispose 提前到 onSourcePagePop（pop 动画开始前
+  // 调用），让书架 NowListeningMiniBar 从首帧就见空会话、不闪播放条。
+  //
+  // BUG-1273 契约变更：这里从「await stop」改成「unawaited(stop())」。TODO-831 要的
+  // 「首帧见空会话」由 `_stopInternal` 的首段（第一个 await 前清空
+  // _reader/_controller/_book + notifyListeners）保证——只隔一个微任务，远早于 pop
+  // 动画首帧，与调用方是否 await 无关；而 await 它会把「排队 + 停 native 播放器 +
+  // 销毁解码器」这段**只有播放态才真正干活**的不可控耗时挂进用户的返回路径（外层
+  // 还有 _popInProgress 单飞门 → 播放中返回被静默吞掉，直到音频真停下来才 pop）。
+  // 行为层证据见 `reader_back_not_blocked_by_stop_test.dart`。
+  test('onSourcePagePop fires the guarded stop without awaiting (BUG-1273)',
       () {
     final RegExpMatch? body = RegExp(
       r'Future<void> onSourcePagePop\(\) async \{(.*?)\n  \}',
@@ -107,14 +90,42 @@ void main() {
     final String pop = body!.group(1)!;
     expect(
       RegExp(
-        r'try\s*\{[\s\S]*?'
-        r'await\s+appModel\.audiobookSession\.stop\(\)[\s\S]*?'
-        r'\}\s*catch\s*\([^)]*\)\s*\{[\s\S]*?'
-        r'ErrorLogService\.instance\.log\(',
+        r'if\s*\(\s*!appModel\.audiobookBackgroundPlay\s*\)\s*\{[\s\S]*?'
+        r'unawaited\(\s*appModel\.audiobookSession\.stop\(\)',
       ).hasMatch(pop),
       isTrue,
-      reason: 'onSourcePagePop 的 await stop 必须被 try/catch 包裹、异常记到 '
-          'ErrorLogService，stop 抛异常时不得逃逸阻断 nav.pop()（W1）',
+      reason: '退出即停必须在 onSourcePagePop 里按 !audiobookBackgroundPlay '
+          '门控调 stop（pop 前止声 + 清会话，消除迷你条闪播放条）',
+    );
+    // 负向：绝不能退回 await——那正是 BUG-1273 的根因（播放中返回被吞到音频停下）。
+    expect(
+      RegExp(r'await\s+appModel\.audiobookSession\.stop\(\)').hasMatch(pop),
+      isFalse,
+      reason: 'BUG-1273：退出路径不得 await stop（native 释放耗时不可控且只在播放态'
+          '发生，会把用户的返回挂到音频真停下来那一刻）',
+    );
+  });
+
+  // W1（TODO-831 复核 → BUG-1273 收口）：stop 在释放 native 解码器时可能抛平台异常。
+  // 旧实现 await + try/catch 防它逃逸阻断 nav.pop()；改 fire-and-forget 后，异常不再
+  // 经过退出路径，但仍必须就地 catchError 记到 ErrorLogService（否则成未捕获异步
+  // 错误），与 dispose 路径的 unawaited(stop().catchError(...)) 惯例一致。
+  test('onSourcePagePop stop() is guarded by catchError + ErrorLogService (W1)',
+      () {
+    final RegExpMatch? body = RegExp(
+      r'Future<void> onSourcePagePop\(\) async \{(.*?)\n  \}',
+      dotAll: true,
+    ).firstMatch(src);
+    expect(body, isNotNull, reason: '找不到 onSourcePagePop 方法体');
+    final String pop = body!.group(1)!;
+    expect(
+      RegExp(
+        r'unawaited\(\s*[\s\S]*?appModel\.audiobookSession\.stop\(\)'
+        r'\s*\.catchError\([\s\S]*?ErrorLogService\.instance\.log\(',
+      ).hasMatch(pop),
+      isTrue,
+      reason: 'onSourcePagePop 的 fire-and-forget stop 必须 .catchError 记到 '
+          'ErrorLogService，不得留下未捕获异步错误（W1）',
     );
   });
 }

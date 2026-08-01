@@ -2210,23 +2210,30 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     await _syncAndFlushPosition();
     await _flushReadingStats();
     // TODO-831：「退出后续播」关闭（audiobookBackgroundPlay=false）时，把真正
-    // 停会话从 dispose 提前到这里——onSourcePagePop 被 onWillPop await，此刻页面
-    // 仍 mounted、pop 动画尚未开始，await stop 完成后会话已空（_book/_controller
-    // 置 null + notifyListeners），下层书架在 pop 动画首帧重建时 NowListeningMiniBar
-    // 即见空会话从一开始 SizedBox.shrink，消除「显一帧再收起」的闪播放条。
-    // dispose() 里的 unawaited(stop()) 兜底保留（硬 kill / 系统回收 / 非 PopScope
-    // 退出路径 onWillPop 不一定跑到），stop() 内部对已清空的 controller 做 no-op，
-    // 二次调用安全。
+    // 停会话从 dispose 提前到这里——此刻页面仍 mounted、pop 动画尚未开始，
+    // [AudiobookSession.stop] 的**同步首段**（第一个 await 之前）就把会话置空
+    // （_book/_controller = null + notifyListeners），下层书架在 pop 动画首帧重建时
+    // NowListeningMiniBar 即见空会话从一开始 SizedBox.shrink，消除「显一帧再收起」
+    // 的闪播放条。dispose() 里的 unawaited(stop()) 兜底保留（硬 kill / 系统回收 /
+    // 非 PopScope 退出路径 onWillPop 不一定跑到），stop() 内部对已清空的 controller
+    // 做 no-op，二次调用安全。
+    //
+    // BUG-1273：这里**不得 await** stop()。stop() 的 await 段是「停 native 播放器 +
+    // 销毁解码器」（stopPlayback → just_audio `_setPlatformActive(false)` 拆平台，
+    // 随后 disposeAndRelease 再 await 一次 `_player.dispose()`），耗时不可控，且
+    // **只有播放态才真正干活**（暂停态几乎瞬时返回）。而 onSourcePagePop 被
+    // onWillPop await、onWillPop 又被 PopScope 的 onPopInvokedWithResult await，
+    // 外层还有 `_popInProgress` 单飞门：一旦这一步慢/挂，用户播放中按返回（手势
+    // 侧滑 / 返回键 / ESC）第一次触发就把单飞门顶住，**后续每一次返回都被静默丢弃**，
+    // 直到 native 播放器真停下来那一刻才连着止声一起 pop——用户感知就是「播放时侧滑
+    // 返回无效，等句子停了那次返回才生效」。会话可见状态由同步首段负责，native 资源
+    // 释放与「用户已经离开这一页」无因果关系，改 fire-and-forget（catchError 兜住
+    // 平台异常，语义与 dispose 路径一致）。
     if (!appModel.audiobookBackgroundPlay) {
-      // W1：onSourcePagePop 被 onWillPop await，stop 在桌面释放 native 解码器时
-      // 若抛平台异常，异常会沿 onWillPop → onPopInvokedWithResult 逃逸，导致
-      // nav.pop() 不执行（用户退不出阅读器）。与 dispose 路径的 catchError 对齐：
-      // 记错误后照常继续退出，绝不能因 stop 失败卡住不 pop。
-      try {
-        await appModel.audiobookSession.stop();
-      } catch (e, s) {
+      unawaited(
+          appModel.audiobookSession.stop().catchError((Object e, StackTrace s) {
         ErrorLogService.instance.log('ReaderHibiki.popStopAudiobook', e, s);
-      }
+      }));
     }
   }
 
