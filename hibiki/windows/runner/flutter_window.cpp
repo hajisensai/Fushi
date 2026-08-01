@@ -1760,6 +1760,10 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                flutter::EncodableValue(s.audio_hooks_ready)},
               {flutter::EncodableValue("rawVoiceReady"),
                flutter::EncodableValue(s.raw_voice_ready)},
+              {flutter::EncodableValue("textLaneRecycles"),
+               flutter::EncodableValue(s.text_lane_recycles)},
+              {flutter::EncodableValue("textLaneOverflows"),
+               flutter::EncodableValue(s.text_lane_overflows)},
               {flutter::EncodableValue("ready"),
                flutter::EncodableValue(s.ok || s.raw_voice_ready)},
           };

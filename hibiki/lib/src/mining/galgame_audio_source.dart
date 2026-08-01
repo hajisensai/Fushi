@@ -984,6 +984,16 @@ class EngineHookGalAudioSource implements GalAudioSource {
   bool get textHookReady => _textHookReady;
   bool get rawVoiceReady => _rawVoiceReady;
 
+  /// v13 文本分道的容量事实（native 累计计数）。
+  ///
+  /// [textLaneOverflows] 大于 0 = 道用尽且连可回收的道都没有，**有台词被丢了**。它必须
+  /// 一路走到诊断里：道满的症状（某些线程的台词就是不来）与 v13 要根治的 256 槽挤压
+  /// 完全同形，真机上没有这个数就分不出「分道没生效」和「道不够用」，而放开非胜出线程
+  /// 本身就抬高了道满概率。[textLaneRecycles] 是降级但未丢行的那一级（回收了最久没写的
+  /// 非选定道），单独计数才能看出压力是从哪一级开始的。
+  int get textLaneRecycles => _textLaneRecycles;
+  int get textLaneOverflows => _textLaneOverflows;
+
   /// 共享内存已通过与 [start] **完全相同**的就绪门（`ready` + 有效 PCM 格式）时的格式。
   ///
   /// null 只说明「游戏还没播过语音」，不说明 hook 没装上（那看 [textHookReady] 与 native
@@ -997,6 +1007,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
   bool _textHookReady = false;
   bool _audioHooksReady = false;
   bool _rawVoiceReady = false;
+  int _textLaneRecycles = 0;
+  int _textLaneOverflows = 0;
   PcmFormat? _readyFormat;
 
   /// 查目标进程 [pid] 是否 32 位（WOW64）。hibiki.exe 是 64 位，故 native `IsWow64Process`
@@ -1340,6 +1352,9 @@ class EngineHookGalAudioSource implements GalAudioSource {
       _textHookReady = parseEngineTextHookReady(r);
       _audioHooksReady = parseEngineAudioHooksReady(r);
       _rawVoiceReady = r['rawVoiceReady'] == true;
+      _textLaneRecycles = (r['textLaneRecycles'] as int?) ?? _textLaneRecycles;
+      _textLaneOverflows =
+          (r['textLaneOverflows'] as int?) ?? _textLaneOverflows;
       // 就绪门只有一处真相源：start() 与运行中的 refreshReadiness() 必须用同一判据，
       // 否则「启动时不算就绪、运行中却算就绪」会让两条路径对同一份共享内存给出
       // 互相矛盾的结论（BUG-1100）。
