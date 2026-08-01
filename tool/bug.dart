@@ -18,17 +18,32 @@
 //
 // 用法：
 //   dart run tool/bug.dart new <slug> [标题...]        # 新建一条 bug（跨分支取下一个空号 + 重建索引）
-//   dart run tool/bug.dart renumber <old> <new> [--dry-run]
+//   dart run tool/bug.dart renumber <old> <new> [--base <ref>] [--dry-run]
 //                                                     # 改号：文件名 + 正文 H2 + 代码/测试引用一把改，
 //                                                     #      改完自动 reindex 并自校验零残留
 //   dart run tool/bug.dart reindex                     # 扫 docs/bugs/*.md 重建 docs/BUGS.md 索引
 //   dart run tool/bug.dart migrate                     # 一次性：把旧单文件 BUGS.md 拆成 per-file
 //   dart run tool/bug.dart check                       # 守卫：校验 per-file 不变式 + 索引是否同步
 //
+// ⚠️ `check` **不扫分支**：它只校验本地 `docs/bugs/` 的「号唯一 / 文件名与 H2 一致 / 索引同步」。
+//    跨分支撞号只有 `new` 与 `renumber` 看得见（只有它们调 [scanBranchBugNumbers]）。
+//
+// renumber 的两种模式——由「old 号在本地是否唯一」决定，**不是开关**：
+//   · **号唯一**（只有一个 bug 文件占 old）：全仓替换。此时仓库里每一处 `BUG-<old>` 按定义
+//     都指向这唯一一条，全仓改才是对的；缩范围反而会漏引用。
+//   · **撞号态**（≥2 个 bug 文件占 old——正是 integration rebase 后唯一需要改号的场景）：
+//     替换范围**钉死**在「本次改动引入的文件集」（`git diff --name-only <merge-base>..工作区`
+//     + untracked），并在改号前后对**范围外每个文件**的 `BUG-<old>` 出现数做断言，
+//     一处变动即整体失败。
+//     不这么做的后果：撞号意味着 base 上**本来就有一条合法的同号 bug**，全仓盲替换会把它
+//     和所有指向它的引用一起改掉，制造「base 侧 bug 凭空消失 / 引用指向不存在的号」的
+//     二次破坏——而事后 `check` 仍然报通过（号仍唯一、索引仍同步），**不会报警**。
+//
 // 环境变量（都可不设）：
 //   HIBIKI_BUG_REMOTE=origin              远端名
 //   HIBIKI_BUG_SKIP_REMOTE_FETCH=1        跳过 git fetch（离线/急用；仍扫已缓存 remote-tracking 并警告）
 //   HIBIKI_BUG_REMOTE_TIMEOUT=25          fetch 超时秒数
+//   HIBIKI_BUG_BASE=origin/develop        撞号态下算作用域用的基线 ref（等价于 `--base`）
 //
 // 零外部依赖（只用 dart:*）。运行目录 = 仓库根（docs/ 在其下）。
 
@@ -90,7 +105,8 @@ const String headerTemplate = '''# Bug 跟踪
 ''';
 
 /// bug 新建骨架模板（`new` 子命令用）。
-String bugSkeleton(String paddedNum, String title, String dateIso) => '''## BUG-$paddedNum · $title
+String bugSkeleton(String paddedNum, String title, String dateIso) =>
+    '''## BUG-$paddedNum · $title
 - **报告**：$dateIso（用户：）
 - **真实性**：（沿真实代码路径验真伪后填：✅ 真 bug / ❌ 未复现，附根因 `file:line`）
 - **[ ] ① 未修复** —
@@ -200,14 +216,16 @@ List<BugEntry> scanBugs() {
     }
     final (n, pad, title) = parsed;
     final (fix, test) = statusIcons(body);
-    entries.add(BugEntry(
-      number: n,
-      paddedNum: pad,
-      title: title,
-      fixIcon: fix,
-      testIcon: test,
-      fileName: name,
-    ));
+    entries.add(
+      BugEntry(
+        number: n,
+        paddedNum: pad,
+        title: title,
+        fixIcon: fix,
+        testIcon: test,
+        fileName: name,
+      ),
+    );
   }
   entries.sort((a, b) => b.number.compareTo(a.number));
   return entries;
@@ -222,7 +240,9 @@ String buildIndexTable(List<BugEntry> entries) {
   sb.writeln('|---|:--:|:--:|---|');
   for (final e in entries) {
     final title = e.title.replaceAll('|', r'\|');
-    sb.writeln('| [BUG-${e.paddedNum}]($linkDir/${e.fileName}) | ${e.fixIcon} | ${e.testIcon} | $title |');
+    sb.writeln(
+      '| [BUG-${e.paddedNum}]($linkDir/${e.fileName}) | ${e.fixIcon} | ${e.testIcon} | $title |',
+    );
   }
   return sb.toString().trimRight();
 }
@@ -307,11 +327,14 @@ Future<ProcessResult?> runGit(
     }
     await proc.stdin.close().catchError((Object _) {});
     var timedOut = false;
-    final code = await proc.exitCode.timeout(timeout, onTimeout: () {
-      timedOut = true;
-      proc.kill(ProcessSignal.sigkill);
-      return -1;
-    });
+    final code = await proc.exitCode.timeout(
+      timeout,
+      onTimeout: () {
+        timedOut = true;
+        proc.kill(ProcessSignal.sigkill);
+        return -1;
+      },
+    );
     await outDone.catchError((Object _) {});
     await errDone.catchError((Object _) {});
     if (timedOut) return null;
@@ -380,10 +403,10 @@ Future<BranchScan> scanBranchBugNumbers() async {
   final skipFetch = skipRaw.isNotEmpty && skipRaw != '0';
   final timeoutSeconds = int.tryParse(env['HIBIKI_BUG_REMOTE_TIMEOUT'] ?? '') ?? 25;
 
-  final inRepo = await runGit(
-    <String>['rev-parse', '--is-inside-work-tree'],
-    timeout: const Duration(seconds: 10),
-  );
+  final inRepo = await runGit(<String>[
+    'rev-parse',
+    '--is-inside-work-tree',
+  ], timeout: const Duration(seconds: 10));
   if (inRepo == null || inRepo.exitCode != 0) {
     return localOnlyScan('不在 git 仓库里，或找不到 git 可执行文件');
   }
@@ -393,10 +416,12 @@ Future<BranchScan> scanBranchBugNumbers() async {
   if (skipFetch) {
     fetchNote = 'HIBIKI_BUG_SKIP_REMOTE_FETCH 已设，主动跳过 fetch';
   } else {
-    final fetch = await runGit(
-      <String>['fetch', '--quiet', remote, '+refs/heads/*:refs/remotes/$remote/*'],
-      timeout: Duration(seconds: timeoutSeconds),
-    );
+    final fetch = await runGit(<String>[
+      'fetch',
+      '--quiet',
+      remote,
+      '+refs/heads/*:refs/remotes/$remote/*',
+    ], timeout: Duration(seconds: timeoutSeconds));
     fetched = fetch != null && fetch.exitCode == 0;
     if (!fetched) {
       fetchNote = fetch == null
@@ -479,8 +504,10 @@ typedef BranchScanner = Future<BranchScan> Function();
 
 Future<void> cmdNew(List<String> args, {BranchScanner? scanner}) async {
   if (args.isEmpty) {
-    throw BugToolError('用法：dart run tool/bug.dart new <slug> [标题...]\n'
-        '  slug 是 ascii kebab（如 reader-internal-link），让并发新建落成不同文件名');
+    throw BugToolError(
+      '用法：dart run tool/bug.dart new <slug> [标题...]\n'
+      '  slug 是 ascii kebab（如 reader-internal-link），让并发新建落成不同文件名',
+    );
   }
   final slug = sanitizeSlug(args.first);
   if (slug.isEmpty) {
@@ -535,8 +562,7 @@ String sanitizeSlug(String s) {
 
 /// 号引用的**唯一口径**：`BUG-1138` / `bug_1138` / `bug-1138`（允许前导 0；禁止数字粘连，
 /// 也不误伤 `debug-1138` 这种词尾）。替换、预览、自校验三处共用同一个正则，口径不会漂。
-RegExp bugRefPattern(int number) =>
-    RegExp('(?<![0-9A-Za-z])(BUG|Bug|bug)([-_])0*$number(?![0-9])');
+RegExp bugRefPattern(int number) => RegExp('(?<![0-9A-Za-z])(BUG|Bug|bug)([-_])0*$number(?![0-9])');
 
 /// 一处待改的引用。
 class BugRefEdit {
@@ -579,11 +605,48 @@ String? renameNumberInPath(String path, int oldNumber, int newNumber) {
 
 /// 认得出的纯文本扩展名（二进制不读、不改）。
 const Set<String> textExtensions = <String>{
-  '.dart', '.md', '.yaml', '.yml', '.json', '.txt', '.ps1', '.sh', '.bat', '.cmd',
-  '.js', '.mjs', '.ts', '.html', '.css', '.kt', '.kts', '.java', '.cpp', '.cc',
-  '.h', '.hpp', '.mm', '.m', '.swift', '.gradle', '.xml', '.py', '.rb', '.go',
-  '.rs', '.toml', '.ini', '.cfg', '.properties', '.podspec', '.plist', '.pro',
-  '.patch', '.diff', '.sql', '.csv',
+  '.dart',
+  '.md',
+  '.yaml',
+  '.yml',
+  '.json',
+  '.txt',
+  '.ps1',
+  '.sh',
+  '.bat',
+  '.cmd',
+  '.js',
+  '.mjs',
+  '.ts',
+  '.html',
+  '.css',
+  '.kt',
+  '.kts',
+  '.java',
+  '.cpp',
+  '.cc',
+  '.h',
+  '.hpp',
+  '.mm',
+  '.m',
+  '.swift',
+  '.gradle',
+  '.xml',
+  '.py',
+  '.rb',
+  '.go',
+  '.rs',
+  '.toml',
+  '.ini',
+  '.cfg',
+  '.properties',
+  '.podspec',
+  '.plist',
+  '.pro',
+  '.patch',
+  '.diff',
+  '.sql',
+  '.csv',
 };
 
 bool looksTextual(String path) {
@@ -600,8 +663,16 @@ String baseName(String path) {
 
 /// git 不可用时的兜底遍历要跳过的目录。
 const Set<String> skipDirs = <String>{
-  '.git', '.dart_tool', 'build', 'node_modules', '.worktrees', '.claude',
-  '.codex-test', 'Pods', '.gradle', '.idea',
+  '.git',
+  '.dart_tool',
+  'build',
+  'node_modules',
+  '.worktrees',
+  '.claude',
+  '.codex-test',
+  'Pods',
+  '.gradle',
+  '.idea',
 };
 
 List<String> walkFallback() {
@@ -629,16 +700,16 @@ List<String> walkFallback() {
 Future<List<String>> repoScanPaths() async {
   final paths = <String>{};
   final tracked = await runGit(<String>['ls-files', '-z'], timeout: const Duration(seconds: 60));
-  final others = await runGit(
-    <String>['ls-files', '-z', '--others', '--exclude-standard'],
-    timeout: const Duration(seconds: 60),
-  );
+  final others = await runGit(<String>[
+    'ls-files',
+    '-z',
+    '--others',
+    '--exclude-standard',
+  ], timeout: const Duration(seconds: 60));
   if (tracked != null && tracked.exitCode == 0) {
     for (final r in <ProcessResult?>[tracked, others]) {
       if (r == null || r.exitCode != 0) continue;
-      paths.addAll(
-        (r.stdout as String).split('\u0000').where((String p) => p.isNotEmpty),
-      );
+      paths.addAll((r.stdout as String).split('\u0000').where((String p) => p.isNotEmpty));
     }
   } else {
     paths.addAll(walkFallback());
@@ -646,9 +717,172 @@ Future<List<String>> repoScanPaths() async {
   for (final extra in extraScanPaths) {
     if (File(extra).existsSync()) paths.add(extra);
   }
-  final list = paths.where(looksTextual).where((String p) => File(p).existsSync()).toList()
-    ..sort();
+  final list = paths.where(looksTextual).where((String p) => File(p).existsSync()).toList()..sort();
   return list;
+}
+
+// ---------------------------------------------------------------------------
+// renumber 作用域：撞号态下把替换范围钉在「本次改动引入的文件集」
+// ---------------------------------------------------------------------------
+
+/// 路径统一成正斜杠（git 吐正斜杠，Dart 在 Windows 上可能拿到反斜杠；两边要能对上）。
+String normalizeRelPath(String p) => p.replaceAll(r'\', '/');
+
+/// 默认基线 ref 候选（按顺序取第一个存在的）。
+const List<String> defaultBaseRefCandidates = <String>[
+  'origin/develop',
+  'develop',
+  'origin/main',
+  'main',
+  'origin/master',
+  'master',
+];
+
+/// 「本次改动引入的文件集」——撞号态下 renumber 的替换范围。
+///
+/// 判据钉在**不可变事实**上：`merge-base(base, HEAD)` 之后我这条线新增/修改的文件，
+/// 加上未跟踪文件（`bug.dart new` 刚建出来还没 commit 的正是这一类）。
+/// 不钉在「文件里有没有 BUG-old」上——那正是会把 base 侧合法同号条目卷进来的错误判据。
+class RenumberScope {
+  RenumberScope({
+    required this.paths,
+    required this.baseRef,
+    required this.mergeBase,
+    required this.detail,
+  });
+
+  /// 解析失败时的空作用域（[detail] 说明原因）。
+  RenumberScope.unavailable(this.detail) : paths = const <String>{}, baseRef = '', mergeBase = '';
+
+  /// 相对仓库根、正斜杠的路径集合。
+  final Set<String> paths;
+  final String baseRef;
+  final String mergeBase;
+
+  /// 解析失败原因；成功时是空串。
+  final String detail;
+
+  bool get available => detail.isEmpty;
+
+  /// 作用域可用**且非空**才能拿来消歧/限范围。空作用域（例如站在 base 分支本身、
+  /// 什么都没改）等同于「不知道哪些文件是我的」，绝不能当成「一个都不改」静默通过。
+  bool get usable => available && paths.isNotEmpty;
+
+  bool contains(String path) => paths.contains(normalizeRelPath(path));
+}
+
+/// 把 `-z` 分隔的 git 路径输出切成集合。
+Set<String> splitGitZ(String raw) =>
+    raw.split('\u0000').where((String p) => p.isNotEmpty).map(normalizeRelPath).toSet();
+
+/// 解析基线 ref：显式 `--base` > `HIBIKI_BUG_BASE` > [defaultBaseRefCandidates]。
+/// 返回第一个真实存在的 ref 名；都不存在返回 null。
+Future<String?> resolveBaseRef(String? explicit) async {
+  final env = Platform.environment;
+  final fromEnv = (env['HIBIKI_BUG_BASE'] ?? '').trim();
+  final wanted = (explicit != null && explicit.trim().isNotEmpty)
+      ? explicit.trim()
+      : (fromEnv.isNotEmpty ? fromEnv : null);
+  final candidates = wanted != null ? <String>[wanted] : defaultBaseRefCandidates;
+  for (final ref in candidates) {
+    final r = await runGit(<String>[
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      '$ref^{commit}',
+    ], timeout: const Duration(seconds: 15));
+    if (r != null && r.exitCode == 0 && (r.stdout as String).trim().isNotEmpty) {
+      return ref;
+    }
+  }
+  return null;
+}
+
+/// 算出本次改动引入的文件集。两个 git 调用：
+///   1. `git diff --name-only -z <merge-base>` —— merge-base 对比**工作区**，
+///      一把覆盖「已提交 + 已 stage + 未 stage」三种状态。
+///   2. `git ls-files -o --exclude-standard -z` —— 未跟踪（刚 `new` 出来的 bug 文件）。
+Future<RenumberScope> resolveRenumberScope({String? baseRef}) async {
+  final inRepo = await runGit(<String>[
+    'rev-parse',
+    '--is-inside-work-tree',
+  ], timeout: const Duration(seconds: 10));
+  if (inRepo == null || inRepo.exitCode != 0) {
+    return RenumberScope.unavailable('不在 git 仓库里，或找不到 git 可执行文件');
+  }
+  final resolved = await resolveBaseRef(baseRef);
+  if (resolved == null) {
+    final tried = (baseRef ?? Platform.environment['HIBIKI_BUG_BASE'] ?? '').trim();
+    return RenumberScope.unavailable(
+      tried.isNotEmpty
+          ? 'base ref `$tried` 不存在'
+          : '找不到可用的 base ref（试过 ${defaultBaseRefCandidates.join(' / ')}）',
+    );
+  }
+  final mb = await runGit(<String>[
+    'merge-base',
+    resolved,
+    'HEAD',
+  ], timeout: const Duration(seconds: 30));
+  if (mb == null || mb.exitCode != 0 || (mb.stdout as String).trim().isEmpty) {
+    return RenumberScope.unavailable('git merge-base $resolved HEAD 失败（无共同祖先？）');
+  }
+  final mergeBase = (mb.stdout as String).trim();
+  final diff = await runGit(<String>[
+    'diff',
+    '--name-only',
+    '-z',
+    mergeBase,
+  ], timeout: const Duration(seconds: 60));
+  if (diff == null || diff.exitCode != 0) {
+    return RenumberScope.unavailable('git diff --name-only $mergeBase 失败');
+  }
+  final untracked = await runGit(<String>[
+    'ls-files',
+    '-o',
+    '--exclude-standard',
+    '-z',
+  ], timeout: const Duration(seconds: 60));
+  final paths = splitGitZ(diff.stdout as String);
+  if (untracked != null && untracked.exitCode == 0) {
+    paths.addAll(splitGitZ(untracked.stdout as String));
+  }
+  return RenumberScope(paths: paths, baseRef: resolved, mergeBase: mergeBase, detail: '');
+}
+
+/// 某路径在 [ref] 那个 commit 上是否存在。撞号消歧的**首选判据**：
+/// 「我引入的那一份」＝ base 上还没有的那一份。
+Future<bool> pathExistsAtRef(String ref, String path) async {
+  final r = await runGit(<String>[
+    'cat-file',
+    '-e',
+    '$ref:${normalizeRelPath(path)}',
+  ], timeout: const Duration(seconds: 15));
+  return r != null && r.exitCode == 0;
+}
+
+/// 范围外文件的指纹：`路径 → "内容命中数:文件名是否命中"`，只留有命中的项。
+/// 改号前后各取一次，任何差异都说明「碰到了不该碰的文件」。
+Map<String, String> bugRefFingerprint(int number, Iterable<String> paths) {
+  final re = bugRefPattern(number);
+  final out = <String, String>{};
+  for (final p in paths) {
+    final f = File(p);
+    if (!f.existsSync()) continue;
+    String content;
+    try {
+      content = f.readAsStringSync();
+    } on FileSystemException {
+      continue;
+    } on FormatException {
+      continue; // 非 UTF-8 文本，不可能是 BUG 引用载体
+    }
+    final contentHits = re.allMatches(content).length;
+    final nameHit = re.hasMatch(baseName(p)) ? 1 : 0;
+    if (contentHits == 0 && nameHit == 0) continue;
+    out[normalizeRelPath(p)] = '$contentHits:$nameHit';
+  }
+  return out;
 }
 
 /// 扫出所有仍在引用 `number` 的位置（`path:line` 或 `path（文件名）`）。
@@ -681,8 +915,9 @@ Future<List<String>> findResidualRefs(int number, {List<String>? paths}) async {
 }
 
 /// 组装 renumber 计划（不落盘）。
-Future<RenumberPlan> buildRenumberPlan(int oldNumber, int newNumber) async {
-  final paths = await repoScanPaths();
+/// [paths] 是**已经框定好的**替换范围；不传则退回全仓（只在 old 号唯一时才成立）。
+Future<RenumberPlan> buildRenumberPlan(int oldNumber, int newNumber, {List<String>? paths}) async {
+  paths ??= await repoScanPaths();
   final re = bugRefPattern(oldNumber);
   final newPad = padNum(newNumber);
   final edits = <BugRefEdit>[];
@@ -700,12 +935,14 @@ Future<RenumberPlan> buildRenumberPlan(int oldNumber, int newNumber) async {
       final lines = content.split('\n');
       for (var i = 0; i < lines.length; i++) {
         if (!re.hasMatch(lines[i])) continue;
-        edits.add(BugRefEdit(
-          p,
-          i + 1,
-          lines[i].trimRight(),
-          lines[i].replaceAllMapped(re, (Match m) => '${m[1]}${m[2]}$newPad').trimRight(),
-        ));
+        edits.add(
+          BugRefEdit(
+            p,
+            i + 1,
+            lines[i].trimRight(),
+            lines[i].replaceAllMapped(re, (Match m) => '${m[1]}${m[2]}$newPad').trimRight(),
+          ),
+        );
       }
     }
     final renamed = renameNumberInPath(p, oldNumber, newNumber);
@@ -714,9 +951,12 @@ Future<RenumberPlan> buildRenumberPlan(int oldNumber, int newNumber) async {
   return RenumberPlan(oldNumber, newNumber, edits, renames);
 }
 
-/// 找承载 `number` 的 bug 文件（正文 H2 或文件名任一命中即算——文件名与 H2 不一致
-/// 正是要修的坏状态）。返回相对仓库根的路径；找不到或多于一个都抛。
-String locateBugFile(int number) {
+/// 列出所有承载 `number` 的 bug 文件（正文 H2 或文件名任一命中即算——文件名与 H2 不一致
+/// 正是要修的坏状态）。返回相对仓库根、已排序的路径列表；一个都没有就返回空列表。
+///
+/// **撞号态返回多份是正常的**，不是错误：PR 侧和 base 侧各占一份同号，正是唯一需要
+/// `renumber` 的场景。消歧交给 [pickOwnBugFile]，不在这里抛错退出。
+List<String> locateBugFiles(int number) {
   final dir = Directory(bugsDir);
   if (!dir.existsSync()) throw BugToolError('找不到 $bugsDir 目录');
   final matches = <String>[];
@@ -728,12 +968,48 @@ String locateBugFile(int number) {
     final nameNum = byName == null ? null : int.tryParse(byName.group(1)!);
     if (headingNum == number || nameNum == number) matches.add('$bugsDir/$name');
   }
+  matches.sort();
+  return matches;
+}
+
+/// 找唯一承载 `number` 的 bug 文件；不存在或撞号（多份）都抛。
+/// 只给「必须唯一」的场景用（例如判断目标号是否已被占用）。
+String locateBugFile(int number) {
+  final matches = locateBugFiles(number);
   if (matches.isEmpty) throw BugToolError('BUG-${padNum(number)} 在 $bugsDir/ 里不存在');
   if (matches.length > 1) {
-    throw BugToolError('BUG-${padNum(number)} 命中多个文件：${matches.join('、')}——先人工归并');
+    throw BugToolError('BUG-${padNum(number)} 命中多个文件：${matches.join('、')}');
   }
   return matches.first;
 }
+
+/// 撞号态消歧：从 [candidates] 里挑出「本次改动引入的那一份」。
+///
+/// 判据按可靠性排序：
+///   1. **base 上不存在** —— 我新建的那一份。这是最硬的事实，和文件内容、行状态都无关。
+///   2. 落在作用域（本次改动的文件集）内 —— 兜底，覆盖「base 上有同名文件但被我整体替换」。
+/// 两条都判不出唯一解就抛错，让人处理，**绝不猜**——猜错就是改坏 base 侧合法条目。
+Future<String> pickOwnBugFile(int number, List<String> candidates, RenumberScope scope) async {
+  if (candidates.length == 1) return candidates.first;
+  final introduced = <String>[];
+  for (final p in candidates) {
+    if (!await pathExistsAtRef(scope.mergeBase, p)) introduced.add(p);
+  }
+  if (introduced.length == 1) return introduced.first;
+  final pool = introduced.isEmpty ? candidates : introduced;
+  final inScope = pool.where(scope.contains).toList();
+  if (inScope.length == 1) return inScope.first;
+  throw BugToolError(
+    'BUG-${padNum(number)} 撞号：$bugsDir/ 里有 ${candidates.length} 份同号文件'
+    '（${candidates.join('、')}），但无法判定哪一份是本次改动引入的'
+    '（base=${scope.baseRef}@${shortSha(scope.mergeBase)}：'
+    '新增 ${introduced.length} 份 / 作用域内 ${inScope.length} 份）。'
+    '换一个更贴切的基线重试（`--base <ref>`），或先人工归并。',
+  );
+}
+
+/// 取短 sha（错误信息里用，避免整行 40 位）。
+String shortSha(String sha) => sha.length <= 9 ? sha : sha.substring(0, 9);
 
 String clipLine(String s) => s.length <= 160 ? s : '${s.substring(0, 157)}...';
 
@@ -744,17 +1020,32 @@ Future<void> renameTracked(String from, String to) async {
   File(from).renameSync(to);
 }
 
-/// 改号：文件名 + 正文 H2 + 代码注释 + 测试名/测试文件名，四处一把改，
+/// 改号：文件名 + 正文 H2 + 代码注释 + 测试名 + 测试文件名内嵌号，**五类一把改**，
 /// 改完自动 reindex 并**自校验旧号零残留**。前置校验不通过就整体退出，不做半截修改。
+///
+/// 撞号态（≥2 个 bug 文件占 old）下会自动把替换范围框到「本次改动引入的文件集」，
+/// 并对范围外文件做前后指纹断言——见文件头「renumber 的两种模式」。
 Future<void> cmdRenumber(List<String> args, {BranchScanner? scanner}) async {
-  final positional = args.where((String a) => !a.startsWith('--')).toList();
-  final dryRun = args.contains('--dry-run');
-  final unknown = args.where((String a) => a.startsWith('--') && a != '--dry-run').toList();
-  if (unknown.isNotEmpty) {
-    throw BugToolError('未知选项：${unknown.join(' ')}');
+  final positional = <String>[];
+  var dryRun = false;
+  String? baseOpt;
+  for (var i = 0; i < args.length; i++) {
+    final a = args[i];
+    if (a == '--dry-run') {
+      dryRun = true;
+    } else if (a == '--base') {
+      if (i + 1 >= args.length) throw BugToolError('--base 后面要跟一个 ref');
+      baseOpt = args[++i];
+    } else if (a.startsWith('--base=')) {
+      baseOpt = a.substring('--base='.length);
+    } else if (a.startsWith('--')) {
+      throw BugToolError('未知选项：$a');
+    } else {
+      positional.add(a);
+    }
   }
   if (positional.length != 2) {
-    throw BugToolError('用法：dart run tool/bug.dart renumber <old> <new> [--dry-run]');
+    throw BugToolError('用法：dart run tool/bug.dart renumber <old> <new> [--base <ref>] [--dry-run]');
   }
   if (!RegExp(r'^\d+$').hasMatch(positional[0]) || !RegExp(r'^\d+$').hasMatch(positional[1])) {
     throw BugToolError('<old> 与 <new> 必须是纯数字（拿到 ${positional[0]} / ${positional[1]}）');
@@ -769,7 +1060,30 @@ Future<void> cmdRenumber(List<String> args, {BranchScanner? scanner}) async {
   }
 
   // —— 前置校验：old 必须存在；new 必须没被占用（本地 + 跨分支同一口径）。
-  final oldPath = locateBugFile(oldNumber);
+  final oldMatches = locateBugFiles(oldNumber);
+  if (oldMatches.isEmpty) {
+    throw BugToolError('BUG-${padNum(oldNumber)} 在 $bugsDir/ 里不存在');
+  }
+  final collided = oldMatches.length > 1;
+
+  // —— 撞号态：算出「本次改动引入的文件集」，据此消歧 + 框死替换范围。
+  //    作用域算不出来时**必须停**：这时候全仓盲替换会改坏 base 侧那条合法同号 bug，
+  //    而事后 `check` 仍然报通过——静默的二次破坏，比直接失败糟得多。
+  final RenumberScope scope = collided
+      ? await resolveRenumberScope(baseRef: baseOpt)
+      : RenumberScope.unavailable('old 号唯一，无需框范围');
+  if (collided && !scope.usable) {
+    throw BugToolError(
+      'BUG-${padNum(oldNumber)} 撞号：$bugsDir/ 里有 ${oldMatches.length} 份同号文件'
+      '（${oldMatches.join('、')}）。撞号意味着 base 上本来就有一条合法的同号 bug，'
+      '此时**必须**把替换范围限定在本次改动引入的文件集里，但算不出来：'
+      '${scope.available ? '作用域为空（相对 ${scope.baseRef} 没有任何改动？）' : scope.detail}。'
+      '用 `--base <ref>` 指定基线后重试（如 `--base origin/develop`）。',
+    );
+  }
+  final String oldPath = await pickOwnBugFile(oldNumber, oldMatches, scope);
+  final List<String> foreignBugFiles = oldMatches.where((String p) => p != oldPath).toList();
+
   final localNumbers = scanBugs().map((BugEntry e) => e.number).toSet();
   final localNames = Directory(bugsDir)
       .listSync()
@@ -782,18 +1096,57 @@ Future<void> cmdRenumber(List<String> args, {BranchScanner? scanner}) async {
     if (parsed != null) localNumbers.add(parsed);
   }
   if (localNumbers.contains(newNumber)) {
-    throw BugToolError('BUG-${padNum(newNumber)} 本地已被占用（${locateBugFile(newNumber)}）——换一个号');
+    throw BugToolError(
+      'BUG-${padNum(newNumber)} 本地已被占用'
+      '（${locateBugFiles(newNumber).join('、')}）——换一个号',
+    );
   }
   final scan = await (scanner ?? scanBranchBugNumbers)();
   final warning = scan.warning;
   if (warning != null) logWarn(warning);
   if (scan.numbers.contains(newNumber)) {
-    throw BugToolError('BUG-${padNum(newNumber)} 已被其它分支占用'
-        '（跨 ${scan.refCount} 个本地/远端分支扫描）——换一个号；'
-        '当前跨分支最大号是 ${padNum(scan.maxNumber)}');
+    throw BugToolError(
+      'BUG-${padNum(newNumber)} 已被其它分支占用'
+      '（跨 ${scan.refCount} 个本地/远端分支扫描）——换一个号；'
+      '当前跨分支最大号是 ${padNum(scan.maxNumber)}',
+    );
   }
 
-  final plan = await buildRenumberPlan(oldNumber, newNumber);
+  // —— 框定替换范围。
+  //    · 索引 docs/BUGS.md 永远排除：它是生成物，由 cmdReindex() 重建；
+  //      撞号态下它同时含 base 侧那条的行，文本替换会把那行也改掉。
+  //    · 别人的同号 bug 文件永远排除：绝不改不是自己引入的那条。
+  final allPaths = await repoScanPaths();
+  final Set<String> foreignSet = foreignBugFiles.map(normalizeRelPath).toSet();
+  bool isIndex(String p) => normalizeRelPath(p) == indexFile;
+  bool inScope(String p) => !collided || scope.contains(p);
+  bool isForeign(String p) => foreignSet.contains(normalizeRelPath(p));
+
+  final List<String> effectivePaths = allPaths
+      .where((String p) => !isIndex(p) && inScope(p) && !isForeign(p))
+      .toList();
+  // 范围外文件（改号前后必须一字不变）。
+  // 刻意**不**由 effectivePaths 取反算出来——那样一旦替换范围被改宽，守卫会跟着一起
+  // 缩小、失去作用（变异实测抓到过）。两个集合各自独立地从 scope / foreign 判据算出，
+  // 互为补集，替换范围漏了什么，守卫就一定看得见。
+  final List<String> outsidePaths = allPaths
+      .where((String p) => !isIndex(p) && (!inScope(p) || isForeign(p)))
+      .toList();
+
+  if (collided) {
+    logWarn(
+      '⚠ 撞号态：BUG-${padNum(oldNumber)} 在 $bugsDir/ 有 ${oldMatches.length} 份同号文件。'
+      '本次只改「$oldPath」以及 ${scope.baseRef}@${shortSha(scope.mergeBase)} 之后'
+      '本改动引入的 ${scope.paths.length} 个文件；'
+      '${foreignBugFiles.join('、')} 及范围外 ${outsidePaths.length} 个文件一律不碰。',
+    );
+    logWarn(
+      '⚠ 范围内若有指向**别人那条** BUG-${padNum(oldNumber)} 的引用，工具无法从文本上分辨，'
+      '会一并改掉——先跑 `--dry-run` 逐行过一遍。',
+    );
+  }
+
+  final plan = await buildRenumberPlan(oldNumber, newNumber, paths: effectivePaths);
   for (final r in plan.renames) {
     if (File(r.to).existsSync()) {
       throw BugToolError('目标文件已存在：${r.to}——换一个号');
@@ -804,8 +1157,16 @@ Future<void> cmdRenumber(List<String> args, {BranchScanner? scanner}) async {
   }
 
   if (dryRun) {
-    logOut('[dry-run] BUG-${padNum(oldNumber)} → BUG-${padNum(newNumber)}：'
-        '${plan.edits.length} 处引用 / ${plan.renames.length} 个文件改名（未落盘）');
+    logOut(
+      '[dry-run] BUG-${padNum(oldNumber)} → BUG-${padNum(newNumber)}：'
+      '${plan.edits.length} 处引用 / ${plan.renames.length} 个文件改名（未落盘）',
+    );
+    if (collided) {
+      logOut(
+        '[dry-run] 作用域：${scope.baseRef}@${shortSha(scope.mergeBase)} 起 '
+        '${scope.paths.length} 个文件；不碰 ${foreignBugFiles.join('、')}',
+      );
+    }
     for (final r in plan.renames) {
       logOut('  改名   ${r.from}  →  ${r.to}');
     }
@@ -817,6 +1178,9 @@ Future<void> cmdRenumber(List<String> args, {BranchScanner? scanner}) async {
     logOut('[dry-run] 未写任何文件；去掉 --dry-run 才真正执行');
     return;
   }
+
+  // —— 事后守卫的基线：范围外每个文件的 BUG-<old> 指纹。
+  final Map<String, String> outsideBefore = bugRefFingerprint(oldNumber, outsidePaths);
 
   // —— 落盘：先改内容，再改名（改名后路径变了，内容已改完不受影响）。
   final re = bugRefPattern(oldNumber);
@@ -833,14 +1197,49 @@ Future<void> cmdRenumber(List<String> args, {BranchScanner? scanner}) async {
 
   cmdReindex();
 
-  // —— 自校验：同口径重扫，确认旧号在工作区零残留。
-  final residual = await findResidualRefs(oldNumber);
-  if (residual.isNotEmpty) {
-    throw BugToolError('改号后仍有 BUG-${padNum(oldNumber)} 残留，请人工处理：\n  '
-        '${residual.join('\n  ')}');
+  // —— 守卫①：范围外文件一字未变。撞号时 base 侧那条合法同号 bug 就在这里面；
+  //    这是把「静默的二次破坏」变成「显式失败」的那道断言。
+  final Map<String, String> outsideAfter = bugRefFingerprint(oldNumber, outsidePaths);
+  final drift = <String>[];
+  for (final key in <String>{...outsideBefore.keys, ...outsideAfter.keys}) {
+    final before = outsideBefore[key];
+    final after = outsideAfter[key];
+    if (before != after) drift.add('$key：$before → $after');
   }
-  logOut('renumber 完成：BUG-${padNum(oldNumber)} → BUG-${padNum(newNumber)}'
-      '（${plan.edits.length} 处引用 / ${plan.renames.length} 个文件改名，自校验零残留）');
+  if (drift.isNotEmpty) {
+    throw BugToolError(
+      '🔴 改号误伤了范围外文件（本该一字不变），请立刻 `git checkout --` 回滚这些文件：\n  '
+      '${drift.join('\n  ')}',
+    );
+  }
+
+  // —— 守卫②：自校验旧号在**本次范围内**零残留。撞号态下范围外还留着别人那条的
+  //    BUG-<old>，那是合法的，不算残留。
+  //    范围里的路径要按改名结果映射一次，否则改完名的文件会因「旧路径已不存在」被跳过、
+  //    残留检查形同虚设。
+  final Map<String, String> renameMap = <String, String>{
+    for (final r in plan.renames) r.from: r.to,
+  };
+  final residual = await findResidualRefs(
+    oldNumber,
+    paths: collided ? effectivePaths.map((String p) => renameMap[p] ?? p).toList() : null,
+  );
+  if (residual.isNotEmpty) {
+    throw BugToolError(
+      '改号后仍有 BUG-${padNum(oldNumber)} 残留，请人工处理：\n  '
+      '${residual.join('\n  ')}',
+    );
+  }
+  logOut(
+    'renumber 完成：BUG-${padNum(oldNumber)} → BUG-${padNum(newNumber)}'
+    '（${plan.edits.length} 处引用 / ${plan.renames.length} 个文件改名，自校验零残留）',
+  );
+  if (collided) {
+    logOut(
+      '  撞号态：范围外 ${outsidePaths.length} 个文件已断言一字未变'
+      '（其中 ${outsideBefore.length} 个仍合法引用 BUG-${padNum(oldNumber)}）',
+    );
+  }
   for (final r in plan.renames) {
     logOut('  ${r.from} → ${r.to}');
   }
@@ -866,16 +1265,20 @@ int cmdCheck() {
   for (final e in entries) {
     final prev = byNum[e.number];
     if (prev != null) {
-      logWarn('✗ 号撞了：BUG-${e.paddedNum} 出现在 $prev 与 ${e.fileName}'
-          '（跑 `dart run tool/bug.dart renumber <old> <new>` 改号）');
+      logWarn(
+        '✗ 号撞了：BUG-${e.paddedNum} 出现在 $prev 与 ${e.fileName}'
+        '（跑 `dart run tool/bug.dart renumber <old> <new>` 改号）',
+      );
       ok = false;
     }
     byNum[e.number] = e.fileName;
     final nameMatch = RegExp(r'^BUG-0*(\d+)').firstMatch(e.fileName);
     final nameNum = nameMatch == null ? null : int.tryParse(nameMatch.group(1)!);
     if (nameNum != null && nameNum != e.number) {
-      logWarn('✗ ${e.fileName} 文件名是 BUG-${padNum(nameNum)} 但正文 H2 是 BUG-${e.paddedNum}'
-          '——两者必须一致（`renumber` 会同步改）');
+      logWarn(
+        '✗ ${e.fileName} 文件名是 BUG-${padNum(nameNum)} 但正文 H2 是 BUG-${e.paddedNum}'
+        '——两者必须一致（`renumber` 会同步改）',
+      );
       ok = false;
     }
   }
@@ -902,15 +1305,20 @@ int cmdCheck() {
   return 1;
 }
 
-const String usage = '用法：dart run tool/bug.dart <new|renumber|reindex|migrate|check> ...\n'
+const String usage =
+    '用法：dart run tool/bug.dart <new|renumber|reindex|migrate|check> ...\n'
     '  new <slug> [标题...]                 新建（跨本地+远端分支取下一个空号）\n'
-    '  renumber <old> <new> [--dry-run]     改号（文件名 + 正文 H2 + 代码/测试引用 + reindex + 自校验）\n'
+    '  renumber <old> <new> [--base <ref>] [--dry-run]\n'
+    '                                       改号：文件名 / 正文 H2 / 代码引用 / 测试名 /\n'
+    '                                       测试文件名内嵌号 五类一把改 + reindex + 自校验\n'
     '  reindex                              重建 docs/BUGS.md 索引\n'
     '  migrate                              一次性：旧单文件拆 per-file\n'
-    '  check                                守卫：号唯一 / 文件名与 H2 一致 / 索引同步\n'
+    '  check                                守卫：号唯一 / 文件名与 H2 一致 / 索引同步（**不扫分支**）\n'
     '\n'
     '注意：取号会扫所有本地分支 + 远端分支，但这**不是**分布式锁——两个 agent 同一秒取号\n'
-    '仍可能撞（TOCTOU）；网络不通时会显式警告并降级。开 PR 前和每次 rebase 后重跑 check。';
+    '仍可能撞（TOCTOU）；网络不通时会显式警告并降级。开 PR 前和每次 rebase 后重跑 check。\n'
+    'renumber 在撞号态（base 上已有一条合法同号 bug）下会自动把替换范围框到本次改动引入的\n'
+    '文件集，并断言范围外文件一字未变；base 默认取 origin/develop，用 --base 覆盖。';
 
 Future<void> main(List<String> args) async {
   if (args.isEmpty) {
