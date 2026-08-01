@@ -252,10 +252,18 @@ enum GalHookInjectorFailure {
   /// injector 已宣告 hooked，但共享内存打不开（native 通道不可用）。
   sharedMemoryUnavailable,
 
-  /// 共享内存打开了，但契约版本与本体不一致：helper 与 Hibiki 版本漂开。
+  /// 共享内存打开了，但契约版本与本体不一致：捕获组件与 Hibiki 本体漂开。
   ///
   /// 与 [sharedMemoryUnavailable] 分开是因为**处置相反**：后者重试/重开游戏有可能好，
-  /// 前者重启多少次都不会好，必须更新或重装捕获组件（BUG-1216）。
+  /// 前者重启多少次都不会好（BUG-1216）。
+  ///
+  /// 处置只有「更新本体」一条：捕获组件自 BUG-1196 起随主包内置（`galgame_helper/` 里的
+  /// 已校验归档，由 [GalgameHelperInstaller] 在每次启动前按摘要自动换入），**没有独立于
+  /// app 的更新通道**，所以旧文案里的「重新安装捕获组件」是个不存在的动作。真能落到这里
+  /// 只剩两种局面：① 本包没随附归档（开发构建 / 早于随包发布的旧包），用的是历史遗留的
+  /// 组件目录；② 随附了但仍不匹配 = 本体与组件不同源构建，属发布包缺陷。两者用户能做的
+  /// 都是「换一个新版本的 Hibiki」，具体是哪一种由诊断行里的双方版本号（`shm=11/want 12`）
+  /// 和安装器日志分辨。
   protocolMismatch,
 
   /// injector 已 hooked、共享内存已开，但超时内既没有 PCM 格式也没有文本 hook。
@@ -405,7 +413,7 @@ String galHookDiagnosticsDetail(GalHookInjectorDiagnostics diagnostics) {
 /// 分开归类的理由是**处置完全不同**，而旧实现把它们全压成一句「捕获通道无法打开，请重启
 /// Hibiki」（BUG-1216）：
 ///   - `access_denied`：游戏跑在更高完整性级别 → 要以管理员身份运行 Hibiki，重启没用；
-///   - `protocol_mismatch`：helper 与本体版本漂开 → 要更新/重装捕获组件，重启更没用；
+///   - `protocol_mismatch`：捕获组件与本体版本漂开 → 组件随本体内置更新，只能更新本体，重启更没用；
 ///   - 其余（映射不存在 / MapView 失败 / pid 非法）→ native 只知道「映射不在那儿」，
 ///     **不知道为什么**，此处返回 null。
 ///

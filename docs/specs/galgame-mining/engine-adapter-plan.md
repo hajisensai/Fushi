@@ -149,7 +149,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
   x64 另含 `unity_audio_runtime`（net8.0，Unity IL2CPP 音频提取运行时）。app 端 `_extractZip` 只取 basename 平铺。
 
 ### 【hibiki 侧（消费端，只在这里）】
-- IPC/reader：`hibiki/windows/runner/voice_hook_ipc.h`、`voice_hook_reader.{cpp,h}`、`voice_hook` channel
+- IPC/reader：`voice_hook_reader.{cpp,h}`、`voice_hook` channel（契约头只有 `native/galgame_hook/include/voice_hook_ipc.h` 一份，host 直接 include）
   （`grabRecent`、`processIsWow64`、`rawVoiceReady`）。
 - Dart 制卡/音频：`hibiki/lib/src/mining/galgame_audio_source.dart`（`EngineHookGalAudioSource` /
   `LoopbackGalAudioSource`）、`galgame_audio_encode.dart`、`galgame_library.dart`、
