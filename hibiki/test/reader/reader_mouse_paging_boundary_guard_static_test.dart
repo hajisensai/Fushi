@@ -197,6 +197,11 @@ void main() {
           reason: '只有横向触控板手势进入跨章节 burst 闸门');
       expect(body, contains('_pagedWheelGestureGate.shouldStartNewGesture'),
           reason: '手势 session 必须属于 reader State，切章后仍在');
+      // BUG-1380：token 只能在这一 tick 真能落地翻页时消费。handler 必须把
+      // _paginationInFlight 交给闸门，否则换章加载期的首个 tick 白吃 token，
+      // 整段惯性的后续 tick 全在闸门早退 → 用户这一次滑动零反馈。
+      expect(body, contains('canTurnPage: !_paginationInFlight'),
+          reason: 'BUG-1380：闸门必须知道这一 tick 能否翻页，才决定是否消费手势 token');
     });
 
     test(
