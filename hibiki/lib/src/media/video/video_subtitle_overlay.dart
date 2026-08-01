@@ -1510,7 +1510,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
               isSecondary: isSecondary,
             ));
           }
-          final Widget ch = _buildSubtitleChar(chars[i], i, markup, cue);
+          final Widget ch = _applyVerticalGlyphRotation(
+              _buildSubtitleChar(chars[i], i, markup, cue), i, markup);
           // 选词光标环（手柄查词）：光标停在本字符时外画一圈主题色圆角框。
           // foregroundDecoration 画在字形之上、不改变布局几何（字幕排版零位移）。
           // 登记与画环同帧同源（entryIndex 即登记序），不存在几何滞后。
@@ -1799,6 +1800,46 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       );
     }
     return _applySpanScale(glyph, char, i, markup, fillStyle);
+  }
+
+  /// GDI/ASS「`@` 前缀 = 竖排字体」约定的字形预旋转（BUG-1331）。
+  ///
+  /// 语义（VSFilter/libass 与 GDI 一致）：`@` 开头的字体，其**字形本身**逆时针预旋转
+  /// 90°（字顶朝左）存储，而文本**仍按水平方向排版**。字幕组据此写出竖排的标准组合
+  ///
+  /// ```
+  /// {\fn@A-OTF Kaimin Tsuki Std H\an2\frz270\pos(10,360)}雨上がり　君は…
+  /// ```
+  ///
+  /// ——`\frz270`（ASS 逆时针为正，270° 即顺时针 90°）把整行顺时针转 90°：行方向由水平
+  /// 变竖直（自上而下），字形由躺倒转回正立。两次旋转互相抵消才得到「字正着、行竖排」。
+  ///
+  /// 旧实现只在 [_resolveAssFontFamily] 里把 `@` 当噪声剥掉（DirectWrite 家族名确实不含
+  /// `@`，那一步是对的），却没有任何地方承接被剥掉的**竖排语义**；而 `\frz270` 照转不误
+  /// ——于是只剩下单向的 90° 旋转，整行躺倒、盒几何随之错位到画面左缘外（用户报「左边的
+  /// 字都出去了」）。
+  ///
+  /// 修法是忠实建模「字形预旋转」本身，而不是新造一套竖排排版分支：每个字形绕自身中心
+  /// 逆时针转 90°（Flutter 的 Z 轴视觉正方向为顺时针，故取 `-π/2`；与 [_applyAssTransform]
+  /// 里 `\frz` 的取负同源）。`\pos` / `\an` / `\frz` / `\fad` / 分组 / 命中登记**全部照旧
+  /// 生效**，零特例分支。
+  ///
+  /// 近似说明：[Transform.rotate] 不改变布局尺寸，而 GDI 竖排字形的 advance 是宽高互换的。
+  /// CJK 全角字（含全角空格）宽≈高，故逐字盒几何几乎不变；`@` 字体本就是 CJK 竖排专用，
+  /// 混排窄拉丁字符时会有半字宽级别的偏差，接受。
+  ///
+  /// 纯字幕模式（respectAssStyle 关）位置/样式语义整体归零，竖排一并不生效。
+  Widget _applyVerticalGlyphRotation(
+      Widget glyph, int i, SubtitleMarkup? markup) {
+    if (!widget.respectAssStyle || markup == null) return glyph;
+    // 行内 \fn 优先于样式表 Fontname（与 [_styleForGrapheme] 的字体优先级同源）。
+    final SubtitleSpan? span = _spanAt(i, markup);
+    final String? spanFont = span?.fontName;
+    final String? name = (spanFont != null && spanFont.isNotEmpty)
+        ? spanFont
+        : markup.cueStyle?.fontName;
+    if (!isAssVerticalFontName(name)) return glyph;
+    return Transform.rotate(angle: -math.pi / 2, child: glyph);
   }
 
   /// span 级静态 `\fscx`/`\fscy` 缩放（ASS：标签处生效到下一次覆盖——说话人前缀
@@ -2546,6 +2587,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return topLeft & ro.size;
   }
 }
+
+/// ASS/GDI 字体名是否声明了**竖排书写**（`@` 前缀约定，BUG-1331）。
+///
+/// `@` 只是「字形已预旋转 90°」的标记，不属于家族名——故 [_resolveAssFontFamily] 按家族名
+/// 解析时剥掉它是对的，本判据负责把被剥掉的那半语义接住（见 `_applyVerticalGlyphRotation`）。
+@visibleForTesting
+bool isAssVerticalFontName(String? name) =>
+    name != null && name.startsWith('@');
 
 /// `\pos` / `\move` 绝对定位盒的最终左上角（容器局部坐标）。纯函数，几何真相源。
 ///
