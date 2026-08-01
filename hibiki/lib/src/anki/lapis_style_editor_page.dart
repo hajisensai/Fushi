@@ -919,6 +919,16 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
         ],
       );
 
+  /// 当前编辑目标由哪些 Anki 字段填充。
+  ///
+  /// 「这块显示哪几个字段」（结构）与「某个字段里装什么内容」（来源）是**正交**
+  /// 的两件事，不是会打架的两层：内置字段的结构由 Lapis 模板写死，所以只能问
+  /// 模板；自定义区域的结构由用户自己挑，所以问区域。两种目标在这里收敛成同一个
+  /// 答案，映射区因此不需要按目标类型分叉，也就没有「选中区域时把映射藏起来」
+  /// 这种回避式特例。
+  List<String> get _selectedTargetSources =>
+      _selectedBlock?.fields ?? lapisVisualFieldSources(_selectedField);
+
   /// 字段在真卡上的可见性说明——只对内置字段有意义，自定义区域没有这类限制。
   String? get _selectedFieldNote =>
       _selectedBlockId != null ? null : _fieldNote(_selectedField);
@@ -1175,13 +1185,10 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   /// 选中区域由哪些 Anki 字段填充。只列**当前卡型真有**的字段：用户选的不是
   /// Lapis 时这里自然空掉，不会把 Lapis 的字段名写到别的卡型头上。
   Widget _buildFieldMappingSection(HibikiDesignTokens tokens) {
-    // 选中自定义区域时不显示：区域显示哪些字段由它自己的字段选择器决定，
-    // 两个都摆出来会让「这里改的到底是哪一层」变得含糊。
-    if (_selectedBlockId != null) return const SizedBox.shrink();
     if (widget.pickHandlebar == null || widget.noteTypeFields.isEmpty) {
       return const SizedBox.shrink();
     }
-    final List<String> sources = lapisVisualFieldSources(_selectedField);
+    final List<String> sources = _selectedTargetSources;
     final List<String> present =
         sources.where(widget.noteTypeFields.contains).toList();
     // 有来源字段、但当前卡型一个都没有 = 用户选的不是 Lapis 系卡型。整块收起，
@@ -1194,9 +1201,14 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
         Text(t.anki_field_mappings, style: tokens.type.sectionLabel),
         SizedBox(height: tokens.spacing.gap),
         Text(
-          present.isEmpty
-              ? t.anki_lapis_visual_mapping_none
-              : t.anki_lapis_visual_mapping_hint,
+          present.isNotEmpty
+              ? t.anki_lapis_visual_mapping_hint
+              // 「一个字段都没有」对两种目标是两回事：内置字段是模板自绘、
+              // 天生没有字段；自定义区域是用户还没挑。用同一句话糊过去，
+              // 用户会以为区域坏了。
+              : _selectedBlockId != null
+                  ? t.anki_lapis_visual_block_no_fields
+                  : t.anki_lapis_visual_mapping_none,
           style: tokens.type.listSubtitle,
         ),
         for (final String ankiField in present)

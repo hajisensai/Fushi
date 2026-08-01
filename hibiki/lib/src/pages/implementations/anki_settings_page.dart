@@ -247,8 +247,15 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               _buildNoteTypeDropdown(settings, vm),
             ],
           ),
+          // 字段映射的主入口已经是可视化编辑器（选中区域 → 直接改喂它的字段），
+          // 这里这份按卡型逐字段平铺的列表退成兜底/全量视图：默认折叠，需要时
+          // 再展开。折叠而不是删掉——非 Lapis 卡型没有可视化编辑器可用，这里
+          // 仍是唯一能配映射的地方。
           AdaptiveSettingsSection(
             title: t.anki_field_mappings,
+            titlePlacement: SettingsSectionTitlePlacement.inside,
+            collapsible: true,
+            initiallyExpanded: false,
             children: _buildFieldMappings(settings, vm),
           ),
           AdaptiveSettingsSection(
