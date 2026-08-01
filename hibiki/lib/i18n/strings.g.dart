@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 51391 (3023 per locale)
 ///
-/// Built on 2026-08-01 at 12:08 UTC
+/// Built on 2026-08-01 at 16:22 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -104715,7 +104715,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get section_interface => '界面';
   @override
-  String get section_layout => '布局与显示';
+  String get section_layout => '布局显示';
   @override
   String get section_navigation => '导航';
   @override
@@ -111318,7 +111318,7 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get section_interface => '介面';
   @override
-  String get section_layout => '版面與顯示';
+  String get section_layout => '版面顯示';
   @override
   String get section_navigation => '導覽';
   @override
@@ -210910,7 +210910,7 @@ extension on _StringsZhCn {
       case 'section_interface':
         return '界面';
       case 'section_layout':
-        return '布局与显示';
+        return '布局显示';
       case 'section_navigation':
         return '导航';
       case 'section_page_turn_direction':
@@ -217074,7 +217074,7 @@ extension on _StringsZhHk {
       case 'section_interface':
         return '介面';
       case 'section_layout':
-        return '版面與顯示';
+        return '版面顯示';
       case 'section_navigation':
         return '導覽';
       case 'section_page_turn_direction':
