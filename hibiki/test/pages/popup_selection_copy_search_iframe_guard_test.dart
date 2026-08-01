@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-802 守卫：查词弹窗里选中词典正文后，右键「复制/搜索」曾完全无效。两层根因：
 ///
 ///   1. 弹窗把每张词条卡渲染成独立**同源** iframe（global_lookup_host.js），用户拖选的
@@ -21,19 +23,10 @@ void main() {
     'lib/src/pages/implementations/dictionary_popup_webview.dart',
   );
 
-  /// 剥掉纯注释行（trim 后以 `//` 开头）——本守卫检查的是**代码**是否调用失效 API，
-  /// 注释里为解释根因会提到 `getSelectedText`，不能让它触发误判。
-  String stripCommentLines(String source) {
-    return source
-        .split('\n')
-        .where((String line) => !line.trimLeft().startsWith('//'))
-        .join('\n');
-  }
-
   test('popup copy/search must not read selection via getSelectedText', () {
     expect(file.existsSync(), isTrue,
         reason: 'popup webview source not found at ${file.path}');
-    final String code = stripCommentLines(file.readAsStringSync());
+    final String code = maskComments(file.readAsStringSync());
 
     // getSelectedText 在桌面 fork 未实现（恒 null）且天然只读顶层文档，取不到 iframe 内
     // 选区。弹窗任何选区读取都不许再走它，否则复制/搜索回归无效。

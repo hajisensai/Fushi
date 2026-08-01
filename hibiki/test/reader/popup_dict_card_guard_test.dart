@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 守卫（按用户「照抄 Niratan」决策，取代 TODO-1325 #7 的玻璃卡皮肤）：查词弹窗里每本
 /// 词典的义项块 (`.glossary-group`) 逐字对齐 Niratan Features/Popup/popup.css 的
 /// **描边卡**——1px 半透明描边 + 圆角 + 顶部 inset 白高光 + 薄贴地投影 + 内边距，**无
@@ -97,18 +99,13 @@ void main() {
   /// 卡片的高度：首行含义项最多的词典被拉高后，同行义项少的卡片下方留出空白玻璃盒，读作
   /// 「首卡特别高」。修复 = 显式 `align-items:start`，卡片取自然内容高度（对齐 Niratan 的
   /// 自然高度卡片，不等高拉伸）。
-  ///
-  /// 用 indexOf/substring 抽取规则块（与 popup_dictionary_columns_test 同法），再剥离
-  /// /* ... */ 注释——popup.css 的解释性注释里也写了「align-items:stretch / start」字样，
-  /// 只断言真实声明。
-  String stripComments(String s) => s.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
 
   test('首卡不被等高拉伸：.category-body grid 显式 align-items:start (BUG-683)', () {
     final int start = css.indexOf('.glossary-section > .category-body {');
     expect(start, isNonNegative, reason: 'in-app grid 容器规则必须存在');
     final int end = css.indexOf('}', start);
     expect(end, greaterThan(start));
-    final String rule = stripComments(css.substring(start, end));
+    final String rule = maskCssComments(css.substring(start, end));
     expect(RegExp(r'align-items\s*:\s*start').hasMatch(rule), isTrue,
         reason: '首卡偏高根因 = grid 默认 align-items:stretch 把同行卡片拉到最高；'
             '必须显式 align-items:start 让卡片取自然内容高度');
@@ -120,7 +117,7 @@ void main() {
   });
 
   test('描边卡不钉死高度，取自然内容高度 (BUG-683)', () {
-    final String body = stripComments(ruleBody(r'\.glossary-group'));
+    final String body = maskCssComments(ruleBody(r'\.glossary-group'));
     expect(RegExp(r'(^|[;{\s])height\s*:').hasMatch(body), isFalse,
         reason: '卡片不能钉死 height，否则内容高度失真、又回到等高观感');
     expect(RegExp(r'min-height\s*:').hasMatch(body), isFalse,

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import '../helpers/source_guard.dart';
 
 /// BUG-1216：共享内存打不开的真实原因不得在返回值处被丢弃。
 ///
@@ -294,17 +295,8 @@ void main() {
       return direct.existsSync() ? direct : File('hibiki/$relative');
     }
 
-    /// 剥掉 `//` 行注释与 `/* */` 块注释再匹配。
-    ///
-    /// 源码扫描守卫最经典的假绿：真声明改名/删掉、注释里还留着同一串字面量，守卫照绿。
-    /// 本文件所有断言都跑在剥注释后的文本上——包括这一条自己写在注释里的
-    /// `"access_denied"`，剥完就不该再被任何断言看见。
-    String stripComments(String source) => source
-        .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
-        .replaceAll(RegExp(r'//[^\n]*'), '');
-
     test('native 为每条 open 出口发机器可读 token，Dart 侧逐个认得', () {
-      final String native = stripComments(
+      final String native = maskComments(
         resolve('windows/runner/voice_hook_reader.cpp').readAsStringSync(),
       );
       const List<String> tokens = <String>[
@@ -323,7 +315,7 @@ void main() {
         );
       }
       // access_denied / protocol_mismatch 是**唯二**改变处置的 token：Dart 必须显式认。
-      final String dart = stripComments(
+      final String dart = maskComments(
         resolve('lib/src/mining/galgame_audio_source.dart').readAsStringSync(),
       );
       expect(dart, contains("'access_denied'"));
@@ -331,7 +323,7 @@ void main() {
     });
 
     test('Open 的每条出口都必须带原因（不认某一种违规写法，认枚举是否齐）', () {
-      final String native = stripComments(
+      final String native = maskComments(
         resolve('windows/runner/voice_hook_reader.cpp').readAsStringSync(),
       );
       final int openAt =
@@ -371,7 +363,7 @@ void main() {
     });
 
     test('channel 的 open 失败分支必须回 token + detail，不是固定英文串', () {
-      final String window = stripComments(
+      final String window = maskComments(
         resolve('windows/runner/flutter_window.cpp').readAsStringSync(),
       );
       final int openAt = window.indexOf('if (method == "open")');

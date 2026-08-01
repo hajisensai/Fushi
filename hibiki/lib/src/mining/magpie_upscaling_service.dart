@@ -193,7 +193,8 @@ class MagpieUpscalingService extends ChangeNotifier {
     bool Function()? bundledMagpieRunningProbe,
   })  : _modeReader = modeReader,
         _bridge = bridge,
-        _installerFactory = installerFactory ?? MagpieInstaller.new,
+        _installerFactory = installerFactory ??
+            (() => MagpieInstaller(isWindowsOverride: isWindowsOverride)),
         _processLauncher = processLauncher ?? _defaultLauncher,
         _hibikiExecutablePath =
             hibikiExecutablePath ?? _safeResolvedExecutable(),

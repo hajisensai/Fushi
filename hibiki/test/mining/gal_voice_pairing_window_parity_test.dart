@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
 import 'package:path/path.dart' as p;
 
-import '../helpers/source_scan_helpers.dart';
+import '../helpers/source_guard.dart';
 
 /// 从当前目录向上找到含 `native/galgame_hook` 的仓库根。测试的 cwd 在本地是
 /// `hibiki/`、在 CI 上也可能是仓库根，故不写死层级；找不到返回 null。
@@ -107,7 +107,7 @@ void main() {
   // 只在 voice-hook-helper workflow（workflow_dispatch + push develop）里跑，**PR 时不是门**。
   // 下面这组结构守卫扫真实 C++ 源码，把「改回错误判据」这件事挡在 PR 的 flutter test 门上。
   // 切片锚点（含 `// ── Luna_Start` 这种注释锚点）在原始源码上取，取到函数体后一律先
-  // [stripLineComments] 再断言——否则把 NoteFace 之类的调用降级成注释也照样命中 contains。
+  // [maskComments] 再断言——否则把 NoteFace 之类的调用降级成注释也照样命中 contains。
   group('native 文本线程/折叠判据结构守卫（BUG-1159 / BUG-1175）', () {
     late String selectorSource;
     late String injectorSource;
@@ -139,7 +139,7 @@ void main() {
       );
       expect(foldEnd, greaterThan(foldStart));
       final String body =
-          stripLineComments(selectorSource.substring(foldStart, foldEnd));
+          maskComments(selectorSource.substring(foldStart, foldEnd));
       expect(
         body.contains('if (doubled) return k;'),
         isFalse,
@@ -161,7 +161,7 @@ void main() {
       final int faceEnd = selectorSource.indexOf('\n}', faceStart);
       expect(faceEnd, greaterThan(faceStart));
       final String body =
-          stripLineComments(selectorSource.substring(faceStart, faceEnd));
+          maskComments(selectorSource.substring(faceStart, faceEnd));
       expect(
         body.contains('&ctx2, sizeof(ctx2)'),
         isTrue,
@@ -187,7 +187,7 @@ void main() {
       );
       expect(fnEnd, greaterThan(fnStart));
       final String body =
-          stripLineComments(injectorSource.substring(fnStart, fnEnd));
+          maskComments(injectorSource.substring(fnStart, fnEnd));
       // 两个位置都在（剥过注释的）函数体内取：既挡住「调用被注释掉」的假绿，也挡住
       // 「函数体里没有、却命中了文件后面别处那一处」的越界命中。
       final int noteAt =

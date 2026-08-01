@@ -214,11 +214,20 @@ String magpieRequireVerifiedSha(String? sha, String arch) {
 /// 落点是 `Hibiki.exe` 同级的 `magpie\`（安装器 `PrivilegesRequired=lowest`，此目录用户
 /// 可写、免提权）。
 class MagpieInstaller {
-  MagpieInstaller({Directory? bundledDirectory})
-      : _bundledDirectoryOverride = bundledDirectory;
+  MagpieInstaller({Directory? bundledDirectory, bool? isWindowsOverride})
+      : _bundledDirectoryOverride = bundledDirectory,
+        _isWindows = isWindowsOverride ?? Platform.isWindows;
 
   /// 仅测试注入：主包随附归档目录（生产恒为 `Hibiki.exe` 同级的 `magpie_bundle/`）。
   final Directory? _bundledDirectoryOverride;
+
+  /// 平台判定的**唯一**入口，仅测试注入（生产恒为 [Platform.isWindows]）。
+  ///
+  /// 与 [MagpieUpscalingService] 的同名开关成对：服务侧声明「按 Windows 跑」时，
+  /// 安装器必须跟着走同一条路径。否则服务以为在演 Windows、安装器却按真实宿主
+  /// 直接返回 [MagpieInstallResult.unsupportedPlatform]，测试在 Windows 上绿、
+  /// 在 Linux CI 上红——平台泄漏，不是功能差异。
+  final bool _isWindows;
 
   /// 换入是唯一与「读取安装目录」竞态的写窗口（亚秒级本地文件操作），全部串到这条门上；
   /// 校验/解压只碰临时目录，无需互斥。
@@ -292,7 +301,7 @@ class MagpieInstaller {
   /// - 未安装或残缺 → 只从主包随附归档安装/修复；
   /// - 缺归档 → [MagpieInstallResult.bundleMissing]，绝不联网补取。
   Future<MagpieInstallResult> ensureInstalled({String? arch}) async {
-    if (!Platform.isWindows) return MagpieInstallResult.unsupportedPlatform;
+    if (!_isWindows) return MagpieInstallResult.unsupportedPlatform;
     final String targetArch = arch ?? kMagpieBundledArch;
     // 等在途换入落定再检查文件，绝不读到半换入状态；平时门是已完成 future，零开销。
     await _installGate;

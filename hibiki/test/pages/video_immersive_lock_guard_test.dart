@@ -220,8 +220,12 @@ void main() {
         reason: '侧边锁按钮淡出仍由 _lockButtonVisible 驱动');
     expect(sideBody.contains('_lockButtonHovered.value'), isTrue,
         reason: 'hover 期间应由 _lockButtonHovered 顶住显示（BUG-295）');
-    expect(sideBody.contains('AnimatedOpacity('), isTrue,
-        reason: '侧边锁按钮淡出应用 AnimatedOpacity');
+    // BUG-1301：AnimatedOpacity + IgnorePointer 搬进共享 FadingChromeGate，
+    // 调用点断「走了共享门控」，组件那半由 expectFadingChromeGateContract 断
+    // （它自己就断 AnimatedOpacity 仍在）。
+    expect(sideBody.contains('FadingChromeGate('), isTrue,
+        reason: '侧边锁按钮淡出应走共享门控 FadingChromeGate');
+    expectFadingChromeGateContract();
     // 唤回路径：桌面 hover（onEnter/onHover）+ 移动 / 触屏点画面（_handleVideoPointerUp）。
     expect('_pokeLockButton()'.allMatches(src).length, greaterThanOrEqualTo(3),
         reason: 'hover + 触屏 + toggle 三处都应唤回侧边锁按钮');
