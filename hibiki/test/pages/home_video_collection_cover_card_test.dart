@@ -132,7 +132,9 @@ void main() {
       );
 
   Future<void> pumpPage(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 800);
+    // TODO-2486：顶部新增 hero 轮播 + 横滚行，800 高视口下墙 sliver 会被懒构建
+    // 跳过（根本不 build）；抬高视口让墙可见，交互/断言不受顶部区块高度影响。
+    tester.view.physicalSize = const Size(1280, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);

@@ -2970,5 +2970,18 @@
   "download_detail_tracker_not_working": "Not working",
   "download_detail_tracker_disabled": "Disabled",
   "download_detail_no_peers": "No connected peers",
-  "download_detail_no_trackers": "No trackers"
+  "download_detail_no_trackers": "No trackers",
+  "video_filter_year": "Year",
+  "video_filter_year_unknown": "Unknown year",
+  "video_filter_watch_status": "Watch status",
+  "video_filter_watch_status_unwatched": "Unwatched",
+  "video_filter_watch_status_watching": "Watching",
+  "video_filter_watch_status_completed": "Completed",
+  "video_hero_detail_view": "Details",
+  "video_hero_episodes_watched": "$n eps watched",
+  "video_recently_added_badge": "NEW",
+  "video_air_season_winter": "Winter",
+  "video_air_season_spring": "Spring",
+  "video_air_season_summer": "Summer",
+  "video_air_season_autumn": "Fall"
 }

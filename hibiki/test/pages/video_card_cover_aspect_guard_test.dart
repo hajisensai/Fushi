@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
+import '../helpers/source_guard.dart';
 import '../widgets/widget_test_helpers.dart';
 
 /// BUG-928 守卫：视频卡封面区必须被固定 AspectRatio 锁定。
@@ -14,25 +15,30 @@ import '../widgets/widget_test_helpers.dart';
 /// 修复：封面 Stack 改由固定 `AspectRatio` 包裹，与文字长短彻底解耦；文字块下移进
 /// `Expanded`（占封面下方剩余固定高度，ellipsis 内收）。
 ///
-/// 2026-07-24 用户拍板：主网格统一 Kazumi 式 2:3 竖版海报，封面比例从 16:9 改为
-/// `2 / 3`（横版截帧由 PortraitCoverImage 模糊垫底填充）；守卫锚点同步到新比例，
+/// 2026-07-24 用户拍板曾统一 2:3 竖版；TODO-2486（hayase 式改版）再拍板升级为
+/// **朝向自适应**：封面朝向由 CoverOrientationBuilder 探测，竖版封面 2:3、横版
+/// 封面 16:9（卡高统一、宽随朝向），朝向未知默认竖卡。守卫锚点同步到新契约，
 /// 「固定 AspectRatio、禁 Expanded 浮动比例」的 BUG-928 意图不变。
 ///
 /// 这是源码扫描守卫——封面是 UI 渲染难做像素断言，故锚定到两张视频卡（本地
-/// `_buildCard` + 远端 `_buildRemoteVideoCard`）的函数体，断言封面被 2:3 AspectRatio
-/// 锁定、且不得回退到 `Expanded(child: Stack(...))` 的浮动比例写法。
+/// `_buildCard` + 远端 `_buildRemoteVideoCard`）的函数体，断言封面被朝向条件的
+/// AspectRatio（2:3 / 16:9）锁定、且不得回退到 `Expanded(child: Stack(...))` 的
+/// 浮动比例写法。
 void main() {
   const String path = 'lib/src/pages/implementations/home_video_page.dart';
 
   test(
-      'video card covers are pinned to a 2:3 poster AspectRatio (no gap) — BUG-928',
-      () {
+      'video card covers are pinned to an orientation-adaptive AspectRatio '
+      '(portrait 2:3 / landscape 16:9, no gap) — BUG-928 / TODO-2486', () {
     final String source = File(path).readAsStringSync();
 
+    // 注释掩码（共享 maskComments，行+块）后再断言：把锚点字面量塞进行注释或
+    // /* */ 块注释、实际代码回退定值的假绿被堵死（两种形态都变异实测确认）。
     final Map<String, String> bodies = <String, String>{
-      '_buildCard': _functionSource(source, 'Widget _buildCard('),
-      '_buildRemoteVideoCard':
-          _functionSource(source, 'Widget _buildRemoteVideoCard('),
+      '_buildCard':
+          _stripLineComments(_functionSource(source, 'Widget _buildCard(')),
+      '_buildRemoteVideoCard': _stripLineComments(
+          _functionSource(source, 'Widget _buildRemoteVideoCard(')),
     };
 
     // 封面 Stack 直接被 Expanded 包裹 = 比例随剩余空间浮动的回归写法（BUG-928 根因）。
@@ -45,9 +51,10 @@ void main() {
 
       expect(
         body,
-        contains('aspectRatio: 2 / 3'),
-        reason: '$name 的封面必须用 AspectRatio(aspectRatio: 2 / 3) 锁定竖版海报'
-            '比例（2026-07-24 主网格统一 Kazumi 式竖版），比例不得随文字块浮动',
+        contains(
+            'orientation == VideoCardOrientation.landscape ? 16 / 9 : 2 / 3'),
+        reason: '$name 的封面比例必须按朝向分流（TODO-2486 朝向自适应：竖版 '
+            '2:3 / 横版 16:9），不得回到单一定值或随文字块浮动',
       );
       expect(
         body,
@@ -143,6 +150,10 @@ void main() {
     );
   });
 }
+
+/// 注释一律掩掉再断言（行注释 + 块注释，等长空白掩码）——复核实测：手写只剥
+/// 行注释时，「锚点塞 /* */ 块注释 + 实现回退定值」照样绿。走共享词法扫描。
+String _stripLineComments(String source) => maskComments(source);
 
 /// 截取从 [startToken] 起到下一个顶层 `  Widget xxx(` 方法定义之前的源码片段。
 String _functionSource(String source, String startToken) {

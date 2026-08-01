@@ -122,7 +122,16 @@ void main() {
       findsOneWidget,
       reason: '合集必须渲染成封面卡',
     );
-    expect(find.text('某番剧'), findsOneWidget, reason: '卡 footer 显示合集名');
+    // TODO-2486：hero 轮播另有一份合集名，按卡内 descendant 断言。
+    expect(
+      find.descendant(
+        of: find
+            .byKey(ValueKey<String>('home_video_collection_card_$collectionId')),
+        matching: find.text('某番剧'),
+      ),
+      findsOneWidget,
+      reason: '卡 footer 显示合集名',
+    );
     expect(find.text('第1集'), findsNothing, reason: '成员卡收进详情页，不在库页');
     expect(find.text('第2集'), findsNothing);
     expect(find.byTooltip(t.collection_collapse), findsNothing,
@@ -144,7 +153,14 @@ void main() {
       findsOneWidget,
       reason: '旧折叠偏好对封面卡无效：卡照常渲染',
     );
-    expect(find.text('某番剧'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find
+            .byKey(ValueKey<String>('home_video_collection_card_$collectionId')),
+        matching: find.text('某番剧'),
+      ),
+      findsOneWidget,
+    );
     // 偏好保持原样（书架还在用；视频页不再读写它）。
     expect(prefs.collapsedCollectionIds, contains(collectionId),
         reason: '视频页不得改写 collapsed_collection_ids（书架仍在用）');
