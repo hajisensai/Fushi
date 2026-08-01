@@ -144,6 +144,16 @@ mixin DictionaryPageMixin {
   /// bool 会被内层的 `finally` 提前复位、外层对话框当场被弹窗盖住。计数天然支持嵌套。
   int _popupHidingDialogDepth = 0;
 
+  /// 是否有「必须盖住查词弹窗」的对话框正开着（[runWithLookupPopupHidden] 期间为真）。
+  ///
+  /// BUG-1327：宿主页除了弹窗层本身，还会画**整屏 dismiss barrier**（点弹窗外面关栈）。
+  /// 视频页把整棵浮层子树挂在**根 Overlay**（为了盖过 media_kit 全屏路由），而根 Overlay
+  /// 里手动 `insert` 的 entry 永远排在 `showAppDialog` 推的路由之上——对话框看得见却点不
+  /// 着：点击先被 barrier 吃掉，再被判成「点弹窗外面」直接清整栈。故 barrier 必须与
+  /// [parkedPopupLayer] 的 `visible` 共用同一门控：对话框期间整棵浮层既不显示也不拦点击。
+  @protected
+  bool get lookupPopupHiddenByDialog => _popupHidingDialogDepth > 0;
+
   /// BUG-1040：在 [body] 执行期间把查词弹窗停靠屏外的统一入口（收口 setState 增减，杜绝
   /// 各调用点各写一份 try/finally 漏复位）。[body] 抛错时照常复位。
   Future<T> runWithLookupPopupHidden<T>(Future<T> Function() body) async {

@@ -265,6 +265,24 @@ Rect anchorPopupTopLeft({
   return Rect.fromLTWH(left, top, width, height);
 }
 
+/// 查词浮层的整屏 dismiss barrier（点浮层外面关栈）这一帧要不要挂。
+///
+/// 三个走**根 Overlay** 的表面（视频页 / 首页词典页 / texthooker）各写一份这条件，
+/// BUG-1327 就是漏项：barrier 只看了「有可见层或正在搜索」，没接
+/// [DictionaryPageMixin.lookupPopupHiddenByDialog]。根 Overlay 里手动 `insert` 的 entry
+/// 永远排在 `showAppDialog` 推的路由之上，全屏 + translucent 的 barrier 于是把落在对话框
+/// 上的点击整个吃掉：用户点「确认制卡」既点不到按钮，还被判成「点浮层外面」→ 清整栈
+/// （用户报「制卡没反应，而且把我查词弹窗关了」）。BUG-797 当时只把 WebView 停到屏外，
+/// 解决了「看得见」，命中测试这一半漏了。
+///
+/// 收口成纯函数，让三处共用同一真值表、不再漂移，也便于单测。
+bool shouldShowLookupDismissBarrier({
+  required bool hasVisiblePopup,
+  required bool isSearching,
+  required bool hiddenByDialog,
+}) =>
+    (hasVisiblePopup || isSearching) && !hiddenByDialog;
+
 /// 把一个弹窗层 [child] 按 [pos] 摆放；隐藏层（[visible]=false，即 BUG-094 常驻热槽 /
 /// TODO-058 挂起冷层）停到屏幕右外侧 `(screen.width + 8, 0)` 继续预热。
 ///

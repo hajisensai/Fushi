@@ -21,6 +21,13 @@
       密钥清单是动态读取的(零硬编码)，以后新增此类本地真值文件自动覆盖。
     - 调 tool/bootstrap.ps1 完成 pub get + 打补丁(可用 -SkipBootstrap 跳过)。
 
+  网络：bootstrap 是在本脚本同一个 PowerShell 进程里跑的，代理只能靠环境变量继承。
+  agent 每次工具调用都是新 shell，上一条命令里设的 HTTPS_PROXY 不会留到下一条 ——
+  要用代理就和启动命令写在同一条命令里，或者在主 checkout 建 tool/bootstrap.local.env
+  (gitignore，本机私有)一次配好，后者对所有 worktree 长期生效。bootstrap 开跑前会先探
+  一次 pub.dev，不通就把这几种配法打在前面，不再等几分钟后甩一句 socket error 了事。
+  详见 tool/bootstrap.ps1 头部注释。
+
 .PARAMETER SkipBootstrap
   只搬运密钥，不跑 pub get / bootstrap。WorktreeCreate 钩子用此开关，避免在
   worktree 创建时同步阻塞数分钟；需要 flutter test 前再手动 tool/bootstrap.ps1。
@@ -34,6 +41,10 @@
 param([switch]$SkipBootstrap)
 
 $ErrorActionPreference = "Stop"
+
+# 本文件的中文提示重定向到管道时默认按 GBK 编码，agent 读到的是乱码。
+# (文件本身必须存成 UTF-8 with BOM，否则 PowerShell 5.1 按 ANSI 解码源码。)
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 
 # --- 定位当前 worktree 根 与 主 checkout 根 -------------------------------
 $here = (& git rev-parse --show-toplevel 2>$null | Out-String).Trim()

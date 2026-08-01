@@ -118,6 +118,7 @@ import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult, DictionaryPopupWebViewState;
@@ -3978,7 +3979,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 // Dismiss barrier while a popup is visible OR a lookup is
                 // searching (搜索→就绪才显示：搜索期浮层还没显示，barrier 仍要拦点击
                 // 并支持点同句另一字切换查词)。仅剩隐藏热槽时不拦，放行给视频。
-                if (_hasVisiblePopup || _popup.isSearchingUi)
+                //
+                // BUG-1327：对话框期间（[lookupPopupHiddenByDialog]）连 barrier 一起撤，
+                // 否则它把落在对话框上的点击吃掉、还判成「点弹窗外面」清整栈。判据收口在
+                // [shouldShowLookupDismissBarrier]（三个根 Overlay 表面共用）。
+                if (shouldShowLookupDismissBarrier(
+                  hasVisiblePopup: _hasVisiblePopup,
+                  isSearching: _popup.isSearchingUi,
+                  hiddenByDialog: lookupPopupHiddenByDialog,
+                ))
                   Positioned.fill(
                     // BUG-861：barrier 外层挂 Listener 转发 hover——首弹后 barrier 盖住字幕，
                     // 字幕盒 MouseRegion 收不到 hover，此处是「按住 Shift 连续切换查词」唯一

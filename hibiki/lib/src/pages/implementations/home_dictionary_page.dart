@@ -915,7 +915,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
               // 屏外照常预热又不被裁；飘出窗的弹窗同理不裁。
               clipBehavior: Clip.none,
               children: <Widget>[
-                if (_hasVisiblePopup || _popup.isSearchingUi)
+                // BUG-1327：对话框期间连 barrier 一起撤——浮层子树挂在根 Overlay，排在
+                // showAppDialog 推的路由之上，全屏 barrier 会把落在对话框上的点击吃掉并
+                // 判成「点弹窗外面」关栈。判据收口在 [shouldShowLookupDismissBarrier]。
+                if (shouldShowLookupDismissBarrier(
+                  hasVisiblePopup: _hasVisiblePopup,
+                  isSearching: _popup.isSearchingUi,
+                  hiddenByDialog: lookupPopupHiddenByDialog,
+                ))
                   Positioned.fill(
                     child: GestureDetector(
                       behavior: HitTestBehavior.translucent,

@@ -108,6 +108,10 @@ docs/项目负责人提示词 copy
 AGENTS.local.md
 CLAUDE.local.md
 
+# tool/bootstrap.ps1 的本机私有配置（KEY=VALUE，主要放 HTTPS_PROXY/NO_PROXY）。
+# 代理地址是本机私有信息且换机器即失效，绝不写进入库脚本。根级锚定。
+/tool/bootstrap.local.env
+
 # 注：google_oauth_secret.dart / log_upload_secret.dart 现已入库（带占位/空默认值，
 # 保证任何 clone/worktree 直接可编译）；本机真值用 `git update-index --skip-worktree`
 # 隐藏，不再 gitignore（否则 worktree 缺文件编译失败）。详见各文件头说明。
