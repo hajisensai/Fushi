@@ -20,7 +20,7 @@ Dialogue: 0,0:00:41.44,0:00:44.57,OP_JP,,0,0,0,,{\an7\pos(521,672)\fad(250,250)\
 
 ### 修复
 
-- **[x] ① 已修复** — commit `（见下方补记）`
+- **[x] ① 已修复** — commit `9ad31a8af`
   - 新增纯函数 `mergePerCharacterCueGroups()`（`video_subtitle_jump_panel.dart`）：把逐字
     事件合并回整句，返回 `byRep`（代表行 → 合成 cue）与 `repByRaw`（成员 → 代表行）。
   - **合并只作用于字幕列表**：渲染层必须保留逐字事件（每字有各自的 `\pos` 与淡入淡出
