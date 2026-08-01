@@ -757,7 +757,81 @@ String _mangaGestureJs({
     for (var i = 0; i < boxes.length; i++) boxes[i].remove();
     if (html) page.insertAdjacentHTML('beforeend', html);
   };
+  // ── 框选识别模式 ──
+  // Dart 经 window.__mangaSetRescanMode(true/false) 进入/退出。模式内：
+  // - pointer 拖出橡皮筋矩形（fixed 定位半透明框，纯视觉反馈）；
+  // - 查词 tap / swipe 翻页 / 滚轮翻页全部旁路（框选手势独占指针）；
+  // - 松手把视口矩形换算成**页图像素坐标**（框中心命中的 .manga-page 的
+  //   data-page/data-pw/data-ph + getBoundingClientRect 线性映射；spread 跨页时
+  //   以框中心判定落页并 clamp 进该页），经 onMangaBoxSelected 回 Dart；
+  // - 任一维 < 8px（视口坐标）忽略并保持模式（用户重画）；
+  // - 有效框发出后自动退出模式（Dart 端收到即复位按钮态）。
+  var RESCAN = false;
+  var rescanStart = null;
+  var rescanEl = null;
+  window.__mangaSetRescanMode = function(on){
+    RESCAN = !!on;
+    // 模式内禁掉触摸原生滚动（webtoon 竖滚会抢拖框手势）。
+    document.body.style.touchAction = RESCAN ? 'none' : '';
+    if (!RESCAN) _rescanClear();
+  };
+  function _rescanClear(){
+    if (rescanEl && rescanEl.parentNode) rescanEl.parentNode.removeChild(rescanEl);
+    rescanEl = null;
+    rescanStart = null;
+  }
+  function _rescanUpdate(x, y){
+    if (!rescanStart) return;
+    if (!rescanEl) {
+      rescanEl = document.createElement('div');
+      rescanEl.id = 'manga-rescan-rect';
+      rescanEl.style.cssText = 'position:fixed;z-index:2147483647;'
+        + 'pointer-events:none;border:2px solid rgba(66,165,245,0.9);'
+        + 'background:rgba(66,165,245,0.25);';
+      document.body.appendChild(rescanEl);
+    }
+    rescanEl.style.left = Math.min(rescanStart.x, x) + 'px';
+    rescanEl.style.top = Math.min(rescanStart.y, y) + 'px';
+    rescanEl.style.width = Math.abs(x - rescanStart.x) + 'px';
+    rescanEl.style.height = Math.abs(y - rescanStart.y) + 'px';
+  }
+  function _rescanFinish(x, y){
+    var start = rescanStart;
+    _rescanClear();
+    if (!start) return;
+    if (Math.abs(x - start.x) < 8 || Math.abs(y - start.y) < 8) return;
+    var cx = (start.x + x) / 2, cy = (start.y + y) / 2;
+    var pages = document.querySelectorAll('.manga-page');
+    var target = null, tr = null;
+    for (var i = 0; i < pages.length; i++) {
+      var r = pages[i].getBoundingClientRect();
+      if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+        target = pages[i];
+        tr = r;
+        break;
+      }
+    }
+    if (!target || tr.width <= 0 || tr.height <= 0) return;
+    var pw = parseFloat(target.getAttribute('data-pw')) || 0;
+    var ph = parseFloat(target.getAttribute('data-ph')) || 0;
+    if (pw <= 0 || ph <= 0) return;
+    var pageIndex = parseInt(target.getAttribute('data-page'), 10) || 0;
+    function toPx(v){ return Math.min(pw, Math.max(0, (v - tr.left) / tr.width * pw)); }
+    function toPy(v){ return Math.min(ph, Math.max(0, (v - tr.top) / tr.height * ph)); }
+    RESCAN = false;
+    document.body.style.touchAction = '';
+    var b = _bridge();
+    if (!b) return;
+    b.callHandler('onMangaBoxSelected', JSON.stringify({
+      pageIndex: pageIndex,
+      left: toPx(Math.min(start.x, x)),
+      top: toPy(Math.min(start.y, y)),
+      right: toPx(Math.max(start.x, x)),
+      bottom: toPy(Math.max(start.y, y))
+    }));
+  }
   document.addEventListener('pointermove', function(e){
+    if (RESCAN && rescanStart) { _rescanUpdate(e.clientX, e.clientY); return; }
     if (rightDrag) {
       var dx = e.clientX - rightDrag.lastX;
       var dy = e.clientY - rightDrag.lastY;
@@ -882,6 +956,7 @@ String _mangaGestureJs({
   // pointer distance so a stationary cursor does not repeat the same lookup.
   var shiftHoverX = -1, shiftHoverY = -1;
   document.addEventListener('mousemove', function(e){
+    if (RESCAN) return;
     if (!e.shiftKey) { shiftHoverX = -1; shiftHoverY = -1; return; }
     var dx = e.clientX - shiftHoverX, dy = e.clientY - shiftHoverY;
     if (shiftHoverX >= 0 && dx * dx + dy * dy < 16) return;
@@ -915,6 +990,7 @@ String _mangaGestureJs({
     }
   }
   document.addEventListener('pointerdown', function(e){
+    if (RESCAN) { rescanStart = {x: e.clientX, y: e.clientY}; return; }
     if (e.button === 2) {
       rightDrag = {
         startX:e.clientX, startY:e.clientY,
@@ -927,6 +1003,8 @@ String _mangaGestureJs({
     _start(e.clientX, e.clientY);
   }, {passive: true});
   document.addEventListener('pointerup', function(e){
+    // 必须排在 _end 的 tap/swipe 消歧之前：框选松手不得被判成 tap 查词或 swipe 翻页。
+    if (RESCAN) { _rescanFinish(e.clientX, e.clientY); return; }
     if (e.button === 2) {
       var drag = rightDrag;
       rightDrag = null;
@@ -948,6 +1026,7 @@ String _mangaGestureJs({
 
   // Ctrl/Command + wheel: 50%..200%, 10% steps, anchored at the pointer.
   document.addEventListener('wheel', function(e){
+    if (RESCAN) return;
     if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -976,6 +1055,7 @@ String _mangaGestureJs({
   if (!IS_WEBTOON) {
     var _wheelLock = false;
     document.addEventListener('wheel', function(e){
+      if (RESCAN) return;
       if (e.ctrlKey || e.metaKey) return;
       e.preventDefault();
       if (_wheelLock) return;
