@@ -76,6 +76,38 @@ DeletionDisclosure buildDeletionDisclosure({
   }
 }
 
+/// 「本机没有删除传播通道」说明行——顶替删除确认框里那个兑现不了的
+/// 「从所有设备删除」勾选框（TODO-2470 死角②）。
+///
+/// 两个删除确认框（`showDeleteScopeConfirm` / `ReaderHistoryDeleteDialog`）共用本
+/// 视图，保证两处措辞一致、不各自漂移——与 [DeletionDisclosureView] 同一纪律。
+///
+/// 刻意不做成「置灰的勾选框」：置灰件仍然长得像个可选项，用户会去点它然后困惑；
+/// 一行说明直接讲清「这次删除只影响本机」，才是把承诺和事实对齐。
+class DeleteScopeUnavailableNote extends StatelessWidget {
+  const DeleteScopeUnavailableNote({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Icon(Icons.devices_outlined, size: 16, color: colors.onSurfaceVariant),
+        SizedBox(width: tokens.spacing.gap / 2),
+        Expanded(
+          child: Text(
+            t.delete_scope_no_channel,
+            style: tokens.type.listSubtitle
+                .copyWith(color: colors.onSurfaceVariant),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// 把 [DeletionDisclosure] 渲染成确认框里的「会被删除 / 会被保留」两段列表。
 ///
 /// 书架删除确认框（`ReaderHistoryDeleteDialog`）与通用删除确认框

@@ -578,6 +578,11 @@ class AppModel with ChangeNotifier {
       for (final VideoBookRow r in await database.allVideoBooks())
         r.bookUid: r.title,
     };
+    // 纯字幕书（standalone SRT）：itemKey 是 uid，展示其 title（TODO-2470 死角①）。
+    final Map<String, String> srtTitles = <String, String>{
+      for (final SrtBookRow r in await database.getAllSrtBooks())
+        r.uid: r.title,
+    };
     // 收藏句：itemKey 是内容键（用户看不懂），从本地在库收藏句解析回句子文本展示。
     // deleteLocal 候选必是本地仍在库者，映射通常命中；查不到退回 itemKey。
     final Map<String, String> favSentenceTexts = <String, String>{
@@ -597,6 +602,7 @@ class AppModel with ChangeNotifier {
             SyncTombstoneKind.audiobook =>
               bookTitles[c.itemKey] ?? c.itemKey,
             SyncTombstoneKind.video => videoTitles[c.itemKey] ?? c.itemKey,
+            SyncTombstoneKind.srtbook => srtTitles[c.itemKey] ?? c.itemKey,
             // 收藏词：itemKey 是 NUL 连接键，展示其中的 expression（词本身）。
             SyncTombstoneKind.favoriteword =>
               parseFavoriteWordItemKey(c.itemKey)?.expression ?? c.itemKey,
@@ -635,6 +641,10 @@ class AppModel with ChangeNotifier {
           case SyncTombstoneKind.audiobook:
             await AudiobookRepository(database)
                 .deleteAudiobook(c.itemKey, propagateDeletion: false);
+          case SyncTombstoneKind.srtbook:
+            // 纯字幕书：itemKey = srt_books.uid。propagateDeletion 默认 false——
+            // 消费远端删除标记时绝不回写墓碑，否则形成传播循环。
+            await SrtBookRepository(database).delete(c.itemKey);
           case SyncTombstoneKind.localaudio:
             // 按 displayName 找到本地音频源并移除（不回写墓碑：keepLocalOnly 语义）。
             final int idx = _localAudioManager.entries.indexWhere(

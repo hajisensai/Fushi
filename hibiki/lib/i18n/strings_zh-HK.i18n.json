@@ -2984,6 +2984,7 @@
   "video_air_season_spring": "Spring",
   "video_air_season_summer": "Summer",
   "video_air_season_autumn": "Fall",
+  "delete_scope_no_channel": "No sync configured - this deletion only affects this device",
   "mihon_sources_title": "Manga sources",
   "mihon_extensions_title": "Manga extensions",
   "mihon_store_add": "Add extension store",

@@ -67,6 +67,7 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
 import 'package:hibiki/src/sync/cloud_remote_book_client.dart';
 import 'package:hibiki/src/sync/deletion_disclosure.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
+import 'package:hibiki/src/sync/deletion_propagation_availability.dart';
 import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/manual_sync_ui.dart';
@@ -1875,12 +1876,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     required String message,
     DeletionDisclosure? disclosure,
   }) async {
+    // TODO-2470 死角②：本机没有任何删除传播通道时不摆那个兑现不了的勾选框。
+    // 纯本地零网络判据，在弹窗弹出前解析完（弹窗自身不做 IO）。
+    final bool canSyncEverywhere =
+        await hasDeletionPropagationChannel(SyncRepository(appModel.database));
+    if (!mounted) return null;
     final DeleteScope? scope = await showAppDialog<DeleteScope>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: title,
         message: message,
         disclosure: disclosure,
+        showSyncScope: canSyncEverywhere,
         onConfirm: (DeleteScope s) => Navigator.pop(ctx, s),
       ),
     );
