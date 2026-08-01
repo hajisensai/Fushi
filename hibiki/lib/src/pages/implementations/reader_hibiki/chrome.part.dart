@@ -625,8 +625,13 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   }
 
   // Clear the reader's app-drawn selection (hoshi-selection CSS Custom Highlight)
-  // without touching any native selection. Best-effort: a half-torn-down WebView
-  // throws MissingPluginException on eval; swallow it (nothing to clear).
+  // *and* the native selection with it: ReaderSelectionScripts.clearInvocation()
+  // runs hoshiSelection.clearSelection(), whose first statement is
+  // `window.getSelection()?.removeAllRanges()` (reader_selection_scripts.dart
+  // `clearSelection`). BUG-1344 depends on that — WKWebView otherwise paints the
+  // defocused native selection as a grey block that survives app switching.
+  // Best-effort: a half-torn-down WebView throws MissingPluginException on eval;
+  // swallow it (nothing to clear).
   Future<void> _clearReaderAppSelection() async {
     _removeSelectionActionBar();
     try {

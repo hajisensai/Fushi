@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// 源码守卫（headless WebView 不可用，锁注入 JS 行为）：
@@ -91,6 +92,10 @@ void main() {
           reason: '不得再用瞬时 scrollTop<=2 几何');
       expect(wheel, isNot(contains('_wheelLastScrollPos')),
           reason: '不得再用相邻拍位置推算（时序坏 → 横排中部误翻）');
+      // 连续分支自己的主轴归一（wheelDelta 取绝对值更大的轴）。分页侧同款判据在
+      // _handlePagedWheelTick 里单独守（见下方 TODO-737 组），两处不得再互相顶包。
+      expect(wheel, contains('Math.abs(e.deltaY) >= Math.abs(e.deltaX)'),
+          reason: '连续模式 wheelDelta 也按绝对值更大的主轴取，斜向触控板不误判方向');
     });
   });
 
@@ -122,18 +127,40 @@ void main() {
 
     test('paged wheel emits onWheelPaginate (not onSwipe)', () {
       final String wheel = _listenerBlock(setupScript, 'wheel');
-      expect(setupScript, contains("callHandler('onWheelPaginate'"),
+      // 假绿修复（PR#670 复核）：分页主轴/方向判据必须锚进 _handlePagedWheelTick
+      // **方法体内部**。旧写法对整份 setupScript 取 contains，命中的是**连续模式分支**
+      // 里同名的 `Math.abs(e.deltaY) >= Math.abs(e.deltaX)`（基底就存在，与本守卫要守的
+      // 分页侧无关）；把分页侧改回旧裸符号判据时 21 条 wheel 守卫全绿 = 零覆盖。
+      final String tick = methodBody(
+        setupScript,
+        'function _handlePagedWheelTick(e)',
+        lexicon: SourceLexicon.js,
+      );
+      expect(containsCodeLine(tick, "callHandler('onWheelPaginate'"), isTrue,
           reason: '分页滚轮翻页改走 onWheelPaginate（产语义意图 forward/backward）');
-      expect(setupScript, contains("horizontal ? 'horizontal' : 'vertical'"));
+      expect(containsCodeLine(tick, "horizontal ? 'horizontal' : 'vertical'"),
+          isTrue,
+          reason: '主轴须一并回传，Dart 侧才能只对横向触控板 burst 开跨章节手势闸门');
+      // 主轴判据：按绝对值更大的轴取 delta，斜向 tick 不得被次轴符号带偏。
+      expect(containsCodeLine(tick, 'Math.abs(e.deltaX) > Math.abs(e.deltaY)'),
+          isTrue,
+          reason: '分页滚轮必须按绝对值更大的主轴判横/纵，不能任一轴为正就前进');
+      expect(
+          containsCodeLine(
+              tick, 'var delta = horizontal ? e.deltaX : e.deltaY'),
+          isTrue,
+          reason: 'delta 必须取自主轴本身，而不是固定读 deltaY');
+      // 方向归一：主轴 delta>0=forward（对齐连续滚轮 delta>0=前进），消除旧裸符号
+      // deltaY<0=forward 与连续相反的方向矛盾。
+      expect(
+          containsCodeLine(tick, "delta > 0 ? 'forward' : 'backward'"), isTrue,
+          reason: '方向只由主轴 delta 的符号决定');
+      expect(containsCodeLine(tick, 'e.deltaY > 0 || e.deltaX > 0'), isFalse,
+          reason: '旧的「任一轴为正就前进」裸符号判据（BUG-1342 根因）必须移除');
+      expect(containsCodeLine(tick, 'e.deltaY < 0 || e.deltaX > 0'), isFalse,
+          reason: '旧的 deltaY<0=forward 裸符号（方向矛盾根因）必须移除');
       expect(wheel, isNot(contains("callHandler('onSwipe'")),
           reason: 'wheel 块不得再回传 onSwipe（onSwipe 专属触摸/鼠标拖动）');
-      // 方向归一：deltaY>0=forward（对齐连续滚轮 delta>0=前进），消除旧裸符号
-      // deltaY<0=forward 与连续相反的方向矛盾。
-      expect(setupScript, contains('Math.abs(e.deltaY) >= Math.abs(e.deltaX)'));
-      expect(setupScript, contains("delta > 0 ? 'forward' : 'backward'"),
-          reason: '分页滚轮必须按绝对值更大的主轴解析方向，不能任一轴为正就前进');
-      expect(wheel, isNot(contains('e.deltaY < 0 || e.deltaX > 0')),
-          reason: '旧的 deltaY<0=forward 裸符号（方向矛盾根因）必须移除');
     });
 
     test('arm-then-fire 二次确认仍完整（删 _wheelTimer 不回归 BUG-369）', () {
