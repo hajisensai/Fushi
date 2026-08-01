@@ -2878,7 +2878,6 @@
   "gal_mining_animated_format_hint": "Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.",
   "scrape_all": "Scrape all",
   "scrape_all_title": "Scrape all $kind",
-  "scrape_all_confirm": "Match all $n library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.",
   "scrape_all_running": "Scraping $current / $total",
   "scrape_all_item": "Processing: $title",
   "scrape_all_done": "Done: $applied applied, $review need review, $skipped skipped, $failed failed",
@@ -3021,5 +3020,6 @@
   "mihon_add_to_bookshelf": "Add to manga shelf",
   "mihon_in_bookshelf": "In manga shelf",
   "media_source_local_roots": "Local scan roots",
-  "game_hook_reason_protocol_mismatch": "The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version."
+  "game_hook_reason_protocol_mismatch": "The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version.",
+  "scrape_all_confirm": "Match all $n library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review."
 }
