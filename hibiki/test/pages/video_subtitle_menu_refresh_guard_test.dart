@@ -12,12 +12,19 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   final String src = readVideoHibikiSource();
 
+  /// 剥掉整行注释。源码扫描守卫若把注释也算数，「把调用点注释掉」这种改动就能原样
+  /// 骗过它（本仓已被这类假绿咬过多次）；所以下面所有 contains 断言都跑在纯代码上。
+  String codeOnly(String source) => source
+      .split('\n')
+      .where((String line) => !line.trimLeft().startsWith('//'))
+      .join('\n');
+
   String region(String startSig, String endSig) {
     final int start = src.indexOf(startSig);
     expect(start, greaterThanOrEqualTo(0), reason: 'missing $startSig');
     final int end = src.indexOf(endSig, start + startSig.length);
     expect(end, greaterThan(start), reason: 'missing $endSig after $startSig');
-    return src.substring(start, end);
+    return codeOnly(src.substring(start, end));
   }
 
   test('BUG-1329: Jimaku 下载完把新档就地并入字幕轨列表', () {
