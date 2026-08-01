@@ -21,8 +21,12 @@ void main() {
           end > start ? source.substring(start, end) : source.substring(start);
 
       // The repo.delete result must be captured and gate the counter.
+      // 前缀匹配（`(uid` 而非 `(uid)`）：TODO-2470 起这次调用要多带一个具名参数
+      // `propagateDeletion:`（纯字幕书的删除范围），写死右括号会把一次合法的签名
+      // 扩展误报成「SRT 分支不再经 repo 删除」。BUG-439 真正的不变量是下面那条
+      // ——删除结果必须被捕获并门控计数器——它一字未改。
       expect(
-        body.contains('await repo.delete(uid)'),
+        body.contains('await repo.delete(uid'),
         isTrue,
         reason: 'the SRT branch still deletes via the repo',
       );
