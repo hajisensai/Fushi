@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 import 'video_hibiki_page_source_corpus.dart';
 
 /// Source guard for video mining context.
@@ -235,25 +237,27 @@ void main() {
     // 守卫改锚 `_gif(` 调用点 + onFailure 转发（不再钉死 `await _gif(` 这一实现细节）。
     // BUG-1205：引擎内两条抽取各自喂专属上报口（reportCover / reportAudio），二者再
     // 合流进 onFailure。守的意图不变：GIF 失败必须留下 ffmpeg 诊断。
-    // 锚到 `_gif(` **调用块内部**，不是两个 token 在全文件里各自存在的无锚 AND——
-    // `onFailure: reportCover` 在 tryStartFrame 里另有一份，无锚写法下把 tryGif 那处
-    // 改回 `onFailure: onFailure` 照样绿（变异实测漏掉过）。
-    final int gifCallIdx = engineNorm.indexOf('_gif(');
-    expect(gifCallIdx, greaterThanOrEqualTo(0),
-        reason: '引擎必须有 _gif( 调用点；守卫锚点失效请同步更新本测试。');
-    final int gifCallEnd = gifCallIdx + 400;
-    final String gifCall = engineNorm.substring(gifCallIdx,
-        gifCallEnd > engineNorm.length ? engineNorm.length : gifCallEnd);
-    expect(gifCall, contains('onFailure: reportCover'),
+    // 锚到**方法体**而不是调用形态：`onFailure: reportCover` 在 tryStartFrame 里另有
+    // 一份，无锚写法下把 tryGif 那处改回 `onFailure: onFailure` 照样绿（变异实测漏掉过）。
+    //
+    // 🔴 为什么不再锚 `_gif(` 调用点 + 定长窗口：该写法已被 BUG-1330 打断过一次——
+    // 远端制卡格式改造把 `await _gif(...)` 变成传给 extractAnimatedClipWithFallback 的
+    // `extractor: _gif`，全文件再无 `_gif(` 形态，indexOf 返回 -1，守卫在**代码改对了
+    // 的那一刻**炸掉。锚点绑实现细节 = 每次重构都要还一次债；绑方法体则与调用形态无关。
+    final String tryGifBody =
+        methodBody(engine, 'Future<String?> tryGif() async');
+    expect(tryGifBody, isNotEmpty, reason: '引擎必须有 tryGif 方法；守卫锚点失效请同步更新本测试。');
+    expect(tryGifBody, contains('onFailure: reportCover'),
         reason: 'GIF 导出失败虽可回退截图，也必须经封面上报口留下 ffmpeg 诊断。');
-    // 音频侧同样锚到 _audio( 调用块内。
-    final int audioCallIdx = engineNorm.indexOf('_audio(');
-    expect(audioCallIdx, greaterThanOrEqualTo(0),
-        reason: '引擎必须有 _audio( 调用点；守卫锚点失效请同步更新本测试。');
-    final int audioCallEnd = audioCallIdx + 500;
-    final String audioCall = engineNorm.substring(audioCallIdx,
-        audioCallEnd > engineNorm.length ? engineNorm.length : audioCallEnd);
-    expect(audioCall, contains('onFailure: reportAudio'),
+    // 音频侧同理锚方法体。它其实**已经和 GIF 侧一起坏了**（`_audio(` 同样只剩
+    // `_audio = audioExtractor ?? …` 赋值与 `final AudioExtractor _audio;` 声明，
+    // 无调用形态），只是 GIF 那条 expect 先失败、执行不到这里所以没暴露——
+    // 一个测试里串多个定长窗口断言时，后面的失效会被前面的掩盖。
+    final String audioBody =
+        methodBody(engine, 'Future<String?> _resolveAudioPath(');
+    expect(audioBody, isNotEmpty,
+        reason: '引擎必须有 _resolveAudioPath 方法；守卫锚点失效请同步更新本测试。');
+    expect(audioBody, contains('onFailure: reportAudio'),
         reason: '音频抽取失败必须经音频上报口留下 ffmpeg 诊断（BUG-1205）。');
 
     // 中止顺序：引擎在构造 AnkiMiningContext 之前就 return aborted（不建缺音频 context）；
