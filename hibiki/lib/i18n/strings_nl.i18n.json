@@ -2970,5 +2970,6 @@
   "download_detail_tracker_not_working": "Not working",
   "download_detail_tracker_disabled": "Disabled",
   "download_detail_no_peers": "No connected peers",
-  "download_detail_no_trackers": "No trackers"
+  "download_detail_no_trackers": "No trackers",
+  "delete_scope_no_channel": "No sync configured - this deletion only affects this device"
 }
