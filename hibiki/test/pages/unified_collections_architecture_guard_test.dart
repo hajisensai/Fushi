@@ -87,7 +87,7 @@ void main() {
 
   test('合集渲染形态：书架横排行（CollectionShelfRow）+ 视频封面卡（用户拍板 2026-07-22）', () {
     // 书架维持 Phase C 横排行；视频侧用户拍板恢复封面卡形态（「一进去就是封面，
-    // 跟小说那种一样」）：合集渲染成与散卡同尺寸的封面卡并入主网格。互退即转红。
+    // 跟小说那种一样」）：合集渲染成封面卡混入媒体库墙。互退即转红。
     expect(historySrc.contains('CollectionShelfRow'), isTrue,
         reason: '书架合集必须渲染成全宽横排行');
     expect(homeSrc.contains('_buildCollectionCoverCard'), isTrue,
@@ -97,6 +97,37 @@ void main() {
     // 点某集从该集进播放器（带剧集面板/连播）的能力经详情页保留。
     expect(homeSrc.contains('playlistCollectionId: collection.id'), isTrue,
         reason: '视频合集详情页开集必须带 playlistCollectionId 直接换集');
+  });
+
+  test('TODO-2486 hayase 式视频首页形态：hero 轮播 + 双横滚行 + 朝向自适应媒体库墙', () {
+    // 用户拍板设计稿（2026-08-01）：顶部全宽 backdrop hero 轮播（最近在看前 5
+    // 合集）→「继续观看」/「最近添加」横滚行 → 竖横混排媒体库墙。撤任一接线
+    // 或回退到恒 2:3 单一网格即转红。
+    expect(homeSrc.contains('_buildHeroCarousel'), isTrue,
+        reason: '视频首页必须有 hero 轮播（最近在看合集，backdrop 优先）');
+    expect(homeSrc.contains('getAllCollectionScrapeMeta'), isTrue,
+        reason: 'hero 轮播必须消费合集刮削资料（backdrop / 简介 / airDate）');
+    expect(homeSrc.contains('_buildContinueRow'), isTrue,
+        reason: '必须有「继续观看」横滚行');
+    expect(homeSrc.contains('_buildRecentlyAddedRow'), isTrue,
+        reason: '必须有「最近添加」横滚行');
+    // 横滚行双包装：滚轮桥 + 鼠标拖拽放开（缺一桌面横滚行就废一半）。
+    expect(homeSrc.contains('WheelToHorizontalScroll('), isTrue,
+        reason: '横滚行必须包 WheelToHorizontalScroll（桌面滚轮横滚，BUG-1214）');
+    expect(homeSrc.contains('HorizontalDragScrollable('), isTrue,
+        reason: '横滚行必须包 HorizontalDragScrollable（桌面鼠标拖拽）');
+    // 媒体库墙：行高固定、宽随封面朝向的流式换行（Wrap），不得回退单一网格。
+    expect(homeSrc.contains('_buildVideoWallSliver'), isTrue,
+        reason: '媒体库墙必须走 _buildVideoWallSliver（Wrap 流式混排）');
+    expect(homeSrc.contains('CoverOrientationBuilder('), isTrue,
+        reason: '卡片朝向必须由 CoverOrientationBuilder 探测（共享 aspect 内核）');
+    expect(homeSrc.contains('SliverGrid.builder('), isFalse,
+        reason: '不得回退到恒定卡宽的 SliverGrid 网格（朝向自适应墙已取代）');
+    // 年份 / 看完状态筛选（本地即筛，纯函数测试同源）。
+    expect(homeSrc.contains('VideoYearFilter'), isTrue,
+        reason: '筛选条必须有年份下拉（airDate 派生，未知桶不消失）');
+    expect(homeSrc.contains('matchesVideoWatchStatus'), isTrue,
+        reason: '筛选条必须有看完状态下拉（completedAt/lastPositionMs 三档）');
   });
 
   test('UI v2：整理排序页已按用户拍板整体砍掉——零残留 + 能力不回退', () {
@@ -239,11 +270,12 @@ void main() {
         reason: '书籍合集详情页一键排序必须写穿 sortIndex');
   });
 
-  test('去碎片方案A（已拍板）：合集区集中+散卡单一网格，交错组装不回潮', () {
-    // 旧保序交错的 flushLoose 分段组装每个合集行都切碎散卡网格（一两本书占
-    // 一行，用户实报）；分区后散卡恒渲染成一个网格。恢复交错即转红。
+  test('去碎片方案A（已拍板）：合集区集中+散卡单一展示区，交错组装不回潮', () {
+    // 旧保序交错的 flushLoose 分段组装每个合集行都切碎散卡区（一两本书占
+    // 一行，用户实报）；分区后散卡恒渲染成一个连续展示区（书架=网格，视频=
+    // TODO-2486 混排墙，合集卡在前散卡在后）。恢复交错即转红。
     expect(homeSrc.contains('flushLoose'), isFalse,
-        reason: '视频库不得回到交错分段组装（散卡必须单一网格）');
+        reason: '视频库不得回到交错分段组装（散卡必须单一展示区）');
     expect(historySrc.contains('flushLoose'), isFalse,
         reason: '书架不得回到交错分段组装（散卡必须单一网格）');
   });

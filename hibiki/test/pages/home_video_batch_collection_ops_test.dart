@@ -98,7 +98,9 @@ void main() {
       );
 
   Future<void> pumpPage(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 800);
+    // TODO-2486：顶部新增 hero 轮播（最高 420），800 高视口下墙卡中心会落到
+    // 视口之外、tap 判 miss；抬高视口让墙完整可见。
+    tester.view.physicalSize = const Size(1280, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -136,8 +138,10 @@ void main() {
       reason: '合集成员卡不在库页（封面卡形态），无从单独勾选',
     );
 
-    // 点合集卡 → 整合集入选中集，底栏计数 = 1。
-    await tester.tap(find.text('合集甲'));
+    // 点合集卡 → 整合集入选中集，底栏计数 = 1。（TODO-2486：hero 轮播也显示
+    // 合集名，裸文本 finder 歧义，按墙卡 key 点。）
+    await tester
+        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$cid')));
     await tester.pumpAndSettle();
     expect(find.text(t.batch_selected_count(n: 1)), findsOneWidget,
         reason: '整卡勾选把合集计入选中集');
@@ -185,7 +189,9 @@ void main() {
     await pumpPage(tester);
     await enterSelectionMode(tester);
 
-    await tester.tap(find.text('合集乙')); // 选合集
+    // TODO-2486：hero 也显示合集名，按墙卡 key 选合集。
+    await tester
+        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$cid')));
     await tester.pumpAndSettle();
     await tester
         .tap(find.byKey(const ValueKey<String>('home_video_video/looseL')));
@@ -222,9 +228,12 @@ void main() {
     await pumpPage(tester);
     await enterSelectionMode(tester);
 
-    await tester.tap(find.text('小集'));
+    // TODO-2486：hero 也显示合集名，按墙卡 key 选合集。
+    await tester
+        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$small')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('大集'));
+    await tester
+        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$big')));
     await tester.pumpAndSettle();
 
     await tester
@@ -261,7 +270,8 @@ void main() {
 
     await pumpPage(tester);
     await enterSelectionMode(tester);
-    await tester.tap(find.text('待解散'));
+    await tester
+        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$cid')));
     await tester.pumpAndSettle();
 
     await tester
@@ -289,7 +299,8 @@ void main() {
 
     await pumpPage(tester);
     await enterSelectionMode(tester);
-    await tester.tap(find.text('某合集'));
+    await tester
+        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$cid')));
     await tester.pumpAndSettle();
     await tester
         .tap(find.byKey(const ValueKey<String>('home_video_video/looseL')));

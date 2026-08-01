@@ -558,15 +558,25 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
               children: <Widget>[
                 _StatusPill(label: statusLabel),
                 const SizedBox(height: 12),
-                Text(
-                  game.displayName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.headlineLarge?.copyWith(
+                // TODO-2497：两行仍放不下时，桌面悬停显示完整游戏名。
+                Builder(builder: (BuildContext context) {
+                  final TextStyle? heroTitleStyle =
+                      theme.textTheme.headlineLarge?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.w800,
-                  ),
-                ),
+                  );
+                  return ShelfTitleOverflowTooltip(
+                    title: game.displayName,
+                    style: heroTitleStyle,
+                    maxLines: 2,
+                    child: Text(
+                      game.displayName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: heroTitleStyle,
+                    ),
+                  );
+                }),
                 const SizedBox(height: 6),
                 Text(
                   subParts.join('   ·   '),
@@ -679,15 +689,25 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Text(
-                        game.displayName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall?.copyWith(
+                      // TODO-2497：两行仍放不下时，桌面悬停显示完整游戏名。
+                      Builder(builder: (BuildContext context) {
+                        final TextStyle? cardTitleStyle =
+                            theme.textTheme.titleSmall?.copyWith(
                           color: colors.onSurface,
                           fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                        );
+                        return ShelfTitleOverflowTooltip(
+                          title: game.displayName,
+                          style: cardTitleStyle,
+                          maxLines: 2,
+                          child: Text(
+                            game.displayName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: cardTitleStyle,
+                          ),
+                        );
+                      }),
                       if (game.developer != null &&
                           game.developer!.isNotEmpty) ...<Widget>[
                         const SizedBox(height: 4),
@@ -829,71 +849,87 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       _relativeTime(entry.latestTimestampMs, now),
       if (entry.sessionCount > 1) t.home_session_count(n: entry.sessionCount),
     ];
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          // 左侧竖轨 + 圆节点。
-          Column(
-            children: <Widget>[
-              Container(
-                width: 12,
-                height: 12,
-                margin: const EdgeInsets.only(top: 6),
-                decoration: BoxDecoration(
-                  color: colors.primary,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              if (!isLast)
-                Expanded(
-                  child: Container(
-                    width: 2,
-                    color: colors.outlineVariant,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(width: 12),
-          // 头像（游戏封面缩略，命中不到回退图标）。
-          _TimelineAvatar(
-            cover: game == null ? null : _coverImage(context, game),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    // P4：渲染时应用库内显示名（entry.title 是活动落库时的标题
-                    // 快照，聚合键恒 raw；改名后时间轴跟着显示新名，查不到条目
-                    // 回落快照）。game 已在上方按 mediaKey/显示名反查。
-                    displayTitleForGame(entry: game, rawTitle: entry.title),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: colors.onSurface,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    parts.join('  ·  '),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
+    // P4：渲染时应用库内显示名（entry.title 是活动落库时的标题快照，聚合键恒
+    // raw；改名后时间轴跟着显示新名，查不到条目回落快照）。game 已按
+    // mediaKey/显示名反查。
+    final String timelineTitle =
+        displayTitleForGame(entry: game, rawTitle: entry.title);
+    final TextStyle? timelineTitleStyle = theme.textTheme.bodyLarge?.copyWith(
+      color: colors.onSurface,
+      fontWeight: FontWeight.w500,
+    );
+    // TODO-2497：旧 IntrinsicHeight + 竖轨 Expanded 撑高与标题溢出 Tooltip 的
+    // LayoutBuilder 不兼容（LayoutBuilder 不支持 intrinsic 测量，debug 直接抛）。
+    // 改成 Stack + Positioned 连接线：行高由内容自然决定，连接线从节点下缘拉到
+    // 行底——少一层昂贵的 intrinsic 双趟布局，视觉逐像素等价。
+    return Stack(
+      children: <Widget>[
+        if (!isLast)
+          Positioned(
+            // 竖轨中线 = 圆节点中心 x（节点宽 12 → 中心 6，线宽 2 → left 5）；
+            // 顶端从节点下缘（上边距 6 + 直径 12）起。
+            left: 5,
+            top: 18,
+            bottom: 0,
+            child: Container(
+              width: 2,
+              color: colors.outlineVariant,
             ),
           ),
-        ],
-      ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            // 左侧圆节点（竖轨连接线在底层 Positioned）。
+            Container(
+              width: 12,
+              height: 12,
+              margin: const EdgeInsets.only(top: 6),
+              decoration: BoxDecoration(
+                color: colors.primary,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 12),
+            // 头像（游戏封面缩略，命中不到回退图标）。
+            _TimelineAvatar(
+              cover: game == null ? null : _coverImage(context, game),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    // TODO-2497：两行仍放不下时，桌面悬停显示完整标题。
+                    ShelfTitleOverflowTooltip(
+                      title: timelineTitle,
+                      style: timelineTitleStyle,
+                      maxLines: 2,
+                      child: Text(
+                        timelineTitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: timelineTitleStyle,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      parts.join('  ·  '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 

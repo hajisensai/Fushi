@@ -2561,6 +2561,11 @@ class HibikiDatabase extends _$HibikiDatabase {
         ..where(($VideoScrapeMetaTable t) => t.bookUid.equals(bookUid)))
       .go();
 
+  /// 全量条目刮削资料（TODO-2486 视频首页年份筛选）。库页一次拉全表内存建
+  /// uid → 行映射，替代逐本 [getVideoScrapeMeta] 的 N+1。
+  Future<List<VideoScrapeMetaRow>> getAllVideoScrapeMeta() =>
+      select(videoScrapeMeta).get();
+
   // ── collection_scrape_meta（合集级刮削资料，schema v64 / BUG-1310）────────
 
   /// 写入/覆盖合集刮削资料（同 collectionId 覆盖，重刮即替换）。
@@ -2576,11 +2581,17 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   /// 监听单个合集的刮削资料。详情页据此在刮削落库后自动重建 hero，无需手动刷新
   /// （与合集封面同一次写入事务，用户点「使用」后资料与背景图一起出现）。
-  Stream<CollectionScrapeMetaRow?> watchCollectionScrapeMeta(int collectionId) =>
+  Stream<CollectionScrapeMetaRow?> watchCollectionScrapeMeta(
+          int collectionId) =>
       (select(collectionScrapeMeta)
             ..where(($CollectionScrapeMetaTable t) =>
                 t.collectionId.equals(collectionId)))
           .watchSingleOrNull();
+
+  /// 全量合集刮削资料（TODO-2486 视频首页 hero 轮播：backdrop / 简介 / airDate）。
+  /// 首页一次拉全表内存建 collectionId → 行映射，替代逐合集查询的 N+1。
+  Future<List<CollectionScrapeMetaRow>> getAllCollectionScrapeMeta() =>
+      select(collectionScrapeMeta).get();
 
   /// 删除合集刮削资料（「重新刮削」前先清，或纠错后作废）。
   Future<void> deleteCollectionScrapeMeta(int collectionId) =>

@@ -120,7 +120,7 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    // 本地卡在，远端占位卡在（同一主 SliverGrid 混排），远端占位带云角标。
+    // 本地卡在，远端占位卡在（同一主混排墙 Wrap 混排，TODO-2486），远端占位带云角标。
     expect(
       find.byKey(const ValueKey<String>('home_video_video/local-1')),
       findsOneWidget,
@@ -134,9 +134,9 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.ancestor(of: remoteCard, matching: find.byType(SliverGrid)),
+      find.ancestor(of: remoteCard, matching: find.byType(Wrap)),
       findsOneWidget,
-      reason: '远端占位卡必须是主散卡网格（SliverGrid）的一个 cell（混排，非独立分区）',
+      reason: '远端占位卡必须是主混排墙（Wrap）的一个 cell（混排，非独立分区）',
     );
   });
 

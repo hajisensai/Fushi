@@ -166,7 +166,7 @@ void main() {
       reason: '云视频占位卡必须带云角标 ☁',
     );
     expect(
-      find.ancestor(of: cloudCard, matching: find.byType(SliverGrid)),
+      find.ancestor(of: cloudCard, matching: find.byType(Wrap)),
       findsOneWidget,
       reason: '云视频占位卡是主散卡网格的一个 cell（混排，非独立分区）',
     );

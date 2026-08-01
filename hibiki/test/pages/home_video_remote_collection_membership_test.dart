@@ -191,7 +191,7 @@ void main() {
     expect(remoteCard, findsOneWidget);
     // 归属解析不到 → 散卡降级：进主散卡网格，且不在任何合集横排行内。
     expect(
-      find.ancestor(of: remoteCard, matching: find.byType(SliverGrid)),
+      find.ancestor(of: remoteCard, matching: find.byType(Wrap)),
       findsOneWidget,
       reason: '归属解析不到本地合集 → 占位卡落散卡网格（散卡降级）',
     );
