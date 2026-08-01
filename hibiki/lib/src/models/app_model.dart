@@ -6143,6 +6143,13 @@ class _AppModelRemoteLookupService
           requireAudio: true,
           // 与上面 resolve 的 format 同值：引擎按它选编码器 + 输出扩展名 + 降级链。
           animatedFormat: animatedFormat,
+          // TODO-2519(2a)：动图 vs 静态帧偏好与格式偏好同源同链路，过去只透传了格式，
+          // 用户选「字幕开头截图 / 制卡时截图」在 YouTube 这条路上恒被吞成动图。
+          // 服务端路径无 stillFallback（拿不到当前解码帧），两种静态模式都落到引擎的
+          // tryStartFrame（immersion_mining_engine.dart:311-318 的排列本就互为兜底）
+          // → 静态模式根本不进 extractAnimatedClipWithFallback，不存在 BUG-1039 那种
+          // 「格式与编码参数不成对」的风险：静态帧压根不吃 gifFps/gifWidth。
+          imageMode: _appModel.videoMiningImageMode,
         ),
         compression: compression,
         tempDir: Directory.systemTemp.path,
