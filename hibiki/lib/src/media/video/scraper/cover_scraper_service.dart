@@ -57,7 +57,7 @@ class ScrapeApplied extends ScrapeOutcome {
   /// 落地的封面绝对路径（已 `updateCover`）。
   final String coverPath;
 
-  /// 封面来源（[CoverOrigin.scraped] 或 [CoverOrigin.sidecar]）。
+  /// 封面来源（[CoverOrigin.autoScraped] 或 [CoverOrigin.sidecar]）。
   final CoverOrigin origin;
 
   /// 在线匹配所得的决策（sidecar 直取时为 null）。
@@ -261,18 +261,22 @@ class CoverScraperService {
           parsed: parsed,
           candidate: aliasCandidate,
         );
-        // 别名是用户此前在弹窗里亲手认定的条目身份，不是猜的：它天然满足
-        // 「唯一精确」，重刮时应当把用户的选择原样恢复回去。
+        // 别名是「这个标题上次判成了哪个条目」的记忆（用户弹窗确认写的、自动
+        // high 应用也写），指向的是一个**已确定的条目身份**而不是一次新猜测，
+        // 因此按唯一精确处理：重刮时把上次的判定原样恢复回去。
         decisionCache?[cacheKey] =
             _ResolvedMatch(aliasDecision, uniqueExactTitle: true);
         if (applyHighConfidence) {
+          // 本次落盘是**程序**做的决定（别名只是记忆），标 autoScraped；用户在
+          // 弹窗里亲手选的那条路走 [applyCandidateToBooks]，标 userScraped。
           final String coverPath = await _applyCandidate(
             bookUid: book.bookUid,
             candidate: aliasCandidate,
+            origin: CoverOrigin.autoScraped,
           );
           return ScrapeApplied(
             coverPath: coverPath,
-            origin: CoverOrigin.scraped,
+            origin: CoverOrigin.autoScraped,
             decision: aliasDecision,
           );
         }
@@ -294,20 +298,26 @@ class CoverScraperService {
 
   // ── 公开：批量流水线 ────────────────────────────────────────────
 
-  /// 批量刮削：**只处理封面来源为 autoFrame（或无记录）的本地书**；manual/sidecar/
-  /// 已刮削一律跳过（[rescrapeScraped]=true 时才重刮已刮削的）。逐本 yield 进度；
-  /// 单本网络异常记 [ScrapeFailed] 继续，不中断整批。同目录成员共享解析结果缓存，
-  /// 避免重复搜索。
+  /// 批量刮削：逐本按封面来源决定能不能覆盖，yield 进度；单本网络异常记
+  /// [ScrapeFailed] 继续，不中断整批。同目录成员共享解析结果缓存，避免重复搜索。
   ///
-  /// [requireUniqueExactTitle]=true 时自动落盘判据收紧成「唯一归一化精确标题」。
-  /// 用户手动触发的整库重刮（[rescrapeScraped]=true）必须开它：那条路会覆盖
-  /// `CoverOrigin.scraped`，而**用户在匹配弹窗里亲手选定的封面同样记为 scraped**
-  /// （[applyCandidateToBooks]），综合分 high 的近似命中足以把用户的正确选择改掉。
-  /// 与书 / 漫画 / 游戏三域的 `uniqueExactScrapeTitleMatch` 同一判据。
+  /// **覆盖决策只在这一层做**（[CoverOriginBatchPolicy.batchOverwritePolicy]
+  /// 是唯一判据来源，
+  /// 所有入口——后台自动刮、页头「全部刮削」——都过这里）：
+  ///
+  /// | 封面来源 | 许可 | [rescrapeScraped]=false | =true |
+  /// |---|---|---|---|
+  /// | autoFrame / 无记录 | free | 覆盖（综合分 high） | 覆盖（综合分 high） |
+  /// | autoScraped | rescrapeOnly | 跳过 | 覆盖（综合分 high） |
+  /// | scraped（存量、来源未知） | legacyStrict | 跳过 | 只有**唯一归一化精确标题**才覆盖 |
+  /// | manual / userScraped / sidecar | never | 跳过 | **跳过**（开关管不到用户手选） |
+  ///
+  /// [rescrapeScraped] 只解锁「要不要覆盖**自动**刮来的旧结果」，它**不是**
+  /// 「覆盖一切」——用户亲手选定的封面（[CoverOrigin.userScraped]，见
+  /// [applyCandidateToBooks]）在任何开关下都不会被动（BUG-1325）。
   Stream<BatchScrapeProgress> scrapeLibrary(
     List<VideoBookRow> books, {
     bool rescrapeScraped = false,
-    bool requireUniqueExactTitle = false,
   }) async* {
     final Map<String, _ResolvedMatch> decisionCache =
         <String, _ResolvedMatch>{};
@@ -320,10 +330,15 @@ class CoverScraperService {
         } else {
           final CoverMeta? meta = await _coverMeta.get(book.bookUid);
           final CoverOrigin origin = meta?.origin ?? CoverOrigin.autoFrame;
-          final bool protectedOrigin = origin == CoverOrigin.manual ||
-              origin == CoverOrigin.sidecar ||
-              (origin == CoverOrigin.scraped && !rescrapeScraped);
-          if (protectedOrigin) {
+          final CoverOverwritePolicy policy = origin.batchOverwritePolicy;
+          final bool allowed = switch (policy) {
+            CoverOverwritePolicy.free => true,
+            CoverOverwritePolicy.rescrapeOnly ||
+            CoverOverwritePolicy.legacyStrict =>
+              rescrapeScraped,
+            CoverOverwritePolicy.never => false,
+          };
+          if (!allowed) {
             outcome = ScrapeSkippedProtected(origin);
             // 封面受保护 ≠ 条目资料也不要。手动设过封面、或目录里有 poster.jpg
             // 的库（整理过的库很常见）此前会被整本跳过、永远刮不到简介/评分；
@@ -333,7 +348,8 @@ class CoverScraperService {
           } else {
             outcome = await scrapeOne(
               book,
-              requireUniqueExactTitle: requireUniqueExactTitle,
+              requireUniqueExactTitle:
+                  policy == CoverOverwritePolicy.legacyStrict,
               decisionCache: decisionCache,
             );
           }
@@ -406,9 +422,13 @@ class CoverScraperService {
   Future<ScrapeCandidate?> fetchBangumiCandidateById(String subjectId) =>
       _bangumi.fetchSubjectCandidate(subjectId);
 
-  /// 用户在弹窗里点「使用」某候选：下载海报落封面 + `updateCover` + 记 scraped 元数据 +
-  /// 记别名缓存（[aliasKey] 非空时）。[bookUids] 多于一个 = 同时应用到整个合集（每个
-  /// 成员各落一份封面文件，海报只下载一次后复制分发）。
+  /// 用户在弹窗里点「使用」某候选：下载海报落封面 + `updateCover` +
+  /// 记 [CoverOrigin.userScraped] 元数据 + 记别名缓存（[aliasKey] 非空时）。
+  /// [bookUids] 多于一个 = 同时应用到整个合集（每个成员各落一份封面文件，海报只
+  /// 下载一次后复制分发）。
+  ///
+  /// 这是**唯一**由用户亲手拍板的在线封面落地路径，所以标 [CoverOrigin.userScraped]
+  /// 而不是 [CoverOrigin.autoScraped]——批量刮削据此永不覆盖它（BUG-1325）。
   Future<void> applyCandidateToBooks({
     required List<String> bookUids,
     required ScrapeCandidate candidate,
@@ -418,11 +438,12 @@ class CoverScraperService {
     final String firstCover = await _applyCandidate(
       bookUid: bookUids.first,
       candidate: candidate,
+      origin: CoverOrigin.userScraped,
     );
     if (bookUids.length > 1) {
       final Directory covers = await _coversDir();
       final CoverMeta meta = CoverMeta(
-        origin: CoverOrigin.scraped,
+        origin: CoverOrigin.userScraped,
         source: candidate.source,
         entryId: candidate.entryId,
       );
@@ -607,10 +628,11 @@ class CoverScraperService {
           bookUid: book.bookUid,
           candidate: decision.candidate,
           aliasKey: parsed.title,
+          origin: CoverOrigin.autoScraped,
         );
         return ScrapeApplied(
           coverPath: coverPath,
-          origin: CoverOrigin.scraped,
+          origin: CoverOrigin.autoScraped,
           decision: decision,
         );
       case MatchConfidence.medium:
@@ -696,11 +718,17 @@ class CoverScraperService {
     return null;
   }
 
-  /// 下载并落地单本封面：下载 → `updateCover` → 记 scraped 元数据。[aliasKey] 非空时
+  /// 下载并落地单本封面：下载 → `updateCover` → 记 [origin] 元数据。[aliasKey] 非空时
   /// 顺便记一条别名缓存（自动 high 应用也记住决策，下次重刮同目录直接命中）。返回封面路径。
+  ///
+  /// [origin] 必须如实反映**这次落盘是谁做的决定**：程序自动匹配传
+  /// [CoverOrigin.autoScraped]，用户在弹窗里点「使用」传 [CoverOrigin.userScraped]。
+  /// 两者曾经共用一个 `scraped` 标记，正是「全部刮削冲掉手动纠正」的根因
+  /// （BUG-1325），所以这里是必填参数、不给默认值。
   Future<String> _applyCandidate({
     required String bookUid,
     required ScrapeCandidate candidate,
+    required CoverOrigin origin,
     String? aliasKey,
   }) async {
     final String coverPath = await _downloader.downloadCover(
@@ -712,7 +740,7 @@ class CoverScraperService {
     await _coverMeta.set(
       bookUid,
       CoverMeta(
-        origin: CoverOrigin.scraped,
+        origin: origin,
         source: candidate.source,
         entryId: candidate.entryId,
       ),

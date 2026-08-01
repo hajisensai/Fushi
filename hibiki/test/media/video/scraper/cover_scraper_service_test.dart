@@ -172,7 +172,7 @@ void main() {
     final ScrapeOutcome outcome = await svc.scrapeOne(book);
     expect(outcome, isA<ScrapeApplied>());
     final ScrapeApplied applied = outcome as ScrapeApplied;
-    expect(applied.origin, CoverOrigin.scraped);
+    expect(applied.origin, CoverOrigin.autoScraped);
     expect(applied.decision!.confidence, MatchConfidence.high);
 
     // 封面落库 + 文件存在。
@@ -180,9 +180,9 @@ void main() {
     expect(updated.coverPath, applied.coverPath);
     expect(File(applied.coverPath).existsSync(), isTrue);
 
-    // scraped 元数据。
+    // 自动刮削元数据（程序做的决定 → autoScraped，不是用户手选的 userScraped）。
     final CoverMeta? meta = await coverMeta.get('video/aot');
-    expect(meta!.origin, CoverOrigin.scraped);
+    expect(meta!.origin, CoverOrigin.autoScraped);
     expect(meta.source, ScrapeSource.offlineDb);
     expect(meta.entryId, 'myanimelist.net/anime/16498');
 
@@ -351,24 +351,142 @@ void main() {
     expect(events[1].outcome, isA<ScrapeFailed>());
   });
 
-  // ── BUG-1307：手动整库重刮的自动落盘判据 ────────────────────────────
+  // ── BUG-1325：整库刮削按「封面是谁定的」决定能不能覆盖 ──────────────
   //
-  // 页头「全部刮削」是唯一开 rescrapeScraped: true 的路径，会解锁覆盖
-  // CoverOrigin.scraped。而用户在匹配弹窗里亲手选定的封面写的**也是** scraped
-  // （applyCandidateToBooks → _applyCandidate），两者在 cover_meta 里无法区分，
-  // 所以覆盖判据必须是「唯一归一化精确标题」，不能是综合分 high。
+  // 页头「全部刮削」是唯一开 rescrapeScraped: true 的路径。这个开关只解锁
+  // 「覆盖**自动**刮来的旧结果」（autoScraped），**不解锁**用户亲手选定的封面
+  // （userScraped / manual / sidecar）；来源未知的存量 scraped 记录还要再过
+  // 「唯一归一化精确标题」才允许覆盖。
 
-  /// 建一本已带封面、且封面来源记为 scraped（= 用户在弹窗里确认过）的书。
-  Future<VideoBookRow> seedConfirmed(String bookUid, String videoPath) async {
+  /// 建一本已带封面、且封面来源记为 [origin] 的书。
+  Future<VideoBookRow> seedWithCover(
+    String bookUid,
+    String videoPath,
+    CoverOrigin origin,
+  ) async {
     await seed(bookUid: bookUid, videoPath: videoPath);
     final File existing = File(p.join(tmp.path, videoCoverFileName(bookUid)));
     await existing.writeAsBytes(_fakePng);
     await repo.updateCover(bookUid, existing.path);
-    await coverMeta.set(bookUid, const CoverMeta(origin: CoverOrigin.scraped));
+    await coverMeta.set(bookUid, CoverMeta(origin: origin));
     return (await repo.getByBookUid(bookUid))!;
   }
 
-  test('BUG-1307 手动整库重刮：唯一归一化精确标题才自动落盘', () async {
+  /// 建一本封面来源为**存量未知**（旧版本写的 scraped）的书。
+  Future<VideoBookRow> seedConfirmed(String bookUid, String videoPath) =>
+      seedWithCover(bookUid, videoPath, CoverOrigin.scraped);
+
+  /// 只有一条近似（非精确）高分候选的离线库：唯一精确闸门下会被拦，
+  /// 不加闸门时按综合分 high 落盘。
+  CoverScraperService approxOnlyService() => build(
+        offline: offlineWith(const OfflineAnimeRecord(
+          title: 'Attack on Titan Final',
+          type: ScrapeEntryType.tv,
+          episodes: 16,
+          picture: 'https://img/aot_final.png',
+          sourceId: 'mal/40028',
+        )),
+      );
+
+  test('BUG-1325 用户在弹窗里选定的封面：开着覆盖开关的整库刮削也绝不覆盖', () async {
+    // 用户手动纠错的典型场景：文件名标题搜不出正确条目，用户在匹配弹窗里亲手
+    // 挑了一部。此后无论整库刮削怎么跑，这张封面都不许动。
+    final VideoBookRow book = await seedWithCover(
+      'video/user_picked',
+      p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
+      CoverOrigin.userScraped,
+    );
+    final String before = book.coverPath!;
+
+    // 离线库里放一条**唯一且精确**同名条目：连最严格的闸门都会放行，
+    // 唯一还能拦住它的只有「这是用户亲手选的」这一个事实。
+    final CoverScraperService svc = build(
+      offline: offlineWith(const OfflineAnimeRecord(
+        title: 'Attack on Titan',
+        type: ScrapeEntryType.tv,
+        episodes: 25,
+        picture: 'https://img/aot.png',
+        sourceId: 'mal/16498',
+      )),
+    );
+
+    final List<BatchScrapeProgress> events = await svc.scrapeLibrary(
+      <VideoBookRow>[book],
+      rescrapeScraped: true,
+    ).toList();
+
+    final ScrapeOutcome outcome = events.single.outcome;
+    expect(outcome, isA<ScrapeSkippedProtected>());
+    expect(
+      (outcome as ScrapeSkippedProtected).origin,
+      CoverOrigin.userScraped,
+    );
+    final VideoBookRow after = (await repo.getByBookUid('video/user_picked'))!;
+    expect(after.coverPath, before, reason: '用户手选的封面不得被整库刮削改掉');
+    final CoverMeta? meta = await coverMeta.get('video/user_picked');
+    expect(meta?.origin, CoverOrigin.userScraped, reason: '保护标记不得被抹掉');
+  });
+
+  test('BUG-1325 applyCandidateToBooks 落的是 userScraped（用户亲手拍板）', () async {
+    await seed(
+      bookUid: 'video/pick_meta',
+      videoPath: p.join('anime', 'X', 'X - 01.mkv'),
+    );
+    await build().applyCandidateToBooks(
+      bookUids: <String>['video/pick_meta'],
+      candidate: const ScrapeCandidate(
+        source: ScrapeSource.bangumi,
+        entryId: '999',
+        title: 'X',
+        posterUrl: 'https://img/x.png',
+      ),
+    );
+    final CoverMeta? meta = await coverMeta.get('video/pick_meta');
+    expect(meta?.origin, CoverOrigin.userScraped);
+  });
+
+  test('BUG-1325 自动刮来的旧封面：覆盖开关打开时照样更新（不许一起挡死）', () async {
+    final VideoBookRow book = await seedWithCover(
+      'video/auto_scraped',
+      p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
+      CoverOrigin.autoScraped,
+    );
+
+    // 近似高分候选：存量未知记录会被闸门拦下，自动刮来的记录不该被拦——
+    // 覆盖开关本来就是为它们准备的。
+    final List<BatchScrapeProgress> events = await approxOnlyService()
+        .scrapeLibrary(<VideoBookRow>[book], rescrapeScraped: true).toList();
+
+    expect(events.single.outcome, isA<ScrapeApplied>());
+    final CoverMeta? meta = await coverMeta.get('video/auto_scraped');
+    expect(meta?.entryId, 'mal/40028', reason: '自动刮来的旧结果应被刷新');
+    expect(meta?.origin, CoverOrigin.autoScraped);
+  });
+
+  test('BUG-1325 自动刮来的旧封面：覆盖开关关着时不动', () async {
+    final VideoBookRow book = await seedWithCover(
+      'video/auto_scraped_off',
+      p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
+      CoverOrigin.autoScraped,
+    );
+    final String before = book.coverPath!;
+
+    final List<BatchScrapeProgress> events =
+        await approxOnlyService().scrapeLibrary(<VideoBookRow>[book]).toList();
+
+    final ScrapeOutcome outcome = events.single.outcome;
+    expect(outcome, isA<ScrapeSkippedProtected>());
+    expect(
+      (outcome as ScrapeSkippedProtected).origin,
+      CoverOrigin.autoScraped,
+    );
+    expect(
+      (await repo.getByBookUid('video/auto_scraped_off'))!.coverPath,
+      before,
+    );
+  });
+
+  test('BUG-1325 存量未知来源（旧 scraped）整库重刮：唯一归一化精确标题才自动落盘', () async {
     final VideoBookRow book = await seedConfirmed(
       'video/exact_one',
       p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
@@ -387,7 +505,6 @@ void main() {
     final List<BatchScrapeProgress> events = await svc.scrapeLibrary(
       <VideoBookRow>[book],
       rescrapeScraped: true,
-      requireUniqueExactTitle: true,
     ).toList();
 
     expect(events.single.outcome, isA<ScrapeApplied>());
@@ -396,7 +513,7 @@ void main() {
     expect(before, isNotEmpty);
   });
 
-  test('BUG-1307 手动整库重刮：多个同名精确候选不自动覆盖，降级待确认', () async {
+  test('BUG-1325 存量未知来源（旧 scraped）整库重刮：多个同名精确候选不自动覆盖，降级待确认', () async {
     final VideoBookRow book = await seedConfirmed(
       'video/exact_two',
       p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
@@ -426,7 +543,6 @@ void main() {
     final List<BatchScrapeProgress> events = await svc.scrapeLibrary(
       <VideoBookRow>[book],
       rescrapeScraped: true,
-      requireUniqueExactTitle: true,
     ).toList();
 
     expect(events.single.outcome, isA<ScrapeNeedsConfirm>());
@@ -437,7 +553,7 @@ void main() {
     expect(meta?.entryId, isNull, reason: '没落盘就不该写条目身份');
   });
 
-  test('BUG-1307 手动整库重刮：高分近似（非精确）候选降级待确认，不覆盖', () async {
+  test('BUG-1325 存量未知来源（旧 scraped）整库重刮：高分近似（非精确）候选降级待确认，不覆盖', () async {
     final VideoBookRow book = await seedConfirmed(
       'video/approx',
       p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
@@ -458,7 +574,6 @@ void main() {
     final List<BatchScrapeProgress> events = await svc.scrapeLibrary(
       <VideoBookRow>[book],
       rescrapeScraped: true,
-      requireUniqueExactTitle: true,
     ).toList();
 
     expect(
@@ -470,7 +585,7 @@ void main() {
     expect(after.coverPath, before);
   });
 
-  test('BUG-1307 手动整库重刮：精确候选存在但按分数落选时，同样不自动落盘', () async {
+  test('BUG-1325 存量未知来源（旧 scraped）整库重刮：精确候选存在但按分数落选时，同样不自动落盘', () async {
     // 「唯一精确」必须落在**获胜候选**身上：库里恰好有一条精确同名条目，却因为
     // 年份/集数加分被另一条近似条目挤下去时，落盘的会是那条近似的——只数
     // 「精确条目有几个」而不校验赢家是不是它，闸门就是漏的。
@@ -504,7 +619,6 @@ void main() {
     final List<BatchScrapeProgress> events = await svc.scrapeLibrary(
       <VideoBookRow>[book],
       rescrapeScraped: true,
-      requireUniqueExactTitle: true,
     ).toList();
 
     final ScrapeOutcome outcome = events.single.outcome;
@@ -522,7 +636,7 @@ void main() {
     expect(after.coverPath, before);
   });
 
-  test('BUG-1307 默认（自动刮削路径）判据不变：高分近似仍落抽帧封面', () async {
+  test('BUG-1325 默认（自动刮削路径）判据不变：高分近似仍落抽帧封面', () async {
     // 防过度收敛：requireUniqueExactTitle 默认 false，既有 _maybeAutoScrape
     // 只覆盖 autoFrame 封面，判据仍是综合分 high。
     final VideoBookRow book = await seed(

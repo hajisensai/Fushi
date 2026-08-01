@@ -243,19 +243,75 @@ class MatchDecision {
   final bool? episodeCountConsistent;
 }
 
-/// 封面来源标记（落 `video_covers/cover_meta.json`，批量匹配只碰 autoFrame）。
+/// 封面来源标记（落 `video_covers/cover_meta.json`）。
+///
+/// 这个枚举回答的是**「这张封面是谁定的」**——批量刮削能不能覆盖它，完全由该问题
+/// 决定（见 [CoverOriginBatchPolicy.batchOverwritePolicy]）。
+///
+/// 历史教训（BUG-1325）：用户在匹配弹窗里**亲手选定**的封面与后台**自动刮到**的
+/// 封面曾经共用同一个 [scraped] 标记，系统事后分不出哪张是人选的，「全部刮削」开
+/// 覆盖开关时就会把用户的纠正一并冲掉。所以在线刮削从此按决定者拆成
+/// [autoScraped] / [userScraped] 两个值，[scraped] 只保留给读不出决定者的存量记录。
 enum CoverOrigin {
-  /// 导入时自动抽帧（默认，批量匹配允许覆盖）。
+  /// 导入时自动抽帧（默认占位图，批量匹配允许覆盖）。
   autoFrame,
 
   /// 用户手动设置（本地图片/粘贴/手动抽帧），批量匹配**永不覆盖**。
   manual,
 
-  /// 在线刮削所得（记录 entryId 以便重刮/纠错）。
+  /// **存量记录专用**：旧版本写下的在线刮削标记，分不清是自动刮到的还是用户在
+  /// 匹配弹窗里亲手选定的。新代码**不再写入**这个值（只在读旧 `cover_meta.json`
+  /// 时出现），覆盖判据走保守口径 [CoverOverwritePolicy.legacyStrict]。
   scraped,
 
-  /// 目录 sidecar（poster.jpg 等）识别所得。
+  /// 自动在线刮削所得（后台自动刮 / 整库刮削里无人值守应用），记录 entryId 以便
+  /// 重刮/纠错。用户开「重刮已刮削的」时允许被覆盖。
+  autoScraped,
+
+  /// 用户在匹配弹窗里亲手点「使用」选定的条目，批量刮削**永不覆盖**（无论覆盖
+  /// 开关是否打开）。
+  userScraped,
+
+  /// 目录 sidecar（poster.jpg 等）识别所得：用户自己放进目录的资产，**永不覆盖**。
   sidecar,
+}
+
+/// 批量刮削对一张**已有封面**的覆盖许可，由 [CoverOrigin] 唯一决定。
+///
+/// 把「能不能覆盖」收成一个枚举而不是散落的 `origin == X || origin == Y` 条件，
+/// 是为了让新增来源时编译器逼着人做决定（switch 穷尽），不会有哪条来源默默落进
+/// 「可覆盖」的默认分支。
+enum CoverOverwritePolicy {
+  /// 占位封面（导入抽帧）：批量随时可覆盖，不需要用户开开关。
+  free,
+
+  /// 自动刮削结果：只有用户显式要求「重刮已刮削的」时才覆盖。
+  rescrapeOnly,
+
+  /// 来源未知的**存量**刮削记录：即便用户要求重刮，也必须过「唯一归一化精确
+  /// 标题」才允许覆盖——旧记录里混着用户亲手选定的封面，宁可少刮一本也不能改掉
+  /// 人选的那张。
+  legacyStrict,
+
+  /// 用户亲自定的（手选本地图 / 弹窗选定 / 自己放的 sidecar）：**永不覆盖**。
+  never,
+}
+
+/// [CoverOrigin] → 批量覆盖许可的唯一映射。
+extension CoverOriginBatchPolicy on CoverOrigin {
+  /// 批量刮削遇到这张封面时的覆盖许可。
+  CoverOverwritePolicy get batchOverwritePolicy => switch (this) {
+        CoverOrigin.autoFrame => CoverOverwritePolicy.free,
+        CoverOrigin.autoScraped => CoverOverwritePolicy.rescrapeOnly,
+        CoverOrigin.scraped => CoverOverwritePolicy.legacyStrict,
+        CoverOrigin.manual ||
+        CoverOrigin.userScraped ||
+        CoverOrigin.sidecar =>
+          CoverOverwritePolicy.never,
+      };
+
+  /// 这张封面是不是用户亲自定的（UI 判「要不要提示会被刮削改掉」用）。
+  bool get isUserChosen => batchOverwritePolicy == CoverOverwritePolicy.never;
 }
 
 /// 单本封面的元数据（`cover_meta.json` 里按 bookUid 存）。
@@ -268,7 +324,8 @@ class CoverMeta {
 
   final CoverOrigin origin;
 
-  /// [CoverOrigin.scraped] 时的来源与条目 id，其余为 null。
+  /// 在线刮削来源（[CoverOrigin.autoScraped] / [CoverOrigin.userScraped]，以及
+  /// 存量 [CoverOrigin.scraped]）时的来源与条目 id，其余为 null。
   final ScrapeSource? source;
   final String? entryId;
 

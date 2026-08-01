@@ -1853,11 +1853,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 页头「全部刮削」：显式重跑整库在线刮削。手动封面和 sidecar 封面由
-  /// [CoverScraperService] 保护；已在线刮过的封面允许刷新，但只能被
-  /// **唯一归一化精确标题**覆盖（`requireUniqueExactTitle`）——用户在匹配弹窗里
-  /// 亲手选定的封面同样记为 `CoverOrigin.scraped`，不能被一个综合分够线的
-  /// 近似命中改掉。近似命中只计入待确认，与书 / 漫画 / 游戏三域同一判据。
+  /// 页头「全部刮削」：显式重跑整库在线刮削。
+  ///
+  /// `rescrapeScraped: true` 只解锁「覆盖**自动**刮来的旧封面」这一件事——覆盖
+  /// 决策本身全在 [CoverScraperService.scrapeLibrary] 那一层按封面来源做
+  /// （BUG-1325）：用户手选的本地图（`manual`）、用户在匹配弹窗里亲手选定的条目
+  /// （`userScraped`）、用户自己放的 sidecar 一律**永不覆盖**；来源未知的存量
+  /// `scraped` 记录还要再过「唯一归一化精确标题」才允许覆盖。本页不再重复表达
+  /// 判据，避免两处各说一套。
   Future<void> _scrapeAllVideos() async {
     final List<VideoBookRow> books = await widget.repo.listAll();
     if (!mounted) return;
@@ -1877,7 +1880,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             in bundle.service.scrapeLibrary(
           books,
           rescrapeScraped: true,
-          requireUniqueExactTitle: true,
         )) {
           final ScrapeBatchItemResult result = switch (progress.outcome) {
             ScrapeApplied() => ScrapeBatchItemResult.applied,
