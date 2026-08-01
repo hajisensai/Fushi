@@ -17,7 +17,10 @@ import 'dart:io';
 import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/media/metadata/credential_redaction.dart';
 import 'package:hibiki/src/media/metadata/image_download.dart'
-    show fetchCoverImageResponse, kCoverImageDownloadTimeout;
+    show
+        CoverDownloadDeadline,
+        fetchCoverImageResponse,
+        kCoverImageDownloadTimeout;
 import 'package:hibiki/src/media/metadata/transport_retry.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
@@ -39,13 +42,16 @@ class CoverDownloader {
 
   final http.Client _client;
 
-  /// 单次尝试的下载截止时间。比搜索宽：海报是几百 KB ~ 数 MB 的响应体，慢速链路上
-  /// 传输本身就要时间，不能像搜索那样按「建连成败」取值；与书籍侧共用
-  /// [kCoverImageDownloadTimeout]（100 秒，BUG-1248）。
+  /// **整轮**下载的总预算（所有尝试与退避共享这一个截止，TODO-2341）。比搜索宽：
+  /// 海报是几百 KB ~ 数 MB 的响应体，慢速链路上传输本身就要时间，不能像搜索那样按
+  /// 「建连成败」取值；与书籍侧共用 [kCoverImageDownloadTimeout]（100 秒，BUG-1248）。
+  ///
+  /// 不是「每次尝试各 100 秒」：那样 3 次重试最坏堆成 300 秒，界面上与卡死无法区分。
   final Duration timeout;
 
   /// 传输失败时的总尝试次数（含首次）。与搜索同一根因：链路会成片丢连接（BUG-1272）。
-  /// 图片下载是幂等 GET，重放安全。
+  /// 图片下载是幂等 GET，重放安全。次数与 [timeout] 是**与**的关系：先到者停手，
+  /// 因此链路特别慢时次数可能用不满（已知取舍）。
   final int maxAttempts;
 
   final Future<void> Function(Duration delay)? _retrySleep;
@@ -69,20 +75,25 @@ class CoverDownloader {
     final String finalPath =
         p.join(coversDir.path, videoCoverFileName(bookUid));
 
+    // 整轮下载（含全部重试与退避）只有这一个截止：所有尝试共用同一个 abort trigger，
+    // 到点时**在飞的那一次传输也被真正中止**（BUG-1248 的核心性质），并置位
+    // isExpired 让重试循环停手（TODO-2341）。
+    final CoverDownloadDeadline deadline = CoverDownloadDeadline(timeout);
     final http.Response response;
     try {
       // 只有传输失败（拿不到响应）会重试；下面对非 2xx 的判断在 try 之外，因此
       // 404 / 403 的坏 URL 依旧一次就失败，不会被重放。每次尝试都走
-      // [fetchCoverImageResponse]：超时即 abort 底层请求/响应流，重放不会在后台
+      // [fetchCoverImageResponse]：截止即 abort 底层请求/响应流，重放不会在后台
       // 堆积仍在下载的孤儿连接（BUG-1248）。
       response = await runWithTransportRetry<http.Response>(
         () => fetchCoverImageResponse(
           _client,
           Uri.parse(url),
-          timeout: timeout,
+          deadline: deadline,
         ),
         maxAttempts: maxAttempts,
         sleep: _retrySleep,
+        shouldGiveUp: () => deadline.isExpired,
       );
     } on TimeoutException {
       throw const ScrapeNetworkException('Poster download timed out');
@@ -92,6 +103,8 @@ class CoverDownloader {
       throw ScrapeNetworkException(
         redactCredentialsInText('Poster request failed: $e'),
       );
+    } finally {
+      deadline.dispose();
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {

@@ -13,6 +13,7 @@ export 'src/pages/implementations/history_reader_page.dart';
 export 'src/pages/implementations/home_reader_page.dart';
 export 'src/pages/implementations/home_video_page.dart';
 export 'src/pages/implementations/home_game_page.dart';
+export 'src/pages/implementations/airing_calendar_page.dart';
 export 'src/pages/implementations/downloads_page.dart';
 export 'src/pages/implementations/browser_extension_page.dart';
 export 'src/pages/implementations/home_page.dart';

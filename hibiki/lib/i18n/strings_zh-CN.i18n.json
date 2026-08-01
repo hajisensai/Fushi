@@ -2232,7 +2232,7 @@
   "video_jimaku_downloaded": "字幕已下载并应用",
   "video_jimaku_episode": "集数（可选）",
   "video_jimaku_episode_hint": "留空列出全部",
-  "video_jimaku_fetch": "自动获取字幕（Jimaku）",
+  "video_jimaku_fetch": "获取字幕（Jimaku）",
   "video_jimaku_filter": "筛选结果（如 WEBRip、BD）",
   "video_jimaku_find_sources": "查找字幕",
   "video_jimaku_language": "语言",
@@ -2946,5 +2946,17 @@
   "mihon_filter_ascending": "升序",
   "mihon_filter_descending": "降序",
   "mihon_add_to_bookshelf": "加入漫画书架",
-  "mihon_in_bookshelf": "已加入漫画书架"
+  "mihon_in_bookshelf": "已加入漫画书架",
+  "download_airing_calendar_title": "放送日历",
+  "download_airing_calendar_show_all": "显示本季全部",
+  "download_airing_calendar_empty_guidance": "暂无可显示的放送信息：给合集绑定 AniList 或添加下载订阅后，这里会显示对应的放送时间。",
+  "download_airing_calendar_error": "放送时间表加载失败",
+  "download_airing_calendar_in_library": "已入库",
+  "download_airing_calendar_subscribed": "订阅中",
+  "download_airing_calendar_episode_label": "第 ${episode} 集",
+  "download_airing_calendar_week_prev": "上一周",
+  "download_airing_calendar_week_next": "下一周",
+  "download_airing_calendar_week_empty": "本周没有相关放送",
+  "video_jimaku_format": "类型",
+  "video_jimaku_format_all": "全部"
 }

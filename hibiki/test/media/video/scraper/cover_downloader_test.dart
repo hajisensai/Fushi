@@ -25,8 +25,12 @@ final class _StreamAbortTrackingClient extends http.BaseClient {
   final List<StreamController<List<int>>> _openResponses =
       <StreamController<List<int>>>[];
 
+  /// 实际发起的尝试次数。共享总预算下预算被吃光即停手，不再发起新尝试。
+  int sendCount = 0;
+
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    sendCount++;
     final StreamController<List<int>> response = StreamController<List<int>>();
     _openResponses.add(response);
     if (request case http.Abortable(:final Future<void>? abortTrigger)
@@ -225,6 +229,95 @@ void main() {
     },
     timeout: const Timeout(Duration(seconds: 2)),
   );
+
+  test(
+    '总截止跨重试共享：预算被首次尝试吃光后不再发起新尝试，在飞传输仍被真正 abort',
+    () async {
+      const String bookUid = 'uid_shared_budget';
+      final String finalPath =
+          p.join(tempDir.path, videoCoverFileName(bookUid));
+      const List<int> oldCover = <int>[0xFF, 0xD8, 0xFF, 0x03];
+      await File(finalPath).writeAsBytes(oldCover);
+
+      const Duration budget = Duration(milliseconds: 200);
+      final _StreamAbortTrackingClient client = _StreamAbortTrackingClient();
+      final Stopwatch elapsed = Stopwatch()..start();
+
+      await expectLater(
+        CoverDownloader(
+          client: client,
+          timeout: budget,
+          maxAttempts: 3,
+          // 去掉真实退避等待；判据只看尝试次数 / 总耗时 / abort，与退避无关。
+          retrySleep: (Duration _) async {},
+        ).downloadCover(
+          url: 'https://img/hang',
+          bookUid: bookUid,
+          coversDirectory: tempDir,
+        ),
+        throwsA(
+          isA<ScrapeNetworkException>().having(
+            (ScrapeNetworkException error) => error.message,
+            'message',
+            'Poster download timed out',
+          ),
+        ),
+      );
+      elapsed.stop();
+
+      // 旧口径「每次尝试各自计时」会发 3 次请求、总耗时 3×budget；
+      // 共享总预算下预算被首次尝试吃光，第 2、3 次尝试不得发起。
+      expect(client.sendCount, 1, reason: '预算用尽后不得再发起新的尝试');
+      expect(
+        elapsed.elapsed,
+        lessThan(const Duration(milliseconds: 500)),
+        reason: '3 次重试合计不得超过总预算（旧口径要 3×200ms）',
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        client.abortObserved.isCompleted,
+        isTrue,
+        reason: '总截止到点必须真正中止底层响应流，而非只让等待层放弃（BUG-1248）',
+      );
+      expect(File(finalPath).readAsBytesSync(), oldCover);
+      expect(File('$finalPath.tmp').existsSync(), isFalse);
+      client.close();
+    },
+    timeout: const Timeout(Duration(seconds: 10)),
+  );
+
+  test('退避期间预算耗尽 → 剩余重试次数用不满，不再发起新尝试', () async {
+    int sends = 0;
+    final MockClient client = MockClient((http.Request req) async {
+      sends++;
+      throw const SocketException('connection reset');
+    });
+
+    await expectLater(
+      CoverDownloader(
+        client: client,
+        timeout: const Duration(milliseconds: 250),
+        maxAttempts: 3,
+        // 每次退避吃掉 150ms 共享预算：第二次退避结束时总预算已耗尽。
+        retrySleep: (Duration _) =>
+            Future<void>.delayed(const Duration(milliseconds: 150)),
+      ).downloadCover(
+        url: 'https://img/flaky',
+        bookUid: 'uid_budget_exhausted',
+        coversDirectory: tempDir,
+      ),
+      throwsA(isA<ScrapeNetworkException>()),
+    );
+
+    // 预期恰好 2 次（第 3 次退避后预算已过期）；放宽成 <3 只为躲开慢机上的
+    // 定时器抖动——被钉死的性质是「不再把 maxAttempts 用满」。
+    expect(
+      sends,
+      allOf(greaterThanOrEqualTo(1), lessThan(3)),
+      reason: '共享预算耗尽后不得继续重试（旧口径会把 3 次用满）',
+    );
+  });
 
   test('底层 IO 失败不覆盖旧封面且不留 .tmp', () async {
     const String bookUid = 'uid_io_error';

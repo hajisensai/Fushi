@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/src/media/manga/manga_module.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_tasks_section.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/airing_calendar_page.dart';
 import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
 import 'package:hibiki/src/pages/implementations/download_subscriptions_panel.dart';
 import 'package:hibiki/src/pages/implementations/torrent_settings_section.dart';
@@ -41,6 +42,25 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     );
   }
 
+  /// 放送日历整页入口（TODO-2487）。[tabContext] 必须来自 DefaultTabController
+  /// 之下（AppBar actions 里的 Builder），日历页点「订阅中」条目 pop 回来后
+  /// 用它把本页 tab 切到订阅。
+  void _openAiringCalendar(BuildContext tabContext) {
+    final TabController tabController = DefaultTabController.of(tabContext);
+    Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => AiringCalendarPage(
+          onOpenSubscriptions: () {
+            if (!mounted) return;
+            tabController.animateTo(2);
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -69,6 +89,16 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                     ],
                   ),
             actions: <Widget>[
+              if (!_showSettings)
+                Builder(
+                  // Builder：拿 DefaultTabController 之下的 context，日历页
+                  // 「订阅中」条目点击回跳时能切回订阅 tab（TODO-2487）。
+                  builder: (BuildContext tabContext) => IconButton(
+                    tooltip: t.download_airing_calendar_title,
+                    icon: const Icon(Icons.calendar_month_outlined),
+                    onPressed: () => _openAiringCalendar(tabContext),
+                  ),
+                ),
               if (!_showSettings)
                 IconButton(
                   tooltip: t.manga_online_catalog_title,

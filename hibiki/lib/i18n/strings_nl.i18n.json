@@ -2232,7 +2232,7 @@
   "video_jimaku_downloaded": "Ondertitel gedownload en toegepast",
   "video_jimaku_episode": "Episode (optional)",
   "video_jimaku_episode_hint": "Leave empty to list all",
-  "video_jimaku_fetch": "Ondertitels automatisch ophalen (Jimaku)",
+  "video_jimaku_fetch": "Ondertitels ophalen (Jimaku)",
   "video_jimaku_filter": "Resultaten filteren (bijv. WEBRip, BD)",
   "video_jimaku_find_sources": "Find subtitles",
   "video_jimaku_language": "Language",
@@ -2946,5 +2946,17 @@
   "mihon_filter_ascending": "Ascending",
   "mihon_filter_descending": "Descending",
   "mihon_add_to_bookshelf": "Add to manga shelf",
-  "mihon_in_bookshelf": "In manga shelf"
+  "mihon_in_bookshelf": "In manga shelf",
+  "download_airing_calendar_title": "Airing calendar",
+  "download_airing_calendar_show_all": "Show all this season",
+  "download_airing_calendar_empty_guidance": "Nothing to show yet: bind a collection to AniList or add a download subscription, and their airing times will appear here.",
+  "download_airing_calendar_error": "Failed to load the airing schedule",
+  "download_airing_calendar_in_library": "In library",
+  "download_airing_calendar_subscribed": "Subscribed",
+  "download_airing_calendar_episode_label": "Ep ${episode}",
+  "download_airing_calendar_week_prev": "Previous week",
+  "download_airing_calendar_week_next": "Next week",
+  "download_airing_calendar_week_empty": "Nothing airing this week",
+  "video_jimaku_format": "Format",
+  "video_jimaku_format_all": "All"
 }

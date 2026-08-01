@@ -91,6 +91,10 @@ class ProfileKeys {
     'audiobook_volume_',
     'audiobook_image_pause_',
     'audiobook_health_overlay_',
+    // TODO-2487: airing calendar fetch cache is device-local network cache,
+    // not a reading preference. Snapshotting it per profile would restore
+    // stale schedules on profile switch for zero benefit.
+    'airing_calendar_',
   ];
 
   /// BUG-1018 (A4): per-item display-name overrides are CONTENT tied to a
