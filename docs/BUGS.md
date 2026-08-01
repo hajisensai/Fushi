@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1300 条。点号进各自文件。
+> 共 1301 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1358](bugs/BUG-1358-schema-guard-handwritten-comment-strip.md) | ✅ | ✅ | PR#679 新守卫手写 startsWith('//') 剥注释，违反 source_guard 纪律，develop 单测门红 |
 | [BUG-1353](bugs/BUG-1353-ci-macos-bsd-sed-inplace.md) | ✅ | ✅ | CI macos/ios 作业固定红：TMDB key 注入用了 GNU-only 的裸 sed -i |
 | [BUG-1352](bugs/BUG-1352-ci-package-tests-schema-literal.md) | ✅ | ✅ | CI Run package tests 红：packages 侧 schemaVersion 等值断言漏跟 v66 |
 | [BUG-1351](bugs/BUG-1351-scan-playlist-import-no-added-activity.md) | ✅ | ✅ | 扫描导入新播放列表合集不落 added 活动事件 |
