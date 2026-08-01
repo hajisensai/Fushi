@@ -81,6 +81,67 @@ void main() {
     });
   });
 
+  group('format filter（按字幕类型筛选，用户要「只看 ass 的」）', () {
+    final List<JimakuCandidate> candidates = <JimakuCandidate>[
+      _cand('ep01.ja.srt'),
+      _cand('ep01.ja.ass'),
+      _cand('ep02.zh.ASS'), // 大写扩展名也要归到 ass
+      _cand('ep03.ja.vtt'),
+    ];
+
+    test('null（全部）不过滤', () {
+      expect(filterCandidatesByFormat(candidates, null), candidates);
+    });
+
+    test('选 ass 只留 ass 候选（含大写扩展名）', () {
+      final List<JimakuCandidate> out =
+          filterCandidatesByFormat(candidates, 'ass');
+      expect(out.map((JimakuCandidate c) => c.file.name),
+          <String>['ep01.ja.ass', 'ep02.zh.ASS']);
+    });
+
+    test('选 srt 不会漏进 ass', () {
+      final List<JimakuCandidate> out =
+          filterCandidatesByFormat(candidates, 'srt');
+      expect(
+          out.map((JimakuCandidate c) => c.file.name), <String>['ep01.ja.srt']);
+    });
+
+    test('availableFormats 去重 + ass/srt/ssa/vtt 稳定顺序', () {
+      expect(availableFormats(candidates), <String>['ass', 'srt', 'vtt']);
+      expect(
+        availableFormats(<JimakuCandidate>[
+          _cand('a.vtt'),
+          _cand('b.ssa'),
+          _cand('c.srt'),
+          _cand('d.ass'),
+        ]),
+        <String>['ass', 'srt', 'ssa', 'vtt'],
+      );
+    });
+
+    test('只有一种类型时 availableFormats 仍返回它（由 UI 决定不渲染单选项筛选区）', () {
+      expect(
+          availableFormats(<JimakuCandidate>[_cand('a.srt'), _cand('b.srt')]),
+          <String>['srt']);
+    });
+
+    test('语言 + 类型两层筛选可叠加，且顺序无关', () {
+      final List<JimakuCandidate> langThenFormat = filterCandidatesByFormat(
+        filterCandidatesByLanguage(candidates, 'ja'),
+        'ass',
+      );
+      final List<JimakuCandidate> formatThenLang = filterCandidatesByLanguage(
+        filterCandidatesByFormat(candidates, 'ass'),
+        'ja',
+      );
+      expect(langThenFormat.map((JimakuCandidate c) => c.file.name),
+          <String>['ep01.ja.ass']);
+      expect(formatThenLang.map((JimakuCandidate c) => c.file.name),
+          langThenFormat.map((JimakuCandidate c) => c.file.name));
+    });
+  });
+
   group('sortJimakuCandidates（消除集数乱序）', () {
     test('同语言按集号升序，认不出集号排末尾', () {
       final List<JimakuCandidate> sorted =

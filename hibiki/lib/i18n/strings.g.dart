@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 49504 (2912 per locale)
+/// Strings: 49538 (2914 per locale)
 ///
-/// Built on 2026-08-01 at 05:47 UTC
+/// Built on 2026-08-01 at 05:59 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2995,7 +2995,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_jimaku_downloaded => 'Subtitle downloaded and applied';
   String get video_jimaku_episode => 'Episode (optional)';
   String get video_jimaku_episode_hint => 'Leave empty to list all';
-  String get video_jimaku_fetch => 'Auto-fetch subtitles (Jimaku)';
+  String get video_jimaku_fetch => 'Fetch subtitles (Jimaku)';
   String get video_jimaku_filter => 'Filter results (e.g. WEBRip, BD)';
   String get video_jimaku_find_sources => 'Find subtitles';
   String get video_jimaku_language => 'Language';
@@ -3937,6 +3937,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get download_task_status_error => 'Error';
   String get download_task_pause => 'Pause';
   String get download_task_resume => 'Resume';
+  String get video_jimaku_format => 'Format';
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -9013,7 +9015,7 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch => 'جلب الترجمات تلقائيًا (Jimaku)';
+  String get video_jimaku_fetch => 'جلب الترجمات (Jimaku)';
   @override
   String get video_jimaku_filter => 'تصفية النتائج (مثل WEBRip وBD)';
   @override
@@ -10635,6 +10637,10 @@ class _StringsAr extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -15768,7 +15774,7 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch => 'Untertitel automatisch holen (Jimaku)';
+  String get video_jimaku_fetch => 'Untertitel holen (Jimaku)';
   @override
   String get video_jimaku_filter => 'Ergebnisse filtern (z. B. WEBRip, BD)';
   @override
@@ -17400,6 +17406,10 @@ class _StringsDe extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -22547,8 +22557,7 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch =>
-      'Obtener subtítulos automáticamente (Jimaku)';
+  String get video_jimaku_fetch => 'Obtener subtítulos (Jimaku)';
   @override
   String get video_jimaku_filter => 'Filtrar resultados (p. ej. WEBRip, BD)';
   @override
@@ -24181,6 +24190,10 @@ class _StringsEs extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -29340,7 +29353,7 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch => 'Récupération auto des sous-titres (Jimaku)';
+  String get video_jimaku_fetch => 'Récupérer les sous-titres (Jimaku)';
   @override
   String get video_jimaku_filter => 'Filtrer les résultats (ex. WEBRip, BD)';
   @override
@@ -30973,6 +30986,10 @@ class _StringsFr extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -36070,7 +36087,7 @@ class _StringsId extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch => 'Ambil subtitle otomatis (Jimaku)';
+  String get video_jimaku_fetch => 'Ambil subtitle (Jimaku)';
   @override
   String get video_jimaku_filter => 'Saring hasil (mis. WEBRip, BD)';
   @override
@@ -37694,6 +37711,10 @@ class _StringsId extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -42830,7 +42851,7 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch => 'Recupero automatico sottotitoli (Jimaku)';
+  String get video_jimaku_fetch => 'Recupera sottotitoli (Jimaku)';
   @override
   String get video_jimaku_filter => 'Filtra risultati (es. WEBRip, BD)';
   @override
@@ -44461,6 +44482,10 @@ class _StringsIt extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -49442,7 +49467,7 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch => '字幕を自動取得（Jimaku）';
+  String get video_jimaku_fetch => '字幕を取得（Jimaku）';
   @override
   String get video_jimaku_filter => '結果を絞り込み（WEBRip、BD など）';
   @override
@@ -51045,6 +51070,10 @@ class _StringsJa extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -56025,7 +56054,7 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch => '자막 자동 가져오기(Jimaku)';
+  String get video_jimaku_fetch => '자막 가져오기(Jimaku)';
   @override
   String get video_jimaku_filter => '결과 필터(예: WEBRip, BD)';
   @override
@@ -57631,6 +57660,10 @@ class _StringsKo extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -62751,7 +62784,7 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch => 'Ondertitels automatisch ophalen (Jimaku)';
+  String get video_jimaku_fetch => 'Ondertitels ophalen (Jimaku)';
   @override
   String get video_jimaku_filter => 'Resultaten filteren (bijv. WEBRip, BD)';
   @override
@@ -64378,6 +64411,10 @@ class _StringsNl extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -69508,7 +69545,7 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch => 'Buscar legendas automaticamente (Jimaku)';
+  String get video_jimaku_fetch => 'Buscar legendas (Jimaku)';
   @override
   String get video_jimaku_filter => 'Filtrar resultados (ex.: WEBRip, BD)';
   @override
@@ -71138,6 +71175,10 @@ class _StringsPtBr extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -76256,7 +76297,7 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch => 'Авто-загрузка субтитров (Jimaku)';
+  String get video_jimaku_fetch => 'Загрузить субтитры (Jimaku)';
   @override
   String get video_jimaku_filter => 'Фильтр результатов (например, WEBRip, BD)';
   @override
@@ -77882,6 +77923,10 @@ class _StringsRu extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -82954,7 +82999,7 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch => 'ดึงคำบรรยายอัตโนมัติ (Jimaku)';
+  String get video_jimaku_fetch => 'ดึงคำบรรยาย (Jimaku)';
   @override
   String get video_jimaku_filter => 'กรองผลลัพธ์ (เช่น WEBRip, BD)';
   @override
@@ -84574,6 +84619,10 @@ class _StringsTh extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -89674,7 +89723,7 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch => 'Altyazıları otomatik getir (Jimaku)';
+  String get video_jimaku_fetch => 'Altyazıları getir (Jimaku)';
   @override
   String get video_jimaku_filter => 'Sonuçları filtrele (ör. WEBRip, BD)';
   @override
@@ -91298,6 +91347,10 @@ class _StringsTr extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -96387,7 +96440,7 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch => 'Tự lấy phụ đề (Jimaku)';
+  String get video_jimaku_fetch => 'Lấy phụ đề (Jimaku)';
   @override
   String get video_jimaku_filter => 'Lọc kết quả (vd WEBRip, BD)';
   @override
@@ -98007,6 +98060,10 @@ class _StringsVi extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 // Path: <root>
@@ -102750,7 +102807,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => '留空列出全部';
   @override
-  String get video_jimaku_fetch => '自动获取字幕（Jimaku）';
+  String get video_jimaku_fetch => '获取字幕（Jimaku）';
   @override
   String get video_jimaku_filter => '筛选结果（如 WEBRip、BD）';
   @override
@@ -104242,6 +104299,10 @@ class _StringsZhCn extends _StringsEn {
   String get download_task_pause => '暂停';
   @override
   String get download_task_resume => '恢复';
+  @override
+  String get video_jimaku_format => '类型';
+  @override
+  String get video_jimaku_format_all => '全部';
 }
 
 // Path: <root>
@@ -109153,7 +109214,7 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_jimaku_episode_hint => 'Leave empty to list all';
   @override
-  String get video_jimaku_fetch => '自動取得字幕（Jimaku）';
+  String get video_jimaku_fetch => '取得字幕（Jimaku）';
   @override
   String get video_jimaku_filter => '篩選結果（如 WEBRip、BD）';
   @override
@@ -110747,6 +110808,10 @@ class _StringsZhHk extends _StringsEn {
   String get download_task_pause => 'Pause';
   @override
   String get download_task_resume => 'Resume';
+  @override
+  String get video_jimaku_format => 'Format';
+  @override
+  String get video_jimaku_format_all => 'All';
 }
 
 /// Flat map(s) containing all translations.
@@ -115320,7 +115385,7 @@ extension on _StringsEn {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return 'Auto-fetch subtitles (Jimaku)';
+        return 'Fetch subtitles (Jimaku)';
       case 'video_jimaku_filter':
         return 'Filter results (e.g. WEBRip, BD)';
       case 'video_jimaku_find_sources':
@@ -116727,6 +116792,10 @@ extension on _StringsEn {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -121297,7 +121366,7 @@ extension on _StringsAr {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return 'جلب الترجمات تلقائيًا (Jimaku)';
+        return 'جلب الترجمات (Jimaku)';
       case 'video_jimaku_filter':
         return 'تصفية النتائج (مثل WEBRip وBD)';
       case 'video_jimaku_find_sources':
@@ -122705,6 +122774,10 @@ extension on _StringsAr {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -127296,7 +127369,7 @@ extension on _StringsDe {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return 'Untertitel automatisch holen (Jimaku)';
+        return 'Untertitel holen (Jimaku)';
       case 'video_jimaku_filter':
         return 'Ergebnisse filtern (z. B. WEBRip, BD)';
       case 'video_jimaku_find_sources':
@@ -128705,6 +128778,10 @@ extension on _StringsDe {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -133296,7 +133373,7 @@ extension on _StringsEs {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return 'Obtener subtítulos automáticamente (Jimaku)';
+        return 'Obtener subtítulos (Jimaku)';
       case 'video_jimaku_filter':
         return 'Filtrar resultados (p. ej. WEBRip, BD)';
       case 'video_jimaku_find_sources':
@@ -134704,6 +134781,10 @@ extension on _StringsEs {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -139300,7 +139381,7 @@ extension on _StringsFr {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return 'Récupération auto des sous-titres (Jimaku)';
+        return 'Récupérer les sous-titres (Jimaku)';
       case 'video_jimaku_filter':
         return 'Filtrer les résultats (ex. WEBRip, BD)';
       case 'video_jimaku_find_sources':
@@ -140709,6 +140790,10 @@ extension on _StringsFr {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -145288,7 +145373,7 @@ extension on _StringsId {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return 'Ambil subtitle otomatis (Jimaku)';
+        return 'Ambil subtitle (Jimaku)';
       case 'video_jimaku_filter':
         return 'Saring hasil (mis. WEBRip, BD)';
       case 'video_jimaku_find_sources':
@@ -146696,6 +146781,10 @@ extension on _StringsId {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -151288,7 +151377,7 @@ extension on _StringsIt {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return 'Recupero automatico sottotitoli (Jimaku)';
+        return 'Recupera sottotitoli (Jimaku)';
       case 'video_jimaku_filter':
         return 'Filtra risultati (es. WEBRip, BD)';
       case 'video_jimaku_find_sources':
@@ -152697,6 +152786,10 @@ extension on _StringsIt {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -157254,7 +157347,7 @@ extension on _StringsJa {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return '字幕を自動取得（Jimaku）';
+        return '字幕を取得（Jimaku）';
       case 'video_jimaku_filter':
         return '結果を絞り込み（WEBRip、BD など）';
       case 'video_jimaku_find_sources':
@@ -158660,6 +158753,10 @@ extension on _StringsJa {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -163220,7 +163317,7 @@ extension on _StringsKo {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return '자막 자동 가져오기(Jimaku)';
+        return '자막 가져오기(Jimaku)';
       case 'video_jimaku_filter':
         return '결과 필터(예: WEBRip, BD)';
       case 'video_jimaku_find_sources':
@@ -164627,6 +164724,10 @@ extension on _StringsKo {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -169212,7 +169313,7 @@ extension on _StringsNl {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return 'Ondertitels automatisch ophalen (Jimaku)';
+        return 'Ondertitels ophalen (Jimaku)';
       case 'video_jimaku_filter':
         return 'Resultaten filteren (bijv. WEBRip, BD)';
       case 'video_jimaku_find_sources':
@@ -170622,6 +170723,10 @@ extension on _StringsNl {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -175206,7 +175311,7 @@ extension on _StringsPtBr {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return 'Buscar legendas automaticamente (Jimaku)';
+        return 'Buscar legendas (Jimaku)';
       case 'video_jimaku_filter':
         return 'Filtrar resultados (ex.: WEBRip, BD)';
       case 'video_jimaku_find_sources':
@@ -176614,6 +176719,10 @@ extension on _StringsPtBr {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -181203,7 +181312,7 @@ extension on _StringsRu {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return 'Авто-загрузка субтитров (Jimaku)';
+        return 'Загрузить субтитры (Jimaku)';
       case 'video_jimaku_filter':
         return 'Фильтр результатов (например, WEBRip, BD)';
       case 'video_jimaku_find_sources':
@@ -182611,6 +182720,10 @@ extension on _StringsRu {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -187183,7 +187296,7 @@ extension on _StringsTh {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return 'ดึงคำบรรยายอัตโนมัติ (Jimaku)';
+        return 'ดึงคำบรรยาย (Jimaku)';
       case 'video_jimaku_filter':
         return 'กรองผลลัพธ์ (เช่น WEBRip, BD)';
       case 'video_jimaku_find_sources':
@@ -188591,6 +188704,10 @@ extension on _StringsTh {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -193171,7 +193288,7 @@ extension on _StringsTr {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return 'Altyazıları otomatik getir (Jimaku)';
+        return 'Altyazıları getir (Jimaku)';
       case 'video_jimaku_filter':
         return 'Sonuçları filtrele (ör. WEBRip, BD)';
       case 'video_jimaku_find_sources':
@@ -194580,6 +194697,10 @@ extension on _StringsTr {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -199157,7 +199278,7 @@ extension on _StringsVi {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return 'Tự lấy phụ đề (Jimaku)';
+        return 'Lấy phụ đề (Jimaku)';
       case 'video_jimaku_filter':
         return 'Lọc kết quả (vd WEBRip, BD)';
       case 'video_jimaku_find_sources':
@@ -200565,6 +200686,10 @@ extension on _StringsVi {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
@@ -205102,7 +205227,7 @@ extension on _StringsZhCn {
       case 'video_jimaku_episode_hint':
         return '留空列出全部';
       case 'video_jimaku_fetch':
-        return '自动获取字幕（Jimaku）';
+        return '获取字幕（Jimaku）';
       case 'video_jimaku_filter':
         return '筛选结果（如 WEBRip、BD）';
       case 'video_jimaku_find_sources':
@@ -206497,6 +206622,10 @@ extension on _StringsZhCn {
         return '暂停';
       case 'download_task_resume':
         return '恢复';
+      case 'video_jimaku_format':
+        return '类型';
+      case 'video_jimaku_format_all':
+        return '全部';
       default:
         return null;
     }
@@ -211050,7 +211179,7 @@ extension on _StringsZhHk {
       case 'video_jimaku_episode_hint':
         return 'Leave empty to list all';
       case 'video_jimaku_fetch':
-        return '自動取得字幕（Jimaku）';
+        return '取得字幕（Jimaku）';
       case 'video_jimaku_filter':
         return '篩選結果（如 WEBRip、BD）';
       case 'video_jimaku_find_sources':
@@ -212455,6 +212584,10 @@ extension on _StringsZhHk {
         return 'Pause';
       case 'download_task_resume':
         return 'Resume';
+      case 'video_jimaku_format':
+        return 'Format';
+      case 'video_jimaku_format_all':
+        return 'All';
       default:
         return null;
     }
