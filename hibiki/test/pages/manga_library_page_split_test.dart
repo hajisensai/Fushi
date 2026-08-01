@@ -1,11 +1,16 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+
+import 'package:hibiki/src/media/manga/manga_browse_page.dart';
 import 'package:hibiki/src/media/manga/manga_library_page.dart';
+import 'package:hibiki/src/media/manga/manga_sources_page.dart';
 import 'package:hibiki/src/media/media_item.dart';
 import 'package:hibiki/src/media/sources/manga_hibiki_source.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
-import 'package:hibiki/src/pages/implementations/media_sources_page.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
 
 /// BUG-1164：PR#474 让书架按 `mangaOnly` 分流（普通书架排除漫画，漫画只在独立
@@ -82,7 +87,8 @@ void main() {
       );
       expect(built, isA<MediaLibraryShell>());
       final MediaLibraryShell shell = built! as MediaLibraryShell;
-      // 三视图齐全且顺序固定：书架在最前（进 tab 的默认落点）。
+      // 恒为三视图，**不随平台变**。Mihon 扩展是「来源」的一部分，不占 tab；
+      // 这条断言就是 PR#594 那版四视图 / 按平台分叉形态的反向锚。
       expect(
         shell.views.map((MediaLibraryViewSpec v) => v.kind).toList(),
         <MediaLibraryViewKind>[
@@ -95,13 +101,46 @@ void main() {
           tester.element(find.byType(SizedBox)), const SizedBox.shrink());
       expect(shelf, isA<ReaderHibikiHistoryPage>());
       expect((shelf as ReaderHibikiHistoryPage).mangaOnly, isTrue);
-      // 「来源」视图必须是漫画种类，不能误接成 book（那会把书的扫描根显示在漫画域）。
-      final Widget sources = shell.views.last.builder(
-          tester.element(find.byType(SizedBox)), const SizedBox.shrink());
-      expect(sources, isA<MediaSourcesPage>());
-      expect((sources as MediaSourcesPage).mediaKind, 'manga');
+      // 「浏览」是在线来源清单（mokuro.moe 与已启用 Mihon 源并列），不是别的域的页。
+      expect(
+        shell.views[1].builder(
+            tester.element(find.byType(SizedBox)), const SizedBox.shrink()),
+        isA<MangaBrowsePage>(),
+      );
+      // 「来源」视图必须是漫画来源页——本地扫描根 + 扩展 + 在线来源都收在这里。
+      expect(
+        shell.views.last.builder(
+            tester.element(find.byType(SizedBox)), const SizedBox.shrink()),
+        isA<MangaSourcesPage>(),
+      );
       // 反向锚：普通书架的默认值必须仍是 false，否则漫画会在两边都出现。
       expect(const ReaderHibikiHistoryPage().mangaOnly, isFalse);
+    });
+
+    test('导航形态与扩展宿主是否可用完全解耦（iOS/Linux 同构）', () {
+      // 这条不 pump widget：它守的是**源码层面**没有任何按平台分叉的视图列表。
+      // `MihonRuntimeFactory.isSupported` 在 iOS/Linux 为 false，一旦有人再把它
+      // 塞回 MangaLibraryPage，导航结构就又分平台裂开了。
+      final String source = File(
+        p.join('lib', 'src', 'media', 'manga', 'manga_library_page.dart'),
+      ).readAsStringSync();
+      expect(
+        source.contains('MihonRuntimeFactory'),
+        isFalse,
+        reason: '漫画库页的视图列表必须是无条件常量，不得按平台/扩展可用性分叉',
+      );
+      for (final String removed in <String>[
+        'mangaSources',
+        'mangaExtensions',
+        'sourceSettings',
+      ]) {
+        expect(
+          MediaLibraryViewKind.values
+              .map((MediaLibraryViewKind kind) => kind.name),
+          isNot(contains(removed)),
+          reason: '$removed 是四视图形态的残留 kind，必须随之删除，否则会被重新用上',
+        );
+      }
     });
   });
 }

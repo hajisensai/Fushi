@@ -8,6 +8,8 @@ class ReaderSelectionData {
     this.sentenceOffset = 0,
     this.sentenceNormalizedOffset,
     this.sentenceNormalizedLength,
+    this.verticalWriting = false,
+    this.mangaPageIndex,
   });
 
   factory ReaderSelectionData.fromJson(Map<String, dynamic> json) {
@@ -32,6 +34,8 @@ class ReaderSelectionData {
           (json['sentenceNormalizedOffset'] as num?)?.toInt(),
       sentenceNormalizedLength:
           (json['sentenceNormalizedLength'] as num?)?.toInt(),
+      verticalWriting: json['verticalWriting'] as bool? ?? false,
+      mangaPageIndex: (json['mangaPageIndex'] as num?)?.toInt(),
     );
   }
 
@@ -43,4 +47,18 @@ class ReaderSelectionData {
   final int sentenceOffset;
   final int? sentenceNormalizedOffset;
   final int? sentenceNormalizedLength;
+
+  /// Whether the source glyph belongs to a vertical writing run.
+  ///
+  /// Most reader surfaces derive this from page settings. Manga OCR can mix
+  /// horizontal and vertical blocks on one page, so its overlay reports the
+  /// direction per hit and the popup host consumes it for anchor placement.
+  final bool verticalWriting;
+
+  /// Exact 0-based manga page containing the selected OCR glyph.
+  ///
+  /// This is null for EPUB and legacy manga payloads. In a two-page spread the
+  /// reader must use this page, rather than the spread's first page, as the
+  /// image attached to a mined card.
+  final int? mangaPageIndex;
 }

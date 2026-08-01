@@ -93,6 +93,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   final GalHookSessionController _session = GalHookSessionController.instance;
   OverlayEntry? _popupOverlayEntry;
   bool _overlayInert = false;
+  bool _popupOverlayRebuildScheduled = false;
   String? _activeLineId;
   String? _activeSentence;
   bool _followLive = true;
@@ -438,13 +439,47 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final bool nextInert = !TickerMode.of(context);
     if (nextInert != _overlayInert) {
       _overlayInert = nextInert;
-      _popupOverlayEntry?.markNeedsBuild();
+      _schedulePopupOverlayRebuild();
     }
+  }
+
+  /// A dependency change is delivered while this page itself is rebuilding.
+  /// The popup lives in the root Overlay, which is an ancestor rather than a
+  /// descendant of this element, so dirtying its entry synchronously from
+  /// [didChangeDependencies] violates Flutter's build ordering and can corrupt
+  /// the subsequent LayoutBuilder dirty queue. Coalesce visibility changes and
+  /// update the overlay only after the current frame has finished building.
+  void _schedulePopupOverlayRebuild() {
+    if (_popupOverlayRebuildScheduled) return;
+    _popupOverlayRebuildScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _popupOverlayRebuildScheduled = false;
+      if (!mounted) return;
+      final OverlayEntry? entry = _popupOverlayEntry;
+      if (entry != null && entry.mounted) {
+        entry.markNeedsBuild();
+      }
+    });
   }
 
   /// 测试可见：查词浮层当前是否被置为 inert（隐藏 tab / 失活时收起）。BUG-953 守卫用。
   @visibleForTesting
   bool get debugOverlayInert => _overlayInert;
+
+  /// Installs the root-overlay host without starting a dictionary lookup.
+  ///
+  /// This is intentionally limited to tests: a real lookup also creates a
+  /// platform WebView, while the overlay lifecycle regression can be exercised
+  /// with an empty host.
+  @visibleForTesting
+  void debugMountPopupOverlayForTesting() {
+    if (_popupOverlayEntry != null) return;
+    final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    final OverlayEntry entry = OverlayEntry(builder: _buildPopupOverlay);
+    _popupOverlayEntry = entry;
+    overlay.insert(entry);
+  }
 
   /// BUG-1137：texthooker 页制出的卡归「游戏」分类标签——外部窗口模式走
   /// [GalHookMiningCoordinator]（自带 game 来源），fallback 纯文本卡走 mixin 的

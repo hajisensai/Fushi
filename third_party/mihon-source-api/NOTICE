@@ -1,0 +1,17 @@
+Mihon source-api
+================
+
+Android builds generate their extension host ABI from:
+
+  Project: https://github.com/mihonapp/mihon
+  Commit: fdb223d657cc60b2d7145c81b7ff690b8010d7aa
+  Path: source-api/src/main/kotlin
+  License: Apache License 2.0
+
+The exact GitHub source archive is verified with SHA-256:
+
+  645e84b2a9abbe0196057d6ba9e752abd6876b7e93bd8bee8a6cbcfe8abb154c
+
+The generated source is build output and is not downloaded or executed by the
+installed Hibiki Android application. Hibiki's small Android network and bridge
+compatibility layer is maintained separately under the same source tree.

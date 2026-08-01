@@ -1437,3 +1437,95 @@ class GalgameTagMappings extends Table {
         {gameId, tagId},
       ];
 }
+
+// ── manga_extension_stores ──────────────────────────────────────────
+/// v63：用户自行添加的 Mihon 扩展仓库。Hibiki 不预置第三方仓库。
+@DataClassName('MangaExtensionStoreRow')
+class MangaExtensionStores extends Table {
+  /// 仓库入口 URL 同时是稳定身份；更新时 URL 不随仓库显示名变化。
+  TextColumn get indexUrl => text()();
+  TextColumn get name => text()();
+  TextColumn get badgeLabel => text().nullable()();
+  TextColumn get signingKey => text().nullable()();
+  TextColumn get contactJson => text().nullable()();
+  TextColumn get format => text()();
+  TextColumn get extensionListUrl => text().nullable()();
+  BoolColumn get enabled => boolean().withDefault(const Constant(true))();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  TextColumn get etag => text().nullable()();
+  TextColumn get lastModified => text().nullable()();
+  IntColumn get lastSyncAt => integer().nullable()();
+  TextColumn get lastError => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {indexUrl};
+}
+
+// ── manga_extensions ────────────────────────────────────────────────
+/// 已安装的私有 Mihon 扩展。APK 只放应用私有目录，本表保存相对路径与校验身份。
+@DataClassName('MangaExtensionRow')
+class MangaExtensions extends Table {
+  TextColumn get packageName => text()();
+  TextColumn get storeUrl => text().nullable()();
+  TextColumn get name => text()();
+  IntColumn get versionCode => integer()();
+  TextColumn get versionName => text()();
+  TextColumn get libVersion => text()();
+  TextColumn get language => text()();
+  IntColumn get contentWarning => integer().withDefault(const Constant(0))();
+  TextColumn get apkPath => text()();
+  TextColumn get apkSha256 => text()();
+  TextColumn get signerSha256 => text()();
+  BoolColumn get enabled => boolean().withDefault(const Constant(true))();
+  IntColumn get installedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {packageName};
+}
+
+// ── manga_online_sources ────────────────────────────────────────────
+/// 一个扩展可以通过 SourceFactory 暴露多个来源，故按 packageName + sourceId 复合键。
+@DataClassName('MangaOnlineSourceRow')
+class MangaOnlineSources extends Table {
+  TextColumn get extensionPackage => text()();
+
+  /// Mihon 的 Long ID 以十进制字符串保存，避免跨 MethodChannel/JSON 精度损失。
+  TextColumn get sourceId => text()();
+  TextColumn get name => text()();
+  TextColumn get language => text()();
+  TextColumn get baseUrl => text().withDefault(const Constant(''))();
+  BoolColumn get enabled => boolean().withDefault(const Constant(true))();
+  BoolColumn get pinned => boolean().withDefault(const Constant(false))();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {extensionPackage, sourceId};
+}
+
+// ── manga_source_preferences ────────────────────────────────────────
+/// 来源偏好的平台无关快照。Cookie/请求头不进本表，也禁止写日志。
+@DataClassName('MangaSourcePreferenceRow')
+class MangaSourcePreferences extends Table {
+  TextColumn get extensionPackage => text()();
+  TextColumn get sourceId => text()();
+  TextColumn get preferenceKey => text()();
+  TextColumn get preferenceType => text()();
+  TextColumn get valueJson => text()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {extensionPackage, sourceId, preferenceKey};
+}
+
+// ── manga_trusted_signers ───────────────────────────────────────────
+/// 用户明确确认过的扩展签名证书 SHA-256；首次安装和换签都必须经过信任门。
+@DataClassName('MangaTrustedSignerRow')
+class MangaTrustedSigners extends Table {
+  TextColumn get fingerprint => text()();
+  TextColumn get label => text()();
+  TextColumn get origin => text()();
+  IntColumn get trustedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {fingerprint};
+}

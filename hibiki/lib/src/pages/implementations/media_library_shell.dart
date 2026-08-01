@@ -14,7 +14,8 @@ enum MediaLibraryViewKind {
   /// 在线源浏览（漫画的 mokuro.moe 目录；将来小说源同位）。
   browse,
 
-  /// 来源管理：本地扫描根 + 在线源设置。
+  /// 来源管理：本地扫描根 + 在线源设置 + 漫画扩展（扩展本身就是「来源」，
+  /// 不单开 tab）。
   sources,
 }
 

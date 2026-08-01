@@ -185,10 +185,10 @@ void main() {
           .read<String>('payload'),
       'untouched',
     );
-    // 本用例 seed 的是 v62 库，因此这一次打开会连跑 v63 **和** v64（后者新建
-    // collection_scrape_meta，BUG-1310）。断言据此拆成两半，原意图一分不弱化：
+    // 本用例 seed 的是 v62 库，因此这一次打开会连跑 v63、v64（collection_scrape_meta，
+    // BUG-1310）**和** v65（Mihon 五表）。断言据此拆成两半，原意图一分不弱化：
     //  ① 既有表逐张全文比对 —— v63 只能删行，不得 ALTER/DROP/rebuild 或留影子表；
-    //  ② 新增表必须**恰好**是 v64 那一张 —— v63 自己仍然一张表都不许建。
+    //  ② 新增表必须**恰好**是 v64 那一张 + v65 那五张 —— v63 自己仍然一张表都不许建。
     final Map<String, String> schemaAfter = await _tableSqlFromDrift(db);
     for (final MapEntry<String, String> entry in schemaBefore.entries) {
       expect(schemaAfter[entry.key], entry.value,
@@ -196,8 +196,16 @@ void main() {
     }
     expect(
       schemaAfter.keys.toSet().difference(schemaBefore.keys.toSet()),
-      <String>{'collection_scrape_meta'},
-      reason: '除 v64 的 collection_scrape_meta 外，升级不得新增任何表',
+      <String>{
+        'collection_scrape_meta',
+        'manga_extension_stores',
+        'manga_extensions',
+        'manga_online_sources',
+        'manga_source_preferences',
+        'manga_trusted_signers',
+      },
+      reason: '除 v64 的 collection_scrape_meta 与 v65 的 Mihon 五表外，'
+          '升级不得新增任何表',
     );
   });
 
@@ -270,7 +278,7 @@ void main() {
 
     migrated = HibikiDatabase.atFile(dbPath, isMainProcess: false);
     expect(await migrated.getPref(_obsoleteKey), isNull,
-        reason: '第二次打开 user_version=63，不得产生复活或重复迁移副作用');
+        reason: '第二次打开 user_version=64，不得产生复活或重复迁移副作用');
     await migrated.close();
   });
 

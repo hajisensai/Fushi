@@ -1,20 +1,27 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_page.dart';
+import 'package:hibiki/src/media/manga/manga_browse_page.dart';
+import 'package:hibiki/src/media/manga/manga_sources_page.dart';
 import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
-import 'package:hibiki/src/pages/implementations/media_sources_page.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
 import 'package:hibiki/utils.dart';
 
-/// 顶层漫画库页（中文按域叫「漫画书架」），三视图：书架 / 浏览 / 来源。
+/// 顶层漫画库页：**恒为三视图**，五个平台完全同构。
 ///
 /// - **书架**：数据、卡片、搜索、排序、合集、进度和删除全部复用小说书架；唯一差异
 ///   是只展示 `EpubBooks.format == 'manga'` 的条目。普通书架由同一页面反向排除漫画。
-/// - **浏览**：mokuro.moe 在线目录（下载页的对话框入口保留，两处同一份实现）。
-/// - **来源**：本地漫画扫描根 + 未来的在线源设置，与书/视频域共用 [MediaSourcesPage]。
+/// - **浏览**：可浏览内容的在线来源清单——内置 mokuro.moe 目录 + 已启用的 Mihon
+///   在线来源，两者并列。
+/// - **来源**：本地漫画扫描根 + 漫画扩展（仓库/安装/启停）+ 扩展提供的在线来源
+///   设置。**扩展就是来源**，因此收在这里而不是另开一个顶层 tab。
 ///
-/// 在线收藏不另建「在线书架」——收藏即建行进同一个书架（数据模型统一，本地/在线不是
-/// 两个库）。本地/在线的区分只活在「来源」视图里。
+/// 视图列表是**无条件常量**：不按 `MihonRuntimeFactory.isSupported` 分叉，
+/// iOS / Linux 与 Android / Windows / macOS 的 tab 数量、顺序、kind 完全一致，
+/// 差异只落在各视图**内部内容**（没有扩展宿主时相应小节显示为不可用）。导航结构
+/// 分平台漂移会让快捷键、焦点顺序和用户肌肉记忆按平台裂开。
+///
+/// Mihon 在线漫画复用 EpubBooks 的漫画身份进入同一书架，当前章节/页码可跨重启
+/// 继续；页面仍由来源运行时按需流式获取，不把鉴权 URL 暴露给 WebView。
 ///
 /// 命名：`shelf` 在本仓命名术语表里已冻结给 `ShelfEntries`（条目排序/归属映射
 /// 层），页面统称 library page，因此这里叫 `MangaLibraryPage` 而不是
@@ -37,13 +44,13 @@ class MangaLibraryPage extends StatelessWidget {
           kind: MediaLibraryViewKind.browse,
           label: t.library_view_browse,
           builder: (BuildContext context, Widget navigation) =>
-              MokuroMoeCatalogPage(navigation: navigation),
+              MangaBrowsePage(navigation: navigation),
         ),
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.sources,
           label: t.library_view_sources,
           builder: (BuildContext context, Widget navigation) =>
-              MediaSourcesPage(mediaKind: 'manga', navigation: navigation),
+              MangaSourcesPage(navigation: navigation),
         ),
       ],
     );

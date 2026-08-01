@@ -1,0 +1,11 @@
+Repository: https://github.com/miru-project/M-Extension-Server
+Tag: v1.0.5.0
+Commit: ee55c65106bb18bf81a5ddc660d321b4e14ea2f9
+License: Mozilla Public License 2.0
+
+Hibiki maintains a narrow security and host-API overlay:
+
+- bind only to 127.0.0.1;
+- require a per-process Bearer token on every endpoint;
+- expose capability, APK inspection, source image, and source-data endpoints;
+- retain the upstream process identity and explicit /stop lifecycle.

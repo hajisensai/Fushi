@@ -29,10 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1277 条。点号进各自文件。
+> 共 1284 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1334](bugs/BUG-1334-manga-card-wrong-spread-page.md) | ✅ | ✅ | 漫画双页模式制卡图片取错成跨页首页 |
+| [BUG-1333](bugs/BUG-1333-manga-sentence-fragmented-blocks.md) | ✅ | ✅ | 漫画 Lens 同一气泡被拆成多列导致制卡句子残缺 |
+| [BUG-1332](bugs/BUG-1332-mihon-extension-catalog-restart.md) | ✅ | ✅ | 漫画扩展重启后可下载目录消失且无法安装新扩展 |
+| [BUG-1331](bugs/BUG-1331-mihon-online-ocr-niratan-parity.md) | ✅ | ✅ | Mihon 在线漫画 OCR 横竖排错位且加载缓存调度未对齐 Niratan |
+| [BUG-1330](bugs/BUG-1330-mihon-detail-layout.md) | ✅ | ✅ | Mihon 漫画详情页路由触发布局断言 |
 | [BUG-1328](bugs/BUG-1328-ui-font-chain-collapsed-to-single-family.md) | ✅ | ✅ | 界面字体回退链被压成单值：中文默认字形难看、日文缺字逐字乱回退、用户第2条字体永不生效 |
 | [BUG-1327](bugs/BUG-1327-video-context-dialog-barrier.md) | ✅ | ✅ | 视频页制卡上下文对话框被查词浮层 barrier 吃掉点击 |
 | [BUG-1326](bugs/BUG-1326-popup-ctx-modal-args-stringified.md) | ✅ | ✅ | 调整上下文回点制卡永远点第一个词条 |
@@ -118,7 +123,9 @@
 | [BUG-1235](bugs/BUG-1235-jimaku-batch-availability.md) | ✅ | ✅ | 合集字幕匹配无法区分来源与逐集可用性 |
 | [BUG-1234](bugs/BUG-1234-cover-match-source-state.md) | ✅ | ✅ | 封面匹配切换来源会自动重搜并保留旧来源结果 |
 | [BUG-1233](bugs/BUG-1233-book-import-repeated-archive-probe.md) | ✅ | ✅ | 书籍导入重复整包判定 EPUB 载体 |
+| [BUG-1232](bugs/BUG-1232-mihon-sidecar-exit-leak.md) | ✅ | ✅ | 桌面关闭后 Mihon Java sidecar 残留 |
 | [BUG-1231](bugs/BUG-1231-cross-chapter-search-locate-race.md) | ✅ | ✅ | 跨章节书内搜索只跳到章首且不高亮 |
+| [BUG-1230](bugs/BUG-1230-manga-popup-ocr-direction.md) | ✅ | ✅ | 漫画查词弹窗未按 OCR 文字方向避让 |
 | [BUG-1229](bugs/BUG-1229-dictionary-css-draft.md) | ✅ | ✅ | 自定义 CSS 遮罩退出丢失草稿且关闭即保存 |
 | [BUG-1228](bugs/BUG-1228-video-mining-queue.md) | ✅ | ✅ | 连续视频制卡未串行且换集可能污染在途任务 |
 | [BUG-1227](bugs/BUG-1227-anki-media-upload-orphan.md) | ✅ | ✅ | 大 GIF 上传超时被吞后仍创建无图卡并留下孤儿媒体 |
