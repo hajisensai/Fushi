@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1302 条。点号进各自文件。
+> 共 1303 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -39,6 +39,7 @@
 | [BUG-1351](bugs/BUG-1351-scan-playlist-import-no-added-activity.md) | ✅ | ✅ | 扫描导入新播放列表合集不落 added 活动事件 |
 | [BUG-1350](bugs/BUG-1350-dashboard-activity-cross-series-merge.md) | ✅ | ✅ | 首页活动时间轴同日同集号跨作品被合并吞掉观看记录 |
 | [BUG-1349](bugs/BUG-1349-collection-detail-escape-dead.md) | ✅ | ✅ | 合集详情页按Esc不退出（焦点导航开启时全局Esc解析不到路由被吞） |
+| [BUG-1348](bugs/BUG-1348-gdrive-signin-token-exchange-direct-connect.md) | ✅ | ✅ | 谷歌云盘桌面登录：token 交换裸直连不走代理，浏览器已授权但 app 超时 |
 | [BUG-1345](bugs/BUG-1345-gal-ipc-contract-host-copy-drift.md) | ✅ | ✅ | galgame 捕获报「捕获组件版本与 Hibiki 不一致」：IPC 契约在 host 侧有手抄副本，且处置指向已不存在的动作 |
 | [BUG-1344](bugs/BUG-1344-macos-reader-selection-stale.md) | ✅ | ✅ | macOS查词关闭后原文选区高亮残留 |
 | [BUG-1343](bugs/BUG-1343-macos-reader-window-drag.md) | ✅ | ✅ | macOS窗口化阅读器缺少可拖拽区域 |
