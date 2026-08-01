@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 64);
-    expect(db.schemaVersion, 64);
+    expect(version.read<int>('user_version'), 65);
+    expect(db.schemaVersion, 65);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -223,7 +223,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 64);
+    expect(version.read<int>('user_version'), 65);
   });
 
   test(
@@ -255,7 +255,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 64);
+      expect(probe.select('PRAGMA user_version').first.values.first, 65);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '
@@ -278,7 +278,7 @@ void main() {
 
     migrated = HibikiDatabase.atFile(dbPath, isMainProcess: false);
     expect(await migrated.getPref(_obsoleteKey), isNull,
-        reason: '第二次打开 user_version=64，不得产生复活或重复迁移副作用');
+        reason: '第二次打开 user_version=65，不得产生复活或重复迁移副作用');
     await migrated.close();
   });
 

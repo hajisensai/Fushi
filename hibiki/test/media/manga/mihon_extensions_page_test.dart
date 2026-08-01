@@ -120,8 +120,9 @@ void main() {
     // 上下两节都在——说明它没有把外层 ListView 撑爆或吞掉兄弟节点。
     expect(find.text('outer-section-above'), findsOneWidget);
     expect(find.text('outer-section-below'), findsOneWidget);
-    // 整棵树只有外层那一个可滚动体：内嵌节不得再嵌一层。
-    expect(find.byType(Scrollable), findsOneWidget);
+    // 整棵树只有外层那一个纵向滚动列表：内嵌节不得再嵌一层
+    // （搜索框内部的横向 editable Scrollable 不算，所以判据锚在 ListView 上）。
+    expect(find.byType(ListView), findsOneWidget);
     // 页头三动作降级成本节顶部按钮行，能力不减。
     expect(find.text(t.mihon_store_refresh), findsWidgets);
     expect(find.text(t.mihon_extension_import), findsWidgets);

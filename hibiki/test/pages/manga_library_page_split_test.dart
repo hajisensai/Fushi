@@ -20,6 +20,21 @@ import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart
 /// 这里守两件事：
 /// 1. 分流谓词本身（互补、无遗漏、无重复）；
 /// 2. 漫画库页确实带 `mangaOnly: true` 接进同一个书架实现，没有接反。
+///
+/// PR#594 落地后追加第 3 件：顶层视图列表恒为三视图，不随平台分叉。
+
+// 剥掉 `//` / `///` 行注释与 `/* */` 块注释，只留可执行源码。
+//
+// 源码扫描守卫的判据只能落在真代码上：文档注释里出现被禁符号是**在解释禁令**，
+// 不是违反禁令，裸 `contains` 分不出这两者。
+String _stripDartComments(String source) => source
+        .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
+        .split('\n')
+        .map((String line) {
+      final int index = line.indexOf('//');
+      return index < 0 ? line : line.substring(0, index);
+    }).join('\n');
+
 MediaItem _item(String identifier, String sourceKey) => MediaItem(
       mediaIdentifier: identifier,
       title: identifier,
@@ -119,15 +134,26 @@ void main() {
 
     test('导航形态与扩展宿主是否可用完全解耦（iOS/Linux 同构）', () {
       // 这条不 pump widget：它守的是**源码层面**没有任何按平台分叉的视图列表。
-      // `MihonRuntimeFactory.isSupported` 在 iOS/Linux 为 false，一旦有人再把它
-      // 塞回 MangaLibraryPage，导航结构就又分平台裂开了。
-      final String source = File(
-        p.join('lib', 'src', 'media', 'manga', 'manga_library_page.dart'),
-      ).readAsStringSync();
+      // 平台探测符号在 iOS/Linux 返回 false，一旦有人再把它塞回 MangaLibraryPage，
+      // 导航结构就又分平台裂开了。
+      //
+      // 判据必须**先剥注释**：本页的文档注释就在解释「不按平台分叉」，里面天然出现
+      // 该符号名，裸 contains 会被自己的说明文字打成假红。
+      final String source = _stripDartComments(
+        File(
+          p.join('lib', 'src', 'media', 'manga', 'manga_library_page.dart'),
+        ).readAsStringSync(),
+      );
       expect(
         source.contains('MihonRuntimeFactory'),
         isFalse,
         reason: '漫画库页的视图列表必须是无条件常量，不得按平台/扩展可用性分叉',
+      );
+      // 同一句的另一半：连条件表达式都不该有——三个 spec 是平铺常量。
+      expect(
+        source.contains('if ('),
+        isFalse,
+        reason: '视图列表里出现条件即意味着某平台/某状态下 tab 会少一个',
       );
       for (final String removed in <String>[
         'mangaSources',

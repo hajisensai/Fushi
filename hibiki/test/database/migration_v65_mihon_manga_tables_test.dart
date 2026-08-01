@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
-/// v63（删除废弃的 galgame 全局超分偏好）与 v64（Mihon 漫画扩展生态五张新表）
-/// 在两条并行的分支上都曾写作 v63。合并时 v64 顺延到 v63 之后，本测试守住
+/// v63（删除废弃的 galgame 全局超分偏好）与 v65（Mihon 漫画扩展生态五张新表）
+/// 在两条并行的分支上都曾写作 v63。合并时 v65 顺延到 v63 之后，本测试守住
 /// 「两条迁移都必须跑到、且互不依赖对方的顺序」这个不变式——撞号一旦复发，
 /// 其中一条会对已升级用户永远不执行，而且不报错。
 const String _obsoleteKey = 'galgame_magpie_upscaling_mode';
@@ -18,7 +18,7 @@ const List<String> _mangaTables = <String>[
   'manga_trusted_signers',
 ];
 
-/// v62 形状：有 v63 要清理的废弃偏好行，没有 v64 要建的五张表。
+/// v62 形状：有 v63 要清理的废弃偏好行，没有 v65 要建的五张表。
 void _seedV62(
   sqlite3.Database db, {
   int userVersion = 62,
@@ -65,7 +65,7 @@ CREATE TABLE galgames (
   );
 
   if (preCreateMangaTables) {
-    // 半升级过的库：v64 的表已经在（例如用户跑过撞号版本），迁移必须原地
+    // 半升级过的库：v65 的表已经在（例如用户跑过撞号版本），迁移必须原地
     // no-op 而不是 CREATE TABLE 报 already exists 把整条 onUpgrade 打断。
     for (final String table in _mangaTables) {
       db.execute('CREATE TABLE $table (probe TEXT NOT NULL PRIMARY KEY)');
@@ -98,15 +98,15 @@ Future<int> _countRows(HibikiDatabase db, String sql) async {
 
 void main() {
   test(
-      'v62 -> current runs BOTH v63 (obsolete pref delete) and v64 '
+      'v62 -> current runs BOTH v63 (obsolete pref delete) and v65 '
       '(Mihon tables); neither swallows the other', () async {
     final HibikiDatabase db = HibikiDatabase.forTesting(
       NativeDatabase.memory(setup: _seedV62),
     );
     addTearDown(db.close);
 
-    expect(db.schemaVersion, 64);
-    expect(await _userVersion(db), 64);
+    expect(db.schemaVersion, 65);
+    expect(await _userVersion(db), 65);
 
     // v63 真跑了：两处废弃偏好都没了。
     expect(
@@ -132,10 +132,10 @@ void main() {
       1,
     );
 
-    // v64 真跑了：五张表都在。
+    // v65 真跑了：五张表都在。
     final Set<String> tables = await _tableNames(db);
     for (final String table in _mangaTables) {
-      expect(tables, contains(table), reason: 'v64 未执行：缺 $table');
+      expect(tables, contains(table), reason: 'v65 未执行：缺 $table');
     }
 
     // 建出来的是真 schema，不是空壳。
@@ -153,9 +153,10 @@ void main() {
     );
   });
 
-  test('v63 -> current runs v64 only, and v64 is order-independent from v63',
+  test('v63 -> current still runs v65, order-independent from v63/v64',
       () async {
-    // 已经跑过 v63 的库（废弃行本就不在），只差 v64。
+    // 已经跑过 v63 的库（废弃行本就不在），还差 v64（collection_scrape_meta）
+    // 和 v65（Mihon 五表）。这里只断言 v65 那一段照跑，不依赖它是最后一步。
     final HibikiDatabase db = HibikiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (sqlite3.Database raw) => _seedV62(
@@ -167,14 +168,14 @@ void main() {
     );
     addTearDown(db.close);
 
-    expect(await _userVersion(db), 64);
+    expect(await _userVersion(db), 65);
     final Set<String> tables = await _tableNames(db);
     for (final String table in _mangaTables) {
-      expect(tables, contains(table), reason: 'from=63 时 v64 必须仍然建表：缺 $table');
+      expect(tables, contains(table), reason: 'from=63 时 v65 必须仍然建表：缺 $table');
     }
   });
 
-  test('v64 is idempotent when the Mihon tables already exist', () async {
+  test('v65 is idempotent when the Mihon tables already exist', () async {
     final HibikiDatabase db = HibikiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (sqlite3.Database raw) =>
@@ -184,14 +185,14 @@ void main() {
     addTearDown(db.close);
 
     // 表已存在不能让 onUpgrade 抛异常——抛了 v63 的删除也会一起回滚。
-    expect(await _userVersion(db), 64);
+    expect(await _userVersion(db), 65);
     expect(
       await _countRows(
         db,
         "SELECT 1 FROM preferences WHERE key = '$_obsoleteKey'",
       ),
       0,
-      reason: 'v64 CREATE TABLE 报错会把同一次 onUpgrade 里的 v63 一并打断',
+      reason: 'v65 CREATE TABLE 报错会把同一次 onUpgrade 里的 v63 一并打断',
     );
     final Set<String> tables = await _tableNames(db);
     for (final String table in _mangaTables) {
@@ -203,23 +204,23 @@ void main() {
     final HibikiDatabase first = HibikiDatabase.forTesting(
       NativeDatabase.memory(setup: _seedV62),
     );
-    expect(await _userVersion(first), 64);
+    expect(await _userVersion(first), 65);
     await first.close();
 
-    // 同一份内存库不能跨实例复用，这里改用「第二次打开已是 v64 的形状」：
+    // 同一份内存库不能跨实例复用，这里改用「第二次打开已是 v65 的形状」：
     // 直接 seed user_version = 64 且五张表齐全，断言不再触发任何迁移副作用。
     final HibikiDatabase second = HibikiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (sqlite3.Database raw) => _seedV62(
           raw,
-          userVersion: 64,
+          userVersion: 65,
           includeObsoleteRows: false,
           preCreateMangaTables: true,
         ),
       ),
     );
     addTearDown(second.close);
-    expect(await _userVersion(second), 64);
+    expect(await _userVersion(second), 65);
     expect(
       await _countRows(second, "SELECT 1 FROM preferences WHERE key = 'theme'"),
       1,
