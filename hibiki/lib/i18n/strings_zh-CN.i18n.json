@@ -2867,5 +2867,7 @@
   "audiobook_delete": "删除有声书",
   "audiobook_delete_confirm": "删除已附加的有声书？它的音频文件会从本机删除。",
   "delete_collection_confirm": "只解除分组，其中的条目会保留。",
-  "shortcut_action_video_enter_caret": "进入字幕选词光标"
+  "shortcut_action_video_enter_caret": "进入字幕选词光标",
+  "sync_err_forbidden": "服务端拒绝了这次请求。登录没问题，请检查服务端设置。",
+  "sync_err_forbidden_detail": "服务端拒绝了这次请求：$reason（登录没问题）"
 }

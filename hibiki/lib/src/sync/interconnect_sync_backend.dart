@@ -704,10 +704,17 @@ class InterconnectSyncBackend extends SyncBackend
       await res.drain<void>();
       return null;
     }
-    _ops!.checkStatus(
-      res.statusCode,
-      'GET /api/interconnect/service-config',
-    );
+    if (res.statusCode >= 400) {
+      // BUG-1323：host 对这个端点的拒绝是**有理由的**（明文 → `HTTPS required for
+      // service config`；未配对 → `Paired-device token required`）。把响应体读出来
+      // 当拒绝原因传下去，否则用户只会看到一句与事实不符的「登录已过期」。
+      // 只在错误路径读——成功路径下面那行还要拿完整 body 解 JSON。
+      _ops!.checkStatus(
+        res.statusCode,
+        'GET /api/interconnect/service-config',
+        serverReason: await readSyncErrorBody(res),
+      );
+    }
     final String body = await res.transform(utf8.decoder).join();
     final Object? decoded = jsonDecode(body);
     if (decoded is! Map) {
@@ -762,7 +769,14 @@ class InterconnectSyncBackend extends SyncBackend
       await res.drain<void>();
       return <T>[];
     }
-    _ops!.checkStatus(res.statusCode, 'GET $path');
+    if (res.statusCode >= 400) {
+      // BUG-1323：错误路径把服务端给的原因带上（成功路径下面才读完整 body）。
+      _ops!.checkStatus(
+        res.statusCode,
+        'GET $path',
+        serverReason: await readSyncErrorBody(res),
+      );
+    }
     final Future<String> reading = res.transform(utf8.decoder).join();
     final String body =
         timeout == null ? await reading : await reading.timeout(timeout);

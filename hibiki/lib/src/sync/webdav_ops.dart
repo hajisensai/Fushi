@@ -7,6 +7,33 @@ import 'package:hibiki/src/sync/tls/hibiki_pinning_http.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/sync_file_ref.dart';
 
+/// 服务端在错误响应体里给出的拒绝原因（截断后的），读不出来就返回 null。
+///
+/// BUG-1323：以前所有 4xx 响应体都被 `drain()` 丢掉，403 的「HTTPS required for
+/// service config」这种**唯一可操作的信息**从来没到过用户面前。
+///
+/// 三条纪律：
+/// - **永不抛**。读原因失败绝不能盖掉原本要报的那个错——那才是用户要看的。
+/// - **有上限**。错误体可能是一整页 HTML；截到 [_kMaxServerReasonChars] 字符，
+///   免得把 SnackBar / 日志行撑爆。
+/// - **有超时**。挂死的响应流不能把同步整轮拖住。
+Future<String?> readSyncErrorBody(HttpClientResponse response) async {
+  try {
+    final String body = await response
+        .transform(utf8.decoder)
+        .join()
+        .timeout(const Duration(seconds: 5));
+    final String trimmed = body.trim();
+    if (trimmed.isEmpty) return null;
+    if (trimmed.length <= _kMaxServerReasonChars) return trimmed;
+    return '${trimmed.substring(0, _kMaxServerReasonChars)}...';
+  } catch (_) {
+    return null;
+  }
+}
+
+const int _kMaxServerReasonChars = 300;
+
 class DavEntry {
   const DavEntry({
     required this.href,
@@ -86,11 +113,22 @@ class WebDavOps {
       request.headers.set('Content-Type', 'application/xml; charset=utf-8');
       request.add(utf8.encode(propfindBody));
       final response = await request.close();
-      await response.drain<void>();
 
-      if (response.statusCode == 401 || response.statusCode == 403) {
+      if (response.statusCode == 401) {
+        await response.drain<void>();
         throw SyncAuthError('Authentication failed');
       }
+      // BUG-1323：403 是服务端的策略拒绝，用户要看到的是**服务端说了什么**，而不是
+      // 「登录已过期，请重新登录」。「测试连接」正是最该把原文摆出来的地方，故这条
+      // 分支不 drain，先把响应体读成拒绝原因。
+      if (response.statusCode == 403) {
+        throw SyncAuthError(
+          'Server refused (403): PROPFIND $_baseUrl',
+          kind: SyncAuthFailureKind.forbidden,
+          serverReason: await readSyncErrorBody(response),
+        );
+      }
+      await response.drain<void>();
       if (response.statusCode >= 400) {
         throw SyncBackendError('Server returned ${response.statusCode}');
       }
@@ -128,8 +166,18 @@ class WebDavOps {
     request.add(utf8.encode(propfindBody));
     final response = await request.close();
 
-    if (response.statusCode == 401 || response.statusCode == 403) {
+    if (response.statusCode == 401) {
       throw SyncAuthError('Authentication failed');
+    }
+    // BUG-1323：403 带上服务端原文。读响应体放在这条分支里而不是提前统一读——
+    // 401 的判定必须先于任何可能抛异常的流读取，否则一个畸形错误体就能把鉴权
+    // 失败盖成 FormatException。
+    if (response.statusCode == 403) {
+      throw SyncAuthError(
+        'Server refused (403): PROPFIND $path',
+        kind: SyncAuthFailureKind.forbidden,
+        serverReason: await readSyncErrorBody(response),
+      );
     }
 
     final body = await response.transform(utf8.decoder).join();
@@ -256,9 +304,26 @@ class WebDavOps {
     }
   }
 
-  void checkStatus(int statusCode, String context) {
-    if (statusCode == 401 || statusCode == 403) {
+  /// HTTP 状态码 → 同步层异常契约。webdav / interconnect / source_library 共用。
+  ///
+  /// [serverReason] 是服务端在响应体里给出的拒绝原因（调用方读得到就传，读不到就
+  /// 不传）。本方法是同步的、拿不到响应流，故不能自己读；已有的三十余处调用点
+  /// 一行都不用改。
+  void checkStatus(int statusCode, String context, {String? serverReason}) {
+    if (statusCode == 401) {
       throw SyncAuthError('Authentication failed');
+    }
+    // BUG-1323：403 ≠ 401。403 是「凭据已被接受，但服务端按策略拒绝了这一次请求」
+    // （host 对明文会话返回 `HTTPS required for service config` 就是有意拒绝，不是
+    // 故障）。压成同一条 'Authentication failed' 有两个后果：文案把用户引去重配一个
+    // 根本没问题的凭据；上层 manual_sync_ui 还会把好端端的会话 signOut 掉。
+    // 顺带把 [context] 带上——以前这条分支连它一起丢了。
+    if (statusCode == 403) {
+      throw SyncAuthError(
+        'Server refused (403): $context',
+        kind: SyncAuthFailureKind.forbidden,
+        serverReason: serverReason,
+      );
     }
     if (statusCode == 404) {
       throw SyncBackendError('Not found: $context', isRetryable: true);

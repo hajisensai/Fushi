@@ -34,10 +34,28 @@ String summarizeSyncReport(SyncRunReport r) {
   ];
   final String head = parts.isEmpty ? t.sync_now_no_changes : parts.join(' · ');
   final String done = t.sync_now_done(detail: head);
-  return r.errors.isEmpty
-      ? done
-      : '$done${t.sync_now_failed_suffix(count: r.errors.length)}';
+  if (r.errors.isEmpty) return done;
+  final String failed =
+      '$done${t.sync_now_failed_suffix(count: r.errors.length)}';
+  // BUG-1324：鉴权类失败不能和网络抖动一样只计进「N 项失败」——那句话里
+  // 没有任何可操作信息。「凭据不被接受」要说去重新登录；「服务端拒绝」要把
+  // 服务端给的原因原样摆出来，并说明这不是登录问题（否则用户会去反复重配
+  // 一个根本没问题的 token，BUG-1311 的原始症状）。只拿第一条：报告已去重，
+  // 同一轮里同因的几百条只会剩一条。
+  if (r.authFailures.isEmpty) return failed;
+  final SyncAuthFailure auth = r.authFailures.first;
+  return '$failed · '
+      '${friendlySyncAuthFailure(auth.kind, auth.serverReason)}';
 }
+
+/// 鉴权失败后是否应当登出。这是一个**判断**，不是一个副作用，故抽成纯函数：
+/// 登出会毁掉用户的会话，它的判据必须能被直接钉住（BUG-1323）。
+///
+/// - [SyncAuthFailureKind.credentials]（401 / 未配置 / OAuth 失效）：会话真的完了，
+///   必须登出，否则账号行不退回「未登录」，用户无从重新登录（TODO-836）。
+/// - [SyncAuthFailureKind.forbidden]（403）：凭据已被接受，只是服务端拒了这一次
+///   请求。登出就是用一条服务端策略抢先毁掉一个好端端的会话。
+bool shouldSignOutOnAuthError(SyncAuthError error) => !error.isForbidden;
 
 /// 本地化的同步阶段名（进度行用）。
 String syncPhaseLabel(SyncPhase phase) {
@@ -176,18 +194,25 @@ Future<ManualSyncOutcome> runManualSyncWithFeedback({
     }
     return result.outcome;
   } on SyncAuthError catch (e) {
-    // TODO-836: insufficient_scope（或任何鉴权错误）—— 存下来的会话已经不可用了。
-    // 先登出，让账号行退回「未登录」（登录按钮重新出现），再提示重新登录。登出
-    // 序列与 account.part.dart 里的手动登出路径一致。
-    final SyncRepository repo = SyncRepository(appModel.database);
-    try {
-      final SyncBackend backend =
-          resolveSyncBackend(await repo.getBackendType());
-      await backend.signOut(repo: repo);
-      backend.clearCache();
-      await repo.clearFolderCache();
-    } catch (_) {
-      // 尽力登出；绝不因此盖掉原本要给用户的重新登录提示。
+    // TODO-836: insufficient_scope（或任何**凭据类**鉴权错误）—— 存下来的会话
+    // 已经不可用了。先登出，让账号行退回「未登录」（登录按钮重新出现），再提示
+    // 重新登录。登出序列与 account.part.dart 里的手动登出路径一致。
+    //
+    // BUG-1323：403 是例外。凭据**已经被接受**，是服务端按策略拒绝了这一次
+    // 请求（如 host 对明文会话拒发 service config）。把它当凭据失效去 signOut，
+    // 等于用一条服务端策略毁掉用户一个好端端的会话，还要他去重配一个没问题的
+    // token——正是 BUG-1311 里用户抱怨的那个循环。提示照常给，只是不动会话。
+    if (shouldSignOutOnAuthError(e)) {
+      final SyncRepository repo = SyncRepository(appModel.database);
+      try {
+        final SyncBackend backend =
+            resolveSyncBackend(await repo.getBackendType());
+        await backend.signOut(repo: repo);
+        backend.clearCache();
+        await repo.clearFolderCache();
+      } catch (_) {
+        // 尽力登出；绝不因此盖掉原本要给用户的重新登录提示。
+      }
     }
     if (context.mounted) showSyncMessage(context, friendlySyncError(e));
     return ManualSyncOutcome.notConfigured;

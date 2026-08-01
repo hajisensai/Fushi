@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1260 条。点号进各自文件。
+> 共 1262 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1324](bugs/BUG-1324-sync-report-auth-failure-untyped.md) | ✅ | ✅ | 同步报告把鉴权失败压成一行字符串：UI 只剩「N 项失败」 |
+| [BUG-1323](bugs/BUG-1323-sync-401-403-flattened.md) | ✅ | ✅ | webdav_ops 把 401/403 压成同一个 SyncAuthError：403 被谎报成登录过期还触发登出 |
 | [BUG-1319](bugs/BUG-1319-collection-delete-cover-leak.md) | ✅ | ✅ | 删合集只有 1/6 入口回收自有封面：其余五条只删 DB 行，路径随行永久丢失、GC 又扫不到该子目录 = 确定性空间泄漏 |
 | [BUG-1315](bugs/BUG-1315-texthooker-threadless-lines-never-published.md) | ✅ | ✅ | 未选线程门控把无线程身份的行（WebSocket/Textractor 端点）永久丢弃 |
 | [BUG-1311](bugs/BUG-1311-interconnect-service-config-403-on-plaintext.md) | ✅ | ✅ | 互联同步每轮都报「认证失败」：明文 host 上无条件请求 service-config |
