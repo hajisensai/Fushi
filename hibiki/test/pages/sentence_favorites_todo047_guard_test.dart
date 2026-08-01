@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
 /// TODO-047 part2/3/4 守卫：句子收藏扩展接线不得回归。
@@ -55,9 +56,10 @@ void main() {
     });
 
     test('只在顶层(index==0)显示，嵌套递归层不显示', () {
-      final int idx = src.indexOf('Widget? buildPopupHeaderFor(int index)');
-      expect(idx, greaterThanOrEqualTo(0));
-      final String body = src.substring(idx, idx + 200);
+      // 窗口=该覆写方法体（花括号配对），不再是 `idx + 200` 定长窗口：早退语句前
+      // 多插一行局部变量、或 header 结构改动，都不该让守卫塌掉。
+      final String body =
+          methodBody(src, 'Widget? buildPopupHeaderFor(int index)');
       expect(
         body.contains('if (index != 0) return null'),
         isTrue,
@@ -189,10 +191,11 @@ void main() {
         reason: 'ffmpeg 抽音失败必须给用户可见反馈，否则点了像没反应',
       );
       // 失败提示必须挂在 extractAudioSegment 返回 null 的 else 分支上。
-      final int playIdx = src.indexOf('_extractAndPlay({');
-      expect(playIdx, greaterThanOrEqualTo(0),
-          reason: '抽音+播放+失败提示应收敛到单一 _extractAndPlay 路径');
-      final String body = src.substring(playIdx, playIdx + 900);
+      // 窗口=`_extractAndPlay` 的方法体（花括号配对），不再是 `playIdx + 900`
+      // 定长窗口。旧窗口离塌只差两行：方法体实测 945 字，`t.audio_clip_failed`
+      // 落在第 ~700 字，try 块里再多写两条语句就把 else 分支挤出窗口 → 要求型
+      // 断言凭空变红，而根本没有任何行为退化。
+      final String body = methodBody(src, 'Future<void> _extractAndPlay({');
       expect(body.contains('if (result != null)'), isTrue);
       expect(
         body.contains('} else {') && body.contains('t.audio_clip_failed'),

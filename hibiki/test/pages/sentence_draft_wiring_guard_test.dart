@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'reader_hibiki_page_source_corpus.dart';
 
 /// TODO-393「查词窗口句子上下文制卡」(取代 TODO-382 单按钮逐句追加)：宿主接线守卫。
@@ -161,9 +162,14 @@ void main() {
     // 暴露一个把镜像标量归零的函数，供宿主换词注入时调用（不重载页面、不发宿主信号）。
     expect(js, contains('window.resetSentenceContextMirror = function() {'));
     // 函数体把上 N / 下 N 两个方向标量都置 0（撤掉任一行本守卫转红）。
-    final int resetAt =
-        js.indexOf('window.resetSentenceContextMirror = function() {');
-    final String resetBody = js.substring(resetAt, resetAt + 200);
+    // 窗口=该函数体（花括号配对，JS 词法：认模板串与正则字面量），不再是
+    // `resetAt + 200` 定长窗口——旧窗口已经越过函数尾滑进后面的注释块，函数里
+    // 多加两行归零就会把断言目标挤出窗口。
+    final String resetBody = methodBody(
+      js,
+      'window.resetSentenceContextMirror = function() {',
+      lexicon: SourceLexicon.js,
+    );
     expect(resetBody, contains('sentenceCtxPrev = 0;'));
     expect(resetBody, contains('sentenceCtxNext = 0;'));
   });

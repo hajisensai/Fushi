@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/source_guard.dart';
+
 /// 用户口径守卫（PR#594 落地形态）：
 ///
 /// 1. 漫画库顶层**恒为三视图**，Mihon 扩展不占 tab —— 由
@@ -15,9 +17,14 @@ import 'package:path/path.dart' as p;
 /// provider），挂起来测的是环境不是接线；而这两条要守的恰恰是**接线本身**。
 /// 内嵌节真能在外层 ListView 里渲染这件事，由
 /// `test/media/manga/mihon_extensions_page_test.dart` 的 embedded 用例真 pump 守。
-String _read(List<String> parts) =>
-    File(p.joinAll(<String>['lib', 'src', 'media', 'manga', ...parts]))
-        .readAsStringSync();
+/// 读源码并**掩掉注释**（共享 `maskComments`，等长掩码不打乱下标）。
+///
+/// 本文件全是「必须包含 X」型断言，不掩注释的话，把实现删光、只在注释里留下那串
+/// 字面量就能骗绿——这是本仓真实抓到过的假绿形态。
+String _read(List<String> parts) => maskComments(
+      File(p.joinAll(<String>['lib', 'src', 'media', 'manga', ...parts]))
+          .readAsStringSync(),
+    );
 
 void main() {
   group('漫画「来源」视图组成', () {

@@ -14,14 +14,27 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
+
 String _read(String relPath) => File(relPath).readAsStringSync();
 
-/// 截取 [src] 中从 [start] 起、到下一个同级成员声明为止的片段。
-String _memberBody(String src, String start, {int fallbackLen = 2500}) {
-  final int i = src.indexOf(start);
-  expect(i, greaterThanOrEqualTo(0), reason: '找不到 $start');
-  final int end = src.indexOf('\n  }', i);
-  return src.substring(i, end > i ? end + 4 : (i + fallbackLen));
+/// 取以 `=>` 表达式体收尾的成员声明（如 `bool get isEmbeddedTorrentReady => …;`）。
+///
+/// 右边界是终止该表达式的**顶层分号**（括号/方括号/花括号深度归零处），与行数无关。
+/// 不能用 [methodBody]：表达式体成员根本没有花括号体，配对扫描会一路配到后面某个
+/// 真方法上去，窗口静默指向错误对象。
+String _expressionBodyMember(String src, String signature) {
+  final String structural = maskCommentsAndStrings(src);
+  final int start = structural.indexOf(signature);
+  expect(start, greaterThanOrEqualTo(0), reason: '找不到成员声明：$signature');
+  int depth = 0;
+  for (int i = start; i < structural.length; i++) {
+    final String c = structural[i];
+    if (c == '(' || c == '[' || c == '{') depth++;
+    if (c == ')' || c == ']' || c == '}') depth--;
+    if (c == ';' && depth == 0) return src.substring(start, i + 1);
+  }
+  fail('表达式体成员没有收尾分号：$signature');
 }
 
 void main() {
@@ -35,8 +48,12 @@ void main() {
     });
 
     test('startAnimeDownloadService 不得创建 libtorrent session', () {
+      // 窗口=方法体（花括号配对）。原 `_memberBody` 是「找下一个 `\n  }`，找不到就退
+      // 定长 2500」：`\n  }` 这半赌的是方法体里不出现同样 2 空格缩进的闭合行，退定长
+      // 那半更是假绿温床——本方法体实测 3605 字符，一旦 `\n  }` 匹配失败，下面这条
+      // isFalse 断言就只扫前 2500 字符、后面 1100 字符里出现 open() 也照样绿。
       final String body =
-          _memberBody(appModel, 'Future<void> startAnimeDownloadService()');
+          methodBody(appModel, 'Future<void> startAnimeDownloadService()');
       expect(body.contains('EmbeddedTorrentHost.open('), isFalse,
           reason: 'BUG-1053 回归：启动即建 session = 空闲也在跑 DHT/占 6881');
       // 只记保存路径（TODO-1961 起是活动根 + 历史根集合），真会话交给懒建入口。
@@ -45,7 +62,7 @@ void main() {
 
     test('后端工厂在真要用时才懒建（且仅内置后端路径）', () {
       final String body =
-          _memberBody(appModel, 'TorrentBackend _torrentBackendFor(');
+          methodBody(appModel, 'TorrentBackend _torrentBackendFor(');
       expect(body.contains('_ensureEmbeddedTorrentHost()'), isTrue,
           reason: 'BUG-1053：内置后端路径必须走懒建入口');
       expect(
@@ -55,18 +72,19 @@ void main() {
     });
 
     test('就绪判定走能力探测，不再等价于「已开 session」', () {
-      final int i = appModel.indexOf('bool get isEmbeddedTorrentReady');
-      expect(i, greaterThanOrEqualTo(0));
-      final String body = appModel.substring(i, i + 400);
+      // 窗口=该表达式体成员的完整声明（顶层分号收口），不是 `+400` 定长窗口：
+      // getter 一旦多包一层三元或换行，probeAvailable 就漂出窗口、断言凭空变假。
+      final String body =
+          _expressionBodyMember(appModel, 'bool get isEmbeddedTorrentReady');
       expect(body.contains('EmbeddedTorrentHost.probeAvailable()'), isTrue,
           reason: 'BUG-1053：就绪判定若仍要求 session 存在，启动就又得开 session');
     });
 
     test('probeAvailable 只加载引擎，绝不创建 session', () {
-      final int i = host.indexOf('static bool probeAvailable(');
-      expect(i, greaterThanOrEqualTo(0));
-      final int end = host.indexOf('\n  }', i);
-      final String body = host.substring(i, end > i ? end : i + 1200);
+      // 窗口=方法体（花括号配对）。原写法是「找下一个 `\n  }`，找不到就退定长 1200」：
+      // 前半赌方法体里不出现同缩进闭合行，后半的静默兜底更是假绿温床——探测体一长，
+      // 下面两条 isFalse 就只扫前 1200 字符，后面真写了 session.open( 也照样绿。
+      final String body = methodBody(host, 'static bool probeAvailable(');
       expect(body.contains('EmbeddedTorrentEngine.open('), isTrue);
       expect(body.contains('EmbeddedTorrentSession.open('), isFalse,
           reason: 'BUG-1053：探测里建 session 就等于没修');
@@ -81,7 +99,7 @@ void main() {
       expect(hits.length, 1,
           reason:
               'BUG-1053：AppModel 里 open() 只应出现在 _ensureEmbeddedTorrentHost');
-      final String ensure = _memberBody(
+      final String ensure = methodBody(
           appModel, 'EmbeddedTorrentHost? _ensureEmbeddedTorrentHost()');
       expect(ensure.contains('EmbeddedTorrentHost.open('), isTrue);
     });

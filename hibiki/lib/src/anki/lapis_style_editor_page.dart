@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
@@ -12,20 +12,55 @@ typedef LapisPreviewBuilder = Widget Function(
   bool showBack,
 );
 
-/// Lapis 自定义 CSS 的可视化入口。
+/// 选中某个 Anki 字段的占位符时弹选择器；返回 null = 用户取消。
+typedef LapisHandlebarPicker = Future<String?> Function(
+  String ankiField,
+  String currentValue,
+);
+
+/// 可视化编辑器的保存结果。
 ///
-/// 预览使用 vendored Lapis 原始 CSS 和与真实模板同名的 DOM selector；字段级控件
+/// 字段映射与 CSS 一起走「保存/取消」这一个闸门：映射如果边改边落盘，「取消」
+/// 就只能撤回样式、撤不回映射，同一个页面出现两套生效语义。
+class LapisVisualEditorResult {
+  const LapisVisualEditorResult({
+    required this.customCss,
+    required this.fieldMappings,
+  });
+
+  final String customCss;
+
+  /// Anki 字段名 → Hibiki 占位符。只含**本次被改过**的字段，调用方逐条写回即可。
+  final Map<String, String> fieldMappings;
+}
+
+/// Lapis 卡片的可视化编辑入口：样式 + 区块位置 + 字段映射。
+///
+/// 预览使用 vendored Lapis 原始 CSS 和与真实模板同名的 DOM selector；样式与布局
 /// 只改 [lapisVisualCssBeginMarker] 托管区，完整手写 CSS 仍在「高级 CSS」中保留。
 class LapisStyleEditorPage extends StatefulWidget {
   const LapisStyleEditorPage({
     required this.initialCustomCss,
     required this.fontScalePercent,
+    this.noteTypeFields = const <String>[],
+    this.initialFieldMappings = const <String, String>{},
+    this.pickHandlebar,
     this.previewBuilder,
     super.key,
   });
 
   final String initialCustomCss;
   final int fontScalePercent;
+
+  /// 当前所选 Anki 卡型的字段名。字段映射区按它自我门控：卡型里没有的字段一律
+  /// 不显示，所以用户选的不是 Lapis 时不会把映射写到别的卡型头上。
+  final List<String> noteTypeFields;
+
+  /// 当前 Anki 字段 → 占位符映射。
+  final Map<String, String> initialFieldMappings;
+
+  /// 为 null = 不提供映射编辑（例如未连接 Anki）。
+  final LapisHandlebarPicker? pickHandlebar;
 
   /// Widget 测试用替身，避免测试环境创建原生 WebView。
   @visibleForTesting
@@ -39,6 +74,10 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   late final TextEditingController _advancedCssController;
   late final String _initialComposedCss;
   late final Map<LapisVisualField, LapisVisualRule> _rules;
+  late LapisVisualLayout _layout;
+
+  /// 本次改过的字段映射（Anki 字段名 → 占位符），保存时才回传。
+  final Map<String, String> _mappingEdits = <String, String>{};
 
   /// 打开时托管区段相对用户自由 CSS 的位置，保存时原样写回（见
   /// [composeLapisVisualStyleSheet]）。托管区段整块 `!important`，把用户写在
@@ -70,6 +109,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
     final LapisVisualStyleSheet sheet =
         splitLapisVisualStyleSheet(widget.initialCustomCss);
     _rules = Map<LapisVisualField, LapisVisualRule>.of(sheet.rules);
+    _layout = sheet.layout;
     _managedFirst = sheet.managedFirst;
     _advancedCssController = TextEditingController(text: sheet.freeformCss)
       ..addListener(_handleAdvancedCssChanged);
@@ -88,10 +128,16 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   String _composeCustomCss() => composeLapisVisualStyleSheet(
         freeformCss: _advancedCssController.text,
         rules: _rules,
+        layout: _layout,
         managedFirst: _managedFirst,
       );
 
-  bool get _isDirty => _composeCustomCss() != _initialComposedCss;
+  bool get _isDirty =>
+      _composeCustomCss() != _initialComposedCss || _mappingEdits.isNotEmpty;
+
+  /// 字段当前占位符：本次改过的优先，否则取进页面时的值。
+  String _mappingFor(String ankiField) =>
+      _mappingEdits[ankiField] ?? widget.initialFieldMappings[ankiField] ?? '';
 
   LapisVisualRule get _selectedRule =>
       _rules[_selectedField] ?? const LapisVisualRule();
@@ -121,6 +167,27 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
     _refreshPreview();
   }
 
+  void _updateLayout(LapisVisualLayout layout) {
+    setState(() => _layout = layout);
+    _refreshPreview();
+  }
+
+  Future<void> _editMapping(String ankiField) async {
+    final LapisHandlebarPicker? picker = widget.pickHandlebar;
+    if (picker == null) return;
+    final String current = _mappingFor(ankiField);
+    final String? next = await picker(ankiField, current);
+    if (next == null || !mounted || next == current) return;
+    setState(() {
+      // 改回进页面时的原值 = 没改过，从 diff 里撤掉，别让保存按钮假亮。
+      if (next == (widget.initialFieldMappings[ankiField] ?? '')) {
+        _mappingEdits.remove(ankiField);
+      } else {
+        _mappingEdits[ankiField] = next;
+      }
+    });
+  }
+
   void _setShowBack(bool value) {
     if (_showBack == value) return;
     setState(() => _showBack = value);
@@ -136,11 +203,11 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
     );
     try {
       await controller.evaluateJavascript(
-        source: '''
-document.getElementById('lapis-style').textContent = ${_jsonForScript(css)};
-window.hibikiLapisEditor.showSide(${_jsonForScript(_showBack ? 'back' : 'front')});
-window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)});
-''',
+        source: buildLapisStylePreviewRefreshScript(
+          css: css,
+          selectedField: _selectedField,
+          showBack: _showBack,
+        ),
       );
     } catch (_) {
       // 页面退出或平台 WebView 正在重建时的刷新是尽力而为；下一次 onLoadStop
@@ -173,9 +240,14 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
     if (discard == true) _pop();
   }
 
-  void _save() => _pop(_composeCustomCss());
+  void _save() => _pop(
+        LapisVisualEditorResult(
+          customCss: _composeCustomCss(),
+          fieldMappings: Map<String, String>.of(_mappingEdits),
+        ),
+      );
 
-  void _pop([String? result]) {
+  void _pop([LapisVisualEditorResult? result]) {
     if (!mounted) return;
     setState(() => _allowPop = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -419,6 +491,7 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
               ),
             ],
           ),
+          _buildLayoutSection(tokens),
           SizedBox(height: tokens.spacing.card),
           Row(
             children: <Widget>[
@@ -535,60 +608,23 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
             ),
           ),
           SizedBox(height: tokens.spacing.card),
-          Text(
-            t.anki_lapis_visual_color,
-            style: tokens.type.listSubtitle,
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          Wrap(
-            spacing: tokens.spacing.gap,
-            runSpacing: tokens.spacing.gap,
-            children: <Widget>[
-              _LapisColorChoice(
-                colorHex: null,
-                selected: rule.colorHex == null,
-                tooltip: t.anki_lapis_visual_default,
-                onTap: () => _updateSelectedRule(rule.copyWith(colorHex: null)),
-              ),
-              for (final String colorHex in _colorChoices)
-                _LapisColorChoice(
-                  colorHex: colorHex,
-                  selected: rule.colorHex == colorHex,
-                  tooltip: colorHex,
-                  onTap: () => _updateSelectedRule(
-                    rule.copyWith(colorHex: colorHex),
-                  ),
-                ),
-            ],
+          _buildColorRow(
+            tokens: tokens,
+            label: t.anki_lapis_visual_color,
+            selectedHex: rule.colorHex,
+            presets: _colorChoices,
+            onChanged: (String? colorHex) =>
+                _updateSelectedRule(rule.copyWith(colorHex: colorHex)),
           ),
           SizedBox(height: tokens.spacing.card),
-          Text(
-            t.anki_lapis_visual_background_color,
-            style: tokens.type.listSubtitle,
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          Wrap(
-            spacing: tokens.spacing.gap,
-            runSpacing: tokens.spacing.gap,
-            children: <Widget>[
-              _LapisColorChoice(
-                colorHex: null,
-                selected: rule.backgroundColorHex == null,
-                tooltip: t.anki_lapis_visual_default,
-                onTap: () => _updateSelectedRule(
-                  rule.copyWith(backgroundColorHex: null),
-                ),
-              ),
-              for (final String colorHex in _highlightChoices)
-                _LapisColorChoice(
-                  colorHex: colorHex,
-                  selected: rule.backgroundColorHex == colorHex,
-                  tooltip: colorHex,
-                  onTap: () => _updateSelectedRule(
-                    rule.copyWith(backgroundColorHex: colorHex),
-                  ),
-                ),
-            ],
+          _buildColorRow(
+            tokens: tokens,
+            label: t.anki_lapis_visual_background_color,
+            selectedHex: rule.backgroundColorHex,
+            presets: _highlightChoices,
+            onChanged: (String? colorHex) => _updateSelectedRule(
+              rule.copyWith(backgroundColorHex: colorHex),
+            ),
           ),
           if (_selectedField.supportsBoxLayout) ...<Widget>[
             SizedBox(height: tokens.spacing.card),
@@ -612,38 +648,13 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
                   ),
                 ),
                 if (rule.borderWidthPx != null) ...<Widget>[
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: Text(
-                      t.anki_lapis_visual_border_color,
-                      style: tokens.type.listSubtitle,
-                    ),
-                  ),
-                  SizedBox(height: tokens.spacing.gap),
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: Wrap(
-                      spacing: tokens.spacing.gap,
-                      runSpacing: tokens.spacing.gap,
-                      children: <Widget>[
-                        _LapisColorChoice(
-                          colorHex: null,
-                          selected: rule.borderColorHex == null,
-                          tooltip: t.anki_lapis_visual_default,
-                          onTap: () => _updateSelectedRule(
-                            rule.copyWith(borderColorHex: null),
-                          ),
-                        ),
-                        for (final String colorHex in _colorChoices)
-                          _LapisColorChoice(
-                            colorHex: colorHex,
-                            selected: rule.borderColorHex == colorHex,
-                            tooltip: colorHex,
-                            onTap: () => _updateSelectedRule(
-                              rule.copyWith(borderColorHex: colorHex),
-                            ),
-                          ),
-                      ],
+                  _buildColorRow(
+                    tokens: tokens,
+                    label: t.anki_lapis_visual_border_color,
+                    selectedHex: rule.borderColorHex,
+                    presets: _colorChoices,
+                    onChanged: (String? colorHex) => _updateSelectedRule(
+                      rule.copyWith(borderColorHex: colorHex),
                     ),
                   ),
                   SizedBox(height: tokens.spacing.gap),
@@ -678,6 +689,7 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
               ],
             ),
           ],
+          _buildFieldMappingSection(tokens),
           SizedBox(height: tokens.spacing.card),
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
@@ -796,6 +808,252 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
         ],
       );
 
+  /// 卡片区块位置。三项都直接映射 vendored Lapis 自己的 user settings 变量
+  /// （见 [LapisVisualLayout]）——空值 = 不覆写 = 保持出厂布局。
+  Widget _buildLayoutSection(HibikiDesignTokens tokens) => ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.only(bottom: tokens.spacing.gap),
+        leading: const Icon(Icons.dashboard_customize_outlined),
+        title: Text(t.anki_lapis_visual_layout),
+        subtitle: Text(t.anki_lapis_visual_layout_hint),
+        initiallyExpanded: !_layout.isDefault,
+        children: <Widget>[
+          _buildLayoutPicker(
+            label: t.anki_lapis_visual_layout_sentence,
+            selected: _layout.sentencePosition?.cssValue ?? '',
+            options: <MapEntry<String, String>>[
+              MapEntry<String, String>(
+                LapisSentencePosition.above.cssValue,
+                t.anki_lapis_visual_layout_sentence_above,
+              ),
+              MapEntry<String, String>(
+                LapisSentencePosition.below.cssValue,
+                t.anki_lapis_visual_layout_sentence_below,
+              ),
+            ],
+            onSelected: (String value) => _updateLayout(
+              _layout.copyWith(
+                sentencePosition: LapisSentencePosition.fromCssValue(value),
+              ),
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          _buildLayoutPicker(
+            label: t.anki_lapis_visual_layout_picture,
+            selected: _layout.picturePosition?.cssValue ?? '',
+            options: <MapEntry<String, String>>[
+              MapEntry<String, String>(
+                LapisPicturePosition.right.cssValue,
+                t.anki_lapis_visual_layout_picture_right,
+              ),
+              MapEntry<String, String>(
+                LapisPicturePosition.left.cssValue,
+                t.anki_lapis_visual_layout_picture_left,
+              ),
+              MapEntry<String, String>(
+                LapisPicturePosition.alt.cssValue,
+                t.anki_lapis_visual_layout_picture_alt,
+              ),
+            ],
+            onSelected: (String value) => _updateLayout(
+              _layout.copyWith(
+                picturePosition: LapisPicturePosition.fromCssValue(value),
+              ),
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          _buildLayoutPicker(
+            label: t.anki_lapis_visual_layout_audio,
+            selected: _layout.audioButtonsPosition?.cssValue ?? '',
+            options: <MapEntry<String, String>>[
+              MapEntry<String, String>(
+                LapisAudioButtonsPosition.header.cssValue,
+                t.anki_lapis_visual_layout_audio_header,
+              ),
+              MapEntry<String, String>(
+                LapisAudioButtonsPosition.fixed.cssValue,
+                t.anki_lapis_visual_layout_audio_fixed,
+              ),
+              MapEntry<String, String>(
+                LapisAudioButtonsPosition.alt.cssValue,
+                t.anki_lapis_visual_layout_audio_alt,
+              ),
+            ],
+            onSelected: (String value) => _updateLayout(
+              _layout.copyWith(
+                audioButtonsPosition:
+                    LapisAudioButtonsPosition.fromCssValue(value),
+              ),
+            ),
+          ),
+        ],
+      );
+
+  /// 位置下拉。空串是「默认」的哨兵值——`DropdownMenu` 的 `initialSelection`
+  /// 传 null 会显示成空输入框（看不出当前是默认还是没选），与「行高」同一处理。
+  Widget _buildLayoutPicker({
+    required String label,
+    required String selected,
+    required List<MapEntry<String, String>> options,
+    required ValueChanged<String> onSelected,
+  }) =>
+      DropdownMenu<String>(
+        key: ValueKey<String>('lapis-layout-$label-$selected'),
+        expandedInsets: EdgeInsets.zero,
+        initialSelection: selected,
+        label: Text(label),
+        dropdownMenuEntries: <DropdownMenuEntry<String>>[
+          DropdownMenuEntry<String>(
+            value: '',
+            label: t.anki_lapis_visual_default,
+          ),
+          for (final MapEntry<String, String> option in options)
+            DropdownMenuEntry<String>(
+              value: option.key,
+              label: option.value,
+            ),
+        ],
+        onSelected: (String? value) => onSelected(value ?? ''),
+      );
+
+  /// 选中区域由哪些 Anki 字段填充。只列**当前卡型真有**的字段：用户选的不是
+  /// Lapis 时这里自然空掉，不会把 Lapis 的字段名写到别的卡型头上。
+  Widget _buildFieldMappingSection(HibikiDesignTokens tokens) {
+    if (widget.pickHandlebar == null || widget.noteTypeFields.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final List<String> sources = lapisVisualFieldSources(_selectedField);
+    final List<String> present =
+        sources.where(widget.noteTypeFields.contains).toList();
+    // 有来源字段、但当前卡型一个都没有 = 用户选的不是 Lapis 系卡型。整块收起，
+    // 而不是拿「这块没有字段」的说法糊过去——那是另一回事（下面那条分支）。
+    if (sources.isNotEmpty && present.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SizedBox(height: tokens.spacing.card),
+        Text(t.anki_field_mappings, style: tokens.type.sectionLabel),
+        SizedBox(height: tokens.spacing.gap),
+        Text(
+          present.isEmpty
+              ? t.anki_lapis_visual_mapping_none
+              : t.anki_lapis_visual_mapping_hint,
+          style: tokens.type.listSubtitle,
+        ),
+        for (final String ankiField in present)
+          HibikiListItem(
+            padding: EdgeInsets.zero,
+            title: Text(ankiField),
+            subtitle: Text(
+              _mappingFor(ankiField).isEmpty
+                  ? t.anki_field_not_mapped
+                  : _mappingFor(ankiField),
+            ),
+            trailing: const Icon(Icons.edit_outlined),
+            onTap: () => unawaited(_editMapping(ankiField)),
+          ),
+      ],
+    );
+  }
+
+  /// 一行色板：默认 + 预设 + 当前自定义色 + 取色器入口。
+  Widget _buildColorRow({
+    required HibikiDesignTokens tokens,
+    required String label,
+    required String? selectedHex,
+    required List<String> presets,
+    required ValueChanged<String?> onChanged,
+  }) {
+    // 取色器选出来的色多半不在预设里。不单独补一颗的话，选完当前色就从盘上消失，
+    // 用户看不出选中的是什么、也无从改回。
+    final bool isCustom = selectedHex != null && !presets.contains(selectedHex);
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(label, style: tokens.type.listSubtitle),
+          SizedBox(height: tokens.spacing.gap),
+          Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: <Widget>[
+              _LapisColorChoice(
+                colorHex: null,
+                selected: selectedHex == null,
+                tooltip: t.anki_lapis_visual_default,
+                onTap: () => onChanged(null),
+              ),
+              for (final String colorHex in presets)
+                _LapisColorChoice(
+                  colorHex: colorHex,
+                  selected: selectedHex == colorHex,
+                  tooltip: colorHex,
+                  onTap: () => onChanged(colorHex),
+                ),
+              if (isCustom)
+                _LapisColorChoice(
+                  colorHex: selectedHex,
+                  selected: true,
+                  tooltip: selectedHex,
+                  onTap: () =>
+                      unawaited(_pickCustomColor(selectedHex, onChanged)),
+                ),
+              _LapisColorChoice(
+                colorHex: selectedHex,
+                selected: false,
+                tooltip: t.anki_lapis_visual_color_custom,
+                showPaletteIcon: true,
+                onTap: () =>
+                    unawaited(_pickCustomColor(selectedHex, onChanged)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 任意取色。卡片 CSS 只接受 `#RRGGBB`（[LapisVisualRule.fromJson] 的校验），
+  /// 所以关掉 alpha 通道并强制不透明——半透明选出来也会在回读时被丢掉。
+  Future<void> _pickCustomColor(
+    String? initialHex,
+    ValueChanged<String?> onChanged,
+  ) async {
+    final Color initial = initialHex == null
+        ? Theme.of(context).colorScheme.primary
+        : lapisColorFromHex(initialHex);
+    Color picked = initial;
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(t.anki_lapis_visual_color_picker_title),
+        content: SingleChildScrollView(
+          child: ColorPicker(
+            pickerColor: initial,
+            onColorChanged: (Color color) => picked = color,
+            portraitOnly: true,
+            enableAlpha: false,
+            displayThumbColor: true,
+            hexInputBar: true,
+            labelTypes: const <ColorLabelType>[],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(t.dialog_ok),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) onChanged(lapisHexFromColor(picked));
+  }
+
   Widget _buildOptionalSlider({
     required String title,
     required int? value,
@@ -831,6 +1089,7 @@ class _LapisColorChoice extends StatelessWidget {
     required this.selected,
     required this.tooltip,
     required this.onTap,
+    this.showPaletteIcon = false,
   });
 
   final String? colorHex;
@@ -838,13 +1097,16 @@ class _LapisColorChoice extends StatelessWidget {
   final String tooltip;
   final VoidCallback onTap;
 
+  /// 取色器入口：不代表某个具体色，只画调色板图标。
+  final bool showPaletteIcon;
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Color color = colorHex == null
+    final Color color = colorHex == null || showPaletteIcon
         ? tokens.surfaces.overlay
-        : Color(int.parse(colorHex!.substring(1), radix: 16) | 0xFF000000);
+        : lapisColorFromHex(colorHex!);
     return Tooltip(
       message: tooltip,
       child: InkResponse(
@@ -865,16 +1127,17 @@ class _LapisColorChoice extends StatelessWidget {
                 width: selected ? 3 : 1,
               ),
             ),
-            child: selected
-                ? Icon(
-                    Icons.check,
-                    color: color.computeLuminance() > 0.55
-                        ? colors.onSurface
-                        : colors.surface,
-                  )
-                : colorHex == null
-                    ? const Icon(Icons.format_color_reset_outlined)
-                    : null,
+            child: switch ((showPaletteIcon, selected, colorHex)) {
+              (true, _, _) => const Icon(Icons.palette_outlined, size: 20),
+              (_, true, _) => Icon(
+                  Icons.check,
+                  color: color.computeLuminance() > 0.55
+                      ? colors.onSurface
+                      : colors.surface,
+                ),
+              (_, _, null) => const Icon(Icons.format_color_reset_outlined),
+              _ => null,
+            },
           ),
         ),
       ),
@@ -882,5 +1145,12 @@ class _LapisColorChoice extends StatelessWidget {
   }
 }
 
-String _jsonForScript(String value) =>
-    jsonEncode(value).replaceAll('<', r'\u003C');
+/// `#RRGGBB` → 不透明 [Color]。
+Color lapisColorFromHex(String colorHex) =>
+    Color(int.parse(colorHex.substring(1), radix: 16) | 0xFF000000);
+
+/// [Color] → `#RRGGBB`（大写）。大写是硬要求：[LapisVisualRule.fromJson] 回读时
+/// 统一大写，取色器若吐小写，同一个颜色在「选中判定」与「是否 dirty」上会被判成
+/// 两个不同值。
+String lapisHexFromColor(Color color) => '#'
+    '${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';

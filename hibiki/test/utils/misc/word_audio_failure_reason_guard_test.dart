@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// BUG-1204 守卫：单词发音失败的**原因**必须一路留痕，不能再被吞成一个光秃秃的 false。
 ///
 /// 背景：`playWordAudio` 原本是 `.catch(() => false)`，把 `audio.play()` 抛的
@@ -21,12 +23,17 @@ void main() {
     '../tools/browser-extension/vendor/popup.js',
   ];
 
-  /// 剥掉整行 `//` 注释后再扫：解释「旧写法为何是 bug」的注释本身必然包含那段旧代码，
+  /// 掩掉注释后再扫：解释「旧写法为何是 bug」的注释本身必然包含那段旧代码，
   /// 连注释一起扫会把文档自己判成回潮（本守卫第一版就这么误报过）。
-  String stripLineComments(String src) => src
-      .split('\n')
-      .where((String l) => !l.trimLeft().startsWith('//'))
-      .join('\n');
+  ///
+  /// 用 **JS 词法**（[maskJsComments]）而不是「丢掉整行以 `//` 起的行」：
+  /// - 块注释 `/* .catch(() => false) */` 旧写法一概放行 ⇒ 禁止型断言被注释骗成红、
+  ///   要求型断言被注释骗成绿（把实现删光只留 `/* __hibikiWordAudioLastError */`
+  ///   照样通过）；
+  /// - 行尾注释同样漏；
+  /// - 掩码**等长**，下面 `indexOf('audio.play()')` + 括号配平截回调体的下标才与原文
+  ///   一致（旧写法删行会整体错位）。
+  String stripLineComments(String src) => maskJsComments(src);
 
   test('三份 popup.js 都记录播放失败原因，且不再无脑吞掉 catch', () {
     for (final String path in popupMirrors) {

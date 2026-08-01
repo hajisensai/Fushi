@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 英语制卡音标（IPA）契约：Yomitan `ipa`-mode 词典（典型：英语）在 pitch 组里
 /// 带 `transcriptions` 而没有 `pitchPositions`，修复前制卡侧只消费 positions，
 /// 英语卡的声调字段恒空（弹窗展示侧 TODO-688 早已渲染，唯独制卡断链）。
@@ -118,19 +120,21 @@ void main() {
     final String src = File('assets/popup/popup.js').readAsStringSync();
 
     /// 取顶层函数体：从 `function <name>(` 到下一个列首 `}`。锚定函数体而不是
-    /// 全文件，防止别处注释里出现同名字面量假绿；再剥掉行注释，防「把代码注释
-    /// 掉但字面量还在」的假绿（变异实测过：注释掉 forEach 本守卫必红）。
+    /// 全文件，防止别处注释里出现同名字面量假绿；再用共享 [maskComments] 把注释
+    /// 换成**等长空白**，防「把代码注释掉但字面量还在」的假绿（变异实测过：
+    /// 注释掉 forEach 本守卫必红）。
+    ///
+    /// 旧写法是「丢掉整行以 `//` 开头的行」，只堵住了行注释一种形态：
+    /// `/* items += ... */` 这样的块注释、以及 `foo(); // pitchGroup.transcriptions`
+    /// 这样的行尾注释都一概放行。[maskComments] 是词法扫描，三种形态一并吃掉，
+    /// 且模板串 / 引号串内容原样保留（本文件断言里的 `` `<ol>${items}</ol>` `` 不受影响）。
     String functionBody(String name) {
       final int start = src.indexOf('function $name(');
       expect(start, greaterThanOrEqualTo(0),
           reason: 'popup.js 缺少 function $name');
       final int end = src.indexOf('\n}', start);
       expect(end, greaterThan(start), reason: '$name 函数体未闭合？');
-      return src
-          .substring(start, end + 2)
-          .split('\n')
-          .where((String l) => !l.trimLeft().startsWith('//'))
-          .join('\n');
+      return maskComments(src.substring(start, end + 2));
     }
 
     test(

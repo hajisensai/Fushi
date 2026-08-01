@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1210 守卫：**每一个查词表面都必须明确声明它接不接自动朗读**。
 ///
 /// 为什么要这条：BUG-1210 的第一版只补了剪贴板面板的 `update()`（剪贴板流）一条路径，
@@ -80,9 +82,17 @@ void main() {
         in Directory('lib').listSync(recursive: true)) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
       final String rel = e.path.replaceAll('\\', '/');
-      for (final String line in e.readAsStringSync().split('\n')) {
+      final String source = e.readAsStringSync();
+      // 便宜的预筛：掩码只会**减少**命中、绝不会新增，所以整文件连这个符号都没有
+      // 就不必逐字符扫（lib/ 有好几 MB，全量词法掩码会明显拖慢这条守卫）。
+      if (!source.contains('searchDictionary(')) continue;
+      // 注释里的同名文本不算调用点。旧写法是逐行 `startsWith('//')`，只堵住
+      // 「整行行注释」一种形态：`/* await searchDictionary(x); */` 这种块注释会被
+      // 当成真实调用点（把新表面塞进块注释就能绕过声明要求），反过来
+      // `foo(); // 见 searchDictionary(` 这种行尾注释也会凭空多报一个文件。
+      // maskComments 是词法扫描，三种形态一并换成等长空白。
+      for (final String line in maskComments(source).split('\n')) {
         final String t = line.trim();
-        if (t.startsWith('//') || t.startsWith('///')) continue;
         if (!t.contains('searchDictionary(')) continue;
         // 方法声明/接口签名本身不算调用点。
         if (RegExp(r'Future<DictionarySearchResult\??>\s+searchDictionary\(')
@@ -117,13 +127,11 @@ void main() {
       final File f = File(e.key);
       expect(f.existsSync(), true,
           reason: 'wiredSurfaces 里的 ${e.key} 已不存在，请更新名单');
-      // 剥注释：讲「这里为什么要朗读」的注释里必然写着这些符号名，
-      // 连注释一起扫会让「实现删光、注释还在」照样绿。
-      final String code = f
-          .readAsStringSync()
-          .split('\n')
-          .where((String l) => !l.trimLeft().startsWith('//'))
-          .join('\n');
+      // 掩码注释：讲「这里为什么要朗读」的注释里必然写着这些符号名，
+      // 连注释一起扫会让「实现删光、注释还在」照样绿。旧写法只丢整行 `//`，
+      // 把朗读调用包进 `/* */` 就能继续骗绿；maskComments 把行注释、行尾注释与
+      // 块注释一并换成等长空白。
+      final String code = maskComments(f.readAsStringSync());
       final bool wired = code.contains('autoReadFirstEntry(') ||
           code.contains('autoReadWord(') ||
           code.contains('_autoReadWord(') ||

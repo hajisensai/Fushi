@@ -516,9 +516,12 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
             : null;
     final String episodeLabel =
         t.download_airing_calendar_episode_label(episode: episode.episode);
-    return ListTile(
-      dense: true,
+    return HibikiListItem(
+      density: HibikiListDensity.compact,
       onTap: onTap,
+      // 条目落在 ListView 里（高度自由），可以安全放宽到两行——番名普遍很长，
+      // 单行 ellipsis 在七列窄栏里只看得到开头几个字。
+      titleMaxLines: 2,
       title: Text(
         episode.media.displayTitle,
         maxLines: 2,
@@ -551,7 +554,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
         border: Border.all(color: color),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: HibikiBorderRadius.chip,
       ),
       child: Text(
         label,

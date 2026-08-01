@@ -4,6 +4,8 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 
+import '../helpers/source_guard.dart';
+
 // BUG-611 / TODO-1308: 竖排(vertical-rl)+滚动(连续)模式下，经目录/书签/搜索跳转后，
 // 振假名(ruby <rt>)塌进基字/正文中间。根因是 html 规则里 legacy WebKit 属性
 // `-webkit-line-box-contain: block glyphs replaced`（从 Hoshi 整体搬来，注释自陈意图是
@@ -16,8 +18,9 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 //
 // 该属性在现代 Blink 上是 no-op，无法在 headless 复现旧引擎的抹除行为，故守卫锁在 CSS
 // 生成层：任何写向/视图模式下生成的正文 CSS 都不得再发出该属性声明。
-String _stripCssComments(String css) =>
-    css.replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '');
+/// 用共享的 CSS 掩码：等长（下标可回原串）、块注释不嵌套（Dart 规则会在
+/// 「注释掉一段本身含注释的规则」时吞掉文件剩余部分，之后断言全对空串跑 ⇒ 静默全绿）。
+String _stripCssComments(String css) => maskCssComments(css);
 
 Future<String> _readerCss({
   required String writingMode,
@@ -61,9 +64,14 @@ void main() {
       final String rawCss =
           await _readerCss(writingMode: 'vertical-rl', viewMode: 'continuous');
       final String stripped = _stripCssComments(rawCss);
-      // 剥注释后不含 → 守卫本体；此断言保证 stripper 真的把注释剥掉了(否则上面的守卫失效)。
-      expect(stripped.length, lessThan(rawCss.length),
-          reason: 'CSS 应含注释，_stripCssComments 必须真的剥掉了内容');
+      // 剥注释后不含 → 守卫本体；下面两条保证 stripper 真的把注释剥掉了(否则上面的
+      // 守卫失效)。判据从「长度变短」改成「内容变了 + 注释标记没了」：共享掩码是
+      // **等长**替换（下标可回原串切片），长度不再变短，旧判据会永远红。
+      expect(stripped.length, rawCss.length,
+          reason: 'maskCssComments 是等长掩码，长度必须守恒');
+      expect(stripped, isNot(rawCss),
+          reason: 'CSS 应含注释，_stripCssComments 必须真的把注释掩掉了');
+      expect(stripped.contains('/*'), isFalse, reason: '掩码后不该再有块注释起始标记');
     });
   });
 }

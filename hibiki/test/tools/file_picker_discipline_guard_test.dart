@@ -33,6 +33,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 统一入口自身——它就是那层分流实现，当然要调 file_picker。
 const String kPickerImpl =
     'lib/src/media/import/real_path_directory_picker.dart';
@@ -94,18 +96,25 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
 /// 所以这里改成正则 `\.\s*<member>\s*\(`（`\s` 跨行）。`getDirectoryPath` /
 /// `pickFiles` 这两个成员名在本仓只属于 file_picker，受体无关匹配不会误伤。
 ///
-/// 只算**真调用**：先剔除整行注释再拼回（`page_focus_ownership.dart` 在文档注释里
+/// 只算**真调用**：注释先换成等长空白（`page_focus_ownership.dart` 在文档注释里
 /// 举例提到了 `FilePicker.platform.pickFiles()`，那不是调用点）。
+///
+/// 剥离用共享的 `maskCommentsAndScriptLines`，而不是旧的「丢掉整行 `//`」。旧写法
+/// 放过块注释与行尾注释，两个方向都会错：
+/// - 注释掉的示例 `/* FilePicker.platform.pickFiles() */` 被当成真调用点 ⇒ 禁止型
+///   断言假红；
+/// - 反过来，把一处真调用暂时注释成 `/* ... */` 后它从命中集合里消失 ⇒「豁免清单
+///   不得虚挂」那两条**要求型**断言凭空变红。
+/// 掩码取旧行式剥离与 Dart 词法掩码的并集：整行 `//`（含三引号 JS/CSS 语料里的）
+/// 照旧掩掉，同时补上块注释与行尾注释。等长掩码保留换行，正则里的 `\s` 仍能跨行
+/// 匹配 `dart format` 折出来的 `FilePicker.platform\n    .pickFiles(`。
 Set<String> _filesCalling(String member) {
   final RegExp call = RegExp(r'\.\s*' + member + r'\s*\(');
   final Directory root = Directory('lib');
   final Set<String> hits = <String>{};
   for (final FileSystemEntity e in root.listSync(recursive: true)) {
     if (e is! File || !e.path.endsWith('.dart')) continue;
-    final String code = e
-        .readAsLinesSync()
-        .where((String line) => !line.trimLeft().startsWith('//'))
-        .join('\n');
+    final String code = maskCommentsAndScriptLines(e.readAsStringSync());
     if (call.hasMatch(code)) hits.add(e.path.replaceAll(r'\', '/'));
   }
   return hits;

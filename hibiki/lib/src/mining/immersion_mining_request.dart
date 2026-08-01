@@ -177,6 +177,22 @@ enum MiningAnimatedFormat {
   int capWidth(int requested) =>
       (requested <= 0 || requested > maxTierWidth) ? maxTierWidth : requested;
 
+  /// 编码尝试链：先试本格式，失败降级 [gif] 再试一次；[gif] 自己只有一次尝试（它是链尾
+  /// 兜底，没有更低一级可降，也恒可用）。
+  ///
+  /// 这与 [maxTierFps]/[maxTierWidth] 是同一手法——**降级链是格式自身的属性**，不是各调用
+  /// 点各写一遍的三元表达式。改动前视频引擎与 galgame 窗口各持一份拷贝，而 Netflix 录制
+  /// 片段那条压根没有链（硬写死 GIF）。三份实现只要漂开一次，就会有一条链路悄悄退回恒 GIF。
+  ///
+  /// ⚠️ 遍历时每次尝试**必须**用 `attempt` 自己的 [capFps]/[capWidth]/[fileExtension] 重新
+  /// 取参：沿用上一个格式的参数（AVIF 顶格档 24fps/1440px）喂给无帧间压缩的 GIF 编码器，
+  /// 正是 BUG-1039 那组「48.9 秒 / 54 MB、撞 120 秒超时」的配置。收口点见
+  /// `extractAnimatedClipWithFallback`。
+  List<MiningAnimatedFormat> get encodeAttempts =>
+      this == MiningAnimatedFormat.gif
+          ? const <MiningAnimatedFormat>[MiningAnimatedFormat.gif]
+          : <MiningAnimatedFormat>[this, MiningAnimatedFormat.gif];
+
   /// 从偏好字符串解析；未知/null → [avif]（新默认）。
   static MiningAnimatedFormat fromWireName(String? name) {
     for (final MiningAnimatedFormat format in MiningAnimatedFormat.values) {

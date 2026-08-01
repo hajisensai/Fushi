@@ -2,6 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
+import 'package:hibiki/src/mining/immersion_mining_engine.dart'
+    show
+        AnimatedClipExtraction,
+        AudioExtractor,
+        GifExtractor,
+        extractAnimatedClipWithFallback;
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/sync/immersion_mine_payload.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
@@ -43,14 +49,34 @@ abstract final class ImmersionCaptureChannel {
 }
 
 class ImmersionCaptureResult {
-  const ImmersionCaptureResult({this.gifBytes, this.audioBytes, this.error});
+  const ImmersionCaptureResult({
+    this.gifBytes,
+    this.audioBytes,
+    this.error,
+    this.animatedFormat = MiningAnimatedFormat.gif,
+  });
 
+  /// 动图封面字节。字段名与 MethodChannel 的 wire key `gifBytes` 一样是历史名，**不代表
+  /// 内容一定是 GIF**——实际格式看 [animatedFormat]。wire key 是 native 契约，冻结不改。
   final Uint8List? gifBytes;
   final Uint8List? audioBytes;
   final String? error;
 
+  /// [gifBytes] **实际被编码成的**格式（不是用户选的那个）。
+  ///
+  /// 必须随字节一起带出来：[transcodeClipToCapture] 在首选格式的编码器缺失时会降级 GIF，
+  /// 调用方若按用户偏好拼文件名，就会写出 `netflix_clip.avif` 里装 GIF 字节的卡（Anki 按
+  /// 扩展名判 MIME → 封面显示不出来）。与 galgame 侧 `GalWindowAnimatedCapture` 同形。
+  ///
+  /// 默认 [MiningAnimatedFormat.gif]：截图降级（无动图）与 native 后台实例路径都只可能
+  /// 是 GIF，此时该字段不参与文件名（见 [buildImmersionRequest] 的 `coverIsAnimated`）。
+  final MiningAnimatedFormat animatedFormat;
+
   bool get ok => error == null;
 
+  /// native 后台软解实例（[ImmersionCaptureChannel.capture]）的 wire 契约里只有 GIF 字节，
+  /// 没有格式字段 —— 那条链路的编码在 native 侧写死 GIF。故这里恒取默认 gif，不去猜。
+  /// 将来 native 支持多格式时，在 wire 上补 `format` 键并在此解析。
   static ImmersionCaptureResult fromMap(Map<Object?, Object?> m) =>
       ImmersionCaptureResult(
         gifBytes: m['gifBytes'] as Uint8List?,
@@ -78,7 +104,7 @@ ImmersionMiningRequest buildImmersionRequest(
   final bool useCapture = cap.ok;
   final Uint8List? cover =
       useCapture ? (cap.gifBytes ?? p.screenshotBytes) : p.screenshotBytes;
-  final bool coverIsGif = useCapture && cap.gifBytes != null;
+  final bool coverIsAnimated = useCapture && cap.gifBytes != null;
   final Uint8List? audio = useCapture ? cap.audioBytes : null;
   return ImmersionMiningRequest(
     fields: p.fields,
@@ -90,7 +116,11 @@ ImmersionMiningRequest buildImmersionRequest(
     documentTitle: p.documentTitle ?? 'Netflix',
     source: AnkiMiningSource.video,
     providedCoverBytes: cover,
-    providedCoverName: coverIsGif ? 'netflix_clip.gif' : 'netflix_shot.jpg',
+    // 扩展名跟随**实际产出格式**，不是用户所选：编码器缺失时捕获内部已降级 GIF，按所选
+    // 格式拼名会写出 `.avif` 里装 GIF 字节的卡（Anki 按扩展名判 MIME → 封面不显示）。
+    providedCoverName: coverIsAnimated
+        ? 'netflix_clip.${cap.animatedFormat.fileExtension}'
+        : 'netflix_shot.jpg',
     providedAudioBytes: audio,
     providedAudioName: audio == null
         ? null
@@ -110,11 +140,22 @@ ImmersionMiningRequest buildImmersionRequest(
 /// V16#4：之前本函数的段内时间窗 + GIF 收口偏移参数是无来源死代码（扩展 mineClip 从不发这些偏
 /// 移，Netflix clip 一直回落整段），已删。若将来加入「实时查词捕获」模型（非批量、播放中查词冻结
 /// 帧），届时再重新引入段内句子窗 + GIF 收口到查词交互前的偏移；批量录制路径不适用。
+///
+/// [format] 是用户的动图格式偏好（`video_mining_animated_format`）。这条链路过去把输出
+/// 硬写成 `clip.gif` 且不传 format，导致扩展制卡恒出 GIF、完全不吃偏好；现在与 app 内
+/// 视频、YouTube 共用 [extractAnimatedClipWithFallback]，格式与编码参数成对下发，编码器
+/// 缺失（移动端 ffmpeg-kit 无 libsvtav1/libwebp）时自动降级 GIF 并**同时换回 GIF 的封顶
+/// 参数**，产出格式经 [ImmersionCaptureResult.animatedFormat] 带回给文件名。
+///
+/// [gifExtractor] / [audioExtractor] 供测试注入，默认指向 ffmpeg 真身。
 Future<ImmersionCaptureResult> transcodeClipToCapture(
   Uint8List clipBytes, {
   required int durationMs,
   required MiningMediaCompression compression,
   required String tempDir,
+  MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+  GifExtractor gifExtractor = extractClipGifViaFfmpeg,
+  AudioExtractor audioExtractor = extractAudioSegmentViaFfmpeg,
 }) async {
   final Directory dir = Directory('$tempDir/nf_clip_${clipBytes.length}');
   await dir.create(recursive: true);
@@ -122,15 +163,18 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
     final File clip = File('${dir.path}/clip.webm');
     await clip.writeAsBytes(clipBytes, flush: true);
     final int endMs = durationMs > 0 ? durationMs : 6000;
-    final String? gifPath = await extractClipGifViaFfmpeg(
+    // 输出扩展名由每次尝试的格式补（ffmpeg 按扩展名选 muxer），故这里只给不含扩展名的前缀。
+    final AnimatedClipExtraction? animated =
+        await extractAnimatedClipWithFallback(
+      format: format,
       inputPath: clip.path,
       startMs: 0,
       endMs: endMs,
-      outputPath: '${dir.path}/clip.gif',
-      fps: compression.gifFps,
-      width: compression.gifWidth,
+      outputPathStem: '${dir.path}/clip',
+      compression: compression,
+      extractor: gifExtractor,
     );
-    final String? audioPath = await extractAudioSegmentViaFfmpeg(
+    final String? audioPath = await audioExtractor(
       inputPath: clip.path,
       startMs: 0,
       endMs: endMs,
@@ -139,14 +183,19 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
       audioBitrate: compression.audioBitrate,
     );
     final Uint8List? gif =
-        gifPath != null ? await File(gifPath).readAsBytes() : null;
+        animated != null ? await File(animated.path).readAsBytes() : null;
     final Uint8List? audio =
         audioPath != null ? await File(audioPath).readAsBytes() : null;
     if (gif == null && audio == null) {
       return const ImmersionCaptureResult(
           error: 'clip transcode produced nothing');
     }
-    return ImmersionCaptureResult(gifBytes: gif, audioBytes: audio);
+    return ImmersionCaptureResult(
+      gifBytes: gif,
+      audioBytes: audio,
+      // 实际产出格式（可能已降级），不是用户所选。gif==null 时不参与文件名。
+      animatedFormat: animated?.format ?? MiningAnimatedFormat.gif,
+    );
   } catch (e) {
     return ImmersionCaptureResult(error: 'clip transcode failed: $e');
   } finally {

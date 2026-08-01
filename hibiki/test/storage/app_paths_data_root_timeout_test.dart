@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -6,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/storage/app_paths.dart';
+
+import '../helpers/source_guard.dart';
 
 /// TODO-1260 / BUG-815：自定义数据根**掉线盘**的启动契约。
 ///
@@ -127,20 +128,21 @@ void main() {
     expect(f, isNotNull, reason: 'app_paths.dart not found');
     final String src = f!.readAsStringSync();
 
+    // 先把注释换成**等长空白**（共享 `maskComments`）再定位与切片：注释里会
+    // **提到** existsSync 解释旧代码为何被换掉，连注释一起扫会误红；反过来旧的
+    // 行式剥离（只丢整行 `//`）放过块注释与行尾注释，把 `.exists().timeout(` 塞进
+    // `/* */` 就能把下面那条要求型断言骗绿。等长掩码同时保证下标仍对齐原文。
+    final String code = maskComments(src);
+
     // 抽出 _probeDataRootExists **函数定义体**做定向断言（锚定 signature，避免抓到
     // resolve() 里的调用点；也避免误伤其它无关 existsSync 用法）。
-    final int start = src.indexOf('static Future<bool> _probeDataRootExists(');
+    final int start = code.indexOf('static Future<bool> _probeDataRootExists(');
     expect(start, greaterThanOrEqualTo(0),
         reason: '找不到 _probeDataRootExists 定义 —— 探测函数被改名/移除？');
     // 到下一个静态解析函数（_resolveDataRoot 定义）为止的片段。
     final int end =
-        src.indexOf('static Future<Directory?> _resolveDataRoot(', start);
-    final String rawBody = src.substring(start, end < 0 ? src.length : end);
-    // 剥掉注释行再扫描（注释里会**提到** existsSync 解释旧代码为何被换掉）。
-    final String body = const LineSplitter()
-        .convert(rawBody)
-        .where((String line) => !line.trimLeft().startsWith('//'))
-        .join(' ');
+        code.indexOf('static Future<Directory?> _resolveDataRoot(', start);
+    final String body = code.substring(start, end < 0 ? code.length : end);
 
     expect(body.contains('existsSync()'), isFalse,
         reason: '掉线盘上同步 existsSync() 会阻塞主 isolate → 无限加载，禁止回归');

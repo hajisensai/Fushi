@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:hibiki/src/media/torrent/download_save_root.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
+import 'package:hibiki/src/media/torrent/torrent_task_display.dart';
 import 'package:hibiki_torrent/hibiki_torrent.dart';
 
 /// [TorrentBackend] 的内置 libtorrent 实现（阶段1b：Windows 先行）。
@@ -19,7 +20,10 @@ import 'package:hibiki_torrent/hibiki_torrent.dart';
 ///   上层服务本就以 20s tick 轮询，无需额外定时器。
 /// - close 只关本后端持有的 session；引擎（DLL）进程级共享不关。
 class EmbeddedTorrentBackend
-    implements TorrentRemovalBackend, TorrentPauseBackend {
+    implements
+        TorrentRemovalBackend,
+        TorrentPauseBackend,
+        TorrentDetailBackend {
   EmbeddedTorrentBackend({
     required EmbeddedTorrentSession session,
     required TorrentSaveRoots saveRoots,
@@ -173,6 +177,130 @@ class EmbeddedTorrentBackend
       _pauseControl?.isPaused(infoHash) ??
       _localPaused.contains(infoHash.toLowerCase());
 
+  // ── TODO-2482：TorrentDetailBackend（详情页数据面）──────────────────
+
+  /// 详情批次与随包 DLL 的符号组绑定；老 DLL 缺符号时 false（UI 显示
+  /// 「当前后端不支持」而不是空白）。
+  @override
+  bool get detailAvailable => _session.supportsDetailInfo;
+
+  @override
+  Future<List<TorrentPeerDetail>?> listPeers(String torrentId) async {
+    final List<HtPeerInfo>? peers = _session.torrentPeers(torrentId);
+    if (peers == null) return null;
+    return peers
+        .map(
+          (HtPeerInfo p) => TorrentPeerDetail(
+            address: p.ip,
+            port: p.port,
+            client: p.client,
+            progress: p.progress,
+            downSpeedBps: p.downSpeed,
+            upSpeedBps: p.upSpeed,
+            // 语义对齐 qb：downloaded = 从该 peer 下到的字节（native
+            // total_download 同义）、uploaded = 喂给该 peer 的字节。
+            downloadedBytes: p.totalDownload,
+            uploadedBytes: p.totalUpload,
+            flags: formatTorrentPeerFlags(p.flagsBits),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<TorrentTrackerDetail>?> listTrackers(String torrentId) async {
+    final List<HtTrackerInfo>? trackers = _session.torrentTrackers(torrentId);
+    if (trackers == null) return null;
+    return trackers
+        .map(
+          (HtTrackerInfo t) => TorrentTrackerDetail(
+            url: t.url,
+            tier: t.tier,
+            status: t.updating
+                ? TorrentTrackerStatus.updating
+                : t.working
+                    ? TorrentTrackerStatus.working
+                    : (t.fails > 0 || t.lastError.isNotEmpty)
+                        ? TorrentTrackerStatus.notWorking
+                        : TorrentTrackerStatus.notContacted,
+            seeds: t.scrapeComplete,
+            leeches: t.scrapeIncomplete,
+            downloaded: t.scrapeDownloaded,
+            message: t.message.isNotEmpty ? t.message : t.lastError,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  /// libtorrent download_priority（0~7）→ 三态。1~5 归 normal、6~7 归
+  /// high（与 qb 的 filePrio 值域折叠口径一致）。
+  @override
+  Future<List<TorrentFilePriority>?> filePriorities(String torrentId) async {
+    final List<int>? raw = _session.getFilePriorities(torrentId);
+    if (raw == null) return null;
+    return raw
+        .map(
+          (int p) => p <= 0
+              ? TorrentFilePriority.skip
+              : p >= 6
+                  ? TorrentFilePriority.high
+                  : TorrentFilePriority.normal,
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<bool> setFilePriority(
+    String torrentId,
+    int fileIndex,
+    TorrentFilePriority priority,
+  ) async {
+    final int value = switch (priority) {
+      TorrentFilePriority.skip => 0,
+      TorrentFilePriority.normal => 4,
+      TorrentFilePriority.high => 7,
+    };
+    return _session.setFilePriority(torrentId, fileIndex, value);
+  }
+
+  @override
+  Future<TorrentSessionStatusInfo?> sessionStatus() async {
+    final HtSessionStatus? status = _session.sessionStatus();
+    if (status == null) return null;
+    return TorrentSessionStatusInfo(
+      dhtEnabled: status.dhtRunning,
+      dhtNodes: status.dhtNodes,
+      lsdEnabled: status.lsdEnabled,
+      pexEnabled: status.pexEnabled,
+      listenPort: status.listenPort,
+      downRateBps: status.downRate,
+      upRateBps: status.upRate,
+      portMappings: status.portMappings
+          .map(
+            (HtPortMapping m) => TorrentPortMappingInfo(
+              transport: m.transport,
+              protocol: m.protocol,
+              externalPort: m.externalPort,
+              ok: m.ok,
+              error: m.error,
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  /// 内置引擎位图只有持有/未持有两态：'1' → 2（已持有）、'0' → 0（缺）。
+  @override
+  Future<TorrentPieceStates?> pieceStates(String torrentId) async {
+    final HtPieceMap? map = _session.torrentPieces(torrentId);
+    if (map == null) return null;
+    return TorrentPieceStates(
+      states: map.have.codeUnits
+          .map((int c) => c == 0x31 ? 2 : 0)
+          .toList(growable: false),
+    );
+  }
+
   @override
   Future<TorrentStorageResult> renameFile(
     String torrentId,
@@ -230,6 +358,14 @@ class EmbeddedTorrentBackend
       downloadedBytes: t.downloaded,
       uploadedBytes: t.uploaded,
       numPeers: t.numPeers,
+      // TODO-2482：详情拆分字段（老 DLL 缺键时 -1 原样透传 = 未提供）。
+      numSeeds: t.numSeeds,
+      numLeechs: t.numSeeds >= 0 ? t.numPeers - t.numSeeds : -1,
+      swarmSeeds: t.numComplete,
+      swarmLeechs: t.numIncomplete,
+      numConnections: t.numConnections,
+      activeDurationSeconds: t.activeDurationSeconds,
+      seedingDurationSeconds: t.seedingDurationSeconds,
     );
   }
 }

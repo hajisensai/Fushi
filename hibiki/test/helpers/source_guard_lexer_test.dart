@@ -95,6 +95,34 @@ final b = \'\'\'{ js }\'\'\';
       expect(maskCssComments(css).contains('needleToken'), isFalse);
       expect(maskCssComments(css).contains('color: red'), isTrue);
     });
+
+    test('CSS 块注释**不嵌套**：首个 */ 就收口，不吞掉文件剩余部分', () {
+      // 「注释掉一段本身含注释的规则」是真实会发生的编辑动作。按 Dart 的嵌套规则扫，
+      // 深度永远回不到 0 ⇒ 后半个文件整段被当注释 ⇒ 之后所有断言对着空串跑，静默全绿。
+      const String css = '/* off: .x { /* why */ } */ .keep { color: red; }';
+      final String masked = maskCssComments(css);
+      expect(masked.length, css.length);
+      expect(masked.contains('.keep { color: red; }'), isTrue,
+          reason: '首个 */ 之后的规则必须留下来');
+    });
+
+    test('maskHtmlComments 等长，且位置下标与原文一致', () {
+      const String html =
+          '<head><!-- needleToken --><meta charset="utf-8"><script src="a.js">';
+      final String masked = maskHtmlComments(html);
+      expect(masked.length, html.length);
+      expect(masked.contains('needleToken'), isFalse);
+      expect(masked.indexOf('<meta'), html.indexOf('<meta'),
+          reason: '删除式剥离会让下标漂移，位置型断言（meta 是否在 script 之前）'
+              '就无法回原文取证');
+      expect(masked.indexOf('<meta'), lessThan(masked.indexOf('<script')));
+    });
+
+    test('HTML 注释里的 <script> 不算真标签', () {
+      const String html =
+          '<!-- <script src="fake.js"> --><meta charset="utf-8">';
+      expect(maskHtmlComments(html).contains('<script'), isFalse);
+    });
   });
 
   group('④ methodBody 的词法边界', () {
@@ -301,6 +329,107 @@ final String js = \'\'\'
         maskCommentsAndScriptLines(src).contains('https://hoshi.local/x'),
         isTrue,
       );
+    });
+
+    test('串里的**行尾** JS 注释与块注释也被掩掉（旧版只认整行 //）', () {
+      const String tail = '''
+final String js = \'\'\'
+  paginate('forward'); // needleTail
+  /* needleBlock */
+  const ok = 1;
+\'\'\';
+''';
+      final String masked = maskCommentsAndScriptLines(tail);
+      expect(masked.length, tail.length);
+      expect(masked.contains('needleTail'), isFalse);
+      expect(masked.contains('needleBlock'), isFalse);
+      expect(masked.contains('const ok = 1'), isTrue);
+      expect(masked.contains("paginate('forward')"), isTrue);
+    });
+
+    test('串里 JS 正则字面量的 // 不再把整行砍掉', () {
+      const String withRegex = '''
+final String js = \'\'\'
+  const bare = url.replace(/^https?:\\/\\//i, ''); needleAfterRegex;
+\'\'\';
+''';
+      final String masked = maskCommentsAndScriptLines(withRegex);
+      expect(masked.contains('needleAfterRegex'), isTrue,
+          reason: '正则里的 // 被当行注释 ⇒ 从这里到行尾整段消失 ⇒ 要求型断言假红、'
+              '禁止型断言假绿');
+    });
+  });
+
+  group('maskJsComments：JS 专用词法（模板串 / 正则 / 行尾注释）', () {
+    test('等长且行数守恒', () {
+      const String js = 'const a = `x \${v}`; // t\n/* b */ const c = 2;\n';
+      expect(maskJsComments(js).length, js.length);
+      expect(maskJsComments(js).split('\n').length, js.split('\n').length);
+      expect(maskJsCommentsAndStrings(js).length, js.length);
+    });
+
+    test('行注释与块注释被掩掉', () {
+      expect(maskJsComments('a(); // needleToken\n').contains('needleToken'),
+          isFalse);
+      expect(maskJsComments('a(); /* needleToken */\n').contains('needleToken'),
+          isFalse);
+      expect(maskJsComments('a(); // x\n').contains('a();'), isTrue);
+    });
+
+    test('正则字面量里的 // 不被当注释（maskComments 会砍，这是它的洞）', () {
+      const String js = r"const s = u.replace(/^https?:\/\//i, ''); keepMe;";
+      expect(maskJsComments(js).contains('keepMe'), isTrue);
+      expect(maskComments(js).contains('keepMe'), isFalse,
+          reason: 'Dart 掩码在 JS 正则上必然出错——这正是需要独立 JS 原语的原因');
+    });
+
+    test('字符类里的 / 不收口正则', () {
+      const String js = r'const re = /[a-z/]+/g; keepMe;';
+      expect(maskJsComments(js).contains('keepMe'), isTrue);
+    });
+
+    test('除号不被误当正则起点（否则会把后面整段吞成正则）', () {
+      const String js = 'const half = (a + b) / 2; const q = c / d; keepMe;';
+      expect(maskJsComments(js), js);
+    });
+
+    test('模板串内容保留，插值里的注释仍被掩掉', () {
+      const String js = r'const t = `a ${f(/* needleToken */ 1)} b`; keepMe;';
+      final String masked = maskJsComments(js);
+      expect(masked.contains('needleToken'), isFalse);
+      expect(masked.contains('`a '), isTrue);
+      expect(masked.contains('keepMe'), isTrue);
+    });
+
+    test('模板串里的 // 不被当注释', () {
+      const String js = 'const t = `https://x/y`; keepMe;';
+      expect(maskJsComments(js).contains('keepMe'), isTrue);
+    });
+
+    test('maskJsCommentsAndStrings 掩掉串内容但保留结构括号', () {
+      const String js = "function f() { const s = '}{'; return 1; }";
+      final String structural = maskJsCommentsAndStrings(js);
+      expect(structural.length, js.length);
+      expect(structural.contains('}{'), isFalse,
+          reason: '串里的花括号必须退出配对，否则 methodBody 当场跑偏');
+      expect(structural.contains('function f()'), isTrue);
+    });
+
+    test('methodBody(lexicon: js) 用 JS 词法取函数体', () {
+      const String js = '''
+function target() {
+  const re = /\\}\\{/g;      // 正则里的花括号不该收口
+  const s = `a \${x} }`;    // 模板串里的也不该
+  return 'realBody';
+}
+function next() {
+  return 'sentinel';
+}
+''';
+      final String body =
+          methodBody(js, 'function target()', lexicon: SourceLexicon.js);
+      expect(body.contains("'realBody'"), isTrue);
+      expect(body.contains('sentinel'), isFalse, reason: '不能越界吞掉下一个函数');
     });
   });
 }

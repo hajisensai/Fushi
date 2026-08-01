@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-1308 问题②（BUG-696）源码守卫：导航跳转落章节开头的三个根因不得回归。
 ///
 /// 用户复诉「跳转后还是没到对应文字位置，只在章节开头」。三个根因（均已真机路径核实）：
@@ -81,11 +83,13 @@ void main() {
   });
 
   test('根因②：搜索跳转连续兜底不得做 surroundContents DOM 手术', () {
-    // 剥掉行注释后断言（修复说明注释里提到旧 API 名不算回归）。
-    final String code = js
-        .split('\n')
-        .where((String line) => !line.trimLeft().startsWith('//'))
-        .join('\n');
+    // 剥掉注释后断言（修复说明注释里提到旧 API 名不算回归）。
+    //
+    // `js` 是**装着 JS 的 Dart 文件**（三引号串里注入脚本），所以用
+    // maskCommentsAndScriptLines：Dart 注释 + 串内 JS 注释一起掩，且等长。
+    // 旧写法只丢「整行以 // 开头」的行，`/* surroundContents */` 这种块注释一概放行，
+    // 也吃不掉行尾注释——本条是禁止型断言，那两个洞会让它误判成红/被绕过。
+    final String code = maskCommentsAndScriptLines(js);
     expect(code.contains('surroundContents'), isFalse,
         reason: 'range.surroundContents 在 rb/rtc 形态书上跨基字命中时抛 '
             'InvalidStateError → 跨章搜索停在章节开头（BUG-696 根因②）；'

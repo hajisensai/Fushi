@@ -15,6 +15,7 @@ import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_schema.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import '../helpers/source_guard.dart';
 import '../helpers/test_platform_services.dart';
 
 /// TODO-180：快捷键是全局输入配置，不属于阅读设置；入口必须位于「系统」
@@ -155,15 +156,19 @@ void main() {
         .replaceAll('\r\n', '\n');
     // 入口的 onTap 推 ShortcutSettingsPage，且推它的那行不能是注释行
     // （旧隐藏态是整块 `// SettingsNavigationItem(...)` 注释）。
-    expect(source, contains('const ShortcutSettingsPage()'),
-        reason: '入口应推 ShortcutSettingsPage');
-    final List<String> activePageLines = source
+    //
+    // 注释剥离改用共享的 `maskComments`（换等长空白）：旧写法只跳整行 `//`，
+    // 把整块入口改写成 `/* SettingsNavigationItem(...) */` 就能骗绿。
+    final String code = maskComments(source);
+    expect(code, contains('const ShortcutSettingsPage()'),
+        reason: '入口应推 ShortcutSettingsPage（注释里的同名文本不算）');
+    final List<String> activePageLines = code
         .split('\n')
         .where((String line) => line.contains('ShortcutSettingsPage'))
-        .where((String line) => !line.trimLeft().startsWith('//'))
         .toList();
     expect(activePageLines, isNotEmpty,
         reason: '推 ShortcutSettingsPage 的那行必须是未注释的真实代码');
+    // 这一条**必须**扫原文：它守的正是「旧隐藏态的那段注释」已被删除。
     expect(source, isNot(contains('快捷键设置入口暂时隐藏')), reason: '旧的「暂时隐藏」注释应已移除');
   });
 }

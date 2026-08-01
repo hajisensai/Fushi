@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-738 守卫：查词弹窗宿主 HTML 必须在任何外链 `<script>` 之前显式声明 UTF-8。
 ///
 /// 根因：Android 从 `file:///android_asset/...` 加载 popup.html（无 HTTP charset 头），
@@ -41,8 +43,9 @@ void main() {
 
       test('<meta charset> 出现在第一个 <script> 之前（否则对外链脚本无效）', () {
         // 先剥掉 HTML 注释——本文件的说明注释里出现了字面 "<script>"，不能算真标签。
-        final String noComments =
-            html.replaceAll(RegExp(r'<!--.*?-->', dotAll: true), '');
+        // 等长掩码：metaAt / scriptAt 的下标与原文一致，出错时能直接回原文取证
+        // （删除式剥离只在删完的串里自洽）。
+        final String noComments = maskHtmlComments(html);
         final int metaAt = noComments.indexOf(charsetMeta);
         final int scriptAt = noComments.indexOf(firstScript);
         // 无外链脚本的宿主天然不受影响，跳过顺序断言。

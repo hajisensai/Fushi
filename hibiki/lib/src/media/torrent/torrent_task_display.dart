@@ -132,3 +132,70 @@ String? formatShareRatio({
   final double ratio = uploadedBytes / downloadedBytes;
   return ratio.toStringAsFixed(2);
 }
+
+/// TODO-2482：内置引擎 peer flags 稳定位掩码的位定义（与
+/// `native/hibiki_torrent/hibiki_torrent_include/hibiki_torrent.h` 的
+/// ht_torrent_peers 契约逐位对齐，改一处必须改两处）。
+class TorrentPeerFlagBits {
+  TorrentPeerFlagBits._();
+
+  /// 我们对该 peer 的数据感兴趣。
+  static const int interesting = 1 << 0;
+
+  /// 我们 choke 了该 peer（不给它上传）。
+  static const int choked = 1 << 1;
+
+  /// 该 peer 对我们的数据感兴趣。
+  static const int remoteInterested = 1 << 2;
+
+  /// 该 peer choke 了我们（不给我们下载）。
+  static const int remoteChoked = 1 << 3;
+
+  static const int supportsExtensions = 1 << 4;
+  static const int outgoingConnection = 1 << 5;
+  static const int handshake = 1 << 6;
+  static const int connecting = 1 << 7;
+  static const int onParole = 1 << 8;
+  static const int seed = 1 << 9;
+  static const int optimisticUnchoke = 1 << 10;
+  static const int snubbed = 1 << 11;
+  static const int uploadOnly = 1 << 12;
+  static const int endgameMode = 1 << 13;
+  static const int holepunched = 1 << 14;
+  static const int utpSocket = 1 << 15;
+  static const int sslSocket = 1 << 16;
+  static const int rc4Encrypted = 1 << 17;
+  static const int plaintextEncrypted = 1 << 18;
+}
+
+/// 内置引擎的 peer flags 位掩码 → qb WebUI 风格字母串（空格分隔）。
+///
+/// 字母表对齐 qBittorrent（用户已有的认知模型）：
+/// `D`/`d` 在下载/想下但被对端 choke、`U`/`u` 在上传/对端想要但被我们
+/// choke、`K` 对端没 choke 我们但我们不感兴趣、`?` 我们没 choke 对端但
+/// 对端不感兴趣、`O` 乐观解锁、`S` snubbed、`I` 入站连接、`E` RC4 加密、
+/// `e` 明文加密、`P` uTP、`H` 洞穿。全 0（老 DLL 无该字段）返回空串。
+String formatTorrentPeerFlags(int flagsBits) {
+  if (flagsBits == 0) return '';
+  bool has(int bit) => (flagsBits & bit) != 0;
+  final bool interesting = has(TorrentPeerFlagBits.interesting);
+  final bool choked = has(TorrentPeerFlagBits.choked);
+  final bool remoteInterested = has(TorrentPeerFlagBits.remoteInterested);
+  final bool remoteChoked = has(TorrentPeerFlagBits.remoteChoked);
+  final List<String> out = <String>[
+    if (interesting && !remoteChoked) 'D',
+    if (interesting && remoteChoked) 'd',
+    if (remoteInterested && !choked) 'U',
+    if (remoteInterested && choked) 'u',
+    if (!interesting && !remoteChoked) 'K',
+    if (!remoteInterested && !choked) '?',
+    if (has(TorrentPeerFlagBits.optimisticUnchoke)) 'O',
+    if (has(TorrentPeerFlagBits.snubbed)) 'S',
+    if (!has(TorrentPeerFlagBits.outgoingConnection)) 'I',
+    if (has(TorrentPeerFlagBits.rc4Encrypted)) 'E',
+    if (has(TorrentPeerFlagBits.plaintextEncrypted)) 'e',
+    if (has(TorrentPeerFlagBits.utpSocket)) 'P',
+    if (has(TorrentPeerFlagBits.holepunched)) 'H',
+  ];
+  return out.join(' ');
+}

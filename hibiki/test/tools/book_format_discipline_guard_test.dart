@@ -27,6 +27,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import '../helpers/source_guard.dart';
+
 /// DAO 所在文件（相对 `hibiki/`，故要跳出去一层）。
 const String kDaoFile =
     '../packages/hibiki_core/lib/src/database/database.dart';
@@ -49,19 +51,25 @@ const List<String> _kFrozenHistoryValueFiles = <String>[
   'test/database/migration_v53_manga_reading_mode_test.dart',
 ];
 
-/// 读取并**剥掉整行注释**后的代码文本。
+/// 读取并把注释换成**等长空白**后的代码文本（共享 `maskComments`）。
 ///
 /// 结构断言一律走它：讲「此前是什么写法、为什么改」的注释是资产，但注释里出现
 /// `format == 'manga'` 不该算违规，反过来注释也不能冒充真声明。
-String _codeOf(String path) => File(path)
-    .readAsLinesSync()
-    .where((String l) => !l.trimLeft().startsWith('//'))
-    .join('\n');
+///
+/// 旧写法是「丢掉整行 `//`」，两个洞：`/* required BookFormat format */` 这类块
+/// 注释一概放行（把要求型断言骗绿），行尾注释也漏剪。掩码与原文逐字节等长，故
+/// 下面 `indexOf` + `substring` 切签名的窗口语义不变。
+String _codeOf(String path) => maskComments(File(path).readAsStringSync());
 
 /// 扫 [roots] 下所有 .dart 的非注释行，返回命中 [pattern] 的 `文件:行号`。
 ///
 /// 跳过 drift 生成文件：`database.g.dart` 里 `format: Value(format)` 这类是生成器
 /// 按表定义产出的搬运代码，不是人写的落库点，禁它只会逼人去改生成文件。
+///
+/// 剥离用 `maskCommentsAndScriptLines`（等长空白）：它是旧行式剥离与 Dart 词法
+/// 掩码的**并集**——既补上块注释 / 行尾注释两个洞，又保留旧行为里「三引号 JS/CSS
+/// 语料中整行 `//` 也算注释」这一条，扫 `lib/src/reader/` 时不会凭空多出命中。
+/// 掩码等长且不改行数，`i + 1` 仍是原文真实行号。
 List<String> _codeHits(List<String> roots, RegExp pattern) {
   final List<String> hits = <String>[];
   for (final String root in roots) {
@@ -72,9 +80,9 @@ List<String> _codeHits(List<String> roots, RegExp pattern) {
       final String rel = e.path.replaceAll(r'\', '/');
       if (rel.endsWith('.g.dart') || rel.endsWith(kSelfPath)) continue;
       if (_kFrozenHistoryValueFiles.any(rel.endsWith)) continue;
-      final List<String> lines = e.readAsLinesSync();
+      final List<String> lines =
+          maskCommentsAndScriptLines(e.readAsStringSync()).split('\n');
       for (int i = 0; i < lines.length; i++) {
-        if (lines[i].trimLeft().startsWith('//')) continue;
         if (pattern.hasMatch(lines[i])) hits.add('$rel:${i + 1}');
       }
     }

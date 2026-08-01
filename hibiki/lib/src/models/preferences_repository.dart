@@ -930,10 +930,16 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 视频条目自动刮削开关：默认开启。开则进视频页 / 新视频入库后后台静默向
-  /// Bangumi 拉条目资料（封面 + 简介/评分/放送/标签），关则完全不发这些请求
-  /// （已刮到的资料保留，手动「重新刮削」仍可用）。给不希望库信息自动出网的用户
-  /// 一个明确的总闸——自动化取代手动按钮后，没有开关就等于没得关。
+  /// 视频条目自动刮削开关：默认开启。开则进视频页 / 新视频入库后后台静默拉条目
+  /// 资料（封面 + 简介/评分/放送/标签），关则完全不发这些请求（已刮到的资料保留，
+  /// 手动「重新刮削」仍可用）。给不希望库信息自动出网的用户一个明确的总闸——
+  /// 自动化取代手动按钮后，没有开关就等于没得关。
+  ///
+  /// ⚠️ 出网面**不止 Bangumi**：`CoverScraperService._resolveBestDecision` 按代价
+  /// 逐层兜底 离线库 → Bangumi → TMDB（随包内置 key，无需用户配置）→ AniList →
+  /// Jikan/MAL，命中 high 即停。命中早的条目只碰 Bangumi，前几层都没把握的条目会把
+  /// 解析出的标题依次发给全部四家。改这条链路时同步改本注释——「只发 Bangumi」的
+  /// 旧描述会让用户以为总闸管的是一家。
   /// getPref 仅在该 key 从未写过时返回默认 true。
   bool get videoAutoScrape =>
       getPref('video_auto_scrape', defaultValue: true) as bool;

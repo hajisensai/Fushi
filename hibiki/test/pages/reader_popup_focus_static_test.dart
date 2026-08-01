@@ -11,7 +11,9 @@ import 'reader_hibiki_page_source_corpus.dart';
 /// - reader/popup 的 WebView 字级 caret 属于焦点导航，必须跟随全局焦点导航开关。
 void main() {
   final String source = readReaderPageSource();
-  final String code = _collapse(_stripDartLineComments(source));
+  // 注意：`source` 必须保持原文——下面 _functionSource 的**结束锚点就是一行注释**
+  // （`  // ── Helpers`），掩码后那个锚点会消失。只有做符号匹配的 `code` 走掩码。
+  final String code = _collapse(maskCommentsAndScriptLines(source));
 
   test('popup header toolbar uses Hibiki focus-aware icon buttons', () {
     final String popupHeader = _functionSource(
@@ -91,10 +93,12 @@ String _functionSource(String source, String start, String end) {
   return source.substring(startIndex, endIndex);
 }
 
-String _stripDartLineComments(String source) => source
-    .split('\n')
-    .where((String line) => !line.trimLeft().startsWith('//'))
-    .join('\n');
-
+/// 折叠连续空白，便于匹配被 dart format 折行的多行表达式。
+///
+/// 注释剥离改用共享的 [maskCommentsAndScriptLines]：本语料含 `webview.part.dart`
+/// 三引号串里的大段 JS，需要 Dart 词法掩码（吃掉 `/* */` 块注释与行尾注释——原来的
+/// 本地 `_stripDartLineComments` 只丢整行 `//`，把 `_focusNavEnabled` 那些接线整段
+/// 包进 `/* */` 就能骗绿）叠加「整行 `//`」规则（吃掉串内 JS 注释）。掩码等长，
+/// 折叠后注释只塌成一个空格，跨行匹配行为不变。
 String _collapse(String source) =>
     source.replaceAll(RegExp(r'\s+'), ' ').trim();

@@ -18,6 +18,13 @@ class TorrentSnapshot {
     this.downloadedBytes = 0,
     this.uploadedBytes = 0,
     this.numPeers = 0,
+    this.numSeeds = -1,
+    this.numLeechs = -1,
+    this.swarmSeeds = -1,
+    this.swarmLeechs = -1,
+    this.numConnections = -1,
+    this.activeDurationSeconds = -1,
+    this.seedingDurationSeconds = -1,
   });
 
   /// 种子 infohash（小写十六进制），后续查文件列表用。
@@ -56,6 +63,31 @@ class TorrentSnapshot {
 
   /// 当前连接的 peer 数。
   final int numPeers;
+
+  /// TODO-2482：以下为详情页拆分字段，`-1` = 后端未提供（旧 DLL / 旧 qb /
+  /// 解析缺字段）。[numPeers] 保持「已连接 peer 总数（含 seed）」的旧语义
+  /// 不变，既有消费方不迁移。
+  ///
+  /// 已连接的 seed 数（qb `num_seeds` / native `num_seeds`）。
+  final int numSeeds;
+
+  /// 已连接的 leecher 数（qb `num_leechs`；native 侧 = peers - seeds）。
+  final int numLeechs;
+
+  /// swarm 总 seed 数（tracker scrape；qb `num_complete`）。
+  final int swarmSeeds;
+
+  /// swarm 总 leecher 数（tracker scrape；qb `num_incomplete`）。
+  final int swarmLeechs;
+
+  /// 连接数（含握手中的连接，>= [numPeers]；qb 无对应字段时 -1）。
+  final int numConnections;
+
+  /// 任务活跃总时长（秒；qb `time_active` / native `active_duration`）。
+  final int activeDurationSeconds;
+
+  /// 做种总时长（秒；qb `seeding_time` / native `seeding_duration`）。
+  final int seedingDurationSeconds;
 
   /// 做种/完成类状态：数据已全部落盘，只在做种或做种停止。
   static const Set<String> _seedingStates = <String>{
@@ -197,4 +229,205 @@ class TorrentStorageResult {
 
   /// 失败原因。调用方**必须**反馈给用户，不得静默吞掉。
   final String? error;
+}
+
+/// TODO-2482：任务详情能力接口（qb/hayase 式四 tab 详情页的数据面）。
+///
+/// 与 [TorrentRemovalBackend] / [TorrentPauseBackend] 同姿态的可选能力：
+/// UI 用 `backend is TorrentDetailBackend` 探测，缺能力的后端不被迫伪造；
+/// 探测过了还要看 [detailAvailable]（内置引擎随包 DLL 过旧、缺详情符号时
+/// 为 false，此时各查询返回 null，UI 显示「当前后端不支持」）。
+///
+/// 所有查询方法容错：失败/种子不存在/后端拿不到一律返回 null，绝不抛
+/// （与 [TorrentBackend] 契约同姿态）。
+abstract interface class TorrentDetailBackend implements TorrentBackend {
+  /// 运行时能力位：底层是否真的具备详情查询原语。
+  bool get detailAvailable;
+
+  /// 某种子当前连接的 peer 列表；种子不存在/失败返回 null。
+  Future<List<TorrentPeerDetail>?> listPeers(String torrentId);
+
+  /// 某种子的 tracker 列表（含 scrape 数与错误信息）。
+  Future<List<TorrentTrackerDetail>?> listTrackers(String torrentId);
+
+  /// 每个文件的下载优先级，按文件 index 对位（与
+  /// [TorrentBackend.listFiles] 的 `index` 同一值域）。
+  Future<List<TorrentFilePriority>?> filePriorities(String torrentId);
+
+  /// 设置单个文件的优先级（[TorrentFilePriority.skip] = 不下载）。
+  Future<bool> setFilePriority(
+    String torrentId,
+    int fileIndex,
+    TorrentFilePriority priority,
+  );
+
+  /// 会话级协议状态（DHT/LSD/PEX/端口映射/监听端口/全局速率）。
+  Future<TorrentSessionStatusInfo?> sessionStatus();
+
+  /// 某种子的 piece 位图（0 = 缺、1 = 下载中、2 = 已持有）。
+  Future<TorrentPieceStates?> pieceStates(String torrentId);
+}
+
+/// 文件下载优先级的后端无关值域。
+///
+/// 映射：内置引擎（libtorrent download_priority）skip=0 / normal=4 / high=7；
+/// qb（filePrio）skip=0 / normal=1 / high=6。
+enum TorrentFilePriority { skip, normal, high }
+
+/// 详情页 Peers tab 的单行（后端无关）。
+class TorrentPeerDetail {
+  const TorrentPeerDetail({
+    required this.address,
+    required this.port,
+    this.client = '',
+    this.progress = 0.0,
+    this.downSpeedBps = 0,
+    this.upSpeedBps = 0,
+    this.downloadedBytes = 0,
+    this.uploadedBytes = 0,
+    this.flags = '',
+  });
+
+  /// peer IP（qb 侧可能是域名形式的 ip 字段原文）。
+  final String address;
+  final int port;
+
+  /// 客户端标识（如 `qBittorrent/4.6.5`）。
+  final String client;
+
+  /// peer 自报进度 0~1（可伪造）。
+  final double progress;
+  final int downSpeedBps;
+  final int upSpeedBps;
+
+  /// 累计从该 peer 下到的字节。
+  final int downloadedBytes;
+
+  /// 累计喂给该 peer 的字节。
+  final int uploadedBytes;
+
+  /// qb 风格 flag 字母串（如 `D U K`；内置引擎经
+  /// `formatTorrentPeerFlags` 从原始位掩码格式化）。
+  final String flags;
+}
+
+/// tracker 工作状态的后端无关值域（qb trackers `status` 同值域）。
+enum TorrentTrackerStatus {
+  /// 已禁用（qb 0；DHT/PEX/LSD 伪条目也归此类）。
+  disabled,
+
+  /// 尚未联系过（qb 1）。
+  notContacted,
+
+  /// 工作中（qb 2）。
+  working,
+
+  /// 正在更新（qb 3）。
+  updating,
+
+  /// 不工作（qb 4；含连续失败）。
+  notWorking,
+}
+
+/// 详情页 Trackers tab 的单行（后端无关）。`-1` = scrape 未提供。
+class TorrentTrackerDetail {
+  const TorrentTrackerDetail({
+    required this.url,
+    this.tier = 0,
+    this.status = TorrentTrackerStatus.notContacted,
+    this.seeds = -1,
+    this.leeches = -1,
+    this.downloaded = -1,
+    this.message = '',
+  });
+
+  final String url;
+  final int tier;
+  final TorrentTrackerStatus status;
+
+  /// scrape 的 seed 数（qb `num_seeds` / native `scrape_complete`）。
+  final int seeds;
+
+  /// scrape 的 leecher 数（qb `num_leeches` / native `scrape_incomplete`）。
+  final int leeches;
+
+  /// scrape 的累计完成下载数（qb `num_downloaded` / `scrape_downloaded`）。
+  final int downloaded;
+
+  /// 最近一次 announce 的错误/提示信息（tracker 原文，空串 = 无）。
+  final String message;
+}
+
+/// 一条端口映射结果（UPnP / NAT-PMP）。
+class TorrentPortMappingInfo {
+  const TorrentPortMappingInfo({
+    required this.transport,
+    required this.protocol,
+    this.externalPort = 0,
+    this.ok = false,
+    this.error = '',
+  });
+
+  /// `upnp` | `natpmp`。
+  final String transport;
+
+  /// `tcp` | `udp`。
+  final String protocol;
+
+  /// 映射成功时的外部端口（失败为 0）。
+  final int externalPort;
+  final bool ok;
+
+  /// 失败原因（路由器/协议原文，空串 = 无）。
+  final String error;
+}
+
+/// 会话级协议状态。`null` 字段 = 该后端不知道（UI 整行不渲染）；
+/// 速率 `-1` = 未知。
+class TorrentSessionStatusInfo {
+  const TorrentSessionStatusInfo({
+    this.dhtEnabled,
+    this.dhtNodes = -1,
+    this.lsdEnabled,
+    this.pexEnabled,
+    this.listenPort = 0,
+    this.downRateBps = -1,
+    this.upRateBps = -1,
+    this.portMappings = const <TorrentPortMappingInfo>[],
+  });
+
+  /// DHT 是否开启（qb 走 preferences，native 走 is_dht_running）。
+  final bool? dhtEnabled;
+
+  /// DHT 路由表节点数（-1 = 未知/尚未统计到）。
+  final int dhtNodes;
+  final bool? lsdEnabled;
+  final bool? pexEnabled;
+
+  /// 实际监听端口（0 = 未知/未监听）。
+  final int listenPort;
+
+  /// 会话级全局下行速率（字节/秒；-1 = 未知）。
+  final int downRateBps;
+  final int upRateBps;
+  final List<TorrentPortMappingInfo> portMappings;
+}
+
+/// 某种子的 piece 位图（详情页 Overview 的 piece bar）。
+class TorrentPieceStates {
+  const TorrentPieceStates({required this.states});
+
+  /// 每 piece 一项：0 = 缺、1 = 下载中、2 = 已持有（qb pieceStates 值域；
+  /// 内置引擎位图只有 0/2 两态）。
+  final List<int> states;
+
+  int get numPieces => states.length;
+
+  int get haveCount {
+    int n = 0;
+    for (final int s in states) {
+      if (s == 2) n++;
+    }
+    return n;
+  }
 }

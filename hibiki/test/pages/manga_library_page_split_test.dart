@@ -13,6 +13,8 @@ import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1164：PR#474 让书架按 `mangaOnly` 分流（普通书架排除漫画，漫画只在独立
 /// 漫画书架出现），但全仓 `git grep 'MangaLibraryPage\|mangaOnly' -- hibiki/test`
 /// 零命中——这条用户直接可见的行为一条测试都没有。
@@ -22,18 +24,6 @@ import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart
 /// 2. 漫画库页确实带 `mangaOnly: true` 接进同一个书架实现，没有接反。
 ///
 /// PR#594 落地后追加第 3 件：顶层视图列表恒为三视图，不随平台分叉。
-
-// 剥掉 `//` / `///` 行注释与 `/* */` 块注释，只留可执行源码。
-//
-// 源码扫描守卫的判据只能落在真代码上：文档注释里出现被禁符号是**在解释禁令**，
-// 不是违反禁令，裸 `contains` 分不出这两者。
-String _stripDartComments(String source) => source
-        .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
-        .split('\n')
-        .map((String line) {
-      final int index = line.indexOf('//');
-      return index < 0 ? line : line.substring(0, index);
-    }).join('\n');
 
 MediaItem _item(String identifier, String sourceKey) => MediaItem(
       mediaIdentifier: identifier,
@@ -137,9 +127,10 @@ void main() {
       // 平台探测符号在 iOS/Linux 返回 false，一旦有人再把它塞回 MangaLibraryPage，
       // 导航结构就又分平台裂开了。
       //
-      // 判据必须**先剥注释**：本页的文档注释就在解释「不按平台分叉」，里面天然出现
-      // 该符号名，裸 contains 会被自己的说明文字打成假红。
-      final String source = _stripDartComments(
+      // 判据必须**先掩注释**（共享 maskComments，等长掩码）：本页的文档注释就在
+      // 解释「不按平台分叉」，里面天然出现该符号名，裸 contains 会被自己的说明
+      // 文字打成假红。
+      final String source = maskComments(
         File(
           p.join('lib', 'src', 'media', 'manga', 'manga_library_page.dart'),
         ).readAsStringSync(),

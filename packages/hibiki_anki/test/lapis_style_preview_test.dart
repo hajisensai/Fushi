@@ -137,6 +137,94 @@ void main() {
       }
     });
 
+    test('预览携带布局切换需要的备用位置元素', () {
+      final String markup = _previewMarkup(
+        buildLapisStylePreviewHtml(
+          css: LapisNoteType.template.css,
+          selectedField: LapisVisualField.sentence,
+          showBack: true,
+          darkMode: false,
+        ),
+      );
+      // vendored Lapis 的位置切换全靠「两处 DOM + 显隐互换」：例句有
+      // .sentence/.sentence-alt，图片有 .image/.image-alt，音频有
+      // .audio-buttons/.audio-buttons-alt。备用那半边缺一个，改到对应位置时
+      // 预览就是一片空白 —— 用户会以为设置坏了。
+      for (final String anchor in <String>[
+        'class="sentence"',
+        'class="sentence-alt"',
+        'class="image"',
+        'class="image-alt"',
+        'class="audio-buttons"',
+        'class="audio-buttons-alt"',
+      ]) {
+        expect(markup, contains(anchor), reason: '预览缺少 $anchor');
+      }
+      // 例句挪到备用位置后仍要能被选中改样式。
+      expect(
+        markup,
+        contains('class="sentence-alt" data-hibiki-lapis-targets="sentence"'),
+      );
+    });
+
+    test('预览按真卡同一套判据把布局变量翻成 data 属性', () {
+      final String html = buildLapisStylePreviewHtml(
+        css: LapisNoteType.template.css,
+        selectedField: LapisVisualField.expression,
+        showBack: true,
+        darkMode: false,
+      );
+      // 注入 CSS 后必须重跑一次，否则改了位置预览纹丝不动。
+      expect(html, contains('window.hibikiLapisEditor.applyLayout();'));
+      expect(html, contains("setAttribute('data-' + opt.slice(2), value)"));
+
+      // 预览读的变量必须是真卡 userSettings() 也读的那些；漂开就等于预览
+      // 和真卡两套布局语义。
+      final RegExp option = RegExp(r"'(--[a-z-]+)'");
+      final Iterable<String> options =
+          option.allMatches(html).map((RegExpMatch m) => m.group(1)!).toSet();
+      expect(options, contains('--sentence-position'));
+      expect(options, contains('--main-picture-position'));
+      expect(options, contains('--audio-buttons'));
+      for (final String name in options) {
+        expect(
+          LapisNoteType.back,
+          contains('"$name"'),
+          reason: '$name 不在真卡 userSettings() 的读取清单里',
+        );
+      }
+    });
+
+    test('刷新脚本按同一顺序重放布局', () {
+      final String script = buildLapisStylePreviewRefreshScript(
+        css: '.x { color: red; }',
+        selectedField: LapisVisualField.sentence,
+        showBack: false,
+      );
+      // 编辑器每次改动只走这段脚本，不重载页面。漏掉 applyLayout，改区块位置
+      // 就要重新打开编辑器才看得到效果；顺序反了则读到旧 CSS 的变量。
+      final int css = script.indexOf("getElementById('lapis-style')");
+      final int layout = script.indexOf('applyLayout()');
+      final int side = script.indexOf('showSide(');
+      final int select = script.indexOf('selectField(');
+      expect(css, greaterThanOrEqualTo(0));
+      expect(layout, greaterThan(css));
+      expect(side, greaterThan(layout));
+      expect(select, greaterThan(side));
+      expect(script, contains('"front"'));
+      expect(script, contains('"sentence"'));
+    });
+
+    test('刷新脚本也走 JSON 转义，CSS 不能逃逸成脚本', () {
+      final String script = buildLapisStylePreviewRefreshScript(
+        css: '</style><script>window.bad = true;</script>',
+        selectedField: LapisVisualField.expression,
+        showBack: true,
+      );
+      expect(script, isNot(contains('<script>window.bad')));
+      expect(script, contains(r'\u003Cscript>window.bad'));
+    });
+
     test('CSS 通过 textContent 注入，style/script 结束标签不能逃逸', () {
       const String hostile =
           'body { color: red; }</style><script>window.bad = true;</script>';

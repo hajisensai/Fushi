@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
+import '../helpers/source_guard.dart';
+
 // TODO-1380 / BUG-694：日志面板选中文本弹出右键菜单后崩溃
 // `Null check operator used on a null value`（用户日志 2026-07-10 01:21，两条同栈
 // 连发：#0 SelectableRegionState.startGlyphHeight → #1 contextMenuAnchors →
@@ -237,16 +239,16 @@ void main() {
     final String source = File(
       'lib/src/utils/components/hibiki_material_components.dart',
     ).readAsStringSync();
-    final String panel = source.substring(
-      source.indexOf('class _HibikiLogPanelState'),
-      source.indexOf('class _LogSelectionScrollController'),
+    // 只扫代码：注释统一换成**等长空白**（共享 `maskComments`），避免误伤注释里
+    // 解释这些 getter 为何被禁的文字。旧写法只丢整行 `//`，块注释与行尾注释都漏
+    // ——`anchors: ctx.contextMenuAnchors, /* 待办 */` 这种既能骗过禁止型断言，也
+    // 能让下面两条**要求型**断言只靠注释里的同名文字就绿。掩码等长，故先掩码再
+    // 按下标切片与直接切原文完全等价。
+    final String code = maskComments(source);
+    final String panel = code.substring(
+      code.indexOf('class _HibikiLogPanelState'),
+      code.indexOf('class _LogSelectionScrollController'),
     );
-    // 只扫代码行：剥掉整行注释，避免误伤注释里解释这些 getter 为何被禁的文字
-    // （代码里的使用总在行首代码段，剥整行注释不会漏检真实调用）。
-    final String panelCode = panel
-        .split('\n')
-        .where((String line) => !line.trimLeft().startsWith('//'))
-        .join('\n');
 
     for (final String banned in <String>[
       '.contextMenuAnchors',
@@ -254,11 +256,13 @@ void main() {
       '.endGlyphHeight',
       '.selectionEndpoints',
     ]) {
-      expect(panelCode, isNot(contains(banned)),
+      expect(panel, isNot(contains(banned)),
           reason: '$banned 对选区端点空断言；懒加载日志面板的端点可被滚动回收/'
               '内容更新清空（TODO-1380 崩溃根因），禁止使用');
     }
     // 自持锚点在场：记录面板内最近一次 pointer down，并用于 toolbar 锚点。
+    // 这两条以前扫的是含注释的原文——本文件的注释里就写着这两个名字，等于让文档
+    // 给自己背书；现在只认代码。
     expect(panel, contains('TextSelectionToolbarAnchors('),
         reason: '菜单必须用自持的稳定锚点构造 TextSelectionToolbarAnchors');
     expect(panel, contains('_lastPointerDownGlobalPosition'),

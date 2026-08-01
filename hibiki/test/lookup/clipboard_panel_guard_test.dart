@@ -7,6 +7,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   final String hostJs =
       File('assets/popup/global_lookup_host.js').readAsStringSync();
@@ -68,22 +70,32 @@ void main() {
         File('windows/runner/flutter_window.cpp').readAsStringSync();
 
     test('面板窗无 owner（owned 窗随主窗最小化隐藏 + Z 序连带拉主窗前台）', () {
-      final int start = fw.indexOf('RegisterClipboardPanelChannel() {');
-      expect(start, isNonNegative);
-      final String body = fw.substring(start);
-      final int prewarm =
-          body.indexOf('clipboard_panel_window_->PrewarmWebView');
-      final int showAt = body.indexOf('clipboard_panel_window_->ShowAt');
+      // 窗口不再是 `+ 200` 定长切片：注册函数体由花括号配对给出，两个创建点各自
+      // 由**圆括号配对**给出。owner 实参是最后一个，前面的 IntFromValue(...) 多写
+      // 一行、或参数换行重排，旧窗口就会把 `nullptr` 挤出去（要求型断言凭空变红）
+      // 或把下一条语句读进来当本调用的实参（`GetHandle()` 禁止型断言误报）。
+      // methodBody/enclosingCall 在 C++ 上同样适用：两者是花括号 / 圆括号配对 +
+      // 词法掩码，不依赖 Dart 语法（本文件两个 .cpp 均无 R"(...)" 原始串）。
+      final String body =
+          methodBody(fw, 'void FlutterWindow::RegisterClipboardPanelChannel()');
+      final String masked = maskComments(body);
+      const String prewarmAnchor = 'clipboard_panel_window_->PrewarmWebView(';
+      const String showAnchor = 'clipboard_panel_window_->ShowAt(';
+      final int prewarm = masked.indexOf(prewarmAnchor);
+      final int showAt = masked.indexOf(showAnchor);
       expect(prewarm, isNonNegative);
       expect(showAt, isNonNegative);
-      expect(body.substring(prewarm, prewarm + 200).contains('nullptr'), isTrue,
+      // 下标落在左括号之后 = 落在实参里，enclosingCall 取到的就是这一次调用。
+      final String prewarmCall =
+          enclosingCall(body, prewarm + prewarmAnchor.length).text;
+      final String showAtCall =
+          enclosingCall(body, showAt + showAnchor.length).text;
+      expect(prewarmCall.contains('nullptr'), isTrue,
           reason: '面板 prewarm 不得把主窗 HWND 作 owner');
-      expect(body.substring(showAt, showAt + 200).contains('nullptr'), isTrue,
+      expect(showAtCall.contains('nullptr'), isTrue,
           reason: '面板 showAt 不得把主窗 HWND 作 owner');
-      expect(body.substring(prewarm, prewarm + 200).contains('GetHandle()'),
-          isFalse);
-      expect(body.substring(showAt, showAt + 200).contains('GetHandle()'),
-          isFalse);
+      expect(prewarmCall.contains('GetHandle()'), isFalse);
+      expect(showAtCall.contains('GetHandle()'), isFalse);
     });
 
     test('拖动经 PostMessage 进模态循环，结束由 WM_EXITSIZEMOVE 报 rect', () {
@@ -96,10 +108,13 @@ void main() {
     });
 
     test('SetTopmost 带 SWP_NOOWNERZORDER（图钉不得连带主窗 Z 序）', () {
-      final int fn = cpp.indexOf('void GlobalLookupWindow::SetTopmost');
-      expect(fn, isNonNegative);
-      final String body = cpp.substring(fn, fn + 700);
-      expect(body.contains('SWP_NOOWNERZORDER'), isTrue);
+      // 旧的 `fn + 700` 定长窗口已经滑进下一个方法（SetTopmost 全体才 425 字），
+      // 改用花括号配对取整个方法体，边界由源码结构给出。
+      // 断言走 containsCodeLine：SetTopmost 的**注释**里也写着 SWP_NOOWNERZORDER，
+      // 裸 contains 会被注释喂绿——把标志从 SetWindowPos 参数里删掉照样通过。
+      final String body =
+          methodBody(cpp, 'void GlobalLookupWindow::SetTopmost(');
+      expect(containsCodeLine(body, 'SWP_NOOWNERZORDER'), isTrue);
     });
   });
 
@@ -162,12 +177,13 @@ void main() {
         reason: '逐字 hover 框在面板里=「按照字来划分」，必须作用域隔离',
       );
       expect(popupCss.contains('.global-lookup-sentence-hit'), isTrue);
-      final int panelRule = popupCss.indexOf('.global-lookup-sentence-panel {');
-      expect(panelRule, isNonNegative);
+      // 窗口=这条 CSS 规则块本身（花括号配对），不再是 `+ 200` 定长窗口。规则体
+      // 只有 92 字，旧窗口已经滑过后面两条规则：从本规则里删掉 font-size 后，
+      // 只要邻居规则里出现同一声明就会被喂成假绿。
+      final String panelRule =
+          methodBody(popupCss, '.global-lookup-sentence-panel {');
       expect(
-        popupCss
-            .substring(panelRule, panelRule + 200)
-            .contains('font-size: 1em;'),
+        panelRule.contains('font-size: 1em;'),
         isTrue,
         reason: '真机第 4 轮：选词区文字与底下词条正文一样大，不得回 0.85em',
       );

@@ -28,6 +28,16 @@ const String lapisVisualCssBeginMarker = '/* HIBIKI-LAPIS-VISUAL BEGIN */';
 const String lapisVisualCssEndMarker = '/* HIBIKI-LAPIS-VISUAL END */';
 const String _lapisVisualConfigPrefix = '/* HIBIKI-LAPIS-VISUAL-CONFIG ';
 
+/// 托管区段 CONFIG 里存放布局的**保留键**。CONFIG 其余键一律是
+/// [LapisVisualField.wireName]，所以这个名字不得与任何 wireName 相撞——守卫见
+/// `lapis_styling_test.dart`『布局保留键不与任何可视字段 wireName 相撞』。
+///
+/// 用保留键而不是把 CONFIG 改成 `{fields: …, layout: …}` 两层结构，是为了让**旧
+/// 版本 Hibiki 打开新 CSS 时字段规则照样解析得出**（旧解析器逐条 `fromWireName`，
+/// 认不出的键直接跳过）：降级最多丢布局，不会整块托管区段被当成损坏而降级成
+/// 自由 CSS。
+const String lapisVisualLayoutConfigKey = 'layout';
+
 /// Lapis 预览中可直接点选、并由可视化编辑器生成稳定选择器的内容区域。
 enum LapisVisualField {
   expression('expression'),
@@ -70,6 +80,133 @@ enum LapisVisualField {
           true,
         _ => false,
       };
+}
+
+/// 例句区块相对释义框的位置（vendored Lapis `--sentence-position`）。
+enum LapisSentencePosition {
+  above('above'),
+  below('below');
+
+  const LapisSentencePosition(this.cssValue);
+
+  final String cssValue;
+
+  static LapisSentencePosition? fromCssValue(String value) {
+    for (final LapisSentencePosition position in values) {
+      if (position.cssValue == value) return position;
+    }
+    return null;
+  }
+}
+
+/// 主图位置（vendored Lapis `--main-picture-position`）。[alt] = 挪进例句块内。
+enum LapisPicturePosition {
+  right('right'),
+  left('left'),
+  alt('alt');
+
+  const LapisPicturePosition(this.cssValue);
+
+  final String cssValue;
+
+  static LapisPicturePosition? fromCssValue(String value) {
+    for (final LapisPicturePosition position in values) {
+      if (position.cssValue == value) return position;
+    }
+    return null;
+  }
+}
+
+/// 音频按钮位置（vendored Lapis `--audio-buttons`）。
+enum LapisAudioButtonsPosition {
+  header('header'),
+  fixed('fixed'),
+  alt('alt');
+
+  const LapisAudioButtonsPosition(this.cssValue);
+
+  final String cssValue;
+
+  static LapisAudioButtonsPosition? fromCssValue(String value) {
+    for (final LapisAudioButtonsPosition position in values) {
+      if (position.cssValue == value) return position;
+    }
+    return null;
+  }
+}
+
+/// 卡片区块位置。
+///
+/// **不自己发明布局机制**：vendored Lapis 自带一套「`:root` 里的 user settings
+/// 变量 → 卡片 JS 读 computed style → 写成 `#lapis[data-*]` → CSS 按属性切换
+/// 显隐/方向」的位置模型（见 [LapisNoteType.css] 的 `USER SETTINGS` 段与
+/// `back` 模板里的 `userSettings()`）。本类只是那套变量的 Dart 侧真相源，生成的
+/// CSS 就是覆写同名变量——不 fork 模板、不新增 selector、不动 DOM 顺序，
+/// 上游 re-vendor 后依旧成立。
+///
+/// 每个字段 `null` = 不覆写 = 完全保持出厂（含桌面/移动端各自的默认差异）。
+/// 非空时**桌面与移动端变量一起写**：Lapis 在 `html.mobile` 下把
+/// `--sentence-position` 重定向到 `--mobile-sentence-position`，且该规则特异性
+/// （0,1,1）高于 `:root`（0,1,0），只写桌面变量在手机上会静默不生效。
+class LapisVisualLayout {
+  const LapisVisualLayout({
+    this.sentencePosition,
+    this.picturePosition,
+    this.audioButtonsPosition,
+  });
+
+  final LapisSentencePosition? sentencePosition;
+  final LapisPicturePosition? picturePosition;
+  final LapisAudioButtonsPosition? audioButtonsPosition;
+
+  bool get isDefault =>
+      sentencePosition == null &&
+      picturePosition == null &&
+      audioButtonsPosition == null;
+
+  LapisVisualLayout copyWith({
+    Object? sentencePosition = _lapisVisualUnset,
+    Object? picturePosition = _lapisVisualUnset,
+    Object? audioButtonsPosition = _lapisVisualUnset,
+  }) =>
+      LapisVisualLayout(
+        sentencePosition: identical(sentencePosition, _lapisVisualUnset)
+            ? this.sentencePosition
+            : sentencePosition as LapisSentencePosition?,
+        picturePosition: identical(picturePosition, _lapisVisualUnset)
+            ? this.picturePosition
+            : picturePosition as LapisPicturePosition?,
+        audioButtonsPosition: identical(audioButtonsPosition, _lapisVisualUnset)
+            ? this.audioButtonsPosition
+            : audioButtonsPosition as LapisAudioButtonsPosition?,
+      );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        if (sentencePosition != null)
+          'sentencePosition': sentencePosition!.cssValue,
+        if (picturePosition != null)
+          'picturePosition': picturePosition!.cssValue,
+        if (audioButtonsPosition != null)
+          'audioButtonsPosition': audioButtonsPosition!.cssValue,
+      };
+
+  static LapisVisualLayout fromJson(Object? value) {
+    if (value is! Map<String, dynamic>) return const LapisVisualLayout();
+    final Object? rawSentence = value['sentencePosition'];
+    final Object? rawPicture = value['picturePosition'];
+    final Object? rawAudio = value['audioButtonsPosition'];
+    return LapisVisualLayout(
+      sentencePosition: rawSentence is String
+          ? LapisSentencePosition.fromCssValue(rawSentence)
+          : null,
+      picturePosition: rawPicture is String
+          ? LapisPicturePosition.fromCssValue(rawPicture)
+          : null,
+      audioButtonsPosition: rawAudio is String
+          ? LapisAudioButtonsPosition.fromCssValue(rawAudio)
+          : null,
+    );
+  }
 }
 
 enum LapisVisualTextAlign {
@@ -255,11 +392,15 @@ class LapisVisualStyleSheet {
   const LapisVisualStyleSheet({
     required this.freeformCss,
     required this.rules,
+    this.layout = const LapisVisualLayout(),
     this.managedFirst = false,
   });
 
   final String freeformCss;
   final Map<LapisVisualField, LapisVisualRule> rules;
+
+  /// 卡片区块位置（托管区段 CONFIG 里的保留键 [lapisVisualLayoutConfigKey]）。
+  final LapisVisualLayout layout;
 
   /// 托管区段原本是否排在用户自由 CSS **之前**。托管区段全部带 `!important`
   /// （见 [_buildLapisVisualFieldCss]，必须压过 Lapis 自己的高特异性规则），
@@ -325,12 +466,15 @@ LapisVisualStyleSheet splitLapisVisualStyleSheet(String customCss) {
     final Map<LapisVisualField, LapisVisualRule> rules =
         <LapisVisualField, LapisVisualRule>{};
     for (final MapEntry<String, dynamic> entry in decoded.entries) {
+      if (entry.key == lapisVisualLayoutConfigKey) continue;
       final LapisVisualField? field = LapisVisualField.fromWireName(entry.key);
       final LapisVisualRule? rule = LapisVisualRule.fromJson(entry.value);
       if (field != null && rule != null && !rule.isDefault) {
         rules[field] = rule;
       }
     }
+    final LapisVisualLayout layout =
+        LapisVisualLayout.fromJson(decoded[lapisVisualLayoutConfigKey]);
     final int afterEnd = end + lapisVisualCssEndMarker.length;
     final String before =
         _withoutLapisSeparatorSuffix(customCss.substring(0, begin));
@@ -347,6 +491,7 @@ LapisVisualStyleSheet splitLapisVisualStyleSheet(String customCss) {
     return LapisVisualStyleSheet(
       freeformCss: freeform,
       managedFirst: managedFirst,
+      layout: layout,
       rules: Map<LapisVisualField, LapisVisualRule>.unmodifiable(rules),
     );
   } on FormatException {
@@ -365,10 +510,15 @@ LapisVisualStyleSheet splitLapisVisualStyleSheet(String customCss) {
 String composeLapisVisualStyleSheet({
   required String freeformCss,
   required Map<LapisVisualField, LapisVisualRule> rules,
+  LapisVisualLayout layout = const LapisVisualLayout(),
   bool managedFirst = false,
 }) {
   final Map<String, Object?> config = <String, Object?>{};
   final List<String> cssRules = <String>[];
+  if (!layout.isDefault) {
+    config[lapisVisualLayoutConfigKey] = layout.toJson();
+    cssRules.addAll(buildLapisVisualLayoutCss(layout));
+  }
   for (final LapisVisualField field in LapisVisualField.values) {
     final LapisVisualRule rule = rules[field] ?? const LapisVisualRule();
     if (rule.isDefault) continue;
@@ -387,6 +537,91 @@ String composeLapisVisualStyleSheet({
       ? '$managed$_lapisVisualBlockSeparator$freeformCss'
       : '$freeformCss$_lapisVisualBlockSeparator$managed';
 }
+
+/// 布局覆写块：重写 vendored Lapis 自己的 user settings 变量。
+///
+/// 刻意**不加 `!important`**：托管区段整体排在基线 CSS 之后，`:root` 同特异性
+/// 后来者胜，已经压得住出厂值；而 `html.mobile`（0,1,1）把桌面变量重定向到
+/// `--mobile-*` 的规则必须保持有效，否则移动端会被强制吃桌面值。桌面/移动两个
+/// 变量一起写，两条路径拿到的都是用户选的那个值。
+List<String> buildLapisVisualLayoutCss(LapisVisualLayout layout) {
+  final List<String> lines = <String>[
+    if (layout.sentencePosition case final LapisSentencePosition position) ...[
+      '  --sentence-position: "${position.cssValue}";',
+      '  --mobile-sentence-position: "${position.cssValue}";',
+    ],
+    if (layout.picturePosition case final LapisPicturePosition position) ...[
+      '  --main-picture-position: "${position.cssValue}";',
+      '  --mobile-main-picture-position: "${position.cssValue}";',
+    ],
+    if (layout.audioButtonsPosition
+        case final LapisAudioButtonsPosition position) ...[
+      '  --audio-buttons: "${position.cssValue}";',
+      '  --mobile-audio-buttons: "${position.cssValue}";',
+    ],
+  ];
+  if (lines.isEmpty) return const <String>[];
+  return <String>[':root {\n${lines.join('\n')}\n}'];
+}
+
+/// 可视目标 ← 真正喂它内容的 Lapis 卡型字段（按「谁先决定这块显示什么」排序）。
+///
+/// 判据是 [LapisNoteType.front] / [LapisNoteType.back] 模板里的 handlebar，不是
+/// 字段名字面像不像：
+/// * 背面 `.vocab` 优先 `{{furigana:ExpressionFurigana}}`，为空才回落
+///   `{{Expression}}`；`.pitch` 同理优先 `{{kana:ExpressionFurigana}}`。所以
+///   「单词/读音」两块的第一顺位都是 `ExpressionFurigana`。
+/// * 例句块同时是 `{{Sentence}}`（正面 `#hint` / 背面 `.sentence`）与
+///   `{{SentenceFurigana}}`（有值时取代 Sentence），另有独立的 `{{Hint}}` 也落在
+///   `#hint`。
+/// * 释义框内三块各有专属字段：`#selection`←SelectionText、`#primary`←
+///   MainDefinition、`#glossaries`←Glossary；词典条目/词典名/例句是这两块 HTML
+///   内部的结构，没有独立字段，故回落到产出它们的那两个字段。
+/// * `.def-info` 是模板写死的计数标签（"First Definition 1/?"），**没有字段**。
+///
+/// 守卫见 `lapis_styling_test.dart`『可视字段的来源字段都存在于 Lapis 卡型』。
+List<String> lapisVisualFieldSources(LapisVisualField field) => switch (field) {
+      LapisVisualField.expression => const <String>[
+          'ExpressionFurigana',
+          'Expression',
+        ],
+      LapisVisualField.reading => const <String>[
+          'ExpressionFurigana',
+          'ExpressionReading',
+        ],
+      LapisVisualField.sentence => const <String>[
+          'Sentence',
+          'SentenceFurigana',
+          'Hint',
+        ],
+      LapisVisualField.definitionInfo => const <String>[],
+      LapisVisualField.definitionBox => const <String>[
+          'SelectionText',
+          'MainDefinition',
+          'Glossary',
+          'DefinitionPicture',
+        ],
+      LapisVisualField.definitionContent => const <String>[
+          'SelectionText',
+          'MainDefinition',
+          'Glossary',
+        ],
+      LapisVisualField.selectedDefinition => const <String>['SelectionText'],
+      LapisVisualField.primaryDefinition => const <String>['MainDefinition'],
+      LapisVisualField.glossaries => const <String>['Glossary'],
+      LapisVisualField.dictionaryEntry => const <String>[
+          'MainDefinition',
+          'Glossary',
+        ],
+      LapisVisualField.dictionaryName => const <String>[
+          'MainDefinition',
+          'Glossary',
+        ],
+      LapisVisualField.definitionExample => const <String>[
+          'MainDefinition',
+          'Glossary',
+        ],
+    };
 
 List<String> _buildLapisVisualFieldCss(
   LapisVisualField field,

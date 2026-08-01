@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：切换内嵌字幕时，抽取期间必须有加载遮罩（BUG-104）。
@@ -48,17 +49,20 @@ void main() {
   test('_selectSubtitleSource 在抽取前后包裹遮罩（show…try/finally hide）', () {
     // 截取 _selectSubtitleSource 方法体，断言遮罩 show 在 loadCuesForSource 之前、
     // hide 在 finally 里，保证任何返回/异常路径都会收起遮罩、不留死遮罩。
-    final int start = src.indexOf('Future<bool> _selectSubtitleSource(');
-    expect(start, greaterThan(-1), reason: '应有 _selectSubtitleSource 方法');
-    final int loadAt =
-        src.indexOf('loadCuesForSource(source, videoPath', start);
-    expect(loadAt, greaterThan(start));
+    // 上界=方法体的右花括号（花括号配对），不再是 `loadAt + 200` 定长窗口：
+    // try/finally 到 hide 之间多写两行（如加一条 OSD 提示）就会把 hide 挤出旧
+    // 窗口，要求型断言凭空变红。下界仍保持在 show 处，「show 之后才出现的
+    // try/finally/hide」这条语义不放松（不是拿整个方法体去 contains）。
+    final String method =
+        methodBody(src, 'Future<bool> _selectSubtitleSource(');
+    final int loadAt = method.indexOf('loadCuesForSource(source, videoPath');
+    expect(loadAt, greaterThan(-1), reason: '缺 loadCuesForSource 抽取调用');
 
-    final int showAt = src.indexOf('_showSubtitleLoadingOverlay();', start);
-    expect(showAt, greaterThan(start));
+    final int showAt = method.indexOf('_showSubtitleLoadingOverlay();');
+    expect(showAt, greaterThan(-1), reason: '缺遮罩 show 调用');
     expect(showAt, lessThan(loadAt), reason: '遮罩必须在抽取开始前弹出');
 
-    final String afterShow = src.substring(showAt, loadAt + 200);
+    final String afterShow = method.substring(showAt);
     expect(afterShow.contains('try {'), isTrue, reason: '抽取应在 try 块内');
     expect(afterShow.contains('} finally {'), isTrue,
         reason: '遮罩应在 finally 中收起');
@@ -106,28 +110,12 @@ void main() {
     );
 
     // 自动加载经协调器，且就绪等待用 libmpv 字幕轨就绪信号、过期判据用双判据。
-    final int start =
-        csrc.indexOf('Future<void> _loadEmbeddedSubtitleIfNeeded({');
-    expect(start, greaterThan(-1), reason: '应有 _loadEmbeddedSubtitleIfNeeded');
-    // 跳过命名参数列表，从函数体起始花括号（`}) async {`）开始做花括号配对，
-    // 否则会在参数列表的 `{` 处就提前闭合，截不到方法体。
-    final int bodyOpen = csrc.indexOf('}) async {', start);
-    expect(bodyOpen, greaterThan(start), reason: '应能定位方法体起始');
-    final int open = csrc.indexOf('{', bodyOpen);
-    int depth = 0;
-    int end = csrc.length;
-    for (int i = open; i < csrc.length; i++) {
-      if (csrc[i] == '{') {
-        depth++;
-      } else if (csrc[i] == '}') {
-        depth--;
-        if (depth == 0) {
-          end = i + 1;
-          break;
-        }
-      }
-    }
-    final String body = csrc.substring(start, end);
+    // 这里原来手写了一份花括号配对（含「跳过命名参数表的 `{`」补丁），但它在**原串**
+    // 上数括号：注释或字符串里的 `{` / `}` 一样参与配对，方法体里出现一句
+    // `// 这里 } 收口` 就会提前闭合。共享 methodBody 先做词法掩码再配对，
+    // 参数表圆括号也由它统一跳过，语义相同且不再被注释带偏。
+    final String body =
+        methodBody(csrc, 'Future<void> _loadEmbeddedSubtitleIfNeeded({');
 
     expect(
       body.contains('loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry('),

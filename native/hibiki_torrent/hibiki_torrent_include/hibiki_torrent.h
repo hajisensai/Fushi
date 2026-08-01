@@ -142,7 +142,14 @@ HT_EXPORT int ht_connect_peer(void* session, const char* info_hash,
 //  多文件=内容根目录、无元数据=""),"total","done","left"(无元数据=-1),
 //  "down_rate","up_rate","uploaded"(累计上传字节，做种上限判定用),
 //  "downloaded"(累计下载字节，分享率分母),"num_peers","has_metadata",
-//  "is_finished","is_seeding","sequential"}
+//  "is_finished","is_seeding","sequential",
+//  TODO-2482 详情批次新增：
+//  "num_seeds"(已连接 seed 数),"num_connections"(连接数，含握手中，
+//  >= num_peers；leecher 数 = num_peers - num_seeds 由调用方导出),
+//  "num_complete"/"num_incomplete"(tracker scrape 的 swarm 总 seed/leecher
+//  数，未 scrape 到为 -1),"is_paused"(引擎侧 paused flag；注意宿主的用户
+//  暂停真相在 Dart 侧，这里只是引擎观测),"active_duration"/
+//  "seeding_duration"/"finished_duration"(秒，跨会话由 resume 累计)}
 HT_EXPORT char* ht_list_torrents(void* session);
 
 // 某种子的文件列表：{"ok":true,"files":[{"index","path","size","done"}]}；
@@ -168,11 +175,19 @@ HT_EXPORT int ht_set_piece_deadline(void* session, const char* info_hash,
 HT_EXPORT int ht_apply_first_last_priority(void* session,
                                            const char* info_hash);
 
-// 某种子当前连接的 peer 列表（反吸血判定输入）：
+// 某种子当前连接的 peer 列表（反吸血判定输入 + 详情页 Peers tab）：
 // {"ok":true,"peers":[{"ip","port","peer_id"(20 字节可打印化，不可打印字节
 // 转 '.'),"client","progress"(peer 自报 0~1，可伪造),"total_upload"(我实际
 // 喂给该 peer 的字节，可信),"total_download","up_speed","down_speed",
-// "remote_interested"}]}
+// "remote_interested",
+// TODO-2482："flags"(本桥自定义的稳定位掩码，与 libtorrent 内部表示解耦：
+// bit0 interesting/bit1 choked/bit2 remote_interested/bit3 remote_choked/
+// bit4 supports_extensions/bit5 outgoing/bit6 handshake/bit7 connecting/
+// bit8 on_parole/bit9 seed/bit10 optimistic_unchoke/bit11 snubbed/
+// bit12 upload_only/bit13 endgame/bit14 holepunched/bit15 utp/bit16 ssl/
+// bit17 rc4_encrypted/bit18 plaintext_encrypted)，
+// "source"(bit0 tracker/bit1 dht/bit2 pex/bit3 lsd/bit4 fastResume/
+// bit5 incoming)}]}
 HT_EXPORT char* ht_torrent_peers(void* session, const char* info_hash);
 
 // 用 CIDR 列表整体重建 session 的 ip_filter（换行分隔，如
@@ -236,6 +251,46 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
 //
 // 返回 JSON：{"ok":true,"added":N,"failed":M,"ids":["<infohash>",...]}。
 HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir);
+
+// ── TODO-2482：任务详情批次 ─────────────────────────────────────────
+
+// 某种子的 tracker 列表（详情页 Trackers tab）：
+// {"ok":true,"trackers":[{"url","tier",
+//  "working"(任一 endpoint 已成功 announce 且当前无错),
+//  "updating"(任一 endpoint 等 tracker 响应中),"fails"(连续失败次数最大值),
+//  "last_error"(最近失败的 error_code 文本，空=无),
+//  "message"(tracker 返回的错误/警告原文，空=无),
+//  "scrape_complete"/"scrape_incomplete"/"scrape_downloaded"(各 endpoint
+//  取最大值；-1 = 该 tracker 未返回 scrape 数据)}]}
+// 种子不存在 {"ok":false,...}；无 tracker（纯 DHT 磁力）trackers 为空数组。
+HT_EXPORT char* ht_torrent_trackers(void* session, const char* info_hash);
+
+// 每个文件的下载优先级（详情页 Files tab）：
+// {"ok":true,"priorities":[4,0,7,...]}（下标 = 文件 index；libtorrent
+// download_priority 值域 0~7：0 = 不下载、4 = 默认、7 = 最高）。
+// 元数据未就绪 {"ok":false,"error":"no metadata"}。
+HT_EXPORT char* ht_get_file_priorities(void* session, const char* info_hash);
+
+// 设置单个文件的下载优先级：[priority] 0~7（0 = 不下载）。
+// 1 成功、0 失败（种子不存在/元数据未就绪/参数越界）。
+HT_EXPORT int ht_set_file_priority(void* session, const char* info_hash,
+                                   int file_index, int priority);
+
+// 会话协议状态（详情页 Overview 的协议区）：
+// {"ok":true,"listen_port","dht_running"(bool),
+//  "dht_nodes"(DHT 路由表节点数，-1 = 尚未统计到),
+//  "lsd_enabled","upnp_enabled","natpmp_enabled"(settings 现值),
+//  "pex_enabled"(恒 true：本桥建 session 一律带默认插件，含 ut_pex),
+//  "down_rate"/"up_rate"(会话级全局速率，字节/秒，含协议开销；由相邻两次
+//  session_stats 采样差分，-1 = 未知),
+//  "port_mappings":[{"transport":"upnp"|"natpmp","protocol":"tcp"|"udp"|""
+//   (error 回执不带协议),"external_port"(失败为 0),"ok","error"}]}
+//
+// **非阻塞**：本函数发出 post_dht_stats/post_session_stats 请求后只收割
+// 已到的 alert 即返回 —— 首次调用 dht_nodes/速率是 -1，下一轮轮询即有值
+// （详情页本就秒级轮询；同步等待会把 UI isolate 卡住）。
+// 需要 session 的 alert_mask 含 port_mapping 类别（ht_session_create 已设）。
+HT_EXPORT char* ht_session_status(void* session);
 
 HT_EXPORT void ht_free_string(char* s);
 

@@ -101,6 +101,31 @@ SettingsDestination buildSystemDestination() {
               );
             },
           ),
+          // TMDB 署名 —— **合约义务，不是可选的致谢**。
+          //
+          // 视频封面/元数据刮削使用 TMDB API（内置 key，见 tmdb_default_key.dart），
+          // 其 Terms of Use 第 3 节要求应用内显著位置展示 TMDB 标识与下面这句原文
+          // 免责声明。声明句**刻意不翻译**：TMDB 要求逐字展示该英文原句，17 种语言
+          // 都用同一份。文案照抄条款当前版本（2023-10-20）的括号占位句，应用场景取
+          // "application"：`This application uses TMDB and the TMDB APIs but is not
+          // endorsed, certified, or otherwise approved by TMDB.` —— 旧措辞
+          // "not endorsed or certified" 少了 "or otherwise approved"，不是原句。
+          //
+          // ⚠️ 尚缺官方 logo 图：条款同时要求展示 TMDB logo（须从
+          // themoviedb.org/about/logos-attribution 取原图，不得改色/改比例/翻转/旋转）。
+          // 补上 logo 资源后把这一项换成带图的行；在那之前本行只满足了文字部分。
+          SettingsActionItem(
+            id: 'system.tmdb_attribution',
+            title: 'TMDB',
+            subtitle: t.about_tmdb_attribution,
+            icon: Icons.movie_outlined,
+            onTap: (_) async {
+              await launchUrl(
+                Uri.parse('https://www.themoviedb.org/'),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+          ),
         ],
       ),
       // 「数据存储位置」从同步备份大类挪来（用户拍板：数据根是设备级存储配置，

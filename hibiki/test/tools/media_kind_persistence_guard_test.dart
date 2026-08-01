@@ -21,6 +21,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 从当前 cwd 向上找含 docs/BUGS.md 的仓库根。
 Directory _repoRoot() {
   Directory dir = Directory.current;
@@ -83,14 +85,18 @@ void main() {
     final List<String> violations = <String>[];
     for (final File f in _dartFiles(root)) {
       final String rel = _relative(root, f);
-      final List<String> lines = f.readAsLinesSync();
+      final String content = f.readAsStringSync();
+      // 注释换成**等长空白**（共享原语），文档里举例说明该格式的那些行不算违规。
+      // 旧写法只跳整行 `//`：`/* 'video|' */` 这类块注释、以及
+      // `foo(); // 历史上是 'video|' + uid` 这类行尾注释都会被误判成违规。
+      // 掩码不改行数，两个列表下标一一对应，`i + 1` 仍是原文真实行号；报错文案里
+      // 要给人看的是**原文**行（掩码行的注释段已变空白）。
+      final List<String> lines =
+          maskCommentsAndScriptLines(content).split('\n');
+      final List<String> rawLines = content.split('\n');
       for (int i = 0; i < lines.length; i++) {
-        final String line = lines[i];
-        // 跳过纯注释行（文档里举例说明该格式是合法的）。
-        final String trimmed = line.trimLeft();
-        if (trimmed.startsWith('//')) continue;
-        if (_handwrittenCompositeKey.hasMatch(line)) {
-          violations.add('$rel:${i + 1}: ${line.trim()}');
+        if (_handwrittenCompositeKey.hasMatch(lines[i])) {
+          violations.add('$rel:${i + 1}: ${rawLines[i].trim()}');
         }
       }
     }
@@ -108,7 +114,10 @@ void main() {
     final List<String> violations = <String>[];
     for (final File f in _dartFiles(root)) {
       final String rel = _relative(root, f);
-      final String content = f.readAsStringSync();
+      // 这一条此前压根没剥注释：`media_kind.dart` 文件头一旦把「`MediaKind.epub.name`
+      // 当前恰好等于 dbValue」这句反例写成代码形态，守卫就会对着自己的文档报违规。
+      // 统一走等长掩码，把注释这个洞一次堵死。
+      final String content = maskCommentsAndScriptLines(f.readAsStringSync());
       if (!content.contains('MediaKind')) continue;
 
       for (final RegExpMatch m in _enumMemberDotName.allMatches(content)) {

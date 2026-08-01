@@ -20,6 +20,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 const String kPolicyFile = 'lib/src/epub/book_title_conflict.dart';
 
 /// 已淘汰的名字 → 换成什么。
@@ -37,19 +39,24 @@ const Map<String, String> kRetiredNames = <String, String>{
 /// 会永远红（自指）。
 const String kSelfPath = 'test/tools/duplicate_policy_naming_guard_test.dart';
 
-/// 读取 [path] 并**剥掉整行注释**后的代码文本。
+/// 读取 [path] 并把注释换成**等长空白**后的代码文本（共享 `maskComments`）。
 ///
 /// 结构断言一律走它，绝不用含注释的原文：本守卫早先版本直接 `src.contains(...)`，
 /// 把 `sealed class DuplicatePolicy` 的真声明删掉、只在注释里留下同一串字面量，
 /// 守卫照样全绿（实测）。注释是资产，但**不能替代声明**。
-String _codeOf(String path) => File(path)
-    .readAsLinesSync()
-    .where((String l) => !l.trimLeft().startsWith('//'))
-    .join('\n');
+///
+/// 旧写法「丢掉整行 `//`」只堵住了行注释这一半：把真声明改写成
+/// `/* sealed class DuplicatePolicy */` 照样能骗绿。掩码等长，故下面
+/// `indexOf('switch (policy)')` + `substring` 的窗口语义不变。
+String _codeOf(String path) => maskComments(File(path).readAsStringSync());
 
 /// 扫 [roots] 下所有 .dart 的**非注释**行，返回 `文件:行号` 命中列表。
 ///
-/// 跳过 `//` / `///` 开头的行：讲「此前叫什么、为什么改」的注释是资产，不是债。
+/// 讲「此前叫什么、为什么改」的注释是资产，不是债：注释统一由
+/// `maskCommentsAndScriptLines` 换成等长空白——它是旧行式剥离（整行 `//`，含三引号
+/// JS/CSS 语料里的）与 Dart 词法掩码的并集，顺带补上块注释与**行尾注释**两个洞
+/// （`updateBinding(...); // 旧叫 onDuplicateTitle` 以前会被判成违规行）。
+/// 掩码不改行数，`i + 1` 仍是原文真实行号。
 List<String> _codeHits(List<String> roots, String needle) {
   final List<String> hits = <String>[];
   for (final String root in roots) {
@@ -59,10 +66,9 @@ List<String> _codeHits(List<String> roots, String needle) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
       final String rel = e.path.replaceAll(r'\', '/');
       if (rel.endsWith(kSelfPath)) continue;
-      final List<String> lines = e.readAsLinesSync();
+      final List<String> lines =
+          maskCommentsAndScriptLines(e.readAsStringSync()).split('\n');
       for (int i = 0; i < lines.length; i++) {
-        final String trimmed = lines[i].trimLeft();
-        if (trimmed.startsWith('//')) continue;
         if (lines[i].contains(needle)) {
           hits.add('$rel:${i + 1}');
         }

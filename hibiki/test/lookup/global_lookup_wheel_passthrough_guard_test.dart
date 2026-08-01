@@ -21,6 +21,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/lookup/overlay_bridge_handlers.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   final String hookSrc =
       File('windows/runner/low_level_mouse_hook.cpp').readAsStringSync();
@@ -78,11 +80,12 @@ void main() {
           '保留地板窗横跨大半个工作区，真正可见的只有 SetWindowRgn 裁出的卡片'
           '（BUG-749）。用 GetWindowRect 判等于卡片一开就吞掉半屏滚轮',
     );
-    // 只看代码行：注释里解释「为什么不能用 GetWindowRect」不算违规。
-    final String wheelCode = beforeSwallow
-        .split('\n')
-        .where((String line) => !line.trimLeft().startsWith('//'))
-        .join('\n');
+    // 只看代码：注释里解释「为什么不能用 GetWindowRect」不算违规。
+    // 旧写法丢掉整行 `//` 开头的行，只堵住行注释一种形态——`/* GetWindowRect */`
+    // 这样的块注释、以及 `IsChild(...); // 不是 GetWindowRect` 这样的行尾注释都会
+    // 被当成真实违规（假红）。maskComments 是词法扫描，三种形态一并换成等长空白，
+    // 且对 C++ 同样适用（字符串字面量原样保留）。
+    final String wheelCode = maskComments(beforeSwallow);
     expect(
       wheelCode.contains('GetWindowRect'),
       isFalse,

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 
+import '../helpers/source_guard.dart';
 import 'reader_hibiki_page_source_corpus.dart';
 
 /// 合并守卫：阅读器焦点系统（reader_focus_guards）。
@@ -35,9 +36,9 @@ void main() {
   group('BUG-161 · 源码守卫：阅读器焦点导航分支门控在开关上', () {
     final File file =
         File('lib/src/pages/implementations/reader_hibiki_page.dart');
-    // 去 `//` 行注释（避免匹配记录守卫的散文）+ 折叠空白，便于跨行匹配。
+    // 掩码注释（避免匹配记录守卫的散文）+ 折叠空白，便于跨行匹配。
     final String code =
-        _collapse(_stripDartLineComments(readReaderPageSource()));
+        _collapse(maskCommentsAndScriptLines(readReaderPageSource()));
 
     test('阅读器页面源文件存在', () {
       expect(file.existsSync(), isTrue);
@@ -229,7 +230,7 @@ void main() {
   group('BUG-136 · 源码守卫：每个指针手势回调都夺回焦点', () {
     // TODO-589 batch8: 指针手势 handler(onSwipe/onBoundarySwipe/onTap/onTapEmpty)
     // 已搬到 reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
-    final String code = _stripDartLineComments(readReaderPageSource());
+    final String code = maskCommentsAndScriptLines(readReaderPageSource());
 
     test('阅读器页面合并语料含 WebView 注入', () {
       // 合并语料(主壳 + part)必须真正含 reader WebView 构建点，否则下面的
@@ -286,12 +287,13 @@ String _handlerCallbackBody(String code, String handlerName) {
   return next < 0 ? code.substring(start) : code.substring(start, next);
 }
 
-/// 去掉 `//` 行注释，使断言匹配真实代码而非记录守卫的散文。
-String _stripDartLineComments(String source) => source
-    .split('\n')
-    .where((String line) => !line.trimLeft().startsWith('//'))
-    .join('\n');
-
 /// 折叠所有连续空白为单个空格，便于匹配被 dart format 折行的多行表达式。
+///
+/// 上游的注释剥离改用共享的 [maskCommentsAndScriptLines]：本语料是「主壳 + 全部
+/// part」，其中 `reader_hibiki/webview.part.dart` 把大段 JS 放在三引号串里，所以
+/// 既要 Dart 词法掩码（吃掉 `/* */` 块注释与行尾注释——原来的本地
+/// `_stripDartLineComments` 只丢整行 `//`，把被守的接线整段包进 `/* */` 就能骗绿），
+/// 又要保留「整行 `//`」规则来吃掉串内的 JS 注释。掩码是**等长**的，配合本函数的
+/// 空白折叠，注释位置只会塌成一个空格，跨行匹配的行为与原来一致。
 String _collapse(String source) =>
     source.replaceAll(RegExp(r'\s+'), ' ').trim();

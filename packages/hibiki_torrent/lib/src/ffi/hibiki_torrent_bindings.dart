@@ -586,6 +586,104 @@ class HibikiTorrentBindings {
       ffi.Pointer<ffi.Char> Function(
           ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
 
+  /// TODO-2482：某种子的 tracker 列表（url/tier/工作状态/错误/scrape 数）；
+  /// 返回 malloc JSON（ht_free_string 释放）。调用前先看 [hasDetailInfo]。
+  ffi.Pointer<ffi.Char> ht_torrent_trackers(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+  ) {
+    return _ht_torrent_trackers(session, info_hash);
+  }
+
+  late final _ht_torrent_trackersPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_torrent_trackers');
+  late final _ht_torrent_trackers = _ht_torrent_trackersPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// TODO-2482：每个文件的下载优先级（0~7，0=不下载，下标=文件 index）；
+  /// 返回 malloc JSON（ht_free_string 释放）。调用前先看 [hasDetailInfo]。
+  ffi.Pointer<ffi.Char> ht_get_file_priorities(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+  ) {
+    return _ht_get_file_priorities(session, info_hash);
+  }
+
+  late final _ht_get_file_prioritiesPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_get_file_priorities');
+  late final _ht_get_file_priorities = _ht_get_file_prioritiesPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// TODO-2482：设置单个文件的下载优先级（0~7，0=不下载）。1 成功 0 失败。
+  /// 调用前先看 [hasDetailInfo]。
+  int ht_set_file_priority(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    int file_index,
+    int priority,
+  ) {
+    return _ht_set_file_priority(session, info_hash, file_index, priority);
+  }
+
+  late final _ht_set_file_priorityPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+              ffi.Int, ffi.Int)>>('ht_set_file_priority');
+  late final _ht_set_file_priority = _ht_set_file_priorityPtr.asFunction<
+      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int, int)>();
+
+  /// TODO-2482：会话协议状态（DHT/LSD/端口映射/监听端口/会话级速率）。
+  /// 非阻塞（首轮统计字段可能为 -1，下一轮轮询即有值）；返回 malloc JSON
+  /// （ht_free_string 释放）。调用前先看 [hasDetailInfo]。
+  ffi.Pointer<ffi.Char> ht_session_status(ffi.Pointer<ffi.Void> session) {
+    return _ht_session_status(session);
+  }
+
+  late final _ht_session_statusPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+              ffi.Pointer<ffi.Void>)>>('ht_session_status');
+  late final _ht_session_status = _ht_session_statusPtr
+      .asFunction<ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>)>();
+
+  /// 已加载的库里是否有 TODO-2482 详情批次的全部符号
+  /// （trackers / 文件优先级读写 / 会话状态，缺一即整体降级）。
+  ///
+  /// 与 [hasApplyLimitsEx] 同理：随包 DLL 是 vendored 预编译产物，Dart 侧
+  /// 更新了、DLL 没重编的组合真实存在。符号缺失时详情页显示「当前后端
+  /// 不支持」，绝不让 lookup 在运行时抛。
+  late final bool hasDetailInfo = _probeDetailInfo();
+
+  bool _probeDetailInfo() {
+    try {
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+                  ffi.Pointer<ffi.Char>)>>('ht_torrent_trackers');
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+                  ffi.Pointer<ffi.Char>)>>('ht_get_file_priorities');
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+                  ffi.Int, ffi.Int)>>('ht_set_file_priority');
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ffi.Char> Function(
+                  ffi.Pointer<ffi.Void>)>>('ht_session_status');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
   /// 释放本库返回的 char* 串；传 NULL 为 no-op。
   void ht_free_string(ffi.Pointer<ffi.Char> s) {
     return _ht_free_string(s);

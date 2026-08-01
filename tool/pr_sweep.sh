@@ -64,9 +64,10 @@ LIMIT="${PR_SWEEP_LIMIT:-40}"
 # 「再合并」，避免 agent 只关不删导致 sweep 每轮重报（PR#68 死循环教训）。
 # 导出（非仅 shell 变量）让内嵌 python 直接读到同一真值，默认只此一处。
 export PR_SWEEP_STALE_BEHIND="${PR_SWEEP_STALE_BEHIND:-20}"
-# fake-ip DNS 下 gh 直连必超时——与 tool/board 同款默认自动挂本机代理。
-export HTTPS_PROXY="${HTTPS_PROXY:-http://127.0.0.1:34151}"
-export HTTP_PROXY="${HTTP_PROXY:-${HTTPS_PROXY}}"
+# fake-ip DNS 下 gh 直连必超时——需要代理。解析顺序见 tool/proxy_env.sh：
+# 调用方环境变量 > HIBIKI_BOOTSTRAP_PROXY > tool/bootstrap.local.env > 不设（照常跑）。
+# 不在本文件写死地址：那会把本机端口带进公开仓库，且换机器指向不存在的端口。
+source "$(dirname "${BASH_SOURCE[0]}")/proxy_env.sh"
 export PYTHONUTF8=1   # Windows GBK 控制台下内嵌 python 打中文不乱码
 
 # 检测阶段把「自动处理」项统一收集成 TSV（kind\tnum\ttitle\tbranch\tahead\toldsha\tnewsha\tbehind；
@@ -92,6 +93,11 @@ trap 'rm -f "$AUTO_TSV" "$MINE_TSV" "$EXT_TXT"' EXIT
 # 仓库根锚**脚本自身位置**，不吃 cwd：面板任务从任意目录调本脚本，cwd 不在仓库里时
 # 裸 `git` 直接失败 -> 判据静默停用 -> 又退回按 SHA 判的老毛病（实测踩到过）。
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# ⚠️ 与上面的 TSV 同理，且更隐蔽：pwd 在 MSYS 下给 `/d/APP/...`，调用方一旦
+# `export MSYS_NO_PATHCONV=1`（本仓 agent 常设，用于让 `git cat-file -e <ref>:path` 正常），
+# `git -C "$ROOT"` 就拿不到仓库 -> BASE_SHA 空 -> **内容判据整体静默停用**，
+# 所有 PR 一律按未落地处理（输出「取不到 origin/develop」）。面板任务环境没设该变量所以没暴露。
+ROOT="$(cygpath -m "$ROOT" 2>/dev/null || echo "$ROOT")"
 GIT_REMOTE="${PR_SWEEP_REMOTE:-origin}"
 BASE_SHA=""
 if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 \

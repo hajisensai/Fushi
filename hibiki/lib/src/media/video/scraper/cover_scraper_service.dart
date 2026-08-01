@@ -17,7 +17,9 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
+import 'package:hibiki/src/media/video/scraper/anilist_client.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
+import 'package:hibiki/src/media/video/scraper/jikan_client.dart';
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
 import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
 import 'package:hibiki/src/media/video/scraper/match_scorer.dart';
@@ -156,6 +158,8 @@ class CoverScraperService {
     required BangumiClient bangumiClient,
     required CoverDownloader coverDownloader,
     TmdbClient? tmdbClient,
+    AniListClient? aniListClient,
+    JikanClient? jikanClient,
     OfflineIndex? offlineIndex,
     bool enableSidecar = true,
     Directory? coversDirectory,
@@ -167,6 +171,8 @@ class CoverScraperService {
         _bangumi = bangumiClient,
         _downloader = coverDownloader,
         _tmdb = tmdbClient,
+        _anilist = aniListClient,
+        _jikan = jikanClient,
         _offline = offlineIndex,
         _enableSidecar = enableSidecar,
         _coversDirectory = coversDirectory;
@@ -177,6 +183,10 @@ class CoverScraperService {
   final BangumiClient _bangumi;
   final CoverDownloader _downloader;
   final TmdbClient? _tmdb;
+
+  /// AniList / Jikan：零 key 门槛的动画补充源。null = 未注入（测试或显式禁用）。
+  final AniListClient? _anilist;
+  final JikanClient? _jikan;
   final OfflineIndex? _offline;
   final bool _enableSidecar;
   final Directory? _coversDirectory;
@@ -413,9 +423,77 @@ class CoverScraperService {
         return _bangumi.search(keyword);
       case ScrapeSource.tmdb:
         return _tmdb?.search(keyword, year: year) ?? const <ScrapeCandidate>[];
+      case ScrapeSource.anilist:
+        return _anilist?.search(keyword, year: year) ??
+            const <ScrapeCandidate>[];
+      case ScrapeSource.jikan:
+        return _jikan?.search(keyword, year: year) ?? const <ScrapeCandidate>[];
       case ScrapeSource.manualUrl:
         return const <ScrapeCandidate>[];
     }
+  }
+
+  /// 本次构建**真正可用**的搜索源（按查询代价升序：本地内存 → 各在线源）。
+  ///
+  /// 未注入的 client（TMDB 无 key、测试没给假实现）不在列——这样调用方不必再写
+  /// 「这个源配了吗」的分支，「可用性」只在这一个地方判定。
+  List<ScrapeSource> get availableSearchSources => <ScrapeSource>[
+        if (_offline != null) ScrapeSource.offlineDb,
+        ScrapeSource.bangumi,
+        if (_tmdb != null) ScrapeSource.tmdb,
+        if (_anilist != null) ScrapeSource.anilist,
+        if (_jikan != null) ScrapeSource.jikan,
+      ];
+
+  /// **并发查全部可用源并合并**（手动匹配弹窗用）。
+  ///
+  /// 与 [_resolveBestDecision]（自动刮削）的分工是有意的、不是重复实现：
+  /// - 自动刮削按代价**逐层兜底**，命中 high 立即停 —— 批量刮 500 本时不能每本都
+  ///   发 4 个请求；
+  /// - 手动匹配是用户已经盯着屏幕在等，要的是**一次看全**，所以并发全查。
+  ///
+  /// 失败策略：**部分源失败只降级不报错**（其余源的结果照常展示，失败明细留在
+  /// [AggregatedSearchResult.failures] 供取证）；只有**全部源都失败**才算「搜不了」，
+  /// 由 UI 出可见失败态。这保住了 BUG-1176 的「搜不到 ≠ 搜不了」分界。
+  Future<AggregatedSearchResult> searchAllSources({
+    required String keyword,
+    int? year,
+  }) async {
+    final List<ScrapeSource> sources = availableSearchSources;
+    final Map<ScrapeSource, Object> failures = <ScrapeSource, Object>{};
+
+    final List<List<ScrapeCandidate>> perSource =
+        await Future.wait(sources.map((ScrapeSource source) async {
+      try {
+        return await searchCandidates(
+          source: source,
+          keyword: keyword,
+          year: year,
+        );
+      } catch (e) {
+        failures[source] = e;
+        return const <ScrapeCandidate>[];
+      }
+    }));
+
+    // 合并去重：**只在同源内按 entryId 去重**。跨源刻意不去重——Bangumi 的中文条目
+    // 与 AniList 的日文条目是同一部作品的不同表示（标题语言、评分体系、海报都不同），
+    // 合并会丢掉用户正想要的那一个。用户看到「同一部片的几种版本」是特性不是 bug。
+    final List<ScrapeCandidate> merged = <ScrapeCandidate>[];
+    final Set<String> seen = <String>{};
+    for (final List<ScrapeCandidate> batch in perSource) {
+      for (final ScrapeCandidate candidate in batch) {
+        final String key = '${candidate.source.name}/${candidate.entryId}';
+        if (!seen.add(key)) continue;
+        merged.add(candidate);
+      }
+    }
+
+    return AggregatedSearchResult(
+      candidates: merged,
+      failures: failures,
+      queriedSources: sources,
+    );
   }
 
   /// 添加/修改 Bangumi 映射：按 subject id 直取条目映射为候选（用户贴 ID/URL
@@ -759,6 +837,19 @@ class CoverScraperService {
     // TMDB 补充源（有 key，或有电影提示时优先补 TMDB）。
     if (_tmdb != null) {
       consider(await _tmdb.search(parsed.title, year: parsed.year));
+      if (best?.confidence == MatchConfidence.high) return finish();
+    }
+
+    // AniList / Jikan 补充源（零 key，动画向）。仍然逐层兜底而非并发全查：批量刮削
+    // 可能是 500 本起步，每本都并发 5 个请求会把 Bangumi/Jikan 的限流直接打爆，而
+    // 绝大多数条目在前两层就已命中 high。手动匹配弹窗要的是「一次看全」，那条路走
+    // [searchAllSources] 并发——两种代价模型服务两种场景，是有意的分工。
+    if (_anilist != null) {
+      consider(await _anilist.search(parsed.title, year: parsed.year));
+      if (best?.confidence == MatchConfidence.high) return finish();
+    }
+    if (_jikan != null) {
+      consider(await _jikan.search(parsed.title, year: parsed.year));
     }
     return finish();
   }

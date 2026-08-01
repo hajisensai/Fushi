@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   group('dictionary popup asset bootstrap', () {
     test('iOS uses inline popup assets instead of a file URL main frame', () {
@@ -653,11 +655,11 @@ void main() {
       expect(source, contains('if (isWindowsPlatform) {'),
           reason: '右键 GestureDetector 包裹仅在 Windows 生效，其它平台返回裸 WebView');
 
-      final int menuStart =
-          source.indexOf('Future<void> _showWindowsContextMenu(');
-      expect(menuStart, greaterThan(0),
-          reason: '必须有 _showWindowsContextMenu 入口');
-      final String body = source.substring(menuStart, menuStart + 1800);
+      // 窗口由花括号配对给出，不再是 `menuStart + 1800` 的定长切片：该方法体实测
+      // 1671 字符，旧窗口一头越界读进后面的 static 成员，另一头只给末尾的
+      // Clipboard 断言留 ~180 字符余量——方法里多写四行就凭空变红。
+      final String body =
+          methodBody(source, 'Future<void> _showWindowsContextMenu(');
       // BUG-261/260 锚点范式：取 showMenu 所用 Overlay 的 RenderBox，把右键点映射到该
       // Overlay 坐标系（吃掉界面大小 FittedBox 缩放残差），再据 Overlay 尺寸算 RelativeRect。
       expect(body.contains('Overlay.of(context).context.findRenderObject()'),
@@ -675,9 +677,9 @@ void main() {
     });
 
     test('症状②：Flutter 菜单含「查词」+「复制」两项（复制走 BUG-402 范式）', () {
-      final int menuStart =
-          source.indexOf('Future<void> _showWindowsContextMenu(');
-      final String body = source.substring(menuStart, menuStart + 1800);
+      // 同上：窗口=方法体（花括号配对），与方法长度无关。
+      final String body =
+          methodBody(source, 'Future<void> _showWindowsContextMenu(');
       // 「查词」平移自原 WebView2 自定义项；「复制」是原 WebView2 原生项，禁原生后自补。
       expect(body.contains('_PopupContextMenuAction.search'), isTrue,
           reason: '保留「查词」项（平移自原 WebView2 自定义项）');

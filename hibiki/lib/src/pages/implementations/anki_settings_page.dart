@@ -591,16 +591,31 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     AnkiSettings settings,
     AnkiViewModel vm,
   ) async {
-    final String? result = await Navigator.of(context).push<String>(
-      adaptivePageRoute<String>(
+    // 字段映射编辑只在真的选了卡型时给出：字段名来自当前卡型，编辑器据此
+    // 自我门控（卡型里没有的字段一律不显示）。
+    final List<String> noteTypeFields =
+        settings.selectedNoteType?.fields ?? const <String>[];
+    final LapisVisualEditorResult? result =
+        await Navigator.of(context).push<LapisVisualEditorResult>(
+      adaptivePageRoute<LapisVisualEditorResult>(
         context: context,
         builder: (BuildContext context) => LapisStyleEditorPage(
           initialCustomCss: settings.lapisCustomCss,
           fontScalePercent: settings.lapisFontScalePercent,
+          noteTypeFields: noteTypeFields,
+          initialFieldMappings: settings.fieldMappings,
+          pickHandlebar: noteTypeFields.isEmpty
+              ? null
+              : (String field, String currentValue) =>
+                  _pickHandlebar(field, currentValue),
         ),
       ),
     );
-    if (result != null) await vm.setLapisCustomCss(result);
+    if (result == null) return;
+    await vm.setLapisCustomCss(result.customCss);
+    for (final MapEntry<String, String> entry in result.fieldMappings.entries) {
+      await vm.updateFieldMapping(entry.key, entry.value);
+    }
   }
 
   Future<void> _applyLapisStyling(AnkiViewModel vm,
@@ -896,6 +911,13 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     String currentValue,
     AnkiViewModel vm,
   ) async {
+    final String? result = await _pickHandlebar(field, currentValue);
+    if (result != null) vm.updateFieldMapping(field, result);
+  }
+
+  /// 只负责「让用户选一个占位符」，不落盘。设置页选完立即写回；可视化编辑器
+  /// 里的选择要跟样式一起走保存/取消，所以落盘时机必须由调用方决定。
+  Future<String?> _pickHandlebar(String field, String currentValue) async {
     final dictionaryNames =
         appModel.termDictionaries.map((d) => d.name).toList();
     // 隐藏没被用到的旧别名；当前字段正用着的旧别名仍会出现（并标「已弃用」）。
@@ -904,7 +926,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       currentValue: currentValue,
     );
 
-    final result = await showAppDialog<String>(
+    return showAppDialog<String>(
       context: context,
       builder: (ctx) => AnkiHandlebarPickerDialog(
         title: t.anki_select_handlebar(field: field),
@@ -913,10 +935,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         labelFor: ankiHandlebarLabel,
       ),
     );
-
-    if (result != null) {
-      vm.updateFieldMapping(field, result);
-    }
   }
 
   Widget _buildTagsInput(AnkiSettings settings, AnkiViewModel vm) {

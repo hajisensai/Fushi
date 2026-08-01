@@ -1337,21 +1337,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       // \pos 绝对定位：把字幕盒的 \an 锚点精确落到映射坐标（\pos 覆盖 MarginV）。
       final SubtitleAnchor anchor = posMarkup!.anchor ??
           const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center);
-      return Stack(
-        children: <Widget>[
-          Positioned(
-            left: posScreen.dx,
-            top: posScreen.dy,
-            child: FractionalTranslation(
-              translation: Offset(
-                -_hFrac(anchor.horizontal),
-                -_vFrac(anchor.vertical),
-              ),
-              child: content,
-            ),
-          ),
-        ],
-      );
+      return _absolutePositioned(posScreen, anchor, content);
     }
     // 无 \pos：纯 SRT 副字幕强制顶部锚点；否则按 markup 锚点（null → 历史底居中）。
     final SubtitleAnchor? anchor = forceTop
@@ -1524,7 +1510,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
               isSecondary: isSecondary,
             ));
           }
-          final Widget ch = _buildSubtitleChar(chars[i], i, markup, cue);
+          final Widget ch = _applyVerticalGlyphRotation(
+              _buildSubtitleChar(chars[i], i, markup, cue), i, markup);
           // 选词光标环（手柄查词）：光标停在本字符时外画一圈主题色圆角框。
           // foregroundDecoration 画在字形之上、不改变布局几何（字幕排版零位移）。
           // 登记与画环同帧同源（entryIndex 即登记序），不存在几何滞后。
@@ -1813,6 +1800,46 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       );
     }
     return _applySpanScale(glyph, char, i, markup, fillStyle);
+  }
+
+  /// GDI/ASS「`@` 前缀 = 竖排字体」约定的字形预旋转（BUG-1331）。
+  ///
+  /// 语义（VSFilter/libass 与 GDI 一致）：`@` 开头的字体，其**字形本身**逆时针预旋转
+  /// 90°（字顶朝左）存储，而文本**仍按水平方向排版**。字幕组据此写出竖排的标准组合
+  ///
+  /// ```
+  /// {\fn@A-OTF Kaimin Tsuki Std H\an2\frz270\pos(10,360)}雨上がり　君は…
+  /// ```
+  ///
+  /// ——`\frz270`（ASS 逆时针为正，270° 即顺时针 90°）把整行顺时针转 90°：行方向由水平
+  /// 变竖直（自上而下），字形由躺倒转回正立。两次旋转互相抵消才得到「字正着、行竖排」。
+  ///
+  /// 旧实现只在 [_resolveAssFontFamily] 里把 `@` 当噪声剥掉（DirectWrite 家族名确实不含
+  /// `@`，那一步是对的），却没有任何地方承接被剥掉的**竖排语义**；而 `\frz270` 照转不误
+  /// ——于是只剩下单向的 90° 旋转，整行躺倒、盒几何随之错位到画面左缘外（用户报「左边的
+  /// 字都出去了」）。
+  ///
+  /// 修法是忠实建模「字形预旋转」本身，而不是新造一套竖排排版分支：每个字形绕自身中心
+  /// 逆时针转 90°（Flutter 的 Z 轴视觉正方向为顺时针，故取 `-π/2`；与 [_applyAssTransform]
+  /// 里 `\frz` 的取负同源）。`\pos` / `\an` / `\frz` / `\fad` / 分组 / 命中登记**全部照旧
+  /// 生效**，零特例分支。
+  ///
+  /// 近似说明：[Transform.rotate] 不改变布局尺寸，而 GDI 竖排字形的 advance 是宽高互换的。
+  /// CJK 全角字（含全角空格）宽≈高，故逐字盒几何几乎不变；`@` 字体本就是 CJK 竖排专用，
+  /// 混排窄拉丁字符时会有半字宽级别的偏差，接受。
+  ///
+  /// 纯字幕模式（respectAssStyle 关）位置/样式语义整体归零，竖排一并不生效。
+  Widget _applyVerticalGlyphRotation(
+      Widget glyph, int i, SubtitleMarkup? markup) {
+    if (!widget.respectAssStyle || markup == null) return glyph;
+    // 行内 \fn 优先于样式表 Fontname（与 [_styleForGrapheme] 的字体优先级同源）。
+    final SubtitleSpan? span = _spanAt(i, markup);
+    final String? spanFont = span?.fontName;
+    final String? name = (spanFont != null && spanFont.isNotEmpty)
+        ? spanFont
+        : markup.cueStyle?.fontName;
+    if (!isAssVerticalFontName(name)) return glyph;
+    return Transform.rotate(angle: -math.pi / 2, child: glyph);
   }
 
   /// span 级静态 `\fscx`/`\fscy` 缩放（ASS：标签处生效到下一次覆盖——说话人前缀
@@ -2500,6 +2527,57 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     );
   }
 
+  /// `\pos` / `\move` 绝对定位盒：把字幕盒的 `\an` 锚点落到 [posScreen]，并与锚点分支
+  /// （[_anchoredPadded] → [_paddingFor]）**共用同一条 chrome 避让契约**。
+  ///
+  /// BUG-1332 根因：避让原先挂在「锚点定位分支」上而不是「字幕层」上——带 `\pos` 的 cue
+  /// 直接走裸 [Positioned] 返回，[controlsVisible] / reserve 一概不参与，于是 OP 卡拉OK 那种
+  /// `{\an7\pos(461,672)}`（672/720 = 画面 93.3%，正是进度条那一条）的逐字歌词恒被控制条
+  /// 压住、且画在 chrome 之上盖掉暂停键。定位方式是**实现细节**，「UI 赢重叠」是产品契约，
+  /// 契约不该随分支消失。
+  ///
+  /// 语义与 [_paddingFor] 严格同构——**取下限、不是加法、只单向移动**：
+  /// - 盒底探进底部 chrome 带才上抬到恰骑其上缘（`min`，绝不把高位盒往下拽）；
+  /// - 盒顶探进顶部 chrome 带才下压到其下缘（`max`，绝不把低位盒往上顶）；
+  /// - 两者都不成立时坐标逐像素等于作者 `\pos`（招牌 / 画面中部特效外观不变）。
+  ///
+  /// 水平方向**不做任何钳制**：`\pos` 的 x 是作者语义，横向出屏另有根因（`\fn@…` 竖排
+  /// 字体前缀未支持），钳到屏内只会把那个 bug 盖住。
+  ///
+  /// 无 [VideoSubtitleOverlay.controlsVisible]（测试 / 有声书 / 无控制条）时避让进度恒 0，
+  /// 与历史像素级一致。控制条显隐用 [TweenAnimationBuilder] 在「作者位」与「避让位」之间
+  /// 插值，时长/曲线与锚点分支的 [AnimatedPadding] 同源，两条分支跟手感一致。
+  Widget _absolutePositioned(
+      Offset posScreen, SubtitleAnchor anchor, Widget content) {
+    final double anchorFx = _hFrac(anchor.horizontal);
+    final double anchorFy = _vFrac(anchor.vertical);
+    Widget layout(double dodgeProgress) => CustomSingleChildLayout(
+          delegate: _AbsoluteCueLayoutDelegate(
+            pos: posScreen,
+            anchorFx: anchorFx,
+            anchorFy: anchorFy,
+            topReserve: widget.controlsTopReserve,
+            bottomReserve: widget.controlsBottomReserve,
+            dodgeProgress: dodgeProgress,
+          ),
+          child: content,
+        );
+
+    final ValueListenable<bool>? visible = widget.controlsVisible;
+    if (visible == null) return layout(0);
+    return ValueListenableBuilder<bool>(
+      valueListenable: visible,
+      builder: (BuildContext _, bool controlsVisible, Widget? child) {
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: controlsVisible ? 1.0 : 0.0),
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          builder: (BuildContext _, double t, Widget? __) => layout(t),
+        );
+      },
+    );
+  }
+
   /// 把 [charContext] 对应字符的局部布局矩形转成全局屏幕矩形（弹窗定位用）。
   /// 无 RenderBox 时退化成 [Rect.zero]，调用方有 fallback。
   static Rect _globalRectOf(BuildContext charContext) {
@@ -2508,6 +2586,99 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final Offset topLeft = ro.localToGlobal(Offset.zero);
     return topLeft & ro.size;
   }
+}
+
+/// ASS/GDI 字体名是否声明了**竖排书写**（`@` 前缀约定，BUG-1331）。
+///
+/// `@` 只是「字形已预旋转 90°」的标记，不属于家族名——故 [_resolveAssFontFamily] 按家族名
+/// 解析时剥掉它是对的，本判据负责把被剥掉的那半语义接住（见 `_applyVerticalGlyphRotation`）。
+@visibleForTesting
+bool isAssVerticalFontName(String? name) =>
+    name != null && name.startsWith('@');
+
+/// `\pos` / `\move` 绝对定位盒的最终左上角（容器局部坐标）。纯函数，几何真相源。
+///
+/// [pos] 是 `\pos` 映射到容器的锚点；[anchorFx]/[anchorFy] 是 `\an` 锚点在盒内的比例
+/// （左/上=0、中=0.5、右/下=1），故作者位 = `pos - (anchorFx*w, anchorFy*h)`。
+///
+/// [dodgeProgress] ∈ [0,1] 是控制条可见度（0=隐藏，1=完全可见）：在作者位与避让位之间
+/// 线性插值，供淡入淡出期跟随。避让语义与 [VideoSubtitleOverlayState._paddingFor] 同构
+/// ——对 chrome 带**取下限、单向移动**，不是加法：
+/// - 盒底越过 `height - bottomReserve` 才上抬（`math.min`，高位盒不被拽下）；
+/// - 盒顶越过 `topReserve` 才下压（`math.max`，低位盒不被顶上）；
+/// - 带高不足以容纳字幕盒时顶部优先（结果确定，不来回抖）。
+///
+/// 水平坐标恒为作者位（`\pos` 的 x 是作者语义，不钳制）。
+@visibleForTesting
+Offset resolveAbsoluteCueOffset({
+  required Offset pos,
+  required Size container,
+  required Size child,
+  required double anchorFx,
+  required double anchorFy,
+  required double topReserve,
+  required double bottomReserve,
+  required double dodgeProgress,
+}) {
+  final double rawX = pos.dx - anchorFx * child.width;
+  final double rawY = pos.dy - anchorFy * child.height;
+  if (dodgeProgress <= 0) return Offset(rawX, rawY);
+  double dodgedY = rawY;
+  // 底部 chrome（进度条 + 按钮行）：只上抬，抬到盒底恰骑其上缘。
+  final double bandBottom = container.height - bottomReserve;
+  dodgedY = math.min(dodgedY, bandBottom - child.height);
+  // 顶部 chrome（标题栏 + 右上角菜单，BUG-1069 同契约）：只下压，压到其下缘。
+  dodgedY = math.max(dodgedY, topReserve);
+  final double t = dodgeProgress.clamp(0.0, 1.0).toDouble();
+  return Offset(rawX, rawY + (dodgedY - rawY) * t);
+}
+
+/// [resolveAbsoluteCueOffset] 的布局壳：`\pos` 盒需要**子盒真实尺寸**才能判断「盒底是否
+/// 探进控制条」，故不能用 [Positioned] + [FractionalTranslation]（两者都在布局前定位）。
+class _AbsoluteCueLayoutDelegate extends SingleChildLayoutDelegate {
+  const _AbsoluteCueLayoutDelegate({
+    required this.pos,
+    required this.anchorFx,
+    required this.anchorFy,
+    required this.topReserve,
+    required this.bottomReserve,
+    required this.dodgeProgress,
+  });
+
+  final Offset pos;
+  final double anchorFx;
+  final double anchorFy;
+  final double topReserve;
+  final double bottomReserve;
+  final double dodgeProgress;
+
+  // 字幕盒按内容自然尺寸排版（与旧 Positioned(child:) 的无界宽同义）：不被层尺寸拉伸，
+  // 也不因避让而换行重排——避让只挪位置，不改变盒的排版结果。
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      const BoxConstraints();
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) =>
+      resolveAbsoluteCueOffset(
+        pos: pos,
+        container: size,
+        child: childSize,
+        anchorFx: anchorFx,
+        anchorFy: anchorFy,
+        topReserve: topReserve,
+        bottomReserve: bottomReserve,
+        dodgeProgress: dodgeProgress,
+      );
+
+  @override
+  bool shouldRelayout(_AbsoluteCueLayoutDelegate old) =>
+      pos != old.pos ||
+      anchorFx != old.anchorFx ||
+      anchorFy != old.anchorFy ||
+      topReserve != old.topReserve ||
+      bottomReserve != old.bottomReserve ||
+      dodgeProgress != old.dodgeProgress;
 }
 
 /// GDI 全名尾部**字重后缀** → [FontWeight]；不是字重后缀返回 null。纯函数可单测。
