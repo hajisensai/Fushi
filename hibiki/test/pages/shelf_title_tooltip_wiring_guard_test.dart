@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-2490 / TODO-2497 源码扫描守卫：卡片/hero 标题溢出 Tooltip 的接线登记表。
 ///
 /// [ShelfTitleOverflowTooltip] 组件行为本身有 widget 测试
@@ -15,7 +17,9 @@ void main() {
   int countIn(String path) {
     final File file = File(path);
     expect(file.existsSync(), isTrue, reason: '缺失 $path');
-    return token.allMatches(file.readAsStringSync()).length;
+    // 共享词法掩码后再数：注释里提到组件名（迁移说明/TODO）不算接线，
+    // 也堵「把接线挪进注释」的假绿。
+    return token.allMatches(maskComments(file.readAsStringSync())).length;
   }
 
   test('视频首页：墙卡（本地/远端/合集）+ hero 轮播 + 横滚行卡都接标题溢出 Tooltip', () {

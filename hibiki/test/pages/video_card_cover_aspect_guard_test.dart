@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
+import '../helpers/source_guard.dart';
 import '../widgets/widget_test_helpers.dart';
 
 /// BUG-928 守卫：视频卡封面区必须被固定 AspectRatio 锁定。
@@ -31,8 +32,8 @@ void main() {
       '(portrait 2:3 / landscape 16:9, no gap) — BUG-928 / TODO-2486', () {
     final String source = File(path).readAsStringSync();
 
-    // 注释剥离后再断言：把锚点字面量塞进注释、实际代码回退定值的假绿被堵死
-    // （变异实测确认）。
+    // 注释掩码（共享 maskComments，行+块）后再断言：把锚点字面量塞进行注释或
+    // /* */ 块注释、实际代码回退定值的假绿被堵死（两种形态都变异实测确认）。
     final Map<String, String> bodies = <String, String>{
       '_buildCard':
           _stripLineComments(_functionSource(source, 'Widget _buildCard(')),
@@ -150,11 +151,9 @@ void main() {
   });
 }
 
-/// 去掉行注释（`//` 到行尾），断言只看真代码。
-String _stripLineComments(String source) => source.replaceAll(
-      RegExp(r'//[^\n]*'),
-      '',
-    );
+/// 注释一律掩掉再断言（行注释 + 块注释，等长空白掩码）——复核实测：手写只剥
+/// 行注释时，「锚点塞 /* */ 块注释 + 实现回退定值」照样绿。走共享词法扫描。
+String _stripLineComments(String source) => maskComments(source);
 
 /// 截取从 [startToken] 起到下一个顶层 `  Widget xxx(` 方法定义之前的源码片段。
 String _functionSource(String source, String startToken) {

@@ -312,4 +312,40 @@ void main() {
     expect(find.text(t.batch_delete_mixed_confirm(n: 1, m: 1)), findsOneWidget,
         reason: '混选确认文案含媒体数 + 合集数');
   });
+
+  testWidgets('TODO-2486 多选纪律：横滚行卡不开播不勾选、hero 按钮禁用',
+      (WidgetTester tester) async {
+    await seedVideo('video/ep1', '第1集');
+    // 入库时刻 = 现在 → 「最近添加」横滚行出现（14 天窗口）。
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('video/fresh'),
+      title: const Value('新片'),
+      videoPath: const Value('/abs/fresh.mp4'),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+    ));
+    final int cid = await db.createMediaCollection('合集甲');
+    await db.addToCollection(cid, MediaKind.video, 'video/ep1');
+
+    await pumpPage(tester);
+    final Finder recentCard =
+        find.byKey(const ValueKey<String>('home_video_recent_video/fresh'));
+    expect(recentCard, findsOneWidget, reason: '前置：最近添加行须出现');
+
+    await enterSelectionMode(tester);
+    // 行卡是墙内容的快捷镜像、不参与勾选：多选态点击不得开播（弹进播放器会把
+    // 批量操作打断）也不得改变选中计数。
+    await tester.tap(recentCard, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.byType(HomeVideoPage), findsOneWidget,
+        reason: '多选态点行卡不得推走库页（不开播）');
+    expect(find.text(t.batch_selected_count(n: 0)), findsOneWidget,
+        reason: '行卡不参与勾选，计数保持 0');
+    // hero 两按钮多选态渲染禁用（onPressed=null），背景导航同门控。
+    final OutlinedButton heroDetail = tester.widget<OutlinedButton>(
+        find.byKey(ValueKey<String>('home_video_hero_detail_$cid')));
+    expect(heroDetail.onPressed, isNull, reason: '多选态 hero「详情」必须禁用');
+    final FilledButton heroContinue = tester.widget<FilledButton>(
+        find.byKey(ValueKey<String>('home_video_hero_continue_$cid')));
+    expect(heroContinue.onPressed, isNull, reason: '多选态 hero 续播必须禁用');
+  });
 }

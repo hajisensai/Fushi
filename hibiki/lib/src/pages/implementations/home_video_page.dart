@@ -2500,7 +2500,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       fit: StackFit.expand,
       children: <Widget>[
         GestureDetector(
-          onTap: () => _openCollectionDetail(item.collection),
+          // 多选纪律（PR#664 复核）：多选态下 hero 不导航（进详情会把批量操作
+          // 中途弹走页面）；按钮同门控（onPressed=null 渲染禁用态，见下）。
+          onTap: _selectionMode
+              ? null
+              : () => _openCollectionDetail(item.collection),
           child: backgroundWidget,
         ),
         // 资料列自身不拦背景点击（按钮仍各自可点）。
@@ -2557,7 +2561,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   FilledButton.icon(
                     key: ValueKey<String>(
                         'home_video_hero_continue_${item.collection.id}'),
-                    onPressed: () => _openHeroContinue(item),
+                    onPressed:
+                        _selectionMode ? null : () => _openHeroContinue(item),
                     icon: const Icon(Icons.play_arrow),
                     label: Text(t.collection_continue_progress(n: continueEp)),
                   ),
@@ -2565,7 +2570,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   OutlinedButton.icon(
                     key: ValueKey<String>(
                         'home_video_hero_detail_${item.collection.id}'),
-                    onPressed: () => _openCollectionDetail(item.collection),
+                    onPressed: _selectionMode
+                        ? null
+                        : () => _openCollectionDetail(item.collection),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white,
                       side: BorderSide(
@@ -2809,9 +2816,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             key: cardKey,
             focusId: focusId,
             padding: EdgeInsets.zero,
-            onTap: onTap,
-            onLongPress: onLongPress,
-            onSecondaryTap: onLongPress,
+            // 多选纪律（PR#664 复核）：横滚行是墙内容的**快捷镜像，不参与勾选**
+            // ——勾选一律走墙卡/合集卡（行卡不在 setVisibleOrder 的可见序里，
+            // 参与勾选会打乱 Shift 区间语义）。进入多选态后行卡点击不得再触发
+            // 播放/流播（误触会把批量操作中途弹进播放器），长按/右键置 null
+            // 让位祖先 SelectionDragArea 扫选，与墙卡同一纪律。
+            onTap: _selectionMode ? null : onTap,
+            onLongPress: _selectionMode ? null : onLongPress,
+            onSecondaryTap: _selectionMode ? null : onLongPress,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
