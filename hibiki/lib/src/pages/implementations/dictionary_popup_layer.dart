@@ -1,11 +1,13 @@
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/utils.dart';
 
@@ -696,7 +698,48 @@ class DictionaryPopupLayer extends StatelessWidget {
             child: content,
           );
 
-    return _maybeWrapHostPointerInput(_maybeWrapResizeGrip(shell));
+    return _maybeWrapHostKeyInput(
+      _maybeWrapHostPointerInput(_maybeWrapResizeGrip(shell)),
+    );
+  }
+
+  /// BUG-1347 键盘那一半：Flutter 焦点落在弹窗子树里时，把绑到宿主动作的按键交回宿主。
+  ///
+  /// 「第一层有效、嵌套无效」就断在焦点链上：视频/首页查词把整棵浮层挂在**根 Overlay**
+  /// （为了盖过 media_kit 全屏路由），而宿主的快捷键入口是**页面自己那层**
+  /// `Focus(onKeyEvent:)`。用户点弹窗里的词唤出嵌套层时，平台视图会把 Flutter 焦点
+  /// 请求过去（`custom_platform_view` 的 `onPointerDown` → `requestFocus`），此后
+  /// `KeyEvent` 沿 根 Overlay → Navigator → App 冒泡，**永远到不了**宿主页面的 `Focus`
+  /// ——不只是关词典，整条宿主快捷键通道都断。第一层之所以有效，只是因为它是从页面里
+  /// 点出来的、焦点还留在页面上。
+  ///
+  /// 在弹窗层自己挂 `Focus` 接住即可：命中就交回宿主并消费，未命中返回 `ignored`
+  /// 继续冒泡（弹窗在页面 `Stack` 里的宿主——如阅读器——照旧走它原本那条链，不双触发）。
+  /// `canRequestFocus: false` + `skipTraversal`：本节点只做拦截，不参与遍历、不抢焦点。
+  ///
+  /// 与弹窗内的 JS 桥天然互斥，故**不需要平台判据**：按键只会到达其中一个——DOM 收得到
+  /// keydown 的平台（Android 等原生 WebView），Flutter 这边根本收不到 `KeyEvent`。
+  Widget _maybeWrapHostKeyInput(Widget child) {
+    final ValueChanged<String>? sink = onHostInputToken;
+    if (sink == null || inputSpec.keyTokens.isEmpty) return child;
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (FocusNode node, KeyEvent event) {
+        // 只在按下沿触发：关词典是一次性动作，按住不该逐层关掉整条弹窗栈
+        // （与 JS 桥的 `forwardRepeats: false` 同语义）。
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        final String? token = dictionaryPopupKeyToken(
+          key: event.logicalKey,
+          modifiers: activeModifierKeys(),
+          spec: inputSpec,
+        );
+        if (token == null) return KeyEventResult.ignored;
+        sink(token);
+        return KeyEventResult.handled;
+      },
+      child: child,
+    );
   }
 
   /// BUG-1269 复诉（鼠标键那一半）：在**宿主拥有指针**的平台（Windows，见

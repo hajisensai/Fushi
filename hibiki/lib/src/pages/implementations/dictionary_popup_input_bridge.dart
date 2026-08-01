@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
 import 'package:hibiki/src/focus/webview_key_bridge.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
@@ -154,6 +155,33 @@ const String kDictionaryPopupInputHandler = 'hostInputToken';
 /// 两条路**互斥**，故 [dictionaryPopupInputBridgeScript] 在宿主拥有指针时不装鼠标
 /// 监听——否则中键/右键会被两条路各触发一次（关词典幂等看不出来，漫画翻页会翻两页）。
 bool get hostOwnsDictionaryPopupPointerInput => isWindowsPlatform;
+
+/// Flutter 焦点落在弹窗子树里时，把命中 [spec] 的按键折成与 JS 桥**完全同形**的
+/// token（`Escape` / `Ctrl+KeyD`），未命中返回 null。
+///
+/// BUG-1347 键盘那一半：JS 桥只在「弹窗 DOM 真能收到 keydown」的平台生效，Windows 的
+/// 无窗口 WebView2 收不到（fork 不转发键盘）。但那里的按键**一定**会到 Flutter，问题
+/// 只是**到不了宿主页面的 `Focus`**：视频/首页查词把整棵浮层挂在**根 Overlay**
+/// （为了盖过 media_kit 全屏路由），焦点一旦进入浮层子树，`KeyEvent` 的冒泡链是
+/// 根 Overlay → Navigator → App，**永远不经过宿主页面那个 `Focus(onKeyEvent:)`**。
+/// 用户点了弹窗里的词（唤出嵌套层）之后焦点正好就在那里——这就是「第一层有效、
+/// 嵌套无效」：第一层是从页面里点出来的、焦点还在页面上。
+///
+/// 所以在弹窗层自己挂一个 `Focus` 接住它，折成同一个 token 交回宿主。与 JS 桥天然
+/// **互斥**：按键只会到达其中一个（DOM 收得到键的平台，Flutter 焦点就不在浏览器外面），
+/// 故不需要平台判据——谁收到谁转发。
+///
+/// 用的是与 [dictionaryPopupInputSpecFor] 生成键表**同一个** [InputBinding.serialize]，
+/// 所以两边的字符串必然对齐，不存在「表里写 A、运行时折出 B」的漂移。
+String? dictionaryPopupKeyToken({
+  required LogicalKeyboardKey key,
+  required Set<ModifierKey> modifiers,
+  required DictionaryPopupInputSpec spec,
+}) {
+  if (spec.keyTokens.isEmpty) return null;
+  final String token = InputBinding(key: key, modifiers: modifiers).serialize();
+  return spec.keyTokens.contains(token) ? token : null;
+}
 
 /// 指针落在弹窗表面时，把命中 [spec] 的鼠标按下折成与 JS 桥**完全同形**的 token
 /// （`Mouse1`/`Mouse2`/`Mouse3`/`Mouse4`），未命中返回 null。

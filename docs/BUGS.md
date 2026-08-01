@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1347](bugs/BUG-1347-dismiss-dict-mouse-popup-surface.md) | ✅ | ✅ | 关词典鼠标键在查词弹窗表面无效（Windows 指针所有权） |
+| [BUG-1347](bugs/BUG-1347-dismiss-dict-mouse-popup-surface.md) | ✅ | ✅ | 关词典的鼠标键/快捷键在查词弹窗表面无效（Windows 指针与焦点所有权） |
 | [BUG-1341](bugs/BUG-1341-mihon-detail-layout.md) | ✅ | ✅ | Mihon 漫画详情页路由触发布局断言 |
 | [BUG-1340](bugs/BUG-1340-mihon-extension-catalog-restart.md) | ✅ | ✅ | 漫画扩展重启后可下载目录消失且无法安装新扩展 |
 | [BUG-1339](bugs/BUG-1339-clip-export-mobile-h264-encoder.md) | ✅ | ✅ | 移动端片段导出缺 H.264 编码器导致静默产出不可播文件 |
