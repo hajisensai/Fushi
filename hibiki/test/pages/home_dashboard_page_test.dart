@@ -992,6 +992,60 @@ void main() {
     );
   });
 
+  /// 撤整页 1600 限宽后的**宽屏兜底**：1920 恰好是「主列 ~1076 < 网格自然上限
+  /// 1110」的临界点，热力图刚好被填满，所以只测 1920 结构上测不到 BUG-1073 症状 3
+  /// 的复发。2560 起主列就宽过 1110，热力图卡再拉满就是右侧死空白（3840 下实测卡内
+  /// 2244 对网格 1110，空 1134px）。这里直接量真实几何：网格必须长到自然上限，且卡
+  /// 内不许剩下富余宽度；同时侧列位置仍随窗口走，证明没有把整页限宽偷偷加回来。
+  for (final double width in <double>[2560, 3840]) {
+    testWidgets('宽屏兜底（$width）：热力图卡按网格自然上限封顶，卡内无右侧死空白',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = Size(width, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await seedAllSections();
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+
+      expect(tester.takeException(), isNull);
+
+      // 网格 = 热力图内最后一个 GestureDetector（Column 里翻页箭头在前、网格在后）。
+      final Finder heatmapFinder = find.byType(StatContributionHeatmap);
+      final Finder gridFinder = find
+          .descendant(
+            of: heatmapFinder,
+            matching: find.byType(GestureDetector),
+          )
+          .last;
+      // 卡内可用宽（= 卡宽 − 两侧内边距）：热力图在 stretch 的 Column 里，宽度就是它。
+      final double cardInnerWidth = tester.getSize(heatmapFinder).width;
+      final double gridWidth = tester.getSize(gridFinder).width;
+
+      // 网格铺到自身两道封顶（53 列 × 18px 格 + 52 × 3px 间距 = 1110）。
+      expect(gridWidth, statHeatmapMaxGridWidth(), reason: 'width=$width');
+      // 富余宽度必须为零——回归时这里是 2244 − 1110 = 1134px 死空白。
+      expect(
+        cardInnerWidth - gridWidth,
+        lessThanOrEqualTo(1.0),
+        reason: 'width=$width 卡内右侧死空白',
+      );
+      // 只封顶热力图这一块：整页没有重新限宽居中，左缘仍贴页面 padding，
+      // 侧列（活动时间轴）起点仍按窗口宽的 ~60% 走。
+      expect(
+        tester.getTopLeft(find.text(t.reading_activity)).dx,
+        lessThan(100),
+        reason: 'width=$width 左缘',
+      );
+      expect(
+        tester.getTopLeft(find.text(t.home_activity)).dx,
+        greaterThan(width * 0.5),
+        reason: 'width=$width 侧列起点',
+      );
+    });
+  }
+
   testWidgets('BUG-1073 窄屏（420）：四个区块仍单列堆叠、左边缘一致', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(420, 1400);
     tester.view.devicePixelRatio = 1.0;

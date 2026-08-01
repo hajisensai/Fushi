@@ -1,7 +1,21 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
+
+import '../../sync/desktop_lookup_foreground_guard_static_test.dart'
+    show stripDartComments;
+
+/// 页面壳里「自己补横向内边距」的判据：`padding:` 位置上出现一个横向 EdgeInsets，
+/// 且取自 `spacing.page`（设计 token，不是散落魔数）。
+bool _hasOwnHorizontalInset(String code) {
+  return RegExp(
+    r'padding:\s*EdgeInsets\.symmetric\(\s*horizontal:[^;]{0,120}?spacing\.page',
+    dotAll: true,
+  ).hasMatch(code);
+}
 
 void main() {
   group('windowSizeClassOf', () {
@@ -172,6 +186,46 @@ void main() {
         expect(
           desktopContentPadding(sizeClass, DesktopContentKind.readerShelf),
           EdgeInsets.zero,
+        );
+      }
+    });
+
+    test('readerShelf 零留白后，两个裸内容页必须自带横向内边距', () {
+      // 共享侧向留白归零，是因为媒体墙**卡片自带内边距**。但这两页的内容体
+      // （MediaSourcesView / MokuroMoeCatalogView）是裸的文字行与搜索框 + 封面网格，
+      // 自身零内边距——共享留白一撤就直接贴窗口边 0px。所以它们必须在页面壳里自己
+      // 补，量级与其余媒体墙页一致（这里取 spacing.page，与同页 HibikiPageHeader 的
+      // 横向内边距同源，标题与正文左缘对齐）。注释先剥掉，防止说明文字假绿。
+      for (final ({String path, String label}) page
+          in const <({String path, String label})>[
+        (
+          path: 'lib/src/pages/implementations/media_sources_page.dart',
+          label: '来源页',
+        ),
+        (
+          path: 'lib/src/media/manga/online/mokuro_moe_catalog_page.dart',
+          label: 'mokuro 在线目录页',
+        ),
+      ]) {
+        final String code =
+            stripDartComments(File(page.path).readAsStringSync());
+        expect(
+          code.contains('DesktopContentKind.readerShelf'),
+          isTrue,
+          reason: '${page.label} 不再是 readerShelf 页，本守卫需重新定标',
+        );
+        expect(
+          _hasOwnHorizontalInset(code),
+          isTrue,
+          reason: '${page.label} 自身无横向内边距，桌面上会贴窗口边 0px',
+        );
+        // 变异自检：把内边距摘掉守卫必须转红。
+        expect(
+          _hasOwnHorizontalInset(
+            code.replaceAll('spacing.page', 'spacing.nothing'),
+          ),
+          isFalse,
+          reason: '${page.label} 的守卫必须能被摘掉内边距的 mutation 杀红',
         );
       }
     });

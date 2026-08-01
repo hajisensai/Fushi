@@ -1509,7 +1509,7 @@ class _HomeDashboardPageState
   Widget _buildHeatmapCard(HibikiDesignTokens tokens) {
     final Map<String, int> charsByDay = _heatmapCharsByDay();
     final Map<String, int> timeMsByDay = _heatmapTimeMsByDay();
-    return _sectionCard(
+    final Widget card = _sectionCard(
       tokens,
       title: t.reading_activity,
       header: _filterChips<int>(
@@ -1554,6 +1554,23 @@ class _HomeDashboardPageState
           SizedBox(height: tokens.spacing.gap),
           _buildDailyGoalRow(tokens),
         ],
+      ),
+    );
+    // 热力图是全仪表盘唯一有**天然最大宽度**的区块：网格列数封顶「一年」、格子边长
+    // 封顶 maxCell，铺到 [statHeatmapMaxGridWidth]（1110）就到头了。整页 1600 限宽撤
+    // 掉后（PR#675），3840 逻辑宽下这张卡被拉到 2244，而网格仍是 1110——右侧空出
+    // 1134px，正是 BUG-1073 症状 3 在超宽屏复发。修法不是把整页限宽加回来（用户实报
+    // 「首页左右强制的间距」要的就是铺满），而是只给这一块按内容的自然上限封顶，并
+    // 左对齐保持与主列其余区块左边缘对齐。1920 及以下主列本就窄于该上限，此处无效果。
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      // ListView 给的高度约束无界，heightFactor: 1 让 Align 收敛到内容高度。
+      heightFactor: 1,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: statHeatmapMaxGridWidth() + 2 * _sectionCardInset(tokens),
+        ),
+        child: card,
       ),
     );
   }
@@ -2638,6 +2655,10 @@ class _HomeDashboardPageState
   // ── 共享外壳 ────────────────────────────────────────────────────────────
 
   /// 统一的分区卡：标题（+ 可选右侧 header 控件）+ 内容，套 group 底色圆角。
+  /// [_sectionCard] 的内边距。单独抽出来是因为 [_buildHeatmapCard] 要按「网格自然
+  /// 最大宽度 + 两侧内边距」给卡片限宽，两处必须用同一个值。
+  double _sectionCardInset(HibikiDesignTokens tokens) => tokens.spacing.gap + 4;
+
   Widget _sectionCard(
     HibikiDesignTokens tokens, {
     required String title,
@@ -2652,7 +2673,7 @@ class _HomeDashboardPageState
         ),
       ),
       child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.gap + 4),
+        padding: EdgeInsets.all(_sectionCardInset(tokens)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
