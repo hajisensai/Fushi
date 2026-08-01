@@ -156,6 +156,16 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 title: t.anki_lapis_restore,
                 onTap: _lapisBusy ? null : () => _restoreLapisBackup(vm),
               ),
+              // 兜底出口：卡片长歪了、又没有可用备份时，这是唯一能回到已知
+              // 良好状态的路。与「从备份恢复」的分工——那个回到某个历史时刻
+              // （前提是那时落过备份），这个回到出厂，不依赖任何历史。
+              AdaptiveSettingsRow(
+                icon: Icons.restart_alt_outlined,
+                showIcon: true,
+                title: t.anki_lapis_restore_factory,
+                subtitle: t.anki_lapis_restore_factory_hint,
+                onTap: _lapisBusy ? null : () => _restoreLapisFactory(vm),
+              ),
             ],
           ),
         // 媒体存储优化：字节级去重（只删字节相同的多余副本，绝不重编码）。
@@ -621,6 +631,50 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       case LapisApplyResult.unsupported:
         // 整区已按 supportsNoteTypeEditing 隐藏，此分支只是防御。
         break;
+    }
+  }
+
+  /// 恢复出厂 Lapis。破坏性动作，必须二次确认；确认后备份门在服务层强制走。
+  Future<void> _restoreLapisFactory(AnkiViewModel vm) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final bool? ok = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(t.anki_lapis_restore_factory),
+        content: Text(t.anki_lapis_restore_factory_confirm),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(t.dialog_ok),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _lapisBusy = true);
+    try {
+      final LapisRestoreFactoryResult result =
+          await vm.lapisTemplateService.restoreFactoryDefaults();
+      // 恢复会清空 Hibiki 侧客制化（字号/CSS/自定义区域），UI 必须跟着刷新，
+      // 否则设置页还显示恢复前的字号、编辑器打开还是旧区域。
+      await vm.refreshSettingsFromStore();
+      final String message = switch (result) {
+        LapisRestoreFactoryResult.restored => t.anki_lapis_restore_factory_done,
+        LapisRestoreFactoryResult.notFound => t.anki_lapis_not_found,
+        // 整区已按 supportsNoteTypeEditing 隐藏，此分支只是防御。
+        LapisRestoreFactoryResult.unsupported => t.anki_lapis_not_found,
+      };
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(t.anki_lapis_restore_factory_failed(error: '$e')),
+      ));
+    } finally {
+      if (mounted) setState(() => _lapisBusy = false);
     }
   }
 

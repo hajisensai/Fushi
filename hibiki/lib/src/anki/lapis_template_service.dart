@@ -27,6 +27,18 @@ enum LapisApplyResult {
   unsupported,
 }
 
+/// 「恢复出厂 Lapis」的结果。
+enum LapisRestoreFactoryResult {
+  /// 已把 Anki 端的 Lapis 卡型推回出厂态（推送前已自动备份）。
+  restored,
+
+  /// Anki 里没有 Lapis note type（先走「创建 Lapis 卡组」）。
+  notFound,
+
+  /// 当前后端不支持模板读写（AnkiDroid / AnkiMobile）。
+  unsupported,
+}
+
 /// Lapis 模板的备份 / 恢复 / 客制化应用 / 启动自动迁移。
 ///
 /// 硬规则：**任何写模板的操作都先落一份带时间戳的 JSON 备份**（写盘失败即
@@ -167,6 +179,58 @@ class LapisTemplateService {
     }
     await _pushCustomization(def, expected, expectedBack);
     return LapisApplyResult.applied;
+  }
+
+  /// 恢复出厂 Lapis：把 Anki 端的卡型**整体**推回 Hibiki 内置的 vendored 版本
+  /// （样式 + 正反面模板），并清空 Hibiki 侧的全部客制化。
+  ///
+  /// 与「从备份恢复」的分工：备份恢复是回到**某个历史时刻**，前提是那时候落过
+  /// 备份；本方法是回到**出厂**，不依赖任何历史。卡片长歪了又没有可用备份时，
+  /// 这是唯一的兜底。
+  ///
+  /// **刻意不走漂移判定**：用户点这个按钮，本身就是「我知道 Anki 端现在是什么
+  /// 样，就是要把它抹掉」的显式声明，再拦一道 foreignEdit 确认没有意义（UI 侧
+  /// 已有一次二次确认）。但备份门照走——覆盖前必落一份，写盘失败即中止。
+  ///
+  /// 清空客制化时把两个指纹**对齐到出厂值**而不是置 null：Anki 端此刻确实就是
+  /// 出厂态，指纹如实记录它才能让后续的漂移判定继续认得出「这是我们写的」；
+  /// 置 null 会让下次启动的自动迁移把刚恢复好的卡型又当成来历不明。
+  Future<LapisRestoreFactoryResult> restoreFactoryDefaults() async {
+    if (!_repository.supportsNoteTypeEditing) {
+      return LapisRestoreFactoryResult.unsupported;
+    }
+    final AnkiNoteTypeDefinition? def =
+        await _repository.readNoteTypeDefinition(LapisNoteType.modelName);
+    if (def == null) return LapisRestoreFactoryResult.notFound;
+    await _writeBackupFile(def);
+
+    final String css = LapisNoteType.template.css;
+    final bool stylingOk =
+        await _repository.updateNoteTypeStyling(def.name, css);
+    if (!stylingOk) throw StateError('Backend rejected styling update');
+
+    final bool templatesOk = await _repository.updateNoteTypeTemplates(
+      def.name,
+      <AnkiCardTemplate>[
+        const AnkiCardTemplate(
+          name: LapisNoteType.cardName,
+          front: LapisNoteType.front,
+          back: LapisNoteType.back,
+        ),
+      ],
+    );
+    if (!templatesOk) throw StateError('Backend rejected card template update');
+
+    await _repository.updateSettings((AnkiSettings s) => s.copyWith(
+          lapisFontScalePercent: 100,
+          lapisCustomCss: '',
+          lapisCustomBlocks: const <LapisCustomBlock>[],
+          lapisAppliedCssSha: lapisCssSha256(css),
+          lapisAppliedTemplateSha:
+              lapisCssSha256(normalizeCssForCompare(LapisNoteType.back)),
+          lapisMigratedBaselineSha: currentLapisBaselineSha,
+        ));
+    return LapisRestoreFactoryResult.restored;
   }
 
   /// 样式与模板两份判定合成一份：**取更保守的那个**。

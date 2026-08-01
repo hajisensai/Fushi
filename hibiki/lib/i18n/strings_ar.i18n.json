@@ -2904,5 +2904,10 @@
   "anki_lapis_visual_block_anchor_bottom": "Bottom of the card",
   "anki_lapis_visual_block_fields": "Fields shown here",
   "anki_lapis_visual_block_no_fields": "No fields selected yet",
-  "anki_lapis_visual_block_needs_note_type": "Pick a note type first to choose fields."
+  "anki_lapis_visual_block_needs_note_type": "Pick a note type first to choose fields.",
+  "anki_lapis_restore_factory": "Restore factory Lapis",
+  "anki_lapis_restore_factory_hint": "Overwrite the Lapis note type in Anki with the version bundled in Hibiki and clear every customisation here.",
+  "anki_lapis_restore_factory_confirm": "This overwrites the Lapis styling and card templates in Anki with Hibiki's bundled version, and resets font size, custom CSS and custom areas. A backup of the current state is saved first. Card data is not touched.",
+  "anki_lapis_restore_factory_done": "Lapis restored to factory defaults",
+  "anki_lapis_restore_factory_failed": "Restore failed: $error"
 }
