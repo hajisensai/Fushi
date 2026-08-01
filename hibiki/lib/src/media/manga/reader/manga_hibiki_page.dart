@@ -1076,13 +1076,13 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       ],
     );
     if (rewriteMangaJson) {
-      final File temporary = File('${mangaJson.path}.tmp');
-      await temporary.writeAsString(
-        jsonEncode(mangaPayloadToJson(payload)),
-        flush: true,
+      // 与几何 debounce 同一 State、可交叠，且共用同一个 `<manga.json>.tmp`：
+      // 必须同锁，否则两个写者互相踩临时文件。
+      final MokuroPayload bootstrapped = payload;
+      await runExclusiveOnMangaJson<void>(
+        mangaJson.path,
+        () => writeMangaJsonAtomically(mangaJson.path, bootstrapped),
       );
-      if (await mangaJson.exists()) await mangaJson.delete();
-      await temporary.rename(mangaJson.path);
     }
 
     final MangaReaderSession pageSession = await MihonMangaPageProvider(
@@ -1216,8 +1216,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     Directory directory,
     Directory imagesDirectory,
   ) async {
+    // 删也要进锁：无锁 delete 可能落在别的写者的读-改-写之间，让它把刚删掉的
+    // 内容又原样写回去（或反过来，让新写的内容被这次删除抹掉）。
     final File payload = File(p.join(directory.path, 'manga.json'));
-    if (await payload.exists()) await payload.delete();
+    await runExclusiveOnMangaJson<void>(payload.path, () async {
+      if (await payload.exists()) await payload.delete();
+    });
     final File materializedManifest =
         File(p.join(imagesDirectory.path, '.mihon-pages.json'));
     if (await materializedManifest.exists()) {
@@ -1317,19 +1321,24 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     final String target = p.join(row.extractDir, row.epubPath);
     try {
       // 与框选回写共用同一把 per-path 写锁：两者都是整份读-改-写，交叠会丢更新。
-      await runExclusiveOnMangaJson<void>(
-        target,
-        () => writeMangaJsonAtomically(target, payload),
-      );
-    } on Object catch (error, stack) {
-      final File temporary = File('$target.tmp');
-      if (await temporary.exists()) {
+      // `.tmp` 残渣清理必须在**锁内**：`.tmp` 是 per-path 固定名，锁外删等于删掉
+      // 下一个写者正在写的临时文件。
+      await runExclusiveOnMangaJson<void>(target, () async {
         try {
-          await temporary.delete();
-        } on FileSystemException {
-          // Best-effort cleanup; the managed target remains intact.
+          await writeMangaJsonAtomically(target, payload);
+        } on Object {
+          final File temporary = File('$target.tmp');
+          if (await temporary.exists()) {
+            try {
+              await temporary.delete();
+            } on FileSystemException {
+              // Best-effort cleanup; the managed target remains intact.
+            }
+          }
+          rethrow;
         }
-      }
+      });
+    } on Object catch (error, stack) {
       ErrorLogService.instance.log(
         'MangaHibikiPage.persistOnlineGeometry',
         error,
@@ -2377,17 +2386,19 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     final EpubBookRow? row = _bookRow;
     if (row == null || text.isEmpty) return;
     final String mangaJsonPath = p.join(row.extractDir, row.epubPath);
+    // 在线几何 debounce 到期时会把当时的 `_payload` 整份写回。它若插在「追加落盘」
+    // 与下面的 setState 之间，写的就是**不含新块**的旧快照，刚回写的框当场被吞。
+    // 先取消它；几何本来就会在下次翻页/滚动时重新排程。
+    _onlineGeometryPersistDebounce?.cancel();
     try {
-      await appendMangaBlockToMangaJson(
+      // 锁内已经产出了落盘后的 payload，直接用——锁外重读会读到别的写者的版本。
+      final MokuroPayload payload = await appendMangaBlockToMangaJson(
         mangaJsonPath: mangaJsonPath,
         pageIndex: pageIndex,
         box: Rect.fromLTRB(box.left, box.top, box.right, box.bottom),
         vertical: vertical,
         text: text,
       );
-      final String jsonStr = await File(mangaJsonPath).readAsString();
-      final MokuroPayload payload =
-          await MangaHibikiPage.parseMangaJsonOffUi(jsonStr);
       if (!mounted) return;
       setState(() => _payload = payload);
       await _loadInitialWindow();

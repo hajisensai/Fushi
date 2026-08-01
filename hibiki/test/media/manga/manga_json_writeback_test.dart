@@ -150,6 +150,22 @@ void main() {
       expect(file.existsSync(), isTrue);
     });
 
+    test('返回落盘后的 payload：调用方不必（也不该）锁外重读文件', () async {
+      final File file = _writeTempMangaJson();
+      final MokuroPayload returned = await appendMangaBlockToMangaJson(
+        mangaJsonPath: file.path,
+        pageIndex: 0,
+        box: const Rect.fromLTRB(0, 0, 50, 50),
+        vertical: false,
+        text: 'inline',
+      );
+      expect(returned.images[0].blocks.single.lines, <String>['inline']);
+      // 返回值与磁盘一致（不是凭空构造的另一份）。
+      final MokuroPayload onDisk = parseMangaJson(file.readAsStringSync());
+      expect(onDisk.images[0].blocks.single.lines, <String>['inline']);
+      expect(returned.ocr?.engineSignature, onDisk.ocr?.engineSignature);
+    });
+
     test('页越界 / 文件缺失 → StateError', () async {
       final File file = _writeTempMangaJson();
       await expectLater(
@@ -224,6 +240,105 @@ void main() {
       );
       final MokuroPayload payload = parseMangaJson(file.readAsStringSync());
       expect(payload.images[0].blocks.single.lines, <String>['ok']);
+    });
+  });
+
+  group('writeMangaJsonAtomically', () {
+    test('rename 直接覆盖已存在的目标：绝不先 delete（那是唯一的原子性缺口）', () async {
+      final File file = _writeTempMangaJson();
+      final MokuroPayload payload = parseMangaJson(file.readAsStringSync());
+      // 目标已存在时照样写成功。若实现改回「先 delete 再 rename」，delete 与
+      // rename 之间目标完全不存在，崩在那个窗口整本 OCR 全丢。
+      await writeMangaJsonAtomically(file.path, payload);
+      expect(file.existsSync(), isTrue);
+      expect(parseMangaJson(file.readAsStringSync()).images, hasLength(2));
+      expect(File('${file.path}.tmp').existsSync(), isFalse);
+    });
+
+    test('源码守卫：writeMangaJsonAtomically 里不得出现 delete()', () {
+      // 行为断言证不了「中途没有不存在窗口」（测不到崩溃时刻），只能钉源码。
+      final File source = File('lib/src/media/manga/manga_json_writeback.dart');
+      final String body = source.readAsStringSync();
+      final int start = body.indexOf('Future<void> writeMangaJsonAtomically(');
+      expect(start, greaterThan(0));
+      final int end = body.indexOf('\n}', start);
+      expect(end, greaterThan(start));
+      expect(
+        body.substring(start, end),
+        isNot(contains('.delete()')),
+        reason: 'rename 已能覆盖已存在目标（Windows 实测 RENAME_OVER_EXISTING: OK）；'
+            '先 delete 再 rename 会开出一个目标不存在的窗口',
+      );
+    });
+  });
+
+  // 锁的价值全在「一个写者都不许漏」。行为测试只能验已经进锁的那些；漏进锁的
+  // 调用点必须靠源码扫描抓——这条守卫与文件头的调用点清单是同一份真相。
+  group('锁覆盖守卫：书根 manga.json 的每个写/删都在锁内', () {
+    const List<String> consumers = <String>[
+      'lib/src/media/manga/reader/manga_hibiki_page.dart',
+      'lib/src/media/manga/manga_ocr_wizard_dialog.dart',
+    ];
+
+    test('每处 writeMangaJsonAtomically 调用都由 runExclusiveOnMangaJson 包住', () {
+      for (final String path in consumers) {
+        final String body = File(path).readAsStringSync();
+        int at = body.indexOf('writeMangaJsonAtomically(');
+        expect(at, greaterThan(0), reason: '$path 应当经本模块落盘');
+        while (at >= 0) {
+          final String preceding = body.substring(at < 400 ? 0 : at - 400, at);
+          expect(
+            preceding,
+            contains('runExclusiveOnMangaJson'),
+            reason: '$path 偏移 $at 处的落盘不在 per-path 写锁内：'
+                '与框选回写交叠会整份覆写、吞掉刚追加的块',
+          );
+          at = body.indexOf('writeMangaJsonAtomically(', at + 1);
+        }
+      }
+    });
+
+    test('在线章节失效时删 manga.json 也在锁内', () {
+      final String body =
+          File('lib/src/media/manga/reader/manga_hibiki_page.dart')
+              .readAsStringSync();
+      final int start =
+          body.indexOf('Future<void> _invalidateOnlineChapterPayload(');
+      expect(start, greaterThan(0));
+      final int end = body.indexOf('\n  Future<', start + 1);
+      final String fn = body.substring(start, end > start ? end : body.length);
+      expect(
+        fn,
+        contains('runExclusiveOnMangaJson'),
+        reason: '无锁 delete 会落在别的写者的读-改-写之间，让删掉的内容被原样写回',
+      );
+    });
+
+    test('阅读器页不得再自己拼书根 manga.json 的落盘（绕过锁与原子写）', () {
+      // 只钉阅读器页：它对书根 manga.json 的写全部应经本模块。向导那边还留着一处
+      // 合法的 mangaPayloadToJson——写的是 `manga_ocr_out/` 里的 OCR 中间产物，
+      // 与书根 manga.json 不同路径，不在这把锁的语义范围内。
+      final String body =
+          File('lib/src/media/manga/reader/manga_hibiki_page.dart')
+              .readAsStringSync();
+      expect(
+        body,
+        isNot(contains('mangaPayloadToJson(')),
+        reason: '直接序列化 payload 就等于绕过 writeMangaJsonAtomically 与 per-path 写锁',
+      );
+    });
+
+    test('向导对书根 manga.json 的落盘经本模块（其余 mangaPayloadToJson 是 OCR 中间产物）', () {
+      final String body =
+          File('lib/src/media/manga/manga_ocr_wizard_dialog.dart')
+              .readAsStringSync();
+      final int at = body.indexOf('MangaStorage.kMangaJsonFileName');
+      expect(at, greaterThan(0));
+      // 书根 manga.json 的那处落盘必须紧跟锁 + 原子写，而不是自己拼 .tmp。
+      final String after = body.substring(at, at + 400);
+      expect(after, contains('runExclusiveOnMangaJson'));
+      expect(after, contains('writeMangaJsonAtomically'));
+      expect(after, isNot(contains('.tmp')));
     });
   });
 

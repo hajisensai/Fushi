@@ -125,6 +125,24 @@ void main() {
     expect(document, contains('pointer-events:none;'));
   });
 
+  test('橡皮筋挂在 body 上，后台 OCR 热替换该页 OCR 层不会把它一起抹掉', () {
+    final String document = _document();
+    expect(
+      document,
+      contains('document.body.appendChild(rescanEl);'),
+      reason: '挂进 .manga-page 的话，__mangaReplaceOcr 逐页热替换会连橡皮筋一起清掉',
+    );
+    // 反向：热替换只删该页的 .ocr-box，不删任何 rescan 节点。
+    expect(document, contains("page.querySelectorAll('.ocr-box')"));
+    expect(document, isNot(contains("querySelectorAll('#manga-rescan-rect')")));
+  });
+
+  test('指针被夺走（pointercancel）时清掉橡皮筋，不残留到下次拖拽', () {
+    final String document = _document();
+    expect(document, contains("addEventListener('pointercancel'"));
+    expect(document, contains('if (RESCAN) _rescanClear();'));
+  });
+
   test('webtoon 同样可用（模式内禁原生触摸滚动，否则竖滚抢拖框手势）', () {
     final String document = _document(mode: MangaReadingMode.webtoon);
     expect(document, contains('window.__mangaSetRescanMode'));

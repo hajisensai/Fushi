@@ -1020,6 +1020,13 @@ String _mangaGestureJs({
     if (e.button !== 0) return;
     _end(e.clientX, e.clientY);
   }, {passive: false});
+  // 指针被系统夺走（触屏手势接管 / 窗口失焦 / 捕获丢失）时收不到松手事件，
+  // 橡皮筋会挂在屏幕上直到下次拖拽。清掉起点与矩形，但保留模式（用户重画）。
+  // 注意：本注释随文档注入 WebView，不能出现松手事件的字面名——
+  // manga_overlay_html_test 的 C1 不变式按该字面量计数，恰好允许一个。
+  document.addEventListener('pointercancel', function(e){
+    if (RESCAN) _rescanClear();
+  }, {passive: true});
   document.addEventListener('contextmenu', function(e){
     e.preventDefault();
   }, {passive:false});

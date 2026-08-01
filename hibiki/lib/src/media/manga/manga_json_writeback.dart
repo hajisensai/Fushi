@@ -8,13 +8,22 @@
 ///
 /// ## 两条不变量
 ///
-/// 1. **并发串行化**：同一 manga.json 路径的写操作经进程内 per-path Future 链串行
-///    化，防止并发读-改-写互相覆盖（丢更新）。阅读器里至少有三个并发写者——框选
-///    回写、整卷 OCR 完成落盘、在线章节几何回填——它们必须共用
-///    [runExclusiveOnMangaJson] 这一把锁，否则串行化只保护了新增的那一条路径。
-///    跨进程并发不在保护范围（本 app 单进程持有书目录）。
-/// 2. **原子落盘**：先写 `<path>.tmp` 再 rename，崩溃/断电不会留下截断的
-///    manga.json（截断意味着整本书的 OCR 结果全丢）。
+/// 1. **并发串行化**：同一 manga.json 路径的**任何**写/删都必须经
+///    [runExclusiveOnMangaJson]，否则读-改-写互相覆盖（丢更新），或两个写者踩同一个
+///    per-path 固定名 `.tmp`。锁只在进程内、按规范化路径分桶；跨进程并发不在保护
+///    范围（本 app 单进程持有书目录）。
+///
+///    全仓写/删 manga.json 的调用点（改动这张表时同步改
+///    `manga_json_writeback_test.dart` 的锁覆盖守卫）：
+///    - `appendMangaBlockToMangaJson`（框选回写，本文件，自带锁）
+///    - `manga_hibiki_page.dart` 的 `_finishWholeVolumeOcr`（整卷 OCR 落盘）
+///    - `manga_hibiki_page.dart` 的 `_persistOnlinePayloadGeometry`（在线几何回填）
+///    - `manga_hibiki_page.dart` 的在线章节引导重写与 `_invalidateOnlineChapterPayload`
+///    - `manga_ocr_wizard_dialog.dart` 的 `_writeManagedMangaJson`（向导对已入库书落盘）
+///
+///    其中向导那条是**整份覆写**：不进锁就会整段吞掉用户刚框选回写的块。
+/// 2. **原子落盘**：先写 `<path>.tmp` 再 rename **直接覆盖**（不 delete），崩溃/断电
+///    不会留下截断的 manga.json，也不会留下「目标暂时不存在」的窗口。
 library;
 
 import 'dart:async';
@@ -57,20 +66,25 @@ Future<T> runExclusiveOnMangaJson<T>(
 ///
 /// 直写 `writeAsString` 在写中途崩溃会留下截断的 JSON（整本 OCR 结果报废）；rename
 /// 在同一文件系统上是原子的，读者要么看到旧文件、要么看到完整新文件。
+///
+/// **绝不先 `delete()` 再 rename**：那一步是整条路径上唯一破坏原子性的动作——delete
+/// 与 rename 之间目标文件完全不存在，崩在这个窗口里整本 OCR 全丢。Dart 的
+/// `File.rename` 在 Windows 上就能覆盖已存在的目标（实测 `RENAME_OVER_EXISTING: OK`），
+/// POSIX 上更是天然覆盖，所以那步既危险又多余。守卫见
+/// `manga_json_writeback_test.dart` 的「rename 直接覆盖」用例。
+///
 /// **调用方必须已持有 [runExclusiveOnMangaJson] 的锁**（本函数不自锁，以便读-改-写
-/// 整体在同一临界区内）。
+/// 整体在同一临界区内）：`.tmp` 是 per-path 固定名，两个写者交叠会互相踩临时文件。
 Future<void> writeMangaJsonAtomically(
   String mangaJsonPath,
   MokuroPayload payload,
 ) async {
-  final File target = File(mangaJsonPath);
   final File temporary = File('$mangaJsonPath.tmp');
   await temporary.writeAsString(
     jsonEncode(mangaPayloadToJson(payload)),
     flush: true,
   );
-  if (target.existsSync()) await target.delete();
-  await temporary.rename(target.path);
+  await temporary.rename(mangaJsonPath);
 }
 
 /// 纯函数：回写块的 font_size 估算（页图像素单位）。
@@ -90,21 +104,27 @@ double estimateMangaBlockFontSize({
   return bySqrt.clamp(8.0, math.max(8.0, math.min(w, h)));
 }
 
-/// 把一个识别块追加进 [mangaJsonPath] 的第 [pageIndex] 页并原子落盘。
+/// 把一个识别块追加进 [mangaJsonPath] 的第 [pageIndex] 页并原子落盘，**返回落盘后
+/// 的完整 payload**。
+///
+/// 返回值不是便利参数，是正确性要求：调用方若在锁外重读文件来刷新内存 payload，
+/// 另一个写者（几何 debounce / 向导整份覆写）恰好插在中间时，读到的就是别人写的
+/// 版本，刚追加的块会被无声吞掉。锁内已经有这份 payload，直接交出去，调用方不必
+/// 也不应再读一次。
 ///
 /// - [box]：页图像素坐标；[vertical]：竖排判定；[text]：识别文本（单行 lines）。
 /// - z_index = 追加前该页块数（既有块保序，新块排最后）。
 /// - 既有 `ocr` 元数据（引擎/签名/schema 版本）原样保留——抹掉它会让
 ///   `manga_ocr_cache_recovery.dart` 的同源判定失效，整卷缓存被判为异源作废。
 /// - 页越界 / 文件缺失 / JSON 无该页 → [StateError]。
-Future<void> appendMangaBlockToMangaJson({
+Future<MokuroPayload> appendMangaBlockToMangaJson({
   required String mangaJsonPath,
   required int pageIndex,
   required Rect box,
   required bool vertical,
   required String text,
 }) {
-  return runExclusiveOnMangaJson<void>(mangaJsonPath, () async {
+  return runExclusiveOnMangaJson<MokuroPayload>(mangaJsonPath, () async {
     final File file = File(mangaJsonPath);
     if (!file.existsSync()) {
       throw StateError('manga.json not found: $mangaJsonPath');
@@ -133,9 +153,9 @@ Future<void> appendMangaBlockToMangaJson({
       size: page.size,
       blocks: <MokuroBlock>[...page.blocks, block],
     );
-    await writeMangaJsonAtomically(
-      mangaJsonPath,
-      MokuroPayload(images: images, ocr: payload.ocr),
-    );
+    final MokuroPayload updated =
+        MokuroPayload(images: images, ocr: payload.ocr);
+    await writeMangaJsonAtomically(mangaJsonPath, updated);
+    return updated;
   });
 }
