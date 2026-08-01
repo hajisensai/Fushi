@@ -743,6 +743,88 @@ void main() {
         reason: '游戏活动条应兼容旧 exePath 并渲染 galgames.coverPath 封面（BUG-1284）');
   });
 
+  testWidgets('BUG-1412：活动身份门禁——不因重复标题、deleted id 或脏 key 误绑现存游戏封面',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final File cover = File('${storeDir.path}/identity_guard_cover.png')
+      ..writeAsBytesSync(_kOnePixelPng);
+    final DateTime now = DateTime.now();
+    await seedGame(
+      id: 'duplicate-a',
+      name: '重复标题',
+      addedAt: now,
+      coverPath: cover.path,
+    );
+    await seedGame(
+      id: 'duplicate-b',
+      name: '重复标题',
+      addedAt: now,
+      coverPath: cover.path,
+    );
+    await seedGame(
+      id: 'replacement',
+      name: '已删除游戏的标题',
+      addedAt: now,
+      coverPath: cover.path,
+    );
+    await seedGame(
+      id: 'dirty-current',
+      name: '脏键标题',
+      addedAt: now,
+      coverPath: cover.path,
+    );
+
+    Future<void> addLegacyActivity({
+      required String title,
+      String? mediaKey,
+      required int offsetMs,
+    }) =>
+        db.addActivityEvent(
+          eventType: kActivityGame,
+          mediaType: kActivityMediaGame,
+          title: title,
+          dateKey: HibikiTimeFormat.dayKey(now),
+          timestampMs: now.millisecondsSinceEpoch - offsetMs,
+          mediaKey: mediaKey,
+          durationMs: 60000,
+        );
+
+    await addLegacyActivity(title: '重复标题', offsetMs: 1000);
+    await addLegacyActivity(
+      title: '已删除游戏的标题',
+      mediaKey: 'deleted-stable-id',
+      offsetMs: 2000,
+    );
+    await addLegacyActivity(
+      title: '脏键标题',
+      mediaKey: 'dirty-key',
+      offsetMs: 3000,
+    );
+
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final Finder fileImages = inSection(
+      t.home_activity,
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is Image &&
+            w.image is ResizeImage &&
+            (w.image as ResizeImage).imageProvider is FileImage,
+      ),
+    );
+    expect(
+      fileImages,
+      findsNothing,
+      reason: '身份不唯一或 key 不可信时必须回退类型图标，不能借标题取任意现存封面',
+    );
+  });
+
   testWidgets('BUG-1112：点活动时间轴的游戏条切到「游戏」tab，不再落到视频 tab',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);

@@ -100,9 +100,15 @@ void main() {
   });
 
   group('findGalgameByExePath', () {
-    GalgameEntry entry(String id, String exe, String args) => GalgameEntry(
+    GalgameEntry entry(
+      String id,
+      String exe,
+      String args, {
+      String? name,
+    }) =>
+        GalgameEntry(
           id: id,
-          name: id,
+          name: name ?? id,
           exePath: exe,
           workdir: '',
           launchArgs: args,
@@ -128,7 +134,7 @@ void main() {
       expect(findGalgameByExePath(<GalgameEntry>[], r'D:\a.exe'), isNull);
     });
 
-    test('活动身份统一兼容新 id、旧 exePath 与无 key 标题快照', () {
+    test('活动身份统一兼容新 id、旧 exePath 与无 key 唯一标题快照', () {
       expect(
         findGalgameForActivity(games, mediaKey: 'a', title: '旧标题')?.id,
         'a',
@@ -147,6 +153,156 @@ void main() {
       );
       expect(
         findGalgameForActivity(games, mediaKey: 'missing', title: 'missing'),
+        isNull,
+      );
+    });
+
+    test('exact stable id 在重复标题中仍精确命中，不能退化成标题首项', () {
+      final List<GalgameEntry> sameTitle = <GalgameEntry>[
+        entry(
+          'stable-a',
+          r'D:\Games\A\a.exe',
+          '-a',
+          name: '共同标题',
+        ),
+        entry(
+          'stable-b',
+          r'D:\Games\B\b.exe',
+          '-b',
+          name: '共同标题',
+        ),
+      ];
+
+      expect(
+        findGalgameForActivity(
+          sameTitle,
+          mediaKey: 'stable-b',
+          title: '共同标题',
+        )?.id,
+        'stable-b',
+      );
+    });
+
+    test('旧 exePath 精确命中优先于重复标题，路径迁移只接受唯一标题', () {
+      final List<GalgameEntry> sameTitle = <GalgameEntry>[
+        entry(
+          'path-a',
+          r'D:\Games\A\a.exe',
+          '-a',
+          name: '共同标题',
+        ),
+        entry(
+          'path-b',
+          r'D:\Games\B\b.exe',
+          '-b',
+          name: '共同标题',
+        ),
+      ];
+      expect(
+        findGalgameForActivity(
+          sameTitle,
+          mediaKey: r'd:/games/b/B.EXE',
+          title: '共同标题',
+        )?.id,
+        'path-b',
+      );
+      expect(
+        findGalgameForActivity(
+          sameTitle,
+          mediaKey: r'D:\Games\Moved\old.exe',
+          title: '共同标题',
+        ),
+        isNull,
+      );
+
+      final List<GalgameEntry> uniqueTitle = <GalgameEntry>[
+        entry(
+          'moved',
+          r'D:\Games\New\game.exe',
+          '',
+          name: '唯一旧标题',
+        ),
+        entry(
+          'other',
+          r'D:\Games\Other\other.exe',
+          '',
+          name: '其他游戏',
+        ),
+      ];
+      expect(
+        findGalgameForActivity(
+          uniqueTitle,
+          mediaKey: r'D:\Games\Old\game.exe',
+          title: '唯一旧标题',
+        )?.id,
+        'moved',
+      );
+    });
+
+    test('无 key 的 legacy 标题只有唯一候选时命中，重复标题安全返回 null', () {
+      final List<GalgameEntry> uniqueTitle = <GalgameEntry>[
+        entry(
+          'unique',
+          r'D:\Games\Unique\game.exe',
+          '',
+          name: '唯一标题',
+        ),
+        entry(
+          'other',
+          r'D:\Games\Other\other.exe',
+          '',
+          name: '其他标题',
+        ),
+      ];
+      expect(
+        findGalgameForActivity(uniqueTitle, title: '唯一标题')?.id,
+        'unique',
+      );
+
+      final List<GalgameEntry> sameTitle = <GalgameEntry>[
+        entry(
+          'duplicate-a',
+          r'D:\Games\A\a.exe',
+          '',
+          name: '重复标题',
+        ),
+        entry(
+          'duplicate-b',
+          r'D:\Games\B\b.exe',
+          '',
+          name: '重复标题',
+        ),
+      ];
+      expect(
+        findGalgameForActivity(sameTitle, title: '重复标题'),
+        isNull,
+      );
+    });
+
+    test('deleted stable id 与脏非路径 key 不得回落到另一个同标题游戏', () {
+      final List<GalgameEntry> currentGames = <GalgameEntry>[
+        entry(
+          'replacement',
+          r'D:\Games\Replacement\game.exe',
+          '',
+          name: '已删除游戏的标题',
+        ),
+      ];
+
+      expect(
+        findGalgameForActivity(
+          currentGames,
+          mediaKey: 'deleted-stable-id',
+          title: '已删除游戏的标题',
+        ),
+        isNull,
+      );
+      expect(
+        findGalgameForActivity(
+          currentGames,
+          mediaKey: 'dirty-key',
+          title: '已删除游戏的标题',
+        ),
         isNull,
       );
     });
