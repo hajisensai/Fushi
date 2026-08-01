@@ -27,6 +27,40 @@ class ImageDownloadException implements Exception {
       : 'ImageDownloadException($statusCode): $message';
 }
 
+/// 远端封面原图下载的统一截止时间。
+///
+/// 原图通常比候选列表缩略图大，弱网或代理链路下 30 秒容易在响应完成前误杀；
+/// 100 秒仍是有界等待，同时给高分辨率封面留出足够传输时间。
+const Duration kCoverImageDownloadTimeout = Duration(seconds: 100);
+
+/// 发送一个受 [timeout] 约束、可在截止时取消底层传输的封面 GET 请求。
+///
+/// 单独给 Future 加 `timeout` 只会停止等待，源 HTTP 请求和响应流仍可能继续。本 helper
+/// 改用 package:http 的 [http.AbortableRequest]：截止回调先触发 abort，再向调用方抛
+/// [TimeoutException]。默认 IOClient 会据此中止未完成请求或取消正在读取的响应流；
+/// client 本身不关闭，因此视频侧的复用 client 及调用方注入 client 的所有权不变。
+Future<http.Response> fetchCoverImageResponse(
+  http.Client client,
+  Uri url, {
+  Duration timeout = kCoverImageDownloadTimeout,
+}) {
+  final Completer<void> abort = Completer<void>();
+  final http.AbortableRequest request = http.AbortableRequest(
+    'GET',
+    url,
+    abortTrigger: abort.future,
+  );
+  final Future<http.Response> response =
+      client.send(request).then(http.Response.fromStream);
+  return response.timeout(
+    timeout,
+    onTimeout: () {
+      if (!abort.isCompleted) abort.complete();
+      throw TimeoutException('cover image download timed out', timeout);
+    },
+  );
+}
+
 /// 下载 [url] 指向的图片到临时文件，返回该文件。
 ///
 /// - [client]：默认自建（下载完关闭）；测试注入 mock client（不关闭，由调用方管理）。
@@ -38,13 +72,17 @@ Future<File> downloadImageToTempFile(
   String url, {
   http.Client? client,
   Directory? tempDir,
-  Duration timeout = const Duration(seconds: 30),
+  Duration timeout = kCoverImageDownloadTimeout,
 }) async {
   final http.Client httpClient = client ?? http.Client();
   try {
     final http.Response response;
     try {
-      response = await httpClient.get(Uri.parse(url)).timeout(timeout);
+      response = await fetchCoverImageResponse(
+        httpClient,
+        Uri.parse(url),
+        timeout: timeout,
+      );
     } on TimeoutException {
       throw const ImageDownloadException('image download timed out');
     } catch (e) {

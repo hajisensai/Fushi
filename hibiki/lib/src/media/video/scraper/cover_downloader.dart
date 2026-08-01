@@ -16,6 +16,8 @@ import 'dart:io';
 
 import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/media/metadata/credential_redaction.dart';
+import 'package:hibiki/src/media/metadata/image_download.dart'
+    show fetchCoverImageResponse, kCoverImageDownloadTimeout;
 import 'package:hibiki/src/media/metadata/transport_retry.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
@@ -29,6 +31,7 @@ import 'package:path/path.dart' as p;
 class CoverDownloader {
   CoverDownloader({
     http.Client? client,
+    this.timeout = kCoverImageDownloadTimeout,
     this.maxAttempts = kTransportMaxAttempts,
     Future<void> Function(Duration delay)? retrySleep,
   })  : _client = client ?? http.Client(),
@@ -36,15 +39,16 @@ class CoverDownloader {
 
   final http.Client _client;
 
+  /// 单次尝试的下载截止时间。比搜索宽：海报是几百 KB ~ 数 MB 的响应体，慢速链路上
+  /// 传输本身就要时间，不能像搜索那样按「建连成败」取值；与书籍侧共用
+  /// [kCoverImageDownloadTimeout]（100 秒，BUG-1248）。
+  final Duration timeout;
+
   /// 传输失败时的总尝试次数（含首次）。与搜索同一根因：链路会成片丢连接（BUG-1272）。
   /// 图片下载是幂等 GET，重放安全。
   final int maxAttempts;
 
   final Future<void> Function(Duration delay)? _retrySleep;
-
-  /// 单次尝试超时。比搜索宽：海报是几百 KB 的响应体，慢速链路上传输本身就要时间，
-  /// 这里不能像搜索那样按「建连成败」取值。
-  static const Duration _timeout = Duration(seconds: 30);
 
   /// 下载 [url] 指向的海报，落地为 [bookUid] 对应封面，返回**绝对路径**（可直接
   /// 传给 `updateCover`）。
@@ -68,9 +72,15 @@ class CoverDownloader {
     final http.Response response;
     try {
       // 只有传输失败（拿不到响应）会重试；下面对非 2xx 的判断在 try 之外，因此
-      // 404 / 403 的坏 URL 依旧一次就失败，不会被重放。
+      // 404 / 403 的坏 URL 依旧一次就失败，不会被重放。每次尝试都走
+      // [fetchCoverImageResponse]：超时即 abort 底层请求/响应流，重放不会在后台
+      // 堆积仍在下载的孤儿连接（BUG-1248）。
       response = await runWithTransportRetry<http.Response>(
-        () => _client.get(Uri.parse(url)).timeout(_timeout),
+        () => fetchCoverImageResponse(
+          _client,
+          Uri.parse(url),
+          timeout: timeout,
+        ),
         maxAttempts: maxAttempts,
         sleep: _retrySleep,
       );
