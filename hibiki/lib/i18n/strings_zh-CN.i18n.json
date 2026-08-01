@@ -2723,7 +2723,6 @@
   "media_tracking_manage_links": "管理关联",
   "media_tracking_last_error": "上次错误",
   "shortcut_action_popup_mine_entry": "制卡（加号）",
-  "game_hook_reason_protocol_mismatch": "捕获组件版本与 Hibiki 不一致，请更新或重新安装 galgame 捕获组件。",
   "game_upscaling_auto_hint": "优先使用机器上正在运行的 Magpie；否则启用 Hibiki 内置版本，不需要下载。",
   "game_upscaling_installed_only_hint": "只用机器上已经安装或正在运行的 Magpie，不启用 Hibiki 内置版本。",
   "game_upscaling_off_hint": "不放大游戏窗口。",
@@ -3021,5 +3020,6 @@
   "mihon_filter_descending": "降序",
   "mihon_add_to_bookshelf": "加入漫画书架",
   "mihon_in_bookshelf": "已加入漫画书架",
-  "media_source_local_roots": "本地扫描根"
+  "media_source_local_roots": "本地扫描根",
+  "game_hook_reason_protocol_mismatch": "捕获组件与本体版本不一致。捕获组件已内置在 Hibiki 里、随本体一起更新，请更新 Hibiki 到最新版；若已是最新版，请把这条提示反馈给我们。"
 }

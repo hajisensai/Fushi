@@ -2723,7 +2723,6 @@
   "media_tracking_manage_links": "Manage links",
   "media_tracking_last_error": "Last error",
   "shortcut_action_popup_mine_entry": "Create card (mine)",
-  "game_hook_reason_protocol_mismatch": "The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.",
   "game_upscaling_auto_hint": "Use Magpie if it is already running; otherwise use the version bundled with Hibiki. No download is needed.",
   "game_upscaling_installed_only_hint": "Only use Magpie if it is already installed or running. Do not unpack Hibiki's bundled version.",
   "game_upscaling_off_hint": "Never upscale the game window.",
@@ -3021,5 +3020,6 @@
   "mihon_filter_descending": "Descending",
   "mihon_add_to_bookshelf": "Add to manga shelf",
   "mihon_in_bookshelf": "In manga shelf",
-  "media_source_local_roots": "Local scan roots"
+  "media_source_local_roots": "Local scan roots",
+  "game_hook_reason_protocol_mismatch": "The capture component does not match this Hibiki build. It is built into Hibiki and updates together with the app, so update Hibiki to the latest version."
 }

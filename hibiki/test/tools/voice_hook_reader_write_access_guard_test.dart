@@ -65,7 +65,10 @@ void main() {
   final Directory root = _repoRoot();
   final String readerPath =
       '${root.path}/hibiki/windows/runner/voice_hook_reader.cpp';
-  final String ipcPath = '${root.path}/hibiki/windows/runner/voice_hook_ipc.h';
+  // 契约只有一份真相源：host 读侧的手抄副本已删除，直接读 native 头
+  // （守卫见 test/mining/gal_ipc_contract_single_source_test.dart）。
+  final String ipcPath =
+      '${root.path}/native/galgame_hook/include/voice_hook_ipc.h';
 
   test('前提：读端仍然会对映射内的 selected_text_thread_id 做原子写', () {
     final String ipc = _stripComments(File(ipcPath).readAsStringSync());
