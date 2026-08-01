@@ -74,6 +74,9 @@ void main() {
       await controller.startAttachedCapture(
         const ExternalWindowInfo(hwnd: 21, pid: 4242, title: 'Attached game'),
       );
+      // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+      // 「选了哪条线程」因此成了本用例的显式前提。
+      await controller.selectTextThread(5);
       await waitUntil(() => seen != null);
       await controller.close();
       endpoints.dispose();
@@ -157,6 +160,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 21, pid: 4242, title: 'Attached game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     await waitUntil(() => service.entries.isNotEmpty);
     final String lineId = service.entries.single.id;
 
@@ -252,6 +258,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 21, pid: 4242, title: 'Attached game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     await waitUntil(() => service.entries.isNotEmpty);
     final String lineId = service.entries.single.id;
 

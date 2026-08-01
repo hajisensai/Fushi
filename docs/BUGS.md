@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1320 条。点号进各自文件。
+> 共 1321 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -57,6 +57,7 @@
 | [BUG-1349](bugs/BUG-1349-collection-detail-escape-dead.md) | ✅ | ✅ | 合集详情页按Esc不退出（焦点导航开启时全局Esc解析不到路由被吞） |
 | [BUG-1348](bugs/BUG-1348-gdrive-signin-token-exchange-direct-connect.md) | ✅ | ✅ | 谷歌云盘桌面登录：token 交换裸直连不走代理，浏览器已授权但 app 超时 |
 | [BUG-1347](bugs/BUG-1347-dismiss-dict-mouse-popup-surface.md) | ✅ | ✅ | 关词典的鼠标键/快捷键在查词弹窗表面无效（Windows 指针与焦点所有权） |
+| [BUG-1346](bugs/BUG-1346-gal-text-lane-v13-squeeze.md) | ✅ | ✅ | galgame 文本捕获：256 槽全局 FIFO 挤压导致放开非胜出线程必然复现 BUG-1159（IPC v13 按线程分道根治） |
 | [BUG-1345](bugs/BUG-1345-gal-ipc-contract-host-copy-drift.md) | ✅ | ✅ | galgame 捕获报「捕获组件版本与 Hibiki 不一致」：IPC 契约在 host 侧有手抄副本，且处置指向已不存在的动作 |
 | [BUG-1344](bugs/BUG-1344-macos-reader-selection-stale.md) | ✅ | ✅ | macOS查词关闭后原文选区高亮残留 |
 | [BUG-1343](bugs/BUG-1343-macos-reader-window-drag.md) | ✅ | ✅ | macOS窗口化阅读器缺少可拖拽区域 |

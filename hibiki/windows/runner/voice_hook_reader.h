@@ -77,6 +77,10 @@ struct VoiceHookText {
   uint64_t timestamp_ms = 0;  // hook 写入时刻（GetTickCount64）
   std::string utf8;           // UTF-8 文本
   uint64_t thread_id = 0;     // 会话内稳定 Hook 线程 id
+  // hook「面」id（不含 ctx）。v13 把选定线程的过滤从采集期挪到消费期，消费方要按 hook 面
+  // 放行（同一 hook 面换调用点 ctx 会变、thread_id 随之变，精确匹配会丢整段台词 —— BUG-1159），
+  // 判据必须用 native 算好的这个值，不能在 Dart 侧照抄一遍哈希。
+  uint64_t face_id = 0;
   uint64_t thread_address = 0;
   uint64_t thread_context = 0;
   uint64_t thread_context2 = 0;

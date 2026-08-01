@@ -150,7 +150,9 @@ void ProcessKirikiriVoiceTasks() {
     KiriKiriVoiceTask* task = &g_kirikiri_voice_tasks[i];
     if (InterlockedCompareExchange(&task->state, 3, 2) != 2) continue;
 
-    hibiki_voice_hook::VoiceTextCandidate candidates[kTextSlotCount] = {};
+    // 只扫一条道，候选上界就是道深（旧值 kTextSlotCount 现在是总槽数，放栈上会白占 20KB）。
+    hibiki_voice_hook::VoiceTextCandidate
+        candidates[hibiki_voice_hook::kTextLaneSlotCount] = {};
     size_t candidate_count = 0;
     uint64_t selected_thread_id = task->pairing.selected_thread_id;
     if (g_header == nullptr || g_text_base == nullptr ||
@@ -158,31 +160,50 @@ void ProcessKirikiriVoiceTasks() {
             selected_thread_id) {
       selected_thread_id = 0;
     } else {
-      const uint64_t current_text_seq =
-          ReadKirikiriSharedU64(&g_header->text_write_count);
-      uint64_t first_seq = task->pairing.baseline_text_seq + 1;
-      if (current_text_seq >= kTextSlotCount &&
-          first_seq <= current_text_seq - kTextSlotCount) {
-        first_seq = current_text_seq - kTextSlotCount + 1;
+      // v13：文本按线程分道后，只扫**选定线程那一条道**。以前扫全局环是因为环里本来就只有
+      // 选定线程的行；放开非胜出线程后再扫全局，等于把每条线程的行都读进候选数组（配对解析
+      // 器仍会按 thread_id 过滤掉它们，但候选数组会先被别的线程刷爆，真候选被顶出去）。
+      // 读取可以跨越写者分区——分区只约束**认领**，不约束读。
+      hibiki_voice_hook::TextLane* lanes =
+          hibiki_voice_hook::TextLanesOf(g_header);
+      const uint32_t lane_count =
+          lanes == nullptr ? 0 : g_header->text_lane_count;
+      uint32_t lane_index = 0;
+      bool lane_found = false;
+      for (uint32_t i = 0; i < lane_count; ++i) {
+        if (ReadKirikiriSharedU64(&lanes[i].thread_id) == selected_thread_id) {
+          lane_index = i;
+          lane_found = true;
+          break;
+        }
       }
-      for (uint64_t seq = first_seq;
-           seq <= current_text_seq && candidate_count < kTextSlotCount; ++seq) {
-        auto* slot = reinterpret_cast<TextSlot*>(
-            g_text_base +
-            static_cast<size_t>((seq - 1) % kTextSlotCount) *
-                kTextSlotBytes);
-        if (ReadKirikiriSharedU64(&slot->seq) != seq) continue;
-        MemoryBarrier();
-        hibiki_voice_hook::VoiceTextCandidate candidate;
-        candidate.seq = seq;
-        candidate.timestamp_ms = slot->timestamp_ms;
-        candidate.thread_id = slot->thread_id;
-        candidate.byte_len = slot->byte_len;
-        candidate.is_line =
-            slot->event_kind == hibiki_voice_hook::kTextEventLine;
-        MemoryBarrier();
-        if (ReadKirikiriSharedU64(&slot->seq) != seq) continue;
-        candidates[candidate_count++] = candidate;
+      if (lane_found) {
+        const uint64_t lane_written =
+            ReadKirikiriSharedU64(&lanes[lane_index].write_count);
+        const uint32_t lane_slots = g_header->text_lane_slot_count;
+        uint64_t first_lane_seq =
+            lane_written > lane_slots ? lane_written - lane_slots + 1 : 1;
+        for (uint64_t lane_seq = first_lane_seq;
+             lane_seq <= lane_written &&
+             candidate_count < hibiki_voice_hook::kTextLaneSlotCount;
+             ++lane_seq) {
+          auto* slot = reinterpret_cast<TextSlot*>(
+              hibiki_voice_hook::TextLaneSlotAt(g_header, lane_index,
+                                                lane_seq));
+          if (slot == nullptr) continue;
+          if (ReadKirikiriSharedU64(&slot->lane_seq) != lane_seq) continue;
+          MemoryBarrier();
+          hibiki_voice_hook::VoiceTextCandidate candidate;
+          candidate.seq = ReadKirikiriSharedU64(&slot->seq);
+          candidate.timestamp_ms = slot->timestamp_ms;
+          candidate.thread_id = slot->thread_id;
+          candidate.byte_len = slot->byte_len;
+          candidate.is_line =
+              slot->event_kind == hibiki_voice_hook::kTextEventLine;
+          MemoryBarrier();
+          if (ReadKirikiriSharedU64(&slot->lane_seq) != lane_seq) continue;
+          candidates[candidate_count++] = candidate;
+        }
       }
     }
 

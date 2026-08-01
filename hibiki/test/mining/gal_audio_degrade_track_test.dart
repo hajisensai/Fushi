@@ -88,6 +88,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     // 游戏刚启动、一句语音都没播：hook 装好了但共享内存里没有格式 -> 临时 Loopback。
     expect(controller.state.phase, GalHookSessionPhase.degraded);
     expect(controller.state.audioBackend, GalHookAudioBackend.systemLoopback);
@@ -176,6 +179,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     await waitUntil(() => service.entries.isNotEmpty);
     expect(service.entries, hasLength(1));
     expect(
@@ -229,6 +235,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     await waitUntil(() => service.entries.isNotEmpty);
     expect(loopback.backMsCalls, isEmpty);
 
@@ -343,6 +352,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     await waitUntil(() => service.entries.isNotEmpty);
     final TexthookerLineEntry line = service.entries.single;
     expect(line.audioResourceId, isNotNull, reason: '前提：自动链路已配上资源语音');
@@ -413,6 +425,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     await waitUntil(() => service.entries.length == 2);
     final TexthookerLineEntry first = service.entries.first;
     engine.utteranceTimestamps.clear();
@@ -497,6 +512,9 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(5);
     await waitUntil(() => service.entries.isNotEmpty);
     final TexthookerLineEntry first = service.entries.single;
 

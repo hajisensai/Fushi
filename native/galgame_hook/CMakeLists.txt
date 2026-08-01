@@ -198,6 +198,14 @@ target_compile_definitions(hibiki_thread_preview_ipc_test
 add_test(NAME hibiki_thread_preview_ipc_test
   COMMAND hibiki_thread_preview_ipc_test)
 
+add_executable(hibiki_text_lane_ipc_test
+  tests/text_lane_ipc_test.cpp)
+target_include_directories(hibiki_text_lane_ipc_test PRIVATE include)
+target_compile_definitions(hibiki_text_lane_ipc_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME hibiki_text_lane_ipc_test
+  COMMAND hibiki_text_lane_ipc_test)
+
 add_executable(hibiki_unity_text_mesh_reassembler_test
   tests/unity_text_mesh_reassembler_test.cpp)
 target_include_directories(hibiki_unity_text_mesh_reassembler_test

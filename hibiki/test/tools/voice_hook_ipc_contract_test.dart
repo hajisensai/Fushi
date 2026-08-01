@@ -35,7 +35,7 @@ void main() {
       expect(source, contains('constexpr uint32_t $bit ='),
           reason: '$bit 没在契约头里定义');
     }
-    expect(source, contains('constexpr uint32_t kSharedVersion = 12;'));
+    expect(source, contains('constexpr uint32_t kSharedVersion = 13;'));
   });
 
   test('host and native share the v12 thread preview seqlock contract', () {
@@ -99,7 +99,7 @@ void main() {
     );
   });
 
-  test('native profile prefer cannot bypass v12 explicit thread selection', () {
+  test('v13：采集期不再有任何线程过滤，只挡伪影（挤压已由分道解决）', () {
     final String injector = File(
       '../native/galgame_hook/injector/injector_main.cpp',
     ).readAsStringSync();
@@ -112,22 +112,31 @@ void main() {
     expect(functionEnd, greaterThan(functionStart));
     final String functionBody = injector.substring(functionStart, functionEnd);
 
-    // hookcode/prefer 不能再进入准入函数；唯一真值必须是共享内存里的显式 thread id。
+    // hookcode/prefer 不能进入准入函数（旧 profile 快路会绕过用户选择）。
     expect(
       functionBody,
       isNot(contains('preferred_hook_codes')),
     );
     expect(functionBody, isNot(contains('const wchar_t* hookcode')));
-    expect(functionBody, contains('SelectedTextThreadId(g_luna.header)'));
+    // v13：采集期读选定线程 = 又在采集期丢行，分道之后没有任何理由这么做（丢掉的行
+    // 换线程后就再也回不来）。选定线程只允许在消费侧使用。
     expect(
       functionBody,
-      contains(
-        'AcceptsLine(\n      thread_id, is_artifact, manually_selected, face_id)',
-      ),
+      isNot(contains('SelectedTextThreadId')),
+      reason: '采集期不得再读选定线程；那是消费期的事',
     );
+    expect(
+      functionBody,
+      isNot(contains('AcceptsLine(')),
+      reason: '采集期不得再跑选定线程准入判定',
+    );
+    // 仍然必须挡伪影：它们不是台词，进道只会挤掉本线程自己的真台词。
+    expect(functionBody, contains('is_artifact'));
+    // face 登记仍要做：消费期按 hook 面放行依赖它（BUG-1159）。
+    expect(functionBody, contains('NoteFace(thread_id, face_id)'));
   });
 
-  test('Unity native text uses preview first and the same explicit gate', () {
+  test('v13：Unity 先写预览，再无条件写自己那条道（不再按选定线程丢行）', () {
     final String source = File(
       '../native/galgame_hook/hook/adapters/unity_adapter.inc',
     ).readAsStringSync();
@@ -141,14 +150,18 @@ void main() {
     final String body = source.substring(functionStart, functionEnd);
 
     expect(body, contains('WriteUnityThreadPreview('));
-    expect(body, contains('IsExactTextThreadSelected(g_header, thread_id)'));
+    expect(body, contains('WriteUnityTextEvent('));
     expect(
       body.indexOf('WriteUnityThreadPreview('),
-      lessThan(body.indexOf('IsExactTextThreadSelected(')),
+      lessThan(body.indexOf('WriteUnityTextEvent(')),
+      reason: '预览必须先写：它是用户挑线程的唯一依据，不能被任何后续判定拦掉',
     );
     expect(
-      body.indexOf('IsExactTextThreadSelected('),
-      lessThan(body.indexOf('WriteUnityTextEvent(')),
+      body,
+      isNot(contains('IsExactTextThreadSelected(')),
+      reason: 'v13：非选定组件的台词也要进它自己那条道，否则换组件后追不回来',
     );
+    // 仍然只发完整行：半截 TextMesh 快照进道会挤掉本组件自己的真行。
+    expect(body, contains('if (!completed_line) return;'));
   });
 }

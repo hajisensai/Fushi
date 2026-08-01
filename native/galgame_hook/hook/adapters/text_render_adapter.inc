@@ -54,45 +54,23 @@ void WriteTextRingEntryLocked(const wchar_t* text, int char_len,
       g_header->luna_active != 0) {
     return;
   }
-  // 原子预留唯一槽位：返回自增后的新值（=占到的 1 基序号，0 基 idx=reserved-1）。
-  const LONGLONG reserved = InterlockedIncrement64(
-      reinterpret_cast<volatile LONGLONG*>(&g_header->text_write_count));
-  const uint64_t idx = static_cast<uint64_t>(reserved) - 1;
-  const size_t slot_off =
-      static_cast<size_t>(idx % kTextSlotCount) * kTextSlotBytes;
-  uint8_t* slot = g_text_base + slot_off;
-  auto* ts = reinterpret_cast<TextSlot*>(slot);
-  memset(ts, 0, sizeof(TextSlot));
-  uint32_t max_bytes = kTextSlotBytes - static_cast<uint32_t>(sizeof(TextSlot));
-  max_bytes -= (max_bytes % static_cast<uint32_t>(sizeof(wchar_t)));  // wchar 边界
-  uint32_t byte_len = static_cast<uint32_t>(char_len) *
-                      static_cast<uint32_t>(sizeof(wchar_t));
-  if (byte_len > max_bytes) {
-    byte_len = max_bytes;  // 截断到槽容量（kTextSlotBytes-头长，wchar 对齐）
-  }
-  memcpy(slot + sizeof(TextSlot), text, byte_len);
-  ts->timestamp_ms = GetTickCount64();
-  ts->byte_len = byte_len;
-  ts->is_utf8 = 0;                            // UTF-16LE
-  ts->thread_id = thread_id;
-  ts->thread_address = thread_address;
-  ts->thread_context = thread_context;
-  ts->process_id = GetCurrentProcessId();
-  ts->source_kind = source_kind;
-  if (hook_name != nullptr) {
-    const size_t name_len = strnlen_s(hook_name, kTextHookNameChars - 1);
-    ts->hook_name_len = static_cast<uint32_t>(name_len);
-    memcpy(ts->hook_name, hook_name, name_len);
-  }
-  if (hook_code != nullptr) {
-    const size_t code_len = wcsnlen_s(hook_code, kTextHookCodeChars - 1);
-    ts->hook_code_len = static_cast<uint32_t>(code_len);
-    memcpy(ts->hook_code, hook_code, code_len * sizeof(wchar_t));
-  }
-  ts->seq = static_cast<uint64_t>(reserved);  // 完成标记，**最后**写
-  if (g_header->text_hooked == 0) {
-    g_header->text_hooked = 1;            // 首次 flush：文本 hook proof-of-life
-  }
+  // v13：写进本线程自己那条道（游戏内 writer 用高段下标，与 injector 里的 LunaHook 互斥）。
+  // 调用方已持 g_text_cs，认领与道内占号因此在本进程内串行；跨进程隔离靠区段划分。
+  hibiki_voice_hook::TextLaneWrite write;
+  write.thread_id = thread_id;
+  write.thread_address = thread_address;
+  write.thread_context = thread_context;
+  write.process_id = GetCurrentProcessId();
+  write.source_kind = source_kind;
+  write.is_utf8 = 0;  // UTF-16LE
+  write.text = text;
+  write.byte_len = static_cast<uint32_t>(char_len) *
+                   static_cast<uint32_t>(sizeof(wchar_t));
+  write.hook_name = hook_name;
+  write.hook_code = hook_code;
+  hibiki_voice_hook::WriteTextLaneEvent(
+      g_header, hibiki_voice_hook::kNativeThreadPreviewStart,
+      hibiki_voice_hook::kTextLaneCount, write);
 }
 
 void WriteTextRingLocked(const wchar_t* text, int char_len) {

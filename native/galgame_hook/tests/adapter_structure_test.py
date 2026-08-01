@@ -89,8 +89,15 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("void FlushUnityTextMeshLine()", source)
         self.assertIn("UsesSasasaLegacyTextMeshTerminator", source)
         self.assertIn("g_unity_text_mesh_reassembler.ShouldTerminate(c, true)", source)
-        self.assertIn("IsExactTextThreadSelected", source)
+        # v13: text capture is no longer gated on the selected thread. Each
+        # component writes its own lane, so a chatty one cannot squeeze the
+        # others out; dropping a non-selected component's line here would mean
+        # the user can never recover it after switching components.
+        self.assertNotIn("IsExactTextThreadSelected", source)
         self.assertIn("kNativeThreadPreviewStart", source)
+        # The selected thread is still read for preview-slot recycling: the
+        # selected component must never be the one evicted from the preview
+        # table.
         self.assertIn("candidate->thread_id == selected", source)
         text_mesh = source.split("void RecordUnityTextMesh", 1)[1]
         text_mesh = text_mesh.split("void RecordUnityVoiceResourceEvent", 1)[0]

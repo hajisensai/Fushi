@@ -1,6 +1,9 @@
 # IPC v13：文本区按线程分道（解 256 槽挤压，放开非胜出线程的前置）
 
-状态：**设计已定，未实现**。前置 BUG-1345（契约单一真相源）已落地。
+状态：**已实现**（native + host 同一 PR 落地）。前置 BUG-1345（契约单一真相源）已落地。
+实现相对本设计的三处增补，都是实现过程中发现的必需项，已写回下文：`TextSlot::face_id`
+（消费期按 hook 面放行的前提）、`CollectTextSlotsBySeq`（读侧归并唯一实现）、换线程后的
+历史回捞（分道保留下来的行要真的能回到工作台，否则「多抓」只存在于共享内存里）。
 关联：看板 TODO-2184、BUG-1159、BUG-1193、`native/galgame_hook/include/voice_hook_ipc.h`。
 
 ## 1. 问题
@@ -55,7 +58,10 @@ native adapter 用 `[kNativeThreadPreviewStart, kThreadPreviewCount)`。跨进�
 - `TextSlot::seq` 语义不变：**全局发布序**，仍由 `InterlockedIncrement64(&header->text_write_count)`
   占号。Dart 的 `pollText(fromSeq)` 契约因此逐字节不变。
 - `TextSlot` 新增 `uint64_t lane_seq`：道内序号，作**道内完成标记**（reader 校验
-  `slot.lane_seq == 期望道内序号` 才取该槽），取代今天的 `slot.seq == 全局 seq` 校验。
+  `slot.lane_seq == 期望道内序号` 才取该槽），取代旧的 `slot.seq == 全局 seq` 校验。
+- `TextSlot` 新增 `uint64_t face_id`：native 算好的 hook 面 id。消费期要按 hook 面放行
+  （同一 hook 面换调用点 ctx 会变、thread_id 随之变，精确匹配会丢整段台词 —— BUG-1159），
+  判据必须用 native 这份，不能在 Dart 里照抄一遍 FNV 哈希（那又是一个漂移源）。
 
 ### 2.4 写侧
 
@@ -66,6 +72,9 @@ native adapter 用 `[kNativeThreadPreviewStart, kThreadPreviewCount)`。跨进�
 
 `VoiceHookReader::PollText(from_seq)` 遍历所有非空道，取 `slot.seq > from_seq` 且道内校验通过的
 行，按 `seq` 升序合并返回。Dart 侧收到的仍是一串按全局序排好的行，字段不变。
+
+归并实现只有 `CollectTextSlotsBySeq`（契约头里）一份：读侧不止一个（host 的 `PollText`、诊断探针
+`ring_probe` 的三个 dump），各写一遍必然漂开。
 
 ### 2.6 选定线程降级为「消费期指定」
 
@@ -81,8 +90,10 @@ native adapter 用 `[kNativeThreadPreviewStart, kThreadPreviewCount)`。跨进�
 
 ### 2.7 用户可见收益
 
-- 中途换线程后，新线程**此前的历史行仍在它自己的道里**，可回补、可回配语音（今天这些行从未
-  被采集，换了也追不回来）。
+- 中途换线程后，新线程**此前的历史行仍在它自己的道里**：`selectTextThread` 成功后立即回捞
+  （`_recoverSelectedThreadHistory`），漏掉的台词直接补进工作台，不必重打一遍剧情。回捞只补
+  文本，不重放音频抓取——那些时刻早已过去，硬跑一遍只会给每句盖上「疑似漏抓」红标；要补音频
+  走既有的逐句重录入口。
 - 选错线程不再等于该段语音永久孤儿。
 - 角色名 / 正文分属两条线程时，两条都留着，后续 UI 可以并列消费（本设计只保证采集，不预设 UI）。
 
