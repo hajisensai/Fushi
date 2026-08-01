@@ -563,12 +563,30 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       proposals: proposals,
     );
     if (chosen == null || chosen.isEmpty || !mounted) return;
+    // 逐条落库、逐条计数：单条失败不打断批次也**不静默**——用户必须分得清
+    // 「全改完」和「改了一半」（复核意见：部分失败不得报成功数=勾选数）。
+    int renamed = 0;
+    Object? firstError;
     for (final EpisodeRenameProposal proposal in chosen) {
-      await widget.database
-          .updateVideoBookTitle(proposal.bookUid, proposal.newTitle);
+      try {
+        await widget.database
+            .updateVideoBookTitle(proposal.bookUid, proposal.newTitle);
+        renamed++;
+      } catch (e) {
+        firstError ??= e;
+      }
     }
     if (!mounted) return;
-    HibikiToast.show(msg: t.collection_episode_rename_apply(n: chosen.length));
+    if (firstError != null) {
+      HibikiToast.show(
+        msg: t.collection_episode_rename_partial(
+          n: renamed,
+          m: chosen.length - renamed,
+        ),
+      );
+    } else {
+      HibikiToast.show(msg: t.collection_episode_rename_apply(n: renamed));
+    }
     await _reload();
     widget.onChanged();
   }
@@ -679,6 +697,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         if (episodeId == null) {
           HibikiToast.show(msg: t.collection_episode_bangumi_not_found);
         }
+      } else {
+        // 集号都解析不出（文件名无集号且无集级刮削）：同样明示降级去向，
+        // 不静默换成条目页（复核意见）。
+        HibikiToast.show(msg: t.collection_episode_bangumi_not_found);
       }
     } on ScrapeNetworkException catch (e) {
       HibikiToast.show(

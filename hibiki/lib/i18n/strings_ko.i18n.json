@@ -3043,12 +3043,13 @@
   "collection_split_keep_original": "Keep the original collection",
   "collection_split_confirm": "Split",
   "collection_episode_open_bangumi": "Open this episode on Bangumi",
-  "collection_episode_bangumi_not_found": "Episode not found on Bangumi",
   "collection_relation_bound": "Bound to $name",
   "collection_episode_scrape_result": "Updated $updated episodes, skipped $skipped",
   "collection_episode_scrape_failed": "Episode scrape failed: $error",
   "collection_episode_rename_apply": "Rename $n episodes",
   "collection_split_done": "Split into $n collections",
   "collection_episode_watched_at": "Watched to $position",
-  "collection_episode_bangumi_open_failed": "Could not resolve the episode on Bangumi: $error"
+  "collection_episode_bangumi_open_failed": "Could not resolve the episode on Bangumi: $error",
+  "collection_episode_rename_partial": "Renamed $n episodes, $m failed",
+  "collection_episode_bangumi_not_found": "Episode not found on Bangumi; opened the subject page instead"
 }

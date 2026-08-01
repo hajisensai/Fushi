@@ -3043,12 +3043,13 @@
   "collection_split_keep_original": "保留原合集",
   "collection_split_confirm": "拆分",
   "collection_episode_open_bangumi": "在 Bangumi 打开本集",
-  "collection_episode_bangumi_not_found": "Bangumi 上没有找到本集",
   "collection_relation_bound": "已绑定到 $name",
   "collection_episode_scrape_result": "已更新 $updated 集 · 跳过 $skipped 集",
   "collection_episode_scrape_failed": "分集刮削失败：$error",
   "collection_episode_rename_apply": "重命名 $n 集",
   "collection_split_done": "已拆分为 $n 个合集",
   "collection_episode_watched_at": "看到 $position",
-  "collection_episode_bangumi_open_failed": "解析 Bangumi 章节失败：$error"
+  "collection_episode_bangumi_open_failed": "解析 Bangumi 章节失败：$error",
+  "collection_episode_rename_partial": "已重命名 $n 集 · $m 集失败",
+  "collection_episode_bangumi_not_found": "未找到对应集，已打开条目页"
 }
