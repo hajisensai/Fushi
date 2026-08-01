@@ -37,7 +37,7 @@ Dialogue: 0,0:00:41.35,0:00:44.48,OP_JP,,0,0,0,,{\an7\pos(461,672)\fad(250,250)\
 
 ### 修复
 
-- **[x] ① 已修复** — commit `（见下方补记）`
+- **[x] ① 已修复** — commit `75e9ad012`
   - 几何真相源抽成纯函数 `resolveAbsoluteCueOffset()`（`video_subtitle_overlay.dart`），
     与 `_paddingFor` **严格同构**：取下限、不是加法、只单向移动。
     - 盒底越过 `height - bottomReserve` 才上抬（`math.min`，高位盒不被拽下）；
