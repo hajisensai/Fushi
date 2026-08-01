@@ -94,11 +94,10 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
     // 首选用户所选格式；失败则降级 GIF 再试一次。这不是「重试掩盖症状」——两次调用
     // 的**参数不同**，第二次是能力降级：捆绑 ffmpeg 若来自旧版本包，没有 libsvtav1 /
     // libwebp 编码器（见 tool/ffmpeg-min/build-ffmpeg-min.sh），首选格式必然失败而
-    // GIF 恒可用。降级只做一次，且只在首选不是 GIF 时发生。
-    final List<MiningAnimatedFormat> attempts =
-        format == MiningAnimatedFormat.gif
-            ? <MiningAnimatedFormat>[MiningAnimatedFormat.gif]
-            : <MiningAnimatedFormat>[format, MiningAnimatedFormat.gif];
+    // GIF 恒可用。链本身由格式自己声明（见 [MiningAnimatedFormat.encodeAttempts]），
+    // 与视频/Netflix 侧同一处真相源；本函数的输入是 PNG 帧序列、跑的是另一套 ffmpeg
+    // 参数，故只共用链而不共用抽取函数。
+    final List<MiningAnimatedFormat> attempts = format.encodeAttempts;
 
     for (final MiningAnimatedFormat attempt in attempts) {
       final String outputPath =

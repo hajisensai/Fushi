@@ -6032,9 +6032,18 @@ class _AppModelRemoteLookupService
   Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async {
     final BaseAnkiRepository repo =
         _appModel.platformServices.createAnkiRepository();
+    // 远端制卡（浏览器扩展的 YouTube / Netflix）语义上就是视频制卡，读同一条动图格式
+    // 偏好。BUG-1330：这里过去既不传 format 给 resolve、也不传 animatedFormat 给引擎，
+    // 用户拍板的 AVIF 默认在扩展这条链路上完全没落地（恒出 GIF）。
+    final MiningAnimatedFormat animatedFormat =
+        _appModel.videoMiningAnimatedFormat;
     final MiningMediaCompression compression = MiningMediaCompression.resolve(
       imageTier: _appModel.miningImageQuality,
       audioTier: _appModel.miningAudioQuality,
+      // 顶格档的动图参数随格式变（AVIF 24fps/1440px、GIF/WebP 12fps/960px）。format 与
+      // 下面透传给编码侧的格式**必须是同一个值**：只传其一就是「格式与参数不成对」——
+      // 把 AVIF 的顶格档参数喂给 GIF 编码器正是 BUG-1039。
+      format: animatedFormat,
     );
     // 优先级 0（YouTube，非 DRM）：有 videoId + 视频时间窗 → 从真实视频流精确裁，不录屏/不回放。
     // 复用应用内播放器已验证的引擎（mediaSource=挖矿流，audioSource=分离音频流或 null）。
@@ -6087,6 +6096,8 @@ class _AppModelRemoteLookupService
           source: AnkiMiningSource.video,
           // YouTube 有音频源 → 缺音频即失败（与应用内一致），不出无声卡。
           requireAudio: true,
+          // 与上面 resolve 的 format 同值：引擎按它选编码器 + 输出扩展名 + 降级链。
+          animatedFormat: animatedFormat,
         ),
         compression: compression,
         tempDir: Directory.systemTemp.path,
@@ -6115,6 +6126,9 @@ class _AppModelRemoteLookupService
         durationMs: payload.clipDurationMs ?? 6000,
         compression: compression,
         tempDir: Directory.systemTemp.path,
+        // 与上面 resolve 的 format 同值：转码按它选编码器 + 输出扩展名 + 降级链，
+        // 实际产出格式经 ImmersionCaptureResult.animatedFormat 回传给封面文件名。
+        format: animatedFormat,
       );
     } else if (payload.netflixVideoId != null &&
         payload.clipStartMs != null &&

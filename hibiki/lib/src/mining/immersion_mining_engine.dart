@@ -51,6 +51,65 @@ typedef RemoteAudioMaterializer = Future<String?> Function({
   FfmpegFailureReporter? onFailure,
 });
 
+/// 动图抽取产物：文件路径 + **实际编码成的格式**。
+///
+/// 格式必须与路径一起带出来，不能让调用方按「用户选了什么」去拼文件名——
+/// [extractAnimatedClipWithFallback] 内部会在首选格式编码失败时降级 GIF，两者可以不一致。
+/// 按所选格式拼名就会写出 `netflix_clip.avif` 里装着 GIF 字节的卡：Anki 按扩展名判 MIME，
+/// 图片直接显示不出来。与 galgame 侧的 `GalWindowAnimatedCapture` 同形。
+typedef AnimatedClipExtraction = ({String path, MiningAnimatedFormat format});
+
+/// 把 `[startMs, endMs)` 抽成动图，按 [format] 自己声明的降级链（[MiningAnimatedFormat
+/// .encodeAttempts]）逐个尝试：首选用户所选格式，失败换 GIF 再试一次。
+///
+/// 这不是「重试掩盖症状」——两次调用的**参数不同**，第二次是能力降级：移动端 ffmpeg-kit
+/// 与旧版捆绑 ffmpeg 没有 libsvtav1 / libwebp 编码器（见 `tool/ffmpeg-min/
+/// build-ffmpeg-min.sh`），首选格式必然失败而 GIF 恒可用。降级只做一级。
+///
+/// **格式与编码参数成对**：每次尝试的 fps / 宽度 / 输出扩展名一律取自 `attempt` 自己
+/// （[MiningAnimatedFormat.capFps] / [MiningAnimatedFormat.capWidth] /
+/// [MiningAnimatedFormat.fileExtension]），绝不沿用上一次尝试的值。[compression] 的
+/// `gifFps`/`gifWidth` 在顶格档是按**用户所选格式**解析出来的（AVIF = 24fps/1440px），
+/// 原样转喂 GIF 就是 BUG-1039 复发。夹取对三种格式、四个档位一致（低档的有限值本就低于
+/// 任何上限，代入后不变），不是「谁是特例」的分支。
+///
+/// [outputPathStem] 是**不含扩展名**的输出路径前缀，扩展名由每次尝试的格式补上（ffmpeg
+/// 按扩展名选 muxer）。三条来路（app 内视频 / YouTube / Netflix 录制片段）共用本函数，
+/// 不各持一份会漂开的循环。[extractor] 供测试注入。
+///
+/// 全部尝试都失败返回 null，调用方据此走各自的下一级降级（单帧截图等）。
+Future<AnimatedClipExtraction?> extractAnimatedClipWithFallback({
+  required MiningAnimatedFormat format,
+  required String inputPath,
+  required int startMs,
+  required int endMs,
+  required String outputPathStem,
+  required MiningMediaCompression compression,
+  GifExtractor extractor = extractClipGifViaFfmpeg,
+  FfmpegFailureReporter? onFailure,
+  String? tlsPinSha256,
+}) async {
+  final List<MiningAnimatedFormat> attempts = format.encodeAttempts;
+  for (final MiningAnimatedFormat attempt in attempts) {
+    final String? out = await extractor(
+      inputPath: inputPath,
+      startMs: startMs,
+      endMs: endMs,
+      outputPath: '$outputPathStem.${attempt.fileExtension}',
+      fps: attempt.capFps(compression.gifFps),
+      width: attempt.capWidth(compression.gifWidth),
+      format: attempt,
+      // 还有降级尝试在后面 → 这次失败是预期内的能力探测，只记诊断日志（否则捆绑
+      // ffmpeg 缺编码器时，每制一张卡都往用户可见错误日志里塞一条「错误」）。
+      diagnosticOnly: attempt != attempts.last,
+      onFailure: onFailure,
+      tlsPinSha256: tlsPinSha256,
+    );
+    if (out != null) return (path: out, format: attempt);
+  }
+  return null;
+}
+
 /// 统一沉浸制卡引擎。降级阶梯与 `_mineVideoCard`（lookup_mining.part.dart L285-441）一致：
 /// GIF 主 → 单帧降级 → 当前解码帧兜底；音频段；requireAudio 且缺音频则中止；组 context 落卡。
 ///
@@ -168,43 +227,22 @@ class ImmersionMiningEngine {
     // 抽字幕区间动图（GIF）到临时文件；无 src / 无区间 → null。
     Future<String?> tryGif() async {
       if (src == null || !req.hasRange) return null;
-      // 首选用户所选格式；失败则降级 GIF 再试一次。这不是「重试掩盖症状」——两次调用的
-      // **参数不同**，第二次是能力降级：捆绑 ffmpeg 若来自旧版本包，没有 libsvtav1 /
-      // libwebp 编码器（见 tool/ffmpeg-min/build-ffmpeg-min.sh），首选格式必然失败而 GIF
-      // 恒可用。只降一级，且只在首选不是 GIF 时发生；GIF 也失败才轮到既有的单帧降级阶梯。
-      final List<MiningAnimatedFormat> attempts =
-          req.animatedFormat == MiningAnimatedFormat.gif
-              ? <MiningAnimatedFormat>[MiningAnimatedFormat.gif]
-              : <MiningAnimatedFormat>[
-                  req.animatedFormat,
-                  MiningAnimatedFormat.gif,
-                ];
-      for (final MiningAnimatedFormat attempt in attempts) {
-        // 档位参数一律夹到**本次尝试的格式**自己声明的顶格档上限。顶格档下
-        // compression.gifFps/gifWidth 是按用户所选格式解析出来的（AVIF = 24/1440），
-        // 换格式重试时若原样沿用，就会把这组参数喂给 GIF —— GIF 无帧间压缩，那正是
-        // BUG-1039 实测 54 MB / 撞 120 秒超时 / AnkiConnect 卡死的配置。
-        // 夹取对三种格式、四个档位一致（低档的有限值本就低于任何上限，代入后不变），
-        // 不是特例分支。
-        final int fps = attempt.capFps(compression.gifFps);
-        final int width = attempt.capWidth(compression.gifWidth);
-        final String? out = await _gif(
-          inputPath: src,
-          startMs: req.clipStartMs,
-          endMs: req.clipEndMs,
-          // 扩展名必须与格式一致：ffmpeg 按扩展名选 muxer。
-          outputPath: '$tempDir/immersion_clip.${attempt.fileExtension}',
-          fps: fps,
-          width: width,
-          format: attempt,
-          // 还有降级尝试在后面 → 这次失败是预期内的能力探测，只记诊断日志。
-          diagnosticOnly: attempt != attempts.last,
-          onFailure: reportCover,
-          tlsPinSha256: req.mediaSourceTlsPinSha256,
-        );
-        if (out != null) return out;
-      }
-      return null;
+      // 首选用户所选格式、失败降级 GIF 的那条链（含每次尝试重新夹取 fps/宽度/扩展名）
+      // 收在 [extractAnimatedClipWithFallback] 里，与 Netflix 录制片段共用同一份实现。
+      // GIF 也失败才轮到下面既有的单帧降级阶梯。
+      final AnimatedClipExtraction? animated =
+          await extractAnimatedClipWithFallback(
+        format: req.animatedFormat,
+        inputPath: src,
+        startMs: req.clipStartMs,
+        endMs: req.clipEndMs,
+        outputPathStem: '$tempDir/immersion_clip',
+        compression: compression,
+        extractor: _gif,
+        onFailure: reportCover,
+        tlsPinSha256: req.mediaSourceTlsPinSha256,
+      );
+      return animated?.path;
     }
 
     // 抽字幕 cue 起始时间点的单帧；无 src → null。
