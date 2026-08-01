@@ -234,6 +234,47 @@ void main() {
     expect(failedRepo.contexts, isEmpty);
   });
 
+  /// 降级判据是 `coverBytes == null || coverBytes.isEmpty`（gal_hook_mining_coordinator
+  /// .dart），上面那条只走 `== null` 那半边。`.isEmpty` 这半边**必须单独测**，因为它和
+  /// null 的内部状态不同：捕获返回了非 null 对象，`coverName` 已经按 `animated.format`
+  /// 被写成 `.avif`/`.gif` 了，只有 `.isEmpty` 命中后才会被改回 `.png`。
+  ///
+  /// 判据若退化成只判 null，这里就会写出**名字 .avif、内容零字节**的封面——Anki 按扩展名
+  /// 判 MIME，图直接不显示，而制卡本身还报成功。这正是同文件注释在防的那类
+  /// 「扩展名与实际内容不符」。
+  ///
+  /// 本用例是补回 PR#630 丢掉的覆盖（TODO-2505）：那次把两处 `Uint8List(0)` 改成
+  /// `null`，`.isEmpty` 分支从此无人经过。
+  test(
+      'animated capture returns empty bytes -> degrades to PNG (not a .avif of 0 bytes)',
+      () async {
+    final TexthookerLineEntry entry = service.appendLine('空バイトの台詞')!;
+    final _RecordingRepo repo = _RecordingRepo();
+
+    final GalHookMiningResult result = await coordinator(
+      validator: (_) => true,
+      // 非 null 对象 + 空字节：coverName 先被写成 .avif，随后应被 .isEmpty 改回 .png。
+      gif: (
+              {required int hwnd,
+              MiningAnimatedFormat format = MiningAnimatedFormat.gif}) async =>
+          (bytes: Uint8List(0), format: MiningAnimatedFormat.avif),
+    ).mineLine(
+      lineId: entry.id,
+      fields: const <String, String>{'expression': '空'},
+      compression: MiningMediaCompression.compressed,
+      repo: repo,
+    );
+
+    expect(result.success, isTrue);
+    expect(result.degradedToStill, isTrue,
+        reason: '空字节与 null 一样应算捕获失败并降级，不能当成"拿到动图了"');
+    final String coverPath = repo.contexts.single.coverPath!;
+    expect(coverPath, endsWith('.png'),
+        reason: '降级后扩展名必须跟着实际内容走；留着 .avif = 名字与字节不符，'
+            'Anki 按扩展名判 MIME 会不显示图，而制卡还报成功');
+    expect(coverPath, isNot(contains('.avif')));
+  });
+
   test('screenshot mode skips GIF entirely and is not a degradation', () async {
     final TexthookerLineEntry entry = service.appendLine('静止画の台詞')!;
     final _RecordingRepo repo = _RecordingRepo();
