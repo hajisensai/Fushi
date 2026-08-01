@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-1375 源码守卫：macOS 原生壳三症状根因修复不变式。
 ///
 /// ① 小说全屏退出后 sidebar 消失、退出阅读界面跳设置页且无边栏可退（困死）；
@@ -104,10 +106,25 @@ void main() {
     expect(reader, contains('kMacTitleBarHeight'));
     expect(reader, contains('_macosWindowTitlebarInset'));
     expect(reader, contains('_readerTopOffset =>'));
-    expect(reader, contains('_lyricsMode || _spreadDocumentLoaded'),
-        reason: '不注入正文引擎的歌词/spread 文档也必须避开顶部拖拽区');
-    expect(reader, contains('top: independentDocumentTopInset'),
-        reason: '独立文档由 Flutter 侧真实缩进，不能只改正文 CSS inset');
+    // BUG-1372：这两条原本钉的是 `_lyricsMode || _spreadDocumentLoaded` 和局部变量名
+    // `top: independentDocumentTopInset` 两个**实现拼写**——与它们同一方法体里那条
+    // `EdgeInsets.only(bottom: _readerBottomReserve)` 守卫同属 B 类「要求型」锚点，
+    // `_buildBody` 一重构就凭空变红（行为分毫未变）。独立文档缩进多少现由纯函数
+    // `independentDocumentInsets` 承载，「歌词/spread 缩进标题栏高、正文不缩进」的数值
+    // 契约由 test/pages/reader_lyrics_progress_bottom_reserve_static_test.dart 的行为
+    // 断言钉死；这里只钉一件本文件该管的事：reader 页确实把标题栏高喂进了那个真相源。
+    final String buildBody = methodBody(reader, '  Widget _buildBody()');
+    expect(
+      containsIdentifierCall(buildBody, 'independentDocumentInsets'),
+      isTrue,
+      reason: '不注入正文引擎的歌词/spread 文档也必须避开顶部拖拽区，'
+          '缩进量走单一真相源 independentDocumentInsets',
+    );
+    expect(
+      containsCodeLine(buildBody, 'titlebarInset: _macosWindowTitlebarInset'),
+      isTrue,
+      reason: '独立文档由 Flutter 侧真实缩进标题栏高，不能只改正文 CSS inset',
+    );
     expect(
       readerChrome,
       contains('_stableTopInset + _macosWindowTitlebarInset'),
