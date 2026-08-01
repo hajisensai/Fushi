@@ -2232,7 +2232,7 @@
   "video_jimaku_downloaded": "字幕已下载并应用",
   "video_jimaku_episode": "集数（可选）",
   "video_jimaku_episode_hint": "留空列出全部",
-  "video_jimaku_fetch": "自动获取字幕（Jimaku）",
+  "video_jimaku_fetch": "获取字幕（Jimaku）",
   "video_jimaku_filter": "筛选结果（如 WEBRip、BD）",
   "video_jimaku_find_sources": "查找字幕",
   "video_jimaku_language": "语言",
@@ -2910,5 +2910,7 @@
   "download_task_status_moving": "移动中",
   "download_task_status_error": "出错",
   "download_task_pause": "暂停",
-  "download_task_resume": "恢复"
+  "download_task_resume": "恢复",
+  "video_jimaku_format": "类型",
+  "video_jimaku_format_all": "全部"
 }

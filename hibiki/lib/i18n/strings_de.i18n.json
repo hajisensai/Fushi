@@ -2232,7 +2232,7 @@
   "video_jimaku_downloaded": "Untertitel heruntergeladen und angewendet",
   "video_jimaku_episode": "Episode (optional)",
   "video_jimaku_episode_hint": "Leave empty to list all",
-  "video_jimaku_fetch": "Untertitel automatisch holen (Jimaku)",
+  "video_jimaku_fetch": "Untertitel holen (Jimaku)",
   "video_jimaku_filter": "Ergebnisse filtern (z. B. WEBRip, BD)",
   "video_jimaku_find_sources": "Find subtitles",
   "video_jimaku_language": "Language",
@@ -2910,5 +2910,7 @@
   "download_task_status_moving": "Moving",
   "download_task_status_error": "Error",
   "download_task_pause": "Pause",
-  "download_task_resume": "Resume"
+  "download_task_resume": "Resume",
+  "video_jimaku_format": "Format",
+  "video_jimaku_format_all": "All"
 }

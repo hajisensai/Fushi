@@ -383,37 +383,69 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     }
     // BUG-939：已为当前视频枚举过就直接用缓存，不再重跑 ffprobe、不再显加载条。
     // 修「每次进字幕分类都要加载、明明没可加载的地方」——无内嵌轨/外挂的视频枚举结果
-    // 恒空，但只跑一次；有轨的视频重开时也不再把已枚举的字幕轨先清空重来。缓存在换视频
-    // （路径变）与导入新字幕档（[_invalidateSubtitleMenuSourcesCache]）时失效。
+    // 恒空，但只跑一次；有轨的视频重开时也不再把已枚举的字幕轨先清空重来。缓存只在换视频
+    // （路径变）时失效；导入/下载新字幕档不再作废整份缓存，而是就地并入
+    // （BUG-1329 [_registerImportedSubtitleSource]），省掉一整趟无谓的容器重探。
     if (_subtitleMenuSourcesPath == videoPath) return;
     if (_subtitleMenuLoading) return;
     _rebuild(() => _subtitleMenuLoading = true);
-    final List<SubtitleSource> sources;
+    // 枚举失败（ffmpeg 偶发失败 / 缺失）用 null 表达，与「枚举出空列表」区分：前者不写
+    // 缓存 key（下次打开重试，不被缓存成「已加载空」），后者是有效结果。单出口收敛加载
+    // 态，[_subtitleMenuLoading] 不存在任何提前 return 把它留在 true 的分支。
+    List<SubtitleSource>? enumerated;
     try {
-      sources = await _subtitleSourcesForMenu(
+      enumerated = await _subtitleSourcesForMenu(
         videoPath: videoPath,
         currentSubtitleSource: _currentSubtitleSource,
         currentCues: controller.cues,
       );
     } catch (_) {
-      // 枚举失败不写缓存 key，下次打开重试（ffprobe 偶发失败不该被缓存成「已加载空」）。
-      if (!mounted) return;
-      _rebuild(() => _subtitleMenuLoading = false);
-      return;
+      enumerated = null;
     }
     if (!mounted) return;
+    final List<SubtitleSource>? sources = enumerated;
     _rebuild(() {
-      _subtitleMenuSources = sources;
       _subtitleMenuLoading = false;
-      _subtitleMenuSourcesPath = videoPath;
+      if (sources != null) {
+        _subtitleMenuSources = sources;
+        _subtitleMenuSourcesPath = videoPath;
+      }
     });
   }
 
-  /// BUG-939：让字幕轨枚举缓存失效（下次打开「字幕」分类重新 ffprobe 枚举）。导入新字幕
-  /// 档（[_importExternalSubtitleInner] / Jimaku 下载）后调用——新档不在旧枚举结果里，
-  /// 靠这条让它下次出现在字幕轨列表。换视频不需调它（缓存 key 是视频路径，路径变自然失效）。
-  void _invalidateSubtitleMenuSourcesCache() {
-    _subtitleMenuSourcesPath = null;
+  /// BUG-1329：把刚落盘的外挂字幕档（[_importExternalSubtitleInner] 导入 / Jimaku 下载）
+  /// **当场**并入字幕轨枚举结果，让它立刻出现在「字幕」分类的字幕轨列表里。
+  ///
+  /// 取代旧的「清掉 [_subtitleMenuSourcesPath]、等下次进入字幕分类重新枚举」（BUG-939
+  /// 留下的缓存作废式刷新）。旧做法有两个真实症状：
+  ///  1. **列表不刷新**：下载/导入几乎总是**从已经打开的「字幕」分类里发起**的，而重新
+  ///     枚举的唯一驱动事件是「进入字幕分类」
+  ///     （[VideoQuickSettingsSheet.onSubtitleCategoryShown]）——面板不关、分类不切，它
+  ///     永远不会再触发，列表就停在旧结果，用户看不到自己刚下载的字幕。
+  ///  2. **长时间加载条**：真去重新枚举时又要对整个容器重跑一遍 `ffmpeg -i`（超时预算按
+  ///     文件体积放大），字幕轨区顶部的 [LinearProgressIndicator] 一直转——而这趟探测
+  ///     带来的唯一新信息，就是我们手里这个已知路径的外挂文件。
+  ///
+  /// 新档是本 app 刚写下的外挂文件，路径与标签都在手里，没有任何需要向 ffmpeg 求证的
+  /// 东西：直接插到列表首位（与 [includeCurrentPersistedSubtitleForMenu] 的「当前导入排
+  /// 最前」约定一致），内嵌轨枚举缓存保持有效、不重探。尚未为当前视频枚举过（缓存 key
+  /// 不匹配）时什么都不做——首次枚举本就会经 [includeCurrentPersistedSubtitleForMenu]
+  /// 把它带上。远端视频没有本地枚举列表（走 host / YouTube 轨），直接跳过。
+  void _registerImportedSubtitleSource(String path) {
+    if (_isRemote) return;
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null || _subtitleMenuSourcesPath != videoPath) return;
+    final bool alreadyListed = _subtitleMenuSources.any(
+      (SubtitleSource source) => sameExternalSubtitlePathForMenu(source, path),
+    );
+    if (alreadyListed) return;
+    final SubtitleSource added = SubtitleSource.external(
+      externalPath: path,
+      label: p.basename(path),
+    );
+    _rebuild(() {
+      _subtitleMenuSources = <SubtitleSource>[added, ..._subtitleMenuSources];
+    });
   }
 
   /// 选中某副字幕源（TODO-857 / TODO-1312）：抽 cue → [VideoPlayerController.setSecondaryCues]
@@ -598,10 +630,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       label: p.basename(downloaded),
     );
     final bool applied = await _selectSubtitleSource(controller, source);
-    // BUG-939：Jimaku 下载的新字幕档不在旧枚举结果里 → 失效缓存，下次打开字幕分类重枚举。
-    if (applied) {
-      _invalidateSubtitleMenuSourcesCache();
-    }
+    // BUG-1329：下载的新档当场并入字幕轨列表（用户就站在「字幕」分类里看着它）。**不**按
+    // applied 门控：文件已经在盘上了，即使这次解析不出 cue（坏档/编码问题）也该列出来，
+    // 否则用户下载完看不到任何东西、只能猜自己有没有下成功。
+    _registerImportedSubtitleSource(downloaded);
     // 仅在字幕真被应用（解析出 cue）时报「已下载并应用」；cue 为空时
     // _selectSubtitleSource 已弹失败提示，不再叠加误导性的成功提示。
     if (applied && mounted) {
@@ -813,15 +845,18 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     List<AudioCue> cues = client.cachedCaptionCues(track.trackKey);
     if (cues.isEmpty) {
       if (mounted) _rebuild(() => _subtitleMenuLoading = true);
-      cues = await resolveYoutubeCaptionCues(track,
-          bookKey: 'yt:${widget.bookUid}');
-      if (!mounted) return;
-      if (loadSeq != null && loadSeq != _episodeLoadSeq) {
-        _rebuild(() => _subtitleMenuLoading = false);
-        return;
+      try {
+        cues = await resolveYoutubeCaptionCues(track,
+            bookKey: 'yt:${widget.bookUid}');
+      } finally {
+        // BUG-1329：cue 解析抛错（网络/解析异常）时也必须收掉加载态。原来靠三条各自
+        // 复位的 return 路径，抛错那条谁也没走到，[_subtitleMenuLoading] 就永久留在
+        // true——字幕轨区顶部的进度条从此一直转，且再没有任何入口能把它关掉。
+        if (mounted) _rebuild(() => _subtitleMenuLoading = false);
       }
+      if (!mounted) return;
+      if (loadSeq != null && loadSeq != _episodeLoadSeq) return;
       if (cues.isNotEmpty) client.cacheCaptionCues(track.trackKey, cues);
-      _rebuild(() => _subtitleMenuLoading = false);
     }
     if (cues.isEmpty) {
       // 手选到空轨（机翻失败 / 该轨无文字）：提示；自动应用（loadSeq!=null）静默不打扰。
@@ -882,9 +917,8 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       label: p.basename(dest),
     );
     await _selectSubtitleSource(controller, source);
-    // BUG-939：导入了新外挂字幕档，它不在旧枚举结果里 → 失效缓存，下次打开「字幕」分类
-    // 重新枚举把它列进字幕轨列表。
-    _invalidateSubtitleMenuSourcesCache();
+    // BUG-1329：导入的新外挂字幕档当场并入字幕轨列表（不再等「下次进入字幕分类」重枚举）。
+    _registerImportedSubtitleSource(dest);
     debugPrint(
       '[hibiki-drop] [video-playback] externalSubtitle imported '
       'path=$dest',

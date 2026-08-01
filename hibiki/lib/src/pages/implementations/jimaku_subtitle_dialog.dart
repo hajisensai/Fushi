@@ -23,6 +23,10 @@ class JimakuCandidate {
 
   /// 从文件名解析出的集号（认不出为 null），用于按集升序排列。
   int? get episode => file.episode;
+
+  /// 字幕文件类型（扩展名小写不含点，如 `ass`/`srt`）。候选在入列前已过
+  /// [JimakuFile.isTextSubtitle]，故这里恒是四种可解析文本格式之一。
+  String get format => file.extension;
 }
 
 /// 给候选排序，消除 Jimaku 返回的乱序（用户报「集数是乱的」的根因是全程无排序）。
@@ -78,6 +82,35 @@ List<String> availableLanguages(List<JimakuCandidate> candidates) {
     if (present.remove(lang)) out.add(lang);
   }
   out.addAll(present);
+  return out;
+}
+
+/// 按字幕类型（扩展名）筛选候选。[format] 为 null（= 全部）时原样返回；非 null 时只留
+/// 该类型的候选（如 `ass` 只留 ASS/字幕特效轨）。纯函数，便于单测。
+///
+/// 与 [filterCandidatesByLanguage] 同构：两个维度各自独立，调用方按「语言 → 类型」串联。
+List<JimakuCandidate> filterCandidatesByFormat(
+    List<JimakuCandidate> candidates, String? format) {
+  if (format == null) return candidates;
+  return candidates
+      .where((JimakuCandidate c) => c.format == format)
+      .toList(growable: false);
+}
+
+/// 候选里出现过的字幕类型集合（去重，稳定顺序 ass/srt/ssa/vtt 优先，未知格式按字典序
+/// 追在后面）。用于渲染类型筛选 chip；只出现一种类型时调用方不必渲染该区。纯函数。
+List<String> availableFormats(List<JimakuCandidate> candidates) {
+  const List<String> order = <String>['ass', 'srt', 'ssa', 'vtt'];
+  final Set<String> present = <String>{};
+  for (final JimakuCandidate c in candidates) {
+    if (c.format.isNotEmpty) present.add(c.format);
+  }
+  final List<String> out = <String>[];
+  for (final String format in order) {
+    if (present.remove(format)) out.add(format);
+  }
+  final List<String> rest = present.toList()..sort();
+  out.addAll(rest);
   return out;
 }
 
@@ -159,6 +192,11 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   /// 当前选中的语言筛选；null = 「全部」（不过滤）。
   String? _selectedLanguage;
 
+  /// 当前选中的字幕类型筛选（扩展名，如 `ass`）；null = 「全部」（不过滤）。
+  /// 与语言不同，**不做跨会话记忆**：同一番不同来源的可用类型差别很大，记住一个类型
+  /// 反而常让下次搜索空屏。
+  String? _selectedFormat;
+
   /// 上次搜索是否带了集数（用于「该集无结果」时显示「显示全部集」出口）。
   bool _searchedWithEpisode = false;
 
@@ -180,7 +218,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
       _candidates = List<JimakuCandidate>.unmodifiable(seed);
       _searched = true;
       _apiKeyCollapsed = widget.initialApiKey.trim().isNotEmpty;
-      _reconcileSelectedLanguage();
+      _reconcileSelectedFilters();
     }
     final List<AniListMedia>? seedSeries = widget.debugInitialSeriesMatches;
     if (seedSeries != null && seedSeries.isNotEmpty) {
@@ -189,12 +227,16 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     }
   }
 
-  /// 把记忆/选中的语言与当前候选对齐：记忆语言本次结果里没出现 → 退回「全部」
-  /// （保底：绝不因记忆语言无候选而空屏）。
-  void _reconcileSelectedLanguage() {
+  /// 把记忆/选中的筛选（语言 + 类型）与当前候选对齐：本次结果里没出现的值 → 退回
+  /// 「全部」（保底：绝不因上一轮的筛选值在新结果里无候选而空屏）。
+  void _reconcileSelectedFilters() {
     final String? lang = _selectedLanguage;
     if (lang != null && !availableLanguages(_candidates).contains(lang)) {
       _selectedLanguage = null;
+    }
+    final String? format = _selectedFormat;
+    if (format != null && !availableFormats(_candidates).contains(format)) {
+      _selectedFormat = null;
     }
   }
 
@@ -311,8 +353,8 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         _searched = true;
         _searchedWithEpisode = episode != null;
         _selectedSeriesId = anilistId;
-        // 记忆语言本次无候选 → 退回「全部」，不空屏（保底）。
-        _reconcileSelectedLanguage();
+        // 记忆语言 / 上轮类型本次无候选 → 退回「全部」，不空屏（保底）。
+        _reconcileSelectedFilters();
         // 配好 key 且搜出结果后，默认收起 API key 输入区腾出列表空间
         // （用户：「apikey 配完是不是可以缩小显示」）。用户仍可点「修改」展开。
         _apiKeyCollapsed = sorted.isNotEmpty;
@@ -393,6 +435,11 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     if (lang != null) {
       await widget.onPreferredLanguageChanged?.call(lang);
     }
+  }
+
+  /// 选某字幕类型（[format]=null 即「全部」）：只更新筛选，不持久化（见 [_selectedFormat]）。
+  void _selectFormat(String? format) {
+    setState(() => _selectedFormat = format);
   }
 
   /// 「显示全部集」：清空集数框并重搜（不带 episode），从 Jimaku 启发式误伤里逃生。
@@ -480,6 +527,27 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     ]);
   }
 
+  /// 字幕类型筛选分区（含「全部」）：用户按 ass / srt 挑格式（ASS 带样式特效、
+  /// srt 纯文本）。只有一种类型时整区不渲染——单选项的筛选器是纯噪声。
+  Widget _buildFormatChips() {
+    final List<String> formats = availableFormats(_candidates);
+    if (formats.length < 2) return const SizedBox.shrink();
+    return _chipSection(t.video_jimaku_format, <Widget>[
+      ChoiceChip(
+        label: Text(t.video_jimaku_format_all),
+        selected: _selectedFormat == null,
+        onSelected: (_) => _selectFormat(null),
+      ),
+      for (final String format in formats)
+        ChoiceChip(
+          // 类型名是文件扩展名本身（ASS / SRT），不进 i18n：它是格式标识不是可译词。
+          label: Text(format.toUpperCase()),
+          selected: _selectedFormat == format,
+          onSelected: (_) => _selectFormat(format),
+        ),
+    ]);
+  }
+
   /// 宽屏两栏的最小内容宽（dp）：≥ 此宽度筛选面板与结果列表左右并排，否则退化为
   /// 上下两段（手机竖屏）。720 顶宽减 48 padding 后 672 必两栏；360dp 手机竖屏内容
   /// 宽 ~296 必单栏；横屏手机（640+）正好用两栏吃掉「矮而宽」。
@@ -532,6 +600,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
           if (_candidates.isNotEmpty) ...<Widget>[
             const SizedBox(height: 12),
             _buildLanguageChips(),
+            _buildFormatChips(),
             TextField(
               decoration: InputDecoration(
                 labelText: t.video_jimaku_filter,
@@ -583,9 +652,13 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         ),
       );
     }
-    // 先按语言筛选（_selectedLanguage），再交给列表做关键词二次筛选。
+    // 先按语言筛选（_selectedLanguage）、再按类型筛选（_selectedFormat），最后交给
+    // 列表做关键词二次筛选。三层各自独立、顺序不影响结果集。
     return JimakuCandidateList(
-      candidates: filterCandidatesByLanguage(_candidates, _selectedLanguage),
+      candidates: filterCandidatesByFormat(
+        filterCandidatesByLanguage(_candidates, _selectedLanguage),
+        _selectedFormat,
+      ),
       filter: _filter,
       busyName: _busyName,
       onDownload: _busyName == null ? _download : null,
