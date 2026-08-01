@@ -28,6 +28,12 @@ import 'package:hibiki/utils.dart';
 // 弹窗条目统一为共享的 [DictionaryPopupEntry]（见 dictionary_popup_controller.dart）；
 // 旧的 NestedPopupEntry / _PopupStackItem 两份重复类型已收口为它一个。
 
+/// 搜索期加载占位卡（[DictionaryPageMixin.buildPopupLoadingPlaceholder]）在宿主 Stack
+/// 里的稳定身份 key。与 reader 车道 `base-source-popup-loading-placeholder` 同用途，
+/// 也是 BUG-1364 行为测试定位该层的锚点。
+const ValueKey<String> kLookupSearchPlaceholderKey =
+    ValueKey<String>('mixin-popup-loading-placeholder');
+
 /// Non-generic mixin that consolidates the popup stack management, Anki mining,
 /// and audio auto-read logic shared across PopupDictionaryPage
 /// and HomeDictionaryPage.
@@ -790,6 +796,21 @@ mixin DictionaryPageMixin {
   /// 搜索期加载占位卡（「搜索→就绪才显示」模式）：在选中词 [rect] 处画一张与弹窗
   /// 同色的小卡 + 顶部进度条，全程不露空 WebView（与书内 base_source_page 同观感）。
   /// 宿主在 [DictionaryPopupController.isSearchingUi] 为真时渲染。
+  ///
+  /// BUG-1364（BUG-797/1040/1327 同族遗留）：本层此前**没接** [_popupHidingDialogDepth]。
+  /// 三个走根 Overlay 的宿主（视频页 / 首页词典页 / texthooker）+ 常驻根 builder 的
+  /// 悬浮歌词 host，整棵浮层子树都排在 `showAppDialog` 推的路由**之上**，所以对话框
+  /// 打开期间浮层的三个组成部分必须一起让位：barrier（[shouldShowLookupDismissBarrier]）、
+  /// 弹窗层（[parkedPopupLayer] 的 `visible`）都已接线，只剩这张占位卡漏了 → 对话框
+  /// 期间只要再起一次**顶层**查词（[DictionaryPopupController.beginTop] 会把复用的热槽
+  /// / 新目标置 `visible=false`，于是 `hasVisiblePopup` 变假、[pushNestedPopup] 进搜索
+  /// 占位态），这张不透明小卡就画在对话框上面。异步触发真实存在：悬浮歌词是独立系统
+  /// 窗口、texthooker / 全局查词的文本来自 app 外，都不受对话框模态遮罩约束。
+  ///
+  /// 与弹窗层不同，本层是**纯 Flutter widget**（无原生平台视图），故不需要
+  /// [parkedPopupLayer] 的「停靠屏外」补偿——那套几何只为绕开平台视图无视 `Opacity` /
+  /// `IgnorePointer` 的 airspace 行为。这里 [Visibility] 即可真正让位（不画、不吃点击），
+  /// 且外层 [Positioned] 尺寸不变，宿主 Stack 的子项数与布局都不受影响。
   Widget buildPopupLoadingPlaceholder({
     required Rect rect,
     required Size screen,
@@ -799,21 +820,29 @@ mixin DictionaryPageMixin {
         (mixinAppModel.overrideDictionaryTheme ?? mixinTheme).colorScheme;
     final Color fill = mixinAppModel.overrideDictionaryColor ?? cs.surface;
     return Positioned(
+      // 占位层的稳定 key（与弹窗层的 `ObjectKey(entry)` 配套，对齐 reader 车道的
+      // `base-source-popup-loading-placeholder`）：barrier 插拔时 Stack 里的子项按 key
+      // 匹配，占位层与弹窗层不会被按位置错配成对方（BUG-941 同族）。
+      key: kLookupSearchPlaceholderKey,
       left: pos.left,
       top: pos.top,
       width: pos.width,
       height: pos.height,
-      child: HibikiPopupSurface(
-        color: fill,
-        child: Column(
-          children: <Widget>[
-            LinearProgressIndicator(
-              backgroundColor: Colors.transparent,
-              color: cs.primary,
-              minHeight: 2.75,
-            ),
-            const Expanded(child: SizedBox.shrink()),
-          ],
+      child: Visibility(
+        // BUG-1364：与 [parkedPopupLayer] 的 `visible` 同源，纳入同一个嵌套安全计数。
+        visible: _popupHidingDialogDepth == 0,
+        child: HibikiPopupSurface(
+          color: fill,
+          child: Column(
+            children: <Widget>[
+              LinearProgressIndicator(
+                backgroundColor: Colors.transparent,
+                color: cs.primary,
+                minHeight: 2.75,
+              ),
+              const Expanded(child: SizedBox.shrink()),
+            ],
+          ),
         ),
       ),
     );
