@@ -94,6 +94,27 @@ void main() {
     );
   });
 
+  test('textStyle carries the locale-aware fallback chain, not a bare family',
+      () {
+    // 字体本质是有序回退链。只设 fontFamily 时，主字体缺字（日文 face 上的简中
+    // 「们/东」、中文 face 上的假名）会逐字掉进引擎默认 fallback —— 同一行里字形
+    // 忽宽忽窄，且用户在字体库里排第 2、3 位的字体永远轮不到。
+    expect(
+      textStyleSource,
+      contains('fontFamilyFallback: appFontFallbacks,'),
+      reason:
+          'textStyle must feed the resolved chain tail to fontFamilyFallback',
+    );
+    // 链本身必须由 appUiFontChain 构造（跟随显示语言），不能在 textStyle 里
+    // 就地硬编码一串家族名。
+    final String source =
+        File('lib/src/models/app_model.dart').readAsStringSync();
+    expect(source, contains('appUiFontChain('));
+    // appUi 目标消费整张有序列表；resolveAndLoad（只取第一条）会静默丢掉用户
+    // 自己排的回退顺序。
+    expect(source, contains('AppFontLoader.resolveAndLoadAll('));
+  });
+
   test('textBaseline is derived from the UI locale, not pinned to Japanese',
       () {
     expect(
