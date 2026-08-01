@@ -360,6 +360,39 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       '元数据源 key（bgm/vndb），不是路径。'),
   PathRebaseColumn('GalgameSources', 'dataJson', PathRebaseKind.notAPath,
       '刮削快照 JSON（远端字段，含远端封面 URL），无本机路径。'),
+
+  // ── Mihon 漫画扩展（PR#594）────────────────────────────────────────
+  // 这一组全部 notAPath，但理由分两类，别混：
+  //  ① 远端 URL / 标识符 / 结构化 JSON —— 本来就不是本机路径；
+  //  ② apkPath —— 是路径，但存的是**相对 mihon 根**的相对路径
+  //     （`MihonManager` 写库时是 `p.join('extensions', '<pkg>.apk')`，读时由
+  //     `resolveApkPath` 现场 join `rootDirectory`）。数据根一动，`rootDirectory`
+  //     跟着 `databaseDirectory` 自然变，相对段无需改写——这正是相对存储的意义。
+  //     谁要是把它改回绝对路径，就必须同时改成 supportRooted 并在
+  //     DataRootMigrator 里补改写，否则换数据根后全部已装扩展当场失效。
+  PathRebaseColumn('MangaExtensionStores', 'indexUrl', PathRebaseKind.notAPath,
+      '扩展仓库的远端 https 索引地址（同时是主键），不是本机路径。'),
+  PathRebaseColumn('MangaExtensionStores', 'extensionListUrl',
+      PathRebaseKind.notAPath, '仓库可选的远端扩展清单地址，不是本机路径。'),
+  PathRebaseColumn('MangaExtensionStores', 'contactJson',
+      PathRebaseKind.notAPath, '仓库维护者联系方式 JSON（远端字段），无本机路径。'),
+  PathRebaseColumn('MangaExtensions', 'storeUrl', PathRebaseKind.notAPath,
+      '该扩展来自哪个远端仓库索引地址，不是本机路径。'),
+  PathRebaseColumn(
+      'MangaExtensions',
+      'apkPath',
+      PathRebaseKind.notAPath,
+      '**相对** mihon 根的相对路径（`extensions/<pkg>.apk`），读时由 '
+          'MihonManager.resolveApkPath 现场 join rootDirectory；数据根移动后相对段'
+          '不变，无需 rebase。改成绝对路径就必须改判 supportRooted。'),
+  PathRebaseColumn('MangaOnlineSources', 'sourceId', PathRebaseKind.notAPath,
+      '扩展内的来源数字 ID（字符串化），不是路径。'),
+  PathRebaseColumn('MangaOnlineSources', 'baseUrl', PathRebaseKind.notAPath,
+      '来源站点的远端 https 地址，不是本机路径。'),
+  PathRebaseColumn('MangaSourcePreferences', 'sourceId',
+      PathRebaseKind.notAPath, '同上，来源数字 ID，不是路径。'),
+  PathRebaseColumn('MangaSourcePreferences', 'valueJson',
+      PathRebaseKind.notAPath, '扩展自定义偏好值的 JSON 编码（扩展私有语义），无本机路径。'),
 ];
 
 /// Drift preferences（以及它在 profile_settings 里的每 Profile 快照副本）中承载路径的

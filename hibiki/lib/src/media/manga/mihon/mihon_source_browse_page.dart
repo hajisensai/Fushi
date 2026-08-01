@@ -256,10 +256,11 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
               );
             }
             final MihonManga manga = _items[index];
-            return Card(
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () => _openDetails(manga),
+            return HibikiCard(
+              padding: EdgeInsets.zero,
+              onTap: () => _openDetails(manga),
+              child: ClipRRect(
+                borderRadius: HibikiBorderRadius.card,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
@@ -446,7 +447,7 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
                           width: 150,
                           height: 220,
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: HibikiBorderRadius.poster,
                             child: MihonSourceImage(
                               runtime: widget.manager.runtime,
                               context: widget.sourceContext,
@@ -517,8 +518,8 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
                     ),
                     const SizedBox(height: 8),
                     for (final MihonChapter chapter in _chapters)
-                      Card(
-                        child: ListTile(
+                      HibikiCard(
+                        child: HibikiListItem(
                           title: Text(chapter.name),
                           subtitle: chapter.scanlator?.isNotEmpty == true
                               ? Text(chapter.scanlator!)
@@ -655,18 +656,17 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
     ValueChanged<MihonFilter> onChanged,
   ) {
     return switch (filter.kind) {
-      MihonFilterKind.header => ListTile(
+      MihonFilterKind.header => HibikiListItem(
           title: Text(
             filter.name,
             style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
       MihonFilterKind.separator => const Divider(),
-      MihonFilterKind.checkBox => CheckboxListTile(
-          title: Text(filter.name),
-          value: filter.state == true,
-          onChanged: (bool? value) =>
-              onChanged(_withState(filter, value == true)),
+      MihonFilterKind.checkBox => _MihonCheckRow(
+          label: filter.name,
+          selected: filter.state == true,
+          onChanged: (bool value) => onChanged(_withState(filter, value)),
         ),
       MihonFilterKind.text => TextFormField(
           initialValue: filter.state?.toString() ?? '',
@@ -728,7 +728,7 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
           filter: filter,
           onChanged: (Object? state) => onChanged(_withState(filter, state)),
         ),
-      _ => ListTile(
+      _ => HibikiListItem(
           title: Text(filter.name),
           subtitle: Text(t.mihon_extension_incompatible),
         ),
@@ -805,14 +805,44 @@ class _MihonSortFilterField extends StatelessWidget {
           ],
           onChanged: (int? value) => update(nextIndex: value ?? 0),
         ),
-        SwitchListTile(
+        HibikiListItem(
           title: Text(
             ascending ? t.mihon_filter_ascending : t.mihon_filter_descending,
           ),
-          value: ascending,
-          onChanged: (bool value) => update(nextAscending: value),
+          trailing: Switch.adaptive(
+            value: ascending,
+            onChanged: (bool value) => update(nextAscending: value),
+          ),
+          onTap: () => update(nextAscending: !ascending),
         ),
       ],
     );
   }
+}
+
+/// 扩展筛选器里的复选行。
+///
+/// 框架的 `CheckboxListTile` 是被 MD3 守卫禁用的本地 chrome；共享的
+/// [HibikiListItem] 没有内建复选语义，所以这里把「点整行 = 切换」显式接上，
+/// 与 `CheckboxListTile` 的交互等价。
+class _MihonCheckRow extends StatelessWidget {
+  const _MihonCheckRow({
+    required this.label,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool selected;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => HibikiListItem(
+        title: Text(label),
+        leading: Checkbox(
+          value: selected,
+          onChanged: (bool? value) => onChanged(value == true),
+        ),
+        onTap: () => onChanged(!selected),
+      );
 }

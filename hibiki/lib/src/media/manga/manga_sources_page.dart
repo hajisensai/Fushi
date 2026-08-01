@@ -209,8 +209,8 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     MangaOnlineSourceRow source,
     int index,
   ) {
-    return Card(
-      child: ListTile(
+    return HibikiCard(
+      child: HibikiListItem(
         leading: Switch.adaptive(
           value: source.enabled,
           onChanged: (bool value) => unawaited(
@@ -410,11 +410,12 @@ class _MihonPreferencesDialogState extends State<_MihonPreferencesDialog> {
               preference.summary.isEmpty ? null : Text(preference.summary),
           children: <Widget>[
             for (int index = 0; index < preference.entries.length; index++)
-              CheckboxListTile(
-                title: Text(preference.entries[index]),
-                value: (preference.value as List<Object?>? ?? const <Object?>[])
-                    .map((Object? value) => value.toString())
-                    .contains(preference.entryValues[index]),
+              _MihonMultiSelectRow(
+                label: preference.entries[index],
+                selected:
+                    (preference.value as List<Object?>? ?? const <Object?>[])
+                        .map((Object? value) => value.toString())
+                        .contains(preference.entryValues[index]),
                 onChanged: busy
                     ? null
                     : (bool? selected) {
@@ -433,11 +434,38 @@ class _MihonPreferencesDialogState extends State<_MihonPreferencesDialog> {
               ),
           ],
         ),
-      MihonPreferenceKind.unsupported => ListTile(
+      MihonPreferenceKind.unsupported => HibikiListItem(
           leading: const Icon(Icons.warning_amber_outlined),
           title: Text(preference.title),
           subtitle: Text(t.mihon_extension_incompatible),
         ),
     };
+  }
+}
+
+/// 多选偏好的一行。
+///
+/// 框架的 `CheckboxListTile` 是被 MD3 守卫禁用的本地 chrome；共享的
+/// [HibikiListItem] 没有内建复选语义，所以这里把「点整行 = 切换」的行为显式接上，
+/// 与 `CheckboxListTile` 的交互等价（整行可点，禁用态整行不可点）。
+class _MihonMultiSelectRow extends StatelessWidget {
+  const _MihonMultiSelectRow({
+    required this.label,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool selected;
+  final ValueChanged<bool?>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final ValueChanged<bool?>? changed = onChanged;
+    return HibikiListItem(
+      title: Text(label),
+      leading: Checkbox(value: selected, onChanged: changed),
+      onTap: changed == null ? null : () => changed(!selected),
+    );
   }
 }

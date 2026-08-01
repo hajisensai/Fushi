@@ -115,8 +115,8 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: <Widget>[
-                Card(
-                  child: ListTile(
+                HibikiCard(
+                  child: HibikiListItem(
                     leading: const Icon(Icons.auto_stories_outlined),
                     title: Text(t.mihon_source_browse_mokuro),
                     subtitle: const Text('mokuro.moe'),
@@ -125,8 +125,8 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
                   ),
                 ),
                 for (final MangaOnlineSourceRow source in sources)
-                  Card(
-                    child: ListTile(
+                  HibikiCard(
+                    child: HibikiListItem(
                       leading: CircleAvatar(
                         child: Text(
                           source.language.isEmpty

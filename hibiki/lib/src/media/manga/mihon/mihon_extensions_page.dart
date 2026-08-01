@@ -389,8 +389,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     );
     return _contentContainer(<Widget>[
       for (final MangaExtensionStoreRow store in manager.stores)
-        Card(
-          child: ListTile(
+        HibikiCard(
+          child: HibikiListItem(
             leading: const Icon(Icons.hub_outlined),
             title: Text(store.name),
             subtitle: Text(
@@ -544,8 +544,8 @@ class _AvailableExtensionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool update =
         installed != null && extension.versionCode > installed!.versionCode;
-    return Card(
-      child: ListTile(
+    return HibikiCard(
+      child: HibikiListItem(
         leading: const Icon(Icons.extension_outlined),
         title: Text(extension.name),
         subtitle: Text(
@@ -589,8 +589,8 @@ class _InstalledExtensionTile extends StatelessWidget {
   final ValueChanged<bool> onEnabledChanged;
 
   @override
-  Widget build(BuildContext context) => Card(
-        child: ListTile(
+  Widget build(BuildContext context) => HibikiCard(
+        child: HibikiListItem(
           leading: const Icon(Icons.extension_outlined),
           title: Text(extension.name),
           subtitle: Text(
