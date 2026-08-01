@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1304 条。点号进各自文件。
+> 共 1305 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1372](bugs/BUG-1372-lyrics-bottom-reserve-guard.md) | ✅ | ✅ | 歌词底栏预留守卫锚在实现写法上，PR#670 合并 Padding 后 develop 单测红 |
 | [BUG-1365](bugs/BUG-1365-local-audio-query-races-binding-index-build.md) | ✅ | ✅ | 桌面本地音频查询与绑定期建索引竞态：撞锁被吞成 null＝「暂无发音」（CI flaky） |
 | [BUG-1358](bugs/BUG-1358-schema-guard-handwritten-comment-strip.md) | ✅ | ✅ | PR#679 新守卫手写 startsWith('//') 剥注释，违反 source_guard 纪律，develop 单测门红 |
 | [BUG-1353](bugs/BUG-1353-ci-macos-bsd-sed-inplace.md) | ✅ | ✅ | CI macos/ios 作业固定红：TMDB key 注入用了 GNU-only 的裸 sed -i |
