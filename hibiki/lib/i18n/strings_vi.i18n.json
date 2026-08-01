@@ -2895,5 +2895,20 @@
   "video_scrape_collection_rename_from": "Current name: $name",
   "video_scrape_collection_rename_to": "New name: $name",
   "video_scrape_collection_rename_keep": "Keep current name",
-  "video_scrape_collection_rename_confirm": "Rename"
+  "video_scrape_collection_rename_confirm": "Rename",
+  "download_task_toggle_failed": "Pause/resume failed",
+  "download_task_eta": "ETA",
+  "download_task_ratio": "Ratio",
+  "download_task_status_downloading": "Downloading",
+  "download_task_status_seeding": "Seeding",
+  "download_task_status_completed": "Completed",
+  "download_task_status_paused": "Paused",
+  "download_task_status_queued": "Queued",
+  "download_task_status_stalled": "Stalled",
+  "download_task_status_checking": "Checking",
+  "download_task_status_metadata": "Fetching metadata",
+  "download_task_status_moving": "Moving",
+  "download_task_status_error": "Error",
+  "download_task_pause": "Pause",
+  "download_task_resume": "Resume"
 }

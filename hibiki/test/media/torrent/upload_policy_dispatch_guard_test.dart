@@ -23,6 +23,7 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/embedded_torrent_host.dart';
+import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki_torrent/hibiki_torrent.dart';
 
 final Pointer<Void> _fakeSession = Pointer<Void>.fromAddress(0xF00D);
@@ -257,6 +258,90 @@ void main() {
       final EmbeddedTorrentHost host = _host(withUploadControl: false);
       host.setUploadPolicy(const QbConnectionConfig());
       expect(_calls, contains('ht_set_upload_mode(,1)'));
+    });
+  });
+
+  group('TODO-2481：用户暂停/恢复与策略 sweep 的边界', () {
+    test('pauseTorrentByUser 下发 pause=1；isTorrentPausedForDisplay 置位', () {
+      final EmbeddedTorrentHost host = _host(withUploadControl: true);
+      expect(host.pauseTorrentByUser('AAA'), isTrue);
+      expect(_calls, contains('ht_pause_torrent(aaa,1)'),
+          reason: 'infohash 统一小写下发');
+      expect(host.isTorrentPausedForDisplay('aaa'), isTrue);
+      expect(host.isTorrentPausedForDisplay('AAA'), isTrue,
+          reason: '大小写只是书写差异');
+    });
+
+    test('靶心：sweep 绝不替用户 resume（把 skip 删掉这条必红）', () {
+      final EmbeddedTorrentHost host = _host(withUploadControl: true);
+      // 开上传 + 无做种上限 → 策略对已完成种子的裁决是「继续做种」。
+      host.setUploadPolicy(const QbConnectionConfig(uploadEnabled: true));
+      _torrentsJson = '[${_torrent(id: 'bbb', finished: true)}]';
+      expect(host.pauseTorrentByUser('bbb'), isTrue);
+      _calls.clear();
+      host.sweepUploadPolicy();
+      host.sweepUploadPolicy();
+      expect(
+          _calls.where((String c) => c.startsWith('ht_pause_torrent')), isEmpty,
+          reason: '用户暂停的种子策略既不重复 pause 也不 resume');
+    });
+
+    test('resumeTorrentByUser 下发 pause=0 并清除暂停显示态', () {
+      final EmbeddedTorrentHost host = _host(withUploadControl: true);
+      expect(host.pauseTorrentByUser('ccc'), isTrue);
+      expect(host.resumeTorrentByUser('ccc'), isTrue);
+      expect(_calls, contains('ht_pause_torrent(ccc,0)'));
+      expect(host.isTorrentPausedForDisplay('ccc'), isFalse);
+    });
+
+    test('用户恢复后策略重新裁决：关上传的已完成种子会被策略再次暂停', () {
+      final EmbeddedTorrentHost host = _host(withUploadControl: true);
+      host.setUploadPolicy(const QbConnectionConfig()); // uploadEnabled=false
+      _torrentsJson = '[${_torrent(id: 'ddd', finished: true)}]';
+      host.sweepUploadPolicy();
+      expect(_calls, contains('ht_pause_torrent(ddd,1)'),
+          reason: '前置：策略先按关上传暂停了做种');
+      // 用户手动恢复（清掉策略已下发记录）→ 下一轮 sweep 按策略重新暂停。
+      expect(host.resumeTorrentByUser('ddd'), isTrue);
+      _calls.clear();
+      host.sweepUploadPolicy();
+      expect(_calls, contains('ht_pause_torrent(ddd,1)'),
+          reason: '策略语义使然：resume 清的是记录，不是豁免');
+    });
+
+    test('老 DLL：supportsPauseControl=false 且用户暂停如实失败', () {
+      final EmbeddedTorrentHost host = _host(withUploadControl: false);
+      expect(host.supportsPauseControl, isFalse);
+      expect(host.pauseTorrentByUser('eee'), isFalse);
+      expect(host.isTorrentPausedForDisplay('eee'), isFalse);
+      expect(host.backendView().pauseControlAvailable, isFalse,
+          reason: '能力位经 backendView 透传，UI 据此隐藏按钮');
+    });
+
+    test('backendView 快照：已知暂停的种子 state 覆写为 pausedDL/pausedUP', () async {
+      final EmbeddedTorrentHost host = _host(withUploadControl: true);
+      _torrentsJson = '['
+          '${_torrent(id: 'dl1', finished: false)},'
+          '${_torrent(id: 'up1', finished: true)}'
+          ']';
+      expect(host.pauseTorrentByUser('dl1'), isTrue);
+      expect(host.pauseTorrentByUser('up1'), isTrue);
+      final Map<String, String> stateByHash = <String, String>{
+        for (final TorrentSnapshot s in await host.backendView().listTorrents())
+          s.hash: s.state,
+      };
+      expect(stateByHash['dl1'], 'pausedDL',
+          reason: 'native state_label 不导出 paused，覆写发生在快照层');
+      expect(stateByHash['up1'], 'pausedUP',
+          reason: 'pausedUP 属做种类，isComplete 判定不受暂停影响');
+
+      // 恢复后回落 native 原词。
+      expect(host.resumeTorrentByUser('dl1'), isTrue);
+      final Map<String, String> after = <String, String>{
+        for (final TorrentSnapshot s in await host.backendView().listTorrents())
+          s.hash: s.state,
+      };
+      expect(after['dl1'], 'downloading');
     });
   });
 }

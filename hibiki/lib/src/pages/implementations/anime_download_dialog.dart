@@ -14,6 +14,7 @@ import 'package:hibiki/src/media/torrent/download_network_proxy.dart'
 import 'package:hibiki/src/media/torrent/download_relocate_service.dart';
 import 'package:hibiki/src/media/torrent/nyaa_client.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
+import 'package:hibiki/src/media/torrent/torrent_task_display.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -2215,6 +2216,77 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     await _reloadPlans();
   }
 
+  /// TODO-2481：当前后端是否支持暂停/恢复。探测 = `is TorrentPauseBackend`
+  /// + 运行时能力位（内置引擎老 DLL 缺原语时类型过了也点不动）。对话框
+  /// 生命周期内缓存一次 —— 只在任务行确实处于下载中时才会走到这里，此时
+  /// 轮询服务本就每 tick 建同款后端，探测不会额外拉起会话。
+  bool? _pauseCapableCache;
+
+  bool get _pauseCapable {
+    final bool? cached = _pauseCapableCache;
+    if (cached != null) return cached;
+    if (!_backendReady) return false;
+    final AppModel appModel = ref.read(appProvider);
+    final TorrentBackend backend = appModel.createTorrentBackend(
+      effectiveTorrentConfig(appModel.qbConnectionConfig),
+    );
+    bool capable = false;
+    try {
+      capable = backend is TorrentPauseBackend && backend.pauseControlAvailable;
+    } finally {
+      backend.close();
+    }
+    _pauseCapableCache = capable;
+    return capable;
+  }
+
+  /// TODO-2481：暂停/恢复单个任务；成功即踢一轮 tick 刷新快照与状态文本。
+  Future<void> _togglePausePlan(
+    AnimeDownloadPlan plan, {
+    required bool pause,
+  }) async {
+    final AppModel appModel = ref.read(appProvider);
+    if (!torrentBackendReady(appModel)) {
+      _snack(t.download_backend_not_configured);
+      return;
+    }
+    final TorrentBackend backend = appModel.createTorrentBackend(
+      effectiveTorrentConfig(appModel.qbConnectionConfig),
+    );
+    bool ok = false;
+    try {
+      if (backend is TorrentPauseBackend) {
+        ok = pause
+            ? await backend.pauseTorrent(plan.id)
+            : await backend.resumeTorrent(plan.id);
+      }
+    } finally {
+      backend.close();
+    }
+    if (!ok) {
+      _snack(t.download_task_toggle_failed);
+      return;
+    }
+    unawaited(appModel.animeDownloadService?.tick());
+  }
+
+  /// TODO-2481：显示状态 → i18n 文案；unknown 返回 null（该段不渲染）。
+  String? _torrentStatusLabel(TorrentDisplayStatus status) {
+    return switch (status) {
+      TorrentDisplayStatus.downloading => t.download_task_status_downloading,
+      TorrentDisplayStatus.seeding => t.download_task_status_seeding,
+      TorrentDisplayStatus.completed => t.download_task_status_completed,
+      TorrentDisplayStatus.paused => t.download_task_status_paused,
+      TorrentDisplayStatus.queued => t.download_task_status_queued,
+      TorrentDisplayStatus.stalled => t.download_task_status_stalled,
+      TorrentDisplayStatus.checking => t.download_task_status_checking,
+      TorrentDisplayStatus.fetchingMetadata => t.download_task_status_metadata,
+      TorrentDisplayStatus.moving => t.download_task_status_moving,
+      TorrentDisplayStatus.error => t.download_task_status_error,
+      TorrentDisplayStatus.unknown => null,
+    };
+  }
+
   /// 单条任务行（[HibikiListItem] compact，自动接焦点系统）。
   ///
   /// - 下载中：轮询服务透传的真实进度（[AnimeDownloadService.downloadProgress]）
@@ -2281,14 +2353,35 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     // BUG-1294：进度百分比之外补速度与累计流量（单位串是纯数字/符号，无需
     // i18n key）。速率为 0 时仍显示（「0 B/s 卡住了」本身就是有效信息）。
     // BUG-1296：百分比只依赖 progress；观测值缺席就只渲染百分比，不整条消失。
+    // TODO-2481：再补状态文本 / ETA / 分享率 —— 三者都是增强位，算不出
+    // （未知词 / 零速度 / 零分母）就整段不渲染，绝不把百分比一起吞掉。
+    final TorrentDisplayStatus? displayStatus =
+        stats == null ? null : torrentDisplayStatusFor(stats.state);
+    final String? statusLabel =
+        displayStatus == null ? null : _torrentStatusLabel(displayStatus);
+    final String? etaText = stats == null
+        ? null
+        : formatTorrentEta(
+            amountLeft: stats.amountLeft,
+            downRateBps: stats.downRateBps,
+          );
+    final String? ratioText = stats == null
+        ? null
+        : formatShareRatio(
+            uploadedBytes: stats.uploadedBytes,
+            downloadedBytes: stats.downloadedBytes,
+          );
     final String? progressText = (downloading && progress != null)
         ? <String>[
             '${(progress * 100).toStringAsFixed(0)}%',
+            if (statusLabel != null) statusLabel,
             if (stats != null) ...<String>[
               '↓ ${HibikiByteFormat.speed(stats.downRateBps.toDouble())}',
               '↑ ${HibikiByteFormat.speed(stats.upRateBps.toDouble())}',
               HibikiByteFormat.bytes(stats.downloadedBytes),
             ],
+            if (etaText != null) '${t.download_task_eta} $etaText',
+            if (ratioText != null) '${t.download_task_ratio} $ratioText',
           ].join(' · ')
         : null;
     final String? failReason =
@@ -2358,6 +2451,23 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          // TODO-2481：暂停/恢复（仅后端具备该能力时显示）。图标随当前
+          // 状态切换；操作成功由 tick 刷出新状态，无本地乐观态。
+          if (downloading && _pauseCapable)
+            if (displayStatus == TorrentDisplayStatus.paused)
+              HibikiIconButton(
+                tooltip: t.download_task_resume,
+                icon: Icons.play_arrow_outlined,
+                size: 20,
+                onTap: () => _togglePausePlan(plan, pause: false),
+              )
+            else
+              HibikiIconButton(
+                tooltip: t.download_task_pause,
+                icon: Icons.pause_circle_outline,
+                size: 20,
+                onTap: () => _togglePausePlan(plan, pause: true),
+              ),
           if (downloading && !plan.importedEarly)
             HibikiIconButton(
               tooltip: t.anime_download_play_now,

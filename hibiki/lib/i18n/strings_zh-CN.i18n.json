@@ -2895,5 +2895,20 @@
   "video_scrape_collection_rename_from": "当前名称：$name",
   "video_scrape_collection_rename_to": "新名称：$name",
   "video_scrape_collection_rename_keep": "保留当前名称",
-  "video_scrape_collection_rename_confirm": "重命名"
+  "video_scrape_collection_rename_confirm": "重命名",
+  "download_task_toggle_failed": "暂停/恢复操作失败",
+  "download_task_eta": "剩余",
+  "download_task_ratio": "分享率",
+  "download_task_status_downloading": "下载中",
+  "download_task_status_seeding": "做种中",
+  "download_task_status_completed": "已完成",
+  "download_task_status_paused": "已暂停",
+  "download_task_status_queued": "排队中",
+  "download_task_status_stalled": "等待资源",
+  "download_task_status_checking": "校验中",
+  "download_task_status_metadata": "获取元数据",
+  "download_task_status_moving": "移动中",
+  "download_task_status_error": "出错",
+  "download_task_pause": "暂停",
+  "download_task_resume": "恢复"
 }

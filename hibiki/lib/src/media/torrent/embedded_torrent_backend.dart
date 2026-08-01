@@ -18,16 +18,26 @@ import 'package:hibiki_torrent/hibiki_torrent.dart';
 ///   记入 [_pendingFirstLast]，在每次 [listTorrents] 轮询时补应用 ——
 ///   上层服务本就以 20s tick 轮询，无需额外定时器。
 /// - close 只关本后端持有的 session；引擎（DLL）进程级共享不关。
-class EmbeddedTorrentBackend implements TorrentRemovalBackend {
+class EmbeddedTorrentBackend
+    implements TorrentRemovalBackend, TorrentPauseBackend {
   EmbeddedTorrentBackend({
     required EmbeddedTorrentSession session,
     required TorrentSaveRoots saveRoots,
     bool closesSession = true,
+    EmbeddedPauseControl? pauseControl,
   })  : _session = session,
         _saveRoots = saveRoots,
-        _closesSession = closesSession;
+        _closesSession = closesSession,
+        _pauseControl = pauseControl;
 
   final EmbeddedTorrentSession _session;
+
+  /// TODO-2481：宿主注入的暂停控制通道；null = standalone（自持 session），
+  /// 退化为直接调 session + 自持暂停集合（backend 与 session 同寿命）。
+  final EmbeddedPauseControl? _pauseControl;
+
+  /// standalone 形态下自持的「已知暂停」集合（infohash 小写）。
+  final Set<String> _localPaused = <String>{};
 
   /// 活动根 + 历史根。写入只用活动根，列表认全部（见类注释）。
   final TorrentSaveRoots _saveRoots;
@@ -133,6 +143,36 @@ class EmbeddedTorrentBackend implements TorrentRemovalBackend {
   }) async =>
       _session.removeTorrent(torrentId, deleteFiles: deleteFiles);
 
+  /// 暂停/恢复原语与上传策略同一组 DLL 符号；老随包 DLL 缺符号时 false。
+  @override
+  bool get pauseControlAvailable =>
+      _pauseControl?.available() ?? _session.supportsUploadControl;
+
+  @override
+  Future<bool> pauseTorrent(String torrentId) async {
+    final EmbeddedPauseControl? control = _pauseControl;
+    if (control != null) return control.pause(torrentId);
+    final String id = torrentId.toLowerCase();
+    if (!_session.pauseTorrent(id, pause: true)) return false;
+    _localPaused.add(id);
+    return true;
+  }
+
+  @override
+  Future<bool> resumeTorrent(String torrentId) async {
+    final EmbeddedPauseControl? control = _pauseControl;
+    if (control != null) return control.resume(torrentId);
+    final String id = torrentId.toLowerCase();
+    if (!_session.pauseTorrent(id, pause: false)) return false;
+    _localPaused.remove(id);
+    return true;
+  }
+
+  /// 该种子是否已知处于暂停态（宿主真相优先；standalone 用自持集合）。
+  bool _isPausedForDisplay(String infoHash) =>
+      _pauseControl?.isPaused(infoHash) ??
+      _localPaused.contains(infoHash.toLowerCase());
+
   @override
   Future<TorrentStorageResult> renameFile(
     String torrentId,
@@ -169,11 +209,18 @@ class EmbeddedTorrentBackend implements TorrentRemovalBackend {
   }
 
   TorrentSnapshot _toSnapshot(HtTorrentStatus t) {
+    // TODO-2481：native 的 state_label 不导出 paused（libtorrent 里 paused
+    // 是 flag 不是 state），已知暂停的种子把 state 覆写成 qb 词汇
+    // pausedDL/pausedUP —— UI 状态文本与 [TorrentSnapshot.isComplete]
+    // （pausedUP 属做种类）吃的都是这个词。
+    final String state = _isPausedForDisplay(t.id)
+        ? (t.isFinished ? 'pausedUP' : 'pausedDL')
+        : t.state;
     return TorrentSnapshot(
       hash: t.id,
       name: t.name,
       progress: t.progress,
-      state: t.state,
+      state: state,
       savePath: t.savePath,
       contentPath: t.contentPath,
       amountLeft: t.left,
@@ -185,4 +232,28 @@ class EmbeddedTorrentBackend implements TorrentRemovalBackend {
       numPeers: t.numPeers,
     );
   }
+}
+
+/// TODO-2481：宿主注入的暂停控制通道。暂停状态的真相在常驻
+/// `EmbeddedTorrentHost`（短命适配器每 tick 重建，自持状态活不过一轮），
+/// backend 只做转发；standalone 场景不传，backend 退化为直连 session。
+class EmbeddedPauseControl {
+  const EmbeddedPauseControl({
+    required this.available,
+    required this.pause,
+    required this.resume,
+    required this.isPaused,
+  });
+
+  /// 运行时能力位（老 DLL 缺 `ht_pause_torrent` 符号时 false）。
+  final bool Function() available;
+
+  /// 暂停一个种子（入参 infohash），返回是否成功。
+  final bool Function(String infoHash) pause;
+
+  /// 恢复一个种子，返回是否成功。
+  final bool Function(String infoHash) resume;
+
+  /// 该种子当前是否已知处于暂停态（用户或策略）。
+  final bool Function(String infoHash) isPaused;
 }

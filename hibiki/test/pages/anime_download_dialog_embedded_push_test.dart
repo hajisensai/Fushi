@@ -351,6 +351,9 @@ void main() {
         downloadedBytes: 0,
         uploadedBytes: 0,
         numPeers: 0,
+        // TODO-2481：state 未知词 → 状态段不渲染，本用例仍只看速度段。
+        state: '',
+        amountLeft: -1,
       ),
     };
     await tester.pump();

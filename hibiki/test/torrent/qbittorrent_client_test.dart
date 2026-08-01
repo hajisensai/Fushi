@@ -354,6 +354,94 @@ void main() {
     });
   });
 
+  group('pauseTorrent / resumeTorrent（TODO-2481）', () {
+    test('posts hashes to /torrents/pause and /torrents/resume', () async {
+      final List<int> logins = <int>[];
+      final List<String> paths = <String>[];
+      late http.Request seen;
+      final QBittorrentClient client = QBittorrentClient(
+        baseUrl: 'http://qb.local:8080',
+        username: 'admin',
+        password: 'secret',
+        client: _mockWithLogin(logins, (http.Request request) async {
+          paths.add(request.url.path);
+          seen = request;
+          return http.Response('', 200);
+        }),
+      );
+      expect(await client.pauseTorrent('abc123'), isTrue);
+      expect(paths.last, '/api/v2/torrents/pause');
+      expect(seen.bodyFields, <String, String>{'hashes': 'abc123'});
+      expect(await client.resumeTorrent('abc123'), isTrue);
+      expect(paths.last, '/api/v2/torrents/resume');
+      expect(seen.bodyFields, <String, String>{'hashes': 'abc123'});
+      client.close();
+    });
+
+    test('qb 5.0 移除旧端点：404 时回退 /torrents/stop 与 /torrents/start', () async {
+      final List<int> logins = <int>[];
+      final List<String> paths = <String>[];
+      final QBittorrentClient client = QBittorrentClient(
+        baseUrl: 'http://qb.local:8080',
+        username: 'admin',
+        password: 'secret',
+        client: _mockWithLogin(logins, (http.Request request) async {
+          paths.add(request.url.path);
+          final bool renamed = request.url.path.endsWith('/stop') ||
+              request.url.path.endsWith('/start');
+          return http.Response('', renamed ? 200 : 404);
+        }),
+      );
+      expect(await client.pauseTorrent('abc123'), isTrue);
+      expect(
+        paths,
+        <String>['/api/v2/torrents/pause', '/api/v2/torrents/stop'],
+      );
+      paths.clear();
+      expect(await client.resumeTorrent('abc123'), isTrue);
+      expect(
+        paths,
+        <String>['/api/v2/torrents/resume', '/api/v2/torrents/start'],
+      );
+      client.close();
+    });
+
+    test('双端点都失败 / 空 hash 返回 false', () async {
+      final List<int> logins = <int>[];
+      final QBittorrentClient client = QBittorrentClient(
+        baseUrl: 'http://qb.local:8080',
+        username: 'admin',
+        password: 'secret',
+        client: _mockWithLogin(
+          logins,
+          (http.Request request) async => http.Response('', 404),
+        ),
+      );
+      expect(await client.pauseTorrent('abc123'), isFalse);
+      expect(await client.pauseTorrent(''), isFalse);
+      expect(await client.resumeTorrent(''), isFalse);
+      client.close();
+    });
+
+    test('非 404 失败（如 403 后重登仍失败）不再重试新端点', () async {
+      final List<int> logins = <int>[];
+      final List<String> paths = <String>[];
+      final QBittorrentClient client = QBittorrentClient(
+        baseUrl: 'http://qb.local:8080',
+        username: 'admin',
+        password: 'secret',
+        client: _mockWithLogin(logins, (http.Request request) async {
+          paths.add(request.url.path);
+          return http.Response('', 500);
+        }),
+      );
+      expect(await client.pauseTorrent('abc123'), isFalse);
+      expect(paths, <String>['/api/v2/torrents/pause'],
+          reason: '500 不是「端点已改名」的证据，盲目重试只会放大故障');
+      client.close();
+    });
+  });
+
   group('ensureCategory', () {
     test('200 and 409 (already exists) both count as success', () async {
       final List<int> logins = <int>[];

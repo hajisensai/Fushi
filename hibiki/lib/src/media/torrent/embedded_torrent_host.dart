@@ -114,6 +114,13 @@ class EmbeddedTorrentHost {
   /// 已下发的 per-torrent 暂停状态（做种超限/关上传时停止做种用）。
   final Map<String, bool> _appliedPaused = <String, bool>{};
 
+  /// TODO-2481：用户显式暂停的种子（infohash 小写）。与策略暂停
+  /// [_appliedPaused] 分开记：[sweepUploadPolicy] 对这里的种子整体跳过，
+  /// 不得替用户 resume。仅内存态 —— 重启后 `ht_load_resume_dir` 会清
+  /// paused 旗标（native 契约「加回来即开始跑」），暂停不跨会话持久，
+  /// 持久化留给 D2（native 导出 is_paused / 计划级落盘）。
+  final Set<String> _userPaused = <String>{};
+
   /// 是否已做过一次性「清 upload_mode 残留」治愈（BUG-1293：旧版本给种子打上
   /// 的 upload_mode flag 会随 resume 复活，掐死下载；开机清一次即可）。
   bool _healedUploadMode = false;
@@ -376,12 +383,53 @@ class EmbeddedTorrentHost {
 
   /// 派发一个短命后端适配器（共享常驻 session；其 close 不销毁会话）。
   /// 供 `AnimeDownloadService.backendFactory` 每 tick 调用。
+  ///
+  /// TODO-2481：暂停状态的真相在本宿主（适配器每 tick 重建，自持状态活
+  /// 不过一轮），暂停/恢复/显示查询经 [EmbeddedPauseControl] 回注宿主。
   EmbeddedTorrentBackend backendView() {
     return EmbeddedTorrentBackend(
       session: _session,
       saveRoots: _saveRoots,
       closesSession: false,
+      pauseControl: EmbeddedPauseControl(
+        available: () => supportsPauseControl,
+        pause: pauseTorrentByUser,
+        resume: resumeTorrentByUser,
+        isPaused: isTorrentPausedForDisplay,
+      ),
     );
+  }
+
+  /// TODO-2481：底层 DLL 是否具备 per-torrent 暂停/恢复原语
+  /// （与上传策略同一组符号；老随包 DLL 没有）。
+  bool get supportsPauseControl => _session.supportsUploadControl;
+
+  /// TODO-2481：用户显式暂停一个种子（清 auto_managed 再 pause，
+  /// 否则队列管理器会自动恢复）。成功后记入 [_userPaused]。
+  bool pauseTorrentByUser(String infoHash) {
+    final String id = infoHash.toLowerCase();
+    if (!_session.pauseTorrent(id, pause: true)) return false;
+    _userPaused.add(id);
+    return true;
+  }
+
+  /// TODO-2481：用户显式恢复。同时清掉策略暂停记录 [_appliedPaused]，
+  /// 让 [sweepUploadPolicy] 下一轮重新裁决 —— 做种超限的种子会被策略再次
+  /// 暂停，这是策略语义使然，不是抢用户的手。
+  bool resumeTorrentByUser(String infoHash) {
+    final String id = infoHash.toLowerCase();
+    if (!_session.pauseTorrent(id, pause: false)) return false;
+    _userPaused.remove(id);
+    _appliedPaused.remove(id);
+    return true;
+  }
+
+  /// TODO-2481：该种子当前是否处于（用户或策略）暂停态。native 的
+  /// state_label 不导出 paused（libtorrent 里 paused 是 flag 不是 state），
+  /// 快照层据此把 state 覆写成 pausedDL/pausedUP 供 UI 显示。
+  bool isTorrentPausedForDisplay(String infoHash) {
+    final String id = infoHash.toLowerCase();
+    return _userPaused.contains(id) || _appliedPaused[id] == true;
   }
 
   /// 当前下载根集合（活动根 + 历史根）。诊断/设置页展示用。
@@ -520,6 +568,9 @@ class EmbeddedTorrentHost {
       final Set<String> live = <String>{};
       for (final HtTorrentStatus t in _session.listTorrents()) {
         live.add(t.id);
+        // TODO-2481：用户显式暂停的种子策略整体跳过 —— 既不重复 pause，
+        // 也绝不替用户 resume（否则下一 tick 就把用户按下的暂停偷偷抢回）。
+        if (_userPaused.contains(t.id)) continue;
         if (t.isSeeding) {
           _seedStartMs.putIfAbsent(t.id, () => nowMs);
         }
@@ -546,6 +597,7 @@ class EmbeddedTorrentHost {
       // 清理已移除种子的残留状态。
       _seedStartMs.removeWhere((String k, int v) => !live.contains(k));
       _appliedPaused.removeWhere((String k, bool v) => !live.contains(k));
+      _userPaused.removeWhere((String k) => !live.contains(k));
       return changed;
     } on Object {
       return 0;
