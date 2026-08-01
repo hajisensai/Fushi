@@ -1589,10 +1589,20 @@ HT_EXPORT int ht_set_file_priority(void* session, const char* info_hash,
     // 回执是 file_prio_alert，drain_alerts 收到它时重放提优（那是「重算
     // 已发生」的唯一可靠信号 —— 写完立即重放会先落地、再被重算覆盖，
     // 实测顺序如此）。这里有界等待回执，保证本函数返回时重放已排队，
-    // 不依赖调用方之后是否轮询某个会收割 alert 的入口；超时（回执丢失/
-    // 磁盘极端忙）不算失败：优先级本身已写入，重放由后续任意收割兜底。
+    // 不依赖调用方之后是否轮询某个会收割 alert 的入口。
+    //
+    // 预算 1s 而不是更长：正常回执毫秒级；但 libtorrent 契约（alert_types
+    // 的 file_prio_alert 注释）写明磁盘操作**失败时不发本 alert**、改发
+    // file_error_alert —— 该路径必吃满预算，而本调用跑在 UI isolate 上，
+    // 长预算就是长冻结（BUG-1285 同型教训）。超时本就非致命：优先级已
+    // 写入，重放由后续任意收割（详情页秒级轮询）兜底。
+    //
+    // 释放条件是**全局**计数器 file_prio_events，不按种子配对：多种子并发
+    // 改优先级时 A 的回执会提前放行 B 的调用 —— 后果与超时路径相同（B 的
+    // 重放由后续 drain 兜底），且 Dart 侧同 isolate 同步 FFI 天然串行，
+    // 不为不存在的并发建 per-torrent 回执簿。
     const std::chrono::steady_clock::time_point deadline =
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
     while (ctx->file_prio_events == seen) {
       const std::chrono::steady_clock::time_point now =
           std::chrono::steady_clock::now();

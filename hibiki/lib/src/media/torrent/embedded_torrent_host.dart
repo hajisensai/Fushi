@@ -133,6 +133,12 @@ class EmbeddedTorrentHost {
   /// session 里，无处可 pause，但用户意图仍然有效 —— 下次启动加载成功时
   /// 必须还能按暂停落。所有写盘点经 [_persistUserPaused] 把两者并集写出，
   /// 否则任何一处「拿内存集整写覆盖文件」都会把这些记录冲掉。
+  ///
+  /// 两个消费点（都表达「用户最新动作否决了旧暂停记录」）：
+  /// - [sweepUploadPolicy]：记录的种子出现在 session 里 = 用户本会话把它
+  ///   重新 add 回来了（restore 只在启动跑一次），最新意图是「跑」；
+  /// - [resumeTorrentByUser]：显式恢复必须连这里的记录一起清，否则并集
+  ///   写盘仍记暂停，下次启动吞掉这次恢复。
   final Set<String> _pausedAwaitingRestore = <String>{};
 
   /// 用户暂停集的唯一写盘出口（[_userPaused] ∪ [_pausedAwaitingRestore]）。
@@ -481,6 +487,10 @@ class EmbeddedTorrentHost {
     final String id = infoHash.toLowerCase();
     if (!_session.pauseTorrent(id, pause: false)) return false;
     _userPaused.remove(id);
+    // TODO-2526：该种子可能带着 awaiting 暂停记录（启动瞬时加载失败）又被
+    // 用户重新 add 进 session —— 显式恢复必须两处记录都清，否则并集写盘
+    // 仍记暂停，下次启动把用户这次恢复吞掉、强制按回暂停。
+    _pausedAwaitingRestore.remove(id);
     _appliedPaused.remove(id);
     _persistUserPaused();
     return true;
@@ -661,11 +671,18 @@ class EmbeddedTorrentHost {
       _appliedPaused.removeWhere((String k, bool v) => !live.contains(k));
       final int pausedBefore = _userPaused.length;
       _userPaused.removeWhere((String k) => !live.contains(k));
+      // TODO-2526：awaiting 记录的种子出现在 live 里 = 用户本会话把它重新
+      // add 回来了（restore 只在启动跑一次，不会二次入 session）——最新
+      // 意图是「跑」，旧暂停记录随之作废。不清的话它整个会话跑态、下次
+      // 启动却被按回暂停，吞掉用户的重新添加。
+      final int awaitingBefore = _pausedAwaitingRestore.length;
+      _pausedAwaitingRestore.removeWhere(live.contains);
       // 种子被删掉时把它的用户暂停记录一并从盘上剪掉（与内存同步）。
-      // 只剪 [_userPaused]（本会话在 session 里出现过的）；
-      // [_pausedAwaitingRestore] 的种子本就不在 live 里，不能据此误剪
-      // （TODO-2526），它们的去留由下次启动的 .resume 文件存在性裁决。
-      if (_userPaused.length != pausedBefore) {
+      // 只剪 [_userPaused]（本会话在 session 里出现过的）；不在 live 里的
+      // [_pausedAwaitingRestore] 记录不能据此误剪，它们的去留由下次启动
+      // 的 .resume 文件存在性裁决。
+      if (_userPaused.length != pausedBefore ||
+          _pausedAwaitingRestore.length != awaitingBefore) {
         _persistUserPaused();
       }
       return changed;
