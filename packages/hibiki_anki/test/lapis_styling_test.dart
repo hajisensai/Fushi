@@ -609,6 +609,187 @@ void main() {
     });
   });
 
+  group('Lapis 区块位置', () {
+    test('布局保留键不与任何可视字段 wireName 相撞', () {
+      // 撞上就意味着某个字段的规则会被当成布局吃掉（或反之）。
+      expect(
+        LapisVisualField.fromWireName(lapisVisualLayoutConfigKey),
+        isNull,
+      );
+    });
+
+    test('每项位置同时覆写桌面与移动端变量', () {
+      const LapisVisualLayout layout = LapisVisualLayout(
+        sentencePosition: LapisSentencePosition.below,
+        picturePosition: LapisPicturePosition.alt,
+        audioButtonsPosition: LapisAudioButtonsPosition.fixed,
+      );
+      final String css = buildLapisVisualLayoutCss(layout).join('\n');
+
+      // 只写桌面变量的话，Lapis 的 `html.mobile { --sentence-position:
+      // var(--mobile-sentence-position) }`（特异性高于 :root）会把手机端拉回
+      // 出厂值 —— 桌面看着生效、手机上没反应。
+      for (final String variable in <String>[
+        '--sentence-position: "below";',
+        '--mobile-sentence-position: "below";',
+        '--main-picture-position: "alt";',
+        '--mobile-main-picture-position: "alt";',
+        '--audio-buttons: "fixed";',
+        '--mobile-audio-buttons: "fixed";',
+      ]) {
+        expect(css, contains(variable), reason: '布局 CSS 缺 $variable');
+      }
+      // 自定义属性不能带 !important：一带上，html.mobile 那条重定向就被压死，
+      // 移动端被迫吃桌面值。
+      expect(css, isNot(contains('!important')));
+    });
+
+    test('覆写的变量名都真实存在于 vendored Lapis', () {
+      const LapisVisualLayout layout = LapisVisualLayout(
+        sentencePosition: LapisSentencePosition.above,
+        picturePosition: LapisPicturePosition.left,
+        audioButtonsPosition: LapisAudioButtonsPosition.alt,
+      );
+      final RegExp names = RegExp(r'--[a-z-]+(?=:)');
+      final Iterable<String> used = names
+          .allMatches(buildLapisVisualLayoutCss(layout).join('\n'))
+          .map((RegExpMatch m) => m.group(0)!);
+      expect(used, isNotEmpty);
+      for (final String name in used) {
+        expect(
+          LapisNoteType.css.contains('$name:'),
+          isTrue,
+          reason: '$name 在 vendored Lapis 里不存在，改布局不会有任何效果',
+        );
+      }
+      // 取值也必须是 vendored CSS 真认得的枚举值。
+      for (final String value in <String>['above', 'below', 'right', 'left']) {
+        expect(LapisNoteType.css, contains('"$value"'));
+      }
+    });
+
+    test('默认布局不产出任何 CSS 与 CONFIG 条目', () {
+      expect(buildLapisVisualLayoutCss(const LapisVisualLayout()), isEmpty);
+      expect(
+        composeLapisVisualStyleSheet(
+          freeformCss: '.x { color: red; }',
+          rules: const <LapisVisualField, LapisVisualRule>{},
+        ),
+        '.x { color: red; }',
+      );
+    });
+
+    test('布局单独存在时也能往返（不依赖字段规则）', () {
+      const LapisVisualLayout layout = LapisVisualLayout(
+        sentencePosition: LapisSentencePosition.below,
+      );
+      final String css = composeLapisVisualStyleSheet(
+        freeformCss: '',
+        rules: const <LapisVisualField, LapisVisualRule>{},
+        layout: layout,
+      );
+      final LapisVisualStyleSheet round = splitLapisVisualStyleSheet(css);
+      expect(round.layout.sentencePosition, LapisSentencePosition.below);
+      expect(round.layout.picturePosition, isNull);
+      expect(round.rules, isEmpty);
+      expect(round.freeformCss, isEmpty);
+    });
+
+    test('布局与字段规则共存时互不吞并', () {
+      final String css = composeLapisVisualStyleSheet(
+        freeformCss: '',
+        rules: const <LapisVisualField, LapisVisualRule>{
+          LapisVisualField.sentence: LapisVisualRule(bold: true),
+        },
+        layout: const LapisVisualLayout(
+          picturePosition: LapisPicturePosition.left,
+        ),
+      );
+      final LapisVisualStyleSheet round = splitLapisVisualStyleSheet(css);
+      expect(round.layout.picturePosition, LapisPicturePosition.left);
+      expect(round.rules[LapisVisualField.sentence]?.bold, isTrue);
+    });
+
+    test('旧版托管区段（无 layout 键）解析成默认布局，字段规则照常保留', () {
+      // 老版本写下的 CONFIG 只有字段键。降级/升级都不许因此丢字段规则。
+      const String legacy = '$lapisVisualCssBeginMarker\n'
+          '/* HIBIKI-LAPIS-VISUAL-CONFIG '
+          '{"sentence":{"fontScalePercent":100,"bold":true}} */\n'
+          '.sentence {\n  font-weight: 700 !important;\n}\n'
+          '$lapisVisualCssEndMarker';
+      final LapisVisualStyleSheet sheet = splitLapisVisualStyleSheet(legacy);
+      expect(sheet.rules[LapisVisualField.sentence]?.bold, isTrue);
+      expect(sheet.layout.isDefault, isTrue);
+    });
+
+    test('CONFIG 里的未知位置取值被丢弃，不产出非法 CSS', () {
+      const String hostile = '$lapisVisualCssBeginMarker\n'
+          '/* HIBIKI-LAPIS-VISUAL-CONFIG '
+          '{"layout":{"sentencePosition":"sideways"}} */\n'
+          '$lapisVisualCssEndMarker';
+      expect(
+        splitLapisVisualStyleSheet(hostile).layout.isDefault,
+        isTrue,
+      );
+    });
+
+    test('copyWith 能把某项清回默认', () {
+      const LapisVisualLayout layout = LapisVisualLayout(
+        sentencePosition: LapisSentencePosition.below,
+        picturePosition: LapisPicturePosition.left,
+      );
+      final LapisVisualLayout cleared = layout.copyWith(sentencePosition: null);
+      expect(cleared.sentencePosition, isNull);
+      expect(cleared.picturePosition, LapisPicturePosition.left);
+      expect(layout.copyWith().sentencePosition, LapisSentencePosition.below);
+    });
+  });
+
+  group('可视字段 → Anki 字段', () {
+    test('来源字段都存在于 Lapis 卡型', () {
+      for (final LapisVisualField field in LapisVisualField.values) {
+        for (final String source in lapisVisualFieldSources(field)) {
+          expect(
+            LapisNoteType.fields,
+            contains(source),
+            reason: '${field.wireName} 指向了 Lapis 卡型里不存在的字段 $source',
+          );
+        }
+      }
+    });
+
+    test('来源字段真的出现在对应模板里', () {
+      // 名字像不算数：字段必须真被 front/back 模板引用，否则改映射对这块没影响。
+      const String templates = '${LapisNoteType.front}${LapisNoteType.back}';
+      for (final LapisVisualField field in LapisVisualField.values) {
+        for (final String source in lapisVisualFieldSources(field)) {
+          expect(
+            templates,
+            contains(source),
+            reason: '${field.wireName} 的来源 $source 未被任何模板引用',
+          );
+        }
+      }
+    });
+
+    test('专属释义块各自只认自己的字段；模板自绘的区域没有字段', () {
+      expect(
+        lapisVisualFieldSources(LapisVisualField.selectedDefinition),
+        <String>['SelectionText'],
+      );
+      expect(
+        lapisVisualFieldSources(LapisVisualField.primaryDefinition),
+        <String>['MainDefinition'],
+      );
+      expect(
+        lapisVisualFieldSources(LapisVisualField.glossaries),
+        <String>['Glossary'],
+      );
+      // `.def-info` 是模板写死的计数标签，没有字段可改。
+      expect(lapisVisualFieldSources(LapisVisualField.definitionInfo), isEmpty);
+    });
+  });
+
   group('AnkiNoteTypeDefinition', () {
     test('JSON 往返（备份文件载荷）', () {
       const AnkiNoteTypeDefinition def = AnkiNoteTypeDefinition(
