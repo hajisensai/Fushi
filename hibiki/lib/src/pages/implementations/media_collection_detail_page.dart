@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 
 import 'package:path/path.dart' as p;
@@ -15,6 +16,8 @@ import 'package:hibiki/src/media/video/cover_ui/episode_rename_confirm_dialog.da
 import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
+import 'package:hibiki/src/media/video/scraper/collection_relations_scrape.dart'
+    show CollectionRelationType;
 import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
 import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
@@ -31,6 +34,7 @@ import 'package:hibiki/src/media/video/video_library_overview.dart'
 import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
 import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
 import 'package:hibiki/src/pages/implementations/collection_relations_section.dart';
+import 'package:hibiki/src/pages/implementations/collection_split_dialog.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_batch_dialog.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/utils/components/hibiki_reorderable_grid.dart';
@@ -698,6 +702,114 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       return;
     }
     await _reload();
+  }
+
+  /// 「按季拆分合集」（TODO-2489）：多季合集逐季建新合集、成员按季加入映射，
+  /// 新合集间自动写前传/续作关系链；原合集按勾选保留（成员不动，作全系列入口）
+  /// 或删除。
+  ///
+  /// 一个事务包住「建合集 + 成员映射 + 关系链」——无半拆状态；且天然可重入
+  ///（createMediaCollection 撞 (name, type) 复用、addToCollection INSERT OR
+  /// IGNORE、replaceCollectionRelations 整体替换）。「保留原合集 = 成员不动」而
+  /// 非「变空壳」：removeFromCollection* 清空即自动删合集，空壳在数据模型上不存
+  /// 在；成员本就允许多归属，拆分只是**新增**每季的归属映射，不动原映射。删除
+  /// 原合集在事务外走 deleteMediaCollectionWithAssets（含文件 IO，语义与
+  /// 「删除合集」菜单一致：只解链 + 回收合集自有封面，绝不删条目）。
+  Future<void> _splitBySeason() async {
+    if (!_hasSeasonTabs) return;
+    final List<CollectionSeasonSection<VideoBookRow>> sections = _sections;
+    final CollectionSplitChoice? choice = await showCollectionSplitDialog(
+      context: context,
+      sections: <CollectionSplitPlanSection>[
+        for (final CollectionSeasonSection<VideoBookRow> section in sections)
+          CollectionSplitPlanSection(
+            defaultName: '$_name ${_groupLabel(section.groupKey)}',
+            memberTitles: <String>[
+              for (final VideoBookRow row in section.items)
+                _episodeDisplayTitle(row),
+            ],
+          ),
+      ],
+    );
+    if (choice == null || !mounted) return;
+    final List<int> newIds = <int>[];
+    await widget.database.transaction(() async {
+      for (int i = 0; i < sections.length; i++) {
+        final int id = await widget.database.createMediaCollection(
+          choice.names[i],
+          collectionType: 'playlist',
+        );
+        for (final VideoBookRow row in sections[i].items) {
+          await widget.database
+              .addToCollection(id, MediaKind.video, row.bookUid);
+        }
+        newIds.add(id);
+      }
+      // 前传/续作链：只连真实季（extras 组无先后语义，不入链）。source 用
+      // 'local'（本地拆分产生的边，非刮削源），subjectId 用 'collection:<目标id>'
+      // ——与唯一键 (collectionId, source, subjectId) 天然兼容且稳定可重入。
+      final List<int> seasonIndexes = <int>[
+        for (int i = 0; i < sections.length; i++)
+          if (seasonNumberOfGroupKey(sections[i].groupKey) != null) i,
+      ];
+      for (int k = 0; k < seasonIndexes.length; k++) {
+        final int i = seasonIndexes[k];
+        final List<CollectionRelationsCompanion> edges =
+            <CollectionRelationsCompanion>[];
+        if (k > 0) {
+          final int prev = seasonIndexes[k - 1];
+          edges.add(_localRelationEdge(
+            collectionId: newIds[i],
+            type: CollectionRelationType.prequel,
+            targetCollectionId: newIds[prev],
+            title: choice.names[prev],
+            sortIndex: edges.length,
+          ));
+        }
+        if (k < seasonIndexes.length - 1) {
+          final int next = seasonIndexes[k + 1];
+          edges.add(_localRelationEdge(
+            collectionId: newIds[i],
+            type: CollectionRelationType.sequel,
+            targetCollectionId: newIds[next],
+            title: choice.names[next],
+            sortIndex: edges.length,
+          ));
+        }
+        await widget.database.replaceCollectionRelations(newIds[i], edges);
+      }
+    });
+    if (!choice.keepOriginal) {
+      await deleteMediaCollectionWithAssets(
+          widget.database, widget.collection.id);
+    }
+    if (!mounted) return;
+    widget.onChanged();
+    HibikiToast.show(msg: t.collection_split_done(n: newIds.length));
+    if (!choice.keepOriginal) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    await _reload();
+  }
+
+  /// 本地拆分产生的关系边（source='local'，subjectId='collection:<目标id>'）。
+  CollectionRelationsCompanion _localRelationEdge({
+    required int collectionId,
+    required CollectionRelationType type,
+    required int targetCollectionId,
+    required String title,
+    required int sortIndex,
+  }) {
+    return CollectionRelationsCompanion.insert(
+      collectionId: collectionId,
+      relationType: type.wire,
+      sortIndex: Value<int>(sortIndex),
+      targetCollectionId: Value<int?>(targetCollectionId),
+      source: 'local',
+      subjectId: 'collection:$targetCollectionId',
+      title: title,
+    );
   }
 
   Future<void> _delete() async {
@@ -1458,6 +1570,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             icon: Icons.playlist_add,
             label: t.collection_episode_fill_missing,
             onPressed: _members.isEmpty ? null : _fillMissingEpisodes,
+          ),
+          // 「按季拆分合集」（TODO-2489）：仅多季合集可用（单季拆分无意义）。
+          HibikiAppBarAction(
+            icon: Icons.call_split,
+            label: t.collection_split_by_season,
+            onPressed: _hasSeasonTabs ? _splitBySeason : null,
           ),
           HibikiAppBarAction(
             icon: Icons.drive_file_rename_outline,
