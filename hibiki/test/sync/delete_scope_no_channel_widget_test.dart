@@ -15,6 +15,7 @@ import 'package:hibiki/src/sync/deletion_disclosure.dart';
 import 'package:hibiki/src/sync/deletion_prompt.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 
+import '../helpers/source_guard.dart';
 import '../pages/reader_history_source_corpus.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -72,9 +73,15 @@ void main() {
   /// `showDeleteScopeConfirm` 调用点，漏掉了书架批删 `_batchDeleteConfirm` 里第二个
   /// `ReaderHistoryDeleteDialog` 构造点——它继续无条件显示那个兑现不了的勾选框。
   /// 死角②的复发方式就是「又冒出一个没接线的入口」，所以按入口数量而非行为来钉。
+  ///
+  /// 🔴 计数前必须 [maskCommentsAndStrings]：这条守卫靠「构造点数 == 传参数」的
+  /// 计数相等成立，而注释和字符串字面量同样能贡献计数。实测（2026-08-01 合入前
+  /// 变异 B）：把真实的 `showSyncScope:` 摘掉、改成在同一处写一行注释提它，
+  /// 未掩码版本 7 tests 全绿——漏接的入口照样会显示那个兑现不了的勾选框。
+  /// 掩码是这条守卫成立的前提，不是可选的洁癖。
   group('入口覆盖源码守卫（TODO-2470 死角②）', () {
     test('每个 ReaderHistoryDeleteDialog 构造点都显式传 showSyncScope', () {
-      final String source = readReaderHistorySource();
+      final String source = maskCommentsAndStrings(readReaderHistorySource());
       // 语料含 dialogs.part.dart 里的类声明本身（`const ReaderHistoryDeleteDialog({`），
       // 它不是调用点，要从计数里剔掉。
       final int ctorCount =
@@ -93,7 +100,7 @@ void main() {
     });
 
     test('每个 showDeleteScopeConfirm 调用点都显式传 db', () {
-      final String source = readReaderHistorySource();
+      final String source = maskCommentsAndStrings(readReaderHistorySource());
       // 书架页自身不用通用弹窗；断言写成「有调用就必须带 db」，防止将来
       // 有人在此页新引入一个不查判据的调用点。
       final int calls = 'showDeleteScopeConfirm('.allMatches(source).length;
