@@ -137,28 +137,41 @@ void logSyncReportErrors(SyncRunReport report) {
 /// 一条待跑的同步通道：后端实例 + 它是不是互联通道。isInterconnect 决定分资产开关
 /// 读云备份共享值还是互联专属上传开关（[resolveChannelSyncFlags]，BUG-988）。
 class SyncChannel {
-  const SyncChannel(this.backend, {required this.isInterconnect});
+  const SyncChannel(
+    this.backend, {
+    required this.type,
+    required this.isInterconnect,
+  });
   final SyncBackend backend;
+
+  /// 这条通道解析自哪个 [SyncBackendType]。带上它，「本机有没有配置过这条通道」
+  /// 之类的问题就能复用同一份通道枚举去问 [SyncRepository.hasStoredBackendConfig]，
+  /// 不必在别处重抄一遍「云 + 互联」的枚举逻辑（会漂）。
+  final SyncBackendType type;
   final bool isInterconnect;
 }
 
-@visibleForTesting
+/// 不再 `@visibleForTesting`：`hasDeletionPropagationChannel` 是生产消费方——
+/// 「本机有没有可用于删除传播的通道」必须复用同一份通道枚举，各处重抄必漂。
 Future<List<SyncChannel>> enabledSyncChannelBackends(
   SyncRepository repo,
 ) async {
-  final SyncBackend cloud = resolveSyncBackend(await repo.getBackendType());
+  final SyncBackendType cloudType = await repo.getBackendType();
+  final SyncBackend cloud = resolveSyncBackend(cloudType);
   // isInterconnect 由后端身份决定，不由「它排在云通道那一格」决定：备份后端被选成
   // 互联时只剩这一条通道，它跑的就是互联链路（SyncOrchestrator 内部同样按
   // `backend is InterconnectSyncBackend` 判断），分资产开关必须跟着读互联专属的
   // 上传开关——否则用户在互联页看到的四个上传开关会被静默忽略、改由云备份开关决定。
   final List<SyncChannel> channels = <SyncChannel>[
-    SyncChannel(cloud, isInterconnect: cloud is InterconnectSyncBackend),
+    SyncChannel(cloud,
+        type: cloudType, isInterconnect: cloud is InterconnectSyncBackend),
   ];
   if (await repo.isInterconnectEnabled()) {
     final SyncBackend interconnect =
         resolveSyncBackend(SyncBackendType.hibikiServer);
     if (!identical(interconnect, cloud)) {
-      channels.add(SyncChannel(interconnect, isInterconnect: true));
+      channels.add(SyncChannel(interconnect,
+          type: SyncBackendType.hibikiServer, isInterconnect: true));
     }
   }
   return channels;

@@ -2983,5 +2983,6 @@
   "video_air_season_winter": "冬",
   "video_air_season_spring": "春",
   "video_air_season_summer": "夏",
-  "video_air_season_autumn": "秋"
+  "video_air_season_autumn": "秋",
+  "delete_scope_no_channel": "未配置同步，本次删除只影响这台设备"
 }

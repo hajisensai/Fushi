@@ -2983,5 +2983,6 @@
   "video_air_season_winter": "Winter",
   "video_air_season_spring": "Spring",
   "video_air_season_summer": "Summer",
-  "video_air_season_autumn": "Fall"
+  "video_air_season_autumn": "Fall",
+  "delete_scope_no_channel": "No sync configured - this deletion only affects this device"
 }

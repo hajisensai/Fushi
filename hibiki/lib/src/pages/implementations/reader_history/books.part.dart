@@ -555,7 +555,11 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
           }
           // BUG-439：以前无条件 deleted++，即便 repo.delete 实际没删到行也计数，
           // 末尾照样弹「已删除 N 本」谎报。改为只对真删掉的 srt_books 行计数。
-          final int removed = await repo.delete(uid);
+          // TODO-2470 死角①：纯字幕书（bookKey 空）没有上面那次 deleteBook，
+          // scope 以前到这里就被丢弃、勾了「从所有设备删除」完全无效。propagateDeletion
+          // 由 repo 按 standalone 判据决定写不写墓碑（srt-backed 已由 deleteBook 写过）。
+          final int removed = await repo.delete(uid,
+              propagateDeletion: scope == DeleteScope.syncEverywhere);
           if (removed > 0) deleted++;
         }
       } else {
@@ -834,7 +838,10 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         scope: scope,
       );
     }
-    await SrtBookRepository(appModel.database).delete(book.uid);
+    // TODO-2470 死角①：纯字幕书（bookKey 空）不走上面的 deleteBook，删除范围必须在
+    // 这里落地，否则勾了「从所有设备删除」静默无效。
+    await SrtBookRepository(appModel.database).delete(book.uid,
+        propagateDeletion: scope == DeleteScope.syncEverywhere);
     if (mounted) {
       _refreshSrtBooks();
       ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));

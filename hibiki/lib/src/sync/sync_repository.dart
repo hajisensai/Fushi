@@ -284,6 +284,45 @@ class SyncRepository {
   Future<void> setBackendType(SyncBackendType type) =>
       _setString(_keyBackendType, type.name);
 
+  /// [type] 这条通道在本机**是否已配置**（凭据/地址已落盘）。
+  ///
+  /// 纯本地 preferences 读，**零网络**——调用点包括删除确认弹窗这类不许做 IO 的 UI
+  /// 路径，绝不能改成去探测连通性（互联后端的 `restoreAuth` 会探测地址）。
+  ///
+  /// 语义是「配置过」而非「此刻连得上」：离线时删东西、勾「从所有设备删除」，墓碑
+  /// 留在本地等下次同步发布，这是正确行为，不该因为当下离线就把选项藏起来。
+  ///
+  /// 穷尽 switch 无 default：新增后端时编译器强制在此表态，避免新后端被默默当成
+  /// 「未配置」而让用户失去删除传播选项。
+  ///
+  /// googleDrive 移动端的登录态由 google_sign_in 插件自己持有、不落本表，所以它多认
+  /// 一个 [getRootFolderId]（同步真跑过一次就有），剩下的缺口由调用方 OR 上后端的
+  /// 内存态 `isAuthenticated` 补齐（见 `hasDeletionPropagationChannel`）。
+  Future<bool> hasStoredBackendConfig(SyncBackendType type) async {
+    bool present(String? v) => v != null && v.isNotEmpty;
+    switch (type) {
+      case SyncBackendType.googleDrive:
+        return present(await getDesktopCredentials()) ||
+            present(await getRootFolderId());
+      case SyncBackendType.webDav:
+        return present(await getWebDavUrl());
+      case SyncBackendType.ftp:
+        return present(await getFtpHost());
+      case SyncBackendType.sftp:
+        return present(await getSftpHost());
+      case SyncBackendType.dropbox:
+        return present(await getDropboxToken());
+      case SyncBackendType.oneDrive:
+        return present(await getOneDriveToken());
+      case SyncBackendType.hibikiServer:
+        // 互联双向：本机连别人（已填对端地址）或别人连本机（开着服务且有已配对
+        // 对端——对端会经 `/api/tombstones` 读走本机墓碑）都算通道存在。
+        if ((await getHibikiClientUrls()).isNotEmpty) return true;
+        return await isServerEnabled() &&
+            (await _db.getPairedPeers()).isNotEmpty;
+    }
+  }
+
   /// 一次性迁移：把已废弃的 "SMB"(实为 WebDAV 网关) 配置并入 WebDAV，并删除全部
   /// `sync_smb_*` 死键。仅当对应 WebDAV 字段为空时才搬运，绝不覆盖用户已有的
   /// WebDAV 配置。幂等：无 SMB 数据时是 no-op。
