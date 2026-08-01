@@ -2910,5 +2910,15 @@
   "download_task_status_moving": "移动中",
   "download_task_status_error": "出错",
   "download_task_pause": "暂停",
-  "download_task_resume": "恢复"
+  "download_task_resume": "恢复",
+  "download_airing_calendar_title": "放送日历",
+  "download_airing_calendar_show_all": "显示本季全部",
+  "download_airing_calendar_empty_guidance": "暂无可显示的放送信息：给合集绑定 AniList 或添加下载订阅后，这里会显示对应的放送时间。",
+  "download_airing_calendar_error": "放送时间表加载失败",
+  "download_airing_calendar_in_library": "已入库",
+  "download_airing_calendar_subscribed": "订阅中",
+  "download_airing_calendar_episode_label": "第 ${episode} 集",
+  "download_airing_calendar_week_prev": "上一周",
+  "download_airing_calendar_week_next": "下一周",
+  "download_airing_calendar_week_empty": "本周没有相关放送"
 }

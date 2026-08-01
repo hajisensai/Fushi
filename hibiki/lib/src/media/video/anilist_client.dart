@@ -139,6 +139,101 @@ List<AniListMedia> parseAniListSearchResponse(String body) {
   }
 }
 
+/// AniList 放送时间表条目：某番剧某一集的放送时刻（epoch 秒，UTC 基准）。
+class AniListAiringEpisode {
+  const AniListAiringEpisode({
+    required this.mediaId,
+    required this.episode,
+    required this.airingAtSeconds,
+    required this.media,
+  });
+
+  /// AniList 媒体 id（与合集 anilistId / 下载订阅 anilistId 同一 id 空间）。
+  final int mediaId;
+
+  /// 集号（AniList 从 1 起）。
+  final int episode;
+
+  /// 放送时刻（Unix epoch 秒）；本地展示用 `airingAtToLocal`（airing_week.dart）。
+  final int airingAtSeconds;
+
+  /// 该集所属番剧的标题/封面等元数据（airingSchedules.media 内联对象）。
+  final AniListMedia media;
+}
+
+/// airingSchedules 的一页结果（Page.pageInfo.hasNextPage 决定是否继续翻页）。
+class AniListAiringPage {
+  const AniListAiringPage({required this.episodes, required this.hasNextPage});
+
+  final List<AniListAiringEpisode> episodes;
+  final bool hasNextPage;
+}
+
+/// AniList HTTP 层失败（非 200，含 429 rate limit）。放送日历要求错误如实
+/// 上抛展示（与 [AniListClient.searchAnime] 的吞错语义**有意不同**：搜索是
+/// 尽力而为的辅助路径，日历页必须让用户看到失败原因并可重试）。
+class AniListRequestException implements Exception {
+  const AniListRequestException(this.statusCode, this.message);
+
+  final int statusCode;
+  final String message;
+
+  @override
+  String toString() => 'AniList HTTP $statusCode: $message';
+}
+
+/// 解析 airingSchedules GraphQL 响应。纯函数，结构不符 → 空页（HTTP 层错误
+/// 由 [AniListClient.fetchAiringSchedulePage] 以 [AniListRequestException] 上抛）。
+AniListAiringPage parseAniListAiringResponse(String body) {
+  const AniListAiringPage empty = AniListAiringPage(
+    episodes: <AniListAiringEpisode>[],
+    hasNextPage: false,
+  );
+  try {
+    final dynamic json = jsonDecode(body);
+    if (json is! Map) return empty;
+    final dynamic data = json['data'];
+    if (data is! Map) return empty;
+    final dynamic page = data['Page'];
+    if (page is! Map) return empty;
+    final dynamic pageInfo = page['pageInfo'];
+    final bool hasNextPage = pageInfo is Map && pageInfo['hasNextPage'] == true;
+    final dynamic schedules = page['airingSchedules'];
+    if (schedules is! List) return empty;
+    final List<AniListAiringEpisode> out = <AniListAiringEpisode>[];
+    for (final dynamic s in schedules) {
+      if (s is! Map) continue;
+      final dynamic mediaId = s['mediaId'];
+      final dynamic episode = s['episode'];
+      final dynamic airingAt = s['airingAt'];
+      if (mediaId is! int || episode is! int || airingAt is! int) continue;
+      final dynamic m = s['media'];
+      final dynamic title = m is Map ? m['title'] : null;
+      final dynamic cover = m is Map ? m['coverImage'] : null;
+      out.add(AniListAiringEpisode(
+        mediaId: mediaId,
+        episode: episode,
+        airingAtSeconds: airingAt,
+        media: AniListMedia(
+          id: mediaId,
+          romaji: title is Map ? title['romaji'] as String? : null,
+          english: title is Map ? title['english'] as String? : null,
+          native: title is Map ? title['native'] as String? : null,
+          coverUrl: cover is Map ? cover['large'] as String? : null,
+          episodes:
+              m is Map && m['episodes'] is int ? m['episodes'] as int : null,
+          seasonYear: m is Map && m['seasonYear'] is int
+              ? m['seasonYear'] as int
+              : null,
+        ),
+      ));
+    }
+    return AniListAiringPage(episodes: out, hasNextPage: hasNextPage);
+  } catch (_) {
+    return empty;
+  }
+}
+
 /// AniList GraphQL 客户端：按标题搜番拿 anilist id（Jimaku 按 anilist_id 查字幕的前置）。
 class AniListClient {
   AniListClient({http.Client? client}) : _client = client ?? http.Client();
@@ -188,6 +283,65 @@ query ($search: String) {
       }
     }
     return const <AniListMedia>[];
+  }
+
+  static const String _airingQuery = r'''
+query ($from: Int, $to: Int, $ids: [Int], $page: Int) {
+  Page(page: $page, perPage: 50) {
+    pageInfo { hasNextPage }
+    airingSchedules(airingAt_greater: $from, airingAt_lesser: $to, mediaId_in: $ids, sort: TIME) {
+      mediaId
+      episode
+      airingAt
+      media {
+        title { romaji english native }
+        coverImage { large }
+        episodes
+        seasonYear
+      }
+    }
+  }
+}''';
+
+  /// 拉取 ([airingAtGreater], [airingAtLesser]) 开区间（epoch 秒）窗口内的
+  /// 放送时间表一页。[mediaIds] 非空时只查这些番剧（合集绑定 + 订阅）；null =
+  /// 不过滤（「显示本季全部」）。**变量缺省 ≠ null**：GraphQL 规范里未提供的
+  /// 变量使对应实参视同未写，故 [mediaIds] 为 null 时直接不放进 variables，
+  /// AniList 才不会按「mediaId_in: null」过滤出 0 结果。
+  ///
+  /// 与 [searchAnime] 不同，本方法**不吞错**：非 200（含 429 rate limit）抛
+  /// [AniListRequestException]，网络异常原样上抛，调用方如实展示并提供重试。
+  Future<AniListAiringPage> fetchAiringSchedulePage({
+    required int airingAtGreater,
+    required int airingAtLesser,
+    List<int>? mediaIds,
+    int page = 1,
+  }) async {
+    final http.Response res = await _client.post(
+      Uri.parse(_endpoint),
+      headers: const <String, String>{
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: jsonEncode(<String, dynamic>{
+        'query': _airingQuery,
+        'variables': <String, dynamic>{
+          'from': airingAtGreater,
+          'to': airingAtLesser,
+          'page': page,
+          if (mediaIds != null) 'ids': mediaIds,
+        },
+      }),
+    );
+    if (res.statusCode != 200) {
+      final String body = utf8.decode(res.bodyBytes, allowMalformed: true);
+      final String snippet =
+          body.length > 200 ? '${body.substring(0, 200)}…' : body;
+      throw AniListRequestException(res.statusCode, snippet);
+    }
+    return parseAniListAiringResponse(
+      utf8.decode(res.bodyBytes, allowMalformed: true),
+    );
   }
 
   void close() => _client.close();

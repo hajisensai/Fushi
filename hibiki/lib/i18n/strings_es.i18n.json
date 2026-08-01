@@ -2910,5 +2910,15 @@
   "download_task_status_moving": "Moving",
   "download_task_status_error": "Error",
   "download_task_pause": "Pause",
-  "download_task_resume": "Resume"
+  "download_task_resume": "Resume",
+  "download_airing_calendar_title": "Airing calendar",
+  "download_airing_calendar_show_all": "Show all this season",
+  "download_airing_calendar_empty_guidance": "Nothing to show yet: bind a collection to AniList or add a download subscription, and their airing times will appear here.",
+  "download_airing_calendar_error": "Failed to load the airing schedule",
+  "download_airing_calendar_in_library": "In library",
+  "download_airing_calendar_subscribed": "Subscribed",
+  "download_airing_calendar_episode_label": "Ep ${episode}",
+  "download_airing_calendar_week_prev": "Previous week",
+  "download_airing_calendar_week_next": "Next week",
+  "download_airing_calendar_week_empty": "Nothing airing this week"
 }
