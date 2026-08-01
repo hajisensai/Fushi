@@ -105,8 +105,8 @@ void main() {
     );
     addTearDown(db.close);
 
-    expect(db.schemaVersion, 65);
-    expect(await _userVersion(db), 65);
+    expect(db.schemaVersion, 66);
+    expect(await _userVersion(db), 66);
 
     // v63 真跑了：两处废弃偏好都没了。
     expect(
@@ -168,7 +168,7 @@ void main() {
     );
     addTearDown(db.close);
 
-    expect(await _userVersion(db), 65);
+    expect(await _userVersion(db), 66);
     final Set<String> tables = await _tableNames(db);
     for (final String table in _mangaTables) {
       expect(tables, contains(table), reason: 'from=63 时 v65 必须仍然建表：缺 $table');
@@ -185,7 +185,7 @@ void main() {
     addTearDown(db.close);
 
     // 表已存在不能让 onUpgrade 抛异常——抛了 v63 的删除也会一起回滚。
-    expect(await _userVersion(db), 65);
+    expect(await _userVersion(db), 66);
     expect(
       await _countRows(
         db,
@@ -204,7 +204,7 @@ void main() {
     final HibikiDatabase first = HibikiDatabase.forTesting(
       NativeDatabase.memory(setup: _seedV62),
     );
-    expect(await _userVersion(first), 65);
+    expect(await _userVersion(first), 66);
     await first.close();
 
     // 同一份内存库不能跨实例复用，这里改用「第二次打开已是 v65 的形状」：
@@ -213,14 +213,14 @@ void main() {
       NativeDatabase.memory(
         setup: (sqlite3.Database raw) => _seedV62(
           raw,
-          userVersion: 65,
+          userVersion: 66,
           includeObsoleteRows: false,
           preCreateMangaTables: true,
         ),
       ),
     );
     addTearDown(second.close);
-    expect(await _userVersion(second), 65);
+    expect(await _userVersion(second), 66);
     expect(
       await _countRows(second, "SELECT 1 FROM preferences WHERE key = 'theme'"),
       1,

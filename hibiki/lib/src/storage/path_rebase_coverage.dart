@@ -332,6 +332,19 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
           '与 media_collections.cover_path 完全同型 → 不改写 = 换数据根后详情页'
           'hero 背景变死链，静默退回海报模糊垫底，用户看到背景「自己没了」。'),
 
+  // ── collection_relations（合集相关作品边表，schema v66 / TODO-2484）──
+  PathRebaseColumn('CollectionRelations', 'source', PathRebaseKind.notAPath,
+      'ScrapeSource 枚举名（bangumi/tmdb/...），不是路径。'),
+  PathRebaseColumn('CollectionRelations', 'coverUrl', PathRebaseKind.notAPath,
+      '关联条目封面的远端 URL，不是本机路径。'),
+  PathRebaseColumn(
+      'CollectionRelations',
+      'coverPath',
+      PathRebaseKind.documentsRooted,
+      '关联条目封面下载后的本地落盘位（<documents>/video_covers/ 目录族，与'
+          '合集封面同型）。当前尚无写入方（下载归 UI 接力线程），但列语义即'
+          '文档根内路径 —— 不改写 = 换数据根后相关作品卡封面变死链。'),
+
   // ── galgames ──────────────────────────────────────────────────────
   PathRebaseColumn('Galgames', 'exePath', PathRebaseKind.externalUserPath,
       '用户外部游戏安装位置（hook 注入目标），不在数据根内。'),

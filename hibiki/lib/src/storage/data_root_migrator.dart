@@ -947,6 +947,7 @@ class DataRootMigrator {
         await _rebaseGalgames(db, docs);
         await _rebaseMediaCollections(db, docs);
         await _rebaseCollectionScrapeMeta(db, docs);
+        await _rebaseCollectionRelations(db, docs);
         await _rebaseMediaItems(db, docs);
         await _rebasePreferences(db, docs, newSupportRoot);
         await _rebaseProfileSettings(db, docs, newSupportRoot);
@@ -1105,6 +1106,28 @@ class DataRootMigrator {
         'WHERE collection_id = ?',
         <Object?>[newBackdrop, c.id],
       );
+    }
+  }
+
+  /// collection_relations：cover_path（关联条目封面的本地落盘位，
+  /// `<documents>/video_covers/` 目录族，与合集封面同型；schema v66 /
+  /// TODO-2484）。当前尚无写入方（封面下载归 UI 接力线程），本改写是
+  /// 前置兜底 —— 列一旦开始落值，不改写 = 换数据根后相关作品卡封面死链。
+  /// source / cover_url 不是本机路径，绝不改写。
+  static Future<void> _rebaseCollectionRelations(
+    HibikiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
+      for (final CollectionRelationRow r
+          in await db.getCollectionRelations(c.id)) {
+        final String? newCover = docs.rebaseNullable(r.coverPath);
+        if (newCover == r.coverPath) continue;
+        await db.customStatement(
+          'UPDATE collection_relations SET cover_path = ? WHERE id = ?',
+          <Object?>[newCover, r.id],
+        );
+      }
     }
   }
 
