@@ -138,6 +138,7 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
     this.showTasks = true,
     this.tasksOnly = false,
     this.onOpenSettings,
+    this.initialSearchQuery,
     @visibleForTesting this.debugInitialMedia,
     @visibleForTesting this.debugInitialTorrent,
   });
@@ -155,6 +156,10 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
   /// 「后端未配置」横幅上「去设置」的落点：embedded 下由下载页传入
   /// （切到页内设置面板）；null（独立对话框，如视频页入口）则 push 下载设置页。
   final VoidCallback? onOpenSettings;
+
+  /// 初始搜番词（TODO-2485/2484 UI）：非空时预填搜索框并自动发起一次 AniList
+  /// 搜索（合集详情页「去下载」等入口预填标题直达）。null = 既有入口行为零变化。
+  final String? initialSearchQuery;
 
   /// 仅测试：初始即选中的番（跳过 AniList 网络搜索直达选种/确认阶段）。
   final AniListMedia? debugInitialMedia;
@@ -272,6 +277,15 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         _selectedTorrent = debugTorrent;
         _chosenSubs = _chooseSubsFor(debugTorrent);
       }
+    }
+    // 初始搜番词（合集详情页入口预填）：只在还没有初始选中番时生效；post-frame
+    // 再搜（_searchAnime 里 setState，initState 同步调用会撞生命周期）。
+    final String? seedQuery = widget.initialSearchQuery?.trim();
+    if (_selectedMedia == null && seedQuery != null && seedQuery.isNotEmpty) {
+      _animeQueryCtrl.text = seedQuery;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_searchAnime());
+      });
     }
     unawaited(_reloadPlans());
   }

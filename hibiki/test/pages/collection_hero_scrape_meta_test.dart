@@ -114,20 +114,18 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('有刮削资料 → hero 渲染年份/话数/评分/标签/简介/原名', (WidgetTester tester) async {
+  testWidgets('有刮削资料 → hero 渲染放送日期/话数/评分/标签/简介/原名',
+      (WidgetTester tester) async {
     await saveMeta();
     await pumpWide(tester);
 
-    // 元数据行是一条拼起来的文本，逐段断言其成分。
-    final String metaLine = tester
-        .widgetList<Text>(find.byType(Text))
-        .map((Text w) => w.data ?? '')
-        .firstWhere((String s) => s.contains('★'), orElse: () => '');
-    expect(metaLine, contains('2023'), reason: '年份取自 airDate 前 4 位');
-    expect(metaLine, contains('全 12 话'));
-    expect(metaLine, contains('★ 8.2'));
-    expect(metaLine, contains('1234 人评分'));
-    expect(metaLine, contains('已看完 0/1'), reason: '观看进度不依赖刮削，恒在');
+    // hayase 式：放送日期独立一行压在标题上方；话数/评分/评分人数/观看进度是
+    // 徽标 chips，各自一个 Text（不再是拼起来的一条元数据行）。
+    expect(find.text('2023-01-04'), findsOneWidget, reason: '放送日期行压在大标题上方');
+    expect(find.text('全 12 话'), findsOneWidget);
+    expect(find.text('★ 8.2'), findsOneWidget);
+    expect(find.text('1234 人评分'), findsOneWidget);
+    expect(find.text('已看完 0/1'), findsOneWidget, reason: '观看进度不依赖刮削，恒在');
 
     expect(find.textContaining('公主与令嬢携手掀起魔法革命'), findsOneWidget,
         reason: '简介必须出现在 hero');
