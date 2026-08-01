@@ -446,6 +446,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onRenderError,
     this.inputSpec = const DictionaryPopupInputSpec(),
     this.onHostInputToken,
+    this.debugHostOwnsPointer,
     this.headerWidget,
     this.overlayWidget,
     this.isDark = false,
@@ -544,6 +545,10 @@ class DictionaryPopupLayer extends StatelessWidget {
 
   /// [inputSpec] 命中时弹窗回传的 token。
   final ValueChanged<String>? onHostInputToken;
+
+  /// 仅测试注入：覆盖 [hostOwnsDictionaryPopupPointerInput]（默认 null = 按运行平台）。
+  @visibleForTesting
+  final bool? debugHostOwnsPointer;
   final Widget? headerWidget;
   final Widget? overlayWidget;
   final bool isDark;
@@ -691,7 +696,42 @@ class DictionaryPopupLayer extends StatelessWidget {
             child: content,
           );
 
-    return _maybeWrapResizeGrip(shell);
+    return _maybeWrapHostPointerInput(_maybeWrapResizeGrip(shell));
+  }
+
+  /// BUG-1269 复诉（鼠标键那一半）：在**宿主拥有指针**的平台（Windows，见
+  /// [hostOwnsDictionaryPopupPointerInput]）就地消费绑到弹窗表面的鼠标键。
+  ///
+  /// 为什么不能只靠弹窗里的 JS 桥：Windows 的 WebView2 是无窗口 composition 模式，
+  /// 指针先到 Flutter 再由 fork 转发进去，而 fork 的 `PointerButton` 枚举里**没有**
+  /// 侧键——后退/前进在转发前就被折成 `none` 丢掉。于是「关闭词典」绑侧键时，弹窗
+  /// DOM 里根本不会发生 `mousedown`，桥永远拿不到 `Mouse3`/`Mouse4`。而指针明明已经
+  /// 到过 Flutter：这里旁听同一次按下即可，不必让 native 把它送进 WebView 再绕回来
+  /// （那样还会顺带打开 Chromium 的「侧键=历史后退」，阅读器正文换章有历史会乱跳）。
+  ///
+  /// 只旁听、不消费：[Listener] 默认 `deferToChild`，且不做任何 hit-test 拦截，
+  /// WebView 的正常点击 / 划词 / 滑动关闭 / 尺寸把手全部照旧（Never break userspace）。
+  /// 命中后走的 token 与 JS 桥**完全同形**（`Mouse<n>`），汇进同一个
+  /// [onHostInputToken] → 同一个 resolve → 同一个宿主落地入口，没有第二套语义。
+  Widget _maybeWrapHostPointerInput(Widget child) {
+    final ValueChanged<String>? sink = onHostInputToken;
+    // 判据默认取运行平台；测试显式注入，否则同一份守卫在 Windows 上过、Linux CI 上
+    // 静默变成另一条分支（本机绿 / CI 绿但测的不是同一件事）。
+    final bool byHost =
+        debugHostOwnsPointer ?? hostOwnsDictionaryPopupPointerInput;
+    if (sink == null || !byHost) return child;
+    return Listener(
+      onPointerDown: (PointerDownEvent event) {
+        if (event.kind != PointerDeviceKind.mouse) return;
+        final String? token = dictionaryPopupPointerToken(
+          buttons: event.buttons,
+          spec: inputSpec,
+        );
+        if (token == null) return;
+        sink(token);
+      },
+      child: child,
+    );
   }
 
   /// 尺寸拖拽（Phase B）：仅当 [showResizeGrip] 且已接线 [onResizeUpdate] 时，在弹窗

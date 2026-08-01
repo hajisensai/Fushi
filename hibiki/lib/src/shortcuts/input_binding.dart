@@ -1,6 +1,13 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart'
+    show
+        kBackMouseButton,
+        kForwardMouseButton,
+        kMiddleMouseButton,
+        kPrimaryMouseButton,
+        kSecondaryMouseButton;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -516,6 +523,25 @@ class MouseBinding {
 
   @override
   String toString() => 'MouseBinding(${serialize()})';
+}
+
+/// 把 Flutter 的 [PointerDownEvent.buttons] 位掩码折成 [MouseBinding] / DOM
+/// `MouseEvent.button` 用的**单个**按钮号，无法绑定的按下返回 null。
+///
+/// 左键（[kPrimaryMouseButton]）**故意**不可绑：WebView 运行时的分发在
+/// `e.button === 0` 上直接早退（左键是主交互键，绑它会吞掉正常点击 / 划词选区），
+/// 所以左键绑定永远不可能触发。多键同按（chord）按 中键(1) → 右键(2) → 后退(3) →
+/// 前进(4) 的优先级取第一个非左键。
+///
+/// 绑定捕获（设置页的按键录制）与运行时分发（查词弹窗表面的 [Listener]）必须用
+/// **同一个**折叠规则，否则会出现「设置里录到侧键、运行时却按另一个号去解析」的
+/// 错位。故收在这里，两侧共用（TODO-1088 originally, BUG-1269 复诉时提升为共享）。
+int? domMouseButtonFromPointerButtons(int buttons) {
+  if (buttons & kMiddleMouseButton != 0) return 1;
+  if (buttons & kSecondaryMouseButton != 0) return 2;
+  if (buttons & kBackMouseButton != 0) return 3;
+  if (buttons & kForwardMouseButton != 0) return 4;
+  return null; // primary (kPrimaryMouseButton) or unknown → not bindable
 }
 
 /// 滚轮方向。滚轮是**离散事件**（没有按下/抬起），故它自成一个绑定通道，而不是
