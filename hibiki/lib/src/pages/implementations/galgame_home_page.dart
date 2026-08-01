@@ -174,7 +174,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
 
   /// 时间线事件：DB 里 game 类活动（游玩 / 已有的添加）+ 由库列表 addedAt 合成的
   /// 「添加」事件（游戏添加当前不落 activity_events，合成后「添加」筛选才有内容）。
-  /// 同 (日期, 标题, 类型) 的重复会在 [aggregateActivityEvents] 里并成一条。
+  /// 同 (设备, 日期, 类型, 媒体类型, mediaKey——缺失回落标题) 的重复会在
+  /// [aggregateActivityEvents] 里并成一条（BUG-1350 后语义）。
   Future<List<ActivityEventRow>> _loadTimelineRows(
     List<GalgameEntry> games,
   ) async {

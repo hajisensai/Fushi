@@ -154,7 +154,8 @@ List<ActivityDateGroup> aggregateActivityEvents(
       stamps.add(e.timestampMs);
     }
     entries.add(ActivityEntry(
-      title: group.first.title,
+      // 标题快照与 mediaKey 同取向：都取组内最新一行（改名当天显示新名）。
+      title: group.last.title,
       eventType: group.first.eventType,
       mediaType: group.first.mediaType,
       mediaKey: mediaKey,
