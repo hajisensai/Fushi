@@ -17,6 +17,7 @@ import 'package:hibiki/src/platform/selection_external_actions.dart';
 import 'package:hibiki/src/reader/popup_swipe_close_script.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
+import 'package:hibiki/src/webview/webview_death_guard.dart';
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -241,6 +242,32 @@ class DictionaryPopupWebViewState
       _controller?.evaluateJavascript(source: source);
   bool _ready = false;
   bool _refreshWhenReady = false;
+
+  /// renderer 死亡处置（救命动作 = 下面 [InAppWebView.onRenderProcessGone] 传了
+  /// 非 null 回调，否则 Android 会连坐杀掉整个 app）。
+  ///
+  /// 这块表面**几乎零损失**：查询词、结果、嵌套层级栈全在 Dart
+  /// （`widget.result` / 宿主的 popup 栈），WebView 只是渲染面。死掉丢的是滚动
+  /// 位置和 popup.js 的角标态；重建后 [refreshCurrentResult] 会把当前结果全量
+  /// 重推。flush 要做的就是把「已推过 / 已渲染过」的去重基线清空 —— 否则
+  /// [refreshCurrentResult] 会认为「这个结果已经推过了」而直接早退，新 WebView
+  /// 永远拿不到内容。
+  late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
+    surface: 'dictionary_popup',
+    flushBeforeRebuild: () async {
+      _controller = null;
+      _ready = false;
+      _lastPushedResult = null;
+      _lastRenderedResult = null;
+      _lastSentStaticRevision = null;
+      _lastSentInAppExtrasKey = null;
+      // 新 WebView 的 onLoadStop 据此立刻补推当前结果。
+      _refreshWhenReady = true;
+    },
+    afterRebuild: () {
+      if (mounted) setState(() {});
+    },
+  );
   String? _lastSearchTerm;
   int _lastEntryCount = 0;
   int _renderToken = 0;
@@ -372,9 +399,16 @@ class DictionaryPopupWebViewState
   /// 安装 capture 阶段的键盘 + 鼠标桥；后续注入只热更新 token 表（listener 只装
   /// 一次）。热槽 WebView 跨查词长期存活，用户随时可能改键，故表必须可更新——
   /// 旧版把键表冻结在首次注入的闭包里，改键后弹窗持焦时仍按老键位响应。
+  ///
+  /// [hostOwnsPointer] 透传给生成器：守卫必须显式声明是哪条指针所有权下的脚本，
+  /// 否则同一份断言在 Windows（指针归宿主、桥不装鼠标监听）与 Linux CI 上测的不是
+  /// 同一件事（BUG-1347）。
   @visibleForTesting
-  static String debugHostInputBridgeScript(DictionaryPopupInputSpec spec) =>
-      dictionaryPopupInputBridgeScript(spec);
+  static String debugHostInputBridgeScript(
+    DictionaryPopupInputSpec spec, {
+    bool? hostOwnsPointer,
+  }) =>
+      dictionaryPopupInputBridgeScript(spec, hostOwnsPointer: hostOwnsPointer);
 
   void _setHostInputBridge() {
     if (_controller == null || !_ready) return;
@@ -2062,6 +2096,13 @@ JSON.stringify((function(){
       onLoadResourceWithCustomScheme: (controller, request) async {
         return dictionaryMediaCustomSchemeResponse(request.url);
       },
+      // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
+      onRenderProcessGone:
+          (InAppWebViewController _, RenderProcessGoneDetail detail) =>
+              unawaited(_deathGuard.handleDeath(
+        didCrash: detail.didCrash,
+        rendererPriorityAtExit: detail.rendererPriorityAtExit,
+      )),
     );
 
     // TODO-896 症状②：Windows 上原生 WebView2 菜单已禁（hideDefaultSystemContextMenuItems
@@ -2070,14 +2111,17 @@ JSON.stringify((function(){
     // [HitTestBehavior.translucent] 让右键之外的所有指针事件照常落到 WebView（不抢左键
     // 框选 / 滚动 / 点击）。
     if (isWindowsPlatform) {
-      return GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onSecondaryTapDown: (TapDownDetails details) =>
-            _showWindowsContextMenu(context, details.globalPosition),
-        child: webView,
+      return KeyedSubtree(
+        key: _deathGuard.rebuildKey,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onSecondaryTapDown: (TapDownDetails details) =>
+              _showWindowsContextMenu(context, details.globalPosition),
+          child: webView,
+        ),
       );
     }
-    return webView;
+    return KeyedSubtree(key: _deathGuard.rebuildKey, child: webView);
   }
 
   /// TODO-896 症状②：Windows 桌面右键弹 Flutter [showMenu]（替代偏移的 WebView2 原生

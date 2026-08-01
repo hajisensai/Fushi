@@ -11,6 +11,7 @@ import 'package:hibiki/src/media/import/import_dialog_frame.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
 import 'package:hibiki/src/media/manga/manga_importer.dart';
+import 'package:hibiki/src/media/manga/manga_json_writeback.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_background_job.dart';
 import 'package:hibiki/src/media/manga/manga_storage.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
@@ -805,17 +806,13 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     if (payload.images.isEmpty) {
       throw const MangaImportException('OCR result has no pages');
     }
-    final File target =
-        File(p.join(managedDir, MangaStorage.kMangaJsonFileName));
-    final File temporary = File('${target.path}.tmp');
-    await temporary.writeAsString(
-      jsonEncode(mangaPayloadToJson(payload)),
-      flush: true,
+    // 整份覆写：不进 per-path 写锁就会整段吞掉用户刚在阅读器里框选回写的块
+    // （两者写的是同一个 `<书目录>/manga.json`）。
+    final String target = p.join(managedDir, MangaStorage.kMangaJsonFileName);
+    await runExclusiveOnMangaJson<void>(
+      target,
+      () => writeMangaJsonAtomically(target, payload),
     );
-    if (target.existsSync()) {
-      await target.delete();
-    }
-    await temporary.rename(target.path);
   }
 
   void _onOcrError(Object e) {

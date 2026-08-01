@@ -29,12 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1311 条。点号进各自文件。
+> 共 1314 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1394](bugs/BUG-1394-cover-write-guard-cross-file.md) | ✅ | ✅ | 封面写盘守卫的跨文件派生覆盖洞：番剧下载封面绕过 BUG-1118 收口 |
 | [BUG-1393](bugs/BUG-1393-collection-member-poster.md) | ✅ | ✅ | 合集子篇被自动刮成作品级竖版海报，且作品海报被整个丢弃 |
+| [BUG-1392](bugs/BUG-1392-md3-chrome-guard-collection-prs.md) | ✅ | ✅ | 合集三 PR 绕过 MD3 页面 chrome 守卫：CheckboxListTile / 手抄封面角标 / 硬编码 fontSize 直接把 develop 打红 |
+| [BUG-1386](bugs/BUG-1386-webview-renderer-gone-kills-app.md) | ✅ | ✅ | Android renderer 被回收时未接管 onRenderProcessGone，整个 app 被系统杀掉 |
 | [BUG-1381](bugs/BUG-1381-lyrics-bottom-reserve-guard.md) | ✅ | ✅ | 歌词底栏预留守卫锚在实现写法上，PR#670 合并 Padding 后 develop 单测红 |
 | [BUG-1380](bugs/BUG-1380-wheel-gate-token-consumed-before-paginate.md) | ✅ | ✅ | 分页滚轮闸门在换章加载期消费手势 token，整段横向惯性被吞 |
 | [BUG-1373](bugs/BUG-1373-ios-pod-install-license-file-type.md) | ✅ | ✅ | iOS pod install 断在 license 校验：LICENSE.GPLv3 扩展名不被 CocoaPods 接受 |
@@ -48,6 +50,7 @@
 | [BUG-1350](bugs/BUG-1350-dashboard-activity-cross-series-merge.md) | ✅ | ✅ | 首页活动时间轴同日同集号跨作品被合并吞掉观看记录 |
 | [BUG-1349](bugs/BUG-1349-collection-detail-escape-dead.md) | ✅ | ✅ | 合集详情页按Esc不退出（焦点导航开启时全局Esc解析不到路由被吞） |
 | [BUG-1348](bugs/BUG-1348-gdrive-signin-token-exchange-direct-connect.md) | ✅ | ✅ | 谷歌云盘桌面登录：token 交换裸直连不走代理，浏览器已授权但 app 超时 |
+| [BUG-1347](bugs/BUG-1347-dismiss-dict-mouse-popup-surface.md) | ✅ | ✅ | 关词典的鼠标键/快捷键在查词弹窗表面无效（Windows 指针与焦点所有权） |
 | [BUG-1345](bugs/BUG-1345-gal-ipc-contract-host-copy-drift.md) | ✅ | ✅ | galgame 捕获报「捕获组件版本与 Hibiki 不一致」：IPC 契约在 host 侧有手抄副本，且处置指向已不存在的动作 |
 | [BUG-1344](bugs/BUG-1344-macos-reader-selection-stale.md) | ✅ | ✅ | macOS查词关闭后原文选区高亮残留 |
 | [BUG-1343](bugs/BUG-1343-macos-reader-window-drag.md) | ✅ | ✅ | macOS窗口化阅读器缺少可拖拽区域 |

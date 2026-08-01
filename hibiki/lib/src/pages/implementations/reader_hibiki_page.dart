@@ -69,6 +69,7 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/reader/reader_top_progress.dart';
 import 'package:hibiki/src/reader/ttu_toc_flatten.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
+import 'package:hibiki/src/webview/webview_death_guard.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
@@ -1323,6 +1324,40 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// 的阅读位置/统计在 exit(0) 前落库。
   ExitFlushCallback? _exitFlushCallback;
   Timer? _progressPollTimer;
+
+  /// renderer 死亡处置（救命动作 = [_buildWebView] 里给 `InAppWebView` 传了非
+  /// null 的 `onRenderProcessGone`，否则 Android 会连坐杀掉整个 app）。
+  ///
+  /// **这里刻意不重建**（`afterRebuild` 为 null），与漫画/词典弹窗/Lapis 三处
+  /// 不同。原因是阅读器的恢复锚 `_initialProgress` / `_initialCharOffset`
+  /// （[_initBook] / `_beginNavigation` / reload 三处写）记的是**进入本章那一刻
+  /// 的快照**，章内滚动只更新 `_lastProgress*`、不回写它俩。跨章翻进本章时
+  /// `_beginNavigation` 常把它们写成 `0.0 / -1`，于是换 key 强制重建后
+  /// `onWebViewCreated → 重新 restore` 会回到**章首**，紧接着
+  /// `_onRestoreComplete → _refreshProgress → _debouncedSavePosition` 把这个回退
+  /// 位置如实落库，把 DB 里更靠后的真实进度覆盖掉。白屏可以退出重进，进度被写
+  /// 回退不可逆 —— 两害相权，本轮只救命不重建。
+  ///
+  /// 要把重建做对，得先补齐这些前置条件（不在本轮止血范围内）：
+  /// ① 崩溃回调里用 `_lastProgressValue` / `_lastProgressCharOffset` 补齐
+  ///    `_initialProgress` / `_initialCharOffset`（照 reload 路径的范式）；
+  /// ② `webview.part.dart` 里 `onWebViewCreated` 的
+  ///    `debugEvaluateJavascript == null` 断言改成幂等 —— State 不重建，第二次
+  ///    `onWebViewCreated` 必炸 assert；
+  /// ③ `navigation.part.dart` 的 `_refreshProgress` 给 `evaluateJavascript`
+  ///    补 try/catch。
+  ///
+  /// flush 侧仍要做满：取消轮询与 debounce（报废 controller 上的
+  /// `evaluateJavascript` 会抛成未捕获异步错误）、落盘当前位置、丢掉 controller。
+  late final WebViewDeathGuard _webViewDeathGuard = WebViewDeathGuard(
+    surface: 'reader_hibiki',
+    flushBeforeRebuild: () async {
+      _progressPollTimer?.cancel();
+      _progressPollTimer = null;
+      _controller = null;
+      await _flushPosition();
+    },
+  );
   // BUG-380: 滚动进度刷新的「在飞 + 待重跑」守卫。rAF 节流后滚动回传可能高频到来，
   // 每次 _refreshProgress 都 evaluateJavascript 跑较重的 hoshiProgressDetails（遍历全章
   // TextNode + caretRangeFromPoint），未加守卫会让多次调用堆积。_scrollProgressInFlight

@@ -23,22 +23,12 @@ bool _mouseBindingSupported(TargetPlatform platform) {
   }
 }
 
-/// TODO-1088: maps a Flutter [PointerDownEvent.buttons] bitmask to the single DOM
-/// `MouseEvent.button` number the runtime `onPointerSeek` dispatch shares with
-/// [MouseBinding], or null for the excluded primary button / an unrecognised
-/// bitmask. The primary (left) button is deliberately unbindable: the
-/// reader/webview runtime handler bails on `e.button === 0` (left is the main
-/// interaction key — binding it would swallow normal clicks / text selection),
-/// so a left binding could never fire. Checked most-specific first; a chorded
-/// press (multiple bits) resolves to the first non-primary button in this
-/// precedence: middle(1)/right(2)/back(3)/forward(4).
-int? _domButtonFromPointerButtons(int buttons) {
-  if (buttons & kMiddleMouseButton != 0) return 1;
-  if (buttons & kSecondaryMouseButton != 0) return 2;
-  if (buttons & kBackMouseButton != 0) return 3;
-  if (buttons & kForwardMouseButton != 0) return 4;
-  return null; // primary (kPrimaryMouseButton) or unknown → not bindable
-}
+/// TODO-1088 的按钮折叠规则已提升为共享函数
+/// （[domMouseButtonFromPointerButtons]，input_binding.dart）：录制绑定与运行时
+/// 分发（查词弹窗表面的 [Listener]，BUG-1269 复诉）必须用同一份规则，否则会
+/// 「录到侧键、运行时按另一个号解析」。此处保留同名薄封装，调用点不变。
+int? _domButtonFromPointerButtons(int buttons) =>
+    domMouseButtonFromPointerButtons(buttons);
 
 // ---------------------------------------------------------------------------
 // Edit binding dialog

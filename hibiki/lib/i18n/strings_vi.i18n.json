@@ -3052,5 +3052,16 @@
   "collection_episode_bangumi_open_failed": "Could not resolve the episode on Bangumi: $error",
   "collection_episode_rename_partial": "Renamed $n episodes, $m failed",
   "collection_episode_bangumi_not_found": "Episode not found on Bangumi; opened the subject page instead",
-  "sync_err_browser_timeout": "The browser never returned the authorization. Retry, and make sure your proxy lets 127.0.0.1 through."
+  "sync_err_browser_timeout": "The browser never returned the authorization. Retry, and make sure your proxy lets 127.0.0.1 through.",
+  "manga_rescan_run": "Box OCR",
+  "manga_rescan_hint": "Drag a box around the text you want to recognize.",
+  "manga_rescan_model_missing": "Download the manga OCR models in Settings first.",
+  "manga_rescan_running": "Recognizing the selected box...",
+  "manga_rescan_failed": "Box OCR failed",
+  "manga_rescan_empty": "No text was recognized in this box.",
+  "manga_rescan_local_source": "Local OCR",
+  "manga_rescan_lookup": "Look up",
+  "manga_rescan_writeback": "Save to page",
+  "manga_rescan_writeback_done": "Saved to manga.json",
+  "manga_rescan_writeback_failed": "Failed to save to manga.json"
 }

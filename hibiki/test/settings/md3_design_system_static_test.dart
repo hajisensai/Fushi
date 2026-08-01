@@ -658,6 +658,7 @@ void main() {
       'BorderRadius.circular(',
       'VisualDensity.compact',
       'surfaceContainerLow',
+      'surfaceContainerLowest',
       'surfaceContainerHigh',
       'surfaceContainerHighest',
       'fontSize:',
@@ -2893,13 +2894,17 @@ List<String> _forbiddenChromeHits(String source, List<String> forbidden) {
 }
 
 bool _containsForbiddenChrome(String source, String token) {
-  if (!_identifierCallTokens.contains(token)) {
-    return source.contains(token);
+  if (_identifierCallTokens.contains(token)) {
+    // 左边界：`HibikiCard(` / `CheckboxListTile(` 不是裸 `Card(` / `ListTile(`。
+    // 共享组件正是本守卫要求你改用的东西，裸子串会在「改对那一刻」把它判成违规。
+    return RegExp(r'(?<![A-Za-z0-9_])' + RegExp.escape(token)).hasMatch(source);
   }
-  final RegExp rawCall = RegExp(
-    r'(?<![A-Za-z0-9_])' + RegExp.escape(token),
-  );
-  return rawCall.hasMatch(source);
+  if (_wholeIdentifierTokens.contains(token)) {
+    // 右边界：`surfaceContainerHigh` 不该被 `surfaceContainerHighest` 命中，
+    // 否则失败报告里会列出源码里根本不存在的 token，把维护者引去找不存在的行。
+    return RegExp(RegExp.escape(token) + r'(?![A-Za-z0-9_])').hasMatch(source);
+  }
+  return source.contains(token);
 }
 
 const Set<String> _identifierCallTokens = <String>{
@@ -2908,6 +2913,15 @@ const Set<String> _identifierCallTokens = <String>{
   'SwitchListTile(',
   'CheckboxListTile(',
   'PopupMenuButton(',
+};
+
+/// 互为前缀的 MD3 容器面色角色：必须整标识符匹配，且四个变体都得在 forbidden
+/// 列表里（右边界收窄只去掉重复命中，不放过任何一个角色）。
+const Set<String> _wholeIdentifierTokens = <String>{
+  'surfaceContainerLow',
+  'surfaceContainerLowest',
+  'surfaceContainerHigh',
+  'surfaceContainerHighest',
 };
 
 String _functionSource(

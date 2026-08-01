@@ -3052,5 +3052,16 @@
   "collection_episode_bangumi_open_failed": "解析 Bangumi 章节失败：$error",
   "collection_episode_rename_partial": "已重命名 $n 集 · $m 集失败",
   "collection_episode_bangumi_not_found": "未找到对应集，已打开条目页",
-  "sync_err_browser_timeout": "浏览器授权没有返回到应用。请重试，并确认代理放行了本机回环地址 127.0.0.1。"
+  "sync_err_browser_timeout": "浏览器授权没有返回到应用。请重试，并确认代理放行了本机回环地址 127.0.0.1。",
+  "manga_rescan_run": "框选识别",
+  "manga_rescan_hint": "拖动框选想要识别的文字。",
+  "manga_rescan_model_missing": "请先在设置里下载漫画 OCR 模型。",
+  "manga_rescan_running": "正在识别所选区域…",
+  "manga_rescan_failed": "框选识别失败",
+  "manga_rescan_empty": "该区域未识别出文字。",
+  "manga_rescan_local_source": "本地识别",
+  "manga_rescan_lookup": "查词",
+  "manga_rescan_writeback": "回写本页",
+  "manga_rescan_writeback_done": "已回写 manga.json",
+  "manga_rescan_writeback_failed": "回写 manga.json 失败"
 }

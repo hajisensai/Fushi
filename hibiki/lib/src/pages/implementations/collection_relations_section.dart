@@ -157,7 +157,6 @@ class _CollectionRelationsSectionState
   Widget _buildCard(
     BuildContext context,
     CollectionRelationRow relation,
-    ColorScheme cs,
   ) {
     // 封面三级回落：coverPath 本地文件 → coverUrl 网络（Image.network 是刮削
     // 候选封面的既有口径，见 scrape_cover_preview.dart）→ 占位图标。
@@ -170,16 +169,16 @@ class _CollectionRelationsSectionState
     if (localCover != null) {
       coverWidget = PortraitCoverImage(
         image: localCover,
-        errorBuilder: (BuildContext _) => _coverPlaceholder(cs),
+        errorBuilder: (BuildContext _) => _coverPlaceholder(context),
       );
     } else if (coverUrl != null && coverUrl.isNotEmpty) {
       coverWidget = Image.network(
         coverUrl,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _coverPlaceholder(cs),
+        errorBuilder: (_, __, ___) => _coverPlaceholder(context),
       );
     } else {
-      coverWidget = _coverPlaceholder(cs);
+      coverWidget = _coverPlaceholder(context);
     }
     final bool bound = relation.targetCollectionId != null;
     return SizedBox(
@@ -209,25 +208,12 @@ class _CollectionRelationsSectionState
                     PositionedDirectional(
                       top: 6,
                       start: 6,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: const Color(0xB8000000),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          child: Text(
-                            _relationLabel(relation.relationType),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
+                      // 关系类型徽标压在封面图上，走共享封面角标胶囊
+                      // （CoverBadge 的纯文字形态）——此前这里是第四份手抄的
+                      // 「深色 scrim + 圆角胶囊 + 白色小字」，正是 CoverBadge
+                      // 要收口的那一类。
+                      child: CoverBadge(
+                        label: _relationLabel(relation.relationType),
                       ),
                     ),
                     if (bound)
@@ -262,20 +248,16 @@ class _CollectionRelationsSectionState
     );
   }
 
-  Widget _coverPlaceholder(ColorScheme cs) => ColoredBox(
-        color: cs.surfaceContainerHighest,
-        child: Center(
-          child: Icon(
-            Icons.movie_outlined,
-            size: 28,
-            color: cs.onSurfaceVariant,
-          ),
-        ),
+  /// 无封面占位走三库页共用的 [ShelfCoverPlaceholder]（底色/描边/图标色全部
+  /// 取自设计令牌，`tokens.surfaces.overlay` 即原先直读的最高阶容器面色）。
+  Widget _coverPlaceholder(BuildContext context) => ShelfCoverPlaceholder(
+        icon: Icons.movie_outlined,
+        iconSize: 28,
+        backgroundColor: HibikiDesignTokens.of(context).surfaces.overlay,
       );
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return FutureBuilder<List<CollectionRelationRow>>(
       key: ValueKey<int>(_refresh),
@@ -320,7 +302,7 @@ class _CollectionRelationsSectionState
                       itemCount: relations.length,
                       separatorBuilder: (_, __) => const SizedBox(width: _gap),
                       itemBuilder: (BuildContext context, int index) =>
-                          _buildCard(context, relations[index], cs),
+                          _buildCard(context, relations[index]),
                     ),
                   ),
                 ),
