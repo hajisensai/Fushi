@@ -179,4 +179,128 @@ final b = \'\'\'{ js }\'\'\';
       );
     });
   });
+
+  group('enclosingCall：窗口由括号配对给出，不靠定长/相邻声明', () {
+    const String src = '''
+    SettingsCustomItem(
+      // 说明：换行与缩进都不该进契约
+      id: 'sync.mode',
+      title: t.sync_mode,
+      children: <Widget>[
+        Text('sync.mode'),
+      ],
+    ),
+    SettingsSwitchItem(
+      id: 'sync.statistics',
+    ),
+''';
+
+    test('取到最内层调用的名字（跨注释、跨嵌套集合字面量）', () {
+      expect(
+          enclosingCallOf(src, "id: 'sync.mode'").name, 'SettingsCustomItem');
+      expect(
+        enclosingCallOf(src, "id: 'sync.statistics'").name,
+        'SettingsSwitchItem',
+      );
+    });
+
+    test('窗口止于该调用的右括号，不会读进下一项', () {
+      final String body = enclosingCallOf(src, "id: 'sync.mode'").text;
+      expect(body.contains('t.sync_mode'), isTrue);
+      expect(body.contains("id: 'sync.statistics'"), isFalse);
+    });
+
+    test('锚点只认代码，注释里的同名文本不算数', () {
+      const String commented = '''
+    Wrapper(
+      // id: 'sync.mode' 这是注释
+      other: 1,
+    ),
+    RealItem(
+      id: 'sync.mode',
+    ),
+''';
+      expect(enclosingCallOf(commented, "id: 'sync.mode'").name, 'RealItem');
+    });
+
+    test('命名构造器与泛型实参都算进名字', () {
+      const String generic = 'AdaptiveRow<int>(value: 1)';
+      expect(enclosingCallOf(generic, 'value:').name, 'AdaptiveRow');
+      const String named = 'EdgeInsets.symmetric(horizontal: 4)';
+      expect(
+          enclosingCallOf(named, 'horizontal:').name, 'EdgeInsets.symmetric');
+    });
+
+    test('找不到锚点时 fail，绝不静默锚到文件头', () {
+      expect(
+        () => enclosingCallOf('Foo(bar: 1)', 'nope:'),
+        throwsA(isA<TestFailure>()),
+      );
+    });
+  });
+
+  group('namedArgumentValues：取实参表达式而不是拼写', () {
+    test('跨换行取整段实参，顶层逗号定右边界', () {
+      const String src = '''
+      Dialog(
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.card,
+          vertical: tokens.spacing.gap,
+        ),
+        child: body,
+      )
+''';
+      final List<String> values = namedArgumentValues(src, 'insetPadding');
+      expect(values.length, 1);
+      expect(values.single.contains('tokens.spacing.card'), isTrue);
+      expect(values.single.contains('child: body'), isFalse);
+    });
+
+    test('注释与字符串里的同名参数不算数', () {
+      const String src = '''
+      Dialog(
+        // insetPadding: EdgeInsets.all(16),
+        title: 'insetPadding: EdgeInsets.all(16)',
+        insetPadding: EdgeInsets.zero,
+      )
+''';
+      final List<String> values = namedArgumentValues(src, 'insetPadding');
+      expect(values.length, 1);
+      expect(values.single, 'EdgeInsets.zero');
+    });
+
+    test('非实参位置的同名标识符不算数（三元表达式）', () {
+      const String src = 'final x = flag ? insetPadding : other;';
+      expect(namedArgumentValues(src, 'insetPadding'), isEmpty);
+    });
+  });
+
+  group('maskCommentsAndScriptLines：吃掉三引号串里的整行 JS 注释', () {
+    const String src = '''
+final String js = \'\'\'
+  // window.hoshiReader.paginate('forward')
+  const url = 'https://hoshi.local/x';
+\'\'\';
+''';
+
+    test('等长且行数守恒', () {
+      expect(maskCommentsAndScriptLines(src).length, src.length);
+      expect(
+        maskCommentsAndScriptLines(src).split('\n').length,
+        src.split('\n').length,
+      );
+    });
+
+    test('串内整行 JS 注释被掩掉（maskComments 会原样保留）', () {
+      expect(maskComments(src).contains('paginate'), isTrue);
+      expect(maskCommentsAndScriptLines(src).contains('paginate'), isFalse);
+    });
+
+    test('串里的 URL 不被砍（旧手写「按首个 // 截断」会砍）', () {
+      expect(
+        maskCommentsAndScriptLines(src).contains('https://hoshi.local/x'),
+        isTrue,
+      );
+    });
+  });
 }

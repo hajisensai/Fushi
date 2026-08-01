@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 
 /// Source-level guard for BUG-457 / TODO-964 — WebView2 event handlers in the
 /// Windows inappwebview fork dereferencing a freed `this` after
@@ -124,11 +125,4 @@ void main() {
 /// real code, not the prose documenting the guards (which mentions the very
 /// symbols we assert on, e.g. a commented-out add_ServerCertificateErrorDetected
 /// block).
-String _stripCppComments(String source) {
-  final String noBlock =
-      source.replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '');
-  return noBlock
-      .split('\n')
-      .where((String line) => !line.trimLeft().startsWith('//'))
-      .join('\n');
-}
+String _stripCppComments(String source) => maskComments(source);

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 
 /// TODO-550 guard: the WGC timer-pump Tick delegate must be AGILE.
 ///
@@ -24,12 +25,7 @@ String _read(List<String> candidates, String name) {
 }
 
 /// 删掉所有 `//` 行注释,只保留真实代码,避免守卫被解释根因的注释误判。
-String _stripLineComments(String src) {
-  return src.split('\n').map((String line) {
-    final int idx = line.indexOf('//');
-    return idx >= 0 ? line.substring(0, idx) : line;
-  }).join('\n');
-}
+String _stripLineComments(String src) => maskComments(src);
 
 void main() {
   test('TODO-550: WGC timer-pump Tick handler is an AGILE delegate', () {

@@ -1,7 +1,7 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 
 /// BUG-518 / TODO-1086 — source-scan guards for the app-OUTSIDE global lookup
 /// hotkey (Ctrl+Alt+D) reliability on Windows.
@@ -196,11 +196,4 @@ void main() {
 /// Removes `//` line comments so a source-scan assertion inspects CODE only
 /// (doc comments may legitimately mention a forbidden call to explain its
 /// removal).
-String _stripLineComments(String source) {
-  final StringBuffer out = StringBuffer();
-  for (final String line in const LineSplitter().convert(source)) {
-    final int c = line.indexOf('//');
-    out.writeln(c >= 0 ? line.substring(0, c) : line);
-  }
-  return out.toString();
-}
+String _stripLineComments(String source) => maskComments(source);

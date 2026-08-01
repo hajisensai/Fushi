@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
+import '../helpers/source_guard.dart';
 
 /// TODO-909 源码守卫（源码扫描，沿用仓库既有 `File(...).readAsStringSync()` +
 /// `contains` 模式）。
@@ -332,12 +333,7 @@ String _extractCssBlock(String css, String selector) {
   return css.substring(selIdx, endIdx + 1);
 }
 
-String _stripLineComments(String source) {
-  return source.split('\n').map((String line) {
-    final int idx = line.indexOf('//');
-    return idx >= 0 ? line.substring(0, idx) : line;
-  }).join('\n');
-}
+String _stripLineComments(String source) => maskCommentsAndScriptLines(source);
 
 bool _hasGenerationAwareRestoreCall(String source) {
   return RegExp(

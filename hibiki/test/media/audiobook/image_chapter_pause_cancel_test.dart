@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
+import '../../helpers/source_guard.dart';
 
 /// TODO-2389 / TODO-2369：`AudiobookPlayerController.awaitImageChapterPause`
 /// 的两个坑。
@@ -265,59 +266,7 @@ void main() {
 
 /// 把 Dart 源码里的行注释 / 块注释替换成等长空白（保持偏移可读），字符串字面量
 /// 内的 `//` 不当注释。
-String _stripDartComments(String source) {
-  final StringBuffer out = StringBuffer();
-  int i = 0;
-  while (i < source.length) {
-    final String ch = source[i];
-    if (ch == '/' && i + 1 < source.length) {
-      final String next = source[i + 1];
-      if (next == '/') {
-        while (i < source.length && source[i] != '\n') {
-          out.write(' ');
-          i++;
-        }
-        continue;
-      }
-      if (next == '*') {
-        while (i < source.length &&
-            !(source[i] == '*' &&
-                i + 1 < source.length &&
-                source[i + 1] == '/')) {
-          out.write(source[i] == '\n' ? '\n' : ' ');
-          i++;
-        }
-        if (i < source.length) {
-          out.write('  ');
-          i += 2;
-        }
-        continue;
-      }
-    }
-    if (ch == "'" || ch == '"') {
-      final String quote = ch;
-      out.write(ch);
-      i++;
-      while (i < source.length) {
-        if (source[i] == r'\') {
-          out.write(source[i]);
-          if (i + 1 < source.length) out.write(source[i + 1]);
-          i += 2;
-          continue;
-        }
-        out.write(source[i]);
-        final bool closing = source[i] == quote;
-        final bool lineBreak = source[i] == '\n';
-        i++;
-        if (closing || lineBreak) break;
-      }
-      continue;
-    }
-    out.write(ch);
-    i++;
-  }
-  return out.toString();
-}
+String _stripDartComments(String source) => maskComments(source);
 
 class _Harness {
   _Harness({

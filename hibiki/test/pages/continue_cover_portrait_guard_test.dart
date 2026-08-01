@@ -129,9 +129,4 @@ String _functionSource(String source, String startToken) {
 }
 
 /// 剥掉整行注释（含行内 `//` 到行尾）：断言字面量写进注释不得让守卫假绿。
-String _stripLineComments(String source) {
-  return source
-      .split('\n')
-      .map((String line) => line.replaceFirst(RegExp(r'//.*$'), ''))
-      .join('\n');
-}
+String _stripLineComments(String source) => maskComments(source);

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'reader_hibiki_page_source_corpus.dart';
+import '../helpers/source_guard.dart';
 
 void main() {
   // BUG-026: 快速连点底栏「调整」会弹出两个面板。
@@ -72,9 +73,4 @@ String _functionSource(String source, String start, String end) {
   return source.substring(startIndex, endIndex);
 }
 
-String _stripLineComments(String source) {
-  return source.split('\n').map((String line) {
-    final int i = line.indexOf('//');
-    return i >= 0 ? line.substring(0, i) : line;
-  }).join('\n');
-}
+String _stripLineComments(String source) => maskCommentsAndScriptLines(source);

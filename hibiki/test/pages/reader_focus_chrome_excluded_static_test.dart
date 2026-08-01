@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 
 /// TODO-700 T8 源码守卫：阅读器底栏退出焦点遍历池（焦点的唯一家是正文）。
 ///
@@ -16,20 +17,20 @@ import 'package:flutter_test/flutter_test.dart';
 /// 整页含真实 `InAppWebView` 平台视图，widget 测试无法挂载整页观测真实焦点遍历，
 /// 故以源码结构守卫钉死不变式；任一退回，对应断言红。
 void main() {
-  String chromeSource() => File(
+  /// 四个 test 一律扫**掩码后**的源。
+  ///
+  /// 本文件守的是「死分支必须整段删除」，而记录这些删除的散文注释天然会复述被删
+  /// 写法（chrome.part.dart 里 `ExcludeFocus` 有 3 处出现在注释里）。原来只有最后
+  /// 一个 test 剥了注释，另外三个裸扫：`allMatches(...).length == 1` 这条计数断言
+  /// 当时之所以没红，仅仅因为其中一条注释恰好写成 `ExcludeFocus (see`——括号前多了
+  /// 一个空格。删掉那个空格守卫立刻假红。掩码等长，计数语义不变。
+  String chromeSource() => maskCommentsAndScriptLines(File(
         'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
-      ).readAsStringSync().replaceAll('\r\n', '\n');
+      ).readAsStringSync().replaceAll('\r\n', '\n'));
 
-  String caretSource() => File(
+  String caretSource() => maskCommentsAndScriptLines(File(
         'lib/src/pages/implementations/reader_hibiki/caret.part.dart',
-      ).readAsStringSync().replaceAll('\r\n', '\n');
-
-  // 去掉 `//` 行注释，使断言匹配真实代码而非记录被删路径的散文
-  // （散文里会出现 `moveFocusToChrome` 字样）。
-  String stripLineComments(String source) => source
-      .split('\n')
-      .where((String line) => !line.trimLeft().startsWith('//'))
-      .join('\n');
+      ).readAsStringSync().replaceAll('\r\n', '\n'));
 
   test('两条底栏（有声书条 + 设置条）经单一 _wrapBottomChromeBar 外壳被 ExcludeFocus 包住', () {
     final String chrome = chromeSource();
@@ -91,7 +92,7 @@ void main() {
   });
 
   test('_toggleChrome 不再把焦点搬进底栏（moveFocusToChrome 路径已删）', () {
-    final String chrome = stripLineComments(chromeSource());
+    final String chrome = chromeSource();
     expect(
       chrome.contains('moveFocusToChrome'),
       isFalse,

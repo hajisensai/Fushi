@@ -187,6 +187,32 @@ String maskCssComments(String source) => _mask(
       maskStringContent: false,
     );
 
+/// [maskComments] 的保守超集：额外把**整行以 `//` 开头**的行也掩成等长空白，
+/// 包括落在 Dart 三引号串里的那些。
+///
+/// 为什么需要它：本仓有一批 Dart 文件把大段 JS/CSS 放在三引号串里
+/// （`reader_hibiki/webview.part.dart`、`reader_visual_novel_scripts.dart`、
+/// `reader_content_styles.dart`）。[maskComments] **按设计保留串内容**（这样
+/// `'https://x'` 里的 `//` 才不会被当注释砍掉），代价是串内的 JS 注释也原样留着，
+/// 于是扫描这些语料的守卫会被一条 JS 注释骗绿 / 误红。
+///
+/// 这些守卫原来手写的剥离是「整行以 `//` 开头就丢掉」，正好能吃掉串内 JS 注释，
+/// 但既不认块注释、也不认行尾注释。本函数取两者的并集：Dart 词法掩码 **加**
+/// 整行 `//`，两侧都不放松，且仍然等长。
+///
+/// 它**不是**完整的 JS 词法器：JS 的行尾注释、模板串、正则字面量（`/^a\/\//i`
+/// 里的 `//`）都不处理。要在 JS 上做逐 token 判定，需要单独的 JS 掩码原语。
+String maskCommentsAndScriptLines(String source) {
+  final List<String> masked = maskComments(source).split('\n');
+  final List<String> original = source.split('\n');
+  for (int i = 0; i < masked.length; i++) {
+    if (original[i].trimLeft().startsWith('//')) {
+      masked[i] = ' ' * masked[i].length;
+    }
+  }
+  return masked.join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // 窗口原语
 // ---------------------------------------------------------------------------
@@ -304,6 +330,179 @@ bool containsIdentifierCall(
     name,
     allowNamedConstructor: allowNamedConstructor,
   ).hasMatch(maskComments(source));
+}
+
+/// 一次调用 `Name(...)` 的结构切片。
+class EnclosingCall {
+  const EnclosingCall({
+    required this.name,
+    required this.text,
+    required this.start,
+    required this.end,
+  });
+
+  /// 被调标识符，含命名构造器（`SettingsCustomItem` / `EdgeInsets.symmetric`）。
+  /// 匿名调用（`(fn)(x)`）取不到名字时是空串。
+  final String name;
+
+  /// `Name(...)` 的完整原文切片（含结尾右括号）。
+  final String text;
+
+  /// [text] 在原串中的起止下标（[end] 为右括号后一位）。
+  final int start;
+  final int end;
+}
+
+/// 取 [src] 中下标 [index] 所在的**最内层调用**。
+///
+/// 用来替掉两类塌陷窗口：
+/// - `src.substring(anchor, anchor + 520)` 这种**定长字符窗口**——被守的那一项一旦
+///   多写两行属性，`group:` 就漂出窗口、守卫凭空变假；反过来项变短又会把**下一项**
+///   的属性读进来，断言指向错误对象。
+/// - `'SettingsCustomItem(\n            id: ...'` 这种把**缩进与换行写进锚点**的
+///   字面量——`dart format` 重排或多包一层就红，而守的根本不是格式。
+///
+/// 换成本函数后窗口由括号配对给出：断言的是「这个 id 落在哪个构造器里 / 这个构造器
+/// 体内有什么」，与长度、缩进、属性顺序全部无关。
+///
+/// 配对跑在掩码串上，注释与字符串里的括号不参与。方括号 / 花括号忽略不计——它们在
+/// 实参内部总是配平的，跳过后拿到的就是最近一层**调用**括号。
+EnclosingCall enclosingCall(String src, int index) {
+  final String structural = maskCommentsAndStrings(src);
+  if (index < 0 || index >= structural.length) {
+    fail('enclosingCall 的下标越界：$index');
+  }
+  int depth = 0;
+  int open = -1;
+  for (int i = index - 1; i >= 0; i--) {
+    final String c = structural[i];
+    if (c == ')') depth++;
+    if (c == '(') {
+      if (depth == 0) {
+        open = i;
+        break;
+      }
+      depth--;
+    }
+  }
+  if (open < 0) {
+    fail('下标 $index 不在任何调用的实参里（找不到未配对的左括号）');
+  }
+  // 名字：跳过空白 →（可选）泛型实参 → 标识符 / 点链。
+  int nameEnd = open;
+  while (nameEnd > 0 && structural[nameEnd - 1].trim().isEmpty) {
+    nameEnd--;
+  }
+  if (nameEnd > 0 && structural[nameEnd - 1] == '>') {
+    int generic = 0;
+    while (nameEnd > 0) {
+      final String c = structural[nameEnd - 1];
+      if (c == '>') generic++;
+      if (c == '<') {
+        generic--;
+        if (generic == 0) {
+          nameEnd--;
+          break;
+        }
+      }
+      nameEnd--;
+    }
+    while (nameEnd > 0 && structural[nameEnd - 1].trim().isEmpty) {
+      nameEnd--;
+    }
+  }
+  int nameStart = nameEnd;
+  while (nameStart > 0 &&
+      (_identifierChar.hasMatch(structural[nameStart - 1]) ||
+          structural[nameStart - 1] == '.')) {
+    nameStart--;
+  }
+  int close = -1;
+  int forward = 0;
+  for (int i = open; i < structural.length; i++) {
+    if (structural[i] == '(') forward++;
+    if (structural[i] == ')') {
+      forward--;
+      if (forward == 0) {
+        close = i;
+        break;
+      }
+    }
+  }
+  if (close < 0) {
+    fail('下标 $index 所在调用的括号不配对');
+  }
+  final String name =
+      nameStart < nameEnd ? src.substring(nameStart, nameEnd) : '';
+  final int start = nameStart < nameEnd ? nameStart : open;
+  return EnclosingCall(
+    name: name,
+    text: src.substring(start, close + 1),
+    start: start,
+    end: close + 1,
+  );
+}
+
+/// [enclosingCall] 的定位版：先在**代码**里找 [anchor]（注释/字符串内容里的同名
+/// 文本不算数），再取它所在的调用。
+///
+/// [anchor] 找不到直接 `fail`，不会像 `indexOf` 返回 -1 那样把 `substring` 变成
+/// RangeError 或把窗口静默锚到文件头。
+EnclosingCall enclosingCallOf(String src, String anchor, {int searchFrom = 0}) {
+  final int index = maskComments(src).indexOf(anchor, searchFrom);
+  if (index < 0) {
+    fail('源码中找不到锚点（注释内的同名文本不算）：$anchor');
+  }
+  return enclosingCall(src, index);
+}
+
+/// 取 [src] 里所有以**实参身份**出现的命名参数 `label:` 的实参表达式原文。
+///
+/// 用于把「间距必须来自设计令牌」这类契约从**逐条字面量拼写**抬上来。旧写法要
+/// `contains('insetPadding: EdgeInsets.symmetric(')` 加 `contains('horizontal:
+/// tokens.spacing.card')` 三条各自扫全文件（三条命中的还可能是三个互不相干的位置），
+/// 外加一串 `isNot(contains('const EdgeInsets.symmetric(horizontal: 16, vertical:
+/// 16)'))` —— 后者只堵住**一种**拼写，把 16 改成 20 就静默放行。
+///
+/// 拿到实参表达式后直接断言「里面没有数字字面量」「引用了 tokens.spacing.」，与
+/// 换行、参数顺序、用哪个 `EdgeInsets` 构造器全部无关。
+///
+/// 只认实参位置（前一个非空白字符是 `(` / `,` / `{`），因此
+/// `cond ? insetPadding : other` 这类表达式里的同名标识符不会被误当命名参数；
+/// map 字面量的 `'insetPadding':` 因为键是字符串、已被掩码，同样不会命中。
+List<String> namedArgumentValues(String src, String label) {
+  final String structural = maskCommentsAndStrings(src);
+  final List<String> values = <String>[];
+  final RegExp pattern = RegExp(
+    r'(?<![A-Za-z0-9_$])' + RegExp.escape(label) + r'\s*:',
+  );
+  for (final RegExpMatch match in pattern.allMatches(structural)) {
+    int before = match.start;
+    while (before > 0 && structural[before - 1].trim().isEmpty) {
+      before--;
+    }
+    if (before == 0) continue;
+    final String prev = structural[before - 1];
+    if (prev != '(' && prev != ',' && prev != '{') continue;
+    int i = match.end;
+    while (i < structural.length && structural[i].trim().isEmpty) {
+      i++;
+    }
+    final int valueStart = i;
+    int depth = 0;
+    while (i < structural.length) {
+      final String c = structural[i];
+      if (c == '(' || c == '[' || c == '{') depth++;
+      if (c == ')' || c == ']' || c == '}') {
+        if (depth == 0) break;
+        depth--;
+      }
+      if (c == ',' && depth == 0) break;
+      i++;
+    }
+    values.add(src.substring(valueStart, i));
+  }
+  return values;
 }
 
 /// 截出 `switch` 里某个 `case` 标签到**下一个 case / default / switch 结束**之间

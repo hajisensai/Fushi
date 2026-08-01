@@ -10,17 +10,14 @@
 //
 // 这两条都是时序/生命周期，widget 测试要真跑整个 Anki 设置页（依赖 AppModel /
 // 平台通道），源码扫描是本仓能落地的最强层。
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 
 /// 去掉整行 `//` 注释：本守卫按「先后顺序」判定，注释里出现 `await` /
 /// `dispose` 这些词会污染下标比较（守卫自己的说明文字就带这些词）。
-String _stripLineComments(String source) => const LineSplitter()
-    .convert(source)
-    .where((String line) => !line.trimLeft().startsWith('//'))
-    .join(' ');
+String _stripLineComments(String source) => maskComments(source);
 
 /// 从 [source] 里截取名为 [name] 的方法体（从签名行到与之配对的右花括号）。
 ///

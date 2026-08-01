@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'reader_hibiki_page_source_corpus.dart';
+import '../helpers/source_guard.dart';
 
 /// Codebase-wide invariant guard (all platforms).
 ///
@@ -69,9 +70,4 @@ void main() {
 
 /// Drops `//` line comments so source-text assertions match real code, not the
 /// explanatory prose that documents the removed call.
-String _stripLineComments(String source) {
-  return source
-      .split('\n')
-      .where((String line) => !line.trimLeft().startsWith('//'))
-      .join('\n');
-}
+String _stripLineComments(String source) => maskCommentsAndScriptLines(source);

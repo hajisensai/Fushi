@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 
 /// BUG-1106 的防线延伸：**凡是起真 app 又靠 Tab 遍历驱动的集成测试，
 /// 都必须先打开实验「键盘/手柄焦点导航」开关**，否则在全新 profile 上必红。
@@ -93,9 +94,4 @@ void main() {
 
 /// 丢掉行注释（`//` / `///`），使扫描只针对真代码。字符串里的 `//`（如 URL）
 /// 会跟着被截掉，对本守卫的 token 扫描无影响。
-String _stripComments(String source) {
-  return source.split('\n').map((String line) {
-    final int i = line.indexOf('//');
-    return i < 0 ? line : line.substring(0, i);
-  }).join('\n');
-}
+String _stripComments(String source) => maskComments(source);
