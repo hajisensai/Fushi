@@ -3,10 +3,23 @@ import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 
 /// [TorrentBackend] 的外接 qBittorrent 实现：纯转发适配器，把接口语义
 /// 一一映射到 [QBittorrentClient] 的 WebUI 调用，不加任何额外逻辑。
-class QbTorrentBackend implements TorrentRemovalBackend {
+class QbTorrentBackend implements TorrentRemovalBackend, TorrentPauseBackend {
   QbTorrentBackend(this._client);
 
   final QBittorrentClient _client;
+
+  /// qb WebUI 一直有暂停/恢复端点（4.x pause/resume、5.x stop/start，
+  /// 客户端已双名兼容），能力恒可用。
+  @override
+  bool get pauseControlAvailable => true;
+
+  @override
+  Future<bool> pauseTorrent(String torrentId) =>
+      _client.pauseTorrent(torrentId);
+
+  @override
+  Future<bool> resumeTorrent(String torrentId) =>
+      _client.resumeTorrent(torrentId);
 
   /// 连接测试 = 拉 WebUI 版本号（如 `v4.6.5`）；失败返回 null。
   @override

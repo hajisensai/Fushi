@@ -288,6 +288,42 @@ class QBittorrentClient {
     return res != null && res.statusCode == 200;
   }
 
+  /// TODO-2481：暂停单个种子：`POST /api/v2/torrents/pause`（form 参数
+  /// hashes）。qBittorrent 5.0（WebUI API ≥ 2.11）把端点改名成
+  /// `/torrents/stop` 并移除旧名 —— 404 时回退新名（外部系统版本差异，
+  /// 本客户端无从根治，只能双名兼容）。
+  Future<bool> pauseTorrent(String hash) =>
+      _postTorrentsToggle(hash, primary: 'pause', renamed: 'stop');
+
+  /// TODO-2481：恢复单个种子：`POST /api/v2/torrents/resume`；qb 5.0 改名
+  /// `/torrents/start`，404 回退，同 [pauseTorrent]。
+  Future<bool> resumeTorrent(String hash) =>
+      _postTorrentsToggle(hash, primary: 'resume', renamed: 'start');
+
+  /// 暂停/恢复的公共发送路径：先老端点 [primary]，404（qb 5.0 移除旧名）
+  /// 再试新端点 [renamed]。两名皆失败返回 false。
+  Future<bool> _postTorrentsToggle(
+    String hash, {
+    required String primary,
+    required String renamed,
+  }) async {
+    if (hash.isEmpty) return false;
+    final Map<String, String> form = <String, String>{'hashes': hash};
+    final http.Response? res = await _request(
+      'POST',
+      '/api/v2/torrents/$primary',
+      form: form,
+    );
+    if (res != null && res.statusCode == 200) return true;
+    if (res == null || res.statusCode != 404) return false;
+    final http.Response? retry = await _request(
+      'POST',
+      '/api/v2/torrents/$renamed',
+      form: form,
+    );
+    return retry != null && retry.statusCode == 200;
+  }
+
   /// TODO-1961-c：改名种子内文件：`POST /api/v2/torrents/renameFile`
   /// （qb ≥ 4.2.1，参数 hash / oldPath / newPath）。
   ///

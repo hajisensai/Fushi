@@ -2870,5 +2870,20 @@
   "shortcut_action_video_enter_caret": "Enter subtitle lookup cursor",
   "audiobook_export_clip_too_long": "Selection audio is too long to export (limit: 5 minutes)",
   "sync_err_forbidden": "The server refused this request. Your sign-in is fine - check the server's settings.",
-  "sync_err_forbidden_detail": "The server refused this request: $reason (your sign-in is fine)"
+  "sync_err_forbidden_detail": "The server refused this request: $reason (your sign-in is fine)",
+  "download_task_status_stalled": "Stalled",
+  "download_task_status_checking": "Checking",
+  "download_task_status_metadata": "Fetching metadata",
+  "download_task_status_moving": "Moving",
+  "download_task_status_error": "Error",
+  "download_task_pause": "Pause",
+  "download_task_resume": "Resume",
+  "download_task_toggle_failed": "Pause/resume failed",
+  "download_task_eta": "ETA",
+  "download_task_ratio": "Ratio",
+  "download_task_status_downloading": "Downloading",
+  "download_task_status_seeding": "Seeding",
+  "download_task_status_completed": "Completed",
+  "download_task_status_paused": "Paused",
+  "download_task_status_queued": "Queued"
 }

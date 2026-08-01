@@ -34,6 +34,8 @@ class DownloadTaskStats {
     required this.downloadedBytes,
     required this.uploadedBytes,
     required this.numPeers,
+    required this.state,
+    required this.amountLeft,
   });
 
   /// 从后端快照投影。
@@ -45,6 +47,8 @@ class DownloadTaskStats {
       downloadedBytes: info.downloadedBytes,
       uploadedBytes: info.uploadedBytes,
       numPeers: info.numPeers,
+      state: info.state,
+      amountLeft: info.amountLeft,
     );
   }
 
@@ -66,6 +70,13 @@ class DownloadTaskStats {
   /// 当前连接的 peer 数。
   final int numPeers;
 
+  /// 后端状态字符串（TODO-2481：此前投影时被丢弃。qb 与内置引擎词汇不同，
+  /// UI 一律经 `torrent_task_display.dart` 的纯函数映射，不裸比较）。
+  final String state;
+
+  /// 剩余待下载字节；-1 = 未知（TODO-2481：ETA 分子，此前投影时被丢弃）。
+  final int amountLeft;
+
   @override
   bool operator ==(Object other) {
     return other is DownloadTaskStats &&
@@ -74,12 +85,14 @@ class DownloadTaskStats {
         other.upRateBps == upRateBps &&
         other.downloadedBytes == downloadedBytes &&
         other.uploadedBytes == uploadedBytes &&
-        other.numPeers == numPeers;
+        other.numPeers == numPeers &&
+        other.state == state &&
+        other.amountLeft == amountLeft;
   }
 
   @override
   int get hashCode => Object.hash(progress, downRateBps, upRateBps,
-      downloadedBytes, uploadedBytes, numPeers);
+      downloadedBytes, uploadedBytes, numPeers, state, amountLeft);
 }
 
 /// 把种子文件列表解析为视频绝对路径列表。纯函数。

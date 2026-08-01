@@ -89,6 +89,25 @@ abstract interface class TorrentRemovalBackend implements TorrentBackend {
   Future<bool> removeTorrent(String torrentId, {bool deleteFiles = false});
 }
 
+/// TODO-2481：支持暂停/恢复单个种子的后端能力。与 [TorrentRemovalBackend]
+/// 同姿态的可选能力接口：UI 用 `backend is TorrentPauseBackend` 探测，
+/// 只读 fake 不被迫伪造支持。
+///
+/// qBittorrent 与内置引擎都实现；内置引擎在随包 DLL 过旧（缺
+/// `ht_pause_torrent` 符号）时 [pauseControlAvailable] 为 false ——
+/// 类型探测过了也要看这一位，否则按钮点了永远失败。
+abstract interface class TorrentPauseBackend implements TorrentBackend {
+  /// 运行时能力位：底层是否真的具备暂停/恢复原语。
+  bool get pauseControlAvailable;
+
+  /// 暂停种子（qb：stop/pause；内置：清 auto_managed 再 pause）。
+  /// 失败（种子不存在/后端不支持）返回 false，绝不抛。
+  Future<bool> pauseTorrent(String torrentId);
+
+  /// 恢复种子（qb：start/resume；内置：恢复 auto_managed 并 resume）。
+  Future<bool> resumeTorrent(String torrentId);
+}
+
 /// 种子内的单个文件（后端无关）。
 class TorrentFileEntry {
   const TorrentFileEntry({
