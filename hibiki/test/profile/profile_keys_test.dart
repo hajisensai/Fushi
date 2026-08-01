@@ -13,6 +13,7 @@ void main() {
       expect(ProfileKeys.isExcludedPref('first_time_setup'), isTrue);
       expect(ProfileKeys.isExcludedPref('current_home_tab_index'), isTrue);
       expect(ProfileKeys.isExcludedPref('app_locale'), isTrue);
+      expect(ProfileKeys.isExcludedPref('airing_calendar_cache'), isTrue);
       expect(ProfileKeys.isExcludedPref('last_selected_deck'), isTrue);
       expect(ProfileKeys.isExcludedPref('last_selected_dictionary_format'),
           isTrue);

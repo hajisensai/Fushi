@@ -172,6 +172,8 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
             .timeout(kDownloadDiscoveryTimeout);
         all.addAll(result.episodes);
         if (!result.hasNextPage || page >= _maxPages) break;
+        // 页面已销毁就停止翻页：不省 setState（末尾已有保护），省的是后续网络请求。
+        if (!mounted) break;
         page += 1;
         await Future<void>.delayed(_pageInterval);
       }
