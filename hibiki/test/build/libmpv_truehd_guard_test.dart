@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-073 source-scan guard: every platform's libmpv must come from a
 /// TrueHD-capable build, never media_kit's stock "default" flavor.
 ///
@@ -35,32 +37,27 @@ import 'package:flutter_test/flutter_test.dart';
 /// asset advertises a patched FFmpeg. Being a source scan, this can only verify
 /// what the build files *claim* — the checksum pins are what tie the claim to
 /// actual bytes. If any of it regresses, this test goes red.
+///
+/// BUG-1406 widened the version check from "the first marker in the file" to
+/// "every marker, plus every pinned artifact carries one". See
+/// [_ffmpegMarker] / `expectEveryMarkerPatched` below for why the old shape was
+/// a hole a single ABI could slip through.
+final RegExp _ffmpegMarker = RegExp(r'ffmpeg(\d+)\.(\d+)\.(\d+)');
+
 void main() {
   /// Lowest FFmpeg that carries the fixes this guard exists for (TODO-1137).
   const List<int> minFfmpeg = <int>[6, 1, 6];
 
-  /// Pulls the `ffmpeg<major>.<minor>.<patch>` marker out of a vendored asset
-  /// name. Null when the asset carries no marker at all, which is itself a
-  /// failure: an unversioned asset can silently be an old, vulnerable build.
-  List<int>? ffmpegVersionOf(String text) {
-    final RegExpMatch? m =
-        RegExp(r'ffmpeg(\d+)\.(\d+)\.(\d+)').firstMatch(text);
-    if (m == null) return null;
-    return <int>[
-      int.parse(m.group(1)!),
-      int.parse(m.group(2)!),
-      int.parse(m.group(3)!),
-    ];
-  }
-
-  /// Drops `#` / `//` comment lines. These build files *document* the flavors
-  /// they must not use ("upstream pins v0.6.0 `-video-default`"), so scanning
-  /// raw text makes a correct file fail on its own explanation.
-  String withoutComments(String source) =>
-      source.split('\n').where((String line) {
-        final String t = line.trimLeft();
-        return !t.startsWith('#') && !t.startsWith('//');
-      }).join('\n');
+  /// The ABIs the Android artifact set must cover, spelled out here rather than
+  /// read back from `build.gradle`. Deriving the expectation from the file under
+  /// guard is how a guard silently shrinks to the empty set: delete three
+  /// entries and a "whatever is in the file" expectation deletes itself too.
+  const Set<String> androidAbis = <String>{
+    'arm64-v8a',
+    'armeabi-v7a',
+    'x86_64',
+    'x86',
+  };
 
   bool isAtLeast(List<int> actual, List<int> minimum) {
     for (int i = 0; i < 3; i++) {
@@ -69,17 +66,51 @@ void main() {
     return true;
   }
 
-  void expectPatchedFfmpeg(String assetText, String platform) {
-    final List<int>? version = ffmpegVersionOf(assetText);
-    expect(version, isNotNull,
-        reason: '$platform asset must carry an ffmpeg<x.y.z> marker so this '
-            'guard can tell a patched build from a vulnerable one (TODO-1137). '
-            'Found: $assetText');
-    expect(isAtLeast(version!, minFfmpeg), isTrue,
-        reason: '$platform pins FFmpeg ${version.join(".")}, older than '
-            '${minFfmpeg.join(".")}. media-kit stock builds sit on 6.0, which '
-            'still has the magicyuv OOB write a crafted mkv/mov/avi can reach '
-            '(TODO-1137). Rebuild from the hajisensai fork.');
+  /// The (trimmed) line [index] falls on, so a failure names the offending ABI
+  /// instead of just quoting a version number.
+  String lineAt(String text, int index) {
+    final int start = text.lastIndexOf('\n', index) + 1;
+    int end = text.indexOf('\n', index);
+    if (end < 0) end = text.length;
+    return text.substring(start, end).trim();
+  }
+
+  /// **Every** `ffmpeg<x.y.z>` marker in [text] must be at least [minFfmpeg].
+  ///
+  /// BUG-1406: this used to be `RegExp.firstMatch`, so only the *first* marker
+  /// in a whole build file was ever compared. Android pins four independent
+  /// artifacts in one file, so dropping a single ABI's URL back to
+  /// `ffmpeg6.0.0` left this guard green — reproduced by mutation before the
+  /// fix. Nothing else backstopped it either: the MD5 pins only assert that
+  /// four checksums *exist*, never which build they belong to, so a downgraded
+  /// URL shipped with its own matching MD5 verified perfectly.
+  ///
+  /// [atLeastMarkers] is the anchor. If a refactor moves the version out of
+  /// these files, scanning zero markers must go red rather than vacuously pass.
+  void expectEveryMarkerPatched(
+    String text,
+    String what, {
+    required int atLeastMarkers,
+  }) {
+    final List<RegExpMatch> markers = _ffmpegMarker.allMatches(text).toList();
+    expect(markers.length, greaterThanOrEqualTo(atLeastMarkers),
+        reason: '$what must carry at least $atLeastMarkers ffmpeg<x.y.z> '
+            'marker(s), found ${markers.length}. An unversioned artifact is '
+            'unverifiable: it can silently be a stock FFmpeg 6.0 build '
+            '(TODO-1137). If the pin layout changed, update this guard '
+            'deliberately instead of letting it scan nothing.');
+    for (final RegExpMatch m in markers) {
+      final List<int> version = <int>[
+        int.parse(m.group(1)!),
+        int.parse(m.group(2)!),
+        int.parse(m.group(3)!),
+      ];
+      if (isAtLeast(version, minFfmpeg)) continue;
+      fail('$what pins FFmpeg ${version.join(".")}, older than '
+          '${minFfmpeg.join(".")} (TODO-1137: 6.0 still carries the magicyuv '
+          'OOB write reachable from a crafted mkv/mov/avi). Rebuild from the '
+          'hajisensai fork. Offending line:\n  ${lineAt(text, m.start)}');
+    }
   }
 
   // Tests run with CWD = `hibiki/`; vendored packages live at the workspace root.
@@ -108,13 +139,29 @@ void main() {
     }
   });
 
+  /// Pulls the single value of a `set(<NAME> "...")` from a CMake file.
+  ///
+  /// `firstMatch` on raw text is the same class of bug BUG-1406 fixed: the
+  /// CMakeLists documents the old upstream pin at length in `#` comments, and a
+  /// second (or commented-out) `set()` would silently win. So comments are
+  /// masked first and a duplicate assignment is a hard failure, not a
+  /// coin flip over which one the build actually uses.
+  String cmakeSet(String masked, String name, RegExp pattern) {
+    final List<RegExpMatch> hits = pattern.allMatches(masked).toList();
+    expect(hits.length, 1,
+        reason: 'windows CMakeLists must assign $name exactly once, found '
+            '${hits.length}. Two assignments mean this guard checks one value '
+            'while the build uses the other.');
+    return hits.single.group(1)!;
+  }
+
   test('Windows fork repoints libmpv off the TrueHD-broken upstream', () {
-    final String cmake =
-        fork('media_kit_libs_windows_video/windows/CMakeLists.txt');
+    final String cmake = maskHashComments(
+        fork('media_kit_libs_windows_video/windows/CMakeLists.txt'));
     final String url =
-        RegExp(r'set\(LIBMPV_URL\s+"([^"]+)"\)').firstMatch(cmake)!.group(1)!;
+        cmakeSet(cmake, 'LIBMPV_URL', RegExp(r'set\(LIBMPV_URL\s+"([^"]+)"\)'));
     final String asset =
-        RegExp(r'set\(LIBMPV "([^"]+)"\)').firstMatch(cmake)!.group(1)!;
+        cmakeSet(cmake, 'LIBMPV', RegExp(r'set\(LIBMPV "([^"]+)"\)'));
     expect(url.contains('media-kit/libmpv-win32-video-build'), isFalse,
         reason: 'win32 upstream froze at 2023-09-24 with no TrueHD decoder.');
     // The libmpv .7z is mirrored into our own permanent GitHub release
@@ -133,51 +180,118 @@ void main() {
   });
 
   test('macOS/iOS use a "video-full" xcframework on a patched FFmpeg', () {
+    final Map<String, String> sha256ByPlatform = <String, String>{};
     for (final String plat in const <String>['macos', 'ios']) {
       final String mk =
-          withoutComments(fork('media_kit_libs_${plat}_video/$plat/Makefile'));
+          maskHashComments(fork('media_kit_libs_${plat}_video/$plat/Makefile'));
       expect(mk.contains('-video-default'), isFalse,
           reason: '$plat still downloads the "default" flavor (truehd demuxer '
               'only, no decoder). Switch to "-video-full".');
       expect(mk.contains('$plat-universal-video-full'), isTrue,
           reason:
               '$plat must download the "-video-full" flavor (all decoders).');
-      expect(RegExp(r'MPV_XCFRAMEWORKS_SHA256SUM=[0-9a-f]{64}').hasMatch(mk),
-          isTrue,
-          reason: '$plat SHA256 must stay pinned for the swapped tarball.');
       // Mirrored into our own permanent release for the same reason Windows is:
       // upstream assets get pruned or retagged, and the media-kit originals are
       // built against FFmpeg 6.0 regardless.
       expect(mk.contains('media-kit/libmpv-darwin-build'), isFalse,
           reason: '$plat must not pull media-kit\'s own release: those are '
               'built against FFmpeg 6.0 (TODO-1137).');
-      expectPatchedFfmpeg(mk, plat);
+
+      final List<RegExpMatch> sums =
+          RegExp(r'MPV_XCFRAMEWORKS_SHA256SUM=([0-9a-f]{64})')
+              .allMatches(mk)
+              .toList();
+      expect(sums.length, 1,
+          reason: '$plat must pin exactly one MPV_XCFRAMEWORKS_SHA256SUM for '
+              'the swapped tarball, found ${sums.length}.');
+      sha256ByPlatform[plat] = sums.single.group(1)!;
+
+      // The darwin flavour of the BUG-1406 hole: the version lives in a
+      // variable and the download URL interpolates it. Hardcode a version into
+      // the URL and the variable keeps reading 6.1.6 while the tarball actually
+      // fetched is whatever the URL spells. Requiring the interpolation keeps
+      // "the version this guard checked" and "the version downloaded" the same
+      // token; `expectEveryMarkerPatched` then covers a hardcoded one anyway.
+      expect(mk.contains(r'-video-full-${MPV_XCFRAMEWORKS_VERSION}.tar.gz'),
+          isTrue,
+          reason: '$plat download URL must interpolate '
+              'MPV_XCFRAMEWORKS_VERSION, not spell a version of its own — '
+              'otherwise the pinned variable and the fetched tarball can drift '
+              '(TODO-1137).');
+
+      expectEveryMarkerPatched(mk, plat, atLeastMarkers: 1);
     }
+    // iOS and macOS ship two different tarballs. An identical pin means one
+    // Makefile was copy-pasted from the other, so its `shasum -c` now verifies
+    // the wrong artifact — and would reject the right one at build time.
+    expect(sha256ByPlatform['ios'], isNot(sha256ByPlatform['macos']),
+        reason: 'ios and macos pin the same SHA256; one of them verifies the '
+            'other platform\'s tarball.');
   });
 
   test('Android downloads "full" jars built on a patched FFmpeg', () {
-    final String gradle = withoutComments(
-        fork('media_kit_libs_android_video/android/build.gradle'));
+    final String gradle =
+        maskComments(fork('media_kit_libs_android_video/android/build.gradle'));
     expect(RegExp(r'/default-[\w-]+\.jar').hasMatch(gradle), isFalse,
         reason: 'Android still pins "default" jars (truehd demuxer only, no '
             'decoder). Switch to the full jars.');
     expect(gradle.contains('media-kit/libmpv-android-video-build'), isFalse,
         reason: 'Android must not pull media-kit\'s own release: those are '
             'built against FFmpeg 6.0 (TODO-1137).');
-    for (final String abi in const <String>[
-      'arm64-v8a',
-      'armeabi-v7a',
-      'x86_64',
-      'x86',
-    ]) {
+    for (final String abi in androidAbis) {
       expect(RegExp('full-$abi[\\w.-]*\\.jar').hasMatch(gradle), isTrue,
           reason: 'Android must download a full-$abi jar (all decoders).');
     }
-    expectPatchedFfmpeg(gradle, 'Android');
-    // All four full jars must keep an MD5 pin (4 distinct 32-hex checksums).
-    final Iterable<RegExpMatch> md5s =
-        RegExp(r'"md5":\s*"([0-9a-f]{32})"').allMatches(gradle);
-    expect(md5s.length, greaterThanOrEqualTo(4),
-        reason: 'each full jar must stay MD5-pinned.');
+
+    // Parse the download table entry by entry instead of asking global
+    // questions of the whole file. Four artifacts pinned in one file is exactly
+    // the shape that hid BUG-1406: any "does this file contain X" phrasing is
+    // satisfied by the three healthy siblings of a swapped-out ABI.
+    final RegExp entry = RegExp(
+      r'\[\s*"url"\s*:\s*"([^"]+)"\s*,\s*"md5"\s*:\s*"([0-9a-f]{32})"\s*,'
+      r'\s*"destination"\s*:\s*file\("([^"]+)"\)\s*\]',
+    );
+    final Map<String, String> md5ByAbi = <String, String>{};
+    for (final RegExpMatch m in entry.allMatches(gradle)) {
+      final String url = m.group(1)!;
+      final String md5 = m.group(2)!;
+      final String destination = m.group(3)!;
+      final RegExpMatch? abiMatch =
+          RegExp(r'full-([\w-]+)\.jar$').firstMatch(destination);
+      expect(abiMatch, isNotNull,
+          reason: 'jar entry lands on "$destination"; expected '
+              '.../full-<abi>.jar so the ABI is identifiable.');
+      final String abi = abiMatch!.group(1)!;
+      expect(md5ByAbi.containsKey(abi), isFalse,
+          reason: 'two download entries claim ABI $abi.');
+      expect(url.contains('full-$abi-'), isTrue,
+          reason: 'the entry written to full-$abi.jar downloads "$url" — URL '
+              'and destination disagree on which ABI this jar is, so one ABI '
+              'would ship another ABI\'s libmpv.');
+      expect(_ffmpegMarker.hasMatch(url), isTrue,
+          reason: 'the $abi jar URL carries no ffmpeg<x.y.z> marker, so this '
+              'guard cannot tell a patched build from a stock 6.0 one '
+              '(TODO-1137). URL: $url');
+      md5ByAbi[abi] = md5;
+    }
+
+    // Anchor: if the table shape changes and the loop above matches nothing,
+    // this fails instead of leaving a guard that scans zero entries.
+    expect(md5ByAbi.keys.toSet(), androidAbis,
+        reason: 'parsed download entries for ${md5ByAbi.keys.toList()}, '
+            'expected exactly $androidAbis. Either an ABI was dropped or the '
+            'entry layout changed and this guard stopped seeing anything.');
+    // Deliberately NOT asserting the MD5 *values*: those already live in
+    // build.gradle, and copying them here would only mean every artifact swap
+    // edits two files in the same commit — a maintenance tax that proves
+    // nothing. What is worth pinning is the correspondence: one checksum per
+    // ABI (enforced by the entry regex above) and four distinct ones, so a
+    // copy-pasted checksum can't leave two ABIs verifying the same jar.
+    expect(md5ByAbi.values.toSet().length, androidAbis.length,
+        reason: 'two ABIs share an MD5 pin: ${md5ByAbi.toString()}. A pasted '
+            'checksum means one ABI is verified against another ABI\'s jar.');
+
+    expectEveryMarkerPatched(gradle, 'Android',
+        atLeastMarkers: androidAbis.length);
   });
 }

@@ -123,6 +123,38 @@ final b = \'\'\'{ js }\'\'\';
           '<!-- <script src="fake.js"> --><meta charset="utf-8">';
       expect(maskHtmlComments(html).contains('<script'), isFalse);
     });
+
+    test('maskHashComments 等长，行首与行尾 # 注释都掩得掉', () {
+      const String mk = '# needleToken\n'
+          'VER=ffmpeg6.1.6\n'
+          '\tsed -i \'\' \'s/x/y/\' f.sh # needleToken trailing\n';
+      final String masked = maskHashComments(mk);
+      expect(masked.length, mk.length);
+      expect(masked.contains('needleToken'), isFalse,
+          reason: '整行注释与**行尾**注释都必须掩掉——旧的「整行以 # 开头」过滤器'
+              '正是漏掉行尾注释的那一档');
+      expect(masked.contains('VER=ffmpeg6.1.6'), isTrue);
+      expect(masked.indexOf('VER='), mk.indexOf('VER='),
+          reason: '等长掩码，下标可回原串切片');
+    });
+
+    test('引号内的 # 不是注释（误剪命令比漏剪注释危险）', () {
+      const String mk = "\tsed 's/#tag/keepToken/' f.sh\n";
+      final String masked = maskHashComments(mk);
+      expect(masked.contains('keepToken'), isTrue,
+          reason: '把引号内的 # 当注释会把半条命令抹成空白，要求型断言凭空变红');
+      expect(masked.length, mk.length);
+    });
+
+    test('漏配的引号不传染到下一行', () {
+      // 引号状态若跨行传染，一个笔误就能把文件剩余部分当成串 —— 之后所有断言
+      // 对着「没有注释」的原文跑，isFalse 型断言被注释里的文字判红、
+      // isTrue 型断言被注释里的字面量骗绿。
+      const String mk = "A='unclosed\nB=keepToken # needleToken\n";
+      final String masked = maskHashComments(mk);
+      expect(masked.contains('keepToken'), isTrue);
+      expect(masked.contains('needleToken'), isFalse);
+    });
   });
 
   group('④ methodBody 的词法边界', () {

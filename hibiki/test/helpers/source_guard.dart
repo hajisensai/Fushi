@@ -236,6 +236,47 @@ String maskHtmlComments(String source) {
   return out.toString();
 }
 
+/// `#` 行注释版（Makefile / CMake / shell / YAML / *.properties）：把 `#` 到行尾
+/// 换成**等长空白**。
+///
+/// 为什么需要单独一个：[maskComments] 只认 `//` 与 `/* */`，构建脚本里的 `#` 注释
+/// 一律原样留下——`isFalse` 型断言（「这里不许再出现 media-kit 的旧产物名」）会被
+/// 注释里的说明文字直接判红，而 `isTrue` 型断言会被注释里的同名字面量骗绿。
+///
+/// 为什么要跟引号状态：recipe 行里有 `sed 's/#x/y/'` 这类**引号内**的 `#`，
+/// 无脑掩到行尾会把半条命令抹成空白，要求型断言随之凭空变红。误报比漏报危险，
+/// 所以这里宁可漏掉引号内的注释，也不误剪命令。`\#`（转义的字面 `#`，Make 里表示
+/// 真的井号）同样不算注释起点。
+///
+/// 引号状态**逐行重置**：构建脚本里跨行的引号极少，而一个漏配的引号若能传染到文件
+/// 剩余部分，就会把后面所有内容当成串——那正是「静默全绿」的经典成因。
+String maskHashComments(String source) {
+  final StringBuffer out = StringBuffer();
+  String quote = '';
+  for (int i = 0; i < source.length; i++) {
+    final String c = source[i];
+    if (c == '\n') {
+      out.write('\n');
+      quote = '';
+      continue;
+    }
+    if (quote.isEmpty && (c == "'" || c == '"')) {
+      quote = c;
+    } else if (quote == c) {
+      quote = '';
+    } else if (quote.isEmpty && c == '#' && (i == 0 || source[i - 1] != r'\')) {
+      while (i < source.length && source[i] != '\n') {
+        out.write(' ');
+        i++;
+      }
+      i--; // 行末的 \n 留给下一轮；for 的 ++ 会把 i 抬回换行符上。
+      continue;
+    }
+    out.write(c);
+  }
+  return out.toString();
+}
+
 // ---------------------------------------------------------------------------
 // JS 词法掩码
 // ---------------------------------------------------------------------------
