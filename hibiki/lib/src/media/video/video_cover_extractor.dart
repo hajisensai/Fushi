@@ -15,15 +15,20 @@
 ///   2. ffmpeg 抽帧（默认 10s 避开黑场片头；播放列表遍历到首个可用集）；
 ///   3. 远端缩略图 URL 下载（流媒体书，如 YouTube hqdefault）。
 ///
-/// 与 `MediaCoverService` 的分工：本文件是**导入期首写**（目标路径通常尚无
-/// 解码缓存，且 ffmpeg 直接以目标路径为输出，写盘方是子进程），属于
-/// `media_cover_write_guard_test.dart` 的记录在案豁免；导入后的**换图/覆盖写**
-/// （手动设封面、刮削、sidecar）一律走 `MediaCoverService.applyCoverFile` /
-/// `applyCoverBytes` 收口（内含双键驱逐）。
+/// 与 `MediaCoverService` 的分工：本文件的 **ffmpeg 两条路**（内嵌封面 / 抽帧）
+/// 是导入期首写——写盘方是 ffmpeg 子进程、直接以目标路径为输出，Dart 侧无字节可
+/// 交给收口，属于 `media_cover_write_guard_test.dart` 的记录在案豁免。**Dart 侧
+/// 有字节的路（[downloadVideoCoverToPath]）不在豁免内**，一律走
+/// `MediaCoverService.applyCoverBytes` 收口（原子落盘 + 双键驱逐）：它被番剧下载
+/// 重放、流媒体换封面、导入弹窗重取三处**覆盖写**复用，按首写豁免裸写就是
+/// BUG-1118。该豁免的边界由守卫**逐函数**钉死，不再是整文件放行（BUG-1394）。
 library;
 
 import 'dart:io';
 
+import 'package:hibiki/src/media/media_cover_service.dart';
+import 'package:hibiki/src/media/metadata/image_download.dart'
+    show looksLikeImageBytes;
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
@@ -136,8 +141,16 @@ String videoCoverFileName(String bookUid) {
 /// TODO-1281：把**远端封面 URL**（YouTube 缩略图 `youtubeThumbnailUrl` 等）下载到
 /// [outputPath]（调用方用 [videoCoverFileName] + [AppPaths.videoCoversDirectory] 拼出
 /// 与 [extractVideoCover] 同目录同命名，书架显示逻辑复用），成功返回 [outputPath]，否则
-/// 返回 null（下载失败 / 非 2xx / 空体 / 非法 URL）——**best-effort**，绝不抛：导入仍成功，
-/// 书架显示占位。流媒体书 videoPath 是 URL、ffmpeg 抽帧不适用，故封面走缩略图 URL 下载。
+/// 返回 null（下载失败 / 非 2xx / 空体 / 非图片 / 非法 URL）——**best-effort**，绝不抛：
+/// 导入仍成功，书架显示占位。流媒体书 videoPath 是 URL、ffmpeg 抽帧不适用，故封面走
+/// 缩略图 URL 下载。
+///
+/// **落盘走统一收口 [MediaCoverService.applyCoverBytes]**（原子 `.tmp`+rename、失败
+/// 不动旧封面、成功后双键驱逐解码缓存），响应体先过 [looksLikeImageBytes] 魔数/
+/// Content-Type 校验。本函数虽然住在「导入期首写产线」文件里，实际是被**三个覆盖写
+/// 场景**复用的通用下载器（番剧下载重放 `reuseExistingPaths` 覆盖同名文件、流媒体
+/// 换封面、导入弹窗重取缩略图）；旧实现的裸 `writeAsBytes` 继承了首写豁免却跑在覆盖
+/// 路径上，同路径重下后 UI 命中旧解码缓存 = 显示旧图，正是 BUG-1118 的形状。
 ///
 /// [httpClient] 仅供测试注入（默认自建、用完关闭）；把「下载 IO」与「目录解析」分离，让
 /// 本函数无需 path_provider 即可单测（调用方负责解析 [outputPath]）。
@@ -153,9 +166,16 @@ Future<String?> downloadVideoCoverToPath({
     final http.Response res = await client.get(uri);
     if (res.statusCode < 200 || res.statusCode >= 300) return null;
     if (res.bodyBytes.isEmpty) return null;
-    final File output = File(outputPath);
-    await output.parent.create(recursive: true);
-    await output.writeAsBytes(res.bodyBytes, flush: true);
+    // 非图片（错误页 HTML / 占位文本）不落盘：零字节封面与「一张 404 页面」在书架
+    // 上同样是坏图，但后者还会顶掉本来能抽出来的帧。
+    if (!looksLikeImageBytes(res.bodyBytes, res.headers['content-type'])) {
+      return null;
+    }
+    await File(outputPath).parent.create(recursive: true);
+    await MediaCoverService.applyCoverBytes(
+      bytes: res.bodyBytes,
+      destPath: outputPath,
+    );
     return outputPath;
   } catch (_) {
     return null;

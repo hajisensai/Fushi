@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
@@ -8,7 +9,7 @@ import 'package:hibiki/src/media/torrent/anime_download_service.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/media/video/video_cover_extractor.dart'
     show downloadVideoCoverToPath, extractVideoCover, videoCoverFileName;
 
@@ -28,15 +29,31 @@ List<String> sortVideoPathsByEpisode(List<String> paths) {
 }
 
 /// 组装番剧下载完成后的入库回调：N 集拆行 + playlist 合集（一个事务，复用
-/// [VideoBookRepository.importSplitPlaylist]）→ 绑定 AniList id → 封面（优先
-/// AniList 封面 URL，失败退 ffmpeg 抽帧）落到首集并让合集封面指向它。
+/// [VideoBookRepository.importSplitPlaylist]）→ 绑定 AniList id → 封面。
+///
+/// 封面分两层、各自 best-effort（用户 2026-08-02：作品海报只归合集封面，成员条目
+/// 保持抽帧/集级剧照）：
+/// * **作品海报（AniList 封面 URL）→ 合集自有封面**（`MediaCollections.coverPath`，
+///   落 `video_covers/collections/<collectionId>.jpg`），**不再借道首集条目封面**
+///   ——旧路径把海报写进首集 `VideoBooks.coverPath` 再让合集 coverSource 指过去，
+///   结果是成员条目顶着一张作品级竖版海报；
+/// * **首集抽帧缩略图 → 首集条目封面**，并保留 coverSource 借用链指向首集：海报
+///   下载失败/无 URL 时，合集卡回落链（coverPath 优先 → 借成员）仍能显示首集抽帧，
+///   与旧行为对齐。
 ///
 /// 封面/绑定失败不影响入库结果（best-effort），入库本体失败返回 null（由
 /// [AnimeDownloadService] 把计划标 failed）。
+///
+/// [httpClient] / [collectionCoversDirectory] 仅供测试注入（默认自建 client /
+/// 生产 [VideoStorage.collectionCoversDir]）。
 Future<AnimeDownloadImportOutcome?> Function(
   AnimeDownloadPlan plan,
   List<String> videoAbsolutePaths,
-) buildAnimeDownloadImporter(HibikiDatabase db) {
+) buildAnimeDownloadImporter(
+  HibikiDatabase db, {
+  http.Client? httpClient,
+  Directory? collectionCoversDirectory,
+}) {
   final VideoBookRepository repo = VideoBookRepository(db);
   return (AnimeDownloadPlan plan, List<String> videoAbsolutePaths) async {
     if (videoAbsolutePaths.isEmpty) return null;
@@ -63,25 +80,40 @@ Future<AnimeDownloadImportOutcome?> Function(
       } catch (_) {}
     }
 
-    // 封面：下载 AniList 封面 → 退 ffmpeg 抽帧；设到首集并让合集封面指向首集。
     if (result.episodeUids.isNotEmpty) {
+      // ① 作品海报 → 合集自有封面（见函数注释）。文件名/目录与
+      //    applyCandidateToCollection 同约定；gcOrphanCovers 非递归，天然免疫。
+      final String? coverUrl = plan.coverUrl;
+      if (coverUrl != null && coverUrl.isNotEmpty) {
+        try {
+          final Directory covers = collectionCoversDirectory ??
+              await VideoStorage.collectionCoversDir();
+          final String? collectionCoverPath = await downloadVideoCoverToPath(
+            coverUrl: coverUrl,
+            outputPath: p.join(
+              covers.path,
+              videoCoverFileName('${result.collectionId}'),
+            ),
+            httpClient: httpClient,
+          );
+          if (collectionCoverPath != null) {
+            await db.updateMediaCollectionCoverPath(
+              result.collectionId,
+              collectionCoverPath,
+            );
+          }
+        } catch (_) {}
+      }
+
+      // ② 首集抽帧缩略图 → 首集条目封面 + coverSource 借用链兜底。
       try {
         final String firstUid = result.episodeUids.first;
-        String? coverPath;
-        final String? coverUrl = plan.coverUrl;
-        if (coverUrl != null && coverUrl.isNotEmpty) {
-          final Directory covers = await AppPaths.videoCoversDirectory();
-          coverPath = await downloadVideoCoverToPath(
-            coverUrl: coverUrl,
-            outputPath: p.join(covers.path, videoCoverFileName(firstUid)),
-          );
-        }
-        coverPath ??= await extractVideoCover(
+        final String? framePath = await extractVideoCover(
           videoPath: sorted.first,
           bookUid: firstUid,
         );
-        if (coverPath != null) {
-          await repo.updateCover(firstUid, coverPath);
+        if (framePath != null) {
+          await repo.updateCover(firstUid, framePath);
           // ⚠️ 唯一落库点：MediaCollections.coverSource 持久化 'video|<uid>'，
           // compositeKey 生成串与历史手写插值逐字节一致。
           await db.updateMediaCollectionCover(

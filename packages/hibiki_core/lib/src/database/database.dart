@@ -2839,6 +2839,15 @@ class HibikiDatabase extends _$HibikiDatabase {
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(coverPath: Value(coverPath)));
 
+  /// 清空视频封面图路径（回落到「无封面」占位）。
+  ///
+  /// 与 [updateVideoBookCover] 分开而不是给它塞 null：清空是**独立动作**（存量
+  /// 子篇作品海报摘除，见 `member_cover_cleanup.dart`），可空参数会让「忘了传」
+  /// 和「有意清空」在类型上无法区分。
+  Future<void> clearVideoBookCover(String bookUid) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+          .write(const VideoBooksCompanion(coverPath: Value<String?>(null)));
+
   /// 更新视频/播放列表标题（用户在视频库长按菜单「重命名」）。title 列已存在，
   /// 无 schema 变更。
   Future<void> updateVideoBookTitle(String bookUid, String title) =>

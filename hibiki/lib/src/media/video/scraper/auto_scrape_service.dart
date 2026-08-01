@@ -19,6 +19,8 @@ library;
 import 'dart:async';
 
 import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
+import 'package:hibiki/src/media/video/scraper/member_cover_cleanup.dart'
+    show runMemberCoverCleanup;
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart' show VideoBookRow;
 
@@ -55,6 +57,10 @@ class VideoScrapeAutoService {
   /// 当前是否有一轮在跑（串行保证：第二次 [sweep] 直接返回，不并发开第二条流水线）。
   bool _running = false;
 
+  /// 本进程是否已跑过存量子篇海报清理（[CoverScraperService.reclaimMemberScrapedCovers]）。
+  /// 判据幂等，跑一次就够；失败也记，不在同一进程里反复重扫全库。
+  bool _reclaimedMemberCovers = false;
+
   /// dispose 后置位，让跑到一半的循环在下一本之前收手。
   bool _disposed = false;
 
@@ -88,6 +94,19 @@ class VideoScrapeAutoService {
     if (_isEnabled != null && !_isEnabled()) return;
     _running = true;
     try {
+      // 存量清理先于本轮刮削：被刷上作品海报的子篇**恰恰是已经有资料行的书**，
+      // 永远进不了 [_pending]，挂在刮削后面就等于永远不跑（用户开 app 看不到修复）。
+      // 判据幂等且不需要 CoverScraperService（不加载离线索引），本进程只跑一次。
+      if (!_reclaimedMemberCovers) {
+        _reclaimedMemberCovers = true;
+        try {
+          await runMemberCoverCleanup(repo: _repo);
+        } catch (_) {
+          // 后台静默清理：失败不拖累刮削，下次启动重来。
+        }
+        if (_disposed) return;
+      }
+
       final List<VideoBookRow> pending = await _pending(books);
       if (pending.isEmpty || _disposed) return;
 

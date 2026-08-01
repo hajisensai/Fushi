@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1309 条。点号进各自文件。
+> 共 1311 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1394](bugs/BUG-1394-cover-write-guard-cross-file.md) | ✅ | ✅ | 封面写盘守卫的跨文件派生覆盖洞：番剧下载封面绕过 BUG-1118 收口 |
+| [BUG-1393](bugs/BUG-1393-collection-member-poster.md) | ✅ | ✅ | 合集子篇被自动刮成作品级竖版海报，且作品海报被整个丢弃 |
 | [BUG-1381](bugs/BUG-1381-lyrics-bottom-reserve-guard.md) | ✅ | ✅ | 歌词底栏预留守卫锚在实现写法上，PR#670 合并 Padding 后 develop 单测红 |
 | [BUG-1380](bugs/BUG-1380-wheel-gate-token-consumed-before-paginate.md) | ✅ | ✅ | 分页滚轮闸门在换章加载期消费手势 token，整段横向惯性被吞 |
 | [BUG-1373](bugs/BUG-1373-ios-pod-install-license-file-type.md) | ✅ | ✅ | iOS pod install 断在 license 校验：LICENSE.GPLv3 扩展名不被 CocoaPods 接受 |

@@ -10,6 +10,8 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:hibiki/src/media/video/scraper/collection_member_policy.dart'
+    show multiMemberCollectionIdByVideoUid;
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart'
     show ScrapeInfoboxEntry, ScrapeMetadata, ScrapeSource, ScrapeTag;
 import 'package:hibiki/src/media/video/video_path_migration.dart';
@@ -344,6 +346,21 @@ class VideoBookRepository {
   Future<MediaCollectionRow?> getMediaCollectionById(int id) =>
       _db.getMediaCollectionById(id);
 
+  /// 统一合集：全部合集（存量子篇海报清理判「哪些合集已有自有封面」用）。
+  Future<List<MediaCollectionRow>> getAllMediaCollections() =>
+      _db.getAllMediaCollections();
+
+  /// 合集子篇 → 所属多成员合集 id：属于任一**成员数 ≥2** 合集的视频条目。自动
+  /// 刮削据此对子篇**不落作品级海报**、并把海报改落到这个 collectionId 上（判据
+  /// 与理由见 [multiMemberCollectionIdByVideoUid]）。
+  Future<Map<String, int>> multiMemberCollectionIds() async =>
+      multiMemberCollectionIdByVideoUid(await _db.getAllCollectionItems());
+
+  /// 统一合集：写合集**自有**封面绝对路径（`MediaCollections.coverPath`）。
+  /// 作品级竖版海报的唯一归宿（用户 2026-08-02）。
+  Future<void> updateMediaCollectionCoverPath(int id, String? coverPath) =>
+      _db.updateMediaCollectionCoverPath(id, coverPath);
+
   Future<List<VideoBookRow>> listAll() => _db.allVideoBooks();
 
   /// 监听视频库行集合（uid）变化，供库页在任意导入路径（页内 / 拖拽 / 外部
@@ -527,6 +544,9 @@ class VideoBookRepository {
   /// 更新视频封面图绝对路径（书架/视频库长按菜单手动设置封面）。
   Future<void> updateCover(String bookUid, String coverPath) =>
       _db.updateVideoBookCover(bookUid, coverPath);
+
+  /// 清空视频封面图路径（存量子篇作品海报摘除，见 `member_cover_cleanup.dart`）。
+  Future<void> clearCover(String bookUid) => _db.clearVideoBookCover(bookUid);
 
   /// 更新视频/播放列表标题（视频库长按菜单「重命名」）。
   Future<void> updateTitle(String bookUid, String title) =>

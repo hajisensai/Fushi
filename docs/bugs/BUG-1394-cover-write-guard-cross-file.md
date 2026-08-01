@@ -1,0 +1,13 @@
+## BUG-1394 · 封面写盘守卫的跨文件派生覆盖洞：番剧下载封面绕过 BUG-1118 收口
+- **报告**：2026-08-02（PR#677 复核）
+- **真实性**：✅ 真 bug（守卫假绿 + 真实的旧图回归面）。
+  - **绕过点**：`hibiki/lib/src/media/video/video_cover_extractor.dart:157` 的 `downloadVideoCoverToPath` 是**裸 `writeAsBytes`**——不 evict 双键解码缓存、不原子 `.tmp`+rename、不校验图片魔数。它被三个**覆盖写**场景复用：番剧下载重放（`anime_download_importer.dart`，`reuseExistingPaths:true` 会覆盖同名文件）、流媒体换封面（`url_stream_video.dart:196`）、导入弹窗重取缩略图（`video_import_dialog.dart:664`）。同路径重下后 UI 重建命中旧解码缓存 = **用户看到旧图**，正是 BUG-1118 的形状。
+  - **守卫为什么不报**：`hibiki/test/media/media_cover_write_guard_test.dart:59-91` 是**单文件内 AND 判定**（destMarker && rawWrite && !applyCover）。派生点与写盘点跨文件时两边都逃：调用方（如 `anime_download_importer.dart`）有 destMarker（`videoCoverFileName(` / `videoCoversDirectory(`）但没有 rawWrite → 第 83 行直接 `continue`；真正的裸写在 `video_cover_extractor.dart`，而它整个文件在白名单里 → 第 78 行直接 `continue`。给「导入期首写（ffmpeg 子进程直写目标路径，此前无解码缓存）」开的豁免，被整文件放行的粒度扩大成了「这个文件里干什么都行」。
+- **[x] ① 已修复** —
+  - `video_cover_extractor.dart` `downloadVideoCoverToPath` 改走统一收口 `MediaCoverService.applyCoverBytes`（原子 `.tmp`+rename、失败不动旧封面、成功后 `evictLocalCoverCache` 双键驱逐），并在落盘前过 `looksLikeImageBytes`（`media/metadata/image_download.dart:180`，与 `CoverDownloader` 同一个判据，不再各写一份魔数嗅探）。**三个调用点一次修完**，不是只补番剧下载那一处。
+  - 库注释同步收紧豁免边界：ffmpeg 两条路（子进程写盘、Dart 侧无字节）仍是豁免；Dart 侧有字节的路不在豁免内。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/media/media_cover_write_guard_test.dart` 新增第 4 条守卫「白名单文件的裸写豁免逐函数登记」：把整文件白名单降级成 `{文件 → 允许裸写的函数名集合}` 显式清单（`media_cover_service.dart` → `{applyCoverFile, applyCoverBytes}`；`video_cover_extractor.dart` → `{}` 空集）。新增裸写函数、或把已收口的函数改回裸写，都会红。
+  - 行为侧：`hibiki/test/media/video/youtube_import_cover_test.dart` 补「覆盖写同名文件内容真被换掉 + 不留 `.tmp`」「非图片响应（HTML 错误页）不落盘」「`content-type: image/*` 权威放行」；`hibiki/test/torrent/anime_download_importer_test.dart` 补重放覆盖同名合集封面用例。
+  - **变异实测**：把 `downloadVideoCoverToPath` 改回裸 `writeAsBytes` → 新守卫红（**行为测试全绿**——`.tmp` 断言对裸写同样成立，这正是必须有源码扫描守卫的理由）。
+- **备注**：与 BUG-1393 同一 PR 落地（接管 PR#677 的三条必改，看板 TODO-2554）。
