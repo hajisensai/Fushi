@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// BUG-801 守卫（源码扫描）：libmpv 默认 `sub-auto=exact` 会在 `player.open()` 加载文件时
 /// 自动加载与视频**同名的 sidecar 外挂字幕**（`<video>.ass/.srt`），把它选成字幕轨经
 /// media_kit 原生 `SubtitleView` 渲染，与 Hibiki 自己解析同一 sidecar 得到的可点
@@ -42,10 +44,11 @@ void main() {
     // 纯函数本身仍须把 sub-auto 关掉（防止有人把它改成只关 sub-visibility）。
     final File cfg = File('lib/src/media/video/video_mpv_config.dart');
     final String cfgText = cfg.readAsStringSync();
-    final int fnIdx = cfgText
-        .indexOf('Map<String, String> buildSubtitleSuppressionProperties');
-    expect(fnIdx, greaterThan(0));
-    final String fnBody = cfgText.substring(fnIdx, fnIdx + 200);
+    // 窗口=该纯函数的函数体（花括号配对），不再是 `fnIdx + 200` 定长窗口：旧窗口
+    // 已经越过函数尾、滑进下一个函数的文档注释（那段注释里就写着 `sub-auto` 仍保持
+    // `no`），多两个 map 条目就会让判据漂移或被注释喂绿。
+    final String fnBody = methodBody(
+        cfgText, 'Map<String, String> buildSubtitleSuppressionProperties(');
     expect(fnBody.contains("'sub-auto': 'no'"), isTrue,
         reason:
             'buildSubtitleSuppressionProperties 必须含 sub-auto=no（禁止 sidecar 自动加载）');

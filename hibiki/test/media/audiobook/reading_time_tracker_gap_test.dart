@@ -4,17 +4,19 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
+import '../../helpers/source_guard.dart';
+
 // BUG-892：阅读时长记账把后台挂起/熄屏/睡眠的墙钟时长一次性计入（34h 的书 /
 // 单小时 >1h / 凌晨幻影阅读）。根因是 ReadingTimeTracker 的 60s 定时器按墙钟差累加，
 // 缺视频侧早有的「异常大间隔整窗丢弃」守卫。本测试锁定移植过来的纯函数
 // isContinuousReadingGap / splitReadingTime（对照 video_watch_tracker_test）。
-/// 去掉整行注释后再做源码守卫匹配——本轮修复的注释里**刻意**保留了旧字段名
-/// （`_sessionStartTime`）作为历史说明，不能让它把「字段已删除」的断言判假。
-/// 只剥整行 `//` 注释，不碰行尾注释与字符串（本文件断言的目标都在代码行上）。
-String _codeOnly(String src) => src
-    .split('\n')
-    .where((String l) => !l.trimLeft().startsWith('//'))
-    .join('\n');
+//
+// 下面的源码守卫一律先跑共享的 [maskComments] 再匹配——本轮修复的注释里**刻意**
+// 保留了旧字段名（`_sessionStartTime`）作为历史说明，不能让它把「字段已删除」的
+// 断言判假。旧的本地 `_codeOnly` 只丢掉整行 `//` 开头的行，`/* _sessionStartTime =
+// DateTime.now(); */` 这类块注释与行尾注释一概放行；而且「整行删除」会改变长度，
+// 底下那些 `indexOf(锚点)` + `substring(i, i + N)` 的窗口全部落在一份与原文行号
+// 错位的文本上。[maskComments] 换成**等长空白**，窗口下标与原文逐字节对齐。
 
 void main() {
   group('isContinuousReadingGap (discard suspend/sleep timer gaps)', () {
@@ -107,7 +109,7 @@ void main() {
   group('BUG-892 lifecycle wiring guards (reader page)', () {
     late String src;
     setUpAll(() {
-      src = _codeOnly(
+      src = maskComments(
           File('lib/src/pages/implementations/reader_hibiki_page.dart')
               .readAsStringSync());
     });
@@ -143,10 +145,10 @@ void main() {
   // reading_hourly_logs 记 345 分钟；两条账目差 4 倍以上，前者是错的那条。
   group('BUG-1052 单一时钟：会话时长累计器不被任何重锚吃掉', () {
     test('EPUB 阅读器不再持有可被重置的墙钟基准字段', () {
-      final String page = _codeOnly(
+      final String page = maskComments(
           File('lib/src/pages/implementations/reader_hibiki_page.dart')
               .readAsStringSync());
-      final String nav = _codeOnly(File(
+      final String nav = maskComments(File(
               'lib/src/pages/implementations/reader_hibiki/navigation.part.dart')
           .readAsStringSync());
       // 字段本体必须已删除（注释里可以留历史说明，故只查声明与赋值形态）。
@@ -160,7 +162,7 @@ void main() {
     });
 
     test('恢复完成（每次重排版都会跑）不得重锚会话时钟', () {
-      final String nav = _codeOnly(File(
+      final String nav = maskComments(File(
               'lib/src/pages/implementations/reader_hibiki/navigation.part.dart')
           .readAsStringSync());
       final int i = nav.indexOf('void _onRestoreComplete()');
@@ -174,7 +176,7 @@ void main() {
     });
 
     test('无新字数的早退路径不清空累计器（时长留到下次落库）', () {
-      final String nav = _codeOnly(File(
+      final String nav = maskComments(File(
               'lib/src/pages/implementations/reader_hibiki/navigation.part.dart')
           .readAsStringSync());
       final int i = nav.indexOf('Future<void> _flushReadingStats()');
@@ -190,7 +192,7 @@ void main() {
     });
 
     test('PDF 阅读器不再拿整段会话去过一次 gap 守卫', () {
-      final String pdf = _codeOnly(
+      final String pdf = maskComments(
           File('lib/src/pages/implementations/reader_pdf_page.dart')
               .readAsStringSync());
       expect(pdf.contains('DateTime _sessionStartTime'), isFalse);

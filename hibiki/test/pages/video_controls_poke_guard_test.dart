@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫（BUG-176 ②）：控制条自动隐藏计时只在 media_kit 的鼠标 hover/进度条
@@ -34,11 +35,7 @@ void main() {
       // _isDesktopVideoControls 之前，且移动端改走 _restartHideTimerSignal.poke() 续命隐藏
       // Timer 而**不派合成 hover**（无 hover 语义）。故桌面门控不再是方法体首语句——守卫改成
       // 「方法体内存在 !_isDesktopVideoControls 早退」，不变量强度不变：移动端绝不派合成 hover。
-      final int at = src.indexOf('void _pokeControlsVisible()');
-      expect(at, greaterThanOrEqualTo(0), reason: '缺 _pokeControlsVisible 助手');
-      final int end = src.indexOf('void _dispatchPokeHover', at);
-      expect(end, greaterThan(at), reason: '缺 _dispatchPokeHover（方法体终点锚）');
-      final String body = src.substring(at, end);
+      final String body = methodBody(src, 'void _pokeControlsVisible()');
       expect(
         RegExp(r'if \(!_isDesktopVideoControls\)\s*\{').hasMatch(body),
         isTrue,
@@ -52,18 +49,24 @@ void main() {
 
     test('键盘快进/跳句四个入口都调用 _pokeControlsVisible', () {
       // previousSubtitle / nextSubtitle / seekBackward / seekForward 各一次。
+      // 窗口=该命名实参的**实参表达式原文**（顶层逗号定右界），不再是 `at + 200`
+      // 定长窗口：回调体是 141~418 字不等，长的那两个（previousSubtitle /
+      // nextSubtitle）里再多包一层或多写两行注释，poke 就漂出旧窗口；短的那两个
+      // 则会把**下一个 action** 的回调读进来，等于用邻居的 poke 冒充自己的。
+      // namedArgumentValues 只认实参位置，`case VideoControlItem.seekBackward:`
+      // 这类前缀是 `.` 的同名标签不会被误当命名参数。
       for (final String entry in <String>[
-        'previousSubtitle:',
-        'nextSubtitle:',
-        'seekBackward:',
-        'seekForward:',
+        'previousSubtitle',
+        'nextSubtitle',
+        'seekBackward',
+        'seekForward',
       ]) {
-        final int at = src.indexOf(entry);
-        expect(at, greaterThanOrEqualTo(0), reason: '缺快捷键入口 $entry');
-        // 入口回调体（到下一个逗号分隔的下一个 action 之前一段）里必须有 poke。
-        final String window = src.substring(at, at + 200);
-        expect(window.contains('_pokeControlsVisible()'), isTrue,
-            reason: '$entry 回调必须 poke 控制条（BUG-176 ②）');
+        final List<String> callbacks = namedArgumentValues(src, entry);
+        expect(callbacks, isNotEmpty, reason: '缺快捷键入口 $entry:');
+        for (final String callback in callbacks) {
+          expect(callback.contains('_pokeControlsVisible()'), isTrue,
+              reason: '$entry: 回调必须 poke 控制条（BUG-176 ②）');
+        }
       }
     });
 
@@ -99,17 +102,14 @@ void main() {
   /// MouseTracker 去重），故在源码层钉死「合成 hover 位置每次抖动、不再用固定
   /// center」契约，防回归把抖动删回固定坐标。
   group('poke 去重抖动 (BUG-215/TODO-148)', () {
-    /// 取 _pokeControlsVisible 方法体：从其签名到下一成员 _dispatchPokeHover 声明。
-    /// 旧实现用固定 1200 字窗，但 TODO-1059（平台无关门控前置）+ BUG-425（派发拆到
-    /// _dispatchPokeHover 微任务）把方法体撑过 1200 字，pokePosition/派发落到窗外 →
-    /// 守卫误报。改按真实后继成员切片，抖动续命契约不变。
-    String pokeBody() {
-      final int at = src.indexOf('void _pokeControlsVisible()');
-      expect(at, greaterThanOrEqualTo(0), reason: '缺 _pokeControlsVisible 助手');
-      final int end = src.indexOf('void _dispatchPokeHover', at);
-      expect(end, greaterThan(at), reason: '缺 _dispatchPokeHover（方法体终点锚）');
-      return src.substring(at, end);
-    }
+    /// 取 _pokeControlsVisible 方法体：花括号配对，边界完全由源码结构给出。
+    /// 演进史（两次塌陷都不是行为退化，是守卫自己塌掉）：固定 1200 字窗 →
+    /// TODO-1059（平台无关门控前置）+ BUG-425（派发拆到 _dispatchPokeHover 微任务）
+    /// 把方法体撑过 1200 字，pokePosition/派发落到窗外 → 改按「下一成员
+    /// _dispatchPokeHover 的签名」切片 → 该成员一旦改名/挪位又会 indexOf 落空。
+    /// 现在只依赖方法自身的花括号，且右界收在 `}` 上（比旧窗口更紧，
+    /// `position: center` 这条禁止型断言不会再被下一个成员的代码污染）。
+    String pokeBody() => methodBody(src, 'void _pokeControlsVisible()');
 
     test('存在 _pokeParity 抖动开关字段', () {
       expect(src.contains('bool _pokeParity = false;'), isTrue,

@@ -14,14 +14,27 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
+
 String _read(String relPath) => File(relPath).readAsStringSync();
 
-/// 截取 [src] 中从 [start] 起、到下一个同级成员声明为止的片段。
-String _memberBody(String src, String start, {int fallbackLen = 2500}) {
-  final int i = src.indexOf(start);
-  expect(i, greaterThanOrEqualTo(0), reason: '找不到 $start');
-  final int end = src.indexOf('\n  }', i);
-  return src.substring(i, end > i ? end + 4 : (i + fallbackLen));
+/// 取以 `=>` 表达式体收尾的成员声明（如 `bool get isEmbeddedTorrentReady => …;`）。
+///
+/// 右边界是终止该表达式的**顶层分号**（括号/方括号/花括号深度归零处），与行数无关。
+/// 不能用 [methodBody]：表达式体成员根本没有花括号体，配对扫描会一路配到后面某个
+/// 真方法上去，窗口静默指向错误对象。
+String _expressionBodyMember(String src, String signature) {
+  final String structural = maskCommentsAndStrings(src);
+  final int start = structural.indexOf(signature);
+  expect(start, greaterThanOrEqualTo(0), reason: '找不到成员声明：$signature');
+  int depth = 0;
+  for (int i = start; i < structural.length; i++) {
+    final String c = structural[i];
+    if (c == '(' || c == '[' || c == '{') depth++;
+    if (c == ')' || c == ']' || c == '}') depth--;
+    if (c == ';' && depth == 0) return src.substring(start, i + 1);
+  }
+  fail('表达式体成员没有收尾分号：$signature');
 }
 
 void main() {
@@ -35,8 +48,12 @@ void main() {
     });
 
     test('startAnimeDownloadService 不得创建 libtorrent session', () {
+      // 窗口=方法体（花括号配对）。原 `_memberBody` 是「找下一个 `\n  }`，找不到就退
+      // 定长 2500」：`\n  }` 这半赌的是方法体里不出现同样 2 空格缩进的闭合行，退定长
+      // 那半更是假绿温床——本方法体实测 3605 字符，一旦 `\n  }` 匹配失败，下面这条
+      // isFalse 断言就只扫前 2500 字符、后面 1100 字符里出现 open() 也照样绿。
       final String body =
-          _memberBody(appModel, 'Future<void> startAnimeDownloadService()');
+          methodBody(appModel, 'Future<void> startAnimeDownloadService()');
       expect(body.contains('EmbeddedTorrentHost.open('), isFalse,
           reason: 'BUG-1053 回归：启动即建 session = 空闲也在跑 DHT/占 6881');
       // 只记保存路径（TODO-1961 起是活动根 + 历史根集合），真会话交给懒建入口。

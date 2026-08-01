@@ -4,6 +4,8 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 
+import '../helpers/source_guard.dart';
+
 // TODO-1308 (BUG-611 follow-up): 竖排(vertical-rl)阅读器里，貫(かん)禄(ろく) 这类带
 // 振假名的内容，从目录/书签跳转后振假名错位——かん 挤到两个汉字之间、ろく 浮到基字
 // 右侧下方。真机复现(reader_vertical_ruby_probe_itest.dart)证实：根因是真书 EPUB 自带
@@ -20,8 +22,9 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 // 真机竖排 ruby 渲染无法在 headless 复现(需真 WebView2 + 书本 display 覆盖)，故本守卫
 // 锁在 CSS 生成层：任何写向/视图/振假名模式下，生成的正文 CSS 都必须发出这些强制声明。
 
-String _stripCssComments(String css) =>
-    css.replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '');
+/// 用共享的 CSS 掩码：等长（下标可回原串）、块注释不嵌套（Dart 规则会在
+/// 「注释掉一段本身含注释的规则」时吞掉文件剩余部分，之后断言全对空串跑 ⇒ 静默全绿）。
+String _stripCssComments(String css) => maskCssComments(css);
 
 String _collapseWs(String css) => css.replaceAll(RegExp(r'\s+'), ' ').trim();
 

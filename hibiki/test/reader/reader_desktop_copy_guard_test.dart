@@ -2,6 +2,29 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
+/// 取 [anchor] 起、到**同层分号**为止的那条声明/语句原文。
+///
+/// 为什么不用 [methodBody]：被守的 `nativeSelectionTextInvocation` 是**箭头**成员
+/// （`... () => '…';`），没有花括号方法体；methodBody 会一路找到下一个带 `{` 的成员
+/// 上去，窗口指向错误对象。这里的右界是「括号深度归零处的 `;`」——一条语句的天然
+/// 结尾，与它写几行、串里有多少括号无关（配对跑在掩码串上，串/注释里的括号与分号
+/// 不参与）。
+String statementAt(String src, String anchor) {
+  final int start = maskComments(src).indexOf(anchor);
+  expect(start, greaterThanOrEqualTo(0), reason: '源码中找不到锚点：$anchor');
+  final String structural = maskCommentsAndStrings(src);
+  int depth = 0;
+  for (int i = start; i < structural.length; i++) {
+    final String c = structural[i];
+    if (c == '(' || c == '[' || c == '{') depth++;
+    if (c == ')' || c == ']' || c == '}') depth--;
+    if (c == ';' && depth == 0) return src.substring(start, i + 1);
+  }
+  fail('锚点 $anchor 之后找不到同层分号（语句未收口？）');
+}
+
 /// BUG-402 源码守卫：阅读器桌面 Windows 复制兼容层接线不得回退。
 ///
 /// 复制链路涉 WebView2 + 平台键盘转发，widget 测试照不到真实复制，故这里用源码

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-860 / BUG-435 / TODO-1022 / BUG-478 / BUG-520: dictionary
 /// structured-content nodes carry inline `style` (`float` /
 /// `position:absolute|fixed|sticky`) that used to land verbatim on
@@ -70,7 +72,9 @@ void main() {
     // Strip CSS comments first so the prose (which mentions gloss-image-link)
     // can never be mistaken for the rule itself.
     final String raw = File('assets/popup/popup.css').readAsStringSync();
-    final String css = raw.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+    // maskCssComments 把注释换成**等长**空白（删除式剥离会让下面 braceOpen /
+    // braceClose 的下标与原文错位），且 CSS 块注释不嵌套的规则也一并正确。
+    final String css = maskCssComments(raw);
 
     final int ruleStart = css.indexOf('a.gloss-sc-a');
     expect(ruleStart, greaterThanOrEqualTo(0),
@@ -143,7 +147,7 @@ void main() {
     // BUG-520 regression guard: the blanket span/div neutralization rule that
     // broke line breaks must never come back.
     final String rawCss = File('assets/popup/popup.css').readAsStringSync();
-    final String css = rawCss.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+    final String css = maskCssComments(rawCss);
     expect(css.contains('span[class*="gloss-sc-"]'), isFalse,
         reason: 'BUG-520: no blanket span[class*="gloss-sc-"] rule in '
             'popup.css -- neutralize at the popup.js source instead');

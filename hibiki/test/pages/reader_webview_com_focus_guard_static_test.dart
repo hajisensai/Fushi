@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// Source-level guard for a reader-open crash that can only be reproduced with a
 /// live WebView2 native layer, so we lock the contract at the source level
 /// (strongest feasible layer — see docs/BUGS.md).
@@ -37,7 +39,12 @@ void main() {
                 'guarded fork file moved or renamed: $relativePath — update '
                 'this test to keep covering every WebView2 env creation site');
 
-        final String code = _stripCppLineComments(file.readAsStringSync());
+        // maskComments blanks `//` line comments, trailing comments **and**
+        // `/* */` blocks with equal-length whitespace, so the two indices below
+        // stay byte-aligned with the original file while comments that merely
+        // *document* CoInitializeEx/CreateCoreWebView2EnvironmentWithOptions can
+        // no longer satisfy (or reorder) the assertions.
+        final String code = maskComments(file.readAsStringSync());
 
         final int createIdx =
             code.indexOf('CreateCoreWebView2EnvironmentWithOptions(');
@@ -58,10 +65,3 @@ void main() {
     }
   });
 }
-
-/// Drops `//` line comments so assertions match real code, not the prose that
-/// documents the guards (which itself mentions the guarded calls).
-String _stripCppLineComments(String source) => source
-    .split('\n')
-    .where((String line) => !line.trimLeft().startsWith('//'))
-    .join('\n');

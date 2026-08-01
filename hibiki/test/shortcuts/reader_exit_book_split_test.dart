@@ -7,6 +7,8 @@ import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 
+import '../helpers/source_guard.dart';
+
 /// schema v5 → v6（用户拍板）：「关闭词典」与「退出书籍」拆成两个独立动作。
 ///
 /// - [ShortcutAction.readerDismissDict]（Esc）只关词典弹窗，无弹窗时不消费、
@@ -73,14 +75,19 @@ void main() {
 
     /// 切出某个 case 分支：从 `case ShortcutAction.<name>:` 起到下一个
     /// `case ShortcutAction.` 止。
+    ///
+    /// 定位与切片都跑在**等长掩码**后的源码上（共享 `maskComments`）：注释里的
+    /// 同名 case 标签不会把窗口锚歪，分支体内的注释也不再能给下面的断言背书。
+    /// 掩码与原文逐字节等长，故 indexOf/substring 的下标语义不变。
     String caseSlice(String source, String name) {
+      final String code = maskComments(source);
       final String start = 'case ShortcutAction.$name:';
-      final int startIdx = source.indexOf(start);
+      final int startIdx = code.indexOf(start);
       expect(startIdx, greaterThanOrEqualTo(0), reason: '$name 的 case 分支应存在');
       final int endIdx =
-          source.indexOf('case ShortcutAction.', startIdx + start.length);
+          code.indexOf('case ShortcutAction.', startIdx + start.length);
       expect(endIdx, greaterThan(startIdx));
-      return source.substring(startIdx, endIdx);
+      return code.substring(startIdx, endIdx);
     }
 
     test('readerDismissDict 分支不得退书（无 maybePop / pop）', () {
@@ -102,12 +109,9 @@ void main() {
       final String slice = caseSlice(source, 'readerExitBook');
       expect(slice.contains('maybePop('), isTrue,
           reason: '退书必须经 maybePop 触发 PopScope→onWillPop（flush/closeMedia/同步）');
-      final String noComments = slice
-          .split('\n')
-          .where((String line) => !line.trimLeft().startsWith('//'))
-          .join('\n');
+      // slice 已是掩码后的代码（见 caseSlice），无需再手工剥一次注释。
       expect(
-        RegExp(r'(?<!maybe)\.pop\(').hasMatch(noComments),
+        RegExp(r'(?<!maybe)\.pop\(').hasMatch(slice),
         isFalse,
         reason: '不得出现绕过 PopScope 的裸 pop()（BUG-782）',
       );

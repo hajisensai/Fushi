@@ -14,12 +14,12 @@ void main() {
     'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
   ).readAsStringSync();
 
-  // Strips '//' line comments so a guard inspects only real code (doc comments
-  // legitimately mention the very tokens we forbid in code).
-  String codeOnly(String segment) => segment
-      .split('\n')
-      .where((String line) => !line.trimLeft().startsWith('//'))
-      .join('\n');
+  // 只看真代码：注释统一交给共享的 `maskComments`（换成**等长**空白），文档注释里
+  // 合法提到的那些被禁 token 不算数。
+  //
+  // 旧写法是「丢掉整行 `//`」，两个洞：`/* ... */` 块注释与行尾注释一概放行——把
+  // 断言字面量塞进块注释就能把要求型断言骗绿。等长掩码还保证掩码串的下标与原文
+  // 逐字节对齐，下面几处 indexOf/substring 的窗口不会因剥离而漂移。
 
   test('bottom chrome bars remain ExcludeFocus', () {
     // 底栏外壳已收敛到单一 _wrapBottomChromeBar helper（清理 wave2）：
@@ -38,7 +38,7 @@ void main() {
     expect(start, isNonNegative);
     final int end = chrome.indexOf('\n  }', start);
     expect(end, greaterThan(start));
-    final String body = codeOnly(chrome.substring(start, end));
+    final String body = maskComments(chrome.substring(start, end));
     expect(body, contains('_showChrome = !_showChrome'));
     expect(body, contains('_applyChromeInsets()'));
     // 底栏是本页自己的 chrome，不是压在页上的覆盖层：必须用自证的 chromeToggled，
@@ -63,7 +63,7 @@ void main() {
     expect(start, isNonNegative);
     final int end = page.indexOf('\n  }', start);
     expect(end, greaterThan(start));
-    final String body = codeOnly(page.substring(start, end));
+    final String body = maskComments(page.substring(start, end));
 
     final int chromeCase =
         body.indexOf('case FocusReclaimCause.chromeToggled:');
@@ -90,7 +90,7 @@ void main() {
     expect(start, isNonNegative);
     final int end = chrome.indexOf('// ── Theme Colors', start);
     expect(end, greaterThan(start));
-    final String body = codeOnly(chrome.substring(start, end));
+    final String body = maskComments(chrome.substring(start, end));
     expect(body, contains('HitTestBehavior.opaque'));
     // TODO-975：挤压态仍 onTap:_toggleChrome；悬浮态点进度条立即收起
     // （_handleFloatingChromeReveal）。两者都不是 focus 节点 —— 仍是纯指针面。

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// BUG-905 source-scan guard: the mobile [KitFfmpegBackend] must cancel **only
 /// the timed-out session**, never every running ffmpeg-kit session.
 ///
@@ -20,13 +22,17 @@ void main() {
   String libFile(String relative) =>
       File(relative).readAsStringSync().replaceAll('\r\n', '\n');
 
-  /// Drop comment-only lines (`///` doc / `//` line comments) so the scan only
-  /// sees executable code — the class doc legitimately mentions the old buggy
-  /// `FFmpegKit.cancel()` form as a cautionary note.
-  String codeOnly(String source) => source.split('\n').where((String line) {
-        final String t = line.trimLeft();
-        return !t.startsWith('//');
-      }).join('\n');
+  /// Blank out comments (`///` doc, `//` line **and** `/* */` block) so the scan
+  /// only sees executable code — the class doc legitimately mentions the old
+  /// buggy `FFmpegKit.cancel()` form as a cautionary note.
+  ///
+  /// The previous local implementation dropped whole lines starting with `//`,
+  /// which left two holes: a `/* FFmpegKit.cancel() */` block still tripped the
+  /// cancel-all guard below (false red), and — worse — commenting a *required*
+  /// call out with `/* ... */` kept the `isTrue` assertions green (false pass).
+  /// [maskComments] is a lexer, so all three comment shapes are replaced with
+  /// **equal-length** whitespace and offsets stay byte-aligned with the source.
+  String codeOnly(String source) => maskComments(source);
 
   group('ffmpeg backend precise cancel guard (BUG-905)', () {
     const String path = 'lib/src/media/video/ffmpeg_backend.dart';
@@ -45,7 +51,9 @@ void main() {
     });
 
     test('timeout paths cancel via the session id', () {
-      final String source = libFile(path);
+      // Comments are masked here too: an `isTrue` assertion on the raw source
+      // stays green when the real call is commented out with `/* ... */`.
+      final String source = codeOnly(libFile(path));
 
       expect(source, contains('FFmpegKit.cancel(sessionId)'),
           reason: 'Timeout handling must cancel the specific session id '
@@ -57,7 +65,8 @@ void main() {
     });
 
     test('sessions are started async so the id is known before timeout', () {
-      final String source = libFile(path);
+      // Same reasoning as above — a commented-out start call must not pass.
+      final String source = codeOnly(libFile(path));
 
       // The synchronous executeWithArguments(...).timeout(...) form never yields
       // the session until completion, so on timeout there is no id to cancel

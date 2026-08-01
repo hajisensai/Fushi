@@ -79,11 +79,17 @@ void main() {
   group('Dart 侧 eager 集合与 JS 侧不倒挂', () {
     test('eagerAll 绑定纯图片章判定（TODO-1349 几何要靠插图真实撑开）', () {
       final String src = webviewSrc();
-      final int lazyIdx =
-          src.indexOf('ReaderResourceSanitizer.markImagesLazy(');
+      // 窗口=这次调用的实参表（圆括号配对），不再是 `lazyIdx + 200` 的定长切片：
+      // 实参一旦换行/多传一个参数就把 `eagerAll:` 挤出旧窗口凭空变红。锚点取 `(` 之后
+      // 的第一个字符，enclosingCall 于是返回 markImagesLazy 这一层调用本身（而不是包在
+      // 外面的那层）；再断 call.name 自证窗口锚对了对象。
+      const String anchor = 'ReaderResourceSanitizer.markImagesLazy(';
+      final int lazyIdx = src.indexOf(anchor);
       expect(lazyIdx, isNonNegative);
-      final String call = src.substring(lazyIdx, lazyIdx + 200);
-      expect(call.contains('eagerAll: _isImageOnlyChapterCached('), isTrue,
+      final EnclosingCall call = enclosingCall(src, lazyIdx + anchor.length);
+      expect(call.name, 'ReaderResourceSanitizer.markImagesLazy',
+          reason: '窗口必须正好是 markImagesLazy 这一层调用');
+      expect(call.text.contains('eagerAll: _isImageOnlyChapterCached('), isTrue,
           reason: '纯图片章必须整章 eager，否则离屏图 0 尺寸 → maxScroll 塌缩');
     });
 
@@ -102,9 +108,10 @@ void main() {
   group('预热配额与阅读方向（PR#469 审查）', () {
     test('预热按张数 + 字节双封顶', () {
       final String src = webviewSrc();
-      final int idx = src.indexOf('void _prefetchAdjacentChapterImages(');
-      expect(idx, isNonNegative);
-      final String body = src.substring(idx, idx + 1800);
+      // 窗口=方法体（花括号配对），不再是 `idx + 1800`：该方法体实测 1483 字符，
+      // 旧窗口越过方法末尾 317 字符读进下一个方法，两条配额断言可能命中错对象。
+      final String body =
+          methodBody(src, 'void _prefetchAdjacentChapterImages(');
       expect(body.contains('_kImagePrefetchMaxCount'), isTrue,
           reason: '预热必须有张数上限');
       expect(body.contains('_kImagePrefetchMaxBytes'), isTrue,

@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// BUG-278 / TODO-367：退出阅读 / 停止会话后有声书仍在播放。
 ///
 /// 根因：[AudiobookSession.stop] 在 dispose 控制器前只 `pause()`（just_audio 语义
@@ -228,13 +230,13 @@ void main() {
           reason: 'audiobook_session.dart 应存在于预期路径');
       final String source = sessionFile.readAsStringSync();
 
-      final int stopIdx =
-          source.indexOf('Future<void> _stopInternal() async {');
-      expect(stopIdx, greaterThanOrEqualTo(0),
-          reason: 'AudiobookSession 应有串行化后的 stop 实现');
-      // 取真实 stop 实现（public stop 只负责生命周期队列）做局部断言。
+      // 取真实 stop 实现（public stop 只负责生命周期队列）做局部断言。窗口=方法体
+      // （花括号配对），不再是 `stopIdx + 3000` 的定长切片：该方法体实测 2016 字符，
+      // 旧窗口越界 984 字符读进后面的方法——下面两条 isFalse 断言（不得退回
+      // `controller.pause()` / 同步 `controller.dispose();`）本来是在替邻居方法背锅，
+      // 邻居里出现任一写法就会让本守卫凭空变红。
       final String stopBody =
-          source.substring(stopIdx, (stopIdx + 3000).clamp(0, source.length));
+          methodBody(source, 'Future<void> _stopInternal() async');
 
       expect(stopBody.contains('controller.stopPlayback()'), isTrue,
           reason: 'stop() 必须调 controller.stopPlayback() 真正止声/释放解码器');
@@ -259,12 +261,10 @@ void main() {
           reason: 'audiobook_controller.dart 应存在于预期路径');
       final String source = controllerFile.readAsStringSync();
 
-      final int idx =
-          source.indexOf('Future<void> disposeAndRelease() async {');
-      expect(idx, greaterThanOrEqualTo(0),
-          reason: 'AudiobookPlayerController 应有 disposeAndRelease() 方法');
+      // 窗口=方法体（花括号配对），不再是 `idx + 1200`：该方法体实测 759 字符，
+      // 旧窗口越界 441 字符读进下一个方法。
       final String body =
-          source.substring(idx, (idx + 1200).clamp(0, source.length));
+          methodBody(source, 'Future<void> disposeAndRelease() async');
       // 关键不变量：底层释放必须被 await（`await _player.dispose()`），否则句柄仍
       // fire-and-forget 释放，迁移撞占用。
       expect(body.contains('await _player.dispose();'), isTrue,

@@ -201,10 +201,21 @@ void main() {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
         final String rel = entity.path.replaceAll(r'\', '/');
         if (rel.endsWith(allowed)) continue;
-        for (final String line in entity.readAsStringSync().split('\n')) {
-          final String trimmed = line.trim();
-          if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue;
-          if (bare.hasMatch(trimmed)) offenders.add('$rel: $trimmed');
+        final String source = entity.readAsStringSync();
+        // 便宜的预筛：掩码只会**减少**命中、绝不会新增，整文件没这个符号就不必逐字符扫。
+        if (!source.contains('deleteMediaCollection')) continue;
+        // 注释里的调用不算违规。旧写法逐行判 `startsWith('//') || startsWith('*')`，
+        // 后者是为了跳过文档块注释的**续行**——maskComments 把整个 `/** ... */` 连同
+        // 续行一起换成等长空白，这个特例分支随之消失（好代码没有特殊情况）。而旧写法
+        // 真正的洞在另一边：`/* await db.deleteMediaCollection(id); */` 这种块注释的
+        // **首行**既不以 `//` 也不以 `*` 开头，会被当成真实违规（假红）；反过来把违规
+        // 调用写成 `foo(); /* deleteMediaCollection( */` 也一样误判。
+        // 等长掩码还让下标与原文逐字节对齐，可以直接报出原始行号与原文行。
+        final List<String> lines = source.split('\n');
+        final List<String> masked = maskComments(source).split('\n');
+        for (int i = 0; i < masked.length; i++) {
+          if (!bare.hasMatch(masked[i].trim())) continue;
+          offenders.add('$rel:${i + 1}: ${lines[i].trim()}');
         }
       }
       expect(offenders, isEmpty,

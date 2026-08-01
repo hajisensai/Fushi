@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-778 同根因的全仓收口守卫。
 ///
 /// 整棵 widget 树活在 `HibikiAppUiScale` 的 `Transform.scale` 之下（main.dart 在
@@ -22,6 +24,11 @@ void main() {
 
     // 只查真实构造调用，不查注释里提到的名字（多处注释正当地解释「为什么不用
     // 它」，那些恰恰是应当保留的设计记录）。
+    //
+    // 判据本身已是 identifierCall 那套纪律：负向后顾 `(?<![\w.])` 挡掉
+    // `HibikiReorderableListView(` 这类更长标识符与 `x.ReorderableListView(` 这类
+    // 成员访问，`(\.\s*\w+\s*)?` 覆盖 `.builder(` 命名构造——两个方向都堵住了，
+    // 故不改判据，只换注释剥离。
     final RegExp constructorCall = RegExp(
       r'(?<![\w.])Reorderable(ListView|GridView)\s*(\.\s*\w+\s*)?\(',
     );
@@ -30,14 +37,20 @@ void main() {
     for (final FileSystemEntity entity in libDir.listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       final String relative = entity.path.replaceAll(r'\', '/');
-      final List<String> lines = entity.readAsLinesSync();
+      final String content = entity.readAsStringSync();
+      // 注释换成**等长空白**（共享原语）。旧写法是「整行 `//` 或 `*` 开头就跳过」：
+      // - doc 续行的 `*` 分支不再需要——`/** ... */` / `/* ... */` 整块（含续行）
+      //   已被词法掩码吃掉，而「行首是 `*`」本来就是个凭形状猜词法状态的近似规则；
+      // - 反过来它漏掉块注释与行尾注释：`foo(); // 原本是 ReorderableListView(`
+      //   会被误判成违规。
+      // 掩码不改行数，两个列表下标一一对应，`i + 1` 仍是原文真实行号；报错文案要
+      // 给人看的是**原文**行（掩码行里注释段已成空白）。
+      final List<String> lines =
+          maskCommentsAndScriptLines(content).split('\n');
+      final List<String> rawLines = content.split('\n');
       for (int i = 0; i < lines.length; i++) {
-        final String line = lines[i];
-        final String trimmed = line.trimLeft();
-        // 跳过注释行（`///`、`//`、以及 doc 续行的 `*`）。
-        if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue;
-        if (constructorCall.hasMatch(line)) {
-          offenders.add('$relative:${i + 1}: ${trimmed.trim()}');
+        if (constructorCall.hasMatch(lines[i])) {
+          offenders.add('$relative:${i + 1}: ${rawLines[i].trim()}');
         }
       }
     }

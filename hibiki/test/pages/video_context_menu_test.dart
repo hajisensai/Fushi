@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：桌面右键上下文菜单（TODO-048c）。整页 widget 测试依赖真实 libmpv
@@ -10,6 +11,12 @@ void main() {
   // 截断锚点 _buildVideoBody 都已搬到 video_hibiki/layout.part.dart，故改读「主壳 + 全部
   // part」合并语料；_handleSecondaryTap / _buildVideoContextMenuItems 仍在主壳，切片照旧。
   final String page = readVideoHibikiSource();
+
+  // 窗口=方法体（花括号配对），不再是 `idx + 400 / 1800 / 2000` 的定长切片：
+  // _handleSecondaryTap 实测 1797 字符——旧的 1800 窗口离方法末尾只剩 3 个字符，
+  // 方法里多一行注释就会把 _focusOwnership.reclaim 断言挤出窗口凭空变红；400 的
+  // 窗口只覆盖开头 22%，2000 的窗口反过来越界读进下一个方法（负向断言指向错对象）。
+  final String secondaryTap = methodBody(page, 'void _handleSecondaryTap(');
 
   group('右键菜单触发与门控', () {
     test('视频控制层挂 onSecondaryTapUp（右键触发）', () {
@@ -22,16 +29,13 @@ void main() {
 
     test('右键菜单仅桌面（移动端门控 no-op）', () {
       // _handleSecondaryTap 第一行必是桌面门控，移动端不弹菜单。
-      final int idx = page.indexOf('void _handleSecondaryTap(');
-      expect(idx, greaterThan(0), reason: '必须有 _handleSecondaryTap 入口');
-      final String body = page.substring(idx, idx + 400);
-      expect(body.contains('if (!_isDesktopVideoControls) return;'), isTrue,
+      expect(secondaryTap.contains('if (!_isDesktopVideoControls) return;'),
+          isTrue,
           reason: '移动端无右键，须 _isDesktopVideoControls 门控双保险');
     });
 
     test('菜单锚定 _videoControlsContext（全屏路由内可弹）', () {
-      final int idx = page.indexOf('void _handleSecondaryTap(');
-      final String body = page.substring(idx, idx + 1800);
+      final String body = secondaryTap;
       expect(body.contains('_videoControlsContext'), isTrue,
           reason: 'showMenu 须用 controls 子树 context，全屏路由复用同一 builder 才能弹出');
       expect(body.contains('showMenu<VoidCallback>('), isTrue,
@@ -49,9 +53,7 @@ void main() {
     // showMenu 所用 Overlay 的 RenderBox 坐标系——FittedBox 缩放被 ancestor 变换自动吸收，
     // 与查词浮层 charRect 走同一「锚点跟随真实渲染几何」范式，对任意 scale 自洽无残差。
     test('菜单锚点用 Overlay 相对变换吃掉界面缩放残差（BUG-260）', () {
-      final int idx = page.indexOf('void _handleSecondaryTap(');
-      expect(idx, greaterThan(0));
-      final String body = page.substring(idx, idx + 1800);
+      final String body = secondaryTap;
       // 取 showMenu 实际使用的 Navigator(rootNavigator:false) 的 Overlay RenderBox。
       expect(
           body.contains('Overlay.of(ctx).context.findRenderObject()'), isTrue,
@@ -68,30 +70,23 @@ void main() {
     });
 
     test('菜单关闭后归还键盘焦点', () {
-      final int idx = page.indexOf('void _handleSecondaryTap(');
-      final String body = page.substring(idx, idx + 2000);
-      expect(body.contains('_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'), isTrue,
+      expect(
+          secondaryTap
+              .contains('_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'),
+          isTrue,
           reason: '覆盖层夺焦后不会自动归还，菜单关闭须经 _focusOwnership 归还');
     });
   });
 
   group('菜单项复用既有动作（不重造）', () {
     // 取 _buildVideoContextMenuItems 方法体断言各项动作都接到既有 helper。
-    final int idx = page.indexOf(
-      'List<PopupMenuEntry<VoidCallback>> _buildVideoContextMenuItems(',
-    );
-    late final String items;
-    setUpAll(() {
-      expect(idx, greaterThan(0), reason: '必须有 _buildVideoContextMenuItems');
-      // TODO-590 batch16: _buildVideoContextMenuItems 现是主壳最末个方法（其后的
-      // _buildVideoBody 已搬到 layout.part，在合并语料里反而排在它之后），故改用方法自身
-      // 的 2 空格闭合作截断终点（菜单项列表内的 `}` 都缩进更深，不会误命中），仍覆盖整个
-      // 菜单项列表、不被新增菜单项 / 注释挤出（TODO-389）。
-      final int end = page.indexOf('\n  }', idx);
-      expect(end, greaterThan(idx),
-          reason: '_buildVideoContextMenuItems 须有 2 空格闭合作截断终点');
-      items = page.substring(idx, end);
-    });
+    // TODO-590 batch16: _buildVideoContextMenuItems 现是主壳最末个方法（其后的
+    // _buildVideoBody 已搬到 layout.part，在合并语料里反而排在它之后），不能拿「下一个
+    // 方法签名」当右边界。原来退而用「方法自身的 2 空格闭合」截断，赌的是菜单项列表里
+    // 不出现同样缩进的 `}`；现在直接用花括号配对取整个方法体，赌注消失，同样覆盖整份
+    // 菜单项列表、不被新增菜单项 / 注释挤出（TODO-389）。
+    final String items =
+        methodBody(page, 'List<PopupMenuEntry<VoidCallback>> _buildVideoContextMenuItems(');
 
     test('含播放/暂停', () {
       expect(items.contains('t.video_menu_play_pause'), isTrue);

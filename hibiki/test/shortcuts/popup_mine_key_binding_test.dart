@@ -12,6 +12,8 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 制卡快捷键（用户请求：「点那个加号的动作」要能用键盘触发，app 内 / app 外 / 浏览器都要）。
 ///
 /// 各表面复用同一套 popup.js 制卡入口（加号只有那一颗 `.mine-button`），
@@ -189,12 +191,16 @@ void main() {
     test('注入端：只有 app 外表面下发真绑定，app 内显式收 null', () {
       // 扫剥注释后的源码：讲「为什么 app 内要收 null」的注释里就写着 globalLookup /
       // __hoshiPopupKeyBindings，连注释一起扫等于让文档给自己背书。
-      final String dart =
-          File('lib/src/pages/implementations/popup_settings_injection.dart')
-              .readAsStringSync()
-              .split('\n')
-              .where((String l) => !l.trimLeft().startsWith('//'))
-              .join('\n');
+      //
+      // 剥离交给共享原语（等长空白，不再改变长度/行数）。这里用
+      // `maskCommentsAndScriptLines` 而不是 `maskComments`：本文件把大段 JS 放在
+      // 三引号串里（`maskComments` 按设计保留串内容，串里的 JS 注释会原样留下），
+      // 前者额外把整行 `//` 也掩掉，正好是旧行式剥离与 Dart 词法掩码的并集——
+      // 既补上了块注释 / 行尾注释两个洞，又不放松串内 JS 注释。
+      final String dart = maskCommentsAndScriptLines(
+        File('lib/src/pages/implementations/popup_settings_injection.dart')
+            .readAsStringSync(),
+      );
       final String norm = dart.replaceAll(RegExp(r'\s+'), ' ');
       // 判据必须钉住**分流结构本身**，不能只查这几个符号各自出现过：`globalLookup` 在本
       // 文件里到处都是（类字段、主题类名、图标字体），把三元拆掉改成无条件下发照样能让

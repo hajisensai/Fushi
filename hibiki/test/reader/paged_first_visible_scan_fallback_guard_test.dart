@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-773 P0 源码守卫（源码扫描，沿用 `reader_paginate_js_guard_static_test.dart` 的
 /// `File(...).readAsStringSync()` + 函数切片 + `contains` 模式）。
 ///
@@ -241,12 +243,12 @@ String _functionSource(String source, String start, String end) {
   return source.substring(startIndex, endIndex);
 }
 
-/// 删掉 `//` 行注释（整行以可选空白 + `//` 起的行），保留可执行代码行。负向断言只能针对
-/// 真实代码——否则解释「为什么不用 window.innerWidth / 不裸 return -1」的注释会被误判违规。
-/// 这些 JS 全是 `_sharedJs` 里的行注释（无 `/* */` 块、无字符串内嵌 `//`），按行剥即足够。
-String _stripJsLineComments(String slice) {
-  return slice
-      .split('\n')
-      .where((String line) => !line.trimLeft().startsWith('//'))
-      .join('\n');
-}
+/// 用 **JS 词法**把注释掩成等长空白，保留可执行代码。负向断言只能针对真实代码——
+/// 否则解释「为什么不用 window.innerWidth / 不裸 return -1」的注释会被误判违规。
+///
+/// 旧写法是「丢掉整行以 `//` 起的行」，三个方向都漏：`/* window.innerWidth */` 块注释
+/// 一概放行、行尾注释（`return -1; // 旧写法`）留着当命中、切片长度还会变（下标不再能
+/// 回原串）。这些 JS 里有正则字面量（`/\s+/` 之类），所以必须用 [maskJsComments] 而不是
+/// Dart 版 [maskComments]——后者会把 `/^a\/\//` 里的 `//` 当行注释，从那里到行尾整段
+/// 消失，负向断言当场变成永远绿。
+String _stripJsLineComments(String slice) => maskJsComments(slice);
