@@ -1,4 +1,4 @@
-## BUG-1330 · Mihon 漫画详情页路由触发布局断言
+## BUG-1335 · Mihon 漫画详情页路由触发布局断言
 - **报告**：2026-07-29（用户：点进 Raw Otaku 漫画后出现 `debugNeedsLayout` 红屏）
 - **真实性**：✅ 真 bug。持久错误日志的第一现场是
   `hibiki/lib/src/pages/implementations/texthooker_page.dart:432-441`：

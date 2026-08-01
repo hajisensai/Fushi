@@ -33,11 +33,11 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1336](bugs/BUG-1336-mihon-online-ocr-niratan-parity.md) | ✅ | ✅ | Mihon 在线漫画 OCR 横竖排错位且加载缓存调度未对齐 Niratan |
+| [BUG-1335](bugs/BUG-1335-mihon-detail-layout.md) | ✅ | ✅ | Mihon 漫画详情页路由触发布局断言 |
 | [BUG-1334](bugs/BUG-1334-manga-card-wrong-spread-page.md) | ✅ | ✅ | 漫画双页模式制卡图片取错成跨页首页 |
 | [BUG-1333](bugs/BUG-1333-manga-sentence-fragmented-blocks.md) | ✅ | ✅ | 漫画 Lens 同一气泡被拆成多列导致制卡句子残缺 |
 | [BUG-1332](bugs/BUG-1332-mihon-extension-catalog-restart.md) | ✅ | ✅ | 漫画扩展重启后可下载目录消失且无法安装新扩展 |
-| [BUG-1331](bugs/BUG-1331-mihon-online-ocr-niratan-parity.md) | ✅ | ✅ | Mihon 在线漫画 OCR 横竖排错位且加载缓存调度未对齐 Niratan |
-| [BUG-1330](bugs/BUG-1330-mihon-detail-layout.md) | ✅ | ✅ | Mihon 漫画详情页路由触发布局断言 |
 | [BUG-1329](bugs/BUG-1329-video-subtitle-menu-not-refreshed-after-download.md) | ✅ | ✅ | 下载/导入字幕后字幕轨列表不刷新，且重新枚举时长时间挂加载条 |
 | [BUG-1328](bugs/BUG-1328-ui-font-chain-collapsed-to-single-family.md) | ✅ | ✅ | 界面字体回退链被压成单值：中文默认字形难看、日文缺字逐字乱回退、用户第2条字体永不生效 |
 | [BUG-1327](bugs/BUG-1327-video-context-dialog-barrier.md) | ✅ | ✅ | 视频页制卡上下文对话框被查词浮层 barrier 吃掉点击 |
