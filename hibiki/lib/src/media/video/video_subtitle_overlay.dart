@@ -1209,7 +1209,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       // 碰撞下推同效果），只有真正的高位标题（大 MarginV，如 400）才独立占 authored 高度
       // （TODO-1341 不回归）。以原始值入键（而非缩放 round），组身份也不随显示尺寸漂移，
       // 跨帧槽位状态（[_syncGroupSlots]）不因窗口缩放churn。
-      mv = mvRaw <= _layerBaseline(isSecondary) ? -1 : mvRaw.round();
+      // 与 [resolveBottomBaseline] 同源（BUG-1335）：基线桶的判据就是「渲染基线是否等于
+      // 用户基线」。两处曾各写各的（这里比原始值、那边 max 缩放值），在高分屏上脱节成
+      // 「同组不同 padding」，组代表一切换字幕就跳。改成问同一个函数，脱节在结构上不可能。
+      mv = isBaselineBucketMarginV(
+              userBase: _layerBaseline(isSecondary), rawMarginV: mvRaw)
+          ? -1
+          : mvRaw.round();
     } else {
       mv = mvRaw.round();
     }
@@ -1352,11 +1358,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         _scaledMarginX(posMarkup, posMarkup?.cueStyle?.marginL);
     final double? scaledMarginR =
         _scaledMarginX(posMarkup, posMarkup?.cueStyle?.marginR);
+    // 原始 MarginV（PlayRes 像素）：底部基线真相源 [resolveBottomBaseline] 要用它判断
+    // 本组是否落在基线桶——与 [_positionKey] 的分组判据同一个量（BUG-1335）。
+    final double? rawMarginV = forceTop ? null : posMarkup?.cueStyle?.marginV;
     return Align(
       alignment: _alignFor(anchor),
       child: _anchoredPadded(
           anchor, content, scaledMarginV, scaledMarginL, scaledMarginR,
-          isSecondary: isSecondary),
+          isSecondary: isSecondary, rawMarginV: rawMarginV),
     );
   }
 
@@ -2452,14 +2461,19 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 副字幕在用户单独调过后用 [secondaryBottomPadding]。避让/MarginV 的 max 语义两层同构。
   EdgeInsets _paddingFor(SubtitleAnchor? a, bool controlsVisible,
       double? scaledMarginV, double? scaledMarginL, double? scaledMarginR,
-      {required bool isSecondary}) {
+      {required bool isSecondary, double? rawMarginV}) {
     final SubtitleVAlign v = a?.vertical ?? SubtitleVAlign.bottom;
     // 本层的用户基线：主字幕恒 bottomPadding，副字幕在用户单独调过时用自己的基线。
     final double userBase = _layerBaseline(isSecondary);
-    // 底部锚点基线：用户基线与 ASS 缩放 MarginV 取**较大值**（单调抬升——绝不低于
-    // 用户基线，保 TODO-129/161/238 控制条避让不回归；作者用大 MarginV 要求更高时才抬）。
-    final double bottomBase =
-        scaledMarginV == null ? userBase : math.max(userBase, scaledMarginV);
+    // 底部锚点基线走**唯一真相源** [resolveBottomBaseline]，与 [_positionKey] 的基线桶
+    // 判据同源（BUG-1335）：桶内一律用用户基线，桶外才按缩放 MarginV 单调抬升。旧代码
+    // 直接 `max(userBase, scaledMarginV)`，与分组键脱节 → 同组内代表切换时 padding 跳变，
+    // AnimatedPadding 把差值动画播出来（高分屏「字幕动一下才正常」）。
+    final double bottomBase = resolveBottomBaseline(
+      userBase: userBase,
+      rawMarginV: rawMarginV,
+      scaledMarginV: scaledMarginV,
+    );
     // ASS MarginL/MarginR 水平边距：Align 内侧 padding 恰是 ASS 排版盒语义——居中对齐时
     // 盒宽 = 文本 + L + R、Align 居中该盒 → 文本中心右移 (L-R)/2；左/右对齐时文本起点 /
     // 终点分别落在 L / 宽-R。无边距恒 0（srt/vtt 像素级不变）。
@@ -2501,13 +2515,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 不被改写（同一字段无特例分支）。
   Widget _anchoredPadded(SubtitleAnchor? anchor, Widget child,
       double? scaledMarginV, double? scaledMarginL, double? scaledMarginR,
-      {required bool isSecondary}) {
+      {required bool isSecondary, double? rawMarginV}) {
     final ValueListenable<bool>? visible = widget.controlsVisible;
     if (visible == null) {
       return Padding(
           padding: _paddingFor(
               anchor, false, scaledMarginV, scaledMarginL, scaledMarginR,
-              isSecondary: isSecondary),
+              isSecondary: isSecondary, rawMarginV: rawMarginV),
           child: child);
     }
     return ValueListenableBuilder<bool>(
@@ -2519,7 +2533,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           curve: Curves.easeOut,
           padding: _paddingFor(anchor, controlsVisible, scaledMarginV,
               scaledMarginL, scaledMarginR,
-              isSecondary: isSecondary),
+              isSecondary: isSecondary, rawMarginV: rawMarginV),
           child: padded,
         );
       },
@@ -2587,6 +2601,61 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return topLeft & ro.size;
   }
 }
+
+/// 底部锚点 cue 的**渲染基线**（距底边的距离）。分组键与 padding 的**唯一真相源**。
+///
+/// BUG-1335 根因：这两处本该同源，实际用了不同的量——
+/// - 分组键（`_positionKey`）用 **原始 MarginV**（PlayRes 像素）比用户基线，判断是否折进
+///   「基线桶」；
+/// - 渲染 padding（`_paddingFor`）却用 **缩放后 MarginV**（显示像素）取 `max(基线, ·)`。
+///
+/// 于是在高分屏上二者会脱节。用户片源（`PlayResY 720`）在 4K（×3）下：
+///
+/// | 样式 | MarginV | 分组键 | 旧 padding |
+/// |---|---|---|---|
+/// | `Text_JP`（对白） | 30 | 30 ≤ 75 → 基线桶 | `max(75, 90)` = **90** |
+/// | `OP_JP`（歌词） | 10 | 10 ≤ 75 → 基线桶 | `max(75, 30)` = **75** |
+///
+/// 两者被判进**同一组**却有不同 padding，而组的 padding 取自「组代表」（`cues.first`）
+/// ——代表随活动集切换，padding 就在 75 ↔ 90 之间跳，[AnimatedPadding] 忠实地把这 15px
+/// 差值动画播出来：用户报的「字幕渲染出来动一下才正常，只有特定的话会这样」。
+/// 1080p 下 `Text_JP` 缩放后 45 会被基线夹回 75、与 `OP_JP` 相同，故只有高分屏触发。
+///
+/// 为什么 libass/mpv 不跳：它**每条事件各自独立定位**，没有「组」也没有「组代表」这个
+/// 共享量。分组是 Hibiki 为消除同位叠印引入的，代价就是引入了这个共享量——那么它就必须
+/// 由**分组键唯一决定**，不能由「谁碰巧当代表」决定。
+///
+/// 本函数即该不变量的载体：**同分组键 → 同基线**。既然判据宣称「原始 MarginV ≤ 用户基线
+/// 的都折进基线桶」，桶内就一律用用户基线；只有真正超出基线的高位标题（如 MarginV=400）
+/// 才按自己的缩放值抬升（TODO-1341 不回归）。
+@visibleForTesting
+double resolveBottomBaseline({
+  required double userBase,
+  required double? rawMarginV,
+  required double? scaledMarginV,
+}) {
+  if (isBaselineBucketMarginV(userBase: userBase, rawMarginV: rawMarginV)) {
+    return userBase;
+  }
+  return scaledMarginV == null ? userBase : math.max(userBase, scaledMarginV);
+}
+
+/// 该 MarginV 是否落在**基线桶**（渲染基线 == 用户基线）。分组键与 [resolveBottomBaseline]
+/// 共用的判据本体（BUG-1335 的「同源」落点）。
+///
+/// 判据**只看原始 MarginV**（PlayRes 像素、显示无关），不看缩放值——这既是 BUG-709 的要求
+/// （组身份不得随显示尺寸漂移，否则大屏上第二语言对白会脱离基线桶、与第一语言各自定位落在
+/// 相邻高度而相交），也让分组键在拿不到缩放值时仍能问出同一个答案。
+///
+/// 曾经的错误写法是让分组键调 `resolveBottomBaseline(scaledMarginV: null)` 再比 `userBase`：
+/// 缺缩放值时该函数回退 `userBase`，于是 `MarginV=400` 的高位标题被误判成「在基线桶」，
+/// 与贴底对白折叠（既有守卫 TODO-1341 当场变红）。判据必须独立于缩放值，故单独成函数。
+@visibleForTesting
+bool isBaselineBucketMarginV({
+  required double userBase,
+  required double? rawMarginV,
+}) =>
+    rawMarginV == null || rawMarginV <= 0 || rawMarginV <= userBase;
 
 /// ASS/GDI 字体名是否声明了**竖排书写**（`@` 前缀约定，BUG-1331）。
 ///
