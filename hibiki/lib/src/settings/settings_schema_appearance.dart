@@ -86,8 +86,9 @@ SettingsDestination buildAppearanceDestination() {
         ],
       ),
       SettingsSection(
+        // 排版分区**不折叠**：改字体是外观页的高频操作（用户显式反馈），折叠让每次
+        // 改字体都多一次展开点击，收益（省一行高度）远小于代价。
         title: t.section_typography,
-        collapsedByDefault: true,
         items: <SettingsItem>[
           // TODO-231: one visible font library; each row manages app UI /
           // body / dictionary target membership via font_catalog/font_targets.

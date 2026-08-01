@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1269 条。点号进各自文件。
+> 共 1270 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1325](bugs/BUG-1325-ui-font-chain-collapsed-to-single-family.md) | ✅ | ✅ | 界面字体回退链被压成单值：中文默认字形难看、日文缺字逐字乱回退、用户第2条字体永不生效 |
 | [BUG-1324](bugs/BUG-1324-sync-report-auth-failure-untyped.md) | ✅ | ✅ | 同步报告把鉴权失败压成一行字符串：UI 只剩「N 项失败」 |
 | [BUG-1323](bugs/BUG-1323-sync-401-403-flattened.md) | ✅ | ✅ | webdav_ops 把 401/403 压成同一个 SyncAuthError：403 被谎报成登录过期还触发登出 |
 | [BUG-1322](bugs/BUG-1322-clip-export-mobile-mjpeg-unplayable.md) | ✅ | ✅ | 移动端导出片段MJPEG-MOV体积巨大且普遍无法播放 |

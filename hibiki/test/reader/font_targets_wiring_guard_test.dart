@@ -18,13 +18,17 @@ void main() {
     // refresh resolves appUi + videoSubtitle; init resolves appUi + videoSubtitle
     // => four AppFontLoader call sites total (TODO-864).
     expect(
-      'AppFontLoader.resolveAndLoad('.allMatches(src).length,
+      'AppFontLoader.resolveAndLoad'.allMatches(src).length,
       greaterThanOrEqualTo(4),
       reason: 'expected the four AppFontLoader call sites '
           '(refresh appUi+videoSub, init appUi+videoSub)',
     );
-    expect(src.contains('resolveAndLoad(settings.appUiFonts)'), isTrue);
-    expect(src.contains('resolveAndLoad(readerSettings.appUiFonts)'), isTrue);
+    // The appUi target consumes the WHOLE ordered list (fallback chain), so it
+    // must go through resolveAndLoadAll — resolveAndLoad drops every entry after
+    // the first, which silently kills the user's own fallback order.
+    expect(src.contains('resolveAndLoadAll(settings.appUiFonts)'), isTrue);
+    expect(
+        src.contains('resolveAndLoadAll(readerSettings.appUiFonts)'), isTrue);
     // It must NOT be fed the body list any more.
     expect(src.contains('resolveAndLoad(settings.customFonts)'), isFalse);
     expect(src.contains('resolveAndLoad(readerSettings.customFonts)'), isFalse);

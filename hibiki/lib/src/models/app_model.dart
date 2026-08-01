@@ -33,6 +33,7 @@ import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/models/app_font_loader.dart';
+import 'package:hibiki/src/models/app_ui_font_chain.dart';
 import 'package:hibiki/src/models/builtin_tags.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
@@ -1457,11 +1458,48 @@ class AppModel with ChangeNotifier {
   MediaItem? get currentMediaItem => _currentMediaItem;
   MediaItem? _currentMediaItem;
 
-  /// The user's custom app-wide UI font family, or null to use the language
-  /// default. Resolved and registered with the Flutter engine by
-  /// [refreshAppFont]; see [AppFontLoader].
-  String? _appFontFamily;
-  String? get appFontFamily => _appFontFamily;
+  /// The user's custom app-wide UI fonts, in the order they appear in the font
+  /// library's `appUi` target — an ordered **fallback chain**, not a single
+  /// face. Resolved and registered with the Flutter engine by [refreshAppFont];
+  /// see [AppFontLoader.resolveAndLoadAll]. Empty means "no custom font", which
+  /// hands the choice to the display language's system chain
+  /// ([appUiFontChain]).
+  List<String> _appFontFamilies = const <String>[];
+
+  /// Primary app-chrome family = head of the resolved chain ([appFontChain]).
+  /// Null keeps the platform default (non-CJK UI language with no custom font).
+  String? get appFontFamily => appFontChain.isEmpty ? null : appFontChain.first;
+
+  /// Everything after the primary family — feeds `TextStyle.fontFamilyFallback`.
+  /// Null (not an empty list) when there is nothing to fall back to, so the
+  /// style stays byte-identical to the pre-chain behaviour.
+  List<String>? get appFontFallbacks {
+    final List<String> chain = appFontChain;
+    return chain.length > 1 ? chain.sublist(1) : null;
+  }
+
+  /// The full app-chrome font chain for the current display language, memoised
+  /// on (locale, custom families) — [textStyle] is read on every theme rebuild,
+  /// and rebuilding a dozen-entry chain each time is pure garbage.
+  List<String> get appFontChain {
+    final Locale uiLocale = appLocale;
+    if (_cachedFontChainLocale == uiLocale &&
+        identical(_cachedFontChainSource, _appFontFamilies)) {
+      return _cachedFontChain;
+    }
+    _cachedFontChain = appUiFontChain(
+      customFamilies: _appFontFamilies,
+      locale: uiLocale,
+      platform: defaultTargetPlatform,
+    );
+    _cachedFontChainLocale = uiLocale;
+    _cachedFontChainSource = _appFontFamilies;
+    return _cachedFontChain;
+  }
+
+  List<String> _cachedFontChain = const <String>[];
+  Locale? _cachedFontChainLocale;
+  List<String>? _cachedFontChainSource;
 
   /// The user's custom video-subtitle font family, or null to use the platform
   /// default (+ CJK fallback chain). Resolved/registered with the Flutter
@@ -1470,27 +1508,31 @@ class AppModel with ChangeNotifier {
   String? _subtitleFontFamily;
   String? get subtitleFontFamily => _subtitleFontFamily;
 
-  /// Loads the first enabled entry from the reader's `customFonts` list as the
-  /// app-wide UI font (registering the file with the Flutter engine via
-  /// [AppFontLoader]) and rebuilds the theme. Falls back to the language
-  /// default when none is usable. Safe to call repeatedly — a no-op when the
-  /// resolved family is unchanged.
+  /// Loads **all** enabled entries of the `appUiFonts` target as the app-wide UI
+  /// font chain (registering each file with the Flutter engine via
+  /// [AppFontLoader]) and rebuilds the theme. Falls back to the display
+  /// language's system fonts when none is usable. Safe to call repeatedly — a
+  /// no-op when the resolved chain is unchanged.
   Future<void> refreshAppFont() async {
     final ReaderSettings settings = ReaderSettings(_database);
     await settings.refreshFromDb();
     // TODO-049: 软件系统字体走独立的 appUiFonts 目标，与小说正文(customFonts)、
-    // 词典字体相互独立。
-    final String? family =
-        await AppFontLoader.resolveAndLoad(settings.appUiFonts);
+    // 词典字体相互独立。整张列表都进链（不再只取第一条），用户排第 2、3 位的字体
+    // 才真正参与缺字回退。
+    final List<String> families =
+        await AppFontLoader.resolveAndLoadAll(settings.appUiFonts);
     // TODO-864: 视频字幕字体走独立的 videoSubtitle 目标；复用同一次
     // refreshFromDb 一起解析。两个 target 都解析完再判是否 notify，否则
     // 只改字幕字体（appUi 未变）时 early-return 会吞掉刷新。
+    // 字幕层自带 CJK 回退链（TODO-088）且与 mpv/libass 字号换算耦合（BUG-929），
+    // 故仍取单个家族，不走链。
     final String? subtitleFamily =
         await AppFontLoader.resolveAndLoad(settings.videoSubtitleFonts);
-    if (family == _appFontFamily && subtitleFamily == _subtitleFontFamily) {
+    if (listEquals(families, _appFontFamilies) &&
+        subtitleFamily == _subtitleFontFamily) {
       return;
     }
-    _appFontFamily = family;
+    _appFontFamilies = families;
     _subtitleFontFamily = subtitleFamily;
     notifyListeners();
   }
@@ -1509,6 +1551,11 @@ class AppModel with ChangeNotifier {
     final Locale uiLocale = appLocale;
     return TextStyle(
       fontFamily: appFontFamily,
+      // 缺字回退链（[appUiFontChain]）：用户列表里剩下的字体 + 显示语言的系统
+      // CJK 字体 + 其余 CJK 语言。没有它时，主字体缺字（典型如日文 face 上的
+      // 简中「们/东」、中文 face 上的日文假名）会逐字掉进引擎默认 fallback，
+      // 同一行里字形忽宽忽窄。
+      fontFamilyFallback: appFontFallbacks,
       fontFeatures: const [FontFeature('liga', 0)],
       locale: uiLocale,
       textBaseline: _isIdeographicLocale(uiLocale)
@@ -2184,11 +2231,12 @@ class AppModel with ChangeNotifier {
       } catch (e, stack) {
         ErrorLogService.instance.log('AppModel.healFontPaths', e, stack);
       }
-      // Register the user's custom app-wide font (first enabled entry) before
-      // first paint so the global theme uses it without a flash. Reuses the
+      // Register the user's custom app-wide fonts (every enabled entry, in
+      // order — the chain feeds fontFamily + fontFamilyFallback) before first
+      // paint so the global theme uses them without a flash. Reuses the
       // settings just loaded above to avoid a second prefs read.
-      _appFontFamily =
-          await AppFontLoader.resolveAndLoad(readerSettings.appUiFonts);
+      _appFontFamilies =
+          await AppFontLoader.resolveAndLoadAll(readerSettings.appUiFonts);
       // TODO-864: 视频字幕字体同样在首帧前从 videoSubtitle 目标解析。
       _subtitleFontFamily =
           await AppFontLoader.resolveAndLoad(readerSettings.videoSubtitleFonts);
