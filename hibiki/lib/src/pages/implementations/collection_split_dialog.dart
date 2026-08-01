@@ -97,18 +97,27 @@ class _CollectionSplitDialogState extends State<CollectionSplitDialog> {
                   widget.sections[i].memberTitles.join(' · '),
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                  // 成员清单是次要说明文本：走 MD3 文本角色（bodySmall 随
+                  // textScale 缩放），不再钉死 12px。
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: cs.onSurfaceVariant),
                 ),
               ],
               const SizedBox(height: 8),
-              CheckboxListTile(
+              // 共享 MD3 行 + 裸 Checkbox 为 leading，整行 onTap 翻转——等价旧
+              // CheckboxListTile 的取值/回调/标题，但走设计令牌的行高与内边距。
+              HibikiListItem(
                 key: const ValueKey<String>('collection-split-keep-original'),
-                value: _keepOriginal,
-                onChanged: (bool? value) =>
-                    setState(() => _keepOriginal = value ?? true),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
+                density: HibikiListDensity.compact,
+                padding: EdgeInsets.zero,
+                onTap: () => setState(() => _keepOriginal = !_keepOriginal),
+                leading: Checkbox(
+                  value: _keepOriginal,
+                  onChanged: (bool? value) =>
+                      setState(() => _keepOriginal = value ?? true),
+                ),
                 title: Text(t.collection_split_keep_original),
               ),
             ],

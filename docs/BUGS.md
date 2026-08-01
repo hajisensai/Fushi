@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1307 条。点号进各自文件。
+> 共 1310 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1392](bugs/BUG-1392-md3-chrome-guard-collection-prs.md) | ✅ | ✅ | 合集三 PR 绕过 MD3 页面 chrome 守卫：CheckboxListTile / 手抄封面角标 / 硬编码 fontSize 直接把 develop 打红 |
+| [BUG-1381](bugs/BUG-1381-lyrics-bottom-reserve-guard.md) | ✅ | ✅ | 歌词底栏预留守卫锚在实现写法上，PR#670 合并 Padding 后 develop 单测红 |
+| [BUG-1380](bugs/BUG-1380-wheel-gate-token-consumed-before-paginate.md) | ✅ | ✅ | 分页滚轮闸门在换章加载期消费手势 token，整段横向惯性被吞 |
 | [BUG-1373](bugs/BUG-1373-ios-pod-install-license-file-type.md) | ✅ | ✅ | iOS pod install 断在 license 校验：LICENSE.GPLv3 扩展名不被 CocoaPods 接受 |
 | [BUG-1372](bugs/BUG-1372-android-appsmoke-prewarm-webview-renderer-kills-app.md) | ✅ | ✅ | Android appSmoke：预热 headless WebView 永不销毁，renderer 被 OOM kill 后连坐杀整个 app 进程 |
 | [BUG-1365](bugs/BUG-1365-local-audio-query-races-binding-index-build.md) | ✅ | ✅ | 桌面本地音频查询与绑定期建索引竞态：撞锁被吞成 null＝「暂无发音」（CI flaky） |

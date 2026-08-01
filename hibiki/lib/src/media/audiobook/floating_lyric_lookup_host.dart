@@ -72,6 +72,17 @@ class FloatingLyricLookupHost extends ConsumerStatefulWidget {
   /// 不能再用 `entries.isNotEmpty` 当判据——那会让隐藏热槽把整层 [IgnorePointer]
   /// 永久翻成可命中，吃掉底下所有点击。判据 = 搜索期占位在显示，或存在**可见**
   /// 弹窗层；隐身热槽（visible=false，停屏外预热）不算。
+  ///
+  /// **有意不接** [DictionaryPageMixin.lookupPopupHiddenByDialog]（BUG-797/1040/1327/1364
+  /// 同族收口时逐条复核过）：本判据与那四处**极性相反**。那四处（弹窗层 `visible`、
+  /// 整屏 dismiss barrier、搜索期占位卡）都是「往树里放一个会画、会吃点击的东西」，漏接
+  /// 计数 = 对话框被盖住/点不着；而这里 `true` 只是把外层 [IgnorePointer] 的 `ignoring`
+  /// 翻成 **false**，即「不强制忽略」——它本身不拦截任何东西，拦截与否完全由子项决定。
+  /// 对话框期间本层的两个子项都已让位：弹窗层经 [parkedPopupLayer] 停到屏外
+  /// （`screen.width + 8`，连安卓原生平台视图也够不着），占位卡经 [Visibility] 收成零尺寸，
+  /// Stack 自身 `hitTestSelf` 恒假 ⇒ 点击照常穿到底下页面。给这里再与一次计数是纯粹的
+  /// 对称性改动，不产生任何可观测差异，故不改（行为证据见
+  /// `test/media/audiobook/floating_lyric_lookup_host_test.dart` 的「对话框期间点击穿透」）。
   static bool shouldBlockHitTest(DictionaryPopupController popup) =>
       popup.isSearchingUi || popup.hasVisiblePopup;
 

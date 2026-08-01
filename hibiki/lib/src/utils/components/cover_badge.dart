@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 
-/// 封面角标：压在封面图上的半透明黑胶囊（图标 + 可选文字）。
+/// 封面角标：压在封面图上的半透明黑胶囊（图标 / 文字，或两者）。
 ///
 /// 统一书架/视频/游戏卡上「字幕/云端/播放列表/有声书」等角标的观感——此前
 /// 同款胶囊在 home_video_page / remote.part 等处至少复制三份且 alpha 各异
@@ -11,14 +11,18 @@ import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 /// eink：半透明黑在墨水屏上合成抖动中间灰，改纯黑实底（前景仍是纯白）。
 class CoverBadge extends StatelessWidget {
   const CoverBadge({
-    required this.icon,
+    this.icon,
     this.label,
     this.iconSize = 14,
     super.key,
-  });
+  }) : assert(
+          icon != null || label != null,
+          'CoverBadge needs an icon, a label, or both',
+        );
 
-  /// 角标图标（14px 白色，与既有视频卡角标同规格）。
-  final IconData icon;
+  /// 角标图标（14px 白色，与既有视频卡角标同规格）；null 时为纯文字胶囊
+  /// （如合集详情「相关作品」卡上的关系类型徽标「前作 / 续作 / 剧场版」）。
+  final IconData? icon;
 
   /// 可选文字（如播放列表集数「12」）；null 时为纯图标胶囊。
   final String? label;
@@ -38,9 +42,9 @@ class CoverBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(icon, size: iconSize, color: Colors.white),
+          if (icon != null) Icon(icon, size: iconSize, color: Colors.white),
           if (label != null) ...[
-            const SizedBox(width: 4),
+            if (icon != null) const SizedBox(width: 4),
             Text(
               label!,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
