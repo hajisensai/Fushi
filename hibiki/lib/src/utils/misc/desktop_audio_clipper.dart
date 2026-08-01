@@ -796,10 +796,13 @@ List<String> buildFfmpegClipGifArgs({
 ///   本负载是 16–48 帧的短片，延迟比压缩率重要，且静态链接体积约 3–5MB 对 5–9MB）。
 ///
 /// 三条分支的参数形态已在带 libsvtav1/libwebp 的真实 ffmpeg 上跑通（1080p30 源 4 秒窗，
-/// 480px·8fps：AVIF 36 KB / WebP 163 KB / GIF 471 KB）。**但入库的 `ffmpeg-min` 尚未含
-/// 这两个编码器**（见 `tool/ffmpeg-min/build-ffmpeg-min.sh`）——须重跑
-/// `.github/workflows/ffmpeg-min.yml` 并重新 vendor exe。在那之前调用点的 fail-open
-/// 会把 AVIF/WebP 降级回 GIF，卡照样制得出来，只是用户选的格式暂不生效。
+/// 480px·8fps：AVIF 36 KB / WebP 163 KB / GIF 471 KB）。**入库的 `ffmpeg-min` 已含这两个
+/// 编码器**（配方 `tool/ffmpeg-min/build-ffmpeg-min.sh` 的 `--enable-libsvtav1
+/// --enable-libwebp` + `ENCODERS` 含 `libsvtav1,libwebp_anim`；exe 由 `fdd5001ff` 重新
+/// vendor，`third_party/ffmpeg-min/windows/ffmpeg.exe -encoders` 可复核）——桌面端不会
+/// 产生注定失败的编码调用，**别为此再跑一次 `.github/workflows/ffmpeg-min.yml`**。
+/// 调用点按 [MiningAnimatedFormat.encodeAttempts] 降级回 GIF 的链路保留为兜底（用户
+/// 自带的外部 ffmpeg 可能缺编码器），不是当前入库 exe 的常态路径。
 ///
 /// `-2` 让高度按宽度等比且取偶（三种编码器都要求偶数维度）。`-ss`/`-t` 置于 `-i` 前做
 /// 快速输入定位（多 GB 剧集不从 0 解码）。时长 clamp 到 `(0, maxDurationMs]`。
