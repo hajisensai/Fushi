@@ -8,10 +8,19 @@ import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
 import 'package:hibiki/src/media/collections/collection_season_groups.dart';
 import 'package:hibiki/src/media/media_cover_source.dart';
+import 'package:hibiki/src/media/video/cover_ui/episode_rename_confirm_dialog.dart';
 import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
 import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
+import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
+import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
+import 'package:hibiki/src/media/video/scraper/episode_rename.dart';
+import 'package:hibiki/src/media/video/scraper/episode_scrape_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
+import 'package:hibiki/src/media/video/scraper/tmdb_default_key.dart';
+import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
@@ -469,6 +478,90 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         members: _members,
       ),
     );
+  }
+
+  /// 「刮削分集资料」（TODO-2491）：EpisodeScrapeService 按合集刮削绑定批量拉
+  /// 每集集名/简介/放送日期（TMDB 还把剧照落为集封面），toast 报成功/跳过统计。
+  /// 前置：合集已刮削（collection_scrape_meta 有行），否则提示先刮合集。
+  /// TMDB key 直读偏好表（本页无 Riverpod）：用户自填优先，其次内置 key，与封面
+  /// 刮削同一取值规则（resolveTmdbApiKey）。
+  Future<void> _scrapeEpisodes() async {
+    final CollectionScrapeMetaRow? meta =
+        await widget.database.getCollectionScrapeMeta(widget.collection.id);
+    if (!mounted) return;
+    if (meta == null) {
+      HibikiToast.show(msg: t.collection_episode_scrape_unbound);
+      return;
+    }
+    final String tmdbKey = resolveTmdbApiKey(
+      await widget.database.getPref(kVideoScraperTmdbApiKeyPref) ?? '',
+    );
+    final BangumiClient bangumi = BangumiClient();
+    final TmdbClient? tmdb =
+        tmdbKey.isEmpty ? null : TmdbClient(apiKey: tmdbKey);
+    try {
+      final EpisodeScrapeService service = EpisodeScrapeService(
+        db: widget.database,
+        bangumiClient: bangumi,
+        tmdbClient: tmdb,
+        coverDownloader: CoverDownloader(),
+        coverMetaStore: CoverMetaStore(await VideoStorage.coversDir()),
+      );
+      final EpisodeScrapeOutcome outcome =
+          await service.scrapeCollectionEpisodes(widget.collection.id);
+      if (!mounted) return;
+      if (outcome.updated == 0 && outcome.errors.isNotEmpty) {
+        // 源级失败（网络/无 key/movie 无分集）：如实报错，不装作「0 集成功」。
+        HibikiToast.show(
+          msg: t.collection_episode_scrape_failed(
+            error: outcome.errors.values.first,
+          ),
+        );
+        return;
+      }
+      HibikiToast.show(
+        msg: t.collection_episode_scrape_result(
+          updated: outcome.updated,
+          skipped: outcome.unmatched,
+        ),
+      );
+      await _reload();
+      widget.onChanged();
+    } finally {
+      bangumi.close();
+      tmdb?.close();
+    }
+  }
+
+  /// 「按刮削重命名各集」（TODO-2491）：dryRun 拿旧名→新名对照表 → 勾选确认
+  /// 弹窗 → 对勾选子集逐条写穿 `video_books.title`（与库页手动重命名同一落库
+  /// 口）。空对照直接提示无可改（未刮集级资料 / 名字已一致）。
+  Future<void> _renameEpisodesFromScrape() async {
+    final List<EpisodeRenameProposal> proposals =
+        await renameCollectionEpisodes(
+      db: widget.database,
+      collectionId: widget.collection.id,
+      dryRun: true,
+    );
+    if (!mounted) return;
+    if (proposals.isEmpty) {
+      HibikiToast.show(msg: t.collection_episode_rename_empty);
+      return;
+    }
+    final List<EpisodeRenameProposal>? chosen =
+        await showEpisodeRenameConfirmDialog(
+      context: context,
+      proposals: proposals,
+    );
+    if (chosen == null || chosen.isEmpty || !mounted) return;
+    for (final EpisodeRenameProposal proposal in chosen) {
+      await widget.database
+          .updateVideoBookTitle(proposal.bookUid, proposal.newTitle);
+    }
+    if (!mounted) return;
+    HibikiToast.show(msg: t.collection_episode_rename_apply(n: chosen.length));
+    await _reload();
+    widget.onChanged();
   }
 
   /// 打开「相关作品」里已绑定的本地合集详情（airing_calendar 同范式：本页只有
@@ -1278,6 +1371,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             icon: Icons.subtitles_outlined,
             label: t.video_jimaku_batch_title,
             onPressed: _members.isEmpty ? null : _fetchCollectionSubtitles,
+          ),
+          // 集级刮削两连：先刮分集资料，再（可选）按刮削结果批量改集名。
+          HibikiAppBarAction(
+            icon: Icons.movie_filter_outlined,
+            label: t.collection_episode_scrape,
+            onPressed: _members.isEmpty ? null : _scrapeEpisodes,
+          ),
+          HibikiAppBarAction(
+            icon: Icons.format_list_numbered,
+            label: t.collection_episode_rename,
+            onPressed: _members.isEmpty ? null : _renameEpisodesFromScrape,
           ),
           HibikiAppBarAction(
             icon: Icons.drive_file_rename_outline,
