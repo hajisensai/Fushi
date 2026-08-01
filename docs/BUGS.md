@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1305 条。点号进各自文件。
+> 共 1306 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1380](bugs/BUG-1380-wheel-gate-token-consumed-before-paginate.md) | ✅ | ✅ | 分页滚轮闸门在换章加载期消费手势 token，整段横向惯性被吞 |
 | [BUG-1365](bugs/BUG-1365-local-audio-query-races-binding-index-build.md) | ✅ | ✅ | 桌面本地音频查询与绑定期建索引竞态：撞锁被吞成 null＝「暂无发音」（CI flaky） |
 | [BUG-1364](bugs/BUG-1364-search-placeholder-covers-dialog.md) | ✅ | ✅ | 搜索中占位层未接对话框隐藏计数，可能盖住对话框 |
 | [BUG-1358](bugs/BUG-1358-schema-guard-handwritten-comment-strip.md) | ✅ | ✅ | PR#679 新守卫手写 startsWith('//') 剥注释，违反 source_guard 纪律，develop 单测门红 |
