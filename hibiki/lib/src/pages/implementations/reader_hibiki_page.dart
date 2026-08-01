@@ -69,6 +69,7 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/reader/reader_top_progress.dart';
 import 'package:hibiki/src/reader/ttu_toc_flatten.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
+import 'package:hibiki/src/webview/webview_death_guard.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
@@ -1323,6 +1324,40 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// 的阅读位置/统计在 exit(0) 前落库。
   ExitFlushCallback? _exitFlushCallback;
   Timer? _progressPollTimer;
+
+  /// renderer 死亡处置（救命动作 = [_buildWebView] 里给 `InAppWebView` 传了非
+  /// null 的 `onRenderProcessGone`，否则 Android 会连坐杀掉整个 app）。
+  ///
+  /// **这里刻意不重建**（`afterRebuild` 为 null），与漫画/词典弹窗/Lapis 三处
+  /// 不同。原因是阅读器的恢复锚 `_initialProgress` / `_initialCharOffset`
+  /// （[_initBook] / `_beginNavigation` / reload 三处写）记的是**进入本章那一刻
+  /// 的快照**，章内滚动只更新 `_lastProgress*`、不回写它俩。跨章翻进本章时
+  /// `_beginNavigation` 常把它们写成 `0.0 / -1`，于是换 key 强制重建后
+  /// `onWebViewCreated → 重新 restore` 会回到**章首**，紧接着
+  /// `_onRestoreComplete → _refreshProgress → _debouncedSavePosition` 把这个回退
+  /// 位置如实落库，把 DB 里更靠后的真实进度覆盖掉。白屏可以退出重进，进度被写
+  /// 回退不可逆 —— 两害相权，本轮只救命不重建。
+  ///
+  /// 要把重建做对，得先补齐这些前置条件（不在本轮止血范围内）：
+  /// ① 崩溃回调里用 `_lastProgressValue` / `_lastProgressCharOffset` 补齐
+  ///    `_initialProgress` / `_initialCharOffset`（照 reload 路径的范式）；
+  /// ② `webview.part.dart` 里 `onWebViewCreated` 的
+  ///    `debugEvaluateJavascript == null` 断言改成幂等 —— State 不重建，第二次
+  ///    `onWebViewCreated` 必炸 assert；
+  /// ③ `navigation.part.dart` 的 `_refreshProgress` 给 `evaluateJavascript`
+  ///    补 try/catch。
+  ///
+  /// flush 侧仍要做满：取消轮询与 debounce（报废 controller 上的
+  /// `evaluateJavascript` 会抛成未捕获异步错误）、落盘当前位置、丢掉 controller。
+  late final WebViewDeathGuard _webViewDeathGuard = WebViewDeathGuard(
+    surface: 'reader_hibiki',
+    flushBeforeRebuild: () async {
+      _progressPollTimer?.cancel();
+      _progressPollTimer = null;
+      _controller = null;
+      await _flushPosition();
+    },
+  );
   // BUG-380: 滚动进度刷新的「在飞 + 待重跑」守卫。rAF 节流后滚动回传可能高频到来，
   // 每次 _refreshProgress 都 evaluateJavascript 跑较重的 hoshiProgressDetails（遍历全章
   // TextNode + caretRangeFromPoint），未加守卫会让多次调用堆积。_scrollProgressInFlight
@@ -2639,34 +2674,25 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return Center(child: adaptiveIndicator(context: context));
     }
     final Widget webView = _buildWebView();
-    // BUG-379: 歌词模式（LyricsModeHtml）是独立 HTML，没有 window.hoshiReader，
-    // _applyChromeInsets 对它整体 early-return，正文那套「告诉 WebView 底栏预留高度」
-    // 的机制对歌词页完全失效。于是歌词 WebView 仍 Positioned.fill 铺满全屏，底栏
-    // （_buildAudiobookBar，bottom:0）盖在其上，歌词文档级 CSS 滚动条（主题化的细条）
-    // 沿整屏高度绘制，底部一段被绘制进底栏区域，看上去像「进度条跑进底栏里」。
-    //
-    // 正文模式滚动条被原生关闭（verticalScrollBarEnabled:false）且 body 经 setChromeInsets
-    // 推离底栏，所以不暴露此问题；唯独歌词页两条都不成立。这里在 Flutter 侧把歌词 WebView
-    // 收缩到底栏之上（底栏可见时留 _readerBottomReserve），视口本身不再与底栏重叠，
-    // CSS 滚动条自然只画在歌词区域内。底栏可见条件与 _buildBottomChrome / popupBottomReserve
-    // 保持一致（_hasEverLoaded && _showChrome），_showChrome 切换会触发 _rebuild 重建本树。
-    // BUG-1343：歌词 / spread 都是独立 HTML，不读取正文引擎的 chromeTopInset。
-    // macOS 顶部 DragToMoveArea 叠在 WebView 之上时，独立文档必须由 Flutter 侧缩进，
-    // 否则首行歌词或整页图会落到拖拽区下面且无法交互。
-    final double independentDocumentTopInset =
-        (_lyricsMode || _spreadDocumentLoaded) ? _macosWindowTitlebarInset : 0;
-    final double lyricsBottomInset =
-        _lyricsMode && _hasEverLoaded && _showChrome ? _readerBottomReserve : 0;
-    if (independentDocumentTopInset > 0 || lyricsBottomInset > 0) {
-      return Padding(
-        padding: EdgeInsets.only(
-          top: independentDocumentTopInset,
-          bottom: lyricsBottomInset,
-        ),
-        child: webView,
-      );
-    }
-    return webView;
+    // BUG-379 / BUG-1343：歌词模式（LyricsModeHtml）与 spread 整页图都是独立 HTML，
+    // 没有 window.hoshiReader，_applyChromeInsets 对它们整体 early-return，正文那套
+    // 「告诉 WebView 预留多少」的机制对它们失效，只能由 Flutter 侧收缩视口本身。
+    // 留多少是 [independentDocumentInsets] 说了算（单一真相源，行为单测直接钉它）；
+    // 这里只负责喂当前状态并按结果包 Padding。
+    // BUG-1381：底部预留曾以 `EdgeInsets.only(bottom: _readerBottomReserve)` 这个**写法**
+    // 被静态守卫钉住，PR#670 把顶/底两笔留白合成一个 Padding 后写法变了、行为没变，
+    // 守卫却红了。改由纯函数承载契约后，守卫钉的是「预留来自它」而非某种拼写。
+    // _showChrome / _hasEverLoaded 切换会触发 _rebuild 重建本树。
+    final EdgeInsets independentDocumentPadding = independentDocumentInsets(
+      lyricsMode: _lyricsMode,
+      spreadDocumentLoaded: _spreadDocumentLoaded,
+      // 底栏占位条件与 _buildBottomChrome / popupBottomReserve 一致。
+      chromeOccupiesLayout: _hasEverLoaded && _showChrome,
+      bottomReserve: _readerBottomReserve,
+      titlebarInset: _macosWindowTitlebarInset,
+    );
+    if (independentDocumentPadding == EdgeInsets.zero) return webView;
+    return Padding(padding: independentDocumentPadding, child: webView);
   }
 
   String _buildStyleTag() {

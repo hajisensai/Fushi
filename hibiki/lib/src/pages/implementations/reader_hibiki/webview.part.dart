@@ -2129,10 +2129,16 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             final String axis = args[1] as String;
             final int throttleMs =
                 ReaderHibikiSource.instance.wheelPageTurnInterval;
+            // BUG-1380：闸门的 token 消费必须晚于「这一 tick 能不能翻页」的确认。
+            // 换章加载/restore 在飞时 _paginate 会直接丢弃这一 tick，若此刻仍认领
+            // token，整段惯性的后续 tick 全在闸门早退 → 用户这一次滑动零反馈。
+            // canTurnPage=false 时闸门只查询不认领，且仍放行到 _paginate——那里的
+            // in-flight 分支要靠这些 tick 续跨章冷却窗（TODO-1229 v2）。
             if (axis == 'horizontal' &&
                 !_pagedWheelGestureGate.shouldStartNewGesture(
                   now: DateTime.now(),
                   settleInterval: Duration(milliseconds: throttleMs),
+                  canTurnPage: !_paginationInFlight,
                 )) {
               return;
             }
@@ -2455,6 +2461,16 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       onConsoleMessage: (controller, msg) {
         debugPrint('[WebView] ${msg.message}');
       },
+      // 非 null 本身就是救命动作：Android 上 renderer 被 OOM 回收时，
+      // `InAppWebViewClientCompat.onRenderProcessGone` 只有拿到非 null 回调才
+      // `return true`；否则默认动作是把整个 app 进程一起杀掉。这里的处置刻意
+      // **不重建**（见 [_webViewDeathGuard] 的注释：恢复锚陈旧会把进度写回退）。
+      onRenderProcessGone:
+          (InAppWebViewController _, RenderProcessGoneDetail detail) =>
+              unawaited(_webViewDeathGuard.handleDeath(
+        didCrash: detail.didCrash,
+        rendererPriorityAtExit: detail.rendererPriorityAtExit,
+      )),
     );
     // KeyedSubtree carries [_webViewKey] (a GlobalKey) on the InAppWebView's own
     // render subtree so [onDismissBarrierHover] can read the WebView's RenderBox

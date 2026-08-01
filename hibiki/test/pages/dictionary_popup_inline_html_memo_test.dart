@@ -77,14 +77,20 @@ void main() {
     // ——「关闭词典」的鼠标键与快捷键在弹窗持焦时因此全无反应。现在表由宿主按注册表
     // 当前绑定下发。行为面（谁被转发、改键跟不跟随）由 test/focus/
     // webview_key_bridge_behavior_test.dart 真跑 JS 验证，这里只锁注入面。
+    // BUG-1347：显式声明「指针归 WebView」——本用例锁的是弹窗内 JS 桥的注入面。
+    // 不写死的话，鼠标表在 Windows 上是空的（那里指针第一手归 Flutter 宿主，桥不装
+    // 鼠标监听），同一份守卫会在本机红、在 Linux CI 绿。宿主那条路由
+    // test/pages/dictionary_popup_pointer_input_test.dart 覆盖。
     final String bound = DictionaryPopupWebViewState.debugHostInputBridgeScript(
       const DictionaryPopupInputSpec(
         keyTokens: <String>['Escape', 'Ctrl+KeyD'],
         mouseButtons: <int>[3],
       ),
+      hostOwnsPointer: false,
     );
     final String empty = DictionaryPopupWebViewState.debugHostInputBridgeScript(
       const DictionaryPopupInputSpec(),
+      hostOwnsPointer: false,
     );
 
     expect(bound, contains("'Escape', 'Ctrl+KeyD'"),

@@ -4681,7 +4681,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   /// `epubPath`=PDF 绝对路径、`extractDir`=占位、`chapterCount`=页数、`chaptersJson`=`'[]'`。
   final String format;
 
-  /// 漫画阅读模式覆盖（漫画 OCR，v52）：`null`=按页图长宽比自动判定（默认，横长跨页
+  /// 漫画阅读模式覆盖（漫画 OCR，v53）：`null`=按页图长宽比自动判定（默认，横长跨页
   /// 走 `'spread'` 双页布局、纵长走 `'webtoon'` 长条纵向连读）；非 null 为用户手动覆盖，
   /// 取值 `'spread'`（跨页/翻页）或 `'webtoon'`（长条纵向）。仅 `format='manga'` 的行有意义，
   /// 其它书身份恒 null。null 语义即「跟随自动判定」，与显式取值区分。
@@ -6172,10 +6172,10 @@ class ReadingHourlyLogRow extends DataClass
   final int hour;
   final int readingTimeMs;
 
-  /// v65：写入面身份（`BookFormat.dbValue`：'epub' / 'pdf' / 'manga'）。此前没有
+  /// v67：写入面身份（`BookFormat.dbValue`：'epub' / 'pdf' / 'manga'）。此前没有
   /// 任何身份列，EPUB / PDF / 漫画同一小时的时长在写入时就被加成一行，永久分不开；
   /// 日级 `reading_statistics` 靠 title→format 反查能拆，时段表拆不开只因缺这列。
-  /// `''` = v65 前的历史行（写入时信息已丢，如实标未区分）以及云同步里旧端贡献的
+  /// `''` = v67 前的历史行（写入时信息已丢，如实标未区分）以及云同步里旧端贡献的
   /// 无法归因差额（见 aggregate_sync_service 的 deficit-lift）。
   final String format;
   const ReadingHourlyLogRow(
@@ -17907,7 +17907,7 @@ class VideoScrapeMetaRow extends DataClass
   /// 条目详情页 URL（`https://bgm.tv/subject/<id>`），供「查看条目」跳转。
   final String? detailUrl;
 
-  /// 集号（v65 / TODO-2491）：集级刮削按文件名解析的集号与源的分集列表对齐后写入
+  /// 集号（v66 / TODO-2491）：集级刮削按文件名解析的集号与源的分集列表对齐后写入
   /// （TMDB `episode_number` / Bangumi `sort`）。NULL = 本行是旧的**作品级**资料
   /// （v54~v64 的自动刮削把整部作品的简介写进每个文件），或集级刮削未能从文件名
   /// 解出集号。存对齐后的**源侧集号**而非文件名原文，便于重刮时按号更新。

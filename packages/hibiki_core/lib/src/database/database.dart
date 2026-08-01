@@ -2671,7 +2671,7 @@ class HibikiDatabase extends _$HibikiDatabase {
                 t.collectionId.equals(collectionId)))
           .go();
 
-  // ── collection_relations（合集相关作品，schema v65 / TODO-2484）──────
+  // ── collection_relations（合集相关作品，schema v66 / TODO-2484）──────
 
   /// 整体替换某合集的相关作品边（重刮即替换）。
   ///
