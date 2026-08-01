@@ -326,12 +326,24 @@ class CoverScraperService {
   /// [rescrapeScraped] 只解锁「要不要覆盖**自动**刮来的旧结果」，它**不是**
   /// 「覆盖一切」——用户亲手选定的封面（[CoverOrigin.userScraped]，见
   /// [applyCandidateToBooks]）在任何开关下都不会被动（BUG-1325）。
+  ///
+  /// 合集子篇（成员数 ≥2 的合集成员，判据 `videoUidsInMultiMemberCollections`）
+  /// 在本层**一律不落封面**、任何开关都解不开——作品级竖版海报只属于合集自有
+  /// 封面（[applyCandidateToCollection]），子篇封面保持抽帧缩略图或集级剧照
+  /// （EpisodeScrapeService），两者都没有就保持无封面（用户 2026-08-02）。子篇
+  /// 与受保护封面走同一条「只刮资料不碰封面」路径、不改既有 cover_meta；用户在
+  /// 弹窗亲手匹配（[applyCandidateToBooks]）与集级剧照不经此闸。
   Stream<BatchScrapeProgress> scrapeLibrary(
     List<VideoBookRow> books, {
     bool rescrapeScraped = false,
   }) async* {
     final Map<String, _ResolvedMatch> decisionCache =
         <String, _ResolvedMatch>{};
+    // 合集子篇集合每批取一次（全量单查询，消 N+1）；含 sidecar 在内的整条
+    // scrapeOne 封面流水线对子篇都不放行——目录级 poster.jpg 刷满整季与在线
+    // 海报同症（Kodi/Jellyfin 生态单集图约定是 -thumb 而非 -poster，此处
+    // 整体跳过实际不损失单集 sidecar）。
+    final Set<String> collectionEpisodes = await _repo.collectionEpisodeUids();
     for (int i = 0; i < books.length; i++) {
       final VideoBookRow book = books[i];
       ScrapeOutcome outcome;
@@ -342,13 +354,14 @@ class CoverScraperService {
           final CoverMeta? meta = await _coverMeta.get(book.bookUid);
           final CoverOrigin origin = meta?.origin ?? CoverOrigin.autoFrame;
           final CoverOverwritePolicy policy = origin.batchOverwritePolicy;
-          final bool allowed = switch (policy) {
-            CoverOverwritePolicy.free => true,
-            CoverOverwritePolicy.rescrapeOnly ||
-            CoverOverwritePolicy.legacyStrict =>
-              rescrapeScraped,
-            CoverOverwritePolicy.never => false,
-          };
+          final bool allowed = !collectionEpisodes.contains(book.bookUid) &&
+              switch (policy) {
+                CoverOverwritePolicy.free => true,
+                CoverOverwritePolicy.rescrapeOnly ||
+                CoverOverwritePolicy.legacyStrict =>
+                  rescrapeScraped,
+                CoverOverwritePolicy.never => false,
+              };
           if (!allowed) {
             outcome = ScrapeSkippedProtected(origin);
             // 封面受保护 ≠ 条目资料也不要。手动设过封面、或目录里有 poster.jpg

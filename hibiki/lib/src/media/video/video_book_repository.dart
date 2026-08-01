@@ -10,6 +10,8 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:hibiki/src/media/video/scraper/collection_member_policy.dart'
+    show videoUidsInMultiMemberCollections;
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart'
     show ScrapeInfoboxEntry, ScrapeMetadata, ScrapeSource, ScrapeTag;
 import 'package:hibiki/src/media/video/video_path_migration.dart';
@@ -338,6 +340,11 @@ class VideoBookRepository {
   /// 统一合集：某合集的成员引用行（按 sortIndex 有序）。播放器据此建播放列表兄弟集。
   Future<List<MediaCollectionItemRow>> getCollectionItems(int collectionId) =>
       _db.getCollectionItems(collectionId);
+
+  /// 合集子篇 uid 集合：属于任一**成员数 ≥2** 合集的视频条目。自动刮削据此对
+  /// 子篇**不落作品级海报**（判据与理由见 [videoUidsInMultiMemberCollections]）。
+  Future<Set<String>> collectionEpisodeUids() async =>
+      videoUidsInMultiMemberCollections(await _db.getAllCollectionItems());
 
   /// 统一合集：按 id 取合集（播放器取 playlist 合集名做制卡 documentTitle 系列名）。
   Future<MediaCollectionRow?> getMediaCollectionById(int id) =>
