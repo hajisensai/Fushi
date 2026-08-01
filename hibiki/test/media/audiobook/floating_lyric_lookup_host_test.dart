@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 
 /// TODO-354 ① 行为守卫：书架/首页（无 reader）开的悬浮字幕点词必须路由进常驻主窗口
 /// 查词宿主，而不再被 app 级 no-op handler 吞掉。
@@ -125,6 +126,117 @@ void main() {
       expect(src, contains('reuseWarmSlot: true'), reason: '顶层查词必须原地复用热槽');
       expect(src, contains('clipBehavior: Clip.none'),
           reason: '停屏外的隐藏热槽会被默认 hardEdge 裁掉而失温');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // TODO-2584：`shouldBlockHitTest` 为什么**有意**不接对话框隐藏计数
+  // ---------------------------------------------------------------------------
+  //
+  // BUG-797/1040（弹窗层 visible）、BUG-1327（barrier）、BUG-1364（搜索期占位卡）三处
+  // 都必须与 `_popupHidingDialogDepth` 相与，于是本判据看上去像"第四处漏网"。逐条复核
+  // 后结论是**不改**：它与那三处极性相反。那三处是「往树里放一个会画、会吃点击的东西」，
+  // 漏接计数 = 对话框被盖住 / 点不着；这里 `true` 只是把外层 `IgnorePointer` 的
+  // `ignoring` 翻成 **false**（"不强制忽略"），本身不拦截任何东西——拦不拦由子项决定，
+  // 而两个子项在对话框期间都已让位。
+  //
+  // 下面两条用**真的** `parkedPopupLayer` 复刻本 host 的图层形态直接观测点击落到谁身上：
+  // 第一条是负向控制（子项在场时确实吃得掉点击，证明 harness 不是空跑），第二条钉死
+  // 「子项让位后即便 `ignoring == false`，点击照常穿到底下」。
+  group('对话框期间点击穿透（shouldBlockHitTest 有意不接对话框计数）', () {
+    const Size screen = Size(800, 600); // = flutter_test 默认视口，停屏外才真在屏外。
+
+    Widget harness({
+      required DictionaryPopupController popup,
+      required bool childrenYielded,
+      required VoidCallback onUnderTap,
+    }) {
+      Widget opaqueBlock(Color color) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {},
+            child: ColoredBox(color: color),
+          );
+      return Directionality(
+        textDirection: TextDirection.ltr,
+        child: Stack(
+          children: <Widget>[
+            // 底下的页面 / 对话框。
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onUnderTap,
+                child: const SizedBox.expand(),
+              ),
+            ),
+            IgnorePointer(
+              // 真实接线：本 host 的 build 就是这一句。
+              ignoring: !FloatingLyricLookupHost.shouldBlockHitTest(popup),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  // 搜索期占位卡的让位形态（BUG-1364 后：Visibility 收成零尺寸）。
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    width: 200,
+                    height: 200,
+                    child: Visibility(
+                      visible: !childrenYielded,
+                      child: opaqueBlock(const Color(0xFF00FF00)),
+                    ),
+                  ),
+                  // 弹窗层的让位形态（BUG-797 后：真 parkedPopupLayer 停到屏外）。
+                  parkedPopupLayer(
+                    pos: const Rect.fromLTWH(0, 0, 200, 200),
+                    visible: !childrenYielded,
+                    screen: screen,
+                    child: opaqueBlock(const Color(0xFF0000FF)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    testWidgets('负向控制：子项在场时确实吃掉点击', (WidgetTester tester) async {
+      final DictionaryPopupController popup =
+          DictionaryPopupController(lowMemory: false)
+            ..beginSearchUi(const Rect.fromLTWH(10, 10, 1, 1));
+      addTearDown(popup.dispose);
+      int underTaps = 0;
+      await tester.pumpWidget(harness(
+        popup: popup,
+        childrenYielded: false,
+        onUnderTap: () => underTaps++,
+      ));
+      await tester.pump();
+      await tester.tapAt(const Offset(50, 50));
+      await tester.pump();
+      expect(underTaps, 0, reason: 'harness 若连"子项吃点击"都复现不了，下一条的穿透就证明不了任何东西');
+    });
+
+    testWidgets('对话框期间：ignoring 仍为 false，但点击照常穿到底下',
+        (WidgetTester tester) async {
+      final DictionaryPopupController popup =
+          DictionaryPopupController(lowMemory: false)
+            ..beginSearchUi(const Rect.fromLTWH(10, 10, 1, 1));
+      addTearDown(popup.dispose);
+      expect(FloatingLyricLookupHost.shouldBlockHitTest(popup), isTrue,
+          reason: '前置：对话框不改变搜索状态，本判据仍为真 ⇒ ignoring == false');
+      int underTaps = 0;
+      await tester.pumpWidget(harness(
+        popup: popup,
+        childrenYielded: true,
+        onUnderTap: () => underTaps++,
+      ));
+      await tester.pump();
+      await tester.tapAt(const Offset(50, 50));
+      await tester.pump();
+      expect(underTaps, 1,
+          reason: '子项都已让位（占位卡零尺寸 / 弹窗层停屏外），Stack 自身 hitTestSelf '
+              '恒假 ⇒ `ignoring: false` 不拦截任何东西，给它再与一次计数是纯对称性改动');
     });
   });
 }
