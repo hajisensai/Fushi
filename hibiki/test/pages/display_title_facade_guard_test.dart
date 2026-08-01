@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// P4 display-title 门面面级守卫（沿 shelf_srt_card_override_title_guard_test
 /// 的源码切片范式）：
 ///
@@ -111,12 +113,12 @@ void main() {
     });
 
     test('统一解析 helper 覆盖书（override 门面）与视频（列值 no-op 门面）', () {
-      final String fn = slice(
-        collections,
-        'String? _displayBookTitleFor(',
-        'void _openBook(',
-        where: '_displayBookTitleFor',
-      );
+      // 切片终点原来写死后继方法的**完整签名** `void _openBook(`，PR#647 把它改成
+      // `Future<void> _openBook(...) async` 后 indexOf 返 -1，守卫什么都没校到就红。
+      // 把返回类型写进锚点＝把「邻居长什么样」当成本函数的不变量。改用 methodBody
+      // 的花括号配对定边界：只依赖本函数自己的签名，邻居怎么改都不咬。
+      final String fn =
+          methodBody(collections, 'String? _displayBookTitleFor(');
       expect(fn, contains('displayTitleForVideo(row)'));
       expect(fn, contains('displayTitleForBook('));
     });

@@ -58,12 +58,15 @@ void main() {
       isTrue,
       reason: '淡入淡出时长应读控制条同源真相源（不再硬编码）',
     );
-    expect(body.contains('curve: Curves.easeInOut'), isTrue,
-        reason: '淡入淡出应用 easeInOut（对齐控制条 / 默认锁按钮）');
-    expect(body.contains('IgnorePointer('), isTrue,
-        reason: '淡出后应 IgnorePointer 不拦点击（与默认锁按钮一致）');
-    expect(body.contains('AnimatedOpacity('), isTrue,
-        reason: '应用 AnimatedOpacity 做淡入淡出');
+    // BUG-1301：曲线 / IgnorePointer / AnimatedOpacity 三项搬进共享
+    // FadingChromeGate，调用点只剩 visible + duration。断言随之拆两半：
+    // 这里断「走了共享门控且没覆盖默认曲线」，组件那半由
+    // expectFadingChromeGateContract 断。
+    expect(body.contains('FadingChromeGate('), isTrue,
+        reason: 'on-rail 沉浸退出钮应走共享门控 FadingChromeGate');
+    expect(body.contains('curve:'), isFalse,
+        reason: '调用点不得覆盖曲线，否则绕开 FadingChromeGate 的 easeInOut 默认值');
+    expectFadingChromeGateContract();
     expect(body.contains('_lockButtonHoverKeepAlive(child: child)'), isTrue,
         reason: 'hover 保活让鼠标悬在按钮上时顶住可见并续命淡出定时');
   });

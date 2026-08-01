@@ -17,9 +17,25 @@ void main() {
   ).readAsStringSync();
 
   test('CaretSurface (with a lyrics value) lives in the shared controller', () {
+    // 断的是**契约**（枚举住在共享控制器里、且带 lyrics 这个面）而不是整行字面量：
+    // 原写法 contains('enum CaretSurface { ... lyrics }') 在 PR#632 给枚举追加
+    // video 面时当场红，可语义一点没坏——锚点把「值域快照」误当成了不变量。
+    // 改成解析值集合后做 containsAll：新增面不再误伤，删掉 lyrics /
+    // 把枚举搬走仍然当场红。
+    final Match? decl =
+        RegExp(r'enum\s+CaretSurface\s*\{([^}]*)\}').firstMatch(controller);
+    expect(decl, isNotNull,
+        reason: 'CaretSurface 枚举必须声明在共享的 dictionary_caret_controller.dart 里');
+    final Set<String> values = decl!
+        .group(1)!
+        .split(',')
+        .map((String v) => v.trim())
+        .where((String v) => v.isNotEmpty)
+        .toSet();
     expect(
-      controller,
-      contains('enum CaretSurface { none, reader, popup, lyrics }'),
+      values,
+      containsAll(<String>['none', 'reader', 'popup', 'lyrics']),
+      reason: '共享 caret 状态机至少要覆盖 none/reader/popup/lyrics 四个面',
     );
   });
 

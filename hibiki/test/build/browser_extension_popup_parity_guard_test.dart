@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-1267 guard: keep the browser-extension dictionary popup byte-for-byte in
 /// step with the in-app popup renderer.
 ///
@@ -54,14 +56,10 @@ void main() {
   });
 
   group('vendor/content.css stays complete vs popup.css (TODO-1267)', () {
-    // Strip /* ... */ comments so we only look at real rules.
-    String stripComments(String css) =>
-        css.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
-
     /// Every top-level, class-rooted (`.foo`) selector part in popup.css — these
     /// are kept verbatim by generate-content-css.mjs, so they must all be present.
     Set<String> classSelectors(String css) {
-      final String s = stripComments(css);
+      final String s = maskCssComments(css);
       final Set<String> out = <String>{};
       final RegExp rule = RegExp(r'([^{}]+)\{');
       for (final Match m in rule.allMatches(s)) {
@@ -78,7 +76,8 @@ void main() {
 
     for (final String root in const <String>[extAssets, extTools]) {
       test('[$root] content.css contains every popup.css class selector', () {
-        final String content = stripComments(read('$root/vendor/content.css'));
+        final String content =
+            maskCssComments(read('$root/vendor/content.css'));
         final List<String> missing =
             wanted.where((String sel) => !content.contains(sel)).toList();
         expect(missing, isEmpty,
@@ -91,7 +90,8 @@ void main() {
 
       test('[$root] content.css re-roots document-level rules (no host leak)',
           () {
-        final String content = stripComments(read('$root/vendor/content.css'));
+        final String content =
+            maskCssComments(read('$root/vendor/content.css'));
         // A rule whose selector starts a line with a bare universal / element /
         // pseudo would restyle the whole host page (TODO-1090). After scoping,
         // none of these may appear at the start of a rule.
@@ -135,7 +135,8 @@ void main() {
         // scopes instead; only the extension-only overlay may address the
         // container element itself by bare ID (its rules target ONLY the
         // container, never descendants).
-        final String content = stripComments(read('$root/vendor/content.css'));
+        final String content =
+            maskCssComments(read('$root/vendor/content.css'));
         // The zero-specificity universal reset must exist...
         expect(
             content
@@ -169,7 +170,7 @@ void main() {
       // scrollbar in the browser extension (BUG-775: tiny arrows+thumb bar
       // squeezed against the header buttons). Every such X must therefore also
       // carry `scrollbar-width: none`.
-      final String css = stripComments(popupCss);
+      final String css = maskCssComments(popupCss);
       final RegExp hider = RegExp(
           r'([^\s{},]+)::-webkit-scrollbar\s*\{[^}]*display:\s*none[^}]*\}');
       final List<String> bases =

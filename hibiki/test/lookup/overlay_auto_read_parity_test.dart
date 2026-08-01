@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1210 守卫：app 外两个 WebView2 表面（瞬态查词覆盖窗 / 常驻剪贴板面板）
 /// 必须**都**接自动朗读，且走**同一份**实现。
 ///
@@ -20,17 +22,15 @@ void main() {
   /// 把真实实现删光、只留注释也照样绿。**变异实测证实过**——删掉共享实现里
   /// `if (!ReaderHibikiSource.instance.autoReadOnLookup) return;`（即用户明确关掉
   /// 自动朗读也照读不误）后，本测试原版仍然全绿。
-  String stripComments(String src) => src
-      .split('\n')
-      .where((String l) => !l.trimLeft().startsWith('//'))
-      .join('\n');
+  // 统一走共享 helper maskComments（词法扫描：行注释 + 块注释 + 不误伤串里的 //）；
+  // 原本地实现只跳「整行 //」，块注释与含引号行的行尾注释都能绕过。
 
-  final String panel = stripComments(
+  final String panel = maskComments(
       File('lib/src/lookup/clipboard_panel_controller.dart')
           .readAsStringSync());
-  final String overlay = stripComments(
+  final String overlay = maskComments(
       File('lib/src/lookup/global_lookup_controller.dart').readAsStringSync());
-  final String shared = stripComments(
+  final String shared = maskComments(
       File('lib/src/lookup/overlay_auto_read.dart').readAsStringSync());
 
   test('剪贴板面板查到词后触发自动朗读（BUG-1210 的核心缺失）', () {

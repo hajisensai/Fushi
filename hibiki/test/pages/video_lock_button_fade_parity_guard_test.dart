@@ -56,7 +56,7 @@ void main() {
   });
 
   test(
-      '锁按钮 AnimatedOpacity 用 _videoControlsTransitionDuration + Curves.easeInOut（不回退 200ms / linear）',
+      '锁按钮淡出用 _videoControlsTransitionDuration + easeInOut（不回退 200ms / linear）',
       () {
     final int start = src.indexOf('Widget _buildSideLockButton()');
     expect(start, greaterThan(0), reason: '应有 _buildSideLockButton 构造器');
@@ -65,20 +65,27 @@ void main() {
     final String body = src.substring(start, end);
 
     expect(
+      body.contains('FadingChromeGate('),
+      isTrue,
+      reason: '锁按钮淡入淡出应走共享门控 FadingChromeGate（BUG-1301）',
+    );
+    expect(
       body.contains('duration: _videoControlsTransitionDuration'),
       isTrue,
       reason: '锁按钮淡入淡出时长应读控制条同源真相源（不再硬编码 200ms）',
     );
     expect(
-      body.contains('curve: Curves.easeInOut'),
-      isTrue,
-      reason: '锁按钮淡入淡出应用 easeInOut（对齐控制条，不再用默认 linear）',
+      body.contains('curve:'),
+      isFalse,
+      reason: '调用点不得覆盖曲线——覆盖了就绕开 FadingChromeGate 的 easeInOut 默认值',
     );
     expect(
       body.contains('duration: const Duration(milliseconds: 200)'),
       isFalse,
       reason: '锁按钮不得回退到硬编码 200ms（TODO-435 回归）',
     );
+    // 曲线契约落在组件里，跟着组件断。
+    expectFadingChromeGateContract();
   });
 
   test('桌面控制主题显式设 controlsTransitionDuration: _videoControlsTransitionDuration',

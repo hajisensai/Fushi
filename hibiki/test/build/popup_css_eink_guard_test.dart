@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 墨水屏模式弹窗 CSS 守卫：
 ///  1. popup.css 必须含 `html.eink` 覆盖块（纯黑白变量 + 方角/去阴影/关动效的
 ///     通配压平规则），且生成的 content.css 里被正确重挂为
@@ -16,11 +18,8 @@ void main() {
   const String popupCssPath = 'assets/popup/popup.css';
   const String contentCssPath = 'assets/browser_extension/vendor/content.css';
 
-  String stripComments(String css) =>
-      css.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
-
   test('popup.css braces are balanced (swallowed-rule guard)', () {
-    final String css = stripComments(File(popupCssPath).readAsStringSync());
+    final String css = maskCssComments(File(popupCssPath).readAsStringSync());
     final int open = '{'.allMatches(css).length;
     final int close = '}'.allMatches(css).length;
     expect(open, close,

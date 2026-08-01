@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter_test/flutter_test.dart';
+
 /// TODO-590: `video_hibiki_page.dart` 正被分批拆成主壳 + `video_hibiki/*.part.dart`
 /// 一组 part 文件（零行为重构，照搬 TODO-589 reader_hibiki 范式）。原来逐文件硬编码
 /// 读单文件的静态守卫，凡断言落在已搬出主壳的方法体里，必须改读这份「合并语料」：
@@ -65,4 +67,26 @@ String readImmersionMiningEngineSource() {
     buffer.writeln(File(path).readAsStringSync().replaceAll('\r\n', '\n'));
   }
   return buffer.toString();
+}
+
+/// BUG-1301 之后淡入淡出的曲线/指针/焦点三项契约搬进了共享组件
+/// [FadingChromeGate]（`lib/src/utils/components/fading_chrome_gate.dart`），
+/// 调用点只剩 `visible` / `duration`。守卫因此必须**跟着组件走**：调用点断
+/// 「走了 FadingChromeGate 且没覆盖默认曲线」，组件源码断「默认曲线就是
+/// easeInOut、且 IgnorePointer + AnimatedOpacity 都在」。把两半拆开断，任一
+/// 半被改坏都当场红；只断调用点的旧写法则会被合法重构打断（本次 CI 红的成因）。
+const String kFadingChromeGatePath =
+    'lib/src/utils/components/fading_chrome_gate.dart';
+
+/// 共享淡出门控自身仍满足「默认 easeInOut + IgnorePointer + AnimatedOpacity」。
+void expectFadingChromeGateContract() {
+  final String gate = File(kFadingChromeGatePath).readAsStringSync();
+  expect(gate.contains('this.curve = Curves.easeInOut'), isTrue,
+      reason: 'FadingChromeGate 默认曲线必须是 easeInOut（调用点不传即取此值）');
+  expect(gate.contains('IgnorePointer('), isTrue,
+      reason: '淡出后必须 IgnorePointer 不拦点击');
+  expect(gate.contains('AnimatedOpacity('), isTrue,
+      reason: '淡入淡出必须由 AnimatedOpacity 实现');
+  expect(gate.contains('curve: curve'), isTrue,
+      reason: 'AnimatedOpacity 必须真把 curve 透传下去，否则默认值形同虚设');
 }

@@ -20,6 +20,8 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/media_sources_dialog.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import '../helpers/source_guard.dart';
+
 import '../helpers/test_platform_services.dart';
 
 HibikiDatabase _memDb() => HibikiDatabase.forTesting(
@@ -314,15 +316,16 @@ void main() {
     });
 
     test('every ref.read/watch/listen sits inside initState', () {
-      // 去掉行注释（避免文档注释里提到 ref.read 触发误报）。
-      final List<String> lines = const LineSplitter().convert(src);
+      // 注释与字符串字面量都掩成等长空白（共享 helper）：注释里提到 ref.read 不
+      // 误报，串里的花括号也不会把 initState 的深度计数带偏。原实现按行
+      // replaceAll(RegExp('//.*'))，块注释和串里的 // 两个方向都漏。
+      final List<String> lines =
+          const LineSplitter().convert(maskCommentsAndStrings(src));
       final RegExp refAccess = RegExp(r'\bref\.(read|watch|listen)\b');
       final RegExp initStart = RegExp(r'void\s+initState\s*\(\s*\)');
       bool inInit = false;
       int depth = 0;
-      for (final String raw in lines) {
-        final String line =
-            raw.replaceAll(RegExp(r'//.*$'), ''); // strip line comment
+      for (final String line in lines) {
         if (!inInit && initStart.hasMatch(line)) {
           inInit = true;
           depth = 0;

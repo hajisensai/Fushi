@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1286 守卫：查词卡的低级鼠标钩子必须**持续**在线，而不是「装一次就当永远有效」。
 ///
 /// `WH_MOUSE_LL` 是 Windows 会主动吊销的资源：回调超过 `LowLevelHooksTimeout`
@@ -24,7 +26,7 @@ void main() {
       isTrue,
       reason: '守卫的目标文件不存在，说明钩子实现被挪走了，必须同步更新本测试',
     );
-    source = _stripComments(file.readAsStringSync());
+    source = maskComments(file.readAsStringSync());
   });
 
   test('回调在任何过滤分支之前就记录存活证据', () {
@@ -115,16 +117,4 @@ void main() {
       reason: '必须同时要求「回调一次都没跑」，两个条件缺一都会误判',
     );
   });
-}
-
-/// 剥掉 `//` 行注释与 `/* */` 块注释。
-///
-/// 不剥就等于允许「把断言要找的字面量写进注释」蒙混过关——本仓库出过这类假绿。
-String _stripComments(String source) {
-  final String withoutBlocks =
-      source.replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '');
-  return withoutBlocks.split('\n').map((String line) {
-    final int idx = line.indexOf('//');
-    return idx >= 0 ? line.substring(0, idx) : line;
-  }).join('\n');
 }
