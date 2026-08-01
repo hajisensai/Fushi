@@ -44,11 +44,27 @@ final double lyricsBottomInset =
     `_buildBody` 必须调 `independentDocumentInsets` 且包 `Padding`，且**不得**就地出现
     `EdgeInsets` 构造。
 
+  - **同一方法体里的第二处同类锚点一并抬高**：
+    `test/macos/macos_shell_fullscreen_sidebar_test.dart:107/109`（PR#670 自己加的）钉的是
+    `'_lyricsMode || _spreadDocumentLoaded'` 与**局部变量名** `'top:
+    independentDocumentTopInset'`，同属 B 类要求型锚点。改为在 `methodBody(_buildBody)` 上
+    断言「调了 `independentDocumentInsets` + 喂了 `titlebarInset:
+    _macosWindowTitlebarInset`」；数值契约交给上面的行为层。
+
 - **变异实测**：
   - 生产纯函数 `bottom:` 改成常量 `0` ⇒ 行为层 2 条红（`FAILED … 2 error events`）。
   - `_buildBody` 绕开纯函数、就地拼 `EdgeInsets.only(top: …, bottom: 0)` ⇒ 接线层 2 条红。
-  - 两次均反向替换还原，`git status --short` 干净。
+  - `_buildBody` 的 `titlebarInset:` 实参改常量 `0` ⇒ macOS 守卫红。
+  - 三次均反向替换还原，`git status --short` 干净。
 
 - **备注**：本会话第二次「刚合的 PR 带进一条红」。共同点是复核跑的定向测试没覆盖到扫描本
   PR 改动文件的守卫——`reader_hibiki_page.dart` 被 **155** 个测试文件扫描（`grep -l`），
-  改这个文件必须至少跑 `test/pages` + `test/reader`。
+  改这个文件必须至少跑 `test/pages` + `test/reader`——本轮正是这个全量反查在
+  `test/macos/` 下逮到第二条同类锚点，只跑 `test/pages` 会漏。
+
+  本轮全量反查另外暴露两条**与本 BUG 无关**的 develop 现状（未在本 PR 处理）：
+  - `test/pages/home_video_remote_download_register_test.dart`「host 有外挂字幕时连带下载
+    并解析成 cue 写入」**flaky**：同一份代码 2 红 3 绿，改动前后表现一致。
+  - `test/settings/md3_design_system_static_test.dart:1164` 红，命中
+    `collection_split_dialog.dart` / `collection_relations_section.dart` /
+    `episode_rename_confirm_dialog.dart`，来自 `a328828ed` / `eaa2d4303` 两个合集 PR。
