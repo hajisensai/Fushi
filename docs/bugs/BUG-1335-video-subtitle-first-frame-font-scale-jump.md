@@ -60,7 +60,7 @@ MarginV 缩放后超出基线，会被错判成「独立位置」而脱离基线
 
 ### 修复
 
-- **[x] ① 已修复** — commit `（见下方补记）`
+- **[x] ① 已修复** — commit `cdf532beb`
   - 抽出**唯一真相源**：判据 `isBaselineBucketMarginV()` + 基线 `resolveBottomBaseline()`。
     `_positionKey`（分组）与 `_paddingFor`（渲染）改为**问同一个函数**，脱节在结构上不再可能。
   - 基线桶内一律用用户基线：既然判据宣称「原始 MarginV ≤ 用户基线的都折进基线桶」，桶内就
