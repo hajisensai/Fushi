@@ -844,29 +844,40 @@ class SyncOrchestrator {
   /// 收集本设备当前在库的资产键（按 mediaType 分组），供删除墓碑消费端算 deleteLocal
   /// 候选（远端有删除标记 ∧ 本地仍在库）。itemKey 与写墓碑点严格一致：book/audiobook =
   /// bookKey（[writeSyncDeletionTombstone] 调用点 reader_hibiki_source / audiobook），
-  /// video = bookUid（video_book_repository），localaudio = displayName。
+  /// video = bookUid（video_book_repository），localaudio = displayName，
+  /// srtbook = srt_books.uid（仅 standalone，见下）。
+  ///
+  /// 键一律用 [SyncTombstoneKind.dbValue] 而非裸字符串字面量：这张 map 与写墓碑点必须
+  /// 逐字一致，拼错一个字符的后果是「对端删了、本地永远不弹确认」这种静默失效。
   Future<Map<String, Set<String>>> _collectPresentDeletionKeys() async {
     return <String, Set<String>>{
-      'book': <String>{
+      SyncTombstoneKind.book.dbValue: <String>{
         for (final EpubBookRow r in await _db.getAllEpubBooks()) r.bookKey,
       },
-      'audiobook': <String>{
+      SyncTombstoneKind.audiobook.dbValue: <String>{
         for (final AudiobookRow r in await _db.getAllAudiobooks()) r.bookKey,
       },
-      'video': <String>{
+      // 纯字幕书（standalone SRT）身份 = uid。**只收 bookKey 为空的行**：与
+      // [SrtBookRepository.delete] 的写墓碑判据同源——srt-backed 行的身份是 bookKey，
+      // 已由上面的 book 键覆盖，重复收进来会让同一资产在对端弹两条确认（TODO-2470）。
+      SyncTombstoneKind.srtbook.dbValue: <String>{
+        for (final SrtBookRow r in await _db.getAllSrtBooks())
+          if (r.bookKey.isEmpty) r.uid,
+      },
+      SyncTombstoneKind.video.dbValue: <String>{
         for (final VideoBookRow r in await _db.allVideoBooks()) r.bookUid,
       },
-      'localaudio': <String>{
+      SyncTombstoneKind.localaudio.dbValue: <String>{
         for (final LocalAudioDbEntry e in localAudioEntries) e.displayName,
       },
-      'favoriteword': <String>{
+      SyncTombstoneKind.favoriteword.dbValue: <String>{
         for (final FavoriteWordRow r in await _db.getAllFavoriteWords())
           HibikiDatabase.favoriteWordItemKey(
               r.expression, r.reading, r.sourceType),
       },
       // 收藏句无稳定 id，用内容键（[FavoriteSentenceRepository.itemKeyOf]）；与写墓碑点、
       // aggregate 去重键同源。
-      'favoritesentence': <String>{
+      SyncTombstoneKind.favoritesentence.dbValue: <String>{
         for (final FavoriteSentence s
             in await FavoriteSentenceRepository(_db).getAll())
           FavoriteSentenceRepository.itemKeyOf(s),

@@ -3,8 +3,10 @@ part of '../reader_hibiki_history_page.dart';
 
 /// 书架删除确认弹窗。[onConfirm] 回传用户在「同步删除」勾选框选择的 [DeleteScope]
 /// （勾选=[DeleteScope.syncEverywhere] 记墓碑传播到其他设备；默认不勾=
-/// [DeleteScope.keepLocalOnly] 只删本机）。[showSyncScope]=false 时隐藏勾选框、恒
-/// keepLocalOnly（用于不参与删除传播的实体/场景，保持旧行为）。取消返回 null。
+/// [DeleteScope.keepLocalOnly] 只删本机）。[showSyncScope]=false 时把勾选框换成
+/// [DeleteScopeUnavailableNote] 说明行、恒 keepLocalOnly——由调用方按
+/// `hasDeletionPropagationChannel` 传入：本机一个同步通道都没有时，那个勾选框兑现不了
+/// （TODO-2470 死角②）。取消返回 null。
 @visibleForTesting
 class ReaderHistoryDeleteDialog extends StatefulWidget {
   const ReaderHistoryDeleteDialog({
@@ -63,8 +65,8 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
               SizedBox(height: tokens.spacing.gap),
               DeletionDisclosureView(disclosure: widget.disclosure!),
             ],
-            if (widget.showSyncScope) ...[
-              SizedBox(height: tokens.spacing.gap),
+            SizedBox(height: tokens.spacing.gap),
+            if (widget.showSyncScope)
               AdaptiveSettingsRow(
                 title: t.delete_scope_sync_everywhere,
                 subtitle: _syncDelete
@@ -77,8 +79,9 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
                       ? Theme.of(context).colorScheme.primary
                       : Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
-              ),
-            ],
+              )
+            else
+              const DeleteScopeUnavailableNote(),
           ],
         ),
         footer: Wrap(

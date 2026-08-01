@@ -751,7 +751,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final DeleteScope? scope;
     if (collectionCount == 0) {
       scope = await showDeleteScopeConfirm(context,
-          title: t.dialog_delete, message: message);
+          title: t.dialog_delete,
+          message: message,
+          db: ref.read(appProvider).database);
     } else {
       scope = await showAppDialog<DeleteScope>(
         context: context,
@@ -2000,6 +2002,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       context,
       title: t.video_delete_title,
       message: t.video_delete_confirm(title: book.title),
+      db: ref.read(appProvider).database,
     );
     if (scope == null || !mounted) return;
     final String? deletedCoverPath = book.coverPath;

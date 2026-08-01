@@ -1000,6 +1000,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       disclosure: buildDeletionDisclosure(
         target: DeletionDisclosureTarget.attachedAudiobook,
       ),
+      db: widget.repo.database,
     );
     debugPrint('AudiobookImportDialog: scope=$scope');
     if (scope == null) return;

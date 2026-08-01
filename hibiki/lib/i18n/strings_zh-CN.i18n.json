@@ -2970,5 +2970,6 @@
   "download_detail_tracker_not_working": "不工作",
   "download_detail_tracker_disabled": "已禁用",
   "download_detail_no_peers": "暂无已连接节点",
-  "download_detail_no_trackers": "无 Tracker"
+  "download_detail_no_trackers": "无 Tracker",
+  "delete_scope_no_channel": "未配置同步，本次删除只影响这台设备"
 }

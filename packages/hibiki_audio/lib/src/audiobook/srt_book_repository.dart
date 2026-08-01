@@ -148,13 +148,43 @@ class SrtBookRepository {
       importedAt: Value(book.importedAt),
       bookKey: Value(book.bookKey),
     ));
+    // 删除传播：重新导入同 uid 的纯字幕书 → 清其 sync 删除墓碑，防「删了又加、墓碑
+    // 还在」误判（范式仿 [AudiobookRepository.saveAudiobook] / 书 / 视频的插入清墓碑）。
+    await _db.clearSyncDeletionTombstone(
+        SyncTombstoneKind.srtbook.dbValue, book.uid);
   }
 
   /// Deletes the SRT book + its on-disk persist dir. Returns the number of
   /// srt_books rows actually removed (0 when [uid] matched nothing) so callers
   /// can count only real deletions (BUG-439).
-  Future<int> delete(String uid) async {
+  ///
+  /// [propagateDeletion]（默认 false）：true 时记一条 `srtbook` sync 删除墓碑，供同步
+  /// 发布到远端标记、其他设备逐条确认后也删（对应删除弹窗「从所有设备删除」）。false
+  /// （含消费远端删除标记的路径）只删本机，绝不回写墓碑造成传播循环。app 层按
+  /// `DeleteScope` 传入——用 bool 而非 DeleteScope 是为了不让本包反向依赖 app 层，
+  /// 与同包 [AudiobookRepository.deleteAudiobook] 同一范式。
+  ///
+  /// 墓碑**只对 standalone 行写**（该行 `bookKey` 为空）：这类纯字幕书无 EpubBooks 行，
+  /// 跨设备身份就是 uid。srt-backed 行（`bookKey` 非空）的身份是 bookKey，它的墓碑由
+  /// `ReaderHibikiSource.deleteBook` 写成 `book` 种类——两者互斥，同一资产绝不会产生
+  /// 两条墓碑、也就不会在对端弹出两条重复的删除确认。
+  Future<int> delete(String uid, {bool propagateDeletion = false}) async {
+    // 身份判据要在删行前读（删完就查不到 bookKey 了）。
+    final bool standalone = propagateDeletion &&
+        ((await _db.getSrtBookByUid(uid))?.bookKey.isEmpty ?? false);
     final int deleted = await _db.deleteSrtBookByUid(uid);
+    // 墓碑写在磁盘清理**之前**：DB 行是唯一真相源，此刻这本书对用户已经消失；持久化
+    // 目录删除是删完再打扫的尾活，Windows 上可能因句柄占用抛 errno 32/145。若把墓碑
+    // 排在它后面，一次尾活失败就会静默吞掉用户「从所有设备删除」的意图（同 TODO-1359
+    // 那类「尾活失败翻转结果」的坑）。
+    if (deleted > 0 && standalone) {
+      try {
+        await _db.writeSyncDeletionTombstone(SyncTombstoneKind.srtbook.dbValue,
+            uid, DateTime.now().millisecondsSinceEpoch);
+      } catch (_) {
+        // best-effort：记账失败不影响字幕书已删。
+      }
+    }
     await AudiobookStorage.deletePersistDir(uid);
     return deleted;
   }

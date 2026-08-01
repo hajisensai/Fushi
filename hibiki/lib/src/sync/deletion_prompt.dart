@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/sync/deletion_disclosure.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
+import 'package:hibiki/src/sync/deletion_propagation_availability.dart';
 import 'package:hibiki/src/sync/sync_conflict_prompter.dart'
     show ConflictSource;
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -10,18 +11,28 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// 通用「删除范围」确认弹窗：正文 + 「从所有设备删除」勾选框（默认不勾）。确认返回用户
 /// 选的 [DeleteScope]（勾选=syncEverywhere 传播 / 不勾=keepLocalOnly 仅本机）；取消返回
 /// null。供书架/视频/有声书等各删除入口共用（书架另有 ReaderHistoryDeleteDialog 变体）。
+///
+/// TODO-2470 死角②：传 [db] 时先查本机有没有删除传播通道（
+/// [hasDeletionPropagationChannel]，纯本地零网络），没有就不渲染那个兑现不了的勾选框，
+/// 改渲染一行说明。查询在 `showAppDialog` **之前**做完，弹窗自身仍是纯同步 widget、
+/// 不做 IO。[db] 省略时保持旧行为（恒显示），供不便拿到 db 的入口与既有测试使用。
 Future<DeleteScope?> showDeleteScopeConfirm(
   BuildContext context, {
   required String title,
   required String message,
   DeletionDisclosure? disclosure,
-}) {
+  HibikiDatabase? db,
+}) async {
+  final bool canSyncEverywhere =
+      db == null || await hasDeletionPropagationChannel(SyncRepository(db));
+  if (!context.mounted) return null;
   return showAppDialog<DeleteScope>(
     context: context,
     builder: (_) => _DeleteScopeConfirmDialog(
       title: title,
       message: message,
       disclosure: disclosure,
+      canSyncEverywhere: canSyncEverywhere,
     ),
   );
 }
@@ -31,10 +42,14 @@ class _DeleteScopeConfirmDialog extends StatefulWidget {
     required this.title,
     required this.message,
     this.disclosure,
+    this.canSyncEverywhere = true,
   });
   final String title;
   final String message;
   final DeletionDisclosure? disclosure;
+
+  /// false = 本机无任何删除传播通道，勾了也不可能生效 → 不渲染勾选框，恒 keepLocalOnly。
+  final bool canSyncEverywhere;
 
   @override
   State<_DeleteScopeConfirmDialog> createState() =>
@@ -67,19 +82,22 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
               DeletionDisclosureView(disclosure: widget.disclosure!),
             ],
             SizedBox(height: tokens.spacing.gap),
-            AdaptiveSettingsRow(
-              title: t.delete_scope_sync_everywhere,
-              subtitle: _syncDelete
-                  ? t.delete_scope_sync_everywhere_desc
-                  : t.delete_scope_keep_local_desc,
-              onTap: () => setState(() => _syncDelete = !_syncDelete),
-              trailing: Icon(
-                _syncDelete ? Icons.check_box : Icons.check_box_outline_blank,
-                color: _syncDelete
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
+            if (widget.canSyncEverywhere)
+              AdaptiveSettingsRow(
+                title: t.delete_scope_sync_everywhere,
+                subtitle: _syncDelete
+                    ? t.delete_scope_sync_everywhere_desc
+                    : t.delete_scope_keep_local_desc,
+                onTap: () => setState(() => _syncDelete = !_syncDelete),
+                trailing: Icon(
+                  _syncDelete ? Icons.check_box : Icons.check_box_outline_blank,
+                  color: _syncDelete
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              )
+            else
+              const DeleteScopeUnavailableNote(),
           ],
         ),
         footer: Wrap(
@@ -97,7 +115,7 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
               isDestructiveAction: true,
               onPressed: () => Navigator.pop(
                   context,
-                  _syncDelete
+                  widget.canSyncEverywhere && _syncDelete
                       ? DeleteScope.syncEverywhere
                       : DeleteScope.keepLocalOnly),
               child: Text(t.dialog_delete),
