@@ -1054,16 +1054,17 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // 旧顺序先用 currentSentence 的单句 range 做分类，随后才建多句计划，导致最终传给
     // ffmpeg 的仍是第一句窗口；动态计划又优先拿 cachedSentenceRange，覆盖了跨句选区
     // span，因而退化成「只有第一句声音 + 整段静态高亮」。
-    _AudiobookClipDynamicPlan? dynamicPlan = _buildAudiobookClipPlan(
-      audioFileCount: audioFileCount,
-    );
-    final AudioPlaybackRange? sentenceRange = dynamicPlan == null
-        ? _currentSentenceAudioRange()
-        : AudioPlaybackRange(
-            audioFileIndex: dynamicPlan.audioFileIndex,
-            startMs: dynamicPlan.globalStartMs,
-            endMs: dynamicPlan.globalEndMs,
-          );
+    final ({
+      _AudiobookClipDynamicPlan? plan,
+      AudioPlaybackRange? range
+    }) clipPlan = _buildAudiobookClipPlan(audioFileCount: audioFileCount);
+    _AudiobookClipDynamicPlan? dynamicPlan = clipPlan.plan;
+    // BUG-1320：多句路径解析出的整段窗口是唯一真相源——**即使它超上限**（此时 plan 为
+    // 空、逐句高亮不可用）也必须拿它去分类，分类器会据此判 tooLong 走诚实文案。旧写法
+    // 在 plan 为空时一律回落 _currentSentenceAudioRange() 的单句锚，把「太长」洗成
+    // 「可导出」（静默产出全文卡片 + 一句声音）或「跨章」（误导提示）。
+    final AudioPlaybackRange? sentenceRange =
+        clipPlan.range ?? _currentSentenceAudioRange();
 
     final AudiobookClipBoundaryResult result = classifyAudiobookClipSelection(
       selectedText: selectedText,
@@ -1116,6 +1117,24 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         );
         HibikiToast.show(msg: t.audiobook_export_clip_unsupported_range);
         return;
+      case AudiobookClipBoundaryKind.tooLong:
+        // BUG-1320：超时长上限此前并进 unsupportedRange，同章长选区被误报「跨章或
+        // 跨音频文件」。分类层已拆出 tooLong，这里给诚实文案（含上限）。
+        debugPrint(
+          '[ReaderHibiki] export-clip: range too long '
+          '(${sentenceRange == null ? 'null' : '${sentenceRange.endMs - sentenceRange.startMs}ms'} '
+          '> ${kAudiobookClipMaxDurationMs}ms) — refusing export.',
+        );
+        ErrorLogService.instance.log(
+          'ReaderHibiki.exportClip.rangeTooLong',
+          'selection range too long, refusing export '
+              '(durationMs=${sentenceRange == null ? -1 : sentenceRange.endMs - sentenceRange.startMs} > '
+              'maxMs=$kAudiobookClipMaxDurationMs, '
+              'text="${selectedText.trim()}")',
+          StackTrace.current,
+        );
+        HibikiToast.show(msg: t.audiobook_export_clip_too_long);
+        return;
       case AudiobookClipBoundaryKind.exportable:
         final AudioPlaybackRange range = result.range!;
         final List<File> audioFiles = ctrl?.audioFiles ?? const <File>[];
@@ -1139,31 +1158,21 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           HibikiToast.show(msg: t.audiobook_export_clip_unsupported_range);
           return;
         }
-        // D4 时长安全上限 120s：单句天然短，仅兜底超长选区，避免巨型编码。超限走
-        // unsupportedRange 文案（选区不可导出）而非崩溃。
-        if (range.endMs - range.startMs > _kAudiobookClipMaxDurationMs) {
-          debugPrint(
-            '[ReaderHibiki] export-clip: range too long '
-            '(${range.endMs - range.startMs}ms > '
-            '${_kAudiobookClipMaxDurationMs}ms) — refusing export.',
-          );
-          // TODO-1005 / BUG-472：此前只 debugPrint + toast、in-app 日志页空白。补
-          // ErrorLogService（沿用同款 input/startMs/endMs/durationMs 字段）。
-          ErrorLogService.instance.log(
-            'ReaderHibiki.exportClip.rangeTooLong',
-            'selection range too long, refusing export '
-                '(durationMs=${range.endMs - range.startMs} > '
-                'maxMs=$_kAudiobookClipMaxDurationMs, '
-                'startMs=${range.startMs}, endMs=${range.endMs}, '
-                'input=${inputFile.path}, text="${selectedText.trim()}")',
-            StackTrace.current,
-          );
-          HibikiToast.show(msg: t.audiobook_export_clip_unsupported_range);
-          return;
-        }
-        // M2-M5：裁音频 → 渲文本图 → mjpeg/.mov 合成 → 分享/存盘。异步推进，先给一个
-        // 反馈 toast；失败在管线内各自 toast。防重入：导出进行中再点直接忽略。
+        // D4 时长上限已收进 classifyAudiobookClipSelection（BUG-1320，tooLong 分支
+        // 在上面给诚实文案），此处不再有散装特判。
+        // M2-M5：裁音频 → 渲文本图 → h264/mpeg4 .mp4 合成 → 分享/存盘。异步推进，
+        // 先给一个反馈 toast；失败在管线内各自 toast。防重入：导出进行中再点直接忽略。
         if (_audiobookClipExporting) return;
+        // BUG-1321：字幕措辞与 EPUB 选区不一致时禁用逐句高亮（静态精确选区卡，
+        // BUG-968 契约不变），但整段音频窗已经通过 sentenceRange 进入 range——静态
+        // 回退裁的仍是整段选区音频，不再塌缩成单句。
+        if (dynamicPlan != null && !dynamicPlan.cueTextMatches) {
+          debugPrint(
+            '[ReaderHibiki] export-clip: cue text != selection — static '
+            'exact-selection card over the full selection window.',
+          );
+          dynamicPlan = null;
+        }
         // TODO-1115：尝试多句连读 + 逐句高亮跟随。把选区映射到有序 cue 列表；≥1 句即走
         // 动态路径（单句时自然退化为单句动态，仍可回退单句静态）。跨章/跨文件 span 为空
         // → dynamicPlan 为 null → 直接走原单句静态路径（never break userspace）。
@@ -1217,11 +1226,12 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   /// 单一真相源：[globalRange] 用 [clipExportGlobalRange]（首句 head-padded ..
   /// 末句尾 padding 放宽到 [kClipExportTailPadMs]，中间句连续不被 tailCap 切），供音频
   /// 裁剪与帧计划共用，避免二者窗口漂移。
-  _AudiobookClipDynamicPlan? _buildAudiobookClipPlan({
+  ({_AudiobookClipDynamicPlan? plan, AudioPlaybackRange? range})
+      _buildAudiobookClipPlan({
     required int audioFileCount,
   }) {
     final AudiobookPlayerController? ctrl = _audiobookController;
-    if (ctrl == null) return null;
+    if (ctrl == null) return (plan: null, range: null);
     final ({int offset, int length, String text})? selection =
         _cachedSelectionRange;
     // BUG-1243：导出入口的主锚是用户真实选区；只有没有原生选区（普通点词导出）时
@@ -1252,7 +1262,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       sentenceNormCharOffset: resolvedSelection.offset,
       sentenceNormCharLength: resolvedSelection.length,
     );
-    if (span.isEmpty) return null;
+    if (span.isEmpty) return (plan: null, range: null);
 
     final AudioPlaybackRange? globalRange = clipExportGlobalRange(
       span: span,
@@ -1272,18 +1282,27 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       audioFileCount: audioFileCount,
       globalRange: globalRange,
       cueSpans: cueSpans,
-      maxDurationMs: _kAudiobookClipMaxDurationMs,
     );
-    if (!result.isExportable) return null;
+    // BUG-1320：分类不可导出时**不能**一律 `return null` —— 那会把「窗口超上限」
+    // 和「压根没窗口」压成同一个信号，超长选区因此回落单句锚，产出「整段文字的卡片 +
+    // 只有一句声音」或弹出误导的「跨章」提示。[audiobookClipPlanRange] 只在真的没窗口
+    // 时才返回 null；tooLong 的超限窗口原样透出去，由单句分类器复判成诚实的「太长」。
+    final AudioPlaybackRange? planRange = audiobookClipPlanRange(
+      kind: result.kind,
+      globalRange: globalRange,
+    );
+    if (!result.isExportable) return (plan: null, range: planRange);
 
     // Aligned cues are subtitle data, not necessarily the exact EPUB text the
     // user selected. Mismatches must use the static exact-selection card.
-    if (!audiobookClipCueTextMatchesSelection(
+    // BUG-1321：不一致时**不再丢弃整个计划**——整段音频窗（globalStart/End）依旧是
+    // 选区的真实音频范围，丢掉它会让静态回退退回 currentSentence 单句锚，产出
+    // 「全文卡片 + 只有第一句声音」。这里保留窗口、只标记 cueTextMatches=false，
+    // 调度方据此禁用逐句高亮（静态精确选区卡），音频仍裁整段。
+    final bool cueTextMatches = audiobookClipCueTextMatchesSelection(
       selectedText: classifyText,
       cueSpans: result.cueSpans,
-    )) {
-      return null;
-    }
+    );
 
     // TODO-1127：把选区里抽取到的插图按归一化文档位置分配到各 cue 段之后。cue 的
     // normCharStart 从 sasayaki 编码的 textFragmentId 解出（解不出的 cue 传 null，不作
@@ -1300,21 +1319,22 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       cueNormStarts: cueNormStarts,
       images: _cachedSelectionImages,
     );
-    return _AudiobookClipDynamicPlan(
-      audioFileIndex: result.audioFileIndex,
-      globalStartMs: result.globalStartMs,
-      globalEndMs: result.globalEndMs,
-      cueSpans: result.cueSpans,
-      imagesByCueIndex: imagesByCueIndex,
+    return (
+      plan: _AudiobookClipDynamicPlan(
+        audioFileIndex: result.audioFileIndex,
+        globalStartMs: result.globalStartMs,
+        globalEndMs: result.globalEndMs,
+        cueSpans: result.cueSpans,
+        cueTextMatches: cueTextMatches,
+        imagesByCueIndex: imagesByCueIndex,
+      ),
+      range: planRange,
     );
   }
 
-  /// D4：片段视频时长安全上限（120s）。单句天然短，仅兜底超长选区。
-  static const int _kAudiobookClipMaxDurationMs = 120 * 1000;
-
   /// TODO-945 M2-M5：把已验证的 {文本, 音频文件, 起止 ms} 走完整管线——裁音频片段
   /// （M2，复用 [extractAudioSegmentViaFfmpeg]）→ 文本离屏渲 PNG（M3，复用
-  /// [renderAudiobookClipTextToPng]）→ 图+音频合成 mjpeg/.mov（M4，复用
+  /// [renderAudiobookClipTextToPng]）→ 图+音频合成 h264/mpeg4 .mp4（M4，复用
   /// [synthAudiobookClipVideoViaFfmpeg]）→ 分享/存盘（M5，桌面 FilePicker / 移动
   /// Share）。任一步失败各自 toast，绝不崩。临时文件落 systemTemp，桌面导出后清理。
   Future<void> _runAudiobookClipPipeline({
@@ -1341,11 +1361,12 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     Directory? framesDir;
     final bool isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
-    // BUG-809：桌面走 H.264 + .mp4（ffmpeg-min 已编入 libx264+mp4，带帧间压缩把
-    // 30 秒片段从 mjpeg 的 ~200MB 压到几 MB，且 .mp4 通用可直接播放/分享）；移动端
-    // 自编 ffmpeg-kit min 无 libx264，保持 mjpeg + .mov（帧内 JPEG，两端都能编）。
+    // BUG-809：桌面走 H.264（ffmpeg-min 已编入 libx264）；BUG-1322：移动走 libavcodec
+    // 原生 mpeg4（MPEG-4 Part 2，AAR 实证已编入）——旧 mjpeg/.mov 无帧间压缩（30 秒
+    // ≈ 200MB）且大量移动播放器无 MJPEG 解码器，导出产物基本不可播。两端统一 .mp4
+    // 容器（faststart），任意播放器/接收端可直接打开。
     final bool useH264 = isDesktop;
-    final String videoExt = useH264 ? 'mp4' : 'mov';
+    const String videoExt = 'mp4';
     try {
       final Directory tmpDir = await getTemporaryDirectory();
       final String stamp = DateTime.now().millisecondsSinceEpoch.toString();
@@ -1359,6 +1380,11 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       // build 契约里句子音频的指定容器（docs/specs/2026-06-07-ffmpeg-min-build-pipeline.md）。
       final int clipStartMs = dynamicPlan?.globalStartMs ?? startMs;
       final int clipEndMs = dynamicPlan?.globalEndMs ?? endMs;
+      // BUG-1320：上限放宽到 300s 后，固定 3 分钟合成超时可能小于片段本身时长。
+      // 超时随片段时长缩放（3 分钟托底 + 1×时长余量），避免长片段被超时误杀。
+      final Duration synthTimeout = Duration(
+        milliseconds: 3 * 60 * 1000 + (clipEndMs - clipStartMs),
+      );
       final String? clipPath = await extractAudioSegmentViaFfmpeg(
         inputPath: inputFile.path,
         startMs: clipStartMs,
@@ -1422,6 +1448,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           audioClip: audioClip,
           videoFile: videoFile,
           isDesktop: isDesktop,
+          timeout: synthTimeout,
         );
         if (!dynamicOk) {
           // 回退：清掉可能半成的序列帧目录，走单句静态。
@@ -1491,12 +1518,9 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           outputPath: videoFile.path,
           width: layout.width,
           height: layout.height,
-          // TODO-1147：桌面去色度下采样（yuvj444p）保留彩色文字边缘精度；移动端
-          // ffmpeg-kit min 的 mjpeg encoder 收 444 需真机验合成不 exit，故保守 420
-          // （仍靠 1080×1920 分辨率提升消模糊，不触碰移动合成 exit1 风险）。
-          // BUG-809：桌面 h264/.mp4（pixFmt 被 yuv420p 覆盖），移动 mjpeg/.mov。
-          pixFmt: isDesktop ? 'yuvj444p' : 'yuvj420p',
+          // BUG-809/BUG-1322：桌面 h264 / 移动 mpeg4，色度统一 yuv420p（编码器内定）。
           h264: useH264,
+          timeout: synthTimeout,
         );
         if (!synth.isSuccess || synth.outputPath == null) {
           debugPrint(
@@ -1533,7 +1557,6 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       } else {
         final List<XFile> sharedFiles = audiobookClipMobileShareAttachments(
           videoPath: outPath,
-          useH264: useH264,
         )
             .map(
               (AudiobookClipShareAttachment attachment) => XFile(
@@ -1580,6 +1603,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     required File audioClip,
     required File videoFile,
     required bool isDesktop,
+    required Duration timeout,
   }) async {
     // BUG-713（用户回访「导出片段高亮进度慢了」根因·帧量化残差）：逐句高亮切换被帧
     // 率量化到 Δ=1000/fps 的网格上。clipFramePlan 用帧中心（round）采样后，句起点 S 的
@@ -1588,9 +1612,12 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // TODO-1147(floor→早)/TODO-1256(round→对称) 三次改采样都只在 ±Δ 里挪，没动 Δ 本身。
     // 真正的杠杆是 Δ=1000/fps：母帧按去重的 highlightCueIndex 逐句只渲一次（渲染开销
     // = O(不同句数)，与 fps 无关，见下方 distinctIndices），提 fps 只多廉价的 JPEG 母帧
-    // 复制 + ffmpeg mjpeg 帧，不增内存（TODO-1167 流式，任一时刻只驻一帧）。24fps →
+    // 复制 + ffmpeg 帧，不增内存（TODO-1167 流式，任一时刻只驻一帧）。24fps →
     // Δ≈41.7ms → 最大滞后 ≤20.8ms，两个方向都降到不可感知，从根上消除来回震荡。
-    const int fps = 24;
+    // BUG-1320：上限放宽到 300s 后按总帧数预算收敛 fps（clipExportFps，≤120s 恒 24）。
+    final int fps = clipExportFps(
+      durationMs: plan.globalEndMs - plan.globalStartMs,
+    );
     // 帧计划：每帧此刻高亮哪一句（相邻同句合并计数）。
     final List<AudioCue> planCues = plan.cueSpans
         .map((AudiobookClipCueSpan s) => AudioCue()
@@ -1693,7 +1720,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     }
     if (frameNo == 0) return false;
 
-    // image2 序列帧 + 完整音频 → mjpeg/.mov。
+    // image2 序列帧 + 完整音频 → h264/mpeg4 .mp4。
     final AudiobookClipSynthResult synth =
         await synthAudiobookClipFrameSeqVideoViaFfmpeg(
       framesDir: framesDir.path,
@@ -1702,10 +1729,10 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       width: layout.width,
       height: layout.height,
       fps: fps,
-      // TODO-1147：同单图静态路径——桌面 444 / 移动保守 420（见上）。
-      // BUG-809：桌面 h264（帧间压缩把逐句高亮的重复帧压到近零）/ 移动 mjpeg。
-      pixFmt: isDesktop ? 'yuvj444p' : 'yuvj420p',
+      // BUG-809/BUG-1322：桌面 h264 / 移动 mpeg4，两端帧间压缩把逐句高亮的重复帧
+      // 压到近零；色度统一 yuv420p（编码器内定）。
       h264: isDesktop,
+      timeout: timeout,
     );
     if (!synth.isSuccess || synth.outputPath == null) {
       debugPrint(
@@ -1838,6 +1865,7 @@ class _AudiobookClipDynamicPlan {
     required this.globalStartMs,
     required this.globalEndMs,
     required this.cueSpans,
+    this.cueTextMatches = true,
     this.imagesByCueIndex = const <List<Uint8List>>[],
   });
 
@@ -1845,6 +1873,12 @@ class _AudiobookClipDynamicPlan {
   final int globalStartMs;
   final int globalEndMs;
   final List<AudiobookClipCueSpan> cueSpans;
+
+  /// BUG-1321：对齐 cue 拼接文本是否与用户真实选区（空白归一化后）完全一致。
+  /// false = 字幕措辞与 EPUB 文本有出入——只允许静态精确选区卡（禁逐句高亮渲字幕文本，
+  /// BUG-968 契约不变），但**整段音频窗仍然有效**：此前直接丢弃整个计划，导致长选区
+  /// 退化成「全文卡片 + 只有第一句声音」。
+  final bool cueTextMatches;
 
   /// TODO-1127：与 [cueSpans] 同下标对齐的「每句后夹带插图」列表（选区里夹在该句之后的
   /// EPUB 插图字节，已降采样）。绝大多数句子为空列表；空则等价旧行为（只渲文本）。

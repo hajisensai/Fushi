@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1263 条。点号进各自文件。
+> 共 1266 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1322](bugs/BUG-1322-clip-export-mobile-mjpeg-unplayable.md) | ✅ | ✅ | 移动端导出片段MJPEG-MOV体积巨大且普遍无法播放 |
+| [BUG-1321](bugs/BUG-1321-clip-export-mismatch-window-collapse.md) | ✅ | ✅ | 选区与字幕文本不一致时长选区导出退化为单句音频 |
+| [BUG-1320](bugs/BUG-1320-clip-export-toolong-crosschapter-toast.md) | ✅ | ✅ | 片段导出超时长上限被误报为跨章且上限过紧 |
 | [BUG-1319](bugs/BUG-1319-collection-delete-cover-leak.md) | ✅ | ✅ | 删合集只有 1/6 入口回收自有封面：其余五条只删 DB 行，路径随行永久丢失、GC 又扫不到该子目录 = 确定性空间泄漏 |
 | [BUG-1318](bugs/BUG-1318-tracking-mapping-stale-after-format-change.md) | 🚧 | 🚧 | 转化后 Bangumi 映射不复核：epub→manga 后进度静默永久停报 |
 | [BUG-1317](bugs/BUG-1317-override-title-key-source-asymmetry.md) | 🚧 | 🚧 | 漫画/PDF 书改名后首页与统计仍显示旧名：override 键读写不同源 |

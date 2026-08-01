@@ -2867,5 +2867,6 @@
   "audiobook_delete": "删除有声书",
   "audiobook_delete_confirm": "删除已附加的有声书？它的音频文件会从本机删除。",
   "delete_collection_confirm": "只解除分组，其中的条目会保留。",
-  "shortcut_action_video_enter_caret": "进入字幕选词光标"
+  "shortcut_action_video_enter_caret": "进入字幕选词光标",
+  "audiobook_export_clip_too_long": "选区音频过长，暂不支持导出（上限 5 分钟）"
 }

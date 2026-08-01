@@ -43,8 +43,11 @@ void main() {
       final String source = File(
         'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
       ).readAsStringSync();
+      // BUG-1320：不可导出时不再裸 `return null`——tooLong 的窗口要透传出去
+      // （否则超长选区回落单句锚，静默产出「全文卡片 + 一句声音」）。锚点只取判据本身，
+      // 不再锚返回值形态。
       final int exportable = source.indexOf(
-        'if (!result.isExportable) return null;',
+        'if (!result.isExportable) return',
       );
       final int equalityGate = source.indexOf(
         'audiobookClipCueTextMatchesSelection(',
@@ -92,14 +95,14 @@ void main() {
     });
 
     test('BUG-1243 mobile share exposes one self-contained video only', () {
+      // BUG-1322：移动产物统一 MPEG-4/.mp4，mime 恒 video/mp4（不再按编码器分叉）。
       final List<AudiobookClipShareAttachment> attachments =
           audiobookClipMobileShareAttachments(
-        videoPath: '/tmp/clip.mov',
-        useH264: false,
+        videoPath: '/tmp/clip.mp4',
       );
       expect(attachments, hasLength(1));
-      expect(attachments.single.path, '/tmp/clip.mov');
-      expect(attachments.single.mimeType, 'video/quicktime');
+      expect(attachments.single.path, '/tmp/clip.mp4');
+      expect(attachments.single.mimeType, 'video/mp4');
       expect(
         attachments.where(
           (AudiobookClipShareAttachment attachment) =>

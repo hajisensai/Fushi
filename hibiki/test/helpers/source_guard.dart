@@ -18,7 +18,31 @@ String methodBody(String src, String signature) {
   if (start < 0) {
     fail('源码中找不到方法签名：$signature');
   }
-  final int open = src.indexOf('{', start);
+  // 命名参数 `foo({required int a})` 的 `{` 就在参数表里：直接取「签名后第一个 `{`」
+  // 会把**参数表**当成方法体，配对结束即返回——`contains` 型断言随之全假，
+  // `isFalse` 那类禁止型断言更是静默变绿。先跳过参数表：若签名后的第一个 `(` 出现在
+  // 第一个 `{` 之前，就把它配对到 `)`，方法体的 `{` 只可能在那之后。
+  // （无参 / 位置参数的老用法落到同一个 `{`，行为不变。）
+  int bodySearchFrom = start;
+  final int firstBrace = src.indexOf('{', start);
+  final int paren = src.indexOf('(', start);
+  if (paren >= 0 && firstBrace >= 0 && paren < firstBrace) {
+    int parenDepth = 0;
+    for (int i = paren; i < src.length; i++) {
+      if (src[i] == '(') parenDepth++;
+      if (src[i] == ')') {
+        parenDepth--;
+        if (parenDepth == 0) {
+          bodySearchFrom = i;
+          break;
+        }
+      }
+    }
+    if (parenDepth != 0) {
+      fail('方法签名的参数表圆括号不配对：$signature');
+    }
+  }
+  final int open = src.indexOf('{', bodySearchFrom);
   if (open < 0) {
     fail('方法签名后找不到左花括号：$signature');
   }

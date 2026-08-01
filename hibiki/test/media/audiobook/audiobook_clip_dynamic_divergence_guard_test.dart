@@ -78,15 +78,13 @@ void main() {
       expect(planAt, greaterThanOrEqualTo(0));
       expect(rangeAt, greaterThan(planAt));
       expect(classifyAt, greaterThan(rangeAt));
+      // BUG-1320 之后整段窗口由 _buildAudiobookClipPlan 随记录字段 range 直接回传，
+      // 不再从 dynamicPlan.global* 反推——超上限时 plan 为空但窗口仍有效，反推会连
+      // 窗口一起丢，长选区退回单句锚（BUG-1243 的老症状）。
       expect(
         body.substring(rangeAt, classifyAt),
-        contains('dynamicPlan.globalStartMs'),
-        reason: '多句计划的完整起点必须进入最终裁剪范围，不能仍裁第一句',
-      );
-      expect(
-        body.substring(rangeAt, classifyAt),
-        contains('dynamicPlan.globalEndMs'),
-        reason: '多句计划的完整终点必须进入最终裁剪范围，不能仍裁第一句',
+        contains('clipPlan.range'),
+        reason: '多句计划算出的完整窗口必须原样进入最终裁剪范围，不能仍裁第一句',
       );
     });
 

@@ -7,20 +7,24 @@ import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
 import 'package:image/image.dart' as img;
 
 void main() {
-  group('buildFfmpegImageAudioToVideoArgs (TODO-945 M4, mjpeg/.mov D-CODEC)',
+  group('buildFfmpegImageAudioToVideoArgs (TODO-945 M4, mobile mpeg4/.mp4)',
       () {
-    test('uses mjpeg video + aac audio, never libx264/mpeg4', () {
+    // BUG-1322：移动端默认（h264=false）走 libavcodec 原生 mpeg4（MPEG-4 Part 2）。
+    // AAR .rodata 实证已编入（`MPEG4 encoder` AVClass + mpegvideo_enc/motion_est/
+    // ratecontrol），movenc（mp4）与 faststart 同在。旧 mjpeg（30 秒 ≈ 200MB 且大量
+    // 移动播放器无 MJPEG 解码器 → 黑屏）绝不再当输出编码器。libx264 仍不在 AAR 里，
+    // 谁在移动分支换 libx264 必须当场红。
+    test('mobile default uses mpeg4 video + aac audio, never libx264/mjpeg',
+        () {
       final List<String> args = buildFfmpegImageAudioToVideoArgs(
-        imagePath: '/tmp/text.png',
-        audioPath: '/tmp/clip.m4a',
-        outputPath: '/tmp/out.mov',
+        imagePath: '/tmp/text.jpg',
+        audioPath: '/tmp/clip.aac',
+        outputPath: '/tmp/out.mp4',
       );
-      // D-CODEC hard fact: bundled ffmpeg only has gif/mjpeg/png video encoders
-      // + aac audio. If anyone swaps to libx264/mpeg4 here it must fail loudly.
-      expect(args, containsAllInOrder(<String>['-c:v', 'mjpeg']));
+      expect(args, containsAllInOrder(<String>['-c:v', 'mpeg4']));
       expect(args, containsAllInOrder(<String>['-c:a', 'aac']));
       expect(args, isNot(contains('libx264')));
-      expect(args, isNot(contains('mpeg4')));
+      expect(args, isNot(contains('mjpeg')));
       expect(args, isNot(contains('h264')));
     });
 
@@ -58,32 +62,23 @@ void main() {
       expect(args.last, '/out.mov');
     });
 
-    // TODO-1147 文字模糊根因守卫：默认去色度下采样（yuvj444p）+ 近最佳 qscale（-q:v 2）。
-    test('defaults to yuvj444p + -q:v 2 (TODO-1147 anti-blur)', () {
+    // BUG-1322：mpeg4 钉近最佳 qscale（-q:v 2，文字边缘保真）+ yuv420p（全平台硬解
+    // 基线色度）+ faststart（moov 前置，接收端秒开）。
+    test('mobile default pins -q:v 2 + yuv420p + faststart', () {
       final List<String> args = buildFfmpegImageAudioToVideoArgs(
         imagePath: '/i.jpg',
-        audioPath: '/a.m4a',
-        outputPath: '/o.mov',
+        audioPath: '/a.aac',
+        outputPath: '/o.mp4',
       );
-      expect(args, containsAllInOrder(<String>['-pix_fmt', 'yuvj444p']));
-      // 近最佳 qscale 消除默认 qscale 的二次有损。
+      expect(args, containsAllInOrder(<String>['-pix_fmt', 'yuv420p']));
+      expect(args, containsAllInOrder(<String>['-movflags', '+faststart']));
       final int qIdx = args.indexOf('-q:v');
       expect(qIdx, greaterThanOrEqualTo(0),
-          reason: 'mjpeg must pin a low qscale to avoid extra JPEG loss');
+          reason: 'mpeg4 must pin a low qscale to keep text edges sharp');
       expect(args[qIdx + 1], '2');
-    });
-
-    // 移动端保守回退：调用方可显式传 yuvj420p（自编 ffmpeg-kit min 的 mjpeg encoder
-    // 收 444 需真机验，未验前移动端仍走 420，靠 1080×1920 分辨率提升消模糊）。
-    test('pixFmt override lets mobile fall back to yuvj420p', () {
-      final List<String> args = buildFfmpegImageAudioToVideoArgs(
-        imagePath: '/i.jpg',
-        audioPath: '/a.m4a',
-        outputPath: '/o.mov',
-        pixFmt: 'yuvj420p',
-      );
-      expect(args, containsAllInOrder(<String>['-pix_fmt', 'yuvj420p']));
+      // 旧 mjpeg 的 yuvj* 色域不得回流。
       expect(args, isNot(contains('yuvj444p')));
+      expect(args, isNot(contains('yuvj420p')));
     });
 
     // BUG-809：桌面 ffmpeg-min 已编入 libx264+mp4，h264=true 走 H.264（带帧间压缩，
@@ -199,21 +194,22 @@ void main() {
       expect(args, isNot(contains('-loop')));
     });
 
-    test('still mjpeg video + aac audio, never libx264/concat/overlay', () {
+    test('mobile seq uses mpeg4 + aac, never libx264/mjpeg/concat/overlay', () {
       final List<String> args = buildFfmpegImageSeqAudioToVideoArgs(
         framesDir: '/f',
         audioPath: '/a.aac',
-        outputPath: '/o.mov',
+        outputPath: '/o.mp4',
       );
-      // ffmpeg-min 天花板：只有 mjpeg 视频编码器；无 libx264/h264/concat/overlay/drawtext。
-      expect(args, containsAllInOrder(<String>['-c:v', 'mjpeg']));
+      // BUG-1322：移动序列帧输出走原生 mpeg4；AAR 无 libx264，也无
+      // concat/overlay/drawtext filter（逐句高亮靠逐帧 JPEG，非 ffmpeg filter）。
+      expect(args, containsAllInOrder(<String>['-c:v', 'mpeg4']));
       expect(args, containsAllInOrder(<String>['-c:a', 'aac']));
       expect(args, isNot(contains('libx264')));
       expect(args, isNot(contains('h264')));
+      expect(args, isNot(contains('mjpeg')));
       expect(args, isNot(contains('concat')));
       expect(args, isNot(contains('overlay')));
       expect(args, isNot(contains('drawtext')));
-      // 序列帧 vf 里也不得掺 overlay/drawtext（逐句高亮靠逐帧 PNG，非 ffmpeg filter）。
       final int vfIdx = args.indexOf('-vf');
       expect(vfIdx, greaterThanOrEqualTo(0));
       final String filter = args[vfIdx + 1];
@@ -250,26 +246,20 @@ void main() {
       );
     });
 
-    // TODO-1147：序列帧路径同样默认 yuvj444p + -q:v 2，可被移动端保守覆写为 420。
-    test('seq defaults to yuvj444p + -q:v 2, mobile override to yuvj420p', () {
+    // BUG-1322：序列帧移动路径同样钉 mpeg4 的 -q:v 2 + yuv420p + faststart。
+    test('mobile seq pins -q:v 2 + yuv420p + faststart', () {
       final List<String> def = buildFfmpegImageSeqAudioToVideoArgs(
         framesDir: '/f',
         audioPath: '/a.aac',
-        outputPath: '/o.mov',
+        outputPath: '/o.mp4',
       );
-      expect(def, containsAllInOrder(<String>['-pix_fmt', 'yuvj444p']));
+      expect(def, containsAllInOrder(<String>['-pix_fmt', 'yuv420p']));
+      expect(def, containsAllInOrder(<String>['-movflags', '+faststart']));
       final int qIdx = def.indexOf('-q:v');
       expect(qIdx, greaterThanOrEqualTo(0));
       expect(def[qIdx + 1], '2');
-
-      final List<String> mobile = buildFfmpegImageSeqAudioToVideoArgs(
-        framesDir: '/f',
-        audioPath: '/a.aac',
-        outputPath: '/o.mov',
-        pixFmt: 'yuvj420p',
-      );
-      expect(mobile, containsAllInOrder(<String>['-pix_fmt', 'yuvj420p']));
-      expect(mobile, isNot(contains('yuvj444p')));
+      expect(def, isNot(contains('yuvj444p')));
+      expect(def, isNot(contains('yuvj420p')));
     });
 
     // BUG-809：序列帧路径（逐句高亮跟随）h264=true 同样走 libx264 —— 这是「30 秒
