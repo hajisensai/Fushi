@@ -2309,9 +2309,6 @@
   "video_scrape_source_offline": "离线库",
   "video_scrape_summary": "简介",
   "video_scrape_tags": "标签",
-  "video_scrape_tmdb_key_hint": "输入 TMDB API Key",
-  "video_scrape_tmdb_key_required": "TMDB 需要 API Key",
-  "video_scrape_tmdb_key_save": "保存",
   "video_scrape_use": "使用",
   "video_scrape_view_subject": "在 Bangumi 查看",
   "video_screenshot": "截图",
@@ -2773,10 +2770,9 @@
   "video_jimaku_episode_unlabeled": "未发现标为第 $episode 集的字幕；另有 $count 个未标集号文件可尝试",
   "video_jimaku_episode_unavailable": "没有找到第 $episode 集字幕",
   "video_jimaku_episode_available": "有 $count 个字幕 · $languages",
-  "video_scrape_manual_match_hint": "手动匹配会替换本集封面，并保存来源映射和条目资料。切换来源后，点“搜索”才会请求该来源。",
-  "video_scrape_collection_match_hint": "这里只替换合集封面，不会修改各集封面或条目资料。切换来源后，点“搜索”才会请求该来源。",
+  "video_scrape_manual_match_hint": "手动匹配会替换本集封面，并保存来源映射和条目资料。会同时搜索全部可用来源，结果按匹配度排序。",
+  "video_scrape_collection_match_hint": "这里只替换合集封面，不会修改各集封面或条目资料。会同时搜索全部可用来源，结果按匹配度排序。",
   "video_scrape_apply_to_collection_hint": "这会把同一张封面写到每一集；只有确实需要统一单集封面时才开启。",
-  "video_scrape_tmdb_key_empty": "先保存 TMDB API Key，再点“搜索”。这里不会混入其他来源的结果。",
   "manga_online_source_disabled": "此互联网来源已关闭，请在「来源」中开启后浏览目录。",
   "selection_web_search": "网页搜索",
   "selection_web_search_unavailable": "没有可用的网页搜索应用。",
@@ -2922,5 +2918,8 @@
   "download_airing_calendar_week_next": "下一周",
   "download_airing_calendar_week_empty": "本周没有相关放送",
   "video_jimaku_format": "类型",
-  "video_jimaku_format_all": "全部"
+  "video_jimaku_format_all": "全部",
+  "video_setting_tmdb_key": "自定义 TMDB API Key",
+  "video_setting_tmdb_key_hint": "可留空，默认用内置 Key。仅当刮削失效或你想用自己的配额时才需要填写。",
+  "about_tmdb_attribution": "This product uses the TMDB API but is not endorsed or certified by TMDB."
 }

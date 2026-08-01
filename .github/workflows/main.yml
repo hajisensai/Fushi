@@ -125,6 +125,24 @@ jobs:
         elif [ ! -f "$dst" ]; then
           cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
         fi
+    # tmdb_default_key.dart ships a committed empty placeholder (key = '') so a
+    # fresh clone compiles and TMDB scraping degrades to "not configured" (Bangumi
+    # / AniList / MAL sources still work). When the TMDB_API_KEY repo secret is set,
+    # bake the real value in so released builds scrape TMDB covers/metadata out of
+    # the box (no manual API key entry). Only the const line is rewritten, so the
+    # file's comments, the pref-key const and resolveTmdbApiKey() all survive.
+    - name: Provide gitignored TMDB API key stub
+      shell: bash
+      env:
+        TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+      run: |
+        dst=hibiki/lib/src/media/video/scraper/tmdb_default_key.dart
+        if [ ! -f "$dst" ]; then
+          cp hibiki/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
+        fi
+        if [ -n "$TMDB_API_KEY" ]; then
+          sed -i "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+        fi
 
     # TODO-1208: cache the resolved pub packages so pub get is near-instant on a
     # warm runner. apply-patches.sh is idempotent (cp -r overwrite), so a restored

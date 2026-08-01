@@ -2309,9 +2309,6 @@
   "video_scrape_source_offline": "Offline",
   "video_scrape_summary": "Synopsis",
   "video_scrape_tags": "Tags",
-  "video_scrape_tmdb_key_hint": "Enter TMDB API Key",
-  "video_scrape_tmdb_key_required": "TMDB requires an API key",
-  "video_scrape_tmdb_key_save": "Save",
   "video_scrape_use": "Use",
   "video_scrape_view_subject": "View on Bangumi",
   "video_screenshot": "Schermafbeelding",
@@ -2773,10 +2770,9 @@
   "video_jimaku_episode_unlabeled": "No subtitle labeled episode $episode; $count unlabeled files may still match",
   "video_jimaku_episode_unavailable": "No subtitle found for episode $episode",
   "video_jimaku_episode_available": "$count subtitles available · $languages",
-  "video_scrape_manual_match_hint": "Manual matching replaces this episode cover and saves its source mapping and title metadata. Switching sources does not search until you press Search.",
-  "video_scrape_collection_match_hint": "This only replaces the collection cover. Episode covers and title metadata are not changed. Switching sources does not search until you press Search.",
+  "video_scrape_manual_match_hint": "Manual matching replaces this episode cover and saves its source mapping and title metadata. All available sources are searched together and results are ranked by match confidence.",
+  "video_scrape_collection_match_hint": "This only replaces the collection cover. Episode covers and title metadata are not changed. All available sources are searched together and results are ranked by match confidence.",
   "video_scrape_apply_to_collection_hint": "This writes the same cover to every episode. Leave it off unless that is intentional.",
-  "video_scrape_tmdb_key_empty": "Save a TMDB API key, then press Search. Results from other sources are not shown here.",
   "manga_online_source_disabled": "This internet source is disabled. Enable it in Sources to browse the catalog.",
   "selection_web_search": "Search the web",
   "selection_web_search_unavailable": "No app can search the web.",
@@ -2922,5 +2918,8 @@
   "download_airing_calendar_week_next": "Next week",
   "download_airing_calendar_week_empty": "Nothing airing this week",
   "video_jimaku_format": "Format",
-  "video_jimaku_format_all": "All"
+  "video_jimaku_format_all": "All",
+  "video_setting_tmdb_key": "Custom TMDB API key",
+  "video_setting_tmdb_key_hint": "Optional. Leave empty to use the built-in key. Fill in your own only if scraping stops working or you want to use your own quota.",
+  "about_tmdb_attribution": "This product uses the TMDB API but is not endorsed or certified by TMDB."
 }
