@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:path/path.dart' as p;
+
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/media/collections/collection_asset_reclaim.dart';
@@ -8,6 +10,7 @@ import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
 import 'package:hibiki/src/media/collections/collection_season_groups.dart';
 import 'package:hibiki/src/media/media_cover_source.dart';
+import 'package:hibiki/src/media/video/anilist_client.dart' show AniListMedia;
 import 'package:hibiki/src/media/video/cover_ui/episode_rename_confirm_dialog.dart';
 import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
@@ -22,6 +25,7 @@ import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
 import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
@@ -618,6 +622,60 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         initialSearchQuery: relation.title,
       ),
     );
+  }
+
+  /// 文件名解出的集号；解不出回落集级刮削行的 episodeNumber（两者都无 → null）。
+  int? _episodeNumberOf(VideoBookRow episode) =>
+      parseVideoFilename(p.basename(episode.videoPath)).episode ??
+      _episodeMetaByUid[episode.bookUid]?.episodeNumber;
+
+  /// 打开下载对话框（TODO-2485）：合集绑了 anilistId → 本地合成 [AniListMedia]
+  /// （id + 合集名，零网络）直达选种段并预填集号；未绑定 → 回落预填合集名的
+  /// 搜番段。[episodeNumber] null = 不按集过滤。
+  void _openDownloadDialog({required int? episodeNumber}) {
+    final MediaCollectionRow collection = _collectionRow ?? widget.collection;
+    final int? anilistId = collection.anilistId;
+    showDialog<void>(
+      context: context,
+      builder: (_) => AnimeDownloadDialog(
+        showTasks: false,
+        initialMedia: anilistId == null
+            ? null
+            : AniListMedia(id: anilistId, romaji: collection.name),
+        initialEpisode: anilistId == null ? null : episodeNumber,
+        initialSearchQuery: anilistId == null ? collection.name : null,
+      ),
+    );
+  }
+
+  /// 「补齐缺集」：按文件名集号找 1..max 的第一个缺口；无内部缺口但刮削话数
+  /// 大于 max → 下一集（max+1）。真没有缺集（或一集集号都解不出）→ 提示。
+  void _fillMissingEpisodes() {
+    final Set<int> present = <int>{
+      for (final VideoBookRow member in _members)
+        if (parseVideoFilename(p.basename(member.videoPath)).episode
+            case final int episode)
+          episode,
+    };
+    int? firstMissing;
+    if (present.isNotEmpty) {
+      final int maxEpisode = present.reduce((int a, int b) => a > b ? a : b);
+      for (int i = 1; i <= maxEpisode; i++) {
+        if (!present.contains(i)) {
+          firstMissing = i;
+          break;
+        }
+      }
+      final int episodeCount = _scrapeMeta?.episodeCount ?? 0;
+      if (firstMissing == null && episodeCount > maxEpisode) {
+        firstMissing = maxEpisode + 1;
+      }
+    }
+    if (firstMissing == null) {
+      HibikiToast.show(msg: t.collection_episode_no_missing);
+      return;
+    }
+    _openDownloadDialog(episodeNumber: firstMissing);
   }
 
   /// 逐集「移出合集」（整理排序页删除后本页是视频侧唯一移出入口）：确认 →
@@ -1322,6 +1380,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       ),
       items: <PopupMenuEntry<_EpisodeMenuAction>>[
         PopupMenuItem<_EpisodeMenuAction>(
+          value: _EpisodeMenuAction.download,
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.download_outlined, size: 20),
+              const SizedBox(width: 12),
+              Text(t.collection_episode_download),
+            ],
+          ),
+        ),
+        PopupMenuItem<_EpisodeMenuAction>(
           value: _EpisodeMenuAction.removeFromCollection,
           child: Row(
             children: <Widget>[
@@ -1335,6 +1403,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
     if (!mounted) return;
     switch (action) {
+      case _EpisodeMenuAction.download:
+        _openDownloadDialog(episodeNumber: _episodeNumberOf(episode));
       case _EpisodeMenuAction.removeFromCollection:
         await _removeEpisode(episode);
       case null:
@@ -1382,6 +1452,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             icon: Icons.format_list_numbered,
             label: t.collection_episode_rename,
             onPressed: _members.isEmpty ? null : _renameEpisodesFromScrape,
+          ),
+          // 「补齐缺集」（TODO-2485）：按文件名集号找缺口，预填第一个缺集开下载。
+          HibikiAppBarAction(
+            icon: Icons.playlist_add,
+            label: t.collection_episode_fill_missing,
+            onPressed: _members.isEmpty ? null : _fillMissingEpisodes,
           ),
           HibikiAppBarAction(
             icon: Icons.drive_file_rename_outline,
@@ -1464,5 +1540,5 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   }
 }
 
-/// 集卡上下文菜单动作（后续线程按序扩：下载本集 / 在 Bangumi 打开本集）。
-enum _EpisodeMenuAction { removeFromCollection }
+/// 集卡上下文菜单动作。
+enum _EpisodeMenuAction { download, removeFromCollection }

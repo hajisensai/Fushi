@@ -139,6 +139,8 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
     this.tasksOnly = false,
     this.onOpenSettings,
     this.initialSearchQuery,
+    this.initialMedia,
+    this.initialEpisode,
     @visibleForTesting this.debugInitialMedia,
     @visibleForTesting this.debugInitialTorrent,
   });
@@ -160,6 +162,15 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
   /// 初始搜番词（TODO-2485/2484 UI）：非空时预填搜索框并自动发起一次 AniList
   /// 搜索（合集详情页「去下载」等入口预填标题直达）。null = 既有入口行为零变化。
   final String? initialSearchQuery;
+
+  /// 初始即选中的番（TODO-2485）：合集已绑定 anilistId 时由详情页本地合成
+  /// （id + 合集名，零网络）直达选种段——与 [debugInitialMedia] 不同，本参数走
+  /// **真实** [_selectMedia] 路径（预填查询词 + 并行拉 Nyaa/Jimaku）。
+  final AniListMedia? initialMedia;
+
+  /// 与 [initialMedia] 联用的预填集号：写进 Jimaku 集号框（字幕按集过滤）。
+  /// null = 不过滤（整季）。
+  final int? initialEpisode;
 
   /// 仅测试：初始即选中的番（跳过 AniList 网络搜索直达选种/确认阶段）。
   final AniListMedia? debugInitialMedia;
@@ -278,10 +289,23 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         _chosenSubs = _chooseSubsFor(debugTorrent);
       }
     }
-    // 初始搜番词（合集详情页入口预填）：只在还没有初始选中番时生效；post-frame
-    // 再搜（_searchAnime 里 setState，initState 同步调用会撞生命周期）。
+    // 初始上下文（合集详情页入口，TODO-2485）。二选一：有 initialMedia（合集已
+    // 绑 anilistId）→ post-frame 走真实 _selectMedia 直达选种段；否则有初始搜番
+    // 词 → 预填并自动搜一次。都 post-frame：两条路径里的 setState 不能在
+    // initState 同步触发。
+    final AniListMedia? seedMedia = widget.initialMedia;
     final String? seedQuery = widget.initialSearchQuery?.trim();
-    if (_selectedMedia == null && seedQuery != null && seedQuery.isNotEmpty) {
+    if (_selectedMedia == null && seedMedia != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(
+            _selectMedia(seedMedia, presetEpisode: widget.initialEpisode),
+          );
+        }
+      });
+    } else if (_selectedMedia == null &&
+        seedQuery != null &&
+        seedQuery.isNotEmpty) {
       _animeQueryCtrl.text = seedQuery;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_searchAnime());
@@ -379,8 +403,14 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
 
   /// 点选某番：进入选种阶段，并行拉 Nyaa 种子与 Jimaku 字幕索引。
   /// Jimaku 空结果/无 key 不阻塞选种，只是徽标显示无字幕。
-  Future<void> _selectMedia(AniListMedia media) async {
+  Future<void> _selectMedia(AniListMedia media, {int? presetEpisode}) async {
     _prefillQueriesFor(media);
+    // 预填集号（「下载本集」/「补齐缺集」入口）：写进 Jimaku 集号框（按集过滤
+    // 字幕），并视作已应用——预填即将被本次自动搜索使用。
+    if (presetEpisode != null) {
+      _jimakuEpisodeCtrl.text = '$presetEpisode';
+      _appliedJimakuSearch = _currentJimakuSearchInput();
+    }
     setState(() {
       _selectedMedia = media;
       _selectedTorrent = null;
@@ -494,10 +524,14 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   }
 
   /// 自动拉 Jimaku 字幕索引（选番时）：先按 AniList id 搜、空则回退标题文本搜。
+  /// 集号框非空（「下载本集」/「补齐缺集」经 [_selectMedia] 的 presetEpisode
+  /// 预填）则按集过滤；常规选番路径 [_prefillQueriesFor] 刚清空过它 → null =
+  /// 旧行为不过滤，零变化。
   Future<void> _fetchJimaku(AniListMedia media) async {
     await _runJimakuSearch(
       anilistId: media.id,
       queries: _jimakuFallbackQueries(media),
+      episode: _parseEpisodeInput(_jimakuEpisodeCtrl.text),
     );
   }
 
