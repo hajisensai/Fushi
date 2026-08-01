@@ -30,6 +30,28 @@ class ReaderPageStep {
   final double targetScroll;
 }
 
+/// Groups the many horizontal wheel ticks emitted by one macOS trackpad swipe
+/// into one page-turn intent.
+///
+/// The gate belongs to the reader State rather than the WebView document, so a
+/// chapter navigation in the middle of momentum cannot reset it and admit a
+/// second page turn. Every tick moves the trailing edge; only a full quiet
+/// interval starts the next gesture.
+class ReaderWheelGestureGate {
+  DateTime? _lastTickAt;
+
+  bool shouldStartNewGesture({
+    required DateTime now,
+    required Duration settleInterval,
+  }) {
+    final DateTime? lastTickAt = _lastTickAt;
+    final bool startsNewGesture =
+        lastTickAt == null || now.difference(lastTickAt) >= settleInterval;
+    _lastTickAt = now;
+    return startsNewGesture;
+  }
+}
+
 /// 一条 sasayaki cue 的运行时定位输入：归一化原文 [needle]、匹配时算出的
 /// 归一化偏移提示 [hint]、提示长度 [length]（仅在未命中回落时用于推进游标）。
 class SasayakiCueHint {
@@ -506,10 +528,11 @@ class ReaderPaginationScripts {
   ///
   /// [deltaY]/[deltaX] = wheel 事件的滚动增量。主轴取绝对值更大的那个，>0 = forward。
   @visibleForTesting
-  static String wheelPaginateDir(
+  static String? wheelPaginateDir(
       {required double deltaY, required double deltaX}) {
-    final bool forward = deltaY > 0 || deltaX > 0;
-    return forward
+    final double delta = deltaY.abs() >= deltaX.abs() ? deltaY : deltaX;
+    if (delta == 0) return null;
+    return delta > 0
         ? ReaderNavigationDirection.forward.jsValue
         : ReaderNavigationDirection.backward.jsValue;
   }

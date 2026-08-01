@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1352 守卫：`packages/*/test/` 下不得再出现 schemaVersion 的**等值**断言。
 ///
 /// 背景：`HibikiDatabase.schemaVersion` 每次加迁移都 +1，而「当前恰好是第几版」
@@ -49,12 +51,19 @@ void main() {
           in testDir.listSync(recursive: true, followLinks: false)) {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
         scannedFiles++;
-        final List<String> lines = entity.readAsStringSync().split('\n');
-        for (int i = 0; i < lines.length; i++) {
-          if (lines[i].trimLeft().startsWith('//')) continue;
-          if (exactEquality.hasMatch(lines[i])) {
+        final String source = entity.readAsStringSync();
+        // 剥注释走共享词法掩码（`test/helpers/source_guard.dart`），不手写
+        // 「整行以 // 开头就跳过」：那个形态剥不掉行尾注释与 `/* */` 块注释，
+        // 把违规写法塞进块注释就能骗绿（`source_guard_adoption_test` 守着这条）。
+        // 这里不用 containsCodeLine 是因为判据是**正则**且报告要给行号，而它只收
+        // 字面量 needle、只返回 bool；maskComments 是它内部用的同一个原语，且**等长
+        // 等行**，掩码行下标可以直接回原文取证。
+        final List<String> maskedLines = maskComments(source).split('\n');
+        final List<String> rawLines = source.split('\n');
+        for (int i = 0; i < maskedLines.length; i++) {
+          if (exactEquality.hasMatch(maskedLines[i])) {
             offenders.add(
-                '${entity.path.replaceAll(r'\', '/')}:${i + 1}: ${lines[i].trim()}');
+                '${entity.path.replaceAll(r'\', '/')}:${i + 1}: ${rawLines[i].trim()}');
           }
         }
       }

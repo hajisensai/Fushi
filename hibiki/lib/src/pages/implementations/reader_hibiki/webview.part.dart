@@ -50,7 +50,11 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     // BUG-1280：交给 WebView 的是正文章节文档，清 spread 标记（见字段注释）。
     // spread 的兜底降级路径 `_loadSpreadPage` → `_loadChapterDirectly` 也经过
     // 这里，所以标记不会泄漏成「以为还在双页」。
-    _spreadDocumentLoaded = false;
+    if (_spreadDocumentLoaded) {
+      _rebuild(() {
+        _spreadDocumentLoaded = false;
+      });
+    }
     _isNavigatingToChapter = true;
     try {
       await _controller!.loadUrl(
@@ -1365,6 +1369,20 @@ install: function(C) {
   // 再来一次才真正跨章，消除「还没到章首就切上一章」。与纯函数
   // ReaderPaginationScripts.continuousWheelBoundaryEmit 同款语义。
   var _wheelBoundaryArmed = null;
+  // BEGIN PAGED_WHEEL_GESTURE_HELPER
+  // BUG-1342：只把每个 tick 的语义方向和主轴交给 Dart。手势 session 不能存在 JS
+  // document 中，因为翻章会重建 document、在同一段惯性中重置闸门。横向主轴由跨章节
+  // 持久的 ReaderWheelGestureGate 聚合；纵向鼠标滚轮维持既有固定窗口节流。
+  function _handlePagedWheelTick(e) {
+    var horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+    var delta = horizontal ? e.deltaX : e.deltaY;
+    if (delta === 0) return;
+    e.preventDefault();
+    var direction = delta > 0 ? 'forward' : 'backward';
+    window.flutter_inappwebview.callHandler('onWheelPaginate', direction,
+      horizontal ? 'horizontal' : 'vertical');
+  }
+  // END PAGED_WHEEL_GESTURE_HELPER
   // TODO-656: 横排连续模式放行原生滚动时，记上一拍 scrollTop，下一拍无变化（原生卡
   // 在边界滚不动）才算到边界——替代瞬时 scrollTop<=2 几何。-1 = 尚无基线（首拍不卡）。
   var _wheelLastScrollPos = -1;
@@ -1460,10 +1478,9 @@ install: function(C) {
     // 产「语义意图」(forward/backward)，方向 deltaY>0=forward 对齐连续滚轮(沿书写轴
     // delta>0=前进)，不再经 onSwipe 被 invertSwipeDirection(默认 true) 连坐反向。
     // 节流统一到 Dart 侧 _paginate 入口时间戳闸门（throttleMs: wheelPageTurnInterval），
-    // JS 不再自持 _wheelTimer。invertSwipeDirection 从此只管触摸滑动 / 鼠标拖动。
-    var forward = (e.deltaY > 0 || e.deltaX > 0);
-    window.flutter_inappwebview.callHandler('onWheelPaginate', forward ? 'forward' : 'backward');
-    e.preventDefault();
+    // JS 不再自持固定窗口 _wheelTimer；横向触控板 burst 由跨文档 Dart State 聚合，
+    // 纵向鼠标滚轮仍走 _paginate 固定窗口。invertSwipeDirection 只管触摸/鼠标拖动。
+    _handlePagedWheelTick(e);
   }, {passive: false});
   var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
   document.addEventListener('mousemove', function(e) {
@@ -1682,6 +1699,10 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
                         selection: HibikiTextSelection(text: text),
                       );
                     }
+                    // BUG-1344：先保留原生选区完成句子/夹图采集，再在打开弹窗前清除。
+                    // WKWebView 否则会把失焦选区绘成灰块并残留到应用切换。
+                    await _clearReaderAppSelection();
+                    if (!mounted) return;
                     await searchDictionaryResult(
                       searchTerm: text,
                       selectionRect: rect,
@@ -2098,16 +2119,24 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         // TODO-737: 分页滚轮翻页专用 handler。JS 已把滚轮方向归一成「语义意图」
         // (forward/backward·deltaY>0=forward 对齐连续滚轮)，这里**不读
         // invertSwipeDirection**（该开关从此只管触摸滑动 / 鼠标拖动，不管滚轮），
-        // 直接映射成 _paginate 的导航方向。节流统一走 _paginate 入口时间戳闸门
-        // （throttleMs: wheelPageTurnInterval），不再依赖 JS _wheelTimer。
+        // 直接映射成 _paginate 的导航方向。横向触控板惯性先经跨 document 持久的
+        // ReaderWheelGestureGate 聚合为一次手势；纵向鼠标滚轮只走既有固定窗口节流。
         controller.addJavaScriptHandler(
           handlerName: 'onWheelPaginate',
           callback: (List<dynamic> args) {
-            if (args.isEmpty || _lyricsMode) return;
-            _focusOwnership.reclaim(FocusReclaimCause.gesture);
+            if (args.length < 2 || _lyricsMode) return;
             final String dir = args[0] as String;
+            final String axis = args[1] as String;
             final int throttleMs =
                 ReaderHibikiSource.instance.wheelPageTurnInterval;
+            if (axis == 'horizontal' &&
+                !_pagedWheelGestureGate.shouldStartNewGesture(
+                  now: DateTime.now(),
+                  settleInterval: Duration(milliseconds: throttleMs),
+                )) {
+              return;
+            }
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
             if (dir == 'forward') {
               _paginate(ReaderNavigationDirection.forward,
                   throttleMs: throttleMs);
