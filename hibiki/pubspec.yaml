@@ -208,10 +208,16 @@ dependency_overrides:
   # BUG-073 (cont.): the SAME TrueHD gap exists on macOS/iOS/Android — media-kit's
   # "default" FFmpeg flavor enables the truehd demuxer but not its decoder, so
   # TrueHD audio is silent on every platform, not just Windows. These forks switch
-  # each platform to media-kit's own "full" flavor (which enables all decoders):
-  # darwin v0.7.0 -video-full (macOS/iOS) and android v1.1.11 full-*.jar. Linux
-  # uses the system libmpv (full FFmpeg) and needs no override. See each package's
-  # Makefile / build.gradle for the per-platform repoint + checksums.
+  # each platform to the "full" flavor (which enables all decoders). Linux uses
+  # the system libmpv (full FFmpeg) and needs no override.
+  #
+  # TODO-1137: every media-kit release, full flavor included, is built against
+  # FFmpeg 6.0 (2023-02) — off the maintenance branches, no security backports,
+  # and this is the library that decodes whatever file the user opens. Android is
+  # therefore built from our own fork at FFmpeg 6.1.6 (6.1 LTS tip) and mirrored
+  # into the permanent `vendor-libmpv` release. macOS/iOS are still on media-kit's
+  # 6.0 build and remain exposed until the darwin xcframeworks are published.
+  # See each package's Makefile / build.gradle for the repoint + checksums.
   media_kit_libs_macos_video:
     path: ../third_party/media_kit_libs_macos_video
   media_kit_libs_ios_video:

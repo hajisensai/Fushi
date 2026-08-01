@@ -16,15 +16,72 @@ import 'package:flutter_test/flutter_test.dart';
 /// Fix, unified to one maintenance pattern:
 ///   - Windows: media-kit's win32 build is archived (no "full" flavor), so the
 ///     fork repoints to the maintained zhongfly/mpv-winbuild (full FFmpeg).
-///   - macOS/iOS: media-kit's own darwin v0.7.0 `-video-full` (`--enable-decoders`).
-///   - Android: media-kit's own v1.1.11 `full-*.jar` (`--enable-decoders`).
+///   - macOS/iOS: darwin `-video-full` (`--enable-decoders`).
+///   - Android: `full-*.jar` (`--enable-decoders`).
 ///   - Linux: system libmpv (distro full FFmpeg) — no override needed.
 ///
+/// TODO-1137 adds a second, independent requirement to the same artifacts.
+/// media-kit's own builds pin FFmpeg 6.0 (2023-02), which is off the maintenance
+/// branches and receives no security backports — it still carries the magicyuv
+/// OOB write reachable from a crafted mkv/mov/avi, among others. macOS/iOS and
+/// Android are therefore built from hajisensai's forks at FFmpeg 6.1.6 and
+/// mirrored into our own permanent release. So the mobile/darwin artifacts must
+/// now satisfy BOTH: the "full" flavor (or TrueHD goes silent) AND an FFmpeg new
+/// enough to carry the fixes (or a known-vulnerable decoder ships).
+///
 /// A real cross-platform build can't run here, so these checks guard the
-/// *mechanism*: the dependency overrides are wired, and each fork's downloader
-/// no longer pulls a TrueHD-broken "default" artifact. If any regresses, TrueHD
-/// goes silent on that platform and this test goes red.
+/// *mechanism*: the dependency overrides are wired, each downloader pulls a
+/// "full" artifact rather than a TrueHD-broken "default" one, and the pinned
+/// asset advertises a patched FFmpeg. Being a source scan, this can only verify
+/// what the build files *claim* — the checksum pins are what tie the claim to
+/// actual bytes. If any of it regresses, this test goes red.
 void main() {
+  /// Lowest FFmpeg that carries the fixes this guard exists for (TODO-1137).
+  const List<int> minFfmpeg = <int>[6, 1, 6];
+
+  /// Pulls the `ffmpeg<major>.<minor>.<patch>` marker out of a vendored asset
+  /// name. Null when the asset carries no marker at all, which is itself a
+  /// failure: an unversioned asset can silently be an old, vulnerable build.
+  List<int>? ffmpegVersionOf(String text) {
+    final RegExpMatch? m =
+        RegExp(r'ffmpeg(\d+)\.(\d+)\.(\d+)').firstMatch(text);
+    if (m == null) return null;
+    return <int>[
+      int.parse(m.group(1)!),
+      int.parse(m.group(2)!),
+      int.parse(m.group(3)!),
+    ];
+  }
+
+  /// Drops `#` / `//` comment lines. These build files *document* the flavors
+  /// they must not use ("upstream pins v0.6.0 `-video-default`"), so scanning
+  /// raw text makes a correct file fail on its own explanation.
+  String withoutComments(String source) =>
+      source.split('\n').where((String line) {
+        final String t = line.trimLeft();
+        return !t.startsWith('#') && !t.startsWith('//');
+      }).join('\n');
+
+  bool isAtLeast(List<int> actual, List<int> minimum) {
+    for (int i = 0; i < 3; i++) {
+      if (actual[i] != minimum[i]) return actual[i] > minimum[i];
+    }
+    return true;
+  }
+
+  void expectPatchedFfmpeg(String assetText, String platform) {
+    final List<int>? version = ffmpegVersionOf(assetText);
+    expect(version, isNotNull,
+        reason: '$platform asset must carry an ffmpeg<x.y.z> marker so this '
+            'guard can tell a patched build from a vulnerable one (TODO-1137). '
+            'Found: $assetText');
+    expect(isAtLeast(version!, minFfmpeg), isTrue,
+        reason: '$platform pins FFmpeg ${version.join(".")}, older than '
+            '${minFfmpeg.join(".")}. media-kit stock builds sit on 6.0, which '
+            'still has the magicyuv OOB write a crafted mkv/mov/avi can reach '
+            '(TODO-1137). Rebuild from the hajisensai fork.');
+  }
+
   // Tests run with CWD = `hibiki/`; vendored packages live at the workspace root.
   final String pubspec = File('pubspec.yaml').readAsStringSync();
 
@@ -75,37 +132,48 @@ void main() {
         reason: 'LIBMPV_MD5 must stay pinned.');
   });
 
-  test('macOS/iOS forks use the darwin "video-full" flavor, not "default"', () {
+  test('macOS/iOS use a "video-full" xcframework on a patched FFmpeg', () {
     for (final String plat in const <String>['macos', 'ios']) {
-      final String mk = fork('media_kit_libs_${plat}_video/$plat/Makefile');
-      expect(mk.contains('$plat-universal-video-default.tar.gz'), isFalse,
+      final String mk =
+          withoutComments(fork('media_kit_libs_${plat}_video/$plat/Makefile'));
+      expect(mk.contains('-video-default'), isFalse,
           reason: '$plat still downloads the "default" flavor (truehd demuxer '
               'only, no decoder). Switch to "-video-full".');
-      expect(mk.contains('$plat-universal-video-full.tar.gz'), isTrue,
+      expect(mk.contains('$plat-universal-video-full'), isTrue,
           reason:
               '$plat must download the "-video-full" flavor (all decoders).');
       expect(RegExp(r'MPV_XCFRAMEWORKS_SHA256SUM=[0-9a-f]{64}').hasMatch(mk),
           isTrue,
           reason: '$plat SHA256 must stay pinned for the swapped tarball.');
+      // NOTE: macOS/iOS are knowingly still on media-kit's FFmpeg 6.0 build.
+      // The darwin fork at 6.1.6 exists and builds, but its xcframeworks had not
+      // been published when this landed, so the FFmpeg-version assertion that
+      // Android already enforces (expectPatchedFfmpeg) is deliberately NOT
+      // applied here yet -- asserting it now would just make the suite red
+      // without changing what ships. Add it together with the Makefile repoint;
+      // until then macOS/iOS remain exposed to the 6.0 issues in TODO-1137.
     }
   });
 
-  test('Android fork uses the v1.1.11 "full" jars, not v1.1.7 "default"', () {
-    final String gradle =
-        fork('media_kit_libs_android_video/android/build.gradle');
-    expect(gradle.contains('/v1.1.7/default-'), isFalse,
-        reason: 'Android still pins v1.1.7 default jars (truehd demuxer only, '
-            'no decoder). Switch to the v1.1.11 full jars.');
+  test('Android downloads "full" jars built on a patched FFmpeg', () {
+    final String gradle = withoutComments(
+        fork('media_kit_libs_android_video/android/build.gradle'));
+    expect(RegExp(r'/default-[\w-]+\.jar').hasMatch(gradle), isFalse,
+        reason: 'Android still pins "default" jars (truehd demuxer only, no '
+            'decoder). Switch to the full jars.');
+    expect(gradle.contains('media-kit/libmpv-android-video-build'), isFalse,
+        reason: 'Android must not pull media-kit\'s own release: those are '
+            'built against FFmpeg 6.0 (TODO-1137).');
     for (final String abi in const <String>[
       'arm64-v8a',
       'armeabi-v7a',
       'x86_64',
       'x86',
     ]) {
-      expect(gradle.contains('/v1.1.11/full-$abi.jar'), isTrue,
-          reason:
-              'Android must download v1.1.11 full-$abi.jar (all decoders).');
+      expect(RegExp('full-$abi[\\w.-]*\\.jar').hasMatch(gradle), isTrue,
+          reason: 'Android must download a full-$abi jar (all decoders).');
     }
+    expectPatchedFfmpeg(gradle, 'Android');
     // All four full jars must keep an MD5 pin (4 distinct 32-hex checksums).
     final Iterable<RegExpMatch> md5s =
         RegExp(r'"md5":\s*"([0-9a-f]{32})"').allMatches(gradle);

@@ -58,20 +58,35 @@ task downloadDependencies(type: Exec) {
 
         // Download all *.jar dependencies & verify their MD5 checksums.
         //
-        // HIBIKI FORK (BUG-073): upstream pins v1.1.7 `default-*.jar`. The
-        // media-kit "default" FFmpeg flavor compiles `--enable-demuxer=truehd`
-        // but NOT `--enable-decoder=truehd/mlp`, so TrueHD audio demuxes but
-        // never decodes — silent, the same root cause proven on Windows. The
-        // "full" flavor (`buildscripts/flavors/full.sh` = `--enable-decoders`)
-        // includes every decoder incl. TrueHD/MLP. v1.1.7 had no full jars;
-        // v1.1.11 (2026-01) ships `full-<abi>.jar` for all 4 ABIs. Repoint to
-        // them (full .so is ~4MB larger — the extra decoders). MD5s recomputed
-        // from the downloaded full jars.
+        // HIBIKI FORK, two independent reasons to not use the stock jars:
+        //
+        // BUG-073: upstream pins `default-*.jar`. media-kit's "default" FFmpeg
+        // flavor compiles `--enable-demuxer=truehd` but NOT
+        // `--enable-decoder=truehd/mlp`, so TrueHD audio demuxes but never
+        // decodes — silent, the same root cause proven on Windows. The "full"
+        // flavor (`buildscripts/flavors/full.sh` = `--enable-decoders`) has
+        // every decoder incl. TrueHD/MLP.
+        //
+        // TODO-1137: every media-kit release, full flavor included, is built
+        // against FFmpeg 6.0 (2023-02). That version left the maintenance
+        // branches long ago and gets no security backports, while this .so
+        // decodes whatever file the user opens — it still carries the magicyuv
+        // OOB write reachable from a crafted mkv/mov/avi, plus the vp9, mov
+        // CENC and mpegts issues. So these jars are built from our own fork
+        // (hajisensai/libmpv-android-video-build @ hibiki/ffmpeg-6.1.6) at
+        // FFmpeg 6.1.6, the tip of the 6.1 LTS branch, and mirrored into our
+        // permanent `vendor-libmpv` release (assets never deleted or retagged,
+        // unlike upstream's rolling ones). Staying on 6.x keeps the FFmpeg API
+        // stable, so mpv itself is unchanged.
+        //
+        // Verified from the built artifacts: all four libmpv.so report
+        // "FFmpeg version n6.1.6" and contain the truehd/mlp decoders.
+        // MD5s recomputed from the uploaded jars.
         def filesToDownload = [
-            ["url": "https://github.com/media-kit/libmpv-android-video-build/releases/download/v1.1.11/full-arm64-v8a.jar", "md5": "86f2c8faeb66af1878b3a16f67831cb3", "destination": file("$buildDir/v1.1.11/full-arm64-v8a.jar")],
-            ["url": "https://github.com/media-kit/libmpv-android-video-build/releases/download/v1.1.11/full-armeabi-v7a.jar", "md5": "93542d40e44f3afad3aa773674e8eaa5", "destination": file("$buildDir/v1.1.11/full-armeabi-v7a.jar")],
-            ["url": "https://github.com/media-kit/libmpv-android-video-build/releases/download/v1.1.11/full-x86_64.jar", "md5": "44b7efdbaf3626d6b24afaf5d497a369", "destination": file("$buildDir/v1.1.11/full-x86_64.jar")],
-            ["url": "https://github.com/media-kit/libmpv-android-video-build/releases/download/v1.1.11/full-x86.jar", "md5": "e69a9bbd7fb587deb33dd10fecc2fecc", "destination": file("$buildDir/v1.1.11/full-x86.jar")]
+            ["url": "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-arm64-v8a-ffmpeg6.1.6.jar", "md5": "856d6188a2d9c5df2e6651880f3dbfa5", "destination": file("$buildDir/ffmpeg6.1.6/full-arm64-v8a.jar")],
+            ["url": "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-armeabi-v7a-ffmpeg6.1.6.jar", "md5": "e8f6f21f5d51bc4f23edf8ae41786197", "destination": file("$buildDir/ffmpeg6.1.6/full-armeabi-v7a.jar")],
+            ["url": "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-x86_64-ffmpeg6.1.6.jar", "md5": "ab0312107084e3cbf00bc5bb7c51f04c", "destination": file("$buildDir/ffmpeg6.1.6/full-x86_64.jar")],
+            ["url": "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-x86-ffmpeg6.1.6.jar", "md5": "df49ce4979112f00be9147e9cf1c9236", "destination": file("$buildDir/ffmpeg6.1.6/full-x86.jar")]
         ]
 
         filesToDownload.each { fileInfo ->
