@@ -2870,5 +2870,8 @@
   "shortcut_action_video_enter_caret": "Enter subtitle lookup cursor",
   "audiobook_export_clip_too_long": "Selection audio is too long to export (limit: 5 minutes)",
   "sync_err_forbidden": "The server refused this request. Your sign-in is fine - check the server's settings.",
-  "sync_err_forbidden_detail": "The server refused this request: $reason (your sign-in is fine)"
+  "sync_err_forbidden_detail": "The server refused this request: $reason (your sign-in is fine)",
+  "collection_group_extras": "Extras & PV",
+  "collection_group_season": "Season $n",
+  "collection_sort_by_season": "Sort by season"
 }

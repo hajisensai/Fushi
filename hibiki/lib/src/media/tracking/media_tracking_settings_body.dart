@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/collections/collection_season_groups.dart'
+    show collectionGroupKeyForFilename, isMultiSeasonGrouped;
 import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_labels.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
@@ -370,10 +372,28 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
         .where((MediaCollectionItemRow row) => row.mediaType == 'video')
         .map((MediaCollectionItemRow row) => row.collectionId)
         .toSet();
+    // 多季合集（分组按各集文件名派生）不再列为整合集映射目标：Bangumi 一季一
+    // 条目，「整个多季合集 → 单个 subject」结构性错位，建了也会被上报门控绕开
+    // ——与其让用户建一条永远不生效的映射，不如不提供入口。多季合集的上报走
+    // 自动按集通道（季度感知刮削 subject + 季内集号），单集也仍可手动映射。
+    final Map<String, String> videoPathByUid = <String, String>{
+      for (final VideoBookRow video in videos) video.bookUid: video.videoPath,
+    };
+    final Map<int, List<String>> groupKeysByCollection = <int, List<String>>{};
+    for (final MediaCollectionItemRow row in members) {
+      if (row.mediaType != 'video') continue;
+      final String? path = videoPathByUid[row.entryKey];
+      if (path == null) continue;
+      groupKeysByCollection
+          .putIfAbsent(row.collectionId, () => <String>[])
+          .add(collectionGroupKeyForFilename(path));
+    }
     final List<_LocalTrackingTarget> targets = <_LocalTrackingTarget>[
       for (final MediaCollectionRow collection in collections)
         if (collection.collectionType == 'playlist' &&
-            videoPlaylists.contains(collection.id))
+            videoPlaylists.contains(collection.id) &&
+            !isMultiSeasonGrouped(
+                groupKeysByCollection[collection.id] ?? const <String>[]))
           _LocalTrackingTarget(
             type: TrackingMediaType.videoCollection,
             key: collection.id.toString(),

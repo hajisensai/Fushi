@@ -1641,4 +1641,178 @@ void main() {
       expect(status.hasProblem, isTrue);
     });
   });
+
+  group('v64 多季分组合集：绕开结构性失真的合集级映射', () {
+    /// S01×2 + S02×1 的多季 playlist（分组由 videoPath 文件名派生），返回
+    /// collectionId。
+    Future<int> seedMultiSeason() async {
+      for (final (String uid, String title) in <(String, String)>[
+        ('s1e1', 'Adachi to Shimamura S01E01'),
+        ('s1e2', 'Adachi to Shimamura S01E02'),
+        ('s2e1', 'Adachi to Shimamura S02E01'),
+      ]) {
+        await db.upsertVideoBook(VideoBooksCompanion.insert(
+          bookUid: uid,
+          title: title,
+          videoPath: 'C:/anime/$title.mkv',
+        ));
+      }
+      final int cid = await db.createMediaCollection(
+        'Adachi to Shimamura',
+        collectionType: 'playlist',
+      );
+      await db.addToCollection(cid, MediaKind.video, 's1e1');
+      await db.addToCollection(cid, MediaKind.video, 's1e2');
+      await db.addToCollection(cid, MediaKind.video, 's2e1');
+      return cid;
+    }
+
+    /// 旧的「整合集 → 第一季 subject」映射（用户显式配置或旧版自动建）。
+    Future<void> seedCollectionMapping(int cid) => repository.saveMapping(
+          mediaType: TrackingMediaType.videoCollection,
+          mediaKey: '$cid',
+          mediaTitle: 'Adachi to Shimamura',
+          kind: TrackingKind.anime,
+          subjectId: 100,
+          subjectName: '安達與島村',
+          progressMode: TrackingProgressMode.episode,
+          progressOffset: 1,
+        );
+
+    test('看完 S02E01：改走按集通道（第二季 subject + 季内集号），不再用合集下标', () async {
+      final int cid = await seedMultiSeason();
+      await seedCollectionMapping(cid);
+      // 季度感知刮削结果：S02E01 已确认属于第二季 subject 200。
+      await db.upsertVideoScrapeMeta(VideoScrapeMetaCompanion.insert(
+        bookUid: 's2e1',
+        source: 'bangumi',
+        subjectId: '200',
+        title: '安達與島村 2',
+        scrapedAt: DateTime.now(),
+      ));
+
+      api.episodes = const <BangumiEpisode>[
+        BangumiEpisode(id: 11, type: 0, sort: 1),
+        BangumiEpisode(id: 12, type: 0, sort: 2),
+      ];
+
+      // 修复前：branch ① 直接给合集映射入队 localProgress=episodeIndex=2 →
+      // ep_status = 2 + offset(1) = 3 报给第一季 subject 100（12 集第一季时
+      // 即「S02E01 被报成 E13」的同型错位），且**不会**建按集映射。
+      await service.recordVideoCompleted(
+        bookUid: 's2e1',
+        collectionId: cid,
+        episodeIndex: 2,
+      );
+
+      final MediaTrackingMappingRow? itemMapping = await repository.findMapping(
+        mediaType: TrackingMediaType.video,
+        mediaKey: 's2e1',
+      );
+      expect(itemMapping, isNotNull,
+          reason: '多季合集必须落到按集映射（修复前在合集映射分支就 return 了）');
+      expect(itemMapping!.subjectId, 200, reason: '报到第二季条目，不是第一季');
+      expect(itemMapping.progressOffset, 1, reason: '季内集号（S02E01 → 第 1 集）');
+      // 合集级映射保留（绝不改写），但本次没有以它入队。
+      expect(
+        await repository.findMapping(
+          mediaType: TrackingMediaType.videoCollection,
+          mediaKey: '$cid',
+        ),
+        isNotNull,
+      );
+      // 收口 _enqueueAndSync 的后台 unawaited(syncNow())，防止其越过 tearDown
+      // 撞已关闭的 db。
+      await service.syncNow();
+      expect(await repository.pendingCount(), 0);
+    });
+
+    test('单季合集（全员同组）：合集级映射行为不变（零破坏）', () async {
+      for (final (String uid, String title) in <(String, String)>[
+        ('e1', 'Solo Show 01'),
+        ('e2', 'Solo Show 02'),
+      ]) {
+        await db.upsertVideoBook(VideoBooksCompanion.insert(
+          bookUid: uid,
+          title: title,
+          videoPath: 'C:/anime/$title.mkv',
+        ));
+      }
+      final int cid = await db.createMediaCollection('Solo Show',
+          collectionType: 'playlist');
+      await db.addToCollection(cid, MediaKind.video, 'e1');
+      await db.addToCollection(cid, MediaKind.video, 'e2');
+      await seedCollectionMapping(cid);
+      api.episodes = const <BangumiEpisode>[
+        BangumiEpisode(id: 11, type: 0, sort: 1),
+        BangumiEpisode(id: 12, type: 0, sort: 2),
+      ];
+
+      await service.recordVideoCompleted(
+        bookUid: 'e2',
+        collectionId: cid,
+        episodeIndex: 1,
+      );
+
+      expect(
+        await repository.findMapping(
+          mediaType: TrackingMediaType.video,
+          mediaKey: 'e2',
+        ),
+        isNull,
+        reason: '单季合集仍走合集映射，不建按集映射',
+      );
+      // 收口后台 sync（见上一测试注释）。
+      await service.syncNow();
+      expect(await repository.pendingCount(), 0);
+    });
+
+    test('多季合集里的 PV/特典（解析不出集号）：不上报也不建映射', () async {
+      final int cid = await seedMultiSeason();
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'pv',
+        title: 'Adachi to Shimamura Fan Disc',
+        videoPath: 'C:/anime/Adachi to Shimamura Fan Disc.mkv',
+      ));
+      await db.addToCollection(cid, MediaKind.video, 'pv');
+
+      await service.recordVideoCompleted(
+        bookUid: 'pv',
+        collectionId: cid,
+        episodeIndex: 3,
+      );
+
+      expect(
+        await repository.findMapping(
+          mediaType: TrackingMediaType.video,
+          mediaKey: 'pv',
+        ),
+        isNull,
+      );
+      // 收口后台 sync（见上；本用例应零入队，drain 只是防御）。
+      await service.syncNow();
+      expect(await repository.pendingCount(), 0);
+    });
+
+    test('补发（loadCompletedVideoTrackingProgress）跳过多季合集的合集级映射', () async {
+      final int cid = await seedMultiSeason();
+      await seedCollectionMapping(cid);
+      // 三集全部标完成：修复前会以 highestCompletedIndex=2 →「整部完结」补发给
+      // 第一季 subject。
+      for (final String uid in <String>['s1e1', 's1e2', 's2e1']) {
+        await db.markVideoCompleted(uid, DateTime.now());
+      }
+
+      final List<CompletedVideoTrackingProgress> progress =
+          await repository.loadCompletedVideoTrackingProgress(afterMs: -1);
+      expect(
+        progress.where(
+          (CompletedVideoTrackingProgress p) =>
+              p.mediaType == TrackingMediaType.videoCollection,
+        ),
+        isEmpty,
+        reason: '多季合集的整合集补发是结构性错位，必须跳过',
+      );
+    });
+  });
 }

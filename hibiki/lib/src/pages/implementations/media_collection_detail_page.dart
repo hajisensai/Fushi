@@ -6,6 +6,7 @@ import 'package:hibiki/src/media/collections/collection_asset_reclaim.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
+import 'package:hibiki/src/media/collections/collection_season_groups.dart';
 import 'package:hibiki/src/media/media_cover_source.dart';
 import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
@@ -54,11 +55,31 @@ class MediaCollectionDetailPage extends StatefulWidget {
 }
 
 class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
-    with CollectionDetailShared<MediaCollectionDetailPage> {
+    with
+        CollectionDetailShared<MediaCollectionDetailPage>,
+        TickerProviderStateMixin {
   late String _name;
   List<VideoBookRow> _members = const <VideoBookRow>[];
   bool _loading = true;
   bool _showAllEpisodes = false;
+
+  /// 分季：video 成员 bookUid → 分组键，**由 videoPath 文件名现场派生**（不落库，
+  /// 数据模型见 collection_season_groups.dart）。路径不随重排变化，故只在
+  /// [_reload] 重算。
+  Map<String, String> _groupKeyByUid = const <String, String>{};
+
+  /// 由 [_members] + [_groupKeyByUid] 派生的分节（季号升序、PV/特典殿后）。
+  /// ≥2 节 → 顶部出季 tab；否则整页与单季合集完全一致（不平白加一层 UI）。
+  List<CollectionSeasonSection<VideoBookRow>> _sections =
+      const <CollectionSeasonSection<VideoBookRow>>[];
+
+  /// 季 tab 控制器：只在 ≥2 节时存在，节数变化（移出成员导致某季清空）时重建。
+  TabController? _seasonTabs;
+  int _selectedSeason = 0;
+
+  /// 初始选季只做一次（落在续播那一季，见 [_rebuildSections]）。之后一律尊重
+  /// 用户手选的 tab —— 重排 / 移出成员不得把他弹回别的季。
+  bool _seasonSelectionInitialized = false;
 
   @override
   HibikiDatabase get detailDatabase => widget.database;
@@ -78,13 +99,95 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     _reload();
   }
 
+  @override
+  void dispose() {
+    _seasonTabs?.dispose();
+    super.dispose();
+  }
+
   Future<void> _reload() async {
     final List<VideoBookRow> members = await widget.loadMembers();
     if (!mounted) return;
     setState(() {
       _members = members;
+      _groupKeyByUid = <String, String>{
+        for (final VideoBookRow r in members)
+          r.bookUid: collectionGroupKeyForFilename(r.videoPath),
+      };
+      _rebuildSections();
       _loading = false;
     });
+  }
+
+  /// 重建分节并让季 tab 控制器跟上节数。**必须在 setState 内调用**（会改
+  /// [_sections] / [_seasonTabs] / [_selectedSeason]）。
+  void _rebuildSections() {
+    _sections = sortCollectionSeasonSections<VideoBookRow>(
+      buildCollectionSeasonSections<VideoBookRow>(
+        members: _members,
+        keyOf: (VideoBookRow r) => _groupKeyByUid[r.bookUid],
+      ),
+    );
+    final int count = _sections.length;
+    // 单季（含纯电影 / 全 PV）退化：销毁控制器、不渲染 tab 条，整页回到原样。
+    if (count < 2) {
+      _seasonTabs?.removeListener(_onSeasonTabChanged);
+      _seasonTabs?.dispose();
+      _seasonTabs = null;
+      _selectedSeason = 0;
+      return;
+    }
+    // 首次进页面停在**续播那一季**：顶部大图讲的是全局续播集，tab 若固定停在第
+    // 1 季，看第二季的用户一进来就是「大图第二季 / 列表第一季」两套内容。
+    if (!_seasonSelectionInitialized) {
+      _seasonSelectionInitialized = true;
+      final String? uid = _continueUid;
+      final int index = uid == null
+          ? -1
+          : _sections.indexWhere((CollectionSeasonSection<VideoBookRow> s) =>
+              s.items.any((VideoBookRow r) => r.bookUid == uid));
+      if (index >= 0) _selectedSeason = index;
+    }
+    _selectedSeason = _selectedSeason.clamp(0, count - 1);
+    if (_seasonTabs?.length == count) {
+      if (_seasonTabs!.index != _selectedSeason) {
+        _seasonTabs!.index = _selectedSeason;
+      }
+      return;
+    }
+    _seasonTabs?.removeListener(_onSeasonTabChanged);
+    _seasonTabs?.dispose();
+    _seasonTabs = TabController(
+      length: count,
+      initialIndex: _selectedSeason,
+      vsync: this,
+    )..addListener(_onSeasonTabChanged);
+  }
+
+  void _onSeasonTabChanged() {
+    final TabController? tabs = _seasonTabs;
+    // indexIsChanging 期间是动画中间态；只认落定值，避免滑动过程中反复重建列表。
+    if (tabs == null || tabs.indexIsChanging || tabs.index == _selectedSeason) {
+      return;
+    }
+    setState(() => _selectedSeason = tabs.index);
+  }
+
+  bool get _hasSeasonTabs => _sections.length >= 2;
+
+  /// 当前选中的季（无 tab 时为 null）。
+  CollectionSeasonSection<VideoBookRow>? get _selectedSection => _hasSeasonTabs
+      ? _sections[_selectedSeason.clamp(0, _sections.length - 1)]
+      : null;
+
+  /// 当前 tab 下应展示的剧集（无 tab 时就是全表）。
+  List<VideoBookRow> get _visibleMembers => _selectedSection?.items ?? _members;
+
+  /// 续播集在**当前可见列表**里的下标；不在本季则 -1（轨道不高亮也不自动滚）。
+  int get _visibleContinueIndex {
+    final String? uid = _continueUid;
+    if (uid == null) return -1;
+    return _visibleMembers.indexWhere((VideoBookRow r) => r.bookUid == uid);
   }
 
   int get _continueIndex => continueMemberIndex(<CollectionMemberProgress>[
@@ -95,11 +198,24 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           ),
       ]);
 
+  /// 续播成员的 uid：分季视图里行下标是**节内**下标，与全局 [_continueIndex]
+  /// 对不上，高亮统一按 uid 判定（平铺视图两者等价）。
+  String? get _continueUid =>
+      _members.isEmpty ? null : _members[_continueIndex].bookUid;
+
+  /// 分组键 → tab / 分节标题（`s<N>` → 「第 N 季」；其余 → PV·特典）。
+  String _groupLabel(String groupKey) {
+    final int? season = seasonNumberOfGroupKey(groupKey);
+    return season == null
+        ? t.collection_group_extras
+        : t.collection_group_season(n: season);
+  }
+
   int get _watchedCount =>
       _members.where((VideoBookRow row) => row.completedAt != null).length;
 
   List<VideoEpisodeEntry> get _episodeEntries => <VideoEpisodeEntry>[
-        for (final VideoBookRow row in _members)
+        for (final VideoBookRow row in _visibleMembers)
           VideoEpisodeEntry(
             title: row.title,
             cover: resolveMediaCoverImage(
@@ -160,12 +276,37 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 拖拽精修：HibikiReorderableColumn 语义（newIndex 即最终下标，无 SDK
   /// ReorderableListView 的「移除前下标」修正）→ 内存 move → 落盘。
+  ///
+  /// 分季 tab 下拖的是**本季**列表：下标是节内的，先在节内 move，再把各节按
+  /// **落盘序**（[_members] 里各组首次出现的顺序，不是 tab 的展示序）拼回全序，
+  /// 避免拖一集顺带把整表按 tab 序重写。
   Future<void> _onReorder(int oldIndex, int newIndex) async {
     if (oldIndex == newIndex) return;
-    final List<VideoBookRow> next = List<VideoBookRow>.of(_members);
-    final VideoBookRow moved = next.removeAt(oldIndex);
-    next.insert(newIndex, moved);
-    setState(() => _members = next);
+    final List<VideoBookRow> section = List<VideoBookRow>.of(_visibleMembers);
+    final VideoBookRow moved = section.removeAt(oldIndex);
+    section.insert(newIndex, moved);
+    if (!_hasSeasonTabs) {
+      setState(() {
+        _members = section;
+        _rebuildSections();
+      });
+      await _persistOrder();
+      return;
+    }
+    final String movedKey =
+        _groupKeyByUid[moved.bookUid] ?? kCollectionExtrasGroupKey;
+    final List<CollectionSeasonSection<VideoBookRow>> persisted =
+        buildCollectionSeasonSections<VideoBookRow>(
+      members: _members,
+      keyOf: (VideoBookRow r) => _groupKeyByUid[r.bookUid],
+    );
+    setState(() {
+      _members = <VideoBookRow>[
+        for (final CollectionSeasonSection<VideoBookRow> s in persisted)
+          ...(s.groupKey == movedKey ? section : s.items),
+      ];
+      _rebuildSections();
+    });
     await _persistOrder();
   }
 
@@ -176,7 +317,28 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   ) async {
     final List<VideoBookRow> next = List<VideoBookRow>.of(_members)
       ..sort(compare);
-    setState(() => _members = next);
+    setState(() {
+      _members = next;
+      _rebuildSections();
+    });
+    await _persistOrder();
+  }
+
+  /// 「按季排序」：按文件名重排全表（季→集→标题，PV/特典殿后）并落盘。季 tab
+  /// **展示**本身是派生的、进页面即生效，本动作只负责把落盘全序也整理成分季连续
+  /// （单季合集执行后无可见变化，幂等）。
+  Future<void> _sortBySeason() async {
+    if (_members.isEmpty) return;
+    final CollectionSeasonRegroup<VideoBookRow> regroup =
+        regroupMembersBySeason<VideoBookRow>(
+      members: _members,
+      filenameOf: (VideoBookRow r) => r.videoPath,
+      titleOf: (VideoBookRow r) => r.title,
+    );
+    setState(() {
+      _members = regroup.ordered;
+      _rebuildSections();
+    });
     await _persistOrder();
   }
 
@@ -497,12 +659,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               ],
             ),
           ),
+          // 多季合集：季 tab 紧贴标题行、在**默认展开**的剧集轨之上——用户一进
+          // 详情页就看得见分季，不需要先展开下面那条折叠的管理列表。
+          if (_hasSeasonTabs) _buildSeasonTabs(context, cs, tokens),
           SizedBox(height: tokens.spacing.rowVertical),
           VideoEpisodeRail(
-            key: const ValueKey<String>('collection-episode-rail'),
+            // 换季时轨道要连滚动位置一起重来（沿用旧 State 会停在上一季的
+            // 偏移上），故 key 带上当前季。
+            key: ValueKey<String>(
+              'collection-episode-rail'
+              '${_selectedSection == null ? '' : '-${_selectedSection!.groupKey}'}',
+            ),
             episodes: _episodeEntries,
-            currentIndex: _continueIndex,
-            onTapEpisode: (int index) => widget.onOpenEpisode(_members[index]),
+            currentIndex: _visibleContinueIndex,
+            onTapEpisode: (int index) =>
+                widget.onOpenEpisode(_visibleMembers[index]),
             colorScheme: cs,
             fontSize: 14,
             cardWidth:
@@ -515,7 +686,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             switchOutCurve: Curves.easeOut,
             child: _showAllEpisodes
                 ? Padding(
-                    key: const ValueKey<String>('episode-management-list'),
+                    // key 带当前季：换季时整段管理列表重建，不复用上一季的
+                    // 拖拽 State。
+                    key: ValueKey<String>(
+                      'episode-management-list'
+                      '${_selectedSection == null ? '' : '-${_selectedSection!.groupKey}'}',
+                    ),
                     padding: EdgeInsets.fromLTRB(
                       tokens.spacing.page,
                       tokens.spacing.section,
@@ -533,20 +709,55 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
+  /// 季 tab 条（MD3 可滚动 [TabBar]）：多季合集**首屏**就能看见并切季，切换后
+  /// 下面的剧集轨与管理列表一起换成该季（分季若只做在默认折叠的管理
+  /// 列表里，用户进页面根本看不见）。单季合集不渲染本条（[_hasSeasonTabs] 门）。
+  Widget _buildSeasonTabs(
+    BuildContext context,
+    ColorScheme cs,
+    HibikiDesignTokens tokens,
+  ) {
+    return Padding(
+      key: const ValueKey<String>('collection-season-tabs'),
+      padding: EdgeInsets.only(top: tokens.spacing.gap),
+      child: TabBar(
+        controller: _seasonTabs,
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
+        padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+        labelColor: cs.primary,
+        unselectedLabelColor: cs.onSurfaceVariant,
+        indicatorColor: cs.primary,
+        dividerColor: Colors.transparent,
+        tabs: <Widget>[
+          for (final CollectionSeasonSection<VideoBookRow> section in _sections)
+            Tab(
+              key:
+                  ValueKey<String>('collection-season-tab-${section.groupKey}'),
+              text: _groupLabel(section.groupKey),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEpisodeManagementList(
     ColorScheme cs,
     HibikiDesignTokens tokens,
   ) {
+    // 分季时管理列表也只列本季（与上方轨道同一份 [_visibleMembers]），拖拽是
+    // 节内重排，由 [_onReorder] 拼回全序落盘。
+    final List<VideoBookRow> visible = _visibleMembers;
     return HibikiReorderableColumn(
-      itemCount: _members.length,
-      keyForIndex: (int i) => ValueKey<String>(_members[i].bookUid),
+      itemCount: visible.length,
+      keyForIndex: (int i) => ValueKey<String>(visible[i].bookUid),
       onReorder: _onReorder,
       spacing: tokens.spacing.gap,
       itemBuilder: (BuildContext context, int i) {
-        final VideoBookRow episode = _members[i];
+        final VideoBookRow episode = visible[i];
         final bool completed = episode.completedAt != null;
         final bool started = episode.lastPositionMs > 0;
-        final bool isContinue = i == _continueIndex;
+        final bool isContinue = episode.bookUid == _continueUid;
         final Widget row = Material(
           key: ValueKey<String>('collection-episode-row-${episode.bookUid}'),
           color: isContinue
@@ -645,6 +856,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         availableWidth: availableWidth,
         alwaysVisible: <Widget>[_buildSortMenu()],
         collapsible: <HibikiAppBarAction>[
+          // 季 tab 的排序补充：tab 展示是派生的、进页面即生效，本动作只把
+          // **落盘全序**整理成季→集连续（单季合集执行后无可见变化，幂等）。
+          HibikiAppBarAction(
+            icon: Icons.segment,
+            label: t.collection_sort_by_season,
+            onPressed: _members.isEmpty ? null : _sortBySeason,
+          ),
           HibikiAppBarAction(
             icon: Icons.subtitles_outlined,
             label: t.video_jimaku_batch_title,

@@ -2870,5 +2870,8 @@
   "shortcut_action_video_enter_caret": "进入字幕选词光标",
   "audiobook_export_clip_too_long": "选区音频过长，暂不支持导出（上限 5 分钟）",
   "sync_err_forbidden": "服务端拒绝了这次请求。登录没问题，请检查服务端设置。",
-  "sync_err_forbidden_detail": "服务端拒绝了这次请求：$reason（登录没问题）"
+  "sync_err_forbidden_detail": "服务端拒绝了这次请求：$reason（登录没问题）",
+  "collection_group_extras": "PV·特典",
+  "collection_group_season": "第 $n 季",
+  "collection_sort_by_season": "按季排序"
 }

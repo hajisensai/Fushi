@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:drift/drift.dart';
+import 'package:hibiki/src/media/collections/collection_season_groups.dart'
+    show collectionGroupKeyForFilename, isMultiSeasonGrouped;
 import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -556,6 +558,23 @@ class MediaTrackingRepository {
     );
   }
 
+  /// 合集 video 成员的分组键列——按各集 `videoPath` 文件名**现场派生**（分组是
+  /// 文件名的纯函数、不落库，语义见 collection_season_groups.dart）。service 据此
+  /// 判定「多季合集」并绕开结构性失真的合集级映射；存量合集零迁移即受保护。
+  Future<List<String>> loadCollectionVideoGroupKeys(int collectionId) async {
+    final List<MediaCollectionItemRow> items =
+        await _db.getCollectionItems(collectionId);
+    final List<String> keys = <String>[];
+    for (final MediaCollectionItemRow item in items) {
+      if (item.mediaType != MediaKind.video.dbValue) continue;
+      final VideoBookRow? video =
+          await _db.getVideoBookByBookUid(item.entryKey);
+      if (video == null) continue;
+      keys.add(collectionGroupKeyForFilename(video.videoPath));
+    }
+    return keys;
+  }
+
   Future<AutoBookTrackingSource?> loadAutoBookSource(String bookKey) async {
     final EpubBookRow? book = await _db.getEpubBook(bookKey);
     if (book == null) return null;
@@ -734,12 +753,23 @@ class MediaTrackingRepository {
               .where((MediaCollectionItemRow item) =>
                   item.mediaType == MediaKind.video.dbValue)
               .toList(growable: false);
+      final List<VideoBookRow?> videos = <VideoBookRow?>[
+        for (final MediaCollectionItemRow item in items)
+          await _db.getVideoBookByBookUid(item.entryKey),
+      ];
+      // 多季分组合集（分组按文件名现场派生，不落库）：整合集映射结构性失真
+      // （Bangumi 一季一条目，合集下标当集数会把第二季完结报给第一季 subject）。
+      // 补发跳过合集级映射，按集映射的补发由上面的 video 分支承担。
+      if (isMultiSeasonGrouped(<String>[
+        for (final VideoBookRow? video in videos)
+          if (video != null) collectionGroupKeyForFilename(video.videoPath),
+      ])) {
+        continue;
+      }
       int highestCompletedIndex = -1;
       int latestCompletedAt = 0;
-      for (int index = 0; index < items.length; index++) {
-        final VideoBookRow? video =
-            await _db.getVideoBookByBookUid(items[index].entryKey);
-        final DateTime? completedAt = video?.completedAt;
+      for (int index = 0; index < videos.length; index++) {
+        final DateTime? completedAt = videos[index]?.completedAt;
         if (completedAt == null) continue;
         highestCompletedIndex = index;
         latestCompletedAt =
