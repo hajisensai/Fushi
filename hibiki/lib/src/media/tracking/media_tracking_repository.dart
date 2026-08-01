@@ -548,12 +548,29 @@ class MediaTrackingRepository {
     final VideoScrapeMetaRow? scrape = await _db.getVideoScrapeMeta(bookUid);
     final bool isBangumi = scrape?.source == kTrackingProviderBangumi;
     final String collectionTitle = collection?.name.trim() ?? '';
+    // 条目名只能取**作品级**资料：v65 起集级刮削（TODO-2491）会把
+    // video_scrape_meta.title 覆盖成集名（episodeNumber 非空即集级行），
+    // 直接取会让追番映射顶着「第 3 话 某某」当条目名。集级行回退所属合集的
+    // 刮削资料（同 subject 的作品名）；无合集资料则不给名（subjectId 仍在，
+    // 映射功能不受影响，只是少个显示名）。
+    String? bangumiSubjectName;
+    if (isBangumi) {
+      if (scrape!.episodeNumber == null) {
+        bangumiSubjectName = scrape.title;
+      } else if (collection != null) {
+        final CollectionScrapeMetaRow? collectionScrape =
+            await _db.getCollectionScrapeMeta(collection.id);
+        if (collectionScrape?.source == kTrackingProviderBangumi) {
+          bangumiSubjectName = collectionScrape!.title;
+        }
+      }
+    }
     return (
       mediaTitle: collectionTitle.isEmpty ? video.title : collectionTitle,
       videoTitle: video.title,
       bangumiSubjectId:
           isBangumi ? int.tryParse(scrape!.subjectId.trim()) : null,
-      bangumiSubjectName: isBangumi ? scrape!.title : null,
+      bangumiSubjectName: bangumiSubjectName,
       bangumiEpisodeCount: isBangumi ? scrape!.episodeCount : null,
     );
   }

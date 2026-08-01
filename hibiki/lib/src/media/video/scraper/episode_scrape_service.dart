@@ -5,7 +5,8 @@
 /// 对齐方式：成员文件名经 [parseVideoFilename]（G10 单规则引擎）解出集号，与源
 /// 分集列表（TMDB `/tv/{id}/season/{n}`；Bangumi `/v0/episodes?type=0`）按集号
 /// 对齐；解不出集号或源无该集 → 跳过并计数（[EpisodeScrapeOutcome.unmatched]）。
-/// TMDB 的季号取合集成员解析季号的众数，无季默认 1；Bangumi 无季概念（多季是
+/// TMDB 按成员实际出现的**每个季**各拉一次分集表、成员按自己的季对齐（混季
+/// 合集里少数季成员不被多数季错配），无季默认 1；Bangumi 无季概念（多季是
 /// 独立 subject），直接按正篇集号对齐。
 ///
 /// 剧照（仅 TMDB 提供）落为该集封面：走 [CoverDownloader] 的既有
@@ -133,15 +134,21 @@ class EpisodeScrapeService {
       ));
     }
 
-    // 源分集列表。
+    // 源分集索引：季号 -> (集号 -> 资料)。Bangumi 无季概念（多季是独立
+    // subject），全部进 [_kAnySeason] 桶、对齐时忽略成员季号；TMDB 按成员出现
+    // 的**每个季**各拉一次——混季合集（S1+S2 文件混放）里少数季成员绝不能被
+    // 多数季的分集表错配资料。
     final Map<String, String> errors = <String, String>{};
-    final Map<int, _SourceEpisode> byNumber = <int, _SourceEpisode>{};
+    final Map<int, Map<int, _SourceEpisode>> bySeason =
+        <int, Map<int, _SourceEpisode>>{};
     if (meta.source == ScrapeSource.bangumi.name) {
       final BangumiClient? bangumi = _bangumi;
       if (bangumi == null) {
         errors[meta.source] = 'Bangumi client unavailable';
       } else {
         try {
+          final Map<int, _SourceEpisode> byNumber =
+              bySeason.putIfAbsent(_kAnySeason, () => <int, _SourceEpisode>{});
           for (final BangumiEpisodeInfo e
               in await bangumi.fetchSubjectEpisodes(meta.subjectId)) {
             byNumber.putIfAbsent(
@@ -166,21 +173,28 @@ class EpisodeScrapeService {
           TmdbSubjectKind.movie) {
         errors[meta.source] = 'movie subject has no episodes';
       } else {
+        // 成员实际出现的季集合（文件名无季 → 默认 1：单季剧集文件名普遍不带季号）。
+        final Set<int> seasons = <int>{
+          for (final ({VideoBookRow book, VideoNameInfo parsed}) m in members)
+            m.parsed.season ?? 1,
+        };
         try {
-          for (final TmdbEpisodeInfo e in await tmdb.fetchSeasonEpisodes(
-            meta.subjectId,
-            _dominantSeason(members),
-          )) {
-            byNumber.putIfAbsent(
-              e.episodeNumber,
-              () => _SourceEpisode(
-                episodeNumber: e.episodeNumber,
-                title: e.title,
-                summary: e.summary,
-                airDate: e.airDate,
-                stillPath: e.stillPath,
-              ),
-            );
+          for (final int season in seasons) {
+            final Map<int, _SourceEpisode> byNumber =
+                bySeason.putIfAbsent(season, () => <int, _SourceEpisode>{});
+            for (final TmdbEpisodeInfo e
+                in await tmdb.fetchSeasonEpisodes(meta.subjectId, season)) {
+              byNumber.putIfAbsent(
+                e.episodeNumber,
+                () => _SourceEpisode(
+                  episodeNumber: e.episodeNumber,
+                  title: e.title,
+                  summary: e.summary,
+                  airDate: e.airDate,
+                  stillPath: e.stillPath,
+                ),
+              );
+            }
           }
         } on ScrapeNetworkException catch (e) {
           errors[meta.source] = e.toString();
@@ -208,8 +222,10 @@ class EpisodeScrapeService {
     int stillsSkippedUserCover = 0;
     for (final ({VideoBookRow book, VideoNameInfo parsed}) member in members) {
       final int? episodeNumber = member.parsed.episode;
-      final _SourceEpisode? source =
-          episodeNumber == null ? null : byNumber[episodeNumber];
+      final _SourceEpisode? source = episodeNumber == null
+          ? null
+          : (bySeason[_kAnySeason]?[episodeNumber] ??
+              bySeason[member.parsed.season ?? 1]?[episodeNumber]);
       if (source == null) {
         unmatched++;
         continue;
@@ -271,25 +287,6 @@ class EpisodeScrapeService {
     );
   }
 
-  /// 合集成员解析季号的众数；全员无季 → 1（单季剧集文件名普遍不带季号）。
-  static int _dominantSeason(
-    List<({VideoBookRow book, VideoNameInfo parsed})> members,
-  ) {
-    final Map<int, int> counts = <int, int>{};
-    for (final ({VideoBookRow book, VideoNameInfo parsed}) m in members) {
-      final int? season = m.parsed.season;
-      if (season != null) {
-        counts[season] = (counts[season] ?? 0) + 1;
-      }
-    }
-    int best = 1;
-    int bestCount = 0;
-    for (final MapEntry<int, int> entry in counts.entries) {
-      if (entry.value > bestCount) {
-        best = entry.key;
-        bestCount = entry.value;
-      }
-    }
-    return best;
-  }
+  /// Bangumi 分集的季桶哨兵：Bangumi 无季概念，对齐时忽略成员季号。
+  static const int _kAnySeason = -1;
 }

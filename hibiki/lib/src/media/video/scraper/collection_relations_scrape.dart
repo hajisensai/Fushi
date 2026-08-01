@@ -86,6 +86,7 @@ class _PendingRelation {
     required this.subjectId,
     required this.title,
     this.coverUrl,
+    this.bindBySubject = true,
   });
 
   final CollectionRelationType type;
@@ -93,6 +94,12 @@ class _PendingRelation {
   final String subjectId;
   final String title;
   final String? coverUrl;
+
+  /// 是否允许按 (source, subjectId) 反查本地合集绑定。TMDB 季边必须关掉：
+  /// 季边的 subjectId 是**季自身 id**（保证同 tv 多季不撞唯一键），而
+  /// collection_scrape_meta 存的是搜索候选的 **tv/movie id**——两个 id 空间
+  /// 互相独立且会撞号，按号反查等于随机乱绑。季边只走标题精确匹配兜底。
+  final bool bindBySubject;
 }
 
 /// 抓取并落库合集 [collectionId] 的相关作品。
@@ -176,15 +183,21 @@ Future<CollectionRelationsScrapeReport> scrapeCollectionRelations({
   int bound = 0;
   final List<CollectionRelationsCompanion> companions =
       <CollectionRelationsCompanion>[];
-  for (int i = 0; i < pending.length; i++) {
-    final _PendingRelation p = pending[i];
+  // (source, subjectId) 去重、首见保留：源侧偶见同一条目以不同关系词重复出现
+  // （Bangumi 脏数据），不去重会撞表唯一键、把 replaceCollectionRelations 的
+  // 事务整批回滚成「一条都写不进」。
+  final Set<String> seenSubjects = <String>{};
+  for (final _PendingRelation p in pending) {
+    if (!seenSubjects.add('${p.source.name}|${p.subjectId}')) continue;
     int? target;
-    final List<int> bySubject =
-        await db.collectionIdsByScrapeSubject(p.source.name, p.subjectId);
-    for (final int id in bySubject) {
-      if (id != collectionId) {
-        target = id;
-        break;
+    if (p.bindBySubject) {
+      final List<int> bySubject =
+          await db.collectionIdsByScrapeSubject(p.source.name, p.subjectId);
+      for (final int id in bySubject) {
+        if (id != collectionId) {
+          target = id;
+          break;
+        }
       }
     }
     target ??= titleToCollectionId[p.title];
@@ -192,7 +205,7 @@ Future<CollectionRelationsScrapeReport> scrapeCollectionRelations({
     companions.add(CollectionRelationsCompanion.insert(
       collectionId: collectionId,
       relationType: p.type.wire,
-      sortIndex: Value<int>(i),
+      sortIndex: Value<int>(companions.length),
       targetCollectionId: Value<int?>(target),
       source: p.source.name,
       subjectId: p.subjectId,
@@ -238,6 +251,9 @@ Future<List<_PendingRelation>> _fetchTmdbRelations(
             coverUrl: season.posterPath == null
                 ? null
                 : '${TmdbClient.posterBase}${season.posterPath}',
+            // 季 id 与 collection_scrape_meta 的 tv/movie id 不同空间，
+            // 按号反查会乱绑（见 _PendingRelation.bindBySubject）。
+            bindBySubject: false,
           ),
       ];
     }

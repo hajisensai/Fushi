@@ -288,5 +288,240 @@ void main() {
         throwsStateError,
       );
     });
+
+    test(
+        'duplicate subjects from source are deduped first-wins '
+        '(no unique-key rollback)', () async {
+      final HibikiDatabase db = await openDb();
+      final int self = await boundCollection(db);
+      final BangumiClient bangumi = BangumiClient(
+        client: bangumiRelationsClient(<Object?>[
+          <String, Object?>{
+            'id': 201,
+            'type': 2,
+            'name': 'Dup',
+            'relation': '续集',
+          },
+          <String, Object?>{
+            'id': 201,
+            'type': 2,
+            'name': 'Dup again',
+            'relation': '其他',
+          },
+        ]),
+      );
+      addTearDown(bangumi.close);
+      final CollectionRelationsScrapeReport report =
+          await scrapeCollectionRelations(
+        db: db,
+        collectionId: self,
+        bangumi: bangumi,
+      );
+      expect(report.sourceErrors, isEmpty);
+      expect(report.written, 1,
+          reason: '同 (source, subjectId) 重复条目首见保留——不去重会撞唯一键'
+              '把整批替换回滚成零写入');
+      final CollectionRelationRow edge =
+          (await db.getCollectionRelations(self)).single;
+      expect(edge.relationType, 'sequel', reason: '首见（续集）保留');
+    });
+  });
+
+  group('scrapeCollectionRelations (tmdb)', () {
+    MockClient tmdbApiClient(Map<String, String> pathToBody) =>
+        MockClient((http.Request req) async {
+          final String? body = pathToBody[req.url.path];
+          if (body == null) return http.Response('not found', 404);
+          return http.Response.bytes(utf8.encode(body), 200,
+              headers: <String, String>{
+                'content-type': 'application/json; charset=utf-8',
+              });
+        });
+
+    test(
+        'tv seasons become edges (specials=side_story) and season edges '
+        'never bind by subject id', () async {
+      final HibikiDatabase db = await openDb();
+      final int self = await boundCollection(
+        db,
+        source: 'tmdb',
+        subjectId: '77',
+        detailUrl: 'https://www.themoviedb.org/tv/77',
+      );
+      // 撞号干扰：另一合集的刮削绑定 subjectId 恰好等于季 id 901（tv/movie id
+      // 与季 id 空间独立、必然撞号）。季边若按 subject 反查会错绑到它。
+      final int decoy = await boundCollection(
+        db,
+        name: '撞号合集',
+        source: 'tmdb',
+        subjectId: '901',
+      );
+      // 标题精确匹配兜底对季边仍然生效。
+      final int titleTarget = await db.createMediaCollection('第 2 季');
+
+      final TmdbClient tmdb = TmdbClient(
+        apiKey: 'k',
+        client: tmdbApiClient(<String, String>{
+          '/3/tv/77': jsonEncode(<String, Object?>{
+            'name': 'Show',
+            'seasons': <Object?>[
+              <String, Object?>{
+                'id': 900,
+                'season_number': 0,
+                'name': '特别篇',
+              },
+              <String, Object?>{
+                'id': 901,
+                'season_number': 1,
+                'name': '第 1 季',
+                'poster_path': '/s1.jpg',
+              },
+              <String, Object?>{
+                'id': 902,
+                'season_number': 2,
+                'name': '第 2 季',
+              },
+            ],
+          }),
+        }),
+      );
+      addTearDown(tmdb.close);
+
+      final CollectionRelationsScrapeReport report =
+          await scrapeCollectionRelations(
+        db: db,
+        collectionId: self,
+        tmdb: tmdb,
+      );
+      expect(report.sourceErrors, isEmpty);
+      expect(report.written, 3);
+      expect(report.boundLocal, 1);
+
+      final List<CollectionRelationRow> edges =
+          await db.getCollectionRelations(self);
+      expect(edges[0].relationType, 'side_story',
+          reason: 'season 0（特别篇）归 side_story');
+      expect(edges[0].title, '特别篇');
+      expect(edges[1].relationType, 'other');
+      expect(edges[1].targetCollectionId, isNull,
+          reason: '季边绝不按 subject 反查——季 id 901 撞上 decoy 合集的 '
+              'tv id 901 也不能绑');
+      expect(edges[1].coverUrl, '${TmdbClient.posterBase}/s1.jpg');
+      expect(edges[2].targetCollectionId, titleTarget, reason: '季边仍走标题精确匹配兜底');
+      expect(decoy, isNot(titleTarget));
+    });
+
+    test('movie parts typed by release date relative to self, self excluded',
+        () async {
+      final HibikiDatabase db = await openDb();
+      final int self = await boundCollection(
+        db,
+        source: 'tmdb',
+        subjectId: '55',
+        detailUrl: 'https://www.themoviedb.org/movie/55',
+        airDate: '2005-06-01',
+      );
+      final TmdbClient tmdb = TmdbClient(
+        apiKey: 'k',
+        client: tmdbApiClient(<String, String>{
+          '/3/movie/55': jsonEncode(<String, Object?>{
+            'belongs_to_collection': <String, Object?>{'id': 5, 'name': '系列'},
+          }),
+          '/3/collection/5': jsonEncode(<String, Object?>{
+            'parts': <Object?>[
+              <String, Object?>{
+                'id': 55,
+                'title': '本体',
+                'release_date': '2005-06-01',
+              },
+              <String, Object?>{
+                'id': 54,
+                'title': '前作',
+                'release_date': '2001-01-01',
+              },
+              <String, Object?>{
+                'id': 56,
+                'title': '续作',
+                'release_date': '2010-01-01',
+              },
+              <String, Object?>{'id': 57, 'title': '未定档'},
+            ],
+          }),
+        }),
+      );
+      addTearDown(tmdb.close);
+
+      final CollectionRelationsScrapeReport report =
+          await scrapeCollectionRelations(
+        db: db,
+        collectionId: self,
+        tmdb: tmdb,
+      );
+      expect(report.sourceErrors, isEmpty);
+      final List<CollectionRelationRow> edges =
+          await db.getCollectionRelations(self);
+      expect(edges, hasLength(3), reason: '排除自身（id 55）');
+      expect(
+        <String, String>{
+          for (final CollectionRelationRow e in edges) e.title: e.relationType,
+        },
+        <String, String>{
+          '前作': 'prequel',
+          '续作': 'sequel',
+          '未定档': 'other',
+        },
+        reason: '按上映日期相对本条目分型，无日期归 other',
+      );
+    });
+
+    test('detailUrl-less subject probes tv first, falls back to movie on 404',
+        () async {
+      final HibikiDatabase db = await openDb();
+      final int self = await boundCollection(
+        db,
+        source: 'tmdb',
+        subjectId: '55',
+        airDate: '2005-06-01',
+      );
+      final List<String> requested = <String>[];
+      final TmdbClient tmdb = TmdbClient(
+        apiKey: 'k',
+        client: MockClient((http.Request req) async {
+          requested.add(req.url.path);
+          final Map<String, String> routes = <String, String>{
+            // '/3/tv/55' 不注册 → 404 → 回退 movie 探测。
+            '/3/movie/55': jsonEncode(<String, Object?>{
+              'belongs_to_collection': <String, Object?>{'id': 5},
+            }),
+            '/3/collection/5': jsonEncode(<String, Object?>{
+              'parts': <Object?>[
+                <String, Object?>{
+                  'id': 54,
+                  'title': '前作',
+                  'release_date': '2001-01-01',
+                },
+              ],
+            }),
+          };
+          final String? body = routes[req.url.path];
+          if (body == null) return http.Response('not found', 404);
+          return http.Response.bytes(utf8.encode(body), 200);
+        }),
+      );
+      addTearDown(tmdb.close);
+
+      final CollectionRelationsScrapeReport report =
+          await scrapeCollectionRelations(
+        db: db,
+        collectionId: self,
+        tmdb: tmdb,
+      );
+      expect(report.sourceErrors, isEmpty);
+      expect(requested.first, '/3/tv/55', reason: '缺 detailUrl 先按 tv 探测');
+      final List<CollectionRelationRow> edges =
+          await db.getCollectionRelations(self);
+      expect(edges.single.relationType, 'prequel',
+          reason: 'tv 404 后回退 movie 路径产出系列成员边');
+    });
   });
 }

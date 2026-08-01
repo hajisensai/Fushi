@@ -169,12 +169,18 @@ class BangumiClient {
           statusCode: response.statusCode,
         );
       }
-      final ({List<BangumiEpisodeInfo> episodes, int total}) page =
-          parseBangumiEpisodesResponse(response.body);
+      final ({
+        List<BangumiEpisodeInfo> episodes,
+        int rawCount,
+        int total
+      }) page = parseBangumiEpisodesResponse(response.body);
       all.addAll(page.episodes);
-      offset += page.episodes.length;
+      // offset 必须按**源返回的原始条数**推进，不能按过滤后的 episodes 长度：
+      // 一页若全被过滤（非整数 sort 的脏数据页），按过滤后长度推进会原地踏步
+      // 或提前 break，把后面还没拉的正常页整段丢掉。
+      offset += page.rawCount;
       // 空页兜底：错误负载/total 虚高时防死循环。
-      if (page.episodes.isEmpty || offset >= page.total) break;
+      if (page.rawCount == 0 || offset >= page.total) break;
     }
     return all;
   }
@@ -276,11 +282,14 @@ List<BangumiRelatedSubject> parseBangumiRelatedSubjects(String body) {
   return related;
 }
 
-/// 纯函数：解析 `/v0/episodes` 分页响应，返回本页分集 + 源侧 total。
+/// 纯函数：解析 `/v0/episodes` 分页响应，返回本页分集 + 源侧 total +
+/// **原始条数** [rawCount]（分页 offset 必须按它推进——过滤后的 episodes
+/// 长度会在脏数据页上把 offset 卡住）。
 ///
 /// `sort` 非整数（25.5 之类的番外话数混进正篇的历史脏数据）跳过；缺 sort 跳过。
 /// JSON 结构异常 → 抛 [ScrapeNetworkException]。
-({List<BangumiEpisodeInfo> episodes, int total}) parseBangumiEpisodesResponse(
+({List<BangumiEpisodeInfo> episodes, int rawCount, int total})
+    parseBangumiEpisodesResponse(
   String body,
 ) {
   final Object? decoded;
@@ -294,6 +303,7 @@ List<BangumiRelatedSubject> parseBangumiRelatedSubjects(String body) {
   }
   final int total = _asInt(decoded['total']) ?? 0;
   final Object? items = decoded['data'];
+  final int rawCount = items is List<Object?> ? items.length : 0;
   final List<BangumiEpisodeInfo> episodes = <BangumiEpisodeInfo>[];
   if (items is List<Object?>) {
     for (final Object? item in items) {
@@ -311,7 +321,7 @@ List<BangumiRelatedSubject> parseBangumiRelatedSubjects(String body) {
       ));
     }
   }
-  return (episodes: episodes, total: total);
+  return (episodes: episodes, rawCount: rawCount, total: total);
 }
 
 /// 纯函数：把 Bangumi `/v0/subjects/{id}` **详情**响应体解析为 [ScrapeCandidate]

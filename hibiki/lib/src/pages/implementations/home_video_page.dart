@@ -33,6 +33,8 @@ import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
 import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
+import 'package:hibiki/src/media/video/scraper/tmdb_default_key.dart'
+    show resolveTmdbApiKey;
 import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -3530,10 +3532,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     HibikiDatabase db,
     int collectionId,
   ) async {
-    final String tmdbKey = ref
+    // 用户自填 key 优先，其次内置 key（resolveTmdbApiKey）——与封面刮削同一
+    // 取值规则；读裸偏好会让只靠内置 key 的用户 TMDB 关系路静默失效。
+    final String tmdbKey = resolveTmdbApiKey(ref
         .read(appProvider)
         .prefsRepo
-        .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
+        .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String);
     final BangumiClient bangumi = BangumiClient();
     final TmdbClient? tmdb =
         tmdbKey.isEmpty ? null : TmdbClient(apiKey: tmdbKey);

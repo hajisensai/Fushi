@@ -86,8 +86,11 @@ void main() {
 
   group('parseBangumiEpisodesResponse', () {
     test('keeps integer main-episode sorts, drops fractional or zero', () {
-      final ({List<BangumiEpisodeInfo> episodes, int total}) page =
-          parseBangumiEpisodesResponse(jsonEncode(<String, Object?>{
+      final ({
+        List<BangumiEpisodeInfo> episodes,
+        int rawCount,
+        int total
+      }) page = parseBangumiEpisodesResponse(jsonEncode(<String, Object?>{
         'total': 4,
         'data': <Object?>[
           <String, Object?>{
@@ -101,6 +104,7 @@ void main() {
         ],
       }));
       expect(page.total, 4);
+      expect(page.rawCount, 4, reason: '分页 offset 按原始条数推进，不受过滤影响');
       expect(page.episodes.map((BangumiEpisodeInfo e) => e.episodeNumber),
           <int>[1, 2]);
       expect(page.episodes.first.title, '第一话');
@@ -281,7 +285,7 @@ void main() {
       expect(outcome.errors, isEmpty);
       expect(outcome.updated, 2);
       expect(seasonRequests.single, '/3/tv/77/season/2',
-          reason: '季号取成员文件名解析的众数（S02 → season 2）');
+          reason: '成员均为 S02 → 只拉 season 2');
 
       // u1：资料写入但封面纹丝不动。
       expect((await db.getVideoScrapeMeta('u1'))!.title, '一话');
@@ -322,6 +326,97 @@ void main() {
       expect(outcome.errors['tmdb'], contains('movie'),
           reason: 'movie 条目无分集：显式报错而不是装作零匹配');
       expect(outcome.updated, 0);
+    });
+  });
+
+  group('mixed seasons and pagination', () {
+    test('mixed-season members each align against their own season table',
+        () async {
+      final HibikiDatabase db = await openDb();
+      final int id = await boundCollection(
+        db,
+        source: 'tmdb',
+        subjectId: '77',
+        detailUrl: 'https://www.themoviedb.org/tv/77',
+      );
+      await addVideoMember(db, id, 'u1', 'Show S01E01.mkv');
+      await addVideoMember(db, id, 'u2', 'Show S02E01.mkv');
+
+      final List<String> seasonRequests = <String>[];
+      final TmdbClient tmdb = TmdbClient(
+        apiKey: 'k',
+        client: MockClient((http.Request req) async {
+          seasonRequests.add(req.url.path);
+          final Map<String, List<Map<String, Object?>>> episodesBySeason =
+              <String, List<Map<String, Object?>>>{
+            '/3/tv/77/season/1': <Map<String, Object?>>[
+              <String, Object?>{'episode_number': 1, 'name': '一季一话'},
+            ],
+            '/3/tv/77/season/2': <Map<String, Object?>>[
+              <String, Object?>{'episode_number': 1, 'name': '二季一话'},
+            ],
+          };
+          final List<Map<String, Object?>>? episodes =
+              episodesBySeason[req.url.path];
+          if (episodes == null) return http.Response('not found', 404);
+          return http.Response.bytes(
+            utf8.encode(jsonEncode(<String, Object?>{'episodes': episodes})),
+            200,
+          );
+        }),
+      );
+      addTearDown(tmdb.close);
+
+      final EpisodeScrapeOutcome outcome =
+          await EpisodeScrapeService(db: db, tmdbClient: tmdb)
+              .scrapeCollectionEpisodes(id);
+      expect(outcome.errors, isEmpty);
+      expect(outcome.updated, 2);
+      expect(seasonRequests.toSet(),
+          <String>{'/3/tv/77/season/1', '/3/tv/77/season/2'},
+          reason: '按成员出现的每个季各拉一次');
+      expect((await db.getVideoScrapeMeta('u1'))!.title, '一季一话',
+          reason: 'S01 成员对齐第 1 季分集表');
+      expect((await db.getVideoScrapeMeta('u2'))!.title, '二季一话',
+          reason: 'S02 成员对齐第 2 季分集表，不被另一季错配');
+    });
+
+    test(
+        'bangumi pagination advances by raw count across fully-filtered '
+        'pages', () async {
+      final List<int> offsets = <int>[];
+      final BangumiClient bangumi = BangumiClient(
+        client: MockClient((http.Request req) async {
+          if (!req.url.path.endsWith('/episodes')) {
+            return http.Response('not found', 404);
+          }
+          final int offset =
+              int.parse(req.url.queryParameters['offset'] ?? '0');
+          offsets.add(offset);
+          // 第一页两条全是非整数 sort（过滤后为空），第二页才是正篇第 3 话。
+          final List<Map<String, Object?>> page = offset == 0
+              ? <Map<String, Object?>>[
+                  <String, Object?>{'sort': 0.5, 'name': 'SP1'},
+                  <String, Object?>{'sort': 1.5, 'name': 'SP2'},
+                ]
+              : <Map<String, Object?>>[
+                  <String, Object?>{'sort': 3, 'name': '第三话'},
+                ];
+          return http.Response.bytes(
+            utf8.encode(
+                jsonEncode(<String, Object?>{'data': page, 'total': 3})),
+            200,
+          );
+        }),
+      );
+      addTearDown(bangumi.close);
+
+      final List<BangumiEpisodeInfo> episodes =
+          await bangumi.fetchSubjectEpisodes('100');
+      expect(offsets, <int>[0, 2],
+          reason: 'offset 按原始返回条数推进——按过滤后长度推进会在全滤页上'
+              '提前终止，丢掉后面的正常页');
+      expect(episodes.single.episodeNumber, 3);
     });
   });
 }
