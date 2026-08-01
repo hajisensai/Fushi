@@ -2888,5 +2888,12 @@
   "scrape_all_item": "Processing: $title",
   "scrape_all_done": "Done: $applied applied, $review need review, $skipped skipped, $failed failed",
   "scrape_all_empty": "There are no items to scrape in this library.",
-  "scrape_all_start": "Start"
+  "scrape_all_start": "Start",
+  "collection_hero_total_episodes": "$count episodes",
+  "video_scrape_collection_rename_title": "Rename this collection?",
+  "video_scrape_collection_rename_body": "The matched entry has a different name. Renaming is optional: the cover and details are saved either way, and a rename also replaces the old name on your other synced devices.",
+  "video_scrape_collection_rename_from": "Current name: $name",
+  "video_scrape_collection_rename_to": "New name: $name",
+  "video_scrape_collection_rename_keep": "Keep current name",
+  "video_scrape_collection_rename_confirm": "Rename"
 }

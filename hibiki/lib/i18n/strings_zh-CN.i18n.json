@@ -2888,5 +2888,12 @@
   "scrape_all_item": "正在处理：$title",
   "scrape_all_done": "完成：已应用 $applied 个，待手动确认 $review 个，已跳过 $skipped 个，失败 $failed 个",
   "scrape_all_empty": "当前库没有可刮削的条目。",
-  "scrape_all_start": "开始"
+  "scrape_all_start": "开始",
+  "collection_hero_total_episodes": "全 $count 话",
+  "video_scrape_collection_rename_title": "要重命名这个合集吗？",
+  "video_scrape_collection_rename_body": "匹配到的条目名称与当前不同。改名是可选的：无论选哪个，封面和资料都会保存；确认改名还会把其他已同步设备上的旧名一并替换。",
+  "video_scrape_collection_rename_from": "当前名称：$name",
+  "video_scrape_collection_rename_to": "新名称：$name",
+  "video_scrape_collection_rename_keep": "保留当前名称",
+  "video_scrape_collection_rename_confirm": "重命名"
 }
