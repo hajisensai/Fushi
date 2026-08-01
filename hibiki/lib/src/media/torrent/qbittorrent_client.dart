@@ -55,6 +55,14 @@ List<TorrentSnapshot> parseQbTorrentInfos(String body) {
         uploadedBytes: e['uploaded'] is int ? e['uploaded'] as int : 0,
         numPeers: (e['num_seeds'] is int ? e['num_seeds'] as int : 0) +
             (e['num_leechs'] is int ? e['num_leechs'] as int : 0),
+        // TODO-2482：详情页拆分字段；缺字段/非 int 一律 -1（= 未提供）。
+        // [numPeers] 保持「seeds+leechs 合并」的旧语义不变。
+        numSeeds: _qbInt(e, 'num_seeds'),
+        numLeechs: _qbInt(e, 'num_leechs'),
+        swarmSeeds: _qbInt(e, 'num_complete'),
+        swarmLeechs: _qbInt(e, 'num_incomplete'),
+        activeDurationSeconds: _qbInt(e, 'time_active'),
+        seedingDurationSeconds: _qbInt(e, 'seeding_time'),
       ));
     }
     return out;
@@ -88,6 +96,190 @@ List<TorrentFileEntry> parseQbTorrentFiles(String body) {
     return out;
   } catch (_) {
     return const <TorrentFileEntry>[];
+  }
+}
+
+/// 从 qb JSON map 里取 int 字段；缺失/类型不对返回 [fallback]（默认 -1，
+/// 与「后端未提供」的 DTO 语义对齐）。
+int _qbInt(Map<dynamic, dynamic> e, String key, {int fallback = -1}) =>
+    e[key] is int ? e[key] as int : fallback;
+
+/// TODO-2482：解析 `/api/v2/sync/torrentPeers` 响应
+/// （`{"peers":{"1.2.3.4:6881":{...}}}`）为中性 [TorrentPeerDetail] 列表。
+/// 纯函数，容错：坏 JSON / 顶层非 Map / `peers` 非 Map 返回空列表；
+/// 单条 peer 非 Map 跳过。`ip` 字段缺失时从 map key（`ip:port`，IPv6 形如
+/// `[::1]:6881`）按最后一个 `:` 拆出地址与端口。
+List<TorrentPeerDetail> parseQbTorrentPeers(String body) {
+  try {
+    final dynamic json = jsonDecode(body);
+    if (json is! Map) return const <TorrentPeerDetail>[];
+    final dynamic peers = json['peers'];
+    if (peers is! Map) return const <TorrentPeerDetail>[];
+    final List<TorrentPeerDetail> out = <TorrentPeerDetail>[];
+    for (final MapEntry<dynamic, dynamic> entry in peers.entries) {
+      final dynamic e = entry.value;
+      if (e is! Map) continue;
+      String address = e['ip'] is String ? e['ip'] as String : '';
+      int port = e['port'] is int ? e['port'] as int : 0;
+      if (address.isEmpty) {
+        // key 形如 `1.2.3.4:6881` / `[::1]:6881`：按最后一个 `:` 拆分，
+        // 天然兼容 IPv6 地址内部的冒号。
+        final String key = entry.key is String ? entry.key as String : '';
+        final int sep = key.lastIndexOf(':');
+        if (sep > 0) {
+          address = key.substring(0, sep);
+          if (port == 0) {
+            port = int.tryParse(key.substring(sep + 1)) ?? 0;
+          }
+        } else {
+          address = key;
+        }
+      }
+      out.add(TorrentPeerDetail(
+        address: address,
+        port: port,
+        client: e['client'] is String ? e['client'] as String : '',
+        progress: e['progress'] is num ? (e['progress'] as num).toDouble() : 0,
+        downSpeedBps: _qbInt(e, 'dl_speed', fallback: 0),
+        upSpeedBps: _qbInt(e, 'up_speed', fallback: 0),
+        downloadedBytes: _qbInt(e, 'downloaded', fallback: 0),
+        uploadedBytes: _qbInt(e, 'uploaded', fallback: 0),
+        flags: e['flags'] is String ? e['flags'] as String : '',
+      ));
+    }
+    return out;
+  } catch (_) {
+    return const <TorrentPeerDetail>[];
+  }
+}
+
+/// qb tracker `status` int → 中性枚举；值域外（未来新值/坏数据）归
+/// [TorrentTrackerStatus.notContacted]。
+TorrentTrackerStatus _qbTrackerStatus(int status) {
+  switch (status) {
+    case 0:
+      return TorrentTrackerStatus.disabled;
+    case 1:
+      return TorrentTrackerStatus.notContacted;
+    case 2:
+      return TorrentTrackerStatus.working;
+    case 3:
+      return TorrentTrackerStatus.updating;
+    case 4:
+      return TorrentTrackerStatus.notWorking;
+    default:
+      return TorrentTrackerStatus.notContacted;
+  }
+}
+
+/// TODO-2482：解析 `/api/v2/torrents/trackers` 响应（JSON 数组）为中性
+/// [TorrentTrackerDetail] 列表。纯函数，容错：坏 JSON / 非数组返回空列表；
+/// 缺 `url` 的条目跳过。
+///
+/// qb 对 DHT/PEX/LSD 伪 tracker 条目（url 形如 `** [DHT] **`）给 tier=-1：
+/// 归一成 tier=0 + [TorrentTrackerStatus.disabled]，但**保留导出**——
+/// 显示与否是 UI 的决定，不在解析层丢数据。
+List<TorrentTrackerDetail> parseQbTrackers(String body) {
+  try {
+    final dynamic json = jsonDecode(body);
+    if (json is! List) return const <TorrentTrackerDetail>[];
+    final List<TorrentTrackerDetail> out = <TorrentTrackerDetail>[];
+    for (final dynamic e in json) {
+      if (e is! Map) continue;
+      final dynamic url = e['url'];
+      if (url is! String || url.isEmpty) continue;
+      final int tier = _qbInt(e, 'tier', fallback: 0);
+      final bool pseudo = tier < 0;
+      out.add(TorrentTrackerDetail(
+        url: url,
+        tier: pseudo ? 0 : tier,
+        status: pseudo
+            ? TorrentTrackerStatus.disabled
+            : _qbTrackerStatus(_qbInt(e, 'status', fallback: 1)),
+        seeds: _qbInt(e, 'num_seeds'),
+        leeches: _qbInt(e, 'num_leeches'),
+        downloaded: _qbInt(e, 'num_downloaded'),
+        message: e['msg'] is String ? e['msg'] as String : '',
+      ));
+    }
+    return out;
+  } catch (_) {
+    return const <TorrentTrackerDetail>[];
+  }
+}
+
+/// TODO-2482：解析 `/api/v2/transfer/info` 响应为部分填充的
+/// [TorrentSessionStatusInfo]（只有速率与 DHT 节点数；DHT/LSD/PEX 开关和
+/// 监听端口在 preferences 端点，由 [QBittorrentClient.fetchSessionStatus]
+/// 组合）。纯函数，容错：坏 JSON / 非 Map 返回 null。
+TorrentSessionStatusInfo? parseQbTransferInfo(String body) {
+  try {
+    final dynamic json = jsonDecode(body);
+    if (json is! Map) return null;
+    return TorrentSessionStatusInfo(
+      downRateBps: _qbInt(json, 'dl_info_speed'),
+      upRateBps: _qbInt(json, 'up_info_speed'),
+      dhtNodes: _qbInt(json, 'dht_nodes'),
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+/// TODO-2482：解析 `/api/v2/torrents/pieceStates` 响应（JSON int 数组，
+/// 值域 0/1/2）。纯函数，容错：坏 JSON / 非数组返回 null；非 int 条目按 0
+/// （缺）处理，不整体失败。
+TorrentPieceStates? parseQbPieceStates(String body) {
+  try {
+    final dynamic json = jsonDecode(body);
+    if (json is! List) return null;
+    final List<int> states = <int>[];
+    for (final dynamic e in json) {
+      states.add(e is int ? e : 0);
+    }
+    return TorrentPieceStates(states: states);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// qb 文件优先级读值 → 中性枚举：0=skip、6/7=high、其余（1/4/5 与任何
+/// 坏值）=normal（qb 历史值域，1 与 4/5 都是「正常」档）。
+TorrentFilePriority _qbFilePriorityFromValue(int value) {
+  if (value == 0) return TorrentFilePriority.skip;
+  if (value == 6 || value == 7) return TorrentFilePriority.high;
+  return TorrentFilePriority.normal;
+}
+
+/// TODO-2482：从 `/api/v2/torrents/files` 响应（与 [parseQbTorrentFiles]
+/// 同一份 body）按文件 index 对位提取 `priority`。纯函数，容错：
+/// 坏 JSON / 非数组返回 null；单条目坏 → 该条 normal。
+///
+/// **files 数组不保证按 index 排序**：先按条目自带的 `index` 落位；
+/// `index` 缺失/越界时退回按出现序占位。
+List<TorrentFilePriority>? parseQbFilePriorities(String body) {
+  try {
+    final dynamic json = jsonDecode(body);
+    if (json is! List) return null;
+    final int n = json.length;
+    final List<TorrentFilePriority> out =
+        List<TorrentFilePriority>.filled(n, TorrentFilePriority.normal);
+    int position = 0;
+    for (final dynamic e in json) {
+      int index = position;
+      TorrentFilePriority priority = TorrentFilePriority.normal;
+      if (e is Map) {
+        final int declared = _qbInt(e, 'index');
+        if (declared >= 0 && declared < n) index = declared;
+        final dynamic p = e['priority'];
+        if (p is int) priority = _qbFilePriorityFromValue(p);
+      }
+      out[index] = priority;
+      position++;
+    }
+    return out;
+  } catch (_) {
+    return null;
   }
 }
 
@@ -375,6 +567,117 @@ class QBittorrentClient {
     if (res.statusCode == 200) return (true, null);
     final String body = res.body.trim();
     return (false, body.isEmpty ? 'HTTP ${res.statusCode}' : body);
+  }
+
+  /// TODO-2482：某种子当前连接的 peer 列表：
+  /// `GET /api/v2/sync/torrentPeers?hash=<h>&rid=0`（rid=0 = 全量快照，
+  /// 不走增量 diff）。失败/非 200 返回 null（区别于「连上了但没 peer」的
+  /// 空列表）。
+  Future<List<TorrentPeerDetail>?> fetchTorrentPeers(String hash) async {
+    if (hash.isEmpty) return null;
+    final http.Response? res = await _request(
+      'GET',
+      '/api/v2/sync/torrentPeers',
+      query: <String, String>{'hash': hash, 'rid': '0'},
+    );
+    if (res == null || res.statusCode != 200) return null;
+    return parseQbTorrentPeers(res.body);
+  }
+
+  /// TODO-2482：某种子的 tracker 列表：`GET /api/v2/torrents/trackers`。
+  Future<List<TorrentTrackerDetail>?> fetchTrackers(String hash) async {
+    if (hash.isEmpty) return null;
+    final http.Response? res = await _request(
+      'GET',
+      '/api/v2/torrents/trackers',
+      query: <String, String>{'hash': hash},
+    );
+    if (res == null || res.statusCode != 200) return null;
+    return parseQbTrackers(res.body);
+  }
+
+  /// TODO-2482：某种子每个文件的优先级（按 index 对位）：复用
+  /// `GET /api/v2/torrents/files` 响应经 [parseQbFilePriorities] 提取。
+  Future<List<TorrentFilePriority>?> fetchFilePriorities(String hash) async {
+    if (hash.isEmpty) return null;
+    final http.Response? res = await _request(
+      'GET',
+      '/api/v2/torrents/files',
+      query: <String, String>{'hash': hash},
+    );
+    if (res == null || res.statusCode != 200) return null;
+    return parseQbFilePriorities(res.body);
+  }
+
+  /// TODO-2482：设置若干文件的下载优先级：`POST /api/v2/torrents/filePrio`
+  /// （form：hash / id=`index|index|...` / priority，值域见
+  /// `_qbFilePriorityFromValue` 的注释）。200 = 成功。
+  Future<bool> setFilePriority({
+    required String hash,
+    required List<int> fileIndexes,
+    required int priority,
+  }) async {
+    if (hash.isEmpty || fileIndexes.isEmpty) return false;
+    final http.Response? res = await _request(
+      'POST',
+      '/api/v2/torrents/filePrio',
+      form: <String, String>{
+        'hash': hash,
+        'id': fileIndexes.join('|'),
+        'priority': '$priority',
+      },
+    );
+    return res != null && res.statusCode == 200;
+  }
+
+  /// TODO-2482：会话级协议状态：组合 `GET /api/v2/transfer/info`（速率 +
+  /// DHT 节点数）与 `GET /api/v2/app/preferences`（DHT/LSD/PEX 开关 +
+  /// 监听端口）。preferences 失败时仍返回 transfer 侧的部分数据（bool 开关
+  /// 保持 null = 不知道）；两个端点都失败才返回 null。
+  ///
+  /// 注意 portMappings 恒为空：qb API 只暴露 UPnP **开关**，拿不到映射
+  /// **结果**，伪造一条「成功」是撒谎，UI 对外接 qb 不渲染该行。
+  Future<TorrentSessionStatusInfo?> fetchSessionStatus() async {
+    final http.Response? infoRes =
+        await _request('GET', '/api/v2/transfer/info');
+    final TorrentSessionStatusInfo? transfer =
+        (infoRes != null && infoRes.statusCode == 200)
+            ? parseQbTransferInfo(infoRes.body)
+            : null;
+    Map<dynamic, dynamic>? prefs;
+    final http.Response? prefRes =
+        await _request('GET', '/api/v2/app/preferences');
+    if (prefRes != null && prefRes.statusCode == 200) {
+      try {
+        final dynamic json = jsonDecode(prefRes.body);
+        if (json is Map) prefs = json;
+      } catch (_) {
+        // preferences 坏 body 按「没拿到」处理，不影响 transfer 侧数据。
+      }
+    }
+    if (transfer == null && prefs == null) return null;
+    return TorrentSessionStatusInfo(
+      dhtEnabled: prefs?['dht'] is bool ? prefs!['dht'] as bool : null,
+      dhtNodes: transfer?.dhtNodes ?? -1,
+      lsdEnabled: prefs?['lsd'] is bool ? prefs!['lsd'] as bool : null,
+      pexEnabled: prefs?['pex'] is bool ? prefs!['pex'] as bool : null,
+      listenPort:
+          prefs?['listen_port'] is int ? prefs!['listen_port'] as int : 0,
+      downRateBps: transfer?.downRateBps ?? -1,
+      upRateBps: transfer?.upRateBps ?? -1,
+    );
+  }
+
+  /// TODO-2482：某种子的 piece 位图：`GET /api/v2/torrents/pieceStates`。
+  Future<TorrentPieceStates?> fetchPieceStates(String hash) async {
+    if (hash.isEmpty) return null;
+    final http.Response? res = await _request(
+      'GET',
+      '/api/v2/torrents/pieceStates',
+      query: <String, String>{'hash': hash},
+    );
+    if (res == null || res.statusCode != 200) return null;
+    return parseQbPieceStates(res.body);
   }
 
   /// 带会话编排的请求：懒登录（登录失败退匿名探测，BUG-1295）→ 发请求 →
