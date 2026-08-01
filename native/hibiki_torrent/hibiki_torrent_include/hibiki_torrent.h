@@ -271,8 +271,17 @@ HT_EXPORT char* ht_torrent_trackers(void* session, const char* info_hash);
 // 元数据未就绪 {"ok":false,"error":"no metadata"}。
 HT_EXPORT char* ht_get_file_priorities(void* session, const char* info_hash);
 
+// 每个 piece 的下载优先级（TODO-2526，诊断/测试用，与文件优先级同姿态）：
+// {"ok":true,"priorities":[7,4,...]}（下标 = piece index；值域 0~7）。
+// 元数据未就绪 {"ok":false,"error":"no metadata"}。
+HT_EXPORT char* ht_get_piece_priorities(void* session, const char* info_hash);
+
 // 设置单个文件的下载优先级：[priority] 0~7（0 = 不下载）。
 // 1 成功、0 失败（种子不存在/元数据未就绪/参数越界）。
+//
+// TODO-2526：写完后桥会对该种子**重放一次首尾 piece 提优**（起播优化）——
+// libtorrent 按新文件优先级重算 piece 优先级会把提优冲掉。重放跳过
+// priority=0（不下载）的文件，不会强制下载已跳过内容。
 HT_EXPORT int ht_set_file_priority(void* session, const char* info_hash,
                                    int file_index, int priority);
 
@@ -287,8 +296,10 @@ HT_EXPORT int ht_set_file_priority(void* session, const char* info_hash,
 //   (error 回执不带协议),"external_port"(失败为 0),"ok","error"}]}
 //
 // **非阻塞**：本函数发出 post_dht_stats/post_session_stats 请求后只收割
-// 已到的 alert 即返回 —— 首次调用 dht_nodes/速率是 -1，下一轮轮询即有值
-// （详情页本就秒级轮询；同步等待会把 UI isolate 卡住）。
+// 已到的 alert 即返回 —— dht_nodes 首轮是 -1、下一轮即有值；速率（down_rate/
+// up_rate）要到**第三轮**才有值：首轮回执未到、第二轮收割到首个采样只够
+// 建基线，第三轮才差分得出（详情页本就秒级轮询；同步等待会把 UI isolate
+// 卡住）。
 // 需要 session 的 alert_mask 含 port_mapping 类别（ht_session_create 已设）。
 HT_EXPORT char* ht_session_status(void* session);
 
