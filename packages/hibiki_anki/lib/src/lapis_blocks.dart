@@ -7,9 +7,13 @@
 ///   sync，删字段更是不可逆地删卡片数据；而区域的增删只影响「显示不显示」，
 ///   随时可撤。可逆的需求不做成不可逆的实现。
 /// * **真相源是 Hibiki 侧的 [LapisCustomBlock] 列表，模板是产物。** 因此不需要
-///   从 Anki 端模板里反解区域（那才是易碎的一步）——[composeLapisBackTemplate]
-///   永远从 vendored 基线重新生成整份背面模板，Anki 端是不是我们的产物由指纹
-///   判定（同 CSS 侧的 [decideLapisStylingAction]）。
+///   从 Anki 端模板里反解区域（那才是易碎的一步）：[composeLapisBackTemplate]
+///   每次都重新生成，Anki 端是不是我们的产物由指纹判定（同 CSS 侧的
+///   [decideLapisStylingAction]）。
+/// * **基线是用户 Anki 里那份模板，不是 Hibiki 内置的 vendored 副本。** 我们只
+///   把托管区段插进去（插入前先 [stripLapisBlocksSections] 掉上一轮的），用户
+///   自己的模板逐字节保留。早先拿 vendored 全文当基线，等于每次 Apply 都把别人
+///   的 Lapis 换成我们这版——用户反馈「没改字体却把字体改了」正是这么来的。
 /// * **锚点是 vendored 模板里真实存在的字面结构**，不预埋自定义注释：基线必须
 ///   逐字节等于上游，且老用户 Anki 里的卡型也没有任何预埋标记。锚串唯一性由
 ///   `lapis_blocks_test.dart` 守卫，上游 re-vendor 改了结构立刻打红，而不是
@@ -203,13 +207,20 @@ String buildLapisBlockHtml(LapisCustomBlock block) {
       '</div>';
 }
 
-/// 自定义区域的基线 CSS：只做「空块不占位」和最小间距，具体外观交给每块自己的
-/// [LapisCustomBlock.rule]。随区域一起进托管区段，没有区域时不产出。
+/// 自定义区域的基线 CSS：只做「空块不占位」「最小间距」和「默认居左」，具体
+/// 外观交给每块自己的 [LapisCustomBlock.rule]。随区域一起进托管区段，没有区域
+/// 时不产出。
+///
+/// `text-align: left` 是刻意的：`#lapis` 全局是 `text-align: center`，新区域若
+/// 直接继承，加进来的内容会莫名其妙居中（用户反馈「对齐也有 bug 没自动居左」）。
+/// 释义块在真卡上也是居左的，跟着它走观感一致。想要别的对齐用区域自己的对齐
+/// 控件改——那条规则带 `!important`，压得过这里。
 const String lapisBlocksBaseCss = '.hibiki-block:empty {\n'
     '  display: none;\n'
     '}\n'
     '.hibiki-block {\n'
     '  margin-block: 0.4em;\n'
+    '  text-align: left;\n'
     '}';
 
 /// 全部区域的样式 CSS（含基线）。声明生成复用字段规则那一套
@@ -243,12 +254,53 @@ List<String> buildLapisBlocksCss(List<LapisCustomBlock> blocks) {
 ///
 /// 锚串在基线里找不到时抛 [StateError] 而不是静默跳过——那意味着 vendored 模板
 /// 结构变了，静默跳过会让用户配好的区域凭空消失。
-String composeLapisBackTemplate(List<LapisCustomBlock> blocks) =>
+/// 在**给定基线**上组合背面模板。
+///
+/// [baseBack] 应当是 Anki 端当前的背面模板剥掉托管区段后的结果——用户自己的
+/// 模板（别的 Lapis 版本 / 他自己改过的结构）因此原样保留，我们只把区域插进去。
+/// 省略时退回 vendored 基线，仅用于「恢复出厂」与测试。
+///
+/// 无区域时**逐字节等于 [baseBack]**：没用这个功能的用户，推送内容与他原本的
+/// 模板完全一致。
+String composeLapisBackTemplate(
+  List<LapisCustomBlock> blocks, {
+  String? baseBack,
+}) =>
     insertLapisBlocksIntoBackHtml(
-      LapisNoteType.back,
+      stripLapisBlocksSections(baseBack ?? LapisNoteType.back),
       blocks,
       renderBlock: buildLapisBlockHtml,
     );
+
+/// 剥掉背面模板里**全部**由 Hibiki 托管的区域区段。
+///
+/// 每次组合都从「用户自己的模板」重新插入，所以必须先把上一轮插进去的清干净，
+/// 否则每 Apply 一次就多叠一份区域（用户看到的「多出来一行」正是这类症状）。
+/// 标记不成对（用户手改坏了）时保守地原样返回：宁可多留一段我们的产物，也不能
+/// 把他的模板切掉一块。
+/// 与 [insertLapisBlocksIntoBackHtml] **严格互逆**：后者写入
+/// `\n + 区段 + \n`，这里就只吃掉紧邻的那两个换行，不做 trim。
+///
+/// 一开始这里图省事用了 `trimRight()`，结果连原文里锚点前的缩进一起吃掉——
+/// strip(insert(x)) != x，于是「Anki 端就是基线」的判定失败，第一次加区域会被
+/// 误判成「疑似手改」多弹一次确认框。互逆性由 `lapis_blocks_test.dart` 守卫。
+String stripLapisBlocksSections(String backHtml) {
+  String result = backHtml;
+  while (true) {
+    final int begin = result.indexOf(lapisBlocksBeginMarker);
+    if (begin < 0) return result;
+    final int end = result.indexOf(
+      lapisBlocksEndMarker,
+      begin + lapisBlocksBeginMarker.length,
+    );
+    if (end < 0) return result;
+    int cutStart = begin;
+    if (cutStart > 0 && result[cutStart - 1] == '\n') cutStart--;
+    int cutEnd = end + lapisBlocksEndMarker.length;
+    if (cutEnd < result.length && result[cutEnd] == '\n') cutEnd++;
+    result = result.substring(0, cutStart) + result.substring(cutEnd);
+  }
+}
 
 /// 把 [blocks] 按锚点插进一段背面 HTML。
 ///
@@ -302,28 +354,48 @@ LapisStylingDecision decideLapisTemplateAction({
   required String expectedBack,
   required String? lastAppliedSha,
 }) {
-  final AnkiCardTemplate? card = def.templates
-      .where((AnkiCardTemplate t) => t.name == LapisNoteType.cardName)
-      .firstOrNull;
-  if (card == null || def.templates.length != 1) {
-    return LapisStylingDecision.foreignEdit;
-  }
+  final AnkiCardTemplate? card = lapisCardTemplateOf(def);
+  if (card == null) return LapisStylingDecision.foreignEdit;
   final String back = normalizeCssForCompare(card.back);
-  if (back == normalizeCssForCompare(expectedBack) &&
-      normalizeCssForCompare(card.front) ==
-          normalizeCssForCompare(LapisNoteType.front)) {
+  if (back == normalizeCssForCompare(expectedBack)) {
     return LapisStylingDecision.upToDate;
   }
+  // **正面模板不参与判定，也永远不写**：区域只插在背面，正面碰都不碰。
+  // 早先这里拿正面与 vendored 比对，等于要求用户的正面必须和内置副本一模一样
+  // ——别的 Lapis 版本立刻被判成「疑似手改」。
   if (lastAppliedSha != null && lapisCssSha256(back) == lastAppliedSha) {
     return LapisStylingDecision.safeUpdate;
   }
-  // 出厂态：用户从没动过背面模板（无区域时 composeLapisBackTemplate 逐字节
-  // 等于它，所以这条也覆盖「第一次加区域」）。
-  if (back == normalizeCssForCompare(LapisNoteType.back)) {
+  // 基线现在取自用户自己的模板（见 [composeLapisBackTemplate] 的 baseBack），
+  // 所以「他的模板长什么样」不再是风险——我们只往里插托管区段，不替换它。
+  // 剥掉托管区段后与期望的基线一致，就说明差异全部来自我们自己那块。
+  if (stripLapisBlocksSections(card.back).trim() ==
+      stripLapisBlocksSections(expectedBack).trim()) {
     return LapisStylingDecision.safeUpdate;
   }
   return LapisStylingDecision.foreignEdit;
 }
+
+/// Anki 端定义里 Lapis 那张卡模板；没有就返回 null。
+///
+/// 只认名字，不再要求「整个卡型只有一张模板」——用户给 Lapis 加过第二张卡模板
+/// 不是我们该拦的事，我们只改自己认得的那一张，其余原样带回。
+AnkiCardTemplate? lapisCardTemplateOf(AnkiNoteTypeDefinition def) =>
+    def.templates
+        .where((AnkiCardTemplate t) => t.name == LapisNoteType.cardName)
+        .firstOrNull;
+
+/// 把 [def] 的模板列表里 Lapis 那张的背面换成 [back]，**其余模板逐字节原样带回**
+/// （含它们的正面）。推送整份列表时不会顺手抹掉用户的其它卡模板。
+List<AnkiCardTemplate> lapisTemplatesWithBack(
+  AnkiNoteTypeDefinition def,
+  String back,
+) =>
+    def.templates
+        .map((AnkiCardTemplate t) => t.name == LapisNoteType.cardName
+            ? AnkiCardTemplate(name: t.name, front: t.front, back: back)
+            : t)
+        .toList();
 
 /// 期望推送到 Anki 的完整卡模板列表（正面不变，背面按区域重算）。
 List<AnkiCardTemplate> composeLapisCardTemplates(

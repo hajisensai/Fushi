@@ -52,6 +52,7 @@ class LapisStyleEditorPage extends StatefulWidget {
     this.noteTypeFields = const <String>[],
     this.initialFieldMappings = const <String, String>{},
     this.initialBlocks = const <LapisCustomBlock>[],
+    this.baseCss,
     this.pickHandlebar,
     this.previewBuilder,
     super.key,
@@ -69,6 +70,13 @@ class LapisStyleEditorPage extends StatefulWidget {
 
   /// 已配置的自定义区域。
   final List<LapisCustomBlock> initialBlocks;
+
+  /// 预览用的**基线样式**：用户 Anki 里现有的 Lapis CSS（剥掉 Hibiki 托管区段）。
+  ///
+  /// null = 拿不到（未连接 Anki / 卡型不存在），退回 Hibiki 内置的 vendored 副本。
+  /// 传真实值才能让编辑器里看到的卡片与他真卡一致——用户反馈「调整器里默认的
+  /// Lapis 和默认的 Lapis 不一样」正是因为这里一直注入内置副本。
+  final String? baseCss;
 
   /// 为 null = 不提供映射编辑（例如未连接 Anki）。
   final LapisHandlebarPicker? pickHandlebar;
@@ -284,10 +292,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   Future<void> _refreshPreview() async {
     final InAppWebViewController? controller = _previewController;
     if (controller == null) return;
-    final String css = composeLapisCss(
-      fontScalePercent: widget.fontScalePercent,
-      customCss: _composeCustomCss(),
-    );
+    final String css = _composePreviewCss();
     try {
       await controller.evaluateJavascript(
         source: buildLapisStylePreviewRefreshScript(
@@ -460,11 +465,15 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
     );
   }
 
+  /// 预览注入的完整样式 = 用户自己的基线 + 本次客制化。
+  String _composePreviewCss() => composeLapisCssOnBase(
+        baseCss: widget.baseCss ?? LapisNoteType.template.css,
+        fontScalePercent: widget.fontScalePercent,
+        customCss: _composeCustomCss(),
+      );
+
   Widget _buildWebPreview() {
-    final String css = composeLapisCss(
-      fontScalePercent: widget.fontScalePercent,
-      customCss: _composeCustomCss(),
-    );
+    final String css = _composePreviewCss();
     return InAppWebView(
       initialData: InAppWebViewInitialData(
         data: buildLapisStylePreviewHtml(

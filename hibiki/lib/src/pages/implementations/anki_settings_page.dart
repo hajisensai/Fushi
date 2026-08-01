@@ -558,6 +558,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     // 自我门控（卡型里没有的字段一律不显示）。
     final List<String> noteTypeFields =
         settings.selectedNoteType?.fields ?? const <String>[];
+    // 预览基线取用户 Anki 里现有的 Lapis CSS（剥掉 Hibiki 托管区段），编辑器里
+    // 看到的才是他自己那张卡。读不到就退回内置副本——只影响预览观感，不影响写入。
+    String? baseCss;
+    try {
+      final AnkiNoteTypeDefinition? def = await vm.lapisTemplateService
+          .readNoteTypeDefinitionForPreview(LapisNoteType.modelName);
+      if (def != null) baseCss = stripLapisUserSection(def.css);
+    } catch (e) {
+      debugPrint('Lapis 预览基线读取失败，退回内置副本: $e');
+    }
+    if (!mounted) return;
     final LapisVisualEditorResult? result =
         await Navigator.of(context).push<LapisVisualEditorResult>(
       adaptivePageRoute<LapisVisualEditorResult>(
@@ -568,6 +579,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           noteTypeFields: noteTypeFields,
           initialFieldMappings: settings.fieldMappings,
           initialBlocks: settings.lapisCustomBlocks,
+          baseCss: baseCss,
           pickHandlebar: noteTypeFields.isEmpty
               ? null
               : (String field, String currentValue) =>

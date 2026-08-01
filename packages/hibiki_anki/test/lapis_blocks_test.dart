@@ -169,6 +169,179 @@ void main() {
     });
   });
 
+  group('以用户自己的 Lapis 为基线', () {
+    /// 一份「不是 Hibiki 内置那版」的用户模板：换了字体、结构也不同。
+    const String userBack = '<div id="lapis" lang="ja">\n'
+        '    <main>\n'
+        '        <div class="def-header">用户自己的头部</div>\n'
+        '        <div class="sentence">用户自己的例句块</div>\n'
+        '        <div class="def-info">1/?</div>\n'
+        '        <div class="main-def">用户自己的释义框</div>\n'
+        '        <div class="sentence-alt">备用位置</div>\n'
+        '    </main>\n'
+        '</div>';
+
+    test('strip 与 insert 严格互逆（不吃掉原文缩进）', () {
+      // 不互逆的话，「Anki 端就是基线」判不出来，第一次加区域会被误判成手改。
+      const List<LapisCustomBlock> blocks = <LapisCustomBlock>[
+        LapisCustomBlock(
+          id: 'b1',
+          anchor: LapisBlockAnchor.aboveSentence,
+          fields: <String>['Frequency'],
+        ),
+        LapisCustomBlock(
+          id: 'b2',
+          anchor: LapisBlockAnchor.bottom,
+          fields: <String>['MiscInfo'],
+        ),
+      ];
+      for (final String base in <String>[userBack, LapisNoteType.back]) {
+        final String inserted = insertLapisBlocksIntoBackHtml(
+          base,
+          blocks,
+          renderBlock: buildLapisBlockHtml,
+        );
+        expect(inserted, isNot(base));
+        expect(
+          stripLapisBlocksSections(inserted),
+          base,
+          reason: 'strip(insert(x)) 必须逐字节等于 x',
+        );
+      }
+    });
+
+    test('无区域时推送内容逐字节等于用户自己的模板', () {
+      // 没用这个功能的用户，Apply 不该让他的模板有任何变化。
+      expect(
+        composeLapisBackTemplate(
+          const <LapisCustomBlock>[],
+          baseBack: userBack,
+        ),
+        userBack,
+      );
+    });
+
+    test('区域插进用户自己的模板，不换成 vendored 那份', () {
+      final String back = composeLapisBackTemplate(
+        const <LapisCustomBlock>[
+          LapisCustomBlock(
+            id: 'b1',
+            anchor: LapisBlockAnchor.bottom,
+            fields: <String>['MiscInfo'],
+          ),
+        ],
+        baseBack: userBack,
+      );
+      expect(back, contains('用户自己的释义框'));
+      expect(back, contains('data-hibiki-block="b1"'));
+      // 病根守卫：用户的模板不得被 Hibiki 内置副本顶掉。
+      expect(back, isNot(contains('def-image')));
+    });
+
+    test('重复 Apply 不会把区域越叠越多', () {
+      const List<LapisCustomBlock> blocks = <LapisCustomBlock>[
+        LapisCustomBlock(
+          id: 'b1',
+          anchor: LapisBlockAnchor.bottom,
+          fields: <String>['MiscInfo'],
+        ),
+      ];
+      final String once = composeLapisBackTemplate(blocks, baseBack: userBack);
+      // 第二次 Apply 的基线是 Anki 端现有内容（已经含上一轮的区段）。
+      final String twice = composeLapisBackTemplate(blocks, baseBack: once);
+      expect(twice, once);
+      expect(
+        lapisBlocksBeginMarker.allMatches(twice).length,
+        1,
+        reason: '每 Apply 一次多叠一份区域 = 用户看到的「多出来一行」',
+      );
+    });
+
+    test('CSS 侧同样叠加：用户的字体不被顶掉', () {
+      const String userCss = ':root { --font-serif: "我的字体"; }\n'
+          '.card { color: #abcdef; }';
+      final String composed = composeLapisCssOnBase(
+        baseCss: userCss,
+        fontScalePercent: 125,
+        customCss: '.mine { color: red; }',
+      );
+      expect(composed, startsWith(userCss));
+      expect(composed, contains('我的字体'));
+      expect(composed, contains('.mine { color: red; }'));
+      // 剥掉我们那段就回到他原本那份，逐字节。
+      expect(stripLapisUserSection(composed), userCss);
+    });
+
+    test('没有客制化时 CSS 逐字节等于用户原本那份', () {
+      const String userCss = ':root { --font-serif: "我的字体"; }';
+      expect(
+        composeLapisCssOnBase(
+          baseCss: userCss,
+          fontScalePercent: 100,
+          customCss: '',
+        ),
+        userCss,
+      );
+    });
+
+    test('从没被 Hibiki 写过的 CSS，strip 后原样返回', () {
+      const String pristine = '.card { font-family: "别的字体"; }';
+      expect(stripLapisUserSection(pristine), pristine);
+    });
+
+    test('正面模板永不参与写入：只换目标卡的背面，其余原样', () {
+      final AnkiNoteTypeDefinition def = AnkiNoteTypeDefinition(
+        name: LapisNoteType.modelName,
+        fields: LapisNoteType.fields,
+        css: 'x',
+        templates: const <AnkiCardTemplate>[
+          AnkiCardTemplate(
+            name: LapisNoteType.cardName,
+            front: '用户自己的正面',
+            back: '旧背面',
+          ),
+          AnkiCardTemplate(
+            name: 'Card 2',
+            front: '第二张正面',
+            back: '第二张背面',
+          ),
+        ],
+      );
+      final List<AnkiCardTemplate> out = lapisTemplatesWithBack(def, '新背面');
+      expect(out.length, 2);
+      expect(out[0].back, '新背面');
+      // 正面推 vendored 就是又一次「用内置副本顶掉用户的东西」。
+      expect(out[0].front, '用户自己的正面');
+      expect(out[1].front, '第二张正面');
+      expect(out[1].back, '第二张背面');
+    });
+
+    test('多张卡模板不再被判成 foreignEdit', () {
+      // 用户给 Lapis 加过第二张卡模板不是我们该拦的事。
+      final AnkiNoteTypeDefinition def = AnkiNoteTypeDefinition(
+        name: LapisNoteType.modelName,
+        fields: LapisNoteType.fields,
+        css: 'x',
+        templates: const <AnkiCardTemplate>[
+          AnkiCardTemplate(
+            name: LapisNoteType.cardName,
+            front: 'f',
+            back: userBack,
+          ),
+          AnkiCardTemplate(name: 'Card 2', front: 'f2', back: 'b2'),
+        ],
+      );
+      expect(
+        decideLapisTemplateAction(
+          def: def,
+          expectedBack: userBack,
+          lastAppliedSha: null,
+        ),
+        LapisStylingDecision.upToDate,
+      );
+    });
+  });
+
   group('序列化', () {
     test('往返保留位置、字段与样式', () {
       const List<LapisCustomBlock> blocks = <LapisCustomBlock>[
