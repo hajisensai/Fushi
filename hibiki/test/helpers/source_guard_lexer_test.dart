@@ -274,4 +274,33 @@ final b = \'\'\'{ js }\'\'\';
       expect(namedArgumentValues(src, 'insetPadding'), isEmpty);
     });
   });
+
+  group('maskCommentsAndScriptLines：吃掉三引号串里的整行 JS 注释', () {
+    const String src = '''
+final String js = \'\'\'
+  // window.hoshiReader.paginate('forward')
+  const url = 'https://hoshi.local/x';
+\'\'\';
+''';
+
+    test('等长且行数守恒', () {
+      expect(maskCommentsAndScriptLines(src).length, src.length);
+      expect(
+        maskCommentsAndScriptLines(src).split('\n').length,
+        src.split('\n').length,
+      );
+    });
+
+    test('串内整行 JS 注释被掩掉（maskComments 会原样保留）', () {
+      expect(maskComments(src).contains('paginate'), isTrue);
+      expect(maskCommentsAndScriptLines(src).contains('paginate'), isFalse);
+    });
+
+    test('串里的 URL 不被砍（旧手写「按首个 // 截断」会砍）', () {
+      expect(
+        maskCommentsAndScriptLines(src).contains('https://hoshi.local/x'),
+        isTrue,
+      );
+    });
+  });
 }

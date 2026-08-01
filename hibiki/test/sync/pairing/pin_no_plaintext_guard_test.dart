@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../../helpers/source_guard.dart';
 
 /// TODO-961 M1 §3.6 源码守卫：PIN 绝不明文出现在响应 body / 日志。
 ///
@@ -15,33 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 2. server 的 pair/v2 响应只含 sessionId / pinRequired / hostNonce（白名单）。
 /// 3. PIN 不进 debugPrint / ErrorLogService 等日志调用。
 
-String _stripComments(String src) {
-  final StringBuffer out = StringBuffer();
-  final int n = src.length;
-  int i = 0;
-  while (i < n) {
-    final String c = src[i];
-    final String next = i + 1 < n ? src[i + 1] : '';
-    if (c == '/' && next == '/') {
-      while (i < n && src[i] != '\n') {
-        i++;
-      }
-      continue;
-    }
-    if (c == '/' && next == '*') {
-      i += 2;
-      while (i < n && !(src[i] == '*' && i + 1 < n && src[i + 1] == '/')) {
-        if (src[i] == '\n') out.write('\n');
-        i++;
-      }
-      i += 2;
-      continue;
-    }
-    out.write(c);
-    i++;
-  }
-  return out.toString();
-}
+String _stripComments(String src) => maskComments(src);
 
 void main() {
   test('pair/v2 响应体只含白名单字段，绝不含 PIN', () {

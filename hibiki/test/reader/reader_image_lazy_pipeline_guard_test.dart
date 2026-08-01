@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
+import '../helpers/source_guard.dart';
 
 /// BUG-1140 第二轮守卫：`loading` 属性的**Dart 侧**流水线。
 ///
@@ -26,10 +27,7 @@ void main() {
 
   /// 去掉 `//` 行注释再扫——否则「注释里写了 `loading="eager"`」也能让守卫变绿，
   /// 而真正 emit 的标签已经没有这个属性了（本守卫的负向验证踩过这个坑）。
-  String stripLineComments(String s) => s
-      .split('\n')
-      .where((String l) => !l.trimLeft().startsWith('//'))
-      .join('\n');
+  String stripLineComments(String s) => maskCommentsAndScriptLines(s);
 
   group('TODO-1339：合并前导插图的 eager 不再靠调用顺序', () {
     test('_injectMergedChapterImages 注入的 <img> 自带 loading="eager"', () {

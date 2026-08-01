@@ -32,6 +32,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 
 /// 从当前 cwd 向上找含 `hibiki/windows/runner` 的仓库根。
 Directory _repoRoot() {
@@ -49,9 +50,7 @@ Directory _repoRoot() {
 ///
 /// 源码扫描守卫最经典的假绿：真代码改掉、注释里还留着同一串字面量，守卫照绿。本文件上面
 /// 的说明里就反复出现 `FILE_MAP_WRITE` 和 `InterlockedExchange64`，剥完不该再被任何断言看见。
-String _stripComments(String source) => source
-    .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
-    .replaceAll(RegExp(r'//[^\n]*'), '');
+String _stripComments(String source) => maskComments(source);
 
 /// 取 [source] 中从 [signature] 起到该函数结尾（列 0 的 `}`）的函数体。
 String _functionBody(String source, String signature) {

@@ -187,6 +187,32 @@ String maskCssComments(String source) => _mask(
       maskStringContent: false,
     );
 
+/// [maskComments] 的保守超集：额外把**整行以 `//` 开头**的行也掩成等长空白，
+/// 包括落在 Dart 三引号串里的那些。
+///
+/// 为什么需要它：本仓有一批 Dart 文件把大段 JS/CSS 放在三引号串里
+/// （`reader_hibiki/webview.part.dart`、`reader_visual_novel_scripts.dart`、
+/// `reader_content_styles.dart`）。[maskComments] **按设计保留串内容**（这样
+/// `'https://x'` 里的 `//` 才不会被当注释砍掉），代价是串内的 JS 注释也原样留着，
+/// 于是扫描这些语料的守卫会被一条 JS 注释骗绿 / 误红。
+///
+/// 这些守卫原来手写的剥离是「整行以 `//` 开头就丢掉」，正好能吃掉串内 JS 注释，
+/// 但既不认块注释、也不认行尾注释。本函数取两者的并集：Dart 词法掩码 **加**
+/// 整行 `//`，两侧都不放松，且仍然等长。
+///
+/// 它**不是**完整的 JS 词法器：JS 的行尾注释、模板串、正则字面量（`/^a\/\//i`
+/// 里的 `//`）都不处理。要在 JS 上做逐 token 判定，需要单独的 JS 掩码原语。
+String maskCommentsAndScriptLines(String source) {
+  final List<String> masked = maskComments(source).split('\n');
+  final List<String> original = source.split('\n');
+  for (int i = 0; i < masked.length; i++) {
+    if (original[i].trimLeft().startsWith('//')) {
+      masked[i] = ' ' * masked[i].length;
+    }
+  }
+  return masked.join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // 窗口原语
 // ---------------------------------------------------------------------------

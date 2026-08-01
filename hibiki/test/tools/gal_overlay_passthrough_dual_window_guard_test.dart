@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 
 /// BUG-951 — source-scan guards for the galgame hook overlay's pass-through
 /// design.
@@ -68,11 +69,7 @@ void main() {
 
   /// Drops `// ...` comments so a call-site count cannot be thrown off (in
   /// either direction) by prose that mentions the symbol.
-  String stripLineComments(String source) =>
-      source.split('\n').map((String line) {
-        final int slashes = line.indexOf('//');
-        return slashes < 0 ? line : line.substring(0, slashes);
-      }).join('\n');
+  String stripLineComments(String source) => maskComments(source);
 
   group('BUG-951 · the body window is really click-through', () {
     test('WS_EX_TRANSPARENT is applied, and only from one function', () {

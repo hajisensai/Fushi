@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../helpers/source_guard.dart';
 
 /// TODO-644 / BUG-357 回归守卫：制卡并发 race（句子/cue 句 + 加粗偏移错配）。
 ///
@@ -13,12 +14,7 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 ///    两次 prepare→mine 在 await 处交错。
 /// 去掉每行 `//` 之后的内容（足以避免说明性注释里出现的标识符被源码守卫误命中；
 /// 字符串字面量里的 `//` 在本文件扫描的目标区域不出现，无需更复杂的词法分析）。
-String _stripLineComments(String code) {
-  return code.split('\n').map((String line) {
-    final int slash = line.indexOf('//');
-    return slash >= 0 ? line.substring(0, slash) : line;
-  }).join('\n');
-}
+String _stripLineComments(String code) => maskCommentsAndScriptLines(code);
 
 void main() {
   late String source;
