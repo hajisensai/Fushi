@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1268 条。点号进各自文件。
+> 共 1270 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1326](bugs/BUG-1326-popup-ctx-modal-args-stringified.md) | ✅ | ✅ | 调整上下文回点制卡永远点第一个词条 |
+| [BUG-1325](bugs/BUG-1325-video-context-dialog-barrier.md) | ✅ | ✅ | 视频页制卡上下文对话框被查词浮层 barrier 吃掉点击 |
 | [BUG-1324](bugs/BUG-1324-sync-report-auth-failure-untyped.md) | ✅ | ✅ | 同步报告把鉴权失败压成一行字符串：UI 只剩「N 项失败」 |
 | [BUG-1323](bugs/BUG-1323-sync-401-403-flattened.md) | ✅ | ✅ | webdav_ops 把 401/403 压成同一个 SyncAuthError：403 被谎报成登录过期还触发登出 |
 | [BUG-1322](bugs/BUG-1322-clip-export-mobile-mjpeg-unplayable.md) | ✅ | ✅ | 移动端导出片段MJPEG-MOV体积巨大且普遍无法播放 |
