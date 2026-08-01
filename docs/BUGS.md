@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1307 条。点号进各自文件。
+> 共 1308 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1373](bugs/BUG-1373-ios-pod-install-license-file-type.md) | ✅ | ✅ | iOS pod install 断在 license 校验：LICENSE.GPLv3 扩展名不被 CocoaPods 接受 |
+| [BUG-1372](bugs/BUG-1372-lyrics-bottom-reserve-guard.md) | ✅ | ✅ | 歌词底栏预留守卫锚在实现写法上，PR#670 合并 Padding 后 develop 单测红 |
 | [BUG-1372](bugs/BUG-1372-android-appsmoke-prewarm-webview-renderer-kills-app.md) | ✅ | ✅ | Android appSmoke：预热 headless WebView 永不销毁，renderer 被 OOM kill 后连坐杀整个 app 进程 |
 | [BUG-1365](bugs/BUG-1365-local-audio-query-races-binding-index-build.md) | ✅ | ✅ | 桌面本地音频查询与绑定期建索引竞态：撞锁被吞成 null＝「暂无发音」（CI flaky） |
 | [BUG-1364](bugs/BUG-1364-search-placeholder-covers-dialog.md) | ✅ | ✅ | 搜索中占位层未接对话框隐藏计数，可能盖住对话框 |
