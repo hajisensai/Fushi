@@ -67,6 +67,17 @@ class LapisTemplateService {
     return dir;
   }
 
+  /// 只读地取回 Anki 端的卡型定义，供编辑器拿真实基线渲染预览。
+  ///
+  /// 单独开一个方法而不是把 `_repository` 暴露出去：预览只需要读，不该顺手获得
+  /// 写入能力。后端不支持时返回 null（预览退回内置副本）。
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinitionForPreview(
+    String modelName,
+  ) async {
+    if (!_repository.supportsNoteTypeEditing) return null;
+    return _repository.readNoteTypeDefinition(modelName);
+  }
+
   /// 手动备份按钮入口：读回当前 Lapis 定义并落盘。模型不存在 / 后端不支持
   /// 返回 null（UI 提示），读写失败照抛。
   Future<LapisBackupOutcome?> backupNow() async {
@@ -139,15 +150,24 @@ class LapisTemplateService {
       return LapisApplyResult.unsupported;
     }
     final AnkiSettings settings = await _repository.loadSettings();
-    final String expected = composeLapisCss(
-      fontScalePercent: settings.lapisFontScalePercent,
-      customCss: settings.lapisCustomCss,
-    );
     final AnkiNoteTypeDefinition? def =
         await _repository.readNoteTypeDefinition(LapisNoteType.modelName);
     if (def == null) return LapisApplyResult.notFound;
-    final String expectedBack =
-        composeLapisBackTemplate(settings.lapisCustomBlocks);
+
+    // 基线取**用户 Anki 里现有的内容**（剥掉我们上一轮的托管区段），不是
+    // Hibiki 内置的 vendored 副本。用户反馈「Hibiki 把我的字体改了」的病根就在
+    // 这里：我们没写过 font-family，但拿 vendored 全文当基线推送，等于把他那份
+    // Lapis（别的版本 / 自己调过字体）整体顶掉。改成叠加之后，字体、版本差异、
+    // 他自己的手改全部原样保留。
+    final String expected = composeLapisCssOnBase(
+      baseCss: stripLapisUserSection(def.css),
+      fontScalePercent: settings.lapisFontScalePercent,
+      customCss: settings.lapisCustomCss,
+    );
+    final String expectedBack = composeLapisBackTemplate(
+      settings.lapisCustomBlocks,
+      baseBack: _currentBackTemplate(def),
+    );
     final LapisStylingDecision templateDecision = decideLapisTemplateAction(
       def: def,
       expectedBack: expectedBack,
@@ -273,7 +293,10 @@ class LapisTemplateService {
     }
     if (def == null) return;
     final AnkiSettings settings = await _repository.loadSettings();
-    final String expected = composeLapisCss(
+    // 基线取用户自己的（同 applyCustomization）：自动路径更不该拿 vendored
+    // 全文去顶用户的 Lapis。
+    final String expected = composeLapisCssOnBase(
+      baseCss: stripLapisUserSection(def.css),
       fontScalePercent: settings.lapisFontScalePercent,
       customCss: settings.lapisCustomCss,
     );
@@ -305,8 +328,16 @@ class LapisTemplateService {
               lapisMigratedBaselineSha: baselineSha,
             ));
       case LapisStylingDecision.safeUpdate:
-        await _pushStyling(def, expected);
-        debugPrint('LapisTemplateService.autoMigrate: baseline migrated');
+        // **不再自动写 Anki。** 这条路径原本的意义是「Hibiki 出厂基线升级了，
+        // 把新基线同步过去」——而基线现在取自用户自己的 Lapis，我们根本不再
+        // 拥有基线，这个动作失去了前提。它同时是唯一一条「用户没点任何按钮就
+        // 改他 Anki」的路径（用户反馈字体被改，这里是最大嫌疑）。保留判定只为
+        // 记指纹，写入统一收敛到用户显式点「应用样式到 Anki」那一个闸门。
+        await _repository.updateSettings((AnkiSettings s) => s.copyWith(
+              lapisMigratedBaselineSha: baselineSha,
+            ));
+        debugPrint('LapisTemplateService.autoMigrate: write skipped by design '
+            '(Apply is the only write gate)');
       case LapisStylingDecision.foreignEdit:
         // 用户手改过：不动，也不记基线（下次启动还要再判）。显式「应用」
         // 流程里有确认弹窗兜这条路。
@@ -383,22 +414,6 @@ class LapisTemplateService {
     }
   }
 
-  /// 备份 [def] → 推送 [css] → 记指纹。启动自动迁移专用：**只写 styling**。
-  ///
-  /// 自动路径刻意不碰卡模板——模板写坏是「卡片内容不显示」，这种后果不该由一条
-  /// 用户没点过的自动路径承担。模板只经用户显式 Apply 落地（见
-  /// [_pushCustomization]）。vendored 背面模板将来升级时也一样：等用户点 Apply，
-  /// 与「Apply 是用户内容写进 Anki 的唯一闸门」一致。
-  Future<void> _pushStyling(AnkiNoteTypeDefinition def, String css) async {
-    await _writeBackupFile(def);
-    final bool ok = await _repository.updateNoteTypeStyling(def.name, css);
-    if (!ok) throw StateError('Backend rejected styling update');
-    await _repository.updateSettings((AnkiSettings s) => s.copyWith(
-          lapisAppliedCssSha: lapisCssSha256(css),
-          lapisMigratedBaselineSha: currentLapisBaselineSha,
-        ));
-  }
-
   /// 显式 Apply 的写入通道：备份 → styling → 卡模板，**每步成功就立刻记自己的
   /// 指纹**。
   ///
@@ -422,21 +437,23 @@ class LapisTemplateService {
           lapisMigratedBaselineSha: currentLapisBaselineSha,
         ));
 
+    // 只换 Lapis 那张卡的**背面**；正面与其它卡模板逐字节原样带回。正面我们
+    // 从不写——区域只插在背面，把 vendored 正面推过去等于又一次「用内置副本
+    // 顶掉用户的东西」。
     final bool templatesOk = await _repository.updateNoteTypeTemplates(
       def.name,
-      <AnkiCardTemplate>[
-        AnkiCardTemplate(
-          name: LapisNoteType.cardName,
-          front: LapisNoteType.front,
-          back: back,
-        ),
-      ],
+      lapisTemplatesWithBack(def, back),
     );
     if (!templatesOk) throw StateError('Backend rejected card template update');
     await _repository.updateSettings((AnkiSettings s) => s.copyWith(
           lapisAppliedTemplateSha: lapisCssSha256(normalizeCssForCompare(back)),
         ));
   }
+
+  /// Anki 端当前的背面模板；取不到就退回 vendored（只在卡模板缺失时发生，那种
+  /// 情况漂移判定已经判 foreignEdit）。
+  String _currentBackTemplate(AnkiNoteTypeDefinition def) =>
+      lapisCardTemplateOf(def)?.back ?? LapisNoteType.back;
 
   Future<LapisBackupOutcome> _writeBackupFile(
       AnkiNoteTypeDefinition def) async {
