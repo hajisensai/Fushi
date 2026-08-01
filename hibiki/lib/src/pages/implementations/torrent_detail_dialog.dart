@@ -312,7 +312,6 @@ class _TorrentTaskDetailDialogState
               child: LinearProgressIndicator(
                 value: snapshot.progress.clamp(0.0, 1.0),
                 minHeight: 6,
-                borderRadius: BorderRadius.circular(3),
               ),
             ),
             const SizedBox(width: 12),
@@ -332,7 +331,7 @@ class _TorrentTaskDetailDialogState
                 states: pieces.states,
                 haveColor: theme.colorScheme.primary,
                 downloadingColor: theme.colorScheme.tertiary,
-                missingColor: theme.colorScheme.surfaceContainerHighest,
+                missingColor: HibikiDesignTokens.of(context).surfaces.overlay,
               ),
             ),
           ),
@@ -497,7 +496,6 @@ class _TorrentTaskDetailDialogState
                 child: LinearProgressIndicator(
                   value: file.progress.clamp(0.0, 1.0),
                   minHeight: 4,
-                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
               const SizedBox(width: 8),
