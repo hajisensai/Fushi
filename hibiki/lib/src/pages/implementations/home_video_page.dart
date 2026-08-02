@@ -283,6 +283,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 刮削资料（hero 轮播的 backdrop / 简介 / airDate），与 [_loadLibraryMaps]
   /// 同批预取（批量 DAO，无 N+1）。
   Map<String, int> _airYearByUid = const <String, int>{};
+
+  /// 条目刮削资料整行（uid → 行）：散装单元上 hero 时的简介/放送日期数据源
+  /// （v68 hero 收散装）。与 [_airYearByUid] 同一次全表查询派生。
+  Map<String, VideoScrapeMetaRow> _videoScrapeMetaByUid =
+      const <String, VideoScrapeMetaRow>{};
   Map<int, CollectionScrapeMetaRow> _collectionScrapeMetaById =
       const <int, CollectionScrapeMetaRow>{};
 
@@ -487,6 +492,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       for (final VideoScrapeMetaRow r in scrapeRows)
         if (videoAirYear(r.airDate) case final int year) r.bookUid: year,
     };
+    final Map<String, VideoScrapeMetaRow> scrapeMetaByUid =
+        <String, VideoScrapeMetaRow>{
+      for (final VideoScrapeMetaRow r in scrapeRows) r.bookUid: r,
+    };
     final Map<int, CollectionScrapeMetaRow> collectionMetaById =
         <int, CollectionScrapeMetaRow>{
       for (final CollectionScrapeMetaRow r
@@ -517,6 +526,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         _watchAtByUid = watchByUid;
         _legacyWatchAtByTitle = legacyByTitle;
         _airYearByUid = airYearByUid;
+        _videoScrapeMetaByUid = scrapeMetaByUid;
         _collectionScrapeMetaById = collectionMetaById;
         _mediaImagesByCollection = imagesByCollection;
         _mediaImagesByBookUid = imagesByBookUid;
@@ -2366,19 +2376,41 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// hero 轮播数据：按主折叠归属聚合本地成员 → 候选（在看优先、回落最近添加，
-  /// [selectVideoHeroCollections] 纯函数，测试同源）→ 前 5 个合集。远端合集本地
-  /// 无 id 不进 hero（hero 是合集粒度；远端进度条目走「继续观看」行）。
+  /// hero 轮播数据：本地条目按主折叠归属聚成**合集单元**，无归属且**在看**的
+  /// 成为**散装单元**（v68：此前散装被整体排除，用户最后看的是散装时置顶就不是
+  /// 「上一个观看的」），两类同池按最近观看倒序选前 5（[selectVideoHeroUnits]
+  /// 纯函数，测试同源）。「最近添加」回落池维持合集粒度——散装不占回落位，零
+  /// 观看库的 hero 形态与从前完全一致。远端条目本地无行不进 hero（远端进度条目
+  /// 走「继续观看」行）。
   List<_VideoHeroItem> _heroItems(List<VideoBookRow> all) {
     final Map<int, List<VideoBookRow>> membersByCollection =
         <int, List<VideoBookRow>>{};
+    final List<VideoBookRow> standaloneBooks = <VideoBookRow>[];
     for (final VideoBookRow book in all) {
       final int? cid =
           _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
-      if (cid == null || !_collectionsById.containsKey(cid)) continue;
+      if (cid == null || !_collectionsById.containsKey(cid)) {
+        standaloneBooks.add(book);
+        continue;
+      }
       membersByCollection.putIfAbsent(cid, () => <VideoBookRow>[]).add(book);
     }
-    final List<VideoHeroCandidate> candidates = <VideoHeroCandidate>[];
+    final List<VideoHeroCandidate<_VideoHeroItem>> candidates =
+        <VideoHeroCandidate<_VideoHeroItem>>[];
+    for (final VideoBookRow book in standaloneBooks) {
+      // 散装只在「在看」（有断点且未看完）时进候选：用户诉求是「置顶 = 上一个
+      // 观看的」，进在看池混排即可满足；**不进**「最近添加」回落池——否则单
+      // 文件库刚导入一个视频顶上就平白多一块大图，且与下方墙卡同屏重复。
+      if (book.lastPositionMs <= 0 || book.completedAt != null) continue;
+      final DateTime? at =
+          _watchAtByUid[book.bookUid] ?? _legacyWatchAtByTitle[book.title];
+      candidates.add(VideoHeroCandidate<_VideoHeroItem>(
+        unit: _VideoHeroItem.standalone(book),
+        lastWatchedAt: at,
+        latestImportedAt: 0,
+        hasUnfinishedTrace: true,
+      ));
+    }
     membersByCollection.forEach((int cid, List<VideoBookRow> members) {
       // 组内序与合集详情/播放器同源（memberSortIndex）。
       members.sort((VideoBookRow a, VideoBookRow b) {
@@ -2405,22 +2437,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         if (m.completedAt != null) completed++;
         if (m.completedAt != null || m.lastPositionMs > 0) hasTrace = true;
       }
-      candidates.add(VideoHeroCandidate(
-        collectionId: cid,
+      candidates.add(VideoHeroCandidate<_VideoHeroItem>(
+        unit: _VideoHeroItem.collection(
+          collection: _collectionsById[cid]!,
+          members: members,
+          meta: _collectionScrapeMetaById[cid],
+        ),
         lastWatchedAt: lastWatched,
         latestImportedAt: latestImported,
         hasUnfinishedTrace: hasTrace && completed < members.length,
       ));
     });
-    final List<int> picked = selectVideoHeroCollections(candidates);
-    return <_VideoHeroItem>[
-      for (final int cid in picked)
-        _VideoHeroItem(
-          collection: _collectionsById[cid]!,
-          members: membersByCollection[cid]!,
-          meta: _collectionScrapeMetaById[cid],
-        ),
-    ];
+    return selectVideoHeroUnits<_VideoHeroItem>(candidates);
   }
 
   /// 全宽 backdrop hero 轮播。手动切换（滑动 + 右下指示条点击），**禁自动轮播**
@@ -2490,27 +2518,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// hero 单页：backdrop（合集刮削 backdropPath 优先 → 成员封面回落，
+  /// hero 单页：backdrop（media_images 横图优先 → 封面回落，
   /// [LandscapeCoverImage] 朝向分流：竖版海报模糊垫底 + contain 前景）+ 左下
-  /// 资料列（季节/年份 · 标题 · 已看 N 集 · 简介两行）+「继续看·第 N 集」
-  /// FilledButton /「详情」按钮分工。背景整面点击 = 进合集详情（与「详情」同
-  /// 路），续播只走 FilledButton。渐变 scrim 走 overlays 注入（层序由组件保证：
-  /// 盖模糊垫底、不压清晰海报前景，BUG-1298 血缘）。
+  /// 资料列（季节/年份 · 标题/logo · 已看 N 集 · 简介两行）+ 续播
+  /// FilledButton /「详情」按钮分工。合集页背景整面点击 = 进合集详情（与
+  /// 「详情」同路）；散装页（v68 起可进 hero）背景点击 = 直接续播（散装没有
+  /// 详情页，「详情」按钮也不出现）。渐变 scrim 走 overlays 注入（层序由组件
+  /// 保证：盖模糊垫底、不压清晰海报前景，BUG-1298 血缘）。
   Widget _buildHeroPage(_VideoHeroItem item) {
     final ThemeData theme = Theme.of(context);
-    // v68：横版背景/logo 走 media_images（v64 的 backdropPath 列已由迁移搬入，
-    // 读它就覆盖了存量数据）。背景无横图回落成员封面（LandscapeCoverImage 垫底）。
-    final List<MediaImageRow>? images =
-        _mediaImagesByCollection[item.collection.id];
+    final MediaCollectionRow? collection = item.collection;
+    final VideoBookRow? standalone = item.standalone;
+    // v68：横版背景/logo 走 media_images（合集归属 / 散装电影的 bookUid 归属）。
+    // 背景无横图回落封面（成员借用链 / 散装自身封面），LandscapeCoverImage 垫底。
+    final List<MediaImageRow>? images = collection != null
+        ? _mediaImagesByCollection[collection.id]
+        : _mediaImagesByBookUid[standalone!.bookUid];
     final ImageProvider? background = _mediaImageProvider(
           images,
           const <MediaImageKind>[MediaImageKind.backdrop],
         ) ??
-        _collectionMembersCoverProvider(item.members);
+        (collection != null
+            ? _collectionMembersCoverProvider(item.members)
+            : _localCoverProvider(standalone!));
     final ImageProvider? logo = _mediaImageProvider(
       images,
       const <MediaImageKind>[MediaImageKind.logo],
     );
+    final String title = collection?.name ?? standalone!.title;
     int completedCount = 0;
     final List<CollectionMemberProgress> progresses =
         <CollectionMemberProgress>[
@@ -2526,8 +2561,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final int continueEp = item.members.isEmpty
         ? 1
         : continueMemberIndex(progresses).clamp(0, item.members.length - 1) + 1;
-    final String? airLabel = _heroAirLabel(item.meta);
-    final String? summary = item.meta?.summary?.trim();
+    // 资料：合集读合集刮削行；散装读条目刮削行（电影的作品级资料就在这）。
+    final VideoScrapeMetaRow? standaloneMeta =
+        standalone == null ? null : _videoScrapeMetaByUid[standalone.bookUid];
+    final String? airLabel =
+        _heroAirLabel(item.meta?.airDate ?? standaloneMeta?.airDate);
+    final String? summary =
+        (item.meta?.summary ?? standaloneMeta?.summary)?.trim();
+    // 散装的主按钮语义：有断点 =「继续观看」，全新 =「播放」；合集恒
+    // 「继续看·第 N 集」。背景整面点击与主按钮同路。
+    final VoidCallback? primaryAction = _selectionMode
+        ? null
+        : (collection != null
+            ? () => _openHeroContinue(item)
+            : () => unawaited(_open(standalone!)));
     final TextStyle? titleStyle = theme.textTheme.headlineSmall?.copyWith(
       color: Colors.white,
       fontWeight: FontWeight.w800,
@@ -2557,15 +2604,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 ColoredBox(color: theme.colorScheme.surfaceContainer),
           );
     return Stack(
-      key: ValueKey<String>('home_video_hero_page_${item.collection.id}'),
+      key: ValueKey<String>('home_video_hero_page_${item.pageKey}'),
       fit: StackFit.expand,
       children: <Widget>[
         GestureDetector(
           // 多选纪律（PR#664 复核）：多选态下 hero 不导航（进详情会把批量操作
           // 中途弹走页面）；按钮同门控（onPressed=null 渲染禁用态，见下）。
+          // 合集页背景点击进详情；散装页无详情页，与主按钮同路直接开播。
           onTap: _selectionMode
               ? null
-              : () => _openCollectionDetail(item.collection),
+              : (collection != null
+                  ? () => _openCollectionDetail(collection)
+                  : primaryAction),
           child: backgroundWidget,
         ),
         // 资料列自身不拦背景点击（按钮仍各自可点）。
@@ -2586,22 +2636,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     ),
                   ),
                 ),
-              // v68：有标题 logo 用图（Jellyfin 式），语义/回落仍是合集名文字。
+              // v68：有标题 logo 用图（Jellyfin 式），语义/回落仍是标题文字。
               if (logo != null)
                 Semantics(
-                  label: item.collection.name,
+                  label: title,
                   image: true,
                   child: ConstrainedBox(
                     constraints:
                         const BoxConstraints(maxHeight: 76, maxWidth: 360),
                     child: Image(
                       key: ValueKey<String>(
-                          'home_video_hero_logo_${item.collection.id}'),
+                          'home_video_hero_logo_${item.pageKey}'),
                       image: logo,
                       fit: BoxFit.contain,
                       alignment: AlignmentDirectional.bottomStart,
                       errorBuilder: (_, __, ___) => Text(
-                        item.collection.name,
+                        title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: titleStyle,
@@ -2611,23 +2661,26 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 )
               else
                 ShelfTitleOverflowTooltip(
-                  title: item.collection.name,
+                  title: title,
                   style: titleStyle,
                   maxLines: 2,
                   child: Text(
-                    item.collection.name,
+                    title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: titleStyle,
                   ),
                 ),
-              const SizedBox(height: 4),
-              Text(
-                t.video_hero_episodes_watched(n: completedCount),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.82),
+              // 「已看 N 集」是合集语义；散装单条目不显示（没有集的概念）。
+              if (collection != null) ...<Widget>[
+                const SizedBox(height: 4),
+                Text(
+                  t.video_hero_episodes_watched(n: completedCount),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.82),
+                  ),
                 ),
-              ),
+              ],
               if (summary != null && summary.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
@@ -2644,29 +2697,37 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               Row(
                 children: <Widget>[
                   FilledButton.icon(
-                    key: ValueKey<String>(
-                        'home_video_hero_continue_${item.collection.id}'),
-                    onPressed:
-                        _selectionMode ? null : () => _openHeroContinue(item),
+                    // 合集页 key 沿用 '<id>'（既有 widget 测试锁它）；散装页
+                    // 走 pageKey（'b<uid>'），两个 key 空间不撞。
+                    key: ValueKey<String>(collection != null
+                        ? 'home_video_hero_continue_${collection.id}'
+                        : 'home_video_hero_continue_${item.pageKey}'),
+                    onPressed: primaryAction,
                     icon: const Icon(Icons.play_arrow),
-                    label: Text(t.collection_continue_progress(n: continueEp)),
+                    label: Text(collection != null
+                        ? t.collection_continue_progress(n: continueEp)
+                        : (standalone!.lastPositionMs > 0
+                            ? t.video_continue_watching
+                            : t.collection_play)),
                   ),
-                  const SizedBox(width: 12),
-                  OutlinedButton.icon(
-                    key: ValueKey<String>(
-                        'home_video_hero_detail_${item.collection.id}'),
-                    onPressed: _selectionMode
-                        ? null
-                        : () => _openCollectionDetail(item.collection),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.5),
+                  if (collection != null) ...<Widget>[
+                    const SizedBox(width: 12),
+                    OutlinedButton.icon(
+                      key: ValueKey<String>(
+                          'home_video_hero_detail_${collection.id}'),
+                      onPressed: _selectionMode
+                          ? null
+                          : () => _openCollectionDetail(collection),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.5),
+                        ),
                       ),
+                      icon: const Icon(Icons.info_outline),
+                      label: Text(t.video_hero_detail_view),
                     ),
-                    icon: const Icon(Icons.info_outline),
-                    label: Text(t.video_hero_detail_view),
-                  ),
+                  ],
                 ],
               ),
             ],
@@ -2678,10 +2739,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 季节/年份行：`2024 · 春`；无月份只显年份；无刮削年份返回 null（整行隐藏）。
   /// 季度对齐番剧习惯（1-3 冬 / 4-6 春 / 7-9 夏 / 10-12 秋）。
-  String? _heroAirLabel(CollectionScrapeMetaRow? meta) {
-    final int? year = videoAirYear(meta?.airDate);
+  /// 入参收成裸 airDate 字符串：合集页给合集刮削行的、散装页给条目刮削行的，
+  /// 同一个格式同一个解析。
+  String? _heroAirLabel(String? airDate) {
+    final int? year = videoAirYear(airDate);
     if (year == null) return null;
-    final String? season = switch (videoAirSeasonQuarter(meta?.airDate)) {
+    final String? season = switch (videoAirSeasonQuarter(airDate)) {
       1 => t.video_air_season_winter,
       2 => t.video_air_season_spring,
       3 => t.video_air_season_summer,
@@ -2693,8 +2756,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 「继续看·第 N 集」落地：Next-Up 纯函数选集（[continueMemberIndex]，与合集
   /// 卡进度行同源）→ 共享路由入口带合集上下文开播（剧集面板/上下集/连播）。
+  /// 只服务合集单元；散装单元的主按钮直接 `_open(book)`（见 [_buildHeroPage]）。
   void _openHeroContinue(_VideoHeroItem item) {
-    if (item.members.isEmpty) return;
+    final MediaCollectionRow? collection = item.collection;
+    if (collection == null || item.members.isEmpty) return;
     final List<CollectionMemberProgress> progresses =
         <CollectionMemberProgress>[
       for (final VideoBookRow m in item.members)
@@ -2707,7 +2772,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         continueMemberIndex(progresses).clamp(0, item.members.length - 1);
     unawaited(_open(
       item.members[index],
-      playlistCollectionId: item.collection.id,
+      playlistCollectionId: collection.id,
     ));
   }
 
@@ -5226,16 +5291,33 @@ class _VideoRowItem {
 
 /// hero 轮播一页（TODO-2486）：合集 + 组内有序成员 + 刮削资料（可空 = 无
 /// backdrop/简介，回落成员封面、对应行隐藏）。
+/// hero 轮播单页数据：合集单元（成员 + 合集刮削资料）或散装单视频单元，
+/// 二者恰一非空（v68：散装此前进不了 hero，用户最后看的是散装时置顶就不是
+/// 「上一个观看的」——现在两类同池按最近观看排序）。
 class _VideoHeroItem {
-  const _VideoHeroItem({
-    required this.collection,
+  const _VideoHeroItem.collection({
+    required MediaCollectionRow this.collection,
     required this.members,
     this.meta,
-  });
+  }) : standalone = null;
 
-  final MediaCollectionRow collection;
+  const _VideoHeroItem.standalone(VideoBookRow this.standalone)
+      : collection = null,
+        members = const <VideoBookRow>[],
+        meta = null;
+
+  final MediaCollectionRow? collection;
   final List<VideoBookRow> members;
   final CollectionScrapeMetaRow? meta;
+
+  /// 散装单视频（电影/单集条目）。
+  final VideoBookRow? standalone;
+
+  /// 轮播页稳定 key（合集 `c<id>` / 散装 `b<uid>`，两个 id 空间不撞）。
+  String get pageKey {
+    final MediaCollectionRow? c = collection;
+    return c != null ? 'c${c.id}' : 'b${standalone!.bookUid}';
+  }
 }
 
 /// 视频库分组 union 载荷（多端库联合视图 §2.3 任务10）：本地视频行 [local] 或

@@ -149,44 +149,49 @@ bool isVideoRecentlyAdded({required int? importedAt, required DateTime now}) {
   return !at.isAfter(now) && now.difference(at) <= kVideoRecentlyAddedWindow;
 }
 
-/// hero 轮播候选（合集粒度）的选取输入。
-class VideoHeroCandidate {
+/// hero 轮播候选单元的选取输入。
+///
+/// [unit] 是调用方的单元载荷——合集**或**散装单视频（v68 起：hero 不再是
+/// 合集专属粒度。用户最后看的是散装条目时，合集门槛会让置顶不是它，见
+/// PR#712 跟进）。本函数只看三个排序事实，对单元种类无感知。
+class VideoHeroCandidate<T> {
   const VideoHeroCandidate({
-    required this.collectionId,
+    required this.unit,
     this.lastWatchedAt,
     this.latestImportedAt = 0,
     this.hasUnfinishedTrace = false,
   });
 
-  final int collectionId;
+  final T unit;
 
-  /// 成员最近观看时刻（无痕迹 = null）。
+  /// 单元最近观看时刻（合集取成员 max；无痕迹 = null）。
   final DateTime? lastWatchedAt;
 
-  /// 成员最近入库时刻毫秒 max（回落排序用）。
+  /// 单元最近入库时刻毫秒（合集取成员 max；回落排序用）。
   final int latestImportedAt;
 
-  /// 有观看痕迹且未整套看完（=「在看」）。
+  /// 有观看痕迹且未看完（=「在看」；合集 = 有痕迹且未整套看完）。
   final bool hasUnfinishedTrace;
 }
 
-/// hero 轮播内容选取：最近在看的前 [limit] 个合集；一个在看的都没有时回落
-/// 「最近添加」（按成员最近入库时刻倒序）。返回合集 id 有序列表。
-List<int> selectVideoHeroCollections(
-  List<VideoHeroCandidate> candidates, {
+/// hero 轮播内容选取：最近在看的前 [limit] 个单元（合集与散装混排，同一
+/// 「最近观看倒序」——置顶恒为用户最后在看的那个东西）；一个在看的都没有时
+/// 回落「最近添加」（按最近入库时刻倒序）。返回单元有序列表。
+List<T> selectVideoHeroUnits<T>(
+  List<VideoHeroCandidate<T>> candidates, {
   int limit = 5,
 }) {
-  final List<VideoHeroCandidate> watching = <VideoHeroCandidate>[
-    for (final VideoHeroCandidate c in candidates)
+  final List<VideoHeroCandidate<T>> watching = <VideoHeroCandidate<T>>[
+    for (final VideoHeroCandidate<T> c in candidates)
       if (c.hasUnfinishedTrace && c.lastWatchedAt != null) c,
-  ]..sort((VideoHeroCandidate a, VideoHeroCandidate b) =>
+  ]..sort((VideoHeroCandidate<T> a, VideoHeroCandidate<T> b) =>
       b.lastWatchedAt!.compareTo(a.lastWatchedAt!));
-  final List<VideoHeroCandidate> pool = watching.isNotEmpty
+  final List<VideoHeroCandidate<T>> pool = watching.isNotEmpty
       ? watching
-      : (List<VideoHeroCandidate>.of(candidates)
-        ..sort((VideoHeroCandidate a, VideoHeroCandidate b) =>
+      : (List<VideoHeroCandidate<T>>.of(candidates)
+        ..sort((VideoHeroCandidate<T> a, VideoHeroCandidate<T> b) =>
             b.latestImportedAt.compareTo(a.latestImportedAt)));
-  return <int>[
-    for (final VideoHeroCandidate c in pool.take(limit)) c.collectionId,
+  return <T>[
+    for (final VideoHeroCandidate<T> c in pool.take(limit)) c.unit,
   ];
 }

@@ -199,45 +199,71 @@ void main() {
     });
   });
 
-  group('selectVideoHeroCollections', () {
+  group('selectVideoHeroUnits', () {
     test('在看优先按最近观看倒序取前 5', () {
-      final List<VideoHeroCandidate> candidates = <VideoHeroCandidate>[
+      final List<VideoHeroCandidate<int>> candidates =
+          <VideoHeroCandidate<int>>[
         for (int i = 1; i <= 7; i++)
-          VideoHeroCandidate(
-            collectionId: i,
+          VideoHeroCandidate<int>(
+            unit: i,
             lastWatchedAt: DateTime(2026, 7, i),
             latestImportedAt: 100 - i,
             hasUnfinishedTrace: true,
           ),
       ];
-      expect(selectVideoHeroCollections(candidates), <int>[7, 6, 5, 4, 3]);
+      expect(selectVideoHeroUnits(candidates), <int>[7, 6, 5, 4, 3]);
     });
 
     test('无在看回落最近添加（成员最近入库倒序）', () {
-      final List<VideoHeroCandidate> candidates = <VideoHeroCandidate>[
-        const VideoHeroCandidate(collectionId: 1, latestImportedAt: 10),
-        const VideoHeroCandidate(collectionId: 2, latestImportedAt: 30),
-        const VideoHeroCandidate(collectionId: 3, latestImportedAt: 20),
+      final List<VideoHeroCandidate<int>> candidates =
+          <VideoHeroCandidate<int>>[
+        const VideoHeroCandidate<int>(unit: 1, latestImportedAt: 10),
+        const VideoHeroCandidate<int>(unit: 2, latestImportedAt: 30),
+        const VideoHeroCandidate<int>(unit: 3, latestImportedAt: 20),
       ];
-      expect(selectVideoHeroCollections(candidates), <int>[2, 3, 1]);
+      expect(selectVideoHeroUnits(candidates), <int>[2, 3, 1]);
     });
 
     test('已整套看完的合集不算在看（hasUnfinishedTrace=false 走回落池）', () {
-      final List<VideoHeroCandidate> candidates = <VideoHeroCandidate>[
-        VideoHeroCandidate(
-          collectionId: 1,
+      final List<VideoHeroCandidate<int>> candidates =
+          <VideoHeroCandidate<int>>[
+        VideoHeroCandidate<int>(
+          unit: 1,
           lastWatchedAt: DateTime(2026, 7, 30),
           latestImportedAt: 1,
         ),
-        VideoHeroCandidate(
-          collectionId: 2,
+        VideoHeroCandidate<int>(
+          unit: 2,
           lastWatchedAt: DateTime(2026, 7, 1),
           latestImportedAt: 2,
           hasUnfinishedTrace: true,
         ),
       ];
       // 只有 2 在看 → 在看池非空 → 只出在看的（1 不混入）。
-      expect(selectVideoHeroCollections(candidates), <int>[2]);
+      expect(selectVideoHeroUnits(candidates), <int>[2]);
+    });
+
+    test('散装与合集同池混排：最后看的是散装时置顶就是它（PR#712 跟进）', () {
+      // 单元载荷对函数不透明——用字符串区分两类；散装 'b:*' 最近观看晚于合集
+      // 'c:*'，必须排第一。旧实现把散装整体挡在候选外，置顶永远是合集，用户
+      // 实报「置顶不是上一个观看的」。
+      final List<VideoHeroCandidate<String>> candidates =
+          <VideoHeroCandidate<String>>[
+        VideoHeroCandidate<String>(
+          unit: 'c:maid-dragon',
+          lastWatchedAt: DateTime(2026, 8, 1, 20),
+          hasUnfinishedTrace: true,
+        ),
+        VideoHeroCandidate<String>(
+          unit: 'b:happy-end',
+          lastWatchedAt: DateTime(2026, 8, 1, 23),
+          hasUnfinishedTrace: true,
+        ),
+      ];
+      expect(
+        selectVideoHeroUnits(candidates),
+        <String>['b:happy-end', 'c:maid-dragon'],
+      );
     });
   });
 }
