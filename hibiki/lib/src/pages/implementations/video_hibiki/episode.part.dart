@@ -214,24 +214,54 @@ extension _VideoEpisode on _VideoHibikiPageState {
   ///
   /// 封面来源判断**不在这里手写分支**——统一走 [resolveMediaCoverImage]：本地集给
   /// `coverPath`、互联远端集给 `coverUrl` + 稳定缓存键，解析器按固定优先级出图。
-  /// 旧单行 playlist 远端模型（`RemoteVideoEpisode`）不下发封面，两者皆空 →
+  ///
+  /// v68 Jellyfin 对齐三件套：
+  /// * 集名：集级刮削集名优先（[_PlaylistEpisodeRef.displayTitle]），回落文件名；
+  /// * 封面回退链的合集段：本集无图 → 合集 titleCard → backdrop
+  ///   （Episode Primary → Series Thumb → Backdrop 的本仓版），此前直接掉到
+  ///   灰色占位图标；
+  /// * 看完/在看角标（Jellyfin played 勾）：轨道本就支持，把数据喂上。
+  /// 旧单行 playlist 远端模型（`RemoteVideoEpisode`）不下发封面，全部图源皆空 →
   /// 返回 null，面板退回纯序号形态。
   List<VideoEpisodeEntry> _episodePanelEntries() {
     final RemoteCoverFetcher? fetcher =
         remoteCoverFetcherFor(widget.remoteClient ?? _resolvedStreamClient);
+    final ImageProvider? seriesFallback = _playlistSeriesFallbackCover();
     return <VideoEpisodeEntry>[
       for (final _PlaylistEpisodeRef e in _episodes)
         VideoEpisodeEntry(
-          title: e.title,
+          title: e.displayTitle ?? e.title,
           cover: resolveMediaCoverImage(
-            kind: MediaKind.video,
-            localPath: e.coverPath,
-            remoteUrl: e.coverUrl,
-            remoteFetcher: fetcher,
-            remoteCacheKey: e.coverCacheKey,
-          ),
+                kind: MediaKind.video,
+                localPath: e.coverPath,
+                remoteUrl: e.coverUrl,
+                remoteFetcher: fetcher,
+                remoteCacheKey: e.coverCacheKey,
+              ) ??
+              seriesFallback,
+          completed: e.completed,
+          started: e.started,
         ),
     ];
+  }
+
+  /// 剧集卡封面回退链的合集段（v68）：合集带字横图 → 无字背景；全缺 → null
+  /// （面板占位图标）。整组只解析一次，面板 N 张卡共享同一 provider。
+  ImageProvider? _playlistSeriesFallbackCover() {
+    for (final MediaImageKind kind in const <MediaImageKind>[
+      MediaImageKind.titleCard,
+      MediaImageKind.backdrop,
+    ]) {
+      for (final MediaImageRow row in _playlistCollectionImages) {
+        if (row.kind == kind.dbValue && row.path.isNotEmpty) {
+          return resolveMediaCoverImage(
+            kind: MediaKind.video,
+            localPath: row.path,
+          );
+        }
+      }
+    }
+    return null;
   }
 
   /// 剧集列表改为覆盖在**视频底部**的横向轨道：画面继续作为沉浸式背景，不把

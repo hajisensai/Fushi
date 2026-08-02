@@ -372,13 +372,22 @@ class _PlaylistEpisodeRef {
   const _PlaylistEpisodeRef({
     this.bookUid,
     required this.title,
+    this.displayTitle,
     this.path = '',
     this.coverPath,
     this.coverUrl,
     this.coverCacheKey,
+    this.completed = false,
+    this.started = false,
   });
   final String? bookUid;
   final String title;
+
+  /// 剧集面板展示名（v68 Jellyfin 对齐：集级刮削集名）。null = 无集级集名，
+  /// 面板回落 [title]。**刻意与 [title] 分开**：title 还流向制卡
+  /// documentTitle（「系列名 - 剧集名」），换成刮削集名会静默改卡片字段。
+  final String? displayTitle;
+
   final String path;
 
   /// 本机封面文件路径（本地集：`video_books.coverPath`）。
@@ -389,6 +398,12 @@ class _PlaylistEpisodeRef {
 
   /// 远端封面的稳定磁盘缓存键（用 `RemoteVideoInfo.id`）。
   final String? coverCacheKey;
+
+  /// 看完 / 在看（本地集：`completedAt` / `lastPositionMs`；远端集无口径恒
+  /// false）。剧集面板右上角标（Jellyfin played 勾）的数据源——轨道组件本就
+  /// 支持，此前面板一直没喂。
+  final bool completed;
+  final bool started;
 }
 
 class VideoHibikiPage extends ConsumerStatefulWidget {
@@ -1554,6 +1569,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 单视频（本地 pushReplacement 换集，widget.bookUid 恒为当前集）。
   List<_PlaylistEpisodeRef> _episodes = const <_PlaylistEpisodeRef>[];
 
+  /// 播放中合集的附加图组（v68）：剧集面板封面回退链的合集段（本集无封面 →
+  /// titleCard → backdrop）。仅本地合集连播路径填充；单视频/远端恒空。
+  List<MediaImageRow> _playlistCollectionImages = const <MediaImageRow>[];
+
   /// 当前集索引（[_episodes] 下标）；单视频恒 0。
   int _currentEpisode = 0;
 
@@ -2045,16 +2064,34 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _delayMs = effectiveSeriesDelayMs(col?.subtitleDelayMs, row.delayMs);
       final List<MediaCollectionItemRow> members =
           await widget.repo.getCollectionItems(collectionId);
+      // v68 Jellyfin 对齐：剧集面板要 ①集级刮削集名 ②合集横图回退链 ③看完/在看
+      // 角标。作品名作集名判据（集名缺失时集级刮削会把作品名回填进 title，那不是
+      // 集名——与合集详情页 `_scrapedEpisodeTitle` 同判据）。
+      final CollectionScrapeMetaRow? colMeta =
+          await widget.repo.collectionScrapeMeta(collectionId);
+      _playlistCollectionImages =
+          await widget.repo.collectionMediaImages(collectionId);
+      final String? workTitle = colMeta?.title.trim();
       final List<_PlaylistEpisodeRef> refs = <_PlaylistEpisodeRef>[];
       for (final MediaCollectionItemRow m in members) {
         if (m.mediaType != MediaKind.video.dbValue) continue;
         final VideoBookRow? er = await widget.repo.getByBookUid(m.entryKey);
         if (er == null) continue; // 孤儿成员（集行已删）→ 读取期过滤。
+        String? scrapedName;
+        final VideoScrapeMetaRow? em =
+            await widget.repo.episodeScrapeMeta(er.bookUid);
+        if (em != null && em.episodeNumber != null) {
+          final String t = em.title.trim();
+          if (t.isNotEmpty && t != workTitle) scrapedName = t;
+        }
         refs.add(_PlaylistEpisodeRef(
           bookUid: er.bookUid,
           title: er.title,
+          displayTitle: scrapedName,
           path: er.videoPath,
           coverPath: er.coverPath,
+          completed: er.completedAt != null,
+          started: er.lastPositionMs > 0,
         ));
       }
       _episodes = refs;
