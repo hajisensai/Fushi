@@ -98,7 +98,7 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
 
 **只枚举某个子树**的同样不进（`lib/src/sync` 的空 catch / PIN / TLS 三条、`lib/src/settings` 的旧 pref key、5 个媒体页根的焦点所有权……）：改动落在那个子树时，定向测试本来就会挑到它。
 
-### 清单（32 条，2026-08-02 反向枚举全量得出）
+### 清单（35 条，2026-08-02 反向枚举全量得出；TODO-2707 补入三份新语料守卫）
 
 | 测试 | 扫描根 | 守什么 |
 |---|---|---|
@@ -134,8 +134,11 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
 | `test/ios/info_plist_media_permission_guard_test.dart` | `lib` 全树（作谓词） | 用了相机/相册/音频就必须有 `Info.plist` 声明 |
 | `test/i18n/i18n_completeness_test.dart` | `lib/i18n` 全部 17 份 | 17 语言 key 完整、无孤儿、插值一致 |
 | `test/pages/reader_hibiki_page_source_corpus_test.dart` | `reader_hibiki/` part 目录枚举 | 合并语料覆盖每个 part（漏登记会让 90+ 条守卫真空通过） |
+| `test/pages/reader_history_source_corpus_test.dart` | `reader_history/` part 目录枚举 | 同上，书架页语料 |
+| `test/pages/video_hibiki_page_source_corpus_test.dart` | `video_hibiki/` part 目录枚举 | 同上，视频页语料 |
+| `test/sync/sync_settings_schema_source_corpus_test.dart` | `sync_settings_schema/` part 目录枚举 | 同上，同步设置 schema 语料 |
 
-一条命令跑完，**实测 194 tests / 34 秒**（2026-08-02，`origin/develop@e474ace0c`）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
+一条命令跑完，**实测 207 tests**（2026-08-02，`origin/develop@c05a91edc` + PR#756；补入三条语料守卫前是 32 条 / 194 tests / 34 秒）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
 
 ```bash
 cd hibiki && dart run tool/flutter_test_failures.dart --no-pub \
@@ -157,7 +160,10 @@ cd hibiki && dart run tool/flutter_test_failures.dart --no-pub \
   test/media/drag_drop/drag_drop_platform_guard_test.dart test/media/media_cover_write_guard_test.dart \
   test/media/sources/book_history_split_guard_test.dart test/media/video/real_path_directory_picker_test.dart \
   test/ios/info_plist_media_permission_guard_test.dart test/i18n/i18n_completeness_test.dart \
-  test/pages/reader_hibiki_page_source_corpus_test.dart
+  test/pages/reader_hibiki_page_source_corpus_test.dart \
+  test/pages/reader_history_source_corpus_test.dart \
+  test/pages/video_hibiki_page_source_corpus_test.dart \
+  test/sync/sync_settings_schema_source_corpus_test.dart
 ```
 
 **另有一批「枚举非源码树」的，按触发条件加跑**（不进默认清单是因为它们只在碰对应资产时才可能红）：改 `.github/workflows` 或 `.ps1` → `test/build/workflow_sed_inplace_portability_guard_test.dart` + `test/tools/powershell_51_compat_guard_test.dart` + `test/mining/magpie_bundled_install_test.dart`；改 `tools/browser-extension/` → `test/build/browser_extension_mirror_full_guard_test.dart` + `test/lookup/browser_extension_installer_test.dart`；动 `docs/bugs/` → `test/tools/bugs_per_file_guard_test.dart`；动 vendored 二进制 / podspec → `test/tools/ffmpeg_min_vendored_self_contained_guard_test.dart` + `test/tools/ffmpeg_kit_podspec_license_guard_test.dart`；动 `hibiki/windows/` native → `test/mining/gal_ipc_contract_single_source_test.dart`。
@@ -179,9 +185,15 @@ comm -12 /tmp/a /tmp/b   # 候选集，再逐个读代码定性
 1. **`listSync(` 会被 `dart format` 折行**成 `listSync(\n  recursive: true,\n)`。单行正则 `listSync\(recursive: true\)` 漏掉 `source_guard_adoption_test.dart` 本身——本清单第一版就是这么漏的。要么用多行匹配，要么只 grep `listSync` 裸词再逐个看。（同一个坑也存在于被守的一侧：`test/storage/data_root_migrator_test.dart` 里 `contains('listSync(recursive: true')` 这条断言就抓不到折行写法。）
 2. **grep 只能定位不能定性**。命中后必须**读代码**确认扫描根是仓库源码树而不是 `Directory.systemTemp` 临时目录——63 个候选里超过一半是「在临时目录造文件再遍历」的行为测试。
 
-### 已知残留风险（盘点发现，尚未修）
+### 扫描规模哨兵（TODO-2707 已补完）
 
-清单里**多数守卫没有「扫到 N 个文件」的哨兵**，且普遍写着 `if (!dir.existsSync()) continue;`。这意味着**目录改名 / 包重构会让它们静默空转、永远绿**——扫不到东西和没有违规，在断言层面长得一模一样。有哨兵的是少数：`source_guard_adoption`（`scanned > 200`）、`itest_focus_navigation_prerequisite`（`inScope >= 25`）、`package_schema_version_literal`（`scannedFiles > 0`）、`webview_render_process_gone`（三重）、`lookup_overlay_dialog_gate`（多重）、`book_history_split`（集合相等）。**新写目录枚举型守卫时，扫描规模下界断言是必需项，不是加分项。**
+TODO-2707（PR#756）已把这条补完：**35 条现在条条有扫描规模哨兵**——27 条走共享 `expectScanScale`（下界取实测值的约 80%，只在量级塌掉时才响，平时零维护）+ 4 条自带专用哨兵（`itest_focus_navigation_prerequisite` 的 `inScope >= 25`、`webview_render_process_gone` 的三重、`lookup_overlay_dialog_gate` 的多重、`book_history_split` 的集合非空）+ 4 条合并语料守卫走 `expectPartManifestMatchesDisk`。
+
+`if (!dir.existsSync()) continue;` 这个早退写法在其中 6 条里仍然留着（`dart_source_no_raw_nul`、`duplicate_policy_naming`、`media_kind_persistence`、`book_format_discipline`、`package_schema_version_literal`、`mime_types`），但**它已经不再等于静默空转**：早退之后哨兵会因为 `scanned` 太小而红。留着早退、由哨兵兜底，比在每个扫描根上各写一遍 `fail` 更少重复。
+
+🔴 **这件事真正的收获不是「修好了什么」，而是「以前无法证明什么」。**变异实测的做法是把 3 条守卫的扫描后缀改成永不匹配：**原判据在零文件扫描下全部保持绿色，只有哨兵响了**。也就是说此前那些「全绿」是真的绿，但**此前没有任何办法把它与「瞎着绿」区分开**。这也正是每次判绿都要自查 `N tests ran` 的 N 有没有偏小的理由——在哨兵补全之前，N 是唯一的空转信号。
+
+**新写目录枚举型守卫时，扫描规模下界断言是必需项，不是加分项**；语料型守卫的「磁盘再枚举一遍」必须与生产侧用**不同**实现，否则枚举器自身的缺陷会让守卫与被守方在同一处同时失明。
 
 ## 输出可信 ≠ 结论可信
 
