@@ -37,8 +37,12 @@ void main() {
   group('spread 文档有唤出底栏的通道 (BUG-1280)', () {
     const String leftUrl = 'hoshi.local/OEBPS/img/left.png';
     const String rightUrl = 'hoshi.local/OEBPS/img/right.png';
-    final String html =
-        buildSpreadPageHtml(leftUrl: leftUrl, rightUrl: rightUrl);
+    final String html = buildSpreadPageHtml(
+      leftUrl: leftUrl,
+      rightUrl: rightUrl,
+      swipeDistThreshold: 44,
+      swipeFastDistThreshold: 22,
+    );
 
     test('图片以外的点击有专桥回传 Dart', () {
       expect(html, contains("callHandler('$kEmptyTapBridge')"),
@@ -266,14 +270,22 @@ function node(tagName, src) {
 }
 
 const imgs = [node('IMG', 'L'), node('IMG', 'R')];
+// BUG-1419 起本文档还挂了 wheel / touch / capture 阶段的 click 监听，故假 DOM 要
+// 按 (type, capture) 分桶——否则「文档级 click 桥只有一个」这条断言会被 capture 阶段
+// 那个吞噬监听凑数放过去。
 const docListeners = {};
+function bucket(type, capture) {
+  const key = type + (capture ? ':capture' : '');
+  return (docListeners[key] = docListeners[key] || []);
+}
 const document = {
   querySelectorAll(selector) {
     assert(selector === 'img', 'unexpected selector ' + selector);
     return imgs;
   },
-  addEventListener(type, fn) {
-    (docListeners[type] = docListeners[type] || []).push(fn);
+  addEventListener(type, fn, options) {
+    const capture = options === true || (options && options.capture === true);
+    bucket(type, capture).push(fn);
   }
 };
 const calls = [];
@@ -288,9 +300,17 @@ assert(calls.length === 1 && calls[0][0] === 'spreadReady',
 assert((docListeners['click'] || []).length === 1,
   'spread document-level click listener missing');
 
-// 真浏览器语义：先跑目标自己的监听，再冒泡到文档级监听，同一个 event 对象。
+// 真浏览器语义：capture 阶段的文档级监听最先跑（可 stopPropagation 掐断后续），
+// 再跑目标自己的监听，最后冒泡回文档级监听——三段共用同一个 event 对象。
 function clickOn(target) {
-  const ev = {target: target};
+  let stopped = false;
+  const ev = {
+    target: target,
+    stopPropagation() { stopped = true; },
+    preventDefault() {}
+  };
+  (docListeners['click:capture'] || []).slice().forEach(fn => fn(ev));
+  if (stopped) return;
   (target.listeners['click'] || []).slice().forEach(fn => fn(ev));
   (docListeners['click'] || []).slice().forEach(fn => fn(ev));
 }
