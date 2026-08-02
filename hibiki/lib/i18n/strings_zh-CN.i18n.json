@@ -3068,5 +3068,6 @@
   "stat_hourly_band_pdf": "PDF",
   "stat_hourly_band_manga": "漫画",
   "stat_hourly_band_unattributed": "未区分历史",
-  "stat_hourly_unattributed_note": "早期记录的时段数据没有存类型，无法拆分；这里按合计如实显示，不归入任何一类。"
+  "stat_hourly_unattributed_note": "早期记录的时段数据没有存类型，无法拆分；这里按合计如实显示，不归入任何一类。",
+  "game_attach_and_capture": "附着并捕获"
 }
