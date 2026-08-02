@@ -170,6 +170,54 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
     _showOsd(t.favorite_added, icon: Icons.favorite);
   }
 
+  /// 查词浮层顶栏「重播本句」：跳回当前查词那句的句首、起播，播到句尾自动暂停。
+  ///
+  /// 句尾停在 [VideoPlayerController.replayCue] 里由播放器的句尾判定负责（与「字幕
+  /// 结束暂停」偏好共用一套时序），这里只负责选对句子和反馈。
+  ///
+  /// 不动 [_pausedForLookup]：它记录的是「查词**之前**是否在播」，是关浮层恢复播放
+  /// （BUG-072）的依据；重播是浮层内的临时试听，改写它会让关浮层后的恢复行为跟着
+  /// 用户听没听过一句而漂移。
+  Future<void> _replayLookupCue() async {
+    final AudioCue? cue = _lastLookupCue;
+    final VideoPlayerController? controller = _controller;
+    if (cue == null || controller == null) {
+      _showOsd(t.no_sentence_selected);
+      return;
+    }
+    await controller.replayCue(cue);
+  }
+
+  /// 查词浮层顶栏「跳到此句」：把播放位置移到当前查词那句的句首，**不改播放状态**
+  /// （查词时通常已暂停，跳完仍停在句首）。与字幕跳转列表行的 ▶ / 点行同一入口
+  /// （[VideoPlayerController.skipToCue]），前导余量与 cue-snap 行为完全一致。
+  Future<void> _jumpToLookupCue() async {
+    final AudioCue? cue = _lastLookupCue;
+    final VideoPlayerController? controller = _controller;
+    if (cue == null || controller == null) {
+      _showOsd(t.no_sentence_selected);
+      return;
+    }
+    await controller.skipToCue(cue);
+  }
+
+  /// 查词浮层顶栏「复制」：复制当前查词那句的字幕文本。
+  ///
+  /// 优先复制锚定 cue 的文本（与收藏 / 制卡取的是同一句）；没有 cue 时（无字幕轨、
+  /// 或字幕 gap 中查词）回落到 [_lastLookupSentence]，不至于让按钮变成哑的。
+  void _copyLookupSentence() {
+    final AudioCue? cue = _lastLookupCue;
+    final String text = (cue?.text.trim().isNotEmpty ?? false)
+        ? cue!.text.trim()
+        : _lastLookupSentence.trim();
+    if (text.isEmpty) {
+      _showOsd(t.no_sentence_selected);
+      return;
+    }
+    Clipboard.setData(ClipboardData(text: text));
+    _showOsd(t.copied_to_clipboard, icon: Icons.copy);
+  }
+
   /// 从字幕跳转列表面板行内复制某句文本到剪贴板（TODO-152 子A）。不暂停 / 不查词。
   void _copyCueText(AudioCue cue) {
     final String text = cue.text.trim();
