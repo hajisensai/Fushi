@@ -36,7 +36,10 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
   String? _selectingThreadKey;
   int? _previewingSourcePtr;
   Timer? _previewResetTimer;
+  Future<void> _previewQueue = Future<void>.value();
+  int _previewGeneration = 0;
   bool _autoCloseScheduled = false;
+  bool _dismissRequested = false;
 
   @override
   void initState() {
@@ -46,6 +49,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
 
   @override
   void dispose() {
+    _previewGeneration++;
     _previewResetTimer?.cancel();
     unawaited(DesktopAudioPlayback.stop());
     super.dispose();
@@ -57,13 +61,22 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
     final bool selected = await widget.onSelectThread(thread);
     if (!mounted) return;
     if (selected) {
-      Navigator.of(context).pop();
+      _dismissOnce();
       return;
     }
     setState(() => _selectingThreadKey = null);
   }
 
-  Future<void> _togglePreview(GalAudioTrack track) async {
+  void _requestPreview(GalAudioTrack track) {
+    final int generation = ++_previewGeneration;
+    _previewQueue = _previewQueue.then(
+      (_) => _togglePreview(track, generation),
+    );
+    unawaited(_previewQueue);
+  }
+
+  Future<void> _togglePreview(GalAudioTrack track, int generation) async {
+    if (!mounted || generation != _previewGeneration) return;
     if (_previewingSourcePtr == track.sourcePtr) {
       _previewResetTimer?.cancel();
       setState(() => _previewingSourcePtr = null);
@@ -72,13 +85,21 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
     }
     final GalTrackPreview? preview =
         await widget.session.exportTrackPreview(track.sourcePtr);
-    if (!mounted) return;
-    if (preview == null ||
-        !await DesktopAudioPlayback.playFile(preview.filePath)) {
+    if (!mounted || generation != _previewGeneration) return;
+    if (preview == null) {
       HibikiToast.show(msg: t.game_track_preview_failed);
       return;
     }
+    final bool started = await DesktopAudioPlayback.playFile(preview.filePath);
     if (!mounted) return;
+    if (generation != _previewGeneration) {
+      await DesktopAudioPlayback.stop();
+      return;
+    }
+    if (!started) {
+      HibikiToast.show(msg: t.game_track_preview_failed);
+      return;
+    }
     _previewResetTimer?.cancel();
     setState(() => _previewingSourcePtr = track.sourcePtr);
     _previewResetTimer = Timer(
@@ -90,11 +111,18 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
   }
 
   void _scheduleAutoClose() {
-    if (_autoCloseScheduled) return;
+    if (_autoCloseScheduled || _dismissRequested) return;
     _autoCloseScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) Navigator.of(context).maybePop();
+      _autoCloseScheduled = false;
+      if (mounted) _dismissOnce();
     });
+  }
+
+  void _dismissOnce() {
+    if (_dismissRequested) return;
+    _dismissRequested = true;
+    Navigator.of(context).maybePop();
   }
 
   @override
@@ -152,7 +180,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
       ),
       actions: <Widget>[
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _dismissOnce,
           child: Text(t.dialog_close),
         ),
       ],
@@ -262,8 +290,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
                     state: state,
                     onSelectVoice: widget.session.selectVoiceTrack,
                     onToggleExcluded: widget.session.setTrackExcluded,
-                    onPreviewTrack: (GalAudioTrack track) =>
-                        unawaited(_togglePreview(track)),
+                    onPreviewTrack: _requestPreview,
                     previewingSourcePtr: _previewingSourcePtr,
                   ),
                 ],

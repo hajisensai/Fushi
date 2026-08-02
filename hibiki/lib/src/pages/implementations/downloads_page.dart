@@ -13,7 +13,7 @@ import 'package:hibiki/utils.dart';
 /// 独立「下载」页（顶层底栏 tab）＝统一下载中心：番剧下载流程 **直接内联**
 /// 铺在页面上（搜番 → 选种 → 配字幕 → 推送 + 通用磁力 + 下载任务），任务 tab
 /// 同时列出漫画「在线目录」（mokuro.moe）的卷下载队列；页头另有在线目录入口。
-/// 右上角齿轮切到「下载设置」（后端/限速/上传/做种/内存）。完成后按内容类型
+/// 第四个顶部页签是「下载设置」（后端/限速/上传/做种/内存）。完成后按内容类型
 /// 自动入库（视频→视频库、epub→阅读库，见 AnimeDownloadService；漫画卷→
 /// 书架，见 MokuroMoeDownloadQueue）。
 class DownloadsPage extends ConsumerStatefulWidget {

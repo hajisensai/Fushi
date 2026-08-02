@@ -51,8 +51,7 @@ class _ModuleSettingsViewState extends ConsumerState<ModuleSettingsView>
       kind: DesktopContentKind.settings,
       child: Column(
         children: <Widget>[
-          if (!isCupertinoPlatform(context))
-            HibikiPageHeader.customTitle(title: widget.navigation),
+          HibikiPageHeader.customTitle(title: widget.navigation),
           Expanded(
             child: renderer.buildDetailContent(
               settingsContext: settingsContext,

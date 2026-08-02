@@ -123,6 +123,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
     final GameMonitorBuilder monitorBuilder = widget.monitorBuilder ??
         (BuildContext context, VoidCallback onShowLibrary) => TexthookerPage(
               embedded: true,
+              captureSetupEnabled: _section == GameSection.monitor,
               onShowLibrary: onShowLibrary,
               onShowDiagnostics: _showDiagnostics,
             );

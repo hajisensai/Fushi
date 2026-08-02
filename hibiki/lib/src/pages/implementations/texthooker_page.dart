@@ -71,12 +71,14 @@ class TexthookerPage extends ConsumerStatefulWidget {
   const TexthookerPage({
     super.key,
     this.embedded = false,
+    this.captureSetupEnabled = true,
     this.onShowLibrary,
     this.onShowDiagnostics,
   });
 
   /// 嵌入 [HomeGamePage] 时不再创建第二层 Scaffold/AppBar。
   final bool embedded;
+  final bool captureSetupEnabled;
   final VoidCallback? onShowLibrary;
   final VoidCallback? onShowDiagnostics;
 
@@ -434,6 +436,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       }
       _maybeScheduleCaptureSetupDialog();
     });
+  }
+
+  @override
+  void didUpdateWidget(TexthookerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.captureSetupEnabled && widget.captureSetupEnabled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _maybeScheduleCaptureSetupDialog();
+      });
+    }
   }
 
   /// BUG-1028：开页 seed 常驻隐藏热槽（低内存模式 [DictionaryPopupController.seedWarmSlot]
@@ -1035,7 +1047,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   }
 
   void _maybeScheduleCaptureSetupDialog() {
-    if (!mounted || _captureSetupDialogOpen || _captureSetupDialogScheduled) {
+    if (!mounted ||
+        !widget.captureSetupEnabled ||
+        !TickerMode.of(context) ||
+        _captureSetupDialogOpen ||
+        _captureSetupDialogScheduled) {
       return;
     }
     final GalHookSessionState state = _session.state;
@@ -1052,7 +1068,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _captureSetupDialogScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _captureSetupDialogScheduled = false;
-      if (!mounted) return;
+      if (!mounted || !widget.captureSetupEnabled || !TickerMode.of(context)) {
+        return;
+      }
       final GalHookSessionState latest = _session.state;
       if (latest.sessionStartedAt != sessionStartedAt ||
           !shouldPromptGalCaptureSetup(
@@ -1153,10 +1171,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   @override
   Widget build(BuildContext context) {
+    final bool captureSetupVisible = TickerMode.of(context);
     final List<TexthookerTextThread> textThreads = _session.textThreads;
     final String? selectedTextThreadKey = _session.selectedTextThreadKey;
     final List<TexthookerLineEntry> lines = _session.workbenchLines;
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
+    if (captureSetupVisible && widget.captureSetupEnabled) {
+      _maybeScheduleCaptureSetupDialog();
+    }
     if (widget.embedded) {
       final List<Widget> actions =
           _buildToolbarActions(context, embedded: true);
