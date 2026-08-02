@@ -33,6 +33,20 @@ AudioCue _cue(String raw, {required int startMs, required int endMs}) {
     ..audioFileIndex = 0;
 }
 
+/// 片源形态的一整行逐字事件：y 恒 672、x 从 [x0] 递增 30、逐字入场与退场各晚 40ms。
+/// [startMs] / [endMs] 是**首字**的起止；第 i 个字为 `startMs + i*40` / `endMs + i*40`。
+List<AudioCue> _line(List<String> chars,
+    {required int x0, required int startMs, required int endMs}) {
+  return <AudioCue>[
+    for (int i = 0; i < chars.length; i++)
+      _cue(
+        '{\\an7\\pos(${x0 + i * 30},672)\\fad(250,250)\\blur2}${chars[i]}',
+        startMs: startMs + i * 40,
+        endMs: endMs + i * 40,
+      ),
+  ];
+}
+
 /// 片源真值：一句 OP 歌词的前 6 个字（x 递增 30，y 恒 672，逐字入场 ~40ms）。
 List<AudioCue> _opLine() {
   const List<String> chars = <String>['手', 'を', '伸', 'ば', 'し', 'て'];
@@ -88,6 +102,42 @@ void main() {
       expect(r.byRep.length, 2);
       expect(r.byRep[0]!.text, '上行');
       expect(r.byRep[2]!.text, '下行');
+    });
+
+    test('片源真值：相邻两句首尾交叠 120ms 仍各自成句（BUG-1439）', () {
+      // 真值来自用户片源 [Nekomoe kissaten&VCB-Studio] ... [10][JPN].ass 的 OP：
+      // 第 2 句末字 3:21.47 结束，第 3 句首字 3:21.35 就已淡入——**两句在时间上交叠**。
+      // 旧实现拿「本组并集」比重叠（并集末端已被末字推到 201470 ≥ 201350），一搭上就把
+      // 后面整首歌链式吞并成一条 101 字乱码。交集口径下第 3 句首字要和第 2 句**首字**
+      // 的窗口（末端 201180）比，201350 > 201180 → 断组。
+      final List<AudioCue> cues = <AudioCue>[
+        ..._line(<String>['一', '雫', '頬', 'を', '濡', 'ら', 'し', 'て'],
+            x0: 521, startMs: 197470, endMs: 201180),
+        ..._line(<String>['切', 'な', 'く', '雨', 'が', '降', 'る'],
+            x0: 535, startMs: 201350, endMs: 204480),
+      ];
+      final r = mergePerCharacterCueGroups(cues);
+      expect(r.byRep.length, 2, reason: '两句，不是一坨');
+      expect(r.byRep[0]!.text, '一雫頬を濡らして');
+      expect(r.byRep[8]!.text, '切なく雨が降る');
+      // 合成句的时间跨度仍取并集（判据用交集，输出用并集，两者分离）。
+      expect(r.byRep[0]!.startMs, 197470);
+      expect(r.byRep[0]!.endMs, 201180 + 7 * 40);
+    });
+
+    test('三句连续交叠也不滚雪球（交集只会收窄，不会被逐句续命）', () {
+      // 每句首字都落在**前句并集尾**之内、**前句交集尾**之外（3020∈(3000,3040]，
+      // 5020∈(5000,5040]）：并集口径会一路吞并成一条，交集口径三句各自独立。
+      final List<AudioCue> cues = <AudioCue>[
+        ..._line(<String>['あ', 'い'], x0: 500, startMs: 1000, endMs: 3000),
+        ..._line(<String>['う', 'え'], x0: 500, startMs: 3020, endMs: 5000),
+        ..._line(<String>['お', 'か'], x0: 500, startMs: 5020, endMs: 7000),
+      ];
+      final r = mergePerCharacterCueGroups(cues);
+      expect(r.byRep.length, 3);
+      expect(r.byRep[0]!.text, 'あい');
+      expect(r.byRep[2]!.text, 'うえ');
+      expect(r.byRep[4]!.text, 'おか');
     });
 
     test('时间不重叠的下一句断组（同一行连唱两句不会被粘起来）', () {

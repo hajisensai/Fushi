@@ -31,7 +31,10 @@ String formatCueTimestamp(int startMs) =>
 /// - 每条都带 `\pos`（无 `\pos` 的常规对白永不参与）；
 /// - 文本是**单个 grapheme**（多字事件已是完整句，不该被并）；
 /// - 同一行：`\pos` 的 y 分数相等（容差 [_kSameRowEps]）且同 ASS Layer；
-/// - 时间上与本组已累积的区间**有重叠**（同一句歌词逐字入场；跨句的下一行不重叠 → 断组）；
+/// - 时间上与本组的**共同在屏窗口（交集）**相交——一句歌词的每个字逐个淡入后会一起挂到
+///   句末，故全组必然有一段同时在屏的时间；下一句在前句淡出前就淡入，但它与前句**首字**
+///   的窗口已经错开，交集判据据此断组（BUG-1439：旧实现拿并集比，区间只增不减，相邻两句
+///   首尾交叠 ~120ms 就够把整首歌链式吞并成一条，再按 x 排序 → 逐字交错的乱码）；
 /// - 组内至少 2 条（单条不构成「被拆开的句子」）。
 ///
 /// 组内按 `\pos` 的 x 分数升序拼接文本（复现 libass 的画面横向顺序，而非文件顺序）。
@@ -62,8 +65,14 @@ String formatCueTimestamp(int startMs) =>
     final SubtitlePos headPos = head.markup!.posFraction!;
     final int headLayer = head.markup?.layer ?? 0;
     final List<AudioCue> group = <AudioCue>[head];
-    int spanStart = head.startMs;
-    int spanEnd = head.endMs;
+    // 两个区间各司其职，不能合成一个：
+    // - 并集 [unionStart, unionEnd]：**输出**用，整句在列表上从首字亮起到末字消失。
+    // - 交集 [liveStart, liveEnd]：**判据**用，即全组「同时在屏」的窗口。它只会收窄，
+    //   所以不会像并集那样被逐句续命、把整首歌链成一条（BUG-1439）。
+    int unionStart = head.startMs;
+    int unionEnd = head.endMs;
+    int liveStart = head.startMs;
+    int liveEnd = head.endMs;
 
     int j = i + 1;
     while (j < cues.length) {
@@ -72,11 +81,13 @@ String formatCueTimestamp(int startMs) =>
       final SubtitlePos p = c.markup!.posFraction!;
       if ((c.markup?.layer ?? 0) != headLayer) break;
       if ((p.yFraction - headPos.yFraction).abs() > kSameRowEps) break;
-      // 与本组已累积区间不重叠 → 是下一句，断组。
-      if (c.startMs > spanEnd || c.endMs < spanStart) break;
+      // 与本组的共同在屏窗口不相交 → 是下一句，断组。
+      if (c.startMs > liveEnd || c.endMs < liveStart) break;
       group.add(c);
-      if (c.startMs < spanStart) spanStart = c.startMs;
-      if (c.endMs > spanEnd) spanEnd = c.endMs;
+      if (c.startMs < unionStart) unionStart = c.startMs;
+      if (c.endMs > unionEnd) unionEnd = c.endMs;
+      if (c.startMs > liveStart) liveStart = c.startMs;
+      if (c.endMs < liveEnd) liveEnd = c.endMs;
       j++;
     }
 
@@ -93,8 +104,8 @@ String formatCueTimestamp(int startMs) =>
         ..sentenceIndex = head.sentenceIndex
         ..textFragmentId = head.textFragmentId
         ..text = ordered.map((AudioCue c) => c.text).join()
-        ..startMs = spanStart
-        ..endMs = spanEnd
+        ..startMs = unionStart
+        ..endMs = unionEnd
         ..audioFileIndex = head.audioFileIndex
         // markup 不继承：合成句没有单一的 \pos / \fad，渲染层也不消费本结果
         // （列表只用 text/时间）。留 null 避免下游误以为它有作者位置。
