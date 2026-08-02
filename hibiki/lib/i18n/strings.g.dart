@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 52190 (3070 per locale)
+/// Strings: 52207 (3071 per locale)
 ///
-/// Built on 2026-08-02 at 01:55 UTC
+/// Built on 2026-08-02 at 03:14 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4125,6 +4125,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get stat_hourly_band_unattributed => 'Unsplit history';
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -11169,6 +11170,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -18280,6 +18283,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -25406,6 +25411,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -32544,6 +32551,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -39611,6 +39620,8 @@ class _StringsId extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -46724,6 +46735,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -53654,6 +53667,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -60586,6 +60601,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -67679,6 +67696,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -74785,6 +74804,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -81875,6 +81896,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -88913,6 +88936,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -95983,6 +96008,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -103038,6 +103065,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 // Path: <root>
@@ -109605,6 +109634,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       '早期记录的时段数据没有存类型，无法拆分；这里按合计如实显示，不归入任何一类。';
+  @override
+  String get game_attach_and_capture => '附着并捕获';
 }
 
 // Path: <root>
@@ -116456,6 +116487,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get game_attach_and_capture => 'Attach and capture';
 }
 
 /// Flat map(s) containing all translations.
@@ -122755,6 +122788,8 @@ extension on _StringsEn {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -129052,6 +129087,8 @@ extension on _StringsAr {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -135371,6 +135408,8 @@ extension on _StringsDe {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -141689,6 +141728,8 @@ extension on _StringsEs {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -148013,6 +148054,8 @@ extension on _StringsFr {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -154319,6 +154362,8 @@ extension on _StringsId {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -160639,6 +160684,8 @@ extension on _StringsIt {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -166921,6 +166968,8 @@ extension on _StringsJa {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -173207,6 +173256,8 @@ extension on _StringsKo {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -179521,6 +179572,8 @@ extension on _StringsNl {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -185832,6 +185885,8 @@ extension on _StringsPtBr {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -192148,6 +192203,8 @@ extension on _StringsRu {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -198447,6 +198504,8 @@ extension on _StringsTh {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -204755,6 +204814,8 @@ extension on _StringsTr {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -211059,6 +211120,8 @@ extension on _StringsVi {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
@@ -217309,6 +217372,8 @@ extension on _StringsZhCn {
         return '未区分历史';
       case 'stat_hourly_unattributed_note':
         return '早期记录的时段数据没有存类型，无法拆分；这里按合计如实显示，不归入任何一类。';
+      case 'game_attach_and_capture':
+        return '附着并捕获';
       default:
         return null;
     }
@@ -223586,6 +223651,8 @@ extension on _StringsZhHk {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'game_attach_and_capture':
+        return 'Attach and capture';
       default:
         return null;
     }
