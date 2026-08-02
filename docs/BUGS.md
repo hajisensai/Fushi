@@ -84,7 +84,7 @@
 | [BUG-1320](bugs/BUG-1320-clip-export-toolong-crosschapter-toast.md) | ✅ | ✅ | 片段导出超时长上限被误报为跨章且上限过紧 |
 | [BUG-1319](bugs/BUG-1319-collection-delete-cover-leak.md) | ✅ | ✅ | 删合集只有 1/6 入口回收自有封面：其余五条只删 DB 行，路径随行永久丢失、GC 又扫不到该子目录 = 确定性空间泄漏 |
 | [BUG-1318](bugs/BUG-1318-tracking-mapping-stale-after-format-change.md) | 🚧 | 🚧 | 转化后 Bangumi 映射不复核：epub→manga 后进度静默永久停报 |
-| [BUG-1317](bugs/BUG-1317-override-title-key-source-asymmetry.md) | 🚧 | 🚧 | 漫画/PDF 书改名后首页与统计仍显示旧名：override 键读写不同源 |
+| [BUG-1317](bugs/BUG-1317-override-title-key-source-asymmetry.md) | ✅ | ✅ | 漫画/PDF 书改名后首页与统计仍显示旧名：override 键读写不同源 |
 | [BUG-1316](bugs/BUG-1316-reader-route-ignores-live-format.md) | ✅ | ✅ | 跳回原文按写死的 EPUB 源打开：漫画/PDF 书用错阅读器 |
 | [BUG-1315](bugs/BUG-1315-texthooker-threadless-lines-never-published.md) | ✅ | ✅ | 未选线程门控把无线程身份的行（WebSocket/Textractor 端点）永久丢弃 |
 | [BUG-1311](bugs/BUG-1311-interconnect-service-config-403-on-plaintext.md) | ✅ | ✅ | 互联同步每轮都报「认证失败」：明文 host 上无条件请求 service-config |
