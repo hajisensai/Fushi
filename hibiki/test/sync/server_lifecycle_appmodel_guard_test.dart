@@ -133,13 +133,24 @@ void main() {
           reason: 'orchestrator 必须有 _syncLocalAudioLive live 分流方法');
       expect(src.contains('_syncAudiobooksLive('), isTrue,
           reason: 'orchestrator 必须有 _syncAudiobooksLive live 分流方法');
-      // run() 里互联分支必须分流到 live 方法
-      expect(src.contains('if (syncLocalAudio) await _syncLocalAudioLive('),
-          isTrue,
-          reason: '互联分支必须调用 _syncLocalAudioLive');
-      expect(src.contains('if (syncAudioBookFiles) await _syncAudiobooksLive('),
-          isTrue,
-          reason: '互联分支必须调用 _syncAudiobooksLive');
+      // run() 里互联分支必须分流到 live 方法。
+      //
+      // 用正则而非整行字面量匹配：门控条件会随功能演进追加（如增量同步的索引跳过
+      // `&& !skipLocalAudio`），而本守卫要钉的是「互联分支走 live 方法、不是走云的
+      // packages 方法」这个分流意图，不是那一行的逐字写法。仍然要求开关名与 live
+      // 方法名同时出现，故「改调云方法」这类真回归照样会被抓到。
+      expect(
+        RegExp(r'if \(syncLocalAudio[^)]*\)\s*\{?\s*await _syncLocalAudioLive\(')
+            .hasMatch(src),
+        isTrue,
+        reason: '互联分支必须调用 _syncLocalAudioLive',
+      );
+      expect(
+        RegExp(r'if \(syncAudioBookFiles[^)]*\)\s*\{?\s*await _syncAudiobooksLive\(')
+            .hasMatch(src),
+        isTrue,
+        reason: '互联分支必须调用 _syncAudiobooksLive',
+      );
     });
   });
 

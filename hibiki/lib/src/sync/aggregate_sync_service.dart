@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:hibiki/src/sync/aggregate_merge_service.dart';
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
+import 'package:hibiki/src/sync/sync_index.dart' show stableContentHash;
 import 'package:hibiki_audio/hibiki_audio.dart'
     show
         FavoriteSentence,
@@ -61,7 +62,11 @@ class AggregateSyncService {
   /// uploaded) means there is nothing to pull; the device still uploads its own
   /// snapshot so peers can pull it next time. A device with no local aggregate
   /// state AND no peer snapshots uploads nothing (nothing to share).
-  Future<void> sync({
+  /// 返回**是否真的上传了**本端快照。调用方据此决定增量索引的 revision 要不要 +1
+  /// （见 `SyncRunReport.remoteMutated`）：这一步历史上是无条件写的，而无条件写会让
+  /// 每台设备每轮同步都在远端留下改动痕迹，于是所有对端的「无人动过」判据永远为假、
+  /// 依赖它的阶段跳过全部失效，多设备之间互相触发、永不收敛。
+  Future<bool> sync({
     required SyncAssetStore store,
     required String deviceId,
   }) async {
@@ -101,9 +106,30 @@ class AggregateSyncService {
     // 5) Upload this device's now-merged snapshot so peers converge next sync.
     //    Nothing to share on a device with an empty merged state and no peers:
     //    skip the write so a fresh device does not litter an empty asset.
-    if (merged.isEmpty) return;
-    await store.putJsonAsset(ns, ownAssetName, merged.toJson());
+    if (merged.isEmpty) return false;
+
+    // 内容与本端上次上传的完全一致时不再重传：远端那份就是这份，重写一遍除了让
+    // 所有对端误以为「本端又改了远端」之外没有任何作用。
+    //
+    // 判据同时要求**远端确实还存在**本端那份资产（`children` 里已经列到了，免费）：
+    // 只信本地记录的话，远端那份被删掉后本端会永远拒绝重传，peers 再也拿不到本端
+    // 的数据。
+    final Map<String, dynamic> payload = merged.toJson();
+    final String hash = stableContentHash(jsonEncode(payload));
+    final bool ownAssetPresent =
+        children.any((AssetEntry e) => !e.isFolder && e.name == ownAssetName);
+    if (ownAssetPresent &&
+        hash == await _db.getPrefTyped<String>(_kLastPushedHashKey, '')) {
+      return false;
+    }
+
+    await store.putJsonAsset(ns, ownAssetName, payload);
+    await _db.setPrefTyped<String>(_kLastPushedHashKey, hash);
+    return true;
   }
+
+  /// 本端上次成功上传的聚合快照内容哈希（设备本地，纯缓存：丢了最多多传一次）。
+  static const String _kLastPushedHashKey = 'sync_aggregate_last_pushed_hash';
 
   /// Runs one aggregate sync over the interconnect live channel (TODO-1056
   /// phase C). Same only-grows / MAX / union / idempotent semantics as the cloud
