@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:hibiki/src/sync/aggregate_merge_service.dart';
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
-import 'package:hibiki/src/sync/sync_index.dart' show stableContentHash;
 import 'package:hibiki_audio/hibiki_audio.dart'
     show
         FavoriteSentence,
@@ -115,7 +114,7 @@ class AggregateSyncService {
     // 只信本地记录的话，远端那份被删掉后本端会永远拒绝重传，peers 再也拿不到本端
     // 的数据。
     final Map<String, dynamic> payload = merged.toJson();
-    final String hash = stableContentHash(jsonEncode(payload));
+    final String hash = _stableHash(jsonEncode(payload));
     final bool ownAssetPresent =
         children.any((AssetEntry e) => !e.isFolder && e.name == ownAssetName);
     if (ownAssetPresent &&
@@ -130,6 +129,26 @@ class AggregateSyncService {
 
   /// 本端上次成功上传的聚合快照内容哈希（设备本地，纯缓存：丢了最多多传一次）。
   static const String _kLastPushedHashKey = 'sync_aggregate_last_pushed_hash';
+
+  /// FNV-1a（64 位）。不是安全哈希，只用来判「内容变没变」，需要的只有确定性和零
+  /// 依赖；碰撞的后果是漏传一次快照，概率 2^-64 量级。
+  ///
+  /// 不用 `Object.hashCode`：Dart 不保证它跨运行稳定，用它会让每轮都判成「变了」，
+  /// 去重形同虚设；更糟的是它可能在部分平台上恰好稳定，于是问题只在部分用户身上出现。
+  static String _stableHash(String input) {
+    const int prime = 0x01000193;
+    int hi = 0xcbf29ce4;
+    int lo = 0x84222325;
+    for (final int unit in input.codeUnits) {
+      lo ^= unit;
+      final int loProduct = lo * prime;
+      final int hiProduct = hi * prime + (loProduct ~/ 0x100000000);
+      lo = loProduct & 0xffffffff;
+      hi = hiProduct & 0xffffffff;
+    }
+    return hi.toRadixString(16).padLeft(8, '0') +
+        lo.toRadixString(16).padLeft(8, '0');
+  }
 
   /// Runs one aggregate sync over the interconnect live channel (TODO-1056
   /// phase C). Same only-grows / MAX / union / idempotent semantics as the cloud

@@ -155,6 +155,7 @@ abstract class SyncBackend implements SyncAssetStore {
   // ── Metadata sync (JSON) ──────────────────────────────────────────
 
   Future<SyncFileTrio> listSyncFiles(String folderId);
+
   Future<TtuProgress> getProgressFile(String fileId);
   Future<List<TtuStatistics>> getStatsFile(String fileId);
   Future<TtuAudioBook> getAudioBookFile(String fileId);
