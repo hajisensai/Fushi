@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 52343 (3079 per locale)
 ///
-/// Built on 2026-08-02 at 03:29 UTC
+/// Built on 2026-08-02 at 05:19 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3530,7 +3530,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get manga_ocr_engine_google_lens => 'Google Lens';
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
   String get manga_google_lens_disclosure_body =>
@@ -10156,7 +10156,7 @@ class _StringsAr extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -17289,7 +17289,7 @@ class _StringsDe extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -24437,7 +24437,7 @@ class _StringsEs extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -31597,7 +31597,7 @@ class _StringsFr extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -38686,7 +38686,7 @@ class _StringsId extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -45821,7 +45821,7 @@ class _StringsIt extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -52773,7 +52773,7 @@ class _StringsJa extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -59727,7 +59727,7 @@ class _StringsKo extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -66842,7 +66842,7 @@ class _StringsNl extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -73970,7 +73970,7 @@ class _StringsPtBr extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -81082,7 +81082,7 @@ class _StringsRu extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -88142,7 +88142,7 @@ class _StringsTh extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -95234,7 +95234,7 @@ class _StringsTr extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -102311,7 +102311,7 @@ class _StringsVi extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -108971,7 +108971,7 @@ class _StringsZhCn extends _StringsEn {
   String get manga_google_lens_section => '整页识别（Google Lens）';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens 使用 Chromium 的非公开接口。仅在你明确选择 Lens 时上传页面；自动模式绝不会上传。';
+      'Google Lens 使用 Chromium 的非公开接口。Lens 是默认引擎，但只有你在本设备同意一次性提示后才会上传页面；自动模式绝不会上传。';
   @override
   String get manga_google_lens_disclosure_title => '将漫画页面发送到 Google Lens？';
   @override
@@ -115769,7 +115769,7 @@ class _StringsZhHk extends _StringsEn {
   String get manga_google_lens_section => 'Full-page OCR (Google Lens)';
   @override
   String get manga_google_lens_privacy =>
-      'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+      'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
   @override
   String get manga_google_lens_disclosure_title =>
       'Send manga pages to Google Lens?';
@@ -122222,7 +122222,7 @@ extension on _StringsEn {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -128537,7 +128537,7 @@ extension on _StringsAr {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -134874,7 +134874,7 @@ extension on _StringsDe {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -141210,7 +141210,7 @@ extension on _StringsEs {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -147552,7 +147552,7 @@ extension on _StringsFr {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -153876,7 +153876,7 @@ extension on _StringsId {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -160214,7 +160214,7 @@ extension on _StringsIt {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -166514,7 +166514,7 @@ extension on _StringsJa {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -172818,7 +172818,7 @@ extension on _StringsKo {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -179150,7 +179150,7 @@ extension on _StringsNl {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -185479,7 +185479,7 @@ extension on _StringsPtBr {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -191813,7 +191813,7 @@ extension on _StringsRu {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -198130,7 +198130,7 @@ extension on _StringsTh {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -204456,7 +204456,7 @@ extension on _StringsTr {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -210778,7 +210778,7 @@ extension on _StringsVi {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
@@ -217053,7 +217053,7 @@ extension on _StringsZhCn {
       case 'manga_google_lens_section':
         return '整页识别（Google Lens）';
       case 'manga_google_lens_privacy':
-        return 'Google Lens 使用 Chromium 的非公开接口。仅在你明确选择 Lens 时上传页面；自动模式绝不会上传。';
+        return 'Google Lens 使用 Chromium 的非公开接口。Lens 是默认引擎，但只有你在本设备同意一次性提示后才会上传页面；自动模式绝不会上传。';
       case 'manga_google_lens_disclosure_title':
         return '将漫画页面发送到 Google Lens？';
       case 'manga_google_lens_disclosure_body':
@@ -223341,7 +223341,7 @@ extension on _StringsZhHk {
       case 'manga_google_lens_section':
         return 'Full-page OCR (Google Lens)';
       case 'manga_google_lens_privacy':
-        return 'Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.';
+        return 'Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.';
       case 'manga_google_lens_disclosure_title':
         return 'Send manga pages to Google Lens?';
       case 'manga_google_lens_disclosure_body':
