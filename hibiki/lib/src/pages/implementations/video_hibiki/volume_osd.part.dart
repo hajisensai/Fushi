@@ -28,6 +28,7 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
     IconData? icon,
     double? progress,
     bool prominent = false,
+    ToastSeverity severity = ToastSeverity.neutral,
   }) {
     if (!mounted) return;
     _osdNotifier.value = _VideoOsdMessage(
@@ -35,6 +36,7 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
       icon: icon,
       progress: progress?.clamp(0.0, 1.0).toDouble(),
       prominent: prominent,
+      severity: severity,
     );
     _osdTimer?.cancel();
     // TODO-971：突出 OSD（制卡成功）停留更久（3.6s），普通通知仍 2.6s。
@@ -331,6 +333,15 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
   Widget _buildOsdCard(_VideoOsdMessage osd) {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final bool prominent = osd.prominent;
+    // 语义配色：null（neutral）＝旧的半透明 inverseSurface。着色时保留同样的半透明
+    // 观感，OSD 压在画面上，实心色块会挡视线。
+    final ({Color background, Color foreground, IconData icon})? palette =
+        toastSeverityPalette(osd.severity);
+    final Color surfaceColor = palette == null
+        ? _osdSurfaceColor(cs)
+        : palette.background.withValues(alpha: 0.88);
+    final Color textColor =
+        palette == null ? _osdTextColor(cs) : palette.foreground;
     final double fontSize = prominent ? 18 : 14;
     final double iconSize = prominent ? 24 : 18;
     final EdgeInsets cardPadding = prominent
@@ -356,7 +367,7 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
           ),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: _osdSurfaceColor(cs),
+              color: surfaceColor,
               borderRadius: radius,
               boxShadow: prominent
                   ? <BoxShadow>[
@@ -374,13 +385,17 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   if (osd.icon != null) ...<Widget>[
-                    Icon(osd.icon, size: iconSize, color: _osdTextColor(cs)),
+                    Icon(osd.icon, size: iconSize, color: textColor),
+                    SizedBox(width: prominent ? 12 : 8),
+                  ] else if (palette != null) ...<Widget>[
+                    // 语义图标：e-ink / 灰阶下颜色会塌掉，形状是唯一区分手段。
+                    Icon(palette.icon, size: iconSize, color: textColor),
                     SizedBox(width: prominent ? 12 : 8),
                   ] else if (prominent) ...<Widget>[
                     Icon(
                       Icons.check_circle,
                       size: iconSize,
-                      color: _osdTextColor(cs),
+                      color: textColor,
                     ),
                     const SizedBox(width: 12),
                   ],
@@ -392,7 +407,7 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
                         Text(
                           osd.message,
                           style: TextStyle(
-                            color: _osdTextColor(cs),
+                            color: textColor,
                             fontSize: fontSize,
                             fontWeight:
                                 prominent ? FontWeight.w600 : FontWeight.normal,
@@ -407,10 +422,9 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
                               value: osd.progress,
                               minHeight: 3,
                               backgroundColor:
-                                  _osdTextColor(cs).withValues(alpha: 0.25),
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                _osdTextColor(cs),
-                              ),
+                                  textColor.withValues(alpha: 0.25),
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(textColor),
                             ),
                           ),
                         ],

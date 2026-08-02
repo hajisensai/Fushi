@@ -4,46 +4,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/misc/toast_severity.dart';
 
 export 'package:fluttertoast/fluttertoast.dart' show Toast, ToastGravity;
-
-/// TODO-1325 #6: 制卡结果 toast 的语义状态。决定 MD3 toast 的着色与 Material 图标，
-/// 让「加入了 / 已存在 / 失败 / 制卡中」一眼可辨，而不再只靠弹窗里 mine 按钮的图标变化。
-enum MineToastStatus { added, duplicate, failed, pending }
-
-/// 把 [MineToastStatus] 映射成 toast 的 (背景色, 前景色, 图标)。用固定 Material 色阶
-/// （绿/橙/红/蓝）而非主题取色，保证四态在任意主题下都语义清晰、对比达标；也让无
-/// BuildContext 的降级路径（独立弹窗 Activity）能直接复用同一配色。
-({Color background, Color foreground, IconData icon}) mineToastPalette(
-  MineToastStatus status,
-) {
-  switch (status) {
-    case MineToastStatus.added:
-      return (
-        background: const Color(0xFF2E7D32), // green 800
-        foreground: Colors.white,
-        icon: Icons.check_circle_rounded,
-      );
-    case MineToastStatus.duplicate:
-      return (
-        background: const Color(0xFFEF6C00), // orange 800
-        foreground: Colors.white,
-        icon: Icons.library_add_check_rounded,
-      );
-    case MineToastStatus.failed:
-      return (
-        background: const Color(0xFFC62828), // red 800
-        foreground: Colors.white,
-        icon: Icons.error_rounded,
-      );
-    case MineToastStatus.pending:
-      return (
-        background: const Color(0xFF1565C0), // blue 800
-        foreground: Colors.white,
-        icon: Icons.sync_rounded,
-      );
-  }
-}
+// 语义与调色板住在 toast_severity.dart（视频页 OSD 也用，见该文件头注释），
+// 这里再导出一次，让既有 `import hibiki_toast.dart` 的调用点无需改 import。
+export 'package:hibiki/src/utils/misc/toast_severity.dart';
 
 /// Global navigator key used by the desktop toast overlay.
 /// Must be assigned to the MaterialApp's navigatorKey.
@@ -56,28 +22,42 @@ abstract final class HibikiToast {
   static set navigatorKey(GlobalKey<NavigatorState> key) =>
       _toastNavigatorKey = key;
 
+  /// [severity] 决定配色与图标（见 [ToastSeverity]）。显式传 [backgroundColor] /
+  /// [textColor] 仍然优先——少数调用点（如 tag chip 透传自身颜色）不是语义着色。
   static void show({
     required String msg,
     Toast toastLength = Toast.LENGTH_SHORT,
     ToastGravity gravity = ToastGravity.BOTTOM,
     Color? backgroundColor,
     Color? textColor,
+    ToastSeverity severity = ToastSeverity.neutral,
   }) {
+    final ({Color background, Color foreground, IconData icon})? palette =
+        toastSeverityPalette(severity);
+    final Color? bg = backgroundColor ?? palette?.background;
+    final Color? fg = textColor ?? palette?.foreground;
     if (Platform.isAndroid || Platform.isIOS) {
+      // 原生 toast 画不了图标，只能着色；桌面自绘 overlay 图标齐全。
       Fluttertoast.showToast(
         msg: msg,
         toastLength: toastLength,
         gravity: gravity,
-        backgroundColor: backgroundColor,
-        textColor: textColor,
+        backgroundColor: bg,
+        textColor: fg,
       );
+      return;
+    }
+    final int durationMs = toastLength == Toast.LENGTH_LONG ? 3500 : 2000;
+    // 有语义调色板且调用点没自带颜色时，走带图标的着色渲染器（与制卡 toast 同一个）。
+    if (palette != null && backgroundColor == null && textColor == null) {
+      _showPaletteToast(msg: msg, palette: palette, durationMs: durationMs);
       return;
     }
     _showDesktopToast(
       msg: msg,
-      durationMs: toastLength == Toast.LENGTH_LONG ? 3500 : 2000,
-      backgroundColor: backgroundColor,
-      textColor: textColor,
+      durationMs: durationMs,
+      backgroundColor: bg,
+      textColor: fg,
     );
   }
 
@@ -111,18 +91,47 @@ abstract final class HibikiToast {
     required String msg,
     required MineToastStatus status,
   }) {
+    // pending 停留更久（等制卡结果覆盖它），结果 toast 用短时长。
+    _insertToastEntry(
+      overlay: overlay,
+      durationMs: status == MineToastStatus.pending ? 4000 : 2400,
+      builder: (BuildContext context) => _SeverityToastWidget(
+        msg: msg,
+        palette: mineToastPalette(status),
+      ),
+    );
+  }
+
+  /// 语义着色 toast（桌面自绘路径）。与制卡 toast 共用同一个渲染器，避免出现
+  /// 「制卡的有图标有颜色、别的没有」这种同类通知两副长相。
+  static void _showPaletteToast({
+    required String msg,
+    required ({Color background, Color foreground, IconData icon}) palette,
+    required int durationMs,
+  }) {
+    final overlay = _toastNavigatorKey?.currentState?.overlay;
+    if (overlay == null) return;
+    _insertToastEntry(
+      overlay: overlay,
+      durationMs: durationMs,
+      builder: (BuildContext context) =>
+          _SeverityToastWidget(msg: msg, palette: palette),
+    );
+  }
+
+  static void _insertToastEntry({
+    required OverlayState overlay,
+    required int durationMs,
+    required WidgetBuilder builder,
+  }) {
     _dismissTimer?.cancel();
     _currentEntry?.remove();
     _currentEntry = null;
 
-    final entry = OverlayEntry(
-      builder: (context) => _MineToastWidget(msg: msg, status: status),
-    );
+    final entry = OverlayEntry(builder: builder);
     _currentEntry = entry;
     overlay.insert(entry);
 
-    // pending 停留更久（等制卡结果覆盖它），结果 toast 用短时长。
-    final int durationMs = status == MineToastStatus.pending ? 4000 : 2400;
     _dismissTimer = Timer(Duration(milliseconds: durationMs), () {
       entry.remove();
       if (_currentEntry == entry) _currentEntry = null;
@@ -233,20 +242,23 @@ class _DesktopToastWidgetState extends State<_DesktopToastWidget>
   }
 }
 
-/// TODO-1325 #6: 制卡结果 toast 的自绘 MD3 组件——一张圆角卡片，左侧状态图标 + 文案，
-/// 整体用状态色填充、白色前景，淡入呈现。与 [_DesktopToastWidget] 同一定位/动画骨架，
-/// 但多了图标与语义色（added/duplicate/failed/pending）。
-class _MineToastWidget extends StatefulWidget {
-  const _MineToastWidget({required this.msg, required this.status});
+/// 语义 toast 的自绘 MD3 组件——一张圆角卡片，左侧状态图标 + 文案，整体用状态色
+/// 填充、白色前景，淡入呈现。与 [_DesktopToastWidget] 同一定位/动画骨架，但多了图标
+/// 与语义色。
+///
+/// 制卡结果（[mineToastPalette]）与通用语义（[toastSeverityPalette]）共用本组件：
+/// 两者都只是一组 (背景, 前景, 图标)，没有理由各写一个渲染器。
+class _SeverityToastWidget extends StatefulWidget {
+  const _SeverityToastWidget({required this.msg, required this.palette});
 
   final String msg;
-  final MineToastStatus status;
+  final ({Color background, Color foreground, IconData icon}) palette;
 
   @override
-  State<_MineToastWidget> createState() => _MineToastWidgetState();
+  State<_SeverityToastWidget> createState() => _SeverityToastWidgetState();
 }
 
-class _MineToastWidgetState extends State<_MineToastWidget>
+class _SeverityToastWidgetState extends State<_SeverityToastWidget>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _opacity;
@@ -272,7 +284,7 @@ class _MineToastWidgetState extends State<_MineToastWidget>
   Widget build(BuildContext context) {
     final tokens = HibikiDesignTokens.of(context);
     final ({Color background, Color foreground, IconData icon}) palette =
-        mineToastPalette(widget.status);
+        widget.palette;
     return Positioned(
       bottom: 50,
       left: 0,

@@ -443,19 +443,25 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     // BUG-296 / TODO-390：应带句子音频却抽取失败 → 显式 OSD + 中止，不建无音频卡。
     if (res.aborted) {
       if (mounted) {
-        _showOsd(t.card_export_failed_detail(
-          reason: audioFailure == null
-              ? 'sentence audio export failed'
-              : 'sentence audio export failed: $audioFailure',
-        ));
+        _showOsd(
+          t.card_export_failed_detail(
+            reason: audioFailure == null
+                ? 'sentence audio export failed'
+                : 'sentence audio export failed: $audioFailure',
+          ),
+          severity: ToastSeverity.error,
+        );
       }
       return const MinePopupResult();
     }
     // W2a：动图降级为静态帧时可感知 OSD（原因取 GIF 失败摘要，最贴近根因）。
     if (res.degradedToStill && mounted) {
-      _showOsd(t.card_cover_degraded_to_static(
-        reason: coverFailure ?? 'animated clip unavailable',
-      ));
+      _showOsd(
+        t.card_cover_degraded_to_static(
+          reason: coverFailure ?? 'animated clip unavailable',
+        ),
+        severity: ToastSeverity.warning,
+      );
     }
     final MineOutcome outcome = res.outcome! as MineOutcome;
     final MinePopupResult result = outcome.result == MineResult.success
@@ -478,7 +484,13 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     if (described.record) unawaited(_recordMinedForVideo());
     // TODO-971：制卡成功（card_exported / card_overwritten，含牌组名）走突出 OSD——
     // 居中、更大、停留更久，区别于音量/亮度小角标，避免用户「制卡了没反馈」。
-    _showOsd(described.message, prominent: true);
+    // describeMineOutcome 早就算出了 status，此前只被拿去选 prominent 布尔、颜色
+    // 整个丢掉，于是视频页制卡成功与失败长得一模一样。透传语义即可对齐其它入口。
+    _showOsd(
+      described.message,
+      prominent: true,
+      severity: mineToastSeverity(described.status),
+    );
     return result;
   }
 
