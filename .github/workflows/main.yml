@@ -78,12 +78,6 @@ jobs:
         sed -i '/systemProp\.https\.proxyPort/d' gradle.properties
         sed -i '/systemProp\.http\.nonProxyHosts/d' gradle.properties
 
-    - name: Remove aliyun mirrors from gradle files
-      working-directory: hibiki/android
-      run: |
-        sed -i "/maven.*aliyun/d" build.gradle
-        sed -i "/maven.*aliyun/d" settings.gradle
-
     # google_oauth_secret.dart is gitignored (the real client secret lives only
     # on dev hosts); CI lacks it, so google_drive_auth.dart's import fails
     # `flutter analyze`. When the GOOGLE_OAUTH_CLIENT_SECRET repo secret is set,
@@ -148,29 +142,28 @@ jobs:
           rm -f "$dst.bak"
         fi
 
-    # TODO-1208: cache the resolved pub packages so pub get is near-instant on a
-    # warm runner. apply-patches.sh is idempotent (cp -r overwrite), so a restored
-    # already-patched cache re-patches to the same bytes. Cache miss auto-rebuilds.
-    - name: Cache pub packages
-      uses: actions/cache@v4
-      with:
-        path: ~/.pub-cache
-        key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-pubcache-
-
-    # TODO-1208: cache Gradle's dependency + wrapper caches for the PR-only
-    # release-verify APK build. Keyed on the gradle build/wrapper files so a
-    # toolchain bump invalidates it; a miss just re-downloads.
+    # TODO-2721: 只缓存 Gradle 的下载物（modules-2 / wrapper dists），不缓存
+    # <ver>/transforms 这类可从 modules-2 重算的派生产物。三个 workflow
+    # （main / release / build-multiplatform）的 path + key 必须逐字相同，且此步
+    # 之前不得 sed 改 build.gradle / settings.gradle —— 否则同一份内容会被存成
+    # 两条各 2.7 GB 的缓存。理由见 docs/agent/build.md 的「CI 缓存配额」，守卫见
+    # hibiki/test/build/workflow_cache_quota_guard_test.dart。
     - name: Cache Gradle caches
       uses: actions/cache@v4
       with:
         path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-${{ hashFiles('hibiki/android/**/*.gradle*', 'hibiki/android/gradle/wrapper/gradle-wrapper.properties') }}
+          ~/.gradle/caches/modules-2
+          ~/.gradle/caches/journal-1
+          ~/.gradle/wrapper/dists
+        key: ${{ runner.os }}-gradle-v2-${{ hashFiles('hibiki/android/**/*.gradle*', 'hibiki/android/gradle/wrapper/gradle-wrapper.properties') }}
         restore-keys: |
-          ${{ runner.os }}-gradle-
+          ${{ runner.os }}-gradle-v2-
+
+    - name: Remove aliyun mirrors from gradle files
+      working-directory: hibiki/android
+      run: |
+        sed -i "/maven.*aliyun/d" build.gradle
+        sed -i "/maven.*aliyun/d" settings.gradle
 
     - name: Flutter pub get
       working-directory: hibiki

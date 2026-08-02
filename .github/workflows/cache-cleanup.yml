@@ -1,0 +1,79 @@
+# TODO-2721：PR 关闭后删掉只属于该 PR 的 Actions 缓存。
+#
+# GitHub 的缓存是**按 ref 分桶**的：`refs/pull/<N>/merge` 上存的缓存和
+# `refs/heads/develop` 上同 key 的缓存是两条独立记录，一起算进仓库那 10 GB 配额。
+# 正常情况下 PR run 会命中 base 分支的缓存、不新存；但仓库一旦超配额、develop 那条
+# 被 LRU 驱逐，下一个 PR run 就会 miss 并在**自己的 PR 桶**里存一份 —— 于是出现
+# 「同一个 key 两条 1.8 GB 记录」，配额越紧越容易复制，是个正反馈。
+#
+# PR 合并/关闭后那些桶永远不会再被读到，但 GitHub 只在「7 天无访问」后才回收。
+# 这一步把它们立刻删掉，把配额还给 develop。
+#
+# 本 workflow **不发布任何东西**：无 checkout、无构建、无 release，只调
+# `DELETE /repos/{owner}/{repo}/actions/caches?key=...&ref=...`。
+name: Cleanup PR caches
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: cache-cleanup-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    # fork PR 的 GITHUB_TOKEN 是只读的，`actions: write` 拿不到，跑了必红。
+    # 本仓的开发模式是同仓分支 PR，fork 直接跳过即可。
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete caches scoped to this PR ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          set -euo pipefail
+          freed=0
+          count=0
+          # 分页取完这个 ref 下的全部缓存再删（边列边删会跳页）。
+          keys="$(gh api --paginate \
+            "repos/$REPO/actions/caches?per_page=100&ref=$PR_REF" \
+            --jq '.actions_caches[] | "\(.id)\t\(.size_in_bytes)\t\(.key)"')"
+          if [ -z "$keys" ]; then
+            echo "No caches scoped to $PR_REF."
+            exit 0
+          fi
+          while IFS=$'\t' read -r id size key; do
+            [ -n "${id:-}" ] || continue
+            echo "Deleting $key ($((size / 1024 / 1024)) MB, id=$id)"
+            # 按 id 删是精确的；失败不让整条 workflow 红（缓存可能刚被 LRU 驱逐）。
+            gh api -X DELETE "repos/$REPO/actions/caches/$id" || \
+              echo "::warning title=Cache delete failed::$key"
+            freed=$((freed + size))
+            count=$((count + 1))
+          done <<< "$keys"
+          echo "Deleted $count cache(s), freed $((freed / 1024 / 1024)) MB from $PR_REF." \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report repository cache usage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          usage="$(gh api "repos/$REPO/actions/cache/usage")"
+          bytes="$(echo "$usage" | jq -r '.active_caches_size_in_bytes')"
+          entries="$(echo "$usage" | jq -r '.active_caches_count')"
+          mb=$((bytes / 1024 / 1024))
+          echo "Repository cache usage: ${mb} MB in ${entries} entries (limit 10240 MB)." \
+            >> "$GITHUB_STEP_SUMMARY"
+          # 超配额只警告不失败：这条 workflow 的职责是回收，不是守门。
+          if [ "$mb" -gt 10240 ]; then
+            echo "::warning title=Actions cache over quota::${mb} MB > 10240 MB; GitHub is LRU-evicting."
+          fi
