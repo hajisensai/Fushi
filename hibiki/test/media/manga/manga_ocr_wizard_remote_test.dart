@@ -17,6 +17,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_wizard_dialog.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_wizard_engines.dart';
+import 'package:hibiki/src/media/manga/ocr/google_lens_ocr_service.dart';
+import 'package:hibiki/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -79,9 +81,36 @@ class _FakeRemoteRunner implements MangaOcrRemoteRunner {
   }
 }
 
+/// Lens 只用来「凑出第二个可用引擎」，从不真的跑。
+class _NoopLensRunner implements GoogleLensMangaOcrRunner {
+  @override
+  Stream<MangaOcrVolumeEvent> ocrFolder({
+    required String imageDirPath,
+    String? volumeTitle,
+    int startPage = 0,
+    bool onlyMissing = false,
+  }) =>
+      const Stream<MangaOcrVolumeEvent>.empty();
+
+  @override
+  Future<void> clearCache(String imageDirPath) async {}
+}
+
 const MangaOcrRemoteTarget _capableTarget = MangaOcrRemoteTarget(
   baseUrl: 'http://192.168.1.2:1234',
   capability: MangaOcrRemoteCapability(supported: true, modelsReady: true),
+);
+
+/// TODO-2635：探到了主机，但它明确报 472MB 模型没下载。
+const MangaOcrRemoteTarget _modelsMissingTarget = MangaOcrRemoteTarget(
+  baseUrl: 'http://192.168.1.3:1234',
+  capability: MangaOcrRemoteCapability(supported: true, modelsReady: false),
+);
+
+/// 对端没报 `modelsReady`（协议未知态）：必须按可用处理，不得凭空消失。
+const MangaOcrRemoteTarget _unknownReadinessTarget = MangaOcrRemoteTarget(
+  baseUrl: 'http://192.168.1.4:1234',
+  capability: MangaOcrRemoteCapability(supported: true, modelsReady: null),
 );
 
 void main() {
@@ -103,6 +132,7 @@ void main() {
     WidgetTester tester, {
     required _FakeRemoteRunner remote,
     MangaOcrImportRunner? importOverride,
+    GoogleLensMangaOcrRunner? lensRunner,
   }) async {
     String? popped;
     final Widget app = ProviderScope(
@@ -118,6 +148,7 @@ void main() {
                       engines: MangaOcrWizardEngines(
                         service: _UnsupportedOcrService(),
                         remoteRunner: remote,
+                        lensRunner: lensRunner,
                       ),
                       db: db,
                       initialImageDir: imageDir.path,
@@ -191,6 +222,76 @@ void main() {
     expect(importedPath, jsonPath);
     expect(importedExternal, isFalse);
     expect(poppedResult(), 'remotebook');
+  });
+
+  // TODO-2635：修复前，模型没下载的主机与就绪主机在选项层长得一模一样，用户要
+  // 传完整卷、走到 start 才吃 `manga_remote_ocr_not_ready`。下面三条钉住新语义。
+  testWidgets(
+      'host with models not downloaded: segment disabled + reason shown, '
+      'Run does not fall onto it', (WidgetTester tester) async {
+    final _FakeRemoteRunner remote =
+        _FakeRemoteRunner(target: _modelsMissingTarget);
+    await pumpWizard(tester, remote: remote, lensRunner: _NoopLensRunner());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // 选项保留（与另外三个引擎同构），但置灰。
+    final SegmentedButton<MangaOcrEngineId> selector =
+        tester.widget<SegmentedButton<MangaOcrEngineId>>(
+            find.byType(SegmentedButton<MangaOcrEngineId>));
+    final ButtonSegment<MangaOcrEngineId> pairedSegment = selector.segments
+        .firstWhere((ButtonSegment<MangaOcrEngineId> s) =>
+            s.value == MangaOcrEngineId.pairedHost);
+    expect(pairedSegment.enabled, isFalse,
+        reason: '模型未下载的主机必须置灰，不能让用户选中后白传一整卷');
+
+    // 原因在选项层就说清楚，而不是等 start 阶段才报。
+    expect(find.text(t.manga_remote_ocr_not_ready), findsOneWidget);
+
+    // auto 解析不得落到未就绪的主机上。修复前 `ready: remote != null` 会让它
+    // 正好选中 pairedHost，于是「默认引擎 = 一台传完才会报错的主机」。
+    // （Lens 被 resolveMangaOcrEngine 有意排除在 auto 之外——隐私边界只能显式选，
+    //  所以这里的落点是兜底的 localOnnx，而不是 Lens。）
+    expect(selector.selected, isNot(contains(MangaOcrEngineId.pairedHost)));
+    expect(selector.selected, <MangaOcrEngineId>{MangaOcrEngineId.localOnnx});
+  });
+
+  testWidgets(
+      'models-not-ready host is the only engine: engines-none plus the reason, '
+      'Run disabled', (WidgetTester tester) async {
+    final _FakeRemoteRunner remote =
+        _FakeRemoteRunner(target: _modelsMissingTarget);
+    await pumpWizard(tester, remote: remote);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // 「没有可用引擎」旁边必须带上具体原因，否则用户无从知道该去主机上下模型。
+    expect(find.text(t.manga_ocr_engine_none), findsOneWidget);
+    expect(find.text(t.manga_remote_ocr_not_ready), findsOneWidget);
+    final Finder runBtn =
+        find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
+    expect(tester.widget<FilledButton>(runBtn).onPressed, isNull);
+  });
+
+  testWidgets(
+      'host that does not report modelsReady stays usable (old-peer skew)',
+      (WidgetTester tester) async {
+    // 缺字段 ≠ 未就绪。把未知态判成 not ready 会让这类对端上本可用的主机凭空
+    // 消失——比「白传一卷」更糟，因为用户连路都没有。
+    final _FakeRemoteRunner remote =
+        _FakeRemoteRunner(target: _unknownReadinessTarget);
+    await pumpWizard(tester, remote: remote);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.manga_ocr_engine_none), findsNothing);
+    expect(find.text(t.manga_remote_ocr_not_ready), findsNothing);
+    final Finder runBtn =
+        find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
+    expect(tester.widget<FilledButton>(runBtn).onPressed, isNotNull);
   });
 
   testWidgets('no capable host: remote hidden, engines-none, Run disabled',
