@@ -1,6 +1,10 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:pdfrx/pdfrx.dart';
+
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// PDF 阅读器（Phase 1）的 pdfrx/PDFium 引擎初始化单一入口。
 ///
@@ -46,6 +50,62 @@ class PdfEngine {
         Pdfrx.pdfiumModulePath = candidate;
         return;
       }
+    }
+  }
+
+  /// 把 [page] 栅格化成 PNG 字节（等比缩到宽 [targetWidth]，白底）。失败返回 null。
+  ///
+  /// 导入器取封面与「PDF → 漫画」逐页导出页图用的是同一段 PDFium 调用，差别只有
+  /// 目标宽度，故收在引擎入口一处：两边各写一份，背景色/缩放/dispose 时机随时能漂。
+  static Future<Uint8List?> renderPagePng(
+    PdfPage page, {
+    required double targetWidth,
+  }) async {
+    try {
+      final double scale = page.width > 0 ? targetWidth / page.width : 1.0;
+      final PdfImage? rendered = await page.render(
+        fullWidth: page.width * scale,
+        fullHeight: page.height * scale,
+        backgroundColor: 0xFFFFFFFF,
+      );
+      if (rendered == null) return null;
+      try {
+        return await bgraToPng(
+            rendered.pixels, rendered.width, rendered.height);
+      } finally {
+        rendered.dispose();
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('PdfEngine.renderPagePng', e, stack);
+      return null;
+    }
+  }
+
+  /// 把 PDFium 输出的 BGRA8888 位图编码成 PNG 字节（纯 CPU codec，无 GPU 回读，
+  /// 离屏可靠）。
+  static Future<Uint8List?> bgraToPng(
+    Uint8List bgra,
+    int width,
+    int height,
+  ) async {
+    final ui.ImmutableBuffer buffer =
+        await ui.ImmutableBuffer.fromUint8List(bgra);
+    final ui.ImageDescriptor descriptor = ui.ImageDescriptor.raw(
+      buffer,
+      width: width,
+      height: height,
+      pixelFormat: ui.PixelFormat.bgra8888,
+    );
+    final ui.Codec codec = await descriptor.instantiateCodec();
+    final ui.FrameInfo frame = await codec.getNextFrame();
+    final ui.Image image = frame.image;
+    try {
+      final ByteData? png =
+          await image.toByteData(format: ui.ImageByteFormat.png);
+      return png?.buffer.asUint8List();
+    } finally {
+      image.dispose();
+      codec.dispose();
     }
   }
 }

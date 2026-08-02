@@ -20,6 +20,8 @@ import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
 import 'package:hibiki/src/media/display_title.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:hibiki/src/media/manga/book_format_convert.dart';
+import 'package:hibiki/src/media/manga/book_format_rebuild.dart';
 import 'package:hibiki/src/media/manga/manga_import_dialog.dart';
 import 'package:hibiki/src/media/manga/manga_module.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
@@ -2119,6 +2121,24 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         icon: Icons.code_outlined,
         onPressed: () => _openCssEditor(bookKey),
       ),
+      // 「书 ↔ 漫画」转化。放这张卡菜单里，因为漫画库与书架本就是同一个页面
+      // （`manga_library_page` 只是 `mangaOnly: true` 的壳）、同一张卡、同一份
+      // 菜单——转化恰好是「这本书用哪个阅读器打开」的开关，与「标记已读完」
+      // 「换封面」同一层级。方向由当前卡自己的源标识决定，不额外读库：
+      // `mediaSourceIdentifier` 就是 `EpubBooks.format` 派生出来的
+      // （`ReaderHibikiSource.mediaSourceKeyFor`），与书架的漫画/书分流同一判据。
+      DialogListAction(
+        label: _isMangaItem(item)
+            ? t.book_convert_to_book_action
+            : t.book_convert_to_manga_action,
+        icon: _isMangaItem(item)
+            ? Icons.menu_book_outlined
+            : Icons.auto_stories_outlined,
+        onPressed: () => _convertBookFormat(
+          bookKey,
+          _isMangaItem(item) ? BookFormatTarget.book : BookFormatTarget.manga,
+        ),
+      ),
       // TODO-291 阶段2：书架长按「悬浮字幕」= 启动该书的后台听书会话（无正在播则用该书
       // 启动 + 拉起悬浮窗），不再只翻 bool。该书已是活动会话则改为「停止后台听书」。
       if (Platform.isAndroid || Platform.isWindows)
@@ -2308,6 +2328,70 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     HibikiToast.show(
       msg: wasCompleted ? t.book_marked_uncompleted : t.book_marked_completed,
     );
+  }
+
+  /// 这张卡是不是漫画。判据与书架的漫画/书分流
+  /// （[filterShelfEntriesByMangaSplit]）逐字相同：`mediaSourceIdentifier` 由
+  /// `EpubBooks.format` 经 `ReaderHibikiSource.mediaSourceKeyFor` 派生，卡上已有，
+  /// 不必为了画一行菜单再去读一次库。
+  bool _isMangaItem(MediaItem item) =>
+      item.mediaSourceIdentifier == MangaHibikiSource.kUniqueKey;
+
+  /// 单卡「书 ↔ 漫画」转化：重建目标格式的磁盘产物，再把 `EpubBooks` 行指过去。
+  ///
+  /// `bookKey` 与 `mediaIdentifier` 全程不变，所以合集/标签/进度/统计/Profile 一条
+  /// 不断，书架与首页「继续」上仍然是同一条目——转化不会把一本书变成两本。
+  ///
+  /// 判定放在**点击后**：探测要解析 OPF/磁盘，塞进菜单 build 会让书架每次重绘都吃
+  /// 一遍 IO；而且转不了的时候给一句具体原因，远比灰掉一个按钮有用（用户报过
+  /// 「拖进去一点反应都没有」）。
+  Future<void> _convertBookFormat(
+    String bookKey,
+    BookFormatTarget target,
+  ) async {
+    Navigator.pop(context);
+    final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
+    if (row == null || !mounted) return;
+    final BookConvertVerdict verdict =
+        BookFormatRebuild.resolveVerdict(row: row, target: target);
+    final BookConvertBlocker? blocker = verdict.blocker;
+    if (blocker != null) {
+      HibikiToast.show(msg: _bookConvertBlockerMessage(blocker));
+      return;
+    }
+    HibikiToast.show(msg: t.book_convert_running);
+    try {
+      await BookFormatRebuild.convert(
+        db: appModel.database,
+        row: row,
+        target: target,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHistory.convertBookFormat', e, stack);
+      if (mounted) HibikiToast.show(msg: t.book_convert_failed);
+      return;
+    }
+    if (!mounted) return;
+    // 转化只改列、不改 bookKey 集合，而 `hibikiBooksProvider` 的响应源按 bookKey
+    // 集合去重 —— 不显式 invalidate，书架会一直画着旧格式的卡。
+    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    _rebuild(() {});
+    HibikiToast.show(msg: t.book_convert_done);
+  }
+
+  /// 把「为什么不能转」翻译成一句给用户看的话。每一条都说清具体原因，不是笼统
+  /// 一句「不支持」。
+  String _bookConvertBlockerMessage(BookConvertBlocker blocker) {
+    switch (blocker) {
+      case BookConvertBlocker.alreadyTarget:
+        return t.book_convert_blocked_already;
+      case BookConvertBlocker.textOnlyBook:
+        return t.book_convert_blocked_text_only;
+      case BookConvertBlocker.noOriginalFile:
+        return t.book_convert_blocked_no_original;
+      case BookConvertBlocker.sourceMissing:
+        return t.book_convert_blocked_source_missing;
+    }
   }
 
   String? _parseBookKey(String mediaIdentifier) =>

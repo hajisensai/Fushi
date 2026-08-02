@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 52190 (3070 per locale)
+/// Strings: 52343 (3079 per locale)
 ///
-/// Built on 2026-08-02 at 01:55 UTC
+/// Built on 2026-08-02 at 03:29 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4125,6 +4125,19 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get stat_hourly_band_unattributed => 'Unsplit history';
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  String get book_convert_to_manga_action => 'Convert to manga';
+  String get book_convert_to_book_action => 'Convert back to book';
+  String get book_convert_running => 'Converting…';
+  String get book_convert_done => 'Conversion finished';
+  String get book_convert_failed => 'Conversion failed';
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -11169,6 +11182,28 @@ class _StringsAr extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -18280,6 +18315,28 @@ class _StringsDe extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -25406,6 +25463,28 @@ class _StringsEs extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -32544,6 +32623,28 @@ class _StringsFr extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -39611,6 +39712,28 @@ class _StringsId extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -46724,6 +46847,28 @@ class _StringsIt extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -53654,6 +53799,28 @@ class _StringsJa extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -60586,6 +60753,28 @@ class _StringsKo extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -67679,6 +67868,28 @@ class _StringsNl extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -74785,6 +74996,28 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -81875,6 +82108,28 @@ class _StringsRu extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -88913,6 +89168,28 @@ class _StringsTh extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -95983,6 +96260,28 @@ class _StringsTr extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -103038,6 +103337,28 @@ class _StringsVi extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 // Path: <root>
@@ -109605,6 +109926,24 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       '早期记录的时段数据没有存类型，无法拆分；这里按合计如实显示，不归入任何一类。';
+  @override
+  String get book_convert_to_manga_action => '转换为漫画';
+  @override
+  String get book_convert_to_book_action => '转换回书';
+  @override
+  String get book_convert_running => '转换中…';
+  @override
+  String get book_convert_done => '转换完成';
+  @override
+  String get book_convert_failed => '转换失败';
+  @override
+  String get book_convert_blocked_already => '这本书已经是该格式了。';
+  @override
+  String get book_convert_blocked_text_only => '这是一本没有页图的文字书。只有扫描版图片书才能转成漫画。';
+  @override
+  String get book_convert_blocked_no_original => '这本漫画是从图片导入的，没有可还原的原书。';
+  @override
+  String get book_convert_blocked_source_missing => '源文件已从磁盘上消失。';
 }
 
 // Path: <root>
@@ -116456,6 +116795,28 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get stat_hourly_unattributed_note =>
       'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+  @override
+  String get book_convert_to_manga_action => 'Convert to manga';
+  @override
+  String get book_convert_to_book_action => 'Convert back to book';
+  @override
+  String get book_convert_running => 'Converting…';
+  @override
+  String get book_convert_done => 'Conversion finished';
+  @override
+  String get book_convert_failed => 'Conversion failed';
+  @override
+  String get book_convert_blocked_already =>
+      'This book is already in that format.';
+  @override
+  String get book_convert_blocked_text_only =>
+      'This is a text book with no page images. Only scanned image books can become manga.';
+  @override
+  String get book_convert_blocked_no_original =>
+      'This manga was imported from images, so there is no original book to convert back to.';
+  @override
+  String get book_convert_blocked_source_missing =>
+      'The source files are gone from disk.';
 }
 
 /// Flat map(s) containing all translations.
@@ -122755,6 +123116,24 @@ extension on _StringsEn {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -129052,6 +129431,24 @@ extension on _StringsAr {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -135371,6 +135768,24 @@ extension on _StringsDe {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -141689,6 +142104,24 @@ extension on _StringsEs {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -148013,6 +148446,24 @@ extension on _StringsFr {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -154319,6 +154770,24 @@ extension on _StringsId {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -160639,6 +161108,24 @@ extension on _StringsIt {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -166921,6 +167408,24 @@ extension on _StringsJa {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -173207,6 +173712,24 @@ extension on _StringsKo {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -179521,6 +180044,24 @@ extension on _StringsNl {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -185832,6 +186373,24 @@ extension on _StringsPtBr {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -192148,6 +192707,24 @@ extension on _StringsRu {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -198447,6 +199024,24 @@ extension on _StringsTh {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -204755,6 +205350,24 @@ extension on _StringsTr {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -211059,6 +211672,24 @@ extension on _StringsVi {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
@@ -217309,6 +217940,24 @@ extension on _StringsZhCn {
         return '未区分历史';
       case 'stat_hourly_unattributed_note':
         return '早期记录的时段数据没有存类型，无法拆分；这里按合计如实显示，不归入任何一类。';
+      case 'book_convert_to_manga_action':
+        return '转换为漫画';
+      case 'book_convert_to_book_action':
+        return '转换回书';
+      case 'book_convert_running':
+        return '转换中…';
+      case 'book_convert_done':
+        return '转换完成';
+      case 'book_convert_failed':
+        return '转换失败';
+      case 'book_convert_blocked_already':
+        return '这本书已经是该格式了。';
+      case 'book_convert_blocked_text_only':
+        return '这是一本没有页图的文字书。只有扫描版图片书才能转成漫画。';
+      case 'book_convert_blocked_no_original':
+        return '这本漫画是从图片导入的，没有可还原的原书。';
+      case 'book_convert_blocked_source_missing':
+        return '源文件已从磁盘上消失。';
       default:
         return null;
     }
@@ -223586,6 +224235,24 @@ extension on _StringsZhHk {
         return 'Unsplit history';
       case 'stat_hourly_unattributed_note':
         return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
+      case 'book_convert_to_manga_action':
+        return 'Convert to manga';
+      case 'book_convert_to_book_action':
+        return 'Convert back to book';
+      case 'book_convert_running':
+        return 'Converting…';
+      case 'book_convert_done':
+        return 'Conversion finished';
+      case 'book_convert_failed':
+        return 'Conversion failed';
+      case 'book_convert_blocked_already':
+        return 'This book is already in that format.';
+      case 'book_convert_blocked_text_only':
+        return 'This is a text book with no page images. Only scanned image books can become manga.';
+      case 'book_convert_blocked_no_original':
+        return 'This manga was imported from images, so there is no original book to convert back to.';
+      case 'book_convert_blocked_source_missing':
+        return 'The source files are gone from disk.';
       default:
         return null;
     }
