@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "1.3.1-debug.10069",
-  "tag": "v1.3.1-debug.10069+1ce2ffb",
+  "version": "1.3.1-debug.10071",
+  "tag": "v1.3.1-debug.10071+beb600b",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 10069,
-  "notes": "Automated release-signed debug-channel build from develop @ 1ce2ffb. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 10071,
+  "notes": "Automated release-signed debug-channel build from develop @ beb600b. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "hibiki-1.3.1-debug.10014-macos.zip",
@@ -29,11 +29,11 @@
       "version": "1.3.1-debug.10043"
     },
     {
-      "name": "hibiki-1.3.1-debug.10069-1ce2ffb-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.1-debug.10069-1ce2ffb-debug.apk",
-      "releaseSequence": 10069,
-      "tag": "v1.3.1-debug.10069+1ce2ffb",
-      "version": "1.3.1-debug.10069"
+      "name": "hibiki-1.3.1-debug.10071-beb600b-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.1-debug.10071-beb600b-debug.apk",
+      "releaseSequence": 10071,
+      "tag": "v1.3.1-debug.10071+beb600b",
+      "version": "1.3.1-debug.10071"
     }
   ]
 }
