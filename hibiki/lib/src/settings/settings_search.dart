@@ -8,12 +8,15 @@ import 'package:hibiki/src/settings/settings_destination.dart';
 /// item 的可搜索标题：普通项就是 [SettingsItem.title]；[SettingsCustomItem]
 /// 的 title 通常为空（正文由 builder 自绘），可用
 /// [SettingsCustomItem.searchTitle] 显式 opt-in。空串 = 不可搜。
-String settingsItemSearchTitle(SettingsItem item) {
+///
+/// 给了 [context] 就走 [SettingsItem.resolveTitle]，让带 [SettingsItem.titleBuilder]
+/// 的行（诊断分区那三条带实时计数的）在搜索结果里显示的标题与列表里那条一致。
+String settingsItemSearchTitle(SettingsItem item, [SettingsContext? context]) {
   if (item is SettingsCustomItem) {
     final String? custom = item.searchTitle;
     if (custom != null && custom.isNotEmpty) return custom;
   }
-  return item.title;
+  return context == null ? item.title : item.resolveTitle(context);
 }
 
 /// 设置搜索的一条可命中条目（已展平：分类 → 分区 → 配置项）。
@@ -23,7 +26,11 @@ class SettingsSearchEntry {
     required this.item,
     this.sectionTitle,
     this.isBodyEntry = false,
-  });
+    String? resolvedTitle,
+  }) : _resolvedTitle = resolvedTitle;
+
+  /// 展平时就地求好的标题（带 [SettingsItem.titleBuilder] 的行才有意义）。
+  final String? _resolvedTitle;
 
   final SettingsDestination destination;
   final String? sectionTitle;
@@ -36,7 +43,7 @@ class SettingsSearchEntry {
 
   /// 打分与结果展示用的标题（custom 项取 searchTitle，见
   /// [settingsItemSearchTitle]）。
-  String get title => settingsItemSearchTitle(item);
+  String get title => _resolvedTitle ?? settingsItemSearchTitle(item);
 }
 
 /// 搜索结果副标题的「分类 › 分区」面包屑（框架级去重）。
@@ -69,11 +76,13 @@ List<SettingsSearchEntry> flattenVisibleSettings(
     for (final SettingsSection section
         in destination.visibleSections(context)) {
       for (final SettingsItem item in section.items) {
-        if (settingsItemSearchTitle(item).isEmpty) continue;
+        final String title = settingsItemSearchTitle(item, context);
+        if (title.isEmpty) continue;
         entries.add(SettingsSearchEntry(
           destination: destination,
           sectionTitle: section.title,
           item: item,
+          resolvedTitle: title,
         ));
       }
     }

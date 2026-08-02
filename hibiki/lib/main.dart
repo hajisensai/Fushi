@@ -43,6 +43,8 @@ import 'package:hibiki/src/lookup/desktop_lookup_dispatcher.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:hibiki/src/startup/desktop_window_placement.dart';
+import 'package:hibiki/src/settings/settings_schema.dart'
+    show resetSettingsSchemaCache;
 import 'package:hibiki/src/storage/data_root_migration_view.dart';
 import 'package:hibiki/src/startup/loading_watchdog_view.dart';
 import 'package:hibiki/src/sync/backup_import_overlay_view.dart';
@@ -571,6 +573,15 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
 
   static bool get _isDesktop =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
+  /// 热重载（debug）后丢弃设置 schema 缓存。schema 树按 locale 缓存，改
+  /// `settings_schema_*.dart` 的树结构（增删项 / 改分区）不会改变 locale，缓存
+  /// 命中会让热重载看不出效果；这里在每次 reassemble 时复位。仅 debug 触发。
+  @override
+  void reassemble() {
+    super.reassemble();
+    resetSettingsSchemaCache();
+  }
 
   @override
   void initState() {
