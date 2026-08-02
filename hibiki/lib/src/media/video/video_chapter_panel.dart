@@ -111,8 +111,12 @@ class _VideoChapterPanelState extends State<VideoChapterPanel> {
       itemBuilder: (BuildContext _, int i) {
         final VideoChapter chapter = chapters[i];
         final bool selected = i == widget.currentIndex;
-        return ListTile(
-          dense: true,
+        // BUG-1418：行骨架走共享 MD3 组件（[HibikiListItem]），不再裸 ListTile。
+        // 本文件的 reviewed 豁免只覆盖「行字号随 appUiScale 缩放」这一条内容理由，
+        // 从不覆盖行骨架；它援引的同类 video_subtitle_jump_panel 也根本不用 ListTile。
+        return HibikiListItem(
+          density: HibikiListDensity.compact,
+          selected: selected,
           leading: Text(
             '${i + 1}',
             style: TextStyle(
@@ -122,6 +126,7 @@ class _VideoChapterPanelState extends State<VideoChapterPanel> {
               fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             ),
           ),
+          titleMaxLines: 2,
           title: Text(
             _chapterLabel(chapter),
             maxLines: 2,
@@ -140,8 +145,6 @@ class _VideoChapterPanelState extends State<VideoChapterPanel> {
               fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             ),
           ),
-          selected: selected,
-          selectedColor: cs.primary,
           trailing: selected ? Icon(Icons.play_arrow, color: cs.primary) : null,
           onTap: () => widget.onTapChapter(chapter),
         );

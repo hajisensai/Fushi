@@ -175,14 +175,24 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 builder: (BuildContext context) {
                   final bool excluded = _session.state.excludedAudioSourcePtrs
                       .contains(track.sourcePtr);
-                  return ListTile(
+                  // BUG-1418：行骨架走共享 MD3 组件，不再裸 ListTile。本文件的
+                  // reviewed 豁免只覆盖「hook 状态胶囊是实时内容指示器」，从不覆盖
+                  // 对话框行骨架。`ListTile.enabled` 的两个作用分开落地：不可选走
+                  // onTap: null（本来就有），置灰走显式 disabled 前景色。
+                  final Color disabledColor = HibikiDesignTokens.of(context)
+                      .surfaces
+                      .onSurface
+                      .withValues(alpha: 0.38);
+                  return HibikiListItem(
                     leading: Icon(
                       excluded ? Icons.music_off_outlined : Icons.graphic_eq,
+                      color: excluded ? disabledColor : null,
                     ),
                     title: Text(
                       '${t.game_track_voice} ${track.orderIndex + 1} · '
                       '${track.format.sampleRate} Hz · '
                       '${track.format.channels} ch',
+                      style: excluded ? TextStyle(color: disabledColor) : null,
                     ),
                     subtitle: Text(
                       <String>[
@@ -191,6 +201,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                             '${track.avgEnergy.toStringAsFixed(1)}',
                         if (excluded) t.game_track_bgm,
                       ].join(' · '),
+                      style: excluded ? TextStyle(color: disabledColor) : null,
                     ),
                     trailing: Wrap(
                       spacing: 4,
@@ -222,7 +233,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                       ],
                     ),
                     // 已明确标为 BGM 的轨不能再被误点成这句语音；仍可试听与恢复。
-                    enabled: !excluded,
                     onTap: excluded
                         ? null
                         : () =>
@@ -644,7 +654,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         title: Text(t.external_window_select),
         children: <Widget>[
           for (final ExternalWindowInfo window in ordered)
-            ListTile(
+            // BUG-1418：行骨架走共享 MD3 组件，不再裸 ListTile（豁免理由只覆盖
+            // hook 状态胶囊）。autofocus 是 BUG-1049 的焦点驱动行为，随之收进
+            // [HibikiListItem]，不能在收口时悄悄丢掉。
+            HibikiListItem(
               // 焦点驱动纪律：这一项拿到初始焦点，Tab/方向键从它开始，Enter 直接确认。
               autofocus: gamePid != null
                   ? window.pid == gamePid

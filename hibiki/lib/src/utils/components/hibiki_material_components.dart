@@ -153,6 +153,7 @@ class HibikiListItem extends StatefulWidget {
     this.titleMaxLines = 1,
     this.subtitleMaxLines = 2,
     this.focusId,
+    this.autofocus = false,
   });
 
   final Widget title;
@@ -177,6 +178,14 @@ class HibikiListItem extends StatefulWidget {
   final int titleMaxLines;
   final int subtitleMaxLines;
   final HibikiFocusId? focusId;
+
+  /// 本行开屏即拿到键盘焦点（等价于框架 `ListTile.autofocus`）。
+  ///
+  /// BUG-1418：把裸 `ListTile` 收口到本组件时，唯一没有对应物的就是 `autofocus`。
+  /// 焦点驱动纪律下它不是装饰——「打开对话框即落在正确的那一行，回车直接确认」
+  /// （texthooker 窗口选择器的 BUG-1049 行为）全靠它。只在 [onTap] 非空、真正建出
+  /// [InkWell] 焦点节点时有意义。
+  final bool autofocus;
 
   @override
   State<HibikiListItem> createState() => _HibikiListItemState();
@@ -302,6 +311,7 @@ class _HibikiListItemState extends State<HibikiListItem> {
             ? content
             : InkWell(
                 onTap: widget.onTap,
+                autofocus: widget.autofocus,
                 borderRadius: highlightRadius,
                 child: content,
               ),
