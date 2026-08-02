@@ -45,7 +45,21 @@ class MangaOcrRemoteCapability {
   });
 
   final bool supported;
-  final bool modelsReady;
+
+  /// 三态：`true` 已下载 / `false` 明确未下载 / `null` 对端没报这个字段。
+  ///
+  /// `null` 只可能来自「报了 `mangaOcr` 却不含 `modelsReady`」的对端。现网不存在
+  /// 这种版本（两个字段是同一个 commit `de5103250` 一起进的协议），所以这一态纯属
+  /// wire 卫生：**按「未知即可用」处理**，保持修复前的行为，由 start 阶段的
+  /// `models_not_ready` 兜底。反过来把缺字段当 not ready，会让这类对端上本可用的
+  /// 主机凭空消失——为一个不存在的版本付真实的功能倒退，不划算。
+  final bool? modelsReady;
+
+  /// 可选为 OCR 主机：支持，且没有**明确**报模型未下载。
+  bool get usable => supported && modelsReady != false;
+
+  /// 支持 OCR 但明确报了模型未下载——UI 据此置灰并说明原因，而不是隐藏。
+  bool get modelsMissing => supported && modelsReady == false;
 
   /// 从 capabilities 响应 JSON 解析；老 host 无 `mangaOcr` 字段返回 null。
   static MangaOcrRemoteCapability? fromCapabilitiesJson(
@@ -53,9 +67,13 @@ class MangaOcrRemoteCapability {
   ) {
     final Object? raw = json['mangaOcr'];
     if (raw is! Map) return null;
+    // 缺 `modelsReady` 与 `modelsReady: false` 必须可区分，所以先查键在不在，
+    // 不能直接 `raw['modelsReady'] == true` 把两者压成同一个 false。
+    final bool? modelsReady =
+        raw.containsKey('modelsReady') ? raw['modelsReady'] == true : null;
     return MangaOcrRemoteCapability(
       supported: raw['supported'] == true,
-      modelsReady: raw['modelsReady'] == true,
+      modelsReady: modelsReady,
     );
   }
 }
@@ -126,8 +144,12 @@ class MangaOcrRemoteException implements Exception {
 
 /// 远程 OCR 执行器的窄接口（向导/导入入口依赖此接口，测试注 fake）。
 abstract class MangaOcrRemoteRunner {
-  /// 探测第一台具备漫画 OCR 能力（`mangaOcr.supported == true`）的已配对主机；
-  /// 无候选/无 token/全不支持返回 null（UI 据此隐藏远程选项）。
+  /// 探测具备漫画 OCR 能力（`mangaOcr.supported == true`）的已配对主机。
+  ///
+  /// **优先返回模型就绪的主机**；一台都没就绪时才回退到「支持但模型未下载」的那台，
+  /// 好让 UI 能置灰并说清原因（而不是等整卷传完才在 start 阶段报
+  /// `models_not_ready`，TODO-2635）。无候选/无 token/全不支持返回 null
+  /// （UI 据此隐藏远程选项）。
   Future<MangaOcrRemoteTarget?> probe();
 
   /// 对 [target] 跑整卷远程 OCR。事件序列：uploading* → running* →
@@ -177,6 +199,9 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
     final String? token = await _repo.getHibikiClientToken();
     if (candidates.isEmpty || token == null || token.isEmpty) return null;
 
+    // 「支持但模型明确未下载」的第一台：所有候选都不可用时才拿它回填，让 UI 有
+    // 具体原因可讲。一台可用的都不能被它挡住，所以只记不返。
+    MangaOcrRemoteTarget? modelsMissingFallback;
     for (final HibikiClientUrl candidate in candidates) {
       final Uri? uri = _uri(candidate.url, '/api/capabilities');
       if (uri == null) continue;
@@ -194,19 +219,21 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
                 Map<String, dynamic>.from(decoded));
         // 老 host（无字段）或明确不支持 → 换下一个候选。
         if (capability == null || !capability.supported) continue;
-        return MangaOcrRemoteTarget(
+        final MangaOcrRemoteTarget target = MangaOcrRemoteTarget(
           baseUrl: candidate.url,
           capability: capability,
           fingerprintSha256: candidate.fingerprintSha256,
           deviceName: candidate.deviceName,
         );
+        if (capability.usable) return target;
+        modelsMissingFallback ??= target;
       } catch (_) {
         continue;
       } finally {
         if (closeAfter) client.close();
       }
     }
-    return null;
+    return modelsMissingFallback;
   }
 
   @override

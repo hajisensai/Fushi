@@ -414,11 +414,15 @@ jobs:
           # silently without it on a machine with no system ffmpeg: embedded
           # subtitle fonts (subtitle_embedded_fonts.dart) and audio container
           # tags (desktop_audio_clipper.dart).
+          # TODO-2701 ②: no MinGW runtime DLLs here. The recipe builds Windows with
+          # `--extra-ldflags=-static --pkg-config-flags=--static`, so zlib/pthread
+          # are folded into the exe; ffmpeg.exe/ffprobe.exe import only system DLLs
+          # (kernel32/msvcrt/ws2_32/secur32/bcrypt). libwinpthread-1.dll and
+          # zlib1.dll were leftovers from the pre-static, dynamically-linked MSYS2
+          # generation and shipped ~194 KB of dead weight to every user.
           $runtimeFiles = @(
             'ffmpeg.exe',
-            'ffprobe.exe',
-            'libwinpthread-1.dll',
-            'zlib1.dll'
+            'ffprobe.exe'
           )
           foreach ($file in $runtimeFiles) {
             $source = Join-Path $sourceDir $file
