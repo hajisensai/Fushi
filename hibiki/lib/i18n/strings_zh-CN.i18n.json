@@ -3068,5 +3068,14 @@
   "stat_hourly_band_pdf": "PDF",
   "stat_hourly_band_manga": "漫画",
   "stat_hourly_band_unattributed": "未区分历史",
-  "stat_hourly_unattributed_note": "早期记录的时段数据没有存类型，无法拆分；这里按合计如实显示，不归入任何一类。"
+  "stat_hourly_unattributed_note": "早期记录的时段数据没有存类型，无法拆分；这里按合计如实显示，不归入任何一类。",
+  "book_convert_to_manga_action": "转换为漫画",
+  "book_convert_to_book_action": "转换回书",
+  "book_convert_running": "转换中…",
+  "book_convert_done": "转换完成",
+  "book_convert_failed": "转换失败",
+  "book_convert_blocked_already": "这本书已经是该格式了。",
+  "book_convert_blocked_text_only": "这是一本没有页图的文字书。只有扫描版图片书才能转成漫画。",
+  "book_convert_blocked_no_original": "这本漫画是从图片导入的，没有可还原的原书。",
+  "book_convert_blocked_source_missing": "源文件已从磁盘上消失。"
 }

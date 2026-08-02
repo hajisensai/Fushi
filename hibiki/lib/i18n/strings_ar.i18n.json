@@ -3068,5 +3068,14 @@
   "stat_hourly_band_pdf": "PDF",
   "stat_hourly_band_manga": "Manga",
   "stat_hourly_band_unattributed": "Unsplit history",
-  "stat_hourly_unattributed_note": "Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type."
+  "stat_hourly_unattributed_note": "Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.",
+  "book_convert_to_manga_action": "Convert to manga",
+  "book_convert_to_book_action": "Convert back to book",
+  "book_convert_running": "Converting…",
+  "book_convert_done": "Conversion finished",
+  "book_convert_failed": "Conversion failed",
+  "book_convert_blocked_already": "This book is already in that format.",
+  "book_convert_blocked_text_only": "This is a text book with no page images. Only scanned image books can become manga.",
+  "book_convert_blocked_no_original": "This manga was imported from images, so there is no original book to convert back to.",
+  "book_convert_blocked_source_missing": "The source files are gone from disk."
 }
