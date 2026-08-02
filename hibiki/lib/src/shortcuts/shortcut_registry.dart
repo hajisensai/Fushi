@@ -16,7 +16,7 @@ import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 7;
+const int kShortcutSchemaVersion = 8;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -140,10 +140,13 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     // 有键盘绑定但无手柄绑定，快照整体覆盖默认 ⇒ 新手柄键会被永久丢失（BUG-318 同型）。
     // 这些迁移**只新增手柄绑定、不改键盘默认**，故用「键盘未动过」判据（键盘集仍等于
     // 当前平台默认）即准确：命中即整组回到当前默认把新手柄键补回，用户改过键盘则不动。
+    //
+    // ⚠️ 原列表里的 `videoEscape` 已在 v8 删除（语义并入 universal 的 globalBack），
+    // 故这一步不再给它补手柄 B。没有能力损失：B 现在由 globalBack 承担，而
+    // globalBack 的手柄 B 早在 v1→v2 就补过（见上）。
     if (from < 5) {
       for (final ShortcutAction action in const <ShortcutAction>[
         ShortcutAction.videoTogglePlayPause,
-        ShortcutAction.videoEscape,
         ShortcutAction.videoSeekBackward,
         ShortcutAction.videoSeekForward,
         ShortcutAction.videoVolumeUp,
@@ -171,6 +174,140 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     // 无需逐个 restore。同时 [ShortcutBindingSet] 新增 `wheel` 序列化字段：老快照
     // 缺这个 key 时 fromJson 给空表，任何既有 action 的键盘/手柄/鼠标绑定都不受
     // 影响。这里只需 bump 版本保持「快照版本 < 当前 ⇒ 跑迁移」不变式诚实。
+    //
+    // v7 -> v8（用户拍板：「返回上一级」全 app 统一成**一个**配置项）。三件事：
+    //   ① globalBack 挪到 universal scope、默认键盘新增 Esc（旧默认只有 Alt+←）。
+    //      持久化 key `global_back` 不变，故老快照原样命中；没改过的用户补上 Esc。
+    //   ② readerDismissDict / mangaDismissDict 的默认 Esc 收回（新默认空绑定）。
+    //      不收回的话，reader/manga scope 先解析 ⇒ Esc 永远只关词典、退不出去，
+    //      正是本次要消灭的双轨。只清**键盘**、保留鼠标绑定（BUG-1071 的侧键通道）。
+    //   ③ 已删除的 readerExitBook / videoEscape：用户**改过**的键并入 globalBack，
+    //      没改过的按默认丢弃（其默认语义已被 globalBack 的 Esc 完整覆盖）。
+    // 三者都严格遵守「只动没被用户碰过的部分」，改过的绑定一律保留或搬运。
+    if (from < 8) {
+      _restoreDefaultIfUntouched(
+        ShortcutAction.globalBack,
+        oldDefaultKeyboard: const <InputBinding>[
+          InputBinding(
+            key: LogicalKeyboardKey.arrowLeft,
+            modifiers: <ModifierKey>{ModifierKey.alt},
+          ),
+        ],
+        defaults: defaults,
+      );
+      for (final ShortcutAction action in const <ShortcutAction>[
+        ShortcutAction.readerDismissDict,
+        ShortcutAction.mangaDismissDict,
+      ]) {
+        _clearKeyboardIfUntouched(
+          action,
+          oldDefaultKeyboard: const <InputBinding>[
+            InputBinding(key: LogicalKeyboardKey.escape),
+          ],
+        );
+      }
+      // macOS 的默认表把 Ctrl 换成 Meta（见 ShortcutDefaults._macOS），故退书键的
+      // 「旧默认」随平台不同；判据必须用当时那台机器的默认，否则会把没改过的
+      // Cmd+W 当成用户自定义搬进 globalBack。
+      _absorbRemovedActionBindings(
+        legacyKey: 'reader_exit_book',
+        oldDefaultKeyboard: <InputBinding>[
+          InputBinding(
+            key: LogicalKeyboardKey.keyW,
+            modifiers: <ModifierKey>{
+              platform == TargetPlatform.macOS
+                  ? ModifierKey.meta
+                  : ModifierKey.ctrl,
+            },
+          ),
+        ],
+        oldDefaultGamepad: const <GamepadBinding>[],
+      );
+      _absorbRemovedActionBindings(
+        legacyKey: 'video_escape',
+        oldDefaultKeyboard: const <InputBinding>[
+          InputBinding(key: LogicalKeyboardKey.escape),
+        ],
+        oldDefaultGamepad: const <GamepadBinding>[
+          GamepadBinding(GamepadButton.b),
+        ],
+      );
+    }
+  }
+
+  /// v8：把 [action] 的**键盘**绑定清空，仅当它恰等于 [oldDefaultKeyboard]（证明
+  /// 用户没动过）。其余通道（鼠标/手柄/滚轮）原样保留 —— 这正是与
+  /// [_restoreDefaultIfUntouched] 的区别：那个整组换成当前默认，会连用户绑在
+  /// readerDismissDict 上的**鼠标侧键**一起抹掉（BUG-1071 的唯一鼠标通道）。
+  void _clearKeyboardIfUntouched(
+    ShortcutAction action, {
+    required List<InputBinding> oldDefaultKeyboard,
+  }) {
+    final ShortcutBindingSet current = bindingsFor(action);
+    final Set<InputBinding> currentKeys = current.keyboardBindings.toSet();
+    final Set<InputBinding> oldKeys = oldDefaultKeyboard.toSet();
+    if (currentKeys.length != oldKeys.length ||
+        !currentKeys.containsAll(oldKeys)) {
+      return;
+    }
+    _bindings[action] = current.copyWith(
+      keyboardBindings: const <InputBinding>[],
+    );
+  }
+
+  /// v8：把一个**已从代码里删除**的 action（其 key 现在落在 [_unknownEntries]）上
+  /// 用户自定义过的键盘/手柄绑定并入 [ShortcutAction.globalBack]。
+  ///
+  /// 判据与其它迁移同源：绑定恰等于该 action 的旧默认 ⇒ 用户没动过 ⇒ 直接丢弃
+  /// （旧默认的语义已由 globalBack 的新默认完整覆盖，搬过去只会多出一个重复键位）；
+  /// 不等 ⇒ 用户特意改过 ⇒ 搬进 globalBack，去重后追加在既有绑定之后（既有绑定
+  /// 优先，顺序稳定）。搬完把 legacy key 从 [_unknownEntries] 移除，避免它随
+  /// [toJson] 永久回写、下次启动又搬一次。
+  void _absorbRemovedActionBindings({
+    required String legacyKey,
+    required List<InputBinding> oldDefaultKeyboard,
+    required List<GamepadBinding> oldDefaultGamepad,
+  }) {
+    final dynamic raw = _unknownEntries[legacyKey];
+    if (raw is! Map<String, dynamic>) return;
+    _unknownEntries.remove(legacyKey);
+    final ShortcutBindingSet legacy;
+    try {
+      legacy = ShortcutBindingSet.fromJson(raw);
+    } catch (_) {
+      return; // 损坏的条目：丢弃即可，绝不因此打断整段迁移。
+    }
+    final bool keyboardUntouched =
+        _sameBindings<InputBinding>(legacy.keyboardBindings, oldDefaultKeyboard);
+    final bool gamepadUntouched =
+        _sameBindings<GamepadBinding>(legacy.gamepadBindings, oldDefaultGamepad);
+    if (keyboardUntouched && gamepadUntouched) return;
+
+    final ShortcutBindingSet back = bindingsFor(ShortcutAction.globalBack);
+    final List<InputBinding> keyboard =
+        List<InputBinding>.of(back.keyboardBindings);
+    final List<GamepadBinding> gamepad =
+        List<GamepadBinding>.of(back.gamepadBindings);
+    if (!keyboardUntouched) {
+      for (final InputBinding b in legacy.keyboardBindings) {
+        if (!keyboard.contains(b)) keyboard.add(b);
+      }
+    }
+    if (!gamepadUntouched) {
+      for (final GamepadBinding b in legacy.gamepadBindings) {
+        if (!gamepad.contains(b)) gamepad.add(b);
+      }
+    }
+    _bindings[ShortcutAction.globalBack] = back.copyWith(
+      keyboardBindings: keyboard,
+      gamepadBindings: gamepad,
+    );
+  }
+
+  static bool _sameBindings<T>(List<T> a, List<T> b) {
+    final Set<T> left = a.toSet();
+    final Set<T> right = b.toSet();
+    return left.length == right.length && left.containsAll(right);
   }
 
   /// 当 [action] 在快照里的键盘绑定**恰等于** [oldDefaultKeyboard]（无序集合相等，

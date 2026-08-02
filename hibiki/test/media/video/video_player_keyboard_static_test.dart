@@ -59,11 +59,12 @@ void main() {
 
     test('Escape exits page when windowed, exits fullscreen when fullscreen',
         () {
-      // Escape default key now comes from the registry videoEscape default.
+      // Escape 现在是全 app 唯一「返回上一级」(globalBack) 的默认键之一，视频页在
+      // video scope 未命中后兜底解析它，执行体仍是本页的逐级退出阶梯。
       expect(
-          defaultHasKey(ShortcutAction.videoEscape, LogicalKeyboardKey.escape),
+          defaultHasKey(ShortcutAction.globalBack, LogicalKeyboardKey.escape),
           isTrue,
-          reason: 'videoEscape default must bind Escape');
+          reason: 'globalBack default must bind Escape');
       expect(page.contains('escape: () {'), isTrue,
           reason: 'page must wire the Escape action to real exit logic');
       expect(page.contains('isFullscreen('), isTrue,

@@ -185,7 +185,12 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoAlignSubtitleToPrev: actions.alignSubtitleToPrev,
     ShortcutAction.videoAlignSubtitleToNext: actions.alignSubtitleToNext,
     ShortcutAction.videoEnterCaret: actions.enterCaret,
-    ShortcutAction.videoEscape: actions.escape,
+    // 「返回上一级」（universal scope，默认 Esc / Alt+← / 手柄 B）。它不是 video
+    // scope 的动作，但执行体属于本页——视频的逐级退出阶梯（控件编辑 → 字幕列表 →
+    // 剧集列表 → 侧栏 → 沉浸锁 → 全屏 → 浮层 → 退页）只有本页知道。
+    // [buildVideoPlayerShortcutsFromRegistry] 按 action 读 `bindingsFor`（与 scope
+    // 无关），故它照常拿到当前绑定、改键立即生效。
+    ShortcutAction.globalBack: actions.escape,
   };
 }
 

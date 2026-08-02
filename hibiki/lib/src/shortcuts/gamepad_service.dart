@@ -401,7 +401,10 @@ class GamepadService {
         // ShortcutAction.globalBack 时才返回，否则无操作（与其它未绑定按钮一致），
         // 使「返回」键可改键（约束3/5）。页面自己的 globalBack（home）已在上面的
         // GamepadButtonIntent 分派里消费，这里只兜未自解析的页面。
-        if (registry?.resolveGamepad(button, scope: ShortcutScope.global) ==
+        // globalBack 现在住在 universal scope（全 app 唯一的「返回上一级」，退书 /
+        // 退漫画 / 退视频 / 退设置页共用一个配置项），故解析 scope 随之改变；
+        // 行为不变：命中才 pop，未绑定仍是无操作。
+        if (registry?.resolveGamepad(button, scope: ShortcutScope.universal) ==
             ShortcutAction.globalBack) {
           navigatorKey.currentState?.maybePop();
         }

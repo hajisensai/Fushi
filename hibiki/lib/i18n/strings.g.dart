@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 52105 (3065 per locale)
+/// Strings: 52088 (3064 per locale)
 ///
-/// Built on 2026-08-02 at 01:33 UTC
+/// Built on 2026-08-02 at 02:09 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2196,7 +2196,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get shortcut_action_dpad_left => 'D-pad left';
   String get shortcut_action_dpad_right => 'D-pad right';
   String get shortcut_action_dpad_up => 'D-pad up';
-  String get shortcut_action_global_back => 'Go back';
+  String get shortcut_action_global_back => 'Back / exit one level';
   String get shortcut_action_global_external_lookup =>
       'App-external lookup shortcut';
   String get shortcut_action_global_scroll_page_down =>
@@ -2215,7 +2215,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Create card from popup';
   String get shortcut_action_reader_dismiss_dict => 'Dismiss dictionary';
   String get shortcut_action_reader_enter_caret => 'Enter lookup cursor';
-  String get shortcut_action_reader_exit_book => 'Exit book';
   String get shortcut_action_reader_lookup_at_cursor =>
       'Lookup / activate cursor';
   String get shortcut_action_reader_open_menu => 'Open settings menu';
@@ -2233,7 +2232,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Cycle secondary subtitle obscure';
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle subtitle obscure mode';
-  String get shortcut_action_video_escape => 'Close video / Back';
   String get shortcut_action_video_next_chapter => 'Next chapter';
   String get shortcut_action_video_next_frame => 'Next frame';
   String get shortcut_action_video_next_subtitle => 'Next subtitle';
@@ -4119,6 +4117,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get manga_rescan_writeback => 'Save to page';
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -7786,8 +7785,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get shortcut_action_reader_enter_caret => 'الدخول إلى مؤشر البحث';
   @override
-  String get shortcut_action_reader_exit_book => 'Exit book';
-  @override
   String get shortcut_action_reader_lookup_at_cursor => 'بحث / تفعيل المؤشر';
   @override
   String get shortcut_action_reader_open_menu => 'Open Settings Menu';
@@ -7815,8 +7812,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => 'خروج / رجوع';
   @override
   String get shortcut_action_video_next_chapter => 'الفصل التالي';
   @override
@@ -11152,6 +11147,8 @@ class _StringsAr extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -14855,8 +14852,6 @@ class _StringsDe extends _StringsEn {
   String get shortcut_action_reader_enter_caret =>
       'Nachschlage-Cursor aktivieren';
   @override
-  String get shortcut_action_reader_exit_book => 'Exit book';
-  @override
   String get shortcut_action_reader_lookup_at_cursor =>
       'Nachschlagen / Cursor aktivieren';
   @override
@@ -14885,8 +14880,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => 'Beenden / Zurück';
   @override
   String get shortcut_action_video_next_chapter => 'Nächstes Kapitel';
   @override
@@ -18252,6 +18245,8 @@ class _StringsDe extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -21961,8 +21956,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get shortcut_action_reader_enter_caret => 'Activar cursor de búsqueda';
   @override
-  String get shortcut_action_reader_exit_book => 'Exit book';
-  @override
   String get shortcut_action_reader_lookup_at_cursor =>
       'Consultar / activar cursor';
   @override
@@ -21993,8 +21986,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => 'Salir / Atrás';
   @override
   String get shortcut_action_video_next_chapter => 'Capítulo siguiente';
   @override
@@ -25367,6 +25358,8 @@ class _StringsEs extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -29086,8 +29079,6 @@ class _StringsFr extends _StringsEn {
   String get shortcut_action_reader_enter_caret =>
       'Activer le curseur de recherche';
   @override
-  String get shortcut_action_reader_exit_book => 'Exit book';
-  @override
   String get shortcut_action_reader_lookup_at_cursor =>
       'Rechercher / activer le curseur';
   @override
@@ -29118,8 +29109,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => 'Quitter / Retour';
   @override
   String get shortcut_action_video_next_chapter => 'Chapitre suivant';
   @override
@@ -32494,6 +32483,8 @@ class _StringsFr extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -36170,8 +36161,6 @@ class _StringsId extends _StringsEn {
   @override
   String get shortcut_action_reader_enter_caret => 'Masuk kursor pencarian';
   @override
-  String get shortcut_action_reader_exit_book => 'Exit book';
-  @override
   String get shortcut_action_reader_lookup_at_cursor =>
       'Cari kata / aktifkan kursor';
   @override
@@ -36200,8 +36189,6 @@ class _StringsId extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => 'Keluar / Kembali';
   @override
   String get shortcut_action_video_next_chapter => 'Bab berikutnya';
   @override
@@ -39550,6 +39537,8 @@ class _StringsId extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -43253,8 +43242,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get shortcut_action_reader_enter_caret => 'Attiva cursore di ricerca';
   @override
-  String get shortcut_action_reader_exit_book => 'Exit book';
-  @override
   String get shortcut_action_reader_lookup_at_cursor =>
       'Cerca / attiva cursore';
   @override
@@ -43285,8 +43272,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => 'Esci / Indietro';
   @override
   String get shortcut_action_video_next_chapter => 'Capitolo successivo';
   @override
@@ -46652,6 +46637,8 @@ class _StringsIt extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -50267,8 +50254,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get shortcut_action_reader_enter_caret => '辞書引きカーソルに入る';
   @override
-  String get shortcut_action_reader_exit_book => '本を閉じる';
-  @override
   String get shortcut_action_reader_lookup_at_cursor => '辞書を引く／カーソルを有効化';
   @override
   String get shortcut_action_reader_open_menu => 'Open Settings Menu';
@@ -50296,8 +50281,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => '動画を閉じる／戻る';
   @override
   String get shortcut_action_video_next_chapter => '次のチャプター';
   @override
@@ -53571,6 +53554,8 @@ class _StringsJa extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -57183,8 +57168,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get shortcut_action_reader_enter_caret => '사전 찾기 커서 진입';
   @override
-  String get shortcut_action_reader_exit_book => 'Exit book';
-  @override
   String get shortcut_action_reader_lookup_at_cursor => '단어 찾기 / 커서 활성화';
   @override
   String get shortcut_action_reader_open_menu => 'Open Settings Menu';
@@ -57212,8 +57195,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => '나가기 / 뒤로';
   @override
   String get shortcut_action_video_next_chapter => '다음 챕터';
   @override
@@ -60492,6 +60473,8 @@ class _StringsKo extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -64182,8 +64165,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get shortcut_action_reader_enter_caret => 'Opzoekcursor activeren';
   @override
-  String get shortcut_action_reader_exit_book => 'Exit book';
-  @override
   String get shortcut_action_reader_lookup_at_cursor =>
       'Opzoeken / cursor activeren';
   @override
@@ -64212,8 +64193,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => 'Afsluiten / Terug';
   @override
   String get shortcut_action_video_next_chapter => 'Volgend hoofdstuk';
   @override
@@ -67574,6 +67553,8 @@ class _StringsNl extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -71276,8 +71257,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get shortcut_action_reader_enter_caret => 'Ativar cursor de pesquisa';
   @override
-  String get shortcut_action_reader_exit_book => 'Exit book';
-  @override
   String get shortcut_action_reader_lookup_at_cursor =>
       'Consultar / ativar cursor';
   @override
@@ -71306,8 +71285,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => 'Sair / Voltar';
   @override
   String get shortcut_action_video_next_chapter => 'Próximo capítulo';
   @override
@@ -74669,6 +74646,8 @@ class _StringsPtBr extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -78363,8 +78342,6 @@ class _StringsRu extends _StringsEn {
   String get shortcut_action_reader_enter_caret =>
       'Войти в режим курсора поиска';
   @override
-  String get shortcut_action_reader_exit_book => 'Exit book';
-  @override
   String get shortcut_action_reader_lookup_at_cursor =>
       'Поиск слова / активация курсора';
   @override
@@ -78394,8 +78371,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => 'Выход / Назад';
   @override
   String get shortcut_action_video_next_chapter => 'Следующая глава';
   @override
@@ -81748,6 +81723,8 @@ class _StringsRu extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -85406,8 +85383,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get shortcut_action_reader_enter_caret => 'เข้าสู่เคอร์เซอร์ค้นหา';
   @override
-  String get shortcut_action_reader_exit_book => 'Exit book';
-  @override
   String get shortcut_action_reader_lookup_at_cursor =>
       'ค้นคำ / เปิดใช้งานเคอร์เซอร์';
   @override
@@ -85436,8 +85411,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => 'ออก / ย้อนกลับ';
   @override
   String get shortcut_action_video_next_chapter => 'บทถัดไป';
   @override
@@ -88775,6 +88748,8 @@ class _StringsTh extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -92456,8 +92431,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get shortcut_action_reader_enter_caret => 'Arama imlecine gir';
   @override
-  String get shortcut_action_reader_exit_book => 'Exit book';
-  @override
   String get shortcut_action_reader_lookup_at_cursor =>
       'İmleci ara / etkinleştir';
   @override
@@ -92486,8 +92459,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => 'Çık / Geri';
   @override
   String get shortcut_action_video_next_chapter => 'Sonraki bölüm';
   @override
@@ -95834,6 +95805,8 @@ class _StringsTr extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -99509,8 +99482,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get shortcut_action_reader_enter_caret => 'Vào con trỏ tra cứu';
   @override
-  String get shortcut_action_reader_exit_book => 'Exit book';
-  @override
   String get shortcut_action_reader_lookup_at_cursor =>
       'Tra từ / kích hoạt con trỏ';
   @override
@@ -99539,8 +99510,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => 'Thoát / Quay lại';
   @override
   String get shortcut_action_video_next_chapter => 'Chương sau';
   @override
@@ -102878,6 +102847,8 @@ class _StringsVi extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => 'Back / Exit';
 }
 
 // Path: <root>
@@ -106277,7 +106248,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get shortcut_action_dpad_up => '方向键 上';
   @override
-  String get shortcut_action_global_back => '返回';
+  String get shortcut_action_global_back => '返回上一级';
   @override
   String get shortcut_action_global_external_lookup => '应用外查词快捷键';
   @override
@@ -106309,8 +106280,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get shortcut_action_reader_enter_caret => '进入选字查词光标';
   @override
-  String get shortcut_action_reader_exit_book => '退出书籍';
-  @override
   String get shortcut_action_reader_lookup_at_cursor => '查词/激活光标';
   @override
   String get shortcut_action_reader_open_menu => '打开设置菜单';
@@ -106335,8 +106304,6 @@ class _StringsZhCn extends _StringsEn {
       '循环副字幕遮蔽';
   @override
   String get shortcut_action_video_cycle_subtitle_obscure => '循环字幕遮蔽模式';
-  @override
-  String get shortcut_action_video_escape => '关闭视频/返回';
   @override
   String get shortcut_action_video_next_chapter => '下一章';
   @override
@@ -109434,6 +109401,8 @@ class _StringsZhCn extends _StringsEn {
   String get manga_rescan_writeback_done => '已回写 manga.json';
   @override
   String get manga_rescan_writeback_failed => '回写 manga.json 失败';
+  @override
+  String get shortcut_scope_universal => '返回·退出';
 }
 
 // Path: <root>
@@ -112973,7 +112942,7 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get shortcut_action_dpad_up => '方向鍵 上';
   @override
-  String get shortcut_action_global_back => '返回';
+  String get shortcut_action_global_back => '返回上一層';
   @override
   String get shortcut_action_global_external_lookup =>
       'App-external lookup shortcut';
@@ -113006,8 +112975,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get shortcut_action_reader_enter_caret => '進入選字查詞游標';
   @override
-  String get shortcut_action_reader_exit_book => '退出書籍';
-  @override
   String get shortcut_action_reader_lookup_at_cursor => '查詞／啟用游標';
   @override
   String get shortcut_action_reader_open_menu => 'Open Settings Menu';
@@ -113035,8 +113002,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get shortcut_action_video_cycle_subtitle_obscure =>
       'Cycle Subtitle Obscure Mode';
-  @override
-  String get shortcut_action_video_escape => '關閉影片／返回';
   @override
   String get shortcut_action_video_next_chapter => '下一章';
   @override
@@ -116274,6 +116239,8 @@ class _StringsZhHk extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get shortcut_scope_universal => '返回·退出';
 }
 
 /// Flat map(s) containing all translations.
@@ -119534,7 +119501,7 @@ extension on _StringsEn {
       case 'shortcut_action_dpad_up':
         return 'D-pad up';
       case 'shortcut_action_global_back':
-        return 'Go back';
+        return 'Back / exit one level';
       case 'shortcut_action_global_external_lookup':
         return 'App-external lookup shortcut';
       case 'shortcut_action_global_scroll_page_down':
@@ -119565,8 +119532,6 @@ extension on _StringsEn {
         return 'Dismiss dictionary';
       case 'shortcut_action_reader_enter_caret':
         return 'Enter lookup cursor';
-      case 'shortcut_action_reader_exit_book':
-        return 'Exit book';
       case 'shortcut_action_reader_lookup_at_cursor':
         return 'Lookup / activate cursor';
       case 'shortcut_action_reader_open_menu':
@@ -119591,8 +119556,6 @@ extension on _StringsEn {
         return 'Cycle secondary subtitle obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle subtitle obscure mode';
-      case 'shortcut_action_video_escape':
-        return 'Close video / Back';
       case 'shortcut_action_video_next_chapter':
         return 'Next chapter';
       case 'shortcut_action_video_next_frame':
@@ -122563,6 +122526,8 @@ extension on _StringsEn {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -125854,8 +125819,6 @@ extension on _StringsAr {
         return 'إغلاق القاموس';
       case 'shortcut_action_reader_enter_caret':
         return 'الدخول إلى مؤشر البحث';
-      case 'shortcut_action_reader_exit_book':
-        return 'Exit book';
       case 'shortcut_action_reader_lookup_at_cursor':
         return 'بحث / تفعيل المؤشر';
       case 'shortcut_action_reader_open_menu':
@@ -125880,8 +125843,6 @@ extension on _StringsAr {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return 'خروج / رجوع';
       case 'shortcut_action_video_next_chapter':
         return 'الفصل التالي';
       case 'shortcut_action_video_next_frame':
@@ -128850,6 +128811,8 @@ extension on _StringsAr {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -132153,8 +132116,6 @@ extension on _StringsDe {
         return 'Wörterbuch schließen';
       case 'shortcut_action_reader_enter_caret':
         return 'Nachschlage-Cursor aktivieren';
-      case 'shortcut_action_reader_exit_book':
-        return 'Exit book';
       case 'shortcut_action_reader_lookup_at_cursor':
         return 'Nachschlagen / Cursor aktivieren';
       case 'shortcut_action_reader_open_menu':
@@ -132179,8 +132140,6 @@ extension on _StringsDe {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return 'Beenden / Zurück';
       case 'shortcut_action_video_next_chapter':
         return 'Nächstes Kapitel';
       case 'shortcut_action_video_next_frame':
@@ -135159,6 +135118,8 @@ extension on _StringsDe {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -138463,8 +138424,6 @@ extension on _StringsEs {
         return 'Cerrar diccionario';
       case 'shortcut_action_reader_enter_caret':
         return 'Activar cursor de búsqueda';
-      case 'shortcut_action_reader_exit_book':
-        return 'Exit book';
       case 'shortcut_action_reader_lookup_at_cursor':
         return 'Consultar / activar cursor';
       case 'shortcut_action_reader_open_menu':
@@ -138489,8 +138448,6 @@ extension on _StringsEs {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return 'Salir / Atrás';
       case 'shortcut_action_video_next_chapter':
         return 'Capítulo siguiente';
       case 'shortcut_action_video_next_frame':
@@ -141467,6 +141424,8 @@ extension on _StringsEs {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -144775,8 +144734,6 @@ extension on _StringsFr {
         return 'Fermer le dictionnaire';
       case 'shortcut_action_reader_enter_caret':
         return 'Activer le curseur de recherche';
-      case 'shortcut_action_reader_exit_book':
-        return 'Exit book';
       case 'shortcut_action_reader_lookup_at_cursor':
         return 'Rechercher / activer le curseur';
       case 'shortcut_action_reader_open_menu':
@@ -144801,8 +144758,6 @@ extension on _StringsFr {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return 'Quitter / Retour';
       case 'shortcut_action_video_next_chapter':
         return 'Chapitre suivant';
       case 'shortcut_action_video_next_frame':
@@ -147781,6 +147736,8 @@ extension on _StringsFr {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -151078,8 +151035,6 @@ extension on _StringsId {
         return 'Tutup Kamus';
       case 'shortcut_action_reader_enter_caret':
         return 'Masuk kursor pencarian';
-      case 'shortcut_action_reader_exit_book':
-        return 'Exit book';
       case 'shortcut_action_reader_lookup_at_cursor':
         return 'Cari kata / aktifkan kursor';
       case 'shortcut_action_reader_open_menu':
@@ -151104,8 +151059,6 @@ extension on _StringsId {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return 'Keluar / Kembali';
       case 'shortcut_action_video_next_chapter':
         return 'Bab berikutnya';
       case 'shortcut_action_video_next_frame':
@@ -154077,6 +154030,8 @@ extension on _StringsId {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -157378,8 +157333,6 @@ extension on _StringsIt {
         return 'Chiudi dizionario';
       case 'shortcut_action_reader_enter_caret':
         return 'Attiva cursore di ricerca';
-      case 'shortcut_action_reader_exit_book':
-        return 'Exit book';
       case 'shortcut_action_reader_lookup_at_cursor':
         return 'Cerca / attiva cursore';
       case 'shortcut_action_reader_open_menu':
@@ -157404,8 +157357,6 @@ extension on _StringsIt {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return 'Esci / Indietro';
       case 'shortcut_action_video_next_chapter':
         return 'Capitolo successivo';
       case 'shortcut_action_video_next_frame':
@@ -160387,6 +160338,8 @@ extension on _StringsIt {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -163670,8 +163623,6 @@ extension on _StringsJa {
         return '辞書を閉じる';
       case 'shortcut_action_reader_enter_caret':
         return '辞書引きカーソルに入る';
-      case 'shortcut_action_reader_exit_book':
-        return '本を閉じる';
       case 'shortcut_action_reader_lookup_at_cursor':
         return '辞書を引く／カーソルを有効化';
       case 'shortcut_action_reader_open_menu':
@@ -163696,8 +163647,6 @@ extension on _StringsJa {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return '動画を閉じる／戻る';
       case 'shortcut_action_video_next_chapter':
         return '次のチャプター';
       case 'shortcut_action_video_next_frame':
@@ -166659,6 +166608,8 @@ extension on _StringsJa {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -169944,8 +169895,6 @@ extension on _StringsKo {
         return '사전 닫기';
       case 'shortcut_action_reader_enter_caret':
         return '사전 찾기 커서 진입';
-      case 'shortcut_action_reader_exit_book':
-        return 'Exit book';
       case 'shortcut_action_reader_lookup_at_cursor':
         return '단어 찾기 / 커서 활성화';
       case 'shortcut_action_reader_open_menu':
@@ -169970,8 +169919,6 @@ extension on _StringsKo {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return '나가기 / 뒤로';
       case 'shortcut_action_video_next_chapter':
         return '다음 챕터';
       case 'shortcut_action_video_next_frame':
@@ -172935,6 +172882,8 @@ extension on _StringsKo {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -176236,8 +176185,6 @@ extension on _StringsNl {
         return 'Woordenboek sluiten';
       case 'shortcut_action_reader_enter_caret':
         return 'Opzoekcursor activeren';
-      case 'shortcut_action_reader_exit_book':
-        return 'Exit book';
       case 'shortcut_action_reader_lookup_at_cursor':
         return 'Opzoeken / cursor activeren';
       case 'shortcut_action_reader_open_menu':
@@ -176262,8 +176209,6 @@ extension on _StringsNl {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return 'Afsluiten / Terug';
       case 'shortcut_action_video_next_chapter':
         return 'Volgend hoofdstuk';
       case 'shortcut_action_video_next_frame':
@@ -179239,6 +179184,8 @@ extension on _StringsNl {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -182540,8 +182487,6 @@ extension on _StringsPtBr {
         return 'Fechar dicionário';
       case 'shortcut_action_reader_enter_caret':
         return 'Ativar cursor de pesquisa';
-      case 'shortcut_action_reader_exit_book':
-        return 'Exit book';
       case 'shortcut_action_reader_lookup_at_cursor':
         return 'Consultar / ativar cursor';
       case 'shortcut_action_reader_open_menu':
@@ -182566,8 +182511,6 @@ extension on _StringsPtBr {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return 'Sair / Voltar';
       case 'shortcut_action_video_next_chapter':
         return 'Próximo capítulo';
       case 'shortcut_action_video_next_frame':
@@ -185540,6 +185483,8 @@ extension on _StringsPtBr {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -188844,8 +188789,6 @@ extension on _StringsRu {
         return 'Закрыть словарь';
       case 'shortcut_action_reader_enter_caret':
         return 'Войти в режим курсора поиска';
-      case 'shortcut_action_reader_exit_book':
-        return 'Exit book';
       case 'shortcut_action_reader_lookup_at_cursor':
         return 'Поиск слова / активация курсора';
       case 'shortcut_action_reader_open_menu':
@@ -188870,8 +188813,6 @@ extension on _StringsRu {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return 'Выход / Назад';
       case 'shortcut_action_video_next_chapter':
         return 'Следующая глава';
       case 'shortcut_action_video_next_frame':
@@ -191846,6 +191787,8 @@ extension on _StringsRu {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -195137,8 +195080,6 @@ extension on _StringsTh {
         return 'ปิดพจนานุกรม';
       case 'shortcut_action_reader_enter_caret':
         return 'เข้าสู่เคอร์เซอร์ค้นหา';
-      case 'shortcut_action_reader_exit_book':
-        return 'Exit book';
       case 'shortcut_action_reader_lookup_at_cursor':
         return 'ค้นคำ / เปิดใช้งานเคอร์เซอร์';
       case 'shortcut_action_reader_open_menu':
@@ -195163,8 +195104,6 @@ extension on _StringsTh {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return 'ออก / ย้อนกลับ';
       case 'shortcut_action_video_next_chapter':
         return 'บทถัดไป';
       case 'shortcut_action_video_next_frame':
@@ -198135,6 +198074,8 @@ extension on _StringsTh {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -201432,8 +201373,6 @@ extension on _StringsTr {
         return 'Sözlüğü Kapat';
       case 'shortcut_action_reader_enter_caret':
         return 'Arama imlecine gir';
-      case 'shortcut_action_reader_exit_book':
-        return 'Exit book';
       case 'shortcut_action_reader_lookup_at_cursor':
         return 'İmleci ara / etkinleştir';
       case 'shortcut_action_reader_open_menu':
@@ -201458,8 +201397,6 @@ extension on _StringsTr {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return 'Çık / Geri';
       case 'shortcut_action_video_next_chapter':
         return 'Sonraki bölüm';
       case 'shortcut_action_video_next_frame':
@@ -204433,6 +204370,8 @@ extension on _StringsTr {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -207728,8 +207667,6 @@ extension on _StringsVi {
         return 'Đóng từ điển';
       case 'shortcut_action_reader_enter_caret':
         return 'Vào con trỏ tra cứu';
-      case 'shortcut_action_reader_exit_book':
-        return 'Exit book';
       case 'shortcut_action_reader_lookup_at_cursor':
         return 'Tra từ / kích hoạt con trỏ';
       case 'shortcut_action_reader_open_menu':
@@ -207754,8 +207691,6 @@ extension on _StringsVi {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return 'Thoát / Quay lại';
       case 'shortcut_action_video_next_chapter':
         return 'Chương sau';
       case 'shortcut_action_video_next_frame':
@@ -210727,6 +210662,8 @@ extension on _StringsVi {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return 'Back / Exit';
       default:
         return null;
     }
@@ -213968,7 +213905,7 @@ extension on _StringsZhCn {
       case 'shortcut_action_dpad_up':
         return '方向键 上';
       case 'shortcut_action_global_back':
-        return '返回';
+        return '返回上一级';
       case 'shortcut_action_global_external_lookup':
         return '应用外查词快捷键';
       case 'shortcut_action_global_scroll_page_down':
@@ -213999,8 +213936,6 @@ extension on _StringsZhCn {
         return '关闭词典';
       case 'shortcut_action_reader_enter_caret':
         return '进入选字查词光标';
-      case 'shortcut_action_reader_exit_book':
-        return '退出书籍';
       case 'shortcut_action_reader_lookup_at_cursor':
         return '查词/激活光标';
       case 'shortcut_action_reader_open_menu':
@@ -214025,8 +213960,6 @@ extension on _StringsZhCn {
         return '循环副字幕遮蔽';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return '循环字幕遮蔽模式';
-      case 'shortcut_action_video_escape':
-        return '关闭视频/返回';
       case 'shortcut_action_video_next_chapter':
         return '下一章';
       case 'shortcut_action_video_next_frame':
@@ -216967,6 +216900,8 @@ extension on _StringsZhCn {
         return '已回写 manga.json';
       case 'manga_rescan_writeback_failed':
         return '回写 manga.json 失败';
+      case 'shortcut_scope_universal':
+        return '返回·退出';
       default:
         return null;
     }
@@ -220218,7 +220153,7 @@ extension on _StringsZhHk {
       case 'shortcut_action_dpad_up':
         return '方向鍵 上';
       case 'shortcut_action_global_back':
-        return '返回';
+        return '返回上一層';
       case 'shortcut_action_global_external_lookup':
         return 'App-external lookup shortcut';
       case 'shortcut_action_global_scroll_page_down':
@@ -220249,8 +220184,6 @@ extension on _StringsZhHk {
         return '關閉詞典';
       case 'shortcut_action_reader_enter_caret':
         return '進入選字查詞游標';
-      case 'shortcut_action_reader_exit_book':
-        return '退出書籍';
       case 'shortcut_action_reader_lookup_at_cursor':
         return '查詞／啟用游標';
       case 'shortcut_action_reader_open_menu':
@@ -220275,8 +220208,6 @@ extension on _StringsZhHk {
         return 'Cycle Secondary Subtitle Obscure';
       case 'shortcut_action_video_cycle_subtitle_obscure':
         return 'Cycle Subtitle Obscure Mode';
-      case 'shortcut_action_video_escape':
-        return '關閉影片／返回';
       case 'shortcut_action_video_next_chapter':
         return '下一章';
       case 'shortcut_action_video_next_frame':
@@ -223234,6 +223165,8 @@ extension on _StringsZhHk {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'shortcut_scope_universal':
+        return '返回·退出';
       default:
         return null;
     }

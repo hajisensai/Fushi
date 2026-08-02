@@ -154,28 +154,29 @@ void main() {
   testWidgets(
       'capturing a key already bound in scope warns and cancel keeps draft unchanged',
       (WidgetTester tester) async {
-    // Escape is a reader-scope default (the reader "back" key = dismiss dict /
-    // exit book), so trying to bind it to another reader action must ask before
-    // moving ownership.
+    // M is a reader-scope default (readerToggleChrome，底栏开关), so trying to
+    // bind it to another reader action must ask before moving ownership.
+    // （样本从 Escape 换成 M：Esc 自 v8 起属于 universal 的「返回上一级」，
+    //   不在 reader co-active 组里，用它就触发不到组内冲突流程。）
     await pumpDialog(tester, buildRegistry(),
         action: ShortcutAction.readerToggleFurigana);
     await startCapture(tester);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
     await tester.pumpAndSettle();
 
     expect(
       find.text(t.shortcut_conflict_replace_confirm(
-        s: t.shortcut_action_reader_dismiss_dict,
+        s: t.shortcut_action_reader_toggle_chrome,
       )),
       findsOneWidget,
     );
     await tester.tap(find.text(t.dialog_cancel).last);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(HibikiTagChip, 'Escape'), findsNothing);
+    expect(find.widgetWithText(HibikiTagChip, 'M'), findsNothing);
     expect(
-      find.text(t.shortcut_conflict(s: t.shortcut_action_reader_dismiss_dict)),
+      find.text(t.shortcut_conflict(s: t.shortcut_action_reader_toggle_chrome)),
       findsOneWidget,
     );
   });
@@ -191,25 +192,26 @@ void main() {
     );
     await startCapture(tester);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
     await tester.pumpAndSettle();
     await tester.tap(find.text('OK').last);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(HibikiTagChip, 'Escape'), findsOneWidget);
+    expect(find.widgetWithText(HibikiTagChip, 'PageDown'), findsOneWidget);
     await tester.tap(find.text('OK').last);
     await tester.pumpAndSettle();
 
-    const InputBinding escape = InputBinding(key: LogicalKeyboardKey.escape);
+    const InputBinding pageDown =
+        InputBinding(key: LogicalKeyboardKey.pageDown);
     expect(
-      registry.bindingsFor(ShortcutAction.readerDismissDict).keyboardBindings,
-      isNot(contains(escape)),
+      registry.bindingsFor(ShortcutAction.readerPageForward).keyboardBindings,
+      isNot(contains(pageDown)),
     );
     expect(
       registry
           .bindingsFor(ShortcutAction.readerToggleFurigana)
           .keyboardBindings,
-      contains(escape),
+      contains(pageDown),
     );
   });
 
@@ -224,31 +226,32 @@ void main() {
     );
     await startCapture(tester);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
     await tester.pumpAndSettle();
     await tester.tap(find.text('OK').last);
     await tester.pumpAndSettle();
 
-    final Finder escapeChip = find.widgetWithText(HibikiTagChip, 'Escape');
-    expect(escapeChip, findsOneWidget);
+    final Finder pageDownChip = find.widgetWithText(HibikiTagChip, 'PageDown');
+    expect(pageDownChip, findsOneWidget);
     await tester.tap(find.descendant(
-      of: escapeChip,
+      of: pageDownChip,
       matching: find.byIcon(Icons.close),
     ));
     await tester.pumpAndSettle();
     await tester.tap(find.text('OK').last);
     await tester.pumpAndSettle();
 
-    const InputBinding escape = InputBinding(key: LogicalKeyboardKey.escape);
+    const InputBinding pageDown =
+        InputBinding(key: LogicalKeyboardKey.pageDown);
     expect(
-      registry.bindingsFor(ShortcutAction.readerDismissDict).keyboardBindings,
-      contains(escape),
+      registry.bindingsFor(ShortcutAction.readerPageForward).keyboardBindings,
+      contains(pageDown),
     );
     expect(
       registry
           .bindingsFor(ShortcutAction.readerToggleFurigana)
           .keyboardBindings,
-      isNot(contains(escape)),
+      isNot(contains(pageDown)),
     );
   });
 
