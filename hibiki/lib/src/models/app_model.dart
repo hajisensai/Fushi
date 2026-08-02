@@ -3223,6 +3223,10 @@ class AppModel with ChangeNotifier {
       database: database,
       rootDirectory: root,
       runtime: MihonRuntimeFactory.create(root),
+      // 只有真实 app 启动这一处装默认扩展仓库（用户诉求：漫画扩展仓库默认带
+      // keiyoushi）。别把它挪进 MihonManager 的默认值——那会让每个构造 manager
+      // 的单测都去拉真实网络索引，见 MihonManager.seedDefaultStore 的说明。
+      seedDefaultStore: true,
     );
     _mihonManager = manager;
     unawaited(manager.initialise());

@@ -16,6 +16,9 @@ import 'package:hibiki/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:path/path.dart' as p;
+
+import '../../helpers/source_guard.dart';
 
 void main() {
   late Directory root;
@@ -36,6 +39,7 @@ void main() {
         rootDirectory: root,
         runtime: _SeedRuntime(),
         storeClient: client,
+        seedDefaultStore: true,
       );
 
   test('首次初始化自动装上 keiyoushi 仓库，且只拉这一个索引', () async {
@@ -93,6 +97,31 @@ void main() {
     expect(
       online.stores.map((MangaExtensionStoreRow row) => row.indexUrl),
       contains(kMihonDefaultStoreIndexUrl),
+    );
+  });
+
+  // 装默认仓库是**应用启动策略**，不是「构造一个 manager」的语义。挂成 manager
+  // 的默认行为，等于让每个构造 manager 的单测都去拉 keiyoushi 的真实索引
+  // （1900+ 条）——本轮就是这样把 `mihon_manager_install_test` 那条 cold-start
+  // 用例打红的：setUp 里种进来的默认仓库让后续 refresh 多刷了一个仓库。
+  test('默认仓库装配默认关闭，只有真实 app 启动那一处打开', () {
+    final String managerSource = maskComments(
+      File(p.join(
+              'lib', 'src', 'media', 'manga', 'mihon', 'mihon_manager.dart'))
+          .readAsStringSync(),
+    );
+    expect(
+      managerSource,
+      contains('this.seedDefaultStore = false'),
+      reason: '构造 manager 不得默认触发网络装配',
+    );
+    final String appModelSource = maskComments(
+      File(p.join('lib', 'src', 'models', 'app_model.dart')).readAsStringSync(),
+    );
+    expect(
+      appModelSource,
+      contains('seedDefaultStore: true'),
+      reason: '真实 app 启动必须开，否则用户拿不到默认仓库',
     );
   });
 }
