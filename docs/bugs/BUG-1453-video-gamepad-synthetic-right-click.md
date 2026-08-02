@@ -1,0 +1,6 @@
+## BUG-1453 · 手柄按键同时触发视频动作与右键菜单
+- **报告**：2026-08-02（用户：手柄 X 已绑定「上一句字幕」，按下却同时打开视频菜单）
+- **真实性**：✅ 真 bug（跨输入源双投递）。手柄链是 Windows `GameInput` → `GamepadService` 60ms 轮询 → `GamepadButtonIntent` → `video_hibiki_page.dart:4469` `_handleVideoGamepadButton` → 注册表 `videoPreviousSubtitle`；菜单链只有 `layout.part.dart:246` `onSecondaryTapUp` → `video_hibiki_page.dart:6862` `_handleSecondaryTap` → `:6886` `_showVideoContextMenu` → `showMenu`。Steam Input 等桌面手柄映射器可把同一次物理 X 同时投递为真实手柄 X 和 Windows 鼠标右键，Flutter 两条事件没有共同 source id；旧实现各自合法消费，故稳定表现为「上一句 + 菜单」。注册表内 X 只有一个视频动作，不是 Hibiki 自己双绑。
+- **[x] ① 已修复** — `video_player_shortcuts.dart:25` 新增 `VideoGamepadSecondaryTapDeduper`：用单调 `Stopwatch` 在 120ms 窄窗口关联同源手柄/右键；视频手柄入口在解析动作前记录真实按钮边沿，右键入口等待 80ms（略大于桌面 poller 的 60ms tick）覆盖 pointer-first 顺序，并在 `showMenu` 前丢弃同源合成右键。独立鼠标右键不与手柄边沿重合，仍正常打开菜单；窗口/全屏共用同一 State 与 wrapper，两种模式同时生效。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_gamepad_secondary_tap_dedup_test.dart` 覆盖轮询窗口约束、普通鼠标放行、手柄先到、指针先到、窗外独立右键和边界值；`hibiki/test/pages/video_context_menu_test.dart` 源码守卫钉死「等待 → 去重 → showMenu」顺序及手柄记录接线。连同快捷键分派/全屏手柄回归共 29 个聚焦用例通过。
+- **备注**：这是外部桌面映射器没有跨通道来源标识时的输入兼容层；影响仅为真实右键菜单最多延后 80ms。按用户要求未等待完整编译/设备验收；Windows 实体手柄 + 当前桌面映射的原始路径仍待设备复测。

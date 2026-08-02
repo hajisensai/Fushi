@@ -1340,6 +1340,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// `FullscreenInheritedWidget` / `VideoStateInheritedWidget`——本页 build 的 context 是
   /// 它们的祖先，传进去会查不到。故捕获一个后代 context 供 Escape/F 快捷键用。
   BuildContext? _videoControlsContext;
+  final Stopwatch _videoInputClock = Stopwatch()..start();
+  final VideoGamepadSecondaryTapDeduper _videoGamepadSecondaryTapDeduper =
+      VideoGamepadSecondaryTapDeduper();
   DateTime? _lastVideoPointerUpAt;
   Offset? _lastVideoPointerUpPosition;
   bool _videoFullscreenTransitioning = false;
@@ -4477,6 +4480,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 兜底）；未绑定返回 false，交回 [GamepadService] 的通用兜底（焦点移动等）。
   /// 执行体与键盘快捷键共用 [_buildVideoShortcutActions]，行为完全一致。
   bool _handleVideoGamepadButton(GamepadButton button) {
+    // BUG-1453：Steam Input 等桌面映射可把一次手柄按键同时合成鼠标右键。先记录
+    // 真实手柄边沿，让右键菜单入口把同源 secondary tap 去重；动作是否绑定不影响
+    // 输入来源判定，故记录必须在注册表解析之前。
+    _videoGamepadSecondaryTapDeduper.recordGamepadPress(
+      _videoInputClock.elapsed,
+    );
     final VideoPlayerController? controller = _controller;
     if (controller == null) return false;
     // videoEnterCaret：选词光标激活期，方向/确认/退出等在注册表解析**之前**截获
@@ -6873,6 +6882,28 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _handleSecondaryTap(Offset globalPosition) {
     if (!_isDesktopVideoControls) return;
     if (!_immersiveAllowsFullControls) return;
+    // BUG-1453：桌面手柄映射器可能先投递 synthetic right-click，GameInput 轮询再在
+    // 下一 tick 投递真实按钮。等一个略大于 60 ms poll interval 的有界窗口，再与
+    // [_handleVideoGamepadButton] 记录的边沿合并；真实鼠标右键不与手柄边沿重合，照常弹。
+    final Duration secondaryTapAt = _videoInputClock.elapsed;
+    unawaited(
+      Future<void>.delayed(VideoGamepadSecondaryTapDeduper.settleDelay)
+          .then<void>((_) {
+        if (!mounted ||
+            _videoGamepadSecondaryTapDeduper.shouldSuppressSecondaryTap(
+              secondaryTapAt,
+            )) {
+          return;
+        }
+        _showVideoContextMenu(globalPosition);
+      }),
+    );
+  }
+
+  /// 在 secondary tap / gamepad 双投递去重后，同步解析当前 controls 几何并打开菜单。
+  /// 延迟窗口之后才读取 [BuildContext]，全屏切换或退页时会自然读到最新 context / null，
+  /// 也不让任何 context 跨 async gap 生存。
+  void _showVideoContextMenu(Offset globalPosition) {
     final VideoPlayerController? controller = _controller;
     final BuildContext? ctx = _videoControlsContext;
     if (controller == null || ctx == null || !ctx.mounted) return;
