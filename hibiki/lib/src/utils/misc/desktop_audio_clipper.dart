@@ -664,10 +664,19 @@ Future<AudioMetadata?> extractAudioMetadataViaFfprobe({
 /// not decoded from 0). [atSeconds] is clamped to >= 0 so a tiny/short video
 /// never seeks negative; seeking past the end yields no frame (the extractor
 /// then reports null). A non-zero default (e.g. 10s) avoids a black intro frame.
+///
+/// BUG-1416：[decodeFromStart] 把 `-ss` 挪到 `-i` **之后**（输出定位：从 0 解码、丢弃到
+/// 目标时间点再取第一帧）。输入定位依赖容器的索引，而 `MediaRecorder` 产出的 webm
+/// **没有 Cues 索引**（浏览器扩展 Netflix 录制片段就是这种），对它做输入定位会落到
+/// 最近的关键帧甚至整段失败 —— 那正是「按制卡时刻取帧」不能接受的糊弄。短片段
+/// （≤12s）从头解码是毫秒级代价，换来的是「取到的就是那一刻的帧」。
+///
+/// **长视频（书架封面、本地剧集）绝不能开**：那会从 0 解码整个文件。
 List<String> buildFfmpegFrameArgs({
   required String inputPath,
   required String outputPath,
   double atSeconds = 0.0,
+  bool decodeFromStart = false,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
 }) {
@@ -675,10 +684,10 @@ List<String> buildFfmpegFrameArgs({
   return <String>[
     '-y',
     ...buildFfmpegRemoteInputArgs(inputPath, tlsPinSha256: tlsPinSha256),
-    '-ss',
-    seek.toStringAsFixed(3),
+    if (!decodeFromStart) ...<String>['-ss', seek.toStringAsFixed(3)],
     '-i',
     inputPath,
+    if (decodeFromStart) ...<String>['-ss', seek.toStringAsFixed(3)],
     '-an',
     '-frames:v',
     '1',
@@ -700,6 +709,9 @@ Future<String?> extractVideoFrameViaFfmpeg({
   required String inputPath,
   required String outputPath,
   double atSeconds = 10.0,
+  // BUG-1416：无 Cues 索引的短片段（MediaRecorder webm）用输出定位取准帧，见
+  // [buildFfmpegFrameArgs]。长视频保持默认 false（输入定位，快）。
+  bool decodeFromStart = false,
   FfmpegFailureReporter? onFailure,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
@@ -715,6 +727,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
         inputPath: inputPath,
         outputPath: outputPath,
         atSeconds: atSeconds,
+        decodeFromStart: decodeFromStart,
         tlsPinSha256: tlsPinSha256,
       ),
       const Duration(seconds: 30),

@@ -17,6 +17,10 @@ class ImmersionMinePayload {
     this.screenshotBytes,
     this.clipBytes,
     this.clipDurationMs,
+    this.clipAnchorMs,
+    this.clipAnchorUncertaintyMs,
+    this.cueStartMs,
+    this.mineAtMs,
   });
 
   final Map<String, String> fields;
@@ -40,6 +44,30 @@ class ImmersionMinePayload {
 
   /// [clipBytes] 的时长（毫秒），供 ffmpeg 截取上界；null 时用默认上限。
   final int? clipDurationMs;
+
+  /// BUG-1416 —— 片段的**时间基锚点**：[clipBytes] 的 t=0 对应的**视频时间**（毫秒）。
+  ///
+  /// 录制不是从字幕句首开整的：扩展 seek 到 `cueStart-200` 后要等 seek 落定、等缓冲、
+  /// 等 `currentTime` 真前进（`content.js` 的 `hibikiWaitForPlaying`，40ms 轮询）才发
+  /// `beginClip`，再经一次 IPC 往返才真正 `recorder.start()`。这段推进量既非零也不固定，
+  /// **不能假设 t=0 == cueStart-200**。故由扩展在 `beginClip` 前后各采一次 `v.currentTime`、
+  /// 取中点实测下发。null = 老版扩展没发（此时无法把任何视频时间换算成片段内偏移）。
+  final int? clipAnchorMs;
+
+  /// [clipAnchorMs] 的**实测**误差上界（毫秒）= `beginClip` 前后两次采样之差的一半。
+  /// `recorder.start()` 必发生在这两次采样之间，故真值必落在 `锚点 ± 本值` 内。
+  /// 只进诊断日志（让偏移误差在真机上可观测，而不是靠猜），不参与取帧运算。
+  final int? clipAnchorUncertaintyMs;
+
+  /// BUG-1416 —— 本句字幕**句首**的视频时间（毫秒）。静态帧模式 `subtitleStart` 用它。
+  final int? cueStartMs;
+
+  /// BUG-1416 —— **制卡那一刻**的视频时间（毫秒）：用户在播放中按下制卡时的
+  /// `video.currentTime`，入队时就地采样并随队列项持久化（不是回放录制时的时间）。
+  /// 静态帧模式 `currentFrame` 用它 —— 用户拍板「按制卡时候的时间来」。
+  /// 扩展只在它确实落在本句 cue 窗内时才发（面板行查词可能停在别的句上），故非 null
+  /// 即保证该时刻被录进了片段。
+  final int? mineAtMs;
 
   /// true = 带了媒体/时间戳，走沉浸引擎路径；false = 纯文本挖词，走现有 mineEntry 回落。
   bool get isImmersion =>
@@ -81,6 +109,11 @@ class ImmersionMinePayload {
       screenshotBytes: _tryDecodeBase64(json['screenshotBase64']),
       clipBytes: _tryDecodeBase64(json['clipBase64']),
       clipDurationMs: (json['clipDurationMs'] as num?)?.round(),
+      clipAnchorMs: (json['clipAnchorMs'] as num?)?.round(),
+      clipAnchorUncertaintyMs:
+          (json['clipAnchorUncertaintyMs'] as num?)?.round(),
+      cueStartMs: (json['cueStartMs'] as num?)?.round(),
+      mineAtMs: (json['mineAtMs'] as num?)?.round(),
     );
   }
 
