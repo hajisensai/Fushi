@@ -680,10 +680,6 @@ void main() {
           'Shared MD3 component implementation may map tokens to framework widgets.',
       'lib/src/utils/components/settings_shared.dart':
           'Shared adaptive settings primitives own compact settings controls.',
-      'lib/src/utils/components/hibiki_dropdown.dart':
-          'Shared dropdown owns its menu anchor shape until it is tokenized.',
-      'lib/src/utils/adaptive/adaptive_theme.dart':
-          'Cupertino text-theme bridge defines platform typography roles.',
       'lib/src/models/theme_notifier.dart':
           'Theme preview content intentionally displays generated surface roles.',
       'lib/src/pages/implementations/custom_theme_page.dart':
@@ -719,15 +715,8 @@ void main() {
               'properties for the three popup injectors — same reviewed '
               'exception class as popup_settings_injection / '
               'dictionary_popup_webview.',
-      'lib/src/lookup/global_lookup_render.dart':
-          'Global lookup popup theming injects MD3 ColorScheme surface roles into popup CSS (same as dictionary_popup_webview).',
       'lib/src/pages/implementations/history_reader_page.dart':
           'History preview uses content-derived surface and text metrics.',
-      'lib/src/pages/implementations/media_item_dialog_page.dart':
-          'TODO-293 long-press media dialog redesign: the cover-hero placeholder '
-              '(no-cover case) paints a surfaceContainerHighest->High tonal '
-              'gradient as immersive cover content, not ordinary page chrome. '
-              'Surfaces still flow through HibikiDialogFrame + HibikiDesignTokens.',
       'lib/src/pages/implementations/reader_hibiki_history_page.dart':
           'Book-cover overlays and drag affordances are reader-shelf content.',
       // CoverBadge 是压在封面图上的角标胶囊（字幕/云端/播放列表等），把书架/
@@ -823,19 +812,10 @@ void main() {
               'image context-menu font size are reader content / chrome, '
               'same rationale as the parent reader_hibiki_page.dart allowlist '
               '(extracted verbatim).',
-      // TODO-589 batch8: reader webview 域(EPUB WebView 构建 / hoshi.local 资源拦截
-      // + 净化 / 单 IIFE setup 脚本)拆到 reader_hibiki/webview.part.dart；同一份
-      // 「reader content / WebView 注入」豁免随搬运延伸到该 part（零行为变化，逐字符
-      // 自父文件搬出，含 _buildReaderSetupScript 整段内联 JS 的字节级等价）。
-      'lib/src/pages/implementations/reader_hibiki/webview.part.dart':
-          'Reader pagination shell script receives the content font size '
-              '(fontSize: s.fontSize.round() passed to '
-              'ReaderPaginationScripts.shellScript) and the WebView injects '
-              'reader content styling, not ordinary page chrome — same '
-              'rationale as the parent reader_hibiki_page.dart allowlist '
-              '(extracted verbatim).',
-      'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
-          'Reader quick settings and audiobook chrome migrate under Task 8.',
+      // BUG-1418：reader_hibiki/webview.part.dart 的豁免已删除。它的理由写的是
+      // 「shellScript 收到 fontSize: s.fontSize.round()」，但该文件如今一个禁用
+      // token 都不剩（`shellScript` 这个符号在整个 lib/src 里也已不存在），豁免早与
+      // 代码脱节。下面的「no dead allowlist entries」断言会让同类过期豁免立刻红。
       'lib/src/media/audiobook/audiobook_bridge.dart':
           'Serialized audiobook bridge data includes reader font size.',
       'lib/src/media/audiobook/audiobook_session.dart':
@@ -887,11 +867,6 @@ void main() {
               'and playback state as video-subsystem content in the player overlay '
               'and collection hero; card typography scales with appUiScale in the '
               'player, the same reviewed content exception as video_episode_panel.',
-      'lib/src/media/video/video_side_panel.dart':
-          'Video translucent side-panel scaffold (favorite sentences list etc.) '
-              'renders video-subsystem overlay chrome; lock toggle (TODO-611) '
-              'uses a dense compact icon button consistent with the sibling '
-              'subtitle jump panel, not ordinary page chrome.',
       'lib/src/media/video/video_subtitle_style.dart':
           'Subtitle appearance model holds user-configurable caption font '
               'size (content), defaults mirror the allowlisted overlay caption.',
@@ -905,8 +880,6 @@ void main() {
               '(entry button surface, delay/view controls) routes through '
               'HibikiDesignTokens + shared MD3 components (HibikiIconButton / '
               'adaptiveSlider / AdaptiveSettingsTextField).',
-      'lib/src/media/video/video_danmaku_overlay.dart':
-          'Danmaku overlay renders timed video content text, not app chrome.',
       'lib/src/media/video/video_danmaku_text_metrics.dart':
           'BUG-1297/PR#627 danmaku font-size single source of truth, shared '
               'by rendering (video_danmaku_overlay) and geometry measurement '
@@ -1124,20 +1097,6 @@ void main() {
               'manga.json blocks; pure data layer, no UI typography.',
       'lib/src/creator/fields/image_field.dart':
           'Anki image-field renderer uses OCR/image coordinate typography.',
-      'lib/src/pages/implementations/dictionary_dialog_import_page.dart':
-          'Dictionary import content mirrors text-theme metrics.',
-      'lib/src/pages/implementations/dictionary_dialog_delete_page.dart':
-          'Dictionary delete content mirrors text-theme metrics.',
-      'lib/src/settings/cupertino_settings_renderer.dart':
-          'Cupertino destination list still wraps platform navigation rows.',
-      'lib/src/utils/components/hibiki_list_tile.dart':
-          'Legacy compatibility adapter wraps framework ListTile.',
-      'lib/src/utils/components/hibiki_text_selection_controls.dart':
-          'Shared text-selection toolbar owns its transient surface.',
-      'lib/src/utils/misc/update_checker_ui.dart':
-          'Update checker migrated card shell is already covered by local guard.',
-      'lib/src/reader/reader_pagination_scripts.dart':
-          'Injected reader JavaScript receives content font size.',
       'lib/src/storage/data_root_migration_view.dart':
           'TODO-959 data-root migration overlay is pre-init startup chrome '
               '(rendered while the DB is closed / isInitialised=false during '
@@ -1179,6 +1138,10 @@ void main() {
     };
 
     final List<String> violations = <String>[];
+    // BUG-1418：真正被用上的豁免键。一条豁免没被用上只有两种情况——文件没了，或者
+    // 文件里早就一个禁用 token 都不剩；两种都是**过期豁免**：理由与代码脱节，却仍
+    // 挂在名单上给该文件整份免检，等于给未来的违规预留了一张不会被审的通行证。
+    final Set<String> liveAllowlistKeys = <String>{};
     final List<File> dartFiles = Directory('lib/src')
         .listSync(recursive: true)
         .whereType<File>()
@@ -1193,7 +1156,10 @@ void main() {
       );
       final List<String> hits = _forbiddenChromeHits(source, forbidden);
       if (hits.isEmpty) continue;
-      if (reason != null && reason.isNotEmpty) continue;
+      if (reason != null && reason.isNotEmpty) {
+        liveAllowlistKeys.add(path);
+        continue;
+      }
       violations.add('$path: ${hits.join(', ')}');
     }
 
@@ -1202,6 +1168,18 @@ void main() {
       isEmpty,
       reason: 'Route ordinary visual chrome through shared MD3 components, or '
           'add a reviewed allowlist reason for true content exceptions.',
+    );
+
+    final List<String> deadAllowlistEntries = allowedFiles.keys
+        .where((String path) => !liveAllowlistKeys.contains(path))
+        .toList(growable: false);
+    expect(
+      deadAllowlistEntries,
+      isEmpty,
+      reason: 'BUG-1418: these allowlist entries no longer match anything — '
+          'the file is gone, or it has zero forbidden-chrome hits. A reason '
+          'that has drifted away from the code is not a reviewed exception, '
+          'it is a standing blanket waiver. Delete the entry.',
     );
   });
 
