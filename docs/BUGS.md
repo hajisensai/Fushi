@@ -29,12 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1327 条。点号进各自文件。
+> 共 1329 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1426](bugs/BUG-1426-spread-input-bridges.md) | ✅ | ✅ | 双页 spread 页滚轮与左右翻页失效 |
 | [BUG-1425](bugs/BUG-1425-md3-guard-allowlist-drift.md) | ✅ | ✅ | MD3 守卫豁免与实际命中脱节：四处裸 Material chrome 静默放行 + fontSizeFactor 绕过判据 + 过期豁免 |
+| [BUG-1423](bugs/BUG-1423-reader-floating-chrome-shortcut.md) | ✅ | ✅ | 阅读器悬浮控制栏快捷键未驱动临时显隐状态 |
+| [BUG-1422](bugs/BUG-1422-shortcut-capture-ime-physical.md) | ✅ | ✅ | 快捷键录入在 IME 下把物理 Z 存成 Process |
 | [BUG-1419](bugs/BUG-1419-webview2-sticky-mouse-buttons-block-lookup.md) | ✅ | ✅ | Windows 阅读器右键后左键点击只出蓝色选区、查词失效（WebView2 鼠标键状态粘滞） |
 | [BUG-1418](bugs/BUG-1418-manga-reader-ocr-paired-host-missing.md) | ✅ | ✅ | 阅读器整卷 OCR 看不到「配对主机」选项：openBookOcr 漏传 remoteRunner |
 | [BUG-1417](bugs/BUG-1417-anime-download-added-activity.md) | ✅ | ✅ | 番剧下载自动入库不记 added 活动事件 |
