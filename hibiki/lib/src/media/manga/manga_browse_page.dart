@@ -77,7 +77,7 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
         context: context,
         builder: (BuildContext context) => MihonSourceBrowsePage(
           manager: _manager!,
-          source: source,
+          target: MihonInstalledTarget(source),
         ),
       ),
     );

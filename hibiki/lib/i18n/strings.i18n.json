@@ -3077,5 +3077,11 @@
   "book_convert_blocked_already": "This book is already in that format.",
   "book_convert_blocked_text_only": "This is a text book with no page images. Only scanned image books can become manga.",
   "book_convert_blocked_no_original": "This manga was imported from images, so there is no original book to convert back to.",
-  "book_convert_blocked_source_missing": "The source files are gone from disk."
+  "book_convert_blocked_source_missing": "The source files are gone from disk.",
+  "mihon_extension_preview": "Preview",
+  "mihon_extension_preview_warning": "Previewing runs this extension's code before it is installed. Nothing is added to your library until you choose to install.",
+  "mihon_extension_preview_discard": "Discard",
+  "mihon_extension_preview_source_select": "Pick a source to preview",
+  "mihon_extension_sources_included": "Included sources",
+  "mihon_extension_preview_read_only": "Preview is read-only. Install the extension to open and read."
 }

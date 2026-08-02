@@ -71,7 +71,7 @@ void main() {
           theme: ThemeData.light(useMaterial3: true),
           home: MihonSourceBrowsePage(
             manager: manager,
-            source: manager.sources.single,
+            target: MihonInstalledTarget(manager.sources.single),
           ),
         ),
       );
