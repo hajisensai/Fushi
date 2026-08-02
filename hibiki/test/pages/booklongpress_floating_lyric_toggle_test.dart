@@ -213,10 +213,14 @@ void main() {
       'Widget _buildSrtCover(SrtBook book',
       '  MediaItem _srtBookMediaItem(SrtBook book) {',
     );
+    // BUG-1317 起读取入口改为 resolveOverrideThumbnailFile——它在规范文件名之外
+    // 还认得存量的旧文件名（源键烧进 hash）并就地迁移；裸
+    // getOverrideThumbnailFilename 会把未迁移的封面判成「没有」。
     expect(
       srtCover,
-      contains('getOverrideThumbnailFilename'),
-      reason: 'SRT 卡封面必须优先读编辑信息弹窗写入的 override thumbnail（TODO-1191）。',
+      contains('resolveOverrideThumbnailFile'),
+      reason: 'SRT 卡封面必须优先读编辑信息弹窗写入的 override thumbnail（TODO-1191），'
+          '且必须走迁移感知入口（BUG-1317）。',
     );
     // 仍保留 book.coverPath 回退，向后兼容历史外层「选择封面图片」写入的封面。
     expect(
