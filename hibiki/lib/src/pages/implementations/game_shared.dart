@@ -46,7 +46,13 @@ bool shouldPromptGalCaptureSetup({
   required bool sessionAlreadyPrompted,
 }) =>
     state.sessionStartedAt != null &&
-    state.isActive &&
+    switch (state.phase) {
+      GalHookSessionPhase.waitingSignals ||
+      GalHookSessionPhase.running ||
+      GalHookSessionPhase.degraded =>
+        true,
+      _ => false,
+    } &&
     hasEngineSource &&
     selectedTextThreadKey == null &&
     textThreadCount > 0 &&
