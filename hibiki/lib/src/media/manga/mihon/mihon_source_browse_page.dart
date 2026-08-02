@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -65,6 +66,8 @@ class MihonSourceBrowsePage extends StatefulWidget {
 
 class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
   final TextEditingController _searchController = TextEditingController();
+  final MihonSourceImageLoadQueue _imageLoadQueue =
+      MihonSourceImageLoadQueue(maxConcurrent: 4);
   MihonSourceContext? _sourceContext;
   List<MihonManga> _items = const <MihonManga>[];
   List<MihonFilter> _filters = const <MihonFilter>[];
@@ -319,6 +322,7 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
                       runtime: widget.manager.runtime,
                       context: _sourceContext!,
                       url: manga.coverUrl,
+                      loadQueue: _imageLoadQueue,
                     ),
                   ),
                   Padding(
@@ -596,11 +600,16 @@ class MihonSourceImage extends StatefulWidget {
     required this.context,
     required this.url,
     super.key,
+    this.loadQueue,
   });
 
   final MihonRuntime runtime;
   final MihonSourceContext context;
   final String? url;
+
+  /// 浏览网格共享同一队列，避免预览一次把所有可见/预取封面同时打到漫画源。
+  /// 详情页只有单张封面，可以不传。
+  final MihonSourceImageLoadQueue? loadQueue;
 
   @override
   State<MihonSourceImage> createState() => _MihonSourceImageState();
@@ -608,6 +617,7 @@ class MihonSourceImage extends StatefulWidget {
 
 class _MihonSourceImageState extends State<MihonSourceImage> {
   Future<Uint8List>? _future;
+  int _generation = 0;
 
   @override
   void initState() {
@@ -626,14 +636,35 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
 
   void _reload() {
     final String? url = widget.url;
-    _future = url == null || url.isEmpty
-        ? null
-        : widget.runtime.fetchSourceImage(
-            widget.context.extension,
-            widget.context.source,
-            url,
-            preferences: widget.context.preferences,
-          );
+    final int generation = ++_generation;
+    if (url == null || url.isEmpty) {
+      _future = null;
+      return;
+    }
+    Future<Uint8List> fetch() {
+      if (!mounted || generation != _generation) {
+        return Future<Uint8List>.error(
+          const MihonRuntimeException(
+            'IMAGE_LOAD_CANCELLED',
+            'The source image left the preview queue before it started',
+          ),
+        );
+      }
+      return widget.runtime.fetchSourceImage(
+        widget.context.extension,
+        widget.context.source,
+        url,
+        preferences: widget.context.preferences,
+      );
+    }
+
+    _future = widget.loadQueue?.run<Uint8List>(fetch) ?? fetch();
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    super.dispose();
   }
 
   @override
@@ -662,6 +693,50 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
         );
       },
     );
+  }
+}
+
+/// 漫画源封面的轻量共享并发闸门。
+///
+/// `GridView.builder` 虽然懒建，但仍会为当前视口和 cacheExtent 同时创建多张封面；
+/// 没有这个闸门时，每个 [MihonSourceImage] 都会立刻发请求。队列只限制正在执行的
+/// 网络任务，不把结果集中缓存，因此图片仍由各自的 widget 独立渲染和释放。
+class MihonSourceImageLoadQueue {
+  MihonSourceImageLoadQueue({required this.maxConcurrent})
+      : assert(maxConcurrent > 0);
+
+  final int maxConcurrent;
+  final Queue<Completer<void>> _waiters = Queue<Completer<void>>();
+  int _active = 0;
+
+  int get active => _active;
+  int get pending => _waiters.length;
+
+  Future<T> run<T>(Future<T> Function() operation) async {
+    await _acquire();
+    try {
+      return await operation();
+    } finally {
+      _release();
+    }
+  }
+
+  Future<void> _acquire() async {
+    if (_active < maxConcurrent) {
+      _active++;
+      return;
+    }
+    final Completer<void> waiter = Completer<void>();
+    _waiters.addLast(waiter);
+    await waiter.future;
+  }
+
+  void _release() {
+    if (_waiters.isNotEmpty) {
+      _waiters.removeFirst().complete();
+      return;
+    }
+    _active--;
   }
 }
 

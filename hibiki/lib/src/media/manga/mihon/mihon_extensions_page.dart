@@ -54,6 +54,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   String _language = '*';
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  final Set<String> _busyExtensionPackages = <String>{};
 
   @override
   void didChangeDependencies() {
@@ -173,6 +174,24 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     }
+  }
+
+  void _runExtensionAction(
+    MihonAvailableExtension extension,
+    Future<void> Function() action,
+  ) {
+    final String packageName = extension.packageName;
+    if (_busyExtensionPackages.contains(packageName)) return;
+    setState(() => _busyExtensionPackages.add(packageName));
+    unawaited(() async {
+      try {
+        await action();
+      } finally {
+        if (mounted) {
+          setState(() => _busyExtensionPackages.remove(packageName));
+        }
+      }
+    }());
   }
 
   /// 「装之前先看看这个源有什么漫画」。
@@ -579,14 +598,27 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         itemBuilder: (BuildContext context, int index) {
           final MihonAvailableExtension extension = visibleAvailable[index];
           final MangaExtensionRow? row = installed[extension.packageName];
+          final bool busy =
+              _busyExtensionPackages.contains(extension.packageName);
           return _AvailableExtensionTile(
             extension: extension,
             installed: row,
-            onInstall: () => unawaited(_install(extension)),
+            busy: busy,
+            showPreview: row == null,
+            onInstall: busy
+                ? null
+                : () => _runExtensionAction(
+                      extension,
+                      () => _install(extension),
+                    ),
             // 只对未安装的开放：Android 的 native install 会覆盖 exts/ 里同包名的
             // 文件，对已装扩展预览等于拿未确认的版本顶掉用户正在用的那份。
-            onPreview:
-                row == null ? () => unawaited(_preview(extension)) : null,
+            onPreview: row == null && !busy
+                ? () => _runExtensionAction(
+                      extension,
+                      () => _preview(extension),
+                    )
+                : null,
             onUninstall: row == null ? null : () => unawaited(_uninstall(row)),
             onEnabledChanged: row == null
                 ? null
@@ -697,6 +729,8 @@ class _AvailableExtensionTile extends StatelessWidget {
   const _AvailableExtensionTile({
     required this.extension,
     required this.installed,
+    required this.busy,
+    required this.showPreview,
     required this.onInstall,
     required this.onPreview,
     required this.onUninstall,
@@ -705,7 +739,9 @@ class _AvailableExtensionTile extends StatelessWidget {
 
   final MihonAvailableExtension extension;
   final MangaExtensionRow? installed;
-  final VoidCallback onInstall;
+  final bool busy;
+  final bool showPreview;
+  final VoidCallback? onInstall;
 
   /// 未安装时才有：跑一次 staged 试用，看真实内容。
   final VoidCallback? onPreview;
@@ -758,12 +794,20 @@ class _AvailableExtensionTile extends StatelessWidget {
         trailing: Wrap(
           crossAxisAlignment: WrapCrossAlignment.center,
           children: <Widget>[
+            if (busy)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
             if (installed != null)
               Switch.adaptive(
                 value: installed!.enabled,
                 onChanged: onEnabledChanged,
               ),
-            if (onPreview != null)
+            if (showPreview)
               TextButton(
                 onPressed: onPreview,
                 child: Text(t.mihon_extension_preview),
