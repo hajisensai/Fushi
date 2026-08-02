@@ -36,6 +36,38 @@ int compareCollectionMembers(
   return byName != 0 ? byName : a.key.compareTo(b.key);
 }
 
+/// 批量「组合成合集」落盘前，把**本次待加入**的成员排成自然序
+/// （`卷1 < 卷2 < 卷10`、`S01E02 < S01E10`），而不是用户的点选顺序。
+///
+/// 此前三个库页都直接按选择集（`Set<String>`，迭代序 = 点选/框选顺序）逐条
+/// `addToCollection`，sortIndex 就此定型：用户框选一整季建出来的合集，「选集」
+/// 列表是乱序的（E09、E10、E07、E12…），必须再手动跑一次「一键整理」才正常
+/// （BUG-1436）。规则复用「一键整理·按名称」的 [naturalCompare]，两条路径同序。
+///
+/// 只排**本次批次**——并入既有合集时不动已有成员的相对序（那可能是用户手动拖拽
+/// 排好的，重排即破坏）。标题相同则保持输入序：`List.sort` 非稳定排序，装饰上
+/// 原始下标兜底，同名成员的落盘顺序才是确定的。
+List<T> sortNewCollectionMembersNaturally<T>(
+  List<T> items, {
+  required String Function(T) titleOf,
+}) {
+  final List<({T item, String title, int index})> decorated =
+      <({T item, String title, int index})>[
+    for (int i = 0; i < items.length; i++)
+      (item: items[i], title: titleOf(items[i]), index: i),
+  ];
+  decorated.sort((
+    ({T item, String title, int index}) a,
+    ({T item, String title, int index}) b,
+  ) {
+    final int byName = naturalCompare(a.title, b.title);
+    return byName != 0 ? byName : a.index.compareTo(b.index);
+  });
+  return <T>[
+    for (final ({T item, String title, int index}) d in decorated) d.item
+  ];
+}
+
 /// 合集「一键整理」在**库页右键菜单 / 书架网格详情页**的实现：成员行只有身份键，
 /// 故标题 / 导入时间从 epub / srt / galgames / videoBooks 四表现查；查不到的成员
 /// （孤儿 / 对端未知种类）按 `(entryKey, 0)` 兜底排序，不 throw。游戏标题取用户

@@ -59,6 +59,8 @@ import 'package:hibiki/src/media/collections/batch_combine.dart';
 import 'package:hibiki/src/media/collections/collection_context_dialog.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
+import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
+    show sortNewCollectionMembersNaturally;
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/collections/collection_drag.dart';
@@ -1121,12 +1123,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!await _pruneStaleSelection() || !mounted) return;
     final HibikiDatabase db = ref.read(appProvider).database;
     final List<int> collectionIds = _selectedCollectionIds.toList()..sort();
-    final List<ShelfEntryRef> looseRefs = <ShelfEntryRef>[
-      for (final String uid in _selectedUids)
-        if (shelfSelectionToEntry(uid, ShelfSelectionSurface.video)
-            case final ShelfEntryRef ref)
-          ref,
-    ];
+    // 成员序按标题自然序落盘，不用 `_selectedUids`（LinkedHashSet）的点选顺序：
+    // 框选一整季建出来的合集此前「选集」列表是乱的（BUG-1436）。三档共用同一份
+    // 已排好的 refs。
+    final Map<String, String> titleByUid = <String, String>{
+      for (final VideoBookRow b in _visibleVideos) b.bookUid: b.title,
+    };
+    final List<ShelfEntryRef> looseRefs = sortNewCollectionMembersNaturally(
+      <ShelfEntryRef>[
+        for (final String uid in _selectedUids)
+          if (shelfSelectionToEntry(uid, ShelfSelectionSurface.video)
+              case final ShelfEntryRef ref)
+            ref,
+      ],
+      titleOf: (ShelfEntryRef r) => titleByUid[r.entryKey] ?? r.entryKey,
+    );
     final CombineTier tier = classifyCombine(
       collectionCount: collectionIds.length,
       looseCount: looseRefs.length,
