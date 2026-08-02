@@ -8,6 +8,8 @@ import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 
+import '../helpers/source_guard.dart';
+
 Future<ReaderSettings> _defaultSettings() async {
   final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
@@ -447,7 +449,10 @@ void main() {
       for (final String mode in <String>['vertical-rl', 'horizontal-tb']) {
         final ReaderSettings settings = await _defaultSettings();
         await settings.setWritingMode(mode);
-        final String css = ReaderContentStyles.css(settings: settings);
+        // TODO-2477：先做共享 CSS 词法掩码，块注释（含跨行、含花括号的）不再
+        // 参与 blockPattern 配对，也不必在逐行处手判 `/*` 开头。
+        final String css =
+            maskCssComments(ReaderContentStyles.css(settings: settings));
 
         int enforcedBlocks = 0;
         for (final RegExpMatch block in blockPattern.allMatches(css)) {
@@ -459,7 +464,7 @@ void main() {
           enforcedBlocks++;
           for (final String line in block.group(2)!.split('\n')) {
             final String trimmed = line.trim();
-            if (trimmed.isEmpty || trimmed.startsWith('/*')) continue;
+            if (trimmed.isEmpty) continue;
             if (trimmed.startsWith('--')) continue; // 自定义变量本身不参与布局。
             final RegExpMatch? decl = declPattern.firstMatch(trimmed);
             if (decl == null) continue;

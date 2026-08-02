@@ -32,6 +32,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/source_guard.dart';
+
 void main() {
   final Directory libDir = Directory('lib');
 
@@ -73,9 +75,9 @@ void main() {
     // 原始写盘调用（对文件的写/拷/换名）。
     final RegExp rawWrite =
         RegExp(r'writeAsBytes\(|\.copy\(|\.rename\(|openWrite\(');
-    // 行注释（含 doc 注释）里的提法不算调用：逐行剥掉 `//` 之后再匹配，
-    // 否则「见 VideoStorage.coversDir()」这类文档引用会误报。
-    final RegExp lineComment = RegExp(r'//.*$', multiLine: true);
+    // 注释（行注释 / doc / 块注释）里的提法不算调用：先做共享词法掩码再匹配，
+    // 否则「见 VideoStorage.coversDir()」这类文档引用会误报。TODO-2477：旧写法是
+    // 删除式 `replaceAll(RegExp(r'//.*$'), '')`，块注释与串里的 `//` 两个方向都错。
     const Set<String> allowed = <String>{
       // 收口自身。
       'lib/src/media/media_cover_service.dart',
@@ -89,7 +91,7 @@ void main() {
       if (allowed.contains(path)) continue;
       // 互联层远端封面本轮不收编（协议 coverUrl 冻结，W 系列另册处理）。
       if (path.startsWith('lib/src/sync/')) continue;
-      final String src = f.readAsStringSync().replaceAll(lineComment, '');
+      final String src = maskComments(f.readAsStringSync());
       if (!destMarker.hasMatch(src)) continue;
       if (!rawWrite.hasMatch(src)) continue;
       if (src.contains('MediaCoverService.applyCover')) continue;
@@ -116,7 +118,6 @@ void main() {
     };
     final RegExp rawWrite =
         RegExp(r'writeAsBytes\(|\.copy\(|\.rename\(|openWrite\(');
-    final RegExp lineComment = RegExp(r'//.*$');
     // 顶层声明 / 类成员声明的行首标识（`static Future<void> applyCoverBytes({`、
     // `Future<String?> downloadVideoCoverToPath({` 等）：缩进 ≤2 且缩进之后**立刻**
     // 是标识符，取 `(` / `{` 前的最后一个标识符为函数名。缩进阈值把函数体里的
@@ -126,13 +127,16 @@ void main() {
         RegExp(r'^ {0,2}(?:static )?(?:[\w<>?,]+ )+(\w+)\s*[({]');
 
     allowedRawWriters.forEach((String path, Set<String> allowed) {
-      final List<String> lines = File(path).readAsLinesSync();
+      // 先等长掩码再按行切：块注释与串里的 `//` 都掩得掉，且列宽与原文一致，
+      // 所以 declaration 正则仍能在掩码行上正确匹配（代码本身原样保留）。
+      final List<String> lines =
+          maskComments(File(path).readAsStringSync()).split('\n');
       final Set<String> found = <String>{};
       String current = '<file-scope>';
       for (final String line in lines) {
         final RegExpMatch? decl = declaration.firstMatch(line);
         if (decl != null) current = decl.group(1)!;
-        if (rawWrite.hasMatch(line.replaceAll(lineComment, ''))) {
+        if (rawWrite.hasMatch(line)) {
           found.add(current);
         }
       }

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 String _between(String source, String start, String end) {
   final int startAt = source.indexOf(start);
   final int endAt = source.indexOf(end, startAt + start.length);
@@ -11,11 +13,7 @@ String _between(String source, String start, String end) {
   return source.substring(startAt, endAt);
 }
 
-String _withoutLineComments(String source) =>
-    source.split('\n').map((String line) {
-      final int at = line.indexOf('//');
-      return at < 0 ? line : line.substring(0, at);
-    }).join('\n');
+String _withoutLineComments(String source) => maskComments(source);
 
 void main() {
   final String chrome =

@@ -15,6 +15,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/magpie_installer.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/source_guard.dart';
+
 /// 造一个内容合法的最小 Magpie 包：三个必需根文件 + effects 目录。
 List<int> _buildFakeMagpieZip() {
   final Archive archive = Archive();
@@ -228,7 +230,10 @@ void main() {
       final List<String> callers = <String>[];
 
       for (final File file in _workflowFiles()) {
-        final List<String> lines = file.readAsLinesSync();
+        // 注释判定走共享等长掩码（YAML / PowerShell 的 `#`）：行号与列宽同原文
+        // 一一对应，下面按行号定位 step 边界的逻辑不受影响。
+        final List<String> lines =
+            maskHashComments(file.readAsStringSync()).split('\n');
         for (int index = 0; index < lines.length; index++) {
           final String line = lines[index];
           if (!line.contains(scriptPath)) continue;
@@ -262,7 +267,8 @@ void main() {
           int nextCommand = index + 1;
           while (nextCommand < stepEnd) {
             final String candidate = lines[nextCommand].trim();
-            if (candidate.isNotEmpty && !candidate.startsWith('#')) break;
+            // 掩码后整行注释只剩空白，故「非空」即「是真命令行」。
+            if (candidate.isNotEmpty) break;
             nextCommand++;
           }
           expect(nextCommand, lessThan(stepEnd),

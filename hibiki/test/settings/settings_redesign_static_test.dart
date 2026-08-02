@@ -690,12 +690,12 @@ String _statementAround(String code, String needle) {
 }
 
 /// YAML 里是否有一条**未被注释掉**的行含 [key]。
+///
+/// TODO-2477：注释判定走共享 [maskHashComments]（等长掩码，且认引号状态，
+/// `sed 's/#x/y/'` 这类引号内的 `#` 不会被当注释把半条命令抹掉）。
 bool _yamlDeclares(String yaml, String key) {
-  for (final String line in yaml.split('\n')) {
-    if (line.trimLeft().startsWith('#')) continue;
-    final int hash = line.indexOf('#');
-    final String code = hash >= 0 ? line.substring(0, hash) : line;
-    if (code.contains(key)) return true;
+  for (final String line in maskHashComments(yaml).split('\n')) {
+    if (line.contains(key)) return true;
   }
   return false;
 }

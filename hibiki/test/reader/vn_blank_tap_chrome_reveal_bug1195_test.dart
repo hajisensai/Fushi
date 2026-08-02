@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1195：视觉小说（VN）模式点屏幕只会翻页，控制栏（菜单）永远唤不出来。
 ///
 /// 根因：VN 是唯一把「点空白」绑成翻页的 view-mode，旧实现在 JS 的 `_gestureEnd`
@@ -321,9 +323,4 @@ String _vnBlankTapBody(String chrome) {
 
 /// 去掉行注释（Dart 与注入 JS 同用 `//`），使守卫只看真代码——注释里正当地引用了
 /// 被修掉的旧写法。
-String _stripLineComments(String source) {
-  return source.split('\n').map((String line) {
-    final int idx = line.indexOf('//');
-    return idx >= 0 ? line.substring(0, idx) : line;
-  }).join('\n');
-}
+String _stripLineComments(String source) => maskCommentsAndScriptLines(source);

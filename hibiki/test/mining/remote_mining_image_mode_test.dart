@@ -7,6 +7,8 @@ import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression, FfmpegFailureReporter;
 
+import '../helpers/source_guard.dart';
+
 /// TODO-2519(2a)：远端制卡的 **YouTube** 路径过去只透传了动图**格式**偏好
 /// （`videoMiningAnimatedFormat`，BUG-1330），却没透传「动图 vs 静态帧」偏好
 /// （`videoMiningImageMode`）——用户在 Anki 设置里选「字幕开头截图 / 制卡时截图」，
@@ -176,10 +178,7 @@ void main() {
   group('源码扫描守卫：mineImmersion 的 YouTube 段必须下发 imageMode', () {
     /// 剥掉注释再扫。散文里为解释这条断链必然写出同样的符号名，让文档把守卫喂绿是
     /// 假阳性；判据只应落在真实代码上。
-    String codeOnly(String src) => src.split('\n').map((String line) {
-          final int i = line.indexOf('//');
-          return i < 0 ? line : line.substring(0, i);
-        }).join('\n');
+    String codeOnly(String src) => maskComments(src);
 
     test('ImmersionMiningRequest 收 _appModel.videoMiningImageMode', () {
       final String src =

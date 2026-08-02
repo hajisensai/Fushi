@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 架构守卫：媒体页（视频 / 阅读器）把键盘焦点的回收**全部**交给
 /// `PageFocusOwnership`，不得再各自裸调 `requestFocus`。
 ///
@@ -44,13 +46,10 @@ void main() {
         .where((File f) => f.path.endsWith('.dart'));
   }
 
-  /// 剥掉 `//` 注释（整行与行尾）——注释里合法地讲解 `requestFocus`，扫的是代码。
-  /// 唯一已知误差：字符串里的 `//`（如 URL）会把该行剩余截掉；`requestFocus`
-  /// 不会出现在 URL 之后，故不影响本守卫。
-  String codeOnly(String source) => source.split('\n').map((String line) {
-        final int at = line.indexOf('//');
-        return at < 0 ? line : line.substring(0, at);
-      }).join('\n');
+  /// 剥掉注释——注释里合法地讲解 `requestFocus`，扫的是代码。
+  /// TODO-2477：走共享词法掩码，串里的 `//`（URL）不再把该行剩余截掉，
+  /// 块注释也一并掩掉（旧写法对 `/* requestFocus() */` 零覆盖）。
+  String codeOnly(String source) => maskComments(source);
 
   test('媒体页不得绕过 PageFocusOwnership 裸调 requestFocus', () {
     final List<String> violations = <String>[];

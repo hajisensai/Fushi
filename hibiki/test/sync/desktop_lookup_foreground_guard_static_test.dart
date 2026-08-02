@@ -2,66 +2,17 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 剥除 Dart 源码里的注释，只保留真实代码，避免静态守卫把文档注释（`///`）/行注释
 /// （`//`）/块注释（`/* */`）里出现的示例文字（如反引号包裹的 `windowManager.show()`）
 /// 误判为真实调用（TODO-972：CI 静态守卫误报）。
 ///
-/// 实现是一个字符级状态机，能识别字符串字面量（`'...'` / `"..."`，含 `r''` 原始串与
-/// `\` 转义），不会把字符串里出现的 `//` 误删，从而保留对真实调用的检测能力。
-/// 注释字符用空格替换（保留长度/换行的相对结构对本守卫无关紧要，但避免把相邻 token
-/// 粘连）。
-String stripDartComments(String src) {
-  final StringBuffer out = StringBuffer();
-  final int n = src.length;
-  int i = 0;
-  while (i < n) {
-    final String c = src[i];
-    final String next = i + 1 < n ? src[i + 1] : '';
-
-    // 行注释 // 或 /// —— 跳到行尾（保留换行）。
-    if (c == '/' && next == '/') {
-      while (i < n && src[i] != '\n') {
-        i++;
-      }
-      continue;
-    }
-
-    // 块注释 /* ... */（含 /** 文档块）—— 跳到 */，保留其中换行以维持行结构。
-    if (c == '/' && next == '*') {
-      i += 2;
-      while (i < n && !(src[i] == '*' && i + 1 < n && src[i + 1] == '/')) {
-        if (src[i] == '\n') out.write('\n');
-        i++;
-      }
-      i += 2; // 跳过结尾 */
-      continue;
-    }
-
-    // 字符串字面量 '...' 或 "..." —— 整段原样保留，串内 // 不算注释。
-    if (c == '\'' || c == '"') {
-      final String quote = c;
-      out.write(c);
-      i++;
-      while (i < n) {
-        final String s = src[i];
-        out.write(s);
-        if (s == '\\' && i + 1 < n) {
-          // 转义序列：连同被转义字符一起原样写出，防止 \' / \" 提前终止。
-          out.write(src[i + 1]);
-          i += 2;
-          continue;
-        }
-        i++;
-        if (s == quote) break;
-      }
-      continue;
-    }
-
-    out.write(c);
-    i++;
-  }
-  return out.toString();
-}
+/// 实现委托给共享词法掩码 [maskComments]（TODO-2477）：原先这里手写了一份字符级
+/// 状态机，行为与共享版一致但各自维护——本仓已因「每个守卫各写一份剥离逻辑」
+/// 反复出过假绿。共享版额外保证**等长掩码**（注释换成等量空白而非删除），
+/// 下标可直接回原串切片。
+String stripDartComments(String src) => maskComments(src);
 
 void main() {
   String read(String path) => File(path).readAsStringSync();
