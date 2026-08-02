@@ -41,6 +41,8 @@ import 'package:hibiki/src/media/manga/ocr/manga_box_rescan.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:hibiki/src/media/manga/reader/manga_rescan_result_sheet.dart';
+import 'package:hibiki/src/media/manga/reader/manga_volume_key_paging_controller.dart';
+import 'package:hibiki/src/media/manga/reader/manga_zoom_preference_debouncer.dart';
 import 'package:hibiki/src/focus/page_focus_ownership.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
     show InputBinding, ModifierKey, MouseBinding, activeModifierKeys;
@@ -613,6 +615,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   double _currentFraction = 0;
   Timer? _progressDebounce;
   Timer? _onlineGeometryPersistDebounce;
+  MangaZoomPreferenceDebouncer? _zoomPreferenceDebouncer;
   int _lastSavedPage = -1;
   double _lastSavedFraction = -1;
 
@@ -765,6 +768,16 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   @override
   void initState() {
     super.initState();
+    _volumeKeyPagingController = MangaVolumeKeyPagingController(
+      onPrevious: () => _executeReaderInputAction(
+        MangaReaderInputAction.previous,
+        source: _MangaReaderInputSource.volumeKey,
+      ),
+      onNext: () => _executeReaderInputAction(
+        MangaReaderInputAction.next,
+        source: _MangaReaderInputSource.volumeKey,
+      ),
+    );
     WidgetsBinding.instance.addObserver(this);
     // 进程退出兜底：把未落盘的页码 flush 掉（与 EPUB/PDF 阅读器同纪律）。
     ExitFlushRegistry.instance.register(_flushPosition);
@@ -774,8 +787,8 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
 
   @override
   void dispose() {
-    // 交还音量键所有权（见 _volumeKeysOwned）：必须早于其它拆栈，且无条件执行。
-    _applyVolumeKeyPaging(false);
+    // 交还音量键所有权：必须早于其它拆栈，且无条件执行。
+    _volumeKeyPagingController.dispose();
     ExitFlushRegistry.instance.unregister(_flushPosition);
     final MangaBoxRescanService? rescanService = _rescanService;
     _rescanService = null;
@@ -788,6 +801,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     _windowGate.abandon();
     _progressDebounce?.cancel();
     _onlineGeometryPersistDebounce?.cancel();
+    final MangaZoomPreferenceDebouncer? zoomDebouncer =
+        _zoomPreferenceDebouncer;
+    _zoomPreferenceDebouncer = null;
+    if (zoomDebouncer != null) unawaited(zoomDebouncer.dispose());
     _dictionaryTurnDismissTimer?.cancel();
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;
@@ -1868,32 +1885,13 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   /// （`audiobook.part.dart` 的 `_setupVolumeKeyHandlers` 无条件覆盖）。漫画页接管后
   /// 必须在 dispose 里交还——清 handler 并关掉原生拦截，否则退出漫画后音量键继续被
   /// `MainActivity.dispatchKeyEvent` 吞掉，用户调不动系统音量（BUG-196 的老坑）。
-  bool _volumeKeysOwned = false;
+  late final MangaVolumeKeyPagingController _volumeKeyPagingController;
 
   void _applyVolumeKeyPaging(bool enabled) {
     // 只有 Android 侧 dispatchKeyEvent 会转发音量键；其它平台连通道都没有。
-    final bool want = enabled && isMobilePlatform;
-    if (want == _volumeKeysOwned) return;
-    _volumeKeysOwned = want;
-    if (want) {
-      VolumeKeyChannel.instance.setHandlers(
-        onVolumeUp: () => _onVolumeKeyTurn(isUp: true),
-        onVolumeDown: () => _onVolumeKeyTurn(isUp: false),
-      );
-      unawaited(VolumeKeyChannel.instance.setInterceptEnabled(true));
-    } else {
-      VolumeKeyChannel.instance.setHandlers();
-      unawaited(VolumeKeyChannel.instance.setInterceptEnabled(false));
-    }
-  }
-
-  /// 音量减 = 页序前进（与 EPUB 阅读器同口径）。方向的 RTL 校正统一在
-  /// [_onMangaTurn] 一侧做，这里只报页序语义。
-  void _onVolumeKeyTurn({required bool isUp}) {
-    if (!mounted) return;
-    _executeReaderInputAction(
-      isUp ? MangaReaderInputAction.previous : MangaReaderInputAction.next,
-      source: _MangaReaderInputSource.volumeKey,
+    _volumeKeyPagingController.apply(
+      enabled: enabled,
+      platformSupported: Platform.isAndroid,
     );
   }
 
@@ -2941,11 +2939,18 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         value.clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent);
     if (_zoomPercent == normalized) return;
     setState(() => _zoomPercent = normalized);
+    _zoomPreferenceDebouncer?.discard();
     await appModel.setMangaZoomPercent(normalized);
     await _controller?.evaluateJavascript(
       source: 'window.__mangaSetZoom && '
           'window.__mangaSetZoom($normalized);',
     );
+  }
+
+  void _queueZoomPreferencePersist(int value) {
+    (_zoomPreferenceDebouncer ??= MangaZoomPreferenceDebouncer(
+      persist: appModel.setMangaZoomPercent,
+    )).queue(value);
   }
 
   Future<void> _jumpToPage(int oneBasedPage) async {
@@ -3438,7 +3443,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
             } else {
               _zoomPercent = normalized;
             }
-            unawaited(appModel.setMangaZoomPercent(normalized));
+            _queueZoomPreferencePersist(normalized);
           },
         );
         // webtoon 滚动报告：更新 fraction/页码（绝不重载）。

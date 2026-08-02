@@ -133,6 +133,7 @@ void main() {
     required _FakeRemoteRunner remote,
     MangaOcrImportRunner? importOverride,
     GoogleLensMangaOcrRunner? lensRunner,
+    String? initialEnginePreference,
   }) async {
     String? popped;
     final Widget app = ProviderScope(
@@ -149,6 +150,7 @@ void main() {
                         service: _UnsupportedOcrService(),
                         remoteRunner: remote,
                         lensRunner: lensRunner,
+                        initialEnginePreference: initialEnginePreference,
                       ),
                       db: db,
                       initialImageDir: imageDir.path,
@@ -304,6 +306,34 @@ void main() {
 
     expect(find.text(t.manga_remote_ocr_engine), findsNothing);
     expect(find.text(t.manga_ocr_engine_none), findsOneWidget);
+    final Finder runBtn =
+        find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
+    expect(tester.widget<FilledButton>(runBtn).onPressed, isNull);
+  });
+
+  testWidgets(
+      'explicit pairedHost stays represented and disabled while host is offline',
+      (WidgetTester tester) async {
+    final _FakeRemoteRunner remote = _FakeRemoteRunner(target: null);
+    await pumpWizard(
+      tester,
+      remote: remote,
+      lensRunner: _NoopLensRunner(),
+      initialEnginePreference: MangaOcrEnginePreference.pairedHost.key,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    final SegmentedButton<MangaOcrEngineId> selector =
+        tester.widget<SegmentedButton<MangaOcrEngineId>>(
+            find.byType(SegmentedButton<MangaOcrEngineId>));
+    final ButtonSegment<MangaOcrEngineId> paired = selector.segments.firstWhere(
+      (ButtonSegment<MangaOcrEngineId> segment) =>
+          segment.value == MangaOcrEngineId.pairedHost,
+    );
+    expect(paired.enabled, isFalse);
+    expect(selector.selected, <MangaOcrEngineId>{MangaOcrEngineId.pairedHost});
     final Finder runBtn =
         find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
     expect(tester.widget<FilledButton>(runBtn).onPressed, isNull);

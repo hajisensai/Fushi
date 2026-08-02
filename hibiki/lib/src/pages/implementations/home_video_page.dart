@@ -920,7 +920,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             : collectionCount == 0
                 ? t.batch_delete_success_video(n: deleted)
                 : t.batch_dissolve_success(m: dissolved);
-    HibikiToast.show(msg: successMsg, severity: ToastSeverity.success);
+    HibikiToast.show(
+      msg: successMsg,
+      severity: deleted > 0 || dissolved > 0
+          ? ToastSeverity.success
+          : ToastSeverity.warning,
+    );
   }
 
   Future<void> _waitForVideoCardsToUnmount() async {

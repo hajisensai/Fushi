@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 
+import '../helpers/source_guard.dart';
+
 // TODO-956 A：右部词条收藏「点了没用」的真因 = 唯一反馈是 popup.css 的 ☆→★ 变色，
 // 而该变色依赖 popup.js `nowFav = await callHandler('favoriteEntry')` 的返回值往返；
 // 桌面 flutter_inappwebview_windows fork 的 callHandler 返回值 marshalling 与移动端
@@ -71,17 +73,17 @@ void main() {
           File('lib/src/pages/base_source_page.dart').readAsStringSync();
       final int handlerStart = src.indexOf('Future<bool> onFavoriteFromPopup(');
       expect(handlerStart, greaterThan(0));
-      final String body = _squashWs(src.substring(handlerStart));
+      final String body = compactCode(src.substring(handlerStart));
       expect(body,
-          contains(_squashWs('HibikiToast.show(msg: t.word_favorite_added')),
+          contains(compactCode('HibikiToast.show(msg: t.word_favorite_added,')),
           reason: '收藏成功后必须弹「已收藏」toast');
       expect(body,
-          contains(_squashWs('HibikiToast.show(msg: t.word_favorite_removed')),
+          contains(compactCode('HibikiToast.show(msg: t.word_favorite_removed,')),
           reason: '取消收藏后必须弹「已取消收藏」toast');
       expect(
         body.indexOf('addFavoriteWord(') <
             body.indexOf(
-                _squashWs('HibikiToast.show(msg: t.word_favorite_added')),
+                compactCode('HibikiToast.show(msg: t.word_favorite_added,')),
         isTrue,
         reason: 'add 的 toast 必须在 addFavoriteWord 写库之后（解耦于返回值通道）',
       );
@@ -93,25 +95,17 @@ void main() {
               .readAsStringSync();
       final int handlerStart = src.indexOf('Future<bool> onFavoriteEntry(');
       expect(handlerStart, greaterThan(0));
-      final String body = _squashWs(src.substring(handlerStart));
+      final String body = compactCode(src.substring(handlerStart));
       expect(body,
-          contains(_squashWs('HibikiToast.show(msg: t.word_favorite_added')));
+          contains(compactCode('HibikiToast.show(msg: t.word_favorite_added,')));
       expect(body,
-          contains(_squashWs('HibikiToast.show(msg: t.word_favorite_removed')));
+          contains(compactCode('HibikiToast.show(msg: t.word_favorite_removed,')));
       expect(
         body.indexOf('addFavoriteWord(') <
             body.indexOf(
-                _squashWs('HibikiToast.show(msg: t.word_favorite_added')),
+                compactCode('HibikiToast.show(msg: t.word_favorite_added,')),
         isTrue,
       );
     });
   });
 }
-
-/// 折叠全部空白后再比对调用文本。
-///
-/// 守卫要钉的是「这条代码路径确实弹了带该文案的提示」，而不是它在源码里排成几行。
-/// 给 toast 增补实参（如统一语义配色的 `severity:`）会让 dart format 把单行调用换成
-/// 多行，逐字匹配单行调用就会假红——红的是格式，不是行为。折叠空白后仍然要求同一
-/// 函数名 + 同一具名实参 + 同一 i18n key 连续出现，守卫强度不变。
-String _squashWs(String s) => s.replaceAll(RegExp(r'\s+'), '');

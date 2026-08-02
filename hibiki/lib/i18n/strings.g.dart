@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 52870 (3110 per locale)
+/// Strings: 53091 (3123 per locale)
 ///
-/// Built on 2026-08-02 at 12:49 UTC
+/// Built on 2026-08-02 at 16:17 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4185,6 +4185,22 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Preview is read-only. Install the extension to open and read.';
   String get selection_copy_empty => 'No text selected.';
   String get video_subtitle_replay => 'Replay this line';
+  String get manga_ocr_done => 'OCR complete';
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  String get manga_page_animation => 'Page turn animation';
+  String get manga_page_animation_none => 'None';
+  String get manga_page_animation_slide => 'Slide';
+  String get manga_page_animation_fade => 'Fade';
+  String get manga_default_zoom => 'Default zoom';
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -11329,6 +11345,35 @@ class _StringsAr extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -18540,6 +18585,35 @@ class _StringsDe extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -25766,6 +25840,35 @@ class _StringsEs extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -33004,6 +33107,35 @@ class _StringsFr extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -40171,6 +40303,35 @@ class _StringsId extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -47384,6 +47545,35 @@ class _StringsIt extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -54414,6 +54604,35 @@ class _StringsJa extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -61446,6 +61665,35 @@ class _StringsKo extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -68639,6 +68887,35 @@ class _StringsNl extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -75845,6 +76122,35 @@ class _StringsPtBr extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -83035,6 +83341,35 @@ class _StringsRu extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -90173,6 +90508,35 @@ class _StringsTh extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -97343,6 +97707,35 @@ class _StringsTr extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -104498,6 +104891,35 @@ class _StringsVi extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 // Path: <root>
@@ -111153,6 +111575,32 @@ class _StringsZhCn extends _StringsEn {
   String get selection_copy_empty => '未选中文本。';
   @override
   String get video_subtitle_replay => '重播本句';
+  @override
+  String get manga_ocr_done => 'OCR 已完成';
+  @override
+  String get settings_destination_manga_summary => '阅读器、OCR 与在线目录';
+  @override
+  String get manga_page_animation => '翻页动画';
+  @override
+  String get manga_page_animation_none => '无';
+  @override
+  String get manga_page_animation_slide => '滑动';
+  @override
+  String get manga_page_animation_fade => '淡入淡出';
+  @override
+  String get manga_default_zoom => '默认缩放';
+  @override
+  String get manga_zoom_sensitivity => '缩放灵敏度';
+  @override
+  String get manga_volume_key_paging => '音量键翻页';
+  @override
+  String get manga_volume_key_paging_subtitle => '在漫画阅读器中用音量加减键翻页';
+  @override
+  String get manga_tap_zone_paging => '点击边缘翻页';
+  @override
+  String get manga_tap_zone_paging_subtitle => '点击页面左右边缘翻页';
+  @override
+  String get manga_section_viewing => '浏览与翻页';
 }
 
 // Path: <root>
@@ -118104,6 +118552,35 @@ class _StringsZhHk extends _StringsEn {
   String get selection_copy_empty => 'No text selected.';
   @override
   String get video_subtitle_replay => 'Replay this line';
+  @override
+  String get manga_ocr_done => 'OCR complete';
+  @override
+  String get settings_destination_manga_summary =>
+      'Reader, OCR and online catalog';
+  @override
+  String get manga_page_animation => 'Page turn animation';
+  @override
+  String get manga_page_animation_none => 'None';
+  @override
+  String get manga_page_animation_slide => 'Slide';
+  @override
+  String get manga_page_animation_fade => 'Fade';
+  @override
+  String get manga_default_zoom => 'Default zoom';
+  @override
+  String get manga_zoom_sensitivity => 'Zoom sensitivity';
+  @override
+  String get manga_volume_key_paging => 'Volume keys turn pages';
+  @override
+  String get manga_volume_key_paging_subtitle =>
+      'Use volume up and down to turn pages in the manga reader';
+  @override
+  String get manga_tap_zone_paging => 'Tap edges to turn pages';
+  @override
+  String get manga_tap_zone_paging_subtitle =>
+      'Tap the left or right edge of the page to turn';
+  @override
+  String get manga_section_viewing => 'Viewing and page turning';
 }
 
 /// Flat map(s) containing all translations.
@@ -124484,6 +124961,32 @@ extension on _StringsEn {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -130862,6 +131365,32 @@ extension on _StringsAr {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -137262,6 +137791,32 @@ extension on _StringsDe {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -143661,6 +144216,32 @@ extension on _StringsEs {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -150066,6 +150647,32 @@ extension on _StringsFr {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -156453,6 +157060,32 @@ extension on _StringsId {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -162854,6 +163487,32 @@ extension on _StringsIt {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -169217,6 +169876,32 @@ extension on _StringsJa {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -175584,6 +176269,32 @@ extension on _StringsKo {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -181979,6 +182690,32 @@ extension on _StringsNl {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -188371,6 +189108,32 @@ extension on _StringsPtBr {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -194768,6 +195531,32 @@ extension on _StringsRu {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -201148,6 +201937,32 @@ extension on _StringsTh {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -207537,6 +208352,32 @@ extension on _StringsTr {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -213922,6 +214763,32 @@ extension on _StringsVi {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }
@@ -220253,6 +221120,32 @@ extension on _StringsZhCn {
         return '未选中文本。';
       case 'video_subtitle_replay':
         return '重播本句';
+      case 'manga_ocr_done':
+        return 'OCR 已完成';
+      case 'settings_destination_manga_summary':
+        return '阅读器、OCR 与在线目录';
+      case 'manga_page_animation':
+        return '翻页动画';
+      case 'manga_page_animation_none':
+        return '无';
+      case 'manga_page_animation_slide':
+        return '滑动';
+      case 'manga_page_animation_fade':
+        return '淡入淡出';
+      case 'manga_default_zoom':
+        return '默认缩放';
+      case 'manga_zoom_sensitivity':
+        return '缩放灵敏度';
+      case 'manga_volume_key_paging':
+        return '音量键翻页';
+      case 'manga_volume_key_paging_subtitle':
+        return '在漫画阅读器中用音量加减键翻页';
+      case 'manga_tap_zone_paging':
+        return '点击边缘翻页';
+      case 'manga_tap_zone_paging_subtitle':
+        return '点击页面左右边缘翻页';
+      case 'manga_section_viewing':
+        return '浏览与翻页';
       default:
         return null;
     }
@@ -226611,6 +227504,32 @@ extension on _StringsZhHk {
         return 'No text selected.';
       case 'video_subtitle_replay':
         return 'Replay this line';
+      case 'manga_ocr_done':
+        return 'OCR complete';
+      case 'settings_destination_manga_summary':
+        return 'Reader, OCR and online catalog';
+      case 'manga_page_animation':
+        return 'Page turn animation';
+      case 'manga_page_animation_none':
+        return 'None';
+      case 'manga_page_animation_slide':
+        return 'Slide';
+      case 'manga_page_animation_fade':
+        return 'Fade';
+      case 'manga_default_zoom':
+        return 'Default zoom';
+      case 'manga_zoom_sensitivity':
+        return 'Zoom sensitivity';
+      case 'manga_volume_key_paging':
+        return 'Volume keys turn pages';
+      case 'manga_volume_key_paging_subtitle':
+        return 'Use volume up and down to turn pages in the manga reader';
+      case 'manga_tap_zone_paging':
+        return 'Tap edges to turn pages';
+      case 'manga_tap_zone_paging_subtitle':
+        return 'Tap the left or right edge of the page to turn';
+      case 'manga_section_viewing':
+        return 'Viewing and page turning';
       default:
         return null;
     }

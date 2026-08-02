@@ -716,7 +716,7 @@ String mangaWindowDocument(
 /// 按 data-spread 测量。
 /// `#manga-root` 的过渡声明，由翻页动画偏好决定。
 ///
-/// `slide` = 旧行为（transform 过渡，只是时长改由偏好给）；`none` = 不声明过渡
+/// `slide` = 旧行为（transform 过渡，时长由动画样式的统一值域给出）；`none` = 不声明过渡
 /// （瞬时翻页，给要极限响应的用户）；`fade` = 只过渡 opacity，位移由 JS 在淡出后
 /// 瞬时完成（见 `__mangaApplyTranslate`）。
 String _rootTransitionCss(MangaPageAnimation animation) {
@@ -1059,7 +1059,7 @@ String _mangaGestureJs({
     _selectOcrChar(e.clientX, e.clientY, true);
   }, {passive:true});
   // 点击边缘翻页（仅 spread）。此前漫画**没有任何点击翻页手段**：_onTap 命中不到
-  // OCR 就只报 onTapEmpty（Dart 侧是 no-op），触屏用户只能靠 swipe。
+  // OCR 就只报 onTapEmpty（Dart 侧只回收焦点），触屏用户只能靠 swipe。
   // 左右各占 TAP_ZONE 宽度；中间留白仍走 onTapEmpty，避免抢走查词/呼出 chrome。
   // 方向按阅读方向镜像：LTR 右边缘前进，RTL 左边缘前进。
   var TAP_ZONE_PAGING = $tapZonePaging;
@@ -1132,7 +1132,11 @@ String _mangaGestureJs({
     var g = _pinchGeom();
     if (!g || g.dist <= 0) return;
     e.preventDefault();
-    _zoomAbout(pinch.zoom * (g.dist / pinch.dist), g.cx, g.cy);
+    _zoomAbout(
+      pinch.zoom * Math.pow(g.dist / pinch.dist, ZOOM_SENS),
+      g.cx,
+      g.cy
+    );
   }, {passive: false});
   document.addEventListener('pointerup', function(e){
     if (e.pointerType === 'touch') {

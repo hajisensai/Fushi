@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_schema_listening.dart';
+import 'package:hibiki/src/settings/settings_schema_manga.dart';
 import 'package:hibiki/src/settings/settings_schema_reading.dart';
 
 void main() {
@@ -37,6 +38,15 @@ void main() {
         itemById(listening, 'listening.volume_key_sentence_nav').visible,
         isNotNull,
         reason: '音量键句子导航必须平台门控，桌面不显示',
+      );
+    });
+
+    test('manga：音量键翻页项带 visible 门控（非总是显示）', () {
+      final SettingsDestination manga = buildMangaDestination();
+      expect(
+        itemById(manga, 'manga.volume_key_paging').visible,
+        isNotNull,
+        reason: '漫画音量键翻页开关必须平台门控，iOS/桌面不显示',
       );
     });
   });
@@ -76,6 +86,14 @@ void main() {
           readSource('lib/src/settings/settings_schema_listening.dart')
               .readAsStringSync();
       expectAndroidGate(src, 'listening.volume_key_sentence_nav');
+    });
+
+    test('manga schema：翻页开关门控为 Platform.isAndroid', () {
+      final String src =
+          readSource('lib/src/settings/settings_schema_manga.dart')
+              .readAsStringSync();
+      expect(src.contains("import 'dart:io'"), isTrue);
+      expectAndroidGate(src, 'manga.volume_key_paging');
     });
   });
 }

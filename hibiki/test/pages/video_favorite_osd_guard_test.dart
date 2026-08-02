@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'video_hibiki_page_source_corpus.dart';
+import '../helpers/source_guard.dart';
 
 /// BUG-931：视频播放器里的两个 UX 契约，用源码扫描守卫锁死，防未来重构悄悄回退。
 ///
@@ -45,7 +46,7 @@ void main() {
       );
       // 正向证据：收藏路径确实改走了左上角 OSD。
       expect(
-        _squashWs(body).contains(_squashWs('_showOsd(t.no_sentence_selected')),
+        compactCode(body).contains(compactCode('_showOsd(t.no_sentence_selected,')),
         isTrue,
         reason: '收藏无句可选时应走左上角 `_showOsd`，不是底部 toast。',
       );
@@ -60,20 +61,12 @@ void main() {
             '`HibikiToast.show` 说明有提示回退到了屏幕底部。',
       );
       // 收藏加/移除确实用 OSD（防止有人把提示整个删掉来「绕过」守卫）。
-      expect(_squashWs(src).contains(_squashWs('_showOsd(t.favorite_added')),
+      expect(compactCode(src).contains(compactCode('_showOsd(t.favorite_added,')),
           isTrue,
           reason: '收藏成功应走左上角 `_showOsd(t.favorite_added ...)`。');
-      expect(_squashWs(src).contains(_squashWs('_showOsd(t.favorite_removed')),
+      expect(compactCode(src).contains(compactCode('_showOsd(t.favorite_removed,')),
           isTrue,
           reason: '取消收藏应走左上角 `_showOsd(t.favorite_removed ...)`。');
     });
   });
 }
-
-/// 折叠全部空白后再比对调用文本。
-///
-/// 守卫要钉的是「这条代码路径确实弹了带该文案的提示」，而不是它在源码里排成几行。
-/// 给 toast / OSD 增补实参（如统一语义配色的 `severity:`）会让 dart format 把单行
-/// 调用换成多行，逐字匹配单行调用就会假红——红的是格式，不是行为。折叠空白后仍然
-/// 要求同一函数名 + 同一具名实参 + 同一 i18n key 连续出现，守卫强度不变。
-String _squashWs(String s) => s.replaceAll(RegExp(r'\s+'), '');

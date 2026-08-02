@@ -40,7 +40,8 @@ enum ToastSeverity { neutral, info, success, warning, error }
     case ToastSeverity.warning:
       return (
         background: const Color(0xFFEF6C00), // orange 800
-        foreground: Colors.white,
+        // orange 800 配白字仅约 3.08:1；黑字约 6.81:1，满足普通正文 4.5:1。
+        foreground: Colors.black,
         icon: Icons.warning_amber_rounded,
       );
     case ToastSeverity.error:
@@ -78,7 +79,7 @@ enum MineToastStatus { added, duplicate, failed, pending }
     case MineToastStatus.duplicate:
       return (
         background: const Color(0xFFEF6C00), // orange 800
-        foreground: Colors.white,
+        foreground: Colors.black,
         icon: Icons.library_add_check_rounded,
       );
     case MineToastStatus.failed:

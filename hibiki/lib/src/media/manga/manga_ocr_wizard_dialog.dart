@@ -1007,14 +1007,13 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
         enabled: _externalAvailable,
         label: Text(t.manga_ocr_engine_external),
       ),
-      // 与另外三个引擎同构：探到主机就保留 segment，不可用时置灰而非隐藏；
-      // 一台主机都没探到（无配对 / 老 host / 不支持）才整段消失。
-      if (_remoteAvailable || _remoteModelsMissing)
-        ButtonSegment<MangaOcrEngineId>(
-          value: MangaOcrEngineId.pairedHost,
-          enabled: _remoteAvailable,
-          label: Text(t.manga_remote_ocr_engine),
-        ),
+      // 与另外三个引擎同构：始终保留 segment，不可用时置灰而非隐藏。否则持久化的
+      // pairedHost 偏好在主机暂时离线时会变成「selected 不在 segments 里」的死状态。
+      ButtonSegment<MangaOcrEngineId>(
+        value: MangaOcrEngineId.pairedHost,
+        enabled: _remoteAvailable,
+        label: Text(t.manga_remote_ocr_engine),
+      ),
     ];
     // 只有一个可用引擎时无需选择器，直接省略（仍已在 _refreshEngines 选好）。
     if (segments.length < 2) return remoteReason ?? const SizedBox.shrink();
