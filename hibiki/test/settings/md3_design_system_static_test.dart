@@ -786,6 +786,21 @@ void main() {
           'Estimates the MokuroBlock.fontSize data field (sqrt(area/chars)) '
               'for OCR-produced manga.json blocks; pure data layer, no UI '
               'code.',
+      // BUG-1414：PR#692 的框选回写是 manga.json 的**第四个生产者**，与上面三条
+      // 豁免的是同一个数据字段——`MokuroBlock(fontSize: …)` 落盘成 `font_size`，
+      // 由 manga_overlay_html.dart:46 折算成 WebView 覆盖层的 CSS `cqi` 命中框字号，
+      // 从不进任何 Flutter `TextStyle`。判据本身表达不了这个区分：那串禁用子串
+      // 与 `TextStyle(...)` 里的同名实参逐字符同形，要分辨只能知道外层构造器
+      // 是谁，也就是把这个子串扫描器换成 Dart 语法分析——那是它有意不做的事。
+      // 所以走守卫自己在失败信息里写明的机制（reviewed allowlist reason），
+      // 并由下面「manga.json 回写层保持纯数据层」把「无 UI 代码」这句话钉成可证伪
+      // 的断言，防止这条豁免退化成整文件免检。
+      'lib/src/media/manga/manga_json_writeback.dart':
+          'Writes the MokuroBlock.fontSize data field when appending a '
+              'user-drawn block to manga.json (estimate + serialize); pure '
+              'data layer with no Flutter import, same reviewed exception '
+              'class as mokuro_payload / manga_ocr_folder_job / '
+              'google_lens_ocr_service.',
       'lib/src/pages/implementations/reader_hibiki_page.dart':
           'Hoshi reader content and reader chrome have separate migration rules.',
       // TODO-589 batch1: reader_hibiki_page.dart 拆成主壳 + reader_hibiki/*.part.dart；
@@ -1168,6 +1183,45 @@ void main() {
       reason: 'Route ordinary visual chrome through shared MD3 components, or '
           'add a reviewed allowlist reason for true content exceptions.',
     );
+  });
+
+  // BUG-1414：上面 allowlist 里 manga_json_writeback.dart 的豁免理由是「纯数据层、
+  // 无 Flutter import」。理由只是一句散文，会随代码漂移；这条把它钉成可证伪的
+  // 断言——一旦有人往回写层塞 UI，豁免立刻失效，而不是继续静默免检。
+  test('manga.json writeback stays a pure data layer', () {
+    final String source = File(
+      'lib/src/media/manga/manga_json_writeback.dart',
+    ).readAsStringSync();
+    final String code = maskComments(source);
+
+    // 无 Flutter import ⇒ 这个文件里不可能存在页面 chrome。
+    expect(code, isNot(contains('package:flutter/')),
+        reason: 'manga_json_writeback.dart is allowlisted as a pure data '
+            'layer; a Flutter import invalidates that reason');
+
+    // 唯一的那个名参必须是 MokuroBlock 数据字段的估算写入，不是排版。
+    final List<String> dataFieldLines = code
+        .split('\n')
+        .where((String line) => line.contains('fontSize:'))
+        .map((String line) => line.trim())
+        .toList(growable: false);
+    expect(dataFieldLines, <String>['fontSize: estimateMangaBlockFontSize('],
+        reason: 'the allowlisted hit must stay the MokuroBlock data-field '
+            'write, not page typography');
+
+    for (final String chrome in const <String>[
+      'TextStyle(',
+      'Card(',
+      'ListTile(',
+      'BorderRadius.circular(',
+      'surfaceContainer',
+      'VisualDensity',
+      'PopupMenuButton(',
+      'Widget build(',
+    ]) {
+      expect(code, isNot(contains(chrome)),
+          reason: 'manga.json writeback must stay UI-free, found $chrome');
+    }
   });
 
   test('scrape failure detail uses the shared MD3 card and design tokens', () {
