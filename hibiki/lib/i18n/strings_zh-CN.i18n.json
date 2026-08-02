@@ -3063,5 +3063,10 @@
   "manga_rescan_lookup": "查词",
   "manga_rescan_writeback": "回写本页",
   "manga_rescan_writeback_done": "已回写 manga.json",
-  "manga_rescan_writeback_failed": "回写 manga.json 失败"
+  "manga_rescan_writeback_failed": "回写 manga.json 失败",
+  "stat_hourly_band_epub": "文字书",
+  "stat_hourly_band_pdf": "PDF",
+  "stat_hourly_band_manga": "漫画",
+  "stat_hourly_band_unattributed": "未区分历史",
+  "stat_hourly_unattributed_note": "早期记录的时段数据没有存类型，无法拆分；这里按合计如实显示，不归入任何一类。"
 }

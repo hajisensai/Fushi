@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/pages/implementations/activity_feed.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
+import 'package:hibiki/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -340,9 +341,85 @@ String formatStatHeatmapDay(String dateKey) {
   return '${d.year}-${d.month}-$dd';
 }
 
-/// 「今日按小时」柱状图区块（标题 + [StatHourlyChartPainter] 画布）。
+/// 「今日按小时」单色柱状图区块（视频统计用：观看时长没有阅读面之分，只有一带）。
 /// [hourlyMs] 为 0-23 每小时的毫秒值。
 Widget buildStatHourlyChartSection(BuildContext context, List<int> hourlyMs) {
+  final colorScheme = Theme.of(context).colorScheme;
+  return _buildStatHourlyChartSection(
+    context,
+    bands: <StatHourlyBand>[
+      StatHourlyBand(values: hourlyMs, color: colorScheme.tertiary),
+    ],
+    legendBands: const <StatHourlyFormatBand>[],
+    showUnattributedNote: false,
+  );
+}
+
+/// 「今日按小时」按阅读面（format）分色堆叠的柱状图区块（阅读统计用）。
+///
+/// [breakdown] 里的 [StatHourlyFormatBand.unattributed] 是 v67 之前写入时就没存
+/// 身份的历史合计，它单独成一带、用中性色、并在图例下附一句说明——**不归入任何一个
+/// 阅读面**。
+Widget buildStatHourlyFormatChartSection(
+  BuildContext context,
+  StatHourlyBreakdown breakdown,
+) {
+  final colorScheme = Theme.of(context).colorScheme;
+  final List<StatHourlyFormatBand> active = breakdown.activeBands;
+  return _buildStatHourlyChartSection(
+    context,
+    bands: <StatHourlyBand>[
+      for (final StatHourlyFormatBand band in active)
+        StatHourlyBand(
+          values: breakdown.valuesOf(band),
+          color: statHourlyBandColor(band, colorScheme),
+        ),
+    ],
+    legendBands: statHourlyLegendBands(active),
+    showUnattributedNote: active.contains(StatHourlyFormatBand.unattributed),
+  );
+}
+
+/// 分带填充色。
+///
+/// 未区分历史刻意用中性的 [ColorScheme.outlineVariant]，而不是第四个品类色：它不是
+/// 一种书，配一个和 EPUB / PDF / 漫画平级的彩色只会让人以为它也是某一类。
+Color statHourlyBandColor(StatHourlyFormatBand band, ColorScheme scheme) =>
+    switch (band) {
+      StatHourlyFormatBand.epub => scheme.tertiary,
+      StatHourlyFormatBand.pdf => scheme.primary,
+      StatHourlyFormatBand.manga => scheme.secondary,
+      StatHourlyFormatBand.unattributed => scheme.outlineVariant,
+    };
+
+/// 分带图例文案。
+String statHourlyBandLabel(StatHourlyFormatBand band) => switch (band) {
+      StatHourlyFormatBand.epub => t.stat_hourly_band_epub,
+      StatHourlyFormatBand.pdf => t.stat_hourly_band_pdf,
+      StatHourlyFormatBand.manga => t.stat_hourly_band_manga,
+      StatHourlyFormatBand.unattributed => t.stat_hourly_band_unattributed,
+    };
+
+/// 该画哪些图例项。
+///
+/// 只有一带、且那一带是真实阅读面时不画图例——「一个条目的图例」不提供任何信息，
+/// 只是噪音。但只要含未区分历史就必须画，哪怕它是唯一一带：没有图例的中性柱子会被
+/// 当成某一类的读书时长，那正是这次要消除的误读。
+List<StatHourlyFormatBand> statHourlyLegendBands(
+    List<StatHourlyFormatBand> activeBands) {
+  if (activeBands.length <= 1 &&
+      !activeBands.contains(StatHourlyFormatBand.unattributed)) {
+    return const <StatHourlyFormatBand>[];
+  }
+  return activeBands;
+}
+
+Widget _buildStatHourlyChartSection(
+  BuildContext context, {
+  required List<StatHourlyBand> bands,
+  required List<StatHourlyFormatBand> legendBands,
+  required bool showUnattributedNote,
+}) {
   final tokens = HibikiDesignTokens.of(context);
   final colorScheme = Theme.of(context).colorScheme;
   return Padding(
@@ -358,8 +435,7 @@ Widget buildStatHourlyChartSection(BuildContext context, List<int> hourlyMs) {
           child: CustomPaint(
             size: Size.infinite,
             painter: StatHourlyChartPainter(
-              hourlyMs: hourlyMs,
-              barColor: colorScheme.tertiary,
+              bands: bands,
               barRadius: tokens.radii.chipCorner,
               labelColor: colorScheme.onSurfaceVariant,
               labelStyle: tokens.type.metadata.copyWith(
@@ -368,8 +444,61 @@ Widget buildStatHourlyChartSection(BuildContext context, List<int> hourlyMs) {
             ),
           ),
         ),
+        if (legendBands.isNotEmpty) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap / 2,
+            children: <Widget>[
+              for (final StatHourlyFormatBand band in legendBands)
+                _StatHourlyLegendChip(band: band),
+            ],
+          ),
+        ],
+        if (showUnattributedNote) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          Text(
+            t.stat_hourly_unattributed_note,
+            style: tokens.type.metadata.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
         SizedBox(height: tokens.spacing.card + tokens.spacing.gap),
       ],
     ),
   );
+}
+
+/// 图例一项：与柱子同色的小色块 + 文案。
+class _StatHourlyLegendChip extends StatelessWidget {
+  const _StatHourlyLegendChip({required this.band});
+
+  final StatHourlyFormatBand band;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Container(
+          width: tokens.spacing.gap,
+          height: tokens.spacing.gap,
+          decoration: BoxDecoration(
+            color: statHourlyBandColor(band, colorScheme),
+            borderRadius: BorderRadius.all(tokens.radii.chipCorner),
+          ),
+        ),
+        SizedBox(width: tokens.spacing.gap / 2),
+        Text(
+          statHourlyBandLabel(band),
+          style: tokens.type.metadata.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
 }

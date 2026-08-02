@@ -3063,5 +3063,10 @@
   "manga_rescan_lookup": "Look up",
   "manga_rescan_writeback": "Save to page",
   "manga_rescan_writeback_done": "Saved to manga.json",
-  "manga_rescan_writeback_failed": "Failed to save to manga.json"
+  "manga_rescan_writeback_failed": "Failed to save to manga.json",
+  "stat_hourly_band_epub": "Text books",
+  "stat_hourly_band_pdf": "PDF",
+  "stat_hourly_band_manga": "Manga",
+  "stat_hourly_band_unattributed": "Unsplit history",
+  "stat_hourly_unattributed_note": "Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type."
 }
