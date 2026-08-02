@@ -27,6 +27,9 @@ import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/video_loading_overlay.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
+// 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 HibikiToast
+// （BUG-931 有守卫），故刻意不 import 整套 toast API。
+import 'package:hibiki/src/utils/misc/toast_severity.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
@@ -590,11 +593,18 @@ class _VideoOsdMessage {
     this.icon,
     this.progress,
     this.prominent = false,
+    this.severity = ToastSeverity.neutral,
   });
 
   final String message;
   final IconData? icon;
   final double? progress;
+
+  /// 语义配色。左上角 OSD 此前**没有任何颜色参数**（70 处调用全恒灰），成功与失败
+  /// 长得一模一样——包括视频页制卡：`describeMineOutcome` 早就算出了状态，却只被
+  /// 拿去选 `prominent` 布尔，颜色信息整个丢掉。与底部 toast 共用同一套语义
+  /// （[ToastSeverity]），保持两套通知系统同一门语言。
+  final ToastSeverity severity;
 
   /// TODO-971：突出变体（制卡成功用）。普通 OSD 沿用音量/亮度同款左上角小角标，
   /// 太轻易被忽略；制卡成功这类用户主动操作的确认改成居中、更大字号、停留更久的
