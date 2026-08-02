@@ -5,7 +5,12 @@ import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
-    show buildSpreadPageHtml, kSpreadBridgedActions, spreadKeyBridgeTokens;
+    show
+        buildSpreadPageHtml,
+        kSpreadBridgedActions,
+        resolveSpreadKeyBridgeAction,
+        spreadKeyBridgeScopes,
+        spreadKeyBridgeTokens;
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
@@ -121,11 +126,8 @@ void main() {
       for (final String token in tokens) {
         final InputBinding? binding = InputBinding.deserialize(token);
         expect(binding, isNotNull, reason: '$token 不是合法 InputBinding token');
-        final ShortcutAction? action = registry.resolveKeyboard(
-          binding!.key,
-          modifiers: binding.modifiers,
-          scope: ShortcutScope.reader,
-        );
+        final ShortcutAction? action =
+            resolveSpreadKeyBridgeAction(registry, binding!);
         expect(kSpreadBridgedActions.contains(action), isTrue,
             reason: '$token 解析成 $action，不在 spread 声明的动作集里');
       }
@@ -134,8 +136,7 @@ void main() {
       final Set<ShortcutAction> covered = tokens
           .map(InputBinding.deserialize)
           .whereType<InputBinding>()
-          .map((InputBinding b) => registry.resolveKeyboard(b.key,
-              modifiers: b.modifiers, scope: ShortcutScope.reader))
+          .map((InputBinding b) => resolveSpreadKeyBridgeAction(registry, b))
           .whereType<ShortcutAction>()
           .toSet();
       expect(covered, contains(ShortcutAction.readerPageForward));
@@ -158,6 +159,161 @@ void main() {
     });
   });
 
+  /// BUG-1442：键桥的「导出哪些动作」与「解析哪个 scope」此前是两份真值——动作集
+  /// 是数据、scope 是 onSpreadKey 里硬编码的 `ShortcutScope.reader`。往动作集里加
+  /// 任何非 reader scope 的动作都会**静默失效**：token 进了 JS 表、按下也回传了
+  /// Dart，但 resolveKeyboard 在 reader scope 里找不到它，handler 直接早退。
+  ///
+  /// 修法：scope 列表从动作集自身导出（[spreadKeyBridgeScopes]），解析按该顺序逐
+  /// 个试（[resolveSpreadKeyBridgeAction]）。本组锁定这条能力，并钉住两条不得回归
+  /// 的既有性质：页面专属 scope 优先于兜底 scope、裸 Space 恒不进表。
+  group('键桥跨 scope 解析 (BUG-1442)', () {
+    /// 一个确定不在任何 reader 默认绑定里的键，用来当「兜底 scope 专属键」。
+    const InputBinding fallbackOnly =
+        InputBinding(key: LogicalKeyboardKey.keyJ);
+
+    /// reader 与兜底 scope **同时**绑上的键，用来验优先级。
+    const InputBinding shared = InputBinding(key: LogicalKeyboardKey.keyK);
+
+    HibikiShortcutRegistry loadedRegistry() =>
+        HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+
+    test('生产动作集今天只导出 reader 一个 scope（本次零行为变化）', () {
+      expect(spreadKeyBridgeScopes(), <ShortcutScope>[ShortcutScope.reader],
+          reason: 'kSpreadBridgedActions 现在全是 reader scope，导出的 scope 列表就该'
+              '只有 reader——多一个都说明导出逻辑没在读动作集');
+    });
+
+    test('scope 列表按动作集出现序去重导出，不是硬编码', () {
+      expect(
+        spreadKeyBridgeScopes(actions: const <ShortcutAction>[
+          ShortcutAction.readerPageForward,
+          ShortcutAction.globalBack,
+          ShortcutAction.readerToggleChrome,
+          ShortcutAction.globalToggleFullscreen,
+        ]),
+        <ShortcutScope>[ShortcutScope.reader, ShortcutScope.global],
+        reason: '两个 reader + 两个 global 必须去重成 [reader, global]，且 reader 在前'
+            '（它在动作集里先出现）',
+      );
+      expect(
+        spreadKeyBridgeScopes(actions: const <ShortcutAction>[
+          ShortcutAction.globalBack,
+          ShortcutAction.readerPageForward,
+        ]),
+        <ShortcutScope>[ShortcutScope.global, ShortcutScope.reader],
+        reason: '顺序必须真的跟着动作集走，不能返回固定列表',
+      );
+    });
+
+    test('动作集里混入别的 scope 时，那个 scope 的键真能解析到', () {
+      final HibikiShortcutRegistry registry = loadedRegistry()
+        ..updateBinding(
+          ShortcutAction.globalBack,
+          const ShortcutBindingSet(
+            keyboardBindings: <InputBinding>[fallbackOnly],
+          ),
+        );
+
+      // 生产动作集（纯 reader）解析不到它——这正是 PR#722 撞上的那堵墙。
+      expect(resolveSpreadKeyBridgeAction(registry, fallbackOnly), isNull,
+          reason: '兜底动作没进动作集时本来就不该被解析到（今天的行为，勿变）');
+
+      // 把它加进动作集，解析侧无需任何改动就跟着生效。
+      expect(
+        resolveSpreadKeyBridgeAction(
+          registry,
+          fallbackOnly,
+          actions: const <ShortcutAction>[
+            ShortcutAction.readerPageForward,
+            ShortcutAction.globalBack,
+          ],
+        ),
+        ShortcutAction.globalBack,
+        reason: '解析侧若还硬编码 reader scope，加进动作集的兜底动作永远解析成 null，'
+            '键桥对它形同虚设',
+      );
+    });
+
+    test('同键被页面 scope 与兜底 scope 都绑时，页面专属胜出', () {
+      final HibikiShortcutRegistry registry = loadedRegistry()
+        ..updateBinding(
+          ShortcutAction.readerPageForward,
+          const ShortcutBindingSet(keyboardBindings: <InputBinding>[shared]),
+        )
+        ..updateBinding(
+          ShortcutAction.globalBack,
+          const ShortcutBindingSet(keyboardBindings: <InputBinding>[shared]),
+        );
+
+      expect(
+        resolveSpreadKeyBridgeAction(
+          registry,
+          shared,
+          actions: const <ShortcutAction>[
+            ShortcutAction.readerPageForward,
+            ShortcutAction.globalBack,
+          ],
+        ),
+        ShortcutAction.readerPageForward,
+        reason: '兜底 scope 排在动作集后面 = 解析时也排在后面；反过来会让翻页被'
+            '「返回」夺舍，spread 页直接退书',
+      );
+    });
+
+    test('裸 Space 的排除与 scope 无关：兜底 scope 的动作绑裸 Space 也进不了表', () {
+      final HibikiShortcutRegistry registry = loadedRegistry()
+        ..updateBinding(
+          ShortcutAction.globalBack,
+          const ShortcutBindingSet(
+            keyboardBindings: <InputBinding>[
+              InputBinding(key: LogicalKeyboardKey.space),
+              InputBinding(
+                key: LogicalKeyboardKey.space,
+                modifiers: <ModifierKey>{ModifierKey.ctrl},
+              ),
+            ],
+          ),
+        );
+
+      final List<String> tokens = spreadKeyBridgeTokens(
+        registry,
+        actions: const <ShortcutAction>[
+          ShortcutAction.readerPageForward,
+          ShortcutAction.globalBack,
+        ],
+      );
+
+      // App 已把裸空格中和为 DoNothingIntent、焦点确认统一走 Enter/手柄 A；spread
+      // 页的裸 Space 又归 onSpaceKey 那座桥。两座桥都装 keydown，裸 Space 一旦进本
+      // 表就是同一次按下触发两次。
+      expect(tokens, isNot(contains('Space')),
+          reason: '裸 Space 必须恒排除，跨 scope 动作也不例外——否则空格在 spread 里'
+              '复活成双触发');
+      expect(tokens, contains('Ctrl+Space'),
+          reason: '排除的判据只是「裸」Space，带修饰键的 Space 仍是正常绑定，不该被'
+              '一起误杀');
+    });
+
+    test('spread 专属键（翻页/唤栏/退书）解析结果一字不变', () {
+      final HibikiShortcutRegistry registry = loadedRegistry();
+      // 默认绑定下逐个动作的每条键盘绑定都必须解析回它自己（裸 Space 那条走
+      // onSpaceKey 桥，不在本表，故按同一规则跳过）。
+      for (final ShortcutAction action in kSpreadBridgedActions) {
+        for (final InputBinding binding
+            in registry.bindingsFor(action).keyboardBindings) {
+          if (binding.key == LogicalKeyboardKey.space &&
+              binding.modifiers.isEmpty) {
+            continue;
+          }
+          expect(resolveSpreadKeyBridgeAction(registry, binding), action,
+              reason: '${binding.serialize()} 本该解析成 $action；spread 专属键的行为'
+                  '不允许因为解析改成多 scope 而漂动');
+        }
+      }
+    });
+  });
+
   group('Dart 侧接线 (BUG-1426)', () {
     final String source = readReaderPageSource();
 
@@ -175,9 +331,14 @@ void main() {
 
       expect(body, contains('InputBinding.deserialize'),
           reason: 'token 必须反解析，不能按字面量比键名');
-      expect(body, contains('resolveKeyboard'),
-          reason: '必须走与 Flutter 焦点路径同一个解析，改键才会对两条路一起生效');
-      expect(body, contains('ShortcutScope.reader'));
+      expect(body, contains('resolveSpreadKeyBridgeAction('),
+          reason: '必须走与 Flutter 焦点路径同一个解析（该 helper 内部就是 '
+              'resolveKeyboard），改键才会对两条路一起生效');
+      // BUG-1442：handler 体内**不许**再出现任何 `ShortcutScope.xxx` 字面量——
+      // 硬编码单 scope 正是「动作集里加了跨 scope 动作却静默解析不到」的根因。
+      // 要试哪些 scope 由 spreadKeyBridgeScopes 从动作集导出。
+      expect(body, isNot(contains('ShortcutScope.')),
+          reason: 'onSpreadKey 里硬编码 scope = 动作集与解析侧两份真值，必然漂开');
       expect(body, contains('_executeShortcutAction('),
           reason: '解析出动作却不执行 = 按键仍然没反应');
       expect(body, contains('FocusReclaimCause.gesture'),

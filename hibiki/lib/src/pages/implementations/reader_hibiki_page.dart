@@ -659,12 +659,18 @@ $keyBridgeScript
 /// **裸 Space 恒排除**：它归正文同款的 `onSpaceKey` 桥（那条经
 /// `resolveReaderSpaceOverride` 解析，有声书激活时是播放/暂停而不是翻页）。两座桥
 /// 都是本 document 上的独立 `keydown` 监听，同一次按下各命中一次就会翻两页。
-List<String> spreadKeyBridgeTokens(HibikiShortcutRegistry registry) {
+List<String> spreadKeyBridgeTokens(
+  HibikiShortcutRegistry registry, {
+  List<ShortcutAction> actions = kSpreadBridgedActions,
+}) {
   if (!registry.isLoaded) return const <String>[];
   final List<String> tokens = <String>[];
-  for (final ShortcutAction action in kSpreadBridgedActions) {
+  for (final ShortcutAction action in actions) {
     for (final InputBinding binding
         in registry.bindingsFor(action).keyboardBindings) {
+      // 裸 Space 的排除**与动作属于哪个 scope 无关**：判据只看这一条绑定本身，所以
+      // 后来往 [kSpreadBridgedActions] 里加的跨 scope 兜底动作即便被用户绑成裸
+      // Space，也一样进不了本表、复活不了双触发。
       if (binding.key == LogicalKeyboardKey.space &&
           binding.modifiers.isEmpty) {
         continue;
@@ -677,12 +683,58 @@ List<String> spreadKeyBridgeTokens(HibikiShortcutRegistry registry) {
 }
 
 /// [spreadKeyBridgeTokens] 导出的动作集（顺序即 token 表顺序，稳定可比较）。
+///
+/// **允许混入非 reader scope 的动作**：桥的解析侧（[spreadKeyBridgeScopes] /
+/// [resolveSpreadKeyBridgeAction]）从本表自身导出要试的 scope，所以往这里加一个
+/// 兜底动作（如把「返回上一级」统一成一个跨表面动作后的那个动作）不需要再改任何
+/// 解析代码。排在前面的动作所属的 scope 先解析 → **页面专属键永远优先于兜底**。
 const List<ShortcutAction> kSpreadBridgedActions = <ShortcutAction>[
   ShortcutAction.readerPageForward,
   ShortcutAction.readerPageBackward,
   ShortcutAction.readerToggleChrome,
   ShortcutAction.readerExitBook,
 ];
+
+/// `onSpreadKey` 反解析 token 时要依次尝试的 scope，**从 [actions] 自身按出现序
+/// 去重导出**，不是另立一份清单。
+///
+/// BUG-1442：桥此前把「导出哪些动作」（数据）和「解析哪个 scope」（硬编码
+/// `ShortcutScope.reader`）分成两处真值，于是往动作集里加任何非 reader scope 的
+/// 动作都会**静默失效**——token 进了 JS 表、按下也回传了 Dart，但 `resolveKeyboard`
+/// 在 reader scope 里找不到它，`onSpreadKey` 直接早退。两处合成一处后，动作集是
+/// 唯一真值，二者不可能漂开。
+List<ShortcutScope> spreadKeyBridgeScopes({
+  List<ShortcutAction> actions = kSpreadBridgedActions,
+}) {
+  final List<ShortcutScope> scopes = <ShortcutScope>[];
+  for (final ShortcutAction action in actions) {
+    if (!scopes.contains(action.scope)) scopes.add(action.scope);
+  }
+  return scopes;
+}
+
+/// 把 `onSpreadKey` 回传的 [binding] 解析成动作：按 [spreadKeyBridgeScopes] 的顺序
+/// 逐个 scope 试 [HibikiShortcutRegistry.resolveKeyboard]，首个命中即用。
+///
+/// 顺序即 [actions] 里各 scope 首次出现的顺序，所以页面专属 scope（reader）排在
+/// 兜底 scope 之前 → 同一个键被两边都绑时页面专属胜出，与 Flutter 焦点路径的
+/// 「reader → audiobook 逐级回退」同构。解析走的仍是与焦点路径**同一个**
+/// `resolveKeyboard`，改键对两条路一起生效。
+ShortcutAction? resolveSpreadKeyBridgeAction(
+  HibikiShortcutRegistry registry,
+  InputBinding binding, {
+  List<ShortcutAction> actions = kSpreadBridgedActions,
+}) {
+  for (final ShortcutScope scope in spreadKeyBridgeScopes(actions: actions)) {
+    final ShortcutAction? action = registry.resolveKeyboard(
+      binding.key,
+      modifiers: binding.modifiers,
+      scope: scope,
+    );
+    if (action != null) return action;
+  }
+  return null;
+}
 
 /// BUG-213：章内原生滚动回传（`onReaderScroll`）到来时，是否应刷新章内进度。
 ///
