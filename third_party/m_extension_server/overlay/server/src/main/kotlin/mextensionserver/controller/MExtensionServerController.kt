@@ -18,10 +18,30 @@ class MExtensionServerController {
             val actualPort = server?.listeningPort ?: 0
             MihonImageProxy.configure(actualPort)
             logger.info { "Hibiki M-Extension-Server started on loopback port $actualPort" }
+            announceReady(actualPort)
         } catch (error: IOException) {
             logger.error(error) { "Failed to start M-Extension-Server" }
             throw error
         }
+    }
+
+    /**
+     * Tells the host, on stdout, which port this process actually holds.
+     *
+     * The host starts us with port `0` and waits for this line instead of
+     * picking a port itself. A host-side "bind, read the port, close, hand the
+     * number to the child" dance is a TOCTOU: between the close and the child's
+     * bind anything else on the machine can take the port, and the host would
+     * then send its per-process Bearer token to a stranger. Here the port is
+     * printed *after* [NanoHTTPD.start] has bound it, so the number is one this
+     * process demonstrably owns at the moment it is reported.
+     *
+     * The line is deliberately machine-readable and prefix-anchored so it stays
+     * separable from logback output on the same stream.
+     */
+    private fun announceReady(actualPort: Int) {
+        println("$READY_LINE_PREFIX$actualPort")
+        System.out.flush()
     }
 
     fun stop() {
@@ -33,6 +53,11 @@ class MExtensionServerController {
     fun isRunning(): Boolean = server?.isAlive == true
 
     fun getPort(): Int = server?.listeningPort ?: 0
+
+    companion object {
+        /** Host-facing readiness contract; see [announceReady]. */
+        const val READY_LINE_PREFIX = "HIBIKI_MIHON_READY port="
+    }
 
     private inner class WebServer(port: Int) : NanoHTTPD("127.0.0.1", port) {
         private val bearer = System.getenv("HIBIKI_MIHON_TOKEN")
