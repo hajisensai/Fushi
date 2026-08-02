@@ -126,7 +126,7 @@ void main() {
       runner,
       'Win32Window::MessageHandler(',
     );
-    final String activateCase = maskComments(
+    final String activateCase = maskCommentsAndStrings(
       switchCaseBody(
         handler,
         'case WM_ACTIVATE:',
@@ -135,11 +135,7 @@ void main() {
     );
 
     expect(
-      RegExp(
-        r'if\s*\(\s*LOWORD\(wparam\)\s*!=\s*WA_INACTIVE\s*&&\s*'
-        r'child_content_\s*!=\s*nullptr\s*\)\s*\{\s*'
-        r'SetFocus\(child_content_\);',
-      ).hasMatch(activateCase),
+      activateCase.contains('ShouldRestoreChildFocus('),
       isTrue,
       reason: 'The lookup panel drag/resize activates an auxiliary Hibiki '
           'window. The main window must ignore its WA_INACTIVE notification '
@@ -149,6 +145,24 @@ void main() {
       'SetFocus(child_content_);'.allMatches(activateCase).length,
       1,
       reason: 'Keep main-window focus restoration behind the activation guard.',
+    );
+    expect(activateCase.contains('IsWindow(child_content_)'), isTrue,
+        reason: 'A destroyed Flutter child HWND must not receive focus.');
+    expect(
+      activateCase.contains('GetParent(child_content_) == hwnd'),
+      isTrue,
+      reason: 'HWND values are recycled; the live child must still belong to '
+          'this exact main window.',
+    );
+
+    final String destroyBody = maskCommentsAndStrings(
+      methodBody(runner, 'void Win32Window::Destroy()'),
+    );
+    expect(
+      destroyBody.contains('child_content_ = nullptr;'),
+      isTrue,
+      reason: 'Destroy must clear the borrowed Flutter child handle before '
+          'subclass/controller teardown can dispatch reentrant messages.',
     );
   });
 

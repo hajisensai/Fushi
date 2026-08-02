@@ -1,5 +1,7 @@
 #include "win32_window.h"
 
+#include "window_activation_policy.h"
+
 #include <flutter_windows.h>
 
 #include "resource.h"
@@ -290,8 +292,15 @@ Win32Window::MessageHandler(HWND hwnd,
       // panel) starts its native move/size loop, the main window receives
       // WA_INACTIVE. Restoring focus from that deactivation notification pulls
       // the main window back above the panel and the user's foreground app.
-      // Only repair Flutter child focus when this main window is being activated.
-      if (LOWORD(wparam) != WA_INACTIVE && child_content_ != nullptr) {
+      // A non-null HWND is not sufficient: child views can be destroyed and
+      // Windows recycles handle values. Confirm both liveness and ownership so
+      // a later main-window activation cannot focus an unrelated recycled HWND.
+      const bool child_is_live =
+          child_content_ != nullptr && IsWindow(child_content_);
+      const bool child_belongs_to_window =
+          child_is_live && GetParent(child_content_) == hwnd;
+      if (ShouldRestoreChildFocus(wparam, child_is_live,
+                                  child_belongs_to_window)) {
         SetFocus(child_content_);
       }
       return 0;
@@ -324,6 +333,11 @@ Win32Window::MessageHandler(HWND hwnd,
 }
 
 void Win32Window::Destroy() {
+  // Clear the borrowed Flutter-view handle before subclass teardown. Destroying
+  // the controller can synchronously destroy that child and dispatch more
+  // window messages; retaining it would turn a later HWND reuse into a focus or
+  // resize operation against an unrelated window.
+  child_content_ = nullptr;
   OnDestroy();
 
   // Release the monitor power-on notification registration before the window
