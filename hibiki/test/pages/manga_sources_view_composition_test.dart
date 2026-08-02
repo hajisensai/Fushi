@@ -51,6 +51,27 @@ void main() {
       expect(sources, contains('_buildOnlineSource('));
       expect(sources, contains('t.mihon_sources_title'));
     });
+
+    // BUG-1431，用户口径：「mokuro 不应该单独显示，应该和漫画扩展同一层级」。
+    // 它此前是「本地扫描根」一节里的一行（和 Hibiki 互联并排），但它是个网站。
+    test('mokuro.moe 归「漫画源」一节，不再挂在本地扫描根下', () {
+      expect(sources, contains('MokuroMoeSourceRow()'));
+      expect(
+        sources.indexOf('MokuroMoeSourceRow()'),
+        greaterThan(sources.indexOf('t.mihon_sources_title')),
+        reason: '它必须排在「漫画源」小标题之后，与扩展提供的在线源同节',
+      );
+      final String localRoots = maskComments(
+        File(p.join('lib', 'src', 'pages', 'implementations',
+                'media_sources_view.dart'))
+            .readAsStringSync(),
+      );
+      expect(
+        localRoots,
+        isNot(contains('Mokuro')),
+        reason: '共享的扫描根视图（书/视频/漫画三域共用）里不得再出现在线站点',
+      );
+    });
   });
 
   group('iOS / Linux 导航结构与其它平台相同', () {
@@ -85,6 +106,13 @@ void main() {
         browse,
         contains('MihonSourceBrowsePage('),
         reason: '已启用的 Mihon 在线源要能从「浏览」直接进内容，不是只在设置里躺着',
+      );
+      // BUG-1431：mokuro.moe 与扩展源遵守同一条可见性规则——「来源」里关掉的源
+      // 不出现在「浏览」里。以前它那个开关只让目录页显示成禁用态，行照旧列着。
+      expect(
+        browse,
+        contains('isMokuroMoeSourceEnabled('),
+        reason: '「浏览」必须尊重「来源」里的 mokuro.moe 开关，否则同一节两种开关语义',
       );
     });
   });

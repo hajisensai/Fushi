@@ -12,6 +12,15 @@ import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
 
+/// 开箱即用的默认扩展仓库（用户指定）。没有它的话「漫画扩展」一节首次打开是空的，
+/// 用户得先自己知道一个仓库地址才能开始——而这个仓库就是社区事实标准。
+const String kMihonDefaultStoreIndexUrl =
+    'https://github.com/keiyoushi/extensions/raw/repo/index.pb';
+
+/// 默认仓库**只自动添加一次**：置位后用户删掉它就不会被下次启动重新塞回来。
+/// 只在添加成功后置位，所以首次启动断网不会永久丢掉默认仓库。
+const String kMihonDefaultStoreSeededPref = 'mihon_default_store_seeded';
+
 class MihonManager extends ChangeNotifier {
   MihonManager({
     required this.database,
@@ -67,12 +76,39 @@ class MihonManager extends ChangeNotifier {
           .create(recursive: true);
       await reload();
       await _refreshStores();
+      await _seedDefaultStore();
     } catch (exception) {
       error = '$exception';
       rethrow;
     } finally {
       loading = false;
       _notify();
+    }
+  }
+
+  /// 首次启动把 [kMihonDefaultStoreIndexUrl] 装进来（见常量文档）。
+  ///
+  /// 放在 [_refreshStores] **之后**：那一步只刷已有仓库，首次启动是空跑，紧接着
+  /// 由 [addStore] 单独拉这一个仓库，不会把同一个索引拉两遍。整个过程吞异常——
+  /// 断网或仓库临时 502 不该让扩展子系统初始化失败（`_initialise` 会 rethrow）。
+  Future<void> _seedDefaultStore() async {
+    final bool seeded = await database.getPrefTyped<bool>(
+      kMihonDefaultStoreSeededPref,
+      false,
+    );
+    if (seeded) return;
+    if (stores.any((MangaExtensionStoreRow row) =>
+        row.indexUrl == kMihonDefaultStoreIndexUrl)) {
+      await database.setPrefTyped<bool>(kMihonDefaultStoreSeededPref, true);
+      return;
+    }
+    try {
+      await addStore(kMihonDefaultStoreIndexUrl);
+      await database.setPrefTyped<bool>(kMihonDefaultStoreSeededPref, true);
+    } catch (_) {
+      // 下次启动再试。`addStore` 的 `_guarded` 已经把失败写进 `error`，但「默认仓库
+      // 这次没拉到」不是用户发起的操作，不该在扩展页挂一条报错。
+      error = null;
     }
   }
 

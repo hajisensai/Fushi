@@ -20,8 +20,14 @@ import 'package:hibiki/utils.dart';
 /// [embedded] 为 true 时：
 /// - 不再包 `DesktopContentLayout` / `HibikiPageHeader`（外层已有一套 chrome），
 ///   页头那三个动作（刷新仓库 / 导入 APK / 添加仓库）降级成本节顶部的按钮行；
-/// - 内容体从 `ListView` 换成 `Column`——它被塞进外层 `ListView` 的无界高度里，
-///   再嵌一个可滚动的 `ListView` 会直接抛约束异常。
+/// - `build` 返回的是**sliver**（[SliverMainAxisGroup]），由外层 `CustomScrollView`
+///   直接消费。
+///
+/// 🔴 内嵌形态必须是 sliver，不能是 `Column`（BUG-1430）：keiyoushi 这类完整仓库
+/// 有 1900+ 个扩展，塞进 `Column` 就是 1900 个 RenderObject 全部实体化——`Column`
+/// 没有视口裁剪，每一帧都要布局并绘制全部条目，于是「语言下拉一展开就卡死」「改一
+/// 次筛选卡几秒」。外层滚动容器换成 `CustomScrollView` 后，这里用 `SliverList`
+/// 只建可见的那十几行。
 class MihonExtensionsPage extends ConsumerStatefulWidget {
   const MihonExtensionsPage({
     super.key,
@@ -255,20 +261,23 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     final MihonManager manager =
         _manager ?? widget.manager ?? ref.read(appProvider).mihonManager;
     if (widget.embedded) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _actions(manager),
+      return SliverMainAxisGroup(
+        slivers: <Widget>[
+          SliverToBoxAdapter(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _actions(manager),
+            ),
           ),
           if (manager.loading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: LinearProgressIndicator(),
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: LinearProgressIndicator(),
+              ),
             ),
-          _buildContent(manager),
+          ..._buildContentSlivers(manager),
         ],
       );
     }
@@ -285,7 +294,16 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           Expanded(
             child: Stack(
               children: <Widget>[
-                _buildContent(manager),
+                CustomScrollView(
+                  slivers: <Widget>[
+                    SliverPadding(
+                      padding: const EdgeInsets.all(16),
+                      sliver: SliverMainAxisGroup(
+                        slivers: _buildContentSlivers(manager),
+                      ),
+                    ),
+                  ],
+                ),
                 if (manager.loading)
                   const Positioned.fill(
                     child: ColoredBox(
@@ -301,53 +319,64 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     );
   }
 
-  Widget _buildContent(MihonManager manager) {
+  List<Widget> _buildContentSlivers(MihonManager manager) {
     final Map<String, MangaExtensionRow> installed =
         <String, MangaExtensionRow>{
       for (final MangaExtensionRow row in manager.installed)
         row.packageName: row,
     };
     if (manager.stores.isEmpty && manager.installed.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const Icon(Icons.extension_outlined, size: 48),
-              const SizedBox(height: 12),
-              Text(
-                t.mihon_store_empty,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 12,
-                children: <Widget>[
-                  FilledButton.icon(
-                    onPressed: _addStore,
-                    icon: const Icon(Icons.add_link),
-                    label: Text(t.mihon_store_add),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _importApk,
-                    icon: const Icon(Icons.file_open_outlined),
-                    label: Text(t.mihon_extension_import),
-                  ),
-                ],
-              ),
-            ],
-          ),
+      final Widget empty = Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(Icons.extension_outlined, size: 48),
+            const SizedBox(height: 12),
+            Text(
+              t.mihon_store_empty,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 12,
+              children: <Widget>[
+                FilledButton.icon(
+                  onPressed: _addStore,
+                  icon: const Icon(Icons.add_link),
+                  label: Text(t.mihon_store_add),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _importApk,
+                  icon: const Icon(Icons.file_open_outlined),
+                  label: Text(t.mihon_extension_import),
+                ),
+              ],
+            ),
+          ],
         ),
       );
+      return <Widget>[
+        // 独立页把空态撑满视口垂直居中；内嵌时它只是页面中的一节，撑满会把下面的
+        // 「漫画源」一节顶出屏幕。
+        if (widget.embedded)
+          SliverToBoxAdapter(child: empty)
+        else
+          SliverFillRemaining(
+              hasScrollBody: false, child: Center(child: empty)),
+      ];
     }
     final Set<String> availablePackages = manager.available
         .map((MihonAvailableExtension extension) => extension.packageName)
         .toSet();
+    // 语言码一律折成小写做值域：仓库里同一门语言大小写不统一时不会分裂成两项。
+    // `all`（多语言扩展）是**一个普通语言项**，不再被强行混进每一种语言里——
+    // 选 JA 却整屏都是 `all`（而且 keiyoushi 的 `all` 大多是聚合站）正是用户说的
+    // 「筛选不生效」的一半（BUG-1430）。要看它就在下拉里选 ALL。
     final List<String> languages = manager.available
-        .map((MihonAvailableExtension extension) => extension.language)
-        .where((String language) =>
-            language.isNotEmpty && language.toLowerCase() != 'all')
+        .map((MihonAvailableExtension extension) =>
+            extension.language.toLowerCase())
+        .where((String language) => language.isNotEmpty)
         .toSet()
         .toList()
       ..sort();
@@ -355,16 +384,18 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         filterByMediaSearch<MihonAvailableExtension>(
       manager.available
           .where((MihonAvailableExtension extension) =>
-              _language == '*' ||
-              extension.language == _language ||
-              extension.language.toLowerCase() == 'all')
+              _language == '*' || extension.language.toLowerCase() == _language)
           .toList(growable: false),
       _searchQuery,
+      // 🔴 可搜字段只能是**条目自身**的标识。`storeUrl` 是仓库级字段，同一仓库的
+      // 每个扩展都一样：keiyoushi 的索引地址是
+      // `https://github.com/keiyoushi/extensions/raw/repo/index.pb`，归一化后含
+      // `raw`/`github`/`repo`/`index`，于是搜「raw」整个仓库 1900 个扩展全部命中，
+      // 看起来就是「筛选完全没生效」（BUG-1430）。`language` 同理是低基数共享值，
+      // 且已有专门的语言下拉，留在这里只会把「all」这类查询打成全命中。
       (MihonAvailableExtension extension) => <String>[
         extension.name,
         extension.packageName,
-        extension.storeUrl,
-        extension.language,
         ...extension.sources.expand(
           (MihonAvailableSource source) => <String>[
             source.name,
@@ -375,7 +406,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     );
     final List<MangaExtensionRow> localOnly = manager.installed
         .where((MangaExtensionRow row) =>
-            !availablePackages.contains(row.packageName))
+            !availablePackages.contains(row.packageName) &&
+            (_language == '*' || row.language.toLowerCase() == _language))
         .toList(growable: false);
     final List<MangaExtensionRow> visibleLocalOnly =
         filterByMediaSearch<MangaExtensionRow>(
@@ -384,83 +416,82 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       (MangaExtensionRow extension) => <String>[
         extension.name,
         extension.packageName,
-        extension.language,
       ],
     );
-    return _contentContainer(<Widget>[
-      for (final MangaExtensionStoreRow store in manager.stores)
-        HibikiCard(
-          padding: EdgeInsets.zero,
-          child: HibikiListItem(
-            leading: const Icon(Icons.hub_outlined),
-            title: Text(store.name),
-            subtitle: Text(
-              store.lastError == null
-                  ? store.indexUrl
-                  : '${store.indexUrl}\n${store.lastError}',
-            ),
-            trailing: IconButton(
-              tooltip: t.dialog_delete,
-              onPressed: () => unawaited(
-                manager.removeStore(store.indexUrl),
+    return <Widget>[
+      SliverList.builder(
+        itemCount: manager.stores.length,
+        itemBuilder: (BuildContext context, int index) {
+          final MangaExtensionStoreRow store = manager.stores[index];
+          return HibikiCard(
+            padding: EdgeInsets.zero,
+            child: HibikiListItem(
+              leading: const Icon(Icons.hub_outlined),
+              title: Text(store.name),
+              subtitle: Text(
+                store.lastError == null
+                    ? store.indexUrl
+                    : '${store.indexUrl}\n${store.lastError}',
               ),
-              icon: const Icon(Icons.delete_outline),
+              trailing: IconButton(
+                tooltip: t.dialog_delete,
+                onPressed: () => unawaited(
+                  manager.removeStore(store.indexUrl),
+                ),
+                icon: const Icon(Icons.delete_outline),
+              ),
             ),
-          ),
-        ),
+          );
+        },
+      ),
       if (manager.available.isNotEmpty || manager.installed.isNotEmpty)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: _buildFilters(languages),
-        ),
-      const SizedBox(height: 8),
-      for (final MihonAvailableExtension extension in visibleAvailable)
-        _AvailableExtensionTile(
-          extension: extension,
-          installed: installed[extension.packageName],
-          onInstall: () => unawaited(_install(extension)),
-          onUninstall: installed[extension.packageName] == null
-              ? null
-              : () => unawaited(
-                    _uninstall(installed[extension.packageName]!),
-                  ),
-          onEnabledChanged: installed[extension.packageName] == null
-              ? null
-              : (bool value) => unawaited(manager.setExtensionEnabled(
-                    installed[extension.packageName]!,
-                    value,
-                  )),
-        ),
-      for (final MangaExtensionRow extension in visibleLocalOnly)
-        _InstalledExtensionTile(
-          extension: extension,
-          onUninstall: () => unawaited(_uninstall(extension)),
-          onEnabledChanged: (bool value) => unawaited(
-            manager.setExtensionEnabled(extension, value),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: _buildFilters(languages),
           ),
         ),
+      const SliverToBoxAdapter(child: SizedBox(height: 8)),
+      SliverList.builder(
+        itemCount: visibleAvailable.length,
+        itemBuilder: (BuildContext context, int index) {
+          final MihonAvailableExtension extension = visibleAvailable[index];
+          final MangaExtensionRow? row = installed[extension.packageName];
+          return _AvailableExtensionTile(
+            extension: extension,
+            installed: row,
+            onInstall: () => unawaited(_install(extension)),
+            onUninstall: row == null ? null : () => unawaited(_uninstall(row)),
+            onEnabledChanged: row == null
+                ? null
+                : (bool value) =>
+                    unawaited(manager.setExtensionEnabled(row, value)),
+          );
+        },
+      ),
+      SliverList.builder(
+        itemCount: visibleLocalOnly.length,
+        itemBuilder: (BuildContext context, int index) {
+          final MangaExtensionRow extension = visibleLocalOnly[index];
+          return _InstalledExtensionTile(
+            extension: extension,
+            onUninstall: () => unawaited(_uninstall(extension)),
+            onEnabledChanged: (bool value) => unawaited(
+              manager.setExtensionEnabled(extension, value),
+            ),
+          );
+        },
+      ),
       if (_searchQuery.trim().isNotEmpty &&
           visibleAvailable.isEmpty &&
           visibleLocalOnly.isEmpty)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 32),
-          child: Center(child: Text(t.no_search_results)),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Center(child: Text(t.no_search_results)),
+          ),
         ),
-    ]);
-  }
-
-  /// 独立页自带滚动；内嵌时外层 `ListView` 已经在滚了，这里必须是裸 `Column`。
-  Widget _contentContainer(List<Widget> children) {
-    if (widget.embedded) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: children,
-      );
-    }
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: children,
-    );
+    ];
   }
 
   Widget _buildFilters(List<String> languages) {
@@ -471,11 +502,15 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       ),
       items: <DropdownMenuItem<String>>[
         DropdownMenuItem<String>(
+          key: const ValueKey<String>('mihon_extension_language_*'),
           value: '*',
           child: Text(t.mihon_extension_language_all),
         ),
+        // `all` 也在这里，作为一个**普通语言项**（显示成 ALL，与条目副标题里的
+        // `all · 1.6.4 · lib 1.6` 同一个词）。见 `_buildContentSlivers` 里的说明。
         for (final String language in languages)
           DropdownMenuItem<String>(
+            key: ValueKey<String>('mihon_extension_language_$language'),
             value: language,
             child: Text(language.toUpperCase()),
           ),

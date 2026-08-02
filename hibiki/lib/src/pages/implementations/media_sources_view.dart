@@ -64,11 +64,13 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// null = 仍在加载；非 null = 已加载（可能为空列表）。
   List<SourceLibraryRow>? _rows;
 
-  /// Virtual sources are not `media_sources` scan roots. They are composed into
-  /// this view so "Sources" describes every origin that can supply the media
-  /// experience instead of only local folders.
+  /// Hibiki 互联不是 `media_sources` 扫描根，但它确实是**本机之外的同一批本地
+  /// 文件**（局域网里另一台自己的设备），所以与扫描根同列。
+  ///
+  /// 🔴 别再往这里加「网站」型来源（BUG-1431）：mokuro.moe 曾挂在这一节，用户口径
+  /// 是它不该跟扫描根混在一起。在线漫画源统一归 `MangaSourcesPage` 的「漫画源」
+  /// 一节（`MokuroMoeSourceRow`），与扩展提供的源同级。
   bool? _interconnectEnabled;
-  bool? _mangaOnlineCatalogEnabled;
 
   /// 每个来源 id → 当前**累计拥有**的媒体条目数（TODO-1036）。
   /// 与列表一起加载，避免逐行 FutureBuilder 抖动。来源不在 map 里时回退 0。
@@ -106,16 +108,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         await _db.getMediaSourcesByKind(widget.mediaKind);
     final bool interconnectEnabled =
         await SyncRepository(_db).isInterconnectEnabled();
-    final bool mangaOnlineCatalogEnabled = await _db.getPrefTyped<bool>(
-      'manga_online_catalog_enabled',
-      true,
-    );
     final Map<int, int> counts = await _loadCumulativeCounts(rows);
     if (!mounted) return;
     setState(() {
       _rows = rows;
       _interconnectEnabled = interconnectEnabled;
-      _mangaOnlineCatalogEnabled = mangaOnlineCatalogEnabled;
       _cumulativeCount
         ..clear()
         ..addAll(counts);
@@ -151,10 +148,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   Widget _buildBody(HibikiDesignTokens tokens) {
     final List<SourceLibraryRow>? rows = _rows;
     final bool? interconnectEnabled = _interconnectEnabled;
-    final bool? mangaOnlineCatalogEnabled = _mangaOnlineCatalogEnabled;
-    if (rows == null ||
-        interconnectEnabled == null ||
-        mangaOnlineCatalogEnabled == null) {
+    if (rows == null || interconnectEnabled == null) {
       return buildLoading(padding: const EdgeInsets.all(24));
     }
     final List<Widget> sourceRows = <Widget>[
@@ -166,17 +160,6 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         value: interconnectEnabled,
         onChanged: _setInterconnectEnabled,
       ),
-      if (widget.mediaKind == 'manga')
-        _buildVirtualSourceRow(
-          tokens,
-          icon: Icons.public_outlined,
-          title: 'Mokuro.moe',
-          subtitle: _appModel.isPreferencesReady
-              ? _appModel.mangaOnlineCatalogBaseUrl
-              : 'https://mokuro.moe',
-          value: mangaOnlineCatalogEnabled,
-          onChanged: _setMangaOnlineCatalogEnabled,
-        ),
       if (rows.isNotEmpty) ...<Widget>[
         Padding(
           padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
@@ -261,20 +244,6 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     } catch (_) {
       if (!mounted) return;
       setState(() => _interconnectEnabled = !value);
-    }
-  }
-
-  Future<void> _setMangaOnlineCatalogEnabled(bool value) async {
-    setState(() => _mangaOnlineCatalogEnabled = value);
-    try {
-      if (_appModel.isPreferencesReady) {
-        await _appModel.setMangaOnlineCatalogEnabled(value);
-      } else {
-        await _db.setPrefTyped<bool>('manga_online_catalog_enabled', value);
-      }
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _mangaOnlineCatalogEnabled = !value);
     }
   }
 
