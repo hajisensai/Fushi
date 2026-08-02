@@ -140,11 +140,12 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
             children: <Widget>[
               HibikiPageHeader.customTitle(
                 title: GameSectionTabs(
-                  selected: GameSection.diagnostics,
+                  selected: GameSection.settings,
                   focusIdPrefix: 'game-diagnostics-tab',
                   onSelectLibrary: widget.onShowLibrary,
                   onSelectMonitor: widget.onShowCapture,
-                  onSelectDiagnostics: () {},
+                  onSelectSettings: () =>
+                      gameSectionNotifier.value = GameSection.settings,
                 ),
                 actions: <Widget>[
                   // BUG-1027：「刷新音轨」已就近移入「活跃音轨」卡片标题行；

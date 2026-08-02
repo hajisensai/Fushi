@@ -22,6 +22,13 @@ Widget _testLibrary(
 /// setUp 里把 IndexedStack 起始子区切到库（与旧默认行为等价）。
 Widget _stubDashboard(BuildContext _, VoidCallback __) => const SizedBox();
 
+Widget _stubSettings(BuildContext _, Widget navigation) => Column(
+      children: <Widget>[
+        navigation,
+        const Text('game-settings'),
+      ],
+    );
+
 Widget _testMonitorWithSections(
   BuildContext _,
   VoidCallback onShowLibrary,
@@ -34,10 +41,16 @@ Widget _testMonitorWithSections(
           gameSectionNotifier.value = GameSection.dashboard,
       onSelectLibrary: onShowLibrary,
       onSelectMonitor: () {},
-      onSelectDiagnostics: () =>
-          gameSectionNotifier.value = GameSection.diagnostics,
+      onSelectSettings: () => gameSectionNotifier.value = GameSection.settings,
     ),
   );
+}
+
+Future<void> _settleOnLibrary(WidgetTester tester) async {
+  // Flutter 测试在下一例首帧才销毁上一例的 HomeGamePage；它的 dispose 会把全局
+  // section 回落到 dashboard。首帧后再选库，避免测试顺序影响初始子页。
+  gameSectionNotifier.value = GameSection.library;
+  await tester.pump();
 }
 
 void main() {
@@ -59,10 +72,11 @@ void main() {
           monitorBuilder: (_, __) => const SizedBox(),
           libraryBuilder: _testLibrary,
           dashboardBuilder: _stubDashboard,
+          settingsBuilder: _stubSettings,
         ),
       ),
     );
-    await tester.pump();
+    await _settleOnLibrary(tester);
 
     expect(find.textContaining('1'), findsWidgets);
     expect(find.text('テスト台詞'), findsOneWidget);
@@ -78,6 +92,7 @@ void main() {
         home: HomeGamePage(
           libraryBuilder: _testLibrary,
           dashboardBuilder: _stubDashboard,
+          settingsBuilder: _stubSettings,
           monitorBuilder: (_, VoidCallback onShowLibrary) => _TestMonitor(
             onShowLibrary: onShowLibrary,
             onInit: () => initCount++,
@@ -86,7 +101,7 @@ void main() {
         ),
       ),
     );
-    await tester.pump();
+    await _settleOnLibrary(tester);
 
     expect(initCount, 1, reason: 'IndexedStack 在模块存活期只挂载一个工作台 State');
     await tester.ensureVisible(find.byKey(HomeGamePage.captureStatusKey));
@@ -105,7 +120,7 @@ void main() {
     expect(disposeCount, 0);
   });
 
-  testWidgets('800x600 diagnostics section is reachable through managed focus',
+  testWidgets('800x600 top tabs replace diagnostics with settings',
       (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -116,11 +131,12 @@ void main() {
             monitorBuilder: _testMonitorWithSections,
             libraryBuilder: _testLibrary,
             dashboardBuilder: _stubDashboard,
+            settingsBuilder: _stubSettings,
           ),
         ),
       ),
     );
-    await tester.pump();
+    await _settleOnLibrary(tester);
 
     final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
       tester.element(find.byType(HomeGamePage)),
@@ -128,25 +144,18 @@ void main() {
     final Finder gameSections =
         find.byType(HibikiAdjustableSegmented<GameSection>);
     expect(gameSections, findsOneWidget);
-    expect(
-      find.descendant(
-        of: gameSections,
-        matching: find.byWidgetPredicate(
-          (Widget widget) =>
-              widget is SingleChildScrollView &&
-              widget.scrollDirection == Axis.horizontal,
-        ),
-      ),
-      findsOneWidget,
-      reason: '800px 页头下完整四分段必须保留真实横滚容器',
-    );
+    expect(find.text(t.game_dashboard), findsOneWidget);
+    expect(find.text(t.game_library), findsOneWidget);
+    expect(find.text(t.game_capture_workbench), findsOneWidget);
+    expect(find.text(t.settings), findsOneWidget,
+        reason: '800px 页头必须完整呈现首页、游戏库、捕获工作台、设置四个分段');
     expect(
       controller.requestById(
         const HibikiFocusId('game-library-tab-sections'),
       ),
       isTrue,
     );
-    await tester.pump();
+    await _settleOnLibrary(tester);
     expect(
       controller.primaryFocusIsManagedTarget,
       isTrue,
@@ -168,6 +177,14 @@ void main() {
     expect(controller.primaryFocusIsManagedTarget, isTrue);
     await driver.adjust(steps: 1);
 
+    expect(find.byKey(HomeGamePage.settingsKey), findsOneWidget);
+    expect(find.text('game-settings'), findsOneWidget);
+    expect(find.text(t.game_diagnostics), findsNothing,
+        reason: '兼容性诊断不得继续占用游戏顶部高频页签');
+
+    // 诊断能力仍保留给设置页导航：程序化入口能进入详情，但顶部高亮设置。
+    gameSectionNotifier.value = GameSection.diagnostics;
+    await tester.pump();
     expect(find.byKey(HomeGamePage.diagnosticsKey), findsOneWidget);
     expect(find.byIcon(Icons.account_tree_outlined), findsOneWidget);
     expect(find.byIcon(Icons.multitrack_audio_outlined), findsOneWidget);
@@ -181,6 +198,7 @@ void main() {
           child: HomeGamePage(
             libraryBuilder: _testLibrary,
             dashboardBuilder: _stubDashboard,
+            settingsBuilder: _stubSettings,
             monitorBuilder: (_, __) => const Text('focused-monitor'),
           ),
         ),
@@ -215,10 +233,11 @@ void main() {
             monitorBuilder: (_, __) => const SizedBox(),
             libraryBuilder: _testLibrary,
             dashboardBuilder: _stubDashboard,
+            settingsBuilder: _stubSettings,
           ),
         ),
       );
-      await tester.pump();
+      await _settleOnLibrary(tester);
       expect(tester.takeException(), isNull);
       expect(find.byKey(HomeGamePage.libraryKey), findsOneWidget);
     });
