@@ -127,6 +127,25 @@ String _annotate(String base, String? reason, String detail) {
   return parts.isEmpty ? base : '$base（${parts.join(' · ')}）';
 }
 
+/// 会话状态卡里那句降级结论（**不含**证据，证据由调用方另起一行渲染，见下）。
+///
+/// 三级取值，与旧实现逐字一致、**绝不编造**：可执行处置 → 降级原因人话 → 内部代码兜底。
+/// 抽成顶层函数是为了能脱开 widget 直接测——它原先内联在私有的 `_SessionOverviewCard`
+/// 里，三级 fallback 一直没有任何单测覆盖。
+///
+/// ⚠️ **别把 `injectorDetail` 拼进这里的返回值**（BUG-1446 踩过）。状态卡那行有
+/// `maxLines`（compact 只有 2 行）+ `TextOverflow.ellipsis`，而处置文案本身就有八十多字；
+/// 证据缀在尾部会被省略号整段吃掉，等于没修。证据必须**独立一行**，才不会被长文案挤掉。
+/// 一次性 toast（[galHookLaunchOutcomeMessage]）没有行数限制，才用「结论（原因 · 证据）」
+/// 单串拼法——介质不同，规则不同，硬统一反而丢事实。
+String galHookFallbackHeadline({
+  required GalHookInjectorFailure failure,
+  required String fallbackReason,
+}) =>
+    galHookFailureLabel(failure) ??
+    galHookFallbackLabel(fallbackReason) ??
+    fallbackReason;
+
 /// 会话降级原因（`GalHookSessionState.fallbackReason` 的内部代码）→ 人话文案。
 ///
 /// BUG-1100：`_activateTextWithLoopback` 这条路径显式把 `injectorFailure` 置成
