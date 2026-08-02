@@ -46,6 +46,11 @@ const List<String> _overlayNewFiles = <String>[
 
 String _read(String path) => File(path).readAsStringSync();
 
+/// 补丁里出现的文件数（`+++ b/<path>` 的条数）——用来反空转，不硬编码。
+int _patchedFileCount() => RegExp(r'^\+\+\+ b/', multiLine: true)
+    .allMatches(_read('$_vendorRoot/server-build.gradle.patch'))
+    .length;
+
 /// 掩掉 `#` 行注释（sh 与 ps1 同一种注释符），走共享的等长掩码原语。
 ///
 /// 为什么必须剥：两份脚本的注释里**必须**能写出 "git clone" 这类字样来解释为什么
@@ -143,6 +148,18 @@ void main() {
             reason: '$name 必须仍然应用 server-build.gradle.patch');
       });
 
+      test('$name 应用补丁时不带 --unidiff-zero（零上下文=漂移无声）', () {
+        // 掩掉注释：两份脚本的注释里**必须**能写出 `--unidiff-zero` 来解释为什么
+        // 不再用它，否则这条守卫会被自己的解释性注释判成假红。
+        expect(
+          _maskedCode(body),
+          isNot(contains('--unidiff-zero')),
+          reason: '$name 又给 git apply 加回了 --unidiff-zero —— 零上下文补丁的'
+              '纯插入 hunk 无内容可校验，`git apply --check` 对上游漂移 exit 0，'
+              '真 apply 时按行号盲插到错误位置（BUG-1428）',
+        );
+      });
+
       test('$name 里 overlay 在补丁之后应用（覆盖顺序即安全边界的胜负手）', () {
         final String code = _maskedCode(body);
         final int patchAt = code.indexOf('server-build.gradle.patch');
@@ -169,31 +186,99 @@ void main() {
   });
 
   test('server-build.gradle.patch 仍能干净地打在 vendored 树上', () {
+    // 两处刻意的调用形态，少一个这条守卫就变成空转（BUG-1428）：
+    //
+    // ① **不带** `--unidiff-zero` —— 见下面「补丁必须带上下文」那条。
+    // ② 从**仓库根** + `--directory=`，而不是 cd 进 upstream_src 直接跑。
+    //    `git apply` 在仓库内把补丁路径解释成**相对仓库根**，再丢掉落在当前
+    //    目录之外的条目。在 upstream_src 里跑时，补丁里的 `gradle/...` /
+    //    `server/...` 被当成 `<repo>/gradle/...`，全部落在 cwd 之外 ——
+    //    git 打印 7 行 "Skipped patch" 然后 exit 0。实测：upstream_src 被改坏
+    //    也照样绿。构建脚本没这个问题（它在仓库外的临时目录里跑）。
     final ProcessResult result = Process.runSync(
       'git',
       <String>[
         'apply',
         '--check',
-        '--unidiff-zero',
-        '../server-build.gradle.patch',
+        '--verbose',
+        '--directory=third_party/m_extension_server/upstream_src',
+        'third_party/m_extension_server/server-build.gradle.patch',
       ],
-      workingDirectory: _upstreamSource,
+      workingDirectory: _repositoryRoot,
       stdoutEncoding: utf8,
       stderrEncoding: utf8,
     );
+    final String log = '${result.stdout}\n${result.stderr}';
+
+    // 反空转：git 必须真的逐个检查了补丁里的每个文件。
+    expect(
+      log,
+      isNot(contains('Skipped patch')),
+      reason: 'git apply 跳过了补丁条目 —— 这条守卫在空转，改坏 upstream_src 也会绿；'
+          '路径解释方式又错了：\n$log',
+    );
+    final int checkedFiles = 'Checking patch'.allMatches(log).length;
+    final int expectedFiles = _patchedFileCount();
+    expect(
+      checkedFiles,
+      expectedFiles,
+      reason: 'git apply 只检查了 $checkedFiles 个文件，补丁里有 $expectedFiles 个'
+          ' —— 守卫覆盖不全：\n$log',
+    );
+
     expect(
       result.exitCode,
       0,
       reason: 'git apply --check 失败，upstream_src 与 server-build.gradle.patch '
-          '已经漂开，CI 上构建会挂：\n${result.stderr}',
+          '已经漂开，CI 上构建会挂：\n$log',
     );
   });
 
-  // `git apply --unidiff-zero`（构建脚本和上面那条守卫都用它）会**关掉**上下文
-  // 校验：源文件第 N 行内容变了它照样 exit 0，然后按行号把内容盲替换掉 —— 补丁
-  // 静默打歪，产物错得无声无息。所以必须自己逐条核对补丁的 `-` 行确实落在
-  // upstream_src 对应行上。这才是真正能挡住漂移的那一条。
-  test('server-build.gradle.patch 的每条删除行都对得上 vendored 树的实际内容', () {
+  // 这条是本文件里唯一能让 `git apply --check` **真的**挡住上游漂移的前提
+  // （BUG-1428）。
+  //
+  // 实测：零上下文补丁里纯插入的 hunk（`@@ -69,0 +70 @@`）没有任何可校验内容，
+  // 在 upstream_src 已漂移的树上 `git apply --check --unidiff-zero` 仍 exit 0，
+  // 真 apply 时按行号把新代码盲插到错误位置 —— JGroupFilter 的 `stateString`
+  // 落在 `name` 与 `type` 之间，Kotlin data class 的字段顺序是位置语义，编译照
+  // 过、行为已错。带上下文之后，上游整体位移由 git 自动重定位，内容真变了硬失败。
+  //
+  // 所以补丁必须保持默认 3 行上下文：重新生成用 `git diff`，**不能**用
+  // `git diff -U0`；应用它的地方（两份构建脚本 + 上面那条守卫）都不能带
+  // `--unidiff-zero`。
+  test('server-build.gradle.patch 必须带上下文（零上下文=漂移无声）', () {
+    final List<String> patch =
+        File('$_vendorRoot/server-build.gradle.patch').readAsLinesSync();
+    final RegExp hunkHeader = RegExp(r'^@@ -\S+ \+\S+ @@');
+    final List<String> headers =
+        patch.where(hunkHeader.hasMatch).toList(growable: false);
+    expect(headers, isNotEmpty, reason: '补丁里一个 hunk 都没有 —— 解析失效');
+
+    // 零上下文 hunk 的形态：单行 `@@ -N +M @@`，或 `,0`（纯插入的旧侧长度 0）。
+    final RegExp zeroContext = RegExp(r'^@@ -\d+(?: |,0 )\+|\+\d+(?: |,0) @@');
+    final List<String> offenders =
+        headers.where(zeroContext.hasMatch).toList(growable: false);
+    expect(
+      offenders,
+      isEmpty,
+      reason: '这些 hunk 是零上下文形态，补丁又被 `git diff -U0` 重新生成了：\n'
+          '${offenders.join('\n')}\n'
+          '零上下文的纯插入 hunk 无内容可校验，`git apply --check` 对上游漂移'
+          ' exit 0，然后按行号盲插到错误位置（BUG-1428）',
+    );
+
+    // 正向证据：确实存在 ` ` 开头的上下文行（只看 hunk 头会被空补丁骗过）。
+    final int contextLines =
+        patch.where((String l) => l.startsWith(' ')).length;
+    expect(contextLines, greaterThan(20),
+        reason: '只有 $contextLines 行上下文 —— 补丁实际上仍是零上下文的');
+  });
+
+  // `git apply` 允许 hunk 带 offset 重定位：上游整体位移时它 exit 0 并打在正确
+  // 位置。那对构建是好事，但意味着「补丁的行号仍与 upstream_src 对齐」这件事
+  // 本身不再被 `--check` 保证。vendored 树是钉死的，补丁与它必须逐行对齐，所以
+  // 这里自解析补丁，把 `-` 行**和** ` ` 上下文行都核到 upstream_src 的实际行上。
+  test('server-build.gradle.patch 的删除行与上下文行都对得上 vendored 树的实际内容', () {
     final List<String> patch =
         File('$_vendorRoot/server-build.gradle.patch').readAsLinesSync();
     final RegExp fileHeader = RegExp(r'^\+\+\+ b/(.+)$');
@@ -203,7 +288,21 @@ void main() {
     String? currentPath;
     List<String>? currentLines;
     int sourceLine = 0;
-    int checked = 0;
+    int deletionsChecked = 0;
+    int contextChecked = 0;
+
+    /// 把补丁里一条旧侧的行（`-` 删除行或 ` ` 上下文行）核到 upstream_src 的实
+    /// 际内容上。[lines] 是当前文件的全部行，[kind] 只进错误信息，用来区分是哪
+    /// 一类行对不上。
+    void verifyOldSideLine(List<String> lines, String expected, String kind) {
+      expect(
+        sourceLine <= lines.length ? lines[sourceLine - 1] : null,
+        expected,
+        reason: 'upstream_src/$currentPath 第 $sourceLine 行与补丁的$kind不一致 —— '
+            'upstream_src 与 server-build.gradle.patch 必须同步更新'
+            '（补丁重新生成用 `git diff`，不要用 `-U0`）',
+      );
+    }
 
     for (final String line in patch) {
       final RegExpMatch? header = fileHeader.firstMatch(line);
@@ -222,30 +321,28 @@ void main() {
       }
       if (currentLines == null || sourceLine == 0) continue;
       if (line.startsWith('---') || line.startsWith('+++')) continue;
+      // `\ No newline at end of file` 不占旧侧行号。
+      if (line.startsWith(r'\')) continue;
       if (line.startsWith('+')) continue;
       if (line.startsWith('-')) {
-        final String expected = line.substring(1);
-        expect(
-          sourceLine <= currentLines.length
-              ? currentLines[sourceLine - 1]
-              : null,
-          expected,
-          reason: 'upstream_src/$currentPath 第 $sourceLine 行与补丁的删除行不一致；'
-              '`git apply --unidiff-zero` 不会报错，只会把内容盲替换掉 —— '
-              'upstream_src 与 server-build.gradle.patch 必须同步更新',
-        );
-        checked++;
+        verifyOldSideLine(currentLines, line.substring(1), '删除行');
+        deletionsChecked++;
         sourceLine++;
         continue;
       }
       if (line.startsWith(' ')) {
+        verifyOldSideLine(currentLines, line.substring(1), '上下文行');
+        contextChecked++;
         sourceLine++;
       }
     }
 
     // 自校验：解析器失效（补丁格式变了 / 路径错了）必须红，不能静默扫空。
-    expect(checked, greaterThan(10),
-        reason: '只核对到 $checked 条删除行 —— 补丁解析很可能已经失效');
+    expect(deletionsChecked, greaterThan(10),
+        reason: '只核对到 $deletionsChecked 条删除行 —— 补丁解析很可能已经失效');
+    expect(contextChecked, greaterThan(50),
+        reason: '只核对到 $contextChecked 条上下文行 —— 补丁很可能又变回零上下文，'
+            '或补丁解析已经失效');
   });
 
   test('overlay 覆盖的上游文件路径仍然存在（覆盖没有打空）', () {

@@ -39,11 +39,21 @@ Build
 tool/mihon/build_desktop_runtime.sh (macOS) and
 tool/mihon/build_desktop_runtime.ps1 (Windows) do, in this order:
   1. copy upstream_src/ into a temporary directory;
-  2. `git apply --unidiff-zero server-build.gradle.patch` (git apply works
-     outside a git repository);
+  2. `git apply server-build.gradle.patch` (git apply works outside a git
+     repository);
   3. copy overlay/ over the result, overwriting same-named files;
   4. run `:server:test :server:shadowJar` with the pinned Temurin JDK.
 The overlay is applied last, so the security boundary below always wins.
+
+server-build.gradle.patch MUST keep its default 3 lines of context and MUST
+NOT be applied with `--unidiff-zero` (BUG-1428). A zero-context patch has
+nothing to verify in an insertion-only hunk: `git apply --check` returns 0
+even after upstream_src has drifted, and the real apply then blind-inserts by
+line number (measured: the JGroupFilter `stateString` field landed between
+`name` and `type` — a Kotlin data class's field order is positional, so it
+still compiles while already behaving wrong). With context, a pure line shift
+is relocated automatically and a real content change fails loudly.
+Regenerate the patch with `git diff` (never `git diff -U0`).
 
 upstream server/build.gradle.kts derives its revision string from
 `git rev-list HEAD --count`, which yields nothing in a .git-less vendored
