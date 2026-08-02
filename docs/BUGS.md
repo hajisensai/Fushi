@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1416](bugs/BUG-1416-anime-download-added-activity.md) | ✅ | ✅ | 番剧下载自动入库不记 added 活动事件 |
+| [BUG-1417](bugs/BUG-1417-anime-download-added-activity.md) | ✅ | ✅ | 番剧下载自动入库不记 added 活动事件 |
 | [BUG-1414](bugs/BUG-1414-md3-manga-fontsize-guard.md) | ✅ | ✅ | manga.json 回写触发 MD3 fontSize 守卫，develop CI 单测门变红 |
 | [BUG-1413](bugs/BUG-1413-local-audio-busy-swallowed-as-miss.md) | ✅ | ✅ | 本地音频库 SQLITE_BUSY 被吞成与「真没这词」同形的 null |
 | [BUG-1412](bugs/BUG-1412-activity-identity-gates.md) | ✅ | ✅ | 游戏活动身份回退过宽：同名条目取第一个 / 脏 key 误绑封面 |
