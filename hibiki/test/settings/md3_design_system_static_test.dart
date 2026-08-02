@@ -662,6 +662,11 @@ void main() {
       'surfaceContainerHigh',
       'surfaceContainerHighest',
       'fontSize:',
+      // BUG-1425：`TextStyle.apply` 的两个字号旋钮。少了它们，「读一个排版令牌
+      // 再用 fontSizeFactor 把它整除掉」就能锁死任意字号而整个文件一个
+      // `fontSize:` 都不剩——判据天然扫不到，等于给绕过留了正门。
+      'fontSizeFactor',
+      'fontSizeDelta',
       'Card(',
       'ListTile(',
       'SwitchListTile(',
@@ -675,10 +680,6 @@ void main() {
           'Shared MD3 component implementation may map tokens to framework widgets.',
       'lib/src/utils/components/settings_shared.dart':
           'Shared adaptive settings primitives own compact settings controls.',
-      'lib/src/utils/components/hibiki_dropdown.dart':
-          'Shared dropdown owns its menu anchor shape until it is tokenized.',
-      'lib/src/utils/adaptive/adaptive_theme.dart':
-          'Cupertino text-theme bridge defines platform typography roles.',
       'lib/src/models/theme_notifier.dart':
           'Theme preview content intentionally displays generated surface roles.',
       'lib/src/pages/implementations/custom_theme_page.dart':
@@ -714,15 +715,8 @@ void main() {
               'properties for the three popup injectors — same reviewed '
               'exception class as popup_settings_injection / '
               'dictionary_popup_webview.',
-      'lib/src/lookup/global_lookup_render.dart':
-          'Global lookup popup theming injects MD3 ColorScheme surface roles into popup CSS (same as dictionary_popup_webview).',
       'lib/src/pages/implementations/history_reader_page.dart':
           'History preview uses content-derived surface and text metrics.',
-      'lib/src/pages/implementations/media_item_dialog_page.dart':
-          'TODO-293 long-press media dialog redesign: the cover-hero placeholder '
-              '(no-cover case) paints a surfaceContainerHighest->High tonal '
-              'gradient as immersive cover content, not ordinary page chrome. '
-              'Surfaces still flow through HibikiDialogFrame + HibikiDesignTokens.',
       'lib/src/pages/implementations/reader_hibiki_history_page.dart':
           'Book-cover overlays and drag affordances are reader-shelf content.',
       // CoverBadge 是压在封面图上的角标胶囊（字幕/云端/播放列表等），把书架/
@@ -818,19 +812,10 @@ void main() {
               'image context-menu font size are reader content / chrome, '
               'same rationale as the parent reader_hibiki_page.dart allowlist '
               '(extracted verbatim).',
-      // TODO-589 batch8: reader webview 域(EPUB WebView 构建 / hoshi.local 资源拦截
-      // + 净化 / 单 IIFE setup 脚本)拆到 reader_hibiki/webview.part.dart；同一份
-      // 「reader content / WebView 注入」豁免随搬运延伸到该 part（零行为变化，逐字符
-      // 自父文件搬出，含 _buildReaderSetupScript 整段内联 JS 的字节级等价）。
-      'lib/src/pages/implementations/reader_hibiki/webview.part.dart':
-          'Reader pagination shell script receives the content font size '
-              '(fontSize: s.fontSize.round() passed to '
-              'ReaderPaginationScripts.shellScript) and the WebView injects '
-              'reader content styling, not ordinary page chrome — same '
-              'rationale as the parent reader_hibiki_page.dart allowlist '
-              '(extracted verbatim).',
-      'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
-          'Reader quick settings and audiobook chrome migrate under Task 8.',
+      // BUG-1425：reader_hibiki/webview.part.dart 的豁免已删除。它的理由写的是
+      // 「shellScript 收到 fontSize: s.fontSize.round()」，但该文件如今一个禁用
+      // token 都不剩（`shellScript` 这个符号在整个 lib/src 里也已不存在），豁免早与
+      // 代码脱节。下面的「no dead allowlist entries」断言会让同类过期豁免立刻红。
       'lib/src/media/audiobook/audiobook_bridge.dart':
           'Serialized audiobook bridge data includes reader font size.',
       'lib/src/media/audiobook/audiobook_session.dart':
@@ -882,11 +867,6 @@ void main() {
               'and playback state as video-subsystem content in the player overlay '
               'and collection hero; card typography scales with appUiScale in the '
               'player, the same reviewed content exception as video_episode_panel.',
-      'lib/src/media/video/video_side_panel.dart':
-          'Video translucent side-panel scaffold (favorite sentences list etc.) '
-              'renders video-subsystem overlay chrome; lock toggle (TODO-611) '
-              'uses a dense compact icon button consistent with the sibling '
-              'subtitle jump panel, not ordinary page chrome.',
       'lib/src/media/video/video_subtitle_style.dart':
           'Subtitle appearance model holds user-configurable caption font '
               'size (content), defaults mirror the allowlisted overlay caption.',
@@ -900,8 +880,6 @@ void main() {
               '(entry button surface, delay/view controls) routes through '
               'HibikiDesignTokens + shared MD3 components (HibikiIconButton / '
               'adaptiveSlider / AdaptiveSettingsTextField).',
-      'lib/src/media/video/video_danmaku_overlay.dart':
-          'Danmaku overlay renders timed video content text, not app chrome.',
       'lib/src/media/video/video_danmaku_text_metrics.dart':
           'BUG-1297/PR#627 danmaku font-size single source of truth, shared '
               'by rendering (video_danmaku_overlay) and geometry measurement '
@@ -1119,20 +1097,6 @@ void main() {
               'manga.json blocks; pure data layer, no UI typography.',
       'lib/src/creator/fields/image_field.dart':
           'Anki image-field renderer uses OCR/image coordinate typography.',
-      'lib/src/pages/implementations/dictionary_dialog_import_page.dart':
-          'Dictionary import content mirrors text-theme metrics.',
-      'lib/src/pages/implementations/dictionary_dialog_delete_page.dart':
-          'Dictionary delete content mirrors text-theme metrics.',
-      'lib/src/settings/cupertino_settings_renderer.dart':
-          'Cupertino destination list still wraps platform navigation rows.',
-      'lib/src/utils/components/hibiki_list_tile.dart':
-          'Legacy compatibility adapter wraps framework ListTile.',
-      'lib/src/utils/components/hibiki_text_selection_controls.dart':
-          'Shared text-selection toolbar owns its transient surface.',
-      'lib/src/utils/misc/update_checker_ui.dart':
-          'Update checker migrated card shell is already covered by local guard.',
-      'lib/src/reader/reader_pagination_scripts.dart':
-          'Injected reader JavaScript receives content font size.',
       'lib/src/storage/data_root_migration_view.dart':
           'TODO-959 data-root migration overlay is pre-init startup chrome '
               '(rendered while the DB is closed / isInitialised=false during '
@@ -1148,6 +1112,21 @@ void main() {
               'roles, the same reviewed startup-chrome exception class as the '
               'data-root migration / backup import overlays and the main.dart '
               'splash branches.',
+      // BUG-1425：查词源文本条的字号是**跨边界对齐常量**，不是本地 MD3 排版决定：
+      // BUG-175 / TODO-222 要求它与查词弹窗 headword 同级，而那个 headword 是
+      // WebView 里 assets/popup/popup.css 的 `.expression { font-size: 26px }`。
+      // 与 dictionary_popup_native / popup_theme_css 同一 reviewed 豁免类（弹窗查词
+      // 排版是内容，不是页面 chrome）。这条散文由下面
+      // 「source lookup strip headword size stays pinned to the popup CSS」钉成
+      // 可证伪断言：常量必须等于 popup.css 里的真实值，且不得退回 fontSizeFactor。
+      'lib/src/utils/components/clipboard_lookup_text_panel.dart':
+          'The source-text strip must render at the popup dictionary headword '
+              'size (BUG-175/TODO-222). That headword lives in the WebView, not '
+              'in a Flutter type role: assets/popup/popup.css sets '
+              '.expression { font-size: 26px }. kPopupHeadwordFontSize is that '
+              'cross-boundary parity constant (scaled by the user dictionary '
+              'font ratio), the same reviewed exception class as '
+              'dictionary_popup_native / popup_theme_css.',
       'lib/src/sync/backup_import_overlay_view.dart':
           'TODO-1151 backup import/restore overlay is pre-init startup chrome '
               '(rendered while the DB is closed / isInitialised=false during the '
@@ -1159,6 +1138,10 @@ void main() {
     };
 
     final List<String> violations = <String>[];
+    // BUG-1425：真正被用上的豁免键。一条豁免没被用上只有两种情况——文件没了，或者
+    // 文件里早就一个禁用 token 都不剩；两种都是**过期豁免**：理由与代码脱节，却仍
+    // 挂在名单上给该文件整份免检，等于给未来的违规预留了一张不会被审的通行证。
+    final Set<String> liveAllowlistKeys = <String>{};
     final List<File> dartFiles = Directory('lib/src')
         .listSync(recursive: true)
         .whereType<File>()
@@ -1173,7 +1156,10 @@ void main() {
       );
       final List<String> hits = _forbiddenChromeHits(source, forbidden);
       if (hits.isEmpty) continue;
-      if (reason != null && reason.isNotEmpty) continue;
+      if (reason != null && reason.isNotEmpty) {
+        liveAllowlistKeys.add(path);
+        continue;
+      }
       violations.add('$path: ${hits.join(', ')}');
     }
 
@@ -1183,6 +1169,110 @@ void main() {
       reason: 'Route ordinary visual chrome through shared MD3 components, or '
           'add a reviewed allowlist reason for true content exceptions.',
     );
+
+    final List<String> deadAllowlistEntries = allowedFiles.keys
+        .where((String path) => !liveAllowlistKeys.contains(path))
+        .toList(growable: false);
+    expect(
+      deadAllowlistEntries,
+      isEmpty,
+      reason: 'BUG-1425: these allowlist entries no longer match anything — '
+          'the file is gone, or it has zero forbidden-chrome hits. A reason '
+          'that has drifted away from the code is not a reviewed exception, '
+          'it is a standing blanket waiver. Delete the entry.',
+    );
+  });
+
+  // BUG-1425：上面四个文件的豁免理由写得比实际命中宽——理由只谈行字号 / 状态胶囊 /
+  // 勾选行 / 内容行，却顺带把行骨架和设置开关一起放了行。整份文件免检时，「理由没
+  // 覆盖到的那部分」是静默通过的，光看 allowlist 根本看不出来。裸 chrome 已收口到
+  // 共享 MD3 组件，这条把「收口后不许长回来」钉成可证伪断言：判据复用主守卫同一个
+  // 标识符边界原语（[_containsForbiddenChrome]），不是另写一套宽松子串。
+  test('reviewed content exemptions do not silently cover bare chrome', () {
+    // 章节面板：行骨架是共享组件，不是裸 ListTile（其豁免只覆盖行字号）。
+    final String chapterPanel =
+        File('lib/src/media/video/video_chapter_panel.dart').readAsStringSync();
+    expect(chapterPanel, contains('HibikiListItem('));
+    expect(_containsForbiddenChrome(chapterPanel, 'ListTile('), isFalse,
+        reason: 'video_chapter_panel is allowlisted for row font size only; '
+            'its row skeleton must stay a shared MD3 component');
+
+    // Hook 控制台：两个选择对话框的行骨架同上（其豁免只覆盖状态胶囊）。
+    final String texthooker =
+        File('lib/src/pages/implementations/texthooker_page.dart')
+            .readAsStringSync();
+    expect(texthooker, contains('HibikiListItem('));
+    expect(_containsForbiddenChrome(texthooker, 'ListTile('), isFalse,
+        reason: 'texthooker_page is allowlisted for hook status pills only; '
+            'its dialog rows must stay shared MD3 components');
+
+    // 着色器对话框：豁免只写了「导入的 shader 文件以勾选行列出」，所以
+    // CheckboxListTile 留着，Anime4K 预设列表的裸 ListTile 不许回来。
+    final String shaderDialog =
+        File('lib/src/pages/implementations/video_shader_dialog.dart')
+            .readAsStringSync();
+    expect(shaderDialog, contains('HibikiListItem('));
+    expect(shaderDialog, contains('CheckboxListTile('),
+        reason: 'the reviewed reason is about the shader-file checkbox rows; '
+            'if they are gone the reason must be rewritten, not inherited');
+    expect(_containsForbiddenChrome(shaderDialog, 'ListTile('), isFalse,
+        reason: 'the Anime4K preset picker must stay a shared MD3 row');
+
+    // 番剧下载对话框：豁免通篇讲内容行，开关不在其中。
+    final String animeDownload =
+        File('lib/src/pages/implementations/anime_download_dialog.dart')
+            .readAsStringSync();
+    expect(animeDownload, contains('AdaptiveSettingsSwitchRow('));
+    expect(_containsForbiddenChrome(animeDownload, 'SwitchListTile('), isFalse,
+        reason: 'anime_download_dialog is allowlisted for content rows; a '
+            'settings toggle must go through the shared MD3 switch row');
+  });
+
+  // BUG-1425：查词源文本条的豁免理由说它的字号对齐弹窗 headword，而那个 headword
+  // 是 WebView 里 popup.css 的 `.expression`。散文会漂，这条把两侧钉在一起：常量
+  // 变了、popup.css 变了、或有人把字号重新藏回 TextStyle.apply，都会红。
+  test('source lookup strip headword size stays pinned to the popup CSS', () {
+    final String panel = File(
+      'lib/src/utils/components/clipboard_lookup_text_panel.dart',
+    ).readAsStringSync();
+    final String code = maskComments(panel);
+
+    final RegExp declaration =
+        RegExp(r'const double kPopupHeadwordFontSize = ([0-9.]+);');
+    final RegExpMatch? declared = declaration.firstMatch(code);
+    expect(declared, isNotNull,
+        reason: 'the strip must name its headword size as a documented '
+            'cross-boundary constant, not an inline literal');
+    final double dartSize = double.parse(declared!.group(1)!);
+
+    // popup.css 的 `.expression` 就是弹窗 headword 那一行。
+    final String popupCss = File('assets/popup/popup.css').readAsStringSync();
+    final RegExpMatch? cssRule = RegExp(
+      r'\.expression\s*\{[^}]*?font-size:\s*([0-9.]+)px',
+      dotAll: true,
+    ).firstMatch(popupCss);
+    expect(cssRule, isNotNull,
+        reason: 'popup.css must still size the .expression headword; if that '
+            'rule moved, the Flutter-side parity reason is stale');
+    expect(dartSize, double.parse(cssRule!.group(1)!),
+        reason: 'the source-text strip must render at the popup headword size '
+            '(BUG-175/TODO-222); the two sides have drifted apart');
+
+    // 不许把字号重新藏进 TextStyle.apply（BUG-1425 的原始绕过写法）。
+    expect(code, isNot(contains('fontSizeFactor')));
+    expect(code, isNot(contains('fontSizeDelta')));
+    // 唯一的字号写入就是那条对齐常量。
+    final List<String> fontSizeLines = code
+        .split('\n')
+        .where((String line) => line.contains('fontSize:'))
+        .map((String line) => line.trim())
+        .toList(growable: false);
+    expect(
+        fontSizeLines,
+        <String>[
+          'return base.copyWith(fontSize: kPopupHeadwordFontSize * safeScale);'
+        ],
+        reason: 'the allowlisted hit must stay the single popup-parity size');
   });
 
   // BUG-1414：上面 allowlist 里 manga_json_writeback.dart 的豁免理由是「纯数据层、
