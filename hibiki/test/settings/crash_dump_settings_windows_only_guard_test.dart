@@ -18,8 +18,11 @@ void main() {
   test('诊断区有崩溃转储项且 Windows-only 可见', () {
     final int idx = schema.indexOf("id: 'diagnostics.crash_dumps'");
     expect(idx, isNonNegative, reason: '诊断区必须有崩溃转储项');
-    // 该项 200 字符窗口内必须有 Platform.isWindows 门控。
-    final String item = schema.substring(idx, idx + 300);
+    // 窗口 = 本项声明到下一项声明之间（结构化，随该项增删行自适应）。
+    // 原来是 `idx + 300` 的固定字符窗口：给该项加一个字段就把门控挤出窗口、
+    // 守卫凭空变红，而门控其实原地未动。窗口不该由长度决定。
+    final int next = schema.indexOf("id: '", idx + 5);
+    final String item = schema.substring(idx, next < 0 ? schema.length : next);
     expect(
       item.contains('visible: (_) => Platform.isWindows'),
       isTrue,
