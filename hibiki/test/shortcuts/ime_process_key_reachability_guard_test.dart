@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-1427：把「`LogicalKeyboardKey.process` 在 Hibiki 出包的 5 个平台上产不出来」
+/// BUG-1432：把「`LogicalKeyboardKey.process` 在 Hibiki 出包的 5 个平台上产不出来」
 /// 这条**平台事实**钉成可执行断言。
 ///
 /// 为什么需要它：仓库里 BUG-430 / BUG-853 / BUG-936 建立了一整套「IME 激活时引擎把

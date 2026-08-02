@@ -1,4 +1,4 @@
-## BUG-1427 · TODO-2652「三处快捷键台账仍记裸 logicalKey」经查证伪：`LogicalKeyboardKey.process` 在 5 个出包平台上根本不可达
+## BUG-1432 · TODO-2652「三处快捷键台账仍记裸 logicalKey」经查证伪：`LogicalKeyboardKey.process` 在 5 个出包平台上根本不可达
 - **报告**：2026-08-02（用户：TODO-2652，PR#720 调查时顺带发现的同族问题，怀疑三处运行期台账/桥接没做 IME 归一化）
 - **真实性**：❌ **未复现 / 伪需求**——三处都不该改，且**连它们要复用的前提本身都不成立**。逐条：
   1. **按住临时倍速台账**（`hibiki/lib/src/pages/implementations/video_hibiki_page.dart:4523` 记 `_holdSpeedTriggerKey = event.logicalKey`，`hibiki/lib/src/media/video/video_player_shortcuts.dart:456/461/469` 用 `activeTriggerKey == event.logicalKey` 配对）。怀疑的后果是「IME 下按下与松开的键配不上 ⇒ 倍速卡住松不开」。**证伪**：IME 消费掉的按键在 Flutter 侧连 `KeyDownEvent` 都不存在（见下「根因」），`engage` 从来不会发生，台账永远是 null，谈不上卡住；IME 不消费的键则 down/up 逻辑键由引擎强制一致（`keyboard_key_embedder_handler.cc:244/268` 的 `result_logical_key = last_logical_record`，up 恒复用 down 记录的逻辑键），也配得上。两种情况都不产生卡死。
