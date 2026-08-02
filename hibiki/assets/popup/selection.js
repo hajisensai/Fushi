@@ -35,11 +35,19 @@ window.hoshiSelection = {
         return !!el?.closest('rt, rp');
     },
 
+    isIgnoredLookupText(node) {
+        const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+        // postProcessRuby inserts a hidden copy of each reading before its base
+        // to reserve inline width. It is layout-only, just like <rt>/<rp>, and
+        // must not leak into mixed kanji/kana lookup scans (打ち合わせ, etc.).
+        return this.isFurigana(node) || !!el?.closest('.ruby-reserve');
+    },
+
     resolveRubyBase(node) {
         const rubyEl = node.parentElement?.closest('ruby');
         if (!rubyEl) return null;
         const walker = document.createTreeWalker(rubyEl, NodeFilter.SHOW_TEXT, {
-            acceptNode: (n) => this.isFurigana(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+            acceptNode: (n) => this.isIgnoredLookupText(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
         });
         const base = walker.nextNode();
         return base ? { node: base, offset: 0 } : null;
@@ -53,7 +61,7 @@ window.hoshiSelection = {
     createWalker(rootNode) {
         const root = rootNode || document.body;
         return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-            acceptNode: (n) => this.isFurigana(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+            acceptNode: (n) => this.isIgnoredLookupText(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
         });
     },
 
