@@ -124,6 +124,24 @@ add_custom_target(hibiki_windows_ime_association_gate
 )
 add_dependencies(${BINARY_NAME} hibiki_windows_ime_association_gate)
 
+# BUG-1455: compile and execute the WM_ACTIVATE focus policy on every Windows
+# runner build. This guards both sides of the contract: popup drag deactivation
+# must not raise the main window, while ordinary main-window click/activation
+# must still restore focus to the live Flutter child. HWND ownership cases cover
+# view teardown/recreation and Windows handle reuse.
+add_executable(hibiki_windows_activation_policy_test
+  "tests/window_activation_policy_test.cpp"
+)
+apply_standard_settings(hibiki_windows_activation_policy_test)
+target_compile_definitions(hibiki_windows_activation_policy_test PRIVATE
+  "NOMINMAX")
+add_custom_target(hibiki_windows_activation_policy_gate
+  COMMAND "$<TARGET_FILE:hibiki_windows_activation_policy_test>"
+  DEPENDS hibiki_windows_activation_policy_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} hibiki_windows_activation_policy_gate)
+
 add_executable(hibiki_update_launcher WIN32
   "update_launcher.cpp"
 )
