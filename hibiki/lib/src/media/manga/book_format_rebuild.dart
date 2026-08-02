@@ -351,6 +351,9 @@ abstract final class BookFormatRebuild {
     required EpubBookRow row,
     required String sourcePath,
   }) async {
+    // [recoverableBookSource] 只会回两种东西：`document.pdf` 这个**文件**，或仍解析
+    // 得通的 EPUB **解压目录**。所以「是不是文件」就是「转回 PDF 还是转回 EPUB」，
+    // 不需要再看扩展名（扩展名判据会在无扩展名的目录上悄悄退化）。
     final bool isPdf = FileSystemEntity.isFileSync(sourcePath);
     final BookFormat target = isPdf ? BookFormat.pdf : BookFormat.epub;
 
