@@ -243,7 +243,9 @@ void main() {
       't.shortcut_action_video_screenshot',
       't.shortcut_action_video_toggle_fullscreen',
       't.shortcut_action_video_toggle_subtitle_blur',
-      't.shortcut_action_video_escape',
+      // 「退出视频」不再是 video 组的动作：v8 起它与退书 / 退漫画 / 退设置页共用
+      // 唯一的 t.shortcut_action_global_back（universal 组），故这里改核那一个。
+      't.shortcut_action_global_back',
     ]) {
       expect(src.contains(label), isTrue,
           reason: 'settings page is missing video action label: $label');

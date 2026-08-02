@@ -234,7 +234,7 @@ extension _VideoSubtitleCaret on _VideoHibikiPageState {
     if (!_videoCaretActive) return false;
     if (action == ShortcutAction.videoEnterCaret) {
       unawaited(_runVideoCaretAction(CaretAction.activate));
-    } else if (action == ShortcutAction.videoEscape) {
+    } else if (action == ShortcutAction.globalBack) {
       unawaited(_runVideoCaretAction(CaretAction.dismissOrExit));
     }
     return true;

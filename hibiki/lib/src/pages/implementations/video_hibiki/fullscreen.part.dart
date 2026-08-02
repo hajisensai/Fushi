@@ -121,7 +121,7 @@ extension _VideoFullscreen on _VideoHibikiPageState {
         // ActivateIntent/焦点遍历兜底，在这棵无可聚焦兄弟的子树里静默 no-op；
         // 只有 B 走 navigatorKey.maybePop 兜底还活着。同一个 wrapper 让全屏子树
         // 拥有与窗口完全一致的手柄语义（A=播放/暂停、dpad=快进快退/音量、
-        // B=videoEscape 逐级退出……），不在 gamepad_service 里加全屏特判。
+        // B=globalBack「返回上一级」逐级退出……），不在 gamepad_service 里加全屏特判。
         pageBuilder: (_, __, ___) => _wrapVideoGamepadControls(Material(
           child: HibikiAppUiScaleNeutralizer(
             child: MaterialVideoControlsTheme(

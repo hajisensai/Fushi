@@ -188,7 +188,12 @@ void main() {
           isNot(contains(LogicalKeyboardKey.escape)));
       expect(toggle.gamepadBindings.map((b) => b.button),
           contains(GamepadButton.y));
-      expect(dismiss.keyboardBindings.map((b) => b.key),
+      // v8 统一：Esc 是全 app 唯一的「返回上一级」(globalBack)，在阅读器里走
+      // 「有词典先关词典 → 否则退书」的阶梯；readerDismissDict 降级成默认空绑定的
+      // 可选动作（绑鼠标侧键用），绝不能再占 Esc（会遮蔽退出那一级）。
+      expect(dismiss.keyboardBindings, isEmpty);
+      expect(
+          win[ShortcutAction.globalBack]!.keyboardBindings.map((b) => b.key),
           contains(LogicalKeyboardKey.escape));
       // TODO-700 T2：readerDismissDict 不再绑手柄 B（B 让位给 audiobookPrevSentence）。
       expect(dismiss.gamepadBindings.map((b) => b.button),

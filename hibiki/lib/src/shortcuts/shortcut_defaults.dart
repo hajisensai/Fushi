@@ -94,20 +94,14 @@ class ShortcutDefaults {
     ShortcutAction.readerOpenNavigation: _kb([
       _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl}),
     ]),
-    // 「关闭词典」键（用户拍板：与退书拆成两个独立动作）：只在词典弹窗可见时关弹窗，
-    // 无弹窗时不消费、不退书（执行体见 caret.part.dart 的 _executeShortcutAction）。
-    // 键盘 Esc。**TODO-700 T1/T2：手柄 B 已从这里挪走** —— 阅读器内 B 现绑
-    // audiobookPrevSentence（上一句），不再退书（约束2/4：X=下一句 / B=上一句全程
-    // 可用，B 不被全局返回夺舍）。
-    ShortcutAction.readerDismissDict: _kb([
-      _key(LogicalKeyboardKey.escape),
-    ]),
-    // 「退出书籍」键（schema v6 拆出）：直接退书，走 maybePop → PopScope onWillPop
-    // 闸门（flush 阅读位置 / closeMedia / 关书自动同步，BUG-782 同径）。默认 Ctrl+W
-    // （reader+audiobook co-active 组内未被占用）；手柄留空，退书也可走返回手势/底栏。
-    ShortcutAction.readerExitBook: _kb([
-      _key(LogicalKeyboardKey.keyW, {ModifierKey.ctrl}),
-    ]),
+    // 「只关词典、绝不退出」的可选专用动作：**默认空绑定**。
+    //
+    // Esc 已交给 universal 的 globalBack（一键阶梯：有词典先关词典、没词典才退书），
+    // 这里再默认绑 Esc 就会在 reader scope 先命中、把退书永久遮蔽掉——正是本次统一
+    // 之前「设置页写着退书是 Ctrl+W、实际 Esc 靠全局硬编码兜底」的那种双轨。留空
+    // 而不是删掉动作：把它绑到鼠标侧键就能「关词典但不退出」（BUG-1071 的鼠标通道
+    // 唯一消费者）。老用户若自己改过它，schema v8 迁移保留其自定义（见 registry）。
+    ShortcutAction.readerDismissDict: const ShortcutBindingSet(),
 
     // R3 toggles furigana (gamepad-only; keyboard furigana stays in settings).
     ShortcutAction.readerToggleFurigana: _kb([], [_gR3]),
@@ -154,10 +148,17 @@ class ShortcutDefaults {
     ], [
       _gY
     ]),
-    // TODO-700 T1/T2：全局「返回」可改键。键盘 Alt+Left，手柄 B。删掉旧硬绑 B 后，B
-    // 在非阅读器页（home/设置/对话框）经 globalBack 解析返回；阅读器页 B 被
-    // audiobookPrevSentence 先消费，故 B 在书内不退书（约束2/3/4/5）。
+    // 全 app 唯一的「返回上一级 / 退出当前界面」（universal scope）。
+    //
+    // 键盘 **Esc**（用户拍板：关词典 / 退书 / 退漫画 / 退视频 / 退设置页都是 Esc，
+    // 且只能有一个配置项）+ Alt+←（保留 TODO-700 T1 的旧默认，老用户肌肉记忆不破）；
+    // 手柄 B。Esc 此前是 global_navigation 里**硬编码**的一条兜底，改键改不动它；
+    // 现在它就是本动作的默认绑定，改键真的能改。
+    //
+    // 阅读器页手柄 B 仍是 audiobookPrevSentence（上一句）：reader/audiobook 先解析、
+    // universal 只在其后兜底，故 B 在书内不退书（TODO-700 约束2/4 不回归）。
     ShortcutAction.globalBack: _kb([
+      _key(LogicalKeyboardKey.escape),
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.alt}),
     ], [
       _gB
@@ -350,9 +351,9 @@ class ShortcutDefaults {
       _key(LogicalKeyboardKey.arrowLeft),
       _key(LogicalKeyboardKey.arrowUp),
     ]),
-    ShortcutAction.mangaDismissDict: _kb([
-      _key(LogicalKeyboardKey.escape),
-    ]),
+    // 「只关词典、绝不退出」（漫画版）：**默认空绑定**，理由与 readerDismissDict
+    // 完全相同——Esc 归 universal 的 globalBack 一键阶梯。
+    ShortcutAction.mangaDismissDict: const ShortcutBindingSet(),
     ShortcutAction.videoReplayCurrentSubtitle: _kb([
       _key(LogicalKeyboardKey.keyR),
     ], [
@@ -369,11 +370,6 @@ class ShortcutDefaults {
     ]),
     ShortcutAction.videoNextChapter: _kb([
       _key(LogicalKeyboardKey.pageDown),
-    ]),
-    ShortcutAction.videoEscape: _kb([
-      _key(LogicalKeyboardKey.escape),
-    ], [
-      _gB
     ]),
     // TODO-840 Part B：字幕遮蔽三态循环（不遮蔽→模糊→隐藏→…）默认 Shift+B，紧挨历史
     // 的「切换模糊」B 键（videoToggleSubtitleBlur 仍保留），video 独立 co-active 组内
@@ -500,6 +496,15 @@ class ShortcutDefaults {
           case ShortcutScope.global:
           case ShortcutScope.gamepad:
             return ShortcutBindingSet(
+              gamepadBindings: desktop.gamepadBindings,
+            );
+          // universal（「返回上一级」）与 reader/video/manga 同档：键盘绑定在移动端
+          // 也保留。移动端主路径是系统返回手势 / 手柄 B，但外接键盘（平板 / DeX /
+          // Android 桌面模式）上 Esc 同样该退一层——这三个媒体 scope 早就是这么做的，
+          // 「返回」没有理由更弱。没有外接键盘的设备上它永不触发，无害。
+          case ShortcutScope.universal:
+            return ShortcutBindingSet(
+              keyboardBindings: desktop.keyboardBindings,
               gamepadBindings: desktop.gamepadBindings,
             );
           // TODO-1066：移动端「app 外查词」= 纯系统 PROCESS_TEXT / 分享 / 悬浮球

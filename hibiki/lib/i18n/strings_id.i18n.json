@@ -1605,7 +1605,6 @@
   "shortcut_action_reader_create_card_from_popup": "Buat kartu dari popup",
   "shortcut_action_reader_dismiss_dict": "Tutup Kamus",
   "shortcut_action_reader_enter_caret": "Masuk kursor pencarian",
-  "shortcut_action_reader_exit_book": "Exit book",
   "shortcut_action_reader_lookup_at_cursor": "Cari kata / aktifkan kursor",
   "shortcut_action_reader_open_menu": "Open Settings Menu",
   "shortcut_action_reader_open_navigation": "Open Navigation",
@@ -1618,7 +1617,6 @@
   "shortcut_action_video_align_subtitle_to_prev": "Align previous subtitle to now",
   "shortcut_action_video_cycle_secondary_subtitle_obscure": "Cycle Secondary Subtitle Obscure",
   "shortcut_action_video_cycle_subtitle_obscure": "Cycle Subtitle Obscure Mode",
-  "shortcut_action_video_escape": "Keluar / Kembali",
   "shortcut_action_video_next_chapter": "Bab berikutnya",
   "shortcut_action_video_next_frame": "Frame Berikutnya",
   "shortcut_action_video_next_subtitle": "Subtitle Berikutnya",
@@ -3063,5 +3061,6 @@
   "manga_rescan_lookup": "Look up",
   "manga_rescan_writeback": "Save to page",
   "manga_rescan_writeback_done": "Saved to manga.json",
-  "manga_rescan_writeback_failed": "Failed to save to manga.json"
+  "manga_rescan_writeback_failed": "Failed to save to manga.json",
+  "shortcut_scope_universal": "Back / Exit"
 }

@@ -3277,7 +3277,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   @override
   Set<ShortcutAction> get dictionaryPopupForwardedActions =>
-      const <ShortcutAction>{ShortcutAction.readerDismissDict};
+      const <ShortcutAction>{
+        // 「返回上一级」（默认 Esc）：弹窗持焦时也必须能关词典。它现在是 universal
+        // scope 的动作，[resolveDictionaryPopupInputToken] 会在宿主 scope 未命中后
+        // 回落到 universal，两端解析口径一致。
+        ShortcutAction.globalBack,
+        // 「只关词典」的专用动作（默认无键盘绑定，用户可绑鼠标侧键）——BUG-1071
+        // 那条鼠标通道的唯一消费者，保留。
+        ShortcutAction.readerDismissDict,
+      };
 
   // ── DictionaryCaretHost ───────────────────────────────────────────
   // The reader is the host for its [_caret] state machine: it supplies the

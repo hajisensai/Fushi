@@ -14,10 +14,13 @@ import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 /// video 作用域内的「无遮蔽」不变式，以及老快照升级到当前 schema 时手柄默认被补回。
 void main() {
   /// 视频作用域期望的默认手柄映射（按钮 → 动作），单一真相源。
+  ///
+  /// B 不在这张表里：「逐级退出」已统一成全 app 唯一的
+  /// [ShortcutAction.globalBack]（universal scope，默认手柄 B），视频页在 video
+  /// scope 未命中后兜底解析它。B 的默认与派发另有下面一组断言。
   const Map<GamepadButton, ShortcutAction> expected =
       <GamepadButton, ShortcutAction>{
     GamepadButton.a: ShortcutAction.videoTogglePlayPause,
-    GamepadButton.b: ShortcutAction.videoEscape,
     GamepadButton.lb: ShortcutAction.videoSeekBackward,
     GamepadButton.dpadLeft: ShortcutAction.videoSeekBackward,
     GamepadButton.rb: ShortcutAction.videoSeekForward,
@@ -71,6 +74,33 @@ void main() {
                   '${action.key} — the later one is shadowed');
           seen[gp.button] = action;
         }
+      }
+    });
+
+    test('手柄 B 在每个平台都绑「返回上一级」(universal globalBack)', () {
+      // 视频页的逐级退出现在与退书 / 退漫画 / 退设置页共用同一个动作。B 落在
+      // universal scope：video scope 未命中后兜底解析（见 _handleVideoGamepadButton）。
+      for (final TargetPlatform platform in platforms) {
+        final Map<ShortcutAction, ShortcutBindingSet> defaults =
+            ShortcutDefaults.forPlatform(platform);
+        expect(
+          defaults[ShortcutAction.globalBack]!
+              .gamepadBindings
+              .map((GamepadBinding b) => b.button),
+          contains(GamepadButton.b),
+          reason: 'B → global_back missing on $platform',
+        );
+      }
+      // 且 video scope 自己不得再有任何动作占用 B，否则兜底永远轮不到。
+      final Map<ShortcutAction, ShortcutBindingSet> win =
+          ShortcutDefaults.forPlatform(TargetPlatform.windows);
+      for (final ShortcutAction action
+          in ShortcutAction.actionsForScope(ShortcutScope.video)) {
+        expect(
+          win[action]!.gamepadBindings.map((GamepadBinding b) => b.button),
+          isNot(contains(GamepadButton.b)),
+          reason: '${action.key} 占用了 B，会遮蔽「返回上一级」的兜底解析',
+        );
       }
     });
 
@@ -192,10 +222,12 @@ void main() {
         isNull,
         reason: 'user-edited play/pause must not be force-restored to A',
       );
-      // Untouched siblings still get their gamepad defaults.
+      // Untouched siblings still get their gamepad defaults. B 现在属于
+      // universal 的「返回上一级」（v8 统一），故在 universal scope 里断言。
       expect(
-        registry.resolveGamepad(GamepadButton.b, scope: ShortcutScope.video),
-        ShortcutAction.videoEscape,
+        registry.resolveGamepad(GamepadButton.b,
+            scope: ShortcutScope.universal),
+        ShortcutAction.globalBack,
       );
     });
   });

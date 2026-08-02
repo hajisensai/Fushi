@@ -561,6 +561,14 @@ class _HomePageState extends BasePageState<HomePage>
           modifiers: modifiers,
           scope: ShortcutScope.global,
           physicalKey: imeFallbackPhysicalKey,
+        ) ??
+        // 兜底「返回上一级」（universal，默认 Esc / Alt+← / 手柄 B）。首页自解析它
+        // 后不再冒泡到最外层 wrapper，与阅读器/漫画/视频三页同一范式。
+        appModel.shortcutRegistry.resolveKeyboard(
+          event.logicalKey,
+          modifiers: modifiers,
+          scope: ShortcutScope.universal,
+          physicalKey: imeFallbackPhysicalKey,
         );
 
     if (action == null) {
@@ -573,6 +581,10 @@ class _HomePageState extends BasePageState<HomePage>
             appModel.shortcutRegistry.resolveGamepad(
               gamepad,
               scope: ShortcutScope.global,
+            ) ??
+            appModel.shortcutRegistry.resolveGamepad(
+              gamepad,
+              scope: ShortcutScope.universal,
             );
       }
     }
@@ -699,6 +711,11 @@ class _HomePageState extends BasePageState<HomePage>
         appModel.shortcutRegistry.resolveGamepad(
           button,
           scope: ShortcutScope.global,
+        ) ??
+        // 兜底「返回上一级」（universal，默认手柄 B）。
+        appModel.shortcutRegistry.resolveGamepad(
+          button,
+          scope: ShortcutScope.universal,
         );
     if (action == null) return false;
     return _executeShortcutAction(action) == KeyEventResult.handled;

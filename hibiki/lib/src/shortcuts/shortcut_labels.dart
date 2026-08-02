@@ -35,8 +35,6 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_reader_open_navigation;
       case ShortcutAction.readerDismissDict:
         return t.shortcut_action_reader_dismiss_dict;
-      case ShortcutAction.readerExitBook:
-        return t.shortcut_action_reader_exit_book;
       case ShortcutAction.readerToggleFurigana:
         return t.shortcut_action_reader_toggle_furigana;
       case ShortcutAction.readerLookupAtCursor:
@@ -147,8 +145,6 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_align_subtitle_to_prev;
       case ShortcutAction.videoAlignSubtitleToNext:
         return t.shortcut_action_video_align_subtitle_to_next;
-      case ShortcutAction.videoEscape:
-        return t.shortcut_action_video_escape;
       case ShortcutAction.videoEnterCaret:
         return t.shortcut_action_video_enter_caret;
       case ShortcutAction.dpadUp:
@@ -181,6 +177,8 @@ extension ShortcutScopeLabel on ShortcutScope {
         return t.shortcut_scope_home;
       case ShortcutScope.global:
         return t.shortcut_scope_global;
+      case ShortcutScope.universal:
+        return t.shortcut_scope_universal;
       case ShortcutScope.audiobook:
         return t.shortcut_scope_audiobook;
       case ShortcutScope.video:
