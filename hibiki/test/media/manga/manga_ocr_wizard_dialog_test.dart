@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_wizard_dialog.dart';
+import 'package:hibiki/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -85,7 +86,7 @@ void main() {
                     poppedResult = await showDialog<String>(
                       context: ctx,
                       builder: (_) => MangaOcrWizardDialog(
-                        service: service,
+                        engines: MangaOcrWizardEngines(service: service),
                         db: db,
                         initialImageDir: imageDir.path,
                         importOverride: ({
@@ -153,7 +154,7 @@ void main() {
                   onPressed: () => showDialog<String>(
                     context: ctx,
                     builder: (_) => MangaOcrWizardDialog(
-                      service: service,
+                      engines: MangaOcrWizardEngines(service: service),
                       db: db,
                       initialImageDir: imageDir.path,
                       importOverride: ({

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_wizard_dialog.dart';
+import 'package:hibiki/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:hibiki/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -84,11 +85,13 @@ void main() {
                   onPressed: () => showDialog<void>(
                     context: context,
                     builder: (_) => MangaOcrWizardDialog(
-                      service: _UnavailableLocalService(),
+                      engines: MangaOcrWizardEngines(
+                        service: _UnavailableLocalService(),
+                        lensRunner: lens,
+                        initialEnginePreference: 'google_lens',
+                      ),
                       db: db,
-                      lensRunner: lens,
                       lensDisclosureGate: (_) async => false,
-                      initialEnginePreference: 'google_lens',
                       initialImageDir: imageDir.path,
                       importOverride: ({
                         required String path,

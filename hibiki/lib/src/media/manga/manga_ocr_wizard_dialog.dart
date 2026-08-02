@@ -13,6 +13,7 @@ import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
 import 'package:hibiki/src/media/manga/manga_importer.dart';
 import 'package:hibiki/src/media/manga/manga_json_writeback.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_background_job.dart';
+import 'package:hibiki/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:hibiki/src/media/manga/manga_storage.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/media/manga/ocr/google_lens_disclosure.dart';
@@ -36,13 +37,9 @@ import 'package:hibiki/utils.dart';
 /// `ConsumerStatefulWidget` 仅为在「选文件夹」时读 [appProvider] 走真实路径目录选择器。
 class MangaOcrWizardDialog extends ConsumerStatefulWidget {
   const MangaOcrWizardDialog({
-    required this.service,
+    required this.engines,
     required this.db,
-    this.externalRunner,
-    this.remoteRunner,
-    this.lensRunner,
     this.lensDisclosureGate,
-    this.initialEnginePreference,
     this.importOverride,
     this.initialImageDir,
     this.existingBook,
@@ -52,26 +49,17 @@ class MangaOcrWizardDialog extends ConsumerStatefulWidget {
     super.key,
   });
 
-  /// 内置 OCR 服务（接口；真实现由 provider 注入，测试注 fake）。
-  final MangaOcrService service;
+  /// 四个引擎的 runner + 默认引擎偏好，**整套必填**。
+  ///
+  /// 拆成一个对象而不是四个可选参数，是因为「某个入口漏传某个 runner」编译期
+  /// 无痕、运行期只表现为选项少一个（BUG-1418）。生产装配一律走
+  /// [MangaOcrWizardEngines.resolve]。
+  final MangaOcrWizardEngines engines;
 
   /// 目标数据库（漫画行写入此处；导入器读取须为同一实例）。
   final HibikiDatabase db;
 
-  /// 外部 mokuro CLI 后备；null = 不提供外部引擎选项。
-  final ExternalMokuroRunner? externalRunner;
-
-  /// 漫画 P3：互联「已配对主机代跑 OCR」；null = 不提供远程引擎选项。仅当探测
-  /// （probe）到具备 `mangaOcr.supported` 能力的已配对 host 时选项才显示。
-  final MangaOcrRemoteRunner? remoteRunner;
-
-  /// Google Lens whole-page runner. Null keeps Lens absent in isolated tests.
-  final GoogleLensMangaOcrRunner? lensRunner;
-
   final GoogleLensDisclosureGate? lensDisclosureGate;
-
-  /// Optional stable preference key for tests/callers; production reads AppModel.
-  final String? initialEnginePreference;
 
   /// 落库注入口（测试用）：null = 走真实 [MangaImporter]。
   final MangaOcrImportRunner? importOverride;
@@ -199,18 +187,19 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     if (!mounted) return;
     setState(() => _checkingEngines = true);
     bool builtin = false;
-    if (widget.service.isSupportedPlatform) {
+    if (widget.engines.service.isSupportedPlatform) {
       try {
-        final MangaOcrModelStatus status = await widget.service.modelStatus();
+        final MangaOcrModelStatus status =
+            await widget.engines.service.modelStatus();
         builtin = status.allReady;
       } catch (_) {
         builtin = false;
       }
     }
     bool external = false;
-    if (widget.externalRunner != null) {
+    if (widget.engines.externalRunner != null) {
       try {
-        external = (await widget.externalRunner!.probe()) != null;
+        external = (await widget.engines.externalRunner!.probe()) != null;
       } catch (_) {
         external = false;
       }
@@ -218,9 +207,9 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     // 漫画 P3：探测已配对 host 的远程 OCR 能力（老 host 无 capabilities 字段 →
     // probe 回 null → 选项隐藏，零破坏）。
     MangaOcrRemoteTarget? remote;
-    if (widget.remoteRunner != null) {
+    if (widget.engines.remoteRunner != null) {
       try {
-        remote = await widget.remoteRunner!.probe();
+        remote = await widget.engines.remoteRunner!.probe();
       } catch (_) {
         remote = null;
       }
@@ -231,10 +220,10 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       _externalAvailable = external;
       _remoteAvailable = remote != null;
       _remoteTarget = remote;
-      _lensAvailable = widget.lensRunner != null;
+      _lensAvailable = widget.engines.lensRunner != null;
       _checkingEngines = false;
-      final String preferenceKey =
-          widget.initialEnginePreference ?? MangaOcrEnginePreference.auto.key;
+      final String preferenceKey = widget.engines.initialEnginePreference ??
+          MangaOcrEnginePreference.auto.key;
       final MangaOcrEnginePreference preference =
           MangaOcrEnginePreferenceKey.fromKey(preferenceKey);
       _engine = resolveMangaOcrEngine(
@@ -243,7 +232,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
             capabilities: <MangaOcrEngineCapability>[
               MangaOcrEngineCapability(
                 id: MangaOcrEngineId.localOnnx,
-                supported: widget.service.isSupportedPlatform,
+                supported: widget.engines.service.isSupportedPlatform,
                 ready: builtin,
                 requiresNetwork: false,
                 uploadsImages: false,
@@ -251,15 +240,15 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
               ),
               MangaOcrEngineCapability(
                 id: MangaOcrEngineId.googleLens,
-                supported: widget.lensRunner != null,
-                ready: widget.lensRunner != null,
+                supported: widget.engines.lensRunner != null,
+                ready: widget.engines.lensRunner != null,
                 requiresNetwork: true,
                 uploadsImages: true,
                 supportsIncremental: true,
               ),
               MangaOcrEngineCapability(
                 id: MangaOcrEngineId.externalMokuro,
-                supported: widget.externalRunner != null,
+                supported: widget.engines.externalRunner != null,
                 ready: external,
                 requiresNetwork: false,
                 uploadsImages: false,
@@ -267,7 +256,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
               ),
               MangaOcrEngineCapability(
                 id: MangaOcrEngineId.pairedHost,
-                supported: widget.remoteRunner != null,
+                supported: widget.engines.remoteRunner != null,
                 ready: remote != null,
                 requiresNetwork: true,
                 uploadsImages: true,
@@ -347,8 +336,8 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       );
       return;
     }
-    await for (final MangaOcrVolumeEvent event
-        in widget.service.ocrFolder(imageDirPath: dir, volumeTitle: _title)) {
+    await for (final MangaOcrVolumeEvent event in widget.engines.service
+        .ocrFolder(imageDirPath: dir, volumeTitle: _title)) {
       if (event.finished) {
         yield MangaOcrBackgroundEvent.finished(
           pagesTotal: event.pagesTotal,
@@ -430,7 +419,8 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       );
       return;
     }
-    await for (final MangaOcrVolumeEvent event in widget.lensRunner!.ocrFolder(
+    await for (final MangaOcrVolumeEvent event
+        in widget.engines.lensRunner!.ocrFolder(
       imageDirPath: dir,
       volumeTitle: _title,
       startPage: widget.startPage,
@@ -483,7 +473,8 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   }
 
   Stream<MangaOcrBackgroundEvent> _backgroundExternalEvents(String dir) async* {
-    await for (final MokuroRunEvent event in widget.externalRunner!.run(dir)) {
+    await for (final MokuroRunEvent event
+        in widget.engines.externalRunner!.run(dir)) {
       if (event.finished) {
         yield MangaOcrBackgroundEvent.finished(
           pagesTotal: event.total,
@@ -504,7 +495,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     if (target == null) {
       throw StateError(t.manga_remote_ocr_no_host);
     }
-    await for (final MangaOcrRemoteEvent event in widget.remoteRunner!
+    await for (final MangaOcrRemoteEvent event in widget.engines.remoteRunner!
         .run(target: target, imageDirPath: dir, volumeTitle: _title)) {
       if (event.finished) {
         yield MangaOcrBackgroundEvent.finished(
@@ -642,7 +633,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   }
 
   void _runLens(String dir) {
-    _runSub = widget.lensRunner!
+    _runSub = widget.engines.lensRunner!
         .ocrFolder(
       imageDirPath: dir,
       volumeTitle: _title,
@@ -667,8 +658,9 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   }
 
   void _runBuiltin(String dir) {
-    _runSub =
-        widget.service.ocrFolder(imageDirPath: dir, volumeTitle: _title).listen(
+    _runSub = widget.engines.service
+        .ocrFolder(imageDirPath: dir, volumeTitle: _title)
+        .listen(
       (MangaOcrVolumeEvent event) {
         if (!mounted) return;
         if (event.finished) {
@@ -686,7 +678,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   }
 
   void _runExternal(String dir) {
-    _runSub = widget.externalRunner!.run(dir).listen(
+    _runSub = widget.engines.externalRunner!.run(dir).listen(
       (MokuroRunEvent event) {
         if (!mounted) return;
         if (event.finished) {
@@ -714,7 +706,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       _onOcrError(t.manga_remote_ocr_no_host);
       return;
     }
-    _runSub = widget.remoteRunner!
+    _runSub = widget.engines.remoteRunner!
         .run(target: target, imageDirPath: dir, volumeTitle: _title)
         .listen(
       (MangaOcrRemoteEvent event) {
