@@ -626,17 +626,32 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   /// 拉起窗口选择器：选择结果只作为 intent 交给 app 级会话控制器。
   Future<void> _pickExternalWindow() async {
+    final ExternalWindowInfo? picked = await _showExternalWindowPicker();
+    // 选回当前已绑定的那个窗口是 no-op，不是「重新绑定」：bindWindow 在捕获模式下会
+    // startAttachedCapture 重启整条会话（launch 会话会因此退化成 attach，正在跑的
+    // engine hook 与已收台词一起丢）。预选中当前游戏后回车确认是最自然的操作，绝不能
+    // 因此把会话打断。
+    if (picked == null || picked.hwnd == _session.state.boundWindow?.hwnd) {
+      return;
+    }
+    await _session.bindWindow(picked);
+  }
+
+  /// 只负责「选」：列出可捕获窗口交给用户挑一个，绑定还是直接起捕获由调用方决定。
+  /// 拆出来是因为「附着并捕获」与「绑定窗口」对同一份列表有两种不同的后续处置，
+  /// 把处置塞进选择器会逼出模式参数。
+  Future<ExternalWindowInfo?> _showExternalWindowPicker() async {
     if (!Platform.isWindows) {
       HibikiToast.show(msg: t.external_window_unsupported);
-      return;
+      return null;
     }
     final List<ExternalWindowInfo> windows =
         await WindowCaptureChannel.listWindows();
     if (windows.isEmpty) {
       HibikiToast.show(msg: t.external_window_no_windows);
-      return;
+      return null;
     }
-    if (!context.mounted) return;
+    if (!context.mounted) return null;
     // BUG-1049：Hibiki 自己启动的游戏必须在这份列表里「已经选好」。会话知道游戏 pid，
     // 却把它和一屏无关窗口平铺在一起，等于让用户替 app 认自己刚拉起的进程。按 pid
     // 把它排到第一条、标注出来并预置焦点：打开即落在正确的窗口上，回车就绑。
@@ -680,12 +695,33 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         ],
       ),
     );
-    // 选回当前已绑定的那个窗口是 no-op，不是「重新绑定」：bindWindow 在捕获模式下会
-    // startAttachedCapture 重启整条会话（launch 会话会因此退化成 attach，正在跑的
-    // engine hook 与已收台词一起丢）。预选中当前游戏后回车确认是最自然的操作，绝不能
-    // 因此把会话打断。
-    if (picked == null || picked.hwnd == boundHwnd) return;
-    await _session.bindWindow(picked);
+    return picked;
+  }
+
+  /// 附着到**已在运行**的游戏：与「启动并捕获」并列的一级入口。
+  ///
+  /// 底层能力一直都在（injector `--pid` attach + [GalHookSessionController.
+  /// startAttachedCapture] 的完整注入编排），但此前唯一入口是「更多」溢出菜单里
+  /// 那个叫「外部窗口挖矿」的模式开关——名字看不出是「附着到已经在跑的游戏」，
+  /// 等于把一条主路径藏进溢出菜单，用户只能每次都让 Hibiki 把游戏拉起来。
+  ///
+  /// 直接调 [GalHookSessionController.startAttachedCapture]，不拼
+  /// 「[GalHookSessionController.bindWindow] + [GalHookSessionController
+  /// .setExternalWindowMode]」两步：那两个方法各自都会在另一半就位时触发
+  /// startAttachedCapture，连着调会起两次会话，第二次把第一次刚装好的 engine hook
+  /// 和已收台词一起丢掉。startAttachedCapture 自己就把 externalWindowMode /
+  /// boundWindow / gamePid 一次设对。
+  Future<void> _attachToRunningGame() async {
+    final ExternalWindowInfo? picked = await _showExternalWindowPicker();
+    if (picked == null) return;
+    final GalHookSessionState state = _session.state;
+    // 已经在捕获这个窗口：重来一遍只会丢掉正在跑的 hook 与已收台词，什么都不做。
+    if (state.isActive &&
+        state.externalWindowMode &&
+        state.boundWindow?.hwnd == picked.hwnd) {
+      return;
+    }
+    await _session.startAttachedCapture(picked);
   }
 
   /// galgame 引擎-hook（launch 模式）：页面只发起会话；位数解析、注入器选择、窗口绑定、
@@ -1049,6 +1085,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           tooltip: t.game_launch_and_capture,
           label: labelOf(t.game_launch_and_capture),
           onTap: _launchGalgameEngineHook,
+        ),
+      // 「游戏已经自己在跑」是和「让 Hibiki 拉起游戏」同等常见的起点（Steam / 启动器 /
+      // 转区工具拉起的进程都属此列），attach 能力也一直都在，只是入口此前藏在「更多」
+      // 菜单的模式开关里。两条起点并列摆出来，用户不必再为了捕获而重启游戏。
+      if (Platform.isWindows)
+        HibikiIconButton(
+          icon: Icons.cable_outlined,
+          tooltip: t.game_attach_and_capture,
+          label: labelOf(t.game_attach_and_capture),
+          focusId: const HibikiFocusId('game-toolbar-attach'),
+          onTap: _attachToRunningGame,
         ),
       if (state.isActive)
         HibikiIconButton(

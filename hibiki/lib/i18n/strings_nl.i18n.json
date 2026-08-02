@@ -3076,5 +3076,6 @@
   "book_convert_blocked_source_missing": "The source files are gone from disk.",
   "manga_online_retry_waiting": "Retrying automatically ($attempt/$total)",
   "manga_ocr_wizard_already_ocred": "This volume already has OCR data on every page. Running OCR again would overwrite it.",
-  "shortcut_scope_universal": "Back / Exit"
+  "shortcut_scope_universal": "Back / Exit",
+  "game_attach_and_capture": "Attach and capture"
 }
