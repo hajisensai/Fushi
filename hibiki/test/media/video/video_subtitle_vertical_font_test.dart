@@ -134,6 +134,58 @@ void main() {
     });
   });
 
+  group('\\frz 变换原点 = \\an 对齐点（BUG-1440：竖排整列左侧出框）', () {
+    // 与 [_pump] 同构，但**喂视频分辨率**：`\pos` 只有在 videoWidth/Height 已知时才生效
+    // （[_posScreen] 否则返回 null、回落锚点对齐），不喂就测不到绝对定位几何。
+    // 容器 1280x720 == PlayRes，故 `\pos` 的坐标就是容器坐标，断言可以直接写数字。
+    Future<void> pumpPositioned(WidgetTester tester, AudioCue cue) async {
+      tester.view.physicalSize = const Size(1280, 720);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final VideoPlayerController c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugVideoWidthOverride = 1280;
+      c.debugVideoHeightOverride = 720;
+      c.setCues(<AudioCue>[cue]);
+      c.debugUpdateCueForPosition(1000);
+      await tester.pumpWidget(MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          body: SizedBox(
+            width: 1280,
+            height: 720,
+            child: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+          ),
+        ),
+      ));
+      await tester.pump();
+    }
+
+    testWidgets('片源真值 \\an2\\frz270\\pos(10,360)：整列落在 \\pos 右侧、不越出画面左缘',
+        (tester) async {
+      await pumpPositioned(
+          tester,
+          _cueOf(r'{\fn@A-OTF Kaimin Tsuki Std H\an2\frz270'
+              r'\pos(10,360)}雨上がり　君は'));
+      for (final String ch in <String>['雨', '君']) {
+        final Rect r = tester.getRect(find.text(ch).first);
+        expect(r.left, greaterThanOrEqualTo(0.0),
+            reason: '「$ch」跑出画面左缘了——这正是用户报的「左边出框」');
+        expect(r.left, greaterThanOrEqualTo(10.0 - 0.01),
+            reason: '绕 \\an2（底边中点）转，整列应在锚点 x=10 右侧；'
+                '绕盒中心转会把列整体左移半个行高');
+      }
+    });
+
+    testWidgets('\\an5 居中锚点的旋转招牌几何不变（既有行为不被这次改动挪动）', (tester) async {
+      // \an5 = 中中，对齐点本来就是盒中心 → 新旧原点同一个点，像素级不动。
+      await pumpPositioned(tester, _cueOf(r'{\an5\frz30\pos(640,360)}看板'));
+      final Rect r = tester.getRect(find.text('看').first);
+      expect(r.center.dx, closeTo(640, 60),
+          reason: '\\an5 招牌应仍绕自身中心转、留在 \\pos 附近');
+    });
+  });
+
   group('源码守卫', () {
     final String src = File('lib/src/media/video/video_subtitle_overlay.dart')
         .readAsStringSync();

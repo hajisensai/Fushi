@@ -29,12 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1345 条。点号进各自文件。
+> 共 1347 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1442](bugs/BUG-1442-spread-key-bridge-single-scope.md) | ✅ | ✅ | 双页 spread 键桥只能解析 reader scope，跨 scope 动作在 spread 里恒解析不到 |
 | [BUG-1441](bugs/BUG-1441-manga-extension-filter-and-lag.md) | ✅ | ✅ | 漫画扩展列表筛选不生效 + 语言下拉卡顿 |
+| [BUG-1440](bugs/BUG-1440-video-subtitle-frz-origin-not-anchor.md) | ✅ | ✅ | \frz 绕盒中心而非 \an 锚点旋转，竖排整列左移出框 |
+| [BUG-1439](bugs/BUG-1439-video-subtitle-list-karaoke-chain-merge.md) | ✅ | ✅ | 字幕列表把整首 OP 歌词链式合并成一条逐字交错的乱码 |
 | [BUG-1437](bugs/BUG-1437-renumber-selfcheck-blind.md) | ✅ | ✅ | renumber 自校验与替换共用同一扫描器，漏改文件被谎报零残留 |
 | [BUG-1436](bugs/BUG-1436-collection-combine-uses-selection-order.md) | ✅ | ✅ | 批量组合成合集：成员按点选顺序落 sortIndex，选集列表乱序 |
 | [BUG-1435](bugs/BUG-1435-video-folder-import-episode-title-in-series.md) | ✅ | ✅ | 按文件夹导入：SxxExx 后的分集标题并进系列名，同一部番分不到一组 |
