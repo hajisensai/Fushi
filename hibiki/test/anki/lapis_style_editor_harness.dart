@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/anki/lapis_style_editor_page.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 
 void useWideWindow(WidgetTester tester) {
   tester.view.physicalSize = const Size(1600, 1400);
@@ -16,8 +17,14 @@ void useWideWindow(WidgetTester tester) {
 }
 
 /// 默认交互：改一个可视参数（加粗），让保存按钮从 disabled 变成可点。
+///
+/// 先 ensureVisible：控件列是个滚动区，展开「自定义区域」之类的折叠块会把粗体
+/// 开关挤出视口，直接 tap 会静默 miss（不报错，只是什么都没发生）。
 Future<void> toggleBold(WidgetTester tester) async {
-  await tester.tap(find.byType(SwitchListTile).first);
+  final Finder bold = find.byType(SwitchListTile).first;
+  await tester.ensureVisible(bold);
+  await tester.pumpAndSettle();
+  await tester.tap(bold);
   await tester.pumpAndSettle();
 }
 
@@ -26,6 +33,7 @@ Future<LapisVisualEditorResult?> openEditorAndSave(
   required String initialCustomCss,
   List<String> noteTypeFields = const <String>[],
   Map<String, String> initialFieldMappings = const <String, String>{},
+  List<LapisCustomBlock> initialBlocks = const <LapisCustomBlock>[],
   LapisHandlebarPicker? pickHandlebar,
   Future<void> Function(WidgetTester tester)? interact,
 }) async {
@@ -50,6 +58,7 @@ Future<LapisVisualEditorResult?> openEditorAndSave(
         fontScalePercent: 100,
         noteTypeFields: noteTypeFields,
         initialFieldMappings: initialFieldMappings,
+        initialBlocks: initialBlocks,
         pickHandlebar: pickHandlebar,
         previewBuilder: (_, __, ___) => const SizedBox.expand(),
       ),

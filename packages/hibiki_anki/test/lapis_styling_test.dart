@@ -609,6 +609,48 @@ void main() {
     });
   });
 
+  group('对齐渲染值', () {
+    test('start/end 渲染成 left/right，与 vendored Lapis 的写法一致', () {
+      // 老 WebView 对 `text-align: start` 支持不齐，正是「选了左对齐没反应」的
+      // 来源；vendored Lapis 自己通篇 left/right，一处逻辑值都没有。
+      expect(LapisVisualTextAlign.start.renderedCssValue, 'left');
+      expect(LapisVisualTextAlign.center.renderedCssValue, 'center');
+      expect(LapisVisualTextAlign.end.renderedCssValue, 'right');
+      expect(
+        LapisNoteType.css.contains('text-align: start'),
+        isFalse,
+        reason: 'vendored 都不用逻辑值，我们没理由用',
+      );
+
+      final String css = composeLapisVisualStyleSheet(
+        freeformCss: '',
+        rules: const <LapisVisualField, LapisVisualRule>{
+          LapisVisualField.sentence:
+              LapisVisualRule(alignment: LapisVisualTextAlign.start),
+        },
+      );
+      expect(css, contains('text-align: left !important;'));
+      expect(css, isNot(contains('text-align: start')));
+    });
+
+    test('存储值仍是 start/end，旧 CONFIG 不需要迁移', () {
+      final String css = composeLapisVisualStyleSheet(
+        freeformCss: '',
+        rules: const <LapisVisualField, LapisVisualRule>{
+          LapisVisualField.sentence:
+              LapisVisualRule(alignment: LapisVisualTextAlign.end),
+        },
+      );
+      expect(css, contains('"alignment":"end"'));
+      expect(
+        splitLapisVisualStyleSheet(css)
+            .ruleFor(LapisVisualField.sentence)
+            .alignment,
+        LapisVisualTextAlign.end,
+      );
+    });
+  });
+
   group('Lapis 区块位置', () {
     test('布局保留键不与任何可视字段 wireName 相撞', () {
       // 撞上就意味着某个字段的规则会被当成布局吃掉（或反之）。

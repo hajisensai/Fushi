@@ -258,6 +258,17 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     state = state.copyWith(settings: updated);
   }
 
+  /// 自定义区域整份覆盖（区域的增删改都在这一份列表里表达）。
+  ///
+  /// 只落 Hibiki 侧偏好，**不写 Anki**：区域要变成卡片上的东西，仍须用户点
+  /// 「应用样式到 Anki」——那是模板写入的唯一闸门（模板写坏是卡片内容不显示，
+  /// 不该由一条用户没点过的路径承担）。
+  Future<void> setLapisCustomBlocks(List<LapisCustomBlock> blocks) async {
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(lapisCustomBlocks: blocks));
+    state = state.copyWith(settings: updated);
+  }
+
   /// LapisTemplateService 落库（指纹/客制化对齐）后刷新 UI 侧 settings。
   Future<void> refreshSettingsFromStore() async {
     final settings = await _repository.loadSettings();

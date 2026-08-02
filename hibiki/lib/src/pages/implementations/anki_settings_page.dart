@@ -156,6 +156,16 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 title: t.anki_lapis_restore,
                 onTap: _lapisBusy ? null : () => _restoreLapisBackup(vm),
               ),
+              // 兜底出口：卡片长歪了、又没有可用备份时，这是唯一能回到已知
+              // 良好状态的路。与「从备份恢复」的分工——那个回到某个历史时刻
+              // （前提是那时落过备份），这个回到出厂，不依赖任何历史。
+              AdaptiveSettingsRow(
+                icon: Icons.restart_alt_outlined,
+                showIcon: true,
+                title: t.anki_lapis_restore_factory,
+                subtitle: t.anki_lapis_restore_factory_hint,
+                onTap: _lapisBusy ? null : () => _restoreLapisFactory(vm),
+              ),
             ],
           ),
         // 媒体存储优化：字节级去重（只删字节相同的多余副本，绝不重编码）。
@@ -247,8 +257,15 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               _buildNoteTypeDropdown(settings, vm),
             ],
           ),
+          // 字段映射的主入口已经是可视化编辑器（选中区域 → 直接改喂它的字段），
+          // 这里这份按卡型逐字段平铺的列表退成兜底/全量视图：默认折叠，需要时
+          // 再展开。折叠而不是删掉——非 Lapis 卡型没有可视化编辑器可用，这里
+          // 仍是唯一能配映射的地方。
           AdaptiveSettingsSection(
             title: t.anki_field_mappings,
+            titlePlacement: SettingsSectionTitlePlacement.inside,
+            collapsible: true,
+            initiallyExpanded: false,
             children: _buildFieldMappings(settings, vm),
           ),
           AdaptiveSettingsSection(
@@ -595,6 +612,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     // 自我门控（卡型里没有的字段一律不显示）。
     final List<String> noteTypeFields =
         settings.selectedNoteType?.fields ?? const <String>[];
+    // 预览基线取用户 Anki 里现有的 Lapis CSS（剥掉 Hibiki 托管区段），编辑器里
+    // 看到的才是他自己那张卡。读不到就退回内置副本——只影响预览观感，不影响写入。
+    String? baseCss;
+    try {
+      final AnkiNoteTypeDefinition? def = await vm.lapisTemplateService
+          .readNoteTypeDefinitionForPreview(LapisNoteType.modelName);
+      if (def != null) baseCss = stripLapisUserSection(def.css);
+    } catch (e) {
+      debugPrint('Lapis 预览基线读取失败，退回内置副本: $e');
+    }
+    if (!mounted) return;
     final LapisVisualEditorResult? result =
         await Navigator.of(context).push<LapisVisualEditorResult>(
       adaptivePageRoute<LapisVisualEditorResult>(
@@ -604,6 +632,8 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           fontScalePercent: settings.lapisFontScalePercent,
           noteTypeFields: noteTypeFields,
           initialFieldMappings: settings.fieldMappings,
+          initialBlocks: settings.lapisCustomBlocks,
+          baseCss: baseCss,
           pickHandlebar: noteTypeFields.isEmpty
               ? null
               : (String field, String currentValue) =>
@@ -613,6 +643,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     );
     if (result == null) return;
     await vm.setLapisCustomCss(result.customCss);
+    await vm.setLapisCustomBlocks(result.blocks);
     for (final MapEntry<String, String> entry in result.fieldMappings.entries) {
       await vm.updateFieldMapping(entry.key, entry.value);
     }
@@ -666,6 +697,50 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       case LapisApplyResult.unsupported:
         // 整区已按 supportsNoteTypeEditing 隐藏，此分支只是防御。
         break;
+    }
+  }
+
+  /// 恢复出厂 Lapis。破坏性动作，必须二次确认；确认后备份门在服务层强制走。
+  Future<void> _restoreLapisFactory(AnkiViewModel vm) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final bool? ok = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(t.anki_lapis_restore_factory),
+        content: Text(t.anki_lapis_restore_factory_confirm),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(t.dialog_ok),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _lapisBusy = true);
+    try {
+      final LapisRestoreFactoryResult result =
+          await vm.lapisTemplateService.restoreFactoryDefaults();
+      // 恢复会清空 Hibiki 侧客制化（字号/CSS/自定义区域），UI 必须跟着刷新，
+      // 否则设置页还显示恢复前的字号、编辑器打开还是旧区域。
+      await vm.refreshSettingsFromStore();
+      final String message = switch (result) {
+        LapisRestoreFactoryResult.restored => t.anki_lapis_restore_factory_done,
+        LapisRestoreFactoryResult.notFound => t.anki_lapis_not_found,
+        // 整区已按 supportsNoteTypeEditing 隐藏，此分支只是防御。
+        LapisRestoreFactoryResult.unsupported => t.anki_lapis_not_found,
+      };
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(t.anki_lapis_restore_factory_failed(error: '$e')),
+      ));
+    } finally {
+      if (mounted) setState(() => _lapisBusy = false);
     }
   }
 

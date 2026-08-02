@@ -5,6 +5,8 @@ import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 
+import 'lapis_blocks.dart';
+
 class AnkiDeck {
   const AnkiDeck({required this.id, required this.name});
 
@@ -173,6 +175,8 @@ class AnkiSettings {
     this.lapisCustomCss = '',
     this.lapisAppliedCssSha,
     this.lapisMigratedBaselineSha,
+    this.lapisCustomBlocks = const <LapisCustomBlock>[],
+    this.lapisAppliedTemplateSha,
     this.lastMediaDedupAtMs,
     this.lastMediaDedupScanAtMs,
     this.mediaDedupAutoEnabled = false,
@@ -211,6 +215,8 @@ class AnkiSettings {
         lapisCustomCss: json['lapisCustomCss'] as String? ?? '',
         lapisAppliedCssSha: json['lapisAppliedCssSha'] as String?,
         lapisMigratedBaselineSha: json['lapisMigratedBaselineSha'] as String?,
+        lapisCustomBlocks: lapisBlocksFromJson(json['lapisCustomBlocks']),
+        lapisAppliedTemplateSha: json['lapisAppliedTemplateSha'] as String?,
         lastMediaDedupAtMs: json['lastMediaDedupAtMs'] as int?,
         lastMediaDedupScanAtMs: json['lastMediaDedupScanAtMs'] as int?,
         // 缺键 = 老装置升级上来：两个自动开关都默认关，升级不会凭空获得
@@ -270,6 +276,20 @@ class AnkiSettings {
   /// 用于漂移判定（区分自有产物与手改）。
   final String? lapisMigratedBaselineSha;
 
+  /// Lapis 卡片上的**自定义区域**（把已有字段摆到模板的另一个位置）。
+  ///
+  /// 这是区域的**单一真相源**：推送到 Anki 的背面模板由它派生
+  /// （[composeLapisBackTemplate]），区域的样式 CSS 也由它派生。区域只改显示，
+  /// 不新增/删除任何 Anki 字段——所以增删区域不会让 Anki 要求 full sync，也
+  /// 永远不会删掉卡片数据。
+  final List<LapisCustomBlock> lapisCustomBlocks;
+
+  /// Hibiki 上次成功推送到 Anki 的**卡模板**指纹（sha256）。null = 本机从未推过
+  /// 模板。与 [lapisAppliedCssSha] 同一套语义、各管一边：模板写坏是「卡片内容
+  /// 不显示」，比 CSS 写坏严重一个量级，必须有自己的「是不是我们写的」判据，
+  /// 不能借用 CSS 的指纹。
+  final String? lapisAppliedTemplateSha;
+
   /// 上次媒体字节级去重**真删**完成时刻（epoch ms）。null = 从未跑过。
   final int? lastMediaDedupAtMs;
 
@@ -324,6 +344,9 @@ class AnkiSettings {
     String? lapisAppliedCssSha,
     bool clearLapisAppliedCssSha = false,
     String? lapisMigratedBaselineSha,
+    List<LapisCustomBlock>? lapisCustomBlocks,
+    String? lapisAppliedTemplateSha,
+    bool clearLapisAppliedTemplateSha = false,
     int? lastMediaDedupAtMs,
     int? lastMediaDedupScanAtMs,
     bool? mediaDedupAutoEnabled,
@@ -358,6 +381,10 @@ class AnkiSettings {
             : (lapisAppliedCssSha ?? this.lapisAppliedCssSha),
         lapisMigratedBaselineSha:
             lapisMigratedBaselineSha ?? this.lapisMigratedBaselineSha,
+        lapisCustomBlocks: lapisCustomBlocks ?? this.lapisCustomBlocks,
+        lapisAppliedTemplateSha: clearLapisAppliedTemplateSha
+            ? null
+            : (lapisAppliedTemplateSha ?? this.lapisAppliedTemplateSha),
         lastMediaDedupAtMs: lastMediaDedupAtMs ?? this.lastMediaDedupAtMs,
         lastMediaDedupScanAtMs:
             lastMediaDedupScanAtMs ?? this.lastMediaDedupScanAtMs,
@@ -390,6 +417,8 @@ class AnkiSettings {
         'lapisCustomCss': lapisCustomCss,
         'lapisAppliedCssSha': lapisAppliedCssSha,
         'lapisMigratedBaselineSha': lapisMigratedBaselineSha,
+        'lapisCustomBlocks': lapisBlocksToJson(lapisCustomBlocks),
+        'lapisAppliedTemplateSha': lapisAppliedTemplateSha,
         'lastMediaDedupAtMs': lastMediaDedupAtMs,
         'lastMediaDedupScanAtMs': lastMediaDedupScanAtMs,
         'mediaDedupAutoEnabled': mediaDedupAutoEnabled,

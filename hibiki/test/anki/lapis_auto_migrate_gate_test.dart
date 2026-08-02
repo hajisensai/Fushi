@@ -124,7 +124,14 @@ void main() {
     expect(repo.settings.lapisFontScalePercent, 150);
   });
 
-  test('基线真变了 → 自动迁移照跑（升级路径没被闸门吞掉）', () async {
+  // 契约变更（不是回归）：自动迁移**不再写 Anki**。
+  //
+  // 它原本的意义是「Hibiki 出厂基线升级了，把新基线同步过去」——而基线现在取自
+  // 用户自己的 Lapis（见 stripLapisUserSection / composeLapisCssOnBase），我们
+  // 根本不再拥有基线，这个动作失去了前提。它同时是唯一一条「用户没点任何按钮
+  // 就改他 Anki」的路径，正是用户反馈「Hibiki 把我的字体改了」的最大嫌疑。
+  // 写入统一收敛到用户显式点「应用样式到 Anki」那一个闸门。
+  test('基线真变了也不自动写 Anki，只把基线指纹记下', () async {
     final _FakeRepo repo = _FakeRepo(
       definition: _definition(LapisNoteType.template.css),
       settings: const AnkiSettings(
@@ -136,7 +143,10 @@ void main() {
     await _TempDirLapisService(repo, dir).maybeAutoMigrateOnStartup();
 
     expect(
-        repo.pushedCss, composeLapisCss(fontScalePercent: 150, customCss: ''));
+      repo.pushedCss,
+      isNull,
+      reason: '自动路径写 Anki = 用户没点任何东西，他的卡就变了',
+    );
     expect(repo.settings.lapisMigratedBaselineSha, currentLapisBaselineSha);
   });
 
@@ -160,7 +170,7 @@ void main() {
     expect(repo.settings.lapisCustomCss, '.a { }');
   });
 
-  test('推送成功后基线指纹被记下（下次启动不会再推一遍）', () async {
+  test('自动迁移全程一个字节都不写 Anki，跑几次都一样', () async {
     final _FakeRepo repo = _FakeRepo(
       definition: _definition(LapisNoteType.template.css),
       settings: const AnkiSettings(
@@ -171,9 +181,9 @@ void main() {
     final LapisTemplateService service = _TempDirLapisService(repo, dir);
 
     await service.maybeAutoMigrateOnStartup();
-    expect(repo.pushedCss, isNotNull);
+    expect(repo.pushedCss, isNull);
+    expect(repo.settings.lapisMigratedBaselineSha, currentLapisBaselineSha);
 
-    repo.pushedCss = null;
     LapisTemplateService.resetAutoMigrateSessionGate();
     await service.maybeAutoMigrateOnStartup();
     expect(repo.pushedCss, isNull);
