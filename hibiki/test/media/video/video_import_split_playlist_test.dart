@@ -28,8 +28,8 @@ void main() {
       const PlaylistEntry(title: '', path: '/v/Show E03.mkv'),
     ];
 
-    final ({int collectionId, List<String> episodeUids}) result = await repo
-        .importSplitPlaylist(collectionName: 'Show', entries: entries);
+    final SplitPlaylistImportResult result = await repo.importSplitPlaylist(
+        collectionName: 'Show', entries: entries);
 
     // 每集 uid = video/<集文件名>，有序返回。
     expect(result.episodeUids, <String>[
@@ -81,14 +81,12 @@ void main() {
       PlaylistEntry(title: 'E2', path: 'D:/Downloads/Show E02.mkv'),
     ];
 
-    final ({int collectionId, List<String> episodeUids}) initial =
-        await repo.importSplitPlaylist(
+    final SplitPlaylistImportResult initial = await repo.importSplitPlaylist(
       collectionName: 'Show',
       entries: first,
       reuseExistingPaths: true,
     );
-    final ({int collectionId, List<String> episodeUids}) restarted =
-        await repo.importSplitPlaylist(
+    final SplitPlaylistImportResult restarted = await repo.importSplitPlaylist(
       collectionName: 'Show',
       entries: replay,
       reuseExistingPaths: true,
@@ -106,8 +104,7 @@ void main() {
     addTearDown(db.close);
     final VideoBookRepository repo = VideoBookRepository(db);
 
-    final ({int collectionId, List<String> episodeUids}) result =
-        await repo.importSplitPlaylist(
+    final SplitPlaylistImportResult result = await repo.importSplitPlaylist(
       collectionName: 'Show',
       entries: const <PlaylistEntry>[
         PlaylistEntry(title: 'E1', path: '/v/a.mkv'),
@@ -155,8 +152,7 @@ void main() {
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
-      final ({int collectionId, List<String> episodeUids}) result =
-          await repo.importSplitPlaylist(
+      final SplitPlaylistImportResult result = await repo.importSplitPlaylist(
         collectionName: 'Show',
         entries: const <PlaylistEntry>[
           PlaylistEntry(title: 'E1', path: '/v/Show E01.mkv'),
@@ -200,8 +196,8 @@ void main() {
         PlaylistEntry(title: 'E1', path: '/v/a.mkv'),
         PlaylistEntry(title: 'E2', path: '/v/b.mkv'),
       ];
-      final ({int collectionId, List<String> episodeUids}) result = await repo
-          .importSplitPlaylist(collectionName: 'Show', entries: entries);
+      final SplitPlaylistImportResult result = await repo.importSplitPlaylist(
+          collectionName: 'Show', entries: entries);
 
       final ({int added, int removed}) recon =
           await repo.reconcileSplitPlaylist(
@@ -223,8 +219,7 @@ void main() {
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
-      final ({int collectionId, List<String> episodeUids}) result =
-          await repo.importSplitPlaylist(
+      final SplitPlaylistImportResult result = await repo.importSplitPlaylist(
         collectionName: 'Show',
         entries: const <PlaylistEntry>[
           PlaylistEntry(title: 'E1', path: '/v/a.mkv'),
