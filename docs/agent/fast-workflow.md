@@ -72,6 +72,26 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
 
 出处：② PR#716 实测（7 路并发 / 27 个 dart+flutter_tester 进程；分片对账 325 + 2602 = 2927 ≈ 2923 完成 + 4 个没装载上）；③ PR#728 实测。
 
+**形态 ① 有一个很具体、且不需要别人并发就能自己撞上的变体：僵尸 `flutter_tester` 锁住自己 worktree 的 `sqlite3.dll`。** 症状是
+
+```text
+PathAccessException: Deletion failed, path = '…\hibiki\build\native_assets\windows\sqlite3.dll' (OS Error: 拒绝访问。, errno = 5)
+…
+FLUTTER TEST VERDICT: FAILED - … Tests completed: 0
+```
+
+来源是**上一轮被超时/被 kill 的测试留下的 `flutter_tester` 子进程没跟着死**——父进程标记 killed 不等于它真死。它一直握着 `build/native_assets/windows/sqlite3.dll`，于是**下一轮在同一个 worktree 里必然零测试执行**，看起来像编译失败。TODO-2755 自校验期间实测撞了两次，两次都是自己上一条命令的残留。
+
+定性和处置（🔴 **按 worktree 名过滤，别盲杀所有 `dart` / `flutter_tester`——本机有别的 agent 在跑**）：
+
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -like '*<你的worktree目录名>*' -and $_.Name -like 'flutter_tester*' } |
+  Select-Object ProcessId, CreationDate
+# 确认是自己的残留（CreationDate 早于本轮）再杀：
+# Stop-Process -Id <pid> -Force
+```
+
 ### 判别纪律（三条，不可打折）
 
 1. **先分型再动手**：先看是断言失败、suite 装载失败还是零输出。只有断言失败才是「被测代码可能坏了」，另两类先按并发伪红查。
@@ -145,15 +165,17 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
 | `test/pages/video_hibiki_page_source_corpus_test.dart` | `video_hibiki/` part 目录枚举 | 同上，视频页语料 |
 | `test/sync/sync_settings_schema_source_corpus_test.dart` | `sync_settings_schema/` part 目录枚举 | 同上，同步设置 schema 语料 |
 
-一条命令跑完，**实测 207 tests**（2026-08-02，`origin/develop@c05a91edc` + PR#756）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
+一条命令跑完，**当前基线 225 tests**（2026-08-02，`origin/develop@b4ed5d8f7` 实测）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
 
 **N 的演进链要留着，别只写当前值**——「N 应该是多少」本身就是判空转的信号，只写当前值就丢掉了「它为什么变」：
 
 | N | 条数 | 变化来源 |
 |---|---|---|
 | 194 | 32 | 初版（34 秒） |
-| **207** | **35** | PR#756 补入三条合并语料守卫 |
-| 225 | 35 | PR#760 给禁止型判据补 18 条自校验（**尚未合入**，合入后以此为准） |
+| 207 | 35 | PR#756 补入三条合并语料守卫 |
+| **225** | **35** | PR#760 给禁止型判据补 18 条自校验（**当前基线**） |
+
+⚠️ **N 变了不一定是坏事，但必须能说出是哪一行变的**；反过来，**N 没变也不一定是漏跑**——见下面「判 N 之前先问：新增用例落在哪一批里」。
 
 
 ```bash
@@ -221,6 +243,20 @@ TODO-2707（PR#756）已把这条补完：**35 条现在条条有扫描规模哨
 
 **新写目录枚举型守卫时，扫描规模下界断言是必需项，不是加分项**；语料型守卫的「磁盘再枚举一遍」必须与生产侧用**不同**实现，否则枚举器自身的缺陷会让守卫与被守方在同一处同时失明。
 
+### 变异实测的五种假绿
+
+「新写守卫必须变异实测」这条规矩本身没人反对，翻车全发生在**「什么才算变异实测通过」**上。已经踩实的假绿有五种：前两种是变异本身做坏了，后三种是**变异做对了、仪器用错了**——后者更危险，因为它给出的是一个看着很正经的结论（「守卫有洞」），于是下一步会去修一个不存在的洞。
+
+| # | 假绿形态 | 症状 | 为什么骗得过人 | 判据 |
+|---|---|---|---|---|
+| ① | **空操作变异** | 改了一处字面量，守卫仍绿 | 改的位置根本不在判据读取的窗口里——改到注释、改到同名的另一个符号、改到守卫扫描根之外 | 变异之后先确认判据**读得到**这处改动（把切出来的窗口打印一次），再看红不红 |
+| ② | **编译失败变异** | `0 tests ran`，看起来「红了」 | 删掉整行造成语法错，测试根本没执行 | 🔴 **零测试执行不是行为红**（同「判别纪律 3」）。把变异改成能编译的形态重跑 |
+| ③ | **守卫与自校验共用同一个枚举函数** | 变异后守卫和自校验一起绿 | 缺陷长在共用的枚举里，两边同时失明，还失明得非常一致 | 自校验必须**独立枚举**，与守卫侧零共享实现（`tool/bug.dart` 的 `buildRenumberPlan` / `findResidualRefs` 就是踩过这个坑的原型） |
+| ④ | **注释把变异兜住** | 变异了实现，守卫仍绿 | 🔴 **本仓注释极其详尽**：被你删掉的那个字面量，在同一个文件的注释里往往还留着一份，判据不剥注释时照样命中 | 逐分支存活性**只能靠合成语料点名**——手写一小段必然违规的源码喂给判据，别指望在真实文件上做变异 |
+| ⑤ | **仪器与变异层不匹配** | 变异了行为却跑源码守卫（或反过来），全绿 | 源码守卫读的是文本，行为变异不改文本；行为测试跑的是运行时，源码变异可能连编译产物都不影响 | 🔴 **行为变异必须配行为守卫，源码变异才配源码守卫。** 用错仪器拿到的绿会被读成「守卫有洞」 |
+
+④ 和上一节是同一件事的一体两面：**禁止型断言在健康仓库里永远零命中**，所以「扫真实文件」这条路天生检验不到判据本身——判据坏没坏，只有合成语料能问出来。这也是为什么「守卫加了自校验」不是锦上添花，而是这类守卫**唯一**的存活性证据。
+
 ## 另一半：按触发条件加跑——**不点名，按树推导**
 
 上面那 35 条扫的是 Dart 源码树。另一半守卫读的是 **native / 资产 / 配置树**：`hibiki/windows`、`hibiki/android`、`hibiki/{ios,macos,linux}`、`packages/*/windows`、`native/`、`tools/browser-extension`、`.github/workflows`、`third_party/`。整批清单抓不到它们，因为它们只在碰对应资产时才可能红。
@@ -260,6 +296,8 @@ dart run tool/flutter_test_failures.dart --no-pub \
   $(dart run tool/tests_for_changes.dart --base=origin/develop)
 ```
 
+⚠️ 最后那条里 `$( )` **展开为空时不是空跑**：`flutter_test_failures.dart` 不带目标就跑全量。`--base` 选错（比如指到自己这条分支的 tip、diff 为空）会白等十几分钟，而输出看起来完全正常。跑之前先单独执行一遍上面第一条，确认它真的吐出了路径。
+
 判据一句话：
 
 > **改动文件 F 触发测试 T ⟺ T 的源码里引用了某个仓库路径 P，且 F 落在 P 底下。**
@@ -280,6 +318,63 @@ dart run tool/flutter_test_failures.dart --no-pub \
 
 规则住在拥有它的那个文件里，改守卫的人一眼看得见；守卫断言每条声明至少匹配到一个真实文件，所以声明烂掉是**响的**不是哑的。
 
+## 共享测试原语：它坏起来是静默的，改它的门也不在上面两批里
+
+守卫的判据窗口很少是「整个文件」，多半是「某个方法体 / 某个类体」。切窗口这件事全仓集中在 `hibiki/test/helpers/source_guard.dart` 的三个原语上——`methodBody`、`balancedBlockFrom`、`topLevelFunctionBody`。它们是上百条守卫共用的地基，**而地基塌下去的方式是静默的**：守卫不报错，只是换了一段源码继续「工作」。
+
+### 已经连续三次栽在同一族缺陷上：签名形态
+
+| # | 原语 | 撞上的签名形态 | 后果 | 结局 |
+|---|---|---|---|---|
+| ① | `methodBody` | **箭头函数体** `Foo bar() => …;` | 找不到 `{`，配对扫描越界，读到**下一个声明**——守卫在一段完全无关的源码上做断言 | PR#768 已修（`291d42af0`），并加了 `HIBIKI_METHOD_BODY_AUDIT=1` 反向枚举全仓有多少守卫锚在箭头体上 |
+| ② | `balancedBlockFrom` | **具名参数签名** `void f({required A a}) {` | 从声明处找第一个 `{`，抓到的是**参数列表**的花括号，切出来的「方法体」其实是一串参数 | PR#771 绕开（`test/reader/reader_exit_bounded_probe_test.dart` 里留了注释说明为什么不能直接 `balancedBlockFrom(start)`） |
+| ③ | `topLevelFunctionBody` | **`async` / `async*` / `sync*` 体** | 右括号后第一个非空白字符不是 `{` 而是 `a`，被判成调用点、解析成 `null` ⇒ **实现正确时守卫转红** | PR#772 已修（`73eabe331`） |
+
+三次都是同一个根：**用「找第一个 `{`」这类朴素规则去猜签名在哪儿结束**。而 Dart 合法签名的形态至少有
+
+> `{具名}` / `[可选位置]` / `=> 箭头体` / `async` `async*` `sync*` / 泛型约束 `<T extends X>` / 构造器初始化列表 `: a = b, super(...)`
+
+**每一种都能让朴素做法抓错窗口，且症状多为「静默拿错一段源码」而不是报错**——③ 是三次里唯一会转红的，前两次都表现为守卫继续绿着、只是在错的文本上绿。
+
+⇒ 建议**把签名解析一次性收敛成单一实现**（三个原语共用一份），而不是每个原语各修各的；并给上面每一种形态各写一条**合成语料**的判据自校验（`test/helpers/source_guard_lexer_test.dart` 已经是这个形状）。理由不是洁癖：三次翻车分别落在三个不同的原语上，说明缺陷跟着「谁来解析签名」走，不跟着「谁在用它」走——**修好一个不会连带修好另外两个，这已经被实证三次了**。
+
+### 改共享原语时的门：不是 35 条，是按 import 反查爆炸半径
+
+35 条清单守的是「目录枚举型守卫扫到新文件」，`tests_for_changes.dart` 守的是「改了哪棵树」。共享测试原语两边都漏：它既不是被扫描的生产文件，也不是被守卫用字面量点名的仓库路径——它是被 `import` 进来的。原语坏了，**所有**用它的守卫都可能静默拿错窗口，而它们散布在全仓各功能域，定向测试同样挑不到。
+
+正确的门是按 import 反查，整批跑：
+
+```bash
+cd hibiki
+# ① 只收测试文件——裸 grep -rl 会混进 test/helpers 下没有 main() 的工具文件
+grep -rl "helpers/source_guard.dart" test/ --include=*_test.dart | sort > /tmp/blast.txt
+# ② 再逐个校验确实是可跑的 suite（*_test.dart 命名也有例外）
+while read -r f; do grep -q "void main(" "$f" && echo "$f"; done < /tmp/blast.txt > /tmp/blast_ok.txt
+wc -l < /tmp/blast_ok.txt
+# ③ 分批跑：一次性把这个量级的路径塞进命令行会撞 Windows 参数长度上限
+rm -f /tmp/blast_part_*
+split -l 40 /tmp/blast_ok.txt /tmp/blast_part_
+i=0
+for part in /tmp/blast_part_*; do
+  i=$((i + 1))
+  dart run tool/flutter_test_failures.dart --no-pub \
+    --output-dir="../.codex-test/flutter-test-blast-$i" $(cat "$part")
+done 2>&1 | tee /tmp/blast_run.log
+```
+
+实测规模：改 `source_guard.dart` 的爆炸半径是 **154 个测试文件 / 1341 tests**（`origin/develop@b4ed5d8f7`，分 4 批 332 / 295 / 456 / 258）。这个数只会往上走——前一天的实测是 153 个文件 / 1333 tests，所以**别把它当常量，每次现算**。
+
+🔴 **三个已实测踩到的坑，前两个长得像并发伪红但都不是**：
+
+1. **`grep -rl` 会混进非测试 helper。** `test/helpers/` 下有一批被 import 的工具文件，它们没有 `main()`。把它们当测试路径传进去，症状是 `Missing definition of main` 造成的**装载失败、零断言失败**——和「并发伪红形态 ②（宿主 IPC 崩溃）」外观几乎一样，很容易被当成伪红放过去。**那是列表错，不是并发伪红**：分型时先读错误文本，`Missing definition of main` 只可能是自己传错了路径。所以上面 ①②两道筛子都要（`--include=*_test.dart` 会滤掉大部分，但 `*_test.dart` 命名也有例外）。
+2. **路径一次性全塞进命令行会撞 Windows 参数长度上限。** 必须分批（上面的 `split -l 40`），且**每批的 `--output-dir` 要分开**，否则后一批覆盖前一批的结果文件——那会退化成并发伪红形态 ③。
+3. 🔴 **分批之后，循环的退出码只是最后一批的。** 本节这段命令块自己就中过招：4 批里第 1、3 批因为并发抢 `sqlite3.dll` 而 `Tests completed: 0` 直接红了，循环整体仍然 `EXIT=0`。**分批跑之后判绿的唯一入口是把所有 VERDICT 行都数出来**，条数要等于批数：
+
+```bash
+grep -c "FLUTTER TEST VERDICT: PASSED" /tmp/blast_run.log   # 必须等于批数
+grep    "FLUTTER TEST VERDICT" /tmp/blast_run.log           # 逐行看，别只看最后一行
+```
+
 ## 输出可信 ≠ 结论可信
 
 `git push` 打印 `* [new branch] HEAD -> refs/heads/xxx`，看起来成功，**push 本身也没撒谎**——它确实把那个 ref 推上去了。撒谎的是**我们对「那个 ref 是什么」的默认假设**：detached HEAD 下 `HEAD` 早已不是工作所在的位置，推上去的是个陈旧 commit。
@@ -287,9 +382,10 @@ dart run tool/flutter_test_failures.dart --no-pub \
 这类错误**读输出永远发现不了**，因为输出对它自己描述的那件事完全准确。唯一的定性办法是**问远端要真实 SHA**，再与本地比对：
 
 ```bash
-git ls-remote origin refs/heads/<branch>
-gh api repos/<owner>/<repo>/git/ref/heads/<branch> --jq .object.sha
-git rev-parse <你以为推上去的那个东西>
+BR=develop                                    # 换成你要核的分支名
+git ls-remote origin "refs/heads/$BR"
+gh api "repos/hajisensai/hibiki/git/ref/heads/$BR" --jq .object.sha
+git rev-parse HEAD                            # 再拿它和「你以为推上去的那个东西」比对
 ```
 
 这与既有的「push `develop` 假失败只信 `gh api` sha」是**同一条纪律的两个方向**：
@@ -299,8 +395,35 @@ git rev-parse <你以为推上去的那个东西>
 | 假失败 | push 报 non-FF 错误 | 并发竞态，commit 其实已经进去了 | `gh api` 查远端 sha |
 | **假成功** | push 报 `[new branch]` / `Everything up-to-date` | 推的 ref 不是工作所在位置（detached HEAD / 推错分支） | `git ls-remote` 查远端 sha |
 | **单端点滞后** | 刚 push 成功，`gh api` 却仍返回旧 sha | 两个端点同一时刻不同值——`gh api` 有传播延迟 | `git ls-remote origin refs/heads/<branch>` 当场就是新值；判 `develop` head 一律以它为准 |
+| **聚合端点失真** | `gh api .../actions/cache/usage` 报 **13,477 MB / 15 条**，看着已经爆了 10 GB 配额 | 同一时刻**逐条列举求和只有 8,543 MB / 10 条**——聚合端点把已删/已过期的条目还算在里面 | 判配额一律**逐条列举再求和**（`gh api .../actions/caches --paginate`），不信聚合数字 |
 
 **通则：凡「远端 / 外部系统的状态」，一律以向它查询到的状态为准，不以本地命令的输出叙述为准；而「向它查询」不等于「问某一个端点」——同一份远端状态在 `gh api` 和 `git ls-remote` 上可以同时是两个值。** 本地输出只能证明「这条命令做了它说的事」，证明不了「这件事就是我要的事」。同族实例还有：`flutter test | tail` 的退出码是 `tail` 的（恒 0）、构建失败时零测试执行会被伪装成通过（BUG-1157）。
+
+### 判「这条 PR 落地了没」是内容问题，不是补丁问题
+
+🔴 **`git cherry` / `git patch-id` 在本仓大面积假阴性，禁止用作判据。** 原因是结构性的，不是偶发：本仓的合并流水线是**逐个 rebase 叠加 + 人工解冲突**，rebase 改写一次补丁、解冲突再改一次，patch-id 当场就对不上。实测一轮 24 条清账里 **≥8 条被 `git cherry` 误报成「没落地」——其中就包括整合线自己刚刚亲手合进去的那几条**。一个连「刚合的」都判错的工具，判不了「三周前那条」。
+
+能用的判据是**新增行覆盖率 + 逐条核未命中行**：把 PR 的新增行拿去 `origin/develop` 的当前文件里找，算命中比例，再把没命中的行**逐条看是什么**。三条已被实测钉死的细则：
+
+1. **必须拆成代码行 / 注释行分别算。** #716 整体覆盖率 92%，看着像「有东西没进去」；拆开之后**代码行 99.3%**——那 8% 全是注释，落地后被后续 PR 重写了措辞。混着算，注释的噪声会把代码的信号整个淹掉。
+2. 🔴 **覆盖率永远不能单独下判定。** #719 是 **93.0%**、#716 是 **92.0%**，**数字几乎相同，结论完全相反**：#716 是「代码全落地了，只差 reason 串里的一个 bug 号」；#719 是「常量落地了、单符号 grep 也命中，但**消费这个常量的行为层根本没进去**」。同一个百分比既可以是「已落地」也可以是「只落了个壳」——**决定结论的是未命中的那几行是什么，不是百分比是多少**。
+3. **未命中行的常见无害真身**：落地后又被改进 / 纯重排版（`dart format` 折行）/ 被后续 PR 整段取代 / slang codegen 头。#731 新增 **5899 行只差 2 行、覆盖率 100%**，而同一条 `git cherry` 报的是 **0/6**。
+
+**选 grep 判据要选源码里真实存在的字面量，不是运行时拼接出来的产物名。** 实例：核 #757 时 grep `Windows-vcpkg-libtorrent` 得 0 命中，差点判成没落地——那串是 GitHub Actions 运行时拼出来的 cache key，**源码里真实存在的字面量是 `${{ runner.os }}-vcpkg-…`**。这是既有的「grep 只能定位不能定性」在**判落地**场景下的形态。
+
+### 判「workflow 改动生效了没」：看 run 用的是哪个 commit 自带的 workflow
+
+`push` 事件触发的 run，用的是**那个 commit 自己带的** workflow 文件，不是 `develop` 当前的。队列一积压就会长出这种假证据：改动早就合进 `develop` 了，但队列里还压着改动之前的 commit，它们跑起来当然还是旧行为——**看上去像「改了没生效」，其实是「这条 run 本来就不该有新行为」**。
+
+所以别去看 `develop` 上的 workflow 长什么样，去看**这条 run 是哪个 commit 触发的**、再看那个 commit 上的 workflow：
+
+```bash
+gh run list --branch develop --limit 20 \
+  --json databaseId,headSha,workflowName,createdAt,status,conclusion
+SHA=$(gh run list --branch develop --limit 1 --json headSha --jq '.[0].headSha')
+gh api -H "Accept: application/vnd.github.raw" \
+  "repos/hajisensai/hibiki/contents/.github/workflows/main.yml?ref=$SHA" | head -40
+```
 
 ### 判「测试跑全了没」是结构问题，不是算术问题
 
@@ -311,6 +434,34 @@ git rev-parse <你以为推上去的那个东西>
 **`N tests ran` 的 N 仍是判据的一部分**（N=0 时 PASSED 和 FAILED 都不成立），但它是**次级信号**：N 能证伪「跑了」，证明不了「跑全了」。清单 / 推导规则要回答的问题是「**该跑的 suite 有没有都跑到**」，那是结构问题，不是算术问题。
 
 这和既有的「grep 只能定位不能定性」是同一个坑的两个面：那条讲**查代码**，这条讲**判测试覆盖**。
+
+**同一个坑的另一面：「加了用例，N 就该变大」也不成立。** 这条只在**新增用例结构上属于被统计的那一批**时才成立。实例：PR#768 给共享原语补了判据自校验用例，但那些用例落在 `test/helpers/source_guard_lexer_test.dart`——一个**非目录枚举型**的新文件，压根不在 35 条清单的扫描面里。⇒ 跑整批时 **N 持平才是正确结果**。
+
+🔴 **判 N 之前必须先问一句：新增用例落在哪一批里？** 不问就会把正确结果当成失败，而这个方向的错误特别危险——它会**反过来逼施工方去改判据凑数字**，把一个本来正确的实现改坏。「N 变了要说得出是哪一行变的」和「N 没变要说得出为什么本来就不该变」，是同一条纪律的两半。
+
+## 三条零散硬规矩（各自有实测出处）
+
+**① 改共用文案之前，先枚举它的全部使用点。** i18n key 不属于「某个页面」，属于**所有 import 了那个 widget 的页面**。实例：`scrape_all_confirm` 在 `hibiki/lib/src/media/metadata/scrape_batch.dart` 里只出现一次，但 `ScrapeBatchDialog` 被 `home_video_page.dart` / `reader_hibiki_history_page.dart` / `games_library_page.dart` **三页共用**——只沿视频页那条路径验证「文案是否如实」，等于把同一句谎话原样搬到书架页和游戏库页。改之前先跑一遍：
+
+```bash
+cd hibiki
+grep -rn "scrape_all_confirm" lib --include=*.dart | grep -v strings.g.dart   # 谁在用这个 key
+grep -rn "scrape_batch.dart" lib --include=*.dart                            # 谁 import 了承载它的 widget
+```
+
+**② 条目 / 文档里的 `file:line` 会因文件移动失效。** 派工之前先验证路径还在（`test -f`）。拿着一个不存在的路径去「定位根因」的子代理不会停下来报错，它会转而去猜——而猜出来的东西读起来和真的一模一样。
+
+**③ 凡经 bash 传递的文本，一律用单引号 heredoc，写完回读校验。** 反引号、`${{ }}`、`$(...)`、`$VAR`、`!` 会被 bash 当命令替换 / 历史展开**静默吞成空**，而 CLI 仍然报「已写入」——错误发生在写入侧、成功信号出现在输出侧，是本节通则的又一个实例。看板条目、`gh pr create --body`、`git commit -m` 全在射程内：
+
+```bash
+BODY="$(cat <<'EOF'
+守卫锚在 `methodBody(` 上；CI key 是 ${{ runner.os }}-vcpkg-…；命中数 $(wc -l) 行；注意 ! 不会被展开
+EOF
+)"
+printf '%s\n' "$BODY"   # 先回显逐字确认，再喂给看板 / gh / git
+```
+
+回显里少了任何一个特殊字符，就说明用错了引号形态——**别信 CLI 的「已写入」，写完一律回读原条目逐字比对**。
 
 ## 合并流水线（integration owner）
 
