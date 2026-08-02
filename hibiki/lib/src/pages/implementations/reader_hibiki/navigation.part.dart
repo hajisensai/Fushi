@@ -1282,14 +1282,36 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   // progress (entry cue = allBookCueIdx), so losing it reads as "归零". Await
   // the controller flush inside the still-alive onPause window so the position
   // at background time is written through — mirroring the reader-pos flush.
+  ///
+  /// TODO-2495：这条链的两段性质不同，交给 [flushWithBoundedProbe] 分开对待——
+  /// 实时探针（WebView `evaluateJavascript`，唯一没有延迟上界的一段）限时
+  /// [kReaderExitProbeBudget]，落库（Drift 写）不限时且**永不跳过**。
+  ///
+  /// 根因不是「某一段慢」，而是「一段没有延迟上界的 await 被压在无 UI 反馈的单飞门
+  /// 底下」：本方法被 `onSourcePagePop` → `onWillPop` → `PopScope` 逐层 await，
+  /// `_popInProgress` 在整条链跑完前一直顶着，且只在 `onWillPop()` 返回时才复位——
+  /// 探针挂死就等于返回键永久失效（比 BUG-1273 更糟，那个至少能自愈）。降级口径与
+  /// [_flushAllForProcessExit] 一致：探针超时/抛错就落 debounce 已算好的缓存锚。
+  /// 完整论证见 [flushWithBoundedProbe] 的文档注释。
   Future<void> _syncAndFlushPosition() async {
-    if (_lyricsMode) {
-      _syncPositionFromCurrentCue();
-    } else {
-      await _syncPositionFromWebViewProgress();
-    }
-    await _flushPosition();
-    await _audiobookController?.flushPosition();
+    await flushWithBoundedProbe(
+      probe: () async {
+        if (_lyricsMode) {
+          _syncPositionFromCurrentCue();
+        } else {
+          await _syncPositionFromWebViewProgress();
+        }
+      },
+      persist: () async {
+        await _flushPosition();
+        await _audiobookController?.flushPosition();
+      },
+      probeBudget: kReaderExitProbeBudget,
+      onProbeFailure: (Object error, StackTrace stack) {
+        ErrorLogService.instance
+            .log('ReaderHibiki.syncAndFlushPosition.probe', error, stack);
+      },
+    );
   }
 
   /// 进程退出统一 flush（TODO-086/BUG-191）。**不**调用
