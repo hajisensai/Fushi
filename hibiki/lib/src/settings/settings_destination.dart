@@ -7,6 +7,10 @@ enum SettingsDestinationId {
   appearance,
   profiles,
   reading,
+  // 「漫画」一级分类：漫画阅读器的观看偏好（方向/缩放/翻页）+ 漫画 OCR。原先
+  // OCR 组寄生在 reading 末尾、观看偏好则完全不在设置里；漫画与 EPUB 阅读没有
+  // 任何共享设置项，故拆成独立大类（见 settings_schema_manga.dart）。
+  manga,
   lookup,
   cardCreation,
   video,

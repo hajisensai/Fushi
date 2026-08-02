@@ -2258,7 +2258,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         await _replacePageOcrOverlay(pageIndex, payload.images[pageIndex]);
       }
     }
-    HibikiToast.show(msg: t.manga_ocr_wizard_done);
+    // 整卷 OCR 只是就地重写已入库书的 manga.json，没有发生任何导入：这里必须用
+    // OCR 语义的文案，不能复用向导的「漫画已导入」（用户在阅读器里跑完 OCR 却看到
+    // 「导入已完成」）。
+    HibikiToast.show(msg: t.manga_ocr_done);
   }
 
   void _cancelWholeVolumeOcr() {

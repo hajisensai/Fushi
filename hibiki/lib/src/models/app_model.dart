@@ -5861,6 +5861,22 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaZoomPercent(int value) =>
       prefsRepo.setMangaZoomPercent(value);
 
+  int get mangaZoomSensitivity => prefsRepo.mangaZoomSensitivity;
+  Future<void> setMangaZoomSensitivity(int value) =>
+      prefsRepo.setMangaZoomSensitivity(value);
+
+  String get mangaPageAnimation => prefsRepo.mangaPageAnimation;
+  Future<void> setMangaPageAnimation(String value) =>
+      prefsRepo.setMangaPageAnimation(value);
+
+  bool get mangaVolumeKeyPaging => prefsRepo.mangaVolumeKeyPaging;
+  Future<void> setMangaVolumeKeyPaging(bool value) =>
+      prefsRepo.setMangaVolumeKeyPaging(value);
+
+  bool get mangaTapZonePaging => prefsRepo.mangaTapZonePaging;
+  Future<void> setMangaTapZonePaging(bool value) =>
+      prefsRepo.setMangaTapZonePaging(value);
+
   /// 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源；空值由 client 归一回默认）。
   String get mangaOnlineCatalogBaseUrl => prefsRepo.mangaOnlineCatalogBaseUrl;
   Future<void> setMangaOnlineCatalogBaseUrl(String value) =>

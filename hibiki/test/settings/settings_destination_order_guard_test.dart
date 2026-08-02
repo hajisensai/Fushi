@@ -30,6 +30,7 @@ void main() {
     const List<String> expectedOrder = <String>[
       'buildAppearanceDestination()',
       'buildReadingDestination()',
+      'buildMangaDestination()',
       'buildListeningDestination()',
       'buildVideoDestination()',
       'buildDownloadsDestination()',
