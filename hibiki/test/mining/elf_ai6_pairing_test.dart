@@ -26,7 +26,9 @@ void main() {
     );
     final Map<String, dynamic> text = events
         .cast<Map<String, dynamic>>()
-        .singleWhere((Map<String, dynamic> event) => event['kind'] == 'text');
+        .singleWhere(
+          (Map<String, dynamic> event) => event['id'] == 'ai6-dialogue',
+        );
     final Map<String, dynamic> resource = events
         .cast<Map<String, dynamic>>()
         .singleWhere(
