@@ -29,11 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1352 条。点号进各自文件。
+> 共 1355 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1449](bugs/BUG-1449-gal-helper-bundled-as-plain-files.md) | ✅ | ✅ | helper 改为构建期解压随包，消灭需与本体同步的第二份副本 |
+| [BUG-1448](bugs/BUG-1448-gal-helper-version-check-short-circuited.md) | ✅ | ✅ | injector 存在即跳过 ensureInjector，随包新组件永不换入 |
 | [BUG-1447](bugs/BUG-1447-manga-remote-ocr-probe-ignores-models-ready.md) | ✅ | ✅ | 远端 OCR probe 只校验 supported 不校验 modelsReady，模型未下载的主机照样可选，白传一整卷才报错 |
+| [BUG-1446](bugs/BUG-1446-gal-fallback-detail-dropped-in-session-card.md) | ✅ | ✅ | galgame 降级状态卡丢弃 injectorDetail，版本对照证据永远看不到 |
 | [BUG-1445](bugs/BUG-1445-ffmpeg-min-macos-arch-and-dead-dlls.md) | ✅ | ✅ | ffmpeg-min：macOS 二进制 arm64-only 无守卫钉住，Windows 两个 MinGW 运行时 DLL 是死重 |
 | [BUG-1444](bugs/BUG-1444-v68-media-images-fk-parent-missing.md) | ✅ | ✅ | v68 迁移 INSERT media_images 在外键开启时因 FK 父表缺席抛 no such table，整条 onUpgrade 中断 |
 | [BUG-1443](bugs/BUG-1443-macos-vendored-ffmpeg-homebrew-dylib.md) | ✅ | ✅ | macOS 随包 ffmpeg 动态依赖 Homebrew dylib，干净机器上 dyld 崩溃 |
