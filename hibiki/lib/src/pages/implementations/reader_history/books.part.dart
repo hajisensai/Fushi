@@ -122,14 +122,16 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     // 以前 SRT 卡只读 book.coverPath（旧外层「选择封面图片」专有写入），忽略
     // override，导致在编辑信息弹窗里选的封面在网格卡上不生效。现在统一到 override，
     // 无 override 再退回 book.coverPath（向后兼容历史外层写入的封面）与关联 EPUB 封面。
-    final String overrideCoverPath =
-        ReaderHibikiSource.instance.getOverrideThumbnailFilename(
+    // BUG-1317：读 override 封面必须走 resolveOverrideThumbnailFile——它才认得
+    // 存量的旧文件名（源键烧进 hash）并就地迁移；裸 getOverrideThumbnailFilename
+    // 只拿得到规范路径，会把还没迁移的封面判成「没有」。
+    final File? overrideCover =
+        ReaderHibikiSource.instance.resolveOverrideThumbnailFile(
       appModel: appModel,
       item: _srtBookMediaItem(book),
     );
-    final String? existingOverride = _existingCoverFilePath(overrideCoverPath);
-    if (existingOverride != null) {
-      return _buildFileCover(existingOverride, fallbackIcon);
+    if (overrideCover != null) {
+      return _buildFileCover(overrideCover.path, fallbackIcon);
     }
     final String? ownCoverPath = _existingCoverFilePath(book.coverPath);
     if (ownCoverPath != null) {

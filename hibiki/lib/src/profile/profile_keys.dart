@@ -99,10 +99,13 @@ class ProfileKeys {
 
   /// BUG-1018 (A4): per-item display-name overrides are CONTENT tied to a
   /// media item, not reading preferences. Their persisted form is
-  /// `src:<sourceId>:override_title://<sourceId>/<uniqueKey>` (see
+  /// `src:<sourceId>:override_title://<mediaIdentifier>` since BUG-1317
+  /// (previously `src:<sourceId>:override_title://<sourceId>/<uniqueKey>`; both
+  /// shapes coexist until the read-time fallback migrates the legacy rows — see
   /// [MediaSource.getOverrideTitleKey] + `dbSourcePrefKey`), so the marker is
-  /// matched as a substring — excluding them from profile snapshots keeps a
-  /// rename visible across profile switches instead of being pruned/reverted.
+  /// matched as a substring — it covers both shapes, and excluding them from
+  /// profile snapshots keeps a rename visible across profile switches instead
+  /// of being pruned/reverted.
   static const String _overrideTitleMarker = 'override_title://';
 
   static bool isExcludedPref(String key) {
