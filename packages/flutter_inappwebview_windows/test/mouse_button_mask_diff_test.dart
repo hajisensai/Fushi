@@ -70,17 +70,16 @@ void main() {
 
     test('掩码为 0 的事件（hover）能自愈任何残留位', () {
       // hover 的语义就是「没有任何键按下」，是漏掉的 up 唯一可靠的补发点。
-      const int stuck = kPrimaryMouseButton |
-          kSecondaryMouseButton |
-          kTertiaryButton;
+      const int stuck =
+          kPrimaryMouseButton | kSecondaryMouseButton | kTertiaryButton;
       final healed = diffMouseButtonMasks(stuck, 0);
       expect(healed, hasLength(3), reason: '三个卡住的键都要补 up');
       expect(healed.every((t) => !t.isDown), isTrue);
     });
 
     test('中键与其它键互不干扰', () {
-      final t = diffMouseButtonMasks(kPrimaryMouseButton,
-          kPrimaryMouseButton | kTertiaryButton);
+      final t = diffMouseButtonMasks(
+          kPrimaryMouseButton, kPrimaryMouseButton | kTertiaryButton);
       expect(t, hasLength(1));
       expect(t.single.button, PointerButton.tertiary);
       expect(t.single.isDown, isTrue);
