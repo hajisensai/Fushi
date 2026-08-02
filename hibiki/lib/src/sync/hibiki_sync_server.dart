@@ -1615,6 +1615,26 @@ class HibikiSyncServer {
     return id;
   }
 
+  /// 裸视频 id（`/api/library/videos/<id>`，**无** suffix）的提取 + 穿越校验。
+  ///
+  /// PUT（client→host 上传）与 DELETE（client→host 删除）共用这一处：两者都只接
+  /// 「裸 id」，带 suffix 的子路由（cover / streamurl / stream / subtitle / position /
+  /// clipaudio）在上方已被 [_extractVideoId] 消化掉。
+  ///
+  /// 收敛成函数而不是在每个端点里手抄穿越判断——安全闸门靠复制粘贴维持，抄漏一处
+  /// 就是真漏洞（同 [_rejectUnsafeAssetId] 的教训，守卫见
+  /// `test/sync/hibiki_sync_server_asset_gate_test.dart`，它按纯文本计数穿越判断的
+  /// 出现次数，所以正文注释里也不要写那个字面量）。视频域不能用那道资产闸门是因为
+  /// 它禁 `/`，而视频 bookUid 合法含 `/`。
+  static String? _extractBareVideoId(String reqPath) {
+    const String prefix = '/api/library/videos/';
+    if (!reqPath.startsWith(prefix)) return null;
+    final String id = reqPath.substring(prefix.length);
+    if (id.isEmpty) return null;
+    if (id.contains('..') || id.contains('\\')) return null;
+    return id;
+  }
+
   /// GET /api/library/activity — host 最近活动事件（新首页 Activity 面板的互联
   /// 数据源；display-only，client 不落库）。limit 参数钳制 1..500。老 client 不知
   /// 道此端点、老 host 对此路径 404（client 侧优雅降级为空列表）。
@@ -1909,9 +1929,8 @@ class HibikiSyncServer {
     // （bookUid 形如 video/xxx），但拒 `..` / `\`（路径穿越）。title / 原始文件名经
     // URL-encode 走 header（HTTP header 只收 ASCII，日文标题必须编码）。
     if (method == 'PUT' && reqPath.startsWith('/api/library/videos/')) {
-      const String prefix = '/api/library/videos/';
-      final String id = reqPath.substring(prefix.length);
-      if (id.isEmpty || id.contains('..') || id.contains('\\')) {
+      final String? id = _extractBareVideoId(reqPath);
+      if (id == null) {
         return shelf.Response(400, body: 'Invalid video id');
       }
       final String title =
@@ -1941,6 +1960,33 @@ class HibikiSyncServer {
         } catch (_) {
           // best-effort
         }
+      }
+    }
+
+    // DELETE /api/library/videos/<id> — client→host 删除远端视频。两个来源：远端视频卡
+    // 长按「删除」，以及本机删除时选了「从所有设备删除」后同步把墓碑推给 host。
+    // 与 PUT 同样只接「裸 id 无 suffix」（带 suffix 的端点已在上方消化）。
+    //
+    // host 未实现 [VideoDeletionHost]（旧版本 app / 测试 fake）时**不接管**，落到下方
+    // 404 —— 这正是 client 侧的能力探测信号，[InterconnectSyncBackend.deleteRemoteVideo]
+    // 按 404/405 判「该 host 不支持」并优雅降级，不报错给用户。
+    // 204 与其它资产链的 DELETE（[_serveAssetPackage]）保持同一成功码。
+    if (method == 'DELETE' && reqPath.startsWith('/api/library/videos/')) {
+      final String? id = _extractBareVideoId(reqPath);
+      if (id == null) {
+        return shelf.Response(400, body: 'Invalid video id');
+      }
+      // 显式 `as` 而不是靠类型提升：[VideoDeletionHost] 不是 [HibikiLibraryHostService]
+      // 的子类型，Dart 不做交集提升（写 `svc.deleteVideo` 会报未定义）。与
+      // [DeletionTombstoneHost] 的探测写法一致。
+      if (svc is! VideoDeletionHost) {
+        return shelf.Response.notFound('Video deletion not supported');
+      }
+      try {
+        await (svc as VideoDeletionHost).deleteVideo(id);
+        return shelf.Response(204);
+      } catch (e) {
+        return shelf.Response(500, body: 'Video delete failed: $e');
       }
     }
 
