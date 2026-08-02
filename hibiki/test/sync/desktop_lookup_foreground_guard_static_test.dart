@@ -120,6 +120,52 @@ void main() {
     );
   });
 
+  test('main window does not reclaim focus when a lookup popup activates', () {
+    final String runner = read('windows/runner/win32_window.cpp');
+    final String handler = methodBody(
+      runner,
+      'Win32Window::MessageHandler(',
+    );
+    final String activateCase = maskCommentsAndStrings(
+      switchCaseBody(
+        handler,
+        'case WM_ACTIVATE:',
+        nextLabels: const <String>['case WM_DISPLAYCHANGE:'],
+      ),
+    );
+
+    expect(
+      activateCase.contains('ShouldRestoreChildFocus('),
+      isTrue,
+      reason: 'The lookup panel drag/resize activates an auxiliary Hibiki '
+          'window. The main window must ignore its WA_INACTIVE notification '
+          'instead of reclaiming focus and jumping to the foreground.',
+    );
+    expect(
+      'SetFocus(child_content_);'.allMatches(activateCase).length,
+      1,
+      reason: 'Keep main-window focus restoration behind the activation guard.',
+    );
+    expect(activateCase.contains('IsWindow(child_content_)'), isTrue,
+        reason: 'A destroyed Flutter child HWND must not receive focus.');
+    expect(
+      activateCase.contains('GetParent(child_content_) == hwnd'),
+      isTrue,
+      reason: 'HWND values are recycled; the live child must still belong to '
+          'this exact main window.',
+    );
+
+    final String destroyBody = maskCommentsAndStrings(
+      methodBody(runner, 'void Win32Window::Destroy()'),
+    );
+    expect(
+      destroyBody.contains('child_content_ = nullptr;'),
+      isTrue,
+      reason: 'Destroy must clear the borrowed Flutter child handle before '
+          'subclass/controller teardown can dispatch reentrant messages.',
+    );
+  });
+
   test(
       'floating lyric window stays noactivate/shownoactivate; only the '
       'clipboard text window opts into the taskbar', () {
