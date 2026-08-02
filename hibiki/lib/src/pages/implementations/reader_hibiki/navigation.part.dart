@@ -900,11 +900,54 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
 
   // ── Progress Save/Restore ─────────────────────────────────────────
 
+  /// 恢复锚的当前值，聚成 [ReaderRestoreAnchor] 读。四个字段仍是 State 的存储
+  /// （既有守卫按字段名钉住导航侧写入形态），这里只给它们一个有语义的读视图。
+  ReaderRestoreAnchor get _restoreAnchor => ReaderRestoreAnchor(
+        progress: _initialProgress,
+        charOffset: _initialCharOffset,
+        charOffsetEnd: _initialCharOffsetEnd,
+        fragment: _initialFragment,
+      );
+
+  /// TODO-2603：恢复锚生命周期**阶段 ②** 的唯一写入口——恢复落定之后，实时进度采样
+  /// 接管恢复锚。
+  ///
+  /// 没有这一步，恢复锚就永远停在 `_beginNavigation` 写下的进章快照（跨章翻页恒
+  /// `0.0 / -1`）；此后任何一次 WebView 重建（renderer 被 OOM 回收后换 key 重建）都会
+  /// restore 回章首，再由本文件的 `_debouncedSavePosition` 把这个回退位置落库，覆盖掉
+  /// 用户更靠后的真实进度。判据（在飞 = 保留目标 / 已落定 = 跟随实时进度）在纯函数
+  /// [restoreAnchorOnLiveProgress] 里，有真行为测；此处只做接线。
+  void _adoptLiveProgressAsRestoreAnchor(double progress, int charOffset) {
+    final ReaderRestoreAnchor next = restoreAnchorOnLiveProgress(
+      current: _restoreAnchor,
+      restoreInFlight: _restoreInFlight,
+      liveProgress: progress,
+      liveCharOffset: charOffset,
+    );
+    _initialProgress = next.progress;
+    _initialCharOffset = next.charOffset;
+    _initialCharOffsetEnd = next.charOffsetEnd;
+    _initialFragment = next.fragment;
+  }
+
   Future<void> _refreshProgress() async {
     if (_controller == null || _lyricsMode) return;
-    final dynamic result = await _controller!.evaluateJavascript(
-      source: ReaderPaginationScripts.stableProgressInvocation(),
-    );
+    final dynamic result;
+    try {
+      result = await _controller!.evaluateJavascript(
+        source: ReaderPaginationScripts.stableProgressInvocation(),
+      );
+    } catch (e, stack) {
+      // TODO-2603：renderer 死亡 / WebView 半销毁后 evaluateJavascript 抛
+      // PlatformException（或在报废 controller 上永不完成）。本方法由 10s 轮询、
+      // scroll 回传与恢复完成三条路驱动，裸 await 会把异常抛成**未捕获异步错误**
+      // （换 key 重建那一瞬每条在飞路径各一次）。此处尚未改任何进度状态，安全
+      // no-op 返回；与 reloadWithCurrentSettings / _syncPositionFromWebViewProgress
+      // 同一 fail-open 范式：不吞成静默，补 ErrorLogService.log。
+      ErrorLogService.instance
+          .log('ReaderHibiki._refreshProgress.eval', e, stack);
+      return;
+    }
     if (result == null) {
       // BUG-493：null = JS stableProgressInvocation 早退（重锚在飞 _reanchorPending / 尚未
       // settle）。这是**瞬态**：JS 侧清旗已单点化（_sharedJs 的 _setReanchorPending），
@@ -942,6 +985,9 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     _lastProgressSection = _currentChapter;
     _lastProgressValue = progress;
     _lastProgressCharOffset = charOffset;
+    // TODO-2603：实时进度既是「落库位置」也是「新建 WebView 的恢复目标」，两者必须
+    // 同源。放在 _lastProgress* 之后、落库之前，顺序即契约。
+    _adoptLiveProgressAsRestoreAnchor(progress, charOffset);
     final int absoluteChars = _absoluteCharPosition(progress);
     // TODO-147 / BUG-211：按 high-water mark 增量计数，避免往返翻页重复累计。
     final ReadProgressResult delta = accumulateSessionChars(
@@ -1075,6 +1121,9 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     _lastProgressSection = _currentChapter;
     _lastProgressValue = snapshot.progress;
     _lastProgressCharOffset = snapshot.charOffset;
+    // TODO-2603：本方法是实时进度的第二个所有者（退出 / lifecycle flush 的实时读），
+    // 恢复锚同样跟随，规则与 _refreshProgress 逐字相同。
+    _adoptLiveProgressAsRestoreAnchor(snapshot.progress, snapshot.charOffset);
   }
 
   void _debouncedSavePosition(double progress, int charOffset) {
