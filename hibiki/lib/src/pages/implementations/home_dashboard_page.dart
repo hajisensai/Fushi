@@ -95,12 +95,16 @@ class _ContinueEntry {
     this.percent = 0,
     this.progress,
     this.collectionName,
+    this.collectionId,
     this.subtitleOverride,
     this.book,
     this.video,
     this.game,
     this.remote,
   });
+
+  /// 所属主合集 id（v68 横版选图链按它取合集附加图组）；null = 散卡。
+  final int? collectionId;
 
   /// 本条的媒体种类。书按真实身份区分 [MediaKind.epub] / [MediaKind.srt]
   /// （两者在本区块行为一致，经 [isBook] 归并），不再用一个 bool 硬编码二元。
@@ -408,6 +412,13 @@ class _HomeDashboardPageState
   /// [initState] 异步载入的视频库（继续观看 + 视频计数）。
   List<VideoBookRow> _videos = const <VideoBookRow>[];
 
+  /// v68 附加图组（media_images）按归属分桶：续播区视频横卡的选图链
+  /// （合集带字横图 → 无字背景 → 目标集封面）。与视频库同批预取。
+  Map<int, List<MediaImageRow>> _mediaImagesByCollection =
+      const <int, List<MediaImageRow>>{};
+  Map<String, List<MediaImageRow>> _mediaImagesByBookUid =
+      const <String, List<MediaImageRow>>{};
+
   /// [_loadDashboardDataUnsafe] 载入的游戏库整表缓存（P4：日明细「游戏」节 +
   /// 活动时间轴游戏行的显示名反查用；空表 = 库为空或尚未载入）。
   List<GalgameEntry> _games = const <GalgameEntry>[];
@@ -575,6 +586,19 @@ class _HomeDashboardPageState
     };
     final Map<String, int> primaryByEntry =
         await db.getPrimaryCollectionIdByEntry();
+    // v68 附加图组：一次全表查询按归属分桶（续播区视频横卡选图链）。
+    final Map<int, List<MediaImageRow>> imagesByCollection =
+        <int, List<MediaImageRow>>{};
+    final Map<String, List<MediaImageRow>> imagesByBookUid =
+        <String, List<MediaImageRow>>{};
+    for (final MediaImageRow imageRow in await db.getAllMediaImages()) {
+      final int? cid = imageRow.collectionId;
+      if (cid != null) {
+        (imagesByCollection[cid] ??= <MediaImageRow>[]).add(imageRow);
+      } else if (imageRow.bookUid case final String uid) {
+        (imagesByBookUid[uid] ??= <MediaImageRow>[]).add(imageRow);
+      }
+    }
     // 组内序：条目在其主折叠合集里的 sortIndex（视频页/书架 _loadShelfMaps 同
     // 口径——一次 getAllCollectionItems 内存分组，只记归属主合集的行）。
     final Map<String, int> memberSortIndex = <String, int>{};
@@ -674,6 +698,8 @@ class _HomeDashboardPageState
       _watchRows = watch;
       _collectionNamesById = collectionNamesById;
       _primaryCollectionByEntry = primaryByEntry;
+      _mediaImagesByCollection = imagesByCollection;
+      _mediaImagesByBookUid = imagesByBookUid;
       _bookKeyByTitle = bookKeyByTitle;
       _epubImportedAtByKey = epubImportedAtByKey;
       _memberSortIndex = memberSortIndex;
@@ -966,6 +992,7 @@ class _HomeDashboardPageState
       entries.add(_videoContinueEntry(
         resume,
         collectionName: _collectionNamesById[ce.key],
+        collectionId: ce.key,
         recentMs: recent,
       ));
     }
@@ -1053,16 +1080,22 @@ class _HomeDashboardPageState
       ),
       child: filtered.isEmpty
           ? Text(t.home_activity_empty, style: tokens.type.metadata)
-          : _continueCardsRow(tokens, appModel, filtered),
+          : _continueCardsRow(tokens, appModel, filtered, videoLandscape: true),
     );
   }
 
   /// 横滑卡片行本体（「继续」与「最近添加」共用）：定高横向 ListView。
+  ///
+  /// [videoLandscape]：续播区传 true——视频卡 16:9 横槽（用户拍板「续播行只对
+  /// 视频改横版，书/游戏维持竖版」，Jellyfin Continue Watching 口径）；「最近
+  /// 添加」传 false 维持全竖版现状。行高不变：两种卡封面同高、宽度不同，底边
+  /// 天然对齐（video_home_layout 同款几何）。
   Widget _continueCardsRow(
     HibikiDesignTokens tokens,
     AppModel appModel,
-    List<_ContinueEntry> entries,
-  ) {
+    List<_ContinueEntry> entries, {
+    bool videoLandscape = false,
+  }) {
     return SizedBox(
       height: _continueRowHeight(context, tokens),
       // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行
@@ -1075,8 +1108,12 @@ class _HomeDashboardPageState
           itemCount: entries.length,
           separatorBuilder: (BuildContext _, int __) =>
               SizedBox(width: tokens.spacing.gap),
-          itemBuilder: (BuildContext context, int i) =>
-              _buildContinueCard(tokens, appModel, entries[i]),
+          itemBuilder: (BuildContext context, int i) => _buildContinueCard(
+            tokens,
+            appModel,
+            entries[i],
+            videoLandscape: videoLandscape,
+          ),
         ),
       ),
     );
@@ -1192,6 +1229,7 @@ class _HomeDashboardPageState
   _ContinueEntry _videoContinueEntry(
     VideoBookRow v, {
     required String? collectionName,
+    int? collectionId,
     required int recentMs,
   }) {
     return _ContinueEntry(
@@ -1204,6 +1242,7 @@ class _HomeDashboardPageState
         episodeCount: playlistEpisodeCount(v.playlistJson),
       ),
       collectionName: collectionName,
+      collectionId: collectionId,
       video: v,
     );
   }
@@ -1263,10 +1302,15 @@ class _HomeDashboardPageState
   Widget _buildContinueCard(
     HibikiDesignTokens tokens,
     AppModel appModel,
-    _ContinueEntry entry,
-  ) {
-    // BUG-1299：三类条目统一竖版槽（见 [_kContinueCoverWidth] 注释）。
-    const double coverWidth = _kContinueCoverWidth;
+    _ContinueEntry entry, {
+    bool videoLandscape = false,
+  }) {
+    // 槽向：书/游戏恒竖版（BUG-1299 口径不变）；续播区的视频卡改 16:9 横版
+    // （用户拍板 + Jellyfin Continue Watching 口径）。横槽装竖图由
+    // [PortraitCoverImage] 模糊垫底承接，不会重演 BUG-1299 的硬裁。
+    final bool landscape = videoLandscape && entry.isVideo;
+    final double coverWidth =
+        landscape ? _kContinueCoverHeight * 16 / 9 : _kContinueCoverWidth;
     // BUG-1111：游戏没有阅读百分比（无完成度概念），状态段只标类型，不能套用
     // 书的「阅读 · x%」——否则一律显示「阅读 · 0%」。
     String status = switch (entry.kind) {
@@ -1303,7 +1347,8 @@ class _HomeDashboardPageState
                 child: Stack(
                   fit: StackFit.expand,
                   children: <Widget>[
-                    _continueCover(tokens, appModel, entry),
+                    _continueCover(tokens, appModel, entry,
+                        landscapeSlot: landscape),
                     // 进度条贴封面底部（home_video_page 视频卡同款范式）；算不出
                     // 进度（progress==null）时不画。
                     if (entry.progress case final double progress)
@@ -1351,10 +1396,27 @@ class _HomeDashboardPageState
   Widget _continueCover(
     HibikiDesignTokens tokens,
     AppModel appModel,
-    _ContinueEntry entry,
-  ) {
-    if (entry.remote != null) return _remoteCover(tokens, entry);
-    if (entry.isVideo) return _videoCover(tokens, entry.video!);
+    _ContinueEntry entry, {
+    bool landscapeSlot = false,
+  }) {
+    if (entry.remote != null) {
+      return _remoteCover(tokens, entry, landscapeSlot: landscapeSlot);
+    }
+    if (entry.isVideo) {
+      // v68 横版选图链（Jellyfin preferThumb 口径）：合集/散装的带字横图 →
+      // 无字背景 → 目标集封面（剧照天然合槽；竖版海报模糊垫底）。
+      final ImageProvider? artwork =
+          landscapeSlot ? _continueArtworkProvider(entry) : null;
+      if (artwork != null) {
+        return PortraitCoverImage(
+          image: artwork,
+          landscapeSlot: true,
+          errorBuilder: (BuildContext _) => _coverPlaceholder(
+              tokens, mediaCoverFallbackIcon(MediaKind.video)),
+        );
+      }
+      return _videoCover(tokens, entry.video!, landscapeSlot: landscapeSlot);
+    }
     if (entry.isGame) return _gameCover(tokens, entry.game!);
     return FadeInImage(
       placeholder: MemoryImage(kTransparentImage),
@@ -1370,7 +1432,11 @@ class _HomeDashboardPageState
 
   /// 远端条目封面：互联 coverUrl + 取图器可用则 [RemoteCoverImage]（按稳定 id
   /// 磁盘缓存），否则占位图标。
-  Widget _remoteCover(HibikiDesignTokens tokens, _ContinueEntry entry) {
+  Widget _remoteCover(
+    HibikiDesignTokens tokens,
+    _ContinueEntry entry, {
+    bool landscapeSlot = false,
+  }) {
     final RemoteContinueCandidate remote = entry.remote!;
     final String? coverUrl = remote.coverUrl;
     final RemoteCoverFetcher? fetcher = _remoteCoverFetcher;
@@ -1382,8 +1448,32 @@ class _HomeDashboardPageState
     // BUG-1299：远端封面横竖不可知（host 侧可能是截帧也可能是海报），槽向自适应。
     return PortraitCoverImage(
       image: RemoteCoverImage(coverUrl, fetcher, cacheKey: remote.id),
+      landscapeSlot: landscapeSlot,
       errorBuilder: (BuildContext _) => _coverPlaceholder(tokens, icon),
     );
+  }
+
+  /// v68：续播视频卡的附加图 provider（合集归属查合集图组，散卡查视频图组；
+  /// titleCard 优先于 backdrop）。null = 无附加图，回落条目封面。
+  ImageProvider? _continueArtworkProvider(_ContinueEntry entry) {
+    final List<MediaImageRow>? rows = entry.collectionId != null
+        ? _mediaImagesByCollection[entry.collectionId]
+        : _mediaImagesByBookUid[entry.video?.bookUid];
+    if (rows == null) return null;
+    for (final MediaImageKind kind in const <MediaImageKind>[
+      MediaImageKind.titleCard,
+      MediaImageKind.backdrop,
+    ]) {
+      for (final MediaImageRow row in rows) {
+        if (row.kind == kind.dbValue && row.path.isNotEmpty) {
+          return resolveMediaCoverImage(
+            kind: MediaKind.video,
+            localPath: row.path,
+          );
+        }
+      }
+    }
+    return null;
   }
 
   /// 视频封面：来源解析与游戏/剧集列表共用 [resolveMediaCoverImage]。

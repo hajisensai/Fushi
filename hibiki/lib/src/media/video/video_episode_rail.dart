@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 
@@ -281,10 +282,13 @@ class _EpisodeCover extends StatelessWidget {
   Widget build(BuildContext context) {
     final ImageProvider? cover = entry.cover;
     if (cover == null) return _placeholder();
-    return Image(
+    // 16:9 横槽走朝向自适应（v68 收口）：刮到的剧照天然合槽直接铺满；没刮过的集
+    // （2:3 刮削海报 / 方图）模糊垫底 + contain 完整显示。此前这里是全域唯一还在
+    // 裸 `BoxFit.cover` 硬裁的封面消费点——竖版海报被裁成中间一条（BUG-1299 同病）。
+    return PortraitCoverImage(
       image: cover,
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => _placeholder(),
+      landscapeSlot: true,
+      errorBuilder: (BuildContext _) => _placeholder(),
     );
   }
 
