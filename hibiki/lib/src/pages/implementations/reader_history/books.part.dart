@@ -190,7 +190,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
 
   Future<void> _openSrtBook(SrtBook book) async {
     if (book.bookKey.isEmpty) {
-      HibikiToast.show(msg: t.srt_epub_not_ready);
+      HibikiToast.show(
+          msg: t.srt_epub_not_ready, severity: ToastSeverity.error);
       return;
     }
     // BUG-456: SRT books must use the normal media entry so AppModel registers
@@ -373,7 +374,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     if (mounted) {
       _refreshSrtBooks();
       _rebuild(() {});
-      HibikiToast.show(msg: t.audiobook_relocate_done);
+      HibikiToast.show(
+          msg: t.audiobook_relocate_done, severity: ToastSeverity.success);
     }
   }
 
@@ -603,7 +605,12 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
             : collectionCount == 0
                 ? t.batch_delete_success(n: deleted)
                 : t.batch_dissolve_success(m: dissolved);
-    HibikiToast.show(msg: successMsg);
+    HibikiToast.show(
+      msg: successMsg,
+      severity: deleted > 0 || dissolved > 0
+          ? ToastSeverity.success
+          : ToastSeverity.warning,
+    );
   }
 
   /// 批量操作前把选中集收敛到真实存在的条目上，真剔掉了就明说。
@@ -644,6 +651,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         n: dropped + _selection.length,
         m: dropped,
       ),
+      severity: ToastSeverity.warning,
     );
     return _selection.isNotEmpty;
   }
@@ -654,7 +662,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     if (!await _pruneStaleSelection() || !mounted) return;
     final allTags = ref.read(allTagsProvider).valueOrNull;
     if (allTags == null || allTags.isEmpty) {
-      HibikiToast.show(msg: t.tag_no_tags_hint);
+      HibikiToast.show(msg: t.tag_no_tags_hint, severity: ToastSeverity.info);
       return;
     }
     await showAppDialog<void>(
@@ -776,7 +784,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     _exitSelectionMode();
     _shelfMapsFuture = _loadShelfMaps();
     _rebuild(() {});
-    HibikiToast.show(msg: t.series_created);
+    HibikiToast.show(msg: t.series_created, severity: ToastSeverity.success);
   }
 
   /// 档2：恰 1 合集 + 若干散卡 → 散卡并入该合集（不弹命名）。
@@ -792,7 +800,9 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     _exitSelectionMode();
     _shelfMapsFuture = _loadShelfMaps();
     _rebuild(() {});
-    HibikiToast.show(msg: t.batch_add_to_collection_success(n: refs.length));
+    HibikiToast.show(
+        msg: t.batch_add_to_collection_success(n: refs.length),
+        severity: ToastSeverity.success);
   }
 
   /// 档3：≥2 合集（可带散卡）→ 合并成一个。目标 = 成员最多合集（其名作默认名，
@@ -848,7 +858,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     _exitSelectionMode();
     _shelfMapsFuture = _loadShelfMaps();
     _rebuild(() {});
-    HibikiToast.show(msg: t.collection_merged);
+    HibikiToast.show(msg: t.collection_merged, severity: ToastSeverity.success);
   }
 
   Future<void> _confirmDeleteSrtBook(SrtBook book) async {
@@ -904,10 +914,12 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       case BackgroundListenResult.started:
         break;
       case BackgroundListenResult.noAudio:
-        HibikiToast.show(msg: t.floating_lyric_no_audio);
+        HibikiToast.show(
+            msg: t.floating_lyric_no_audio, severity: ToastSeverity.error);
         break;
       case BackgroundListenResult.loadFailed:
-        HibikiToast.show(msg: t.audiobook_load_error);
+        HibikiToast.show(
+            msg: t.audiobook_load_error, severity: ToastSeverity.error);
         break;
     }
     _rebuild(() {});
@@ -942,6 +954,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         msg: reason.isEmpty
             ? t.epub_delete_error
             : '${t.epub_delete_error}: $reason',
+        severity: ToastSeverity.error,
       );
       return;
     }
@@ -977,19 +990,23 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final List<String> picked = await _pickSrtAudioFiles();
     if (picked.isEmpty || !mounted) return;
 
-    HibikiToast.show(msg: t.dialog_importing);
+    HibikiToast.show(msg: t.dialog_importing, severity: ToastSeverity.info);
     try {
       await SrtBookRepository(appModel.database)
           .replaceAudio(uid: book.uid, pickedPaths: picked);
       if (mounted) {
         _refreshSrtBooks();
         _rebuild(() {});
-        HibikiToast.show(msg: t.audiobook_import_success);
+        HibikiToast.show(
+            msg: t.audiobook_import_success, severity: ToastSeverity.success);
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHistory.openAudioImport', e, stack);
       debugPrint('[ReaderHistory] openAudioImport failed: $e');
-      if (mounted) HibikiToast.show(msg: t.audiobook_import_error);
+      if (mounted) {
+        HibikiToast.show(
+            msg: t.audiobook_import_error, severity: ToastSeverity.error);
+      }
     }
   }
 

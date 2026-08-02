@@ -173,7 +173,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       return; // 用户取消
     }
     if (filterOutDuplicateGameExes(_games, <String>[exe]).isEmpty) {
-      HibikiToast.show(msg: t.game_already_added);
+      HibikiToast.show(
+        msg: t.game_already_added,
+        severity: ToastSeverity.warning,
+      );
       return; // 已在库里：不重复添加
     }
     final GalgameEntry entry = newGalgameEntryFromExe(exe);
@@ -187,7 +190,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   Future<void> _handleDrop(List<String> paths, Offset _) async {
     final List<String> exes = filterOutDuplicateGameExes(_games, paths);
     if (exes.isEmpty) {
-      HibikiToast.show(msg: t.game_drop_no_exe);
+      HibikiToast.show(
+        msg: t.game_drop_no_exe,
+        severity: ToastSeverity.warning,
+      );
       return;
     }
     // 批内 id 用「基准时刻 + 序号微秒」错开，避免同微秒撞 id。
@@ -199,7 +205,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     ];
     await _repo.addAll(added);
     _refresh();
-    HibikiToast.show(msg: t.game_drop_imported(count: added.length));
+    HibikiToast.show(
+      msg: t.game_drop_imported(count: added.length),
+      severity: ToastSeverity.success,
+    );
     for (final GalgameEntry entry in added) {
       unawaited(_autoCover(entry, silent: true));
     }
@@ -210,7 +219,12 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// [silent] = 添加游戏后的后台补齐（成功静默、失败不打扰）；用户从菜单主动触发时
   /// 为 false，两种结局都给 toast，否则「点了没反应」无从判断。
   Future<void> _autoCover(GalgameEntry game, {bool silent = false}) async {
-    if (!silent) HibikiToast.show(msg: t.game_cover_searching);
+    if (!silent) {
+      HibikiToast.show(
+        msg: t.game_cover_searching,
+        severity: ToastSeverity.info,
+      );
+    }
     final ResolvedGameCover? resolved = await autoResolveGameCover(
       gameId: game.id,
       gameName: game.displayName,
@@ -218,11 +232,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       workdir: game.workdir,
     );
     if (resolved == null) {
-      if (!silent) HibikiToast.show(msg: t.game_cover_not_found);
+      if (!silent) {
+        HibikiToast.show(
+          msg: t.game_cover_not_found,
+          severity: ToastSeverity.error,
+        );
+      }
       return;
     }
     await _applyCover(game, resolved.path);
-    if (!silent) HibikiToast.show(msg: t.game_cover_updated);
+    if (!silent) {
+      HibikiToast.show(
+        msg: t.game_cover_updated,
+        severity: ToastSeverity.success,
+      );
+    }
   }
 
   /// 手动设置封面：统一封面服务（P3）——[MediaCoverService.pickCoverImage] 平台
@@ -241,11 +265,17 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       sourcePath: picked.path,
     );
     if (saved == null) {
-      HibikiToast.show(msg: t.game_cover_not_found);
+      HibikiToast.show(
+        msg: t.game_cover_not_found,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     await _applyCover(game, saved);
-    HibikiToast.show(msg: t.game_cover_updated);
+    HibikiToast.show(
+      msg: t.game_cover_updated,
+      severity: ToastSeverity.success,
+    );
   }
 
   /// 把新封面路径写回条目并刷新。
@@ -473,7 +503,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     if (outcome != CollectionAddOutcome.added || !mounted) return;
     await _loadCollectionMaps();
     _refresh();
-    HibikiToast.show(msg: t.batch_add_to_collection_success(n: 1));
+    HibikiToast.show(
+      msg: t.batch_add_to_collection_success(n: 1),
+      severity: ToastSeverity.success,
+    );
   }
 
   /// 合集横排行折叠开关（游戏库独立偏好命名空间，见
@@ -548,11 +581,17 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     _launching = true;
     try {
       if (!Platform.isWindows) {
-        HibikiToast.show(msg: t.game_launch_unsupported);
+        HibikiToast.show(
+          msg: t.game_launch_unsupported,
+          severity: ToastSeverity.error,
+        );
         return;
       }
       if (!File(game.exePath).existsSync()) {
-        HibikiToast.show(msg: t.game_exe_missing);
+        HibikiToast.show(
+          msg: t.game_exe_missing,
+          severity: ToastSeverity.error,
+        );
         return;
       }
       final bool is32Bit =
@@ -596,7 +635,22 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         lastError: state.lastError,
         injectorDetail: state.injectorDetail,
       );
-      if (message != null) HibikiToast.show(msg: message);
+      // BUG-1089 的着色面：outcome 已经把「跑起来了 / 只剩整机混音兜底 / 根本没起来」
+      // 分好了，toast 的颜色跟着同一份判定走，别再让三种结局长成同一条无色提示。
+      if (message != null) {
+        HibikiToast.show(
+          msg: message,
+          severity: switch (outcome) {
+            GalHookLaunchOutcome.running => ToastSeverity.success,
+            GalHookLaunchOutcome.degradedLoopback => ToastSeverity.warning,
+            GalHookLaunchOutcome.failed ||
+            GalHookLaunchOutcome.windowMissing =>
+              ToastSeverity.error,
+            // message 为 null 时根本不播报，这里走不到。
+            GalHookLaunchOutcome.superseded => ToastSeverity.neutral,
+          },
+        );
+      }
       if (!result.launched) return;
       widget.onLaunched?.call();
     } finally {

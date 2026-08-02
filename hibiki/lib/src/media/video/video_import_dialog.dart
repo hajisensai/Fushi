@@ -288,6 +288,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
     setState(() => _subtitlePath = m.subtitlePath);
     HibikiToast.show(
       msg: t.import_sidecar_subtitle(name: p.basename(m.subtitlePath!)),
+      severity: ToastSeverity.info,
     );
   }
 

@@ -466,7 +466,10 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     }
     if (!mounted) return;
     Navigator.of(context).pop();
-    HibikiToast.show(msg: t.video_scrape_applied);
+    HibikiToast.show(
+      msg: t.video_scrape_applied,
+      severity: ToastSeverity.success,
+    );
   }
 
   @override

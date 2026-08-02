@@ -259,6 +259,7 @@ List<String> _filterPickedFilesByExtension({
       msg: t.import_unsupported_file_format(
         ext: ext.isEmpty ? p.basename(rejected.first) : ext,
       ),
+      severity: ToastSeverity.error,
     );
   }
   return accepted;

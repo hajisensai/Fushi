@@ -437,7 +437,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   void _notifyNoTextLayer() {
     if (_noTextLayerNotified) return;
     _noTextLayerNotified = true;
-    HibikiToast.show(msg: t.pdf_no_text_layer);
+    HibikiToast.show(msg: t.pdf_no_text_layer, severity: ToastSeverity.error);
   }
 
   // ── Phase 5：书签（复用 EPUB 的 Bookmarks 表）───────────────────────
@@ -462,7 +462,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
         ),
       );
       if (!mounted) return;
-      HibikiToast.show(msg: t.pdf_bookmark_added);
+      HibikiToast.show(
+          msg: t.pdf_bookmark_added, severity: ToastSeverity.success);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderPdfPage.addBookmark', e, stack);
     }
@@ -479,7 +480,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     }
     if (!mounted) return;
     if (bookmarks.isEmpty) {
-      HibikiToast.show(msg: t.pdf_bookmarks_empty);
+      HibikiToast.show(
+          msg: t.pdf_bookmarks_empty, severity: ToastSeverity.info);
       return;
     }
     await showAppDialog<void>(
@@ -524,7 +526,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     }
     if (!mounted) return;
     if (outline.isEmpty) {
-      HibikiToast.show(msg: t.pdf_outline_empty);
+      HibikiToast.show(msg: t.pdf_outline_empty, severity: ToastSeverity.info);
       return;
     }
     await showAppDialog<void>(

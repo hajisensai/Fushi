@@ -9,21 +9,27 @@ part of '../video_hibiki_page.dart';
 extension _VideoClipExport on _VideoHibikiPageState {
   Future<void> _toggleClipExport() async {
     if (_clipExporting) {
-      _showOsd(t.video_clip_exporting);
+      _showOsd(t.video_clip_exporting, severity: ToastSeverity.info);
       return;
     }
 
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     if (_isRemote || _currentVideoPath == null) {
-      _showOsd(t.video_clip_export_remote_download_required);
+      _showOsd(
+        t.video_clip_export_remote_download_required,
+        severity: ToastSeverity.warning,
+      );
       return;
     }
 
     if (!_clipExportMarking) {
       final int? positionMs = controller.positionMs;
       if (positionMs == null) {
-        _showOsd(t.video_clip_export_invalid_range);
+        _showOsd(
+          t.video_clip_export_invalid_range,
+          severity: ToastSeverity.error,
+        );
         return;
       }
       _rebuild(() {
@@ -34,7 +40,7 @@ extension _VideoClipExport on _VideoHibikiPageState {
         _clipExportStartAudioStreamIndex = controller.currentAudioStreamIndex;
         _clipExportStartAudioStreamCount = controller.realAudioStreamCount;
       });
-      _showOsd(t.video_clip_export_start);
+      _showOsd(t.video_clip_export_start, severity: ToastSeverity.info);
       return;
     }
 
@@ -46,12 +52,18 @@ extension _VideoClipExport on _VideoHibikiPageState {
         endMs == null ||
         startPath != _currentVideoPath) {
       _rebuild(_clearClipExportState);
-      _showOsd(t.video_clip_export_source_changed);
+      _showOsd(
+        t.video_clip_export_source_changed,
+        severity: ToastSeverity.warning,
+      );
       return;
     }
     if (endMs <= startMs) {
       _rebuild(_clearClipExportState);
-      _showOsd(t.video_clip_export_invalid_range);
+      _showOsd(
+        t.video_clip_export_invalid_range,
+        severity: ToastSeverity.error,
+      );
       return;
     }
 
@@ -76,17 +88,20 @@ extension _VideoClipExport on _VideoHibikiPageState {
     if (outputPath == null) {
       // 桌面用户取消了「另存为」——此刻尚未产出任何文件，直接清状态收场。
       _rebuild(_clearClipExportState);
-      _showOsd(t.video_clip_export_cancelled);
+      _showOsd(t.video_clip_export_cancelled, severity: ToastSeverity.info);
       _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
       return;
     }
     if (generation != _clipExportGeneration || _currentVideoPath != startPath) {
       _rebuild(_clearClipExportState);
-      _showOsd(t.video_clip_export_source_changed);
+      _showOsd(
+        t.video_clip_export_source_changed,
+        severity: ToastSeverity.warning,
+      );
       return;
     }
     _rebuild(() => _clipExporting = true);
-    _showOsd(t.video_clip_exporting);
+    _showOsd(t.video_clip_exporting, severity: ToastSeverity.info);
 
     final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
       inputPath: startPath,
@@ -110,7 +125,10 @@ extension _VideoClipExport on _VideoHibikiPageState {
       await _deleteClipOutput(result.outputPath ?? outputPath);
       if (mounted) {
         _rebuild(_clearClipExportState);
-        _showOsd(t.video_clip_export_source_changed);
+        _showOsd(
+          t.video_clip_export_source_changed,
+          severity: ToastSeverity.warning,
+        );
       }
       return;
     }
@@ -121,9 +139,12 @@ extension _VideoClipExport on _VideoHibikiPageState {
       // 区分带没带字幕：字幕封装可能被静默降级（容器封不下、旧的桌面精简 ffmpeg 没有
       // movtext 编码器），不告诉用户的话，他只会看到一个「导出成功却没字幕」的片段，
       // 无从判断是自己没选字幕还是导出丢了。
-      _showOsd(result.subtitleTrackCount > 0
-          ? t.video_clip_exported_with_subtitles(path: exported)
-          : t.video_clip_exported(path: exported));
+      _showOsd(
+        result.subtitleTrackCount > 0
+            ? t.video_clip_exported_with_subtitles(path: exported)
+            : t.video_clip_exported(path: exported),
+        severity: ToastSeverity.success,
+      );
       if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
         await HibikiShare.shareFiles(<XFile>[
           XFile(exported),
@@ -140,7 +161,10 @@ extension _VideoClipExport on _VideoHibikiPageState {
       final String reason = (detail == null || detail.isEmpty)
           ? readable
           : '$readable — ${detail.length > 200 ? '${detail.substring(detail.length - 200)}…' : detail}';
-      _showOsd(t.video_clip_export_failed(reason: reason));
+      _showOsd(
+        t.video_clip_export_failed(reason: reason),
+        severity: ToastSeverity.error,
+      );
     }
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
   }
@@ -302,13 +326,19 @@ extension _VideoClipExport on _VideoHibikiPageState {
         if (savePath != null) {
           final String finalPath = _uniqueScreenshotSavePath(savePath);
           await tmp.copy(finalPath);
-          _showOsd(t.video_screenshot_saved_to(path: finalPath));
+          _showOsd(
+            t.video_screenshot_saved_to(path: finalPath),
+            severity: ToastSeverity.success,
+          );
         }
       } else {
         await HibikiShare.shareFiles(<XFile>[
           XFile(tmp.path, mimeType: 'image/jpeg'),
         ], subject: screenshotName);
-        _showOsd(t.video_screenshot_ready(file: screenshotName));
+        _showOsd(
+          t.video_screenshot_ready(file: screenshotName),
+          severity: ToastSeverity.success,
+        );
       }
     } catch (e, stack) {
       debugPrint('[VideoHibikiPage] screenshot save failed: $e\n$stack');
@@ -349,6 +379,7 @@ extension _VideoClipExport on _VideoHibikiPageState {
       t.video_screenshot_failed_reason(
         reason: text.isEmpty ? 'unknown error' : text,
       ),
+      severity: ToastSeverity.error,
     );
   }
 }

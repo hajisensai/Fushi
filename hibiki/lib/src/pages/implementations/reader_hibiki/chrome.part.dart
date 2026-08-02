@@ -396,7 +396,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           return;
         case 'copy':
           await Clipboard.setData(ClipboardData(text: selectedText));
-          HibikiToast.show(msg: t.copied_to_clipboard);
+          HibikiToast.show(
+              msg: t.copied_to_clipboard, severity: ToastSeverity.success);
           // 复制是终结动作：清掉刻意保留的原生选区，和移动端拖选菜单的 'copy'
           // （_clearReaderAppSelection）对齐。否则残留的原生蓝色选区会一直卡住后续
           // 查词（见 webview.part.dart pointerup 里对 nativeMoved 的处理）。BUG-927。
@@ -594,14 +595,16 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         return;
       case 'copy':
         await Clipboard.setData(ClipboardData(text: data.text));
-        HibikiToast.show(msg: t.copied_to_clipboard);
+        HibikiToast.show(
+            msg: t.copied_to_clipboard, severity: ToastSeverity.success);
         await _clearReaderAppSelection();
         return;
       case 'share':
         final bool shared =
             await SelectionExternalActions.instance.shareText(data.text);
         if (mounted && !shared) {
-          HibikiToast.show(msg: t.selection_share_failed);
+          HibikiToast.show(
+              msg: t.selection_share_failed, severity: ToastSeverity.error);
         }
         await _clearReaderAppSelection();
         return;
@@ -609,7 +612,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         final bool opened =
             await SelectionExternalActions.instance.searchWeb(data.text);
         if (mounted && !opened) {
-          HibikiToast.show(msg: t.selection_web_search_unavailable);
+          HibikiToast.show(
+              msg: t.selection_web_search_unavailable,
+              severity: ToastSeverity.error);
         }
         await _clearReaderAppSelection();
         return;
@@ -762,7 +767,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   Future<void> _exportAudiobookClipFromSelectionData(
       ReaderSelectionData data) async {
     if (data.text.isEmpty) {
-      HibikiToast.show(msg: t.audiobook_export_clip_no_text);
+      HibikiToast.show(
+          msg: t.audiobook_export_clip_no_text, severity: ToastSeverity.error);
       return;
     }
     await _fillLookupStateFromSelectionData(data, extractNativeImages: false);
@@ -854,7 +860,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     if (!mounted) return;
     if (data == null) {
       // 无选区 / 解析失败：走与 _exportAudiobookClip 空选区分支一致的兜底文案。
-      HibikiToast.show(msg: t.audiobook_export_clip_no_text);
+      HibikiToast.show(
+          msg: t.audiobook_export_clip_no_text, severity: ToastSeverity.error);
       return;
     }
     _exportAudiobookClip();
@@ -863,7 +870,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   Future<void> _shareReaderImage(String imgUrl) async {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) {
-      HibikiToast.show(msg: t.reader_image_file_unavailable);
+      HibikiToast.show(
+          msg: t.reader_image_file_unavailable, severity: ToastSeverity.error);
       return;
     }
     try {
@@ -872,14 +880,17 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         subject: p.basename(file.path),
       );
     } catch (e) {
-      HibikiToast.show(msg: t.reader_image_share_failed(error: e));
+      HibikiToast.show(
+          msg: t.reader_image_share_failed(error: e),
+          severity: ToastSeverity.error);
     }
   }
 
   Future<void> _copyReaderImageToClipboard(String imgUrl) async {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) {
-      HibikiToast.show(msg: t.reader_image_file_unavailable);
+      HibikiToast.show(
+          msg: t.reader_image_file_unavailable, severity: ToastSeverity.error);
       return;
     }
     try {
@@ -887,9 +898,12 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         'copyImageFile',
         <String, String>{'path': file.path},
       );
-      HibikiToast.show(msg: t.copied_to_clipboard);
+      HibikiToast.show(
+          msg: t.copied_to_clipboard, severity: ToastSeverity.success);
     } catch (e) {
-      HibikiToast.show(msg: t.reader_image_copy_failed(error: e));
+      HibikiToast.show(
+          msg: t.reader_image_copy_failed(error: e),
+          severity: ToastSeverity.error);
     }
   }
 
@@ -2107,7 +2121,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     final String sentence =
         appModel.currentMediaSource?.currentSentence.text ?? '';
     if (sentence.isEmpty) {
-      HibikiToast.show(msg: t.no_sentence_selected);
+      HibikiToast.show(
+          msg: t.no_sentence_selected, severity: ToastSeverity.error);
       return;
     }
 
@@ -2146,7 +2161,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       if (sentenceRange != null || _lyricsMode) {
         await _refreshSectionHighlights(section);
       }
-      HibikiToast.show(msg: t.favorite_removed);
+      HibikiToast.show(
+          msg: t.favorite_removed, severity: ToastSeverity.success);
       return;
     }
 
@@ -2171,7 +2187,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     if (sentenceRange != null || _lyricsMode) {
       await _refreshSectionHighlights(section);
     }
-    HibikiToast.show(msg: t.favorite_added);
+    HibikiToast.show(msg: t.favorite_added, severity: ToastSeverity.success);
   }
 
   /// TODO-1308 问题②（BUG-696 根因①）：书内收藏面板跳转的唯一真实路径——quick

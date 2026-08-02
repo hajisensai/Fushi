@@ -27,6 +27,7 @@ import 'package:hibiki/src/ocr/ocr_types.dart' show OcrRect;
 import 'package:hibiki/src/media/manga/manga_overlay_html.dart';
 import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
 import 'package:hibiki/src/media/manga/manga_reading_stats.dart';
+import 'package:hibiki/src/media/manga/manga_view_prefs.dart';
 import 'package:hibiki/src/media/manga/manga_spread_model.dart';
 import 'package:hibiki/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_library.dart';
@@ -40,6 +41,8 @@ import 'package:hibiki/src/media/manga/ocr/manga_box_rescan.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:hibiki/src/media/manga/reader/manga_rescan_result_sheet.dart';
+import 'package:hibiki/src/media/manga/reader/manga_volume_key_paging_controller.dart';
+import 'package:hibiki/src/media/manga/reader/manga_zoom_preference_debouncer.dart';
 import 'package:hibiki/src/focus/page_focus_ownership.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
     show InputBinding, ModifierKey, MouseBinding, activeModifierKeys;
@@ -97,7 +100,7 @@ enum MangaReaderInputAction {
   backOrExit,
 }
 
-enum _MangaReaderInputSource { flutter, nativeWebView }
+enum _MangaReaderInputSource { flutter, nativeWebView, volumeKey }
 
 /// Serializes burst page-turn input across asynchronous WebView window loads.
 ///
@@ -597,6 +600,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   String _spreadDirection = 'rtl';
   int _zoomPercent = 100;
 
+  /// 观看偏好快照（打开书时从 [AppModel] 读一次，随文档注入 WebView）。
+  /// 与 [_zoomPercent] 不同，这三项没有页内切换入口，只在设置里改。
+  int _zoomSensitivity = kMangaZoomSensitivityDefault;
+  MangaPageAnimation _pageAnimation = MangaPageAnimation.slide;
+  bool _tapZonePaging = true;
+
   /// 最近一次实际生效的布局（由 [_buildSpreadsFor] 记账），didChangeMetrics
   /// 只在解析结果真变时才重建 spread 序列，避免键盘弹出等无关 metrics 抖动。
   MangaPageLayout _pageLayout = MangaPageLayout.single;
@@ -606,6 +615,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   double _currentFraction = 0;
   Timer? _progressDebounce;
   Timer? _onlineGeometryPersistDebounce;
+  MangaZoomPreferenceDebouncer? _zoomPreferenceDebouncer;
   int _lastSavedPage = -1;
   double _lastSavedFraction = -1;
 
@@ -758,6 +768,16 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   @override
   void initState() {
     super.initState();
+    _volumeKeyPagingController = MangaVolumeKeyPagingController(
+      onPrevious: () => _executeReaderInputAction(
+        MangaReaderInputAction.previous,
+        source: _MangaReaderInputSource.volumeKey,
+      ),
+      onNext: () => _executeReaderInputAction(
+        MangaReaderInputAction.next,
+        source: _MangaReaderInputSource.volumeKey,
+      ),
+    );
     WidgetsBinding.instance.addObserver(this);
     // 进程退出兜底：把未落盘的页码 flush 掉（与 EPUB/PDF 阅读器同纪律）。
     ExitFlushRegistry.instance.register(_flushPosition);
@@ -767,6 +787,8 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
 
   @override
   void dispose() {
+    // 交还音量键所有权：必须早于其它拆栈，且无条件执行。
+    _volumeKeyPagingController.dispose();
     ExitFlushRegistry.instance.unregister(_flushPosition);
     final MangaBoxRescanService? rescanService = _rescanService;
     _rescanService = null;
@@ -779,6 +801,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     _windowGate.abandon();
     _progressDebounce?.cancel();
     _onlineGeometryPersistDebounce?.cancel();
+    final MangaZoomPreferenceDebouncer? zoomDebouncer =
+        _zoomPreferenceDebouncer;
+    _zoomPreferenceDebouncer = null;
+    if (zoomDebouncer != null) unawaited(zoomDebouncer.dispose());
     _dictionaryTurnDismissTimer?.cancel();
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;
@@ -920,7 +946,13 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       appModel.mangaSpreadPreference,
     );
     _spreadDirection = appModel.mangaReadingDirection == 'ltr' ? 'ltr' : 'rtl';
-    _zoomPercent = appModel.mangaZoomPercent.clamp(50, 200);
+    _zoomPercent = appModel.mangaZoomPercent
+        .clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent);
+    _zoomSensitivity = appModel.mangaZoomSensitivity
+        .clamp(kMangaZoomSensitivityMin, kMangaZoomSensitivityMax);
+    _pageAnimation = MangaPageAnimationKey.fromKey(appModel.mangaPageAnimation);
+    _tapZonePaging = appModel.mangaTapZonePaging;
+    _applyVolumeKeyPaging(appModel.mangaVolumeKeyPaging);
 
     // 阅读模式：用户覆盖优先，null 走自动判定（页图长宽比中位数）。
     final MangaReadingMode mode =
@@ -1153,7 +1185,13 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       appModel.mangaSpreadPreference,
     );
     _spreadDirection = appModel.mangaReadingDirection == 'ltr' ? 'ltr' : 'rtl';
-    _zoomPercent = appModel.mangaZoomPercent.clamp(50, 200);
+    _zoomPercent = appModel.mangaZoomPercent
+        .clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent);
+    _zoomSensitivity = appModel.mangaZoomSensitivity
+        .clamp(kMangaZoomSensitivityMin, kMangaZoomSensitivityMax);
+    _pageAnimation = MangaPageAnimationKey.fromKey(appModel.mangaPageAnimation);
+    _tapZonePaging = appModel.mangaTapZonePaging;
+    _applyVolumeKeyPaging(appModel.mangaVolumeKeyPaging);
     final EpubBookRow row = persistedRow != null
         ? persistedRow.copyWith(
             epubPath: p.basename(mangaJson.path),
@@ -1652,6 +1690,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       restoreFraction: isWebtoon ? _currentFraction : 0,
       documentGeneration: documentGeneration,
       ocrPageIndices: keptPages,
+      zoomSensitivity: _zoomSensitivity,
+      pageAnimation: _pageAnimation,
+      tapZonePaging: _tapZonePaging,
     );
   }
 
@@ -1837,6 +1878,22 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   _MangaReaderInputSource? _lastReaderInputSource;
   DateTime? _lastReaderInputAt;
   Timer? _dictionaryTurnDismissTimer;
+
+  /// 是否已接管音量键。
+  ///
+  /// [VolumeKeyChannel] 是**进程级单例**，EPUB 阅读器也会往同一个 handler 槽里写
+  /// （`audiobook.part.dart` 的 `_setupVolumeKeyHandlers` 无条件覆盖）。漫画页接管后
+  /// 必须在 dispose 里交还——清 handler 并关掉原生拦截，否则退出漫画后音量键继续被
+  /// `MainActivity.dispatchKeyEvent` 吞掉，用户调不动系统音量（BUG-196 的老坑）。
+  late final MangaVolumeKeyPagingController _volumeKeyPagingController;
+
+  void _applyVolumeKeyPaging(bool enabled) {
+    // 只有 Android 侧 dispatchKeyEvent 会转发音量键；其它平台连通道都没有。
+    _volumeKeyPagingController.apply(
+      enabled: enabled,
+      platformSupported: Platform.isAndroid,
+    );
+  }
 
   void _executeReaderInputAction(
     MangaReaderInputAction action, {
@@ -2137,7 +2194,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           );
           if (!mounted) return;
           setState(() => _wholeVolumeOcrRunning = false);
-          HibikiToast.show(msg: '${t.manga_ocr_wizard_failed}: $error');
+          HibikiToast.show(
+            msg: '${t.manga_ocr_wizard_failed}: $error',
+            severity: ToastSeverity.error,
+          );
         },
         onDone: () {
           _wholeVolumeOcrSubscription = null;
@@ -2153,7 +2213,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         stack,
       );
       if (mounted) {
-        HibikiToast.show(msg: '${t.manga_ocr_wizard_failed}: $error');
+        HibikiToast.show(
+          msg: '${t.manga_ocr_wizard_failed}: $error',
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       if (mounted) setState(() => _wholeVolumeOcrOpen = false);
@@ -2208,6 +2271,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         engine: acceleration.label,
         reason: acceleration.degradeReasons.join('; '),
       ),
+      severity: ToastSeverity.warning,
     );
   }
 
@@ -2258,7 +2322,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         await _replacePageOcrOverlay(pageIndex, payload.images[pageIndex]);
       }
     }
-    HibikiToast.show(msg: t.manga_ocr_wizard_done);
+    // 整卷 OCR 只是就地重写已入库书的 manga.json，没有发生任何导入：这里必须用
+    // OCR 语义的文案，不能复用向导的「漫画已导入」（用户在阅读器里跑完 OCR 却看到
+    // 「导入已完成」）。
+    HibikiToast.show(msg: t.manga_ocr_done, severity: ToastSeverity.success);
   }
 
   void _cancelWholeVolumeOcr() {
@@ -2304,14 +2371,20 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     final MangaBoxRescanService service =
         _rescanService ??= MangaBoxRescanService();
     if (!service.isLocalRescanSupported) {
-      HibikiToast.show(msg: t.manga_ocr_unsupported);
+      HibikiToast.show(
+        msg: t.manga_ocr_unsupported,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     if (!_rescanModelReady) {
       await _refreshRescanModelReady();
       if (!mounted) return;
       if (!_rescanModelReady) {
-        HibikiToast.show(msg: t.manga_rescan_model_missing);
+        HibikiToast.show(
+          msg: t.manga_rescan_model_missing,
+          severity: ToastSeverity.error,
+        );
         return;
       }
     }
@@ -2326,7 +2399,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       source: 'window.__mangaSetRescanMode && '
           'window.__mangaSetRescanMode(${on ? 'true' : 'false'});',
     );
-    if (on) HibikiToast.show(msg: t.manga_rescan_hint);
+    if (on) {
+      HibikiToast.show(
+        msg: t.manga_rescan_hint,
+        severity: ToastSeverity.info,
+      );
+    }
   }
 
   /// JS 框选回传（`onMangaBoxSelected`）：payload 是
@@ -2357,11 +2435,17 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       MangaHibikiPage.mangaImageRelativePath(payload.images[pageIndex].url),
     );
     if (imagePath == null) {
-      HibikiToast.show(msg: t.manga_rescan_failed);
+      HibikiToast.show(
+        msg: t.manga_rescan_failed,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     _rescanBusy = true;
-    HibikiToast.show(msg: t.manga_rescan_running);
+    HibikiToast.show(
+      msg: t.manga_rescan_running,
+      severity: ToastSeverity.info,
+    );
     try {
       final MangaBoxRescanService service =
           _rescanService ??= MangaBoxRescanService();
@@ -2376,7 +2460,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       );
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaHibikiPage.rescan', error, stack);
-      if (mounted) HibikiToast.show(msg: t.manga_rescan_failed);
+      if (mounted) {
+        HibikiToast.show(
+          msg: t.manga_rescan_failed,
+          severity: ToastSeverity.error,
+        );
+      }
     } finally {
       _rescanBusy = false;
     }
@@ -2466,10 +2555,18 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       if (!mounted) return;
       setState(() => _payload = payload);
       await _loadInitialWindow();
-      HibikiToast.show(msg: t.manga_rescan_writeback_done);
+      HibikiToast.show(
+        msg: t.manga_rescan_writeback_done,
+        severity: ToastSeverity.success,
+      );
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaHibikiPage.rescanWrite', error, stack);
-      if (mounted) HibikiToast.show(msg: t.manga_rescan_writeback_failed);
+      if (mounted) {
+        HibikiToast.show(
+          msg: t.manga_rescan_writeback_failed,
+          severity: ToastSeverity.error,
+        );
+      }
     }
   }
 
@@ -2838,14 +2935,22 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   }
 
   Future<void> _setZoomPercent(int value) async {
-    final int normalized = value.clamp(50, 200);
+    final int normalized =
+        value.clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent);
     if (_zoomPercent == normalized) return;
     setState(() => _zoomPercent = normalized);
+    _zoomPreferenceDebouncer?.discard();
     await appModel.setMangaZoomPercent(normalized);
     await _controller?.evaluateJavascript(
       source: 'window.__mangaSetZoom && '
           'window.__mangaSetZoom($normalized);',
     );
+  }
+
+  void _queueZoomPreferencePersist(int value) {
+    (_zoomPreferenceDebouncer ??= MangaZoomPreferenceDebouncer(
+      persist: appModel.setMangaZoomPercent,
+    )).queue(value);
   }
 
   Future<void> _jumpToPage(int oneBasedPage) async {
@@ -2943,12 +3048,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         ),
         PopupMenuItem<_MangaContextAction>(
           value: _MangaContextAction.zoomIn,
-          enabled: _zoomPercent < 200,
+          enabled: _zoomPercent < kMangaZoomMaxPercent,
           child: Text('${t.manga_zoom} + ($_zoomPercent%)'),
         ),
         PopupMenuItem<_MangaContextAction>(
           value: _MangaContextAction.zoomOut,
-          enabled: _zoomPercent > 50,
+          enabled: _zoomPercent > kMangaZoomMinPercent,
           child: Text('${t.manga_zoom} − ($_zoomPercent%)'),
         ),
       ],
@@ -3330,14 +3435,15 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
               _ => null,
             };
             if (value == null) return;
-            final int normalized = value.clamp(50, 200);
+            final int normalized =
+                value.clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent);
             if (_zoomPercent == normalized) return;
             if (mounted) {
               setState(() => _zoomPercent = normalized);
             } else {
               _zoomPercent = normalized;
             }
-            unawaited(appModel.setMangaZoomPercent(normalized));
+            _queueZoomPreferencePersist(normalized);
           },
         );
         // webtoon 滚动报告：更新 fraction/页码（绝不重载）。

@@ -48,8 +48,10 @@ SettingsDestination buildDownloadsDestination() {
     ],
     // 内联既有 torrent 设置组件（不改写）。包一层 AdaptiveSettingsSection 让它拿到
     // 与其它 section 一致的卡片表面（body 契约：自带 section 布局、不自带脚手架/滚动）。
+    // constrainWidth:false —— 下载页那套「560 居中限宽」在设置详情 pane 里会让本组
+    // 左边缘变成 (paneWidth-560)/2，与其它 12 个分类的设置行完全对不齐。
     body: (SettingsContext context) => const AdaptiveSettingsSection(
-      children: <Widget>[TorrentSettingsSection()],
+      children: <Widget>[TorrentSettingsSection(constrainWidth: false)],
     ),
   );
 }

@@ -27,6 +27,9 @@ import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/video_loading_overlay.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
+// 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 HibikiToast
+// （BUG-931 有守卫），故刻意不 import 整套 toast API。
+import 'package:hibiki/src/utils/misc/toast_severity.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
@@ -590,11 +593,18 @@ class _VideoOsdMessage {
     this.icon,
     this.progress,
     this.prominent = false,
+    this.severity = ToastSeverity.neutral,
   });
 
   final String message;
   final IconData? icon;
   final double? progress;
+
+  /// 语义配色。左上角 OSD 此前**没有任何颜色参数**（70 处调用全恒灰），成功与失败
+  /// 长得一模一样——包括视频页制卡：`describeMineOutcome` 早就算出了状态，却只被
+  /// 拿去选 `prominent` 布尔，颜色信息整个丢掉。与底部 toast 共用同一套语义
+  /// （[ToastSeverity]），保持两套通知系统同一门语言。
+  final ToastSeverity severity;
 
   /// TODO-971：突出变体（制卡成功用）。普通 OSD 沿用音量/亮度同款左上角小角标，
   /// 太轻易被忽略；制卡成功这类用户主动操作的确认改成居中、更大字号、停留更久的
@@ -3195,7 +3205,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _failed = false;
       _failReason = null;
     });
-    _showOsd(t.video_resource_relink_success);
+    _showOsd(t.video_resource_relink_success, severity: ToastSeverity.success);
     await _loadSingle(updated);
   }
 
@@ -3252,7 +3262,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     if (!result.shouldNotifyFailure) return;
     final String label = result.source?.label ?? t.video_menu_subtitle_track;
-    _showOsd(t.video_subtitle_load_failed(label: label));
+    _showOsd(
+      t.video_subtitle_load_failed(label: label),
+      severity: ToastSeverity.error,
+    );
   }
 
   /// 位置持久化（controller 每秒至多一次回调）。
@@ -6030,7 +6043,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _toggleFavoriteCurrentCue() async {
     final AudioCue? cue = _currentCueForAction();
     if (cue == null || cue.text.trim().isEmpty) {
-      _showOsd(t.no_sentence_selected);
+      _showOsd(t.no_sentence_selected, severity: ToastSeverity.error);
       return;
     }
     // BUG-931：收藏不再唤起 media_kit 控制条——原先那句 poke 会派发合成 hover 把底栏
@@ -6285,7 +6298,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         await RenderBackendService.instance.setImpellerDisabled(true);
     if (!ok || !appModel.platformServices.lifecycle.supportsRestart) {
       // pref 未写成（非 Android）或平台不支持自动重启：降级提示手动重开。
-      if (mounted) _showOsd(t.render_restart_required);
+      if (mounted) {
+        _showOsd(t.render_restart_required, severity: ToastSeverity.warning);
+      }
       return;
     }
     try {
@@ -6293,7 +6308,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     } catch (e) {
       // 起新进程失败（Process.start 抛错等）→ 降级提示手动重开。
       debugPrint('[render] switch to Skia restart failed: $e');
-      if (mounted) _showOsd(t.render_restart_required);
+      if (mounted) {
+        _showOsd(t.render_restart_required, severity: ToastSeverity.warning);
+      }
     }
   }
 
@@ -6345,17 +6362,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     if (files.subtitles.isNotEmpty) {
       debugPrint('[hibiki-drop] [video-playback] intent=unsupportedSubtitle');
-      _showOsd(t.video_subtitle_import_unsupported);
+      _showOsd(
+        t.video_subtitle_import_unsupported,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     if (files.audios.isNotEmpty && files.videos.isEmpty) {
       debugPrint('[hibiki-drop] [video-playback] intent=unsupportedAudio');
-      _showOsd(t.video_drop_audio_unsupported);
+      _showOsd(t.video_drop_audio_unsupported, severity: ToastSeverity.error);
       return;
     }
     if (files.hasAny) {
       debugPrint('[hibiki-drop] [video-playback] intent=unsupportedSurface');
-      _showOsd(t.video_drop_subtitle_only);
+      _showOsd(t.video_drop_subtitle_only, severity: ToastSeverity.error);
     }
   }
 

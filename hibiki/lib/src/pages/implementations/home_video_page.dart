@@ -818,6 +818,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         n: dropped + _selection.length,
         m: dropped,
       ),
+      severity: ToastSeverity.warning,
     );
     return _selection.isNotEmpty;
   }
@@ -919,7 +920,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             : collectionCount == 0
                 ? t.batch_delete_success_video(n: deleted)
                 : t.batch_dissolve_success(m: dissolved);
-    HibikiToast.show(msg: successMsg);
+    HibikiToast.show(
+      msg: successMsg,
+      severity: deleted > 0 || dissolved > 0
+          ? ToastSeverity.success
+          : ToastSeverity.warning,
+    );
   }
 
   Future<void> _waitForVideoCardsToUnmount() async {
@@ -947,7 +953,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (_selectedUids.isEmpty) return;
     final List<BookTagRow>? allTags = ref.read(allTagsProvider).valueOrNull;
     if (allTags == null || allTags.isEmpty) {
-      HibikiToast.show(msg: t.tag_no_tags_hint);
+      HibikiToast.show(msg: t.tag_no_tags_hint, severity: ToastSeverity.info);
       return;
     }
     await showAppDialog<void>(
@@ -1239,7 +1245,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     _exitSelectionMode();
     await _loadLibraryMaps();
-    HibikiToast.show(msg: t.series_created);
+    HibikiToast.show(msg: t.series_created, severity: ToastSeverity.success);
   }
 
   /// 档2：恰 1 合集 + 若干散卡 → 散卡并入该合集（不弹命名）。
@@ -1254,7 +1260,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     _exitSelectionMode();
     await _loadLibraryMaps();
-    HibikiToast.show(msg: t.batch_add_to_collection_success(n: refs.length));
+    HibikiToast.show(
+      msg: t.batch_add_to_collection_success(n: refs.length),
+      severity: ToastSeverity.success,
+    );
   }
 
   /// 档3：≥2 合集（可带散卡）→ 合并成一个。目标 = 成员最多合集（其名作默认名，
@@ -1309,7 +1318,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     _exitSelectionMode();
     await _loadLibraryMaps();
-    HibikiToast.show(msg: t.collection_merged);
+    HibikiToast.show(msg: t.collection_merged, severity: ToastSeverity.success);
   }
 
   /// 打开收藏夹页（书签 + 收藏句子，含视频来源的收藏句子，TODO-047 ③a）。与书架页头
@@ -1824,7 +1833,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     if (outcome != CollectionAddOutcome.added || !mounted) return;
     await _loadLibraryMaps();
-    HibikiToast.show(msg: t.batch_add_to_collection_success(n: 1));
+    HibikiToast.show(
+      msg: t.batch_add_to_collection_success(n: 1),
+      severity: ToastSeverity.success,
+    );
   }
 
   Future<void> _editTags(VideoBookRow book) async {
@@ -1846,7 +1858,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final bool alreadyHas =
         existing?[bookUid]?.any((BookTagRow t) => t.id == tag.id) ?? false;
     if (alreadyHas) {
-      HibikiToast.show(msg: t.tag_already_on_book(name: tag.name));
+      HibikiToast.show(
+        msg: t.tag_already_on_book(name: tag.name),
+        severity: ToastSeverity.warning,
+      );
       return;
     }
 
@@ -1854,7 +1869,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ref.invalidate(videoBookTagMapProvider);
     ref.invalidate(filteredVideoBookUidsProvider);
     if (mounted) {
-      HibikiToast.show(msg: t.tag_added_to_video(name: tag.name));
+      HibikiToast.show(
+        msg: t.tag_added_to_video(name: tag.name),
+        severity: ToastSeverity.success,
+      );
     }
   }
 
@@ -1869,14 +1887,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final List<BookTagRow> existing =
         await db.getTagsForCollection(collectionId);
     if (existing.any((BookTagRow t) => t.id == tag.id)) {
-      HibikiToast.show(msg: t.tag_already_on_collection(name: tag.name));
+      HibikiToast.show(
+        msg: t.tag_already_on_collection(name: tag.name),
+        severity: ToastSeverity.warning,
+      );
       return;
     }
     await db.addTagToCollection(collectionId, tag.id);
     ref.invalidate(collectionTagMapProvider);
     ref.invalidate(filteredCollectionIdsProvider);
     if (mounted) {
-      HibikiToast.show(msg: t.tag_added_to_collection(name: tag.name));
+      HibikiToast.show(
+        msg: t.tag_added_to_collection(name: tag.name),
+        severity: ToastSeverity.success,
+      );
     }
   }
 
@@ -5116,6 +5140,7 @@ class _VideoBatchTagPickerDialogState
           name: tag.name,
           n: widget.selectedUids.length,
         ),
+        severity: ToastSeverity.success,
       );
     }
     for (final int tagId in _removeTagIds) {
@@ -5126,6 +5151,7 @@ class _VideoBatchTagPickerDialogState
           name: tag.name,
           n: widget.selectedUids.length,
         ),
+        severity: ToastSeverity.success,
       );
     }
     Navigator.pop(context);

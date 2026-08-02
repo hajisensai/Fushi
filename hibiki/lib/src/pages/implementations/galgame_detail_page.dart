@@ -868,7 +868,10 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
     final String rawDate = _releaseDate.text.trim();
     final String? date = rawDate.isEmpty ? null : draftDate(rawDate);
     if (rawDate.isNotEmpty && date == null) {
-      HibikiToast.show(msg: t.game_edit_invalid_date);
+      HibikiToast.show(
+        msg: t.game_edit_invalid_date,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     final GalgameEntry game = widget.game;
@@ -906,7 +909,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
     await widget.repo.updateEntry(next);
     await widget.onSaved();
     if (!mounted) return;
-    HibikiToast.show(msg: t.game_edit_saved);
+    HibikiToast.show(msg: t.game_edit_saved, severity: ToastSeverity.success);
   }
 
   /// 刮削：打开统一刮削弹窗（与库页卡菜单「刮削元数据」同一个入口，

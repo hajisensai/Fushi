@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-904 源码守卫：阅读器正文 WebView native 实例创建失败时可见恢复，不再永久 spinner。
 ///
 /// 根因：Windows 反复开关书后 native WebView2 实例创建失败抛
@@ -79,7 +81,9 @@ void main() {
     expect(block.contains('kReaderWebViewCreationFailedSentinel'), isTrue,
         reason: 'onReceivedError 必须先判 sentinel 区分创建失败');
     expect(
-        block.contains('HibikiToast.show(msg: t.reader_open_failed)'), isTrue,
+        compactCode(block)
+            .contains(compactCode('HibikiToast.show(msg: t.reader_open_failed,')),
+        isTrue,
         reason: '命中创建失败必须提示用户打开失败');
     expect(block.contains('Navigator.of(context).pop()'), isTrue,
         reason: '命中创建失败必须退回书架，不让 spinner 永挂');

@@ -9,7 +9,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki/utils.dart';
 
-/// 设置区「漫画 OCR」组的正文（内联进阅读设置分类）。
+/// 设置区「漫画 OCR」组的正文（隶属**漫画**设置分类）。
 ///
 /// 内容：默认引擎下拉、内置 OCR 模型状态行（已下载/未下载 + 体积）、下载按钮
 /// （进度条 + 可取消）、删除按钮（二次确认）。本地模型只在支持整卷 ONNX 的平台
@@ -161,13 +161,19 @@ class _MangaOcrSettingsSectionState
           _downloading = false;
           _downloadSub = null;
         });
-        HibikiToast.show(msg: t.manga_ocr_download_failed);
+        HibikiToast.show(
+          msg: t.manga_ocr_download_failed,
+          severity: ToastSeverity.error,
+        );
       },
       onDone: () async {
         _downloadSub = null;
         if (!mounted) return;
         setState(() => _downloading = false);
-        HibikiToast.show(msg: t.manga_ocr_download_done);
+        HibikiToast.show(
+          msg: t.manga_ocr_download_done,
+          severity: ToastSeverity.success,
+        );
         await _loadStatus();
       },
     );
@@ -206,7 +212,10 @@ class _MangaOcrSettingsSectionState
       if (mounted) setState(() => _deleting = false);
     }
     if (!mounted) return;
-    HibikiToast.show(msg: t.manga_ocr_delete_done);
+    HibikiToast.show(
+      msg: t.manga_ocr_delete_done,
+      severity: ToastSeverity.success,
+    );
     await _loadStatus();
   }
 
@@ -250,31 +259,50 @@ class _MangaOcrSettingsSectionState
     );
   }
 
+  /// 补齐标准设置行的水平内边距。
+  ///
+  /// [SettingsCustomItem] 是 `settings_schema_widgets.dart` 的 switch 里**唯一**
+  /// 不经过 `AdaptiveSettingsRow*` 的分支，而那 16px 横向 padding 正是由行控件自带
+  /// 的。于是本组件的裸内容贴在卡片边（x=0），同一张卡片里的模型状态行与「在线目录
+  /// 地址」行却在 x=16——用户看到的「漫画设置左右间距和其他设置不一样」就是这 16px。
+  /// 这里由组件自己补上，与制卡/媒体记录/配置方案那几个 body 逃生口的做法一致
+  /// （它们靠 `AdaptiveSettingsSection` + `AdaptiveSettingsRow` 天然拿到 16）。
+  Widget _inset(Widget child) {
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: HibikiDesignTokens.of(context).spacing.rowHorizontal,
+      ),
+      child: child,
+    );
+  }
+
   Widget _buildBody(ThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        _sectionLabel(theme, t.manga_ocr_section),
+        _inset(_sectionLabel(theme, t.manga_ocr_section)),
         // 引擎下拉全平台显示：出厂默认已是 Google Lens（会上传页面），把开关关在
         // 桌面里等于让移动端用户无法持久地退回离线引擎。外部 mokuro 是桌面工具，
         // 由下拉项自身 disable，不再靠整块 gating。
-        _buildEnginePreference(theme),
+        _inset(_buildEnginePreference(theme)),
         const SizedBox(height: 12),
         if (widget.service.isSupportedPlatform)
           _buildModelBlock(theme)
         else
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              t.manga_ocr_unsupported,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          _inset(
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                t.manga_ocr_unsupported,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
             ),
           ),
         // 外部 mokuro CLI 是桌面工具，仅桌面显示。
         if (isDesktopPlatform) ...<Widget>[
           const SizedBox(height: 16),
-          _buildExternalBlock(theme),
+          _inset(_buildExternalBlock(theme)),
         ],
       ],
     );
@@ -310,6 +338,13 @@ class _MangaOcrSettingsSectionState
           enabled: isDesktopPlatform,
           child: Text(t.manga_ocr_engine_external),
         ),
+        // 互联「配对主机代跑」：服务端/客户端链路早已完整（/api/ocr/job*），此前
+        // 只是没进偏好枚举，导致它永远只能被 auto 兜底顺序选中、无法显式指定。
+        // 移动端没有本地 ONNX 时这是唯一可用的整卷引擎。
+        DropdownMenuItem<MangaOcrEnginePreference>(
+          value: MangaOcrEnginePreference.pairedHost,
+          child: Text(t.manga_remote_ocr_engine),
+        ),
       ],
       onChanged: (MangaOcrEnginePreference? value) {
         if (value == null) return;
@@ -321,9 +356,11 @@ class _MangaOcrSettingsSectionState
 
   Widget _buildModelBlock(ThemeData theme) {
     if (_loadingStatus) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
-        child: LinearProgressIndicator(),
+      return _inset(
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: LinearProgressIndicator(),
+        ),
       );
     }
     final MangaOcrModelStatus? status = _status;
@@ -345,41 +382,47 @@ class _MangaOcrSettingsSectionState
         ),
         if (_downloading) ...<Widget>[
           const SizedBox(height: 8),
-          LinearProgressIndicator(value: _downloadProgress),
+          _inset(LinearProgressIndicator(value: _downloadProgress)),
           const SizedBox(height: 4),
           if (_downloadingFile != null)
-            Text(
-              t.manga_ocr_downloading_file(file: _downloadingFile!),
-              style: theme.textTheme.bodySmall,
+            _inset(
+              Text(
+                t.manga_ocr_downloading_file(file: _downloadingFile!),
+                style: theme.textTheme.bodySmall,
+              ),
             ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              onPressed: _cancelDownload,
-              child: Text(t.dialog_cancel),
+          _inset(
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: _cancelDownload,
+                child: Text(t.dialog_cancel),
+              ),
             ),
           ),
         ] else ...<Widget>[
           const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: ready
-                ? OutlinedButton.icon(
-                    onPressed: _deleting ? null : _confirmDelete,
-                    icon: _deleting
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.delete_outline, size: 18),
-                    label: Text(t.manga_ocr_delete),
-                  )
-                : FilledButton.icon(
-                    onPressed: _startDownload,
-                    icon: const Icon(Icons.download_outlined, size: 18),
-                    label: Text(t.manga_ocr_download),
-                  ),
+          _inset(
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ready
+                  ? OutlinedButton.icon(
+                      onPressed: _deleting ? null : _confirmDelete,
+                      icon: _deleting
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.delete_outline, size: 18),
+                      label: Text(t.manga_ocr_delete),
+                    )
+                  : FilledButton.icon(
+                      onPressed: _startDownload,
+                      icon: const Icon(Icons.download_outlined, size: 18),
+                      label: Text(t.manga_ocr_download),
+                    ),
+            ),
           ),
         ],
       ],

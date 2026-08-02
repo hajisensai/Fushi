@@ -519,7 +519,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       if (path == null || !mounted) return;
       final String ext = p.extension(path).toLowerCase().replaceFirst('.', '');
       if (!_alignmentExtensions.contains(ext)) {
-        HibikiToast.show(msg: t.import_unsupported_file_format(ext: '.$ext'));
+        HibikiToast.show(
+          msg: t.import_unsupported_file_format(ext: '.$ext'),
+          severity: ToastSeverity.error,
+        );
         return;
       }
       setState(() {
@@ -594,7 +597,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   Future<void> _doImport() async {
     if (!_hasAudioSource || (!widget.audioOnly && _alignmentPath == null)) {
-      HibikiToast.show(msg: t.audiobook_import_error);
+      HibikiToast.show(
+        msg: t.audiobook_import_error,
+        severity: ToastSeverity.error,
+      );
       return;
     }
 
@@ -623,6 +629,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           if (mounted) {
             HibikiToast.show(
               msg: t.import_unsupported_file_format(ext: '.$ext'),
+              severity: ToastSeverity.error,
             );
           }
           return;
@@ -785,7 +792,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         final String msg = tail == null
             ? t.audiobook_import_success
             : '${t.audiobook_import_success} · $tail';
-        HibikiToast.show(msg: msg);
+        HibikiToast.show(msg: msg, severity: ToastSeverity.success);
         Navigator.pop(context, true); // true = reload player
       }
     } on FileSystemException catch (e, stack) {
@@ -800,12 +807,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
               size: _formatBytes(grandTotal),
             ),
             toastLength: Toast.LENGTH_LONG,
+            severity: ToastSeverity.error,
           );
         } else {
           HibikiToast.show(
             msg: t.audiobook_import_error_copy_failed(
               name: e.path ?? '',
             ),
+            severity: ToastSeverity.error,
           );
         }
       }
@@ -813,7 +822,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       ErrorLogService.instance.log('AudiobookImport.doImport', e, stack);
       debugPrint('AudiobookImportDialog import error: $e');
       if (mounted) {
-        HibikiToast.show(msg: t.audiobook_import_error);
+        HibikiToast.show(
+          msg: t.audiobook_import_error,
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       if (mounted) {
@@ -827,7 +839,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   /// 字节写坏）。
   Future<void> _openReMatchSheet(Audiobook ab) async {
     if (!_hasEpub) {
-      HibikiToast.show(msg: t.ttu_not_bound_cannot_rematch);
+      HibikiToast.show(
+        msg: t.ttu_not_bound_cannot_rematch,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     await SasayakiRematch.promptAndRun(
@@ -1015,7 +1030,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       ErrorLogService.instance.log('AudiobookImport.deleteAudiobook', e, st);
       debugPrint('AudiobookImportDialog: deleteAudiobook failed: $e\n$st');
       if (mounted) {
-        HibikiToast.show(msg: t.audiobook_import_error);
+        HibikiToast.show(
+          msg: t.audiobook_import_error,
+          severity: ToastSeverity.error,
+        );
       }
       return;
     }

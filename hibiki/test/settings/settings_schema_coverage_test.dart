@@ -35,6 +35,18 @@ import '../helpers/test_platform_services.dart';
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 漫画观看偏好五项。写 prefsRepo（changed=true），生效点全部在**漫画阅读器的
+  // WebView 文档**里——这些值被注入成 CSS 过渡声明 / JS 常量（ZOOM_SENS、
+  // TAP_ZONE_PAGING、IS_RTL、PAGE_ANIM），widget harness 里没有 WebView，也就没有
+  // 可探的渲染输入。由 manga_overlay_html_test 逐项咬住：同一份生成器在不同参数下
+  // 必须产出不同的文档（缩放上下限/灵敏度、点击翻页开关与 RTL 镜像、三种翻页动画
+  // 各自的过渡声明），阅读方向另有既有的 RTL 几何用例。
+  'manga/Reading direction': 'test/media/manga/manga_overlay_html_test.dart',
+  'manga/Default zoom': 'test/media/manga/manga_overlay_html_test.dart',
+  'manga/Zoom sensitivity': 'test/media/manga/manga_overlay_html_test.dart',
+  'manga/Page turn animation': 'test/media/manga/manga_overlay_html_test.dart',
+  'manga/Tap edges to turn pages':
+      'test/media/manga/manga_overlay_html_test.dart',
   // galgame 窗口超分三态开关（PR#430）。写 prefsRepo（changed=true），生效点整条在
   // 本进程之外 —— 改写 Magpie 自己的 config.json、拉起 / 收掉一个独立的 Magpie 进程、
   // 由它去做全屏缩放，widget harness 里没有任何可探的渲染输入；而且它 Windows-only，

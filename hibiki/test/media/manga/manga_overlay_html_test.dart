@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/manga/manga_overlay_html.dart';
 import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
+import 'package:hibiki/src/media/manga/manga_view_prefs.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 
@@ -618,8 +619,14 @@ void main() {
       // wheel 回调必须 preventDefault（overflow:hidden 视口下消除无操作反馈）并按
       // deltaY 符号报 next/prev。
       expect(doc.contains('e.preventDefault()'), isTrue);
-      expect(doc.contains("d > 0 ? 'next' : 'prev'"), isTrue,
+      expect(doc.contains("dir > 0 ? 'next' : 'prev'"), isTrue,
           reason: 'wheel 必须按滚动方向报 next/prev');
+      // 翻页触发按**累计位移**而非「一个事件 = 一页」：鼠标一格立即翻，触控板碎
+      // delta 攒够才翻。旧实现首个事件就翻 + 320ms 全禁，滚轮上限约 3 页/秒。
+      expect(doc.contains('_wheelAccum'), isTrue,
+          reason: '滚轮翻页必须按累计 delta 触发，不能一个事件翻一页');
+      expect(doc.contains('_wheelLock = false; }, 110)'), isTrue,
+          reason: '滚轮合并窗口 110ms（旧 320ms 把翻页上限压到约 3 页/秒）');
     });
 
     test('webtoon IS_WEBTOON=true 运行时跳过 wheel→翻页（保留原生竖滚，BUG-051）', () {
@@ -761,11 +768,86 @@ void main() {
         inlineSelectionJs: '',
         zoomPercent: 100,
       );
-      expect(doc.contains('Math.min(2, Math.max(0.5'), isTrue);
+      // 缩放边界由参数注入（默认 50%..400%），不再是写死的 0.5/2。
+      expect(doc.contains('var ZOOM_MIN = 0.5;'), isTrue);
+      expect(doc.contains('var ZOOM_MAX = 4.0;'), isTrue);
       expect(doc.contains('rightDrag.startX) > 4'), isTrue);
       expect(doc.contains("callHandler('onMangaContextMenu'"), isTrue);
       expect(doc.contains("callHandler('onMangaZoomChanged'"), isTrue);
       expect(doc.contains('e.ctrlKey || e.metaKey'), isTrue);
+      // 滚轮缩放必须按 deltaY **幅值**做乘法缩放。旧实现只取符号、恒 ±0.1 加法步长
+      // （触控板与鼠标同等对待 + 高倍率下相对变化越来越小）＝「缩放极其不灵敏」。
+      expect(doc.contains('Math.exp(steps * 0.2 * ZOOM_SENS)'), isTrue,
+          reason: '滚轮缩放必须是按 delta 幅值的乘法缩放，不能是定长加法');
+      expect(doc.contains('e.deltaMode === 1'), isTrue,
+          reason: 'deltaMode 必须归一化，否则行/页模式步长完全不同');
+    });
+
+    test('缩放范围与灵敏度随参数注入，触屏有捏合缩放', () {
+      final String doc = mangaWindowDocument(
+        <MokuroImage>[_pageWithTwoBlocks()],
+        <String>['p.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+        zoomPercent: 100,
+        zoomMaxPercent: 300,
+        zoomSensitivity: 200,
+      );
+      expect(doc.contains('var ZOOM_MAX = 3.0;'), isTrue);
+      expect(doc.contains('var ZOOM_SENS = 2.0;'), isTrue);
+      // 触屏此前完全无法缩放：viewport 是 user-scalable=no（必须，否则浏览器原生
+      // 缩放与 #manga-canvas 的 transform 打架），而 JS 侧没有任何多指处理。
+      expect(doc.contains("e.pointerType === 'touch'"), isTrue,
+          reason: '必须自己处理触点，浏览器原生缩放被 user-scalable=no 禁掉了');
+      expect(doc.contains('_pinchGeom'), isTrue, reason: '必须有双指捏合几何');
+      expect(
+          doc.contains('Math.pow(g.dist / pinch.dist, ZOOM_SENS)'), isTrue,
+          reason: '灵敏度设置声明覆盖滚轮与捏合，pinch 比率也必须应用 ZOOM_SENS');
+      expect(doc.contains("addEventListener('pointermove'"), isTrue,
+          reason: '捏合需要 pointermove 才能跟手');
+    });
+
+    test('点击边缘翻页可关，且方向随 RTL 镜像', () {
+      String docFor({required bool tapZonePaging, required String direction}) =>
+          mangaWindowDocument(
+            <MokuroImage>[_pageWithTwoBlocks()],
+            <String>['p.jpg'],
+            mode: MangaReadingMode.spread,
+            spreadDirection: direction,
+            inlineSelectionJs: '',
+            tapZonePaging: tapZonePaging,
+          );
+      final String on = docFor(tapZonePaging: true, direction: 'rtl');
+      expect(on.contains('var TAP_ZONE_PAGING = true;'), isTrue);
+      expect(on.contains('var IS_RTL = true;'), isTrue);
+      // RTL 下左边缘前进（LTR 相反）——同一份 JS 靠 IS_RTL 分流。
+      expect(on.contains("IS_RTL ? 'next' : 'prev'"), isTrue);
+      final String off = docFor(tapZonePaging: false, direction: 'ltr');
+      expect(off.contains('var TAP_ZONE_PAGING = false;'), isTrue);
+      expect(off.contains('var IS_RTL = false;'), isTrue);
+    });
+
+    test('翻页动画偏好决定 #manga-root 过渡声明', () {
+      String docFor(MangaPageAnimation animation) => mangaWindowDocument(
+            <MokuroImage>[_pageWithTwoBlocks()],
+            <String>['p.jpg'],
+            mode: MangaReadingMode.spread,
+            spreadDirection: 'rtl',
+            inlineSelectionJs: '',
+            pageAnimation: animation,
+          );
+      expect(docFor(MangaPageAnimation.slide).contains('transition:transform '),
+          isTrue);
+      // none = 完全不声明过渡（要极限响应的用户）。
+      final String none = docFor(MangaPageAnimation.none);
+      expect(none.contains('transition:transform '), isFalse);
+      expect(none.contains('transition:opacity '), isFalse);
+      // fade 只过渡 opacity，位移在淡出后瞬时完成，否则会同时看到滑动与淡入淡出。
+      final String fade = docFor(MangaPageAnimation.fade);
+      expect(fade.contains('transition:opacity '), isTrue);
+      expect(fade.contains('transition:transform '), isFalse);
+      expect(fade.contains("PAGE_ANIM !== 'fade'"), isTrue);
     });
 
     test('window document exposes its navigation generation', () {

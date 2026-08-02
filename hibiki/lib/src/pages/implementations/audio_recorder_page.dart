@@ -406,7 +406,10 @@ class _AudioRecorderDialogPageState
       onPressed: () async {
         await _audioPlayer.stop();
         if (!await _recorder.hasPermission()) {
-          HibikiToast.show(msg: t.microphone_permission_denied);
+          HibikiToast.show(
+            msg: t.microphone_permission_denied,
+            severity: ToastSeverity.error,
+          );
           return;
         }
         if (!mounted) return;
@@ -438,7 +441,10 @@ class _AudioRecorderDialogPageState
 
   void executeSave() {
     if (_audioFile == null) {
-      HibikiToast.show(msg: t.no_audio_file);
+      HibikiToast.show(
+        msg: t.no_audio_file,
+        severity: ToastSeverity.error,
+      );
       return;
     }
 

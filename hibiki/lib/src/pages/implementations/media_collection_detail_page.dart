@@ -550,7 +550,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await widget.database.getCollectionScrapeMeta(widget.collection.id);
     if (!mounted) return;
     if (meta == null) {
-      HibikiToast.show(msg: t.collection_episode_scrape_unbound);
+      HibikiToast.show(
+        msg: t.collection_episode_scrape_unbound,
+        severity: ToastSeverity.info,
+      );
       return;
     }
     final String tmdbKey = resolveTmdbApiKey(
@@ -576,6 +579,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           msg: t.collection_episode_scrape_failed(
             error: outcome.errors.values.first,
           ),
+          severity: ToastSeverity.error,
         );
         return;
       }
@@ -584,6 +588,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           updated: outcome.updated,
           skipped: outcome.unmatched,
         ),
+        severity: ToastSeverity.success,
       );
       await _reload();
       widget.onChanged();
@@ -605,7 +610,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
     if (!mounted) return;
     if (proposals.isEmpty) {
-      HibikiToast.show(msg: t.collection_episode_rename_empty);
+      HibikiToast.show(
+        msg: t.collection_episode_rename_empty,
+        severity: ToastSeverity.info,
+      );
       return;
     }
     final List<EpisodeRenameProposal>? chosen =
@@ -634,9 +642,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           n: renamed,
           m: chosen.length - renamed,
         ),
+        severity: ToastSeverity.warning,
       );
     } else {
-      HibikiToast.show(msg: t.collection_episode_rename_apply(n: renamed));
+      HibikiToast.show(
+        msg: t.collection_episode_rename_apply(n: renamed),
+        severity: ToastSeverity.success,
+      );
     }
     await _reload();
     widget.onChanged();
@@ -746,16 +758,23 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           }
         }
         if (episodeId == null) {
-          HibikiToast.show(msg: t.collection_episode_bangumi_not_found);
+          HibikiToast.show(
+            msg: t.collection_episode_bangumi_not_found,
+            severity: ToastSeverity.warning,
+          );
         }
       } else {
         // 集号都解析不出（文件名无集号且无集级刮削）：同样明示降级去向，
         // 不静默换成条目页（复核意见）。
-        HibikiToast.show(msg: t.collection_episode_bangumi_not_found);
+        HibikiToast.show(
+          msg: t.collection_episode_bangumi_not_found,
+          severity: ToastSeverity.warning,
+        );
       }
     } on ScrapeNetworkException catch (e) {
       HibikiToast.show(
         msg: t.collection_episode_bangumi_open_failed(error: e.toString()),
+        severity: ToastSeverity.error,
       );
     } finally {
       bangumi.close();
@@ -790,7 +809,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       }
     }
     if (firstMissing == null) {
-      HibikiToast.show(msg: t.collection_episode_no_missing);
+      HibikiToast.show(
+        msg: t.collection_episode_no_missing,
+        severity: ToastSeverity.info,
+      );
       return;
     }
     _openDownloadDialog(episodeNumber: firstMissing);
@@ -806,7 +828,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         widget.collection.id, MediaKind.video, ep.bookUid);
     if (!mounted) return;
     widget.onChanged();
-    HibikiToast.show(msg: t.collection_member_removed);
+    HibikiToast.show(
+      msg: t.collection_member_removed,
+      severity: ToastSeverity.success,
+    );
     final bool emptied =
         await widget.database.getMediaCollectionById(widget.collection.id) ==
             null;
@@ -899,7 +924,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     }
     if (!mounted) return;
     widget.onChanged();
-    HibikiToast.show(msg: t.collection_split_done(n: newIds.length));
+    HibikiToast.show(
+      msg: t.collection_split_done(n: newIds.length),
+      severity: ToastSeverity.success,
+    );
     if (!choice.keepOriginal) {
       Navigator.of(context).maybePop();
       return;

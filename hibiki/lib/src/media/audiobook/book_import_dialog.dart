@@ -544,7 +544,10 @@ class _BookImportDialogState extends State<BookImportDialog>
       if (attachedAudio) t.import_sidecar_audio(count: _audioPaths.length),
     ];
     if (parts.isNotEmpty && mounted) {
-      HibikiToast.show(msg: parts.join(' · '));
+      HibikiToast.show(
+        msg: parts.join(' · '),
+        severity: ToastSeverity.info,
+      );
     }
   }
 
@@ -569,7 +572,10 @@ class _BookImportDialogState extends State<BookImportDialog>
       if (path == null || !mounted) return;
       final String ext = p.extension(path).toLowerCase().replaceFirst('.', '');
       if (!_subtitleExtensions.contains(ext)) {
-        HibikiToast.show(msg: t.import_unsupported_file_format(ext: '.$ext'));
+        HibikiToast.show(
+          msg: t.import_unsupported_file_format(ext: '.$ext'),
+          severity: ToastSeverity.error,
+        );
         return;
       }
 
@@ -796,7 +802,10 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   Future<void> _doImport() async {
     if (_epubPath == null && !_hasSubtitles) {
-      HibikiToast.show(msg: t.srt_import_missing_input);
+      HibikiToast.show(
+        msg: t.srt_import_missing_input,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     // 兜底闸门：选/拖两条入口在收下路径时就已过 [_handoffIfManga]，但 initialEpubPath
@@ -806,12 +815,18 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (epubPath != null && await _handoffIfManga(epubPath)) return;
     if (!mounted) return;
     if (_epubPath != null && !_hasSubtitles && _audioPaths.isNotEmpty) {
-      HibikiToast.show(msg: t.srt_import_audio_needs_subtitle);
+      HibikiToast.show(
+        msg: t.srt_import_audio_needs_subtitle,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     final String title = _titleCtrl.text.trim();
     if (title.isEmpty) {
-      HibikiToast.show(msg: t.srt_import_missing_title);
+      HibikiToast.show(
+        msg: t.srt_import_missing_title,
+        severity: ToastSeverity.error,
+      );
       return;
     }
 
@@ -823,7 +838,10 @@ class _BookImportDialogState extends State<BookImportDialog>
       isCancelled: (Object e) => e is DuplicateImportCancelledException,
       onCancelled: () {
         if (mounted) {
-          HibikiToast.show(msg: t.book_import_duplicate_cancelled);
+          HibikiToast.show(
+            msg: t.book_import_duplicate_cancelled,
+            severity: ToastSeverity.info,
+          );
           Navigator.pop(context, false);
         }
       },
@@ -850,7 +868,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           final String msg = tail == null
               ? t.srt_import_success
               : '${t.srt_import_success} · $tail';
-          HibikiToast.show(msg: msg);
+          HibikiToast.show(msg: msg, severity: ToastSeverity.success);
           Navigator.pop(context, true);
         }
       },

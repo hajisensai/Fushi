@@ -22,7 +22,20 @@ const double kTorrentSettingsContentMaxWidth = 560;
 /// 从「设置→视频」搬到「下载」页——下载既已独立成页，配置就该在页内，不再埋进
 /// 视频设置。所有字段写 `QbConnectionConfig`（即时生效到内置引擎）。
 class TorrentSettingsSection extends ConsumerStatefulWidget {
-  const TorrentSettingsSection({super.key, this.desktopOverride});
+  const TorrentSettingsSection({
+    super.key,
+    this.desktopOverride,
+    this.constrainWidth = true,
+  });
+
+  /// 是否把正文收进 [kTorrentSettingsContentMaxWidth]（560）并水平居中。
+  ///
+  /// true（默认）= 下载页语境：整页只有这一组表单，居中限宽是为了让左侧文案与最右
+  /// 侧控件不至于隔着整块 4K 面板。
+  /// false = 嵌进「下载」设置分类的详情 pane：那里同屏还有别的设置卡片，居中限宽会
+  /// 让本组左边缘变成 `(paneWidth - 560) / 2`，与其它分类的行完全对不齐（用户反馈的
+  /// 「下载设置左右间距和其他设置不一样」）。此时改为与普通设置行同一条 16px 基线。
+  final bool constrainWidth;
 
   /// 仅测试注入：覆盖「本平台是否有内置引擎」的判据（BUG-1207 的平台门控）。
   /// null = 用真实 `dart:io` 平台判断。照搬 `book_import_dialog.dart` 的
@@ -163,6 +176,9 @@ class _TorrentSettingsSectionState
         icon: Icons.folder_open_outlined,
         showIcon: true,
         controlBelow: true,
+        // 嵌入设置详情时外层已经统一缩进 16，这里不能再叠一层（否则本行 32、
+        // 同卡片其它内容 16）。
+        horizontalPadding: widget.constrainWidth ? null : 0,
         onTap: _pickingFolder ? null : _changeDownloadFolder,
         trailing: Wrap(
           spacing: 8,
@@ -287,6 +303,7 @@ class _TorrentSettingsSectionState
       subtitle: subtitle,
       value: value,
       onChanged: onChanged,
+      horizontalPadding: widget.constrainWidth ? null : 0,
     );
   }
 
@@ -479,6 +496,7 @@ class _TorrentSettingsSectionState
             title: t.video_setting_torrent_limit_lan,
             subtitle: t.video_setting_torrent_limit_lan_hint,
             value: c.limitLocalPeers,
+            horizontalPadding: widget.constrainWidth ? null : 0,
             onChanged: (bool v) => _commit(
                 (QbConnectionConfig c) => c.copyWith(limitLocalPeers: v)),
           ),
@@ -486,6 +504,7 @@ class _TorrentSettingsSectionState
             title: t.video_setting_torrent_upload_enabled,
             subtitle: t.video_setting_torrent_upload_enabled_hint,
             value: c.uploadEnabled,
+            horizontalPadding: widget.constrainWidth ? null : 0,
             onChanged: (bool v) =>
                 _commit((QbConnectionConfig c) => c.copyWith(uploadEnabled: v)),
           ),
@@ -651,6 +670,19 @@ class _TorrentSettingsSectionState
         ],
       ],
     );
+    if (!widget.constrainWidth) {
+      // 设置详情 pane 语境：不居中限宽，改用与普通设置行同一条 16px 左右基线。
+      return Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: HibikiDesignTokens.of(context).spacing.rowHorizontal,
+        ),
+        child: SizedBox(
+          key: const ValueKey<String>('torrent-settings-content'),
+          width: double.infinity,
+          child: content,
+        ),
+      );
+    }
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(

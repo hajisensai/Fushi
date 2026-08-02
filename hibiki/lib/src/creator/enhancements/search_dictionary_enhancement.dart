@@ -43,6 +43,7 @@ class SearchDictionaryEnhancement extends Enhancement {
           msg: t.no_text_to_search,
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
+          severity: ToastSeverity.error,
         );
         return;
       } else {
@@ -53,6 +54,7 @@ class SearchDictionaryEnhancement extends Enhancement {
           ),
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
+          severity: ToastSeverity.warning,
         );
       }
     }

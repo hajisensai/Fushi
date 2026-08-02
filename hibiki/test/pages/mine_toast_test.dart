@@ -46,8 +46,15 @@ void main() {
     expect(mineToastPalette(MineToastStatus.failed).icon, Icons.error_rounded);
     expect(mineToastPalette(MineToastStatus.pending).background,
         const Color(0xFF1565C0));
-    // 前景统一白色（保证四种状态色上的对比）。
-    for (final MineToastStatus s in MineToastStatus.values) {
+    // orange 800 配白字只有 3.08:1；duplicate/warning 用黑字达到 6.81:1。
+    expect(mineToastPalette(MineToastStatus.duplicate).foreground, Colors.black);
+    expect(toastSeverityPalette(ToastSeverity.warning)?.foreground,
+        Colors.black);
+    for (final MineToastStatus s in <MineToastStatus>[
+      MineToastStatus.added,
+      MineToastStatus.failed,
+      MineToastStatus.pending,
+    ]) {
       expect(mineToastPalette(s).foreground, Colors.white);
     }
   });

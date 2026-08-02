@@ -422,7 +422,17 @@ class AdaptiveSettingsRow extends StatelessWidget {
     this.trailingFlexible = false,
     this.titleMaxLines,
     this.subtitleMaxLines,
+    this.horizontalPadding,
   });
+
+  /// 覆盖本行的水平内边距；null = 用标准 `tokens.spacing.rowHorizontal`（16）。
+  ///
+  /// 存在的理由：这 16px 此前是硬编码、无逃生口的，而它同时是「设置行左边缘」的
+  /// 事实标准。于是任何**自带内边距**的嵌入式正文（`SettingsCustomItem` 的 builder、
+  /// `SettingsDestination.body` 逃生口）一旦把自己整体缩进 16，里面夹杂的
+  /// [AdaptiveSettingsRow] 就变成 32，与同卡片其它行错开——「下载设置左右间距和其他
+  /// 设置不一样」正是这一类。给出显式 0 让调用方声明「外层已经缩进过了」。
+  final double? horizontalPadding;
 
   final String title;
   final String? subtitle;
@@ -507,7 +517,8 @@ class AdaptiveSettingsRow extends StatelessWidget {
                 constraints.maxWidth < stackThreshold + iconExtra);
         return Padding(
           padding: EdgeInsets.symmetric(
-            horizontal: cupertino ? 16 : tokens.spacing.rowHorizontal,
+            horizontal: horizontalPadding ??
+                (cupertino ? 16 : tokens.spacing.rowHorizontal),
             vertical:
                 stackControls ? tokens.spacing.rowVertical : tokens.spacing.gap,
           ),
@@ -702,6 +713,7 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
     this.subtitle,
     this.icon,
     this.showIcon = false,
+    this.horizontalPadding,
   });
 
   final String title;
@@ -712,6 +724,7 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
   /// 才渲染左栏图标徽章。schema 层的 `showIcons` 经此透传（此前只转发 icon 不
   /// 转发 showIcon，值控件行声明的图标从不渲染，同卡片左栏对不齐）。
   final bool showIcon;
+  final double? horizontalPadding;
   final bool value;
   final ValueChanged<bool>? onChanged;
 
@@ -722,6 +735,7 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
       subtitle: subtitle,
       icon: icon,
       showIcon: showIcon,
+      horizontalPadding: horizontalPadding,
       trailing: adaptiveSwitch(
         context: context,
         value: value,

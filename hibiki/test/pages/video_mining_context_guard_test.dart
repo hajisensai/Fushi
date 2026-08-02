@@ -343,7 +343,8 @@ void main() {
         reason: '制卡成功/覆盖消息须由 describeMineOutcome 统一产出（含 deck 名）。');
     // 成功分支发出突出 OSD。
     expect(
-      mineImpl.contains('_showOsd(described.message, prominent: true)'),
+      compactCode(mineImpl)
+          .contains(compactCode('_showOsd(described.message, prominent: true,')),
       isTrue,
       reason: 'TODO-971：制卡成功须走突出 OSD（prominent: true），不再是易忽略的小角标。',
     );

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import 'package:hibiki/src/media/manga/manga_view_prefs.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
@@ -1883,7 +1884,49 @@ class PreferencesRepository extends ChangeNotifier {
       getPref('manga_zoom_percent', defaultValue: 100) as int;
 
   Future<void> setMangaZoomPercent(int value) async {
-    await setPref('manga_zoom_percent', value.clamp(50, 200));
+    await setPref(
+      'manga_zoom_percent',
+      value.clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent),
+    );
+    notifyListeners();
+  }
+
+  /// 滚轮/捏合缩放灵敏度倍率（百分比，100 = 基准）。
+  int get mangaZoomSensitivity => getPref('manga_zoom_sensitivity',
+      defaultValue: kMangaZoomSensitivityDefault) as int;
+
+  Future<void> setMangaZoomSensitivity(int value) async {
+    await setPref(
+      'manga_zoom_sensitivity',
+      value.clamp(kMangaZoomSensitivityMin, kMangaZoomSensitivityMax),
+    );
+    notifyListeners();
+  }
+
+  /// 翻页动画样式（`none` / `slide` / `fade`）。
+  String get mangaPageAnimation => getPref('manga_page_animation',
+      defaultValue: MangaPageAnimation.slide.key) as String;
+
+  Future<void> setMangaPageAnimation(String value) async {
+    await setPref('manga_page_animation', value);
+    notifyListeners();
+  }
+
+  /// 音量键翻页（漫画阅读器）。默认开：与 EPUB 阅读器的音量键翻页一致。
+  bool get mangaVolumeKeyPaging =>
+      getPref('manga_volume_key_paging', defaultValue: true) as bool;
+
+  Future<void> setMangaVolumeKeyPaging(bool value) async {
+    await setPref('manga_volume_key_paging', value);
+    notifyListeners();
+  }
+
+  /// 点击页面左右边缘翻页。默认开：触屏此前完全没有点击翻页手段。
+  bool get mangaTapZonePaging =>
+      getPref('manga_tap_zone_paging', defaultValue: true) as bool;
+
+  Future<void> setMangaTapZonePaging(bool value) async {
+    await setPref('manga_tap_zone_paging', value);
     notifyListeners();
   }
 

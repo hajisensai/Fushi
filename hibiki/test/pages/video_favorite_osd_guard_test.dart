@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'video_hibiki_page_source_corpus.dart';
+import '../helpers/source_guard.dart';
 
 /// BUG-931：视频播放器里的两个 UX 契约，用源码扫描守卫锁死，防未来重构悄悄回退。
 ///
@@ -45,7 +46,7 @@ void main() {
       );
       // 正向证据：收藏路径确实改走了左上角 OSD。
       expect(
-        body.contains('_showOsd(t.no_sentence_selected)'),
+        compactCode(body).contains(compactCode('_showOsd(t.no_sentence_selected,')),
         isTrue,
         reason: '收藏无句可选时应走左上角 `_showOsd`，不是底部 toast。',
       );
@@ -60,9 +61,11 @@ void main() {
             '`HibikiToast.show` 说明有提示回退到了屏幕底部。',
       );
       // 收藏加/移除确实用 OSD（防止有人把提示整个删掉来「绕过」守卫）。
-      expect(src.contains('_showOsd(t.favorite_added'), isTrue,
+      expect(compactCode(src).contains(compactCode('_showOsd(t.favorite_added,')),
+          isTrue,
           reason: '收藏成功应走左上角 `_showOsd(t.favorite_added ...)`。');
-      expect(src.contains('_showOsd(t.favorite_removed'), isTrue,
+      expect(compactCode(src).contains(compactCode('_showOsd(t.favorite_removed,')),
+          isTrue,
           reason: '取消收藏应走左上角 `_showOsd(t.favorite_removed ...)`。');
     });
   });

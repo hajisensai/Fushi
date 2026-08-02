@@ -597,7 +597,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Future<void> _playItemAudio(_CollectionItem item) async {
     final String? bookKey = item.bookKey;
     if (bookKey == null || bookKey.isEmpty) {
-      HibikiToast.show(msg: t.srt_audio_unresolved);
+      HibikiToast.show(
+        msg: t.srt_audio_unresolved,
+        severity: ToastSeverity.error,
+      );
       return;
     }
 
@@ -616,13 +619,19 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     final List<File>? audioFiles = _audioFileMap[bookKey];
     if (audioFiles == null || audioFiles.isEmpty) {
-      HibikiToast.show(msg: t.srt_audio_unresolved);
+      HibikiToast.show(
+        msg: t.srt_audio_unresolved,
+        severity: ToastSeverity.error,
+      );
       return;
     }
 
     final List<AudioCue>? cues = _cueMap[bookKey];
     if (cues == null || cues.isEmpty) {
-      HibikiToast.show(msg: t.srt_audio_unresolved);
+      HibikiToast.show(
+        msg: t.srt_audio_unresolved,
+        severity: ToastSeverity.error,
+      );
       return;
     }
 
@@ -634,11 +643,17 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       text: item.text,
     );
     if (range == null) {
-      HibikiToast.show(msg: t.srt_audio_unresolved);
+      HibikiToast.show(
+        msg: t.srt_audio_unresolved,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     if (range.audioFileIndex < 0 || range.audioFileIndex >= audioFiles.length) {
-      HibikiToast.show(msg: t.srt_audio_unresolved);
+      HibikiToast.show(
+        msg: t.srt_audio_unresolved,
+        severity: ToastSeverity.error,
+      );
       return;
     }
 
@@ -659,7 +674,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   ) async {
     final VideoBookRow? row = _videoRowMap[bookUid];
     if (row == null) {
-      HibikiToast.show(msg: t.srt_audio_unresolved);
+      HibikiToast.show(
+        msg: t.srt_audio_unresolved,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     final ({String filePath, int startMs, int endMs})? clip =
@@ -670,7 +688,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       favoriteDurationMs: item.normCharLength,
     );
     if (clip == null) {
-      HibikiToast.show(msg: t.srt_audio_unresolved);
+      HibikiToast.show(
+        msg: t.srt_audio_unresolved,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     await _extractAndPlay(
@@ -709,7 +730,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       if (result != null) {
         await TtsChannel.instance.playFile(result);
       } else {
-        HibikiToast.show(msg: t.audio_clip_failed);
+        HibikiToast.show(
+          msg: t.audio_clip_failed,
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       // 只清自己那一次的进行中标记：期间用户已点了别的行（先停旧后播新）时，

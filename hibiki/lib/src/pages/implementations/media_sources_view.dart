@@ -468,7 +468,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final bool dup = existing.any(
         (SourceLibraryRow r) => r.transport == 'local' && r.rootPath == norm);
     if (dup) {
-      HibikiToast.show(msg: norm);
+      HibikiToast.show(msg: norm, severity: ToastSeverity.warning);
       return;
     }
 
@@ -508,7 +508,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       return (cfg['host'] as String?) == result.host;
     });
     if (dup) {
-      HibikiToast.show(msg: norm);
+      HibikiToast.show(msg: norm, severity: ToastSeverity.warning);
       return;
     }
 
@@ -734,7 +734,7 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
   Future<void> _testConnection() async {
     final String? error = _validate();
     if (error != null) {
-      HibikiToast.show(msg: error);
+      HibikiToast.show(msg: error, severity: ToastSeverity.error);
       return;
     }
     setState(() => _testing = true);
@@ -767,10 +767,18 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
           useTls: _useTls,
         );
       }
-      if (mounted) HibikiToast.show(msg: t.sync_connection_success);
+      if (mounted) {
+        HibikiToast.show(
+          msg: t.sync_connection_success,
+          severity: ToastSeverity.success,
+        );
+      }
     } catch (e) {
       if (mounted) {
-        HibikiToast.show(msg: '${t.sync_connection_failed}: $e');
+        HibikiToast.show(
+          msg: '${t.sync_connection_failed}: $e',
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       if (mounted) setState(() => _testing = false);
@@ -780,7 +788,7 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
   void _submit() {
     final String? error = _validate();
     if (error != null) {
-      HibikiToast.show(msg: error);
+      HibikiToast.show(msg: error, severity: ToastSeverity.error);
       return;
     }
     final String pass = _passwordController.text;

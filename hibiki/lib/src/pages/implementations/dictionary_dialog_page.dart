@@ -450,7 +450,10 @@ class _DictionaryDialogPageState extends BasePageState {
     );
     // TODO-082：导入一开始就给用户一个明确反馈（开始后台导入），不只让用户盯着
     // 模态进度框猜测进度。
-    HibikiToast.show(msg: t.dict_import_started);
+    HibikiToast.show(
+      msg: t.dict_import_started,
+      severity: ToastSeverity.info,
+    );
 
     bool hadMemoryError = false;
     final List<String> failedNames = [];
@@ -491,6 +494,7 @@ class _DictionaryDialogPageState extends BasePageState {
       HibikiToast.show(
         msg: DictionaryImportManager.formatImportFailureSummary(failedNames),
         toastLength: Toast.LENGTH_LONG,
+        severity: ToastSeverity.error,
       );
     }
 
@@ -498,7 +502,10 @@ class _DictionaryDialogPageState extends BasePageState {
     // （失败的另由上面的失败汇总文案告知，两者可同时出现：部分成功部分失败）。
     final int successCount = dictFiles.length - failedNames.length;
     if (successCount > 0) {
-      HibikiToast.show(msg: t.dict_import_success_summary(n: successCount));
+      HibikiToast.show(
+        msg: t.dict_import_success_summary(n: successCount),
+        severity: ToastSeverity.success,
+      );
     }
 
     if (hadMemoryError && mounted) {
@@ -524,7 +531,10 @@ class _DictionaryDialogPageState extends BasePageState {
     );
     if (importPaths.isEmpty) {
       debugPrint('[hibiki-drop] [dictionary-dialog] intent=unsupportedSurface');
-      HibikiToast.show(msg: t.drag_drop_unsupported_on_dictionary);
+      HibikiToast.show(
+        msg: t.drag_drop_unsupported_on_dictionary,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     _importDictionaryPaths(importPaths);
@@ -942,6 +952,7 @@ class _DictionaryDialogPageState extends BasePageState {
       HibikiToast.show(
         msg: DictionaryImportManager.formatImportFailureSummary(failedNames),
         toastLength: Toast.LENGTH_LONG,
+        severity: ToastSeverity.error,
       );
     }
   }
@@ -1035,7 +1046,10 @@ class _DictionaryDialogPageState extends BasePageState {
       );
       // TODO-082：目录导入也在开始时给明确反馈（成功/失败提示由
       // DictionaryImportManager.importFromDirectory 在完成时弹出）。
-      HibikiToast.show(msg: t.dict_import_started);
+      HibikiToast.show(
+        msg: t.dict_import_started,
+        severity: ToastSeverity.info,
+      );
     }
 
     bool hadMemoryError = false;
@@ -1077,6 +1091,7 @@ class _DictionaryDialogPageState extends BasePageState {
       HibikiToast.show(
         msg: folderImportError,
         toastLength: Toast.LENGTH_LONG,
+        severity: ToastSeverity.error,
       );
     }
 
@@ -1603,6 +1618,9 @@ class _DictionaryDialogPageState extends BasePageState {
     if (!dictionary.isUpdatable) return;
 
     String resultMsg = t.dict_update_latest;
+    // 三种结局（已最新 / 已更新 / 更新失败）共用一条 toast，配色跟着文案一起定，
+    // 否则失败也是一条无色提示、与「已是最新」长得一模一样。
+    ToastSeverity resultSeverity = ToastSeverity.info;
     await _runWithDownloadProgressDialog(
       initialMessage: t.dict_update_checking,
       body: (
@@ -1616,6 +1634,7 @@ class _DictionaryDialogPageState extends BasePageState {
           if (!DictionaryUpdateService.needsUpdate(
               dictionary.revision, remoteRevision)) {
             resultMsg = t.dict_update_latest;
+            resultSeverity = ToastSeverity.info;
           } else {
             await _redownloadAndReimport(
               name: dictionary.name,
@@ -1631,15 +1650,17 @@ class _DictionaryDialogPageState extends BasePageState {
               },
             );
             resultMsg = t.dict_update_done(name: dictionary.name);
+            resultSeverity = ToastSeverity.success;
           }
         } catch (e, stack) {
           ErrorLogService.instance
               .log('DictionaryDialog.updateSingle', e, stack);
           resultMsg = t.dict_update_failed(error: '$e');
+          resultSeverity = ToastSeverity.error;
         }
       },
     );
-    HibikiToast.show(msg: resultMsg);
+    HibikiToast.show(msg: resultMsg, severity: resultSeverity);
   }
 
   /// TODO-839：本地导入 / 旧词典（isUpdatable=false，无在线来源）的「从文件重选覆盖
@@ -1691,6 +1712,8 @@ class _DictionaryDialogPageState extends BasePageState {
     if (!mounted) return;
 
     String resultMsg = t.dict_update_done(name: dictionary.name);
+    // 覆盖导入没抛异常即成功；catch 里连同文案一起翻成 error 配色。
+    ToastSeverity resultSeverity = ToastSeverity.success;
     await _runWithDownloadProgressDialog(
       initialMessage: t.dict_update_updating(name: dictionary.name),
       body: (
@@ -1708,13 +1731,14 @@ class _DictionaryDialogPageState extends BasePageState {
           ErrorLogService.instance
               .log('DictionaryDialog.updateFromFile', e, stack);
           resultMsg = t.dict_update_failed(error: '$e');
+          resultSeverity = ToastSeverity.error;
         }
       },
     );
     if (Platform.isAndroid || Platform.isIOS) {
       await FilePicker.platform.clearTemporaryFiles();
     }
-    HibikiToast.show(msg: resultMsg);
+    HibikiToast.show(msg: resultMsg, severity: resultSeverity);
   }
 
   /// 异名覆盖确认对话框：所选文件包名 [incoming] 与被更新词典 [existing] 不同时弹出，
@@ -1757,7 +1781,10 @@ class _DictionaryDialogPageState extends BasePageState {
     final List<Dictionary> updatable =
         appModel.dictionaries.where((Dictionary d) => d.isUpdatable).toList();
     if (updatable.isEmpty) {
-      HibikiToast.show(msg: t.dict_update_none);
+      HibikiToast.show(
+        msg: t.dict_update_none,
+        severity: ToastSeverity.info,
+      );
       return;
     }
 
@@ -1810,6 +1837,8 @@ class _DictionaryDialogPageState extends BasePageState {
         failed: failed.toString(),
       ),
       toastLength: Toast.LENGTH_LONG,
+      // 有失败即「部分成功」→ warning；全成或全已最新才算 success。
+      severity: failed > 0 ? ToastSeverity.warning : ToastSeverity.success,
     );
   }
 

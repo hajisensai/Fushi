@@ -98,7 +98,9 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     try {
       await _manager!.clearSourceData(source);
     } on Object catch (error) {
-      if (mounted) HibikiToast.show(msg: '$error');
+      if (mounted) {
+        HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
     }
   }
 

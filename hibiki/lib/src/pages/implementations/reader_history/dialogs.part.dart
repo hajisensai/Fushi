@@ -413,6 +413,7 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
           name: tag.name,
           n: widget.selectedKeys.length,
         ),
+        severity: ToastSeverity.success,
       );
     }
     for (final tagId in _removeTagIds) {
@@ -422,6 +423,7 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
           name: tag.name,
           n: widget.selectedKeys.length,
         ),
+        severity: ToastSeverity.success,
       );
     }
     Navigator.pop(context);

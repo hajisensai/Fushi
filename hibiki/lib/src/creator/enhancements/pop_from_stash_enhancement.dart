@@ -37,6 +37,7 @@ class PopFromStashEnhancement extends Enhancement {
         msg: t.stash_nothing_to_pop,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
+        severity: ToastSeverity.error,
       );
     } else {
       String lastStashItem = stashContents.last;

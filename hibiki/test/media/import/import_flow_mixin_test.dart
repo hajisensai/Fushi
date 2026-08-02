@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/import/import_flow_mixin.dart';
 import 'package:hibiki/utils.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// 最小宿主：把 [ImportFlowMixin] 接进来，按 `importing` 渲染进度块，
 /// 用以验证 mixin 的写入器 + 渲染契约（书/有声书/视频导入对话框共享的真行为），
 /// 以及 [ImportFlowMixin.runImport] 模板的错误处理契约（审计 §1-K / BUG-1117：
@@ -189,7 +191,9 @@ void main() {
         reason: 'runImport 的 catch 必须以 logTag 落 ErrorLogService',
       );
       expect(
-        source.contains(r"HibikiToast.show(msg: '${t.srt_import_error}: $e')"),
+        compactCode(source).contains(
+          compactCode(r"HibikiToast.show(msg: '${t.srt_import_error}: $e',"),
+        ),
         isTrue,
         reason: 'runImport 的 catch 必须给用户失败提示（toast）',
       );

@@ -7,7 +7,7 @@ import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/utils.dart';
 
-/// 「漫画 OCR」设置组（内联进阅读设置分类，默认折叠）。
+/// 「漫画 OCR」设置组（隶属**漫画**设置分类，默认折叠）。
 ///
 /// 全平台显示（P4）：模型下载/状态行移动端也需要（单框补扫用识别三件套）；
 /// 整卷 OCR 向导仍桌面/远程，外部 mokuro CLI 块在 section 正文内自行按桌面
@@ -21,7 +21,7 @@ SettingsSection buildMangaOcrSection() {
     collapsedByDefault: true,
     items: <SettingsItem>[
       SettingsCustomItem(
-        id: 'reading.manga_ocr',
+        id: 'manga.ocr',
         searchTitle: t.manga_ocr_section,
         builder: (SettingsContext c) => MangaOcrSettingsSection(
           service: c.ref.read(mangaOcrServiceProvider),
@@ -33,7 +33,7 @@ SettingsSection buildMangaOcrSection() {
       // MokuroMoeClient 的 normalizeMokuroMoeBaseUrl 归一回默认站点，故这里
       // 只 trim 存原值、不做格式校验。
       SettingsTextItem(
-        id: 'reading.manga_online_catalog_base_url',
+        id: 'manga.online_catalog_base_url',
         title: t.manga_online_base_url_label,
         icon: Icons.cloud_outlined,
         keyboardType: TextInputType.url,

@@ -188,6 +188,7 @@ extension _VideoDanmaku on _VideoHibikiPageState {
               ? t.video_danmaku_manual_network_error
               : t.video_danmaku_manual_bind_server_error,
           icon: Icons.error_outline,
+          severity: ToastSeverity.error,
         );
         return;
       }
@@ -204,7 +205,12 @@ extension _VideoDanmaku on _VideoHibikiPageState {
       // 该集有效但暂无弹幕：绑定照样生效（之后有人发就会出现），但要说清楚，
       // 否则用户只看到「面板关了、什么都没有」。
       if (result.items.isEmpty) {
-        _showOsd(t.video_danmaku_manual_bind_empty, icon: Icons.info_outline);
+        // 绑定本身成功（episodeId 已落库），只是这集暂无弹幕——状态告知而非失败。
+        _showOsd(
+          t.video_danmaku_manual_bind_empty,
+          icon: Icons.info_outline,
+          severity: ToastSeverity.info,
+        );
       }
       debugPrint(
         '[VideoDanmaku] manual bind episode=${episode.episodeId} '
@@ -214,7 +220,11 @@ extension _VideoDanmaku on _VideoHibikiPageState {
       debugPrint('[VideoDanmaku] manual bind failed: $e');
       // UI 巡检 PR-4：失败给可见反馈（此前只 debugPrint，用户选完集面板不关、
       // 弹幕不出现、零提示）。原始异常只留日志，不进 UI。
-      _showOsd(t.video_danmaku_manual_bind_failed, icon: Icons.error_outline);
+      _showOsd(
+        t.video_danmaku_manual_bind_failed,
+        icon: Icons.error_outline,
+        severity: ToastSeverity.error,
+      );
     } finally {
       client.close();
     }

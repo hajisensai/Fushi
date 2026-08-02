@@ -12,6 +12,7 @@ enum MangaOcrEnginePreference {
   localOnnx,
   googleLens,
   externalMokuro,
+  pairedHost,
 }
 
 extension MangaOcrEnginePreferenceKey on MangaOcrEnginePreference {
@@ -25,6 +26,8 @@ extension MangaOcrEnginePreferenceKey on MangaOcrEnginePreference {
         return 'google_lens';
       case MangaOcrEnginePreference.externalMokuro:
         return 'external_mokuro';
+      case MangaOcrEnginePreference.pairedHost:
+        return 'paired_host';
     }
   }
 
@@ -38,6 +41,8 @@ extension MangaOcrEnginePreferenceKey on MangaOcrEnginePreference {
         return MangaOcrEngineId.googleLens;
       case MangaOcrEnginePreference.externalMokuro:
         return MangaOcrEngineId.externalMokuro;
+      case MangaOcrEnginePreference.pairedHost:
+        return MangaOcrEngineId.pairedHost;
     }
   }
 
@@ -49,6 +54,8 @@ extension MangaOcrEnginePreferenceKey on MangaOcrEnginePreference {
         return MangaOcrEnginePreference.googleLens;
       case 'external_mokuro':
         return MangaOcrEnginePreference.externalMokuro;
+      case 'paired_host':
+        return MangaOcrEnginePreference.pairedHost;
       case 'auto':
       default:
         return MangaOcrEnginePreference.auto;

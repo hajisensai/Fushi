@@ -130,13 +130,19 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         await _session.exportLineAudioPreview(line.id);
     if (!mounted) return;
     if (preview == null) {
-      HibikiToast.show(msg: t.game_line_preview_failed);
+      HibikiToast.show(
+        msg: t.game_line_preview_failed,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     final bool started = await DesktopAudioPlayback.playFile(preview.filePath);
     if (!mounted) return;
     if (!started) {
-      HibikiToast.show(msg: t.game_line_preview_failed);
+      HibikiToast.show(
+        msg: t.game_line_preview_failed,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     _linePreviewResetTimer?.cancel();
@@ -160,7 +166,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Future<void> _pickLineTrack(TexthookerLineEntry line) async {
     final List<GalAudioTrack> tracks = _session.state.audioTracks;
     if (tracks.isEmpty) {
-      HibikiToast.show(msg: t.game_no_tracks);
+      HibikiToast.show(
+        msg: t.game_no_tracks,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     final int? picked = await showAppDialog<int>(
@@ -249,6 +258,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (!mounted) return;
     HibikiToast.show(
       msg: applied ? t.game_line_track_applied : t.game_line_track_failed,
+      severity: applied ? ToastSeverity.success : ToastSeverity.error,
     );
   }
 
@@ -257,11 +267,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final GalTrackPreview? preview =
         await _session.exportLineTrackPreview(lineId, sourcePtr);
     if (preview == null) {
-      HibikiToast.show(msg: t.game_track_preview_failed);
+      HibikiToast.show(
+        msg: t.game_track_preview_failed,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     if (!await DesktopAudioPlayback.playFile(preview.filePath)) {
-      HibikiToast.show(msg: t.game_track_preview_failed);
+      HibikiToast.show(
+        msg: t.game_track_preview_failed,
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -288,14 +304,20 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   await _session.exportTrackPreview(track.sourcePtr);
               if (!dialogContext.mounted) return;
               if (preview == null) {
-                HibikiToast.show(msg: t.game_track_preview_failed);
+                HibikiToast.show(
+                  msg: t.game_track_preview_failed,
+                  severity: ToastSeverity.error,
+                );
                 return;
               }
               final bool started =
                   await DesktopAudioPlayback.playFile(preview.filePath);
               if (!dialogContext.mounted) return;
               if (!started) {
-                HibikiToast.show(msg: t.game_track_preview_failed);
+                HibikiToast.show(
+                  msg: t.game_track_preview_failed,
+                  severity: ToastSeverity.error,
+                );
                 return;
               }
               previewReset?.cancel();
@@ -353,6 +375,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       final bool ok = await _session.finishLineRecapture();
       HibikiToast.show(
         msg: ok ? t.game_hook_recapture_saved : t.game_hook_recapture_empty,
+        // 补录窗口空手而归不是崩溃，是「这次没录到」——warning 而非 error。
+        severity: ok ? ToastSeverity.success : ToastSeverity.warning,
       );
       return;
     }
@@ -361,6 +385,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       msg: started
           ? t.game_hook_recapture_started
           : t.game_hook_recapture_unavailable,
+      // 开录是「去游戏里重播这句」的操作指示（info）；开不起来是能力缺失（error）。
+      severity: started ? ToastSeverity.info : ToastSeverity.error,
     );
   }
 
@@ -599,13 +625,18 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     }
     HibikiToast.showMine(msg: described.message, status: described.status);
     if (result.sentenceAudioMissing) {
-      HibikiToast.show(msg: t.game_card_sentence_audio_missing);
+      // 卡片建成了、只是缺句子音频 = 部分成功。
+      HibikiToast.show(
+        msg: t.game_card_sentence_audio_missing,
+        severity: ToastSeverity.warning,
+      );
     }
     if (result.unmappedTokens.isNotEmpty) {
       // 冒号统一全角（与上方 external_window_capture_failed toast 一致）。
       HibikiToast.show(
         msg: '${t.game_card_mapping_missing}：'
             '${result.unmappedTokens.join(', ')}',
+        severity: ToastSeverity.warning,
       );
     }
     if (described.success) {
@@ -642,13 +673,19 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 把处置塞进选择器会逼出模式参数。
   Future<ExternalWindowInfo?> _showExternalWindowPicker() async {
     if (!Platform.isWindows) {
-      HibikiToast.show(msg: t.external_window_unsupported);
+      HibikiToast.show(
+        msg: t.external_window_unsupported,
+        severity: ToastSeverity.error,
+      );
       return null;
     }
     final List<ExternalWindowInfo> windows =
         await WindowCaptureChannel.listWindows();
     if (windows.isEmpty) {
-      HibikiToast.show(msg: t.external_window_no_windows);
+      HibikiToast.show(
+        msg: t.external_window_no_windows,
+        severity: ToastSeverity.error,
+      );
       return null;
     }
     if (!context.mounted) return null;
@@ -732,7 +769,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _launchingGalHook = true;
     try {
       if (!Platform.isWindows) {
-        HibikiToast.show(msg: t.external_window_unsupported);
+        HibikiToast.show(
+          msg: t.external_window_unsupported,
+          severity: ToastSeverity.error,
+        );
         return;
       }
       final FilePickerResult? picked = await FilePicker.platform.pickFiles(
@@ -753,7 +793,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         context: context,
       );
       if (!installed || !mounted) return;
-      HibikiToast.show(msg: t.game_capture_launching);
+      HibikiToast.show(
+        msg: t.game_capture_launching,
+        severity: ToastSeverity.info,
+      );
       // 这条入口只拿到一个裸 exe 路径、不经过游戏库条目，但同一个 exe 就是同一个游戏：
       // 按路径回查库里已配置的启动参数与工作目录，让「从库里启动」和「从工作台启动并
       // 捕获」用同一份配置。库里没有这个 exe（临时选的文件）→ 空配置 = 旧行为。
@@ -786,7 +829,22 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         lastError: state.lastError,
         injectorDetail: state.injectorDetail,
       );
-      if (message != null) HibikiToast.show(msg: message);
+      // BUG-1089 的着色面：outcome 已经把「跑起来了 / 只剩整机混音兜底 / 根本没起来」
+      // 分好了，toast 的颜色跟着同一份判定走，别再让三种结局长成同一条无色提示。
+      if (message != null) {
+        HibikiToast.show(
+          msg: message,
+          severity: switch (outcome) {
+            GalHookLaunchOutcome.running => ToastSeverity.success,
+            GalHookLaunchOutcome.degradedLoopback => ToastSeverity.warning,
+            GalHookLaunchOutcome.failed ||
+            GalHookLaunchOutcome.windowMissing =>
+              ToastSeverity.error,
+            // message 为 null 时根本不播报，这里走不到。
+            GalHookLaunchOutcome.superseded => ToastSeverity.neutral,
+          },
+        );
+      }
     } finally {
       _launchingGalHook = false;
     }
@@ -805,11 +863,20 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       final LunaHookCodeProfileStore store =
           await LunaHookCodeProfileStore.openDefault();
       await store.replaceFrom(File(path));
-      HibikiToast.show(msg: 'Hook Code · ${t.dialog_import}');
+      HibikiToast.show(
+        msg: 'Hook Code · ${t.dialog_import}',
+        severity: ToastSeverity.success,
+      );
     } on FormatException {
-      HibikiToast.show(msg: t.audiobook_import_error);
+      HibikiToast.show(
+        msg: t.audiobook_import_error,
+        severity: ToastSeverity.error,
+      );
     } catch (_) {
-      HibikiToast.show(msg: t.audiobook_import_error);
+      HibikiToast.show(
+        msg: t.audiobook_import_error,
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -824,9 +891,15 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       final LunaHookCodeProfileStore store =
           await LunaHookCodeProfileStore.openDefault();
       await store.exportTo(File(path));
-      HibikiToast.show(msg: 'Hook Code · ${t.dialog_export}');
+      HibikiToast.show(
+        msg: 'Hook Code · ${t.dialog_export}',
+        severity: ToastSeverity.success,
+      );
     } catch (_) {
-      HibikiToast.show(msg: t.audiobook_import_error);
+      HibikiToast.show(
+        msg: t.audiobook_import_error,
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -835,7 +908,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final TexthookerTextThread? thread = _session.selectedTextThread;
     final String? hookCode = thread?.hookCode;
     if (executable == null || hookCode == null || hookCode.trim().isEmpty) {
-      HibikiToast.show(msg: t.game_text_thread_hint);
+      // 没选文本线程就点保存＝前置条件不满足、什么都没存下，必须让用户看出这次没成。
+      HibikiToast.show(
+        msg: t.game_text_thread_hint,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     try {
@@ -854,9 +931,15 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           label: label,
         ),
       );
-      HibikiToast.show(msg: 'Hook Code · ${t.dialog_save}');
+      HibikiToast.show(
+        msg: 'Hook Code · ${t.dialog_save}',
+        severity: ToastSeverity.success,
+      );
     } catch (_) {
-      HibikiToast.show(msg: t.audiobook_import_error);
+      HibikiToast.show(
+        msg: t.audiobook_import_error,
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -2022,13 +2105,19 @@ class _LineTracksCardState extends State<_LineTracksCard> {
         await widget.session.exportLineTrackPreview(lineId, track.sourcePtr);
     if (!mounted) return;
     if (preview == null) {
-      HibikiToast.show(msg: t.game_track_preview_failed);
+      HibikiToast.show(
+        msg: t.game_track_preview_failed,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     final bool started = await DesktopAudioPlayback.playFile(preview.filePath);
     if (!mounted) return;
     if (!started) {
-      HibikiToast.show(msg: t.game_track_preview_failed);
+      HibikiToast.show(
+        msg: t.game_track_preview_failed,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     _previewResetTimer?.cancel();
@@ -2049,6 +2138,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
     if (!mounted) return;
     HibikiToast.show(
       msg: applied ? t.game_line_track_applied : t.game_line_track_failed,
+      severity: applied ? ToastSeverity.success : ToastSeverity.error,
     );
   }
 

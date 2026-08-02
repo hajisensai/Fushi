@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-1007/1008：「点 ✓ 弹操作选择（覆写/新增重复卡/查看·在 Anki 中打开）」可达性
 /// 链路的源码守卫。锁住 minedCardAction 在 popup.js → webview → layer → 两条宿主车道
 /// （mixin / base_source_page）全程接线，避免任一层漏接导致点 ✓ 又回到「静默无反应」。
@@ -169,10 +171,10 @@ void main() {
       reason: '三处宿主回调 await 必须各有 try',
     );
     // catch 块固定形态：复位 _busy（避免卡死）+ 弹失败反馈。三处都必须出现这条收口。
-    const String catchReset =
-        'setState(() => _busy = false);\n      HibikiToast.show(msg: t.anki_card_action_failed);';
+    final String catchReset = compactCode('setState(() => _busy = false); '
+        'HibikiToast.show(msg: t.anki_card_action_failed,');
     expect(
-      catchReset.allMatches(src).length,
+      catchReset.allMatches(compactCode(src)).length,
       3,
       reason: '三处 catch 必须复位 _busy 并弹 anki_card_action_failed 反馈',
     );

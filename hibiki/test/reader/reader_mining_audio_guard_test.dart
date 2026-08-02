@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../helpers/source_guard.dart';
 
 void main() {
   group('reader mining context guard', () {
@@ -208,8 +209,11 @@ void main() {
       final String source = readReaderPageSource();
 
       expect(
-        source,
-        contains('HibikiToast.show(msg: t.card_mined_without_sentence_audio)'),
+        compactCode(source),
+        contains(
+          compactCode(
+              'HibikiToast.show(msg: t.card_mined_without_sentence_audio,'),
+        ),
         reason:
             'A card created with audio files present but no resolvable sentence '
             'range must visibly tell the user no sentence audio was attached, '
