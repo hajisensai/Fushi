@@ -10,6 +10,8 @@ import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1100 降级不可恢复 / BUG-1101 降级下音频配错句 / BUG-1102 活跃音轨面板无效 /
 /// BUG-1094 手动补录固定 8 秒，以及「单条台词可改对应音轨」。
 void main() {
@@ -141,13 +143,31 @@ void main() {
       reason: '未知代码返回 null 让调用方显示原始代码，绝不编造原因',
     );
 
-    final String page = File(
-      'lib/src/pages/implementations/texthooker_page.dart',
-    ).readAsStringSync();
+    // ── 会话卡这一侧：锚点钉在**契约**上，不是某个页面里的字面调用串 ──────────
+    //
+    // 旧判据是 `page.contains('galHookFallbackLabel(state.fallbackReason!)')`。
+    // 它守的不是不变式，是「那一行长什么样」：PR#753（BUG-1446）把三级取值收口成
+    // 共享入口 `galHookFallbackHeadline(failure:, fallbackReason:)` 之后，不变式
+    // **被保留而且加强了**（内联表达式 → 单一入口），字面串却没了，守卫当场转红。
+    // 同型事故本仓已有两次：PR#758 的 `SetTimer(` token 禁令、9fd30d281 的字面量锚点。
+    //
+    // 新判据问的是真正要守的那句话：**内部代码 `state.fallbackReason` 被交给了谁？**
+    // 接收它的那个调用，必须直接、或经 gal_hook_failure_text.dart 里的共享入口一跳，
+    // 落到翻译表 [galHookFallbackLabel] 上。把原始代码直接塞进 `Text(...)`
+    // ——BUG-1100 的原始症状——无论重构成哪种形状都拿不到这条可达性。
+    //
+    // 三处「绝不静默变绿」：卡片类改名 → `balancedBlockFrom` 之前的断言先红；
+    // 降级原因整行被删 → `enclosingCallOf` 找不到锚点直接 fail；
+    // 换成本文件之外定义的中转函数 → 解析不到实现体，判 false 并在失败信息里点名。
+    final String card = _sessionOverviewCardSource();
+    final EnclosingCall sink = enclosingCallOf(card, 'state.fallbackReason!');
     expect(
-      page.contains('galHookFallbackLabel(state.fallbackReason!)'),
+      _routesThroughFallbackLabel(sink.name),
       isTrue,
-      reason: '状态卡必须先翻译降级原因，再才回退内部代码',
+      reason: '状态卡必须先翻译降级原因，翻不到才回退内部代码；'
+          '现在它把内部代码直接交给了 `${sink.name}(...)`，'
+          '而这个调用既不是 $_kFallbackLabel，也不是 '
+          '$_kFailureTextPath 里任何一个会先查翻译表的共享入口',
     );
   });
 
@@ -591,6 +611,101 @@ void main() {
     expect(legacy?.clipCountAtCue, -1);
     expect(legacy?.isSilentAtCue, isFalse);
   });
+}
+
+// ---------------------------------------------------------------------------
+// 「降级文案必须先走翻译」的契约判据（BUG-1100）
+// ---------------------------------------------------------------------------
+
+/// 翻译表本体：把内部代码翻成人话的唯一入口。
+const String _kFallbackLabel = 'galHookFallbackLabel';
+
+/// 翻译层模块。会话卡若把内部代码转交给别人，那个「别人」必须在这里定义——
+/// 「UI 只在这里把它翻成人话」本身就是 gal_hook_failure_text.dart 的文档契约。
+const String _kFailureTextPath = 'lib/src/mining/gal_hook_failure_text.dart';
+
+/// 降级会话卡（`_SessionOverviewCard`）的类体原文。
+///
+/// 用 [balancedBlockFrom] 而不是整文件：texthooker_page.dart 六千多行，别处出现
+/// `state.fallbackReason` 的话窗口会锚到不相干的地方去。
+String _sessionOverviewCardSource() {
+  final File file = File('lib/src/pages/implementations/texthooker_page.dart');
+  expect(file.existsSync(), isTrue, reason: '会话卡源文件不在了？守卫失去锚点，先修路径再谈断言');
+  final String src = file.readAsStringSync();
+  final int start =
+      maskCommentsAndStrings(src).indexOf('class _SessionOverviewCard');
+  expect(start, greaterThanOrEqualTo(0),
+      reason: '_SessionOverviewCard 改名了：守卫锚点必须跟着改，不能静默失效');
+  return balancedBlockFrom(src, start, what: '_SessionOverviewCard');
+}
+
+/// 接收内部代码的这个调用 [callee]，会不会先查翻译表。
+///
+/// 直接调 [_kFallbackLabel] 算数；调 [_kFailureTextPath] 里某个共享入口、而那个入口
+/// 自己调 [_kFallbackLabel] 也算（一跳可达，PR#753 的 `galHookFallbackHeadline`
+/// 正是这种）。除此以外一律不算——把 `state.fallbackReason` 直接塞进 `Text(...)`
+/// 这种 BUG-1100 的原始形态，以及「中转函数自己把翻译那一跳删了」，都落在这一侧。
+bool _routesThroughFallbackLabel(String callee) {
+  if (callee == _kFallbackLabel) return true;
+  final String? body = _topLevelFunctionBody(
+    File(_kFailureTextPath).readAsStringSync(),
+    callee,
+  );
+  if (body == null) return false;
+  return containsIdentifierCall(body, _kFallbackLabel);
+}
+
+/// 取 [src] 里顶层函数 [name] 的**实现体**原文；`=> expr;` 与 `{ … }` 两种形态都认。
+/// 找不到声明返回 null（失败信息由调用方给，这里不 fail）。
+///
+/// 为什么不能直接用 [methodBody]：它只认花括号体。`galHookFallbackHeadline` 是箭头
+/// 函数，[methodBody] 会跳过参数表后一路找到**下一个**声明的花括号——紧随其后的正是
+/// `galHookFallbackLabel` 那个 switch 块，于是「一跳可达」会因为读到了邻居的实现而
+/// 假绿。窗口锚错时守卫不报错、只是静默守错对象，这是最难发现的一类塌陷。
+String? _topLevelFunctionBody(String src, String name) {
+  final String structural = maskCommentsAndStrings(src);
+  final RegExp declaration = RegExp(
+    r'(?<![A-Za-z0-9_$.])' + RegExp.escape(name) + r'\s*\(',
+  );
+  for (final RegExpMatch match in declaration.allMatches(structural)) {
+    final int open = match.end - 1;
+    int depth = 0;
+    int close = -1;
+    for (int i = open; i < structural.length; i++) {
+      if (structural[i] == '(') depth++;
+      if (structural[i] == ')') {
+        depth--;
+        if (depth == 0) {
+          close = i;
+          break;
+        }
+      }
+    }
+    if (close < 0) continue;
+    int i = close + 1;
+    while (i < structural.length && structural[i].trim().isEmpty) {
+      i++;
+    }
+    if (i + 1 < structural.length &&
+        structural[i] == '=' &&
+        structural[i + 1] == '>') {
+      // 箭头体：收口在**深度 0** 的分号上。`=> switch (x) { … };` 里的花括号、
+      // 以及实参里的分号都不算，否则窗口会在半路截断。
+      int nest = 0;
+      for (int j = i + 2; j < structural.length; j++) {
+        final String c = structural[j];
+        if (c == '(' || c == '[' || c == '{') nest++;
+        if (c == ')' || c == ']' || c == '}') nest--;
+        if (c == ';' && nest == 0) return src.substring(i + 2, j);
+      }
+      return null;
+    }
+    if (i < structural.length && structural[i] == '{') {
+      return balancedBlockFrom(src, i, what: '$name 的实现体');
+    }
+    // 既不是 `=>` 也不是 `{`：这一处是**调用**而不是声明，继续找下一处。
+  }
+  return null;
 }
 
 /// 可控就绪状态 / 可排队台词的引擎 helper 替身。
