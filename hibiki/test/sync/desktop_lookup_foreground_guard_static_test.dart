@@ -120,6 +120,38 @@ void main() {
     );
   });
 
+  test('main window does not reclaim focus when a lookup popup activates', () {
+    final String runner = read('windows/runner/win32_window.cpp');
+    final String handler = methodBody(
+      runner,
+      'Win32Window::MessageHandler(',
+    );
+    final String activateCase = maskComments(
+      switchCaseBody(
+        handler,
+        'case WM_ACTIVATE:',
+        nextLabels: const <String>['case WM_DISPLAYCHANGE:'],
+      ),
+    );
+
+    expect(
+      RegExp(
+        r'if\s*\(\s*LOWORD\(wparam\)\s*!=\s*WA_INACTIVE\s*&&\s*'
+        r'child_content_\s*!=\s*nullptr\s*\)\s*\{\s*'
+        r'SetFocus\(child_content_\);',
+      ).hasMatch(activateCase),
+      isTrue,
+      reason: 'The lookup panel drag/resize activates an auxiliary Hibiki '
+          'window. The main window must ignore its WA_INACTIVE notification '
+          'instead of reclaiming focus and jumping to the foreground.',
+    );
+    expect(
+      'SetFocus(child_content_);'.allMatches(activateCase).length,
+      1,
+      reason: 'Keep main-window focus restoration behind the activation guard.',
+    );
+  });
+
   test(
       'floating lyric window stays noactivate/shownoactivate; only the '
       'clipboard text window opts into the taskbar', () {
