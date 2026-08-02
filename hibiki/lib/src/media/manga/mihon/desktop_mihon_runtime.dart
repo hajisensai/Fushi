@@ -301,10 +301,6 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     final Directory preferences =
         Directory(p.join(dataDirectory.path, 'preferences'));
     await preferences.create(recursive: true);
-    final ServerSocket socket =
-        await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    final int port = socket.port;
-    await socket.close();
     final Random random = Random.secure();
     final String token = base64UrlEncode(
       List<int>.generate(32, (_) => random.nextInt(256)),
@@ -317,7 +313,13 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         '-Djava.util.prefs.userRoot=${preferences.path}',
         '-jar',
         server.path,
-        '$port',
+        // 0 = "bind an ephemeral port yourself and tell us which one".
+        // Picking the port here (bind → read → close → hand the number over)
+        // is a TOCTOU: between our close and the child's bind any other local
+        // process can take that port, and we would then hand our per-process
+        // Bearer token to a stranger. It also made a benign port collision
+        // fail the whole start with START_TIMEOUT.
+        '0',
         dataDirectory.path,
       ],
       environment: <String, String>{'HIBIKI_MIHON_TOKEN': token},
@@ -352,11 +354,24 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       );
     }
     _process = process;
-    _port = port;
     _token = token;
-    process.stdout.listen((List<int> _) {});
+
+    // The child prints its real listening port once NanoHTTPD has bound it.
+    // `null` means "it will never arrive" (the process is gone).
+    final Completer<int?> announced = Completer<int?>();
+    // Never cancelled: stdout has to keep being drained or the pipe fills up
+    // and blocks the JVM.
+    process.stdout
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .transform(const LineSplitter())
+        .listen((String line) {
+      if (announced.isCompleted) return;
+      final int? port = _parseReadyPort(line);
+      if (port != null) announced.complete(port);
+    });
     process.stderr.listen((List<int> _) {});
     unawaited(process.exitCode.then((int _) {
+      if (!announced.isCompleted) announced.complete(null);
       if (identical(_process, process)) {
         _process = null;
         _port = null;
@@ -365,8 +380,29 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     }));
 
     final DateTime deadline = DateTime.now().add(const Duration(seconds: 20));
+    final int? readyPort = await announced.future.timeout(
+      const Duration(seconds: 20),
+      onTimeout: () => null,
+    );
+    if (readyPort == null || readyPort <= 0) {
+      process.kill();
+      _process = null;
+      _port = null;
+      _token = null;
+      throw const MihonRuntimeException(
+        'START_TIMEOUT',
+        'M-Extension-Server did not report a listening port',
+      );
+    }
+    // Only now is a port known to be held by *this* child, so only now may the
+    // per-process Bearer token leave the app.
+    _port = readyPort;
+
     Object? lastError;
     while (DateTime.now().isBefore(deadline)) {
+      // Liveness is checked before the request, not after it fails: a dead
+      // child must not be sent another authenticated request first.
+      if (await _hasExited(process)) break;
       try {
         final MihonCapabilities capabilities = await _readCapabilities();
         if (!capabilities.isUsable) {
@@ -378,7 +414,6 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         return;
       } catch (error) {
         lastError = error;
-        if (await _hasExited(process)) break;
         await Future<void>.delayed(const Duration(milliseconds: 200));
       }
     }
@@ -391,6 +426,26 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       'M-Extension-Server did not become ready',
       cause: lastError,
     );
+  }
+
+  /// Readiness contract with the sidecar; mirrors
+  /// `MExtensionServerController.READY_LINE_PREFIX`.
+  static const String _readyLinePrefix = 'HIBIKI_MIHON_READY port=';
+
+  /// Extracts the announced port from one stdout line, or `null` if the line
+  /// is ordinary log output.
+  ///
+  /// The child shares stdout with logback, so the marker is located rather
+  /// than assumed to start the line.
+  static int? _parseReadyPort(String line) {
+    final int marker = line.indexOf(_readyLinePrefix);
+    if (marker < 0) return null;
+    final String tail = line.substring(marker + _readyLinePrefix.length);
+    final Match? digits = RegExp(r'^\d+').matchAsPrefix(tail);
+    if (digits == null) return null;
+    final int? port = int.tryParse(digits.group(0)!);
+    if (port == null || port <= 0 || port > 65535) return null;
+    return port;
   }
 
   Future<MihonCapabilities> _readCapabilities() async {

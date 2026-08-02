@@ -80,15 +80,19 @@ server-build.gradle.patch:
   two upstream tests updated to match
 
 overlay/ (full-file replacements):
-  .../controller/MExtensionServerController.kt  the security boundary below
+  .../controller/MExtensionServerController.kt  the security boundary below;
+                                                also prints the readiness line
+                                                the host waits for
   .../controller/DalvikHandler.kt               explicit wire serialisation for
                                                 filters; fixes an upstream
                                                 index-out-of-bounds on cookies
                                                 without a value
-  .../controller/InspectHandler.kt              new: apksig-verified APK
-                                                inspection
+  .../controller/InspectHandler.kt              new: apksig-verified,
+                                                metadata-only APK inspection
+                                                (loads nothing; see below)
   .../controller/SourceImageHandler.kt          new: fetch a source image with
-                                                the extension's own client
+                                                the extension's own client,
+                                                buffered with a hard ceiling
   .../controller/SourceDataHandler.kt           new: clear per-source
                                                 preferences, cookies and cache
 
@@ -101,10 +105,33 @@ Security boundary (must not be weakened)
   bypass it. The token is 256 bits from Dart's Random.secure(), handed to the
   child only through the HIBIKI_MIHON_TOKEN environment variable, and the
   server refuses to start without it.
+- The child, not the host, chooses the listening port. It is started with port
+  0 and prints "HIBIKI_MIHON_READY port=<n>" on stdout once NanoHTTPD has
+  bound; the host parses that line and only then sends its first authenticated
+  request. Letting the host bind/close/hand over a port number instead is a
+  TOCTOU: any local process can take the port in between, and the host would
+  hand it the Bearer token. Both ends of this contract are guarded by
+  hibiki/test/build/mihon_vendored_server_guard_test.dart.
+- /inspect never loads the APK. It is called *before* Hibiki shows the "third
+  party extensions execute code with Hibiki permissions" trust dialog, so it
+  stays on apksig plus PackageTools.getPackageInfo (zip + binary manifest
+  parsing) and never touches MExtensionServerLoader, whose path runs dex2jar,
+  Class.forName + newInstance on the extension main class and
+  SourceFactory.createSources() — arbitrary code, before consent, and cached
+  with no eviction. Loading is /dalvik's job, which the host only reaches
+  after the user has accepted the dialog or explicitly asked for a preview.
+  The guard test asserts this over the whole closure reachable from /inspect,
+  not just the handler.
 - The complete route table is /dalvik, /inspect, /source-image,
   /source-data/clear, /capabilities, / (banner), /stop and upstream's
   /image/<uuid> proxy prefix. All of them sit behind the token gate; nothing
   else is served.
+- /source-image buffers the fetched body with a hard 32 MiB ceiling instead of
+  OkHttp's unbounded body.bytes(); the sidecar runs with -Xmx512m, so an
+  oversized response would otherwise OOM the whole JVM. Note this bounds only
+  the size, not the destination: the URL is chosen by the source site, exactly
+  as in upstream's own /image/<uuid> page path, which is inherent to Mihon's
+  "the site tells the client where the image is" contract.
 - The upstream process identity is retained: Main.kt, ServerWindow.kt,
   MExtensionServerLoader and MihonImageProxy are untouched, and the Hibiki
   host only ever terminates the Process handle it started (never a port or

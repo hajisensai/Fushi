@@ -407,4 +407,205 @@ void main() {
     expect(controller, contains('"/stop"'));
     expect(controller, contains('hibikiMihonBridge'));
   });
+
+  // ==========================================================================
+  // /inspect 必须是「只读元数据」路径
+  //
+  // 时序才是要害：宿主在 _prepareInstallBytes 里就调 /inspect，弹「第三方扩展会以
+  // Hibiki 权限执行代码」信任对话框在那之后。所以 /inspect 一旦经过
+  // MExtensionServerLoader（Class.forName + newInstance + createSources），用户
+  // 点“取消”时代码早就跑完了——警告变成过去式。加载是 /dalvik 的职责。
+  //
+  // 断言全部打在**剥掉注释**的源码上：这两个文件的注释里必须能写出
+  // "MExtensionServerLoader" / "Class.forName" 来解释为什么不那么做。
+  // ==========================================================================
+  test('/inspect 不加载扩展代码（元数据闭包里没有任何执行原语）', () {
+    const String inspectPath = '$_vendorRoot/overlay/server/src/main/kotlin/'
+        'mextensionserver/controller/InspectHandler.kt';
+    final String inspectCode = maskComments(_read(inspectPath));
+
+    // ① InspectHandler 自己不碰加载器。
+    for (final String primitive in _codeExecutionPrimitives) {
+      expect(
+        inspectCode,
+        isNot(contains(primitive)),
+        reason: 'InspectHandler 里出现了 $primitive —— /inspect 在信任对话框弹出'
+            '之前就会执行扩展的静态初始化 / 构造器 / createSources()',
+      );
+    }
+    expect(
+      inspectCode,
+      contains('PackageTools.getPackageInfo('),
+      reason: '/inspect 必须只走 apk-parser 的元数据读取；换成别的读法就得重新'
+          '证明那条路径不构造类',
+    );
+
+    // ② 闭包的另一端：getPackageInfo 的函数体本身也不能含执行原语。
+    //    这两步合起来才是「从 /inspect 可达的代码里没有执行原语」的完整证据，
+    //    而不是「我读了 InspectHandler 觉得没问题」。
+    const String packageToolsPath = '$_upstreamSource/server/src/main/kotlin/'
+        'mextensionserver/util/PackageTools.kt';
+    expect(
+      File(packageToolsPath).existsSync(),
+      isTrue,
+      reason: 'PackageTools.kt 不在了 —— overlay 里的 getPackageInfo 调用会悬空',
+    );
+    final String body = _kotlinFunctionBody(
+      _read(packageToolsPath),
+      'fun getPackageInfo(',
+    );
+    // 反空转：函数体解析一旦失效（改名 / 花括号匹配错），下面的 isNot(contains)
+    // 会在空串上全部通过，变成假绿。
+    expect(
+      body.length,
+      greaterThan(200),
+      reason: 'getPackageInfo 函数体只解析到 ${body.length} 字符 —— 花括号匹配'
+          '很可能已经失效，下面的断言会在空串上假绿',
+    );
+    expect(
+      body,
+      contains('ApkParsers.getMetaInfo'),
+      reason: '解析出来的函数体不像 getPackageInfo —— 锚点串对错了位置',
+    );
+    for (final String primitive in _codeExecutionPrimitives) {
+      expect(
+        body,
+        isNot(contains(primitive)),
+        reason: 'PackageTools.getPackageInfo 里出现了 $primitive —— /inspect 的'
+            '“只读元数据”闭包被击穿，上游漂移把执行路径带回来了',
+      );
+    }
+  });
+
+  test('sidecar 端口由子进程自报（token 不会发给陌生进程）', () {
+    final String controller = maskComments(_read(
+      '$_vendorRoot/overlay/server/src/main/kotlin/mextensionserver/'
+      'controller/MExtensionServerController.kt',
+    ));
+    final String runtime = maskComments(_read(
+      '$_repositoryRoot/hibiki/lib/src/media/manga/mihon/'
+      'desktop_mihon_runtime.dart',
+    ));
+
+    // 契约两端必须是同一个字面量，否则宿主永远等不到就绪行。
+    expect(controller, contains(_readyLinePrefix));
+    expect(
+      runtime,
+      contains(_readyLinePrefix),
+      reason: '宿主侧的就绪行前缀与 controller 对不上 —— 启动会退化成 20s 超时',
+    );
+
+    // 子进程必须先 bind 再报端口。
+    final int bind = controller.indexOf('server?.start(');
+    final int announce = controller.indexOf('announceReady(');
+    expect(bind, greaterThan(-1), reason: 'controller 里的 NanoHTTPD 启动不见了');
+    expect(announce, greaterThan(-1), reason: '就绪行播报不见了');
+    expect(
+      bind,
+      lessThan(announce),
+      reason: '端口必须在 NanoHTTPD 已经 bind 之后才播报；提前播报等于又回到'
+          '「报出来的端口未必归自己」',
+    );
+
+    // 宿主不许自己挑端口：bind→close→把号交给子进程之间存在 TOCTOU 窗口，
+    // 期间任何本机进程都能抢走该端口，宿主随后把 Bearer token 发给陌生人。
+    expect(
+      runtime,
+      isNot(contains('ServerSocket.bind')),
+      reason: '宿主又开始自己预选端口了 —— token 可能发给抢占该端口的陌生进程',
+    );
+
+    // token 必须在拿到「子进程自报的端口」之后才可能发出。
+    final int awaitPort = runtime.indexOf('await announced.future');
+    final int assignPort = runtime.indexOf('_port = readyPort;');
+    final int firstRequest = runtime.indexOf('await _readCapabilities()');
+    expect(awaitPort, greaterThan(-1), reason: '等待就绪行的地方不见了');
+    expect(assignPort, greaterThan(-1), reason: '_port 的赋值点不见了');
+    expect(firstRequest, greaterThan(-1), reason: '就绪探测请求不见了');
+    expect(awaitPort, lessThan(assignPort));
+    expect(
+      assignPort,
+      lessThan(firstRequest),
+      reason: '_port 必须在第一次带 token 的请求之前、且只能由子进程自报的值赋出',
+    );
+
+    // 就绪循环：先查子进程死没死，再发认证请求。
+    final int loopExited =
+        runtime.indexOf('await _hasExited(process)', awaitPort);
+    expect(loopExited, greaterThan(-1), reason: '就绪循环里的存活检查不见了');
+    expect(
+      loopExited,
+      lessThan(firstRequest),
+      reason: '存活检查必须在请求之前；放在 catch 里等于每轮都先朝一个可能已经'
+          '不是自家子进程的端口发一次带 token 的请求',
+    );
+  });
+
+  test('/source-image 的响应缓冲有硬上限（敌意源不能 OOM 掉 sidecar）', () {
+    final String handler = maskComments(_read(
+      '$_vendorRoot/overlay/server/src/main/kotlin/mextensionserver/'
+      'controller/SourceImageHandler.kt',
+    ));
+    expect(
+      handler,
+      isNot(contains('body.bytes()')),
+      reason: 'body.bytes() 是无上限全量缓冲，sidecar 只有 -Xmx512m；'
+          '源站点控制的 URL 返回超大响应就能把整个 JVM 打死',
+    );
+    expect(handler, contains('MAX_IMAGE_BYTES'));
+    expect(
+      handler,
+      contains('body.byteStream()'),
+      reason: '必须边读边计数；只看 Content-Length 会被 chunked 响应绕过',
+    );
+  });
+}
+
+/// 会让第三方 APK 里的代码真正跑起来的原语。
+///
+/// 前四个是加载器入口，后四个是「把 APK 里的类变成活对象」本身；`/inspect` 的
+/// 可达闭包里出现任意一个，都意味着「用户点确认之前不执行扩展代码」这条不变式
+/// 已经破了。
+///
+/// 刻意**不**收裸 `newInstance`：`DocumentBuilderFactory.newInstance()` 这类
+/// JAXP 静态工厂同名，收了就是纯子串假阳（实测 getPackageInfo 里就有一处）。
+/// 闭包不因此漏 —— 想拿到扩展类的 `Class` 对象，只能经过 `Class.forName` 或者
+/// 自建 ClassLoader，两条都在下面。
+const List<String> _codeExecutionPrimitives = <String>[
+  'MExtensionServerLoader',
+  'invokeWithExtension',
+  'loadExtensionSources',
+  'dex2jar',
+  'URLClassLoader',
+  'Class.forName',
+  'getDeclaredConstructor',
+  'defineClass',
+  'createSources',
+];
+
+/// 宿主与 sidecar 之间的就绪行契约（两端必须共用同一个字面量）。
+const String _readyLinePrefix = 'HIBIKI_MIHON_READY port=';
+
+/// 取 [source] 里以 [anchor] 开头的 Kotlin 函数体（含外层花括号）。
+///
+/// 花括号配对走 [maskCommentsAndStrings]（注释与字符串里的花括号不参与配对），
+/// 再用同下标切回**只剥注释**的版本 —— 两者等长，所以下标通用；返回值里字符串
+/// 字面量原样保留，调用方的 contains 断言才能看到真实代码。
+String _kotlinFunctionBody(String source, String anchor) {
+  final String structural = maskCommentsAndStrings(source);
+  final String readable = maskComments(source);
+  final int start = structural.indexOf(anchor);
+  if (start < 0) return '';
+  final int open = structural.indexOf('{', start);
+  if (open < 0) return '';
+  int depth = 0;
+  for (int i = open; i < structural.length; i++) {
+    final String c = structural[i];
+    if (c == '{') depth++;
+    if (c == '}') {
+      depth--;
+      if (depth == 0) return readable.substring(open, i + 1);
+    }
+  }
+  return '';
 }
