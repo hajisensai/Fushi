@@ -79,8 +79,30 @@ class MangaImporter {
     void Function(int done, int total)? onProgress,
   }) async {
     final Directory root = Directory(imageDirPath);
+    final MokuroPayload payload = await payloadFromImageFolder(root);
+    final String proposedTitle = title?.trim().isNotEmpty == true
+        ? title!.trim()
+        : (p.basename(root.path).isEmpty ? 'manga' : p.basename(root.path));
+    return _copyAndInsert(
+      db: db,
+      srcDir: root,
+      payload: payload,
+      proposedTitle: proposedTitle,
+      policy: policy,
+      onProgress: onProgress,
+    );
+  }
+
+  /// 「一个装着页图的文件夹」→ [MokuroPayload] 的**唯一**枚举/解码口径：自然序枚举
+  /// [root] 下的页图，逐张解码取真实宽高（`bakeOrientation` 后，EXIF 旋转过的页不会
+  /// 把宽高读反），OCR 框留空。
+  ///
+  /// 抽成公开函数是因为「导入一本新漫画」与「把已在库的书就地转成漫画」
+  /// （`book_format_rebuild.dart`）用的是同一批页图事实：两处各写一遍枚举/解码，
+  /// 排序或宽高口径一旦漂开，转化产出的 `manga.json` 就与导入产出的不是同一种东西。
+  static Future<MokuroPayload> payloadFromImageFolder(Directory root) async {
     if (!root.existsSync()) {
-      throw MangaImportException('Manga image folder not found: $imageDirPath');
+      throw MangaImportException('Manga image folder not found: ${root.path}');
     }
     final List<MangaOcrPageFile> files = enumerateMangaPages(root);
     if (files.isEmpty) {
@@ -103,17 +125,70 @@ class MangaImporter {
         ),
       );
     }
-    final String proposedTitle = title?.trim().isNotEmpty == true
-        ? title!.trim()
-        : (p.basename(root.path).isEmpty ? 'manga' : p.basename(root.path));
-    return _copyAndInsert(
-      db: db,
-      srcDir: root,
-      payload: MokuroPayload(images: pages),
-      proposedTitle: proposedTitle,
-      policy: policy,
-      onProgress: onProgress,
-    );
+    return MokuroPayload(images: pages);
+  }
+
+  /// 第一遍（纯校验，零副作用）：为 [payload] 的每页规划书目录内的 destRel
+  /// （`images/...`，sanitize + 保留子目录 + 去重 + 防穿越），并校验源图在 [srcDir]
+  /// 里确实存在。返回值与 `payload.images` 一一对应、同序。
+  ///
+  /// 与 [copyMangaArtifacts] 拆成两步不是为了好看：调用方（导入器）必须在**建书目录
+  /// 与问用户同名冲突之前**跑完校验，否则一次注定失败的导入会先弹一个同名弹窗、
+  /// 再留下一个空书目录。
+  static List<String> planMangaDestRels({
+    required Directory srcDir,
+    required MokuroPayload payload,
+  }) {
+    final List<String> destRels = <String>[];
+    final Set<String> usedDestRels = <String>{};
+    for (final MokuroImage page in payload.images) {
+      // sanitizeRelSegments 对含 `..` 的 img_path 抛 MangaImportException（防穿越红线）。
+      final List<String> segments = MangaStorage.sanitizeRelSegments(page.url);
+      destRels.add(MangaStorage.uniqueDestRel(segments, usedDestRels));
+      final File src = _sourceFile(srcDir.path, page.url);
+      if (!src.existsSync()) {
+        throw MangaImportException('Missing manga page image: ${page.url}');
+      }
+    }
+    return destRels;
+  }
+
+  /// 第二遍（落盘）：把页图从 [srcDir] 拷进 `<bookDir>/images/<destRel>`，再写
+  /// `<bookDir>/manga.json`（`url` 已改写成 destRel）。返回页数与封面相对路径
+  /// （= 第一页页图，书架封面解析器 `p.join(extractDir, coverPath)` 直接可用）。
+  ///
+  /// **不碰数据库**：导入走 `insertEpubBook`、转化走 `updateEpubBookFormat`，
+  /// 但两者产出的磁盘产物必须逐字节同构，故这一段只有一份实现。
+  static Future<({int pageCount, String coverRel})> copyMangaArtifacts({
+    required Directory srcDir,
+    required MokuroPayload payload,
+    required List<String> destRels,
+    required String bookDir,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    // 逐页 await 让主 isolate 有机会喂进度不卡 UI。
+    final int total = payload.images.length;
+    final List<MokuroImage> rewritten = <MokuroImage>[];
+    for (int i = 0; i < total; i++) {
+      final MokuroImage page = payload.images[i];
+      final String destRel = destRels[i];
+      final File src = _sourceFile(srcDir.path, page.url);
+      final File dest = MangaStorage.destFile(bookDir, destRel);
+      dest.parent.createSync(recursive: true);
+      await src.copy(dest.path);
+      rewritten.add(
+        MokuroImage(url: destRel, size: page.size, blocks: page.blocks),
+      );
+      onProgress?.call(i + 1, total);
+    }
+
+    // 写序列化页/框结构（url 已改写为 destRel；mangaPayloadToJson 保留 lines_coords）。
+    final Map<String, Object?> serialized =
+        mangaPayloadToJson(MokuroPayload(images: rewritten, ocr: payload.ocr));
+    await File(p.join(bookDir, MangaStorage.kMangaJsonFileName))
+        .writeAsString(jsonEncode(serialized), flush: true);
+
+    return (pageCount: total, coverRel: destRels.first);
   }
 
   /// 从 [mokuroPath] 指向的 `.mokuro` 文件导入一本漫画，返回新建的 `bookKey`。
@@ -235,17 +310,8 @@ class MangaImporter {
   }) async {
     // 第一遍：规划每页 destRel（sanitize + 保留子目录 + 去重）并校验源图存在 + 防路径穿越。
     // 全部在任何落盘/落库之前完成——校验失败零副作用，无需回滚。
-    final List<String> destRels = <String>[];
-    final Set<String> usedDestRels = <String>{};
-    for (final MokuroImage page in payload.images) {
-      // sanitizeRelSegments 对含 `..` 的 img_path 抛 MangaImportException（防穿越红线）。
-      final List<String> segments = MangaStorage.sanitizeRelSegments(page.url);
-      destRels.add(MangaStorage.uniqueDestRel(segments, usedDestRels));
-      final File src = _sourceFile(srcDir.path, page.url);
-      if (!src.existsSync()) {
-        throw MangaImportException('Missing manga page image: ${page.url}');
-      }
-    }
+    final List<String> destRels =
+        planMangaDestRels(srcDir: srcDir, payload: payload);
 
     final List<EpubBookRow> existingBooks = await db.getAllEpubBooks();
     final String storedTitle = await resolveDuplicateTitle(
@@ -258,31 +324,18 @@ class MangaImporter {
 
     String? insertedKey;
     try {
-      // 第二遍：逐页拷贝到 `<bookDir>/images/<destRel>`（保留子目录结构），并构造改写后的
-      // payload（url = destRel）供写 manga.json。逐页 await 让主 isolate 有机会喂进度不卡 UI。
-      final int total = payload.images.length;
-      final List<MokuroImage> rewritten = <MokuroImage>[];
-      for (int i = 0; i < total; i++) {
-        final MokuroImage page = payload.images[i];
-        final String destRel = destRels[i];
-        final File src = _sourceFile(srcDir.path, page.url);
-        final File dest = MangaStorage.destFile(bookDir, destRel);
-        dest.parent.createSync(recursive: true);
-        await src.copy(dest.path);
-        rewritten.add(
-          MokuroImage(url: destRel, size: page.size, blocks: page.blocks),
-        );
-        onProgress?.call(i + 1, total);
-      }
-
-      // 封面 = 第一页页图的相对路径（书架封面解析器 `p.join(extractDir, coverPath)`）。
-      final String coverRel = destRels.first;
-
-      // 写序列化页/框结构（url 已改写为 destRel；mangaPayloadToJson 保留 lines_coords）。
-      final Map<String, Object?> serialized = mangaPayloadToJson(
-          MokuroPayload(images: rewritten, ocr: payload.ocr));
-      await File(p.join(bookDir, MangaStorage.kMangaJsonFileName))
-          .writeAsString(jsonEncode(serialized), flush: true);
+      // 第二遍：拷图 + 写 manga.json。封面 = 第一页页图的相对路径（书架封面解析器
+      // `p.join(extractDir, coverPath)`）。
+      final ({int pageCount, String coverRel}) artifacts =
+          await copyMangaArtifacts(
+        srcDir: srcDir,
+        payload: payload,
+        destRels: destRels,
+        bookDir: bookDir,
+        onProgress: onProgress,
+      );
+      final int total = artifacts.pageCount;
+      final String coverRel = artifacts.coverRel;
 
       final int importedAtMs = DateTime.now().millisecondsSinceEpoch;
       insertedKey = await db.insertEpubBook(

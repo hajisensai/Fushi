@@ -110,22 +110,7 @@ class EpubImporter {
       final EpubBook book = result.book;
       final List<int> characterCounts = result.characterCounts;
 
-      final String chaptersJson = jsonEncode(
-        book.chapters
-            .asMap()
-            .entries
-            .map((entry) => <String, Object>{
-                  'id': entry.value.id,
-                  'href': entry.value.href,
-                  'mediaType': entry.value.mediaType,
-                  'characters': characterCounts[entry.key],
-                  // TODO-1192: 标记该 characters 计数的口径版本，供开书判定是否需
-                  // 要按新口径（[japaneseCharCount]）后台重算并回写（见
-                  // [kChapterCharCountCaliber] / charCountsFromChaptersJson）。
-                  'charCaliber': kChapterCharCountCaliber,
-                })
-            .toList(),
-      );
+      final String chaptersJson = buildChaptersJson(book, characterCounts);
 
       final String? tocJson = book.toc.isNotEmpty
           ? jsonEncode(
@@ -239,6 +224,48 @@ class EpubImporter {
       _tryDeleteDir(tempDir);
       rethrow;
     }
+  }
+
+  /// `EpubBooks.chaptersJson` 的**唯一**序列化口径：每章 `id`/`href`/`mediaType`/
+  /// `characters` + 计数口径版本 [kChapterCharCountCaliber]。
+  ///
+  /// 公开是给「漫画 → 书」转化用的（`book_format_rebuild.dart`）：转成漫画时这一列
+  /// 被写成 `'[]'`，转回来只能由重新解析解压树重建。两处各写一份 JSON 结构，字段名
+  /// 或 charCaliber 漂一个字，书架字数与 TODO-1192 的口径重算就同时坏掉。
+  static String buildChaptersJson(EpubBook book, List<int> characterCounts) {
+    return jsonEncode(
+      book.chapters
+          .asMap()
+          .entries
+          .map((entry) => <String, Object>{
+                'id': entry.value.id,
+                'href': entry.value.href,
+                'mediaType': entry.value.mediaType,
+                'characters': characterCounts[entry.key],
+                // TODO-1192: 标记该 characters 计数的口径版本，供开书判定是否需
+                // 要按新口径（[japaneseCharCount]）后台重算并回写（见
+                // [kChapterCharCountCaliber] / charCountsFromChaptersJson）。
+                'charCaliber': kChapterCharCountCaliber,
+              })
+          .toList(),
+    );
+  }
+
+  /// 重新解析**已解压**的书目录 [extractDir]，返回 `(chapterCount, chaptersJson,
+  /// coverPath)` 三件套。
+  ///
+  /// 用于「漫画 → 书」转回：本仓的 EPUB 在盘上只有解压树、没有独立 `.epub`
+  /// （BUG-088），所以「撤销」不存在——只能拿解压树重新算一遍。DOM 解析与字数统计
+  /// 放 isolate（与导入同款 [compute]），不卡 UI。
+  static Future<({int chapterCount, String chaptersJson, String? coverPath})>
+      reparseExtractedBook(String extractDir) async {
+    final _ParseResult result =
+        await compute(_reparseExtractedInIsolate, extractDir);
+    return (
+      chapterCount: result.book.chapters.length,
+      chaptersJson: buildChaptersJson(result.book, result.characterCounts),
+      coverPath: result.book.coverHref,
+    );
   }
 
   /// Move the freshly-extracted [srcDir] to [targetDir]; returns the
@@ -414,6 +441,16 @@ List<int> _computeCharacterCounts(EpubBook book) {
     book.chapters.length,
     (int index) => book.chapterCharacterCount(index),
     growable: false,
+  );
+}
+
+/// 解析一个**已经解压好**的书目录（不解压、不写盘），供「漫画 → 书」转回重算
+/// 章节与字数。
+_ParseResult _reparseExtractedInIsolate(String extractDir) {
+  final EpubBook book = EpubParser.parseFromExtracted(extractDir);
+  return _ParseResult(
+    book: book,
+    characterCounts: _computeCharacterCounts(book),
   );
 }
 

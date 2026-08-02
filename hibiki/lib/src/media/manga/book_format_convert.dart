@@ -12,9 +12,9 @@
 ///
 /// **转化即重建**：不是翻一个字段就完事——`format='manga'` 的阅读器硬要求
 /// `extractDir/manga.json` + `images/` 存在（缺了直接 `_loadFailed`），所以转过去
-/// 必须真的产出页图与 `manga.json`。反向（漫画 → 书）则要求原始 `.epub`/`.pdf` 仍在
-/// 书目录里；从 `.mokuro`/裸图片目录导入的漫画压根没有那个原始文件，只能明确说不支持
-/// ——而不是造一本假书糊弄过去。
+/// 必须真的产出页图与 `manga.json`。反向（漫画 → 书）则要求书目录里仍有可还原的
+/// **书侧源产物**；从 `.mokuro`/裸图片目录导入的漫画压根没有过那样的产物，只能明确
+/// 说不支持——而不是造一本假书糊弄过去。
 ///
 /// 本文件只做**判定**（纯函数，便于单测）；磁盘探测由调用方完成后把事实传进来，
 /// 与 `drop_classification.dart` 的 `isDirectory` / `isImageArchive` 注入同一范式。
@@ -41,16 +41,16 @@ enum BookConvertBlocker {
   /// 文字书（普通 EPUB）没有可用作页图的内容。转成漫画后阅读器只会打开一本空书。
   textOnlyBook,
 
-  /// 这本漫画是从 `.mokuro` / 裸图片目录导入的，书目录里没有可还原的原始
-  /// `.epub`/`.pdf`。只能保持漫画身份。
+  /// 这本漫画是从 `.mokuro` / 裸图片目录导入的，书目录里没有可还原的书侧源产物
+  /// （EPUB 解压树 / `document.pdf`）。只能保持漫画身份。
   noOriginalFile,
 
-  /// 记录在案的源文件在磁盘上找不到了（被手工删了 / 外部存储掉盘）。
+  /// 记录在案的源产物在磁盘上找不到了（被手工删了 / 外部存储掉盘）。
   sourceMissing,
 }
 
-/// 判定结果。[blocker] 为 null 即可转化，[sourcePath] 是重建要读的源文件
-/// （转漫画时 = 原 `.epub`/`.pdf`；转回书时 = 要指回去的那个原始文件）。
+/// 判定结果。[blocker] 为 null 即可转化，[sourcePath] 是重建要读的**源产物**
+/// （转漫画时 = 页图来源；转回书时 = 要重新解析的那份书侧产物）。
 class BookConvertVerdict {
   const BookConvertVerdict.supported(this.sourcePath) : blocker = null;
 
@@ -66,13 +66,16 @@ class BookConvertVerdict {
   bool get supported => blocker == null;
 }
 
-/// 书目录里那份原始文件的既有形态（调用方探测后传入）。
+/// 书目录里那份**源产物**的既有形态（调用方探测后传入）。
 ///
-/// 三种 format 的 `epubPath` 语义各不相同，故这里只描述**事实**、不描述格式：
-/// - EPUB 行：`epubPath` = 原 `.epub` 文件名（导入时拷进书目录，仍在）；
-/// - PDF 行：`epubPath` = `hibiki.pdf`（PDF 拷进书目录，仍在）；
-/// - 漫画行：`epubPath` = `manga.json`（**不是**原始文件；原始文件可能存在也可能
-///   压根没有过——`.mokuro`/裸目录导入的漫画就没有）。
+/// 三种 format 的源产物形态各不相同，故这里只描述**事实**、不描述格式。
+/// 各自的源产物是什么，由 `book_format_rebuild.dart` 的探测器负责认定：
+/// - EPUB 行：源产物 = **解压书目录本身**。本仓的 EPUB 从不在书目录里留一份独立
+///   `.epub`（导入即解压，BUG-088 已确认 `epubPath` 只是导入时的原始文件名、
+///   **永远解析不到真实文件**），所以「转成漫画要读的东西」只能是解压树；
+/// - PDF 行：源产物 = `extractDir/document.pdf`（导入时真的拷进了书目录，仍在）；
+/// - 漫画行：`epubPath` = `manga.json`（**不是**书侧源产物；书侧源产物可能仍在，
+///   也可能压根没有过——`.mokuro`/裸目录导入的漫画就没有）。
 class BookSourceProbe {
   const BookSourceProbe({
     required this.sourceExists,
@@ -80,21 +83,22 @@ class BookSourceProbe {
     this.recoverableOriginalPath,
   });
 
-  /// `extractDir/epubPath` 指向的文件当前是否存在。
+  /// 源产物当前是否存在（EPUB 行 = 解压树解析得通；PDF 行 = 那个文件在）。
   final bool sourceExists;
 
-  /// 该文件是不是「一包页图」（`MangaArchiveImporter.looksLikeImageArchive`，
-  /// 对 `.epub` 有专门的图片型判定分支）。PDF 恒可渲染成页图，不看这一位。
+  /// 源产物是不是「一叠页图」：EPUB 行走 `MangaArchiveImporter.isPureImageEpub`
+  /// （每章都只有图片）。PDF 恒可渲染成页图，不看这一位。
   final bool sourceIsImageArchive;
 
-  /// 漫画行专用：书目录里仍在的原始 `.epub`/`.pdf` 绝对路径（没有则 null）。
+  /// 漫画行专用：书目录里仍可还原的书侧源产物绝对路径——`document.pdf` 文件，
+  /// 或仍在的 EPUB 解压书目录（都没有则 null）。
   final String? recoverableOriginalPath;
 }
 
 /// 判定一本书能否转成漫画。纯函数。
 ///
-/// [format] / [sourceAbsolutePath] 来自 `EpubBooks` 行（后者 =
-/// `p.join(extractDir, epubPath)`），[probe] 是调用方的磁盘探测结果。
+/// [format] 来自 `EpubBooks` 行，[sourceAbsolutePath] 是该行的源产物绝对路径
+/// （见 [BookSourceProbe]），[probe] 是调用方的磁盘探测结果。
 BookConvertVerdict verdictToManga({
   required BookFormat format,
   required String sourceAbsolutePath,
@@ -121,8 +125,9 @@ BookConvertVerdict verdictToManga({
 
 /// 判定一本漫画能否转回书。纯函数。
 ///
-/// 「转回」是把 `epubPath` 指回书目录里**仍在的**原始 `.epub`/`.pdf`——那才是真书。
-/// 从 `.mokuro`/裸图片目录导入的漫画没有这样的原始文件，不支持（不造假书）。
+/// 「转回」是拿书目录里**仍在的**书侧源产物（`document.pdf` / EPUB 解压树）重新
+/// 算出章节与封面——那才是真书。从 `.mokuro`/裸图片目录导入的漫画没有这样的产物，
+/// 不支持（不造假书）。
 BookConvertVerdict verdictToBook({
   required BookFormat format,
   required BookSourceProbe probe,

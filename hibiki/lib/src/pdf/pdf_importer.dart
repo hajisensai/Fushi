@@ -1,6 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:drift/drift.dart';
 import 'package:path/path.dart' as p;
@@ -146,58 +144,9 @@ class PdfImporter {
 
   /// 把 PDF 首页栅格化成封面 PNG 字节（失败返回 null，不阻断导入——书仍可无封面入架）。
   /// 目标宽度约 600px 以保证书架封面清晰；高度按页面纵横比等比。
-  static Future<Uint8List?> _renderCoverPng(PdfPage page) async {
-    try {
-      const double targetWidth = 600;
-      final double scale = page.width > 0 ? targetWidth / page.width : 1.0;
-      final double fullWidth = page.width * scale;
-      final double fullHeight = page.height * scale;
-      final PdfImage? rendered = await page.render(
-        fullWidth: fullWidth,
-        fullHeight: fullHeight,
-        backgroundColor: 0xFFFFFFFF,
-      );
-      if (rendered == null) return null;
-      try {
-        return await _bgraToPng(
-          rendered.pixels,
-          rendered.width,
-          rendered.height,
-        );
-      } finally {
-        rendered.dispose();
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('PdfImporter.renderCover', e, stack);
-      return null;
-    }
-  }
-
-  /// 把 PDFium 输出的 BGRA8888 位图编码成 PNG 字节（纯 CPU codec，无 GPU 回读，
-  /// 与 Phase 0 spike 同路径，离屏可靠）。
-  static Future<Uint8List?> _bgraToPng(
-    Uint8List bgra,
-    int width,
-    int height,
-  ) async {
-    final ui.ImmutableBuffer buffer =
-        await ui.ImmutableBuffer.fromUint8List(bgra);
-    final ui.ImageDescriptor descriptor = ui.ImageDescriptor.raw(
-      buffer,
-      width: width,
-      height: height,
-      pixelFormat: ui.PixelFormat.bgra8888,
-    );
-    final ui.Codec codec = await descriptor.instantiateCodec();
-    final ui.FrameInfo frame = await codec.getNextFrame();
-    final ui.Image image = frame.image;
-    try {
-      final ByteData? png =
-          await image.toByteData(format: ui.ImageByteFormat.png);
-      return png?.buffer.asUint8List();
-    } finally {
-      image.dispose();
-      codec.dispose();
-    }
-  }
+  ///
+  /// 栅格化与 PNG 编码本体在 [PdfEngine]：「PDF → 漫画」转化要逐页导出同款页图，
+  /// 两处各写一份的话背景色/缩放/dispose 时机随时能漂。
+  static Future<Uint8List?> _renderCoverPng(PdfPage page) =>
+      PdfEngine.renderPagePng(page, targetWidth: 600);
 }

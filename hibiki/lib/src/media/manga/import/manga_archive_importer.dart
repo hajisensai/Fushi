@@ -32,6 +32,22 @@ const List<String> _kYomitanBankPrefixes = <String>[
 const String _kYomitanIndexEntry = 'index.json';
 
 abstract final class MangaArchiveImporter {
+  /// [book]（已解压的 EPUB）是不是「纯图漫画」：每个 `linear && !isNav` 章节都只有
+  /// 图片、且图片扩展名都在 [kMangaImageExtensions] 内。
+  ///
+  /// 公开是因为「一本已在库的 EPUB 能不能转成漫画」问的是同一个问题，而那本书在
+  /// 盘上**只有解压树、没有独立 `.epub`**（BUG-088），走不了 [looksLikeImageArchive]
+  /// 的压缩包入口。判据只能有一份，否则「导入时算漫画、转化时不算」这种自相矛盾
+  /// 迟早出现。
+  static bool isPureImageEpub(EpubBook book) => _isPureImageEpub(book);
+
+  /// 按 spine 顺序把 [book] 的页图铺进 [staging]（`page_%06d.<ext>` 自然序）。
+  ///
+  /// 与 [isPureImageEpub] 同理公开：导入压缩包与「就地把书转成漫画」必须产出同一
+  /// 批页、同一种排序，否则同一本书从两条路进来页序不同。
+  static Future<void> copyEpubPages(EpubBook book, Directory staging) =>
+      _copyEpubPages(book, staging);
+
   static bool looksLikeImageArchive(String archivePath) {
     final String extension = p.extension(archivePath).toLowerCase();
     if (extension == '.epub') {
