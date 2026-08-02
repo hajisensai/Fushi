@@ -112,6 +112,11 @@ DictionaryPopupInputSpec dictionaryPopupInputSpecFor({
 ///
 /// 解析走的是与键盘路径**同一个** `resolve*`，所以改键对两条路径同时生效——旧桥
 /// 把键名硬编码在 JS 里，改键后 WebView 持焦时仍按老键位响应。
+///
+/// 宿主 [scope] 未命中时**回落 [ShortcutScope.universal]**，与页面派发路径的兜底
+/// 顺序完全一致（页面专属键优先，其后才是「返回上一级」）。少了这一跳，默认的
+/// Esc 关词典会在**弹窗持焦时**整条失效：Esc 现在绑在 universal 的 globalBack 上，
+/// 而宿主 scope 里根本没有它——BUG-1071 修好的正是这条弹窗持焦路径，不能重开。
 ShortcutAction? resolveDictionaryPopupInputToken({
   required HibikiShortcutRegistry registry,
   required String token,
@@ -119,15 +124,21 @@ ShortcutAction? resolveDictionaryPopupInputToken({
 }) {
   final MouseBinding? mouse = MouseBinding.deserialize(token);
   if (mouse != null) {
-    return registry.resolveMouse(mouse.button, scope: scope);
+    return registry.resolveMouse(mouse.button, scope: scope) ??
+        registry.resolveMouse(mouse.button, scope: ShortcutScope.universal);
   }
   final InputBinding? keyboard = InputBinding.deserialize(token);
   if (keyboard != null) {
     return registry.resolveKeyboard(
-      keyboard.key,
-      modifiers: keyboard.modifiers,
-      scope: scope,
-    );
+          keyboard.key,
+          modifiers: keyboard.modifiers,
+          scope: scope,
+        ) ??
+        registry.resolveKeyboard(
+          keyboard.key,
+          modifiers: keyboard.modifiers,
+          scope: ShortcutScope.universal,
+        );
   }
   return null;
 }

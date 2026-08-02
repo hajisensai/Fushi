@@ -1589,7 +1589,7 @@
   "shortcut_action_dpad_left": "D-pad left",
   "shortcut_action_dpad_right": "D-pad right",
   "shortcut_action_dpad_up": "D-pad up",
-  "shortcut_action_global_back": "Go back",
+  "shortcut_action_global_back": "Back / exit one level",
   "shortcut_action_global_external_lookup": "App-external lookup shortcut",
   "shortcut_action_global_scroll_page_down": "Scroll down one screen",
   "shortcut_action_global_scroll_page_up": "Scroll up one screen",
@@ -1605,7 +1605,6 @@
   "shortcut_action_reader_create_card_from_popup": "Create card from popup",
   "shortcut_action_reader_dismiss_dict": "Dismiss dictionary",
   "shortcut_action_reader_enter_caret": "Enter lookup cursor",
-  "shortcut_action_reader_exit_book": "Exit book",
   "shortcut_action_reader_lookup_at_cursor": "Lookup / activate cursor",
   "shortcut_action_reader_open_menu": "Open settings menu",
   "shortcut_action_reader_open_navigation": "Open navigation",
@@ -1618,7 +1617,6 @@
   "shortcut_action_video_align_subtitle_to_prev": "Align previous subtitle to now",
   "shortcut_action_video_cycle_secondary_subtitle_obscure": "Cycle secondary subtitle obscure",
   "shortcut_action_video_cycle_subtitle_obscure": "Cycle subtitle obscure mode",
-  "shortcut_action_video_escape": "Close video / Back",
   "shortcut_action_video_next_chapter": "Next chapter",
   "shortcut_action_video_next_frame": "Next frame",
   "shortcut_action_video_next_subtitle": "Next subtitle",
@@ -3077,5 +3075,6 @@
   "book_convert_blocked_no_original": "This manga was imported from images, so there is no original book to convert back to.",
   "book_convert_blocked_source_missing": "The source files are gone from disk.",
   "manga_online_retry_waiting": "Retrying automatically ($attempt/$total)",
-  "manga_ocr_wizard_already_ocred": "This volume already has OCR data on every page. Running OCR again would overwrite it."
+  "manga_ocr_wizard_already_ocred": "This volume already has OCR data on every page. Running OCR again would overwrite it.",
+  "shortcut_scope_universal": "Back / Exit"
 }

@@ -1413,7 +1413,7 @@ extension _VideoSubtitle on _VideoHibikiPageState {
             appModel.shortcutRegistry,
             _buildVideoShortcutActions(controller),
             exclude: const <ShortcutAction>{
-              ShortcutAction.videoEscape,
+              ShortcutAction.globalBack,
               ShortcutAction.videoToggleFullscreen,
               ShortcutAction.videoToggleSubtitleList,
               ShortcutAction.videoToggleImmersiveLock,

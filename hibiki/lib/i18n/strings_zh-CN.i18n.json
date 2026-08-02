@@ -1589,7 +1589,7 @@
   "shortcut_action_dpad_left": "方向键 左",
   "shortcut_action_dpad_right": "方向键 右",
   "shortcut_action_dpad_up": "方向键 上",
-  "shortcut_action_global_back": "返回",
+  "shortcut_action_global_back": "返回上一级",
   "shortcut_action_global_external_lookup": "应用外查词快捷键",
   "shortcut_action_global_scroll_page_down": "向下翻一屏",
   "shortcut_action_global_scroll_page_up": "向上翻一屏",
@@ -1605,7 +1605,6 @@
   "shortcut_action_reader_create_card_from_popup": "从弹窗制卡",
   "shortcut_action_reader_dismiss_dict": "关闭词典",
   "shortcut_action_reader_enter_caret": "进入选字查词光标",
-  "shortcut_action_reader_exit_book": "退出书籍",
   "shortcut_action_reader_lookup_at_cursor": "查词/激活光标",
   "shortcut_action_reader_open_menu": "打开设置菜单",
   "shortcut_action_reader_open_navigation": "打开导航",
@@ -1618,7 +1617,6 @@
   "shortcut_action_video_align_subtitle_to_prev": "上一句字幕对齐到当前时间",
   "shortcut_action_video_cycle_secondary_subtitle_obscure": "循环副字幕遮蔽",
   "shortcut_action_video_cycle_subtitle_obscure": "循环字幕遮蔽模式",
-  "shortcut_action_video_escape": "关闭视频/返回",
   "shortcut_action_video_next_chapter": "下一章",
   "shortcut_action_video_next_frame": "下一帧",
   "shortcut_action_video_next_subtitle": "下一句字幕",
@@ -3077,5 +3075,6 @@
   "book_convert_blocked_no_original": "这本漫画是从图片导入的，没有可还原的原书。",
   "book_convert_blocked_source_missing": "源文件已从磁盘上消失。",
   "manga_online_retry_waiting": "即将自动重试 ($attempt/$total)",
-  "manga_ocr_wizard_already_ocred": "本卷每一页都已有 OCR 数据，无需再跑（重跑会覆盖现有数据）。"
+  "manga_ocr_wizard_already_ocred": "本卷每一页都已有 OCR 数据，无需再跑（重跑会覆盖现有数据）。",
+  "shortcut_scope_universal": "返回·退出"
 }

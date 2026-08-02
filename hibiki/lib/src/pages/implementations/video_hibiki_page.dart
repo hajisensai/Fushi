@@ -4149,12 +4149,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 不会被抢走，与守卫把制卡键排在守卫之外是同一条边界。
   @override
   Set<ShortcutAction> get dictionaryPopupForwardedActions =>
-      ShortcutAction.actionsForScope(ShortcutScope.video).toSet();
+      <ShortcutAction>{
+        ...ShortcutAction.actionsForScope(ShortcutScope.video),
+        // 「返回上一级」（默认 Esc / Alt+←）：浮层持焦时按它必须关浮层。它在
+        // universal scope，不在 video 组里，漏掉就等于 BUG-1269 那半边重开。
+        ShortcutAction.globalBack,
+      };
 
   /// 视频的语义是「关**顶层**浮层」（逐层关，保留隐藏热槽 BUG-092），不是清整栈，
   /// 故不走基类默认的 `clearDictionaryResult()`，改用与守卫完全同一个执行体。
   @override
   void onDictionaryPopupInputToken(String token) {
+    // scope 未命中时函数内部回落 universal（「返回上一级」），与页面派发同口径。
     final ShortcutAction? action = resolveDictionaryPopupInputToken(
       registry: appModel.shortcutRegistry,
       token: token,
@@ -4384,9 +4390,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // （进入光标本身是注册表动作 videoEnterCaret，经下方 callback 执行）。
     if (_handleCaretGamepadButton(button)) return true;
     final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
-      button,
-      scope: ShortcutScope.video,
-    );
+          button,
+          scope: ShortcutScope.video,
+        ) ??
+        // 兜底「返回上一级」（universal，默认手柄 B）。video 专属键先解析，未命中才
+        // 落到它——B 的逐级退出（原 videoEscape）现在就走这条。
+        appModel.shortcutRegistry.resolveGamepad(
+          button,
+          scope: ShortcutScope.universal,
+        );
     if (action == null) return false;
     // BUG-924：词典浮层可见时，任一已绑手柄键先关顶层浮层并消费（对齐阅读器 + 键盘通道），
     // 而非穿透控制后台视频。放在解析出 action 之后——未绑定的键仍交回 GamepadService 兜底
@@ -6067,7 +6079,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               appModel.shortcutRegistry,
               _buildVideoShortcutActions(_controller!),
               exclude: const <ShortcutAction>{
-                ShortcutAction.videoEscape,
+                ShortcutAction.globalBack,
                 ShortcutAction.videoToggleFullscreen,
                 ShortcutAction.videoToggleSubtitleList,
                 ShortcutAction.videoToggleImmersiveLock,

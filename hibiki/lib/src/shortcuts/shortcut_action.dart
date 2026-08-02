@@ -2,6 +2,25 @@ enum ShortcutScope {
   reader,
   home,
   global,
+
+  // 「返回上一级」这一件事的唯一归属地（用户拍板：Esc 一键从任何界面退一层，
+  // 且退书 / 退漫画 / 退视频只能有**一个**配置项）。
+  //
+  // 为什么是独立 scope 而不是塞进 global：媒体页（reader/manga/video）都只解析
+  // 自己那一组 co-active scope，若把「返回」留在 global 就得让它们连 home 组一起
+  // 解析——那会把 home+global+reader+audiobook 串成一个巨大的 co-active 组，
+  // reader 的 Ctrl+F（readerOpenNavigation）与 home 的 Ctrl+F（homeFocusSearch）
+  // 这类**本就永不同时激活**的键会被冲突检测误判成撞键。universal 自成一组，由
+  // 每个表面在**自己 scope 未命中之后**兜底解析，故：
+  //   · 页面专属键永远优先（阅读器内手柄 B 仍是 audiobookPrevSentence 上一句，
+  //     不被「返回」夺舍——这是 TODO-700 T1/T2 的既有约束，不得回归）；
+  //   · 页面没占用的键才落到「返回上一级」。
+  // ⚠️ 代价说明：正因为它是兜底，页面 scope 绑了同一个键就会**静默遮蔽**它，而
+  // 冲突检测（只扫 co-active 组）看不见。守卫 `universal_back_test` 因此对着默认
+  // 表核一遍「universal 的默认键不得被任何页面 scope 的默认键遮蔽」，B 在 reader
+  // 组是唯一登记在案的有意例外。
+  universal,
+
   audiobook,
   video,
   // 漫画阅读器（mokuro 页图 + OCR 文本层）。与 reader 分开是因为动作集不同：漫画
@@ -33,6 +52,16 @@ enum ShortcutScope {
   // is a real conflict (the later scope silently never fires). Conflict
   // detection must therefore scan the whole group, not just one scope. This is
   // the single source of truth both the pages and the registry rely on.
+  /// ⚠️ [universal]（「返回上一级」）**刻意不进任何组**，它与页面 scope 的关系不是
+  /// 「同时解析、谁先声明谁赢」，而是「页面全都没中才轮到」——单向遮蔽，且这个方向
+  /// 上有一个**有意**的既存例外：书内手柄 B 归有声书「上一句」，返回键在阅读器被它
+  /// 吃掉正是 TODO-700 约束2/4 要的效果。把 universal 并进各组会让默认表自带一条
+  /// 需要开例外的「冲突」，反而侵蚀这套冲突检测的可信度。
+  ///
+  /// 代价（已知限制，不要以为它被覆盖了）：用户在设置页把 Esc 之类的返回键绑给某个
+  /// 页面动作时，**不会**收到冲突提示，绑完那个页面就退不出去（改回来即可恢复）。
+  /// 默认表这一侧由 `universal_back_test` 的静态守卫逐平台钉死：任何页面 scope 的
+  /// 默认键盘绑定都不得与 globalBack 撞键，手柄侧只放行登记在案的 B。
   List<ShortcutScope> get coactiveScopes {
     switch (this) {
       case reader:
@@ -59,6 +88,11 @@ enum ShortcutScope {
       // 应用内 scope 牵连。
       case globalExternal:
         return const <ShortcutScope>[globalExternal];
+      // universal（「返回上一级」）是独立 co-active 组：它由每个表面在自身 scope
+      // 未命中后兜底解析，与任何页面 scope 都不在同一次解析里竞争，故冲突检测只
+      // 扫自己。跨组遮蔽由 `universal_back_test` 的默认表守卫兜住（见枚举注释）。
+      case universal:
+        return const <ShortcutScope>[universal];
       // dictionaryPopup（查词弹窗内导航）同理是独立 co-active 组：它的绑定由弹窗
       // WebView 的 JS 消费，永不与任何页面 scope 的键位竞争，冲突检测只扫自己。
       case dictionaryPopup:
@@ -104,6 +138,17 @@ enum ShortcutScope {
       case home:
       case global:
       case video:
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+        };
+      // universal（「返回上一级」）：键盘与手柄都有解析入口——每个表面在自身 scope
+      // 未命中后按 `resolveKeyboard/resolveGamepad(scope: universal)` 兜底
+      // （reader caret.part / manga page / video page / global_navigation 四处）。
+      // 鼠标不开：Flutter 侧至今没有 PointerDownEvent → MouseBinding 的派发管线，
+      // 而弹窗桥那条鼠标路只在**词典弹窗表面**成立、不是全表面能力（开了就是
+      // 「设置里能配、在正文上按了没反应」）。
+      case universal:
         return const <ShortcutChannel>{
           ShortcutChannel.keyboard,
           ShortcutChannel.gamepad,
@@ -155,11 +200,11 @@ enum ShortcutAction {
   // readerLookupAtCursor 在 readerEnterCaret 之前。
 
   // Reader
-  // 关闭/返回（用户拍板拆分：关词典与退书是两个独立动作、各自键位，不再共用一键
-  // 的阶梯语义）：readerDismissDict 只关词典弹窗（无弹窗时不消费、不退书）；
-  // readerExitBook 直接退出书籍（走 maybePop → PopScope onWillPop 闸门，BUG-782）。
+  // 「只关词典、绝不退出」的可选专用动作（**默认无键盘绑定**）。退出改由
+  // universal 的 globalBack 一键阶梯承担（关词典 → 退书），故这里不再需要
+  // 一个默认键；保留动作本身是因为它有独立价值：把它绑到鼠标侧键，就能在不退出
+  // 的前提下关词典（BUG-1071 那条鼠标通道的唯一消费者）。
   readerDismissDict(ShortcutScope.reader, 'reader_dismiss_dict'),
-  readerExitBook(ShortcutScope.reader, 'reader_exit_book'),
 
   // 翻页
   readerPageForward(ShortcutScope.reader, 'reader_page_forward'),
@@ -202,8 +247,22 @@ enum ShortcutAction {
   homeTabNext(ShortcutScope.home, 'home_tab_next'),
   homeFocusSearch(ShortcutScope.home, 'home_focus_search'),
 
+  // Universal —— 全 app 唯一的「返回上一级 / 退出当前界面」。
+  //
+  // 一个配置项覆盖全部退出语义（用户拍板）：关词典弹窗、退出书籍、退出漫画、
+  // 退出视频、退出设置等任意整页界面，全走它。默认键盘 Esc + Alt+←、手柄 B。
+  // scope 从 global 挪到 universal（持久化 key `global_back` **保持不变**，老用户
+  // 改过的键原样生效）；旧的 `reader_exit_book` / `video_escape` 两个 action 已删除，
+  // 它们的自定义绑定由 schema v8 迁移并入本动作（见 shortcut_registry）。
+  //
+  // 「退出到哪一层」由各表面自己的阶梯执行体决定，本动作只表达「退一层」：
+  //   · 阅读器：词典弹窗可见 → 关弹窗；否则 maybePop 退书（PopScope 闸门，BUG-782）
+  //   · 漫画：  词典弹窗可见 → 关弹窗；否则 maybePop 退漫画
+  //   · 视频：  控件编辑 → 字幕列表 → 剧集列表 → 侧栏 → 沉浸锁 → 全屏 → 浮层 → 退页
+  //   · 其它页：maybePop（PopupRoute 让框架自己的 Esc 语义优先，见 global_navigation）
+  globalBack(ShortcutScope.universal, 'global_back'),
+
   // Global
-  globalBack(ShortcutScope.global, 'global_back'),
   globalScrollPageDown(ShortcutScope.global, 'global_scroll_page_down'),
   globalScrollPageUp(ShortcutScope.global, 'global_scroll_page_up'),
   // TODO-1093：窗口级/app 级「全屏切换」（区别于视频播放器内的
@@ -229,11 +288,9 @@ enum ShortcutAction {
   // registry. Defaults match the previous asbplayer/mpv-style bindings.
   //
   // 声明顺序 = 设置页展示顺序（actionsForScope 按 values 声明序过滤）。视频组按
-  // 关闭/返回 → 播放控制 → 字幕/章节跳转 → 字幕显示 → 字幕对轴 → 音量 → 画面/杂项
+  // 播放控制 → 字幕/章节跳转 → 字幕显示 → 字幕对轴 → 音量 → 画面/杂项
   // 分簇排列，重要动作靠前；重排只影响展示，持久化走字符串 key、与声明序无关。
-
-  // 关闭/返回：逐级退出（控件编辑态→字幕列表→剧集列表→侧栏→沉浸锁→全屏→退出视频页）。
-  videoEscape(ShortcutScope.video, 'video_escape'),
+  // 「逐级退出」不在本组——它是全 app 共用的 [globalBack]（universal scope）。
 
   // 播放控制
   videoTogglePlayPause(ShortcutScope.video, 'video_toggle_play_pause'),
@@ -329,8 +386,10 @@ enum ShortcutAction {
   // 的排版决定，不会出现「改了键之后 rtl 书翻反」。
   mangaPageForward(ShortcutScope.manga, 'manga_page_forward'),
   mangaPageBackward(ShortcutScope.manga, 'manga_page_backward'),
-  // 关词典弹窗。漫画与阅读器的差异：本页弹窗可见时左右键仍要「关弹窗并翻页」，
-  // 故没有独立的「退书」动作绑在 Esc 上（退书走系统返回 / PopScope）。
+  // 「只关词典、绝不退出」的可选专用动作（**默认无键盘绑定**，与
+  // [readerDismissDict] 同形）。漫画与阅读器的差异仍在：本页弹窗可见时左右键要
+  // 「关弹窗并翻页」，那条语义在 [MangaReaderInputAction] 侧，与本动作无关。
+  // 退出漫画走 universal 的 [globalBack] 阶梯（弹窗可见先关弹窗，否则退出）。
   mangaDismissDict(ShortcutScope.manga, 'manga_dismiss_dict'),
 
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体

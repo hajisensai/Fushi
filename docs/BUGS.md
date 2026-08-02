@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1342 条。点号进各自文件。
+> 共 1343 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -46,6 +46,7 @@
 | [BUG-1427](bugs/BUG-1427-mobile-mining-ffmpeg-stuck-6-0.md) | 🚧 | 🚧 | 移动端制卡链 FFmpeg 停在 6.0，上游已迁到 ffmpeg-kit-next (FFmpeg 8.1.2) |
 | [BUG-1426](bugs/BUG-1426-spread-input-bridges.md) | ✅ | ✅ | 双页 spread 页滚轮与左右翻页失效 |
 | [BUG-1425](bugs/BUG-1425-md3-guard-allowlist-drift.md) | ✅ | ✅ | MD3 守卫豁免与实际命中脱节：四处裸 Material chrome 静默放行 + fontSizeFactor 绕过判据 + 过期豁免 |
+| [BUG-1424](bugs/BUG-1424-manga-escape-dead-key.md) | ✅ | ✅ | 漫画阅读器里 Esc 是死键：无词典弹窗时退不出漫画 |
 | [BUG-1423](bugs/BUG-1423-reader-floating-chrome-shortcut.md) | ✅ | ✅ | 阅读器悬浮控制栏快捷键未驱动临时显隐状态 |
 | [BUG-1422](bugs/BUG-1422-shortcut-capture-ime-physical.md) | ✅ | ✅ | 快捷键录入在 IME 下把物理 Z 存成 Process |
 | [BUG-1421](bugs/BUG-1421-macos-release-no-bundled-ffmpeg.md) | ✅ | ✅ | macOS 发布产物从不捆绑 ffmpeg，桌面制卡全链在未装 ffmpeg 的 Mac 上失效 |

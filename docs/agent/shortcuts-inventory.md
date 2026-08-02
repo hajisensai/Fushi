@@ -1,5 +1,21 @@
 # Hibiki 快捷键清单（TODO-048a 统计）
 
+> ⚠️ **2026-08-02 增补：「返回上一级」已统一，本文与之冲突的行以本段为准。**
+>
+> Esc / Alt+← / 手柄 B 现在全部绑在**唯一一个**可改键动作
+> `ShortcutAction.globalBack`（新 `ShortcutScope.universal`，设置页分组「返回·退出」）
+> 上，退出书籍 / 退出漫画 / 退出视频 / 退出设置页 / 关闭词典弹窗共用它。
+> 每个表面在自己 scope 未命中后**兜底解析** universal，再按各自阶梯执行：
+> 阅读器与漫画「有词典先关词典，否则退出」，视频「控件编辑 → 字幕列表 → 剧集列表
+> → 侧栏 → 沉浸锁 → 全屏 → 浮层 → 退页」，其它页 `maybePop`。
+>
+> 随之删除的动作：`readerExitBook`（原 Ctrl+W）、`videoEscape`（原 Esc）；
+> `readerDismissDict` / `mangaDismissDict` 降级为**默认空绑定**的可选动作
+> （「只关词典、不退出」，典型用法是绑鼠标侧键）。`global_navigation.dart` 里那条
+> **硬编码 Escape**（旧 `_handleGlobalEscape`）已并入注册表驱动的 `_handleGlobalBack`，
+> 现在改键真的能改。schema v7 → v8 迁移见 `shortcut_registry.dart`，
+> 不变式守卫见 `test/shortcuts/universal_back_test.dart`。
+>
 > 生成：2026-06-11，base develop@d94197419。本文件是「当前实际生效的快捷键 + 手柄
 > + 鼠标绑定」的盘点，供 TODO-048（统计并优化快捷键）使用。**本清单只统计，不改任何
 > 绑定行为**；发现的冲突/重复/缺失列在末尾「待优化」，改绑定属行为变更，须用户确认。
@@ -24,7 +40,8 @@
 | readerPageForward | PageDown / → / ↓ / Space | RB, D-pad右 | 下一页 |
 | readerPageBackward | PageUp / ← / ↑ / Shift+Space | LB, D-pad左 | 上一页 |
 | readerToggleChrome | M | Y | 切换底栏 |
-| readerDismissDict | Esc | B | 有弹窗关弹窗，否则退出书 |
+| readerDismissDict | ~~Esc~~ →（无默认，见顶部增补） | — | 只关词典弹窗，绝不退出 |
+| globalBack（universal） | Esc / Alt+← | B | 返回上一级：有弹窗关弹窗，否则退出书 |
 | readerToggleBookmark | Ctrl+D | X | 切换书签 |
 | readerToggleFurigana | （无键盘默认） | R3 | 切换振假名 |
 
@@ -88,14 +105,14 @@
 | , / . | 上一帧 / 下一帧 |
 | S | 截图 |
 | F | 切换全屏 |
-| Esc | 退出（退全屏或退页） |
+| Esc | 退出（逐级：控件编辑→字幕列表→剧集列表→侧栏→沉浸锁→全屏→浮层→退页）。**现由 universal 的 globalBack 驱动**，不再是 video 组的 videoEscape |
 | B | 切换字幕模糊（`video_hibiki_page.dart:3305`，内层 CallbackShortcuts，asbplayer 同款） |
 
 ### 2b. 全局焦点/导航（`global_navigation.dart`，仅实验性焦点导航开启时）
 
 | 键 | 功能 |
 |---|---|
-| Esc（在 Navigator 之上） | 退出全页路由层级（`_handleGlobalEscape`，只 pop PageRoute，不动 popup） |
+| Esc（在 Navigator 之上） | 退出全页路由层级。**已不再硬编码**：现按注册表解析 `globalBack`（`_handleGlobalBack`），Esc 落在弹层上仍让给框架的 barrierDismissible 契约 |
 | 方向键（单行文本框聚焦时按上/下，press 边） | 逃出文本框焦点（框架把方向键全吞成 caret intent 的补救） |
 | 方向键（无文本框聚焦，OS 自动重复 KeyRepeat） | 持续移动焦点（带面板几何 + 阅读顺序回退） |
 | 裸 Space | 中和为 DoNothingIntent（不触发激活，焦点确认统一走 Enter / 手柄 A） |

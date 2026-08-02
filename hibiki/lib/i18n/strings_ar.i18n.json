@@ -1605,7 +1605,6 @@
   "shortcut_action_reader_create_card_from_popup": "إنشاء بطاقة من النافذة المنبثقة",
   "shortcut_action_reader_dismiss_dict": "إغلاق القاموس",
   "shortcut_action_reader_enter_caret": "الدخول إلى مؤشر البحث",
-  "shortcut_action_reader_exit_book": "Exit book",
   "shortcut_action_reader_lookup_at_cursor": "بحث / تفعيل المؤشر",
   "shortcut_action_reader_open_menu": "Open Settings Menu",
   "shortcut_action_reader_open_navigation": "Open Navigation",
@@ -1618,7 +1617,6 @@
   "shortcut_action_video_align_subtitle_to_prev": "Align previous subtitle to now",
   "shortcut_action_video_cycle_secondary_subtitle_obscure": "Cycle Secondary Subtitle Obscure",
   "shortcut_action_video_cycle_subtitle_obscure": "Cycle Subtitle Obscure Mode",
-  "shortcut_action_video_escape": "خروج / رجوع",
   "shortcut_action_video_next_chapter": "الفصل التالي",
   "shortcut_action_video_next_frame": "الإطار التالي",
   "shortcut_action_video_next_subtitle": "الترجمة التالية",
@@ -3077,5 +3075,6 @@
   "book_convert_blocked_no_original": "This manga was imported from images, so there is no original book to convert back to.",
   "book_convert_blocked_source_missing": "The source files are gone from disk.",
   "manga_online_retry_waiting": "Retrying automatically ($attempt/$total)",
-  "manga_ocr_wizard_already_ocred": "This volume already has OCR data on every page. Running OCR again would overwrite it."
+  "manga_ocr_wizard_already_ocred": "This volume already has OCR data on every page. Running OCR again would overwrite it.",
+  "shortcut_scope_universal": "Back / Exit"
 }

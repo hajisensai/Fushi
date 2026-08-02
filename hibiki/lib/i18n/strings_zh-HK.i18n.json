@@ -1589,7 +1589,7 @@
   "shortcut_action_dpad_left": "方向鍵 左",
   "shortcut_action_dpad_right": "方向鍵 右",
   "shortcut_action_dpad_up": "方向鍵 上",
-  "shortcut_action_global_back": "返回",
+  "shortcut_action_global_back": "返回上一層",
   "shortcut_action_global_external_lookup": "App-external lookup shortcut",
   "shortcut_action_global_scroll_page_down": "向下捲動一頁",
   "shortcut_action_global_scroll_page_up": "向上捲動一頁",
@@ -1605,7 +1605,6 @@
   "shortcut_action_reader_create_card_from_popup": "由彈窗製卡",
   "shortcut_action_reader_dismiss_dict": "關閉詞典",
   "shortcut_action_reader_enter_caret": "進入選字查詞游標",
-  "shortcut_action_reader_exit_book": "退出書籍",
   "shortcut_action_reader_lookup_at_cursor": "查詞／啟用游標",
   "shortcut_action_reader_open_menu": "Open Settings Menu",
   "shortcut_action_reader_open_navigation": "Open Navigation",
@@ -1618,7 +1617,6 @@
   "shortcut_action_video_align_subtitle_to_prev": "Align previous subtitle to now",
   "shortcut_action_video_cycle_secondary_subtitle_obscure": "Cycle Secondary Subtitle Obscure",
   "shortcut_action_video_cycle_subtitle_obscure": "Cycle Subtitle Obscure Mode",
-  "shortcut_action_video_escape": "關閉影片／返回",
   "shortcut_action_video_next_chapter": "下一章",
   "shortcut_action_video_next_frame": "下一幀",
   "shortcut_action_video_next_subtitle": "下一句字幕",
@@ -3077,5 +3075,6 @@
   "book_convert_blocked_no_original": "This manga was imported from images, so there is no original book to convert back to.",
   "book_convert_blocked_source_missing": "The source files are gone from disk.",
   "manga_online_retry_waiting": "Retrying automatically ($attempt/$total)",
-  "manga_ocr_wizard_already_ocred": "This volume already has OCR data on every page. Running OCR again would overwrite it."
+  "manga_ocr_wizard_already_ocred": "This volume already has OCR data on every page. Running OCR again would overwrite it.",
+  "shortcut_scope_universal": "返回·退出"
 }

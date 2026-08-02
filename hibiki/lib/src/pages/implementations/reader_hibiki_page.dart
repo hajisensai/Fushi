@@ -692,7 +692,10 @@ const List<ShortcutAction> kSpreadBridgedActions = <ShortcutAction>[
   ShortcutAction.readerPageForward,
   ShortcutAction.readerPageBackward,
   ShortcutAction.readerToggleChrome,
-  ShortcutAction.readerExitBook,
+  // 「返回上一级」统一成 universal scope 的一个动作后，退书走的就是它；桥的解析
+  // scope 由本表自身导出（[spreadKeyBridgeScopes]），所以这里换成跨 scope 的兜底
+  // 动作不需要改解析代码，reader 仍排在 universal 之前 → 页面专属键优先。
+  ShortcutAction.globalBack,
 ];
 
 /// `onSpreadKey` 反解析 token 时要依次尝试的 scope，**从 [actions] 自身按出现序
@@ -3459,7 +3462,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   @override
   Set<ShortcutAction> get dictionaryPopupForwardedActions =>
-      const <ShortcutAction>{ShortcutAction.readerDismissDict};
+      const <ShortcutAction>{
+        // 「返回上一级」（默认 Esc）：弹窗持焦时也必须能关词典。它现在是 universal
+        // scope 的动作，[resolveDictionaryPopupInputToken] 会在宿主 scope 未命中后
+        // 回落到 universal，两端解析口径一致。
+        ShortcutAction.globalBack,
+        // 「只关词典」的专用动作（默认无键盘绑定，用户可绑鼠标侧键）——BUG-1071
+        // 那条鼠标通道的唯一消费者，保留。
+        ShortcutAction.readerDismissDict,
+      };
 
   // ── DictionaryCaretHost ───────────────────────────────────────────
   // The reader is the host for its [_caret] state machine: it supplies the

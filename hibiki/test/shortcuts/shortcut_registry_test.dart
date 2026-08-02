@@ -89,14 +89,16 @@ void main() {
     test(
         'updateBindingWithReassignments moves keyboard binding from old action',
         () {
-      const binding = InputBinding(key: LogicalKeyboardKey.escape);
+      // 用 M（底栏开关）当「组内已被占用的键」样本。Esc 自 v8 起不属于 reader 组的
+      // 任何动作（它是 universal 的「返回上一级」），拿它做样本就测不到重分配。
+      const binding = InputBinding(key: LogicalKeyboardKey.keyM);
       expect(
         registry.resolveKeyboard(
-          LogicalKeyboardKey.escape,
+          LogicalKeyboardKey.keyM,
           modifiers: {},
           scope: ShortcutScope.reader,
         ),
-        ShortcutAction.readerDismissDict,
+        ShortcutAction.readerToggleChrome,
       );
 
       registry.updateBindingWithReassignments(
@@ -106,12 +108,12 @@ void main() {
       );
 
       expect(
-        registry.bindingsFor(ShortcutAction.readerDismissDict).keyboardBindings,
+        registry.bindingsFor(ShortcutAction.readerToggleChrome).keyboardBindings,
         isNot(contains(binding)),
       );
       expect(
         registry.resolveKeyboard(
-          LogicalKeyboardKey.escape,
+          LogicalKeyboardKey.keyM,
           modifiers: {},
           scope: ShortcutScope.reader,
         ),
@@ -207,19 +209,17 @@ void main() {
 
     test('hasKeyboardConflict detects conflict across home/global co-active',
         () {
-      // home + global resolve together on the home page. globalBack default is
-      // Alt+ArrowLeft; checking from the home scope must find it.
-      final binding = InputBinding(
-        key: LogicalKeyboardKey.arrowLeft,
-        modifiers: const {ModifierKey.alt},
-      );
+      // home + global resolve together on the home page. globalToggleFullscreen
+      // default is F11; checking from the home scope must find it.
+      // （globalBack 自 v8 起搬到 universal scope，不再是这条跨组用例的样本。）
+      const binding = InputBinding(key: LogicalKeyboardKey.f11);
       expect(
         registry.hasKeyboardConflict(
           ShortcutScope.home,
           binding,
           exclude: null,
         ),
-        ShortcutAction.globalBack,
+        ShortcutAction.globalToggleFullscreen,
       );
     });
 
@@ -324,19 +324,31 @@ void main() {
       );
     });
 
-    test('resolveKeyboard Escape resolves to readerDismissDict (reader back)',
+    test('resolveKeyboard Escape resolves to globalBack (universal fallback)',
         () {
       // Regression: Escape used to be double-bound to BOTH readerToggleChrome
       // and readerDismissDict, and enum order made it resolve to
       // readerToggleChrome → Esc toggled the bottom bar instead of leaving the
-      // book. Esc is now the reader's single "back" key (readerDismissDict);
-      // readerToggleChrome moved to KeyM. So Esc must resolve to dismiss/back.
-      final result = registry.resolveKeyboard(
-        LogicalKeyboardKey.escape,
-        modifiers: {},
-        scope: ShortcutScope.reader,
+      // book. readerToggleChrome moved to KeyM.
+      // v8 统一：Esc 不再属于 reader 组的任何动作，而是全 app 唯一的
+      // 「返回上一级」globalBack（universal scope），由页面在自身 scope
+      // 未命中后兜底解析。故 reader scope 里它必须解析不到。
+      expect(
+        registry.resolveKeyboard(
+          LogicalKeyboardKey.escape,
+          modifiers: {},
+          scope: ShortcutScope.reader,
+        ),
+        isNull,
       );
-      expect(result, ShortcutAction.readerDismissDict);
+      expect(
+        registry.resolveKeyboard(
+          LogicalKeyboardKey.escape,
+          modifiers: {},
+          scope: ShortcutScope.universal,
+        ),
+        ShortcutAction.globalBack,
+      );
     });
 
     test(
@@ -350,21 +362,20 @@ void main() {
       expect(result, ShortcutAction.readerToggleChrome);
     });
 
-    test('Escape is owned by exactly one reader-group action (no double-bind)',
-        () {
+    test('Escape is owned by exactly one action app-wide (no double-bind)', () {
       // The original bug was a silent keyboard double-bind. Guard it: no two
-      // reader-group actions may both own Escape, or enum order would again
-      // decide which one wins and the loser would never fire.
+      // actions may both own Escape, or resolution order would again decide
+      // which one wins and the loser would never fire. v8 后范围从
+      // 「reader 组」扩到全部 scope：Esc 是全 app 唯一的「返回上一级」，
+      // 任何页面 scope 再占它都会在那个页面静默遮蔽掉退出能力。
       const escape = InputBinding(key: LogicalKeyboardKey.escape);
       final owners = <ShortcutAction>[];
-      for (final scope in ShortcutScope.reader.coactiveScopes) {
-        for (final action in ShortcutAction.actionsForScope(scope)) {
-          if (registry.bindingsFor(action).keyboardBindings.contains(escape)) {
-            owners.add(action);
-          }
+      for (final action in ShortcutAction.values) {
+        if (registry.bindingsFor(action).keyboardBindings.contains(escape)) {
+          owners.add(action);
         }
       }
-      expect(owners, [ShortcutAction.readerDismissDict]);
+      expect(owners, [ShortcutAction.globalBack]);
     });
 
     test('loadFromJson preserves unknown action keys for forward compatibility',

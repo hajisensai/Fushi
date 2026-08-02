@@ -17,41 +17,24 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
         focusedEditableText,
         gamepadMoveFocusInDirection;
 
-/// Escape -> pop the current FULL-PAGE route ("退出层级").
-
+/// 顶层路由是不是一个**弹层**（对话框 / 下拉 / bottom sheet）。
 ///
-/// The framework only wires Escape to a dismiss action for `barrierDismissible`
-/// modal routes (dialogs, dropdowns, popups, bottom sheets). Full-page routes
-/// (`PageRoute`, e.g. pushed settings pages) have `barrierDismissible == false`,
-/// so Escape is a no-op there and the user cannot back out a level with the
-/// keyboard.
+/// The focused widget lives in the top-most route; resolve its route so we can
+/// tell a full page apart from a popup. The focus root's active target and the
+/// raw primary focus are BOTH candidates: the controller's [activeContext] is
+/// only authoritative while a managed target is live — on a page with zero
+/// managed targets it falls back to the HibikiFocusRoot's own fallback node,
+/// which sits ABOVE the [Navigator] and therefore resolves NO route at all
+/// (BUG-1349: Escape went dead on the collection detail page whenever focus
+/// navigation was enabled). Take the first candidate that resolves to a real
+/// route instead of letting an unrooted fallback shadow a perfectly good
+/// primary focus.
 ///
-/// This handler sits above the [Navigator], so it sees an Escape only after
-/// every deeper handler declined it — a page that consumes Escape itself (e.g.
-/// the reader toggling its chrome) keeps winning. It pops ONLY page routes;
-/// popups are left to the framework so the `barrierDismissible` contract (incl.
-/// intentionally non-dismissible dialogs) and any [PopScope] stay authoritative.
-/// [Navigator.maybePop] is used so a page's own [PopScope] guard still runs.
-KeyEventResult _handleGlobalEscape(
-  GlobalKey<NavigatorState> navigatorKey,
-  KeyEvent event,
-) {
-  if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.escape) {
-    return KeyEventResult.ignored;
-  }
-  final NavigatorState? nav = navigatorKey.currentState;
-  if (nav == null || !nav.canPop()) return KeyEventResult.ignored;
-
-  // The focused widget lives in the top-most route; resolve its route so we can
-  // tell a full page apart from a popup. The focus root's active target and the
-  // raw primary focus are BOTH candidates: the controller's [activeContext] is
-  // only authoritative while a managed target is live — on a page with zero
-  // managed targets it falls back to the HibikiFocusRoot's own fallback node,
-  // which sits ABOVE the [Navigator] and therefore resolves NO route at all
-  // (BUG-1349: Escape went dead on the collection detail page whenever focus
-  // navigation was enabled). Take the first candidate that resolves to a real
-  // route instead of letting an unrooted fallback shadow a perfectly good
-  // primary focus.
+/// Unresolvable (focus parked above the Navigator on the focus root's fallback
+/// node) is NOT a popup: when a dialog owns focus the framework consumes Escape
+/// before it ever bubbles here, so the top route in the unresolvable case is a
+/// full page.
+bool _topRouteIsPopup(GlobalKey<NavigatorState> navigatorKey) {
   final BuildContext? navigationContext = navigatorKey.currentContext;
   final HibikiFocusController? controller = navigationContext == null
       ? null
@@ -65,16 +48,7 @@ KeyEventResult _handleGlobalEscape(
     route = ModalRoute.of(candidate);
     if (route != null) break;
   }
-  // A popup keeps the framework's own Escape handling (incl. intentionally
-  // non-dismissible dialogs) — only a POSITIVELY identified popup defers.
-  // Unresolvable (focus parked above the Navigator on the focus root's
-  // fallback node) is NOT a popup: when a dialog owns focus the framework
-  // consumes Escape before it ever bubbles here, so the top route in the
-  // unresolvable case is a full page and must pop.
-  if (route is PopupRoute) return KeyEventResult.ignored;
-
-  nav.maybePop();
-  return KeyEventResult.handled;
+  return route is PopupRoute;
 }
 
 /// App-wide arrow-key focus handling, in two parts (both reached BEFORE
@@ -192,13 +166,30 @@ bool _caretKeepsArrow(EditableText editable, TraversalDirection dir) {
 }
 
 /// Outermost fallback for the remappable [ShortcutAction.globalBack] key
-/// (TODO-700 T1). A page that owns its own global resolution (home / reader)
-/// consumes the key in a nearer handler first; this only fires for pages that do
-/// NOT self-resolve globalBack (settings pages, dialogs), preserving "B / the
-/// bound back key pops a level" on every surface on both Android (native
-/// gameButton key events) and desktop (the polled gamepad reaches here as a
-/// synthesized key event), while letting the user rebind which key is "back".
-/// Returns handled only when the event is actually bound to globalBack.
+/// (TODO-700 T1). A page that owns its own global resolution (home / reader /
+/// manga / video) consumes the key in a nearer handler first; this only fires
+/// for pages that do NOT self-resolve globalBack (settings pages, dialogs),
+/// preserving "B / the bound back key pops a level" on every surface on both
+/// Android (native gameButton key events) and desktop (the polled gamepad
+/// reaches here as a synthesized key event), while letting the user rebind
+/// which key is "back". Returns handled only when the event is actually bound
+/// to globalBack.
+///
+/// 「返回上一级」统一之后，本处理器同时接管了从前那条**硬编码 Escape** 兜底
+/// （旧 `_handleGlobalEscape`：Esc → pop 当前整页路由）。它们本来就是同一件事，
+/// 只是一条可改键、一条改不动——两套并存的结果就是设置页写着「退出书籍 = Ctrl+W」
+/// 而实际退书靠硬编码 Esc。现在 Esc 只是 [ShortcutAction.globalBack] 的默认键之一，
+/// 改键真的能改。The framework only wires Escape to a dismiss action for
+/// `barrierDismissible` modal routes; full-page routes (`PageRoute`, e.g. pushed
+/// settings pages) have `barrierDismissible == false`, so without this the user
+/// could not back out a level with the keyboard at all.
+///
+/// **两条既有语义原样保留、不合并**（合并任何一边都是回归）：
+///   · 触发键是 Escape 且顶层是弹层 ⇒ 不介入，让框架自己的 `barrierDismissible`
+///     契约（含**故意**不可关闭的对话框）说了算 —— 旧 `_handleGlobalEscape` 行为；
+///   · 其余触发键（Alt+← / 手柄 B / 用户自绑键）⇒ 一律 [Navigator.maybePop]，弹层
+///     上也照 pop —— 旧 `_handleGlobalBack` 行为（手柄用户靠它关对话框）。
+/// [Navigator.maybePop] 保证页面自己的 [PopScope] 闸门仍然先跑。
 KeyEventResult _handleGlobalBack(
   GlobalKey<NavigatorState> navigatorKey,
   HibikiShortcutRegistry registry,
@@ -218,18 +209,42 @@ KeyEventResult _handleGlobalBack(
   ShortcutAction? action = registry.resolveKeyboard(
     event.logicalKey,
     modifiers: modifiers,
-    scope: ShortcutScope.global,
+    scope: ShortcutScope.universal,
     physicalKey: imeFallbackPhysicalKey,
   );
   if (action == null) {
     final GamepadButton? gamepad = GamepadButton.fromKeyEvent(event);
     if (gamepad != null) {
-      action = registry.resolveGamepad(gamepad, scope: ShortcutScope.global);
+      action = registry.resolveGamepad(gamepad, scope: ShortcutScope.universal);
     }
   }
   if (action != ShortcutAction.globalBack) return KeyEventResult.ignored;
   final NavigatorState? nav = navigatorKey.currentState;
   if (nav == null || !nav.canPop()) return KeyEventResult.ignored;
+  // Escape 落在弹层上：让给框架（见上方文档的两条既有语义）。
+  if (event.logicalKey == LogicalKeyboardKey.escape &&
+      _topRouteIsPopup(navigatorKey)) {
+    return KeyEventResult.ignored;
+  }
+  nav.maybePop();
+  return KeyEventResult.handled;
+}
+
+/// 注册表缺席时的键盘退出降级：裸 Escape 退一层整页路由，弹层仍让给框架。
+///
+/// 只在 [wrapWithGlobalNavigation] 拿不到 [HibikiShortcutRegistry] 时使用（widget
+/// 测试直接调 wrapper）。生产路径一律走可改键的 [_handleGlobalBack]，故这不是
+/// 「第二条硬编码 Escape」——它与注册表路径互斥，永远不会两条同时活着。
+KeyEventResult _handleEscapeWithoutRegistry(
+  GlobalKey<NavigatorState> navigatorKey,
+  KeyEvent event,
+) {
+  if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.escape) {
+    return KeyEventResult.ignored;
+  }
+  final NavigatorState? nav = navigatorKey.currentState;
+  if (nav == null || !nav.canPop()) return KeyEventResult.ignored;
+  if (_topRouteIsPopup(navigatorKey)) return KeyEventResult.ignored;
   nav.maybePop();
   return KeyEventResult.handled;
 }
@@ -438,9 +453,9 @@ Widget wrapWithGlobalNavigation({
             _handleGlobalArrowFocus(navigatorKey, event);
         if (arrowResult == KeyEventResult.handled) return arrowResult;
       }
-      // TODO-700 T1：注册表驱动的全局返回回退（B 或用户改键后的「返回」键）。仅
-      // 对未自解析 globalBack 的页面（设置/对话框）生效；home/reader 已在更近的
-      // 处理器消费。registry 为空（测试 / 未注入）时跳过，回退到 Escape。
+      // TODO-700 T1：注册表驱动的全局返回回退（Esc / Alt+← / B，或用户改键后的
+      // 「返回」键）。仅对未自解析 globalBack 的页面（设置/对话框）生效；
+      // home/reader/manga/video 已在更近的处理器消费。
       if (registry != null) {
         final KeyEventResult backResult =
             _handleGlobalBack(navigatorKey, registry, event);
@@ -458,7 +473,13 @@ Widget wrapWithGlobalNavigation({
       // BUG-1266：走到这里说明**没有任何**处理器认领这次手柄按键。对手柄 B 必须
       // 就地消费，绝不能放行——见 [gamepadBackMustBeSwallowed] 的完整理由。
       if (gamepadBackMustBeSwallowed(event)) return KeyEventResult.handled;
-      return _handleGlobalEscape(navigatorKey, event);
+      // 注册表未注入（widget 测试直接调本 wrapper，不带 registry）时的降级：按裸
+      // Escape 退一层。生产路径永远带 registry，走上面那条可改键的 globalBack；
+      // 这里只是让「不关心快捷键」的测试宿主仍有键盘退出能力，不是第二条产品路径。
+      if (registry == null) {
+        return _handleEscapeWithoutRegistry(navigatorKey, event);
+      }
+      return KeyEventResult.ignored;
     },
     child: Shortcuts(
       shortcuts: shortcuts,

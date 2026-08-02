@@ -274,6 +274,15 @@ extension _ReaderCaret on _ReaderHibikiPageState {
           modifiers: modifiers,
           scope: ShortcutScope.audiobook,
           physicalKey: imeFallbackPhysicalKey,
+        ) ??
+        // 最后兜底：universal 的「返回上一级」（默认 Esc / Alt+← / 手柄 B）。
+        // 必须排在 reader+audiobook **之后**：页面专属键永远优先，故书内手柄 B
+        // 仍是 audiobookPrevSentence（上一句），不被返回夺舍（TODO-700 约束2/4）。
+        appModel.shortcutRegistry.resolveKeyboard(
+          event.logicalKey,
+          modifiers: modifiers,
+          scope: ShortcutScope.universal,
+          physicalKey: imeFallbackPhysicalKey,
         );
   }
 
@@ -434,6 +443,13 @@ extension _ReaderCaret on _ReaderHibikiPageState {
         appModel.shortcutRegistry.resolveGamepad(
           button,
           scope: ShortcutScope.audiobook,
+        ) ??
+        // 兜底「返回上一级」（universal，默认手柄 B）。排在 reader+audiobook 之后
+        // ⇒ 书内 B 仍先命中 audiobookPrevSentence（上一句），不退书；只有用户把
+        // B 从上一句上解绑、或把返回改绑到别的键时，这条才会真的接管。
+        appModel.shortcutRegistry.resolveGamepad(
+          button,
+          scope: ShortcutScope.universal,
         );
     if (action == null) return false;
     return _executeShortcutAction(
@@ -507,17 +523,27 @@ extension _ReaderCaret on _ReaderHibikiPageState {
         _paginate(ReaderNavigationDirection.backward);
         return KeyEventResult.handled;
       case ShortcutAction.readerDismissDict:
-        // 用户拍板（schema v6）：关词典与退书拆成两个独立动作。本键只关词典弹窗；
-        // 无弹窗时不消费（ignored 让事件继续冒泡），**绝不退书**——退书是
-        // readerExitBook 的职责。
+        // 「只关词典、绝不退出」的专用动作（默认无键盘绑定，典型用法是绑鼠标侧键）。
+        // 无弹窗时不消费（ignored 让事件继续冒泡），**绝不退书**——退出是
+        // globalBack 的职责。
         if (isDictionaryShown) {
           clearDictionaryResult();
           return KeyEventResult.handled;
         }
         return KeyEventResult.ignored;
-      case ShortcutAction.readerExitBook:
-        // 退出书籍：必须走 maybePop 触发 PopScope→onWillPop 闸门（flush 阅读位置 /
-        // closeMedia / 关书自动同步，BUG-782 同径），与底栏退出按钮同一条路。
+      case ShortcutAction.globalBack:
+        // 「返回上一级」在阅读器的阶梯（用户拍板：Esc 一键包办）：
+        //   ① 词典弹窗可见 → 只关弹窗，留在书里；
+        //   ② 否则退出书籍 —— 必须走 maybePop 触发 PopScope→onWillPop 闸门
+        //      （flush 阅读位置 / closeMedia / 关书自动同步，BUG-782 同径），与底栏
+        //      退出按钮同一条路。
+        // 两级都在**本页**消费，不再依赖「返回 ignored → 冒泡到最外层硬编码 Esc」
+        // 那条隐形链路：那条链路让退书行为与设置页显示的键位对不上（设置页写
+        // Ctrl+W，实际 Esc 也能退），也让改键改不动真正生效的那个键。
+        if (isDictionaryShown) {
+          clearDictionaryResult();
+          return KeyEventResult.handled;
+        }
         unawaited(Navigator.of(context).maybePop());
         return KeyEventResult.handled;
       case ShortcutAction.readerToggleChrome:

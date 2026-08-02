@@ -86,7 +86,16 @@ Rect mangaSelectionRectFromPayload(
   );
 }
 
-enum MangaReaderInputAction { previous, next, dismissDictionary }
+enum MangaReaderInputAction {
+  previous,
+  next,
+  dismissDictionary,
+
+  /// 「返回上一级」在本页没有更内层可退时的落点：退出漫画（走 maybePop，页面自己的
+  /// [PopScope] 闸门照跑）。与 [dismissDictionary] 是同一个键（默认 Esc）的两级——
+  /// 弹窗可见先关弹窗，没弹窗才退出，判据在 [MangaHibikiPage.inputActionForShortcut]。
+  backOrExit,
+}
 
 enum _MangaReaderInputSource { flutter, nativeWebView }
 
@@ -331,6 +340,16 @@ class MangaHibikiPage extends BaseSourcePage {
     if (action == null) return null;
     if (action == ShortcutAction.mangaDismissDict) {
       return dictionaryShown ? MangaReaderInputAction.dismissDictionary : null;
+    }
+    // 「返回上一级」（universal，默认 Esc / 手柄 B）的两级阶梯：弹窗可见先关弹窗，
+    // 没弹窗才退出漫画。此前本页**根本没有退出动作**——Esc 只绑 mangaDismissDict，
+    // 无弹窗时解析成 null 就地丢弃；而正文是原生 WebView，键经 JS 桥
+    // （`stopPropagation: true`）转进 Dart，丢弃后也不会再冒泡到全局 Esc 兜底，
+    // 于是漫画里按 Esc 是**死键**、退不出去。这一支就是那个 bug 的根因修复。
+    if (action == ShortcutAction.globalBack) {
+      return dictionaryShown
+          ? MangaReaderInputAction.dismissDictionary
+          : MangaReaderInputAction.backOrExit;
     }
     if (!horizontalArrow) {
       if (dictionaryShown) return null;
@@ -1823,11 +1842,13 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     MangaReaderInputAction action, {
     required _MangaReaderInputSource source,
   }) {
-    // 框选识别模式独占键盘：关词典键（默认 Escape）退出模式，翻页键一律吞掉——
-    // 框选途中翻走当前页会让松手时算出的 pageIndex 指向另一页，回写就落错页。
-    // 放在去抖之前：两条输入源（Flutter / 原生 WebView 桥）共用这一个闸门。
+    // 框选识别模式独占键盘：「返回上一级」/ 关词典键（默认都是 Escape）退出模式，
+    // 翻页键一律吞掉——框选途中翻走当前页会让松手时算出的 pageIndex 指向另一页，
+    // 回写就落错页。放在去抖之前：两条输入源（Flutter / 原生 WebView 桥）共用这一个
+    // 闸门。框选模式是本页最内的一层，故「返回」在这里只退出模式、绝不退出漫画。
     if (_rescanModeActive) {
-      if (action == MangaReaderInputAction.dismissDictionary) {
+      if (action == MangaReaderInputAction.dismissDictionary ||
+          action == MangaReaderInputAction.backOrExit) {
         unawaited(_setRescanMode(false));
       }
       return;
@@ -1846,6 +1867,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     if (action == MangaReaderInputAction.dismissDictionary) {
       _dictionaryTurnDismissTimer?.cancel();
       clearDictionaryResult();
+      return;
+    }
+    if (action == MangaReaderInputAction.backOrExit) {
+      // 退出漫画：走 maybePop 让本页 [PopScope] 闸门照常跑（落库 / 收尾），与顶栏
+      // 返回按钮同一条路，不直接 pop。
+      unawaited(Navigator.of(context).maybePop());
       return;
     }
     if (isDictionaryShown) {
@@ -1879,6 +1906,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         ShortcutAction.mangaPageForward,
         ShortcutAction.mangaPageBackward,
         ShortcutAction.mangaDismissDict,
+        // 「返回上一级」（默认 Esc）：弹窗持焦时也要能关弹窗。它在 universal scope，
+        // [resolveDictionaryPopupInputToken] 会在 manga 未命中后回落到 universal。
+        ShortcutAction.globalBack,
       };
 
   @override
@@ -1919,10 +1949,17 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   ) {
     final HibikiShortcutRegistry registry = appModel.shortcutRegistry;
     final ShortcutAction? bound = registry.resolveKeyboard(
-      key,
-      modifiers: modifiers,
-      scope: ShortcutScope.manga,
-    );
+          key,
+          modifiers: modifiers,
+          scope: ShortcutScope.manga,
+        ) ??
+        // 兜底「返回上一级」（universal，默认 Esc）。排在 manga scope 之后：本页专属
+        // 键永远优先。跨页方向校正只作用于翻页动作，globalBack 原样穿过。
+        registry.resolveKeyboard(
+          key,
+          modifiers: modifiers,
+          scope: ShortcutScope.universal,
+        );
     final ShortcutAction? corrected = resolveMangaArrowPageTurn(
           key: key,
           modifiers: modifiers,

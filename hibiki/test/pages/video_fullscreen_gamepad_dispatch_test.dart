@@ -65,7 +65,7 @@ void main() {
         reason: 'B 的全局返回兜底必须始终可用（修前唯一退出手段）');
   });
 
-  testWidgets('修后形态：全屏路由包同一手柄输入层 → A/D-pad 恢复窗口模式语义、B 走 videoEscape',
+  testWidgets('修后形态：全屏路由包同一手柄输入层 → A/D-pad 恢复窗口模式语义、B 走 globalBack',
       (WidgetTester tester) async {
     final _Rig rig = _Rig();
     await rig.pump(tester);
@@ -90,14 +90,14 @@ void main() {
     expect(rig.dispatchLikeService(GamepadButton.dpadDown), isTrue);
     expect(rig.counts[ShortcutAction.videoVolumeDown], 1);
 
-    // B = videoEscape（页面消费，逐级退出；harness 的 escape 同构
+    // B = globalBack「返回上一级」（页面消费，逐级退出；harness 的 escape 同构
     // _exitVideoFullscreen：关全屏路由）。B 返回依旧可用，且升级为页面语义。
     expect(rig.dispatchLikeService(GamepadButton.b), isTrue,
-        reason: 'B 现在被页面 videoEscape 消费（不再依赖裸 maybePop 兜底）');
-    expect(rig.counts[ShortcutAction.videoEscape], 1);
+        reason: 'B 现在被页面 globalBack 消费（不再依赖裸 maybePop 兜底）');
+    expect(rig.counts[ShortcutAction.globalBack], 1);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('windowed-controls')), findsOneWidget,
-        reason: 'videoEscape 在全屏态必须退出全屏（B 返回始终可用）');
+        reason: 'globalBack 在全屏态必须退出全屏（B 返回始终可用）');
   });
 }
 
@@ -117,7 +117,7 @@ class _Rig {
     ShortcutAction.videoSeekForward: 0,
     ShortcutAction.videoVolumeUp: 0,
     ShortcutAction.videoVolumeDown: 0,
-    ShortcutAction.videoEscape: 0,
+    ShortcutAction.globalBack: 0,
   };
 
   late final _HarnessState state;
@@ -137,8 +137,11 @@ class _Rig {
   /// 与页面 _handleVideoGamepadButton 逐行同构：video scope 注册表解析 →
   /// [videoActionCallbacks] 执行体。命中返回 true（消费），未绑定返回 false。
   bool handleButton(GamepadButton button) {
+    // 与页面 _handleVideoGamepadButton 同构：video scope 先解析，未命中兜底
+    // universal（「返回上一级」，默认手柄 B）。
     final ShortcutAction? action =
-        registry.resolveGamepad(button, scope: ShortcutScope.video);
+        registry.resolveGamepad(button, scope: ShortcutScope.video) ??
+            registry.resolveGamepad(button, scope: ShortcutScope.universal);
     if (action == null) return false;
     final VoidCallback? callback = videoActionCallbacks(_actions())[action];
     if (callback == null) return false;
@@ -162,7 +165,7 @@ class _Rig {
         Actions.maybeInvoke<ActivateIntent>(ctx, const ActivateIntent());
         return false;
       case GamepadButton.b:
-        if (registry.resolveGamepad(button, scope: ShortcutScope.global) ==
+        if (registry.resolveGamepad(button, scope: ShortcutScope.universal) ==
             ShortcutAction.globalBack) {
           navKey.currentState?.maybePop();
         }
@@ -227,7 +230,7 @@ class _Rig {
       alignSubtitleToNext: _noop,
       enterCaret: () => bump(ShortcutAction.videoEnterCaret),
       escape: () {
-        bump(ShortcutAction.videoEscape);
+        bump(ShortcutAction.globalBack);
         if (state.fullscreenActive) {
           navKey.currentState?.maybePop();
         }

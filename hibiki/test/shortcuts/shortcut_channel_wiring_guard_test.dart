@@ -207,6 +207,11 @@ void main() {
           .where((ShortcutAction a) => a.scope == ShortcutScope.manga)) {
         expect(table[action]!.gamepadBindings, isEmpty,
             reason: '$platform ${action.key} 不得有手柄默认绑定（漫画页没接手柄）');
+        // mangaDismissDict 是**有意**留空的可选动作：Esc 已归全 app 唯一的
+        // 「返回上一级」(globalBack)，它在这里再绑一个键盘默认就会在 manga scope
+        // 先命中，把「无弹窗时退出漫画」那一级永久遮蔽（v8 统一的核心不变式，
+        // 见 universal_back_test）。翻页动作仍必须有键盘默认。
+        if (action == ShortcutAction.mangaDismissDict) continue;
         expect(table[action]!.keyboardBindings, isNotEmpty,
             reason: '$platform ${action.key} 必须有键盘默认绑定');
       }
