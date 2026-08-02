@@ -14,15 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart' show ModifierKey;
 import 'package:hibiki/src/shortcuts/reader_space_override.dart';
 
-/// 剥掉行注释与块注释，避免断言被文档注释里的同名字样喂成假绿。
-String _stripComments(String source) {
-  final String noBlock =
-      source.replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '');
-  return noBlock.split('\n').map((String line) {
-    final int idx = line.indexOf('//');
-    return idx >= 0 ? line.substring(0, idx) : line;
-  }).join('\n');
-}
+import '../helpers/source_guard.dart';
 
 void main() {
   final File webviewFile =
@@ -32,7 +24,7 @@ void main() {
   setUpAll(() {
     expect(webviewFile.existsSync(), isTrue,
         reason: '弹窗 WebView 源文件必须存在（测试须在 hibiki/ 下运行）');
-    code = _stripComments(webviewFile.readAsStringSync());
+    code = maskComments(webviewFile.readAsStringSync());
   });
 
   group('BUG-1451 ① 选区必须在右键那一刻取快照', () {
