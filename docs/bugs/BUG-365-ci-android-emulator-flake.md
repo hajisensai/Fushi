@@ -10,5 +10,13 @@
   实测代价（52 次已完成 run，2026-07-28..2026-08-01，走 Actions API 采样）：`Boot completed in` 316s..704s（对 action 默认 600s `emulator-boot-timeout`）；app 内单帧 `app_time_stats: avg=` 90s..214s、1000+ skipped frames。失败分布：13 绿 / 6 红在模拟器 boot（adb exit 224）/ 33 红在 appSmoke（chromium renderer 崩溃连坐杀 app，即 BUG-1372）。即 **总红率 ~75%，不是原结论里的「偶发 flake」**，且在整个保留历史窗口内均匀存在，**追不到某个起点 commit**（模拟器步骤参数自 2026-06-02 引入后从未改过）。
 - **[x] ① 根因修复（本轮）** —— `.github/workflows/build-multiplatform.yml` android job 在模拟器步骤前新增 `Enable KVM group permissions`：写入 `/etc/udev/rules.d/99-kvm4all.rules`（`KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"`）+ `udevadm control --reload-rules` + `udevadm trigger --name-match=kvm`，让 `disable-linux-hw-accel: auto` 重探到 KVM 并启用 `-accel on`。`MODE="0666"` 是必须的：改 0660 就还得把用户加进 `kvm` 组，而 job 中途 `usermod -aG` 对已启动的 shell 不生效。这是恢复硬件虚拟化的根治，**不是重试/sleep/括大 timeout**。
 - **[x] ② 已加自动化测试（本轮）** —— `hibiki/test/build/release_workflow_diagnostics_guard_test.dart` 新增 `build-multiplatform Android emulator gets KVM access before appSmoke`：钉住步骤存在、顺序在模拟器步骤之前、以及规则正文四行（含 `MODE="0666"`）。变异实测 4 条均已验证：删 `udevadm trigger` 行→红；步骤改名为 `... (disabled)`→红（第一版用前缀匹配会**假绿**，已改成整行锚定）；步骤挪到模拟器之后→红；`MODE` 改 0660→红。还原后均绿。
+- **CI 实证（PR #705 run 30724867058，2026-08-02）**：加规则后同一 workflow 的 android job **绿**，且四条机理指标全部翻转：
+  - `disable Linux hardware acceleration: false`（原 `true`）；emulator 命令行里 **`-accel off` 消失**；`ProbeKVM` 报错整条不见。
+  - `Boot completed in 35603 ms` —— 35.6s，对比改前 316s..704s（中位 ~460s），**约 13 倍**。
+  - app 内最大单帧 `app_time_stats: avg=5365`ms，对比改前 90454..213995ms，**约 40 倍**；skipped frames 刷屏消失。
+  - `[Hibiki] WebView engine pre-warm ended: loaded` —— 预热**真正加载完成**，不再走 30s 超时兜底（改前恒为 `: timeout`）。
+    这正是喂养 BUG-1372 那条 renderer 崩溃的饥饿条件。
+  - appSmoke 整步 7m26s 通过（改前 11..23 分钟且多数红）。
+  注意：**这是 n=1**。改前基线本身就有 25% 绿，单次绿有约四分之一概率是巧合，所以还不足以据此摘 `continue-on-error`；需要连续若干次绿。
 - **尚未消除的部分**：`continue-on-error: true` 本轮**保留**。KVM 对 boot 类失败（6/52）是机理上直接对症，但对 appSmoke 类（33/52）只是移除饥饿条件，**未经 CI 实证**；run 30716840686（sha 0bb1647e）已含 BUG-1372 修复、日志里`[Hibiki] WebView engine pre-warm ended: timeout` 证明新兜底路径真的跑了，但 appSmoke 仍以同一 renderer 崩溃签名红。所以不能现在就把一个已知红的 contract 变回硬门。**清理条件**：开了 KVM 后的 run 不再出现 appSmoke 类失败，就摘掉 `continue-on-error`。宽松的确切代价：该 job **只跑 appSmoke contract**（不构 APK、不签名，release APK 的构建与单测门在 `main.yml`），因此当前实际失护的恰好是 `hibiki/integration_test/app_smoke_test.dart` —— 但它是全仓**唯一**在真实 Android 运行时上跑的门。
 - **备注**：jobs 全平行无 `needs` 依赖，故 android 容错不改变 linux/windows/macos/ios 的 pass/fail 语义。未动任何发布/release 触发逻辑（符合发布通道硬规则）。
