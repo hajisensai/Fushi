@@ -78,7 +78,11 @@ abstract class BaseAnkiRepository {
 
   Future<void> saveSettings(AnkiSettings settings) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(settingsKey, jsonEncode(settings.toJson()));
+    final bool saved =
+        await prefs.setString(settingsKey, jsonEncode(settings.toJson()));
+    if (!saved) {
+      throw StateError('Failed to persist Anki settings.');
+    }
   }
 
   Future<AnkiSettings> updateSettings(

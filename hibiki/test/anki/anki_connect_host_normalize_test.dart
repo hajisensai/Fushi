@@ -24,6 +24,23 @@ void main() {
       final r = normalizeAnkiConnectHostInput('http://192.168.1.5:48765/foo');
       expect(r.host, '192.168.1.5');
       expect(r.port, 48765);
+      expect(r.useHttps, isFalse);
+    });
+
+    test('https URL 保留安全协议，不静默降级为 HTTP', () {
+      final r = normalizeAnkiConnectHostInput(
+        'https://anki.example.com:443/path',
+      );
+      expect(r.host, 'anki.example.com');
+      expect(r.port, 443);
+      expect(r.useHttps, isTrue);
+    });
+
+    test('非 HTTP(S) scheme 被拒绝', () {
+      final r = normalizeAnkiConnectHostInput('ftp://anki.example.com');
+      expect(r.host, isEmpty);
+      expect(r.port, isNull);
+      expect(r.useHttps, isNull);
     });
 
     test('host:port 拆分到独立端口', () {

@@ -487,22 +487,26 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   String _cachedHost = '';
   int _cachedPort = 0;
   String _cachedApiKey = '';
+  bool _cachedUseHttps = false;
 
   AnkiConnectService _serviceForSettings(AnkiSettings settings) {
     if (_fixedService != null) return _fixedService;
     if (_cachedService != null &&
         _cachedHost == settings.ankiConnectHost &&
         _cachedPort == settings.ankiConnectPort &&
-        _cachedApiKey == settings.ankiConnectApiKey) {
+        _cachedApiKey == settings.ankiConnectApiKey &&
+        _cachedUseHttps == settings.ankiConnectUseHttps) {
       return _cachedService!;
     }
     _cachedHost = settings.ankiConnectHost;
     _cachedPort = settings.ankiConnectPort;
     _cachedApiKey = settings.ankiConnectApiKey;
+    _cachedUseHttps = settings.ankiConnectUseHttps;
     _cachedService = AnkiConnectService(
       host: settings.ankiConnectHost,
       port: settings.ankiConnectPort,
       apiKey: settings.ankiConnectApiKey,
+      useHttps: settings.ankiConnectUseHttps,
     );
     return _cachedService!;
   }

@@ -65,7 +65,6 @@
   "anki_compact_glossaries": "معاني مختصرة",
   "anki_compact_glossaries_hint": "استخدام تنسيق مختصر لإدخالات المعاني",
   "anki_connect_api_key": "مفتاح API",
-  "anki_connect_api_key_hint": "اتركه فارغًا ما لم يطلب AnkiConnect مفتاحًا",
   "anki_connect_host": "المضيف",
   "anki_connect_port": "المنفذ",
   "anki_create_lapis": "إنشاء مجموعة Lapis",
@@ -3125,5 +3124,10 @@
   "game_capture_setup_title": "Complete capture setup",
   "game_capture_setup_hint": "Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.",
   "game_audio_requires_thread": "The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.",
-  "game_session_waiting_thread": "Waiting for a dialogue thread"
+  "game_session_waiting_thread": "Waiting for a dialogue thread",
+  "anki_connect_use_on_android": "Use AnkiConnect on Android",
+  "anki_connect_use_on_android_hint": "Use only on a trusted network. AnkiConnect uses cleartext HTTP; configure a matching API key, then refresh decks and note types after switching.",
+  "anki_connect_api_key_hint": "Required for remote AnkiConnect; must match the key configured in the add-on",
+  "anki_connect_android_api_key_required": "Configure a matching AnkiConnect API key before enabling the Android backend.",
+  "anki_connect_backend_switch_failed": "Could not switch Anki backend: $error"
 }

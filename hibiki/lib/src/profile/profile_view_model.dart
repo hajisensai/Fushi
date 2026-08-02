@@ -2,8 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/platform/platform_providers.dart';
+import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -312,7 +315,15 @@ final profileViewModelProvider =
   final ProfileDraftCoordinator profileDraftCoordinator =
       ref.watch(profileDraftCoordinatorProvider);
   Future<void> onApplied() async {
-    ref.invalidate(ankiViewModelProvider);
+    final PlatformServices platformServices =
+        ref.read(platformServicesProvider);
+    final AnkiSettings ankiSettings =
+        await ref.read(ankiRepositoryProvider).loadSettings();
+    platformServices.setUseAnkiConnectOnAndroid(
+      ankiSettings.useAnkiConnectOnAndroid,
+      apiKey: ankiSettings.ankiConnectApiKey,
+    );
+    ref.invalidate(ankiRepositoryProvider);
     final appModel = ref.read(appProvider);
     await appModel.refreshPrefCache();
     // TODO-1077: the profile switch replaced the dictionary_metadata table, so

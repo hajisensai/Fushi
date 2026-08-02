@@ -179,6 +179,7 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
         ankiConnectHost: endpoint.host,
         // 仅当输入里带了合法端口才覆盖，否则保留用户在端口字段里的既有值。
         ankiConnectPort: endpoint.port ?? s.ankiConnectPort,
+        ankiConnectUseHttps: endpoint.useHttps ?? s.ankiConnectUseHttps,
       ),
     );
     state = state.copyWith(settings: updated);
@@ -195,6 +196,20 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   Future<void> updateAnkiConnectApiKey(String apiKey) async {
     final updated = await _repository
         .updateSettings((s) => s.copyWith(ankiConnectApiKey: apiKey.trim()));
+    state = state.copyWith(settings: updated);
+  }
+
+  Future<void> updateUseAnkiConnectOnAndroid(bool value) async {
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(
+        useAnkiConnectOnAndroid: value,
+        clearSelectedDeck: true,
+        clearSelectedNoteType: true,
+        availableDecks: const <AnkiDeck>[],
+        availableNoteTypes: const <AnkiNoteType>[],
+        fieldMappings: const <String, String>{},
+      ),
+    );
     state = state.copyWith(settings: updated);
   }
 
@@ -300,21 +315,31 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   }
 }
 
-/// 把用户敲/粘进 AnkiConnect **主机**字段的自由文本规范化成裸主机 + 可选端口。
+/// 把用户敲/粘进 AnkiConnect **主机**字段的自由文本规范化成裸主机、可选端口与协议。
 ///
-/// AnkiConnect 恒在 `http://host:port` 的根路径，所以 `http://192.168.1.5:48765/`
-/// 之类的完整 URL（或手敲的 `http://host`）不能被拒绝——剥掉 scheme、path/query/
+/// AnkiConnect 使用 HTTP(S) 根路径，所以 `https://anki.example:48765/`
+/// 之类的完整 URL不能被拒绝——保留 HTTP/HTTPS 语义，剥掉 scheme、path/query/
 /// fragment 与 userinfo，并把尾部的数字 `:port` 拆出来交给独立端口字段（留在主机里
 /// 会让 `Uri.parse('http://$host:$port')` 变成 `host:port:port` 破坏请求）。主机原样
 /// 保留（不小写化、不做 IDNA punycode），用户看到的就是自己敲的值。返回的 [port] 仅在
 /// 输入携带 1..65535 合法端口时非 null；非数字尾部（如错误的 IPv6/笔误）原样保留，
 /// 尽力而为不擅自篡改。
 @visibleForTesting
-({String host, int? port}) normalizeAnkiConnectHostInput(String raw) {
+({String host, int? port, bool? useHttps}) normalizeAnkiConnectHostInput(
+  String raw,
+) {
   var s = raw.trim();
-  // 剥掉开头的 "scheme://"。
+  bool? useHttps;
+  // 只接受并保留明确的 HTTP(S) scheme；其它 scheme 不能被静默降级。
   final schemeSep = s.indexOf('://');
-  if (schemeSep >= 0) s = s.substring(schemeSep + 3);
+  if (schemeSep >= 0) {
+    final String scheme = s.substring(0, schemeSep).toLowerCase();
+    if (scheme != 'http' && scheme != 'https') {
+      return (host: '', port: null, useHttps: null);
+    }
+    useHttps = scheme == 'https';
+    s = s.substring(schemeSep + 3);
+  }
   // 在第一个 path / query / fragment 分隔符处截断。
   for (final sep in const ['/', '?', '#']) {
     final cut = s.indexOf(sep);
@@ -339,7 +364,7 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
       }
     }
   }
-  return (host: s.trim(), port: port);
+  return (host: s.trim(), port: port, useHttps: useHttps);
 }
 
 enum LapisSetupOutcome { created, alreadyExisted, failed }

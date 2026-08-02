@@ -102,6 +102,9 @@ PlatformServices fakePlatformServices({
   FakeClipboardService? clipboard,
   FakePermissionService? permission,
   FakeDeviceInfoService? deviceInfo,
+  BaseAnkiRepository Function()? createAnkiRepository,
+  BaseAnkiRepository Function()? createAndroidAnkiConnectRepository,
+  bool isAndroid = false,
 }) {
   return PlatformServices(
     directory: directory ?? FakeDirectoryService(),
@@ -109,6 +112,8 @@ PlatformServices fakePlatformServices({
     clipboard: clipboard ?? FakeClipboardService(),
     permission: permission ?? FakePermissionService(),
     deviceInfo: deviceInfo ?? FakeDeviceInfoService(),
-    createAnkiRepository: AnkiConnectRepository.new,
+    createAnkiRepository: createAnkiRepository ?? AnkiConnectRepository.new,
+    createAndroidAnkiConnectRepository: createAndroidAnkiConnectRepository,
+    isAndroid: isAndroid,
   );
 }

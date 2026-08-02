@@ -31,7 +31,10 @@ class PlatformServices {
   final PlatformClipboardService clipboard;
   final PlatformPermissionService permission;
   final PlatformDeviceInfoService deviceInfo;
-  final BaseAnkiRepository Function() createAnkiRepository;
+  final BaseAnkiRepository Function() _createDefaultAnkiRepository;
+  final BaseAnkiRepository Function()? _createAndroidAnkiConnectRepository;
+  final bool _isAndroid;
+  bool _useAnkiConnectOnAndroid = false;
 
   /// Typed reference to the Android clipboard impl, when running on Android.
   /// Holding the concrete type here (rather than an `is`/`as` downcast in
@@ -45,9 +48,38 @@ class PlatformServices {
     required this.clipboard,
     required this.permission,
     required this.deviceInfo,
-    required this.createAnkiRepository,
+    required BaseAnkiRepository Function() createAnkiRepository,
+    BaseAnkiRepository Function()? createAndroidAnkiConnectRepository,
+    bool isAndroid = false,
     AndroidClipboardService? androidClipboard,
-  }) : _androidClipboard = androidClipboard;
+  })  : _createDefaultAnkiRepository = createAnkiRepository,
+        _createAndroidAnkiConnectRepository =
+            createAndroidAnkiConnectRepository,
+        _isAndroid = isAndroid,
+        _androidClipboard = androidClipboard,
+        assert(
+          !isAndroid || createAndroidAnkiConnectRepository != null,
+          'Android requires an AnkiConnect repository factory.',
+        );
+
+  /// Creates the active Anki backend. Android keeps AnkiDroid as the upgrade-
+  /// safe default, but may explicitly opt into a reachable AnkiConnect server.
+  BaseAnkiRepository createAnkiRepository() {
+    if (_isAndroid && _useAnkiConnectOnAndroid) {
+      return _createAndroidAnkiConnectRepository!();
+    }
+    return _createDefaultAnkiRepository();
+  }
+
+  bool get useAnkiConnectOnAndroid => _isAndroid && _useAnkiConnectOnAndroid;
+
+  void setUseAnkiConnectOnAndroid(
+    bool value, {
+    String apiKey = '',
+  }) {
+    if (!_isAndroid) return;
+    _useAnkiConnectOnAndroid = value && apiKey.trim().isNotEmpty;
+  }
 
   /// Cross-service wiring that requires async initialisation.
   ///
@@ -55,6 +87,20 @@ class PlatformServices {
   /// after all services are constructed.
   Future<void> init() async {
     await _androidClipboard?.init();
+    if (_isAndroid) {
+      final AnkiSettings settings =
+          await _createDefaultAnkiRepository().loadSettings();
+      setUseAnkiConnectOnAndroid(
+        settings.useAnkiConnectOnAndroid,
+        apiKey: settings.ankiConnectApiKey,
+      );
+      if (settings.useAnkiConnectOnAndroid && !_useAnkiConnectOnAndroid) {
+        await _createDefaultAnkiRepository().updateSettings(
+          (AnkiSettings current) =>
+              current.copyWith(useAnkiConnectOnAndroid: false),
+        );
+      }
+    }
   }
 
   /// Constructs the correct service bundle for the current platform.
@@ -70,6 +116,8 @@ class PlatformServices {
         permission: AndroidPermissionService(deviceInfo),
         deviceInfo: deviceInfo,
         createAnkiRepository: AnkiRepository.new,
+        createAndroidAnkiConnectRepository: AnkiConnectRepository.new,
+        isAndroid: true,
         androidClipboard: clipboard,
       );
     }
