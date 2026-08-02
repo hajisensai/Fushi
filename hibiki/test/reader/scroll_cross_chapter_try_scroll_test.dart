@@ -113,50 +113,76 @@ void main() {
     late String paginationScripts;
     late String corpus;
     setUpAll(() {
-      paginationScripts = File('lib/src/reader/reader_pagination_scripts.dart')
-          .readAsStringSync()
-          .replaceAll('\r\n', '\n');
-      corpus = readReaderPageSource();
+      // TODO-2527: 两份语料都先掩码——`downSPos` / `_wheelBoundaryArmed` 这类符号
+      // 本来就原样写在生产注释里（webview.part.dart 的 TODO-656 说明段就有），裸
+      // contains 会被注释满足：把实现删光只留注释，旧写法照样全绿。
+      paginationScripts = maskCommentsAndScriptLines(
+        File('lib/src/reader/reader_pagination_scripts.dart')
+            .readAsStringSync()
+            .replaceAll('\r\n', '\n'),
+      );
+      corpus = maskCommentsAndScriptLines(readReaderPageSource());
     });
 
     test('_bStart 记手势起点滚动量 downSPos/downSMax', () {
-      expect(paginationScripts, contains('downSPos'),
+      expect(containsCodeLine(paginationScripts, 'downSPos'), isTrue,
           reason: 'touchstart 必须记手势起点沿内容轴的滚动量');
-      expect(paginationScripts, contains('downSMax'),
+      expect(containsCodeLine(paginationScripts, 'downSMax'), isTrue,
           reason: 'touchstart 必须记最大可滚量供边界判定');
     });
     test('_bEnd 用手势起点在边界判据，不再用 touchend 瞬时 atTop', () {
-      expect(paginationScripts, contains('downAtStart'),
+      expect(containsCodeLine(paginationScripts, 'downAtStart'), isTrue,
           reason: '跨章必须看手势起点是否在章首（downSPos<=2）');
-      expect(paginationScripts, contains('downAtEnd'),
+      expect(containsCodeLine(paginationScripts, 'downAtEnd'), isTrue,
           reason: '跨章必须看手势起点是否在章末');
       expect(
-          paginationScripts, isNot(contains('var atTop = root.scrollTop <= 2')),
+          containsCodeLine(
+              paginationScripts, 'var atTop = root.scrollTop <= 2'),
+          isFalse,
           reason: '_bEnd 不得再用 touchend 瞬时 scrollTop<=2 判跨章（提前跨章根因）');
     });
     test('滚轮跨章用真试滚（scrollBy + moved），不再用 stuck 推算/瞬时几何', () {
       final String wheel = _wheelBlock(corpus);
-      expect(wheel, contains('var moved = Math.abs(after - before) > 1'),
+      // 锚点自检：窗口必须落在**正文引擎**那份 wheel 监听上。spread 独立文档那份
+      // 逐字同签名、在语料里更靠前（见 _wheelBlock 注释），锚错时下面的 needle 会
+      // 集体落空 —— 但那时报的是「实现没了」，会把人引向生产代码。这条先红，直接
+      // 说清是守卫自己锚歪了。
+      expect(wheel.contains('hoshiContinuousMode'), isTrue,
+          reason: '窗口锚到了没有连续/分页门控的那份 wheel 监听（spread 独立文档），'
+              '守卫在守错对象');
+      expect(wheel.contains('onSpreadTapEmpty'), isFalse,
+          reason: '窗口吃进了 spread 独立文档的脚本段，右边界塌了');
+      expect(
+          containsCodeLine(wheel, 'var moved = Math.abs(after - before) > 1'),
+          isTrue,
           reason: '滚轮跨章须靠真试滚的实际位移判边界');
-      expect(wheel, contains('window.scrollBy'),
+      expect(containsCodeLine(wheel, 'window.scrollBy'), isTrue,
           reason: '横排/竖排都真的 window.scrollBy 一步再读位移（已验证原语）');
-      expect(wheel, isNot(contains('atStart = root.scrollTop <= 2')),
+      expect(containsCodeLine(wheel, 'atStart = root.scrollTop <= 2'), isFalse,
           reason: '不得再用瞬时 scrollTop<=2 几何');
-      expect(wheel, isNot(contains('_wheelLastScrollPos')),
+      expect(containsCodeLine(wheel, '_wheelLastScrollPos'), isFalse,
           reason: '不得再用相邻拍位置推算（时序坏 → 横排中部误翻）');
       // arm-then-fire 二次确认仍在。
-      expect(wheel, contains('_wheelBoundaryArmed'),
+      expect(containsCodeLine(wheel, '_wheelBoundaryArmed'), isTrue,
           reason: '保留 arm-then-fire 二次确认吸收单帧擦边');
     });
   });
 }
 
+/// 正文引擎那份 wheel 监听的**回调体**窗口。
+///
+/// 两件事必须分开定，合在一起就出错：
+/// - **起点**：BUG-1426 之后语料里有两份 wheel 监听，签名逐字相同
+///   （`'wheel', function(e)`）。spread 独立文档自带那份在主壳
+///   `reader_hibiki_page.dart:566`，正文引擎那份在
+///   `reader_hibiki/webview.part.dart:1408`，而语料是「主壳在前」⇒ 按签名文本
+///   `indexOf`（含 `methodBody` 的内建定位）必然锚到 spread 那份，守错对象。所以起点
+///   走语义判据 [bodyEngineWheelListenerStart]（按块内 `hoshiContinuousMode` 认）。
+/// - **右边界**：旧写法 `indexOf('}, {passive:')` 一旦监听器漏写 passive 选项就一路
+///   吞到下一个监听器，所以改成 [balancedBlockFrom] 的花括号配对。
 String _wheelBlock(String source) {
-  // BUG-1426：spread 独立文档自带的 wheel 监听（无连续/分页门控）在合并语料里排在
-  // 正文引擎那份**前面**，裸 indexOf 会锚错。按块内的 hoshiContinuousMode 挑正文那份。
   final int start = bodyEngineWheelListenerStart(source);
   expect(start, isNonNegative, reason: 'missing body-engine wheel listener');
-  final int end = source.indexOf('}, {passive:', start);
-  expect(end, isNonNegative);
-  return source.substring(start, end);
+  return balancedBlockFrom(source, start,
+      lexicon: SourceLexicon.js, what: '正文引擎 wheel 监听回调体');
 }
