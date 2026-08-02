@@ -13,17 +13,18 @@ bool ApplyImeAssociation(HWND hwnd, bool enable) {
                                enable ? IACE_DEFAULT : 0) != FALSE;
 }
 
-bool ImeAssociationGuard::SetEnabled(HWND hwnd, bool enable) {
+ImeAssociationUpdate ImeAssociationGuard::SetEnabled(HWND hwnd, bool enable) {
   if (associate_ == nullptr) {
-    return false;
+    return ImeAssociationUpdate::kFailed;
   }
-  if (initialised_ && enabled_ == enable) {
-    return false;
+  if (initialised_ && hwnd_ == hwnd && enabled_ == enable) {
+    return ImeAssociationUpdate::kUnchanged;
   }
   if (!associate_(hwnd, enable, context_)) {
-    return false;
+    return ImeAssociationUpdate::kFailed;
   }
+  hwnd_ = hwnd;
   enabled_ = enable;
   initialised_ = true;
-  return true;
+  return ImeAssociationUpdate::kApplied;
 }

@@ -894,7 +894,16 @@ void FlutterWindow::RegisterImeGuardChannel() {
         if (target == nullptr) {
           target = GetHandle();
         }
-        ime_association_guard_.SetEnabled(target, *enable);
+        const ImeAssociationUpdate update =
+            ime_association_guard_.SetEnabled(target, *enable);
+        if (update == ImeAssociationUpdate::kFailed) {
+          // Let Dart clear its optimistic cache so the same desired state can
+          // be retried. Reporting Success here would strand a recreated view
+          // with the wrong association until some unrelated focus transition.
+          result->Error("ime_association_failed",
+                        "ImmAssociateContextEx failed for the Flutter view");
+          return;
+        }
         result->Success();
       });
 }

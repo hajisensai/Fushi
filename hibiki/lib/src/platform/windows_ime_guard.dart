@@ -65,8 +65,10 @@ abstract final class WindowsImeGuard {
   static void _onFocusChanged() => _syncNow();
 
   static void _syncNow() {
+    final EditableText? editable = focusedEditableText();
     final bool enable = imeShouldBeEnabled(
-      hasEditableFocus: focusedEditableText() != null,
+      hasEditableFocus: editable != null,
+      focusedEditableIsReadOnly: editable?.readOnly ?? true,
     );
     // 焦点变化一帧内会触发多次通知；只有状态真正翻转才打通道。
     if (_lastSent == enable) return;
@@ -89,7 +91,13 @@ abstract final class WindowsImeGuard {
 
 /// 是否应当让输入法接管按键。
 ///
-/// 唯一判据是「有没有真正在编辑的文本框」：有就必须开（否则用户打不了中日文），
-/// 没有就必须关（否则输入法吞掉全部快捷键）。抽成纯函数以便直接单测，不必起
-/// 平台通道。
-bool imeShouldBeEnabled({required bool hasEditableFocus}) => hasEditableFocus;
+/// 唯一判据是「有没有真正在接收输入的文本框」：有就必须开（否则用户打不了中日文），
+/// 没有就必须关（否则输入法吞掉全部快捷键）。不能只判断 [EditableText] 是否存在：
+/// [SelectableText] 内部同样用一个 `readOnly` 的 [EditableText] 承载选择焦点，点击它
+/// 不代表用户要输入文字。这里按输入能力判定，而不是对白名单里的 widget 类型特判。
+/// 抽成纯函数以便直接单测，不必起平台通道。
+bool imeShouldBeEnabled({
+  required bool hasEditableFocus,
+  required bool focusedEditableIsReadOnly,
+}) =>
+    hasEditableFocus && !focusedEditableIsReadOnly;
