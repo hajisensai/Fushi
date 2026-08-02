@@ -75,6 +75,7 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
   bool _loading = true;
   bool _hasNextPage = false;
   int _page = 1;
+  int _loadGeneration = 0;
   Object? _error;
 
   @override
@@ -125,52 +126,63 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
   Future<void> _load({required bool reset}) async {
     final MihonSourceContext? context = _sourceContext;
     if (context == null) return;
-    if (reset) {
-      _page = 1;
-    } else {
-      _page++;
-    }
+    if (!reset && (_loading || !_hasNextPage)) return;
+    final int generation = reset ? ++_loadGeneration : _loadGeneration;
+    final int requestedPage = reset ? 1 : _page + 1;
+    final _MihonBrowseMode requestedMode = _mode;
+    final String requestedQuery = _searchController.text.trim();
+    final List<MihonFilter> requestedFilters = List<MihonFilter>.of(_filters);
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final MihonMangaPage response = switch (_mode) {
+      final MihonMangaPage response = switch (requestedMode) {
         _MihonBrowseMode.popular => await widget.manager.runtime.getPopular(
             context.extension,
             context.source,
-            page: _page,
+            page: requestedPage,
             preferences: context.preferences,
           ),
         _MihonBrowseMode.latest => await widget.manager.runtime.getLatest(
             context.extension,
             context.source,
-            page: _page,
+            page: requestedPage,
             preferences: context.preferences,
           ),
         _MihonBrowseMode.search => await widget.manager.runtime.search(
             context.extension,
             context.source,
-            page: _page,
-            query: _searchController.text.trim(),
-            filters: _filters,
+            page: requestedPage,
+            query: requestedQuery,
+            filters: requestedFilters,
             preferences: context.preferences,
           ),
       };
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
-        _items =
-            reset ? response.items : <MihonManga>[..._items, ...response.items];
-        _hasNextPage = response.hasNextPage;
+        final List<MihonManga> previous = reset ? const <MihonManga>[] : _items;
+        final Set<String> seen =
+            previous.map((MihonManga item) => item.url).toSet();
+        final List<MihonManga> additions = response.items
+            .where((MihonManga item) => seen.add(item.url))
+            .toList(growable: false);
+        _items = <MihonManga>[...previous, ...additions];
+        _page = requestedPage;
+        _hasNextPage = response.hasNextPage &&
+            response.items.isNotEmpty &&
+            (reset || additions.isNotEmpty);
         _loading = false;
       });
     } on Object catch (error) {
-      if (!mounted) return;
-      if (!reset) _page--;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _loading = false;
         _error = error;
       });
+      if (_items.isNotEmpty) {
+        HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
     }
   }
 
