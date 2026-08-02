@@ -42,7 +42,14 @@ cp -R "$vendored_source_root/." "$source_root/"
 # `git apply` 在非 git 目录下同样可用（实测 exit 0），补丁与 overlay 的应用顺序
 # 和语义与 clone 时代完全一致：先打 build/上游逻辑补丁，再用 Hibiki 的安全
 # overlay 覆盖同名文件。
-git -C "$source_root" apply --unidiff-zero "$overlay_root/server-build.gradle.patch"
+#
+# 补丁必须带上下文，这里也**绝不能**加回 `--unidiff-zero`（BUG-1428）：零上下文
+# 补丁里纯插入的 hunk 没有任何可校验的内容，`git apply --check` 对上游漂移
+# exit 0，真 apply 时按行号把新代码盲插到错误位置（实测 JGroupFilter 的
+# `stateString` 字段被插到 `name` 与 `type` 之间——data class 的字段顺序是位置
+# 语义，编译照过、行为已错）。带上下文之后，上游只是整体位移则 git 自动重定位，
+# 内容真变了就硬失败。
+git -C "$source_root" apply "$overlay_root/server-build.gradle.patch"
 cp -R "$overlay_root/overlay/." "$source_root/"
 
 prepare_jdk() {

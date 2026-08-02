@@ -2,27 +2,58 @@ diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
 index a61155b..027527d 100644
 --- a/gradle/libs.versions.toml
 +++ b/gradle/libs.versions.toml
-@@ -4 +4 @@ coroutines = "1.10.2"
+@@ -1,7 +1,7 @@
+ [versions]
+ kotlin = "2.2.21"
+ coroutines = "1.10.2"
 -serialization = "1.9.0"
 +serialization = "1.11.0"
+ okhttp = "5.3.2" # Major version is locked by Tachiyomi extensions
+ jackson = "2.18.3" # jackson version locked by javalin, ref: `io.javalin.core.util.OptionalDependency`
+ dex2jar = "2.4.33"
 diff --git a/server/build.gradle.kts b/server/build.gradle.kts
 index e105c56..9fe540c 100644
 --- a/server/build.gradle.kts
 +++ b/server/build.gradle.kts
-@@ -17,0 +18 @@ dependencies {
+@@ -15,6 +15,7 @@ plugins {
+ 
+ dependencies {
+     implementation(libs.bundles.okhttp)
 +    implementation(libs.apksig)
-@@ -42 +43 @@ sourceSets {
+     implementation(libs.icu4j.charset)
+     testImplementation(kotlin("test"))
+ 
+@@ -39,7 +40,7 @@ sourceSets {
+ }
+ 
+ // should be bumped with each stable release
 -val m_extension_serverVersion = "v1.0.4.10"
 +val m_extension_serverVersion = "v1.0.5.0"
+ 
+ // counts commit count on master
+ val m_extension_serverRevision = runCatching {
 diff --git a/server/src/main/kotlin/mextensionserver/impl/MihonInvoker.kt b/server/src/main/kotlin/mextensionserver/impl/MihonInvoker.kt
-index f77332c..adc2815 100644
+index f77332c..6b07a8a 100644
 --- a/server/src/main/kotlin/mextensionserver/impl/MihonInvoker.kt
 +++ b/server/src/main/kotlin/mextensionserver/impl/MihonInvoker.kt
-@@ -32,0 +33 @@ import mextensionserver.model.JAnime
+@@ -30,12 +30,14 @@ import mextensionserver.model.ChapterData
+ import mextensionserver.model.DataBody
+ import mextensionserver.model.EpisodeData
+ import mextensionserver.model.JAnime
 +import mextensionserver.model.JChapter
-@@ -38,0 +40 @@ import mextensionserver.model.toJAnime
+ import mextensionserver.model.JFilterList
+ import mextensionserver.model.JManga
+ import mextensionserver.model.JPage
+ import mextensionserver.model.MangaData
+ import mextensionserver.model.MangaResponse
+ import mextensionserver.model.toJAnime
 +import mextensionserver.model.toJChapter
-@@ -241,10 +243,30 @@ object MihonInvoker {
+ import mextensionserver.model.toJManga
+ import uy.kohesive.injekt.Injekt
+ import uy.kohesive.injekt.api.get
+@@ -239,14 +241,34 @@ object MihonInvoker {
+         }
+ 
          return runBlocking {
 +            val originalManga = mangaData.toSManga(source)
              val detailedManga =
@@ -54,25 +85,54 @@ index f77332c..adc2815 100644
 +                detailedManga.thumbnail_url = originalManga.thumbnail_url
 +            }
              MihonMetadataCache.remember(source, detailedManga)
-@@ -271 +293 @@ object MihonInvoker {
+             detailedManga.toJManga()
+         }
+@@ -268,7 +290,7 @@ object MihonInvoker {
+     private fun invokeGetChapterList(
+         source: Source,
+         mangaData: MangaData?,
 -    ): List<SChapter> {
 +    ): List<JChapter> {
-@@ -285,0 +308 @@ object MihonInvoker {
+         if (mangaData == null) {
+             throw IllegalArgumentException("mangaData is required for getChapterList")
+         }
+@@ -283,6 +305,7 @@ object MihonInvoker {
+                         fetchChapters = true,
+                     ).chapters
+             chapters.onEach { chapter -> MihonMetadataCache.remember(source, chapter) }
 +                .map(SChapter::toJChapter)
-@@ -854 +877 @@ object MihonInvoker {
+         }
+     }
+ 
+@@ -851,7 +874,7 @@ object MihonInvoker {
+                                 }
+                                 if (state is Filter.Text) {
+                                     val text = state
 -                                    text.state = dataGroup.name ?: ""
 +                                    text.state = dataGroup.stateString ?: ""
+                                 }
+                             }
+                         }
 diff --git a/server/src/main/kotlin/mextensionserver/model/DataBody.kt b/server/src/main/kotlin/mextensionserver/model/DataBody.kt
 index f3ec3c1..da50e07 100644
 --- a/server/src/main/kotlin/mextensionserver/model/DataBody.kt
 +++ b/server/src/main/kotlin/mextensionserver/model/DataBody.kt
-@@ -69,0 +70 @@ data class JGroupFilter(
+@@ -67,6 +67,7 @@ data class JGroupFilter(
+     val type: String?,
+     val stateBoolean: Boolean?,
+     val stateInt: Int?,
 +    val stateString: String? = null,
+ )
+ 
+ data class JSortFilter(
 diff --git a/server/src/main/kotlin/mextensionserver/util/BytecodeEditor.kt b/server/src/main/kotlin/mextensionserver/util/BytecodeEditor.kt
 index 0a6fd9f..2a5adfe 100644
 --- a/server/src/main/kotlin/mextensionserver/util/BytecodeEditor.kt
 +++ b/server/src/main/kotlin/mextensionserver/util/BytecodeEditor.kt
-@@ -291,0 +292,8 @@ object BytecodeEditor {
+@@ -289,15 +289,23 @@ object BytecodeEditor {
+                                     pendingConstructions.removeLast()
+                                 }
+                             }
 +                            val replacementIsInterface =
 +                                replacementOwner?.let(hierarchy::isInterface) ?: itf
 +                            val replacementOpcode =
@@ -81,44 +141,98 @@ index 0a6fd9f..2a5adfe 100644
 +                                } else {
 +                                    opcode
 +                                }
-@@ -293 +301 @@ object BytecodeEditor {
+                             logger.trace {
 -                                "Method" to "$opcode: $replacementOwner: $name: ${desc.replaceIndirectly()}"
 +                                "Method" to "$replacementOpcode: $replacementOwner: $name: ${desc.replaceIndirectly()}"
-@@ -296 +304 @@ object BytecodeEditor {
+                             }
+                             super.visitMethodInsn(
 -                                opcode,
 +                                replacementOpcode,
-@@ -300 +308 @@ object BytecodeEditor {
+                                 replacementOwner,
+                                 name,
+                                 desc.replaceIndirectly(),
 -                                itf,
 +                                replacementIsInterface,
-@@ -436,0 +445,2 @@ object BytecodeEditor {
+                             )
+                         }
+ 
+@@ -434,6 +442,8 @@ object BytecodeEditor {
+ 
+         fun superName(name: String): String? = classInfo(name)?.superName
+ 
 +        fun isInterface(name: String): Boolean = classInfo(name)?.isInterface == true
 +
+         fun syntheticConstructors(name: String): Set<String> = syntheticConstructors[name].orEmpty()
+ 
+         fun needsConstructorRedirect(
 diff --git a/server/src/test/kotlin/mextensionserver/impl/TachiyomiXCompatibilityTest.kt b/server/src/test/kotlin/mextensionserver/impl/TachiyomiXCompatibilityTest.kt
-index d00206f..b0e4c9e 100644
+index d00206f..89c2d7a 100644
 --- a/server/src/test/kotlin/mextensionserver/impl/TachiyomiXCompatibilityTest.kt
 +++ b/server/src/test/kotlin/mextensionserver/impl/TachiyomiXCompatibilityTest.kt
-@@ -10,0 +11 @@ import kotlinx.serialization.json.buildJsonObject
+@@ -8,6 +8,7 @@ import eu.kanade.tachiyomi.source.model.SMangaUpdate
+ import kotlinx.coroutines.runBlocking
+ import kotlinx.serialization.json.JsonPrimitive
+ import kotlinx.serialization.json.buildJsonObject
 +import mextensionserver.model.JChapter
-@@ -31,0 +33 @@ class TachiyomiXCompatibilityTest {
+ import mextensionserver.model.JManga
+ import mextensionserver.model.MangaData
+ import rx.Observable
+@@ -29,6 +30,7 @@ class TachiyomiXCompatibilityTest {
+         val result = invokeDetails(source)
+ 
+         assertEquals("Updated title", result.title)
 +        assertEquals("/manga", result.url)
-@@ -41 +43 @@ class TachiyomiXCompatibilityTest {
+         assertEquals(listOf(UpdateRequest(fetchDetails = true, fetchChapters = false)), source.requests)
+     }
+ 
+@@ -38,7 +40,7 @@ class TachiyomiXCompatibilityTest {
+ 
+         val result = invokeChapters(source)
+ 
 -        assertEquals(listOf("Chapter 1"), result.map(SChapter::name))
 +        assertEquals(listOf("Chapter 1"), result.map(JChapter::name))
-@@ -115 +117 @@ class TachiyomiXCompatibilityTest {
+         assertEquals(listOf(UpdateRequest(fetchDetails = false, fetchChapters = true)), source.requests)
+     }
+ 
+@@ -112,7 +114,7 @@ class TachiyomiXCompatibilityTest {
+     }
+ 
+     @Suppress("UNCHECKED_CAST")
 -    private fun invokeChapters(source: Source): List<SChapter> {
 +    private fun invokeChapters(source: Source): List<JChapter> {
-@@ -123 +125 @@ class TachiyomiXCompatibilityTest {
+         val method =
+             MihonInvoker::class.java.getDeclaredMethod(
+                 "invokeGetChapterList",
+@@ -120,7 +122,7 @@ class TachiyomiXCompatibilityTest {
+                 MangaData::class.java,
+             )
+         method.isAccessible = true
 -        return method.invoke(MihonInvoker, source, mangaData()) as List<SChapter>
 +        return method.invoke(MihonInvoker, source, mangaData()) as List<JChapter>
-@@ -144 +146 @@ class TachiyomiXCompatibilityTest {
+     }
+ 
+     private data class UpdateRequest(
+@@ -141,7 +143,7 @@ class TachiyomiXCompatibilityTest {
+         ): SMangaUpdate {
+             requests += UpdateRequest(fetchDetails, fetchChapters)
+             return SMangaUpdate(
 -                manga = if (fetchDetails) newManga("Updated title") else manga,
 +                manga = if (fetchDetails) newManga("Updated title").apply { url = "" } else manga,
+                 chapters = if (fetchChapters) listOf(newChapter("Chapter 1")) else chapters,
+             )
+         }
 diff --git a/server/src/test/kotlin/mextensionserver/util/BytecodeEditorTest.kt b/server/src/test/kotlin/mextensionserver/util/BytecodeEditorTest.kt
 index 1635772..63987f5 100644
 --- a/server/src/test/kotlin/mextensionserver/util/BytecodeEditorTest.kt
 +++ b/server/src/test/kotlin/mextensionserver/util/BytecodeEditorTest.kt
-@@ -329 +329,3 @@ class BytecodeEditorTest {
+@@ -326,7 +326,9 @@ class BytecodeEditorTest {
+                     "kotlin/jvm/functions/Function1",
+                     "invoke",
+                     "(Ljava/lang/Object;)Ljava/lang/Object;",
 -                    true,
 +                    // dex2jar can preserve INVOKEINTERFACE while writing a
 +                    // Methodref instead of the required InterfaceMethodref.
 +                    false,
+                 )
+                 visitInsn(Opcodes.ARETURN)
+                 visitMaxs(2, 0)

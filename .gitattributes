@@ -6,6 +6,12 @@
 *.cmd  text eol=crlf
 *.ps1  text eol=crlf
 
+# 补丁里的空上下文行就是「一个空格」，那是 unified diff 的行首标记，不是可清理
+# 的行尾空白。剥掉它补丁就打不上（BUG-1428）。关掉 whitespace 检查，免得
+# `git diff --check` 每次都报一片假阳、并诱使后人真去「修」它。
+*.patch -whitespace
+*.diff  -whitespace
+
 # 二进制文件不做行尾转换
 *.png   binary
 *.jpg   binary
