@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'reader_hibiki_page_source_corpus.dart';
 
 /// BUG-270 (TODO-296 B) 守卫：锁定跨章 sanitize-HTML LRU 缓存 + 下一章预取的接线。
@@ -19,103 +20,105 @@ void main() {
       // _putChapterHtml / _buildSanitizedChapterHtmlBytes /
       // _prefetchAdjacentChapter / _onChapterLoadComplete 已搬到
       // reader_hibiki/webview.part.dart，故改读「主壳 + 全部 part」合并语料。
-      src = readReaderPageSource();
+      // TODO-2527: 语料先掩码 + 窗口改花括号配对。旧写法七个窗口全是「本方法名 →
+      // **下一个**方法名」的文本切片（其中两个直接切到语料尾部），窗口里夹着别的方法
+      // 体和大段注释；`_kChapterHtmlCacheLimit` / `_prefetchingHtmlPath` /
+      // `scheduleMicrotask` 这些串本来就写在生产注释里，要求型断言可被注释单独满足、
+      // 禁止型断言可被注释误判红。
+      src = maskCommentsAndScriptLines(readReaderPageSource());
     });
 
     test('HTML 缓存是有界 LRU（LinkedHashMap + 容量上限）', () {
       expect(
-          src.contains('LinkedHashMap<String, Uint8List> _sanitizedHtmlCache'),
+          containsCodeLine(
+              src, 'LinkedHashMap<String, Uint8List> _sanitizedHtmlCache'),
           isTrue,
           reason: '跨章 HTML 缓存必须用 LinkedHashMap 维护 LRU 顺序');
-      expect(src.contains('static const int _kChapterHtmlCacheLimit'), isTrue,
+      expect(containsCodeLine(src, 'static const int _kChapterHtmlCacheLimit'),
+          isTrue,
           reason: '缓存必须有界，防无限增长');
     });
 
     test('HTML 资源分支经缓存提供，而非每次原地重建', () {
-      final int payloadIdx = src
-          .indexOf('Future<_ReaderResourceResponse> _readerResourcePayload(');
-      final int interceptIdx =
-          src.indexOf('Future<WebResourceResponse?> _interceptRequest(');
-      expect(payloadIdx, greaterThan(0));
-      expect(interceptIdx, greaterThan(payloadIdx));
-      final String payloadBody = src.substring(payloadIdx, interceptIdx);
-      expect(payloadBody.contains('_chapterHtmlBytes(filePath, data)'), isTrue,
+      final String payloadBody = methodBody(
+          src, 'Future<_ReaderResourceResponse> _readerResourcePayload(');
+      expect(containsCodeLine(payloadBody, '_chapterHtmlBytes(filePath, data)'),
+          isTrue,
           reason: 'HTML 分支必须走 _chapterHtmlBytes（命中缓存/失效重建），'
               '不能在资源分支里内联 sanitize+inject');
 
-      final int chapterIdx = src.indexOf('Uint8List _chapterHtmlBytes(');
-      expect(chapterIdx, greaterThan(interceptIdx));
-      final String interceptBody = src.substring(interceptIdx, chapterIdx);
-      expect(interceptBody.contains('_readerResourcePayload(url)'), isTrue,
+      final String interceptBody =
+          methodBody(src, 'Future<WebResourceResponse?> _interceptRequest(');
+      expect(containsCodeLine(interceptBody, '_readerResourcePayload(url)'),
+          isTrue,
           reason: '_interceptRequest 必须复用共享资源分支，避免 https/custom-scheme '
               '两套路径绕过 HTML 缓存');
     });
 
     test('_chapterHtmlBytes 命中即把条目顶到 MRU', () {
-      final int idx = src.indexOf('Uint8List _chapterHtmlBytes(');
-      expect(idx, greaterThan(0));
-      final int end = src.indexOf('void _putChapterHtml(');
-      final String body = src.substring(idx, end);
-      expect(body.contains('_sanitizedHtmlCache.remove(filePath)'), isTrue);
-      expect(body.contains('_sanitizedHtmlCache[filePath] = cached'), isTrue,
+      final String body = methodBody(src, 'Uint8List _chapterHtmlBytes(');
+      expect(containsCodeLine(body, '_sanitizedHtmlCache.remove(filePath)'),
+          isTrue);
+      expect(containsCodeLine(body, '_sanitizedHtmlCache[filePath] = cached'),
+          isTrue,
           reason: '命中时移除再插入 = 顶到最近使用');
     });
 
     test('_putChapterHtml 超限淘汰最旧条目', () {
-      final int idx = src.indexOf('void _putChapterHtml(');
-      expect(idx, greaterThan(0));
-      final int end = src.indexOf('Uint8List _buildSanitizedChapterHtmlBytes(');
-      final String body = src.substring(idx, end);
-      expect(body.contains('_kChapterHtmlCacheLimit'), isTrue);
+      final String body = methodBody(src, 'void _putChapterHtml(');
+      expect(containsCodeLine(body, '_kChapterHtmlCacheLimit'), isTrue);
       expect(
-          body.contains(
+          containsCodeLine(body,
               '_sanitizedHtmlCache.remove(_sanitizedHtmlCache.keys.first)'),
           isTrue,
           reason: '超限时淘汰 keys.first（最旧/最久未用）');
+      // 旧写法拿 `_buildSanitizedChapterHtmlBytes` 当右边界，顺带证明了它存在。
+      // 换成花括号配对后不再需要它定边界，存在性单独锁住。
+      expect(
+          containsCodeLine(src, 'Uint8List _buildSanitizedChapterHtmlBytes('),
+          isTrue,
+          reason: 'sanitize+inject 构建入口必须还在');
     });
 
     test('样式失效必须清空 HTML 缓存（styleTag 烘进缓存条目）', () {
-      final int idx = src.indexOf('void _invalidateStyleCache()');
-      expect(idx, greaterThan(0));
-      final int end = src.indexOf('Future<void> _applyStylesLive()');
-      final String body = src.substring(idx, end);
-      expect(body.contains('_cachedStyleTag = null'), isTrue);
-      expect(body.contains('_sanitizedHtmlCache.clear()'), isTrue,
+      final String body = methodBody(src, 'void _invalidateStyleCache()');
+      expect(containsCodeLine(body, '_cachedStyleTag = null'), isTrue);
+      expect(containsCodeLine(body, '_sanitizedHtmlCache.clear()'), isTrue,
           reason: '改字号/字体/主题后，缓存里旧 styleTag 的 HTML 必须丢弃');
     });
 
     test('翻章后预取下一章并去重在途读取', () {
-      expect(src.contains('void _prefetchAdjacentChapter('), isTrue);
-      // 预取必须挂在章节加载完成之后
-      final int loadIdx = src.indexOf('Future<void> _onChapterLoadComplete(');
-      expect(loadIdx, greaterThan(0));
-      // _onChapterLoadComplete 是 webview part 的最后一个方法（合并语料末尾），
-      // _invalidateFavoriteSentenceCache 仍在主壳（更早），故切到语料尾部。
-      final String loadBody = src.substring(loadIdx);
-      expect(loadBody.contains('_prefetchAdjacentChapter(chapterSnapshot + 1)'),
+      expect(containsCodeLine(src, 'void _prefetchAdjacentChapter('), isTrue);
+      // 预取必须挂在章节加载完成之后。旧写法把窗口切到**语料尾部**（因为
+      // _onChapterLoadComplete 恰好是 webview part 最后一个方法），一旦后面再加方法，
+      // 窗口就把新方法体也算进来。
+      final String loadBody =
+          methodBody(src, 'Future<void> _onChapterLoadComplete(');
+      expect(
+          containsCodeLine(
+              loadBody, '_prefetchAdjacentChapter(chapterSnapshot + 1)'),
           isTrue,
           reason: '加载完一章后预取下一章（前进翻章方向）');
 
-      final int prefIdx = src.indexOf('void _prefetchAdjacentChapter(');
-      // _prefetchAdjacentChapter 之后在 part 内紧跟 static _isValidFontData。
-      final int prefEnd = src.indexOf('static bool _isValidFontData(', prefIdx);
-      expect(prefEnd, greaterThan(prefIdx));
-      final String prefBody = src.substring(prefIdx, prefEnd);
-      expect(prefBody.contains('_prefetchingHtmlPath'), isTrue,
+      final String prefBody = methodBody(src, 'void _prefetchAdjacentChapter(');
+      expect(containsCodeLine(prefBody, '_prefetchingHtmlPath'), isTrue,
           reason: '在途预取要去重，避免与落地导航重复读盘');
-      expect(prefBody.contains('_sanitizedHtmlCache.containsKey(filePath)'),
+      expect(
+          containsCodeLine(
+              prefBody, '_sanitizedHtmlCache.containsKey(filePath)'),
           isTrue,
           reason: '已缓存就跳过预取');
       // 渐进重建 phase2：旧断言钉的 scheduleMicrotask 恰是问题本身——microtask
       // 在当前任务展开后立刻同步执行，读盘+净化全落在同一帧内（假「后台」）。
       // 现钉事件队列任务 + 异步 IO + style epoch 过期丢弃三件套。
-      expect(prefBody.contains('scheduleMicrotask'), isFalse,
+      expect(containsCodeLine(prefBody, 'scheduleMicrotask'), isFalse,
           reason: 'microtask 同帧同步执行会阻塞 UI，预取必须走事件队列任务');
-      expect(prefBody.contains('unawaited(Future<void>(()'), isTrue,
+      expect(containsCodeLine(prefBody, 'unawaited(Future<void>(()'), isTrue,
           reason: '预取走事件队列任务（当前帧先收尾）+ 异步读盘');
-      expect(prefBody.contains('await file.readAsBytes()'), isTrue,
+      expect(containsCodeLine(prefBody, 'await file.readAsBytes()'), isTrue,
           reason: 'IO 必须异步，让出主 isolate');
-      expect(prefBody.contains('_styleEpoch != styleEpochAtStart'), isTrue,
+      expect(containsCodeLine(prefBody, '_styleEpoch != styleEpochAtStart'),
+          isTrue,
           reason: '真异步后必须按 style epoch 丢弃跨样式失效的过期结果'
               '（styleTag 烤进缓存条目，旧代际入缓存=脏样式）');
     });
