@@ -177,6 +177,39 @@ void main() {
     );
   });
 
+  test('build-multiplatform Android emulator gets KVM access before appSmoke',
+      () {
+    final String workflow = readBuildMultiplatformWorkflow();
+    final String androidJob = workflowJob(workflow, 'android');
+    // Anchor on the whole line: matching the bare prefix would still succeed
+    // against a renamed step such as `Enable KVM group permissions (disabled)`.
+    final int kvmStart =
+        androidJob.indexOf('- name: Enable KVM group permissions\n');
+    expect(kvmStart, isNonNegative,
+        reason: 'android job must grant the runner user access to /dev/kvm; '
+            'without it the emulator silently falls back to -accel off (TCG)');
+    final int emulatorStart = androidJob
+        .indexOf('- name: Run Android comprehensive automation contract\n');
+    expect(emulatorStart, greaterThan(kvmStart),
+        reason: 'the udev rule must be applied before the emulator starts');
+    final String enableKvm = androidJob.substring(kvmStart, emulatorStart);
+
+    // Pin the rule itself, not just the step name: on the hosted runner
+    // /dev/kvm exists but the `runner` user is not in the `kvm` group, so the
+    // emulator probe fails and the AVD boots under software TCG (measured:
+    // boot 316s..704s against a 600s timeout, in-app frames 90s..214s).
+    // Dropping any of these lines silently restores that starvation.
+    expect(enableKvm, contains('/etc/udev/rules.d/99-kvm4all.rules'));
+    expect(enableKvm, contains('KERNEL=="kvm"'));
+    expect(enableKvm, contains('GROUP="kvm"'));
+    // 0666 is load-bearing: with 0660 the runner user would additionally have
+    // to join the kvm group, and a mid-job `usermod -aG` does not take effect
+    // for the already-running shell, so the emulator would still see EACCES.
+    expect(enableKvm, contains('MODE="0666"'));
+    expect(enableKvm, contains('sudo udevadm control --reload-rules'));
+    expect(enableKvm, contains('sudo udevadm trigger --name-match=kvm'));
+  });
+
   test('build-multiplatform gates iOS and macOS on normal PRs', () {
     final String workflow = readBuildMultiplatformWorkflow();
     final String macosJob = workflowJob(workflow, 'macos');

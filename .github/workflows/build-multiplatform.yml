@@ -38,21 +38,26 @@ concurrency:
 jobs:
   android:
     runs-on: ubuntu-latest
-    # The reactivecircus/android-emulator-runner emulator on the GitHub-hosted
-    # ubuntu runner boots under a software GPU (swiftshader, -accel off) and
-    # intermittently never reaches sys.boot_completed within emulator-boot-timeout
-    # (600s), failing the step with "Unable to connect to adb daemon on port:
-    # 5037" / adb exit code 224 (e.g. CI runs +111/+112). That is a runner/emulator
-    # infrastructure flake, not a Hibiki break: the same commit's linux (Linux
-    # ctest + desktop build), windows, and macos jobs stayed green, and later runs
-    # of identical code (+113..+123) all passed. The action has no built-in boot
-    # retry, so make the job non-blocking: the appSmoke contract still runs and a
-    # failure is still visible as a red X on this job (signal preserved), but an
-    # emulator boot flake no longer fails the whole workflow and so no longer
-    # blocks the Linux native ctest gate or the deliverable platform builds
-    # (TODO-624). External-platform limitation: re-evaluate dropping this once the
-    # hosted runner / action ships a reliable boot, or move the smoke contract to a
-    # self-hosted emulator.
+    # Still non-blocking (TODO-624 / BUG-365), but the original rationale here was
+    # wrong and has been corrected - see the "Enable KVM group permissions" step
+    # below. Measured over 52 completed runs (2026-07-28..2026-08-01, sampled via
+    # the Actions API): 13 green, 6 red on emulator boot ("Unable to connect to
+    # adb daemon on port: 5037" / adb exit code 224), 33 red inside appSmoke with
+    # the app process killed by a chromium renderer crash. That is a ~75% red
+    # rate held steady across the whole retained history - not the rare flake the
+    # first TODO-624 note assumed, and not traceable to any one commit.
+    # The KVM step below removes the CPU-emulation starvation that feeds both
+    # classes, but it is only proven against the boot class by mechanism; its
+    # effect on the appSmoke class is unproven until CI actually runs with
+    # acceleration on. So the job stays non-blocking for now instead of turning a
+    # known-red contract into a hard gate.
+    # What the looseness costs, precisely: this job runs ONLY the appSmoke
+    # contract - no APK build and no signing happen here (main.yml still builds
+    # and unit-tests the release APK), so the coverage currently at risk is
+    # exactly integration_test/app_smoke_test.dart, which is nonetheless the only
+    # gate exercising Hibiki on a real Android runtime.
+    # Removal condition: once runs with KVM enabled show the appSmoke class gone,
+    # drop continue-on-error so this contract becomes a real gate again.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
@@ -186,6 +191,30 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # The GitHub-hosted ubuntu runner DOES ship /dev/kvm (nested virtualization
+      # has been available on the standard Ubuntu images since 2023), but the
+      # `runner` user is not a member of the `kvm` group, so the emulator's own
+      # probe fails and the AVD silently drops to full software CPU emulation:
+      #   ProbeKVM: This user doesn't have permissions to use KVM (/dev/kvm).
+      #   The KVM line in /etc/group is: [kvm:x:993:]
+      #   disable Linux hardware acceleration: true
+      #   emulator ... -no-boot-anim -accel off
+      #   TCG doesn't support requested feature: CPUID.01H:ECX.avx
+      # Note the empty member list after `993:` - the device node is there, only
+      # the group membership is missing. Measured cost of running under TCG over
+      # 52 completed runs (2026-07-28..2026-08-01): `Boot completed in` 316s..704s
+      # against the action's 600s emulator-boot-timeout, and inside the app single
+      # frames of 90s..214s with 1000+ skipped frames, so even the 30s WebView
+      # pre-warm fallback (BUG-1372) times out. So `-accel off` was never the
+      # hosted-runner limitation BUG-365 assumed - it is this missing udev rule,
+      # which is exactly the setup android-emulator-runner's own error output
+      # tells you to apply. This restores hardware virtualization; it is not a
+      # retry, a sleep or a timeout bump.
+      - name: Enable KVM group permissions
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"'             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
       - name: Run Android comprehensive automation contract
         uses: reactivecircus/android-emulator-runner@v2
         with:
