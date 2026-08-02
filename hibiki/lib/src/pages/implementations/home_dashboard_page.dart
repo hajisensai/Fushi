@@ -19,7 +19,10 @@ import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_service.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_repository.dart';
+import 'package:hibiki/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:hibiki/src/media/video/video_home_layout.dart'
+    show VideoCardOrientation;
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/base_module_tab_page.dart';
@@ -1305,10 +1308,52 @@ class _HomeDashboardPageState
     _ContinueEntry entry, {
     bool videoLandscape = false,
   }) {
-    // 槽向：书/游戏恒竖版（BUG-1299 口径不变）；续播区的视频卡改 16:9 横版
-    // （用户拍板 + Jellyfin Continue Watching 口径）。横槽装竖图由
-    // [PortraitCoverImage] 模糊垫底承接，不会重演 BUG-1299 的硬裁。
-    final bool landscape = videoLandscape && entry.isVideo;
+    // 续播区视频卡：单行允许横竖混排（用户拍板「继续观看只有一行，混排不破
+    // 排版；书架里不可以」）——朝向随**选图链选中的那张图**探测：titleCard /
+    // backdrop（天然 16:9）→ 横卡；只有竖版海报 → 自然竖卡，不强制模糊垫底成
+    // 16:9。书 / 游戏 /「最近添加」行恒竖版（BUG-1299 口径不变）。探测与卡内
+    // 渲染共用同一 provider 键，零额外解码（CoverOrientationBuilder 契约）。
+    if (videoLandscape && entry.isVideo) {
+      final ImageProvider? probe =
+          _continueArtworkProvider(entry) ?? _continueVideoCoverProvider(entry);
+      return CoverOrientationBuilder(
+        image: probe,
+        builder: (BuildContext context, VideoCardOrientation orientation) =>
+            _buildContinueCardBody(
+          tokens,
+          appModel,
+          entry,
+          landscape: orientation == VideoCardOrientation.landscape,
+        ),
+      );
+    }
+    return _buildContinueCardBody(tokens, appModel, entry, landscape: false);
+  }
+
+  /// 续播视频卡的朝向探测 provider（与 [_continueCover] 渲染路共用键）：远端走
+  /// 互联封面，本地走条目封面；取不到 → null（探测默认竖卡）。
+  ImageProvider? _continueVideoCoverProvider(_ContinueEntry entry) {
+    final RemoteContinueCandidate? remote = entry.remote;
+    if (remote != null) {
+      final RemoteCoverFetcher? fetcher = _remoteCoverFetcher;
+      final String? url = remote.coverUrl;
+      if (url == null || url.isEmpty || fetcher == null) return null;
+      return RemoteCoverImage(url, fetcher, cacheKey: remote.id);
+    }
+    final VideoBookRow? video = entry.video;
+    if (video == null) return null;
+    return resolveMediaCoverImage(
+      kind: MediaKind.video,
+      localPath: video.coverPath,
+    );
+  }
+
+  Widget _buildContinueCardBody(
+    HibikiDesignTokens tokens,
+    AppModel appModel,
+    _ContinueEntry entry, {
+    required bool landscape,
+  }) {
     final double coverWidth =
         landscape ? _kContinueCoverHeight * 16 / 9 : _kContinueCoverWidth;
     // BUG-1111：游戏没有阅读百分比（无完成度概念），状态段只标类型，不能套用

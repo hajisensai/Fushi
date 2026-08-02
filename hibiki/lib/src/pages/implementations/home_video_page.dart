@@ -2875,9 +2875,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// [CoverOrientationBuilder] 探测与卡内封面共用同一 provider 键，零额外解码）。
   /// 底边进度条、集数/「新」/云角标，两行标题 + 溢出 Tooltip（TODO-2490 同款）。
   ///
-  /// [forceLandscape]：续播行的视频卡恒 16:9 横槽（Jellyfin Continue Watching
-  /// 口径，用户拍板「续播行只对视频改横版」）——不做朝向探测，竖版海报由
-  /// [PortraitCoverImage] 的横槽模糊垫底承接，不会重演 BUG-1299 的硬裁。
   Widget _buildRowMediaCard({
     required Key cardKey,
     required HibikiFocusId focusId,
@@ -2890,7 +2887,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     int? episodeCount,
     bool newBadge = false,
     bool cloudBadge = false,
-    bool forceLandscape = false,
   }) {
     final TextStyle? titleStyle = Theme.of(context).textTheme.bodyMedium;
     Widget buildCard(BuildContext context, VideoCardOrientation orientation) {
@@ -3002,19 +2998,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       );
     }
 
-    if (forceLandscape) {
-      return Builder(
-        builder: (BuildContext context) =>
-            buildCard(context, VideoCardOrientation.landscape),
-      );
-    }
     return CoverOrientationBuilder(image: cover, builder: buildCard);
   }
 
   /// 继续观看行·本地散卡：点击直接续播；多集显集数角标 + 按集进度条（单视频无
   /// 总时长列，不造百分比 → 不画进度条，与墙卡同一诚实口径）。
-  /// v68：恒横版 16:9；选图链 titleCard → backdrop（散装电影刮削图组）→ 自身
-  /// 封面（横图直铺 / 竖版海报模糊垫底）。
+  /// v68 选图链 titleCard → backdrop（散装电影刮削图组）→ 自身封面；卡朝向随
+  /// 选中那张图探测（用户拍板：续播行单行、横竖混排无排版问题——有横图出横卡，
+  /// 只有竖版海报就自然出竖卡，不强制垫底成 16:9）。
   Widget _buildContinueEntryCard(VideoBookRow book, double coverHeight) {
     final int episodeCount = playlistEpisodeCount(book.playlistJson);
     return _buildRowMediaCard(
@@ -3038,7 +3029,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         episodeCount: episodeCount,
       ),
       episodeCount: episodeCount,
-      forceLandscape: true,
     );
   }
 
@@ -3054,8 +3044,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       cardKey:
           ValueKey<String>('home_video_continue_collection_${collection.id}'),
       focusId: HibikiFocusId('home-video-continue-collection-${collection.id}'),
-      // v68 横版选图链（Jellyfin preferThumb 口径）：带字横图 → 无字背景 →
-      // 成员封面借用链（剧照/海报，竖图由横槽模糊垫底承接）。
+      // v68 选图链（Jellyfin preferThumb 口径）：带字横图 → 无字背景 →
+      // 成员封面借用链；卡朝向随选中那张图探测（混排语义，见散卡注释）。
       cover: _mediaImageProvider(
             _mediaImagesByCollection[collection.id],
             const <MediaImageKind>[
@@ -3084,7 +3074,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       progressFraction:
           members.isEmpty ? null : completedCount / members.length,
       episodeCount: members.length,
-      forceLandscape: true,
     );
   }
 
@@ -3102,7 +3091,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       onLongPress: () => _showRemoteVideoDialog(video),
       episodeCount: video.isPlaylist ? video.episodes.length : null,
       cloudBadge: true,
-      forceLandscape: true,
     );
   }
 
