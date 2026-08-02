@@ -20,14 +20,15 @@
   **仅 macOS**——「mac/Linux 都缺 ffmpeg」的说法里，Linux 那半是「根本没发布」而非
   「发布了但缺 ffmpeg」，不要据此去给 Linux 加装配步。
 
-- **[ ] ① 未修复** — vendor macOS 版 ffmpeg/ffprobe 到 `third_party/ffmpeg-min/macos/`；
-  在 `release-desktop.yml` 的 macos job 加装配步，把二者拷进
-  `hibiki.app/Contents/MacOS/`，ad-hoc `codesign` 后重签整个 app（镜像既有
-  `Bundle and sign pinned Mihon desktop runtimes` 的做法：逐个签 Mach-O →
-  `codesign --force --deep --sign -` 重签 app → `codesign --verify --deep --strict`）。
-- **[ ] ② 未加自动化测试** — 源码扫描守卫：`release-desktop.yml` 中每个产出发布物的
-  桌面 job 都必须有对应的 ffmpeg-min 装配步；新增平台漏装配即当场红。避免再次出现
-  「加了平台却没接装配线」。
+- **[x] ① 已修复** — vendor `third_party/ffmpeg-min/macos/{ffmpeg,ffprobe}`（mode 100755）；
+  `release-desktop.yml` macos job 新增 `Install vendored ffmpeg-min runtime into macOS bundle`：
+  拷进 `hibiki.app/Contents/MacOS/` → 逐个 ad-hoc `codesign` → `--force --deep` 重签 app →
+  `codesign --verify --deep --strict` → `-version` 硬门。位置在 Mihon 重签之后、打包之前
+  （commit 229f8bd46）。
+- **[x] ② 已加自动化测试** — 新增 `hibiki/test/tools/desktop_ffmpeg_bundling_guard_test.dart`：
+  凡 job 跑了 `flutter build <桌面平台> --release` 就必须装配 ffmpeg-min 且 ffmpeg/ffprobe 齐全，
+  **不硬编码平台清单**（将来加 Linux 发布漏装配同样红）；并校验被引用的 vendored 二进制真实存在
+  且非占位文件。
 - **备注**：与 [BUG-1420](BUG-1420-desktop-ffprobe-never-bundled.md) 同源——配方 /
   产物 / 装配 / 消费四处无单一真相源。macOS 的 ad-hoc 签名（`--sign -`，不做公证）
   意味着往 `Contents/MacOS/` 放辅助可执行文件是安全的，无需 Helpers 目录或
