@@ -3125,5 +3125,7 @@
   "game_capture_setup_title": "Complete capture setup",
   "game_capture_setup_hint": "Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.",
   "game_audio_requires_thread": "The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.",
-  "game_session_waiting_thread": "Waiting for a dialogue thread"
+  "game_session_waiting_thread": "Waiting for a dialogue thread",
+  "anki_connect_use_on_android": "Use AnkiConnect on Android",
+  "anki_connect_use_on_android_hint": "Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default."
 }
