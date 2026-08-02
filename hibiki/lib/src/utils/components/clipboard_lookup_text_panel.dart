@@ -4,7 +4,20 @@ import 'package:flutter/services.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
 
-const double _dictionaryHeadwordBaseFontSize = 26.0;
+/// 查词弹窗 headword 的字号，单位逻辑像素。
+///
+/// BUG-175 / TODO-222 要求源文本条与弹窗 headword **同级**；那个 headword 不是
+/// Flutter 排版角色，而是 WebView 里 `assets/popup/popup.css` 的
+/// `.expression { font-size: 26px }`。所以这个数字是**跨边界对齐常量**，不是本地
+/// 重新拍板的 MD3 字号——守卫用 `md3_design_system_static_test.dart` 的
+/// 「source lookup strip headword size stays pinned to the popup CSS」把它与
+/// popup.css 钉在一起，改哪边都会红。
+///
+/// BUG-1418：这里曾写成 `pageTitle.apply(fontSizeFactor: 26 / pageTitle.fontSize)`
+/// —— 读一个设计令牌只为把它整除掉。那个写法有两宗罪：① 文件里一个 `fontSize:`
+/// 都不剩，MD3 守卫的子串判据天然扫不到，等于绕过门禁；② 谁把 `pageTitle` 调大，
+/// 因子会自动补偿回 26，改动零反馈、静默失效。现在明写字号、明说它对齐谁。
+const double kPopupHeadwordFontSize = 26.0;
 
 class SourceLookupTextPanel extends StatefulWidget {
   const SourceLookupTextPanel({
@@ -99,19 +112,15 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
     );
   }
 
+  /// 字体族 / 字重 / 颜色仍取 MD3 的 [HibikiTypeRoles.pageTitle] 标题角色；
+  /// 只有**字号**按 [kPopupHeadwordFontSize] 与弹窗 headword 对齐，再乘用户的
+  /// 词典字号比例。
   TextStyle _dictionaryHeadwordTextStyle(BuildContext context) {
     final TextStyle base = HibikiDesignTokens.of(context).type.pageTitle;
-    final double baseSize = base.fontSize ?? _dictionaryHeadwordBaseFontSize;
-    final double safeBaseSize = baseSize.isFinite && baseSize > 0
-        ? baseSize
-        : _dictionaryHeadwordBaseFontSize;
     final double requestedScale = widget.dictionaryHeadwordScale;
     final double safeScale =
         requestedScale.isFinite && requestedScale > 0 ? requestedScale : 1.0;
-    return base.apply(
-      fontSizeFactor:
-          (_dictionaryHeadwordBaseFontSize / safeBaseSize) * safeScale,
-    );
+    return base.copyWith(fontSize: kPopupHeadwordFontSize * safeScale);
   }
 
   void _handleShiftHover(

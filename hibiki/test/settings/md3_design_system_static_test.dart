@@ -662,6 +662,11 @@ void main() {
       'surfaceContainerHigh',
       'surfaceContainerHighest',
       'fontSize:',
+      // BUG-1418：`TextStyle.apply` 的两个字号旋钮。少了它们，「读一个排版令牌
+      // 再用 fontSizeFactor 把它整除掉」就能锁死任意字号而整个文件一个
+      // `fontSize:` 都不剩——判据天然扫不到，等于给绕过留了正门。
+      'fontSizeFactor',
+      'fontSizeDelta',
       'Card(',
       'ListTile(',
       'SwitchListTile(',
@@ -1148,6 +1153,21 @@ void main() {
               'roles, the same reviewed startup-chrome exception class as the '
               'data-root migration / backup import overlays and the main.dart '
               'splash branches.',
+      // BUG-1418：查词源文本条的字号是**跨边界对齐常量**，不是本地 MD3 排版决定：
+      // BUG-175 / TODO-222 要求它与查词弹窗 headword 同级，而那个 headword 是
+      // WebView 里 assets/popup/popup.css 的 `.expression { font-size: 26px }`。
+      // 与 dictionary_popup_native / popup_theme_css 同一 reviewed 豁免类（弹窗查词
+      // 排版是内容，不是页面 chrome）。这条散文由下面
+      // 「source lookup strip headword size stays pinned to the popup CSS」钉成
+      // 可证伪断言：常量必须等于 popup.css 里的真实值，且不得退回 fontSizeFactor。
+      'lib/src/utils/components/clipboard_lookup_text_panel.dart':
+          'The source-text strip must render at the popup dictionary headword '
+              'size (BUG-175/TODO-222). That headword lives in the WebView, not '
+              'in a Flutter type role: assets/popup/popup.css sets '
+              '.expression { font-size: 26px }. kPopupHeadwordFontSize is that '
+              'cross-boundary parity constant (scaled by the user dictionary '
+              'font ratio), the same reviewed exception class as '
+              'dictionary_popup_native / popup_theme_css.',
       'lib/src/sync/backup_import_overlay_view.dart':
           'TODO-1151 backup import/restore overlay is pre-init startup chrome '
               '(rendered while the DB is closed / isInitialised=false during the '
@@ -1228,6 +1248,53 @@ void main() {
     expect(_containsForbiddenChrome(animeDownload, 'SwitchListTile('), isFalse,
         reason: 'anime_download_dialog is allowlisted for content rows; a '
             'settings toggle must go through the shared MD3 switch row');
+  });
+
+  // BUG-1418：查词源文本条的豁免理由说它的字号对齐弹窗 headword，而那个 headword
+  // 是 WebView 里 popup.css 的 `.expression`。散文会漂，这条把两侧钉在一起：常量
+  // 变了、popup.css 变了、或有人把字号重新藏回 TextStyle.apply，都会红。
+  test('source lookup strip headword size stays pinned to the popup CSS', () {
+    final String panel = File(
+      'lib/src/utils/components/clipboard_lookup_text_panel.dart',
+    ).readAsStringSync();
+    final String code = maskComments(panel);
+
+    final RegExp declaration =
+        RegExp(r'const double kPopupHeadwordFontSize = ([0-9.]+);');
+    final RegExpMatch? declared = declaration.firstMatch(code);
+    expect(declared, isNotNull,
+        reason: 'the strip must name its headword size as a documented '
+            'cross-boundary constant, not an inline literal');
+    final double dartSize = double.parse(declared!.group(1)!);
+
+    // popup.css 的 `.expression` 就是弹窗 headword 那一行。
+    final String popupCss = File('assets/popup/popup.css').readAsStringSync();
+    final RegExpMatch? cssRule = RegExp(
+      r'\.expression\s*\{[^}]*?font-size:\s*([0-9.]+)px',
+      dotAll: true,
+    ).firstMatch(popupCss);
+    expect(cssRule, isNotNull,
+        reason: 'popup.css must still size the .expression headword; if that '
+            'rule moved, the Flutter-side parity reason is stale');
+    expect(dartSize, double.parse(cssRule!.group(1)!),
+        reason: 'the source-text strip must render at the popup headword size '
+            '(BUG-175/TODO-222); the two sides have drifted apart');
+
+    // 不许把字号重新藏进 TextStyle.apply（BUG-1418 的原始绕过写法）。
+    expect(code, isNot(contains('fontSizeFactor')));
+    expect(code, isNot(contains('fontSizeDelta')));
+    // 唯一的字号写入就是那条对齐常量。
+    final List<String> fontSizeLines = code
+        .split('\n')
+        .where((String line) => line.contains('fontSize:'))
+        .map((String line) => line.trim())
+        .toList(growable: false);
+    expect(
+        fontSizeLines,
+        <String>[
+          'return base.copyWith(fontSize: kPopupHeadwordFontSize * safeScale);'
+        ],
+        reason: 'the allowlisted hit must stay the single popup-parity size');
   });
 
   // BUG-1414：上面 allowlist 里 manga_json_writeback.dart 的豁免理由是「纯数据层、
