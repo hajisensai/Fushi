@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -10,6 +11,46 @@ import 'package:hibiki/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 void main() {
+  test('source image queue starts only four cover fetches at a time', () async {
+    final MihonSourceImageLoadQueue queue =
+        MihonSourceImageLoadQueue(maxConcurrent: 4);
+    final List<Completer<void>> gates = List<Completer<void>>.generate(
+      10,
+      (_) => Completer<void>(),
+    );
+    int active = 0;
+    int maximumActive = 0;
+    int started = 0;
+    final List<Future<void>> tasks = <Future<void>>[
+      for (int index = 0; index < gates.length; index++)
+        queue.run<void>(() async {
+          started++;
+          active++;
+          if (active > maximumActive) maximumActive = active;
+          await gates[index].future;
+          active--;
+        }),
+    ];
+
+    await Future<void>.delayed(Duration.zero);
+    expect(started, 4);
+    expect(queue.active, 4);
+    expect(queue.pending, 6);
+
+    gates.first.complete();
+    await Future<void>.delayed(Duration.zero);
+    expect(started, 5);
+    expect(maximumActive, 4);
+
+    for (final Completer<void> gate in gates.skip(1)) {
+      gate.complete();
+    }
+    await Future.wait<void>(tasks);
+    expect(maximumActive, 4);
+    expect(queue.active, 0);
+    expect(queue.pending, 0);
+  });
+
   late Directory root;
   late HibikiDatabase database;
   late _BrowseRuntime runtime;
