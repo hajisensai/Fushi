@@ -897,56 +897,103 @@ String? renameNumberInPath(String path, int oldNumber, int newNumber) {
   return dir + base.replaceAllMapped(re, (Match m) => '${m[1]}${m[2]}$pad');
 }
 
-/// 认得出的纯文本扩展名（二进制不读、不改）。
-const Set<String> textExtensions = <String>{
-  '.dart',
-  '.md',
-  '.yaml',
-  '.yml',
-  '.json',
-  '.txt',
-  '.ps1',
-  '.sh',
-  '.bat',
-  '.cmd',
-  '.js',
-  '.mjs',
-  '.ts',
-  '.html',
-  '.css',
-  '.kt',
-  '.kts',
-  '.java',
-  '.cpp',
-  '.cc',
-  '.h',
-  '.hpp',
-  '.mm',
-  '.m',
-  '.swift',
-  '.gradle',
-  '.xml',
-  '.py',
-  '.rb',
-  '.go',
-  '.rs',
-  '.toml',
-  '.ini',
-  '.cfg',
-  '.properties',
-  '.podspec',
-  '.plist',
-  '.pro',
-  '.patch',
-  '.diff',
-  '.sql',
-  '.csv',
+/// 明确排除的二进制/容器扩展名（**黑名单**，只是省一次开文件的快路径；
+/// 真正的判据是下面的 NUL 嗅探）。
+///
+/// 🔴 判据必须是黑名单，不能是白名单。旧实现要求「有点号 + 扩展名在白名单里」，
+/// 实测把 `.gitattributes` / `third_party/m_extension_server/UPSTREAM` / `LICENSE` /
+/// `Makefile` 这类**没有扩展名或扩展名冷门的纯文本**全判成非文本；它们既不会被
+/// renumber 替换，也不会被自校验看见——一次改号 9 处引用只落了 7 处，工具仍报
+/// 「零残留」（TODO-2669）。文本文件的扩展名是开放集合，枚举不完；二进制格式是
+/// 有限集合，而且漏了一个还有 NUL 嗅探兜底。
+const Set<String> binaryExtensions = <String>{
+  // 图片
+  '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.icns', '.webp', '.avif',
+  '.tif', '.tiff', '.psd', '.heic',
+  // 字体
+  '.ttf', '.otf', '.ttc', '.woff', '.woff2', '.eot',
+  // 音视频
+  '.mp3', '.wav', '.flac', '.ogg', '.opus', '.m4a', '.aac', '.mp4', '.m4v',
+  '.mkv', '.mov', '.avi', '.webm', '.wmv', '.flv',
+  // 归档 / 压缩
+  '.zip', '.7z', '.rar', '.tar', '.gz', '.tgz', '.bz2', '.xz', '.zst', '.lz4',
+  '.jar', '.aar', '.apk', '.aab', '.ipa', '.war', '.nupkg',
+  // 可执行 / 库 / 编译中间产物
+  '.exe', '.dll', '.so', '.dylib', '.lib', '.a', '.o', '.obj', '.pdb',
+  '.class', '.dex', '.wasm', '.bin', '.pyc', '.pyd',
+  // 文档 / 数据库 / 密钥容器
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.db', '.sqlite', '.sqlite3', '.jks', '.keystore', '.p12', '.pfx', '.der',
+  // 模型 / 词典二进制
+  '.onnx', '.tflite', '.pt', '.pth', '.safetensors', '.mdx', '.mdd',
 };
 
+/// 无论从哪条枚举路径来的都不扫的目录（生成物 / 缓存 / VCS 内部 / 测试证据）。
+/// `git ls-files` 本来就不吐这些，但兜底遍历 [walkFallback] 与 [extraScanPaths] 会。
+const List<String> excludedScanPrefixes = <String>[
+  '.git/',
+  '.dart_tool/',
+  'build/',
+  'node_modules/',
+  '.gradle/',
+  '.idea/',
+  'Pods/',
+  '.worktrees/',
+  '.claude/',
+  '.codex-test/',
+];
+
+/// 头部多少字节内出现 NUL 就判二进制（git 自己也是这个套路）。
+const int binarySniffBytes = 8192;
+
+/// 纯字节判据：这段头部像不像二进制。不碰路径、不碰扩展名。
+///
+/// 替换侧与自校验侧共用**这一个低层原语**是有意的——「什么算二进制」只该有一个定义。
+/// 二者的独立性在于各自的**枚举与过滤**，见 [residualScanPaths]。
+bool bytesLookBinary(List<int> head) => head.contains(0);
+
+/// 读文件头做 NUL 嗅探。读不出来一律当二进制（扫不了的东西别硬扫）。
+/// 只读前 [binarySniffBytes] 字节——仓里最大的几个无扩展名文件是 18MB 的
+/// `libavcodec`，整读会把 renumber 拖垮。
+bool fileLooksBinary(String path) {
+  RandomAccessFile? raf;
+  try {
+    raf = File(path).openSync();
+    final int len = raf.lengthSync();
+    if (len <= 0) return false; // 空文件当文本，无害
+    final int n = len < binarySniffBytes ? len : binarySniffBytes;
+    return bytesLookBinary(raf.readSync(n));
+  } on FileSystemException {
+    return true;
+  } finally {
+    try {
+      raf?.closeSync();
+    } on FileSystemException {
+      // 关不上不影响判据。
+    }
+  }
+}
+
+/// 路径层面就能否掉的（不碰磁盘）：排除目录 + 二进制扩展名黑名单。
+///
+/// 「扩展名」只认最后一个点**在文件名中间**的那种：`.gitattributes` / `.gitignore`
+/// 的前导点不是扩展名分隔符，旧实现把它当扩展名正是漏扫的原因之一。
+bool isExcludedScanPath(String path) {
+  final String p = normalizeRelPath(path);
+  for (final prefix in excludedScanPrefixes) {
+    if (p.startsWith(prefix) || p == prefix.substring(0, prefix.length - 1)) return true;
+  }
+  final int slash = p.lastIndexOf('/');
+  final int dot = p.lastIndexOf('.');
+  if (dot > slash + 1 && binaryExtensions.contains(p.substring(dot).toLowerCase())) return true;
+  return false;
+}
+
+/// 这个文件值不值得按文本扫描：先路径/扩展名黑名单毙掉（不碰磁盘），
+/// 剩下的读头 [binarySniffBytes] 字节做 NUL 嗅探。
 bool looksTextual(String path) {
-  final dot = path.lastIndexOf('.');
-  if (dot < 0) return false;
-  return textExtensions.contains(path.substring(dot).toLowerCase());
+  if (isExcludedScanPath(path)) return false;
+  return !fileLooksBinary(path);
 }
 
 /// 取路径的文件名部分。
@@ -1011,7 +1058,46 @@ Future<List<String>> repoScanPaths() async {
   for (final extra in extraScanPaths) {
     if (File(extra).existsSync()) paths.add(extra);
   }
-  final list = paths.where(looksTextual).where((String p) => File(p).existsSync()).toList()..sort();
+  // 先 exists 再 looksTextual：后者要开文件做 NUL 嗅探，路径不存在时白扔一个异常。
+  final list = paths.where((String p) => File(p).existsSync()).where(looksTextual).toList()..sort();
+  return list;
+}
+
+/// 自校验专用的**独立**文件枚举。
+///
+/// 🔴 刻意不复用 [repoScanPaths] / [looksTextual]：守卫和被守对象共用同一个扫描器时，
+/// 扫描器漏掉的文件在守卫里同样看不见，「自校验零残留」就是假的。TODO-2669 实测：
+/// 一次改号 9 处引用只落了 7 处，漏掉 `.gitattributes` 与
+/// `third_party/m_extension_server/UPSTREAM`，而 renumber 仍打印「自校验零残留」。
+///
+/// 这里只做两件事：把工作区文件全列出来、逐个确认真实存在。**一个扩展名判据都不用**
+/// ——扩展名/黑名单再退化一次，这条路照样看得见残留。二进制在
+/// [findResidualRefs] 里按字节现场判。
+Future<List<String>> residualScanPaths() async {
+  final paths = <String>{};
+  final tracked = await runGit(<String>['ls-files', '-z'], timeout: const Duration(seconds: 60));
+  final others = await runGit(<String>[
+    'ls-files',
+    '-z',
+    '--others',
+    '--exclude-standard',
+  ], timeout: const Duration(seconds: 60));
+  if (tracked != null && tracked.exitCode == 0) {
+    for (final r in <ProcessResult?>[tracked, others]) {
+      if (r == null || r.exitCode != 0) continue;
+      paths.addAll(splitGitZ(r.stdout as String));
+    }
+  } else {
+    paths.addAll(walkFallback().map(normalizeRelPath));
+  }
+  for (final extra in extraScanPaths) {
+    if (File(extra).existsSync()) paths.add(normalizeRelPath(extra));
+  }
+  final list = paths
+      .where((String p) => !p.startsWith('.git/'))
+      .where((String p) => File(p).existsSync())
+      .toList()
+    ..sort();
   return list;
 }
 
@@ -1183,22 +1269,29 @@ Map<String, String> bugRefFingerprint(int number, Iterable<String> paths) {
 }
 
 /// 扫出所有仍在引用 `number` 的位置（`path:line` 或 `path（文件名）`）。
-/// renumber 的自校验用这个，口径与替换完全一致（同一个 [bugRefPattern]）。
+/// renumber 的自校验用这个，命中判据与替换一致（同一个 [bugRefPattern]），
+/// 但**文件枚举刻意各走各的**：不传 [paths] 时走 [residualScanPaths]，不是
+/// [repoScanPaths]。守卫和被守对象共用扫描器 = 守卫永远和 bug 同盲（TODO-2669）。
 /// 只看工作区文件——git 历史里的旧号是历史，不算残留。
 Future<List<String>> findResidualRefs(int number, {List<String>? paths}) async {
-  final files = paths ?? await repoScanPaths();
+  final files = paths ?? await residualScanPaths();
   final re = bugRefPattern(number);
   final hits = <String>[];
   for (final p in files) {
     final f = File(p);
     if (!f.existsSync()) continue;
+    // 自校验自己判二进制（按字节，不看扩展名）：扩展名判据再退化，这里仍看得见。
+    if (fileLooksBinary(p)) {
+      if (re.hasMatch(baseName(p))) hits.add('$p（文件名）');
+      continue;
+    }
     String content;
     try {
-      content = f.readAsStringSync();
+      // 宽松解码：GBK 等非 UTF-8 文本里的 `BUG-NNN` 是纯 ASCII，照样得算残留。
+      // 旧实现在 FormatException 上直接 `continue`，等于对这类文件也瞎。
+      content = utf8.decode(f.readAsBytesSync(), allowMalformed: true);
     } on FileSystemException {
       continue;
-    } on FormatException {
-      continue; // 非 UTF-8 文本（GBK 等），不可能是我们要改的 BUG 引用载体，跳过
     }
     if (re.hasMatch(content)) {
       final lines = content.split('\n');
@@ -1515,12 +1608,18 @@ Future<void> cmdRenumber(List<String> args, {BranchScanner? scanner}) async {
   //    BUG-<old>，那是合法的，不算残留。
   //    范围里的路径要按改名结果映射一次，否则改完名的文件会因「旧路径已不存在」被跳过、
   //    残留检查形同虚设。
+  //    🔴 范围**必须独立于 repoScanPaths 算**：effectivePaths ＝ repoScanPaths ∩ scope，
+  //    拿它当自校验范围就把扫描器的盲区一并继承过来，守卫又和 bug 同盲。这里直接取
+  //    git diff 出来的 scope.paths，只剔掉索引与别人那条 bug 文件。
   final Map<String, String> renameMap = <String, String>{
-    for (final r in plan.renames) r.from: r.to,
+    for (final r in plan.renames) normalizeRelPath(r.from): r.to,
   };
+  String afterRename(String p) => renameMap[normalizeRelPath(p)] ?? p;
   final residual = await findResidualRefs(
     oldNumber,
-    paths: collided ? effectivePaths.map((String p) => renameMap[p] ?? p).toList() : null,
+    paths: collided
+        ? scope.paths.where((String p) => !isIndex(p) && !isForeign(p)).map(afterRename).toList()
+        : null,
   );
   if (residual.isNotEmpty) {
     throw BugToolError(
