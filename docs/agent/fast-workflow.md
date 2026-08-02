@@ -71,6 +71,139 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
 2. 🔴 **不许拿「可能是并发伪红」当借口跳过真红**。伪红是要**证明**出来的（进程数、分片对账、并发结果文件），不是默认假设。判不明就如实写一句「这条红我没判明，交给 CI」并继续推进——**不要反复重跑碰运气，也不要默认它是假的**。
 3. 🔴 **零测试执行的红也不算红**。变异测试里删掉整行造成编译失败、`0 tests ran` 的，那不是行为红，是**无效变异**，必须把变异改成能编译的形态再跑。这与「零测试执行的绿是假绿」（BUG-1157）是同一枚硬币的两面：**`N tests ran` 的 N 本身就是判据的一部分**，N=0 时 PASSED 和 FAILED 都不成立。
 
+## 合并后必跑：目录枚举型守卫清单
+
+### 由来（真事，不是预防性条款）
+
+2026-08-02 一天内**连续四次**「刚合的 PR 把一条红带进 `develop`」，每次都靠下一条线程偶然发现；其中一条**在 `develop` 上躺了整整一天、跨了 5 条 PR** 没人察觉。同类修复在 git log 里是一串：`724b7d3f7`（PR#679 新守卫手写 maskComments → develop 单测门红 BUG-1358）、`3d5ffb77f`（合集三处裸 Material chrome → develop 守卫红 BUG-1392）、`9fd30d281`（制卡上下文守卫锚点失效 → develop 红）、`e4ca65212`（MD3 守卫红修复）。
+
+根因**不是谁不小心**，是结构性的：
+
+> **定向测试按功能域挑，而目录枚举型守卫的触发面与功能域正交。**
+
+一条改视频合集 UI 的 PR，定向测试会挑 `test/media/collections/*`、`test/pages/video_*`——没有人会想到去跑 `test/settings/md3_design_system_static_test.dart`。可那条守卫扫的是 `lib/src` **全树**，合集 PR 新写的裸 `Card(` 正落在它的扫描面里。**按名字挑测试，就永远挑不到它**；漏掉不是概率问题，是必然。
+
+补上「每条 PR 合入后固定加跑这批」之后，累计 **30 条合并零红**。
+
+### 判据：目录枚举型 vs 点名清单型
+
+区分只有一条，**不看名字、不看所在目录、不看叫不叫 guard**——看**被检对象是怎么来的**：
+
+| 类型 | 被检对象来源 | 新 PR 的新文件 | 进清单？ |
+|---|---|---|---|
+| **目录枚举型** | `Directory(...).listSync(recursive: true)` 现场枚举 | **自动纳入扫描面** | ✅ 进 |
+| **点名清单型** | 源码里硬编码的文件路径常量表 | **天然在扫描集外** | ❌ 不进 |
+
+点名清单型是本仓「静态守卫」的大多数（例如 `md3_design_system_static_test.dart` 约 70 个 test 里有 69 个是点名的）。它们对新 PR 的新文件**零覆盖**——加进清单不会多抓到任何东西，只会让清单变长。它们由定向测试覆盖，位置正确。
+
+**只枚举某个子树**的同样不进（`lib/src/sync` 的空 catch / PIN / TLS 三条、`lib/src/settings` 的旧 pref key、5 个媒体页根的焦点所有权……）：改动落在那个子树时，定向测试本来就会挑到它。
+
+### 清单（32 条，2026-08-02 反向枚举全量得出）
+
+| 测试 | 扫描根 | 守什么 |
+|---|---|---|
+| `test/tools/source_guard_adoption_test.dart` | `test/` 全树 | 禁手写注释剥离，一律走 `helpers/source_guard.dart` |
+| `test/settings/md3_design_system_static_test.dart` | `lib/src` 全树（仅其中 1 个 test） | 页面 chrome 不得重开本地 MD3 决策（裸 `Card(`/`ListTile(`/`fontSize:`/`BorderRadius.circular(`…） |
+| `test/tools/dart_source_no_raw_nul_guard_test.dart` | `hibiki/{lib,test}` + 5 个 `packages/*/lib` | `.dart` 不得含裸 NUL（git 判 binary 会静默丢改动） |
+| `test/tools/duplicate_policy_naming_guard_test.dart` | `lib` + `test` 全树 | 7 个淘汰命名不得复活 |
+| `test/tools/media_kind_persistence_guard_test.dart` | 6 个生产 `lib` 根 | MediaKind 持久化只经 `dbValue`/`compositeKey` |
+| `test/tools/book_format_discipline_guard_test.dart` | `lib`+`test`+`hibiki_core/lib` | `BookFormat` 只经枚举落库/比较 |
+| `test/tools/file_picker_discipline_guard_test.dart` | `lib` 全树 | 选择器走统一入口，裸调须登记 |
+| `test/tools/image_picker_usage_guard_test.dart` | `lib` 全树 | 桌面可达代码不得直接用 `image_picker` |
+| `test/tools/safe_file_name_guard_test.dart` | `lib` 全树 | Windows 非法文件名字符集单一真相源 |
+| `test/tools/integration_test_no_tester_tap_guard_test.dart` | `integration_test/` 全树 | 集成测试禁坐标点击 |
+| `test/tools/itest_focus_navigation_prerequisite_guard_test.dart` | `integration_test/` 全树 | 起真 app 的 itest 必须先开焦点导航 |
+| `test/database/package_schema_version_literal_guard_test.dart` | `packages/*/test` 全树 | package 测试禁 `schemaVersion` 等值断言 |
+| `test/sync/no_hardcoded_google_secret_test.dart` | `lib` 全树 | 源码不得出现 OAuth secret 明文 |
+| `test/sync/mime_types_test.dart` | 6 个 `lib` 根 | 禁新增「扩展名 → image MIME」switch 副本 |
+| `test/sync/desktop_lookup_foreground_guard_static_test.dart` | `lib/src` 全树 | 抢前台/任务栏闪烁只能走单一封装 |
+| `test/storage/documents_whitelist_guard_test.dart` | `lib` 全树 | 新增 documents 子目录必须进迁移白名单 |
+| `test/storage/path_rebase_coverage_guard_test.dart` | `lib` 全树（pref 扫描） | 新增路径形 pref / DB 列必须双向登记 |
+| `test/focus/focus_architecture_static_test.dart` | `lib/src` 全树 | 焦点滚动必须走 `HibikiFocusScroll` |
+| `test/lookup/auto_read_surface_coverage_guard_test.dart` | `lib` 全树 | 每个 `searchDictionary(` 调用点须声明接不接自动朗读 |
+| `test/pages/lookup_overlay_dialog_gate_guard_test.dart` | `lib` 全树 | 查词浮层每个子项都能走到对话框隐藏计数 |
+| `test/shortcuts/shortcut_channel_wiring_guard_test.dart` | `lib` 全树 | 开放的输入通道必须真有解析入口 |
+| `test/webview/webview_render_process_gone_guard_test.dart` | `lib` 全树 | 每处 WebView 构造必须传 `onRenderProcessGone` |
+| `test/widgets/horizontal_drag_scroll_guard_test.dart` | `lib` 全树 | 横向滚动区必须包 `HorizontalDragScrollable` |
+| `test/widgets/reorderable_scale_safety_guard_test.dart` | `lib` 全树 | 禁用 SDK `ReorderableListView`/`GridView` |
+| `test/media/collections/collection_asset_reclaim_test.dart` | `lib` 全树 | 禁裸调 DAO 删合集（须回收磁盘资产） |
+| `test/media/drag_drop/drag_drop_platform_guard_test.dart` | `lib` 全树 | `desktop_drop` 只能被平台门控 wrapper 导入 |
+| `test/media/media_cover_write_guard_test.dart` | `lib` 全树 | 封面写盘 → 驱逐缓存收口在 `MediaCoverService` |
+| `test/media/sources/book_history_split_guard_test.dart` | `lib` 全树 | 书族源恒 `implementsHistory: false` |
+| `test/media/video/real_path_directory_picker_test.dart` | `lib` 全树 | 生产代码不得用 iOS `FileType.audio` |
+| `test/ios/info_plist_media_permission_guard_test.dart` | `lib` 全树（作谓词） | 用了相机/相册/音频就必须有 `Info.plist` 声明 |
+| `test/i18n/i18n_completeness_test.dart` | `lib/i18n` 全部 17 份 | 17 语言 key 完整、无孤儿、插值一致 |
+| `test/pages/reader_hibiki_page_source_corpus_test.dart` | `reader_hibiki/` part 目录枚举 | 合并语料覆盖每个 part（漏登记会让 90+ 条守卫真空通过） |
+
+一条命令跑完，**实测 194 tests / 34 秒**（2026-08-02，`origin/develop@e474ace0c`）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
+
+```bash
+cd hibiki && dart run tool/flutter_test_failures.dart --no-pub \
+  --output-dir=../.codex-test/flutter-test-guards \
+  test/tools/source_guard_adoption_test.dart test/settings/md3_design_system_static_test.dart \
+  test/tools/dart_source_no_raw_nul_guard_test.dart test/tools/duplicate_policy_naming_guard_test.dart \
+  test/tools/media_kind_persistence_guard_test.dart test/tools/book_format_discipline_guard_test.dart \
+  test/tools/file_picker_discipline_guard_test.dart test/tools/image_picker_usage_guard_test.dart \
+  test/tools/safe_file_name_guard_test.dart test/tools/integration_test_no_tester_tap_guard_test.dart \
+  test/tools/itest_focus_navigation_prerequisite_guard_test.dart \
+  test/database/package_schema_version_literal_guard_test.dart \
+  test/sync/no_hardcoded_google_secret_test.dart test/sync/mime_types_test.dart \
+  test/sync/desktop_lookup_foreground_guard_static_test.dart \
+  test/storage/documents_whitelist_guard_test.dart test/storage/path_rebase_coverage_guard_test.dart \
+  test/focus/focus_architecture_static_test.dart test/lookup/auto_read_surface_coverage_guard_test.dart \
+  test/pages/lookup_overlay_dialog_gate_guard_test.dart test/shortcuts/shortcut_channel_wiring_guard_test.dart \
+  test/webview/webview_render_process_gone_guard_test.dart test/widgets/horizontal_drag_scroll_guard_test.dart \
+  test/widgets/reorderable_scale_safety_guard_test.dart test/media/collections/collection_asset_reclaim_test.dart \
+  test/media/drag_drop/drag_drop_platform_guard_test.dart test/media/media_cover_write_guard_test.dart \
+  test/media/sources/book_history_split_guard_test.dart test/media/video/real_path_directory_picker_test.dart \
+  test/ios/info_plist_media_permission_guard_test.dart test/i18n/i18n_completeness_test.dart \
+  test/pages/reader_hibiki_page_source_corpus_test.dart
+```
+
+**另有一批「枚举非源码树」的，按触发条件加跑**（不进默认清单是因为它们只在碰对应资产时才可能红）：改 `.github/workflows` 或 `.ps1` → `test/build/workflow_sed_inplace_portability_guard_test.dart` + `test/tools/powershell_51_compat_guard_test.dart` + `test/mining/magpie_bundled_install_test.dart`；改 `tools/browser-extension/` → `test/build/browser_extension_mirror_full_guard_test.dart` + `test/lookup/browser_extension_installer_test.dart`；动 `docs/bugs/` → `test/tools/bugs_per_file_guard_test.dart`；动 vendored 二进制 / podspec → `test/tools/ffmpeg_min_vendored_self_contained_guard_test.dart` + `test/tools/ffmpeg_kit_podspec_license_guard_test.dart`；动 `hibiki/windows/` native → `test/mining/gal_ipc_contract_single_source_test.dart`。
+
+### 清单会过期——怎么重新推导
+
+**按行为反向枚举，不按名字猜**。名字里带 `guard` / `static` / `adoption` 的既不充分也不必要：`i18n_completeness_test.dart` 不带 guard 却必须进，`resume_prune_guard_test.dart` 带 guard 却是定点。
+
+```bash
+cd hibiki
+grep -rlE "listSync|\.list\(" test/ --include=*.dart | sort > /tmp/a
+grep -rlE "['\"](\.\./)*(lib|test|assets|integration_test|packages|\.github|tools|docs|third_party)(/[^'\"]*)?['\"]" \
+  test/ --include=*.dart | sort > /tmp/b
+comm -12 /tmp/a /tmp/b   # 候选集，再逐个读代码定性
+```
+
+🔴 **两个已被实测踩到的坑**：
+
+1. **`listSync(` 会被 `dart format` 折行**成 `listSync(\n  recursive: true,\n)`。单行正则 `listSync\(recursive: true\)` 漏掉 `source_guard_adoption_test.dart` 本身——本清单第一版就是这么漏的。要么用多行匹配，要么只 grep `listSync` 裸词再逐个看。（同一个坑也存在于被守的一侧：`test/storage/data_root_migrator_test.dart` 里 `contains('listSync(recursive: true')` 这条断言就抓不到折行写法。）
+2. **grep 只能定位不能定性**。命中后必须**读代码**确认扫描根是仓库源码树而不是 `Directory.systemTemp` 临时目录——63 个候选里超过一半是「在临时目录造文件再遍历」的行为测试。
+
+### 已知残留风险（盘点发现，尚未修）
+
+清单里**多数守卫没有「扫到 N 个文件」的哨兵**，且普遍写着 `if (!dir.existsSync()) continue;`。这意味着**目录改名 / 包重构会让它们静默空转、永远绿**——扫不到东西和没有违规，在断言层面长得一模一样。有哨兵的是少数：`source_guard_adoption`（`scanned > 200`）、`itest_focus_navigation_prerequisite`（`inScope >= 25`）、`package_schema_version_literal`（`scannedFiles > 0`）、`webview_render_process_gone`（三重）、`lookup_overlay_dialog_gate`（多重）、`book_history_split`（集合相等）。**新写目录枚举型守卫时，扫描规模下界断言是必需项，不是加分项。**
+
+## 输出可信 ≠ 结论可信
+
+`git push` 打印 `* [new branch] HEAD -> refs/heads/xxx`，看起来成功，**push 本身也没撒谎**——它确实把那个 ref 推上去了。撒谎的是**我们对「那个 ref 是什么」的默认假设**：detached HEAD 下 `HEAD` 早已不是工作所在的位置，推上去的是个陈旧 commit。
+
+这类错误**读输出永远发现不了**，因为输出对它自己描述的那件事完全准确。唯一的定性办法是**问远端要真实 SHA**，再与本地比对：
+
+```bash
+git ls-remote origin refs/heads/<branch>
+gh api repos/<owner>/<repo>/git/ref/heads/<branch> --jq .object.sha
+git rev-parse <你以为推上去的那个东西>
+```
+
+这与既有的「push `develop` 假失败只信 `gh api` sha」是**同一条纪律的两个方向**：
+
+| 方向 | 表象 | 真相 | 定性 |
+|---|---|---|---|
+| 假失败 | push 报 non-FF 错误 | 并发竞态，commit 其实已经进去了 | `gh api` 查远端 sha |
+| **假成功** | push 报 `[new branch]` / `Everything up-to-date` | 推的 ref 不是工作所在位置（detached HEAD / 推错分支） | `git ls-remote` 查远端 sha |
+
+**通则：凡「远端 / 外部系统的状态」，一律以向它查询到的状态为准，不以本地命令的输出叙述为准。** 本地输出只能证明「这条命令做了它说的事」，证明不了「这件事就是我要的事」。同族实例还有：`flutter test | tail` 的退出码是 `tail` 的（恒 0）、构建失败时零测试执行会被伪装成通过（BUG-1157）。
+
 ## 合并流水线（integration owner）
 
 落地范式不变：干净 worktree ff → merge → 解 i18n → analyze → bump。提速点：
