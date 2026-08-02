@@ -1020,6 +1020,12 @@ void FlutterWindow::RegisterGalHookTextChannel() {
           gal_hook_text_window_->UpdateStyle(StyleFromArgs(args));
           gal_hook_text_window_->SetClickLookupEnabled(
               BoolFromValue(args, "clickLookupEnabled", true));
+          gal_hook_text_window_->SetHoverAutoLookup(
+              BoolFromValue(args, "hoverAutoLookup", false));
+          // 置顶按会话复位（与 locked / passThrough / following 同规矩）：上一局
+          // 关掉置顶后，这一局的浮窗不该藏在全屏游戏后面让用户以为它没出来。
+          gal_hook_text_window_->SetTopmost(
+              BoolFromValue(args, "topmost", true));
           gal_hook_text_window_->SetLocked(
               BoolFromValue(args, "locked", false));
           gal_hook_text_window_->SetPassThrough(
@@ -1053,6 +1059,12 @@ void FlutterWindow::RegisterGalHookTextChannel() {
         } else if (method == "setClickLookupEnabled") {
           gal_hook_text_window_->SetClickLookupEnabled(
               BoolFromValue(args, "enabled", true));
+          result->Success();
+        } else if (method == "setHoverAutoLookup") {
+          // 「悬停即查词」live 下发：设置页一改，正在开着的浮窗立刻跟上，不必等下
+          // 一局游戏（与字号 applyFontSizeFromPreferences 同款纪律）。
+          gal_hook_text_window_->SetHoverAutoLookup(
+              BoolFromValue(args, "enabled", false));
           result->Success();
         } else if (method == "setLocked") {
           gal_hook_text_window_->SetLocked(

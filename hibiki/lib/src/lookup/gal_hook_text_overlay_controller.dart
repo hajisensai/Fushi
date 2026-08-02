@@ -13,6 +13,7 @@ import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/magpie_upscaling.dart';
 import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_game_page.dart';
@@ -32,6 +33,11 @@ typedef GalHookPreferenceWriter = Future<void> Function(
   Object? value,
 );
 
+/// 「悬停即查词」开关的读取口（设置项 `hover_auto_lookup`）。真值在
+/// [ReaderHibikiSource]（media source 偏好store，与本控制器用的 prefsRepo 不是同一
+/// 个存储），所以单独开一条读取口而不是复用 [GalHookPreferenceReader]。
+typedef GalHookHoverAutoLookupReader = bool Function();
+
 /// App 级 Windows Hook 台词浮窗控制器。
 class GalHookTextOverlayController extends ChangeNotifier {
   GalHookTextOverlayController._({
@@ -39,11 +45,13 @@ class GalHookTextOverlayController extends ChangeNotifier {
     GalHookMiningCoordinator? miningCoordinator,
     GalHookPreferenceReader? preferenceReader,
     GalHookPreferenceWriter? preferenceWriter,
+    GalHookHoverAutoLookupReader? hoverAutoLookupReader,
   })  : _session = session ?? GalHookSessionController.instance,
         _miningCoordinator =
             miningCoordinator ?? GalHookMiningCoordinator.instance,
         _preferenceReader = preferenceReader,
-        _preferenceWriter = preferenceWriter;
+        _preferenceWriter = preferenceWriter,
+        _hoverAutoLookupReader = hoverAutoLookupReader;
 
   static final GalHookTextOverlayController instance =
       GalHookTextOverlayController._();
@@ -54,11 +62,13 @@ class GalHookTextOverlayController extends ChangeNotifier {
     GalHookMiningCoordinator? miningCoordinator,
     GalHookPreferenceReader? preferenceReader,
     GalHookPreferenceWriter? preferenceWriter,
+    GalHookHoverAutoLookupReader? hoverAutoLookupReader,
   }) : this._(
           session: session,
           miningCoordinator: miningCoordinator,
           preferenceReader: preferenceReader,
           preferenceWriter: preferenceWriter,
+          hoverAutoLookupReader: hoverAutoLookupReader,
         );
 
   static const String _rectPreferenceKey = 'gal_hook_text_window_rect';
@@ -74,6 +84,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
   final GalHookMiningCoordinator _miningCoordinator;
   final GalHookPreferenceReader? _preferenceReader;
   final GalHookPreferenceWriter? _preferenceWriter;
+  final GalHookHoverAutoLookupReader? _hoverAutoLookupReader;
 
   AppModel? _appModel;
   bool _started = false;
@@ -92,6 +103,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
   /// 已推给 native 的语音控件状态，避免每轮 sync 都发一次 channel 调用。
   bool _pushedReplaying = false;
   bool _pushedRecapturing = false;
+
+  /// 已推给 native 的「悬停即查词」值（show 载荷里带过的也算已推）。
+  bool _pushedHoverAutoLookup = false;
   int? _sessionKey;
   String? _displayedLineId;
   double _opacity = _defaultOpacity;
@@ -328,6 +342,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
         text: latest.text,
         rubySpans: rubySpansToChannel(latest.rubySpans),
       );
+      final bool hoverAutoLookup = _readHoverAutoLookup();
       _visible = await GalHookTextOverlayChannel.show(
         rect: _savedRect,
         fontSize: _fontSize,
@@ -335,7 +350,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
         following: _following,
         passThrough: _passThrough,
         locked: _locked,
+        hoverAutoLookup: hoverAutoLookup,
       );
+      _pushedHoverAutoLookup = hoverAutoLookup;
       // native 在 show 里把语音控件复位（见 flutter_window.cpp），本地镜像跟着复位，
       // 否则下一次 _syncVoiceState 会认为「已经推过了」而不再推。
       _pushedReplaying = false;
@@ -434,6 +451,27 @@ class GalHookTextOverlayController extends ChangeNotifier {
       fontSize: next,
     );
     notifyListeners();
+  }
+
+  /// 「悬停即查词」当前值。默认真值在 [ReaderHibikiSource]（与阅读器 / 视频字幕
+  /// 同一个开关），测试可注入替身。
+  bool _readHoverAutoLookup() {
+    final GalHookHoverAutoLookupReader? reader = _hoverAutoLookupReader;
+    if (reader != null) return reader();
+    return ReaderHibikiSource.instance.hoverAutoLookup;
+  }
+
+  /// BUG-756b 同款纪律：设置页改完「悬停即查词」后调用，把最新值推给已经开着的
+  /// native 浮窗。漏掉这一步，用户得关掉浮窗重开才生效。
+  ///
+  /// Shift-悬停查词不受这个开关控制（它是查词的通用手势，始终可用）；本开关只决定
+  /// 「不按 Shift 也查」。
+  Future<void> applyHoverAutoLookupFromPreferences() async {
+    if (!_started) return;
+    final bool next = _readHoverAutoLookup();
+    if (next == _pushedHoverAutoLookup) return;
+    _pushedHoverAutoLookup = next;
+    await GalHookTextOverlayChannel.setHoverAutoLookup(next);
   }
 
   Future<void> _onLockChanged(bool locked) async {

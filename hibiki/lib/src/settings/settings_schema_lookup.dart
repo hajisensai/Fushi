@@ -227,6 +227,11 @@ SettingsDestination buildLookupDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.readerSource
                   .setHoverAutoLookup(value: value);
+              // galgame Hook 台词浮窗是独立 native 窗口，读不到 Dart 侧偏好：不 live
+              // 推一次，用户得关掉浮窗重开才生效（阅读器 / 视频页由
+              // notifyReaderSettingsChanged 覆盖，浮窗不在那条链路上）。
+              await GalHookTextOverlayController.instance
+                  .applyHoverAutoLookupFromPreferences();
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
