@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -370,14 +371,15 @@ abstract class MediaSource {
     String? fallbackUrl,
     bool noOverride = false,
   }) {
-    ImageProvider<Object>? overrideThumbnail =
-        getOverrideThumbnailFromMediaItem(
-      appModel: appModel,
-      item: item,
-    );
-
-    if (!noOverride && overrideThumbnail != null) {
-      return overrideThumbnail;
+    if (!noOverride) {
+      final ImageProvider<Object>? overrideThumbnail =
+          getOverrideThumbnailFromMediaItem(
+        appModel: appModel,
+        item: item,
+      );
+      if (overrideThumbnail != null) {
+        return overrideThumbnail;
+      }
     }
 
     if (item.imageUrl != null) {
@@ -414,14 +416,14 @@ abstract class MediaSource {
     required MediaItem item,
     bool noOverride = false,
   }) {
-    ImageProvider<Object>? overrideThumbnail =
-        getOverrideThumbnailFromMediaItem(
-      appModel: appModel,
-      item: item,
-    );
-
-    if (!noOverride && overrideThumbnail != null) {
-      return getOverrideThumbnailFilename(appModel: appModel, item: item);
+    if (!noOverride) {
+      final File? overrideFile = resolveOverrideThumbnailFile(
+        appModel: appModel,
+        item: item,
+      );
+      if (overrideFile != null) {
+        return overrideFile.path;
+      }
     }
 
     if (item.imageUrl != null) {
@@ -435,23 +437,81 @@ abstract class MediaSource {
     return '';
   }
 
+  // ── override 身份（BUG-1317）─────────────────────────────────────────
+  //
+  // override 书名 / 封面的身份是**条目**（`mediaIdentifier`），不是「用哪个阅读器
+  // 打开」。旧实现把源键烧进了两处：
+  //   1. key 字符串 `override_title://<src>/<src>/<mediaId>`——源键出现两次，因为
+  //      `MediaItem.uniqueKey` 自己就是 `<src>/<mediaId>`；封面同理，文件名是
+  //      `'<mediaId>/<src>/override_thumbnail'.hashCode`；
+  //   2. 存储命名空间——偏好落 `src:<src>:<key>`（[dbSourcePrefKey]），每个源一份
+  //      独立缓存，所以光把源键从 key 字符串里拿掉并不够。
+  //
+  // 而一本书的 `mediaSourceIdentifier` 由 `EpubBooks.format` **现算**
+  // （epub→`reader_ttu` / manga→`reader_manga` / pdf→`reader_pdf`，见
+  // `ReaderHibikiSource._bookToMediaItem`），三者共享同一 `hoshi://book/<bookKey>`
+  // 身份。于是同一本书在「书架用真实源」与「首页 / 统计 / 通知栏用合成的 EPUB 源」
+  // 两条路径上读到不同的键——改名后四处显示不一致；EPUB 转成漫画后连书架侧也读不
+  // 回来，用户自定义书名与封面静默丢失。
+  //
+  // 修法：规范位置 = [overrideStore] 的命名空间 + 只含 `mediaIdentifier` 的键；
+  // 读取期依次回退 [legacyOverrideStores] 里的旧位置，命中后**就地重写**成规范
+  // 位置。零 schema 迁移、零存量丢失。清理条件：一个版本后（存量已被读取期迁走）
+  // 删掉 [legacyOverrideStores] 与全部 legacy helper。
+
+  /// override（书名 / 封面）的**存储归属源**。默认归属自己。
+  ///
+  /// 共享同一 `mediaIdentifier` 命名空间的源族必须统一归一个源存，否则同一条目在
+  /// 不同源实例下落进不同的 `src:<sourceId>:` 偏好命名空间——见
+  /// `ReaderMediaSource.overrideStore`（书族三源全归 EPUB 源）。
+  MediaSource get overrideStore => this;
+
+  /// 读取期回退位置：规范位置未命中时依次尝试的**旧**存储。
+  ///
+  /// 每个元素同时提供两样东西：旧偏好命名空间的宿主实例，以及旧键 / 旧封面文件名
+  /// 里烧进去的那个源键（[uniqueKey]）。默认只有自己。
+  List<MediaSource> get legacyOverrideStores => <MediaSource>[this];
+
   /// The map key used to store the override title of an item.
-  String getOverrideTitleKey(MediaItem item) {
-    return 'override_title://${item.mediaSourceIdentifier}/${item.uniqueKey}';
-  }
+  ///
+  /// BUG-1317：只含 `mediaIdentifier`，不含任何源键——override 跟着**条目**走。
+  String getOverrideTitleKey(MediaItem item) =>
+      'override_title://${item.mediaIdentifier}';
+
+  /// BUG-1317 之前的旧书名键形态（源键出现两次）。只用于读取期回退与清除。
+  static String legacyOverrideTitleKey({
+    required String sourceId,
+    required String mediaIdentifier,
+  }) =>
+      'override_title://$sourceId/$sourceId/$mediaIdentifier';
 
   /// The map value used to store the override thumbnail of an item.
+  ///
+  /// BUG-1317：规范文件名只由 `mediaIdentifier` 派生。**读取请走
+  /// [resolveOverrideThumbnailFile]**——直接调本函数只拿得到规范路径，看不见还没
+  /// 迁移的存量旧文件。
   String getOverrideThumbnailFilename({
     required AppModel appModel,
     required MediaItem item,
-  }) {
-    String key =
-        '${item.mediaIdentifier}/${item.mediaSourceIdentifier}/override_thumbnail';
-    String basename = key.hashCode.toString();
-    String filename = path.join(appModel.thumbnailsDirectory.path, basename);
+  }) =>
+      _overrideThumbnailPath(
+        appModel,
+        '${item.mediaIdentifier}/override_thumbnail',
+      );
 
-    return filename;
-  }
+  /// BUG-1317 之前的旧封面文件名（把源键烧进 hashCode）。只用于读取期回退与清除。
+  String legacyOverrideThumbnailFilename({
+    required AppModel appModel,
+    required MediaItem item,
+    required String sourceId,
+  }) =>
+      _overrideThumbnailPath(
+        appModel,
+        '${item.mediaIdentifier}/$sourceId/override_thumbnail',
+      );
+
+  String _overrideThumbnailPath(AppModel appModel, String key) =>
+      path.join(appModel.thumbnailsDirectory.path, key.hashCode.toString());
 
   /// Given a [MediaItem], return its override display title.
   String? getOverrideTitleFromMediaItem(MediaItem item) {
@@ -459,10 +519,112 @@ abstract class MediaSource {
       return null;
     }
 
-    String key = getOverrideTitleKey(item);
-    String? overrideTitle =
-        getPreference<String?>(key: key, defaultValue: null);
-    return overrideTitle;
+    final String key = getOverrideTitleKey(item);
+    final String? current =
+        overrideStore.getPreference<String?>(key: key, defaultValue: null);
+    if (current != null) {
+      return current;
+    }
+    return _adoptLegacyOverrideTitle(item: item, canonicalKey: key);
+  }
+
+  /// BUG-1317 读取期回退：规范键无值时依次试旧键，命中即就地重写成规范键。
+  ///
+  /// 重写故意不 await：本函数在 `build()` 里被同步调用，而 [setPreference] /
+  /// [deletePreference] 的**内存缓存写发生在第一个 await 之前**，所以「下一次读
+  /// 已命中规范键」是同步可见的；落库是写穿，失败由它们内部记日志。
+  String? _adoptLegacyOverrideTitle({
+    required MediaItem item,
+    required String canonicalKey,
+  }) {
+    for (final MediaSource legacy in legacyOverrideStores) {
+      final String legacyKey = legacyOverrideTitleKey(
+        sourceId: legacy.uniqueKey,
+        mediaIdentifier: item.mediaIdentifier,
+      );
+      final String? value =
+          legacy.getPreference<String?>(key: legacyKey, defaultValue: null);
+      if (value == null) {
+        continue;
+      }
+      unawaited(overrideStore.setPreference<String?>(
+        key: canonicalKey,
+        value: value,
+      ));
+      unawaited(legacy.deletePreference(key: legacyKey));
+      return value;
+    }
+    return null;
+  }
+
+  /// 清除一个条目的 override 书名——规范位置 **与全部旧位置**。
+  ///
+  /// BUG-1317：不清旧位置的话，「清除改名」会被读取期回退当成存量重新读回来
+  /// （用户看到旧名复活），换新名则留下永不再读的孤儿行。
+  Future<void> clearOverrideTitle(MediaItem item) async {
+    await overrideStore.deletePreference(key: getOverrideTitleKey(item));
+    for (final MediaSource legacy in legacyOverrideStores) {
+      await legacy.deletePreference(
+        key: legacyOverrideTitleKey(
+          sourceId: legacy.uniqueKey,
+          mediaIdentifier: item.mediaIdentifier,
+        ),
+      );
+    }
+  }
+
+  /// BUG-1317：返回**实际存在**的 override 封面文件，没有则 null。
+  ///
+  /// 命中旧文件名（源键烧进 hash）时就地 rename 成规范文件名。所有消费点——书架卡 /
+  /// 编辑弹窗 / 刮削跳过判据 / [getThumbnailUri] /
+  /// [getOverrideThumbnailFromMediaItem]——都必须走本入口。
+  File? resolveOverrideThumbnailFile({
+    required AppModel appModel,
+    required MediaItem item,
+  }) {
+    final String canonical =
+        getOverrideThumbnailFilename(appModel: appModel, item: item);
+    final File canonicalFile = File(canonical);
+    if (canonicalFile.existsSync()) {
+      return canonicalFile;
+    }
+    for (final MediaSource legacy in legacyOverrideStores) {
+      final File legacyFile = File(legacyOverrideThumbnailFilename(
+        appModel: appModel,
+        item: item,
+        sourceId: legacy.uniqueKey,
+      ));
+      if (!legacyFile.existsSync()) {
+        continue;
+      }
+      try {
+        canonicalFile.parent.createSync(recursive: true);
+        return legacyFile.renameSync(canonical);
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('MediaSource.adoptLegacyOverrideThumbnail', e, stack);
+        // rename 失败不该让封面凭空消失：仍返回旧文件，下次读再试一次。
+        return legacyFile;
+      }
+    }
+    return null;
+  }
+
+  /// 删除一个条目全部旧文件名形态的 override 封面（BUG-1317 清理）。
+  void _deleteLegacyOverrideThumbnails({
+    required AppModel appModel,
+    required MediaItem item,
+  }) {
+    for (final MediaSource legacy in legacyOverrideStores) {
+      final File legacyFile = File(legacyOverrideThumbnailFilename(
+        appModel: appModel,
+        item: item,
+        sourceId: legacy.uniqueKey,
+      ));
+      if (legacyFile.existsSync()) {
+        legacyFile.deleteSync();
+      }
+    }
   }
 
   /// Given a [MediaItem], return its override display thumbnail.
@@ -470,17 +632,13 @@ abstract class MediaSource {
     required AppModel appModel,
     required MediaItem item,
   }) {
-    String filename = getOverrideThumbnailFilename(
-      appModel: appModel,
-      item: item,
-    );
-
-    File file = File(filename);
-    if (!file.existsSync()) {
+    final File? file =
+        resolveOverrideThumbnailFile(appModel: appModel, item: item);
+    if (file == null) {
       return null;
     }
 
-    // BUG-959: 降采样解码；existsSync 保留——它区分「有无 override 封面」（同步 API，
+    // BUG-959: 降采样解码；存在性判据保留——它区分「有无 override 封面」（同步 API，
     // 返回 null 表示无 override 由上层回落正常封面），改异步会牵动所有 build 调用点。
     return resizedFileImage(file);
   }
@@ -491,16 +649,21 @@ abstract class MediaSource {
     required MediaItem item,
     required String? title,
   }) async {
-    String key = getOverrideTitleKey(item);
     String? value;
     if (title != null) {
-      String trimmedTitle = title.trim();
+      final String trimmedTitle = title.trim();
       if (trimmedTitle.isNotEmpty) {
         value = trimmedTitle;
       }
     }
 
-    await setPreference<String?>(key: key, value: value);
+    // BUG-1317: 旧位置无条件清掉再写规范位置——否则「清除改名」会被读取期回退
+    // 复活成旧名，「改成新名」则留下永不再读的孤儿行。
+    await clearOverrideTitle(item);
+    await overrideStore.setPreference<String?>(
+      key: getOverrideTitleKey(item),
+      value: value,
+    );
   }
 
   /// Whether this source lets the user edit a [MediaItem]'s author in the edit
@@ -548,6 +711,11 @@ abstract class MediaSource {
       return;
     }
 
+    // BUG-1317: 无论清除还是换图，旧文件名（源键烧进 hash）都必须一起清掉——
+    // 清除时留着会被 [resolveOverrideThumbnailFile] 的回退「复活」，换图时留着
+    // 只是永不再读的孤儿文件。
+    _deleteLegacyOverrideThumbnails(appModel: appModel, item: item);
+
     // 统一封面服务不变量（P3）：override 缩略图是「同路径覆盖写/删除」——filename
     // 由 hashCode 派生、换图不换路径，而 ImageCache 按 (path, scale) 而非内容缓存
     // 解码。写/删后必须双键驱逐（裸 FileImage + resizedFileImage 的 ResizeImage 键，
@@ -562,7 +730,7 @@ abstract class MediaSource {
     required AppModel appModel,
     required MediaItem item,
   }) async {
-    await deletePreference(key: getOverrideTitleKey(item));
+    await clearOverrideTitle(item);
     await setOverrideThumbnailFromMediaItem(
       appModel: appModel,
       item: item,

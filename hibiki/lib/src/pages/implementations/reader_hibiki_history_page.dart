@@ -2182,13 +2182,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 displayTitleForBook(item: item, rawTitle: item.title);
             ScrapeBatchItemResult result;
             try {
-              final File existingOverride = File(
-                source.getOverrideThumbnailFilename(
-                  appModel: appModel,
-                  item: item,
-                ),
+              // BUG-1317：跳过判据要认存量旧文件名，否则改版后批量刮削会把用户
+              // 已设的封面当成「没有」重新刮一遍并覆盖掉。
+              final File? existingOverride =
+                  source.resolveOverrideThumbnailFile(
+                appModel: appModel,
+                item: item,
               );
-              if (await existingOverride.exists()) {
+              if (existingOverride != null) {
                 result = ScrapeBatchItemResult.skipped;
               } else {
                 final List<BookScrapeCandidate> candidates =

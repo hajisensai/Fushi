@@ -302,6 +302,13 @@ class ReaderHibikiSource extends ReaderMediaSource {
     return _overrideTitleForIdentifier(mediaIdentifierForSrtUid(uid));
   }
 
+  /// BUG-1317：这里合成的 `mediaSourceIdentifier` **不再参与 override 身份**。
+  ///
+  /// 它以前是个谎——恒填 EPUB 源，于是一本漫画 / PDF 书的 override 键被按 EPUB 源
+  /// 拼出来，与编辑弹窗按真实 format 写进去的键对不上（首页 / 统计 / 通知栏读不到
+  /// 用户改的名字）。现在 override 键只由 `mediaIdentifier` 派生、统一存进
+  /// [overrideStore]，回退位置取自 `this` 的 [legacyOverrideStores]（书族三源全在
+  /// 内），所以本处填哪个源键都读到同一个值。保留 `uniqueKey` 只因它对本类自洽。
   String? _overrideTitleForIdentifier(String mediaIdentifier) {
     return getOverrideTitleFromMediaItem(MediaItem(
       mediaIdentifier: mediaIdentifier,
@@ -903,7 +910,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
         if (appModel != null) {
           await clearOverrideValues(appModel: appModel, item: item);
         } else {
-          await deletePreference(key: getOverrideTitleKey(item));
+          await clearOverrideTitle(item);
         }
       } catch (e, stack) {
         ErrorLogService.instance
