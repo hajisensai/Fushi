@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 53159 (3127 per locale)
+/// Strings: 53193 (3129 per locale)
 ///
-/// Built on 2026-08-02 at 16:30 UTC
+/// Built on 2026-08-02 at 17:23 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4207,6 +4207,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get game_audio_requires_thread =>
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -11390,6 +11393,11 @@ class _StringsAr extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -18640,6 +18648,11 @@ class _StringsDe extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -25905,6 +25918,11 @@ class _StringsEs extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -33182,6 +33200,11 @@ class _StringsFr extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -40388,6 +40411,11 @@ class _StringsId extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -47640,6 +47668,11 @@ class _StringsIt extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -54709,6 +54742,11 @@ class _StringsJa extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -61780,6 +61818,11 @@ class _StringsKo extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -69012,6 +69055,11 @@ class _StringsNl extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -76257,6 +76305,11 @@ class _StringsPtBr extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -83486,6 +83539,11 @@ class _StringsRu extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -90663,6 +90721,11 @@ class _StringsTh extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -97872,6 +97935,11 @@ class _StringsTr extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -105066,6 +105134,11 @@ class _StringsVi extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 // Path: <root>
@@ -111755,6 +111828,11 @@ class _StringsZhCn extends _StringsEn {
   String get game_audio_requires_thread => '音频采集源可能已经就绪，但选择线程并收到台词之前，不存在本句音频。';
   @override
   String get game_session_waiting_thread => '等待选择台词线程';
+  @override
+  String get anki_connect_use_on_android => '在 Android 上使用 AnkiConnect';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      '连接下方主机和端口，而非 AnkiDroid；默认仍使用 AnkiDroid。';
 }
 
 // Path: <root>
@@ -118745,6 +118823,11 @@ class _StringsZhHk extends _StringsEn {
       'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
   @override
   String get game_session_waiting_thread => 'Waiting for a dialogue thread';
+  @override
+  String get anki_connect_use_on_android => 'Use AnkiConnect on Android';
+  @override
+  String get anki_connect_use_on_android_hint =>
+      'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
 }
 
 /// Flat map(s) containing all translations.
@@ -125159,6 +125242,10 @@ extension on _StringsEn {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -131571,6 +131658,10 @@ extension on _StringsAr {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -138005,6 +138096,10 @@ extension on _StringsDe {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -144438,6 +144533,10 @@ extension on _StringsEs {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -150877,6 +150976,10 @@ extension on _StringsFr {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -157298,6 +157401,10 @@ extension on _StringsId {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -163733,6 +163840,10 @@ extension on _StringsIt {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -170130,6 +170241,10 @@ extension on _StringsJa {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -176531,6 +176646,10 @@ extension on _StringsKo {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -182960,6 +183079,10 @@ extension on _StringsNl {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -189386,6 +189509,10 @@ extension on _StringsPtBr {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -195817,6 +195944,10 @@ extension on _StringsRu {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -202231,6 +202362,10 @@ extension on _StringsTh {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -208654,6 +208789,10 @@ extension on _StringsTr {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -215073,6 +215212,10 @@ extension on _StringsVi {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }
@@ -221438,6 +221581,10 @@ extension on _StringsZhCn {
         return '音频采集源可能已经就绪，但选择线程并收到台词之前，不存在本句音频。';
       case 'game_session_waiting_thread':
         return '等待选择台词线程';
+      case 'anki_connect_use_on_android':
+        return '在 Android 上使用 AnkiConnect';
+      case 'anki_connect_use_on_android_hint':
+        return '连接下方主机和端口，而非 AnkiDroid；默认仍使用 AnkiDroid。';
       default:
         return null;
     }
@@ -227830,6 +227977,10 @@ extension on _StringsZhHk {
         return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
       case 'game_session_waiting_thread':
         return 'Waiting for a dialogue thread';
+      case 'anki_connect_use_on_android':
+        return 'Use AnkiConnect on Android';
+      case 'anki_connect_use_on_android_hint':
+        return 'Connect to the host and port below instead of AnkiDroid. AnkiDroid remains the default.';
       default:
         return null;
     }

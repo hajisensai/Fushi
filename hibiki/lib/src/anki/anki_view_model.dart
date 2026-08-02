@@ -198,6 +198,13 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     state = state.copyWith(settings: updated);
   }
 
+  Future<void> updateUseAnkiConnectOnAndroid(bool value) async {
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(useAnkiConnectOnAndroid: value),
+    );
+    state = state.copyWith(settings: updated);
+  }
+
   Future<LapisSetupResult> createLapisSetup() async {
     state = state.copyWith(isFetching: true, clearError: true);
     try {
