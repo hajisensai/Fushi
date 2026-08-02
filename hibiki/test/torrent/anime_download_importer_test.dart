@@ -1,11 +1,11 @@
-/// 番剧下载入库封面（BUG-1393 / BUG-1394）+ added 活动事件（BUG-1416）。
+/// 番剧下载入库封面（BUG-1393 / BUG-1394）+ added 活动事件（BUG-1417）。
 ///
 /// 用户 2026-08-02：作品海报只落合集自有封面，不借道首集条目——多集合集的子篇不得
 /// 顶着作品级竖版海报。同时钉住落盘走统一收口（`MediaCoverService.applyCoverBytes`
 /// 的原子 `.tmp`+rename）：`reuseExistingPaths` 重放会覆盖同名文件，裸 writeAsBytes
 /// 不驱逐解码缓存就是 BUG-1118 的形状。
 ///
-/// BUG-1416：下载完成自动入库以前一条 `added` 活动事件都不记，首页时间轴看不到番剧
+/// BUG-1417：下载完成自动入库以前一条 `added` 活动事件都不记，首页时间轴看不到番剧
 /// 入库。补记的同时必须扛住崩溃重放——`reuseExistingPaths` 让重放复用既有条目/合集，
 /// 幂等判据只能是 `createdEpisodeUids`（本次真新建的集），不是时间窗、不是去重表。
 library;
@@ -138,7 +138,7 @@ void main() {
     expect(File('$dest.tmp').existsSync(), isFalse, reason: '收口写不留 .tmp');
   });
 
-  // ── BUG-1416：added 活动事件 ───────────────────────────────────────────
+  // ── BUG-1417：added 活动事件 ───────────────────────────────────────────
   //
   // 幂等判据钉在「本次真新建了集」上（SplitPlaylistImportResult.createdEpisodeUids），
   // 不是时间窗、不是合集是否已存在。四条用例分别守：真新增记 1 条 / 崩溃重放不重记 /

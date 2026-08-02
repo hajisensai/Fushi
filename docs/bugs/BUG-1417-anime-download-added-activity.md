@@ -1,4 +1,4 @@
-## BUG-1416 · 番剧下载自动入库不记 added 活动事件
+## BUG-1417 · 番剧下载自动入库不记 added 活动事件
 - **报告**：2026-08-02（TODO-2556）
 - **真实性**：✅ 真 bug。`hibiki/lib/src/media/torrent/anime_download_importer.dart` 全文 `grep -n "Activity\|recordActivity"` 零命中（129 行，入库主体 :58-127）：番剧下载完成后 `importSplitPlaylist` 返回就直接去绑 AniList / 抽封面，从不记 `added` 活动事件。视频域其它入库路径（对话框 5 处 `video_import_dialog.dart:366/462/481/559/634`、扫描首导 `source_library_scanner.dart:758`）全都经 `VideoBookRepository.recordVideoImportActivity`（`video_book_repository.dart:140`）记账，只有下载这条漏了 → 首页 dashboard / 时间轴看不到番剧入库。引入者 `buildAnimeDownloadImporter`（commit `5dbd4b179`）自始未接活动流。
 - **[x] ① 已修复** — `anime_download_importer.dart:73-87` 在 `importSplitPlaylist` 返回后按既有范式记 1 条（整本 1 条，`title=plan.seriesTitle`、`mediaKey=首集 uid`，与对话框 / 扫描首导同粒度）。
