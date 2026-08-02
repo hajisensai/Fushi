@@ -1,0 +1,11 @@
+## BUG-1414 · manga.json 回写触发 MD3 fontSize 守卫，develop CI 单测门变红
+- **报告**：2026-08-02（用户：项目负责人）
+- **真实性**：✅ 真 bug（CI 真红）。`Build Release APK` 的 `Run unit tests (main app)` 失败（run 30722983628，head a237e0551），verdict：`FAILED - flutter test exited with 1 ... Actual: ['lib/src/media/manga/manga_json_writeback.dart: fontSize:']`。本地在 origin/develop（ac1574b46）已复现。
+  - 守卫：`hibiki/test/settings/md3_design_system_static_test.dart` 的 `ordinary page chrome does not reopen local MD3 decisions`（禁用串表 `:664` 含 `fontSize:`，全 `lib/src` 子串扫描）。
+  - 命中行：`hibiki/lib/src/media/manga/manga_json_writeback.dart:142` 的 `fontSize: estimateMangaBlockFontSize(`（PR#692 引入）。
+  - **定性：守卫误伤，不是功能坏**。这个 `fontSize:` 是 mokuro 数据模型构造器 `MokuroBlock(...)` 的名参（`hibiki/lib/src/media/manga/mokuro_payload.dart:81/96`），落盘成 manga.json 的 `font_size` 字段（`mokuro_payload.dart:290`），唯一消费方是 `hibiki/lib/src/media/manga/manga_overlay_html.dart:46`：`(block.fontSize / pageWidth) * 100` 折算成 WebView 覆盖层的 CSS `cqi` 命中框字号。全文件零 `package:flutter/` import（`manga_json_writeback.dart:29-37`），不可能是页面 chrome。
+- **[x] ① 已修复** — 按守卫自己在失败信息里写明的机制（“add a reviewed allowlist reason for true content exceptions”）给 `manga_json_writeback.dart` 加一条写明理由的豁免，与已有三个同字段生产者（`mokuro_payload.dart` / `ocr/manga_ocr_folder_job.dart` / `media/manga/ocr/google_lens_ocr_service.dart`）同一 reviewed 豁免类。**生产代码零改动**（`git diff origin/develop -- hibiki/lib` 为空）。
+  - 为什么不改判据：`fontSize:` 与 `TextStyle(fontSize:)` 逐字符同形，要分辨只能知道外层构造器是谁，即把这个子串扫描器换成 Dart 语法分析——那是它有意不做的事。“没有 Flutter import 就跳过扫描”也不行：那是把扫描范围改小（把门禁变松），不是把判据改准。
+- **[x] ② 已加自动化测试** — 新增 `manga.json writeback stays a pure data layer`（同文件）：把豁免理由里“纯数据层、无 UI 代码”钉成可证伪断言（无 `package:flutter/` import、`fontSize:` 只允许是 `estimateMangaBlockFontSize(` 那一行、无 `TextStyle(`/`Card(`/`ListTile(`/`BorderRadius.circular(`/`surfaceContainer*`/`Widget build(`），防止整文件豁免退化成永久免检。
+  - 变异实测三个方向均已跑真：M1 在未豁免的 UI 文件（`media/metadata/scrape_failure_view.dart`）塞 `TextStyle(fontSize: 14)` → 扫描守卫转红；M2 往回写层塞 `package:flutter/material.dart` + `Card(` → 新守卫转红；M3 把回写层那行改成硬编码 `fontSize: 14` → 新守卫转红。三个变异均用反向文本替换还原，`git status` 零残留。
+- **备注**：存量三条同类豁免（mokuro_payload / manga_ocr_folder_job / google_lens_ocr_service）仍是整文件免检，没有本条这种可证伪钉子；另外 `manga_ocr_folder_job.dart:264` 的 `estimateMangaFontSize` 与本文件 `estimateMangaBlockFontSize` 是两份各自实现的同字段估算。两件都超出本次修红范围，未动。
