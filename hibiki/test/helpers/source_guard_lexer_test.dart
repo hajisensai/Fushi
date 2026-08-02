@@ -240,6 +240,305 @@ final b = \'\'\'{ js }\'\'\';
     });
   });
 
+  // -------------------------------------------------------------------------
+  // ④' 箭头函数体（TODO-2726）
+  // -------------------------------------------------------------------------
+  //
+  // 这一组语料全部**手写合成**，不读磁盘：判据必须能在「被守文件恰好长成另一个样」
+  // 时仍然点名验证到每一条分支。真实文件既证不了负例（健康仓库里箭头越界不会发生
+  // 两次），也会让「注释把变异兜住」的老陷阱重演。
+  group("④' methodBody 认箭头函数体（TODO-2726：只认花括号会静默返回邻居）", () {
+    /// 越界的**充分必要**语料：箭头函数紧跟一个花括号体的邻居。
+    /// 旧实现在这里会把 `neighbourBody` 整段读进窗口。
+    const String arrowThenBrace = '''
+String alpha(int x) => 'A\$x';
+
+String beta(int x) {
+  return 'neighbourBody';
+}
+''';
+
+    test('箭头体只取到自己的分号，不吞掉紧随其后的花括号邻居', () {
+      final String body = methodBody(arrowThenBrace, 'String alpha(int x)');
+      expect(body.contains("'A"), isTrue, reason: '箭头体自身必须在窗口里');
+      expect(body.trimRight().endsWith(';'), isTrue,
+          reason: '箭头体的右边界是深度 0 的分号');
+      expect(body.contains('neighbourBody'), isFalse,
+          reason: '这正是 TODO-2726：旧实现把邻居 beta 的实现当成 alpha 的体返回');
+    });
+
+    test('=> switch (…) { … }; 里的花括号不提前也不延后收口', () {
+      const String src = '''
+String label(int x) => switch (x) {
+      1 => 'one',
+      _ => 'other',
+    };
+
+String next() {
+  return 'neighbourBody';
+}
+''';
+      final String body = methodBody(src, 'String label(int x)');
+      expect(body.contains("'other'"), isTrue, reason: 'switch 表达式整段都在体内');
+      expect(body.contains('neighbourBody'), isFalse);
+    });
+
+    test('箭头体里实参内的分号不提前收口', () {
+      const String src = '''
+String f() => g('a;b', <int>[1, 2]);
+
+String next() {
+  return 'neighbourBody';
+}
+''';
+      final String body = methodBody(src, 'String f()');
+      expect(body.contains('<int>[1, 2]'), isTrue);
+      expect(body.contains('neighbourBody'), isFalse);
+    });
+
+    test('箭头体里闭包**语句块**的分号不提前收口（真·深度 >0 的分号）', () {
+      // 上一条的 `'a;b'` 在结构串里已被掩成空白，其实**碰不到**深度判断这条分支。
+      // 闭包体里的分号是真的、在花括号深度 1 上——只有这里才验得到「深度 0 才收口」。
+      const String src = '''
+String f() => run(() {
+      final int a = 1;
+      return a.toString();
+    });
+
+String next() {
+  return 'neighbourBody';
+}
+''';
+      final String body = methodBody(src, 'String f()');
+      expect(body.contains('a.toString()'), isTrue, reason: '首个分号收口会把闭包体拦腰截断');
+      expect(body.trimRight().endsWith(');'), isTrue);
+      expect(body.contains('neighbourBody'), isFalse);
+    });
+
+    test('命名参数默认值里的 => 不被当成函数体起点', () {
+      const String src = '''
+Widget wrap({Widget Function() build = _fallback, required Widget child}) {
+  return Padding(padding: EdgeInsets.zero, child: child);
+}
+''';
+      final String body = methodBody(
+        src,
+        'Widget wrap({Widget Function() build = _fallback',
+      );
+      expect(body.contains('Padding('), isTrue,
+          reason: '参数表里的 => 在圆括号深度 >0，不该收口');
+    });
+
+    test('没有体的声明（抽象方法）fail loudly，绝不静默锚到下一个声明', () {
+      const String src = '''
+abstract class A {
+  void target();
+}
+
+class B {
+  void other() {
+    final String s = 'neighbourBody';
+  }
+}
+''';
+      expect(
+        () => methodBody(src, 'void target()'),
+        throwsA(isA<TestFailure>()),
+        reason: '旧实现会一路找到 B.other 的花括号，把邻居的体当成 target 的体',
+      );
+    });
+
+    test('花括号体不受影响（回归）', () {
+      const String src = '''
+String beta(int x) {
+  return 'own';
+}
+
+String next() {
+  return 'neighbourBody';
+}
+''';
+      final String body = methodBody(src, 'String beta(int x)');
+      expect(body.contains("'own'"), isTrue);
+      expect(body.contains('neighbourBody'), isFalse);
+    });
+  });
+
+  group("④'' topLevelFunctionBody：按名字取体，跳过调用点", () {
+    const String src = '''
+String headline({required String reason}) => label(reason);
+
+String label(String code) {
+  switch (code) {
+    case 'x':
+      return 'X';
+  }
+  return code;
+}
+
+void caller() {
+  headline(reason: 'never-part-of-a-body');
+}
+''';
+
+    test('箭头体返回 => 与 ; 之间的表达式，不含邻居', () {
+      final String? body = topLevelFunctionBody(src, 'headline');
+      expect(body, isNotNull);
+      expect(containsIdentifierCall(body!, 'label'), isTrue,
+          reason: '一跳可达判据靠的就是这个窗口');
+      expect(body.contains("case 'x'"), isFalse,
+          reason: '不得读到邻居 label 的 switch 块（PR#762 实测到的那次假绿）');
+    });
+
+    test('花括号体返回含 {} 的整块', () {
+      final String? body = topLevelFunctionBody(src, 'label');
+      expect(body, isNotNull);
+      expect(body!.trimLeft().startsWith('{'), isTrue);
+      expect(body.contains("case 'x'"), isTrue);
+      expect(body.contains('never-part-of-a-body'), isFalse);
+    });
+
+    test('只有调用点没有声明时返回 null，不返回调用方的体', () {
+      const String callsOnly = '''
+void caller() {
+  headline(reason: 'r');
+}
+''';
+      expect(topLevelFunctionBody(callsOnly, 'headline'), isNull);
+    });
+
+    test('调用点排在声明之前时仍锚到声明', () {
+      const String callFirst = '''
+void caller() {
+  headline(reason: 'r');
+}
+
+String headline({required String reason}) => label(reason);
+''';
+      final String? body = topLevelFunctionBody(callFirst, 'headline');
+      expect(body, isNotNull);
+      expect(containsIdentifierCall(body!, 'label'), isTrue);
+    });
+  });
+
+  // 禁止型断言（isFalse）在健康仓库里**永远零命中**：判据自己坏掉时，扫盘那一路
+  // 检验不到。所以判据必须在**手写语料**上单独验证，且与磁盘扫描互不依赖。
+  group('containsIdentifier：禁止型判据的自校验（手写语料，不读磁盘）', () {
+    test('代码里以独立标识符出现 ⇒ 命中', () {
+      expect(
+        containsIdentifier(
+            '  static const int _galAudioBackMs = 8000;', '_galAudioBackMs'),
+        isTrue,
+      );
+      expect(
+        containsIdentifier('final int x = _galAudioBackMs;', '_galAudioBackMs'),
+        isTrue,
+      );
+    });
+
+    test('只出现在注释里 ⇒ 不命中（否则守卫会被一句解释永久判红）', () {
+      expect(
+        containsIdentifier(
+            '// 历史：这里曾有 _galAudioBackMs 同时当两个量用。\nfinal int a = 1;',
+            '_galAudioBackMs'),
+        isFalse,
+      );
+      expect(
+        containsIdentifier('/* _galAudioBackMs */', '_galAudioBackMs'),
+        isFalse,
+      );
+    });
+
+    test('更长的标识符含同名子串 ⇒ 不命中（否则正确写法反被判红）', () {
+      expect(
+        containsIdentifier(
+            'const int _galAudioBackMsLegacy = 1;', '_galAudioBackMs'),
+        isFalse,
+      );
+      expect(
+        containsIdentifier(
+            'const int x_galAudioBackMs = 1;', '_galAudioBackMs'),
+        isFalse,
+      );
+    });
+
+    test('不要求是次调用（与 containsIdentifierCall 的分工）', () {
+      expect(containsIdentifier('a = selectable && !excluded;', 'selectable'),
+          isTrue);
+      expect(
+        containsIdentifierCall('a = selectable && !excluded;', 'selectable'),
+        isFalse,
+      );
+    });
+  });
+
+  group('initializerExpression：取「这个量是怎么来的」而不是逐字拼写', () {
+    test('取到分号前的整段表达式，与修饰符/空格/类型名无关', () {
+      const String src = '''
+class A {
+  static const int cap = 60 * 1000;
+  static const Duration window = Duration(seconds: 20);
+}
+''';
+      expect(initializerExpression(src, 'cap'), '60 * 1000');
+      expect(initializerExpression(src, 'window'), 'Duration(seconds: 20)');
+    });
+
+    test('实参/集合字面量里的分号不提前收口', () {
+      const String src = "final String s = fn('a;b', <int>[1]);";
+      expect(initializerExpression(src, 's'), "fn('a;b', <int>[1])");
+    });
+
+    test('闭包**语句块**里的分号不提前收口（真·深度 >0 的分号）', () {
+      // 上一条的 `'a;b'` 在结构串里已被掩成空白，碰不到深度判断。闭包体里的分号是
+      // 真的、在花括号深度 1 上——只有这里才验得到「深度 0 才收口」。
+      const String src = '''
+final VoidCallback cb = () {
+  count += 1;
+};
+final int tail = 7;
+''';
+      expect(initializerExpression(src, 'cb'), '() {\n  count += 1;\n}');
+    });
+
+    test('`name == x` 是比较，不是声明', () {
+      const String src = '''
+bool f(int name) {
+  if (name == 3) return true;
+  return false;
+}
+''';
+      expect(initializerExpression(src, 'name'), isNull);
+    });
+
+    test('switch 表达式的 `pattern => …` 分支不被当成声明', () {
+      // `v =>` 与 `v =` 只差一个字符，且它出现在真声明**之前**：
+      // 少了这一条，取到的会是那个分支的表达式而不是变量的初始化式。
+      const String src = '''
+void f(int x) {
+  final String s = switch (x) {
+    1 => 'one',
+    v => 'other',
+  };
+  final int v = 9;
+}
+''';
+      expect(initializerExpression(src, 'v'), '9');
+    });
+
+    test('注释里的同名声明不算数', () {
+      const String src = '''
+// 旧值 static const int cap = 8000;
+static const int cap = 60000;
+''';
+      expect(initializerExpression(src, 'cap'), '60000');
+    });
+
+    test('找不到返回 null，不返回空串', () {
+      expect(initializerExpression('const int a = 1;', 'b'), isNull);
+    });
+  });
+
   group('enclosingCall：窗口由括号配对给出，不靠定长/相邻声明', () {
     const String src = '''
     SettingsCustomItem(
