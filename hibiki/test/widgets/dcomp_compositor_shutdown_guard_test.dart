@@ -2,17 +2,15 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 剥掉 Dart 源码里的行注释（`//` 到行尾，含 `///` 文档注释），用于「先于 exit(0)
 /// 调用 native pre-exit hook」这类**代码顺序**断言：源文件的文档注释里常出现
 /// `` `exit(0)` `` 字面（如 desktop_lifecycle_service.dart 的方法说明），裸
 /// `indexOf('exit(0)')` 会命中注释而非真实代码调用，造成顺序误判（TODO-950）。
-/// 这些被守卫的源文件不含「字符串字面量里嵌 `//`」的情况，按行去尾注释即可。
-String _stripDartLineComments(String src) {
-  return src.split('\n').map((String line) {
-    final int idx = line.indexOf('//');
-    return idx >= 0 ? line.substring(0, idx) : line;
-  }).join('\n');
-}
+/// TODO-2477：改走共享词法掩码 [maskComments]——原先按行 `indexOf('//')` 截断，
+/// 块注释与串里的 `//`（URL）两个方向都判错；共享版等长掩码，下标仍可回原串。
+String _stripDartLineComments(String src) => maskComments(src);
 
 /// BUG-255 / TODO-313 Family B 源码守卫：vendored fork flutter_inappwebview_windows
 /// 的进程级 DirectComposition Compositor 单例必须在**受控退出时机**释放，绝不能

@@ -1,8 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/source_guard.dart';
 
 /// TODO-1172 source-scan guard: the Windows media_kit video libraries (libmpv +
 /// ANGLE) are vendored into the repo so a clean Windows build is fully
@@ -37,12 +38,11 @@ void main() {
     return m!.group(1)!;
   }
 
-  // CMake source with comment lines stripped, so the download regression guards
-  // match real commands and never a mention of file(DOWNLOAD) in a comment.
-  String codeOnly(String text) => const LineSplitter()
-      .convert(text)
-      .where((String line) => !line.trimLeft().startsWith('#'))
-      .join('\n');
+  // CMake source with comments masked, so the download regression guards match
+  // real commands and never a mention of file(DOWNLOAD) in a comment.
+  // TODO-2477: shared maskHashComments — equal-length masking that also strips
+  // trailing `# ...` comments, which the old whole-line filter let through.
+  String codeOnly(String text) => maskHashComments(text);
 
   void expectRealSevenZip(File archive) {
     expect(archive.existsSync(), isTrue,
