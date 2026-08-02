@@ -527,7 +527,10 @@ extension _ReaderCaret on _ReaderHibikiPageState {
         }
         // TODO-700 T8: showing the bar no longer moves focus into it — the bar
         // is excluded from focus traversal; focus stays on the reading content.
-        _toggleChrome();
+        // BUG-1423: route through the mode-aware helper so a floating bottom bar
+        // uses the same transient-visibility + auto-hide state machine as a
+        // blank-content tap instead of flipping the invisible `_showChrome` gate.
+        _toggleChromeFromShortcut();
         return KeyEventResult.handled;
       case ShortcutAction.readerOpenMenu:
         // TODO-728：一键打开阅读器设置菜单（外观/进度/目录快速设置面板），免去先

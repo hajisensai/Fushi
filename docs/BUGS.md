@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1322 条。点号进各自文件。
+> 共 1324 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1423](bugs/BUG-1423-reader-floating-chrome-shortcut.md) | ✅ | ✅ | 阅读器悬浮控制栏快捷键未驱动临时显隐状态 |
+| [BUG-1422](bugs/BUG-1422-shortcut-capture-ime-physical.md) | ✅ | ✅ | 快捷键录入在 IME 下把物理 Z 存成 Process |
 | [BUG-1416](bugs/BUG-1416-netflix-still-frame-at-mine-time.md) | ✅ | ✅ | Netflix 沉浸捕获选静态帧时取的是片段首帧，不是制卡那一刻的帧 |
 | [BUG-1415](bugs/BUG-1415-ci-mextension-upstream-404.md) | ✅ | ✅ | CI macos/windows/publish 全红：Mihon 桌面 runtime 构建 git clone 已 404 的 M-Extension-Server |
 | [BUG-1414](bugs/BUG-1414-md3-manga-fontsize-guard.md) | ✅ | ✅ | manga.json 回写触发 MD3 fontSize 守卫，develop CI 单测门变红 |

@@ -962,6 +962,31 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   // ── Bottom Chrome ─────────────────────────────────────────────────
 
+  /// BUG-1423：键盘 / 手柄的 `readerToggleChrome` 唯一入口。
+  ///
+  /// 悬浮底栏（TODO-975 默认形态）下 [_showChrome] 只是「底栏功能是否启用」这层
+  /// **不可见**的持久开关，用户真正看到的是 [_chromeTransientVisible] + 自动收起
+  /// 计时器 [_chromeAutoHideTimer]。直接调 [_toggleChrome] 只翻那个不可见旗标，
+  /// 既不改真实可见态也不续期计时器 —— 表现就是「按快捷键什么都没发生，必须先用
+  /// 鼠标点一下空白把栏唤出来」。指针路径（点空白 / 点顶部进度）走的是
+  /// [_handleFloatingChromeReveal]，本方法让键盘/手柄进同一台状态机（可见即收起
+  /// 并取消计时、隐藏即唤出并重新武装计时），随后与 [_toggleChrome] 一样用
+  /// `FocusReclaimCause.chromeToggled` 把焦点确认回正文。
+  ///
+  /// 底栏仍是挤压模式时（悬浮开关关闭）没有临时可见态，保留 [_toggleChrome] 旧
+  /// 语义；只开顶部进度悬浮、底栏挤压的混合形态同样走挤压分支，与指针路径一致。
+  void _toggleChromeFromShortcut() {
+    if (_bottomBarFloating) {
+      // _bottomBarFloating ⇒ _anyChromeFloating，所以这里恒被消费；断言锁住这个
+      // 蕴含关系，防止将来有人把 _anyChromeFloating 的定义改窄后此路静默变 no-op。
+      final bool handled = _handleFloatingChromeReveal();
+      assert(handled, 'a floating bottom bar must enable floating chrome');
+      _focusOwnership.reclaim(FocusReclaimCause.chromeToggled);
+      return;
+    }
+    _toggleChrome();
+  }
+
   void _toggleChrome() {
     _rebuild(() {
       _showChrome = !_showChrome;
