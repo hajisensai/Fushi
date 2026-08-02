@@ -909,17 +909,53 @@ jobs:
           bash ci/apply-patches.sh
       # 内置 libtorrent 引擎的 Windows DLL：vcpkg 编 libtorrent + bridge，产物落
       # native/hibiki_torrent/prebuilt/windows-x64/，供下面 flutter build windows
-      # 的 copy-if-present 随包（缺则跳，运行期回退 qb）。vcpkg 二进制缓存摊薄首编
-      # ~40min（boost+openssl+libtorrent）到后续秒级。
+      # 的 copy-if-present 随包（缺则跳，运行期回退 qb）。
+      #
+      # TODO-2668｜缓存 key 必须带 runner 镜像版本，两条 Windows workflow 同一处病灶。
+      # 完整实测数据与失败链路见 release-desktop.yml 同名步骤上的长注释；要点：
+      # 常量 key 只装得下一种 runner 镜像的 ABI，而 actions/cache 命中即不回存，于是
+      # 另一种镜像永远冷编（`Restored 0 package(s)` + 22 min + ~110 个 tarball，其中
+      # ~45 个来自 mirror.msys2.org / ftpmirror.gnu.org / www.nasm.us / download.qt.io
+      # 这 4 个不受控主机）。key 带上 ImageVersion 后两种镜像各占一个条目，都走
+      # `Restored 72 package(s)` 的零下载路径（4 min）。二进制缓存故意不留 restore-keys：
+      # 前缀命中回来的是另一镜像的归档，实测一个都用不上。
+      - name: Resolve vcpkg cache identity
+        id: vcpkg_cache_id
+        shell: pwsh
+        run: |
+          # runner 镜像版本决定了镜像内固化的 vcpkg 修订与 MSVC 工具集，也就决定了
+          # 所有 vcpkg 包的 ABI hash。取不到时退回常量，行为等同改动前（冷编但不失败）。
+          $image = $env:ImageVersion
+          if ([string]::IsNullOrWhiteSpace($image)) { $image = 'unknown-image' }
+          $image = ($image -replace '[^0-9A-Za-z._-]', '-')
+          Write-Host "vcpkg cache identity (runner ImageVersion): $image"
+          # 用 pwsh 的 `>>`（GHA 的 shell: pwsh 是 PowerShell 7，写 UTF-8 无 BOM）。
+          # 别换成 `Out-File -Encoding utf8`：那在 Windows PowerShell 5.1 下会写 BOM，
+          # BOM 会跟着糊进第一个 key，GITHUB_OUTPUT 的 key=value 解析当场失效。
+          "image=$image" >> $env:GITHUB_OUTPUT
+      # 第二层，只兜「新镜像上线那一次必然冷编」的残余：缓存 vcpkg 的 distfile 目录，
+      # 等价于官方 asset cache 但不需要额外存储。distfile 全部 SHA512 校验，故前缀
+      # restore-key 拿回上一个镜像的目录是安全的；那 4 个高危非 GitHub 主机上的件跨
+      # vcpkg 修订几乎不变，前缀命中即可把高危取件面清零。排除 downloads\tools（解压
+      # 后的树）以免条目撑到 GB 级；重新解压是纯本地操作，不碰网络。
+      - name: Cache vcpkg source distfiles (libtorrent)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}\vcpkg-downloads
+            !${{ runner.temp }}\vcpkg-downloads\tools
+          key: ${{ runner.os }}-vcpkg-downloads-libtorrent-v1-${{ steps.vcpkg_cache_id.outputs.image }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-downloads-libtorrent-v1-
       - name: Cache vcpkg binary archives (libtorrent)
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\vcpkg\archives
-          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v1
-          restore-keys: |
-            ${{ runner.os }}-vcpkg-libtorrent-
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v2-${{ steps.vcpkg_cache_id.outputs.image }}
       - name: Build embedded libtorrent DLL (vcpkg)
         shell: pwsh
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}\vcpkg-downloads
         run: |
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libtorrent:x64-windows
           if ($LASTEXITCODE -ne 0) { throw "vcpkg install libtorrent failed" }
