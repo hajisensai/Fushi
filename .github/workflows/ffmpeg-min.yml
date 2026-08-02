@@ -84,12 +84,12 @@ jobs:
 
       - name: Report size (Linux/macOS)
         if: runner.os != 'Windows'
-        run: ls -lh out/bin/ffmpeg
+        run: ls -lh out/bin/ffmpeg out/bin/ffprobe
 
       - name: Report size (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Get-Item out/bin/ffmpeg.exe | Select-Object Name, Length
+        run: Get-Item out/bin/ffmpeg.exe, out/bin/ffprobe.exe | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v7
         if: always()
@@ -98,4 +98,6 @@ jobs:
           path: |
             out/bin/ffmpeg
             out/bin/ffmpeg.exe
+            out/bin/ffprobe
+            out/bin/ffprobe.exe
           if-no-files-found: error

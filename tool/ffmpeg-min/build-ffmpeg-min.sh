@@ -7,6 +7,17 @@
 #   - YouTube/远端制卡（http(s) googlevideo 流 + -reconnect 系列网络韧性开关）
 #   - 片段导出 mp4（h264/libx264 + aac → .mp4，跨平台可打开，TODO-1257）
 #
+# 产物是**两个** exe：ffmpeg(.exe) + ffprobe(.exe)。BUG-1420 之前本脚本传
+# `--disable-ffprobe`，但 Dart 侧 resolveFfprobeExecutable()（ffmpeg_backend.dart）
+# 的注释与优先级链一直按「与 ffmpeg 并排捆绑」设计——配方与消费方各说各话，结果
+# ffprobe 从来没被编出来过，桌面上恒走 PATH 回退。没装系统 ffmpeg 的机器上：
+#   - 内封字幕字体（subtitle_embedded_fonts.dart）→ ProcessException → 恒空集，
+#     ASS 字幕永远退回系统字体 fallback；
+#   - 音频容器元数据（desktop_audio_clipper.dart 的 extractAudioMetadataViaFfprobe）
+#     → 恒 null，有声书标题/作者永远退回文件名。
+# 两处都是**静默降级**（各自就地兜住异常、不记日志），所以没人报过。ffprobe 走
+# 同一份 configure 白名单，体积增量只是第二个静态 exe。
+#
 # 编码器：native gif/aac/mjpeg/png + libx264（H.264，TODO-1214/1257）。
 # ⚠️ libx264 是 GPL，本 build 因此传 --enable-gpl → 产物许可从 LGPL 变为 GPL；
 # ffmpeg(.exe) 作为独立可执行文件随 app 分发，源码即公开的 FFmpeg + x264，属分发合规范畴。
@@ -110,7 +121,7 @@ esac
   --disable-everything \
   --disable-doc --disable-htmlpages --disable-manpages --disable-podpages --disable-txtpages \
   --enable-network --disable-autodetect --disable-debug \
-  --disable-ffplay --disable-ffprobe \
+  --disable-ffplay --enable-ffprobe \
   --enable-ffmpeg \
   --enable-small --enable-zlib \
   --enable-gpl --enable-libx264 --enable-libsvtav1 --enable-libwebp \

@@ -8,6 +8,10 @@
 set -euo pipefail
 
 FFMPEG_MIN="${FFMPEG_MIN:?set FFMPEG_MIN to the minimal ffmpeg binary}"
+# BUG-1420: ffprobe ships next to ffmpeg in every desktop bundle and has its own
+# consumers (embedded subtitle fonts, audio container tags). Default to the
+# sibling of FFMPEG_MIN so callers that only set FFMPEG_MIN still exercise it.
+FFPROBE_MIN="${FFPROBE_MIN:-$(dirname "$FFMPEG_MIN")/$(basename "$FFMPEG_MIN" | sed 's/^ffmpeg/ffprobe/')}"
 FIXTURE_FFMPEG="${FIXTURE_FFMPEG:-ffmpeg}"
 WORK="${WORK:-$(mktemp -d)}"
 KEEP_WORK="${KEEP_WORK:-0}"
@@ -324,5 +328,59 @@ assert_nonempty "$WORK/clip-subbed.mp4"
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
   -i "$WORK/clip-subbed.mp4" -map 0:s:0 "$WORK/clip-subbed.srt"
 assert_nonempty "$WORK/clip-subbed.srt"
+
+echo "[ffmpeg-min-smoke] verifying bundled ffprobe (BUG-1420)"
+# BUG-1420: ffprobe was never built (--disable-ffprobe) even though Dart's
+# resolveFfprobeExecutable() has always assumed it ships next to ffmpeg. Both of
+# its consumers swallow the resulting ProcessException and degrade silently, so
+# nothing ever went red. Exercise the two REAL argument shapes here, so a future
+# --disable-ffprobe (or a JSON writer dropped by --disable-everything) fails the
+# build instead of silently disabling two features for every user without a
+# system ffmpeg on PATH.
+if [ ! -x "$FFPROBE_MIN" ]; then
+  echo "[ffmpeg-min-smoke] missing ffprobe binary: $FFPROBE_MIN" >&2
+  echo "  build-ffmpeg-min.sh must pass --enable-ffprobe (BUG-1420)." >&2
+  exit 1
+fi
+
+# Shape 1: container tag extraction -- buildFfprobeFormatTagsArgs()
+# (hibiki/lib/src/utils/misc/desktop_audio_clipper.dart). Feeds an audiobook file
+# and reads format.tags.{title,artist,album}; a null result makes the importer
+# fall back to the bare filename.
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+  -f lavfi -i "sine=frequency=440:duration=1" \
+  -c:a aac \
+  -metadata title="Hibiki Probe Title" \
+  -metadata artist="Hibiki Probe Artist" \
+  -metadata album="Hibiki Probe Album" \
+  "$WORK/tagged.m4a"
+"$FFPROBE_MIN" -v quiet -print_format json -show_format \
+  "$WORK/tagged.m4a" >"$WORK/tags.json" 2>"$WORK/tags.err" || {
+  echo "[ffmpeg-min-smoke] ffprobe -show_format failed:" >&2
+  cat "$WORK/tags.err" >&2
+  exit 1
+}
+assert_nonempty "$WORK/tags.json"
+assert_log_contains "$WORK/tags.json" "Hibiki Probe Title"
+assert_log_contains "$WORK/tags.json" "Hibiki Probe Artist"
+
+# Shape 2: font attachment enumeration -- _enumerateFontAttachments()
+# (hibiki/lib/src/media/video/subtitle_embedded_fonts.dart). `-select_streams t`
+# lists only attachment streams; the result drives ASS rendering with the video's
+# own embedded fonts instead of the system fallback.
+printf 'not-a-real-font-but-ffprobe-only-lists-the-stream' >"$WORK/fake.ttf"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+  -i "$MKV_FIXTURE" -c copy \
+  -attach "$WORK/fake.ttf" \
+  -metadata:s:t mimetype=application/x-truetype-font \
+  "$WORK/attached.mkv"
+"$FFPROBE_MIN" -v quiet -print_format json -show_streams -select_streams t \
+  "$WORK/attached.mkv" >"$WORK/attachments.json" 2>"$WORK/attachments.err" || {
+  echo "[ffmpeg-min-smoke] ffprobe -select_streams t failed:" >&2
+  cat "$WORK/attachments.err" >&2
+  exit 1
+}
+assert_nonempty "$WORK/attachments.json"
+assert_log_contains "$WORK/attachments.json" "fake.ttf"
 
 echo "[ffmpeg-min-smoke] PASS"
