@@ -6173,14 +6173,37 @@ class _AppModelRemoteLookupService
     if (payload.clipBytes != null) {
       // Netflix 批量录制的片段边界即句子边界（seek 到句首 → 录到字幕变化停），整段转码 [0,时长]。
       // 扩展 mineClip 不发段内窗/gifEnd（批量回放全自动、无查词交互、无鼠标/弹窗）→ 无从也无须裁段内窗（V16#4）。
+      final int clipDurationMs = payload.clipDurationMs ?? 6000;
+      // BUG-1416：动图 vs 静态帧偏好在 Netflix 这条路上过去被结构性吞掉——buildImmersionRequest
+      // 恒给 providedCoverBytes，引擎的 imageMode 阶梯（immersion_mining_engine.dart 的
+      // `if (coverPath == null)`）根本不会被求值。故必须在**产字节这一层**就按偏好分流。
+      final ClipStillTarget? stillTarget = resolveClipStillTarget(
+        imageMode: _appModel.videoMiningImageMode,
+        clipAnchorMs: payload.clipAnchorMs,
+        cueStartMs: payload.cueStartMs,
+        mineAtMs: payload.mineAtMs,
+        durationMs: clipDurationMs,
+      );
+      if (stillTarget != null) {
+        // 偏移误差在真机上可观测，而不是靠猜：锚点不确定度由扩展在 beginClip 前后实测下发。
+        ErrorLogService.instance.logDiagnostic(
+          'Anki.mineImmersion.netflix.still',
+          'imageMode=${_appModel.videoMiningImageMode.wireName} '
+              'offsetMs=${stillTarget.offsetMs} exact=${stillTarget.exact} '
+              'anchorMs=${payload.clipAnchorMs} '
+              'anchorUncertaintyMs=${payload.clipAnchorUncertaintyMs} '
+              'mineAtMs=${payload.mineAtMs} cueStartMs=${payload.cueStartMs}',
+        );
+      }
       cap = await transcodeClipToCapture(
         payload.clipBytes!,
-        durationMs: payload.clipDurationMs ?? 6000,
+        durationMs: clipDurationMs,
         compression: compression,
         tempDir: Directory.systemTemp.path,
         // 与上面 resolve 的 format 同值：转码按它选编码器 + 输出扩展名 + 降级链，
         // 实际产出格式经 ImmersionCaptureResult.animatedFormat 回传给封面文件名。
         format: animatedFormat,
+        stillTarget: stillTarget,
       );
     } else if (payload.netflixVideoId != null &&
         payload.clipStartMs != null &&

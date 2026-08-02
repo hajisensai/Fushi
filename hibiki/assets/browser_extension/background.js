@@ -485,6 +485,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           body: JSON.stringify({
             fields: msg.fields, sentence: msg.sentence || '',
             clipBase64: msg.clipBase64, clipDurationMs: msg.clipDurationMs,
+            // BUG-1416：片段时间基锚点 + 句首 + 制卡那一刻（都是**视频时间**），服务端在静态帧
+            // 模式下据此在片段里定位取帧。null（老队列项/采样失败）就不发 → 服务端退片段起点。
+
+            ...(typeof msg.clipAnchorMs === 'number' ? { clipAnchorMs: msg.clipAnchorMs } : {}),
+            ...(typeof msg.clipAnchorUncertaintyMs === 'number'
+              ? { clipAnchorUncertaintyMs: msg.clipAnchorUncertaintyMs } : {}),
+            ...(typeof msg.cueStartMs === 'number' ? { cueStartMs: msg.cueStartMs } : {}),
+            ...(typeof msg.mineAtMs === 'number' ? { mineAtMs: msg.mineAtMs } : {}),
             ...(msg.documentTitle ? { documentTitle: msg.documentTitle } : {}),
           }),
         });
