@@ -60,6 +60,7 @@ import 'package:hibiki/src/reader/reader_lyrics_caret_scripts.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/image_reveal_key.dart';
 import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
+import 'package:hibiki/src/reader/reader_exit_flush.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 import 'package:hibiki/src/reader/reader_restore_anchor.dart';
 import 'package:hibiki/src/reader/reader_search_navigation.dart';
