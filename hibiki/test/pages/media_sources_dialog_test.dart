@@ -1,5 +1,5 @@
 // TODO-817 M1c MediaSourcesDialog widget 行为 + 源码守卫测试：
-//  (1) 空扫描根仍显示 Hibiki 互联；漫画还显示独立可开关的 Mokuro.moe。
+//  (1) 空扫描根仍显示 Hibiki 互联；漫画**不再**在这里显示 Mokuro.moe（BUG-1431）。
 //  (2) 预置 video 来源 -> 按 sortOrder 渲染 label/rootPath/统计文案。
 //  (3) lastScanError != null -> 显示 media_source_scan_error。
 //  (4) 移除来源 -> 确认对话框含 media_source_remove_keeps_media；确认后该来源消失，
@@ -122,7 +122,7 @@ void main() {
     expect(find.text('No sources yet'), findsNothing);
   });
 
-  testWidgets('manga sources compose interconnect, internet and every folder',
+  testWidgets('manga sources compose interconnect and every folder — 但不含在线站点',
       (tester) async {
     final HibikiDatabase db = _memDb();
     addTearDown(db.close);
@@ -143,7 +143,10 @@ void main() {
     await _pumpDialog(tester, db, 'manga');
 
     expect(find.text('Hibiki Interconnect'), findsOneWidget);
-    expect(find.text('Mokuro.moe'), findsOneWidget);
+    // BUG-1431：mokuro.moe 是个网站，不是扫描根，已挪到「来源」视图的「漫画源」
+    // 一节（`MokuroMoeSourceRow`），与扩展提供的在线源同级。这条反向锚防止它被
+    // 重新塞回本地扫描根列表。
+    expect(find.text('Mokuro.moe'), findsNothing);
     expect(find.text('Manga A'), findsOneWidget);
     expect(find.text(r'D:\manga\a'), findsOneWidget);
     expect(find.text('Manga B'), findsOneWidget);

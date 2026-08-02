@@ -8,6 +8,7 @@ import 'package:hibiki/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_runtime_factory.dart';
+import 'package:hibiki/src/media/manga/online/mokuro_moe_source_row.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/media_sources_view.dart';
 import 'package:hibiki/utils.dart';
@@ -18,7 +19,17 @@ import 'package:hibiki/utils.dart';
 /// 1. 本地漫画扫描根（与书 / 视频共用的 [MediaSourcesView]）；
 /// 2. 漫画扩展（Mihon 扩展仓库 + 安装 / 启停 / 卸载）——用户口径：「漫画扩展
 ///    不就是来源吗，来源设置里面加上就行了」，因此**不另开顶层 tab**；
-/// 3. 扩展提供的在线来源（启停 / 排序 / 偏好 / 清数据 / 置顶）。
+/// 3. 在线漫画源：内置的 mokuro.moe **与**扩展提供的源并列（启停 / 排序 / 偏好 /
+///    清数据 / 置顶）。
+///
+/// 🔴 mokuro.moe 归第 3 节，不归第 1 节（BUG-1431）：它是个网站，不是本地扫描根。
+/// 之前它和「Hibiki 互联」一起挂在「本地扫描根」下，用户口径「mokuro 不应该单独
+/// 显示，应该和漫画扩展同一层级」。挪进「漫画源」后它与扩展源同构——同一节、同一
+/// 种开关语义（关掉 = 不在「浏览」里出现）。
+///
+/// 🔴 本页的滚动容器必须是 [CustomScrollView]（BUG-1430）：第 2 节要渲染整个扩展
+/// 仓库（keiyoushi 有 1900+ 条），只有 sliver 才能懒建。换回 `ListView` +
+/// 内嵌 `Column` 会立刻把「语言下拉一展开就卡死」带回来。
 ///
 /// 平台差异只在**内容**：iOS / Linux 没有扩展宿主，第 2、3 节渲染成
 /// `mihon_runtime_unavailable` 提示，视图本身与其它平台同构、同位。
@@ -160,42 +171,58 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
               bottom: widget.navigation,
             ),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: <Widget>[
-                _sectionTitle(t.media_source_local_roots),
-                const SizedBox(height: 8),
-                MediaSourcesView(
-                  key: _localSourcesKey,
-                  mediaKind: 'manga',
-                ),
-                const SizedBox(height: 28),
-                _sectionTitle(t.mihon_extensions_title),
-                const SizedBox(height: 8),
-                if (manager == null)
-                  _unavailableNote()
-                else
-                  const MihonExtensionsPage(embedded: true),
-                const SizedBox(height: 28),
-                _sectionTitle(t.mihon_sources_title),
-                const SizedBox(height: 8),
-                if (manager == null)
-                  _unavailableNote()
-                else if (manager.sources.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      t.mihon_source_empty,
-                      textAlign: TextAlign.center,
-                    ),
+            child: CustomScrollView(
+              slivers: <Widget>[
+                SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverMainAxisGroup(
+                    slivers: <Widget>[
+                      SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            _sectionTitle(t.media_source_local_roots),
+                            const SizedBox(height: 8),
+                            MediaSourcesView(
+                              key: _localSourcesKey,
+                              mediaKind: 'manga',
+                            ),
+                            const SizedBox(height: 28),
+                            _sectionTitle(t.mihon_extensions_title),
+                            const SizedBox(height: 8),
+                          ],
+                        ),
+                      ),
+                      if (manager == null)
+                        SliverToBoxAdapter(child: _unavailableNote())
+                      else
+                        const MihonExtensionsPage(embedded: true),
+                      SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            const SizedBox(height: 28),
+                            _sectionTitle(t.mihon_sources_title),
+                            const SizedBox(height: 8),
+                            // 内置在线源：与扩展提供的源同节同级（见类文档）。
+                            const MokuroMoeSourceRow(),
+                            if (manager == null) _unavailableNote(),
+                          ],
+                        ),
+                      ),
+                      if (manager != null)
+                        SliverList.builder(
+                          itemCount: manager.sources.length,
+                          itemBuilder: (BuildContext context, int index) =>
+                              _buildOnlineSource(
+                            manager,
+                            manager.sources[index],
+                            index,
+                          ),
+                        ),
+                    ],
                   ),
-                if (manager != null)
-                  for (int index = 0; index < manager.sources.length; index++)
-                    _buildOnlineSource(
-                      manager,
-                      manager.sources[index],
-                      index,
-                    ),
+                ),
               ],
             ),
           ),
