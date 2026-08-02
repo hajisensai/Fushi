@@ -1,0 +1,13 @@
+## BUG-1431 · mokuro.moe 挂在本地扫描根下，应与漫画扩展同级
+- **报告**：2026-08-02（用户：「浏览里面，mokuro 不应该单独显示。应该和漫画扩展同一层级」+ 截图，「来源」页「本地扫描根」一节里 Hibiki 互联下面直接跟着 Mokuro.moe）
+- **真实性**：✅ 真 bug（信息架构错位，非崩溃类）
+  - 根因 `hibiki/lib/src/pages/implementations/media_sources_view.dart:169-179`（改前）：共享的扫描根视图里为 `mediaKind == 'manga'` 特判出一行 `Mokuro.moe`。这个视图是书 / 视频 / 漫画三域共用的**本地扫描根**列表，而 mokuro.moe 是个网站，既不是扫描根也不属于三域共用能力。
+  - 连带问题：那个开关的语义与同一页「漫画源」一节里扩展源的开关**不一致**——关掉 mokuro.moe 只让它的目录页显示成禁用态（`mokuro_moe_catalog_view.dart:148` 的 `enabledOverride`），「浏览」里那一行照旧列着（`manga_browse_page.dart` 硬编码首行、根本不读这个偏好）。同一节里两种开关语义，用户无法解释。
+- **[x] ① 已修复** —
+  - 新增 `hibiki/lib/src/media/manga/online/mokuro_moe_source_row.dart`：与 `_buildOnlineSource` 同构的一行（左开关 + 名字 + 站点地址），放进 `MangaSourcesPage` 的「漫画源」一节最前，与扩展提供的在线源同级；
+  - 从 `MediaSourcesView` 摘掉 manga 特判分支与 `_mangaOnlineCatalogEnabled` 状态，该视图恢复成纯扫描根视图；
+  - 「浏览」页改读同一个偏好（`isMokuroMoeSourceEnabled`，`ref.watch(appProvider)` 保证 Offstage 保活的视图也能跟着刷新）：关掉就不列出来，与扩展源同一条可见性规则。默认值仍是 true，既有行为不变。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/pages/manga_sources_view_composition_test.dart`：「mokuro.moe 归「漫画源」一节，不再挂在本地扫描根下」——正向锚 `MokuroMoeSourceRow()` 且位置在 `t.mihon_sources_title` 之后，反向锚 `media_sources_view.dart` 里不得再出现 `Mokuro`；「浏览」用例加 `isMokuroMoeSourceEnabled(` 锚。
+  - `hibiki/test/pages/media_sources_dialog_test.dart`：manga 语境下 `find.text('Mokuro.moe')` 改为 `findsNothing`（反向锚，防止被塞回扫描根列表）。
+- **备注**：Hibiki 互联仍留在「本地扫描根」一节——它指向的是局域网里另一台自己设备上的同一批本地文件，与「网站」不是一类。文件头已写死这条边界，防止下次又往里加在线源。
