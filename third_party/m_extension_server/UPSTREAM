@@ -3,9 +3,103 @@ Tag: v1.0.5.0
 Commit: ee55c65106bb18bf81a5ddc660d321b4e14ea2f9
 License: Mozilla Public License 2.0
 
-Hibiki maintains a narrow security and host-API overlay:
+Upstream availability
+---------------------
+The upstream repository was deleted from GitHub and now returns 404. The
+pinned commit above was recovered from the network mirror
+https://github.com/kodjodevf/M-Extension-Server by SHA
+(`git fetch --depth=1 <mirror> ee55c65106bb18bf81a5ddc660d321b4e14ea2f9`), and
+its LICENSE is byte-identical to the LICENSE already vendored here
+(sha256 3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04).
 
-- bind only to 127.0.0.1;
-- require a per-process Bearer token on every endpoint;
-- expose capability, APK inspection, source image, and source-data endpoints;
-- retain the upstream process identity and explicit /stop lifecycle.
+Because no reachable upstream remains, the source is vendored in this
+directory instead of being cloned at build time.
+
+Layout
+------
+upstream_src/               pristine upstream tree at the pinned commit,
+                            byte-for-byte, no Hibiki edits.
+overlay/                    Hibiki-modified source files; copied over
+                            upstream_src after the patch is applied.
+server-build.gradle.patch   Hibiki changes to upstream files that are too
+                            small to justify a full-file overlay.
+LICENSE / NOTICE            MPL-2.0 text and the modification notice.
+
+upstream_src/ excludes exactly two things from the upstream commit:
+  .git/       clone metadata, not source
+  .DS_Store   macOS Finder metadata that upstream had committed
+Everything else is vendored verbatim, including the Gradle wrapper JAR, the
+AndroidCompat Noto font resources (loaded by the static initialiser in
+AndroidCompat/src/main/java/android/graphics/Typeface.java, so dropping them
+would change the shipped JAR's behaviour) and upstream's own .gitattributes
+(same EOL policy as Hibiki's, so no normalisation drift).
+
+Build
+-----
+tool/mihon/build_desktop_runtime.sh (macOS) and
+tool/mihon/build_desktop_runtime.ps1 (Windows) do, in this order:
+  1. copy upstream_src/ into a temporary directory;
+  2. `git apply --unidiff-zero server-build.gradle.patch` (git apply works
+     outside a git repository);
+  3. copy overlay/ over the result, overwriting same-named files;
+  4. run `:server:test :server:shadowJar` with the pinned Temurin JDK.
+The overlay is applied last, so the security boundary below always wins.
+
+upstream server/build.gradle.kts derives its revision string from
+`git rev-list HEAD --count`, which yields nothing in a .git-less vendored
+tree. Both scripts therefore set upstream's own `ProductRevision` escape
+hatch to the pinned commit's short SHA (ee55c65), so the produced JAR name
+and manifest point straight at the commit recorded above.
+
+Hibiki modifications
+--------------------
+server-build.gradle.patch:
+  gradle/libs.versions.toml        kotlinx-serialization 1.9.0 -> 1.11.0
+  server/build.gradle.kts          + implementation(libs.apksig) for the
+                                   authenticated APK inspection route;
+                                   version string 1.0.4.10 -> 1.0.5.0 (upstream
+                                   forgot to bump it when tagging v1.0.5.0)
+  .../impl/MihonInvoker.kt         preserve the catalogue identity
+                                   (url/title/...) that legacy detail parsers
+                                   drop; chapters cross the bridge as JChapter
+  .../model/DataBody.kt            JGroupFilter.stateString
+  .../util/BytecodeEditor.kt       emit INVOKEINTERFACE when the replacement
+                                   owner is an interface (dex2jar writes a
+                                   Methodref where an InterfaceMethodref is
+                                   required)
+  two upstream tests updated to match
+
+overlay/ (full-file replacements):
+  .../controller/MExtensionServerController.kt  the security boundary below
+  .../controller/DalvikHandler.kt               explicit wire serialisation for
+                                                filters; fixes an upstream
+                                                index-out-of-bounds on cookies
+                                                without a value
+  .../controller/InspectHandler.kt              new: apksig-verified APK
+                                                inspection
+  .../controller/SourceImageHandler.kt          new: fetch a source image with
+                                                the extension's own client
+  .../controller/SourceDataHandler.kt           new: clear per-source
+                                                preferences, cookies and cache
+
+Security boundary (must not be weakened)
+----------------------------------------
+- The listener binds 127.0.0.1 only. Upstream passed the port alone to
+  NanoHTTPD, i.e. it listened on 0.0.0.0.
+- Every request is checked against a per-process Bearer token before routing;
+  the check sits in the single NanoHTTPD dispatch entry point, so no route can
+  bypass it. The token is 256 bits from Dart's Random.secure(), handed to the
+  child only through the HIBIKI_MIHON_TOKEN environment variable, and the
+  server refuses to start without it.
+- The complete route table is /dalvik, /inspect, /source-image,
+  /source-data/clear, /capabilities, / (banner), /stop and upstream's
+  /image/<uuid> proxy prefix. All of them sit behind the token gate; nothing
+  else is served.
+- The upstream process identity is retained: Main.kt, ServerWindow.kt,
+  MExtensionServerLoader and MihonImageProxy are untouched, and the Hibiki
+  host only ever terminates the Process handle it started (never a port or
+  process-name scan). The upstream wire key __mangatan_bridge_context__ is
+  deliberately kept; only the capability identifier is renamed to
+  hibikiMihonBridge.
+- Shutdown stays explicit: POST /stop, itself authenticated, with the host
+  falling back to killing its own child only on timeout.

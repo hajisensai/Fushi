@@ -143,7 +143,7 @@
 | `services/log-backend/log-collector/` | Go | 报错日志接收端（自有服务器 + EdgeOne 版）；独立部署（原 `server/`，改名消与同步层 `hibiki_sync_server.dart`/`SyncBackendType.hibikiServer` 的三义撞词） | [README.md](services/log-backend/log-collector/README.md) |
 | `services/log-backend/cf-worker/` | JS | 报错日志接收端（Cloudflare Worker + D1 版，与 Go 版择一）；独立部署 | [README.md](services/log-backend/cf-worker/README.md) |
 | `tools/browser-extension/` | JS | 浏览器查词扩展（根级 `tools/`，非 `tool/`） | — |
-| `third_party/` | — | 11 个 path-override vendored 补丁包 + 1 个 CI 自编二进制（ffmpeg-min，Windows 最小化 ffmpeg.exe）：carousel_slider、desktop_drop、fading_edge_scrollview、ffmpeg_kit_flutter、flutter_inappwebview_android、media_kit_libs_{android,ios,macos,windows}_video、media_kit_video、network_to_file_image；vendor 原因见 `hibiki/pubspec.yaml` dependency_overrides 逐包注释 | — |
+| `third_party/` | — | 11 个 path-override vendored 补丁包 + 1 个 CI 自编二进制（ffmpeg-min，Windows 最小化 ffmpeg.exe）：carousel_slider、desktop_drop、fading_edge_scrollview、ffmpeg_kit_flutter、flutter_inappwebview_android、media_kit_libs_{android,ios,macos,windows}_video、media_kit_video、network_to_file_image；vendor 原因见 `hibiki/pubspec.yaml` dependency_overrides 逐包注释。另有 `m_extension_server/`（**不是** pub 包）：Mihon 桌面 sidecar 的 Kotlin 源码，上游 GitHub 仓库已删除，按 MPL-2.0 整树 vendored 在 `upstream_src/`（pristine）+ `overlay/`（Hibiki 安全边界）+ `server-build.gradle.patch`，构建走 `tool/mihon/build_desktop_runtime.{sh,ps1}`，规则见该目录 `UPSTREAM` | — |
 | `references/ReinaManager` | — | git submodule：galgame 库信息架构参考（AGPL-3.0，不参与构建） | — |
 
 > 完整架构、技术栈、构建命令、致谢见 [README.md](README.md)。`file_picker` 用 pub.dev 版（**不是** fork）。依赖补丁机制（vendored vs apply-patches）见 [docs/agent/build.md](docs/agent/build.md)。
