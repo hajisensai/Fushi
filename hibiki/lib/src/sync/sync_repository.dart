@@ -100,6 +100,18 @@ class SyncRepository {
   // 设备本地（[deviceLocalPrefKeys]）：随备份跨设备会让新设备把老墓碑误判为新闻反复弹。
   static const _keyDeletionTombstonesBaselineMs =
       'sync_deletion_tombstones_baseline_ms';
+  // 删除墓碑**推送**的因果基线（互联通道专用，与上面的消费基线镜像对称）：描述
+  // 「本设备已把删除推给对端 host 到什么时刻」。deletedAt 晚于它的墓碑才需要推。
+  //
+  // 为什么不复用墓碑行上的 `remotePublishedAt`：那个字段的语义是「已写进云端
+  // `__tombstones__` 资产」。互联推送去标它，会让同时配了云备份的设备在云通道
+  // `syncDeletionTombstones` 的 `remotePublishedAt == 0` 过滤里永远跳过这条——只连
+  // 云的第三台设备就再也收不到这次删除了。两个通道各记各的账。
+  //
+  // 设备本地（[deviceLocalPrefKeys]）：随备份跨设备会让新设备以为自己已经推过一批
+  // 它从没连过的 host。
+  static const _keyDeletionTombstonesPushBaselineMs =
+      'sync_deletion_tombstones_push_baseline_ms';
   static const _keyDesktopCredentials = 'sync_desktop_credentials';
   static const _keyBackendType = 'sync_backend_type';
   // 「与 Hoshi/ッツ 共享」开关：开启后 Google Drive 后端改用可见 My Drive /
@@ -246,6 +258,22 @@ class SyncRepository {
 
   Future<void> setDeletionTombstonesBaselineMs(int ms) =>
       _setString(_keyDeletionTombstonesBaselineMs, ms.toString());
+
+  /// 删除墓碑**推送**的因果基线（毫秒，互联通道专用）。本地墓碑 deletedAt 晚于它才
+  /// 推给对端 host；早于它视为本设备已推过、不再重复请求。0 = 从未推送过。
+  ///
+  /// 单一全局键（不按 host 分）：互联是 host/client 模型且 client 侧后端是单例
+  /// [InterconnectSyncBackend.instance]，实际只对一个 host 推送；消费侧基线
+  /// （[getDeletionTombstonesBaselineMs]）也是同样的全局口径，两侧保持一致。
+  /// 设备本地（[deviceLocalPrefKeys]），理由见键定义处注释。
+  Future<int> getDeletionTombstonesPushBaselineMs() async {
+    final String? s =
+        await _getStringOrNull(_keyDeletionTombstonesPushBaselineMs);
+    return s == null ? 0 : int.tryParse(s) ?? 0;
+  }
+
+  Future<void> setDeletionTombstonesPushBaselineMs(int ms) =>
+      _setString(_keyDeletionTombstonesPushBaselineMs, ms.toString());
 
   // ── 增量同步索引（`__index__`，TODO-2656） ─────────────────────────
   //
@@ -965,6 +993,9 @@ class SyncRepository {
     _keyCollectionsBaselineMs,
     // 删除墓碑消费基线：同理设备本地，跨设备携带会让新设备反复弹老墓碑确认框。
     _keyDeletionTombstonesBaselineMs,
+    // 删除墓碑推送基线：同理设备本地，跨设备携带会让新设备以为自己已经把一批删除
+    // 推给过一个它从没连过的 host（漏推 = 对端该删的没删）。
+    _keyDeletionTombstonesPushBaselineMs,
     // 增量同步索引缓存：本端对**某一个特定远端**的观测。跨设备携带会让新设备
     // 以为自己已经看过一个它从没连过的远端，据此跳过真正该拉的书（漏同步）。
     'sync_index_manifest_cache_cloud',

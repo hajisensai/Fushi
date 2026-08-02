@@ -1293,16 +1293,30 @@ class SyncOrchestrator {
     }
   }
 
-  /// 删除墓碑同步（互联 host API 通道）。GET host 墓碑（老 host 404 → null 优雅跳过）→
-  /// 与本地在库键求交 deleteLocal 候选 → 过基线守卫 → 塞 report。与云
-  /// [syncDeletionTombstones] 同消费语义；互联为 GET-only（host→client 方向），client
-  /// 自身删除不经此推给 host（各端自行确认删除，见蓝图）。
+  /// 删除墓碑同步（互联 host API 通道），**双向**：
+  ///
+  /// 1. 推送（client→host，[_pushDeletionTombstonesLive]）：把本机「从所有设备删除」
+  ///    产生的墓碑真的删到对端 host 上。host 自己的 delete 会写它自己的墓碑，于是
+  ///    第三台设备下轮照常收到确认提示——链路闭合。
+  /// 2. 消费（host→client）：GET host 墓碑（老 host 404 → null 优雅跳过）→ 与本地在库键
+  ///    求交 deleteLocal 候选 → 过基线守卫 → 塞 report，UI 弹逐条确认。
+  ///
+  /// 此处曾是 GET-only（注释原文「client 自身删除不经此推给 host，各端自行确认删除」），
+  /// 后果是勾了「从所有设备删除」对互联对端完全无效——墓碑只留在本地表里没人发布。
+  /// 消费语义仍与云 [syncDeletionTombstones] 一致；推送是互联独有（云通道的对应动作是
+  /// 往 `__tombstones__` 写标记，两者各记各的基线，见
+  /// [SyncRepository.getDeletionTombstonesPushBaselineMs]）。
   Future<void> _syncDeletionTombstonesLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) async {
     try {
       final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
+      // 先推后拉：本机的删除意图先发出去，再看对端有什么要删的。两步共用同一个
+      // nextBaseline（预取，防 IO 期间时钟漂移造成窗口空洞）。推送整段自带 try，
+      // 失败不挡消费。
+      await _pushDeletionTombstonesLive(report, backend, nextBaseline);
+
       final List<({String mediaType, String itemKey, int deletedAt})>? remote =
           await backend.getRemoteDeletionTombstones();
       if (remote == null) return; // 老 host 无 /api/tombstones 端点，优雅跳过。
@@ -1343,6 +1357,121 @@ class SyncOrchestrator {
       }
     } catch (e) {
       report.noteError('deletion tombstones live sync', e);
+    }
+  }
+
+  /// 把本机未推送的删除墓碑推给对端 host（client→host，「从所有设备删除」的落地端）。
+  ///
+  /// 墓碑只在用户显式选 [DeleteScope.syncEverywhere] 时才写（各实体删除路径的门控），
+  /// 所以走到这里的每一条都是用户明确要求「所有设备都删」的条目——推送不需要再问一次。
+  ///
+  /// 因果轴用 [SyncRepository.getDeletionTombstonesPushBaselineMs]：只推
+  /// `baseline < deletedAt <= nextBaseline` 的墓碑，整批成功才推进基线。**不碰墓碑行上的
+  /// `remotePublishedAt`**——那是云通道 `__tombstones__` 的账，互联去标它会让同时配了云
+  /// 备份的设备永远跳过这条、只连云的第三台设备再也收不到这次删除。
+  ///
+  /// 两类失败区别对待：
+  /// * **异常**（网络 / host 5xx）→ 不推进基线，下轮整批重试。这类失败通常是整体性的
+  ///   （断网），整批重试正是想要的；DELETE 端点幂等，重推已成功的无害。
+  /// * **host 不支持**（视频 DELETE 端点 404/405 = 对端版本过旧）→ 记 `report.errors`
+  ///   但**不**阻塞基线。能力缺失不是暂时性故障，为它永久卡住基线会让书 / 有声书的
+  ///   删除每轮无谓重推。代价是对端升级前的这条视频删除会漏掉——UI 侧长按删除路径会
+  ///   直接提示「对端版本过旧」，同步路径则留在日志里。
+  Future<void> _pushDeletionTombstonesLive(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+    int nextBaseline,
+  ) async {
+    try {
+      final SyncRepository repo = SyncRepository(_db);
+      int baseline = await repo.getDeletionTombstonesPushBaselineMs();
+      // 时钟回拨钳制：基线晚于本轮取的 now 时按 now 算，否则一次回拨会把窗口永久关死。
+      if (baseline > nextBaseline) baseline = nextBaseline;
+
+      final List<SyncDeletionTombstoneRow> rows =
+          await _db.getSyncDeletionTombstones();
+      bool retryable = false;
+      for (final SyncDeletionTombstoneRow row in rows) {
+        // 窗口两端都要卡：晚于 nextBaseline 的（本地时钟超前写出的未来戳）留到下轮，
+        // 否则推进基线会把它一并盖掉、这条删除就此蒸发。
+        if (row.deletedAt <= baseline || row.deletedAt > nextBaseline) continue;
+        final SyncTombstoneKind? kind =
+            SyncTombstoneKind.tryParse(row.mediaType);
+        // 未知 kind = 比本端新的版本写的墓碑，本端不认识就别猜着删（前向兼容）。
+        if (kind == null) continue;
+        if (!_hasInterconnectDeletionChannel(kind)) continue;
+        try {
+          final bool supported =
+              await _pushOneDeletionLive(backend, kind, row.itemKey);
+          if (!supported) {
+            report.errors.add(
+              'host does not support deleting ${row.mediaType} '
+              '"${row.itemKey}" (peer app too old); skipped',
+            );
+          }
+        } catch (e) {
+          retryable = true;
+          report.noteError(
+            'deletion push ${row.mediaType}/${row.itemKey}',
+            e,
+          );
+        }
+      }
+      if (!retryable) {
+        await repo.setDeletionTombstonesPushBaselineMs(nextBaseline);
+      }
+    } catch (e) {
+      report.noteError('deletion tombstones live push', e);
+    }
+  }
+
+  /// 该 kind 在互联 live 通道上有没有删除端点。
+  ///
+  /// 收藏词 / 收藏句没有：它们经聚合快照通道同步，而 `applyAggregateSnapshot` 按设计
+  /// 只做 MAX / 并集（删除不跨端传播）。这里如实跳过——不假装推过（那会静默丢删除），
+  /// 也不算作失败（那会为一件永远做不成的事永久卡住基线）。
+  static bool _hasInterconnectDeletionChannel(SyncTombstoneKind kind) {
+    switch (kind) {
+      case SyncTombstoneKind.book:
+      case SyncTombstoneKind.audiobook:
+      case SyncTombstoneKind.srtbook:
+      case SyncTombstoneKind.localaudio:
+      case SyncTombstoneKind.video:
+        return true;
+      case SyncTombstoneKind.favoriteword:
+      case SyncTombstoneKind.favoritesentence:
+        return false;
+    }
+  }
+
+  /// 按 kind 分派到对应的 host 删除端点。返回 host 是否支持该删除（false = 对端版本
+  /// 过旧，端点 404/405）；其余失败照常抛给调用方计入 retryable。
+  ///
+  /// 纯字幕书（srtbook）与有声书共用 `DELETE /api/library/audiobooks/<identity>`：host
+  /// 端 identity 解析同时查 `Audiobooks(bookKey)` 与 `SrtBooks(uid)`，两种键都能命中。
+  Future<bool> _pushOneDeletionLive(
+    InterconnectSyncBackend backend,
+    SyncTombstoneKind kind,
+    String itemKey,
+  ) async {
+    switch (kind) {
+      case SyncTombstoneKind.book:
+        await backend.deleteRemoteBook(itemKey);
+        return true;
+      case SyncTombstoneKind.audiobook:
+      case SyncTombstoneKind.srtbook:
+        await backend.deleteRemoteAudiobook(itemKey);
+        return true;
+      case SyncTombstoneKind.localaudio:
+        await backend.deleteRemoteLocalAudio(itemKey);
+        return true;
+      case SyncTombstoneKind.video:
+        // 唯一会如实报「不支持」的一条：视频删除端点是本次新增的，旧 host 没有。
+        return backend.deleteRemoteVideo(itemKey);
+      case SyncTombstoneKind.favoriteword:
+      case SyncTombstoneKind.favoritesentence:
+        // [_hasInterconnectDeletionChannel] 已挡在前面，走不到这里。
+        return true;
     }
   }
 
