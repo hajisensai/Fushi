@@ -54,7 +54,6 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   String _language = '*';
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  final Set<String> _busyExtensionPackages = <String>{};
 
   @override
   void didChangeDependencies() {
@@ -181,15 +180,12 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     Future<void> Function() action,
   ) {
     final String packageName = extension.packageName;
-    if (_busyExtensionPackages.contains(packageName)) return;
-    setState(() => _busyExtensionPackages.add(packageName));
+    if (!_manager!.tryBeginExtensionAction(packageName)) return;
     unawaited(() async {
       try {
         await action();
       } finally {
-        if (mounted) {
-          setState(() => _busyExtensionPackages.remove(packageName));
-        }
+        _manager!.endExtensionAction(packageName);
       }
     }());
   }
@@ -203,9 +199,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   /// 或安装（走与直接安装完全相同的签名确认框）。
   Future<void> _preview(MihonAvailableExtension extension) async {
     MihonPreviewSession? session;
+    MihonInstallProposal? proposal;
     try {
-      final MihonInstallProposal proposal =
-          await _manager!.prepareStoreInstall(extension);
+      proposal = await _manager!.prepareStoreInstall(extension);
       final MihonPreviewSession started =
           await _manager!.beginPreview(proposal);
       session = started;
@@ -227,6 +223,12 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           await _manager!.endPreview(pending, keep: false);
         } on Object {
           // 清理失败不能掩盖真正的错误，继续把原始错误报给用户。
+        }
+      } else if (proposal != null) {
+        try {
+          await _manager!.discardProposal(proposal);
+        } on Object {
+          // 同上：保留原始预览错误；残留 staging 会在下次启动清理。
         }
       }
       if (mounted) HibikiToast.show(msg: '$error');
@@ -599,7 +601,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           final MihonAvailableExtension extension = visibleAvailable[index];
           final MangaExtensionRow? row = installed[extension.packageName];
           final bool busy =
-              _busyExtensionPackages.contains(extension.packageName);
+              manager.isExtensionActionBusy(extension.packageName);
           return _AvailableExtensionTile(
             extension: extension,
             installed: row,

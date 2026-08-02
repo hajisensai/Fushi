@@ -134,6 +134,19 @@ void main() {
     expect(tester.widget<TextButton>(install).onPressed == null, isTrue);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+    await pumpStandalone(tester);
+    expect(blocking.prepareCalls, 1);
+    expect(
+      tester
+          .widget<TextButton>(
+            find.widgetWithText(TextButton, t.mihon_extension_preview),
+          )
+          .onPressed,
+      equals(null),
+      reason: 'manager-level ownership must survive leaving and re-entering',
+    );
+
     blocking.failPending();
     await tester.pump();
     await tester.pump();
