@@ -2637,7 +2637,7 @@
   "manga_ocr_engine_local_onnx": "Local ONNX",
   "manga_ocr_engine_google_lens": "Google Lens",
   "manga_google_lens_section": "Full-page OCR (Google Lens)",
-  "manga_google_lens_privacy": "Google Lens uses an unofficial Chromium endpoint. Pages are uploaded only when you explicitly select Lens; Automatic mode never uploads them.",
+  "manga_google_lens_privacy": "Google Lens uses an unofficial Chromium endpoint. Lens is the default engine, but no page is uploaded until you accept the one-time consent prompt on this device; Automatic mode never uploads pages at all.",
   "manga_google_lens_disclosure_title": "Send manga pages to Google Lens?",
   "manga_google_lens_disclosure_body": "Recognizing this manga sends a reduced JPEG copy of each page without OCR text to Google. Results are cached on this device. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.",
   "manga_google_lens_disclosure_accept": "Agree and start OCR",
