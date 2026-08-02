@@ -6,6 +6,26 @@ import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/reader_space_override.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
+/// ⚠️ 部分假绿（2026-08-02 定性）：本文件里凡是构造 `LogicalKeyboardKey.process` 的
+/// 用例，**前提已被引擎源码证伪**——即 group
+/// `[假绿·前提已证伪] TODO-847 IME 改写 logicalKey=process 时的物理键回退` 全组，
+/// 外加 TODO-992 组里那条 `[假绿·前提已证伪] IME process + 物理键但已改绑非翻页`。
+///
+/// 理由：引擎在本仓 5 个出包平台上**永不产生 `process`**。它是 **Flutter Web 专有**
+/// 值，裸 keyId `0x0010000070f` 全 engine 树只出现 3 处（web 引擎
+/// `lib/web_ui/lib/src/engine/key_map.g.dart:237` 生产 + Android/embedder 两个
+/// test util），Windows / Android / iOS / macOS / Linux-GTK 生产键表全无；Windows 上
+/// 被 IME 消费的键更是在 `shell/platform/windows/keyboard_key_embedder_handler.cc:177-183`
+/// 就被 `callback(true); return;` 丢掉（注释原文 "not sent to Flutter"），keyup 也在
+/// `:255-260` 被丢 ⇒ Dart 侧连事件都收不到。
+///
+/// ⇒ 这些用例绿灯**不代表 BUG-430 的 IME 症状被修好**，只描述纯函数被喂进一个引擎
+/// 不会产生的值时的分支行为，且**永远不会因真机失效而转红**。不要当成回归保护。
+/// 保留是因为钉的是框架侧纯函数行为，将来真定位到根因时可能还要复用。
+/// 事实守卫见 `test/shortcuts/ime_process_key_reachability_guard_test.dart`（BUG-1432）；
+/// 定性见 `docs/bugs/BUG-430-win-ime-shortcut-fallback.md` 的「根因证伪」栏。
+/// 本文件其余 group（裸 Space 覆写 / BUG-099 方向 / TODO-120 反转 / TODO-992 让出）
+/// 走的是真实 logicalKey，不受影响。
 void main() {
   KeyDownEvent keyDown(
     LogicalKeyboardKey key,
@@ -345,7 +365,7 @@ void main() {
       }
     });
   });
-  group('TODO-847 IME 改写 logicalKey=process 时的物理键回退', () {
+  group('[假绿·前提已证伪] TODO-847 IME 改写 logicalKey=process 时的物理键回退', () {
     test('Space override: process + physical Space → 播放/暂停', () {
       // 修前：key=process != space → null（红）。修后：physical Space 命中（绿）。
       expect(
@@ -523,7 +543,7 @@ void main() {
       );
     });
 
-    test('IME process + 物理键但已改绑非翻页 → 仍让出(null)', () {
+    test('[假绿·前提已证伪] IME process + 物理键但已改绑非翻页 → 仍让出(null)', () {
       expect(
         resolveReaderArrowPageTurn(
           key: LogicalKeyboardKey.process,

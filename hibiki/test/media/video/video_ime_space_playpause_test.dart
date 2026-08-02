@@ -7,6 +7,31 @@ import 'package:hibiki/src/platform/windows_ime_space_dispatch.dart';
 
 import '../../pages/video_hibiki_page_source_corpus.dart';
 
+/// ⚠️ 部分假绿（2026-08-02 定性）：group
+/// `[假绿·前提已证伪] isVideoImeSpacePlayPause` 的**断言前提已被引擎源码证伪**。
+///
+/// 那 6 条用例手工构造 `LogicalKeyboardKey.process`（及「其它 IME 改写值」）+ 物理
+/// Space 的合成事件，而引擎在本仓 5 个出包平台上**根本不产生这类事件**：
+/// - `process` 是 **Flutter Web 专有**值，裸 keyId `0x0010000070f` 全 engine 树只出现
+///   3 处——web 引擎 `lib/web_ui/lib/src/engine/key_map.g.dart:237`（唯一生产用）+
+///   Android / embedder 两个 **test util**；原生端生产键表全无。
+/// - Windows 上被 IME 消费的键由
+///   `shell/platform/windows/keyboard_key_embedder_handler.cc:177-183` 在 `VK_PROCESSKEY`
+///   时直接 `callback(true); return;`（注释原文 "not sent to Flutter"）⇒ Dart 侧连
+///   事件都收不到，更没有可用的 `physicalKey`（下面 BUG-1239 段落记录的 physical/
+///   logical 均为 0 正是同一事实的另一面）。
+///
+/// ⇒ 该组绿灯**不代表用户症状被修好**，也永远不会因真机失效而转红——BUG-853 当年
+/// 就是单测全绿、用户真机复报（即 BUG-936）。**不要当成回归保护。**
+/// 保留是因为它钉的是纯谓词的分支行为，将来真修复时可能还要复用。
+///
+/// ✅ 本文件其余用例（`BUG-1239 native IME Space channel …` / `BUG-1239 native
+/// notification Dart ownership gate` / 两条源码守卫）走的是 runner 侧 Win32 拦截
+/// 这套**另一条真实契约**，不在假绿之列。
+/// 事实守卫见 `test/shortcuts/ime_process_key_reachability_guard_test.dart`（BUG-1432）；
+/// 定性见 `docs/bugs/BUG-936-video-ime-space-playpause.md` 的「根因证伪」栏。
+///
+/// 以下为原始说明（存档）：
 /// BUG-853 回归守卫：日语输入法（Windows 微软 IME）激活时，视频页按空格无法暂停。
 ///
 /// 根因：IME 激活时裸 Space 的 `logicalKey` 被引擎改写成 [LogicalKeyboardKey.process]，
@@ -27,7 +52,7 @@ import '../../pages/video_hibiki_page_source_corpus.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('isVideoImeSpacePlayPause', () {
+  group('[假绿·前提已证伪] isVideoImeSpacePlayPause', () {
     test('IME 改写成 process 的物理空格（无修饰、无文本框）→ 命中', () {
       expect(
         isVideoImeSpacePlayPause(

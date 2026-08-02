@@ -4,6 +4,27 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 
+/// ⚠️ 部分假绿（2026-08-02 定性）：本文件里两个 group 的**前提已被引擎源码证伪**——
+/// `[假绿·前提已证伪] InputBinding.physicalKey (TODO-847 IME fallback)` 与
+/// `[假绿·前提已证伪] InputBinding.normalizeCapturedKey`。
+///
+/// 理由：这两组服务的都是「IME 把 logicalKey 改写成 `LogicalKeyboardKey.process`
+/// 之后按物理键还原」这条链路，而引擎在本仓 5 个出包平台上**永不产生 `process`**：
+/// 它是 **Flutter Web 专有**值，裸 keyId `0x0010000070f` 全 engine 树只出现 3 处
+/// （web 引擎 `key_map.g.dart:237` 生产 + Android/embedder 两个 test util），原生端
+/// 生产键表全无；Windows 上被 IME 消费的键更是在
+/// `keyboard_key_embedder_handler.cc:177-183` 就被 `callback(true); return;` 丢掉
+/// （注释原文 "not sent to Flutter"），Dart 侧连事件都收不到。
+///
+/// ⇒ `normalizeCapturedKey` 那组直接构造 `process` 合成事件，是**纯假绿**；
+///   `physicalKey` 那组虽只测派生映射表本身（断言本身成立），但它**唯一的消费方**
+///   是已证伪的 `process` 回退分支，绿灯同样不代表任何用户症状被覆盖。
+///
+/// 两组都**不构成回归保护**，也永远不会因真机失效而转红。保留是因为那两张映射表与
+/// `normalizeCapturedKey` 的「捕获侧与运行时共用同一契约」正是将来真修复所需的零件。
+/// 事实守卫见 `test/shortcuts/ime_process_key_reachability_guard_test.dart`（BUG-1432）；
+/// 定性见 `docs/bugs/BUG-430-win-ime-shortcut-fallback.md` 的「根因证伪」栏。
+/// 本文件其余 group（序列化 / 相等 / GamepadBinding / ShortcutBindingSet）不受影响。
 void main() {
   group('ModifierKey', () {
     test('fromKeyboardKey maps correctly', () {
@@ -152,7 +173,7 @@ void main() {
     });
   });
 
-  group('InputBinding.physicalKey (TODO-847 IME fallback)', () {
+  group('[假绿·前提已证伪] InputBinding.physicalKey (TODO-847 IME fallback)', () {
     // 与 input_binding.dart 的 _knownKeys 非 game* 键集对齐。私有 map 不可直接访问，
     // 故在测试侧显式列出同一集合作为 _knownKeys⊇ 守卫：每个键的 physicalKey 必须
     // 非 null，否则该键在 IME 改写 logicalKey 时仍会失效（物理回退漏键）。
@@ -360,7 +381,7 @@ void main() {
   });
 
   // BUG-1422：快捷键录入在 IME 下必须与运行时解析共用同一条物理键回退契约。
-  group('InputBinding.normalizeCapturedKey', () {
+  group('[假绿·前提已证伪] InputBinding.normalizeCapturedKey', () {
     test('IME process + physical Z records KeyZ', () {
       expect(
         InputBinding.normalizeCapturedKey(
