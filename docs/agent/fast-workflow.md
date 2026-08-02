@@ -263,7 +263,7 @@ dart run tool/flutter_test_failures.dart --no-pub \
 
 **有意的偏置：过度触发，不漏触发。** 漏一条 ⇒ 红带进 develop；多跑一条 ⇒ 多几秒。所以不剥注释（注释里点名一棵树本身就是证据）、路径解析退到最近存在的祖先（构建产物 / `.../` 省略写法 / 被删的叶子都还算数）。
 
-**不需要分层**。实测 `hibiki/windows/runner/flutter_window.cpp` 推出的 61 条跑完 **46 秒 / 503 tests**（`origin/develop@f0a00f410`）——比争论「该不该跑」便宜得多，整批跑。
+**不需要分层**。实测 `hibiki/windows/runner/flutter_window.cpp` 推出的 **72 条**跑完 **53 秒 / 594 tests**（`origin/develop@f0a00f410`）——比争论「该不该跑」便宜得多，整批跑。
 
 **唯一的例外：扫描面运行时才算得出来的守卫。** 典型是 `powershell_51_compat_guard_test.dart`——它从 `.github/workflows/*.yml` 里解析 `powershell -File <脚本>`，被守的 `.ps1` 清单是 yml 内容决定的，源码里没有那些路径的字面量。这类守卫在**自己文件里**写一行声明：
 
