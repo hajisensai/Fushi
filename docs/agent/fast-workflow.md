@@ -49,7 +49,27 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
 - **定向测试** = 改动直接覆盖的 test 文件 + 相邻功能的 test 文件，`flutter test test/<路径> --no-pub`。
 - **`flutter analyze` 全量在 push 前必跑**（含 test 目录）——它本身只要秒级~1 分钟，而 CI 把 warning 当致命，省这一步只会在 CI 上浪费一轮。
 - **分支 draft PR**：定向测试绿 + 全量 analyze 绿即可 push；全量 test 由 CI 兜底（真单测门是 **Build Release APK 的 Run unit tests**，不是 Build and Test）。声明「修好了」的真机复测门槛**不变**（[integration-testing.md](integration-testing.md)）。
-- **合入 `develop`**：integration owner 本地全量 analyze + 全量 test **不变**（bash 环境跑；别 `| tail` 吞退出码；别重叠跑锁 sqlite3.dll）。
+- **合入 `develop`**：integration owner 本地全量 analyze + 全量 test **不变**（bash 环境跑；别 `| tail` 吞退出码；重叠跑会互抢 `sqlite3.dll`，见下节）。
+
+## 并发伪红判别
+
+本机常态是 5~10 个 agent 同时跑测试，**测试红有相当比例不是被测代码坏了**。下面三类都是实测形态，各有独立的定性办法。
+
+**遇红先分型，再动手**——断言失败 / suite 装载失败 / 零输出，三者的处置完全不同，串了型就是白追一轮。
+
+| 形态 | 症状 | 定性办法 | 处置 |
+|---|---|---|---|
+| ① 互抢 `sqlite3.dll` | 多个 `flutter_tester` 争用同一份 native 库；无关文件莫名失败，或进程不报错只静停 | 数一下本机在跑的并发测试进程（`dart` / `flutter_tester`） | 别重叠跑；错开或串行化后单独重跑该目标确认 |
+| ② 宿主 IPC 崩溃 | VERDICT `FAILED - ...(N 个 error event(s), M 个 tests completed)`，但**零断言失败**；日志里 `Bad state: Cannot close sink while adding stream.` @ `flutter_tools/flutter_platform.dart:766` → `Connection closed before test suite loaded` | 本质是 suite **装载**失败，不是断言失败。**分片重跑并对账**：各分片完成数之和 ≈ 原批完成数 + 没装载上的数量 | 账对得上 → 伪红，按分片结果判绿，并在回报里写清对账数字 |
+| ③ 结果文件被抢 | 跑很久**零输出、像卡死**；既没断言失败也没装载失败 | 看有没有并发进程在写同一份 `.codex-test/flutter-test/flutter_test.jsonl`（`flutter_test_failures.dart` 的默认输出目录就是 `../.codex-test/flutter-test`，所有 agent 共用） | **规避优先于诊断**：每次跑都显式给独立输出，`--output-dir=../.codex-test/flutter-test-<任务名>` |
+
+出处：② PR#716 实测（7 路并发 / 27 个 dart+flutter_tester 进程；分片对账 325 + 2602 = 2927 ≈ 2923 完成 + 4 个没装载上）；③ PR#728 实测。
+
+### 判别纪律（三条，不可打折）
+
+1. **先分型再动手**：先看是断言失败、suite 装载失败还是零输出。只有断言失败才是「被测代码可能坏了」，另两类先按并发伪红查。
+2. 🔴 **不许拿「可能是并发伪红」当借口跳过真红**。伪红是要**证明**出来的（进程数、分片对账、并发结果文件），不是默认假设。判不明就如实写一句「这条红我没判明，交给 CI」并继续推进——**不要反复重跑碰运气，也不要默认它是假的**。
+3. 🔴 **零测试执行的红也不算红**。变异测试里删掉整行造成编译失败、`0 tests ran` 的，那不是行为红，是**无效变异**，必须把变异改成能编译的形态再跑。这与「零测试执行的绿是假绿」（BUG-1157）是同一枚硬币的两面：**`N tests ran` 的 N 本身就是判据的一部分**，N=0 时 PASSED 和 FAILED 都不成立。
 
 ## 合并流水线（integration owner）
 
