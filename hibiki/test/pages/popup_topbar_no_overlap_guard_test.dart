@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/lookup/effective_lookup_size.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 
 import '../widgets/widget_test_helpers.dart';
 
@@ -35,7 +36,11 @@ void main() {
         ),
       );
 
-  Future<void> pumpLayer(WidgetTester tester, double width) async {
+  Future<void> pumpLayer(
+    WidgetTester tester,
+    double width, {
+    Widget? header,
+  }) async {
     await tester.pumpWidget(
       buildTestApp(
         Align(
@@ -48,7 +53,7 @@ void main() {
               result: null,
               isSearching: false,
               webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
-              headerWidget: shrinkableHeader(),
+              headerWidget: header ?? shrinkableHeader(),
               onClose: () {},
               onDismiss: () {},
               onTextSelected: (text, rect) {},
@@ -130,6 +135,69 @@ void main() {
       fn.contains('mainAxisSize: MainAxisSize.min'),
       isTrue,
       reason: '音频行须 mainAxisSize.min，FittedBox 才能量到有限内在宽（BUG-826）。',
+    );
+  });
+
+  // ── BUG-826 视频端：查词浮层顶栏加到 4 颗动作按钮后的窄宽实测 ──────────────
+  //
+  // 上面那条锁的是 reader 的源码契约，用的 header 语料是 4×48 的 SizedBox。视频端
+  // 用的是真 [HibikiIconButton]（icon 20 + 默认 padding gap 8 ×2 = **36px/颗**），
+  // 尺寸不同、算术也不同：中段可用宽 = 弹窗宽 − 108（左 A−/A+ 各 36 + 右关闭 36），
+  // 4 颗 = 144，弹窗宽下限 [kLookupPopupMinWidth] = 250 ⇒ 142 < 144。
+  //
+  // 这里用**真按钮**跑正反两面：不包 FittedBox 必 overflow（负向对照证明本条判据真
+  // 在工作，不是恒绿），包了必不 overflow。生产侧真的走了 FittedBox 这条结构，由
+  // `test/pages/video_popup_cue_actions_guard_test.dart` 的源码扫描钉住。
+  Widget realIconButtons() => Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          for (final IconData icon in <IconData>[
+            Icons.replay,
+            Icons.play_arrow,
+            Icons.content_copy_outlined,
+            Icons.star_border,
+          ])
+            HibikiIconButton(
+              icon: icon,
+              tooltip: 'action',
+              size: 20,
+              onTap: () {},
+            ),
+        ],
+      );
+
+  testWidgets(
+      'video popup header with four real icon buttons does not overflow at '
+      'min popup width (BUG-826)', (WidgetTester tester) async {
+    // 负向对照：裸 Row（生产代码修复前的形态）在下限宽必 RenderFlex overflow。
+    await pumpLayer(tester, kLookupPopupMinWidth,
+        header: Container(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: realIconButtons(),
+        ));
+    final Object? bare = tester.takeException();
+    expect(
+      bare,
+      isNotNull,
+      reason: '负向对照失效：裸 Row 在最窄弹窗竟没溢出，说明这条判据已量不到真实尺寸，'
+          '正向断言随之变成恒绿。请复核 HibikiIconButton 尺寸或顶栏左右簇宽度。',
+    );
+    expect('$bare', contains('overflowed'));
+
+    // 正向：包 FittedBox(scaleDown) + mainAxisSize.min 后等比缩小，零溢出。
+    await pumpLayer(tester, kLookupPopupMinWidth,
+        header: Container(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: realIconButtons(),
+          ),
+        ));
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: 'FittedBox(scaleDown) 必须把 4 颗按钮缩到有界宽内，绝不横向溢出/裁切。',
     );
   });
 }

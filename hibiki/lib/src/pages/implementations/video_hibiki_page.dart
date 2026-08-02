@@ -3650,48 +3650,60 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // TODO-1187：header 底边框已移出 —— 分隔线改由 [DictionaryPopupLayer] 在
         // 「有词条」时才画（无结果/搜索中悬空的多余横线消除）。
         padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            HibikiIconButton(
-              key: const Key('video_popup_replay_cue_button'),
-              tooltip: t.video_subtitle_replay,
-              icon: Icons.replay,
-              size: 20,
-              enabled: hasCue,
-              onTap: _replayLookupCue,
-            ),
-            HibikiIconButton(
-              key: const Key('video_popup_jump_to_cue_button'),
-              // 复用字幕跳转列表行尾 ▶ 的图标与文案：同一动作同一表征，不造第二套说法。
-              tooltip: t.video_subtitle_list_jump,
-              icon: Icons.play_arrow,
-              size: 20,
-              enabled: hasCue,
-              onTap: _jumpToLookupCue,
-            ),
-            HibikiIconButton(
-              key: const Key('video_popup_copy_sentence_button'),
-              tooltip: t.copy,
-              icon: Icons.content_copy_outlined,
-              size: 20,
-              onTap: _copyLookupSentence,
-            ),
-            HibikiIconButton(
-              key: const Key('video_favorite_sentence_button'),
-              // tooltip 用「句子收藏」（已有 i18n），描述按钮职责；不复用 toast 文案
-              // favorite_added/removed——那是动作结果提示，做静态 tooltip 会反向误导。
-              tooltip: t.collection_sentence,
-              icon: _currentVideoSentenceIsFavorited
-                  ? Icons.star
-                  : Icons.star_border,
-              size: 20,
-              enabledColor: _currentVideoSentenceIsFavorited
-                  ? theme.colorScheme.primary
-                  : null,
-              onTap: _toggleFavoriteSentenceForVideo,
-            ),
-          ],
+        // BUG-826（视频端）：[DictionaryPopupLayer._buildTopBar] 只保证 header 拿到
+        // 「左簇 A−/A+ 与右簇关闭之间的有界宽」，**收缩由内容侧负责**——reader 音频行
+        // 早就用 [FittedBox]`(scaleDown)` 做了，视频端此前只有 1 颗星标（36px）永远放
+        // 得下，加到 4 颗后必溢出：中段可用宽 = 弹窗宽 − 108（左 36×2 + 右 36），
+        // 4 颗 [HibikiIconButton]（icon 20 + padding gap 8 ×2 = 36）合计 144，
+        // 而弹窗宽下限 [kLookupPopupMinWidth] = 250 ⇒ 142 < 144，实测
+        // 「RenderFlex overflowed by 2.0 pixels」。界面缩放 <1 时更窄。
+        // `mainAxisSize: min` 让行取按钮总宽（有限内在宽），FittedBox 才量得到并等比缩小。
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              HibikiIconButton(
+                key: const Key('video_popup_replay_cue_button'),
+                tooltip: t.video_subtitle_replay,
+                icon: Icons.replay,
+                size: 20,
+                enabled: hasCue,
+                onTap: _replayLookupCue,
+              ),
+              HibikiIconButton(
+                key: const Key('video_popup_jump_to_cue_button'),
+                // 复用字幕跳转列表行尾 ▶ 的图标与文案：同一动作同一表征，不造第二套说法。
+                tooltip: t.video_subtitle_list_jump,
+                icon: Icons.play_arrow,
+                size: 20,
+                enabled: hasCue,
+                onTap: _jumpToLookupCue,
+              ),
+              HibikiIconButton(
+                key: const Key('video_popup_copy_sentence_button'),
+                tooltip: t.copy,
+                icon: Icons.content_copy_outlined,
+                size: 20,
+                onTap: _copyLookupSentence,
+              ),
+              HibikiIconButton(
+                key: const Key('video_favorite_sentence_button'),
+                // tooltip 用「句子收藏」（已有 i18n），描述按钮职责；不复用 toast 文案
+                // favorite_added/removed——那是动作结果提示，做静态 tooltip 会反向误导。
+                tooltip: t.collection_sentence,
+                icon: _currentVideoSentenceIsFavorited
+                    ? Icons.star
+                    : Icons.star_border,
+                size: 20,
+                enabledColor: _currentVideoSentenceIsFavorited
+                    ? theme.colorScheme.primary
+                    : null,
+                onTap: _toggleFavoriteSentenceForVideo,
+              ),
+            ],
+          ),
         ),
       ),
     );

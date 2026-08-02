@@ -95,6 +95,29 @@ void main() {
         reason: '重播与跳转两个按钮都必须按 hasCue 置灰',
       );
     });
+
+    test('按钮行包 FittedBox(scaleDown) + mainAxisSize.min（BUG-826 视频端）', () {
+      // [DictionaryPopupLayer._buildTopBar] 只给 header「左簇 A−/A+ 与右簇关闭之间的
+      // 有界宽」，**收缩是内容侧的责任**。裸 Row 在弹窗宽下限
+      // [kLookupPopupMinWidth](250) 下必溢出：可用宽 = 250 − 108 = 142 < 4×36 = 144。
+      // 行为侧由 test/pages/popup_topbar_no_overlap_guard_test.dart 的窄宽 widget
+      // 测试实测「无 RenderFlex overflow」，本条只钉住生产代码真的走了那条结构。
+      expect(
+        header.contains('FittedBox('),
+        isTrue,
+        reason: '顶栏动作行必须包 FittedBox，否则窄弹窗 RenderFlex overflow',
+      );
+      expect(
+        header.contains('BoxFit.scaleDown'),
+        isTrue,
+        reason: 'FittedBox 必须是 scaleDown（只缩不放，宽裕时保持原尺寸）',
+      );
+      expect(
+        header.contains('MainAxisSize.min'),
+        isTrue,
+        reason: 'Row 必须取有限内在宽，FittedBox 才量得到并等比缩放',
+      );
+    });
   });
 
   group('顶栏 handler 落到播放器 API', () {
