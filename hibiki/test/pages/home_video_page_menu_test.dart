@@ -62,6 +62,7 @@ class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
     required String? deletedCoverPath,
     required String? deletedSubtitlePath,
     required String deletedVideoPath,
+    List<String> deletedImagePaths = const <String>[],
   }) async {
     reclaimCalls++;
     await super.reclaimDeletedVideoBookAssets(
@@ -69,6 +70,7 @@ class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
       deletedCoverPath: deletedCoverPath,
       deletedSubtitlePath: deletedSubtitlePath,
       deletedVideoPath: deletedVideoPath,
+      deletedImagePaths: deletedImagePaths,
     );
   }
 

@@ -948,6 +948,7 @@ class DataRootMigrator {
         await _rebaseMediaCollections(db, docs);
         await _rebaseCollectionScrapeMeta(db, docs);
         await _rebaseCollectionRelations(db, docs);
+        await _rebaseMediaImages(db, docs);
         await _rebaseMediaItems(db, docs);
         await _rebasePreferences(db, docs, newSupportRoot);
         await _rebaseProfileSettings(db, docs, newSupportRoot);
@@ -1105,6 +1106,24 @@ class DataRootMigrator {
         'UPDATE collection_scrape_meta SET backdrop_path = ? '
         'WHERE collection_id = ?',
         <Object?>[newBackdrop, c.id],
+      );
+    }
+  }
+
+  /// media_images：path（v68 附加图组：`<documents>/video_covers/collections/`
+  /// 与 `<documents>/video_covers/images/` 两个目录族，与合集封面同型）。
+  /// 不改写 = 换数据根后 hero 背景/logo、续播横卡全部变死链，静默退回海报模糊
+  /// 垫底。kind / source_url 不是本机路径，绝不改写。
+  static Future<void> _rebaseMediaImages(
+    HibikiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    for (final MediaImageRow row in await db.getAllMediaImages()) {
+      final String? newPath = docs.rebaseNullable(row.path);
+      if (newPath == null || newPath == row.path) continue;
+      await db.customStatement(
+        'UPDATE media_images SET path = ? WHERE id = ?',
+        <Object?>[newPath, row.id],
       );
     }
   }

@@ -332,6 +332,22 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
           '与 media_collections.cover_path 完全同型 → 不改写 = 换数据根后详情页'
           'hero 背景变死链，静默退回海报模糊垫底，用户看到背景「自己没了」。'),
 
+  // ── media_images（媒体附加图组，schema v68 / Jellyfin 图组对齐）──────
+  PathRebaseColumn('MediaImages', 'bookUid', PathRebaseKind.notAPath,
+      '归属视频的 bookUid 逻辑外键，不是路径。'),
+  PathRebaseColumn('MediaImages', 'kind', PathRebaseKind.notAPath,
+      'MediaImageKind 枚举值（backdrop/logo/title_card），不是路径。'),
+  PathRebaseColumn(
+      'MediaImages',
+      'path',
+      PathRebaseKind.documentsRooted,
+      'v68 附加图组落盘位：<documents>/video_covers/collections/（合集归属）与 '
+          '<documents>/video_covers/images/（视频归属）两个目录族，与合集封面'
+          '完全同型 → 不改写 = 换数据根后 hero 背景/logo、续播横卡全部死链，'
+          '静默退回海报模糊垫底。'),
+  PathRebaseColumn('MediaImages', 'sourceUrl', PathRebaseKind.notAPath,
+      '来源远程 URL（重下/诊断用），不是本机路径。'),
+
   // ── collection_relations（合集相关作品边表，schema v66 / TODO-2484）──
   PathRebaseColumn('CollectionRelations', 'source', PathRebaseKind.notAPath,
       'ScrapeSource 枚举名（bangumi/tmdb/...），不是路径。'),
