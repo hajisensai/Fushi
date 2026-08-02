@@ -1699,7 +1699,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     if (fax != null) m.setEntry(0, 1, fax);
     if (fay != null) m.setEntry(1, 0, fay);
     if (sx != 1.0 || sy != 1.0) m.scale(sx, sy, 1.0);
-    return Transform(alignment: Alignment.center, transform: m, child: box);
+    // 变换原点 = 本行的 `\an` 对齐点，**不是盒中心**（BUG-1440）。VSFilter/libass 的
+    // `\frz`/`\fscx` 都绕对齐点作用，而 [_absolutePositioned] 也正是把这个点落到 `\pos`
+    // 上——两处同取一个锚点，旋转后盒子才不会整体平移。小角度招牌看不出差别，但 90°/270°
+    // 的竖排行（`\fn@…\an2\frz270\pos(10,360)`）会被平移半个行高：应落在 x∈[10,10+行高]，
+    // 绕中心转则落到 x∈[10-行高/2, 10+行高/2]，左半截溢出画面外（用户报「左边出框」）。
+    // anchor 为 null 时 [_alignFor] 回落底居中，与 ASS 默认 Alignment=2 及 `\pos` 分支
+    // （见 [_positionCueGroup] 的同名回落）一致。
+    return Transform(
+        alignment: _alignFor(markup.anchor), transform: m, child: box);
   }
 
   /// 本条 cue 的 `\fad`/`\fade` 不透明度（0..1）。无位置信息（未 load）时恒 1（不淡）。
