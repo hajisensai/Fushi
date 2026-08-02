@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -96,6 +97,75 @@ void main() {
 
     expect(find.text('フェイト Extension'), findsNothing);
     expect(find.text('Unrelated extension'), findsOneWidget);
+  });
+
+  testWidgets(
+      'preview and install are mutually disabled while preparation runs',
+      (WidgetTester tester) async {
+    manager.dispose();
+    final _BlockingActionManager blocking = _BlockingActionManager(
+      database: database,
+      rootDirectory: root,
+      runtime: _PageRuntime(),
+    );
+    manager = blocking;
+    await manager.reload();
+    manager.available = <MihonAvailableExtension>[
+      _extension(
+        name: 'Slow extension',
+        packageName: 'org.example.slow',
+        sourceName: 'Slow source',
+      ),
+    ];
+    await pumpStandalone(tester);
+
+    final Finder preview =
+        find.widgetWithText(TextButton, t.mihon_extension_preview);
+    final Finder install =
+        find.widgetWithText(TextButton, t.mihon_extension_install);
+    final VoidCallback previewAction =
+        tester.widget<TextButton>(preview).onPressed!;
+    previewAction();
+    previewAction();
+    await tester.pump();
+
+    expect(blocking.prepareCalls, 1);
+    expect(tester.widget<TextButton>(preview).onPressed == null, isTrue);
+    expect(tester.widget<TextButton>(install).onPressed == null, isTrue);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+    await pumpStandalone(tester);
+    expect(blocking.prepareCalls, 1);
+    expect(
+      tester
+          .widget<TextButton>(
+            find.widgetWithText(TextButton, t.mihon_extension_preview),
+          )
+          .onPressed,
+      equals(null),
+      reason: 'manager-level ownership must survive leaving and re-entering',
+    );
+
+    blocking.failPending();
+    await tester.pump();
+    await tester.pump();
+    expect(tester.widget<TextButton>(preview).onPressed != null, isTrue);
+    expect(tester.widget<TextButton>(install).onPressed != null, isTrue);
+
+    blocking.resetPending();
+    final VoidCallback installAction =
+        tester.widget<TextButton>(install).onPressed!;
+    installAction();
+    installAction();
+    await tester.pump();
+
+    expect(blocking.prepareCalls, 2);
+    expect(tester.widget<TextButton>(preview).onPressed == null, isTrue);
+    expect(tester.widget<TextButton>(install).onPressed == null, isTrue);
+    blocking.failPending();
+    await tester.pump();
+    await tester.pump();
   });
 
   // BUG-1441（其一）：可搜字段里混进了**仓库级**的 `storeUrl`。同一个仓库的每个
@@ -298,4 +368,31 @@ MihonAvailableExtension _extension({
 class _PageRuntime extends Fake implements MihonRuntime {
   @override
   Future<void> dispose() async {}
+}
+
+class _BlockingActionManager extends MihonManager {
+  _BlockingActionManager({
+    required super.database,
+    required super.rootDirectory,
+    required super.runtime,
+  });
+
+  int prepareCalls = 0;
+  Completer<MihonInstallProposal> _pending = Completer<MihonInstallProposal>();
+
+  @override
+  Future<MihonInstallProposal> prepareStoreInstall(
+    MihonAvailableExtension extension,
+  ) {
+    prepareCalls++;
+    return _pending.future;
+  }
+
+  void failPending() {
+    _pending.completeError(StateError('fixture preparation stopped'));
+  }
+
+  void resetPending() {
+    _pending = Completer<MihonInstallProposal>();
+  }
 }

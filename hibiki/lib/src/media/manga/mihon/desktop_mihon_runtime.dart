@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -12,6 +13,35 @@ import 'package:hibiki/src/media/manga/mihon/mihon_bridge_runtime.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_child_process_containment.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
+
+const Duration kMihonSourceImageHeaderTimeout = Duration(seconds: 90);
+const Duration kMihonSourceImageIdleTimeout = Duration(seconds: 90);
+const int kMihonSourceImageMaxBytes = 32 * 1024 * 1024;
+
+/// 读取漫画源封面时按“无进度”计时，而不是从请求开始固定倒数。
+///
+/// [Stream.timeout] 会在每个数据块到达后重置计时器，所以慢速但仍在持续返回数据的
+/// 图片不会像旧的整请求 45 秒超时那样被中途切断；真正连续 90 秒没有任何数据时
+/// 仍会退出。大小上限避免异常扩展让预览封面无限占用内存。
+Future<Uint8List> readMihonSourceImageBytes(
+  Stream<List<int>> stream, {
+  Duration idleTimeout = kMihonSourceImageIdleTimeout,
+  int maxBytes = kMihonSourceImageMaxBytes,
+}) async {
+  final BytesBuilder builder = BytesBuilder(copy: false);
+  int length = 0;
+  await for (final List<int> chunk in stream.timeout(idleTimeout)) {
+    length += chunk.length;
+    if (length > maxBytes) {
+      throw const MihonRuntimeException(
+        'IMAGE_TOO_LARGE',
+        'Mihon source image exceeds the 32 MiB limit',
+      );
+    }
+    builder.add(chunk);
+  }
+  return builder.takeBytes();
+}
 
 class DesktopMihonRuntime extends MihonBridgeRuntime
     implements CancellableMihonRuntime {
@@ -177,25 +207,31 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     List<MihonPreference> preferences = const <MihonPreference>[],
   }) async {
     await _ensureStarted();
-    final http.Response response = await _http
-        .post(
-          _uri('/source-image'),
-          headers: _headers,
-          body: jsonEncode(<String, Object?>{
-            'data': await _apkBase64(extension.apkPath),
-            'sourceId': source.id,
-            'url': url,
-            'preferences': mihonBridgePreferences(source, preferences),
-          }),
-        )
-        .timeout(const Duration(seconds: 45));
-    if (response.statusCode != HttpStatus.ok || response.bodyBytes.isEmpty) {
+    final http.Request request = http.Request('POST', _uri('/source-image'))
+      ..headers.addAll(_headers)
+      ..body = jsonEncode(<String, Object?>{
+        'data': await _apkBase64(extension.apkPath),
+        'sourceId': source.id,
+        'url': url,
+        'preferences': mihonBridgePreferences(source, preferences),
+      });
+    final http.StreamedResponse response =
+        await _http.send(request).timeout(kMihonSourceImageHeaderTimeout);
+    if (response.statusCode != HttpStatus.ok) {
+      await response.stream.drain<void>().timeout(kMihonSourceImageIdleTimeout);
       throw MihonRuntimeException(
         'IMAGE_HTTP_${response.statusCode}',
         'Mihon source image request failed',
       );
     }
-    return response.bodyBytes;
+    final Uint8List bytes = await readMihonSourceImageBytes(response.stream);
+    if (bytes.isEmpty) {
+      throw const MihonRuntimeException(
+        'EMPTY_IMAGE',
+        'Mihon source returned an empty image',
+      );
+    }
+    return bytes;
   }
 
   @override

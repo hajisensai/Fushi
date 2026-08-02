@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -10,6 +11,46 @@ import 'package:hibiki/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 void main() {
+  test('source image queue starts only four cover fetches at a time', () async {
+    final MihonSourceImageLoadQueue queue =
+        MihonSourceImageLoadQueue(maxConcurrent: 4);
+    final List<Completer<void>> gates = List<Completer<void>>.generate(
+      10,
+      (_) => Completer<void>(),
+    );
+    int active = 0;
+    int maximumActive = 0;
+    int started = 0;
+    final List<Future<void>> tasks = <Future<void>>[
+      for (int index = 0; index < gates.length; index++)
+        queue.run<void>(() async {
+          started++;
+          active++;
+          if (active > maximumActive) maximumActive = active;
+          await gates[index].future;
+          active--;
+        }),
+    ];
+
+    await Future<void>.delayed(Duration.zero);
+    expect(started, 4);
+    expect(queue.active, 4);
+    expect(queue.pending, 6);
+
+    gates.first.complete();
+    await Future<void>.delayed(Duration.zero);
+    expect(started, 5);
+    expect(maximumActive, 4);
+
+    for (final Completer<void> gate in gates.skip(1)) {
+      gate.complete();
+    }
+    await Future.wait<void>(tasks);
+    expect(maximumActive, 4);
+    expect(queue.active, 0);
+    expect(queue.pending, 0);
+  });
+
   late Directory root;
   late HibikiDatabase database;
   late _BrowseRuntime runtime;
@@ -88,6 +129,79 @@ void main() {
       expect(find.text('Add to manga shelf'), findsOneWidget);
     },
   );
+
+  testWidgets('a stale initial response cannot replace a newer search result',
+      (WidgetTester tester) async {
+    runtime.popularGate = Completer<MihonMangaPage>();
+    runtime.searchGate = Completer<MihonMangaPage>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MihonSourceBrowsePage(
+          manager: manager,
+          target: MihonInstalledTarget(manager.sources.single),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField), 'new query');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+    runtime.searchGate!.complete(
+      const MihonMangaPage(
+        items: <MihonManga>[
+          MihonManga(url: '/manga/new', title: 'New search result'),
+        ],
+        hasNextPage: false,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('New search result'), findsOneWidget);
+
+    runtime.popularGate!.complete(
+      const MihonMangaPage(
+        items: <MihonManga>[
+          MihonManga(url: '/manga/old', title: 'Stale popular result'),
+        ],
+        hasNextPage: false,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('New search result'), findsOneWidget);
+    expect(find.text('Stale popular result'), findsNothing);
+  });
+
+  testWidgets('a duplicate-only next page terminates pagination',
+      (WidgetTester tester) async {
+    runtime.popularPages = <int, MihonMangaPage>{
+      1: const MihonMangaPage(
+        items: <MihonManga>[_BrowseRuntime.manga],
+        hasNextPage: true,
+      ),
+      2: const MihonMangaPage(
+        items: <MihonManga>[_BrowseRuntime.manga],
+        hasNextPage: true,
+      ),
+    };
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MihonSourceBrowsePage(
+          manager: manager,
+          target: MihonInstalledTarget(manager.sources.single),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Raw Otaku fixture'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.add_circle_outline));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Raw Otaku fixture'), findsOneWidget);
+    expect(find.byIcon(Icons.add_circle_outline), findsNothing);
+  });
 }
 
 class _BrowseRuntime extends Fake implements MihonRuntime {
@@ -95,6 +209,9 @@ class _BrowseRuntime extends Fake implements MihonRuntime {
     url: '/manga/fixture',
     title: 'Raw Otaku fixture',
   );
+  Completer<MihonMangaPage>? popularGate;
+  Completer<MihonMangaPage>? searchGate;
+  Map<int, MihonMangaPage>? popularPages;
 
   @override
   Future<List<MihonFilter>> getFilters(
@@ -111,10 +228,25 @@ class _BrowseRuntime extends Fake implements MihonRuntime {
     required int page,
     List<MihonPreference> preferences = const <MihonPreference>[],
   }) async =>
-      const MihonMangaPage(
-        items: <MihonManga>[manga],
-        hasNextPage: false,
-      );
+      popularGate != null
+          ? popularGate!.future
+          : popularPages?[page] ??
+              const MihonMangaPage(
+                items: <MihonManga>[manga],
+                hasNextPage: false,
+              );
+
+  @override
+  Future<MihonMangaPage> search(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    required int page,
+    required String query,
+    List<MihonFilter> filters = const <MihonFilter>[],
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async =>
+      searchGate?.future ??
+      const MihonMangaPage(items: <MihonManga>[], hasNextPage: false);
 
   @override
   Future<MihonManga> getDetails(

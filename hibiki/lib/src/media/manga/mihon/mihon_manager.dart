@@ -59,6 +59,23 @@ class MihonManager extends ChangeNotifier {
   Future<void>? _initialising;
   Future<void>? _runtimeShutdown;
   ExitFlushCallback? _exitShutdown;
+  final Set<String> _extensionActionPackages = <String>{};
+  String? _activePreviewPackage;
+
+  bool isExtensionActionBusy(String packageName) =>
+      _extensionActionPackages.contains(packageName);
+
+  /// Claims a package for the complete user-facing preview/install flow.
+  /// This survives page rebuilds and navigation while a dialog is open.
+  bool tryBeginExtensionAction(String packageName) {
+    if (!_extensionActionPackages.add(packageName)) return false;
+    _notify();
+    return true;
+  }
+
+  void endExtensionAction(String packageName) {
+    if (_extensionActionPackages.remove(packageName)) _notify();
+  }
 
   /// Desktop window close ends in a process-level fast exit, so ordinary
   /// ChangeNotifier/widget disposal is not guaranteed to run. Register this
@@ -531,35 +548,47 @@ class MihonManager extends ChangeNotifier {
       );
     }
     final String packageName = proposal.inspection.packageName;
+    if (_activePreviewPackage != null) {
+      throw const MihonRuntimeException(
+        'PREVIEW_IN_PROGRESS',
+        'Another extension preview is already active',
+      );
+    }
+    _activePreviewPackage = packageName;
     late final MihonPreviewSession session;
-    await _guarded(() async {
-      // 标记先于文件落地写：崩溃留下的孤儿只能靠它认出来（见 _recoverAbandonedPreview）。
-      await _writePreviewMarker(packageName);
-      try {
-        final String runtimePath = Platform.isAndroid
-            ? await runtime.installPrivateExtension(proposal.tempPath)
-            : proposal.tempPath;
-        final MihonExtensionRef extension = MihonExtensionRef(
-          packageName: packageName,
-          apkPath: runtimePath,
-        );
-        final List<MihonSource> loaded = await runtime.listSources(extension);
-        if (loaded.isEmpty) {
-          throw const MihonRuntimeException(
-            'NO_SOURCES',
-            'Extension did not expose any manga sources',
+    try {
+      await _guarded(() async {
+        // 标记先于文件落地写：崩溃留下的孤儿只能靠它认出来（见 _recoverAbandonedPreview）。
+        await _writePreviewMarker(packageName);
+        try {
+          final String runtimePath = Platform.isAndroid
+              ? await runtime.installPrivateExtension(proposal.tempPath)
+              : proposal.tempPath;
+          final MihonExtensionRef extension = MihonExtensionRef(
+            packageName: packageName,
+            apkPath: runtimePath,
           );
+          final List<MihonSource> loaded = await runtime.listSources(extension);
+          if (loaded.isEmpty) {
+            throw const MihonRuntimeException(
+              'NO_SOURCES',
+              'Extension did not expose any manga sources',
+            );
+          }
+          session = MihonPreviewSession(
+            proposal: proposal,
+            extension: extension,
+            sources: loaded,
+          );
+        } catch (_) {
+          await _discardPreview(packageName, tempPath: proposal.tempPath);
+          rethrow;
         }
-        session = MihonPreviewSession(
-          proposal: proposal,
-          extension: extension,
-          sources: loaded,
-        );
-      } catch (_) {
-        await _discardPreview(packageName, tempPath: proposal.tempPath);
-        rethrow;
-      }
-    });
+      });
+    } catch (_) {
+      _activePreviewPackage = null;
+      rethrow;
+    }
     return session;
   }
 
@@ -574,17 +603,23 @@ class MihonManager extends ChangeNotifier {
     required bool keep,
   }) async {
     final String packageName = session.proposal.inspection.packageName;
-    if (keep) {
-      await runtime.invalidateExtension(packageName);
-      await _clearPreviewMarker();
-      return;
+    try {
+      if (keep) {
+        await runtime.invalidateExtension(packageName);
+        await _clearPreviewMarker();
+        return;
+      }
+      await _guarded(
+        () => _discardPreview(
+          packageName,
+          tempPath: session.proposal.tempPath,
+        ),
+      );
+    } finally {
+      if (_activePreviewPackage == packageName) {
+        _activePreviewPackage = null;
+      }
     }
-    await _guarded(
-      () => _discardPreview(
-        packageName,
-        tempPath: session.proposal.tempPath,
-      ),
-    );
   }
 
   Future<void> _discardPreview(

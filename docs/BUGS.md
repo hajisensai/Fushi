@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1361 条。点号进各自文件。
+> 共 1362 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1456](bugs/BUG-1456-manga-source-preview-loading.md) | ✅ | ✅ | 漫画源预览并发拉图、超时与重复操作 |
 | [BUG-1455](bugs/BUG-1455-lookup-popup-reactivates-main-window.md) | ✅ | ✅ | 拖动或缩放查词弹窗会把主窗口抬到前台 |
 | [BUG-1454](bugs/BUG-1454-kana-compound-popup-selection.md) | ✅ | ✅ | 查词结果正文含假名词被 ruby 占位文本截断 |
 | [BUG-1453](bugs/BUG-1453-video-gamepad-synthetic-right-click.md) | ✅ | ✅ | 手柄按键同时触发视频动作与右键菜单 |
