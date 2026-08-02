@@ -745,15 +745,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       if (executable == null) return;
       final bool is32Bit =
           await EngineHookGalAudioSource.exeIs32Bit(executable) ?? false;
-      if (GalHookSessionController.defaultInjectorResolver(is32Bit: is32Bit) ==
-          null) {
-        if (!context.mounted) return;
-        final bool installed = await GalgameHelperInstaller().ensureInjector(
-          is32Bit: is32Bit,
-          context: context,
-        );
-        if (!installed || !mounted) return;
-      }
+      // BUG-1448：见 games_library_page 同处注释——「injector 在不在」不是判据，
+      // 「版本对不对」才是。这道前置门会让随包新组件永远换不进去。
+      if (!context.mounted) return;
+      final bool installed = await GalgameHelperInstaller().ensureInjector(
+        is32Bit: is32Bit,
+        context: context,
+      );
+      if (!installed || !mounted) return;
       HibikiToast.show(msg: t.game_capture_launching);
       // 这条入口只拿到一个裸 exe 路径、不经过游戏库条目，但同一个 exe 就是同一个游戏：
       // 按路径回查库里已配置的启动参数与工作目录，让「从库里启动」和「从工作台启动并
