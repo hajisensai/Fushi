@@ -141,6 +141,31 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         style: Theme.of(context).textTheme.titleLarge,
       );
 
+  /// 页头。与 `MediaSourcesPage` 同一范式：库页视图导航条存在时它就是页头主位，
+  /// **不再另渲染一个页面大标题**——导航条自己已经标明了当前在哪个视图，标题只是
+  /// 重复占一行。仅在没有导航条（独立 push 进来）时才回退到文字标题。
+  Widget _buildHeader() {
+    final List<Widget> actions = <Widget>[
+      HibikiIconButton(
+        tooltip: t.media_source_add,
+        label: t.media_source_add,
+        icon: Icons.create_new_folder_outlined,
+        onTap: () => _localSourcesKey.currentState?.addSource(),
+      ),
+    ];
+    final Widget? navigation = widget.navigation;
+    if (navigation != null) {
+      return HibikiPageHeader.customTitle(
+        title: navigation,
+        actions: actions,
+      );
+    }
+    return HibikiPageHeader(
+      title: t.media_source_manage_title,
+      actions: actions,
+    );
+  }
+
   /// 扩展宿主不可用时统一的占位（iOS / Linux）。结构不变，只是这一节没内容。
   Widget _unavailableNote() => Padding(
         padding: const EdgeInsets.all(24),
@@ -157,19 +182,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!isCupertinoPlatform(context))
-            HibikiPageHeader(
-              title: t.media_source_manage_title,
-              actions: <Widget>[
-                HibikiIconButton(
-                  tooltip: t.media_source_add,
-                  label: t.media_source_add,
-                  icon: Icons.create_new_folder_outlined,
-                  onTap: () => _localSourcesKey.currentState?.addSource(),
-                ),
-              ],
-              bottom: widget.navigation,
-            ),
+          if (!isCupertinoPlatform(context)) _buildHeader(),
           Expanded(
             child: CustomScrollView(
               slivers: <Widget>[

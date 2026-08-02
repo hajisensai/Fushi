@@ -104,6 +104,17 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
         .toList(growable: false);
   }
 
+  /// 页头。与 `MediaSourcesPage` / `MangaSourcesPage` 同一范式：库页视图导航条
+  /// 存在时它就是页头主位，**不再另渲染一个页面大标题**——导航条自己已经标明了当前
+  /// 在哪个视图。仅在没有导航条（独立 push 进来）时才回退到文字标题。
+  Widget _buildHeader() {
+    final Widget? navigation = widget.navigation;
+    if (navigation != null) {
+      return HibikiPageHeader.customTitle(title: navigation);
+    }
+    return HibikiPageHeader(title: t.library_view_browse);
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<MangaOnlineSourceRow> sources = _enabledSources();
@@ -114,11 +125,7 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!isCupertinoPlatform(context))
-            HibikiPageHeader(
-              title: t.library_view_browse,
-              bottom: widget.navigation,
-            ),
+          if (!isCupertinoPlatform(context)) _buildHeader(),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(16),
