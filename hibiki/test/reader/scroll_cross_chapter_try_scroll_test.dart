@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 
+import '../helpers/source_guard.dart';
 import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// TODO-656「试滚范式」根治：跨章不再用瞬时坐标阈值 `scrollTop<=2`，而是「内容真的
@@ -151,8 +152,10 @@ void main() {
 }
 
 String _wheelBlock(String source) {
-  final int start = source.indexOf("addEventListener('wheel'");
-  expect(start, isNonNegative, reason: 'missing wheel listener');
+  // BUG-1419：spread 独立文档自带的 wheel 监听（无连续/分页门控）在合并语料里排在
+  // 正文引擎那份**前面**，裸 indexOf 会锚错。按块内的 hoshiContinuousMode 挑正文那份。
+  final int start = bodyEngineWheelListenerStart(source);
+  expect(start, isNonNegative, reason: 'missing body-engine wheel listener');
   final int end = source.indexOf('}, {passive:', start);
   expect(end, isNonNegative);
   return source.substring(start, end);

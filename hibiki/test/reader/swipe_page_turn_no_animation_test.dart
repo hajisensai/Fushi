@@ -1,5 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 import '../pages/reader_hibiki_page_source_corpus.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
@@ -107,7 +108,9 @@ void main() {
     final String src = readReaderPageSource();
 
     // 定位 wheel 监听块（从 addEventListener('wheel' 到其闭合 `}, {passive`)。
-    final int wheelStart = src.indexOf("addEventListener('wheel'");
+    // BUG-1419：语料里现在有两份 wheel 监听（spread 独立文档自带一份，位置更靠前），
+    // 裸 indexOf 会锚到 spread 那份 → 本守卫在实现正确时转红。按连续模式门控挑正文那份。
+    final int wheelStart = bodyEngineWheelListenerStart(src);
     expect(wheelStart, greaterThanOrEqualTo(0),
         reason: 'wheel listener must exist in the reader setup script');
     final int wheelEnd = src.indexOf('{passive: false});', wheelStart);

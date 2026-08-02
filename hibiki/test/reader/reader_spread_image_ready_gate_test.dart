@@ -24,8 +24,12 @@ void main() {
   group('buildSpreadPageHtml gates spreadReady on image load (TODO-1229)', () {
     const String leftUrl = 'hoshi.local/OEBPS/img/left.png';
     const String rightUrl = 'hoshi.local/OEBPS/img/right.png';
-    final String html =
-        buildSpreadPageHtml(leftUrl: leftUrl, rightUrl: rightUrl);
+    final String html = buildSpreadPageHtml(
+      leftUrl: leftUrl,
+      rightUrl: rightUrl,
+      swipeDistThreshold: 44,
+      swipeFastDistThreshold: 22,
+    );
 
     test('两张整页图 URL 与 spreadReady 信号都在', () {
       expect(html, contains('src="$leftUrl"'));
@@ -79,8 +83,13 @@ void main() {
           source.indexOf('String _resolveSpreadImageUrl(', loadSpreadIdx);
       expect(nextIdx, greaterThan(loadSpreadIdx));
       final String body = source.substring(loadSpreadIdx, nextIdx);
-      expect(body, contains('buildSpreadPageHtml(leftUrl:'),
+      // 钉的是「委托给 builder」，不是调用点的换行方式——BUG-1419 给 builder 加了
+      // 阈值/键桥参数后调用点被 dart format 折成多行，旧的 `buildSpreadPageHtml(leftUrl:`
+      // 连写断言当场转红，那是拼写脆弱而不是契约破裂。
+      expect(body, contains('buildSpreadPageHtml('),
           reason: '_loadSpreadPage 必须走 buildSpreadPageHtml 生成 spread HTML');
+      expect(body, contains('leftUrl:'),
+          reason: 'builder 的左右图入参必须由 _loadSpreadPage 解析后传入');
       expect(body.contains("callHandler('spreadReady')"), isFalse,
           reason: '_loadSpreadPage 函数体内不得再内联 spreadReady（已下沉到 builder）');
     });
