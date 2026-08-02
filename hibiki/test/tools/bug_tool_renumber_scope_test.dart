@@ -39,6 +39,12 @@ void writeFile(Directory root, String rel, String content) {
   f.writeAsStringSync(content);
 }
 
+void writeBytes(Directory root, String rel, List<int> bytes) {
+  final f = File('${root.path}/$rel');
+  f.parent.createSync(recursive: true);
+  f.writeAsBytesSync(bytes);
+}
+
 String readFile(Directory root, String rel) => File('${root.path}/$rel').readAsStringSync();
 
 bool exists(Directory root, String rel) => File('${root.path}/$rel').existsSync();
@@ -99,6 +105,7 @@ Directory makeCollisionFixture(
   String baseBranch = 'develop',
   bool commitPrSide = true,
   bool touchBaseBugFile = false,
+  Map<String, String> extraPrFiles = const <String, String>{},
 }) {
   final root = Directory.systemTemp.createTempSync('bug_collide_');
   temps.add(root);
@@ -117,6 +124,7 @@ Directory makeCollisionFixture(
   writeFile(root, 'hibiki/lib/src/reader/restore.dart', prLib);
   writeFile(root, 'hibiki/test/reader/reader_restore_bug_9246_test.dart', prTest);
   writeFile(root, 'hibiki/lib/src/reader/notes.dart', lookalikeCorpus);
+  extraPrFiles.forEach((String rel, String content) => writeFile(root, rel, content));
   if (touchBaseBugFile) {
     writeFile(
         root, 'docs/bugs/BUG-9246-helper-version-drift.md', '$baseBugDoc- **备注**：本 PR 顺手补的一行。\n');
@@ -392,6 +400,134 @@ void main() {
       expect(fp['a.dart'], '2:0');
       expect(fp['bug_9246_test.dart'], '0:1');
       expect(fp.containsKey('clean.dart'), isFalse);
+    });
+  });
+
+  // —— BUG-1437：替换与自校验共用同一副「瞎眼镜」。
+  //    旧 `looksTextual` 要求「有点号 + 扩展名在白名单里」，实测 `.gitattributes` /
+  //    `third_party/m_extension_server/UPSTREAM` / `LICENSE` / `Makefile` 全判成非文本；
+  //    而 `findResidualRefs` 与 `buildRenumberPlan` 吃的是同一个 `repoScanPaths()`，
+  //    于是漏改的文件在自校验里同样看不见——实测 9 处引用只落了 7 处，工具仍打印
+  //    「自校验零残留」。取号撞了人能发现，自校验骗人没人会去复查。
+  group('BUG-1437：扫描口径 + 自校验独立遍历', () {
+    const Map<String, String> oddNameFiles = <String, String>{
+      'third_party/m_extension_server/UPSTREAM': '上游基线。修复记录见 BUG-9246。\n',
+      '.gitattributes': '# 由 BUG-9246 引入的 CRLF 规则\n*.dart text\n',
+      'LICENSE': 'MIT License\n\n历史豁免见 BUG-9246。\n',
+      'Makefile': 'all:\n\t@echo BUG-9246\n',
+    };
+
+    test('无扩展名 / 前导点文件里的引用会被真正改到（白名单判据看不见它们）', () async {
+      final root = makeCollisionFixture(temps, extraPrFiles: oddNameFiles);
+
+      // 前提成立：这四类路径在旧判据下全是「非文本」，现在必须判成文本。
+      for (final rel in oddNameFiles.keys) {
+        expect(bug.looksTextual(rel), isTrue, reason: '$rel 又被判成非文本了');
+      }
+
+      await bug.cmdRenumber(<String>['9246', '9250'], scanner: stubScanner(<int>{9246}));
+
+      for (final rel in oddNameFiles.keys) {
+        expect(readFile(root, rel), contains('BUG-9250'), reason: '$rel 里的引用没改到');
+        expect(readFile(root, rel), isNot(contains('BUG-9246')), reason: '$rel 里还留着旧号');
+      }
+    });
+
+    test('替换扫描器漏掉一类文件时，自校验必须报红——不许打印「零残留」', () async {
+      // 模拟「扩展名判据又退化了一次」：引用落在一个扩展名进了二进制黑名单、
+      // 内容其实是纯文本的文件里。替换侧按黑名单跳过它；自校验走独立遍历 +
+      // 字节嗅探，必须照样看得见。守卫与被守对象共用扫描器时这里是假绿。
+      makeCollisionFixture(temps, extraPrFiles: <String, String>{
+        'docs/notes.bin': '这一行引用 BUG-9246，替换侧看不见它。\n',
+      });
+      expect(bug.looksTextual('docs/notes.bin'), isFalse, reason: '前提：替换侧确实跳过它');
+
+      await expectLater(
+        bug.cmdRenumber(<String>['9246', '9250'], scanner: stubScanner(<int>{9246})),
+        throwsA(isA<bug.BugToolError>()
+            .having((bug.BugToolError e) => e.message, 'message', contains('残留'))
+            .having((bug.BugToolError e) => e.message, 'message', contains('docs/notes.bin'))),
+      );
+      expect(out.join('\n'), isNot(contains('自校验零残留')));
+    });
+
+    test('非撞号态（全量口径）同样看得见漏改', () async {
+      final root = Directory.systemTemp.createTempSync('bug_residual_full_');
+      temps.add(root);
+      git(root, <String>['init', '-q', '-b', 'develop', '.']);
+      git(root, <String>['config', 'user.email', 'fixture@example.com']);
+      git(root, <String>['config', 'user.name', 'fixture']);
+      git(root, <String>['config', 'commit.gpgsign', 'false']);
+      writeFile(root, 'docs/BUGS.md', indexShell);
+      writeFile(root, 'docs/bugs/BUG-9246-reader-restore.md', prBugDoc);
+      writeFile(root, 'docs/notes.bin', '漏网的引用 BUG-9246。\n');
+      git(root, <String>['add', '-A']);
+      git(root, <String>['commit', '-qm', 'single BUG-9246']);
+      Directory.current = root;
+
+      // 前提：这是非撞号态（只有一份同号文件），自校验走全量 residualScanPaths()。
+      expect(bug.locateBugFiles(9246), hasLength(1));
+
+      await expectLater(
+        bug.cmdRenumber(<String>['9246', '9250'], scanner: stubScanner(<int>{9246})),
+        throwsA(isA<bug.BugToolError>()
+            .having((bug.BugToolError e) => e.message, 'message', contains('残留'))),
+      );
+    });
+
+    test('findResidualRefs 的枚举不复用 repoScanPaths（这一条直接盯独立性）', () async {
+      final root = Directory.systemTemp.createTempSync('bug_residual_indep_');
+      temps.add(root);
+      git(root, <String>['init', '-q', '-b', 'develop', '.']);
+      git(root, <String>['config', 'user.email', 'fixture@example.com']);
+      git(root, <String>['config', 'user.name', 'fixture']);
+      git(root, <String>['config', 'commit.gpgsign', 'false']);
+      writeFile(root, 'docs/notes.bin', '引用 BUG-9246 在这里。\n');
+      writeFile(root, 'UPSTREAM', '引用 BUG-9246 也在这里。\n');
+      git(root, <String>['add', '-A']);
+      git(root, <String>['commit', '-qm', 'seed']);
+      Directory.current = root;
+
+      final scan = await bug.repoScanPaths();
+      expect(scan, isNot(contains('docs/notes.bin')), reason: '前提：替换侧按黑名单跳过 .bin');
+      final residual = await bug.findResidualRefs(9246);
+      expect(residual, contains('docs/notes.bin:1'), reason: '自校验复用了 repoScanPaths 就会在这里瞎掉');
+      expect(residual, contains('UPSTREAM:1'));
+    });
+
+    test('真二进制文件既不被改、也不被误报成残留', () async {
+      final root = Directory.systemTemp.createTempSync('bug_residual_bin_');
+      temps.add(root);
+      git(root, <String>['init', '-q', '-b', 'develop', '.']);
+      git(root, <String>['config', 'user.email', 'fixture@example.com']);
+      git(root, <String>['config', 'user.name', 'fixture']);
+      git(root, <String>['config', 'commit.gpgsign', 'false']);
+      // 头部就有 NUL：即使字节里出现 `BUG-9246`，也不是引用载体。
+      writeBytes(root, 'assets/blob', <int>[0x89, 0x50, 0x00, 0x01, ...'BUG-9246'.codeUnits]);
+      git(root, <String>['add', '-A']);
+      git(root, <String>['commit', '-qm', 'binary blob']);
+      Directory.current = root;
+
+      expect(bug.looksTextual('assets/blob'), isFalse);
+      expect(await bug.findResidualRefs(9246), isEmpty);
+    });
+
+    test('非 UTF-8 文本（GBK 等）里的 ASCII 引用也算残留', () async {
+      final root = Directory.systemTemp.createTempSync('bug_residual_gbk_');
+      temps.add(root);
+      git(root, <String>['init', '-q', '-b', 'develop', '.']);
+      git(root, <String>['config', 'user.email', 'fixture@example.com']);
+      git(root, <String>['config', 'user.name', 'fixture']);
+      git(root, <String>['config', 'commit.gpgsign', 'false']);
+      // GBK 的「中文」+ ASCII 引用；readAsStringSync 会抛 FormatException，
+      // 旧实现在那里直接 continue，等于对这类文件也瞎。
+      writeBytes(
+          root, 'legacy.txt', <int>[0xD6, 0xD0, 0xCE, 0xC4, 0x20, ...'BUG-9246'.codeUnits, 0x0A]);
+      git(root, <String>['add', '-A']);
+      git(root, <String>['commit', '-qm', 'gbk']);
+      Directory.current = root;
+
+      expect(await bug.findResidualRefs(9246), contains('legacy.txt:1'));
     });
   });
 }
