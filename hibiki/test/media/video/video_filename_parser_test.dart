@@ -113,7 +113,70 @@ void main() {
     });
   });
 
+  // BUG-1435：Jellyfin / Plex / Netflix 系点分隔命名里，`SxxExx` 之后是**该集独有**
+  // 的分集标题 + 发布元数据。此前分集标题被并进系列名，同一部番每集解出不同
+  // series，「按文件夹导入」按 series 分组时分不到一组，12 集变成 12 个独立条目。
+  group('SxxExx 后的分集标题不进系列名（BUG-1435）', () {
+    test('Netflix 式 标题.S01E09.分集标题.WEBRip.Netflix.ja[cc]', () {
+      final VideoNameInfo info = parseVideoFilename(
+        '日々は過ぎれど飯うまし.S01E09.出店してみますか!.WEBRip.Netflix.ja[cc].mkv',
+      );
+      expect(info.series, '日々は過ぎれど飯うまし');
+      expect(info.season, 1);
+      expect(info.episode, 9);
+    });
+
+    test('分集标题含下划线时噪声一样剥干净', () {
+      // `_`→空格 若发生在「点分隔命名」判定之前，标题里凭空多出空格会让判定失效，
+      // `.WEBRip.Netflix.ja` 整串留在系列名里。
+      final VideoNameInfo info = parseVideoFilename(
+        '日々は過ぎれど飯うまし.S01E05.ドライブ行かない_.WEBRip.Netflix.ja[cc].mkv',
+      );
+      expect(info.series, '日々は過ぎれど飯うまし');
+      expect(info.season, 1);
+      expect(info.episode, 5);
+    });
+
+    test('分集标题归 secondaryTitle，不丢信息', () {
+      final ParsedMediaName parsed = FilenameParser.parse(
+        '日々は過ぎれど飯うまし.S01E10.ただいま.WEBRip.Netflix.ja[cc].mkv',
+      );
+      expect(parsed.title, '日々は過ぎれど飯うまし');
+      expect(parsed.secondaryTitle, 'ただいま');
+    });
+
+    test('集号前置命名不被截空（S01E04 之前无标题字符时不截断）', () {
+      final VideoNameInfo info = parseVideoFilename('S01E04 - Title.mkv');
+      expect(info.series, 'Title');
+      expect(info.season, 1);
+      expect(info.episode, 4);
+    });
+  });
+
   group('groupVideosIntoPlaylists', () {
+    test('整季分集标题各不相同 → 仍归一组，按集号排序（BUG-1435）', () {
+      const String prefix = '/v/日々は過ぎれど飯うまし.S01E';
+      const String suffix = '.WEBRip.Netflix.ja[cc].mkv';
+      final List<VideoGroup> groups = groupVideosIntoPlaylists(<String>[
+        '${prefix}09.出店してみますか!$suffix',
+        '${prefix}10.ただいま$suffix',
+        '${prefix}07.ずっと忘れないと思う$suffix',
+        '${prefix}12.ごちそうさま!!$suffix',
+        '${prefix}04.この子は星なな$suffix',
+        '${prefix}03.お金なくなっちゃった!!$suffix',
+        '${prefix}05.ドライブ行かない_$suffix',
+        '${prefix}11.クリスマス空いてますか!_$suffix',
+      ]);
+      expect(groups, hasLength(1), reason: '同一部番必须归一组');
+      final VideoGroup g = groups.single;
+      expect(g.series, '日々は過ぎれど飯うまし');
+      expect(g.isPlaylist, isTrue);
+      expect(
+        g.episodes.map((VideoEpisode e) => e.episode).toList(),
+        <int>[3, 4, 5, 7, 9, 10, 11, 12],
+      );
+    });
+
     test('同系列多集 → 一组，按集号排序', () {
       final List<VideoGroup> groups = groupVideosIntoPlaylists(<String>[
         '/v/[G] Title - 03 [1080p].mkv',
