@@ -175,13 +175,24 @@ void main() {
     /// reader 与兜底 scope **同时**绑上的键，用来验优先级。
     const InputBinding shared = InputBinding(key: LogicalKeyboardKey.keyK);
 
+    /// 绑给一个**不在生产动作集里**的 scope（global）的键，用来验「没进动作集的
+    /// scope 一概不试」。
+    const InputBinding notBridged = InputBinding(key: LogicalKeyboardKey.keyL);
+
     HibikiShortcutRegistry loadedRegistry() =>
         HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
 
-    test('生产动作集今天只导出 reader 一个 scope（本次零行为变化）', () {
-      expect(spreadKeyBridgeScopes(), <ShortcutScope>[ShortcutScope.reader],
-          reason: 'kSpreadBridgedActions 现在全是 reader scope，导出的 scope 列表就该'
-              '只有 reader——多一个都说明导出逻辑没在读动作集');
+    /// PR#722 落地后生产动作集里已经混进了 universal scope 的「返回上一级」
+    /// （[ShortcutAction.globalBack]），这正是 BUG-1442 修完要让它跑起来的那件事：
+    /// 解析侧不需要任何改动就跟着动作集走。
+    test('生产动作集导出 reader + universal 两个 scope，reader 在前', () {
+      expect(
+        spreadKeyBridgeScopes(),
+        <ShortcutScope>[ShortcutScope.reader, ShortcutScope.universal],
+        reason: 'kSpreadBridgedActions 前三个是 reader 动作、末位是 universal 的'
+            'globalBack，导出的 scope 列表就该是 [reader, universal]——顺序反了会让'
+            '「返回」把 spread 页的翻页键夺舍',
+      );
     });
 
     test('scope 列表按动作集出现序去重导出，不是硬编码', () {
@@ -192,16 +203,20 @@ void main() {
           ShortcutAction.readerToggleChrome,
           ShortcutAction.globalToggleFullscreen,
         ]),
-        <ShortcutScope>[ShortcutScope.reader, ShortcutScope.global],
-        reason: '两个 reader + 两个 global 必须去重成 [reader, global]，且 reader 在前'
-            '（它在动作集里先出现）',
+        <ShortcutScope>[
+          ShortcutScope.reader,
+          ShortcutScope.universal,
+          ShortcutScope.global,
+        ],
+        reason: '两个 reader 必须去重成一个，且三个 scope 按首次出现序排'
+            '（reader → universal → global）',
       );
       expect(
         spreadKeyBridgeScopes(actions: const <ShortcutAction>[
           ShortcutAction.globalBack,
           ShortcutAction.readerPageForward,
         ]),
-        <ShortcutScope>[ShortcutScope.global, ShortcutScope.reader],
+        <ShortcutScope>[ShortcutScope.universal, ShortcutScope.reader],
         reason: '顺序必须真的跟着动作集走，不能返回固定列表',
       );
     });
@@ -213,25 +228,39 @@ void main() {
           const ShortcutBindingSet(
             keyboardBindings: <InputBinding>[fallbackOnly],
           ),
+        )
+        ..updateBinding(
+          ShortcutAction.globalToggleFullscreen,
+          const ShortcutBindingSet(
+            keyboardBindings: <InputBinding>[notBridged],
+          ),
         );
 
-      // 生产动作集（纯 reader）解析不到它——这正是 PR#722 撞上的那堵墙。
-      expect(resolveSpreadKeyBridgeAction(registry, fallbackOnly), isNull,
-          reason: '兜底动作没进动作集时本来就不该被解析到（今天的行为，勿变）');
+      // globalBack 是 universal scope，靠的就是它在动作集里 → 解析侧才试 universal。
+      // 这正是 PR#722 撞上的那堵墙，现在已经拆掉。
+      expect(resolveSpreadKeyBridgeAction(registry, fallbackOnly),
+          ShortcutAction.globalBack,
+          reason: '解析侧若还硬编码 reader scope，进了动作集的兜底动作永远解析成 null，'
+              '键桥对它形同虚设');
+
+      // 没进动作集的 scope 一概不试——键桥不是「什么都解析」。
+      expect(resolveSpreadKeyBridgeAction(registry, notBridged), isNull,
+          reason: 'globalToggleFullscreen（global scope）不在生产动作集里，它的键就'
+              '不该被 spread 键桥解析到');
 
       // 把它加进动作集，解析侧无需任何改动就跟着生效。
       expect(
         resolveSpreadKeyBridgeAction(
           registry,
-          fallbackOnly,
+          notBridged,
           actions: const <ShortcutAction>[
             ShortcutAction.readerPageForward,
-            ShortcutAction.globalBack,
+            ShortcutAction.globalToggleFullscreen,
           ],
         ),
-        ShortcutAction.globalBack,
-        reason: '解析侧若还硬编码 reader scope，加进动作集的兜底动作永远解析成 null，'
-            '键桥对它形同虚设',
+        ShortcutAction.globalToggleFullscreen,
+        reason: 'scope 列表从动作集导出 ⇒ 往集合里加一个新 scope 的动作，解析侧零改动'
+            '就该跟着生效',
       );
     });
 
