@@ -5,9 +5,19 @@ import 'package:flutter/services.dart' show FontLoader;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/models/woff2_decoder.dart';
 
+/// The committed fixture. It is tracked in git (`test/fixtures/fonts/`), so
+/// "not found" means the repo is broken, never "this machine happens to lack
+/// one" — see [_findWoff2] for why that distinction is load-bearing.
+const String kVendoredWoff2Fixture = 'test/fixtures/fonts/Roboto-Regular.woff2';
+
 /// Locates a real `.woff2` fixture. The Flutter SDK ships several (Roboto)
-/// under its bundled DevTools assets; honour an explicit override too. Returns
-/// null when none is found (the test then skips rather than failing on CI).
+/// under its bundled DevTools assets; honour an explicit override too.
+///
+/// TODO-2715: this used to return null and the test then called
+/// `markTestSkipped` — i.e. **deleting the fixture deleted the test**, and the
+/// output said "skipped", not "failed". A guard that can be silently removed by
+/// removing a file it reads is not a guard. The fixture is committed, so a
+/// missing one is a repo defect: [_requireWoff2] fails instead of skipping.
 String _baseName(Directory d) => d.path
     .replaceAll('\\', '/')
     .split('/')
@@ -27,7 +37,7 @@ String? _scanForWoff2(Directory dir) {
 String? _findWoff2() {
   // Committed fixture (CI-stable). Falls back to an override / the SDK's
   // bundled Roboto woff2 when run outside the repo tree.
-  final File vendored = File('test/fixtures/fonts/Roboto-Regular.woff2');
+  final File vendored = File(kVendoredWoff2Fixture);
   if (vendored.existsSync()) return vendored.path;
 
   final String? override = Platform.environment['HIBIKI_WOFF2_FIXTURE'];
@@ -61,6 +71,17 @@ String? _findWoff2() {
   return null;
 }
 
+/// [_findWoff2] or a hard failure. Never a skip.
+String _requireWoff2() {
+  final String? fixture = _findWoff2();
+  if (fixture != null) return fixture;
+  fail('no .woff2 fixture found. The committed one is $kVendoredWoff2Fixture — '
+      'restore it (git checkout) rather than skipping this test. An explicit '
+      'HIBIKI_WOFF2_FIXTURE override is honoured when running outside the repo '
+      'tree. TODO-2715: this used to markTestSkipped, which turned "the '
+      'fixture is gone" into a silently green run.');
+}
+
 ({int flavor, int numTables, Map<String, (int, int)> tables}) _parse(
     Uint8List sfnt) {
   final ByteData bd =
@@ -84,13 +105,26 @@ String? _findWoff2() {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  // TODO-2715: the fixture is part of the test, not part of the environment.
+  // Asserting its presence separately makes "the fixture vanished" a distinct,
+  // legible failure instead of a decode error further down.
+  test('the committed .woff2 fixture is present and non-trivial', () {
+    final File vendored = File(kVendoredWoff2Fixture);
+    expect(vendored.existsSync(), isTrue,
+        reason: '$kVendoredWoff2Fixture is tracked in git; a missing file is a '
+            'broken checkout, not a reason to skip the decoder test');
+    // A git-lfs pointer / truncated download is ~130 bytes of ASCII; a real
+    // woff2 starts with the `wOF2` signature and is kilobytes long.
+    final Uint8List bytes = vendored.readAsBytesSync();
+    expect(bytes.length, greaterThan(4096),
+        reason: 'fixture is ${bytes.length} bytes — looks truncated');
+    expect(String.fromCharCodes(bytes.sublist(0, 4)), 'wOF2',
+        reason: 'fixture does not carry the woff2 signature');
+  });
+
   test('decodes a real Roboto .woff2 into a loadable, structurally valid sfnt',
       () async {
-    final String? fixture = _findWoff2();
-    if (fixture == null) {
-      markTestSkipped('no .woff2 fixture found (set HIBIKI_WOFF2_FIXTURE)');
-      return;
-    }
+    final String fixture = _requireWoff2();
 
     final Uint8List woff2 = File(fixture).readAsBytesSync();
     final Uint8List? sfnt = Woff2Decoder.toSfnt(woff2);
