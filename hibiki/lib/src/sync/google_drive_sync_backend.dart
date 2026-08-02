@@ -7,11 +7,13 @@ import 'package:hibiki/src/sync/google_drive_handler.dart';
 import 'package:hibiki/src/sync/google_drive_sync_space.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_remote_listing.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
-class GoogleDriveSyncBackend extends SyncBackend {
+class GoogleDriveSyncBackend extends SyncBackend
+    implements RemoteListingCapable {
   GoogleDriveSyncBackend._();
   static final GoogleDriveSyncBackend instance = GoogleDriveSyncBackend._();
 
@@ -134,6 +136,10 @@ class GoogleDriveSyncBackend extends SyncBackend {
   @override
   Future<SyncFileTrio> listSyncFiles(String folderId) =>
       _wrapErrors(() => _drive.listSyncFiles(folderId));
+
+  @override
+  Future<RemoteListingSnapshot?> snapshotListing(String rootFolderId) =>
+      _drive.snapshotListing(rootFolderId);
 
   @override
   Future<TtuProgress> getProgressFile(String fileId) =>

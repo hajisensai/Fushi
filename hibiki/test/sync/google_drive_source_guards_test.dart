@@ -46,8 +46,8 @@ void main() {
         blocks.add(buf.toString());
       }
 
-      expect(blocks.length, 7,
-          reason: 'expected exactly 7 files.list calls in the handler; if this '
+      expect(blocks.length, 8,
+          reason: 'expected exactly 8 files.list calls in the handler; if this '
               'changed, audit each new call for spaces: _space.spaces');
 
       final List<int> missing = <int>[];

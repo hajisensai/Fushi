@@ -1,13 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:hibiki/src/sync/desktop_oauth.dart';
 import 'package:hibiki/src/sync/pkce_oauth.dart';
 import 'package:hibiki/src/sync/sync_http.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_remote_listing.dart';
 import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -21,7 +22,8 @@ import 'package:url_launcher/url_launcher.dart';
 /// Auth: OAuth 2.0 PKCE flow.
 /// Folder IDs are path strings like `/hibiki-data/BookTitle`.
 class DropboxSyncBackend extends SyncBackend
-    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
+    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults
+    implements RemoteListingCapable {
   DropboxSyncBackend._();
   static final DropboxSyncBackend instance = DropboxSyncBackend._();
 
@@ -543,10 +545,64 @@ class DropboxSyncBackend extends SyncBackend
 
   // ── Private helpers ───────────────────────────────────────────────
 
-  Future<List<Map<String, dynamic>>> _listFolder(String path) async {
+  /// 一次递归列出整个同步根：Dropbox 的 `list_folder` 原生支持 `recursive`，返回的
+  /// 每个条目都带完整路径，本地按「同步根的直接子文件夹」归位即可。
+  ///
+  /// 与逐本列举拿到的是同一批文件名，只是一次拿完（分页仍走同一个 cursor 循环）。
+  @override
+  Future<RemoteListingSnapshot?> snapshotListing(String rootFolderId) async {
+    try {
+      final List<Map<String, dynamic>> entries =
+          await _listFolder(rootFolderId, recursive: true);
+      final String prefix =
+          rootFolderId.endsWith('/') ? rootFolderId : '$rootFolderId/';
+      final String prefixLower = prefix.toLowerCase();
+
+      final RemoteListingBuilder builder = RemoteListingBuilder();
+      for (final Map<String, dynamic> e in entries) {
+        final String? display =
+            e['path_display'] as String? ?? e['path_lower'] as String?;
+        final String? name = e['name'] as String?;
+        if (display == null || name == null) continue;
+        if (!display.toLowerCase().startsWith(prefixLower)) continue;
+
+        final List<String> rel = display
+            .substring(prefix.length)
+            .split('/')
+            .where((String p) => p.isNotEmpty)
+            .toList();
+        final bool isFolder = e['.tag'] == 'folder';
+        final String id =
+            e['path_lower'] as String? ?? e['path_display'] as String;
+
+        // 深度 1 = 同步根的直接子项；深度 2 = 某个书文件夹 / 命名空间下的条目。
+        // 更深的层级当前布局里不存在，忽略而不是硬塞进某个文件夹。
+        if (rel.length == 1) {
+          if (isFolder) builder.addFolder(rel.first);
+        } else if (rel.length == 2) {
+          builder.addEntry(
+            parentName: rel.first,
+            name: name,
+            id: id,
+            isFolder: isFolder,
+          );
+        }
+      }
+      return builder.build();
+    } catch (e) {
+      debugPrint('[dropbox] snapshotListing failed, falling back: $e');
+      return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _listFolder(
+    String path, {
+    bool recursive = false,
+  }) async {
     final resp = await _apiPost('/files/list_folder', {
       'path': path,
       'include_deleted': false,
+      if (recursive) 'recursive': true,
     });
     var json = jsonDecode(resp.body) as Map<String, dynamic>;
     final entries = (json['entries'] as List).cast<Map<String, dynamic>>();

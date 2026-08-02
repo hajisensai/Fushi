@@ -7,7 +7,7 @@ import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_index.dart';
+import 'package:hibiki/src/sync/sync_remote_listing.dart';
 import 'package:hibiki/src/sync/sync_progress_resolver.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -90,39 +90,12 @@ class SyncBookResult {
     this.conflictDimension,
     this.conflictLocalVersion,
     this.conflictRemoteVersion,
-    this.indexAssetKey,
-    this.indexEntry,
   });
 
   final SyncResult direction;
   final String title;
   final int? characterCount;
   final String? error;
-
-  /// 本轮跑完后，这本书在远端 progress 上的状态（供 `__index__` 记录，见
-  /// [SyncIndexBookEntry]）。null = 本轮没能确定远端状态（异常中断 / 书不可同步），
-  /// 此时**必须**把该书从索引里剔除而不是沿用旧值：旧值可能已经被本轮写坏一半，
-  /// 沿用它会让下一轮（以及别的设备）据一个不成立的前提跳过这本书。
-  final SyncIndexBookEntry? indexEntry;
-
-  /// [indexEntry] 对应的索引键（书标题的 sanitize 结果，与 `assetKey` 同一值）。
-  final String? indexAssetKey;
-
-  /// 附上索引观测值（其余字段原样）。给已经构造好的结果补记录，避免在每个返回点
-  /// 重复罗列全部字段。
-  SyncBookResult withIndex(String assetKey, SyncIndexBookEntry entry) =>
-      SyncBookResult(
-        direction: direction,
-        title: title,
-        characterCount: characterCount,
-        error: error,
-        conflictAssetKey: conflictAssetKey,
-        conflictDimension: conflictDimension,
-        conflictLocalVersion: conflictLocalVersion,
-        conflictRemoteVersion: conflictRemoteVersion,
-        indexAssetKey: assetKey,
-        indexEntry: entry,
-      );
 
   // Populated only when `direction == SyncResult.conflict`. The local/remote
   // versions are the diverging progress timestamps; downstream UI uses them
@@ -184,6 +157,7 @@ class SyncManager {
     required bool syncAudioBook,
     bool syncContent = false,
     bool importOnly = false,
+    RemoteListingSnapshot? listing,
   }) async {
     try {
       final result = await _syncBookOnce(
@@ -194,6 +168,7 @@ class SyncManager {
         syncAudioBook: syncAudioBook,
         syncContent: syncContent,
         importOnly: importOnly,
+        listing: listing,
       );
       await _persistDriveCache();
       return result;
@@ -213,6 +188,9 @@ class SyncManager {
             syncAudioBook: syncAudioBook,
             syncContent: syncContent,
             importOnly: importOnly,
+            // 重试是因为一次瞬时后端错误；此时快照多半已经陈旧，不再复用它，
+            // 老老实实逐本列举拿最新状态。
+            listing: null,
           );
           await _persistDriveCache();
           return result;
@@ -242,16 +220,17 @@ class SyncManager {
 
   /// 同步所有已导入的 EPUB 书籍。
   ///
-  /// [indexPlan] 非空且可用时，先用 `__index__` 记录的远端状态在**本地**判断每本书
-  /// 是否已经双方一致；一致的书整本跳过，一次网络请求都不发。这是增量同步的主要
-  /// 收益点——在此之前，哪怕一本书都没动过，也要为每本书发一次 `listSyncFiles`。
+  /// [listing] 非空时，每本书的远端三件套直接从这份**一次问来的**快照里取，不再逐本
+  /// 发 `listSyncFiles`。每本书照常走完全相同的方向判定——判据是同一批文件名，只是
+  /// 获取方式从 O(书数) 次请求变成 1 次。快照缺席（后端不支持 / 拉取失败）时逐本
+  /// 列举，行为与改动前逐字一致。
   Future<List<SyncBookResult>> syncAllBooks({
     required bool syncStats,
     required StatisticsSyncMode statsSyncMode,
     required bool syncAudioBook,
     bool syncContent = false,
     bool importOnly = false,
-    SyncIndexPlan? indexPlan,
+    RemoteListingSnapshot? listing,
     void Function(int done, int total, String title)? onBookProgress,
   }) async {
     // 全部书都命中索引时，下面的循环一次 `_syncBookOnce` 都不会进，而 folder 缓存
@@ -266,13 +245,6 @@ class SyncManager {
       final book = books[i];
       onBookProgress?.call(i, books.length, book.title);
 
-      final SyncBookResult? skipped =
-          await _trySkipViaIndex(book: book, indexPlan: indexPlan);
-      if (skipped != null) {
-        results.add(skipped);
-        continue;
-      }
-
       final result = await syncBook(
         book: book,
         syncStats: syncStats,
@@ -280,6 +252,7 @@ class SyncManager {
         syncAudioBook: syncAudioBook,
         syncContent: syncContent,
         importOnly: importOnly,
+        listing: listing,
       );
       results.add(result);
     }
@@ -291,70 +264,8 @@ class SyncManager {
     return results;
   }
 
-  /// 进度分数 tie-break 的相等容差。**必须**是 [_determineSyncDirection]（完整路径）
-  /// 与 [_trySkipViaIndex]（索引快路径）共用的同一个值：两处若各写各的字面量，一次
-  /// 修改就会让「跳过」与「不跳过」对同一本书给出相反判断，表现为某些书永远同步不
-  /// 干净或永远被跳过。
+  /// 进度分数 tie-break 的相等容差（[_determineSyncDirection] 专用）。
   static const double _progressTieEpsilon = 1e-6;
-
-  /// 纯本地判断这本书是否已经与远端一致——一致就整本跳过，不发任何网络请求。
-  /// 返回 null = 判不了或不一致，交由完整路径处理。
-  ///
-  /// 判据与完整路径**逐条对齐**（时间戳相等 → 再按同一套存储网格量化比分数），
-  /// 因为它替代的正是完整路径在 `syncDir == synced` 时的那个早返回。任何一条对不上，
-  /// 同一本书就会在「跳过」与「同步」之间反复横跳。
-  ///
-  /// 任何拿不准的情形一律返回 null（不跳过）。索引只被允许**过度保守**：多跑一次
-  /// 完整路径只是慢，少跑一次就是漏同步。
-  Future<SyncBookResult?> _trySkipViaIndex({
-    required EpubBookRow book,
-    required SyncIndexPlan? indexPlan,
-  }) async {
-    if (indexPlan == null || !indexPlan.usable) return null;
-
-    // 空 sanitize 标题的书不可同步（BUG-619 / TODO-1329），交给完整路径按既有
-    // 逻辑跳过并计数，不在这里另立一条判断。
-    final String assetKey = sanitizeTtuFilename(book.title);
-    if (assetKey.isEmpty) return null;
-
-    // 索引里没有这本 = 本端从没完整同步过它（新导入 / 上轮失败被剔除）→ 必须走
-    // 完整路径，否则一本从未上传过的书会被永久跳过。
-    final SyncIndexBookEntry? entry = indexPlan.books[assetKey];
-    if (entry == null) return null;
-
-    final ReaderPositionRow? localPosition =
-        await _db.getReaderPosition(book.bookKey);
-    final int? localAt = localPosition?.updatedAt;
-    final int? remoteAt = entry.progressAt;
-
-    // 单边有、单边无，或时间戳不等 → 有活要干。
-    if (localAt != remoteAt) return null;
-
-    if (localAt != null) {
-      final List<ChapterCharInfo> chapters =
-          parseChaptersJson(book.chaptersJson);
-      final double? localProgress =
-          _localProgressFraction(localPosition!, chapters);
-      final double? remoteFraction = entry.progressFraction;
-      if (localProgress == null || remoteFraction == null) return null;
-      final double remoteOnGrid =
-          _quantizeToStorageGrid(remoteFraction, chapters);
-      if ((localProgress - remoteOnGrid).abs() > _progressTieEpsilon) {
-        return null;
-      }
-      // 与完整路径的 synced 分支同律：双方在此时间戳上一致，记为新的共同祖先，
-      // 否则长期跳过会让 baseline 永远停在旧值，日后单边一改就被误判成分叉。
-      await _db.setSyncBaseline(assetKey, 'progress', localAt);
-    }
-
-    return SyncBookResult(
-      direction: SyncResult.synced,
-      title: book.title,
-      indexAssetKey: assetKey,
-      // 这本书没被任何人动过，上一轮记录的远端状态原样成立，继续沿用。
-      indexEntry: entry,
-    );
-  }
 
   Future<SyncBookResult> _syncBookOnce({
     required EpubBookRow book,
@@ -364,6 +275,7 @@ class SyncManager {
     required bool syncAudioBook,
     bool syncContent = false,
     bool importOnly = false,
+    RemoteListingSnapshot? listing,
   }) async {
     // BUG-619 / TODO-1329: an empty sanitized title has no unique bookKey and no
     // per-book folder — `ensureBookFolder('')` collapses onto the sync root and
@@ -391,7 +303,17 @@ class SyncManager {
           coverPath == null ? null : () => _readCoverBytes(coverPath),
     );
 
-    final syncFiles = await _backend.listSyncFiles(folderId);
+    // 书的远端文件夹名与它的 assetKey 是同一个值（都是 sanitize 后的书名，见
+    // `requireBookFolderName`），所以它既是快照的键，也是同步基线的键。
+    final String assetKey = sanitizeTtuFilename(book.title);
+
+    // 整个增量同步收敛到这一行：三件套要么来自本轮那一次全量列举快照，要么照旧为
+    // 这本书单独问一次。两条路给出的是**同一批文件名**（快照的 trioFor 与各后端的
+    // listSyncFiles 共用同一个 canonical matcher），所以下面的方向判定一个字都不用
+    // 改，也不存在「快照说没变就跳过」这种需要被信任的中间结论。
+    final SyncFileTrio syncFiles = listing != null
+        ? listing.trioFor(assetKey)
+        : await _backend.listSyncFiles(folderId);
 
     final localPosition = await _db.getReaderPosition(book.bookKey);
     final chapters = parseChaptersJson(book.chaptersJson);
@@ -405,17 +327,6 @@ class SyncManager {
     final int? remoteTimestamp = syncFiles.progress != null
         ? parseProgressTimestamp(syncFiles.progress!.name)
         : null;
-    final String assetKey = sanitizeTtuFilename(book.title);
-
-    // 这一次列举问出来的远端状态——正是索引要替我们记住、好让下一轮不必再问一遍的
-    // 东西。除导出方向外（远端会被改成本地值，见 `_handleExport`），所有路径下这就是
-    // 本轮结束时远端的样子。
-    final SyncIndexBookEntry observed = SyncIndexBookEntry(
-      progressAt: remoteTimestamp,
-      progressFraction: syncFiles.progress == null
-          ? null
-          : _parseRemoteProgressFraction(syncFiles.progress!.name),
-    );
 
     final SyncDirection syncDir;
     if (direction != null) {
@@ -442,9 +353,6 @@ class SyncManager {
           conflictDimension: 'progress',
           conflictLocalVersion: localPosition?.updatedAt,
           conflictRemoteVersion: remoteTimestamp,
-          // 冲突 = 本轮不动远端，故远端仍是刚刚列举到的样子。
-          indexAssetKey: assetKey,
-          indexEntry: observed,
         );
       }
       // Non-conflict: honour the resolver's direction. It agrees with the
@@ -472,20 +380,10 @@ class SyncManager {
         await _db.setSyncBaseline(
             assetKey, 'progress', localPosition!.updatedAt);
       }
-      return SyncBookResult(
-        direction: SyncResult.synced,
-        title: book.title,
-        indexAssetKey: assetKey,
-        indexEntry: observed,
-      );
+      return SyncBookResult(direction: SyncResult.synced, title: book.title);
     }
     if (importOnly && syncDir != SyncDirection.importFromTtu) {
-      return SyncBookResult(
-        direction: SyncResult.skipped,
-        title: book.title,
-        indexAssetKey: assetKey,
-        indexEntry: observed,
-      );
+      return SyncBookResult(direction: SyncResult.skipped, title: book.title);
     }
 
     final progressFileId = syncFiles.progress?.id;
@@ -515,17 +413,12 @@ class SyncManager {
           syncStats: syncStats,
           syncAudioBook: syncAudioBook,
           syncContent: syncContent,
-          // 导入不改远端 progress，远端仍是列举到的样子。
-        ).then((SyncBookResult r) => r.withIndex(assetKey, observed));
+        );
 
       case SyncDirection.exportToTtu:
         if (localPosition == null && !syncContent) {
           return SyncBookResult(
-            direction: SyncResult.skipped,
-            title: book.title,
-            indexAssetKey: assetKey,
-            indexEntry: observed,
-          );
+              direction: SyncResult.skipped, title: book.title);
         }
         // BUG-201: see _handleImport above — the export baseline is written
         // inside _handleExport immediately after the remote progress file
@@ -545,16 +438,10 @@ class SyncManager {
           syncAudioBook: syncAudioBook,
           statsSyncMode: statsSyncMode,
           syncContent: syncContent,
-          observedBefore: observed,
         );
 
       case SyncDirection.synced:
-        return SyncBookResult(
-          direction: SyncResult.synced,
-          title: book.title,
-          indexAssetKey: assetKey,
-          indexEntry: observed,
-        );
+        return SyncBookResult(direction: SyncResult.synced, title: book.title);
     }
   }
 
@@ -743,14 +630,9 @@ class SyncManager {
     required bool syncStats,
     required bool syncAudioBook,
     required StatisticsSyncMode statsSyncMode,
-    required SyncIndexBookEntry observedBefore,
     bool syncContent = false,
   }) async {
     int? exploredChars;
-
-    // 导出方向下远端 progress 会被改写成本地值；没有本地位置可导（只补内容文件）
-    // 时它维持原样，故以列举到的状态兜底。
-    SyncIndexBookEntry observedAfter = observedBefore;
 
     // Export progress (only if we have a local reading position)
     if (localPosition != null) {
@@ -777,16 +659,6 @@ class SyncManager {
         folderId: folderId,
         fileId: progressFileId,
         progress: ttuProgress,
-      );
-
-      // 记远端**新**状态时，走一遍「生成文件名 → 再解析回来」的往返，而不是直接记
-      // 内存里的 double：索引下一轮要与「列举到文件名再解析」出来的值比对，任何
-      // 格式化损失都会让这本书每轮都判成不一致、永远跳不过。
-      observedAfter = SyncIndexBookEntry(
-        progressAt: timestampMs,
-        progressFraction: _parseRemoteProgressFraction(
-          progressFileName(timestampMs, progress),
-        ),
       );
 
       // BUG-201: the call above is the authoritative remote progress transfer —
@@ -850,8 +722,6 @@ class SyncManager {
       direction: SyncResult.exported,
       title: book.title,
       characterCount: exploredChars,
-      indexAssetKey: assetKey,
-      indexEntry: observedAfter,
     );
   }
 

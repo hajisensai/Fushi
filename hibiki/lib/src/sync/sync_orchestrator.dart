@@ -1,8 +1,7 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:hibiki/src/epub/book_css_repository.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/media/video/video_sidecar.dart'
@@ -15,12 +14,10 @@ import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/interconnect_service_config.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/aggregate_sync_service.dart';
-import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_index.dart';
-import 'package:hibiki/src/sync/sync_index_service.dart';
+import 'package:hibiki/src/sync/sync_remote_listing.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -100,8 +97,7 @@ bool isReservedSyncFolderName(String name) =>
     name == kSyncAggregateNamespace ||
     name == kSyncCollectionsNamespace ||
     name == kSyncVideosNamespace ||
-    name == kSyncTombstonesNamespace ||
-    name == kSyncIndexNamespace;
+    name == kSyncTombstonesNamespace;
 
 /// Delete a dictionary's package from the remote `__dictionaries__` staging
 /// namespace, so deleting a dictionary locally also removes its remote copy
@@ -230,19 +226,7 @@ class SyncRunReport {
 
   /// 合并另一条通道的报告到本报告（option B 双通道：云备份 + 互联并行各跑一轮后，
   /// 汇总成单一报告返回）。累加所有计数、拼接错误与冲突列表。
-  /// 本轮**改动过远端内容**（上传 / 覆盖 / 删除任一资产）。
-  ///
-  /// 增量索引的 revision 语义就建立在它上面：revision 是「本端改动远端的次数」，
-  /// 不是「本端跑过几轮同步」。若把没改远端的一轮也算作改动，每台设备每轮同步都会
-  /// 让所有对端看到「有人动过」，那些依赖「无人动过」的阶段跳过就永远不会生效
-  /// （多设备互相触发、永不收敛）。
-  ///
-  /// 由真正发出写请求的那几处置位——不是由「阶段跑没跑」推断。阶段跑了却什么都没
-  /// 写是常态（内容与远端已经一致）。
-  bool remoteMutated = false;
-
   void mergeFrom(SyncRunReport other) {
-    remoteMutated = remoteMutated || other.remoteMutated;
     booksImported += other.booksImported;
     dictionariesImported += other.dictionariesImported;
     dictionariesExported += other.dictionariesExported;
@@ -427,48 +411,18 @@ class SyncOrchestrator {
   /// statistics, and audiobook-position conflicts remain visible.
   Future<SyncRunReport> run() async {
     final SyncRunReport report = SyncRunReport();
-    final int nowMs = DateTime.now().millisecondsSinceEpoch;
 
-    // ── 增量同步：先问一次「自上次以来有什么变了」（TODO-2656） ──────────
+    // ── 增量同步（TODO-2656）：把 O(书数) 次列举压成一次 ──────────────────
     //
-    // 这一次 `listChildren(__index__)` 是整轮唯一无条件付出的网络往返。它换来的是
-    // 后面每本书、每个阶段的「要不要干活」都能在本地回答。在此之前，这个问题是靠
-    // 对每本书各发一次列举请求重新算出来的——O(书数) 次往返，且答案几乎总是「无事
-    // 发生」。
-    final SyncIndexService indexService = SyncIndexService(
-      store: _backend,
-      repo: SyncRepository(_db),
-      deviceId: deviceId,
-      channel: _backend is InterconnectSyncBackend
-          ? SyncRepository.indexChannelInterconnect
-          : SyncRepository.indexChannelCloud,
-    );
-    final SyncIndexPlan indexPlan = await indexService.plan(nowMs: nowMs);
-    final Map<String, String?> stageFingerprints =
-        await _computeStageFingerprints();
-
-    bool canSkip(String stage) =>
-        indexPlan.canSkipStage(stage, stageFingerprints[stage]);
-
-    // 本轮**绝对不会**改动远端的充分条件：远端无人动过，且本地所有会触发写入的
-    // 状态指纹都与上轮相同。此时连 dirty 租约都不必发布——稳态下整轮同步的网络
-    // 开销就只剩上面那一次列举。
-    //
-    // 判据故意与 per-book 的跳过判据**相互独立**：这里比的是「全部书的阅读位置
-    // 时间戳集合」，粗但保守。两处若共用一套判据，任何一处的改动都会同时改变
-    // 「跳过哪本书」和「要不要上锁」，而后者错了是数据风险，不是性能问题。
-    final bool willNotWriteRemote =
-        indexPlan.usable && SyncIndexStage.all.every(canSkip);
-
-    // 上锁的条件是「本端可能写远端」，**与本端自己觉不觉得索引可用无关**：本端因为
-    // 周期性全量或首次发布而不信任索引时，别的设备照样可能正信任着本端上一份 clean
-    // 索引。那份索引正要被本轮的写入变得不成立，租约就是通知它们「这段时间别信我」。
-    bool leaseAcquired = false;
-    if (!willNotWriteRemote) {
-      leaseAcquired = await indexService.markDirty(indexPlan);
-    }
-
+    // 唯一的改动是「远端那批文件名怎么拿到」：能一次拿全就一次拿全，拿不到就照旧
+    // 逐本问。每本书之后走的判定逻辑一字未改，也没有任何「快照说没变所以跳过」的
+    // 中间结论——跳过是单边不安全的操作，一旦所依赖的结论与远端实情不符，漏掉的
+    // 那次对端更新会被本地 LWW 覆盖掉，那是丢数据而不是慢。
     final String root = await _backend.findOrCreateRootFolder();
+    final SyncBackend backend = _backend;
+    final RemoteListingSnapshot? listing = backend is RemoteListingCapable
+        ? await (backend as RemoteListingCapable).snapshotListing(root)
+        : null;
 
     // BUG-619 re-report / TODO-1340: sweep any per-book metadata/cover files
     // that spilled directly into the sync root (from the old empty-title
@@ -477,14 +431,7 @@ class SyncOrchestrator {
     // residue, which piles into many duplicate copies. Runs before the per-book
     // sweep so a spilled `progress_*` in the root can't be mistaken for a book's
     // remote state.
-    //
-    // 增量同步（TODO-2656）：它既要列举同步根，又可能删远端文件——是一次往返，也是
-    // 一个写入点。本轮已判定「绝对不会写远端」时一并跳过：那个判定的前提正是远端无
-    // 人动过且本地没变，于是 spill 集合与上一轮相同，而上一轮已经清过了。远端被外部
-    // 塞进新 spill 的情形由周期性全量兜底（那时判定必然为假）。
-    if (!willNotWriteRemote) {
-      await pruneRootSpill(root, report);
-    }
+    await pruneRootSpill(root, report);
 
     // 书籍文件开关是上传语义：只把本端已有 epub 内容补到远端。
     // 远端独有书不会在自动同步中导入本机，必须通过 compare/interconnect UI 点击下载。
@@ -530,7 +477,7 @@ class SyncOrchestrator {
       statsSyncMode: statsSyncMode,
       syncAudioBook: syncAudioBookPosition,
       syncContent: managerSyncContent,
-      indexPlan: indexPlan,
+      listing: listing,
       onBookProgress: (int done, int total, String title) {
         readingDone = done;
         readingTotal = total;
@@ -541,39 +488,23 @@ class SyncOrchestrator {
     );
     _collectConflicts(bookResults, report);
 
-    if (syncDictionary && !canSkip(SyncIndexStage.dictionaries)) {
-      await syncDictionaries(report);
-    }
+    if (syncDictionary) await syncDictionaries(report);
 
     // 互联（InterconnectSyncBackend）本地音频 + 有声书包走 live 端点；
     // 云后端仍走原 __local_audio__ 暂存路径（不变）。
-    // 这三个阶段的跳过判据在两条通道下共用同一个 stage id：它们比的是**本地**
-    // 有哪些音频 / 有声书 / 视频，与走哪条通道无关；而「远端有没有被别人动过」由
-    // 各通道自己的索引（`_channel` 分键）分别回答。
-    final bool skipLocalAudio = canSkip(SyncIndexStage.localAudio);
-    final bool skipAudiobooks = canSkip(SyncIndexStage.audiobookPackages);
-    final bool skipVideos = canSkip(SyncIndexStage.videoAssets);
     if (isInterconnect) {
-      if (syncLocalAudio && !skipLocalAudio) {
-        await _syncLocalAudioLive(report, b);
-      }
-      if (syncAudioBookFiles && !skipAudiobooks) {
-        await _syncAudiobooksLive(report, b);
-      }
+      if (syncLocalAudio) await _syncLocalAudioLive(report, b);
+      if (syncAudioBookFiles) await _syncAudiobooksLive(report, b);
       // 互联视频文件 live push（client→host）：单文件本地视频经 host 上传端点注册进
       // host 视频库。与云后端 syncVideoAssets 同为 syncVideoFiles 开关驱动、同为
       // upload-only（host→client 仍走按需流式/下载）。
-      if (syncVideoFiles && !skipVideos) await _syncVideosLive(report, b);
+      if (syncVideoFiles) await _syncVideosLive(report, b);
     } else {
-      if (syncLocalAudio && !skipLocalAudio) {
-        await syncLocalAudioPackages(report);
-      }
-      if (syncAudioBookFiles && !skipAudiobooks) {
-        await syncAudiobookPackages(root, report);
-      }
+      if (syncLocalAudio) await syncLocalAudioPackages(report);
+      if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
       // 云视频资产上传（多端库联合视图 §2.6）：仅云后端走 __videos__ 伪装资产。互联
       // 视频文件走上面 _syncVideosLive 的 host API 上传，不走此云后端分支。
-      if (syncVideoFiles && !skipVideos) await syncVideoAssets(report);
+      if (syncVideoFiles) await syncVideoAssets(report);
     }
 
     // 互联书籍 + 视频进度走 live 端点双向同步（TODO-767）。
@@ -595,9 +526,7 @@ class SyncOrchestrator {
       // 开关（聚合 = 统计 + 收藏，同属「统计同步」语义，不新增设置项 / schema）。
       // 互联无 per-device 快照文件、不依赖 deviceId：host 单份权威快照，client GET →
       // 并集折叠 → 写回本地 → PUT 回 host（host 再 MAX/并集折叠进自己 DB）。
-      if (syncStats && !canSkip(SyncIndexStage.aggregate)) {
-        await _syncAggregateLive(report, b);
-      }
+      if (syncStats) await _syncAggregateLive(report, b);
     }
 
     // 云后端聚合同步（统计 + 收藏跨端共享，TODO-1056 phase B）。互联 live 端点
@@ -605,10 +534,7 @@ class SyncOrchestrator {
     // 统计 + 收藏，同属「统计同步」语义，不新增设置项 / schema）。
     // deviceId 为空（测试构造 / 未配置）时跳过：聚合快照按 deviceId 命名，无 id
     // 无法安全落每设备快照，降级为 no-op（绝不崩，绝不写错名快照）。
-    if (!isInterconnect &&
-        syncStats &&
-        deviceId.isNotEmpty &&
-        !canSkip(SyncIndexStage.aggregate)) {
+    if (!isInterconnect && syncStats && deviceId.isNotEmpty) {
       await _syncAggregate(report);
     }
 
@@ -619,12 +545,10 @@ class SyncOrchestrator {
     //   __collections__ 资产（互联 backend 的资产层是 live 端点适配，语义不同）。
     // 两条通道调用同一 CollectionSyncEngine.merge / applyCollectionLocalChanges，
     // 成员并集 + 移出/删除墓碑 + 手动序整合集 LWW，仅通道不同。
-    if (!canSkip(SyncIndexStage.collections)) {
-      if (isInterconnect) {
-        await _syncCollectionsLive(report, b);
-      } else {
-        await syncCollections(report);
-      }
+    if (isInterconnect) {
+      await _syncCollectionsLive(report, b);
+    } else {
+      await syncCollections(report);
     }
 
     // 删除传播墓碑（显式确认式）：发布本机未发布删除标记 + 消费远端标记算 deleteLocal
@@ -645,231 +569,7 @@ class SyncOrchestrator {
     await SyncRepository(_db)
         .setLastSyncMs(DateTime.now().millisecondsSinceEpoch);
 
-    // 发布本轮观测。书籍那部分逐本给出：跑过完整路径的书用这一轮问到的真实远端
-    // 状态，索引命中的书沿用上一轮那条（它没被任何人动过）。没能给出观测的书
-    // （异常中断 / 标题为空不可同步）**不写进索引**——留白比留一个可能已经不成立的
-    // 旧值安全，下一轮它会照常走完整路径。
-    final Map<String, SyncIndexBookEntry> observedBooks =
-        <String, SyncIndexBookEntry>{};
-    for (final SyncBookResult r in bookResults) {
-      final String? key = r.indexAssetKey;
-      final SyncIndexBookEntry? entry = r.indexEntry;
-      if (key != null && entry != null) observedBooks[key] = entry;
-    }
-
-    // 阶段指纹只记「本轮真的跑完了」的阶段。被跳过的阶段沿用上一轮的值（本地没变，
-    // 那个值依然成立）；被开关关掉的阶段不写——它下次被打开时必须重跑一遍。
-    final Map<String, String> publishedStages = <String, String>{};
-    for (final String stage in SyncIndexStage.all) {
-      final String? fingerprint = stageFingerprints[stage];
-      if (fingerprint == null) continue;
-      if (_stageRan(stage, isInterconnect) || canSkip(stage)) {
-        publishedStages[stage] = fingerprint;
-      }
-    }
-
-    await indexService.publish(
-      plan: indexPlan,
-      books: observedBooks,
-      stages: publishedStages,
-      nowMs: nowMs,
-      wroteRemote: _wroteRemote(report, bookResults, indexPlan, isInterconnect),
-      wasFullSweep: !indexPlan.usable,
-      // 没拿到 dirty 租约却动了远端：别的设备这段时间里可能正拿着本端那份已经不
-      // 成立的 clean 索引做跳过决策。强制 bump revision，让它们下一轮立刻发现本端
-      // 变了并重新拉取，把窗口收敛到一轮。
-      forceRepublish: !leaseAcquired && !willNotWriteRemote,
-    );
     return report;
-  }
-
-  /// 算出每个非书籍阶段所依赖的**本地**状态指纹。
-  ///
-  /// 全部是本地查询，零网络。跳过一个阶段能省下的是整段网络往返，所以这里多查几张
-  /// 本地表完全划算——但仍按开关门控，关掉的阶段一次查询都不做。
-  ///
-  /// 任何一个阶段算不出来（表结构变了 / 查询抛异常）就返回 null，该阶段本轮照常跑。
-  /// **算不出指纹必须等于不跳过**：反过来就是把「不知道变没变」当成「没变」。
-  Future<Map<String, String?>> _computeStageFingerprints() async {
-    return <String, String?>{
-      SyncIndexStage.books: await _guardedFingerprint(_fingerprintBooks),
-      SyncIndexStage.dictionaries: syncDictionary
-          ? await _guardedFingerprint(_fingerprintDictionaries)
-          : null,
-      SyncIndexStage.localAudio: syncLocalAudio
-          ? await _guardedFingerprint(_fingerprintLocalAudio)
-          : null,
-      SyncIndexStage.audiobookPackages: syncAudioBookFiles
-          ? await _guardedFingerprint(_fingerprintAudiobookPackages)
-          : null,
-      SyncIndexStage.videoAssets: syncVideoFiles
-          ? await _guardedFingerprint(_fingerprintVideoAssets)
-          : null,
-      SyncIndexStage.collections:
-          await _guardedFingerprint(_fingerprintCollections),
-      SyncIndexStage.aggregate:
-          syncStats ? await _guardedFingerprint(_fingerprintAggregate) : null,
-    };
-  }
-
-  Future<String?> _guardedFingerprint(Future<String> Function() compute) async {
-    try {
-      return await compute();
-    } catch (e) {
-      debugPrint('[sync-index] stage fingerprint failed: $e');
-      return null;
-    }
-  }
-
-  /// 全部书的阅读位置时间戳集合。只用于判断「书籍阶段有没有可能写远端」，不用于
-  /// 决定跳过哪本书（那是 per-book 判据，见 `SyncManager._trySkipViaIndex`）。
-  Future<String> _fingerprintBooks() async {
-    final List<EpubBookRow> books = await _db.getAllEpubBooks();
-    final List<ReaderPositionRow> positions =
-        await _db.select(_db.readerPositions).get();
-    final Map<String, int> byKey = <String, int>{
-      for (final ReaderPositionRow p in positions) p.bookKey: p.updatedAt,
-    };
-    final List<String> parts = <String>[
-      for (final EpubBookRow b in books)
-        '${b.bookKey}:${byKey[b.bookKey] ?? 0}',
-    ]..sort();
-    return syncStageFingerprint(<String, Object?>{'books': parts.join(',')});
-  }
-
-  Future<String> _fingerprintDictionaries() async {
-    final List<DictionaryMetaRow> dicts = await _db.getAllDictionaryMetadata();
-    final List<String> names = <String>[
-      for (final DictionaryMetaRow d in dicts) d.name,
-    ]..sort();
-    return syncStageFingerprint(<String, Object?>{'names': names.join(',')});
-  }
-
-  Future<String> _fingerprintLocalAudio() async {
-    final List<String> parts = <String>[
-      for (final LocalAudioDbEntry e in localAudioEntries)
-        '${e.displayName}:${e.path}:${await _fileLength(e.path)}',
-    ]..sort();
-    return syncStageFingerprint(<String, Object?>{'entries': parts.join(',')});
-  }
-
-  /// 有声书包阶段的输入是「哪些书同时有 audiobook + 字幕」这一存在性集合——该阶段
-  /// 本身就只按「远端有没有这个包」决定推不推，不比内容版本。
-  Future<String> _fingerprintAudiobookPackages() async {
-    final List<EpubBookRow> books = await _db.getAllEpubBooks();
-    final Set<String> withAudio = <String>{
-      for (final AudiobookRow a in await _db.getAllAudiobooks()) a.bookKey,
-    };
-    final Set<String> withSrt = <String>{
-      for (final SrtBookRow s in await _db.getAllSrtBooks()) s.bookKey,
-    };
-    final List<String> parts = <String>[
-      for (final EpubBookRow b in books)
-        if (withAudio.contains(b.bookKey) && withSrt.contains(b.bookKey))
-          '${b.bookKey}:${b.title}',
-    ]..sort();
-    return syncStageFingerprint(<String, Object?>{'packages': parts.join(',')});
-  }
-
-  /// 视频资产阶段按「远端有没有同名同大小的资产」决定推不推，所以本地文件大小是
-  /// 判据的一部分：路径不变但文件被换掉时，只有大小能看出来。
-  Future<String> _fingerprintVideoAssets() async {
-    final List<String> parts = <String>[];
-    for (final VideoBookRow v in await _db.allVideoBooks()) {
-      final String? path = v.videoPath.isEmpty ? null : v.videoPath;
-      if (path == null) continue;
-      parts.add('${v.bookUid}:$path:${await _fileLength(path)}'
-          ':${v.coverPath ?? ''}');
-    }
-    parts.sort();
-    return syncStageFingerprint(<String, Object?>{'videos': parts.join(',')});
-  }
-
-  Future<String> _fingerprintCollections() async {
-    final CollectionManifest local = await loadLocalCollectionManifest(_db);
-    return syncStageFingerprint(
-        <String, Object?>{'manifest': local.canonicalJson()});
-  }
-
-  Future<String> _fingerprintAggregate() async {
-    final AggregateSnapshot snapshot =
-        await AggregateSyncService(_db).materializeLocalSnapshot();
-    return syncStageFingerprint(
-        <String, Object?>{'snapshot': jsonEncode(snapshot.toJson())});
-  }
-
-  /// 文件大小；取不到（文件不存在 / 无权限）时为 -1，与「大小为 0」区分开。
-  Future<int> _fileLength(String path) async {
-    try {
-      final File f = File(path);
-      return await f.exists() ? await f.length() : -1;
-    } catch (_) {
-      return -1;
-    }
-  }
-
-  /// 本轮某个阶段是否真的跑过（开关开着且没被索引跳过）。
-  ///
-  /// 与 `canSkip` 一起决定该阶段的指纹要不要写进索引：跑过 → 写本轮的新指纹；
-  /// 跳过 → 写同一个指纹（等价于沿用）；开关关着 → 两者都不满足，不写。
-  bool _stageRan(String stage, bool isInterconnect) {
-    switch (stage) {
-      case SyncIndexStage.books:
-        return true;
-      case SyncIndexStage.dictionaries:
-        return syncDictionary;
-      case SyncIndexStage.localAudio:
-        return syncLocalAudio;
-      case SyncIndexStage.audiobookPackages:
-        return syncAudioBookFiles;
-      case SyncIndexStage.videoAssets:
-        return syncVideoFiles;
-      case SyncIndexStage.collections:
-        return true;
-      case SyncIndexStage.aggregate:
-        return syncStats && (isInterconnect || deviceId.isNotEmpty);
-      default:
-        return false;
-    }
-  }
-
-  /// 本轮是否改动过远端内容——决定索引 revision 要不要 +1。
-  ///
-  /// 判据故意偏保守（宁可多 bump 一次）：漏判会让别的设备错过本端的改动，而多判
-  /// 只是让它们多跑一轮完整同步。
-  bool _wroteRemote(
-    SyncRunReport report,
-    List<SyncBookResult> bookResults,
-    SyncIndexPlan plan,
-    bool isInterconnect,
-  ) {
-    // 索引本来就不可用（首轮 / 周期性全量 / 有人 dirty）：这一轮的记录是全新观测，
-    // 必须让对端重新拉一次，故一律 bump。
-    if (!plan.usable) return true;
-
-    // 书籍导出是唯一由 per-book 结果表达的远端写入。
-    if (bookResults
-        .any((SyncBookResult r) => r.direction == SyncResult.exported)) {
-      return true;
-    }
-
-    // 各资产阶段已有的导出计数器就是「真的传了东西」的回执，直接复用，不另立标志。
-    if (report.dictionariesExported > 0 ||
-        report.localAudioExported > 0 ||
-        report.audiobooksExported > 0 ||
-        report.videosExported > 0) {
-      return true;
-    }
-
-    // 互联通道的 live 阶段（进度 / 合集 / 聚合 / 内容推送）直接打 host API，没有经过
-    // 上面这些资产层计数器，无从判断它们到底写没写。保守当作写过。
-    //
-    // 已知代价：互联通道的 revision 因此每轮都 +1，对端那边依赖「无人动过」的**非
-    // 书籍**阶段跳过随之失效，退化成本改动之前的行为。互联最贵的 per-book 列举
-    // （O(书数)）不受影响——它的判据是每本书自己的时间戳，与此无关。
-    if (isInterconnect) return true;
-
-    return report.remoteMutated;
   }
 
   /// 云后端聚合同步：把本机统计 + 收藏经 [AggregateSyncService] 与其它设备的
@@ -881,11 +581,10 @@ class SyncOrchestrator {
   /// 维度同纪律）。删除不跨端传播；无 schema 变更。
   Future<void> _syncAggregate(SyncRunReport report) async {
     try {
-      final bool uploaded = await AggregateSyncService(_db).sync(
+      await AggregateSyncService(_db).sync(
         store: _backend,
         deviceId: deviceId,
       );
-      if (uploaded) report.remoteMutated = true;
     } catch (e) {
       report.noteError('aggregate sync', e);
     }
@@ -1067,7 +766,6 @@ class SyncOrchestrator {
         await _backend.putJsonAsset(ns, ownName,
             outcome.merged.withLastWrittenAt(nextBaseline).toJson());
         ownWritten = true;
-        report.remoteMutated = true;
       }
 
       // finding 1：本端 per-device 文件此刻已承载吸收后的并集知识（读到的旧单文件已折进
@@ -1076,7 +774,6 @@ class SyncOrchestrator {
       // 单文件名）时被赋值，故绝不误删本端自己那份。
       if (legacySingle != null && (ownExists || ownWritten)) {
         await _backend.deleteAsset(legacySingle.id);
-        report.remoteMutated = true;
       }
 
       // finding 2：跳过了任一他端损坏文件 ⇒ 本轮没读全知识，不推进基线。本端自愈不算
@@ -1235,7 +932,6 @@ class SyncOrchestrator {
           deletionTombstoneAssetName(row.mediaType, row.itemKey),
           deletionTombstoneJson(row.mediaType, row.itemKey, row.deletedAt),
         );
-        report.remoteMutated = true;
         await _db.markSyncDeletionPublished(
             row.mediaType, row.itemKey, nextBaseline);
       }
@@ -1570,7 +1266,6 @@ class SyncOrchestrator {
             coverAsset = videoCoverAssetName(v.bookUid, coverPath);
             if (!remoteSizeByName.containsKey(coverAsset)) {
               await _backend.putAsset(ns, coverAsset, File(coverPath));
-              report.remoteMutated = true;
               remoteSizeByName[coverAsset] = await File(coverPath).length();
             }
           }
@@ -1638,7 +1333,6 @@ class SyncOrchestrator {
       if (!nothingToPublish && merged.canonicalJson() != remoteCanonical) {
         await _backend.putJsonAsset(
             ns, kSyncVideosManifestName, merged.toJson());
-        report.remoteMutated = true;
       }
     } catch (e) {
       report.noteError('video assets sync', e);
@@ -2894,7 +2588,6 @@ class SyncOrchestrator {
       if (e.isFolder || !isTtuPerBookFileName(e.name)) continue;
       try {
         await _backend.deleteAsset(e.id);
-        report.remoteMutated = true;
         report.rootSpillFilesRemoved++;
       } catch (err) {
         report.noteError('prune root spill "${e.name}"', err);

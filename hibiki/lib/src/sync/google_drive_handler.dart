@@ -9,6 +9,7 @@ import 'package:hibiki/src/sync/google_drive_auth.dart';
 import 'package:hibiki/src/sync/google_drive_sync_space.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_remote_listing.dart';
 import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_transient_error.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -414,6 +415,86 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   }
 
   // ── Sync file operations ──────────────────────────────────────────
+
+  /// 一次列举整个同步空间：不按 parent 逐个查，而是一次把空间里所有非回收站条目
+  /// 连同它们的 `parents` 拉下来，本地按 parent 归位。
+  ///
+  /// Drive 的配额与延迟都是**按请求**算的，一次 1000 条分页远比 500 次单 parent 查询
+  /// 便宜。字段只取 id/name/parents/mimeType——不要内容、不要时间戳，因为同步方向本来
+  /// 就只看文件名（progress 的时间戳与分数编码在名字里）。
+  Future<RemoteListingSnapshot?> snapshotListing(String rootFolder) async {
+    // 只在隐藏的 App Data 空间启用。那个空间按 app 隔离，里面除了 Hibiki 自己的同步
+    // 数据什么都没有，所以「列出空间里的全部文件」等价于「列出同步根下的全部文件」。
+    //
+    // 「与 Hoshi/ッツ 共享」开关打开时空间是用户**可见的 My Drive**（完整 drive
+    // scope）。在那里做同一件事就成了列举用户的整个云盘——几万个文件、几十次分页、
+    // 白白烧掉配额，而其中与同步有关的可能只有几十个。Drive 的 `q` 又没有「递归在某
+    // 文件夹下」的写法，凑不出一个既便宜又只覆盖同步根的查询。
+    //
+    // 这正是 `snapshotListing` 允许返回 null 的意义：拿不到**廉价**的全貌就不硬拿，
+    // 共享模式照旧逐本列举。
+    if (_space.id != GoogleDriveSyncSpace.appData.id) return null;
+
+    try {
+      return await _call((api) async {
+        final Map<String, String> folderNameById = <String, String>{};
+        final List<
+                ({String id, String name, List<String> parents, bool isFolder})>
+            all =
+            <({String id, String name, List<String> parents, bool isFolder})>[];
+
+        String? pageToken;
+        do {
+          final list = await api.files.list(
+            // appDataFolder 里不显式带 spaces 会返回空（[GoogleDriveSyncSpace]，
+            // TODO-836）——与 listBooks 同一约束。
+            spaces: _space.spaces,
+            q: 'trashed=false',
+            $fields: 'nextPageToken,files(id,name,parents,mimeType)',
+            pageSize: 1000,
+            pageToken: pageToken,
+          );
+          for (final f in list.files ?? const []) {
+            final String? id = f.id;
+            final String? name = f.name;
+            if (id == null || name == null) continue;
+            final bool isFolder =
+                f.mimeType == 'application/vnd.google-apps.folder';
+            final List<String> parents = f.parents ?? const <String>[];
+            if (isFolder) folderNameById[id] = name;
+            all.add((id: id, name: name, parents: parents, isFolder: isFolder));
+          }
+          pageToken = list.nextPageToken;
+        } while (pageToken != null);
+
+        // 同步根的直接子文件夹先登记，空文件夹才能与「不存在的文件夹」区分开。
+        final Set<String> topFolderIds = <String>{};
+        final RemoteListingBuilder builder = RemoteListingBuilder();
+        for (final e in all) {
+          if (!e.isFolder) continue;
+          if (!e.parents.contains(rootFolder)) continue;
+          topFolderIds.add(e.id);
+          builder.addFolder(e.name);
+        }
+
+        for (final e in all) {
+          for (final String parent in e.parents) {
+            if (!topFolderIds.contains(parent)) continue;
+            builder.addEntry(
+              parentName: folderNameById[parent] ?? '',
+              name: e.name,
+              id: e.id,
+              isFolder: e.isFolder,
+            );
+          }
+        }
+        return builder.build();
+      });
+    } catch (e) {
+      debugPrint('[drive] snapshotListing failed, falling back: $e');
+      return null;
+    }
+  }
 
   Future<SyncFileTrio> listSyncFiles(String folderId) async {
     final q = _escapeQuery(folderId);

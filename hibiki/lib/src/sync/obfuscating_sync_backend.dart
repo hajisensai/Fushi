@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_obfuscator.dart';
+import 'package:hibiki/src/sync/sync_remote_listing.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -26,7 +27,8 @@ import 'package:hibiki/src/sync/ttu_models.dart';
 ///
 /// 向后兼容：[SyncObfuscator] 用 magic header 做混读判定，现有 Drive 明文（无魔数）
 /// 下载时原样落地仍可导入；新上传带魔数混淆，逐步重传即全部变混淆，无需一键全重传。
-class ObfuscatingSyncBackend extends SyncBackend {
+class ObfuscatingSyncBackend extends SyncBackend
+    implements RemoteListingCapable {
   ObfuscatingSyncBackend(this._inner);
 
   final SyncBackend _inner;
@@ -136,6 +138,17 @@ class ObfuscatingSyncBackend extends SyncBackend {
   @override
   Future<SyncFileTrio> listSyncFiles(String folderId) =>
       _inner.listSyncFiles(folderId);
+
+  // 快照只含文件名与定位符，不含任何内容字节，故与混淆层无关：能力随内层有无而定，
+  // 内层不支持就同样报告不支持（返回 null），绝不假装自己能一次列举。
+  @override
+  Future<RemoteListingSnapshot?> snapshotListing(String rootFolderId) {
+    final SyncBackend inner = _inner;
+    if (inner is! RemoteListingCapable) {
+      return Future<RemoteListingSnapshot?>.value();
+    }
+    return (inner as RemoteListingCapable).snapshotListing(rootFolderId);
+  }
 
   @override
   Future<TtuProgress> getProgressFile(String fileId) =>

@@ -275,104 +275,6 @@ class SyncRepository {
   Future<void> setDeletionTombstonesPushBaselineMs(int ms) =>
       _setString(_keyDeletionTombstonesPushBaselineMs, ms.toString());
 
-  // ── 增量同步索引（`__index__`，TODO-2656） ─────────────────────────
-  //
-  // 四个键全是**本端对远端的观测缓存**，描述「本设备上次同步时远端长什么样」。
-  // 随备份跨设备携带会让新设备以为自己已经观测过一个它从没连过的远端，据此跳过
-  // 真正需要拉取的书——即漏同步。故全部进 [deviceLocalPrefKeys]。
-  //
-  // 它们也全都是**可丢弃**的：任何一个缺失或损坏，索引即判为不可用，本轮退回
-  // 全量列举（老行为），并在结束时重新发布。清掉它们最多让下一轮慢一次。
-
-  /// 索引缓存按**同步通道**分键：云备份与互联是两条并行运行、指向**不同远端**的
-  /// 通道，各自有各自的 `__index__`。共用一个键会让两条通道轮流用对方的观测覆盖
-  /// 自己的——本端会拿着「在互联对端看到的 revision」去判断云盘有没有变，于是把
-  /// 真正该同步的东西跳掉。
-  static const String indexChannelCloud = 'cloud';
-  static const String indexChannelInterconnect = 'interconnect';
-
-  static String _keyIndexManifestCache(String channel) =>
-      'sync_index_manifest_cache_$channel';
-  static String _keyIndexLastFullSweepMs(String channel) =>
-      'sync_index_last_full_sweep_ms_$channel';
-
-  /// 全部通道的索引缓存键（[deviceLocalPrefKeys] 与 [clearIndexCache] 共用，
-  /// 避免两处各写一份清单而漏掉某个通道）。
-  static const List<String> _indexChannels = <String>[
-    indexChannelCloud,
-    indexChannelInterconnect,
-  ];
-
-  static List<String> get indexCacheKeys => <String>[
-        for (final String c in _indexChannels) ...<String>[
-          'sync_index_manifest_cache_$c',
-          'sync_index_last_full_sweep_ms_$c',
-        ],
-      ];
-
-  /// 各设备（含本端）索引清单的本地副本：deviceId → (revision, 清单 JSON 原文)。
-  ///
-  /// 存在的唯一理由是**不必把内容没变的清单反复下载回来**：远端文件名里已经带着
-  /// revision，一次列举即可判断缓存是否仍然有效；命中就直接用本地这份。远端始终是
-  /// 权威——revision 对不上就丢弃缓存重新下载，绝不拿旧内容硬配新 revision。
-  Future<Map<String, ({int revision, String raw})>> getIndexManifestCache(
-    String channel,
-  ) async {
-    final String? raw = await _getStringOrNull(_keyIndexManifestCache(channel));
-    if (raw == null) return const <String, ({int revision, String raw})>{};
-    try {
-      final Object? decoded = jsonDecode(raw);
-      if (decoded is! Map) {
-        return const <String, ({int revision, String raw})>{};
-      }
-      final Map<String, ({int revision, String raw})> out =
-          <String, ({int revision, String raw})>{};
-      for (final MapEntry<Object?, Object?> e in decoded.entries) {
-        final Object? k = e.key;
-        final Object? v = e.value;
-        if (k is! String || v is! Map) continue;
-        final Object? revision = v['r'];
-        final Object? manifest = v['m'];
-        if (revision is num && manifest is String) {
-          out[k] = (revision: revision.toInt(), raw: manifest);
-        }
-      }
-      return out;
-    } catch (_) {
-      return const <String, ({int revision, String raw})>{};
-    }
-  }
-
-  Future<void> setIndexManifestCache(
-    String channel,
-    Map<String, ({int revision, String raw})> cache,
-  ) async {
-    final Map<String, Object?> encoded = <String, Object?>{
-      for (final MapEntry<String, ({int revision, String raw})> e
-          in cache.entries)
-        e.key: <String, Object?>{'r': e.value.revision, 'm': e.value.raw},
-    };
-    await _setString(_keyIndexManifestCache(channel), jsonEncode(encoded));
-  }
-
-  /// 本端上次跑**完整**（忽略索引、逐本列举）书籍 sweep 的时刻。0 = 从未。
-  /// 见 [kSyncIndexFullSweepIntervalMs]：这是索引前提失效时的周期性兜底。
-  Future<int> getIndexLastFullSweepMs(String channel) async {
-    final String? s = await _getStringOrNull(_keyIndexLastFullSweepMs(channel));
-    return s == null ? 0 : int.tryParse(s) ?? 0;
-  }
-
-  Future<void> setIndexLastFullSweepMs(String channel, int ms) =>
-      _setString(_keyIndexLastFullSweepMs(channel), ms.toString());
-
-  /// 丢弃本端全部索引观测缓存，使下一轮同步必然走全量列举并重新发布索引。
-  /// 后端切换 / 登出 / 用户重置同步时调用——换了个远端，旧观测一文不值且危险。
-  Future<void> clearIndexCache() async {
-    await (_db.delete(_db.preferences)
-          ..where((t) => t.key.isIn(indexCacheKeys)))
-        .go();
-  }
-
   // ── Desktop OAuth credentials ──────────────────────────────────────
 
   Future<String?> getDesktopCredentials() async {
@@ -996,12 +898,6 @@ class SyncRepository {
     // 删除墓碑推送基线：同理设备本地，跨设备携带会让新设备以为自己已经把一批删除
     // 推给过一个它从没连过的 host（漏推 = 对端该删的没删）。
     _keyDeletionTombstonesPushBaselineMs,
-    // 增量同步索引缓存：本端对**某一个特定远端**的观测。跨设备携带会让新设备
-    // 以为自己已经看过一个它从没连过的远端，据此跳过真正该拉的书（漏同步）。
-    'sync_index_manifest_cache_cloud',
-    'sync_index_last_full_sweep_ms_cloud',
-    'sync_index_manifest_cache_interconnect',
-    'sync_index_last_full_sweep_ms_interconnect',
     // TODO-1961：下载保存根与历史根都是**本机绝对路径**（如 D:\downloads），跨设备
     // 恢复必然指向新机不存在的位置。启动校验会回退默认根并警告（不丢数据），但让它
     // 漂过去只会给用户「我明明设过怎么变了」的困惑，故按设备本地处理不随备份携带。
