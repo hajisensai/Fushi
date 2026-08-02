@@ -145,8 +145,8 @@ void main() {
       final String source = maskComments(read(path));
       final int start = source.indexOf('Future<void> _syncAndFlushPosition()');
       expect(start, isNonNegative, reason: '找不到 _syncAndFlushPosition');
-      // methodBody 遇箭头函数会静默越界（PR#768 未合），这里的方法体内含箭头函数
-      // （onProbeFailure），必须用 balancedBlockFrom 从声明处配对花括号。
+      // 方法体内含箭头函数（onProbeFailure），用 balancedBlockFrom 从声明处配对
+      // 花括号，切的就是整段方法体。
       final String body =
           balancedBlockFrom(source, start, what: '_syncAndFlushPosition 方法体');
 
@@ -197,7 +197,11 @@ void main() {
       final String body =
           balancedBlockFrom(source, start, what: '_flushAllForProcessExit 方法体');
 
-      expect(body, isNot(contains('_syncPositionFromWebViewProgress')),
+      // 禁止型断言用 containsIdentifier：裸 contains 两个方向都会错——注释里提一句
+      // 这个名字就假红，`_syncPositionFromWebViewProgressV2` 这类更长标识符又会被
+      // 子串误命中。
+      expect(
+          containsIdentifier(body, '_syncPositionFromWebViewProgress'), isFalse,
           reason: '进程退出期 WebView 正在拆除，对它 evaluateJavascript 会挂死整个退出；'
               '这条路径只能落缓存锚（限时探针也救不了它——退出不能再等一个预算）');
       expect(body, contains('await _flushPosition()'), reason: '进程退出仍必须把缓存锚写穿');
