@@ -1390,13 +1390,34 @@ class HibikiDatabase extends _$HibikiDatabase {
               if (await _tableExists('collection_scrape_meta') &&
                   await _columnExists(
                       'collection_scrape_meta', 'backdrop_path')) {
-                await customStatement(
-                  'INSERT INTO media_images '
-                  '(collection_id, kind, position, path) '
-                  "SELECT collection_id, 'backdrop', 0, backdrop_path "
-                  'FROM collection_scrape_meta '
-                  "WHERE backdrop_path IS NOT NULL AND backdrop_path != ''",
-                );
+                // 搬运期间必须关 FK 强制。media_images 带两条外键
+                // （collection_id -> media_collections、book_uid -> video_books），
+                // 而 SQLite 是在**执行 DML 时**才去解析父表的：父表不在场就直接抛
+                // `no such table: main.<父表>` 中断整条 onUpgrade（= 库打不开），
+                // 且与本条 INSERT 搬几行、book_uid 是否恒为 NULL 全都无关。两张父表
+                // 各自只在自己那一级阶梯里建（video_books 在 from<17 / from<20，
+                // media_collections 在 from<38），没走到那一级的库到这里就是缺席。
+                // 关 FK 是 v16/v57 的既有先例：搬运的引用完整性由源表
+                // collection_scrape_meta 自己的外键继承，不需要在这里再验一遍；也
+                // 刻意不加 foreign_key_check 门 —— 真库若存过孤儿刮削行，抛错就等于
+                // 把用户锁死在「app 打不开」，代价远大于一行永不渲染的残图。
+                // 收尾**恢复进入本步时的取值**，不像 v57 那样无条件置 ON：那会把
+                // 调用方（含迁移测试）显式关掉的 FK 悄悄打开，改变后续步骤的行为。
+                final bool foreignKeysWereOn = await _foreignKeysEnabled();
+                await customStatement('PRAGMA foreign_keys = OFF');
+                try {
+                  await customStatement(
+                    'INSERT INTO media_images '
+                    '(collection_id, kind, position, path) '
+                    "SELECT collection_id, 'backdrop', 0, backdrop_path "
+                    'FROM collection_scrape_meta '
+                    "WHERE backdrop_path IS NOT NULL AND backdrop_path != ''",
+                  );
+                } finally {
+                  if (foreignKeysWereOn) {
+                    await customStatement('PRAGMA foreign_keys = ON');
+                  }
+                }
               }
             }
           }
@@ -1663,6 +1684,13 @@ class HibikiDatabase extends _$HibikiDatabase {
     }
     final rows = await customSelect('PRAGMA table_info($tableName)').get();
     return rows.any((row) => row.read<String>('name') == columnName);
+  }
+
+  /// 当前连接上 `PRAGMA foreign_keys` 的取值。迁移里要临时关外键时用它记住进入
+  /// 时的状态，收尾按原值恢复 —— 无条件置 ON 会把调用方显式关掉的外键悄悄打开。
+  Future<bool> _foreignKeysEnabled() async {
+    final QueryRow row = await customSelect('PRAGMA foreign_keys').getSingle();
+    return row.read<int>('foreign_keys') == 1;
   }
 
   Future<bool> _tableExists(String tableName) async {

@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 67);
-    expect(db.schemaVersion, 67);
+    expect(version.read<int>('user_version'), 68);
+    expect(db.schemaVersion, 68);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -186,10 +186,11 @@ void main() {
       'untouched',
     );
     // 本用例 seed 的是 v62 库，因此这一次打开会连跑 v63、v64（collection_scrape_meta，
-    // BUG-1310）、v65（Mihon 五表）**和** v66（collection_relations）。断言据此拆成
-    // 两半，原意图一分不弱化：
+    // BUG-1310）、v65（Mihon 五表）、v66（collection_relations）**和** v68
+    // （media_images）。断言据此拆成两半，原意图一分不弱化：
     //  ① 既有表逐张全文比对 —— v63 只能删行，不得 ALTER/DROP/rebuild 或留影子表；
-    //  ② 新增表必须**恰好**是 v64 一张 + v65 五张 + v66 一张 —— v63 自己仍然一张表都不许建。
+    //  ② 新增表必须**恰好**是 v64 一张 + v65 五张 + v66 一张 + v68 一张 —— v63
+    //     自己仍然一张表都不许建。
     final Map<String, String> schemaAfter = await _tableSqlFromDrift(db);
     for (final MapEntry<String, String> entry in schemaBefore.entries) {
       expect(schemaAfter[entry.key], entry.value,
@@ -205,9 +206,10 @@ void main() {
         'manga_source_preferences',
         'manga_trusted_signers',
         'collection_relations',
+        'media_images',
       },
-      reason: '除 v64 的 collection_scrape_meta、v65 的 Mihon 五表与 v66 的 '
-          'collection_relations 外，升级不得新增任何表',
+      reason: '除 v64 的 collection_scrape_meta、v65 的 Mihon 五表、v66 的 '
+          'collection_relations 与 v68 的 media_images 外，升级不得新增任何表',
     );
   });
 
@@ -225,7 +227,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 67);
+    expect(version.read<int>('user_version'), 68);
   });
 
   test(
@@ -257,7 +259,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 67);
+      expect(probe.select('PRAGMA user_version').first.values.first, 68);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '
