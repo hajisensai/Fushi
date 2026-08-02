@@ -662,7 +662,7 @@ void main() {
       'surfaceContainerHigh',
       'surfaceContainerHighest',
       'fontSize:',
-      // BUG-1418：`TextStyle.apply` 的两个字号旋钮。少了它们，「读一个排版令牌
+      // BUG-1425：`TextStyle.apply` 的两个字号旋钮。少了它们，「读一个排版令牌
       // 再用 fontSizeFactor 把它整除掉」就能锁死任意字号而整个文件一个
       // `fontSize:` 都不剩——判据天然扫不到，等于给绕过留了正门。
       'fontSizeFactor',
@@ -812,7 +812,7 @@ void main() {
               'image context-menu font size are reader content / chrome, '
               'same rationale as the parent reader_hibiki_page.dart allowlist '
               '(extracted verbatim).',
-      // BUG-1418：reader_hibiki/webview.part.dart 的豁免已删除。它的理由写的是
+      // BUG-1425：reader_hibiki/webview.part.dart 的豁免已删除。它的理由写的是
       // 「shellScript 收到 fontSize: s.fontSize.round()」，但该文件如今一个禁用
       // token 都不剩（`shellScript` 这个符号在整个 lib/src 里也已不存在），豁免早与
       // 代码脱节。下面的「no dead allowlist entries」断言会让同类过期豁免立刻红。
@@ -1112,7 +1112,7 @@ void main() {
               'roles, the same reviewed startup-chrome exception class as the '
               'data-root migration / backup import overlays and the main.dart '
               'splash branches.',
-      // BUG-1418：查词源文本条的字号是**跨边界对齐常量**，不是本地 MD3 排版决定：
+      // BUG-1425：查词源文本条的字号是**跨边界对齐常量**，不是本地 MD3 排版决定：
       // BUG-175 / TODO-222 要求它与查词弹窗 headword 同级，而那个 headword 是
       // WebView 里 assets/popup/popup.css 的 `.expression { font-size: 26px }`。
       // 与 dictionary_popup_native / popup_theme_css 同一 reviewed 豁免类（弹窗查词
@@ -1138,7 +1138,7 @@ void main() {
     };
 
     final List<String> violations = <String>[];
-    // BUG-1418：真正被用上的豁免键。一条豁免没被用上只有两种情况——文件没了，或者
+    // BUG-1425：真正被用上的豁免键。一条豁免没被用上只有两种情况——文件没了，或者
     // 文件里早就一个禁用 token 都不剩；两种都是**过期豁免**：理由与代码脱节，却仍
     // 挂在名单上给该文件整份免检，等于给未来的违规预留了一张不会被审的通行证。
     final Set<String> liveAllowlistKeys = <String>{};
@@ -1176,14 +1176,14 @@ void main() {
     expect(
       deadAllowlistEntries,
       isEmpty,
-      reason: 'BUG-1418: these allowlist entries no longer match anything — '
+      reason: 'BUG-1425: these allowlist entries no longer match anything — '
           'the file is gone, or it has zero forbidden-chrome hits. A reason '
           'that has drifted away from the code is not a reviewed exception, '
           'it is a standing blanket waiver. Delete the entry.',
     );
   });
 
-  // BUG-1418：上面四个文件的豁免理由写得比实际命中宽——理由只谈行字号 / 状态胶囊 /
+  // BUG-1425：上面四个文件的豁免理由写得比实际命中宽——理由只谈行字号 / 状态胶囊 /
   // 勾选行 / 内容行，却顺带把行骨架和设置开关一起放了行。整份文件免检时，「理由没
   // 覆盖到的那部分」是静默通过的，光看 allowlist 根本看不出来。裸 chrome 已收口到
   // 共享 MD3 组件，这条把「收口后不许长回来」钉成可证伪断言：判据复用主守卫同一个
@@ -1228,7 +1228,7 @@ void main() {
             'settings toggle must go through the shared MD3 switch row');
   });
 
-  // BUG-1418：查词源文本条的豁免理由说它的字号对齐弹窗 headword，而那个 headword
+  // BUG-1425：查词源文本条的豁免理由说它的字号对齐弹窗 headword，而那个 headword
   // 是 WebView 里 popup.css 的 `.expression`。散文会漂，这条把两侧钉在一起：常量
   // 变了、popup.css 变了、或有人把字号重新藏回 TextStyle.apply，都会红。
   test('source lookup strip headword size stays pinned to the popup CSS', () {
@@ -1258,7 +1258,7 @@ void main() {
         reason: 'the source-text strip must render at the popup headword size '
             '(BUG-175/TODO-222); the two sides have drifted apart');
 
-    // 不许把字号重新藏进 TextStyle.apply（BUG-1418 的原始绕过写法）。
+    // 不许把字号重新藏进 TextStyle.apply（BUG-1425 的原始绕过写法）。
     expect(code, isNot(contains('fontSizeFactor')));
     expect(code, isNot(contains('fontSizeDelta')));
     // 唯一的字号写入就是那条对齐常量。

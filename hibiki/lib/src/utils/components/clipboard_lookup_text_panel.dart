@@ -13,7 +13,7 @@ import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
 /// 「source lookup strip headword size stays pinned to the popup CSS」把它与
 /// popup.css 钉在一起，改哪边都会红。
 ///
-/// BUG-1418：这里曾写成 `pageTitle.apply(fontSizeFactor: 26 / pageTitle.fontSize)`
+/// BUG-1425：这里曾写成 `pageTitle.apply(fontSizeFactor: 26 / pageTitle.fontSize)`
 /// —— 读一个设计令牌只为把它整除掉。那个写法有两宗罪：① 文件里一个 `fontSize:`
 /// 都不剩，MD3 守卫的子串判据天然扫不到，等于绕过门禁；② 谁把 `pageTitle` 调大，
 /// 因子会自动补偿回 26，改动零反馈、静默失效。现在明写字号、明说它对齐谁。

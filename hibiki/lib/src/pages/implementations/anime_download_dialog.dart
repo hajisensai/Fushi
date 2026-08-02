@@ -1834,7 +1834,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                 ],
                 const SizedBox(height: 4),
                 if (_chosenSubs.isNotEmpty)
-                  // BUG-1418：这是一个「设置开关」，不是候选行/字幕行/任务行——
+                  // BUG-1425：这是一个「设置开关」，不是候选行/字幕行/任务行——
                   // 本文件的 reviewed 豁免通篇只讲内容行，从没覆盖过开关。走共享
                   // MD3 开关行（与 games_library_page 同款收口）。
                   AdaptiveSettingsSwitchRow(

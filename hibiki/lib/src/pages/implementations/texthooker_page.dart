@@ -175,7 +175,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 builder: (BuildContext context) {
                   final bool excluded = _session.state.excludedAudioSourcePtrs
                       .contains(track.sourcePtr);
-                  // BUG-1418：行骨架走共享 MD3 组件，不再裸 ListTile。本文件的
+                  // BUG-1425：行骨架走共享 MD3 组件，不再裸 ListTile。本文件的
                   // reviewed 豁免只覆盖「hook 状态胶囊是实时内容指示器」，从不覆盖
                   // 对话框行骨架。`ListTile.enabled` 的两个作用分开落地：不可选走
                   // onTap: null（本来就有），置灰走显式 disabled 前景色。
@@ -654,7 +654,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         title: Text(t.external_window_select),
         children: <Widget>[
           for (final ExternalWindowInfo window in ordered)
-            // BUG-1418：行骨架走共享 MD3 组件，不再裸 ListTile（豁免理由只覆盖
+            // BUG-1425：行骨架走共享 MD3 组件，不再裸 ListTile（豁免理由只覆盖
             // hook 状态胶囊）。autofocus 是 BUG-1049 的焦点驱动行为，随之收进
             // [HibikiListItem]，不能在收口时悄悄丢掉。
             HibikiListItem(

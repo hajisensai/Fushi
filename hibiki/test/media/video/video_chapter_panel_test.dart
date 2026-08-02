@@ -64,7 +64,7 @@ void main() {
       ),
     ));
 
-    // BUG-1418：行骨架已从裸 ListTile 收口到共享 HibikiListItem，祖先按新组件找。
+    // BUG-1425：行骨架已从裸 ListTile 收口到共享 HibikiListItem，祖先按新组件找。
     expect(find.byType(ListTile), findsNothing);
     // 仅当前章（Body, index 1）有 play_arrow trailing 标记。
     final Finder bodyTile = find.ancestor(

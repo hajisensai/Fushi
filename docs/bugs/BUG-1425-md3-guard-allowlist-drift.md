@@ -1,4 +1,4 @@
-## BUG-1418 · MD3 守卫豁免与实际命中脱节：四处裸 Material chrome 静默放行 + fontSizeFactor 绕过判据 + 过期豁免
+## BUG-1425 · MD3 守卫豁免与实际命中脱节：四处裸 Material chrome 静默放行 + fontSizeFactor 绕过判据 + 过期豁免
 - **报告**：2026-08-02（TODO-2629 / 2630 / 2631，PR#707 排查时发现，当时有意未动）
 - **真实性**：✅ 真 bug（三类都复核成立）
 

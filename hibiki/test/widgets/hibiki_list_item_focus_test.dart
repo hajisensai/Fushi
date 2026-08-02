@@ -43,7 +43,7 @@ void main() {
     expect(taps, 1);
   });
 
-  // BUG-1418：把 texthooker 窗口选择器的裸 ListTile 收口到本组件时，唯一没有对应物的
+  // BUG-1425：把 texthooker 窗口选择器的裸 ListTile 收口到本组件时，唯一没有对应物的
   // 就是 `autofocus`。它不是装饰——BUG-1049 的「打开对话框即落在正确的那一行，回车直接
   // 确认」全靠它。这条锁住：带 autofocus 的行开屏就持有键盘焦点，且 Enter 直接触发
   // onTap（对话框里没有 HibikiFocusRoot，走的是 InkWell 自己的焦点节点）。
