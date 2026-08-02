@@ -55,7 +55,13 @@ jobs:
 
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
-        run: brew install ffmpeg nasm pkg-config x264 svt-av1 webp
+        # BUG-1443：这里**不再** brew install x264 / svt-av1 / webp。用 Homebrew 的库
+        # 会让产物动态依赖 /opt/homebrew/opt/*/lib/*.dylib，在没装 Homebrew 的用户机上
+        # dyld 直接崩（Abort trap: 6）；而且 Homebrew 的 svt-av1 根本不出 .a，想改成
+        # 静态链也没得链。build-ffmpeg-min.sh 的 Darwin 分支现在自己把三个库编成静态库
+        # 装进私有 prefix（需要 cmake + nasm，cmake 是 macOS runner 自带）。
+        # `ffmpeg` 只是 smoke-test 的 fixture 生成器，与产物链接无关。
+        run: brew install ffmpeg nasm pkg-config
 
       - name: Setup MSYS2 (Windows)
         if: runner.os == 'Windows'

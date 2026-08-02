@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1341 条。点号进各自文件。
+> 共 1342 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1443](bugs/BUG-1443-macos-vendored-ffmpeg-homebrew-dylib.md) | 🚧 | ✅ | macOS 随包 ffmpeg 动态依赖 Homebrew dylib，干净机器上 dyld 崩溃 |
 | [BUG-1441](bugs/BUG-1441-manga-extension-filter-and-lag.md) | ✅ | ✅ | 漫画扩展列表筛选不生效 + 语言下拉卡顿 |
 | [BUG-1437](bugs/BUG-1437-renumber-selfcheck-blind.md) | ✅ | ✅ | renumber 自校验与替换共用同一扫描器，漏改文件被谎报零残留 |
 | [BUG-1434](bugs/BUG-1434-mokuro-book-ocr-no-images.md) | ✅ | ✅ | 已导入的 mokuro 漫画在 OCR 向导被误判为没有找到图片 |
