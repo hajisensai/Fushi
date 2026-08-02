@@ -2093,6 +2093,31 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           },
         );
 
+        // BUG-1419：spread 独立文档的键桥落地点。JS 侧的表由
+        // [spreadKeyBridgeTokens] 按注册表当前绑定导出（裸 Space 除外，那条归上面
+        // 的 onSpaceKey 桥），所以这里只做「token → 动作」的反解析，解析走的是与
+        // Flutter 焦点路径**同一个** resolveKeyboard——改键对两条路一起生效。
+        // 收尾 reclaim：这一次按键说明 OS 焦点在 WebView2 手里，不夺回来后续按键
+        // 还是只到 DOM（与 onSpaceKey / onSwipe 的 BUG-136 修复同款）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onSpreadKey',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || _lyricsMode) return;
+            final InputBinding? binding =
+                InputBinding.deserialize(args[0] as String);
+            if (binding == null) return;
+            final ShortcutAction? action =
+                appModel.shortcutRegistry.resolveKeyboard(
+              binding.key,
+              modifiers: binding.modifiers,
+              scope: ShortcutScope.reader,
+            );
+            if (action == null) return;
+            _executeShortcutAction(action);
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
+          },
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'onSwipe',
           callback: (List<dynamic> args) {

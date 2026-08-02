@@ -98,7 +98,9 @@ import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
-    show GamepadButton, ModifierKey, activeModifierKeys;
+    show GamepadButton, InputBinding, ModifierKey, activeModifierKeys;
+import 'package:hibiki/src/shortcuts/shortcut_registry.dart'
+    show HibikiShortcutRegistry;
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent, GamepadLongPressIntent, focusedEditableText;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
@@ -495,9 +497,25 @@ bool chapterTurnCoolingDown({
 ///
 /// [leftUrl] / [rightUrl] 是已解析的整页图 URL（调用方已按 RTL/LTR 排好左右）。纯字符串
 /// 生成、无副作用，供单测锁定「spreadReady 被图片 load 门控」（撤回同步触发 → 守卫转红）。
+///
+/// BUG-1419：本文档还必须自带**翻页输入**。spread 是第四种独立文档，
+/// `_onChapterLoadComplete` 的 spread 守卫（BUG-1280 ③）把整份正文引擎挡在门外，
+/// 而滚轮 / 横扫 / 键桥全在那份引擎里 ⇒ 进了双页页面滚轮和翻页键一起失效。三条通道
+/// 都直连**既有** Dart handler，Dart 侧不新增翻页语义：
+/// * `wheel` → `onWheelPaginate`（与正文 `_handlePagedWheelTick` 逐字同款：主轴取
+///   绝对值更大的那个，`delta > 0` = forward）；
+/// * 单指横扫 → `onSwipe`（与正文 `touchend` 分支同款判据：横向分量占优，且位移过
+///   [swipeDistThreshold] 或「过 [swipeFastDistThreshold] + 速度 ≥ 900px/s」，`dx < 0`
+///   = `'left'`）。阈值由调用方从 [ReaderSettings] 取同一真值传入，不在此另立默认；
+/// * 键盘 → [keyBridgeScript]（调用方用 `webViewKeyBridgeScript` 按注册表**当前**绑定
+///   生成）。Windows 的 WebView2 一旦持有 OS 焦点，按键只存在于 DOM 里，Flutter 的
+///   `Focus.onKeyEvent` 收不到（TODO-1078 / BUG-136 同源）。空串 = 不装键桥。
 String buildSpreadPageHtml({
   required String leftUrl,
   required String rightUrl,
+  required int swipeDistThreshold,
+  required int swipeFastDistThreshold,
+  String keyBridgeScript = '',
 }) {
   return '''
 <!DOCTYPE html>
@@ -540,6 +558,58 @@ html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
     if (e && e.target && e.target.tagName === 'IMG') return;
     window.flutter_inappwebview.callHandler('onSpreadTapEmpty');
   });
+  // BUG-1419：翻页输入。正文引擎（滚轮 / 横扫 / 键桥都在里面）对 spread 文档是
+  // 被守卫挡住的，本文档必须自带，否则进了双页页面滚轮和翻页键一起没反应。
+  // 滚轮：与正文 _handlePagedWheelTick 逐字同款语义（主轴取绝对值更大的那个，
+  // delta > 0 = forward），直送既有 onWheelPaginate handler——节流 / 跨章冷却 /
+  // 虚拟页翻页全在 Dart 侧那一份，这里不重复实现。
+  document.addEventListener('wheel', function(e){
+    var horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+    var delta = horizontal ? e.deltaX : e.deltaY;
+    if (delta === 0) return;
+    e.preventDefault();
+    window.flutter_inappwebview.callHandler('onWheelPaginate',
+      delta > 0 ? 'forward' : 'backward',
+      horizontal ? 'horizontal' : 'vertical');
+  }, {passive: false});
+  // 单指横扫：判据与阈值同正文 touchend 分支（横向分量占优 + 距离/速度二选一），
+  // 方向约定同样是 dx < 0 → 'left'，直送既有 onSwipe handler（那里按书写方向和
+  // invertSwipeDirection 把 left/right 折成 forward/backward）。
+  var _swipeStartX = 0, _swipeStartY = 0, _swipeStartAt = 0, _swipeTracking = false;
+  var _swipeDoneAt = 0;
+  document.addEventListener('touchstart', function(e){
+    if (!e.touches || e.touches.length !== 1) { _swipeTracking = false; return; }
+    _swipeStartX = e.touches[0].clientX;
+    _swipeStartY = e.touches[0].clientY;
+    _swipeStartAt = Date.now();
+    _swipeTracking = true;
+  }, {passive: true});
+  document.addEventListener('touchend', function(e){
+    if (!_swipeTracking) return;
+    _swipeTracking = false;
+    var t = e.changedTouches && e.changedTouches[0];
+    if (!t) return;
+    var dx = t.clientX - _swipeStartX;
+    var dy = t.clientY - _swipeStartY;
+    var absDx = Math.abs(dx), absDy = Math.abs(dy);
+    if (absDx <= absDy) return;
+    var velocity = absDx / Math.max(1, Date.now() - _swipeStartAt) * 1000;
+    if (absDx < $swipeDistThreshold &&
+        !(absDx >= $swipeFastDistThreshold && velocity >= 900)) return;
+    if (e.preventDefault) e.preventDefault();
+    _swipeDoneAt = Date.now();
+    window.flutter_inappwebview.callHandler('onSwipe', dx < 0 ? 'left' : 'right');
+  }, {passive: false});
+  // 横扫之后浏览器仍可能合成一次 click；不拦就会同时命中 onImageTap（弹图片查看器）
+  // 或 onSpreadTapEmpty（翻底栏）。capture 阶段单点吞掉，两个消费者都碰不到它。
+  // 用时间窗而非裸标志：preventDefault 已压掉合成 click 时标志不会残留到下一次
+  // 真实点击（那会表现成「翻页后第一下点击无效」）。
+  document.addEventListener('click', function(e){
+    if (!_swipeDoneAt || (Date.now() - _swipeDoneAt) > 700) return;
+    _swipeDoneAt = 0;
+    e.stopPropagation();
+    if (e.preventDefault) e.preventDefault();
+  }, true);
   var signaled = false;
   function signalReady(){
     if (signaled) return;
@@ -569,10 +639,50 @@ html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
     });
   }
 })();
+$keyBridgeScript
 </script>
 </body></html>
 ''';
 }
+
+/// BUG-1419：spread 独立文档要交回 Dart 的键盘 token 表（[InputBinding.serialize]
+/// 原样，如 `ArrowLeft` / `Ctrl+KeyD`）。
+///
+/// 只导出在双页页面上**真正有意义**的动作：翻页、唤/收底栏、退出书。spread 页没有
+/// 正文，查词 / caret / 振假名那些动作在这里无处可施，桥进来只会白白吞掉按键。
+///
+/// 表由注册表**当前**绑定实时导出而不是硬编码键名（漫画页旧桥写死
+/// `ArrowLeft/ArrowRight/Escape` 的教训，BUG-1347）：用户改键后 spread 页跟着变。
+/// 注册表未装载时 `bindingsFor` 对每个动作都返回空集，与「用户清空了绑定」在数据上
+/// 不可区分，返回空表即可（下一次进 spread 页会拿到真表）。
+///
+/// **裸 Space 恒排除**：它归正文同款的 `onSpaceKey` 桥（那条经
+/// `resolveReaderSpaceOverride` 解析，有声书激活时是播放/暂停而不是翻页）。两座桥
+/// 都是本 document 上的独立 `keydown` 监听，同一次按下各命中一次就会翻两页。
+List<String> spreadKeyBridgeTokens(HibikiShortcutRegistry registry) {
+  if (!registry.isLoaded) return const <String>[];
+  final List<String> tokens = <String>[];
+  for (final ShortcutAction action in kSpreadBridgedActions) {
+    for (final InputBinding binding
+        in registry.bindingsFor(action).keyboardBindings) {
+      if (binding.key == LogicalKeyboardKey.space &&
+          binding.modifiers.isEmpty) {
+        continue;
+      }
+      final String token = binding.serialize();
+      if (!tokens.contains(token)) tokens.add(token);
+    }
+  }
+  return tokens;
+}
+
+/// [spreadKeyBridgeTokens] 导出的动作集（顺序即 token 表顺序，稳定可比较）。
+const List<ShortcutAction> kSpreadBridgedActions = <ShortcutAction>[
+  ShortcutAction.readerPageForward,
+  ShortcutAction.readerPageBackward,
+  ShortcutAction.readerToggleChrome,
+  ShortcutAction.readerExitBook,
+];
 
 /// BUG-213：章内原生滚动回传（`onReaderScroll`）到来时，是否应刷新章内进度。
 ///

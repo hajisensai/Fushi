@@ -815,8 +815,32 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     final String leftUrl = rtl ? urlB : urlA;
     final String rightUrl = rtl ? urlA : urlB;
 
-    final String html =
-        buildSpreadPageHtml(leftUrl: leftUrl, rightUrl: rightUrl);
+    // BUG-1419：spread 独立文档自带翻页输入。阈值取与正文引擎**同一个**真值来源
+    // （`ReaderSettings.swipePageTurnDistThresholds`，随灵敏度设置缩放），不在
+    // spread 侧另立一套默认值——否则调灵敏度只对正文生效，双页页面手感恒定。
+    final ({int dist, int fastDist}) swipeThresholds =
+        ReaderSettings.swipePageTurnDistThresholds(
+      _settings?.swipePageTurnSensitivity ??
+          ReaderSettings.defaultSwipePageTurnSensitivity,
+    );
+    // 键桥：按注册表当前绑定导出（改键即时跟随），外加与正文逐字同款的裸 Space 桥
+    // （`onSpaceKey`，经 resolveReaderSpaceOverride 分流有声书播放/暂停 vs 翻页）。
+    // 两座桥各自裹 IIFE + 幂等安装守卫，同一 document 共存互不覆盖。
+    final String keyBridgeScript = '${webViewKeyBridgeScript(
+      handlerName: 'onSpreadKey',
+      keys: spreadKeyBridgeTokens(appModel.shortcutRegistry),
+    )}\n${webViewKeyBridgeScript(
+      handlerName: 'onSpaceKey',
+      keys: const <String>[' '],
+    )}';
+
+    final String html = buildSpreadPageHtml(
+      leftUrl: leftUrl,
+      rightUrl: rightUrl,
+      swipeDistThreshold: swipeThresholds.dist,
+      swipeFastDistThreshold: swipeThresholds.fastDist,
+      keyBridgeScript: keyBridgeScript,
+    );
 
     // BUG-1280：置位必须在 loadData 之前——`onLoadStop` 可能在 await 返回前就
     // 派发，晚置位等于守卫对这一次加载失效。

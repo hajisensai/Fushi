@@ -925,3 +925,28 @@ String switchCaseBody(
   }
   return src.substring(start, end);
 }
+
+/// 在合并语料里定位**正文引擎那份** `wheel` 监听的起始下标。
+///
+/// BUG-1419 之后语料里有**两份** wheel 监听：spread 独立文档自带的那份
+/// （`buildSpreadPageHtml`，直送 `onWheelPaginate`，没有连续/分页轴向门控）在
+/// 主壳里、位置更靠前；正文引擎那份在 `reader_hibiki/webview.part.dart`。
+/// 裸 `indexOf("addEventListener('wheel'")` 会锚到前者，让所有钉正文轴向门控的
+/// 守卫在「实现完全正确」时转红（本函数就是被这条实测打出来的）。
+///
+/// 判据用**块内是否含 `hoshiContinuousMode`**：连续/分页分流是正文那份独有的语义，
+/// 比「取第几个」稳——将来再多一份独立文档的 wheel 监听也不会把锚点挤歪。
+/// 找不到返回 -1，由调用方断言。
+int bodyEngineWheelListenerStart(String source) {
+  const String needle = "addEventListener('wheel'";
+  int idx = source.indexOf(needle);
+  while (idx >= 0) {
+    final int end = source.indexOf('}, {passive:', idx);
+    if (end > idx &&
+        source.substring(idx, end).contains('hoshiContinuousMode')) {
+      return idx;
+    }
+    idx = source.indexOf(needle, idx + needle.length);
+  }
+  return -1;
+}
