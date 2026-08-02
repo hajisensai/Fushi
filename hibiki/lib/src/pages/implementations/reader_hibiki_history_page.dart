@@ -51,6 +51,8 @@ import 'package:hibiki/src/media/metadata/image_download.dart';
 import 'package:hibiki/src/media/metadata/scrape_batch.dart';
 import 'package:hibiki/src/media/metadata/scrape_title_matcher.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
+import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
+    show sortNewCollectionMembersNaturally;
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/collections/collection_drag.dart';

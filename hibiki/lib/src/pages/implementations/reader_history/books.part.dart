@@ -682,12 +682,33 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     // 幽灵键会让 addToCollection 撞外键且无人 catch（用户只看到「点了没反应」）。
     if (!await _pruneStaleSelection() || !mounted) return;
     final List<int> collectionIds = _selectedCollectionIds.toList()..sort();
-    final List<ShelfEntryRef> looseRefs = <ShelfEntryRef>[
-      for (final String key in _selectedKeys)
-        if (shelfSelectionToEntry(key, ShelfSelectionSurface.books)
+    // 成员序按显示标题自然序落盘（`卷1 < 卷2 < 卷10`），不用 `_selectedKeys` 的
+    // 点选顺序——否则框选一套书建出来的合集内部是乱的（BUG-1436）。标题走
+    // display-title 门面，与用户看到的一致。
+    // 键带 mediaType：epub 的 bookKey 与 srt 的 uid 是两个独立值域，裸 entryKey
+    // 做映射键有撞键风险。
+    final Map<String, String> titleByRef = <String, String>{
+      for (final MediaItem item in _visibleEpubBooks)
+        if (shelfSelectionToEntry(
+          item.mediaIdentifier,
+          ShelfSelectionSurface.books,
+        )
             case final ShelfEntryRef ref)
-          ref,
-    ];
+          '${ref.mediaType}|${ref.entryKey}':
+              displayTitleForBook(item: item, rawTitle: item.title),
+      for (final SrtBook book in _visibleSrtBooks)
+        '${MediaKind.srt}|${book.uid}': _srtDisplayTitle(book),
+    };
+    final List<ShelfEntryRef> looseRefs = sortNewCollectionMembersNaturally(
+      <ShelfEntryRef>[
+        for (final String key in _selectedKeys)
+          if (shelfSelectionToEntry(key, ShelfSelectionSurface.books)
+              case final ShelfEntryRef ref)
+            ref,
+      ],
+      titleOf: (ShelfEntryRef r) =>
+          titleByRef['${r.mediaType}|${r.entryKey}'] ?? r.entryKey,
+    );
     final CombineTier tier = classifyCombine(
       collectionCount: collectionIds.length,
       looseCount: looseRefs.length,

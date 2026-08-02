@@ -375,13 +375,18 @@ class FilenameParser {
   /// 分隔符归一：全角空格→空格、下划线→空格；
   /// 点分隔西式命名（无空格且 ≥2 个点，如 `Mushoku.Tensei.S03E04`）把点当空格。
   static String _normalizeSeparators(String s) {
-    String out = s
-        .replaceAll('　', ' ')
-        .replaceAll('_', ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    if (!out.contains(' ') && '.'.allMatches(out).length >= 2) {
-      out = out.replaceAll('.', ' ');
+    // 「点分隔命名」（`Title.S01E09.Sub.WEBRip.ja`）的判定必须在 `_`→空格 **之前**
+    // 做：下划线是标题内的普通字符（`ドライブ行かない_`），先替换会让串里凭空多出
+    // 空格，判定失效、`.` 不再当分隔符，整串 `.WEBRip.Netflix.ja` 留在标题里
+    // （BUG-1435）。
+    final String base =
+        s.replaceAll('　', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    final bool dotSeparated =
+        !base.contains(' ') && '.'.allMatches(base).length >= 2;
+    String out =
+        base.replaceAll('_', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (dotSeparated) {
+      out = out.replaceAll('.', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
     }
     return out;
   }
@@ -561,11 +566,32 @@ class FilenameParser {
     }
     // 纯日期/设备命名：直接判空标题，不再做集数误抽取。
     if (_looksLikeNonTitle(text)) return '';
-    // ① S01E04（一次给出季+集）。
-    text = _extractFirst(text, _seasonEpisode, (RegExpMatch m) {
-      st.season ??= int.parse(m.group(1)!);
-      st.episode ??= int.parse(m.group(2)!);
-    });
+    // ① S01E04（一次给出季+集）。`SxxExx` 是 Jellyfin / Plex / Netflix 系命名的
+    // 强边界：它**之后**的一切都不属于系列名——要么是该集独有的分集标题，要么是
+    // 发布元数据（`.WEBRip.Netflix.ja`）。此前只把 `SxxExx` 本身替换成空格、分集
+    // 标题原样留在标题里，同一部番每集解出不同 series，「按文件夹导入」按 series
+    // 分组时分不到一组，12 集变成 12 个独立条目（BUG-1435）。故命中即截断；分集
+    // 标题不丢，归入 [ParsedMediaName.secondaryTitle]。
+    final RegExpMatch? se = _seasonEpisode.firstMatch(text);
+    if (se != null) {
+      st.season ??= int.parse(se.group(1)!);
+      st.episode ??= int.parse(se.group(2)!);
+      final String head = text.substring(0, se.start);
+      if (_hasTitleChars(head)) {
+        final String tail = _cleanupTitle(
+          _cutTrailingNoiseTokens(
+            _cleanupTitle(text.substring(se.end)),
+            st,
+          ),
+        );
+        if (tail.isNotEmpty) st.secondaryTitle ??= tail;
+        text = head;
+      } else {
+        // 集号前置命名（`S01E04 - Title`）：截断会把标题整个丢空，退回原先的
+        // 「替换成空格」行为，让后续规则照常处理剩余文本。
+        text = text.replaceRange(se.start, se.end, ' ');
+      }
+    }
     // ② 其余集数模式（first-wins，括号块里解析出的集数优先保留）。
     if (st.episode == null) {
       text = _extractFirst(text, _cnEpisode, (RegExpMatch m) {
