@@ -19,7 +19,7 @@
 - 函数和新增 Dart helper 要有明确类型签名。
 - 不从零重写现有功能；在当前实现上删减、合并、修正。
 - 发现问题直接说，不要为了顺滑把风险说轻。
-- 用户报 bug：按 [docs/BUGS.md](docs/BUGS.md)（文件头有完整流程）——先沿真实代码路径**验真伪**。**一 bug 一文件**：真 bug 用 `dart run tool/bug.dart new <slug> [标题...]` 新建独立文件 `docs/bugs/BUG-NNN[-slug].md`（自动取下一个空号、生成骨架、重建索引；**禁止手动往 `docs/BUGS.md` 加正文**——它只是头部约定 + 自动索引表），在该文件里记根因 `file:line`，再 **① 根因修复**、**② 在最强可落地层加自动化测试**（widget 行为 / CSS 生成器 / 源码扫描守卫），两步各把 `[ ]` 勾成 `[x]` 并记提交哈希/测试文件，改完跑 `dart run tool/bug.dart reindex` 重建索引；**撞号别手改**——跑 `dart run tool/bug.dart renumber <old> <new>`（文件名/正文 H2/代码引用/测试名四处一起改 + reindex + 自校验零残留；只改文件名不改正文 H2 会让守卫测试 CI 红）。取号已扩到扫全部本地+远端分支，但那不是分布式锁，开 PR 前和每次 rebase 后仍要重跑 `check`；非真 bug/无法复现也建一条标「未复现」。这套 per-file 结构消除并发 agent 撞号 + 顶部插入的 git 冲突（守卫 `hibiki/test/tools/bugs_per_file_guard_test.dart`）。与本地不入库的 `docs/REGRESSION_BUGS.md` 区分。
+- 用户报 bug：按 [docs/BUGS.md](docs/BUGS.md)（文件头有完整流程）——先沿真实代码路径**验真伪**。**一 bug 一文件**：真 bug 用 `dart run tool/bug.dart new <slug> [标题...]` 新建独立文件 `docs/bugs/BUG-NNN[-slug].md`（自动取下一个空号、生成骨架、重建索引；**禁止手动往 `docs/BUGS.md` 加正文**——它只是头部约定 + 自动索引表），在该文件里记根因 `file:line`，再 **① 根因修复**、**② 在最强可落地层加自动化测试**（widget 行为 / CSS 生成器 / 源码扫描守卫），两步各把 `[ ]` 勾成 `[x]` 并记提交哈希/测试文件，改完跑 `dart run tool/bug.dart reindex` 重建索引；**撞号别手改**——跑 `dart run tool/bug.dart renumber <old> <new>`（文件名/正文 H2/代码引用/测试名四处一起改 + reindex + 自校验零残留；只改文件名不改正文 H2 会让守卫测试 CI 红）。取号扫「全部本地+远端分支的 commit 树 **+ 本机每个 git 工作区磁盘上还没提交的 `docs/bugs/*.md`**」（后者是并发撞号的大头：`new` 写文件到 commit 之间隔着几十分钟到几小时，BUG-1429），但那不是分布式锁，开 PR 前和每次 rebase 后仍要重跑 `check`——`check` 现在会跨分支/工作区复核并报出「我新引入的号还被谁占着、在哪个 ref/工作区」，想当硬门用 `check --strict`（默认只让本地不变式决定退出码）；非真 bug/无法复现也建一条标「未复现」。这套 per-file 结构消除并发 agent 撞号 + 顶部插入的 git 冲突（守卫 `hibiki/test/tools/bugs_per_file_guard_test.dart`）。与本地不入库的 `docs/REGRESSION_BUGS.md` 区分。
 
 ## 仓库地图
 
