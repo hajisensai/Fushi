@@ -70,7 +70,7 @@ Future<AnimeDownloadImportOutcome?> Function(
       ],
     );
 
-    // BUG-1416：番剧下载完成自动入库也是一次真实入库，必须进首页活动时间轴——
+    // BUG-1417：番剧下载完成自动入库也是一次真实入库，必须进首页活动时间轴——
     // 与对话框 / 拖拽 / 扫描首导同粒度：整本 1 条 added（title=系列名、mediaKey=
     // 首集 uid），绝不每集一条。
     //

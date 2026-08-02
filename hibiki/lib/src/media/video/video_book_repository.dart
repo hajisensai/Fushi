@@ -32,7 +32,7 @@ import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 /// `importSplitPlaylist` 在事务内按 [normalizeVideoPath] 归一路径判「已在库」，只有
 /// 它知道哪几集是这一次插进去的。调用方**不得**在方法外拿路径自己重扫一遍去猜——
 /// 那份判据必须与事务内的规则逐字节一致，一旦漂移就会把崩溃重放误判成新增
-/// （BUG-1416：番剧下载重放重复记 `added` 活动事件的形状）。
+/// （BUG-1417：番剧下载重放重复记 `added` 活动事件的形状）。
 /// `reuseExistingPaths == false` 时每集都是新建，[createdEpisodeUids] 恒等于
 /// [episodeUids]。
 typedef SplitPlaylistImportResult = ({
