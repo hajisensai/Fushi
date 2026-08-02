@@ -130,7 +130,9 @@ extension _ReaderMining on _ReaderHibikiPageState {
           '(lookupCue=null, sentenceRange=${_cachedSentenceRange != null}, '
           'draftSentences=${_miningDraft.length}).',
         );
-        HibikiToast.show(msg: t.card_mined_without_sentence_audio);
+        HibikiToast.show(
+            msg: t.card_mined_without_sentence_audio,
+            severity: ToastSeverity.warning);
       }
     }
 
@@ -149,6 +151,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
               ? 'sentence audio export failed'
               : 'sentence audio export failed: $sentenceAudioFailure',
         ),
+        severity: ToastSeverity.error,
       );
       return (context: null, cleanup: cleanupSasayakiTempDir);
     }
@@ -256,7 +259,8 @@ extension _ReaderMining on _ReaderHibikiPageState {
     if (described.record) {
       unawaited(_recordMinedSentence(fields, miningContext, outcome.noteId));
     }
-    HibikiToast.show(msg: described.message);
+    HibikiToast.show(
+        msg: described.message, severity: mineToastSeverity(described.status));
     if (described.success) {
       // TODO-270 F/G：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，
       // 两端在同一事件归零、不漂移）。下一次查词从空草稿重新累积。
@@ -299,7 +303,8 @@ extension _ReaderMining on _ReaderHibikiPageState {
         : '';
     final described =
         describeMineOutcome(outcome, deckName: deckName, overwrite: true);
-    HibikiToast.show(msg: described.message);
+    HibikiToast.show(
+        msg: described.message, severity: mineToastSeverity(described.status));
     if (described.success) {
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
@@ -328,7 +333,9 @@ extension _ReaderMining on _ReaderHibikiPageState {
     if (context.sentence.trim().isEmpty) {
       debugPrint('[mine-diag] empty sentence: no sentence captured for this '
           'selection (JS sentence extraction returned empty or no selection).');
-      HibikiToast.show(msg: t.card_mined_no_sentence_captured);
+      HibikiToast.show(
+          msg: t.card_mined_no_sentence_captured,
+          severity: ToastSeverity.warning);
       return;
     }
 
@@ -348,7 +355,9 @@ extension _ReaderMining on _ReaderHibikiPageState {
     if (!AnkiHandlebarOptions.anyFieldConsumesSentence(fieldMappings)) {
       debugPrint('[mine-diag] sentence non-empty but no field maps {sentence}/'
           '{cue-sentence}; card will have an empty sentence field.');
-      HibikiToast.show(msg: t.card_mined_unmapped_sentence_field);
+      HibikiToast.show(
+          msg: t.card_mined_unmapped_sentence_field,
+          severity: ToastSeverity.warning);
       return;
     }
 
@@ -357,7 +366,9 @@ extension _ReaderMining on _ReaderHibikiPageState {
         !AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(fieldMappings)) {
       debugPrint('[mine-diag] sentence audio attached but no field maps '
           '{sentence-audio}; the audio will not land on the card.');
-      HibikiToast.show(msg: t.card_mined_unmapped_sentence_audio_field);
+      HibikiToast.show(
+          msg: t.card_mined_unmapped_sentence_audio_field,
+          severity: ToastSeverity.warning);
     }
   }
 

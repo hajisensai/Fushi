@@ -309,11 +309,17 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
     if (!applied) {
       // 失败：复位转圈（否则按钮永久禁用），弹窗保留让用户改选/重试。
       setState(() => _applyingCandidate = null);
-      HibikiToast.show(msg: failureMessage ?? t.game_scrape_no_result);
+      HibikiToast.show(
+        msg: failureMessage ?? t.game_scrape_no_result,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     Navigator.of(context).pop(true);
-    HibikiToast.show(msg: t.game_scrape_applied);
+    HibikiToast.show(
+      msg: t.game_scrape_applied,
+      severity: ToastSeverity.success,
+    );
   }
 
   @override

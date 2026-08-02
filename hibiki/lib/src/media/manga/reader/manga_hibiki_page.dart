@@ -2196,7 +2196,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           );
           if (!mounted) return;
           setState(() => _wholeVolumeOcrRunning = false);
-          HibikiToast.show(msg: '${t.manga_ocr_wizard_failed}: $error');
+          HibikiToast.show(
+            msg: '${t.manga_ocr_wizard_failed}: $error',
+            severity: ToastSeverity.error,
+          );
         },
         onDone: () {
           _wholeVolumeOcrSubscription = null;
@@ -2212,7 +2215,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         stack,
       );
       if (mounted) {
-        HibikiToast.show(msg: '${t.manga_ocr_wizard_failed}: $error');
+        HibikiToast.show(
+          msg: '${t.manga_ocr_wizard_failed}: $error',
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       if (mounted) setState(() => _wholeVolumeOcrOpen = false);
@@ -2267,6 +2273,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         engine: acceleration.label,
         reason: acceleration.degradeReasons.join('; '),
       ),
+      severity: ToastSeverity.warning,
     );
   }
 
@@ -2320,7 +2327,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     // 整卷 OCR 只是就地重写已入库书的 manga.json，没有发生任何导入：这里必须用
     // OCR 语义的文案，不能复用向导的「漫画已导入」（用户在阅读器里跑完 OCR 却看到
     // 「导入已完成」）。
-    HibikiToast.show(msg: t.manga_ocr_done);
+    HibikiToast.show(msg: t.manga_ocr_done, severity: ToastSeverity.success);
   }
 
   void _cancelWholeVolumeOcr() {
@@ -2366,14 +2373,20 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     final MangaBoxRescanService service =
         _rescanService ??= MangaBoxRescanService();
     if (!service.isLocalRescanSupported) {
-      HibikiToast.show(msg: t.manga_ocr_unsupported);
+      HibikiToast.show(
+        msg: t.manga_ocr_unsupported,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     if (!_rescanModelReady) {
       await _refreshRescanModelReady();
       if (!mounted) return;
       if (!_rescanModelReady) {
-        HibikiToast.show(msg: t.manga_rescan_model_missing);
+        HibikiToast.show(
+          msg: t.manga_rescan_model_missing,
+          severity: ToastSeverity.error,
+        );
         return;
       }
     }
@@ -2388,7 +2401,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       source: 'window.__mangaSetRescanMode && '
           'window.__mangaSetRescanMode(${on ? 'true' : 'false'});',
     );
-    if (on) HibikiToast.show(msg: t.manga_rescan_hint);
+    if (on) {
+      HibikiToast.show(
+        msg: t.manga_rescan_hint,
+        severity: ToastSeverity.info,
+      );
+    }
   }
 
   /// JS 框选回传（`onMangaBoxSelected`）：payload 是
@@ -2419,11 +2437,17 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       MangaHibikiPage.mangaImageRelativePath(payload.images[pageIndex].url),
     );
     if (imagePath == null) {
-      HibikiToast.show(msg: t.manga_rescan_failed);
+      HibikiToast.show(
+        msg: t.manga_rescan_failed,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     _rescanBusy = true;
-    HibikiToast.show(msg: t.manga_rescan_running);
+    HibikiToast.show(
+      msg: t.manga_rescan_running,
+      severity: ToastSeverity.info,
+    );
     try {
       final MangaBoxRescanService service =
           _rescanService ??= MangaBoxRescanService();
@@ -2438,7 +2462,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       );
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaHibikiPage.rescan', error, stack);
-      if (mounted) HibikiToast.show(msg: t.manga_rescan_failed);
+      if (mounted) {
+        HibikiToast.show(
+          msg: t.manga_rescan_failed,
+          severity: ToastSeverity.error,
+        );
+      }
     } finally {
       _rescanBusy = false;
     }
@@ -2528,10 +2557,18 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       if (!mounted) return;
       setState(() => _payload = payload);
       await _loadInitialWindow();
-      HibikiToast.show(msg: t.manga_rescan_writeback_done);
+      HibikiToast.show(
+        msg: t.manga_rescan_writeback_done,
+        severity: ToastSeverity.success,
+      );
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaHibikiPage.rescanWrite', error, stack);
-      if (mounted) HibikiToast.show(msg: t.manga_rescan_writeback_failed);
+      if (mounted) {
+        HibikiToast.show(
+          msg: t.manga_rescan_writeback_failed,
+          severity: ToastSeverity.error,
+        );
+      }
     }
   }
 

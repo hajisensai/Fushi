@@ -1929,7 +1929,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       debugPrint('[ReaderHibiki] _initBook failed: $e\n$stack');
       ErrorLogService.instance.log('ReaderHibiki._initBook', e, stack);
       if (!mounted) return;
-      HibikiToast.show(msg: t.reader_open_failed);
+      HibikiToast.show(
+          msg: t.reader_open_failed, severity: ToastSeverity.error);
       // BUG-782 同款并发退出合流：init 失败自动退与用户手动退（PopScope 的
       // onPopInvokedWithResult）可能同窗竞发，两条各自 pop 会连退两级把书架也
       // 弹掉。共用同一把 _popInProgress 锁：用户已在退出就让用户路径收尾，这里
@@ -1978,7 +1979,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (!mounted) return;
     if (!located.exists) {
       debugPrint('[ReaderHibiki] book ${widget.bookKey} not found on disk');
-      HibikiToast.show(msg: t.book_file_not_found);
+      HibikiToast.show(
+          msg: t.book_file_not_found, severity: ToastSeverity.error);
       // 与 _initBook catch 同款 _popInProgress 合流（防与用户手动退出竞发连退两级）。
       if (_popInProgress) return;
       _popInProgress = true;
@@ -2011,7 +2013,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
             bookRow.chaptersJson, _book!.chapters.length);
       }
       if (!mounted) return;
-      HibikiToast.show(msg: t.epub_parse_fallback);
+      HibikiToast.show(
+          msg: t.epub_parse_fallback, severity: ToastSeverity.warning);
     }
 
     final List<String> hrefs = _book!.chapters.map((ch) => ch.href).toList();

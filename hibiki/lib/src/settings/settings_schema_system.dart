@@ -350,9 +350,13 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
       msg: newer
           ? t.update_cached_newer(version: cached.latestTag)
           : t.update_cached_up_to_date(version: cached.latestTag),
+      severity: ToastSeverity.info,
     );
   } else {
-    HibikiToast.show(msg: t.update_checking_now);
+    HibikiToast.show(
+      msg: t.update_checking_now,
+      severity: ToastSeverity.info,
+    );
   }
   try {
     await UpdateChecker.scheduleCheck(
@@ -366,8 +370,14 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
       customProxy: settingsContext.appModel.updateCustomProxy,
       // 网络刷新跑完写回缓存，下次手动检查直接乐观显示（恒快）。
       cacheWriter: settingsContext.appModel.setUpdateCheckCache,
-      onUpToDate: () => HibikiToast.show(msg: t.update_already_latest),
-      onError: (Object _) => HibikiToast.show(msg: t.update_check_failed),
+      onUpToDate: () => HibikiToast.show(
+        msg: t.update_already_latest,
+        severity: ToastSeverity.info,
+      ),
+      onError: (Object _) => HibikiToast.show(
+        msg: t.update_check_failed,
+        severity: ToastSeverity.error,
+      ),
     );
   } finally {
     _manualCheckInFlight = false;

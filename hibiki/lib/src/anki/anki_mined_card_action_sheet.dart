@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
-import 'package:hibiki/utils.dart' show t, HibikiToast;
+import 'package:hibiki/utils.dart' show t, HibikiToast, ToastSeverity;
 
 /// BUG-1040：把「一段期间内让查词弹窗让位」的执行权交回宿主页面的钩子。
 ///
@@ -105,7 +105,10 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      HibikiToast.show(msg: t.anki_card_action_failed);
+      HibikiToast.show(
+        msg: t.anki_card_action_failed,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     if (!mounted) return;
@@ -126,7 +129,10 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      HibikiToast.show(msg: t.anki_card_action_failed);
+      HibikiToast.show(
+        msg: t.anki_card_action_failed,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     if (!mounted) return;
@@ -291,7 +297,10 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (!ok) {
-      HibikiToast.show(msg: t.anki_note_open_failed);
+      HibikiToast.show(
+        msg: t.anki_note_open_failed,
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -305,7 +314,10 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      HibikiToast.show(msg: t.anki_card_action_failed);
+      HibikiToast.show(
+        msg: t.anki_card_action_failed,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     if (!mounted) return;
@@ -435,13 +447,19 @@ Future<void> openMinedCardInAnki({
 }) async {
   final matches = await repo.findMatchingNotes(expression, reading);
   if (matches.isEmpty) {
-    HibikiToast.show(msg: t.anki_open_no_card);
+    HibikiToast.show(
+      msg: t.anki_open_no_card,
+      severity: ToastSeverity.error,
+    );
     return;
   }
   if (matches.length == 1) {
     final ok = await repo.openNoteInAnki(matches.first.noteId);
     if (!ok) {
-      HibikiToast.show(msg: t.anki_note_open_failed);
+      HibikiToast.show(
+        msg: t.anki_note_open_failed,
+        severity: ToastSeverity.error,
+      );
     }
     return;
   }
@@ -490,7 +508,10 @@ class _OpenNotePickerState extends State<_OpenNotePicker> {
     if (!mounted) return;
     if (!ok) {
       setState(() => _busy = false);
-      HibikiToast.show(msg: t.anki_note_open_failed);
+      HibikiToast.show(
+        msg: t.anki_note_open_failed,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     Navigator.of(context).pop();

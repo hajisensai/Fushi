@@ -114,7 +114,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     try {
       await _manager!.addStore(url, allowInsecure: allowInsecure);
     } catch (error) {
-      if (mounted) HibikiToast.show(msg: '$error');
+      if (mounted) {
+        HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
     }
   }
 
@@ -155,7 +157,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           await _manager!.prepareLocalInstall(path);
       await _confirmAndInstall(proposal);
     } catch (error) {
-      if (mounted) HibikiToast.show(msg: '$error');
+      if (mounted) {
+        HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
     }
   }
 
@@ -165,7 +169,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           await _manager!.prepareStoreInstall(extension);
       await _confirmAndInstall(proposal);
     } catch (error) {
-      if (mounted) HibikiToast.show(msg: '$error');
+      if (mounted) {
+        HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
     }
   }
 
@@ -316,7 +322,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       await _manager!.commitInstall(proposal, trustSigner: true);
       return true;
     } catch (error) {
-      if (mounted) HibikiToast.show(msg: '$error');
+      if (mounted) {
+        HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
       return false;
     }
   }

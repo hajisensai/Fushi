@@ -169,10 +169,10 @@ void main() {
       reason: '三处宿主回调 await 必须各有 try',
     );
     // catch 块固定形态：复位 _busy（避免卡死）+ 弹失败反馈。三处都必须出现这条收口。
-    const String catchReset =
-        'setState(() => _busy = false);\n      HibikiToast.show(msg: t.anki_card_action_failed);';
+    final String catchReset = _squashWs('setState(() => _busy = false); '
+        'HibikiToast.show(msg: t.anki_card_action_failed');
     expect(
-      catchReset.allMatches(src).length,
+      catchReset.allMatches(_squashWs(src)).length,
       3,
       reason: '三处 catch 必须复位 _busy 并弹 anki_card_action_failed 反馈',
     );
@@ -180,3 +180,11 @@ void main() {
     expect(src.contains('} catch (e) {'), isTrue);
   });
 }
+
+/// 折叠全部空白后再比对调用文本。
+///
+/// 守卫要钉的是「这条代码路径确实弹了带该文案的提示」，而不是它在源码里排成几行。
+/// 给 toast / OSD 增补实参（如统一语义配色的 `severity:`）会让 dart format 把单行
+/// 调用换成多行，逐字匹配单行调用就会假红——红的是格式，不是行为。折叠空白后仍然
+/// 要求同一函数名 + 同一具名实参 + 同一 i18n key 连续出现，守卫强度不变。
+String _squashWs(String s) => s.replaceAll(RegExp(r'\s+'), '');

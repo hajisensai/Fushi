@@ -407,7 +407,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     );
     if (importPaths.isEmpty) {
       debugPrint('[hibiki-drop] [home-dictionary] intent=unsupportedSurface');
-      HibikiToast.show(msg: t.drag_drop_unsupported_on_dictionary);
+      HibikiToast.show(
+        msg: t.drag_drop_unsupported_on_dictionary,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     unawaited(appModel.showDictionaryMenu(initialImportPaths: importPaths));

@@ -208,8 +208,11 @@ void main() {
       final String source = readReaderPageSource();
 
       expect(
-        source,
-        contains('HibikiToast.show(msg: t.card_mined_without_sentence_audio)'),
+        _squashWs(source),
+        contains(
+          _squashWs(
+              'HibikiToast.show(msg: t.card_mined_without_sentence_audio'),
+        ),
         reason:
             'A card created with audio files present but no resolvable sentence '
             'range must visibly tell the user no sentence audio was attached, '
@@ -224,3 +227,11 @@ void main() {
     });
   });
 }
+
+/// 折叠全部空白后再比对调用文本。
+///
+/// 守卫要钉的是「这条代码路径确实弹了带该文案的提示」，而不是它在源码里排成几行。
+/// 给 toast / OSD 增补实参（如统一语义配色的 `severity:`）会让 dart format 把单行
+/// 调用换成多行，逐字匹配单行调用就会假红——红的是格式，不是行为。折叠空白后仍然
+/// 要求同一函数名 + 同一具名实参 + 同一 i18n key 连续出现，守卫强度不变。
+String _squashWs(String s) => s.replaceAll(RegExp(r'\s+'), '');

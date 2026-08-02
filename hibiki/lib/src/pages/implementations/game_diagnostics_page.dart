@@ -65,11 +65,17 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
   /// 有别的入口绕过禁用又变回静默无反应。
   void _handleSelectVoice(int sourcePtr) {
     if (!_controller.hasEngineSource) {
-      HibikiToast.show(msg: t.game_track_select_requires_engine);
+      HibikiToast.show(
+        msg: t.game_track_select_requires_engine,
+        severity: ToastSeverity.error,
+      );
     } else if (!galTrackSelectionAffectsCapture(
       _controller.state.audioBackend,
     )) {
-      HibikiToast.show(msg: t.game_tracks_pcm_only_hint);
+      HibikiToast.show(
+        msg: t.game_tracks_pcm_only_hint,
+        severity: ToastSeverity.warning,
+      );
       return;
     }
     _controller.selectVoiceTrack(sourcePtr);
@@ -88,13 +94,19 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
         await _controller.exportTrackPreview(track.sourcePtr);
     if (!mounted) return;
     if (preview == null) {
-      HibikiToast.show(msg: t.game_track_preview_failed);
+      HibikiToast.show(
+        msg: t.game_track_preview_failed,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     final bool started = await DesktopAudioPlayback.playFile(preview.filePath);
     if (!mounted) return;
     if (!started) {
-      HibikiToast.show(msg: t.game_track_preview_failed);
+      HibikiToast.show(
+        msg: t.game_track_preview_failed,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     _previewResetTimer?.cancel();

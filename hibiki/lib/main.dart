@@ -883,10 +883,14 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     switch (result) {
       case AnkiFetchSuccess():
         await ref.read(ankiViewModelProvider.notifier).reloadSettings();
-        HibikiToast.show(msg: 'AnkiMobile configuration imported.');
+        HibikiToast.show(
+          msg: 'AnkiMobile configuration imported.',
+          severity: ToastSeverity.success,
+        );
       case AnkiFetchError(:final message, :final code):
         HibikiToast.show(
           msg: AnkiViewModel.localizeAnkiFetchError(message, code),
+          severity: ToastSeverity.error,
         );
     }
   }
@@ -903,7 +907,9 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     final String? error = uri.queryParameters['error'];
     if (code == null) {
       HibikiToast.show(
-          msg: t.sync_auth_error(message: error ?? 'missing code'));
+        msg: t.sync_auth_error(message: error ?? 'missing code'),
+        severity: ToastSeverity.error,
+      );
       return;
     }
 
@@ -916,12 +922,20 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         default:
           return;
       }
-      HibikiToast.show(msg: t.sync_signed_in);
+      HibikiToast.show(
+        msg: t.sync_signed_in,
+        severity: ToastSeverity.success,
+      );
     } on SyncAuthError catch (e) {
       HibikiToast.show(
-          msg: t.sync_auth_error(message: friendlySyncErrorDetail(e)));
+        msg: t.sync_auth_error(message: friendlySyncErrorDetail(e)),
+        severity: ToastSeverity.error,
+      );
     } catch (e) {
-      HibikiToast.show(msg: friendlySyncError(e));
+      HibikiToast.show(
+        msg: friendlySyncError(e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -986,7 +1000,10 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     // 此处首帧入库之间文件可能被移动/删除（或检查与使用间的竞态），故再校验一次；
     // 文件不存在则不入库、不静默吞，给与既有失败路径一致的 toast 反馈（TODO-903）。
     if (!await File(videoPath).exists()) {
-      HibikiToast.show(msg: t.video_file_not_found);
+      HibikiToast.show(
+        msg: t.video_file_not_found,
+        severity: ToastSeverity.error,
+      );
       return;
     }
 
@@ -1387,7 +1404,10 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                             Clipboard.setData(
                               ClipboardData(text: appModel.initError!),
                             );
-                            HibikiToast.show(msg: t.error_copied);
+                            HibikiToast.show(
+                              msg: t.error_copied,
+                              severity: ToastSeverity.success,
+                            );
                           },
                         ),
                       ],

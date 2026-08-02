@@ -325,7 +325,10 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   void _shareTheme() {
     final code = _encodeTheme();
     Clipboard.setData(ClipboardData(text: code));
-    HibikiToast.show(msg: t.theme_code_copied);
+    HibikiToast.show(
+      msg: t.theme_code_copied,
+      severity: ToastSeverity.success,
+    );
   }
 
   void _applyImportedTheme(
@@ -429,12 +432,18 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                     onPressed: () {
                       final result = _decodeTheme(controller.text);
                       if (result == null) {
-                        HibikiToast.show(msg: t.import_theme_invalid);
+                        HibikiToast.show(
+                          msg: t.import_theme_invalid,
+                          severity: ToastSeverity.error,
+                        );
                         return;
                       }
                       Navigator.pop(ctx);
                       _applyImportedTheme(result);
-                      HibikiToast.show(msg: t.import_theme_success);
+                      HibikiToast.show(
+                        msg: t.import_theme_success,
+                        severity: ToastSeverity.success,
+                      );
                     },
                     child: Text(t.dialog_import),
                   ),

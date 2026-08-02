@@ -491,6 +491,7 @@ class GalgameHelperInstaller {
     if (ensured) return true;
     HibikiToast.show(
       msg: t.game_helper_bundle_missing,
+      severity: ToastSeverity.error,
     );
     return false;
   }

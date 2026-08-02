@@ -953,7 +953,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     required String successMsg,
   }) async {
     if (alreadyHas) {
-      HibikiToast.show(msg: t.tag_already_on_book(name: tag.name));
+      HibikiToast.show(
+          msg: t.tag_already_on_book(name: tag.name),
+          severity: ToastSeverity.warning);
       return;
     }
     await addToDb();
@@ -961,7 +963,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       ref.invalidate(p);
     }
     if (mounted) {
-      HibikiToast.show(msg: successMsg);
+      HibikiToast.show(msg: successMsg, severity: ToastSeverity.success);
     }
   }
 
@@ -1004,14 +1006,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final List<BookTagRow> existing =
         await db.getTagsForCollection(collectionId);
     if (existing.any((BookTagRow t) => t.id == tag.id)) {
-      HibikiToast.show(msg: t.tag_already_on_collection(name: tag.name));
+      HibikiToast.show(
+          msg: t.tag_already_on_collection(name: tag.name),
+          severity: ToastSeverity.warning);
       return;
     }
     await db.addTagToCollection(collectionId, tag.id);
     ref.invalidate(collectionTagMapProvider);
     ref.invalidate(filteredCollectionIdsProvider);
     if (mounted) {
-      HibikiToast.show(msg: t.tag_added_to_collection(name: tag.name));
+      HibikiToast.show(
+          msg: t.tag_added_to_collection(name: tag.name),
+          severity: ToastSeverity.success);
     }
   }
 
@@ -1033,7 +1039,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     if (outcome != CollectionAddOutcome.added || !mounted) return;
     _shelfMapsFuture = _loadShelfMaps();
     _rebuild(() {});
-    HibikiToast.show(msg: t.batch_add_to_collection_success(n: 1));
+    HibikiToast.show(
+        msg: t.batch_add_to_collection_success(n: 1),
+        severity: ToastSeverity.success);
   }
 
   /// 某媒体卡上挂的标签列：标签 map 为空 / 该 key 无标签都返回 null，否则渲染
@@ -2329,6 +2337,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     _rebuild(() {});
     HibikiToast.show(
       msg: wasCompleted ? t.book_marked_uncompleted : t.book_marked_completed,
+      severity: ToastSeverity.success,
     );
   }
 
@@ -2358,10 +2367,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         BookFormatRebuild.resolveVerdict(row: row, target: target);
     final BookConvertBlocker? blocker = verdict.blocker;
     if (blocker != null) {
-      HibikiToast.show(msg: _bookConvertBlockerMessage(blocker));
+      HibikiToast.show(
+          msg: _bookConvertBlockerMessage(blocker),
+          severity: ToastSeverity.error);
       return;
     }
-    HibikiToast.show(msg: t.book_convert_running);
+    HibikiToast.show(msg: t.book_convert_running, severity: ToastSeverity.info);
     try {
       await BookFormatRebuild.convert(
         db: appModel.database,
@@ -2370,7 +2381,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHistory.convertBookFormat', e, stack);
-      if (mounted) HibikiToast.show(msg: t.book_convert_failed);
+      if (mounted) {
+        HibikiToast.show(
+            msg: t.book_convert_failed, severity: ToastSeverity.error);
+      }
       return;
     }
     if (!mounted) return;
@@ -2378,7 +2392,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // 集合去重 —— 不显式 invalidate，书架会一直画着旧格式的卡。
     ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
     _rebuild(() {});
-    HibikiToast.show(msg: t.book_convert_done);
+    HibikiToast.show(msg: t.book_convert_done, severity: ToastSeverity.success);
   }
 
   /// 把「为什么不能转」翻译成一句给用户看的话。每一条都说清具体原因，不是笼统

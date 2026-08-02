@@ -108,7 +108,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
   Future<void> _toggleFavoriteSentenceForVideo() async {
     final String sentence = _lastLookupSentence;
     if (sentence.isEmpty) {
-      _showOsd(t.no_sentence_selected);
+      _showOsd(t.no_sentence_selected, severity: ToastSeverity.error);
       return;
     }
     final AudioCue? cue = _lastLookupCue;
@@ -137,7 +137,13 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
           );
         });
       }
-      _showOsd(t.favorite_removed, icon: Icons.favorite_border);
+      // 加入收藏＝success（绿），移出＝info（蓝）：都执行成功了，但只有「加进去了」
+      // 值得一枚对勾；取消收藏染绿会让人以为又收藏了一次。
+      _showOsd(
+        t.favorite_removed,
+        icon: Icons.favorite_border,
+        severity: ToastSeverity.info,
+      );
       return;
     }
     await repo.add(
@@ -167,7 +173,11 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
         ));
       });
     }
-    _showOsd(t.favorite_added, icon: Icons.favorite);
+    _showOsd(
+      t.favorite_added,
+      icon: Icons.favorite,
+      severity: ToastSeverity.success,
+    );
   }
 
   /// 查词浮层顶栏「重播本句」：跳回当前查词那句的句首、起播，播到句尾自动暂停。
@@ -223,7 +233,11 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
     final String text = cue.text.trim();
     if (text.isEmpty) return;
     Clipboard.setData(ClipboardData(text: text));
-    _showOsd(t.copied_to_clipboard, icon: Icons.copy);
+    _showOsd(
+      t.copied_to_clipboard,
+      icon: Icons.copy,
+      severity: ToastSeverity.success,
+    );
   }
 
   /// 字幕跳转列表面板某句是否已收藏（同步，读缓存 [_favoritedVideoSentences]）。
@@ -296,6 +310,8 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
     _showOsd(
       wasFavorited ? t.favorite_removed : t.favorite_added,
       icon: wasFavorited ? Icons.favorite_border : Icons.favorite,
+      // 与 [_toggleFavoriteSentenceForVideo] 同口径：加入 success、移出 info。
+      severity: wasFavorited ? ToastSeverity.info : ToastSeverity.success,
     );
   }
 

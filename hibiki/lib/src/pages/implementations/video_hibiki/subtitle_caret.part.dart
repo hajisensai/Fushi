@@ -49,7 +49,7 @@ extension _VideoSubtitleCaret on _VideoHibikiPageState {
     if (!_immersiveAllowsLookup) return;
     final int anchor = _subtitleHitTester.caretAnchorEntry();
     if (anchor < 0) {
-      _showOsd(t.no_sentence_selected);
+      _showOsd(t.no_sentence_selected, severity: ToastSeverity.error);
       return;
     }
     // 与 _lookupAt 同款暂停语义：仅在播时置位标记，fire-and-forget 暂停。

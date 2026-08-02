@@ -63,7 +63,10 @@ Future<bool> showAddToCollectionDialog({
     collectionId = picked;
   }
   await database.addToCollection(collectionId, mediaType, entryKey);
-  HibikiToast.show(msg: t.batch_add_to_collection_success(n: 1));
+  HibikiToast.show(
+    msg: t.batch_add_to_collection_success(n: 1),
+    severity: ToastSeverity.success,
+  );
   return true;
 }
 

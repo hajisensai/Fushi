@@ -468,7 +468,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     }
     if (!mounted) return false;
     if (cues.isEmpty) {
-      _showOsd(t.video_subtitle_load_failed(label: source.label));
+      _showOsd(
+        t.video_subtitle_load_failed(label: source.label),
+        severity: ToastSeverity.error,
+      );
       return false;
     }
     controller.setSecondaryCues(cues);
@@ -637,7 +640,7 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     // 仅在字幕真被应用（解析出 cue）时报「已下载并应用」；cue 为空时
     // _selectSubtitleSource 已弹失败提示，不再叠加误导性的成功提示。
     if (applied && mounted) {
-      _showOsd(t.video_jimaku_downloaded);
+      _showOsd(t.video_jimaku_downloaded, severity: ToastSeverity.success);
     }
   }
 
@@ -668,7 +671,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     final String? path = result?.files.single.path;
     if (path == null) return;
     if (subtitleFormatForPath(path) == null) {
-      _showOsd(t.video_subtitle_import_unsupported);
+      _showOsd(
+        t.video_subtitle_import_unsupported,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     // 复制到 video_subtitles/ 持久目录再应用：远端选择按文件路径持久化（见
@@ -707,7 +713,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     }
     if (!mounted) return;
     if (cues.isEmpty) {
-      _showOsd(t.video_subtitle_load_failed(label: displayLabel));
+      _showOsd(
+        t.video_subtitle_load_failed(label: displayLabel),
+        severity: ToastSeverity.error,
+      );
       return;
     }
     controller.setCues(cues);
@@ -747,7 +756,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     RemoteVideoEmbeddedSubtitleTrack track,
   ) async {
     if (!track.isText) {
-      _showOsd(t.video_subtitle_import_unsupported);
+      _showOsd(
+        t.video_subtitle_import_unsupported,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     final RemoteVideoClient? client = widget.remoteClient;
@@ -860,7 +872,12 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     }
     if (cues.isEmpty) {
       // 手选到空轨（机翻失败 / 该轨无文字）：提示；自动应用（loadSeq!=null）静默不打扰。
-      if (loadSeq == null) _showOsd(t.video_subtitle_youtube_empty);
+      if (loadSeq == null) {
+        _showOsd(
+          t.video_subtitle_youtube_empty,
+          severity: ToastSeverity.error,
+        );
+      }
       return;
     }
     controller.setCues(cues);
@@ -894,7 +911,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     String srcPath,
   ) async {
     if (subtitleFormatForPath(srcPath) == null) {
-      _showOsd(t.video_subtitle_import_unsupported);
+      _showOsd(
+        t.video_subtitle_import_unsupported,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     // TODO-1236：经 AppPaths 解析（跟随桌面自定义数据根），与迁移白名单 `video_subtitles`
@@ -907,7 +927,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         await File(srcPath).copy(dest);
       } catch (_) {
         if (!mounted) return;
-        _showOsd(t.video_subtitle_import_failed);
+        _showOsd(
+          t.video_subtitle_import_failed,
+          severity: ToastSeverity.error,
+        );
         return;
       }
     }
@@ -964,7 +987,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       );
       if (!mounted) return false;
       if (!shown) {
-        _showOsd(t.video_subtitle_load_failed(label: source.label));
+        _showOsd(
+          t.video_subtitle_load_failed(label: source.label),
+          severity: ToastSeverity.error,
+        );
         return false;
       }
       final String persisted = source.toPersistedValue();
@@ -981,7 +1007,11 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       }
       if (!mounted) return false;
       _rebuild(() => _currentSubtitleSource = persisted);
-      _showOsd(t.video_subtitle_graphic_shown(label: source.label));
+      // 图形轨只能当画面渲染、逐字查词失效——是降级而非成功，配色要说清。
+      _showOsd(
+        t.video_subtitle_graphic_shown(label: source.label),
+        severity: ToastSeverity.warning,
+      );
       return true;
     }
 
@@ -1000,7 +1030,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     // **不切换、不持久化**——避免谎报「已切换」却空屏，也避免用一个坏内封轨覆盖掉
     // 当前正常工作的字幕源（下次进来还是空）。
     if (cues.isEmpty) {
-      _showOsd(t.video_subtitle_load_failed(label: source.label));
+      _showOsd(
+        t.video_subtitle_load_failed(label: source.label),
+        severity: ToastSeverity.error,
+      );
       return false;
     }
     controller.setCues(cues);
@@ -1266,7 +1299,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     final String? videoPath = controller.videoPath;
     final int? durationMs = controller.durationMs;
     if (cues.isEmpty || videoPath == null || videoPath.isEmpty) {
-      _showOsd(t.video_subtitle_auto_align_low_confidence);
+      _showOsd(
+        t.video_subtitle_auto_align_low_confidence,
+        severity: ToastSeverity.warning,
+      );
       return null;
     }
     // 时长缺失时用最后一条 cue 的结束时间兜底（cue 升序由 setCues 保证），仍能栅格化。
@@ -1281,6 +1317,7 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     _showOsd(
       t.video_subtitle_auto_align_running,
       icon: Icons.auto_fix_high,
+      severity: ToastSeverity.info,
     );
 
     final List<double> rawRms = await extractAudioEnergyEnvelope(
@@ -1312,12 +1349,16 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         _showOsd(
           t.video_subtitle_auto_align_done(ms: result.offsetMs),
           icon: Icons.auto_fix_high,
+          severity: ToastSeverity.success,
         );
         // TODO-1206：回传实际平移量，让面板把滑条/数值/波形同步到新延迟。
         return result.offsetMs;
       case SubtitleAutoAlignStatus.lowConfidence:
       case SubtitleAutoAlignStatus.noData:
-        _showOsd(t.video_subtitle_auto_align_low_confidence);
+        _showOsd(
+          t.video_subtitle_auto_align_low_confidence,
+          severity: ToastSeverity.warning,
+        );
         return null;
     }
   }
@@ -1366,13 +1407,19 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     final List<AudioCue> cues = controller.cues;
     final String? videoPath = controller.videoPath;
     if (cues.isEmpty || videoPath == null || videoPath.isEmpty) {
-      _showOsd(t.video_subtitle_waveform_unavailable);
+      _showOsd(
+        t.video_subtitle_waveform_unavailable,
+        severity: ToastSeverity.warning,
+      );
       return;
     }
     final List<double> env = await _loadSubtitleWaveformEnvelope();
     if (!mounted) return;
     if (env.isEmpty) {
-      _showOsd(t.video_subtitle_waveform_unavailable);
+      _showOsd(
+        t.video_subtitle_waveform_unavailable,
+        severity: ToastSeverity.warning,
+      );
       return;
     }
     // 波形时间窗上界：与 extractAudioEnergyEnvelope 探测上界同源（前 N 分钟截断），

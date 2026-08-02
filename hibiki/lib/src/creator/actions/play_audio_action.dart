@@ -101,6 +101,7 @@ class PlayAudioAction extends QuickAction {
       msg: t.audio_unavailable,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,
+      severity: ToastSeverity.error,
     );
   }
 }

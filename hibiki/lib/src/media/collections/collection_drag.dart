@@ -31,6 +31,11 @@ enum CollectionAddOutcome {
 }
 
 /// 提示通道。默认 [HibikiToast.show]；测试注入自己的收集器。
+///
+/// 刻意**不带** `ToastSeverity`：这一个通道要送两种语义（已存在=warning、落库
+/// 失败=error），要着色就得把语义塞进 typedef，而 typedef 一改，注入自己收集器的
+/// 测试（`test/media/collection_add_failure_test.dart`）全部失配。语义着色留到
+/// 通道本身重构时一起做，这里维持旧的中性外观。
 typedef CollectionAddNotifier = void Function(String message);
 
 /// 「把一个 [MediaRef] 加进合集」的共享落库编排（书架 / 视频库 / 游戏库三处同一份）。

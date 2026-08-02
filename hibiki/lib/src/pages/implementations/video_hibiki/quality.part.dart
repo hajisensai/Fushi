@@ -140,11 +140,13 @@ extension _VideoQuality on _VideoHibikiPageState {
         _youtubeVariantsLoading = false;
         _youtubeVariantsResolved = true; // 已解析（含空档）——不再重复 getManifest。
       });
-      if (set.variants.isEmpty) _showOsd(t.video_quality_load_failed);
+      if (set.variants.isEmpty) {
+        _showOsd(t.video_quality_load_failed, severity: ToastSeverity.error);
+      }
     } catch (_) {
       if (!mounted || seq != _episodeLoadSeq) return;
       _rebuild(() => _youtubeVariantsLoading = false);
-      _showOsd(t.video_quality_load_failed);
+      _showOsd(t.video_quality_load_failed, severity: ToastSeverity.error);
     }
   }
 

@@ -60,6 +60,7 @@ mixin ExportFieldSearch on Field {
             ),
             toastLength: Toast.LENGTH_SHORT,
             gravity: ToastGravity.BOTTOM,
+            severity: ToastSeverity.warning,
           );
 
           return fallbackTerm;
@@ -71,6 +72,7 @@ mixin ExportFieldSearch on Field {
       msg: t.no_text_to_search,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,
+      severity: ToastSeverity.error,
     );
 
     return null;

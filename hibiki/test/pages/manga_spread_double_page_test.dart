@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/manga/manga_spread_model.dart';
+import 'package:hibiki/src/media/manga/manga_view_prefs.dart';
 import 'package:hibiki/src/media/media_item.dart';
 import 'package:hibiki/src/pages/implementations/manga_hibiki_page.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -54,6 +55,21 @@ class _MangaTestAppModel extends AppModel {
 
   @override
   int get mangaZoomPercent => 100;
+
+  // 观看偏好同样必须在 fake 上给出真值：AppModel 这些 getter 都走 prefsRepo，
+  // 而测试里 _prefsRepo 是 null（`prefsRepo` 是 `_prefsRepo!`）。漏一个就在
+  // _loadBook 里抛 _TypeError，表现为页面永远不 ready。
+  @override
+  int get mangaZoomSensitivity => kMangaZoomSensitivityDefault;
+
+  @override
+  String get mangaPageAnimation => MangaPageAnimation.slide.key;
+
+  @override
+  bool get mangaTapZonePaging => true;
+
+  @override
+  bool get mangaVolumeKeyPaging => false;
 }
 
 Widget _harness(AppModel appModel, String bookKey) {

@@ -226,7 +226,10 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     }
     setState(() {});
     if (completed) {
-      HibikiToast.show(msg: t.manga_ocr_wizard_done);
+      HibikiToast.show(
+        msg: t.manga_ocr_wizard_done,
+        severity: ToastSeverity.success,
+      );
     }
   }
 
@@ -303,7 +306,10 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
         .toList();
     _queue.enqueue(seriesName: series.name, volumeNames: volumes);
     setState(() => _selectedVolumes.clear());
-    HibikiToast.show(msg: t.manga_online_queue_added);
+    HibikiToast.show(
+      msg: t.manga_online_queue_added,
+      severity: ToastSeverity.info,
+    );
   }
 
   // ── UI ───────────────────────────────────────────────────────────────
