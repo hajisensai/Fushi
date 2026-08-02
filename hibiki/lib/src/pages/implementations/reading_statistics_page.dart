@@ -3,6 +3,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
+import 'package:hibiki/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:hibiki/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:hibiki/src/pages/implementations/stat_kpi_strip.dart';
 import 'package:hibiki/src/pages/implementations/stat_ring.dart';
@@ -73,8 +74,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   // 每日数据（最近 30 天）
   List<StatDayData> _dailyData = [];
 
-  // 今日每小时数据（0-23）
-  List<int> _hourlyMs = List.filled(24, 0);
+  // 今日每小时数据（0-23），按写入面（format）分带。v67 前的行没有身份，落在
+  // StatHourlyFormatBand.unattributed，图上单独成带、不归入任何阅读面。
+  StatHourlyBreakdown _hourly = StatHourlyBreakdown();
 
   // 制卡 / 收藏计数（来源 'book'），按今日/本周/本月/全部分桶。
   StatActivityBuckets _mined = StatActivityBuckets();
@@ -200,14 +202,17 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final db = appModelNoUpdate.database;
     final todayKey = statTodayKey();
     final rows = await db.getHourlyLogsForDate(todayKey);
-    _hourlyMs = List.filled(24, 0);
+    // v67 起同一小时按写入面（format）分多行。这里不再压成一个合计，而是按带累加：
+    // 图表分色堆叠，`''`（v67 前写入 / 旧端同步差额）如实归 unattributed 带。
+    final StatHourlyBreakdown breakdown = StatHourlyBreakdown();
     for (final row in rows) {
-      if (row.hour >= 0 && row.hour < 24) {
-        // v67 起同一小时按写入面（format）分多行，图表口径是全部阅读面合计，
-        // 必须累加——赋值会只剩最后一行（单一 format 的值）。
-        _hourlyMs[row.hour] += row.readingTimeMs;
-      }
+      breakdown.addMs(
+        band: StatHourlyFormatBand.ofDbValue(row.format),
+        hour: row.hour,
+        ms: row.readingTimeMs,
+      );
     }
+    _hourly = breakdown;
   }
 
   void _computeAggregates() {
@@ -477,7 +482,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                 SliverToBoxAdapter(child: _buildSourceBreakdown()),
                 SliverToBoxAdapter(child: _buildGoalPanel()),
                 SliverToBoxAdapter(
-                    child: buildStatHourlyChartSection(context, _hourlyMs)),
+                    child: buildStatHourlyFormatChartSection(context, _hourly)),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(card,

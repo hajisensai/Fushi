@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 52105 (3065 per locale)
+/// Strings: 52190 (3070 per locale)
 ///
-/// Built on 2026-08-02 at 01:33 UTC
+/// Built on 2026-08-02 at 01:55 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4119,6 +4119,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get manga_rescan_writeback => 'Save to page';
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  String get stat_hourly_band_epub => 'Text books';
+  String get stat_hourly_band_pdf => 'PDF';
+  String get stat_hourly_band_manga => 'Manga';
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -11152,6 +11158,17 @@ class _StringsAr extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -18252,6 +18269,17 @@ class _StringsDe extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -25367,6 +25395,17 @@ class _StringsEs extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -32494,6 +32533,17 @@ class _StringsFr extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -39550,6 +39600,17 @@ class _StringsId extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -46652,6 +46713,17 @@ class _StringsIt extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -53571,6 +53643,17 @@ class _StringsJa extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -60492,6 +60575,17 @@ class _StringsKo extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -67574,6 +67668,17 @@ class _StringsNl extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -74669,6 +74774,17 @@ class _StringsPtBr extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -81748,6 +81864,17 @@ class _StringsRu extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -88775,6 +88902,17 @@ class _StringsTh extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -95834,6 +95972,17 @@ class _StringsTr extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -102878,6 +103027,17 @@ class _StringsVi extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 // Path: <root>
@@ -109434,6 +109594,17 @@ class _StringsZhCn extends _StringsEn {
   String get manga_rescan_writeback_done => '已回写 manga.json';
   @override
   String get manga_rescan_writeback_failed => '回写 manga.json 失败';
+  @override
+  String get stat_hourly_band_epub => '文字书';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => '漫画';
+  @override
+  String get stat_hourly_band_unattributed => '未区分历史';
+  @override
+  String get stat_hourly_unattributed_note =>
+      '早期记录的时段数据没有存类型，无法拆分；这里按合计如实显示，不归入任何一类。';
 }
 
 // Path: <root>
@@ -116274,6 +116445,17 @@ class _StringsZhHk extends _StringsEn {
   String get manga_rescan_writeback_done => 'Saved to manga.json';
   @override
   String get manga_rescan_writeback_failed => 'Failed to save to manga.json';
+  @override
+  String get stat_hourly_band_epub => 'Text books';
+  @override
+  String get stat_hourly_band_pdf => 'PDF';
+  @override
+  String get stat_hourly_band_manga => 'Manga';
+  @override
+  String get stat_hourly_band_unattributed => 'Unsplit history';
+  @override
+  String get stat_hourly_unattributed_note =>
+      'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
 }
 
 /// Flat map(s) containing all translations.
@@ -122563,6 +122745,16 @@ extension on _StringsEn {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -128850,6 +129042,16 @@ extension on _StringsAr {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -135159,6 +135361,16 @@ extension on _StringsDe {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -141467,6 +141679,16 @@ extension on _StringsEs {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -147781,6 +148003,16 @@ extension on _StringsFr {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -154077,6 +154309,16 @@ extension on _StringsId {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -160387,6 +160629,16 @@ extension on _StringsIt {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -166659,6 +166911,16 @@ extension on _StringsJa {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -172935,6 +173197,16 @@ extension on _StringsKo {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -179239,6 +179511,16 @@ extension on _StringsNl {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -185540,6 +185822,16 @@ extension on _StringsPtBr {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -191846,6 +192138,16 @@ extension on _StringsRu {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -198135,6 +198437,16 @@ extension on _StringsTh {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -204433,6 +204745,16 @@ extension on _StringsTr {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -210727,6 +211049,16 @@ extension on _StringsVi {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
@@ -216967,6 +217299,16 @@ extension on _StringsZhCn {
         return '已回写 manga.json';
       case 'manga_rescan_writeback_failed':
         return '回写 manga.json 失败';
+      case 'stat_hourly_band_epub':
+        return '文字书';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return '漫画';
+      case 'stat_hourly_band_unattributed':
+        return '未区分历史';
+      case 'stat_hourly_unattributed_note':
+        return '早期记录的时段数据没有存类型，无法拆分；这里按合计如实显示，不归入任何一类。';
       default:
         return null;
     }
@@ -223234,6 +223576,16 @@ extension on _StringsZhHk {
         return 'Saved to manga.json';
       case 'manga_rescan_writeback_failed':
         return 'Failed to save to manga.json';
+      case 'stat_hourly_band_epub':
+        return 'Text books';
+      case 'stat_hourly_band_pdf':
+        return 'PDF';
+      case 'stat_hourly_band_manga':
+        return 'Manga';
+      case 'stat_hourly_band_unattributed':
+        return 'Unsplit history';
+      case 'stat_hourly_unattributed_note':
+        return 'Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.';
       default:
         return null;
     }
