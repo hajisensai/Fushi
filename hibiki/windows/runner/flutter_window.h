@@ -10,6 +10,7 @@
 
 #include "floating_lyric_window.h"
 #include "global_lookup_window.h"
+#include "ime_association_guard.h"
 #include "win32_window.h"
 
 // A window that does nothing but host a Flutter view.
@@ -60,6 +61,16 @@ class FlutterWindow : public Win32Window {
   // Flutter turns VK_PROCESSKEY into a KeyEvent with physical/logical key 0.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       windows_ime_space_channel_;
+
+  // BUG-1450: Dart tells us whether anything editable holds focus; while
+  // nothing does we detach the window's IME context so a CJK IME stops eating
+  // every shortcut key. See ime_association_guard.h.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      windows_ime_guard_channel_;
+  ImeAssociationGuard ime_association_guard_;
+
+  // Wires the ime_guard MethodChannel to ime_association_guard_.
+  void RegisterImeGuardChannel();
 
   // Drives the standalone always-on-top desktop lyric strip (the Windows
   // counterpart of Android's FloatingLyricService). See floating_lyric_window.h.

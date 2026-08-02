@@ -542,6 +542,7 @@ bool FlutterWindow::OnCreate() {
           "app.hibiki/windows_ime_space",
           &flutter::StandardMethodCodec::GetInstance());
 
+  RegisterImeGuardChannel();
   RegisterFloatingLyricChannel();
   RegisterClipboardTextChannel();
   RegisterGalHookTextChannel();
@@ -850,6 +851,60 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
         } else {
           result->NotImplemented();
         }
+      });
+}
+
+void FlutterWindow::RegisterImeGuardChannel() {
+  // BUG-1450: Dart owns focus knowledge, the runner owns the HWND. Dart calls
+  // setImeEnabled(false) while nothing editable holds focus so a CJK IME stops
+  // consuming shortcut keys, and setImeEnabled(true) the moment a text field
+  // takes focus so Chinese/Japanese input keeps working everywhere.
+  ime_association_guard_ = ImeAssociationGuard(
+      [](HWND hwnd, bool enable, void*) {
+        return ApplyImeAssociation(hwnd, enable);
+      },
+      nullptr);
+
+  windows_ime_guard_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki/windows_ime_guard",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  windows_ime_guard_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() != "setImeEnabled") {
+          result->NotImplemented();
+          return;
+        }
+        const auto* enable = std::get_if<bool>(call.arguments());
+        if (enable == nullptr) {
+          result->Error("bad_args", "setImeEnabled expects a bool");
+          return;
+        }
+        // The IME context is per-HWND and applies to whichever window holds
+        // focus. Win32Window::SetChildContent does SetFocus(child), so the
+        // Flutter view — not the top-level frame — is the window the IME talks
+        // to. Fall back to the frame only if the view is gone (teardown).
+        HWND target = flutter_controller_ && flutter_controller_->view()
+                          ? flutter_controller_->view()->GetNativeWindow()
+                          : nullptr;
+        if (target == nullptr) {
+          target = GetHandle();
+        }
+        const ImeAssociationUpdate update =
+            ime_association_guard_.SetEnabled(target, *enable);
+        if (update == ImeAssociationUpdate::kFailed) {
+          // Let Dart clear its optimistic cache so the same desired state can
+          // be retried. Reporting Success here would strand a recreated view
+          // with the wrong association until some unrelated focus transition.
+          result->Error("ime_association_failed",
+                        "ImmAssociateContextEx failed for the Flutter view");
+          return;
+        }
+        result->Success();
       });
 }
 
