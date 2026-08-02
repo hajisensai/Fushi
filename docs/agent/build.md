@@ -81,6 +81,11 @@ repos/hajisensai/hibiki/actions/cache/usage` = **10.65 GB / 14 条**，长期在
    `flutter-pub-linux-…-3fa29c49` = 149,357,387 B 与
    `Linux-pubcache-3fa29c49` = 149,365,205 B，同一批字节，三平台白占 447 MB，
    每个作业还要多解压一次（6~32 s）。**不要再加 `Cache pub packages` 步骤。**
+   代价说清楚：flutter-action 那条 pub 缓存**没有 `restore-keys`**（实测其
+   `actions/cache@v5` 输入里只有 `key`），所以 `pubspec.lock` 一变就是全冷，
+   `flutter pub get` 要重下约 150 MB；旧的 `<OS>-pubcache-` 前缀能给个部分命中。
+   这是有意取舍：换来的是 447 MB 永久配额 + 每作业少一次解压，而 lockfile 变更
+   本来就不频繁，且那时重新解析依赖并不亏。
 2. **Gradle 缓存三处必须逐字相同，且缓存步骤排在改 `*.gradle` 的 sed 前面。**
    `hashFiles()` 算的是**当时磁盘上**的内容。`main.yml` / `release.yml` 原先在缓存
    步骤之前就 `sed -i` 删掉了 `build.gradle` / `settings.gradle` 里的 aliyun 镜像行，
