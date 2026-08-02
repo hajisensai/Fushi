@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1438（与 BUG-129/261/381/781 同族）守卫：**右键 / 上下文菜单在界面大小≠100%
 /// 时的坐标空间与内容尺寸**。
 ///
@@ -202,10 +204,7 @@ void main() {
 
     /// 剥掉整行注释：负向断言（`isNot(contains(...))`）必须只看真代码，否则解释
     /// 这段历史的注释本身会让守卫红——那是假失败，比假绿更容易被人删掉守卫。
-    String stripComments(String s) => s
-        .split('\n')
-        .where((String l) => !l.trimLeft().startsWith('//'))
-        .join('\n');
+    String stripComments(String s) => maskComments(s);
 
     String slice(String source, String start, String end) {
       final int s = source.indexOf(start);

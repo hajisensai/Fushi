@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'reader_hibiki_page_source_corpus.dart';
 
 /// TODO-954 守卫：阅读器**文字选区右键菜单**（查词 / 复制 / 收藏 / 导出）随界面大小
@@ -59,11 +60,8 @@ void main() {
     expect(menu, contains('width: 12.0'));
     expect(menu, contains('fontSize: 14.0'));
     expect(
-      menu
-          .split('\n')
-          .where((String l) => !l.trimLeft().startsWith('//'))
-          .join('\n'),
-      isNot(contains('menuScale')),
+      containsCodeLine(menu, 'menuScale'),
+      isFalse,
       reason: '菜单在缩放画布内已天然跟随界面大小，再乘一次得 scale²（BUG-1438）',
     );
 
