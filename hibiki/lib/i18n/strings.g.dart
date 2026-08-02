@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 52836 (3108 per locale)
+/// Strings: 52853 (3109 per locale)
 ///
-/// Built on 2026-08-02 at 08:03 UTC
+/// Built on 2026-08-02 at 10:06 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4183,6 +4183,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get mihon_extension_sources_included => 'Included sources';
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -11323,6 +11324,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -18530,6 +18533,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -25752,6 +25757,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -32986,6 +32993,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -40149,6 +40158,8 @@ class _StringsId extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -47358,6 +47369,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -54384,6 +54397,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -61412,6 +61427,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -68601,6 +68618,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -75803,6 +75822,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -82989,6 +83010,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -90123,6 +90146,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -97289,6 +97314,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -104440,6 +104467,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 // Path: <root>
@@ -111091,6 +111120,8 @@ class _StringsZhCn extends _StringsEn {
   String get mihon_extension_sources_included => '包含的源';
   @override
   String get mihon_extension_preview_read_only => '预览是只读的。安装扩展后才能打开阅读。';
+  @override
+  String get selection_copy_empty => '未选中文本。';
 }
 
 // Path: <root>
@@ -118038,6 +118069,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get mihon_extension_preview_read_only =>
       'Preview is read-only. Install the extension to open and read.';
+  @override
+  String get selection_copy_empty => 'No text selected.';
 }
 
 /// Flat map(s) containing all translations.
@@ -124414,6 +124447,8 @@ extension on _StringsEn {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -130788,6 +130823,8 @@ extension on _StringsAr {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -137184,6 +137221,8 @@ extension on _StringsDe {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -143579,6 +143618,8 @@ extension on _StringsEs {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -149980,6 +150021,8 @@ extension on _StringsFr {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -156363,6 +156406,8 @@ extension on _StringsId {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -162760,6 +162805,8 @@ extension on _StringsIt {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -169119,6 +169166,8 @@ extension on _StringsJa {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -175482,6 +175531,8 @@ extension on _StringsKo {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -181873,6 +181924,8 @@ extension on _StringsNl {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -188261,6 +188314,8 @@ extension on _StringsPtBr {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -194654,6 +194709,8 @@ extension on _StringsRu {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -201030,6 +201087,8 @@ extension on _StringsTh {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -207415,6 +207474,8 @@ extension on _StringsTr {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -213796,6 +213857,8 @@ extension on _StringsVi {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
@@ -220123,6 +220186,8 @@ extension on _StringsZhCn {
         return '包含的源';
       case 'mihon_extension_preview_read_only':
         return '预览是只读的。安装扩展后才能打开阅读。';
+      case 'selection_copy_empty':
+        return '未选中文本。';
       default:
         return null;
     }
@@ -226477,6 +226542,8 @@ extension on _StringsZhHk {
         return 'Included sources';
       case 'mihon_extension_preview_read_only':
         return 'Preview is read-only. Install the extension to open and read.';
+      case 'selection_copy_empty':
+        return 'No text selected.';
       default:
         return null;
     }
