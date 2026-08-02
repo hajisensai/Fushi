@@ -1185,6 +1185,51 @@ void main() {
     );
   });
 
+  // BUG-1418：上面四个文件的豁免理由写得比实际命中宽——理由只谈行字号 / 状态胶囊 /
+  // 勾选行 / 内容行，却顺带把行骨架和设置开关一起放了行。整份文件免检时，「理由没
+  // 覆盖到的那部分」是静默通过的，光看 allowlist 根本看不出来。裸 chrome 已收口到
+  // 共享 MD3 组件，这条把「收口后不许长回来」钉成可证伪断言：判据复用主守卫同一个
+  // 标识符边界原语（[_containsForbiddenChrome]），不是另写一套宽松子串。
+  test('reviewed content exemptions do not silently cover bare chrome', () {
+    // 章节面板：行骨架是共享组件，不是裸 ListTile（其豁免只覆盖行字号）。
+    final String chapterPanel =
+        File('lib/src/media/video/video_chapter_panel.dart').readAsStringSync();
+    expect(chapterPanel, contains('HibikiListItem('));
+    expect(_containsForbiddenChrome(chapterPanel, 'ListTile('), isFalse,
+        reason: 'video_chapter_panel is allowlisted for row font size only; '
+            'its row skeleton must stay a shared MD3 component');
+
+    // Hook 控制台：两个选择对话框的行骨架同上（其豁免只覆盖状态胶囊）。
+    final String texthooker =
+        File('lib/src/pages/implementations/texthooker_page.dart')
+            .readAsStringSync();
+    expect(texthooker, contains('HibikiListItem('));
+    expect(_containsForbiddenChrome(texthooker, 'ListTile('), isFalse,
+        reason: 'texthooker_page is allowlisted for hook status pills only; '
+            'its dialog rows must stay shared MD3 components');
+
+    // 着色器对话框：豁免只写了「导入的 shader 文件以勾选行列出」，所以
+    // CheckboxListTile 留着，Anime4K 预设列表的裸 ListTile 不许回来。
+    final String shaderDialog =
+        File('lib/src/pages/implementations/video_shader_dialog.dart')
+            .readAsStringSync();
+    expect(shaderDialog, contains('HibikiListItem('));
+    expect(shaderDialog, contains('CheckboxListTile('),
+        reason: 'the reviewed reason is about the shader-file checkbox rows; '
+            'if they are gone the reason must be rewritten, not inherited');
+    expect(_containsForbiddenChrome(shaderDialog, 'ListTile('), isFalse,
+        reason: 'the Anime4K preset picker must stay a shared MD3 row');
+
+    // 番剧下载对话框：豁免通篇讲内容行，开关不在其中。
+    final String animeDownload =
+        File('lib/src/pages/implementations/anime_download_dialog.dart')
+            .readAsStringSync();
+    expect(animeDownload, contains('AdaptiveSettingsSwitchRow('));
+    expect(_containsForbiddenChrome(animeDownload, 'SwitchListTile('), isFalse,
+        reason: 'anime_download_dialog is allowlisted for content rows; a '
+            'settings toggle must go through the shared MD3 switch row');
+  });
+
   // BUG-1414：上面 allowlist 里 manga_json_writeback.dart 的豁免理由是「纯数据层、
   // 无 Flutter import」。理由只是一句散文，会随代码漂移；这条把它钉成可证伪的
   // 断言——一旦有人往回写层塞 UI，豁免立刻失效，而不是继续静默免检。

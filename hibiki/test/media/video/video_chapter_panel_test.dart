@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/media/video/video_chapter_panel.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 void main() {
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
@@ -63,10 +64,12 @@ void main() {
       ),
     ));
 
+    // BUG-1418：行骨架已从裸 ListTile 收口到共享 HibikiListItem，祖先按新组件找。
+    expect(find.byType(ListTile), findsNothing);
     // 仅当前章（Body, index 1）有 play_arrow trailing 标记。
     final Finder bodyTile = find.ancestor(
       of: find.text('Body'),
-      matching: find.byType(ListTile),
+      matching: find.byType(HibikiListItem),
     );
     expect(
       find.descendant(of: bodyTile, matching: find.byIcon(Icons.play_arrow)),
@@ -74,7 +77,7 @@ void main() {
     );
     final Finder introTile = find.ancestor(
       of: find.text('Intro'),
-      matching: find.byType(ListTile),
+      matching: find.byType(HibikiListItem),
     );
     expect(
       find.descendant(of: introTile, matching: find.byIcon(Icons.play_arrow)),
