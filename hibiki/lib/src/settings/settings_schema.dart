@@ -8,6 +8,7 @@ import 'package:hibiki/src/settings/settings_schema_downloads.dart';
 import 'package:hibiki/src/settings/settings_schema_game.dart';
 import 'package:hibiki/src/settings/settings_schema_listening.dart';
 import 'package:hibiki/src/settings/settings_schema_lookup.dart';
+import 'package:hibiki/src/settings/settings_schema_manga.dart';
 import 'package:hibiki/src/settings/settings_schema_tracking.dart';
 import 'package:hibiki/src/settings/settings_schema_profiles.dart';
 import 'package:hibiki/src/settings/settings_schema_reading.dart';
@@ -87,6 +88,8 @@ List<SettingsDestination> _buildDestinations() {
   return List<SettingsDestination>.unmodifiable(<SettingsDestination>[
     buildAppearanceDestination(),
     buildReadingDestination(),
+    // 「漫画」大类：从阅读分类拆出（观看偏好 + OCR，详见 buildMangaDestination）。
+    buildMangaDestination(),
     buildListeningDestination(),
     buildVideoDestination(),
     buildMediaTrackingDestination(),

@@ -770,7 +770,8 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       if (createdBookKey != null) {
         await _applyOcrToManagedBook(path, external: external);
         if (!mounted) return;
-        HibikiToast.show(msg: t.manga_ocr_wizard_done);
+        // 书已在库，这条路径只把 OCR 结果贴回去，没有导入动作 —— 用 OCR 文案。
+        HibikiToast.show(msg: t.manga_ocr_done);
         Navigator.pop(context, createdBookKey);
         return;
       }
