@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 52853 (3109 per locale)
 ///
-/// Built on 2026-08-02 at 10:06 UTC
+/// Built on 2026-08-02 at 12:05 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4057,7 +4057,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get game_hook_reason_protocol_mismatch =>
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   String get collection_related_title => 'Related works';
   String get collection_relation_prequel => 'Prequel';
   String get collection_relation_sequel => 'Sequel';
@@ -11109,7 +11109,7 @@ class _StringsAr extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -18318,7 +18318,7 @@ class _StringsDe extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -25542,7 +25542,7 @@ class _StringsEs extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -32778,7 +32778,7 @@ class _StringsFr extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -39943,7 +39943,7 @@ class _StringsId extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -47154,7 +47154,7 @@ class _StringsIt extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -54182,7 +54182,7 @@ class _StringsJa extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -61212,7 +61212,7 @@ class _StringsKo extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -68403,7 +68403,7 @@ class _StringsNl extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -75607,7 +75607,7 @@ class _StringsPtBr extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -82795,7 +82795,7 @@ class _StringsRu extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -89931,7 +89931,7 @@ class _StringsTh extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -97099,7 +97099,7 @@ class _StringsTr extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -104252,7 +104252,7 @@ class _StringsVi extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -110923,7 +110923,7 @@ class _StringsZhCn extends _StringsEn {
       '捕获组件与本体版本不一致。组件已内置在 Hibiki 里，不需要单独安装：先彻底关掉游戏再重开一次（游戏进程里可能还挂着上一次注入的旧组件）。若重开后仍提示不一致，说明这份 Hibiki 没带上与之匹配的组件。';
   @override
   String scrape_all_confirm({required Object n}) =>
-      '将按标题匹配库中的 ${n} 个条目。只自动应用唯一的精确匹配；你自己定的封面一律不覆盖（手动设置的本地图、在匹配弹窗里亲手选定的条目、目录里自带的 poster 图），歧义结果留待手动确认。';
+      '将按标题匹配库中的 ${n} 个条目。只自动应用高置信度的匹配——视频按标题与年份、类型等信息综合打分，书籍和游戏则要求标题唯一且完全一致。你自己定的封面一律不覆盖（手动设置的本地图、在匹配弹窗里亲手选定的条目、目录里自带的 poster 图），歧义结果留待手动确认。';
   @override
   String get collection_related_title => '相关作品';
   @override
@@ -117854,7 +117854,7 @@ class _StringsZhHk extends _StringsEn {
       'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
   @override
   String scrape_all_confirm({required Object n}) =>
-      'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+      'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
   @override
   String get collection_related_title => 'Related works';
   @override
@@ -124264,7 +124264,7 @@ extension on _StringsEn {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -130640,7 +130640,7 @@ extension on _StringsAr {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -137038,7 +137038,7 @@ extension on _StringsDe {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -143435,7 +143435,7 @@ extension on _StringsEs {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -149838,7 +149838,7 @@ extension on _StringsFr {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -156223,7 +156223,7 @@ extension on _StringsId {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -162622,7 +162622,7 @@ extension on _StringsIt {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -168983,7 +168983,7 @@ extension on _StringsJa {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -175348,7 +175348,7 @@ extension on _StringsKo {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -181741,7 +181741,7 @@ extension on _StringsNl {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -188131,7 +188131,7 @@ extension on _StringsPtBr {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -194526,7 +194526,7 @@ extension on _StringsRu {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -200904,7 +200904,7 @@ extension on _StringsTh {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -207291,7 +207291,7 @@ extension on _StringsTr {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -213674,7 +213674,7 @@ extension on _StringsVi {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
@@ -220004,7 +220004,7 @@ extension on _StringsZhCn {
         return '捕获组件与本体版本不一致。组件已内置在 Hibiki 里，不需要单独安装：先彻底关掉游戏再重开一次（游戏进程里可能还挂着上一次注入的旧组件）。若重开后仍提示不一致，说明这份 Hibiki 没带上与之匹配的组件。';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            '将按标题匹配库中的 ${n} 个条目。只自动应用唯一的精确匹配；你自己定的封面一律不覆盖（手动设置的本地图、在匹配弹窗里亲手选定的条目、目录里自带的 poster 图），歧义结果留待手动确认。';
+            '将按标题匹配库中的 ${n} 个条目。只自动应用高置信度的匹配——视频按标题与年份、类型等信息综合打分，书籍和游戏则要求标题唯一且完全一致。你自己定的封面一律不覆盖（手动设置的本地图、在匹配弹窗里亲手选定的条目、目录里自带的 poster 图），歧义结果留待手动确认。';
       case 'collection_related_title':
         return '相关作品';
       case 'collection_relation_prequel':
@@ -226359,7 +226359,7 @@ extension on _StringsZhHk {
         return 'The capture component does not match this Hibiki build. It ships inside Hibiki, so there is nothing to install separately: fully close the game and launch it again, since the game process may still hold the component injected by a previous session. If it still mismatches, this build did not ship a matching component.';
       case 'scrape_all_confirm':
         return ({required Object n}) =>
-            'Match all ${n} library items by title. Only a unique exact match is applied automatically; covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
+            'Match all ${n} library items by title. Only high-confidence matches are applied automatically — videos are scored on the title together with year, type and other signals, while books and games require a unique exact title. Covers you chose yourself are never overwritten (local images you set, entries you picked in the match dialog, and poster files placed in the folder), and ambiguous results stay pending for manual review.';
       case 'collection_related_title':
         return 'Related works';
       case 'collection_relation_prequel':
