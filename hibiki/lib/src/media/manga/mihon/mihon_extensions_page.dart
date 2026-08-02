@@ -794,8 +794,9 @@ class _PreviewFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return ColoredBox(
-      color: theme.colorScheme.surfaceContainerHighest,
+      color: tokens.surfaces.overlay,
       child: SafeArea(
         top: false,
         child: Padding(
@@ -876,7 +877,7 @@ class _NsfwBadge extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
           color: theme.colorScheme.errorContainer,
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: HibikiDesignTokens.of(context).radii.chipRadius,
         ),
         child: Text(
           '18+',
