@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/win32_interactivity_guard.dart';
+
 /// Source-scan guards for the desktop floating-subtitle strip's click-through
 /// contract (TODO-038). The native Win32 window cannot run on the host, so
 /// these guards pin the load-bearing wiring that makes the strip both
@@ -42,21 +44,37 @@ void main() {
       expect(createFlags.contains('WS_EX_TOPMOST'), isTrue);
     });
 
-    test('interactivity is not driven by a hover timer', () {
+    test('no timer can flip interactivity (PR#460 invariant)', () {
       // A timer-driven transparent/interactive flip is inherently racy: a fast
       // mouse-enter + click can arrive while WS_EX_TRANSPARENT is still set.
       // This is the invariant that killed PR#460 and it still holds.
-      expect(cpp.contains('PollCursorInteractivity'), isFalse);
-      expect(cpp.contains('ApplyInteractive'), isFalse);
-      expect(cpp.contains('SetTimer('), isFalse);
-      expect(cpp.contains('KillTimer('), isFalse);
+      //
+      // PR#749 UPDATE — this used to be four token bans
+      // (`PollCursorInteractivity` / `ApplyInteractive` / `SetTimer(` /
+      // `KillTimer(`). Banning the KEYWORD instead of the BEHAVIOUR was wrong
+      // in both directions: `SetCoalescableTimer` / a `TIMERPROC` callback /
+      // `SetWindowsHookEx` all rebuild PR#460 verbatim while dodging the
+      // literal `SetTimer(`, and any timer unrelated to interactivity was
+      // failed on sight — which is what happened when the hook overlay grew a
+      // 60ms Shift-hover lookup poll that only reads the cursor and dispatches
+      // a word lookup (and explicitly stands down under `pass_through_`).
+      //
+      // The predicate is now the invariant itself: walk the real call graph out
+      // of every timer callback and fail if anything reachable WRITES the
+      // window's mouse interactivity. Information may flow pass-through ->
+      // timer (a timer may read the state and stop itself), never the reverse.
+      expectTimerCannotFlipInteractivity(
+        cpp,
+        className: 'FloatingLyricWindow',
+        label: 'floating_lyric_window.cpp',
+      );
 
       // BUG-951 UPDATE — this test used to also forbid touching
       // WS_EX_TRANSPARENT at all. That blanket ban was the reason the overlay
       // shipped a pass-through mode that did nothing across processes: the bit
       // is the ONLY cross-process click-through mechanism Win32 has. What was
       // actually unsafe was flipping it by cursor position on a timer, which
-      // the four assertions above already forbid.
+      // the reachability predicate above already forbids.
       //
       // The bit is now applied statically for as long as the user keeps
       // pass-through on, with the toolbar moved into its own always-clickable

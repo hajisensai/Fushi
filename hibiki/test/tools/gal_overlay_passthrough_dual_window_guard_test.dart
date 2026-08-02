@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
+import '../helpers/win32_interactivity_guard.dart';
 
 /// BUG-951 — source-scan guards for the galgame hook overlay's pass-through
 /// design.
@@ -34,8 +35,11 @@ void main() {
   late String bodyHeader;
   late String cmake;
   late String host;
+  late String dartChannel;
 
   setUpAll(() {
+    dartChannel = File('lib/src/platform/gal_hook_text_overlay_channel.dart')
+        .readAsStringSync();
     body = File('windows/runner/floating_lyric_window.cpp').readAsStringSync();
     bodyHeader =
         File('windows/runner/floating_lyric_window.h').readAsStringSync();
@@ -120,17 +124,37 @@ void main() {
     });
 
     test('pass-through is not driven by a timer (PR#460 regression)', () {
+      // PR#749 UPDATE — this used to ban the token `Timer(` outright. That
+      // judged the KEYWORD, not the BEHAVIOUR, and it was wrong in both
+      // directions: a `TIMERPROC` callback rebuilds PR#460 verbatim without the
+      // body ever containing `WM_TIMER`, while a timer that merely reads the
+      // cursor to dispatch a word lookup — which is what the Shift-hover lookup
+      // poll does, and it explicitly stands down under `pass_through_` — was
+      // failed on sight.
+      //
+      // The predicate is now the invariant itself: from every timer callback,
+      // walk the real call graph and fail if anything reachable WRITES the
+      // window's mouse interactivity. It also pins that the callbacks are
+      // enumerable at all (TIMERPROC must be nullptr), so the reachability
+      // analysis cannot be dodged by installing a timer with its own callback.
+      expectTimerCannotFlipInteractivity(body,
+          className: 'FloatingLyricWindow', label: 'floating_lyric_window.cpp');
+      expectTimerCannotFlipInteractivity(toolbar,
+          className: 'HookToolbarWindow', label: 'hook_toolbar_window.cpp');
+      // The toolbar is the escape hatch; it has no pass-through state to flip
+      // and no reason to own a timer at all, so the stricter ban still applies
+      // there. Losing this would mean the one always-clickable window grew a
+      // way to stop being clickable.
+      expect(stripLineComments(toolbar).contains('Timer('), isFalse,
+          reason: 'The escape-hatch toolbar has no legitimate timer.');
+      // Symbol-level tombstones for PR#460's own helpers, in either file. Cheap
+      // belt-and-braces on top of the behavioural predicate: a resurrection by
+      // copy-paste is caught by name even before the call graph is walked.
       for (final String source in <String>[body, toolbar]) {
-        // Any Win32 timer entry point at all, not just SetTimer/KillTimer:
-        // SetCoalescableTimer would otherwise re-create PR#460 verbatim while
-        // passing a SetTimer-only ban. Neither file has a legitimate timer.
-        expect(source.contains('Timer('), isFalse,
-            reason: 'No timer of any kind may drive pass-through.');
-        expect(source.contains('WM_TIMER'), isFalse);
-        // Nor a mouse hook, the other way to poll the cursor off-thread.
-        expect(source.contains('SetWindowsHookEx'), isFalse);
-        expect(source.contains('PollCursorInteractivity'), isFalse);
-        expect(source.contains('ApplyPassThroughHitTest'), isFalse);
+        final String code = stripLineComments(source);
+        expect(code.contains('PollCursorInteractivity'), isFalse);
+        expect(code.contains('ApplyPassThroughHitTest'), isFalse);
+        expect(code.contains('UpdatePassThroughFromCursor'), isFalse);
       }
     });
 
@@ -237,6 +261,10 @@ void main() {
       final String table = toolbarHeader.substring(
           toolbarHeader.indexOf('kSlotActions'),
           toolbarHeader.indexOf('};', toolbarHeader.indexOf('kSlotActions')));
+      // Spelled out on purpose: the row's left-to-right order is muscle memory
+      // (rightmost is always 关闭), so a reorder must be a deliberate edit here
+      // and not something a refactor can do quietly. `topmost` joined at slot 7
+      // in PR#749 — ahead of close, so slots 0..6 kept their index.
       const List<String> expected = <String>[
         'replayVoice',
         'recaptureVoice',
@@ -245,6 +273,7 @@ void main() {
         'toggleTransparency',
         'lock',
         'openWorkbench',
+        'topmost',
         'close',
       ];
       final List<String> found = RegExp('"([a-zA-Z]+)"')
@@ -253,11 +282,33 @@ void main() {
           .toList();
       expect(found, expected,
           reason: 'Slot order is the wire contract with the Dart controller.');
-      expect(toolbarHeader.contains('constexpr int kSlotCount = 8'), isTrue);
+      // Derived, not a second literal to keep in sync: a table that grows while
+      // kSlotCount does not is an out-of-bounds read in both windows.
+      expect(
+          toolbarHeader
+              .contains('constexpr int kSlotCount = ${expected.length}'),
+          isTrue,
+          reason: 'kSlotCount must equal the shared table length.');
       expect(
           body.contains('kHookTextControlSlotCount = hook_toolbar::kSlotCount'),
           isTrue,
           reason: 'The body must derive its slot count from the shared table.');
+
+      // No dead buttons. Every slot must actually be executed somewhere: either
+      // natively in DispatchControlAction (`lock` / `topmost` deliberately skip
+      // the Dart round-trip) or by the Dart controller's action switch. Without
+      // this, adding a slot to the table draws a button that does nothing —
+      // and the hardcoded list above would happily bless it.
+      final String dispatcher = functionBody(body,
+          'void FloatingLyricWindow::DispatchControlAction(const std::string& action)');
+      for (final String action in expected) {
+        final bool nativelyHandled = dispatcher.contains('== "$action"');
+        final bool dartHandled = dartChannel.contains("case '$action':");
+        expect(nativelyHandled || dartHandled, isTrue,
+            reason: 'Slot "$action" is drawn and hit-tested but nothing runs '
+                'it — neither DispatchControlAction nor the Dart controller '
+                'handles it.');
+      }
     });
 
     test('glyph + active tint are shared too', () {
@@ -279,7 +330,24 @@ void main() {
       final String dispatcher = functionBody(body,
           'void FloatingLyricWindow::DispatchControlAction(const std::string& action)');
       expect(dispatcher.contains('on_lock_'), isTrue);
-      expect(dispatcher.contains('topmost_ = !topmost_'), isTrue);
+      // PR#749 UPDATE — this used to be `contains('topmost_ = !topmost_')`,
+      // an inline write that PR#749 correctly extracted into SetTopmost() so
+      // the pin button and Dart's session reset drive the same code. Pinning
+      // the literal would have punished the better structure, so pin the
+      // structure instead: the dispatcher toggles through the single applier,
+      // and the applier is the ONLY writer of topmost_. Every window-Z
+      // SetWindowPos reads that member, so a second writer is how the pin ends
+      // up lit while the window is no longer topmost.
+      expect(dispatcher.contains('SetTopmost(!topmost_)'), isTrue,
+          reason: 'The pin button must toggle through the single applier.');
+      expect(countOf(stripLineComments(body), 'topmost_ ='), 1,
+          reason: 'SetTopmost() must be the only writer of topmost_.');
+      expect(
+          functionBody(
+                  body, 'void FloatingLyricWindow::SetTopmost(bool enabled)')
+              .contains('topmost_ = enabled'),
+          isTrue,
+          reason: 'That one writer must be SetTopmost().');
     });
 
     test('geometry is pushed from the body, not recomputed in the toolbar', () {

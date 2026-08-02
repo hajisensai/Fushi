@@ -14,12 +14,18 @@
   - 非 hook 实例（有声书歌词条 / 剪贴板文本窗）完全不进这条分支，窗口样式与渲染逐像素不变。
 - **[ ] ② 只有源码扫描守卫，缺运行时验证** — `hibiki/test/tools/gal_overlay_passthrough_dual_window_guard_test.dart`（新增，源码扫描守卫）：
   - `WS_EX_TRANSPARENT` 只允许在 `SetBodyExTransparent` 内被应用，且必须配 `SWP_FRAMECHANGED`；`SetBodyExTransparent` 只允许被 `ApplyPassThroughExStyle` 调用；
-  - `return HTTRANSPARENT;` 在两个文件中都不得出现；`SetTimer(` / `KillTimer(` / 轮询符号在两个文件中都不得出现（PR#460 回归门）；
+  - `return HTTRANSPARENT;` 在两个文件中都不得出现；**定时器不得翻转可交互性**（PR#460 回归门，判据见下方「PR#460 回归门的判据修正」）；
   - **顺序不变量**：`pass_through_toolbar_.Show(` 必须出现在 `SetBodyExTransparent(true)` 之前，且失败路径必须把 `pass_through_` 摁回 false；
   - 工具条窗建窗 flags 不含 `WS_EX_TRANSPARENT`、含 `WS_EX_NOACTIVATE` / `WS_EX_TOPMOST`，且全文件没有 `GWL_EXSTYLE` 改写；
   - 两窗共表（8 个 action 顺序逐个比对）、共字形、共派发、几何由正文窗单向下发；
   - `CMakeLists.txt` 真的编了新 TU。
-  - 同时把 `hibiki/test/media/audiobook/floating_lyric_click_through_guard_test.dart` 里那条「禁止一切 `WS_EX_TRANSPARENT` 改写」的旧断言换成新契约：**保留**反定时器四条（那才是 PR#460 的真教训），把「禁用该位」换成「必须走唯一 applier + 必须有逃生工具条」。旧断言正是浮窗长期带着一个跨进程无效的穿透模式的原因，如实记录在测试注释里。
+  - 同时把 `hibiki/test/media/audiobook/floating_lyric_click_through_guard_test.dart` 里那条「禁止一切 `WS_EX_TRANSPARENT` 改写」的旧断言换成新契约：**保留**反定时器判据（那才是 PR#460 的真教训），把「禁用该位」换成「必须走唯一 applier + 必须有逃生工具条」。旧断言正是浮窗长期带着一个跨进程无效的穿透模式的原因，如实记录在测试注释里。
+- **PR#460 回归门的判据修正（2026-08-02）** — 上面两条守卫里的反定时器判据原本写成四个 token 禁令（`PollCursorInteractivity` / `ApplyInteractive` / `SetTimer(` / `KillTimer(`，双窗守卫里还有 `Timer(` / `WM_TIMER`）。**禁的是关键字，不是行为**，两个方向都错：
+  - **漏真阳**：`SetCoalescableTimer`、给 `SetTimer` 传一个自己的 `TIMERPROC`、`SetWindowsHookEx` 都能原样重建 PR#460，却绕开 `SetTimer(` 这个字面量；
+  - **报假阳**：PR#749 给台词浮窗加「按住 Shift 悬停查词」的 60ms 轮询时被误伤——那个定时器只读光标位置派发查词，全程碰不到任何可交互性状态，还专门写了 `if (pass_through_) { StopHoverLookupPolling(); return; }` 主动让位（`floating_lyric_window.cpp` `MaybeHoverLookup`），却让两条守卫同时转红并把红带进 develop。
+  - 判据改为不变式本身，收进 `hibiki/test/helpers/win32_interactivity_guard.dart` 的 `expectTimerCannotFlipInteractivity()`：① 每次装表必须把 TIMERPROC 传 `nullptr`，保证 `case WM_TIMER:` 是唯一定时器回调入口（否则后面的分析不完整）；② 禁 `SetWindowsHookEx`（离线程轮询光标，源码扫描分析不了它的回调）；③ 从每个 `case WM_TIMER:` 出发沿真实调用图做**可达性闭包**，闭包里出现任何可交互性写操作（`GWL_EXSTYLE` / `WS_EX_TRANSPARENT` / `SWP_FRAMECHANGED` / `HTTRANSPARENT` / `EnableWindow(` / `SetBodyExTransparent(` / `ApplyPassThroughExStyle(` / `pass_through_ =`）即红。
+  - 一句话语义：信息只许**单向**流动——穿透态 → 定时器（定时器可以读到 `pass_through_` 并把自己停掉），反向一律禁止。
+  - 变异实测（8 次，每次改完跑守卫、再按反向替换还原并逐字节比对）：PR#460 换成无辜命名、两跳之外重建 → 红；给 `SetTimer` 传自己的 `TIMERPROC` 绕开分析 → 红；在 `case WM_TIMER:` 里直接翻位 → 红；在 `case WM_TIMER:` 里加一句与可交互性无关的 `RequestRender()` → **绿**（判据不误伤）。
   - **局限（如实说明）**：源码扫描锁的是接线，不是运行时行为。跨进程点击真的落到游戏、以及工具条在任意时刻都可点，仍需下面的 Windows 真机验收。C++ 进不了 Dart 单测；更强的 Windows itest 层因本机冒烟门长期红而受阻，属成本取舍，不是跳过。
 - 🔴 **还差什么（这条 bug 未完成的全部原因）**：Windows 真机四条验收**一条都没做**。跨进程点击是否真的落到游戏、工具条是否在任意时刻都可点，源码扫描一个字也证明不了。四条如下，全部通过前本条保持未完成：
   1. 开穿透 → 点浮窗覆盖的游戏正文区 → **游戏推进台词**（这条是 BUG-951 本身，其余三条都是它的配套）；
