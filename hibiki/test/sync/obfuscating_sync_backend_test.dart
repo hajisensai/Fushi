@@ -16,8 +16,15 @@ class _RecordingBackend implements SyncBackend {
   /// assetId -> 预置的「云端字节」，下载时写入目标文件。
   final Map<String, Uint8List> remoteBytes = <String, Uint8List>{};
 
-  /// 最近一次 ensureBookFolder 收到的 coverData（已是装饰器处理后的）。
+  /// 最近一次 ensureBookFolder 从惰性回调取到的封面字节（已是装饰器处理后的）。
   Uint8List? lastCoverData;
+
+  /// ensureBookFolder 里惰性封面回调被调用的次数（验证装饰器保持惰性）。
+  int coverProviderCalls = 0;
+
+  /// true 时 ensureBookFolder 模拟「书名→folderId 缓存命中」：直接早退，
+  /// 一次都不碰封面回调。
+  bool simulateCacheHit = false;
 
   /// 记录 JSON 方法被调用（验证纯委托不混淆）。
   TtuProgress? lastProgress;
@@ -68,9 +75,14 @@ class _RecordingBackend implements SyncBackend {
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   }) async {
-    lastCoverData = coverData;
+    if (simulateCacheHit) return 'folder-$bookTitle';
+    // 模拟 cache-miss 分支：真的去取封面字节（缓存命中的后端不会调用回调）。
+    if (readCoverData != null) {
+      coverProviderCalls++;
+      lastCoverData = await readCoverData();
+    }
     return 'folder-$bookTitle';
   }
 
@@ -170,7 +182,7 @@ void main() {
   });
 
   group('ObfuscatingSyncBackend cover obfuscation', () {
-    test('ensureBookFolder obfuscates coverData', () async {
+    test('ensureBookFolder obfuscates lazily-read cover bytes', () async {
       final inner = _RecordingBackend();
       final backend = ObfuscatingSyncBackend(inner);
       final cover =
@@ -179,7 +191,7 @@ void main() {
       await backend.ensureBookFolder(
         bookTitle: 'Book',
         rootFolderId: 'root',
-        coverData: cover,
+        readCoverData: () async => cover,
       );
 
       final stored = inner.lastCoverData!;
@@ -187,10 +199,32 @@ void main() {
       expect(SyncObfuscator.deobfuscateBytes(stored), cover);
     });
 
-    test('ensureBookFolder forwards null coverData untouched', () async {
+    test('ensureBookFolder forwards a null cover provider untouched', () async {
       final inner = _RecordingBackend();
       final backend = ObfuscatingSyncBackend(inner);
       await backend.ensureBookFolder(bookTitle: 'B', rootFolderId: 'r');
+      expect(inner.lastCoverData, isNull);
+      expect(inner.coverProviderCalls, 0);
+    });
+
+    // TODO-2657: 装饰器必须把混淆包在惰性回调「里面」。若它先 await 取字节、混淆
+    // 完再把常量透传下去（eager 形态），内层后端即使缓存命中根本不要封面，也已经
+    // 付掉了整张图的磁盘读 + 混淆代价——正是这轮要消掉的浪费。
+    test('ObfuscatingSyncBackend does not read the cover eagerly', () async {
+      final inner = _RecordingBackend()..simulateCacheHit = true;
+      final backend = ObfuscatingSyncBackend(inner);
+      int reads = 0;
+
+      await backend.ensureBookFolder(
+        bookTitle: 'Book',
+        rootFolderId: 'root',
+        readCoverData: () async {
+          reads++;
+          return Uint8List.fromList(<int>[1, 2, 3, 4]);
+        },
+      );
+
+      expect(reads, 0, reason: '内层后端缓存命中不取封面时，装饰器也不许自己先读一遍');
       expect(inner.lastCoverData, isNull);
     });
   });

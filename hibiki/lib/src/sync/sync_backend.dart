@@ -132,6 +132,18 @@ String requireBookFolderName(String bookTitle) {
 String ensureFolderIdTrailingSlash(String folderId) =>
     folderId.endsWith('/') ? folderId : '$folderId/';
 
+/// 惰性封面字节来源，交给 [SyncBackend.ensureBookFolder]。
+///
+/// TODO-2657: 每个后端的 `ensureBookFolder` 在书名→folderId 缓存命中时**直接
+/// return**，封面字节根本没被看一眼。此前调用方（`SyncManager._syncBookOnce`）
+/// 却在调用前就 `readAsBytesSync()` 读完整张封面图，于是稳态下每本书每轮都白读
+/// 一整张图再丢弃。改成惰性回调后，只有真正走到「新建/确认文件夹 + 上传封面」
+/// 分支的后端才会去读磁盘——cache-miss 分支的行为一字不变。
+///
+/// 返回 `null` 表示这本书没有可用封面（路径缺失/读失败），与旧的
+/// `coverData == null` 完全同义。
+typedef SyncCoverDataProvider = Future<Uint8List?> Function();
+
 abstract class SyncBackend implements SyncAssetStore {
   // ── Auth ──────────────────────────────────────────────────────────
 
@@ -146,10 +158,13 @@ abstract class SyncBackend implements SyncAssetStore {
 
   Future<String> findOrCreateRootFolder();
   Future<List<SyncFileRef>> listBooks(String rootFolderId);
+
+  /// [readCoverData] 只在实现真的要上传封面时才调用（见 [SyncCoverDataProvider]）；
+  /// 缓存命中的快路径必须**不**调用它。
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   });
 
   // ── Metadata sync (JSON) ──────────────────────────────────────────
