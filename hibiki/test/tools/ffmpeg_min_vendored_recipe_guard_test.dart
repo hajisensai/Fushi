@@ -38,12 +38,15 @@ const Map<String, String> _componentVarToFlag = <String, String>{
   'PROTOCOLS': 'protocol',
 };
 
-/// 必须出现在入库二进制 configure 串里的独立开关（非清单形式）。
+/// 必须出现在**每个平台**入库二进制 configure 串里的独立开关（非清单形式）。
 ///
-/// libx264/gpl：H.264 片段导出（TODO-1257）。network/schannel：YouTube 远端制卡
-/// 的 http(s) 输入 + -reconnect（TODO-1214）。libsvtav1/libwebp：制卡封面动图的
-/// AVIF / WebP 编码器（默认格式已是 AVIF；缺它们时 Dart 侧会降级 GIF，卡还能制出来，
-/// 但用户选的格式静默失效）。少任何一个都是「二进制比配方旧」。
+/// libx264/gpl：H.264 片段导出（TODO-1257）。network：YouTube 远端制卡的 http(s)
+/// 输入 + -reconnect（TODO-1214）。libsvtav1/libwebp：制卡封面动图的 AVIF / WebP
+/// 编码器（默认格式已是 AVIF；缺它们时 Dart 侧会降级 GIF，卡还能制出来，但用户选的
+/// 格式静默失效）。ffprobe：BUG-1420——配方曾传 --disable-ffprobe，而 Dart 侧
+/// resolveFfprobeExecutable() 一直按「与 ffmpeg 并排捆绑」设计，导致内封字幕字体与
+/// 音频容器元数据两条链在没装系统 ffmpeg 的机器上静默失效。
+/// 少任何一个都是「二进制比配方旧」。
 const List<String> _requiredStandaloneFlags = <String>[
   '--disable-everything',
   '--enable-gpl',
@@ -51,7 +54,52 @@ const List<String> _requiredStandaloneFlags = <String>[
   '--enable-libsvtav1',
   '--enable-libwebp',
   '--enable-network',
-  '--enable-schannel',
+  '--enable-ffprobe',
+];
+
+/// 一个入库平台的校验目标。
+///
+/// BUG-1421 之前本守卫只认 Windows 的 ffmpeg.exe：macOS 从来没被 vendor 过，也就
+/// 没有任何东西会红。现在每个 vendored 平台都要过同一套配方一致性检查，且 ffmpeg
+/// 与 ffprobe **两个** exe 都查（它们由同一次 configure 编出，内嵌同一串配方）。
+class _VendoredTarget {
+  const _VendoredTarget({
+    required this.label,
+    required this.dir,
+    required this.ffmpegName,
+    required this.ffprobeName,
+    required this.tlsFlag,
+  });
+
+  final String label;
+  final String dir;
+  final String ffmpegName;
+  final String ffprobeName;
+
+  /// 各平台走系统原生 TLS 后端（见 build-ffmpeg-min.sh 的 EXTRA_CONFIG 分支）：
+  /// Windows schannel / macOS SecureTransport / Linux gnutls。
+  final String tlsFlag;
+}
+
+/// 当前入库的平台。Linux 暂不入库——release-desktop.yml 没有 Linux 发布 job
+/// （只有 build-multiplatform.yml 里一个 `flutter build linux --debug` 编译冒烟），
+/// vendor 一份没人装配的二进制只是 11MB 的死重。将来真加 Linux 发布时，
+/// 在这里补一行，desktop_ffmpeg_bundling_guard_test 会同时要求装配步。
+const List<_VendoredTarget> _targets = <_VendoredTarget>[
+  _VendoredTarget(
+    label: 'windows',
+    dir: 'windows',
+    ffmpegName: 'ffmpeg.exe',
+    ffprobeName: 'ffprobe.exe',
+    tlsFlag: '--enable-schannel',
+  ),
+  _VendoredTarget(
+    label: 'macos',
+    dir: 'macos',
+    ffmpegName: 'ffmpeg',
+    ffprobeName: 'ffprobe',
+    tlsFlag: '--enable-securetransport',
+  ),
 ];
 
 /// 从当前 cwd 向上找含 tool/ffmpeg-min/build-ffmpeg-min.sh 的仓库根。
@@ -125,83 +173,119 @@ String _revendorHint() => '''
 
 修法（唯一正确路径，见 .github/workflows/ffmpeg-min.yml 头部）：
   1. gh workflow run ffmpeg-min.yml --ref develop -f ffmpeg_ref=n7.1.5
-  2. 等 workflow 绿（它会跑 tool/ffmpeg-min/smoke-test.sh 验行为契约）
-  3. 下载 ffmpeg-min-windows-x64 artifact，替换
-     third_party/ffmpeg-min/windows/ffmpeg.exe 后提交
+  2. 等 workflow 绿（它会跑 tool/ffmpeg-min/smoke-test.sh 验行为契约，
+     含 BUG-1420 的两条 ffprobe 真实调用形态断言）
+  3. 下载 ffmpeg-min-windows-x64 / ffmpeg-min-macos artifact，把其中的
+     ffmpeg(.exe) 与 ffprobe(.exe) 一起替换到
+     third_party/ffmpeg-min/<平台>/ 后提交（macOS 侧记得
+     `git update-index --chmod=+x`，否则 bundle 里的是不可执行文件）
 禁止只改配方不换二进制——用户跑的是二进制，不是脚本。''';
 
 void main() {
   final Directory root = _repoRoot();
   final File recipe = File('${root.path}/tool/ffmpeg-min/build-ffmpeg-min.sh');
-  final File exe =
-      File('${root.path}/third_party/ffmpeg-min/windows/ffmpeg.exe');
 
-  group('ffmpeg-min 入库二进制与构建配方一致性守卫（BUG-1058）', () {
-    test('配方与 vendored exe 都在', () {
-      expect(recipe.existsSync(), isTrue, reason: '缺 ${recipe.path}');
-      expect(exe.existsSync(), isTrue, reason: '缺 ${exe.path}');
-      // 入库的是真 exe（~9-13MB），不是 LFS 指针或占位符。
-      expect(
-        exe.lengthSync(),
-        greaterThan(1 << 20),
-        reason: '${exe.path} 太小，疑似 LFS 指针或占位文件',
-      );
-    });
+  test('配方脚本在', () {
+    expect(recipe.existsSync(), isTrue, reason: '缺 ${recipe.path}');
+  });
 
-    test('8 组组件清单逐项一致（缺项 = 忘了重新 vendor）', () {
-      final String script = recipe.readAsStringSync();
-      final String configuration = _embeddedConfiguration(exe);
+  for (final _VendoredTarget target in _targets) {
+    final String base = '${root.path}/third_party/ffmpeg-min/${target.dir}';
+    final File exe = File('$base/${target.ffmpegName}');
+    final File probe = File('$base/${target.ffprobeName}');
 
-      final List<String> problems = <String>[];
-      _componentVarToFlag.forEach((String varName, String flag) {
-        final Set<String> wanted = _parseRecipeList(script, varName);
-        final Set<String> got = _parseBinaryList(configuration, flag);
-        final Set<String> missing = wanted.difference(got);
-        final Set<String> extra = got.difference(wanted);
-        if (missing.isNotEmpty) {
-          problems.add(
-            '--enable-$flag 缺少配方要求的组件: ${(missing.toList()..sort()).join(", ")}',
-          );
-        }
-        if (extra.isNotEmpty) {
-          problems.add(
-            '--enable-$flag 多出配方之外的组件: ${(extra.toList()..sort()).join(", ")}',
+    group('ffmpeg-min 入库二进制与构建配方一致性守卫（${target.label}，BUG-1058/1420/1421）',
+        () {
+      test('ffmpeg 与 ffprobe 两个 exe 都在且是真二进制', () {
+        // BUG-1420：ffprobe 有独立消费方（内封字幕字体 / 音频容器元数据），
+        // 缺它不会让 ffmpeg 相关功能报错，只会让那两条链静默退化，所以必须单查。
+        for (final File f in <File>[exe, probe]) {
+          expect(f.existsSync(), isTrue, reason: '缺 ${f.path}${_revendorHint()}');
+          // 入库的是真 exe（~5-13MB），不是 LFS 指针或占位符。
+          expect(
+            f.lengthSync(),
+            greaterThan(1 << 20),
+            reason: '${f.path} 太小，疑似 LFS 指针或占位文件',
           );
         }
       });
 
-      expect(
-        problems,
-        isEmpty,
-        reason: '入库 ffmpeg.exe 与 build-ffmpeg-min.sh 不一致：\n'
-            '${problems.join("\n")}\n${_revendorHint()}',
-      );
-    });
+      test('8 组组件清单逐项一致（缺项 = 忘了重新 vendor）', () {
+        final String script = recipe.readAsStringSync();
+        final String configuration = _embeddedConfiguration(exe);
 
-    test('关键独立开关都编进去了', () {
-      final String configuration = _embeddedConfiguration(exe);
-      for (final String flag in _requiredStandaloneFlags) {
+        final List<String> problems = <String>[];
+        _componentVarToFlag.forEach((String varName, String flag) {
+          final Set<String> wanted = _parseRecipeList(script, varName);
+          final Set<String> got = _parseBinaryList(configuration, flag);
+          final Set<String> missing = wanted.difference(got);
+          final Set<String> extra = got.difference(wanted);
+          if (missing.isNotEmpty) {
+            problems.add(
+              '--enable-$flag 缺少配方要求的组件: ${(missing.toList()..sort()).join(", ")}',
+            );
+          }
+          if (extra.isNotEmpty) {
+            problems.add(
+              '--enable-$flag 多出配方之外的组件: ${(extra.toList()..sort()).join(", ")}',
+            );
+          }
+        });
+
         expect(
-          configuration.contains(flag),
-          isTrue,
-          reason: '入库 ffmpeg.exe 的 configure 串缺 $flag${_revendorHint()}',
+          problems,
+          isEmpty,
+          reason: '入库 ${target.ffmpegName}（${target.label}）与 '
+              'build-ffmpeg-min.sh 不一致：\n'
+              '${problems.join("\n")}\n${_revendorHint()}',
         );
-      }
-    });
+      });
 
-    test('mp4 软字幕能力（movtext 编码器）真的在二进制里', () {
-      // 单拎出来断言，因为这就是 BUG-1058 的具体表现，且失败信息要能直接读懂：
-      // configure 的组件名是 movtext，ffmpeg -encoders 列出来的名字是 mov_text，
-      // 而片段导出传的是 `-c:s mov_text`。缺它 → 'Unknown encoder' → 静默降级成
-      // 无字幕片段（video_clip_exporter.dart 的降级重试）。
-      final Set<String> encoders =
-          _parseBinaryList(_embeddedConfiguration(exe), 'encoder');
-      expect(
-        encoders,
-        contains('movtext'),
-        reason: '入库 ffmpeg.exe 没有 movtext 编码器，桌面端片段导出永远封不进字幕。'
-            '${_revendorHint()}',
-      );
+      test('关键独立开关 + 本平台 TLS 后端都编进去了', () {
+        final String configuration = _embeddedConfiguration(exe);
+        for (final String flag in <String>[
+          ..._requiredStandaloneFlags,
+          target.tlsFlag,
+        ]) {
+          expect(
+            configuration.contains(flag),
+            isTrue,
+            reason: '入库 ${target.ffmpegName}（${target.label}）的 configure 串缺 '
+                '$flag${_revendorHint()}',
+          );
+        }
+      });
+
+      test('ffprobe 与 ffmpeg 由同一次 configure 编出', () {
+        // 两个 exe 出自同一棵源码树、同一条 configure，因此内嵌配方串必须一致。
+        // 不一致 = 只换了其中一个（半拉子 vendor），比两个都旧更危险：
+        // 能力矩阵对不上，排查时会指向错误的方向。
+        final Set<String> exeEncoders =
+            _parseBinaryList(_embeddedConfiguration(exe), 'encoder');
+        final Set<String> probeEncoders =
+            _parseBinaryList(_embeddedConfiguration(probe), 'encoder');
+        expect(
+          probeEncoders,
+          equals(exeEncoders),
+          reason: '${target.label} 的 ffmpeg 与 ffprobe 内嵌配方不一致，'
+              '说明只重新 vendor 了其中一个。${_revendorHint()}',
+        );
+      });
+
+      test('mp4 软字幕能力（movtext 编码器）真的在二进制里', () {
+        // 单拎出来断言，因为这就是 BUG-1058 的具体表现，且失败信息要能直接读懂：
+        // configure 的组件名是 movtext，ffmpeg -encoders 列出来的名字是 mov_text，
+        // 而片段导出传的是 `-c:s mov_text`。缺它 → 'Unknown encoder' → 静默降级成
+        // 无字幕片段（video_clip_exporter.dart 的降级重试）。
+        final Set<String> encoders =
+            _parseBinaryList(_embeddedConfiguration(exe), 'encoder');
+        expect(
+          encoders,
+          contains('movtext'),
+          reason: '入库 ${target.ffmpegName}（${target.label}）没有 movtext 编码器，'
+              '桌面端片段导出永远封不进字幕。${_revendorHint()}',
+        );
+      });
     });
-  });
+  }
 }

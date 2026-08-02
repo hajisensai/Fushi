@@ -407,8 +407,16 @@ jobs:
           if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
             throw "Missing Windows release bundle directory: $targetDir"
           }
+          # BUG-1420: ffprobe rides along with ffmpeg. resolveFfprobeExecutable()
+          # (ffmpeg_backend.dart) has always looked for it next to the app exe,
+          # but the recipe used to pass --disable-ffprobe so it never existed and
+          # the lookup silently fell through to PATH. Two features degrade
+          # silently without it on a machine with no system ffmpeg: embedded
+          # subtitle fonts (subtitle_embedded_fonts.dart) and audio container
+          # tags (desktop_audio_clipper.dart).
           $runtimeFiles = @(
             'ffmpeg.exe',
+            'ffprobe.exe',
             'libwinpthread-1.dll',
             'zlib1.dll'
           )
@@ -865,6 +873,51 @@ jobs:
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
+      # BUG-1421: the macOS bundle never shipped ffmpeg at all. Only the Windows
+      # job had an install step, so hibiki.app/Contents/MacOS/ held just the main
+      # executable and _bundledExecutablePath() (ffmpeg_backend.dart) always
+      # returned null -> resolveFfmpegExecutable() fell through to a bare
+      # 'ffmpeg' on PATH. macOS ships no system ffmpeg, so every Mac without a
+      # Homebrew ffmpeg had the ENTIRE desktop mining chain dead: frame covers,
+      # sentence audio, cue animations, clip export, embedded subtitle
+      # extraction -- all ProcessException.
+      #
+      # Contents/MacOS/ is the right home: that is the directory
+      # Platform.resolvedExecutable lives in, which is exactly where the Dart
+      # lookup searches. The app is ad-hoc signed (--sign -, no notarization),
+      # so shipping helper executables there needs no Helpers/ dir or
+      # entitlements change -- they just have to be signed, and the app
+      # re-signed afterwards. Mirrors the Mihon runtime step above.
+      - name: Install vendored ffmpeg-min runtime into macOS bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_dir="third_party/ffmpeg-min/macos"
+          app_dir="hibiki/build/macos/Build/Products/Release/hibiki.app"
+          target_dir="$app_dir/Contents/MacOS"
+          if [ ! -d "$target_dir" ]; then
+            echo "::error title=macOS bundle missing::Expected $target_dir"
+            exit 1
+          fi
+          for tool in ffmpeg ffprobe; do
+            src="$source_dir/$tool"
+            if [ ! -f "$src" ]; then
+              echo "::error title=Missing vendored binary::$src"
+              exit 1
+            fi
+            cp "$src" "$target_dir/$tool"
+            chmod +x "$target_dir/$tool"
+            codesign --force --sign - --timestamp=none "$target_dir/$tool"
+          done
+          # Re-sign the app after mutating its bundle, then prove the payload is
+          # actually runnable. `-version` is the hard gate: a wrong-arch or
+          # broken binary would otherwise ride into the release unnoticed (the
+          # Windows job has the same gate for the same reason).
+          codesign --force --deep --sign - --timestamp=none "$app_dir"
+          codesign --verify --deep --strict --verbose=2 "$app_dir"
+          "$target_dir/ffmpeg" -hide_banner -version | head -n 1
+          "$target_dir/ffprobe" -hide_banner -version | head -n 1
+          ls -lh "$target_dir/ffmpeg" "$target_dir/ffprobe"
       - name: Prepare macOS app release asset
         working-directory: hibiki
         shell: bash

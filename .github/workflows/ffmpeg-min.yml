@@ -2,10 +2,16 @@
 # 产物 ffmpeg(.exe) 放到 app 程序旁即被 resolveFfmpegExecutable() 优先选用
 # （见 hibiki/lib/src/media/video/ffmpeg_backend.dart）。
 #
-# 手动触发：重新编出三平台「精简 ffmpeg」并产出 artifact。Windows 产物现已入库到
-# third_party/ffmpeg-min/windows/ffmpeg.exe，release-desktop.yml 直接 Copy（不再跨
-# workflow 下载 artifact，见 TODO-416）。需要刷新入库二进制时：手动跑此 workflow，
-# 下载对应平台 artifact，替换 third_party 下的 vendored 文件再提交。
+# 手动触发：重新编出三平台「精简 ffmpeg」并产出 artifact。每个平台产出**两个** exe：
+# ffmpeg(.exe) + ffprobe(.exe)（BUG-1420：ffprobe 有独立消费方，见 build-ffmpeg-min.sh
+# 头部）。Windows 与 macOS 产物已入库到 third_party/ffmpeg-min/<平台>/，
+# release-desktop.yml 直接 Copy（不再跨 workflow 下载 artifact，见 TODO-416）。
+# Linux 不入库——release-desktop.yml 没有 Linux 发布 job，vendor 一份没人装配的二进制
+# 只是死重；真加 Linux 发布时同步补 vendor + 装配步（守卫
+# hibiki/test/tools/desktop_ffmpeg_bundling_guard_test.dart 会要求）。
+# 需要刷新入库二进制时：手动跑此 workflow，下载对应平台 artifact，替换 third_party 下
+# 的 vendored 文件再提交；macOS 侧还要 `git update-index --chmod=+x`，否则拷进
+# hibiki.app 的是不可执行文件。
 #
 # ⚠️ 本 workflow 的 smoke-test 只验**当场刚编出来的**二进制，管不到入库的那个。
 # 「改了 build-ffmpeg-min.sh 却忘记重新 vendor」曾让桌面片段导出静默丢字幕整整一个
