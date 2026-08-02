@@ -121,7 +121,11 @@ bool swipeLeftIsForward({required bool invert, required bool rtl}) =>
 /// 但 Ctrl+C / 右键复制都到不了 WebView2。移动端与 macOS 的 WebView 自带原生
 /// copy，**不需要**也**不应该**被这个应用层快捷键覆盖（否则会双重处理）。
 ///
-/// 本谓词只判定「这是不是 Windows 阅读器该接管的复制手势」：必须是
+/// BUG-1451：查词弹窗（[DictionaryPopupWebView]）与阅读器正文**共用**本谓词——两者
+/// 断在同一个平台事实上（fork 不转发键盘），判据必须同源，否则改一处另一处会漂开。
+/// 名字保留 `reader` 前缀只为不破坏既有测试/守卫引用，语义是「桌面该接管的复制手势」。
+///
+/// 本谓词只判定「这是不是 Windows 该接管的复制手势」：必须是
 /// Windows + 仅 Ctrl 修饰（无 Shift/Alt/Meta，避开 Ctrl+Shift+C 等其它组合）
 /// + 键是 C。命中后由调用方取 `window.getSelection()`（浏览器原生选区，**不是**
 /// `window.hoshiSelection` 查词选区）的文本写入系统剪贴板。其余一律返回 false，

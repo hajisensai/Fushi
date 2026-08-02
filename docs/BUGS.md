@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1352 条。点号进各自文件。
+> 共 1353 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1451](bugs/BUG-1451-popup-copy-shortcut-and-context-menu.md) | ✅ | ✅ | 查词弹窗无法复制（Ctrl+C 与右键「复制」都无效） |
 | [BUG-1447](bugs/BUG-1447-manga-remote-ocr-probe-ignores-models-ready.md) | ✅ | ✅ | 远端 OCR probe 只校验 supported 不校验 modelsReady，模型未下载的主机照样可选，白传一整卷才报错 |
 | [BUG-1445](bugs/BUG-1445-ffmpeg-min-macos-arch-and-dead-dlls.md) | ✅ | ✅ | ffmpeg-min：macOS 二进制 arm64-only 无守卫钉住，Windows 两个 MinGW 运行时 DLL 是死重 |
 | [BUG-1444](bugs/BUG-1444-v68-media-images-fk-parent-missing.md) | ✅ | ✅ | v68 迁移 INSERT media_images 在外键开启时因 FK 父表缺席抛 no such table，整条 onUpgrade 中断 |
