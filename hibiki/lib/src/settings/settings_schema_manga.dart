@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/media/manga/manga_view_prefs.dart';
@@ -117,13 +119,13 @@ SettingsDestination buildMangaDestination() {
                 c.appModel.setMangaTapZonePaging(value),
           ),
           // 音量键只有 Android 侧 `MainActivity.dispatchKeyEvent` 会拦截并转发
-          // （见 VolumeKeyChannel），其它平台没有可拦截的音量键，故只在移动端显示。
+          // （见 VolumeKeyChannel），iOS 与桌面端均没有实现，故只在 Android 显示。
           SettingsSwitchItem(
             id: 'manga.volume_key_paging',
             title: t.manga_volume_key_paging,
             subtitle: t.manga_volume_key_paging_subtitle,
             icon: Icons.volume_up_outlined,
-            visible: (SettingsContext c) => isMobilePlatform,
+            visible: (_) => Platform.isAndroid,
             value: (SettingsContext c) => c.appModel.mangaVolumeKeyPaging,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMangaVolumeKeyPaging(value),

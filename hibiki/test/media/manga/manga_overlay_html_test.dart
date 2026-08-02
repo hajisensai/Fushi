@@ -801,6 +801,9 @@ void main() {
       expect(doc.contains("e.pointerType === 'touch'"), isTrue,
           reason: '必须自己处理触点，浏览器原生缩放被 user-scalable=no 禁掉了');
       expect(doc.contains('_pinchGeom'), isTrue, reason: '必须有双指捏合几何');
+      expect(
+          doc.contains('Math.pow(g.dist / pinch.dist, ZOOM_SENS)'), isTrue,
+          reason: '灵敏度设置声明覆盖滚轮与捏合，pinch 比率也必须应用 ZOOM_SENS');
       expect(doc.contains("addEventListener('pointermove'"), isTrue,
           reason: '捏合需要 pointermove 才能跟手');
     });

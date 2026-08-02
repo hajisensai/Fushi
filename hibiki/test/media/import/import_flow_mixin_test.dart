@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/import/import_flow_mixin.dart';
 import 'package:hibiki/utils.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// 最小宿主：把 [ImportFlowMixin] 接进来，按 `importing` 渲染进度块，
 /// 用以验证 mixin 的写入器 + 渲染契约（书/有声书/视频导入对话框共享的真行为），
 /// 以及 [ImportFlowMixin.runImport] 模板的错误处理契约（审计 §1-K / BUG-1117：
@@ -189,8 +191,8 @@ void main() {
         reason: 'runImport 的 catch 必须以 logTag 落 ErrorLogService',
       );
       expect(
-        _squashWs(source).contains(
-          _squashWs(r"HibikiToast.show(msg: '${t.srt_import_error}: $e'"),
+        compactCode(source).contains(
+          compactCode(r"HibikiToast.show(msg: '${t.srt_import_error}: $e',"),
         ),
         isTrue,
         reason: 'runImport 的 catch 必须给用户失败提示（toast）',
@@ -198,11 +200,3 @@ void main() {
     });
   });
 }
-
-/// 折叠全部空白后再比对调用文本。
-///
-/// 守卫要钉的是「这条代码路径确实弹了带该文案的提示」，而不是它在源码里排成几行。
-/// 给 toast / OSD 增补实参（如统一语义配色的 `severity:`）会让 dart format 把单行
-/// 调用换成多行，逐字匹配单行调用就会假红——红的是格式，不是行为。折叠空白后仍然
-/// 要求同一函数名 + 同一具名实参 + 同一 i18n key 连续出现，守卫强度不变。
-String _squashWs(String s) => s.replaceAll(RegExp(r'\s+'), '');

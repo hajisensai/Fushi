@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'video_hibiki_page_source_corpus.dart';
+import '../helpers/source_guard.dart';
 
 /// TODO-1254：视频制卡成功提示（`card_exported` / `card_overwritten`，走
 /// `_showOsd(..., prominent: true)`）的定位守卫。
@@ -31,8 +32,8 @@ void main() {
   test('制卡成功 OSD 触发保留：_showOsd(described.message, prominent: true)', () {
     // 只改定位、不动内容 / 触发：突出制卡提示仍走 prominent 变体。
     expect(
-      _squashWs(src)
-          .contains(_squashWs('_showOsd(described.message, prominent: true')),
+      compactCode(src)
+          .contains(compactCode('_showOsd(described.message, prominent: true,')),
       isTrue,
       reason: '制卡成功提示必须仍走 prominent OSD（内容 / 触发不得改）',
     );
@@ -62,11 +63,3 @@ void main() {
     );
   });
 }
-
-/// 折叠全部空白后再比对调用文本。
-///
-/// 守卫要钉的是「这条代码路径确实弹了带该文案的提示」，而不是它在源码里排成几行。
-/// 给 toast / OSD 增补实参（如统一语义配色的 `severity:`）会让 dart format 把单行
-/// 调用换成多行，逐字匹配单行调用就会假红——红的是格式，不是行为。折叠空白后仍然
-/// 要求同一函数名 + 同一具名实参 + 同一 i18n key 连续出现，守卫强度不变。
-String _squashWs(String s) => s.replaceAll(RegExp(r'\s+'), '');

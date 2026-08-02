@@ -605,7 +605,12 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
             : collectionCount == 0
                 ? t.batch_delete_success(n: deleted)
                 : t.batch_dissolve_success(m: dissolved);
-    HibikiToast.show(msg: successMsg, severity: ToastSeverity.success);
+    HibikiToast.show(
+      msg: successMsg,
+      severity: deleted > 0 || dissolved > 0
+          ? ToastSeverity.success
+          : ToastSeverity.warning,
+    );
   }
 
   /// 批量操作前把选中集收敛到真实存在的条目上，真剔掉了就明说。

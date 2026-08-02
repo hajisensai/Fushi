@@ -713,6 +713,7 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
     this.subtitle,
     this.icon,
     this.showIcon = false,
+    this.horizontalPadding,
   });
 
   final String title;
@@ -723,6 +724,7 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
   /// 才渲染左栏图标徽章。schema 层的 `showIcons` 经此透传（此前只转发 icon 不
   /// 转发 showIcon，值控件行声明的图标从不渲染，同卡片左栏对不齐）。
   final bool showIcon;
+  final double? horizontalPadding;
   final bool value;
   final ValueChanged<bool>? onChanged;
 
@@ -733,6 +735,7 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
       subtitle: subtitle,
       icon: icon,
       showIcon: showIcon,
+      horizontalPadding: horizontalPadding,
       trailing: adaptiveSwitch(
         context: context,
         value: value,

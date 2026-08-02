@@ -303,6 +303,7 @@ class _TorrentSettingsSectionState
       subtitle: subtitle,
       value: value,
       onChanged: onChanged,
+      horizontalPadding: widget.constrainWidth ? null : 0,
     );
   }
 
@@ -495,6 +496,7 @@ class _TorrentSettingsSectionState
             title: t.video_setting_torrent_limit_lan,
             subtitle: t.video_setting_torrent_limit_lan_hint,
             value: c.limitLocalPeers,
+            horizontalPadding: widget.constrainWidth ? null : 0,
             onChanged: (bool v) => _commit(
                 (QbConnectionConfig c) => c.copyWith(limitLocalPeers: v)),
           ),
@@ -502,6 +504,7 @@ class _TorrentSettingsSectionState
             title: t.video_setting_torrent_upload_enabled,
             subtitle: t.video_setting_torrent_upload_enabled_hint,
             value: c.uploadEnabled,
+            horizontalPadding: widget.constrainWidth ? null : 0,
             onChanged: (bool v) =>
                 _commit((QbConnectionConfig c) => c.copyWith(uploadEnabled: v)),
           ),

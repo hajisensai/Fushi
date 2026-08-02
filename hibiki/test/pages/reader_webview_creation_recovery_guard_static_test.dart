@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-904 源码守卫：阅读器正文 WebView native 实例创建失败时可见恢复，不再永久 spinner。
 ///
 /// 根因：Windows 反复开关书后 native WebView2 实例创建失败抛
@@ -79,8 +81,8 @@ void main() {
     expect(block.contains('kReaderWebViewCreationFailedSentinel'), isTrue,
         reason: 'onReceivedError 必须先判 sentinel 区分创建失败');
     expect(
-        _squashWs(block)
-            .contains(_squashWs('HibikiToast.show(msg: t.reader_open_failed')),
+        compactCode(block)
+            .contains(compactCode('HibikiToast.show(msg: t.reader_open_failed,')),
         isTrue,
         reason: '命中创建失败必须提示用户打开失败');
     expect(block.contains('Navigator.of(context).pop()'), isTrue,
@@ -89,11 +91,3 @@ void main() {
         reason: 'setState/Navigator 前必须 mounted 守卫');
   });
 }
-
-/// 折叠全部空白后再比对调用文本。
-///
-/// 守卫要钉的是「这条代码路径确实弹了带该文案的提示」，而不是它在源码里排成几行。
-/// 给 toast / OSD 增补实参（如统一语义配色的 `severity:`）会让 dart format 把单行
-/// 调用换成多行，逐字匹配单行调用就会假红——红的是格式，不是行为。折叠空白后仍然
-/// 要求同一函数名 + 同一具名实参 + 同一 i18n key 连续出现，守卫强度不变。
-String _squashWs(String s) => s.replaceAll(RegExp(r'\s+'), '');

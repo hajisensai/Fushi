@@ -192,6 +192,13 @@ String maskComments(String source) => _mask(
       maskStringContent: false,
     );
 
+/// 把注释掩掉后折叠全部空白，供必须跨 `dart format` 换行匹配的源码守卫使用。
+///
+/// 不能让消费端直接对原源码 `replaceAll(RegExp(r'\s+'), '')`：那会把注释里的
+/// needle 一并折进语料，删掉真实实现、只留同文字注释时仍然假绿。
+String compactCode(String source) =>
+    maskComments(source).replaceAll(RegExp(r'\s+'), '');
+
 /// 同 [maskComments]，并把字符串字面量的内容也换成空白。
 ///
 /// 用于花括号 / 圆括号配对这类**结构**扫描：串里的花括号（尤其是三引号里注入的

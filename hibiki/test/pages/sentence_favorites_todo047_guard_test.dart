@@ -186,8 +186,8 @@ void main() {
     test('① 抽音失败(result==null)弹 audio_clip_failed 提示，不再静默(BUG-252)', () {
       // 修前 _playItemAudio 在 result!=null 时才 playFile，else 什么都不做。
       expect(
-        _squashWs(src),
-        contains(_squashWs('HibikiToast.show(msg: t.audio_clip_failed')),
+        compactCode(src),
+        contains(compactCode('HibikiToast.show(msg: t.audio_clip_failed,')),
         reason: 'ffmpeg 抽音失败必须给用户可见反馈，否则点了像没反应',
       );
       // 失败提示必须挂在 extractAudioSegment 返回 null 的 else 分支上。
@@ -259,11 +259,3 @@ void main() {
     });
   });
 }
-
-/// 折叠全部空白后再比对调用文本。
-///
-/// 守卫要钉的是「这条代码路径确实弹了带该文案的提示」，而不是它在源码里排成几行。
-/// 给 toast / OSD 增补实参（如统一语义配色的 `severity:`）会让 dart format 把单行
-/// 调用换成多行，逐字匹配单行调用就会假红——红的是格式，不是行为。折叠空白后仍然
-/// 要求同一函数名 + 同一具名实参 + 同一 i18n key 连续出现，守卫强度不变。
-String _squashWs(String s) => s.replaceAll(RegExp(r'\s+'), '');
