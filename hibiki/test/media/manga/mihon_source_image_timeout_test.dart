@@ -21,14 +21,15 @@ void main() {
         StreamController<List<int>>();
     final Future<Uint8List> reading = readMihonSourceImageBytes(
       controller.stream,
-      idleTimeout: const Duration(milliseconds: 120),
+      idleTimeout: const Duration(milliseconds: 500),
     );
 
     controller.add(<int>[1]);
-    await Future<void>.delayed(const Duration(milliseconds: 70));
+    await Future<void>.delayed(const Duration(milliseconds: 200));
     controller.add(<int>[2]);
-    await Future<void>.delayed(const Duration(milliseconds: 70));
+    await Future<void>.delayed(const Duration(milliseconds: 200));
     controller.add(<int>[3]);
+    await Future<void>.delayed(const Duration(milliseconds: 200));
     await controller.close();
 
     expect(await reading, Uint8List.fromList(<int>[1, 2, 3]));
