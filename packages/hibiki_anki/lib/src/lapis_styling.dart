@@ -218,6 +218,18 @@ enum LapisVisualTextAlign {
 
   final String cssValue;
 
+  /// 真正写进 CSS 的取值。
+  ///
+  /// **存储用 start/end，渲染用 left/right**：vendored Lapis 自己通篇写的是
+  /// `left` / `right`，一处逻辑值都没有；跟着它走兼容性最好（老 WebView 对
+  /// `text-align: start` 的支持并不齐，那正是「选了左对齐没反应」的来源）。
+  /// 存储值保持 start/end 不动，旧 CONFIG 不需要迁移。
+  String get renderedCssValue => switch (this) {
+        LapisVisualTextAlign.start => 'left',
+        LapisVisualTextAlign.center => 'center',
+        LapisVisualTextAlign.end => 'right',
+      };
+
   static LapisVisualTextAlign? fromCssValue(String value) {
     for (final LapisVisualTextAlign alignment in values) {
       if (alignment.cssValue == value) return alignment;
@@ -507,10 +519,16 @@ LapisVisualStyleSheet splitLapisVisualStyleSheet(String customCss) {
 /// 自由 CSS 在前、托管区段在后）。**保存动作不得移动用户 CSS 相对托管区段的
 /// 位置**：托管区段整块 `!important`，把用户写在后面的覆盖搬到前面就等于静默
 /// 推翻他的改动。自由 CSS 本身逐字节原样写回，首尾空白不再被 trim。
+/// [extraManagedCss]：由**别处的真相源**派生、但同样归 Hibiki 托管的规则（当前
+/// 是自定义区域的样式，真相源在 `AnkiSettings.lapisCustomBlocks`）。它们只进
+/// 托管区段正文、**不进 CONFIG**——CONFIG 是回读用的，把派生物也写进去就成了
+/// 双真相源，删区域时必然留孤儿。托管区段正文本来每次就整块重生成，所以回读时
+/// 丢掉它们是正确行为。
 String composeLapisVisualStyleSheet({
   required String freeformCss,
   required Map<LapisVisualField, LapisVisualRule> rules,
   LapisVisualLayout layout = const LapisVisualLayout(),
+  List<String> extraManagedCss = const <String>[],
   bool managedFirst = false,
 }) {
   final Map<String, Object?> config = <String, Object?>{};
@@ -525,7 +543,8 @@ String composeLapisVisualStyleSheet({
     config[field.wireName] = rule.toJson();
     cssRules.addAll(_buildLapisVisualFieldCss(field, rule));
   }
-  if (config.isEmpty) return freeformCss;
+  cssRules.addAll(extraManagedCss);
+  if (config.isEmpty && cssRules.isEmpty) return freeformCss;
   final String managed = <String>[
     lapisVisualCssBeginMarker,
     '$_lapisVisualConfigPrefix${jsonEncode(config)} */',
@@ -623,32 +642,39 @@ List<String> lapisVisualFieldSources(LapisVisualField field) => switch (field) {
         ],
     };
 
+/// 一条可视规则的 CSS 声明（不含 selector 与字号——字号要按目标换算不同基准变量）。
+///
+/// 抽出来是为了让自定义区域（`lapis_blocks.dart`）与内置字段共用同一套声明生成：
+/// 两边分别手写就会漂开，出现「区域支持边框、字段不支持」这类无理由的差异。
+/// 整块 `!important` 是刚需——必须压过 Lapis 自己的高特异性规则。
+List<String> lapisVisualDeclarations(LapisVisualRule rule) => <String>[
+      if (rule.bold) '  font-weight: 700 !important;',
+      if (rule.alignment != null)
+        '  text-align: ${rule.alignment!.renderedCssValue} !important;',
+      if (rule.colorHex != null) '  color: ${rule.colorHex} !important;',
+      if (rule.lineHeightPercent != null)
+        '  line-height: ${(rule.lineHeightPercent! / 100).toStringAsFixed(2)} !important;',
+      if (rule.backgroundColorHex != null)
+        '  background-color: ${rule.backgroundColorHex} !important;',
+      if (rule.borderWidthPx != null) ...<String>[
+        '  border-style: solid !important;',
+        '  border-width: ${rule.borderWidthPx}px !important;',
+      ],
+      if (rule.borderColorHex != null)
+        '  border-color: ${rule.borderColorHex} !important;',
+      if (rule.borderRadiusPx != null)
+        '  border-radius: ${rule.borderRadiusPx}px !important;',
+      if (rule.paddingPx != null) '  padding: ${rule.paddingPx}px !important;',
+      if (rule.marginBlockPx != null)
+        '  margin-block: ${rule.marginBlockPx}px !important;',
+    ];
+
 List<String> _buildLapisVisualFieldCss(
   LapisVisualField field,
   LapisVisualRule rule,
 ) {
   final String selector = lapisVisualSelector(field);
-  final List<String> declarations = <String>[
-    if (rule.bold) '  font-weight: 700 !important;',
-    if (rule.alignment != null)
-      '  text-align: ${rule.alignment!.cssValue} !important;',
-    if (rule.colorHex != null) '  color: ${rule.colorHex} !important;',
-    if (rule.lineHeightPercent != null)
-      '  line-height: ${(rule.lineHeightPercent! / 100).toStringAsFixed(2)} !important;',
-    if (rule.backgroundColorHex != null)
-      '  background-color: ${rule.backgroundColorHex} !important;',
-    if (rule.borderWidthPx != null) ...<String>[
-      '  border-style: solid !important;',
-      '  border-width: ${rule.borderWidthPx}px !important;',
-    ],
-    if (rule.borderColorHex != null)
-      '  border-color: ${rule.borderColorHex} !important;',
-    if (rule.borderRadiusPx != null)
-      '  border-radius: ${rule.borderRadiusPx}px !important;',
-    if (rule.paddingPx != null) '  padding: ${rule.paddingPx}px !important;',
-    if (rule.marginBlockPx != null)
-      '  margin-block: ${rule.marginBlockPx}px !important;',
-  ];
+  final List<String> declarations = lapisVisualDeclarations(rule);
   final List<String> result = <String>[];
   if (declarations.isNotEmpty) {
     result.add('$selector {\n${declarations.join('\n')}\n}');
@@ -941,6 +967,46 @@ String? extractLapisUserSectionBody(String css) {
   final int end = css.indexOf(lapisUserCssEndMarker, bodyStart);
   if (end < 0) return null;
   return css.substring(bodyStart, end).trim();
+}
+
+/// 从一份完整 styling 里剥掉 Hibiki 的用户区段，得到**用户自己的那份基线**。
+///
+/// 这是「以用户现有 Lapis 为基线」的地基（用户反馈：Hibiki 把别人的字体改了）。
+/// 病根不是我们写了 `font-family`，而是 [composeLapisCss] 把基线硬编码成
+/// vendored 的 [LapisNoteType.template.css]——推送 = vendored 全文 + 用户区段，
+/// 于是用户自己那份 Lapis（别的版本 / 自己调过字体）被整体顶掉。托管区段的标记
+/// 机制本来就是为了「只改我们那块、其余原样保留」，基线却被换掉，等于自相矛盾。
+///
+/// 没有标记（用户从没被 Hibiki 写过）时原样返回——那整份就是他的基线。
+String stripLapisUserSection(String css) {
+  final int begin = css.indexOf(lapisUserCssBeginMarker);
+  if (begin < 0) return css;
+  final int end = css.indexOf(
+    lapisUserCssEndMarker,
+    begin + lapisUserCssBeginMarker.length,
+  );
+  if (end < 0) return css;
+  final String before = css.substring(0, begin);
+  final String after = css.substring(end + lapisUserCssEndMarker.length);
+  // 逐字节保留区段两侧，只把区段本身连同它前后各一个换行抹掉；用户写在区段
+  // 之后的内容（如果有）位置不变。
+  return '${before.trimRight()}\n${after.trimLeft()}'.trim();
+}
+
+/// 在**给定基线**上组合最终 styling。[composeLapisCss] 是它固定用 vendored
+/// 基线的特例；真实推送应当传 Anki 端当前内容剥掉用户区段后的结果，这样字体、
+/// 版本差异、用户自己的手改全部原样保留。
+String composeLapisCssOnBase({
+  required String baseCss,
+  required int fontScalePercent,
+  required String customCss,
+}) {
+  final String body = buildLapisUserSectionBody(
+    fontScalePercent: fontScalePercent,
+    customCss: customCss,
+  );
+  if (body.isEmpty) return baseCss;
+  return '$baseCss\n$lapisUserCssBeginMarker\n$body\n$lapisUserCssEndMarker\n';
 }
 
 /// 比较用 CSS 规范化：统一换行 + 去首尾空白。Anki 端存取可能改变行尾/尾部
