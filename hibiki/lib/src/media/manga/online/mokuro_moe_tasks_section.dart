@@ -36,6 +36,8 @@ class MokuroMoeTasksSection extends ConsumerWidget {
         final ThemeData theme = Theme.of(context);
         final bool hasFinished =
             tasks.any((MokuroMoeDownloadTask t) => t.isFinished);
+        final bool hasRetryable =
+            tasks.any((MokuroMoeDownloadTask t) => _canRetry(t));
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -50,6 +52,11 @@ class MokuroMoeTasksSection extends ConsumerWidget {
                       style: theme.textTheme.titleSmall,
                     ),
                   ),
+                  if (hasRetryable)
+                    TextButton(
+                      onPressed: queue.retryAllFailed,
+                      child: Text(t.retry),
+                    ),
                   if (hasFinished)
                     TextButton(
                       onPressed: queue.clearFinished,
@@ -102,6 +109,9 @@ class MokuroMoeTasksSection extends ConsumerWidget {
         Icon(Icons.check_circle_outline, size: 20, color: scheme.primary),
       MokuroMoeTaskStatus.failed =>
         Icon(Icons.error_outline, size: 20, color: scheme.error),
+      // 退避等待中：失败了但队列会自己回来重来（区别于终态 failed 的红叉）。
+      MokuroMoeTaskStatus.waitingRetry =>
+        Icon(Icons.autorenew, size: 20, color: scheme.error),
       MokuroMoeTaskStatus.cancelled =>
         Icon(Icons.block_outlined, size: 20, color: scheme.outline),
       MokuroMoeTaskStatus.running => eink
@@ -125,7 +135,13 @@ class MokuroMoeTasksSection extends ConsumerWidget {
       MokuroMoeTaskStatus.cancelled => t.download_status_cancelled,
       MokuroMoeTaskStatus.failed =>
         '${t.manga_online_failed}: ${task.error ?? ''}',
+      MokuroMoeTaskStatus.waitingRetry => '${t.manga_online_retry_waiting(
+          attempt: task.autoRetries,
+          total: queue.maxAutoRetries,
+        )}: ${task.error ?? ''}',
     };
+    final bool errorTone = task.status == MokuroMoeTaskStatus.failed ||
+        task.status == MokuroMoeTaskStatus.waitingRetry;
     return HibikiListItem(
       density: HibikiListDensity.compact,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -140,18 +156,37 @@ class MokuroMoeTasksSection extends ConsumerWidget {
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: theme.textTheme.bodySmall?.copyWith(
-          color:
-              task.status == MokuroMoeTaskStatus.failed ? scheme.error : null,
+          color: errorTone ? scheme.error : null,
         ),
       ),
-      trailing: task.isFinished
-          ? null
-          : HibikiIconButton(
-              tooltip: t.dialog_cancel,
-              icon: Icons.close,
-              size: 20,
-              onTap: () => queue.cancel(task),
-            ),
+      // 失败/取消 → 手动重试（就地复活该任务，`.part` 续传）；未结束 → 取消；
+      // 成功 → 无操作。旧实现在失败行给 null，用户只能回「在线目录」重找那一卷，
+      // 重新入队还会多出一条同名任务、失败那条僵在列表里。
+      trailing: switch (task.status) {
+        MokuroMoeTaskStatus.failed ||
+        MokuroMoeTaskStatus.cancelled =>
+          HibikiIconButton(
+            tooltip: t.retry,
+            icon: Icons.refresh,
+            size: 20,
+            onTap: () => queue.retry(task),
+          ),
+        MokuroMoeTaskStatus.done => null,
+        MokuroMoeTaskStatus.queued ||
+        MokuroMoeTaskStatus.running ||
+        MokuroMoeTaskStatus.waitingRetry =>
+          HibikiIconButton(
+            tooltip: t.dialog_cancel,
+            icon: Icons.close,
+            size: 20,
+            onTap: () => queue.cancel(task),
+          ),
+      },
     );
   }
+
+  /// 手动重试可用的任务（与 [MokuroMoeDownloadQueue.retry] 的受理条件同口径）。
+  static bool _canRetry(MokuroMoeDownloadTask task) =>
+      task.status == MokuroMoeTaskStatus.failed ||
+      task.status == MokuroMoeTaskStatus.cancelled;
 }

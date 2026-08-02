@@ -3068,5 +3068,7 @@
   "stat_hourly_band_pdf": "PDF",
   "stat_hourly_band_manga": "漫画",
   "stat_hourly_band_unattributed": "未区分历史",
-  "stat_hourly_unattributed_note": "早期记录的时段数据没有存类型，无法拆分；这里按合计如实显示，不归入任何一类。"
+  "stat_hourly_unattributed_note": "早期记录的时段数据没有存类型，无法拆分；这里按合计如实显示，不归入任何一类。",
+  "manga_online_retry_waiting": "即将自动重试 ($attempt/$total)",
+  "manga_ocr_wizard_already_ocred": "本卷每一页都已有 OCR 数据，无需再跑（重跑会覆盖现有数据）。"
 }

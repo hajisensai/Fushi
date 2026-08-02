@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1335 条。点号进各自文件。
+> 共 1337 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1434](bugs/BUG-1434-mokuro-book-ocr-no-images.md) | ✅ | ✅ | 已导入的 mokuro 漫画在 OCR 向导被误判为没有找到图片 |
+| [BUG-1433](bugs/BUG-1433-mokuro-download-no-retry.md) | ✅ | ✅ | mokuro.moe 卷下载失败后既无自动重试也无手动重试入口 |
 | [BUG-1432](bugs/BUG-1432-ime-physical-key-ledger.md) | ✅ | ✅ | TODO-2652「三处快捷键台账仍记裸 logicalKey」经查证伪：`LogicalKeyboardKey.process` 在 5 个出包平台上根本不可达 |
 | [BUG-1429](bugs/BUG-1429-bug-tool-number-pool-misses-uncommitted-worktrees.md) | ✅ | ✅ | bug.dart 取号扫不到并发工作区未提交的 bug 文件，一天连撞六次 |
 | [BUG-1428](bugs/BUG-1428-zero-context-patch-drift-silent.md) | ✅ | ✅ | 零上下文补丁漂移无声：git apply --unidiff-zero 对上游漂移 exit 0 后盲插 |
