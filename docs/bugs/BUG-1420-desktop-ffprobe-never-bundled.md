@@ -24,13 +24,15 @@
   与两个 MinGW DLL，即使编出了 ffprobe 也不会被装进产物——所以本 bug 需要配方与装配
   两处同时修。macOS 侧连 ffmpeg 都没捆绑，见 [BUG-1421](BUG-1421-macos-release-no-bundled-ffmpeg.md)。
 
-- **[ ] ① 未修复** — 配方改 `--enable-ffprobe`（`tool/ffmpeg-min/build-ffmpeg-min.sh`）；
-  `.github/workflows/ffmpeg-min.yml` 产出 `ffprobe(.exe)` artifact；`release-desktop.yml`
-  的 Windows / macOS 装配步把 ffprobe 与 ffmpeg 一起拷进产物；重新 vendor 二进制。
-- **[ ] ② 未加自动化测试** — `tool/ffmpeg-min/smoke-test.sh` 加两条**真实调用形态**断言
-  （`-show_format` 读 format.tags、`-select_streams t -show_streams` 列附件流），
-  覆盖两个消费方各自的参数形状；`hibiki/test/tools/ffmpeg_min_vendored_recipe_guard_test.dart`
-  扩到 ffprobe 二进制存在性 + 配方一致性。
+- **[x] ① 已修复** — 配方改 `--enable-ffprobe`（`tool/ffmpeg-min/build-ffmpeg-min.sh`，commit 982b4aa8f）；
+  `ffmpeg-min.yml` 产出 `ffprobe(.exe)` artifact；`release-desktop.yml` 的 Windows 与 macOS 装配步
+  把 ffprobe 与 ffmpeg 一起拷进产物，并各自加 `-version` 硬门（229f8bd46 / 594560d7e / e52ad0b64）；
+  `third_party/ffmpeg-min/{windows,macos}/` 已 vendor 新构建（CI run 30728980639 三平台绿）。
+- **[x] ② 已加自动化测试** — `tool/ffmpeg-min/smoke-test.sh` 加两条**真实调用形态**断言
+  （`-show_format` 读 format.tags、`-select_streams t -show_streams` 列附件流），CI 三平台实测 PASS；
+  `hibiki/test/tools/ffmpeg_min_vendored_recipe_guard_test.dart` 扩到每个 vendored 平台 × 两个 exe
+  + `--enable-ffprobe` 独立开关 + 两 exe 同源校验；
+  `hibiki/test/build/release_workflow_diagnostics_guard_test.dart` 要求冒烟步含 ffprobe.exe 字面量。
 - **备注**：与「三条 FFmpeg 链各自为政」同源——配方 / 产物 / 装配 / 消费四处没有单一
   真相源，任一处漏掉都不会红。BUG-1058（movtext 漏 vendor）是同一根因的另一个表现，
   当时只给 Windows 的 ffmpeg 补了守卫，ffprobe 与 macOS 无人看管。
