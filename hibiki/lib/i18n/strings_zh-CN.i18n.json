@@ -3100,5 +3100,11 @@
   "anki_lapis_restore_factory_done": "Lapis 已恢复出厂状态",
   "anki_lapis_restore_factory_failed": "恢复失败：$error",
   "anki_lapis_visual_select_field_hint": "点预览里的任意部分，或从下面挑一个。选中的就是下方那些控件正在编辑的对象。",
-  "anki_lapis_visual_editing_now": "正在编辑"
+  "anki_lapis_visual_editing_now": "正在编辑",
+  "mihon_extension_preview": "预览",
+  "mihon_extension_preview_warning": "预览会在安装前运行该扩展的代码。在你选择安装之前，不会有任何东西写进你的库。",
+  "mihon_extension_preview_discard": "放弃",
+  "mihon_extension_preview_source_select": "选择要预览的源",
+  "mihon_extension_sources_included": "包含的源",
+  "mihon_extension_preview_read_only": "预览是只读的。安装扩展后才能打开阅读。"
 }

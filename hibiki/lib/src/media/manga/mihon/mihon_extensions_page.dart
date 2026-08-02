@@ -8,6 +8,8 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
+import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
+import 'package:hibiki/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
 
@@ -167,8 +169,115 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     }
   }
 
-  Future<void> _confirmAndInstall(MihonInstallProposal proposal) async {
-    if (!mounted) return;
+  /// 「装之前先看看这个源有什么漫画」。
+  ///
+  /// 与 [_install] 共用同一个 proposal——下载、校验签名指纹、比对仓库元数据都已经
+  /// 做完了，差别只在拿到 proposal 之后走 [MihonManager.beginPreview] 而不是直接
+  /// commit：扩展代码会真跑起来（它是代码不是配置，不跑就没有任何内容可看），但
+  /// **不写库、不进受信任签名表**。用户看完在预览页底部二选一：放弃（删干净）
+  /// 或安装（走与直接安装完全相同的签名确认框）。
+  Future<void> _preview(MihonAvailableExtension extension) async {
+    MihonPreviewSession? session;
+    try {
+      final MihonInstallProposal proposal =
+          await _manager!.prepareStoreInstall(extension);
+      final MihonPreviewSession started =
+          await _manager!.beginPreview(proposal);
+      session = started;
+      final MihonSource? source = await _pickPreviewSource(started);
+      if (source == null) {
+        session = null;
+        await _manager!.endPreview(started, keep: false);
+        return;
+      }
+      final bool install = await _openPreviewBrowse(started, source);
+      session = null;
+      // keep 时落地的文件留给 commitInstall 复用，只清运行时缓存与崩溃标记。
+      await _manager!.endPreview(started, keep: install);
+      if (install) await _confirmAndInstall(started.proposal);
+    } catch (error) {
+      final MihonPreviewSession? pending = session;
+      if (pending != null) {
+        try {
+          await _manager!.endPreview(pending, keep: false);
+        } on Object {
+          // 清理失败不能掩盖真正的错误，继续把原始错误报给用户。
+        }
+      }
+      if (mounted) HibikiToast.show(msg: '$error');
+    }
+  }
+
+  /// 一个扩展可能提供多个源（不同站点 / 不同语言），得先问预览哪一个。
+  /// 只有一个就别多一次点击。
+  Future<MihonSource?> _pickPreviewSource(MihonPreviewSession session) async {
+    if (session.sources.length == 1) return session.sources.single;
+    if (!mounted) return null;
+    return showAppDialog<MihonSource>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(t.mihon_extension_preview_source_select),
+        content: SizedBox(
+          width: 420,
+          child: ListView(
+            shrinkWrap: true,
+            children: <Widget>[
+              for (final MihonSource source in session.sources)
+                HibikiListItem(
+                  title: Text(source.name),
+                  subtitle: Text(
+                    source.baseUrl.isEmpty
+                        ? source.language.toUpperCase()
+                        : '${source.language.toUpperCase()} · '
+                            '${source.baseUrl}',
+                  ),
+                  onTap: () => Navigator.pop(dialogContext, source),
+                ),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: dialogContext,
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(t.dialog_cancel),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 打开只读预览浏览页，返回用户是否选择了安装。
+  /// 系统返回键 / 手势返回 pop 出 null，按「放弃」处理。
+  Future<bool> _openPreviewBrowse(
+    MihonPreviewSession session,
+    MihonSource source,
+  ) async {
+    if (!mounted) return false;
+    final bool? install = await Navigator.of(context).push<bool>(
+      adaptivePageRoute<bool>(
+        context: context,
+        builder: (BuildContext pageContext) => MihonSourceBrowsePage(
+          manager: _manager!,
+          target: MihonPreviewTarget(session: session, source: source),
+          footer: _PreviewFooter(
+            onDiscard: () => Navigator.pop(pageContext, false),
+            onInstall: () => Navigator.pop(pageContext, true),
+          ),
+        ),
+      ),
+    );
+    return install ?? false;
+  }
+
+  /// 签名确认 + 落地安装。返回**是否真的装上了**。
+  ///
+  /// 用户点取消时把已下载的 APK 一并丢掉：走到这一步文件已经在 `tmp/` 里躺着了。
+  Future<bool> _confirmAndInstall(MihonInstallProposal proposal) async {
+    if (!mounted) {
+      await _manager!.discardProposal(proposal);
+      return false;
+    }
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog.adaptive(
@@ -199,11 +308,16 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true) {
+      await _manager!.discardProposal(proposal);
+      return false;
+    }
     try {
       await _manager!.commitInstall(proposal, trustSigner: true);
+      return true;
     } catch (error) {
       if (mounted) HibikiToast.show(msg: '$error');
+      return false;
     }
   }
 
@@ -461,6 +575,10 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             extension: extension,
             installed: row,
             onInstall: () => unawaited(_install(extension)),
+            // 只对未安装的开放：Android 的 native install 会覆盖 exts/ 里同包名的
+            // 文件，对已装扩展预览等于拿未确认的版本顶掉用户正在用的那份。
+            onPreview:
+                row == null ? () => unawaited(_preview(extension)) : null,
             onUninstall: row == null ? null : () => unawaited(_uninstall(row)),
             onEnabledChanged: row == null
                 ? null
@@ -561,11 +679,18 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   }
 }
 
+/// 仓库里一条可用扩展。
+///
+/// 副标题不止版本号：仓库 index 里本来就带着**这个扩展装完会给你哪几个站**
+/// （[MihonAvailableExtension.sources] 的名字 + 域名）和 NSFW 标记，以前这些数据
+/// 只喂给搜索匹配，一个字都没显示，用户只能靠扩展名猜。安装前能看清装的是什么，
+/// 是「预览」的第一层——不需要跑任何代码，也没有任何网络请求。
 class _AvailableExtensionTile extends StatelessWidget {
   const _AvailableExtensionTile({
     required this.extension,
     required this.installed,
     required this.onInstall,
+    required this.onPreview,
     required this.onUninstall,
     required this.onEnabledChanged,
   });
@@ -573,6 +698,9 @@ class _AvailableExtensionTile extends StatelessWidget {
   final MihonAvailableExtension extension;
   final MangaExtensionRow? installed;
   final VoidCallback onInstall;
+
+  /// 未安装时才有：跑一次 staged 试用，看真实内容。
+  final VoidCallback? onPreview;
   final VoidCallback? onUninstall;
   final ValueChanged<bool>? onEnabledChanged;
 
@@ -580,14 +708,44 @@ class _AvailableExtensionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool update =
         installed != null && extension.versionCode > installed!.versionCode;
+    final ThemeData theme = Theme.of(context);
     return HibikiCard(
       padding: EdgeInsets.zero,
       child: HibikiListItem(
-        leading: const Icon(Icons.extension_outlined),
-        title: Text(extension.name),
-        subtitle: Text(
-          '${extension.language} · ${extension.versionName} · '
-          'lib ${extension.libVersion}',
+        leading: _ExtensionIcon(url: extension.iconUrl),
+        title: Row(
+          children: <Widget>[
+            Flexible(child: Text(extension.name)),
+            if (extension.contentWarning >= 3) ...<Widget>[
+              const SizedBox(width: 8),
+              _NsfwBadge(theme: theme),
+            ],
+          ],
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              '${extension.language} · ${extension.versionName} · '
+              'lib ${extension.libVersion}',
+            ),
+            if (extension.sources.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 6),
+              Text(
+                t.mihon_extension_sources_included,
+                style: theme.textTheme.labelSmall,
+              ),
+              for (final MihonAvailableSource source in extension.sources)
+                Text(
+                  source.baseUrl.isEmpty
+                      ? '· ${source.name} (${source.language})'
+                      : '· ${source.name} (${source.language}) — '
+                          '${source.baseUrl}',
+                  style: theme.textTheme.bodySmall,
+                ),
+            ],
+          ],
         ),
         trailing: Wrap(
           crossAxisAlignment: WrapCrossAlignment.center,
@@ -596,6 +754,11 @@ class _AvailableExtensionTile extends StatelessWidget {
               Switch.adaptive(
                 value: installed!.enabled,
                 onChanged: onEnabledChanged,
+              ),
+            if (onPreview != null)
+              TextButton(
+                onPressed: onPreview,
+                child: Text(t.mihon_extension_preview),
               ),
             TextButton(
               onPressed: installed == null || update ? onInstall : onUninstall,
@@ -612,6 +775,116 @@ class _AvailableExtensionTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 预览页底部的操作条。
+///
+/// 两句说明不是装饰，是这个功能唯一诚实的地方：**预览已经在跑这个扩展的代码了**
+/// （否则不可能有内容），它与安装的差别是「有没有写进你的库」，不是「有没有执行」。
+/// 说清楚，用户才知道自己在同意什么。
+class _PreviewFooter extends StatelessWidget {
+  const _PreviewFooter({
+    required this.onDiscard,
+    required this.onInstall,
+  });
+
+  final VoidCallback onDiscard;
+  final VoidCallback onInstall;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return ColoredBox(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                t.mihon_extension_preview_warning,
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                t.mihon_extension_preview_read_only,
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  TextButton(
+                    onPressed: onDiscard,
+                    child: Text(t.mihon_extension_preview_discard),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: onInstall,
+                    child: Text(t.mihon_extension_install),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 扩展图标。仓库 index 给的是远程 URL，取不到就退回通用扩展图标——图标加载失败
+/// 不该让整行显示不出来。
+class _ExtensionIcon extends StatelessWidget {
+  const _ExtensionIcon({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    if (url.isEmpty) return const Icon(Icons.extension_outlined);
+    return SizedBox(
+      width: 32,
+      height: 32,
+      child: Image.network(
+        url,
+        width: 32,
+        height: 32,
+        errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
+            const Icon(Icons.extension_outlined),
+        loadingBuilder: (
+          BuildContext context,
+          Widget child,
+          ImageChunkEvent? progress,
+        ) =>
+            progress == null ? child : const Icon(Icons.extension_outlined),
+      ),
+    );
+  }
+}
+
+class _NsfwBadge extends StatelessWidget {
+  const _NsfwBadge({required this.theme});
+
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.errorContainer,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          '18+',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onErrorContainer,
+          ),
+        ),
+      );
 }
 
 class _InstalledExtensionTile extends StatelessWidget {

@@ -3100,5 +3100,11 @@
   "anki_lapis_restore_factory_done": "Lapis restored to factory defaults",
   "anki_lapis_restore_factory_failed": "Restore failed: $error",
   "anki_lapis_visual_select_field_hint": "Click any part of the preview, or pick one below. What you pick is what the controls underneath edit.",
-  "anki_lapis_visual_editing_now": "Editing"
+  "anki_lapis_visual_editing_now": "Editing",
+  "mihon_extension_preview": "Preview",
+  "mihon_extension_preview_warning": "Previewing runs this extension's code before it is installed. Nothing is added to your library until you choose to install.",
+  "mihon_extension_preview_discard": "Discard",
+  "mihon_extension_preview_source_select": "Pick a source to preview",
+  "mihon_extension_sources_included": "Included sources",
+  "mihon_extension_preview_read_only": "Preview is read-only. Install the extension to open and read."
 }

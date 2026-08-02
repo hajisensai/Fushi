@@ -85,6 +85,9 @@ class MihonManager extends ChangeNotifier {
       await Directory(p.join(rootDirectory.path, 'tmp'))
           .create(recursive: true);
       await reload();
+      // 必须在 reload 之后：判断孤儿要拿 installed 跟标记里的包名比对。
+      await _recoverAbandonedPreview();
+      await _clearStagedApks();
       await _refreshStores();
       await _seedDefaultStore();
     } catch (exception) {
@@ -489,6 +492,168 @@ class MihonManager extends ChangeNotifier {
     });
   }
 
+  /// 丢弃一个没有走到 [commitInstall] 的安装提案。
+  ///
+  /// [prepareStoreInstall] / [prepareLocalInstall] 成功后 APK 已经落在 `tmp/`，
+  /// 用户在签名确认框点取消时那份文件就没人认领了（最大 100 MiB）。
+  /// [_clearStagedApks] 会在下次启动兜底，但当场删掉才是对的。
+  Future<void> discardProposal(MihonInstallProposal proposal) async {
+    final File temp = File(proposal.tempPath);
+    if (await temp.exists()) await temp.delete();
+  }
+
+  /// 开一次「装之前先看看这个源有什么漫画」的试用预览。
+  ///
+  /// Mihon 扩展是**代码**不是配置——站点怎么解析、封面在哪、翻页规则全在 APK 里，
+  /// 所以预览内容必然要真跑它的代码。预览与安装的差别因此不在「有没有执行」，
+  /// 而在**有没有在库里留下痕迹**：
+  /// - 不写 `manga_extensions` / `manga_online_sources`，所以它不进已安装列表、
+  ///   不出现在「浏览」视图、不参与任何续读；
+  /// - 不把签名指纹写进受信任表（只有 [commitInstall] 才写）；
+  /// - 放弃时把落地的文件删干净。
+  ///
+  /// 平台差异只在「代码从哪加载」：桌面 sidecar 直接吃任意路径的 APK 字节，
+  /// staged 的临时文件就能跑；Android 的 `invoke` 只认 `filesDir/exts/<pkg>.ext`
+  /// （Dart 传过去的 `apkPath` 在那条路径上是死字段），所以必须先
+  /// [MihonRuntime.installPrivateExtension] 把文件放进私有目录——**那一步只是文件
+  /// 落地，不构成本类意义上的「安装」**。
+  ///
+  /// 只对**未安装**的扩展开放：Android 的 native install 会覆盖 `exts/` 里同包名
+  /// 的文件，对已装扩展做预览等于拿未经确认的版本顶掉用户正在用的那份。已装的
+  /// 扩展本来就能从「浏览」进去看，不需要预览。
+  Future<MihonPreviewSession> beginPreview(
+    MihonInstallProposal proposal,
+  ) async {
+    if (proposal.current != null) {
+      throw const MihonRuntimeException(
+        'PREVIEW_ALREADY_INSTALLED',
+        'Preview is only available for extensions that are not installed',
+      );
+    }
+    final String packageName = proposal.inspection.packageName;
+    late final MihonPreviewSession session;
+    await _guarded(() async {
+      // 标记先于文件落地写：崩溃留下的孤儿只能靠它认出来（见 _recoverAbandonedPreview）。
+      await _writePreviewMarker(packageName);
+      try {
+        final String runtimePath = Platform.isAndroid
+            ? await runtime.installPrivateExtension(proposal.tempPath)
+            : proposal.tempPath;
+        final MihonExtensionRef extension = MihonExtensionRef(
+          packageName: packageName,
+          apkPath: runtimePath,
+        );
+        final List<MihonSource> loaded = await runtime.listSources(extension);
+        if (loaded.isEmpty) {
+          throw const MihonRuntimeException(
+            'NO_SOURCES',
+            'Extension did not expose any manga sources',
+          );
+        }
+        session = MihonPreviewSession(
+          proposal: proposal,
+          extension: extension,
+          sources: loaded,
+        );
+      } catch (_) {
+        await _discardPreview(packageName, tempPath: proposal.tempPath);
+        rethrow;
+      }
+    });
+    return session;
+  }
+
+  /// 结束预览。
+  ///
+  /// [keep] 为 true 表示用户看完决定装：落地的文件留给 [commitInstall] 复用
+  /// （Android 上它已经在 `exts/` 里，桌面上 temp 文件还等着被 rename 过去），
+  /// 这里只清运行时的已加载缓存，让安装后重新加载到同一份文件。
+  /// 为 false 则把预览留下的一切删干净。
+  Future<void> endPreview(
+    MihonPreviewSession session, {
+    required bool keep,
+  }) async {
+    final String packageName = session.proposal.inspection.packageName;
+    if (keep) {
+      await runtime.invalidateExtension(packageName);
+      await _clearPreviewMarker();
+      return;
+    }
+    await _guarded(
+      () => _discardPreview(
+        packageName,
+        tempPath: session.proposal.tempPath,
+      ),
+    );
+  }
+
+  Future<void> _discardPreview(
+    String packageName, {
+    required String tempPath,
+  }) async {
+    await runtime.invalidateExtension(packageName);
+    if (Platform.isAndroid) {
+      await runtime.uninstallPrivateExtension(packageName);
+    }
+    final File temp = File(tempPath);
+    if (await temp.exists()) await temp.delete();
+    await _clearPreviewMarker();
+  }
+
+  File get _previewMarker =>
+      File(p.join(rootDirectory.path, 'tmp', 'preview-pending'));
+
+  Future<void> _writePreviewMarker(String packageName) async {
+    await _previewMarker.parent.create(recursive: true);
+    await _previewMarker.writeAsString(packageName, flush: true);
+  }
+
+  Future<void> _clearPreviewMarker() async {
+    if (await _previewMarker.exists()) await _previewMarker.delete();
+  }
+
+  /// 预览期间进程被杀，会在 Android 私有目录里留下一个没有任何 DB 记录的孤儿
+  /// 扩展文件。它不会出现在任何列表里（列表读 DB），但会占空间，而且下次预览同
+  /// 一个包时 native 的 install 会走「升级」分支去比对签名版本号，行为不可预期。
+  ///
+  /// 桌面端不需要动 runtime：那边预览用的是 `tmp/*.apk.part`，由 [_clearStagedApks]
+  /// 统一清理，没有任何东西被放进常驻目录。
+  Future<void> _recoverAbandonedPreview() async {
+    if (!await _previewMarker.exists()) return;
+    try {
+      final String packageName = (await _previewMarker.readAsString()).trim();
+      final bool reallyInstalled = installed.any(
+        (MangaExtensionRow row) => row.packageName == packageName,
+      );
+      if (Platform.isAndroid && packageName.isNotEmpty && !reallyInstalled) {
+        await runtime.invalidateExtension(packageName);
+        await runtime.uninstallPrivateExtension(packageName);
+      }
+    } on Object {
+      // 清不掉不能挡住整个扩展子系统启动：孤儿文件只占空间，不影响正确性。
+    }
+    await _clearPreviewMarker();
+  }
+
+  /// 清掉上次进程留下的半成品 APK。
+  ///
+  /// `tmp/extension-<sha>.apk.part` 是 [_prepareInstallBytes] 的落脚点，正常路径
+  /// 上一定会被 [commitInstall] rename 掉或被失败分支删掉，只有进程在中途被杀才
+  /// 会留下。它们没有任何长期意义，且每个最大 100 MiB。
+  Future<void> _clearStagedApks() async {
+    final Directory tmp = Directory(p.join(rootDirectory.path, 'tmp'));
+    if (!await tmp.exists()) return;
+    try {
+      await for (final FileSystemEntity entity in tmp.list()) {
+        if (entity is File && entity.path.endsWith('.apk.part')) {
+          await entity.delete();
+        }
+      }
+    } on Object {
+      // 同上：清理是尽力而为，不能让它挡住启动。
+    }
+  }
+
   Future<void> uninstallExtension(
     MangaExtensionRow extension, {
     bool clearData = false,
@@ -731,6 +896,36 @@ class MihonInstallProposal {
   final MihonAvailableExtension? expected;
   final MangaExtensionRow? current;
   final bool signerTrusted;
+}
+
+/// 一次进行中的扩展试用预览。
+///
+/// 持有 staged（已落地但未登记入库）的扩展引用和它暴露出来的源列表。生命周期由
+/// [MihonManager.beginPreview] / [MihonManager.endPreview] 成对管理——**不要**自己
+/// 拿 [extension] 去调 [MihonManager.commitInstall] 之外的写库路径，那会绕过
+/// 「预览不留痕迹」的不变量。
+@immutable
+class MihonPreviewSession {
+  const MihonPreviewSession({
+    required this.proposal,
+    required this.extension,
+    required this.sources,
+  });
+
+  final MihonInstallProposal proposal;
+  final MihonExtensionRef extension;
+  final List<MihonSource> sources;
+
+  /// 把预览里的某个源包装成浏览页能直接吃的上下文。
+  ///
+  /// 偏好恒为空：源偏好落在 `manga_source_preferences` 表且以
+  /// `(extensionPackage, sourceId)` 为键，而预览的扩展根本没进库——读它只会拿到
+  /// 空表，写它则会留下指向不存在扩展的孤儿行。预览就用扩展的内置默认值。
+  MihonSourceContext contextFor(MihonSource source) => MihonSourceContext(
+        extension: extension,
+        source: source,
+        preferences: const <MihonPreference>[],
+      );
 }
 
 @immutable

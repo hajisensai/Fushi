@@ -13,15 +13,51 @@ import 'package:hibiki/utils.dart';
 
 enum _MihonBrowseMode { popular, latest, search }
 
+/// 浏览页要浏览的那「一个源」从哪来。
+///
+/// 两个变体的差别只在**上下文怎么拿到**和**能不能落库**，网格、搜索、分页、
+/// 封面代理全部同一套代码——所以这里用 sealed 穷尽，而不是给页面塞一堆可空参数
+/// 再靠「恰有一个非空」的隐式约定分流。
+sealed class MihonBrowseTarget {
+  const MihonBrowseTarget();
+}
+
+/// 已安装并登记入库的源：上下文和用户偏好都从库里读，可以进详情、可以入库。
+class MihonInstalledTarget extends MihonBrowseTarget {
+  const MihonInstalledTarget(this.row);
+
+  final MangaOnlineSourceRow row;
+}
+
+/// 试用预览里的源：上下文来自 staged 会话，库里根本没有这个扩展。
+///
+/// 因此**只读**——不能进详情页。详情页会走 `MihonLibraryService.add()` 把书写进
+/// 书架，而那要求扩展和源都已在库里登记；对一个随时可能被放弃的预览来说，那会
+/// 留下指向不存在扩展的孤儿行。预览的目的是「看看这个源有没有我要的漫画」，
+/// 网格 + 搜索 + 封面已经够判断，真要读就先装。
+class MihonPreviewTarget extends MihonBrowseTarget {
+  const MihonPreviewTarget({
+    required this.session,
+    required this.source,
+  });
+
+  final MihonPreviewSession session;
+  final MihonSource source;
+}
+
 class MihonSourceBrowsePage extends StatefulWidget {
   const MihonSourceBrowsePage({
     required this.manager,
-    required this.source,
+    required this.target,
     super.key,
+    this.footer,
   });
 
   final MihonManager manager;
-  final MangaOnlineSourceRow source;
+  final MihonBrowseTarget target;
+
+  /// 钉在正文底部的操作条。预览用它放「放弃 / 信任并安装」。
+  final Widget? footer;
 
   @override
   State<MihonSourceBrowsePage> createState() => _MihonSourceBrowsePageState();
@@ -50,10 +86,20 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
     super.dispose();
   }
 
+  /// 预览态只读：封面不可点，也没有详情页可去。
+  bool get _readOnly => widget.target is MihonPreviewTarget;
+
   Future<void> _initialise() async {
     try {
-      final MihonSourceContext context =
-          await widget.manager.contextForSource(widget.source);
+      final MihonSourceContext context = switch (widget.target) {
+        MihonInstalledTarget(:final MangaOnlineSourceRow row) =>
+          await widget.manager.contextForSource(row),
+        MihonPreviewTarget(
+          :final MihonPreviewSession session,
+          :final MihonSource source,
+        ) =>
+          session.contextFor(source),
+      };
       final List<MihonFilter> filters = await widget.manager.runtime.getFilters(
         context.extension,
         context.source,
@@ -155,7 +201,10 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
   @override
   Widget build(BuildContext context) {
     return HibikiPageScaffold(
-      title: widget.source.name,
+      title: switch (widget.target) {
+        MihonInstalledTarget(:final MangaOnlineSourceRow row) => row.name,
+        MihonPreviewTarget(:final MihonSource source) => source.name,
+      },
       headerBottom: Padding(
         padding: const EdgeInsets.only(top: 8),
         child: Row(
@@ -212,6 +261,7 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
             ),
           ),
           Expanded(child: _buildResults()),
+          if (widget.footer != null) widget.footer!,
         ],
       ),
     );
@@ -258,7 +308,7 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
             final MihonManga manga = _items[index];
             return HibikiCard(
               padding: EdgeInsets.zero,
-              onTap: () => _openDetails(manga),
+              onTap: _readOnly ? null : () => _openDetails(manga),
               // HibikiCard 内部已用 Material(clipBehavior: antiAlias) 按同一
               // 圆角 token 裁剪，这里不再多包一层 ClipRRect。
               child: Column(
