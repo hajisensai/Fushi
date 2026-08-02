@@ -407,6 +407,70 @@ void caller() {
       expect(topLevelFunctionBody(callsOnly, 'headline'), isNull);
     });
 
+    test('async / async* / sync* 修饰符不得把声明误判成调用点', () {
+      // 「右括号后第一个非空白字符是不是 `=>` / `{`」是本函数分辨声明与调用点的
+      // 唯一判据，而异步函数在两者之间隔着一个 `async`。不跳它 ⇒ 每个
+      // `Future<T> f() async { … }` 都被判成调用点、整个函数解析成 null，
+      // 而 null 在「一跳可达」判据里的含义是**不可达** ⇒ 实现完全正确时守卫转红。
+      const String asyncSrc = '''
+class _State {
+  Future<void> copy(String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+  }
+
+  Stream<int> ticks() async* {
+    yield 1;
+  }
+
+  Iterable<int> ones() sync* {
+    yield 1;
+  }
+
+  Future<String> read() async => fetch();
+
+  Future<void> caller() async {
+    await copy('x');
+  }
+}
+''';
+      final String? brace = topLevelFunctionBody(asyncSrc, 'copy');
+      expect(brace, isNotNull, reason: 'async 花括号体必须取得到');
+      expect(containsIdentifierCall(brace!, 'Clipboard.setData'), isTrue);
+      expect(brace.contains('yield'), isFalse, reason: '不得越界读到邻居');
+
+      expect(
+          topLevelFunctionBody(asyncSrc, 'ticks')?.contains('yield 1'), isTrue);
+      expect(
+          topLevelFunctionBody(asyncSrc, 'ones')?.contains('yield 1'), isTrue);
+
+      final String? arrow = topLevelFunctionBody(asyncSrc, 'read');
+      expect(arrow, isNotNull, reason: 'async 箭头体必须取得到');
+      expect(containsIdentifierCall(arrow!, 'fetch'), isTrue);
+      expect(arrow.contains('{'), isFalse,
+          reason: 'async 箭头体收口在深度 0 的分号，不得吞掉下一个花括号体');
+    });
+
+    test('只跳 async / sync，不跳任意标识符（调用点不得被误判成声明）', () {
+      // 「跳过右括号后任意标识符」是个诱人但错误的泛化：下面两处都是**调用点**，
+      // 一旦被当成声明，窗口会静默锚到别人的花括号上。
+      const String traps = '''
+void caller() {
+  if (target(1)) {
+    print('not a body');
+  }
+}
+''';
+      expect(topLevelFunctionBody(traps, 'target'), isNull,
+          reason: '`if (target(1)) {` 里的 target 是调用点，不是声明');
+      const String asyncPrefixed = '''
+void caller() {
+  asyncHelper(1);
+}
+''';
+      expect(topLevelFunctionBody(asyncPrefixed, 'asyncHelper'), isNull,
+          reason: '`asyncHelper` 只是以 async 开头的标识符，不是修饰符');
+    });
+
     test('调用点排在声明之前时仍锚到声明', () {
       const String callFirst = '''
 void caller() {

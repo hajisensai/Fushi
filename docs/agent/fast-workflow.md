@@ -47,6 +47,13 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
 ## 验证分级细则
 
 - **定向测试** = 改动直接覆盖的 test 文件 + 相邻功能的 test 文件，`flutter test test/<路径> --no-pub`。
+  - 🔴 **别靠脑子想「相邻功能」是哪些，机器能算**：改了 `hibiki/lib/**` 时用
+    `dart run tool/tests_for_changes.dart --include-dart --explain <改的文件…>` 反查
+    「谁在源码里读这个文件」。**`--include-dart` 不加就恒为空**——工具默认把 Dart 树的
+    改动整条过滤掉（`isDefaultBatchCoveredChange`，理由是「整批 35 条 + 定向测试兜底」），
+    而**点名单个生产文件的守卫既不在那 35 条里、也不按功能域取名**，正好落在两道门的缝里。
+    实测漏网：PR#764 收口弹窗复制入口，`test/dictionary/popup_touch_copy_actionmode_guard_test.dart`
+    只被 `test/lookup` 的定向测试擦肩而过，红直接进了 develop（TODO-2745）。
 - **`flutter analyze` 全量在 push 前必跑**（含 test 目录）——它本身只要秒级~1 分钟，而 CI 把 warning 当致命，省这一步只会在 CI 上浪费一轮。
 - **分支 draft PR**：定向测试绿 + 全量 analyze 绿即可 push；全量 test 由 CI 兜底（真单测门是 **Build Release APK 的 Run unit tests**，不是 Build and Test）。声明「修好了」的真机复测门槛**不变**（[integration-testing.md](integration-testing.md)）。
 - **合入 `develop`**：integration owner 本地全量 analyze + 全量 test **不变**（bash 环境跑；别 `| tail` 吞退出码；重叠跑会互抢 `sqlite3.dll`，见下节）。

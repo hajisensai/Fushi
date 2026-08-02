@@ -743,8 +743,12 @@ String methodBody(
   return src.substring(start, bounds.close + 1);
 }
 
-/// 按**函数名**取 [src] 里那个函数的**实现体**原文；`=> expr;` 与 `{ … }` 两种形态
-/// 都认，找不到声明返回 null。
+/// 按**函数名**取 [src] 里那个函数 / 方法的**实现体**原文；`=> expr;` 与 `{ … }`
+/// 两种形态都认，`async` / `async*` / `sync*` 修饰符会被跳过（见 [_skipAsyncModifier]），
+/// 找不到声明返回 null。
+///
+/// 名字里的 "topLevel" 只说明它不解析类作用域（同名方法取首个声明），**类成员方法
+/// 一样能取**——BUG-1237 的可达性守卫正是拿它取 `_State` 里的私有异步方法。
 ///
 /// 与 [methodBody] 的分工——两者都不可省：
 /// - [methodBody] 的起点是**签名文本**的首次出现，找不到就 `fail`。适合"我知道这个
@@ -779,10 +783,7 @@ String? topLevelFunctionBody(String src, String name) {
       }
     }
     if (close < 0) continue;
-    int i = close + 1;
-    while (i < structural.length && structural[i].trim().isEmpty) {
-      i++;
-    }
+    final int i = _skipAsyncModifier(structural, close + 1);
     if (i + 1 < structural.length &&
         structural[i] == '=' &&
         structural[i + 1] == '>') {
@@ -798,6 +799,40 @@ String? topLevelFunctionBody(String src, String name) {
     // 既不是 `=>` 也不是 `{`：这一处是**调用**而不是声明，继续找下一处。
   }
   return null;
+}
+
+/// 跳过参数表右括号之后的空白，以及 `async` / `async*` / `sync*` 修饰符，返回**体
+/// 起点**（`=>` 或 `{`）的下标。
+///
+/// 为什么必须有它：[topLevelFunctionBody] 是拿「右括号后第一个非空白字符是不是
+/// `=>` / `{`」来分辨**声明**与**调用点**的。异步函数的签名与体之间隔着一个
+/// `async`，于是每一个 `Future<T> f(…) async { … }` 都会被判成调用点、被跳过，
+/// 函数最终解析成 null——而 null 在「一跳可达」判据里的含义是**不可达**，守卫因此
+/// 在实现完全正确时转红（BUG-1237 的可达性守卫就是被这条打出来的）。
+///
+/// 只认 `async` / `sync` 两个词（且必须是完整标识符），不做「跳过任意标识符」：
+/// 后者会让 `if (foo(x)) { … }`、`x = foo(a) as T { …` 这类语境里的调用点被误判成
+/// 声明，把窗口静默锚到别人的花括号上。宁可漏认一种修饰符，不可误认一个调用点。
+int _skipAsyncModifier(String structural, int from) {
+  int i = from;
+  while (i < structural.length && structural[i].trim().isEmpty) {
+    i++;
+  }
+  for (final String keyword in const <String>['async', 'sync']) {
+    if (!structural.startsWith(keyword, i)) continue;
+    final int after = i + keyword.length;
+    if (after < structural.length &&
+        _identifierChar.hasMatch(structural[after])) {
+      continue; // `asyncHelper(` 之类：不是修饰符。
+    }
+    i = after;
+    if (i < structural.length && structural[i] == '*') i++;
+    while (i < structural.length && structural[i].trim().isEmpty) {
+      i++;
+    }
+    break;
+  }
+  return i;
 }
 
 /// 从 [structural]（已掩码的语料）的左花括号 [open] 起做配对，返回配对上的 `}` 的
