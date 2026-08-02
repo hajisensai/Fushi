@@ -23,6 +23,7 @@ import 'package:hibiki/src/mining/galgame_hook_code_profile.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:hibiki/src/pages/implementations/gal_capture_setup_dialog.dart';
 import 'package:hibiki/src/pages/implementations/game_shared.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
@@ -70,12 +71,14 @@ class TexthookerPage extends ConsumerStatefulWidget {
   const TexthookerPage({
     super.key,
     this.embedded = false,
+    this.captureSetupEnabled = true,
     this.onShowLibrary,
     this.onShowDiagnostics,
   });
 
   /// 嵌入 [HomeGamePage] 时不再创建第二层 Scaffold/AppBar。
   final bool embedded;
+  final bool captureSetupEnabled;
   final VoidCallback? onShowLibrary;
   final VoidCallback? onShowDiagnostics;
 
@@ -103,6 +106,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// galgame 引擎-hook 启动的**再入守卫**：一次启动含选文件、位数探测、helper 确认/下载对话框、
   /// 注入会话等多个 await，可持续数秒。没有守卫时重复点击会叠出多个下载确认对话框。
   bool _launchingGalHook = false;
+
+  /// 每个捕获会话只自动弹一次首次设置；手动关闭后不反复打扰。新会话由
+  /// sessionStartedAt 区分，候选线程出现且仍未选中时才弹，避免空白弹窗。
+  DateTime? _captureSetupShownForSession;
+  bool _captureSetupDialogOpen = false;
+  bool _captureSetupDialogScheduled = false;
 
   /// 实时台词列表的筛选维度（全部 / 有音频 / 已制卡 / 已收藏）。与线程下拉正交叠加。
   TexthookerLineFilter _lineFilter = TexthookerLineFilter.all;
@@ -425,7 +434,18 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       if (mounted && _followLive && _scroll.hasClients) {
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
+      _maybeScheduleCaptureSetupDialog();
     });
+  }
+
+  @override
+  void didUpdateWidget(TexthookerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.captureSetupEnabled && widget.captureSetupEnabled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _maybeScheduleCaptureSetupDialog();
+      });
+    }
   }
 
   /// BUG-1028：开页 seed 常驻隐藏热槽（低内存模式 [DictionaryPopupController.seedWarmSlot]
@@ -944,7 +964,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   }
 
   void _onSessionChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    _maybeScheduleCaptureSetupDialog();
   }
 
   /// 外部窗口挖矿模式条：展示已绑定窗口标题 + 重选/解绑；未绑定时点击选窗口。
@@ -1015,11 +1037,66 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     setState(() {
       if (!follow && receivedNewLine) _unreadLines++;
     });
+    _maybeScheduleCaptureSetupDialog();
     if (!receivedNewLine || !follow) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
+    });
+  }
+
+  void _maybeScheduleCaptureSetupDialog() {
+    if (!mounted ||
+        !widget.captureSetupEnabled ||
+        !TickerMode.of(context) ||
+        _captureSetupDialogOpen ||
+        _captureSetupDialogScheduled) {
+      return;
+    }
+    final GalHookSessionState state = _session.state;
+    final DateTime? sessionStartedAt = state.sessionStartedAt;
+    if (!shouldPromptGalCaptureSetup(
+      state: state,
+      hasEngineSource: _session.hasEngineSource,
+      selectedTextThreadKey: _session.selectedTextThreadKey,
+      textThreadCount: _session.textThreads.length,
+      sessionAlreadyPrompted: _captureSetupShownForSession == sessionStartedAt,
+    )) {
+      return;
+    }
+    _captureSetupDialogScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _captureSetupDialogScheduled = false;
+      if (!mounted || !widget.captureSetupEnabled || !TickerMode.of(context)) {
+        return;
+      }
+      final GalHookSessionState latest = _session.state;
+      if (latest.sessionStartedAt != sessionStartedAt ||
+          !shouldPromptGalCaptureSetup(
+            state: latest,
+            hasEngineSource: _session.hasEngineSource,
+            selectedTextThreadKey: _session.selectedTextThreadKey,
+            textThreadCount: _session.textThreads.length,
+            sessionAlreadyPrompted: false,
+          )) {
+        return;
+      }
+      _captureSetupShownForSession = sessionStartedAt;
+      _captureSetupDialogOpen = true;
+      await showAppDialog<void>(
+        context: context,
+        builder: (BuildContext dialogContext) => GalCaptureSetupDialog(
+          session: _session,
+          onSelectThread: (TexthookerTextThread thread) =>
+              _session.selectTextThread(
+            thread.nativeThreadId,
+            threadKey: thread.key,
+            remember: true,
+          ),
+        ),
+      );
+      _captureSetupDialogOpen = false;
     });
   }
 
@@ -1094,10 +1171,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   @override
   Widget build(BuildContext context) {
+    final bool captureSetupVisible = TickerMode.of(context);
     final List<TexthookerTextThread> textThreads = _session.textThreads;
     final String? selectedTextThreadKey = _session.selectedTextThreadKey;
     final List<TexthookerLineEntry> lines = _session.workbenchLines;
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
+    if (captureSetupVisible && widget.captureSetupEnabled) {
+      _maybeScheduleCaptureSetupDialog();
+    }
     if (widget.embedded) {
       final List<Widget> actions =
           _buildToolbarActions(context, embedded: true);
@@ -1153,7 +1234,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 清空台词），低频开关收进「更多」菜单。[embedded] 仅决定按钮是否展开文字标签
   /// （页头模式展开、AppBar 模式纯图标），按钮集合与行为调用两模式完全一致。
   ///
-  /// 「兼容性诊断」入口已删——顶部 [GameSectionTabs] 已有同入口，工具栏再放一份纯冗余。
+  /// 「兼容性诊断」入口已删——它收进游戏「设置」，工具栏再放一份纯冗余。
   List<Widget> _buildToolbarActions(
     BuildContext context, {
     required bool embedded,
@@ -1188,7 +1269,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         ),
       // 会话音轨面板直达入口：排除 BGM 是会话级操作，此前只能从「某一句的
       // 选轨对话框」绕进去（先随便找一句才能排除，入口藏反了）。
-      if (Platform.isWindows && state.isActive)
+      if (Platform.isWindows &&
+          state.isActive &&
+          _session.selectedTextThreadKey != null)
         HibikiIconButton(
           icon: Icons.multitrack_audio_outlined,
           tooltip: t.game_audio_tracks,
@@ -1366,7 +1449,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       focusIdPrefix: 'game-capture-tab',
       onSelectLibrary: widget.onShowLibrary!,
       onSelectMonitor: () {},
-      onSelectDiagnostics: widget.onShowDiagnostics!,
     );
   }
 
@@ -1377,6 +1459,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     String? selectedTextThreadKey,
   ) {
     final GalHookSessionState state = _session.state;
+    final GalWorkbenchReadiness readiness = galWorkbenchReadiness(
+      state: state,
+      hasEngineSource: _session.hasEngineSource,
+      selectedTextThreadKey: selectedTextThreadKey,
+    );
     return Column(
       children: <Widget>[
         _buildExperimentalBanner(context),
@@ -1396,14 +1483,20 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 // 让位）：正文与音频元信息并进本面板，健康状态移到工具栏「更多」→
                 // 对话框（同页签栏的「兼容性诊断」也有完整版），把这块常驻空间还给
                 // 「听 → 判断 → 排除 BGM」这条真正需要反复操作的动线。
-                final Widget lineTracks = _LineTracksCard(
-                  session: _session,
-                  line: _selectedOrLatestLine(lines),
-                );
+                final Widget lineTracks =
+                    readiness == GalWorkbenchReadiness.waitingForThread
+                        ? const _ThreadSelectionRequiredCard()
+                        : _LineTracksCard(
+                            session: _session,
+                            line: _selectedOrLatestLine(lines),
+                          );
                 if (box.maxWidth >= 1280) {
                   return Column(
                     children: <Widget>[
-                      _SessionOverviewCard(state: state),
+                      _SessionOverviewCard(
+                        state: state,
+                        readiness: readiness,
+                      ),
                       const SizedBox(height: 12),
                       Expanded(
                         child: Row(
@@ -1421,7 +1514,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 if (box.maxWidth >= 840) {
                   return Column(
                     children: <Widget>[
-                      _SessionOverviewCard(state: state),
+                      _SessionOverviewCard(
+                        state: state,
+                        readiness: readiness,
+                      ),
                       const SizedBox(height: 12),
                       Expanded(
                         child: Row(
@@ -1441,7 +1537,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    _SessionOverviewCard(state: state, compact: true),
+                    _SessionOverviewCard(
+                      state: state,
+                      readiness: readiness,
+                      compact: true,
+                    ),
                     const SizedBox(height: 12),
                     Expanded(child: live),
                     ExpansionTile(
@@ -1924,13 +2024,20 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 }
 
 class _SessionOverviewCard extends StatelessWidget {
-  const _SessionOverviewCard({required this.state, this.compact = false});
+  const _SessionOverviewCard({
+    required this.state,
+    required this.readiness,
+    this.compact = false,
+  });
 
   final GalHookSessionState state;
+  final GalWorkbenchReadiness readiness;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final bool waitingForThread =
+        readiness == GalWorkbenchReadiness.waitingForThread;
     final String audio = galHookAudioBackendLabel(state.audioBackend);
     final String phase = galHookSessionPhaseLabel(state.phase);
     final String? format = state.audioFormat == null
@@ -1943,7 +2050,11 @@ class _SessionOverviewCard extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Icon(
-            state.isActive ? Icons.sensors : Icons.sensors_off_outlined,
+            waitingForThread
+                ? Icons.forum_outlined
+                : state.isActive
+                    ? Icons.sensors
+                    : Icons.sensors_off_outlined,
             color: state.isActive
                 ? Theme.of(context).colorScheme.primary
                 : Theme.of(context).colorScheme.outline,
@@ -1954,17 +2065,21 @@ class _SessionOverviewCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  state.isActive
-                      ? t.game_session_listening
-                      : t.game_session_idle,
+                  waitingForThread
+                      ? t.game_session_waiting_thread
+                      : state.isActive
+                          ? t.game_session_listening
+                          : t.game_session_idle,
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  compact
-                      ? '$phase · $audio'
-                      : '$phase · $audio'
-                          '${format == null ? '' : ' · $format'}',
+                  waitingForThread
+                      ? '$phase · ${t.game_text_thread_unset}'
+                      : compact
+                          ? '$phase · $audio'
+                          : '$phase · $audio'
+                              '${format == null ? '' : ' · $format'}',
                   maxLines: compact ? 1 : 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall,
@@ -2012,14 +2127,57 @@ class _SessionOverviewCard extends StatelessWidget {
             ),
           ),
           _StatusPill(
-            label: state.isDegraded
-                ? t.game_line_audio_fallback
-                : (state.isActive
-                    ? t.game_status_ready
-                    : t.game_status_waiting),
-            ready: state.isActive && !state.isDegraded,
+            label: waitingForThread
+                ? t.game_status_waiting
+                : state.isDegraded
+                    ? t.game_line_audio_fallback
+                    : (state.isActive
+                        ? t.game_status_ready
+                        : t.game_status_waiting),
+            ready: !waitingForThread && state.isActive && !state.isDegraded,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 未选台词线程时替代「本句音轨」面板：没有句子身份就不存在可归属的句级音频，
+/// 不能继续展示一个看似已就绪的音轨工作区。
+class _ThreadSelectionRequiredCard extends StatelessWidget {
+  const _ThreadSelectionRequiredCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return HibikiCard(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(
+                Icons.multitrack_audio_outlined,
+                size: 40,
+                color: Theme.of(context).colorScheme.outline,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                t.game_session_waiting_thread,
+                style: Theme.of(context).textTheme.titleMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                t.game_audio_requires_thread,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

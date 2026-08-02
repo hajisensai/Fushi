@@ -72,7 +72,7 @@ void main() {
 
     test('嵌入模式删除冗余「兼容性诊断」按钮', () {
       expect(pageSrc.contains('game_open_diagnostics'), isFalse,
-          reason: '顶部 GameSectionTabs 已有诊断入口，工具栏诊断按钮纯冗余，须删');
+          reason: '兼容性诊断已经收进设置页，捕获工具栏不应再放一个高频入口');
     });
   });
 

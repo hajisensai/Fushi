@@ -3108,8 +3108,7 @@
   "mihon_extension_sources_included": "Included sources",
   "mihon_extension_preview_read_only": "Preview is read-only. Install the extension to open and read.",
   "selection_copy_empty": "No text selected.",
-  "video_subtitle_replay": "Replay this line"
-,
+  "video_subtitle_replay": "Replay this line",
   "manga_ocr_done": "OCR complete",
   "settings_destination_manga_summary": "Reader, OCR and online catalog",
   "manga_page_animation": "Page turn animation",
@@ -3122,5 +3121,9 @@
   "manga_volume_key_paging_subtitle": "Use volume up and down to turn pages in the manga reader",
   "manga_tap_zone_paging": "Tap edges to turn pages",
   "manga_tap_zone_paging_subtitle": "Tap the left or right edge of the page to turn",
-  "manga_section_viewing": "Viewing and page turning"
+  "manga_section_viewing": "Viewing and page turning",
+  "game_capture_setup_title": "Complete capture setup",
+  "game_capture_setup_hint": "Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.",
+  "game_audio_requires_thread": "The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.",
+  "game_session_waiting_thread": "Waiting for a dialogue thread"
 }

@@ -3108,8 +3108,7 @@
   "mihon_extension_sources_included": "包含的源",
   "mihon_extension_preview_read_only": "预览是只读的。安装扩展后才能打开阅读。",
   "selection_copy_empty": "未选中文本。",
-  "video_subtitle_replay": "重播本句"
-,
+  "video_subtitle_replay": "重播本句",
   "manga_ocr_done": "OCR 已完成",
   "settings_destination_manga_summary": "阅读器、OCR 与在线目录",
   "manga_page_animation": "翻页动画",
@@ -3122,5 +3121,9 @@
   "manga_volume_key_paging_subtitle": "在漫画阅读器中用音量加减键翻页",
   "manga_tap_zone_paging": "点击边缘翻页",
   "manga_tap_zone_paging_subtitle": "点击页面左右边缘翻页",
-  "manga_section_viewing": "浏览与翻页"
+  "manga_section_viewing": "浏览与翻页",
+  "game_capture_setup_title": "完成捕获设置",
+  "game_capture_setup_hint": "请先选择台词线程。Hibiki 只能把音频与所选线程收到的台词配对。",
+  "game_audio_requires_thread": "音频采集源可能已经就绪，但选择线程并收到台词之前，不存在本句音频。",
+  "game_session_waiting_thread": "等待选择台词线程"
 }

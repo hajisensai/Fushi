@@ -17,6 +17,9 @@ enum MediaLibraryViewKind {
   /// 来源管理：本地扫描根 + 在线源设置 + 漫画扩展（扩展本身就是「来源」，
   /// 不单开 tab）。
   sources,
+
+  /// 本媒体域的设置。正文投影自全局 settings schema，避免复制第二套配置。
+  settings,
 }
 
 /// 一个视图的声明：显示名 + 内容构建器。

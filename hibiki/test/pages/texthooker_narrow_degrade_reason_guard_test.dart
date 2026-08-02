@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1110 守卫：窄屏（compact）状态卡不得把降级原因整行藏掉。
 ///
 /// 原实现是 `if (!compact && state.fallbackReason != null)` —— 窗口宽度不足 840px
@@ -21,23 +23,29 @@ void main() {
       'lib/src/pages/implementations/texthooker_page.dart',
     ).readAsStringSync();
 
-    // 抽 _SessionOverviewCard 的类体，避免「整文件命中」把断言蒙混过去。
-    final int start = source.indexOf('class _SessionOverviewCard');
+    // 以类声明的真实代码锚点 + 花括号配对抽体，邻接类增删不会把窗口误扩/截断。
+    final String searchable = maskComments(source);
+    final int start = searchable.indexOf('class _SessionOverviewCard');
     expect(start, greaterThanOrEqualTo(0),
         reason: '找不到 _SessionOverviewCard，测试锚点过期');
-    final int end = source.indexOf('class _LineTracksCard', start);
-    expect(end, greaterThan(start), reason: '找不到类体结束锚点');
-    cardSource = source.substring(start, end);
+    cardSource = balancedBlockFrom(
+      source,
+      start,
+      what: '_SessionOverviewCard 类体',
+    );
   });
 
   test('降级原因不再被 compact 整行丢弃（BUG-1110）', () {
     expect(
-      cardSource.contains('if (state.fallbackReason != null)'),
+      containsCodeLine(cardSource, 'if (state.fallbackReason != null)'),
       isTrue,
       reason: '降级原因的渲染条件必须只看 fallbackReason，不看屏宽',
     );
     expect(
-      cardSource.contains('!compact && state.fallbackReason != null'),
+      containsCodeLine(
+        cardSource,
+        '!compact && state.fallbackReason != null',
+      ),
       isFalse,
       reason: '窄屏藏掉降级原因正是 BUG-1110，不得回退',
     );
@@ -45,7 +53,7 @@ void main() {
 
   test('compact 只收窄行数，不丢弃内容（BUG-1110）', () {
     expect(
-      cardSource.contains('maxLines: compact ? 2 : 3'),
+      containsCodeLine(cardSource, 'maxLines: compact ? 2 : 3'),
       isTrue,
       reason: '降级原因在窄屏应收窄到 2 行，而不是整行消失',
     );
@@ -54,8 +62,10 @@ void main() {
   test('compact 省掉的是次要信息而非诊断线索（BUG-1110）', () {
     // 采样率/声道/位深这类次要信息仍可以在窄屏省掉——这是 compact 的正当用途。
     expect(
-      cardSource
-          .contains("compact\n                      ? '\$phase · \$audio'"),
+      RegExp(
+        r"compact\s*\?\s*'\$phase · \$audio'\s*:\s*'\$phase · \$audio'"
+        r"\s*'\$\{format == null",
+      ).hasMatch(maskComments(cardSource)),
       isTrue,
       reason: 'compact 仍应省掉 format（次要信息），这是它的正当用途',
     );
@@ -63,9 +73,10 @@ void main() {
 
   test('降级徽章与降级原因的显示条件必须对称（BUG-1110）', () {
     // 不对称正是这个 bug 的本质：徽章无条件亮，原因却被藏。
-    final int pill = cardSource.indexOf('_StatusPill(');
+    final String code = maskComments(cardSource);
+    final int pill = code.indexOf('_StatusPill(');
     expect(pill, greaterThanOrEqualTo(0), reason: '找不到 _StatusPill');
-    final String pillSource = cardSource.substring(pill);
+    final String pillSource = code.substring(pill);
     expect(
       pillSource.contains('state.isDegraded'),
       isTrue,

@@ -364,7 +364,6 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
               focusIdPrefix: 'game-dashboard-tab',
               onSelectLibrary: widget.onShowLibrary,
               onSelectMonitor: widget.onShowMonitor,
-              onSelectDiagnostics: widget.onShowDiagnostics,
             ),
             actions: <Widget>[
               HibikiIconButton(

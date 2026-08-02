@@ -11,6 +11,7 @@ import 'package:hibiki/src/media/media_item.dart';
 import 'package:hibiki/src/media/sources/manga_hibiki_source.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
+import 'package:hibiki/src/pages/implementations/module_settings_view.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
 
 import '../helpers/source_guard.dart';
@@ -100,6 +101,7 @@ void main() {
           MediaLibraryViewKind.library,
           MediaLibraryViewKind.browse,
           MediaLibraryViewKind.sources,
+          MediaLibraryViewKind.settings,
         ],
       );
       final Widget shelf = shell.views.first.builder(
@@ -114,9 +116,14 @@ void main() {
       );
       // 「来源」视图必须是漫画来源页——本地扫描根 + 扩展 + 在线来源都收在这里。
       expect(
-        shell.views.last.builder(
+        shell.views[2].builder(
             tester.element(find.byType(SizedBox)), const SizedBox.shrink()),
         isA<MangaSourcesPage>(),
+      );
+      expect(
+        shell.views.last.builder(
+            tester.element(find.byType(SizedBox)), const SizedBox.shrink()),
+        isA<ModuleSettingsView>(),
       );
       // 反向锚：普通书架的默认值必须仍是 false，否则漫画会在两边都出现。
       expect(const ReaderHibikiHistoryPage().mangaOnly, isFalse);

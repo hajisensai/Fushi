@@ -6,19 +6,57 @@ import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
 import 'package:hibiki/utils.dart';
 
-/// 游戏模块四页（首页 / 库 / 捕获工作台 / 诊断）共享的枚举翻译映射、时间格式与
+/// 游戏模块各页（首页 / 库 / 捕获工作台 / 设置 / 诊断）共享的枚举翻译映射、时间格式与
 /// 子区分段导航。巡检 PR-1 收敛点：此前 `_audioBackendLabel` 三份拷贝、
 /// `_formatTime` 两份拷贝、section tab 行三份拷贝，且多处枚举 `.name`
 /// 直接上屏（camelCase 英文暴露给 17 语言用户）。
 
 /// 游戏页子区。[dashboard] 是游戏模块的默认首屏（游戏首页/仪表盘），排在最前，
 /// 库/工作台/诊断顺延——枚举顺序即 [HomeGamePage] 的 IndexedStack 索引顺序。
-enum GameSection { dashboard, library, monitor, diagnostics }
+enum GameSection { dashboard, library, monitor, diagnostics, settings }
 
 /// App 级游戏页子区导航。默认停在游戏首页（[GameSection.dashboard]）；原生 Hook
 /// 浮窗可在主窗最小化时请求回到捕获工作台（写 [GameSection.monitor]）。
 final ValueNotifier<GameSection> gameSectionNotifier =
     ValueNotifier<GameSection>(GameSection.dashboard);
+
+/// 捕获工作台对用户可宣称的阶段。helper/音频源已启动不等于已经能消费台词：
+/// 引擎会话必须先选定文本线程，之后才可能产生与该线程台词绑定的句级音频。
+enum GalWorkbenchReadiness { idle, waitingForThread, listening }
+
+GalWorkbenchReadiness galWorkbenchReadiness({
+  required GalHookSessionState state,
+  required bool hasEngineSource,
+  required String? selectedTextThreadKey,
+}) {
+  if (!state.isActive) return GalWorkbenchReadiness.idle;
+  if (hasEngineSource && selectedTextThreadKey == null) {
+    return GalWorkbenchReadiness.waitingForThread;
+  }
+  return GalWorkbenchReadiness.listening;
+}
+
+/// 游戏启动后的捕获设置弹窗只在「本轮引擎会话已经发现线程，但用户尚未选定」时出现。
+/// 将判定收敛为纯函数，避免 session/listener 的多次通知重复弹窗。
+bool shouldPromptGalCaptureSetup({
+  required GalHookSessionState state,
+  required bool hasEngineSource,
+  required String? selectedTextThreadKey,
+  required int textThreadCount,
+  required bool sessionAlreadyPrompted,
+}) =>
+    state.sessionStartedAt != null &&
+    switch (state.phase) {
+      GalHookSessionPhase.waitingSignals ||
+      GalHookSessionPhase.running ||
+      GalHookSessionPhase.degraded =>
+        true,
+      _ => false,
+    } &&
+    hasEngineSource &&
+    selectedTextThreadKey == null &&
+    textThreadCount > 0 &&
+    !sessionAlreadyPrompted;
 
 /// Hook 会话音频后端的用户可读标签。
 String galHookAudioBackendLabel(GalHookAudioBackend backend) =>
@@ -77,7 +115,10 @@ String formatGameClockTime(DateTime value) {
   return '${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
 }
 
-/// 游戏模块四页共用的胶囊分段导航（首页 / 库 / 捕获工作台 / 诊断）。
+/// 游戏模块共用的胶囊分段导航（首页 / 库 / 捕获工作台 / 设置）。
+///
+/// 兼容性诊断仍可从「设置」进入，但不再占据高频顶部页签；诊断详情打开时顶部
+/// 高亮「设置」，明确它属于配置/排障路径。
 ///
 /// 四个选项是一个焦点停靠点：左右方向键在控件内切换，鼠标和触摸仍可直接点某段。
 /// [focusIdPrefix] 决定稳定 focusId `<prefix>-sections`，各页前缀互不冲突。
@@ -87,7 +128,7 @@ class GameSectionTabs extends StatelessWidget {
     required this.focusIdPrefix,
     required this.onSelectLibrary,
     required this.onSelectMonitor,
-    required this.onSelectDiagnostics,
+    this.onSelectSettings,
     this.onSelectDashboard,
     super.key,
   });
@@ -105,11 +146,16 @@ class GameSectionTabs extends StatelessWidget {
 
   final VoidCallback onSelectLibrary;
   final VoidCallback onSelectMonitor;
-  final VoidCallback onSelectDiagnostics;
+  final VoidCallback? onSelectSettings;
 
   @override
   Widget build(BuildContext context) {
-    const List<GameSection> values = GameSection.values;
+    const List<GameSection> values = <GameSection>[
+      GameSection.dashboard,
+      GameSection.library,
+      GameSection.monitor,
+      GameSection.settings,
+    ];
     void select(GameSection section) {
       switch (section) {
         case GameSection.dashboard:
@@ -123,7 +169,11 @@ class GameSectionTabs extends StatelessWidget {
           onSelectMonitor();
           return;
         case GameSection.diagnostics:
-          onSelectDiagnostics();
+          gameSectionNotifier.value = GameSection.diagnostics;
+          return;
+        case GameSection.settings:
+          (onSelectSettings ??
+              () => gameSectionNotifier.value = GameSection.settings)();
           return;
       }
     }
@@ -149,8 +199,8 @@ class GameSectionTabs extends StatelessWidget {
             label: Text(t.game_capture_workbench),
           ),
           ButtonSegment<GameSection>(
-            value: GameSection.diagnostics,
-            label: Text(t.game_diagnostics),
+            value: GameSection.settings,
+            label: Text(t.settings),
           ),
         ],
         selected: selected,

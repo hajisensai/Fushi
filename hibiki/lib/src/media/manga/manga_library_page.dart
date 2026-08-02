@@ -3,7 +3,9 @@ import 'package:flutter/widgets.dart';
 import 'package:hibiki/src/media/manga/manga_browse_page.dart';
 import 'package:hibiki/src/media/manga/manga_sources_page.dart';
 import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
+import 'package:hibiki/src/pages/implementations/module_settings_view.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
+import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/utils.dart';
 
 /// 顶层漫画库页：**恒为三视图**，五个平台完全同构。
@@ -51,6 +53,15 @@ class MangaLibraryPage extends StatelessWidget {
           label: t.library_view_sources,
           builder: (BuildContext context, Widget navigation) =>
               MangaSourcesPage(navigation: navigation),
+        ),
+        MediaLibraryViewSpec(
+          kind: MediaLibraryViewKind.settings,
+          label: t.settings,
+          builder: (BuildContext context, Widget navigation) =>
+              ModuleSettingsView(
+            destinationId: SettingsDestinationId.reading,
+            navigation: navigation,
+          ),
         ),
       ],
     );

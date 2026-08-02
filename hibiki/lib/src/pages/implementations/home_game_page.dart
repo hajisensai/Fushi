@@ -6,7 +6,9 @@ import 'package:hibiki/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:hibiki/src/pages/implementations/game_shared.dart';
 import 'package:hibiki/src/pages/implementations/game_statistics_page.dart';
 import 'package:hibiki/src/pages/implementations/games_library_page.dart';
+import 'package:hibiki/src/pages/implementations/module_settings_view.dart';
 import 'package:hibiki/src/pages/implementations/texthooker_page.dart';
+import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/utils.dart';
 
 // GameSection / gameSectionNotifier 已迁到 game_shared.dart（三页共享），
@@ -30,6 +32,10 @@ typedef GameDashboardBuilder = Widget Function(
   BuildContext context,
   VoidCallback onShowLibrary,
 );
+typedef GameSettingsBuilder = Widget Function(
+  BuildContext context,
+  Widget navigation,
+);
 
 /// 首页一级「游戏」模块。
 ///
@@ -42,18 +48,21 @@ class HomeGamePage extends StatefulWidget {
     this.monitorBuilder,
     this.libraryBuilder,
     this.dashboardBuilder,
+    this.settingsBuilder,
     this.controller,
   });
 
   final GameMonitorBuilder? monitorBuilder;
   final GameLibraryBuilder? libraryBuilder;
   final GameDashboardBuilder? dashboardBuilder;
+  final GameSettingsBuilder? settingsBuilder;
   final GalHookSessionController? controller;
 
   static const Key dashboardKey = ValueKey<String>('game-dashboard');
   static const Key libraryKey = ValueKey<String>('game-library');
   static const Key monitorKey = ValueKey<String>('game-monitor');
   static const Key diagnosticsKey = ValueKey<String>('game-diagnostics');
+  static const Key settingsKey = ValueKey<String>('game-settings');
 
   /// 库页顶部会话状态带（原两张总览大卡的收敛替身），整条可点进入捕获工作台。
   static const Key captureStatusKey = ValueKey<String>('game-capture-status');
@@ -101,6 +110,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
   void _showLibrary() => _showSection(GameSection.library);
   void _showMonitor() => _showSection(GameSection.monitor);
   void _showDiagnostics() => _showSection(GameSection.diagnostics);
+  void _showSettings() => _showSection(GameSection.settings);
 
   Future<void> _openStatistics() => Navigator.of(context).push(
         MaterialPageRoute<void>(
@@ -113,6 +123,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
     final GameMonitorBuilder monitorBuilder = widget.monitorBuilder ??
         (BuildContext context, VoidCallback onShowLibrary) => TexthookerPage(
               embedded: true,
+              captureSetupEnabled: _section == GameSection.monitor,
               onShowLibrary: onShowLibrary,
               onShowDiagnostics: _showDiagnostics,
             );
@@ -149,6 +160,26 @@ class _HomeGamePageState extends State<HomeGamePage> {
               onShowCapture: _showMonitor,
             ),
           ),
+          KeyedSubtree(
+            key: HomeGamePage.settingsKey,
+            child: Builder(
+              builder: (BuildContext context) {
+                final Widget navigation = GameSectionTabs(
+                  selected: GameSection.settings,
+                  focusIdPrefix: 'game-settings-tab',
+                  onSelectDashboard: _showDashboard,
+                  onSelectLibrary: _showLibrary,
+                  onSelectMonitor: _showMonitor,
+                  onSelectSettings: _showSettings,
+                );
+                return widget.settingsBuilder?.call(context, navigation) ??
+                    ModuleSettingsView(
+                      destinationId: SettingsDestinationId.game,
+                      navigation: navigation,
+                    );
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -174,7 +205,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
               onSelectDashboard: _showDashboard,
               onSelectLibrary: _showLibrary,
               onSelectMonitor: _showMonitor,
-              onSelectDiagnostics: _showDiagnostics,
+              onSelectSettings: _showSettings,
             ),
             // 顶部不再放「捕获工作台」图标钮——它与下方 GameSectionTabs 的
             // 「捕获工作台」分段去向完全相同，纯冗余；入口收敛到分段导航 + 状态带。
@@ -190,12 +221,19 @@ class _HomeGamePageState extends State<HomeGamePage> {
                   builder: (BuildContext context, Widget? child) {
                     final GalHookSessionState state = _controller.state;
                     final lines = _controller.lines;
+                    final GalWorkbenchReadiness readiness =
+                        galWorkbenchReadiness(
+                      state: state,
+                      hasEngineSource: _controller.hasEngineSource,
+                      selectedTextThreadKey: _controller.selectedTextThreadKey,
+                    );
                     return Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                       child: _CaptureStatusStrip(
                         lineCount: lines.length,
                         latestLine: lines.isEmpty ? null : lines.last.text,
                         state: state,
+                        readiness: readiness,
                         onOpen: _showMonitor,
                       ),
                     );
@@ -232,12 +270,14 @@ class _CaptureStatusStrip extends StatelessWidget {
     required this.lineCount,
     required this.latestLine,
     required this.state,
+    required this.readiness,
     required this.onOpen,
   });
 
   final int lineCount;
   final String? latestLine;
   final GalHookSessionState state;
+  final GalWorkbenchReadiness readiness;
   final VoidCallback onOpen;
 
   @override
@@ -246,11 +286,14 @@ class _CaptureStatusStrip extends StatelessWidget {
     final ColorScheme colors = theme.colorScheme;
     // 有台词、或会话阶段非 idle/error，都算「在捕获」——阶段已 running 但尚未
     // 产出台词时仍显示活动态，而不是回落到「尚未开始」。
-    final bool active = state.isActive || lineCount > 0;
+    final bool active =
+        readiness != GalWorkbenchReadiness.idle || lineCount > 0;
     final Color accent = active ? colors.primary : colors.onSurfaceVariant;
 
     final Widget detail = active
-        ? _buildActiveDetail(theme, colors)
+        ? readiness == GalWorkbenchReadiness.waitingForThread
+            ? _buildWaitingForThreadDetail(theme, colors)
+            : _buildActiveDetail(theme, colors)
         : Text(
             '${t.game_session_idle}  ·  ${t.game_open_capture_workspace}',
             maxLines: 1,
@@ -279,6 +322,33 @@ class _CaptureStatusStrip extends StatelessWidget {
           Icon(Icons.chevron_right, color: colors.onSurfaceVariant, size: 20),
         ],
       ),
+    );
+  }
+
+  Widget _buildWaitingForThreadDetail(
+    ThemeData theme,
+    ColorScheme colors,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          t.game_session_waiting_thread,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.labelLarge,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          t.game_text_thread_unset,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+      ],
     );
   }
 
