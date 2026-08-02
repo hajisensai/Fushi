@@ -285,7 +285,13 @@ Win32Window::MessageHandler(HWND hwnd,
     }
 
     case WM_ACTIVATE:
-      if (child_content_ != nullptr) {
+      // WM_ACTIVATE is sent for both sides of an activation hand-off. When an
+      // activatable Hibiki auxiliary window (for example the clipboard lookup
+      // panel) starts its native move/size loop, the main window receives
+      // WA_INACTIVE. Restoring focus from that deactivation notification pulls
+      // the main window back above the panel and the user's foreground app.
+      // Only repair Flutter child focus when this main window is being activated.
+      if (LOWORD(wparam) != WA_INACTIVE && child_content_ != nullptr) {
         SetFocus(child_content_);
       }
       return 0;
