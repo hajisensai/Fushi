@@ -83,7 +83,7 @@ void main() {
           source.indexOf('String _resolveSpreadImageUrl(', loadSpreadIdx);
       expect(nextIdx, greaterThan(loadSpreadIdx));
       final String body = source.substring(loadSpreadIdx, nextIdx);
-      // 钉的是「委托给 builder」，不是调用点的换行方式——BUG-1419 给 builder 加了
+      // 钉的是「委托给 builder」，不是调用点的换行方式——BUG-1426 给 builder 加了
       // 阈值/键桥参数后调用点被 dart format 折成多行，旧的 `buildSpreadPageHtml(leftUrl:`
       // 连写断言当场转红，那是拼写脆弱而不是契约破裂。
       expect(body, contains('buildSpreadPageHtml('),

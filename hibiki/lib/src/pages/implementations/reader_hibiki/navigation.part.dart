@@ -815,7 +815,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     final String leftUrl = rtl ? urlB : urlA;
     final String rightUrl = rtl ? urlA : urlB;
 
-    // BUG-1419：spread 独立文档自带翻页输入。阈值取与正文引擎**同一个**真值来源
+    // BUG-1426：spread 独立文档自带翻页输入。阈值取与正文引擎**同一个**真值来源
     // （`ReaderSettings.swipePageTurnDistThresholds`，随灵敏度设置缩放），不在
     // spread 侧另立一套默认值——否则调灵敏度只对正文生效，双页页面手感恒定。
     final ({int dist, int fastDist}) swipeThresholds =

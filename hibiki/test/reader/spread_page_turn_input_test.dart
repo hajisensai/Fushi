@@ -14,7 +14,7 @@ import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import '../helpers/source_guard.dart';
 import '../pages/reader_hibiki_page_source_corpus.dart';
 
-/// BUG-1419 守卫：进了双页 spread 页面，滚轮和左右翻页一起失效。
+/// BUG-1426 守卫：进了双页 spread 页面，滚轮和左右翻页一起失效。
 ///
 /// 根因是 BUG-1280 ③ 的守卫留下的账：spread 是第四种独立文档，
 /// `_onChapterLoadComplete` 判到 `_spreadDocumentLoaded` 就早退、绝不注入正文引擎，
@@ -38,7 +38,7 @@ void main() {
         keyBridgeScript: keyBridgeScript,
       );
 
-  group('spread 文档自带翻页输入 (BUG-1419)', () {
+  group('spread 文档自带翻页输入 (BUG-1426)', () {
     test('滚轮桥直连既有 onWheelPaginate，且带主轴参数', () {
       final String html = htmlWith();
       expect(html, contains("callHandler('onWheelPaginate'"),
@@ -97,7 +97,7 @@ void main() {
     });
   });
 
-  group('键桥 token 表按注册表当前绑定导出 (BUG-1419)', () {
+  group('键桥 token 表按注册表当前绑定导出 (BUG-1426)', () {
     test('未装载的注册表给空表（与「用户清空绑定」同等对待）', () {
       expect(spreadKeyBridgeTokens(HibikiShortcutRegistry()), isEmpty);
     });
@@ -158,7 +158,7 @@ void main() {
     });
   });
 
-  group('Dart 侧接线 (BUG-1419)', () {
+  group('Dart 侧接线 (BUG-1426)', () {
     final String source = readReaderPageSource();
 
     test('注册了 onSpreadKey 处理器，走注册表解析并 reclaim 焦点', () {
@@ -206,7 +206,7 @@ void main() {
     });
   });
 
-  group('滑动灵敏度默认值单一真值 (BUG-1419)', () {
+  group('滑动灵敏度默认值单一真值 (BUG-1426)', () {
     test('getter 的兜底默认就是 defaultSwipePageTurnSensitivity', () {
       const String kSettingsFile = 'lib/src/reader/reader_settings.dart';
       final String settingsSrc = File(kSettingsFile).readAsStringSync();

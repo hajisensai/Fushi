@@ -928,7 +928,7 @@ String switchCaseBody(
 
 /// 在合并语料里定位**正文引擎那份** `wheel` 监听的起始下标。
 ///
-/// BUG-1419 之后语料里有**两份** wheel 监听：spread 独立文档自带的那份
+/// BUG-1426 之后语料里有**两份** wheel 监听：spread 独立文档自带的那份
 /// （`buildSpreadPageHtml`，直送 `onWheelPaginate`，没有连续/分页轴向门控）在
 /// 主壳里、位置更靠前；正文引擎那份在 `reader_hibiki/webview.part.dart`。
 /// 裸 `indexOf("addEventListener('wheel'")` 会锚到前者，让所有钉正文轴向门控的

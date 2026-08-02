@@ -498,7 +498,7 @@ bool chapterTurnCoolingDown({
 /// [leftUrl] / [rightUrl] 是已解析的整页图 URL（调用方已按 RTL/LTR 排好左右）。纯字符串
 /// 生成、无副作用，供单测锁定「spreadReady 被图片 load 门控」（撤回同步触发 → 守卫转红）。
 ///
-/// BUG-1419：本文档还必须自带**翻页输入**。spread 是第四种独立文档，
+/// BUG-1426：本文档还必须自带**翻页输入**。spread 是第四种独立文档，
 /// `_onChapterLoadComplete` 的 spread 守卫（BUG-1280 ③）把整份正文引擎挡在门外，
 /// 而滚轮 / 横扫 / 键桥全在那份引擎里 ⇒ 进了双页页面滚轮和翻页键一起失效。三条通道
 /// 都直连**既有** Dart handler，Dart 侧不新增翻页语义：
@@ -558,7 +558,7 @@ html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
     if (e && e.target && e.target.tagName === 'IMG') return;
     window.flutter_inappwebview.callHandler('onSpreadTapEmpty');
   });
-  // BUG-1419：翻页输入。正文引擎（滚轮 / 横扫 / 键桥都在里面）对 spread 文档是
+  // BUG-1426：翻页输入。正文引擎（滚轮 / 横扫 / 键桥都在里面）对 spread 文档是
   // 被守卫挡住的，本文档必须自带，否则进了双页页面滚轮和翻页键一起没反应。
   // 滚轮：与正文 _handlePagedWheelTick 逐字同款语义（主轴取绝对值更大的那个，
   // delta > 0 = forward），直送既有 onWheelPaginate handler——节流 / 跨章冷却 /
@@ -645,7 +645,7 @@ $keyBridgeScript
 ''';
 }
 
-/// BUG-1419：spread 独立文档要交回 Dart 的键盘 token 表（[InputBinding.serialize]
+/// BUG-1426：spread 独立文档要交回 Dart 的键盘 token 表（[InputBinding.serialize]
 /// 原样，如 `ArrowLeft` / `Ctrl+KeyD`）。
 ///
 /// 只导出在双页页面上**真正有意义**的动作：翻页、唤/收底栏、退出书。spread 页没有

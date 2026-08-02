@@ -2093,7 +2093,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           },
         );
 
-        // BUG-1419：spread 独立文档的键桥落地点。JS 侧的表由
+        // BUG-1426：spread 独立文档的键桥落地点。JS 侧的表由
         // [spreadKeyBridgeTokens] 按注册表当前绑定导出（裸 Space 除外，那条归上面
         // 的 onSpaceKey 桥），所以这里只做「token → 动作」的反解析，解析走的是与
         // Flutter 焦点路径**同一个** resolveKeyboard——改键对两条路一起生效。

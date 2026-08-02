@@ -404,7 +404,7 @@ class ReaderSettings {
   static double normalizeSwipePageTurnSensitivity(num value) =>
       value.toDouble().clamp(0.3, 2.0).toDouble();
 
-  /// 灵敏度系数的默认值（1.0 = 默认「轻快」手感）。提成常量是因为 BUG-1419 之后
+  /// 灵敏度系数的默认值（1.0 = 默认「轻快」手感）。提成常量是因为 BUG-1426 之后
   /// 它有了**第二个**读取方：spread 独立文档在 settings 尚未就绪时也要算滑动阈值，
   /// 那里若各写一个字面量 1.0，改默认手感只会改到其中一半。
   static const double defaultSwipePageTurnSensitivity = 1.0;

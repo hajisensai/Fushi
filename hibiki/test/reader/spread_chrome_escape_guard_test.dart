@@ -270,7 +270,7 @@ function node(tagName, src) {
 }
 
 const imgs = [node('IMG', 'L'), node('IMG', 'R')];
-// BUG-1419 起本文档还挂了 wheel / touch / capture 阶段的 click 监听，故假 DOM 要
+// BUG-1426 起本文档还挂了 wheel / touch / capture 阶段的 click 监听，故假 DOM 要
 // 按 (type, capture) 分桶——否则「文档级 click 桥只有一个」这条断言会被 capture 阶段
 // 那个吞噬监听凑数放过去。
 const docListeners = {};

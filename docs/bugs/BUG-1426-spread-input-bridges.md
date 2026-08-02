@@ -1,4 +1,4 @@
-## BUG-1419 · 双页 spread 页滚轮与左右翻页失效
+## BUG-1426 · 双页 spread 页滚轮与左右翻页失效
 - **报告**：2026-08-02（用户截图：EPUB 轻小说彩插被自动配成双页展开，"进入这个界面以后，滚轮和左右翻页失效"）
 - **真实性**：✅ 真 bug。根因是 **BUG-1280 ③ 的守卫留下的账**，不是新回归：
   - spread 页是 `buildSpreadPageHtml`（`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart:497`）

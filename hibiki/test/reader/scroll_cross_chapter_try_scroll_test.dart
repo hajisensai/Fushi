@@ -152,7 +152,7 @@ void main() {
 }
 
 String _wheelBlock(String source) {
-  // BUG-1419：spread 独立文档自带的 wheel 监听（无连续/分页门控）在合并语料里排在
+  // BUG-1426：spread 独立文档自带的 wheel 监听（无连续/分页门控）在合并语料里排在
   // 正文引擎那份**前面**，裸 indexOf 会锚错。按块内的 hoshiContinuousMode 挑正文那份。
   final int start = bodyEngineWheelListenerStart(source);
   expect(start, isNonNegative, reason: 'missing body-engine wheel listener');
