@@ -135,7 +135,10 @@ void main() {
 
   testWidgets('默认最近观看：看过的在前，没看过的按导入时间倒序；切名称/导入时间真重排 + 写穿偏好',
       (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 800);
+    // v68 起散装也进 hero（本用例三张全是散卡，Beta 在看 → 顶部多出一块全宽
+    // hero），视口抬高让墙卡仍在首屏内被懒构建出来——本用例断言的是墙卡排序，
+    // 不是 hero。
+    tester.view.physicalSize = const Size(1280, 2200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -178,7 +181,10 @@ void main() {
 
   testWidgets('偏好持久化：带 video_sort_mode=title 开页直接按名称序渲染',
       (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 800);
+    // v68 起散装也进 hero（本用例三张全是散卡，Beta 在看 → 顶部多出一块全宽
+    // hero），视口抬高让墙卡仍在首屏内被懒构建出来——本用例断言的是墙卡排序，
+    // 不是 hero。
+    tester.view.physicalSize = const Size(1280, 2200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
