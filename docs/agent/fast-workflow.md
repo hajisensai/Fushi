@@ -94,7 +94,7 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
 | **目录枚举型** | `Directory(...).listSync(recursive: true)` 现场枚举 | **自动纳入扫描面** | ✅ 进 |
 | **点名清单型** | 源码里硬编码的文件路径常量表 | **天然在扫描集外** | ❌ 不进 |
 
-点名清单型是本仓「静态守卫」的大多数（例如 `md3_design_system_static_test.dart` 约 70 个 test 里有 69 个是点名的）。它们对新 PR 的新文件**零覆盖**——加进清单不会多抓到任何东西，只会让清单变长。它们由定向测试覆盖，位置正确。
+点名清单型是本仓「静态守卫」的大多数（例如 `md3_design_system_static_test.dart` 63 个 test 里有 62 个是点名的）。它们对新 PR 的新文件**零覆盖**——加进清单不会多抓到任何东西，只会让清单变长。它们由定向测试覆盖，位置正确。
 
 **只枚举某个子树**的同样不进（`lib/src/sync` 的空 catch / PIN / TLS 三条、`lib/src/settings` 的旧 pref key、5 个媒体页根的焦点所有权……）：改动落在那个子树时，定向测试本来就会挑到它。
 
