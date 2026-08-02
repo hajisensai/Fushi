@@ -327,7 +327,27 @@ class VideoPlayerController extends ChangeNotifier
   Future<void> Function()? _pauseAtSubtitleEndOverride;
   bool Function()? _pauseAtSubtitleEndIsPlayingOverride;
   Future<void> Function(int positionMs)? _pauseAtSubtitleEndSeekOverride;
+
+  /// 测试注入：[replayCue] 的起播出口（生产为 null，走真 [play]）。无 [_player] 的
+  /// 纯单测里 [play] 是 no-op，靠它断言「重播确实起播了」。
+  Future<void> Function()? _replayPlayOverride;
   int? _lastSubtitleEndPauseCueIndex;
+
+  /// 「只播这一句就停」的一次性目标 cue 下标（[replayCue] 置，句尾停下即消耗）；
+  /// null = 无一次性请求。
+  ///
+  /// **与全局偏好 [_pauseAtSubtitleEnd] 正交**，故必须是独立字段而不是「临时把开关
+  /// 打开、停下再关」：后者一旦停不下来（用户中途 seek 走 / 换片）就把用户的真实偏好
+  /// 永久写反了。两者经 [_holdEnabledForCue] 汇成同一个句尾判定，句尾暂停的时序、
+  /// seek 回句尾的落点、防重复停（[_lastSubtitleEndPauseCueIndex]）全部共用一套代码，
+  /// 不产生第二条平行路径。
+  ///
+  /// **生命周期绝不能挂进 [_clearSeekTargetSnap]**（那是「主动跳转快照」的复位点）：
+  /// 该方法在**自然播放越过目标句**时会被 [_applySeekTargetSnap] 自行调用，而那一刻
+  /// 正是重播即将抵达句尾、最需要本字段存活的时刻——挂进去等于每次重播都在停下来
+  /// 之前把自己清掉。因此只在**用户主动改变播放位置**的两个真实出口（[seekMs] /
+  /// [_rawSeekMs]，后者覆盖 [skipToCue] 点别的句子）和换片换字幕（[setCues]）清。
+  int? _oneShotHoldCueIndex;
 
   /// 当前启用的 mpv 着色器绝对路径（[load] 复用 / [applyShaders] 实时切换）。
   List<String> _shaderPaths = <String>[];
@@ -867,6 +887,10 @@ class VideoPlayerController extends ChangeNotifier
     // 换字幕/换片（[load] 经此）复位主动跳转目标快照 + 在途 seek 宽限：旧目标下标对新
     // _cues 已失效，留着会让首个 tick 误 snap（TODO-565）。
     _clearSeekTargetSnap();
+    // 同理复位一次性「只播这一句就停」请求与句尾防重复停记号：两者都是**旧 _cues 的
+    // 下标**，对新列表已无意义，留着会让新片的某句被无缘无故停一次。
+    _oneShotHoldCueIndex = null;
+    _lastSubtitleEndPauseCueIndex = null;
     notifyListeners();
   }
 
@@ -1130,8 +1154,7 @@ class VideoPlayerController extends ChangeNotifier
     final int requestedStartMs = initialPositionMs < 0 ? 0 : initialPositionMs;
     final int preloadStartMs =
         resolveEpisodeStart(startIntent, requestedStartMs, null);
-    final bool startArmed =
-        await applyMpvStartPosition(player, preloadStartMs);
+    final bool startArmed = await applyMpvStartPosition(player, preloadStartMs);
     if (!_isCurrentLoad(player, loadToken)) return; // start 下发后换片/销毁。
 
     await player.open(
@@ -1919,11 +1942,13 @@ class VideoPlayerController extends ChangeNotifier
     bool Function()? isPlaying,
     required Future<void> Function() onPause,
     Future<void> Function(int positionMs)? onSeek,
+    Future<void> Function()? onPlay,
   }) {
     _pauseAtSubtitleEnd = enabled;
     _pauseAtSubtitleEndOverride = onPause;
     _pauseAtSubtitleEndIsPlayingOverride = isPlaying;
     _pauseAtSubtitleEndSeekOverride = onSeek;
+    _replayPlayOverride = onPlay;
     _lastSubtitleEndPauseCueIndex = null;
   }
 
@@ -2169,16 +2194,32 @@ class VideoPlayerController extends ChangeNotifier
     }
   }
 
+  /// 第 [cueIndex] 句是否该在句尾停：全局偏好开着（每句都停）**或**它正是一次性
+  /// [replayCue] 的目标句。两个来源在此汇成单一判定，句尾时序只有一套实现。
+  bool _holdEnabledForCue(int cueIndex) =>
+      _pauseAtSubtitleEnd || _oneShotHoldCueIndex == cueIndex;
+
+  /// 消耗一次性 hold（仅当它正指向 [cueIndex]）。停下即用完，避免用户之后自然播回
+  /// 同一句时被再停一次。
+  void _consumeOneShotHold(int cueIndex) {
+    if (_oneShotHoldCueIndex == cueIndex) _oneShotHoldCueIndex = null;
+  }
+
+  /// 句尾落进 gap（下一拍无 cue）的暂停路径。此刻 [_currentCueIndex] 仍是**刚结束
+  /// 那句**（调用点在把它清成 -1 之前），故一次性 hold 按它判定并消耗。
   void _pauseForSubtitleEnd() {
-    if (!_pauseAtSubtitleEnd) return;
+    final int endedCueIndex = _currentCueIndex;
+    if (!_holdEnabledForCue(endedCueIndex)) return;
+    _consumeOneShotHold(endedCueIndex);
     unawaited((_pauseAtSubtitleEndOverride ?? pause).call());
   }
 
   bool _shouldHoldAtSubtitleEnd(int nextCueIndex, int effectiveMs) {
-    if (!_pauseAtSubtitleEnd || nextCueIndex < 0) return false;
+    if (nextCueIndex < 0) return false;
     if (_currentCueIndex < 0 || _currentCueIndex >= _cues.length) {
       return false;
     }
+    if (!_holdEnabledForCue(_currentCueIndex)) return false;
     if (nextCueIndex == _currentCueIndex) return false;
     final AudioCue cue = _cues[_currentCueIndex];
     if (effectiveMs <= cue.endMs) return false;
@@ -2196,6 +2237,7 @@ class VideoPlayerController extends ChangeNotifier
 
   void _pauseAndSeekForSubtitleEnd(AudioCue cue, int cueIndex) {
     _lastSubtitleEndPauseCueIndex = cueIndex;
+    _consumeOneShotHold(cueIndex);
     unawaited(() async {
       await (_pauseAtSubtitleEndOverride ?? pause).call();
       final Future<void> Function(int positionMs) seekToEnd =
@@ -2242,6 +2284,8 @@ class VideoPlayerController extends ChangeNotifier
   Future<void> seekMs(int positionMs) async {
     final int clampedMs = positionMs.clamp(0, 1 << 30);
     _clearSeekTargetSnap();
+    // 用户主动改变播放位置 = 放弃「只播这一句就停」的意图（[_oneShotHoldCueIndex]）。
+    _oneShotHoldCueIndex = null;
     _beginPlainSeekInFlight(clampedMs);
     // 权威同步：直接按目标位置算一次字幕（不经 tick 的位置调和），gap 则立即清空。
     _syncCueForPosition(clampedMs, persistPosition: false);
@@ -2255,6 +2299,10 @@ class VideoPlayerController extends ChangeNotifier
   /// 快照 snap 回目标，凭空多一次闪烁。
   Future<void> _rawSeekMs(int positionMs) async {
     _clearSeekTargetSnap();
+    // 同 [seekMs]：跳到别的句（[skipToCue]）即放弃上一次「只播这一句就停」。
+    // [replayCue] 是唯一例外——它在本方法**之后**才置自己的一次性 hold，与
+    // [skipToCue] 置 [_seekTargetCueIndex] 的顺序契约完全同构，故不会被自清。
+    _oneShotHoldCueIndex = null;
     await _player?.seek(Duration(milliseconds: positionMs.clamp(0, 1 << 30)));
   }
 
@@ -2376,6 +2424,42 @@ class VideoPlayerController extends ChangeNotifier
     _seekSnapGraceTicksLeft =
         _seekTargetCueIndex == null ? 0 : _seekSnapGraceTicks;
   }
+
+  /// 重播 [cue]：跳回句首并播放，**播到该句结尾自动暂停**（一次性）。
+  ///
+  /// 供查词浮层顶栏「重播本句」使用（听不清就地重听，不必手动倒回再按暂停）。
+  ///
+  /// 与 [skipToCue] 的差别只有两点：本方法会**主动起播**，并给这一句挂一次性
+  /// [_oneShotHoldCueIndex]。句尾停下的判定、落点与防重复停完全复用「字幕结束暂停」
+  /// 那套（[_shouldHoldAtSubtitleEnd] / [_pauseAndSeekForSubtitleEnd]），因此倍速、
+  /// 字幕延迟（[_delayMs]）、关键帧吸附、seek 在途 lag 全部自动吃到同一份处理——
+  /// **不是**在 UI 层按 `endMs - startMs` 起个定时器等句长（那种做法会被倍速、缓冲、
+  /// 用户中途 seek 逐一打穿）。
+  ///
+  /// 一次性 hold 的作废由 [seekMs] / [_rawSeekMs] / [setCues] 负责：用户中途拖进度、
+  /// 跳去别的句或换片，都立刻放弃「停在本句尾」的意图。全局偏好
+  /// `字幕结束暂停`（[setPauseAtSubtitleEnd]）与本方法正交，互不改写。
+  Future<void> replayCue(AudioCue cue) async {
+    // 先 seek（内部 [_rawSeekMs] 会清掉上一次的一次性 hold），再置本次目标——顺序与
+    // [skipToCue] 置 [_seekTargetCueIndex] 同构，故绝不会被自清。
+    await skipToCue(cue);
+    final int? targetIndex = _resolveCueIndex(cue);
+    if (targetIndex != null) {
+      _oneShotHoldCueIndex = targetIndex;
+      // 这一句可能刚被句尾暂停过（全局开关开着时）。不清防重复记号的话，重播到句尾会
+      // 被 [_shouldHoldAtSubtitleEnd] 的「停过就不再停」挡掉、直接播进下一句。
+      _lastSubtitleEndPauseCueIndex = null;
+    }
+    // targetIndex == null（目标不在当前 cue 列表，换轨/换片竞态）：仍已 seek 到位，
+    // 但没有可挂 hold 的下标，退化成「跳过去接着播」，不静默假装能停。
+    // 两条分支共用同一个起播出口——分头调 play 会让退化路径绕开测试注入、也埋下
+    // 「以后只改一处」的隐患。
+    await (_replayPlayOverride ?? play).call();
+  }
+
+  /// 测试可见：当前一次性「只播这一句就停」目标下标（[_oneShotHoldCueIndex]）。
+  @visibleForTesting
+  int? get debugOneShotHoldCueIndex => _oneShotHoldCueIndex;
 
   /// 升序 cue 列表上按 `startMs` 二分求分界下标（要求 [cues] 已按 startMs 升序）：
   /// - [inclusive] 为 false：lower bound——返回首个 `startMs >= value` 的下标；

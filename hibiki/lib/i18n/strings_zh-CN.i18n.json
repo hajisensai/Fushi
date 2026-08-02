@@ -3107,5 +3107,6 @@
   "mihon_extension_preview_source_select": "选择要预览的源",
   "mihon_extension_sources_included": "包含的源",
   "mihon_extension_preview_read_only": "预览是只读的。安装扩展后才能打开阅读。",
-  "selection_copy_empty": "未选中文本。"
+  "selection_copy_empty": "未选中文本。",
+  "video_subtitle_replay": "重播本句"
 }

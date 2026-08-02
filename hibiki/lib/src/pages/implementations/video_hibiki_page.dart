@@ -3627,14 +3627,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _thumbnailGrabber = null;
   }
 
-  /// 查词浮层顶部「收藏当前字幕句」星标行（覆写 [DictionaryPageMixin.buildPopupHeaderFor]）。
+  /// 查词浮层顶部「当前字幕句」动作行（覆写 [DictionaryPageMixin.buildPopupHeaderFor]）。
   /// 仅顶层（[index] == 0，真查词那句）显示；嵌套递归查词层（index > 0）不属于某条字幕句，
-  /// 返回 null。星标实心=已收藏，空心=未收藏，点击 toggle。
+  /// 返回 null。
+  ///
+  /// 四个动作都作用于**当前查词那句**（[_lastLookupCue]）：重播本句 / 跳到此句 / 复制 /
+  /// 收藏。前三个与字幕跳转列表行尾的 ▶ ⧉ 同源（[VideoPlayerController.skipToCue] /
+  /// 剪贴板），用户在浮层里不必先关浮层再去字幕列表找回那一行。
+  ///
+  /// 没有锚定 cue（无字幕轨 / gap 中查词）时重播与跳转无处可去，置灰而不是隐藏——
+  /// 按钮位置恒定，不会因句而异地跳来跳去。复制仍可用（回落整句文本）。
+  /// 星标实心=已收藏，空心=未收藏，点击 toggle。
   @override
   Widget? buildPopupHeaderFor(int index) {
     if (index != 0) return null;
     final ThemeData theme =
         appModel.overrideDictionaryTheme ?? Theme.of(context);
+    final bool hasCue = _lastLookupCue != null && _controller != null;
     return Material(
       type: MaterialType.transparency,
       child: Container(
@@ -3644,6 +3653,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
+            HibikiIconButton(
+              key: const Key('video_popup_replay_cue_button'),
+              tooltip: t.video_subtitle_replay,
+              icon: Icons.replay,
+              size: 20,
+              enabled: hasCue,
+              onTap: _replayLookupCue,
+            ),
+            HibikiIconButton(
+              key: const Key('video_popup_jump_to_cue_button'),
+              // 复用字幕跳转列表行尾 ▶ 的图标与文案：同一动作同一表征，不造第二套说法。
+              tooltip: t.video_subtitle_list_jump,
+              icon: Icons.play_arrow,
+              size: 20,
+              enabled: hasCue,
+              onTap: _jumpToLookupCue,
+            ),
+            HibikiIconButton(
+              key: const Key('video_popup_copy_sentence_button'),
+              tooltip: t.copy,
+              icon: Icons.content_copy_outlined,
+              size: 20,
+              onTap: _copyLookupSentence,
+            ),
             HibikiIconButton(
               key: const Key('video_favorite_sentence_button'),
               // tooltip 用「句子收藏」（已有 i18n），描述按钮职责；不复用 toast 文案
@@ -4185,8 +4218,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// （dictionaryPopup scope 的切词条 / 制卡）由 [dictionaryPopupInputSpecFor] 统一减掉，
   /// 不会被抢走，与守卫把制卡键排在守卫之外是同一条边界。
   @override
-  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
-      <ShortcutAction>{
+  Set<ShortcutAction> get dictionaryPopupForwardedActions => <ShortcutAction>{
         ...ShortcutAction.actionsForScope(ShortcutScope.video),
         // 「返回上一级」（默认 Esc / Alt+←）：浮层持焦时按它必须关浮层。它在
         // universal scope，不在 video 组里，漏掉就等于 BUG-1269 那半边重开。
