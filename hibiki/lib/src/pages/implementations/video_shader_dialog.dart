@@ -609,6 +609,9 @@ class Anime4kPresetPickerDialog extends StatelessWidget {
                               .rowVertical,
                         ),
                         title: Text(preset.name),
+                        // 预设说明是两三句话，裸 ListTile 的 subtitle 不截行；
+                        // 收口后显式放宽到 3 行，别让长语言（英/德）被吃掉半句。
+                        subtitleMaxLines: 3,
                         subtitle: Text(presetDescription(preset.id)),
                         trailing: added
                             ? Icon(Icons.check, color: cs.primary)
