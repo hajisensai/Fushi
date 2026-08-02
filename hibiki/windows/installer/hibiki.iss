@@ -40,6 +40,15 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 ; 只在资源管理器右键「打开方式」里出现 Hibiki，并支持拖视频到 hibiki.exe）。
 Name: "videoassoc"; Description: "将 Hibiki 加入视频文件的「打开方式」（mkv / mp4 等）"; GroupDescription: "文件关联："
 
+[InstallDelete]
+; BUG-1449：galgame helper 现在以**普通文件**随包发在 {app}\voice_hook\<arch>\，
+; 由 install_into_bundle.ps1 在构建期解压，与本体同一次构建产出。随包 zip 归档
+; （旧模型的产物）必须在升级时清掉——否则它会以「随包真相源」的身份留在磁盘上：
+; 一旦用户手工删过 voice_hook\<arch>\installed.sha256（排障时的常见动作），
+; GalgameHelperInstaller 就会拿这份**旧** zip 回填，把安装器刚放好的新组件覆盖成旧的，
+; 直接复发 BUG-1448 的「组件比本体旧」。删的是上一版留下的归档，不碰用户数据。
+Type: filesandordirs; Name: "{app}\galgame_helper"
+
 [Files]
 ; 包含 hibiki_update_launcher.exe：应用内更新用它等待当前 hibiki.exe 退出后再启动 Inno。
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

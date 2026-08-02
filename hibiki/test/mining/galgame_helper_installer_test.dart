@@ -686,7 +686,11 @@ void main() {
       }
     });
 
-    test('debug 与 release 都调用统一脚本并复制到 galgame_helper', () {
+    // BUG-1449 改契约：旧断言要求两个 workflow 把 zip 复制进 `{app}\galgame_helper`
+    // 供运行时解压。那份「随包 zip + 运行期解压」是 helper 还走网络下载时的设计，随包
+    // 之后只剩一个后果——磁盘上多一份必须与本体保持同步的解压副本，而同步断掉就是
+    // BUG-1448。现在改为**构建期**解压成普通文件进 `voice_hook\<arch>\`，两者同源。
+    test('debug 与 release 都构建 helper 并在构建期解压进 bundle (BUG-1449)', () {
       for (final String workflow in <String>[
         debugWorkflow,
         releaseWorkflow,
@@ -697,11 +701,16 @@ void main() {
             'native/galgame_hook/tools/build_distribution.ps1 -RunTests',
           ),
         );
-        expect(workflow, contains(r'\galgame_helper'));
-        for (final String arch in <String>['x64', 'x86']) {
-          expect(workflow, contains("'voice_hook_$arch.zip'"));
-          expect(workflow, contains("'voice_hook_$arch.zip.sha256'"));
-        }
+        expect(
+          workflow,
+          contains('native/galgame_hook/tools/install_into_bundle.ps1'),
+          reason: '构建期解压脚本没被调用，helper 根本不会进包',
+        );
+        expect(
+          workflow,
+          isNot(contains(r'\galgame_helper')),
+          reason: '又在随包发 zip 归档：磁盘上重新出现需要与本体同步的第二份副本',
+        );
       }
     });
 
