@@ -12,8 +12,15 @@ download_cache="${2:-${RUNNER_TEMP:-/tmp}/hibiki-mihon-downloads}"
 script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$script_directory/../.." && pwd)"
 overlay_root="$repository_root/third_party/m_extension_server"
-server_repository="https://github.com/miru-project/M-Extension-Server.git"
+# 上游 miru-project/M-Extension-Server 已从 GitHub 消失（404），原先的
+# `git clone` 会转去交互取凭据并以 exit 128 挂掉整个 job。源码按 MPL-2.0
+# vendored 进 upstream_src/，构建从本地树取，不再依赖任何外部仓库。
+vendored_source_root="$overlay_root/upstream_src"
 server_commit="ee55c65106bb18bf81a5ddc660d321b4e14ea2f9"
+# 上游 server/build.gradle.kts 用 `git rev-list HEAD --count` 生成 revision，
+# vendored 树没有 .git 会退化成空串。走上游自带的 ProductRevision 钩子把它钉成
+# 被 vendor 的 commit 短 SHA，产物名与 manifest 因此直接指向真相源。
+server_revision="${server_commit:0:7}"
 temurin_version="jdk-21.0.11+10"
 
 case "$output_directory" in
@@ -26,8 +33,15 @@ trap 'rm -rf -- "$working_root"' EXIT
 source_root="$working_root/M-Extension-Server"
 staging_root="$working_root/output"
 
-git clone --filter=blob:none --no-checkout "$server_repository" "$source_root"
-git -C "$source_root" checkout --detach "$server_commit"
+if [[ ! -f "$vendored_source_root/settings.gradle.kts" ]]; then
+  echo "vendored M-Extension-Server source is missing at $vendored_source_root" >&2
+  exit 1
+fi
+mkdir -p "$source_root"
+cp -R "$vendored_source_root/." "$source_root/"
+# `git apply` 在非 git 目录下同样可用（实测 exit 0），补丁与 overlay 的应用顺序
+# 和语义与 clone 时代完全一致：先打 build/上游逻辑补丁，再用 Hibiki 的安全
+# overlay 覆盖同名文件。
 git -C "$source_root" apply --unidiff-zero "$overlay_root/server-build.gradle.patch"
 cp -R "$overlay_root/overlay/." "$source_root/"
 
@@ -70,7 +84,7 @@ esac
 # Compile and execute the Java 21-targeted server tests with the same verified
 # toolchain that is bundled. A host Java 17 can compile Kotlin JVM 21 bytecode
 # but cannot execute the resulting test classes.
-JAVA_HOME="$host_jdk_home" "$source_root/gradlew" \
+JAVA_HOME="$host_jdk_home" ProductRevision="$server_revision" "$source_root/gradlew" \
   -p "$source_root" :server:test :server:shadowJar --no-daemon
 
 server_jar="$(find "$source_root/server/build" -maxdepth 1 -type f -name 'MExtensionServer-*.jar' -print -quit)"

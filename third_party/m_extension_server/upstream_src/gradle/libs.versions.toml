@@ -1,0 +1,207 @@
+[versions]
+kotlin = "2.2.21"
+coroutines = "1.10.2"
+serialization = "1.9.0"
+okhttp = "5.3.2" # Major version is locked by Tachiyomi extensions
+jackson = "2.18.3" # jackson version locked by javalin, ref: `io.javalin.core.util.OptionalDependency`
+dex2jar = "2.4.33"
+settings = "1.3.0"
+twelvemonkeys = "3.12.0"
+
+[libraries]
+# Kotlin
+kotlin-stdlib-jdk8 = { module = "org.jetbrains.kotlin:kotlin-stdlib-jdk8", version.ref = "kotlin" }
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
+kotlin-test-junit5 = { module = "org.jetbrains.kotlin:kotlin-test-junit5", version.ref = "kotlin" }
+
+# Coroutines
+coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+coroutines-jdk8 = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-jdk8", version.ref = "coroutines" }
+coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+
+# Serialization
+serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+serialization-json-okio = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json-okio", version.ref = "serialization" }
+serialization-protobuf = { module = "org.jetbrains.kotlinx:kotlinx-serialization-protobuf", version.ref = "serialization" }
+
+# Logging
+slf4japi = "org.slf4j:slf4j-api:2.0.17"
+logback = "ch.qos.logback:logback-classic:1.5.21"
+kotlinlogging = "io.github.oshai:kotlin-logging-jvm:7.0.13"
+
+# OkHttp
+okhttp-core = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+okhttp-logging = { module = "com.squareup.okhttp3:logging-interceptor", version.ref = "okhttp" }
+okhttp-dnsoverhttps = { module = "com.squareup.okhttp3:okhttp-dnsoverhttps", version.ref = "okhttp" }
+okhttp-brotli = { module = "com.squareup.okhttp3:okhttp-brotli", version.ref = "okhttp" }
+okhttp-zstd = { module = "com.squareup.okhttp3:okhttp-zstd", version.ref = "okhttp" }
+
+# Javalin api
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin", version.ref = "jackson" }
+jackson-annotations = { module = "com.fasterxml.jackson.core:jackson-annotations", version.ref = "jackson" }
+
+
+# dependencies of Tachiyomi extensions
+rxjava = "io.reactivex:rxjava:1.3.8"
+rxkotlin = "io.reactivex:rxkotlin:1.0.0"
+jsoup = "org.jsoup:jsoup:1.21.2"
+icu4j-charset = "com.ibm.icu:icu4j-charset:78.1"
+
+# Config
+config = "com.typesafe:config:1.4.5"
+config4k = "io.github.config4k:config4k:0.7.0"
+
+# Android stub library
+android-stubs = "com.github.Suwayomi:android-jar:1.0.0"
+
+# Asm modificiation
+dex2jar-translator = { module = "de.femtopedia.dex2jar:dex-translator", version.ref = "dex2jar" }
+dex2jar-tools = { module = "de.femtopedia.dex2jar:dex-tools", version.ref = "dex2jar" }
+
+# APK
+apk-parser = "net.dongliu:apk-parser:2.6.10"
+apksig = "com.android.tools.build:apksig:8.13.1"
+
+# Xml
+xmlpull = "xmlpull:xmlpull:1.1.3.4a"
+
+# Disk & File
+appdirs = "ca.gosyer:kotlin-multiplatform-appdirs:2.0.0"
+
+# AndroidX annotations
+android-annotations = "androidx.annotation:annotation:1.9.1"
+
+# Settings
+settings-core = { module = "com.russhwolf:multiplatform-settings-jvm", version.ref = "settings" }
+settings-serialization = { module = "com.russhwolf:multiplatform-settings-serialization-jvm", version.ref = "settings" }
+
+# ICU4J
+icu4j = "com.ibm.icu:icu4j:78.1"
+
+# Image Decoding implementation provider
+twelvemonkeys-common-lang = { module = "com.twelvemonkeys.common:common-lang", version.ref = "twelvemonkeys" }
+twelvemonkeys-common-io = { module = "com.twelvemonkeys.common:common-io", version.ref = "twelvemonkeys" }
+twelvemonkeys-common-image = { module = "com.twelvemonkeys.common:common-image", version.ref = "twelvemonkeys" }
+twelvemonkeys-imageio-core = { module = "com.twelvemonkeys.imageio:imageio-core", version.ref = "twelvemonkeys" }
+twelvemonkeys-imageio-metadata = { module = "com.twelvemonkeys.imageio:imageio-metadata", version.ref = "twelvemonkeys" }
+twelvemonkeys-imageio-jpeg = { module = "com.twelvemonkeys.imageio:imageio-jpeg", version.ref = "twelvemonkeys" }
+twelvemonkeys-imageio-webp = { module = "com.twelvemonkeys.imageio:imageio-webp", version.ref = "twelvemonkeys" }
+
+imageio-webp = "com.github.usefulness:webp-imageio:0.10.2"
+
+# Webview
+kcef = "dev.datlag:kcef:2024.04.20.4"
+
+# NanoHTTPD
+nanohttpd = "org.nanohttpd:nanohttpd:2.3.1"
+
+# Dependency Injection
+kodein = "org.kodein.di:kodein-di-conf-jvm:7.11.0"
+
+# Dependency of :AndroidCompat:Config
+typesafe_config = "com.typesafe:config:1.4.2"
+
+# injekt-core
+injekt-core = { module = "com.github.null2264.injekt:injekt-core", version = "4135455a2a" }
+
+# Quickjs4j
+quickjs4j = "io.roastedroot:quickjs4j:0.0.13"
+quickjs4j-annotations = "io.roastedroot:quickjs4j-annotations:0.0.13"
+quickjs4j-processor = "io.roastedroot:quickjs4j-processor:0.0.13"
+
+[plugins]
+# Kotlin
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin"}
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin"}
+
+# Linter
+kotlinter = { id = "org.jmailen.kotlinter", version = "5.0.1" }
+
+# Build config
+buildconfig = { id = "com.github.gmazzo.buildconfig", version = "6.0.6"}
+
+# ShadowJar
+shadowjar = { id = "com.gradleup.shadow", version = "8.3.9"}
+
+[bundles]
+shared = [
+    "kotlin-stdlib-jdk8",
+    "kotlin-reflect",
+    "coroutines-core",
+    "coroutines-jdk8",
+    "serialization-json",
+    "serialization-json-okio",
+    "serialization-protobuf",
+    "slf4japi",
+    "logback",
+    "kotlinlogging",
+    "appdirs",
+    "rxjava",
+    "jsoup",
+    "config",
+    "config4k",
+    "dex2jar-translator",
+    "dex2jar-tools",
+    "apk-parser",
+    "jackson-annotations",
+    "kcef",
+    "kodein",
+    "quickjs4j",
+    "quickjs4j-annotations",
+    "quickjs4j-processor"
+]
+
+common = [
+    "kotlin-stdlib-jdk8",
+    "kotlin-reflect",
+    "coroutines-core",
+    "coroutines-jdk8",
+    "serialization-json",
+    "serialization-json-okio",
+    "serialization-protobuf",
+    "kodein",
+    "logback",
+    "kotlinlogging",
+    "rxjava",
+    "rxkotlin",
+    "jsoup",
+    "typesafe_config",
+    "dex2jar-translator",
+    "dex2jar-tools",
+    "apk-parser",
+    "nanohttpd",
+    "jackson-databind",
+    "jackson-kotlin",
+    "injekt-core",
+    "quickjs4j",
+    "quickjs4j-annotations",
+    "quickjs4j-processor"
+]
+
+sharedTest = [
+    "kotlin-test-junit5",
+    "coroutines-test",
+]
+
+okhttp = [
+    "okhttp-core",
+    "okhttp-logging",
+    "okhttp-dnsoverhttps",
+    "okhttp-brotli",
+    "okhttp-zstd",
+]
+
+settings = [
+    "settings-core",
+    "settings-serialization",
+]
+twelvemonkeys = [
+    "twelvemonkeys-common-lang",
+    "twelvemonkeys-common-io",
+    "twelvemonkeys-common-image",
+    "twelvemonkeys-imageio-core",
+    "twelvemonkeys-imageio-metadata",
+    "twelvemonkeys-imageio-jpeg",
+    "twelvemonkeys-imageio-webp",
+]
