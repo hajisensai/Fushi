@@ -13,6 +13,38 @@ import 'package:hibiki/src/shortcuts/input_binding.dart' show ModifierKey;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 
+/// Coalesces a controller button and the synthetic secondary mouse click that
+/// some desktop controller mappers emit for the same physical press.
+///
+/// Steam Input's desktop layout is a common source: Hibiki receives the real
+/// controller button through GameInput, while Windows also receives a right
+/// click through the pointer channel. Neither Flutter event carries a shared
+/// source identifier, so the only reliable app-side boundary is their tightly
+/// correlated arrival time. Real mouse right-clicks outside this narrow window
+/// remain untouched.
+class VideoGamepadSecondaryTapDeduper {
+  /// The desktop gamepad poller ticks every 60 ms. Waiting slightly longer lets
+  /// a pointer-first synthetic click meet its controller half before a menu is
+  /// opened.
+  static const Duration settleDelay = Duration(milliseconds: 80);
+
+  /// Covers either delivery order plus normal UI-thread scheduling jitter.
+  static const Duration coincidenceWindow = Duration(milliseconds: 120);
+
+  Duration? _lastGamepadPressAt;
+
+  void recordGamepadPress(Duration at) {
+    _lastGamepadPressAt = at;
+  }
+
+  bool shouldSuppressSecondaryTap(Duration tapAt) {
+    final Duration? gamepadAt = _lastGamepadPressAt;
+    if (gamepadAt == null) return false;
+    final Duration delta = gamepadAt - tapAt;
+    return delta.abs() <= coincidenceWindow;
+  }
+}
+
 class VideoPlayerShortcutActions {
   const VideoPlayerShortcutActions({
     required this.togglePlayPause,
