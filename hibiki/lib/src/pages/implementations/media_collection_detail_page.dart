@@ -1,3 +1,5 @@
+import 'dart:async' show Timer;
+
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 
@@ -123,8 +125,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 回落到「只有标题 + 进度」的旧形态，与本功能引入前一致（BUG-1310）。
   ScrapeMetadata? _scrapeMeta;
 
-  /// 横版背景本地路径；仅 TMDB 源有，Bangumi / 离线库恒为 null。
-  String? _backdropPath;
+  /// 横版背景本地路径组（v68，media_images 轮换序）；仅 TMDB / AniList 源有，
+  /// Bangumi / 离线库恒为空。多张时 hero 每 10 秒交叉淡入轮换（Jellyfin 式）。
+  List<String> _backdropPaths = const <String>[];
+
+  /// 标题 logo 本地路径（透明底 PNG）；有则 hero 用 logo 图替代纯文字标题。
+  String? _logoPath;
+
+  /// 背景轮换下标与定时器（单张 / 禁用动效时不启）。
+  int _heroBackdropIndex = 0;
+  Timer? _backdropRotationTimer;
 
   /// 集级刮削资料（TODO-2491）：bookUid → `video_scrape_meta` 行，**只含
   /// `episodeNumber` 非空**（真·集级）的行。旧作品级行（v54~v64 把整部简介写进
@@ -152,6 +162,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   @override
   void dispose() {
+    _backdropRotationTimer?.cancel();
     _seasonTabs?.dispose();
     super.dispose();
   }
@@ -163,8 +174,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 快照，只认它会让详情页标题停在旧文件夹名。
     final CollectionScrapeMetaRow? metaRow =
         await widget.database.getCollectionScrapeMeta(widget.collection.id);
-    final ({ScrapeMetadata metadata, String? backdropPath})? decoded =
-        decodeCollectionScrapeMeta(metaRow);
+    final ScrapeMetadata? decoded = decodeCollectionScrapeMeta(metaRow);
+    // 附加图组（v68）：横版背景（轮换序）与标题 logo。
+    final List<MediaImageRow> imageRows =
+        await widget.database.getMediaImagesForCollection(widget.collection.id);
     // 集级刮削资料（一集一行、episodeNumber 非空才算集级；见 [_episodeMetaByUid]）。
     final Map<String, VideoScrapeMetaRow> episodeMeta =
         <String, VideoScrapeMetaRow>{};
@@ -186,13 +199,42 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       };
       _rebuildSections();
       _episodeMetaByUid = episodeMeta;
-      _scrapeMeta = decoded?.metadata;
-      _backdropPath = decoded?.backdropPath;
+      _scrapeMeta = decoded;
+      _backdropPaths = <String>[
+        for (final MediaImageRow row in imageRows)
+          if (row.kind == MediaImageKind.backdrop.dbValue) row.path,
+      ];
+      _logoPath = null;
+      for (final MediaImageRow row in imageRows) {
+        if (row.kind == MediaImageKind.logo.dbValue && row.path.isNotEmpty) {
+          _logoPath = row.path;
+          break;
+        }
+      }
+      _heroBackdropIndex = 0;
       if (fresh != null) {
         _collectionRow = fresh;
         _name = fresh.name;
       }
       _loading = false;
+    });
+    _syncBackdropRotation();
+  }
+
+  /// 让背景轮换定时器跟上当前背景张数：≥2 张且未禁用动效才轮（Jellyfin 详情页
+  /// 同款 10 秒节奏）；单张 / 禁动效 / 页面销毁一律停表。setState 由定时器回调
+  /// 自己发（只改下标），不重查任何数据。
+  void _syncBackdropRotation() {
+    _backdropRotationTimer?.cancel();
+    _backdropRotationTimer = null;
+    if (!mounted || _backdropPaths.length < 2) return;
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) return;
+    _backdropRotationTimer =
+        Timer.periodic(const Duration(seconds: 10), (Timer _) {
+      if (!mounted || _backdropPaths.length < 2) return;
+      setState(() {
+        _heroBackdropIndex = (_heroBackdropIndex + 1) % _backdropPaths.length;
+      });
     });
   }
 
@@ -306,17 +348,19 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     return (summary == null || summary.isEmpty) ? null : summary;
   }
 
-  /// hero 背景的**横版**图源（BUG-1298 的数据层根治）。
+  /// hero 背景的**横版**图源（BUG-1298 的数据层根治；v68 支持多张轮换，取当前
+  /// 轮换下标那张）。
   ///
-  /// hero 是约 2.7:1 的宽幅槽，理应喂横图。刮削若拿到了 TMDB 的 `backdrop_path`
-  /// 就落在这里，槽向天然吻合、直接 cover 铺满即可。
+  /// hero 是约 2.7:1 的宽幅槽，理应喂横图。刮削若拿到了 TMDB 的横版图组就落在
+  /// media_images 里，槽向天然吻合、直接 cover 铺满即可。
   ///
-  /// 返回 null = 该源没有横版图（Bangumi / 离线库只有竖版海报，恒为 null），此时
+  /// 返回 null = 该源没有横版图（Bangumi / 离线库只有竖版海报，恒为空），此时
   /// 背景回落到海报 + [LandscapeCoverImage] 的模糊垫底。那不是权宜之计，是这些源
   /// 的常态路径。
   ImageProvider? get _heroBackdrop {
-    final String? path = _backdropPath;
-    if (path == null || path.isEmpty) return null;
+    if (_backdropPaths.isEmpty) return null;
+    final String path =
+        _backdropPaths[_heroBackdropIndex % _backdropPaths.length];
     return resolveMediaCoverImage(
       kind: MediaKind.video,
       localPath: path,
@@ -324,6 +368,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       decodeWidth: 2560,
     );
   }
+
+  /// 标题 logo 图源（v68）；null = 无 logo，hero 标题走纯文字。
+  ImageProvider? get _heroLogo => resolveMediaCoverImage(
+        kind: MediaKind.video,
+        localPath: _logoPath,
+        decodeWidth: 800,
+      );
 
   ImageProvider? get _heroCover {
     // 读 DB 快照而非进页副本：刮削刚写进去的新封面必须立刻生效（见 [_collectionRow]）。
@@ -1000,13 +1051,23 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           //    模糊垫底 + 靠右完整显示（BUG-1298）。此时不再另放海报卡，否则同一张
           //    图在同一屏出现两次。
           if (backdrop != null) ...<Widget>[
-            Image(
+            // v68：多张背景 10 秒轮换（Jellyfin 详情页同款）。外层 key 恒定供
+            // 测试定位；内层 key 随轮换下标变化驱动 AnimatedSwitcher 交叉淡入。
+            // gaplessPlayback：新图解码完成前保留旧帧，避免轮换瞬间闪底色。
+            KeyedSubtree(
               key: const ValueKey<String>('collection-hero-backdrop'),
-              image: backdrop,
-              fit: BoxFit.cover,
-              alignment: Alignment.center,
-              errorBuilder: (_, __, ___) =>
-                  ColoredBox(color: cs.surfaceContainerHighest),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 700),
+                child: Image(
+                  key: ValueKey<int>(_heroBackdropIndex),
+                  image: backdrop,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.center,
+                  gaplessPlayback: true,
+                  errorBuilder: (_, __, ___) =>
+                      ColoredBox(color: cs.surfaceContainerHighest),
+                ),
+              ),
             ),
             ...overlays,
           ] else if (cover != null)
@@ -1124,16 +1185,26 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           ),
           SizedBox(height: tokens.spacing.gap / 2),
         ],
-        Text(
-          _name,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: text.displaySmall?.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-            height: 1.08,
-          ),
-        ),
+        // v68：有标题 logo 时替代纯文字大标题（Jellyfin `.detailLogo` 同款）。
+        // Semantics 保留合集名——logo 是图，读屏与测试都还能按名字找到它；
+        // logo 解码失败回落文字标题，绝不留一块空白当标题。
+        if (_heroLogo case final ImageProvider logo)
+          Semantics(
+            label: _name,
+            image: true,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 110, maxWidth: 460),
+              child: Image(
+                key: const ValueKey<String>('collection-hero-logo'),
+                image: logo,
+                fit: BoxFit.contain,
+                alignment: AlignmentDirectional.bottomStart,
+                errorBuilder: (_, __, ___) => _buildHeroTitleText(text),
+              ),
+            ),
+          )
+        else
+          _buildHeroTitleText(text),
         // 原名与合集名相同就不重复占一行（刮削回写后二者常常一致）。
         if (originalTitle != null &&
             originalTitle.isNotEmpty &&
@@ -1190,6 +1261,20 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           onPressed: () => widget.onOpenEpisode(episode),
         ),
       ],
+    );
+  }
+
+  /// hero 纯文字大标题（无 logo 的常态路径 / logo 解码失败回落共用）。
+  Widget _buildHeroTitleText(TextTheme text) {
+    return Text(
+      _name,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: text.displaySmall?.copyWith(
+        color: Colors.white,
+        fontWeight: FontWeight.w700,
+        height: 1.08,
+      ),
     );
   }
 

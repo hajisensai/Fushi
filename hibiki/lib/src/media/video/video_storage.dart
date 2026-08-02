@@ -61,6 +61,39 @@ class VideoStorage {
   static Future<Directory> collectionCoversDir() async =>
       Directory(p.join((await coversDir()).path, collectionCoversDirName));
 
+  /// **单视频**附加图（media_images，v68：散装电影 backdrop/logo/titleCard）
+  /// 子目录名。与 [collectionCoversDirName] 同理由放子目录：文件名含 kind 后缀、
+  /// 不与成员封面派生名撞车，且 [gcOrphanCovers] 非递归、子目录整体免疫（这些
+  /// 路径不在它的保留集里，同级扁平会被当孤儿删掉）。合集的附加图直接落
+  /// `collections/`（与合集封面同目录，共用删除护栏）。
+  static const String imagesDirName = 'images';
+
+  /// 单视频附加图目录绝对路径（不创建）。见 [imagesDirName]。
+  static Future<Directory> imagesDir() async =>
+      Directory(p.join((await coversDir()).path, imagesDirName));
+
+  /// 回收一批附加图文件（media_images 行已随归属 cascade 删除后调用）。
+  ///
+  /// 纪律与 [deleteBookAssets] 逐字一致：只删**非空 + 落在 [ownedDir] 内 + 不在
+  /// [stillReferencedPaths]（其余归属仍引用）**的文件；目录外一律不碰。返回实删数。
+  static Future<int> deleteOwnedImageFiles({
+    required Iterable<String> deletedPaths,
+    required Iterable<String> stillReferencedPaths,
+    required Directory ownedDir,
+  }) async {
+    int removed = 0;
+    for (final String path in deletedPaths) {
+      if (await _deleteOwnedAsset(
+        candidate: path,
+        ownedDir: ownedDir,
+        stillReferenced: stillReferencedPaths,
+      )) {
+        removed++;
+      }
+    }
+    return removed;
+  }
+
   /// 删掉被删合集自己那张封面（`MediaCollections.coverPath`）。
   ///
   /// 纪律与 [deleteBookAssets] 逐字一致：只删**非空 + 落在合集封面目录内 + 不被其余

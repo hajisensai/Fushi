@@ -71,9 +71,24 @@ class CoverDownloader {
   }) async {
     final Directory coversDir =
         coversDirectory ?? await VideoStorage.coversDir();
-    await coversDir.create(recursive: true);
-    final String finalPath =
-        p.join(coversDir.path, videoCoverFileName(bookUid));
+    return downloadImageFile(
+      url: url,
+      fileName: videoCoverFileName(bookUid),
+      directory: coversDir,
+    );
+  }
+
+  /// 下载 [url] 落地为 [directory]/[fileName]，返回绝对路径（v68 附加图组用：
+  /// backdrop/logo/titleCard 的文件名不是 bookUid 1:1 派生，须显式给名）。
+  ///
+  /// 与 [downloadCover] 同一套截止/重试/魔数校验/原子落盘——那是收口，不是两份。
+  Future<String> downloadImageFile({
+    required String url,
+    required String fileName,
+    required Directory directory,
+  }) async {
+    await directory.create(recursive: true);
+    final String finalPath = p.join(directory.path, fileName);
 
     // 整轮下载（含全部重试与退避）只有这一个截止：所有尝试共用同一个 abort trigger，
     // 到点时**在飞的那一次传输也被真正中止**（BUG-1248 的核心性质），并置位

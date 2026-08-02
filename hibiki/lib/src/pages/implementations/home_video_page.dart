@@ -286,6 +286,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Map<int, CollectionScrapeMetaRow> _collectionScrapeMetaById =
       const <int, CollectionScrapeMetaRow>{};
 
+  /// v68 附加图组（media_images）按归属分桶：合集（hero 背景/logo、续播行横卡）
+  /// 与散装视频（续播行横卡）。与 [_loadLibraryMaps] 同批预取（一次全表查询）。
+  Map<int, List<MediaImageRow>> _mediaImagesByCollection =
+      const <int, List<MediaImageRow>>{};
+  Map<String, List<MediaImageRow>> _mediaImagesByBookUid =
+      const <String, List<MediaImageRow>>{};
+
   /// TODO-2486：年份 / 看完状态下拉筛选（本地即筛，刻意不持久化——与搜索词同
   /// 一决定：下次进库还挂着上次的筛选只会让人以为库空了）。
   VideoYearFilter _yearFilter = const VideoYearFilter.all();
@@ -486,6 +493,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           in await db.getAllCollectionScrapeMeta())
         r.collectionId: r,
     };
+    // v68 附加图组：一次全表查询按归属分桶（hero 背景/logo、续播行横卡）。
+    final Map<int, List<MediaImageRow>> imagesByCollection =
+        <int, List<MediaImageRow>>{};
+    final Map<String, List<MediaImageRow>> imagesByBookUid =
+        <String, List<MediaImageRow>>{};
+    for (final MediaImageRow row in await db.getAllMediaImages()) {
+      final int? cid = row.collectionId;
+      if (cid != null) {
+        (imagesByCollection[cid] ??= <MediaImageRow>[]).add(row);
+      } else if (row.bookUid case final String uid) {
+        (imagesByBookUid[uid] ??= <MediaImageRow>[]).add(row);
+      }
+    }
     if (mounted) {
       setState(() {
         _sortMode = sortMode;
@@ -498,8 +518,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         _legacyWatchAtByTitle = legacyByTitle;
         _airYearByUid = airYearByUid;
         _collectionScrapeMetaById = collectionMetaById;
+        _mediaImagesByCollection = imagesByCollection;
+        _mediaImagesByBookUid = imagesByBookUid;
       });
     }
+  }
+
+  /// 附加图组里按种类偏好取首张可用图的 provider（文件悬空 = 视作没有）。
+  /// 探测与渲染共用 [resizedFileImage] 的解码缓存键，零额外解码。
+  ImageProvider? _mediaImageProvider(
+    List<MediaImageRow>? rows,
+    List<MediaImageKind> preference,
+  ) {
+    if (rows == null) return null;
+    for (final MediaImageKind kind in preference) {
+      for (final MediaImageRow row in rows) {
+        if (row.kind != kind.dbValue || row.path.isEmpty) continue;
+        final File file = File(row.path);
+        if (file.existsSync()) return resizedFileImage(file);
+      }
+    }
+    return null;
   }
 
   /// 用户切换排序方式：立即重排 + 偏好持久化（跨启动记住）。
@@ -2459,12 +2498,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 盖模糊垫底、不压清晰海报前景，BUG-1298 血缘）。
   Widget _buildHeroPage(_VideoHeroItem item) {
     final ThemeData theme = Theme.of(context);
-    final String? backdropPath = item.meta?.backdropPath;
-    final ImageProvider? background = (backdropPath != null &&
-            backdropPath.isNotEmpty &&
-            File(backdropPath).existsSync())
-        ? FileImage(File(backdropPath))
-        : _collectionMembersCoverProvider(item.members);
+    // v68：横版背景/logo 走 media_images（v64 的 backdropPath 列已由迁移搬入，
+    // 读它就覆盖了存量数据）。背景无横图回落成员封面（LandscapeCoverImage 垫底）。
+    final List<MediaImageRow>? images =
+        _mediaImagesByCollection[item.collection.id];
+    final ImageProvider? background = _mediaImageProvider(
+          images,
+          const <MediaImageKind>[MediaImageKind.backdrop],
+        ) ??
+        _collectionMembersCoverProvider(item.members);
+    final ImageProvider? logo = _mediaImageProvider(
+      images,
+      const <MediaImageKind>[MediaImageKind.logo],
+    );
     int completedCount = 0;
     final List<CollectionMemberProgress> progresses =
         <CollectionMemberProgress>[
@@ -2540,17 +2586,41 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     ),
                   ),
                 ),
-              ShelfTitleOverflowTooltip(
-                title: item.collection.name,
-                style: titleStyle,
-                maxLines: 2,
-                child: Text(
-                  item.collection.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+              // v68：有标题 logo 用图（Jellyfin 式），语义/回落仍是合集名文字。
+              if (logo != null)
+                Semantics(
+                  label: item.collection.name,
+                  image: true,
+                  child: ConstrainedBox(
+                    constraints:
+                        const BoxConstraints(maxHeight: 76, maxWidth: 360),
+                    child: Image(
+                      key: ValueKey<String>(
+                          'home_video_hero_logo_${item.collection.id}'),
+                      image: logo,
+                      fit: BoxFit.contain,
+                      alignment: AlignmentDirectional.bottomStart,
+                      errorBuilder: (_, __, ___) => Text(
+                        item.collection.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: titleStyle,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                ShelfTitleOverflowTooltip(
+                  title: item.collection.name,
                   style: titleStyle,
+                  maxLines: 2,
+                  child: Text(
+                    item.collection.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: titleStyle,
+                  ),
                 ),
-              ),
               const SizedBox(height: 4),
               Text(
                 t.video_hero_episodes_watched(n: completedCount),
@@ -2804,6 +2874,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 横滚行通用卡：高度统一、宽度随封面朝向（竖 2:3 / 横 16:9，
   /// [CoverOrientationBuilder] 探测与卡内封面共用同一 provider 键，零额外解码）。
   /// 底边进度条、集数/「新」/云角标，两行标题 + 溢出 Tooltip（TODO-2490 同款）。
+  ///
+  /// [forceLandscape]：续播行的视频卡恒 16:9 横槽（Jellyfin Continue Watching
+  /// 口径，用户拍板「续播行只对视频改横版」）——不做朝向探测，竖版海报由
+  /// [PortraitCoverImage] 的横槽模糊垫底承接，不会重演 BUG-1299 的硬裁。
   Widget _buildRowMediaCard({
     required Key cardKey,
     required HibikiFocusId focusId,
@@ -2816,130 +2890,144 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     int? episodeCount,
     bool newBadge = false,
     bool cloudBadge = false,
+    bool forceLandscape = false,
   }) {
     final TextStyle? titleStyle = Theme.of(context).textTheme.bodyMedium;
-    return CoverOrientationBuilder(
-      image: cover,
-      builder: (BuildContext context, VideoCardOrientation orientation) {
-        final double width = videoCardWidthForOrientation(
-          orientation: orientation,
-          coverHeight: coverHeight,
-        );
-        return SizedBox(
-          width: width,
-          child: HibikiCard(
-            key: cardKey,
-            focusId: focusId,
-            padding: EdgeInsets.zero,
-            // 多选纪律（PR#664 复核）：横滚行是墙内容的**快捷镜像，不参与勾选**
-            // ——勾选一律走墙卡/合集卡（行卡不在 setVisibleOrder 的可见序里，
-            // 参与勾选会打乱 Shift 区间语义）。进入多选态后行卡点击不得再触发
-            // 播放/流播（误触会把批量操作中途弹进播放器），长按/右键置 null
-            // 让位祖先 SelectionDragArea 扫选，与墙卡同一纪律。
-            onTap: _selectionMode ? null : onTap,
-            onLongPress: _selectionMode ? null : onLongPress,
-            onSecondaryTap: _selectionMode ? null : onLongPress,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                SizedBox(
-                  height: coverHeight,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: <Widget>[
-                      if (cover == null)
-                        ShelfCoverPlaceholder(
+    Widget buildCard(BuildContext context, VideoCardOrientation orientation) {
+      final double width = videoCardWidthForOrientation(
+        orientation: orientation,
+        coverHeight: coverHeight,
+      );
+      return SizedBox(
+        width: width,
+        child: HibikiCard(
+          key: cardKey,
+          focusId: focusId,
+          padding: EdgeInsets.zero,
+          // 多选纪律（PR#664 复核）：横滚行是墙内容的**快捷镜像，不参与勾选**
+          // ——勾选一律走墙卡/合集卡（行卡不在 setVisibleOrder 的可见序里，
+          // 参与勾选会打乱 Shift 区间语义）。进入多选态后行卡点击不得再触发
+          // 播放/流播（误触会把批量操作中途弹进播放器），长按/右键置 null
+          // 让位祖先 SelectionDragArea 扫选，与墙卡同一纪律。
+          onTap: _selectionMode ? null : onTap,
+          onLongPress: _selectionMode ? null : onLongPress,
+          onSecondaryTap: _selectionMode ? null : onLongPress,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              SizedBox(
+                height: coverHeight,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    if (cover == null)
+                      ShelfCoverPlaceholder(
+                        icon: Icons.movie_outlined,
+                        backgroundColor:
+                            Theme.of(context).colorScheme.surfaceContainer,
+                      )
+                    else
+                      PortraitCoverImage(
+                        image: cover,
+                        landscapeSlot:
+                            orientation == VideoCardOrientation.landscape,
+                        errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
                           icon: Icons.movie_outlined,
                           backgroundColor:
                               Theme.of(context).colorScheme.surfaceContainer,
-                        )
-                      else
-                        PortraitCoverImage(
-                          image: cover,
-                          landscapeSlot:
-                              orientation == VideoCardOrientation.landscape,
-                          errorBuilder: (BuildContext _) =>
-                              ShelfCoverPlaceholder(
-                            icon: Icons.movie_outlined,
+                        ),
+                      ),
+                    if (episodeCount != null && episodeCount >= 2)
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: _buildPlaylistBadge(episodeCount),
+                      ),
+                    if (newBadge)
+                      Positioned(
+                        top: 6,
+                        left: 6,
+                        child: CoverBadge(
+                          icon: Icons.fiber_new_outlined,
+                          label: t.video_recently_added_badge,
+                        ),
+                      ),
+                    if (cloudBadge)
+                      const Positioned(
+                        bottom: 6,
+                        right: 6,
+                        child: CoverBadge(icon: Icons.cloud_outlined),
+                      ),
+                    // 底边进度条（YouTube 式），与墙卡同款视觉。
+                    if (progressFraction != null)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: IgnorePointer(
+                          child: LinearProgressIndicator(
+                            value: progressFraction,
+                            minHeight: 3,
                             backgroundColor:
-                                Theme.of(context).colorScheme.surfaceContainer,
+                                Colors.black.withValues(alpha: 0.35),
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                         ),
-                      if (episodeCount != null && episodeCount >= 2)
-                        Positioned(
-                          top: 6,
-                          right: 6,
-                          child: _buildPlaylistBadge(episodeCount),
-                        ),
-                      if (newBadge)
-                        Positioned(
-                          top: 6,
-                          left: 6,
-                          child: CoverBadge(
-                            icon: Icons.fiber_new_outlined,
-                            label: t.video_recently_added_badge,
-                          ),
-                        ),
-                      if (cloudBadge)
-                        const Positioned(
-                          bottom: 6,
-                          right: 6,
-                          child: CoverBadge(icon: Icons.cloud_outlined),
-                        ),
-                      // 底边进度条（YouTube 式），与墙卡同款视觉。
-                      if (progressFraction != null)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: IgnorePointer(
-                            child: LinearProgressIndicator(
-                              value: progressFraction,
-                              minHeight: 3,
-                              backgroundColor:
-                                  Colors.black.withValues(alpha: 0.35),
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
-                    child: Align(
-                      alignment: Alignment.topLeft,
-                      child: ShelfTitleOverflowTooltip(
-                        title: title,
-                        style: titleStyle,
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: ShelfTitleOverflowTooltip(
+                      title: title,
+                      style: titleStyle,
+                      maxLines: 2,
+                      child: Text(
+                        title,
                         maxLines: 2,
-                        child: Text(
-                          title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: titleStyle,
-                        ),
+                        overflow: TextOverflow.ellipsis,
+                        style: titleStyle,
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        );
-      },
-    );
+        ),
+      );
+    }
+
+    if (forceLandscape) {
+      return Builder(
+        builder: (BuildContext context) =>
+            buildCard(context, VideoCardOrientation.landscape),
+      );
+    }
+    return CoverOrientationBuilder(image: cover, builder: buildCard);
   }
 
   /// 继续观看行·本地散卡：点击直接续播；多集显集数角标 + 按集进度条（单视频无
   /// 总时长列，不造百分比 → 不画进度条，与墙卡同一诚实口径）。
+  /// v68：恒横版 16:9；选图链 titleCard → backdrop（散装电影刮削图组）→ 自身
+  /// 封面（横图直铺 / 竖版海报模糊垫底）。
   Widget _buildContinueEntryCard(VideoBookRow book, double coverHeight) {
     final int episodeCount = playlistEpisodeCount(book.playlistJson);
     return _buildRowMediaCard(
       cardKey: ValueKey<String>('home_video_continue_${book.bookUid}'),
       focusId: HibikiFocusId('home-video-continue-${book.bookUid}'),
-      cover: _localCoverProvider(book),
+      cover: _mediaImageProvider(
+            _mediaImagesByBookUid[book.bookUid],
+            const <MediaImageKind>[
+              MediaImageKind.titleCard,
+              MediaImageKind.backdrop,
+            ],
+          ) ??
+          _localCoverProvider(book),
       title: book.title,
       coverHeight: coverHeight,
       onTap: () => _open(book),
@@ -2950,6 +3038,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         episodeCount: episodeCount,
       ),
       episodeCount: episodeCount,
+      forceLandscape: true,
     );
   }
 
@@ -2965,7 +3054,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       cardKey:
           ValueKey<String>('home_video_continue_collection_${collection.id}'),
       focusId: HibikiFocusId('home-video-continue-collection-${collection.id}'),
-      cover: _collectionRowCoverProvider(collection, members),
+      // v68 横版选图链（Jellyfin preferThumb 口径）：带字横图 → 无字背景 →
+      // 成员封面借用链（剧照/海报，竖图由横槽模糊垫底承接）。
+      cover: _mediaImageProvider(
+            _mediaImagesByCollection[collection.id],
+            const <MediaImageKind>[
+              MediaImageKind.titleCard,
+              MediaImageKind.backdrop,
+            ],
+          ) ??
+          _collectionRowCoverProvider(collection, members),
       title: collection.name,
       coverHeight: coverHeight,
       onTap: () {
@@ -2986,6 +3084,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       progressFraction:
           members.isEmpty ? null : completedCount / members.length,
       episodeCount: members.length,
+      forceLandscape: true,
     );
   }
 
@@ -3003,6 +3102,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       onLongPress: () => _showRemoteVideoDialog(video),
       episodeCount: video.isPlaylist ? video.episodes.length : null,
       cloudBadge: true,
+      forceLandscape: true,
     );
   }
 

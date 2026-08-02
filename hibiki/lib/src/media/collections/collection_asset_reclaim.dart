@@ -38,11 +38,25 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 /// 一行合集快照里「该合集自有、随合集删除一起回收」的磁盘资产路径。
 ///
-/// 目前只有封面一项。将来给 `media_collections` 加横版 backdrop 之类的自有图片
-/// 列时，**在这里加一行**就能让全部六条删除路径同时生效——这正是把回收收成单一
-/// 入口的收益（否则新列会原样重演同一个泄漏）。
+/// 封面一项 + v68 附加图组（media_images，须在删行**前**由调用方快照——行随删
+/// 合集 FK cascade 消失，见 [collectionOwnedImagePaths]）。新增自有图片资产时
+/// **在这两处加**就能让全部删除路径同时生效——这正是把回收收成单一入口的收益
+/// （否则新资产会原样重演同一个泄漏）。
 List<String?> collectionOwnedAssetPaths(MediaCollectionRow collection) {
   return <String?>[collection.coverPath];
+}
+
+/// 某合集当前的附加图文件路径（v68）。**必须在删行前调用**：`media_images` 行
+/// 随删合集 cascade 消失，删后再查恒为空、文件永久泄漏。
+Future<List<String>> collectionOwnedImagePaths(
+  HibikiDatabase db,
+  int collectionId,
+) async {
+  return <String>[
+    for (final MediaImageRow row
+        in await db.getMediaImagesForCollection(collectionId))
+      row.path,
+  ];
 }
 
 /// 删除合集的**唯一入口**：删 DB 行（[HibikiDatabase.deleteMediaCollection]，
@@ -57,13 +71,16 @@ Future<int> deleteMediaCollectionWithAssets(
   int collectionId, {
   Directory? collectionCoversDirectory,
 }) async {
-  // 快照必须在删行**之前**取：行一删，coverPath 就再也推导不出来。
+  // 快照必须在删行**之前**取：行一删，coverPath / 附加图行就再也推导不出来。
   final MediaCollectionRow? snapshot =
       await db.getMediaCollectionById(collectionId);
+  final List<String> imagePaths =
+      await collectionOwnedImagePaths(db, collectionId);
   final int removed = await db.deleteMediaCollection(collectionId);
   await reclaimDeletedCollectionAssets(
     db,
     <MediaCollectionRow>[if (snapshot != null) snapshot],
+    ownedImagePaths: imagePaths,
     collectionCoversDirectory: collectionCoversDirectory,
   );
   return removed;
@@ -79,12 +96,17 @@ Future<int> deleteMediaCollectionWithAssets(
 Future<int> reclaimDeletedCollectionAssets(
   HibikiDatabase db,
   Iterable<MediaCollectionRow> deletedCollections, {
+  List<String> ownedImagePaths = const <String>[],
   Directory? collectionCoversDirectory,
 }) async {
   final List<String> candidates = <String>[
     for (final MediaCollectionRow collection in deletedCollections)
       for (final String? path in collectionOwnedAssetPaths(collection))
         if (path != null && path.isNotEmpty) path,
+    // v68 附加图：行已随删行 cascade 消失，路径由调用方删行前快照
+    // （[collectionOwnedImagePaths]）。文件与合集封面同目录，共用同一护栏。
+    for (final String path in ownedImagePaths)
+      if (path.isNotEmpty) path,
   ];
   // 没有任何自有资产就彻底不碰文件系统（无封面的同步 / 单测路径零 IO）。
   if (candidates.isEmpty) return 0;
@@ -96,6 +118,7 @@ Future<int> reclaimDeletedCollectionAssets(
       for (final MediaCollectionRow collection in survivors)
         for (final String? path in collectionOwnedAssetPaths(collection))
           if (path != null && path.isNotEmpty) path,
+      for (final MediaImageRow row in await db.getAllMediaImages()) row.path,
     ];
     for (final String candidate in candidates) {
       if (await VideoStorage.deleteCollectionCover(

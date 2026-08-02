@@ -39,7 +39,7 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
 import 'package:hibiki_core/hibiki_core.dart'
-    show MediaCollectionRow, VideoBookRow;
+    show MediaCollectionRow, MediaImageKind, VideoBookRow;
 import 'package:path/path.dart' as p;
 
 /// slim 缓存落盘文件名（与原始库同目录）。
@@ -167,7 +167,9 @@ class CoverScraperService {
     bool enableSidecar = true,
     Directory? coversDirectory,
     Directory? collectionCoversDirectory,
+    Directory? imagesDirectory,
   })  : _collectionCoversDirectory = collectionCoversDirectory,
+        _imagesDirectory = imagesDirectory,
         _repo = repository,
         _coverMeta = coverMetaStore,
         _aliasCache = aliasCache,
@@ -197,6 +199,9 @@ class CoverScraperService {
   /// 合集自有封面目录（测试注入临时目录；null = 取生产
   /// [VideoStorage.collectionCoversDir]）。
   final Directory? _collectionCoversDirectory;
+
+  /// 单视频附加图目录（测试注入临时目录；null = 取生产 [VideoStorage.imagesDir]）。
+  final Directory? _imagesDirectory;
 
   /// 条目详情缓存 / 失败记忆，key = `<source>:<entryId>`。见 [_persistMetadata]。
   final Map<String, ScrapeMetadata> _metadataCache = <String, ScrapeMetadata>{};
@@ -728,24 +733,11 @@ class CoverScraperService {
       coversDirectory: covers,
     );
 
-    String? backdropPath;
-    final String? backdropUrl = candidate.backdropUrl;
-    if (backdropUrl != null && backdropUrl.isNotEmpty) {
-      try {
-        // 文件名后缀 `_backdrop` 与海报同目录不同名：collections/<id>.jpg 是竖版，
-        // collections/<id>_backdrop.jpg 是横版，各自独立可重下。
-        backdropPath = await _downloader.downloadCover(
-          url: backdropUrl,
-          bookUid: '${collectionId}_backdrop',
-          coversDirectory: covers,
-        );
-      } catch (e, stack) {
-        // 见上：背景失败不升级为整体失败，但必须留日志——否则「有的合集有背景有的
-        // 没有」永远查不出是源没图还是下载挂了。
-        ErrorLogService.instance
-            .log('CoverScraperService.collectionBackdrop', e, stack);
-      }
-    }
+    final List<ScrapedMediaImage> images = await _downloadImages(
+      candidate: candidate,
+      directory: covers,
+      filePrefix: '$collectionId',
+    );
 
     ScrapeMetadata metadata;
     if (candidate.source == ScrapeSource.bangumi) {
@@ -760,9 +752,122 @@ class CoverScraperService {
 
     return CollectionScrapeResult(
       coverPath: coverPath,
-      backdropPath: backdropPath,
+      images: images,
       metadata: metadata,
     );
+  }
+
+  /// 下载附加图组（v68，Jellyfin 图组对齐；合集与散装电影共用）。
+  ///
+  /// TMDB 源走 `/images` 端点拿完整图组（多张无字 backdrop + 带字横图 + logo）；
+  /// 其余源退化为候选自带的单张 backdropUrl（AniList banner）。失败语义延续
+  /// BUG-1310 的分级：附加图是锦上添花，**任何一张失败都不升级为整体失败**——
+  /// 咽掉留日志，hero 自会回落到海报 + 模糊垫底。
+  ///
+  /// 文件名 = `<filePrefix>_backdrop<n>.jpg` / `<filePrefix>_titlecard.jpg` /
+  /// `<filePrefix>_logo.png`（logo 是透明底 PNG，扩展名如实），与海报不同名、
+  /// 各自独立可重下。v64 遗留的 `<id>_backdrop.jpg`（无序号）只存在于迁移数据里，
+  /// 新刮削不再产生。
+  Future<List<ScrapedMediaImage>> _downloadImages({
+    required ScrapeCandidate candidate,
+    required Directory directory,
+    required String filePrefix,
+  }) async {
+    // 1) 汇集远程 URL 图组。
+    TmdbImageSet set = const TmdbImageSet();
+    if (candidate.source == ScrapeSource.tmdb && _tmdb != null) {
+      try {
+        set = await _tmdb.fetchImageSet(
+          entryId: candidate.entryId,
+          isTv: candidate.type != ScrapeEntryType.movie,
+        );
+      } on ScrapeNetworkException catch (e, stack) {
+        ErrorLogService.instance
+            .log('CoverScraperService.collectionImageSet', e, stack);
+      }
+    }
+    if (set.backdropUrls.isEmpty && candidate.backdropUrl != null) {
+      // 非 TMDB 源（AniList banner）或 /images 拉挂了：候选自带的单张背景兜底，
+      // 与 v64 行为等价。
+      set = TmdbImageSet(
+        backdropUrls: <String>[candidate.backdropUrl!],
+        titleCardUrl: set.titleCardUrl,
+        logoUrl: set.logoUrl,
+      );
+    }
+    if (set.isEmpty) return const <ScrapedMediaImage>[];
+
+    // 2) 逐张落盘（单张失败跳过该张，不拖垮其余）。
+    final List<ScrapedMediaImage> images = <ScrapedMediaImage>[];
+    Future<void> fetch({
+      required MediaImageKind kind,
+      required int position,
+      required String url,
+      required String fileName,
+    }) async {
+      try {
+        final String path = await _downloader.downloadImageFile(
+          url: url,
+          fileName: fileName,
+          directory: directory,
+        );
+        images.add(ScrapedMediaImage(
+          kind: kind,
+          position: position,
+          path: path,
+          sourceUrl: url,
+        ));
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+            'CoverScraperService.collectionImage.${kind.dbValue}', e, stack);
+      }
+    }
+
+    for (int i = 0; i < set.backdropUrls.length; i++) {
+      await fetch(
+        kind: MediaImageKind.backdrop,
+        position: i,
+        url: set.backdropUrls[i],
+        fileName: '${filePrefix}_backdrop$i.jpg',
+      );
+    }
+    if (set.titleCardUrl != null) {
+      await fetch(
+        kind: MediaImageKind.titleCard,
+        position: 0,
+        url: set.titleCardUrl!,
+        fileName: '${filePrefix}_titlecard.jpg',
+      );
+    }
+    if (set.logoUrl != null) {
+      await fetch(
+        kind: MediaImageKind.logo,
+        position: 0,
+        url: set.logoUrl!,
+        fileName: '${filePrefix}_logo.png',
+      );
+    }
+    return images;
+  }
+
+  /// 散装电影的附加图组落地 + 落库（v68）。
+  ///
+  /// 只在 **movie 型候选**时调用（见 [_applyCandidate]）：剧集（tv 型）的横版图
+  /// 属于合集容器（[applyCandidateToCollection]），逐集各存一份是 N 倍冗余，且
+  /// UI 没有消费单集 backdrop 的槽位。文件落 `video_covers/images/`（GC 免疫子
+  /// 目录），行走 `media_images.bookUid` 归属。图组失败不升级为整体失败。
+  Future<void> _applyBookImages({
+    required String bookUid,
+    required ScrapeCandidate candidate,
+  }) async {
+    final Directory dir = _imagesDirectory ?? await VideoStorage.imagesDir();
+    final List<ScrapedMediaImage> images = await _downloadImages(
+      candidate: candidate,
+      directory: dir,
+      filePrefix: p.basenameWithoutExtension(videoCoverFileName(bookUid)),
+    );
+    if (images.isEmpty) return;
+    await _repo.replaceMediaImages(bookUid, images);
   }
 
   /// 对某路径推导批量/别名缓存 key（= 目录+文件合并解析后的主标题，可空）。UI 弹窗
@@ -979,6 +1084,11 @@ class CoverScraperService {
       bookUids: <String>[bookUid],
       candidate: candidate,
     );
+    // v68：电影候选顺带拉附加图组（backdrop/logo/titleCard，横版续播卡用）。
+    // tv 型跳过——那些图属于合集容器，见 [_applyBookImages]。
+    if (candidate.type == ScrapeEntryType.movie) {
+      await _applyBookImages(bookUid: bookUid, candidate: candidate);
+    }
     if (aliasKey != null && aliasKey.trim().isNotEmpty) {
       await _aliasCache.put(aliasKey, candidate.source, candidate.entryId);
     }

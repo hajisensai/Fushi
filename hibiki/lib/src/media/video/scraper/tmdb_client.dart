@@ -127,6 +127,45 @@ class TmdbClient {
         : parseTmdbCollectionParts(body);
   }
 
+  /// 拉取条目图组 `GET /3/{tv|movie}/{id}/images`（Jellyfin 图组对齐）：多张
+  /// 无字 backdrop + 带字横图（titleCard）+ 标题 logo。404 / 全空 → 空图组。
+  ///
+  /// `include_image_language` 必须显式给：`/images` 端点不受 `language` 参数的
+  /// 兜底逻辑保护，只传 `language=zh-CN` 会把无语言字段的无字横图全部滤掉。
+  Future<TmdbImageSet> fetchImageSet({
+    required String entryId,
+    required bool isTv,
+  }) async {
+    final String kind = isTv ? 'tv' : 'movie';
+    final Uri uri =
+        Uri.parse('https://api.themoviedb.org/3/$kind/$entryId/images')
+            .replace(queryParameters: <String, String>{
+      'include_image_language': 'zh,ja,en,null',
+      'api_key': _apiKey,
+    });
+    final http.Response response;
+    try {
+      response = await _client.get(
+        uri,
+        headers: const <String, String>{'Accept': 'application/json'},
+      ).timeout(_timeout);
+    } on TimeoutException {
+      throw const ScrapeNetworkException('TMDB images timed out');
+    } catch (e) {
+      throw ScrapeNetworkException(
+        redactCredentialsInText('TMDB images request failed: $e'),
+      );
+    }
+    if (response.statusCode == 404) return const TmdbImageSet();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ScrapeNetworkException(
+        'TMDB images HTTP ${response.statusCode}',
+        statusCode: response.statusCode,
+      );
+    }
+    return parseTmdbImageSet(utf8.decode(response.bodyBytes));
+  }
+
   /// 共享 GET：`https://api.themoviedb.org/3<path>?language=zh-CN&api_key=…`。
   /// 404 返回 null（各端点自定语义）；其余非 2xx / 网络失败抛
   /// [ScrapeNetworkException]。异常 message 统一 [redactCredentialsInText]
@@ -341,6 +380,96 @@ List<TmdbCollectionPart> parseTmdbCollectionParts(String body) {
     }
   }
   return parts;
+}
+
+/// TMDB `/images` 端点的分类产物（完整 URL）。
+///
+/// 分类规则抄 Jellyfin（`TmdbClientManager.ConvertToRemoteImageInfo`）：
+/// * `backdrops[]` 里 **`iso_639_1` 为空**的 → 无字横版背景 [backdropUrls]
+///   （全屏背景/轮换槽，永远不该有烧死的片名文字）；
+/// * `backdrops[]` 里 **带语言**的 → 带字横图 [titleCardUrl]（Jellyfin 把它降级
+///   归类为 Thumb——横版卡片槽用它，与全屏背景分开）；
+/// * `logos[]` → [logoUrl]，跳过 SVG（Flutter Image 不解码矢量）。
+class TmdbImageSet {
+  const TmdbImageSet({
+    this.backdropUrls = const <String>[],
+    this.titleCardUrl,
+    this.logoUrl,
+  });
+
+  final List<String> backdropUrls;
+  final String? titleCardUrl;
+  final String? logoUrl;
+
+  bool get isEmpty =>
+      backdropUrls.isEmpty && titleCardUrl == null && logoUrl == null;
+}
+
+/// 无字 backdrop 最多取几张（详情页 10 秒轮换用；TMDB 响应按 vote 降序，取前 N
+/// 即最受认可的 N 张。上限防冷门条目也把几十张全下到用户磁盘上）。
+const int kTmdbMaxBackdrops = 3;
+
+/// 语言偏好序（logo / 带字横图挑选用）：中文界面标题优先，其次日文原题、英文。
+const List<String> _kTmdbImageLanguagePreference = <String>['zh', 'ja', 'en'];
+
+/// 纯函数：解析 `/3/{tv|movie}/{id}/images` 响应并按 Jellyfin 规则分类。
+/// JSON 结构异常 → 抛 [ScrapeNetworkException]。
+TmdbImageSet parseTmdbImageSet(String body) {
+  final Map<String, Object?> decoded = _decodeObject(body, 'TMDB images');
+
+  List<Map<String, Object?>> itemsOf(String key) {
+    final Object? node = decoded[key];
+    if (node is! List<Object?>) return const <Map<String, Object?>>[];
+    return <Map<String, Object?>>[
+      for (final Object? item in node)
+        if (item is Map<String, Object?> &&
+            _nonEmptyString(item['file_path']) != null)
+          item,
+    ];
+  }
+
+  // 带语言序号的挑选：偏好序里最靠前的语言组第一张（组内沿用响应的 vote 降序）。
+  String? pickByLanguage(List<Map<String, Object?>> items) {
+    for (final String lang in _kTmdbImageLanguagePreference) {
+      for (final Map<String, Object?> item in items) {
+        if (_nonEmptyString(item['iso_639_1']) == lang) {
+          return _nonEmptyString(item['file_path']);
+        }
+      }
+    }
+    return items.isEmpty ? null : _nonEmptyString(items.first['file_path']);
+  }
+
+  final List<String> backdrops = <String>[];
+  final List<Map<String, Object?>> titled = <Map<String, Object?>>[];
+  for (final Map<String, Object?> item in itemsOf('backdrops')) {
+    if (_nonEmptyString(item['iso_639_1']) == null) {
+      if (backdrops.length < kTmdbMaxBackdrops) {
+        backdrops.add('${TmdbClient.backdropBase}${item['file_path']}');
+      }
+    } else {
+      titled.add(item);
+    }
+  }
+  final String? titleCardPath = pickByLanguage(titled);
+
+  final List<Map<String, Object?>> logos = <Map<String, Object?>>[
+    for (final Map<String, Object?> item in itemsOf('logos'))
+      // SVG 跳过：Flutter Image 不解码矢量；TMDB logo 常见 png/svg 混排。
+      if (!(_nonEmptyString(item['file_path']) ?? '')
+          .toLowerCase()
+          .endsWith('.svg'))
+        item,
+  ];
+  final String? logoPath = pickByLanguage(logos);
+
+  return TmdbImageSet(
+    backdropUrls: backdrops,
+    titleCardUrl: titleCardPath == null
+        ? null
+        : '${TmdbClient.backdropBase}$titleCardPath',
+    logoUrl: logoPath == null ? null : '${TmdbClient.posterBase}$logoPath',
+  );
 }
 
 /// 解 JSON 顶层对象；非对象/解码失败 → 抛 [ScrapeNetworkException]。

@@ -405,6 +405,7 @@ _MergedTagState _mergeTagClocks(
   MangaSourcePreferences,
   MangaTrustedSigners,
   CollectionRelations,
+  MediaImages,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
@@ -423,7 +424,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 67;
+  int get schemaVersion => 68;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1373,6 +1374,30 @@ class HibikiDatabase extends _$HibikiDatabase {
                 readingHourlyLogs,
                 newColumns: [readingHourlyLogs.format],
               ));
+            }
+          }
+          if (from < 68) {
+            // v68（Jellyfin 图组对齐）：新增 media_images —— 媒体附加图组表
+            // （backdrop 多张 / logo / title_card，归属合集或单视频二选一）。
+            // 建表后一次性把 v64 的 collection_scrape_meta.backdrop_path 搬进来
+            // （kind='backdrop', position=0），旧列自此冻结为遗留残留（Series
+            // 先例）：读写一律走 media_images。搬运只在建表的同一分支里跑——
+            // 重复升级时 _tableExists 短路，绝不重插；fresh DB 走 onCreate
+            // createAll，本就没有旧数据可搬（Never break userspace：旧库升级后
+            // 详情页 hero 读到的背景与升级前同一张文件，逐像素不变）。
+            if (!await _tableExists('media_images')) {
+              await m.createTable(mediaImages);
+              if (await _tableExists('collection_scrape_meta') &&
+                  await _columnExists(
+                      'collection_scrape_meta', 'backdrop_path')) {
+                await customStatement(
+                  'INSERT INTO media_images '
+                  '(collection_id, kind, position, path) '
+                  "SELECT collection_id, 'backdrop', 0, backdrop_path "
+                  'FROM collection_scrape_meta '
+                  "WHERE backdrop_path IS NOT NULL AND backdrop_path != ''",
+                );
+              }
             }
           }
         },
@@ -2780,6 +2805,70 @@ class HibikiDatabase extends _$HibikiDatabase {
             .get();
     return <int>[for (final CollectionScrapeMetaRow r in rows) r.collectionId];
   }
+
+  // ── media_images（媒体附加图组，schema v68 / Jellyfin 图组对齐）──────
+
+  /// 整体替换某合集的附加图组（重刮即替换；空列表 = 清空）。
+  ///
+  /// 事务内 delete + insert（与 [replaceCollectionRelations] 同理由）：图组来自
+  /// 源的一次完整响应，逐条 upsert 会留下上次刮削已不存在的残图行。
+  Future<void> replaceMediaImagesForCollection(
+    int collectionId,
+    List<MediaImagesCompanion> images,
+  ) =>
+      transaction(() async {
+        await (delete(mediaImages)
+              ..where(
+                  ($MediaImagesTable t) => t.collectionId.equals(collectionId)))
+            .go();
+        for (final MediaImagesCompanion c in images) {
+          await into(mediaImages).insert(c);
+        }
+      });
+
+  /// 整体替换某视频的附加图组（散装电影刮削用；空列表 = 清空）。
+  Future<void> replaceMediaImagesForBook(
+    String bookUid,
+    List<MediaImagesCompanion> images,
+  ) =>
+      transaction(() async {
+        await (delete(mediaImages)
+              ..where(($MediaImagesTable t) => t.bookUid.equals(bookUid)))
+            .go();
+        for (final MediaImagesCompanion c in images) {
+          await into(mediaImages).insert(c);
+        }
+      });
+
+  /// 某合集的附加图组（kind 组内按 position 升序，backdrop 轮换序即此序）。
+  Future<List<MediaImageRow>> getMediaImagesForCollection(int collectionId) =>
+      (select(mediaImages)
+            ..where(
+                ($MediaImagesTable t) => t.collectionId.equals(collectionId))
+            ..orderBy([
+              ($MediaImagesTable t) => OrderingTerm(expression: t.kind),
+              ($MediaImagesTable t) => OrderingTerm(expression: t.position),
+            ]))
+          .get();
+
+  /// 某视频的附加图组。
+  Future<List<MediaImageRow>> getMediaImagesForBook(String bookUid) =>
+      (select(mediaImages)
+            ..where(($MediaImagesTable t) => t.bookUid.equals(bookUid))
+            ..orderBy([
+              ($MediaImagesTable t) => OrderingTerm(expression: t.kind),
+              ($MediaImagesTable t) => OrderingTerm(expression: t.position),
+            ]))
+          .get();
+
+  /// 全表附加图组（库页/首页批量预取，替代逐归属查询的 N+1；调用方按
+  /// collectionId / bookUid 内存分组）。
+  Future<List<MediaImageRow>> getAllMediaImages() => (select(mediaImages)
+        ..orderBy([
+          ($MediaImagesTable t) => OrderingTerm(expression: t.kind),
+          ($MediaImagesTable t) => OrderingTerm(expression: t.position),
+        ]))
+      .get();
 
   /// 监听视频库 uid 集合。插入/删除行时发出更新后的 uid 列表；库页据此在任意
   /// 导入路径（页内 / 拖拽 / 外部「用 Hibiki 打开」/ 远端下载）落库后自动重查，

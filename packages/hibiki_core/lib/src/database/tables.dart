@@ -1333,6 +1333,66 @@ class CollectionRelations extends Table {
       ];
 }
 
+// ── media_images ────────────────────────────────────────────────────
+// 媒体附加图组（v68，Jellyfin 图组对齐）：一行 = 一张附加图（横版背景 backdrop /
+// 标题 logo / 带字横图 title_card），归属**二选一**——合集（collectionId）或单视频
+// （bookUid），CHECK 约束在 DB 层锁死单一归属。主封面**不进本表**：仍是
+// `MediaCollections.coverPath` / `VideoBooks.coverPath`（冻结契约，书架/GC/同步
+// 全部围绕它）。
+//
+// 为什么是一张表而不是逐列加（对齐 Jellyfin `ItemImageInfo[]` 扁平数组）：
+// backdrop 允许多张（position 排序，详情页 10 秒轮换），列模型装不下；且合集与
+// 散装电影两个归属方各拷一套列就是四份特例。只有 backdrop 允许 position>0
+// （Jellyfin `AllowsMultipleImages` 同拍板），logo / title_card 每归属一张。
+//
+// 与 [CollectionScrapeMeta] 同族：可重建的刮削缓存（重刮即回填）。v64 的
+// `CollectionScrapeMeta.backdropPath` 由 v68 迁移搬进本表（kind='backdrop',
+// position=0），旧列冻结为遗留残留（Series 先例）——读写一律走本表，勿再碰旧列。
+// 删合集 / 删视频经 FK cascade 清行；磁盘文件回收走 collection_asset_reclaim /
+// VideoBookRepository 的既有单一入口（文件不在 gcOrphanCovers 的扫描面内，见
+// VideoStorage 子目录免疫说明）。
+@DataClassName('MediaImageRow')
+class MediaImages extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// 归属合集（与 [bookUid] 二选一）。删合集 cascade 清行。
+  IntColumn get collectionId => integer()
+      .nullable()
+      .references(MediaCollections, #id, onDelete: KeyAction.cascade)();
+
+  /// 归属单视频（与 [collectionId] 二选一；散装电影的图组）。删视频 cascade 清行。
+  TextColumn get bookUid => text()
+      .nullable()
+      .references(VideoBooks, #bookUid, onDelete: KeyAction.cascade)();
+
+  /// 图种类（`MediaImageKind.dbValue`：backdrop / logo / title_card）。
+  TextColumn get kind => text()();
+
+  /// 同归属同种类内的排序位（仅 backdrop 允许 >0；其余恒 0）。
+  IntColumn get position => integer().withDefault(const Constant(0))();
+
+  /// 本地文件绝对路径（合集图落 `video_covers/collections/`，视频图落
+  /// `video_covers/images/`——两个子目录都在 gcOrphanCovers 扫描面外）。
+  TextColumn get path => text()();
+
+  /// 来源远程 URL（重下/诊断用；手动设置的图为 null）。
+  TextColumn get sourceUrl => text().nullable()();
+
+  /// 单一归属：合集与视频二选一，恰好一个非空。
+  @override
+  List<String> get customConstraints => <String>[
+        'CHECK ((collection_id IS NULL) != (book_uid IS NULL))',
+      ];
+
+  /// 同归属同种类同槽位唯一（重复刮削整组替换按此幂等）。两条唯一键分别覆盖两种
+  /// 归属——SQLite 的 UNIQUE 对 NULL 不判等，各自只约束自己那种归属的行。
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {collectionId, kind, position},
+        {bookUid, kind, position},
+      ];
+}
+
 // ── galgames ────────────────────────────────────────────────────────
 /// v55（游戏库对齐 ReinaManager，见 `docs/design/galgame-library-reina-parity.md`）：
 /// galgame 游戏库的持久真相源，取代旧的偏好表单一 JSON key `galgame_library`

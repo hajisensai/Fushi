@@ -13,7 +13,12 @@ import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:hibiki/src/media/video/scraper/collection_member_policy.dart'
     show multiMemberCollectionIdByVideoUid;
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart'
-    show ScrapeInfoboxEntry, ScrapeMetadata, ScrapeSource, ScrapeTag;
+    show
+        ScrapeInfoboxEntry,
+        ScrapeMetadata,
+        ScrapeSource,
+        ScrapeTag,
+        ScrapedMediaImage;
 import 'package:hibiki/src/media/video/video_path_migration.dart';
 import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
@@ -123,6 +128,23 @@ class VideoBookRepository {
 
   /// 已刮出资料的 bookUid 集合（自动刮削一次性排除已刮的，避免逐本 N+1 查询）。
   Future<Set<String>> scrapedBookUids() => _db.scrapedVideoBookUids();
+
+  /// v68：整体替换一本视频的附加图组行（散装电影 backdrop/logo/titleCard，
+  /// 重刮即替换）。文件已由刮削层落 `video_covers/images/`，本层只写行。
+  Future<void> replaceMediaImages(
+    String bookUid,
+    List<ScrapedMediaImage> images,
+  ) =>
+      _db.replaceMediaImagesForBook(bookUid, <MediaImagesCompanion>[
+        for (final ScrapedMediaImage image in images)
+          MediaImagesCompanion.insert(
+            bookUid: Value<String?>(bookUid),
+            kind: image.kind.dbValue,
+            position: Value<int>(image.position),
+            path: image.path,
+            sourceUrl: Value<String?>(image.sourceUrl),
+          ),
+      ]);
 
   /// 删一本的条目资料（「重新刮削」前先清）。
   Future<void> deleteScrapeMetadata(String bookUid) =>
@@ -628,12 +650,19 @@ class VideoBookRepository {
     final String? deletedCoverPath = book.coverPath;
     final String? deletedSubtitlePath = book.subtitleSource;
     final String deletedVideoPath = book.videoPath;
+    // v68：附加图行随删行 FK cascade 消失，路径必须删行**前**快照（与 coverPath
+    // 同一顺序约束——行一删就再也推导不出来，见 collection_asset_reclaim）。
+    final List<String> deletedImagePaths = <String>[
+      for (final MediaImageRow row in await _db.getMediaImagesForBook(bookUid))
+        row.path,
+    ];
     await deleteVideoBook(bookUid);
     await reclaimDeletedVideoBookAssets(
       deletedBookUid: bookUid,
       deletedCoverPath: deletedCoverPath,
       deletedSubtitlePath: deletedSubtitlePath,
       deletedVideoPath: deletedVideoPath,
+      deletedImagePaths: deletedImagePaths,
     );
     if (compactDatabase) {
       await compactAfterVideoDeleteBestEffort();
@@ -653,6 +682,7 @@ class VideoBookRepository {
     required String? deletedCoverPath,
     required String? deletedSubtitlePath,
     required String deletedVideoPath,
+    List<String> deletedImagePaths = const <String>[],
   }) async {
     try {
       final ({Set<String> covers, Set<String> subtitles}) refs =
@@ -663,6 +693,20 @@ class VideoBookRepository {
         stillReferencedCoverPaths: refs.covers,
         stillReferencedSubtitlePaths: refs.subtitles,
       );
+      // v68：附加图文件（video_covers/images/，行已 cascade 删除）。护栏：仍被
+      // 幸存行引用的路径保留（同名共享理论上不存在——文件名按 bookUid 派生——
+      // 但护栏与封面/字幕同纪律，宁可漏删）。
+      if (deletedImagePaths.isNotEmpty) {
+        final Set<String> survivingImagePaths = <String>{
+          for (final MediaImageRow row in await _db.getAllMediaImages())
+            row.path,
+        };
+        await VideoStorage.deleteOwnedImageFiles(
+          deletedPaths: deletedImagePaths,
+          stillReferencedPaths: survivingImagePaths,
+          ownedDir: await VideoStorage.imagesDir(),
+        );
+      }
       await VideoStorage.gcOrphanCovers(referencedCoverPaths: refs.covers);
       if (!await isDuplicateVideoPath(
         deletedVideoPath,

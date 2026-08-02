@@ -6,9 +6,11 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// 把一次合集刮削的产物写进库。
@@ -36,10 +38,15 @@ Future<void> applyCollectionScrape(
   int collectionId,
   CollectionScrapeResult result, {
   required String? confirmedTitle,
-}) {
+  Directory? collectionCoversDirectory,
+}) async {
   final ScrapeMetadata meta = result.metadata;
   final String scrapedTitle = (confirmedTitle ?? '').trim();
-  return db.transaction(() async {
+  // 旧图行快照必须在整组替换**前**取：替换后行没了，旧文件路径再也推导不出来
+  // （与 collection_asset_reclaim 同一顺序约束）。
+  final List<MediaImageRow> replacedImages =
+      await db.getMediaImagesForCollection(collectionId);
+  await db.transaction(() async {
     await db.updateMediaCollectionCoverPath(collectionId, result.coverPath);
     await db.upsertCollectionScrapeMeta(
       CollectionScrapeMetaCompanion.insert(
@@ -55,15 +62,69 @@ Future<void> applyCollectionScrape(
         episodeCount: Value<int?>(meta.episodeCount),
         tagsJson: Value<String?>(encodeScrapeTags(meta.tags)),
         infoboxJson: Value<String?>(encodeScrapeInfobox(meta.infobox)),
-        backdropPath: Value<String?>(result.backdropPath),
+        // v68 起横版图唯一真相源是 media_images；本列冻结为遗留残留（迁移已把
+        // 存量搬走），新写入恒 NULL，防止两处真相漂开。
+        backdropPath: const Value<String?>(null),
         detailUrl: Value<String?>(meta.detailUrl),
         scrapedAt: DateTime.now(),
       ),
     );
+    await db
+        .replaceMediaImagesForCollection(collectionId, <MediaImagesCompanion>[
+      for (final ScrapedMediaImage image in result.images)
+        MediaImagesCompanion.insert(
+          collectionId: Value<int?>(collectionId),
+          kind: image.kind.dbValue,
+          position: Value<int>(image.position),
+          path: image.path,
+          sourceUrl: Value<String?>(image.sourceUrl),
+        ),
+    ]);
     if (scrapedTitle.isNotEmpty) {
       await db.renameMediaCollection(collectionId, scrapedTitle);
     }
   });
+  // 事务外（文件 IO 不进事务）：整组替换后失去引用的旧图文件回收——v64 遗留的
+  // `<id>_backdrop.jpg` 在首次重刮后正是经这条路清掉，不留确定性泄漏。
+  await _reclaimReplacedCollectionImages(
+    db,
+    replacedImages,
+    result.images,
+    collectionCoversDirectory: collectionCoversDirectory,
+  );
+}
+
+/// 删掉整组替换后失去引用的旧附加图文件。
+///
+/// 护栏与 collection_asset_reclaim 同纪律：只删**落在合集封面目录内 + 替换后全库
+/// 无任何行引用**的文件；失败静默（合集刮削已成功是既成事实）。
+Future<void> _reclaimReplacedCollectionImages(
+  HibikiDatabase db,
+  List<MediaImageRow> before,
+  List<ScrapedMediaImage> after, {
+  Directory? collectionCoversDirectory,
+}) async {
+  final Set<String> kept = <String>{
+    for (final ScrapedMediaImage image in after) image.path,
+  };
+  final List<String> stale = <String>[
+    for (final MediaImageRow row in before)
+      if (!kept.contains(row.path)) row.path,
+  ];
+  if (stale.isEmpty) return;
+  try {
+    final Set<String> stillReferenced = <String>{
+      for (final MediaImageRow row in await db.getAllMediaImages()) row.path,
+    };
+    await VideoStorage.deleteOwnedImageFiles(
+      deletedPaths: stale,
+      stillReferencedPaths: stillReferenced,
+      ownedDir:
+          collectionCoversDirectory ?? await VideoStorage.collectionCoversDir(),
+    );
+  } catch (_) {
+    // 一张残留旧图不该让已成功的刮削流程报错；下次重刮还有机会清。
+  }
 }
 
 /// 这次刮削**该不该**征询用户改名：返回要提议的新名，返回 null = 无需询问。
@@ -99,34 +160,31 @@ String? encodeScrapeInfobox(List<ScrapeInfoboxEntry> infobox) => infobox.isEmpty
         for (final ScrapeInfoboxEntry e in infobox) e.toJson(),
       ]);
 
-/// 读回合集刮削资料为领域对象 + 横版背景路径；未刮过返回 null。
+/// 读回合集刮削资料为领域对象；未刮过返回 null。
+///
+/// v68 起横版图不再从本行读（`backdropPath` 列已冻结为遗留残留），附加图组一律
+/// 走 `getMediaImagesForCollection`。
 ///
 /// JSON 列损坏时该列降级为空列表（其余字段照常返回），不因一列坏掉丢整条资料——
 /// 与 `VideoBookRepository.scrapeMetadata` 同一容错规矩。
-({ScrapeMetadata metadata, String? backdropPath})? decodeCollectionScrapeMeta(
-  CollectionScrapeMetaRow? row,
-) {
+ScrapeMetadata? decodeCollectionScrapeMeta(CollectionScrapeMetaRow? row) {
   if (row == null) return null;
-  return (
-    metadata: ScrapeMetadata(
-      source:
-          ScrapeSource.values.asNameMap()[row.source] ?? ScrapeSource.bangumi,
-      subjectId: row.subjectId,
-      title: row.title,
-      originalTitle: row.originalTitle,
-      summary: row.summary,
-      airDate: row.airDate,
-      rating: row.rating,
-      ratingCount: row.ratingCount,
-      episodeCount: row.episodeCount,
-      tags: _decodeJsonList<ScrapeTag>(row.tagsJson, ScrapeTag.fromJson),
-      infobox: _decodeJsonList<ScrapeInfoboxEntry>(
-        row.infoboxJson,
-        ScrapeInfoboxEntry.fromJson,
-      ),
-      detailUrl: row.detailUrl,
+  return ScrapeMetadata(
+    source: ScrapeSource.values.asNameMap()[row.source] ?? ScrapeSource.bangumi,
+    subjectId: row.subjectId,
+    title: row.title,
+    originalTitle: row.originalTitle,
+    summary: row.summary,
+    airDate: row.airDate,
+    rating: row.rating,
+    ratingCount: row.ratingCount,
+    episodeCount: row.episodeCount,
+    tags: _decodeJsonList<ScrapeTag>(row.tagsJson, ScrapeTag.fromJson),
+    infobox: _decodeJsonList<ScrapeInfoboxEntry>(
+      row.infoboxJson,
+      ScrapeInfoboxEntry.fromJson,
     ),
-    backdropPath: row.backdropPath,
+    detailUrl: row.detailUrl,
   );
 }
 

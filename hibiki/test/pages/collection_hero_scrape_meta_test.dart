@@ -64,7 +64,14 @@ void main() {
         collectionId,
         CollectionScrapeResult(
           coverPath: coverPath,
-          backdropPath: backdropPath,
+          // v68：横版背景改走 media_images 图组（apply 落行，页面读表）。
+          images: <ScrapedMediaImage>[
+            if (backdropPath != null)
+              ScrapedMediaImage(
+                kind: MediaImageKind.backdrop,
+                path: backdropPath,
+              ),
+          ],
           metadata: const ScrapeMetadata(
             source: ScrapeSource.tmdb,
             subjectId: '100',

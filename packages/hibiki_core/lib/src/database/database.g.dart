@@ -24831,6 +24831,409 @@ class CollectionRelationsCompanion
   }
 }
 
+class $MediaImagesTable extends MediaImages
+    with TableInfo<$MediaImagesTable, MediaImageRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaImagesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _collectionIdMeta =
+      const VerificationMeta('collectionId');
+  @override
+  late final GeneratedColumn<int> collectionId = GeneratedColumn<int>(
+      'collection_id', aliasedName, true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES media_collections (id) ON DELETE CASCADE'));
+  static const VerificationMeta _bookUidMeta =
+      const VerificationMeta('bookUid');
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+      'book_uid', aliasedName, true,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES video_books (book_uid) ON DELETE CASCADE'));
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+      'kind', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _positionMeta =
+      const VerificationMeta('position');
+  @override
+  late final GeneratedColumn<int> position = GeneratedColumn<int>(
+      'position', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+      'path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _sourceUrlMeta =
+      const VerificationMeta('sourceUrl');
+  @override
+  late final GeneratedColumn<String> sourceUrl = GeneratedColumn<String>(
+      'source_url', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, collectionId, bookUid, kind, position, path, sourceUrl];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_images';
+  @override
+  VerificationContext validateIntegrity(Insertable<MediaImageRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('collection_id')) {
+      context.handle(
+          _collectionIdMeta,
+          collectionId.isAcceptableOrUnknown(
+              data['collection_id']!, _collectionIdMeta));
+    }
+    if (data.containsKey('book_uid')) {
+      context.handle(_bookUidMeta,
+          bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta));
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+          _kindMeta, kind.isAcceptableOrUnknown(data['kind']!, _kindMeta));
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('position')) {
+      context.handle(_positionMeta,
+          position.isAcceptableOrUnknown(data['position']!, _positionMeta));
+    }
+    if (data.containsKey('path')) {
+      context.handle(
+          _pathMeta, path.isAcceptableOrUnknown(data['path']!, _pathMeta));
+    } else if (isInserting) {
+      context.missing(_pathMeta);
+    }
+    if (data.containsKey('source_url')) {
+      context.handle(_sourceUrlMeta,
+          sourceUrl.isAcceptableOrUnknown(data['source_url']!, _sourceUrlMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {collectionId, kind, position},
+        {bookUid, kind, position},
+      ];
+  @override
+  MediaImageRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaImageRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      collectionId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}collection_id']),
+      bookUid: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_uid']),
+      kind: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}kind'])!,
+      position: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}position'])!,
+      path: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}path'])!,
+      sourceUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_url']),
+    );
+  }
+
+  @override
+  $MediaImagesTable createAlias(String alias) {
+    return $MediaImagesTable(attachedDatabase, alias);
+  }
+}
+
+class MediaImageRow extends DataClass implements Insertable<MediaImageRow> {
+  final int id;
+
+  /// 归属合集（与 [bookUid] 二选一）。删合集 cascade 清行。
+  final int? collectionId;
+
+  /// 归属单视频（与 [collectionId] 二选一；散装电影的图组）。删视频 cascade 清行。
+  final String? bookUid;
+
+  /// 图种类（`MediaImageKind.dbValue`：backdrop / logo / title_card）。
+  final String kind;
+
+  /// 同归属同种类内的排序位（仅 backdrop 允许 >0；其余恒 0）。
+  final int position;
+
+  /// 本地文件绝对路径（合集图落 `video_covers/collections/`，视频图落
+  /// `video_covers/images/`——两个子目录都在 gcOrphanCovers 扫描面外）。
+  final String path;
+
+  /// 来源远程 URL（重下/诊断用；手动设置的图为 null）。
+  final String? sourceUrl;
+  const MediaImageRow(
+      {required this.id,
+      this.collectionId,
+      this.bookUid,
+      required this.kind,
+      required this.position,
+      required this.path,
+      this.sourceUrl});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    if (!nullToAbsent || collectionId != null) {
+      map['collection_id'] = Variable<int>(collectionId);
+    }
+    if (!nullToAbsent || bookUid != null) {
+      map['book_uid'] = Variable<String>(bookUid);
+    }
+    map['kind'] = Variable<String>(kind);
+    map['position'] = Variable<int>(position);
+    map['path'] = Variable<String>(path);
+    if (!nullToAbsent || sourceUrl != null) {
+      map['source_url'] = Variable<String>(sourceUrl);
+    }
+    return map;
+  }
+
+  MediaImagesCompanion toCompanion(bool nullToAbsent) {
+    return MediaImagesCompanion(
+      id: Value(id),
+      collectionId: collectionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(collectionId),
+      bookUid: bookUid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(bookUid),
+      kind: Value(kind),
+      position: Value(position),
+      path: Value(path),
+      sourceUrl: sourceUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceUrl),
+    );
+  }
+
+  factory MediaImageRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaImageRow(
+      id: serializer.fromJson<int>(json['id']),
+      collectionId: serializer.fromJson<int?>(json['collectionId']),
+      bookUid: serializer.fromJson<String?>(json['bookUid']),
+      kind: serializer.fromJson<String>(json['kind']),
+      position: serializer.fromJson<int>(json['position']),
+      path: serializer.fromJson<String>(json['path']),
+      sourceUrl: serializer.fromJson<String?>(json['sourceUrl']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'collectionId': serializer.toJson<int?>(collectionId),
+      'bookUid': serializer.toJson<String?>(bookUid),
+      'kind': serializer.toJson<String>(kind),
+      'position': serializer.toJson<int>(position),
+      'path': serializer.toJson<String>(path),
+      'sourceUrl': serializer.toJson<String?>(sourceUrl),
+    };
+  }
+
+  MediaImageRow copyWith(
+          {int? id,
+          Value<int?> collectionId = const Value.absent(),
+          Value<String?> bookUid = const Value.absent(),
+          String? kind,
+          int? position,
+          String? path,
+          Value<String?> sourceUrl = const Value.absent()}) =>
+      MediaImageRow(
+        id: id ?? this.id,
+        collectionId:
+            collectionId.present ? collectionId.value : this.collectionId,
+        bookUid: bookUid.present ? bookUid.value : this.bookUid,
+        kind: kind ?? this.kind,
+        position: position ?? this.position,
+        path: path ?? this.path,
+        sourceUrl: sourceUrl.present ? sourceUrl.value : this.sourceUrl,
+      );
+  MediaImageRow copyWithCompanion(MediaImagesCompanion data) {
+    return MediaImageRow(
+      id: data.id.present ? data.id.value : this.id,
+      collectionId: data.collectionId.present
+          ? data.collectionId.value
+          : this.collectionId,
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      position: data.position.present ? data.position.value : this.position,
+      path: data.path.present ? data.path.value : this.path,
+      sourceUrl: data.sourceUrl.present ? data.sourceUrl.value : this.sourceUrl,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaImageRow(')
+          ..write('id: $id, ')
+          ..write('collectionId: $collectionId, ')
+          ..write('bookUid: $bookUid, ')
+          ..write('kind: $kind, ')
+          ..write('position: $position, ')
+          ..write('path: $path, ')
+          ..write('sourceUrl: $sourceUrl')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, collectionId, bookUid, kind, position, path, sourceUrl);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaImageRow &&
+          other.id == this.id &&
+          other.collectionId == this.collectionId &&
+          other.bookUid == this.bookUid &&
+          other.kind == this.kind &&
+          other.position == this.position &&
+          other.path == this.path &&
+          other.sourceUrl == this.sourceUrl);
+}
+
+class MediaImagesCompanion extends UpdateCompanion<MediaImageRow> {
+  final Value<int> id;
+  final Value<int?> collectionId;
+  final Value<String?> bookUid;
+  final Value<String> kind;
+  final Value<int> position;
+  final Value<String> path;
+  final Value<String?> sourceUrl;
+  const MediaImagesCompanion({
+    this.id = const Value.absent(),
+    this.collectionId = const Value.absent(),
+    this.bookUid = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.position = const Value.absent(),
+    this.path = const Value.absent(),
+    this.sourceUrl = const Value.absent(),
+  });
+  MediaImagesCompanion.insert({
+    this.id = const Value.absent(),
+    this.collectionId = const Value.absent(),
+    this.bookUid = const Value.absent(),
+    required String kind,
+    this.position = const Value.absent(),
+    required String path,
+    this.sourceUrl = const Value.absent(),
+  })  : kind = Value(kind),
+        path = Value(path);
+  static Insertable<MediaImageRow> custom({
+    Expression<int>? id,
+    Expression<int>? collectionId,
+    Expression<String>? bookUid,
+    Expression<String>? kind,
+    Expression<int>? position,
+    Expression<String>? path,
+    Expression<String>? sourceUrl,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (collectionId != null) 'collection_id': collectionId,
+      if (bookUid != null) 'book_uid': bookUid,
+      if (kind != null) 'kind': kind,
+      if (position != null) 'position': position,
+      if (path != null) 'path': path,
+      if (sourceUrl != null) 'source_url': sourceUrl,
+    });
+  }
+
+  MediaImagesCompanion copyWith(
+      {Value<int>? id,
+      Value<int?>? collectionId,
+      Value<String?>? bookUid,
+      Value<String>? kind,
+      Value<int>? position,
+      Value<String>? path,
+      Value<String?>? sourceUrl}) {
+    return MediaImagesCompanion(
+      id: id ?? this.id,
+      collectionId: collectionId ?? this.collectionId,
+      bookUid: bookUid ?? this.bookUid,
+      kind: kind ?? this.kind,
+      position: position ?? this.position,
+      path: path ?? this.path,
+      sourceUrl: sourceUrl ?? this.sourceUrl,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (collectionId.present) {
+      map['collection_id'] = Variable<int>(collectionId.value);
+    }
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (position.present) {
+      map['position'] = Variable<int>(position.value);
+    }
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (sourceUrl.present) {
+      map['source_url'] = Variable<String>(sourceUrl.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaImagesCompanion(')
+          ..write('id: $id, ')
+          ..write('collectionId: $collectionId, ')
+          ..write('bookUid: $bookUid, ')
+          ..write('kind: $kind, ')
+          ..write('position: $position, ')
+          ..write('path: $path, ')
+          ..write('sourceUrl: $sourceUrl')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -24930,6 +25333,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $MangaTrustedSignersTable(this);
   late final $CollectionRelationsTable collectionRelations =
       $CollectionRelationsTable(this);
+  late final $MediaImagesTable mediaImages = $MediaImagesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -24994,7 +25398,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         mangaOnlineSources,
         mangaSourcePreferences,
         mangaTrustedSigners,
-        collectionRelations
+        collectionRelations,
+        mediaImages
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -25179,6 +25584,20 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('collection_relations', kind: UpdateKind.update),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('media_collections',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('media_images', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('video_books',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('media_images', kind: UpdateKind.delete),
             ],
           ),
         ],
@@ -31881,6 +32300,21 @@ final class $$VideoBooksTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$MediaImagesTable, List<MediaImageRow>>
+      _mediaImagesRefsTable(_$HibikiDatabase db) =>
+          MultiTypedResultKey.fromTable(db.mediaImages,
+              aliasName: 'video_books__book_uid__media_images__book_uid');
+
+  $$MediaImagesTableProcessedTableManager get mediaImagesRefs {
+    final manager = $$MediaImagesTableTableManager($_db, $_db.mediaImages)
+        .filter((f) =>
+            f.bookUid.bookUid.sqlEquals($_itemColumn<String>('book_uid')!));
+
+    final cache = $_typedResult.readTableOrNull(_mediaImagesRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$VideoBooksTableFilterComposer
@@ -32002,6 +32436,27 @@ class $$VideoBooksTableFilterComposer
             $$VideoScrapeMetaTableFilterComposer(
               $db: $db,
               $table: $db.videoScrapeMeta,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> mediaImagesRefs(
+      Expression<bool> Function($$MediaImagesTableFilterComposer f) f) {
+    final $$MediaImagesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.mediaImages,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaImagesTableFilterComposer(
+              $db: $db,
+              $table: $db.mediaImages,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -32218,6 +32673,27 @@ class $$VideoBooksTableAnnotationComposer
             ));
     return f(composer);
   }
+
+  Expression<T> mediaImagesRefs<T extends Object>(
+      Expression<T> Function($$MediaImagesTableAnnotationComposer a) f) {
+    final $$MediaImagesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.mediaImages,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaImagesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.mediaImages,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
 }
 
 class $$VideoBooksTableTableManager extends RootTableManager<
@@ -32234,7 +32710,8 @@ class $$VideoBooksTableTableManager extends RootTableManager<
     PrefetchHooks Function(
         {bool sourceId,
         bool videoBookTagMappingsRefs,
-        bool videoScrapeMetaRefs})> {
+        bool videoScrapeMetaRefs,
+        bool mediaImagesRefs})> {
   $$VideoBooksTableTableManager(_$HibikiDatabase db, $VideoBooksTable table)
       : super(TableManagerState(
           db: db,
@@ -32334,12 +32811,14 @@ class $$VideoBooksTableTableManager extends RootTableManager<
           prefetchHooksCallback: (
               {sourceId = false,
               videoBookTagMappingsRefs = false,
-              videoScrapeMetaRefs = false}) {
+              videoScrapeMetaRefs = false,
+              mediaImagesRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (videoBookTagMappingsRefs) db.videoBookTagMappings,
-                if (videoScrapeMetaRefs) db.videoScrapeMeta
+                if (videoScrapeMetaRefs) db.videoScrapeMeta,
+                if (mediaImagesRefs) db.mediaImages
               ],
               addJoins: <
                   T extends TableManagerState<
@@ -32394,6 +32873,19 @@ class $$VideoBooksTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.bookUid == item.bookUid),
+                        typedResults: items),
+                  if (mediaImagesRefs)
+                    await $_getPrefetchedData<VideoBookRow, $VideoBooksTable,
+                            MediaImageRow>(
+                        currentTable: table,
+                        referencedTable: $$VideoBooksTableReferences
+                            ._mediaImagesRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$VideoBooksTableReferences(db, table, p0)
+                                .mediaImagesRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.bookUid == item.bookUid),
                         typedResults: items)
                 ];
               },
@@ -32416,7 +32908,8 @@ typedef $$VideoBooksTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function(
         {bool sourceId,
         bool videoBookTagMappingsRefs,
-        bool videoScrapeMetaRefs})>;
+        bool videoScrapeMetaRefs,
+        bool mediaImagesRefs})>;
 typedef $$VideoBookTagMappingsTableCreateCompanionBuilder
     = VideoBookTagMappingsCompanion Function({
   Value<int> id,
@@ -34411,6 +34904,20 @@ final class $$MediaCollectionsTableReferences extends BaseReferences<
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$MediaImagesTable, List<MediaImageRow>>
+      _mediaImagesRefsTable(_$HibikiDatabase db) =>
+          MultiTypedResultKey.fromTable(db.mediaImages,
+              aliasName: 'media_collections__id__media_images__collection_id');
+
+  $$MediaImagesTableProcessedTableManager get mediaImagesRefs {
+    final manager = $$MediaImagesTableTableManager($_db, $_db.mediaImages)
+        .filter((f) => f.collectionId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_mediaImagesRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$MediaCollectionsTableFilterComposer
@@ -34517,6 +35024,27 @@ class $$MediaCollectionsTableFilterComposer
             $$CollectionScrapeMetaTableFilterComposer(
               $db: $db,
               $table: $db.collectionScrapeMeta,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> mediaImagesRefs(
+      Expression<bool> Function($$MediaImagesTableFilterComposer f) f) {
+    final $$MediaImagesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.mediaImages,
+        getReferencedColumn: (t) => t.collectionId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaImagesTableFilterComposer(
+              $db: $db,
+              $table: $db.mediaImages,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -34683,6 +35211,27 @@ class $$MediaCollectionsTableAnnotationComposer
                 ));
     return f(composer);
   }
+
+  Expression<T> mediaImagesRefs<T extends Object>(
+      Expression<T> Function($$MediaImagesTableAnnotationComposer a) f) {
+    final $$MediaImagesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.mediaImages,
+        getReferencedColumn: (t) => t.collectionId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaImagesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.mediaImages,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
 }
 
 class $$MediaCollectionsTableTableManager extends RootTableManager<
@@ -34699,7 +35248,8 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
     PrefetchHooks Function(
         {bool mediaCollectionItemsRefs,
         bool collectionTagMappingsRefs,
-        bool collectionScrapeMetaRefs})> {
+        bool collectionScrapeMetaRefs,
+        bool mediaImagesRefs})> {
   $$MediaCollectionsTableTableManager(
       _$HibikiDatabase db, $MediaCollectionsTable table)
       : super(TableManagerState(
@@ -34772,13 +35322,15 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
           prefetchHooksCallback: (
               {mediaCollectionItemsRefs = false,
               collectionTagMappingsRefs = false,
-              collectionScrapeMetaRefs = false}) {
+              collectionScrapeMetaRefs = false,
+              mediaImagesRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (mediaCollectionItemsRefs) db.mediaCollectionItems,
                 if (collectionTagMappingsRefs) db.collectionTagMappings,
-                if (collectionScrapeMetaRefs) db.collectionScrapeMeta
+                if (collectionScrapeMetaRefs) db.collectionScrapeMeta,
+                if (mediaImagesRefs) db.mediaImages
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -34821,6 +35373,19 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.collectionId == item.id),
+                        typedResults: items),
+                  if (mediaImagesRefs)
+                    await $_getPrefetchedData<MediaCollectionRow,
+                            $MediaCollectionsTable, MediaImageRow>(
+                        currentTable: table,
+                        referencedTable: $$MediaCollectionsTableReferences
+                            ._mediaImagesRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$MediaCollectionsTableReferences(db, table, p0)
+                                .mediaImagesRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.collectionId == item.id),
                         typedResults: items)
                 ];
               },
@@ -34843,7 +35408,8 @@ typedef $$MediaCollectionsTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function(
         {bool mediaCollectionItemsRefs,
         bool collectionTagMappingsRefs,
-        bool collectionScrapeMetaRefs})>;
+        bool collectionScrapeMetaRefs,
+        bool mediaImagesRefs})>;
 typedef $$MediaCollectionItemsTableCreateCompanionBuilder
     = MediaCollectionItemsCompanion Function({
   required int collectionId,
@@ -42026,6 +42592,381 @@ typedef $$CollectionRelationsTableProcessedTableManager = ProcessedTableManager<
     (CollectionRelationRow, $$CollectionRelationsTableReferences),
     CollectionRelationRow,
     PrefetchHooks Function({bool collectionId, bool targetCollectionId})>;
+typedef $$MediaImagesTableCreateCompanionBuilder = MediaImagesCompanion
+    Function({
+  Value<int> id,
+  Value<int?> collectionId,
+  Value<String?> bookUid,
+  required String kind,
+  Value<int> position,
+  required String path,
+  Value<String?> sourceUrl,
+});
+typedef $$MediaImagesTableUpdateCompanionBuilder = MediaImagesCompanion
+    Function({
+  Value<int> id,
+  Value<int?> collectionId,
+  Value<String?> bookUid,
+  Value<String> kind,
+  Value<int> position,
+  Value<String> path,
+  Value<String?> sourceUrl,
+});
+
+final class $$MediaImagesTableReferences
+    extends BaseReferences<_$HibikiDatabase, $MediaImagesTable, MediaImageRow> {
+  $$MediaImagesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $MediaCollectionsTable _collectionIdTable(_$HibikiDatabase db) =>
+      db.mediaCollections
+          .createAlias('media_images__collection_id__media_collections__id');
+
+  $$MediaCollectionsTableProcessedTableManager? get collectionId {
+    final $_column = $_itemColumn<int>('collection_id');
+    if ($_column == null) return null;
+    final manager =
+        $$MediaCollectionsTableTableManager($_db, $_db.mediaCollections)
+            .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_collectionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $VideoBooksTable _bookUidTable(_$HibikiDatabase db) => db.videoBooks
+      .createAlias('media_images__book_uid__video_books__book_uid');
+
+  $$VideoBooksTableProcessedTableManager? get bookUid {
+    final $_column = $_itemColumn<String>('book_uid');
+    if ($_column == null) return null;
+    final manager = $$VideoBooksTableTableManager($_db, $_db.videoBooks)
+        .filter((f) => f.bookUid.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_bookUidTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$MediaImagesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MediaImagesTable> {
+  $$MediaImagesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get kind => $composableBuilder(
+      column: $table.kind, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get position => $composableBuilder(
+      column: $table.position, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get path => $composableBuilder(
+      column: $table.path, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceUrl => $composableBuilder(
+      column: $table.sourceUrl, builder: (column) => ColumnFilters(column));
+
+  $$MediaCollectionsTableFilterComposer get collectionId {
+    final $$MediaCollectionsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableFilterComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$VideoBooksTableFilterComposer get bookUid {
+    final $$VideoBooksTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.videoBooks,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBooksTableFilterComposer(
+              $db: $db,
+              $table: $db.videoBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$MediaImagesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MediaImagesTable> {
+  $$MediaImagesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+      column: $table.kind, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get position => $composableBuilder(
+      column: $table.position, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get path => $composableBuilder(
+      column: $table.path, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sourceUrl => $composableBuilder(
+      column: $table.sourceUrl, builder: (column) => ColumnOrderings(column));
+
+  $$MediaCollectionsTableOrderingComposer get collectionId {
+    final $$MediaCollectionsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableOrderingComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$VideoBooksTableOrderingComposer get bookUid {
+    final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.videoBooks,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBooksTableOrderingComposer(
+              $db: $db,
+              $table: $db.videoBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$MediaImagesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MediaImagesTable> {
+  $$MediaImagesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<int> get position =>
+      $composableBuilder(column: $table.position, builder: (column) => column);
+
+  GeneratedColumn<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceUrl =>
+      $composableBuilder(column: $table.sourceUrl, builder: (column) => column);
+
+  $$MediaCollectionsTableAnnotationComposer get collectionId {
+    final $$MediaCollectionsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$VideoBooksTableAnnotationComposer get bookUid {
+    final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.videoBooks,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBooksTableAnnotationComposer(
+              $db: $db,
+              $table: $db.videoBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$MediaImagesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MediaImagesTable,
+    MediaImageRow,
+    $$MediaImagesTableFilterComposer,
+    $$MediaImagesTableOrderingComposer,
+    $$MediaImagesTableAnnotationComposer,
+    $$MediaImagesTableCreateCompanionBuilder,
+    $$MediaImagesTableUpdateCompanionBuilder,
+    (MediaImageRow, $$MediaImagesTableReferences),
+    MediaImageRow,
+    PrefetchHooks Function({bool collectionId, bool bookUid})> {
+  $$MediaImagesTableTableManager(_$HibikiDatabase db, $MediaImagesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaImagesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaImagesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaImagesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<int?> collectionId = const Value.absent(),
+            Value<String?> bookUid = const Value.absent(),
+            Value<String> kind = const Value.absent(),
+            Value<int> position = const Value.absent(),
+            Value<String> path = const Value.absent(),
+            Value<String?> sourceUrl = const Value.absent(),
+          }) =>
+              MediaImagesCompanion(
+            id: id,
+            collectionId: collectionId,
+            bookUid: bookUid,
+            kind: kind,
+            position: position,
+            path: path,
+            sourceUrl: sourceUrl,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<int?> collectionId = const Value.absent(),
+            Value<String?> bookUid = const Value.absent(),
+            required String kind,
+            Value<int> position = const Value.absent(),
+            required String path,
+            Value<String?> sourceUrl = const Value.absent(),
+          }) =>
+              MediaImagesCompanion.insert(
+            id: id,
+            collectionId: collectionId,
+            bookUid: bookUid,
+            kind: kind,
+            position: position,
+            path: path,
+            sourceUrl: sourceUrl,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$MediaImagesTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({collectionId = false, bookUid = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (collectionId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.collectionId,
+                    referencedTable:
+                        $$MediaImagesTableReferences._collectionIdTable(db),
+                    referencedColumn:
+                        $$MediaImagesTableReferences._collectionIdTable(db).id,
+                  ) as T;
+                }
+                if (bookUid) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.bookUid,
+                    referencedTable:
+                        $$MediaImagesTableReferences._bookUidTable(db),
+                    referencedColumn:
+                        $$MediaImagesTableReferences._bookUidTable(db).bookUid,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$MediaImagesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $MediaImagesTable,
+    MediaImageRow,
+    $$MediaImagesTableFilterComposer,
+    $$MediaImagesTableOrderingComposer,
+    $$MediaImagesTableAnnotationComposer,
+    $$MediaImagesTableCreateCompanionBuilder,
+    $$MediaImagesTableUpdateCompanionBuilder,
+    (MediaImageRow, $$MediaImagesTableReferences),
+    MediaImageRow,
+    PrefetchHooks Function({bool collectionId, bool bookUid})>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -42156,4 +43097,6 @@ class $HibikiDatabaseManager {
       $$MangaTrustedSignersTableTableManager(_db, _db.mangaTrustedSigners);
   $$CollectionRelationsTableTableManager get collectionRelations =>
       $$CollectionRelationsTableTableManager(_db, _db.collectionRelations);
+  $$MediaImagesTableTableManager get mediaImages =>
+      $$MediaImagesTableTableManager(_db, _db.mediaImages);
 }

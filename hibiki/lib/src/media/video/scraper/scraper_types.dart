@@ -20,6 +20,8 @@
 /// `sidecar_scanner.dart` / `cover_scraper_service.dart`。
 library;
 
+import 'package:hibiki_core/hibiki_core.dart' show MediaImageKind;
+
 /// 从文件名/目录名解析出的结构化信息（解析层输出）。
 class ParsedMediaName {
   const ParsedMediaName({
@@ -250,25 +252,48 @@ class ScrapeMetadata {
   final String? detailUrl;
 }
 
-/// 合集刮削一次落地的全部产物（BUG-1310）。
+/// 一张已落盘的附加图（刮削产物 → `media_images` 行的领域对象，v68）。
+class ScrapedMediaImage {
+  const ScrapedMediaImage({
+    required this.kind,
+    this.position = 0,
+    required this.path,
+    this.sourceUrl,
+  });
+
+  final MediaImageKind kind;
+
+  /// 同种类内排序位（仅 backdrop 允许 >0，见 `MediaImages.position`）。
+  final int position;
+
+  /// 本地文件绝对路径。
+  final String path;
+
+  /// 来源远程 URL（重下/诊断用）。
+  final String? sourceUrl;
+}
+
+/// 合集刮削一次落地的全部产物（BUG-1310；v68 起横版背景并入 [images] 图组）。
 ///
 /// 合集刮削此前只产出一张海报路径（`downloadCollectionCover` 返回 String），资料与
-/// 横版背景无处安放。本类型把三样东西一次带回给调用方写库：封面、横版背景、条目资料。
+/// 附加图无处安放。本类型把三样东西一次带回给调用方写库：封面、附加图组、条目资料。
 ///
 /// 为什么由调用方写库而不是本层直接写：刮削 service 刻意不持有 [HibikiDatabase]
 /// （见 `cover_scraper_service.dart` 顶注），不该为几列写入把整个数据库拖进它的依赖面。
 class CollectionScrapeResult {
   const CollectionScrapeResult({
     required this.coverPath,
-    this.backdropPath,
+    this.images = const <ScrapedMediaImage>[],
     required this.metadata,
   });
 
   /// 竖版海报本地路径（必有——没有海报的候选在匹配层就被滤掉了）。
   final String coverPath;
 
-  /// 横版背景本地路径；源没有横版图（Bangumi / 离线库）或下载失败时为 null。
-  final String? backdropPath;
+  /// 已落盘的附加图组（backdrop 0..n / logo / titleCard）。源没有横版图
+  /// （Bangumi / 离线库）或全部下载失败时为空列表——hero 自会回落到海报 +
+  /// 模糊垫底，那是这些源的常态路径，不是错误。
+  final List<ScrapedMediaImage> images;
 
   /// 条目资料（Bangumi 走详情端点取全量；其余源由候选自身降级拼出）。
   final ScrapeMetadata metadata;

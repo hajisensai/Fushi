@@ -60,7 +60,7 @@ void main() {
         detailUrl: 'https://www.themoviedb.org/tv/100',
       );
 
-  test('落库 → 读回：全字段往返，含横版背景路径', () async {
+  test('落库 → 读回：全字段往返，附加图组落 media_images（v68）', () async {
     final HibikiDatabase db = await openDb();
     final int id = await newCollection(db);
 
@@ -69,32 +69,94 @@ void main() {
       id,
       CollectionScrapeResult(
         coverPath: '/covers/collections/$id.jpg',
-        backdropPath: '/covers/collections/${id}_backdrop.jpg',
+        images: <ScrapedMediaImage>[
+          ScrapedMediaImage(
+            kind: MediaImageKind.backdrop,
+            path: '/covers/collections/${id}_backdrop0.jpg',
+            sourceUrl: 'https://img/b0.jpg',
+          ),
+          ScrapedMediaImage(
+            kind: MediaImageKind.backdrop,
+            position: 1,
+            path: '/covers/collections/${id}_backdrop1.jpg',
+          ),
+          ScrapedMediaImage(
+            kind: MediaImageKind.logo,
+            path: '/covers/collections/${id}_logo.png',
+          ),
+          ScrapedMediaImage(
+            kind: MediaImageKind.titleCard,
+            path: '/covers/collections/${id}_titlecard.jpg',
+          ),
+        ],
         metadata: meta(),
       ),
       confirmedTitle: null,
     );
 
-    final ({ScrapeMetadata metadata, String? backdropPath})? got =
+    final ScrapeMetadata? got =
         decodeCollectionScrapeMeta(await db.getCollectionScrapeMeta(id));
     expect(got, isNotNull);
-    expect(got!.backdropPath, '/covers/collections/${id}_backdrop.jpg');
-    expect(got.metadata.summary, '一部关于魔法的故事。');
-    expect(got.metadata.rating, 8.2);
-    expect(got.metadata.ratingCount, 1234);
-    expect(got.metadata.episodeCount, 12);
-    expect(got.metadata.airDate, '2023-01-04');
-    expect(got.metadata.originalTitle, '転生王女');
+    expect(got!.summary, '一部关于魔法的故事。');
+    expect(got.rating, 8.2);
+    expect(got.ratingCount, 1234);
+    expect(got.episodeCount, 12);
+    expect(got.airDate, '2023-01-04');
+    expect(got.originalTitle, '転生王女');
     expect(
-      got.metadata.tags.map((ScrapeTag t) => t.name).toList(),
+      got.tags.map((ScrapeTag t) => t.name).toList(),
       <String>['奇幻', '百合'],
       reason: '标签必须保序（源按热度降序），JSON 往返不得打乱',
     );
-    expect(got.metadata.infobox.single.key, '导演');
+    expect(got.infobox.single.key, '导演');
+
+    // v68：附加图组整组落 media_images，遗留 backdrop_path 列恒 NULL
+    // （单一真相源，两处都有值必然漂开）。
+    final CollectionScrapeMetaRow? metaRow =
+        await db.getCollectionScrapeMeta(id);
+    expect(metaRow!.backdropPath, isNull, reason: 'v68 起旧列冻结，新刮削不得再写它');
+    final List<MediaImageRow> images = await db.getMediaImagesForCollection(id);
+    expect(images, hasLength(4));
+    final List<MediaImageRow> backdrops = <MediaImageRow>[
+      for (final MediaImageRow r in images)
+        if (r.kind == MediaImageKind.backdrop.dbValue) r,
+    ];
+    expect(backdrops, hasLength(2), reason: 'backdrop 是唯一允许多张的种类');
+    expect(backdrops.first.position, 0);
+    expect(backdrops.first.sourceUrl, 'https://img/b0.jpg');
+    expect(backdrops.last.position, 1);
 
     // 封面列与合集名同一次写入落地。
     final MediaCollectionRow? row = await db.getMediaCollectionById(id);
     expect(row!.coverPath, '/covers/collections/$id.jpg');
+  });
+
+  test('删合集 → media_images 行 FK cascade 清空（v68）', () async {
+    final HibikiDatabase db = await openDb();
+    final int id = await newCollection(db);
+    await applyCollectionScrape(
+      db,
+      id,
+      CollectionScrapeResult(
+        coverPath: '/c.jpg',
+        images: <ScrapedMediaImage>[
+          ScrapedMediaImage(
+            kind: MediaImageKind.backdrop,
+            path: '/covers/collections/${id}_backdrop0.jpg',
+          ),
+        ],
+        metadata: meta(),
+      ),
+      confirmedTitle: null,
+    );
+    expect(await db.getMediaImagesForCollection(id), hasLength(1));
+
+    await db.deleteMediaCollection(id);
+    expect(
+      await db.getAllMediaImages(),
+      isEmpty,
+      reason: '删合集必须连带清附加图行——否则孤儿行指向已删合集，永远无法回收',
+    );
   });
 
   test('用户确认后才回写合集名：文件夹名 → 条目正名', () async {
@@ -298,9 +360,9 @@ void main() {
       <Object?>['{not-a-list', id],
     );
 
-    final ({ScrapeMetadata metadata, String? backdropPath})? got =
+    final ScrapeMetadata? got =
         decodeCollectionScrapeMeta(await db.getCollectionScrapeMeta(id));
-    expect(got!.metadata.tags, isEmpty);
-    expect(got.metadata.summary, '一部关于魔法的故事。', reason: '一列坏掉不得丢整条资料');
+    expect(got!.tags, isEmpty);
+    expect(got.summary, '一部关于魔法的故事。', reason: '一列坏掉不得丢整条资料');
   });
 }

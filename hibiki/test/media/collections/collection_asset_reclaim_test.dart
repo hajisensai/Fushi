@@ -238,11 +238,14 @@ void main() {
       );
       expect(containsCodeLine(body, 'dissolved.add(row)'), isTrue,
           reason: '删行前必须入列行快照——行一删 coverPath 就推导不出来了');
-      expect(
-          containsCodeLine(
-              body, 'reclaimDeletedCollectionAssets(db, dissolved)'),
+      expect(containsCodeLine(body, 'collectionOwnedImagePaths(db, row.id)'),
           isTrue,
+          reason: 'v68 附加图行随删行 cascade 消失，路径同样必须删前快照');
+      expect(containsCodeLine(body, 'reclaimDeletedCollectionAssets('), isTrue,
           reason: '同步删除传播同样会解散合集，不回收就同样泄漏');
+      expect(containsCodeLine(body, 'ownedImagePaths: dissolvedImagePaths'),
+          isTrue,
+          reason: 'v68 附加图快照必须真的传给回收入口，光快照不回收等于没做');
       final int txEnd = body.indexOf('});');
       final int reclaimAt = body.indexOf('reclaimDeletedCollectionAssets(');
       expect(txEnd >= 0 && reclaimAt > txEnd, isTrue,
