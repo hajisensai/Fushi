@@ -311,16 +311,69 @@ jobs:
           bash ci/apply-patches.sh
       # 内置 libtorrent 引擎 DLL：vcpkg 编 libtorrent + bridge，产物随发布包（下面
       # flutter build 的 copy-if-present 拷到 hibiki.exe 旁）。发布版必须带上，故此步
-      # 失败即让发布失败（不静默出无内置引擎的包）。vcpkg 二进制缓存摊薄首编。
+      # 失败即让发布失败（不静默出无内置引擎的包）。
+      #
+      # TODO-2668｜缓存 key 必须带 runner 镜像版本，否则这条链路每次都在冷编 + 拉网。
+      # 旧 key 是常量 `<os>-vcpkg-libtorrent-x64-windows-v1`，有两个叠加的后果：
+      #   a) GitHub 的 windows-2022 池同时在跑多个镜像版本，不同镜像里固化的 vcpkg
+      #      修订不同，全部包的 ABI hash 就不同，一个常量 key 只装得下其中一种；
+      #   b) actions/cache 只在「主 key 未命中」时才回存，所以另一种镜像的归档
+      #      永远存不进去，一直冷。
+      # 2026-08-02 实测 5 次 desktop run，ImageVersion 与命中率完全对应、无一例外：
+      #   20260728.258.1 -> `Restored 72 package(s)`，vcpkg 步骤 4 min，零下载；
+      #   20260720.249.2 -> 缓存命中、白下载解压 81MB，然后 `Restored 0 package(s)`，
+      #                     22 min 全量重编 72 个包，并拉 ~110 个 tarball。
+      # 那 ~110 个件里有 ~45 个来自 4 个不受我们控制的非 GitHub 主机
+      # （mirror.msys2.org x40 / ftpmirror.gnu.org x2 / www.nasm.us / download.qt.io）。
+      # run 30729229450 就死在其中一个：automake-1.17.tar.gz 三个 GNU 镜像同时
+      # `curl error 35 (SSL connect error)`，而 vcpkg 把 SSL connect error 判成
+      # 「Not a transient network error, won't retry」直接 BUILD_FAILED，桌面发布链整条
+      # 红（publish 那句 `No files matched hibiki-*-windows-setup.exe` 只是级联）。
+      # 所以根因不是「vcpkg 的重试判定写错了」——那是外部缺陷、我们改不了——而是
+      # 这条路径本来就不该下载任何东西：key 带上 ImageVersion 后两种镜像各占一个
+      # 条目，都走 `Restored 72` 的零下载路径，取件抖动面归零、顺带每次省 ~18 min。
+      # 二进制缓存故意不留 restore-keys：前缀命中回来的是另一镜像的归档，实测
+      # `Restored 0`，纯白下 81MB，还会连同新归档一起回存、越滚越大。
+      - name: Resolve vcpkg cache identity
+        id: vcpkg_cache_id
+        shell: pwsh
+        run: |
+          # runner 镜像版本决定了镜像内固化的 vcpkg 修订与 MSVC 工具集，也就决定了
+          # 所有 vcpkg 包的 ABI hash。取不到时退回常量，行为等同改动前（冷编但不失败）。
+          $image = $env:ImageVersion
+          if ([string]::IsNullOrWhiteSpace($image)) { $image = 'unknown-image' }
+          $image = ($image -replace '[^0-9A-Za-z._-]', '-')
+          Write-Host "vcpkg cache identity (runner ImageVersion): $image"
+          # 用 pwsh 的 `>>`（GHA 的 shell: pwsh 是 PowerShell 7，写 UTF-8 无 BOM）。
+          # 别换成 `Out-File -Encoding utf8`：那在 Windows PowerShell 5.1 下会写 BOM，
+          # BOM 会跟着糊进第一个 key，GITHUB_OUTPUT 的 key=value 解析当场失效。
+          "image=$image" >> $env:GITHUB_OUTPUT
+      # 第二层，只兜「新镜像上线那一次必然冷编」的残余：把 vcpkg 的 distfile 目录也
+      # 缓存住，等价于 vcpkg 官方 asset cache 要解决的问题，但不需要额外的 Azure 或
+      # 自建存储。distfile 全部按 SHA512 校验，所以前缀 restore-key 拿回上一个镜像的
+      # 目录是安全的——对不上号的文件 vcpkg 自己会重下。而恰好那 4 个高危非 GitHub
+      # 主机上的件（msys2 工具链 / automake / libiconv / nasm / jom）跨 vcpkg 修订几乎
+      # 不变，前缀命中就能把高危取件面清零。排除 downloads\tools（解压后的树）以免把
+      # 条目撑到 GB 级；重新解压是纯本地操作，不碰网络。该目录长期只增不减，体积不
+      # 合适了就把 key 里的 -v1 递增一次。
+      - name: Cache vcpkg source distfiles (libtorrent)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}\vcpkg-downloads
+            !${{ runner.temp }}\vcpkg-downloads\tools
+          key: ${{ runner.os }}-vcpkg-downloads-libtorrent-v1-${{ steps.vcpkg_cache_id.outputs.image }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-downloads-libtorrent-v1-
       - name: Cache vcpkg binary archives (libtorrent)
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\vcpkg\archives
-          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v1
-          restore-keys: |
-            ${{ runner.os }}-vcpkg-libtorrent-
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v2-${{ steps.vcpkg_cache_id.outputs.image }}
       - name: Build embedded libtorrent DLL (vcpkg)
         shell: pwsh
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}\vcpkg-downloads
         run: |
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libtorrent:x64-windows
           if ($LASTEXITCODE -ne 0) { throw "vcpkg install libtorrent failed" }
