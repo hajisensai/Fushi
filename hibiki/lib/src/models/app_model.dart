@@ -2970,6 +2970,15 @@ class AppModel with ChangeNotifier {
   ) =>
       prefsRepo.setVideoSecondarySubtitleObscureMode(mode);
 
+  /// 显式全局广播（= 本 model 的 `notifyListeners`，对外可调用）。
+  ///
+  /// 给「写入方**刻意**不广播、但某个调用点确实需要全局刷新」的路径用：遮蔽模式两个
+  /// setter 为了不让高频快捷键重建整个 app 而不广播（见
+  /// [PreferencesRepository.setVideoSubtitleObscureMode]），从全局设置页改时由
+  /// `setVideoSubtitleObscureModeDual` 显式补这一次。不要拿它当「顺手刷一下 UI」的
+  /// 万能锤——每次调用都会重建所有 watch [appProvider] 的 widget。
+  void notifyPreferencesChanged() => notifyListeners();
+
   /// 视频字幕列表自动滚动开关（TODO-613，落 Drift preferences，默认开）。
   bool get videoSubtitleListAutoScroll => prefsRepo.videoSubtitleListAutoScroll;
 

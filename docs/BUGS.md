@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1332 条。点号进各自文件。
+> 共 1333 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1430](bugs/BUG-1430-subtitle-obscure-switch-lag.md) | ✅ | ✅ | 切换字幕遮罩模式卡顿：两次事务落盘 + UI 等落盘 + 全局广播重建全 app |
 | [BUG-1427](bugs/BUG-1427-mobile-mining-ffmpeg-stuck-6-0.md) | 🚧 | 🚧 | 移动端制卡链 FFmpeg 停在 6.0，上游已迁到 ffmpeg-kit-next (FFmpeg 8.1.2) |
 | [BUG-1426](bugs/BUG-1426-spread-input-bridges.md) | ✅ | ✅ | 双页 spread 页滚轮与左右翻页失效 |
 | [BUG-1425](bugs/BUG-1425-md3-guard-allowlist-drift.md) | ✅ | ✅ | MD3 守卫豁免与实际命中脱节：四处裸 Material chrome 静默放行 + fontSizeFactor 绕过判据 + 过期豁免 |
