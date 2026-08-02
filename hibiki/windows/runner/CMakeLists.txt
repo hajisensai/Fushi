@@ -30,6 +30,7 @@ add_executable(${BINARY_NAME} WIN32
   "foreground_selection.cpp"
   "global_lookup_window.cpp"
   "hook_toolbar_window.cpp"
+  "ime_association_guard.cpp"
   "ime_space_dispatch.cpp"
   "low_level_mouse_hook.cpp"
   "main.cpp"
@@ -83,6 +84,9 @@ target_link_libraries(${BINARY_NAME} PRIVATE avrt)
 # 剪切板面板背景逐像素透明（global_lookup_window composition 模式）：DirectComposition
 # 视觉树承载 WebView2 composition controller 的透明像素，dxguid 提供 DComp/DXGI IID。
 target_link_libraries(${BINARY_NAME} PRIVATE dcomp dxguid)
+# BUG-1450: ImmAssociateContextEx — detach the IME from the window while no text
+# field has focus so CJK IMEs stop swallowing every shortcut key.
+target_link_libraries(${BINARY_NAME} PRIVATE imm32)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
@@ -101,6 +105,24 @@ add_custom_target(hibiki_windows_ime_space_gate
   VERBATIM
 )
 add_dependencies(${BINARY_NAME} hibiki_windows_ime_space_gate)
+
+# BUG-1450: same treatment for the IME association state machine. Getting the
+# coalescing or the failure path wrong either strands the window with the IME
+# detached (no Chinese/Japanese input anywhere in the app) or re-attached (the
+# whole shortcut table dies again), so it runs on every Windows runner build.
+add_executable(hibiki_windows_ime_association_test
+  "ime_association_guard.cpp"
+  "tests/ime_association_guard_test.cpp"
+)
+apply_standard_settings(hibiki_windows_ime_association_test)
+target_compile_definitions(hibiki_windows_ime_association_test PRIVATE "NOMINMAX")
+target_link_libraries(hibiki_windows_ime_association_test PRIVATE imm32)
+add_custom_target(hibiki_windows_ime_association_gate
+  COMMAND "$<TARGET_FILE:hibiki_windows_ime_association_test>"
+  DEPENDS hibiki_windows_ime_association_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} hibiki_windows_ime_association_gate)
 
 add_executable(hibiki_update_launcher WIN32
   "update_launcher.cpp"

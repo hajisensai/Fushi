@@ -56,6 +56,7 @@ import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/anki/ankimobile_repository.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
+import 'package:hibiki/src/platform/windows_ime_guard.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/platform/desktop/desktop_lifecycle_service.dart';
 import 'package:hibiki/src/platform/ios/ios_url_event_channel.dart';
@@ -308,6 +309,11 @@ void main([List<String> args = const <String>[]]) {
         platformServicesProvider.overrideWithValue(platformServices),
       ],
     );
+
+    /// BUG-1450：Windows 上没有文本框持焦时解除窗口的 IME 关联，否则中文输入法
+    /// 会吞掉每一个按键（引擎把它们报成 physical=0/logical=0），整张快捷键表失效。
+    /// 必须在 runApp 之前挂上：install 会立刻同步一次，冷启动第一帧起就生效。
+    WindowsImeGuard.install();
 
     /// Start the application immediately so the user sees the loading page
     /// rather than a blank white screen while initialisation is in progress.
