@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/scan_scale.dart';
 
 void main() {
   test('focus-driven scrolling is centralized in the focus package', () {
@@ -8,6 +9,8 @@ void main() {
         .listSync(recursive: true)
         .whereType<File>()
         .where((File file) => file.path.endsWith('.dart'));
+    expectScanScale(dartFiles.length,
+        what: 'lib/src 下的 .dart', atLeast: 750, measured: 930);
 
     for (final File file in dartFiles) {
       final String normalized = file.path.replaceAll('\\', '/');

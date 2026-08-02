@@ -27,6 +27,8 @@ import 'package:hibiki_anki/hibiki_anki.dart'
 import 'package:hibiki_core/hibiki_core.dart'
     show kFallbackMimeType, kMimeTypeByExtension, mimeTypeForFilePath;
 
+import '../helpers/scan_scale.dart';
+
 /// 从当前 cwd 向上找含 docs/BUGS.md 的仓库根（与 bugs_per_file_guard_test 同法）。
 Directory _repoRoot() {
   var dir = Directory.current;
@@ -165,6 +167,7 @@ void main() {
       final RegExp caseRe =
           RegExp(r"case\s+'\.?(?:png|jpe?g|webp|gif|svg)'\s*:");
       final List<String> offenders = <String>[];
+      int scanned = 0;
       for (final String libDir in <String>[
         'hibiki/lib',
         'packages/hibiki_anki/lib',
@@ -180,9 +183,13 @@ void main() {
           final String rel =
               e.path.substring(root.path.length + 1).replaceAll('\\', '/');
           if (allowlist.contains(rel)) continue;
+          scanned++;
           if (caseRe.hasMatch(e.readAsStringSync())) offenders.add(rel);
         }
       }
+      expectScanScale(scanned,
+          what: '6 个 lib 根下的 .dart', atLeast: 850, measured: 1033);
+
       expect(
         offenders,
         isEmpty,

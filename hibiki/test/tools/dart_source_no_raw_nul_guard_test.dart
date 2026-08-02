@@ -22,6 +22,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/scan_scale.dart';
 
 /// 从当前 cwd 向上找含 docs/BUGS.md 的仓库根。
 Directory _repoRoot() {
@@ -52,6 +53,7 @@ void main() {
 
   test('入库 .dart 源码不含裸 NUL 字节（否则 git 判二进制 → 三方合并被拒 → 静默丢改动）', () {
     final List<String> offenders = <String>[];
+    int scanned = 0;
 
     for (final String rel in _scanRoots) {
       final Directory dir = Directory('${root.path}/$rel');
@@ -61,6 +63,7 @@ void main() {
           in dir.listSync(recursive: true, followLinks: false)) {
         if (entity is! File) continue;
         if (!entity.path.endsWith('.dart')) continue;
+        scanned++;
 
         final List<int> bytes = entity.readAsBytesSync();
         final int nulCount = bytes.where((int b) => b == 0).length;
@@ -69,6 +72,9 @@ void main() {
         }
       }
     }
+
+    expectScanScale(scanned,
+        what: '7 个扫描根下的 .dart', atLeast: 2600, measured: 3235);
 
     expect(
       offenders,

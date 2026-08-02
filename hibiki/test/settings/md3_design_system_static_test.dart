@@ -5,6 +5,7 @@ import '../helpers/source_guard.dart';
 import '../pages/reader_history_source_corpus.dart';
 import '../pages/reader_hibiki_page_source_corpus.dart';
 import '../sync/sync_settings_schema_source_corpus.dart';
+import '../helpers/scan_scale.dart';
 
 void main() {
   const Map<String, List<String>> requiredComponentTokens =
@@ -1148,6 +1149,8 @@ void main() {
         .where((File file) => file.path.endsWith('.dart'))
         .toList(growable: false)
       ..sort((File a, File b) => a.path.compareTo(b.path));
+    expectScanScale(dartFiles.length,
+        what: 'lib/src 下的 .dart', atLeast: 750, measured: 930);
     for (final File file in dartFiles) {
       final String path = file.path.replaceAll(r'\', '/');
       final String? reason = allowedFiles[path];

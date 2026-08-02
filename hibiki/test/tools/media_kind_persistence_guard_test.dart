@@ -22,6 +22,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
+import '../helpers/scan_scale.dart';
 
 /// 从当前 cwd 向上找含 docs/BUGS.md 的仓库根。
 Directory _repoRoot() {
@@ -80,6 +81,11 @@ String _relative(Directory root, File f) =>
 
 void main() {
   final Directory root = _repoRoot();
+
+  test('扫描规模哨兵：6 个生产 lib 根确实都被枚举到了', () {
+    expectScanScale(_dartFiles(root).length,
+        what: '6 个生产 lib 根下的 .dart（已排除生成物）', atLeast: 850, measured: 1034);
+  });
 
   test('lib/ 不得手写 <kind>|... 复合键字面量（只走 MediaKind.compositeKey）', () {
     final List<String> violations = <String>[];

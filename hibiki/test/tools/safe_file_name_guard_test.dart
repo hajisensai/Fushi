@@ -8,6 +8,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/scan_scale.dart';
 
 /// 手写黑名单字符类的指纹子串（覆盖历史上出现过的全部排列变体）。
 const List<String> _fingerprints = <String>[
@@ -30,6 +31,8 @@ void main() {
         .listSync(recursive: true)
         .whereType<File>()
         .where((File f) => f.path.endsWith('.dart'));
+    expectScanScale(files.length,
+        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
     for (final File f in files) {
       final String rel = f.path.replaceAll(r'\', '/');
       if (rel == _allowedFile || rel.endsWith('/$_allowedFile')) continue;

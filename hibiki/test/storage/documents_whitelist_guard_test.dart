@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/storage/app_paths.dart';
+import '../helpers/scan_scale.dart';
 
 /// TODO-1226 守卫：documents 根顶层派生点 ↔ 迁移白名单
 /// [AppPaths.hibikiOwnedDocumentsEntries] 一致性。
@@ -39,8 +40,12 @@ void main() {
     expect(lib.existsSync(), isTrue,
         reason: '本测试假定 cwd 为 hibiki/（flutter test 默认）');
 
+    final List<File> sources = dartSources(lib);
+    expectScanScale(sources.length,
+        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+
     final Map<String, Set<String>> missing = <String, Set<String>>{};
-    for (final File f in dartSources(lib)) {
+    for (final File f in sources) {
       final String src = f.readAsStringSync();
       final Set<String> found = <String>{};
       for (final RegExp re in <RegExp>[

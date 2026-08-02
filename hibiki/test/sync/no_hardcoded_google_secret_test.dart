@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/scan_scale.dart';
 
 /// Anti-recurrence guard. A Google OAuth client secret (`GOCSPX-...`) was once
 /// hardcoded in `google_drive_auth.dart` and leaked to a public mirror, where
@@ -26,9 +27,11 @@ void main() {
     final RegExp googleSecret = RegExp(r'GOCSPX-[\w-]+');
     final List<String> offenders = <String>[];
 
+    int scanned = 0;
     for (final FileSystemEntity entity in dir.listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       if (entity.uri.pathSegments.last == ignoredBasename) continue;
+      scanned++;
       final String content = entity.readAsStringSync();
       for (final RegExpMatch m in googleSecret.allMatches(content)) {
         final int line =
@@ -36,6 +39,9 @@ void main() {
         offenders.add('${entity.path}:$line');
       }
     }
+
+    expectScanScale(scanned,
+        what: 'lib/ 下入库的 .dart', atLeast: 750, measured: 938);
 
     expect(
       offenders,

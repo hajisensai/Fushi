@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../../helpers/scan_scale.dart';
 
 /// TODO-949 守卫：安卓「导入视频文件夹/选单个视频」改走**系统原生 SAF 选择器**
 /// （`pickRealDirectory` / `pickRealFile`），原生把 content URI 解析回真实绝对
@@ -201,11 +202,18 @@ void main() {
         () {
       final Directory libDir = Directory('lib');
       final List<String> offenders = <String>[];
+      int scanned = 0;
       for (final FileSystemEntity entity in libDir.listSync(recursive: true)) {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        scanned++;
         final String src = entity.readAsStringSync();
         if (src.contains('FileType.audio')) offenders.add(entity.path);
       }
+
+      // 这条判据是「命中数为 0」：扫描一旦塌成空集，它 100% 假绿，
+      // 是全清单里最需要哨兵的形态之一。
+      expectScanScale(scanned,
+          what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
 
       expect(
         offenders,

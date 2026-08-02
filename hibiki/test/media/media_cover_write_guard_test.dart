@@ -33,6 +33,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
 import '../helpers/source_guard.dart';
+import '../helpers/scan_scale.dart';
 
 void main() {
   final Directory libDir = Directory('lib');
@@ -45,6 +46,11 @@ void main() {
     ..sort((File a, File b) => a.path.compareTo(b.path));
 
   String norm(String path) => p.split(path).join('/');
+
+  test('扫描规模哨兵：lib/ 确实被枚举到了', () {
+    expectScanScale(dartFiles().length,
+        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+  });
 
   test('evictLocalCoverCache 只许出现在收口链路（新落盘点必须改走 MediaCoverService）', () {
     // 定义处 + 服务 + 书 override 统一写入口（setOverrideThumbnail* 的历史收口，

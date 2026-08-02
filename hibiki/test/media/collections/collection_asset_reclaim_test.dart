@@ -7,6 +7,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
 import '../../helpers/source_guard.dart';
+import '../../helpers/scan_scale.dart';
 
 /// BUG-1319 守卫：删合集必须回收该合集**自有**的磁盘资产，且**只**回收它自己的。
 ///
@@ -197,8 +198,10 @@ void main() {
       final RegExp bare =
           RegExp('(?<![A-Za-z0-9_\$])deleteMediaCollection' r'\s*\(');
       final List<String> offenders = <String>[];
+      int scanned = 0;
       for (final FileSystemEntity entity in lib.listSync(recursive: true)) {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        scanned++;
         final String rel = entity.path.replaceAll(r'\', '/');
         if (rel.endsWith(allowed)) continue;
         final String source = entity.readAsStringSync();
@@ -218,6 +221,8 @@ void main() {
           offenders.add('$rel:${i + 1}: ${lines[i].trim()}');
         }
       }
+      expectScanScale(scanned,
+          what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
       expect(offenders, isEmpty,
           reason: '这些调用点删了 DB 行却不回收合集自有封面 = 确定性磁盘泄漏'
               '（BUG-1319）。改调 deleteMediaCollectionWithAssets；'
