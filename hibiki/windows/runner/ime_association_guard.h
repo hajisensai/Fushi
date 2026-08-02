@@ -27,6 +27,12 @@ bool ApplyImeAssociation(HWND hwnd, bool enable);
 
 using ImeAssociateFn = bool (*)(HWND hwnd, bool enable, void* context);
 
+enum class ImeAssociationUpdate {
+  kUnchanged,
+  kApplied,
+  kFailed,
+};
+
 // Tracks the association state so repeated identical requests (focus churn
 // emits many notifications per frame) do not hammer Win32.
 class ImeAssociationGuard {
@@ -35,11 +41,11 @@ class ImeAssociationGuard {
   explicit ImeAssociationGuard(ImeAssociateFn fn, void* context = nullptr)
       : associate_(fn), context_(context) {}
 
-  // Requests the IME association state. Returns true when the request reached
-  // the platform (state actually changed, or this is the first request -- the
-  // window starts out associated by the engine, but we must not assume the
-  // first "enable" is a no-op after a hot restart).
-  bool SetEnabled(HWND hwnd, bool enable);
+  // Requests the IME association state. The HWND is part of the cached identity:
+  // a recreated Flutter view must receive the current state even when `enable`
+  // did not change. The first request is always applied too (after a Dart hot
+  // restart the native window may already be dissociated).
+  ImeAssociationUpdate SetEnabled(HWND hwnd, bool enable);
 
   bool enabled() const { return enabled_; }
   bool initialised() const { return initialised_; }
@@ -51,6 +57,7 @@ class ImeAssociationGuard {
   // start from; `initialised_` forces the first request through regardless.
   bool enabled_ = true;
   bool initialised_ = false;
+  HWND hwnd_ = nullptr;
 };
 
 #endif  // RUNNER_IME_ASSOCIATION_GUARD_H_

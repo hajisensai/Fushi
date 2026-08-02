@@ -12,6 +12,7 @@ struct Recorder {
 };
 
 bool Record(HWND hwnd, bool enable, void* context) {
+  (void)hwnd;
   auto* rec = static_cast<Recorder*>(context);
   if (rec->fail_next) {
     rec->fail_next = false;
@@ -33,6 +34,10 @@ HWND FakeHwnd() {
   return reinterpret_cast<HWND>(static_cast<UINT_PTR>(0x1234));
 }
 
+HWND SecondFakeHwnd() {
+  return reinterpret_cast<HWND>(static_cast<UINT_PTR>(0x5678));
+}
+
 }  // namespace
 
 int main() {
@@ -43,7 +48,8 @@ int main() {
   {
     Recorder rec;
     ImeAssociationGuard guard(Record, &rec);
-    passed &= Expect(guard.SetEnabled(FakeHwnd(), false),
+    passed &= Expect(guard.SetEnabled(FakeHwnd(), false) ==
+                         ImeAssociationUpdate::kApplied,
                      "first disable must reach the platform");
     passed &= Expect(rec.requests.size() == 1 && rec.requests[0] == false,
                      "first disable records exactly one disable");
@@ -56,7 +62,8 @@ int main() {
     Recorder rec;
     ImeAssociationGuard guard(Record, &rec);
     guard.SetEnabled(FakeHwnd(), false);
-    passed &= Expect(!guard.SetEnabled(FakeHwnd(), false),
+    passed &= Expect(guard.SetEnabled(FakeHwnd(), false) ==
+                         ImeAssociationUpdate::kUnchanged,
                      "repeated disable is coalesced");
     passed &= Expect(rec.requests.size() == 1,
                      "repeated disable makes no second platform call");
@@ -68,7 +75,8 @@ int main() {
     Recorder rec;
     ImeAssociationGuard guard(Record, &rec);
     guard.SetEnabled(FakeHwnd(), false);
-    passed &= Expect(guard.SetEnabled(FakeHwnd(), true),
+    passed &= Expect(guard.SetEnabled(FakeHwnd(), true) ==
+                         ImeAssociationUpdate::kApplied,
                      "re-enable on editable focus must reach the platform");
     passed &= Expect(rec.requests.size() == 2 && rec.requests[1] == true,
                      "re-enable records an enable request");
@@ -80,7 +88,8 @@ int main() {
   {
     Recorder rec;
     ImeAssociationGuard guard(Record, &rec);
-    passed &= Expect(guard.SetEnabled(FakeHwnd(), true),
+    passed &= Expect(guard.SetEnabled(FakeHwnd(), true) ==
+                         ImeAssociationUpdate::kApplied,
                      "first enable must reach the platform too");
     passed &= Expect(rec.requests.size() == 1 && rec.requests[0] == true,
                      "first enable records one enable");
@@ -92,20 +101,37 @@ int main() {
     Recorder rec;
     ImeAssociationGuard guard(Record, &rec);
     rec.fail_next = true;
-    passed &= Expect(!guard.SetEnabled(FakeHwnd(), false),
+    passed &= Expect(guard.SetEnabled(FakeHwnd(), false) ==
+                         ImeAssociationUpdate::kFailed,
                      "failed platform call reports failure");
     passed &= Expect(!guard.initialised(),
                      "failed platform call does not latch state");
-    passed &= Expect(guard.SetEnabled(FakeHwnd(), false),
+    passed &= Expect(guard.SetEnabled(FakeHwnd(), false) ==
+                         ImeAssociationUpdate::kApplied,
                      "retry after failure reaches the platform again");
     passed &= Expect(rec.requests.size() == 1 && rec.requests[0] == false,
                      "retry records the disable");
   }
 
+  // A Flutter view HWND can be recreated while the Dart-side desired state is
+  // unchanged. Coalescing by bool alone would skip the new window and leave it
+  // with the engine's default associated IME context.
+  {
+    Recorder rec;
+    ImeAssociationGuard guard(Record, &rec);
+    guard.SetEnabled(FakeHwnd(), false);
+    passed &= Expect(guard.SetEnabled(SecondFakeHwnd(), false) ==
+                         ImeAssociationUpdate::kApplied,
+                     "same state on a new HWND must be applied");
+    passed &= Expect(rec.requests.size() == 2 && !rec.requests[1],
+                     "new HWND receives the current disabled state");
+  }
+
   // A guard without a platform hook must be inert rather than claim success.
   {
     ImeAssociationGuard guard;
-    passed &= Expect(!guard.SetEnabled(FakeHwnd(), false),
+    passed &= Expect(guard.SetEnabled(FakeHwnd(), false) ==
+                         ImeAssociationUpdate::kFailed,
                      "guard without an associate fn does nothing");
   }
 

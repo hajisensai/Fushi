@@ -14,11 +14,33 @@ import 'package:hibiki/src/platform/windows_ime_guard.dart';
 void main() {
   group('imeShouldBeEnabled', () {
     test('无文本框焦点时关闭输入法接管，快捷键才能到达', () {
-      expect(imeShouldBeEnabled(hasEditableFocus: false), isFalse);
+      expect(
+        imeShouldBeEnabled(
+          hasEditableFocus: false,
+          focusedEditableIsReadOnly: false,
+        ),
+        isFalse,
+      );
     });
 
     test('文本框持焦时必须开启，否则中日文输入全废', () {
-      expect(imeShouldBeEnabled(hasEditableFocus: true), isTrue);
+      expect(
+        imeShouldBeEnabled(
+          hasEditableFocus: true,
+          focusedEditableIsReadOnly: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('只读 EditableText 持焦不等于文本输入，保持 IME 解除', () {
+      expect(
+        imeShouldBeEnabled(
+          hasEditableFocus: true,
+          focusedEditableIsReadOnly: true,
+        ),
+        isFalse,
+      );
     });
   });
 
@@ -84,13 +106,66 @@ void main() {
 
       node.requestFocus();
       await tester.pump();
-      expect(calls, <bool>[false, true],
-          reason: '文本框持焦必须恢复输入法，否则打不了中文');
+      expect(calls, <bool>[false, true], reason: '文本框持焦必须恢复输入法，否则打不了中文');
 
       node.unfocus();
       await tester.pump();
-      expect(calls, <bool>[false, true, false],
-          reason: '离开文本框应重新让快捷键可用');
+      expect(calls, <bool>[false, true, false], reason: '离开文本框应重新让快捷键可用');
+    });
+
+    testWidgets('点击 SelectableText 不会重新关联 IME，快捷键保持可用',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: SelectableText('click to select')),
+        ),
+      );
+      WindowsImeGuard.install();
+      await tester.pump();
+      expect(calls, <bool>[false]);
+
+      await tester.tap(find.byType(SelectableText));
+      await tester.pump();
+
+      expect(
+        calls,
+        <bool>[false],
+        reason: 'SelectableText 的只读 EditableText 焦点不能冒充输入焦点',
+      );
+      expect(WindowsImeGuard.debugLastSent, isFalse);
+    });
+
+    testWidgets('SelectableText 与真文本框来回切焦只在输入能力变化时切换',
+        (WidgetTester tester) async {
+      final FocusNode editableNode = FocusNode();
+      addTearDown(editableNode.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: <Widget>[
+                const SelectableText('selectable'),
+                TextField(focusNode: editableNode),
+              ],
+            ),
+          ),
+        ),
+      );
+      WindowsImeGuard.install();
+      await tester.pump();
+
+      await tester.tap(find.byType(SelectableText));
+      await tester.pump();
+      expect(calls, <bool>[false]);
+
+      editableNode.requestFocus();
+      await tester.pump();
+      expect(calls, <bool>[false, true]);
+
+      await tester.tap(find.byType(SelectableText));
+      await tester.pump();
+      expect(calls, <bool>[false, true, false]);
     });
 
     testWidgets('同一状态的重复焦点通知不重复打通道', (WidgetTester tester) async {
@@ -119,8 +194,7 @@ void main() {
       b.requestFocus();
       await tester.pump();
 
-      expect(calls, <bool>[false],
-          reason: '两个都不是文本框，状态没翻转就不该再发');
+      expect(calls, <bool>[false], reason: '两个都不是文本框，状态没翻转就不该再发');
     });
 
     testWidgets('非 Windows 平台完全空转', (WidgetTester tester) async {
