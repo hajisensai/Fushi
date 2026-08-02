@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 // ---------------------------------------------------------------------------
@@ -610,14 +612,107 @@ String maskCommentsAndScriptLines(String source) {
 /// - 命名参数 `foo({required int a})` 的左花括号在参数表里，先把参数表圆括号配对掉；
 /// - 方法体里字符串（含三引号 JS/CSS）与注释中的花括号不参与配对。
 ///
-/// 找不到签名、找不到左花括号、花括号不配对一律 `fail`，绝不返回空串——
-/// 空串会让后续 `contains` 静默变假，是最典型的假绿源。
+/// 找不到签名、找不到方法体、括号不配对一律 `fail`，绝不返回空串也绝不返回**邻居的
+/// 实现**——两者都会让后续 `contains` 静默变假（要求型断言假红 / 禁止型断言假绿），
+/// 是最典型的假绿源。
 /// 被扫描语料的词法族。决定 [methodBody] 用哪套掩码去找签名与配对花括号。
 ///
 /// [SourceLexicon.dart] 同时适用 C++（`//`、`/* */`、单双引号，规则一致；C++ 的
 /// 原始串 `R"(...)"` 不认，目标文件里有就别用结构窗口）。
 /// [SourceLexicon.js] 额外认模板串与正则字面量。
 enum SourceLexicon { dart, js }
+
+/// 方法体的词法形态。
+///
+/// 花括号体与箭头体是 Dart 里**同等合法**的两种函数体，[methodBody] 必须都认：
+/// 只认花括号的旧实现遇到 `T f(a) => expr;` 会跳过参数表后一路 `indexOf('{')` 找到
+/// **下一个声明**的花括号，把邻居的实现当成"该函数的体"返回——不报错、不抛异常。
+/// 那是最危险的假绿形态：窗口凭空变宽，禁止型断言读到邻居的内容而假红，要求型断言
+/// 被邻居的内容喂绿。
+enum MethodBodyForm {
+  /// `T f(a) { … }`
+  brace,
+
+  /// `T f(a) => expr;`（含 `=> switch (x) { … };` 这类体内带花括号的表达式）
+  arrow,
+}
+
+/// 一个方法体的形态与边界（下标都落在**掩码串**上，与原串逐字节对齐）。
+class _MethodBodyBounds {
+  const _MethodBodyBounds(this.form, this.close);
+
+  final MethodBodyForm form;
+
+  /// 收口字符的下标：花括号体是配对上的 `}`，箭头体是深度 0 的 `;`。
+  final int close;
+}
+
+/// 从签名起点 [start] 起，在掩码串 [structural] 上定位方法体的形态与右边界。
+///
+/// 一遍扫描同时替掉旧实现的两段逻辑（"先把参数表圆括号配对掉"与"再 indexOf('{')"）：
+/// 圆/方括号深度 >0 的位置一律跳过，于是命名参数的 `{`、可选位置参数的 `[`、默认值
+/// 里的 `= () => x` 都不会被当成体的起点。深度 0 上先遇到谁就是谁：
+/// - `=>` ⇒ 箭头体，右边界是深度 0 的 `;`（`=> switch (x) { … };` 里的花括号不收口）；
+/// - `{`  ⇒ 花括号体，右边界由配对给出；
+/// - `;`  ⇒ **没有体**（抽象声明 / `external` / 字段声明）⇒ 返回 null 让调用方 `fail`。
+///
+/// 最后一条是本函数存在的另一半理由：旧实现在这里会继续往后找下一个 `{`，同样静默
+/// 返回邻居的实现。
+_MethodBodyBounds? _methodBodyBounds(String structural, int start) {
+  int depth = 0;
+  for (int i = start; i < structural.length; i++) {
+    final String c = structural[i];
+    if (c == '(' || c == '[') {
+      depth++;
+      continue;
+    }
+    if (c == ')' || c == ']') {
+      depth--;
+      continue;
+    }
+    if (depth != 0) continue;
+    if (c == '=' && i + 1 < structural.length && structural[i + 1] == '>') {
+      final int semi = _arrowBodyEnd(structural, i + 2);
+      if (semi < 0) return null;
+      return _MethodBodyBounds(MethodBodyForm.arrow, semi);
+    }
+    if (c == '{') {
+      final int close = _balancedBraceEnd(structural, i);
+      if (close < 0) return null;
+      return _MethodBodyBounds(MethodBodyForm.brace, close);
+    }
+    if (c == ';') return null;
+  }
+  return null;
+}
+
+/// 箭头体的收口：从 [from] 起找**深度 0** 的 `;`，圆/方/花括号内的分号不算。
+///
+/// 花括号也要计深度，否则 `=> switch (x) { 1 => 'a', _ => 'b' };` 里
+/// `case` 体内的分号会提前收口。找不到返回 -1。
+int _arrowBodyEnd(String structural, int from) {
+  int depth = 0;
+  for (int i = from; i < structural.length; i++) {
+    final String c = structural[i];
+    if (c == '(' || c == '[' || c == '{') {
+      depth++;
+      continue;
+    }
+    if (c == ')' || c == ']' || c == '}') {
+      depth--;
+      continue;
+    }
+    if (c == ';' && depth == 0) return i;
+  }
+  return -1;
+}
+
+/// 审计钩子：置位后 [methodBody] 每次调用都往 stdout 打一行
+/// `#MBAUDIT|<form>|<signature>`，用来**反向枚举**全仓有多少守卫锚在箭头函数上。
+///
+/// 只在专门的审计跑里开（`HIBIKI_METHOD_BODY_AUDIT=1`），常规跑零开销、零输出。
+final bool _methodBodyAudit =
+    Platform.environment['HIBIKI_METHOD_BODY_AUDIT'] == '1';
 
 String methodBody(
   String src,
@@ -635,34 +730,74 @@ String methodBody(
   if (start < 0) {
     fail('源码中找不到方法签名（注释内的同名文本不算）：$signature');
   }
-  int bodySearchFrom = start;
-  final int firstBrace = structural.indexOf('{', start);
-  final int paren = structural.indexOf('(', start);
-  if (paren >= 0 && firstBrace >= 0 && paren < firstBrace) {
-    int parenDepth = 0;
-    for (int i = paren; i < structural.length; i++) {
-      if (structural[i] == '(') parenDepth++;
+  final _MethodBodyBounds? bounds = _methodBodyBounds(structural, start);
+  if (_methodBodyAudit) {
+    // ignore: avoid_print
+    print('#MBAUDIT|${bounds?.form.name ?? 'none'}|'
+        '${signature.replaceAll('\n', r'\n')}');
+  }
+  if (bounds == null) {
+    fail('方法签名后找不到可收口的方法体（花括号体不配对 / 箭头体缺分号 / '
+        '这是个没有体的声明）：$signature');
+  }
+  return src.substring(start, bounds.close + 1);
+}
+
+/// 按**函数名**取 [src] 里那个函数的**实现体**原文；`=> expr;` 与 `{ … }` 两种形态
+/// 都认，找不到声明返回 null。
+///
+/// 与 [methodBody] 的分工——两者都不可省：
+/// - [methodBody] 的起点是**签名文本**的首次出现，找不到就 `fail`。适合"我知道这个
+///   方法长什么样、它必须存在"的守卫。
+/// - 本函数只给**名字**，自己在候选里筛掉调用点（`name(` 后面既不是 `=>` 也不是 `{`
+///   的那些），并允许"没有这个函数"是个合法答案（返回 null 由调用方决定怎么报）。
+///   适合"这个中转函数如果存在，它必须先查翻译表"这类**一跳可达**判据——被查的名字
+///   是数据（来自另一处解析出的 callee），写不出固定签名文本。
+///
+/// 返回的是**体本身**：花括号体含 `{}`，箭头体是 `=>` 与 `;` 之间的表达式原文（不含
+/// 两端）。调用方拿它做 [containsIdentifierCall] 之类的可达性判据。
+///
+/// 收口逻辑与 [methodBody] 共用 [_arrowBodyEnd] / [_balancedBraceEnd]：箭头体的
+/// "深度 0 分号"规则只有一份，不会两处各写一遍再慢慢漂开。
+String? topLevelFunctionBody(String src, String name) {
+  final String structural = maskCommentsAndStrings(src);
+  final RegExp declaration = RegExp(
+    r'(?<![A-Za-z0-9_$.])' + RegExp.escape(name) + r'\s*\(',
+  );
+  for (final RegExpMatch match in declaration.allMatches(structural)) {
+    final int open = match.end - 1;
+    int depth = 0;
+    int close = -1;
+    for (int i = open; i < structural.length; i++) {
+      if (structural[i] == '(') depth++;
       if (structural[i] == ')') {
-        parenDepth--;
-        if (parenDepth == 0) {
-          bodySearchFrom = i;
+        depth--;
+        if (depth == 0) {
+          close = i;
           break;
         }
       }
     }
-    if (parenDepth != 0) {
-      fail('方法签名的参数表圆括号不配对：$signature');
+    if (close < 0) continue;
+    int i = close + 1;
+    while (i < structural.length && structural[i].trim().isEmpty) {
+      i++;
     }
+    if (i + 1 < structural.length &&
+        structural[i] == '=' &&
+        structural[i + 1] == '>') {
+      final int semi = _arrowBodyEnd(structural, i + 2);
+      if (semi < 0) return null;
+      return src.substring(i + 2, semi);
+    }
+    if (i < structural.length && structural[i] == '{') {
+      final int end = _balancedBraceEnd(structural, i);
+      if (end < 0) return null;
+      return src.substring(i, end + 1);
+    }
+    // 既不是 `=>` 也不是 `{`：这一处是**调用**而不是声明，继续找下一处。
   }
-  final int open = structural.indexOf('{', bodySearchFrom);
-  if (open < 0) {
-    fail('方法签名后找不到左花括号：$signature');
-  }
-  final int close = _balancedBraceEnd(structural, open);
-  if (close < 0) {
-    fail('方法体花括号不配对：$signature');
-  }
-  return src.substring(start, close + 1);
+  return null;
 }
 
 /// 从 [structural]（已掩码的语料）的左花括号 [open] 起做配对，返回配对上的 `}` 的
@@ -728,6 +863,45 @@ String balancedBlockFrom(
   return src.substring(start, close + 1);
 }
 
+/// 取 [src] 里 `… <name> = <表达式>;` 的**初始化表达式**原文（不含 `=` 与结尾 `;`）。
+///
+/// 字段、顶层常量、方法体里的局部变量都适用。用来把「这个量是怎么来的」这类契约从
+/// **逐字拼写**抬上来：旧写法是
+/// `src.contains('static const int _loopbackRingCapacityMs = 60000;')`，它同时钉死了
+/// 修饰符顺序、空格、类型名和结尾分号 —— `dart format` 重排、加一个 `final`、把常量
+/// 挪进别的类都会让守卫在**实现完全正确**时转红，而真正要守的「这个值等于 native 的
+/// 环容量」一条都没守到。
+///
+/// 拿到表达式后直接断言它的**语义**：值是多少、有没有引用某个不该引用的常量、
+/// 是不是某个构造器。
+///
+/// 只认**赋值**的 `=`：紧跟其后的 `=` 或 `>` 说明这其实是 `==` 比较或 switch 表达式
+/// 的 `=>` 分支，一律跳过——否则 `if (a == name)` 会被当成声明。
+///
+/// 不需要再看 `=` **之前**那个字符：正则要求 `=` 只能隔着空白紧跟 [name]，
+/// `name != x` / `name += 1` / `name >= 2` 里的 `=` 前面隔着 `!` `+` `>`，本来就匹配
+/// 不上。（曾经写过一条 "前一个字符是复合运算符就跳过" 的判断，变异实测证明它
+/// **永远不可达**，删掉了：不可达的判据只会让人误以为这里已经守住了。）
+///
+/// 找不到返回 null（由调用方决定怎么报）。
+String? initializerExpression(String src, String name) {
+  final String structural = maskCommentsAndStrings(src);
+  final RegExp pattern = RegExp(
+    r'(?<![A-Za-z0-9_$.])' + RegExp.escape(name) + r'\s*=',
+  );
+  for (final RegExpMatch match in pattern.allMatches(structural)) {
+    final int eq = match.end - 1;
+    if (eq + 1 < structural.length &&
+        (structural[eq + 1] == '=' || structural[eq + 1] == '>')) {
+      continue;
+    }
+    final int semi = _arrowBodyEnd(structural, eq + 1);
+    if (semi < 0) return null;
+    return src.substring(eq + 1, semi).trim();
+  }
+  return null;
+}
+
 /// 在 [body] 的**代码行**上查找 [needle]，注释里的同名文本不算数。
 ///
 /// 裸 `body.contains('foo()')` 会被注释里的同名字面量喂成假绿——本仓一天抓到过 6 起
@@ -765,6 +939,22 @@ RegExp identifierCall(String name, {bool allowNamedConstructor = true}) {
         (allowNamedConstructor ? r'(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_]*)?' : '') +
         r'(?:\s*<[^>]*>)?\s*\(',
   );
+}
+
+/// [source] 的**代码**里是否出现以独立标识符身份出现的 [name]（不要求它是个调用）。
+///
+/// 禁止型断言（"这个被废弃的常量/字段不许回来"）的标准判据。裸
+/// `src.contains('_galAudioBackMs')` 两个方向都错：
+/// - **假红**：一句解释性注释里提到这个名字（"历史：这里曾有 _galAudioBackMs"）就判红，
+///   而守卫因此永久红——比漏掉更糟，因为下一个人只会把断言删掉；
+/// - **假阳**：`_galAudioBackMsLegacy` 这种更长的标识符含有该子串，正确写法反被判红。
+///
+/// 与 [containsIdentifierCall] 的分工：那个要求后面跟 `(`（是次调用），这个只问
+/// "这个名字作为标识符出现过没有"，字段引用、常量、类型名都算。
+bool containsIdentifier(String source, String name) {
+  return RegExp(
+    r'(?<![A-Za-z0-9_$])' + RegExp.escape(name) + r'(?![A-Za-z0-9_$])',
+  ).hasMatch(maskComments(source));
 }
 
 /// [identifierCall] 的 `contains` 形态：[source] 的**代码**里是否出现以独立标识符

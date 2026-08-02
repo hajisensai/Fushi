@@ -304,19 +304,52 @@ void main() {
     final String panel = File(
       'lib/src/mining/gal_audio_tracks_panel.dart',
     ).readAsStringSync();
+    // 「可选性」这个量本身必须由**后端**算出来。
     expect(
-      panel.contains('galTrackSelectionAffectsCapture(state.audioBackend)'),
-      isTrue,
+      initializerExpression(panel, 'selectionEffective'),
+      'galTrackSelectionAffectsCapture(state.audioBackend)',
       reason: '解释/禁用判据必须是后端，不能再是 audioTracks.isEmpty',
     );
+    // 解释态同理：先看后端，再谈别的。旧断言写的是
+    // `isFalse` + `'state.audioTracks.isEmpty && emptyHint'` —— 那个串在实现里
+    // **从来就不存在**（真实写法是 `... && backendHint == null`），是一条永远零命中
+    // 的禁止型断言：判据自己坏掉时没有任何东西会发现。改成钉可达顺序。
+    final String? hintExpr = initializerExpression(panel, 'backendHint');
+    expect(hintExpr, isNotNull, reason: 'backendHint 改名了：守卫失去锚点');
     expect(
-      panel.contains('state.audioTracks.isEmpty && emptyHint'),
-      isFalse,
-      reason: '列表非空时解释态被跳过，正是 BUG-1102 里整套死控件照常渲染的原因',
+      hintExpr!.trimLeft().startsWith('selectionEffective'),
+      isTrue,
+      reason: '列表空不空只能决定末梢文案；先决条件必须是后端 —— '
+          '反过来就是 BUG-1102 里整套死控件照常渲染的成因',
     );
-    expect(panel.contains('selectable: selectionEffective'), isTrue);
-    expect(panel.contains('enabled: selectable && !excluded'), isTrue,
+    // TODO-2727：下面两条原本是 `panel.contains('selectable: selectionEffective')`
+    // 与 `panel.contains('enabled: selectable && !excluded')` —— 把**参数顺序、空格、
+    // 布尔表达式的书写顺序**全钉进了契约。`!excluded && selectable` 是同一语义的
+    // 合法写法，旧断言会在实现完全正确时转红；反过来把 `selectable:` 换给别的控件
+    // 而字面量恰好还在文件里某处，旧断言又照样绿。
+    //
+    // 改成问「这个值被交给了谁」：轨行拿到的 selectable 就是后端判据本身，
+    // 「设为语音轨」那个按钮的 enabled 必须同时受 selectable 与 excluded 约束。
+    final int tileAt = maskComments(panel).indexOf('GalTrackTile(');
+    expect(tileAt, greaterThanOrEqualTo(0),
+        reason: 'GalTrackTile 改名了：守卫锚点必须跟着改，不能静默失效');
+    final EnclosingCall tile =
+        enclosingCall(panel, tileAt + 'GalTrackTile('.length);
+    expect(tile.name, 'GalTrackTile');
+    expect(namedArgumentValues(tile.text, 'selectable'),
+        <String>['selectionEffective'],
+        reason: '轨行的可选性必须直接来自后端判据 selectionEffective');
+
+    // 「设为语音轨」按钮：用 onTap 认它是哪一个（语义锚），再看它的 enabled 判据。
+    final EnclosingCall selectButton =
+        enclosingCallOf(panel, 'onTap: onSelect');
+    final List<String> enabled =
+        namedArgumentValues(selectButton.text, 'enabled');
+    expect(enabled, hasLength(1), reason: '「设为语音轨」按钮必须显式声明 enabled，缺省即恒可点');
+    expect(containsIdentifier(enabled.single, 'selectable'), isTrue,
         reason: '非引擎 PCM 后端必须禁用「选为语音轨」');
+    expect(containsIdentifier(enabled.single, 'excluded'), isTrue,
+        reason: '已排除为 BGM 的轨不得再被选成语音轨');
     expect(panel.contains('t.game_track_silent_at_cue'), isTrue,
         reason: '此刻没有声音的轨必须标注，而不是和可用轨长一个样');
     // BUG-1165：判据不得再用 clipCount——native 的 clip_count 是全环累计，一条轨
@@ -470,38 +503,74 @@ void main() {
     endpoints.dispose();
   });
 
-  test('BUG-1094 补录窗口与回取上限解耦：常量与错误注释都必须改掉', () {
+  test('BUG-1094 补录窗口与回取上限解耦：两个量各有各的常量，环容量对齐 native 真相源', () {
+    // TODO-2727：这一条原本是六条 `src.contains('<原样抄下来的一行>')`。那批判据
+    // 钉的是**拼写**（修饰符顺序、空格、结尾分号、甚至一整句中文注释），而不是不变式：
+    // - `dart format` 重排、加一个 `final`、把常量挪进别的类 ⇒ 实现完全正确却转红；
+    // - 反过来，只要那些串还在文件里的**任何位置**（哪怕在注释里）就照样绿；
+    // - 其中两条（`kRingSeconds = 60`、`环形缓冲实际保留 60 秒`）钉的干脆就是注释
+    //   内容——等于把断言字面量存在被守文件的注释里，而注释里那个 `:21` 行号今天
+    //   已经指错（真实位置是 `audio_loopback_capture.cpp:22`）。**注释是会漂的，
+    //   它不是真相源**。真相源是 native 那个常量本身，所以下面直接读它对账。
     final String src = File(
       'lib/src/mining/gal_hook_session_controller.dart',
     ).readAsStringSync();
+    final String code = maskComments(src);
+
+    // ① 那个「一个 8000 绑死两个语义」的旧标识符不许回来。
+    //    只扫代码：这是禁止型断言，被一句解释性注释判红比漏掉更糟——守卫会永久红。
+    //    带标识符边界：`_galAudioBackMsLegacy` 这类更长的名字不算命中。
     expect(
-      src.contains('_galAudioBackMs'),
+      containsIdentifier(code, '_galAudioBackMs'),
       isFalse,
       reason: '一个 8000 的常量同时当补录窗口和回取上限，两个语义都被它绑死',
     );
+
+    // ② 环容量常量的**值**必须等于 native 的真相源。
+    //    这是跨语言契约，只有两边一起读才守得住；旧写法钉一行 Dart 字面量 + 一句
+    //    中文注释，native 那边把 kRingSeconds 改成 30 时它一动不动。
+    final String? capacity =
+        initializerExpression(src, '_loopbackRingCapacityMs');
+    expect(capacity, isNotNull, reason: '环容量常量改名了：守卫失去锚点，先修锚点再谈断言');
+    final File nativeFile = File('windows/runner/audio_loopback_capture.cpp');
+    expect(nativeFile.existsSync(), isTrue,
+        reason: 'native loopback 采集源不在了：跨语言契约的真相源必须先修');
+    final RegExpMatch? ring = RegExp(r'kRingSeconds\s*=\s*(\d+)')
+        .firstMatch(maskComments(nativeFile.readAsStringSync()));
+    expect(ring, isNotNull, reason: 'native kRingSeconds 改名了：Dart 侧上限失去依据');
     expect(
-      src.contains('static const int _loopbackRingCapacityMs = 60000;'),
-      isTrue,
+      int.parse(capacity!),
+      int.parse(ring!.group(1)!) * 1000,
+      reason: 'Dart 侧回取上限必须等于 native 环形缓冲的真实容量',
     );
-    expect(src.contains('kRingSeconds = 60'), isTrue,
-        reason: '必须记下环容量的真相源（native audio_loopback_capture.cpp）');
+
+    // ③ 回取长度这个量**是怎么算出来的**：上限是环容量，不是补录窗口。
+    final String finish = methodBody(
+      src,
+      'Future<bool> finishLineRecapture({bool discard = false}) async',
+    );
+    final String? backMs = initializerExpression(finish, 'backMs');
+    expect(backMs, isNotNull, reason: '回取长度不再是一个具名局部量：守卫失去锚点');
     expect(
-      src.contains(
-        'elapsedMs.clamp(_recaptureMinBackMs, _loopbackRingCapacityMs)',
-      ),
+      containsIdentifier(backMs!, '_loopbackRingCapacityMs'),
       isTrue,
       reason: '回取上限应是环的真实容量，不是补录窗口时长',
     );
     expect(
-      src.contains('环形缓冲实际保留 60 秒'),
-      isTrue,
-      reason: '旧注释「8 秒是因为环只有这么长」是错的，必须在原地写清真值',
+      containsIdentifier(backMs, '_recaptureWindow'),
+      isFalse,
+      reason: '回取长度一旦又由补录窗口换算而来，BUG-1094 就原地复活',
     );
+
+    // ④ 补录窗口是自己的时长常量，且不由环容量换算而来。
+    final String? window = initializerExpression(src, '_recaptureWindow');
+    expect(window, isNotNull, reason: '补录窗口常量改名了：守卫失去锚点');
+    expect(containsIdentifierCall(window!, 'Duration'), isTrue,
+        reason: '补录窗口必须是自己的时长常量，不再由回取上限换算而来');
     expect(
-      src.contains(
-          'static const Duration _recaptureWindow = Duration(seconds:'),
-      isTrue,
-      reason: '补录窗口必须是自己的时长常量，不再由回取上限换算而来',
+      containsIdentifier(window, '_loopbackRingCapacityMs'),
+      isFalse,
+      reason: '两个量必须解耦：窗口时长不许再引用环容量',
     );
   });
 
@@ -647,65 +716,18 @@ String _sessionOverviewCardSource() {
 /// 这种 BUG-1100 的原始形态，以及「中转函数自己把翻译那一跳删了」，都落在这一侧。
 bool _routesThroughFallbackLabel(String callee) {
   if (callee == _kFallbackLabel) return true;
-  final String? body = _topLevelFunctionBody(
+  // 用共享原语 [topLevelFunctionBody]：`=> expr;` 与 `{ … }` 两种体都认。
+  // 这里曾有一份私有实现（PR#762），因为当时的 [methodBody] 只认花括号体——
+  // `galHookFallbackHeadline` 是箭头函数，它会跳过参数表后一路找到**下一个**声明的
+  // 花括号（紧随其后的 `galHookFallbackLabel` 那个 switch 块），于是「一跳可达」
+  // 因为读到了邻居的实现而假绿。TODO-2726 把箭头体支持合回共享原语，私有副本删除：
+  // 两份收口逻辑各写一遍只会慢慢漂开。
+  final String? body = topLevelFunctionBody(
     File(_kFailureTextPath).readAsStringSync(),
     callee,
   );
   if (body == null) return false;
   return containsIdentifierCall(body, _kFallbackLabel);
-}
-
-/// 取 [src] 里顶层函数 [name] 的**实现体**原文；`=> expr;` 与 `{ … }` 两种形态都认。
-/// 找不到声明返回 null（失败信息由调用方给，这里不 fail）。
-///
-/// 为什么不能直接用 [methodBody]：它只认花括号体。`galHookFallbackHeadline` 是箭头
-/// 函数，[methodBody] 会跳过参数表后一路找到**下一个**声明的花括号——紧随其后的正是
-/// `galHookFallbackLabel` 那个 switch 块，于是「一跳可达」会因为读到了邻居的实现而
-/// 假绿。窗口锚错时守卫不报错、只是静默守错对象，这是最难发现的一类塌陷。
-String? _topLevelFunctionBody(String src, String name) {
-  final String structural = maskCommentsAndStrings(src);
-  final RegExp declaration = RegExp(
-    r'(?<![A-Za-z0-9_$.])' + RegExp.escape(name) + r'\s*\(',
-  );
-  for (final RegExpMatch match in declaration.allMatches(structural)) {
-    final int open = match.end - 1;
-    int depth = 0;
-    int close = -1;
-    for (int i = open; i < structural.length; i++) {
-      if (structural[i] == '(') depth++;
-      if (structural[i] == ')') {
-        depth--;
-        if (depth == 0) {
-          close = i;
-          break;
-        }
-      }
-    }
-    if (close < 0) continue;
-    int i = close + 1;
-    while (i < structural.length && structural[i].trim().isEmpty) {
-      i++;
-    }
-    if (i + 1 < structural.length &&
-        structural[i] == '=' &&
-        structural[i + 1] == '>') {
-      // 箭头体：收口在**深度 0** 的分号上。`=> switch (x) { … };` 里的花括号、
-      // 以及实参里的分号都不算，否则窗口会在半路截断。
-      int nest = 0;
-      for (int j = i + 2; j < structural.length; j++) {
-        final String c = structural[j];
-        if (c == '(' || c == '[' || c == '{') nest++;
-        if (c == ')' || c == ']' || c == '}') nest--;
-        if (c == ';' && nest == 0) return src.substring(i + 2, j);
-      }
-      return null;
-    }
-    if (i < structural.length && structural[i] == '{') {
-      return balancedBlockFrom(src, i, what: '$name 的实现体');
-    }
-    // 既不是 `=>` 也不是 `{`：这一处是**调用**而不是声明，继续找下一处。
-  }
-  return null;
 }
 
 /// 可控就绪状态 / 可排队台词的引擎 helper 替身。
