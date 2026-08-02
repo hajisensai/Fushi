@@ -1899,13 +1899,31 @@ class _SessionOverviewCard extends StatelessWidget {
                   Text(
                     // BUG-1100：先看注入失败的可执行处置，再看降级原因自己的人话文案；
                     // 两张表都没有才回退内部代码。
-                    galHookFailureLabel(state.injectorFailure) ??
-                        galHookFallbackLabel(state.fallbackReason!) ??
-                        state.fallbackReason!,
+                    galHookFallbackHeadline(
+                      failure: state.injectorFailure,
+                      fallbackReason: state.fallbackReason!,
+                    ),
                     maxLines: compact ? 2 : 3,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.tertiary,
+                        ),
+                  ),
+                // native 一手证据**独立一行**（BUG-1446）。这张卡以前只渲染上面那句处置，
+                // 把 `injectorDetail` 整个丢了：`protocol_mismatch` 时 native 侧
+                // `ProtocolMismatchDetail` 生成的**双方版本对照**（`shm=12/want 13` 之类，
+                // 经 voice_hook_reader.cpp → flutter_window.cpp → injectorDetail 一路带上来）
+                // 是这条失败唯一能一次确诊的事实，却恰好在用户最常盯着的位置被抹掉，
+                // 只剩一句「先彻底关掉游戏再重开一次」——照做也不会好，因为真正漂开的是谁
+                // 根本没显示。它必须自己占一行：上面那句处置有八十多字，缀在尾部会被
+                // ellipsis 整段吃掉（compact 只有 2 行），修了等于没修。
+                if (state.injectorDetail.trim().isNotEmpty)
+                  Text(
+                    state.injectorDetail.trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
                         ),
                   ),
               ],
