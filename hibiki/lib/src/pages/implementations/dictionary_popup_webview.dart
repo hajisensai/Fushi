@@ -16,6 +16,10 @@ import 'package:hibiki/src/pages/implementations/popup_settings_injection.dart';
 import 'package:hibiki/src/platform/selection_external_actions.dart';
 import 'package:hibiki/src/reader/popup_swipe_close_script.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart'
+    show activeModifierKeys;
+import 'package:hibiki/src/shortcuts/reader_space_override.dart'
+    show readerShouldHandleDesktopCopy;
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/webview/webview_death_guard.dart';
 import 'package:hibiki/utils.dart';
@@ -1321,10 +1325,14 @@ JSON.stringify((function(){
               id: 2,
               title: t.copy,
               action: () async {
+                // BUG-1451：与 Windows 两条入口收口到同一个 [_copySelectionToClipboard]
+                // （写剪贴板 + 成功反馈），空选区也不再静默——三条入口语义一致。
                 final String text = await _selectedTextAcrossFrames();
-                if (text.isEmpty) return;
-                await Clipboard.setData(ClipboardData(text: text));
-                HibikiToast.show(msg: t.copied_to_clipboard);
+                if (text.isEmpty) {
+                  _showCopyToast(copied: false);
+                  return;
+                }
+                await _copySelectionToClipboard(text);
                 await _clearSelectedTextAcrossFrames();
               },
             ),
@@ -2113,15 +2121,60 @@ JSON.stringify((function(){
     if (isWindowsPlatform) {
       return KeyedSubtree(
         key: _deathGuard.rebuildKey,
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onSecondaryTapDown: (TapDownDetails details) =>
-              _showWindowsContextMenu(context, details.globalPosition),
-          child: webView,
+        child: Focus(
+          // BUG-1451 键盘那一半（BUG-402 当年只修了阅读器正文，弹窗漏修）：Windows 的
+          // WebView2 走合成模式，fork 只转发鼠标、**不转发键盘**，所以弹窗里按 Ctrl+C
+          // 永远到不了 WebView2、浏览器原生 copy 永不触发。但这一按键**一定**会到
+          // Flutter（平台视图的 FocusNode 是本节点的后代，KeyEvent 沿焦点链向上冒泡），
+          // 在这里接住即可。`canRequestFocus:false` + `skipTraversal`：只做拦截，不参与
+          // 遍历、不抢焦点，与 BUG-1347 那层宿主键桥同范式、互不干扰（它只转发宿主
+          // 动作 token，不含 Ctrl+C）。
+          canRequestFocus: false,
+          skipTraversal: true,
+          onKeyEvent: _handleDesktopCopyKey,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onSecondaryTapDown: (TapDownDetails details) =>
+                _showWindowsContextMenu(context, details.globalPosition),
+            child: webView,
+          ),
         ),
       );
     }
     return KeyedSubtree(key: _deathGuard.rebuildKey, child: webView);
+  }
+
+  /// Windows 弹窗内的「Ctrl+C 复制选中文字」兼容层（BUG-1451，BUG-402 同根）。
+  ///
+  /// 判据复用阅读器正文那条**同一个纯谓词** [readerShouldHandleDesktopCopy]（Windows +
+  /// 仅 Ctrl + 键 C），两条复制路径不会漂开。未命中一律返回 [KeyEventResult.ignored]
+  /// 继续冒泡——弹窗内的制卡（Ctrl+Enter）、切词条、宿主的关词典键全部不受影响。
+  ///
+  /// 取的是**浏览器原生选区**（[_selectedTextAcrossFrames] 穿透同源 iframe），刻意不碰
+  /// `window.hoshiSelection`——那是查词高亮的另一套坐标/状态（BUG-368/402 注释）。
+  KeyEventResult _handleDesktopCopyKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (!readerShouldHandleDesktopCopy(
+      key: event.logicalKey,
+      modifiers: activeModifierKeys(),
+      isWindows: isWindowsPlatform,
+    )) {
+      return KeyEventResult.ignored;
+    }
+    unawaited(_copyNativeSelectionToClipboard());
+    return KeyEventResult.handled;
+  }
+
+  /// Ctrl+C 落地：读原生选区 → 写系统剪贴板。空选区不覆盖剪贴板已有内容，但给出提示
+  /// （BUG-1451：静默失败正是这个 bug 长期被当成「偶发」的原因）。
+  Future<void> _copyNativeSelectionToClipboard() async {
+    final String text = await _selectedTextAcrossFrames();
+    if (!mounted) return;
+    if (text.isEmpty) {
+      _showCopyToast(copied: false);
+      return;
+    }
+    await _copySelectionToClipboard(text);
   }
 
   /// TODO-896 症状②：Windows 桌面右键弹 Flutter [showMenu]（替代偏移的 WebView2 原生
@@ -2134,6 +2187,13 @@ JSON.stringify((function(){
   /// [_selectedTextAcrossFrames]，否则复制/搜索拿到空串永远无效。
   Future<void> _showWindowsContextMenu(
       BuildContext context, Offset globalPosition) async {
+    // BUG-1451 根因：选区是**易失状态**，而 [showMenu] 是一个真实 route——打开到用户
+    // 点中项之间，Flutter 焦点转移到菜单、弹窗可能被 dismiss / 热槽换页 / WebView2 因
+    // 右键落在选区外而清掉 caret。旧实现在 `await showMenu` **之后**才去读选区，读到的
+    // 是「菜单关闭那一刻」的状态而非「用户右键那一刻」的状态，任一环变动就拿空串，
+    // 再被 `if (text.isEmpty) return` 静默吞掉 —— 用户看到的就是「菜单弹了、点复制没反应」。
+    // 正确的数据流是在**事件源头**取快照：右键按下即发起读取，菜单只是选择动作的 UI。
+    final Future<String> selectionAtRightClick = _selectedTextAcrossFrames();
     final RenderObject? overlayObject =
         Overlay.of(context).context.findRenderObject();
     if (overlayObject is! RenderBox || !overlayObject.hasSize) return;
@@ -2164,16 +2224,47 @@ JSON.stringify((function(){
     if (action == null) return;
     // BUG-802：桌面 fork 未实现 getSelectedText 且选区在同源子 iframe 内，改用穿透 iframe
     // 的 [_selectedTextAcrossFrames]，否则复制/搜索永远拿到空串直接早退（表现为无效）。
-    final String text = await _selectedTextAcrossFrames();
-    if (text.isEmpty) return;
+    // BUG-1451：优先用右键那一刻的快照；快照为空才回退实时读一次（快照发起时 WebView
+    // 尚未就绪等边缘情况），两条都空才是「用户真的没选中文本」。
+    String text = await selectionAtRightClick;
+    if (text.isEmpty) text = await _selectedTextAcrossFrames();
+    // BUG-1451：空选区不再**静默**早退。原实现在这里直接 return，用户无从分辨「我没选中」
+    // 和「复制链路断了」，一个真 bug 因此被当成偶发忍了很久。给出明确提示（不覆盖剪贴板
+    // 已有内容这一行为不变）。
+    if (text.isEmpty) {
+      _showCopyToast(copied: false);
+      return;
+    }
     switch (action) {
       case _PopupContextMenuAction.search:
         widget.onTextSelected?.call(text, Rect.zero);
       case _PopupContextMenuAction.copy:
         // BUG-402 范式：桌面 WebView2 合成模式下原生复制键转发受限，自己把选区文本写
-        // 系统剪贴板。空选区上面已早退，不覆盖剪贴板已有内容。
-        await Clipboard.setData(ClipboardData(text: text));
+        // 系统剪贴板。
+        await _copySelectionToClipboard(text);
     }
+  }
+
+  /// 把选区文本写系统剪贴板并给出成功反馈。
+  ///
+  /// BUG-1451：Windows 右键「复制」原本成功也**毫无反馈**（Android 的 ContextMenuItem
+  /// 分支一直有 toast），成功与失败在用户眼里长得一模一样。三条复制入口（Windows 右键
+  /// 菜单 / Windows Ctrl+C / Android 原生菜单）统一走同一反馈语义。
+  Future<void> _copySelectionToClipboard(String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    _showCopyToast(copied: true);
+  }
+
+  /// 弹出复制结果 toast。context 已失活（弹窗在 await 期间被关掉）时静默跳过而不是
+  /// 抛异常——反馈是锦上添花，绝不能让它把复制这条主路径带崩。
+  void _showCopyToast({required bool copied}) {
+    // State.mounted 是这里唯一正确的存活判据：本方法恒在 await 之后调用，弹窗可能
+    // 已被 dismiss。unmounted 时读 State.context 会抛异常，故必须先 return。
+    if (!mounted) return;
+    final t = Translations.of(context);
+    HibikiToast.show(
+      msg: copied ? t.copied_to_clipboard : t.selection_copy_empty,
+    );
   }
 
   static String? _cachedStylesJson;

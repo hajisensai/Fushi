@@ -692,9 +692,16 @@ void main() {
       // 穿透同源 iframe 的 _selectedTextAcrossFrames，否则复制/搜索永远拿空串无效。
       expect(body.contains('_selectedTextAcrossFrames()'), isTrue,
           reason: '复制/搜索经穿透 iframe 的 _selectedTextAcrossFrames 取选区（BUG-802）');
-      expect(
-          body.contains('Clipboard.setData(ClipboardData(text: text))'), isTrue,
-          reason: '把选区文本写系统剪贴板（BUG-402 范式）');
+      // BUG-1451：写剪贴板从方法体内联收口到共用 `_copySelectionToClipboard`（三条复制
+      // 入口 —— Windows 右键菜单 / Windows Ctrl+C / Android 原生菜单 —— 统一走它，带成功
+      // 反馈）。不变式没变（右键复制最终把选区写系统剪贴板），只是落点变了；「全文件裸
+      // Clipboard.setData 只许出现一处」这条更强的守卫在
+      // test/pages/popup_copy_shortcut_and_menu_guard_test.dart。
+      expect(body.contains('_copySelectionToClipboard(text)'), isTrue,
+          reason: '把选区文本写系统剪贴板（BUG-402 范式，经 BUG-1451 收口的共用 helper）');
+      expect(source.contains('Clipboard.setData(ClipboardData(text: text))'),
+          isTrue,
+          reason: 'helper 内必须真的写系统剪贴板');
     });
   });
 }

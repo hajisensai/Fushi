@@ -3106,5 +3106,6 @@
   "mihon_extension_preview_discard": "Discard",
   "mihon_extension_preview_source_select": "Pick a source to preview",
   "mihon_extension_sources_included": "Included sources",
-  "mihon_extension_preview_read_only": "Preview is read-only. Install the extension to open and read."
+  "mihon_extension_preview_read_only": "Preview is read-only. Install the extension to open and read.",
+  "selection_copy_empty": "No text selected."
 }
