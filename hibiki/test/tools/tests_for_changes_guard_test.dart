@@ -330,6 +330,40 @@ void main() {
           isFalse);
     });
 
+    test('两处硬编码目录名必须仍对得上仓库布局', () {
+      // 工具里只有这两组硬编码名字。硬编码本身不是问题，**哑掉**才是：
+      // 仓库改了布局而常量没跟上，路径解析会静默退化——容器目录不再被拒，
+      // 一次对 `hibiki` 的引用就把整棵树拉进触发面，推导结果从「精准」变成「全跑」。
+      for (final RepoPath container in kContainerDirs) {
+        final Directory dir = Directory('${fs.root.path}/$container');
+        expect(dir.existsSync(), isTrue, reason: '容器目录 $container 不在了');
+        final int subDirs =
+            dir.listSync(followLinks: false).whereType<Directory>().length;
+        expect(subDirs, greaterThanOrEqualTo(5),
+            reason: '$container 只剩 $subDirs 个子目录，'
+                '它可能已经不再是「装着互不相干多个域」的容器目录');
+      }
+    });
+
+    test('索引里不得混进构建产物路径（否则索引因机器而异）', () {
+      // 本机有 `hibiki/build/windows/x64/...`、CI 的干净 checkout 没有。
+      // 一旦这类路径进了索引，本机推导出的测试集就和 CI 的不一样——
+      // 这是「本机全绿 CI 红」最难查的一种。
+      //
+      // 注意这条在**没有构建产物的干净环境**上是平凡通过的（那里本来就没东西可混
+      // 进来）；它要抓的正是「在有产物的开发机上」跑出来的那份被污染的索引。
+      final List<String> polluted = <String>[];
+      index.forEach((RepoPath test, TestTriggerFace face) {
+        for (final RepoPath ref in face.referencedPaths) {
+          if (ref.split('/').any(kNonSourceDirs.contains)) {
+            polluted.add('$test → $ref');
+          }
+        }
+      });
+      expect(polluted, isEmpty,
+          reason: '这些引用落在构建产物 / 机器本地目录里：\n${polluted.join('\n')}');
+    });
+
     test('存在性判定必须逐段精确大小写（Windows NTFS 大小写不敏感）', () {
       // 直接用 existsSync 时，注释里的「Android/iOS/macOS/Windows/Linux」会让
       // `hibiki/Linux` 在 Windows 上判为存在、在 Linux CI 上判为不存在——
