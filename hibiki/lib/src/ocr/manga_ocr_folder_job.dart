@@ -105,8 +105,20 @@ int naturalCompare(String a, String b) {
 
 bool _isDigit(int codeUnit) => codeUnit >= 0x30 && codeUnit <= 0x39;
 
-/// 枚举 [root] 下的页图：顶层文件 + **一层**子目录内的文件（更深不递归），
-/// 排除 [kMangaOcrOutDirName] 产物目录，按相对路径自然序排序。
+/// 页图目录树的最大下钻层数（root 自身算第 0 层）。够覆盖真实布局
+/// （书目录 `images/<源子目录>/页.jpg` 已经是第 2 层），又不至于在用户误选
+/// 整个磁盘根时把目录树走穿。
+const int kMangaPageScanMaxDepth = 6;
+
+/// 枚举 [root] 下的页图：递归下钻到 [kMangaPageScanMaxDepth] 层，排除
+/// [kMangaOcrOutDirName] 产物目录，按相对路径自然序排序。
+///
+/// 旧实现只认「顶层文件 + 一层子目录内的文件」。已入库漫画的书目录是
+/// `manga.json` + `images/<destRel>`，而 destRel **保留源子目录结构**：
+/// mokuro.moe 的卷 CBZ 顶层带一个 `<卷名>/` 目录，页图因此落在
+/// `images/<卷名>/001.jpg`（第 2 层子目录），旧枚举一页也扫不到——OCR 向导
+/// 报「此文件夹中没有找到图片」，引擎跑起来也是 no pages。页图深度取决于源
+/// 压缩包怎么打的，不是常数，扫描就不该把它当常数。
 List<MangaOcrPageFile> enumerateMangaPages(Directory root) {
   final List<MangaOcrPageFile> pages = <MangaOcrPageFile>[];
   void addFile(File file) {
@@ -120,21 +132,27 @@ List<MangaOcrPageFile> enumerateMangaPages(Directory root) {
     );
   }
 
-  for (final FileSystemEntity entity in root.listSync(followLinks: false)) {
-    if (entity is File) {
-      addFile(entity);
-    } else if (entity is Directory) {
-      if (p.basename(entity.path) == kMangaOcrOutDirName) {
-        continue;
-      }
-      for (final FileSystemEntity child
-          in entity.listSync(followLinks: false)) {
-        if (child is File) {
-          addFile(child);
+  void walk(Directory dir, int depth) {
+    final List<FileSystemEntity> entries;
+    try {
+      entries = dir.listSync(followLinks: false);
+    } catch (_) {
+      // 无权限/瞬时 IO：跳过该目录，不让整卷枚举失败。
+      return;
+    }
+    for (final FileSystemEntity entity in entries) {
+      if (entity is File) {
+        addFile(entity);
+      } else if (entity is Directory && depth < kMangaPageScanMaxDepth) {
+        if (p.basename(entity.path) == kMangaOcrOutDirName) {
+          continue;
         }
+        walk(entity, depth + 1);
       }
     }
   }
+
+  walk(root, 0);
   pages.sort((MangaOcrPageFile a, MangaOcrPageFile b) =>
       naturalCompare(a.relativeUrl, b.relativeUrl));
   return pages;

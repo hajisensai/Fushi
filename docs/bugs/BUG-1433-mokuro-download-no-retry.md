@@ -1,0 +1,12 @@
+## BUG-1433 · mokuro.moe 卷下载失败后既无自动重试也无手动重试入口
+- **报告**：2026-08-02（用户：截图「下载 → 任务」页，`下载失败: SocketException: 信号灯超时时间已到 (OS Error: 信号灯超时时间已到, errno = 121), address = mokuro.moe, port = 9253`）
+- **真实性**：✅ 真 bug（两条都缺）
+  - 无自动重试：`hibiki/lib/src/media/manga/online/mokuro_moe_download_queue.dart:215`（旧行号）——`_finish` 里只要 error 不是 `MokuroMoeDownloadCancelled` 就直接 `status = failed` 终结。全链唯一的重试是 `mokuro_moe_volume_downloader.dart` 的 416 分支（针对坏 `.part`），与网络瞬断无关。mokuro.moe 是社区托管小站，连接超时是常态。
+  - 无手动重试：`hibiki/lib/src/media/manga/online/mokuro_moe_tasks_section.dart:147`（旧行号）——`trailing: task.isFinished ? null : 取消按钮`，失败行右侧是空的。用户只能回「在线目录」对话框重新找那一卷；重新入队会**新建一条任务**，失败那条僵在列表里（用户第二张截图：同名两行，`(1/2)`）。
+- **[x] ① 已修复** — 就地复活同一个任务对象（不新建行），`.part` 续传不重下已到字节：
+  - 新增非终态 `MokuroMoeTaskStatus.waitingRetry`：网络类瞬时失败按 `kMokuroMoeRetryBackoff`（2s/8s/20s）退避重排；退避**不占执行位**，队列继续跑后面的卷，到期回 `queued` 参与正常调度。
+  - 可重试判据 = 「再来一次可能就好了」：`SocketException` / `TimeoutException` / `TlsException` / 裸 `HttpException`；HTTP 只认 5xx/408/429。为此给 client 加了带状态码的 `MokuroMoeHttpException`（implements `HttpException`，旧类型判断不受影响）——否则 404 的卷会白白重试三轮几十秒。坏 zip 等本地数据错误不自动重试（重跑同一份坏数据不会变好）。
+  - `MokuroMoeDownloadQueue.retry(task)` / `retryAllFailed()`：failed/cancelled 就地回 `queued` 并清零自动重试计数；下载页失败行给「重试」按钮，区段头给「重试」批量按钮。
+  - 提交：见本分支 `fix(manga): mokuro.moe 下载失败自动重试 + 手动重试`
+- **[x] ② 已加自动化测试** — `hibiki/test/media/manga/online/mokuro_moe_download_queue_test.dart`（新增 11 例）：SocketException 退避后自动重跑同一对象、连续失败到上限落 failed、退避期间不占执行位、退避中取消掐掉定时器、404 不重试 / 503 重试、坏 zip 不重试、用户取消不重试、手动 retry 就地复活不新建行、done/进行中 no-op、`retryAllFailed` 条数与不动已成功项。
+- **备注**：断点续传语义本来就是好的（用户截图里重下从 30.0/36.8 MB 接上），缺的只是「回到那一卷」的路径。相关：[BUG-1434](BUG-1434-mokuro-book-ocr-no-images.md)（同一批 mokuro.moe 下载链路）。

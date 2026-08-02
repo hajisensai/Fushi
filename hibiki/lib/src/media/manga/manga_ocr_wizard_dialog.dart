@@ -891,6 +891,10 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
               _errorText(theme, t.manga_ocr_wizard_no_images),
             if (_folderStatus == MangaOcrFolderStatus.hasMokuro)
               _errorText(theme, t.manga_ocr_wizard_has_mokuro),
+            // 已入库且每页都有 OCR（mokuro.moe 下载的卷天生如此）：说清「不需要」，
+            // 而不是让用户对着一个禁用的按钮猜。
+            if (_folderStatus == MangaOcrFolderStatus.alreadyOcred)
+              _errorText(theme, t.manga_ocr_wizard_already_ocred),
             if (_folderStatus == MangaOcrFolderStatus.valid) ...<Widget>[
               const SizedBox(height: 12),
               _engineSelector(busy),
@@ -1037,9 +1041,9 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   }
 }
 
-/// 裸图片文件夹校验结果。
+/// 图片文件夹 / 已入库书目录的校验结果。
 enum MangaOcrFolderStatus {
-  /// 有图、无 `.mokuro`——可 OCR。
+  /// 有图、无 `.mokuro`——可 OCR。已入库的书则是「至少一页还没有 OCR 块」。
   valid,
 
   /// 无任何图片。
@@ -1048,16 +1052,33 @@ enum MangaOcrFolderStatus {
   /// 已有 `.mokuro`——应走普通导入而非 OCR。
   hasMokuro,
 
+  /// 已入库的书每一页都已有 OCR 块——没有可补的页，再跑只会用较差的引擎结果
+  /// 覆盖掉现成数据（mokuro.moe 下载的卷天生如此：站点已给 `.mokuro`）。
+  alreadyOcred,
+
   /// 目录不存在。
   notFound,
 }
 
-/// 纯校验：目录须存在、含图片（一层深）、且**不含** `.mokuro`（有则提示直接普通导入）。
+/// 纯校验：目录须存在、含图片、且**不含** `.mokuro`（有则提示直接普通导入）。
 /// 无平台通道、无 async，便于单测与即时禁用 Run 按钮。
+///
+/// 两种输入分开判：
+/// - **已入库书目录**（含 `manga.json`，即 `EpubBooks.extractDir`）：真相是
+///   `manga.json` 的页表，不是目录里躺着什么文件。页图落在 `images/<destRel>`，
+///   而 destRel 保留源子目录结构，深度不固定；按文件扫描去猜「有没有图 / 有没有
+///   OCR」既够不着深层页图，也认不出已存在的 OCR（书里的 OCR 数据在 manga.json
+///   里，不叫 `.mokuro`）。mokuro.moe 下载的卷正是两条都踩：能正常阅读的书被判成
+///   「此文件夹中没有找到图片」。
+/// - **裸图片文件夹**（用户自选）：仍按文件扫描，只是改用与 OCR 引擎同一个枚举器
+///   [enumerateMangaPages]，避免「向导说有图、引擎说没页」这类两套规则漂移。
 MangaOcrFolderStatus checkOcrFolder(String dirPath) {
   final Directory dir = Directory(dirPath);
   if (!dir.existsSync()) return MangaOcrFolderStatus.notFound;
-  bool hasImage = false;
+
+  final File mangaJson = File(p.join(dirPath, MangaStorage.kMangaJsonFileName));
+  if (mangaJson.existsSync()) return _checkImportedBookDir(mangaJson);
+
   List<FileSystemEntity> entries;
   try {
     entries = dir.listSync();
@@ -1065,24 +1086,33 @@ MangaOcrFolderStatus checkOcrFolder(String dirPath) {
     return MangaOcrFolderStatus.notFound;
   }
   for (final FileSystemEntity entity in entries) {
-    if (entity is File) {
-      final String ext = p.extension(entity.path).toLowerCase();
-      if (ext == '.mokuro') return MangaOcrFolderStatus.hasMokuro;
-      if (kMangaImageExtensions.contains(ext)) hasImage = true;
-    } else if (entity is Directory) {
-      try {
-        for (final FileSystemEntity sub in entity.listSync()) {
-          if (sub is File &&
-              kMangaImageExtensions
-                  .contains(p.extension(sub.path).toLowerCase())) {
-            hasImage = true;
-            break;
-          }
-        }
-      } catch (_) {
-        // 无权限/瞬时 IO：跳过该子目录。
-      }
+    if (entity is File && p.extension(entity.path).toLowerCase() == '.mokuro') {
+      return MangaOcrFolderStatus.hasMokuro;
     }
   }
-  return hasImage ? MangaOcrFolderStatus.valid : MangaOcrFolderStatus.noImages;
+  return enumerateMangaPages(dir).isEmpty
+      ? MangaOcrFolderStatus.noImages
+      : MangaOcrFolderStatus.valid;
+}
+
+/// 已入库书目录的判定：页数与 OCR 完成度都以 `manga.json` 为准。
+///
+/// 每页都有 OCR 块 → [MangaOcrFolderStatus.alreadyOcred]（无可补的页）；有页缺块
+/// → [MangaOcrFolderStatus.valid]（可补齐）。manga.json 读不动时退回文件扫描——
+/// 「元数据坏了」不等于「没有图片」。
+MangaOcrFolderStatus _checkImportedBookDir(File mangaJson) {
+  final MokuroPayload payload;
+  try {
+    payload = parseMangaJson(mangaJson.readAsStringSync());
+  } catch (_) {
+    return enumerateMangaPages(mangaJson.parent).isEmpty
+        ? MangaOcrFolderStatus.noImages
+        : MangaOcrFolderStatus.valid;
+  }
+  if (payload.images.isEmpty) return MangaOcrFolderStatus.noImages;
+  final bool everyPageOcred =
+      payload.images.every((MokuroImage page) => page.blocks.isNotEmpty);
+  return everyPageOcred
+      ? MangaOcrFolderStatus.alreadyOcred
+      : MangaOcrFolderStatus.valid;
 }

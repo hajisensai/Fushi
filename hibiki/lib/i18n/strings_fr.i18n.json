@@ -3068,5 +3068,7 @@
   "stat_hourly_band_pdf": "PDF",
   "stat_hourly_band_manga": "Manga",
   "stat_hourly_band_unattributed": "Unsplit history",
-  "stat_hourly_unattributed_note": "Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type."
+  "stat_hourly_unattributed_note": "Hours recorded before per-format tracking existed have no type stored, so they cannot be split. They are shown as a combined total and are not assigned to any type.",
+  "manga_online_retry_waiting": "Retrying automatically ($attempt/$total)",
+  "manga_ocr_wizard_already_ocred": "This volume already has OCR data on every page. Running OCR again would overwrite it."
 }
