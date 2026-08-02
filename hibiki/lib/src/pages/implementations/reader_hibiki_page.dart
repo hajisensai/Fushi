@@ -114,7 +114,6 @@ import 'package:hibiki/src/shortcuts/dictionary_caret_controller.dart';
 export 'package:hibiki/src/shortcuts/dictionary_caret_controller.dart'
     show CaretSurface;
 import 'package:hibiki/src/shortcuts/reader_space_override.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
 
 part 'reader_hibiki/lyrics.part.dart';
 part 'reader_hibiki/mining.part.dart';
@@ -1421,10 +1420,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// 1.0，故不能用 HibikiAppUiScale.of）。在 build 里读 appModel 会随缩放变化重建。
   double get _readerChromeScale => appModel.appUiScale;
 
-  /// 图片右键菜单由 Flutter PopupMenuRoute 承载，不在阅读器中和后的 chrome 子树内。
-  /// 所以这里复用 reader chrome 的用户界面缩放口径，且只缩放菜单自身，不改鼠标锚点。
-  double get _readerImageMenuScale =>
-      HibikiAppUiScale.normalize(_readerChromeScale);
+  // BUG-1438：曾有 `_readerImageMenuScale = normalize(_readerChromeScale)`，把 chrome
+  // 的缩放口径套到右键菜单 / 选区操作条上。那是错的——菜单由 PopupMenuRoute / 根
+  // OverlayEntry 承载，**在中和器之外**，落在全局 HibikiAppUiScale 的缩放画布里，
+  // 画布→屏幕这一跳已经按 scale 放大过一次；再乘一次得到 scale²（实测 scale=2 时
+  // chrome 文字 40px 而菜单 80px）。菜单尺寸一律写常量，见 chrome.part.dart 的
+  // _showReaderImageContextMenuAtGlobalPosition 注释。
 
   /// 缩放后底栏在屏高度。所有把底栏高度喂给 WebView/光标/焦点环/正文预留的地方都
   /// 走这个 getter，保证视觉高度与预留高度恒等。

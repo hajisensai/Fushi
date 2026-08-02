@@ -2895,14 +2895,30 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     if (decoded is! Map || !mounted) return;
     final double x = (decoded['x'] as num?)?.toDouble() ?? 0;
     final double y = (decoded['y'] as num?)?.toDouble() ?? 0;
-    final Size size = MediaQuery.of(context).size;
+    // BUG-1438（与 BUG-129/261/381/781 同族）：JS 报的 clientX/clientY 是 **真实屏幕
+    // 坐标**——漫画页整棵子树被 HibikiAppUiScaleNeutralizer 中和回净缩放=1（见
+    // manga_hibiki_source.dart），WebView 全出血铺满真实视口。但 showMenu 的
+    // RelativeRect 落在根 Navigator 的 Overlay 坐标系，而该 Overlay 在全局
+    // HibikiAppUiScale 的 FittedBox 之内（**缩放画布**空间，尺寸 = 真实视口 / scale）。
+    //
+    // 修复前把真实坐标直接当画布坐标喂进去，菜单实际渲染在「点击点 × scale」：
+    // 界面大小 125% 时右键点在 (800,600) 菜单跑到 (1000,750)，越靠右下偏得越远；
+    // 调小到 50% 则菜单缩向左上角。同理 MediaQuery.of(context).size 在中和层内是
+    // **真实视口**尺寸（比 overlay.size 大 scale 倍），当作 RelativeRect 的 right/bottom
+    // 会让贴边翻转判断一起失准。
+    //
+    // 修法与同族一致：不读 scale 数值逆算（自动模式下生效 scale ≠ appModel.appUiScale），
+    // 而用 Overlay 的 RenderBox 沿真实渲染变换链把锚点映射到 Overlay 本地坐标——中间的
+    // FittedBox 缩放被 render transform 自动吸收，对任意 scale 自洽；scale=1 时变换为
+    // 单位阵，逐像素等价（向后兼容）。边界同步改用 overlay.size。
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final Offset anchor = overlay.globalToLocal(Offset(x, y));
     final _MangaContextAction? action = await showMenu<_MangaContextAction>(
       context: context,
-      position: RelativeRect.fromLTRB(
-        x,
-        y,
-        math.max(0, size.width - x),
-        math.max(0, size.height - y),
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
+        Offset.zero & overlay.size,
       ),
       items: <PopupMenuEntry<_MangaContextAction>>[
         PopupMenuItem<_MangaContextAction>(

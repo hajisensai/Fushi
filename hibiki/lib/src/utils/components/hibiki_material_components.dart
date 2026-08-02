@@ -2584,14 +2584,24 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
         },
       ),
     ];
+    // BUG-1438（与 BUG-129/261/381/781 同族）：[_lastPointerDownGlobalPosition] 是
+    // 真实屏幕坐标，而本 toolbar 由 SelectionOverlay 挂进根 Overlay——后者落在全局
+    // HibikiAppUiScale 的 FittedBox 缩放画布内，锚点被当画布坐标解读。界面大小≠100%
+    // 时工具条会偏到「右键点 × scale」处（离屏幕原点越远偏得越多）。经 Overlay 的
+    // RenderBox 沿真实渲染变换链换算，缩放被 render transform 自动吸收；scale=1 时
+    // 为单位阵，逐像素等价。
+    final Offset rawAnchor = _lastPointerDownGlobalPosition ?? Offset.zero;
+    final RenderBox? overlayBox =
+        Overlay.maybeOf(context)?.context.findRenderObject() as RenderBox?;
+    final Offset anchor = overlayBox != null && overlayBox.hasSize
+        ? overlayBox.globalToLocal(rawAnchor)
+        : rawAnchor;
     return AdaptiveTextSelectionToolbar.buttonItems(
       // TODO-1380/BUG-694：锚点自持（[_lastPointerDownGlobalPosition]），不读
       // selectableRegionState.contextMenuAnchors——其 glyph 回退路径对选区端点
       // 空断言，toolbar 重建即崩。null 分支不可达（菜单必由面板内 pointer down
       // 召出），仅作类型收口。
-      anchors: TextSelectionToolbarAnchors(
-        primaryAnchor: _lastPointerDownGlobalPosition ?? Offset.zero,
-      ),
+      anchors: TextSelectionToolbarAnchors(primaryAnchor: anchor),
       buttonItems: items,
     );
   }

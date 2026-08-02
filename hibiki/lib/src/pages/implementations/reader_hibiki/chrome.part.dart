@@ -196,7 +196,6 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     final BuildContext effectiveContext = menuContext ?? context;
     final RenderBox overlay =
         Overlay.of(effectiveContext).context.findRenderObject()! as RenderBox;
-    final double menuScale = _readerImageMenuScale;
     // BUG-381: [globalPosition] 是真实屏幕坐标（右键路径来自阅读器 State 的 RenderBox
     // localToGlobal，放大图路径来自 details.globalPosition；两者都在「净缩放=1 的真实
     // 视口空间」——阅读器被 HibikiAppUiScaleNeutralizer 中和回 1.0）。但 showMenu 的
@@ -208,7 +207,15 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // appModel.appUiScale），而用 Overlay 的 RenderBox 把锚点从真实屏幕坐标沿真实渲染
     // 变换链映射到 Overlay 本地坐标系——其间的 FittedBox 缩放被 render transform 自动
     // 吸收，对任意 scale（含自动模式）自洽无残差；scale=1 时变换为单位阵，逐像素等价
-    // （向后兼容）。菜单内容缩放（menuScale）是另一回事，保持不动。
+    // （向后兼容）。
+    //
+    // BUG-1438：菜单内容**不能**再乘界面缩放。菜单渲染在根 Overlay，也就是全局
+    // HibikiAppUiScale 的缩放画布内，画布→屏幕这一跳已经把它按 scale 放大了一次；
+    // 阅读器 chrome 之所以要手动 ×_readerChromeScale，是因为 chrome 在
+    // HibikiAppUiScaleNeutralizer **之内**（净缩放=1，不跟随），而菜单在**之外**。
+    // 旧代码把 chrome 的规则错套到菜单上 → 视觉尺寸是 scale²：实测同样写
+    // `fontSize: 14 * menuScale`，chrome 渲染成 40 而菜单 80（scale=2）。所以这里
+    // 写常量，让菜单与 app 其它右键菜单（视频 / 合集 / 标签管理）口径一致。
     final Offset anchor = overlay.globalToLocal(globalPosition);
     final String? action = await showMenu<String>(
       context: effectiveContext,
@@ -216,24 +223,21 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
         Offset.zero & overlay.size,
       ),
-      constraints: BoxConstraints(
-        minWidth: 112.0 * menuScale,
-        maxWidth: 280.0 * menuScale,
-      ),
-      menuPadding: EdgeInsets.symmetric(vertical: 8.0 * menuScale),
+      constraints: const BoxConstraints(minWidth: 112.0, maxWidth: 280.0),
+      menuPadding: const EdgeInsets.symmetric(vertical: 8.0),
       items: <PopupMenuEntry<String>>[
         PopupMenuItem<String>(
           value: 'copy',
-          height: kMinInteractiveDimension * menuScale,
-          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+          height: kMinInteractiveDimension,
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.copy_outlined, size: 18.0 * menuScale),
-              SizedBox(width: 12.0 * menuScale),
+              const Icon(Icons.copy_outlined, size: 18.0),
+              const SizedBox(width: 12.0),
               Text(
                 t.reader_copy_image,
-                style: TextStyle(fontSize: 14.0 * menuScale),
+                style: const TextStyle(fontSize: 14.0),
               ),
             ],
           ),
@@ -246,9 +250,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   }
 
   // TODO-954：阅读器文字选区右键菜单（Windows）。完全复用图片右键的「锚点经 Overlay
-  // RenderBox 映射 + menuScale 只缩放菜单自身」范式（见上方 BUG-381 长注释），让查词/
-  // 复制/导出三项随界面大小缩放，而鼠标锚点与 WebView 命中测试不受影响。导出项仅在本书
-  // 有音频 cue 时出现；其它两项恒在。
+  // RenderBox 映射、菜单尺寸写常量」范式（见上方 BUG-381 / BUG-1438 长注释）：菜单随
+  // 界面大小缩放这件事由它所在的缩放画布负责，代码不再手动乘 scale，而鼠标锚点与
+  // WebView 命中测试不受影响。导出项仅在本书有音频 cue 时出现；其它两项恒在。
   Future<void> _showReaderTextContextMenu(Offset globalPosition) async {
     if (!mounted || !isWindowsPlatform || _readerTextContextMenuActive) {
       return;
@@ -285,7 +289,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
       final RenderBox overlay =
           Overlay.of(context).context.findRenderObject()! as RenderBox;
-      final double menuScale = _readerImageMenuScale;
+      // BUG-1438：与图片右键菜单同因——菜单在根 Overlay（缩放画布）内，不得再手动
+      // 乘界面缩放，否则视觉尺寸是 scale²。详见上方 _showReaderImageContextMenu 注释。
       final Offset anchor = overlay.globalToLocal(globalPosition);
 
       final bool hasAudio = _audiobookController != null &&
@@ -294,27 +299,27 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       final List<PopupMenuEntry<String>> items = <PopupMenuEntry<String>>[
         PopupMenuItem<String>(
           value: 'search',
-          height: kMinInteractiveDimension * menuScale,
-          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+          height: kMinInteractiveDimension,
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.search_outlined, size: 18.0 * menuScale),
-              SizedBox(width: 12.0 * menuScale),
-              Text(t.search, style: TextStyle(fontSize: 14.0 * menuScale)),
+              Icon(Icons.search_outlined, size: 18.0),
+              const SizedBox(width: 12.0),
+              Text(t.search, style: TextStyle(fontSize: 14.0)),
             ],
           ),
         ),
         PopupMenuItem<String>(
           value: 'copy',
-          height: kMinInteractiveDimension * menuScale,
-          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+          height: kMinInteractiveDimension,
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.copy_outlined, size: 18.0 * menuScale),
-              SizedBox(width: 12.0 * menuScale),
-              Text(t.copy, style: TextStyle(fontSize: 14.0 * menuScale)),
+              Icon(Icons.copy_outlined, size: 18.0),
+              const SizedBox(width: 12.0),
+              Text(t.copy, style: TextStyle(fontSize: 14.0)),
             ],
           ),
         ),
@@ -323,30 +328,28 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         // （TODO-1279），旧菜单只有查词 / 复制 / 导出，无从收藏当前句；此项填平缺口。
         PopupMenuItem<String>(
           value: 'favorite',
-          height: kMinInteractiveDimension * menuScale,
-          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+          height: kMinInteractiveDimension,
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.star_border, size: 18.0 * menuScale),
-              SizedBox(width: 12.0 * menuScale),
-              Text(t.action_favorite,
-                  style: TextStyle(fontSize: 14.0 * menuScale)),
+              Icon(Icons.star_border, size: 18.0),
+              const SizedBox(width: 12.0),
+              Text(t.action_favorite, style: TextStyle(fontSize: 14.0)),
             ],
           ),
         ),
         if (hasAudio)
           PopupMenuItem<String>(
             value: 'export',
-            height: kMinInteractiveDimension * menuScale,
-            padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+            height: kMinInteractiveDimension,
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Icon(Icons.movie_creation_outlined, size: 18.0 * menuScale),
-                SizedBox(width: 12.0 * menuScale),
-                Text(t.audiobook_export_clip,
-                    style: TextStyle(fontSize: 14.0 * menuScale)),
+                Icon(Icons.movie_creation_outlined, size: 18.0),
+                const SizedBox(width: 12.0),
+                Text(t.audiobook_export_clip, style: TextStyle(fontSize: 14.0)),
               ],
             ),
           ),
@@ -358,11 +361,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
           Offset.zero & overlay.size,
         ),
-        constraints: BoxConstraints(
-          minWidth: 112.0 * menuScale,
-          maxWidth: 280.0 * menuScale,
-        ),
-        menuPadding: EdgeInsets.symmetric(vertical: 8.0 * menuScale),
+        constraints: const BoxConstraints(minWidth: 112.0, maxWidth: 280.0),
+        menuPadding: const EdgeInsets.symmetric(vertical: 8.0),
         items: items,
       );
       if (!mounted) return;
@@ -477,8 +477,10 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       return const SizedBox.shrink();
     }
     final Size overlaySize = overlayBox.size;
-    final double menuScale = _readerImageMenuScale;
-    final double barHeight = kMinInteractiveDimension * menuScale;
+    // BUG-1438：本操作条是插进**根 Overlay** 的 OverlayEntry，落在全局
+    // HibikiAppUiScale 的缩放画布内，已天然跟随界面大小；不得再乘
+    // _readerImageMenuScale（那是给中和层内 chrome 用的），否则视觉尺寸是 scale²。
+    const double barHeight = kMinInteractiveDimension;
     const double gap = 8;
     const double handleReserve = 32 + gap;
 
@@ -488,11 +490,18 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     double selectionTop;
     double selectionBottom;
     if (r != null && webBox != null) {
-      final Offset topGlobal = webBox.localToGlobal(
-        Offset(r['x'] ?? 0, r['y'] ?? 0),
+      // BUG-1438：选区矩形的**两个角**都要过 localToGlobal→globalToLocal，不能只映射
+      // 顶边再加上未换算的 height。`r` 来自 WebView（中和层内的真实像素），而
+      // selectionTop 已在 Overlay 画布空间——两者相加是混量纲，界面大小≠100% 时
+      // 「上方放不下→翻到选区下方」这一分支会偏 (1−1/scale)×选区高。
+      final double rx = r['x'] ?? 0;
+      final double ry = r['y'] ?? 0;
+      final Offset topGlobal = webBox.localToGlobal(Offset(rx, ry));
+      final Offset bottomGlobal = webBox.localToGlobal(
+        Offset(rx, ry + (r['height'] ?? 0)),
       );
       selectionTop = overlayBox.globalToLocal(topGlobal).dy;
-      selectionBottom = selectionTop + (r['height'] ?? 0);
+      selectionBottom = overlayBox.globalToLocal(bottomGlobal).dy;
     } else {
       selectionTop = overlaySize.height / 2;
       selectionBottom = selectionTop;
@@ -515,16 +524,16 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       return InkWell(
         onTap: () => _runSelectionAction(action),
         child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: 12.0 * menuScale,
-            vertical: 10.0 * menuScale,
+          padding: const EdgeInsets.symmetric(
+            horizontal: 12.0,
+            vertical: 10.0,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(icon, size: 18.0 * menuScale),
-              SizedBox(width: 8.0 * menuScale),
-              Text(label, style: TextStyle(fontSize: 14.0 * menuScale)),
+              Icon(icon, size: 18.0),
+              const SizedBox(width: 8.0),
+              Text(label, style: TextStyle(fontSize: 14.0)),
             ],
           ),
         ),
@@ -543,7 +552,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
             elevation: 6,
             color: theme.popupMenuTheme.color ??
                 theme.colorScheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(8.0 * menuScale),
+            borderRadius: BorderRadius.circular(8.0),
             clipBehavior: Clip.antiAlias,
             child: Row(
               mainAxisSize: MainAxisSize.min,

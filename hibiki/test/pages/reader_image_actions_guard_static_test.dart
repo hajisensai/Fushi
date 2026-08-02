@@ -70,45 +70,40 @@ void main() {
     // so the old corpus-wide isNot(Clipboard.setData) guard was over-broad and removed.
   });
 
-  test('reader image context menu scales with reader chrome only', () {
+  test('reader image context menu does not double-scale with ui scale', () {
     final String source = readReaderPageSource();
 
-    expect(source, contains('double get _readerImageMenuScale'));
+    // BUG-1438：本用例原先要求菜单尺寸乘 `_readerImageMenuScale`，方向是反的。
+    // 菜单由 PopupMenuRoute 承载，挂在根 Overlay = 全局 HibikiAppUiScale 的缩放画布
+    // 内，画布→屏幕这一跳已按 scale 放大过一次；阅读器 chrome 之所以要手动乘，是因为
+    // chrome 在 HibikiAppUiScaleNeutralizer **之内**（净缩放=1）。把 chrome 的规则套到
+    // 菜单上 → 视觉尺寸 scale²（实测 scale=2 时 chrome 文字 40px、菜单 80px）。
+    // 现在菜单尺寸一律写常量，"随界面大小缩放"由它所在的画布负责。
+    // 真行为断言见 test/pages/context_menu_ui_scale_guard_test.dart。
+    expect(source, isNot(contains('double get _readerImageMenuScale')),
+        reason: '双重缩放根源的 getter 必须保持删除状态');
+
     final String menu = _functionSource(
       source,
       'Future<void> _showReaderImageContextMenuAtGlobalPosition(',
       'Future<void> _shareReaderImage(String imgUrl)',
     );
 
-    expect(menu, contains('final double menuScale = _readerImageMenuScale'));
+    // 尺寸写常量，且不得再出现任何 menuScale 乘法。
+    expect(menu, contains('minWidth: 112.0'));
+    expect(menu, contains('maxWidth: 280.0'));
+    expect(menu, contains('height: kMinInteractiveDimension,'));
+    expect(menu, contains('horizontal: 16.0'));
+    expect(menu, contains('size: 18.0'));
+    expect(menu, contains('width: 12.0'));
+    expect(menu, contains('fontSize: 14.0'));
     expect(
-      RegExp(r'minWidth:\s*112(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
-      isTrue,
-    );
-    expect(
-      RegExp(r'maxWidth:\s*280(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
-      isTrue,
-    );
-    expect(
-      RegExp(r'height:\s*kMinInteractiveDimension\s*\*\s*menuScale')
-          .hasMatch(menu),
-      isTrue,
-    );
-    expect(
-      RegExp(r'horizontal:\s*16(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
-      isTrue,
-    );
-    expect(
-      RegExp(r'size:\s*18(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
-      isTrue,
-    );
-    expect(
-      RegExp(r'width:\s*12(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
-      isTrue,
-    );
-    expect(
-      RegExp(r'fontSize:\s*14(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
-      isTrue,
+      menu
+          .split('\n')
+          .where((String l) => !l.trimLeft().startsWith('//'))
+          .join('\n'),
+      isNot(contains('menuScale')),
+      reason: '菜单在缩放画布内已天然跟随界面大小，再乘一次得 scale²（BUG-1438）',
     );
 
     // The menu anchor must be mapped through the Overlay RenderBox so the global
@@ -125,14 +120,12 @@ void main() {
       isTrue,
       reason: 'menu Rect must anchor on overlay-local coords, not raw global',
     );
-    // The anchor mapping must NOT read/scale by menuScale (content scale only).
-    expect(menu, isNot(contains('anchor.dx * menuScale')));
-    expect(menu, isNot(contains('anchor.dy * menuScale')));
-    expect(menu, isNot(contains('globalPosition.dx * menuScale')));
-    expect(menu, isNot(contains('globalPosition.dy * menuScale')));
+    // 锚点绝不能被任何缩放系数改写——它由 Overlay 的 render transform 负责换算。
+    expect(menu, isNot(contains('anchor.dx *')));
+    expect(menu, isNot(contains('anchor.dy *')));
+    expect(menu, isNot(contains('globalPosition.dx *')));
+    expect(menu, isNot(contains('globalPosition.dy *')));
     expect(menu, isNot(contains('webViewOffset *')));
-    expect(menu, isNot(contains('webViewOffset.dx * menuScale')));
-    expect(menu, isNot(contains('webViewOffset.dy * menuScale')));
   });
 
   test('expanded reader image viewer exposes Windows right-click copy menu',
