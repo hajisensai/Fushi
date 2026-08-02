@@ -267,6 +267,47 @@ class InputBinding {
     LogicalKeyboardKey.backquote: PhysicalKeyboardKey.backquote,
   };
 
+  /// [_logicalToPhysical] 的反向索引（同一张真相源，不是第二份手写表）。
+  ///
+  /// 正向表是 1:1 的（每个物理键只被一个逻辑键映射），由
+  /// `input_binding_test` 的「反向表与正向表等大」守卫锁死；一旦有人往正向表
+  /// 里塞出第二个指向同一物理键的逻辑键，反向表会静默丢一条，守卫直接红。
+  static final Map<PhysicalKeyboardKey, LogicalKeyboardKey> _physicalToLogical =
+      <PhysicalKeyboardKey, LogicalKeyboardKey>{
+    for (final MapEntry<LogicalKeyboardKey, PhysicalKeyboardKey> entry
+        in _logicalToPhysical.entries)
+      entry.value: entry.key,
+  };
+
+  /// 仅供守卫测试比对两表基数用；不参与运行时逻辑。
+  @visibleForTesting
+  static int get logicalToPhysicalLength => _logicalToPhysical.length;
+
+  /// 同上。
+  @visibleForTesting
+  static int get physicalToLogicalLength => _physicalToLogical.length;
+
+  /// BUG-1422：把「快捷键录入」拿到的按键归一化成应当持久化的逻辑键。
+  ///
+  /// Windows 微软 IME 激活时引擎会把按下字母的 [KeyEvent.logicalKey] 改写成
+  /// [LogicalKeyboardKey.process]，而 USB-HID 的 [KeyEvent.physicalKey] 不受影响。
+  /// 运行时解析（`HibikiShortcutRegistry.resolveKeyboard`）早就有这条物理键回退，
+  /// **录入侧却直接存 `event.logicalKey`**：于是 IME 下按物理 Z 存进去的是
+  /// `Process`（显示成一个没人认识的键，且运行时永远匹配不上），用户看到的就是
+  /// 「录不进去 / 录完没反应」。捕获侧与运行时必须共用同一条契约。
+  ///
+  /// 回退**只在 `logicalKey == process` 时启用**，与运行时判据逐字一致：引擎给出
+  /// 真实逻辑键时一律原样返回，非美式布局（AZERTY / QWERTZ）的字母语义不被物理位
+  /// 覆盖。表外的物理键（numpad、F13+、game*）保持 `process` 原样返回，由调用方的
+  /// 既有流程处理，不猜。
+  static LogicalKeyboardKey normalizeCapturedKey({
+    required LogicalKeyboardKey logicalKey,
+    required PhysicalKeyboardKey physicalKey,
+  }) {
+    if (logicalKey != LogicalKeyboardKey.process) return logicalKey;
+    return _physicalToLogical[physicalKey] ?? logicalKey;
+  }
+
   /// 本 binding 逻辑键对应的物理键（USB HID 扫描码）；不在覆盖表内（如 game* 键、
   /// numpad、F13+）返回 null。仅供 IME 改写 logicalKey 时的物理键回退使用，绝不进入
   /// [==] / [hashCode] / [serialize]（保持 Set 去重、冲突检测、JSON 兼容不变）。
