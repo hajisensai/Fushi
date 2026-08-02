@@ -1,4 +1,4 @@
-## BUG-1430 · 漫画扩展列表筛选不生效 + 语言下拉卡顿
+## BUG-1441 · 漫画扩展列表筛选不生效 + 语言下拉卡顿
 - **报告**：2026-08-02（用户：截图，「来源」页装了 keiyoushi 仓库后，语言选 JA、搜索框输入 `raw`，列表纹丝不动；下拉框很卡）
 - **真实性**：✅ 真 bug，三个独立根因叠在一起
   1. **搜索被仓库级字段打成全命中** —— `hibiki/lib/src/media/manga/mihon/mihon_extensions_page.dart:363`（改前）把 `extension.storeUrl` 塞进可搜字段。同一仓库里每个扩展的 `storeUrl` 完全一样，keiyoushi 的索引地址是

@@ -13,7 +13,7 @@ import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// keiyoushi 这类真实仓库的索引地址：注意路径里带 `raw`（GitHub 原始文件直链）。
-/// BUG-1430 的一半根因就长在这个字符串上——它曾经是可搜字段。
+/// BUG-1441 的一半根因就长在这个字符串上——它曾经是可搜字段。
 const String _kRepoIndexUrl =
     'https://github.com/keiyoushi/extensions/raw/repo/index.pb';
 
@@ -98,7 +98,7 @@ void main() {
     expect(find.text('Unrelated extension'), findsOneWidget);
   });
 
-  // BUG-1430（其一）：可搜字段里混进了**仓库级**的 `storeUrl`。同一个仓库的每个
+  // BUG-1441（其一）：可搜字段里混进了**仓库级**的 `storeUrl`。同一个仓库的每个
   // 扩展 storeUrl 完全一样，于是任何命中该 URL 的查询都会「命中全部」——用户搜
   // 「raw」（想找 RawKuma 这类生肉源），keiyoushi 索引地址里的斜杠 raw 斜杠让 1900
   // 个扩展一个不少地留下来，看上去就是「筛选完全不生效」。
@@ -141,7 +141,7 @@ void main() {
     expect(find.text('Akuma'), findsNothing);
   });
 
-  // BUG-1430（其二）：语言下拉选 JA 时，实现额外放行 language 为 all 的扩展。
+  // BUG-1441（其二）：语言下拉选 JA 时，实现额外放行 language 为 all 的扩展。
   // keiyoushi 的 all 多是多语言聚合站，于是选了日语整屏还是 all——用户口径同样
   // 是「筛选不生效」。all 现在是下拉里的一个普通选项，选 JA 就只有 JA。
   testWidgets('语言选 JA 不再混进 all 语言的扩展', (WidgetTester tester) async {
@@ -186,7 +186,7 @@ void main() {
   // 既不能自带第二层可滚动列表，也不能再摆一套页面 chrome。同时三个页头动作
   // 一个都不能丢。
   //
-  // BUG-1430：宿主现在是 CustomScrollView，内嵌节返回 sliver。
+  // BUG-1441：宿主现在是 CustomScrollView，内嵌节返回 sliver。
   testWidgets('embedded 模式可直接塞进「来源」视图的 CustomScrollView：无 chrome、无自带滚动、动作齐全',
       (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
@@ -227,7 +227,7 @@ void main() {
     expect(tester.takeException(), null);
   });
 
-  // BUG-1430（其三，也是「下拉框很卡」的真正来源）：内嵌节以前是裸 Column，
+  // BUG-1441（其三，也是「下拉框很卡」的真正来源）：内嵌节以前是裸 Column，
   // keiyoushi 的 1900+ 个扩展会全部实体化成 RenderObject —— Column 没有视口
   // 裁剪，每帧都要布局并绘制全部条目。这条守卫锚在「视口外的条目根本没被建出来」
   // 上：改回 Column（或任何非 sliver 容器）都会让它变红。

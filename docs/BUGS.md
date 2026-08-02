@@ -29,12 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1337 条。点号进各自文件。
+> 共 1339 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1441](bugs/BUG-1441-manga-extension-filter-and-lag.md) | ✅ | ✅ | 漫画扩展列表筛选不生效 + 语言下拉卡顿 |
 | [BUG-1437](bugs/BUG-1437-renumber-selfcheck-blind.md) | ✅ | ✅ | renumber 自校验与替换共用同一扫描器，漏改文件被谎报零残留 |
 | [BUG-1432](bugs/BUG-1432-ime-physical-key-ledger.md) | ✅ | ✅ | TODO-2652「三处快捷键台账仍记裸 logicalKey」经查证伪：`LogicalKeyboardKey.process` 在 5 个出包平台上根本不可达 |
+| [BUG-1431](bugs/BUG-1431-mokuro-source-belongs-with-extensions.md) | ✅ | ✅ | mokuro.moe 挂在本地扫描根下，应与漫画扩展同级 |
 | [BUG-1430](bugs/BUG-1430-subtitle-obscure-switch-lag.md) | ✅ | ✅ | 切换字幕遮罩模式卡顿：两次事务落盘 + UI 等落盘 + 全局广播重建全 app |
 | [BUG-1429](bugs/BUG-1429-bug-tool-number-pool-misses-uncommitted-worktrees.md) | ✅ | ✅ | bug.dart 取号扫不到并发工作区未提交的 bug 文件，一天连撞六次 |
 | [BUG-1428](bugs/BUG-1428-zero-context-patch-drift-silent.md) | ✅ | ✅ | 零上下文补丁漂移无声：git apply --unidiff-zero 对上游漂移 exit 0 后盲插 |

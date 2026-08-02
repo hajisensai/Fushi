@@ -27,7 +27,7 @@ import 'package:hibiki/utils.dart';
 /// 显示，应该和漫画扩展同一层级」。挪进「漫画源」后它与扩展源同构——同一节、同一
 /// 种开关语义（关掉 = 不在「浏览」里出现）。
 ///
-/// 🔴 本页的滚动容器必须是 [CustomScrollView]（BUG-1430）：第 2 节要渲染整个扩展
+/// 🔴 本页的滚动容器必须是 [CustomScrollView]（BUG-1441）：第 2 节要渲染整个扩展
 /// 仓库（keiyoushi 有 1900+ 条），只有 sliver 才能懒建。换回 `ListView` +
 /// 内嵌 `Column` 会立刻把「语言下拉一展开就卡死」带回来。
 ///

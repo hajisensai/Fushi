@@ -23,7 +23,7 @@ import 'package:hibiki/utils.dart';
 /// - `build` 返回的是**sliver**（[SliverMainAxisGroup]），由外层 `CustomScrollView`
 ///   直接消费。
 ///
-/// 🔴 内嵌形态必须是 sliver，不能是 `Column`（BUG-1430）：keiyoushi 这类完整仓库
+/// 🔴 内嵌形态必须是 sliver，不能是 `Column`（BUG-1441）：keiyoushi 这类完整仓库
 /// 有 1900+ 个扩展，塞进 `Column` 就是 1900 个 RenderObject 全部实体化——`Column`
 /// 没有视口裁剪，每一帧都要布局并绘制全部条目，于是「语言下拉一展开就卡死」「改一
 /// 次筛选卡几秒」。外层滚动容器换成 `CustomScrollView` 后，这里用 `SliverList`
@@ -372,7 +372,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     // 语言码一律折成小写做值域：仓库里同一门语言大小写不统一时不会分裂成两项。
     // `all`（多语言扩展）是**一个普通语言项**，不再被强行混进每一种语言里——
     // 选 JA 却整屏都是 `all`（而且 keiyoushi 的 `all` 大多是聚合站）正是用户说的
-    // 「筛选不生效」的一半（BUG-1430）。要看它就在下拉里选 ALL。
+    // 「筛选不生效」的一半（BUG-1441）。要看它就在下拉里选 ALL。
     final List<String> languages = manager.available
         .map((MihonAvailableExtension extension) =>
             extension.language.toLowerCase())
@@ -391,7 +391,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       // 每个扩展都一样：keiyoushi 的索引地址是
       // `https://github.com/keiyoushi/extensions/raw/repo/index.pb`，归一化后含
       // `raw`/`github`/`repo`/`index`，于是搜「raw」整个仓库 1900 个扩展全部命中，
-      // 看起来就是「筛选完全没生效」（BUG-1430）。`language` 同理是低基数共享值，
+      // 看起来就是「筛选完全没生效」（BUG-1441）。`language` 同理是低基数共享值，
       // 且已有专门的语言下拉，留在这里只会把「all」这类查询打成全命中。
       (MihonAvailableExtension extension) => <String>[
         extension.name,
