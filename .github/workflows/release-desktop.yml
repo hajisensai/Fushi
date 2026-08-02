@@ -511,13 +511,27 @@ jobs:
       - name: Smoke test bundled ffmpeg in Windows bundle
         shell: pwsh
         run: |
-          $target = Join-Path $PWD 'hibiki\build\windows\x64\runner\Release\ffmpeg.exe'
+          $releaseDir = Join-Path $PWD 'hibiki\build\windows\x64\runner\Release'
+          $target = Join-Path $releaseDir 'ffmpeg.exe'
           if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
             throw "Missing bundled ffmpeg executable: $target"
           }
           & $target -version
           if ($LASTEXITCODE -ne 0) {
             throw "Bundled ffmpeg failed -version with exit code $LASTEXITCODE"
+          }
+          # BUG-1420: ffprobe is a SEPARATE executable with its own consumers
+          # (embedded subtitle fonts, audio container tags). A bundle that ships
+          # a healthy ffmpeg but a missing/broken ffprobe degrades silently -
+          # both consumers swallow the ProcessException by design - so gate it
+          # here with the same -version check rather than trusting the copy step.
+          $probeTarget = Join-Path $releaseDir 'ffprobe.exe'
+          if (-not (Test-Path -LiteralPath $probeTarget -PathType Leaf)) {
+            throw "Missing bundled ffprobe executable: $probeTarget"
+          }
+          & $probeTarget -version
+          if ($LASTEXITCODE -ne 0) {
+            throw "Bundled ffprobe failed -version with exit code $LASTEXITCODE"
           }
           $fixtureCommand = Get-Command ffmpeg -ErrorAction SilentlyContinue
           if ($null -eq $fixtureCommand) {

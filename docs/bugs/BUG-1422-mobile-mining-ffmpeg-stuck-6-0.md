@@ -53,6 +53,14 @@
 - **[ ] ② 未加自动化测试** — 现有 `hibiki/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart`
   静态抠二进制内嵌 configure 串与 libx264 符号，迁移后需同步期望值；另需补一条
   「vendored ffmpeg-kit 的 FFmpeg 主版本不得低于 N」的守卫，避免再次悄悄落后一个大版本。
+- **收敛目标（后续，不在本条范围内）**：三条链当前是 播放 libmpv 6.1.6 / 桌面制卡
+  ffmpeg-min n7.1.5 / 移动制卡 6.0，**三个版本**。FFmpeg 现最新稳定是 **n8.1.2**
+  （`n7.1.5` 是 7.1 分支 tip，`n8.2-dev` 未发）。本条落地后移动端就在 8.1.2，届时
+  把桌面 ffmpeg-min 从 n7.1.5 也抬到 n8.1.2，可让**制卡两端同 ref**，cert-pin 补丁
+  收敛成**一个** rebase 目标（当前是桌面 7.1.5 + 移动 6.0 两个）。
+  桌面那一步很便宜——`build-ffmpeg-min.sh` 的 `FFMPEG_REF` 一行 + 重跑 ffmpeg-min.yml
+  重新 vendor，行为回归由 smoke-test.sh 兜（它逐条覆盖了 Hibiki 实际用的参数形态）。
+  **但必须单独一个 PR**：把「补漏装配」和「升大版本」混在一起，出回归无法二分定位。
 - **备注**：本条**不能与 BUG-1420/1421 同批做**——需要独立 worktree、远程 Mac 构建机
   （iOS xcframework 只能 macOS+Xcode 编，且必须 `brew install nasm`，否则 x86_64 模拟器
   切片的 x264 会挂**而 arm64 切片先成功**，极易误判成「编好了」，见
