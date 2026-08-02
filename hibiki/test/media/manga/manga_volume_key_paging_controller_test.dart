@@ -44,9 +44,9 @@ void main() {
 
     controller.apply(enabled: true, platformSupported: true);
     await Future<void>.delayed(Duration.zero);
-    expect(outbound, <MethodCall>[
-      const MethodCall('setInterceptEnabled', true),
-    ]);
+    expect(outbound, hasLength(1));
+    expect(outbound.single.method, 'setInterceptEnabled');
+    expect(outbound.single.arguments, isTrue);
 
     await sendNative('onVolumeDown');
     await sendNative('onVolumeDown');
@@ -58,7 +58,8 @@ void main() {
 
     controller.dispose();
     await Future<void>.delayed(Duration.zero);
-    expect(outbound.last, const MethodCall('setInterceptEnabled', false));
+    expect(outbound.last.method, 'setInterceptEnabled');
+    expect(outbound.last.arguments, isFalse);
     await sendNative('onVolumeDown');
     expect(turns, <String>['next', 'previous'], reason: '销毁后 handler 必须已清空');
   });
