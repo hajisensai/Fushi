@@ -2,10 +2,18 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'reader_hibiki_page_source_corpus.dart';
 
-/// TODO-954 守卫：阅读器**文字选区右键菜单**（查词 / 复制 / 导出）必须随界面大小缩放
-/// （`menuScale = _readerImageMenuScale`，与图片右键同范式，落在 HibikiAppUiScale 内的
-/// Overlay 渲染链上），且导出入口从查词弹窗 header 迁到选区右键（Windows Flutter 菜单 +
-/// 移动端原生 ContextMenu），防止回退成「右键不吃界面大小」/「弹窗里塞导出按钮」。
+/// TODO-954 守卫：阅读器**文字选区右键菜单**（查词 / 复制 / 收藏 / 导出）随界面大小
+/// 缩放，且导出入口从查词弹窗 header 迁到选区右键（Windows Flutter 菜单 + 移动端原生
+/// ContextMenu），防止回退成「弹窗里塞导出按钮」。
+///
+/// BUG-1438 修正了本守卫原来的方向：它曾要求菜单尺寸乘 `menuScale =
+/// _readerImageMenuScale`。那是**双重缩放**——菜单挂在根 Overlay，即全局
+/// HibikiAppUiScale 的缩放画布内，画布→屏幕这一跳已经按 scale 放大过一次；
+/// 而阅读器 chrome 需要手动乘，是因为它在 HibikiAppUiScaleNeutralizer **之内**
+/// （净缩放=1）。两者在中和器的两侧，规则不能互抄。实测 scale=2 时同样写
+/// `fontSize: 14 * menuScale`，chrome 渲染 40px 而菜单 80px。
+/// 「菜单随界面大小缩放」这个诉求本身没变，只是由画布负责，代码写常量即可。
+/// 真行为断言（线性而非平方）见 test/pages/context_menu_ui_scale_guard_test.dart。
 void main() {
   String functionSource(String source, String start, String end) {
     final int startIndex = source.indexOf(start);
@@ -31,10 +39,6 @@ void main() {
       'Future<void> _exportAudiobookClipFromSelection()',
     );
 
-    // Content scale: the menu must derive from _readerImageMenuScale (same
-    // getter the image menu uses), never from a freshly read HibikiAppUiScale.
-    expect(menu, contains('final double menuScale = _readerImageMenuScale'));
-
     // Anchor mapped through the Overlay RenderBox (FittedBox transform absorbed);
     // the Rect must use the mapped `anchor`, not raw globalPosition.
     expect(menu, contains('overlay.globalToLocal(globalPosition)'));
@@ -43,38 +47,24 @@ void main() {
       isTrue,
       reason: 'menu Rect must anchor on overlay-local coords, not raw global',
     );
-    expect(menu, isNot(contains('anchor.dx * menuScale')));
-    expect(menu, isNot(contains('globalPosition.dx * menuScale')));
+    expect(menu, isNot(contains('anchor.dx *')));
+    expect(menu, isNot(contains('globalPosition.dx *')));
 
-    // Every menu item dimension scales with menuScale.
+    // BUG-1438：尺寸写常量，不得再乘任何界面缩放系数（否则 scale²）。
+    expect(menu, contains('minWidth: 112.0'));
+    expect(menu, contains('maxWidth: 280.0'));
+    expect(menu, contains('height: kMinInteractiveDimension,'));
+    expect(menu, contains('horizontal: 16.0'));
+    expect(menu, contains('size: 18.0'));
+    expect(menu, contains('width: 12.0'));
+    expect(menu, contains('fontSize: 14.0'));
     expect(
-      RegExp(r'minWidth:\s*112(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
-      isTrue,
-    );
-    expect(
-      RegExp(r'maxWidth:\s*280(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
-      isTrue,
-    );
-    expect(
-      RegExp(r'height:\s*kMinInteractiveDimension\s*\*\s*menuScale')
-          .hasMatch(menu),
-      isTrue,
-    );
-    expect(
-      RegExp(r'horizontal:\s*16(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
-      isTrue,
-    );
-    expect(
-      RegExp(r'size:\s*18(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
-      isTrue,
-    );
-    expect(
-      RegExp(r'width:\s*12(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
-      isTrue,
-    );
-    expect(
-      RegExp(r'fontSize:\s*14(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
-      isTrue,
+      menu
+          .split('\n')
+          .where((String l) => !l.trimLeft().startsWith('//'))
+          .join('\n'),
+      isNot(contains('menuScale')),
+      reason: '菜单在缩放画布内已天然跟随界面大小，再乘一次得 scale²（BUG-1438）',
     );
 
     // Three actions present: search, copy, export.
