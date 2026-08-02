@@ -188,7 +188,7 @@ class _FakeSyncBackend implements SyncBackend {
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   }) =>
       _store.ensureFolder(rootFolderId, bookTitle);
   @override

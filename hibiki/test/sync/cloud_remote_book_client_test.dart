@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/cloud_remote_book_client.dart';
@@ -103,7 +102,7 @@ class _ControllableSyncBackend implements SyncBackend {
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   }) async =>
       throw UnimplementedError();
   @override

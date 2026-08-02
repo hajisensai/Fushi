@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -92,7 +91,7 @@ class _OrphanFakeBackend implements SyncBackend {
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   }) async =>
       throw UnimplementedError();
   @override

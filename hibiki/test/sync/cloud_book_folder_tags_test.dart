@@ -162,7 +162,7 @@ class _FakeBookFolderBackend implements SyncBackend {
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   }) async =>
       throw UnimplementedError();
   @override

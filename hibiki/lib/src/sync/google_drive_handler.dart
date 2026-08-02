@@ -268,7 +268,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolder,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   }) async {
     final sanitized = requireBookFolderName(bookTitle);
 
@@ -311,6 +311,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
       final folderId = created.id!;
       folderIdCache[sanitized] = folderId;
 
+      final Uint8List? coverData = await readCoverData?.call();
       if (coverData != null) {
         try {
           await _uploadCover(api, folderId: folderId, coverData: coverData);

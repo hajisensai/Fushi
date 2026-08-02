@@ -157,7 +157,7 @@ class _FakeSyncBackend implements SyncBackend {
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   }) {
     ensureBookFolderCalled = true;
     return _store.ensureFolder(rootFolderId, bookTitle);

@@ -314,7 +314,7 @@ class OneDriveSyncBackend extends SyncBackend
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   }) async {
     final sanitized = requireBookFolderName(bookTitle);
 
@@ -346,6 +346,7 @@ class OneDriveSyncBackend extends SyncBackend
     }
     folderIdCache[sanitized] = folderId;
 
+    final Uint8List? coverData = await readCoverData?.call();
     if (coverData != null) {
       try {
         final format = detectCoverFormat(coverData);

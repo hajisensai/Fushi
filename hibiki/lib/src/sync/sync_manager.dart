@@ -379,20 +379,16 @@ class SyncManager {
 
     final rootId = await _backend.findOrCreateRootFolder();
 
-    Uint8List? coverData;
-    if (book.coverPath != null) {
-      try {
-        final file = File(book.coverPath!);
-        if (file.existsSync()) coverData = file.readAsBytesSync();
-      } catch (e) {
-        debugPrint('[sync] cover image read failed: $e');
-      }
-    }
-
+    // TODO-2657: 封面字节惰性提供，不再在调用前预读。`ensureBookFolder` 在书名→
+    // folderId 缓存命中时直接 return、封面根本用不上；旧代码却每本书每轮都
+    // `readAsBytesSync()` 读完整张图再丢弃。回调只在后端真的要上传封面（新建/首次
+    // 确认文件夹）时才被调用，cache-miss 分支拿到的字节与从前逐字节相同。
+    final String? coverPath = book.coverPath;
     final folderId = await _backend.ensureBookFolder(
       bookTitle: book.title,
       rootFolderId: rootId,
-      coverData: coverData,
+      readCoverData:
+          coverPath == null ? null : () => _readCoverBytes(coverPath),
     );
 
     final syncFiles = await _backend.listSyncFiles(folderId);
@@ -1041,6 +1037,20 @@ class SyncManager {
         readingTimeMs: Value((stat.readingTimeSec * 1000).round()),
         lastStatisticModified: Value(stat.lastStatisticModified),
       ));
+    }
+  }
+
+  /// 读一本书的封面字节；路径不存在或读失败一律返回 `null`（与旧的
+  /// `coverData == null` 同义，后端据此跳过封面上传）。只被
+  /// [SyncCoverDataProvider] 回调调用，即只在后端真要上传封面时才执行。
+  static Future<Uint8List?> _readCoverBytes(String coverPath) async {
+    try {
+      final File file = File(coverPath);
+      if (!await file.exists()) return null;
+      return await file.readAsBytes();
+    } catch (e) {
+      debugPrint('[sync] cover image read failed: $e');
+      return null;
     }
   }
 
