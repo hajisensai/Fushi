@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1358 条。点号进各自文件。
+> 共 1359 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1454](bugs/BUG-1454-kana-compound-popup-selection.md) | ✅ | ✅ | 查词结果正文含假名词被 ruby 占位文本截断 |
+| [BUG-1453](bugs/BUG-1453-video-gamepad-synthetic-right-click.md) | ✅ | ✅ | 手柄按键同时触发视频动作与右键菜单 |
 | [BUG-1452](bugs/BUG-1452-gal-unselected-thread-implies-audio.md) | ✅ | ✅ | 未选择台词线程时仍显示正在监听与句级音频 |
 | [BUG-1451](bugs/BUG-1451-popup-copy-shortcut-and-context-menu.md) | ✅ | ✅ | 查词弹窗无法复制（Ctrl+C 与右键「复制」都无效） |
 | [BUG-1449](bugs/BUG-1449-gal-helper-bundled-as-plain-files.md) | ✅ | ✅ | helper 改为构建期解压随包，消灭需与本体同步的第二份副本 |

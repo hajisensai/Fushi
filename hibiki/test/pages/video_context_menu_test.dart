@@ -17,6 +17,8 @@ void main() {
   // 方法里多一行注释就会把 _focusOwnership.reclaim 断言挤出窗口凭空变红；400 的
   // 窗口只覆盖开头 22%，2000 的窗口反过来越界读进下一个方法（负向断言指向错对象）。
   final String secondaryTap = methodBody(page, 'void _handleSecondaryTap(');
+  final String showContextMenu =
+      methodBody(page, 'void _showVideoContextMenu(');
 
   group('右键菜单触发与门控', () {
     test('视频控制层挂 onSecondaryTapUp（右键触发）', () {
@@ -27,6 +29,28 @@ void main() {
           reason: '右键松手处的 globalPosition 作 showMenu 锚点');
     });
 
+    test('手柄映射器合成的同源右键在 showMenu 前去重（BUG-1453）', () {
+      final int settle = secondaryTap.indexOf(
+        'VideoGamepadSecondaryTapDeduper.settleDelay',
+      );
+      final int suppress = secondaryTap.indexOf(
+        '_videoGamepadSecondaryTapDeduper.shouldSuppressSecondaryTap(',
+      );
+      final int show =
+          secondaryTap.indexOf('_showVideoContextMenu(globalPosition)');
+      expect(settle, greaterThanOrEqualTo(0),
+          reason: '须等待略大于桌面手柄 60ms 轮询周期，让 pointer-first 双投递可合并');
+      expect(suppress, greaterThan(settle), reason: '等待后须按同一输入时钟检查手柄/右键是否同源');
+      expect(show, greaterThan(suppress), reason: '同源去重必须发生在菜单构造之前，不能先闪菜单再关闭');
+      expect(
+        page.contains(
+          '_videoGamepadSecondaryTapDeduper.recordGamepadPress(',
+        ),
+        isTrue,
+        reason: '视频手柄入口须记录真实按钮边沿供右键入口关联',
+      );
+    });
+
     test('右键菜单仅桌面（移动端门控 no-op）', () {
       // _handleSecondaryTap 第一行必是桌面门控，移动端不弹菜单。
       expect(secondaryTap.contains('if (!_isDesktopVideoControls) return;'),
@@ -35,7 +59,7 @@ void main() {
     });
 
     test('菜单锚定 _videoControlsContext（全屏路由内可弹）', () {
-      final String body = secondaryTap;
+      final String body = showContextMenu;
       expect(body.contains('_videoControlsContext'), isTrue,
           reason: 'showMenu 须用 controls 子树 context，全屏路由复用同一 builder 才能弹出');
       expect(body.contains('showMenu<VoidCallback>('), isTrue,
@@ -53,7 +77,7 @@ void main() {
     // showMenu 所用 Overlay 的 RenderBox 坐标系——FittedBox 缩放被 ancestor 变换自动吸收，
     // 与查词浮层 charRect 走同一「锚点跟随真实渲染几何」范式，对任意 scale 自洽无残差。
     test('菜单锚点用 Overlay 相对变换吃掉界面缩放残差（BUG-260）', () {
-      final String body = secondaryTap;
+      final String body = showContextMenu;
       // 取 showMenu 实际使用的 Navigator(rootNavigator:false) 的 Overlay RenderBox。
       expect(
           body.contains('Overlay.of(ctx).context.findRenderObject()'), isTrue,
@@ -71,7 +95,7 @@ void main() {
 
     test('菜单关闭后归还键盘焦点', () {
       expect(
-          secondaryTap.contains(
+          showContextMenu.contains(
               '_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'),
           isTrue,
           reason: '覆盖层夺焦后不会自动归还，菜单关闭须经 _focusOwnership 归还');
