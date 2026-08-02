@@ -27,6 +27,7 @@ import 'package:hibiki/src/ocr/ocr_types.dart' show OcrRect;
 import 'package:hibiki/src/media/manga/manga_overlay_html.dart';
 import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
 import 'package:hibiki/src/media/manga/manga_reading_stats.dart';
+import 'package:hibiki/src/media/manga/manga_view_prefs.dart';
 import 'package:hibiki/src/media/manga/manga_spread_model.dart';
 import 'package:hibiki/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_library.dart';
@@ -97,7 +98,7 @@ enum MangaReaderInputAction {
   backOrExit,
 }
 
-enum _MangaReaderInputSource { flutter, nativeWebView }
+enum _MangaReaderInputSource { flutter, nativeWebView, volumeKey }
 
 /// Serializes burst page-turn input across asynchronous WebView window loads.
 ///
@@ -597,6 +598,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   String _spreadDirection = 'rtl';
   int _zoomPercent = 100;
 
+  /// 观看偏好快照（打开书时从 [AppModel] 读一次，随文档注入 WebView）。
+  /// 与 [_zoomPercent] 不同，这三项没有页内切换入口，只在设置里改。
+  int _zoomSensitivity = kMangaZoomSensitivityDefault;
+  MangaPageAnimation _pageAnimation = MangaPageAnimation.slide;
+  bool _tapZonePaging = true;
+
   /// 最近一次实际生效的布局（由 [_buildSpreadsFor] 记账），didChangeMetrics
   /// 只在解析结果真变时才重建 spread 序列，避免键盘弹出等无关 metrics 抖动。
   MangaPageLayout _pageLayout = MangaPageLayout.single;
@@ -767,6 +774,8 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
 
   @override
   void dispose() {
+    // 交还音量键所有权（见 _volumeKeysOwned）：必须早于其它拆栈，且无条件执行。
+    _applyVolumeKeyPaging(false);
     ExitFlushRegistry.instance.unregister(_flushPosition);
     final MangaBoxRescanService? rescanService = _rescanService;
     _rescanService = null;
@@ -920,7 +929,13 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       appModel.mangaSpreadPreference,
     );
     _spreadDirection = appModel.mangaReadingDirection == 'ltr' ? 'ltr' : 'rtl';
-    _zoomPercent = appModel.mangaZoomPercent.clamp(50, 200);
+    _zoomPercent = appModel.mangaZoomPercent
+        .clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent);
+    _zoomSensitivity = appModel.mangaZoomSensitivity
+        .clamp(kMangaZoomSensitivityMin, kMangaZoomSensitivityMax);
+    _pageAnimation = MangaPageAnimationKey.fromKey(appModel.mangaPageAnimation);
+    _tapZonePaging = appModel.mangaTapZonePaging;
+    _applyVolumeKeyPaging(appModel.mangaVolumeKeyPaging);
 
     // 阅读模式：用户覆盖优先，null 走自动判定（页图长宽比中位数）。
     final MangaReadingMode mode =
@@ -1153,7 +1168,13 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       appModel.mangaSpreadPreference,
     );
     _spreadDirection = appModel.mangaReadingDirection == 'ltr' ? 'ltr' : 'rtl';
-    _zoomPercent = appModel.mangaZoomPercent.clamp(50, 200);
+    _zoomPercent = appModel.mangaZoomPercent
+        .clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent);
+    _zoomSensitivity = appModel.mangaZoomSensitivity
+        .clamp(kMangaZoomSensitivityMin, kMangaZoomSensitivityMax);
+    _pageAnimation = MangaPageAnimationKey.fromKey(appModel.mangaPageAnimation);
+    _tapZonePaging = appModel.mangaTapZonePaging;
+    _applyVolumeKeyPaging(appModel.mangaVolumeKeyPaging);
     final EpubBookRow row = persistedRow != null
         ? persistedRow.copyWith(
             epubPath: p.basename(mangaJson.path),
@@ -1652,6 +1673,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       restoreFraction: isWebtoon ? _currentFraction : 0,
       documentGeneration: documentGeneration,
       ocrPageIndices: keptPages,
+      zoomSensitivity: _zoomSensitivity,
+      pageAnimation: _pageAnimation,
+      tapZonePaging: _tapZonePaging,
     );
   }
 
@@ -1837,6 +1861,41 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   _MangaReaderInputSource? _lastReaderInputSource;
   DateTime? _lastReaderInputAt;
   Timer? _dictionaryTurnDismissTimer;
+
+  /// 是否已接管音量键。
+  ///
+  /// [VolumeKeyChannel] 是**进程级单例**，EPUB 阅读器也会往同一个 handler 槽里写
+  /// （`audiobook.part.dart` 的 `_setupVolumeKeyHandlers` 无条件覆盖）。漫画页接管后
+  /// 必须在 dispose 里交还——清 handler 并关掉原生拦截，否则退出漫画后音量键继续被
+  /// `MainActivity.dispatchKeyEvent` 吞掉，用户调不动系统音量（BUG-196 的老坑）。
+  bool _volumeKeysOwned = false;
+
+  void _applyVolumeKeyPaging(bool enabled) {
+    // 只有 Android 侧 dispatchKeyEvent 会转发音量键；其它平台连通道都没有。
+    final bool want = enabled && isMobilePlatform;
+    if (want == _volumeKeysOwned) return;
+    _volumeKeysOwned = want;
+    if (want) {
+      VolumeKeyChannel.instance.setHandlers(
+        onVolumeUp: () => _onVolumeKeyTurn(isUp: true),
+        onVolumeDown: () => _onVolumeKeyTurn(isUp: false),
+      );
+      unawaited(VolumeKeyChannel.instance.setInterceptEnabled(true));
+    } else {
+      VolumeKeyChannel.instance.setHandlers();
+      unawaited(VolumeKeyChannel.instance.setInterceptEnabled(false));
+    }
+  }
+
+  /// 音量减 = 页序前进（与 EPUB 阅读器同口径）。方向的 RTL 校正统一在
+  /// [_onMangaTurn] 一侧做，这里只报页序语义。
+  void _onVolumeKeyTurn({required bool isUp}) {
+    if (!mounted) return;
+    _executeReaderInputAction(
+      isUp ? MangaReaderInputAction.previous : MangaReaderInputAction.next,
+      source: _MangaReaderInputSource.volumeKey,
+    );
+  }
 
   void _executeReaderInputAction(
     MangaReaderInputAction action, {
@@ -2841,7 +2900,8 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   }
 
   Future<void> _setZoomPercent(int value) async {
-    final int normalized = value.clamp(50, 200);
+    final int normalized =
+        value.clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent);
     if (_zoomPercent == normalized) return;
     setState(() => _zoomPercent = normalized);
     await appModel.setMangaZoomPercent(normalized);
@@ -2946,12 +3006,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         ),
         PopupMenuItem<_MangaContextAction>(
           value: _MangaContextAction.zoomIn,
-          enabled: _zoomPercent < 200,
+          enabled: _zoomPercent < kMangaZoomMaxPercent,
           child: Text('${t.manga_zoom} + ($_zoomPercent%)'),
         ),
         PopupMenuItem<_MangaContextAction>(
           value: _MangaContextAction.zoomOut,
-          enabled: _zoomPercent > 50,
+          enabled: _zoomPercent > kMangaZoomMinPercent,
           child: Text('${t.manga_zoom} − ($_zoomPercent%)'),
         ),
       ],
@@ -3333,7 +3393,8 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
               _ => null,
             };
             if (value == null) return;
-            final int normalized = value.clamp(50, 200);
+            final int normalized =
+                value.clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent);
             if (_zoomPercent == normalized) return;
             if (mounted) {
               setState(() => _zoomPercent = normalized);
