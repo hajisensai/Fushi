@@ -231,6 +231,18 @@ void main() {
             '实际只找到 ${binaries.length} 个：'
             '${binaries.map((File f) => f.path).join(", ")}',
       );
+      // 规模哨兵按平台再收一道：总数够但全挤在一个平台目录里（另一个被挪走/清空）
+      // 同样是「守卫扫不到东西」，不能靠总数蒙混过关。
+      for (final String platformDir in <String>['macos', 'windows']) {
+        final List<File> perPlatform =
+            _vendoredBinaries(Directory('${vendorRoot.path}/$platformDir'));
+        expect(
+          perPlatform.length,
+          greaterThanOrEqualTo(2),
+          reason: 'third_party/ffmpeg-min/$platformDir 下应有 ffmpeg + ffprobe，'
+              '实际找到 ${perPlatform.length} 个',
+        );
+      }
     });
 
     for (final File binary in _vendoredBinaries(vendorRoot)) {
@@ -258,17 +270,235 @@ void main() {
       });
     }
   });
+
+  group('ffmpeg-min macOS 架构 × 发版 runner 一致性守卫（TODO-2701 ①）', () {
+    test('解析器本身有效：thin arm64 / thin x86_64 / fat 都要认得出', () {
+      // 与上面的扫描自检同款纪律：没有这条，一个恒返回空集的解析器会让下面的
+      // 断言退化成「恒绿」。期望值刻意手写，不与解析器共享常量。
+      final Directory tmp = Directory.systemTemp.createTempSync('ffmin-arch');
+      addTearDown(() => tmp.deleteSync(recursive: true));
+
+      File write(String name, List<int> bytes) =>
+          File('${tmp.path}/$name')..writeAsBytesSync(bytes);
+
+      // MH_MAGIC_64 小端（cf fa ed fe）+ cputype 0x0100000C。
+      expect(
+        machOArchitectures(write('thin-arm64', <int>[
+          0xcf, 0xfa, 0xed, 0xfe, //
+          0x0c, 0x00, 0x00, 0x01,
+          ...List<int>.filled(24, 0),
+        ])),
+        <String>{'arm64'},
+      );
+      // 同上，cputype 0x01000007。
+      expect(
+        machOArchitectures(write('thin-x86', <int>[
+          0xcf, 0xfa, 0xed, 0xfe, //
+          0x07, 0x00, 0x00, 0x01,
+          ...List<int>.filled(24, 0),
+        ])),
+        <String>{'x86_64'},
+      );
+      // MH_MAGIC_64 大端（fe ed fa cf）：字段跟着换字节序。
+      expect(
+        machOArchitectures(write('thin-be', <int>[
+          0xfe, 0xed, 0xfa, 0xcf, //
+          0x01, 0x00, 0x00, 0x0c,
+          ...List<int>.filled(24, 0),
+        ])),
+        <String>{'arm64'},
+      );
+      // FAT_MAGIC + 2 条 arch（fat header 恒大端）。
+      expect(
+        machOArchitectures(write('fat-universal', <int>[
+          0xca, 0xfe, 0xba, 0xbe, //
+          0x00, 0x00, 0x00, 0x02, // nfat_arch = 2
+          0x01, 0x00, 0x00, 0x07, ...List<int>.filled(16, 0), // x86_64
+          0x01, 0x00, 0x00, 0x0c, ...List<int>.filled(16, 0), // arm64
+        ])),
+        <String>{'x86_64', 'arm64'},
+      );
+      // 不是 Mach-O（比如 PE）→ 空集，交给哨兵判红。
+      expect(
+        machOArchitectures(write('not-macho', <int>[
+          0x4d,
+          0x5a,
+          0x90,
+          0x00,
+          ...List<int>.filled(28, 0),
+        ])),
+        isEmpty,
+      );
+    });
+
+    test('入库 macOS 二进制提供的架构必须覆盖发版 runner 的架构', () {
+      final Directory macosDir = Directory('${vendorRoot.path}/macos');
+      final List<File> binaries = _vendoredBinaries(macosDir);
+      // 规模哨兵①：目录被挪走 / 文件改名时必须红，而不是「没有二进制 → 没有
+      // 违规 → 恒绿」。
+      expect(
+        binaries.length,
+        greaterThanOrEqualTo(2),
+        reason: '${macosDir.path} 下应有 ffmpeg + ffprobe，实际找到 '
+            '${binaries.length} 个：${binaries.map((File f) => f.path).join(", ")}',
+      );
+
+      final File workflow =
+          File('${root.path}/.github/workflows/release-desktop.yml');
+      expect(workflow.existsSync(), isTrue, reason: '缺 ${workflow.path}');
+      final String macosJob =
+          _workflowJob(workflow.readAsStringSync(), 'macos');
+      final RegExpMatch? runsOn =
+          RegExp(r'runs-on:\s*(\S+)').firstMatch(macosJob);
+      // 规模哨兵②：解析不出 runner 标签 = 守卫无从比对，必须红。
+      expect(runsOn, isNotNull,
+          reason: 'release-desktop.yml 的 macos job 里没解析出 runs-on；'
+              '守卫无法判断发版机架构');
+      final String label = runsOn!.group(1)!;
+      final String? runnerArch = _macRunnerArchitectures[label];
+      expect(
+        runnerArch,
+        isNotNull,
+        reason: '未知的 macOS runner 标签 `$label`。请在 '
+            '_macRunnerArchitectures 里显式登记它的原生架构——猜标签名会在 '
+            '`macos-13-xlarge`（其实是 arm64）这类例外上判错。',
+      );
+
+      for (final File binary in binaries) {
+        final Set<String> archs = machOArchitectures(binary);
+        // 规模哨兵③：解析不出任何架构（文件被换成占位符 / 解析器坏了）必须红。
+        expect(archs, isNotEmpty,
+            reason: '${binary.path} 解析不出 Mach-O 架构——文件可能不是 Mach-O，'
+                '或已被换成占位符');
+        expect(
+          archs,
+          contains(runnerArch),
+          reason: '${binary.path} 提供 $archs，而 release-desktop.yml 的 macos '
+              'job 跑在 `$label`（$runnerArch）。发版时装配步会把它拷进 .app，'
+              '架构不匹配 → 用户机上 `Bad CPU type in executable`，桌面制卡链全废。\n'
+              '修法二选一：① 把 macos job 换回 $archs 的 runner；'
+              '② 重新 vendor 一份含 $runnerArch 切片的产物'
+              '（`gh workflow run ffmpeg-min.yml`，必要时把配方改成 '
+              '`lipo -create` 出 universal），并把本守卫的期望一起更新。',
+        );
+      }
+    });
+  });
 }
 
-/// 列出 third_party/ffmpeg-min 下所有可执行产物（跳过随包的系统 DLL 与说明文件）。
+/// 列出 third_party/ffmpeg-min 下所有可执行产物（跳过说明文件）。
 ///
 /// 不硬编码平台/文件名清单：将来加 Linux vendor 或换文件名，新产物自动进守卫。
+/// （TODO-2701 ②：随包的 MinGW 运行时 DLL 已删除——Windows 配方 `-static`，
+/// 那两个 dll 从来没进过 ffmpeg.exe 的 import 表。）
 List<File> _vendoredBinaries(Directory vendorRoot) {
   if (!vendorRoot.existsSync()) return <File>[];
   return vendorRoot.listSync(recursive: true).whereType<File>().where((File f) {
     final String name = f.uri.pathSegments.last;
-    // 随包的 MinGW 运行时 DLL 也一起扫——它们同样会被拷进用户机器。
     return !name.endsWith('.md') && !name.endsWith('.txt');
   }).toList()
     ..sort((File a, File b) => a.path.compareTo(b.path));
+}
+
+// ---------------------------------------------------------------------------
+// TODO-2701 ①：macOS 二进制架构 × 发版 runner 架构必须对得上。
+//
+// 入库的 macos/ffmpeg 是 **thin arm64**（Mach-O magic 0xFEEDFACF、cputype
+// 0x0100000C），不是 universal。今天不出事纯粹是巧合：release-desktop.yml 的
+// macos job 跑在 `macos-latest`（Apple Silicon），架构正好一致。任何一侧单独动
+// —— 换 Intel runner（macos-13）、或重新 vendor 出个 x86_64 产物 —— 都会在用户
+// 机上变成 `Bad CPU type in executable`，而且只有发版之后才看得见。
+//
+// 所以钉的不是「必须永远 arm64」（那会把 universal 这种改进也判红），而是**两侧
+// 一致**这条不变式：runner 需要的架构必须落在二进制提供的架构集合里。
+// ---------------------------------------------------------------------------
+
+/// Mach-O cputype → 架构名。
+const Map<int, String> _machOCpuTypes = <int, String>{
+  0x01000007: 'x86_64',
+  0x0100000C: 'arm64',
+  0x00000007: 'i386',
+  0x0000000C: 'arm',
+};
+
+/// GitHub 托管 macOS runner 标签 → 它执行的原生架构。
+///
+/// 刻意用穷举表而不是「标签里带 13 就是 Intel」的猜法：`macos-13-xlarge` 恰恰是
+/// arm64。遇到表里没有的标签直接失败，逼人显式分类，而不是默默按错的架构放行。
+const Map<String, String> _macRunnerArchitectures = <String, String>{
+  'macos-latest': 'arm64',
+  'macos-latest-xlarge': 'arm64',
+  'macos-latest-large': 'x86_64',
+  'macos-15': 'arm64',
+  'macos-15-xlarge': 'arm64',
+  'macos-15-large': 'x86_64',
+  'macos-14': 'arm64',
+  'macos-14-xlarge': 'arm64',
+  'macos-14-large': 'x86_64',
+  'macos-13': 'x86_64',
+  'macos-13-xlarge': 'arm64',
+  'macos-13-large': 'x86_64',
+  'macos-12': 'x86_64',
+};
+
+int _u32be(List<int> b, int at) =>
+    (b[at] << 24) | (b[at + 1] << 16) | (b[at + 2] << 8) | b[at + 3];
+
+int _u32le(List<int> b, int at) =>
+    b[at] | (b[at + 1] << 8) | (b[at + 2] << 16) | (b[at + 3] << 24);
+
+/// 解析 Mach-O 头，返回它实际包含的架构集合。
+///
+/// 同时认 fat（`0xCAFEBABE` / 64 位 offset 的 `0xCAFEBABF`，头恒为 big-endian）
+/// 与 thin（`0xFEEDFACE` / `0xFEEDFACF`，两种字节序都有）。不是 Mach-O 返回空集，
+/// 由调用方的哨兵断言把「解析不出东西」判红。
+Set<String> machOArchitectures(File file) {
+  final RandomAccessFile handle = file.openSync();
+  final List<int> head;
+  try {
+    // fat header 最多 32 字节/条 × 合理条数；4KB 足够覆盖所有 arch 条目。
+    head = handle.readSync(4096);
+  } finally {
+    handle.closeSync();
+  }
+  if (head.length < 8) return <String>{};
+
+  final int magicBe = _u32be(head, 0);
+  final bool isFat = magicBe == 0xCAFEBABE || magicBe == 0xCAFEBABF;
+  if (isFat) {
+    final bool fat64 = magicBe == 0xCAFEBABF;
+    final int entrySize = fat64 ? 32 : 20;
+    final int count = _u32be(head, 4);
+    final Set<String> archs = <String>{};
+    for (int i = 0; i < count; i++) {
+      final int at = 8 + i * entrySize;
+      if (at + 4 > head.length) break;
+      final String? name = _machOCpuTypes[_u32be(head, at)];
+      if (name != null) archs.add(name);
+    }
+    return archs;
+  }
+
+  // thin：magic 的字节序同时决定后续字段的字节序。
+  for (final bool littleEndian in <bool>[false, true]) {
+    final int magic = littleEndian ? _u32le(head, 0) : magicBe;
+    if (magic != 0xFEEDFACE && magic != 0xFEEDFACF) continue;
+    final int cpuType = littleEndian ? _u32le(head, 4) : _u32be(head, 4);
+    final String? name = _machOCpuTypes[cpuType];
+    return name == null ? <String>{} : <String>{name};
+  }
+  return <String>{};
+}
+
+/// 从 workflow 文本里切出某个 job 段（与 windows_vendored_ffmpeg_guard 同款切法）。
+String _workflowJob(String workflow, String name) {
+  final String marker = '\n  $name:\n';
+  final int start = workflow.indexOf(marker);
+  if (start < 0) fail('release-desktop.yml 里找不到 job：$name');
+  final Match? next = RegExp(r'\n  [a-zA-Z0-9_-]+:\n')
+      .firstMatch(workflow.substring(start + marker.length));
+  return workflow.substring(
+    start,
+    next == null ? workflow.length : start + marker.length + next.start,
+  );
 }

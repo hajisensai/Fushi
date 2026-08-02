@@ -49,17 +49,71 @@ void main() {
     expect(bytes[1], equals(0x5A), reason: 'expected PE "MZ" magic byte 1');
   });
 
-  test('vendored Windows ffmpeg runtime DLLs are committed', () {
-    for (final String name in <String>[
-      'libwinpthread-1.dll',
-      'zlib1.dll',
-    ]) {
-      final File dll = File('../third_party/ffmpeg-min/windows/$name');
-      expect(dll.existsSync(), isTrue,
-          reason: 'vendored Windows ffmpeg runtime must exist at '
-              '${dll.absolute.path}; ffmpeg.exe imports this DLL');
-      expect(dll.lengthSync(), greaterThan(32 * 1024),
-          reason: 'vendored $name is suspiciously small');
+  // TODO-2701 (2): the Windows recipe links statically
+  // (--extra-ldflags=-static --pkg-config-flags=--static), so zlib and pthread
+  // are folded into the exe. libwinpthread-1.dll / zlib1.dll survived from the
+  // pre-static MSYS2 generation and were pure dead weight: ffmpeg.exe's import
+  // table never named them. This fence keeps them (and any other side-car
+  // runtime DLL) from creeping back: the invariant is "the vendored Windows
+  // directory holds nothing but the two exes", not "these two DLLs are absent".
+  test('vendored Windows dir ships only the exes, no side-car runtime DLLs',
+      () {
+    final Directory dir = Directory('../third_party/ffmpeg-min/windows');
+    expect(dir.existsSync(), isTrue, reason: 'missing ${dir.absolute.path}');
+    final List<String> names = dir
+        .listSync()
+        .whereType<File>()
+        .map((File f) => f.uri.pathSegments.last)
+        .where((String n) => !n.endsWith('.md') && !n.endsWith('.txt'))
+        .toList()
+      ..sort();
+    // Scale sentinel: an empty/moved directory must fail loudly rather than
+    // satisfy "no DLLs found" vacuously.
+    expect(names, <String>['ffmpeg.exe', 'ffprobe.exe'],
+        reason: 'third_party/ffmpeg-min/windows must contain exactly the two '
+            'statically-linked exes. Extra runtime DLLs mean the recipe stopped '
+            'linking statically - fix build-ffmpeg-min.sh instead of shipping '
+            'MinGW DLLs; missing exes mean the vendored payload is gone.');
+  });
+
+  test('vendored Windows exes import only system DLLs', () {
+    // The DLL names a PE loads - both the import table and any LoadLibrary
+    // call - exist as plain ASCII inside the binary, so a byte scan is enough
+    // and needs no dumpbin/objdump. Anything outside this allowlist would have
+    // to be shipped next to the exe on every user machine.
+    const Set<String> systemDlls = <String>{
+      'advapi32.dll',
+      'bcrypt.dll',
+      'kernel32.dll',
+      'kernelbase.dll',
+      'msvcrt.dll',
+      'ole32.dll',
+      'secur32.dll',
+      'shell32.dll',
+      'user32.dll',
+      'ws2_32.dll',
+    };
+    final RegExp dllPattern = RegExp(r'[A-Za-z0-9_.-]+\.[Dd][Ll][Ll]');
+    final List<File> exes = <File>[
+      File('../third_party/ffmpeg-min/windows/ffmpeg.exe'),
+      File('../third_party/ffmpeg-min/windows/ffprobe.exe'),
+    ];
+    for (final File exe in exes) {
+      expect(exe.existsSync(), isTrue, reason: 'missing ${exe.absolute.path}');
+      final String blob = String.fromCharCodes(exe.readAsBytesSync());
+      final Set<String> referenced = dllPattern
+          .allMatches(blob)
+          .map((RegExpMatch m) => m.group(0)!.toLowerCase())
+          .toSet();
+      // Scale sentinel: a scan that finds no DLL name at all is broken, not
+      // clean - every PE names at least kernel32.
+      expect(referenced, contains('kernel32.dll'),
+          reason: 'DLL-name scan of ${exe.path} found nothing recognisable; '
+              'the guard would pass vacuously');
+      expect(referenced.difference(systemDlls), isEmpty,
+          reason: '${exe.path} references non-system DLLs '
+              '${referenced.difference(systemDlls)}; the Windows recipe must '
+              'keep linking statically so the exe ships alone (TODO-2701)');
     }
   });
 
@@ -79,12 +133,28 @@ void main() {
     );
     expect(windowsJob, contains('ffmpeg.exe'),
         reason: 'the install step must copy ffmpeg.exe into the bundle');
-    expect(windowsJob, contains('libwinpthread-1.dll'),
-        reason: 'ffmpeg.exe imports libwinpthread-1.dll, so the installer '
-            'payload must include it next to ffmpeg.exe');
-    expect(windowsJob, contains('zlib1.dll'),
-        reason: 'ffmpeg.exe imports zlib1.dll, so the installer payload must '
-            'include it next to ffmpeg.exe');
+    expect(windowsJob, contains('ffprobe.exe'),
+        reason: 'the install step must copy ffprobe.exe into the bundle '
+            '(BUG-1420: embedded subtitle fonts and audio container tags '
+            'degrade silently without it)');
+    // TODO-2701 (2): the copy list itself must not resurrect the dead MinGW
+    // runtime DLLs. They are gone from third_party, so naming them here would
+    // make the step throw "Missing vendored ffmpeg-min runtime file" and block
+    // every release. Scoped to the $runtimeFiles array on purpose: prose around
+    // the step may legitimately mention the DLLs to explain why they are gone.
+    final RegExp runtimeList = RegExp(r'\$runtimeFiles\s*=\s*@\(([^)]*)\)');
+    final RegExpMatch? listMatch = runtimeList.firstMatch(windowsJob);
+    expect(listMatch, isNotNull,
+        reason: 'could not locate the \$runtimeFiles copy list in the Windows '
+            'job; this guard cannot verify what gets shipped');
+    final String copyList = listMatch!.group(1)!;
+    expect(copyList, contains('ffmpeg.exe'));
+    expect(copyList, contains('ffprobe.exe'));
+    for (final String dead in <String>['libwinpthread-1.dll', 'zlib1.dll']) {
+      expect(copyList, isNot(contains(dead)),
+          reason: '$dead is no longer vendored (the Windows recipe links '
+              'statically); copying it would hard-fail the release job');
+    }
     expect(
       windowsJob,
       contains(r'hibiki\build\windows\x64\runner\Release'),

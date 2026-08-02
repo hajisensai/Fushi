@@ -104,6 +104,9 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   bool _builtinAvailable = false;
   bool _externalAvailable = false;
   bool _remoteAvailable = false;
+
+  /// 探到了已配对主机，但它明确报模型未下载：选项保留、置灰、下方说明原因。
+  bool _remoteModelsMissing = false;
   bool _lensAvailable = false;
   MangaOcrRemoteTarget? _remoteTarget;
   bool _checkingEngines = false;
@@ -205,7 +208,8 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       }
     }
     // 漫画 P3：探测已配对 host 的远程 OCR 能力（老 host 无 capabilities 字段 →
-    // probe 回 null → 选项隐藏，零破坏）。
+    // probe 回 null → 选项隐藏，零破坏）。host 报了「支持但模型未下载」时 probe
+    // 仍返回 target，UI 据此置灰 + 说明原因（TODO-2635）。
     MangaOcrRemoteTarget? remote;
     if (widget.engines.remoteRunner != null) {
       try {
@@ -218,7 +222,8 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     setState(() {
       _builtinAvailable = builtin;
       _externalAvailable = external;
-      _remoteAvailable = remote != null;
+      _remoteAvailable = remote?.capability.usable ?? false;
+      _remoteModelsMissing = remote?.capability.modelsMissing ?? false;
       _remoteTarget = remote;
       _lensAvailable = widget.engines.lensRunner != null;
       _checkingEngines = false;
@@ -257,7 +262,8 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
               MangaOcrEngineCapability(
                 id: MangaOcrEngineId.pairedHost,
                 supported: widget.engines.remoteRunner != null,
-                ready: remote != null,
+                // 模型没下载的 host 不算 ready，auto 解析不得落到它上面。
+                ready: remote?.capability.usable ?? false,
                 requiresNetwork: true,
                 uploadsImages: true,
                 supportsIncremental: true,
@@ -958,11 +964,24 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
         child: LinearProgressIndicator(),
       );
     }
+    final ThemeData theme = Theme.of(context);
+    // 主机模型未下载：在选项层就说清原因，而不是让用户传完整卷才在 start 阶段
+    // 撞 models_not_ready（TODO-2635）。与 §_folderStatus 的说明式提示同款纪律。
+    final Widget? remoteReason = _remoteModelsMissing
+        ? _errorText(theme, t.manga_remote_ocr_not_ready)
+        : null;
     if (!_builtinAvailable &&
         !_lensAvailable &&
         !_externalAvailable &&
         !_remoteAvailable) {
-      return _errorText(Theme.of(context), t.manga_ocr_engine_none);
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _errorText(theme, t.manga_ocr_engine_none),
+          if (remoteReason != null) remoteReason,
+        ],
+      );
     }
     final List<ButtonSegment<MangaOcrEngineId>> segments =
         <ButtonSegment<MangaOcrEngineId>>[
@@ -981,15 +1000,18 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
         enabled: _externalAvailable,
         label: Text(t.manga_ocr_engine_external),
       ),
-      if (_remoteAvailable)
+      // 与另外三个引擎同构：探到主机就保留 segment，不可用时置灰而非隐藏；
+      // 一台主机都没探到（无配对 / 老 host / 不支持）才整段消失。
+      if (_remoteAvailable || _remoteModelsMissing)
         ButtonSegment<MangaOcrEngineId>(
           value: MangaOcrEngineId.pairedHost,
+          enabled: _remoteAvailable,
           label: Text(t.manga_remote_ocr_engine),
         ),
     ];
     // 只有一个可用引擎时无需选择器，直接省略（仍已在 _refreshEngines 选好）。
-    if (segments.length < 2) return const SizedBox.shrink();
-    return Align(
+    if (segments.length < 2) return remoteReason ?? const SizedBox.shrink();
+    final Widget selector = Align(
       alignment: Alignment.centerLeft,
       child: SegmentedButton<MangaOcrEngineId>(
         showSelectedIcon: false,
@@ -999,6 +1021,12 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
             ? null
             : (Set<MangaOcrEngineId> s) => setState(() => _engine = s.first),
       ),
+    );
+    if (remoteReason == null) return selector;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[selector, remoteReason],
     );
   }
 

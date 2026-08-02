@@ -162,14 +162,85 @@ void main() {
     await startHost(service);
     final InterconnectMangaOcrClient client = buildClient();
 
+    // 模型未下载的 host 仍返回 target（UI 要靠它讲清原因），但 usable 为假。
     final MangaOcrRemoteTarget? target = await client.probe();
     expect(target, isNotNull);
     expect(target!.capability.supported, isTrue);
     expect(target.capability.modelsReady, isFalse);
+    expect(target.capability.usable, isFalse);
+    expect(target.capability.modelsMissing, isTrue);
 
     // token 清空 → 隐藏。
     await repo.setHibikiClientToken(null);
     expect(await client.probe(), isNull);
+  });
+
+  // TODO-2635：`modelsReady` 三态。`null`（对端没报这个字段）绝不能和明确的
+  // `false` 压成同一态——那会让这类对端上本可用的主机凭空消失。
+  test('capability tri-state: true / false / absent are distinguishable', () {
+    MangaOcrRemoteCapability? parse(Object? mangaOcr) =>
+        MangaOcrRemoteCapability.fromCapabilitiesJson(
+            <String, dynamic>{'mangaOcr': mangaOcr});
+
+    final MangaOcrRemoteCapability ready =
+        parse(<String, Object?>{'supported': true, 'modelsReady': true})!;
+    expect(ready.modelsReady, isTrue);
+    expect(ready.usable, isTrue);
+    expect(ready.modelsMissing, isFalse);
+
+    final MangaOcrRemoteCapability missing =
+        parse(<String, Object?>{'supported': true, 'modelsReady': false})!;
+    expect(missing.modelsReady, isFalse);
+    expect(missing.usable, isFalse);
+    expect(missing.modelsMissing, isTrue);
+
+    // 字段缺失 = 未知 → 按可用处理（保持修复前行为，start 阶段兜底）。
+    final MangaOcrRemoteCapability unknown =
+        parse(<String, Object?>{'supported': true})!;
+    expect(unknown.modelsReady, isNull);
+    expect(unknown.usable, isTrue);
+    expect(unknown.modelsMissing, isFalse);
+
+    // 不支持：无论 modelsReady 怎么报都既不可用也不该显示「模型没下载」。
+    final MangaOcrRemoteCapability unsupported =
+        parse(<String, Object?>{'supported': false, 'modelsReady': false})!;
+    expect(unsupported.usable, isFalse);
+    expect(unsupported.modelsMissing, isFalse);
+
+    // 整个 mangaOcr 对象缺失（真·老 host）→ null。
+    expect(parse(null), isNull);
+  });
+
+  test('probe prefers a models-ready host over an earlier not-ready one',
+      () async {
+    Future<HibikiSyncServer> spawn(bool ready) async {
+      final HibikiSyncServer server = HibikiSyncServer(
+        syncDataDir: Directory(p.join(tmpRoot.path, 'sync_$ready')).path,
+        port: 0,
+        token: 'tok',
+        mangaOcrJobs: MangaOcrHostJobManager(
+          service: _FakeOcrService(ready: ready),
+          jobRoot: Directory(p.join(tmpRoot.path, 'jobs_$ready')),
+        ),
+      );
+      await server.start();
+      addTearDown(server.stop);
+      return server;
+    }
+
+    final HibikiSyncServer notReady = await spawn(false);
+    final HibikiSyncServer isReady = await spawn(true);
+    // 未就绪的排在前面：修复前会被第一个命中并返回，就绪的那台永远选不上。
+    await repo.setHibikiClientUrls(<HibikiClientUrl>[
+      HibikiClientUrl(url: 'http://127.0.0.1:${notReady.port}'),
+      HibikiClientUrl(url: 'http://127.0.0.1:${isReady.port}'),
+    ]);
+    await repo.setHibikiClientToken('tok');
+
+    final MangaOcrRemoteTarget? target = await buildClient().probe();
+    expect(target, isNotNull);
+    expect(target!.baseUrl, 'http://127.0.0.1:${isReady.port}');
+    expect(target.capability.usable, isTrue);
   });
 
   test('probe returns null against a host without manga OCR wiring (skew)',
