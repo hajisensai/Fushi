@@ -1,4 +1,4 @@
-## BUG-1422 · 移动端制卡链 FFmpeg 停在 6.0，上游已迁到 ffmpeg-kit-next (FFmpeg 8.1.2)
+## BUG-1427 · 移动端制卡链 FFmpeg 停在 6.0，上游已迁到 ffmpeg-kit-next (FFmpeg 8.1.2)
 - **报告**：2026-08-02（用户：qqbotxiaoxiao）
 - **真实性**：✅ 真 bug（安全面）。Android / iOS 的制卡链走 `KitFfmpegBackend`
   （`hibiki/lib/src/media/video/ffmpeg_backend.dart:624`，进程内 ffmpeg-kit），
