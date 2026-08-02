@@ -557,15 +557,18 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       }
       final bool is32Bit =
           await EngineHookGalAudioSource.exeIs32Bit(game.exePath) ?? false;
-      if (GalHookSessionController.defaultInjectorResolver(is32Bit: is32Bit) ==
-          null) {
-        if (!mounted) return;
-        final bool installed = await GalgameHelperInstaller().ensureInjector(
-          is32Bit: is32Bit,
-          context: context,
-        );
-        if (!installed || !mounted) return;
-      }
+      // BUG-1448：**不得**拿「injector 文件在不在」当调用 ensureInjector 的前置门。
+      // 真正的判据是版本对账（`_ensureBundledVersion`，BUG-1246）——文件在、版本却是
+      // 上一个 app 版本留下的，恰恰是必须换入的情形，却被这道门整个短路：随包新组件
+      // 永远换不进去，旧 hook DLL 建出旧契约共享内存段，本体读到的就是
+      // `protocol_mismatch`（用户现场：本体 1.3.1+1171 / 组件停在五天前）。
+      // ensureInjector 自身幂等，已就位且版本一致时直接返回 true。
+      if (!mounted) return;
+      final bool installed = await GalgameHelperInstaller().ensureInjector(
+        is32Bit: is32Bit,
+        context: context,
+      );
+      if (!installed || !mounted) return;
       final GalHookSessionController session =
           widget.sessionController ?? GalHookSessionController.instance;
       final GalHookLaunchResult result = await session.launchGame(

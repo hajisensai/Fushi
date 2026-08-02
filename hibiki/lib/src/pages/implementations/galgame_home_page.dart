@@ -263,15 +263,14 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       }
       final bool is32Bit =
           await EngineHookGalAudioSource.exeIs32Bit(game.exePath) ?? false;
-      if (GalHookSessionController.defaultInjectorResolver(is32Bit: is32Bit) ==
-          null) {
-        if (!mounted) return;
-        final bool installed = await GalgameHelperInstaller().ensureInjector(
-          is32Bit: is32Bit,
-          context: context,
-        );
-        if (!installed || !mounted) return;
-      }
+      // BUG-1448：见 games_library_page 同处注释——「injector 在不在」不是判据，
+      // 「版本对不对」才是。这道前置门会让随包新组件永远换不进去。
+      if (!mounted) return;
+      final bool installed = await GalgameHelperInstaller().ensureInjector(
+        is32Bit: is32Bit,
+        context: context,
+      );
+      if (!installed || !mounted) return;
       final GalHookSessionController controller =
           widget.sessionController ?? GalHookSessionController.instance;
       final GalHookLaunchResult result = await controller.launchGame(
