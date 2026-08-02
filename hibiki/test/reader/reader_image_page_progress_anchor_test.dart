@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
     show imagePageProgressAnchor;
 
+import '../helpers/source_guard.dart';
 import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// TODO-796 (Bug 1)：在目录里「导航到封面」时顶部阅读进度（百分比）不刷新。
@@ -100,9 +101,12 @@ void main() {
     });
 
     test('_refreshProgress 在 snapshot==null 时不再一律早退，走图片页兜底', () {
-      final int idx = src.indexOf('Future<void> _refreshProgress() async');
-      expect(idx, greaterThan(0), reason: '_refreshProgress 必须存在');
-      final String body = src.substring(idx, idx + 1200);
+      // TODO-2603：窗口从 `substring(idx, idx + 1200)` 换成 methodBody 的花括号配对。
+      // 定长窗口在方法体变长时会把被守的那一行挤出去（本例：_refreshProgress 补了
+      // evaluateJavascript 的 try/catch 后 1200 字符不够用），红的是守卫自己塌了、
+      // 不是行为退化。
+      final String body =
+          methodBody(src, 'Future<void> _refreshProgress() async {');
       expect(
         body.contains('_applyImagePageProgressFallback();'),
         isTrue,
@@ -112,10 +116,9 @@ void main() {
     });
 
     test('_applyImagePageProgressFallback 经 isImageOnlyChapter 门控 + 纯函数锚点', () {
-      final int idx = src.indexOf('void _applyImagePageProgressFallback() {');
-      expect(idx, greaterThan(0),
-          reason: '_applyImagePageProgressFallback 必须存在');
-      final String body = src.substring(idx, idx + 900);
+      // 同上：定长 900 字符窗口换成花括号配对，与方法体长度无关。
+      final String body =
+          methodBody(src, 'void _applyImagePageProgressFallback() {');
       // 只对真正的纯图片页兜底，普通章节走正常快照路径不受影响。
       expect(body.contains('isImageOnlyChapter(_currentChapter)'), isTrue,
           reason: '必须经 isImageOnlyChapter 门控，避免误伤普通无快照瞬态');
