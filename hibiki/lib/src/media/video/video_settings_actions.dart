@@ -197,6 +197,11 @@ Future<void> setVideoDanmakuMaxActiveDual(
 
 // ── 遮蔽 / 画面 / 沉浸 / 窗口 / 控件（单值 pref 的双路写穿）──────────────────
 
+/// 遮蔽模式两个 setter 刻意不做全局广播（见
+/// [PreferencesRepository.setVideoSubtitleObscureMode]：那是播放中的高频快捷键路径，
+/// 广播会重建整个 app）。host 在场 = 视频页自己 setState 刷新，够了；host 缺席 = 从
+/// **全局设置页**改的（视频页可能仍在路由栈下方挂着），这条低频路径显式补一次全局广播，
+/// 保持「改完返回视频页字幕即新模式」的既有行为不回归。
 Future<void> setVideoSubtitleObscureModeDual(
   SettingsContext context,
   VideoSubtitleObscureMode mode,
@@ -206,9 +211,11 @@ Future<void> setVideoSubtitleObscureModeDual(
     await host.onSetSubtitleObscureMode(mode);
   } else {
     await context.appModel.setVideoSubtitleObscureMode(mode);
+    context.appModel.notifyPreferencesChanged();
   }
 }
 
+/// 同构于 [setVideoSubtitleObscureModeDual]（含 host 缺席时的显式全局广播）。
 Future<void> setVideoSecondarySubtitleObscureModeDual(
   SettingsContext context,
   VideoSubtitleObscureMode mode,
@@ -218,6 +225,7 @@ Future<void> setVideoSecondarySubtitleObscureModeDual(
     await host.onSetSecondarySubtitleObscureMode(mode);
   } else {
     await context.appModel.setVideoSecondarySubtitleObscureMode(mode);
+    context.appModel.notifyPreferencesChanged();
   }
 }
 
