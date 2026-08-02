@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/scan_scale.dart';
 
 /// Anti-recurrence guard for the project-wide integration-test discipline:
 /// **integration tests drive the real app by focus + synthetic keys only,
@@ -66,11 +67,13 @@ void main() {
 
     final List<String> hardOffenders = <String>[];
     final Map<String, int> perFileCounts = <String, int>{};
+    int scanned = 0;
 
     for (final FileSystemEntity entity in dir.listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       final String basename = entity.uri.pathSegments.last;
       if (exemptBasenames.contains(basename)) continue;
+      scanned++;
 
       final String content = entity.readAsStringSync();
       final List<String> lines = content.split('\n');
@@ -88,6 +91,9 @@ void main() {
         }
       }
     }
+
+    expectScanScale(scanned,
+        what: 'integration_test/ 下未豁免的 .dart', atLeast: 60, measured: 86);
 
     // 1) No coordinate taps in files outside the temporary allowlist.
     expect(

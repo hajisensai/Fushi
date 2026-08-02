@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
+import '../helpers/scan_scale.dart';
 
 /// 「某个 scope 开放了某个输入通道，就必须真的存在该通道的解析入口」。
 ///
@@ -91,6 +92,11 @@ void main() {
       return !definitionOnly.any((String d) => p.startsWith(d));
     }).toList();
   }
+
+  test('扫描规模哨兵：消费方文件确实被枚举到了', () {
+    expectScanScale(consumerFiles().length,
+        what: 'lib/ 下的 .dart（已排除纯定义目录）', atLeast: 750, measured: 931);
+  });
 
   /// 实际存在消费者的 (scope, channel)。
   Set<String> consumedPairs() {

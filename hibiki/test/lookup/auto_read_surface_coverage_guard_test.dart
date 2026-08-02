@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
+import '../helpers/scan_scale.dart';
 
 /// BUG-1210 守卫：**每一个查词表面都必须明确声明它接不接自动朗读**。
 ///
@@ -76,11 +77,14 @@ void main() {
   };
 
   /// 收集 lib/ 下所有 `searchDictionary(` 的**调用**点（排除声明/重写本身）。
+  int scannedFiles = 0;
   Set<String> collectCallSiteFiles() {
     final Set<String> hits = <String>{};
+    scannedFiles = 0;
     for (final FileSystemEntity e
         in Directory('lib').listSync(recursive: true)) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
+      scannedFiles++;
       final String rel = e.path.replaceAll('\\', '/');
       final String source = e.readAsStringSync();
       // 便宜的预筛：掩码只会**减少**命中、绝不会新增，所以整文件连这个符号都没有
@@ -107,9 +111,12 @@ void main() {
 
   test('每个查词调用点都必须显式声明接不接自动朗读', () {
     final Set<String> found = collectCallSiteFiles();
-    expect(found, isNotEmpty,
-        reason: '一个 searchDictionary 调用点都没扫到——扫描逻辑失效了，'
-            '这条守卫会变成永远绿的摆设，请修扫描而不是删断言');
+    expectScanScale(scannedFiles,
+        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+    // `found` 才是判据的真分母：扫描面还在、但预筛/掩码把命中全滤没了，同样是
+    // 「守卫在对着空气跑」，而 isNotEmpty 放行到只剩 1 个都不会响。
+    expectScanScale(found.length,
+        what: 'searchDictionary 调用点所在文件', atLeast: 10, measured: 12);
     final Set<String> declared = <String>{
       ...wiredSurfaces.keys,
       ...exemptCallSites.keys,

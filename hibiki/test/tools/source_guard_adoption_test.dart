@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/banned_comment_strip.dart';
 import '../helpers/source_guard.dart';
+import '../helpers/scan_scale.dart';
 
 /// TODO-2358 / TODO-2477 的**覆盖率**守卫：源码扫描守卫不得再手写注释剥离。
 ///
@@ -74,9 +75,8 @@ void main() {
 
     // 扫描本身失效（路径变了 / listSync 拿不到东西）必须红，不能静默变成
     // 「零违规」的摆设。
-    expect(scanned, greaterThan(200),
-        reason: '只扫到 $scanned 个 test/*.dart —— 扫描逻辑失效了，'
-            '这条守卫会变成永远绿的摆设，请修扫描而不是删断言');
+    expectScanScale(scanned,
+        what: 'test/ 下未豁免的 .dart', atLeast: 1800, measured: 2199);
 
     expect(offenders, isEmpty,
         reason: '这些地方手写了注释剥离：\n${offenders.join('\n')}\n\n'

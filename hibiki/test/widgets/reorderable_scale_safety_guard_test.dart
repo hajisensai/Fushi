@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
+import '../helpers/scan_scale.dart';
 
 /// BUG-778 同根因的全仓收口守卫。
 ///
@@ -34,8 +35,10 @@ void main() {
     );
 
     final List<String> offenders = <String>[];
+    int scanned = 0;
     for (final FileSystemEntity entity in libDir.listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      scanned++;
       final String relative = entity.path.replaceAll(r'\', '/');
       final String content = entity.readAsStringSync();
       // 注释换成**等长空白**（共享原语）。旧写法是「整行 `//` 或 `*` 开头就跳过」：
@@ -54,6 +57,9 @@ void main() {
         }
       }
     }
+
+    expectScanScale(scanned,
+        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
 
     expect(
       offenders,

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import '../../pages/reader_history_source_corpus.dart';
+import '../../helpers/scan_scale.dart';
 
 void main() {
   final File wrapper = File(
@@ -11,8 +12,10 @@ void main() {
   test('desktop_drop is only imported inside the platform-gated wrapper', () {
     final Directory libDir = Directory('lib');
     final List<String> offenders = <String>[];
+    int scanned = 0;
     for (final FileSystemEntity e in libDir.listSync(recursive: true)) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
+      scanned++;
       if (e.path
           .replaceAll('\\', '/')
           .endsWith('src/media/drag_drop/hibiki_file_drop_target.dart')) {
@@ -23,6 +26,8 @@ void main() {
         offenders.add(e.path);
       }
     }
+    expectScanScale(scanned,
+        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
     expect(offenders, isEmpty,
         reason: 'desktop_drop should only be imported by HibikiFileDropTarget');
   });

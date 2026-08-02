@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/scan_scale.dart';
 
 /// BUG-531 / TODO-1020 source-scan guard: iOS hard-crashes (SIGABRT) the first
 /// time it touches the camera or photo library unless Info.plist declares the
@@ -26,17 +27,27 @@ void main() {
   final Directory libDir = Directory('lib');
   final File plistFile = File('ios/Runner/Info.plist');
 
+  // libUses 命中即短路返回，数不出扫描规模，所以枚举面单独抽出来——它是这条守卫
+  // 唯一的输入，塌成空集时 `libUses` 恒 false，两条 test 都会静默全绿。
+  List<File> scannedDartFiles() => libDir
+      .listSync(recursive: true)
+      .whereType<File>()
+      .where((File f) => f.path.endsWith('.dart'))
+      .toList();
+
   bool libUses(String needle) {
-    for (final FileSystemEntity entity in libDir.listSync(recursive: true)) {
-      if (entity is! File || !entity.path.endsWith('.dart')) {
-        continue;
-      }
+    for (final File entity in scannedDartFiles()) {
       if (entity.readAsStringSync().contains(needle)) {
         return true;
       }
     }
     return false;
   }
+
+  test('扫描规模哨兵：lib/ 确实被枚举到了', () {
+    expectScanScale(scannedDartFiles().length,
+        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+  });
 
   test('iOS Info.plist declares media usage keys for used ImageSources', () {
     expect(libDir.existsSync(), isTrue,

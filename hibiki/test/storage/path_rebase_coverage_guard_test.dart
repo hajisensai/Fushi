@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/media_source.dart' show dbSourcePrefKey;
 import 'package:hibiki/src/storage/path_rebase_coverage.dart';
+import '../helpers/scan_scale.dart';
 
 /// BUG-1174 守卫：**路径 rebase 覆盖率**。
 ///
@@ -136,9 +137,11 @@ void main() {
     final Set<String> declared =
         kPathRebasePrefs.map((PathRebasePref s) => s.key).toSet();
     final Map<String, String> missing = <String, String>{};
+    int scanned = 0;
     for (final FileSystemEntity e
         in Directory('lib').listSync(recursive: true, followLinks: false)) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
+      scanned++;
       final String src = e.readAsStringSync();
       for (final RegExpMatch m in prefCall.allMatches(src)) {
         final String key = m.group(1)!;
@@ -150,6 +153,9 @@ void main() {
         missing[key] = e.path;
       }
     }
+    expectScanScale(scanned,
+        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+
     expect(
       missing,
       isEmpty,
@@ -161,11 +167,15 @@ void main() {
 
   test('kPathRebasePrefs 里的 key 都还在 lib/ 里被真实使用（无陈旧声明）', () {
     final StringBuffer all = StringBuffer();
+    int scanned = 0;
     for (final FileSystemEntity e
         in Directory('lib').listSync(recursive: true, followLinks: false)) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
+      scanned++;
       all.write(e.readAsStringSync());
     }
+    expectScanScale(scanned,
+        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
     final String src = all.toString();
     final List<String> stale = <String>[];
     for (final PathRebasePref spec in kPathRebasePrefs) {

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
+import '../helpers/scan_scale.dart';
 
 /// 剥除 Dart 源码里的注释，只保留真实代码，避免静态守卫把文档注释（`///`）/行注释
 /// （`//`）/块注释（`/* */`）里出现的示例文字（如反引号包裹的 `windowManager.show()`）
@@ -55,9 +56,11 @@ void main() {
       () {
     final RegExp foregroundCall = RegExp(r'windowManager\.(show|focus)\s*\(');
     final List<String> offenders = <String>[];
+    int scanned = 0;
     for (final File entity
         in Directory('lib/src').listSync(recursive: true).whereType<File>()) {
       if (!entity.path.endsWith('.dart')) continue;
+      scanned++;
       final String normalized = entity.path.replaceAll('\\', '/');
       // 先剥除注释，只对真实代码跑守卫正则——文档/行/块注释里的示例文字不算违规。
       final String source = stripDartComments(entity.readAsStringSync());
@@ -66,6 +69,9 @@ void main() {
         offenders.add(normalized);
       }
     }
+
+    expectScanScale(scanned,
+        what: 'lib/src 下的 .dart', atLeast: 750, measured: 930);
 
     expect(
       offenders,
@@ -174,9 +180,11 @@ void main() {
     final RegExp invokeFlash =
         RegExp(r"invokeMethod<[^>]*>\(\s*'clearTaskbarFlash'");
     final List<String> offenders = <String>[];
+    int scanned = 0;
     for (final File entity
         in Directory('lib/src').listSync(recursive: true).whereType<File>()) {
       if (!entity.path.endsWith('.dart')) continue;
+      scanned++;
       final String normalized = entity.path.replaceAll('\\', '/');
       final String source = entity.readAsStringSync();
       if (!invokeFlash.hasMatch(source)) continue;
@@ -184,6 +192,8 @@ void main() {
         offenders.add(normalized);
       }
     }
+    expectScanScale(scanned,
+        what: 'lib/src 下的 .dart', atLeast: 750, measured: 930);
     expect(offenders, isEmpty,
         reason: 'Only WindowCaptionChannel may invoke clearTaskbarFlash on the '
             'app.hibiki/window channel.');

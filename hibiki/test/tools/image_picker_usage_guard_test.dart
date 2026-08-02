@@ -18,6 +18,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/scan_scale.dart';
 
 /// 允许直接引用 image_picker 的文件（相对 hibiki/ 包根、正斜杠路径）。
 const Set<String> _allowedFiles = <String>{
@@ -48,8 +49,10 @@ void main() {
     final RegExp instantiateRe = RegExp(r'\bImagePicker\s*\(');
 
     final List<String> violations = <String>[];
+    int scanned = 0;
     for (final FileSystemEntity entity in libDir.listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      scanned++;
       final String relative =
           entity.path.substring(root.path.length + 1).replaceAll('\\', '/');
       if (_allowedFiles.contains(relative)) continue;
@@ -61,6 +64,9 @@ void main() {
         violations.add('$relative: 实例化 ImagePicker()');
       }
     }
+
+    expectScanScale(scanned,
+        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
 
     expect(
       violations,

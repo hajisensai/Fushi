@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import '../helpers/scan_scale.dart';
 
 Set<String> _flattenKeys(Map<String, dynamic> map, [String prefix = '']) {
   final keys = <String>{};
@@ -63,6 +64,8 @@ void main() {
     });
 
     test('at least one translation file exists', () {
+      expectScanScale(translationFiles.length,
+          what: 'lib/i18n 下的译文 .i18n.json', atLeast: 12, measured: 16);
       expect(translationFiles, isNotEmpty,
           reason: 'Expected at least one translation besides the base');
     });

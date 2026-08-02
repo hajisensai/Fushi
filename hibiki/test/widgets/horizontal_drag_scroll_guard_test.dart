@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/scan_scale.dart';
 
 /// 桌面端 Flutter 的默认 `MaterialScrollBehavior.dragDevices` **不含鼠标**：横向
 /// 滚动区用鼠标左键按住左右拖会毫无反应（用户实报）。仓库早在
@@ -35,12 +36,16 @@ void main() {
     expect(libDir.existsSync(), isTrue, reason: '测试须从 hibiki/ 下运行');
 
     final List<String> offenders = <String>[];
+    int scanned = 0;
+    int withHorizontal = 0;
     for (final FileSystemEntity entity in libDir.listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      scanned++;
       final String source = entity.readAsStringSync();
       final int horizontals =
           'scrollDirection: Axis.horizontal'.allMatches(source).length;
       if (horizontals == 0) continue;
+      withHorizontal++;
 
       final String relative = entity.path.replaceAll(r'\', '/');
       final int wrapped = 'HorizontalDragScrollable('.allMatches(source).length;
@@ -53,6 +58,13 @@ void main() {
         );
       }
     }
+
+    expectScanScale(scanned,
+        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+    // `withHorizontal` 才是判据的真分母：扫描面还在、但「横向滚动区」的匹配写法
+    // 一旦失配（`dart format` 折行、参数换序），这条守卫就对着 0 个候选跑全绿。
+    expectScanScale(withHorizontal,
+        what: '含横向滚动区的文件', atLeast: 12, measured: 17);
 
     expect(
       offenders,

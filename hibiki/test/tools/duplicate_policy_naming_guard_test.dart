@@ -21,6 +21,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
+import '../helpers/scan_scale.dart';
 
 const String kPolicyFile = 'lib/src/epub/book_title_conflict.dart';
 
@@ -57,21 +58,31 @@ String _codeOf(String path) => maskComments(File(path).readAsStringSync());
 /// JS/CSS 语料里的）与 Dart 词法掩码的并集，顺带补上块注释与**行尾注释**两个洞
 /// （`updateBinding(...); // 旧叫 onDuplicateTitle` 以前会被判成违规行）。
 /// 掩码不改行数，`i + 1` 仍是原文真实行号。
-List<String> _codeHits(List<String> roots, String needle) {
-  final List<String> hits = <String>[];
+/// [_codeHits] 的枚举面，单独抽出来只为了让「扫描规模哨兵」能断言**同一条**扫描路径。
+/// 哨兵另写一份枚举只能证明「磁盘上有文件」，证明不了守卫真的读到了它们。
+List<File> _scannedDartFiles(List<String> roots) {
+  final List<File> files = <File>[];
   for (final String root in roots) {
     final Directory dir = Directory(root);
     if (!dir.existsSync()) continue;
     for (final FileSystemEntity e in dir.listSync(recursive: true)) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
-      final String rel = e.path.replaceAll(r'\', '/');
-      if (rel.endsWith(kSelfPath)) continue;
-      final List<String> lines =
-          maskCommentsAndScriptLines(e.readAsStringSync()).split('\n');
-      for (int i = 0; i < lines.length; i++) {
-        if (lines[i].contains(needle)) {
-          hits.add('$rel:${i + 1}');
-        }
+      if (e.path.replaceAll(r'\', '/').endsWith(kSelfPath)) continue;
+      files.add(e);
+    }
+  }
+  return files;
+}
+
+List<String> _codeHits(List<String> roots, String needle) {
+  final List<String> hits = <String>[];
+  for (final File e in _scannedDartFiles(roots)) {
+    final String rel = e.path.replaceAll(r'\', '/');
+    final List<String> lines =
+        maskCommentsAndScriptLines(e.readAsStringSync()).split('\n');
+    for (int i = 0; i < lines.length; i++) {
+      if (lines[i].contains(needle)) {
+        hits.add('$rel:${i + 1}');
       }
     }
   }
@@ -80,6 +91,11 @@ List<String> _codeHits(List<String> roots, String needle) {
 
 void main() {
   const List<String> roots = <String>['lib', 'test'];
+
+  test('扫描规模哨兵：淘汰词扫描确实扫到了 lib/ + test/', () {
+    expectScanScale(_scannedDartFiles(roots).length,
+        what: 'lib/ + test/ 下的 .dart（已排除本守卫自身）', atLeast: 2500, measured: 3145);
+  });
 
   group('淘汰词不得复活', () {
     kRetiredNames.forEach((String retired, String replacement) {
