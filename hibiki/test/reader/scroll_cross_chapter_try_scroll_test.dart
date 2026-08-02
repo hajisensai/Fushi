@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 
+import '../helpers/source_guard.dart';
 import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// TODO-656「试滚范式」根治：跨章不再用瞬时坐标阈值 `scrollTop<=2`，而是「内容真的
@@ -112,48 +113,57 @@ void main() {
     late String paginationScripts;
     late String corpus;
     setUpAll(() {
-      paginationScripts = File('lib/src/reader/reader_pagination_scripts.dart')
-          .readAsStringSync()
-          .replaceAll('\r\n', '\n');
-      corpus = readReaderPageSource();
+      // TODO-2527: 两份语料都先掩码——`downSPos` / `_wheelBoundaryArmed` 这类符号
+      // 本来就原样写在生产注释里（webview.part.dart:1466 就有一处），裸 contains
+      // 会被注释满足：把实现删光只留注释，旧写法照样全绿。
+      paginationScripts = maskCommentsAndScriptLines(
+        File('lib/src/reader/reader_pagination_scripts.dart')
+            .readAsStringSync()
+            .replaceAll('\r\n', '\n'),
+      );
+      corpus = maskCommentsAndScriptLines(readReaderPageSource());
     });
 
     test('_bStart 记手势起点滚动量 downSPos/downSMax', () {
-      expect(paginationScripts, contains('downSPos'),
+      expect(containsCodeLine(paginationScripts, 'downSPos'), isTrue,
           reason: 'touchstart 必须记手势起点沿内容轴的滚动量');
-      expect(paginationScripts, contains('downSMax'),
+      expect(containsCodeLine(paginationScripts, 'downSMax'), isTrue,
           reason: 'touchstart 必须记最大可滚量供边界判定');
     });
     test('_bEnd 用手势起点在边界判据，不再用 touchend 瞬时 atTop', () {
-      expect(paginationScripts, contains('downAtStart'),
+      expect(containsCodeLine(paginationScripts, 'downAtStart'), isTrue,
           reason: '跨章必须看手势起点是否在章首（downSPos<=2）');
-      expect(paginationScripts, contains('downAtEnd'),
+      expect(containsCodeLine(paginationScripts, 'downAtEnd'), isTrue,
           reason: '跨章必须看手势起点是否在章末');
       expect(
-          paginationScripts, isNot(contains('var atTop = root.scrollTop <= 2')),
+          containsCodeLine(
+              paginationScripts, 'var atTop = root.scrollTop <= 2'),
+          isFalse,
           reason: '_bEnd 不得再用 touchend 瞬时 scrollTop<=2 判跨章（提前跨章根因）');
     });
     test('滚轮跨章用真试滚（scrollBy + moved），不再用 stuck 推算/瞬时几何', () {
       final String wheel = _wheelBlock(corpus);
-      expect(wheel, contains('var moved = Math.abs(after - before) > 1'),
+      expect(
+          containsCodeLine(wheel, 'var moved = Math.abs(after - before) > 1'),
+          isTrue,
           reason: '滚轮跨章须靠真试滚的实际位移判边界');
-      expect(wheel, contains('window.scrollBy'),
+      expect(containsCodeLine(wheel, 'window.scrollBy'), isTrue,
           reason: '横排/竖排都真的 window.scrollBy 一步再读位移（已验证原语）');
-      expect(wheel, isNot(contains('atStart = root.scrollTop <= 2')),
+      expect(containsCodeLine(wheel, 'atStart = root.scrollTop <= 2'), isFalse,
           reason: '不得再用瞬时 scrollTop<=2 几何');
-      expect(wheel, isNot(contains('_wheelLastScrollPos')),
+      expect(containsCodeLine(wheel, '_wheelLastScrollPos'), isFalse,
           reason: '不得再用相邻拍位置推算（时序坏 → 横排中部误翻）');
       // arm-then-fire 二次确认仍在。
-      expect(wheel, contains('_wheelBoundaryArmed'),
+      expect(containsCodeLine(wheel, '_wheelBoundaryArmed'), isTrue,
           reason: '保留 arm-then-fire 二次确认吸收单帧擦边');
     });
   });
 }
 
-String _wheelBlock(String source) {
-  final int start = source.indexOf("addEventListener('wheel'");
-  expect(start, isNonNegative, reason: 'missing wheel listener');
-  final int end = source.indexOf('}, {passive:', start);
-  expect(end, isNonNegative);
-  return source.substring(start, end);
-}
+/// wheel 监听器的**回调体**窗口（花括号配对，JS 词法）。
+///
+/// 旧写法右边界是 `indexOf('}, {passive:')`：监听器一旦漏写 passive 选项，窗口就
+/// 一路吞到下一个监听器；而 `_wheelBoundaryArmed` 恰好原样写在本块的注释里
+/// （webview.part.dart:1466），窗口不掩码时那条要求型断言可被注释单独满足。
+String _wheelBlock(String source) =>
+    methodBody(source, "'wheel', function(e)", lexicon: SourceLexicon.js);
