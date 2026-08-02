@@ -153,7 +153,9 @@ class VideoBookRepository {
   /// 成功后**调用：[VideoImportDialog] 各路径（单文件 / 文件夹单集 / 播放列表首集 /
   /// 流媒体各调一次；播放列表整本只调一次，title=合集名、mediaKey=首集 uid），以及
   /// 扫描首导的新 playlist 合集（source_library_scanner，BUG-1351：用户把新清单放进
-  /// 扫描根就是入库动作，整本 1 条；重扫 reconcile 不 emit）——刻意**不放进
+  /// 扫描根就是入库动作，整本 1 条；重扫 reconcile 不 emit），以及番剧下载完成后的自动入库
+  /// （anime_download_importer，BUG-1417：整本 1 条、title=系列名、mediaKey=首集 uid；幂等看
+  /// createdEpisodeUids，崩溃重放复用既有条目时一条都不记）——刻意**不放进
   /// [saveVideoBook]**，让散装文件批量扫描、远端打开（home_video_page，打开≠导入）、
   /// 云同步（app_model_library_host_service）等路径天然不 emit，避免刷屏或语义错误
   /// （对齐 EpubImporter 只在用户导入管线 emit 的做法）。timestamp/dateKey 用调用
