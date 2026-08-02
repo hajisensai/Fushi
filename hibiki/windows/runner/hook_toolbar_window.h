@@ -49,7 +49,7 @@ namespace hook_toolbar {
 // Draw / hit-test order of the galgame hook toolbar. Single source of truth:
 // FloatingLyricWindow::ControlActionAt() indexes the same table, so the body
 // window and the standalone toolbar can never disagree about what a slot does.
-constexpr int kSlotCount = 8;
+constexpr int kSlotCount = 9;
 constexpr const char* kSlotActions[kSlotCount] = {
     "replayVoice",         // 0 replay the line's captured audio
     "recaptureVoice",      // 1 open a recapture window
@@ -58,7 +58,13 @@ constexpr const char* kSlotActions[kSlotCount] = {
     "toggleTransparency",  // 4 one-click background transparency
     "lock",                // 5 position lock
     "openWorkbench",       // 6 capture workbench
-    "close",               // 7 close the overlay
+    // 7 always-on-top pin. Handled natively in DispatchControlAction (no Dart
+    // round-trip), exactly like the clipboard window's 📌 — the overlay is born
+    // topmost, and this is the only way to drop it behind another window
+    // without closing it. Inserted ahead of the close slot so the rightmost
+    // button is still 关闭 (muscle memory) and slots 0..6 keep their index.
+    "topmost",
+    "close",  // 8 close the overlay
 };
 
 // Button states that change a slot's glyph or its active tint.
@@ -68,6 +74,9 @@ struct States {
   bool playing = false;
   bool pass_through = false;
   bool locked = false;
+  // Mirrors FloatingLyricWindow::topmost_ so the pin renders lit while the
+  // overlay really is HWND_TOPMOST. Default true = the overlay's own default.
+  bool topmost = true;
 };
 
 // Colours, mirrored from the body window's Style so both toolbars look alike.
