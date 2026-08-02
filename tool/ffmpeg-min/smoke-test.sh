@@ -383,4 +383,34 @@ run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
 assert_nonempty "$WORK/attachments.json"
 assert_log_contains "$WORK/attachments.json" "fake.ttf"
 
+# BUG-1443: 自包含检查。上面所有断言都跑在**刚装完依赖的构建机**上，dylib 就在
+# /opt/homebrew 下，所以「能跑」完全不代表用户机上能跑。macOS 的 ffmpeg 曾就这样
+# 带着 4 条 Homebrew 动态依赖进了发版流水线，在装配步 `Abort trap: 6` (exit 134)。
+# 这里直接看动态依赖表：凡是指向包管理器 / 家目录的共享库，一律当场失败——
+# 构建机是唯一能便宜地发现这件事的地方，别再让它漏到发版。
+assert_self_contained() {
+  local binary="$1"
+  local deps=""
+  case "$(uname -s)" in
+    Darwin) deps="$(otool -L "$binary" | tail -n +2 | awk '{print $1}')" ;;
+    Linux) deps="$(objdump -p "$binary" | awk '/NEEDED|RPATH|RUNPATH/ {print $2}')
+$(ldd "$binary" 2>/dev/null | awk '{print $3}')" ;;
+    # Windows/MSYS：产物是 --extra-ldflags=-static 的单文件 PE，没有 Unix 式
+    # 共享库路径可查；入库产物由 Dart 守卫字节扫描兜底。
+    *) echo "[ffmpeg-min-smoke] self-contained check skipped on $(uname -s)"; return 0 ;;
+  esac
+  local foreign
+  foreign="$(printf '%s\n' "$deps" | grep -E '^/(opt/homebrew|opt/local|usr/local|home|Users)/' || true)"
+  if [ -n "$foreign" ]; then
+    echo "[ffmpeg-min-smoke] FATAL(BUG-1443): $binary 依赖构建机专有的共享库：" >&2
+    printf '%s\n' "$foreign" >&2
+    echo "[ffmpeg-min-smoke] 这些路径在用户机上不存在，运行时直接 dyld/ld.so 崩溃。" >&2
+    echo "[ffmpeg-min-smoke] 修法见 build-ffmpeg-min.sh 的 Darwin 分支（静态链第三方库）。" >&2
+    exit 1
+  fi
+  echo "[ffmpeg-min-smoke] self-contained OK: $binary"
+}
+assert_self_contained "$FFMPEG_MIN"
+assert_self_contained "$FFPROBE_MIN"
+
 echo "[ffmpeg-min-smoke] PASS"

@@ -50,6 +50,94 @@ OUT="${OUT:-$PWD/ffmpeg-min-out}"
 SRC="${SRC:-$PWD/ffmpeg-src}"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 
+# macOS 专用：自编静态第三方库的私有 prefix + 源码版本
+# （见下方 build_darwin_static_deps 的长注释）。默认与 $SRC 同级，不污染 ffmpeg 源码树。
+STATIC_DEPS="${STATIC_DEPS:-$PWD/ffmpeg-min-deps}"
+X264_REF="${X264_REF:-stable}"
+SVTAV1_REF="${SVTAV1_REF:-v2.3.0}"
+LIBWEBP_REF="${LIBWEBP_REF:-v1.5.0}"
+
+# BUG-1443：macOS 上把 libx264 / SVT-AV1 / libwebp 从源码编成**静态库**，装进一个
+# 私有 prefix，让 ffmpeg 只从那里取。
+#
+# 为什么必须自编，而不是用 Homebrew 的库：
+#   1. 之前的做法是 `brew install x264 svt-av1 webp` 后直接 configure，产物于是
+#      动态依赖 /opt/homebrew/opt/*/lib/*.dylib。用户机没有 Homebrew → dyld
+#      "Library not loaded" → Abort trap: 6 (exit 134) → 桌面制卡链全废。
+#   2. Windows 分支的 `--extra-ldflags=-static` 在 macOS 上**不可用**：Apple 不提供
+#      静态 libSystem/crt0，ld64 的 `-static` 只用于编内核（QA1118）。
+#   3. 「只把 .a 挑出来链」也走不通：ld64 默认 -search_paths_first，在**同一目录**里
+#      永远先看 libx.dylib 再看 libx.a；而 pkg-config 吐出的 -L 就指向那个目录。
+#      更致命的是 Homebrew 的 svt-av1 formula 只传 std_cmake_args（不含
+#      BUILD_SHARED_LIBS），上游默认 BUILD_SHARED_LIBS=ON 且 shared/static 二选一，
+#      所以 /opt/homebrew/opt/svt-av1/lib 下**根本没有 libSvtAv1Enc.a**。
+# ⇒ 唯一无特例的路径就是社区通行做法（markus-perl/ffmpeg-build-script、
+#   arthenica/ffmpeg-kit 的 macos.sh 都是这个形态）：依赖全部自编成静态库进私有
+#   prefix，PKG_CONFIG_PATH 只指向它。这样也顺带把「产物能力取决于 CI 机器上
+#   brew 当天装了什么版本」这个隐性漂移一起消掉。
+#
+# 版本策略：三个 ref 都可用环境变量覆盖。x264 上游不发版本号，只有 stable 分支
+# （社区脚本一律用它）。SVT-AV1 与 libwebp 钉 tag。
+build_darwin_static_deps() {
+  local prefix="$1"
+  local work="$prefix/src"
+  mkdir -p "$prefix" "$work"
+
+  if [ ! -f "$prefix/lib/libx264.a" ]; then
+    echo "[ffmpeg-min] build static x264 @ $X264_REF"
+    rm -rf "$work/x264"
+    git clone --depth 1 --branch "$X264_REF" \
+      https://code.videolan.org/videolan/x264.git "$work/x264"
+    # --disable-cli：只要库，不要 x264 命令行工具。--enable-pic：静态库进可执行
+    # 文件时 arm64 需要位置无关代码。
+    (cd "$work/x264" && ./configure --prefix="$prefix" \
+      --enable-static --enable-pic --disable-cli --disable-opencl \
+      && make -j"$JOBS" && make install)
+  fi
+
+  if [ ! -f "$prefix/lib/libSvtAv1Enc.a" ]; then
+    echo "[ffmpeg-min] build static SVT-AV1 @ $SVTAV1_REF"
+    rm -rf "$work/svt-av1"
+    git clone --depth 1 --branch "$SVTAV1_REF" \
+      https://gitlab.com/AOMediaCodec/SVT-AV1.git "$work/svt-av1"
+    cmake -S "$work/svt-av1" -B "$work/svt-av1/build" \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
+      -DBUILD_SHARED_LIBS=OFF -DBUILD_APPS=OFF -DBUILD_TESTING=OFF
+    cmake --build "$work/svt-av1/build" -j "$JOBS"
+    cmake --install "$work/svt-av1/build"
+  fi
+
+  if [ ! -f "$prefix/lib/libwebpmux.a" ]; then
+    # FFmpeg 的 --enable-libwebp 同时要 libwebp 与 libwebpmux
+    # （libwebp_anim_encoder 走 libwebpmux >= 0.4.0，见 FFmpeg configure）。
+    echo "[ffmpeg-min] build static libwebp @ $LIBWEBP_REF"
+    rm -rf "$work/libwebp"
+    git clone --depth 1 --branch "$LIBWEBP_REF" \
+      https://github.com/webmproject/libwebp.git "$work/libwebp"
+    cmake -S "$work/libwebp" -B "$work/libwebp/build" \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
+      -DBUILD_SHARED_LIBS=OFF -DWEBP_BUILD_LIBWEBPMUX=ON \
+      -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_BUILD_CWEBP=OFF -DWEBP_BUILD_DWEBP=OFF \
+      -DWEBP_BUILD_GIF2WEBP=OFF -DWEBP_BUILD_IMG2WEBP=OFF -DWEBP_BUILD_VWEBP=OFF \
+      -DWEBP_BUILD_WEBPINFO=OFF -DWEBP_BUILD_WEBPMUX=OFF -DWEBP_BUILD_EXTRAS=OFF
+    cmake --build "$work/libwebp/build" -j "$JOBS"
+    cmake --install "$work/libwebp/build"
+  fi
+
+  # 缺任何一个 .a 就当场停：继续跑下去只会又编出一个动态依赖 Homebrew 的产物，
+  # 而那个缺陷要到发版流水线才暴露。
+  local archive
+  for archive in libx264.a libSvtAv1Enc.a libwebp.a libwebpmux.a; do
+    if [ ! -f "$prefix/lib/$archive" ]; then
+      echo "[ffmpeg-min] FATAL(BUG-1443): 缺静态库 $prefix/lib/$archive" >&2
+      ls -la "$prefix/lib" >&2 || true
+      exit 1
+    fi
+  done
+  echo "[ffmpeg-min] static deps ready in $prefix/lib"
+  ls -1 "$prefix/lib"
+}
+
 if [ ! -d "$SRC/.git" ]; then
   echo "[ffmpeg-min] clone FFmpeg @ $FFMPEG_REF"
   git clone --depth 1 --branch "$FFMPEG_REF" https://github.com/FFmpeg/FFmpeg.git "$SRC"
@@ -113,7 +201,28 @@ case "$(uname -s)" in
   # Windows：静态链接，把 libwinpthread/zlib/libgcc/x264 等折进 exe → 发布单文件，
   # 不依赖 MSYS2 mingw64 运行时 DLL（用户机没有 MSYS2）。schannel 是系统 secur32，无外链。
   MINGW*|MSYS*) EXTRA_CONFIG="--target-os=mingw32 --arch=x86_64 --extra-ldflags=-static --pkg-config-flags=--static --enable-schannel" ;;
-  Darwin) EXTRA_CONFIG="--enable-securetransport" ;;
+  # macOS（BUG-1443）：本分支曾只传 --enable-securetransport，于是 Homebrew 装的
+  # x264 / svt-av1 / webp 全部以**动态依赖**留在产物里：
+  #   /opt/homebrew/opt/svt-av1/lib/libSvtAv1Enc.4.dylib
+  #   /opt/homebrew/opt/webp/lib/{libwebp.7,libwebpmux.3}.dylib
+  #   /opt/homebrew/opt/x264/lib/libx264.165.dylib
+  # 用户机（绝大多数 Mac）没有 Homebrew → dyld "Library not loaded" → Abort trap: 6
+  # (exit 134) → 桌面制卡链全废。ffmpeg-min.yml 的 smoke-test 跑在刚 brew install 过
+  # 的同一台机器上，天然测不到这个；直到 release-desktop.yml 的装配冒烟才炸。
+  # 修法与三条排除掉的替代方案见上方 build_darwin_static_deps 的注释。
+  #
+  # PKG_CONFIG_PATH 把私有 prefix 排在最前：即使 Homebrew 因为别的 formula
+  # （比如 smoke-test 的 fixture ffmpeg）顺带装进了 x264/svt-av1/webp，
+  # pkg-config 也只会命中我们自编的静态版。
+  # --pkg-config-flags=--static 让 pkg-config 吐出 Libs.private，静态链必需的
+  # -lm / -lsharpyuv 等传递依赖才会进链接行。
+  Darwin)
+    build_darwin_static_deps "$STATIC_DEPS"
+    export PKG_CONFIG_PATH="$STATIC_DEPS/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    EXTRA_CONFIG="--enable-securetransport --pkg-config-flags=--static"
+    EXTRA_CONFIG="$EXTRA_CONFIG --extra-cflags=-I$STATIC_DEPS/include"
+    EXTRA_CONFIG="$EXTRA_CONFIG --extra-ldflags=-L$STATIC_DEPS/lib"
+    ;;
 esac
 
 ./configure \
