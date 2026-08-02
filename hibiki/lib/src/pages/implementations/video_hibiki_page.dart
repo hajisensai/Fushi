@@ -5823,9 +5823,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 落盘字幕遮蔽模式并刷新页面 overlay（热键 + 快速设置面板共用，TODO-840 Part B）。
+  ///
+  /// **先刷 UI、再等落盘**：[PreferencesRepository.setPrefs] 的同步段已把两个 key 一起
+  /// 写进内存缓存，故 setState 这一帧 getter 就返回完整的新三态。旧写法 `await 落盘;
+  /// setState()` 让按键到画面变化白等一次 sqlite 事务提交（Windows/WAL 实测中位 12.3ms、
+  /// p90 20ms、最坏 113ms，真实繁忙库上还得排在在途写之后）——用户报的「切换遮罩模式
+  /// 好卡」的一半。Future 仍 await 住：落盘失败照旧抛给调用方，不吞异常。
   Future<void> _setSubtitleObscureMode(VideoSubtitleObscureMode mode) async {
-    await appModel.setVideoSubtitleObscureMode(mode);
+    final Future<void> persisted = appModel.setVideoSubtitleObscureMode(mode);
     if (mounted) setState(() {});
+    await persisted;
   }
 
   /// 循环**副字幕**遮蔽三态（Shift+G，TODO-1382）：不遮蔽 → 模糊 → 隐藏 → …。
@@ -5845,10 +5852,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 落盘副字幕遮蔽模式并刷新页面 overlay（热键 + 快速设置面板共用，TODO-1382）。
+  /// 先刷 UI 再等落盘，理由与主字幕 [_setSubtitleObscureMode] 同构。
   Future<void> _setSecondarySubtitleObscureMode(
       VideoSubtitleObscureMode mode) async {
-    await appModel.setVideoSecondarySubtitleObscureMode(mode);
+    final Future<void> persisted =
+        appModel.setVideoSecondarySubtitleObscureMode(mode);
     if (mounted) setState(() {});
+    await persisted;
   }
 
   /// **一键画质档位应用**（无/低/中/高/极高）：原子写两套正交状态——mpv 内置缩放开关
