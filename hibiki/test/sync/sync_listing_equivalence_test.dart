@@ -37,7 +37,7 @@ class _PerBookBackend implements SyncBackend {
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   }) async =>
       'folder/$bookTitle';
 
