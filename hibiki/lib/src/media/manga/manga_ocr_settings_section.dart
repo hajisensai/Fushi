@@ -254,10 +254,11 @@ class _MangaOcrSettingsSectionState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _sectionLabel(theme, t.manga_ocr_section),
-        if (isDesktopPlatform) ...<Widget>[
-          _buildEnginePreference(theme),
-          const SizedBox(height: 12),
-        ],
+        // 引擎下拉全平台显示：出厂默认已是 Google Lens（会上传页面），把开关关在
+        // 桌面里等于让移动端用户无法持久地退回离线引擎。外部 mokuro 是桌面工具，
+        // 由下拉项自身 disable，不再靠整块 gating。
+        _buildEnginePreference(theme),
+        const SizedBox(height: 12),
         if (widget.service.isSupportedPlatform)
           _buildModelBlock(theme)
         else
@@ -303,8 +304,11 @@ class _MangaOcrSettingsSectionState
           value: MangaOcrEnginePreference.googleLens,
           child: Text(t.manga_ocr_engine_google_lens),
         ),
+        // 仍然出现在列表里（而不是按平台裁项）：裁项会让「已存 external_mokuro
+        // 的偏好」在移动端找不到匹配 value 而触发 Dropdown 断言。
         DropdownMenuItem<MangaOcrEnginePreference>(
           value: MangaOcrEnginePreference.externalMokuro,
+          enabled: isDesktopPlatform,
           child: Text(t.manga_ocr_engine_external),
         ),
       ],

@@ -1848,8 +1848,15 @@ class PreferencesRepository extends ChangeNotifier {
 
   /// PC 漫画整卷 OCR 默认引擎。稳定字符串而非 enum index，避免重排枚举破坏偏好。
   /// `auto` 的解析顺序由漫画模块统一控制，且永不自动跨到 Google Lens。
+  ///
+  /// 出厂默认是 `google_lens`：整页识别的版面/竖排质量明显优于本地 ONNX，且不
+  /// 依赖 1GB 级模型下载或桌面 mokuro CLI，是唯一「装完就能用」的引擎。这**不**
+  /// 削弱隐私边界——真正的上传闸门是 [ensureGoogleLensDisclosure] 的逐设备一次性
+  /// 同意弹窗，用户拒绝即不发任何字节；想彻底离线的用户把本偏好改回 `auto`，
+  /// `auto` 的解析链依旧永不跨到 Lens。
   String get mangaOcrEnginePreference =>
-      getPref('manga_ocr_engine_preference', defaultValue: 'auto') as String;
+      getPref('manga_ocr_engine_preference', defaultValue: 'google_lens')
+          as String;
 
   Future<void> setMangaOcrEnginePreference(String value) async {
     await setPref('manga_ocr_engine_preference', value);

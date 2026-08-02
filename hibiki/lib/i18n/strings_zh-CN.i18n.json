@@ -2637,7 +2637,7 @@
   "manga_ocr_engine_local_onnx": "本地 ONNX",
   "manga_ocr_engine_google_lens": "Google Lens",
   "manga_google_lens_section": "整页识别（Google Lens）",
-  "manga_google_lens_privacy": "Google Lens 使用 Chromium 的非公开接口。仅在你明确选择 Lens 时上传页面；自动模式绝不会上传。",
+  "manga_google_lens_privacy": "Google Lens 使用 Chromium 的非公开接口。Lens 是默认引擎，但只有你在本设备同意一次性提示后才会上传页面；自动模式绝不会上传。",
   "manga_google_lens_disclosure_title": "将漫画页面发送到 Google Lens？",
   "manga_google_lens_disclosure_body": "识别本漫画会把尚无 OCR 文本的页面缩小为 JPEG 后发送给 Google，结果缓存在本设备。该接口并非官方公开 API，可能随时失效。只有同意后才会上传。",
   "manga_google_lens_disclosure_accept": "同意并开始识别",
