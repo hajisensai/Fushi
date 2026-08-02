@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1324 条。点号进各自文件。
+> 共 1325 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1427](bugs/BUG-1427-ime-physical-key-ledger.md) | ✅ | ✅ | TODO-2652「三处快捷键台账仍记裸 logicalKey」经查证伪：`LogicalKeyboardKey.process` 在 5 个出包平台上根本不可达 |
 | [BUG-1418](bugs/BUG-1418-manga-reader-ocr-paired-host-missing.md) | ✅ | ✅ | 阅读器整卷 OCR 看不到「配对主机」选项：openBookOcr 漏传 remoteRunner |
 | [BUG-1417](bugs/BUG-1417-anime-download-added-activity.md) | ✅ | ✅ | 番剧下载自动入库不记 added 活动事件 |
 | [BUG-1416](bugs/BUG-1416-netflix-still-frame-at-mine-time.md) | ✅ | ✅ | Netflix 沉浸捕获选静态帧时取的是片段首帧，不是制卡那一刻的帧 |
