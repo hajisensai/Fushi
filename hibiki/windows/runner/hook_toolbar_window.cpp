@@ -60,7 +60,7 @@ bool SameStyle(const hook_toolbar::Style& a, const hook_toolbar::Style& b) {
 bool SameStates(const hook_toolbar::States& a, const hook_toolbar::States& b) {
   return a.replaying == b.replaying && a.recapturing == b.recapturing &&
          a.playing == b.playing && a.pass_through == b.pass_through &&
-         a.locked == b.locked;
+         a.locked == b.locked && a.topmost == b.topmost;
 }
 
 }  // namespace
@@ -84,6 +84,8 @@ const wchar_t* SlotGlyph(int slot, const States& states) {
     case 6:
       return L"▣";  // ▣ workbench
     case 7:
+      return L"\U0001F4CC";  // 📌 always-on-top pin
+    case 8:
       return L"✕";  // ✕ close
     default:
       return L"";
@@ -102,6 +104,8 @@ bool SlotActive(int slot, const States& states) {
       return states.pass_through;
     case 5:
       return states.locked;
+    case 7:
+      return states.topmost;
     default:
       return false;
   }

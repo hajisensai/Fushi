@@ -149,6 +149,10 @@ class FloatingLyricWindow {
   // window, so this is the only place the user can see either state.
   void SetVoiceState(bool replaying, bool recapturing);
   void SetClickLookupEnabled(bool enabled);
+  // 「悬停即查词」（Dart 偏好 `hover_auto_lookup`，与阅读器 / 视频字幕同一开关）。
+  // 关闭时（默认）hook 浮窗只在**按住 Shift** 悬停时查词；打开时纯悬停即查。
+  // Shift-悬停本身不受此开关控制，它是查词的通用手势。
+  void SetHoverAutoLookup(bool enabled);
   // Text-only mode (the transparent clipboard text window): the strip draws
   // ONLY the draggable, tappable text — no playback / lock / close control
   // buttons and no resize grip. Drag + single-tap word lookup still work exactly
@@ -157,8 +161,9 @@ class FloatingLyricWindow {
   // false so its rendering + hit-testing stay byte-for-byte unchanged.
   void SetTextOnly(bool text_only) { text_only_ = text_only; }
   // Rich text-only mode used by the galgame Hook window. It keeps the text-only
-  // rendering surface but enables wrapping, resizing, the six-button core
-  // toolbar, line-context lookup and body pass-through.
+  // rendering surface but enables wrapping, resizing, the shared-slot
+  // toolbar (hook_toolbar::kSlotActions), line-context lookup and body
+  // pass-through.
   void SetHookTextMode(bool enabled) {
     hook_text_mode_ = enabled;
     if (enabled) text_only_ = true;
@@ -183,6 +188,11 @@ class FloatingLyricWindow {
   // created.
   void SetPassThrough(bool enabled);
   bool IsPassThrough() const { return pass_through_; }
+  // 置顶（📌）。用户按按钮时由 DispatchControlAction 就地翻转；这个入口给 Dart 在
+  // 每次 show 时**按会话复位**用——与 locked / passThrough / following 同规矩，
+  // 不然上一局关掉置顶之后，下一局浮窗会藏在全屏游戏后面，用户只会以为它没出来。
+  void SetTopmost(bool enabled);
+  bool IsTopmost() const { return topmost_; }
   // Restores a physical-pixel window rectangle before the next Show. Invalid
   // rectangles are ignored and Show uses its DPI-aware default.
   void SetInitialBounds(int left, int top, int width, int height);
@@ -217,6 +227,23 @@ class FloatingLyricWindow {
 
   // Returns the control action at the client point, or empty when none.
   std::string ControlActionAt(float x, float y);
+
+  // 把 client 点上的那个字送去查词（回调带屏幕逻辑 px 的词矩形）。点击查词与
+  // Shift-悬停查词共用这一个出口，两条路径的取词、坐标换算、载荷永远同形。
+  // 返回是否真的派发了一次查词。
+  bool DispatchLookupAt(float x, float y);
+
+  // Shift-悬停查词（gal hook 浮窗）。命中新字才派发一次，因此鼠标在同一个字上
+  // 抖动、或定时器每次轮询都不会重复查词。
+  void MaybeHoverLookup(float x, float y);
+  // 复位悬停去重锚（松开 Shift / 移出文本 / 换台词），使下次进入同一个字仍会查。
+  void ResetHoverLookupAnchor();
+  // 只在鼠标停在窗口里时开着的轮询定时器：浮窗是 WS_EX_NOACTIVATE 的分层窗，键盘
+  // 焦点永远在游戏那边，收不到任何 WM_KEYDOWN，所以「光标不动、按下 Shift」只能靠
+  // 轮询物理键态发现（这正是 BUG-880 在视频页踩过的坑：只绑 hover 事件 = 不抖鼠标
+  // 就不出词）。离开窗口即停表，不在后台空转。
+  void StartHoverLookupPolling();
+  void StopHoverLookupPolling();
 
   // Runs a toolbar action. Single dispatcher shared by the in-body toolbar
   // (WM_LBUTTONDOWN) and the standalone pass-through toolbar window, so a
@@ -296,7 +323,7 @@ class FloatingLyricWindow {
   void ClampCurrentPositionToWindowMonitor();
 
   // Narrowest width the strip may be resized / restored to. Hook mode floors at
-  // its own 8-slot toolbar width so the voice buttons can never be clipped.
+  // its own toolbar row width so the voice buttons can never be clipped.
   float MinStripWidthDip() const;
 
   HWND hwnd_ = nullptr;
@@ -307,6 +334,13 @@ class FloatingLyricWindow {
   bool replaying_ = false;
   bool recapturing_ = false;
   bool click_lookup_enabled_ = true;
+  // 「悬停即查词」偏好镜像（见 SetHoverAutoLookup）。false 时悬停查词需按住 Shift。
+  bool hover_auto_lookup_ = false;
+  // Shift-悬停查词去重锚：上一次真正派发查词的字下标（-1 = 无）。命中同一个字不
+  // 重复查词——鼠标横穿一行时按字触发，停住不动时不刷屏。
+  int hover_lookup_index_ = -1;
+  // 悬停轮询定时器是否已挂（只在鼠标在窗口内时挂着）。
+  bool hover_poll_active_ = false;
   // Text-only clipboard window: suppress control buttons + resize grip, use the
   // full window height for text. Never true for the audiobook lyric strip.
   bool text_only_ = false;

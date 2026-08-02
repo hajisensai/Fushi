@@ -209,6 +209,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     bool following = true,
     bool passThrough = false,
     bool locked = false,
+    bool hoverAutoLookup = false,
   }) {
     return _instance.showImpl(<String, Object?>{
       'fontSize': fontSize,
@@ -220,6 +221,12 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       'windowWidth': 900.0,
       'windowHeight': 140.0,
       'clickLookupEnabled': true,
+      // 置顶（📌 按钮）按会话复位为「开」，与 locked / passThrough / following 同
+      // 规矩：上一局用户关掉置顶，不该让这一局的浮窗藏在全屏游戏后面。
+      'topmost': true,
+      // 「悬停即查词」：true 时浮窗上纯悬停即查词，false 时必须按住 Shift（Shift-悬停
+      // 查词本身始终可用，不受此开关控制）。
+      'hoverAutoLookup': hoverAutoLookup,
       'following': following,
       'passThrough': passThrough,
       'locked': locked,
@@ -291,6 +298,16 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         'replaying': replaying,
         'recapturing': recapturing,
       },
+    );
+  }
+
+  /// 「悬停即查词」live 下发（设置项 `hover_auto_lookup`）：开着浮窗时改设置立刻生效，
+  /// 不必等下一局游戏。关掉时浮窗退回「按住 Shift 悬停才查词」。
+  static Future<void> setHoverAutoLookup(bool enabled) async {
+    if (!_instance.isSupported) return;
+    await _instance.channel.invokeMethod<void>(
+      'setHoverAutoLookup',
+      <String, Object?>{'enabled': enabled},
     );
   }
 

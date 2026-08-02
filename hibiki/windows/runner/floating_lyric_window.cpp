@@ -31,11 +31,17 @@ constexpr float kControlsTopDip = 8.0f;
 // Bottom-right resize grip and the min / max the user may drag the bar to.
 constexpr float kResizeGripDip = 18.0f;
 constexpr float kMinStripWidthDip = 280.0f;
-// Hook mode draws a centred 8-slot toolbar (8 * 30 + 7 * 10 = 310dip). The
+// Hook mode draws a centred 9-slot toolbar (9 * 30 + 8 * 10 = 350dip). The
 // generic 280dip floor would let the user drag the window narrower than its own
 // controls, clipping the leading voice buttons; hook mode therefore floors at
-// the toolbar width plus a small margin.
-constexpr float kHookTextMinStripWidthDip = 330.0f;
+// the toolbar width plus a small margin. Bump this whenever kSlotCount grows —
+// the floor is derived from the row width, not from a taste-based round number.
+constexpr float kHookTextMinStripWidthDip = 370.0f;
+// Shift-悬停查词的轮询表（只在鼠标停在浮窗里时挂着，见 StartHoverLookupPolling）。
+// 60ms ≈ 一次按键的最短可感知延迟，且远低于用户「按下 Shift 想看词」的心理预期；
+// 只在窗口内轮询，代价是一次 GetAsyncKeyState + 一次 DWrite 命中测试。
+constexpr UINT_PTR kHoverLookupTimerId = 1;
+constexpr UINT kHoverLookupPollMs = 60;
 constexpr float kMinStripHeightDip = 64.0f;
 constexpr float kMaxStripWidthDip = 2400.0f;
 constexpr float kMaxStripHeightDip = 480.0f;
@@ -322,9 +328,13 @@ bool FloatingLyricWindow::Show(HWND owner) {
       const int restored_width = initial_bounds_.right - initial_bounds_.left;
       const int restored_height = initial_bounds_.bottom - initial_bounds_.top;
       if (restored_width > 0 && restored_height > 0) {
+        // 存下来的宽度可能比**今天**的工具栏还窄（老版本槽位少、下限也低）。不夹
+        // 一下，恢复出来的窗口会把首尾按钮裁掉；下限本身就是按当前槽数算的。
+        const int min_width =
+            static_cast<int>(ScaleForDpi(MinStripWidthDip()));
         SetWindowPos(hwnd_, HWND_TOPMOST, initial_bounds_.left,
-                     initial_bounds_.top, restored_width, restored_height,
-                     SWP_NOACTIVATE);
+                     initial_bounds_.top, std::max(restored_width, min_width),
+                     restored_height, SWP_NOACTIVATE);
         SyncStripSizeFromWindow();
         ClampCurrentPositionToWindowMonitor();
       }
@@ -347,6 +357,9 @@ void FloatingLyricWindow::Hide() {
   hovered_ = false;
   tracking_mouse_leave_ = false;
   dragging_ = false;
+  // 隐藏后收不到 WM_MOUSELEAVE：定时器留着就是后台空转。
+  StopHoverLookupPolling();
+  ResetHoverLookupAnchor();
   // BUG-951: hand clicks back unconditionally and take the toolbar down with
   // the body. A hidden window that is still WS_EX_TRANSPARENT would come back
   // click-through even if pass-through was switched off while hidden.
@@ -388,6 +401,9 @@ void FloatingLyricWindow::UpdateText(const std::wstring& text,
   // 的分支——那个分支要成立，前提是新旧文本连续，而 hook 台词从来不是。
   scroll_offset_px_ = 0.0f;
   scroll_max_px_ = 0.0f;
+  // 换了台词，去重锚指的那个下标已经是另一个字了：不清就会出现「新句子里鼠标下
+  // 的字正好同号 → 悬停不查」。
+  ResetHoverLookupAnchor();
   RequestRender();
 }
 
@@ -467,6 +483,29 @@ void FloatingLyricWindow::SetVoiceState(bool replaying, bool recapturing) {
 
 void FloatingLyricWindow::SetClickLookupEnabled(bool enabled) {
   click_lookup_enabled_ = enabled;
+}
+
+void FloatingLyricWindow::SetTopmost(bool enabled) {
+  topmost_ = enabled;
+  if (hwnd_ == nullptr) {
+    // 还没建窗：Show() 自己会按 topmost_ 插入 Z 序。
+    return;
+  }
+  // 不做「值没变就早退」：Dart 每局 show 会再调一次 SetTopmost(true)，同值也把窗口
+  // 重新插到 Z 序顶上——上一局被别的窗口爬到上面时，这一次复位就是把它拉回来。
+  SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  RequestRender();
+}
+
+void FloatingLyricWindow::SetHoverAutoLookup(bool enabled) {
+  if (hover_auto_lookup_ == enabled) {
+    return;
+  }
+  hover_auto_lookup_ = enabled;
+  // 开关一变，上一次的去重锚就没有意义了（刚关掉时更要清，否则重新按 Shift 停在
+  // 同一个字上会被当成「已经查过」）。
+  ResetHoverLookupAnchor();
 }
 
 bool FloatingLyricWindow::ScrollBy(float delta_px) {
@@ -638,6 +677,7 @@ hook_toolbar::States FloatingLyricWindow::ToolbarStates() const {
   states.playing = playing_;
   states.pass_through = pass_through_;
   states.locked = locked_;
+  states.topmost = topmost_;
   return states;
 }
 
@@ -753,6 +793,9 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
           tracking_mouse_leave_ = true;
         }
       }
+      // 鼠标进了窗口才开轮询表：静止光标上按下 Shift 也要能出词（BUG-880 在视频页
+      // 的同款坑）。离开窗口时 WM_MOUSELEAVE 停表。
+      StartHoverLookupPolling();
       if (dragging_) {
         POINT cursor;
         GetCursorPos(&cursor);
@@ -796,10 +839,39 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
           dragging_ = true;
         }
       }
+      // Shift-悬停查词：按住 Shift 在台词上划过即逐字查词（与阅读器 / 视频字幕的
+      // onShiftHover 同语义）。命中新字才派发一次，见 MaybeHoverLookup。
+      MaybeHoverLookup(static_cast<float>(GET_X_LPARAM(lparam)),
+                       static_cast<float>(GET_Y_LPARAM(lparam)));
+      return 0;
+    }
+    case WM_TIMER: {
+      if (wparam != kHoverLookupTimerId) {
+        return DefWindowProc(hwnd_, message, wparam, lparam);
+      }
+      // 轮询只补一件 WM_MOUSEMOVE 补不了的事：光标不动、用户刚按下 Shift。光标位置
+      // 现问系统（不缓存），落在窗口外就直接停表——WM_MOUSELEAVE 偶尔会因为窗口 Z
+      // 序变化而不来，这是兜底。
+      POINT cursor;
+      if (!GetCursorPos(&cursor)) {
+        return 0;
+      }
+      RECT rc;
+      if (!GetWindowRect(hwnd_, &rc) || !PtInRect(&rc, cursor)) {
+        StopHoverLookupPolling();
+        ResetHoverLookupAnchor();
+        return 0;
+      }
+      POINT client = cursor;
+      ScreenToClient(hwnd_, &client);
+      MaybeHoverLookup(static_cast<float>(client.x),
+                       static_cast<float>(client.y));
       return 0;
     }
     case WM_MOUSELEAVE: {
       tracking_mouse_leave_ = false;
+      StopHoverLookupPolling();
+      ResetHoverLookupAnchor();
       if (hovered_ && !dragging_) {
         hovered_ = false;
         RequestRender();
@@ -854,37 +926,9 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       }
       // A press that never moved into a drag over the lyric text fires the word
       // lookup now — single-tap lookup preserved.
-      if (!was_dragging && was_pressed && was_text &&
-          (on_lookup_ || on_context_lookup_)) {
-        D2D1_RECT_F char_rect = {};
-        const int index = CharIndexAt(static_cast<float>(lookup_pt.x),
-                                      static_cast<float>(lookup_pt.y),
-                                      &char_rect);
-        if (index >= 0) {
-          int utf8_len = WideCharToMultiByte(CP_UTF8, 0, text_.c_str(),
-                                             static_cast<int>(text_.size()),
-                                             nullptr, 0, nullptr, nullptr);
-          std::string utf8(utf8_len, '\0');
-          WideCharToMultiByte(CP_UTF8, 0, text_.c_str(),
-                              static_cast<int>(text_.size()), utf8.data(),
-                              utf8_len, nullptr, nullptr);
-          if (on_context_lookup_) {
-            // Client-area physical px -> screen logical px: the lookup card
-            // anchors to the tapped word, so it must be in the same unit
-            // system Dart uses for screen rects.
-            const float scale = std::max(0.01f, static_cast<float>(dpi_) / 96.0f);
-            RECT wr = {};
-            GetWindowRect(hwnd_, &wr);
-            const D2D1_RECT_F screen_rect = D2D1::RectF(
-                (wr.left + char_rect.left) / scale,
-                (wr.top + char_rect.top) / scale,
-                (wr.left + char_rect.right) / scale,
-                (wr.top + char_rect.bottom) / scale);
-            on_context_lookup_(context_id_, utf8, index, screen_rect);
-          } else if (on_lookup_) {
-            on_lookup_(utf8, index);
-          }
-        }
+      if (!was_dragging && was_pressed && was_text) {
+        DispatchLookupAt(static_cast<float>(lookup_pt.x),
+                         static_cast<float>(lookup_pt.y));
       }
       if (was_dragging) {
         NotifyBoundsChanged();
@@ -1382,7 +1426,7 @@ void FloatingLyricWindow::Render() {
 
     // Controls appear only on hover. Clipboard mode keeps its historical
     // right-aligned buttons (transparency, pin/topmost, lock); Hook mode uses a
-    // centred six-button core toolbar. Their hit areas in ControlActionAt() are
+    // centred shared-slot core toolbar. Their hit areas in ControlActionAt() are
     // gated on hovered_ too, so a click can never hit an invisible button.
     if (hovered_ && draw_body_toolbar) {
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_bg;
@@ -1419,7 +1463,7 @@ void FloatingLyricWindow::Render() {
         const float left = (width - controls_total) / 2.0f;
         // Glyph + active tint come from the shared slot table, so the in-body
         // toolbar and the standalone pass-through toolbar always draw the same
-        // eight buttons in the same order (BUG-951).
+        // buttons in the same order (BUG-951).
         const hook_toolbar::States tb_states = ToolbarStates();
         for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
           draw_tbtn(left + slot * (t_btn + t_gap),
@@ -1575,13 +1619,17 @@ void FloatingLyricWindow::DispatchControlAction(const std::string& action) {
     return;
   }
   if (action == "topmost") {
-    // The text-only Luna toolbar pin button: toggle always-on-top locally
-    // (LunaTranslator #36). Handled natively — no Dart round-trip — and every
-    // window-Z SetWindowPos reads topmost_ so the new state sticks.
-    topmost_ = !topmost_;
-    SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-    RequestRender();
+    // 按钮按下 = 翻转，落地走 SetTopmost（与 Dart 的会话复位同一条路径）。
+    // Pin button (clipboard Luna toolbar + galgame hook toolbar slot 7): toggle
+    // always-on-top locally (LunaTranslator #36). Handled natively — no Dart
+    // round-trip — and every window-Z SetWindowPos reads topmost_ so the new
+    // state sticks. Re-pinning also re-asserts HWND_TOPMOST, which is the way
+    // back up when another window has since climbed over the overlay.
+    //
+    // 只作用于**正文窗**。穿透态下的独立工具条窗（HookToolbarWindow）永远保持
+    // HWND_TOPMOST：它是 BUG-951 的逃生口，被压到游戏底下就等于用户再也回不来，
+    // 所以这里刻意不把 Z 同步给它。
+    SetTopmost(!topmost_);
     return;
   }
   if (on_control_) {
@@ -1698,6 +1746,104 @@ void FloatingLyricWindow::SyncStripSizeFromWindow() {
   }
   strip_width_dip_ = static_cast<float>(rc.right - rc.left) / scale;
   strip_height_dip_ = static_cast<float>(rc.bottom - rc.top) / scale;
+}
+
+bool FloatingLyricWindow::DispatchLookupAt(float x, float y) {
+  if (on_lookup_ == nullptr && on_context_lookup_ == nullptr) {
+    return false;
+  }
+  D2D1_RECT_F char_rect = {};
+  const int index = CharIndexAt(x, y, &char_rect);
+  if (index < 0) {
+    return false;
+  }
+  int utf8_len =
+      WideCharToMultiByte(CP_UTF8, 0, text_.c_str(),
+                          static_cast<int>(text_.size()), nullptr, 0, nullptr,
+                          nullptr);
+  std::string utf8(utf8_len, '\0');
+  WideCharToMultiByte(CP_UTF8, 0, text_.c_str(),
+                      static_cast<int>(text_.size()), utf8.data(), utf8_len,
+                      nullptr, nullptr);
+  if (on_context_lookup_) {
+    // Client-area physical px -> screen logical px: the lookup card
+    // anchors to the tapped word, so it must be in the same unit
+    // system Dart uses for screen rects.
+    const float scale = std::max(0.01f, static_cast<float>(dpi_) / 96.0f);
+    RECT wr = {};
+    GetWindowRect(hwnd_, &wr);
+    const D2D1_RECT_F screen_rect =
+        D2D1::RectF((wr.left + char_rect.left) / scale,
+                    (wr.top + char_rect.top) / scale,
+                    (wr.left + char_rect.right) / scale,
+                    (wr.top + char_rect.bottom) / scale);
+    on_context_lookup_(context_id_, utf8, index, screen_rect);
+    return true;
+  }
+  on_lookup_(utf8, index);
+  return true;
+}
+
+void FloatingLyricWindow::ResetHoverLookupAnchor() { hover_lookup_index_ = -1; }
+
+void FloatingLyricWindow::MaybeHoverLookup(float x, float y) {
+  // 只有 gal hook 浮窗走悬停查词：歌词条 / 剪贴板文本窗保持「点字才查」，一字不改。
+  // 按下左键的那段（pending press / 拖窗 / 拉伸）里也不查——那是另一套手势，用户
+  // 正在移动窗口，不是在读词。
+  if (!hook_text_mode_ || !click_lookup_enabled_ || pressed_ || dragging_) {
+    return;
+  }
+  // 穿透态下「鼠标整个属于游戏」（BUG-951 的契约）：正文窗带 WS_EX_TRANSPARENT，
+  // 系统根本不投鼠标消息给它，但轮询定时器读的是全局光标位置，会绕过这条边界 ——
+  // 所以判据必须写在这里，而不是指望收不到消息。
+  if (pass_through_) {
+    StopHoverLookupPolling();
+    ResetHoverLookupAnchor();
+    return;
+  }
+  if (on_lookup_ == nullptr && on_context_lookup_ == nullptr) {
+    return;
+  }
+  // Shift 只能问**物理**键态：这个窗口是 WS_EX_NOACTIVATE 的分层窗，键盘焦点永远
+  // 在游戏那边，GetKeyState 读的是本线程消息队列的同步键态（对一个从不收键盘消息
+  // 的窗口来说永远不会更新）。GetAsyncKeyState 读的是全局实时键态，才是对的。
+  const bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+  if (!shift && !hover_auto_lookup_) {
+    ResetHoverLookupAnchor();
+    return;
+  }
+  const int index = CharIndexAt(x, y);
+  if (index < 0) {
+    // 移出文本区（空白 / 工具条 / 滚动条）即松锚，回来时同一个字仍会再查一次。
+    ResetHoverLookupAnchor();
+    return;
+  }
+  if (index == hover_lookup_index_) {
+    return;  // 同一个字：抖动、轮询都不重复查词。
+  }
+  hover_lookup_index_ = index;
+  if (!DispatchLookupAt(x, y)) {
+    ResetHoverLookupAnchor();
+  }
+}
+
+void FloatingLyricWindow::StartHoverLookupPolling() {
+  if (hover_poll_active_ || hwnd_ == nullptr || !hook_text_mode_) {
+    return;
+  }
+  if (SetTimer(hwnd_, kHoverLookupTimerId, kHoverLookupPollMs, nullptr) != 0) {
+    hover_poll_active_ = true;
+  }
+}
+
+void FloatingLyricWindow::StopHoverLookupPolling() {
+  if (!hover_poll_active_) {
+    return;
+  }
+  if (hwnd_ != nullptr) {
+    KillTimer(hwnd_, kHoverLookupTimerId);
+  }
+  hover_poll_active_ = false;
 }
 
 int FloatingLyricWindow::CharIndexAt(float x, float y,
