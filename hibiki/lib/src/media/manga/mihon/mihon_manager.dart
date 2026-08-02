@@ -27,6 +27,7 @@ class MihonManager extends ChangeNotifier {
     required this.rootDirectory,
     required this.runtime,
     MihonExtensionStoreClient? storeClient,
+    this.seedDefaultStore = false,
   }) : _storeClient = storeClient ?? MihonExtensionStoreClient() {
     if (Platform.isWindows || Platform.isMacOS) {
       _exitShutdown =
@@ -38,6 +39,15 @@ class MihonManager extends ChangeNotifier {
   final Directory rootDirectory;
   final MihonRuntime runtime;
   final MihonExtensionStoreClient _storeClient;
+
+  /// 是否在 [initialise] 里装配默认扩展仓库（见 [kMihonDefaultStoreIndexUrl]）。
+  ///
+  /// 默认 **false**，只有真实 app 启动那一处（`AppModel.mihonManager`）传 true。
+  /// 装默认仓库是**应用启动策略**，不是「构造一个 manager」的语义：挂在
+  /// [initialise] 上无条件执行，会让任何构造 manager 的单测都去真实网络拉
+  /// keiyoushi 索引（1900+ 条），既慢又把测试结果绑在外网上——这正是本轮
+  /// `mihon_manager_install_test` 那条 cold-start 用例变红的原因。
+  final bool seedDefaultStore;
 
   List<MangaExtensionStoreRow> stores = const <MangaExtensionStoreRow>[];
   List<MangaExtensionRow> installed = const <MangaExtensionRow>[];
@@ -92,6 +102,7 @@ class MihonManager extends ChangeNotifier {
   /// 由 [addStore] 单独拉这一个仓库，不会把同一个索引拉两遍。整个过程吞异常——
   /// 断网或仓库临时 502 不该让扩展子系统初始化失败（`_initialise` 会 rethrow）。
   Future<void> _seedDefaultStore() async {
+    if (!seedDefaultStore) return;
     final bool seeded = await database.getPrefTyped<bool>(
       kMihonDefaultStoreSeededPref,
       false,
