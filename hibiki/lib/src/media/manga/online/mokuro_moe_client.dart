@@ -19,6 +19,30 @@ import 'dart:io';
 /// 默认目录站点（偏好 `manga_online_catalog_base_url` 空值时的回退）。
 const String kMokuroMoeDefaultBaseUrl = 'https://mokuro.moe';
 
+/// 带状态码的 HTTP 失败。实现 [HttpException] 的隐式接口，`is HttpException`
+/// 仍为真（旧调用点/测试的类型判断不受影响），额外暴露 [statusCode] 供下载
+/// 队列区分「服务端瞬时故障（值得自动重试）」与「该资源就是没有（重试无用）」
+/// ——404 的卷重试三轮只是白等几十秒。
+class MokuroMoeHttpException implements HttpException {
+  const MokuroMoeHttpException(this.statusCode, {this.uri});
+
+  final int statusCode;
+
+  @override
+  final Uri? uri;
+
+  @override
+  String get message => 'mokuro.moe request failed: HTTP $statusCode';
+
+  /// 服务端侧瞬时故障：5xx 网关/过载、408 请求超时、429 限流。
+  /// 4xx 其余（404 缺卷、403 防盗链）是稳定结论，重试没有意义。
+  bool get isTransient =>
+      statusCode >= 500 || statusCode == 408 || statusCode == 429;
+
+  @override
+  String toString() => 'HttpException: $message, uri = $uri';
+}
+
 /// 归一 base URL：trim + 去尾斜杠；空串回退默认站点。
 String normalizeMokuroMoeBaseUrl(String raw) {
   String s = raw.trim();
@@ -153,8 +177,8 @@ class MokuroMoeClient {
       final HttpClientResponse response = await request.close();
       if (response.statusCode != HttpStatus.ok) {
         await response.drain<void>();
-        throw HttpException(
-          'mokuro.moe request failed: HTTP ${response.statusCode}',
+        throw MokuroMoeHttpException(
+          response.statusCode,
           uri: Uri.parse(url),
         );
       }

@@ -254,8 +254,8 @@ class MokuroMoeVolumeDownloader {
       final HttpClientResponse response = await request.close();
       if (response.statusCode != HttpStatus.ok) {
         await response.drain<void>();
-        throw HttpException(
-          'download failed: HTTP ${response.statusCode}',
+        throw MokuroMoeHttpException(
+          response.statusCode,
           uri: Uri.parse(url),
         );
       }
@@ -329,8 +329,8 @@ class MokuroMoeVolumeDownloader {
         sink = part.openWrite();
       } else {
         await response.drain<void>();
-        throw HttpException(
-          'download failed: HTTP ${response.statusCode}',
+        throw MokuroMoeHttpException(
+          response.statusCode,
           uri: Uri.parse(url),
         );
       }

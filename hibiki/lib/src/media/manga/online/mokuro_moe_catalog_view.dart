@@ -503,6 +503,11 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
             MokuroMoeTaskStatus.running =>
               mokuroMoeStageLabel(pending!.lastEvent),
             MokuroMoeTaskStatus.queued => t.download_status_queued,
+            // 退避重试中也是「未完成任务」，行仍不可再选，得说清它在等什么。
+            MokuroMoeTaskStatus.waitingRetry => t.manga_online_retry_waiting(
+                attempt: pending!.autoRetries,
+                total: _queue.maxAutoRetries,
+              ),
             _ => null,
           };
     final Widget? subtitle = subtitleText == null

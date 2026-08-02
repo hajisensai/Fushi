@@ -130,7 +130,7 @@ void main() {
   });
 
   group('enumerateMangaPages', () {
-    test('顶层 + 一层子目录、白名单扩展名、排除产物目录、自然序', () {
+    test('递归下钻、白名单扩展名、排除产物目录、自然序', () {
       final Directory root = Directory.systemTemp.createTempSync('manga_enum_');
       addTearDown(() => root.deleteSync(recursive: true));
       _writePng(p.join(root.path, 'p10.png'), 10, 10);
@@ -138,19 +138,56 @@ void main() {
       _writePng(p.join(root.path, 'extra', 'p1.png'), 10, 10);
       // bmp 页：导入白名单认它，OCR 枚举也必须收（BUG-1121）。
       _writeBmp(p.join(root.path, 'p3.bmp'), 10, 10);
-      // 二层子目录：不收。
+      // 二层子目录：**要收**。已入库书的页图在 `images/<源子目录>/页`，
+      // mokuro.moe 的卷 CBZ 顶层带 `<卷名>/`，页图正落在这一层；旧实现只扫一层
+      // 子目录，整本书一页都枚举不到（BUG-1434）。
       _writePng(p.join(root.path, 'extra', 'deep', 'x.png'), 10, 10);
       // 产物目录里的图：不收。
       _writePng(p.join(root.path, kMangaOcrOutDirName, 'y.png'), 10, 10);
+      // 嵌套在子目录里的产物目录：同样不收。
+      _writePng(
+          p.join(root.path, 'extra', kMangaOcrOutDirName, 'z.png'), 10, 10);
       // 非图片：不收。
       File(p.join(root.path, 'note.txt')).writeAsStringSync('x');
 
       final List<MangaOcrPageFile> pages = enumerateMangaPages(root);
       expect(
         pages.map((MangaOcrPageFile page) => page.relativeUrl).toList(),
-        <String>['extra/p1.png', 'p2.png', 'p3.bmp', 'p10.png'],
+        <String>[
+          'extra/deep/x.png',
+          'extra/p1.png',
+          'p2.png',
+          'p3.bmp',
+          'p10.png',
+        ],
         reason: '正斜杠相对 url + 自然序（p2 < p3 < p10）',
       );
+    });
+
+    test('下钻深度封顶 kMangaPageScanMaxDepth，更深的不收', () {
+      final Directory root =
+          Directory.systemTemp.createTempSync('manga_enum_deep_');
+      addTearDown(() => root.deleteSync(recursive: true));
+      // 恰好在上限层：收。
+      final List<String> atLimit = <String>[
+        root.path,
+        for (int i = 0; i < kMangaPageScanMaxDepth; i++) 'd$i',
+        'ok.png',
+      ];
+      _writePng(p.joinAll(atLimit), 10, 10);
+      // 再深一层：不收（防误选磁盘根时走穿整棵树）。
+      final List<String> tooDeep = <String>[
+        root.path,
+        for (int i = 0; i < kMangaPageScanMaxDepth + 1; i++) 'e$i',
+        'nope.png',
+      ];
+      _writePng(p.joinAll(tooDeep), 10, 10);
+
+      final List<String> urls = enumerateMangaPages(root)
+          .map((MangaOcrPageFile page) => page.relativeUrl)
+          .toList();
+      expect(urls, hasLength(1));
+      expect(urls.single, endsWith('ok.png'));
     });
   });
 

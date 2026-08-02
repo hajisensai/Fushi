@@ -1,0 +1,14 @@
+## BUG-1434 · 已导入的 mokuro 漫画在 OCR 向导被误判为没有找到图片
+- **报告**：2026-08-02（用户：截图「OCR 导入漫画」对话框对已导入的 `Atsumare!Fushigi Kenkyubu 第01巻` 报「此文件夹中没有找到图片。」且「开始 OCR」禁用；用户同时指出「这个 mokuro 下载的应该不用 ocr 才对」——正确）
+- **真实性**：✅ 真 bug，两层根因都在「页图深度被当成常数」：
+  - `hibiki/lib/src/ocr/manga_ocr_folder_job.dart:110` `enumerateMangaPages` 只枚举「顶层文件 + **一层**子目录内的文件」。已入库书目录布局是 `manga.json` + `images/<destRel>`，而 destRel **保留源子目录结构**（`manga_importer.dart:242` `sanitizeRelSegments`）：mokuro.moe 的卷 CBZ 顶层带一个 `<卷名>/` 目录，页图因此落在 `images/<卷名>/001.jpg`（第 2 层子目录）→ 一页都枚举不到。裸图片导入的书是扁平的 `images/001.jpg`，所以只有 mokuro.moe 下载的卷中招。
+  - `hibiki/lib/src/media/manga/manga_ocr_wizard_dialog.dart:1057` `checkOcrFolder` 对**已入库书目录**也按「裸图片文件夹」判定：同样的浅扫够不着深层页图，且「有没有 OCR」只认顶层 `.mokuro` 文件——而书里的 OCR 数据在 `manga.json` 里，不叫 `.mokuro`。于是一本能正常阅读、站点已附带完整 OCR 的书被判成 `noImages`。
+  - 附带确认：`openBookOcr` 的 `onlyMissing` 读的是 OCR 引擎自己的输出缓存（`google_lens_ocr_service.dart:203` `_readExistingPages(output)`），**不是**书里的 `manga.json`。所以真跑起来不会「只补缺失页」，而是把 mokuro.moe 的原生 OCR 全量重跑覆盖——这正是「不该对已有 OCR 的书跑 OCR」的理由。
+- **[x] ① 已修复** —
+  - `enumerateMangaPages` 改为递归下钻，上限 `kMangaPageScanMaxDepth = 6`（防误选磁盘根走穿目录树），每层都排除 `kMangaOcrOutDirName` 产物目录；无权限/瞬时 IO 的子目录跳过而非整卷失败。
+  - `checkOcrFolder` 分两种输入：**已入库书目录**（含 `manga.json`）以页表为准——每页都有 OCR 块 → 新增 `MangaOcrFolderStatus.alreadyOcred`（向导显示「本卷每一页都已有 OCR 数据，无需再跑（重跑会覆盖现有数据）」并禁用运行），有页缺块 → `valid`（可补齐），页表为空 → `noImages`，`manga.json` 读不动 → 退回文件扫描（「元数据坏了」不等于「没有图片」）；**裸图片文件夹**仍按文件判，但改用与 OCR 引擎同一个枚举器 `enumerateMangaPages`，消除「向导说有图、引擎说没页」的两套规则漂移。
+- **[x] ② 已加自动化测试** —
+  - 新增 `hibiki/test/media/manga/manga_ocr_folder_check_test.dart`（9 例，此前 `checkOcrFolder` 无测试）：mokuro.moe 卷（`images/<卷名>/*.jpg` + 每页有块）→ `alreadyOcred` 且显式断言 `isNot(noImages)`（用户症状）；部分页缺块 → `valid`；页表空 → `noImages`；`manga.json` 损坏退回扫描；裸文件夹 `.mokuro` → `hasMokuro`；深层图 → `valid`；无图 → `noImages`；不存在 → `notFound`。
+  - `hibiki/test/ocr/manga_ocr_folder_job_test.dart`：原断言「二层子目录：不收」是这条 bug 的行为快照，已连同理由改为「要收」，并新增深度封顶用例（恰好 6 层收、第 7 层不收）+ 嵌套产物目录仍排除。
+  - **变异实测**（两个修复各自独立生效）：临时关掉 `manga.json` 分支 → `alreadyOcred` 用例报 `valid` 失败；临时把 `kMangaPageScanMaxDepth` 改回 1 → 3 个深层扫描用例失败。
+- **备注**：`onlyMissing` 与书内 `manga.json` 不同源这件事本次未改（超出本轮范围），但已被 `alreadyOcred` 挡在入口外——全页有 OCR 的书不会再进入运行路径。相关：[BUG-1433](BUG-1433-mokuro-download-no-retry.md)。

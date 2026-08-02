@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -30,7 +31,7 @@ void main() {
     MokuroMoeDownloadQueue queue,
     List<({String series, String volume})> calls,
     List<StreamController<MokuroMoeVolumeDownloadEvent>> ctrls,
-  }) makeQueue() {
+  }) makeQueue({List<Duration>? backoff}) {
     final List<({String series, String volume})> calls =
         <({String series, String volume})>[];
     final List<StreamController<MokuroMoeVolumeDownloadEvent>> ctrls =
@@ -46,9 +47,19 @@ void main() {
         ctrls.add(c);
         return c.stream;
       },
+      retryBackoffOverride: backoff,
     );
     return (queue: queue, calls: calls, ctrls: ctrls);
   }
+
+  /// 用户实际撞到的失败：mokuro.moe 连接超时（截图里的
+  /// `SocketException: 信号灯超时已到 ... mokuro.moe:9253`）。
+  const SocketException timeout =
+      SocketException('信号灯超时时间已到', osError: OSError('timeout', 121));
+
+  /// 退避全零的队列：Timer(Duration.zero) 在下一轮事件循环触发，pumpEventQueue 可等到。
+  List<Duration> instantBackoff(int times) =>
+      List<Duration>.filled(times, Duration.zero);
 
   test('顺序执行：一次一卷，前一卷收尾后才起下一卷；done 计入 importedCount', () async {
     final r = makeQueue();
@@ -161,5 +172,208 @@ void main() {
     expect(r.queue.tasks.map((MokuroMoeDownloadTask t) => t.volumeName),
         <String>['v2']);
     r.queue.dispose();
+  });
+
+  group('自动重试（网络瞬断自己回来）', () {
+    test('SocketException → waitingRetry，退避到期后自动重跑同一个任务', () async {
+      final r = makeQueue(backoff: instantBackoff(3));
+      r.queue.enqueue(seriesName: 'S', volumeNames: <String>['v1']);
+      final MokuroMoeDownloadTask task = r.queue.tasks.single;
+
+      r.ctrls[0].addError(timeout);
+      await r.ctrls[0].close();
+      await pumpEventQueue();
+
+      // 不是终态：不能被「清除已完成」扫掉，也不算 finished。
+      expect(task.autoRetries, 1);
+      expect(task.isFinished, isFalse);
+      r.queue.clearFinished();
+      expect(r.queue.tasks, hasLength(1));
+      // 退避到期后重跑，且仍是**同一个任务对象**（不新建行）。
+      expect(r.calls, hasLength(2));
+      expect(r.queue.tasks.single, same(task));
+      expect(task.status, MokuroMoeTaskStatus.running);
+
+      r.ctrls[1].add(doneEvent);
+      await r.ctrls[1].close();
+      await pumpEventQueue();
+      expect(task.status, MokuroMoeTaskStatus.done);
+      expect(r.queue.importedCount, 1);
+      r.queue.dispose();
+    });
+
+    test('连续失败到上限后落 failed，不再无限重试', () async {
+      final r = makeQueue(backoff: instantBackoff(2));
+      r.queue.enqueue(seriesName: 'S', volumeNames: <String>['v1']);
+      final MokuroMoeDownloadTask task = r.queue.tasks.single;
+
+      for (int attempt = 0; attempt < 3; attempt++) {
+        r.ctrls[attempt].addError(timeout);
+        await r.ctrls[attempt].close();
+        await pumpEventQueue();
+      }
+
+      expect(r.calls, hasLength(3), reason: '首跑 + 2 次自动重试');
+      expect(task.status, MokuroMoeTaskStatus.failed);
+      expect(task.autoRetries, 2);
+      expect(task.error, contains('信号灯超时'));
+      r.queue.dispose();
+    });
+
+    test('退避期间不占执行位：队列立刻去跑下一卷', () async {
+      // 退避足够长，确保观察窗口内不会到期。
+      final r = makeQueue(backoff: const <Duration>[Duration(minutes: 5)]);
+      r.queue.enqueue(seriesName: 'S', volumeNames: <String>['v1', 'v2']);
+
+      r.ctrls[0].addError(timeout);
+      await r.ctrls[0].close();
+      await pumpEventQueue();
+
+      expect(r.queue.tasks[0].status, MokuroMoeTaskStatus.waitingRetry);
+      expect(r.calls, hasLength(2));
+      expect(r.queue.runningTask?.volumeName, 'v2');
+      r.queue.dispose();
+    });
+
+    test('退避中取消：移出队列，且到期后不会被偷偷重排', () async {
+      // 退避设短但非零：cancel 掐掉定时器后，即使等过这个时长也不该再起下载。
+      final r =
+          makeQueue(backoff: const <Duration>[Duration(milliseconds: 10)]);
+      r.queue.enqueue(seriesName: 'S', volumeNames: <String>['v1']);
+      final MokuroMoeDownloadTask task = r.queue.tasks.single;
+
+      r.ctrls[0].addError(timeout);
+      await r.ctrls[0].close();
+      await pumpEventQueue();
+      expect(task.status, MokuroMoeTaskStatus.waitingRetry);
+
+      r.queue.cancel(task);
+      expect(r.queue.tasks, isEmpty);
+
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      await pumpEventQueue();
+      expect(r.calls, hasLength(1), reason: '取消后定时器必须已被掐掉');
+      r.queue.dispose();
+    });
+
+    test('404 不自动重试（该卷就是没有，重试只是白等）；503 才重试', () async {
+      final r = makeQueue(backoff: instantBackoff(3));
+      r.queue.enqueue(seriesName: 'S', volumeNames: <String>['v1']);
+      r.ctrls[0].addError(const MokuroMoeHttpException(404));
+      await r.ctrls[0].close();
+      await pumpEventQueue();
+      expect(r.queue.tasks.single.status, MokuroMoeTaskStatus.failed);
+      expect(r.calls, hasLength(1));
+      r.queue.dispose();
+
+      final r2 = makeQueue(backoff: instantBackoff(3));
+      r2.queue.enqueue(seriesName: 'S', volumeNames: <String>['v1']);
+      r2.ctrls[0].addError(const MokuroMoeHttpException(503));
+      await r2.ctrls[0].close();
+      await pumpEventQueue();
+      expect(r2.calls, hasLength(2), reason: '服务端瞬时故障值得重试');
+      r2.queue.dispose();
+    });
+
+    test('本地数据错误（坏 zip）不自动重试：重跑同一份坏数据不会变好', () async {
+      final r = makeQueue(backoff: instantBackoff(3));
+      r.queue.enqueue(seriesName: 'S', volumeNames: <String>['v1']);
+      r.ctrls[0].addError(StateError('mokuro.moe CBZ is not a valid zip'));
+      await r.ctrls[0].close();
+      await pumpEventQueue();
+      expect(r.queue.tasks.single.status, MokuroMoeTaskStatus.failed);
+      expect(r.calls, hasLength(1));
+      r.queue.dispose();
+    });
+
+    test('用户取消不触发自动重试', () async {
+      final r = makeQueue(backoff: instantBackoff(3));
+      r.queue.enqueue(seriesName: 'S', volumeNames: <String>['v1']);
+      r.queue.cancel(r.queue.tasks.single);
+      await pumpEventQueue();
+      expect(r.queue.tasks.single.status, MokuroMoeTaskStatus.cancelled);
+      expect(r.calls, hasLength(1));
+      r.queue.dispose();
+    });
+  });
+
+  group('手动重试（下载页的重试按钮）', () {
+    test('failed 任务就地复活成排队态，不新建第二条同名行', () async {
+      final r = makeQueue(backoff: const <Duration>[]);
+      r.queue.enqueue(seriesName: 'S', volumeNames: <String>['v1']);
+      final MokuroMoeDownloadTask task = r.queue.tasks.single;
+      r.ctrls[0].addError(timeout);
+      await r.ctrls[0].close();
+      await pumpEventQueue();
+      expect(task.status, MokuroMoeTaskStatus.failed);
+
+      r.queue.retry(task);
+      await pumpEventQueue();
+
+      expect(r.queue.tasks, hasLength(1), reason: '失败行不该僵在列表里 + 多出一条新任务');
+      expect(r.queue.tasks.single, same(task));
+      expect(task.status, MokuroMoeTaskStatus.running);
+      expect(task.error, isNull);
+      expect(task.autoRetries, 0, reason: '用户点一次 = 重新拿满自动重试预算');
+      expect(r.calls, hasLength(2));
+      r.queue.dispose();
+    });
+
+    test('已取消的任务也能手动重试；done / 进行中是 no-op', () async {
+      final r = makeQueue(backoff: const <Duration>[]);
+      r.queue.enqueue(seriesName: 'S', volumeNames: <String>['v1', 'v2']);
+      final MokuroMoeDownloadTask v1 = r.queue.tasks[0];
+      final MokuroMoeDownloadTask v2 = r.queue.tasks[1];
+
+      r.queue.cancel(v1);
+      await pumpEventQueue();
+      expect(v1.status, MokuroMoeTaskStatus.cancelled);
+      expect(r.queue.runningTask, same(v2));
+
+      // 进行中的任务：no-op（不打断当前下载）。
+      r.queue.retry(v2);
+      expect(v2.status, MokuroMoeTaskStatus.running);
+      expect(r.calls, hasLength(2));
+
+      r.queue.retry(v1);
+      expect(v1.status, MokuroMoeTaskStatus.queued, reason: 'v2 还占着执行位，v1 排队等');
+
+      r.ctrls[1].add(doneEvent);
+      await r.ctrls[1].close();
+      await pumpEventQueue();
+      expect(r.calls, hasLength(3));
+      expect(v1.status, MokuroMoeTaskStatus.running);
+
+      // 已成功的任务：no-op。
+      r.queue.retry(v2);
+      expect(v2.status, MokuroMoeTaskStatus.done);
+      expect(r.calls, hasLength(3));
+      r.queue.dispose();
+    });
+
+    test('retryAllFailed 一次复活所有失败/取消任务并返回条数', () async {
+      final r = makeQueue(backoff: const <Duration>[]);
+      r.queue.enqueue(seriesName: 'S', volumeNames: <String>['v1', 'v2', 'v3']);
+      // v1 失败、v2 取消、v3 成功。
+      r.ctrls[0].addError(timeout);
+      await r.ctrls[0].close();
+      await pumpEventQueue();
+      r.queue.cancel(r.queue.tasks[1]);
+      await pumpEventQueue();
+      r.ctrls[2].add(doneEvent);
+      await r.ctrls[2].close();
+      await pumpEventQueue();
+
+      expect(r.queue.tasks[0].status, MokuroMoeTaskStatus.failed);
+      expect(r.queue.tasks[1].status, MokuroMoeTaskStatus.cancelled);
+      expect(r.queue.tasks[2].status, MokuroMoeTaskStatus.done);
+
+      expect(r.queue.retryAllFailed(), 2);
+      await pumpEventQueue();
+      expect(r.queue.tasks[2].status, MokuroMoeTaskStatus.done,
+          reason: '成功的不动');
+      expect(r.queue.tasks, hasLength(3), reason: '仍是原来那三行');
+      r.queue.dispose();
+    });
   });
 }
