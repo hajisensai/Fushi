@@ -34,6 +34,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
+import '../helpers/scan_scale.dart';
 
 /// 统一入口自身——它就是那层分流实现，当然要调 file_picker。
 const String kPickerImpl =
@@ -108,12 +109,18 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
 /// 掩码取旧行式剥离与 Dart 词法掩码的并集：整行 `//`（含三引号 JS/CSS 语料里的）
 /// 照旧掩掉，同时补上块注释与行尾注释。等长掩码保留换行，正则里的 `\s` 仍能跨行
 /// 匹配 `dart format` 折出来的 `FilePicker.platform\n    .pickFiles(`。
+/// [_filesCalling] 的枚举面，单独抽出来只为了让「扫描规模哨兵」能断言**同一条**
+/// 扫描路径（哨兵另写一份枚举只能证明磁盘上有文件，证明不了守卫真的读到了它们）。
+List<File> _scannedDartFiles() => Directory('lib')
+    .listSync(recursive: true)
+    .whereType<File>()
+    .where((File f) => f.path.endsWith('.dart'))
+    .toList();
+
 Set<String> _filesCalling(String member) {
   final RegExp call = RegExp(r'\.\s*' + member + r'\s*\(');
-  final Directory root = Directory('lib');
   final Set<String> hits = <String>{};
-  for (final FileSystemEntity e in root.listSync(recursive: true)) {
-    if (e is! File || !e.path.endsWith('.dart')) continue;
+  for (final File e in _scannedDartFiles()) {
     final String code = maskCommentsAndScriptLines(e.readAsStringSync());
     if (call.hasMatch(code)) hits.add(e.path.replaceAll(r'\', '/'));
   }
@@ -121,6 +128,11 @@ Set<String> _filesCalling(String member) {
 }
 
 void main() {
+  test('扫描规模哨兵：lib/ 确实被枚举到了', () {
+    expectScanScale(_scannedDartFiles().length,
+        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+  });
+
   test('目录选择器：除统一入口与登记豁免外，不得裸调 getDirectoryPath', () {
     final Set<String> callers = _filesCalling('getDirectoryPath')
       ..remove(kPickerImpl);

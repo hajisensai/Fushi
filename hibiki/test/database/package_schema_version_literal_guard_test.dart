@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
+import '../helpers/scan_scale.dart';
 
 /// BUG-1352 守卫：`packages/*/test/` 下不得再出现 schemaVersion 的**等值**断言。
 ///
@@ -32,7 +33,10 @@ void main() {
   });
 
   test('packages/*/test 下的 schemaVersion 断言必须是下界而非等值', () {
-    if (!packagesDir.existsSync()) return;
+    if (!packagesDir.existsSync()) {
+      fail('../packages 不存在——静默 return 会让这条守卫整条变绿（扫不到 = 没违规），'
+          '这正是本轮要消灭的假绿形态。请在 hibiki/ 包根下运行。');
+    }
 
     // 匹配 `expect(<任意>.schemaVersion, 66)` 这类第二参数是裸整数字面量的断言。
     // `greaterThanOrEqualTo(65)` / `lessThan(...)` 等 matcher 不匹配。
@@ -69,8 +73,8 @@ void main() {
       }
     }
 
-    expect(scannedFiles, greaterThan(0),
-        reason: 'packages/*/test 一个 dart 文件都没扫到，守卫等于没跑');
+    expectScanScale(scannedFiles,
+        what: 'packages/*/test 下的 .dart', atLeast: 50, measured: 72);
     expect(offenders, isEmpty,
         reason: 'package 侧测试跑在 CI 的 `Run package tests` 里，拿不到 hibiki/test '
             '那次批量替换，schema bump 必漏改。改成下界断言，例如\n'

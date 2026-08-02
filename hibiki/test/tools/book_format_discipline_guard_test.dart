@@ -28,6 +28,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 import '../helpers/source_guard.dart';
+import '../helpers/scan_scale.dart';
 
 /// DAO 所在文件（相对 `hibiki/`，故要跳出去一层）。
 const String kDaoFile =
@@ -70,8 +71,10 @@ String _codeOf(String path) => maskComments(File(path).readAsStringSync());
 /// 掩码的**并集**——既补上块注释 / 行尾注释两个洞，又保留旧行为里「三引号 JS/CSS
 /// 语料中整行 `//` 也算注释」这一条，扫 `lib/src/reader/` 时不会凭空多出命中。
 /// 掩码等长且不改行数，`i + 1` 仍是原文真实行号。
-List<String> _codeHits(List<String> roots, RegExp pattern) {
-  final List<String> hits = <String>[];
+/// [_codeHits] 的枚举面，单独抽出来只为了让「扫描规模哨兵」能断言**同一条**扫描路径。
+/// 哨兵另写一份枚举只能证明「磁盘上有文件」，证明不了守卫真的读到了它们。
+List<File> _scannedDartFiles(List<String> roots) {
+  final List<File> files = <File>[];
   for (final String root in roots) {
     final Directory dir = Directory(root);
     if (!dir.existsSync()) continue;
@@ -80,11 +83,20 @@ List<String> _codeHits(List<String> roots, RegExp pattern) {
       final String rel = e.path.replaceAll(r'\', '/');
       if (rel.endsWith('.g.dart') || rel.endsWith(kSelfPath)) continue;
       if (_kFrozenHistoryValueFiles.any(rel.endsWith)) continue;
-      final List<String> lines =
-          maskCommentsAndScriptLines(e.readAsStringSync()).split('\n');
-      for (int i = 0; i < lines.length; i++) {
-        if (pattern.hasMatch(lines[i])) hits.add('$rel:${i + 1}');
-      }
+      files.add(e);
+    }
+  }
+  return files;
+}
+
+List<String> _codeHits(List<String> roots, RegExp pattern) {
+  final List<String> hits = <String>[];
+  for (final File e in _scannedDartFiles(roots)) {
+    final String rel = e.path.replaceAll(r'\', '/');
+    final List<String> lines =
+        maskCommentsAndScriptLines(e.readAsStringSync()).split('\n');
+    for (int i = 0; i < lines.length; i++) {
+      if (pattern.hasMatch(lines[i])) hits.add('$rel:${i + 1}');
     }
   }
   return hits;
@@ -96,6 +108,13 @@ void main() {
     'test',
     '../packages/hibiki_core/lib',
   ];
+
+  test('扫描规模哨兵：三个扫描根确实都被枚举到了', () {
+    expectScanScale(_scannedDartFiles(roots).length,
+        what: 'lib/ + test/ + hibiki_core/lib 下的 .dart（已排除生成物与冻结文件）',
+        atLeast: 2500,
+        measured: 3163);
+  });
 
   test('落库入口收 BookFormat 而非裸 String（未知值编译期不可表达）', () {
     final String dao = _codeOf(kDaoFile);
