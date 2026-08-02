@@ -1,0 +1,25 @@
+@file:Suppress("ktlint:standard:property-naming")
+
+package eu.kanade.tachiyomi.animesource.model
+
+class SAnimeImpl : SAnime {
+    override lateinit var url: String
+
+    override lateinit var title: String
+
+    override var artist: String? = null
+
+    override var author: String? = null
+
+    override var description: String? = null
+
+    override var genre: String? = null
+
+    override var status: Int = 0
+
+    override var thumbnail_url: String? = null
+
+    override var update_strategy: AnimeUpdateStrategy = AnimeUpdateStrategy.ALWAYS_UPDATE
+
+    override var initialized: Boolean = false
+}

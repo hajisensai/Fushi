@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1319 条。点号进各自文件。
+> 共 1320 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1415](bugs/BUG-1415-ci-mextension-upstream-404.md) | ✅ | ✅ | CI macos/windows/publish 全红：Mihon 桌面 runtime 构建 git clone 已 404 的 M-Extension-Server |
 | [BUG-1414](bugs/BUG-1414-md3-manga-fontsize-guard.md) | ✅ | ✅ | manga.json 回写触发 MD3 fontSize 守卫，develop CI 单测门变红 |
 | [BUG-1413](bugs/BUG-1413-local-audio-busy-swallowed-as-miss.md) | ✅ | ✅ | 本地音频库 SQLITE_BUSY 被吞成与「真没这词」同形的 null |
 | [BUG-1412](bugs/BUG-1412-activity-identity-gates.md) | ✅ | ✅ | 游戏活动身份回退过宽：同名条目取第一个 / 脏 key 误绑封面 |

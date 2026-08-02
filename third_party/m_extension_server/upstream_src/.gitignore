@@ -1,0 +1,20 @@
+# Ignore Gradle project-specific cache directory
+.gradle
+.idea
+gradle.properties
+local.properties
+
+# Ignore Gradle build output directory
+build
+dist
+
+# Build scripts temporary files
+.jre_build_tmp
+*.ico
+*.icns
+
+# IDE
+.vscode/
+*.swp
+*.swo
+*~

@@ -1,0 +1,169 @@
+name: CI Publish
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  check_wrapper:
+    name: Validate Gradle Wrapper
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repo
+        uses: actions/checkout@v5
+
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@v5
+
+  build-jar:
+    name: Build Jar
+    needs: check_wrapper
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Generate android.jar
+        run: ./AndroidCompat/getAndroid.sh
+
+      - name: Build project (shadowJar)
+        run: ./gradlew :server:shadowJar --no-daemon --stacktrace
+
+      - name: Upload Jar
+        uses: actions/upload-artifact@v5
+        with:
+          name: jar
+          path: server/build/*.jar
+          if-no-files-found: error
+
+  jlink:
+    name: Create platform JREs
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x64
+          - os: windows-latest
+            name: windows-x64
+          - os: macos-14
+            name: macOS-arm64
+          - os: macos-15-intel
+            name: macOS-x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Make build_jre.sh executable
+        run: chmod +x ./build_jre.sh
+
+      - name: Generate JRE using build_jre.sh
+        shell: bash
+        run: |
+          ./build_jre.sh
+
+      - name: Upload JRE package
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.name }}-jre
+          path: jre
+
+  bundle:
+    name: Bundle JAR + JRE per platform
+    needs: [build-jar, jlink]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            jre: linux-x64
+          - name: macOS-x64
+            jre: macOS-x64
+          - name: macOS-arm64
+            jre: macOS-arm64
+          - name: windows-x64
+            jre: windows-x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download Jar
+        uses: actions/download-artifact@v6
+        with:
+          name: jar
+          path: server/build
+
+      - name: Download JRE for platform
+        uses: actions/download-artifact@v6
+        with:
+          name: ${{ matrix.jre }}-jre
+          path: jre
+
+      - name: Prepare bundle
+        shell: bash
+        run: |
+          mkdir -p upload/jre
+          cp server/build/*.jar upload/
+          if [ -d "jre" ]; then
+            mv jre upload/jre/
+          fi
+          ARCHIVE_NAME="${{ matrix.name }}-bundle.zip"
+          cd upload
+          zip -r ../${ARCHIVE_NAME} .
+
+      - name: Upload bundled artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}-bundle.zip
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download bundle artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: release/default
+
+      - name: Collect release artifacts
+        shell: bash
+        run: |
+          cd release
+          mkdir -p final
+          find default -name "*-bundle.zip" -exec mv {} final/ \;
+          ls -la final/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: release/final/*
+          draft: false
+          prerelease: false

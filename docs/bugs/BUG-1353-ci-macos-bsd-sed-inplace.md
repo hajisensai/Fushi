@@ -38,6 +38,6 @@
   `git clone https://github.com/miru-project/M-Extension-Server.git`，该仓库现已
   **404**（`gh api repos/miru-project/M-Extension-Server` → Not Found），git 转去交互
   取凭据 → `could not read Username for 'https://github.com'` → exit 128。上游仓库消失
-  属外部依赖失效，需产品决策（换镜像 / vendor 到 `third_party/` / 暂时把该步骤设为
-  非阻塞），不在本次修复范围。另 android job 的 `appSmoke` 集成测试失败需模拟器产物
-  才能定位，同样另开条目。
+  属外部依赖失效，需产品决策，不在本次修复范围。**已另开 BUG-1415**（用户拍板「合并」，
+  源码按 MPL-2.0 vendor 进 `third_party/m_extension_server/upstream_src/`）。
+  另 android job 的 `appSmoke` 集成测试失败需模拟器产物才能定位，同样另开条目。
