@@ -14,6 +14,7 @@ import 'package:hibiki/src/anki/lapis_template_service.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat, VideoMiningImageMode;
 import 'package:hibiki/src/platform/platform_providers.dart';
+import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/profile/profile_selector.dart';
 
 /// Anki 设置正文（无脚手架）。直接平铺进「制卡」设置 destination 详情页
@@ -49,6 +50,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   /// 媒体去重在途标记（扫描/执行互斥防重入）。
   bool _dedupBusy = false;
+
+  /// Android 后端切换包含持久化与 provider 换代，必须串行，避免快速往返点击
+  /// 以 Future 完成顺序覆盖最后一次手势。
+  bool _ankiBackendBusy = false;
 
   @override
   Widget build(BuildContext context) {
@@ -90,7 +95,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 title: t.anki_connect_use_on_android,
                 subtitle: t.anki_connect_use_on_android_hint,
                 value: settings.useAnkiConnectOnAndroid,
-                onChanged: (bool value) => _updateAndroidAnkiBackend(vm, value),
+                onChanged: _ankiBackendBusy || uiState.isFetching
+                    ? null
+                    : (bool value) =>
+                        _updateAndroidAnkiBackend(vm, settings, value),
               ),
             _AnkiConnectionField(
               label: t.anki_connect_host,
@@ -109,6 +117,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               label: t.anki_connect_api_key,
               value: settings.ankiConnectApiKey,
               hint: t.anki_connect_api_key_hint,
+              obscureText: true,
               onChanged: vm.updateAnkiConnectApiKey,
             ),
           ],
@@ -573,16 +582,46 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   Future<void> _updateAndroidAnkiBackend(
     AnkiViewModel vm,
+    AnkiSettings settings,
     bool useAnkiConnect,
   ) async {
-    await vm.updateUseAnkiConnectOnAndroid(useAnkiConnect);
-    ref
-        .read(platformServicesProvider)
-        .setUseAnkiConnectOnAndroid(useAnkiConnect);
-    // Every mining entry point creates its repository through PlatformServices.
-    // Rebuild the settings repository immediately as well so capability-gated
-    // sections (Lapis/media maintenance) and Refresh use the selected backend.
-    ref.invalidate(ankiRepositoryProvider);
+    if (_ankiBackendBusy) return;
+    if (useAnkiConnect && settings.ankiConnectApiKey.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.anki_connect_android_api_key_required)),
+      );
+      return;
+    }
+    final PlatformServices platformServices =
+        ref.read(platformServicesProvider);
+    final ProviderContainer container = ProviderScope.containerOf(
+      context,
+      listen: false,
+    );
+    setState(() => _ankiBackendBusy = true);
+    try {
+      await vm.updateUseAnkiConnectOnAndroid(useAnkiConnect);
+      platformServices.setUseAnkiConnectOnAndroid(
+        useAnkiConnect,
+        apiKey: settings.ankiConnectApiKey,
+      );
+      // Every mining entry point creates its repository through PlatformServices.
+      // Rebuild the settings repository immediately as well. Switching clears
+      // deck/model data so the target backend cannot consume the previous
+      // backend's synthetic ids; Refresh must repopulate it before mining.
+      container.invalidate(ankiRepositoryProvider);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text(t.anki_connect_backend_switch_failed(error: '$error')),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _ankiBackendBusy = false);
+    }
   }
 
   Widget _buildCreateLapisTile(AnkiUiState uiState, AnkiViewModel vm) {
@@ -1119,6 +1158,7 @@ class _AnkiConnectionField extends StatefulWidget {
     required this.hint,
     required this.onChanged,
     this.keyboardType = TextInputType.text,
+    this.obscureText = false,
   });
 
   final String label;
@@ -1126,6 +1166,7 @@ class _AnkiConnectionField extends StatefulWidget {
   final String hint;
   final ValueChanged<String> onChanged;
   final TextInputType keyboardType;
+  final bool obscureText;
 
   @override
   State<_AnkiConnectionField> createState() => _AnkiConnectionFieldState();
@@ -1163,6 +1204,7 @@ class _AnkiConnectionFieldState extends State<_AnkiConnectionField> {
         controller: _controller,
         focusNode: _focusNode,
         keyboardType: widget.keyboardType,
+        obscureText: widget.obscureText,
         hintText: widget.hint,
         onChanged: widget.onChanged,
       ),

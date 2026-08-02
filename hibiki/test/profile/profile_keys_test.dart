@@ -200,6 +200,34 @@ void main() {
 
       expect(result.embedMedia, isTrue);
     });
+
+    test('profile apply preserves device-local AnkiConnect routing and secret',
+        () {
+      const AnkiSettings current = AnkiSettings(
+        ankiConnectHost: '192.168.1.20',
+        ankiConnectPort: 9876,
+        ankiConnectApiKey: 'device-secret',
+        ankiConnectUseHttps: true,
+        useAnkiConnectOnAndroid: true,
+      );
+
+      final AnkiSettings result = ProfileKeys.mapToAnkiSettings(
+        <String, String>{
+          'selectedDeckId': '',
+          'selectedDeckName': '',
+          'selectedNoteTypeId': '',
+          'selectedNoteTypeName': '',
+          'fieldMappings': '{}',
+        },
+        current,
+      );
+
+      expect(result.ankiConnectHost, '192.168.1.20');
+      expect(result.ankiConnectPort, 9876);
+      expect(result.ankiConnectApiKey, 'device-secret');
+      expect(result.ankiConnectUseHttps, isTrue);
+      expect(result.useAnkiConnectOnAndroid, isTrue);
+    });
   });
 
   group('ProfileKeys.isExcludedPref — credentials never enter a snapshot', () {

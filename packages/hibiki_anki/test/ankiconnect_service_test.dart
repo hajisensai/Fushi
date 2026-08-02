@@ -70,6 +70,32 @@ void main() {
       expect(url.port, 8765);
     });
 
+    test('preserves an explicitly configured HTTPS endpoint', () async {
+      final issued = <http.Request>[];
+      final client = MockClient((http.Request request) async {
+        issued.add(request);
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'result': const <String>[],
+            'error': null,
+          }),
+          200,
+        );
+      });
+      final service = AnkiConnectService(
+        host: 'anki.example.com',
+        port: 443,
+        useHttps: true,
+        client: client,
+      );
+
+      await service.getDeckNames();
+
+      expect(issued.single.url.scheme, 'https');
+      expect(issued.single.url.host, 'anki.example.com');
+      expect(issued.single.url.port, 443);
+    });
+
     test('requests use a short connection to avoid stale pooled sockets',
         () async {
       final issued = <http.Request>[];
