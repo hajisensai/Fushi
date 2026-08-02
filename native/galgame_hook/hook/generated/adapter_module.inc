@@ -5,3 +5,4 @@
         catsystem2_.onModuleLoaded(entry.szModule);
         malie_libp_.onModuleLoaded(entry.szModule);
         qlie_.onModuleLoaded(entry.szModule);
+        elf_ai6_.onModuleLoaded(entry.szModule);

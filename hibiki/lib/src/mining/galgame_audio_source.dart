@@ -527,16 +527,12 @@ String? pickPairedVoiceOgg({
     }
     final int tick = parsed.tick;
     if (parsed.textEventId != null) {
-      // native 只保证**单边**：资源先落盘、文本随后到，
-      // `0 <= textTs - resourceTick <= kKirikiriFollowingTextWindowMs`
-      // （native/galgame_hook/hook/voice_resource_pairing.h 的
-      // `candidate.timestamp_ms >= resource_tick_ms && <= deadline_ms`）。
-      // 用 `.abs()` 做双边判定等于凭空把容差翻倍，把 native 永远不会产出的
-      // 「资源晚于文本」也纳进来，白扩大陈旧 dump 文件的碰撞面。
-      final int eventDist = textTsMs - tick;
+      // KiriKiri 的资源先于文本，AI6 的 voice.arc 读取晚于文本；两者都由 native
+      // 写入同一个稳定 TextSlot::seq。只有事件 ID 精确相等时才接受双向窄窗，
+      // 带标资源仍绝不降级成“附近最新文件”猜给另一条文本。
+      final int eventDist = (textTsMs - tick).abs();
       if (textEventId != null &&
           parsed.textEventId == textEventId &&
-          eventDist >= 0 &&
           eventDist <= eventIdToleranceMs &&
           eventDist < eventBestDist) {
         eventBestDist = eventDist;

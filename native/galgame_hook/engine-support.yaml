@@ -146,6 +146,100 @@
       ]
     },
     {
+      "id": "elf_ai6",
+      "display_name": "elf AI6",
+      "aliases": ["AI6WIN", "elf AI6"],
+      "family": {
+        "id": "elf",
+        "relation": "elf AI6 archive-based engine"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_architectures": {
+          "values": [],
+          "evidence": null
+        },
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
+        "resource_extensions": {
+          "values": [],
+          "evidence": null
+        },
+        "hashes": {
+          "values": [],
+          "evidence": null
+        }
+      },
+      "process_strategy": {
+        "launch": "unverified",
+        "attach": "unverified",
+        "follow_child_processes": false,
+        "notes": [
+          "Candidate profile detection requires AI6WIN.exe and a structurally valid sibling voice.arc; the original Windows launch path is not verified."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_textouta_hook",
+            "status": "implemented_unverified",
+            "verification": "Candidate Luna TextOutA route; original AI6 thread selection is not verified."
+          }
+        ],
+        "codepage": "CP932",
+        "thread_selection_hint": "Select the stable TextOutA dialogue thread and reject title/menu rendering threads."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "ai6_voice_arc_resource",
+            "format": "candidate Ogg/Vorbis in u32le count + count x 272-byte voice.arc index",
+            "status": "implemented_unverified",
+            "clean_voice": true
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "generic DirectSound PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "No AI6 original-install identity/timeline ledger or same-session text-resource-card E2E is available; this adapter is offline-only and implemented_unverified.",
+        "DirectSound and process-loopback are mixed-output fallbacks and must not be described as clean voice.",
+        "The candidate resource parser accepts only the bounded fixed 272-byte index layout with stored Ogg members that pass structural/EOS validation; Ogg CRC is not validated."
+      ],
+      "adapter_path": "hook/adapters/elf_ai6_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/elf_ai6_replay.json",
+        "../../hibiki/test/fixtures/galhook/elf_ai6_replay.json"
+      ],
+      "test_paths": [
+        "tests/elf_ai6_adapter_test.cpp",
+        "tests/resource_audio_ready_test.cpp",
+        "../../hibiki/test/mining/elf_ai6_pairing_test.dart"
+      ]
+    },
+    {
       "id": "reallive",
       "display_name": "RealLive / old VisualArt's",
       "aliases": ["RealLive", "VisualArt's RealLive"],

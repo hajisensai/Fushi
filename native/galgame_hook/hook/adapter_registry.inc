@@ -357,6 +357,7 @@ class AdapterRegistry {
     artemis_pfs_.ProcessPendingEvents();
     catsystem2_.ProcessPendingEvents();
     malie_libp_.ProcessPendingEvents();
+    elf_ai6_.ProcessPendingEvents();
     kirikiri_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing

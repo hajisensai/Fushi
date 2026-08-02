@@ -86,10 +86,9 @@ void main() {
         isNull,
       );
     });
-    test('资源晚于文本时不得配对（native 只保证单边窗口）', () {
-      // native 的配对条件是 resource_tick <= text_ts <= resource_tick + 窗口，
-      // 「资源比文本晚」根本不会被 native 打标。消费端若用 .abs() 双边判定，
-      // 就把这段 native 永不产出的区间也认了，等于凭空翻倍容差。
+    test('AI6 资源晚于文本时，稳定事件 ID 仍可在窄窗内配对', () {
+      // KiriKiri 先资源后文本，AI6 则先文本后读取 voice.arc；两条链都必须先由
+      // native 写入精确 TextSlot::seq，消费端才允许双向时间窗。
       const int textTsMs = 600000;
       const int tick = textTsMs + 300;
       expect(
@@ -98,7 +97,7 @@ void main() {
           textTsMs: textTsMs,
           textEventId: 83,
         ),
-        isNull,
+        '${tick}_hibiki_textseq83_yuz_001_0012.ogg',
       );
     });
   });

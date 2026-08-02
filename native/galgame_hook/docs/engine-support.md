@@ -9,6 +9,7 @@
 | ID | 引擎 / 后端 | 状态 | 文本 | 音频优先级 | 已验证样本 |
 |---|---|---|---|---|---|
 | `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
+| `elf_ai6` | elf AI6 | `implemented_unverified` | luna_textouta_hook (implemented_unverified) | ai6_voice_arc_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `reallive` | RealLive / old VisualArt's | `implemented_unverified` | luna_hook (implemented_unverified) | visual_arts_ovk_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `kirikiri_z` | KiriKiri2 / KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 2 |
 | `xaudio2_directsound` | XAudio2 / DirectSound generic capture | `verified` | — | xaudio2_source_voice_pcm (verified)；directsound_buffer_pcm (verified) | 1 |
@@ -66,6 +67,42 @@
 Fixtures：尚无（P5 补齐）
 
 Tests：`tests/siglus_ovk_test.cpp`、`tests/siglus_launch_test.cpp`、`tests/siglus_text_test.cpp`
+
+### elf AI6 (`elf_ai6`)
+
+- 状态：`implemented_unverified`
+- 别名：AI6WIN、elf AI6
+- 家族：`elf`（elf AI6 archive-based engine）
+- 当前 adapter：`hook/adapters/elf_ai6_adapter.inc`
+- 进程策略：launch=`unverified`，attach=`unverified`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+
+文本能力：
+
+- `luna_textouta_hook`：`implemented_unverified` — Candidate Luna TextOutA route; original AI6 thread selection is not verified.
+- codepage：CP932
+- 线程提示：Select the stable TextOutA dialogue thread and reject title/menu rendering threads.
+
+音频优先级：
+
+1. `ai6_voice_arc_resource` — `implemented_unverified`；格式：candidate Ogg/Vorbis in u32le count + count x 272-byte voice.arc index；clean voice：是
+2. `directsound_pcm` — `implemented_unverified`；格式：generic DirectSound PCM fallback；clean voice：否
+3. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- No AI6 original-install identity/timeline ledger or same-session text-resource-card E2E is available; this adapter is offline-only and implemented_unverified.
+- DirectSound and process-loopback are mixed-output fallbacks and must not be described as clean voice.
+- The candidate resource parser accepts only the bounded fixed 272-byte index layout with stored Ogg members that pass structural/EOS validation; Ogg CRC is not validated.
+
+Fixtures：`tests/fixtures/elf_ai6_replay.json`、`../../hibiki/test/fixtures/galhook/elf_ai6_replay.json`
+
+Tests：`tests/elf_ai6_adapter_test.cpp`、`tests/resource_audio_ready_test.cpp`、`../../hibiki/test/mining/elf_ai6_pairing_test.dart`
 
 ### RealLive / old VisualArt's (`reallive`)
 

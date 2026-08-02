@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "elf_ai6",
+  "status": "implemented_unverified",
+  "detection": {
+    "executable_sha256": [],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": true,
+    "pcm_audio": true
+  },
+  "evidence": []
+}

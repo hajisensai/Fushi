@@ -5,3 +5,4 @@
     catsystem2_.shutdown();
     malie_libp_.shutdown();
     qlie_.shutdown();
+    elf_ai6_.shutdown();

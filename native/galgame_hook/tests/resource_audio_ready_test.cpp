@@ -6,9 +6,11 @@
 using hibiki_voice_hook::HasReadyGameResourceAudio;
 using hibiki_voice_hook::kDiagKirikiriVoiceStreamHookReady;
 using hibiki_voice_hook::kDiagFfmpegResourceHooksReady;
+using hibiki_voice_hook::kDiagVisualArtsOvkHooksReady;
 using hibiki_voice_hook::kDiagSiglusOvkHooksReady;
 using hibiki_voice_hook::kDiagUnityIl2CppHooksReady;
 using hibiki_voice_hook::kDiagUnityResourceExtractorReady;
+using hibiki_voice_hook::kDiagElfAi6ArcHooksReady;
 
 int main() {
   assert(!HasReadyGameResourceAudio(0, 0));
@@ -16,6 +18,7 @@ int main() {
   assert(HasReadyGameResourceAudio(0, kDiagFfmpegResourceHooksReady));
   assert(HasReadyGameResourceAudio(0, kDiagVisualArtsOvkHooksReady));
   assert(HasReadyGameResourceAudio(kDiagSiglusOvkHooksReady, 0));
+  assert(HasReadyGameResourceAudio(0, 0, kDiagElfAi6ArcHooksReady));
 
   assert(!HasReadyGameResourceAudio(0, kDiagUnityIl2CppHooksReady));
   assert(!HasReadyGameResourceAudio(0, kDiagUnityResourceExtractorReady));

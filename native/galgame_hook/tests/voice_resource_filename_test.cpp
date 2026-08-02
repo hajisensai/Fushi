@@ -7,6 +7,7 @@
 int main() {
   using hibiki_voice_hook::BuildVoiceResourceFileName;
   using hibiki_voice_hook::ResolveFollowingSelectedText;
+  using hibiki_voice_hook::ResolvePrecedingSelectedText;
   using hibiki_voice_hook::VoiceResourcePairState;
   using hibiki_voice_hook::VoiceTextCandidate;
 
@@ -50,5 +51,27 @@ int main() {
       sizeof(observed) / sizeof(observed[0]));
   assert(expired.state == VoiceResourcePairState::kExpired);
   assert(expired.text_event_id == 0);
+
+  const VoiceTextCandidate preceding[] = {
+      {20, 5000, 523, 24, true},
+      {21, 5900, 41, 30, true},
+      {22, 6000, 523, 42, true},
+      {23, 6010, 523, 0, true},
+      {24, 6020, 523, 55, false},
+      {25, 6200, 523, 60, true},
+  };
+  const auto preceding_matched = ResolvePrecedingSelectedText(
+      6005, 523, preceding, sizeof(preceding) / sizeof(preceding[0]));
+  assert(preceding_matched.state == VoiceResourcePairState::kMatched);
+  assert(preceding_matched.text_event_id == 22);
+  const auto preceding_wrong_thread = ResolvePrecedingSelectedText(
+      6005, 99, preceding, sizeof(preceding) / sizeof(preceding[0]));
+  assert(preceding_wrong_thread.state == VoiceResourcePairState::kExpired);
+  const auto preceding_stale = ResolvePrecedingSelectedText(
+      7301, 523, preceding, sizeof(preceding) / sizeof(preceding[0]), 1000);
+  assert(preceding_stale.state == VoiceResourcePairState::kExpired);
+  const auto preceding_unselected = ResolvePrecedingSelectedText(
+      6005, 0, preceding, sizeof(preceding) / sizeof(preceding[0]));
+  assert(preceding_unselected.state == VoiceResourcePairState::kUnselected);
   return 0;
 }
