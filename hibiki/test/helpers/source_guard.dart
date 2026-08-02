@@ -658,16 +658,74 @@ String methodBody(
   if (open < 0) {
     fail('方法签名后找不到左花括号：$signature');
   }
+  final int close = _balancedBraceEnd(structural, open);
+  if (close < 0) {
+    fail('方法体花括号不配对：$signature');
+  }
+  return src.substring(start, close + 1);
+}
+
+/// 从 [structural]（已掩码的语料）的左花括号 [open] 起做配对，返回配对上的 `}` 的
+/// 下标；不配对返回 -1。掩码由调用方按语料词法先做好，这里只认结构。
+int _balancedBraceEnd(String structural, int open) {
   int depth = 0;
   for (int i = open; i < structural.length; i++) {
     final String c = structural[i];
     if (c == '{') depth++;
     if (c == '}') {
       depth--;
-      if (depth == 0) return src.substring(start, i + 1);
+      if (depth == 0) return i;
     }
   }
-  fail('方法体花括号不配对：$signature');
+  return -1;
+}
+
+/// 从**调用方给定的起点** [start] 起，用花括号配对切出到右边界的整块。
+///
+/// 与 [methodBody] 的分工 —— 这是本函数存在的全部理由：[methodBody] 把「怎么定
+/// 起点」（按签名文本 `indexOf`）和「怎么定右边界」（花括号配对）焊死在一起，起点
+/// 只能是语料里**第一处**签名文本。合并语料里同一签名出现多次时，第一处未必是要守
+/// 的那处，而且锚错时守卫是**静默锚到别人身上**（窗口里没有被守的符号 ⇒ 要求型断言
+/// 红、禁止型断言假绿），不是报错。
+///
+/// 实例（BUG-1426 之后的 reader 合并语料）：`'wheel', function(e)` 逐字相同的两处 ——
+/// spread 独立文档自带那份在主壳 `reader_hibiki_page.dart:566`，正文引擎那份在
+/// `reader_hibiki/webview.part.dart:1408`，而语料是「主壳在前、part 按路径排序在后」，
+/// 第一处必然是 spread 那份。
+///
+/// **不做「取第 N 处匹配」**：序号是脆的 —— 语料拼接顺序、part 文件改名、再多一份同
+/// 签名监听都会把序号挤歪，而挤歪后守卫照样绿着守错了对象。所以起点必须由调用方用
+/// **语义判据**定（如 [bodyEngineWheelListenerStart] 按块内 `hoshiContinuousMode`
+/// 认正文那份），右边界才由本函数用结构配对定。
+///
+/// 右边界用配对而不是「下一个固定文本」（旧写法 `indexOf('}, {passive:')`）：监听器
+/// 一旦漏写 `passive` 选项，文本右边界就一路吞到下一个监听器，窗口断言凭空变假。
+///
+/// [openSearchFrom] 用来把「返回值起点」和「找左花括号的起点」分开（[methodBody] 要
+/// 先跳过参数表圆括号）；默认与 [start] 相同。
+/// 起点越界 / 找不到左花括号 / 花括号不配对一律 `fail`，绝不返回空串。
+String balancedBlockFrom(
+  String src,
+  int start, {
+  SourceLexicon lexicon = SourceLexicon.dart,
+  int? openSearchFrom,
+  String what = '结构块',
+}) {
+  if (start < 0 || start > src.length) {
+    fail('$what 的起点下标越界：$start（语料长度 ${src.length}）');
+  }
+  final String structural = lexicon == SourceLexicon.js
+      ? maskJsCommentsAndStrings(src)
+      : maskCommentsAndStrings(src);
+  final int open = structural.indexOf('{', openSearchFrom ?? start);
+  if (open < 0) {
+    fail('$what：起点之后找不到左花括号');
+  }
+  final int close = _balancedBraceEnd(structural, open);
+  if (close < 0) {
+    fail('$what：花括号不配对');
+  }
+  return src.substring(start, close + 1);
 }
 
 /// 在 [body] 的**代码行**上查找 [needle]，注释里的同名文本不算数。
