@@ -24,6 +24,8 @@ import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
 import 'package:hibiki/src/pages/implementations/media_sources_page.dart';
+import 'package:hibiki/src/pages/implementations/module_settings_view.dart';
+import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/media/audiobook/now_listening_mini_bar.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/pages.dart';
@@ -1085,6 +1087,15 @@ class _HomePageState extends BasePageState<HomePage>
               label: t.library_view_sources,
               builder: (BuildContext context, Widget navigation) =>
                   MediaSourcesPage(mediaKind: 'video', navigation: navigation),
+            ),
+            MediaLibraryViewSpec(
+              kind: MediaLibraryViewKind.settings,
+              label: t.settings,
+              builder: (BuildContext context, Widget navigation) =>
+                  ModuleSettingsView(
+                destinationId: SettingsDestinationId.video,
+                navigation: navigation,
+              ),
             ),
           ],
         );

@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 53091 (3123 per locale)
+/// Strings: 53159 (3127 per locale)
 ///
-/// Built on 2026-08-02 at 16:17 UTC
+/// Built on 2026-08-02 at 16:30 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4201,6 +4201,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get manga_tap_zone_paging_subtitle =>
       'Tap the left or right edge of the page to turn';
   String get manga_section_viewing => 'Viewing and page turning';
+  String get game_capture_setup_title => 'Complete capture setup';
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -11374,6 +11380,16 @@ class _StringsAr extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -18614,6 +18630,16 @@ class _StringsDe extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -25869,6 +25895,16 @@ class _StringsEs extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -33136,6 +33172,16 @@ class _StringsFr extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -40332,6 +40378,16 @@ class _StringsId extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -47574,6 +47630,16 @@ class _StringsIt extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -54633,6 +54699,16 @@ class _StringsJa extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -61694,6 +61770,16 @@ class _StringsKo extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -68916,6 +69002,16 @@ class _StringsNl extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -76151,6 +76247,16 @@ class _StringsPtBr extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -83370,6 +83476,16 @@ class _StringsRu extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -90537,6 +90653,16 @@ class _StringsTh extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -97736,6 +97862,16 @@ class _StringsTr extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -104920,6 +105056,16 @@ class _StringsVi extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 // Path: <root>
@@ -111601,6 +111747,14 @@ class _StringsZhCn extends _StringsEn {
   String get manga_tap_zone_paging_subtitle => '点击页面左右边缘翻页';
   @override
   String get manga_section_viewing => '浏览与翻页';
+  @override
+  String get game_capture_setup_title => '完成捕获设置';
+  @override
+  String get game_capture_setup_hint => '请先选择台词线程。Hibiki 只能把音频与所选线程收到的台词配对。';
+  @override
+  String get game_audio_requires_thread => '音频采集源可能已经就绪，但选择线程并收到台词之前，不存在本句音频。';
+  @override
+  String get game_session_waiting_thread => '等待选择台词线程';
 }
 
 // Path: <root>
@@ -118581,6 +118735,16 @@ class _StringsZhHk extends _StringsEn {
       'Tap the left or right edge of the page to turn';
   @override
   String get manga_section_viewing => 'Viewing and page turning';
+  @override
+  String get game_capture_setup_title => 'Complete capture setup';
+  @override
+  String get game_capture_setup_hint =>
+      'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+  @override
+  String get game_audio_requires_thread =>
+      'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+  @override
+  String get game_session_waiting_thread => 'Waiting for a dialogue thread';
 }
 
 /// Flat map(s) containing all translations.
@@ -124987,6 +125151,14 @@ extension on _StringsEn {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -131391,6 +131563,14 @@ extension on _StringsAr {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -137817,6 +137997,14 @@ extension on _StringsDe {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -144242,6 +144430,14 @@ extension on _StringsEs {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -150673,6 +150869,14 @@ extension on _StringsFr {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -157086,6 +157290,14 @@ extension on _StringsId {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -163513,6 +163725,14 @@ extension on _StringsIt {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -169902,6 +170122,14 @@ extension on _StringsJa {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -176295,6 +176523,14 @@ extension on _StringsKo {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -182716,6 +182952,14 @@ extension on _StringsNl {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -189134,6 +189378,14 @@ extension on _StringsPtBr {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -195557,6 +195809,14 @@ extension on _StringsRu {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -201963,6 +202223,14 @@ extension on _StringsTh {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -208378,6 +208646,14 @@ extension on _StringsTr {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -214789,6 +215065,14 @@ extension on _StringsVi {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }
@@ -221146,6 +221430,14 @@ extension on _StringsZhCn {
         return '点击页面左右边缘翻页';
       case 'manga_section_viewing':
         return '浏览与翻页';
+      case 'game_capture_setup_title':
+        return '完成捕获设置';
+      case 'game_capture_setup_hint':
+        return '请先选择台词线程。Hibiki 只能把音频与所选线程收到的台词配对。';
+      case 'game_audio_requires_thread':
+        return '音频采集源可能已经就绪，但选择线程并收到台词之前，不存在本句音频。';
+      case 'game_session_waiting_thread':
+        return '等待选择台词线程';
       default:
         return null;
     }
@@ -227530,6 +227822,14 @@ extension on _StringsZhHk {
         return 'Tap the left or right edge of the page to turn';
       case 'manga_section_viewing':
         return 'Viewing and page turning';
+      case 'game_capture_setup_title':
+        return 'Complete capture setup';
+      case 'game_capture_setup_hint':
+        return 'Choose the dialogue thread first. Hibiki can only pair audio with lines from the selected thread.';
+      case 'game_audio_requires_thread':
+        return 'The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.';
+      case 'game_session_waiting_thread':
+        return 'Waiting for a dialogue thread';
       default:
         return null;
     }

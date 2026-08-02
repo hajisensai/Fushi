@@ -4,6 +4,8 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
 import 'package:hibiki/src/pages/implementations/media_sources_page.dart';
+import 'package:hibiki/src/pages/implementations/module_settings_view.dart';
+import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/utils.dart';
 
 /// The body content for the Reader tab in the main menu.
@@ -42,6 +44,15 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
           label: t.library_view_sources,
           builder: (BuildContext context, Widget navigation) =>
               MediaSourcesPage(mediaKind: 'book', navigation: navigation),
+        ),
+        MediaLibraryViewSpec(
+          kind: MediaLibraryViewKind.settings,
+          label: t.settings,
+          builder: (BuildContext context, Widget navigation) =>
+              ModuleSettingsView(
+            destinationId: SettingsDestinationId.reading,
+            navigation: navigation,
+          ),
         ),
       ],
     );
