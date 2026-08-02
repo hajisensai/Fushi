@@ -132,7 +132,8 @@ class SettingsSchemaItem extends StatelessWidget {
     SettingsNavigationItem navigation,
   ) {
     return AdaptiveSettingsNavigationRow(
-      title: navigation.title,
+      // resolveTitle：诊断行的实时计数在这里求值（schema 树本身是缓存的常量树）。
+      title: navigation.resolveTitle(settingsContext),
       subtitle: navigation.subtitle,
       icon: navigation.icon,
       showIcon: showIcons || navigation.showIcon,

@@ -209,6 +209,7 @@ sealed class SettingsItem {
   const SettingsItem({
     required this.id,
     required this.title,
+    this.titleBuilder,
     this.subtitle,
     this.icon,
     this.visible,
@@ -217,7 +218,25 @@ sealed class SettingsItem {
   });
 
   final String id;
+
+  /// 静态标题。schema 树按 locale 缓存（见 settings_schema.dart 的
+  /// `_SettingsSchemaCache`），故本字段在**构造期**求值一次——它只能是 i18n 常量，
+  /// 不得插值任何运行期状态。标题要随状态变（计数、当前值），用 [titleBuilder]。
   final String title;
+
+  /// 渲染时求值的标题；非空时覆盖 [title]。
+  ///
+  /// 存在的理由：`title` 是这个数据结构里唯一「只能构造期求值」的字段，而
+  /// `value` / `visible` / `onChanged` 全是渲染时求值的闭包。诊断分区那三行
+  /// （错误日志 / 崩溃转储 / 调试日志）需要在标题里带实时条数，此前只能靠
+  /// 「每次 build 重建整棵 schema」来刷新——这正是全量重建的成因之一，而且顺带让
+  /// 崩溃转储行每帧做一次同步目录扫描。补上这个闭包后标题与其它字段对称，动态
+  /// 标题在渲染时算、缓存树保持纯净。
+  ///
+  /// 目前只有 [SettingsNavigationItem] 透传；其它 item 类型需要时照此加
+  /// `super.titleBuilder` 即可。
+  final SettingsValueGetter<String>? titleBuilder;
+
   final String? subtitle;
   final IconData? icon;
   final SettingsVisibility? visible;
@@ -229,12 +248,17 @@ sealed class SettingsItem {
   final VideoPlacement? video;
 
   bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
+
+  /// 渲染 / 搜索展示用的标题：有 [titleBuilder] 就用它，否则用静态 [title]。
+  String resolveTitle(SettingsContext context) =>
+      titleBuilder?.call(context) ?? title;
 }
 
 class SettingsNavigationItem extends SettingsItem {
   const SettingsNavigationItem({
     required super.id,
     required super.title,
+    super.titleBuilder,
     this.builder,
     this.onTap,
     this.showIcon = false,

@@ -255,9 +255,13 @@ SettingsDestination buildSystemDestination() {
         title: t.settings_destination_diagnostics,
         collapsedByDefault: true,
         items: <SettingsItem>[
+          // 标题里的实时条数走 titleBuilder（渲染时求值）。写成构造期插值会把整棵
+          // schema 变成「每次 setState 都得重建才能刷新计数」的状态载体——那正是
+          // 全量重建的成因之一（见 settings_destination.dart 的 titleBuilder 注释）。
           SettingsNavigationItem(
             id: 'diagnostics.error_log',
-            title:
+            title: t.error_log_label(n: 0),
+            titleBuilder: (_) =>
                 t.error_log_label(n: ErrorLogService.instance.entries.length),
             icon: Icons.report_problem_outlined,
             builder: (_) => const ErrorLogPage(),
@@ -268,7 +272,10 @@ SettingsDestination buildSystemDestination() {
           // 把进程带崩等，错误日志里看不到）有可上传的二进制证据。
           SettingsNavigationItem(
             id: 'diagnostics.crash_dumps',
-            title: t.crash_dump_label(
+            // 同上走 titleBuilder——这一行的计数还要同步扫目录，构造期算等于每次
+            // setState 都做一次磁盘 IO。
+            title: t.crash_dump_label(n: 0),
+            titleBuilder: (_) => t.crash_dump_label(
               n: CrashDumpLocator.listCurrentPlatformDumps().length,
             ),
             icon: Icons.bug_report_outlined,
@@ -287,7 +294,8 @@ SettingsDestination buildSystemDestination() {
           ),
           SettingsNavigationItem(
             id: 'diagnostics.debug_log',
-            title: t.debug_log_title(
+            title: t.debug_log_title(count: 0),
+            titleBuilder: (_) => t.debug_log_title(
               count: DebugLogService.instance.entries.length,
             ),
             icon: Icons.terminal_outlined,
