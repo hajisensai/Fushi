@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/pages/implementations/stat_hourly_breakdown.dart';
 
 /// 统计图表的每日数据点（阅读统计 / 视频统计共用）。
 class StatDayData {
@@ -62,40 +63,57 @@ String formatStatDurationAxis(int ms) {
   return '0';
 }
 
+/// 今日按小时柱状图的一条**堆叠带**：24 小时的毫秒值 + 填充色。
+///
+/// 单带 = 旧的单色柱（视频统计：观看时长没有阅读面之分）；多带 = 同一根柱子自下
+/// 而上按列表序堆叠（阅读统计按 format 分带）。「一根柱子只有一种颜色」在这里是
+/// 「只有一条带」这个普通情况，不是单独的分支。
+class StatHourlyBand {
+  const StatHourlyBand({required this.values, required this.color});
+
+  /// 0-23 时的毫秒值。长度不足的位置按 0 处理。
+  final List<int> values;
+  final Color color;
+}
+
 /// 今日按小时柱状图画笔（0-23 小时，值为毫秒）。阅读统计与视频统计共用。
 class StatHourlyChartPainter extends CustomPainter {
   StatHourlyChartPainter({
-    required this.hourlyMs,
-    required this.barColor,
+    required this.bands,
     required this.barRadius,
     required this.labelColor,
     required this.labelStyle,
   });
 
-  final List<int> hourlyMs;
-  final Color barColor;
+  final List<StatHourlyBand> bands;
   final Radius barRadius;
   final Color labelColor;
   final TextStyle labelStyle;
 
+  static int _valueAt(StatHourlyBand band, int hour) =>
+      hour < band.values.length ? band.values[hour] : 0;
+
+  /// 某小时所有带的合计（决定柱高与纵轴上限）。
+  int totalAt(int hour) => bands.fold<int>(
+      0, (int sum, StatHourlyBand band) => sum + _valueAt(band, hour));
+
   @override
   void paint(Canvas canvas, Size size) {
-    if (hourlyMs.isEmpty) return;
+    if (bands.isEmpty) return;
 
-    final maxMs = hourlyMs.fold<int>(0, (prev, ms) => ms > prev ? ms : prev);
+    final List<int> totals =
+        List<int>.generate(kStatHourlyBuckets, totalAt, growable: false);
+    final maxMs = totals.fold<int>(0, (prev, ms) => ms > prev ? ms : prev);
     if (maxMs == 0) return;
 
     const bottomPadding = 20.0;
     const leftPadding = 32.0;
     final chartHeight = size.height - bottomPadding;
     final chartWidth = size.width - leftPadding;
-    final step = chartWidth / 24;
+    final step = chartWidth / kStatHourlyBuckets;
     final barWidth = step * 0.7;
     final gap = step * 0.15;
 
-    final paint = Paint()
-      ..color = barColor
-      ..style = PaintingStyle.fill;
     final axisPaint = Paint()
       ..color = labelColor.withValues(alpha: 0.55)
       ..strokeWidth = 1;
@@ -126,16 +144,36 @@ class StatHourlyChartPainter extends CustomPainter {
       tp.paint(canvas, Offset(leftPadding - tp.width - 4, y - tp.height / 2));
     }
 
-    for (int i = 0; i < 24; i++) {
+    for (int i = 0; i < kStatHourlyBuckets; i++) {
       final x = leftPadding + i * step + gap;
-      final barHeight = (hourlyMs[i] / maxMs) * chartHeight;
+      final total = totals[i];
 
-      if (hourlyMs[i] > 0) {
+      if (total > 0) {
+        final barHeight = (total / maxMs) * chartHeight;
         final rect = RRect.fromRectAndRadius(
           Rect.fromLTWH(x, chartHeight - barHeight, barWidth, barHeight),
           barRadius,
         );
-        canvas.drawRRect(rect, paint);
+        // 整根柱子先剪成圆角，各段按普通矩形填进去——圆角只在柱子两端出现，不必
+        // 为「首段 / 末段 / 单段」写三套 RRect 分支。
+        canvas.save();
+        canvas.clipRRect(rect);
+        double segmentBottom = chartHeight;
+        int accumulated = 0;
+        for (final StatHourlyBand band in bands) {
+          final int value = _valueAt(band, i);
+          if (value <= 0) continue;
+          accumulated += value;
+          // 用累计值算上沿而非逐段累加高度：避免每段各取一次舍入后段间出现缝隙。
+          final double segmentTop =
+              chartHeight - (accumulated / maxMs) * chartHeight;
+          canvas.drawRect(
+            Rect.fromLTWH(x, segmentTop, barWidth, segmentBottom - segmentTop),
+            Paint()..color = band.color,
+          );
+          segmentBottom = segmentTop;
+        }
+        canvas.restore();
       }
 
       if (i % 3 == 0) {
@@ -156,11 +194,20 @@ class StatHourlyChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant StatHourlyChartPainter oldDelegate) =>
-      !listEquals(hourlyMs, oldDelegate.hourlyMs) ||
-      barColor != oldDelegate.barColor ||
+      !_bandsEqual(bands, oldDelegate.bands) ||
       barRadius != oldDelegate.barRadius ||
       labelColor != oldDelegate.labelColor ||
       labelStyle != oldDelegate.labelStyle;
+
+  static bool _bandsEqual(List<StatHourlyBand> a, List<StatHourlyBand> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].color != b[i].color || !listEquals(a[i].values, b[i].values)) {
+        return false;
+      }
+    }
+    return true;
+  }
 }
 
 /// 最近 N 天柱状图画笔。阅读统计默认画字数（[statCharsValue]），视频统计删字数后
