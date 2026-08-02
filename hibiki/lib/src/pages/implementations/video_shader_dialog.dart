@@ -599,9 +599,19 @@ class Anime4kPresetPickerDialog extends StatelessWidget {
                     () {
                       final bool added =
                           preset.fileNames.every(downloadedFiles.contains);
-                      return ListTile(
-                        contentPadding: EdgeInsets.zero,
+                      // BUG-1425：预设选择行走共享 MD3 组件，不再裸 ListTile。
+                      // 本文件的 reviewed 豁免只写了「导入的 shader 文件以勾选行
+                      // 列出」（即那两处 CheckboxListTile），从不覆盖这个预设列表。
+                      return HibikiListItem(
+                        padding: EdgeInsets.symmetric(
+                          vertical: HibikiDesignTokens.of(context)
+                              .spacing
+                              .rowVertical,
+                        ),
                         title: Text(preset.name),
+                        // 预设说明是两三句话，裸 ListTile 的 subtitle 不截行；
+                        // 收口后显式放宽到 3 行，别让长语言（英/德）被吃掉半句。
+                        subtitleMaxLines: 3,
                         subtitle: Text(presetDescription(preset.id)),
                         trailing: added
                             ? Icon(Icons.check, color: cs.primary)
