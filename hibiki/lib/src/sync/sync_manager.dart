@@ -1056,18 +1056,51 @@ class SyncManager {
 
   // ── Drive cache persistence ───────────────────────────────────────
 
+  /// 上次真正落盘的根 folderId / 书名→folderId 映射（TODO-2657 脏判定基线）。
+  ///
+  /// [_persistDriveCache] 每本书都被调一次。稳态（所有书都缓存命中）下这张映射表
+  /// 一字不变，旧实现却每本书都 `jsonEncode` 整表 + upsert 一次外加一次
+  /// `setRootFolderId`，N 本书写出 O(N²) 字节的纯重复。只在内容真变时写。
+  ///
+  /// **崩溃安全语义逐字不变**：这不是「攒到整轮结束再落盘」。任何新学到的
+  /// folderId 都让映射表相对基线变脏，因而仍在该书 `syncBook` 返回前落盘；中途
+  /// 崩溃时已同步书的 folderId 一个都不会丢。被跳过的只有「内容与磁盘完全相同」
+  /// 的重写，跳过它按定义不可能丢信息。
+  String? _persistedRootFolderId;
+  Map<String, String> _persistedFolderCache = const <String, String>{};
+
   Future<void> _restoreDriveCache() async {
     if (_backend.cachedRootFolderId != null) return;
     final rootId = await _repo.getRootFolderId();
     final folderCache = await _repo.getFolderCache();
     _backend.restoreCache(rootFolderId: rootId, titleToFolderId: folderCache);
+    // 刚读出来的就是磁盘现值，直接当脏判定基线，省掉「恢复后第一次落盘」的无谓
+    // 整表重写。刻意用**未经 normalizeFolderId 归一化**的原值：这样 restoreCache
+    // 的尾斜杠自愈（BUG-845）仍会被判为「变脏」并写回磁盘，被污染的持久化缓存照旧
+    // 在下一次落盘时清干净。
+    _persistedRootFolderId = rootId;
+    _persistedFolderCache = Map<String, String>.unmodifiable(folderCache);
   }
 
   Future<void> _persistDriveCache() async {
     final rootId = _backend.cachedRootFolderId;
-    if (rootId != null) await _repo.setRootFolderId(rootId);
+    if (rootId != null && rootId != _persistedRootFolderId) {
+      await _repo.setRootFolderId(rootId);
+      _persistedRootFolderId = rootId;
+    }
     final cache = _backend.cachedFolderIds;
-    if (cache.isNotEmpty) await _repo.setFolderCache(cache);
+    if (cache.isNotEmpty && !_sameFolderCache(cache, _persistedFolderCache)) {
+      await _repo.setFolderCache(cache);
+      _persistedFolderCache = Map<String, String>.unmodifiable(cache);
+    }
+  }
+
+  static bool _sameFolderCache(Map<String, String> a, Map<String, String> b) {
+    if (a.length != b.length) return false;
+    for (final MapEntry<String, String> entry in a.entries) {
+      if (b[entry.key] != entry.value) return false;
+    }
+    return true;
   }
 }
 
