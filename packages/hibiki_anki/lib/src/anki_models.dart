@@ -171,6 +171,7 @@ class AnkiSettings {
     this.ankiConnectHost = 'localhost',
     this.ankiConnectPort = 8765,
     this.ankiConnectApiKey = '',
+    this.ankiConnectUseHttps = false,
     this.useAnkiConnectOnAndroid = false,
     this.lapisFontScalePercent = 100,
     this.lapisCustomCss = '',
@@ -212,6 +213,7 @@ class AnkiSettings {
         ankiConnectHost: json['ankiConnectHost'] as String? ?? 'localhost',
         ankiConnectPort: json['ankiConnectPort'] as int? ?? 8765,
         ankiConnectApiKey: json['ankiConnectApiKey'] as String? ?? '',
+        ankiConnectUseHttps: json['ankiConnectUseHttps'] as bool? ?? false,
         useAnkiConnectOnAndroid:
             json['useAnkiConnectOnAndroid'] as bool? ?? false,
         lapisFontScalePercent: json['lapisFontScalePercent'] as int? ?? 100,
@@ -256,6 +258,7 @@ class AnkiSettings {
   final String ankiConnectHost;
   final int ankiConnectPort;
   final String ankiConnectApiKey;
+  final bool ankiConnectUseHttps;
 
   /// Android normally talks to AnkiDroid through its Content Provider. Users
   /// who deliberately run AnkiConnect on another reachable machine can opt in
@@ -334,6 +337,8 @@ class AnkiSettings {
     String? selectedDeckName,
     int? selectedNoteTypeId,
     String? selectedNoteTypeName,
+    bool clearSelectedDeck = false,
+    bool clearSelectedNoteType = false,
     List<AnkiDeck>? availableDecks,
     List<AnkiNoteType>? availableNoteTypes,
     Map<String, String>? fieldMappings,
@@ -348,6 +353,7 @@ class AnkiSettings {
     String? ankiConnectHost,
     int? ankiConnectPort,
     String? ankiConnectApiKey,
+    bool? ankiConnectUseHttps,
     bool? useAnkiConnectOnAndroid,
     int? lapisFontScalePercent,
     String? lapisCustomCss,
@@ -363,10 +369,17 @@ class AnkiSettings {
     bool? mediaDedupAutoDelete,
   }) =>
       AnkiSettings(
-        selectedDeckId: selectedDeckId ?? this.selectedDeckId,
-        selectedDeckName: selectedDeckName ?? this.selectedDeckName,
-        selectedNoteTypeId: selectedNoteTypeId ?? this.selectedNoteTypeId,
-        selectedNoteTypeName: selectedNoteTypeName ?? this.selectedNoteTypeName,
+        selectedDeckId:
+            clearSelectedDeck ? null : (selectedDeckId ?? this.selectedDeckId),
+        selectedDeckName: clearSelectedDeck
+            ? null
+            : (selectedDeckName ?? this.selectedDeckName),
+        selectedNoteTypeId: clearSelectedNoteType
+            ? null
+            : (selectedNoteTypeId ?? this.selectedNoteTypeId),
+        selectedNoteTypeName: clearSelectedNoteType
+            ? null
+            : (selectedNoteTypeName ?? this.selectedNoteTypeName),
         availableDecks: availableDecks ?? this.availableDecks,
         availableNoteTypes: availableNoteTypes ?? this.availableNoteTypes,
         fieldMappings: fieldMappings ?? this.fieldMappings,
@@ -381,6 +394,7 @@ class AnkiSettings {
         ankiConnectHost: ankiConnectHost ?? this.ankiConnectHost,
         ankiConnectPort: ankiConnectPort ?? this.ankiConnectPort,
         ankiConnectApiKey: ankiConnectApiKey ?? this.ankiConnectApiKey,
+        ankiConnectUseHttps: ankiConnectUseHttps ?? this.ankiConnectUseHttps,
         useAnkiConnectOnAndroid:
             useAnkiConnectOnAndroid ?? this.useAnkiConnectOnAndroid,
         lapisFontScalePercent:
@@ -425,6 +439,7 @@ class AnkiSettings {
         'ankiConnectHost': ankiConnectHost,
         'ankiConnectPort': ankiConnectPort,
         'ankiConnectApiKey': ankiConnectApiKey,
+        'ankiConnectUseHttps': ankiConnectUseHttps,
         'useAnkiConnectOnAndroid': useAnkiConnectOnAndroid,
         'lapisFontScalePercent': lapisFontScalePercent,
         'lapisCustomCss': lapisCustomCss,

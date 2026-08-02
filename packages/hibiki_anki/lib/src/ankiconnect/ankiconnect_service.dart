@@ -10,6 +10,7 @@ import '../lapis_note_type.dart';
 class AnkiConnectService {
   final String host;
   final int port;
+  final bool useHttps;
 
   /// Whether this endpoint runs on the same machine and can read a local path
   /// passed to AnkiConnect's `storeMediaFile`.
@@ -46,6 +47,7 @@ class AnkiConnectService {
   AnkiConnectService({
     this.host = 'localhost',
     this.port = 8765,
+    this.useHttps = false,
     this.apiKey = '',
     http.Client? client,
     Duration timeout = const Duration(seconds: 10),
@@ -239,7 +241,7 @@ class AnkiConnectService {
 
   Future<http.Response> _post(String body) {
     return _client.post(
-      Uri.parse('http://$host:$port'),
+      Uri.parse('${useHttps ? 'https' : 'http'}://$host:$port'),
       body: body,
       headers: {
         'Content-Type': 'application/json',

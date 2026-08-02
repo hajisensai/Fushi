@@ -193,6 +193,14 @@ class ProfileKeys {
       duplicateScope: m.containsKey('duplicateScope')
           ? ankiDuplicateScopeFromName(m['duplicateScope'])
           : current.duplicateScope,
+      // Endpoint and API key are device-local connection state, not Profile
+      // content. Applying a Profile must not reset the active backend or its
+      // credentials while PlatformServices still routes to the old value.
+      ankiConnectHost: current.ankiConnectHost,
+      ankiConnectPort: current.ankiConnectPort,
+      ankiConnectApiKey: current.ankiConnectApiKey,
+      ankiConnectUseHttps: current.ankiConnectUseHttps,
+      useAnkiConnectOnAndroid: current.useAnkiConnectOnAndroid,
     );
   }
 

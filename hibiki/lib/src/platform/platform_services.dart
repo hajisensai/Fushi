@@ -73,9 +73,12 @@ class PlatformServices {
 
   bool get useAnkiConnectOnAndroid => _isAndroid && _useAnkiConnectOnAndroid;
 
-  void setUseAnkiConnectOnAndroid(bool value) {
+  void setUseAnkiConnectOnAndroid(
+    bool value, {
+    String apiKey = '',
+  }) {
     if (!_isAndroid) return;
-    _useAnkiConnectOnAndroid = value;
+    _useAnkiConnectOnAndroid = value && apiKey.trim().isNotEmpty;
   }
 
   /// Cross-service wiring that requires async initialisation.
@@ -87,7 +90,16 @@ class PlatformServices {
     if (_isAndroid) {
       final AnkiSettings settings =
           await _createDefaultAnkiRepository().loadSettings();
-      _useAnkiConnectOnAndroid = settings.useAnkiConnectOnAndroid;
+      setUseAnkiConnectOnAndroid(
+        settings.useAnkiConnectOnAndroid,
+        apiKey: settings.ankiConnectApiKey,
+      );
+      if (settings.useAnkiConnectOnAndroid && !_useAnkiConnectOnAndroid) {
+        await _createDefaultAnkiRepository().updateSettings(
+          (AnkiSettings current) =>
+              current.copyWith(useAnkiConnectOnAndroid: false),
+        );
+      }
     }
   }
 
