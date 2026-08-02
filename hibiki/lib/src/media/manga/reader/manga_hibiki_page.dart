@@ -2079,7 +2079,6 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           db: appModel.database,
           book: row,
           startPage: _currentPage,
-          desktop: Platform.isWindows || Platform.isLinux || Platform.isMacOS,
         );
       }
       if (!mounted || job == null) return;

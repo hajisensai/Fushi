@@ -14,7 +14,6 @@ import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/manga/manga_module.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/utils.dart';
 
 /// 漫画导入对话框。
@@ -43,8 +42,8 @@ class MangaImportDialog extends StatefulWidget {
   /// 拖放/书籍框转交时预填的漫画路径（目录 / `.cbz` / `.zip` 页图包 / `.mokuro`）。
   final String? initialPath;
 
-  /// 测试缝：注入远程 OCR runner（探测已配对 host 能力 + 代跑）。
-  /// null = 生产路径，按 [db] 惰性构造 [InterconnectMangaOcrClient]。
+  /// 测试缝：注入远程 OCR runner（探测已配对 host 能力 + 代跑）。null = 生产路径，
+  /// 由 [MangaOcrWizardEngines.resolve] 按 [db] 构造 [InterconnectMangaOcrClient]。
   final MangaOcrRemoteRunner? mangaOcrRemoteRunner;
 
   /// 测试缝：覆盖「是否桌面平台」判定。null = 用真实 [isDesktopPlatform]。
@@ -70,13 +69,6 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   bool _titleFromUser = false;
 
   bool _pickerActive = false;
-
-  late final MangaOcrRemoteRunner _mangaOcrRemoteRunner =
-      widget.mangaOcrRemoteRunner ??
-          InterconnectMangaOcrClient(repo: SyncRepository(widget.db));
-
-  bool get _ocrEntryDesktop =>
-      widget.ocrEntryDesktopOverride ?? isDesktopPlatform;
 
   @override
   void initState() {
@@ -279,8 +271,8 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     final String? bookKey = await MangaModule.openOcrImportWizard(
       context: context,
       db: widget.db,
-      remoteRunner: _mangaOcrRemoteRunner,
-      desktop: _ocrEntryDesktop,
+      remoteRunnerOverride: widget.mangaOcrRemoteRunner,
+      desktopOverride: widget.ocrEntryDesktopOverride,
     );
     if (bookKey != null && mounted) {
       Navigator.pop(context, true);
