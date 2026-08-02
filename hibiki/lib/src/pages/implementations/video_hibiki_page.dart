@@ -3205,7 +3205,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _failed = false;
       _failReason = null;
     });
-    _showOsd(t.video_resource_relink_success);
+    _showOsd(t.video_resource_relink_success, severity: ToastSeverity.success);
     await _loadSingle(updated);
   }
 
@@ -3262,7 +3262,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     if (!result.shouldNotifyFailure) return;
     final String label = result.source?.label ?? t.video_menu_subtitle_track;
-    _showOsd(t.video_subtitle_load_failed(label: label));
+    _showOsd(
+      t.video_subtitle_load_failed(label: label),
+      severity: ToastSeverity.error,
+    );
   }
 
   /// 位置持久化（controller 每秒至多一次回调）。
@@ -6040,7 +6043,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _toggleFavoriteCurrentCue() async {
     final AudioCue? cue = _currentCueForAction();
     if (cue == null || cue.text.trim().isEmpty) {
-      _showOsd(t.no_sentence_selected);
+      _showOsd(t.no_sentence_selected, severity: ToastSeverity.error);
       return;
     }
     // BUG-931：收藏不再唤起 media_kit 控制条——原先那句 poke 会派发合成 hover 把底栏
@@ -6295,7 +6298,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         await RenderBackendService.instance.setImpellerDisabled(true);
     if (!ok || !appModel.platformServices.lifecycle.supportsRestart) {
       // pref 未写成（非 Android）或平台不支持自动重启：降级提示手动重开。
-      if (mounted) _showOsd(t.render_restart_required);
+      if (mounted) {
+        _showOsd(t.render_restart_required, severity: ToastSeverity.warning);
+      }
       return;
     }
     try {
@@ -6303,7 +6308,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     } catch (e) {
       // 起新进程失败（Process.start 抛错等）→ 降级提示手动重开。
       debugPrint('[render] switch to Skia restart failed: $e');
-      if (mounted) _showOsd(t.render_restart_required);
+      if (mounted) {
+        _showOsd(t.render_restart_required, severity: ToastSeverity.warning);
+      }
     }
   }
 
@@ -6355,17 +6362,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     if (files.subtitles.isNotEmpty) {
       debugPrint('[hibiki-drop] [video-playback] intent=unsupportedSubtitle');
-      _showOsd(t.video_subtitle_import_unsupported);
+      _showOsd(
+        t.video_subtitle_import_unsupported,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     if (files.audios.isNotEmpty && files.videos.isEmpty) {
       debugPrint('[hibiki-drop] [video-playback] intent=unsupportedAudio');
-      _showOsd(t.video_drop_audio_unsupported);
+      _showOsd(t.video_drop_audio_unsupported, severity: ToastSeverity.error);
       return;
     }
     if (files.hasAny) {
       debugPrint('[hibiki-drop] [video-playback] intent=unsupportedSurface');
-      _showOsd(t.video_drop_subtitle_only);
+      _showOsd(t.video_drop_subtitle_only, severity: ToastSeverity.error);
     }
   }
 

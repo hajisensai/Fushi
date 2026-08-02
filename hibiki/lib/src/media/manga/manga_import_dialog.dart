@@ -231,6 +231,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       final String ext = p.extension(path).toLowerCase();
       HibikiToast.show(
         msg: t.import_unsupported_file_format(ext: ext.isEmpty ? path : ext),
+        severity: ToastSeverity.error,
       );
       return;
     }
@@ -259,6 +260,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         msg: t.import_unsupported_file_format(
           ext: ext.isEmpty ? paths.first : ext,
         ),
+        severity: ToastSeverity.error,
       );
     }
   }
@@ -318,12 +320,18 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     final String? path = _path;
     final ImportCarrier? carrier = _carrier;
     if (path == null || carrier == null) {
-      HibikiToast.show(msg: t.manga_import_missing_input);
+      HibikiToast.show(
+        msg: t.manga_import_missing_input,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     final String title = _titleCtrl.text.trim();
     if (title.isEmpty) {
-      HibikiToast.show(msg: t.srt_import_missing_title);
+      HibikiToast.show(
+        msg: t.srt_import_missing_title,
+        severity: ToastSeverity.error,
+      );
       return;
     }
 
@@ -333,7 +341,10 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       isCancelled: (Object e) => e is DuplicateImportCancelledException,
       onCancelled: () {
         if (mounted) {
-          HibikiToast.show(msg: t.book_import_duplicate_cancelled);
+          HibikiToast.show(
+            msg: t.book_import_duplicate_cancelled,
+            severity: ToastSeverity.info,
+          );
           Navigator.pop(context, false);
         }
       },
@@ -378,7 +389,10 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
         reportProgress(1, t.import_step_done);
         if (mounted) {
-          HibikiToast.show(msg: t.srt_import_success);
+          HibikiToast.show(
+            msg: t.srt_import_success,
+            severity: ToastSeverity.success,
+          );
           Navigator.pop(context, true);
         }
       },

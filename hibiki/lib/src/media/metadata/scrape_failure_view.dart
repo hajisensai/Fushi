@@ -112,7 +112,10 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
                 label: Text(t.copy_error),
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: widget.detail));
-                  HibikiToast.show(msg: t.error_copied);
+                  HibikiToast.show(
+                    msg: t.error_copied,
+                    severity: ToastSeverity.success,
+                  );
                 },
               ),
             ],

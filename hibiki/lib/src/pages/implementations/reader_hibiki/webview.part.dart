@@ -1729,7 +1729,9 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
                     final text = await _controller?.getSelectedText();
                     if (text == null || text.isEmpty) return;
                     await Clipboard.setData(ClipboardData(text: text));
-                    HibikiToast.show(msg: t.copied_to_clipboard);
+                    HibikiToast.show(
+                        msg: t.copied_to_clipboard,
+                        severity: ToastSeverity.success);
                     // 复制后清掉 ActionMode 残留的原生选区，和桌面右键 'copy' 对齐，
                     // 避免残留选区卡住后续查词。BUG-927。
                     await _clearReaderAppSelection();
@@ -1746,7 +1748,9 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
                           .instance
                           .shareText(text);
                       if (mounted && !shared) {
-                        HibikiToast.show(msg: t.selection_share_failed);
+                        HibikiToast.show(
+                            msg: t.selection_share_failed,
+                            severity: ToastSeverity.error);
                       }
                       await _clearReaderAppSelection();
                     },
@@ -1763,7 +1767,8 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
                           .searchWeb(text);
                       if (mounted && !opened) {
                         HibikiToast.show(
-                            msg: t.selection_web_search_unavailable);
+                            msg: t.selection_web_search_unavailable,
+                            severity: ToastSeverity.error);
                       }
                       await _clearReaderAppSelection();
                     },
@@ -2475,7 +2480,8 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           ErrorLogService.instance.log(
               'ReaderHibiki.onWebViewCreationFailed', error.description, null);
           if (!mounted) return;
-          HibikiToast.show(msg: t.reader_open_failed);
+          HibikiToast.show(
+              msg: t.reader_open_failed, severity: ToastSeverity.error);
           Navigator.of(context).pop();
           return;
         }

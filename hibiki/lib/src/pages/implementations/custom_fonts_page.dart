@@ -698,7 +698,10 @@ class _CustomFontsPageState extends BasePageState {
 
     if (count > 0) {
       await _save();
-      HibikiToast.show(msg: t.custom_fonts_imported_count(count: count));
+      HibikiToast.show(
+        msg: t.custom_fonts_imported_count(count: count),
+        severity: ToastSeverity.success,
+      );
     }
   }
 
@@ -863,7 +866,10 @@ class _CustomFontsPageState extends BasePageState {
     } catch (e, stack) {
       ErrorLogService.instance.log('CustomFontsPage.extractArchive', e, stack);
       debugPrint('[hibiki-fonts] archive extract failed: $e');
-      HibikiToast.show(msg: t.custom_fonts_archive_error);
+      HibikiToast.show(
+        msg: t.custom_fonts_archive_error,
+        severity: ToastSeverity.error,
+      );
       return 0;
     }
   }
@@ -984,9 +990,15 @@ class _CustomFontsPageState extends BasePageState {
 
       if (count > 0) {
         await _save();
-        HibikiToast.show(msg: t.custom_fonts_imported_count(count: count));
+        HibikiToast.show(
+          msg: t.custom_fonts_imported_count(count: count),
+          severity: ToastSeverity.success,
+        );
       } else {
-        HibikiToast.show(msg: t.custom_fonts_no_fonts_in_archive);
+        HibikiToast.show(
+          msg: t.custom_fonts_no_fonts_in_archive,
+          severity: ToastSeverity.error,
+        );
       }
     } on DioError catch (e, stack) {
       if (mounted) Navigator.pop(context);
@@ -997,6 +1009,7 @@ class _CustomFontsPageState extends BasePageState {
         HibikiToast.show(
           msg: '${t.custom_fonts_download_failed}: ${e.type.name}',
           toastLength: Toast.LENGTH_LONG,
+          severity: ToastSeverity.error,
         );
       }
       final f = File(tempPath);
@@ -1008,6 +1021,7 @@ class _CustomFontsPageState extends BasePageState {
       HibikiToast.show(
         msg: '${t.custom_fonts_download_failed}: $e',
         toastLength: Toast.LENGTH_LONG,
+        severity: ToastSeverity.error,
       );
       final f = File(tempPath);
       if (await f.exists()) await f.delete();
@@ -1102,7 +1116,10 @@ class _CustomFontsPageState extends BasePageState {
         debugPrint('[Hibiki] failed to delete font file $filePath: $e');
       }
     }
-    HibikiToast.show(msg: t.custom_fonts_removed);
+    HibikiToast.show(
+      msg: t.custom_fonts_removed,
+      severity: ToastSeverity.success,
+    );
   }
 
   /// [newIndex] 是**最终下标**（HibikiReorderableColumn 语义），不是 SDK

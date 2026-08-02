@@ -324,7 +324,10 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibiki.startSession', e, stack);
       debugPrint('[ReaderHibiki] audiobook session start failed: $e');
-      if (mounted) HibikiToast.show(msg: t.audiobook_load_error);
+      if (mounted) {
+        HibikiToast.show(
+            msg: t.audiobook_load_error, severity: ToastSeverity.error);
+      }
       return;
     }
     if (controller == null) return;
@@ -1086,7 +1089,9 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
               'audioFileCount=$audioFileCount',
           StackTrace.current,
         );
-        HibikiToast.show(msg: t.audiobook_export_clip_no_text);
+        HibikiToast.show(
+            msg: t.audiobook_export_clip_no_text,
+            severity: ToastSeverity.error);
         return;
       case AudiobookClipBoundaryKind.noAudio:
         debugPrint(
@@ -1100,7 +1105,9 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
               'selectedText="${selectedText.trim()}"',
           StackTrace.current,
         );
-        HibikiToast.show(msg: t.audiobook_export_clip_no_selection);
+        HibikiToast.show(
+            msg: t.audiobook_export_clip_no_selection,
+            severity: ToastSeverity.error);
         return;
       case AudiobookClipBoundaryKind.unsupportedRange:
         debugPrint(
@@ -1115,7 +1122,9 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           'selection has no single-file cue range (cross-chapter/cross-file)',
           StackTrace.current,
         );
-        HibikiToast.show(msg: t.audiobook_export_clip_unsupported_range);
+        HibikiToast.show(
+            msg: t.audiobook_export_clip_unsupported_range,
+            severity: ToastSeverity.error);
         return;
       case AudiobookClipBoundaryKind.tooLong:
         // BUG-1320：超时长上限此前并进 unsupportedRange，同章长选区被误报「跨章或
@@ -1133,7 +1142,9 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
               'text="${selectedText.trim()}")',
           StackTrace.current,
         );
-        HibikiToast.show(msg: t.audiobook_export_clip_too_long);
+        HibikiToast.show(
+            msg: t.audiobook_export_clip_too_long,
+            severity: ToastSeverity.error);
         return;
       case AudiobookClipBoundaryKind.exportable:
         final AudioPlaybackRange range = result.range!;
@@ -1155,7 +1166,9 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
                 'text="${selectedText.trim()}")',
             StackTrace.current,
           );
-          HibikiToast.show(msg: t.audiobook_export_clip_unsupported_range);
+          HibikiToast.show(
+              msg: t.audiobook_export_clip_unsupported_range,
+              severity: ToastSeverity.error);
           return;
         }
         // D4 时长上限已收进 classifyAudiobookClipSelection（BUG-1320，tooLong 分支
@@ -1345,7 +1358,8 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     _AudiobookClipDynamicPlan? dynamicPlan,
   }) async {
     _audiobookClipExporting = true;
-    HibikiToast.show(msg: t.audiobook_export_clip_in_progress);
+    HibikiToast.show(
+        msg: t.audiobook_export_clip_in_progress, severity: ToastSeverity.info);
 
     // 渲图前先抓阅读主题色 + 写排方向 + 字号（在 await 前读，避免跨 await 用 context）。
     final ReaderThemeColors themeColors = _readerThemeColors;
@@ -1403,7 +1417,9 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           StackTrace.current,
         );
         if (mounted) {
-          HibikiToast.show(msg: t.audiobook_export_clip_failed);
+          HibikiToast.show(
+              msg: t.audiobook_export_clip_failed,
+              severity: ToastSeverity.error);
         }
         return;
       }
@@ -1418,7 +1434,11 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
               '(text="$text")',
           StackTrace.current,
         );
-        if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
+        if (mounted) {
+          HibikiToast.show(
+              msg: t.audiobook_export_clip_failed,
+              severity: ToastSeverity.error);
+        }
         return;
       }
       final AudiobookClipTextLayout layout = computeClipTextLayout(
@@ -1488,7 +1508,11 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
             'renderAudiobookClipTextToPng returned null (text="$text")',
             StackTrace.current,
           );
-          if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
+          if (mounted) {
+            HibikiToast.show(
+                msg: t.audiobook_export_clip_failed,
+                severity: ToastSeverity.error);
+          }
           return;
         }
         // BUG-543：移动端 ffmpeg-kit min 变体无 png decoder（有 mjpeg decoder），
@@ -1505,7 +1529,11 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
                 '(pngLen=${pngBytes.length}, text="$text")',
             StackTrace.current,
           );
-          if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
+          if (mounted) {
+            HibikiToast.show(
+                msg: t.audiobook_export_clip_failed,
+                severity: ToastSeverity.error);
+          }
           return;
         }
         imageFile = File('$base.jpg');
@@ -1534,7 +1562,11 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
             'video synth failed: ${synth.failure} ${synth.detail ?? ''}',
             StackTrace.current,
           );
-          if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
+          if (mounted) {
+            HibikiToast.show(
+                msg: t.audiobook_export_clip_failed,
+                severity: ToastSeverity.error);
+          }
           return;
         }
       }
@@ -1551,7 +1583,11 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         );
         if (savePath != null) {
           await File(outPath).copy(savePath);
-          if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_saved);
+          if (mounted) {
+            HibikiToast.show(
+                msg: t.audiobook_export_clip_saved,
+                severity: ToastSeverity.success);
+          }
         }
       } else {
         final List<XFile> sharedFiles = audiobookClipMobileShareAttachments(
@@ -1568,13 +1604,20 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         // 旧兼容兜底又把临时 .aac 当第二个附件分享，系统分享面板把它显示成一个多余
         // “字幕/音频文件”。产物契约收敛为单个带声视频，不再泄漏中间文件。
         await HibikiShare.shareFiles(sharedFiles, subject: text);
-        if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_saved);
+        if (mounted) {
+          HibikiToast.show(
+              msg: t.audiobook_export_clip_saved,
+              severity: ToastSeverity.success);
+        }
       }
     } catch (e, stack) {
       ErrorLogService.instance
           .log('ReaderHibiki.exportClip.pipeline', e, stack);
       debugPrint('[ReaderHibiki] export-clip pipeline error: $e');
-      if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
+      if (mounted) {
+        HibikiToast.show(
+            msg: t.audiobook_export_clip_failed, severity: ToastSeverity.error);
+      }
     } finally {
       _audiobookClipExporting = false;
       // 清理临时中间文件。桌面端最终视频已 copy 到用户选定路径，可一并清理；移动端
@@ -1814,7 +1857,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
 
     if (newPaths == null || newPaths.isEmpty || !mounted) return;
 
-    HibikiToast.show(msg: t.dialog_importing);
+    HibikiToast.show(msg: t.dialog_importing, severity: ToastSeverity.info);
 
     try {
       // TODO-1032：复制导入 + 改写 SrtBook.audioPaths（清 audioRoot）的核心写入逻辑
@@ -1826,12 +1869,16 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       await _resolveAudioSlot(forceReload: true);
       if (mounted) {
         _rebuild(() {});
-        HibikiToast.show(msg: t.audiobook_import_success);
+        HibikiToast.show(
+            msg: t.audiobook_import_success, severity: ToastSeverity.success);
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibiki.srtBookAudioPicker', e, stack);
       debugPrint('[ReaderHibiki] srtBookAudioPicker failed: $e');
-      if (mounted) HibikiToast.show(msg: t.audiobook_import_error);
+      if (mounted) {
+        HibikiToast.show(
+            msg: t.audiobook_import_error, severity: ToastSeverity.error);
+      }
     }
   }
 

@@ -1288,7 +1288,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       // favoriteEntry），桌面可能收不到 → 星标不变色 → 用户判定「点了没用」（DB 其实
       // 已写）。DB 写成功后**与 callHandler 返回值解耦**直接弹 toast，保证两宿主都有
       // 确定反馈，不依赖也不改动返回值通道。
-      HibikiToast.show(msg: t.word_favorite_removed);
+      HibikiToast.show(
+        msg: t.word_favorite_removed,
+        severity: ToastSeverity.success,
+      );
       return false;
     }
     // TODO-1252：把当前书身份（阅读器 / 有声书覆写 lookupBookIdentity）随收藏落库，
@@ -1303,7 +1306,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       bookKey: favIdentity?.bookKey,
       title: favIdentity?.title ?? '',
     );
-    HibikiToast.show(msg: t.word_favorite_added);
+    HibikiToast.show(
+      msg: t.word_favorite_added,
+      severity: ToastSeverity.success,
+    );
     return true;
   }
 

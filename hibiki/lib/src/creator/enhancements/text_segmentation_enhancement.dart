@@ -38,6 +38,7 @@ class TextSegmentationEnhancement extends Enhancement {
         msg: t.no_text,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
+        severity: ToastSeverity.error,
       );
       return;
     }

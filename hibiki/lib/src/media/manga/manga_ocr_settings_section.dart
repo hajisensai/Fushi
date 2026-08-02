@@ -161,13 +161,19 @@ class _MangaOcrSettingsSectionState
           _downloading = false;
           _downloadSub = null;
         });
-        HibikiToast.show(msg: t.manga_ocr_download_failed);
+        HibikiToast.show(
+          msg: t.manga_ocr_download_failed,
+          severity: ToastSeverity.error,
+        );
       },
       onDone: () async {
         _downloadSub = null;
         if (!mounted) return;
         setState(() => _downloading = false);
-        HibikiToast.show(msg: t.manga_ocr_download_done);
+        HibikiToast.show(
+          msg: t.manga_ocr_download_done,
+          severity: ToastSeverity.success,
+        );
         await _loadStatus();
       },
     );
@@ -206,7 +212,10 @@ class _MangaOcrSettingsSectionState
       if (mounted) setState(() => _deleting = false);
     }
     if (!mounted) return;
-    HibikiToast.show(msg: t.manga_ocr_delete_done);
+    HibikiToast.show(
+      msg: t.manga_ocr_delete_done,
+      severity: ToastSeverity.success,
+    );
     await _loadStatus();
   }
 

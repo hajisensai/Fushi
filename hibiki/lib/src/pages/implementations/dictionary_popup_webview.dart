@@ -1346,7 +1346,10 @@ JSON.stringify((function(){
                 final bool shared =
                     await SelectionExternalActions.instance.shareText(text);
                 if (!shared) {
-                  HibikiToast.show(msg: t.selection_share_failed);
+                  HibikiToast.show(
+                    msg: t.selection_share_failed,
+                    severity: ToastSeverity.error,
+                  );
                 }
                 await _clearSelectedTextAcrossFrames();
               },
@@ -1361,7 +1364,10 @@ JSON.stringify((function(){
                 final bool opened =
                     await SelectionExternalActions.instance.searchWeb(text);
                 if (!opened) {
-                  HibikiToast.show(msg: t.selection_web_search_unavailable);
+                  HibikiToast.show(
+                    msg: t.selection_web_search_unavailable,
+                    severity: ToastSeverity.error,
+                  );
                 }
                 await _clearSelectedTextAcrossFrames();
               },

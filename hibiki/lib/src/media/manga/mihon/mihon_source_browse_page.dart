@@ -429,7 +429,9 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
       ErrorLogService.instance
           .log('MihonMangaDetailPage.addToBookshelf', error, stack);
       debugPrint('[Mihon] add to bookshelf failed: $error');
-      if (mounted) HibikiToast.show(msg: '$error');
+      if (mounted) {
+        HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
     } finally {
       if (mounted) setState(() => _libraryBusy = false);
     }

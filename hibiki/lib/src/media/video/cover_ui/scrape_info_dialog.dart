@@ -227,7 +227,10 @@ class ScrapeInfoDialog extends StatelessWidget {
     try {
       await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     } catch (_) {
-      HibikiToast.show(msg: t.video_scrape_apply_failed);
+      HibikiToast.show(
+        msg: t.video_scrape_apply_failed,
+        severity: ToastSeverity.error,
+      );
     }
   }
 }

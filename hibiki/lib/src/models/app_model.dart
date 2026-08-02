@@ -3865,7 +3865,10 @@ class AppModel with ChangeNotifier {
       _rebuildDictPathsCache();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionaries', e, stack);
-      HibikiToast.show(msg: t.dictionaries_delete_failed);
+      HibikiToast.show(
+        msg: t.dictionaries_delete_failed,
+        severity: ToastSeverity.error,
+      );
     } finally {
       dictionarySearchAgainNotifier.notifyListeners();
     }
@@ -3893,7 +3896,10 @@ class AppModel with ChangeNotifier {
       unawaited(_propagateDictionaryDeleteToRemote(dictionary.name));
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionary', e, stack);
-      HibikiToast.show(msg: t.dictionary_delete_failed);
+      HibikiToast.show(
+        msg: t.dictionary_delete_failed,
+        severity: ToastSeverity.error,
+      );
     } finally {
       dictionarySearchAgainNotifier.notifyListeners();
     }
@@ -4191,6 +4197,7 @@ class AppModel with ChangeNotifier {
         msg: t.storage_permissions,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
+        severity: ToastSeverity.info,
       );
     }
 
@@ -4495,12 +4502,14 @@ class AppModel with ChangeNotifier {
         msg: t.stash_added_single(term: terms.first),
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
+        severity: ToastSeverity.success,
       );
     } else {
       HibikiToast.show(
         msg: t.stash_added_multiple,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
+        severity: ToastSeverity.success,
       );
     }
   }
@@ -4511,6 +4520,7 @@ class AppModel with ChangeNotifier {
       msg: t.stash_clear_single(term: term),
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,
+      severity: ToastSeverity.success,
     );
   }
 
@@ -4526,6 +4536,7 @@ class AppModel with ChangeNotifier {
       msg: t.failed_online_service,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,
+      severity: ToastSeverity.error,
     );
   }
 
@@ -4568,6 +4579,7 @@ class AppModel with ChangeNotifier {
         msg: t.copied_to_clipboard,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
+        severity: ToastSeverity.success,
       );
     }
   }
@@ -5807,12 +5819,22 @@ class AppModel with ChangeNotifier {
           final String deckName = outcome.result == MineResult.success
               ? (await repo.loadSettings()).selectedDeckName ?? ''
               : '';
+          final ({
+            String message,
+            bool success,
+            bool record,
+            MineToastStatus status
+          }) described = describeMineOutcome(outcome, deckName: deckName);
           HibikiToast.show(
-            msg: describeMineOutcome(outcome, deckName: deckName).message,
+            msg: described.message,
+            severity: mineToastSeverity(described.status),
           );
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);
-          HibikiToast.show(msg: t.card_export_failed);
+          HibikiToast.show(
+            msg: t.card_export_failed,
+            severity: ToastSeverity.error,
+          );
         }
       },
     );

@@ -170,6 +170,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
         msg: failure == null
             ? t.book_scrape_failed
             : '${t.book_scrape_failed}\n${_failureReason(failure)}',
+        severity: ToastSeverity.error,
       );
       return;
     }

@@ -52,7 +52,10 @@ class SasayakiRematch {
     void Function(bool running)? onRunningChanged,
   }) async {
     if (extractDir.isEmpty) {
-      HibikiToast.show(msg: t.ttu_not_bound_cannot_rematch);
+      HibikiToast.show(
+        msg: t.ttu_not_bound_cannot_rematch,
+        severity: ToastSeverity.error,
+      );
       return null;
     }
     final AudiobookHealth? overlay = await repo.readHealthOverlay(ab.bookKey);
@@ -205,11 +208,17 @@ class SasayakiRematch {
     List<int> windows = EpubCueMatcher.defaultProbeWindows,
   }) async {
     if (sections.isEmpty) {
-      HibikiToast.show(msg: t.sasayaki_no_sections);
+      HibikiToast.show(
+        msg: t.sasayaki_no_sections,
+        severity: ToastSeverity.error,
+      );
       return null;
     }
     if (cues.isEmpty) {
-      HibikiToast.show(msg: t.sasayaki_no_cues_to_match);
+      HibikiToast.show(
+        msg: t.sasayaki_no_cues_to_match,
+        severity: ToastSeverity.error,
+      );
       return null;
     }
     try {
@@ -220,16 +229,24 @@ class SasayakiRematch {
       );
       final MapEntry<int, double>? best = r.best;
       if (best == null || best.value <= 0) {
-        HibikiToast.show(msg: t.sasayaki_all_zero);
+        HibikiToast.show(
+          msg: t.sasayaki_all_zero,
+          severity: ToastSeverity.warning,
+        );
         return null;
       }
       final String pctStr = (best.value * 100).toStringAsFixed(2);
       HibikiToast.show(
-          msg: t.sasayaki_auto_picked(window: best.key, pct: pctStr));
+        msg: t.sasayaki_auto_picked(window: best.key, pct: pctStr),
+        severity: ToastSeverity.success,
+      );
       return best.key;
     } catch (e, st) {
       debugPrint('[hibiki-audiobook] autoProbe failed: $e\n$st');
-      HibikiToast.show(msg: t.sasayaki_auto_failed(error: e));
+      HibikiToast.show(
+        msg: t.sasayaki_auto_failed(error: e),
+        severity: ToastSeverity.error,
+      );
       return null;
     }
   }
@@ -256,12 +273,18 @@ class SasayakiRematch {
     try {
       final List<AudioCue> cues = await repo.cuesForBook(ab.bookKey);
       if (cues.isEmpty) {
-        HibikiToast.show(msg: t.sasayaki_no_stored_cues);
+        HibikiToast.show(
+          msg: t.sasayaki_no_stored_cues,
+          severity: ToastSeverity.error,
+        );
         return;
       }
       final List<EpubSection> sections = epubSectionsFromExtractDir(extractDir);
       if (sections.isEmpty) {
-        HibikiToast.show(msg: t.sasayaki_no_chapters);
+        HibikiToast.show(
+          msg: t.sasayaki_no_chapters,
+          severity: ToastSeverity.error,
+        );
         return;
       }
       final MatchResult result = await EpubCueMatcher.matchInIsolate(
@@ -285,10 +308,14 @@ class SasayakiRematch {
       await repo.updateHealthOverlay(bookKey: ab.bookKey, health: health);
       HibikiToast.show(
         msg: t.sasayaki_rematch_result(pct: pctStr, window: searchWindow),
+        severity: ToastSeverity.success,
       );
     } catch (e, st) {
       debugPrint('[hibiki-audiobook] SasayakiRematch failed: $e\n$st');
-      HibikiToast.show(msg: t.sasayaki_rematch_failed(error: e));
+      HibikiToast.show(
+        msg: t.sasayaki_rematch_failed(error: e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 }

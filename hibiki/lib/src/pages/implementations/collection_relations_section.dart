@@ -150,7 +150,10 @@ class _CollectionRelationsSectionState
     if (chosen == null || !mounted) return;
     await widget.database.bindCollectionRelationTarget(relation.id, chosen.id);
     if (!mounted) return;
-    HibikiToast.show(msg: t.collection_relation_bound(name: chosen.name));
+    HibikiToast.show(
+      msg: t.collection_relation_bound(name: chosen.name),
+      severity: ToastSeverity.success,
+    );
     setState(() => _refresh++);
   }
 

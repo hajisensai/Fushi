@@ -254,11 +254,17 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     _launching = true;
     try {
       if (!Platform.isWindows) {
-        HibikiToast.show(msg: t.game_launch_unsupported);
+        HibikiToast.show(
+          msg: t.game_launch_unsupported,
+          severity: ToastSeverity.error,
+        );
         return;
       }
       if (!File(game.exePath).existsSync()) {
-        HibikiToast.show(msg: t.game_exe_missing);
+        HibikiToast.show(
+          msg: t.game_exe_missing,
+          severity: ToastSeverity.error,
+        );
         return;
       }
       final bool is32Bit =
@@ -298,7 +304,22 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         lastError: state.lastError,
         injectorDetail: state.injectorDetail,
       );
-      if (message != null) HibikiToast.show(msg: message);
+      // BUG-1089 的着色面：outcome 已经把「跑起来了 / 只剩整机混音兜底 / 根本没起来」
+      // 分好了，toast 的颜色跟着同一份判定走，别再让三种结局长成同一条无色提示。
+      if (message != null) {
+        HibikiToast.show(
+          msg: message,
+          severity: switch (outcome) {
+            GalHookLaunchOutcome.running => ToastSeverity.success,
+            GalHookLaunchOutcome.degradedLoopback => ToastSeverity.warning,
+            GalHookLaunchOutcome.failed ||
+            GalHookLaunchOutcome.windowMissing =>
+              ToastSeverity.error,
+            // message 为 null 时根本不播报，这里走不到。
+            GalHookLaunchOutcome.superseded => ToastSeverity.neutral,
+          },
+        );
+      }
       if (!result.launched) return;
       widget.onLaunched?.call();
     } finally {

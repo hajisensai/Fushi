@@ -1534,7 +1534,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                       },
             onCopy: () {
               Clipboard.setData(ClipboardData(text: favorite.text));
-              HibikiToast.show(msg: t.copy);
+              HibikiToast.show(msg: t.copy, severity: ToastSeverity.success);
             },
             onDelete: () async {
               await widget.onDeleteFavorite?.call(favorite);

@@ -406,7 +406,10 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
   Future<void> _shareCurrentImage() async {
     final File file = _currentFile();
     if (!file.existsSync()) {
-      HibikiToast.show(msg: t.reader_image_file_unavailable);
+      HibikiToast.show(
+        msg: t.reader_image_file_unavailable,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     try {
@@ -415,7 +418,10 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
         subject: p.basename(file.path),
       );
     } catch (e) {
-      HibikiToast.show(msg: t.reader_image_share_failed(error: e));
+      HibikiToast.show(
+        msg: t.reader_image_share_failed(error: e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -423,7 +429,10 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
   Future<void> _copyCurrentImageToClipboard() async {
     final File file = _currentFile();
     if (!file.existsSync()) {
-      HibikiToast.show(msg: t.reader_image_file_unavailable);
+      HibikiToast.show(
+        msg: t.reader_image_file_unavailable,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     try {
@@ -431,9 +440,15 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
         'copyImageFile',
         <String, String>{'path': file.path},
       );
-      HibikiToast.show(msg: t.copied_to_clipboard);
+      HibikiToast.show(
+        msg: t.copied_to_clipboard,
+        severity: ToastSeverity.success,
+      );
     } catch (e) {
-      HibikiToast.show(msg: t.reader_image_copy_failed(error: e));
+      HibikiToast.show(
+        msg: t.reader_image_copy_failed(error: e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 

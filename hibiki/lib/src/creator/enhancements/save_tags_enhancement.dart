@@ -40,6 +40,7 @@ class SaveTagsEnhancement extends Enhancement {
       msg: t.saved_tags,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,
+      severity: ToastSeverity.success,
     );
   }
 }

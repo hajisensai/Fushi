@@ -68,7 +68,10 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
           debugMessage != null ? debugMessage(e) : '$logTag failed: $e',
         );
         if (mounted) {
-          HibikiToast.show(msg: '${t.srt_import_error}: $e');
+          HibikiToast.show(
+            msg: '${t.srt_import_error}: $e',
+            severity: ToastSeverity.error,
+          );
         }
       }
     } finally {

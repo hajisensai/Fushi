@@ -65,7 +65,8 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         // 里建/启，而这条路径正是「JS 迟迟不回 onRestoreComplete」——遮罩已摘、书能
         // 读，却一秒都不记时长（字数照常累计 ⇒ 速度又爆表）。
         _ensureReadingTimeTracker();
-        HibikiToast.show(msg: t.reader_content_timeout);
+        HibikiToast.show(
+            msg: t.reader_content_timeout, severity: ToastSeverity.warning);
       },
     );
   }

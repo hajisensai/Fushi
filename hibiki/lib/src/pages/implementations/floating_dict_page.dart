@@ -99,8 +99,12 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     final String deckName = outcome.result == MineResult.success
         ? (await repo.loadSettings()).selectedDeckName ?? ''
         : '';
+    final described = describeMineOutcome(outcome, deckName: deckName);
     HibikiToast.show(
-      msg: describeMineOutcome(outcome, deckName: deckName).message,
+      msg: described.message,
+      // 制卡结果的语义已由 describeMineOutcome 算出（added/duplicate/failed），
+      // 这里只把它翻译成 toast 配色，不再另判一次。
+      severity: mineToastSeverity(described.status),
     );
   }
 
