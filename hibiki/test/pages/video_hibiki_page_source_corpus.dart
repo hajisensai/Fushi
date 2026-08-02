@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/part_corpus.dart';
+import '../helpers/source_guard.dart';
 
 /// TODO-590: `video_hibiki_page.dart` 正被分批拆成主壳 + `video_hibiki/*.part.dart`
 /// 一组 part 文件（零行为重构，照搬 TODO-589 reader_hibiki 范式）。原来逐文件硬编码
@@ -67,14 +68,21 @@ const String kFadingChromeGatePath =
     'lib/src/utils/components/fading_chrome_gate.dart';
 
 /// 共享淡出门控自身仍满足「默认 easeInOut + IgnorePointer + AnimatedOpacity」。
+///
+/// 四条全是**要求型**（isTrue）断言，所以判据必须剥注释：裸 `contains` 下
+/// 「把实现删光、把同样的字面量留在注释里」是完全合法的骗绿写法（TODO-2715）。
+/// 组件构造走 [containsIdentifierCall]（`IgnorePointer(` 的左边界，防
+/// `MyIgnorePointer(` 顶包），字面量走 [containsCodeLine]（只认代码行）。
 void expectFadingChromeGateContract() {
   final String gate = File(kFadingChromeGatePath).readAsStringSync();
-  expect(gate.contains('this.curve = Curves.easeInOut'), isTrue,
-      reason: 'FadingChromeGate 默认曲线必须是 easeInOut（调用点不传即取此值）');
-  expect(gate.contains('IgnorePointer('), isTrue,
-      reason: '淡出后必须 IgnorePointer 不拦点击');
-  expect(gate.contains('AnimatedOpacity('), isTrue,
-      reason: '淡入淡出必须由 AnimatedOpacity 实现');
-  expect(gate.contains('curve: curve'), isTrue,
-      reason: 'AnimatedOpacity 必须真把 curve 透传下去，否则默认值形同虚设');
+  expect(containsCodeLine(gate, 'this.curve = Curves.easeInOut'), isTrue,
+      reason: 'FadingChromeGate 默认曲线必须是 easeInOut（调用点不传即取此值）；'
+          '注释里写着这句不算实现');
+  expect(containsIdentifierCall(gate, 'IgnorePointer'), isTrue,
+      reason: '淡出后必须 IgnorePointer 不拦点击；注释里提到它不算实现');
+  expect(containsIdentifierCall(gate, 'AnimatedOpacity'), isTrue,
+      reason: '淡入淡出必须由 AnimatedOpacity 实现；注释里提到它不算实现');
+  expect(containsCodeLine(gate, 'curve: curve'), isTrue,
+      reason: 'AnimatedOpacity 必须真把 curve 透传下去，否则默认值形同虚设；'
+          '注释里写着这句不算实现');
 }

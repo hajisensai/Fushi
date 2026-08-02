@@ -2,6 +2,30 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/scan_scale.dart';
+import '../helpers/source_guard.dart';
+
+/// 横向滚动区的判据。
+///
+/// TODO-2715：旧判据是精确字面量 `'scrollDirection: Axis.horizontal'`，
+/// `dart format` 只要把它折成 `scrollDirection:\n    Axis.horizontal`（长实参表里
+/// 常见）就一个也匹配不到——分母归零、守卫全绿。改成允许任意空白/换行。
+final RegExp kHorizontalAxis = RegExp(r'scrollDirection:\s*Axis\.horizontal');
+
+/// 包裹件。用 [identifierCall] 定左边界，`MyHorizontalDragScrollable(` 不算数。
+final RegExp kDragScrollableWrap = identifierCall(
+  'HorizontalDragScrollable',
+  allowNamedConstructor: false,
+);
+
+/// 一个文件里的「横向滚动区数 / 包裹数」。判据先剥注释：注释里的示例代码既不该
+/// 被算成违规（假红），也不该被算成包裹（假绿）。
+({int horizontals, int wrapped}) countHorizontalScrollAreas(String source) {
+  final String code = maskComments(source);
+  return (
+    horizontals: kHorizontalAxis.allMatches(code).length,
+    wrapped: kDragScrollableWrap.allMatches(code).length,
+  );
+}
 
 /// 桌面端 Flutter 的默认 `MaterialScrollBehavior.dragDevices` **不含鼠标**：横向
 /// 滚动区用鼠标左键按住左右拖会毫无反应（用户实报）。仓库早在
@@ -41,14 +65,13 @@ void main() {
     for (final FileSystemEntity entity in libDir.listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       scanned++;
-      final String source = entity.readAsStringSync();
-      final int horizontals =
-          'scrollDirection: Axis.horizontal'.allMatches(source).length;
+      final counts = countHorizontalScrollAreas(entity.readAsStringSync());
+      final int horizontals = counts.horizontals;
       if (horizontals == 0) continue;
       withHorizontal++;
 
       final String relative = entity.path.replaceAll(r'\', '/');
-      final int wrapped = 'HorizontalDragScrollable('.allMatches(source).length;
+      final int wrapped = counts.wrapped;
       final int exempt = exemptions.keys.any(relative.endsWith) ? 1 : 0;
 
       if (wrapped + exempt < horizontals) {
@@ -76,10 +99,54 @@ void main() {
     );
   });
 
+  // TODO-2715：判据自校验。上面那条是禁止型断言（offenders isEmpty），真实仓库里
+  // 长期零命中，所以「分子/分母还认不认得代码」在扫盘那条路上得不到检验；这里用
+  // 手写语料独立喂进同一个 [countHorizontalScrollAreas]，正负两向都钉住。
+  group('判据自校验（手写语料，与磁盘扫描互不依赖）', () {
+    test('单行写法数得到', () {
+      final c = countHorizontalScrollAreas(
+        'ListView(scrollDirection: Axis.horizontal, children: []);',
+      );
+      expect(c.horizontals, 1);
+      expect(c.wrapped, 0);
+    });
+
+    test('dart format 折行后仍数得到（旧字面量判据在这里归零）', () {
+      final c = countHorizontalScrollAreas('''
+ListView.builder(
+  scrollDirection:
+      Axis.horizontal,
+  itemBuilder: (_, __) => const SizedBox(),
+);
+''');
+      expect(c.horizontals, 1, reason: '折行是 dart format 的常规产物，分母不得依赖「同一行」');
+    });
+
+    test('包裹件计数认左边界，不被同后缀标识符顶包', () {
+      final c = countHorizontalScrollAreas('''
+HorizontalDragScrollable(child: ListView(scrollDirection: Axis.horizontal));
+MyHorizontalDragScrollable(child: SizedBox());
+''');
+      expect(c.horizontals, 1);
+      expect(c.wrapped, 1, reason: 'MyHorizontalDragScrollable( 不是这个共享件');
+    });
+
+    test('注释里的示例既不算横向区也不算包裹', () {
+      final c = countHorizontalScrollAreas('''
+// 示例：ListView(scrollDirection: Axis.horizontal) 要包 HorizontalDragScrollable(
+/* scrollDirection: Axis.horizontal */
+void f() {}
+''');
+      expect(c.horizontals, 0);
+      expect(c.wrapped, 0);
+    });
+  });
+
   test('共享件本体存在且放开了 mouse/trackpad/stylus', () {
     final File file = File('lib/src/utils/misc/platform_utils.dart');
     expect(file.existsSync(), isTrue);
-    final String source = file.readAsStringSync();
+    // 全是要求型断言：注释里写着这些名字不算实现（TODO-2715）。
+    final String source = maskComments(file.readAsStringSync());
     expect(source, contains('class HorizontalDragScrollable'));
     expect(source, contains('PointerDeviceKind.mouse'));
     expect(source, contains('PointerDeviceKind.trackpad'));
@@ -92,7 +159,7 @@ void main() {
     final File main = File('lib/main.dart');
     expect(main.existsSync(), isTrue);
     expect(
-      main.readAsStringSync(),
+      maskComments(main.readAsStringSync()),
       isNot(contains('scrollBehavior:')),
       reason: '全局放开鼠标拖动滚动会让垂直网格与 MediaCardDraggable 的 Draggable '
           '抢手势，把「拖卡进合集」变成「拖动网格滚动」。只包横向区。',

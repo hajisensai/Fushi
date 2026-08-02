@@ -1138,11 +1138,287 @@ void main() {
               'data-root migration overlay and the main.dart splash branches.',
     };
 
+    // TODO-2715 ①：豁免的**粒度**从「整份文件」收到「这份文件里被审过的那几个 token」。
+    //
+    // 旧机制的问题不是名单太长，而是**名单项的语义**：文件一旦进 allowedFiles，它里面
+    // 新写的**任何**违规都不会被抓——理由写的是「图表内容的小字号」，实际连 `Card(` /
+    // `ListTile(` / 圆角一起整份免检。BUG-1425 已经用几条手写的可证伪断言堵了其中 5 个
+    // 文件（video_chapter_panel / texthooker_page / video_shader_dialog /
+    // anime_download_dialog / manga_json_writeback），但那是逐文件手写的，覆盖不了另外
+    // 69 个，而且每加一个豁免就要再手写一条。
+    //
+    // 新机制：每条豁免同时登记它**当前实际命中**的 token 集合。
+    // - 命中了名单外的 token ⇒ 违规。旧理由不再捎带免检未来的新违规；
+    // - 名单里的 token 不再命中 ⇒ 过期登记，必须删。这就是 BUG-1425 那条 dead-entry
+    //   断言，粒度从「文件」下沉到「token」。
+    //
+    // 为什么是**两张表**而不是把 token 塞进 allowedFiles 的值：理由是给人读的散文、
+    // token 是给判据用的数据，两者的评审方式和修改节奏不同（改理由不该动判据，反之
+    // 亦然）。下面有一条断言强制两张表键集合完全一致，所以拆表不会漂。
+    //
+    // 这张表是**实测生成**的，不是人拍脑袋写的：写下时逐文件跑 _forbiddenChromeHits
+    // 得到，因此本轮零红。它不是「以后再收窄」的占位——名单里的每个 token 从现在起
+    // 都必须真实存在，删一个就红。
+    const Map<String, Set<String>> allowedTokens = <String, Set<String>>{
+      'lib/src/anki/anki_mined_card_action_sheet.dart': <String>{'ListTile('},
+      'lib/src/creator/fields/image_field.dart': <String>{'fontSize:'},
+      'lib/src/lookup/gal_hook_text_overlay_controller.dart': <String>{
+        'fontSize:'
+      },
+      'lib/src/media/audiobook/audiobook_bridge.dart': <String>{'fontSize:'},
+      'lib/src/media/audiobook/audiobook_clip_text_render.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:'
+      },
+      'lib/src/media/audiobook/audiobook_session.dart': <String>{'fontSize:'},
+      'lib/src/media/audiobook/now_listening_mini_bar.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHighest'
+      },
+      'lib/src/media/manga/manga_json_writeback.dart': <String>{'fontSize:'},
+      'lib/src/media/manga/mokuro_payload.dart': <String>{'fontSize:'},
+      'lib/src/media/manga/ocr/google_lens_ocr_service.dart': <String>{
+        'fontSize:'
+      },
+      'lib/src/media/video/cover_ui/cover_match_dialog.dart': <String>{
+        'BorderRadius.circular(',
+        'CheckboxListTile('
+      },
+      'lib/src/media/video/danmaku_manual_match_panel.dart': <String>{
+        'ListTile('
+      },
+      'lib/src/media/video/subtitle_waveform_align_panel.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHighest'
+      },
+      'lib/src/media/video/video_chapter_panel.dart': <String>{'fontSize:'},
+      'lib/src/media/video/video_control_layout_editor.dart': <String>{
+        'surfaceContainerHigh',
+        'surfaceContainerHighest'
+      },
+      'lib/src/media/video/video_danmaku_text_metrics.dart': <String>{
+        'fontSize:'
+      },
+      'lib/src/media/video/video_episode_panel.dart': <String>{
+        'VisualDensity.compact',
+        'fontSize:'
+      },
+      'lib/src/media/video/video_episode_rail.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHighest',
+        'fontSize:'
+      },
+      'lib/src/media/video/video_long_press_speed_badge.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:'
+      },
+      'lib/src/media/video/video_settings_actions.dart': <String>{
+        'fontSize:',
+        'ListTile('
+      },
+      'lib/src/media/video/video_subtitle_jump_panel.dart': <String>{
+        'VisualDensity.compact',
+        'fontSize:'
+      },
+      'lib/src/media/video/video_subtitle_overlay.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:'
+      },
+      'lib/src/media/video/video_subtitle_style.dart': <String>{'fontSize:'},
+      'lib/src/media/video/video_thumbnail_preview_overlay.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:'
+      },
+      'lib/src/media/video/video_volume_overlays.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHighest',
+        'fontSize:'
+      },
+      'lib/src/models/app_model.dart': <String>{
+        'surfaceContainerHigh',
+        'fontSize:'
+      },
+      'lib/src/models/theme_notifier.dart': <String>{
+        'surfaceContainerLow',
+        'surfaceContainerLowest',
+        'surfaceContainerHigh',
+        'surfaceContainerHighest'
+      },
+      'lib/src/ocr/manga_ocr_folder_job.dart': <String>{'fontSize:'},
+      'lib/src/pages/implementations/anime_download_dialog.dart': <String>{
+        'BorderRadius.circular(',
+        'VisualDensity.compact',
+        'surfaceContainerHighest',
+        'fontSize:',
+        'Card(',
+        'ListTile('
+      },
+      'lib/src/pages/implementations/custom_theme_page.dart': <String>{
+        'surfaceContainerLow'
+      },
+      'lib/src/pages/implementations/dictionary_popup_native.dart': <String>{
+        'surfaceContainerHighest'
+      },
+      'lib/src/pages/implementations/dictionary_popup_webview.dart': <String>{
+        'surfaceContainerHigh'
+      },
+      'lib/src/pages/implementations/game_diagnostics_page.dart': <String>{
+        'BorderRadius.circular(',
+        'ListTile('
+      },
+      'lib/src/pages/implementations/games_library_page.dart': <String>{
+        'surfaceContainerHighest',
+        'fontSize:'
+      },
+      'lib/src/pages/implementations/history_reader_page.dart': <String>{
+        'surfaceContainerHighest'
+      },
+      'lib/src/pages/implementations/home_video_page.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:'
+      },
+      'lib/src/pages/implementations/jimaku_batch_dialog.dart': <String>{
+        'ListTile('
+      },
+      'lib/src/pages/implementations/jimaku_subtitle_dialog.dart': <String>{
+        'BorderRadius.circular(',
+        'VisualDensity.compact',
+        'ListTile('
+      },
+      'lib/src/pages/implementations/media_collection_detail_page.dart':
+          <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerLow',
+        'surfaceContainerHighest',
+        'fontSize:'
+      },
+      'lib/src/pages/implementations/popup_settings_injection.dart': <String>{
+        'surfaceContainerHigh'
+      },
+      'lib/src/pages/implementations/reader_hibiki/chrome.part.dart': <String>{
+        'BorderRadius.circular(',
+        'VisualDensity.compact',
+        'surfaceContainerHigh',
+        'surfaceContainerHighest',
+        'fontSize:'
+      },
+      'lib/src/pages/implementations/reader_hibiki/lyrics.part.dart': <String>{
+        'fontSize:'
+      },
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart': <String>{
+        'surfaceContainerHighest'
+      },
+      'lib/src/pages/implementations/reader_hibiki_page.dart': <String>{
+        'BorderRadius.circular('
+      },
+      'lib/src/pages/implementations/reader_history/card_widgets.part.dart':
+          <String>{'surfaceContainerHighest'},
+      'lib/src/pages/implementations/reader_history/dialogs.part.dart':
+          <String>{'fontSize:'},
+      'lib/src/pages/implementations/reader_history/remote.part.dart': <String>{
+        'VisualDensity.compact',
+        'surfaceContainerHighest'
+      },
+      'lib/src/pages/implementations/reading_statistics_page.dart': <String>{
+        'surfaceContainerHighest'
+      },
+      'lib/src/pages/implementations/sentence_context_dialog.dart': <String>{
+        'VisualDensity.compact'
+      },
+      'lib/src/pages/implementations/series_shelf_card.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHighest'
+      },
+      'lib/src/pages/implementations/texthooker_page.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHighest'
+      },
+      'lib/src/pages/implementations/video_hibiki/audio_track.part.dart':
+          <String>{'ListTile('},
+      'lib/src/pages/implementations/video_hibiki/controls_popover.part.dart':
+          <String>{'surfaceContainerHighest', 'fontSize:'},
+      'lib/src/pages/implementations/video_hibiki/controls_theme.part.dart':
+          <String>{'BorderRadius.circular(', 'fontSize:'},
+      'lib/src/pages/implementations/video_hibiki/episode.part.dart': <String>{
+        'BorderRadius.circular(',
+        'VisualDensity.compact',
+        'fontSize:'
+      },
+      'lib/src/pages/implementations/video_hibiki/flicker_notice.part.dart':
+          <String>{
+        'BorderRadius.circular(',
+        'VisualDensity.compact',
+        'fontSize:'
+      },
+      'lib/src/pages/implementations/video_hibiki/layout.part.dart': <String>{
+        'fontSize:'
+      },
+      'lib/src/pages/implementations/video_hibiki/quality.part.dart': <String>{
+        'ListTile('
+      },
+      'lib/src/pages/implementations/video_hibiki/subtitle.part.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+        'ListTile('
+      },
+      'lib/src/pages/implementations/video_hibiki/volume_osd.part.dart':
+          <String>{'BorderRadius.circular(', 'fontSize:'},
+      'lib/src/pages/implementations/video_hibiki_page.dart': <String>{
+        'fontSize:',
+        'ListTile('
+      },
+      'lib/src/pages/implementations/video_shader_dialog.dart': <String>{
+        'CheckboxListTile('
+      },
+      'lib/src/pages/implementations/video_statistics_page.dart': <String>{
+        'surfaceContainerHighest'
+      },
+      'lib/src/settings/settings_schema_video.dart': <String>{'fontSize:'},
+      'lib/src/startup/loading_watchdog_view.dart': <String>{'fontSize:'},
+      'lib/src/storage/data_root_migration_view.dart': <String>{'fontSize:'},
+      'lib/src/sync/backup_import_overlay_view.dart': <String>{'fontSize:'},
+      'lib/src/utils/components/clipboard_lookup_text_panel.dart': <String>{
+        'fontSize:'
+      },
+      'lib/src/utils/components/cover_badge.dart': <String>{
+        'BorderRadius.circular('
+      },
+      'lib/src/utils/components/hibiki_design_tokens.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerLow',
+        'surfaceContainerHigh',
+        'surfaceContainerHighest',
+        'fontSize:'
+      },
+      'lib/src/utils/components/hibiki_material_components.dart': <String>{
+        'BorderRadius.circular(',
+        'VisualDensity.compact',
+        'surfaceContainerHigh',
+        'fontSize:'
+      },
+      'lib/src/utils/components/settings_shared.dart': <String>{
+        'VisualDensity.compact',
+        'fontSize:'
+      },
+      'lib/src/utils/components/stat_contribution_heatmap.dart': <String>{
+        'surfaceContainerHighest'
+      },
+      'lib/src/utils/popup_theme_css.dart': <String>{'surfaceContainerHigh'},
+    };
+
+    expect(allowedTokens.keys.toSet(), allowedFiles.keys.toSet(),
+        reason: '两张豁免表的键必须一一对应：allowedFiles 是给人读的理由，'
+            'allowedTokens 是判据真正用的范围。少一边 = 要么有文件整份免检'
+            '（token 表缺项按空集处理会当场红，这条只是把原因说清），'
+            '要么有条理由挂在名单上却不再有对应范围。');
+
     final List<String> violations = <String>[];
     // BUG-1425：真正被用上的豁免键。一条豁免没被用上只有两种情况——文件没了，或者
     // 文件里早就一个禁用 token 都不剩；两种都是**过期豁免**：理由与代码脱节，却仍
     // 挂在名单上给该文件整份免检，等于给未来的违规预留了一张不会被审的通行证。
     final Set<String> liveAllowlistKeys = <String>{};
+    // TODO-2715：逐 token 的实际命中，用来抓「登记了却不再命中」的过期 token。
+    final Map<String, Set<String>> liveTokens = <String, Set<String>>{};
     final List<File> dartFiles = Directory('lib/src')
         .listSync(recursive: true)
         .whereType<File>()
@@ -1154,13 +1430,24 @@ void main() {
     for (final File file in dartFiles) {
       final String path = file.path.replaceAll(r'\', '/');
       final String? reason = allowedFiles[path];
+      // TODO-2715：先剥注释。判据是禁止型（isNot），注释里写着 `fontSize:` 的说明
+      // 文字会被当成命中——既制造假红，又会把一条注释登记进豁免范围。
       final String source = _withoutSharedComponentNames(
-        file.readAsStringSync(),
+        maskComments(file.readAsStringSync()),
       );
       final List<String> hits = _forbiddenChromeHits(source, forbidden);
       if (hits.isEmpty) continue;
       if (reason != null && reason.isNotEmpty) {
         liveAllowlistKeys.add(path);
+        liveTokens[path] = hits.toSet();
+        final Set<String> covered =
+            allowedTokens[path] ?? const <String>{}; // 缺项 = 零豁免范围。
+        final List<String> uncovered = hits
+            .where((String token) => !covered.contains(token))
+            .toList(growable: false);
+        if (uncovered.isEmpty) continue;
+        violations.add('$path: ${uncovered.join(', ')}'
+            '（豁免只覆盖 ${covered.join(', ')}；新 token 不在被审范围内）');
         continue;
       }
       violations.add('$path: ${hits.join(', ')}');
@@ -1183,6 +1470,25 @@ void main() {
           'the file is gone, or it has zero forbidden-chrome hits. A reason '
           'that has drifted away from the code is not a reviewed exception, '
           'it is a standing blanket waiver. Delete the entry.',
+    );
+
+    // TODO-2715：同一条纪律下沉到 token 粒度。登记了却不再命中的 token 会悄悄
+    // 变成「预留通行证」：那一项收口之后，同名 token 再长回来不会红。
+    final List<String> deadTokens = <String>[];
+    allowedTokens.forEach((String path, Set<String> tokens) {
+      final Set<String>? live = liveTokens[path];
+      if (live == null) return; // 整条已由 deadAllowlistEntries 报出。
+      final Iterable<String> gone =
+          tokens.where((String token) => !live.contains(token));
+      if (gone.isNotEmpty) deadTokens.add('$path: ${gone.join(', ')}');
+    });
+    expect(
+      deadTokens,
+      isEmpty,
+      reason: 'TODO-2715: these exempted tokens no longer occur in the file. '
+          'A token that has been routed through the shared MD3 components must '
+          'be removed from allowedTokens, otherwise the exemption silently '
+          'holds the door open for it to come back:\n${deadTokens.join('\n')}',
     );
   });
 

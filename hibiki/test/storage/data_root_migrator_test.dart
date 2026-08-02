@@ -8,6 +8,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/storage/data_root_migrator.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-935 E1 块2 单测：数据根迁移引擎 [DataRootMigrator]。
 ///
 /// 三类用例：
@@ -1059,8 +1061,23 @@ void main() {
           'data_root_migrator.dart',
         ),
       ).readAsStringSync();
-      expect(src.contains('listSync(recursive: true'), isFalse,
+      // TODO-2715：判据不得写成精确字面量 `'listSync(recursive: true'`——
+      // `dart format` 会把它折成 `listSync(\n  recursive: true,\n)`，字面量当场
+      // 失配、守卫静默变绿（这个坑在 docs/agent/fast-workflow.md 里被点名，
+      // 但被守的这一侧一直没改）。同时先剥注释：注释里写着这个调用不算实现。
+      final RegExp syncRecursiveList =
+          RegExp(r'(?<![A-Za-z0-9_$])listSync\s*\(\s*recursive:\s*true');
+      expect(syncRecursiveList.hasMatch(maskComments(src)), isFalse,
           reason: '迁移引擎不得在主 isolate 上同步递归列目录（会冻结 UI）');
+      // 判据自校验：正则本身还认不认得这两种写法（禁止型断言长期零命中，
+      // 扫盘那条路检验不到它）。
+      expect(
+          syncRecursiveList.hasMatch('dir.listSync(recursive: true)'), isTrue);
+      expect(syncRecursiveList.hasMatch('dir.listSync(\n  recursive: true,\n)'),
+          isTrue,
+          reason: 'dart format 折行形态必须同样被抓到');
+      expect(syncRecursiveList.hasMatch('dir.listSync(recursive: false)'),
+          isFalse);
     });
 
     test('幂等/防重入：对已含迁移数据的目标再次迁移 → 拒绝覆盖，源与目标均完整', () async {
