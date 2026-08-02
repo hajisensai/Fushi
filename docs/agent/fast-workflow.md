@@ -138,7 +138,16 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
 | `test/pages/video_hibiki_page_source_corpus_test.dart` | `video_hibiki/` part 目录枚举 | 同上，视频页语料 |
 | `test/sync/sync_settings_schema_source_corpus_test.dart` | `sync_settings_schema/` part 目录枚举 | 同上，同步设置 schema 语料 |
 
-一条命令跑完，**实测 207 tests**（2026-08-02，`origin/develop@c05a91edc` + PR#756；补入三条语料守卫前是 32 条 / 194 tests / 34 秒）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
+一条命令跑完，**实测 207 tests**（2026-08-02，`origin/develop@c05a91edc` + PR#756）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
+
+**N 的演进链要留着，别只写当前值**——「N 应该是多少」本身就是判空转的信号，只写当前值就丢掉了「它为什么变」：
+
+| N | 条数 | 变化来源 |
+|---|---|---|
+| 194 | 32 | 初版（34 秒） |
+| **207** | **35** | PR#756 补入三条合并语料守卫 |
+| 225 | 35 | PR#760 给禁止型判据补 18 条自校验（**尚未合入**，合入后以此为准） |
+
 
 ```bash
 cd hibiki && dart run tool/flutter_test_failures.dart --no-pub \
@@ -166,8 +175,6 @@ cd hibiki && dart run tool/flutter_test_failures.dart --no-pub \
   test/sync/sync_settings_schema_source_corpus_test.dart
 ```
 
-**另有一批「枚举非源码树」的，按触发条件加跑**（不进默认清单是因为它们只在碰对应资产时才可能红）：改 `.github/workflows` 或 `.ps1` → `test/build/workflow_sed_inplace_portability_guard_test.dart` + `test/tools/powershell_51_compat_guard_test.dart` + `test/mining/magpie_bundled_install_test.dart`；改 `tools/browser-extension/` → `test/build/browser_extension_mirror_full_guard_test.dart` + `test/lookup/browser_extension_installer_test.dart`；动 `docs/bugs/` → `test/tools/bugs_per_file_guard_test.dart`；动 vendored 二进制 / podspec → `test/tools/ffmpeg_min_vendored_self_contained_guard_test.dart` + `test/tools/ffmpeg_kit_podspec_license_guard_test.dart`；动 `hibiki/windows/` native → `test/mining/gal_ipc_contract_single_source_test.dart`。
-
 ### 清单会过期——怎么重新推导
 
 **按行为反向枚举，不按名字猜**。名字里带 `guard` / `static` / `adoption` 的既不充分也不必要：`i18n_completeness_test.dart` 不带 guard 却必须进，`resume_prune_guard_test.dart` 带 guard 却是定点。
@@ -182,7 +189,7 @@ comm -12 /tmp/a /tmp/b   # 候选集，再逐个读代码定性
 
 🔴 **两个已被实测踩到的坑**：
 
-1. **`listSync(` 会被 `dart format` 折行**成 `listSync(\n  recursive: true,\n)`。单行正则 `listSync\(recursive: true\)` 漏掉 `source_guard_adoption_test.dart` 本身——本清单第一版就是这么漏的。要么用多行匹配，要么只 grep `listSync` 裸词再逐个看。（同一个坑也存在于被守的一侧：`test/storage/data_root_migrator_test.dart` 里 `contains('listSync(recursive: true')` 这条断言就抓不到折行写法。）
+1. **`listSync(` 会被 `dart format` 折行**成 `listSync(\n  recursive: true,\n)`。单行正则 `listSync\(recursive: true\)` 漏掉 `source_guard_adoption_test.dart` 本身——本清单第一版就是这么漏的。要么用多行匹配，要么只 grep `listSync` 裸词再逐个看。（同一个坑也存在于被守的一侧：`test/storage/data_root_migrator_test.dart` 里 `contains('listSync(recursive: true')` 这条断言就抓不到折行写法——**PR#760 已改成折行容忍正则**；例子留在这里不是因为它还没修，而是因为「精确字面量断言被 `dart format` 折行打断」这个形态还会再出现。）
 2. **grep 只能定位不能定性**。命中后必须**读代码**确认扫描根是仓库源码树而不是 `Directory.systemTemp` 临时目录——63 个候选里超过一半是「在临时目录造文件再遍历」的行为测试。
 
 ### 扫描规模哨兵（TODO-2707 已补完）
@@ -193,7 +200,78 @@ TODO-2707（PR#756）已把这条补完：**35 条现在条条有扫描规模哨
 
 🔴 **这件事真正的收获不是「修好了什么」，而是「以前无法证明什么」。**变异实测的做法是把 3 条守卫的扫描后缀改成永不匹配：**原判据在零文件扫描下全部保持绿色，只有哨兵响了**。也就是说此前那些「全绿」是真的绿，但**此前没有任何办法把它与「瞎着绿」区分开**。这也正是每次判绿都要自查 `N tests ran` 的 N 有没有偏小的理由——在哨兵补全之前，N 是唯一的空转信号。
 
+### 禁止型断言的盲区：全绿 ≠ 在工作
+
+🔴 PR#760 挖出来的结构性问题，和上面的空转是同一族：
+
+> **禁止型断言（「不得出现 X」）在健康仓库里本来就永远零命中。于是判据本身坏掉时，扫盘那条路根本检验不到它。**
+
+「精确字面量被 `dart format` 折行打断」这类判据缺陷能坏很久没人发现，根子就在这儿：守卫每天都绿，而绿正是它坏掉时的预期表现。**扫描规模哨兵管的是「扫到东西了没」，管不到「判得准不准」。**
+
+应对：给禁止型守卫补**判据自校验**——手写一小段必然违规的语料，喂给判据，要求它必须报出来。自校验语料必须与磁盘扫描**互不依赖、独立枚举**，否则同一个缺陷让两边一起失明。PR#760 做了新旧判据 A/B 实测：一条真假红（旧红新绿）、两条真假绿（旧绿新红）。
+
+配套关系：**「合并后必跑清单」管的是「该跑的守卫有没有跑到」，判据自校验管的是「跑到的守卫判得准不准」**——两层都塌过，缺一层就是另一种形式的假绿。
+
 **新写目录枚举型守卫时，扫描规模下界断言是必需项，不是加分项**；语料型守卫的「磁盘再枚举一遍」必须与生产侧用**不同**实现，否则枚举器自身的缺陷会让守卫与被守方在同一处同时失明。
+
+## 另一半：按触发条件加跑——**不点名，按树推导**
+
+上面那 35 条扫的是 Dart 源码树。另一半守卫读的是 **native / 资产 / 配置树**：`hibiki/windows`、`hibiki/android`、`hibiki/{ios,macos,linux}`、`packages/*/windows`、`native/`、`tools/browser-extension`、`.github/workflows`、`third_party/`。整批清单抓不到它们，因为它们只在碰对应资产时才可能红。
+
+### 这里曾经挂着一份手写的 9 个测试名，它烂了——而且是必然烂的
+
+结构性成因一句话：
+
+> **清单的分类维度是「资产种类」（workflow / 扩展 / 二进制 / native），而真实触发面的维度是「哪棵源码树」。**
+
+两者不对齐，于是五棵最大的 native 树里只有一棵被点了一个名：
+
+| 树 | 引用它的守卫数（实测） | 旧手写清单覆盖 |
+|---|---|---|
+| `hibiki/windows` | 75 | **只点了 `gal_ipc_contract_single_source` 1 个** |
+| `hibiki/android` | 38 | **0，无任何触发规则** |
+| `tools/browser-extension` | 49 | 2 |
+| `packages/flutter_inappwebview_windows` | 20 | **0** |
+| `.github/workflows` | 20 | 3 |
+| `native/hoshidicts` / `native/galgame_hook` | 12 / 9 | 1（半覆盖） |
+| `hibiki/macos` / `hibiki/ios` / `hibiki/linux` | 9 / 7 / 2 | **0** |
+| `packages/gamepads_windows` / `third_party/desktop_drop` | 4 / 3 | **0** |
+
+改一行 `hibiki/windows/runner/flutter_window.cpp` 会牵动 **72 条**守卫，旧清单一条都没提。这是「合入的 PR 把红带进 develop」已发生 3 次的共同根因之一（TODO-2720）。
+
+### 现在：从仓库现状推导
+
+```bash
+cd hibiki
+dart run tool/tests_for_changes.dart --base=origin/develop            # 该加跑哪些
+dart run tool/tests_for_changes.dart --base=origin/develop --explain  # 顺带说明被哪条路径命中
+dart run tool/tests_for_changes.dart hibiki/windows/runner/x.cpp      # 也可以直接给文件
+
+# 直接串给测试入口：
+dart run tool/flutter_test_failures.dart --no-pub \
+  --output-dir=../.codex-test/flutter-test-trigger \
+  $(dart run tool/tests_for_changes.dart --base=origin/develop)
+```
+
+判据一句话：
+
+> **改动文件 F 触发测试 T ⟺ T 的源码里引用了某个仓库路径 P，且 F 落在 P 底下。**
+
+**为什么这条不会像名字表那样烂**：被提取的字符串和被守卫断言存在的路径，是同一个文件里的**同一个字面量**。树改名时守卫必须改那个字面量（不然它自己就红），索引自动跟着走。名字表没有这种耦合，只能靠人记得去改——这次就是没人记得。
+
+规则本身由 `test/tools/tests_for_changes_guard_test.dart` 守着，三层判据：① 被替掉的那 9 条手写规则必须仍能被推导出来（**超集，不是近似**）；② 原先零覆盖的树现在每棵都推得出测试；③ 逐树规模下界，且下界由一份**与提取器毫无共享代码**的朴素 `contains` 扫描独立算出（共用同一个枚举函数会让守卫与被守方在同一处同时失明，`tool/bug.dart` 的 `buildRenumberPlan` / `findResidualRefs` 踩过）。
+
+**有意的偏置：过度触发，不漏触发。** 漏一条 ⇒ 红带进 develop；多跑一条 ⇒ 多几秒。所以不剥注释（注释里点名一棵树本身就是证据）、路径解析退到最近存在的祖先（构建产物 / `.../` 省略写法 / 被删的叶子都还算数）。
+
+**不需要分层**。实测 `hibiki/windows/runner/flutter_window.cpp` 推出的 61 条跑完 **46 秒 / 503 tests**（`origin/develop@f0a00f410`）——比争论「该不该跑」便宜得多，整批跑。
+
+**唯一的例外：扫描面运行时才算得出来的守卫。** 典型是 `powershell_51_compat_guard_test.dart`——它从 `.github/workflows/*.yml` 里解析 `powershell -File <脚本>`，被守的 `.ps1` 清单是 yml 内容决定的，源码里没有那些路径的字面量。这类守卫在**自己文件里**写一行声明：
+
+```dart
+// tests-for-changes: **/*.ps1
+```
+
+规则住在拥有它的那个文件里，改守卫的人一眼看得见；守卫断言每条声明至少匹配到一个真实文件，所以声明烂掉是**响的**不是哑的。
 
 ## 输出可信 ≠ 结论可信
 
@@ -213,8 +291,19 @@ git rev-parse <你以为推上去的那个东西>
 |---|---|---|---|
 | 假失败 | push 报 non-FF 错误 | 并发竞态，commit 其实已经进去了 | `gh api` 查远端 sha |
 | **假成功** | push 报 `[new branch]` / `Everything up-to-date` | 推的 ref 不是工作所在位置（detached HEAD / 推错分支） | `git ls-remote` 查远端 sha |
+| **单端点滞后** | 刚 push 成功，`gh api` 却仍返回旧 sha | 两个端点同一时刻不同值——`gh api` 有传播延迟 | `git ls-remote origin refs/heads/<branch>` 当场就是新值；判 `develop` head 一律以它为准 |
 
-**通则：凡「远端 / 外部系统的状态」，一律以向它查询到的状态为准，不以本地命令的输出叙述为准。** 本地输出只能证明「这条命令做了它说的事」，证明不了「这件事就是我要的事」。同族实例还有：`flutter test | tail` 的退出码是 `tail` 的（恒 0）、构建失败时零测试执行会被伪装成通过（BUG-1157）。
+**通则：凡「远端 / 外部系统的状态」，一律以向它查询到的状态为准，不以本地命令的输出叙述为准；而「向它查询」不等于「问某一个端点」——同一份远端状态在 `gh api` 和 `git ls-remote` 上可以同时是两个值。** 本地输出只能证明「这条命令做了它说的事」，证明不了「这件事就是我要的事」。同族实例还有：`flutter test | tail` 的退出码是 `tail` 的（恒 0）、构建失败时零测试执行会被伪装成通过（BUG-1157）。
+
+### 判「测试跑全了没」是结构问题，不是算术问题
+
+🔴 **别去数 `test(`。** 实测：整合线想核 `test/sync` 的 `N=1937` 对不对，用 grep 数出 9 个 `test(`，算 `1933 + 9 = 1942 ≠ 1937`，差 5，于是怀疑漏跑。**这条路本身就是错的**——源码里的 `test(` 数**从来不等于**运行时用例数：`testWidgets`、参数化循环、`group` 内动态生成的用例，全都对不上。
+
+决定性的是 **suite 层的结构对账**：`test/sync` 磁盘 **237 个 suite、装载 237、0 缺失、0 空 suite** ⇒ 运行是完整的，N 的差额来自用例本身而不是漏跑。
+
+**`N tests ran` 的 N 仍是判据的一部分**（N=0 时 PASSED 和 FAILED 都不成立），但它是**次级信号**：N 能证伪「跑了」，证明不了「跑全了」。清单 / 推导规则要回答的问题是「**该跑的 suite 有没有都跑到**」，那是结构问题，不是算术问题。
+
+这和既有的「grep 只能定位不能定性」是同一个坑的两个面：那条讲**查代码**，这条讲**判测试覆盖**。
 
 ## 合并流水线（integration owner）
 
