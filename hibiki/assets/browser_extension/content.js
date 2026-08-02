@@ -698,6 +698,12 @@ window.hibikiEnqueue = function (fields, sentence) {
   const cw = hibikiPendingCueWindow;
   const w = cw ? { text: cw.text || '', startV: cw.startMs, endV: cw.endMs } : hibikiCurrentCueWindowV();
   if (!w) return { ok: false, reason: 'no-cue' };
+  // BUG-1416：**制卡那一刻**的视频时间就地采样并随队列项持久化。用户拍板「按制卡时候的时间来」，
+  // 而这是唯一还知道那一刻的地方——之后的回放录制只知道句首，再也拿不回这个时刻。
+  // 只在它确实落在本句 cue 窗内才记：面板行查词（hibikiPendingCueWindow）可能停在别的句上，
+  // 那种时刻不在将要录的片段里，记下来只会让下游取到夹取后的边界帧。null → 下游退句首。
+  const nowV = hibikiVideoTimeMs();
+  const mineAtV = (nowV !== null && nowV >= w.startV && nowV <= w.endV) ? nowV : null;
   const site = hibikiSite();
   const youtubeId = site === 'youtube' ? hibikiYoutubeId() : null;
   const netflixId = site === 'netflix' ? hibikiNetflixId() : null;
@@ -711,6 +717,9 @@ window.hibikiEnqueue = function (fields, sentence) {
     id: Date.now() + '-' + Math.random().toString(36).slice(2),
     fields: fields, sentence: sentence || w.text || '',
     startV: Math.max(0, w.startV - 200), endV: w.endV + 200,
+    // BUG-1416：startV 带了 200ms 录制头部提前量，不是真句首；静态帧「字幕开头」要的是真句首。
+    cueStartV: w.startV,
+    mineAtV: mineAtV,
     site: site,
     youtubeId: youtubeId,
     netflixId: netflixId,
@@ -871,9 +880,22 @@ async function hibikiRunNetflixBatch() {
         // 不变），不再因 seek→播放时序把本可录的句误跳。
         const advancing = await hibikiWaitForPlaying(v, 4000);
         if (!advancing) { fail++; window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
+        // BUG-1416：实测片段的**时间基锚点**（clip t=0 对应的视频时间）。绝不能假设它等于
+        // 本句 seek 目标——上面的 waitForSeekSettled/waitForBuffered/waitForPlaying（40ms 轮询、
+        // 要求 currentTime 真前进 20ms 以上）加这一次 IPC 往返，都在推进视频时间。
+        // recorder.start() 必落在「发消息」与「收到 ack」之间，故真锚点必在 [before, after] 内：
+        // 取中点，误差上界 = 半个区间，随请求下发供服务端写进诊断日志（可观测，不靠猜）。
+        const anchorBeforeV = hibikiVideoTimeMs(v);
         const beginResp = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'beginClip' });
+        const anchorAfterV = hibikiVideoTimeMs(v);
         began = !!(beginResp && beginResp.ok);
         if (!began) { fail++; window.hibikiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
+        const anchorV = (anchorBeforeV === null || anchorAfterV === null)
+          ? null
+          : Math.round((anchorBeforeV + anchorAfterV) / 2);
+        const anchorUncertaintyMs = (anchorBeforeV === null || anchorAfterV === null)
+          ? null
+          : Math.round(Math.abs(anchorAfterV - anchorBeforeV) / 2);
         // 本句结束判据：字幕文本变成别的/清空（≠ 这一句），且已过句首 0.4s。refText 用入队时存的整句
         // 文本，比「播放时现采样」稳（避免字幕还没渲染时采到空 → 判据失效整段录到超时）。
         // seek 后字幕要零点几秒才重新渲染：**先等本句字幕真正出现**（过句首 0.3s 后第一段非空字幕
@@ -912,6 +934,10 @@ async function hibikiRunNetflixBatch() {
             chrome.runtime.sendMessage(
               // BUG-676（TODO-1361 ③）：带上入队时抓的剧名；旧队列项无则录制时现抓（此刻正在目标集页）。
               { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs,
+                // BUG-1416：静态帧模式要「制卡那一刻」的帧，服务端据这三个视频时间换算片段内偏移。
+                clipAnchorMs: anchorV, clipAnchorUncertaintyMs: anchorUncertaintyMs,
+                cueStartMs: (typeof q.cueStartV === 'number' ? q.cueStartV : null),
+                mineAtMs: (typeof q.mineAtV === 'number' ? q.mineAtV : null),
                 documentTitle: q.documentTitle || (typeof netflixDocumentTitle === 'function' ? netflixDocumentTitle() : '') },
               (resp) => {
                 try { if (chrome.runtime.lastError) return resolve('retry'); } catch (_) { return resolve('retry'); }
