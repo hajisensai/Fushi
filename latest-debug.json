@@ -8,11 +8,11 @@
   "notes": "Automated release-signed debug-channel build from develop @ a6ab912. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "hibiki-1.3.1-debug.10012-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.1-debug.10012-macos.zip",
-      "releaseSequence": 10012,
-      "tag": "v1.3.1-debug.10012+b524563",
-      "version": "1.3.1-debug.10012"
+      "name": "hibiki-1.3.1-debug.10014-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.1-debug.10014-macos.zip",
+      "releaseSequence": 10014,
+      "tag": "v1.3.1-debug.10014+cb23df8",
+      "version": "1.3.1-debug.10014"
     },
     {
       "name": "hibiki-1.3.1-debug.10020-ios.ipa",
