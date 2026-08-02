@@ -2099,6 +2099,12 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         // Flutter 焦点路径**同一个** resolveKeyboard——改键对两条路一起生效。
         // 收尾 reclaim：这一次按键说明 OS 焦点在 WebView2 手里，不夺回来后续按键
         // 还是只到 DOM（与 onSpaceKey / onSwipe 的 BUG-136 修复同款）。
+        //
+        // BUG-1442：反解析的 scope **不在这里硬编码**，而是由
+        // [resolveSpreadKeyBridgeAction] 从 [kSpreadBridgedActions] 自身导出并逐个
+        // 试（页面专属 scope 在前、兜底 scope 在后）。硬编码单 scope 时，往动作集
+        // 里加任何非 reader scope 的动作都会静默失效：token 进了 JS 表、按下也回传
+        // 到这里，但解析不到动作就早退，桥形同虚设。
         controller.addJavaScriptHandler(
           handlerName: 'onSpreadKey',
           callback: (List<dynamic> args) {
@@ -2106,11 +2112,9 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             final InputBinding? binding =
                 InputBinding.deserialize(args[0] as String);
             if (binding == null) return;
-            final ShortcutAction? action =
-                appModel.shortcutRegistry.resolveKeyboard(
-              binding.key,
-              modifiers: binding.modifiers,
-              scope: ShortcutScope.reader,
+            final ShortcutAction? action = resolveSpreadKeyBridgeAction(
+              appModel.shortcutRegistry,
+              binding,
             );
             if (action == null) return;
             _executeShortcutAction(action);
