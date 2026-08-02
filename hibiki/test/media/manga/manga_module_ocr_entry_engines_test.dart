@@ -9,7 +9,7 @@
 /// 的必填参数，漏传编译不过）并只在 [MangaOcrWizardEngines.resolve] 装配一次，
 /// 两个入口共用。本测试同时钉死：
 /// - ① 阅读器入口在有可用 host 时「配对主机」选项**出现**；
-/// - ② 无 host 时不出现（probe 决定显隐的既有语义不变）；
+/// - ② 无 host 时仍出现但不可用（保留持久化选择且不可触发）；
 /// - ③ 导入向导入口拿到的依赖集与阅读器入口同构、不回归；
 /// - ④ `externalRunner` 的 desktop 三元是**有意**差异，不许被一并抹平。
 library;
@@ -26,6 +26,7 @@ import 'package:hibiki/src/media/manga/manga_module.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_wizard_dialog.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_wizard_engines.dart';
+import 'package:hibiki/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
@@ -190,7 +191,7 @@ void main() {
     );
   });
 
-  testWidgets('② 阅读器入口：无可用 host 时「配对主机」不出现', (WidgetTester tester) async {
+  testWidgets('② 阅读器入口：无可用 host 时「配对主机」保留但禁用', (WidgetTester tester) async {
     final EpubBookRow book = await seedMangaBook();
     final _FakeRemoteRunner remote = _FakeRemoteRunner(target: null);
     await pumpHost(tester, (BuildContext ctx) async {
@@ -204,8 +205,17 @@ void main() {
       );
     });
 
-    expect(find.text(t.manga_remote_ocr_engine), findsNothing);
-    // 显隐由 probe 决定而非「传没传 runner」：runner 仍在，只是探测无 host。
+    expect(find.text(t.manga_remote_ocr_engine), findsOneWidget);
+    final SegmentedButton<MangaOcrEngineId> selector =
+        tester.widget<SegmentedButton<MangaOcrEngineId>>(
+      find.byType(SegmentedButton<MangaOcrEngineId>),
+    );
+    final ButtonSegment<MangaOcrEngineId> remoteSegment = selector.segments
+        .singleWhere((ButtonSegment<MangaOcrEngineId> segment) =>
+            segment.value == MangaOcrEngineId.pairedHost);
+    expect(remoteSegment.enabled, isFalse,
+        reason: '无可用 host 时保留分段以承载持久化选择，但必须不可触发');
+    // runner 仍在，只是 probe 没有找到可用 host。
     expect(mountedEngines(tester).remoteRunner, same(remote));
     // Lens 全平台可用，引擎区不该退化成「无可用引擎」。
     expect(find.text(t.manga_ocr_engine_none), findsNothing);
