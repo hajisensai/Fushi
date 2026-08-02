@@ -1,0 +1,6 @@
+## BUG-1452 · AI6 制卡误用混合 BGM
+- **报告**：2026-08-02（用户：AI6WIN 文本可抓，但制卡音频是 BGM 而非角色语音）
+- **真实性**：✅ 真 bug。该样本的 DirectSound 只暴露一条 44.1 kHz 双声道软件混音流；旧链路没有 AI6 `voice.arc` 资源适配器，只能落到 PCM/系统 Loopback，因此无法靠“改音轨”分离 BGM。缺口位于 `native/galgame_hook/hook/adapter_registry.inc` 的引擎注册表和 `hook/adapters/` 的资源采集实现；修复入口见 `native/galgame_hook/hook/adapters/elf_ai6_adapter.inc:1`。
+- **[x] ① 已修复** — 新增 `elf_ai6` profile 与有界 `voice.arc` 解析器，hook `CreateFileA/W`、`ReadFile`、`CloseHandle`，回调只排队，worker 按 `u32le count + count×272` 索引定位完整 Ogg，并经现有 `WriteVoiceOggAt` 发布；宿主同步识别新增诊断位。2026-08-02 x86 原始路径实测 `hookio=0x1f800000`，Hibiki `TextOutA 0x7525c690` 台词显示 `game_resource`。
+- **[x] ② 已加自动化测试** — `native/galgame_hook/tests/elf_ai6_adapter_test.cpp` 覆盖合法索引、读取区间、越界与畸形头；`resource_audio_ready_test.cpp` 覆盖新增就绪位；`hibiki/test/mining/elf_ai6_pairing_test.dart` 固定“资源 Ogg 优先于混合 Loopback”的回放契约。定向 x86 两个 CTest、adapter structure 12 项均通过；按用户要求未跑全量测试/全量编译。
+- **备注**：样本 `AI6WIN.exe` SHA-256 `2373B7C70005C02A1F1666ADC4DE6413400A6C15481BFDE6EFE7FA11F8C3FC86`。制卡使用 `voice.arc` entry 3 `ozjk98773sji`（offset `3175862`，`35669` bytes），捕获 Ogg 与归档 entry 的 SHA-256 均为 `0717927C9DDD28C114A3DF5C5DC33D44D975FD297579912E4552B9D09242EAF8`。Anki note `1785683571806` 的 SentenceAudio 为 44.1 kHz 单声道 AAC、`1.260157s`，Hibiki 行状态为“已制卡 / 音频已提取”。支持矩阵仍保持 `implemented_unverified`，因为本次明确跳过完整 x86/x64 release gate。

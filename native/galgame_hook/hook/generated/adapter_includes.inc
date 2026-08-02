@@ -5,3 +5,4 @@
 #include "../adapters/catsystem2_adapter.inc"
 #include "../adapters/malie_adapter.inc"
 #include "../adapters/qlie_adapter.inc"
+#include "../adapters/elf_ai6_adapter.inc"

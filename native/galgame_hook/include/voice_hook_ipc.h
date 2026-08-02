@@ -150,6 +150,13 @@ constexpr uint32_t kDiagUnityAudioPcmMethodsFound = 0x00080000u;
 constexpr uint32_t kDiagUnityAudioPlaybackMethodFound = 0x00100000u;
 constexpr uint32_t kDiagUnityAudioPlaybackHookReady = 0x00200000u;
 constexpr uint32_t kDiagUnityHooksDeferredUntilWindow = 0x00400000u;
+constexpr uint32_t kDiagElfAi6ArcHooksReady = 0x00800000u;
+constexpr uint32_t kDiagElfAi6ArcVoiceCaptured = 0x01000000u;
+constexpr uint32_t kDiagElfAi6ArcHandleTracked = 0x02000000u;
+constexpr uint32_t kDiagElfAi6ArcReadObserved = 0x04000000u;
+constexpr uint32_t kDiagElfAi6ArcOggObserved = 0x08000000u;
+constexpr uint32_t kDiagElfAi6ArcVoiceQueued = 0x10000000u;
+constexpr uint32_t kDiagElfAi6ArcTaskRejected = 0x20000000u;
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
@@ -159,7 +166,8 @@ constexpr uint32_t kDiagKirikiriVoiceStreamDumped = 0x00080000u;
 constexpr uint32_t kDiagSiglusOvkHooksReady = 0x10000000u;
 
 inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
-                                                uint32_t hook_diagnostics) {
+                                                uint32_t hook_diagnostics,
+                                                uint32_t reserved_hook_diagnostics = 0) {
   const uint32_t unity_required = kDiagUnityIl2CppHooksReady |
                                   kDiagUnityResourceExtractorReady;
   const bool unity_ready =
@@ -172,7 +180,9 @@ inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
          (hook_diagnostics & kDiagArtemisPfsHooksReady) != 0 ||
          (hook_diagnostics & kDiagCatSystem2PcmHooksReady) != 0 ||
          (hook_diagnostics & kDiagMalieLibpHooksReady) != 0 ||
-         (hook_diagnostics & kDiagVisualArtsOvkHooksReady) != 0 || unity_ready;
+         (hook_diagnostics & kDiagVisualArtsOvkHooksReady) != 0 ||
+         (reserved_hook_diagnostics & kDiagElfAi6ArcHooksReady) != 0 ||
+         unity_ready;
 }
 
 // Unity Streaming AudioClip 不能用 AudioClip.GetData 读取。DLL 在 Play/set_clip 时只写一个

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "elf_ai6",
+  "status": "implemented_unverified",
+  "detection": {
+    "executable_sha256": [
+      "2373B7C70005C02A1F1666ADC4DE6413400A6C15481BFDE6EFE7FA11F8C3FC86"
+    ],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": true,
+    "pcm_audio": true
+  },
+  "evidence": [
+    {
+      "kind": "runtime_observation",
+      "reference": "2026-08-02 original-path x86 run: TextOutA 0x7525c690 produced the selected dialogue thread; hook diagnostics 0x1f800000 recorded ready, archive tracked/read, Ogg observed, queued and captured."
+    },
+    {
+      "kind": "hash_verified",
+      "reference": "voice.arc entry 3 (ozjk98773sji, offset 3175862, 35669 bytes) and captured 213150437_ozjk98773sji.ogg share SHA-256 0717927C9DDD28C114A3DF5C5DC33D44D975FD297579912E4552B9D09242EAF8."
+    },
+    {
+      "kind": "e2e_observation",
+      "reference": "Hibiki paired the resource Ogg to a TextOutA line and created Anki note 1785683571806; SentenceAudio is a 44100 Hz mono AAC of 1.260157 seconds. Full release gates were intentionally skipped, so support remains implemented_unverified."
+    }
+  ]
+}

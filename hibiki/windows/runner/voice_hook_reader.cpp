@@ -131,7 +131,8 @@ VoiceHookStatus StatusFromHeaderLocked(const SharedHeader* h) {
   // 原始资源语音不要求共享环已有 PCM：KiriKiriZ/Siglus 直接导出逐句 Ogg；Unity
   // 由 injector 落逐句 WAV。统一契约确保资源优先，系统回环只作某句配对失败时的 fallback。
   s.raw_voice_ready = hibiki_voice_hook::HasReadyGameResourceAudio(
-      h->reserved_luna, h->hook_diagnostics);
+      h->reserved_luna, h->hook_diagnostics,
+      h->reserved_hook_diagnostics);
   s.text_lane_recycles = static_cast<int64_t>(h->text_lane_recycle_count);
   s.text_lane_overflows = static_cast<int64_t>(h->text_lane_overflow_count);
   // 格式就绪（hook 已填有效格式）才算 ok；hooked 但格式全 0（还没收到语音）时 ok=false。

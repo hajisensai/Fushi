@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "verified_at": "2026-07-23",
+  "verified_at": "2026-08-02",
   "source_baseline": {
     "repository": "hajisensai/hibiki",
     "document": "docs/specs/galgame-mining/engine-adapter-plan.md",
@@ -143,6 +143,126 @@
         "tests/siglus_ovk_test.cpp",
         "tests/siglus_launch_test.cpp",
         "tests/siglus_text_test.cpp"
+      ]
+    },
+    {
+      "id": "elf_ai6",
+      "display_name": "elf AI6",
+      "aliases": ["AI6WIN", "elf AI6"],
+      "family": {
+        "id": "elf",
+        "relation": "elf AI6 archive-based engine"
+      },
+      "detection": {
+        "executable_names": {
+          "values": ["AI6WIN.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "媚肉の香り original-path sample, 2026-08-02"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x86"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "AI6WIN.exe PE architecture measured on the original-path sample"
+          }
+        },
+        "directory_files_all": {
+          "values": ["voice.arc"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Sibling voice.arc validated as u32le count plus fixed 272-byte entries"
+          }
+        },
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": ["dsound.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "The sample exposed one 44.1 kHz stereo DirectSound software-mixed stream"
+          }
+        },
+        "resource_extensions": {
+          "values": [".arc"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "voice.arc entry 3 exported byte-identically as Ogg/Vorbis"
+          }
+        },
+        "hashes": {
+          "values": [
+            {
+              "algorithm": "sha256",
+              "scope": "game_executable",
+              "value": "2373B7C70005C02A1F1666ADC4DE6413400A6C15481BFDE6EFE7FA11F8C3FC86",
+              "version": "original sample"
+            }
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Measured from C:/biniku/AI6WIN.exe on 2026-08-02"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "x86_locale_emulator_then_early_injection",
+        "attach": "supported",
+        "follow_child_processes": false,
+        "notes": [
+          "The verified run used --japanese-locale; no global Windows locale change is required.",
+          "Profile detection requires AI6WIN.exe and a structurally valid sibling voice.arc."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_textouta_hook",
+            "status": "implemented_unverified",
+            "verification": "TextOutA 0x7525c690 produced the selected dialogue thread in the 2026-08-02 run; full release gates were intentionally skipped."
+          }
+        ],
+        "codepage": "CP932",
+        "thread_selection_hint": "Select the stable TextOutA dialogue thread and reject title/menu rendering threads."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "ai6_voice_arc_resource",
+            "format": "Ogg/Vorbis in u32le count + count x 272-byte voice.arc index",
+            "status": "implemented_unverified",
+            "clean_voice": true
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "44100 Hz / stereo / signed 16-bit in the observed sample",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "The original-path E2E run passed on one x86 executable hash, but the user explicitly requested skipping the complete x86/x64 release matrix, so this entry is not promoted.",
+        "DirectSound and process-loopback audio are software-mixed BGM plus voice in the observed sample and must not be described as clean voice.",
+        "The resource adapter supports only the strictly validated fixed 272-byte index layout with stored, complete Ogg members."
+      ],
+      "adapter_path": "hook/adapters/elf_ai6_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/elf_ai6_replay.json",
+        "../../hibiki/test/fixtures/galhook/elf_ai6_replay.json"
+      ],
+      "test_paths": [
+        "tests/elf_ai6_adapter_test.cpp",
+        "tests/resource_audio_ready_test.cpp",
+        "../../hibiki/test/mining/elf_ai6_pairing_test.dart"
       ]
     },
     {

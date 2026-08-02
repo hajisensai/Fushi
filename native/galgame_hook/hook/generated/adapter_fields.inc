@@ -5,3 +5,4 @@
   CatSystem2Adapter catsystem2_;
   MalieLibpAdapter malie_libp_;
   QlieAdapter qlie_;
+  ElfAi6Adapter elf_ai6_;

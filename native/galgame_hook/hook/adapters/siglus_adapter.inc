@@ -64,6 +64,10 @@ void RememberMalieMapping(HANDLE mapping, HANDLE file);
 void ObserveMalieMappedRange(HANDLE mapping, uint64_t offset, SIZE_T bytes);
 void ForgetMalieMapping(HANDLE handle);
 void ForgetMalieArchive(HANDLE handle);
+void RememberElfAi6VoiceArc(HANDLE handle, const wchar_t* path);
+void ObserveElfAi6VoiceArcRead(HANDLE file, const void* buffer, DWORD done,
+                               LPOVERLAPPED overlapped);
+void ForgetElfAi6VoiceArc(HANDLE handle);
 
 bool HasOvkSuffix(const wchar_t* path) {
   if (path == nullptr) return false;
@@ -172,6 +176,7 @@ HANDLE WINAPI Detour_CreateFileW(LPCWSTR file_name, DWORD desired_access,
   if (result != INVALID_HANDLE_VALUE) RememberArtemisPfs(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberCatSystem2Pcm(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberMalieArchive(result, file_name);
+  if (result != INVALID_HANDLE_VALUE) RememberElfAi6VoiceArc(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberUnityVoiceBundle(file_name);
   return result;
 }
@@ -201,6 +206,7 @@ HANDLE WINAPI Detour_CreateFileA(LPCSTR file_name, DWORD desired_access,
       RememberArtemisPfs(result, wide);
       RememberCatSystem2Pcm(result, wide);
       RememberMalieArchive(result, wide);
+      RememberElfAi6VoiceArc(result, wide);
       RememberUnityVoiceBundle(wide);
     }
   }
@@ -269,6 +275,7 @@ BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
   ObserveArtemisPfsRead(file, done, overlapped);
   ObserveCatSystem2PcmRead(file, done, overlapped);
   ObserveMalieArchiveRead(file, done, overlapped);
+  ObserveElfAi6VoiceArcRead(file, buffer, done, overlapped);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) == 0) return ok;
 
   wchar_t path[kSiglusPathChars] = {0};
@@ -302,6 +309,7 @@ BOOL WINAPI Detour_CloseHandle(HANDLE handle) {
   ForgetArtemisPfs(handle);
   ForgetCatSystem2Pcm(handle);
   ForgetMalieArchive(handle);
+  ForgetElfAi6VoiceArc(handle);
   ForgetMalieMapping(handle);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) != 0) {
     ForgetSiglusOvk(handle);
