@@ -234,8 +234,9 @@ void main() {
     });
 
     for (final File binary in _vendoredBinaries(vendorRoot)) {
-      final String relative =
-          binary.path.substring(vendorRoot.path.length + 1).replaceAll(r'\', '/');
+      final String relative = binary.path
+          .substring(vendorRoot.path.length + 1)
+          .replaceAll(r'\', '/');
       final String platformDir = relative.split('/').first;
 
       test('$relative 不依赖构建机上的包管理器动态库', () {
@@ -264,14 +265,10 @@ void main() {
 /// 不硬编码平台/文件名清单：将来加 Linux vendor 或换文件名，新产物自动进守卫。
 List<File> _vendoredBinaries(Directory vendorRoot) {
   if (!vendorRoot.existsSync()) return <File>[];
-  return vendorRoot
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((File f) {
-        final String name = f.uri.pathSegments.last;
-        // 随包的 MinGW 运行时 DLL 也一起扫——它们同样会被拷进用户机器。
-        return !name.endsWith('.md') && !name.endsWith('.txt');
-      })
-      .toList()
+  return vendorRoot.listSync(recursive: true).whereType<File>().where((File f) {
+    final String name = f.uri.pathSegments.last;
+    // 随包的 MinGW 运行时 DLL 也一起扫——它们同样会被拷进用户机器。
+    return !name.endsWith('.md') && !name.endsWith('.txt');
+  }).toList()
     ..sort((File a, File b) => a.path.compareTo(b.path));
 }
