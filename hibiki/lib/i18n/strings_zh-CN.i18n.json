@@ -3017,7 +3017,7 @@
   "mihon_in_bookshelf": "已加入漫画书架",
   "media_source_local_roots": "本地扫描根",
   "game_hook_reason_protocol_mismatch": "捕获组件与本体版本不一致。组件已内置在 Hibiki 里，不需要单独安装：先彻底关掉游戏再重开一次（游戏进程里可能还挂着上一次注入的旧组件）。若重开后仍提示不一致，说明这份 Hibiki 没带上与之匹配的组件。",
-  "scrape_all_confirm": "将按标题匹配库中的 $n 个条目。自动应用高置信度匹配；你自己定的封面一律不覆盖（手动设置的本地图、在匹配弹窗里亲手选定的条目、目录里自带的 poster 图），歧义结果留待手动确认。",
+  "scrape_all_confirm": "将按标题匹配库中的 $n 个条目。只自动应用高置信度的匹配——视频按标题与年份、类型等信息综合打分，书籍和游戏则要求标题唯一且完全一致。你自己定的封面一律不覆盖（手动设置的本地图、在匹配弹窗里亲手选定的条目、目录里自带的 poster 图），歧义结果留待手动确认。",
   "collection_related_title": "相关作品",
   "collection_relation_prequel": "前传",
   "collection_relation_sequel": "续作",
