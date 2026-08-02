@@ -1,7 +1,8 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/source_guard.dart';
 
 /// TODO-867 P3b/P3c — guards isolating the app-OUTSIDE nested-stack host
 /// (global_lookup_host.js + buildStackRenderScript) from the in-app popup.
@@ -562,15 +563,12 @@ void main() {
       // The layout math is CSS / logical px throughout; the only dpr boundary is
       // C++ window geometry / the WH_MOUSE_LL hook. So neither host.js nor the
       // pure layout function may multiply/divide by a device pixel ratio.
-      // Strip // line comments first (the Chinese docs legitimately mention
-      // "dpr" to EXPLAIN the rule); the CODE must carry no dpr arithmetic.
+      // Strip comments first (the Chinese docs legitimately mention "dpr" to
+      // EXPLAIN the rule); the CODE must carry no dpr arithmetic. TODO-2477:
+      // shared lexical mask — block comments and `//` inside string literals
+      // are both handled, which the old per-line indexOf('//') got wrong.
       final String layoutRaw = read('lib/src/lookup/global_lookup_layout.dart');
-      final StringBuffer codeOnly = StringBuffer();
-      for (final String line in const LineSplitter().convert(layoutRaw)) {
-        final int c = line.indexOf('//');
-        codeOnly.writeln(c >= 0 ? line.substring(0, c) : line);
-      }
-      final String layoutCode = codeOnly.toString();
+      final String layoutCode = maskComments(layoutRaw);
       for (final String token in <String>[
         'dpr',
         'devicePixelRatio',

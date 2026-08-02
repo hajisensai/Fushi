@@ -7,6 +7,8 @@ import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1330：浏览器扩展的远端制卡（YouTube / Netflix）过去完全不读动图格式偏好，恒出 GIF。
 ///
 /// 本文件钉死三件事：
@@ -300,10 +302,7 @@ void main() {
 
     /// 剥掉注释再扫「不得出现」的字面量。散文里为解释 bug 必然会写出 `clip.gif` 这类
     /// 触发词，让文档把守卫扫红是假阳性；判据只应落在真实代码上。
-    String codeOnly(String src) => src.split('\n').map((String line) {
-          final int i = line.indexOf('//');
-          return i < 0 ? line : line.substring(0, i);
-        }).join('\n');
+    String codeOnly(String src) => maskComments(src);
 
     test('mineImmersion 读 videoMiningAnimatedFormat 并成对下发', () {
       final String src = libFile('lib/src/models/app_model.dart');

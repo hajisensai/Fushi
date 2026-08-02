@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1353 守卫：跑在 macOS runner 上的 workflow 作业不得使用裸 `sed -i`。
 ///
 /// BSD/macOS 的 sed 与 GNU sed 在 `-i` 上语义不同：BSD 的 `-i` **必须**带备份
@@ -25,6 +27,9 @@ void main() {
   /// `log_upload_workflow_injection_guard_test.dart`）都是纯文本扫描，保持一致。
   List<MapEntry<String, String>> splitJobs(String source) {
     final List<String> lines = source.split('\n');
+    // 注释判定走共享等长掩码（行号/列宽与原文一一对应）；正文仍写入**原文**行，
+    // 报错信息要显示真实内容。
+    final List<String> masked = maskHashComments(source).split('\n');
     final int jobsAt = lines.indexWhere((String l) => l.trimRight() == 'jobs:');
     if (jobsAt < 0) return const <MapEntry<String, String>>[];
 
@@ -48,8 +53,9 @@ void main() {
         currentName = header.group(1);
         continue;
       }
-      // 顶层 key（零缩进非空行）代表 jobs: 段结束。
-      if (line.isNotEmpty && !line.startsWith(' ') && !line.startsWith('#')) {
+      // 顶层 key（零缩进非空行）代表 jobs: 段结束。整行注释在掩码后只剩空白，
+      // 于是天然不会被当成顶层 key（旧写法靠手判 `startsWith('#')`）。
+      if (masked[i].trim().isNotEmpty && !masked[i].startsWith(' ')) {
         flush();
         currentName = null;
         break;
@@ -99,9 +105,11 @@ void main() {
 
       for (final MapEntry<String, String> job in splitJobs(source)) {
         if (!mayRunOnMacos(job.value)) continue;
-        for (final String line in job.value.split('\n')) {
-          // 注释行不算实际命令。
-          if (line.trimLeft().startsWith('#')) continue;
+        // 注释行不算实际命令：走共享等长掩码，顺带掩掉行尾 `# ...`（旧写法只跳
+        // 整行注释），且引号内的 `#`（`sed 's/#x/y/'`）不会被误当注释抹半条命令。
+        // 注意只掩**命令扫描**这一侧：mayRunOnMacos 仍看原文，保持「宁可严、
+        // 不可漏」——被注释掉的 runs-on: macos 依旧让该作业纳入检查范围。
+        for (final String line in maskHashComments(job.value).split('\n')) {
           if (bareInPlace.hasMatch(line)) {
             offenders.add('${job.key}: ${line.trim()}');
           }
@@ -121,9 +129,10 @@ void main() {
     final List<String> offenders = <String>[];
 
     for (final File workflow in workflows) {
-      for (final String line in workflow.readAsStringSync().split('\n')) {
+      for (final String line in maskHashComments(
+        workflow.readAsStringSync(),
+      ).split('\n')) {
         if (!line.contains(marker)) continue;
-        if (line.trimLeft().startsWith('#')) continue;
         injectionSites++;
         if (!line.contains('sed -i.bak ')) {
           offenders.add('${workflow.uri.pathSegments.last}: ${line.trim()}');

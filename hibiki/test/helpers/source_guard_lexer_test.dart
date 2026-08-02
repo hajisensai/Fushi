@@ -438,6 +438,28 @@ final String js = \'\'\'
       expect(maskJsComments(js).contains('keepMe'), isTrue);
     });
 
+    test('已知边界：`)` 之后的正则被当成除号（TODO-2477 复核结论）', () {
+      // `/` 是正则还是除号，只能靠前一个有意义 token 判。`)` 有意**不在**
+      // _kJsRegexAllowedAfter 里，因为 `(a+b)/2` 是除法，而「if 条件收口后紧跟
+      // 正则」在真实代码里罕见。代价是下面这种写法会被读成「除号 + 行注释」，
+      // 从 `//` 起到行尾整段被掩掉。
+      //
+      // 全仓 66 个真实 .js 资产扫下来没有一处命中（TODO-2477 实测），所以保持
+      // 现状；真要修得引入表达式上下文/ASI 跟踪，代价远大于收益。这条用例把
+      // 边界钉住：谁哪天真去修了，它会红，提醒同步更新这段说明。
+      const String js = 'if (a) /x://y/.test(b); keepMe;';
+      expect(maskJsComments(js).contains('keepMe'), isFalse,
+          reason: '这是已知且有意的取舍，不是回归；改动前先读上面的说明');
+      // 反过来：`(`、`=`、`[`、`return` 之后的正则都判得对，含 `\/` 转义斜杠。
+      for (final String ok in <String>[
+        r't(/x:\/\/y/); keepMe;',
+        r'var re = /a:\/\/b/; keepMe;',
+        r'return /a:\/\/b/.test(s); keepMe;',
+      ]) {
+        expect(maskJsComments(ok).contains('keepMe'), isTrue, reason: ok);
+      }
+    });
+
     test('maskJsCommentsAndStrings 掩掉串内容但保留结构括号', () {
       const String js = "function f() { const s = '}{'; return 1; }";
       final String structural = maskJsCommentsAndStrings(js);
