@@ -177,17 +177,23 @@ void main() {
 
   test('TODO-174: locked context menu is available only to full-control mode',
       () {
-    final String body = methodBody(
+    final String handleBody = methodBody(
         pageSrc, 'void _handleSecondaryTap(Offset globalPosition) {');
+    final String showBody = methodBody(
+        pageSrc, 'void _showVideoContextMenu(Offset globalPosition) {');
     final int fullControlsGate =
-        body.indexOf('if (!_immersiveAllowsFullControls) return;');
+        handleBody.indexOf('if (!_immersiveAllowsFullControls) return;');
     expect(fullControlsGate, greaterThanOrEqualTo(0),
         reason:
             'right-click menu exposes full controls and must be gated by immersive mode');
-    final int menuIdx = body.indexOf('showMenu<VoidCallback>(');
-    expect(menuIdx, greaterThan(fullControlsGate),
+    final int delegateIdx =
+        handleBody.indexOf('_showVideoContextMenu(globalPosition);');
+    expect(delegateIdx, greaterThan(fullControlsGate),
         reason:
-            'full-control gate must run before building/showing the context menu');
+            'full-control gate must run before scheduling the context menu');
+    expect(showBody.contains('showMenu<VoidCallback>('), isTrue,
+        reason:
+            'the gated delegate must remain the method that opens the menu');
   });
 
   test('TODO-174: video settings schema exposes the four-mode selector', () {
