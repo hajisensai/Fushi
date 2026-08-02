@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
     show readerUiScaleReanchorAllowed, readerRestoreReanchorAllowed;
 
+import '../helpers/source_guard.dart';
 import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// TODO-693：改 appUiScale（整体界面缩放）时，**连续/滚动模式**阅读位置被弹回章节开头。
@@ -123,50 +124,53 @@ void main() {
     });
   });
 
+  // TODO-2527：JS 侧两个窗口原来用 `indexOf('\n  },')` / `indexOf('\n  }')` 当右边界
+  // ——那是「首个缩进两格的右花括号」，函数体里嵌一层同缩进的块就当场截断；而且窗口从
+  // 未掩码的源码切，`getFirstVisibleCharOffset()` / `finally` 这类串在生产注释里到处
+  // 都是，实现删光只留注释照样绿。现在窗口由 JS 花括号配对给出，语料先掩码。
   group('JS 守卫：连续模式两阶段重锚原语 + _reanchorPending 串行契约', () {
     late String js;
+    late String continuousShell;
 
     setUpAll(() {
-      js = File('lib/src/reader/reader_pagination_scripts.dart')
-          .readAsStringSync()
-          .replaceAll('\r\n', '\n');
+      js = maskCommentsAndScriptLines(
+        File('lib/src/reader/reader_pagination_scripts.dart')
+            .readAsStringSync()
+            .replaceAll('\r\n', '\n'),
+      );
+      continuousShell = _continuousShellJs(js);
     });
 
     /// 切出 `beginUiScaleReanchor: function() { ... }` 函数体，避免误命中别处。
-    String beginBody() {
-      const String marker = 'beginUiScaleReanchor: function()';
-      final int start = js.indexOf(marker);
-      expect(start, greaterThanOrEqualTo(0),
-          reason: '找不到 beginUiScaleReanchor 定义（连续模式重锚阶段1）');
-      final int end = js.indexOf('\n  },', start);
-      expect(end, greaterThan(start), reason: '找不到 beginUiScaleReanchor 体结尾');
-      return js.substring(start, end);
-    }
+    String beginBody() => methodBody(
+          continuousShell,
+          'beginUiScaleReanchor: function()',
+          lexicon: SourceLexicon.js,
+        );
 
-    String commitBody() {
-      const String marker = 'commitUiScaleReanchor: function()';
-      final int start = js.indexOf(marker);
-      expect(start, greaterThanOrEqualTo(0),
-          reason: '找不到 commitUiScaleReanchor 定义（连续模式重锚阶段2）');
-      final int end = js.indexOf('\n  }', start);
-      expect(end, greaterThan(start), reason: '找不到 commitUiScaleReanchor 体结尾');
-      return js.substring(start, end);
-    }
+    String commitBody() => methodBody(
+          continuousShell,
+          'commitUiScaleReanchor: function()',
+          lexicon: SourceLexicon.js,
+        );
 
     test('阶段1 beginUiScaleReanchor 先置 _reanchorPending 再暂存锚', () {
       final String body = beginBody();
       // 已有重锚在飞则让既有序列接管，不重复采样。
-      expect(body.contains('this._reanchorPending === true) return -1'), isTrue,
+      expect(
+          containsCodeLine(body, 'this._reanchorPending === true) return -1'),
+          isTrue,
           reason: 'begin 必须在已有重锚在飞时返回 -1（让 setChromeInsets/updatePageSize '
               '等既有序列接管，不重复采样/不抢旗）');
       // 关键时序：采样首个可见字符 → 置旗 → 暂存锚。置旗必须发生（挡住 reflow 归零 scroll）。
-      expect(body.contains('getFirstVisibleCharOffset()'), isTrue,
+      expect(containsCodeLine(body, 'getFirstVisibleCharOffset()'), isTrue,
           reason: 'begin 必须用 getFirstVisibleCharOffset 采样精确锚');
       // BUG-493：置旗改走清旗单点 setter（_setReanchorPending，语义不变）。
-      expect(body.contains('this._setReanchorPending(true)'), isTrue,
+      expect(containsCodeLine(body, 'this._setReanchorPending(true)'), isTrue,
           reason: 'begin 必须置 _reanchorPending=true，否则 reflow 归零 scroll 会经 '
               'onReaderScroll 落库 progress≈0 弹回章首（TODO-693 根因）');
-      expect(body.contains('this._uiScaleReanchorOffset = charOffset'), isTrue,
+      expect(containsCodeLine(body, 'this._uiScaleReanchorOffset = charOffset'),
+          isTrue,
           reason: 'begin 必须暂存锚供 commit 阶段提交');
       // 时序：置旗在暂存之前/同段，且无可用锚时早返回不置旗。
       final int idxOffsetInvalid = body.indexOf('charOffset < 0) return -1');
@@ -181,23 +185,26 @@ void main() {
       final String body = commitBody();
       // 仅当 begin 成功暂存了有效锚才提交，否则 no-op（绝不误清别处的 _reanchorPending）。
       expect(
-          body.contains('off === undefined || off < 0) return false'), isTrue,
+          containsCodeLine(body, 'off === undefined || off < 0) return false'),
+          isTrue,
           reason: 'commit 必须在无有效暂存锚时整体 no-op，绝不误清别处重锚旗');
       // TODO-1229：commit 透传 begin 暂存的滚动位（<=0 章首区保位 hint，不弹回前导）。
       expect(
-          body.contains(
+          containsCodeLine(body,
               'this.scrollToCharOffset(off, undefined, this._uiScaleReanchorScroll)'),
           isTrue,
           reason: 'commit 必须把锚滚回视口首边并透传采到的滚动位（settle 后的真实位置）');
       // finally 清旗 + 清暂存，保证异常路径也不卡死 _reanchorPending（HBK-REG-004 同形）。
-      expect(body.contains('finally'), isTrue,
+      expect(containsCodeLine(body, 'finally'), isTrue,
           reason: 'commit 必须在 finally 清旗，异常路径也不能卡死 _reanchorPending');
       // BUG-493：清旗改走单点 setter（true→false 转换经 onReanchorSettled 通知 Dart 补刷进度）。
-      expect(body.contains('this._setReanchorPending(false)'), isTrue,
+      expect(containsCodeLine(body, 'this._setReanchorPending(false)'), isTrue,
           reason: 'commit 必须清 _reanchorPending，否则后续滚动回传被永久挡住');
-      expect(body.contains('this._uiScaleReanchorOffset = undefined'), isTrue,
+      expect(containsCodeLine(body, 'this._uiScaleReanchorOffset = undefined'),
+          isTrue,
           reason: 'commit 必须清暂存锚，避免下次缩放误用旧锚');
-      expect(body.contains('this._uiScaleReanchorScroll = undefined'), isTrue,
+      expect(containsCodeLine(body, 'this._uiScaleReanchorScroll = undefined'),
+          isTrue,
           reason: 'commit 必须清暂存滚动位，避免下次缩放误用旧 hint');
     });
 
@@ -210,14 +217,14 @@ void main() {
 
     test('invocation builder 用 typeof 守卫使分页模式整体 no-op', () {
       expect(
-        js.contains(
+        containsCodeLine(js,
             "typeof window.hoshiReader.beginUiScaleReanchor === 'function'"),
         isTrue,
         reason: 'beginUiScaleReanchorInvocation 必须 typeof 守卫——分页 shell 缺此函数，'
             '误调时整体 no-op 返回 -1',
       );
       expect(
-        js.contains(
+        containsCodeLine(js,
             "typeof window.hoshiReader.commitUiScaleReanchor === 'function'"),
         isTrue,
         reason: 'commitUiScaleReanchorInvocation 必须 typeof 守卫',
@@ -229,17 +236,18 @@ void main() {
     late String src;
 
     setUpAll(() {
-      src = readReaderPageSource();
+      src = maskCommentsAndScriptLines(readReaderPageSource());
     });
 
     test('build 用 ref.listen 监听 appUiScale 变化并调连续重锚', () {
       // 用 select 只监听 appUiScale 标量，避免 AppModel 任意字段变更都触发。
       expect(
-        src.contains('appProvider.select((AppModel m) => m.appUiScale)'),
+        containsCodeLine(
+            src, 'appProvider.select((AppModel m) => m.appUiScale)'),
         isTrue,
         reason: '必须用 ref.listen + select 只监听 appUiScale 标量变化（TODO-693）',
       );
-      expect(src.contains('_reanchorContinuousForUiScale()'), isTrue,
+      expect(containsCodeLine(src, '_reanchorContinuousForUiScale()'), isTrue,
           reason: 'appUiScale 变化必须触发 _reanchorContinuousForUiScale 重锚');
     });
 
@@ -247,28 +255,33 @@ void main() {
       // TODO-697：两阶段编排（门控→begin→intResult→postFrame→commit）已抽到 top-level
       // runUiScaleReanchorOrchestration（运行时序列由 *_runtime_test.dart 真执行锁定）。
       // 这里只静态守卫「方法把本 State 实例字段正确绑进编排回调」这层接线。
-      final int idx =
-          src.indexOf('Future<void> _reanchorContinuousForUiScale()');
-      expect(idx, greaterThan(0), reason: '_reanchorContinuousForUiScale 必须存在');
-      final String body = src.substring(idx, idx + 2000);
-      expect(body.contains('runUiScaleReanchorOrchestration('), isTrue,
+      // TODO-2527: `idx + 2000` 定长窗口换成花括号配对——方法体再长也不会漂出窗口，
+      // 再短也不会把下一个方法的属性读进来。
+      final String body =
+          methodBody(src, 'Future<void> _reanchorContinuousForUiScale()');
+      expect(containsCodeLine(body, 'runUiScaleReanchorOrchestration('), isTrue,
           reason: '方法必须委托给 top-level runUiScaleReanchorOrchestration（编排核心，'
               '运行时序列由 runtime 测试锁定）');
       // TODO-718：编排核心改由调用方注入门控结果（gateAllowed）。693 缩放重锚路径必须绑
       // readerUiScaleReanchorAllowed（含 !restoreInFlight 早返回）。
       expect(
-          body.contains('gateAllowed: readerUiScaleReanchorAllowed('), isTrue,
+          containsCodeLine(body, 'gateAllowed: readerUiScaleReanchorAllowed('),
+          isTrue,
           reason: '缩放重锚必须把 readerUiScaleReanchorAllowed 结果绑进 gateAllowed');
       // 门控的五个实例字段必须绑进 readerUiScaleReanchorAllowed（撤任一 → 对应抑制不再受控）。
-      expect(body.contains('controllerAvailable: _controller != null'), isTrue,
+      expect(containsCodeLine(body, 'controllerAvailable: _controller != null'),
+          isTrue,
           reason: '必须把控制器存活绑进门控');
       expect(
-          body.contains('continuousMode: _settings?.isContinuousMode == true'),
+          containsCodeLine(
+              body, 'continuousMode: _settings?.isContinuousMode == true'),
           isTrue,
           reason: '必须把连续模式绑进门控（分页模式抑制的来源）');
-      expect(body.contains('readerContentReady: _readerContentReady'), isTrue);
-      expect(body.contains('lyricsMode: _lyricsMode'), isTrue);
-      expect(body.contains('restoreInFlight: _restoreInFlight'), isTrue);
+      expect(containsCodeLine(body, 'readerContentReady: _readerContentReady'),
+          isTrue);
+      expect(containsCodeLine(body, 'lyricsMode: _lyricsMode'), isTrue);
+      expect(
+          containsCodeLine(body, 'restoreInFlight: _restoreInFlight'), isTrue);
       // begin / commit 回调必须绑各自的 invocation；postFrame 必须经 addPostFrameCallback。
       final int idxBegin = body
           .indexOf('ReaderPaginationScripts.beginUiScaleReanchorInvocation()');
@@ -279,7 +292,7 @@ void main() {
       expect(idxCommit, greaterThan(0),
           reason:
               'evalCommit 回调必须绑 commitUiScaleReanchorInvocation（settle 后滚回清旗）');
-      expect(body.contains('addPostFrameCallback'), isTrue,
+      expect(containsCodeLine(body, 'addPostFrameCallback'), isTrue,
           reason:
               'schedulePostFrame 必须经 WidgetsBinding.addPostFrameCallback 等过渡帧 '
               'settle（box.size 是 FittedBox 逐帧过渡，沿用 _syncPageSize 的 settle 时机）');
@@ -289,12 +302,9 @@ void main() {
         () {
       // 编排核心的源码切片守卫：运行时序列已由 runtime 测试锁定，这里再静态确认
       // 「门控 → begin → intResult → charOffset<0 早返回 → postFrame → commit」骨架在源码里。
-      final int idx =
-          src.indexOf('Future<void> runUiScaleReanchorOrchestration(');
-      expect(idx, greaterThan(0),
-          reason: 'runUiScaleReanchorOrchestration top-level 编排核心必须存在');
-      final String body = src.substring(idx, idx + 1600);
-      expect(body.contains('if (!gateAllowed)'), isTrue,
+      final String body =
+          methodBody(src, 'Future<void> runUiScaleReanchorOrchestration(');
+      expect(containsCodeLine(body, 'if (!gateAllowed)'), isTrue,
           reason: '编排核心必须先过调用方注入的门控结果 gateAllowed（TODO-718：不再硬编码'
               '单一门控函数，缩放/恢复两路径各传自己的门控真值表）');
       final int idxBegin = body.indexOf('await evalBegin()');
@@ -401,7 +411,7 @@ void main() {
     late String src;
 
     setUpAll(() {
-      src = readReaderPageSource();
+      src = maskCommentsAndScriptLines(readReaderPageSource());
     });
 
     test(
@@ -424,28 +434,26 @@ void main() {
               '否则归零会先污染落库（要求①③：采锚在归零前）');
       // 同段内 _refreshProgress() 必须出现在采锚之后。
       final String afterReanchor = src.substring(idxReanchor, idxStartPoll);
-      expect(afterReanchor.contains('_refreshProgress();'), isTrue,
+      expect(containsCodeLine(afterReanchor, '_refreshProgress();'), isTrue,
           reason: '采锚之后才轮到 _refreshProgress()（置旗已挡住归零，读到正确位置）');
     });
 
     test('_reanchorContinuousAfterRestore 委托编排核心并绑恢复完成门控', () {
-      final int idx =
-          src.indexOf('Future<void> _reanchorContinuousAfterRestore()');
-      expect(idx, greaterThan(0),
-          reason: '_reanchorContinuousAfterRestore 必须存在（TODO-718）');
-      final String body = src.substring(idx, idx + 2000);
-      expect(body.contains('runUiScaleReanchorOrchestration('), isTrue,
+      final String body =
+          methodBody(src, 'Future<void> _reanchorContinuousAfterRestore()');
+      expect(containsCodeLine(body, 'runUiScaleReanchorOrchestration('), isTrue,
           reason: '恢复重锚必须复用 top-level 编排核心（同 693 两阶段序列）');
       // 要求②：必须绑恢复完成专用门控 readerRestoreReanchorAllowed（不含 restoreInFlight 早返回），
       // 绝不复用 readerUiScaleReanchorAllowed。
       expect(
-          body.contains('gateAllowed: readerRestoreReanchorAllowed('), isTrue,
+          containsCodeLine(body, 'gateAllowed: readerRestoreReanchorAllowed('),
+          isTrue,
           reason: '恢复重锚必须绑 readerRestoreReanchorAllowed（避开会早返回的门控，要求②）');
-      expect(body.contains('readerUiScaleReanchorAllowed('), isFalse,
+      expect(containsCodeLine(body, 'readerUiScaleReanchorAllowed('), isFalse,
           reason:
               '恢复重锚不得复用含 !restoreInFlight 早返回的 readerUiScaleReanchorAllowed');
       // 门控不绑 restoreInFlight（恢复完成路径下必为 false）。
-      expect(body.contains('restoreInFlight:'), isFalse,
+      expect(containsCodeLine(body, 'restoreInFlight:'), isFalse,
           reason: '恢复重锚门控不应再绑 restoreInFlight');
       // 复用同一两阶段 begin/commit invocation（与 _reanchorPending 串行旗一致）。
       final int idxBegin = body
@@ -457,12 +465,28 @@ void main() {
       expect(idxCommit, greaterThan(0),
           reason:
               'evalCommit 必须绑 commitUiScaleReanchorInvocation（settle 后滚回清旗）');
-      expect(body.contains('addPostFrameCallback'), isTrue,
+      expect(containsCodeLine(body, 'addPostFrameCallback'), isTrue,
           reason: 'schedulePostFrame 必须经 addPostFrameCallback 等 settle 时机');
       expect(
-          body.contains('continuousMode: _settings?.isContinuousMode == true'),
+          containsCodeLine(
+              body, 'continuousMode: _settings?.isContinuousMode == true'),
           isTrue,
           reason: '必须把连续模式绑进门控（分页抑制来源）');
     });
   });
+}
+
+/// 从**掩码后**的 `reader_pagination_scripts.dart` 里切出连续模式 shell 的 JS 语料。
+///
+/// [methodBody] 的 [SourceLexicon.js] 只能扫纯 JS：直接对 Dart 文件用 JS 词法，
+/// `'''` 会被读成「空串 + 新串」，三引号里的花括号被当成串内容抹掉、配对跑偏。
+/// 先按 Dart 侧稳定标记切出 JS blob，再在里面用 JS 词法配对函数体。
+String _continuousShellJs(String maskedSource) {
+  const String start = 'window.__hoshiShells.continuous = function(C) {';
+  const String end = '</script>';
+  final int startIndex = maskedSource.indexOf(start);
+  expect(startIndex, isNonNegative, reason: '找不到连续模式 shell 起点：$start');
+  final int endIndex = maskedSource.indexOf(end, startIndex + start.length);
+  expect(endIndex, greaterThan(startIndex), reason: '找不到连续模式 shell 终点：$end');
+  return maskedSource.substring(startIndex, endIndex);
 }
