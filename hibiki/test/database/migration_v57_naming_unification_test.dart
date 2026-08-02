@@ -22,7 +22,11 @@ void main() {
           rawDb.execute('PRAGMA foreign_keys = OFF');
           // v56 shape：video_books 全列在场，imported_at/completed_at 是 drift
           // DateTime（Unix 秒整数）。media_sources 只作 source_id 的 FK 目标
-          // （foreign_key_check 需要父表在场）。
+          // （foreign_key_check 需要父表在场）；media_collections 同理，是 v68
+          // media_images 的 FK 目标 —— media_images 既是 video_books 的 cascade
+          // 子表、又自己 FK 到 media_collections，删 video_books 行时 SQLite 要
+          // 连着解析这条 FK，父表缺席就抛 no such table。真实 v56 库恒有该表
+          // （v38 就建了），种子缺它是本 fixture 的不真实处，不是被测行为。
           rawDb.execute('''
 CREATE TABLE media_sources (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -37,6 +41,17 @@ CREATE TABLE media_sources (
   recursive INTEGER NOT NULL DEFAULT 1,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
+)
+''');
+          rawDb.execute('''
+CREATE TABLE media_collections (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  collection_type TEXT NOT NULL DEFAULT 'collection',
+  cover_source TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  order_updated_at INTEGER NOT NULL DEFAULT 0
 )
 ''');
           rawDb.execute('''
@@ -154,7 +169,7 @@ CREATE TABLE book_tag_membership_tombstones (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 67,
+    expect(db.schemaVersion, 68,
         reason: 'v57 = 命名统一；v58 = 外部媒体自动记录；v59 = 游戏标签；'
             'v60 = 阅读页数；v61 = 合集自有封面；v62 = 每游戏窗口超分档位；'
             'v63 = 清理旧全局超分 pref');
