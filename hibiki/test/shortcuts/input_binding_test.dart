@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
@@ -354,6 +356,75 @@ void main() {
           GamepadButton.dpadLeft);
       expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowRight),
           GamepadButton.dpadRight);
+    });
+  });
+
+  // BUG-1422：快捷键录入在 IME 下必须与运行时解析共用同一条物理键回退契约。
+  group('InputBinding.normalizeCapturedKey', () {
+    test('IME process + physical Z records KeyZ', () {
+      expect(
+        InputBinding.normalizeCapturedKey(
+          logicalKey: LogicalKeyboardKey.process,
+          physicalKey: PhysicalKeyboardKey.keyZ,
+        ),
+        LogicalKeyboardKey.keyZ,
+      );
+    });
+
+    test('IME process + physical Space records Space', () {
+      expect(
+        InputBinding.normalizeCapturedKey(
+          logicalKey: LogicalKeyboardKey.process,
+          physicalKey: PhysicalKeyboardKey.space,
+        ),
+        LogicalKeyboardKey.space,
+      );
+    });
+
+    test('a real logical key is never overridden by physical layout', () {
+      // 非美式布局（AZERTY/QWERTZ）：物理 Z 位上的逻辑键可能是 Y。引擎给出真实
+      // 逻辑键时必须原样保留，绝不按 US-QWERTY 物理位改写。
+      expect(
+        InputBinding.normalizeCapturedKey(
+          logicalKey: LogicalKeyboardKey.keyY,
+          physicalKey: PhysicalKeyboardKey.keyZ,
+        ),
+        LogicalKeyboardKey.keyY,
+      );
+    });
+
+    test('process with an unmapped physical key stays Process', () {
+      expect(
+        InputBinding.normalizeCapturedKey(
+          logicalKey: LogicalKeyboardKey.process,
+          physicalKey: PhysicalKeyboardKey.numpad1,
+        ),
+        LogicalKeyboardKey.process,
+      );
+    });
+
+    test('the reverse map is a total inverse of the forward map', () {
+      // 正向表必须保持 1:1；否则反向表会静默丢条目，某些键在 IME 下悄悄录不进。
+      expect(
+        InputBinding.physicalToLogicalLength,
+        InputBinding.logicalToPhysicalLength,
+      );
+    });
+
+    test('the shortcut recorder persists the normalized key', () {
+      final String source = File(
+        'lib/src/pages/implementations/shortcut_settings/'
+        'binding_edit_dialog.part.dart',
+      ).readAsStringSync();
+      expect(source, contains('InputBinding.normalizeCapturedKey('));
+      expect(source, contains('logicalKey: event.logicalKey'));
+      expect(source, contains('physicalKey: event.physicalKey'));
+      // 归一化必须发生在建 InputBinding 之前（否则存的还是 process）。
+      expect(
+        source.indexOf('InputBinding.normalizeCapturedKey('),
+        lessThan(
+            source.indexOf('InputBinding(key: key, modifiers: modifiers)')),
+      );
     });
   });
 
