@@ -11,10 +11,11 @@ import 'package:hibiki/utils.dart';
 
 /// 设置区「漫画 OCR」组的正文（内联进阅读设置分类）。
 ///
-/// 内容：内置 OCR 模型状态行（已下载/未下载 + 体积）、下载按钮（进度条 + 可取消）、
-/// 删除按钮（二次确认）。本地模型只在支持整卷 ONNX 的平台显示；下方是外部
-/// mokuro CLI 路径设置（仅桌面）和 Google Lens 整页上传说明。旧的单框 Gemini
-/// 配置不再渲染。
+/// 内容：默认引擎下拉、内置 OCR 模型状态行（已下载/未下载 + 体积）、下载按钮
+/// （进度条 + 可取消）、删除按钮（二次确认）。本地模型只在支持整卷 ONNX 的平台
+/// 显示；下方是外部 mokuro CLI 路径设置（仅桌面）。旧的单框 Gemini 配置和 Google
+/// Lens 说明段落均不再渲染——Lens 的上传告知由首次使用时的
+/// `ensureGoogleLensDisclosure` 同意弹窗承担，设置页不再重复一遍。
 ///
 /// 服务经构造参数注入（不 `ref.read` provider），偏好与外部探测提供可注入默认实现，
 /// 故最小 widget 测试注 fake 即可独立编译/通过；真实接线由 `settings_schema_manga_ocr.dart`
@@ -275,8 +276,6 @@ class _MangaOcrSettingsSectionState
           const SizedBox(height: 16),
           _buildExternalBlock(theme),
         ],
-        const SizedBox(height: 16),
-        _buildLensBlock(theme),
       ],
     );
   }
@@ -317,20 +316,6 @@ class _MangaOcrSettingsSectionState
         setState(() => _enginePreference = value);
         unawaited(_writeEnginePreference(value));
       },
-    );
-  }
-
-  Widget _buildLensBlock(ThemeData theme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        _sectionLabel(theme, t.manga_google_lens_section),
-        Text(
-          t.manga_google_lens_privacy,
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-      ],
     );
   }
 
