@@ -1807,18 +1807,25 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       onWebViewCreated: (controller) {
         _controller = controller;
         assert(() {
+          // TODO-2603：调试钩子的生命周期属于**本页 State**，不属于单个 WebView
+          // 实例。旧判据是「钩子必须为 null」——它把「同一页重装钩子」和「两个阅读器
+          // 同时活着」混成一件事。renderer 死后换 key 重建时 State 不重建、
+          // `onWebViewCreated` 会第二次触发，那一刻钩子还挂着上一代 controller，旧
+          // 断言必炸（这是阅读器不敢走重建路径的硬阻塞之一）。
+          //
+          // 判据改成**所有者身份**：没有主人（首次安装 / 上一页已 dispose 释放），或
+          // 主人就是本 State（重建重装），都合法；主人是**另一个** State 才是真的两个
+          // 阅读器同时活着——检测力度与旧断言等价，只是不再误伤重装。
           assert(
-            ReaderHibikiPage.debugEvaluateJavascript == null,
-            'debugEvaluateJavascript already set — a previous reader did not '
-            'clear it on dispose, or two readers are live at once.',
+            ReaderHibikiPage.debugHookOwner == null ||
+                identical(ReaderHibikiPage.debugHookOwner, this),
+            'reader debug hooks are owned by another live reader — a previous '
+            'reader did not clear them on dispose, or two readers are live at '
+            'once.',
           );
+          ReaderHibikiPage.debugHookOwner = this;
           ReaderHibikiPage.debugEvaluateJavascript =
               (String source) => controller.evaluateJavascript(source: source);
-          assert(
-            ReaderHibikiPage.debugCaptureWebView == null,
-            'debugCaptureWebView already set — a previous reader did not '
-            'clear it on dispose, or two readers are live at once.',
-          );
           ReaderHibikiPage.debugCaptureWebView =
               () => controller.takeScreenshot();
           ReaderHibikiPage.debugCaretSurface = () => _caretSurface.name;

@@ -80,3 +80,81 @@ PR#690（BUG-1372）只修了 `main.dart` 的启动预热那一处。`lib/` 下*
 
 - **备注**：Windows fork（`packages/flutter_inappwebview_windows`）原生侧从不 raise
   `ProcessFailed`，那边注册 `onRenderProcessGone` 是死代码，要改 C++，属独立工作量，本条不含。
+
+### 派生（TODO-2603）：阅读器「能重建」的三处前置
+
+上面 ① 里那段「阅读器刻意不重建」的理由**已随本次改动失效**，别再照抄。三处前置本轮全部收口，
+但**重建本身仍未打开**（`afterRebuild` 依旧是 null）——打开它要连着真机验证（renderer 真死一次、
+重建后落点与落库都对），刻意留成独立一轮，本轮只做静态前置。
+
+复核结论（对 `origin/develop` `4d576bc9d`）：三处**当时都仍成立**，没有被别的 PR 修掉或重构走。
+
+| 前置 | 复核到的 file:line（修前） | 根因 |
+|---|---|---|
+| ① 恢复锚陈旧 | `reader_hibiki_page.dart:1209/1212/1215/1223` 声明；`reader_hibiki/navigation.part.dart:428-434` 写（`_beginNavigation`） | 见下 |
+| ② 断言只在 dispose 清 | `reader_hibiki/webview.part.dart:1809-1821` | 钩子生命周期属于 State，断言却按 WebView 实例建模 |
+| ③ `_refreshProgress` 无 try/catch | `reader_hibiki/navigation.part.dart:903-907` | 报废 controller 上 `evaluateJavascript` 抛 → 未捕获异步错误 |
+
+#### 前置 ① 的真根因不是「值偶尔是 0」，是**一个状态被两种语义共用**
+
+`_initialProgress` / `_initialCharOffset` / `_initialCharOffsetEnd` / `_initialFragment` 同时充当
+「本次导航的待消费目标」和「新建 WebView 该恢复到哪」。前者一次性、后者要一直有效，于是恢复落定
+之后这组字段就变成一张过期的进章快照（跨章翻页恒 `0.0 / -1`）。重建 restore 回章首 →
+`_onRestoreComplete → _refreshProgress → _debouncedSavePosition` 把回退位置如实落库 → **覆盖掉
+DB 里更靠后的真实进度**。
+
+**修法是切生命周期 + 定唯一所有者**，不是加「锚是不是 0」的判据：
+
+- 阶段 ①（`_restoreInFlight == true`）：所有者 = 导航发起方（`_beginNavigation` / `_initBook` /
+  `reloadWithCurrentSettings` / 有声书 cue 恢复）。此时实时进度采样读到的还是旧页面，不得覆盖。
+- 阶段 ②（恢复落定后）：所有者 = 实时进度采样。`_refreshProgress` /
+  `_syncPositionFromWebViewProgress` 每写一次 `_lastProgress*`，就经
+  `_adoptLiveProgressAsRestoreAnchor` 让恢复锚跟着走；一次性字段（句尾锚 / 内链 fragment）在接管时
+  清空。
+
+于是「恢复锚始终等于当前阅读位置」变成**结构性事实**。原先设想的「崩溃回调里把 `_lastProgress*`
+拷进 `_initial*`」那个补丁被整个消掉了——崩溃路径根本不需要知道恢复锚这回事。
+
+判据凿成纯函数 `restoreAnchorOnLiveProgress`（`hibiki/lib/src/reader/reader_restore_anchor.dart`）；
+四个字段仍是 State 的存储（既有守卫按字段名钉住导航侧写入形态，改名会连带重写十来个无关守卫，
+不值得），只是多了一个 `_restoreAnchor` 聚合读视图 + 一个接管写入口。
+
+- **[x] ① 根因修复**
+  - `hibiki/lib/src/reader/reader_restore_anchor.dart`（新）：`ReaderRestoreAnchor` +
+    `restoreAnchorOnLiveProgress`。
+  - `hibiki/lib/src/pages/implementations/reader_hibiki/navigation.part.dart`：`_restoreAnchor`
+    getter、`_adoptLiveProgressAsRestoreAnchor`，接进 `_refreshProgress` 与
+    `_syncPositionFromWebViewProgress`；`_refreshProgress` 的 `evaluateJavascript` 补 try/catch +
+    `ErrorLogService.log('ReaderHibiki._refreshProgress.eval')`（前置 ③）。
+  - `hibiki/lib/src/pages/implementations/reader_hibiki/webview.part.dart` +
+    `reader_hibiki_page.dart`：调试钩子断言改成所有者身份判据
+    `ReaderHibikiPage.debugHookOwner`（前置 ②），`dispose` 无条件释放所有权。检测力度与旧断言
+    等价（另一个 State 抢装仍炸），只是不再把「同一页重装」误判成「两个阅读器同时活着」。
+  - `hibiki/lib/src/webview/webview_death_guard.dart`：把「恢复锚是进章快照所以不重建」的理由
+    改写成「要具备重建能力就得把恢复锚的所有权修对」，并点名不要用崩溃回调拷贝当补丁。
+
+- **[x] ② 已加自动化测试**
+  - 真行为测 `hibiki/test/reader/reader_restore_anchor_test.dart`：`_ReaderProgressLoop` 按真实
+    调用顺序跑「跨章进第 3 章 → 恢复落定 → 读到 0.62/char 1500 → renderer 死 → 换 key 重建 →
+    restore → 落库」，落库那步走生产的 `readerPositionSaveArgs`，断言重建后落库值 **等于**重建前
+    （`normCharOffset 6200 / charOffset 1500`）且 `restoredTo.isChapterStart` 为假；另测恢复在飞
+    期间旧页面采样不得顶掉待消费目标、一次性字段接管时清空。
+  - 接线守卫 `hibiki/test/reader/reader_restore_anchor_wiring_guard_test.dart`：窗口全部走
+    `source_guard.methodBody` 花括号配对，钉住三处前置都接在真实路径上（接管顺序
+    `_lastProgress* → 接管 → 落库`、两个采样所有者都接管、身份判据 + `dispose` 释放、
+    try/catch 与 fail-open 日志）。
+  - 变异实测（改动全部反向文本替换还原，无 `git checkout --`）：
+    1. `restoreAnchorOnLiveProgress` 改成恒返回 `current`（锚永不推进）→ 行为测 3 条红，其中
+       「读到章中 → renderer 死 → 重建恢复」报 `重建 restore 必须回到用户读到的位置，回章首就是丢进度`；
+    2. 从 `_refreshProgress` 摘掉 `_adoptLiveProgressAsRestoreAnchor(...)` → 守卫「接管顺序」条红
+       （`Actual: <-1>`）；
+    3. 把 `onWebViewCreated` 换回旧的 `debugEvaluateJavascript == null` 断言 → 守卫「身份判据」条红；
+    4. 摘掉 `_refreshProgress` 的 try/catch → 守卫「前置 ③」条红（`tryIdx == -1`）；
+    5. `dispose` 里删掉 `debugHookOwner = null` → 守卫「dispose 释放钩子所有权」条红；
+    6. 把 `_syncPositionFromWebViewProgress` 的接管实参改成 `_lastProgressCharOffset` → 守卫
+       「第二个所有者也接管」条红。
+  - 顺带修好一处**塌掉的既有守卫**：`hibiki/test/reader/reader_image_page_progress_anchor_test.dart`
+    用 `src.substring(idx, idx + 1200)` 定长窗口切 `_refreshProgress`，本轮补 try/catch 后被守的
+    `_applyImagePageProgressFallback();` 被挤出窗口 → 红的是守卫自己而不是行为退化。两处定长窗口
+    （1200 / 900）改用 `source_guard.methodBody` 的花括号配对。变异实测：摘掉
+    `_refreshProgress` 里的 `_applyImagePageProgressFallback();` → 该条仍红（不是改绿了事）。

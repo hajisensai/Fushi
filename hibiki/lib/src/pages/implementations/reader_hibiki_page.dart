@@ -61,6 +61,7 @@ import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/image_reveal_key.dart';
 import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
+import 'package:hibiki/src/reader/reader_restore_anchor.dart';
 import 'package:hibiki/src/reader/reader_search_navigation.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
@@ -1062,10 +1063,22 @@ class ReaderHibikiPage extends BaseSourcePage {
   /// by `assert` so it is tree-shaken out of release builds.
   ///
   /// Assumes a single live reader at a time (the normal case — the reader is a
-  /// full-screen route). The reentrancy `assert` in [onWebViewCreated] fires in
-  /// debug if a second reader is created before the first disposes.
+  /// full-screen route). The reentrancy `assert` in `onWebViewCreated` fires in
+  /// debug if a second reader is created before the first disposes — see
+  /// [debugHookOwner].
   @visibleForTesting
   static Future<dynamic> Function(String source)? debugEvaluateJavascript;
+
+  /// TODO-2603：上面这批调试钩子的**当前所有者 State**（debug-only，`assert` 里读写，
+  /// release 被树摇掉）。
+  ///
+  /// 钩子的生命周期跟着**页面**走，不跟着 WebView 实例走：renderer 死后换 key 重建时
+  /// State 不重建、`onWebViewCreated` 会再触发一次并重装钩子，那是合法的。旧的
+  /// 「钩子必须为 null」断言分不出「同一页重装」和「两个阅读器同时活着」，重建必炸。
+  /// 换成所有者身份判据后，只有**另一个** State 抢装才报错；`dispose` 无条件释放
+  /// 所有权。
+  @visibleForTesting
+  static Object? debugHookOwner;
 
   /// 测试钩子：抓当前阅读器 WebView 正文为 PNG（经 WebView2 CDP，离屏可用）。
   /// 仅 debug/profile build 在 onWebViewCreated 注册；release / 未在阅读器页时为 null。
@@ -1328,24 +1341,28 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// renderer 死亡处置（救命动作 = [_buildWebView] 里给 `InAppWebView` 传了非
   /// null 的 `onRenderProcessGone`，否则 Android 会连坐杀掉整个 app）。
   ///
-  /// **这里刻意不重建**（`afterRebuild` 为 null），与漫画/词典弹窗/Lapis 三处
-  /// 不同。原因是阅读器的恢复锚 `_initialProgress` / `_initialCharOffset`
-  /// （[_initBook] / `_beginNavigation` / reload 三处写）记的是**进入本章那一刻
-  /// 的快照**，章内滚动只更新 `_lastProgress*`、不回写它俩。跨章翻进本章时
-  /// `_beginNavigation` 常把它们写成 `0.0 / -1`，于是换 key 强制重建后
-  /// `onWebViewCreated → 重新 restore` 会回到**章首**，紧接着
-  /// `_onRestoreComplete → _refreshProgress → _debouncedSavePosition` 把这个回退
-  /// 位置如实落库，把 DB 里更靠后的真实进度覆盖掉。白屏可以退出重进，进度被写
-  /// 回退不可逆 —— 两害相权，本轮只救命不重建。
+  /// **这里目前仍不重建**（`afterRebuild` 为 null），与漫画/词典弹窗/Lapis 三处
+  /// 不同 —— 但理由已经换了，别照抄旧结论。
   ///
-  /// 要把重建做对，得先补齐这些前置条件（不在本轮止血范围内）：
-  /// ① 崩溃回调里用 `_lastProgressValue` / `_lastProgressCharOffset` 补齐
-  ///    `_initialProgress` / `_initialCharOffset`（照 reload 路径的范式）；
-  /// ② `webview.part.dart` 里 `onWebViewCreated` 的
-  ///    `debugEvaluateJavascript == null` 断言改成幂等 —— State 不重建，第二次
-  ///    `onWebViewCreated` 必炸 assert；
-  /// ③ `navigation.part.dart` 的 `_refreshProgress` 给 `evaluateJavascript`
-  ///    补 try/catch。
+  /// 旧理由（已失效）：恢复锚 `_initialProgress` / `_initialCharOffset` 记的是
+  /// **进入本章那一刻的快照**，章内滚动只更新 `_lastProgress*`，于是换 key 重建
+  /// 后 restore 会回到章首、再被 `_debouncedSavePosition` 如实落库，把 DB 里更靠
+  /// 后的真实进度覆盖掉。
+  ///
+  /// TODO-2603 已把这三处前置全部修掉：
+  /// ① 恢复锚的所有权切成两段（见 [ReaderRestoreAnchor]）：恢复在飞时归导航发起
+  ///    方，恢复落定后由实时进度采样（`_refreshProgress` /
+  ///    `_syncPositionFromWebViewProgress` → `_adoptLiveProgressAsRestoreAnchor`）
+  ///    接管。恢复锚因此**结构性地**始终等于当前阅读位置，崩溃回调不需要再临时
+  ///    拷 `_lastProgress*`；
+  /// ② `onWebViewCreated` 的调试钩子断言改成所有者身份判据
+  ///    （[ReaderHibikiPage.debugHookOwner]），同一 State 重装合法、两个阅读器
+  ///    同时活着仍会炸；
+  /// ③ `_refreshProgress` 的 `evaluateJavascript` 补了 try/catch + 日志。
+  ///
+  /// 剩下的只是**开关**：把 `afterRebuild` 接上「换 epoch key + setState」。刻意
+  /// 留到独立一轮做，因为它要连着真机验证（renderer 真死一次、重建后落点与落库
+  /// 都对）才算数，与本轮的静态前置不同源。
   ///
   /// flush 侧仍要做满：取消轮询与 debounce（报废 controller 上的
   /// `evaluateJavascript` 会抛成未捕获异步错误）、落盘当前位置、丢掉 controller。
@@ -2165,6 +2182,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // of leaving the callback alive until the 10-second timeout.
     _failNavigation();
     assert(() {
+      // TODO-2603：页面走了就释放钩子所有权，下一个阅读器才能装（无条件清，与旧行为
+      // 逐字一致——钩子本来就是无条件清的，这里只多清一个所有者字段）。
+      ReaderHibikiPage.debugHookOwner = null;
       ReaderHibikiPage.debugEvaluateJavascript = null;
       ReaderHibikiPage.debugCaptureWebView = null;
       ReaderHibikiPage.debugCaretSurface = null;
