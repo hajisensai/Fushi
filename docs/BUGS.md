@@ -7,7 +7,13 @@
 > 这样并发 agent 各写各的文件，永不在同一处产生 git 冲突；撞号也只是两个不同文件名，
 > 改个名即可，不再有冲突标记手术。
 >
-> 新建一条：`dart run tool/bug.dart new <slug> [标题...]`（跨本地+远端分支取下一个空号、生成骨架、重建索引）。
+> 新建一条：`dart run tool/bug.dart new <slug> [标题...]`（取下一个空号、生成骨架、重建索引）。
+> 号池可见范围 = 全部本地/远端分支的 commit 树 **+ 本机每个 git 工作区磁盘上还没提交的
+> `docs/bugs/*.md`**——后者是并发撞号的大头（`new` 写文件到 commit 之间隔着几十分钟到几小时；
+> 完整根因与判据见 `tool/bug.dart` 文件头注释。本段刻意不写具体 BUG 号：`renumber` 按设计
+> 整体跳过本文件（索引区是生成物），header 里的号改不到，会在自校验里报残留）。
+> 仍不是分布式锁：开 PR 前和每次 rebase 后重跑 `dart run tool/bug.dart check`
+> （会跨分支/工作区复核并报出「我新引入的号被谁占着、在哪」；`check --strict` 让撞号也退非 0）。
 > 撞号了：`dart run tool/bug.dart renumber <old> <new>`（文件名 + 正文 H2 + 代码/测试引用一把改 + 自校验；
 > 别手改——只改文件名不改正文 H2 会让 `bugs_per_file_guard_test` 变红）。
 > 改完某条 bug 文件后：`dart run tool/bug.dart reindex` 重建下面的索引表。
@@ -29,10 +35,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1325 条。点号进各自文件。
+> 共 1326 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1429](bugs/BUG-1429-bug-tool-number-pool-misses-uncommitted-worktrees.md) | ✅ | ✅ | bug.dart 取号扫不到并发工作区未提交的 bug 文件，一天连撞六次 |
 | [BUG-1425](bugs/BUG-1425-md3-guard-allowlist-drift.md) | ✅ | ✅ | MD3 守卫豁免与实际命中脱节：四处裸 Material chrome 静默放行 + fontSizeFactor 绕过判据 + 过期豁免 |
 | [BUG-1418](bugs/BUG-1418-manga-reader-ocr-paired-host-missing.md) | ✅ | ✅ | 阅读器整卷 OCR 看不到「配对主机」选项：openBookOcr 漏传 remoteRunner |
 | [BUG-1417](bugs/BUG-1417-anime-download-added-activity.md) | ✅ | ✅ | 番剧下载自动入库不记 added 活动事件 |
