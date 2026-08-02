@@ -3870,11 +3870,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 动作：
   /// * 「下载」→ 复用 [_downloadRemote]（与封面下载按钮同一入口，内部已去重）。
   /// * 「信息」→ 弹基本元数据（标题 + 是否含字幕）。
+  /// * 「删除」→ 仅互联后端（[InterconnectSyncBackend]，有 deleteRemoteVideo）才显示；
+  ///   云盘后端（[CloudRemoteVideoClient]）无此能力，按类型门控隐藏，与远端书卡
+  ///   [_showRemoteBookDialog] 同一纪律。
   ///
-  /// 删除：远端视频是 host/client 模型（client 不存视频，只从 host 流式播放），
-  /// [RemoteVideoClient] / [InterconnectSyncBackend] 均无 deleteRemoteVideo 能力，
-  /// 故不提供删除动作（真实能力边界，非掩盖）。
+  /// 注：此处曾注明「均无 deleteRemoteVideo 能力，故不提供删除动作」——该能力现已补齐
+  /// （host `VideoDeletionHost` + `DELETE /api/library/videos/<id>` + client 方法四层）。
   void _showRemoteVideoDialog(RemoteVideoInfo video) {
+    final RemoteVideoClient? client = _remoteVideoClient;
+    final bool canDelete = client is InterconnectSyncBackend;
     showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
@@ -3899,8 +3903,76 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             },
           ),
         ],
+        dangerActions: <DialogDangerAction>[
+          if (canDelete)
+            DialogDangerAction(
+              label: t.dialog_delete,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _confirmDeleteRemoteVideo(video, client);
+              },
+            ),
+        ],
       ),
     );
+  }
+
+  /// 删除互联对端 host 上的远端视频，删完强制刷新远端列表。
+  ///
+  /// 删的是 host 库里的条目 + host app 自己拥有的封面/字幕缓存与上传副本；host 用户
+  /// **自己导入的原始视频文件不删**（见 `AppModelLibraryHostService.deleteVideo`）。
+  ///
+  /// 三种结果各有可见反馈——静默失败正是远端书删除的老毛病（只写日志、用户以为删了）：
+  /// * 成功 → 列表里消失（强制刷新绕过 [RemoteLibraryCache] TTL）；
+  /// * host 版本过旧不支持（404/405）→ 提示升级对端；
+  /// * 其它失败（网络 / host 500）→ 提示失败。
+  Future<void> _confirmDeleteRemoteVideo(
+    RemoteVideoInfo video,
+    InterconnectSyncBackend backend,
+  ) async {
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(video.title),
+        content: Text(t.sync_compare_delete_confirm(name: video.title)),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(t.dialog_delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    bool supported = true;
+    bool failed = false;
+    try {
+      supported = await backend.deleteRemoteVideo(video.id);
+    } catch (e, stack) {
+      failed = true;
+      ErrorLogService.instance.log('HomeVideoPage.deleteRemoteVideo', e, stack);
+    }
+    if (!mounted) return;
+    if (failed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_delete_failed)),
+      );
+    } else if (!supported) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_delete_unsupported)),
+      );
+    }
+    // 删成功才需要重取清单；失败时列表本就没变。forceRefresh 绕过远端库缓存 TTL，
+    // 否则刚删掉的视频会在 TTL 内继续显示成幽灵卡片。
+    if (!failed && supported) {
+      setState(() {
+        _remoteFuture = _loadRemoteVideos(forceRefresh: true);
+      });
+    }
   }
 
   /// 展示远端视频的基本元数据（标题 + 大小 + 字幕有无）。纯信息弹窗。

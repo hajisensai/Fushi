@@ -3077,5 +3077,7 @@
   "manga_online_retry_waiting": "Retrying automatically ($attempt/$total)",
   "manga_ocr_wizard_already_ocred": "This volume already has OCR data on every page. Running OCR again would overwrite it.",
   "shortcut_scope_universal": "Back / Exit",
-  "game_attach_and_capture": "Attach and capture"
+  "game_attach_and_capture": "Attach and capture",
+  "remote_delete_failed": "Could not delete it on the paired device",
+  "remote_delete_unsupported": "The paired device is too old to support remote deletion. Update Hibiki there first."
 }

@@ -50,6 +50,7 @@ class AppModelLibraryHostService
     implements
         HibikiLibraryHostService,
         DeletionTombstoneHost,
+        VideoDeletionHost,
         InterconnectServiceConfigHost {
   AppModelLibraryHostService({
     required HibikiDatabase db,
@@ -59,6 +60,7 @@ class AppModelLibraryHostService
     required Future<void> Function(Future<void> Function() body) runExclusive,
     Future<void> Function(File epubFile)? importBookFromFile,
     Future<void> Function(EpubBookRow row)? cleanupBookOnDisk,
+    Future<void> Function(VideoBookRow row)? cleanupVideoOnDisk,
     List<LocalAudioDbEntry> localAudioEntries = const <LocalAudioDbEntry>[],
     Directory? localAudioStagingDir,
     Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
@@ -76,6 +78,7 @@ class AppModelLibraryHostService
         _runExclusive = runExclusive,
         _importBookFromFile = importBookFromFile,
         _cleanupBookOnDisk = cleanupBookOnDisk,
+        _cleanupVideoOnDisk = cleanupVideoOnDisk,
         _localAudioEntries = localAudioEntries,
         _localAudioStagingDir = localAudioStagingDir,
         _onLocalAudioImported = onLocalAudioImported,
@@ -106,6 +109,11 @@ class AppModelLibraryHostService
   /// 书籍磁盘清理回调（可选；null 时只执行 DB 删除，跳过 AudiobookStorage/SrtBook 清理）。
   /// 生产传 ReaderHibikiSource 实例的磁盘清理部分。
   final Future<void> Function(EpubBookRow row)? _cleanupBookOnDisk;
+
+  /// 视频磁盘清理回调（可选；null 时只执行 DB 删除 + 上传副本目录回收）。
+  /// 生产传 `VideoBookRepository.reclaimDeletedVideoBookAssets` 的等价闭包——它按
+  /// 「仍在 app 资产目录内 + 无其它条目引用」回收封面 / 字幕缓存，**不碰原始视频文件**。
+  final Future<void> Function(VideoBookRow row)? _cleanupVideoOnDisk;
 
   // ── 本地音频（T3.1）──────────────────────────────────────────────────────
 
@@ -1265,6 +1273,68 @@ class AppModelLibraryHostService
   Future<bool> videoExists(String id) async {
     _assertSafeVideoId(id);
     return (await _db.getVideoBookByBookUid(id)) != null;
+  }
+
+  /// 从 host 视频库删除 bookUid 为 [id] 的视频（[VideoDeletionHost]）。
+  ///
+  /// 与 host 用户在自己视频库长按删除同语义（镜像 `VideoBookRepository.deleteVideoBook`
+  /// + `reclaimDeletedVideoBookAssets`）：DB 行 + 字幕 cue + 合集引用 + 删除墓碑，磁盘侧
+  /// **只回收 app 自己拥有的字节**。用户自己导入的原始视频文件绝不删除。
+  @override
+  Future<void> deleteVideo(String id) async {
+    _assertSafeVideoId(id);
+    await _runExclusive(() async {
+      final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+      if (row == null) return; // 幂等：不存在则静默跳过
+
+      // DB 事务：删 VideoBooks 行 + 本视频的 audio_cues（标签映射经 FK cascade）。
+      await _db.deleteVideoBook(id);
+      // 统一合集：删条目时清其全部合集引用（逻辑外键无 DB cascade），镜像本地
+      // 删除路径，避免留孤儿成员 / 合集卡数量虚高。
+      await _db.removeEntryFromAllCollections(MediaKind.video, id);
+      // 记删除墓碑：host 的其它已配对设备下次同步会拉到并逐条确认删除，使
+      // 「从所有设备删除」在 client→host→其它 client 链路上闭合。best-effort。
+      try {
+        await _db.writeSyncDeletionTombstone(
+          SyncTombstoneKind.video.dbValue,
+          id,
+          DateTime.now().millisecondsSinceEpoch,
+        );
+      } catch (_) {
+        // best-effort：记账失败不影响视频已删。
+      }
+
+      // 磁盘回收，两条都只碰「能证明是 app 自己写进来的」字节：
+      // ① client 上传副本目录（本 host 自己按 uid 建的，见 importVideo）。
+      await _deleteUploadedVideoCopy(row);
+      // ② 封面 / 字幕缓存交注入回调（与 deleteBook 的 cleanupBookOnDisk 同构，生产接
+      //    VideoBookRepository.reclaimDeletedVideoBookAssets，其内部有「仍在 app 资产
+      //    目录内 + 无其它条目引用」双重判据）。
+      try {
+        await _cleanupVideoOnDisk?.call(row);
+      } catch (_) {
+        // best-effort：磁盘回收失败不影响 DB 已删。
+      }
+    });
+  }
+
+  /// 删除 client 上传副本目录——当且仅当该行的 `videoPath` 确实落在本 host 的
+  /// `<uploadedVideoRoot>/<safeUid>/` 之内。
+  ///
+  /// host 用户自己导入的原片不在这个目录下，所以这条 [p.isWithin] 判据就是
+  /// 「这些字节是 app 自己搬进来的」的证明；判据不成立时一个字节都不动。
+  Future<void> _deleteUploadedVideoCopy(VideoBookRow row) async {
+    final Directory? root = _uploadedVideoRoot;
+    if (root == null) return;
+    final Directory owned =
+        Directory(p.join(root.path, _sanitizeVideoIdForPath(row.bookUid)));
+    if (!owned.existsSync()) return;
+    if (!p.isWithin(owned.path, row.videoPath)) return;
+    try {
+      await owned.delete(recursive: true);
+    } catch (_) {
+      // best-effort：目录被占用等失败不影响 DB 已删。
+    }
   }
 
   /// 接收 client 上传的单文件视频并注册进 host 视频库（client→host live push）。

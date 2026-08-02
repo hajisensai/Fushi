@@ -3077,5 +3077,7 @@
   "manga_online_retry_waiting": "即将自动重试 ($attempt/$total)",
   "manga_ocr_wizard_already_ocred": "本卷每一页都已有 OCR 数据，无需再跑（重跑会覆盖现有数据）。",
   "shortcut_scope_universal": "返回·退出",
-  "game_attach_and_capture": "附着并捕获"
+  "game_attach_and_capture": "附着并捕获",
+  "remote_delete_failed": "无法在对端设备上删除",
+  "remote_delete_unsupported": "对端设备版本过旧，不支持远端删除，请先升级对端 Hibiki"
 }

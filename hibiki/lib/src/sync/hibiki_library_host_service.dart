@@ -1457,3 +1457,26 @@ abstract interface class DeletionTombstoneHost {
   Future<List<({String mediaType, String itemKey, int deletedAt})>>
       listDeletionTombstones();
 }
+
+/// host 端「删除视频」的**可选**能力（client→host 删除方向）。
+///
+/// 与 [HibikiLibraryHostService] 分开的理由同 [DeletionTombstoneHost]：主接口有十余个
+/// 测试 fake 用 `implements` 全量实现，往主接口加方法会强制它们全部补桩（Never break
+/// userspace）。书 / 有声书 / 本地音频 / 词典的 delete 是主接口的历史既成事实，新增的
+/// 视频删除不再扩大那个面。
+///
+/// server 用 `is` 探测——host 不实现就让 `DELETE /api/library/videos/<id>` 落 404，
+/// client 侧 [RemoteVideoDeletionClient.deleteRemoteVideo] 已按 404/405 优雅降级
+/// （旧版本 host 天然如此）。
+abstract interface class VideoDeletionHost {
+  /// 从 host 视频库删除 bookUid 为 [id] 的视频。
+  ///
+  /// 语义与 host 用户在自己视频库里长按删除**完全一致**：删 `VideoBooks` 行 + 其字幕
+  /// cue、清合集引用、记删除墓碑（供 host 的其它已配对设备继续传播），磁盘侧**只回收
+  /// app 自己拥有的文件**——client 上传副本目录、封面 / 字幕缓存。
+  /// **用户自己导入的原始视频文件绝不删除**（本地删除路径同此约束，见
+  /// `VideoBookRepository.reclaimDeletedVideoBookAssets`）。
+  ///
+  /// 幂等：[id] 不存在时静默返回。[id] 含路径穿越字符时抛 [ArgumentError]。
+  Future<void> deleteVideo(String id);
+}

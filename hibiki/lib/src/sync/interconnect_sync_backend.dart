@@ -1313,6 +1313,27 @@ class InterconnectSyncBackend extends SyncBackend
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id');
   }
 
+  /// 通知对端 host 删除 bookUid 为 [id] 的视频（远端视频卡长按删除 / 「从所有设备
+  /// 删除」的墓碑推送）。
+  ///
+  /// 返回 true = host 已删除；false = 该 host 不支持视频删除（旧版本 app 无此端点，
+  /// 或 host 库服务未实现 `VideoDeletionHost`，两者都表现为 404/405）。调用方据此
+  /// 区分「删成了」与「对端不支持」——后者不该报错给用户、也不该标记墓碑已发布，
+  /// 留待 host 升级后下次同步重试。其余失败照常抛（[WebDavOps.checkStatus]），
+  /// 与 [putRemoteVideoSubtitle] 的旧 host 降级同款。
+  Future<bool> deleteRemoteVideo(String id) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'DELETE',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}',
+    );
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    if (res.statusCode == 404 || res.statusCode == 405) return false;
+    _ops!.checkStatus(res.statusCode, 'DELETE /api/library/videos/$id');
+    return true;
+  }
+
   /// 把视频 [id] 的一个外挂字幕 sidecar [file] 推给 host（BUG-964，随
   /// [putRemoteVideo] 的 live push 一起走）。[suffix] 是相对视频 stem 的字幕后缀
   /// （`.srt` / `.ja.srt` …，host 端按自己的视频文件名 stem + suffix 落盘）。
