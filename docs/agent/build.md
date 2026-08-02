@@ -63,6 +63,52 @@ Flutter 版本号以 `hibiki/pubspec.yaml` 的 `version: X.Y.Z+build` 为准。�
 - 纯文档、PM 元数据、不影响分发行为的 CI 维护不强制 bump；发布、安装包或运行行为变化应 bump。
 - 发布 workflow 修改后必须运行 `tool/check_release_policy.ps1`（Windows：`powershell -NoProfile -ExecutionPolicy Bypass -File tool/check_release_policy.ps1`；GitHub Actions 用 `pwsh`）。该守卫会拒绝重新引入 workflow-local run number、缺失完整历史 checkout、缺失同 tag/commit 发布并发锁，或文档缺少 cross-workflow release sequence / single GitHub Release 规则。
 
+## CI 缓存配额（TODO-2721）
+
+GitHub Actions 给每个仓库的缓存配额是**硬上限 10 GB**，超了就按 LRU 静默驱逐。
+驱逐不是洁癖问题：桌面发布 run `30729229450` 变红的最后一环就是 vcpkg 缓存被驱逐
+后冷编 + 拉外部镜像失败。2026-08-02 实测 `gh api
+repos/hajisensai/hibiki/actions/cache/usage` = **10.65 GB / 14 条**，长期在驱逐。
+
+三条铁律（守卫 `hibiki/test/build/workflow_cache_quota_guard_test.dart`）：
+
+1. **pub cache 只准存一份，由 `subosito/flutter-action@v2` 存。**
+   它的 `cache: true` 不只缓存 Flutter SDK，还会额外挂一个
+   `Cache pub dependencies` 步骤把 `~/.pub-cache`（Windows 是
+   `%LOCALAPPDATA%\Pub\Cache`）存成
+   `flutter-pub-<os>-<channel>-<ver>-<arch>-<pubspec.lock hash>`。
+   workflow 里再挂 `actions/cache` 存同一个目录只是换个 key 名存第二遍：实测
+   `flutter-pub-linux-…-3fa29c49` = 149,357,387 B 与
+   `Linux-pubcache-3fa29c49` = 149,365,205 B，同一批字节，三平台白占 447 MB，
+   每个作业还要多解压一次（6~32 s）。**不要再加 `Cache pub packages` 步骤。**
+2. **Gradle 缓存三处必须逐字相同，且缓存步骤排在改 `*.gradle` 的 sed 前面。**
+   `hashFiles()` 算的是**当时磁盘上**的内容。`main.yml` / `release.yml` 原先在缓存
+   步骤之前就 `sed -i` 删掉了 `build.gradle` / `settings.gradle` 里的 aliyun 镜像行，
+   而 `build-multiplatform.yml` 的同名 sed 在缓存步骤之后 —— 于是同一份内容被存成
+   两条 key：`Linux-gradle-6facc6ed…`(2,901,298,096 B) 与
+   `Linux-gradle-5709404c…`(2,901,388,049 B)，差 89,953 B，白占 2.7 GB。
+3. **Gradle 只缓存下载物，不缓存派生产物。**
+   `~/.gradle/caches` 全量含 `<ver>/transforms`（解包 AAR / jetify / desugar 输出），
+   本机实测 5,073.7 MB，是 `modules-2`(1,937.2 MB) 的 2.6 倍，而它能从 modules-2
+   重算。只列 `~/.gradle/caches/modules-2` + `~/.gradle/caches/journal-1` +
+   `~/.gradle/wrapper/dists`。key 前缀带 `-v2-` 是为了让 `restore-keys` 够不到旧的
+   胖缓存（否则每次先白拉 2.7 GB）。
+
+另外：GitHub 缓存**按 ref 分桶**，`refs/pull/<N>/merge` 与 `refs/heads/develop` 上
+同 key 是两条独立记录。正常 PR run 会命中 base 分支的缓存不新存，但仓库一旦超配额、
+develop 那条被驱逐，下一个 PR run 就 miss 并在自己的 PR 桶里存一份 —— 越紧越复制，
+是正反馈。`.github/workflows/cache-cleanup.yml` 在 PR 关闭时立刻删掉该 PR 桶
+（GitHub 自己要等 7 天无访问才回收），并把当前用量写进 step summary。
+
+查用量与逐条明细：
+
+```bash
+gh api repos/hajisensai/hibiki/actions/cache/usage
+gh api "repos/hajisensai/hibiki/actions/caches?per_page=100"   --jq '.actions_caches[] | "\(.size_in_bytes) \(.ref) \(.key)"' | sort -rn
+```
+
+删存量缓存前先确认没有 in-flight 的 run 在用它（`gh run list --status in_progress`）。
+
 ## 依赖补丁
 
 Flutter 3.44.0 下部分上游依赖未适配，两种补法并存（对个别包**有重叠**）：

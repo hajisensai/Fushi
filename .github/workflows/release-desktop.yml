@@ -279,15 +279,6 @@ jobs:
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
           fi
-      # TODO-1208: cache resolved pub packages. Windows Dart pub cache defaults to
-      # %LOCALAPPDATA%\Pub\Cache (apply-patches.sh resolves the same path).
-      - name: Cache pub packages
-        uses: actions/cache@v4
-        with:
-          path: ~\AppData\Local\Pub\Cache
-          key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pubcache-
       # TODO-1208: cache media_kit's pre-built libmpv + ANGLE .7z archives it
       # downloads from GitHub into the CMake binary dir (hibiki/build/windows/x64).
       # media_kit's download_and_verify skips the download when the archive exists
@@ -894,14 +885,6 @@ jobs:
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
           fi
-      # TODO-1208: cache resolved pub packages (macOS/iOS default ~/.pub-cache).
-      - name: Cache pub packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.pub-cache
-          key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pubcache-
       # TODO-1208: cache CocoaPods spec repos + downloaded pod source and the
       # generated Pods dirs. Keyed on the Podfile.lock/pubspec.lock so a pod bump
       # invalidates it; CocoaPods re-installs on a mismatch, and a miss just
@@ -1225,14 +1208,6 @@ jobs:
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
           fi
-      # TODO-1208: cache resolved pub packages (macOS/iOS default ~/.pub-cache).
-      - name: Cache pub packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.pub-cache
-          key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pubcache-
       # TODO-1208: cache CocoaPods spec repos + downloaded pod source and the
       # generated Pods dirs. Keyed on the Podfile.lock/pubspec.lock so a pod bump
       # invalidates it; CocoaPods re-installs on a mismatch, and a miss just
