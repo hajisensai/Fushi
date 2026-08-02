@@ -267,41 +267,38 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     );
   }
 
-  /// 删除互联后端上的远端书（含其有声书），删完刷新远端列表。仅互联后端可达
+  /// 删除互联后端上的远端书（含其有声书），删完强制刷新远端列表。仅互联后端可达
   /// （[InterconnectSyncBackend.deleteRemoteBook] / [deleteRemoteAudiobook]）。
+  ///
+  /// 身份键统一用 [RemoteBookInfo.downloadId]（= `bookKey ?? title`），与下载 / 有声书
+  /// 删除同键（BUG-414 定下的纪律）。host 端 `_findBookByTitleOrKey` 两种键都能命中，
+  /// 故对老 host 也安全；此前这里单独传 `book.title` 属遗漏。
   Future<void> _confirmDeleteRemoteBook(
     RemoteBookInfo book,
     InterconnectSyncBackend backend,
   ) async {
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text(book.title),
-        content: Text(t.sync_compare_delete_confirm(name: book.title)),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(t.dialog_cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(t.dialog_delete),
-          ),
-        ],
-      ),
-    );
+    final bool? confirmed = await _confirmRemoteDelete(book.title);
     if (confirmed != true) return;
+    bool failed = false;
     try {
-      await backend.deleteRemoteBook(book.title);
+      await backend.deleteRemoteBook(book.downloadId);
       if (book.hasAudiobook) {
         await backend.deleteRemoteAudiobook(book.downloadId);
       }
     } catch (e, stack) {
+      failed = true;
       ErrorLogService.instance
           .log('ReaderHibikiHistoryPage.deleteRemoteBook', e, stack);
     }
     if (!mounted) return;
-    _refreshRemoteBooks();
+    // 失败必须给可见提示：原实现只写日志就刷新列表，书还在原处、用户以为自己看错了。
+    if (failed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_delete_failed)),
+      );
+      return;
+    }
+    _forceRefreshRemoteBooks();
   }
 
   /// 远端书卡左上角类型徽章：有有声书 → 耳机徽章（与本地 _audiobookBadge 同色，
@@ -739,10 +736,16 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
   }
 
   /// 长按 / 桌面右键纯 SRT 远端占位卡：弹与远端 EPUB 卡一致的动作面板
-  /// （[MediaItemDialogFrame] 复用）。唯一动作是「下载」（远端占位无本地副本；
-  /// 互联删除 API 面向 EPUB 关联包，standalone SRT 不接删除，真实能力边界）。
+  /// （[MediaItemDialogFrame] 复用）。
+  ///
+  /// 动作：「下载」+「删除」。此处曾注明「互联删除 API 面向 EPUB 关联包，standalone
+  /// SRT 不接删除，真实能力边界」——那条描述偏保守：`DELETE /api/library/audiobooks/
+  /// <identity>` 的 host 端 identity 解析同时查 `Audiobooks(bookKey)` 与 `SrtBooks(uid)`，
+  /// 传 uid 本就能命中，缺的只是这个 UI 入口。
   void _showRemoteSrtDialog(RemoteAudiobookInfo book) {
     final String title = book.title ?? book.identity;
+    final RemoteBookClient? client = _remoteBookClient;
+    final bool canDelete = client is InterconnectSyncBackend;
     showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
@@ -759,8 +762,75 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
             },
           ),
         ],
+        dangerActions: <DialogDangerAction>[
+          if (canDelete)
+            DialogDangerAction(
+              label: t.dialog_delete,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _confirmDeleteRemoteSrt(book, client);
+              },
+            ),
+        ],
       ),
     );
+  }
+
+  /// 删除互联对端 host 上的纯 SRT 有声书（身份键 = uid），删完强制刷新远端列表。
+  /// 反馈与 [_confirmDeleteRemoteBook] 同款：失败必给可见提示，不静默。
+  Future<void> _confirmDeleteRemoteSrt(
+    RemoteAudiobookInfo book,
+    InterconnectSyncBackend backend,
+  ) async {
+    final String title = book.title ?? book.identity;
+    final bool? confirmed = await _confirmRemoteDelete(title);
+    if (confirmed != true) return;
+    bool failed = false;
+    try {
+      await backend.deleteRemoteAudiobook(book.identity);
+    } catch (e, stack) {
+      failed = true;
+      ErrorLogService.instance
+          .log('ReaderHibikiHistoryPage.deleteRemoteSrt', e, stack);
+    }
+    if (!mounted) return;
+    if (failed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_delete_failed)),
+      );
+      return;
+    }
+    _forceRefreshRemoteBooks();
+  }
+
+  /// 远端删除的统一二次确认框（文案明说「从远端删除、本地保留、不可撤销」）。
+  Future<bool?> _confirmRemoteDelete(String name) {
+    return showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(name),
+        content: Text(t.sync_compare_delete_confirm(name: name)),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(t.dialog_delete),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 远端删除后的列表重取：**必须** forceRefresh 穿透 [RemoteLibraryCache] 的 TTL。
+  /// 非强制的 [_refreshRemoteBooks] 会命中缓存，让刚删掉的条目在 TTL 内继续显示成
+  /// 幽灵卡片（远端书删除的既有毛病）。
+  void _forceRefreshRemoteBooks() {
+    _rebuild(() {
+      _remoteBooksFuture = _loadRemoteBooks(forceRefresh: true);
+    });
   }
 
   /// 下载纯 SRT 远端有声书：`getRemoteAudiobook(identity=uid)` 拉 `.hibikiaudio` 包 →

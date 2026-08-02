@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 52343 (3079 per locale)
+/// Strings: 52377 (3081 per locale)
 ///
-/// Built on 2026-08-02 at 03:29 UTC
+/// Built on 2026-08-02 at 05:58 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4138,6 +4138,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'This manga was imported from images, so there is no original book to convert back to.';
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -11204,6 +11207,11 @@ class _StringsAr extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -18337,6 +18345,11 @@ class _StringsDe extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -25485,6 +25498,11 @@ class _StringsEs extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -32645,6 +32663,11 @@ class _StringsFr extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -39734,6 +39757,11 @@ class _StringsId extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -46869,6 +46897,11 @@ class _StringsIt extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -53821,6 +53854,11 @@ class _StringsJa extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -60775,6 +60813,11 @@ class _StringsKo extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -67890,6 +67933,11 @@ class _StringsNl extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -75018,6 +75066,11 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -82130,6 +82183,11 @@ class _StringsRu extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -89190,6 +89248,11 @@ class _StringsTh extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -96282,6 +96345,11 @@ class _StringsTr extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -103359,6 +103427,11 @@ class _StringsVi extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 // Path: <root>
@@ -109944,6 +110017,10 @@ class _StringsZhCn extends _StringsEn {
   String get book_convert_blocked_no_original => '这本漫画是从图片导入的，没有可还原的原书。';
   @override
   String get book_convert_blocked_source_missing => '源文件已从磁盘上消失。';
+  @override
+  String get remote_delete_failed => '无法在对端设备上删除';
+  @override
+  String get remote_delete_unsupported => '对端设备版本过旧，不支持远端删除，请先升级对端 Hibiki';
 }
 
 // Path: <root>
@@ -116817,6 +116894,11 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get book_convert_blocked_source_missing =>
       'The source files are gone from disk.';
+  @override
+  String get remote_delete_failed => 'Could not delete it on the paired device';
+  @override
+  String get remote_delete_unsupported =>
+      'The paired device is too old to support remote deletion. Update Hibiki there first.';
 }
 
 /// Flat map(s) containing all translations.
@@ -123134,6 +123216,10 @@ extension on _StringsEn {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -129449,6 +129535,10 @@ extension on _StringsAr {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -135786,6 +135876,10 @@ extension on _StringsDe {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -142122,6 +142216,10 @@ extension on _StringsEs {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -148464,6 +148562,10 @@ extension on _StringsFr {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -154788,6 +154890,10 @@ extension on _StringsId {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -161126,6 +161232,10 @@ extension on _StringsIt {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -167426,6 +167536,10 @@ extension on _StringsJa {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -173730,6 +173844,10 @@ extension on _StringsKo {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -180062,6 +180180,10 @@ extension on _StringsNl {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -186391,6 +186513,10 @@ extension on _StringsPtBr {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -192725,6 +192851,10 @@ extension on _StringsRu {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -199042,6 +199172,10 @@ extension on _StringsTh {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -205368,6 +205502,10 @@ extension on _StringsTr {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -211690,6 +211828,10 @@ extension on _StringsVi {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }
@@ -217958,6 +218100,10 @@ extension on _StringsZhCn {
         return '这本漫画是从图片导入的，没有可还原的原书。';
       case 'book_convert_blocked_source_missing':
         return '源文件已从磁盘上消失。';
+      case 'remote_delete_failed':
+        return '无法在对端设备上删除';
+      case 'remote_delete_unsupported':
+        return '对端设备版本过旧，不支持远端删除，请先升级对端 Hibiki';
       default:
         return null;
     }
@@ -224253,6 +224399,10 @@ extension on _StringsZhHk {
         return 'This manga was imported from images, so there is no original book to convert back to.';
       case 'book_convert_blocked_source_missing':
         return 'The source files are gone from disk.';
+      case 'remote_delete_failed':
+        return 'Could not delete it on the paired device';
+      case 'remote_delete_unsupported':
+        return 'The paired device is too old to support remote deletion. Update Hibiki there first.';
       default:
         return null;
     }

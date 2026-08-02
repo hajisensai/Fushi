@@ -498,6 +498,17 @@ class AppModel with ChangeNotifier {
       extractVideoCover: (
               {required String videoPath, required String bookUid}) =>
           extractVideoCover(videoPath: videoPath, bookUid: bookUid),
+      // host 收到 DELETE /api/library/videos/<id> 时的磁盘回收（VideoDeletionHost）：
+      // 复用本机长按删除的同一函数，按「仍在 app 资产目录内 + 无其它条目引用」回收
+      // 封面 / 字幕缓存。**不碰用户自己导入的原始视频文件**——远端删除与本地删除
+      // 在「删掉哪些字节」上必须完全同语义，否则同一动作在两端后果不同。
+      cleanupVideoOnDisk: (VideoBookRow row) =>
+          VideoBookRepository(database).reclaimDeletedVideoBookAssets(
+        deletedBookUid: row.bookUid,
+        deletedCoverPath: row.coverPath,
+        deletedSubtitlePath: row.subtitleSource,
+        deletedVideoPath: row.videoPath,
+      ),
       removeLocalAudioEntry: (String displayName) async {
         // 按 displayName 在 LocalAudioManager 中找到对应 index 并删除。
         // LocalAudioManager.remove(int) 删除 DB 文件 + 从 prefs 移出 + 推 native。
