@@ -348,6 +348,18 @@ void main() {
       contains(r'hibiki\build\windows\x64\runner\Release\ffmpeg.exe'),
       reason: 'release must test the exact ffmpeg.exe copied beside hibiki.exe',
     );
+    // BUG-1420: ffprobe is a second, independent executable with its own
+    // consumers (embedded subtitle fonts, audio container tags). Both consumers
+    // swallow a missing-binary ProcessException by design, so a bundle shipping
+    // a healthy ffmpeg next to a missing/broken ffprobe degrades silently and
+    // no runtime error ever surfaces. Demand the same -version gate on it.
+    expect(
+      smoke,
+      contains(r'hibiki\build\windows\x64\runner\Release\ffprobe.exe'),
+      reason: 'release must test the exact ffprobe.exe copied beside hibiki.exe '
+          '(BUG-1420: it was never built nor bundled, and both of its consumers '
+          'degrade silently when it is absent)',
+    );
     expect(
       smoke,
       contains('tool/ffmpeg-min/smoke-test.sh'),
