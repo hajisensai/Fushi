@@ -129,6 +129,21 @@ class VideoBookRepository {
   /// 已刮出资料的 bookUid 集合（自动刮削一次性排除已刮的，避免逐本 N+1 查询）。
   Future<Set<String>> scrapedBookUids() => _db.scrapedVideoBookUids();
 
+  /// 一本视频的刮削资料**原始行**（播放器剧集面板判「真·集级集名」要
+  /// `episodeNumber` 列，领域对象 [ScrapeMetadata] 没带它——与合集详情页
+  /// `_episodeMetaByUid` 同一判据同一取数口）。
+  Future<VideoScrapeMetaRow?> episodeScrapeMeta(String bookUid) =>
+      _db.getVideoScrapeMeta(bookUid);
+
+  /// 合集级刮削资料行（播放器剧集面板拿作品名作集名判据）。
+  Future<CollectionScrapeMetaRow?> collectionScrapeMeta(int collectionId) =>
+      _db.getCollectionScrapeMeta(collectionId);
+
+  /// 合集附加图组（v68：播放器剧集面板的封面回退链——本集无图回落合集
+  /// titleCard/backdrop，Jellyfin Episode Primary → Series Thumb 的本仓版）。
+  Future<List<MediaImageRow>> collectionMediaImages(int collectionId) =>
+      _db.getMediaImagesForCollection(collectionId);
+
   /// v68：整体替换一本视频的附加图组行（散装电影 backdrop/logo/titleCard，
   /// 重刮即替换）。文件已由刮削层落 `video_covers/images/`，本层只写行。
   Future<void> replaceMediaImages(
