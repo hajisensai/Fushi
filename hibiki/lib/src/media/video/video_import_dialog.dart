@@ -345,7 +345,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
 
         // 统一合集 Phase 2：多集拆成 N 条独立 VideoBooks 行 + 一个 playlist 合集
         // （单一真相源 importSplitPlaylist，与 v38 迁移落库形状对齐）。
-        final ({int collectionId, List<String> episodeUids}) result =
+        final SplitPlaylistImportResult result =
             await widget.repo.importSplitPlaylist(
           collectionName: p.basenameWithoutExtension(m3u8Path),
           entries: entries,
@@ -444,7 +444,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
           .toList();
       // 统一合集 Phase 2：拆成 N 条独立 VideoBooks 行 + 一个 playlist 合集
       // （合集名用系列名）。封面给首集承接。
-      final ({int collectionId, List<String> episodeUids}) result =
+      final SplitPlaylistImportResult result =
           await widget.repo.importSplitPlaylist(
         collectionName: group.series,
         entries: entries,

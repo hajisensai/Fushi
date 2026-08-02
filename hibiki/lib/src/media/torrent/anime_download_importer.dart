@@ -29,7 +29,8 @@ List<String> sortVideoPathsByEpisode(List<String> paths) {
 }
 
 /// 组装番剧下载完成后的入库回调：N 集拆行 + playlist 合集（一个事务，复用
-/// [VideoBookRepository.importSplitPlaylist]）→ 绑定 AniList id → 封面。
+/// [VideoBookRepository.importSplitPlaylist]）→ 记 added 活动事件 → 绑定
+/// AniList id → 封面。
 ///
 /// 封面分两层、各自 best-effort（用户 2026-08-02：作品海报只归合集封面，成员条目
 /// 保持抽帧/集级剧照）：
@@ -58,8 +59,7 @@ Future<AnimeDownloadImportOutcome?> Function(
   return (AnimeDownloadPlan plan, List<String> videoAbsolutePaths) async {
     if (videoAbsolutePaths.isEmpty) return null;
     final List<String> sorted = sortVideoPathsByEpisode(videoAbsolutePaths);
-    final ({int collectionId, List<String> episodeUids}) result =
-        await repo.importSplitPlaylist(
+    final SplitPlaylistImportResult result = await repo.importSplitPlaylist(
       collectionName: plan.seriesTitle,
       // plan JSON 与 Drift 无法做同一事务；若进程在 DB 提交后、计划 flag
       // 回写前崩溃，重启会重放 importer。以归一化视频路径作稳定业务键并在
@@ -69,6 +69,23 @@ Future<AnimeDownloadImportOutcome?> Function(
         for (final String path in sorted) PlaylistEntry(title: '', path: path),
       ],
     );
+
+    // BUG-1416：番剧下载完成自动入库也是一次真实入库，必须进首页活动时间轴——
+    // 与对话框 / 拖拽 / 扫描首导同粒度：整本 1 条 added（title=系列名、mediaKey=
+    // 首集 uid），绝不每集一条。
+    //
+    // 幂等**只能**看 createdEpisodeUids：`reuseExistingPaths: true` 让崩溃重放
+    // （DB 已提交、计划 flag 未回写）复用既有条目与既有合集，此时一集都没新建 →
+    // 一条都不记。**不是**靠时间窗/去重表掩盖，而是让判据本身分清「真新增」与
+    // 「复用既有」；活动流表按设计是纯追加（addActivityEvent 不去重），不能也
+    // 不该在那一层兜。同系列后续批次（新集号）确有新建 → 记 1 条，这是真新增内容。
+    // best-effort：recordVideoImportActivity 内部自捕获，失败只 log 不影响入库。
+    if (result.createdEpisodeUids.isNotEmpty && result.episodeUids.isNotEmpty) {
+      await repo.recordVideoImportActivity(
+        bookUid: result.episodeUids.first,
+        title: plan.seriesTitle,
+      );
+    }
 
     // AniList 绑定（后续 Jimaku 批量对话框可直接复用该 id，跳过搜番消歧）。
     if (plan.anilistId != null) {

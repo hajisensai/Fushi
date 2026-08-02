@@ -20,6 +20,27 @@ import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 
+/// [VideoBookRepository.importSplitPlaylist] 的落库结果。
+///
+/// * [collectionId] —— playlist 合集 id；`createMediaCollection` 按自然键
+///   `(name, collectionType)` 查重复用，所以它**可能是既有合集**。
+/// * [episodeUids] —— 各集 uid，有序，长度恒 = 入参 `entries`；复用到的既有 uid 和
+///   本次新建的 uid 混在一起，**无法**从这个列表判断新旧。
+/// * [createdEpisodeUids] —— **本次调用真新建**的那几集（[episodeUids] 的有序子集）。
+///
+/// [createdEpisodeUids] 是 `reuseExistingPaths` 复用判据的**唯一真相源**：
+/// `importSplitPlaylist` 在事务内按 [normalizeVideoPath] 归一路径判「已在库」，只有
+/// 它知道哪几集是这一次插进去的。调用方**不得**在方法外拿路径自己重扫一遍去猜——
+/// 那份判据必须与事务内的规则逐字节一致，一旦漂移就会把崩溃重放误判成新增
+/// （BUG-1416：番剧下载重放重复记 `added` 活动事件的形状）。
+/// `reuseExistingPaths == false` 时每集都是新建，[createdEpisodeUids] 恒等于
+/// [episodeUids]。
+typedef SplitPlaylistImportResult = ({
+  int collectionId,
+  List<String> episodeUids,
+  List<String> createdEpisodeUids,
+});
+
 /// VideoBooks 仓库：视频元数据 + 进度；字幕 cue 复用 audioCues 表。
 class VideoBookRepository {
   const VideoBookRepository(this._db);
@@ -196,14 +217,17 @@ class VideoBookRepository {
   /// currentEpisode 恒 0；completed_at 不设）。整批包一个事务：全成或全回滚。
   ///
   /// 封面不在此处理（ffmpeg 属 app 层，且需先知集 uid 命名封面文件）——调用方在拿到
-  /// [episodeUids] 后自行抽封面并 [updateCover] 到首集。返回合集 id + 各集 uid（有序）。
-  Future<({int collectionId, List<String> episodeUids})> importSplitPlaylist({
+  /// [episodeUids] 后自行抽封面并 [updateCover] 到首集。
+  ///
+  /// 返回 [SplitPlaylistImportResult]：合集 id + 各集 uid（有序）+ 本次真新建的集。
+  Future<SplitPlaylistImportResult> importSplitPlaylist({
     required String collectionName,
     required List<PlaylistEntry> entries,
     int? sourceId,
     bool reuseExistingPaths = false,
   }) async {
     final List<String> epUids = <String>[];
+    final List<String> createdUids = <String>[];
     int collectionId = 0;
     await _db.transaction(() async {
       final List<VideoBookRow> existingBooks = await listAll();
@@ -230,6 +254,7 @@ class VideoBookRepository {
         );
         taken.add(uid);
         epUids.add(uid);
+        createdUids.add(uid);
         await saveVideoBook(
           VideoBooksCompanion(
             bookUid: Value(uid),
@@ -255,7 +280,11 @@ class VideoBookRepository {
         await _db.addToCollection(collectionId, MediaKind.video, uid);
       }
     });
-    return (collectionId: collectionId, episodeUids: epUids);
+    return (
+      collectionId: collectionId,
+      episodeUids: epUids,
+      createdEpisodeUids: createdUids,
+    );
   }
 
   /// 统一合集：把**已存在**的 playlist 合集 [collectionId] 的成员对齐到当前 m3u8 清单

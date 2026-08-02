@@ -740,7 +740,7 @@ class SourceLibraryScanner {
           continue;
         }
 
-        final ({int collectionId, List<String> episodeUids}) result =
+        final SplitPlaylistImportResult result =
             await _videoRepo.importSplitPlaylist(
           collectionName: collectionName,
           entries: entries,
