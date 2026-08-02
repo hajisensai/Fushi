@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1347 条。点号进各自文件。
+> 共 1348 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1443](bugs/BUG-1443-macos-vendored-ffmpeg-homebrew-dylib.md) | ✅ | ✅ | macOS 随包 ffmpeg 动态依赖 Homebrew dylib，干净机器上 dyld 崩溃 |
 | [BUG-1442](bugs/BUG-1442-spread-key-bridge-single-scope.md) | ✅ | ✅ | 双页 spread 键桥只能解析 reader scope，跨 scope 动作在 spread 里恒解析不到 |
 | [BUG-1441](bugs/BUG-1441-manga-extension-filter-and-lag.md) | ✅ | ✅ | 漫画扩展列表筛选不生效 + 语言下拉卡顿 |
 | [BUG-1440](bugs/BUG-1440-video-subtitle-frz-origin-not-anchor.md) | ✅ | ✅ | \frz 绕盒中心而非 \an 锚点旋转，竖排整列左移出框 |

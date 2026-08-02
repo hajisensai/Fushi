@@ -2,7 +2,8 @@
 
 - **报告**：2026-08-02（TODO-2692，发版阻塞级）
 - **真实性**：✅ 真 bug，根因 `tool/ffmpeg-min/build-ffmpeg-min.sh:112-117`
-- **[ ] ① 未修复** — 配方已改（见下），但**入库二进制尚未重新 vendor**，需 macOS CI 产出
+- **[x] ① 已修复** — 配方改为自编静态第三方库；入库二进制已用 CI run `30736855579`
+  （macOS job 绿，含 smoke-test 行为契约 + `otool -L` 自包含断言）的 artifact 重新 vendor
 - **[x] ② 已加自动化测试** — `hibiki/test/tools/ffmpeg_min_vendored_self_contained_guard_test.dart`
 
 ### 现象
@@ -69,8 +70,21 @@ macOS 分支没有任何静态化处理，于是 `.github/workflows/ffmpeg-min.y
 
 ### 落地状态
 
-配方已按 (a) 改（macOS 分支静态化），守卫已加。**入库二进制仍是旧的坏产物，守卫当前为红**——
-这是有意的：红到重新 vendor 为止。修法见守卫失败信息与 `.github/workflows/ffmpeg-min.yml` 头部。
+配方已按 (a) 改：三个库自己 `cmake -DBUILD_SHARED_LIBS=OFF` / `./configure --enable-static`
+编进私有 prefix，`PKG_CONFIG_PATH` 只指向它（社区通行形态，见
+`markus-perl/ffmpeg-build-script`、`arthenica/ffmpeg-kit` 的 `macos.sh`）。
+
+CI run `30736855579`（ref `fix/macos-ffmpeg-self-contained`）macOS job **绿**，含
+`smoke-test.sh` 的全部行为契约与新加的 `assert_self_contained`（`otool -L`）。
+artifact 已 vendor 回 `third_party/ffmpeg-min/macos/`，独立字节复核：
+
+- 两个 exe 的 `.dylib` 引用只剩 `/usr/lib/libSystem.B.dylib` 与 `/usr/lib/libz.1.dylib`；
+- `/opt/homebrew` / `/usr/local` / `/opt/local` 命中数为 0；
+- 内嵌 configure 串的 encoder 清单与配方逐字一致，`--enable-lib{svtav1,webp,x264}` 全在
+  ⇒ **零能力损失**；
+- 体积 5.7 MB → 11.5 MB（静态库折进去的必然代价）。
+
+守卫已转绿。
 
 ### 备注（相邻发现，不在本 bug 范围）
 
