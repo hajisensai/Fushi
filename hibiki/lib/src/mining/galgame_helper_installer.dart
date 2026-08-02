@@ -13,9 +13,17 @@ import 'package:hibiki/utils.dart';
 /// 供应链每一步都必须能事后定位。
 void _log(String message) => debugPrint('[gal-helper] $message');
 
-/// Windows 主包内随附的 helper 归档目录名。发布 workflow 把两架构 zip 与各自 `.sha256`
-/// 侧车复制到 `hibiki.exe` 同级的这个目录，Inno Setup 递归纳入安装包。helper 仍是独立
-/// 子进程/DLL，不链接进 `Hibiki.exe`；这里只改变交付介质，让首装不依赖网络。
+/// Windows 主包内随附的 helper 归档目录名。
+///
+/// 🔴 **BUG-1449 起，正常安装包里已经没有这个目录了。** helper 现在由
+/// `native/galgame_hook/tools/install_into_bundle.ps1` 在**构建期**解压成普通文件，
+/// 直接放进 `hibiki.exe` 同级的 `voice_hook/<arch>/`，两个架构都装；`hibiki.iss` 的
+/// `[InstallDelete]` 会清掉上一版残留的本目录。于是 helper 与本体同一次构建产出、
+/// 同一个安装包落地，**版本漂移在结构上不再可能**——不需要运行期对账，也就没有
+/// 「已装组件比本体旧」（BUG-1448）这条路。
+///
+/// 本常量与下面整套归档安装逻辑保留，是给**没有安装器参与**的形态兜底：便携解压、
+/// 开发构建、以及用户误删组件后的修复。归档不存在是**正常情况**，不是异常。
 const String kGalgameHelperBundledDirectoryName = 'galgame_helper';
 
 /// 按目标游戏位数选注入器架构目录名：32 位游戏→x86，否则→x64（注入 DLL 位数必须匹配目标进程）。
@@ -419,13 +427,16 @@ class GalgameHelperInstaller {
         await _readVerifiedBundledHelper(arch);
     if (missing.isEmpty) {
       if (bundle == null) {
-        // 这是**唯一**能让「已装组件」与本体版本漂开的口子：本包没带归档时无从对账，只能
-        // 沿用历史遗留的完整安装（开发构建 / 早于随包发布的旧包）。放行是有意的（否则开发
-        // 构建直接不能用），但必须留痕：真漂开时用户看到的是运行期 `protocol_mismatch`，
-        // 而那一刻已经在游戏启动之后，只有这行日志能说清「本体压根没带组件来对账」。
-        _log(
-            'bundled archive absent ($arch): keeping existing install unchecked '
-            '(dev build or pre-bundle package; version binding not provable)');
+        // BUG-1449 起这是**正常路径**：安装包已经把 helper 作为普通文件直接放进
+        // `voice_hook/<arch>/`（构建期解压，与本体同源），不再随包发 zip，`[InstallDelete]`
+        // 也清掉了上一版残留的归档。此时无归档可对账，也**不需要**对账——版本绑定由
+        // 构建与安装链路保证，比运行期对账更强。
+        //
+        // 仍然留痕：便携解压 / 开发构建 / 用户误删归档也会走到这里，而那些形态下
+        // 「已装组件」确实可能与本体漂开。真漂开时用户看到的是运行期
+        // `protocol_mismatch`，那一刻已在游戏启动之后，只有这行日志能说清当时的依据。
+        _log('bundled archive absent ($arch): using existing install as-is '
+            '(normal for installer-provided helpers; also covers portable/dev builds)');
         return true;
       }
       final String? installedSha = await _installedMarkerSha(arch);

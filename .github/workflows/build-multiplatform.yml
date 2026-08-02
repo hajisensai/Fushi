@@ -984,21 +984,10 @@ jobs:
           # 有人插入第二条 native 命令，双架构 ctest 的判决就被静默顶掉。显式断言。
           powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/build_distribution.ps1 -RunTests
           if ($LASTEXITCODE -ne 0) { throw "build_distribution.ps1 -RunTests failed ($LASTEXITCODE)" }
-          $sourceDir = Join-Path $PWD 'native\galgame_hook\dist'
-          $targetDir = Join-Path $PWD 'hibiki\build\windows\x64\runner\Debug\galgame_helper'
-          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-          foreach ($file in @(
-            'voice_hook_x64.zip',
-            'voice_hook_x64.zip.sha256',
-            'voice_hook_x86.zip',
-            'voice_hook_x86.zip.sha256'
-          )) {
-            $source = Join-Path $sourceDir $file
-            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-              throw "Missing bundled galgame helper asset: $source"
-            }
-            Copy-Item -LiteralPath $source -Destination (Join-Path $targetDir $file) -Force
-          }
+          # BUG-1449：见 release-desktop.yml 同处注释。helper 作为普通文件直接装进
+          # voice_hook\<arch>\，与本体同源；解压/校验走共用脚本，不要复制粘贴回来。
+          powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/install_into_bundle.ps1 -BundleDirectory "$PWD\hibiki\build\windows\x64\runner\Debug"
+          if ($LASTEXITCODE -ne 0) { throw "install_into_bundle.ps1 failed ($LASTEXITCODE)" }
       - name: Bundle slim Magpie for offline upscaling install
         shell: pwsh
         run: |
