@@ -218,7 +218,7 @@ class FtpSyncBackend extends SyncBackend
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   }) =>
       _opLock.withLock(() async {
         final sanitized = requireBookFolderName(bookTitle);
@@ -242,6 +242,7 @@ class FtpSyncBackend extends SyncBackend
           await _client!.changeDirectory(_homeDir);
           folderIdCache[sanitized] = folderPath;
 
+          final Uint8List? coverData = await readCoverData?.call();
           if (coverData != null) {
             try {
               final format = detectCoverFormat(coverData);

@@ -42,7 +42,7 @@ class _RecordingBackend implements SyncBackend {
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   }) async {
     ensureBookFolderTitles.add(bookTitle);
     return '$rootFolderId${sanitizeTtuFilename(bookTitle)}/';

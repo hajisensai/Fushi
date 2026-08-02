@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
@@ -122,12 +121,12 @@ class GoogleDriveSyncBackend extends SyncBackend {
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   }) =>
       _wrapErrors(() => _drive.ensureBookFolder(
             bookTitle: bookTitle,
             rootFolder: rootFolderId,
-            coverData: coverData,
+            readCoverData: readCoverData,
           ));
 
   // ── Metadata sync ─────────────────────────────────────────────────

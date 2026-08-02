@@ -142,7 +142,7 @@ class SftpSyncBackend extends SyncBackend
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   }) =>
       _guarded(() async {
         final sanitized = requireBookFolderName(bookTitle);
@@ -156,6 +156,7 @@ class SftpSyncBackend extends SyncBackend
         await _mkdirIfAbsent(sftp, path);
         folderIdCache[sanitized] = path;
 
+        final Uint8List? coverData = await readCoverData?.call();
         if (coverData != null) {
           try {
             final format = detectCoverFormat(coverData);

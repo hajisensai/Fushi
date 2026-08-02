@@ -113,15 +113,23 @@ class ObfuscatingSyncBackend extends SyncBackend {
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
-    Uint8List? coverData,
+    SyncCoverDataProvider? readCoverData,
   }) =>
       _inner.ensureBookFolder(
         bookTitle: bookTitle,
         rootFolderId: rootFolderId,
-        // 封面是小数据，整块混淆。null 原样透传。
-        coverData:
-            coverData == null ? null : SyncObfuscator.obfuscateBytes(coverData),
+        // 封面是小数据，整块混淆。null 原样透传。混淆包在惰性回调「里面」，
+        // 所以内层后端缓存命中不调用回调时，既不读磁盘也不做混淆（TODO-2657）。
+        readCoverData:
+            readCoverData == null ? null : _obfuscateCover(readCoverData),
       );
+
+  /// 把惰性封面来源 [inner] 包一层混淆，保持惰性（只在被调用时才读+混淆）。
+  static SyncCoverDataProvider _obfuscateCover(SyncCoverDataProvider inner) =>
+      () async {
+        final Uint8List? data = await inner();
+        return data == null ? null : SyncObfuscator.obfuscateBytes(data);
+      };
 
   // ── Metadata sync (JSON, 纯委托 — A2 follow-up) ───────────────────
 
