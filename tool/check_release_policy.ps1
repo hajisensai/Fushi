@@ -139,11 +139,21 @@ Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-ios.ipa' 'desktop workflow must upload iOS IPA assets'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Publish mirror update manifest (Apple assets)' 'Apple release assets must merge into the update manifest'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'native/galgame_hook/tools/build_distribution.ps1 -RunTests' 'Windows releases must build the bundled offline galgame helper from the in-tree source'
-Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Release\galgame_helper' 'Windows installer payload must contain both helper archives and sidecars'
+# BUG-1449: the helper is no longer shipped as zip + sidecar for the runtime to
+# unpack -- that layout left a second copy on disk that had to stay in sync with
+# the app, and "staying in sync" is exactly what broke in BUG-1448. Both Windows
+# workflows now unpack BOTH architectures into the build output at build time via
+# the shared install_into_bundle.ps1, so helper and app come out of one build.
+# Pin the bundle directory too: the archive-era `<config>\galgame_helper` payload
+# check could not tell Release from Debug, and unpacking into the wrong directory
+# ships an installer with no helper at all while the build stays green.
+# (The anti-regression side -- never copying zips back into galgame_helper/ --
+# lives in hibiki/test/mining/gal_helper_bundled_as_plain_files_test.dart.)
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'install_into_bundle.ps1 -BundleDirectory "$PWD\hibiki\build\windows\x64\runner\Release"' 'Windows release payload must unpack both helper architectures into the packaged Release bundle (BUG-1449)'
 
 $multiplatformWorkflow = Read-RepoFile '.github/workflows/build-multiplatform.yml'
 Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 'native/galgame_hook/tools/build_distribution.ps1 -RunTests' 'Windows CI must exercise the same bundled helper build as release'
-Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 'Debug\galgame_helper' 'Windows debug bundle must exercise the offline helper payload layout'
+Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 'install_into_bundle.ps1 -BundleDirectory "$PWD\hibiki\build\windows\x64\runner\Debug"' 'Windows debug bundle must exercise the same build-time helper unpack as release (BUG-1449)'
 
 # BUG-1292: Magpie has no download path left, so the bundled slim archive is the
 # ONLY way window upscaling can ever install. If a Windows workflow stops
