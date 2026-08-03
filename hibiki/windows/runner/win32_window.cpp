@@ -286,7 +286,9 @@ Win32Window::MessageHandler(HWND hwnd,
       return 0;
     }
 
-    case WM_ACTIVATE:
+    // Braced: this case declares locals, and without its own scope MSVC rejects
+    // the switch outright (C2360, initialization skipped by a later case label).
+    case WM_ACTIVATE: {
       // WM_ACTIVATE is sent for both sides of an activation hand-off. When an
       // activatable Hibiki auxiliary window (for example the clipboard lookup
       // panel) starts its native move/size loop, the main window receives
@@ -304,6 +306,7 @@ Win32Window::MessageHandler(HWND hwnd,
         SetFocus(child_content_);
       }
       return 0;
+    }
 
     case WM_DISPLAYCHANGE:
       // Display topology / resolution / depth changed (e.g. a monitor came
