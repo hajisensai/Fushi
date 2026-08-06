@@ -24,7 +24,7 @@
 | iOS bundle id | **改**（`app.hibiki.reader` → `app.fushi.reader`）；迁移走既有备份导出/导入 + Files 分享（无 Android 式中转目录，见 §3 P2-4） | 用户拍板「所有的」 |
 | 桌面端改名 | 改显示名 + 二进制名 + **数据目录**（`%APPDATA%\Hibiki` → `%APPDATA%\Fushi`，一次性搬迁），**Inno `AppId` GUID 保持不变** | `hibiki.iss:14`，AppId 决定覆盖升级；GUID 对用户不可见、不含字样 |
 | 卸载旧版 | 由 Fushi 发起 `ACTION_DELETE`，用户手动确认 | Android 无静默卸载能力（§3.3） |
-| 内部代号 | **全量清理**：`hoshi` / `ttu` / `hibiki` 等我方符号全改 fushi；第三方署名与外部域名除外（硬约束见 §1.5） | 用户拍板「包括 app 内的 hoshi、hibiki、ttu、manhhao、shishamo、niratan 等名字」 |
+| 内部代号 | **全量清理但只改代码**（标识符/字符串/文件名/产物名），注释一律不管；`hoshi` / `ttu` / `hibiki` / `Ht*` / `sasayaki` 全改（范围普查见 §1.5）；Manhhao/Niratan/shishamo 等第三方名与人名不管、原样保留 | 用户拍板「包括 app 内的 hoshi、hibiki、ttu…等名字」+ 同日二次拍板「改是要改代码，注释无所谓；1/2/3 不管了」 |
 
 ### 仍开放（不阻塞 Phase 0/1 设计，发布前定即可）
 
@@ -84,7 +84,8 @@
 
 ### 1.5 内部代号普查（2026-08-06 实测，决定「全量清理」的真实范围）
 
-用户点名的名字分三类，**性质完全不同**，处置必须区分：
+**范围口径（用户二次拍板）：只改代码（标识符、字符串、文件名、产物名），注释一律不管；
+B/C 类（第三方署名/外部域名/第三方 app 名/人名）不管了，原样保留。**
 
 #### A 类：我方内部代号（改，这是 Phase 6 的主体）
 
@@ -96,22 +97,23 @@
 | `ttu` | 持久化偏好键 `reader_ttu` / `setTtu*` / 同步 wire 模型 `ttu_models.dart` / DB 迁移阶梯 | `reader_hibiki_source.dart`(101) / `settings_schema_reading.dart`(83) / `reader_settings.dart`(74) / `database.dart`(63) / sync 3 文件 | 旧数据兼容残留（CLAUDE.md 冻结原因是「没有迁移方案」——**本计划就是迁移方案**）：迁移导入时旧键→新键映射一次做完；DB 迁移阶梯里的历史常量保留（只活在 migration 代码里，进白名单） |
 | `ttu` | i18n key 前缀 `ttu_*` | `strings.g.dart` 1179 处（生成物），源头在 17 个 `*.i18n.json` | 走 `hibiki/tool/i18n_sync.dart --rename` 批量改（禁手改 json），改完 `dart run slang` |
 | `hibiki` | 主身份 + `hibiki.db` 文件名 + 各处字面量 | 全仓 | 原计划 Phase 0-5 已覆盖；DB 文件新包落 `fushi.db`（迁移导入时改名，`database.dart:284`） |
+| `hibiki` | **pub 包名体系**：app 包 `hibiki` + `hibiki_core`/`hibiki_audio`/`hibiki_anki`/`hibiki_platform`/`hibiki_dictionary`/`hibiki_torrent` + workspace 名 `hibiki_workspace` | `package:hibiki/` import 出现在 **692 个文件**；Melos workspace + 各 pubspec | 全部改 `fushi*`：包目录名、pubspec `name`、全仓 import 路径、dependency_overrides、Melos 配置一把改（纯机械但爆炸半径最大，独立批次 P6-5） |
+| `hibiki` | **galgame helper 产物名**：`hibiki_voice_injector.exe` / `hibiki_voice_hook.dll` / `hibiki_unity_audio_extract.exe` + CMake target/测试名 + adapter 头注释里的组件名 | `native/galgame_hook/`（`build_distribution.ps1:110-200`、`CMakeLists.txt`）、`.github/workflows/voice-hook-helper.yml`、随包 `galgame_helper/` zip | 进程名在任务管理器**用户可见**，全改 `fushi_voice_*`；IPC 契约（shm/pipe 对象名）两侧同 PR 改（CLAUDE.md 硬规则）；`engine-support.yaml` 与 helper 在线更新通道同步 |
+| `hibiki` | **torrent native 库**：`hibiki_torrent_ffi` DLL（随 Windows 包分发） | `native/hibiki_torrent/CMakeLists.txt` | 改 `fushi_torrent_ffi`：CMake target、DLL 文件名、Dart FFI `DynamicLibrary.open` 查找名同步 |
+| `Ht` | `hibiki_torrent` 的 FFI DTO 类前缀（Hibiki Torrent 缩写）：`HtTorrentStatus` / `HtFileEntry` / `HtPeerInfo` 等 **11 个类** | `packages/hibiki_torrent/` | 改 `Ft*`（Fushi Torrent），纯代码符号无持久化 |
+| `sasayaki` | 有声书字幕重匹配子系统代号：`SasayakiRematch` / `SasayakiMatchCodec` / `sasayaki_rematch.dart` | audiobook 域 + anki 2 个 repo + epub_book | 非身份代号，改**描述性英文名**（如 `SubtitleRematch`），不硬套 fushi |
 
-#### B 类：第三方署名 / 外部服务（**不能改**，进守卫白名单）
+#### B/C 类：不改（用户 2026-08-06 二次拍板「不管了」）
 
-| 名字 | 事实 | 为什么不能改 |
-|---|---|---|
-| `Manhhao` | `tools/browser-extension/vendor/popup.js:84` 版权行 `Copyright © 2026 Manhhao`（vendored 第三方代码） | 版权署名受许可证保护，改署名 = 违约 |
-| `hoshi-reader.manhhaoo-do.workers.dev` | `preferences_repository.dart:1499` 远端音频源 URL（默认关闭） | 别人的服务器域名，改了就断。可选项：整个移除该默认音频源（用户如不想看到此字样，删源比改名诚实） |
+- `Manhhao` 版权行（`popup.js:84`）、外部域名 `hoshi-reader.manhhaoo-do.workers.dev`
+  （`preferences_repository.dart:1499`）：第三方署名/别人的服务器，原样保留。
+- `Niratan`（约 40 处设计出处注释）、`shishamo`（docs 人名）、`jidoujisho`
+  （血统说明注释 7 处）、`Dandanplay` / `Qb*`（弹弹play、qBittorrent 等第三方服务的
+  集成类名）：注释一律不改；第三方服务名是真实指称，保留。
 
-#### C 类：第三方 app / 人名（不是本 app 的名字，改成 fushi 会造假 → 改写为中性措辞）
-
-| 名字 | 事实 | 处置 |
-|---|---|---|
-| `Niratan` | 全部是**注释**里的设计出处引用（mac 原生日语沉浸 app：字幕柔和投影 `video_subtitle_style.dart`、制卡句子上下文 UI `sentence_context_dialog.dart` / `dictionary_popup_webview.dart`、manga 命中测试等约 40 处），运行时不可见 | 注释改写为中性描述（如「参考的 mac 原生沉浸 app」），保留设计依据语义、不出现名字 |
-| `shishamo` | 仅 docs 两处（`docs/specs/2026-06-05-video-subsystem-plan.md:3` 等），是**需求提出者人名**（shishamo / 哈吉千歳） | docs 脱敏为「用户/团队」 |
-
-> 目标状态：全仓（除 B 类白名单 + git 历史）搜不到 `hoshi` / `ttu` / `hibiki` / `niratan` / `shishamo` 字样；守卫测试固化（§5）。
+> 目标状态：**代码标识符、用户可见字符串、文件/产物名**零 `hoshi`/`ttu`/`hibiki`/`Ht`/
+> `sasayaki` 残留（DB 迁移阶梯、迁移导入器映射常量、B 类白名单除外）；注释不设限；
+> 守卫测试按此口径固化（§5）。
 
 ---
 
@@ -336,7 +338,7 @@ iOS 无 `MANAGE_EXTERNAL_STORAGE` 式共享中转目录，两个 app 沙盒完�
 
 ### Phase 6：内部代号全量清理（范围见 §1.5，可与 Phase 3/4/5 并行）
 
-按依赖顺序拆四个独立可合并的批次：
+按依赖顺序拆六个独立可合并的批次（注释一律不动，见 §1.5 口径）：
 
 1. **P6-1 运行时符号**：`window.hoshiReader` → `window.fushiReader`
    （17 个 JS/CSS 注入封装 + webview part + audiobook/highlight bridge；
@@ -348,13 +350,23 @@ iOS 无 `MANAGE_EXTERNAL_STORAGE` 式共享中转目录，两个 app 沙盒完�
    `dart run slang`；`setTtu*` 方法/`ttu_models.dart` 类型改名；
    持久化旧键的读取集中到迁移导入器的映射表（P2-2），主代码零 `ttu` 字样。
    DB 迁移阶梯中的历史常量保留（migration-only，白名单）。
-4. **P6-4 注释与文档措辞**：Niratan 注释改写中性描述、docs 里 shishamo 脱敏、
-   全仓残留 `hibiki`/`Hibiki` 字样清扫（迁移代码对 `app.hibiki.reader` /
-   `Documents/Hibiki/migration` 的有意引用收口到单一常量文件，进白名单）。
+4. **P6-4 字面量清扫**：代码字符串/文件名里残留的 `hibiki`/`Hibiki`
+   （迁移代码对 `app.hibiki.reader` / `Documents/Hibiki/migration` 的有意引用
+   收口到单一常量文件，进白名单）；`Sasayaki*` → 描述性英文名；`Ht*` → `Ft*`。
+5. **P6-5 pub 包名体系**：`hibiki` app 包 + 6 个 `hibiki_*` 包 + `hibiki_workspace`
+   → `fushi*`：目录名、pubspec `name`、**692 个文件的 `package:hibiki/` import**、
+   dependency_overrides、Melos 配置。一把过、单独 PR（爆炸半径最大但纯机械，
+   合并窗口内不与任何其它 PR 并行——全仓 import 改动跟谁都冲突）。
+6. **P6-6 native 产物名**：galgame helper 三件套
+   （`hibiki_voice_injector.exe` / `hibiki_voice_hook.dll` / `hibiki_unity_audio_extract.exe`
+   → `fushi_voice_*`，任务管理器可见）+ IPC shm/pipe 对象名**两侧同 PR**（CLAUDE.md 硬规则）
+   + `voice-hook-helper.yml` 发布名 + `engine-support.yaml`；
+   `hibiki_torrent_ffi` DLL → `fushi_torrent_ffi`（CMake target + Dart `DynamicLibrary.open`）。
+   helper 改名后必须重发（在线更新通道 + 随包 zip 同步）。
 
-**硬边界（不改，守卫白名单固化）**：Manhhao 版权行、`manhhaoo-do.workers.dev` 域名
-（或整体移除该音频源，二选一在 P6-4 定）、Inno `AppId` GUID、Google Cloud 项目 ID、
-`kLegacyGitHubRepo` 类历史兼容常量、git 历史。
+**硬边界（不改，守卫白名单固化）**：注释（一律不设限）、Manhhao 版权行、
+`manhhaoo-do.workers.dev` 域名、第三方服务集成名（`Dandanplay*`/`Qb*` 等）、
+Inno `AppId` GUID、Google Cloud 项目 ID、`kLegacyGitHubRepo` 类历史兼容常量、git 历史。
 
 ---
 
@@ -383,7 +395,7 @@ iOS 无 `MANAGE_EXTERNAL_STORAGE` 式共享中转目录，两个 app 沙盒完�
 | 单测 | `MigrationManifest` 的生成/比对（行数 + 文件摘要）；批次规划纯函数；只读态谓词 |
 | 单测 | `BackupMergeEngine` 多次调用累加不互相覆盖（当前无此用例，需补） |
 | 守卫 | 源码扫描：不得再出现旧包名字面量（除迁移代码里对 `app.hibiki.reader` 的**有意**引用，白名单收口到单一常量） |
-| 守卫 | 源码扫描扩展到全部旧代号：`hoshi` / `ttu` / `hibiki` / `niratan` / `shishamo` 零残留（白名单=§1.5 B 类 + DB 迁移阶梯 + 迁移导入器常量文件；匹配带词边界，防短名子串假阳） |
+| 守卫 | 源码扫描扩展到全部旧代号：`hoshi` / `ttu` / `hibiki` / `Ht` DTO 前缀 / `sasayaki` 在**代码标识符与字符串**层零残留（注释行剥除后再匹配；白名单=§1.5 B 类 + DB 迁移阶梯 + 迁移导入器常量文件；匹配带词边界，防短名子串假阳） |
 | 单测 | ttu 旧键→新键映射表逐键覆盖（从设置 schema 反向枚举，防 R9 漏项） |
 | 守卫 | 新守卫必须做变异实测（把断言字面量塞进注释后确认测试转红） |
 | 集成 | **真机**：老版导出 → 装新包 → 导入 → 直接查 DB 断言路径列已 rebase、书能打开、进度对得上 |
@@ -409,6 +421,6 @@ iOS 无 `MANAGE_EXTERNAL_STORAGE` 式共享中转目录，两个 app 沙盒完�
 本计划的 Phase 3/4/5 可以独立成立。
 
 **2026-08-06 用户已明确拍板全量方案**（包名、签名、目录、内部代号一律 fushi），
-上述意见仅留档，按全量执行。唯一被顶回的子项：Manhhao 版权署名与外部域名（法律/技术硬约束，
-见 §1.5 B 类）、Niratan/shishamo（第三方 app 名与人名，替换成 fushi 会造假署名，改为中性措辞脱敏）——
-这三处的处置目标仍是「全仓搜不到这些词」，只是手段不是「改成 fushi」。
+上述意见仅留档，按全量执行。同日二次拍板收窄口径：**只改代码，注释不管**；
+Manhhao/Niratan/shishamo 三处（第三方署名、外部域名、第三方 app 名、人名）**不管了**，
+原样保留（见 §1.5）。
