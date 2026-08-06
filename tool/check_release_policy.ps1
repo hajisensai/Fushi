@@ -138,6 +138,11 @@ Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-macos.zip' 'desktop workflow must upload macOS zip assets'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-ios.ipa' 'desktop workflow must upload iOS IPA assets'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Publish mirror update manifest (Apple assets)' 'Apple release assets must merge into the update manifest'
+# Apple 签名链路：细粒度不变式由 hibiki/test/tools/apple_signing_workflow_guard_test.dart
+# 守（每个 PR 都跑）。这里只锁发布策略层面的那一条 —— TestFlight 上传绝不能挂到 push
+# 事件上：push 的 debug 通道每次提交都会跑，每次上传都消耗一个不可回收的构建号
+# （同一语义版本下 CFBundleVersion 必须单调递增）。
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '[ "$GITHUB_EVENT_NAME" = workflow_dispatch ]' 'TestFlight upload must be gated on manual workflow_dispatch; a push-triggered upload burns an unrecoverable build number every commit'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'native/galgame_hook/tools/build_distribution.ps1 -RunTests' 'Windows releases must build the bundled offline galgame helper from the in-tree source'
 # BUG-1449: the helper is no longer shipped as zip + sidecar for the runtime to
 # unpack -- that layout left a second copy on disk that had to stay in sync with

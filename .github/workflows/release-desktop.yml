@@ -42,6 +42,14 @@ on:
       release_name:
         description: 'Optional GitHub Release title.'
         required: false
+      # TestFlight 上传只在手动 beta/formal 发布时发生（见 ios job 的
+      # "Resolve Apple signing mode"）。push 的 debug 通道每次提交都会跑，
+      # 传上去只会白烧 App Store Connect 的处理配额并把构建号推高。
+      upload_testflight:
+        description: 'Upload a signed iOS build to TestFlight (beta/formal only; needs the Apple secrets).'
+        required: false
+        default: true
+        type: boolean
 
 concurrency:
   group: hibiki-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
@@ -970,6 +978,191 @@ jobs:
           "$target_dir/ffmpeg" -hide_banner -version | head -n 1
           "$target_dir/ffprobe" -hide_banner -version | head -n 1
           ls -lh "$target_dir/ffmpeg" "$target_dir/ffprobe"
+      # ---- Developer ID 签名 + 公证（Gatekeeper）-------------------------
+      # **必须排在上面 Mihon / ffmpeg 两步之后**：那两步往 bundle 里塞可执行文件
+      # 并用 `codesign --force --deep --sign -` 重签整个 app，签在前面的
+      # Developer ID 签名会被那个 ad-hoc 签名整个盖掉。
+      # 每一项 Apple 凭据都是可选的：没有它们（fork，或本仓开发者账号存在之前）
+      # 走原来的 ad-hoc 签名 zip，发布链路绝不硬依赖 Apple 开发者账号。
+      # 有它们时才做 Developer ID 重签 + notarytool 公证 + stapler 装订，
+      # 用户下载 zip 后不再被「已损坏，无法打开」拦住。
+      # 注意：macOS 走的是 Developer ID（App Store 之外分发），不是 TestFlight。
+      # Release.entitlements 已刻意去沙盒（应用内自动更新要写 /Applications），
+      # 上 Mac App Store / macOS TestFlight 需要重新引入沙盒，是另一个决策。
+      - name: Resolve macOS Developer ID signing mode
+        id: signing
+        shell: bash
+        env:
+          MACOS_DEVELOPER_ID_P12_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_P12_BASE64 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          SIGN=false
+          if [ -n "$MACOS_DEVELOPER_ID_P12_BASE64" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            SIGN=true
+          fi
+          # 公证要 App Store Connect API key；只签不公证仍然会被 Gatekeeper 拦，
+          # 所以缺 API key 时把签名一起降级，避免产出「签了但过不了」的中间态。
+          NOTARIZE=false
+          if [ "$SIGN" = true ] && [ -n "$APPSTORE_API_KEY_ID" ] \
+             && [ -n "$APPSTORE_API_ISSUER_ID" ] && [ -n "$APPSTORE_API_PRIVATE_KEY" ]; then
+            NOTARIZE=true
+          fi
+          if [ "$SIGN" = true ] && [ "$NOTARIZE" = false ]; then
+            echo "::warning title=macOS notarization skipped::Developer ID cert present but APPSTORE_API_* secrets are missing; falling back to the unsigned ad-hoc zip."
+            SIGN=false
+          fi
+          echo "macos_signed=$SIGN" >> "$GITHUB_OUTPUT"
+          echo "Developer ID signing: $SIGN"
+      - name: Import Developer ID certificate
+        if: steps.signing.outputs.macos_signed == 'true'
+        shell: bash
+        env:
+          MACOS_DEVELOPER_ID_P12_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_P12_BASE64 }}
+          MACOS_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/hibiki-macos-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          P12_PATH="$RUNNER_TEMP/developer-id.p12"
+          printf '%s' "$MACOS_DEVELOPER_ID_P12_BASE64" | base64 --decode > "$P12_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # 6h 自动锁；不设的话默认 5 分钟无操作即锁，长构建中途 codesign 会失败。
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$P12_PATH" -k "$KEYCHAIN_PATH" \
+            -P "${MACOS_DEVELOPER_ID_P12_PASSWORD:-}" \
+            -T /usr/bin/codesign -T /usr/bin/security -f pkcs12 -A
+          rm -f "$P12_PATH"
+          # 没有这一步，codesign 每次用私钥都会弹「允许访问钥匙串」的 UI 授权，
+          # 无人值守的 runner 上直接挂住。
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+          # 把临时钥匙串放进搜索列表最前面，同时保留 runner 原有的 login 钥匙串。
+          EXISTING_KEYCHAINS=""
+          while IFS= read -r line; do
+            trimmed="$(printf '%s' "$line" | tr -d '"' | sed 's/^ *//;s/ *$//')"
+            if [ -n "$trimmed" ]; then
+              EXISTING_KEYCHAINS="$EXISTING_KEYCHAINS $trimmed"
+            fi
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $EXISTING_KEYCHAINS
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | grep 'Developer ID Application' | head -n 1 | sed 's/.*) \([0-9A-F]*\) ".*/\1/')"
+          if [ -z "$IDENTITY" ]; then
+            echo "::error title=No Developer ID identity::MACOS_DEVELOPER_ID_P12_BASE64 does not contain a 'Developer ID Application' certificate with its private key."
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH" || true
+            exit 1
+          fi
+          {
+            echo "MACOS_SIGN_IDENTITY=$IDENTITY"
+            echo "MACOS_KEYCHAIN_PATH=$KEYCHAIN_PATH"
+          } >> "$GITHUB_ENV"
+          echo "Developer ID identity: $IDENTITY"
+      - name: Sign macOS app with Developer ID
+        if: steps.signing.outputs.macos_signed == 'true'
+        working-directory: hibiki
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="build/macos/Build/Products/Release/hibiki.app"
+          ENTITLEMENTS="macos/Runner/Release.entitlements"
+          JVM_ENTITLEMENTS="$RUNNER_TEMP/mihon-jvm.entitlements"
+          if [ ! -d "$APP" ]; then
+            echo "::error title=macOS app missing::Expected $APP"
+            exit 1
+          fi
+          # 捆绑的 Temurin JDK 21 jlink 镜像（Contents/Resources/mihon_bridge）在
+          # 强化运行时下跑 HotSpot 需要 JIT 和可写可执行内存，还要能加载镜像里那堆
+          # 库。这些 entitlement 只给 JVM 可执行体，不进主 app —— 主 app 是 AOT 的
+          # Flutter，给了纯属白白扩大攻击面。
+          cat > "$JVM_ENTITLEMENTS" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>com.apple.security.cs.allow-jit</key><true/>
+            <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+            <key>com.apple.security.cs.disable-library-validation</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          plutil -lint "$JVM_ENTITLEMENTS"
+          sign_one() {
+            codesign --force --timestamp --options runtime \
+              --keychain "$MACOS_KEYCHAIN_PATH" \
+              --sign "$MACOS_SIGN_IDENTITY" "$@"
+          }
+          # 公证要求 bundle 里**每一个** Mach-O 都带强化运行时 + 安全时间戳，不是
+          # 只有 dylib：Contents/MacOS 下的 ffmpeg/ffprobe、mihon_bridge 里的 JVM
+          # 可执行体同样算，而它们都没有扩展名 —— 所以按 `file` 判定而不是后缀。
+          # 按路径深度倒序，内层先签（codesign 会把内层签名封进外层，顺序反了外层
+          # 立刻失效）。-type f 同时排除了符号链接，jlink 镜像和 framework 里的
+          # 符号链接不能签。
+          MIHON_PREFIX="$APP/Contents/Resources/mihon_bridge/"
+          while IFS= read -r item; do
+            if ! file "$item" | grep -q 'Mach-O'; then
+              continue
+            fi
+            case "$item" in
+              "$MIHON_PREFIX"*)
+                echo "signing (jvm): $item"
+                sign_one --entitlements "$JVM_ENTITLEMENTS" "$item"
+                ;;
+              *)
+                echo "signing: $item"
+                sign_one "$item"
+                ;;
+            esac
+          done < <(find "$APP/Contents" -type f \
+            | awk '{ print gsub(/\//, "/") "\t" $0 }' | sort -rn | cut -f2-)
+          # framework bundle 本身（内层 Mach-O 上一轮已签）。
+          while IFS= read -r -d '' item; do
+            echo "signing bundle: $item"
+            sign_one "$item"
+          done < <(find "$APP/Contents/Frameworks" -maxdepth 1 -name '*.framework' -print0 2>/dev/null)
+          codesign --force --timestamp --options runtime \
+            --entitlements "$ENTITLEMENTS" \
+            --keychain "$MACOS_KEYCHAIN_PATH" \
+            --sign "$MACOS_SIGN_IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign --display --entitlements - --verbose=4 "$APP"
+      - name: Notarize and staple macOS app
+        if: steps.signing.outputs.macos_signed == 'true'
+        working-directory: hibiki
+        shell: bash
+        env:
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          APP="build/macos/Build/Products/Release/hibiki.app"
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPSTORE_API_KEY_ID}.p8"
+          printf '%s\n' "$APPSTORE_API_PRIVATE_KEY" > "$KEY_PATH"
+          NOTARIZE_ZIP="$RUNNER_TEMP/hibiki-notarize.zip"
+          # 公证服务只吃 zip/dmg/pkg，且必须 ditto 保留 .app 的符号链接与扩展属性。
+          ditto -c -k --keepParent "$APP" "$NOTARIZE_ZIP"
+          set +e
+          xcrun notarytool submit "$NOTARIZE_ZIP" \
+            --key "$KEY_PATH" \
+            --key-id "$APPSTORE_API_KEY_ID" \
+            --issuer "$APPSTORE_API_ISSUER_ID" \
+            --wait --timeout 45m
+          NOTARY_STATUS=$?
+          set -e
+          rm -f "$KEY_PATH" "$NOTARIZE_ZIP"
+          if [ "$NOTARY_STATUS" -ne 0 ]; then
+            echo "::error title=Notarization failed::notarytool exited $NOTARY_STATUS. Run 'xcrun notarytool log <submission-id>' with the same key to see the rejected binaries."
+            exit "$NOTARY_STATUS"
+          fi
+          # 装订票据：装订后用户离线也能通过 Gatekeeper（不装订则每次首启都要联网）。
+          xcrun stapler staple "$APP"
+          xcrun stapler validate "$APP"
+          spctl --assess --type execute --verbose=4 "$APP"
       - name: Prepare macOS app release asset
         working-directory: hibiki
         shell: bash
@@ -1270,6 +1463,206 @@ jobs:
           path: hibiki/build/release-artifacts/hibiki-*-ios.ipa
           if-no-files-found: ignore
           retention-days: 14
+
+      # ---- App Store 签名 + TestFlight ---------------------------------
+      # 上面的未签名 IPA 是 GitHub Release 资产，**保持不变**：老用户用自签工具
+      # （AltStore / Sideloadly 等）侧载的就是它，换成 App Store 签名的包会直接
+      # 打断他们。TestFlight 走的是下面这个额外的、只在手动 beta/formal 发布时
+      # 才产出的签名 IPA，它不进 Release 资产。
+      #
+      # 每一项 Apple 凭据都是可选的：缺任何一项就整段跳过，未签名 IPA 照常发布，
+      # fork 与无账号状态下发布链路不受影响（tool/check_release_policy.ps1 守卫
+      # 也依赖 `flutter build ios --release --no-codesign` 这条路径继续存在）。
+      - name: Resolve Apple signing mode
+        id: signing
+        shell: bash
+        env:
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          RELEASE_CHANNEL: ${{ steps.channel.outputs.channel }}
+          INPUT_UPLOAD_TESTFLIGHT: ${{ github.event.inputs.upload_testflight }}
+        run: |
+          set -euo pipefail
+          CREDS=false
+          if [ -n "$IOS_DIST_CERT_P12_BASE64" ] && [ -n "$IOS_PROVISIONING_PROFILE_BASE64" ] \
+             && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPSTORE_API_KEY_ID" ] \
+             && [ -n "$APPSTORE_API_ISSUER_ID" ] && [ -n "$APPSTORE_API_PRIVATE_KEY" ]; then
+            CREDS=true
+          fi
+          # 只在手动 beta/formal 发布时上传。push 触发的 debug 通道每次提交都会跑，
+          # 传 TestFlight 只会白烧 App Store Connect 的处理配额并把构建号推高，
+          # 而构建号在同一个 CFBundleShortVersionString 下必须单调，浪费不可回收。
+          TESTFLIGHT=false
+          if [ "$CREDS" = true ] && [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] \
+             && { [ "$RELEASE_CHANNEL" = beta ] || [ "$RELEASE_CHANNEL" = formal ]; } \
+             && [ "${INPUT_UPLOAD_TESTFLIGHT:-true}" != false ]; then
+            TESTFLIGHT=true
+          fi
+          if [ "$CREDS" = false ] && [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] \
+             && [ "${INPUT_UPLOAD_TESTFLIGHT:-true}" != false ] \
+             && { [ "$RELEASE_CHANNEL" = beta ] || [ "$RELEASE_CHANNEL" = formal ]; }; then
+            echo "::warning title=TestFlight upload skipped::Apple signing secrets are incomplete. See docs/agent/apple-signing.md for the required secret names."
+          fi
+          echo "testflight=$TESTFLIGHT" >> "$GITHUB_OUTPUT"
+          echo "TestFlight upload: $TESTFLIGHT (channel=$RELEASE_CHANNEL event=$GITHUB_EVENT_NAME creds=$CREDS)"
+      - name: Import iOS distribution certificate
+        if: steps.signing.outputs.testflight == 'true'
+        shell: bash
+        env:
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_DIST_CERT_P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/hibiki-ios-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          P12_PATH="$RUNNER_TEMP/ios-distribution.p12"
+          printf '%s' "$IOS_DIST_CERT_P12_BASE64" | base64 --decode > "$P12_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # 见 macos job：默认 5 分钟无操作即锁，长构建中途 codesign 会失败。
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$P12_PATH" -k "$KEYCHAIN_PATH" \
+            -P "${IOS_DIST_CERT_P12_PASSWORD:-}" \
+            -T /usr/bin/codesign -T /usr/bin/security -f pkcs12 -A
+          rm -f "$P12_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+          EXISTING_KEYCHAINS=""
+          while IFS= read -r line; do
+            trimmed="$(printf '%s' "$line" | tr -d '"' | sed 's/^ *//;s/ *$//')"
+            if [ -n "$trimmed" ]; then
+              EXISTING_KEYCHAINS="$EXISTING_KEYCHAINS $trimmed"
+            fi
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $EXISTING_KEYCHAINS
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | grep 'Apple Distribution' | head -n 1 | sed 's/.*) \([0-9A-F]*\) ".*/\1/')"
+          if [ -z "$IDENTITY" ]; then
+            echo "::error title=No Apple Distribution identity::IOS_DIST_CERT_P12_BASE64 does not contain an 'Apple Distribution' certificate with its private key. A 'Apple Development' cert cannot sign an App Store build."
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH" || true
+            exit 1
+          fi
+          {
+            echo "IOS_SIGN_IDENTITY=$IDENTITY"
+            echo "IOS_KEYCHAIN_PATH=$KEYCHAIN_PATH"
+          } >> "$GITHUB_ENV"
+          echo "Apple Distribution identity: $IDENTITY"
+      - name: Install provisioning profile and signing xcconfig
+        if: steps.signing.outputs.testflight == 'true'
+        shell: bash
+        env:
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          PROFILE_PATH="$RUNNER_TEMP/hibiki.mobileprovision"
+          PROFILE_PLIST="$RUNNER_TEMP/hibiki-profile.plist"
+          printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
+          # .mobileprovision 是 CMS 签名信封，先解出里面的 plist 才能读字段。
+          security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST"
+          PROFILE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$PROFILE_PLIST")"
+          PROFILE_UUID="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$PROFILE_PLIST")"
+          PROFILE_EXPIRY="$(/usr/libexec/PlistBuddy -c 'Print :ExpirationDate' "$PROFILE_PLIST")"
+          APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$PROFILE_PLIST")"
+          PROFILE_BUNDLE_ID="${APP_ID#*.}"
+          EXPECTED_BUNDLE_ID="$(sed -n 's/.*PRODUCT_BUNDLE_IDENTIFIER = \(.*\);/\1/p' \
+            hibiki/ios/Runner.xcodeproj/project.pbxproj | grep -v RunnerTests | head -n 1)"
+          if [ "$PROFILE_BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]; then
+            echo "::error title=Provisioning profile mismatch::Profile is for '$PROFILE_BUNDLE_ID' but Runner builds '$EXPECTED_BUNDLE_ID'. A wildcard profile cannot be used for App Store distribution."
+            exit 1
+          fi
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          # 手动签名设置写进 ios/Flutter/Release.xcconfig（gitignore 之外的模板文件，
+          # 只在 runner 上追加，不入库）。这是 Runner **target** 的 base configuration，
+          # 在 Xcode 的优先级里高于 project 级设置 —— 而 project.pbxproj 恰好在
+          # project 级钉了 CODE_SIGN_IDENTITY[sdk=iphoneos*] = "iPhone Developer"，
+          # CI 钥匙串里没有这张证书。带条件的赋值只能被同样带条件的赋值压过，
+          # 所以两种写法都写一遍。改 pbxproj 或用 xcodebuild 命令行全局覆盖都会
+          # 波及 CocoaPods 的 pod target（use_frameworks! 下它们也要签名），
+          # 这条路径只作用于 Runner 工程。
+          {
+            echo ""
+            echo "// Injected by .github/workflows/release-desktop.yml for the TestFlight build."
+            echo "CODE_SIGN_STYLE = Manual"
+            echo "DEVELOPMENT_TEAM = $APPLE_TEAM_ID"
+            echo "PROVISIONING_PROFILE_SPECIFIER = $PROFILE_NAME"
+            echo "CODE_SIGN_IDENTITY = Apple Distribution"
+            echo "CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution"
+            echo "OTHER_CODE_SIGN_FLAGS = \$(inherited) --keychain $IOS_KEYCHAIN_PATH"
+          } >> hibiki/ios/Flutter/Release.xcconfig
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${PROFILE_BUNDLE_ID}</key><string>${PROFILE_NAME}</string>
+            </dict>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          PLIST
+          # heredoc 的缩进由 YAML 块标量统一剥掉，但这个文件是签名链路的唯一入口，
+          # 写坏了报错发生在 xcodebuild 深处，先在这里把格式问题挡下来。
+          plutil -lint "$RUNNER_TEMP/ExportOptions.plist"
+          rm -f "$PROFILE_PATH" "$PROFILE_PLIST"
+          echo "profile: $PROFILE_NAME ($PROFILE_UUID) bundle=$PROFILE_BUNDLE_ID expires=$PROFILE_EXPIRY"
+      - name: Build signed iOS App Store IPA
+        if: steps.signing.outputs.testflight == 'true'
+        working-directory: hibiki
+        run: >-
+          flutter build ipa --release
+          --export-options-plist "$RUNNER_TEMP/ExportOptions.plist"
+          --build-name "${{ steps.channel.outputs.build_version_name }}"
+          --build-number "${{ steps.channel.outputs.release_sequence }}"
+      - name: Upload to TestFlight
+        if: steps.signing.outputs.testflight == 'true'
+        working-directory: hibiki
+        shell: bash
+        env:
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          IPA=""
+          while IFS= read -r candidate; do
+            IPA="$candidate"
+            break
+          done < <(find build/ios/ipa -maxdepth 1 -name '*.ipa' -type f)
+          if [ -z "$IPA" ]; then
+            echo "::error title=Signed IPA missing::flutter build ipa produced no .ipa under hibiki/build/ios/ipa"
+            ls -la build/ios/ipa || true
+            exit 1
+          fi
+          echo "uploading $IPA"
+          # altool 只在这几个固定目录里找 --apiKey 对应的 .p8。
+          KEY_DIR="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$KEY_DIR"
+          KEY_PATH="$KEY_DIR/AuthKey_${APPSTORE_API_KEY_ID}.p8"
+          printf '%s\n' "$APPSTORE_API_PRIVATE_KEY" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          cleanup() { rm -f "$KEY_PATH"; }
+          trap cleanup EXIT
+          # 先 validate 再 upload：绝大多数拒收（缺 icon、entitlement 不匹配、
+          # 构建号回退）在 validate 阶段就报出来，比等 App Store Connect 发退信快。
+          xcrun altool --validate-app -f "$IPA" -t ios \
+            --apiKey "$APPSTORE_API_KEY_ID" --apiIssuer "$APPSTORE_API_ISSUER_ID"
+          xcrun altool --upload-app -f "$IPA" -t ios \
+            --apiKey "$APPSTORE_API_KEY_ID" --apiIssuer "$APPSTORE_API_ISSUER_ID"
+          echo "已上传 TestFlight；App Store Connect 处理完成（通常 5-30 分钟）后才会出现在测试员列表里。"
 
   publish:
     needs: [windows, macos, ios]
