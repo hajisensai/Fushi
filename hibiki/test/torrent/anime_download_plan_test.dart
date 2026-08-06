@@ -57,16 +57,16 @@ void main() {
       expect(decodeQbConnectionConfig('[1,2]'), isNull);
     });
 
-    test('category 缺失/为空回退默认 hibiki', () {
+    test('category 缺失/为空回退默认 fushi', () {
       final QbConnectionConfig? decoded = decodeQbConnectionConfig(
         '{"baseUrl":"http://x"}',
       );
       expect(decoded, isNotNull);
-      expect(decoded!.category, 'hibiki');
+      expect(decoded!.category, 'fushi');
       final QbConnectionConfig? decoded2 = decodeQbConnectionConfig(
         '{"baseUrl":"http://x","category":""}',
       );
-      expect(decoded2!.category, 'hibiki');
+      expect(decoded2!.category, 'fushi');
     });
 
     test('默认构造=auto(开箱即用/已配置)；显式 qb 空=未配置；copyWith 逐字段', () {
@@ -74,7 +74,7 @@ void main() {
       const QbConnectionConfig config = QbConnectionConfig();
       expect(config.backend, QbConnectionConfig.backendAuto);
       expect(config.isConfigured, isTrue);
-      expect(config.category, 'hibiki');
+      expect(config.category, 'fushi');
       // 显式外接 qb 但没填地址 → 未配置。
       const QbConnectionConfig qbEmpty = QbConnectionConfig(
         backend: QbConnectionConfig.backendQbittorrent,
@@ -82,7 +82,7 @@ void main() {
       expect(qbEmpty.isConfigured, isFalse);
       final QbConnectionConfig edited = qbEmpty.copyWith(baseUrl: 'http://x');
       expect(edited.isConfigured, isTrue);
-      expect(edited.category, 'hibiki');
+      expect(edited.category, 'fushi');
       expect(edited.username, '');
     });
   });

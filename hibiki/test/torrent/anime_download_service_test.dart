@@ -401,7 +401,7 @@ void main() {
         _torrentJson(state: 'downloading', progress: 0.1, amountLeft: 5),
       ];
       await buildService().tick();
-      expect(qb.lastInfoCategory, 'hibiki');
+      expect(qb.lastInfoCategory, 'fushi');
     });
 
     test('种子未完成不导入，计划保持 downloading', () async {
