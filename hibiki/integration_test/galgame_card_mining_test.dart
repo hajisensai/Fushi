@@ -16,7 +16,7 @@ import 'package:hibiki/src/mining/window_capture_channel.dart';
 ///
 /// 在真实 hibiki.exe 测试宿主里（能用 native 通道），对每个游戏逐个跑通整条路径：
 ///   拉起游戏（injector --launch CREATE_SUSPENDED 早注入，命中启动即建 DirectSound 的引擎）
-///   到 引擎-hook 抓混音前干净语音（app.hibiki.reader/voice_hook channel），抓不到 / 全静音
+///   到 引擎-hook 抓混音前干净语音（app.fushi.reader/voice_hook channel），抓不到 / 全静音
 ///   则回退 WASAPI loopback 系统混音（[LoopbackGalAudioSource]），保证每个游戏都有音频
 ///   到 截游戏窗口（[WindowCaptureChannel]，失败不致命）
 ///   到 把 WAV + 可选 PNG + meta JSON **dump 到 GALTEST_OUT 目录**（外层脚本再经
@@ -36,7 +36,7 @@ void main() {
   // 引擎-hook 读侧通道：直接用裸 MethodChannel（不经 EngineHookGalAudioSource——那会自己
   // 拉起 injector + 超时杀游戏，本测试要自己掌控每个游戏的生命周期）。
   const MethodChannel voiceChannel =
-      MethodChannel('app.hibiki.reader/voice_hook');
+      MethodChannel('app.fushi.reader/voice_hook');
 
   testWidgets('逐个 galgame 抓真实音频并经 AnkiConnect 推带音频卡',
       (WidgetTester tester) async {
@@ -248,7 +248,7 @@ void main() {
   }, timeout: const Timeout(Duration(minutes: 8)));
 }
 
-/// 经 app.hibiki.reader/voice_hook 的 grabRecent 抓最近 [backMs] 毫秒引擎-hook PCM。
+/// 经 app.fushi.reader/voice_hook 的 grabRecent 抓最近 [backMs] 毫秒引擎-hook PCM。
 /// 用 [parseGalPcmFormat] 解格式；native 缺失 / error / 无数据返回 null（降级 loopback）。
 Future<GalAudioSlice?> _grabEngineHook(
     MethodChannel channel, int backMs) async {
