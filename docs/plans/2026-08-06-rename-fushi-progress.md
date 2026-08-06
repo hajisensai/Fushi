@@ -11,14 +11,14 @@
 - [x] Phase 0 身份对照表（见下；本文件即产出）
 - [x] Apple 侧改名：bundle id（#784）、显示名/产物名/资产名（develop `a5022cd56`）
 - [x] P6-1 `window.hoshiReader` → `window.fushiReader`（82 文件；分支提交 45865b679，阅读器/有声书/macos 定向 2242 绿）
-- [x] P6-3 ttu 清算（分支提交 ee0655c88）：31 个 i18n key →`reader_*`；`setTtu*`→`setReader*`；`'reader_ttu'` 收口 `kReaderSourcePersistedKey`。**白名单**：`ttu_models.dart`/`ttu_filename.dart`（ッツ第三方 wire 契约，文件头注明禁单方改）、`reader_settings.dart` 内 `ttu_*` 现役持久化键值（冻结，P2-2 新包换新键时迁移）
-- [x] P6-4a `Ht*`→`Ft*`（11 类；分支提交 20f50fc10，torrent 定向 147 绿）
+- [x] P6-3 ttu 清算（develop ee0655c88）：31 个 i18n key →`reader_*`；`setTtu*`→`setReader*`；`'reader_ttu'` 收口 `kReaderSourcePersistedKey`。**白名单**：`ttu_models.dart`/`ttu_filename.dart`（ッツ第三方 wire 契约，文件头注明禁单方改）、`reader_settings.dart` 内 `ttu_*` 现役持久化键值（冻结，P2-2 新包换新键时迁移）
+- [x] P6-4a `Ht*`→`Ft*`（11 类；develop 20f50fc10，torrent 定向 147 绿）
 - [ ] P6-4b `Sasayaki*` 改描述性名——**实测面 ~500 处远超预估**，且含两个 userspace 契约需先定策略：① Anki handlebars 模板变量（`handlebar_sasayaki_audio` 对应的用户模板变量，乱改破用户现有卡模板）；② `sasayakiColor` 疑似入库的主题自定义色键（custom_theme 持久化待查）。纯内部符号（SasayakiCue/AutoNav/JS 桥）可机械换，两个契约点需映射或冻结
 - [ ] P6-4c 代码字符串残留 hibiki 清扫 + 白名单收口（与 P2-1 通道前缀联动，随 Phase 2 做）
 - [x] P1-1 `MigrationExporter` 核心（`lib/src/migration/migration_exporter.dart`：分批调 createBackup、断点 state.json、幂等跳过；**尚缺**：Android 中转目录取路径接线 + 从设置页触发——归 P1-3 一起做）
 - [x] P1-2 `MigrationManifest` v1（`migration_manifest.dart`：归档 sha256+size + 14 表行数 + schema 版本；8 单测绿；对计划的偏差已记回计划 §P1-2）
-- [x] P1-3 迁移 UI（分支提交 0ffb7cc1c + 73b4b6973）：Android MigrationChannelHandler（探测/拉起/卸载/PROCESS_TEXT）+ `<queries>` + MigrationPage 三态引导 + 设置入口 + 15 i18n key。**验证态**：analyze 绿、Android release 构建验证进行中；真机 E2E 未做（标 implemented_unverified，待 P2 后一起真机跑）
-- [x] P1-4a 只读态启动闸门（分支提交 c56a273aa）：`isMigrationReadonly` + init 尾段早退（互联/Yomitan/自动同步/词典自更/下载入库/texthooker 全停）+ PROCESS_TEXT 注销随导出完成触发
+- [x] P1-3 迁移 UI（develop 0ffb7cc1c + 73b4b6973 + MD3 修正，Android release APK 构建绿）：Android MigrationChannelHandler（探测/拉起/卸载/PROCESS_TEXT）+ `<queries>` + MigrationPage 三态引导 + 设置入口 + 15 i18n key。**验证态**：analyze 绿、Android release APK 构建绿（334.9MB）；真机 E2E 未做（标 implemented_unverified，待 P2 后一起真机跑）
+- [x] P1-4a 只读态启动闸门（develop c56a273aa）：`isMigrationReadonly` + init 尾段早退（互联/Yomitan/自动同步/词典自更/下载入库/texthooker 全停）+ PROCESS_TEXT 注销随导出完成触发
 - [ ] P1-4b 只读态补口：媒体页内进度/统计写锁（用户在只读态仍打开书/视频时的落库点）、首屏常驻引导 banner（「数据已迁移」+ 重新导出 + 打开 Fushi）
 - [ ] P2-1 Android 身份替换：applicationId/namespace/taskAffinity/Java 包目录/URL scheme/MethodChannel 常量（Dart+五端原生同 PR）
 - [ ] P2-2 `MigrationImporter`（首启扫描/逐批 merge 导入/manifest 全项校验/失败保留重传）
@@ -65,3 +65,5 @@
 5. ASC：删除绑 `app.hibiki.reader` 的废弃 `fushii` 记录。
 6. 新 Android keystore 生成并配到 CI secrets（拍板不复用旧签名）。
 7. 浏览器扩展商店条目改名（打包密钥不变）。
+
+> 2026-08-07 全量门：FLUTTER TEST VERDICT: PASSED - 17615 tests ran；develop 推进至 d23fa7f79（Phase 1 整批）。
