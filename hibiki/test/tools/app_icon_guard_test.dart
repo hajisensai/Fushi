@@ -43,17 +43,17 @@ void main() {
     final String manifest = read('android/app/src/main/AndroidManifest.xml');
     // 透明档 alias 存在、默认禁用、引用透明 wordmark（launcher_icon_minimal）。
     final RegExp transparentAlias = RegExp(
-      r'MainActivityHibikiTransparent[\s\S]*?android:icon="@mipmap/launcher_icon_minimal"',
+      r'MainActivityFushiTransparent[\s\S]*?android:icon="@mipmap/launcher_icon_minimal"',
     );
     expect(transparentAlias.hasMatch(manifest), isTrue,
         reason:
-            '.MainActivityHibikiTransparent 应引用 launcher_icon_minimal（透明 wordmark）');
+            '.MainActivityFushiTransparent 应引用 launcher_icon_minimal（透明 wordmark）');
     // 透明档在原生映射与预设映射里都可选。
     final String helper = read(
         'android/app/src/main/java/app/fushi/reader/IconSwitchHelper.java');
     expect(helper.contains('"hibiki_transparent"'), isTrue,
         reason: 'IconSwitchHelper 应把 hibiki_transparent 列为可选档');
-    expect(helper.contains('.MainActivityHibikiTransparent'), isTrue);
+    expect(helper.contains('.MainActivityFushiTransparent'), isTrue);
     final String prefs = read('lib/src/utils/misc/app_icon_preferences.dart');
     expect(prefs.contains("'hibiki_transparent':"), isTrue);
     expect(prefs.contains('assets/meta/launcher_icon_squircle.png'), isTrue,
@@ -144,7 +144,7 @@ void main() {
       () {
     // manifest 保留退役 alias 声明，避免老用户升级后 launcher 图标消失。
     final String manifest = read('android/app/src/main/AndroidManifest.xml');
-    expect(manifest.contains('.MainActivityHibikiMinimal'), isTrue,
+    expect(manifest.contains('.MainActivityFushiMinimal'), isTrue,
         reason: '退役 minimal alias 必须保留声明（老用户 launcher 安全）');
 
     // IconSwitchHelper：不再把 hibiki_minimal 列为可选项，但提供迁移逻辑。
