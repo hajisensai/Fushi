@@ -1,8 +1,8 @@
 # Hibiki → Fushi 改名与跨包名数据迁移 实现计划
 
-- 日期：2026-08-06
+- 日期：2026-08-06（同日用户拍板全量方案，见 §0）
 - 基线：`develop@7176ef9a8`
-- 状态：**计划待确认**（未开始实现）
+- 状态：**决策已定稿，未开始实现**
 
 ---
 
@@ -14,23 +14,21 @@
 改包名在 Android 上等于全新应用，老用户的全部数据（`/data/user/0/app.hibiki.reader/`）
 无法被新包读取。故本计划的**主体不是改名本身，而是跨包名的数据迁移链路**。
 
-### 已定决策
+### 已定决策（2026-08-06 用户拍板：「全部改成 fushi，包括签名、包括目录、包括任何」）
 
 | 决策 | 结论 | 依据 |
 |---|---|---|
-| Android 改包名 | **改** | 用户诉求（包名可见性） |
+| Android 改包名 | **改**，新包名 `app.fushi.reader`（用户拍板 fushi；字面量如需调整仅在 Phase 0 定稿时改） | 用户诉求（包名可见性） |
 | 迁移方式 | 老包名发过渡版 → 两版并存 → 一键迁移 → 校验 → 引导卸载 | 见 §3 |
-| 桌面端改名 | 改显示名 + 二进制名 + 数据目录，**Inno `AppId` GUID 保持不变** | `hibiki.iss:14`，AppId 决定覆盖升级 |
+| Android 签名 | **新建 fushi keystore**，不复用旧 keystore | 用户拍板「包括签名」；方案不依赖 signature 级权限，无功能损失 |
+| iOS bundle id | **改**（`app.hibiki.reader` → `app.fushi.reader`）；迁移走既有备份导出/导入 + Files 分享（无 Android 式中转目录，见 §3 P2-4） | 用户拍板「所有的」 |
+| 桌面端改名 | 改显示名 + 二进制名 + **数据目录**（`%APPDATA%\Hibiki` → `%APPDATA%\Fushi`，一次性搬迁），**Inno `AppId` GUID 保持不变** | `hibiki.iss:14`，AppId 决定覆盖升级；GUID 对用户不可见、不含字样 |
 | 卸载旧版 | 由 Fushi 发起 `ACTION_DELETE`，用户手动确认 | Android 无静默卸载能力（§3.3） |
+| 内部代号 | **全量清理**：`hoshi` / `ttu` / `hibiki` 等我方符号全改 fushi；第三方署名与外部域名除外（硬约束见 §1.5） | 用户拍板「包括 app 内的 hoshi、hibiki、ttu、manhhao、shishamo、niratan 等名字」 |
 
-### 待定项（阻塞 Phase 1 开工）
+### 仍开放（不阻塞 Phase 0/1 设计，发布前定即可）
 
-1. **新包名字面量**。本计划一律以 `app.fushi.reader` 为占位，确认后全局替换。
-2. **是否复用同一 keystore 签名**。当前方案不依赖 signature 级权限，复用与否都能跑；
-   但复用可为后续留下更干净的跨 app 通道选项。
-3. **桌面数据目录是否跟着改名**（`%APPDATA%\Hibiki` → `%APPDATA%\Fushi`）。
-   改了要写一次性迁移；不改则桌面端仍留 Hibiki 字样（该字样对桌面用户**可见**，见 §1）。
-4. **过渡版的发布通道与最低版本要求**。老用户必须先升到过渡版才有迁移入口。
+1. **过渡版的发布通道与最低版本要求**。老用户必须先升到过渡版才有迁移入口。
 
 ---
 
@@ -84,6 +82,37 @@
 | 悬浮窗 / 无障碍 / 通知 / 媒体控制两套 | `AndroidManifest.xml:11,194` |
 | `<queries>` 已存在（可低成本扩展） | `AndroidManifest.xml:258-260`（当前只声明 `com.ichi2.anki`） |
 
+### 1.5 内部代号普查（2026-08-06 实测，决定「全量清理」的真实范围）
+
+用户点名的名字分三类，**性质完全不同**，处置必须区分：
+
+#### A 类：我方内部代号（改，这是 Phase 6 的主体）
+
+| 代号 | 实际角色 | 分布 | 处置 |
+|---|---|---|---|
+| `hoshi` | JS 桥全局 `window.hoshiReader` | 阅读器 17 个 JS/CSS 注入封装 + `webview.part.dart`(178 处) + `audiobook_bridge.dart`(98 处) 等，运行时符号**不持久化** | 全局改 `window.fushiReader`，机械替换，无迁移需求 |
+| `hoshi` | 词典引擎 `hoshidicts`（C++ + FFI + DLL/so 名） | `native/hoshidicts/`、`packages/hibiki_dictionary`（engine 73 处 + FFI 绑定 29 处）；DLL 名随包分发**用户可见** | 改 `fushidicts`：C ABI 符号、库文件名、JNI、CMake target 同步改；上游 fork 基线 `UPSTREAM.md` 记录改名映射 |
+| `hoshi` | 磁盘目录 `hoshi_books` | epub/manga importer + storage 5 文件 | **持久化名**：新装写 `fushi_books`；迁移导入器把老目录内容落到新名（§3 P2-2 顺带完成，桌面端在数据目录搬迁时改名） |
+| `ttu` | 持久化偏好键 `reader_ttu` / `setTtu*` / 同步 wire 模型 `ttu_models.dart` / DB 迁移阶梯 | `reader_hibiki_source.dart`(101) / `settings_schema_reading.dart`(83) / `reader_settings.dart`(74) / `database.dart`(63) / sync 3 文件 | 旧数据兼容残留（CLAUDE.md 冻结原因是「没有迁移方案」——**本计划就是迁移方案**）：迁移导入时旧键→新键映射一次做完；DB 迁移阶梯里的历史常量保留（只活在 migration 代码里，进白名单） |
+| `ttu` | i18n key 前缀 `ttu_*` | `strings.g.dart` 1179 处（生成物），源头在 17 个 `*.i18n.json` | 走 `hibiki/tool/i18n_sync.dart --rename` 批量改（禁手改 json），改完 `dart run slang` |
+| `hibiki` | 主身份 + `hibiki.db` 文件名 + 各处字面量 | 全仓 | 原计划 Phase 0-5 已覆盖；DB 文件新包落 `fushi.db`（迁移导入时改名，`database.dart:284`） |
+
+#### B 类：第三方署名 / 外部服务（**不能改**，进守卫白名单）
+
+| 名字 | 事实 | 为什么不能改 |
+|---|---|---|
+| `Manhhao` | `tools/browser-extension/vendor/popup.js:84` 版权行 `Copyright © 2026 Manhhao`（vendored 第三方代码） | 版权署名受许可证保护，改署名 = 违约 |
+| `hoshi-reader.manhhaoo-do.workers.dev` | `preferences_repository.dart:1499` 远端音频源 URL（默认关闭） | 别人的服务器域名，改了就断。可选项：整个移除该默认音频源（用户如不想看到此字样，删源比改名诚实） |
+
+#### C 类：第三方 app / 人名（不是本 app 的名字，改成 fushi 会造假 → 改写为中性措辞）
+
+| 名字 | 事实 | 处置 |
+|---|---|---|
+| `Niratan` | 全部是**注释**里的设计出处引用（mac 原生日语沉浸 app：字幕柔和投影 `video_subtitle_style.dart`、制卡句子上下文 UI `sentence_context_dialog.dart` / `dictionary_popup_webview.dart`、manga 命中测试等约 40 处），运行时不可见 | 注释改写为中性描述（如「参考的 mac 原生沉浸 app」），保留设计依据语义、不出现名字 |
+| `shishamo` | 仅 docs 两处（`docs/specs/2026-06-05-video-subsystem-plan.md:3` 等），是**需求提出者人名**（shishamo / 哈吉千歳） | docs 脱敏为「用户/团队」 |
+
+> 目标状态：全仓（除 B 类白名单 + git 历史）搜不到 `hoshi` / `ttu` / `hibiki` / `niratan` / `shishamo` 字样；守卫测试固化（§5）。
+
 ---
 
 ## 2. 关键洞察
@@ -101,7 +130,8 @@
 
 ## 3. 实现分期
 
-关键路径是 Phase 1 → Phase 2。Phase 3/4/5 可并行。
+关键路径是 Phase 1 → Phase 2。Phase 3/4/5/6 可并行
+（Phase 6 中依赖迁移映射的部分——`hoshi_books`/ttu 旧键——落在 P2-2 里）。
 
 ### Phase 0：命名决策落地（无代码）
 
@@ -222,6 +252,10 @@ class MigrationExporter {
   **不依赖 intent extra**——用户自己手动点开 Fushi 也要能触发；intent 只是加速。
 - 逐批导入：走 `BackupMergeEngine` 的 merge 模式（按业务键 upsert，
   已确认支持多次调用累加，不是整库替换）。
+- **导入即改名**（跨包名迁移是持久化名换代的唯一窗口，一次做完，见 §1.5）：
+  - DB 文件落地为 `fushi.db`（新包首启即以新名建库）；
+  - `hoshi_books` 目录内容落到 `fushi_books`，DB 路径列 rebase 同步指向新名；
+  - `reader_ttu` 等旧偏好键 → 新键映射表（单一常量文件收口，老键只在导入器出现）。
 - 每批导入后立即按 `MigrationManifest` 全项校验：
   - 表行数逐项相等
   - 文件 `size` + `sha256` 逐个相等
@@ -240,6 +274,18 @@ class MigrationExporter {
 - 卸载框关闭后**重新 `getPackageInfo` 复查**——用户可能点了「取消」。
   查得到 = 未完成，保持引导状态，不要乐观标记成功。
 - 确认卸载后清理 `Documents/Hibiki/migration/` 残留。
+
+#### P2-4 iOS 迁移（bundle id 同改，通道不同）
+
+iOS 无 `MANAGE_EXTERNAL_STORAGE` 式共享中转目录，两个 app 沙盒完全隔离，
+自动化中转不可行。走既有能力：
+
+- 老包过渡版：备份导出 UI（`backup.part.dart:145-225`）已支持系统分享 →
+  用户存到「文件」app；过渡版同样加 `MigrationManifest` 与只读态。
+- 新包 Fushi：导入入口从「文件」选包，同一 `MigrationImporter` 校验链路。
+- 体验比 Android 差（多两步手动选文件），如实告知用户；**校验门与 Android 完全一致**，
+  不因手动通道降低标准。
+- 卸载引导：iOS 无 `ACTION_DELETE` 等价物，只能文字引导长按删除。
 
 ---
 
@@ -288,6 +334,30 @@ class MigrationExporter {
 
 ---
 
+### Phase 6：内部代号全量清理（范围见 §1.5，可与 Phase 3/4/5 并行）
+
+按依赖顺序拆四个独立可合并的批次：
+
+1. **P6-1 运行时符号**：`window.hoshiReader` → `window.fushiReader`
+   （17 个 JS/CSS 注入封装 + webview part + audiobook/highlight bridge；
+   不持久化，纯机械替换 + 阅读器真机冒烟）。
+2. **P6-2 词典引擎改名**：`hoshidicts` → `fushidicts`
+   （C ABI 符号、DLL/so 文件名、JNI、CMake target、FFI 绑定、`UPSTREAM.md` 改名映射；
+   五平台构建全过才能合）。
+3. **P6-3 ttu 残留清算**：i18n `ttu_*` key 走 `i18n_sync --rename` 批量改 +
+   `dart run slang`；`setTtu*` 方法/`ttu_models.dart` 类型改名；
+   持久化旧键的读取集中到迁移导入器的映射表（P2-2），主代码零 `ttu` 字样。
+   DB 迁移阶梯中的历史常量保留（migration-only，白名单）。
+4. **P6-4 注释与文档措辞**：Niratan 注释改写中性描述、docs 里 shishamo 脱敏、
+   全仓残留 `hibiki`/`Hibiki` 字样清扫（迁移代码对 `app.hibiki.reader` /
+   `Documents/Hibiki/migration` 的有意引用收口到单一常量文件，进白名单）。
+
+**硬边界（不改，守卫白名单固化）**：Manhhao 版权行、`manhhaoo-do.workers.dev` 域名
+（或整体移除该音频源，二选一在 P6-4 定）、Inno `AppId` GUID、Google Cloud 项目 ID、
+`kLegacyGitHubRepo` 类历史兼容常量、git 历史。
+
+---
+
 ## 4. 风险登记
 
 | # | 风险 | 影响 | 缓解 |
@@ -299,6 +369,10 @@ class MigrationExporter {
 | R5 | 用户在老版继续读书导致进度分叉 | 两边进度对不上 | 导出完成即进只读态锁写 |
 | R6 | Google 敏感 scope 改名触发重新审核 | Drive 同步中断 | Phase 4 先在测试项目验证，正式改名前留缓冲 |
 | R7 | Windows exe 改名后文件关联失效 | 双击视频无反应 | 安装器新增 ProgID 迁移 + 旧键清理 |
+| R8 | `hoshidicts` 改名破坏 FFI/JNI 符号解析 | 词典整体不可用（核心功能） | P6-2 独立批次，五平台构建 + 词典查询集成测试全过才合并 |
+| R9 | ttu 旧偏好键映射漏项 | 老用户阅读器设置静默回默认值 | 映射表从 `settings_schema_reading.dart`/`reader_settings.dart` 反向枚举生成，单测断言逐键覆盖 |
+| R10 | iOS 手动通道用户中途放弃 | 数据滞留老包，误卸载即丢失 | 只读态在导出完成前不置位；未完成迁移时老包保持完全可用 |
+| R11 | 老 Hibiki ↔ 新 Fushi 互联同步跨版本不兼容 | 过渡期多设备用户同步断链 | 明确不支持跨名互联：迁移引导要求全设备一起换代，wire 层拒绝旧标识并给明确报错 |
 
 ---
 
@@ -309,6 +383,8 @@ class MigrationExporter {
 | 单测 | `MigrationManifest` 的生成/比对（行数 + 文件摘要）；批次规划纯函数；只读态谓词 |
 | 单测 | `BackupMergeEngine` 多次调用累加不互相覆盖（当前无此用例，需补） |
 | 守卫 | 源码扫描：不得再出现旧包名字面量（除迁移代码里对 `app.hibiki.reader` 的**有意**引用，白名单收口到单一常量） |
+| 守卫 | 源码扫描扩展到全部旧代号：`hoshi` / `ttu` / `hibiki` / `niratan` / `shishamo` 零残留（白名单=§1.5 B 类 + DB 迁移阶梯 + 迁移导入器常量文件；匹配带词边界，防短名子串假阳） |
+| 单测 | ttu 旧键→新键映射表逐键覆盖（从设置 schema 反向枚举，防 R9 漏项） |
 | 守卫 | 新守卫必须做变异实测（把断言字面量塞进注释后确认测试转红） |
 | 集成 | **真机**：老版导出 → 装新包 → 导入 → 直接查 DB 断言路径列已 rebase、书能打开、进度对得上 |
 | 集成 | 焦点驱动（`FocusDriver` / `sendKeyEvent`，禁坐标点击），Enter 确认不用空格 |
@@ -330,4 +406,9 @@ class MigrationExporter {
 而改名代价小得多（AppId 兜底 + 数据本地可搬）。
 
 如果哪天想收缩范围，**保 Android 包名、只改桌面端 + 全平台显示名**是性价比最高的切法，
-本计划的 Phase 3/4/5 可以独立成立。已知悉用户已就此拍板，按全量方案执行。
+本计划的 Phase 3/4/5 可以独立成立。
+
+**2026-08-06 用户已明确拍板全量方案**（包名、签名、目录、内部代号一律 fushi），
+上述意见仅留档，按全量执行。唯一被顶回的子项：Manhhao 版权署名与外部域名（法律/技术硬约束，
+见 §1.5 B 类）、Niratan/shishamo（第三方 app 名与人名，替换成 fushi 会造假署名，改为中性措辞脱敏）——
+这三处的处置目标仍是「全仓搜不到这些词」，只是手段不是「改成 fushi」。
