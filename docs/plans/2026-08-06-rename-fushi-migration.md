@@ -21,7 +21,7 @@
 | Android 改包名 | **改**，新包名 `app.fushi.reader`（用户拍板 fushi；字面量如需调整仅在 Phase 0 定稿时改） | 用户诉求（包名可见性） |
 | 迁移方式 | 老包名发过渡版 → 两版并存 → 一键迁移 → 校验 → 引导卸载 | 见 §3 |
 | Android 签名 | **新建 fushi keystore**，不复用旧 keystore | 用户拍板「包括签名」；方案不依赖 signature 级权限，无功能损失 |
-| iOS bundle id | **改**（`app.hibiki.reader` → `app.fushi.reader`）；迁移走既有备份导出/导入 + Files 分享（无 Android 式中转目录，见 §3 P2-4） | 用户拍板「所有的」 |
+| iOS bundle id | **改**（`app.hibiki.reader` → `app.fushi.reader`，已落地 PR #784）；**iOS/macOS 旧数据不迁移**（2026-08-07 用户拍板「不用管 ios 和 mac 的旧数据，没人用」），新包全新开始，P2-4 废除 | 用户拍板「所有的」 |
 | 桌面端改名 | 改显示名 + 二进制名 + **数据目录**（`%APPDATA%\Hibiki` → `%APPDATA%\Fushi`，一次性搬迁），**Inno `AppId` GUID 保持不变** | `hibiki.iss:14`，AppId 决定覆盖升级；GUID 对用户不可见、不含字样 |
 | 卸载旧版 | 由 Fushi 发起 `ACTION_DELETE`，用户手动确认 | Android 无静默卸载能力（§3.3） |
 | 内部代号 | **全量清理但只改代码**（标识符/字符串/文件名/产物名），注释一律不管；`hoshi` / `ttu` / `hibiki` / `Ht*` / `sasayaki` 全改（范围普查见 §1.5）；Manhhao/Niratan/shishamo 等第三方名与人名不管、原样保留 | 用户拍板「包括 app 内的 hoshi、hibiki、ttu…等名字」+ 同日二次拍板「改是要改代码，注释无所谓；1/2/3 不管了」 |
@@ -277,17 +277,12 @@ class MigrationExporter {
   查得到 = 未完成，保持引导状态，不要乐观标记成功。
 - 确认卸载后清理 `Documents/Hibiki/migration/` 残留。
 
-#### P2-4 iOS 迁移（bundle id 同改，通道不同）
+#### P2-4 iOS 迁移 —— **已废除**（2026-08-07 用户拍板）
 
-iOS 无 `MANAGE_EXTERNAL_STORAGE` 式共享中转目录，两个 app 沙盒完全隔离，
-自动化中转不可行。走既有能力：
-
-- 老包过渡版：备份导出 UI（`backup.part.dart:145-225`）已支持系统分享 →
-  用户存到「文件」app；过渡版同样加 `MigrationManifest` 与只读态。
-- 新包 Fushi：导入入口从「文件」选包，同一 `MigrationImporter` 校验链路。
-- 体验比 Android 差（多两步手动选文件），如实告知用户；**校验门与 Android 完全一致**，
-  不因手动通道降低标准。
-- 卸载引导：iOS 无 `ACTION_DELETE` 等价物，只能文字引导长按删除。
+iOS/macOS 旧数据不迁移（「不用管 ios 和 mac 的旧数据，没人用」）：
+新 bundle id（PR #784 已落地）全新开始，不做导出/导入通道，R10 随之作废。
+Phase 3 中 macOS 侧数据目录同理不搬（bundle id 变更后 `path_provider`
+自动落新目录）；Windows 数据搬迁**保留**（Windows 有存量用户）。
 
 ---
 
