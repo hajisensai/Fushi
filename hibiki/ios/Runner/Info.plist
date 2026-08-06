@@ -110,5 +110,16 @@
 		</array>
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+		<!--
+			出口合规声明。不写这个键的话，每个上传到 TestFlight 的构建都会卡在
+			「缺少出口合规信息」，必须去 App Store Connect 网页上手动答一遍问卷才
+			能分发给测试员 —— CI 自动发布就没有意义了。
+			false = 不使用「非豁免加密」：Hibiki 只用系统提供的 HTTPS/TLS（同步、
+			词典下载、TMDB/dandanplay 等 API），没有自实现或专有的加密算法，属于
+			Apple 明确列出的豁免范围。若将来引入自研加密（例如端到端加密的互联
+			同步），必须回头改这个值并补交年度自分类报告。
+		-->
+		<key>ITSAppUsesNonExemptEncryption</key>
+		<false/>
 </dict>
 </plist>
