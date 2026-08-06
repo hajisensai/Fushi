@@ -22,7 +22,7 @@ void main() {
     expect(flutterBlock, contains('android.intent.action.PROCESS_TEXT'));
     expect(flutterBlock, contains('android.intent.action.SEND'));
     expect(flutterBlock, contains('android.intent.action.TRANSLATE'));
-    expect(flutterBlock, contains('android:scheme="hibiki"'));
+    expect(flutterBlock, contains('android:scheme="fushi"'));
     expect(flutterBlock, contains('android:host="lookup"'));
     expect(flutterBlock, contains('android:process=":popup"'));
     expect(flutterBlock, contains('@style/PopupDictTheme'));
