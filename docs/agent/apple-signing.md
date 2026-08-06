@@ -9,7 +9,7 @@ Hibiki 的 iOS / macOS 发布签名怎么配、怎么轮换、坏了怎么查。
 |---|---|---|
 | 分发方式 | TestFlight / App Store | Developer ID（商店之外直接下载） |
 | 证书 | `Apple Distribution` | `Developer ID Application` |
-| 描述文件 | `IOS_APP_STORE` 类型，绑 `app.hibiki.reader` | 不需要 |
+| 描述文件 | `IOS_APP_STORE` 类型，绑 `app.fushi.reader` | 不需要 |
 | 后处理 | 上传 App Store Connect 审核处理 | `notarytool` 公证 + `stapler` 装订 |
 | 沙盒 | 不涉及 | **刻意不进 Mac App Store** |
 
@@ -20,6 +20,28 @@ Mac App Store 强制沙盒，两者不能兼得。Developer ID + 公证是「不
 Gatekeeper 拦」的正解。
 
 **不要**为了「统一」把 macOS 也塞进 TestFlight —— 那等于把自动更新废掉。
+
+## Bundle ID 现状（2026-08-06 改名 Fushi）
+
+| 平台 | bundle ID / application ID | 备注 |
+|---|---|---|
+| iOS | `app.fushi.reader` | App Store / TestFlight 用；旧 `app.hibiki.reader` 已废弃 |
+| macOS | `app.fushi.reader` | 原 `com.example.hibiki` |
+| Android | `app.hibiki.reader` | **不动**：改了等于所有现有用户断更新 |
+| Linux | `com.example.hibiki` | 未在本轮范围内 |
+
+**macOS 换包名是有代价且已被明确接受的决定。** Flutter 的
+`getApplicationSupportDirectory()` 在 macOS 上返回
+`~/Library/Application Support/<bundleId>`，Hibiki 的整个 Drift 数据库（书库、阅读
+进度、统计）就落在那里，偏好落 `~/Library/Preferences/<bundleId>.plist`。换包名之后
+旧目录**还在磁盘上但 app 不再读它**，现有 mac 用户升级即等同全新安装。用户已在知情
+下选择「不做迁移」。将来若要补迁移，落点是 `lib/src/storage/data_root_migrator.dart`
+旁边新加一条「平台 support 根变更」的一次性搬迁，而不是改 `AppPaths` 的解析逻辑。
+
+Android 的 `applicationId` 保持 `app.hibiki.reader` 是**硬约束**，不是遗漏：Play 商店
+以它作为 app 身份，改了现有用户全部断更新。同理，代码里的 MethodChannel 名
+（`app.hibiki.reader/anki`、`app.hibiki.reader/voice_hook`）只是字符串常量，与任何
+平台的 bundle ID 无关，跟着改毫无收益。
 
 ## 仓库 Secrets 清单
 
@@ -75,7 +97,7 @@ openssl req -new -newkey rsa:2048 -nodes \
 ```
 
 然后 `POST /v1/certificates`（`certificateType: DISTRIBUTION`）→
-`POST /v1/bundleIds`（`app.hibiki.reader`，platform `IOS`）→
+`POST /v1/bundleIds`（`app.fushi.reader`，platform `IOS`）→
 `POST /v1/profiles`（`profileType: IOS_APP_STORE`，关联上面两者）。
 返回的证书 subject 里的 `OU=` 就是 Team ID。
 
@@ -98,7 +120,7 @@ Application** → 上传本地生成的 CSR → 下载 `.cer`，再和本地私�
 
 **API 建不了**（`The resource 'apps' does not allow 'CREATE'`）。必须在
 appstoreconnect.apple.com →「我的 App」→ **+** 手动建，Bundle ID 选
-`app.hibiki.reader`。没有这条记录，`altool --upload-app` 会以
+`app.fushi.reader`。没有这条记录，`altool --upload-app` 会以
 "No suitable application records were found" 失败。
 
 ## 发一版 TestFlight
