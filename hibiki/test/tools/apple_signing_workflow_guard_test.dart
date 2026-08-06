@@ -78,7 +78,7 @@ void main() {
     // 上传到 Release 的 artifact 必须来自未签名产物目录，而不是 flutter build ipa
     // 的输出（build/ios/ipa）。
     expect(
-      content.contains('path: hibiki/build/release-artifacts/hibiki-*-ios.ipa'),
+      content.contains('path: hibiki/build/release-artifacts/fushi-*-ios.ipa'),
       isTrue,
       reason: 'Release 资产必须来自 release-artifacts/（未签名打包路径）',
     );
