@@ -4,6 +4,7 @@ import 'package:external_path/external_path.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/migration/migration_exporter.dart';
+import 'package:hibiki/src/migration/migration_readonly.dart';
 import 'package:hibiki/src/migration/migration_target_channel.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki/utils.dart';
@@ -26,9 +27,6 @@ class MigrationPage extends StatefulWidget {
   @override
   State<MigrationPage> createState() => _MigrationPageState();
 }
-
-/// 已迁移只读态标志（P1-4）。置位后每次启动都生效，直到老版真被卸掉。
-const String kMigrationReadonlyPrefKey = 'migration_readonly_v1';
 
 /// Fushi 发布页（下载引导用；与更新检查同仓）。
 const String kFushiReleasesUrl =

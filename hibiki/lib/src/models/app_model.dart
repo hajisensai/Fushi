@@ -93,6 +93,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_routing.dart';
+import 'package:hibiki/src/migration/migration_readonly.dart';
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/models/dictionary_import_manager.dart';
 import 'package:hibiki/src/models/file_export_manager.dart';
@@ -890,6 +891,11 @@ class AppModel with ChangeNotifier {
   /// Whether [initialise] has completed successfully.
   bool get isInitialised => _isInitialised;
   bool _isInitialised = false;
+
+  /// 已迁移只读态（Fushi 迁移 P1-4，见 [kMigrationReadonlyPrefKey]）。
+  /// 置位后本启动周期内：不自启互联/Yomitan 服务、不跑自动同步与后台写手。
+  bool get isMigrationReadonly =>
+      prefsRepo.getPref(kMigrationReadonlyPrefKey) == true;
 
   /// BUG-815: the currently-running [_initialiseOnce] future, or null when no
   /// init is in flight. [initialise] uses it to serialise concurrent callers so
@@ -2337,6 +2343,13 @@ class AppModel with ChangeNotifier {
       // cache (keeps refreshPrefCacheIfChanged consistent if ever reused here).
       _lastSeenPrefsVersion = prefsRepo.prefsVersion;
       _setupFloatingDictHandlers();
+      // 已迁移只读态（Fushi 迁移 P1-4）：不再自启互联服务——两版并存时端口
+      // 固定必冲突（SyncServerPortInUseException 会打到用户脸上）；老版只保
+      // 留「重新导出」通道。
+      if (isMigrationReadonly) {
+        notifyListeners();
+        return;
+      }
       // Start the LAN sync server now if hosting is enabled, so it runs app-wide
       // for the whole session instead of only while the sync settings page is on
       // screen (BUG-085). Fire-and-forget: a bind failure self-disables + is
