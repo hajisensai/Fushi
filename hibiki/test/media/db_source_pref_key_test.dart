@@ -39,7 +39,8 @@ void main() {
           File('lib/src/profile/profile_repository.dart').readAsStringSync();
       expect(ms, contains('dbSourcePrefKey(uniqueKey, key)'),
           reason: 'MediaSource._dbPrefKey 应转调编码器');
-      expect(pr, contains("dbSourcePrefKey('reader_ttu', row.key)"),
+      expect(
+          pr, contains('dbSourcePrefKey(kReaderSourcePersistedKey, row.key)'),
           reason: 'profile applyProfile 应转调编码器');
       expect(pr.contains("'src:reader_ttu:\${row.key}'"), isFalse,
           reason: 'profile 不应再硬编码 media_source 私有 key 格式');
@@ -61,20 +62,32 @@ void main() {
           // BUG-1174：字体 key 组连同其余承载路径的 pref 一起搬进了声明式覆盖表；
           // data_root_migrator 现在只消费 kPathRebasePrefs，不再自持 key 常量。
           File('lib/src/storage/path_rebase_coverage.dart').readAsStringSync();
-      expect(rs, contains("dbSourcePrefKey('reader_ttu', '')"),
+      expect(rs, contains("dbSourcePrefKey(kReaderSourcePersistedKey, '')"),
           reason: 'ReaderSettings._prefix 应转调编码器');
       expect(rs.contains("'src:reader_ttu:'"), isFalse,
           reason: 'reader_settings 不应再持有前缀字面量');
-      expect(cf, contains("dbSourcePrefKey('reader_ttu', shortKey)"),
+      expect(
+          cf, contains('dbSourcePrefKey(kReaderSourcePersistedKey, shortKey)'),
           reason: 'custom_fonts_page._readerPrefKey 应转调编码器');
       expect(cf.contains("'src:reader_ttu:'"), isFalse,
           reason: 'custom_fonts_page 不应再持有前缀字面量');
       for (final String src in <String>[pr, dm]) {
-        expect(src, contains("dbSourcePrefKey('reader_ttu', 'font_catalog')"),
+        expect(
+            src,
+            contains(
+                "dbSourcePrefKey(kReaderSourcePersistedKey, 'font_catalog')"),
             reason: '字体 key 组应经编码器生成');
         expect(src.contains("'src:reader_ttu:font_catalog'"), isFalse,
             reason: '不应再硬编码字体 key 字面量');
       }
+      // 持久化身份键的字面值冻结在单一常量（Fushi 改名 P6-3 收口）；
+      // 值必须保持 'reader_ttu'，改名迁移（P2-2）落地前不得更改。
+      final String src2 =
+          File('lib/src/media/sources/reader_hibiki_source.dart')
+              .readAsStringSync();
+      expect(src2,
+          contains("const String kReaderSourcePersistedKey = 'reader_ttu';"),
+          reason: '持久化键字面值必须冻结在 kReaderSourcePersistedKey 单一常量');
     });
   });
 }
