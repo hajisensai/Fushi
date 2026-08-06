@@ -19,7 +19,8 @@
 - [x] P1-2 `MigrationManifest` v1（`migration_manifest.dart`：归档 sha256+size + 14 表行数 + schema 版本；8 单测绿；对计划的偏差已记回计划 §P1-2）
 - [x] P1-3 迁移 UI（develop 0ffb7cc1c + 73b4b6973 + MD3 修正，Android release APK 构建绿）：Android MigrationChannelHandler（探测/拉起/卸载/PROCESS_TEXT）+ `<queries>` + MigrationPage 三态引导 + 设置入口 + 15 i18n key。**验证态**：analyze 绿、Android release APK 构建绿（334.9MB）；真机 E2E 未做（标 implemented_unverified，待 P2 后一起真机跑）
 - [x] P1-4a 只读态启动闸门（develop c56a273aa）：`isMigrationReadonly` + init 尾段早退（互联/Yomitan/自动同步/词典自更/下载入库/texthooker 全停）+ PROCESS_TEXT 注销随导出完成触发
-- [ ] P1-4b 只读态补口：媒体页内进度/统计写锁（用户在只读态仍打开书/视频时的落库点）、首屏常驻引导 banner（「数据已迁移」+ 重新导出 + 打开 Fushi）
+- [x] P1-4b 只读态收口（develop 513e49ff2）：openMedia 单闸门（写路径整体不可达）+ dashboard 常驻 banner。原文案：：媒体页内进度/统计写锁
+**⚠️ Android 过渡版基线 = **（含完整迁移导出/只读态，包名仍 app.hibiki.reader；发布老包最后版本从此提交出包）。
 - [ ] P2-1 Android 身份替换：applicationId/namespace/taskAffinity/Java 包目录/URL scheme/MethodChannel 常量（Dart+五端原生同 PR）
 - [ ] P2-2 `MigrationImporter`（首启扫描/逐批 merge 导入/manifest 全项校验/失败保留重传）
 - [ ] P2-3 卸载引导（ACTION_DELETE + getPackageInfo 复查取消分支）
