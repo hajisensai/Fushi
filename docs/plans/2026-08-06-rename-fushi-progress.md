@@ -17,8 +17,9 @@
 - [ ] P6-4c 代码字符串残留 hibiki 清扫 + 白名单收口（与 P2-1 通道前缀联动，随 Phase 2 做）
 - [x] P1-1 `MigrationExporter` 核心（`lib/src/migration/migration_exporter.dart`：分批调 createBackup、断点 state.json、幂等跳过；**尚缺**：Android 中转目录取路径接线 + 从设置页触发——归 P1-3 一起做）
 - [x] P1-2 `MigrationManifest` v1（`migration_manifest.dart`：归档 sha256+size + 14 表行数 + schema 版本；8 单测绿；对计划的偏差已记回计划 §P1-2）
-- [ ] P1-3 迁移 UI 三态引导 + `<queries>` 声明 `app.fushi.reader` + 导完拉起 Fushi
-- [ ] P1-4 已迁移只读态（锁写/停互联/注销 PROCESS_TEXT/保留重传/常驻引导）
+- [x] P1-3 迁移 UI（分支提交 0ffb7cc1c + 73b4b6973）：Android MigrationChannelHandler（探测/拉起/卸载/PROCESS_TEXT）+ `<queries>` + MigrationPage 三态引导 + 设置入口 + 15 i18n key。**验证态**：analyze 绿、Android release 构建验证进行中；真机 E2E 未做（标 implemented_unverified，待 P2 后一起真机跑）
+- [x] P1-4a 只读态启动闸门（分支提交 c56a273aa）：`isMigrationReadonly` + init 尾段早退（互联/Yomitan/自动同步/词典自更/下载入库/texthooker 全停）+ PROCESS_TEXT 注销随导出完成触发
+- [ ] P1-4b 只读态补口：媒体页内进度/统计写锁（用户在只读态仍打开书/视频时的落库点）、首屏常驻引导 banner（「数据已迁移」+ 重新导出 + 打开 Fushi）
 - [ ] P2-1 Android 身份替换：applicationId/namespace/taskAffinity/Java 包目录/URL scheme/MethodChannel 常量（Dart+五端原生同 PR）
 - [ ] P2-2 `MigrationImporter`（首启扫描/逐批 merge 导入/manifest 全项校验/失败保留重传）
 - [ ] P2-3 卸载引导（ACTION_DELETE + getPackageInfo 复查取消分支）
