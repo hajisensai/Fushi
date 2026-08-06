@@ -28,7 +28,7 @@ SettingsDestination buildAppearanceDestination() {
           SettingsCustomItem(
             id: 'appearance.theme',
             icon: Icons.color_lens_outlined,
-            searchTitle: t.ttu_theme,
+            searchTitle: t.reader_theme,
             builder: buildThemeSelector,
           ),
           SettingsCustomItem(

@@ -840,7 +840,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   Future<void> _openReMatchSheet(Audiobook ab) async {
     if (!_hasEpub) {
       HibikiToast.show(
-        msg: t.ttu_not_bound_cannot_rematch,
+        msg: t.reader_not_bound_cannot_rematch,
         severity: ToastSeverity.error,
       );
       return;

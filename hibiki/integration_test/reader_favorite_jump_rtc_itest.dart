@@ -219,8 +219,8 @@ void main() {
 
           // Phase A: DEFAULT paginated mode (vertical-rl). The user's app default
           // is paginated, so this is the most likely real path.
-          await ReaderHibikiSource.instance.setTtuWritingMode('vertical-rl');
-          await ReaderHibikiSource.instance.setTtuViewMode('paginated');
+          await ReaderHibikiSource.instance.setReaderWritingMode('vertical-rl');
+          await ReaderHibikiSource.instance.setReaderViewMode('paginated');
           ReaderHibikiSource.onLayoutReloadLive?.call();
           for (int i = 0; i < 16; i++) {
             await tester.pump(const Duration(milliseconds: 250));
@@ -242,7 +242,7 @@ void main() {
           await _verifyJumpInMode(tester, runJs!, jump, bookKey, 'paginated');
 
           // Phase B: continuous mode (the BUG-696-documented user scenario).
-          await ReaderHibikiSource.instance.setTtuViewMode('continuous');
+          await ReaderHibikiSource.instance.setReaderViewMode('continuous');
           ReaderHibikiSource.onLayoutReloadLive?.call();
           for (int i = 0; i < 16; i++) {
             await tester.pump(const Duration(milliseconds: 250));

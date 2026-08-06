@@ -182,7 +182,7 @@ void main() {
       reason: '远端目录拉取失败时占位卡不出现',
     );
     // 本地空 + 远端失败 → 只剩本地库（此处为空态占位提示，非崩溃）。
-    expect(find.text(t.ttu_no_books_added), findsOneWidget);
+    expect(find.text(t.reader_no_books_added), findsOneWidget);
   });
 }
 

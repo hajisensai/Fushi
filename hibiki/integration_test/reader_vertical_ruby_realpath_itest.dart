@@ -192,8 +192,8 @@ void main() {
           // Keep vertical-rl (the machine default) + continuous scroll (the
           // reported scenario). writingMode/viewMode are structural layout keys:
           // fire onLayoutReloadLive to re-run pagination (the product path).
-          await ReaderHibikiSource.instance.setTtuWritingMode('vertical-rl');
-          await ReaderHibikiSource.instance.setTtuViewMode('continuous');
+          await ReaderHibikiSource.instance.setReaderWritingMode('vertical-rl');
+          await ReaderHibikiSource.instance.setReaderViewMode('continuous');
           ReaderHibikiSource.onLayoutReloadLive?.call();
           for (int i = 0; i < 16; i++) {
             await tester.pump(const Duration(milliseconds: 250));

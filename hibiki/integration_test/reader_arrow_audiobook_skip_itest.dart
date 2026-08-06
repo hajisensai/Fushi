@@ -166,7 +166,7 @@ void main() {
                   '(got ${ctrl.chapterCueCount})');
 
           // 强制连续滚动模式（报告里的精确场景）。
-          await ReaderHibikiSource.instance.setTtuViewMode('continuous');
+          await ReaderHibikiSource.instance.setReaderViewMode('continuous');
           for (int i = 0; i < 6; i++) {
             await tester.pump(const Duration(milliseconds: 200));
           }

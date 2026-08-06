@@ -579,7 +579,7 @@ class CustomFontsPage extends BasePage {
 /// 阅读器设置的 DB 偏好 key：经单一真相编码器 [dbSourcePrefKey]（`reader_ttu`
 /// 是冻结的历史 sourceId，旧数据兼容，勿改）。
 String _readerPrefKey(String shortKey) =>
-    dbSourcePrefKey('reader_ttu', shortKey);
+    dbSourcePrefKey(kReaderSourcePersistedKey, shortKey);
 
 class _CustomFontsPageState extends BasePageState {
   ReaderSettings? _settings;

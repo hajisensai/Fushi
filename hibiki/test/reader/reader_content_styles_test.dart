@@ -1090,8 +1090,8 @@ void main() {
       ReaderHibikiSource.readerSettings = settings;
       addTearDown(() => ReaderHibikiSource.readerSettings = null);
 
-      await ReaderHibikiSource.instance.setTtuMarginLeft(99);
-      await ReaderHibikiSource.instance.setTtuMarginRight(-10);
+      await ReaderHibikiSource.instance.setReaderMarginLeft(99);
+      await ReaderHibikiSource.instance.setReaderMarginRight(-10);
       expect(ReaderHibikiSource.instance.ttuMarginLeft, 50);
       expect(ReaderHibikiSource.instance.ttuMarginRight, 0);
     });
@@ -1111,8 +1111,8 @@ void main() {
       ReaderHibikiSource.onSettingsChangedLive = () => calls++;
       addTearDown(() => ReaderHibikiSource.onSettingsChangedLive = null);
 
-      await ReaderHibikiSource.instance.setTtuFontSize(25);
-      await ReaderHibikiSource.instance.setTtuPrioritizeReaderStyles(true);
+      await ReaderHibikiSource.instance.setReaderFontSize(25);
+      await ReaderHibikiSource.instance.setReaderPrioritizeReaderStyles(true);
       await ReaderHibikiSource.instance.addCustomFont(name: 'Test Font');
 
       expect(calls, 3);
@@ -1339,7 +1339,7 @@ void main() {
     });
   });
 
-  // TODO-1285：每页列数设置写穿守卫——UI onChanged → source.setTtuPageColumns →
+  // TODO-1285：每页列数设置写穿守卫——UI onChanged → source.setReaderPageColumns →
   // ReaderSettings.setPageColumns → preferences 表 `ttu_page_columns`。getter 反读一致。
   group('TODO-1285 每页列数写穿 DB', () {
     test('setPageColumns 写穿 preferences 且 getter 反读一致', () async {
@@ -1363,7 +1363,7 @@ void main() {
       expect(reloaded.pageColumns, 3);
     });
 
-    test('source.setTtuPageColumns 经 ReaderSettings 写穿并反读', () async {
+    test('source.setReaderPageColumns 经 ReaderSettings 写穿并反读', () async {
       final HibikiDatabase db =
           HibikiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -1372,7 +1372,7 @@ void main() {
       ReaderHibikiSource.readerSettings = settings;
       addTearDown(() => ReaderHibikiSource.readerSettings = null);
 
-      await ReaderHibikiSource.instance.setTtuPageColumns(2);
+      await ReaderHibikiSource.instance.setReaderPageColumns(2);
       expect(ReaderHibikiSource.instance.ttuPageColumns, 2);
       final Map<String, String> prefs = await db.getAllPrefs();
       expect(prefs['src:reader_ttu:ttu_page_columns'], '2');

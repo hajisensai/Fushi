@@ -36,8 +36,8 @@ import 'test_helpers.dart';
 /// 本测试在真实 app 离屏壳里端到端证明该修复的**几何效果**（产品代码已落地，本文件
 /// 只加测试，不改产品代码）：
 ///   1. 播种标准日文 EPUB（含长段落），焦点驱动打开它，等 `hoshi_content_ready`。
-///   2. 强制横排（`setTtuWritingMode('horizontal-tb')`，BUG-461 句尾对齐只在横排
-///      生效）+「连续滚动」模式（`setTtuViewMode('continuous')`，报告里的精确场景），
+///   2. 强制横排（`setReaderWritingMode('horizontal-tb')`，BUG-461 句尾对齐只在横排
+///      生效）+「连续滚动」模式（`setReaderViewMode('continuous')`，报告里的精确场景），
 ///      经 onLayoutReloadLive 整章重排（产品改结构性布局键的同一路径）。
 ///   3. 注入非零的阅读底栏内边距 `--chrome-bottom-inset`（模拟底栏遮挡），按章内
 ///      可匹配字符计数选出一条**故意够长、句首贴顶后句尾会溢出可见区底沿**的句子
@@ -147,15 +147,15 @@ void main() {
           // （整章重排，CSS-only 的 onSettingsChangedLive 表达不了写排方向切换）。这里
           // 严格复刻产品同一路径：先写两个偏好，再 fire onLayoutReloadLive 触发
           // 重排，等内容重新就绪。
-          await ReaderHibikiSource.instance.setTtuWritingMode('horizontal-tb');
-          await ReaderHibikiSource.instance.setTtuViewMode('continuous');
+          await ReaderHibikiSource.instance.setReaderWritingMode('horizontal-tb');
+          await ReaderHibikiSource.instance.setReaderViewMode('continuous');
           // 设一个非零顶部正文边距：连续模式横排里 paddingTop = marginTop·vh +
           // chromeTopInset，而 BUG-461 的可见区上沿 bandTop = chromeTopInset。只有
           // paddingTop > bandTop（即 marginTop·vh > 0）时，句首贴内容顶后才可能比
           // 「贴可见区上沿」低一截，使一条本身放得下可见区的句子的句尾溢出底沿——
           // 这正是修复要解决的「放得下却被切尾」窗口。chromeTopInset 取 0 时窗口宽度
           // = marginTop·vh，10vh 给足余量。
-          await ReaderHibikiSource.instance.setTtuMarginTop(10);
+          await ReaderHibikiSource.instance.setReaderMarginTop(10);
           ReaderHibikiSource.onLayoutReloadLive?.call();
           for (int i = 0; i < 16; i++) {
             await tester.pump(const Duration(milliseconds: 250));

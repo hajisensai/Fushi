@@ -240,7 +240,7 @@ void main() {
         reason: 'view-mode segmented control must offer the VN option',
       );
       expect(
-        schema.contains('t.ttu_vn'),
+        schema.contains('t.reader_vn'),
         isTrue,
         reason: 'VN option must use the ttu_vn i18n label',
       );

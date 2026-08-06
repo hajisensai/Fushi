@@ -93,7 +93,7 @@ void main() {
       // 小数（仅 innerHeight 为 1000 整数倍时退化），pitch 随之变成小数。
       // 原值在 finally 中恢复，不污染全局偏好。
       origMarginTop = ReaderHibikiSource.instance.ttuMarginTop;
-      await ReaderHibikiSource.instance.setTtuMarginTop(1.3);
+      await ReaderHibikiSource.instance.setReaderMarginTop(1.3);
 
       // Do not require the exact shelf card to be mounted before opening it.
       // A populated shelf is lazily built and may sort a just-imported fixture
@@ -383,7 +383,7 @@ void main() {
       debugPrint('[M1] === PAGINATION TESTS PASSED ===');
     } finally {
       if (origMarginTop != null) {
-        await ReaderHibikiSource.instance.setTtuMarginTop(origMarginTop);
+        await ReaderHibikiSource.instance.setReaderMarginTop(origMarginTop);
       }
       FlutterError.onError = oldHandler;
     }

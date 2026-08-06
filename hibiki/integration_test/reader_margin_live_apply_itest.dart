@@ -20,7 +20,7 @@ import 'test_helpers.dart';
 ///
 /// 本测试沿真实产品路径复现：开书 → 读 body 的 computed `padding-top/bottom`
 /// 与 `column-width`（竖排列宽由上下边距驱动）→ 走产品 setter
-/// `setTtuMarginTop/Bottom`（内部 fire `onSettingsChangedLive` = `_applyStylesLive`
+/// `setReaderMarginTop/Bottom`（内部 fire `onSettingsChangedLive` = `_applyStylesLive`
 /// 的同一条实时通道）→ **不重开** → 再读 padding，断言即时变化。
 ///
 /// 对照组：同一路径改 `fontSize`，验证 body `font-size` 是否即时变化，以确认
@@ -168,8 +168,8 @@ void main() {
           // ── Real product path: change top/bottom margin. The setter fires
           //    onSettingsChangedLive == _applyStylesLive (the exact hook the
           //    settings schema onChanged drives via notifyReaderSettingsChanged).
-          await src.setTtuMarginTop(targetMt);
-          await src.setTtuMarginBottom(targetMb);
+          await src.setReaderMarginTop(targetMt);
+          await src.setReaderMarginBottom(targetMb);
           // Let _applyStylesLive + beginStyleReanchor + postFrame commit settle.
           for (int i = 0; i < 12; i++) {
             await tester.pump(const Duration(milliseconds: 250));
@@ -185,7 +185,7 @@ void main() {
           // ── Control: change font size on the same live path.
           final Map<String, dynamic> beforeFont = afterMargin;
           final double beforeFontPx = _px(beforeFont['fontSize']);
-          await src.setTtuFontSize(targetFont);
+          await src.setReaderFontSize(targetFont);
           for (int i = 0; i < 12; i++) {
             await tester.pump(const Duration(milliseconds: 250));
           }
@@ -194,9 +194,9 @@ void main() {
           final double afterFontPx = _px(afterFont['fontSize']);
 
           // Restore global prefs so we don't pollute the user's real settings.
-          await src.setTtuMarginTop(origMt);
-          await src.setTtuMarginBottom(origMb);
-          await src.setTtuFontSize(origFont);
+          await src.setReaderMarginTop(origMt);
+          await src.setReaderMarginBottom(origMb);
+          await src.setReaderFontSize(origFont);
           for (int i = 0; i < 4; i++) {
             await tester.pump(const Duration(milliseconds: 200));
           }
@@ -233,7 +233,7 @@ void main() {
           //    paginated shell lacked beginStyleReanchor entirely).
           expect(styleHasMt, isTrue,
               reason: 'live CSS swap missing: #hoshi-reader-style textContent '
-                  'does not carry ${targetMt}vh after setTtuMarginTop');
+                  'does not carry ${targetMt}vh after setReaderMarginTop');
 
           // 2) Computed body padding-top/bottom must grow by the new margins
           //    WITHOUT reopening the book (delta isolates the margin term).

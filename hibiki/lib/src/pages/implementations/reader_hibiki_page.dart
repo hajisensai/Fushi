@@ -2956,7 +2956,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   Future<void> _applyStylesLive() async {
     if (_controller == null || _settings == null) return;
     _invalidateStyleCache();
-    // _settings 即 ReaderHibikiSource.readerSettings 本体，setTtu* 已在触发本
+    // _settings 即 ReaderHibikiSource.readerSettings 本体，setReaderPref* 已在触发本
     // 回调前写穿同一对象，无需再 _syncSettingsFromHive 自拷贝（旧 TTU 死桥）。
     if (!mounted || _controller == null) return;
     // TODO-756b：把“悬停即查词”开关下发到 WebView 的 window.__hoverAutoLookup（mousemove

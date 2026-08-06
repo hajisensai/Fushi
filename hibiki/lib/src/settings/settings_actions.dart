@@ -308,7 +308,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
       HibikiDesignTokens.of(settingsContext.context);
 
   return AdaptiveSettingsRow(
-    title: t.ttu_theme,
+    title: t.reader_theme,
     // TODO-928: 提示自定义主题「点击切换 · 长按编辑」的发现性文案。
     subtitle: t.custom_theme_long_press_hint,
     icon: Icons.color_lens_outlined,

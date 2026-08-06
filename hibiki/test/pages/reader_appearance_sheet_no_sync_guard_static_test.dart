@@ -10,7 +10,7 @@ void main() {
   // 对象（initState 里 `_settings = ReaderHibikiSource.readerSettings`，二者再无
   // 其它赋值点）。旧 TTU「全局 prefs ↔ profile prefs」双存储时代的
   // _syncSettingsToHive / _syncSettingsFromHive 现在退化成「把对象的值写回它自
-  // 己」的死桥。其中 _syncSettingsToHive 走 ReaderHibikiSource.setTtu*，每个
+  // 己」的死桥。其中 _syncSettingsToHive 走 ReaderHibikiSource.setReaderPref*，每个
   // setter 还会 onSettingsChangedLive?.call() → _applyStylesLive（17 次 DB 读 +
   // CSS 重生成 + WebView evaluateJavascript 往返 + setState）。点「调整」到面板
   // 出现之间，先空跑 17× 的 DB/WebView 风暴 = 慢半拍。
@@ -29,7 +29,7 @@ void main() {
       stripped.contains('_syncSettingsToHive'),
       isFalse,
       reason: '_syncSettingsToHive 是写回自身的死桥，会在开「调整」面板前触发 '
-          '17× setTtu* → onSettingsChangedLive → _applyStylesLive 风暴；勿重新引入',
+          '17× setReaderPref* → onSettingsChangedLive → _applyStylesLive 风暴；勿重新引入',
     );
     expect(
       stripped.contains('_syncSettingsFromHive'),
@@ -47,10 +47,10 @@ void main() {
       '  String _currentChapterLabel() {',
     );
     expect(
-      sheet.contains('.setTtu'),
+      sheet.contains('.setReaderPref'),
       isFalse,
       reason: '面板用 ReaderHibikiSource.instance.ttu* 实时读 _settings；开面板前'
-          '不得再经 setTtu* 写回（会触发 onSettingsChangedLive 的 DB/WebView 风暴）',
+          '不得再经 setReaderPref* 写回（会触发 onSettingsChangedLive 的 DB/WebView 风暴）',
     );
   });
 }

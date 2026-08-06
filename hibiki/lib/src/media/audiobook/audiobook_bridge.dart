@@ -683,7 +683,7 @@ window.__hoshiAnnotate = function(chapterHref) {
     );
   }
 
-  static Future<({int sectionIndex, int sectionCharOffset})?> getTtuCharOffset(
+  static Future<({int sectionIndex, int sectionCharOffset})?> getReaderCharOffset(
     InAppWebViewController controller,
   ) async {
     return null;

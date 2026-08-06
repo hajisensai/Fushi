@@ -109,8 +109,8 @@ void main() {
           await _waitFor(tester, _webViewShown, 'reader WebView');
           await _waitFor(tester, _contentReady, 'hoshi content');
 
-          await ReaderHibikiSource.instance.setTtuWritingMode('vertical-rl');
-          await ReaderHibikiSource.instance.setTtuViewMode('continuous');
+          await ReaderHibikiSource.instance.setReaderWritingMode('vertical-rl');
+          await ReaderHibikiSource.instance.setReaderViewMode('continuous');
           ReaderHibikiSource.onLayoutReloadLive?.call();
           for (int i = 0; i < 16; i++) {
             await tester.pump(const Duration(milliseconds: 250));

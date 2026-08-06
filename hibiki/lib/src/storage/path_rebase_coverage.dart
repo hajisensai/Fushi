@@ -14,6 +14,7 @@ library;
 import 'package:flutter/foundation.dart';
 
 import 'package:hibiki/src/media/media_source.dart' show dbSourcePrefKey;
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 
 /// 一个持久化字段在数据根迁移里的处置。
 enum PathRebaseKind {
@@ -102,7 +103,7 @@ enum PathValueShape {
 class PathRebasePref {
   const PathRebasePref(this.key, this.kind, this.shape, this.reason);
 
-  /// pref key 的**字面值**。经编码器生成的键（dbSourcePrefKey('reader_ttu', ...)）
+  /// pref key 的**字面值**。经编码器生成的键（dbSourcePrefKey(kReaderSourcePersistedKey, ...)）
   /// 也写展开后的字面值，守卫按字面值比对。
   final String key;
 
@@ -430,24 +431,24 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
 /// media_source 的私有 key 前缀格式（守卫 `test/media/db_source_pref_key_test.dart`）。
 final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
   PathRebasePref(
-      dbSourcePrefKey('reader_ttu', 'font_catalog'),
+      dbSourcePrefKey(kReaderSourcePersistedKey, 'font_catalog'),
       PathRebaseKind.documentsRooted,
       PathValueShape.fontCatalogJson,
       '自定义字体 catalog，path 落 <documents>/custom_fonts。无 PrefCodec tag。'),
   PathRebasePref(
-      dbSourcePrefKey('reader_ttu', 'custom_fonts'),
+      dbSourcePrefKey(kReaderSourcePersistedKey, 'custom_fonts'),
       PathRebaseKind.documentsRooted,
       PathValueShape.fontListJson,
       '旧影子字体列表，path 落 <documents>/custom_fonts。'),
   PathRebasePref(
-      dbSourcePrefKey('reader_ttu', 'app_ui_fonts'),
+      dbSourcePrefKey(kReaderSourcePersistedKey, 'app_ui_fonts'),
       PathRebaseKind.documentsRooted,
       PathValueShape.fontListJson,
       '同上（App UI 字体）。'),
-  PathRebasePref(dbSourcePrefKey('reader_ttu', 'dict_fonts'),
+  PathRebasePref(dbSourcePrefKey(kReaderSourcePersistedKey, 'dict_fonts'),
       PathRebaseKind.documentsRooted, PathValueShape.fontListJson, '同上（词典字体）。'),
   PathRebasePref(
-      dbSourcePrefKey('reader_ttu', 'video_sub_fonts'),
+      dbSourcePrefKey(kReaderSourcePersistedKey, 'video_sub_fonts'),
       PathRebaseKind.documentsRooted,
       PathValueShape.fontListJson,
       '同上（视频字幕字体）。'),

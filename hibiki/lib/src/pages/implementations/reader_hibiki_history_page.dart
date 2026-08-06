@@ -1917,7 +1917,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         children: [
           HibikiPlaceholderMessage(
             icon: mediaSource.icon,
-            message: t.ttu_no_books_added,
+            message: t.reader_no_books_added,
           ),
           SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           FilledButton.icon(

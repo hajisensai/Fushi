@@ -36,10 +36,10 @@ void main() {
     await db.close();
   });
 
-  test('(a) 回退路径双写复现：setTtuFontSize 落标签值，ReaderSettings 重启后必须读回', () async {
+  test('(a) 回退路径双写复现：setReaderFontSize 落标签值，ReaderSettings 重启后必须读回', () async {
     // readerSettings == null → 走 MediaSource.setPreference 回退，
     // 落 PrefCodec 标签值到 ReaderSettings 的同一 DB key。
-    await ReaderHibikiSource.instance.setTtuFontSize(30);
+    await ReaderHibikiSource.instance.setReaderFontSize(30);
 
     final Map<String, String> prefs = await db.getAllPrefs();
     expect(prefs['src:reader_ttu:ttu_font_size'], 'd:30.0',

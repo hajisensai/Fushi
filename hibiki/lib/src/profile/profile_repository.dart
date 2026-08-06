@@ -9,6 +9,7 @@ import 'package:hibiki/src/profile/profile_keys.dart';
 import 'package:hibiki/src/sync/backup_service.dart'
     show rebaseFontCatalogJson, rebaseFontListJson;
 import 'package:hibiki/src/sync/pref_redaction_policy.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 
 /// 配置方案导入失败：文件损坏 / 类型魔数不符 / 版本不兼容 / 结构非法。
 ///
@@ -197,7 +198,8 @@ class ProfileRepository {
         case ProfileKeys.categoryReader:
           // 旧快照里 reader 偏好按 MediaSource 命名空间还原；用单一真相编码器
           // 而非硬编码 `src:reader_ttu:` 猜下层私有 key 格式（[dbSourcePrefKey]）。
-          prefMap[dbSourcePrefKey('reader_ttu', row.key)] = row.value;
+          prefMap[dbSourcePrefKey(kReaderSourcePersistedKey, row.key)] =
+              row.value;
         default:
           break;
       }
@@ -430,12 +432,12 @@ class ProfileRepository {
   /// 保留字面量并由 `db_source_pref_key_test` 锁一致）。这里经单一真相编码器
   /// [dbSourcePrefKey] 生成，不再硬编码 `src:reader_ttu:` 格式。
   static final String _fontCatalogPrefKey =
-      dbSourcePrefKey('reader_ttu', 'font_catalog');
+      dbSourcePrefKey(kReaderSourcePersistedKey, 'font_catalog');
   static final List<String> _legacyFontPrefKeys = <String>[
-    dbSourcePrefKey('reader_ttu', 'custom_fonts'),
-    dbSourcePrefKey('reader_ttu', 'app_ui_fonts'),
-    dbSourcePrefKey('reader_ttu', 'dict_fonts'),
-    dbSourcePrefKey('reader_ttu', 'video_sub_fonts'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'custom_fonts'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'app_ui_fonts'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'dict_fonts'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'video_sub_fonts'),
   ];
 
   /// 解析并校验一个导出 JSON 字符串。坏文件 / 魔数不符 / 版本不兼容 / 结构非法

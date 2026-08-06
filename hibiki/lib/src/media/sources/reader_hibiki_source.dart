@@ -148,10 +148,15 @@ class DeleteBookResult {
   final String? failureReason;
 }
 
+/// 阅读器媒体源的**持久化身份键**。字面值冻结（DB pref 前缀 `src:reader_ttu:`、
+/// 历史行的 sourceKey 都用它）；改名迁移（Fushi P2-2）落地前不得更改。
+/// 全仓对该字面量的引用一律走本常量（改名守卫白名单锚点）。
+const String kReaderSourcePersistedKey = 'reader_ttu';
+
 class ReaderHibikiSource extends ReaderMediaSource {
   ReaderHibikiSource._()
       : super(
-          uniqueKey: 'reader_ttu',
+          uniqueKey: kReaderSourcePersistedKey,
           sourceName: t.source_name_bookshelf,
           description: t.source_description_epub,
           icon: Icons.auto_stories_outlined,
@@ -1335,7 +1340,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   double get ttuFontSize =>
       readerSettings?.fontSize ??
       getPreference<double>(key: 'ttu_font_size', defaultValue: 20);
-  Future<void> setTtuFontSize(double v) async {
+  Future<void> setReaderFontSize(double v) async {
     await (readerSettings?.setFontSize(v) ??
         setPreference<double>(key: 'ttu_font_size', value: v));
     onSettingsChangedLive?.call();
@@ -1428,7 +1433,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   double get ttuLineHeight =>
       readerSettings?.lineHeight ??
       getPreference<double>(key: 'ttu_line_height', defaultValue: 1.65);
-  Future<void> setTtuLineHeight(double v) async {
+  Future<void> setReaderLineHeight(double v) async {
     await (readerSettings?.setLineHeight(v) ??
         setPreference<double>(key: 'ttu_line_height', value: v));
     onSettingsChangedLive?.call();
@@ -1440,7 +1445,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
         key: 'ttu_writing_mode',
         defaultValue: 'vertical-rl',
       );
-  Future<void> setTtuWritingMode(String v) async {
+  Future<void> setReaderWritingMode(String v) async {
     await (readerSettings?.setWritingMode(v) ??
         setPreference<String>(key: 'ttu_writing_mode', value: v));
     onSettingsChangedLive?.call();
@@ -1452,7 +1457,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
         key: 'ttu_view_mode',
         defaultValue: 'paginated',
       );
-  Future<void> setTtuViewMode(String v) async {
+  Future<void> setReaderViewMode(String v) async {
     await (readerSettings?.setViewMode(v) ??
         setPreference<String>(key: 'ttu_view_mode', value: v));
     onSettingsChangedLive?.call();
@@ -1464,7 +1469,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
         key: 'ttu_theme',
         defaultValue: 'light-theme',
       );
-  Future<void> setTtuTheme(String v) async {
+  Future<void> setReaderTheme(String v) async {
     await (readerSettings?.setTheme(v) ??
         setPreference<String>(key: 'ttu_theme', value: v));
     onSettingsChangedLive?.call();
@@ -1498,7 +1503,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
-  Future<void> setTtuFuriganaMode(String v) async {
+  Future<void> setReaderFuriganaMode(String v) async {
     await (readerSettings?.setFuriganaMode(v) ??
         setPreference<String>(
           key: 'ttu_furigana_mode',
@@ -1510,7 +1515,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   double get ttuTextIndentation =>
       readerSettings?.textIndentation ??
       getPreference<double>(key: 'ttu_text_indentation', defaultValue: 0);
-  Future<void> setTtuTextIndentation(double v) async {
+  Future<void> setReaderTextIndentation(double v) async {
     await (readerSettings?.setTextIndentation(v) ??
         setPreference<double>(key: 'ttu_text_indentation', value: v));
     onSettingsChangedLive?.call();
@@ -1520,7 +1525,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   double get ttuParagraphSpacing =>
       readerSettings?.paragraphSpacing ??
       getPreference<double>(key: 'ttu_paragraph_spacing', defaultValue: 0);
-  Future<void> setTtuParagraphSpacing(double v) async {
+  Future<void> setReaderParagraphSpacing(double v) async {
     await (readerSettings?.setParagraphSpacing(v) ??
         setPreference<double>(key: 'ttu_paragraph_spacing', value: v));
     onSettingsChangedLive?.call();
@@ -1532,7 +1537,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   bool get ttuBlurImages =>
       readerSettings?.blurImages ??
       getPreference<bool>(key: 'ttu_blur_images', defaultValue: false);
-  Future<void> setTtuBlurImages(bool v) async {
+  Future<void> setReaderBlurImages(bool v) async {
     await (readerSettings?.setBlurImages(v) ??
         setPreference<bool>(key: 'ttu_blur_images', value: v));
     onSettingsChangedLive?.call();
@@ -1544,7 +1549,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
         key: 'ttu_margin_top',
         defaultValue: ReaderSettings.defaultMarginTopPercent,
       );
-  Future<void> setTtuMarginTop(double v) async {
+  Future<void> setReaderMarginTop(double v) async {
     final double normalized = ReaderSettings.normalizeMarginPercent(v);
     await (readerSettings?.setMarginTop(normalized) ??
         setPreference<double>(key: 'ttu_margin_top', value: normalized));
@@ -1557,7 +1562,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
         key: 'ttu_margin_bottom',
         defaultValue: ReaderSettings.defaultMarginBottomPercent,
       );
-  Future<void> setTtuMarginBottom(double v) async {
+  Future<void> setReaderMarginBottom(double v) async {
     final double normalized = ReaderSettings.normalizeMarginPercent(v);
     await (readerSettings?.setMarginBottom(normalized) ??
         setPreference<double>(key: 'ttu_margin_bottom', value: normalized));
@@ -1570,7 +1575,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
         key: 'ttu_margin_left',
         defaultValue: ReaderSettings.defaultMarginLeftPercent,
       );
-  Future<void> setTtuMarginLeft(double v) async {
+  Future<void> setReaderMarginLeft(double v) async {
     final double normalized = ReaderSettings.normalizeMarginPercent(v);
     await (readerSettings?.setMarginLeft(normalized) ??
         setPreference<double>(key: 'ttu_margin_left', value: normalized));
@@ -1583,7 +1588,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
         key: 'ttu_margin_right',
         defaultValue: ReaderSettings.defaultMarginRightPercent,
       );
-  Future<void> setTtuMarginRight(double v) async {
+  Future<void> setReaderMarginRight(double v) async {
     final double normalized = ReaderSettings.normalizeMarginPercent(v);
     await (readerSettings?.setMarginRight(normalized) ??
         setPreference<double>(key: 'ttu_margin_right', value: normalized));
@@ -1593,7 +1598,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   int get ttuPageColumns =>
       readerSettings?.pageColumns ??
       getPreference<int>(key: 'ttu_page_columns', defaultValue: 0);
-  Future<void> setTtuPageColumns(int v) async {
+  Future<void> setReaderPageColumns(int v) async {
     await (readerSettings?.setPageColumns(v) ??
         setPreference<int>(key: 'ttu_page_columns', value: v));
     onSettingsChangedLive?.call();
@@ -1604,7 +1609,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   String get ttuSpreadMode =>
       readerSettings?.spreadMode ??
       getPreference<String>(key: 'ttu_spread_mode', defaultValue: 'off');
-  Future<void> setTtuSpreadMode(String v) async {
+  Future<void> setReaderSpreadMode(String v) async {
     await (readerSettings?.setSpreadMode(v) ??
         setPreference<String>(key: 'ttu_spread_mode', value: v));
     onSettingsChangedLive?.call();
@@ -1613,7 +1618,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   String get ttuSpreadDirection =>
       readerSettings?.spreadDirection ??
       getPreference<String>(key: 'ttu_spread_direction', defaultValue: 'rtl');
-  Future<void> setTtuSpreadDirection(String v) async {
+  Future<void> setReaderSpreadDirection(String v) async {
     await (readerSettings?.setSpreadDirection(v) ??
         setPreference<String>(key: 'ttu_spread_direction', value: v));
     onSettingsChangedLive?.call();
@@ -1622,7 +1627,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   // TODO-1128: merge standalone single-image chapters into the neighbouring
   // text chapter's continuous flow. A *structural* layout key (it changes the
   // virtual-page/spread map and the injected chapter DOM, not just CSS). Mirrors
-  // setTtuSpreadMode/setTtuBlurImages: the setter fires the CSS-live hook only;
+  // setReaderSpreadMode/setReaderBlurImages: the setter fires the CSS-live hook only;
   // the caller (schema UI via notifyReaderLayoutChanged, or the in-reader quick
   // sheet via its layout-key reload) drives the structural reload — which now
   // rebuilds the spread map before reloading. Firing onLayoutReloadLive here too
@@ -1630,7 +1635,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   bool get ttuMergeImagePages =>
       readerSettings?.mergeImagePages ??
       getPreference<bool>(key: 'ttu_merge_image_pages', defaultValue: false);
-  Future<void> setTtuMergeImagePages(bool v) async {
+  Future<void> setReaderMergeImagePages(bool v) async {
     await (readerSettings?.setMergeImagePages(v) ??
         setPreference<bool>(key: 'ttu_merge_image_pages', value: v));
     onSettingsChangedLive?.call();
@@ -1639,7 +1644,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   bool get ttuEnableVerticalFontKerning =>
       readerSettings?.enableVerticalFontKerning ??
       getPreference<bool>(key: 'ttu_vert_kerning', defaultValue: false);
-  Future<void> setTtuEnableVerticalFontKerning(bool v) async {
+  Future<void> setReaderEnableVerticalFontKerning(bool v) async {
     await (readerSettings?.setEnableVerticalFontKerning(v) ??
         setPreference<bool>(key: 'ttu_vert_kerning', value: v));
     onSettingsChangedLive?.call();
@@ -1648,7 +1653,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   bool get ttuEnableFontVPAL =>
       readerSettings?.enableFontVPAL ??
       getPreference<bool>(key: 'ttu_font_vpal', defaultValue: false);
-  Future<void> setTtuEnableFontVPAL(bool v) async {
+  Future<void> setReaderEnableFontVPAL(bool v) async {
     await (readerSettings?.setEnableFontVPAL(v) ??
         setPreference<bool>(key: 'ttu_font_vpal', value: v));
     onSettingsChangedLive?.call();
@@ -1660,7 +1665,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
         key: 'ttu_vert_text_orient',
         defaultValue: 'mixed',
       );
-  Future<void> setTtuVerticalTextOrientation(String v) async {
+  Future<void> setReaderVerticalTextOrientation(String v) async {
     await (readerSettings?.setVerticalTextOrientation(v) ??
         setPreference<String>(key: 'ttu_vert_text_orient', value: v));
     onSettingsChangedLive?.call();
@@ -1669,7 +1674,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   bool get ttuEnableTextJustification =>
       readerSettings?.enableTextJustification ??
       getPreference<bool>(key: 'ttu_text_justify', defaultValue: false);
-  Future<void> setTtuEnableTextJustification(bool v) async {
+  Future<void> setReaderEnableTextJustification(bool v) async {
     await (readerSettings?.setEnableTextJustification(v) ??
         setPreference<bool>(key: 'ttu_text_justify', value: v));
     onSettingsChangedLive?.call();
@@ -1678,7 +1683,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   bool get ttuPrioritizeReaderStyles =>
       readerSettings?.prioritizeReaderStyles ??
       getPreference<bool>(key: 'ttu_reader_styles', defaultValue: false);
-  Future<void> setTtuPrioritizeReaderStyles(bool v) async {
+  Future<void> setReaderPrioritizeReaderStyles(bool v) async {
     await (readerSettings?.setPrioritizeReaderStyles(v) ??
         setPreference<bool>(key: 'ttu_reader_styles', value: v));
     onSettingsChangedLive?.call();

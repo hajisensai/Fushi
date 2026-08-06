@@ -8,6 +8,7 @@ import 'package:hibiki/src/reader/font_catalog.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 
 /// The independent font targets a user can configure (TODO-049 / TODO-864):
 /// 软件系统字体 ([appUi]) / 小说正文字体 ([body]) / 词典字体 ([dictionary]) /
@@ -42,7 +43,7 @@ class ReaderSettings {
 
   /// 经单一真相编码器 [dbSourcePrefKey] 得到 `src:reader_ttu:`；`reader_ttu`
   /// 是冻结的历史 sourceId（旧数据兼容，勿改）。
-  static final String _prefix = dbSourcePrefKey('reader_ttu', '');
+  static final String _prefix = dbSourcePrefKey(kReaderSourcePersistedKey, '');
 
   /// TODO-362（PR#3 响应式页边距）：正文左右两侧默认各留白 2%（百分比 = vw），每行
   /// 因此变窄；上下默认 0%（垂直预留由 chrome inset + 字号决定，见

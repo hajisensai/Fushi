@@ -53,7 +53,7 @@ class SasayakiRematch {
   }) async {
     if (extractDir.isEmpty) {
       HibikiToast.show(
-        msg: t.ttu_not_bound_cannot_rematch,
+        msg: t.reader_not_bound_cannot_rematch,
         severity: ToastSeverity.error,
       );
       return null;
