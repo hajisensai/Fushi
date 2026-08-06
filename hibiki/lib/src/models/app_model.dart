@@ -4273,6 +4273,13 @@ class AppModel with ChangeNotifier {
     MediaItem? item,
     Bookmark? initialBookmarkJump,
   }) async {
+    // 已迁移只读态（Fushi 迁移 P1-4b）：单闸门挡掉全部媒体打开路径——进度/
+    // 统计/制卡的所有写点都在媒体页内，媒体不开则写路径整体不可达（好过在
+    // 每个写点各加一个特例分支）。老版此时只保留「重新导出」通道。
+    if (isMigrationReadonly) {
+      HibikiToast.show(msg: t.migration_readonly_note);
+      return;
+    }
     if (killOnPop) {
       _shouldKillMediaOnPop = true;
     }

@@ -41,6 +41,8 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:hibiki/src/utils/misc/dashboard_remote_merge.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/migration/migration_target_channel.dart';
+import 'package:hibiki/src/pages/implementations/migration_page.dart';
 
 /// 首页仪表盘（阅读向），参考 ReinaManager 首页改造：
 ///
@@ -909,7 +911,14 @@ class _HomeDashboardPageState
         }
         return ListView(
           padding: EdgeInsets.all(tokens.spacing.card),
-          children: <Widget>[body],
+          children: <Widget>[
+            // 已迁移只读态（Fushi 迁移 P1-4）：首屏常驻引导，直到老版被卸掉。
+            if (appModel.isMigrationReadonly) ...<Widget>[
+              _MigrationReadonlyBanner(appModel: appModel),
+              SizedBox(height: tokens.spacing.card),
+            ],
+            body,
+          ],
         );
       },
     );
@@ -2846,6 +2855,49 @@ class _HomeDashboardPageState
             },
           ),
       ],
+    );
+  }
+}
+
+/// 已迁移只读态的首屏常驻引导（Fushi 迁移 P1-4）：数据已导出，引导用户改用
+/// Fushi；保留「重新导出」通道（Fushi 校验缺批时回头重传）。
+class _MigrationReadonlyBanner extends StatelessWidget {
+  const _MigrationReadonlyBanner({required this.appModel});
+
+  final AppModel appModel;
+
+  static const MigrationTargetChannel _channel = MigrationTargetChannel();
+
+  @override
+  Widget build(BuildContext context) {
+    return HibikiCard(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(t.migration_readonly_note),
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                FilledButton.tonal(
+                  onPressed: () => _channel.launchFushi(),
+                  child: Text(t.migration_open_fushi),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => MigrationPage(appModel: appModel),
+                    ),
+                  ),
+                  child: Text(t.migration_reexport),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
