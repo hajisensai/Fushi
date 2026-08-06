@@ -10,7 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 /// TODO-901：Windows 桌面换图标后，把桌面 / 开始菜单的快捷方式（.lnk）图标同步成
 /// 用户当前选的图。纯 Dart 侧负责 PNG → 多尺寸 .ico 编码 + 落盘（带内容哈希文件
-/// 名绕 explorer 图标缓存），再经 `app.hibiki/window` channel 的 `setShortcutIcon`
+/// 名绕 explorer 图标缓存），再经 `app.fushi/window` channel 的 `setShortcutIcon`
 /// 让原生侧 IShellLink 改写 .lnk 的 IconLocation。
 ///
 /// 仅 Windows 有意义；其它平台 [syncWindowsShortcutIcons] 直接 no-op。
@@ -133,7 +133,7 @@ Future<String> writeShortcutIcoFile(Uint8List icoBytes) async {
   return dest.path;
 }
 
-const MethodChannel _windowChannel = MethodChannel('app.hibiki/window');
+const MethodChannel _windowChannel = MethodChannel('app.fushi/window');
 
 /// 换图标后同步桌面 / 开始菜单快捷方式图标（仅 Windows，其它平台 no-op）。
 ///

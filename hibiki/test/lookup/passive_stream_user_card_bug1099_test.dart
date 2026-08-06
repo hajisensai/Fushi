@@ -31,7 +31,7 @@ void main() {
     DesktopForegroundGuard.debugHiddenWindowsRunner = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('app.hibiki/window'),
+      const MethodChannel('app.fushi/window'),
       (MethodCall call) async => null,
     );
   });
@@ -42,7 +42,7 @@ void main() {
     DesktopForegroundGuard.debugHiddenWindowsRunner = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-            const MethodChannel('app.hibiki/window'), null);
+            const MethodChannel('app.fushi/window'), null);
   });
 
   group('keepUserOwnedCardForPassiveStream（面板/瞬态窗共用判据）', () {

@@ -165,7 +165,7 @@ void main() {
     test('permissionDenied maps to the localized actionable toast', () {
       final MineOutcome outcome = MineOutcome.failure(
         'AnkiDroid: Permission not granted for: '
-        'CardContentProvider.query /decks (app.hibiki.reader)',
+        'CardContentProvider.query /decks (app.fushi.reader)',
         errorCode: AnkiErrorCode.permissionDenied,
       );
       final String msg = logMineFailure(outcome);

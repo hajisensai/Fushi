@@ -9,7 +9,7 @@ import 'package:flutter/services.dart';
 class WindowCaptionChannel {
   WindowCaptionChannel._();
 
-  static const MethodChannel _channel = MethodChannel('app.hibiki/window');
+  static const MethodChannel _channel = MethodChannel('app.fushi/window');
 
   static int? _lastCaption;
   static int? _lastText;

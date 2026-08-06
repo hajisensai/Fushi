@@ -26,7 +26,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const MethodChannel channel =
-      MethodChannel('app.hibiki.reader/global_lookup');
+      MethodChannel('app.fushi.reader/global_lookup');
   const StandardMethodCodec codec = StandardMethodCodec();
   final TestDefaultBinaryMessenger messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;

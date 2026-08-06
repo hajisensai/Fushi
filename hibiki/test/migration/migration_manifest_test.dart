@@ -45,7 +45,7 @@ void main() {
       const MigrationManifest m = MigrationManifest(
         version: MigrationManifest.currentVersion,
         batch: 'core',
-        sourcePackage: 'app.hibiki.reader',
+        sourcePackage: 'app.fushi.reader',
         sourceAppVersion: '1.2.3+45',
         sourceSchemaVersion: 62,
         createdAt: 1754500000000,
@@ -126,7 +126,7 @@ void main() {
       final MigrationManifest m = await MigrationManifest.computeForArchive(
         archivePath: zipPath,
         batchName: 'books',
-        sourcePackage: 'app.hibiki.reader',
+        sourcePackage: 'app.fushi.reader',
         sourceAppVersion: '9.9.9',
         nowMs: 42,
         archiveContainsDb: true,
@@ -165,7 +165,7 @@ void main() {
       final MigrationExporter exporter = MigrationExporter(
         backupService: _NeverCalledBackupService(),
         transferDir: tmp,
-        sourcePackage: 'app.hibiki.reader',
+        sourcePackage: 'app.fushi.reader',
         sourceAppVersion: 'v',
         nowMs: () => 0,
       );

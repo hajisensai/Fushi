@@ -14,7 +14,7 @@
 // The fix is to remove the special case instead of forwarding keys one by one:
 // dissociate the IME context while nothing editable has focus, and associate it
 // back the moment a text field takes focus. Dart owns focus knowledge and drives
-// this through the app.hibiki/windows_ime_guard channel.
+// this through the app.fushi/windows_ime_guard channel.
 //
 // Win32 contract (same one Chromium's InputMethodWinImm32 uses):
 //   disable -> ImmAssociateContextEx(hwnd, nullptr, 0)

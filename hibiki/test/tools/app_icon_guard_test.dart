@@ -50,7 +50,7 @@ void main() {
             '.MainActivityHibikiTransparent 应引用 launcher_icon_minimal（透明 wordmark）');
     // 透明档在原生映射与预设映射里都可选。
     final String helper = read(
-        'android/app/src/main/java/app/hibiki/reader/IconSwitchHelper.java');
+        'android/app/src/main/java/app/fushi/reader/IconSwitchHelper.java');
     expect(helper.contains('"hibiki_transparent"'), isTrue,
         reason: 'IconSwitchHelper 应把 hibiki_transparent 列为可选档');
     expect(helper.contains('.MainActivityHibikiTransparent'), isTrue);
@@ -149,7 +149,7 @@ void main() {
 
     // IconSwitchHelper：不再把 hibiki_minimal 列为可选项，但提供迁移逻辑。
     final String helper = read(
-        'android/app/src/main/java/app/hibiki/reader/IconSwitchHelper.java');
+        'android/app/src/main/java/app/fushi/reader/IconSwitchHelper.java');
     expect(helper.contains('"hibiki_minimal"'), isFalse,
         reason: 'hibiki_minimal 不应再出现在可选 ALIAS_KEYS 中');
     expect(helper.contains('migrateRetiredMinimalIfEnabled'), isTrue,

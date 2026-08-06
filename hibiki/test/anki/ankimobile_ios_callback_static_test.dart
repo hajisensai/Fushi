@@ -6,7 +6,7 @@ void main() {
   test('iOS declares Hibiki and Anki URL schemes for AnkiMobile callbacks', () {
     final plist = File('ios/Runner/Info.plist').readAsStringSync();
 
-    expect(plist, contains('<string>hibiki</string>'));
+    expect(plist, contains('<string>fushi</string>'));
     expect(plist, contains('<key>LSApplicationQueriesSchemes</key>'));
     expect(plist, contains('<string>anki</string>'));
   });
@@ -14,10 +14,10 @@ void main() {
   test('AppDelegate exposes AnkiMobile pasteboard and URL callbacks', () {
     final src = File('ios/Runner/AppDelegate.swift').readAsStringSync();
 
-    expect(src, contains('app.hibiki.reader/ankimobile'));
+    expect(src, contains('app.fushi.reader/ankimobile'));
     expect(src, contains('consumeInfoForAddingPasteboard'));
     expect(src, contains('net.ankimobile.json'));
-    expect(src, contains('app.hibiki.reader/url_events'));
+    expect(src, contains('app.fushi.reader/url_events'));
     expect(src, contains('override func application('));
     expect(src, contains('open url: URL'));
   });

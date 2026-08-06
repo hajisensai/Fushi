@@ -144,7 +144,7 @@ Future<DownloadSaveRootIssue?> checkDownloadSaveRoot(String path) async {
   }
   final File probe = File(p.join(trimmed, '.hibiki_write_probe'));
   try {
-    await probe.writeAsString('hibiki', flush: true);
+    await probe.writeAsString('fushi', flush: true);
   } on FileSystemException {
     return DownloadSaveRootIssue.notWritable;
   } finally {

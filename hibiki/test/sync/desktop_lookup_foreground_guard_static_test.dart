@@ -242,7 +242,7 @@ void main() {
         what: 'lib/src 下的 .dart', atLeast: 750, measured: 930);
     expect(offenders, isEmpty,
         reason: 'Only WindowCaptionChannel may invoke clearTaskbarFlash on the '
-            'app.hibiki/window channel.');
+            'app.fushi/window channel.');
   });
 
   // TODO-615：bringPendingLookupToFront 唤前台路径必须主动 clearTaskbarFlash——

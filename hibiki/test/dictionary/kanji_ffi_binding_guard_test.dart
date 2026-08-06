@@ -79,7 +79,7 @@ void main() {
     expect(jni.contains('nativeAddKanjiDict'), isTrue);
     expect(jni.contains('nativeQueryKanjiJson'), isTrue);
     final String bridge = read(
-        '../hibiki/android/app/src/main/java/app/hibiki/reader/HoshiBridge.kt');
+        '../hibiki/android/app/src/main/java/app/fushi/reader/HoshiBridge.kt');
     expect(bridge.contains('nativeAddKanjiDict'), isTrue);
     expect(bridge.contains('nativeQueryKanjiJson'), isTrue);
     expect(bridge.contains('fun queryKanjiJson('), isTrue);

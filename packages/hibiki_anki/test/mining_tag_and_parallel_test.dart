@@ -122,7 +122,7 @@ void main() {
 
     test('AnkiDroid backend appends hibiki identically', () async {
       TestWidgetsFlutterBinding.ensureInitialized();
-      const MethodChannel channel = MethodChannel('app.hibiki.reader/anki');
+      const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
       final List<List<String>> addedTags = <List<String>>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
@@ -174,7 +174,7 @@ void main() {
     Future<List<String>> tagsForDroid(String configured,
         {AnkiMiningSource? source}) async {
       TestWidgetsFlutterBinding.ensureInitialized();
-      const MethodChannel channel = MethodChannel('app.hibiki.reader/anki');
+      const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
       final List<List<String>> addedTags = <List<String>>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
@@ -280,7 +280,7 @@ void main() {
       bool includeCategory = true,
     }) async {
       TestWidgetsFlutterBinding.ensureInitialized();
-      const MethodChannel channel = MethodChannel('app.hibiki.reader/anki');
+      const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
       final List<List<String>> addedTags = <List<String>>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
@@ -407,7 +407,7 @@ void main() {
       String? bookTitleTag,
     }) async {
       TestWidgetsFlutterBinding.ensureInitialized();
-      const MethodChannel channel = MethodChannel('app.hibiki.reader/anki');
+      const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
       final List<List<String>> addedTags = <List<String>>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {

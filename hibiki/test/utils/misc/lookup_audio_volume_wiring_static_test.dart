@@ -100,7 +100,7 @@ void main() {
       final String desktop =
           _read('lib/src/utils/misc/desktop_audio_playback.dart');
       final String android = _read(
-        'android/app/src/main/java/app/hibiki/reader/TtsChannelHandler.java',
+        'android/app/src/main/java/app/fushi/reader/TtsChannelHandler.java',
       );
 
       expect(desktop, contains('_player.setVolume(volume.clamp(0.0, 1.0))'));

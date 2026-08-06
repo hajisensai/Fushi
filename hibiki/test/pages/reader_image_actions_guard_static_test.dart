@@ -150,7 +150,7 @@ void main() {
     expect(constants, contains('clipboardImage'));
     expect(constants, contains("MethodChannel('\$_prefix/clipboard_image')"));
     expect(header, contains('clipboard_image_channel_'));
-    expect(runner, contains('"app.hibiki.reader/clipboard_image"'));
+    expect(runner, contains('"app.fushi.reader/clipboard_image"'));
     expect(runner, contains('copyImageFile'));
     expect(runner, contains('CopyImageFileToClipboard'));
     expect(runner, contains('CF_DIB'));

@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   final java = File(
-    'android/app/src/main/java/app/hibiki/reader/AnkiChannelHandler.java',
+    'android/app/src/main/java/app/fushi/reader/AnkiChannelHandler.java',
   ).readAsStringSync();
   final repo = File(
     '../packages/hibiki_anki/lib/src/ankidroid/anki_repository.dart',

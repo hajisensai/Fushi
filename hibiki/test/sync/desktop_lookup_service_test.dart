@@ -20,12 +20,12 @@ void main() {
     DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = false;
     DesktopForegroundGuard.debugHiddenWindowsRunner = false;
     // TODO-615: bringPendingLookupToFront 现在会经 WindowCaptionChannel 下发
-    // clearTaskbarFlash 到 app.hibiki/window。在 Windows 测试宿主上，未 mock 的平台
+    // clearTaskbarFlash 到 app.fushi/window。在 Windows 测试宿主上，未 mock 的平台
     // 通道 invokeMethod 永不完成（无平台实现应答）会让 await 挂死。默认应答该通道
     // （返回 null = 立即完成）；想观察该调用的用例可各自再覆盖 handler 收集调用。
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('app.hibiki/window'),
+      const MethodChannel('app.fushi/window'),
       (MethodCall call) async => null,
     );
   });
@@ -39,7 +39,7 @@ void main() {
         .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-            const MethodChannel('app.hibiki/window'), null);
+            const MethodChannel('app.fushi/window'), null);
   });
 
   test('submitText sets pendingText and notifies, deduped', () {
@@ -459,7 +459,7 @@ void main() {
   // TODO-615 方案A：剪贴板/热键查词在主窗已前台时仍误触 SetForegroundWindow 退化成
   // 任务栏 flash（TODO-341）。判前台守卫在前台判据抖动时可能漏判而留下残留高亮，
   // 升级为「已前台 early-return 前主动 clearTaskbarFlash 一次」幂等熄灭残留高亮。
-  // clearTaskbarFlash 只走 app.hibiki/window 单一封装（WindowCaptionChannel）。
+  // clearTaskbarFlash 只走 app.fushi/window 单一封装（WindowCaptionChannel）。
   testWidgets(
       'focused window clears taskbar flash before no-op return (TODO-615)',
       (WidgetTester tester) async {
@@ -474,7 +474,7 @@ void main() {
       if (call.method == 'isFocused') return true; // 窗口已在前台
       return null;
     });
-    messenger.setMockMethodCallHandler(const MethodChannel('app.hibiki/window'),
+    messenger.setMockMethodCallHandler(const MethodChannel('app.fushi/window'),
         (MethodCall call) async {
       captionCalls.add(call.method);
       return null;
@@ -514,7 +514,7 @@ void main() {
       if (call.method == 'isFocused') return false; // 不在前台 → 走唤前台路径
       return null;
     });
-    messenger.setMockMethodCallHandler(const MethodChannel('app.hibiki/window'),
+    messenger.setMockMethodCallHandler(const MethodChannel('app.fushi/window'),
         (MethodCall call) async {
       captionCalls.add(call.method);
       return null;

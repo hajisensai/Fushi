@@ -17,7 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// （真机验收另行）。这条守卫同时覆盖复用 [BaseFloatingService] 的 FloatingDictService。
 void main() {
   const String base =
-      '../hibiki/android/app/src/main/java/app/hibiki/reader/BaseFloatingService.java';
+      '../hibiki/android/app/src/main/java/app/fushi/reader/BaseFloatingService.java';
 
   String read() => File(base).readAsStringSync().replaceAll('\r\n', '\n');
 

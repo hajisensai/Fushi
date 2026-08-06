@@ -12,7 +12,7 @@ class QbConnectionConfig {
     this.baseUrl = '',
     this.username = '',
     this.password = '',
-    this.category = 'hibiki',
+    this.category = 'fushi',
     this.downloadLimitKbps = 0,
     this.uploadLimitKbps = 0,
     this.limitLocalPeers = false,
@@ -48,7 +48,7 @@ class QbConnectionConfig {
   static const int encryptionDisabled = 2;
 
   /// 本应用管理的下载在 qBittorrent 里归入的默认分类名。
-  static const String defaultCategory = 'hibiki';
+  static const String defaultCategory = 'fushi';
 
   /// 后端标识：外接 qBittorrent WebUI。
   static const String backendQbittorrent = 'qbittorrent';

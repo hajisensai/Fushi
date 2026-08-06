@@ -3144,5 +3144,17 @@
   "migration_export_failed": "导出失败：$error",
   "migration_readonly_note": "数据已导出到 Fushi。本应用已进入只读模式：请改用 Fushi 阅读和制卡。若 Fushi 校验发现缺失，可随时在此重新导出。",
   "migration_reexport": "重新导出",
-  "migration_batch_core_label": "设置、进度与统计"
+  "migration_batch_core_label": "设置、进度与统计",
+  "migration_import_entry": "从 Hibiki 导入",
+  "migration_import_entry_subtitle": "导入旧版 Hibiki 导出的数据",
+  "migration_import_detected": "检测到 Hibiki 迁移数据，现在导入？",
+  "migration_import_start": "开始导入",
+  "migration_import_running": "正在导入 $batch…",
+  "migration_import_verify_failed": "$batch 校验未通过，已保留待重传：$detail",
+  "migration_import_counts_failed": "导入数据不完整：$detail。请回 Hibiki 重新导出缺失部分后再导入。",
+  "migration_import_success": "导入完成，校验通过。",
+  "migration_import_nothing": "中转目录中没有找到迁移数据。",
+  "migration_uninstall_prompt": "迁移完成。卸载旧版 Hibiki？",
+  "migration_uninstall_button": "卸载 Hibiki",
+  "migration_uninstall_still_installed": "旧版 Hibiki 仍安装在设备上，可随时卸载。"
 }

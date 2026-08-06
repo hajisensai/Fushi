@@ -170,7 +170,7 @@ class _ConfiguredAnkiConnectRepository extends AnkiConnectRepository {
 
 // ── AnkiDroid configured repo (loadSettings stub; channel mocked per-test) ────
 
-const MethodChannel _droidChannel = MethodChannel('app.hibiki.reader/anki');
+const MethodChannel _droidChannel = MethodChannel('app.fushi.reader/anki');
 
 class _ConfiguredAnkiRepository extends AnkiRepository {
   _ConfiguredAnkiRepository(this.settings);

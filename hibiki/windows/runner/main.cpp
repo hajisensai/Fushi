@@ -134,7 +134,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       // CLI `hibiki.exe "%1"`），必须把路径**转交**首实例，否则第二实例只前置窗口
       // 就退出 → 视频路径整个丢掉、首实例从不知情 →「点了没反应」。用 WM_COPYDATA
       // 把 UTF-8 路径字节跨进程发给首实例的窗口过程（见 flutter_window.cpp 的
-      // WM_COPYDATA 处理 → app.hibiki/external_video MethodChannel →
+      // WM_COPYDATA 处理 → app.fushi/external_video MethodChannel →
       // _openExternalVideo）。无文件参数（纯第二次启动）则只前置 + 退出。
       const std::wstring file_arg = FirstFileArgFromCommandLine();
       if (!file_arg.empty()) {

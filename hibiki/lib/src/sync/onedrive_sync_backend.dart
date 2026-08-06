@@ -31,7 +31,7 @@ class OneDriveSyncBackend extends SyncBackend
   /// backend cannot authenticate, so the UI hides it from the picker.
   static bool get isConfigured => !_clientId.startsWith('YOUR_');
 
-  static const _redirectUri = 'hibiki://auth/onedrive';
+  static const _redirectUri = 'fushi://auth/onedrive';
   static const _tokenEndpoint =
       'https://login.microsoftonline.com/common/oauth2/v2.0/token';
   static const _authorizeEndpoint =

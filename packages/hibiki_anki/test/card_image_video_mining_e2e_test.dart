@@ -250,7 +250,7 @@ void main() {
   group('AnkiDroid video mining: {book-cover} Picture 也产 GIF (TODO-1298)', () {
     Future<String?> pictureFor(String pictureHandlebar) async {
       TestWidgetsFlutterBinding.ensureInitialized();
-      const MethodChannel channel = MethodChannel('app.hibiki.reader/anki');
+      const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
       final List<List<String>> addedFieldArrays = <List<String>>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {

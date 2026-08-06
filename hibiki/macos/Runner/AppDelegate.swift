@@ -9,7 +9,7 @@ class AppDelegate: FlutterAppDelegate {
   override func applicationDidFinishLaunching(_ notification: Notification) {
     if let controller = mainFlutterWindow?.contentViewController as? FlutterViewController {
       let channel = FlutterMethodChannel(
-        name: "app.hibiki/data_root_access",
+        name: "app.fushi/data_root_access",
         binaryMessenger: controller.engine.binaryMessenger)
       channel.setMethodCallHandler { [weak self] call, result in
         self?.handleDataRootAccess(call, result: result)
@@ -23,7 +23,7 @@ class AppDelegate: FlutterAppDelegate {
       // sentence trimmer. A failure returns null so Dart falls back to the
       // clipboard capture (never break the existing lookup path).
       let foregroundSelectionChannel = FlutterMethodChannel(
-        name: "app.hibiki.reader/foreground_selection",
+        name: "app.fushi.reader/foreground_selection",
         binaryMessenger: controller.engine.binaryMessenger)
       foregroundSelectionChannel.setMethodCallHandler { call, result in
         AppDelegate.handleForegroundSelection(call, result: result)

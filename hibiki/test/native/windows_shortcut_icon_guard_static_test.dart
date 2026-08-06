@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// TODO-901 源码守卫：Windows 桌面换图标后同步 .lnk 快捷方式图标的链路在位。
 ///
 /// 链路：Dart `syncWindowsShortcutIcons` 编码多尺寸 .ico + 落盘 → 经
-/// `app.hibiki/window` channel 的 `setShortcutIcon`（入参 key `iconPath`）→ 原生
+/// `app.fushi/window` channel 的 `setShortcutIcon`（入参 key `iconPath`）→ 原生
 /// `ApplyShortcutIcon` 用 IShellLink + IPersistFile 改写桌面 / 开始菜单 .lnk 的
 /// IconLocation。删掉任一环即红。
 void main() {
@@ -76,8 +76,8 @@ void main() {
 
   test('Dart syncWindowsShortcutIcons 经 setShortcutIcon 用 iconPath 下发', () {
     final String src = read('lib/src/utils/misc/shortcut_icon_sync.dart');
-    expect(src.contains("MethodChannel('app.hibiki/window')"), isTrue,
-        reason: '必须复用 app.hibiki/window channel');
+    expect(src.contains("MethodChannel('app.fushi/window')"), isTrue,
+        reason: '必须复用 app.fushi/window channel');
     expect(src.contains("'setShortcutIcon'"), isTrue,
         reason: '必须调 setShortcutIcon method');
     expect(src.contains("'iconPath'"), isTrue,

@@ -18,11 +18,11 @@ typedef _AnkiMobileLocalMediaRefBuilder = Future<String?> Function(
 
 const String ankiMobileInfoCallback = 'anki://x-callback-url/infoForAdding';
 const String ankiMobileAddNoteCallback = 'anki://x-callback-url/addnote';
-const String hibikiAnkiFetchCallback = 'hibiki://ankiFetch';
-const String hibikiAnkiSuccessCallback = 'hibiki://ankiSuccess';
+const String hibikiAnkiFetchCallback = 'fushi://ankiFetch';
+const String hibikiAnkiSuccessCallback = 'fushi://ankiSuccess';
 
 const MethodChannel _ankiMobileChannel =
-    MethodChannel('app.hibiki.reader/ankimobile');
+    MethodChannel('app.fushi.reader/ankimobile');
 
 String _encodeAnkiMobileQueryComponent(String value) =>
     Uri.encodeComponent(value);

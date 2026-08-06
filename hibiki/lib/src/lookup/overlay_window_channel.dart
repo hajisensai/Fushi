@@ -3,7 +3,7 @@
 // as a zero-churn delegating facade for the 1700-line controller) so the
 // SECOND window instance — the persistent clipboard panel — reuses the exact
 // same method contract on its own MethodChannel
-// (app.hibiki.reader/clipboard_panel) instead of copy-pasting ~250 lines.
+// (app.fushi.reader/clipboard_panel) instead of copy-pasting ~250 lines.
 //
 // Native counterpart: windows/runner/global_lookup_window.cpp +
 // FlutterWindow::RegisterGlobalLookupChannel / RegisterClipboardPanelChannel.

@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="app.hibiki.reader">
+    package="app.fushi.reader">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
@@ -12,7 +12,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <application
-        android:label="Hibiki"
+        android:label="Fushi"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon_squircle"
         android:networkSecurityConfig="@xml/network_security_config"
@@ -42,7 +42,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="hibiki" android:host="auth" />
+                <data android:scheme="fushi" android:host="auth" />
             </intent-filter>
         </activity>
 
@@ -51,7 +51,7 @@
             android:name=".MainActivityDefault"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/launcher_icon_squircle"
-            android:label="Hibiki"
+            android:label="Fushi"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
@@ -64,10 +64,10 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityHibikiFull"
+            android:name=".MainActivityFushiFull"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/launcher_icon_full"
-            android:label="Hibiki"
+            android:label="Fushi"
             android:enabled="false"
             android:exported="true">
             <intent-filter>
@@ -83,10 +83,10 @@
              legacy png 也透明。默认档已改用不透明白 squircle（任意壁纸可见），此档保留
              给偏好极简透明观感的用户。 -->
         <activity-alias
-            android:name=".MainActivityHibikiTransparent"
+            android:name=".MainActivityFushiTransparent"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/launcher_icon_minimal"
-            android:label="Hibiki"
+            android:label="Fushi"
             android:enabled="false"
             android:exported="true">
             <intent-filter>
@@ -104,10 +104,10 @@
              IconSwitchHelper.getCurrentIcon 会在首次读取时把这类老用户安全迁回
              .MainActivityDefault（图标字节相同，无视觉变化）。迁移普及后方可删除。 -->
         <activity-alias
-            android:name=".MainActivityHibikiMinimal"
+            android:name=".MainActivityFushiMinimal"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/launcher_icon_minimal"
-            android:label="Hibiki"
+            android:label="Fushi"
             android:enabled="false"
             android:exported="true">
             <intent-filter>
@@ -124,7 +124,7 @@
             android:name=".PopupDictActivity"
             android:theme="@style/PopupDictTheme"
             android:process=":popup"
-            android:taskAffinity="app.hibiki.reader.popup"
+            android:taskAffinity="app.fushi.reader.popup"
             android:excludeFromRecents="true"
             android:autoRemoveFromRecents="true"
             android:launchMode="singleTop"
@@ -138,7 +138,7 @@
             android:name=".PopupDictFlutterActivity"
             android:theme="@style/PopupDictTheme"
             android:process=":popup"
-            android:taskAffinity="app.hibiki.reader.popup"
+            android:taskAffinity="app.fushi.reader.popup"
             android:excludeFromRecents="true"
             android:autoRemoveFromRecents="true"
             android:launchMode="singleTop"
@@ -164,7 +164,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="hibiki" android:host="lookup" />
+                <data android:scheme="fushi" android:host="lookup" />
             </intent-filter>
         </activity>
         <service android:name="com.ryanheise.audioservice.AudioService"
@@ -197,13 +197,13 @@
             </intent-filter>
             <meta-data
                 android:name="android.accessibilityservice"
-                android:resource="@xml/hibiki_dict_accessibility" />
+                android:resource="@xml/fushi_dict_accessibility" />
         </service>
         -->
         <service android:name=".FloatingDictTile"
             android:exported="true"
             android:label="Dictionary"
-            android:icon="@drawable/ic_stat_hibiki"
+            android:icon="@drawable/ic_stat_fushi"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
@@ -216,7 +216,7 @@
         </intent-filter>
         </receiver> 
         <provider
-            android:name="app.hibiki.reader.HibikiFileProvider"
+            android:name="app.fushi.reader.FushiFileProvider"
             android:authorities="${applicationId}.provider"
             android:exported="false"
             android:grantUriPermissions="true">
@@ -258,6 +258,6 @@
     <queries>
         <package android:name="com.ichi2.anki" />
         <!-- Hibiki→Fushi 迁移：Android 11+ 包可见性，不声明则 getPackageInfo 查不到新包 -->
-        <package android:name="app.fushi.reader" />
+        <package android:name="app.hibiki.reader" />
     </queries>
 </manifest>

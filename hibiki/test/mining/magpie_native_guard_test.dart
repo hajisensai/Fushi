@@ -54,7 +54,7 @@ void main() {
     test('channel 名与 Dart 侧一致（两侧都扫，改一边就红）', () {
       // 这条以前只扫 native：只改 Dart 侧字面量的话，channel 名对不上、事件永远收
       // 不到，而测试全绿。两侧都断言才叫「守卫」。
-      const String channelName = 'app.hibiki.reader/magpie';
+      const String channelName = 'app.fushi.reader/magpie';
       const String methodName = 'onScalingChanged';
       expect(source.contains(channelName), isTrue);
       expect(source.contains(methodName), isTrue);

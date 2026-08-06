@@ -12,7 +12,7 @@ import '../ankiconnect/ankiconnect_repository.dart';
 import '../lapis_note_type.dart';
 
 class AnkiRepository extends BaseAnkiRepository {
-  static const _channel = MethodChannel('app.hibiki.reader/anki');
+  static const _channel = MethodChannel('app.fushi.reader/anki');
   static const _legacyDeckKey = 'last_selected_deck';
 
   @override

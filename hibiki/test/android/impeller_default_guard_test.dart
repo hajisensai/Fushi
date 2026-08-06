@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// `: true`（=又把全体 Android 用户翻到 Skia，牺牲多数人性能）。
 void main() {
   final File mainActivity = File(
-    'android/app/src/main/java/app/hibiki/reader/MainActivity.java',
+    'android/app/src/main/java/app/fushi/reader/MainActivity.java',
   );
 
   late final String src;

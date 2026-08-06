@@ -120,7 +120,7 @@ gradle.taskGraph.whenReady { taskGraph ->
 }
 
 android {
-    namespace "app.hibiki.reader"
+    namespace "app.fushi.reader"
     compileSdk 36
     ndkVersion '28.2.13676358'
 
@@ -140,7 +140,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "app.hibiki.reader"
+        applicationId "app.fushi.reader"
         minSdkVersion 24
         targetSdk 35
         versionCode flutterVersionCode.toInteger()

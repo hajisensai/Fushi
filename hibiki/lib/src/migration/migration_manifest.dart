@@ -38,7 +38,7 @@ class MigrationManifest {
   /// 批次名（`MigrationBatch.name`）。
   final String batch;
 
-  /// 导出方包名（`app.hibiki.reader`；用于导入侧甄别来源）。
+  /// 导出方包名（`app.fushi.reader`；用于导入侧甄别来源）。
   final String sourcePackage;
 
   /// 导出方 app 版本字符串。

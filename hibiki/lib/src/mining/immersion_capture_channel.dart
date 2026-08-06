@@ -17,7 +17,7 @@ import 'package:hibiki_anki/hibiki_anki.dart' show AnkiMiningSource;
 /// native 缺失（未构建 / 非 Windows）时 [capture] 返回 error，seam 降级为 2A 截图卡。
 abstract final class ImmersionCaptureChannel {
   static const MethodChannel _channel =
-      MethodChannel('app.hibiki.reader/immersion_capture');
+      MethodChannel('app.fushi.reader/immersion_capture');
 
   static Future<ImmersionCaptureResult> capture({
     required String netflixVideoId,

@@ -8,7 +8,7 @@ import 'package:hibiki/src/pages/implementations/floating_dict_page.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 
-const _overlayChannel = MethodChannel('app.hibiki.reader/floating_overlay');
+const _overlayChannel = MethodChannel('app.fushi.reader/floating_overlay');
 
 @pragma('vm:entry-point')
 void floatingDictMain() {

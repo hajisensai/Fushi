@@ -3144,5 +3144,17 @@
   "migration_export_failed": "Export failed: $error",
   "migration_readonly_note": "Your data has been exported to Fushi. This app is now read-only: use Fushi for reading and mining. You can re-export at any time if Fushi reports missing data.",
   "migration_reexport": "Re-export",
-  "migration_batch_core_label": "Settings, progress & statistics"
+  "migration_batch_core_label": "Settings, progress & statistics",
+  "migration_import_entry": "Import from Hibiki",
+  "migration_import_entry_subtitle": "Import data exported by the old Hibiki app",
+  "migration_import_detected": "Hibiki migration data detected. Import it now?",
+  "migration_import_start": "Start import",
+  "migration_import_running": "Importing $batch…",
+  "migration_import_verify_failed": "$batch failed verification and was kept for re-export: $detail",
+  "migration_import_counts_failed": "Imported data is incomplete: $detail. Re-export the missing parts from Hibiki, then import again.",
+  "migration_import_success": "Import complete and verified.",
+  "migration_import_nothing": "No migration data found in the transfer folder.",
+  "migration_uninstall_prompt": "Migration finished. Uninstall the old Hibiki app?",
+  "migration_uninstall_button": "Uninstall Hibiki",
+  "migration_uninstall_still_installed": "Hibiki is still installed. You can uninstall it any time."
 }

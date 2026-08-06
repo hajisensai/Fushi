@@ -56,7 +56,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const MethodChannel channel =
-      MethodChannel('app.hibiki.reader/gal_hook_text');
+      MethodChannel('app.fushi.reader/gal_hook_text');
   late TexthookerService textService;
   late GalHookSessionController session;
   late GalHookTextOverlayController controller;

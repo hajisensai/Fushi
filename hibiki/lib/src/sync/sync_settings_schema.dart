@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/migration_page.dart';
+import 'package:hibiki/src/pages/implementations/migration_import_page.dart';
+import 'package:hibiki/src/migration/migration_target_channel.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_schema_lookup.dart'
@@ -341,22 +343,34 @@ SettingsDestination buildSyncBackupDestination() {
             builder: (SettingsContext ctx) =>
                 _BackupImportWidget(settingsContext: ctx),
           ),
-          // Hibiki→Fushi 跨包名迁移入口（改名迁移计划 P1-3）；仅 Android——
-          // 桌面端数据目录可直接搬迁，不走导出/导入通道。
+          // Hibiki→Fushi 跨包名迁移入口（改名迁移计划 P1-3/P2-2）；仅 Android——
+          // 桌面端数据目录可直接搬迁，不走导出/导入通道。同一份代码按**运行时
+          // 包名**切方向：老包（app.hibiki.reader，过渡版基线）显示导出入口，
+          // Fushi 显示导入入口，基线分支无需分叉。
           if (!kIsWeb && Platform.isAndroid)
             SettingsCustomItem(
               id: 'sync.migration_to_fushi',
               icon: Icons.drive_file_move_outlined,
-              builder: (SettingsContext ctx) => AdaptiveSettingsRow(
-                title: t.migration_settings_entry,
-                subtitle: t.migration_settings_entry_subtitle,
-                icon: Icons.drive_file_move_outlined,
-                onTap: () => Navigator.of(ctx.context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => MigrationPage(appModel: ctx.appModel),
+              builder: (SettingsContext ctx) {
+                final bool runningAsLegacy =
+                    ctx.appModel.packageInfo.packageName == kHibikiPackageName;
+                return AdaptiveSettingsRow(
+                  title: runningAsLegacy
+                      ? t.migration_settings_entry
+                      : t.migration_import_entry,
+                  subtitle: runningAsLegacy
+                      ? t.migration_settings_entry_subtitle
+                      : t.migration_import_entry_subtitle,
+                  icon: Icons.drive_file_move_outlined,
+                  onTap: () => Navigator.of(ctx.context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => runningAsLegacy
+                          ? MigrationPage(appModel: ctx.appModel)
+                          : MigrationImportPage(appModel: ctx.appModel),
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
         ],
       ),

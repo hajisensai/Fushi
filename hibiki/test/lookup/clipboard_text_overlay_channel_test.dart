@@ -9,7 +9,7 @@ import 'package:hibiki/src/platform/clipboard_text_overlay_channel.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const String channelName = 'app.hibiki.reader/clipboard_text';
+  const String channelName = 'app.fushi.reader/clipboard_text';
   const MethodCodec codec = StandardMethodCodec();
 
   setUp(() {

@@ -94,6 +94,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:hibiki/src/migration/migration_readonly.dart';
+import 'package:hibiki/src/migration/migration_target_channel.dart';
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/models/dictionary_import_manager.dart';
 import 'package:hibiki/src/models/file_export_manager.dart';
@@ -894,7 +895,11 @@ class AppModel with ChangeNotifier {
 
   /// 已迁移只读态（Fushi 迁移 P1-4，见 [kMigrationReadonlyPrefKey]）。
   /// 置位后本启动周期内：不自启互联/Yomitan 服务、不跑自动同步与后台写手。
+  ///
+  /// **包名门**：该偏好会随迁移 core 批原样合并进 Fushi 的库，只有真正运行为
+  /// 老包（`app.hibiki.reader`）时才生效——否则 Fushi 导入完成后会误锁自己。
   bool get isMigrationReadonly =>
+      packageInfo.packageName == kHibikiPackageName &&
       prefsRepo.getPref(kMigrationReadonlyPrefKey) == true;
 
   /// BUG-815: the currently-running [_initialiseOnce] future, or null when no
@@ -4429,7 +4434,7 @@ class AppModel with ChangeNotifier {
       return;
     }
     final Uri uri = Uri(
-      scheme: 'hibiki',
+      scheme: 'fushi',
       host: 'lookup',
       queryParameters: {'word': trimmed},
     );

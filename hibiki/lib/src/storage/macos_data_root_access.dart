@@ -15,7 +15,7 @@ class MacOSDataRootAccess {
 
   static const String dataRootBookmarkPrefKey = 'data_root_bookmark';
   static const MethodChannel _channel =
-      MethodChannel('app.hibiki/data_root_access');
+      MethodChannel('app.fushi/data_root_access');
 
   static Future<String?> createBookmarkForPath(String path) async {
     if (!Platform.isMacOS) return null;

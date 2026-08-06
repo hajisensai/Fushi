@@ -101,7 +101,7 @@ void main() {
       'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
     ).readAsStringSync();
     final String mainActivitySrc = File(
-      'android/app/src/main/java/app/hibiki/reader/MainActivity.java',
+      'android/app/src/main/java/app/fushi/reader/MainActivity.java',
     ).readAsStringSync();
 
     String didChangeMetricsBody() {

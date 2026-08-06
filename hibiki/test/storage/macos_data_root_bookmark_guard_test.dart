@@ -24,7 +24,7 @@ void main() {
 
     test('AppDelegate creates and restores security-scoped bookmarks', () {
       final String src = read('macos/Runner/AppDelegate.swift');
-      expect(src, contains('app.hibiki/data_root_access'));
+      expect(src, contains('app.fushi/data_root_access'));
       expect(src, contains('bookmarkData('));
       expect(src, contains('.withSecurityScope'));
       expect(src, contains('startAccessingSecurityScopedResource()'));

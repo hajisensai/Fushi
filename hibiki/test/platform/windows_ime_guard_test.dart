@@ -53,7 +53,7 @@ void main() {
       WindowsImeGuard.debugForceEnabled = true;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-        const MethodChannel('app.hibiki/windows_ime_guard'),
+        const MethodChannel('app.fushi/windows_ime_guard'),
         (MethodCall call) async {
           if (call.method == 'setImeEnabled') {
             calls.add(call.arguments as bool);
@@ -68,7 +68,7 @@ void main() {
       WindowsImeGuard.debugReset();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-        const MethodChannel('app.hibiki/windows_ime_guard'),
+        const MethodChannel('app.fushi/windows_ime_guard'),
         null,
       );
     });

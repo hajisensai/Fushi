@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// BUG-865 source-scan guard: app 外查词面（剪贴板 / 悬浮 / 选区弹窗）的制卡跑在
 /// `popupMain` 副 FlutterEngine（`PopupEngineHolder`）里。AnkiDroid 制卡走
-/// `AnkiRepository` 的 `app.hibiki.reader/anki` MethodChannel，而该 channel 原先只在
+/// `AnkiRepository` 的 `app.fushi.reader/anki` MethodChannel，而该 channel 原先只在
 /// `MainActivity.configureFlutterEngine` 的主 engine 注册。副 engine 未注册 →
 /// `invokeMethod('addNote')` 抛 `MissingPluginException`，被 `mineEntry` 外层 catch
 /// 包成 toast「导出卡片失败：AnkiDroid: unexpected error: MissingPluginException(...)」。
@@ -21,13 +21,13 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   // Tests run with CWD = `hibiki/`.
   final File registrant = File(
-    'android/app/src/main/java/app/hibiki/reader/FloatingDictPluginRegistrant.java',
+    'android/app/src/main/java/app/fushi/reader/FloatingDictPluginRegistrant.java',
   );
   final File popupEngine = File(
-    'android/app/src/main/java/app/hibiki/reader/PopupEngineHolder.kt',
+    'android/app/src/main/java/app/fushi/reader/PopupEngineHolder.kt',
   );
   final File ankiHandler = File(
-    'android/app/src/main/java/app/hibiki/reader/AnkiChannelHandler.java',
+    'android/app/src/main/java/app/fushi/reader/AnkiChannelHandler.java',
   );
 
   test('secondary-engine files exist', () {
@@ -55,7 +55,7 @@ void main() {
       RegExp(r'new\s+AnkiChannelHandler\([^)]*\)\s*\.register\(')
           .hasMatch(compact),
       isTrue,
-      reason: 'BUG-865: 副 engine 必须注册 app.hibiki.reader/anki channel，'
+      reason: 'BUG-865: 副 engine 必须注册 app.fushi.reader/anki channel，'
           '否则 app 外查词面制卡 invokeMethod(addNote) 抛 MissingPluginException。',
     );
   });

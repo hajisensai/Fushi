@@ -19,7 +19,7 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   test('AnkiDroid native addNote 不再硬编码注入 Yuuna 默认 tag', () {
     final String src = File(
-      'android/app/src/main/java/app/hibiki/reader/AnkiChannelHandler.java',
+      'android/app/src/main/java/app/fushi/reader/AnkiChannelHandler.java',
     ).readAsStringSync();
     // 旧 fork 曾 `new HashSet<>(Arrays.asList("Yuuna"))`，给每张卡硬塞 Yuuna。
     expect(src.contains('"Yuuna"'), isFalse,

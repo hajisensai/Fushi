@@ -72,9 +72,9 @@ class AudioController {
           onToggleFloatingLyric: () => _toggleFloatingLyricController.add(null),
         ),
         config: const ag.AudioServiceConfig(
-          androidNotificationChannelId: 'app.hibiki.reader.channel.audio',
-          androidNotificationChannelName: 'hibiki',
-          androidNotificationIcon: 'drawable/ic_stat_hibiki',
+          androidNotificationChannelId: 'app.fushi.reader.channel.audio',
+          androidNotificationChannelName: 'fushi',
+          androidNotificationIcon: 'drawable/ic_stat_fushi',
           notificationColor: Colors.black,
           fastForwardInterval: Duration(seconds: 5),
           rewindInterval: Duration(seconds: 5),

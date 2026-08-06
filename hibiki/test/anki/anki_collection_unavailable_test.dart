@@ -112,14 +112,14 @@ void main() {
     test('classifies collection-unavailable with ANKI_COLLECTION_UNAVAILABLE',
         () {
       final File f = File(
-        '../hibiki/android/app/src/main/java/app/hibiki/reader/'
+        '../hibiki/android/app/src/main/java/app/fushi/reader/'
         'AnkiChannelHandler.java',
       );
       // Run from either repo root or the hibiki package directory.
       final File java = f.existsSync()
           ? f
           : File(
-              'android/app/src/main/java/app/hibiki/reader/'
+              'android/app/src/main/java/app/fushi/reader/'
               'AnkiChannelHandler.java',
             );
       expect(java.existsSync(), isTrue,

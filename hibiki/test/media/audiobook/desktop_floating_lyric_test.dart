@@ -69,7 +69,7 @@ class _FakeFloatingLyricWindow {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const String channelName = 'app.hibiki.reader/floating_lyric';
+  const String channelName = 'app.fushi.reader/floating_lyric';
   const MethodChannel channel = MethodChannel(channelName);
   const MethodCodec codec = StandardMethodCodec();
   late _FakeFloatingLyricWindow native;

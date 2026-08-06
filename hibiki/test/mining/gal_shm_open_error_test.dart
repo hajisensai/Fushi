@@ -128,7 +128,7 @@ void main() {
   });
 
   group('open 失败的一手证据必须走到用户看见的那句话 (BUG-1216)', () {
-    const String channelName = 'app.hibiki.reader/voice_hook';
+    const String channelName = 'app.fushi.reader/voice_hook';
 
     setUp(TestWidgetsFlutterBinding.ensureInitialized);
 

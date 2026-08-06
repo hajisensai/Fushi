@@ -4,14 +4,14 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 
 // TODO-1007/1008：AnkiDroid 后端「按内容反查全部同词卡 note id + 一行预览」契约。
 //
-// host 无真 AnkiDroid，故 mock 平台通道 `app.hibiki.reader/anki`，断言：
+// host 无真 AnkiDroid，故 mock 平台通道 `app.fushi.reader/anki`，断言：
 //  - findMatchingNotes 经 native `findNotesByContent` 传入 models/key/reading/
 //    readingFieldIndices，把 native 返回的 [{noteId, preview}, ...] 解析成
 //    List<MinedNoteRef>，预览去 HTML。
 //  - openNoteInAnki 经 native `openNote` 传 noteId，native 回 true 时返回 true。
 //  - 通道异常 / 形状异常时优雅降级（空列表 / false，不抛）。
 
-const MethodChannel _channel = MethodChannel('app.hibiki.reader/anki');
+const MethodChannel _channel = MethodChannel('app.fushi.reader/anki');
 
 class _ConfiguredAnkiRepository extends AnkiRepository {
   _ConfiguredAnkiRepository(this.settings);

@@ -4,11 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   const String servicePath =
-      'android/app/src/main/java/app/hibiki/reader/FloatingLyricService.java';
+      'android/app/src/main/java/app/fushi/reader/FloatingLyricService.java';
   const String baseServicePath =
-      'android/app/src/main/java/app/hibiki/reader/BaseFloatingService.java';
+      'android/app/src/main/java/app/fushi/reader/BaseFloatingService.java';
   const String activityPath =
-      'android/app/src/main/java/app/hibiki/reader/MainActivity.java';
+      'android/app/src/main/java/app/fushi/reader/MainActivity.java';
 
   test('floating lyric lock button icon reflects current lock state', () {
     final String source = File(servicePath).readAsStringSync();

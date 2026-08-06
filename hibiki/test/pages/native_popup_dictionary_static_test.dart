@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   const String popupActivityPath =
-      'android/app/src/main/java/app/hibiki/reader/PopupDictActivity.kt';
+      'android/app/src/main/java/app/fushi/reader/PopupDictActivity.kt';
 
   test('native popup stores initial lookup text before WebView callbacks', () {
     final String source = File(popupActivityPath).readAsStringSync();

@@ -4,7 +4,7 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 
 // TODO-270 B/C2：AnkiDroid 后端「制卡返回真 noteId + 按 id 覆盖已有卡片」契约。
 //
-// host 无真 AnkiDroid，故 mock 平台通道 `app.hibiki.reader/anki`，断言：
+// host 无真 AnkiDroid，故 mock 平台通道 `app.fushi.reader/anki`，断言：
 //  (B)  mineEntry 把 native addNote 返回的 note id 带回 MineOutcome.noteId
 //       （旧版返回字符串/true 时优雅降级为 null）。
 //  (C2) updateMinedNote 经 `updateNoteFields` 按 id 覆盖渲染后的字段、返回 noteId；
@@ -13,7 +13,7 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 // 与 AnkiConnect 侧 ankiconnect_create_test / mining_tag_and_parallel_test 的
 // MockClient 范式对称（这里用 setMockMethodCallHandler 替代）。
 
-const MethodChannel _channel = MethodChannel('app.hibiki.reader/anki');
+const MethodChannel _channel = MethodChannel('app.fushi.reader/anki');
 
 class _ConfiguredAnkiRepository extends AnkiRepository {
   _ConfiguredAnkiRepository(this.settings);

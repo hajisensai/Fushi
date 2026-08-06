@@ -8,7 +8,7 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
     implements CancellableMihonRuntime {
   AndroidMihonRuntime({
     MethodChannel? channel,
-  }) : _channel = channel ?? const MethodChannel('app.hibiki.reader/mihon');
+  }) : _channel = channel ?? const MethodChannel('app.fushi.reader/mihon');
 
   final MethodChannel _channel;
   int _imageRequestSequence = 0;

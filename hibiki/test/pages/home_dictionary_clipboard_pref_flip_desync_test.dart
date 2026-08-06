@@ -122,7 +122,7 @@ void main() {
       const MethodChannel('dev.leanflutter.plugins/hotkey_manager_event'),
       (MethodCall call) async => null,
     );
-    m.setMockMethodCallHandler(const MethodChannel('app.hibiki/window'),
+    m.setMockMethodCallHandler(const MethodChannel('app.fushi/window'),
         (MethodCall call) async => null);
     m.setMockMethodCallHandler(SystemChannels.platform,
         (MethodCall call) async {
@@ -140,7 +140,7 @@ void main() {
       'clipboard_watcher',
       'dev.leanflutter.plugins/hotkey_manager',
       'dev.leanflutter.plugins/hotkey_manager_event',
-      'app.hibiki/window',
+      'app.fushi/window',
     ]) {
       m.setMockMethodCallHandler(MethodChannel(name), null);
     }

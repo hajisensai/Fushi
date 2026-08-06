@@ -156,7 +156,7 @@ void main() {
       // hardcoded Windows separator would never match on Linux/Android.
       // fontPathBasename splits on either separator so the basename survives.
       const String oldPath = '/old/container/custom_fonts/Gothic_7.ttf';
-      const String newDir = '/data/user/0/app.hibiki.reader/custom_fonts';
+      const String newDir = '/data/user/0/app.fushi.reader/custom_fonts';
       final String newPath = p.join(newDir, fontPathBasename(oldPath));
       final String json = jsonEncode(<String, dynamic>{
         'version': 1,

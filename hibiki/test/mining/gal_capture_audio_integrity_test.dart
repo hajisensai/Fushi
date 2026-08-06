@@ -44,7 +44,7 @@ void main() {
   }
 
   group('grabClipNear 选轨/排除契约（BUG-1118 ①）', () {
-    const String channelName = 'app.hibiki.reader/voice_hook';
+    const String channelName = 'app.fushi.reader/voice_hook';
 
     void setHandler(Future<Object?>? Function(MethodCall)? handler) {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

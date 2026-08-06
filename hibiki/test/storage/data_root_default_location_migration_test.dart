@@ -30,7 +30,7 @@ void main() {
     platformDocuments = Directory(p.join(tmp.path, 'Documents'))
       ..createSync(recursive: true);
     platformSupport =
-        Directory(p.join(tmp.path, 'AppData', 'Roaming', 'app.hibiki.reader'))
+        Directory(p.join(tmp.path, 'AppData', 'Roaming', 'app.fushi.reader'))
           ..createSync(recursive: true);
     defaultDocsRoot = p.joinAll(<String>[
       platformDocuments.path,

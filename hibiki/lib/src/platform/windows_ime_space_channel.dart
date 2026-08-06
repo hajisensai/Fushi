@@ -10,7 +10,7 @@ import 'package:flutter/services.dart';
 /// [onImeSpaceDown] only for the unmodified Space make-code.
 abstract final class WindowsImeSpaceChannel {
   static const MethodChannel _channel =
-      MethodChannel('app.hibiki/windows_ime_space');
+      MethodChannel('app.fushi/windows_ime_space');
 
   static Object? _owner;
   static VoidCallback? _handler;

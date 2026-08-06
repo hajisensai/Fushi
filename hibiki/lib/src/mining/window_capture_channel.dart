@@ -13,7 +13,7 @@ import 'package:flutter/services.dart';
 /// 调用方据此降级（不崩、不静默假成功）。
 abstract final class WindowCaptureChannel {
   static const MethodChannel _channel =
-      MethodChannel('app.hibiki.reader/window_capture');
+      MethodChannel('app.fushi.reader/window_capture');
 
   /// 枚举当前可捕获的顶层窗口（有标题、可见、非本 app 自身）。native 不可用或无窗口
   /// 时返回空列表（调用方按空列表提示「未找到窗口」，不崩）。

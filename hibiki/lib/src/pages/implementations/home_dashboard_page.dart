@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'dart:async';
 
@@ -43,6 +45,8 @@ import 'package:hibiki/src/utils/misc/dashboard_remote_merge.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/migration/migration_target_channel.dart';
 import 'package:hibiki/src/pages/implementations/migration_page.dart';
+import 'package:hibiki/src/pages/implementations/migration_import_page.dart';
+import 'package:hibiki/src/migration/migration_importer.dart';
 
 /// 首页仪表盘（阅读向），参考 ReinaManager 首页改造：
 ///
@@ -912,10 +916,18 @@ class _HomeDashboardPageState
         return ListView(
           padding: EdgeInsets.all(tokens.spacing.card),
           children: <Widget>[
-            // 已迁移只读态（Fushi 迁移 P1-4）：首屏常驻引导，直到老版被卸掉。
+            // 已迁移只读态（Fushi 迁移 P1-4，仅老包生效）：首屏常驻引导。
             if (appModel.isMigrationReadonly) ...<Widget>[
               _MigrationReadonlyBanner(appModel: appModel),
               SizedBox(height: tokens.spacing.card),
+            ],
+            // Fushi 侧（P2-2/P2-3）：检测到迁移数据 → 导入引导；导入完成且旧包
+            // 仍在 → 卸载引导（ACTION_DELETE + 复查）。仅 Android。
+            if (!kIsWeb &&
+                Platform.isAndroid &&
+                appModel.packageInfo.packageName !=
+                    kHibikiPackageName) ...<Widget>[
+              _FushiMigrationBanner(appModel: appModel),
             ],
             body,
           ],
@@ -2897,6 +2909,109 @@ class _MigrationReadonlyBanner extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Fushi 侧迁移引导 banner（P2-2/P2-3）：
+/// - 未导入且中转目录有数据 → 「检测到 Hibiki 迁移数据 → 导入」；
+/// - 已导入且旧包仍安装 → 「卸载旧版」（ACTION_DELETE 弹系统框，回来复查
+///   getPackageInfo——用户可能点了取消，绝不乐观标成功）；
+/// - 其余情况渲染为空。
+class _FushiMigrationBanner extends StatefulWidget {
+  const _FushiMigrationBanner({required this.appModel});
+
+  final AppModel appModel;
+
+  @override
+  State<_FushiMigrationBanner> createState() => _FushiMigrationBannerState();
+}
+
+class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
+    with WidgetsBindingObserver {
+  static const MigrationTargetChannel _channel = MigrationTargetChannel();
+  static const MigrationImporter _importer = MigrationImporter();
+
+  bool _hasTransferData = false;
+  bool _legacyInstalled = false;
+
+  bool get _importDone =>
+      widget.appModel.prefsRepo.getPref(kMigrationImportDonePrefKey) == true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 从系统卸载确认框回来（resumed）时复查旧包是否真被卸了。
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final Directory dir = await migrationTransferDir();
+    final MigrationScanResult scan = await _importer.scan(dir);
+    final bool installed =
+        await _channel.isPackageInstalled(kHibikiPackageName);
+    if (!mounted) return;
+    setState(() {
+      _hasTransferData = scan.hasAnything;
+      _legacyInstalled = installed;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    Widget? inner;
+    if (!_importDone && _hasTransferData) {
+      inner = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(t.migration_import_detected),
+          const SizedBox(height: 8),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => MigrationImportPage(appModel: widget.appModel),
+              ),
+            ),
+            child: Text(t.migration_import_entry),
+          ),
+        ],
+      );
+    } else if (_importDone && _legacyInstalled) {
+      inner = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(t.migration_uninstall_prompt),
+          const SizedBox(height: 8),
+          FilledButton.tonal(
+            onPressed: () async {
+              await _channel.requestUninstall(kHibikiPackageName);
+              // resumed 回调会复查；这里再主动刷一次兜底。
+              await _refresh();
+            },
+            child: Text(t.migration_uninstall_button),
+          ),
+        ],
+      );
+    }
+    if (inner == null) return const SizedBox.shrink();
+    return Padding(
+      padding: EdgeInsets.only(bottom: tokens.spacing.card),
+      child: HibikiCard(
+        child: Padding(padding: const EdgeInsets.all(12), child: inner),
       ),
     );
   }

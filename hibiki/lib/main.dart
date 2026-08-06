@@ -531,7 +531,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// 经此 MethodChannel 收到 `openExternalVideo`，复用现有 [_openExternalVideo]
   /// 打开链路。仅 Windows 注册（其它桌面平台暂无单实例守卫，走首启 argv 路径）。
   static const MethodChannel _externalVideoChannel =
-      MethodChannel('app.hibiki/external_video');
+      MethodChannel('app.fushi/external_video');
 
   /// TODO-1092: Windows 系统强调色/主题色实时变更通知 channel。runner 侧
   /// （`windows/runner/flutter_window.cpp` 的 MessageHandler）收到
@@ -539,7 +539,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// WM_THEMECHANGED 后经此 channel 推 `onSystemColorChanged`，Dart 侧据此调
   /// [AppModel.refreshSystemPalette] 让动态取色实时刷新（不再等生命周期 resumed）。
   static const MethodChannel _systemThemeChannel =
-      MethodChannel('app.hibiki/system_theme');
+      MethodChannel('app.fushi/system_theme');
 
   /// 去抖：一次系统色变更常连发多条 Win32 广播（DWM + ImmersiveColorSet +
   /// THEMECHANGED），合并到一次 [AppModel.refreshSystemPalette]，避免同一变更重复
@@ -868,7 +868,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   }) async {
     if (data == null || !mounted) return false;
     final String normalized = data.toLowerCase();
-    if (normalized.startsWith('hibiki://auth/')) {
+    if (normalized.startsWith('fushi://auth/')) {
       await _handleOAuthRedirect(data);
       return true;
     }
@@ -946,7 +946,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   }
 
   /// TODO-904 P0 回归：首实例收到第二实例经 WM_COPYDATA 转交的外部视频路径
-  /// （`windows/runner` → `app.hibiki/external_video` channel）。这里做与首启 argv
+  /// （`windows/runner` → `app.fushi/external_video` channel）。这里做与首启 argv
   /// 路径（[main]）等价的校验：扩展名白名单（[isSupportedVideoFile]）+ 存在性
   /// （`File.existsSync`），通过后复用 [_openExternalVideo] 打开。
   ///

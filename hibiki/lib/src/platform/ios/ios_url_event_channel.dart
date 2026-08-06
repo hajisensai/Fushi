@@ -4,9 +4,9 @@ class IosUrlEventChannel {
   const IosUrlEventChannel._();
 
   static const MethodChannel _method =
-      MethodChannel('app.hibiki.reader/url_events');
+      MethodChannel('app.fushi.reader/url_events');
   static const EventChannel _events =
-      EventChannel('app.hibiki.reader/url_events/stream');
+      EventChannel('app.fushi.reader/url_events/stream');
 
   static Future<String?> getInitialUrl() =>
       _method.invokeMethod<String>('getInitialUrl');

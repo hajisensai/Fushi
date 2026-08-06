@@ -56,7 +56,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const MethodChannel channel =
-      MethodChannel('app.hibiki.reader/gal_hook_text');
+      MethodChannel('app.fushi.reader/gal_hook_text');
   late List<MethodCall> nativeCalls;
   late TexthookerService textService;
   late GalHookSessionController session;
@@ -259,7 +259,7 @@ void main() {
     );
     await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .handlePlatformMessage(
-      'app.hibiki.reader/gal_hook_text',
+      'app.fushi.reader/gal_hook_text',
       data,
       (_) {},
     );

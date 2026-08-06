@@ -197,7 +197,7 @@ void main() {
         'AnkiDroid does not reuse preferred media names when a fixed local audio path changes content',
         () async {
       TestWidgetsFlutterBinding.ensureInitialized();
-      const MethodChannel channel = MethodChannel('app.hibiki.reader/anki');
+      const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
       final List<List<String>> addedNotes = <List<String>>[];
       final List<String> preferredNames = <String>[];
 

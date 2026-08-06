@@ -382,7 +382,7 @@ bool FlutterWindow::OnCreate() {
   // native caption follows the in-app theme (see window_caption_channel.dart).
   caption_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          flutter_controller_->engine()->messenger(), "app.hibiki/window",
+          flutter_controller_->engine()->messenger(), "app.fushi/window",
           &flutter::StandardMethodCodec::GetInstance());
   caption_channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
@@ -483,7 +483,7 @@ bool FlutterWindow::OnCreate() {
   clipboard_image_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
-          "app.hibiki.reader/clipboard_image",
+          "app.fushi.reader/clipboard_image",
           &flutter::StandardMethodCodec::GetInstance());
   clipboard_image_channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
@@ -523,7 +523,7 @@ bool FlutterWindow::OnCreate() {
   external_video_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
-          "app.hibiki/external_video",
+          "app.fushi/external_video",
           &flutter::StandardMethodCodec::GetInstance());
 
   // TODO-1092: 系统强调色/主题色实时变更通知 channel。runner 侧收到 Windows 的
@@ -533,13 +533,13 @@ bool FlutterWindow::OnCreate() {
   // 首实例无需主动调用任何方法，仅作为 MessageHandler 的出口。
   system_theme_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          flutter_controller_->engine()->messenger(), "app.hibiki/system_theme",
+          flutter_controller_->engine()->messenger(), "app.fushi/system_theme",
           &flutter::StandardMethodCodec::GetInstance());
 
   windows_ime_space_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
-          "app.hibiki/windows_ime_space",
+          "app.fushi/windows_ime_space",
           &flutter::StandardMethodCodec::GetInstance());
 
   RegisterImeGuardChannel();
@@ -747,7 +747,7 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
   floating_lyric_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
-          "app.hibiki.reader/floating_lyric",
+          "app.fushi.reader/floating_lyric",
           &flutter::StandardMethodCodec::GetInstance());
 
   // Native taps -> Dart events (handled by FloatingLyricChannel.setEventHandlers
@@ -868,7 +868,7 @@ void FlutterWindow::RegisterImeGuardChannel() {
   windows_ime_guard_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
-          "app.hibiki/windows_ime_guard",
+          "app.fushi/windows_ime_guard",
           &flutter::StandardMethodCodec::GetInstance());
 
   windows_ime_guard_channel_->SetMethodCallHandler(
@@ -921,7 +921,7 @@ void FlutterWindow::RegisterClipboardTextChannel() {
   clipboard_text_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
-          "app.hibiki.reader/clipboard_text",
+          "app.fushi.reader/clipboard_text",
           &flutter::StandardMethodCodec::GetInstance());
 
   clipboard_text_window_->SetLookupCallback(
@@ -998,7 +998,7 @@ void FlutterWindow::RegisterGalHookTextChannel() {
   gal_hook_text_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
-          "app.hibiki.reader/gal_hook_text",
+          "app.fushi.reader/gal_hook_text",
           &flutter::StandardMethodCodec::GetInstance());
 
   gal_hook_text_window_->SetContextLookupCallback(
@@ -1150,7 +1150,7 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
   global_lookup_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
-          "app.hibiki.reader/global_lookup",
+          "app.fushi.reader/global_lookup",
           &flutter::StandardMethodCodec::GetInstance());
 
   // image:// -> ask the main Dart engine for the bytes. Asynchronous: the reply
@@ -1394,7 +1394,7 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
   clipboard_panel_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
-          "app.hibiki.reader/clipboard_panel",
+          "app.fushi.reader/clipboard_panel",
           &flutter::StandardMethodCodec::GetInstance());
 
   clipboard_panel_window_->SetMediaResolver(
@@ -1592,7 +1592,7 @@ void FlutterWindow::RegisterForegroundSelectionChannel() {
   foreground_selection_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
-          "app.hibiki.reader/foreground_selection",
+          "app.fushi.reader/foreground_selection",
           &flutter::StandardMethodCodec::GetInstance());
 
   foreground_selection_channel_->SetMethodCallHandler(
@@ -1646,7 +1646,7 @@ void FlutterWindow::RegisterWindowCaptureChannel() {
   window_capture_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
-          "app.hibiki.reader/window_capture",
+          "app.fushi.reader/window_capture",
           &flutter::StandardMethodCodec::GetInstance());
 
   window_capture_channel_->SetMethodCallHandler(
@@ -1716,7 +1716,7 @@ void FlutterWindow::RegisterAudioLoopbackChannel() {
   audio_loopback_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
-          "app.hibiki.reader/audio_loopback",
+          "app.fushi.reader/audio_loopback",
           &flutter::StandardMethodCodec::GetInstance());
 
   audio_loopback_channel_->SetMethodCallHandler(
@@ -1793,7 +1793,7 @@ void FlutterWindow::RegisterVoiceHookChannel() {
   voice_hook_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
-          "app.hibiki.reader/voice_hook",
+          "app.fushi.reader/voice_hook",
           &flutter::StandardMethodCodec::GetInstance());
 
   voice_hook_channel_->SetMethodCallHandler(
@@ -2178,11 +2178,11 @@ void FlutterWindow::RegisterVoiceHookChannel() {
 
 // Magpie 缩放状态监听（仅 Windows）。Magpie 用 RegisterWindowMessage 注册的广播消息
 // "MagpieScalingChanged" 通知全系统顶层窗口缩放状态变化；本 runner 只读不回，收到后
-// 经 app.hibiki.reader/magpie channel 把事件推给 Dart。
+// 经 app.fushi.reader/magpie channel 把事件推给 Dart。
 void FlutterWindow::RegisterMagpieChannel() {
   magpie_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          flutter_controller_->engine()->messenger(), "app.hibiki.reader/magpie",
+          flutter_controller_->engine()->messenger(), "app.fushi.reader/magpie",
           &flutter::StandardMethodCodec::GetInstance());
 
   // 广播消息号只注册一次：同一字符串在全系统映射到同一个消息号，Magpie 侧
@@ -2427,7 +2427,7 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case WM_COPYDATA: {
       // TODO-904 P0 回归：第二实例转交「用 Hibiki 打开视频」的路径。解出 UTF-8 路径
       // （dwData magic 不匹配则 DecodeExternalVideoPath 返回空串，忽略非本协议消息），
-      // 经 app.hibiki/external_video channel 推给 Dart 复用 _openExternalVideo。
+      // 经 app.fushi/external_video channel 推给 Dart 复用 _openExternalVideo。
       // WndProc 跑在 platform 线程，InvokeMethod 可直接调用。
       const auto* cds = reinterpret_cast<const COPYDATASTRUCT*>(lparam);
       const std::string video_path = ::hibiki::DecodeExternalVideoPath(cds);

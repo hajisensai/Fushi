@@ -18,15 +18,18 @@ class MigrationTargetChannel {
 
   static bool get _supported => !kIsWeb && Platform.isAndroid;
 
-  /// Fushi 是否已安装（Android 11+ 依赖 manifest `<queries>` 声明）。
-  Future<bool> isFushiInstalled() async {
+  /// 指定包是否已安装（Android 11+ 依赖 manifest `<queries>` 声明该包）。
+  Future<bool> isPackageInstalled(String packageName) async {
     if (!_supported) return false;
     final bool? installed = await HibikiChannels.migration
         .invokeMethod<bool>('isPackageInstalled', <String, Object?>{
-      'package': kFushiPackageName,
+      'package': packageName,
     });
     return installed ?? false;
   }
+
+  /// Fushi 是否已安装（老包导出引导用）。
+  Future<bool> isFushiInstalled() => isPackageInstalled(kFushiPackageName);
 
   /// 前台拉起 Fushi（用户点按钮触发；带 `source=hibiki_migration` extra）。
   /// 返回是否成功发出启动 intent。

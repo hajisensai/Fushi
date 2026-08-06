@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   final String native = File(
-    'android/app/src/main/java/app/hibiki/reader/SelectionActionChannel.java',
+    'android/app/src/main/java/app/fushi/reader/SelectionActionChannel.java',
   ).readAsStringSync();
   final String lower = native.toLowerCase();
 
@@ -40,13 +40,13 @@ void main() {
 
   test('main and popup engines register the same channel seam', () {
     final String main = File(
-      'android/app/src/main/java/app/hibiki/reader/MainActivity.java',
+      'android/app/src/main/java/app/fushi/reader/MainActivity.java',
     ).readAsStringSync();
     final String popup = File(
-      'android/app/src/main/java/app/hibiki/reader/PopupEngineHolder.kt',
+      'android/app/src/main/java/app/fushi/reader/PopupEngineHolder.kt',
     ).readAsStringSync();
     final String registrant = File(
-      'android/app/src/main/java/app/hibiki/reader/'
+      'android/app/src/main/java/app/fushi/reader/'
       'FloatingDictPluginRegistrant.java',
     ).readAsStringSync();
     expect(main,

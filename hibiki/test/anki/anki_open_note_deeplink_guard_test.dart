@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// `anki://x-callback-url/browser?search=nid:<id>`（search 参数直接喂给浏览器）。
 void main() {
   final java = File(
-    'android/app/src/main/java/app/hibiki/reader/AnkiChannelHandler.java',
+    'android/app/src/main/java/app/fushi/reader/AnkiChannelHandler.java',
   ).readAsStringSync();
 
   final openNote = _extractMethodBody(java, 'private boolean openNote(');

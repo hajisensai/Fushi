@@ -99,7 +99,7 @@ class GoogleDriveAuth {
   static bool get desktopCredentialsConfigured =>
       isDesktopSecretConfigured(_oauthClientSecret);
 
-  // iOS 专用 OAuth 客户端（应用类型 = iOS，Bundle ID = app.hibiki.reader）。
+  // iOS 专用 OAuth 客户端（应用类型 = iOS，Bundle ID = app.fushi.reader）。
   // Android 不读这里：google_sign_in 在 Android 上从 google-services.json 按
   // 包名 + 签名 SHA-1 自动解析对应 client，传 null 即可。iOS 必须显式提供
   // iOS 型 clientId，且 Info.plist 需配反转 client id 的 URL scheme 作回调。

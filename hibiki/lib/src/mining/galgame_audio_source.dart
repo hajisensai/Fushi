@@ -52,7 +52,7 @@ class GalAudioSlice {
 class LoopbackGalAudioSource implements GalAudioSource {
   LoopbackGalAudioSource({MethodChannel? channel})
       : _channel =
-            channel ?? const MethodChannel('app.hibiki.reader/audio_loopback');
+            channel ?? const MethodChannel('app.fushi.reader/audio_loopback');
 
   final MethodChannel _channel;
 
@@ -856,7 +856,7 @@ void _logGalHookProcessOutput(bool isStderr, String chunk) {
 /// **独立 helper 组件** `hibiki_voice_injector.exe` + `hibiki_voice_hook.dll`（注入必被杀软启发式
 /// 报毒，绝不进 hibiki.exe）。本实现只做两件被视为无害的事：
 ///   ① 把 injector **当子进程拉起**（`--pid <PID> --hold`）——注入那步的报毒代码只待在子进程；
-///   ② 经 `app.hibiki.reader/voice_hook` MethodChannel 让 hibiki.exe 自己的 native **读**注入
+///   ② 经 `app.fushi.reader/voice_hook` MethodChannel 让 hibiki.exe 自己的 native **读**注入
 ///      组件建好的共享内存（读共享内存不是注入、不被杀软标记，见 voice_hook_reader.cpp）。
 /// 和 [LoopbackGalAudioSource] **同接口**——波形选区/制卡出口零改动；不可用（无 injector /
 /// 未注入 / 无该引擎 / 超时）时 [start] 返回 null，调用方自动回退 loopback（Never break）。
@@ -887,7 +887,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     Duration readyTimeout = const Duration(seconds: 30),
     Duration pollInterval = const Duration(milliseconds: 200),
   })  : _channel =
-            channel ?? const MethodChannel('app.hibiki.reader/voice_hook'),
+            channel ?? const MethodChannel('app.fushi.reader/voice_hook'),
         _processStarter = processStarter ?? _startGalHookProcess,
         _processOutputSink = processOutputSink ?? _logGalHookProcessOutput,
         _readyTimeout = readyTimeout,
@@ -1015,7 +1015,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
       return null;
     }
     final MethodChannel ch =
-        channel ?? const MethodChannel('app.hibiki.reader/voice_hook');
+        channel ?? const MethodChannel('app.fushi.reader/voice_hook');
     try {
       final Map<Object?, Object?>? r =
           await ch.invokeMethod<Map<Object?, Object?>>(

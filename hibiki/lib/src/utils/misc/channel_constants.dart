@@ -1,10 +1,10 @@
-// Java counterpart: app.hibiki.reader.constants.ChannelNames
+// Java counterpart: app.fushi.reader.constants.ChannelNames
 // Both files MUST stay in sync. If you add a channel here, add it there too.
 
 import 'package:flutter/services.dart';
 
 abstract final class HibikiChannels {
-  static const String _prefix = 'app.hibiki.reader';
+  static const String _prefix = 'app.fushi.reader';
 
   static const MethodChannel splash = MethodChannel('$_prefix/splash');
   static const MethodChannel anki = MethodChannel('$_prefix/anki');

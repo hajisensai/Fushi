@@ -45,7 +45,7 @@ abstract final class SelectionCapture {
   // MissingPluginException / any failure falls back to the clipboard capture
   // below.
   static const MethodChannel _foregroundSelectionChannel =
-      MethodChannel('app.hibiki.reader/foreground_selection');
+      MethodChannel('app.fushi.reader/foreground_selection');
 
   /// Saves the clipboard, clears it, injects a clean Ctrl+C so the foreground
   /// app copies its current selection, reads it back, then restores the

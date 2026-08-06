@@ -24,7 +24,7 @@ import 'package:just_audio_platform_interface/just_audio_platform_interface.dart
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const String channelName = 'app.hibiki.reader/floating_lyric';
+  const String channelName = 'app.fushi.reader/floating_lyric';
 
   AudioCue cue(int startMs) => AudioCue()
     ..id = startMs

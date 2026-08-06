@@ -33,7 +33,7 @@ class DropboxSyncBackend extends SyncBackend
   /// backend cannot authenticate, so the UI hides it from the picker.
   static bool get isConfigured => !_clientId.startsWith('YOUR_');
 
-  static const _redirectUri = 'hibiki://auth/dropbox';
+  static const _redirectUri = 'fushi://auth/dropbox';
   static const _authorizeEndpoint = 'https://www.dropbox.com/oauth2/authorize';
   static const _tokenEndpoint = 'https://api.dropboxapi.com/oauth2/token';
   static const _apiBase = 'https://api.dropboxapi.com/2';

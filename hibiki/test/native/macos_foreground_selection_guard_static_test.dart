@@ -32,7 +32,7 @@ void main() {
         () {
       // Same channel name + method the Windows runner exposes and the Dart
       // SelectionCapture.captureForegroundContext invokes.
-      expect(code, contains('app.hibiki.reader/foreground_selection'));
+      expect(code, contains('app.fushi.reader/foreground_selection'));
       expect(code, contains('call.method == "captureContext"'));
       expect(code, contains('handleForegroundSelection'));
     });
@@ -88,7 +88,7 @@ void main() {
       // The context capture path must run on macOS too (AX channel), not just
       // Windows; the gate excludes only truly-unsupported platforms.
       expect(dart, contains('!Platform.isWindows && !Platform.isMacOS'));
-      expect(dart, contains('app.hibiki.reader/foreground_selection'));
+      expect(dart, contains('app.fushi.reader/foreground_selection'));
     });
   });
 }

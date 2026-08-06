@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   const String holderPath =
-      'android/app/src/main/java/app/hibiki/reader/PopupEngineHolder.kt';
+      'android/app/src/main/java/app/fushi/reader/PopupEngineHolder.kt';
 
   test('popup engine holder runs popupMain on a cached engine', () {
     final String src = File(holderPath).readAsStringSync();
@@ -29,7 +29,7 @@ void main() {
   });
 
   const String activityPath =
-      'android/app/src/main/java/app/hibiki/reader/PopupDictFlutterActivity.kt';
+      'android/app/src/main/java/app/fushi/reader/PopupDictFlutterActivity.kt';
 
   test('popup flutter activity is transparent, cached-engine, pushes text', () {
     final String src = File(activityPath).readAsStringSync();
@@ -79,7 +79,7 @@ void main() {
   // result area stays blank.
   test('floating dict registrant registers popup-render runtime plugins', () {
     const String registrantPath =
-        'android/app/src/main/java/app/hibiki/reader/FloatingDictPluginRegistrant.java';
+        'android/app/src/main/java/app/fushi/reader/FloatingDictPluginRegistrant.java';
     final String src = File(registrantPath).readAsStringSync();
     // Root cause: word entries render in an InAppWebView platform view.
     expect(

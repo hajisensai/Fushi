@@ -19,7 +19,7 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 //     provider 直接抛出的英文 "permission not granted" 原文）分类成
 //     `AnkiErrorCode.permissionDenied`，供主 app 映射本地化、可操作的提醒文案。
 
-const MethodChannel _channel = MethodChannel('app.hibiki.reader/anki');
+const MethodChannel _channel = MethodChannel('app.fushi.reader/anki');
 
 class _ConfiguredAnkiRepository extends AnkiRepository {
   _ConfiguredAnkiRepository(this.settings);
@@ -99,7 +99,7 @@ void main() {
           throw PlatformException(
             code: 'ANKI_PROVIDER_ERROR',
             message: 'Permission not granted for: '
-                'CardContentProvider.query /decks (app.hibiki.reader)',
+                'CardContentProvider.query /decks (app.fushi.reader)',
           );
         }
         fail('unexpected channel call: ${call.method}');

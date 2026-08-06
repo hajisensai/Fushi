@@ -11,7 +11,7 @@ void main() {
 
   setUpAll(() {
     src = File(
-      'android/app/src/main/java/app/hibiki/reader/MainActivity.java',
+      'android/app/src/main/java/app/fushi/reader/MainActivity.java',
     ).readAsStringSync();
   });
 

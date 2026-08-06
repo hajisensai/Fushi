@@ -80,15 +80,15 @@ void main() {
     expect(fw.contains('::hibiki::DecodeExternalVideoPath('), isTrue,
         reason: '必须用 DecodeExternalVideoPath 解出路径（magic 不匹配则忽略）');
     expect(
-        fw.contains('app.hibiki/external_video') &&
+        fw.contains('app.fushi/external_video') &&
             fw.contains('openExternalVideo'),
         isTrue,
-        reason: '收到路径必须经 app.hibiki/external_video channel 推给 Dart');
+        reason: '收到路径必须经 app.fushi/external_video channel 推给 Dart');
 
     // Dart 端：复用现有 _openExternalVideo 打开链路，不另造第二套。
     final String main = read('lib/main.dart');
-    expect(main.contains("MethodChannel('app.hibiki/external_video')"), isTrue,
-        reason: 'Dart 必须注册 app.hibiki/external_video channel');
+    expect(main.contains("MethodChannel('app.fushi/external_video')"), isTrue,
+        reason: 'Dart 必须注册 app.fushi/external_video channel');
     expect(
         main.contains('_handleExternalVideoChannel') &&
             main.contains('_openExternalVideo('),

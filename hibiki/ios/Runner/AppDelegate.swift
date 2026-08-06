@@ -26,7 +26,7 @@ import Flutter
 
   private func installChannels(binaryMessenger: FlutterBinaryMessenger) {
     let splashChannel = FlutterMethodChannel(
-      name: "app.hibiki.reader/splash",
+      name: "app.fushi.reader/splash",
       binaryMessenger: binaryMessenger)
     splashChannel.setMethodCallHandler { (call, result) in
       switch call.method {
@@ -39,7 +39,7 @@ import Flutter
     }
 
     let ankiMobileChannel = FlutterMethodChannel(
-      name: "app.hibiki.reader/ankimobile",
+      name: "app.fushi.reader/ankimobile",
       binaryMessenger: binaryMessenger)
     ankiMobileChannel.setMethodCallHandler { [weak self] (call, result) in
       switch call.method {
@@ -66,7 +66,7 @@ import Flutter
     }
 
     let urlMethodChannel = FlutterMethodChannel(
-      name: "app.hibiki.reader/url_events",
+      name: "app.fushi.reader/url_events",
       binaryMessenger: binaryMessenger)
     urlMethodChannel.setMethodCallHandler { [weak self] (call, result) in
       switch call.method {
@@ -79,12 +79,12 @@ import Flutter
     }
 
     let urlEventChannel = FlutterEventChannel(
-      name: "app.hibiki.reader/url_events/stream",
+      name: "app.fushi.reader/url_events/stream",
       binaryMessenger: binaryMessenger)
     urlEventChannel.setStreamHandler(self)
 
     let brightnessChannel = FlutterMethodChannel(
-      name: "app.hibiki.reader/screen_brightness",
+      name: "app.fushi.reader/screen_brightness",
       binaryMessenger: binaryMessenger)
     brightnessChannel.setMethodCallHandler { (call, result) in
       switch call.method {
@@ -123,7 +123,7 @@ import Flutter
   ) -> Bool {
     deliverUrl(url.absoluteString)
     let handled = super.application(application, open: url, options: options)
-    return handled || url.scheme == "hibiki"
+    return handled || url.scheme == "fushi"
   }
 
   func deliverUrl(_ url: String) {

@@ -55,7 +55,7 @@ const String _payload = '{"expression":"言葉"}';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  const MethodChannel channel = MethodChannel('app.hibiki.reader/anki');
+  const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
 
   late List<Map<String, String>> mediaCalls; // {preferredName, filename}
 

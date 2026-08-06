@@ -50,7 +50,7 @@ void main() {
     final String appDelegate =
         File('ios/Runner/AppDelegate.swift').readAsStringSync();
 
-    expect(appDelegate, contains('app.hibiki.reader/splash'));
+    expect(appDelegate, contains('app.fushi.reader/splash'));
     expect(appDelegate, contains('getSplashColor'));
     expect(appDelegate, contains('LaunchScreen'));
   });

@@ -45,7 +45,7 @@ void main() {
 
   group('① Android MediaPlayer is reused via reset(), not new per play', () {
     final String java = _read(
-        'android/app/src/main/java/app/hibiki/reader/TtsChannelHandler.java');
+        'android/app/src/main/java/app/fushi/reader/TtsChannelHandler.java');
     final String flat = java.replaceAll(RegExp(r'\s+'), ' ');
 
     test('play paths go through a shared startPlayback that resets', () {

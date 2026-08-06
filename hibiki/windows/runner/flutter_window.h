@@ -35,7 +35,7 @@ class FlutterWindow : public Win32Window {
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
 
-  // Receives title-bar colors pushed from Dart (app.hibiki/window channel).
+  // Receives title-bar colors pushed from Dart (app.fushi/window channel).
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       caption_channel_;
 
@@ -45,7 +45,7 @@ class FlutterWindow : public Win32Window {
 
   // TODO-904 P0 回归：单实例守卫下，第二实例用 WM_COPYDATA 把「用 Hibiki 打开视频」
   // 的路径转交给首实例。首实例在 MessageHandler 收到 WM_COPYDATA 后经此 channel 把
-  // UTF-8 路径推给 Dart（app.hibiki/external_video → _openExternalVideo），复用既有
+  // UTF-8 路径推给 Dart（app.fushi/external_video → _openExternalVideo），复用既有
   // external-video 打开链路，不另造第二套。
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       external_video_channel_;
