@@ -8,10 +8,10 @@
 PRODUCT_NAME = hibiki
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.hibiki
+PRODUCT_BUNDLE_IDENTIFIER = app.fushi.reader
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 Fushi. All rights reserved.
 
 // Native hoshidicts FFI library, built by the macOS Runner target and copied
 // into Contents/Frameworks so DynamicLibrary.open can resolve it from the app.
