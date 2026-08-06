@@ -164,8 +164,8 @@ class HighlightBridge {
 
   function _skip(c) {
     if (typeof __hoshiIsSkippable === 'function') return __hoshiIsSkippable(c);
-    if (window.hoshiReader && window.hoshiReader.isMatchableChar) {
-      return !window.hoshiReader.isMatchableChar(String.fromCodePoint(c));
+    if (window.fushiReader && window.fushiReader.isMatchableChar) {
+      return !window.fushiReader.isMatchableChar(String.fromCodePoint(c));
     }
     return false;
   }

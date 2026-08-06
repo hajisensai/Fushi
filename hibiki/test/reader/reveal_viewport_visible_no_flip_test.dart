@@ -21,7 +21,7 @@ import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 ///
 /// 修复：起始边落在真实 client 视口 `[0, viewportExtent)` 内即「已在本页可见」，reveal 不翻页。
 ///
-/// 这是 JS `window.hoshiReader.scrollToRange` 落页决策的纯 Dart 影子（headless WebView 不可用，
+/// 这是 JS `window.fushiReader.scrollToRange` 落页决策的纯 Dart 影子（headless WebView 不可用，
 /// 按项目测试范式：纯函数单测 + 源码守卫）。
 void main() {
   // pageStep 比视口 extent 小半页：真实设备上 chrome inset / body padding 造成的失配。

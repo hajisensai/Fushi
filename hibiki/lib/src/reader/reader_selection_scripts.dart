@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:ui';
 
 /// TODO-393：阅读器 DOM 里「当前查词句」前后一条上下文句的解析结果。
-/// [normOffset]/[normLength] 是整书归一化偏移（有 [window.hoshiReader] 时才有值），
+/// [normOffset]/[normLength] 是整书归一化偏移（有 [window.fushiReader] 时才有值），
 /// 供有声书把这句映射到音频区间；纯阅读时为 null（只合文本）。
 class SurroundingSentence {
   const SurroundingSentence({
@@ -720,7 +720,7 @@ window.hoshiSelection = {
   // TODO-393：从「当前查词句」往前 / 往后逐句采集上下文（制卡「上 N 句 / 下 N 句」）。
   // 以当前 this.selection 的起点定位当前句边界，再用 getSentenceContext 从「当前句首
   // 的前一个字符」继续往前取上一句、从「当前句尾的后一个字符」往后取下一句，逐句迭代。
-  // 每条返回 sentence 文本 + （有 window.hoshiReader 时）整书归一化偏移，供宿主裁句子
+  // 每条返回 sentence 文本 + （有 window.fushiReader 时）整书归一化偏移，供宿主裁句子
   // 音频区间。到段首 / 文首（无更多字符）即止，故实际句数可能少于请求数。
   getSurroundingSentences: function(prevCount, nextCount) {
     var result = { prev: [], next: [] };
@@ -728,7 +728,7 @@ window.hoshiSelection = {
     var self = this;
     var describe = function(ctx) {
       var entry = { sentence: ctx.sentence };
-      if (window.hoshiReader) {
+      if (window.fushiReader) {
         var s = self.getNormalizedOffset(ctx.sStartNode, ctx.sStartOffset);
         var e = self.getNormalizedOffset(ctx.sEndNode, ctx.sEndOffset);
         if (s !== null && e !== null) {
@@ -812,7 +812,7 @@ window.hoshiSelection = {
       else { endNode = startNode; endOffset = startOffset; }
     }
     var sentenceContext = this.getSentenceContext(startNode, startOffset);
-    var normalizedOffset = window.hoshiReader
+    var normalizedOffset = window.fushiReader
       ? this.getNormalizedOffset(startNode, startOffset) : null;
     var normalizedLength = null;
     if (normalizedOffset !== null) {
@@ -829,7 +829,7 @@ window.hoshiSelection = {
     var sentenceOffset = sentenceContext.sentenceOffset;
     var sentenceNormalizedOffset = null;
     var sentenceNormalizedLength = null;
-    if (window.hoshiReader) {
+    if (window.fushiReader) {
       var isDrag = !(startNode === endNode && startOffset === endOffset);
       var endContext = isDrag
         ? this.getSentenceContext(endNode, endOffset) : sentenceContext;
@@ -927,10 +927,10 @@ window.hoshiSelection = {
     return null;
   },
   // 图节点在整书归一化文本坐标里的位置：优先取图**后**第一个正文文本节点的归一化偏移
-  // （图排在这句之前），取不到再退到图**前**最后一个文本节点的末端偏移。无 hoshiReader
+  // （图排在这句之前），取不到再退到图**前**最后一个文本节点的末端偏移。无 fushiReader
   // （无归一化映射）时返回 null，宿主兜底挂到最前一段。
   imageNormOffset: function(el) {
-    if (!window.hoshiReader) return null;
+    if (!window.fushiReader) return null;
     var w = this.createWalker(document.body);
     w.currentNode = el;
     var after = w.nextNode();
@@ -1133,7 +1133,7 @@ window.hoshiSelection = {
         };
       }
     }
-    var normalizedOffset = window.hoshiReader ? this.getNormalizedOffset(startNode, startOffset) : null;
+    var normalizedOffset = window.fushiReader ? this.getNormalizedOffset(startNode, startOffset) : null;
     var normalizedLength = null;
     if (normalizedOffset !== null && ranges.length > 0) {
       var lastRange = ranges[ranges.length - 1];
@@ -1142,7 +1142,7 @@ window.hoshiSelection = {
     }
     var sentenceNormalizedOffset = null;
     var sentenceNormalizedLength = null;
-    if (window.hoshiReader) {
+    if (window.fushiReader) {
       var snStart = this.getNormalizedOffset(sentenceContext.sStartNode, sentenceContext.sStartOffset);
       var snEnd = this.getNormalizedOffset(sentenceContext.sEndNode, sentenceContext.sEndOffset);
       if (snStart !== null && snEnd !== null) {
@@ -1319,12 +1319,12 @@ window.hoshiSelection = {
   // glyph of the first range) and end (last glyph of the last range). Two round
   // touch grips are drawn at those endpoints so the user can adjust the range
   // after a drag-select instead of being forced into an immediate lookup. Drag
-  // semantics honour the writing mode via hoshiReader.isVertical(). The grips
+  // semantics honour the writing mode via fushiReader.isVertical(). The grips
   // only ever mutate the app-drawn selection, never the browser's native one, so
   // no double selection is created (TODO-1279).
   _selectionVertical: function() {
-    if (window.hoshiReader && typeof window.hoshiReader.isVertical === 'function') {
-      return window.hoshiReader.isVertical();
+    if (window.fushiReader && typeof window.fushiReader.isVertical === 'function') {
+      return window.fushiReader.isVertical();
     }
     return window.getComputedStyle(document.body).writingMode === 'vertical-rl';
   },
@@ -1602,15 +1602,15 @@ window.hoshiSelection = {
     return bounds ? { x: bounds.left, y: bounds.top, width: bounds.right - bounds.left, height: bounds.bottom - bounds.top } : null;
   },
   getNormalizedOffset: function(targetNode, offset) {
-    if (!window.hoshiReader) return null;
-    var base = window.hoshiReader.nodeStartOffsets
-      ? window.hoshiReader.nodeStartOffsets.get(targetNode) : undefined;
+    if (!window.fushiReader) return null;
+    var base = window.fushiReader.nodeStartOffsets
+      ? window.fushiReader.nodeStartOffsets.get(targetNode) : undefined;
     if (base !== undefined) {
       var count = base || 0;
       var text = targetNode.textContent;
       for (var i = 0; i < offset;) {
         var char = String.fromCodePoint(text.codePointAt(i));
-        if (window.hoshiReader.isMatchableChar(char)) count++;
+        if (window.fushiReader.isMatchableChar(char)) count++;
         i += char.length;
       }
       return count;
@@ -1623,14 +1623,14 @@ window.hoshiSelection = {
       if (node === targetNode) {
         for (var i = 0; i < offset;) {
           var char = String.fromCodePoint(nodeText.codePointAt(i));
-          if (window.hoshiReader.isMatchableChar(char)) count++;
+          if (window.fushiReader.isMatchableChar(char)) count++;
           i += char.length;
         }
         return count;
       }
       for (var i = 0; i < nodeText.length;) {
         var char = String.fromCodePoint(nodeText.codePointAt(i));
-        if (window.hoshiReader.isMatchableChar(char)) count++;
+        if (window.fushiReader.isMatchableChar(char)) count++;
         i += char.length;
       }
     }
@@ -1649,8 +1649,8 @@ window.hoshiSelection = {
       parent.normalize();
     }
     this.highlightWrappers = [];
-    if (!window.__hoshiCssHighlightsSupported && window.hoshiReader && window.hoshiReader.buildNodeOffsets) {
-      window.hoshiReader.buildNodeOffsets();
+    if (!window.__hoshiCssHighlightsSupported && window.fushiReader && window.fushiReader.buildNodeOffsets) {
+      window.fushiReader.buildNodeOffsets();
     }
   },
   clearSelection: function() {

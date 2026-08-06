@@ -67,7 +67,7 @@ import 'test_helpers.dart';
 bool _webViewShown() =>
     find.byKey(const ValueKey<String>('hoshi_webview')).evaluate().isNotEmpty;
 
-/// 内容就绪标记（hoshiReader 已注入、首章已铺好）。
+/// 内容就绪标记（fushiReader 已注入、首章已铺好）。
 bool _contentReady() => find
     .byKey(const ValueKey<String>('hoshi_content_ready'))
     .evaluate()
@@ -172,7 +172,7 @@ void main() {
           // 健全性：我们已强制 horizontal-tb；确认 DOM 真生效（竖排无「句尾被底栏
           // 切」语义，本守卫只覆盖横排——产品修复亦只动横排分支）。
           final Object? verticalRaw =
-              await runJs!('window.hoshiReader.isVertical();');
+              await runJs!('window.fushiReader.isVertical();');
           final bool vertical = verticalRaw == true || verticalRaw == 'true';
           expect(vertical, isFalse,
               reason: 'after forcing horizontal-tb, the chapter must render '
@@ -186,7 +186,7 @@ void main() {
           // marginTop·vh > 0，使 paddingTop(=marginTop·vh) > bandTop，开出修复生效窗口。
           const double chromeTopInsetPx = 0.0;
           await runJs(
-            'window.hoshiReader.setChromeInsets('
+            'window.fushiReader.setChromeInsets('
             '$chromeTopInsetPx, $chromeBottomInsetPx);',
           );
           await tester.pump(const Duration(milliseconds: 300));
@@ -197,7 +197,7 @@ void main() {
           // (溢出底沿, 可见区高] 之间。纯几何探测，返回 [start, end]。
           final String pickJson = await runJs(r'''
             (function() {
-              var rr = window.hoshiReader;
+              var rr = window.fushiReader;
               var walker = rr.createWalker();
               var total = 0, node;
               while (node = walker.nextNode()) {
@@ -260,7 +260,7 @@ void main() {
           Future<Map<String, dynamic>> probe() async {
             final String raw = await runJs('''
               (function() {
-                var rr = window.hoshiReader;
+                var rr = window.fushiReader;
                 var rootStyle = getComputedStyle(document.documentElement);
                 var bottomInset = parseFloat(
                   rootStyle.getPropertyValue('--chrome-bottom-inset')) || 0;
@@ -282,7 +282,7 @@ void main() {
           }
 
           // ── 负向对照：旧单点句首锚（不传句尾）→ 句尾应溢出可见区底沿 ──
-          await runJs('window.hoshiReader.restoreToCharOffset($startOff);');
+          await runJs('window.fushiReader.restoreToCharOffset($startOff);');
           await tester.pump(const Duration(milliseconds: 400));
           final Map<String, dynamic> oldProbe = await probe();
           debugPrint('[coll-jump] OLD(start-only) probe=$oldProbe');
@@ -300,7 +300,7 @@ void main() {
                   'fixture sentence genuinely overflows so the guard is meaningful');
 
           // ── 正向断言：产品真实路径 restoreToCharOffset(start, end) ──
-          await runJs('window.hoshiReader.restoreToCharOffset('
+          await runJs('window.fushiReader.restoreToCharOffset('
               '$startOff, $endOff);');
           await tester.pump(const Duration(milliseconds: 400));
           final Map<String, dynamic> newProbe = await probe();

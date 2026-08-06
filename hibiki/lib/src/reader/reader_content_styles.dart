@@ -65,7 +65,7 @@ class ReaderContentStyles {
   // 保持，列底边 = V−F−cB ≤ V−cB（漏 0，且与 F 无关）。
   //
   // 注意：JS 端必须把 viewportHeight 注入为 `--reader-viewport-height` 且
-  // hoshiReader.viewportHeight = V（见 reader_pagination_scripts.dart 的
+  // fushiReader.viewportHeight = V（见 reader_pagination_scripts.dart 的
   // initialize / updatePageSize），否则 CSS 变量为空回退 100vh、列高失配复活跳章。
   //
   // TODO-743（P0 坍塌地板）：当 cT + cB + F ≥ V（横屏短边小 + 大字号）时，上面的
@@ -827,7 +827,7 @@ html, body {
   background: ${colors.backgroundColor} !important;
   color: ${colors.textColor} !important;
   writing-mode: ${settings.writingMode} !important;
-  /* TODO-114: 分页模式翻页本是瞬时跳页（hoshiReader.assignPagePosition 直接赋值
+  /* TODO-114: 分页模式翻页本是瞬时跳页（fushiReader.assignPagePosition 直接赋值
      scrollTop/scrollLeft）。但触摸拖动会让 WebView 把手势当原生 pan，让页面跟手
      位移再被 snap 回弹 —— 那段跟手 + 回弹就是用户看到的「滑动翻页动画」。禁用
      touch-action 后触摸不再被翻译成原生滚动，翻页只由 onSwipe 检测后瞬时跳页，

@@ -23,7 +23,7 @@ void main() {
     // isolate the function body up to the next top-level function decl so the
     // assertions are about THIS function, not the whole file.
     final int fnEnd =
-        src.indexOf('function _hoshiReaderCaretRangeAtPoint(', fnStart);
+        src.indexOf('function _fushiReaderCaretRangeAtPoint(', fnStart);
     expect(fnEnd, greaterThan(fnStart));
     final String body = src.substring(fnStart, fnEnd);
 

@@ -102,7 +102,7 @@ void main() {
     // full-size content。Reader 必须自己提供稳定可抓区，不能让 WebView 吞满顶边。
     expect(reader, contains('package:window_manager/window_manager.dart'));
     expect(reader, contains('DragToMoveArea('));
-    expect(reader, contains("'hoshi_reader_window_drag_area'"));
+    expect(reader, contains("'fushi_reader_window_drag_area'"));
     expect(reader, contains('kMacTitleBarHeight'));
     expect(reader, contains('_macosWindowTitlebarInset'));
     expect(reader, contains('_readerTopOffset =>'));

@@ -206,7 +206,7 @@ void main() {
               reason: 'reader must expose debugEvaluateJavascript hook');
 
           final Object? verticalRaw =
-              await runJs!('window.hoshiReader.isVertical();');
+              await runJs!('window.fushiReader.isVertical();');
           expect(verticalRaw == true || verticalRaw == 'true', isTrue,
               reason: 'reader must be vertical-rl for TODO-1308');
 
@@ -238,11 +238,11 @@ void main() {
           // Trigger the real jump/relayout path: scroll to a char offset (the
           // reveal/reanchor machinery) + toggle chrome insets (forces the same
           // incremental relayout _applyChapterHighlights triggers).
-          await runJs('window.hoshiReader.restoreToCharOffset(200);');
+          await runJs('window.fushiReader.restoreToCharOffset(200);');
           await tester.pump(const Duration(milliseconds: 400));
-          await runJs('window.hoshiReader.setChromeInsets(48, 96);');
+          await runJs('window.fushiReader.setChromeInsets(48, 96);');
           await tester.pump(const Duration(milliseconds: 400));
-          await runJs('window.hoshiReader.setChromeInsets(0, 0);');
+          await runJs('window.fushiReader.setChromeInsets(0, 0);');
           await tester.pump(const Duration(milliseconds: 400));
 
           // Measure AFTER jump/relayout.

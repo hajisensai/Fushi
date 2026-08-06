@@ -133,7 +133,7 @@ void main() {
 
       Future<double> currentProgress() async {
         final dynamic raw = await ReaderHibikiPage.debugEvaluateJavascript!(
-            'window.hoshiReader ? window.hoshiReader.calculateProgress() : -1');
+            'window.fushiReader ? window.fushiReader.calculateProgress() : -1');
         if (raw is num) return raw.toDouble();
         return double.tryParse(raw?.toString() ?? '') ?? -1;
       }
@@ -199,7 +199,7 @@ void main() {
       // 下「翻一页」实测跨过的字符数当上界 —— 漂一张整页插图 ≥ 一页，必然超出。
       Future<int> firstVisibleChar() async {
         final dynamic raw = await ReaderHibikiPage.debugEvaluateJavascript!(
-            'window.hoshiReader ? window.hoshiReader.getFirstVisibleCharOffset() : -1');
+            'window.fushiReader ? window.fushiReader.getFirstVisibleCharOffset() : -1');
         if (raw is num) return raw.toInt();
         return int.tryParse(raw?.toString() ?? '') ?? -1;
       }
@@ -226,7 +226,7 @@ void main() {
       // 翻进章内中段（不是章首、不是章末）。
       for (int i = 0; i < 3; i++) {
         await ReaderHibikiPage.debugEvaluateJavascript!(
-            "window.hoshiReader.paginate('forward');");
+            "window.fushiReader.paginate('forward');");
         await tester.pump(const Duration(milliseconds: 400));
       }
       final int anchorChar = await firstVisibleChar();
@@ -262,7 +262,7 @@ void main() {
       final int restoredChar = await firstVisibleChar();
       // 自校准容差：同章同版式下翻一页跨过多少字符。
       await ReaderHibikiPage
-          .debugEvaluateJavascript!("window.hoshiReader.paginate('forward');");
+          .debugEvaluateJavascript!("window.fushiReader.paginate('forward');");
       await tester.pump(const Duration(milliseconds: 600));
       final int nextPageChar = await firstVisibleChar();
       final int pageSpan = (nextPageChar - restoredChar).abs();

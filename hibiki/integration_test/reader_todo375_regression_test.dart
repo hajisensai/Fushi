@@ -146,7 +146,7 @@ void main() {
       int scrolledCount = 0;
       for (int i = 0; i < 6; i++) {
         final dynamic r =
-            await runJs('window.hoshiReader.paginate("forward");');
+            await runJs('window.fushiReader.paginate("forward");');
         final String result = (r as String?) ?? 'null';
         debugPrint('[t375] paginate forward #$i -> $result');
         if (result == 'scrolled') scrolledCount++;
@@ -221,19 +221,19 @@ void main() {
       // The reopened continuous reader installs a fresh JS hook. content_ready
       // may already have fired during the first poll window, so instead of
       // gating on the key we wait until the reopened reader's hook is usable
-      // AND hoshiReader is present, then drive paginate. Generous fixed settle
+      // AND fushiReader is present, then drive paginate. Generous fixed settle
       // covers the headless reopen + WebView2 init latency.
       await tester.pump(const Duration(seconds: 8));
       final runJs2 = ReaderHibikiPage.debugEvaluateJavascript;
       expect(runJs2, isNotNull,
           reason: 'reopened reader must reinstall the JS hook');
 
-      // Wait until hoshiReader is live in the reopened WebView (small string
+      // Wait until fushiReader is live in the reopened WebView (small string
       // return marshals fine through the Windows fork).
       bool readerLive = false;
       for (int i = 0; i < 40; i++) {
         final dynamic probe = await runJs2!(
-            'typeof window.hoshiReader !== "undefined" ? "yes" : "no"');
+            'typeof window.fushiReader !== "undefined" ? "yes" : "no"');
         if ((probe as String?) == 'yes') {
           readerLive = true;
           break;
@@ -241,13 +241,13 @@ void main() {
         await tester.pump(const Duration(milliseconds: 500));
       }
       expect(readerLive, isTrue,
-          reason: 'continuous-mode hoshiReader must come alive');
+          reason: 'continuous-mode fushiReader must come alive');
       await tester.pump(const Duration(seconds: 2));
 
       int contScrolled = 0;
       for (int i = 0; i < 6; i++) {
         final dynamic r =
-            await runJs2!('window.hoshiReader.paginate("forward");');
+            await runJs2!('window.fushiReader.paginate("forward");');
         final String result = (r as String?) ?? 'null';
         debugPrint('[t375][continuous] paginate forward #$i -> $result');
         if (result == 'scrolled') contScrolled++;

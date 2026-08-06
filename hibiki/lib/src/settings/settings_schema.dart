@@ -60,7 +60,7 @@ _SettingsSchemaCache _schemaSnapshot() {
 ///
 /// 生产路径不需要它（locale 是唯一缓存键，已由 [_schemaSnapshot] 自动比对）；存在
 /// 是为两件事：① debug 热重载——改了 `settings_schema_*.dart` 的树结构后，已缓存的
-/// 旧树不会自己更新，故 `_HoshiReaderAppState.reassemble()` 调它；② 测试里需要观察
+/// 旧树不会自己更新，故 `_FushiReaderAppState.reassemble()` 调它；② 测试里需要观察
 /// 「重新构造」而非缓存命中时的显式复位。
 void resetSettingsSchemaCache() {
   _schemaCache = null;

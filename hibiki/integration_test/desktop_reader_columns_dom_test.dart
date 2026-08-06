@@ -339,7 +339,7 @@ void main() {
         parse(await controller.evaluateJavascript(source: imgProbe));
     debugPrint('[img-dom] no-clamp => ${jsonEncode(noClamp)}');
 
-    // Replicate hoshiReader._imageMaxBox: set --hoshi-image-max-width to the used
+    // Replicate fushiReader._imageMaxBox: set --hoshi-image-max-width to the used
     // sub-column width (getComputedStyle(body).columnWidth).
     await controller.evaluateJavascript(source: r'''
       (function() {

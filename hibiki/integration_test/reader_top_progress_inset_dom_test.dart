@@ -309,9 +309,9 @@ Future<void> _activateBook(WidgetTester tester, String bookKey) async {
   final AppModel appModel = container.read(appProvider);
 
   // openMedia 需要 WidgetRef 但打开路径不解引用它（经 app 的 navigatorKey context
-  // 路由，非 ref）。根 HoshiReaderApp 是 ConsumerStatefulWidget，其 element 即 WidgetRef。
+  // 路由，非 ref）。根 FushiReaderApp 是 ConsumerStatefulWidget，其 element 即 WidgetRef。
   final ConsumerStatefulElement appElement = tester
-      .element(find.byType(app.HoshiReaderApp)) as ConsumerStatefulElement;
+      .element(find.byType(app.FushiReaderApp)) as ConsumerStatefulElement;
   final WidgetRef ref = appElement;
 
   final MediaItem? item =

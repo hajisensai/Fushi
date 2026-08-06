@@ -13,7 +13,7 @@ import 'package:hibiki/utils.dart' show t;
 ///   - [timedOut] == false → 居中转圈（与旧行为一致）。
 ///   - [timedOut] == true  → 「耗时超预期 + 说明 + 重试」逃生 UI，[onRetry] 触发重试。
 ///
-/// 计时（何时翻 [timedOut]）由 `_HoshiReaderAppState` 的看门狗 [Timer] 负责；本 widget
+/// 计时（何时翻 [timedOut]）由 `_FushiReaderAppState` 的看门狗 [Timer] 负责；本 widget
 /// 只做渲染，故可被 widget 测试独立断言「超时后 Retry 出现」而无需 pump 整个 App。
 class LoadingWatchdogView extends StatelessWidget {
   const LoadingWatchdogView({

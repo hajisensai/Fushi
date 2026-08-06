@@ -60,7 +60,7 @@ void main() {
           'window.hoshiTestHarness.getPaginationState();',
         ) as String) as Map<String, dynamic>,
       );
-      await eval('window.hoshiReader.paginate("forward");');
+      await eval('window.fushiReader.paginate("forward");');
       await tester.pump(const Duration(seconds: 1));
       final PaginationState after = PaginationState.fromJson(
         jsonDecode(await eval(

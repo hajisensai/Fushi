@@ -13,8 +13,8 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// WebView ↔ Flutter 双向通道，用于有声书句子高亮和点击跳转。
 ///
-/// hoshiReader 架构：不再依赖 ttu IndexedDB / __ttu* JS API，
-/// 改用 window.hoshiReader (pagination_scripts) + flutter_inappwebview.callHandler。
+/// fushiReader 架构：不再依赖 ttu IndexedDB / __ttu* JS API，
+/// 改用 window.fushiReader (pagination_scripts) + flutter_inappwebview.callHandler。
 class AudiobookBridge {
   AudiobookBridge._();
 
@@ -147,8 +147,8 @@ window.__hoshiRevealAllBlurred = function() {
 
 window.__hoshiRevealTarget = function(t) {
   if (!t) return;
-  var r = window.hoshiReader;
-  // 分页模式 hoshiReader 没有 scrollToTarget、且 body overflow:hidden 下原生
+  var r = window.fushiReader;
+  // 分页模式 fushiReader 没有 scrollToTarget、且 body overflow:hidden 下原生
   // scrollIntoView 不滚动；reader 的页对齐 reveal 原语是 scrollToRange（连续模式
   // 走 revealElement→scrollToTarget）。用 selectNode(t) 取元素自身盒，对 img/svg/
   // 文本都成立（selectNodeContents 对空的 img 取不到 rect）。
@@ -249,7 +249,7 @@ window.__hoshiResetPrevHighlight = function() {
   ///
   /// `__hoshiIsSkippable` 保留 — 归一化偏移计算需要它。
   /// 删除了 `__hoshiLoadSasayakiRefs`（不再依赖 ttu IndexedDB）。
-  /// cue 应用改为调用 `window.hoshiReader.applySasayakiCues()`。
+  /// cue 应用改为调用 `window.fushiReader.applySasayakiCues()`。
   static const String _sasayakiFn = '''
 window.__hoshiIsSkippable = function(c) {
   if (c >= 0x30 && c <= 0x39) return false;
@@ -279,21 +279,21 @@ window.__hoshiIsSkippable = function(c) {
 };
 
 window.__hoshiClearSasayakiApplied = function() {
-  if (window.hoshiReader && typeof window.hoshiReader.clearSasayakiCue === 'function') {
-    window.hoshiReader.clearSasayakiCue();
+  if (window.fushiReader && typeof window.fushiReader.clearSasayakiCue === 'function') {
+    window.fushiReader.clearSasayakiCue();
   }
 };
 
 window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
   if (!document.body && !document.documentElement) return;
-  if (window.hoshiReader && typeof window.hoshiReader.applySasayakiCues === 'function') {
-    window.hoshiReader.applySasayakiCues(cuesJson);
+  if (window.fushiReader && typeof window.fushiReader.applySasayakiCues === 'function') {
+    window.fushiReader.applySasayakiCues(cuesJson);
     return;
   }
 };
 
 window.__hoshiSasayakiAnchorEl = function(key) {
-  var r = window.hoshiReader;
+  var r = window.fushiReader;
   if (!r) return null;
   // BUG-898 根因：这里原本是 `if(cueRangesMap) {...} else if(cueWrappers) {...}`。
   // 但 __hoshiCssHighlightsSupported 在现代 WebView 恒为 true 且 cueRangesMap **从不被
@@ -318,7 +318,7 @@ window.__hoshiSasayakiAnchorEl = function(key) {
 
 window.__hoshiHighlightSasayakiCueById = function(key, reveal, pauseEnabled) {
   if (reveal === undefined) reveal = true;
-  var r = window.hoshiReader;
+  var r = window.fushiReader;
   if (!r || typeof r.highlightSasayakiCue !== 'function') return false;
   var anchor = window.__hoshiSasayakiAnchorEl(key);
   var revealedImage = false;
@@ -641,13 +641,13 @@ window.__hoshiAnnotate = function(chapterHref) {
     );
   }
 
-  /// 通过 hoshiReader.calculateProgress() 获取当前位置。
+  /// 通过 fushiReader.calculateProgress() 获取当前位置。
   static Future<ReaderViewportPos?> getViewportNormOffset(
     InAppWebViewController controller,
   ) async {
     final Object? raw = await controller.evaluateJavascript(
       source:
-          '(function(){try{if(window.hoshiReader){var p=window.hoshiReader.calculateProgress();return JSON.stringify({section:0,offset:Math.round(p*10000)});}return "null";}catch(e){return "null";}})()',
+          '(function(){try{if(window.fushiReader){var p=window.fushiReader.calculateProgress();return JSON.stringify({section:0,offset:Math.round(p*10000)});}return "null";}catch(e){return "null";}})()',
     );
     if (raw is! String || raw.isEmpty || raw == 'null') {
       return null;
@@ -669,7 +669,7 @@ window.__hoshiAnnotate = function(chapterHref) {
     }
   }
 
-  /// 通过 hoshiReader.restoreProgress() 跳到给定进度。
+  /// 通过 fushiReader.restoreProgress() 跳到给定进度。
   static Future<void> scrollToNormOffset(
     InAppWebViewController controller, {
     required int section,
@@ -679,7 +679,7 @@ window.__hoshiAnnotate = function(chapterHref) {
     final double progress = offset / 10000.0;
     await controller.evaluateJavascript(
       source:
-          '(function(){try{if(window.hoshiReader)window.hoshiReader.restoreProgress($progress);}catch(e){}})()',
+          '(function(){try{if(window.fushiReader)window.fushiReader.restoreProgress($progress);}catch(e){}})()',
     );
   }
 

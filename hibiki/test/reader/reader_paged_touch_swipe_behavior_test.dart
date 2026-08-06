@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// word-lookup taps using the full movement path.
 ///
 /// 回归背景：commit 890378f19 把 touch 纳入 pointer 拖动状态机（pointerdown 的
-/// 门控从 `e.pointerType !== 'mouse'` 改成 `_hoshiReaderPointerPrimaryButton(e)`，
+/// 门控从 `e.pointerType !== 'mouse'` 改成 `_fushiReaderPointerPrimaryButton(e)`，
 /// 对 touch 返 true）。分页模式下 touch 因此走进 native-text-start 抑制路径：
 /// pointermove 超 6px 清掉 `hasStart`，touchend 被吞，`onSwipe` 永不触发 → 触摸
 /// 滑动不再翻页。原静态守卫只断言源码子串，没执行 JS，漏掉了这个回归。
@@ -17,8 +17,8 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 防假绿的两个关键（上一版守不住回归的根因）：
 /// ① 伪 DOM 必须实现 `caretRangeFromPoint` 并返回落在 TEXT_NODE 上的 range，
-///    模拟手指真落在正文文字上 → 分页模式 `_hoshiReaderMouseDragStartAllowed`
-///    在 `return !_hoshiReaderCaretRangeAtPoint(...)` 处得 `!range`=false，走
+///    模拟手指真落在正文文字上 → 分页模式 `_fushiReaderMouseDragStartAllowed`
+///    在 `return !_fushiReaderCaretRangeAtPoint(...)` 处得 `!range`=false，走
 ///    native-text 抑制路径（正确的正文行为）。缺 caret 时 helper 返 null、
 ///    `!null`=true，回归版会误进 pointer 拖动机却仍从 pointerup 发 onSwipe，
 ///    掩盖 bug。② 断言区分 onSwipe 来源（`left@touchend` vs `left@pointerup`）：

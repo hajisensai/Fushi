@@ -32,8 +32,8 @@ void main() {
       // 两处 initialize（分页 + 连续）的图片 load 回调都必须失效 metrics。
       final RegExp block = RegExp(
         r'Promise\.all\(imagePromises\)\.then\(function\(\)\s*\{'
-        r'[\s\S]*?window\.hoshiReader\.buildNodeOffsets\(\);'
-        r'[\s\S]*?window\.hoshiReader\.paginationMetrics = null;',
+        r'[\s\S]*?window\.fushiReader\.buildNodeOffsets\(\);'
+        r'[\s\S]*?window\.fushiReader\.paginationMetrics = null;',
       );
       final Iterable<Match> matches = block.allMatches(scriptsSource);
       expect(

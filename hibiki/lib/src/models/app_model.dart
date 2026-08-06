@@ -2899,7 +2899,7 @@ class AppModel with ChangeNotifier {
   /// the bulk of the UI reads the global Method A `t` (which does NOT rebuild
   /// on a [LocaleSettings] change by itself), the root widget tree is
   /// additionally remounted via a locale-keyed [Key] at [main]'s
-  /// [TranslationProvider] (see `_HoshiReaderAppState.build`).
+  /// [TranslationProvider] (see `_FushiReaderAppState.build`).
   ///
   /// Mobile (Android/iOS) keeps the native restart path (`restart_app` plugin
   /// rebuilds the Activity/scene — no mutex race). The data-root migration

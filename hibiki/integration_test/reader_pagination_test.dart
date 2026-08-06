@@ -201,14 +201,14 @@ void main() {
       debugPrint('[M1] Distinct markers seen: ${allMarkers.length} '
           '(expected $markerCount, DOM $domMarkerCount)');
       final Object? tailGeometry = await eval('''JSON.stringify((function() {
-        var ctx = hoshiReader.getScrollContext();
-        var metrics = hoshiReader.paginationMetrics || hoshiReader.buildPaginationMetrics();
+        var ctx = fushiReader.getScrollContext();
+        var metrics = fushiReader.paginationMetrics || fushiReader.buildPaginationMetrics();
         var marker = document.getElementById('m420');
         var rects = marker ? Array.from(marker.getClientRects()).map(function(r) {
           return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,width:r.width,height:r.height};
         }) : [];
         return {
-          pagePosition: hoshiReader.getPagePosition(ctx),
+          pagePosition: fushiReader.getPagePosition(ctx),
           pageSize: ctx.pageSize,
           contextMaxScroll: ctx.maxScroll,
           browserMaxScroll: ctx.vertical
@@ -331,7 +331,7 @@ void main() {
       // Page back into the middle so a regression to chapter start is
       // unambiguous (the I9 step left us at the chapter end).
       for (int i = 0; i < 18; i++) {
-        await eval('window.hoshiReader.paginate("backward");');
+        await eval('window.fushiReader.paginate("backward");');
       }
       await tester.pump(const Duration(milliseconds: 300));
       final midState = PaginationState.fromJson(
@@ -410,9 +410,9 @@ Future<void> _activateBook(
 
   // openMedia requires a WidgetRef but never dereferences it on the open path
   // (it routes through the app's navigatorKey context, not ref). The root
-  // [HoshiReaderApp] is a ConsumerStatefulWidget, so its element IS a WidgetRef.
+  // [FushiReaderApp] is a ConsumerStatefulWidget, so its element IS a WidgetRef.
   final ConsumerStatefulElement appElement = tester
-      .element(find.byType(app.HoshiReaderApp)) as ConsumerStatefulElement;
+      .element(find.byType(app.FushiReaderApp)) as ConsumerStatefulElement;
   final WidgetRef ref = appElement;
 
   final MediaItem? item =

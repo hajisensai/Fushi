@@ -149,7 +149,7 @@ class ReaderPaginationScripts {
     return out;
   }
 
-  /// JS `window.hoshiReader.paginate` 的纯 Dart 影子，供单测验证「错位不跳页」
+  /// JS `window.fushiReader.paginate` 的纯 Dart 影子，供单测验证「错位不跳页」
   /// 不变量（BUG-169）。两侧同算法：
   ///
   /// - forward → 严格在 [currentScroll] 之后的最近整页边界
@@ -203,7 +203,7 @@ class ReaderPaginationScripts {
     }
   }
 
-  /// JS `window.hoshiReader.scrollToRange` 落页锚的纯 Dart 影子（TODO-881）。
+  /// JS `window.fushiReader.scrollToRange` 落页锚的纯 Dart 影子（TODO-881）。
   ///
   /// cue 高亮 reveal / search-highlight 共用这条落页路径。历史上它用首段 client
   /// rect 的**几何中点**当锚（`(top+bottom)/2` 或 `(left+right)/2`）再 `alignToPage`
@@ -686,17 +686,17 @@ class ReaderPaginationScripts {
   }
 
   static String paginateInvocation(ReaderNavigationDirection direction) =>
-      "window.hoshiReader && window.hoshiReader.paginate('${direction.jsValue}')";
+      "window.fushiReader && window.fushiReader.paginate('${direction.jsValue}')";
 
   static String progressInvocation() =>
-      'window.hoshiReader && window.hoshiReader.calculateProgress()';
+      'window.fushiReader && window.fushiReader.calculateProgress()';
 
   static String stableProgressInvocation() =>
-      'window.hoshiReader && !window.hoshiReader._reanchorPending '
+      'window.fushiReader && !window.fushiReader._reanchorPending '
       '&& window.hoshiProgressDetails ? window.hoshiProgressDetails() : null';
 
   static String updatePageSizeInvocation(double width, double height) =>
-      'window.hoshiReader && window.hoshiReader.updatePageSize($width, $height)';
+      'window.fushiReader && window.fushiReader.updatePageSize($width, $height)';
 
   static ReaderNavigationDirection? navigationDirectionForKey(
     LogicalKeyboardKey key, {
@@ -721,61 +721,61 @@ class ReaderPaginationScripts {
     String cueId, {
     required bool reveal,
   }) =>
-      'window.hoshiReader.highlightSasayakiCue(${_jsStringLiteral(cueId)}, $reveal)';
+      'window.fushiReader.highlightSasayakiCue(${_jsStringLiteral(cueId)}, $reveal)';
 
   static String clearSasayakiCueInvocation() =>
-      'window.hoshiReader.clearSasayakiCue()';
+      'window.fushiReader.clearSasayakiCue()';
 
   static String scrollToSearchMatchInvocation(String query, int hintOffset) =>
-      'window.hoshiReader.scrollToSearchMatch(${_jsStringLiteral(query)}, $hintOffset)';
+      'window.fushiReader.scrollToSearchMatch(${_jsStringLiteral(query)}, $hintOffset)';
 
   static String clearSearchHighlightInvocation() =>
-      'window.hoshiReader.clearSearchHighlight()';
+      'window.fushiReader.clearSearchHighlight()';
 
   /// Returns the current page / total pages within the loaded chapter as a JSON
   /// string (`{"currentPage":N,"totalPages":M}`), or the literal `"null"` when
   /// the reader is in a non-paged mode (continuous) where pages don't apply.
   static String pageInfoInvocation() =>
-      'JSON.stringify((window.hoshiReader && window.hoshiReader.pageInfo) '
-      '? window.hoshiReader.pageInfo() : null)';
+      'JSON.stringify((window.fushiReader && window.fushiReader.pageInfo) '
+      '? window.fushiReader.pageInfo() : null)';
 
   static String setChromeInsetsInvocation(double topPx, double bottomPx) =>
-      'window.hoshiReader && window.hoshiReader.setChromeInsets($topPx, $bottomPx)';
+      'window.fushiReader && window.fushiReader.setChromeInsets($topPx, $bottomPx)';
 
   /// TODO-693: 连续模式 appUiScale 缩放重锚的第一阶段——在缩放重建那一帧同步采样首个
   /// 可见字符偏移并置 `_reanchorPending`（挡住 reflow 归零 scroll 污染落库）。返回采到
   /// 的字符偏移；-1 = 无可用锚 / 已有重锚在飞 → 调用方跳过提交阶段。
-  /// `beginUiScaleReanchor` 只存在于连续模式的 `window.hoshiReader`，分页模式缺席，
+  /// `beginUiScaleReanchor` 只存在于连续模式的 `window.fushiReader`，分页模式缺席，
   /// `typeof` 守卫使分页模式整体 no-op（分页有 snap/lock 保护，无需此重锚）。
-  static String beginUiScaleReanchorInvocation() => '(window.hoshiReader && '
-      "typeof window.hoshiReader.beginUiScaleReanchor === 'function') "
-      '? window.hoshiReader.beginUiScaleReanchor() : -1';
+  static String beginUiScaleReanchorInvocation() => '(window.fushiReader && '
+      "typeof window.fushiReader.beginUiScaleReanchor === 'function') "
+      '? window.fushiReader.beginUiScaleReanchor() : -1';
 
   /// TODO-693: 第二阶段——过渡帧 settle 后把暂存锚滚回视口首边并清 `_reanchorPending`。
   /// 仅当第一阶段成功暂存了有效锚时才生效，否则 no-op（绝不误清别处的重锚旗）。
-  static String commitUiScaleReanchorInvocation() => '(window.hoshiReader && '
-      "typeof window.hoshiReader.commitUiScaleReanchor === 'function') "
-      '? window.hoshiReader.commitUiScaleReanchor() : false';
+  static String commitUiScaleReanchorInvocation() => '(window.fushiReader && '
+      "typeof window.fushiReader.commitUiScaleReanchor === 'function') "
+      '? window.fushiReader.commitUiScaleReanchor() : false';
 
   /// TODO-736 B-1（必补点2）：样式变更专用两阶段重锚的第一阶段调用——在换样式那一刻
   /// 同步采锚 + 换 CSS（[jsonCss] 须是已 jsonEncode 的 JS 字符串字面量）+ 失效 metrics +
   /// 重置 image-max + 置 `_reanchorPending` + 暂存锚。返回采到的字符偏移；-1 = 无锚 / 已有
-  /// 重锚在飞 / pagination 未就绪（无 hoshiReader 或非 reader 页）→ 调用方跳过提交阶段并
+  /// 重锚在飞 / pagination 未就绪（无 fushiReader 或非 reader 页）→ 调用方跳过提交阶段并
   /// 自行裸套 CSS 兜底。`beginStyleReanchor` 分页/连续两 shell **各自定义**（不在 _sharedJs，
   /// 因 scrollToCharOffset 签名两 shell 不同）；曾只加进连续 shell、分页缺席致改字号/边距/主题
   /// 等纯 CSS 设置在分页模式不实时生效（守卫见 reader_style_reanchor_both_shells_guard_test）。
   /// 分页/连续各自的 getFirstVisibleCharOffset/scrollToCharOffset 经 `this` 解析（连续含 A-2 兜底）。
   static String beginStyleReanchorInvocation(String jsonCss) =>
-      '(window.hoshiReader && '
-      "typeof window.hoshiReader.beginStyleReanchor === 'function') "
-      '? window.hoshiReader.beginStyleReanchor('
+      '(window.fushiReader && '
+      "typeof window.fushiReader.beginStyleReanchor === 'function') "
+      '? window.fushiReader.beginStyleReanchor('
       "document.getElementById('hoshi-reader-style'), $jsonCss) : -1";
 
   /// TODO-736 B-1：第二阶段——过渡帧 settle 后把暂存锚滚回视口首边并清 `_reanchorPending`。
   /// 仅当第一阶段成功暂存了有效锚时才生效，否则 no-op（绝不误清别处的重锚旗）。
-  static String commitStyleReanchorInvocation() => '(window.hoshiReader && '
-      "typeof window.hoshiReader.commitStyleReanchor === 'function') "
-      '? window.hoshiReader.commitStyleReanchor() : false';
+  static String commitStyleReanchorInvocation() => '(window.fushiReader && '
+      "typeof window.fushiReader.commitStyleReanchor === 'function') "
+      '? window.fushiReader.commitStyleReanchor() : false';
 
   static bool didScroll(String? result) =>
       result?.trim().replaceAll('"', '') == 'scrolled';
@@ -892,7 +892,7 @@ window.__hoshiInstallShell = function(C) {
     }
   },
   // wave1 去重：content-box 尺寸探针（body clientWidth/Height 扣 padding）。曾在分页/连续
-  // 两 shell 尾部各挂一份逐字相同的 window.hoshiReader._contentSize = function(){...}；上移进
+  // 两 shell 尾部各挂一份逐字相同的 window.fushiReader._contentSize = function(){...}；上移进
   // _sharedJs 作对象字面量属性，两 shell 经 $_sharedJs 各得一份、字节等价（_imageMaxBox 经
   // this._contentSize() 调用，属性先于 initialize 求值，定义先于使用）。
   _contentSize: function() {
@@ -1677,32 +1677,32 @@ window.__hoshiInstallShell = function(C) {
   /// 分页 shell 只用单点句首锚（旧实现也只传一个参数）。
   static const String _paginatedInitialRestoreJs = '''
     if (C.initialFragment !== null && C.initialFragment !== undefined) {
-      window.hoshiReader.jumpToFragment(C.initialFragment);
+      window.fushiReader.jumpToFragment(C.initialFragment);
     } else if (C.initialCharOffset >= 0) {
-      window.hoshiReader.restoreToCharOffset(C.initialCharOffset);
+      window.fushiReader.restoreToCharOffset(C.initialCharOffset);
     } else {
-      window.hoshiReader.restoreProgress(C.initialProgress);
+      window.fushiReader.restoreProgress(C.initialProgress);
     }''';
 
   /// 连续 shell 版：多一条 BUG-461 的句尾区间对齐分支（`initialCharOffsetEnd >
   /// initialCharOffset` 时透传句尾偏移），其余与 [_paginatedInitialRestoreJs] 相同。
   static const String _continuousInitialRestoreJs = '''
     if (C.initialFragment !== null && C.initialFragment !== undefined) {
-      window.hoshiReader.jumpToFragment(C.initialFragment);
+      window.fushiReader.jumpToFragment(C.initialFragment);
     } else if (C.initialCharOffset >= 0) {
       if (C.initialCharOffsetEnd > C.initialCharOffset) {
-        window.hoshiReader.restoreToCharOffset(C.initialCharOffset, C.initialCharOffsetEnd);
+        window.fushiReader.restoreToCharOffset(C.initialCharOffset, C.initialCharOffsetEnd);
       } else {
-        window.hoshiReader.restoreToCharOffset(C.initialCharOffset);
+        window.fushiReader.restoreToCharOffset(C.initialCharOffset);
       }
     } else {
-      window.hoshiReader.restoreProgress(C.initialProgress);
+      window.fushiReader.restoreProgress(C.initialProgress);
     }''';
 
   /// 有声书 cue 下发：旧实现「有 cue 才注入这一行」，现在「有 cue 才调用」。
   static const String _sharedSasayakiInitJs = '''
     if (C.sasayakiCues !== null && C.sasayakiCues !== undefined) {
-      window.hoshiReader.applySasayakiCues(C.sasayakiCues);
+      window.fushiReader.applySasayakiCues(C.sasayakiCues);
     }''';
 
   static const String _sharedInitViewport = '''
@@ -1856,7 +1856,7 @@ $blurFn
   // 字符即短路 → 文本章几乎零开销、只对纯图片章全扫（文本极少）。图文混排章仍 lazy（不回退
   // TODO-1074 懒加载优化）；非图片章（有文本）完全 no-op（向后兼容）。
   var __hoshiImageOnlyChapter =
-      !window.hoshiReader.ttuRegex.test(document.body.textContent || '');
+      !window.fushiReader.ttuRegex.test(document.body.textContent || '');
   Array.from(document.querySelectorAll('img')).forEach(function(img) {
     var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
     // TODO-1339：图片合并（前导插图折进后随文本章）注入的插图（`.hoshi-merged-image`
@@ -1881,7 +1881,7 @@ $blurFn
       // 未完成：restore 不等它。真正 load 后补做 block-img 归类并失效 metrics。
       img.addEventListener('load', function() {
         if (_hoshiClassifyBlockImg(img)) {
-          var r = window.hoshiReader;
+          var r = window.fushiReader;
           if (r && r.paginationMetrics !== undefined) r.paginationMetrics = null;
           // TODO-1229 案B / BUG-1140 第二轮：懒加载 block 图 load 后整章几何后移，冻结的
           // restore scrollTop 错位（Chromium 只在 scrollTop=0 自愈）。按本次恢复登记的
@@ -1914,9 +1914,9 @@ $blurFn
   static const String _sharedInitBoot = '''
 function _hoshiBootInitialize() {
   try {
-    window.hoshiReader.initialize();
+    window.fushiReader.initialize();
   } catch (e) {
-    try { if (window.console && console.error) console.error('[HoshiReader] boot initialize failed', e); } catch (_ignored) {}
+    try { if (window.console && console.error) console.error('[FushiReader] boot initialize failed', e); } catch (_ignored) {}
   }
 }
 window.addEventListener('load', function() {
@@ -1948,7 +1948,7 @@ if (document.readyState === 'complete') {
     return '''<script>
 window.__hoshiShells.paginated = function(C) {
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
-window.hoshiReader = {
+window.fushiReader = {
   // 跨章分段计时总开关（Dart [ReaderChapterPerfTrace.enabled] → C.perfTraceEnabled）。
   // false = 生产路径，perfMark / perfSnapshot 零开销。
   _perfOn: C.perfTraceEnabled === true,
@@ -2662,9 +2662,9 @@ $_sharedJs
     return true;
   }
 };
-window.hoshiReader.initialize = function() {
-  if (window.hoshiReader.didInitialize) return;
-  window.hoshiReader.didInitialize = true;
+window.fushiReader.initialize = function() {
+  if (window.fushiReader.didInitialize) return;
+  window.fushiReader.didInitialize = true;
   this.perfMark('initStart');
   document.documentElement.style.setProperty('--chrome-top-inset', C.chromeTopInset + 'px');
   document.documentElement.style.setProperty('--chrome-bottom-inset', C.chromeBottomInset + 'px');
@@ -2688,9 +2688,9 @@ $_sharedInitViewport
   var __imgBox = this._imageMaxBox();
   document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
-  window.hoshiReader.pageHeight = pageHeight;
-  window.hoshiReader.viewportHeight = viewportHeight;
-  window.hoshiReader.pageWidth = pageWidth;
+  window.fushiReader.pageHeight = pageHeight;
+  window.fushiReader.viewportHeight = viewportHeight;
+  window.fushiReader.pageWidth = pageWidth;
 $initImages
   var spacer = document.createElement('div');
   spacer.style.height = '$spacerHeight';
@@ -2700,23 +2700,23 @@ $initImages
   document.body.appendChild(spacer);
   this.perfMark('initSyncDone');
   Promise.all(imagePromises).then(function() {
-    window.hoshiReader.perfMark('imagesReady');
-    window.hoshiReader.buildNodeOffsets();
-    window.hoshiReader.perfMark('offsetsBuilt');
+    window.fushiReader.perfMark('imagesReady');
+    window.fushiReader.buildNodeOffsets();
+    window.fushiReader.perfMark('offsetsBuilt');
     // TODO-627：图片可能在初次分页 metrics 建好之后才 decode 完。此前
     // buildPaginationMetrics 枚举到的 <img> 还是 0x0（getBoundingClientRect 全 0），
     // metrics.maxScroll 漏掉图片所占的列 → 偏小 → paginate 在图片页前就误判到末页
     // → _handlePageTurnLimit 跳过插画页跨章。图片 decode 完成后必须失效缓存的
     // paginationMetrics，强制下次 paginate 用纳入图片真实尺寸的几何重建（与
     // updatePageSize / reanchorAfterStyleChange 的 metrics 失效一致）。
-    if (window.hoshiReader.paginationMetrics !== undefined) {
-      window.hoshiReader.paginationMetrics = null;
+    if (window.fushiReader.paginationMetrics !== undefined) {
+      window.fushiReader.paginationMetrics = null;
     }
     $sasayakiInit
     $initialRestoreScript
   });
 };
-window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
+window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   // TODO-734：newViewportHeight = 纯 V（Math.round(cssHeight)），newHeight = V + O。
   var newViewportHeight = Math.round(cssHeight);
   var newHeight = newViewportHeight + $bottomOverlapPx;
@@ -2771,13 +2771,13 @@ $_sharedInitBoot
     return '''<script>
 window.__hoshiShells.continuous = function(C) {
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
-window.hoshiReader = {
+window.fushiReader = {
   // 跨章分段计时总开关（Dart [ReaderChapterPerfTrace.enabled] → C.perfTraceEnabled）。
   // false = 生产路径，perfMark / perfSnapshot 零开销。
   _perfOn: C.perfTraceEnabled === true,
   // TODO-734：连续模式不用竖排分页几何（无 column），故 initialize/updatePageSize
   // 不注入 --reader-viewport-height、getScrollContext 也不引用它。但属性仍声明 0
-  // （补点2 防 stale）：两个 hoshiReader 实例属性表保持对齐，避免误读 undefined。
+  // （补点2 防 stale）：两个 fushiReader 实例属性表保持对齐，避免误读 undefined。
   viewportHeight: 0,
 $_sharedJs
   scrollToChapterStart: function() {
@@ -3294,9 +3294,9 @@ $_sharedJs
     return true;
   }
 };
-window.hoshiReader.initialize = function() {
-  if (window.hoshiReader.didInitialize) return;
-  window.hoshiReader.didInitialize = true;
+window.fushiReader.initialize = function() {
+  if (window.fushiReader.didInitialize) return;
+  window.fushiReader.didInitialize = true;
   this.perfMark('initStart');
   document.documentElement.style.setProperty('--chrome-top-inset', C.chromeTopInset + 'px');
   document.documentElement.style.setProperty('--chrome-bottom-inset', C.chromeBottomInset + 'px');
@@ -3312,23 +3312,23 @@ $_sharedInitViewport
 $initImages
   this.perfMark('initSyncDone');
   Promise.all(imagePromises).then(function() {
-    window.hoshiReader.perfMark('imagesReady');
-    window.hoshiReader.buildNodeOffsets();
-    window.hoshiReader.perfMark('offsetsBuilt');
+    window.fushiReader.perfMark('imagesReady');
+    window.fushiReader.buildNodeOffsets();
+    window.fushiReader.perfMark('offsetsBuilt');
     // TODO-627：图片可能在初次分页 metrics 建好之后才 decode 完。此前
     // buildPaginationMetrics 枚举到的 <img> 还是 0x0（getBoundingClientRect 全 0），
     // metrics.maxScroll 漏掉图片所占的列 → 偏小 → paginate 在图片页前就误判到末页
     // → _handlePageTurnLimit 跳过插画页跨章。图片 decode 完成后必须失效缓存的
     // paginationMetrics，强制下次 paginate 用纳入图片真实尺寸的几何重建（与
     // updatePageSize / reanchorAfterStyleChange 的 metrics 失效一致）。
-    if (window.hoshiReader.paginationMetrics !== undefined) {
-      window.hoshiReader.paginationMetrics = null;
+    if (window.fushiReader.paginationMetrics !== undefined) {
+      window.fushiReader.paginationMetrics = null;
     }
     $sasayakiInit
     $initialRestoreScript
   });
 };
-window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
+window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   var newHeight = Math.round(cssHeight);
   var newWidth = Math.round(cssWidth);
   var changed = (newHeight !== this._contH || newWidth !== this._contW);
@@ -3362,7 +3362,7 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
     // TODO-656：记手势起点(touchstart)沿内容轴的滚动量 + 最大可滚量，跨章只看
     // 起点是否已在边界（见 _bEnd / 纯函数 touchBoundaryCrossDir）。
     var root = document.scrollingElement || document.documentElement;
-    var vertical = window.hoshiReader && window.hoshiReader.isVertical();
+    var vertical = window.fushiReader && window.fushiReader.isVertical();
     if (vertical) {
       downSPos = Math.abs(root.scrollLeft);
       downSMax = Math.max(1, root.scrollWidth - window.innerWidth);
@@ -3380,7 +3380,7 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
     var dx = x - downX;
     var dy = y - downY;
     if (Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) return;
-    var vertical = window.hoshiReader && window.hoshiReader.isVertical();
+    var vertical = window.fushiReader && window.fushiReader.isVertical();
     var gestureDir = null;
     if (vertical) {
       if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy)) return;
@@ -3415,7 +3415,7 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
     _bEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY, 'touch');
   }, {passive: true});
   // 砍掉 PC 鼠标/触控笔(pointer)的边界手势跨章：连续模式鼠标左键已回归原生选字/划词
-  // （见 _hoshiReaderMouseDragStartAllowed 连续模式返 false），PC 桌面跨章只走滚轮；
+  // （见 _fushiReaderMouseDragStartAllowed 连续模式返 false），PC 桌面跨章只走滚轮；
   // 边界手势只保留触摸(touchstart/touchend)给手机。鼠标拖动选词到边界不再误跨章。
 })();
 $_sharedInitBoot

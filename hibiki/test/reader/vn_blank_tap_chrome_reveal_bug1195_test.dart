@@ -8,7 +8,7 @@ import '../helpers/source_guard.dart';
 /// BUG-1195：视觉小说（VN）模式点屏幕只会翻页，控制栏（菜单）永远唤不出来。
 ///
 /// 根因：VN 是唯一把「点空白」绑成翻页的 view-mode，旧实现在 JS 的 `_gestureEnd`
-/// 里直接 `window.hoshiReader.paginate('forward')` 并 return，抢在查词 /
+/// 里直接 `window.fushiReader.paginate('forward')` 并 return，抢在查词 /
 /// `onTapEmpty` 之前。而 `onTapEmpty` 是触屏**唯一**能唤出控制栏的通道；
 /// `tap_empty_hide_chrome` 默认 true ⇒ 底栏悬浮、几秒后自动收起 ⇒ VN 下底栏一收起
 /// 就再也叫不回来（点文字=查词、点空白=翻页，没有第三条路）。
@@ -147,7 +147,7 @@ void main() {
       // 注释里会引用旧写法（说明为什么不能那么写），只看真代码。
       expect(
         _stripLineComments(webview)
-            .contains("window.hoshiReader.paginate('forward')"),
+            .contains("window.fushiReader.paginate('forward')"),
         isFalse,
         reason: 'BUG-1195：JS 直接 paginate 会吞掉唯一能唤出控制栏的手势；'
             '翻页必须走 Dart 的 _paginate（同时才有跨章 / 节流 / caret 重锚）',

@@ -8,7 +8,7 @@ import 'dart:ui';
 /// widget, not a glyph inside it).
 ///
 /// Writing-mode (horizontal vs. vertical-rl) and continuous-vs-paged scrolling
-/// are resolved here, against the live computed style / `window.hoshiReader`
+/// are resolved here, against the live computed style / `window.fushiReader`
 /// state — the single source of truth. Word lookup reuses
 /// `window.hoshiSelection.selectFromPosition`, so a caret lookup hits the exact
 /// same dictionary pipeline as a tap.
@@ -176,14 +176,14 @@ window.hoshiCaret = {
 
   // ── Mode / writing-mode ────────────────────────────────────────────
   _vertical: function() {
-    if (window.hoshiReader && typeof window.hoshiReader.isVertical === 'function') {
-      return window.hoshiReader.isVertical();
+    if (window.fushiReader && typeof window.fushiReader.isVertical === 'function') {
+      return window.fushiReader.isVertical();
     }
-    // Match hoshiReader.isVertical(): the reader only lays out vertical-rl.
+    // Match fushiReader.isVertical(): the reader only lays out vertical-rl.
     return window.getComputedStyle(document.body).writingMode === 'vertical-rl';
   },
   _paged: function() {
-    return !!(window.hoshiReader && ('paginationMetrics' in window.hoshiReader));
+    return !!(window.fushiReader && ('paginationMetrics' in window.fushiReader));
   },
   _logicalDir: function(dir, vertical) {
     if (dir === 'forward' || dir === 'backward' || dir === 'lineNext' || dir === 'linePrev') {
@@ -223,7 +223,7 @@ window.hoshiCaret = {
     if (offset < 0 || offset >= text.length) return false;
     var ch = text[offset];
     if (/^[\s　]$/.test(ch)) return false; // skip whitespace/newlines
-    if (!window.hoshiReader) {
+    if (!window.fushiReader) {
       // Popup-only: a lone punctuation/symbol glyph (the " | " separator between
       // source links, list bullets, brackets) is not a useful lookup target —
       // don't stop on it, so the cursor never lands on a thin separator sliver.
@@ -342,7 +342,7 @@ window.hoshiCaret = {
   // Called from every public entry point (move/enter/reanchor/refresh/activate)
   // so tags are always fresh.
   _markClickables: function() {
-    if (window.hoshiReader) return;
+    if (window.fushiReader) return;
     var all = document.body.querySelectorAll('*');
     for (var i = 0; i < all.length; i++) {
       var e = all[i], clk = false;
@@ -378,7 +378,7 @@ window.hoshiCaret = {
     // land on one without disturbing text-row navigation, and activate() opens it
     // through onImageTap. Inline images and gaiji are excluded so they never
     // interrupt reading; hyperlinks stay reachable as text stops.
-    if (window.hoshiReader) {
+    if (window.fushiReader) {
       return Array.prototype.slice.call(
         document.body.querySelectorAll('img.block-img'));
     }
@@ -514,8 +514,8 @@ window.hoshiCaret = {
     var acy = a.top + a.height / 2;
     // Popup: Up/Down jump by row/element (skip per-glyph stops), Left/Right
     // step per-glyph within the current text. The reader keeps per-glyph both
-    // ways (window.hoshiReader → lineLevel false).
-    var lineLevel = !window.hoshiReader &&
+    // ways (window.fushiReader → lineLevel false).
+    var lineLevel = !window.fushiReader &&
       physicalDir !== 'left' && physicalDir !== 'right';
     var stops = this._collectVisibleStops(lineLevel);
     var eps = 2;
@@ -859,7 +859,7 @@ window.hoshiCaret = {
     var forwardish = (logical === 'forward' || logical === 'lineNext');
     var physical = this._physicalDir(dir, vertical, logical);
     var target = null;
-    if (!window.hoshiReader) {
+    if (!window.fushiReader) {
       // Dictionary popups are mixed DOM: text, links, buttons and disclosure
       // controls share one visual plane. Directional input must therefore use
       // physical geometry for every stop, including plain text.
@@ -882,7 +882,7 @@ window.hoshiCaret = {
       // reader's element stops (block images) are reached by Up/Down line moves,
       // and its Left/Right is reading-order text stepping handled just below;
       // Up/Down here still scroll for more rows.
-      if (!window.hoshiReader && (physical === 'left' || physical === 'right')) {
+      if (!window.fushiReader && (physical === 'left' || physical === 'right')) {
         return { status: 'blocked' };
       }
       if (!this.el && (logical === 'forward' || logical === 'backward')) {
@@ -897,7 +897,7 @@ window.hoshiCaret = {
       // re-measure, so the view tracks the cursor instead of leaving the ring
       // pinned at the edge. Popup-only (continuous scroll); the paged reader
       // turns pages via _offPage and isn't touched.
-      if (!window.hoshiReader) {
+      if (!window.fushiReader) {
         this._scrollIntoView(rect);
         rect = this._stopRect(target);
       }
@@ -1011,7 +1011,7 @@ window.hoshiCaret = {
       // Reader block images have no DOM click→lightbox listener (the reader opens
       // images from the pointer-gesture path, not a synthesised click), so call
       // the same onImageTap handler that path uses instead of a no-op el.click().
-      if (window.hoshiReader && this.el.tagName === 'IMG' && this.el.src) {
+      if (window.fushiReader && this.el.tagName === 'IMG' && this.el.src) {
         // TODO-861④：键盘/手柄激活仍带 `blurred` 类的防剧透图时，先揭开（移除类）
         // 而非放大；揭开后再次激活才走 onImageTap 放大（与指针点击语义一致）。
         if (this.el.classList && this.el.classList.contains('blurred')) {

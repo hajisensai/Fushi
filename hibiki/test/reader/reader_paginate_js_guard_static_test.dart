@@ -245,10 +245,10 @@ void main() {
               'initialize 与 updatePageSize 两处都要注入 --reader-viewport-height');
     });
 
-    test('viewportHeight 属性两 hoshiReader 实例都声明（防 stale NaN）', () {
+    test('viewportHeight 属性两 fushiReader 实例都声明（防 stale NaN）', () {
       final int decls = 'viewportHeight: 0,'.allMatches(source).length;
       expect(decls >= 2, isTrue,
-          reason: '翻页 + 连续两个 hoshiReader 实例都要声明 viewportHeight: 0，'
+          reason: '翻页 + 连续两个 fushiReader 实例都要声明 viewportHeight: 0，'
               '否则首帧读 undefined→NaN→pageStep 退化成 1');
     });
   });

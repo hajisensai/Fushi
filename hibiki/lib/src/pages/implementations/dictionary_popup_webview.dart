@@ -537,7 +537,7 @@ JSON.stringify((function(){
   // ── Char-level reading cursor (driven from the reader page) ──────────
   // The same window.hoshiCaret as the reader, injected on load and scoped to the
   // definition body. The popup has no chrome insets (the WebView IS the popup)
-  // and no hoshiReader, so the cursor runs in horizontal + continuous-scroll
+  // and no fushiReader, so the cursor runs in horizontal + continuous-scroll
   // mode automatically. The reader reaches these via the popup's webViewKey.
 
   String _caretRingColorCss() {

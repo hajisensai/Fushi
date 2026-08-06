@@ -6,7 +6,7 @@ import 'reader_hibiki_page_source_corpus.dart';
 
 /// BUG-756 回归守卫：歌词模式（`LyricsModeHtml` 独立文档）唤不出隐藏底栏 + ESC 退不出。
 ///
-/// 根因：歌词是整页 `loadData` 的独立文档，没有正文 hoshiReader 的 onTap/onTapEmpty
+/// 根因：歌词是整页 `loadData` 的独立文档，没有正文 fushiReader 的 onTap/onTapEmpty
 /// 桥；歌词里点句子 = 查词，点空白此前是 no-op（`if (!cueEl) return;`）。于是：
 /// ① 底栏一旦隐藏就再无任何手势能唤出；② 桌面 WebView2 在 pointer 手势里抢走 OS 焦点，
 /// 歌词 tap 路径从不 reclaim Flutter `_focusNode` → 收不到 ESC → 全局「Esc 退出整页」

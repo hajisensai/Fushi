@@ -377,7 +377,7 @@ Future<void> _runPageTurnStress(
 ) async {
   ReaderPageSnapshot state = await _readPageState(eval);
   evidence.recordPageSnapshot('page-start', state);
-  expect(state.ready, isTrue, reason: 'window.hoshiReader must be ready');
+  expect(state.ready, isTrue, reason: 'window.fushiReader must be ready');
   expect(state.bodyTextLength, greaterThan(0),
       reason: 'reader must not be blank before page stress');
   if (state.currentPage != null && state.totalPages != null) {
@@ -516,7 +516,7 @@ Future<ReaderPageSnapshot> _readPageState(
 ) async {
   const String source = r'''
 JSON.stringify((function() {
-  var r = window.hoshiReader;
+  var r = window.fushiReader;
   if (!r) return {ready:false};
   var ctx = r.getScrollContext ? r.getScrollContext() : null;
   var metrics = r.paginationMetrics ||

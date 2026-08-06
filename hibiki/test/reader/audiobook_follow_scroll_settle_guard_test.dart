@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// （瞬时一帧到位）。用户明确反对——要求恢复平滑动画且仍不闪。
 ///
 /// 真因（不是 smooth 动画本身）：连续模式 cue reveal 经 Dart
-/// `AudiobookBridge.highlight(reveal:true)` → JS `hoshiReader.scrollToTarget`
+/// `AudiobookBridge.highlight(reveal:true)` → JS `fushiReader.scrollToTarget`
 /// （位于 `_continuousShellScript`）平滑滚动到当前句。这条**程序化跟随滚动当年没武装
 /// B-3 250ms settle 保护窗**（eaa151581 只武装 恢复/缩放/换样式 三条 reanchor commit）→
 /// smooth 动画落定那帧 WebView 回弹的 scroll 经 `_handleReaderScroll` 回传 → 触发
@@ -32,7 +32,7 @@ void main() {
     'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
   ).readAsStringSync();
 
-  /// 取 `_continuousShellScript` 函数体（连续模式那份 hoshiReader），避免误把分页 shell
+  /// 取 `_continuousShellScript` 函数体（连续模式那份 fushiReader），避免误把分页 shell
   /// 的滚动函数当成命中。从签名起到下一个顶层 `static String` 声明之间。
   String continuousShellBody() {
     final int start = scripts.indexOf('static String continuousShellSource(');

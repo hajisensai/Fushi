@@ -823,7 +823,7 @@ extension _ReaderCaret on _ReaderHibikiPageState {
 
   /// Drive one cursor move on the active surface. On the reader, a paged
   /// page-edge ('pageForward'/'pageBackward') asks Dart to turn the page (which
-  /// re-anchors the cursor). The popup has no hoshiReader, so its cursor scrolls
+  /// re-anchors the cursor). The popup has no fushiReader, so its cursor scrolls
   /// internally and only ever returns 'moved'/'blocked'.
   Future<void> _caretMove(String physicalDir) async {
     if (_caretSurface == CaretSurface.popup) {

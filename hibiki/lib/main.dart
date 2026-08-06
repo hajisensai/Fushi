@@ -77,7 +77,7 @@ Color? _savedSplashColor;
 
 /// 桌面端「从 app 外打开视频文件」时，runner 经 `set_dart_entrypoint_arguments`
 /// 把视频路径传进 `main(List<String> args)`；这里暂存，待 app 初始化完成后由
-/// [_HoshiReaderAppState] 打开播放页并加入书架。null 表示本次启动不是外部打开视频。
+/// [_FushiReaderAppState] 打开播放页并加入书架。null 表示本次启动不是外部打开视频。
 String? _pendingExternalVideoPath;
 
 /// Single source of truth for the status/navigation bar overlay style.
@@ -145,7 +145,7 @@ void main([List<String> args = const <String>[]]) {
       // exits. Without this, a queued mDNS event delivered to a torn-down
       // messenger crashes the process on exit (TODO-036, Windows). The actual
       // event-source cut + fast exit runs in
-      // [_HoshiReaderAppState.onWindowClose] (TODO-086).
+      // [_FushiReaderAppState.onWindowClose] (TODO-086).
       await windowManager.setPreventClose(true);
       // TODO-959: 数据迁移成功后的自动重启会以 detached 模式拉新进程并带上重启标志。
       // 新进程的 Windows runner 见到标志会**隐藏建窗**（不带 WS_VISIBLE，见
@@ -320,7 +320,7 @@ void main([List<String> args = const <String>[]]) {
     runApp(
       UncontrolledProviderScope(
         container: container,
-        child: const HoshiReaderApp(),
+        child: const FushiReaderApp(),
       ),
     );
 
@@ -357,7 +357,7 @@ void main([List<String> args = const <String>[]]) {
 
     /// Run the heavy initialisation after the first frame has been scheduled.
     /// [AppModel.isInitialised] will flip to true and notify listeners when
-    /// done, causing [HoshiReaderApp] to navigate from [LoadingPage] to
+    /// done, causing [FushiReaderApp] to navigate from [LoadingPage] to
     /// [HomePage].
     await HoshiDicts.preloadTransforms();
 
@@ -498,7 +498,7 @@ void main([List<String> args = const <String>[]]) {
     ErrorLogService.instance.logFatal('UncaughtZone', exception, stack);
     if (Platform.isAndroid || Platform.isIOS) {
       FlutterLogs.logError(
-        'hoshi_reader',
+        'fushi_reader',
         details.exceptionAsString(),
         stack.toString(),
       );
@@ -508,15 +508,15 @@ void main([List<String> args = const <String>[]]) {
 
 /// Encapsulates theming, spacing and other configurable options pertaining to
 /// the entire app, with some parameters dependent on the [AppModel].
-class HoshiReaderApp extends ConsumerStatefulWidget {
+class FushiReaderApp extends ConsumerStatefulWidget {
   /// Initialises an instance of the app.
-  const HoshiReaderApp({super.key});
+  const FushiReaderApp({super.key});
 
   @override
-  ConsumerState<HoshiReaderApp> createState() => _HoshiReaderAppState();
+  ConsumerState<FushiReaderApp> createState() => _FushiReaderAppState();
 }
 
-class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
+class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     with WidgetsBindingObserver, WindowListener {
   final navigatorKey = GlobalKey<NavigatorState>();
   bool _isMainIntent = true;

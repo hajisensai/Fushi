@@ -17,7 +17,7 @@ import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 /// （`floor(currentScroll/pitch) + 1`），backward 取严格之前的整页边界
 /// （`ceil(currentScroll/pitch) - 1`）。整页对齐时与旧实现等价；错位时永远只走一页。
 ///
-/// 这是 JS `window.hoshiReader.paginate` 的纯 Dart 影子（headless WebView 不可用，
+/// 这是 JS `window.fushiReader.paginate` 的纯 Dart 影子（headless WebView 不可用，
 /// 按项目测试范式：纯函数单测 + 源码守卫）。
 void main() {
   const double pitch = 1000.0;

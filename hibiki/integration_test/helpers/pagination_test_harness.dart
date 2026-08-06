@@ -72,17 +72,17 @@ const String paginationHarnessJs = r'''
     },
 
     getPaginationState: function() {
-      if (typeof hoshiReader === 'undefined') {
-        return JSON.stringify({error: 'hoshiReader not found'});
+      if (typeof fushiReader === 'undefined') {
+        return JSON.stringify({error: 'fushiReader not found'});
       }
-      var ctx = hoshiReader.getScrollContext();
-      var metrics = hoshiReader.paginationMetrics ||
-                    hoshiReader.buildPaginationMetrics();
+      var ctx = fushiReader.getScrollContext();
+      var metrics = fushiReader.paginationMetrics ||
+                    fushiReader.buildPaginationMetrics();
       // Read the page position through the reader's OWN accessor so the
       // harness measures exactly what pagination drives (scrollTop when
       // vertical, scrollLeft when horizontal). Reimplementing this here is
       // what previously produced false I1/I5 results.
-      var scroll = hoshiReader.getPagePosition(ctx);
+      var scroll = fushiReader.getPagePosition(ctx);
       return JSON.stringify({
         scroll: scroll,
         // TODO-729：单一量纲后 ctx.pageSize 即唯一步进量(=旧 columnPitch=pageStep)；
@@ -138,7 +138,7 @@ const String paginationHarnessJs = r'''
     },
 
     pageForwardAndQuery: function() {
-      var result = hoshiReader.paginate('forward');
+      var result = fushiReader.paginate('forward');
       var markers = JSON.parse(this.getVisibleMarkers());
       var state = JSON.parse(this.getPaginationState());
       return JSON.stringify({
@@ -181,7 +181,7 @@ const String paginationHarnessJs = r'''
 
     fullChapterScan: function() {
       var safety = 0;
-      while (hoshiReader.paginate('backward') === 'scrolled' && safety < 500) {
+      while (fushiReader.paginate('backward') === 'scrolled' && safety < 500) {
         safety++;
       }
 
@@ -210,7 +210,7 @@ const String paginationHarnessJs = r'''
 
       record(this);
       while (true) {
-        var result = hoshiReader.paginate('forward');
+        var result = fushiReader.paginate('forward');
         if (result !== 'scrolled') break;
         pageNum++;
         if (pageNum > 1000) break;

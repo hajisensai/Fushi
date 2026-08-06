@@ -59,7 +59,7 @@ class ReaderChapterPerfTrace {
     _current[name] = value;
   }
 
-  /// 收下 JS 侧随 `onRestoreComplete` 回传的计时快照（`hoshiReader.perfSnapshot()`）。
+  /// 收下 JS 侧随 `onRestoreComplete` 回传的计时快照（`fushiReader.perfSnapshot()`）。
   /// 把 WebView 内部那一大段拆成 `js.initSync`（initialize 同步部分：CSS 变量 + 图片
   /// 挂载 + 强制 layout）/ `js.images`（图片 decode 等待）/ `js.offsets`
   /// （buildNodeOffsets）/ `js.restore`（恢复滚动），外加浏览器 navigation timing

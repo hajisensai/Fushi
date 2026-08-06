@@ -24,7 +24,7 @@ void main() {
     File('$tmp/hoshi_shell_continuous.html').writeAsStringSync(continuous);
     File('$tmp/hoshi_shell_fwd.html').writeAsStringSync(paginated);
     File('$tmp/hoshi_shell_bwd.html').writeAsStringSync(paginated);
-    expect(paginated.contains('window.hoshiReader'), isTrue);
-    expect(continuous.contains('window.hoshiReader'), isTrue);
+    expect(paginated.contains('window.fushiReader'), isTrue);
+    expect(continuous.contains('window.fushiReader'), isTrue);
   });
 }

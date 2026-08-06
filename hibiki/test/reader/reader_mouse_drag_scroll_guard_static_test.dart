@@ -32,11 +32,11 @@ void main() {
       () {
     final String guard = _jsFunction(
       setupScript,
-      'function _hoshiReaderMouseDragStartAllowed(e)',
+      'function _fushiReaderMouseDragStartAllowed(e)',
     );
 
     expect(
-        containsCodeLine(guard, '_hoshiReaderPointerPrimaryButton(e)'), isTrue);
+        containsCodeLine(guard, '_fushiReaderPointerPrimaryButton(e)'), isTrue);
     expect(containsCodeLine(guard, "e.pointerType !== 'mouse'"), isFalse,
         reason: 'touch and mouse must share the same drag state machine');
     expect(containsCodeLine(guard, "closest('a[href], ruby, rt, rp')"), isTrue,
@@ -48,7 +48,7 @@ void main() {
         reason: 'editable islands must not be grabbed for reader scrolling');
     expect(containsCodeLine(guard, 'window.getSelection'), isTrue,
         reason: 'an existing text selection must not be grabbed for dragging');
-    // 砍掉 PC 鼠标左键拖动平移：连续模式 _hoshiReaderMouseDragStartAllowed 返 false，
+    // 砍掉 PC 鼠标左键拖动平移：连续模式 _fushiReaderMouseDragStartAllowed 返 false，
     // 鼠标左键回归原生选字/划词；不再捕获正文做 JS scrollBy 平移（卡顿 + 鼠标拖动提前
     // 跨章的来源）。分页模式仍走下方 caret 命中逻辑（拖动转翻页 BUG-368 不受影响）。
     expect(containsCodeLine(guard, 'if (hoshiContinuousMode) return false;'),
@@ -62,7 +62,7 @@ void main() {
     final int readerTextHitIndex =
         guard.indexOf('window.hoshiSelection.getCharacterAtPoint');
     final int caretHitIndex =
-        guard.indexOf('return !_hoshiReaderCaretRangeAtPoint');
+        guard.indexOf('return !_fushiReaderCaretRangeAtPoint');
     expect(readerTextHitIndex, greaterThan(continuousModeIndex),
         reason: 'reader text hit testing must only protect paged mode');
     expect(caretHitIndex, greaterThan(continuousModeIndex),
@@ -73,7 +73,7 @@ void main() {
         containsCodeLine(pointerDown, "e.pointerType === 'touch' ||"), isFalse,
         reason: 'touch must not be filtered out of pointer drag startup');
     final int guardIndex =
-        pointerDown.indexOf('_hoshiReaderMouseDragStartAllowed(e)');
+        pointerDown.indexOf('_fushiReaderMouseDragStartAllowed(e)');
     final int startIndex = pointerDown.indexOf('_gestureStart', guardIndex);
     expect(guardIndex, isNonNegative);
     expect(startIndex, greaterThan(guardIndex),
@@ -86,7 +86,7 @@ void main() {
       () {
     final String helper = _jsFunction(
       setupScript,
-      'function _hoshiReaderCaretRangeAtPoint(x, y)',
+      'function _fushiReaderCaretRangeAtPoint(x, y)',
     );
 
     expect(containsCodeLine(helper, 'document.caretPositionFromPoint'), isTrue);
@@ -103,27 +103,27 @@ void main() {
     expect(containsCodeLine(pointerMove, "e.pointerType === 'touch') return"),
         isFalse,
         reason: 'touch moves must be able to claim reader scrolling');
-    expect(containsCodeLine(pointerMove, '_hoshiReaderPointerStillDown(e)'),
+    expect(containsCodeLine(pointerMove, '_fushiReaderPointerStillDown(e)'),
         isTrue);
-    expect(containsCodeLine(pointerMove, '_hoshiReaderMouseDragClaimed = true'),
+    expect(containsCodeLine(pointerMove, '_fushiReaderMouseDragClaimed = true'),
         isTrue);
     expect(
         containsCodeLine(
-            pointerMove, '_hoshiReaderMouseDragIgnoreTouchEnd = true'),
+            pointerMove, '_fushiReaderMouseDragIgnoreTouchEnd = true'),
         isTrue,
         reason:
             'claimed touch drags must suppress the following legacy touchend');
     expect(containsCodeLine(pointerMove, 'e.preventDefault()'), isTrue);
-    expect(containsCodeLine(pointerMove, '_hoshiReaderClearMouseSelection()'),
+    expect(containsCodeLine(pointerMove, '_fushiReaderClearMouseSelection()'),
         isTrue,
         reason: 'claimed text drags must clear browser native selection');
-    expect(containsCodeLine(pointerMove, '_hoshiReaderPointerNoSelect(true)'),
+    expect(containsCodeLine(pointerMove, '_fushiReaderPointerNoSelect(true)'),
         isTrue,
         reason:
             'claimed drags temporarily disable native selection only while active');
     final String clearSelection = _jsFunction(
       setupScript,
-      'function _hoshiReaderClearMouseSelection()',
+      'function _fushiReaderClearMouseSelection()',
     );
     expect(containsCodeLine(clearSelection, 'window.getSelection'), isTrue);
     expect(containsCodeLine(clearSelection, 'removeAllRanges'), isTrue);
@@ -131,20 +131,20 @@ void main() {
     final String pointerUp = _jsListener(setupScript, 'pointerup');
     expect(containsCodeLine(pointerUp, "e.pointerType === 'touch' ||"), isFalse,
         reason: 'touch pointerup must finish the same claimed-drag path');
-    final int finishIndex = pointerUp.indexOf('_finishHoshiReaderMouseDrag(e)');
+    final int finishIndex = pointerUp.indexOf('_finishFushiReaderMouseDrag(e)');
     final int gestureEndIndex = pointerUp.indexOf('_gestureEnd');
     expect(finishIndex, isNonNegative);
     expect(gestureEndIndex, isNonNegative);
     expect(finishIndex, lessThan(gestureEndIndex),
         reason: 'claimed drags must finish before the legacy _gestureEnd path');
-    expect(containsCodeLine(pointerUp, 'if (_hoshiReaderMouseDragClaimed)'),
+    expect(containsCodeLine(pointerUp, 'if (_fushiReaderMouseDragClaimed)'),
         isTrue);
-    expect(containsCodeLine(pointerUp, '_hoshiReaderPointerNoSelect(false)'),
+    expect(containsCodeLine(pointerUp, '_fushiReaderPointerNoSelect(false)'),
         isTrue);
 
     final String touchEnd = _jsListener(setupScript, 'touchend');
     final int ignoreIndex =
-        touchEnd.indexOf('_hoshiReaderMouseDragIgnoreTouchEnd');
+        touchEnd.indexOf('_fushiReaderMouseDragIgnoreTouchEnd');
     final int legacyEndIndex = touchEnd.indexOf('_gestureEnd');
     expect(ignoreIndex, isNonNegative);
     expect(legacyEndIndex, isNonNegative);
@@ -158,7 +158,7 @@ void main() {
       () {
     final String scrollFn = _jsFunction(
       setupScript,
-      'function _hoshiReaderMouseDragScrollBy(dx, dy)',
+      'function _fushiReaderMouseDragScrollBy(dx, dy)',
     );
 
     expect(containsCodeLine(scrollFn, 'r.isVertical'), isTrue);
@@ -181,7 +181,7 @@ void main() {
   test('continuous vertical drag follows the pointer without a sign flip', () {
     final String scrollFn = _jsFunction(
       setupScript,
-      'function _hoshiReaderMouseDragScrollBy(dx, dy)',
+      'function _fushiReaderMouseDragScrollBy(dx, dy)',
     );
 
     // Vertical axis: content follows the pointer with plain `-dx` (no sign).
@@ -204,16 +204,16 @@ void main() {
   test('paged desktop mouse drag emits at most one onSwipe on release', () {
     final String finishFn = _jsFunction(
       setupScript,
-      'function _finishHoshiReaderMouseDrag(e)',
+      'function _finishFushiReaderMouseDrag(e)',
     );
 
     expect(
-        containsCodeLine(finishFn, '_hoshiReaderMouseDragSwipeSent'), isTrue);
-    expect(containsCodeLine(finishFn, '_hoshiReaderMouseDragSwipeSent = true'),
+        containsCodeLine(finishFn, '_fushiReaderMouseDragSwipeSent'), isTrue);
+    expect(containsCodeLine(finishFn, '_fushiReaderMouseDragSwipeSent = true'),
         isTrue);
     expect(containsCodeLine(finishFn, "callHandler('onSwipe'"), isTrue);
     expect(
-        containsCodeLine(finishFn, '_hoshiReaderMouseDragPageDirection = null'),
+        containsCodeLine(finishFn, '_fushiReaderMouseDragPageDirection = null'),
         isTrue);
 
     final String pointerMove = _jsListener(setupScript, 'pointermove');
@@ -246,9 +246,9 @@ void main() {
   test('touch only engages the pointer drag machine in continuous mode', () {
     final String engages = _jsFunction(
       setupScript,
-      'function _hoshiReaderPointerEngages(e)',
+      'function _fushiReaderPointerEngages(e)',
     );
-    expect(containsCodeLine(engages, '_hoshiReaderPointerPrimaryButton(e)'),
+    expect(containsCodeLine(engages, '_fushiReaderPointerPrimaryButton(e)'),
         isTrue);
     expect(containsCodeLine(engages, "e.pointerType === 'touch'"), isTrue);
     expect(containsCodeLine(engages, 'return hoshiContinuousMode'), isTrue,
@@ -256,7 +256,7 @@ void main() {
 
     final String pointerDown = _jsListener(setupScript, 'pointerdown');
     expect(
-        containsCodeLine(pointerDown, '_hoshiReaderPointerEngages(e)'), isTrue,
+        containsCodeLine(pointerDown, '_fushiReaderPointerEngages(e)'), isTrue,
         reason: 'pointerdown must gate touch through the engage predicate');
 
     final String pointerMove = _jsListener(setupScript, 'pointermove');
@@ -268,7 +268,7 @@ void main() {
             'leaving touchend -> _gestureEnd -> onSwipe to turn the page');
 
     final String pointerUp = _jsListener(setupScript, 'pointerup');
-    expect(containsCodeLine(pointerUp, '_hoshiReaderPointerEngages(e)'), isTrue,
+    expect(containsCodeLine(pointerUp, '_fushiReaderPointerEngages(e)'), isTrue,
         reason: 'paged-mode touch pointerup must not run the native-text path');
 
     final String pointerCancel = _jsListener(setupScript, 'pointercancel');

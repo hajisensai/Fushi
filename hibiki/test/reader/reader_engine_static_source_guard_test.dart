@@ -184,7 +184,7 @@ void main() {
       );
       expect(
         boot.contains(
-            'window.__hoshiEngine.install(window.__hoshiReaderConfig);'),
+            'window.__hoshiEngine.install(window.__fushiReaderConfig);'),
         isTrue,
       );
       // 引擎独有符号一个都不许出现在每章载荷里。

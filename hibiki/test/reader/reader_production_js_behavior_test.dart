@@ -47,12 +47,12 @@ function assert(value, message) {
   if (!value) throw new Error(message);
 }
 function objectLiteral(source) {
-  const marker = 'window.hoshiReader = {';
+  const marker = 'window.fushiReader = {';
   const start = source.indexOf(marker);
-  if (start < 0) throw new Error('hoshiReader object missing');
+  if (start < 0) throw new Error('fushiReader object missing');
   const brace = source.indexOf('{', start);
   const end = source.indexOf('\n};', brace);
-  if (end < 0) throw new Error('hoshiReader object terminator missing');
+  if (end < 0) throw new Error('fushiReader object terminator missing');
   return source.slice(brace, end + 2);
 }
 function fragment() {
@@ -78,7 +78,7 @@ function instantiate(source) {
   const global = {};
   const factory = new Function(
     'window', 'document', 'C', 'global', 'CSS', 'Highlight',
-    'window.hoshiReader = ' + objectLiteral(source) + '; return window.hoshiReader;'
+    'window.fushiReader = ' + objectLiteral(source) + '; return window.fushiReader;'
   );
   const reader = factory(window, document, C, global, window.CSS, window.Highlight);
   return {reader, window, document};
@@ -163,7 +163,7 @@ const progressReader = {
   getFirstVisibleCharOffset: () => 7,
   isAtEnd: () => false
 };
-progressWindow.hoshiReader = progressReader;
+progressWindow.fushiReader = progressReader;
 assert(progressWindow.hoshiProgressDetails() === '90,100,7',
   'non-terminal progress must remain fractional');
 progressReader.isAtEnd = () => true;

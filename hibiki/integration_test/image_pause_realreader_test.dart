@@ -182,8 +182,8 @@ const String _insertImageJs = r'''
         document.body.appendChild(wrap);
       }
     }
-    if (window.hoshiReader && window.hoshiReader.buildPaginationMetrics) {
-      try { window.hoshiReader.buildPaginationMetrics(); } catch (e) {}
+    if (window.fushiReader && window.fushiReader.buildPaginationMetrics) {
+      try { window.fushiReader.buildPaginationMetrics(); } catch (e) {}
     }
     return JSON.stringify({
       hasPic: !!document.getElementById('rrPic'),

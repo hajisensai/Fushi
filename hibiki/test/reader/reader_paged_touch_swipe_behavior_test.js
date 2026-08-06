@@ -2,7 +2,7 @@
 //
 // Regression context: commit 890378f19 folded touch into the pointer drag state
 // machine (the pointerdown gate changed from `e.pointerType !== 'mouse'` to
-// `_hoshiReaderPointerPrimaryButton(e)`, which returns true for touch). In PAGED
+// `_fushiReaderPointerPrimaryButton(e)`, which returns true for touch). In PAGED
 // mode that routed touch into the native-text-start suppression path: a >6px
 // pointermove cleared `hasStart`, and touchend was swallowed, so the
 // touchstart/touchend -> _gestureEnd -> onSwipe page-turn never fired. This test
@@ -14,8 +14,8 @@
 // Source-of-truth detail (the previous false-green): every onSwipe is tagged
 // `<direction>@<dispatch event>`. The fake document exposes caretRangeFromPoint
 // returning a TEXT_NODE range, so the finger is a real "text hit". In PAGED mode
-// _hoshiReaderMouseDragStartAllowed then evaluates
-// `return !_hoshiReaderCaretRangeAtPoint(...)` = `return !range` = FALSE -- the
+// _fushiReaderMouseDragStartAllowed then evaluates
+// `return !_fushiReaderCaretRangeAtPoint(...)` = `return !range` = FALSE -- the
 // native-text-suppression path -- so the fix keeps touch OUT of the pointer drag
 // machine and the swipe MUST come from touchend (`left@touchend`). The
 // regression drives the pointer machine and (when it fires) emits from pointerup
@@ -89,9 +89,9 @@ function makeHarness(continuousMode) {
   };
 
   // A range whose startContainer is a real TEXT_NODE: models the finger landing
-  // on actual reader body text. _hoshiReaderCaretRangeAtPoint returns it, so in
-  // PAGED mode _hoshiReaderMouseDragStartAllowed evaluates
-  // `return !_hoshiReaderCaretRangeAtPoint(...)` = `return !range` = FALSE
+  // on actual reader body text. _fushiReaderCaretRangeAtPoint returns it, so in
+  // PAGED mode _fushiReaderMouseDragStartAllowed evaluates
+  // `return !_fushiReaderCaretRangeAtPoint(...)` = `return !range` = FALSE
   // (the native-text-suppression path) -- exactly like real reader body text,
   // so paged-mode touch stays OUT of the pointer drag machine. WITHOUT this
   // caret the helper would return null, `!null` = true, and the 890378f19
@@ -116,7 +116,7 @@ function makeHarness(continuousMode) {
   };
 
   const windowObj = {
-    hoshiReader: { isVertical() { return false; } },
+    fushiReader: { isVertical() { return false; } },
     hoshiSelection: null,
     getSelection() { return { isCollapsed: true, removeAllRanges() {} }; },
     getComputedStyle() { return body; },

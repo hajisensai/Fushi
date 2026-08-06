@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// double-click toggle.
 ///
 /// 回归背景：WebView 原生双击在正文上建立蓝色框选（`selectstart` 抑制只挡拖动起手
-/// 400ms 内、不挡双击；正文 `_hoshiReaderMouseNativeTextStart=true` 放过双击选词），
+/// 400ms 内、不挡双击；正文 `_fushiReaderMouseNativeTextStart=true` 放过双击选词），
 /// 盖住单击查词的 CSS Highlight，并把振假名整页切换（`_buildFuriganaJs` 'toggle' 分支
 /// 的 dblclick handler 带 `if (sel && !sel.isCollapsed) return` 守卫）绊住——双击自己
 /// 产生的选区让守卫早退，振假名不切换。修复在 `_buildReaderSetupScript` 加 capture 阶段

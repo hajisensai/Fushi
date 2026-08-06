@@ -188,7 +188,7 @@ class AudiobookPlayBar extends StatelessWidget {
       ),
       _FocusableBarButton(
         id: const HibikiFocusId('audiobook_settings'),
-        key: const ValueKey<String>('hoshi_reader_audiobook_settings_button'),
+        key: const ValueKey<String>('fushi_reader_audiobook_settings_button'),
         semanticsIdentifier: 'hibiki.reader.audiobook.settings',
         icon: const Icon(Icons.tune_outlined),
         iconSize: 20,

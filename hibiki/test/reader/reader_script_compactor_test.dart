@@ -78,7 +78,7 @@ var e = 5;
   group('ReaderScriptCompactor 词法地雷', () {
     test('注释里的单个反引号不会把后续模板串当成代码区', () {
       const String src = '''
-// 用 `hoshiReader 包一层（奇数个反引号）
+// 用 `fushiReader 包一层（奇数个反引号）
 var css = `body {
 
   color: red;
@@ -270,7 +270,7 @@ tail`;
     test('最终脚本里各子载荷的运行时哨兵同时在场', () {
       const Map<String, String> sentinels = <String, String>{
         'selection': 'window.hoshiSelection',
-        'pagination': 'window.hoshiReader',
+        'pagination': 'window.fushiReader',
         'caret': 'window.hoshiCaret',
         'longPressDrag': '__hoshiTextSelectDragActive',
         'keyBridge': "'onSpaceKey'",
@@ -286,7 +286,7 @@ tail`;
       final String compacted = ReaderScriptCompactor.compact(assembled);
       for (final String sentinel in <String>[
         'window.hoshiSelection',
-        'window.hoshiReader',
+        'window.fushiReader',
         'window.hoshiCaret',
         '__hoshiTextSelectDragActive',
         "'onSpaceKey'",

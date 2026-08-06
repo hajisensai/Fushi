@@ -6,7 +6,7 @@ import 'reader_hibiki_page_source_corpus.dart';
 ///
 /// 滚轮惯性节流(450ms) 远短于换章加载(数百 ms restore)，跨章那一下之后排队的翻页
 /// tick 会在新章 restore 未落定时立即再翻——章首插图页/首页整页被越过；更糟
-/// hoshiReader 未就绪时 evaluateJavascript 返 null → _didScroll(null)=false →
+/// fushiReader 未就绪时 evaluateJavascript 返 null → _didScroll(null)=false →
 /// 又 _handlePageTurnLimit → 跳两章。两条翻页输入入口（keyboard/gamepad/volume/
 /// onSwipe/onWheelPaginate 汇合的 _paginate；跨章手势绕过 _paginate 直接调
 /// _handlePageTurnLimit 的 onBoundarySwipe）都必须在导航/恢复在飞窗口丢弃输入，

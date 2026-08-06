@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 根因 = 内容就绪兜底看门狗 `_startContentReadyTimeout` 的超时回调只翻
 /// `_readerContentReady = true` 摘掉遮罩，却漏了复位导航态
 /// （`_restoreInFlight` / `_isNavigatingToChapter` / `_restoreCompleter`）。
-/// 当 `window.hoshiReader` 偶发不回 `onRestoreComplete` 时，这三者恒悬空 →
+/// 当 `window.fushiReader` 偶发不回 `onRestoreComplete` 时，这三者恒悬空 →
 /// `_paginationInFlight`（chrome.part.dart：`_restoreInFlight || !_readerContentReady
 /// || _isNavigatingToChapter`）恒真 → 翻页 tick 全被守卫吞掉、位置保存也停摆。
 ///

@@ -251,10 +251,10 @@ void main() {
       'restore bridge',
       () {
         for (final String dep in <String>[
-          'global.hoshiReaderTextSemantics',
-          'global.hoshiReaderVnContentStream',
-          'global.hoshiReaderVnRangeMap',
-          'global.hoshiReaderMediaSemantics',
+          'global.fushiReaderTextSemantics',
+          'global.fushiReaderVnContentStream',
+          'global.fushiReaderVnRangeMap',
+          'global.fushiReaderMediaSemantics',
         ]) {
           expect(
             vnScripts.contains(dep),
@@ -272,7 +272,7 @@ void main() {
         // appear in explanatory comments, so scan comment-stripped code).
         expect(
           _stripLineComments(vnScripts)
-              .contains('window.HoshiReaderRestore.postMessage('),
+              .contains('window.FushiReaderRestore.postMessage('),
           isFalse,
           reason: 'VN must not keep hoshi native restore bridge call',
         );

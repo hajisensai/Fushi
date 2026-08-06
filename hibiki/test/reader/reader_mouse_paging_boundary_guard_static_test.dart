@@ -48,29 +48,29 @@ void main() {
       // 转换发生在 native-text-start 分支内，且仅分页模式（!hoshiContinuousMode）。
       // 窗口取该 `if` 的**块本体**（花括号配对）：旧写法 `substring(nativeBranch)` 一路
       // 吃到 listener 末尾，把 if 之后的通用拖动分支也算进窗口——那里有同名的
-      // `_hoshiReaderMouseDragClaimed = true` / `_hoshiReaderClearMouseSelection()`，
+      // `_fushiReaderMouseDragClaimed = true` / `_fushiReaderClearMouseSelection()`，
       // 足以在 native-text 分支被删空时顶包骗绿。
       final String branch = methodBody(
         pointerMove,
-        'if (_hoshiReaderMouseNativeTextStart)',
+        'if (_fushiReaderMouseNativeTextStart)',
         lexicon: SourceLexicon.js,
       );
       expect(containsCodeLine(branch, '!hoshiContinuousMode'), isTrue,
           reason: '正文拖动转翻页只在分页模式，连续模式仍是拖动滚动');
       expect(
-          containsCodeLine(branch, '_hoshiReaderMouseDragResolvePageDirection'),
+          containsCodeLine(branch, '_fushiReaderMouseDragResolvePageDirection'),
           isTrue,
           reason: '复用与触摸横滑同款方向判据，达阈值才转翻页');
-      expect(containsCodeLine(branch, '_hoshiReaderMouseDragClaimed = true'),
+      expect(containsCodeLine(branch, '_fushiReaderMouseDragClaimed = true'),
           isTrue,
           reason:
-              '转换后接管为拖动翻页，pointerup 经 _finishHoshiReaderMouseDrag 回传 onSwipe');
+              '转换后接管为拖动翻页，pointerup 经 _finishFushiReaderMouseDrag 回传 onSwipe');
       expect(
-          containsCodeLine(branch, '_hoshiReaderMouseNativeTextStart = false'),
+          containsCodeLine(branch, '_fushiReaderMouseNativeTextStart = false'),
           isTrue,
           reason: '转翻页后必须退出原生选词态');
       expect(
-          containsCodeLine(branch, '_hoshiReaderClearMouseSelection()'), isTrue,
+          containsCodeLine(branch, '_fushiReaderClearMouseSelection()'), isTrue,
           reason: '转翻页前清掉已起的原生选区');
       // 短拖/竖向拖（resolve 返 null）仍回退原生选词——保留划词查词。
       expect(
@@ -84,7 +84,7 @@ void main() {
       final String pointerMove = _listenerBody(setupScript, 'pointermove');
       expect(containsCodeLine(pointerMove, "callHandler('onSwipe'"), isFalse,
           reason:
-              '方向在 move 决定，onSwipe 仍只从 pointerup/_finishHoshiReaderMouseDrag 发一次');
+              '方向在 move 决定，onSwipe 仍只从 pointerup/_finishFushiReaderMouseDrag 发一次');
     });
   });
 

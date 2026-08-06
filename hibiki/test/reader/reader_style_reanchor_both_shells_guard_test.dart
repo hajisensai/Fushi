@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 
 /// 根因守卫：样式变更实时下发（`_applyStylesLive` → `beginStyleReanchorInvocation`）
-/// 依赖 `window.hoshiReader.beginStyleReanchor` / `commitStyleReanchor` 存在。
+/// 依赖 `window.fushiReader.beginStyleReanchor` / `commitStyleReanchor` 存在。
 ///
 /// 这两个方法曾**只**加进连续 shell（`_continuousShellScript`），分页 shell
 /// （`_paginatedShellScript`，且是机器默认视图模式）整体缺席 → 分页模式下
@@ -50,7 +50,7 @@ void main() {
     // 调用点用 typeof === 'function' 门控；脚本里必须存在同名函数定义，否则门控恒假。
     expect(
       ReaderPaginationScripts.beginStyleReanchorInvocation('"body{}"')
-          .contains('window.hoshiReader.beginStyleReanchor'),
+          .contains('window.fushiReader.beginStyleReanchor'),
       isTrue,
     );
     expect(paginated.contains('beginStyleReanchor: function(styleEl, css)'),

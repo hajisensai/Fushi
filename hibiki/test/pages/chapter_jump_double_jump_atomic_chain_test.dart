@@ -168,7 +168,7 @@ void main() {
             'BUG-876 起 charOffset 条件化(useOffset ? … : null)，收藏缺 offset 回退文本搜索');
     expect(fav.contains('progress:'), isFalse,
         reason: '收藏跳转不得再把绝对字符索引当分数烘进 progress');
-    expect('hoshiReader.restoreProgress('.allMatches(fav).length, 0,
+    expect('fushiReader.restoreProgress('.allMatches(fav).length, 0,
         reason: '收藏同章分支改用 restoreToCharOffset 精确锚，不再 restoreProgress');
     expect('restoreToCharOffset('.allMatches(fav).length, 1,
         reason: '收藏同章分支保留一条 restoreToCharOffset 直接锚');

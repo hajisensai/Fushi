@@ -29,7 +29,7 @@ AudioCue? cueForLyricsPointer(
   return lyricsCues[idx];
 }
 
-/// 把 `hoshiReader.cueIdAtPoint` 回传的 JSON（`{type,id}`）解析到 [allCues]
+/// 把 `fushiReader.cueIdAtPoint` 回传的 JSON（`{type,id}`）解析到 [allCues]
 /// 里的目标 cue。`type=='sid'` 按 sentenceIndex（字符串 id，合成书 [data-cue-id]），
 /// `type=='frag'` 按 textFragmentId（Sasayaki 原生 EPUB）。无法解析或无命中返回
 /// null。纯函数，便于单测 payload→cue 反查而无需真实 WebView。

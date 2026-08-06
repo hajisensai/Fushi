@@ -543,7 +543,7 @@ html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
     });
   });
   // BUG-1280：spread 是第四种独立文档（继歌词 BUG-756、VN BUG-1195 之后），HTML 本身
-  // 不含正文 hoshiReader 的 onTap/onTapEmpty，自带的手势只有「点图片 → onImageTap」。
+  // 不含正文 fushiReader 的 onTap/onTapEmpty，自带的手势只有「点图片 → onImageTap」。
   // 底栏一收起就没有唤出通道 → 看不到返回按钮 → 退不出这本书。
   //
   // 注意这条在修复前**分平台**：Windows 的 loadData 丢 baseUrl，onLoadStop 判 stale，
@@ -1318,7 +1318,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   EpubSpreadMap? _spreadMap;
 
   /// BUG-1280：**上一次交给 WebView 的文档是不是 spread 独立文档**
-  /// （[buildSpreadPageHtml]，两张整页 `<img>`，无正文 `hoshiReader`）。
+  /// （[buildSpreadPageHtml]，两张整页 `<img>`，无正文 `fushiReader`）。
   ///
   /// 写点是**三个**，正好是把文档交给 WebView 的三个装载原语：`_loadSpreadPage`
   /// 置位，`_loadChapterDirectly` 与 **`_loadLyricsPage`** 复位。所以它跟踪的是
@@ -2835,7 +2835,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                         child: DragToMoveArea(
                           child: ColoredBox(
                             key: const ValueKey<String>(
-                              'hoshi_reader_window_drag_area',
+                              'fushi_reader_window_drag_area',
                             ),
                             color: bgColor,
                           ),
@@ -2865,7 +2865,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
     final Widget webView = _buildWebView();
     // BUG-379 / BUG-1343：歌词模式（LyricsModeHtml）与 spread 整页图都是独立 HTML，
-    // 没有 window.hoshiReader，_applyChromeInsets 对它们整体 early-return，正文那套
+    // 没有 window.fushiReader，_applyChromeInsets 对它们整体 early-return，正文那套
     // 「告诉 WebView 预留多少」的机制对它们失效，只能由 Flutter 侧收缩视口本身。
     // 留多少是 [independentDocumentInsets] 说了算（单一真相源，行为单测直接钉它）；
     // 这里只负责喂当前状态并按结果包 Padding。
@@ -2969,8 +2969,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
     final String jsonCss = _currentStyleJson();
     // 余白/主题实时不生效根因修复：CSS 换入（用户可见效果）不得被样式重锚的就绪门控
-    // [readerStyleReanchorAllowed] 挡掉。旧实现只在 `!window.hoshiReader` 时裸换 CSS，
-    // 有 hoshiReader 时把换 CSS 全托付给下面 gate 后的 beginStyleReanchor；一旦 gate 关闭
+    // [readerStyleReanchorAllowed] 挡掉。旧实现只在 `!window.fushiReader` 时裸换 CSS，
+    // 有 fushiReader 时把换 CSS 全托付给下面 gate 后的 beginStyleReanchor；一旦 gate 关闭
     // （内容未就绪 / 重排在飞 / 切章瞬态），[runUiScaleReanchorOrchestration] 在 evalBegin 前
     // 就 return，CSS 被静默丢弃 → 主题/余白改完不生效、必须退出重进重烤 _computeStyleTag
     // 才见效。这里把「换 CSS」与「重锚就绪门控」解耦：重锚会跑（gate 开）时仍交给
@@ -2992,13 +2992,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     el.id = 'hoshi-reader-style';
     document.head.appendChild(el);
   }
-  // 重锚不会跑（无 hoshiReader / 内容未就绪 / 重排在飞）时就地换 CSS，并失效分页 metrics
+  // 重锚不会跑（无 fushiReader / 内容未就绪 / 重排在飞）时就地换 CSS，并失效分页 metrics
   // 让几何（余白/字号）重新分栏；重锚会跑时不在此换——交给下面 beginStyleReanchor 原子
   // 采锚 + 换 CSS + 置旗（settle-aware commit 保翻页保位）。
-  if (!window.hoshiReader || ${!reanchorWillRun}) {
+  if (!window.fushiReader || ${!reanchorWillRun}) {
     el.textContent = $jsonCss;
-    if (window.hoshiReader && window.hoshiReader.paginationMetrics !== undefined) {
-      window.hoshiReader.paginationMetrics = null;
+    if (window.fushiReader && window.fushiReader.paginationMetrics !== undefined) {
+      window.fushiReader.paginationMetrics = null;
     }
   }
 })();
@@ -3077,7 +3077,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       if (!mounted || _controller == null) return;
       await _controller!.evaluateJavascript(
         source:
-            'if (!window.__hoshiCssHighlightsSupported) { window.hoshiReader && window.hoshiReader.buildNodeOffsets(); }',
+            'if (!window.__hoshiCssHighlightsSupported) { window.fushiReader && window.fushiReader.buildNodeOffsets(); }',
       );
       // HBK-AUDIT-117: theme persistence moved to _onThemeChanged — it is
       // unrelated to highlight application and must not be gated on favorites.
@@ -3411,8 +3411,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null) return;
     final Object? raw = await _controller?.evaluateJavascript(
-      source: 'window.hoshiReader && window.hoshiReader.cueIdAtPoint'
-          ' ? window.hoshiReader.cueIdAtPoint($x, $y) : null',
+      source: 'window.fushiReader && window.fushiReader.cueIdAtPoint'
+          ' ? window.fushiReader.cueIdAtPoint($x, $y) : null',
     );
     // await 期间用户可能退出有声书（_audiobookController 被置空并 dispose）。
     // 用快照同一性校验，避免对已 dispose 的旧 controller 调 playCueAndContinue。

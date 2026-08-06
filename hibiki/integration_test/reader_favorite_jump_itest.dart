@@ -55,7 +55,7 @@ Future<int> _firstVisibleCharOffset(
   Future<dynamic> Function(String source) runJs,
 ) async {
   final Object? raw = await runJs(
-      'window.hoshiReader ? window.hoshiReader.getFirstVisibleCharOffset() : -999;');
+      'window.fushiReader ? window.fushiReader.getFirstVisibleCharOffset() : -999;');
   final num? n = raw is num ? raw : num.tryParse(raw.toString());
   expect(n, isNotNull,
       reason: 'getFirstVisibleCharOffset must return a number');
@@ -161,7 +161,7 @@ void main() {
           //    back to the deep offset (exercises the _navigateToChapterAndWait
           //    charOffset transport). We first scroll to the top so the landing
           //    delta is meaningful.
-          await runJs('window.hoshiReader.restoreProgress(0);');
+          await runJs('window.fushiReader.restoreProgress(0);');
           await tester.pump(const Duration(milliseconds: 600));
           final int atTop = await _firstVisibleCharOffset(runJs);
           expect(atTop, lessThan(targetOffset ~/ 2),
@@ -200,7 +200,7 @@ Future<int> _pickDeepCharOffset(
 ) async {
   const String js = r'''
 (function () {
-  var self = window.hoshiReader;
+  var self = window.fushiReader;
   if (!self || !self.createWalker) return -1;
   var walker = self.createWalker();
   var total = 0;

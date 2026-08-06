@@ -512,7 +512,7 @@ Future<void> _activateBook(WidgetTester tester, String bookKey) async {
   final AppModel appModel = container.read(appProvider);
 
   final ConsumerStatefulElement appElement = tester
-      .element(find.byType(app.HoshiReaderApp)) as ConsumerStatefulElement;
+      .element(find.byType(app.FushiReaderApp)) as ConsumerStatefulElement;
   final WidgetRef ref = appElement;
 
   final MediaItem? item =

@@ -4,7 +4,7 @@ import 'reader_hibiki_page_source_corpus.dart';
 
 void main() {
   // Regression: in lyrics mode the WebView holds LyricsModeHtml, which has no
-  // hoshiReader paginator. A keyboard/gamepad/volume page-turn funnels through
+  // fushiReader paginator. A keyboard/gamepad/volume page-turn funnels through
   // _paginate(); without an early bail it no-ops in JS, is misread as a page
   // edge, and triggers _handlePageTurnLimit → _navigateToChapter, replacing the
   // lyrics page with an EPUB chapter (the lyrics text disappears). _paginate

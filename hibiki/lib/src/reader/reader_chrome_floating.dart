@@ -94,7 +94,7 @@ double bottomChromeReserve({
 /// spread 整页图）的 WebView 四周留白，是「阅读器页给独立文档留多少空间」的唯一真相源。
 ///
 /// 为什么独立文档要 Flutter 侧留白、正文不用：正文经 `_applyChromeInsets` 把预留高
-/// 下发给 `window.hoshiReader`，由页内 CSS 收缩 body；独立 HTML 没有这个桥，
+/// 下发给 `window.fushiReader`，由页内 CSS 收缩 body；独立 HTML 没有这个桥，
 /// `_applyChromeInsets` 对它整体 early-return，于是只能由 Flutter 侧收缩视口本身。
 ///
 ///  * **底部**（BUG-379）：歌词 WebView 原本 `Positioned.fill` 铺满全屏，底栏

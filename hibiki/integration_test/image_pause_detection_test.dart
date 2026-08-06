@@ -100,7 +100,7 @@ void main() {
           },
           onLoadStop: (InAppWebViewController controller, WebUri? url) async {
             await controller.evaluateJavascript(
-                source: 'window.hoshiReader={scrollToTarget:function(t){'
+                source: 'window.fushiReader={scrollToTarget:function(t){'
                     "window.flutter_inappwebview.callHandler('reportReveal',"
                     '(t&&(t.id||t.tagName))||null);}};');
             await AudiobookBridge.inject(controller);
@@ -154,7 +154,7 @@ void main() {
           onLoadStop: (InAppWebViewController controller, WebUri? url) async {
             await controller.evaluateJavascript(source: '''
               window.__hoshiCssHighlightsSupported = true;
-              window.hoshiReader = {
+              window.fushiReader = {
                 cueRangesMap: new Map(),
                 activeCueId: null,
                 highlightSasayakiCue: function(id, reveal){ this.activeCueId = id; },
@@ -166,8 +166,8 @@ void main() {
               (function(){
                 function rng(sel){ var el=document.querySelector(sel);
                   var r=document.createRange(); r.selectNodeContents(el.firstChild); return r; }
-                window.hoshiReader.cueRangesMap.set('c1', [rng('[data-hoshi-sid=s1]')]);
-                window.hoshiReader.cueRangesMap.set('c2', [rng('[data-hoshi-sid=s2]')]);
+                window.fushiReader.cueRangesMap.set('c1', [rng('[data-hoshi-sid=s1]')]);
+                window.fushiReader.cueRangesMap.set('c2', [rng('[data-hoshi-sid=s2]')]);
               })();
             ''');
             await AudiobookBridge.inject(controller);

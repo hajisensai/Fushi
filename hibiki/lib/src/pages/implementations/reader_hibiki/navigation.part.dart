@@ -47,7 +47,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
           _readerContentReady = true;
           _hasEverLoaded = true;
         });
-        // BUG-868：兜底超时是「JS 侧 hoshiReader 迟迟不回 onRestoreComplete」时的最终解锁，
+        // BUG-868：兜底超时是「JS 侧 fushiReader 迟迟不回 onRestoreComplete」时的最终解锁，
         // 光翻 _readerContentReady 不够——_restoreInFlight / _isNavigatingToChapter /
         // _restoreCompleter 仍悬空，_paginationInFlight（chrome.part.dart）恒真：遮罩摘掉、
         // 书看似打开，但翻页永久被守卫吞掉、进度不再保存。这里连同解开导航态：三份中止
@@ -221,7 +221,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       }
       // 收藏高亮：恢复完成（分页布局稳定、恢复滚动结束）后重新应用。
       // _onChapterLoadComplete 里的早期 apply 跑在 onLoadStop 同步返回之后，
-      // 而 hoshiReader.initialize 把 buildNodeOffsets / 恢复滚动塞进图片
+      // 而 fushiReader.initialize 把 buildNodeOffsets / 恢复滚动塞进图片
       // Promise.all().then() 里异步执行——早期 apply 抢在列布局存在之前注册
       // CSS Custom Highlight range，重进章节时高亮不绘制（立即收藏时布局已稳定
       // 所以能显示）。在这里（与立即收藏相同的稳定状态）再应用一次即可对齐。
@@ -691,8 +691,8 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     final String literal = jsonEncode(fragment);
     try {
       await _controller!.evaluateJavascript(
-        source: 'window.hoshiReader && '
-            'window.hoshiReader.jumpToFragment($literal);',
+        source: 'window.fushiReader && '
+            'window.fushiReader.jumpToFragment($literal);',
       );
     } catch (e, stack) {
       ErrorLogService.instance
@@ -1370,7 +1370,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     } else {
       await _controller!.evaluateJavascript(
         source:
-            'window.hoshiReader && window.hoshiReader.restoreProgress(${target.progress});',
+            'window.fushiReader && window.fushiReader.restoreProgress(${target.progress});',
       );
     }
   }

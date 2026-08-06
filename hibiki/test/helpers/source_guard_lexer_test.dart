@@ -732,7 +732,7 @@ static const int cap = 60000;
   group('maskCommentsAndScriptLines：吃掉三引号串里的整行 JS 注释', () {
     const String src = '''
 final String js = \'\'\'
-  // window.hoshiReader.paginate('forward')
+  // window.fushiReader.paginate('forward')
   const url = 'https://hoshi.local/x';
 \'\'\';
 ''';

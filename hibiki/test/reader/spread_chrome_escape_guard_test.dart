@@ -16,7 +16,7 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// 底栏、退不出这本书。
 ///
 /// ① spread 页是 [buildSpreadPageHtml] 生成的**独立文档**（继歌词 BUG-756、VN
-///    BUG-1195 之后的第四种），HTML 本身不含正文 hoshiReader 的 onTap/onTapEmpty，
+///    BUG-1195 之后的第四种），HTML 本身不含正文 fushiReader 的 onTap/onTapEmpty，
 ///    自带手势只有「点图片 → 弹图片查看器」。底栏一收起就没有唤出通道，用户看不到
 ///    返回按钮 → 退不出书 → 回不到书架。
 /// ② 点图片的 Dart 处理器没有 reclaim 阅读焦点，OS 焦点留在 WebView，ESC 全局退出

@@ -785,14 +785,14 @@ install: function(C) {
   var imageLongPressTimer = null;
   var imageLongPressConsumed = false;
   var imageLongPressStartX = 0, imageLongPressStartY = 0;
-  var _hoshiReaderMouseDragActive = false;
-  var _hoshiReaderMouseDragClaimed = false;
-  var _hoshiReaderMouseNativeTextStart = false;
-  var _hoshiReaderMouseDragLastX = 0, _hoshiReaderMouseDragLastY = 0;
-  var _hoshiReaderMouseDragPointerId = null;
-  var _hoshiReaderMouseDragPageDirection = null;
-  var _hoshiReaderMouseDragSwipeSent = false;
-  var _hoshiReaderMouseDragIgnoreTouchEnd = false;
+  var _fushiReaderMouseDragActive = false;
+  var _fushiReaderMouseDragClaimed = false;
+  var _fushiReaderMouseNativeTextStart = false;
+  var _fushiReaderMouseDragLastX = 0, _fushiReaderMouseDragLastY = 0;
+  var _fushiReaderMouseDragPointerId = null;
+  var _fushiReaderMouseDragPageDirection = null;
+  var _fushiReaderMouseDragSwipeSent = false;
+  var _fushiReaderMouseDragIgnoreTouchEnd = false;
   function _gestureStart(x, y) {
     hasStart = true;
     startX = x;
@@ -823,7 +823,7 @@ install: function(C) {
   // resolved character's client rect; a clamped-but-outside hit is real blank.
   function _hoshiVnTapIsBlank(x, y) {
     try {
-      var range = _hoshiReaderCaretRangeAtPoint(x, y);
+      var range = _fushiReaderCaretRangeAtPoint(x, y);
       if (!range || !range.startContainer) return true;
       var node = range.startContainer;
       if (node.nodeType !== Node.TEXT_NODE) return true;
@@ -854,7 +854,7 @@ install: function(C) {
       return true;
     }
   }
-  function _hoshiReaderCaretRangeAtPoint(x, y) {
+  function _fushiReaderCaretRangeAtPoint(x, y) {
     try {
       var range = null;
       if (document.caretPositionFromPoint) {
@@ -873,27 +873,27 @@ install: function(C) {
       return null;
     }
   }
-  function _hoshiReaderClearMouseSelection() {
+  function _fushiReaderClearMouseSelection() {
     try {
       var selected = window.getSelection && window.getSelection();
       if (selected && !selected.isCollapsed) selected.removeAllRanges();
     } catch (err) {}
   }
-  function _hoshiReaderPointerPrimaryButton(e) {
+  function _fushiReaderPointerPrimaryButton(e) {
     return e && (e.pointerType === 'touch' || e.button === 0);
   }
-  function _hoshiReaderPointerStillDown(e) {
+  function _fushiReaderPointerStillDown(e) {
     return e && (e.pointerType === 'touch' || (e.buttons & 1) === 1);
   }
   // TODO-553: 触摸只在「连续模式」走 pointer 拖动状态机（8f095de78 的触摸拖滚）；
   // 分页模式下触摸交还给 touchstart/touchend → _gestureEnd → onSwipe 的滑动翻页路径
   // （890378f19 前的行为）。鼠标左键在两种模式都走 pointer 机（拖选/划词/拖动翻页）。
-  function _hoshiReaderPointerEngages(e) {
-    if (!_hoshiReaderPointerPrimaryButton(e)) return false;
+  function _fushiReaderPointerEngages(e) {
+    if (!_fushiReaderPointerPrimaryButton(e)) return false;
     if (e.pointerType === 'touch') return hoshiContinuousMode;
     return true;
   }
-  function _hoshiReaderPointerNoSelect(enabled) {
+  function _fushiReaderPointerNoSelect(enabled) {
     try {
       var id = 'hoshi-reader-pointer-drag-style';
       var style = document.getElementById(id);
@@ -906,8 +906,8 @@ install: function(C) {
       document.documentElement.classList.toggle('hoshi-reader-pointer-dragging', !!enabled);
     } catch (err) {}
   }
-  function _hoshiReaderMouseDragStartAllowed(e) {
-    if (!_hoshiReaderPointerPrimaryButton(e)) return false;
+  function _fushiReaderMouseDragStartAllowed(e) {
+    if (!_fushiReaderPointerPrimaryButton(e)) return false;
     var target = e.target || document.elementFromPoint(e.clientX, e.clientY);
     if (target && target.closest) {
       if (target.closest('a[href], ruby, rt, rp')) return false;
@@ -925,14 +925,14 @@ install: function(C) {
         window.hoshiSelection.getCharacterAtPoint(e.clientX, e.clientY)) {
       return false;
     }
-    return !_hoshiReaderCaretRangeAtPoint(e.clientX, e.clientY);
+    return !_fushiReaderCaretRangeAtPoint(e.clientX, e.clientY);
   }
-  function _hoshiReaderMouseDragScrollBy(dx, dy) {
+  function _fushiReaderMouseDragScrollBy(dx, dy) {
     // drag-to-pan「内容跟手」的方向与 writing-mode 无关：鼠标往右拖(dx>0)→内容往右移
     // →scrollLeft 减小→scrollBy({left: -dx})；鼠标往上拖(dy<0)→内容往上→scrollTop 增大
     // →scrollBy({top: -dy})。BUG-338: 旧实现给竖排加了 (vertical-rl ? -1 : 1) 的 sign
     // 翻符号，把 vertical-rl 写成 scrollBy({left: dx}) 致拖动方向反了；删掉该特殊情况。
-    var r = window.hoshiReader;
+    var r = window.fushiReader;
     var vertical = !!(r && r.isVertical && r.isVertical());
     if (vertical) {
       window.scrollBy({left: -dx, top: 0, behavior: 'auto'});
@@ -940,7 +940,7 @@ install: function(C) {
       window.scrollBy({left: 0, top: -dy, behavior: 'auto'});
     }
   }
-  function _hoshiReaderMouseDragResolvePageDirection(x, y) {
+  function _fushiReaderMouseDragResolvePageDirection(x, y) {
     var dx = x - startX;
     var dy = y - startY;
     var elapsed = Date.now() - startTime;
@@ -956,21 +956,21 @@ install: function(C) {
     }
     return null;
   }
-  function _finishHoshiReaderMouseDrag(e) {
-    var claimed = _hoshiReaderMouseDragClaimed;
-    var direction = _hoshiReaderMouseDragPageDirection;
-    _hoshiReaderMouseDragActive = false;
-    _hoshiReaderMouseDragClaimed = false;
-    _hoshiReaderMouseNativeTextStart = false;
-    _hoshiReaderMouseDragPointerId = null;
-    _hoshiReaderMouseDragPageDirection = null;
-    _hoshiReaderPointerNoSelect(false);
+  function _finishFushiReaderMouseDrag(e) {
+    var claimed = _fushiReaderMouseDragClaimed;
+    var direction = _fushiReaderMouseDragPageDirection;
+    _fushiReaderMouseDragActive = false;
+    _fushiReaderMouseDragClaimed = false;
+    _fushiReaderMouseNativeTextStart = false;
+    _fushiReaderMouseDragPointerId = null;
+    _fushiReaderMouseDragPageDirection = null;
+    _fushiReaderPointerNoSelect(false);
     hasStart = false;
     if (!claimed) return false;
     if (e && e.preventDefault) e.preventDefault();
     if (!hoshiContinuousMode && direction) {
-      if (_hoshiReaderMouseDragSwipeSent) return true;
-      _hoshiReaderMouseDragSwipeSent = true;
+      if (_fushiReaderMouseDragSwipeSent) return true;
+      _fushiReaderMouseDragSwipeSent = true;
       window.flutter_inappwebview.callHandler('onSwipe', direction);
     }
     return true;
@@ -1106,11 +1106,11 @@ install: function(C) {
         window.flutter_inappwebview.callHandler('onImageTap', imgUrl);
       } else if (hoshiVnMode && hoshiVnClickAdvance &&
           _hoshiVnTapIsBlank(x, y) &&
-          window.hoshiReader && window.hoshiReader.paginate) {
+          window.fushiReader && window.fushiReader.paginate) {
         // TODO-909 M0: VN blank-tap. Only when the tap is NOT over matchable
         // text (so word lookup still wins on text).
         // BUG-1195: 这里**不再**自己 paginate。旧实现直调
-        // `window.hoshiReader.paginate('forward')` 把每一次空白点都吃掉，而空白点
+        // `window.fushiReader.paginate('forward')` 把每一次空白点都吃掉，而空白点
         // 同时是触屏唯一能唤出控制栏的手势（onTapEmpty）→ VN 下底栏一自动收起就
         // 永远唤不回来。翻页还是唤栏必须由 Dart 判（chrome 可见性只有 Dart 知道：
         // 悬浮态真值是 _chromeTransientVisible，JS 的 __hoshiTapGate.chrome 镜像的
@@ -1200,8 +1200,8 @@ install: function(C) {
     if ((dx * dx + dy * dy) > 144) clearImageLongPressTimer();
   }, {passive: true});
   document.addEventListener('touchend', function(e) {
-    if (_hoshiReaderMouseDragIgnoreTouchEnd) {
-      _hoshiReaderMouseDragIgnoreTouchEnd = false;
+    if (_fushiReaderMouseDragIgnoreTouchEnd) {
+      _fushiReaderMouseDragIgnoreTouchEnd = false;
       if (e && e.preventDefault) e.preventDefault();
       return;
     }
@@ -1210,53 +1210,53 @@ install: function(C) {
   document.addEventListener('touchcancel', function(e) {
     clearImageLongPressTimer();
     imageLongPressConsumed = false;
-    _hoshiReaderMouseDragIgnoreTouchEnd = false;
+    _fushiReaderMouseDragIgnoreTouchEnd = false;
     hasStart = false;
   }, {passive: true});
   document.addEventListener('pointerdown', function(e) {
-    if (!_hoshiReaderPointerEngages(e)) return;
-    _hoshiReaderMouseDragActive = _hoshiReaderMouseDragStartAllowed(e);
-    _hoshiReaderMouseDragClaimed = false;
-    _hoshiReaderMouseNativeTextStart = !_hoshiReaderMouseDragActive;
-    _hoshiReaderMouseDragLastX = e.clientX;
-    _hoshiReaderMouseDragLastY = e.clientY;
-    _hoshiReaderMouseDragPointerId = e.pointerId;
-    _hoshiReaderMouseDragPageDirection = null;
-    _hoshiReaderMouseDragSwipeSent = false;
+    if (!_fushiReaderPointerEngages(e)) return;
+    _fushiReaderMouseDragActive = _fushiReaderMouseDragStartAllowed(e);
+    _fushiReaderMouseDragClaimed = false;
+    _fushiReaderMouseNativeTextStart = !_fushiReaderMouseDragActive;
+    _fushiReaderMouseDragLastX = e.clientX;
+    _fushiReaderMouseDragLastY = e.clientY;
+    _fushiReaderMouseDragPointerId = e.pointerId;
+    _fushiReaderMouseDragPageDirection = null;
+    _fushiReaderMouseDragSwipeSent = false;
     _gestureStart(e.clientX, e.clientY);
   }, {passive: true});
   document.addEventListener('pointermove', function(e) {
     _gestureTrackMovement(e.clientX, e.clientY);
-    // TODO-553: pointermove 的 button 恒 -1，不能用 _hoshiReaderPointerEngages
+    // TODO-553: pointermove 的 button 恒 -1，不能用 _fushiReaderPointerEngages
     // （它查 button===0）；分页模式触摸只需在此直接放行回 touch swipe 路径。
     if (e.pointerType === 'touch' && !hoshiContinuousMode) return;
-    if (_hoshiReaderMouseDragPointerId !== null && e.pointerId !== _hoshiReaderMouseDragPointerId) return;
-    if (!_hoshiReaderPointerStillDown(e) || !hasStart) return;
+    if (_fushiReaderMouseDragPointerId !== null && e.pointerId !== _fushiReaderMouseDragPointerId) return;
+    if (!_fushiReaderPointerStillDown(e) || !hasStart) return;
     var totalDx = e.clientX - startX;
     var totalDy = e.clientY - startY;
     var totalDistSq = totalDx * totalDx + totalDy * totalDy;
-    if (_hoshiReaderMouseNativeTextStart) {
+    if (_fushiReaderMouseNativeTextStart) {
       // BUG-368: 分页模式下，鼠标在正文上横向拖动应像手机端的「触摸横滑」一样翻页。
       // 旧实现里鼠标拖动起点落在正文（caret range 命中）时一律当作原生选词起点
-      // （_hoshiReaderMouseNativeTextStart），移动 >6px 就放弃手势交还原生选区，
+      // （_fushiReaderMouseNativeTextStart），移动 >6px 就放弃手势交还原生选区，
       // 永不回传 onSwipe → 桌面鼠标在分页模式根本「翻不了页」（只有空白边距能拖、
       // 或全靠滚轮）。触摸路径（touchend→_gestureEnd）早已能在正文上横滑翻页，鼠标
       // 却被这道闸门挡住，造成「鼠标 ≠ 手机」的不对称。这里在仍是分页模式时，先判
       // 定这次拖动是否已构成一次明确的横向翻页手势（横向位移占优且达滑动阈值，与
-      // _hoshiReaderMouseDragResolvePageDirection / _gestureEnd 同款判据）：是→把
+      // _fushiReaderMouseDragResolvePageDirection / _gestureEnd 同款判据）：是→把
       // 本次手势从「原生选词」转换为「拖动翻页」（清掉已起的选区、接管 pointer、
-      // 后续走 _finishHoshiReaderMouseDrag 回传 onSwipe）；否→保持原行为（竖向/短拖
+      // 后续走 _finishFushiReaderMouseDrag 回传 onSwipe）；否→保持原行为（竖向/短拖
       // 交还原生选区，仍可正常划词查词）。
       var ntDir = (!hoshiContinuousMode)
-          ? _hoshiReaderMouseDragResolvePageDirection(e.clientX, e.clientY)
+          ? _fushiReaderMouseDragResolvePageDirection(e.clientX, e.clientY)
           : null;
       if (ntDir) {
-        _hoshiReaderMouseNativeTextStart = false;
-        _hoshiReaderMouseDragActive = true;
-        _hoshiReaderMouseDragClaimed = true;
-        _hoshiReaderMouseDragPageDirection = ntDir;
-        _hoshiReaderPointerNoSelect(true);
-        _hoshiReaderClearMouseSelection();
+        _fushiReaderMouseNativeTextStart = false;
+        _fushiReaderMouseDragActive = true;
+        _fushiReaderMouseDragClaimed = true;
+        _fushiReaderMouseDragPageDirection = ntDir;
+        _fushiReaderPointerNoSelect(true);
+        _fushiReaderClearMouseSelection();
         if (e.target && e.target.setPointerCapture) {
           try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
         }
@@ -1266,49 +1266,49 @@ install: function(C) {
       if (totalDistSq > 36) hasStart = false;
       return;
     }
-    if (!_hoshiReaderMouseDragActive) return;
-    if (!_hoshiReaderMouseDragClaimed) {
+    if (!_fushiReaderMouseDragActive) return;
+    if (!_fushiReaderMouseDragClaimed) {
       if (totalDistSq < 36) return;
-      _hoshiReaderMouseDragClaimed = true;
-      if (e.pointerType === 'touch') _hoshiReaderMouseDragIgnoreTouchEnd = true;
-      _hoshiReaderPointerNoSelect(true);
-      _hoshiReaderClearMouseSelection();
+      _fushiReaderMouseDragClaimed = true;
+      if (e.pointerType === 'touch') _fushiReaderMouseDragIgnoreTouchEnd = true;
+      _fushiReaderPointerNoSelect(true);
+      _fushiReaderClearMouseSelection();
       if (e.target && e.target.setPointerCapture) {
         try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
       }
     }
-    var dx = e.clientX - _hoshiReaderMouseDragLastX;
-    var dy = e.clientY - _hoshiReaderMouseDragLastY;
-    _hoshiReaderMouseDragLastX = e.clientX;
-    _hoshiReaderMouseDragLastY = e.clientY;
+    var dx = e.clientX - _fushiReaderMouseDragLastX;
+    var dy = e.clientY - _fushiReaderMouseDragLastY;
+    _fushiReaderMouseDragLastX = e.clientX;
+    _fushiReaderMouseDragLastY = e.clientY;
     if (hoshiContinuousMode) {
-      _hoshiReaderMouseDragScrollBy(dx, dy);
+      _fushiReaderMouseDragScrollBy(dx, dy);
     } else {
-      _hoshiReaderMouseDragPageDirection =
-          _hoshiReaderMouseDragResolvePageDirection(e.clientX, e.clientY);
+      _fushiReaderMouseDragPageDirection =
+          _fushiReaderMouseDragResolvePageDirection(e.clientX, e.clientY);
     }
     e.preventDefault();
   }, {passive: false});
   document.addEventListener('pointerup', function(e) {
-    if (!_hoshiReaderPointerEngages(e)) return;
-    if (_hoshiReaderMouseDragPointerId !== null && e.pointerId !== _hoshiReaderMouseDragPointerId) return;
-    if (_hoshiReaderMouseDragClaimed) {
-      if (!hoshiContinuousMode && !_hoshiReaderMouseDragPageDirection) {
-        _hoshiReaderMouseDragPageDirection =
-            _hoshiReaderMouseDragResolvePageDirection(e.clientX, e.clientY);
+    if (!_fushiReaderPointerEngages(e)) return;
+    if (_fushiReaderMouseDragPointerId !== null && e.pointerId !== _fushiReaderMouseDragPointerId) return;
+    if (_fushiReaderMouseDragClaimed) {
+      if (!hoshiContinuousMode && !_fushiReaderMouseDragPageDirection) {
+        _fushiReaderMouseDragPageDirection =
+            _fushiReaderMouseDragResolvePageDirection(e.clientX, e.clientY);
       }
-      _finishHoshiReaderMouseDrag(e);
+      _finishFushiReaderMouseDrag(e);
       return;
     }
-    if (_hoshiReaderMouseNativeTextStart) {
+    if (_fushiReaderMouseNativeTextStart) {
       var nativeDx = e.clientX - startX;
       var nativeDy = e.clientY - startY;
       var nativeMoved = (nativeDx * nativeDx + nativeDy * nativeDy) > 36;
-      _hoshiReaderMouseNativeTextStart = false;
-      _hoshiReaderMouseDragActive = false;
-      _hoshiReaderMouseDragPointerId = null;
-      _hoshiReaderMouseDragPageDirection = null;
-      _hoshiReaderPointerNoSelect(false);
+      _fushiReaderMouseNativeTextStart = false;
+      _fushiReaderMouseDragActive = false;
+      _fushiReaderMouseDragPointerId = null;
+      _fushiReaderMouseDragPageDirection = null;
+      _fushiReaderPointerNoSelect(false);
       // 只有「本次手势里指针真的移动过」(nativeMoved) 才当作用户在拖动划原生选区，
       // 保留选区供复制 / 桌面 Ctrl+C，不再当作查词 tap。
       // 旧代码还把「残留原生选区未折叠」也塞进这条早退：只要上一轮的选区还在，纯 tap
@@ -1322,22 +1322,22 @@ install: function(C) {
         return;
       }
     } else {
-      _hoshiReaderMouseDragActive = false;
-      _hoshiReaderMouseDragPointerId = null;
-      _hoshiReaderMouseDragPageDirection = null;
-      _hoshiReaderPointerNoSelect(false);
+      _fushiReaderMouseDragActive = false;
+      _fushiReaderMouseDragPointerId = null;
+      _fushiReaderMouseDragPageDirection = null;
+      _fushiReaderPointerNoSelect(false);
     }
     _gestureEnd(e.clientX, e.clientY, e);
   }, {passive: false});
   document.addEventListener('pointercancel', function(e) {
     if (e.pointerType === 'touch' && !hoshiContinuousMode) return;
-    if (_hoshiReaderMouseDragPointerId !== null && e.pointerId !== _hoshiReaderMouseDragPointerId) return;
-    _hoshiReaderMouseDragActive = false;
-    _hoshiReaderMouseDragClaimed = false;
-    _hoshiReaderMouseNativeTextStart = false;
-    _hoshiReaderMouseDragPointerId = null;
-    _hoshiReaderMouseDragPageDirection = null;
-    _hoshiReaderPointerNoSelect(false);
+    if (_fushiReaderMouseDragPointerId !== null && e.pointerId !== _fushiReaderMouseDragPointerId) return;
+    _fushiReaderMouseDragActive = false;
+    _fushiReaderMouseDragClaimed = false;
+    _fushiReaderMouseNativeTextStart = false;
+    _fushiReaderMouseDragPointerId = null;
+    _fushiReaderMouseDragPageDirection = null;
+    _fushiReaderPointerNoSelect(false);
     hasStart = false;
   }, {passive: true});
   // 非左键（中键/侧键）：上报 Dart，由 resolveMouse 判定是否绑定「seek 到点击句」。
@@ -1352,7 +1352,7 @@ install: function(C) {
     window.flutter_inappwebview.callHandler('onPointerSeek', e.button, e.clientX, e.clientY);
   }, {passive: false});
   document.addEventListener('selectstart', function(e) {
-    if (hasStart && !_hoshiReaderMouseNativeTextStart && (Date.now() - startTime) < 400) e.preventDefault();
+    if (hasStart && !_fushiReaderMouseNativeTextStart && (Date.now() - startTime) < 400) e.preventDefault();
   });
   // TODO-1028: 砍掉双击建立的原生框选——它会盖住单击查词、并绊住振假名 dblclick
   // 切换（_buildFuriganaJs 'toggle' 分支带 `!sel.isCollapsed` 守卫）。原生双击选词在
@@ -1408,14 +1408,14 @@ install: function(C) {
   document.addEventListener('wheel', function(e) {
     // BUG-239 / TODO-345 同源门控：连续模式靠浏览器原生滚动（滚动轴 = 书写轴）。
     // 此处一旦在连续模式回传 onSwipe（90% 整屏跳页），就与原生滚动产生轴向冲突。
-    var r = window.hoshiReader;
+    var r = window.fushiReader;
     if (hoshiContinuousMode) {
       // TODO-345: 横排连续滚动轴 = 纵向（与桌面鼠标滚轮的 deltaY 默认轴一致），
       // 放行原生滚动即可顺滑滚动。竖排连续滚动轴 = 横向（CSS overflow-x 可滚、
       // overflow-y:hidden），但桌面鼠标滚轮只产生 deltaY、不产生 deltaX，浏览器
       // 不会把垂直滚轮可靠地映射到横向可滚轴 → 竖排连续模式滚轮滚不动。故竖排
       // 显式把滚轮的主 delta 投影到横向 scrollBy（沿真实书写轴），方向与
-      // hoshiReader.paginate 一致（vertical-rl forward 往左 = scrollLeft 减小）。
+      // fushiReader.paginate 一致（vertical-rl forward 往左 = scrollLeft 减小）。
       // TODO-627: 连续模式滚轮原本只放行/投影原生滚动，到章末/章首滚不出去（边界
       // 跨章原本只有触摸/指针的边界 IIFE 走 onBoundarySwipe，滚轮无此通道）。这里
       // 补滚轮的跨章通道：仅当原生滚动已到该内容轴尽头才回传 onBoundarySwipe，复用
@@ -1499,7 +1499,7 @@ install: function(C) {
   // resolveReaderSpaceOverride 统一解析，与 Flutter 焦点路径同款语义。
 ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
   window.hoshiProgressDetails = function() {
-    var r = window.hoshiReader;
+    var r = window.fushiReader;
     if (!r) return '';
     var p = r.calculateProgress();
     var m = r.paginationMetrics;
@@ -1548,7 +1548,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     // 抗自发 reflow 归零回到干净的源头屏蔽：reflow 归零的 scroll 在重锚期被 `_reanchorPending`
     // 旗在此 return 挡掉、永不回传落库（见下方）。无需再区分「是否用户驱动」。
     function _reportReaderScroll() {
-      var r = window.hoshiReader;
+      var r = window.fushiReader;
       // TODO-151/164 / BUG-225 诊断：默认 off（C.debugLogging 由 DebugLogService
       // 下发），开了才打印。reanchorPending=true 会早返回不回传，
       // hasBridge=false 说明 callHandler 不可用——便于真机定位「滚动了但进度没动」哪一链断。
@@ -1621,8 +1621,8 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
   /// 与引擎源码拼在**同一次** `evaluateJavascript` 里发出去（往返次数不变）；
   /// 分开写只是为了让引擎那半边可以 memoize。
   static String readerEngineBoot(ReaderEngineConfig config) =>
-      'window.__hoshiReaderConfig = ${config.toJsLiteral()};'
-      'window.__hoshiEngine.install(window.__hoshiReaderConfig);';
+      'window.__fushiReaderConfig = ${config.toJsLiteral()};'
+      'window.__hoshiEngine.install(window.__fushiReaderConfig);';
 
   static String _stripScriptTags(String js) {
     return js
@@ -2046,7 +2046,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         );
 
         // BUG-756: 歌词模式空白点击的专用桥。歌词是独立文档（LyricsModeHtml），没有
-        // 正文 hoshiReader 的 onTap/onTapEmpty；歌词里点句子 = 查词，唯一能唤出底栏的
+        // 正文 fushiReader 的 onTap/onTapEmpty；歌词里点句子 = 查词，唯一能唤出底栏的
         // 手势就是点空白。故这里对隐藏的底栏**无条件唤出/收起**——不看
         // tapEmptyToHideChrome（那开关管的是正文点空白是否收起底栏，歌词没有别的唤出
         // 途径，绝不能被它关死）。挤压态直接 _toggleChrome（隐藏→出、可见→收，且其内部
@@ -2072,7 +2072,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         );
 
         // BUG-1280：双页 spread 空白点击的专用桥，与上面的歌词桥同族。spread 是
-        // [buildSpreadPageHtml] 生成的独立文档，HTML 本身不含正文 hoshiReader 的
+        // [buildSpreadPageHtml] 生成的独立文档，HTML 本身不含正文 fushiReader 的
         // onTap/onTapEmpty，自带手势只有「点图片 → onImageTap」（弹图片查看器）。
         // 底栏一收起，spread 页就再没有唤出通道 → 看不到返回按钮 → 退不出书。
         // （修复前 Android 因 baseUrl 被保留而被误注入过正文引擎，见

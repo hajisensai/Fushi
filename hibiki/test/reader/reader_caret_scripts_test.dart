@@ -165,10 +165,10 @@ void main() {
       // _collectVisibleStops takes a lineLevel flag; popup vertical moves keep
       // one text stop per visual row (rounded top), so Up/Down hops rows /
       // elements instead of every glyph, while Left/Right and the reader stay
-      // per-glyph (window.hoshiReader → lineLevel false).
+      // per-glyph (window.fushiReader → lineLevel false).
       expect(js, contains('_collectVisibleStops: function(lineLevel)'));
       expect(js, contains('Math.round(rect.top)'));
-      expect(js, contains('!window.hoshiReader &&'));
+      expect(js, contains('!window.fushiReader &&'));
       expect(js, contains("physicalDir !== 'left' && physicalDir !== 'right'"));
     });
 
@@ -226,7 +226,7 @@ void main() {
       // Reader block images have no DOM click→lightbox listener, so activate()
       // must call the same onImageTap handler the pointer-gesture path uses;
       // el.click() would be a no-op.
-      expect(js, contains("window.hoshiReader && this.el.tagName === 'IMG'"));
+      expect(js, contains("window.fushiReader && this.el.tagName === 'IMG'"));
       expect(js, contains("callHandler('onImageTap', this.el.src)"));
     });
 
@@ -279,7 +279,7 @@ void main() {
     test('resolves writing-mode and paged vs continuous from live state', () {
       expect(js, contains('_vertical:'));
       expect(js, contains('isVertical'));
-      expect(js, contains("'paginationMetrics' in window.hoshiReader"));
+      expect(js, contains("'paginationMetrics' in window.fushiReader"));
     });
 
     test('maps physical directions to logical ones for vertical-rl', () {
@@ -315,7 +315,7 @@ void main() {
     });
 
     test('popup caret skips lone punctuation/symbol glyphs (e.g. " | ")', () {
-      // In the popup (no hoshiReader) a single punctuation/symbol char is not a
+      // In the popup (no fushiReader) a single punctuation/symbol char is not a
       // useful lookup target and must not be a stop, so the caret never lands on
       // the thin "|" separator between source links.
       expect(js, contains(r'\p{P}'));
@@ -341,7 +341,7 @@ void main() {
 
     test('popup text moves are physical geometry, not reading-order stepping',
         () {
-      expect(js, contains('if (!window.hoshiReader) {'));
+      expect(js, contains('if (!window.fushiReader) {'));
       expect(js, contains('target = this._geomMove(physical);'));
     });
 
@@ -351,7 +351,7 @@ void main() {
       expect(
         js,
         contains(
-            "!window.hoshiReader && (physical === 'left' || physical === 'right')"),
+            "!window.fushiReader && (physical === 'left' || physical === 'right')"),
       );
     });
 

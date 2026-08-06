@@ -4,7 +4,7 @@
 // spanning multiple sentences only captured (text + audio for) the START
 // sentence. This harness EXECUTES the real selection JS (extracted verbatim from
 // reader_selection_scripts.dart) against a minimal fake DOM + a fake
-// window.hoshiReader (normalized-offset map), and asserts:
+// window.fushiReader (normalized-offset map), and asserts:
 //   (A) a drag spanning two sentences -> sentence text + sentenceNormalized range
 //       both cover START-sentence-head .. END-sentence-tail (merged, wide);
 //   (B) a collapsed selection (start == end == tap single point) -> byte-identical
@@ -125,14 +125,14 @@ function buildDocument(container) {
 
 // Fake whole-book normalized-offset map: every char is matchable, so a node's
 // normalized offset == cumulative text length in document order.
-function makeHoshiReader(textNodesInOrder, baseByNode) {
+function makeFushiReader(textNodesInOrder, baseByNode) {
   const nodeStartOffsets = new Map();
   for (const node of textNodesInOrder) nodeStartOffsets.set(node, baseByNode.get(node));
   return { nodeStartOffsets, isMatchableChar() { return true; }, buildNodeOffsets() {} };
 }
 
-function loadHoshiSelection(document, hoshiReader) {
-  const windowObj = { scanNonJapaneseText: true, hoshiReader };
+function loadHoshiSelection(document, fushiReader) {
+  const windowObj = { scanNonJapaneseText: true, fushiReader };
   const sandbox = { window: windowObj, document, Node, NodeFilter, Math, console };
   vm.createContext(sandbox);
   vm.runInContext(jsSource, sandbox, { filename: 'hoshi-selection.js' });
@@ -148,7 +148,7 @@ let passed = 0;
   const p = makeElement('p');
   const t = makeText('一つ目の文。二つ目の文。', p);
   const document = buildDocument(p);
-  const reader = makeHoshiReader([t], new Map([[t, 0]]));
+  const reader = makeFushiReader([t], new Map([[t, 0]]));
   const sel = loadHoshiSelection(document, reader);
   const startCtx = sel.getSentenceContext(t, 2);
   const endCtx = sel.getSentenceContext(t, 8);
@@ -171,7 +171,7 @@ let passed = 0;
   const t1 = makeText('前の文。', p);
   const t2 = makeText('後の文。', p);
   const document = buildDocument(p);
-  const reader = makeHoshiReader([t1, t2], new Map([[t1, 0], [t2, 4]]));
+  const reader = makeFushiReader([t1, t2], new Map([[t1, 0], [t2, 4]]));
   const sel = loadHoshiSelection(document, reader);
   const startCtx = sel.getSentenceContext(t1, 1);
   const endCtx = sel.getSentenceContext(t2, 1);
@@ -190,7 +190,7 @@ let passed = 0;
   const p = makeElement('p');
   const t = makeText('前の文。これが対象の文。次の文。', p);
   const document = buildDocument(p);
-  const reader = makeHoshiReader([t], new Map([[t, 0]]));
+  const reader = makeFushiReader([t], new Map([[t, 0]]));
   const sel = loadHoshiSelection(document, reader);
   const startCtx = sel.getSentenceContext(t, 7);
   const endCtx = startCtx;
@@ -213,7 +213,7 @@ let passed = 0;
   const p = makeElement('p');
   const t = makeText('一つ目の文。二つ目の文。', p);
   const document = buildDocument(p);
-  const reader = makeHoshiReader([t], new Map([[t, 0]]));
+  const reader = makeFushiReader([t], new Map([[t, 0]]));
   const sel = loadHoshiSelection(document, reader);
   const startCtx = sel.getSentenceContext(t, 8);
   const endCtx = sel.getSentenceContext(t, 2);
@@ -229,7 +229,7 @@ let passed = 0;
   const p = makeElement('p');
   const t = makeText('文。', p);
   const document = buildDocument(p);
-  const reader = makeHoshiReader([t], new Map([[t, 0]]));
+  const reader = makeFushiReader([t], new Map([[t, 0]]));
   const sel = loadHoshiSelection(document, reader);
   const ctx = sel.getSentenceContext(t, 0);
   assert.strictEqual(sel.spanSentenceRange(ctx, ctx, null, 4).merged, false, 'D: null start -> fallback');
@@ -249,7 +249,7 @@ let passed = 0;
   body.childNodes.push(p2);
   const b = makeText('第二段落。', p2);
   const document = buildDocument(body);
-  const reader = makeHoshiReader([a, b], new Map([[a, 0], [b, 5]]));
+  const reader = makeFushiReader([a, b], new Map([[a, 0], [b, 5]]));
   const sel = loadHoshiSelection(document, reader);
   assert.strictEqual(sel.textBetween(a, 0, b, 5), '', 'E: unreachable end node -> empty (caller falls back)');
   passed++;

@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// This executes the REAL selection JS (extracted verbatim from
 /// `reader_selection_scripts.dart`) against a minimal fake DOM + fake
-/// `window.hoshiReader`, asserting:
+/// `window.fushiReader`, asserting:
 ///   * a two-sentence drag -> merged sentence text + range span start-head..end-tail;
 ///   * a collapsed selection (tap single point) -> byte-identical to the
 ///     start-sentence-only behaviour (never-break constraint);

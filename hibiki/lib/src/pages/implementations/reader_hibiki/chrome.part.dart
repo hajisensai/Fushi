@@ -30,7 +30,7 @@ part of '../reader_hibiki_page.dart';
 extension _ReaderChrome on _ReaderHibikiPageState {
   /// TODO-1229 案A：章界连续输入穿透守卫。滚轮惯性节流（450ms）远短于换章加载
   /// （数百 ms restore），跨章那一下之后排队的翻页 tick 会在新章 restore 未落定时
-  /// 立即再翻——章首插图页/首页整页被越过；更糟 hoshiReader 尚未就绪时
+  /// 立即再翻——章首插图页/首页整页被越过；更糟 fushiReader 尚未就绪时
   /// evaluateJavascript 返 null → _didScroll(null)=false → 又 _handlePageTurnLimit →
   /// **跳两章**。本 getter 只在「导航在飞（_isNavigatingToChapter）/ 恢复在飞
   /// （_restoreInFlight）/ 内容未就绪（!_readerContentReady）」这三个瞬态窗口为真；
@@ -108,8 +108,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       _lastPaginateTime = DateTime.now();
     }
     // Lyrics mode renders LyricsModeHtml — a vertical cue list with no
-    // hoshiReader paginator. paginate() there no-ops in JS (the
-    // `window.hoshiReader && ...` guard short-circuits) and returns undefined,
+    // fushiReader paginator. paginate() there no-ops in JS (the
+    // `window.fushiReader && ...` guard short-circuits) and returns undefined,
     // which _didScroll reads as a page edge → _handlePageTurnLimit →
     // _navigateToChapter, swapping the lyrics page for an EPUB chapter (the
     // text vanishes). Swipe paths already guard this (onSwipe/onBoundarySwipe);
@@ -1153,7 +1153,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   /// BUG-1195：VN（视觉小说）模式下一次「空白点击」的唯一落点。
   ///
-  /// 旧实现在 JS 侧 [_gestureEnd] 里直接 `window.hoshiReader.paginate('forward')`
+  /// 旧实现在 JS 侧 [_gestureEnd] 里直接 `window.fushiReader.paginate('forward')`
   /// 并 return，抢在查词 / `onTapEmpty` 之前把每一次空白点都吃掉——而 `onTapEmpty`
   /// 是触屏唯一能唤出控制栏的通道，于是 VN 下底栏（悬浮态默认几秒后自动收起）一旦
   /// 收起就永远唤不回来。现在 JS 只回传「这是一次 VN 空白点」，翻页还是唤栏由 Dart
@@ -1213,7 +1213,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   ///
   /// 门控（与 [_syncPageSize] / [_applyChromeInsets] / [_refreshProgress] 一致）：控制器
   /// 释放 / 内容未就绪 / 歌词模式 / 恢复期（`_restoreInFlight`）/ 分页模式都不触发。分页
-  /// 模式即使误调，JS 侧 `beginUiScaleReanchor` 在分页 `window.hoshiReader` 缺席，
+  /// 模式即使误调，JS 侧 `beginUiScaleReanchor` 在分页 `window.fushiReader` 缺席，
   /// `typeof` 守卫使其整体 no-op。
   Future<void> _reanchorContinuousForUiScale() {
     // 实际两阶段编排（门控 → begin → intResult → postFrame → commit）抽到 top-level
@@ -1494,7 +1494,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       Semantics(
         identifier: 'hibiki.reader.bottom.settings',
         child: IconButton(
-          key: const ValueKey<String>('hoshi_reader_settings_button'),
+          key: const ValueKey<String>('fushi_reader_settings_button'),
           icon: Icon(Icons.tune_outlined, color: _themeTextColor()),
           iconSize: 20,
           tooltip: t.reader_settings_section,
@@ -2112,7 +2112,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         customHighlightCss: _customHighlightCss);
     await _controller!.evaluateJavascript(
       source:
-          'if (!window.__hoshiCssHighlightsSupported) { window.hoshiReader && window.hoshiReader.buildNodeOffsets(); }',
+          'if (!window.__hoshiCssHighlightsSupported) { window.fushiReader && window.fushiReader.buildNodeOffsets(); }',
     );
   }
 
@@ -2237,7 +2237,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     if (!mounted || _controller == null) return;
     if (useOffset) {
       await _controller!.evaluateJavascript(
-        source: 'window.hoshiReader && window.hoshiReader'
+        source: 'window.fushiReader && window.fushiReader'
             '.restoreToCharOffset($normCharOffset, $charOffsetEnd);',
       );
     } else if (textLocateJs != null) {

@@ -41,7 +41,7 @@ void main() {
         reason: 'boot 必须经受保护的 _hoshiBootInitialize 调用 initialize()');
     expect(boot.contains('try {'), isTrue,
         reason: 'boot 必须 try 包 initialize()');
-    expect(boot.contains('window.hoshiReader.initialize();'), isTrue,
+    expect(boot.contains('window.fushiReader.initialize();'), isTrue,
         reason: 'boot 仍要调 initialize()');
     expect(boot.contains('} catch (e) {'), isTrue,
         reason: 'boot 必须 catch 住 initialize() 的同步抛（否则冲出 IIFE 卡 cloak）');

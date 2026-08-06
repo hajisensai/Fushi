@@ -11,7 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'package:hibiki/main.dart' show HoshiReaderApp;
+import 'package:hibiki/main.dart' show FushiReaderApp;
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/media/media_item.dart' show MediaItem;
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
@@ -82,9 +82,9 @@ Future<void> openBookViaProductionPath(
   );
   final AppModel appModel = container.read(appProvider);
   // openMedia 需要 WidgetRef 但 open 路径不解引用它（路由走 app navigatorKey 的
-  // context）；根 [HoshiReaderApp] 是 ConsumerStatefulWidget，其 element 即 WidgetRef。
+  // context）；根 [FushiReaderApp] 是 ConsumerStatefulWidget，其 element 即 WidgetRef。
   final ConsumerStatefulElement appElement =
-      tester.element(find.byType(HoshiReaderApp)) as ConsumerStatefulElement;
+      tester.element(find.byType(FushiReaderApp)) as ConsumerStatefulElement;
   final WidgetRef ref = appElement;
   unawaited(appModel.openMedia(
     ref: ref,

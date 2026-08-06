@@ -14,11 +14,11 @@ void main() {
   test('VN shell builds and contains the object + restore + deps', () {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
     expect(shell.contains('<script>'), isTrue);
-    expect(shell.contains('window.hoshiReader = {'), isTrue);
-    expect(shell.contains('global.hoshiReaderTextSemantics'), isTrue);
-    expect(shell.contains('global.hoshiReaderVnContentStream'), isTrue);
-    expect(shell.contains('global.hoshiReaderVnRangeMap'), isTrue);
-    expect(shell.contains('global.hoshiReaderMediaSemantics'), isTrue);
+    expect(shell.contains('window.fushiReader = {'), isTrue);
+    expect(shell.contains('global.fushiReaderTextSemantics'), isTrue);
+    expect(shell.contains('global.fushiReaderVnContentStream'), isTrue);
+    expect(shell.contains('global.fushiReaderVnRangeMap'), isTrue);
+    expect(shell.contains('global.fushiReaderMediaSemantics'), isTrue);
     // BUG-1140 第二阶段①：恢复锚 / reveal 参数不再插进源码，改由运行时读 C。
     expect(shell.contains('restoreToCharOffset(C.initialCharOffset)'), isTrue);
     expect(shell.contains('revealSpeed: C.vnRevealSpeed,'), isTrue);
@@ -313,7 +313,7 @@ void main() {
   // BUG-718：VN 模式按字符偏移恢复（restoreToCharOffset）时整页空白。根因——
   // restoreToCharOffset 只由 boot 块之后的 host-compat shim IIFE 挂上，而 boot 的
   // `if (document.readyState==='complete')` 分支在 setup 脚本注入时同步调用
-  // `window.hoshiReader.restoreToCharOffset(<offset>)`。shim 尚未定义 → TypeError →
+  // `window.fushiReader.restoreToCharOffset(<offset>)`。shim 尚未定义 → TypeError →
   // 中断整个外层 setup IIFE → 尾部的 `#hoshi-cloak` 移除永不执行 → body 保持
   // visibility:hidden → 空白。根因修复：boot 块必须排在 shim IIFE 之后（restore*
   // 方法先定义再被调用），且 boot restore 套 try/catch，任何 restore 错误都不再
@@ -323,7 +323,7 @@ void main() {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
     // boot must restore by charOffset for a saved position（现在读运行时 C）。
     final int bootCall = shell
-        .indexOf('window.hoshiReader.restoreToCharOffset(C.initialCharOffset)');
+        .indexOf('window.fushiReader.restoreToCharOffset(C.initialCharOffset)');
     expect(bootCall, greaterThanOrEqualTo(0),
         reason:
             'charOffset restore must call restoreToCharOffset(C.initialCharOffset)');
@@ -350,7 +350,7 @@ void main() {
         vnMode: true, continuousMode: false);
     final int engShim = engine.indexOf('vn.restoreToCharOffset = ');
     final int engBoot = engine.indexOf(
-        'window.hoshiReader.restoreToCharOffset(C.initialCharOffset)', engShim);
+        'window.fushiReader.restoreToCharOffset(C.initialCharOffset)', engShim);
     expect(engShim, greaterThanOrEqualTo(0));
     expect(engBoot, greaterThan(engShim),
         reason:

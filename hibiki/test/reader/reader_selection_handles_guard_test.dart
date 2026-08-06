@@ -149,10 +149,10 @@ void main() {
       expect(body, contains('this._selectionVertical()'), reason: '定位必须读书写模式');
       expect(body, contains('if (vertical)'), reason: '竖排/横排必须各自定位（不是一套硬编码坐标）');
       expect(body, contains('_glyphRect'));
-      // _selectionVertical 走 hoshiReader.isVertical()（与 caret 同源）。
+      // _selectionVertical 走 fushiReader.isVertical()（与 caret 同源）。
       final String vBody = _between(
           js, '_selectionVertical: function', 'selectionEndpoints: function');
-      expect(vBody, contains('window.hoshiReader'));
+      expect(vBody, contains('window.fushiReader'));
       expect(vBody, contains('isVertical'));
     });
 

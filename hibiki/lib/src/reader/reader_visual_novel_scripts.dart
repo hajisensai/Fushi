@@ -10,9 +10,9 @@
 //
 // Hibiki adaptations vs hoshi a (see [vnShellScript]):
 //   * The 4 injected dependency scripts (text-semantics / vn-content-stream /
-//     vn-range-map / media-semantics) are inlined ahead of `window.hoshiReader`.
+//     vn-range-map / media-semantics) are inlined ahead of `window.fushiReader`.
 //   * `notifyRestoreComplete` forwards to InAppWebView's `onRestoreComplete`
-//     handler instead of hoshi's native `HoshiReaderRestore.postMessage`.
+//     handler instead of hoshi's native `FushiReaderRestore.postMessage`.
 //   * media-semantics is an M0 no-op stub (images render from cloned chapter
 //     markup); Sasayaki / highlights / E-Ink overlay are M1 (their hoshi calls
 //     are guarded by `window.hoshiHighlights` / popupHost checks, safe at M0).
@@ -20,7 +20,7 @@
 //     hoshi JS concern -- the host (webview.part.dart) binds blank-tap ->
 //     `paginate("forward")`.
 //
-// `window.hoshiReader` here exposes the same method names the Dart side already
+// `window.fushiReader` here exposes the same method names the Dart side already
 // invokes via short-circuit guards (paginate / calculateProgress /
 // applySasayakiCues / highlightSasayakiCue / clearSasayakiCue). Methods the VN
 // object does not define (pageInfo / scrollToCharOffset / beginUiScaleReanchor /
@@ -34,7 +34,7 @@ import 'package:hibiki/src/reader/reader_content_styles.dart'
 
 /// Builds the VN-mode reader shell `<script>` for the reader WebView. Mirrors
 /// [ReaderPaginationScripts.shellScript]'s shells but installs the hoshi a
-/// Visual-Novel `window.hoshiReader`.
+/// Visual-Novel `window.fushiReader`.
 class ReaderVisualNovelScripts {
   ReaderVisualNovelScripts._();
 
@@ -48,11 +48,11 @@ class ReaderVisualNovelScripts {
   /// 恢复锚三选一的运行时分派（旧实现在 Dart 侧三元式挑一条语句）。
   static const String _initialRestoreJs = '''
     if (C.initialFragment !== null && C.initialFragment !== undefined) {
-      window.hoshiReader.jumpToFragment(C.initialFragment);
+      window.fushiReader.jumpToFragment(C.initialFragment);
     } else if (C.initialCharOffset >= 0) {
-      window.hoshiReader.restoreToCharOffset(C.initialCharOffset);
+      window.fushiReader.restoreToCharOffset(C.initialCharOffset);
     } else {
-      window.hoshiReader.restoreProgress(C.initialProgress);
+      window.fushiReader.restoreProgress(C.initialProgress);
     }''';
 
   static String _shell() {
@@ -85,7 +85,7 @@ window.__hoshiShells.vn = function(C) {
     return Array.from(text || '').length;
   }
 
-  global.hoshiReaderTextSemantics = {
+  global.fushiReaderTextSemantics = {
     normalizeText: normalizeText,
     isMatchableChar: isMatchableChar,
     countChars: countChars,
@@ -95,12 +95,12 @@ window.__hoshiShells.vn = function(C) {
 (function(global) {
   'use strict';
   // TODO-909 M0 stub: hoshi a's media-semantics bridges images to an
-  // Android native @JavascriptInterface (HoshiReaderImage). Hibiki has no
+  // Android native @JavascriptInterface (FushiReaderImage). Hibiki has no
   // such bridge at M0, so images render from the chapter's own <img> markup
   // cloned into the VN screen. These no-ops keep reader-visual-novel.js's
   // setupReaderImage(s) calls safe. M1 wires Hibiki image interception.
   function noop() { return null; }
-  global.hoshiReaderMediaSemantics = {
+  global.fushiReaderMediaSemantics = {
     setupReaderImage: noop,
     setupReaderImages: noop
   };
@@ -123,10 +123,10 @@ window.__hoshiShells.vn = function(C) {
   }
 
   function textSemantics() {
-    if (!global.hoshiReaderTextSemantics) {
-      throw new Error('hoshiReaderTextSemantics is required for VN content stream');
+    if (!global.fushiReaderTextSemantics) {
+      throw new Error('fushiReaderTextSemantics is required for VN content stream');
     }
-    return global.hoshiReaderTextSemantics;
+    return global.fushiReaderTextSemantics;
   }
 
   function normalizeText(text) {
@@ -625,7 +625,7 @@ window.__hoshiShells.vn = function(C) {
     }
   };
 
-  global.hoshiReaderVnContentStream = {
+  global.fushiReaderVnContentStream = {
     create: function(root, options) {
       return new ReaderVnContentStream(root, options);
     }
@@ -752,14 +752,14 @@ window.__hoshiShells.vn = function(C) {
     }
   };
 
-  global.hoshiReaderVnRangeMap = {
+  global.fushiReaderVnRangeMap = {
     create: function(reader) {
       return new ReaderVnRangeMap(reader);
     }
   };
 })(window);
 
-window.hoshiReader = {
+window.fushiReader = {
   revealSpeed: C.vnRevealSpeed,
   screenMode: C.vnScreenMode,
   sentencesPerScreen: C.vnSentencesPerScreen,
@@ -829,10 +829,10 @@ window.hoshiReader = {
     return !!(el && el.closest('[data-hoshi-visual-novel-unrevealed]'));
   },
   textSemantics: function() {
-    if (!window.hoshiReaderTextSemantics) {
-      throw new Error('hoshiReaderTextSemantics is required for reader text semantics');
+    if (!window.fushiReaderTextSemantics) {
+      throw new Error('fushiReaderTextSemantics is required for reader text semantics');
     }
-    return window.hoshiReaderTextSemantics;
+    return window.fushiReaderTextSemantics;
   },
   normalizeText: function(text) {
     return this.textSemantics().normalizeText(text);
@@ -861,7 +861,7 @@ window.hoshiReader = {
   },
   notifyRestoreComplete: function() {
     // Hibiki adaptation: hoshi a posts to a native @JavascriptInterface
-    // (HoshiReaderRestore). Hibiki is InAppWebView, so forward to the same
+    // (FushiReaderRestore). Hibiki is InAppWebView, so forward to the same
     // 'onRestoreComplete' handler the paginated/continuous shells use.
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler(
@@ -989,13 +989,13 @@ window.hoshiReader = {
     root.style.setProperty('--hoshi-image-max-height', vh + 'px');
   },
   buildSourceIndexes: function() {
-    var contentStreamFactory = window.hoshiReaderVnContentStream && window.hoshiReaderVnContentStream.create;
+    var contentStreamFactory = window.fushiReaderVnContentStream && window.fushiReaderVnContentStream.create;
     if (!contentStreamFactory) {
-      throw new Error('hoshiReaderVnContentStream is required for visual novel reader');
+      throw new Error('fushiReaderVnContentStream is required for visual novel reader');
     }
-    var rangeMapFactory = window.hoshiReaderVnRangeMap && window.hoshiReaderVnRangeMap.create;
+    var rangeMapFactory = window.fushiReaderVnRangeMap && window.fushiReaderVnRangeMap.create;
     if (!rangeMapFactory) {
-      throw new Error('hoshiReaderVnRangeMap is required for visual novel reader');
+      throw new Error('fushiReaderVnRangeMap is required for visual novel reader');
     }
     this.contentStream = contentStreamFactory(this.sourceRoot);
     this.rangeMap = rangeMapFactory(this);
@@ -2351,9 +2351,9 @@ window.hoshiReader = {
     return fragment;
   },
   setupReaderImage: function(element, src, wrap, blurElement) {
-    return window.hoshiReaderMediaSemantics.setupReaderImage(element, src, {
+    return window.fushiReaderMediaSemantics.setupReaderImage(element, src, {
       blurImages: C.blurImages,
-      imageBridge: window.HoshiReaderImage,
+      imageBridge: window.FushiReaderImage,
       wrap: wrap,
       blurElement: blurElement
     });
@@ -2370,9 +2370,9 @@ window.hoshiReader = {
     // _sharedInitImages, so `--hoshi-image-max-width/height` (set by
     // applyImageMaxVars) drive their size. Gaiji glyph images are left inline.
     this.promoteBlockImages(scope);
-    return window.hoshiReaderMediaSemantics.setupReaderImages(scope, {
+    return window.fushiReaderMediaSemantics.setupReaderImages(scope, {
       blurImages: C.blurImages,
-      imageBridge: window.HoshiReaderImage,
+      imageBridge: window.FushiReaderImage,
       waitForImages: false
     });
   },
@@ -2839,8 +2839,8 @@ window.hoshiReader = {
       this.clearSasayakiOverlay();
       return;
     }
-    if (window.hoshiReaderPopupHost && window.hoshiReaderPopupHost.renderSasayakiHighlight) {
-      window.hoshiReaderPopupHost.renderSasayakiHighlight({
+    if (window.fushiReaderPopupHost && window.fushiReaderPopupHost.renderSasayakiHighlight) {
+      window.fushiReaderPopupHost.renderSasayakiHighlight({
         rects: this.sasayakiOverlayRects(this.activeCueId),
         eInkMode: true,
         verticalWriting: this.isVertical()
@@ -2848,8 +2848,8 @@ window.hoshiReader = {
     }
   },
   clearSasayakiOverlay: function() {
-    if (window.hoshiReaderPopupHost && window.hoshiReaderPopupHost.clearSasayakiHighlight) {
-      window.hoshiReaderPopupHost.clearSasayakiHighlight();
+    if (window.fushiReaderPopupHost && window.fushiReaderPopupHost.clearSasayakiHighlight) {
+      window.fushiReaderPopupHost.clearSasayakiHighlight();
     }
   },
   clearInlineSasayakiCue: function(cueId) {
@@ -2987,11 +2987,11 @@ window.hoshiReader = {
 
 
 // ── Hibiki host-compat shims (TODO-909 M0) ───────────────────────────────────
-// The Dart side calls a few methods on window.hoshiReader that hoshi a's VN
+// The Dart side calls a few methods on window.fushiReader that hoshi a's VN
 // object does not define. Add minimal, correct equivalents so the shared Dart
 // reader paths behave under VN mode.
 (function() {
-  var vn = window.hoshiReader;
+  var vn = window.fushiReader;
   if (!vn) return;
   if (typeof vn.updatePageSize !== 'function') {
     vn.updatePageSize = function(width, height) {
@@ -3047,14 +3047,14 @@ window.hoshiReader = {
 
 // Hibiki adaptation: initialize on load, then run the restore script. This MUST
 // run AFTER the host-compat shim IIFE above: a charOffset restore calls
-// window.hoshiReader.restoreToCharOffset, which only the shim defines. Placed
+// window.fushiReader.restoreToCharOffset, which only the shim defines. Placed
 // before the shim it threw a synchronous TypeError that aborted the outer
 // reader-setup IIFE before its tail removed #hoshi-cloak, leaving the page
 // visibility:hidden (blank) on any restore-by-charOffset VN entry. The
 // try/catch also stops a future restore error from ever stranding the cloak.
 window.addEventListener('load', function() {
   try {
-    window.hoshiReader.initialize();
+    window.fushiReader.initialize();
     $initialRestoreScript
   } catch (e) {
     try { if (window.console && console.error) console.error('[HoshiVN] boot restore failed', e); } catch (_ignored) {}
@@ -3062,7 +3062,7 @@ window.addEventListener('load', function() {
 });
 if (document.readyState === 'complete') {
   try {
-    window.hoshiReader.initialize();
+    window.fushiReader.initialize();
     $initialRestoreScript
   } catch (e) {
     try { if (window.console && console.error) console.error('[HoshiVN] boot restore failed', e); } catch (_ignored) {}
