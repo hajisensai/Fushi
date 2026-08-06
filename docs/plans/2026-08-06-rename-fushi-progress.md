@@ -15,8 +15,8 @@
 - [x] P6-4a `Ht*`→`Ft*`（11 类；分支提交 20f50fc10，torrent 定向 147 绿）
 - [ ] P6-4b `Sasayaki*` 改描述性名——**实测面 ~500 处远超预估**，且含两个 userspace 契约需先定策略：① Anki handlebars 模板变量（`handlebar_sasayaki_audio` 对应的用户模板变量，乱改破用户现有卡模板）；② `sasayakiColor` 疑似入库的主题自定义色键（custom_theme 持久化待查）。纯内部符号（SasayakiCue/AutoNav/JS 桥）可机械换，两个契约点需映射或冻结
 - [ ] P6-4c 代码字符串残留 hibiki 清扫 + 白名单收口（与 P2-1 通道前缀联动，随 Phase 2 做）
-- [ ] P1-1 `MigrationExporter`（分批导出，复用 BackupService，中转 `Documents/Hibiki/migration/`）
-- [ ] P1-2 `MigrationManifest`（表行数 + 文件 sha256 清单 + 单测）
+- [x] P1-1 `MigrationExporter` 核心（`lib/src/migration/migration_exporter.dart`：分批调 createBackup、断点 state.json、幂等跳过；**尚缺**：Android 中转目录取路径接线 + 从设置页触发——归 P1-3 一起做）
+- [x] P1-2 `MigrationManifest` v1（`migration_manifest.dart`：归档 sha256+size + 14 表行数 + schema 版本；8 单测绿；对计划的偏差已记回计划 §P1-2）
 - [ ] P1-3 迁移 UI 三态引导 + `<queries>` 声明 `app.fushi.reader` + 导完拉起 Fushi
 - [ ] P1-4 已迁移只读态（锁写/停互联/注销 PROCESS_TEXT/保留重传/常驻引导）
 - [ ] P2-1 Android 身份替换：applicationId/namespace/taskAffinity/Java 包目录/URL scheme/MethodChannel 常量（Dart+五端原生同 PR）

@@ -200,6 +200,12 @@ class MigrationExporter {
 - 批次总字节数、源 `schemaVersion`、源 `appVersion`、源包名
 
 > 复用 `backup_service.dart` 已有的 sha256 计算方式，不引入新依赖。
+>
+> **实现偏差（2026-08-07，v1 已落地 `migration_manifest.dart`）**：改为**归档级**
+> `size`+`sha256` + DB 表行数，不做逐 entry 哈希——archive 3.x 逐 entry 取
+> content 需整块载入内存，书籍/有声书批次可达 GB 级；整档哈希对「中转损坏/截断」
+> 防护等价，行数校验兜语义。另：每批=核心四类+本批文件树（BackupService 防幽灵
+> 语义使内容行恰随自己批次落地），而非「core 批带全库」。
 
 #### P1-3 迁移 UI + 引导
 
