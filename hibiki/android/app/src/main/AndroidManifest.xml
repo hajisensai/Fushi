@@ -257,5 +257,7 @@
     <uses-permission android:name="com.ichi2.anki.permission.READ_WRITE_DATABASE"/>
     <queries>
         <package android:name="com.ichi2.anki" />
+        <!-- Hibiki→Fushi 迁移：Android 11+ 包可见性，不声明则 getPackageInfo 查不到新包 -->
+        <package android:name="app.fushi.reader" />
     </queries>
 </manifest>

@@ -22,4 +22,7 @@ public final class ChannelNames {
     // Skia" experiment flag; applied at next launch via MainActivity's
     // getFlutterShellArgs override).
     public static final String RENDER = PREFIX + "/render";
+    // Hibiki→Fushi 跨包名迁移（改名迁移计划 P1-3/P1-4）：探测/拉起新包、
+    // 发起卸载、注销 PROCESS_TEXT 系统入口。
+    public static final String MIGRATION = PREFIX + "/migration";
 }

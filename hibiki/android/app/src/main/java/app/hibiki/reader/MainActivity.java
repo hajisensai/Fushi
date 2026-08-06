@@ -509,6 +509,7 @@ public class MainActivity extends AudioServiceActivity {
         super.configureFlutterEngine(flutterEngine);
         FloatingDictService.initEngineGroup(getApplicationContext());
         SelectionActionChannel.registerWith(flutterEngine, this);
+        MigrationChannelHandler.registerWith(flutterEngine, getApplicationContext());
 
         volumeKeyChannel = new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(), VOLUME_KEY_CHANNEL);
