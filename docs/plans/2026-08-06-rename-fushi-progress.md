@@ -21,11 +21,11 @@
 - [x] P1-4a 只读态启动闸门（develop c56a273aa）：`isMigrationReadonly` + init 尾段早退（互联/Yomitan/自动同步/词典自更/下载入库/texthooker 全停）+ PROCESS_TEXT 注销随导出完成触发
 - [x] P1-4b 只读态收口（develop 513e49ff2）：openMedia 单闸门（进度/统计/制卡写路径整体不可达）+ dashboard 常驻 banner（打开 Fushi / 重新导出）
 **⚠️ Android 过渡版基线 = 513e49ff2**（含完整迁移导出/只读态，包名仍 app.hibiki.reader；发布老包最后版本从此提交出包）。
-- [ ] P2-1 Android 身份替换：applicationId/namespace/taskAffinity/Java 包目录/URL scheme/MethodChannel 常量（Dart+五端原生同 PR）
-- [ ] P2-2 `MigrationImporter`（首启扫描/逐批 merge 导入/manifest 全项校验/失败保留重传）
-- [ ] P2-3 卸载引导（ACTION_DELETE + getPackageInfo 复查取消分支）
+- [x] P2-1 Android 身份替换（develop 15fd787e0…64386eaf4）：applicationId/namespace/taskAffinity/Java·Kotlin 包目录/label/图标 alias/URL scheme fushi://和 Bonjour _fushi-sync/MethodChannel 前缀五端同 PR；FushiFileProvider/FushiBridge/资源改名；新包名 release APK 构建绿（335.1MB）；全量门 17619 绿
+- [x] P2-2 `MigrationImporter`（同批落地）：scan/归档校验/mergeRestore 逐批合并/行数聚合校验/失败保留（4 单测）+ MigrationImportPage + dashboard 检测 banner + 设置入口按运行包名切方向
+- [x] P2-3 卸载引导（同批落地）：dashboard 卸载 banner（ACTION_DELETE + resumed 生命周期复查，绝不乐观标成功）
 - [ ] Phase 3 Windows：`fushi.exe`/安装器 AppName/`FushiSingleInstanceMutex` 三处同步/`Fushi.Video` ProgID 迁移+旧键清理/`%APPDATA%\Hibiki`→`Fushi` 搬迁
-- [ ] Phase 5 更新桥：Win/Android `synthesizeStableAssetNames` 切 fushi（随 Phase 2/3 同 PR；发布时机用户定）
+- [ ] Phase 5 更新桥：Windows `synthesizeStableAssetNames` 行随 Phase 3 切 fushi（Android 无更新桥需求：跨包名不能就地更新，迁移链即通道）
 - [ ] P6-2 `hoshidicts`→`fushidicts`（C ABI/DLL/JNI/CMake/FFI/UPSTREAM.md；五平台构建门）
 - [ ] P6-6 native 产物：gal helper 三件套 `fushi_voice_*` + IPC 对象名两侧同 PR + `hibiki_torrent_ffi`→`fushi_torrent_ffi`
 - [ ] P6-5 pub 包名体系：`hibiki`→`fushi` app 包 + 6 内部包 + workspace + 全仓 import（最后做，单独 PR，不与他人并行）
