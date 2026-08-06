@@ -160,7 +160,7 @@ class _MigrationPageState extends State<MigrationPage> {
           Text(t.migration_intro),
           const SizedBox(height: 16),
           if (_allDone)
-            Card(
+            HibikiCard(
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Text(t.migration_readonly_note),
@@ -180,17 +180,17 @@ class _MigrationPageState extends State<MigrationPage> {
             ),
           ],
           if (_target == _TargetState.installed) ...<Widget>[
-            SwitchListTile(
+            AdaptiveSettingsSwitchRow(
+              title: t.migration_include_local_audio,
               value: _includeLocalAudio,
               onChanged: _running
                   ? null
                   : (bool v) => setState(() => _includeLocalAudio = v),
-              title: Text(t.migration_include_local_audio),
             ),
             const SizedBox(height: 8),
             for (final MigrationBatch batch in batches)
-              ListTile(
-                dense: true,
+              HibikiListItem(
+                density: HibikiListDensity.compact,
                 leading: _doneBatches.contains(batch.name)
                     ? const Icon(Icons.check_circle_outline)
                     : (_currentBatch == batch.name
