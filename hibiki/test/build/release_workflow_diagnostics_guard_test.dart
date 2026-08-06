@@ -240,14 +240,14 @@ void main() {
 
     expect(macosJob, contains('flutter build macos --release'));
     expect(macosJob, contains('ditto -c -k --keepParent'));
-    expect(macosJob, contains(r'hibiki-${BUILD_VERSION_NAME}-macos.zip'));
+    expect(macosJob, contains(r'fushi-${BUILD_VERSION_NAME}-macos.zip'));
 
     expect(iosJob, contains('flutter build ios --release --no-codesign'));
     expect(iosJob, contains('Payload'));
-    expect(iosJob, contains(r'hibiki-${BUILD_VERSION_NAME}-ios.ipa'));
+    expect(iosJob, contains(r'fushi-${BUILD_VERSION_NAME}-ios.ipa'));
 
-    expect(publishJob, contains('hibiki-*-macos.zip'));
-    expect(publishJob, contains('hibiki-*-ios.ipa'));
+    expect(publishJob, contains('fushi-*-macos.zip'));
+    expect(publishJob, contains('fushi-*-ios.ipa'));
     expect(
         publishJob, contains('Publish mirror update manifest (Apple assets)'));
   });
@@ -356,7 +356,8 @@ void main() {
     expect(
       smoke,
       contains(r'hibiki\build\windows\x64\runner\Release\ffprobe.exe'),
-      reason: 'release must test the exact ffprobe.exe copied beside hibiki.exe '
+      reason:
+          'release must test the exact ffprobe.exe copied beside hibiki.exe '
           '(BUG-1420: it was never built nor bundled, and both of its consumers '
           'degrade silently when it is absent)',
     );

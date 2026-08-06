@@ -3,15 +3,15 @@
 <plist version="1.0">
 	<dict>
 		<key>NSMicrophoneUsageDescription</key>
-		<string>Hibiki needs the microphone to record audio for your Anki cards.</string>
+		<string>Fushi needs the microphone to record audio for your Anki cards.</string>
 		<key>NSAppleMusicUsageDescription</key>
-		<string>Hibiki accesses your media library to import audio files for audiobooks and Anki cards.</string>
+		<string>Fushi accesses your media library to import audio files for audiobooks and Anki cards.</string>
 		<key>NSCameraUsageDescription</key>
-		<string>Hibiki uses the camera to capture images to add to your Anki cards.</string>
+		<string>Fushi uses the camera to capture images to add to your Anki cards.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
-		<string>Hibiki accesses your photo library to pick images to add to your Anki cards.</string>
+		<string>Fushi accesses your photo library to pick images to add to your Anki cards.</string>
 		<key>NSLocalNetworkUsageDescription</key>
-		<string>Hibiki finds other Hibiki devices on your local network to sync your library.</string>
+		<string>Fushi finds other Fushi devices on your local network to sync your library.</string>
 		<key>NSBonjourServices</key>
 		<array>
 			<string>_hibiki-sync._tcp</string>
@@ -19,7 +19,7 @@
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>
-		<string>Hibiki</string>
+		<string>Fushi</string>
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>
 		<key>CFBundleIdentifier</key>
@@ -27,7 +27,7 @@
 		<key>CFBundleInfoDictionaryVersion</key>
 		<string>6.0</string>
 		<key>CFBundleName</key>
-		<string>Hibiki</string>
+		<string>Fushi</string>
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>

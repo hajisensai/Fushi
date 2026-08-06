@@ -921,7 +921,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x tool/mihon/build_desktop_runtime.sh
-          app_dir="hibiki/build/macos/Build/Products/Release/hibiki.app"
+          app_dir="hibiki/build/macos/Build/Products/Release/fushi.app"
           runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
           tool/mihon/build_desktop_runtime.sh "$runtime_dir" "$RUNNER_TEMP/hibiki-mihon-downloads"
           while IFS= read -r candidate; do
@@ -934,7 +934,7 @@ jobs:
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
       # BUG-1421: the macOS bundle never shipped ffmpeg at all. Only the Windows
-      # job had an install step, so hibiki.app/Contents/MacOS/ held just the main
+      # job had an install step, so fushi.app/Contents/MacOS/ held just the main
       # executable and _bundledExecutablePath() (ffmpeg_backend.dart) always
       # returned null -> resolveFfmpegExecutable() fell through to a bare
       # 'ffmpeg' on PATH. macOS ships no system ffmpeg, so every Mac without a
@@ -953,7 +953,7 @@ jobs:
         run: |
           set -euo pipefail
           source_dir="third_party/ffmpeg-min/macos"
-          app_dir="hibiki/build/macos/Build/Products/Release/hibiki.app"
+          app_dir="hibiki/build/macos/Build/Products/Release/fushi.app"
           target_dir="$app_dir/Contents/MacOS"
           if [ ! -d "$target_dir" ]; then
             echo "::error title=macOS bundle missing::Expected $target_dir"
@@ -1068,7 +1068,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APP="build/macos/Build/Products/Release/hibiki.app"
+          APP="build/macos/Build/Products/Release/fushi.app"
           ENTITLEMENTS="macos/Runner/Release.entitlements"
           JVM_ENTITLEMENTS="$RUNNER_TEMP/mihon-jvm.entitlements"
           if [ ! -d "$APP" ]; then
@@ -1140,7 +1140,7 @@ jobs:
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          APP="build/macos/Build/Products/Release/hibiki.app"
+          APP="build/macos/Build/Products/Release/fushi.app"
           KEY_PATH="$RUNNER_TEMP/AuthKey_${APPSTORE_API_KEY_ID}.p8"
           printf '%s\n' "$APPSTORE_API_PRIVATE_KEY" > "$KEY_PATH"
           NOTARIZE_ZIP="$RUNNER_TEMP/hibiki-notarize.zip"
@@ -1170,15 +1170,15 @@ jobs:
           BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
         run: |
           set -euo pipefail
-          app_dir="build/macos/Build/Products/Release/hibiki.app"
+          app_dir="build/macos/Build/Products/Release/fushi.app"
           out_dir="build/release-artifacts"
           if [ ! -d "$app_dir" ]; then
             echo "::error title=macOS app missing::Expected $app_dir"
             exit 1
           fi
           mkdir -p "$out_dir"
-          rm -f "$out_dir"/hibiki-*-macos.zip
-          ditto -c -k --keepParent "$app_dir" "$out_dir/hibiki-${BUILD_VERSION_NAME}-macos.zip"
+          rm -f "$out_dir"/fushi-*-macos.zip
+          ditto -c -k --keepParent "$app_dir" "$out_dir/fushi-${BUILD_VERSION_NAME}-macos.zip"
       # The single non-blocking `publish` job downloads this artifact and does
       # all Release publishing, so macOS builds in parallel with Windows/iOS and
       # never blocks (or is blocked by) the other platforms.
@@ -1187,7 +1187,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: desktop-artifacts-macos
-          path: hibiki/build/release-artifacts/hibiki-*-macos.zip
+          path: hibiki/build/release-artifacts/fushi-*-macos.zip
           if-no-files-found: ignore
           retention-days: 14
 
@@ -1447,10 +1447,10 @@ jobs:
           rm -rf "$payload_dir"
           mkdir -p "$payload_dir/Payload" "$out_dir"
           ditto "$app_dir" "$payload_dir/Payload/Runner.app"
-          rm -f "$out_dir"/hibiki-*-ios.ipa
+          rm -f "$out_dir"/fushi-*-ios.ipa
           (
             cd "$payload_dir"
-            zip -qry "$GITHUB_WORKSPACE/hibiki/$out_dir/hibiki-${BUILD_VERSION_NAME}-ios.ipa" Payload
+            zip -qry "$GITHUB_WORKSPACE/hibiki/$out_dir/fushi-${BUILD_VERSION_NAME}-ios.ipa" Payload
           )
       # The single non-blocking `publish` job downloads this artifact and does
       # all Release publishing, so iOS builds in parallel with Windows/macOS and
@@ -1460,7 +1460,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: desktop-artifacts-ios
-          path: hibiki/build/release-artifacts/hibiki-*-ios.ipa
+          path: hibiki/build/release-artifacts/fushi-*-ios.ipa
           if-no-files-found: ignore
           retention-days: 14
 
@@ -1838,8 +1838,8 @@ jobs:
           tag_name: ${{ steps.channel.outputs.tag }}
           files: |
             hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
-            hibiki/build/release-artifacts/hibiki-*-macos.zip
-            hibiki/build/release-artifacts/hibiki-*-ios.ipa
+            hibiki/build/release-artifacts/fushi-*-macos.zip
+            hibiki/build/release-artifacts/fushi-*-ios.ipa
       # TODO-1049 / TODO-1123 / TODO-1129: same rolling-release asset GC as
       # release.yml. softprops upserts same-named assets but never removes a
       # PRIOR commit's asset (different seq/sha in the name) from the reused
@@ -1962,8 +1962,8 @@ jobs:
           make_latest: ${{ steps.channel.outputs.make_latest }}
           files: |
             hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
-            hibiki/build/release-artifacts/hibiki-*-macos.zip
-            hibiki/build/release-artifacts/hibiki-*-ios.ipa
+            hibiki/build/release-artifacts/fushi-*-macos.zip
+            hibiki/build/release-artifacts/fushi-*-ios.ipa
       # TODO-705: publish a mirror update manifest so beta/debug in-China update
       # checks succeed (raw.githubusercontent.com is proxiable; api.github.com
       # /releases is mirror-403'd, BUG-292). This pushes a DATA FILE to the
@@ -2011,6 +2011,6 @@ jobs:
           VERSION: ${{ steps.channel.outputs.build_version_name }}
           RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
           ARTIFACTS_DIR: hibiki/build/release-artifacts
-          ASSET_GLOB: hibiki-*-macos.zip hibiki-*-ios.ipa
+          ASSET_GLOB: fushi-*-macos.zip fushi-*-ios.ipa
           PLATFORM_LABEL: apple
         run: bash tool/publish_update_manifest.sh

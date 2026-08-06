@@ -14,7 +14,7 @@ Hibiki 的 iOS / macOS 发布签名怎么配、怎么轮换、坏了怎么查。
 | 沙盒 | 不涉及 | **刻意不进 Mac App Store** |
 
 macOS 不上架的原因不是懒：`macos/Runner/Release.entitlements` 已经刻意移除
-`com.apple.security.app-sandbox`，因为应用内自动更新要替换 `/Applications/hibiki.app`，
+`com.apple.security.app-sandbox`，因为应用内自动更新要替换 `/Applications/fushi.app`，
 沙盒容器写不了那里（决策见 `docs/specs/2026-06-04-all-platform-auto-update-design.md` §5）。
 Mac App Store 强制沙盒，两者不能兼得。Developer ID + 公证是「不上架但不被
 Gatekeeper 拦」的正解。
@@ -138,7 +138,7 @@ debug 通道每次提交都会跑，传上去只会白烧 App Store Connect 的�
 
 ### GitHub Release 资产不受影响
 
-Release 里挂的 `hibiki-<版本>-ios.ipa` **仍然是未签名包**，走的还是原来的
+Release 里挂的 `fushi-<版本>-ios.ipa` **仍然是未签名包**，走的还是原来的
 `flutter build ios --release --no-codesign` + 手工打 Payload。老用户用 AltStore /
 Sideloadly 自签侧载的就是它，换成 App Store 签名包会直接打断他们。TestFlight 用的是
 另外一次、只在手动 beta/formal 时才发生的签名构建，产物不进 Release 资产。

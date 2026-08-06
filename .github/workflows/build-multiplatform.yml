@@ -583,7 +583,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x tool/mihon/build_desktop_runtime.sh
-          app_dir="hibiki/build/macos/Build/Products/Debug/hibiki.app"
+          app_dir="hibiki/build/macos/Build/Products/Debug/fushi.app"
           runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
           tool/mihon/build_desktop_runtime.sh "$runtime_dir" "$RUNNER_TEMP/hibiki-mihon-downloads"
           while IFS= read -r candidate; do
@@ -599,7 +599,7 @@ jobs:
         working-directory: hibiki
         run: |
           set -euo pipefail
-          app_dir="build/macos/Build/Products/Debug/hibiki.app"
+          app_dir="build/macos/Build/Products/Debug/fushi.app"
           dylib="$app_dir/Contents/Frameworks/libhoshidicts_ffi.dylib"
           test -f "$dylib"
           found="$(find "$app_dir/Contents/Frameworks" -maxdepth 1 -type f -name 'libhoshidicts_ffi.dylib' -print -quit)"
