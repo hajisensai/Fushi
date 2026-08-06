@@ -5,9 +5,11 @@ import 'dart:io';
 import 'package:clipboard/clipboard.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/migration_page.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_schema_lookup.dart'
@@ -339,6 +341,23 @@ SettingsDestination buildSyncBackupDestination() {
             builder: (SettingsContext ctx) =>
                 _BackupImportWidget(settingsContext: ctx),
           ),
+          // Hibiki→Fushi 跨包名迁移入口（改名迁移计划 P1-3）；仅 Android——
+          // 桌面端数据目录可直接搬迁，不走导出/导入通道。
+          if (!kIsWeb && Platform.isAndroid)
+            SettingsCustomItem(
+              id: 'sync.migration_to_fushi',
+              icon: Icons.drive_file_move_outlined,
+              builder: (SettingsContext ctx) => AdaptiveSettingsRow(
+                title: t.migration_settings_entry,
+                subtitle: t.migration_settings_entry_subtitle,
+                icon: Icons.drive_file_move_outlined,
+                onTap: () => Navigator.of(ctx.context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => MigrationPage(appModel: ctx.appModel),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     ],

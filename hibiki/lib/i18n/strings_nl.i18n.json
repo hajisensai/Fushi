@@ -3129,5 +3129,20 @@
   "anki_connect_use_on_android_hint": "Use only on a trusted network. AnkiConnect uses cleartext HTTP; configure a matching API key, then refresh decks and note types after switching.",
   "anki_connect_api_key_hint": "Required for remote AnkiConnect; must match the key configured in the add-on",
   "anki_connect_android_api_key_required": "Configure a matching AnkiConnect API key before enabling the Android backend.",
-  "anki_connect_backend_switch_failed": "Could not switch Anki backend: $error"
+  "anki_connect_backend_switch_failed": "Could not switch Anki backend: $error",
+  "migration_settings_entry": "Migrate to Fushi",
+  "migration_settings_entry_subtitle": "Move all data to the new Fushi app",
+  "migration_intro": "Fushi is the new name of this app. Migration exports all your data in batches to a transfer folder, then Fushi imports and verifies it. Your data here stays untouched until you uninstall this app.",
+  "migration_target_missing": "Fushi is not installed yet. Install Fushi first, then return here.",
+  "migration_download_fushi": "Get Fushi",
+  "migration_start": "Start migration",
+  "migration_open_fushi": "Open Fushi",
+  "migration_include_local_audio": "Also export local pronunciation audio (can be large)",
+  "migration_batch_running": "Exporting $batch…",
+  "migration_batch_done": "$batch exported",
+  "migration_export_done": "Export complete. Open Fushi to import and verify.",
+  "migration_export_failed": "Export failed: $error",
+  "migration_readonly_note": "Your data has been exported to Fushi. This app is now read-only: use Fushi for reading and mining. You can re-export at any time if Fushi reports missing data.",
+  "migration_reexport": "Re-export",
+  "migration_batch_core_label": "Settings, progress & statistics"
 }

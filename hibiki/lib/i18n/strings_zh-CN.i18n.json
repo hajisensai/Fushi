@@ -3129,5 +3129,20 @@
   "anki_connect_use_on_android_hint": "仅在可信网络中使用。AnkiConnect 使用明文 HTTP；请配置匹配的 API key，切换后再刷新牌组与笔记类型。",
   "anki_connect_api_key_hint": "远程 AnkiConnect 必填；必须与插件中配置的 key 一致",
   "anki_connect_android_api_key_required": "请先配置匹配的 AnkiConnect API key，再启用 Android 后端。",
-  "anki_connect_backend_switch_failed": "无法切换 Anki 后端：$error"
+  "anki_connect_backend_switch_failed": "无法切换 Anki 后端：$error",
+  "migration_settings_entry": "迁移到 Fushi",
+  "migration_settings_entry_subtitle": "把全部数据搬到新的 Fushi 应用",
+  "migration_intro": "Fushi 是本应用的新名字。迁移会把你的全部数据分批导出到中转目录，再由 Fushi 导入并逐项校验。在你卸载旧版之前，这里的数据原样保留。",
+  "migration_target_missing": "尚未安装 Fushi。请先安装 Fushi，再回到这里。",
+  "migration_download_fushi": "下载 Fushi",
+  "migration_start": "开始迁移",
+  "migration_open_fushi": "打开 Fushi",
+  "migration_include_local_audio": "一并导出本地发音库（体积可能很大）",
+  "migration_batch_running": "正在导出 $batch…",
+  "migration_batch_done": "$batch 已导出",
+  "migration_export_done": "导出完成。打开 Fushi 完成导入与校验。",
+  "migration_export_failed": "导出失败：$error",
+  "migration_readonly_note": "数据已导出到 Fushi。本应用已进入只读模式：请改用 Fushi 阅读和制卡。若 Fushi 校验发现缺失，可随时在此重新导出。",
+  "migration_reexport": "重新导出",
+  "migration_batch_core_label": "设置、进度与统计"
 }
