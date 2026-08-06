@@ -898,9 +898,11 @@ class AppModel with ChangeNotifier {
   ///
   /// **包名门**：该偏好会随迁移 core 批原样合并进 Fushi 的库，只有真正运行为
   /// 老包（`app.hibiki.reader`）时才生效——否则 Fushi 导入完成后会误锁自己。
+  /// 顺序有意：先查偏好（测试夹具里 [packageInfo] 是未初始化的 late 字段，
+  /// 偏好为 false 时短路，不触发 LateInitializationError）。
   bool get isMigrationReadonly =>
-      packageInfo.packageName == kHibikiPackageName &&
-      prefsRepo.getPref(kMigrationReadonlyPrefKey) == true;
+      prefsRepo.getPref(kMigrationReadonlyPrefKey) == true &&
+      packageInfo.packageName == kHibikiPackageName;
 
   /// BUG-815: the currently-running [_initialiseOnce] future, or null when no
   /// init is in flight. [initialise] uses it to serialise concurrent callers so

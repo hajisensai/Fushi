@@ -24,7 +24,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// test/media/audiobook/floating_lyric_seed_test.dart.
 void main() {
   const String androidRoot =
-      '../hibiki/android/app/src/main/java/app/hibiki/reader';
+      '../hibiki/android/app/src/main/java/app/fushi/reader';
 
   String read(String relative) =>
       File('$androidRoot/$relative').readAsStringSync();

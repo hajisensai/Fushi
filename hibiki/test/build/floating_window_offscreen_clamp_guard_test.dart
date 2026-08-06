@@ -15,7 +15,7 @@ void main() {
   late String header;
 
   const String androidRoot =
-      '../hibiki/android/app/src/main/java/app/hibiki/reader';
+      '../hibiki/android/app/src/main/java/app/fushi/reader';
   String readJava(String relative) =>
       File('$androidRoot/$relative').readAsStringSync();
 
