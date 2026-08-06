@@ -50,6 +50,25 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - `release-desktop.yml`（Win/mac/iOS）本就无测试步骤，天生快，无需该开关。
 - 平台并行：Android（`release.yml`）与桌面（`release-desktop.yml`）是两条独立 workflow，同时 dispatch 即并行；桌面内部 `apple needs: windows` 是**故意串行**，避免两 job 抢同一 release 上传，勿改。
 
+### Apple 签名与 TestFlight
+
+`release-desktop.yml` 的 `ios` / `macos` job 在仓库 secrets 齐全时额外做 Apple 签名，
+完整清单、首次配置、证书轮换与排障见 [apple-signing.md](apple-signing.md)。这里只记
+影响发布判断的三条：
+
+- **Apple 凭据全部可选**。缺任何一项，对应链路整段跳过，未签名 IPA / ad-hoc macOS zip
+  照常发布 —— fork 和无开发者账号的状态下发布链路完全不受影响。
+- **TestFlight 只在手动 `workflow_dispatch` 的 beta / formal 通道上传**（dispatch 输入
+  `upload_testflight`，默认开）。push 触发的 debug 通道每次提交都会跑，传上去只会白烧
+  App Store Connect 的处理配额并把构建号推高，而构建号在同一语义版本下必须单调，
+  浪费不可回收。
+- **GitHub Release 里的 `hibiki-<版本>-ios.ipa` 仍是未签名包**，走的还是
+  `flutter build ios --release --no-codesign`。老用户自签侧载的就是它，不能换成
+  App Store 签名包。TestFlight 用的是另一次、只在手动 beta/formal 时才发生的签名构建，
+  产物不进 Release 资产 —— 代价是这种发布下 iOS 构建两次。
+- macOS 走 **Developer ID + 公证**，不进 Mac App Store：`Release.entitlements` 已刻意
+  去沙盒以支持应用内自动更新替换 `/Applications/hibiki.app`，商店强制沙盒，两者不可兼得。
+
 ## 版本号与 build number
 
 Flutter 版本号以 `hibiki/pubspec.yaml` 的 `version: X.Y.Z+build` 为准。准备 push 前先判断本轮改动是否影响用户可安装/可分发产物：
