@@ -82,7 +82,7 @@ void main() {
     addTearDown(leecher!.close);
 
     final Directory dlDir = Directory('${tempDir.path}/dl')..createSync();
-    final HtAddResult added =
+    final FtAddResult added =
         leecher.addMagnet(rig.magnetUri, savePath: dlDir.path);
     expect(added.ok, isTrue, reason: 'addMagnet: ${added.error}');
     expect(
@@ -90,9 +90,9 @@ void main() {
 
     await _pollUntil(
       () {
-        final HtTorrentStatus? t = leecher
+        final FtTorrentStatus? t = leecher
             .listTorrents()
-            .where((HtTorrentStatus e) => e.id == rig.infoHash)
+            .where((FtTorrentStatus e) => e.id == rig.infoHash)
             .firstOrNull;
         return t != null && t.isFinished && t.progress >= 1.0 && t.left == 0;
       },
@@ -109,16 +109,16 @@ void main() {
       EmbeddedTorrentSession session, String infoHash) async {
     await _pollUntil(
       () {
-        final HtTorrentStatus? t = session
+        final FtTorrentStatus? t = session
             .listTorrents()
-            .where((HtTorrentStatus e) => e.id == infoHash)
+            .where((FtTorrentStatus e) => e.id == infoHash)
             .firstOrNull;
         return t != null && t.isSeeding;
       },
       timeout: const Duration(seconds: 30),
       what: 'torrent to stay in seeding state',
     );
-    final HtPieceMap? pieces = session.torrentPieces(infoHash);
+    final FtPieceMap? pieces = session.torrentPieces(infoHash);
     expect(pieces, isNotNull);
     expect(pieces!.haveCount, pieces.numPieces,
         reason: 'every piece must still be present — a broken rename/move '
@@ -134,14 +134,14 @@ void main() {
         Directory dlDir
       ) = await seedingSession();
 
-      final List<HtFileEntry>? before = session.torrentFiles(rig.infoHash);
+      final List<FtFileEntry>? before = session.torrentFiles(rig.infoHash);
       expect(before, hasLength(1));
       final String oldName = before!.single.path;
       final File oldFile = File('${dlDir.path}/$oldName');
       expect(oldFile.existsSync(), isTrue);
 
       const String newName = '整理过的名字.bin';
-      final HtStorageOpResult result =
+      final FtStorageOpResult result =
           session.renameFile(rig.infoHash, before.single.index, newName);
       expect(result.ok, isTrue, reason: 'rename failed: ${result.error}');
       expect(result.path, newName);
@@ -151,7 +151,7 @@ void main() {
       expect(oldFile.existsSync(), isFalse);
 
       // 引擎的文件列表跟着变，且做种没断。
-      final List<HtFileEntry>? after = session.torrentFiles(rig.infoHash);
+      final List<FtFileEntry>? after = session.torrentFiles(rig.infoHash);
       expect(after!.single.path, newName);
       expect(after.single.done, after.single.size);
       await expectStillSeeding(session, rig.infoHash);
@@ -169,9 +169,9 @@ void main() {
         Directory dlDir
       ) = await seedingSession();
 
-      final List<HtFileEntry>? before = session.torrentFiles(rig.infoHash);
+      final List<FtFileEntry>? before = session.torrentFiles(rig.infoHash);
       const String nested = 'Season 1/ep01.bin';
-      final HtStorageOpResult result =
+      final FtStorageOpResult result =
           session.renameFile(rig.infoHash, before!.single.index, nested);
       expect(result.ok, isTrue, reason: 'rename failed: ${result.error}');
 
@@ -192,12 +192,12 @@ void main() {
         Directory dlDir
       ) = await seedingSession();
 
-      final List<HtFileEntry>? files = session.torrentFiles(rig.infoHash);
+      final List<FtFileEntry>? files = session.torrentFiles(rig.infoHash);
       final String name = files!.single.path;
       expect(File('${dlDir.path}/$name').existsSync(), isTrue);
 
       final Directory target = Directory('${tempDir.path}/moved');
-      final HtStorageOpResult result =
+      final FtStorageOpResult result =
           session.moveStorage(rig.infoHash, target.path);
       expect(result.ok, isTrue, reason: 'move failed: ${result.error}');
       expect(result.path, isNotNull);
@@ -209,9 +209,9 @@ void main() {
               'move must not leave a copy behind (it is a move, not a copy)');
 
       // savePath 跟着变，做种没断。
-      final HtTorrentStatus moved = session
+      final FtTorrentStatus moved = session
           .listTorrents()
-          .firstWhere((HtTorrentStatus t) => t.id == rig.infoHash);
+          .firstWhere((FtTorrentStatus t) => t.id == rig.infoHash);
       expect(File(moved.contentPath).existsSync(), isTrue);
       await expectStillSeeding(session, rig.infoHash);
     },
@@ -228,7 +228,7 @@ void main() {
         Directory dlDir
       ) = await seedingSession();
 
-      final List<HtFileEntry>? files = session.torrentFiles(rig.infoHash);
+      final List<FtFileEntry>? files = session.torrentFiles(rig.infoHash);
       final String name = files!.single.path;
 
       // 目标目录里先放一个同名文件（模拟「那边已经有一份了」）。
@@ -237,7 +237,7 @@ void main() {
       final File squatter = File('${target.path}/$name')
         ..writeAsStringSync('do not clobber me');
 
-      final HtStorageOpResult result =
+      final FtStorageOpResult result =
           session.moveStorage(rig.infoHash, target.path);
       expect(result.ok, isFalse,
           reason: 'must refuse rather than overwrite user data');
@@ -260,12 +260,12 @@ void main() {
       expect(session, isNotNull);
       addTearDown(session!.close);
 
-      final HtStorageOpResult renamed =
+      final FtStorageOpResult renamed =
           session.renameFile('0' * 40, 0, 'whatever.bin');
       expect(renamed.ok, isFalse);
       expect(renamed.error, isNotNull);
 
-      final HtStorageOpResult moved =
+      final FtStorageOpResult moved =
           session.moveStorage('0' * 40, tempDir.path);
       expect(moved.ok, isFalse);
       expect(moved.error, isNotNull);

@@ -82,7 +82,7 @@ void main() {
       expect(leecher.setUnchokeSlots(0), isTrue);
 
       final Directory dlDir = Directory('${tempDir.path}/dl')..createSync();
-      final HtAddResult added =
+      final FtAddResult added =
           leecher.addMagnet(rig.magnetUri, savePath: dlDir.path);
       expect(added.ok, isTrue, reason: 'addMagnet: ${added.error}');
       expect(leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
@@ -93,7 +93,7 @@ void main() {
       await _pollUntil(
         () => leecher
             .listTorrents()
-            .any((HtTorrentStatus t) => t.id == rig.infoHash && t.isFinished),
+            .any((FtTorrentStatus t) => t.id == rig.infoHash && t.isFinished),
         timeout: const Duration(seconds: 60),
         what: 'download completion with upload disabled',
         onTick: () =>

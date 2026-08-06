@@ -77,7 +77,7 @@ void main() {
       listenInterfaces: '127.0.0.1:0',
     );
     addTearDown(session!.close);
-    final HtSessionStatus? status = session.sessionStatus();
+    final FtSessionStatus? status = session.sessionStatus();
     expect(status, isNotNull);
     expect(status!.dhtRunning, isFalse);
     expect(status.lsdEnabled, isFalse, reason: 'bridge 建 session 默认关 LSD');
@@ -102,7 +102,7 @@ void main() {
     );
     addTearDown(rig.dispose);
     final Directory saveDir = Directory('${tempDir.path}/dl')..createSync();
-    final HtAddResult added = session.addTorrentFile(
+    final FtAddResult added = session.addTorrentFile(
       rig.torrentPath,
       savePath: saveDir.path,
     );
@@ -147,7 +147,7 @@ void main() {
     );
     addTearDown(rig.dispose);
     final Directory saveDir = Directory('${tempDir.path}/dl')..createSync();
-    final HtAddResult added = session.addTorrentFile(
+    final FtAddResult added = session.addTorrentFile(
       rig.torrentPath,
       savePath: saveDir.path,
     );
@@ -210,12 +210,12 @@ void main() {
     );
     addTearDown(rig.dispose);
     final Directory saveDir = Directory('${tempDir.path}/dl')..createSync();
-    final HtAddResult added = session.addTorrentFile(
+    final FtAddResult added = session.addTorrentFile(
       rig.torrentPath,
       savePath: saveDir.path,
     );
     expect(added.ok, isTrue);
-    final List<HtTrackerInfo>? trackers = session.torrentTrackers(added.id!);
+    final List<FtTrackerInfo>? trackers = session.torrentTrackers(added.id!);
     expect(trackers, isNotNull);
     expect(trackers, isEmpty);
     // 不存在的种子 → null（不是空列表）。
@@ -235,14 +235,14 @@ void main() {
     );
     addTearDown(rig.dispose);
     final Directory saveDir = Directory('${tempDir.path}/dl')..createSync();
-    final HtAddResult added = session.addTorrentFile(
+    final FtAddResult added = session.addTorrentFile(
       rig.torrentPath,
       savePath: saveDir.path,
     );
     expect(added.ok, isTrue);
-    final HtTorrentStatus status = session
+    final FtTorrentStatus status = session
         .listTorrents()
-        .singleWhere((HtTorrentStatus t) => t.id == added.id);
+        .singleWhere((FtTorrentStatus t) => t.id == added.id);
     // 新 DLL 必须导出这些键（不再是 -1 缺省）。
     expect(status.numSeeds, greaterThanOrEqualTo(0));
     expect(status.numConnections, greaterThanOrEqualTo(0));

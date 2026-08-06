@@ -93,14 +93,14 @@ class EmbeddedTorrentEngine {
   }
 
   /// 从本地文件/目录生成 .torrent（本地做种与确定性测试支撑）。
-  HtAddResult makeTorrent({
+  FtAddResult makeTorrent({
     required String contentPath,
     required String outTorrentPath,
   }) {
     final Pointer<Char> content = contentPath.toNativeUtf8().cast<Char>();
     final Pointer<Char> out = outTorrentPath.toNativeUtf8().cast<Char>();
     try {
-      return HtAddResult._fromJson(
+      return FtAddResult._fromJson(
           _consumeJson(bindings.ht_make_torrent(content, out)));
     } finally {
       malloc.free(content);
@@ -141,8 +141,8 @@ class EmbeddedTorrentEngine {
 }
 
 /// 添加/生成种子操作的结果。
-class HtAddResult {
-  const HtAddResult({required this.ok, this.id, this.error});
+class FtAddResult {
+  const FtAddResult({required this.ok, this.id, this.error});
 
   final bool ok;
 
@@ -151,11 +151,11 @@ class HtAddResult {
 
   final String? error;
 
-  factory HtAddResult._fromJson(Object? json) {
+  factory FtAddResult._fromJson(Object? json) {
     if (json is! Map<String, dynamic>) {
-      return const HtAddResult(ok: false, error: 'bad native response');
+      return const FtAddResult(ok: false, error: 'bad native response');
     }
-    return HtAddResult(
+    return FtAddResult(
       ok: json['ok'] == true,
       id: json['id'] as String?,
       error: json['error'] as String?,
@@ -164,8 +164,8 @@ class HtAddResult {
 }
 
 /// 一个种子任务的状态快照（native `ht_list_torrents` 单项）。
-class HtTorrentStatus {
-  const HtTorrentStatus({
+class FtTorrentStatus {
+  const FtTorrentStatus({
     required this.id,
     required this.name,
     required this.progress,
@@ -251,8 +251,8 @@ class HtTorrentStatus {
   /// 完成后总时长（秒）。
   final int finishedDurationSeconds;
 
-  factory HtTorrentStatus._fromJson(Map<String, dynamic> json) {
-    return HtTorrentStatus(
+  factory FtTorrentStatus._fromJson(Map<String, dynamic> json) {
+    return FtTorrentStatus(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
@@ -285,8 +285,8 @@ class HtTorrentStatus {
 }
 
 /// 种子内单个文件（native `ht_torrent_files` 单项）。
-class HtFileEntry {
-  const HtFileEntry({
+class FtFileEntry {
+  const FtFileEntry({
     required this.index,
     required this.path,
     required this.size,
@@ -302,8 +302,8 @@ class HtFileEntry {
   /// 已下载字节（piece 粒度，已过 hash 校验）。
   final int done;
 
-  factory HtFileEntry._fromJson(Map<String, dynamic> json) {
-    return HtFileEntry(
+  factory FtFileEntry._fromJson(Map<String, dynamic> json) {
+    return FtFileEntry(
       index: (json['index'] as num?)?.toInt() ?? -1,
       path: json['path'] as String? ?? '',
       size: (json['size'] as num?)?.toInt() ?? 0,
@@ -313,8 +313,8 @@ class HtFileEntry {
 }
 
 /// 分片持有位图。
-class HtPieceMap {
-  const HtPieceMap({required this.numPieces, required this.have});
+class FtPieceMap {
+  const FtPieceMap({required this.numPieces, required this.have});
 
   final int numPieces;
 
@@ -326,8 +326,8 @@ class HtPieceMap {
 }
 
 /// 某种子当前连接的单个 peer（反吸血判定输入）。
-class HtPeerInfo {
-  const HtPeerInfo({
+class FtPeerInfo {
+  const FtPeerInfo({
     required this.ip,
     required this.port,
     required this.peerId,
@@ -368,8 +368,8 @@ class HtPeerInfo {
   /// bit4 fastResume/bit5 incoming）。
   final int sourceBits;
 
-  factory HtPeerInfo._fromJson(Map<String, dynamic> json) {
-    return HtPeerInfo(
+  factory FtPeerInfo._fromJson(Map<String, dynamic> json) {
+    return FtPeerInfo(
       ip: json['ip'] as String? ?? '',
       port: (json['port'] as num?)?.toInt() ?? 0,
       peerId: json['peer_id'] as String? ?? '',
@@ -387,8 +387,8 @@ class HtPeerInfo {
 }
 
 /// TODO-2482：某种子的单个 tracker（native `ht_torrent_trackers` 单项）。
-class HtTrackerInfo {
-  const HtTrackerInfo({
+class FtTrackerInfo {
+  const FtTrackerInfo({
     required this.url,
     required this.tier,
     required this.working,
@@ -428,8 +428,8 @@ class HtTrackerInfo {
   /// scrape 的累计完成下载数。
   final int scrapeDownloaded;
 
-  factory HtTrackerInfo._fromJson(Map<String, dynamic> json) {
-    return HtTrackerInfo(
+  factory FtTrackerInfo._fromJson(Map<String, dynamic> json) {
+    return FtTrackerInfo(
       url: json['url'] as String? ?? '',
       tier: (json['tier'] as num?)?.toInt() ?? 0,
       working: json['working'] == true,
@@ -445,8 +445,8 @@ class HtTrackerInfo {
 }
 
 /// TODO-2482：一条端口映射回执（native `ht_session_status` 内嵌）。
-class HtPortMapping {
-  const HtPortMapping({
+class FtPortMapping {
+  const FtPortMapping({
     required this.transport,
     required this.protocol,
     required this.externalPort,
@@ -463,8 +463,8 @@ class HtPortMapping {
   final bool ok;
   final String error;
 
-  factory HtPortMapping._fromJson(Map<String, dynamic> json) {
-    return HtPortMapping(
+  factory FtPortMapping._fromJson(Map<String, dynamic> json) {
+    return FtPortMapping(
       transport: json['transport'] as String? ?? '',
       protocol: json['protocol'] as String? ?? '',
       externalPort: (json['external_port'] as num?)?.toInt() ?? 0,
@@ -475,8 +475,8 @@ class HtPortMapping {
 }
 
 /// TODO-2482：会话协议状态快照（native `ht_session_status`）。
-class HtSessionStatus {
-  const HtSessionStatus({
+class FtSessionStatus {
+  const FtSessionStatus({
     required this.listenPort,
     required this.dhtRunning,
     required this.dhtNodes,
@@ -502,11 +502,11 @@ class HtSessionStatus {
   /// 会话级全局速率（字节/秒，含协议开销；-1 = 未知）。
   final int downRate;
   final int upRate;
-  final List<HtPortMapping> portMappings;
+  final List<FtPortMapping> portMappings;
 
-  factory HtSessionStatus._fromJson(Map<String, dynamic> json) {
+  factory FtSessionStatus._fromJson(Map<String, dynamic> json) {
     final Object? mappings = json['port_mappings'];
-    return HtSessionStatus(
+    return FtSessionStatus(
       listenPort: (json['listen_port'] as num?)?.toInt() ?? 0,
       dhtRunning: json['dht_running'] == true,
       dhtNodes: (json['dht_nodes'] as num?)?.toInt() ?? -1,
@@ -519,16 +519,16 @@ class HtSessionStatus {
       portMappings: mappings is List
           ? mappings
               .whereType<Map<String, dynamic>>()
-              .map(HtPortMapping._fromJson)
+              .map(FtPortMapping._fromJson)
               .toList(growable: false)
-          : const <HtPortMapping>[],
+          : const <FtPortMapping>[],
     );
   }
 }
 
 /// 单个 piece 完成事件（发生序）。
-class HtPieceEvent {
-  const HtPieceEvent({required this.id, required this.piece});
+class FtPieceEvent {
+  const FtPieceEvent({required this.id, required this.piece});
 
   final String id;
   final int piece;
@@ -536,8 +536,8 @@ class HtPieceEvent {
 
 /// 一次异步存储操作（[EmbeddedTorrentSession.renameFile] /
 /// [EmbeddedTorrentSession.moveStorage]）的结果。
-class HtStorageOpResult {
-  const HtStorageOpResult({required this.ok, this.path, this.error});
+class FtStorageOpResult {
+  const FtStorageOpResult({required this.ok, this.path, this.error});
 
   /// 操作是否成功落地（引擎已回执且无错）。
   final bool ok;
@@ -548,11 +548,11 @@ class HtStorageOpResult {
   /// 失败原因（引擎原文，或超时 / 种子不存在等）。**必须**反馈给用户。
   final String? error;
 
-  factory HtStorageOpResult._fromJson(Object? json) {
+  factory FtStorageOpResult._fromJson(Object? json) {
     if (json is! Map<String, dynamic>) {
-      return const HtStorageOpResult(ok: false, error: 'bad native response');
+      return const FtStorageOpResult(ok: false, error: 'bad native response');
     }
-    return HtStorageOpResult(
+    return FtStorageOpResult(
       ok: json['ok'] == true,
       path: json['path'] as String?,
       error: json['error'] as String?,
@@ -561,8 +561,8 @@ class HtStorageOpResult {
 }
 
 /// 一轮 [EmbeddedTorrentSession.saveResumeData] 的结果。
-class HtResumeSaveResult {
-  const HtResumeSaveResult({
+class FtResumeSaveResult {
+  const FtResumeSaveResult({
     required this.saved,
     required this.failed,
     this.timedOut = 0,
@@ -744,16 +744,16 @@ class EmbeddedTorrentSession {
   }
 
   /// 添加磁力链接。
-  HtAddResult addMagnet(
+  FtAddResult addMagnet(
     String magnetUri, {
     required String savePath,
     bool sequential = false,
   }) {
-    if (isClosed) return const HtAddResult(ok: false, error: 'session closed');
+    if (isClosed) return const FtAddResult(ok: false, error: 'session closed');
     final Pointer<Char> magnet = magnetUri.toNativeUtf8().cast<Char>();
     final Pointer<Char> save = savePath.toNativeUtf8().cast<Char>();
     try {
-      return HtAddResult._fromJson(_engine._consumeJson(
+      return FtAddResult._fromJson(_engine._consumeJson(
           _b.ht_add_magnet(_session, magnet, save, sequential ? 1 : 0)));
     } finally {
       malloc.free(magnet);
@@ -762,16 +762,16 @@ class EmbeddedTorrentSession {
   }
 
   /// 添加本地 .torrent 文件（本地做种 / 恢复下载）。
-  HtAddResult addTorrentFile(
+  FtAddResult addTorrentFile(
     String torrentPath, {
     required String savePath,
     bool sequential = false,
   }) {
-    if (isClosed) return const HtAddResult(ok: false, error: 'session closed');
+    if (isClosed) return const FtAddResult(ok: false, error: 'session closed');
     final Pointer<Char> torrent = torrentPath.toNativeUtf8().cast<Char>();
     final Pointer<Char> save = savePath.toNativeUtf8().cast<Char>();
     try {
-      return HtAddResult._fromJson(_engine._consumeJson(
+      return FtAddResult._fromJson(_engine._consumeJson(
           _b.ht_add_torrent_file(_session, torrent, save, sequential ? 1 : 0)));
     } finally {
       malloc.free(torrent);
@@ -793,18 +793,18 @@ class EmbeddedTorrentSession {
   }
 
   /// 列出 session 内所有种子。
-  List<HtTorrentStatus> listTorrents() {
-    if (isClosed) return const <HtTorrentStatus>[];
+  List<FtTorrentStatus> listTorrents() {
+    if (isClosed) return const <FtTorrentStatus>[];
     final Object? json = _engine._consumeJson(_b.ht_list_torrents(_session));
-    if (json is! List) return const <HtTorrentStatus>[];
+    if (json is! List) return const <FtTorrentStatus>[];
     return json
         .whereType<Map<String, dynamic>>()
-        .map(HtTorrentStatus._fromJson)
+        .map(FtTorrentStatus._fromJson)
         .toList(growable: false);
   }
 
   /// 某种子的文件列表；元数据未就绪返回 null。
-  List<HtFileEntry>? torrentFiles(String infoHash) {
+  List<FtFileEntry>? torrentFiles(String infoHash) {
     if (isClosed) return null;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     try {
@@ -815,7 +815,7 @@ class EmbeddedTorrentSession {
       if (files is! List) return null;
       return files
           .whereType<Map<String, dynamic>>()
-          .map(HtFileEntry._fromJson)
+          .map(FtFileEntry._fromJson)
           .toList(growable: false);
     } finally {
       malloc.free(id);
@@ -823,14 +823,14 @@ class EmbeddedTorrentSession {
   }
 
   /// 分片持有位图；元数据未就绪返回 null。
-  HtPieceMap? torrentPieces(String infoHash) {
+  FtPieceMap? torrentPieces(String infoHash) {
     if (isClosed) return null;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     try {
       final Object? json =
           _engine._consumeJson(_b.ht_torrent_pieces(_session, id));
       if (json is! Map<String, dynamic> || json['ok'] != true) return null;
-      return HtPieceMap(
+      return FtPieceMap(
         numPieces: (json['num_pieces'] as num?)?.toInt() ?? 0,
         have: json['have'] as String? ?? '',
       );
@@ -840,14 +840,14 @@ class EmbeddedTorrentSession {
   }
 
   /// 排空累计的 piece 完成事件（发生序）。
-  List<HtPieceEvent> pollPieceEvents() {
-    if (isClosed) return const <HtPieceEvent>[];
+  List<FtPieceEvent> pollPieceEvents() {
+    if (isClosed) return const <FtPieceEvent>[];
     final Object? json =
         _engine._consumeJson(_b.ht_poll_piece_events(_session));
-    if (json is! List) return const <HtPieceEvent>[];
+    if (json is! List) return const <FtPieceEvent>[];
     return json
         .whereType<Map<String, dynamic>>()
-        .map((Map<String, dynamic> e) => HtPieceEvent(
+        .map((Map<String, dynamic> e) => FtPieceEvent(
               id: e['id'] as String? ?? '',
               piece: (e['piece'] as num?)?.toInt() ?? -1,
             ))
@@ -858,21 +858,21 @@ class EmbeddedTorrentSession {
   /// 相对路径，可含子目录，分隔符 `/`）。**做种不断** —— 引擎知道数据换了名字，
   /// 继续从新名字读盘上传。
   ///
-  /// 返回 [HtStorageOpResult]：失败时 `error` 原样带回引擎给的原因，调用方
+  /// 返回 [FtStorageOpResult]：失败时 `error` 原样带回引擎给的原因，调用方
   /// 必须显示给用户（不得吞成一个光秃秃的 false）。
-  HtStorageOpResult renameFile(
+  FtStorageOpResult renameFile(
     String infoHash,
     int fileIndex,
     String newPath, {
     int timeoutMs = 15000,
   }) {
     if (isClosed) {
-      return const HtStorageOpResult(ok: false, error: 'session closed');
+      return const FtStorageOpResult(ok: false, error: 'session closed');
     }
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     final Pointer<Char> target = newPath.toNativeUtf8().cast<Char>();
     try {
-      return HtStorageOpResult._fromJson(_engine._consumeJson(
+      return FtStorageOpResult._fromJson(_engine._consumeJson(
           _b.ht_rename_file(_session, id, fileIndex, target, timeoutMs)));
     } finally {
       malloc.free(id);
@@ -884,18 +884,18 @@ class EmbeddedTorrentSession {
   ///
   /// 目标已有同名文件时**整体失败**（libtorrent `fail_if_exist`），绝不覆盖
   /// 用户数据、也绝不留下搬了一半的内容目录。
-  HtStorageOpResult moveStorage(
+  FtStorageOpResult moveStorage(
     String infoHash,
     String newSavePath, {
     int timeoutMs = 15000,
   }) {
     if (isClosed) {
-      return const HtStorageOpResult(ok: false, error: 'session closed');
+      return const FtStorageOpResult(ok: false, error: 'session closed');
     }
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     final Pointer<Char> target = newSavePath.toNativeUtf8().cast<Char>();
     try {
-      return HtStorageOpResult._fromJson(_engine
+      return FtStorageOpResult._fromJson(_engine
           ._consumeJson(_b.ht_move_storage(_session, id, target, timeoutMs)));
     } finally {
       malloc.free(id);
@@ -908,16 +908,16 @@ class EmbeddedTorrentSession {
   ///
   /// 同步阻塞最多 [timeoutMs] 毫秒等引擎回执（内部 wait_for_alert 挂起，不是
   /// sleep 轮询）；通常几十毫秒内收齐。调用时机是「周期性 + 退出前」，不是每 tick。
-  HtResumeSaveResult saveResumeData(String dir, {int timeoutMs = 5000}) {
-    if (isClosed) return const HtResumeSaveResult(saved: 0, failed: 0);
+  FtResumeSaveResult saveResumeData(String dir, {int timeoutMs = 5000}) {
+    if (isClosed) return const FtResumeSaveResult(saved: 0, failed: 0);
     final Pointer<Char> out = dir.toNativeUtf8().cast<Char>();
     try {
       final Object? json = _engine
           ._consumeJson(_b.ht_save_resume_data(_session, out, timeoutMs));
       if (json is! Map<String, dynamic> || json['ok'] != true) {
-        return const HtResumeSaveResult(saved: 0, failed: 0);
+        return const FtResumeSaveResult(saved: 0, failed: 0);
       }
-      return HtResumeSaveResult(
+      return FtResumeSaveResult(
         saved: (json['saved'] as num?)?.toInt() ?? 0,
         failed: (json['failed'] as num?)?.toInt() ?? 0,
         timedOut: (json['timed_out'] as num?)?.toInt() ?? 0,
@@ -970,7 +970,7 @@ class EmbeddedTorrentSession {
   }
 
   /// 某种子当前连接的 peer 列表；种子不存在返回 null。
-  List<HtPeerInfo>? torrentPeers(String infoHash) {
+  List<FtPeerInfo>? torrentPeers(String infoHash) {
     if (isClosed) return null;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     try {
@@ -981,7 +981,7 @@ class EmbeddedTorrentSession {
       if (peers is! List) return null;
       return peers
           .whereType<Map<String, dynamic>>()
-          .map(HtPeerInfo._fromJson)
+          .map(FtPeerInfo._fromJson)
           .toList(growable: false);
     } finally {
       malloc.free(id);
@@ -994,7 +994,7 @@ class EmbeddedTorrentSession {
 
   /// TODO-2482：某种子的 tracker 列表；种子不存在/库不支持返回 null。
   /// 纯 DHT 磁力（无 tracker）返回空列表。
-  List<HtTrackerInfo>? torrentTrackers(String infoHash) {
+  List<FtTrackerInfo>? torrentTrackers(String infoHash) {
     if (isClosed || !_b.hasDetailInfo) return null;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     try {
@@ -1005,7 +1005,7 @@ class EmbeddedTorrentSession {
       if (trackers is! List) return null;
       return trackers
           .whereType<Map<String, dynamic>>()
-          .map(HtTrackerInfo._fromJson)
+          .map(FtTrackerInfo._fromJson)
           .toList(growable: false);
     } finally {
       malloc.free(id);
@@ -1068,11 +1068,11 @@ class EmbeddedTorrentSession {
   /// TODO-2482：会话协议状态。非阻塞：native 只收割已到的统计 alert，
   /// dhtNodes 首轮 -1、下一轮即有值；速率要到**第三轮**才有值（第二轮
   /// 收割到首个采样只够建基线，第三轮才差分得出）。库不支持返回 null。
-  HtSessionStatus? sessionStatus() {
+  FtSessionStatus? sessionStatus() {
     if (isClosed || !_b.hasDetailInfo) return null;
     final Object? json = _engine._consumeJson(_b.ht_session_status(_session));
     if (json is! Map<String, dynamic> || json['ok'] != true) return null;
-    return HtSessionStatus._fromJson(json);
+    return FtSessionStatus._fromJson(json);
   }
 
   /// 用 CIDR 列表整体重建 session 的 ip_filter（空列表 = 清空）。已连接的

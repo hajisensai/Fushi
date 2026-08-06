@@ -79,7 +79,7 @@ void main() {
       addTearDown(leecher!.close);
 
       final Directory dlDir = Directory('${tempDir.path}/dl')..createSync();
-      final HtAddResult added = leecher.addMagnet(rig.magnetUri,
+      final FtAddResult added = leecher.addMagnet(rig.magnetUri,
           savePath: dlDir.path, sequential: true);
       expect(added.ok, isTrue, reason: 'addMagnet: ${added.error}');
       expect(added.id, rig.infoHash);
@@ -93,14 +93,14 @@ void main() {
       await _pollUntil(
         () => leecher
             .listTorrents()
-            .any((HtTorrentStatus t) => t.id == rig.infoHash && t.hasMetadata),
+            .any((FtTorrentStatus t) => t.id == rig.infoHash && t.hasMetadata),
         timeout: const Duration(seconds: 30),
         what: 'metadata',
         onTick: () =>
             leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
       );
 
-      final List<HtFileEntry>? files = leecher.torrentFiles(rig.infoHash);
+      final List<FtFileEntry>? files = leecher.torrentFiles(rig.infoHash);
       expect(files, isNotNull);
       expect(files, hasLength(1));
       expect(files!.single.path, contains('rig-content'));
@@ -108,7 +108,7 @@ void main() {
 
       // 元数据就绪后：首尾 piece 提优应用成功；末 piece 截止期可设。
       expect(leecher.applyFirstLastPriority(rig.infoHash), 1);
-      final HtPieceMap? piecesBefore = leecher.torrentPieces(rig.infoHash);
+      final FtPieceMap? piecesBefore = leecher.torrentPieces(rig.infoHash);
       expect(piecesBefore, isNotNull);
       expect(piecesBefore!.numPieces, greaterThan(0));
       expect(
@@ -120,33 +120,33 @@ void main() {
       final List<int> pieceOrder = <int>[];
       await _pollUntil(
         () {
-          final List<HtTorrentStatus> ts = leecher.listTorrents();
-          final HtTorrentStatus? t =
-              ts.where((HtTorrentStatus e) => e.id == rig.infoHash).firstOrNull;
+          final List<FtTorrentStatus> ts = leecher.listTorrents();
+          final FtTorrentStatus? t =
+              ts.where((FtTorrentStatus e) => e.id == rig.infoHash).firstOrNull;
           return t != null && t.isFinished && t.progress >= 1.0 && t.left == 0;
         },
         timeout: const Duration(seconds: 120),
         what: 'download completion',
         onTick: () {
-          for (final HtPieceEvent e in leecher.pollPieceEvents()) {
+          for (final FtPieceEvent e in leecher.pollPieceEvents()) {
             if (e.id == rig.infoHash) pieceOrder.add(e.piece);
           }
         },
       );
-      for (final HtPieceEvent e in leecher.pollPieceEvents()) {
+      for (final FtPieceEvent e in leecher.pollPieceEvents()) {
         if (e.id == rig.infoHash) pieceOrder.add(e.piece);
       }
 
       // ── 完成后校验 ────────────────────────────────────────────────
-      final HtPieceMap? piecesAfter = leecher.torrentPieces(rig.infoHash);
+      final FtPieceMap? piecesAfter = leecher.torrentPieces(rig.infoHash);
       expect(piecesAfter!.haveCount, piecesAfter.numPieces);
 
-      final List<HtFileEntry>? filesDone = leecher.torrentFiles(rig.infoHash);
+      final List<FtFileEntry>? filesDone = leecher.torrentFiles(rig.infoHash);
       expect(filesDone!.single.done, filesDone.single.size);
 
-      final HtTorrentStatus snap = leecher
+      final FtTorrentStatus snap = leecher
           .listTorrents()
-          .firstWhere((HtTorrentStatus t) => t.id == rig.infoHash);
+          .firstWhere((FtTorrentStatus t) => t.id == rig.infoHash);
       expect(snap.contentPath, isNotEmpty);
       final String contentPath = snap.contentPath;
 
@@ -203,7 +203,7 @@ void main() {
       expect(remover, isNotNull);
       addTearDown(remover!.close);
 
-      final HtAddResult readded =
+      final FtAddResult readded =
           remover.addTorrentFile(rig.torrentPath, savePath: dlDir.path);
       expect(readded.ok, isTrue, reason: 'addTorrentFile: ${readded.error}');
       expect(readded.id, rig.infoHash);
@@ -223,7 +223,7 @@ void main() {
     final EmbeddedTorrentSession? session =
         EmbeddedTorrentSession.open(engine!);
     addTearDown(session!.close);
-    final HtAddResult r =
+    final FtAddResult r =
         session.addMagnet('not-a-magnet', savePath: tempDir.path);
     expect(r.ok, isFalse);
     expect(r.error, isNotNull);
@@ -290,7 +290,7 @@ void main() {
       // 先封整个回环段：随后 connect_peer 到做种者应被 ip_filter 拒绝，
       // 30×0.1s 窗口内拿不到元数据（若不生效，1MiB 本地传输早该几百 ms 完成）。
       expect(leecher.applyIpFilter(<String>['127.0.0.0/8']), isTrue);
-      final HtAddResult added = leecher.addMagnet(rig.magnetUri,
+      final FtAddResult added = leecher.addMagnet(rig.magnetUri,
           savePath: '${tempDir.path}/dl', sequential: true);
       expect(added.ok, isTrue);
       for (int i = 0; i < 30; i++) {
@@ -319,8 +319,8 @@ void main() {
       int maxSeenDownload = 0;
       await _pollUntil(
         () {
-          for (final HtPeerInfo pr
-              in leecher.torrentPeers(rig.infoHash) ?? const <HtPeerInfo>[]) {
+          for (final FtPeerInfo pr
+              in leecher.torrentPeers(rig.infoHash) ?? const <FtPeerInfo>[]) {
             if (pr.ip == '127.0.0.1' && pr.totalDownload > maxSeenDownload) {
               maxSeenDownload = pr.totalDownload;
             }

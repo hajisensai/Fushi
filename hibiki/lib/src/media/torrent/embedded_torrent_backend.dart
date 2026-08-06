@@ -82,7 +82,7 @@ class EmbeddedTorrentBackend
   }) async {
     final String savePath = _categoryPath(category);
     if (!await prepareCategory(category)) return false;
-    final HtAddResult result;
+    final FtAddResult result;
     if (magnetOrUrl.startsWith('magnet:')) {
       result = _session.addMagnet(
         magnetOrUrl,
@@ -116,7 +116,7 @@ class EmbeddedTorrentBackend
     return _session
         .listTorrents()
         .where(
-          (HtTorrentStatus t) =>
+          (FtTorrentStatus t) =>
               category == null ||
               _saveRoots.ownsCategoryPath(t.savePath, category),
         )
@@ -126,11 +126,11 @@ class EmbeddedTorrentBackend
 
   @override
   Future<List<TorrentFileEntry>> listFiles(String torrentId) async {
-    final List<HtFileEntry>? files = _session.torrentFiles(torrentId);
+    final List<FtFileEntry>? files = _session.torrentFiles(torrentId);
     if (files == null) return const <TorrentFileEntry>[];
     return files
         .map(
-          (HtFileEntry f) => TorrentFileEntry(
+          (FtFileEntry f) => TorrentFileEntry(
             name: f.path,
             size: f.size,
             progress: f.size <= 0 ? 1.0 : (f.done / f.size).clamp(0.0, 1.0),
@@ -186,11 +186,11 @@ class EmbeddedTorrentBackend
 
   @override
   Future<List<TorrentPeerDetail>?> listPeers(String torrentId) async {
-    final List<HtPeerInfo>? peers = _session.torrentPeers(torrentId);
+    final List<FtPeerInfo>? peers = _session.torrentPeers(torrentId);
     if (peers == null) return null;
     return peers
         .map(
-          (HtPeerInfo p) => TorrentPeerDetail(
+          (FtPeerInfo p) => TorrentPeerDetail(
             address: p.ip,
             port: p.port,
             client: p.client,
@@ -209,11 +209,11 @@ class EmbeddedTorrentBackend
 
   @override
   Future<List<TorrentTrackerDetail>?> listTrackers(String torrentId) async {
-    final List<HtTrackerInfo>? trackers = _session.torrentTrackers(torrentId);
+    final List<FtTrackerInfo>? trackers = _session.torrentTrackers(torrentId);
     if (trackers == null) return null;
     return trackers
         .map(
-          (HtTrackerInfo t) => TorrentTrackerDetail(
+          (FtTrackerInfo t) => TorrentTrackerDetail(
             url: t.url,
             tier: t.tier,
             status: t.updating
@@ -265,7 +265,7 @@ class EmbeddedTorrentBackend
 
   @override
   Future<TorrentSessionStatusInfo?> sessionStatus() async {
-    final HtSessionStatus? status = _session.sessionStatus();
+    final FtSessionStatus? status = _session.sessionStatus();
     if (status == null) return null;
     return TorrentSessionStatusInfo(
       dhtEnabled: status.dhtRunning,
@@ -277,7 +277,7 @@ class EmbeddedTorrentBackend
       upRateBps: status.upRate,
       portMappings: status.portMappings
           .map(
-            (HtPortMapping m) => TorrentPortMappingInfo(
+            (FtPortMapping m) => TorrentPortMappingInfo(
               transport: m.transport,
               protocol: m.protocol,
               externalPort: m.externalPort,
@@ -292,7 +292,7 @@ class EmbeddedTorrentBackend
   /// 内置引擎位图只有持有/未持有两态：'1' → 2（已持有）、'0' → 0（缺）。
   @override
   Future<TorrentPieceStates?> pieceStates(String torrentId) async {
-    final HtPieceMap? map = _session.torrentPieces(torrentId);
+    final FtPieceMap? map = _session.torrentPieces(torrentId);
     if (map == null) return null;
     return TorrentPieceStates(
       states: map.have.codeUnits
@@ -316,7 +316,7 @@ class EmbeddedTorrentBackend
   ) async =>
       _toStorageResult(_session.moveStorage(torrentId, newSavePath));
 
-  static TorrentStorageResult _toStorageResult(HtStorageOpResult r) =>
+  static TorrentStorageResult _toStorageResult(FtStorageOpResult r) =>
       TorrentStorageResult(ok: r.ok, path: r.path, error: r.error);
 
   @override
@@ -336,7 +336,7 @@ class EmbeddedTorrentBackend
     });
   }
 
-  TorrentSnapshot _toSnapshot(HtTorrentStatus t) {
+  TorrentSnapshot _toSnapshot(FtTorrentStatus t) {
     // TODO-2481：native 的 state_label 不导出 paused（libtorrent 里 paused
     // 是 flag 不是 state），已知暂停的种子把 state 覆写成 qb 词汇
     // pausedDL/pausedUP —— UI 状态文本与 [TorrentSnapshot.isComplete]

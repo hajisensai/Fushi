@@ -33,7 +33,7 @@ Future<void> main(List<String> args) async {
     exit(1);
   }
 
-  final HtAddResult added =
+  final FtAddResult added =
       session.addMagnet(magnet, savePath: saveDir.path, sequential: true);
   if (!added.ok || added.id == null) {
     stderr.writeln('FAIL: addMagnet: ${added.error}');
@@ -46,9 +46,9 @@ Future<void> main(List<String> args) async {
   bool flppApplied = false;
   while (true) {
     await Future<void>.delayed(const Duration(seconds: 1));
-    final HtTorrentStatus? t = session
+    final FtTorrentStatus? t = session
         .listTorrents()
-        .where((HtTorrentStatus e) => e.id == id)
+        .where((FtTorrentStatus e) => e.id == id)
         .firstOrNull;
     if (t == null) {
       stderr.writeln('FAIL: torrent disappeared');
@@ -58,8 +58,8 @@ Future<void> main(List<String> args) async {
       flppApplied = session.applyFirstLastPriority(id) == 1;
       stdout.writeln('metadata ready: ${t.name}; first/last piece '
           'priority ${flppApplied ? 'applied' : 'FAILED'}');
-      final List<HtFileEntry>? files = session.torrentFiles(id);
-      for (final HtFileEntry f in files ?? const <HtFileEntry>[]) {
+      final List<FtFileEntry>? files = session.torrentFiles(id);
+      for (final FtFileEntry f in files ?? const <FtFileEntry>[]) {
         stdout.writeln('  [${f.index}] ${f.path} (${f.size} bytes)');
       }
     }

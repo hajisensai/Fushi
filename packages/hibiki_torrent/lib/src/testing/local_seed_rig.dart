@@ -62,7 +62,7 @@ class LocalSeedRig {
       ..writeAsBytesSync(deterministicBytes(contentBytes));
 
     final String torrentPath = '${workDir.path}/rig-content.torrent';
-    final HtAddResult made = engine.makeTorrent(
+    final FtAddResult made = engine.makeTorrent(
         contentPath: content.path, outTorrentPath: torrentPath);
     if (!made.ok || made.id == null) {
       throw StateError('make_torrent failed: ${made.error}');
@@ -82,14 +82,14 @@ class LocalSeedRig {
         what: 'seeder listen port',
       );
 
-      final HtAddResult added =
+      final FtAddResult added =
           seeder.addTorrentFile(torrentPath, savePath: seedDir.path);
       if (!added.ok) throw StateError('seeder add failed: ${added.error}');
 
       // 等 hash 校验完、进入做种/完成态。
       await _waitFor<bool>(
         () async {
-          final List<HtTorrentStatus> ts = seeder.listTorrents();
+          final List<FtTorrentStatus> ts = seeder.listTorrents();
           if (ts.isEmpty) return null;
           return (ts.first.isSeeding || ts.first.isFinished) ? true : null;
         },

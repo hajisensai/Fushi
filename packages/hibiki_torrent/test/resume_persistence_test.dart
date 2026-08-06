@@ -85,7 +85,7 @@ void main() {
           EmbeddedTorrentSession.open(engine, listenInterfaces: '127.0.0.1:0');
       expect(first, isNotNull);
 
-      final HtAddResult added =
+      final FtAddResult added =
           first!.addMagnet(rig.magnetUri, savePath: dlDir.path);
       expect(added.ok, isTrue, reason: 'addMagnet: ${added.error}');
       expect(added.id, rig.infoHash);
@@ -94,9 +94,9 @@ void main() {
 
       await _pollUntil(
         () {
-          final HtTorrentStatus? t = first
+          final FtTorrentStatus? t = first
               .listTorrents()
-              .where((HtTorrentStatus e) => e.id == rig.infoHash)
+              .where((FtTorrentStatus e) => e.id == rig.infoHash)
               .firstOrNull;
           return t != null && t.isFinished && t.progress >= 1.0 && t.left == 0;
         },
@@ -107,7 +107,7 @@ void main() {
       );
 
       // ── 存 resume ────────────────────────────────────────────────
-      final HtResumeSaveResult saveResult =
+      final FtResumeSaveResult saveResult =
           first.saveResumeData(resumeDir.path);
       expect(saveResult.saved, 1,
           reason: 'exactly one torrent should be persisted '
@@ -151,9 +151,9 @@ void main() {
 
       await _pollUntil(
         () {
-          final HtTorrentStatus? t = second
+          final FtTorrentStatus? t = second
               .listTorrents()
-              .where((HtTorrentStatus e) => e.id == rig.infoHash)
+              .where((FtTorrentStatus e) => e.id == rig.infoHash)
               .firstOrNull;
           return t != null && t.isFinished && t.progress >= 1.0;
         },
@@ -161,9 +161,9 @@ void main() {
         what: 'restored torrent to finish checking and report complete',
       );
 
-      final HtTorrentStatus restoredStatus = second
+      final FtTorrentStatus restoredStatus = second
           .listTorrents()
-          .firstWhere((HtTorrentStatus t) => t.id == rig.infoHash);
+          .firstWhere((FtTorrentStatus t) => t.id == rig.infoHash);
       // 元数据来自 resume 里的 info dict（save_info_dict），不是从 peer 取的
       // —— 本会话根本没有 peer。
       expect(restoredStatus.hasMetadata, isTrue);
@@ -172,7 +172,7 @@ void main() {
       expect(restoredStatus.left, 0);
       expect(restoredStatus.savePath, isNotEmpty);
 
-      final HtPieceMap? pieces = second.torrentPieces(rig.infoHash);
+      final FtPieceMap? pieces = second.torrentPieces(rig.infoHash);
       expect(pieces, isNotNull);
       expect(pieces!.haveCount, pieces.numPieces,
           reason: 'every piece must be recovered from disk');
@@ -180,9 +180,9 @@ void main() {
       // 做种态（上传能力恢复）——完成后 libtorrent 进 seeding。
       await _pollUntil(
         () {
-          final HtTorrentStatus? t = second
+          final FtTorrentStatus? t = second
               .listTorrents()
-              .where((HtTorrentStatus e) => e.id == rig.infoHash)
+              .where((FtTorrentStatus e) => e.id == rig.infoHash)
               .firstOrNull;
           return t != null && t.isSeeding;
         },
@@ -222,7 +222,7 @@ void main() {
       addTearDown(session!.close);
 
       final Directory outDir = Directory('${tempDir.path}/empty-resume');
-      final HtResumeSaveResult result = session.saveResumeData(outDir.path);
+      final FtResumeSaveResult result = session.saveResumeData(outDir.path);
       expect(result.saved, 0);
       expect(result.failed, 0);
       expect(result.timedOut, 0);

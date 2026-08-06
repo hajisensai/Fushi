@@ -1,6 +1,6 @@
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 
-/// 单个种子的上传/做种度量（内置引擎 `HtTorrentStatus` 投影，纯数据）。
+/// 单个种子的上传/做种度量（内置引擎 `FtTorrentStatus` 投影，纯数据）。
 class TorrentUploadMetrics {
   const TorrentUploadMetrics({
     required this.isSeeding,

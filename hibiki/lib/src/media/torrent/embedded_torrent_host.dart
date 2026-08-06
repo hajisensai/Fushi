@@ -79,8 +79,8 @@ class EmbeddedTorrentHost {
   bool get hasRestored => _hasRestored;
 
   /// 最近一次 resume 保存的引擎回执（诊断用；从未保存过为 null）。
-  HtResumeSaveResult? _lastResumeSaveResult;
-  HtResumeSaveResult? get lastResumeSaveResult => _lastResumeSaveResult;
+  FtResumeSaveResult? _lastResumeSaveResult;
+  FtResumeSaveResult? get lastResumeSaveResult => _lastResumeSaveResult;
 
   /// 本会话是否已记过一条「首次保存成功」日志（避免每分钟刷屏）。
   bool _loggedFirstResumeSave = false;
@@ -343,7 +343,7 @@ class EmbeddedTorrentHost {
     _lastResumeSaveMs = nowMs;
     final Stopwatch sw = Stopwatch()..start();
     try {
-      final HtResumeSaveResult result = _session.saveResumeData(
+      final FtResumeSaveResult result = _session.saveResumeData(
         _resumeDir,
         timeoutMs: force ? shutdownSaveTimeoutMs : periodicSaveTimeoutMs,
       );
@@ -529,8 +529,8 @@ class EmbeddedTorrentHost {
       }
       final int nowMs = _clockMs();
       int newlyBanned = 0;
-      for (final HtTorrentStatus t in _session.listTorrents()) {
-        final List<HtPeerInfo>? peers = _session.torrentPeers(t.id);
+      for (final FtTorrentStatus t in _session.listTorrents()) {
+        final List<FtPeerInfo>? peers = _session.torrentPeers(t.id);
         if (peers == null || peers.isEmpty) continue;
         final TorrentContext ctx = TorrentContext(
           infoHash: t.id,
@@ -539,7 +539,7 @@ class EmbeddedTorrentHost {
           isSeeding: t.isSeeding,
         );
         final List<PeerSnapshot> snapshots = <PeerSnapshot>[
-          for (final HtPeerInfo pi in peers)
+          for (final FtPeerInfo pi in peers)
             PeerSnapshot(
               ip: pi.ip,
               peerId: pi.peerId,
@@ -638,7 +638,7 @@ class EmbeddedTorrentHost {
 
       // ② per-torrent：只对已完成（做种）种子暂停/恢复。
       final Set<String> live = <String>{};
-      for (final HtTorrentStatus t in _session.listTorrents()) {
+      for (final FtTorrentStatus t in _session.listTorrents()) {
         live.add(t.id);
         // TODO-2481：用户显式暂停的种子策略整体跳过 —— 既不重复 pause，
         // 也绝不替用户 resume（否则下一 tick 就把用户按下的暂停偷偷抢回）。
