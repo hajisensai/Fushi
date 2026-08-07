@@ -22,7 +22,7 @@ class CrashDumpLocator {
 
   /// dump 目录相对 `%LOCALAPPDATA%` 的子路径（native 端 crash_dump.cpp 用同一
   /// `%LOCALAPPDATA%\Hibiki\crashdumps` 常量——两边硬钉，无 bundle id 推测）。
-  static const String _relativePath = r'Hibiki\crashdumps';
+  static const String _relativePath = r'Fushi\crashdumps';
 
   /// minidump 文件扩展名（小写，匹配不区分大小写）。
   static const String dumpExtension = '.dmp';

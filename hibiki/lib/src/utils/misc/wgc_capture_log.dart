@@ -24,7 +24,7 @@ class WgcCaptureLog {
 
   /// 日志文件相对 `%LOCALAPPDATA%` 的子路径（native 端 wgc_log.cpp 用同一常量
   /// `%LOCALAPPDATA%\Hibiki\wgc_capture.log`——两边硬钉同一确定路径，无 bundle id 推测）。
-  static const String _relativePath = r'Hibiki\wgc_capture.log';
+  static const String _relativePath = r'Fushi\wgc_capture.log';
 
   /// 解析日志文件（仅 Windows）。环境变量 `LOCALAPPDATA` 缺失或非 Windows 返回 null。
   @visibleForTesting

@@ -83,7 +83,7 @@ namespace flutter_inappwebview_plugin
       }
       std::wstring dir(local_app_data);
       CoTaskMemFree(local_app_data);
-      dir += L"\\Hibiki";
+      dir += L"\\Fushi";
       if (!CreateDirectoryW(dir.c_str(), nullptr) &&
         GetLastError() != ERROR_ALREADY_EXISTS) {
         return std::wstring();
