@@ -73,3 +73,22 @@
 7. 浏览器扩展商店条目改名（打包密钥不变）。
 
 > 全量门史：17615 绿(d23fa7f79 P1)→17619 绿(64386eaf4 P2)→17619 绿(215c9cc24 P3)→17619 绿(b1ff91994 P6-2/6/4b 合并批)。
+
+## P7 终局清算（2026-08-07 用户拍板：新 app 零旧名，冻结点全解冻）
+
+口径升级：存量持久化名不再冻结——Fushi 未发过版，存量用户全经迁移进来，旧名在迁移那一刻就地改写；旧字面量只允许活在「读旧数据的迁移代码」里。仓库顶层目录名 `hibiki/` 不在本轮（不进 app 产物，改动牵 CI/文档/Mac 同步，需用户单独确认）。
+
+已落 fushi-mega（未 push develop，等 P7 各流合并后过终局门一起推）：
+- [x] 扩展 wire `'app'` 双侧直切 `'fushi'`（扩展从未上架，双值兼容作废）+ Google 新 OAuth 客户端落码（iOS client id + Info.plist scheme + google-services.json 包名/client/证书哈希）——`6b12d38c6`
+- [x] Dropbox 切用户自有新 app（App Folder 沙箱 `dv2sk1o33j6pfi8`；旧根 `/hibiki-data` 新 app 够不到=Dropbox 云根迁移失效，设备端为真相源可接受）——`fc3802734`
+- [x] 合并门 5 红修复（4 品牌改名更新测试钉 + 1 回滚误改的 HibikiExport 冻结字面量）——`c6362d4c9`（merge `1c552c4ef`）
+
+工作流（各自独立 worktree fable 子代理，完成合并后勾）：
+- [ ] B 扩展全量清扫：UI 文案/符号族 hibiki*→fushi*/storage 键/alarm 名/Basic auth 用户名 'hibiki:' 双侧/manifest；镜像 sync-mirrors 重建；self-update.test.js 既有红修复
+- [ ] W1 DB 层：`hibiki_paired_peers`→`fushi_paired_peers`（v62→v63）；`hibiki.db`→`fushi.db` 打开前改名；fushi_core 残留清扫
+- [ ] W3 JS 桥：`window.hoshiReader`→`window.fushiReader`；`hoshi.local`→`fushi.local`（先验证无落库形态）
+- [ ] W2 存量值改写（最重，前三流落地后派）：`reader_ttu` 媒体键/`ttu_*` 偏好+i18n/`src:reader_ttu:` 前缀/sasayaki 全族（`{sasayaki-audio}` 模板、`sasayakiColor` 主题 JSON、`sasayaki://` scheme、`custom_theme_sasayaki_color`）/`hibikiExport`→`fushiExport`/Magpie `'Hibiki: '` 前缀/`runningHibikiProcesses` wire 键——每项配 Drift/磁盘迁移改写存量行
+- [ ] W4 文件名 git mv：`reader_hibiki_*`/`video_hibiki_page` 等含旧词文件与类名词中形态（MangaHibikiPage 族）
+- [ ] 终局门 + 守卫白名单清空核查 + push develop
+
+外部注册进度（用户侧）：Google 全完成（Android `-o3vcj`/iOS `-a5iep` client 已建已落码，同意屏改名）；新 keystore 已生成（`C:\Users\wrds\fushi-keys\`，SHA1 CC:39:...:B3，4 个 CI secrets 已配，key.properties 已落主 checkout 与本 worktree）；Dropbox 新 app 已建已落码（差 Permissions 勾 scope + redirect URI 两步）；Entra redirect 用户在改；TMDB/ASC 未动。
