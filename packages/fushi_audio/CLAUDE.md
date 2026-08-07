@@ -54,7 +54,7 @@
 ## 测试与质量
 
 测试覆盖良好，位于：
-- `hibiki/test/media/audiobook/` -- srt/vtt/lrc/ass/smil parser tests, audiobook_controller_seek_test, audiobook_health_test, epub_srt_matcher_test, sasayaki_match_codec_test, collection_audio_matcher_test, cues_to_epub_test, 等。
+- `fushi/test/media/audiobook/` -- srt/vtt/lrc/ass/smil parser tests, audiobook_controller_seek_test, audiobook_health_test, epub_srt_matcher_test, sasayaki_match_codec_test, collection_audio_matcher_test, cues_to_epub_test, 等。
 - `packages/fushi_audio/test/audiobook/` -- audiobook_model_test, audio_file_sort_test。
 
 ## 相关文件清单

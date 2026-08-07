@@ -1,6 +1,6 @@
 # Vendored fork of gamepads_windows 0.3.0+1 (pub.dev) carrying Hibiki's crash
 # fixes for BUG-116. Pinned here via dependency_overrides (path:) in
-# hibiki/pubspec.yaml — see packages/gamepads_android_stub for the sibling
+# fushi/pubspec.yaml — see packages/gamepads_android_stub for the sibling
 # override that no-ops the Android implementation. Upstream is unmaintained for
 # these defects (teardown use-after-free + channel calls off the platform
 # thread + data races + a wild callback-token pointer), so the patches live in

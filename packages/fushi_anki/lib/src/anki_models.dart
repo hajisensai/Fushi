@@ -880,7 +880,7 @@ class AnkiHandlebarOptions {
 ///
 /// 真相源是 hibiki_core `kMimeTypeByExtension`（单一 MIME 映射表）。hibiki_anki
 /// 是刻意无 hibiki_core 依赖的独立模块，无法直接查那张表，故持有此逐项镜像；
-/// `hibiki/test/sync/mime_types_test.dart` 的守卫测试锁定两表完全一致——改动任一侧
+/// `fushi/test/sync/mime_types_test.dart` 的守卫测试锁定两表完全一致——改动任一侧
 /// 必须同步另一侧，否则该测试红。
 const Map<String, String> kAnkiMimeTypeByExtension = <String, String>{
   // ── 文档 / 容器 ──

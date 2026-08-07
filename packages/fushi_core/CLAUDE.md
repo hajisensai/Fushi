@@ -81,7 +81,7 @@
 
 ## 测试与质量
 
-测试位于 `hibiki/test/database/` 下，覆盖：
+测试位于 `fushi/test/database/` 下，覆盖：
 - `migration_test.dart` -- 迁移路径验证
 - `preferences_test.dart` / `pref_codec_test.dart` -- 偏好读写
 - `epub_books_test.dart` / `audiobooks_test.dart` / `media_items_test.dart` 等 -- 各表 CRUD

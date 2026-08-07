@@ -49,7 +49,7 @@
 
 ## 测试与质量
 
-测试位于 `hibiki/test/dictionary/`：
+测试位于 `fushi/test/dictionary/`：
 - `dictionary_entry_test.dart`
 - `dictionary_search_result_test.dart`
 

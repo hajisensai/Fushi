@@ -35,7 +35,7 @@ Anki 集成模块：定义 Anki 服务抽象接口，提供 AnkiDroid（Android 
 
 ## 测试与质量
 
-- 主应用测试：`hibiki/test/anki/anki_models_test.dart`
+- 主应用测试：`fushi/test/anki/anki_models_test.dart`
 - 本包无独立 test 目录。
 
 ## 相关文件清单

@@ -9,7 +9,7 @@
 ///
 /// ⚠️ 这些变换参与搜索归一化与 sasayaki 匹配坐标系：任何输出变化都会改变既有
 /// 匹配/高亮行为。改动必须保持逐码点输出不变（各 normalizer 既有测试 +
-/// `hibiki/test/utils/jp_codepoint_fold_test.dart` 的 JS parity 测试锁定）。
+/// `fushi/test/utils/jp_codepoint_fold_test.dart` 的 JS parity 测试锁定）。
 library;
 
 /// 全角 ASCII（U+FF01..U+FF5E ！..～）→ 半角 ASCII（平移 -0xFEE0）；范围外
@@ -45,7 +45,7 @@ int halfwidthKatakanaToFullwidth(int codePoint) {
 ///
 /// ⚠️ reader 注入 JS（`reader_pagination_scripts.dart` 的 `hwKataToFw`）持有
 /// 同表的 JS 字符串副本（跨语言无法引用 Dart 常量），由
-/// `hibiki/test/utils/jp_codepoint_fold_test.dart` 的 parity 测试逐项锁定一致。
+/// `fushi/test/utils/jp_codepoint_fold_test.dart` 的 parity 测试逐项锁定一致。
 const List<int> kHalfwidthKatakanaToFullwidth = <int>[
   0x30F2, // ｦ → ヲ
   0x30A1, // ｧ → ァ

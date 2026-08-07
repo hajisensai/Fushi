@@ -717,7 +717,7 @@ class MinedSentences extends Table {
 ///
 /// 生成行类名 `MediaSourceRow` 是 DB 层历史命名（改名需动 database.g.dart 与全部
 /// DAO 签名，不值得）；app 消费侧统一用别名 `SourceLibraryRow`
-/// （hibiki/lib/src/media/source_library/source_library_row.dart），与 UI 媒体源
+/// （fushi/lib/src/media/source_library/source_library_row.dart），与 UI 媒体源
 /// `abstract class MediaSource`（jidoujisho 血统）区分。表名/列名/落库值不动。
 @DataClassName('MediaSourceRow')
 class MediaSources extends Table {

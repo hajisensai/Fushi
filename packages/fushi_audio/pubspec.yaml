@@ -16,7 +16,7 @@ dependencies:
   xml: ^6.3.0
   flutter_charset_detector: ^1.0.2
   # subtitle_markup.dart 用 package:characters 做字素簇切分；此前靠传递依赖
-  # （flutter → characters）碰运气解析，这里显式声明（与 hibiki/pubspec.yaml 同约束）。
+  # （flutter → characters）碰运气解析，这里显式声明（与 fushi/pubspec.yaml 同约束）。
   characters: ^1.3.0
   path: ^1.8.2
   path_provider: ^2.0.13

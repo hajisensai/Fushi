@@ -1,21 +1,21 @@
 /// 单一「扩展名 → MIME」推断真相源（命名统一轮 G8 + BUG-1122）。
 ///
 /// 此前这段 switch 在 6 处各持一份漂移副本：
-/// - `hibiki/lib/src/sync/fushi_sync_server.dart` `_guessContentType`
+/// - `fushi/lib/src/sync/fushi_sync_server.dart` `_guessContentType`
 ///   （WebDAV / 流式 / 字幕端点；**缺 `.webp` → webp 封面按
 ///   application/octet-stream 下发，即 BUG-1122**）；
-/// - `hibiki/lib/src/sync/sync_utils.dart` `guessSyncContentType`（云端上传）；
-/// - `hibiki/lib/src/epub/epub_book.dart` `fallbackMimeType`（阅读器 WebView 资源）；
-/// - `hibiki/lib/src/dictionary/dictionary_media_types.dart`
+/// - `fushi/lib/src/sync/sync_utils.dart` `guessSyncContentType`（云端上传）；
+/// - `fushi/lib/src/epub/epub_book.dart` `fallbackMimeType`（阅读器 WebView 资源）；
+/// - `fushi/lib/src/dictionary/dictionary_media_types.dart`
 ///   `dictionaryMediaMimeType`（词典媒体，app 内 + 浏览器扩展端点）；
-/// - `hibiki/lib/src/lookup/global_lookup_controller.dart`
+/// - `fushi/lib/src/lookup/global_lookup_controller.dart`
 ///   `_globalLookupImageMime`（桌面查词浮窗）；
 /// - `packages/fushi_anki/lib/src/anki_models.dart` `mimeTypeForPath`
 ///   （Anki 媒体上传）。
 ///
 /// 本表取 6 份覆盖面的**并集**（6 份之间无互相矛盾的映射）。前 5 份已改为直接查本表；
 /// fushi_anki 是无 fushi_core 依赖的独立模块，其副本改为本表的**镜像**，由
-/// `hibiki/test/sync/mime_types_test.dart` 守卫锁定逐项一致。单词音频语境的
+/// `fushi/test/sync/mime_types_test.dart` 守卫锁定逐项一致。单词音频语境的
 /// `kAudioMimeByExtension`（hibiki `utils/misc/audio_mime.dart`，
 /// `.mp4/.aac/.webm → audio/*` 是刻意收窄，`audio_mime_test.dart` 锁定与本表的
 /// 分歧集合）与 manga 页 jpeg 兜底的图片服务不属本表，见各自注释。
@@ -30,7 +30,7 @@ const Map<String, String> kMimeTypeByExtension = <String, String>{
   'js': 'application/javascript',
   // BUG-1199 / BUG-1203：`.htm` / `.xht` 与 `.html` / `.xhtml` 是同一类文档的合法
   // 扩展名。阅读器拦截器判「这是不是内容文档」现在以 OPF 声明的 media-type 为准
-  // （`isHtmlMediaType`，见 `hibiki/lib/src/epub/epub_book.dart`），本表只是 OPF
+  // （`isHtmlMediaType`，见 `fushi/lib/src/epub/epub_book.dart`），本表只是 OPF
   // 缺项 / 畸形时的**兜底**——但兜底路径同样不能漏：漏掉时章节按
   // [kFallbackMimeType]（octet-stream）下发，既不注入阅读器样式/分页脚本、也不做
   // XHTML 净化，WebView 更不把它当文档渲染，整本书翻页全空白且无错误日志。

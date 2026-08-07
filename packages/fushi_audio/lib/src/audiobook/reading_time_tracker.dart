@@ -7,7 +7,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 正常窗口 ≈ 60s。超过此上限说明定时器跨越了**非连续前台阅读窗口**（app 后台挂起 /
 /// 系统睡眠 / 熄屏 / 长 GC 停顿致定时器被冻结后一次性补发），该段用户是否真在阅读未知。
 ///
-/// 对照 `hibiki/lib/src/media/video/video_watch_tracker.dart` 的 `kMaxWatchGap`——视频侧
+/// 对照 `fushi/lib/src/media/video/video_watch_tracker.dart` 的 `kMaxWatchGap`——视频侧
 /// 早已有此守卫，阅读侧此前缺失，导致整夜后台挂起被一次性计入阅读时长（BUG-892）。
 const Duration kMaxReadingGap = Duration(seconds: 120);
 

@@ -6714,7 +6714,7 @@ class FushiDatabase extends _$FushiDatabase {
   /// Delegates to the core-local copy of `sanitizeTtuFilename`
   /// (`../utils/ttu_sanitize.dart`). fushi_core cannot depend on the app
   /// package, so the core copy stands in for the app truth source
-  /// `hibiki/lib/src/sync/ttu_filename.dart`. Core copy and app copy MUST
+  /// `fushi/lib/src/sync/ttu_filename.dart`. Core copy and app copy MUST
   /// stay byte-identical: the migrated bookKey has to equal the key
   /// sync/folder code derives from the same title, or cross-device identity
   /// drifts. A source guard (book_key_guard_test) plus the behavioral
