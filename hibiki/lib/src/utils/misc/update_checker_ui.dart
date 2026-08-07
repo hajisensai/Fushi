@@ -292,7 +292,7 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
                 ),
               ],
               for (final WindowsProcessInfo process
-                  in record.runningHibikiProcesses) ...[
+                  in record.runningFushiProcesses) ...[
                 SizedBox(height: tokens.spacing.gap / 2),
                 SelectableText(
                   t.update_install_running_process(
@@ -324,7 +324,7 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
                   style: tokens.type.metadata,
                 ),
               ],
-              if (record.runningHibikiProcesses.isNotEmpty ||
+              if (record.runningFushiProcesses.isNotEmpty ||
                   record.libmpvModuleHolders.isNotEmpty ||
                   record.innoLogDeleteFileFailures.isNotEmpty) ...[
                 SizedBox(height: tokens.spacing.gap),

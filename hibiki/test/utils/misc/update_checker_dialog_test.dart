@@ -354,7 +354,7 @@ void main() {
       ],
       'pathMismatchWarning':
           r'Registered install location D:\Program\Hibiki differs from current D:\Portable\Hibiki. Do not delete it automatically; clean old shortcuts manually if needed.',
-      'runningHibikiProcesses': <Map<String, dynamic>>[
+      'runningFushiProcesses': <Map<String, dynamic>>[
         <String, dynamic>{
           'pid': 5678,
           'path': r'D:\Portable\Hibiki\hibiki.exe',

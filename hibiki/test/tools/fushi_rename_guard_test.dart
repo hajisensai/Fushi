@@ -193,10 +193,21 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   _ForbiddenPattern(
     // 类名族清算：Hibiki* → Fushi*（HibikiDatabase/HibikiToast/_HibikiCardState
     // 等词首形态，含 _$Hibiki* 生成类）。词中内嵌形态不属类名族、刻意不匹配：
-    // MangaHibikiPage 等含 hibiki 文件名的类（W4 才 git mv，半径控制）、
-    // 'runningHibikiProcesses'（update-handoff JSON wire 键，W2-6 处理）。
+    // MangaHibikiPage 等含 hibiki 文件名的类（W4 才 git mv，半径控制）。
     name: 'Hibiki*-类名族',
     regex: RegExp(r'(?<![A-Za-z0-9])Hibiki[A-Z]'),
+  ),
+  _ForbiddenPattern(
+    // W2-6：update-handoff JSON wire 键已是 'runningFushiProcesses'（写侧只写
+    // 新键）；旧键只允许活在读侧回退（真实跨版本 wire：hibiki→fushi 更新桥时代
+    // 的旧二进制写 marker、新版读，清理条件锚在 update_handoff.dart 注释）。
+    name: 'runningHibikiProcesses',
+    regex: RegExp('runningHibikiProcesses'),
+    allowed: <String, String>{
+      'lib/src/utils/misc/update_handoff.dart':
+          'fromJson 的旧键读侧回退：旧 Hibiki 过渡版写的 marker 在升级后由新版'
+              '读取，是唯一会见到旧键的窗口；写侧只写新键。',
+    },
   ),
   _ForbiddenPattern(
     // W2-5：Magpie 配置 profile 名前缀已是 'Fushi: '
