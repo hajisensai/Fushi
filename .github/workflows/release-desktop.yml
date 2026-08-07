@@ -4,7 +4,7 @@ on:
   # TODO-1208: docs-only / repo-chore pushes should not fire the full desktop +
   # Apple release build. Scope the PUSH trigger to build-relevant paths. The
   # `release` and `workflow_dispatch` triggers stay UNfiltered so manual
-  # beta/formal publishes always run. A version bump lives under hibiki/** so it
+  # beta/formal publishes always run. A version bump lives under fushi/** so it
   # still triggers; rolling debug seq = commit count, so skipping a seq on a
   # docs-only push is harmless.
   # ⚠️ Fushi 改名过渡期（2026-08-07 用户指示）：暂停 push 自动发布——新版 Fushi
@@ -13,7 +13,7 @@ on:
   # push:
   #   branches: ['main', 'develop']
   #   paths:
-  #     - 'hibiki/**'
+  #     - 'fushi/**'
   #     - 'packages/**'
   #     # C ABI bridge 源码：只改 native/ 的 PR 以前触发不了任何构建，
   #     # 编译挂了要等下一个不相关改动才暴露。
@@ -85,7 +85,7 @@ jobs:
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -euo pipefail
-          VERSION=$(grep '^version:' hibiki/pubspec.yaml | sed 's/version: *//;s/+.*//')
+          VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
           RELEASE_SEQUENCE=$(git rev-list --count HEAD)
           if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
             echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
@@ -236,14 +236,14 @@ jobs:
         env:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
-          dst=hibiki/lib/src/sync/google_oauth_secret.dart
+          dst=fushi/lib/src/sync/google_oauth_secret.dart
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
             oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
             printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
               "$oauth_secret_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+            cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
           fi
       # log_upload_secret.dart ships a committed empty placeholder (endpoint = '')
       # so a fresh clone compiles and the log-upload button stays hidden (it is
@@ -259,7 +259,7 @@ jobs:
           LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
           LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
         run: |
-          dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
+          dst=fushi/lib/src/utils/misc/log_upload_secret.dart
           if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
             log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
             log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
@@ -268,7 +268,7 @@ jobs:
               "$log_token_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+            cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
       # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
       # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
@@ -281,17 +281,17 @@ jobs:
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
         run: |
-          dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+          dst=fushi/lib/src/media/video/dandanplay_secret.dart
           if [ -n "$DANDANPLAY_APP_ID" ]; then
             printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
               "$DANDANPLAY_APP_ID" \
               "$DANDANPLAY_APP_SECRET" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+            cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
           fi
       # TODO-1208: cache media_kit's pre-built libmpv + ANGLE .7z archives it
-      # downloads from GitHub into the CMake binary dir (hibiki/build/windows/x64).
+      # downloads from GitHub into the CMake binary dir (fushi/build/windows/x64).
       # media_kit's download_and_verify skips the download when the archive exists
       # with a matching MD5, so restoring just the .7z blobs (NOT the build tree /
       # CMakeCache -- avoids stale-abspath breakage) cuts the slow GitHub fetch.
@@ -299,12 +299,12 @@ jobs:
       - name: Cache media_kit Windows mpv/ANGLE archives
         uses: actions/cache@v4
         with:
-          path: hibiki/build/windows/x64/*.7z
-          key: ${{ runner.os }}-mediakit7z-${{ hashFiles('hibiki/pubspec.lock') }}
+          path: fushi/build/windows/x64/*.7z
+          key: ${{ runner.os }}-mediakit7z-${{ hashFiles('fushi/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-mediakit7z-
       - name: Flutter pub get
-        working-directory: hibiki
+        working-directory: fushi
         run: flutter pub get
       - name: Apply pub cache patches
         shell: bash
@@ -381,7 +381,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "vcpkg install libtorrent failed" }
           powershell -ExecutionPolicy Bypass -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
       - name: Build Windows release
-        working-directory: hibiki
+        working-directory: fushi
         run: >-
           flutter build windows --release
           --build-name "${{ steps.channel.outputs.build_version_name }}"
@@ -390,11 +390,11 @@ jobs:
         shell: pwsh
         run: |
           .\tool\mihon\build_desktop_runtime.ps1 `
-            -OutputDirectory "hibiki\build\windows\x64\runner\Release\mihon_bridge" `
+            -OutputDirectory "fushi\build\windows\x64\runner\Release\mihon_bridge" `
             -DownloadCache "$env:RUNNER_TEMP\hibiki-mihon-downloads"
           if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
           .\tool\mihon\verify_desktop_runtime.ps1 `
-            -RuntimeDirectory "hibiki\build\windows\x64\runner\Release\mihon_bridge"
+            -RuntimeDirectory "fushi\build\windows\x64\runner\Release\mihon_bridge"
       - name: Build and bundle galgame helper archives
         shell: pwsh
         run: |
@@ -415,7 +415,7 @@ jobs:
           # 漂移在结构上不再可能。完整性校验没有削弱，只是前移到这里（构建期 fail-closed）。
           # 解压/校验逻辑与 build-multiplatform.yml 共用同一个脚本：这两段曾是孪生副本，
           # 而「两份各自漂移」就是本次要根治的形态，不要再复制粘贴回来。
-          powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/install_into_bundle.ps1 -BundleDirectory "$PWD\hibiki\build\windows\x64\runner\Release"
+          powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/install_into_bundle.ps1 -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Release"
           if ($LASTEXITCODE -ne 0) { throw "install_into_bundle.ps1 failed ($LASTEXITCODE)" }
       - name: Bundle slim Magpie for offline upscaling install
         shell: pwsh
@@ -428,7 +428,7 @@ jobs:
           pwsh -NoProfile -ExecutionPolicy Bypass -File tools/build_magpie_slim.ps1
           if ($LASTEXITCODE -ne 0) { throw "build_magpie_slim.ps1 failed ($LASTEXITCODE)" }
           $sourceDir = Join-Path $PWD 'dist'
-          $targetDir = Join-Path $PWD 'hibiki\build\windows\x64\runner\Release\magpie_bundle'
+          $targetDir = Join-Path $PWD 'fushi\build\windows\x64\runner\Release\magpie_bundle'
           New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
           foreach ($file in @(
             'Magpie-hibiki-slim-x64.zip',
@@ -452,7 +452,7 @@ jobs:
         shell: pwsh
         run: |
           $sourceDir = Join-Path $PWD 'third_party\ffmpeg-min\windows'
-          $targetDir = Join-Path $PWD 'hibiki\build\windows\x64\runner\Release'
+          $targetDir = Join-Path $PWD 'fushi\build\windows\x64\runner\Release'
           if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
             throw "Missing Windows release bundle directory: $targetDir"
           }
@@ -496,7 +496,7 @@ jobs:
       - name: Bundle VC++ CRT runtime into Windows bundle
         shell: pwsh
         run: |
-          $targetDir = Join-Path $PWD 'hibiki\build\windows\x64\runner\Release'
+          $targetDir = Join-Path $PWD 'fushi\build\windows\x64\runner\Release'
           if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
             throw "Missing Windows release bundle directory: $targetDir"
           }
@@ -569,7 +569,7 @@ jobs:
           # these literals to prove the release smokes the exact binaries copied
           # beside hibiki.exe -- splitting them into a variable silently blinds
           # that guard.
-          $target = Join-Path $PWD 'hibiki\build\windows\x64\runner\Release\ffmpeg.exe'
+          $target = Join-Path $PWD 'fushi\build\windows\x64\runner\Release\ffmpeg.exe'
           if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
             throw "Missing bundled ffmpeg executable: $target"
           }
@@ -582,7 +582,7 @@ jobs:
           # a healthy ffmpeg but a missing/broken ffprobe degrades silently -
           # both consumers swallow the ProcessException by design - so gate it
           # here with the same -version check rather than trusting the copy step.
-          $probeTarget = Join-Path $PWD 'hibiki\build\windows\x64\runner\Release\ffprobe.exe'
+          $probeTarget = Join-Path $PWD 'fushi\build\windows\x64\runner\Release\ffprobe.exe'
           if (-not (Test-Path -LiteralPath $probeTarget -PathType Leaf)) {
             throw "Missing bundled ffprobe executable: $probeTarget"
           }
@@ -624,9 +624,9 @@ jobs:
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
           & "$iscc" "/DAppVersion=${{ steps.channel.outputs.build_version_name }}" `
-            "/DSourceDir=$PWD\hibiki\build\windows\x64\runner\Release" `
-            "/DOutputDir=$PWD\hibiki\build\installer" `
-            "hibiki\windows\installer\fushi.iss"
+            "/DSourceDir=$PWD\fushi\build\windows\x64\runner\Release" `
+            "/DOutputDir=$PWD\fushi\build\installer" `
+            "fushi\windows\installer\fushi.iss"
       - name: Check signing availability
         id: signcheck
         shell: bash
@@ -643,7 +643,7 @@ jobs:
         run: |
           [IO.File]::WriteAllBytes("$PWD\cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
           $st = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
-          & "$st" sign /fd SHA256 /f "$PWD\cert.pfx" /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 "$PWD\hibiki\build\installer\fushi-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe"
+          & "$st" sign /fd SHA256 /f "$PWD\cert.pfx" /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 "$PWD\fushi\build\installer\fushi-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe"
       - name: Prepare Windows installer release asset
         shell: bash
         env:
@@ -651,7 +651,7 @@ jobs:
           BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
         run: |
           set -euo pipefail
-          installer="hibiki/build/installer/fushi-${BUILD_VERSION_NAME}-windows-setup.exe"
+          installer="fushi/build/installer/fushi-${BUILD_VERSION_NAME}-windows-setup.exe"
           asset_name="$(basename "$installer")"
           if [ ! -f "$installer" ]; then
             echo "::error title=Windows installer missing::Expected $installer"
@@ -666,9 +666,9 @@ jobs:
                 ;;
             esac
           fi
-          mkdir -p hibiki/build/release-artifacts
-          rm -f hibiki/build/release-artifacts/fushi-*-windows-setup.exe
-          cp "$installer" "hibiki/build/release-artifacts/$asset_name"
+          mkdir -p fushi/build/release-artifacts
+          rm -f fushi/build/release-artifacts/fushi-*-windows-setup.exe
+          cp "$installer" "fushi/build/release-artifacts/$asset_name"
       # TODO-866: same fragility as the Android release workflow -- the prepared
       # Windows installer is otherwise only uploaded as a GitHub Release asset
       # (softprops steps below). When that publish intermittently 403s, the
@@ -682,7 +682,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: desktop-artifacts-windows
-          path: hibiki/build/release-artifacts/fushi-*-windows-setup.exe
+          path: fushi/build/release-artifacts/fushi-*-windows-setup.exe
           if-no-files-found: ignore
           retention-days: 14
 
@@ -709,7 +709,7 @@ jobs:
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -euo pipefail
-          VERSION=$(grep '^version:' hibiki/pubspec.yaml | sed 's/version: *//;s/+.*//')
+          VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
           RELEASE_SEQUENCE=$(git rev-list --count HEAD)
           if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
             echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
@@ -844,14 +844,14 @@ jobs:
         env:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
-          dst=hibiki/lib/src/sync/google_oauth_secret.dart
+          dst=fushi/lib/src/sync/google_oauth_secret.dart
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
             oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
             printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
               "$oauth_secret_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+            cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
           fi
       - name: Provide gitignored log upload secret stub
         shell: bash
@@ -859,7 +859,7 @@ jobs:
           LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
           LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
         run: |
-          dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
+          dst=fushi/lib/src/utils/misc/log_upload_secret.dart
           if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
             log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
             log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
@@ -868,7 +868,7 @@ jobs:
               "$log_token_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+            cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
       # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
       # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
@@ -881,14 +881,14 @@ jobs:
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
         run: |
-          dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+          dst=fushi/lib/src/media/video/dandanplay_secret.dart
           if [ -n "$DANDANPLAY_APP_ID" ]; then
             printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
               "$DANDANPLAY_APP_ID" \
               "$DANDANPLAY_APP_SECRET" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+            cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
           fi
       # TODO-1208: cache CocoaPods spec repos + downloaded pod source and the
       # generated Pods dirs. Keyed on the Podfile.lock/pubspec.lock so a pod bump
@@ -900,13 +900,13 @@ jobs:
           path: |
             ~/Library/Caches/CocoaPods
             ~/.cocoapods
-            hibiki/ios/Pods
-            hibiki/macos/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('hibiki/ios/Podfile.lock', 'hibiki/macos/Podfile.lock', 'hibiki/pubspec.lock') }}
+            fushi/ios/Pods
+            fushi/macos/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'fushi/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pods-
       - name: Flutter pub get
-        working-directory: hibiki
+        working-directory: fushi
         run: flutter pub get
       - name: Apply pub cache patches
         shell: bash
@@ -914,7 +914,7 @@ jobs:
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
       - name: Build macOS release
-        working-directory: hibiki
+        working-directory: fushi
         run: >-
           flutter build macos --release
           --build-name "${{ steps.channel.outputs.build_version_name }}"
@@ -924,7 +924,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x tool/mihon/build_desktop_runtime.sh
-          app_dir="hibiki/build/macos/Build/Products/Release/fushi.app"
+          app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
           runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
           tool/mihon/build_desktop_runtime.sh "$runtime_dir" "$RUNNER_TEMP/hibiki-mihon-downloads"
           while IFS= read -r candidate; do
@@ -956,7 +956,7 @@ jobs:
         run: |
           set -euo pipefail
           source_dir="third_party/ffmpeg-min/macos"
-          app_dir="hibiki/build/macos/Build/Products/Release/fushi.app"
+          app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
           target_dir="$app_dir/Contents/MacOS"
           if [ ! -d "$target_dir" ]; then
             echo "::error title=macOS bundle missing::Expected $target_dir"
@@ -1067,7 +1067,7 @@ jobs:
           echo "Developer ID identity: $IDENTITY"
       - name: Sign macOS app with Developer ID
         if: steps.signing.outputs.macos_signed == 'true'
-        working-directory: hibiki
+        working-directory: fushi
         shell: bash
         run: |
           set -euo pipefail
@@ -1135,7 +1135,7 @@ jobs:
           codesign --display --entitlements - --verbose=4 "$APP"
       - name: Notarize and staple macOS app
         if: steps.signing.outputs.macos_signed == 'true'
-        working-directory: hibiki
+        working-directory: fushi
         shell: bash
         env:
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
@@ -1167,7 +1167,7 @@ jobs:
           xcrun stapler validate "$APP"
           spctl --assess --type execute --verbose=4 "$APP"
       - name: Prepare macOS app release asset
-        working-directory: hibiki
+        working-directory: fushi
         shell: bash
         env:
           BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
@@ -1190,7 +1190,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: desktop-artifacts-macos
-          path: hibiki/build/release-artifacts/fushi-*-macos.zip
+          path: fushi/build/release-artifacts/fushi-*-macos.zip
           if-no-files-found: ignore
           retention-days: 14
 
@@ -1217,7 +1217,7 @@ jobs:
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -euo pipefail
-          VERSION=$(grep '^version:' hibiki/pubspec.yaml | sed 's/version: *//;s/+.*//')
+          VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
           RELEASE_SEQUENCE=$(git rev-list --count HEAD)
           if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
             echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
@@ -1352,14 +1352,14 @@ jobs:
         env:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
-          dst=hibiki/lib/src/sync/google_oauth_secret.dart
+          dst=fushi/lib/src/sync/google_oauth_secret.dart
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
             oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
             printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
               "$oauth_secret_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+            cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
           fi
       - name: Provide gitignored log upload secret stub
         shell: bash
@@ -1367,7 +1367,7 @@ jobs:
           LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
           LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
         run: |
-          dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
+          dst=fushi/lib/src/utils/misc/log_upload_secret.dart
           if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
             log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
             log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
@@ -1376,7 +1376,7 @@ jobs:
               "$log_token_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+            cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
       # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
       # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
@@ -1389,14 +1389,14 @@ jobs:
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
         run: |
-          dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+          dst=fushi/lib/src/media/video/dandanplay_secret.dart
           if [ -n "$DANDANPLAY_APP_ID" ]; then
             printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
               "$DANDANPLAY_APP_ID" \
               "$DANDANPLAY_APP_SECRET" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+            cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
           fi
       # TODO-1208: cache CocoaPods spec repos + downloaded pod source and the
       # generated Pods dirs. Keyed on the Podfile.lock/pubspec.lock so a pod bump
@@ -1408,13 +1408,13 @@ jobs:
           path: |
             ~/Library/Caches/CocoaPods
             ~/.cocoapods
-            hibiki/ios/Pods
-            hibiki/macos/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('hibiki/ios/Podfile.lock', 'hibiki/macos/Podfile.lock', 'hibiki/pubspec.lock') }}
+            fushi/ios/Pods
+            fushi/macos/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'fushi/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pods-
       - name: Flutter pub get
-        working-directory: hibiki
+        working-directory: fushi
         run: flutter pub get
       - name: Apply pub cache patches
         shell: bash
@@ -1428,13 +1428,13 @@ jobs:
       - name: Disable experimental Swift Package Manager (CocoaPods-managed iOS)
         run: flutter config --no-enable-swift-package-manager
       - name: Build iOS release app (no codesign)
-        working-directory: hibiki
+        working-directory: fushi
         run: >-
           flutter build ios --release --no-codesign
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
       - name: Prepare unsigned iOS IPA release asset
-        working-directory: hibiki
+        working-directory: fushi
         shell: bash
         env:
           BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
@@ -1463,7 +1463,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: desktop-artifacts-ios
-          path: hibiki/build/release-artifacts/fushi-*-ios.ipa
+          path: fushi/build/release-artifacts/fushi-*-ios.ipa
           if-no-files-found: ignore
           retention-days: 14
 
@@ -1573,7 +1573,7 @@ jobs:
           APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$PROFILE_PLIST")"
           PROFILE_BUNDLE_ID="${APP_ID#*.}"
           EXPECTED_BUNDLE_ID="$(sed -n 's/.*PRODUCT_BUNDLE_IDENTIFIER = \(.*\);/\1/p' \
-            hibiki/ios/Runner.xcodeproj/project.pbxproj | grep -v RunnerTests | head -n 1)"
+            fushi/ios/Runner.xcodeproj/project.pbxproj | grep -v RunnerTests | head -n 1)"
           if [ "$PROFILE_BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]; then
             echo "::error title=Provisioning profile mismatch::Profile is for '$PROFILE_BUNDLE_ID' but Runner builds '$EXPECTED_BUNDLE_ID'. A wildcard profile cannot be used for App Store distribution."
             exit 1
@@ -1597,7 +1597,7 @@ jobs:
             echo "CODE_SIGN_IDENTITY = Apple Distribution"
             echo "CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution"
             echo "OTHER_CODE_SIGN_FLAGS = \$(inherited) --keychain $IOS_KEYCHAIN_PATH"
-          } >> hibiki/ios/Flutter/Release.xcconfig
+          } >> fushi/ios/Flutter/Release.xcconfig
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1624,7 +1624,7 @@ jobs:
           echo "profile: $PROFILE_NAME ($PROFILE_UUID) bundle=$PROFILE_BUNDLE_ID expires=$PROFILE_EXPIRY"
       - name: Build signed iOS App Store IPA
         if: steps.signing.outputs.testflight == 'true'
-        working-directory: hibiki
+        working-directory: fushi
         run: >-
           flutter build ipa --release
           --export-options-plist "$RUNNER_TEMP/ExportOptions.plist"
@@ -1632,7 +1632,7 @@ jobs:
           --build-number "${{ steps.channel.outputs.release_sequence }}"
       - name: Upload to TestFlight
         if: steps.signing.outputs.testflight == 'true'
-        working-directory: hibiki
+        working-directory: fushi
         shell: bash
         env:
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
@@ -1646,7 +1646,7 @@ jobs:
             break
           done < <(find build/ios/ipa -maxdepth 1 -name '*.ipa' -type f)
           if [ -z "$IPA" ]; then
-            echo "::error title=Signed IPA missing::flutter build ipa produced no .ipa under hibiki/build/ios/ipa"
+            echo "::error title=Signed IPA missing::flutter build ipa produced no .ipa under fushi/build/ios/ipa"
             ls -la build/ios/ipa || true
             exit 1
           fi
@@ -1691,7 +1691,7 @@ jobs:
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -euo pipefail
-          VERSION=$(grep '^version:' hibiki/pubspec.yaml | sed 's/version: *//;s/+.*//')
+          VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
           RELEASE_SEQUENCE=$(git rev-list --count HEAD)
           if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
             echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
@@ -1833,16 +1833,16 @@ jobs:
         with:
           pattern: desktop-artifacts-*
           merge-multiple: true
-          path: hibiki/build/release-artifacts
+          path: fushi/build/release-artifacts
       - name: Upload assets to GitHub Release event
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.channel.outputs.tag }}
           files: |
-            hibiki/build/release-artifacts/fushi-*-windows-setup.exe
-            hibiki/build/release-artifacts/fushi-*-macos.zip
-            hibiki/build/release-artifacts/fushi-*-ios.ipa
+            fushi/build/release-artifacts/fushi-*-windows-setup.exe
+            fushi/build/release-artifacts/fushi-*-macos.zip
+            fushi/build/release-artifacts/fushi-*-ios.ipa
       # TODO-1049 / TODO-1123 / TODO-1129: same rolling-release asset GC as
       # release.yml. softprops upserts same-named assets but never removes a
       # PRIOR commit's asset (different seq/sha in the name) from the reused
@@ -1964,9 +1964,9 @@ jobs:
           prerelease: ${{ steps.channel.outputs.prerelease }}
           make_latest: ${{ steps.channel.outputs.make_latest }}
           files: |
-            hibiki/build/release-artifacts/fushi-*-windows-setup.exe
-            hibiki/build/release-artifacts/fushi-*-macos.zip
-            hibiki/build/release-artifacts/fushi-*-ios.ipa
+            fushi/build/release-artifacts/fushi-*-windows-setup.exe
+            fushi/build/release-artifacts/fushi-*-macos.zip
+            fushi/build/release-artifacts/fushi-*-ios.ipa
       # TODO-705: publish a mirror update manifest so beta/debug in-China update
       # checks succeed (raw.githubusercontent.com is proxiable; api.github.com
       # /releases is mirror-403'd, BUG-292). This pushes a DATA FILE to the
@@ -1994,7 +1994,7 @@ jobs:
           NOTES: ${{ steps.channel.outputs.body }}
           VERSION: ${{ steps.channel.outputs.build_version_name }}
           RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
-          ARTIFACTS_DIR: hibiki/build/release-artifacts
+          ARTIFACTS_DIR: fushi/build/release-artifacts
           ASSET_GLOB: fushi-*-windows-setup.exe
           PLATFORM_LABEL: desktop
         run: bash tool/publish_update_manifest.sh
@@ -2013,7 +2013,7 @@ jobs:
           NOTES: ${{ steps.channel.outputs.body }}
           VERSION: ${{ steps.channel.outputs.build_version_name }}
           RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
-          ARTIFACTS_DIR: hibiki/build/release-artifacts
+          ARTIFACTS_DIR: fushi/build/release-artifacts
           ASSET_GLOB: fushi-*-macos.zip fushi-*-ios.ipa
           PLATFORM_LABEL: apple
         run: bash tool/publish_update_manifest.sh

@@ -2,7 +2,7 @@ name: Update Contributors
 on:
   push:
     branches: ['main']
-    paths: ['hibiki/**']
+    paths: ['fushi/**']
   workflow_dispatch:
 jobs:
   contrib-readme-job:

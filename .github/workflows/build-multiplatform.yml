@@ -14,7 +14,7 @@ on:
   push:
     branches: ['main', 'develop']
     paths: &multiplatform_paths
-      - 'hibiki/**'
+      - 'fushi/**'
       - 'packages/**'
       # C ABI bridge 源码：只改 native/ 的 PR 以前触发不了任何构建，
       # 编译挂了要等下一个不相关改动才暴露。
@@ -81,14 +81,14 @@ jobs:
         env:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
-          dst=hibiki/lib/src/sync/google_oauth_secret.dart
+          dst=fushi/lib/src/sync/google_oauth_secret.dart
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
             oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
             printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
               "$oauth_secret_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+            cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
           fi
       # log_upload_secret.dart ships a committed empty placeholder (endpoint = '')
       # so a fresh clone compiles and the log-upload button stays hidden (it is
@@ -104,7 +104,7 @@ jobs:
           LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
           LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
         run: |
-          dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
+          dst=fushi/lib/src/utils/misc/log_upload_secret.dart
           if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
             log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
             log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
@@ -113,7 +113,7 @@ jobs:
               "$log_token_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+            cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
       # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
       # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
@@ -126,14 +126,14 @@ jobs:
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
         run: |
-          dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+          dst=fushi/lib/src/media/video/dandanplay_secret.dart
           if [ -n "$DANDANPLAY_APP_ID" ]; then
             printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
               "$DANDANPLAY_APP_ID" \
               "$DANDANPLAY_APP_SECRET" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+            cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
           fi
       # tmdb_default_key.dart ships a committed empty placeholder (key = '') so a
       # fresh clone compiles and TMDB scraping degrades to "not configured" (Bangumi
@@ -146,16 +146,16 @@ jobs:
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
-          dst=hibiki/lib/src/media/video/scraper/tmdb_default_key.dart
+          dst=fushi/lib/src/media/video/scraper/tmdb_default_key.dart
           if [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
+            cp fushi/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
           fi
           if [ -n "$TMDB_API_KEY" ]; then
             # -i.bak（后缀紧贴 -i，中间不留空格）是 GNU sed 与 BSD/macOS sed
             # 都接受的唯一就地编辑写法。裸 `sed -i "脚本" 文件` 只在 GNU sed 下
             # 成立：BSD sed 的 -i 必须带备份后缀，会把紧跟的脚本吃成后缀、再把
             # 文件名当脚本，于是 macos/ios 作业固定报
-            # `sed: 1: "hibiki/lib/src/media/vi ...": extra characters at the
+            # `sed: 1: "fushi/lib/src/media/vi ...": extra characters at the
             # end of h command`。五处 TMDB 注入统一用同一种写法，别再从 ubuntu
             # 作业复制出裸 -i。
             sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
@@ -166,7 +166,7 @@ jobs:
       # （main / release / build-multiplatform）的 path + key 必须逐字相同，且此步
       # 之前不得 sed 改 build.gradle / settings.gradle —— 否则同一份内容会被存成
       # 两条各 2.7 GB 的缓存。理由见 docs/agent/build.md 的「CI 缓存配额」，守卫见
-      # hibiki/test/build/workflow_cache_quota_guard_test.dart。
+      # fushi/test/build/workflow_cache_quota_guard_test.dart。
       - name: Cache Gradle caches
         uses: actions/cache@v4
         with:
@@ -174,14 +174,14 @@ jobs:
             ~/.gradle/caches/modules-2
             ~/.gradle/caches/journal-1
             ~/.gradle/wrapper/dists
-          key: ${{ runner.os }}-gradle-v2-${{ hashFiles('hibiki/android/**/*.gradle*', 'hibiki/android/gradle/wrapper/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-v2-${{ hashFiles('fushi/android/**/*.gradle*', 'fushi/android/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-v2-
       - name: Flutter pub get
-        working-directory: hibiki
+        working-directory: fushi
         run: flutter pub get
       - name: Remove aliyun mirrors from gradle files
-        working-directory: hibiki/android
+        working-directory: fushi/android
         run: |
           sed -i "/maven.*aliyun/d" build.gradle
           sed -i "/maven.*aliyun/d" settings.gradle
@@ -294,14 +294,14 @@ jobs:
         env:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
-          dst=hibiki/lib/src/sync/google_oauth_secret.dart
+          dst=fushi/lib/src/sync/google_oauth_secret.dart
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
             oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
             printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
               "$oauth_secret_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+            cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
           fi
       # log_upload_secret.dart ships a committed empty placeholder (endpoint = '')
       # so a fresh clone compiles and the log-upload button stays hidden (it is
@@ -317,7 +317,7 @@ jobs:
           LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
           LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
         run: |
-          dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
+          dst=fushi/lib/src/utils/misc/log_upload_secret.dart
           if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
             log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
             log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
@@ -326,7 +326,7 @@ jobs:
               "$log_token_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+            cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
       # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
       # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
@@ -339,14 +339,14 @@ jobs:
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
         run: |
-          dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+          dst=fushi/lib/src/media/video/dandanplay_secret.dart
           if [ -n "$DANDANPLAY_APP_ID" ]; then
             printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
               "$DANDANPLAY_APP_ID" \
               "$DANDANPLAY_APP_SECRET" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+            cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
           fi
       # tmdb_default_key.dart ships a committed empty placeholder (key = '') so a
       # fresh clone compiles and TMDB scraping degrades to "not configured" (Bangumi
@@ -359,30 +359,30 @@ jobs:
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
-          dst=hibiki/lib/src/media/video/scraper/tmdb_default_key.dart
+          dst=fushi/lib/src/media/video/scraper/tmdb_default_key.dart
           if [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
+            cp fushi/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
           fi
           if [ -n "$TMDB_API_KEY" ]; then
             # -i.bak（后缀紧贴 -i，中间不留空格）是 GNU sed 与 BSD/macOS sed
             # 都接受的唯一就地编辑写法。裸 `sed -i "脚本" 文件` 只在 GNU sed 下
             # 成立：BSD sed 的 -i 必须带备份后缀，会把紧跟的脚本吃成后缀、再把
             # 文件名当脚本，于是 macos/ios 作业固定报
-            # `sed: 1: "hibiki/lib/src/media/vi ...": extra characters at the
+            # `sed: 1: "fushi/lib/src/media/vi ...": extra characters at the
             # end of h command`。五处 TMDB 注入统一用同一种写法，别再从 ubuntu
             # 作业复制出裸 -i。
             sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
             rm -f "$dst.bak"
           fi
       - name: Flutter pub get
-        working-directory: hibiki
+        working-directory: fushi
         run: flutter pub get
       - name: Apply pub cache patches
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
       - name: Flutter Linux CMake toolchain shim
-        working-directory: hibiki
+        working-directory: fushi
         shell: bash
         run: |
           set -euo pipefail
@@ -427,7 +427,7 @@ jobs:
             /tmp/fushidicts_flutter_cmake_expected.cpp \
             -o /tmp/fushidicts_flutter_cmake_expected
       - name: Build Linux (debug)
-        working-directory: hibiki
+        working-directory: fushi
         shell: bash
         run: |
           set -euo pipefail
@@ -473,14 +473,14 @@ jobs:
         env:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
-          dst=hibiki/lib/src/sync/google_oauth_secret.dart
+          dst=fushi/lib/src/sync/google_oauth_secret.dart
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
             oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
             printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
               "$oauth_secret_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+            cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
           fi
       # log_upload_secret.dart ships a committed empty placeholder (endpoint = '')
       # so a fresh clone compiles and the log-upload button stays hidden (it is
@@ -496,7 +496,7 @@ jobs:
           LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
           LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
         run: |
-          dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
+          dst=fushi/lib/src/utils/misc/log_upload_secret.dart
           if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
             log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
             log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
@@ -505,7 +505,7 @@ jobs:
               "$log_token_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+            cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
       # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
       # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
@@ -518,14 +518,14 @@ jobs:
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
         run: |
-          dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+          dst=fushi/lib/src/media/video/dandanplay_secret.dart
           if [ -n "$DANDANPLAY_APP_ID" ]; then
             printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
               "$DANDANPLAY_APP_ID" \
               "$DANDANPLAY_APP_SECRET" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+            cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
           fi
       # tmdb_default_key.dart ships a committed empty placeholder (key = '') so a
       # fresh clone compiles and TMDB scraping degrades to "not configured" (Bangumi
@@ -538,16 +538,16 @@ jobs:
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
-          dst=hibiki/lib/src/media/video/scraper/tmdb_default_key.dart
+          dst=fushi/lib/src/media/video/scraper/tmdb_default_key.dart
           if [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
+            cp fushi/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
           fi
           if [ -n "$TMDB_API_KEY" ]; then
             # -i.bak（后缀紧贴 -i，中间不留空格）是 GNU sed 与 BSD/macOS sed
             # 都接受的唯一就地编辑写法。裸 `sed -i "脚本" 文件` 只在 GNU sed 下
             # 成立：BSD sed 的 -i 必须带备份后缀，会把紧跟的脚本吃成后缀、再把
             # 文件名当脚本，于是 macos/ios 作业固定报
-            # `sed: 1: "hibiki/lib/src/media/vi ...": extra characters at the
+            # `sed: 1: "fushi/lib/src/media/vi ...": extra characters at the
             # end of h command`。五处 TMDB 注入统一用同一种写法，别再从 ubuntu
             # 作业复制出裸 -i。
             sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
@@ -562,20 +562,20 @@ jobs:
           path: |
             ~/Library/Caches/CocoaPods
             ~/.cocoapods
-            hibiki/ios/Pods
-            hibiki/macos/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('hibiki/ios/Podfile.lock', 'hibiki/macos/Podfile.lock', 'hibiki/pubspec.lock') }}
+            fushi/ios/Pods
+            fushi/macos/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'fushi/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pods-
       - name: Flutter pub get
-        working-directory: hibiki
+        working-directory: fushi
         run: flutter pub get
       - name: Apply pub cache patches
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
       - name: Build macOS (debug)
-        working-directory: hibiki
+        working-directory: fushi
         run: >-
           flutter build macos --debug
       - name: Bundle and verify pinned Mihon desktop runtimes
@@ -583,7 +583,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x tool/mihon/build_desktop_runtime.sh
-          app_dir="hibiki/build/macos/Build/Products/Debug/fushi.app"
+          app_dir="fushi/build/macos/Build/Products/Debug/fushi.app"
           runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
           tool/mihon/build_desktop_runtime.sh "$runtime_dir" "$RUNNER_TEMP/hibiki-mihon-downloads"
           while IFS= read -r candidate; do
@@ -596,7 +596,7 @@ jobs:
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
       - name: Verify macOS fushidicts dylib bundle
-        working-directory: hibiki
+        working-directory: fushi
         run: |
           set -euo pipefail
           app_dir="build/macos/Build/Products/Debug/fushi.app"
@@ -641,14 +641,14 @@ jobs:
         env:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
-          dst=hibiki/lib/src/sync/google_oauth_secret.dart
+          dst=fushi/lib/src/sync/google_oauth_secret.dart
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
             oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
             printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
               "$oauth_secret_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+            cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
           fi
       # See the android job: CI/release builds should use the real log-upload
       # endpoint only when repo secrets provide it; otherwise keep the committed
@@ -659,7 +659,7 @@ jobs:
           LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
           LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
         run: |
-          dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
+          dst=fushi/lib/src/utils/misc/log_upload_secret.dart
           if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
             log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
             log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
@@ -668,7 +668,7 @@ jobs:
               "$log_token_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+            cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
       # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
       # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
@@ -681,14 +681,14 @@ jobs:
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
         run: |
-          dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+          dst=fushi/lib/src/media/video/dandanplay_secret.dart
           if [ -n "$DANDANPLAY_APP_ID" ]; then
             printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
               "$DANDANPLAY_APP_ID" \
               "$DANDANPLAY_APP_SECRET" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+            cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
           fi
       # tmdb_default_key.dart ships a committed empty placeholder (key = '') so a
       # fresh clone compiles and TMDB scraping degrades to "not configured" (Bangumi
@@ -701,16 +701,16 @@ jobs:
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
-          dst=hibiki/lib/src/media/video/scraper/tmdb_default_key.dart
+          dst=fushi/lib/src/media/video/scraper/tmdb_default_key.dart
           if [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
+            cp fushi/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
           fi
           if [ -n "$TMDB_API_KEY" ]; then
             # -i.bak（后缀紧贴 -i，中间不留空格）是 GNU sed 与 BSD/macOS sed
             # 都接受的唯一就地编辑写法。裸 `sed -i "脚本" 文件` 只在 GNU sed 下
             # 成立：BSD sed 的 -i 必须带备份后缀，会把紧跟的脚本吃成后缀、再把
             # 文件名当脚本，于是 macos/ios 作业固定报
-            # `sed: 1: "hibiki/lib/src/media/vi ...": extra characters at the
+            # `sed: 1: "fushi/lib/src/media/vi ...": extra characters at the
             # end of h command`。五处 TMDB 注入统一用同一种写法，别再从 ubuntu
             # 作业复制出裸 -i。
             sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
@@ -725,13 +725,13 @@ jobs:
           path: |
             ~/Library/Caches/CocoaPods
             ~/.cocoapods
-            hibiki/ios/Pods
-            hibiki/macos/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('hibiki/ios/Podfile.lock', 'hibiki/macos/Podfile.lock', 'hibiki/pubspec.lock') }}
+            fushi/ios/Pods
+            fushi/macos/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'fushi/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pods-
       - name: Flutter pub get
-        working-directory: hibiki
+        working-directory: fushi
         run: flutter pub get
       - name: Apply pub cache patches
         run: |
@@ -752,7 +752,7 @@ jobs:
       - name: Disable experimental Swift Package Manager (CocoaPods-managed iOS)
         run: flutter config --no-enable-swift-package-manager
       - name: Build iOS (debug, no codesign)
-        working-directory: hibiki
+        working-directory: fushi
         run: >-
           flutter build ios --debug --no-codesign
   windows:
@@ -771,14 +771,14 @@ jobs:
         env:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
-          dst=hibiki/lib/src/sync/google_oauth_secret.dart
+          dst=fushi/lib/src/sync/google_oauth_secret.dart
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
             oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
             printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
               "$oauth_secret_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+            cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
           fi
       # log_upload_secret.dart ships a committed empty placeholder (endpoint = '')
       # so a fresh clone compiles and the log-upload button stays hidden (it is
@@ -794,7 +794,7 @@ jobs:
           LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
           LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
         run: |
-          dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
+          dst=fushi/lib/src/utils/misc/log_upload_secret.dart
           if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
             log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
             log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
@@ -803,7 +803,7 @@ jobs:
               "$log_token_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+            cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
           fi
       # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
       # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
@@ -816,14 +816,14 @@ jobs:
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
         run: |
-          dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+          dst=fushi/lib/src/media/video/dandanplay_secret.dart
           if [ -n "$DANDANPLAY_APP_ID" ]; then
             printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
               "$DANDANPLAY_APP_ID" \
               "$DANDANPLAY_APP_SECRET" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+            cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
           fi
       # tmdb_default_key.dart ships a committed empty placeholder (key = '') so a
       # fresh clone compiles and TMDB scraping degrades to "not configured" (Bangumi
@@ -836,34 +836,34 @@ jobs:
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
-          dst=hibiki/lib/src/media/video/scraper/tmdb_default_key.dart
+          dst=fushi/lib/src/media/video/scraper/tmdb_default_key.dart
           if [ ! -f "$dst" ]; then
-            cp hibiki/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
+            cp fushi/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
           fi
           if [ -n "$TMDB_API_KEY" ]; then
             # -i.bak（后缀紧贴 -i，中间不留空格）是 GNU sed 与 BSD/macOS sed
             # 都接受的唯一就地编辑写法。裸 `sed -i "脚本" 文件` 只在 GNU sed 下
             # 成立：BSD sed 的 -i 必须带备份后缀，会把紧跟的脚本吃成后缀、再把
             # 文件名当脚本，于是 macos/ios 作业固定报
-            # `sed: 1: "hibiki/lib/src/media/vi ...": extra characters at the
+            # `sed: 1: "fushi/lib/src/media/vi ...": extra characters at the
             # end of h command`。五处 TMDB 注入统一用同一种写法，别再从 ubuntu
             # 作业复制出裸 -i。
             sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
             rm -f "$dst.bak"
           fi
       # TODO-1208: cache media_kit's libmpv + ANGLE .7z archives it downloads into
-      # the CMake binary dir (hibiki/build/windows/x64). media_kit skips the
+      # the CMake binary dir (fushi/build/windows/x64). media_kit skips the
       # download when the .7z exists with a matching MD5, so caching just the
       # blobs (NOT the build tree / CMakeCache) cuts the slow GitHub fetch.
       - name: Cache media_kit Windows mpv/ANGLE archives
         uses: actions/cache@v4
         with:
-          path: hibiki/build/windows/x64/*.7z
-          key: ${{ runner.os }}-mediakit7z-${{ hashFiles('hibiki/pubspec.lock') }}
+          path: fushi/build/windows/x64/*.7z
+          key: ${{ runner.os }}-mediakit7z-${{ hashFiles('fushi/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-mediakit7z-
       - name: Flutter pub get
-        working-directory: hibiki
+        working-directory: fushi
         run: flutter pub get
       - name: Apply pub cache patches
         shell: bash
@@ -930,7 +930,7 @@ jobs:
       #
       # 这个 job 上面刚好已经把 DLL 编出来了，跑一遍近乎零边际成本，且这是唯一
       # 能验证「新 DLL + 新绑定」真能对上的地方（纯文本层的漂移由
-      # hibiki/test/media/torrent/torrent_ffi_bindings_parity_guard_test.dart
+      # fushi/test/media/torrent/torrent_ffi_bindings_parity_guard_test.dart
       # 在所有平台兜底）。
       - name: Run fushi_torrent FFI tests against the freshly built DLL
         shell: pwsh
@@ -953,17 +953,17 @@ jobs:
       # flutter_inappwebview_windows C++ plugin; an MSVC/native break here was
       # previously invisible to CI (the audit: Windows never built anywhere).
       - name: Build Windows (debug)
-        working-directory: hibiki
+        working-directory: fushi
         run: >-
           flutter build windows --debug
       - name: Bundle and verify pinned Mihon desktop runtime
         shell: pwsh
         run: |
           .\tool\mihon\build_desktop_runtime.ps1 `
-            -OutputDirectory "hibiki\build\windows\x64\runner\Debug\mihon_bridge" `
+            -OutputDirectory "fushi\build\windows\x64\runner\Debug\mihon_bridge" `
             -DownloadCache "$env:RUNNER_TEMP\hibiki-mihon-downloads"
           if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
-          $runtime = "hibiki\build\windows\x64\runner\Debug\mihon_bridge"
+          $runtime = "fushi\build\windows\x64\runner\Debug\mihon_bridge"
           foreach ($required in @(
             "runtime\bin\java.exe",
             "m-extension-server.jar",
@@ -986,7 +986,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "build_distribution.ps1 -RunTests failed ($LASTEXITCODE)" }
           # BUG-1449：见 release-desktop.yml 同处注释。helper 作为普通文件直接装进
           # voice_hook\<arch>\，与本体同源；解压/校验走共用脚本，不要复制粘贴回来。
-          powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/install_into_bundle.ps1 -BundleDirectory "$PWD\hibiki\build\windows\x64\runner\Debug"
+          powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/install_into_bundle.ps1 -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Debug"
           if ($LASTEXITCODE -ne 0) { throw "install_into_bundle.ps1 failed ($LASTEXITCODE)" }
       - name: Bundle slim Magpie for offline upscaling install
         shell: pwsh
@@ -999,7 +999,7 @@ jobs:
           pwsh -NoProfile -ExecutionPolicy Bypass -File tools/build_magpie_slim.ps1
           if ($LASTEXITCODE -ne 0) { throw "build_magpie_slim.ps1 failed ($LASTEXITCODE)" }
           $sourceDir = Join-Path $PWD 'dist'
-          $targetDir = Join-Path $PWD 'hibiki\build\windows\x64\runner\Debug\magpie_bundle'
+          $targetDir = Join-Path $PWD 'fushi\build\windows\x64\runner\Debug\magpie_bundle'
           New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
           foreach ($file in @(
             'Magpie-hibiki-slim-x64.zip',
