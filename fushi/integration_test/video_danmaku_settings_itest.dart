@@ -4,7 +4,7 @@
 // ③ 样式滑块 commit 落盘（appModel.videoDanmakuStyle 真变化）。
 // ④ 手动搜索 / 选集侧栏可开（手动匹配入口可达，DanmakuManualMatchPanel 渲染）。
 //
-// 运行：hibiki/ 下 `.\tool\run_windows_itest.ps1 integration_test\video_danmaku_settings_itest.dart`
+// 运行：fushi/ 下 `.\tool\run_windows_itest.ps1 integration_test\video_danmaku_settings_itest.dart`
 // （FUSHI_TEST_HIDDEN 离屏）。需真机 media_kit native + 测试视频
 // D:\hibiki_video_test\sample.mp4（本机已置）。
 //

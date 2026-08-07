@@ -38,7 +38,7 @@ Directory _repoRoot() {
 
 /// 扫描范围：本仓自有生产代码根（不含 third_party / vendored）。
 const List<String> _libRoots = <String>[
-  'hibiki/lib',
+  'fushi/lib',
   'packages/fushi_core/lib',
   'packages/fushi_dictionary/lib',
   'packages/fushi_anki/lib',

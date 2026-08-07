@@ -20,7 +20,7 @@ const String _key = 'stat_format_chars_wan';
 /// 各语言允许的「万」倍率标记：简体/日文/英文等用 万，繁体用 萬，韩文用 만。
 const List<String> _myriadMarkers = <String>['万', '萬', '만'];
 
-/// 17 个 slang 源文件（相对 `hibiki/` 工作目录）。
+/// 17 个 slang 源文件（相对 `fushi/` 工作目录）。
 const List<String> _localeFiles = <String>[
   'strings.i18n.json', // en（默认）
   'strings_ar.i18n.json',

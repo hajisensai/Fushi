@@ -189,7 +189,7 @@ void main() {
     // 只要生产代码里还允许裸调 DAO 的删除方法，下一个新入口就会重演泄漏。
     test('生产代码不得裸调 DAO 删合集方法 —— 一律走带回收的入口', () {
       final Directory lib = Directory('lib');
-      expect(lib.existsSync(), isTrue, reason: '必须在 hibiki/ 包根下跑');
+      expect(lib.existsSync(), isTrue, reason: '必须在 fushi/ 包根下跑');
       // 唯一豁免：回收入口自己，它就是那层包装。
       const String allowed =
           'lib/src/media/collections/collection_asset_reclaim.dart';

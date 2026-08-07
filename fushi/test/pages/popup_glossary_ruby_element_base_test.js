@@ -13,7 +13,7 @@
 // <rt> lands INSIDE a .ruby-unit rather than staying a direct child of <ruby>
 // (= the overlap signature). Reverting the fix turns the element-base cases red.
 //
-// Run: node hibiki/test/pages/popup_glossary_ruby_element_base_test.js
+// Run: node fushi/test/pages/popup_glossary_ruby_element_base_test.js
 // (also driven from popup_glossary_ruby_element_base_test.dart inside `flutter test`).
 
 const assert = require('assert');

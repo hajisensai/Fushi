@@ -19,7 +19,7 @@
 // entry tree, run renderPopup / updatePopupIncremental, and count `.entry` cards.
 // Reverting the fix turns these red.
 //
-// Run: node hibiki/test/pages/popup_empty_entry_card_test.js
+// Run: node fushi/test/pages/popup_empty_entry_card_test.js
 // (also driven from popup_empty_entry_card_test.dart inside `flutter test`).
 
 const assert = require('assert');

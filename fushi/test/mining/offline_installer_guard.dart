@@ -3,7 +3,7 @@
 //
 // 🔴 为什么不能只用字面量黑名单（这一版存在的全部理由）：
 // 旧守卫扫的是 `HttpClient` / `ResumableDownload` / `https://` 这几个**字面串**。可 app
-// 直接依赖 `http` 与 `dio`（`hibiki/pubspec.yaml`），所以「把下载加回来」最自然的写法是
+// 直接依赖 `http` 与 `dio`（`fushi/pubspec.yaml`），所以「把下载加回来」最自然的写法是
 //
 //     import 'package:http/http.dart' as http;
 //     final Uri url = Uri.parse('htt' 'ps://example.com/pkg.zip');

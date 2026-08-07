@@ -145,6 +145,6 @@ class _FailingWriteDatabase extends FushiDatabase {
   }
 }
 
-/// 测试进程的工作目录是 `hibiki/`，故这里用仓内相对路径。
+/// 测试进程的工作目录是 `fushi/`，故这里用仓内相对路径。
 String _readSource(String relativePath) =>
     File(relativePath).readAsStringSync();

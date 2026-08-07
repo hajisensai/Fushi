@@ -29,7 +29,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 /// horizontal-tb turn axis = left/scrollLeft; vertical-rl turn axis =
 /// top/scrollTop. Columns tested at N=1,2,3.
 ///
-/// Run (from hibiki/, offscreen):
+/// Run (from fushi/, offscreen):
 ///   .\tool\run_windows_itest.ps1 integration_test\desktop_reader_columns_dom_test.dart
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

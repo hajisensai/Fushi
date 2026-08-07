@@ -40,7 +40,7 @@ class GalAudioSlice {
 /// A 阶段实现：WASAPI loopback 抓系统混音（含 BGM/SE/语音，混音后）。环形缓冲在 native
 /// 侧（内存有界、不持续 IPC），Dart 只在热键那一刻按 [backMs] 拉最近一段。
 ///
-/// native 侧（`hibiki/windows/runner/audio_loopback_capture.cpp`）注册 `audio_loopback`
+/// native 侧（`fushi/windows/runner/audio_loopback_capture.cpp`）注册 `audio_loopback`
 /// MethodChannel，方法：
 ///   - `start` -> `Map`：`{sampleRate, channels, bitsPerSample, isFloat}` 或 `{error}`。
 ///   - `stop` -> void。

@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 /// Magpie 缩放状态监听（仅 Windows）的极薄 channel 封装。
 ///
-/// native 侧（`hibiki/windows/runner/flutter_window.cpp` 的 `RegisterMagpieChannel`）
+/// native 侧（`fushi/windows/runner/flutter_window.cpp` 的 `RegisterMagpieChannel`）
 /// 用 `RegisterWindowMessage(L"MagpieScalingChanged")` 注册 Magpie 的系统广播消息，
 /// 收到后经 `app.fushi.reader/magpie` channel 单向推 `onScalingChanged` 给 Dart。
 /// 只有 native -> Dart 一个方向，Dart 侧不发起任何调用。

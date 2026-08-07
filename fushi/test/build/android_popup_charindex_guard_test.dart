@@ -21,7 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// test/pages/popup_floating_lyric_charindex_test.dart.
 void main() {
   const String androidRoot =
-      '../hibiki/android/app/src/main/java/app/fushi/reader';
+      '../fushi/android/app/src/main/java/app/fushi/reader';
 
   String read(String relative) =>
       File('$androidRoot/$relative').readAsStringSync();

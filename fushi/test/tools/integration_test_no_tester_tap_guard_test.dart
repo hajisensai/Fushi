@@ -95,7 +95,7 @@ void main() {
   test('integration_test uses focus driving, never tester.tap/longPress', () {
     final Directory dir = Directory('integration_test');
     expect(dir.existsSync(), isTrue,
-        reason: 'run from the hibiki/ package root (cwd=hibiki/)');
+        reason: 'run from the fushi/ package root (cwd=fushi/)');
 
     final List<String> hardOffenders = <String>[];
     final Map<String, int> perFileCounts = <String, int>{};

@@ -2,7 +2,7 @@
  *  content.css — GENERATED, DO NOT EDIT BY HAND.
  *
  *  Produced by tools/browser-extension/scripts/generate-content-css.mjs from
- *  hibiki/assets/popup/popup.css (shared dictionary-popup styling, document-
+ *  fushi/assets/popup/popup.css (shared dictionary-popup styling, document-
  *  level rules re-rooted at #entries-container so nothing leaks to the host
  *  page — TODO-1090) plus content-css-overlay.css (extension-only rules).
  *
@@ -1390,7 +1390,7 @@
    span/div[class*="gloss-sc-"]{float:none!important;position:static!important;display:inline}
    是 BUG-520 的根因——display:inline 把所有词典靠 div block 布局做的分行
    压成一行、行高为 0 的图标容器互相重叠，禁止再引入（守卫见
-   hibiki/test/pages/popup_glossary_link_scope_test.js 第 (3) 节）。
+   fushi/test/pages/popup_glossary_link_scope_test.js 第 (3) 节）。
    上面的 a.gloss-sc-a 规则保留：它还兜住词典自带 styles.css 对 <a> 的
    float/position（BUG-435 的次要成因），且 <a> 本就是行内元素零副作用。 */
 

@@ -33,10 +33,10 @@ class _FloodLookupService implements FushiRemoteLookupService {
       null;
 }
 
-/// 读取被测源文件（从 hibiki/ 包根运行）。
+/// 读取被测源文件（从 fushi/ 包根运行）。
 String _readServerSource() {
   final File f = File('lib/src/sync/fushi_sync_server.dart');
-  expect(f.existsSync(), isTrue, reason: 'run from the hibiki/ package root');
+  expect(f.existsSync(), isTrue, reason: 'run from the fushi/ package root');
   return f.readAsStringSync();
 }
 

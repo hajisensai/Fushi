@@ -38,7 +38,7 @@ import 'test_helpers.dart';
 /// than focus-ACTIVATING the control. Closing Step 2b needs a keyboard
 /// activation path (and may surface a real desktop keyboard-a11y gap).
 ///
-/// Run (PowerShell, from hibiki/):
+/// Run (PowerShell, from fushi/):
 ///   $env:FUSHI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/desktop_settings_smoke_test.dart -d windows
 void main() {

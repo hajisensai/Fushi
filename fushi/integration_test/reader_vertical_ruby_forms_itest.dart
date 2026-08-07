@@ -35,7 +35,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 ///   * an <rt> intrudes the base column x-range (>0.6) / sits on the wrong
 ///     side (left of the base centers in vertical-rl).
 ///
-/// Run (from hibiki/):
+/// Run (from fushi/):
 ///   tool\run_windows_itest.ps1 integration_test\reader_vertical_ruby_forms_itest.dart
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

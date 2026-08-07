@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// BUG-914：移除有声书按句同步/高亮热路径的发布版诊断噪声后，锁住这两处
-/// 打点不再回归。测试从 `hibiki/` 工作目录运行：
+/// 打点不再回归。测试从 `fushi/` 工作目录运行：
 /// - 桥接文件在本包内（`lib/src/media/audiobook/audiobook_bridge.dart`），
 ///   曾在播放期逐 cue 打 `[sasayaki-hl]`（highlight raw / applySasayakiCues
 ///   EMPTY payload）。

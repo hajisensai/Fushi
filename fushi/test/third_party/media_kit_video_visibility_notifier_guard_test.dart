@@ -19,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// host mirror starts drifting again and the direction-reversal bug returns.
 /// See `third_party/media_kit_video/PATCHES.md`.
 void main() {
-  // Tests run with CWD = `hibiki/`; vendored packages live at the workspace root.
+  // Tests run with CWD = `fushi/`; vendored packages live at the workspace root.
   const String base =
       '../third_party/media_kit_video/lib/media_kit_video_controls/'
       'src/controls/';

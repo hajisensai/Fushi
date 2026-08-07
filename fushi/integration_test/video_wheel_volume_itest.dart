@@ -14,7 +14,7 @@
 // GestureBinding.handlePointerEvent 注入 PointerScrollEvent 是合法的被测输入，
 // 不是「用坐标点击做焦点确认」。开视频/切 tab 仍走焦点驱动（禁 tester.tap）。
 //
-// 运行：hibiki/ 下 `.\tool\run_windows_itest.ps1 integration_test\video_wheel_volume_itest.dart -Visible`
+// 运行：fushi/ 下 `.\tool\run_windows_itest.ps1 integration_test\video_wheel_volume_itest.dart -Visible`
 // （视频 media_kit 需 DWM 窗，必须 -Visible）。
 import 'dart:async';
 import 'dart:ui' as ui;

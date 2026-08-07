@@ -11,7 +11,7 @@ import 'package:image/image.dart' as img;
 /// 文件级 + 图像解码扫描兜底。
 void main() {
   String read(String relative) {
-    // 测试在 hibiki/ 下运行；相对路径即相对该目录。
+    // 测试在 fushi/ 下运行；相对路径即相对该目录。
     final File f = File(relative);
     expect(f.existsSync(), isTrue, reason: '缺失文件: $relative');
     return f.readAsStringSync();

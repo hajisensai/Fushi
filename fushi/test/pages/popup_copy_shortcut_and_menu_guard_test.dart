@@ -23,7 +23,7 @@ void main() {
 
   setUpAll(() {
     expect(webviewFile.existsSync(), isTrue,
-        reason: '弹窗 WebView 源文件必须存在（测试须在 hibiki/ 下运行）');
+        reason: '弹窗 WebView 源文件必须存在（测试须在 fushi/ 下运行）');
     code = maskComments(webviewFile.readAsStringSync());
   });
 

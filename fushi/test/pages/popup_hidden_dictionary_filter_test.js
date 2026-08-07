@@ -16,7 +16,7 @@
 // term glossaries (and that an entry whose only glossary is hidden yields no
 // glossary section at all). Reverting the fix turns this red.
 //
-// Run: node hibiki/test/pages/popup_hidden_dictionary_filter_test.js
+// Run: node fushi/test/pages/popup_hidden_dictionary_filter_test.js
 // (also driven from popup_hidden_dictionary_filter_test.dart so it executes
 //  inside `flutter test`).
 

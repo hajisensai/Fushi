@@ -72,7 +72,7 @@ void main() {
       return f.readAsStringSync();
     }
 
-    // 被 E0 收敛的 app 层核心数据存储模块（hibiki/ 下，相对 hibiki/ 运行）。
+    // 被 E0 收敛的 app 层核心数据存储模块（fushi/ 下，相对 fushi/ 运行）。
     const List<String> convergedModules = <String>[
       'lib/src/models/app_model.dart',
       'lib/src/epub/epub_storage.dart',

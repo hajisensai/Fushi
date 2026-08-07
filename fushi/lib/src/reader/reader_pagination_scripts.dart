@@ -481,7 +481,7 @@ class ReaderPaginationScripts {
   // 的值转换同口径。改用 hibiki_core 共享码点原语（`jp_codepoint_fold.dart`）后
   // 与 AudioTextNormalizer 同源；在白名单域（`_jsIsMatchableCodePoint` 为 true
   // 的码点）与 JS 分段平移逐码点等价。运行期 JS 副本（`hwKataToFw` 查表）由
-  // `hibiki/test/utils/jp_codepoint_fold_test.dart` 的 parity 测试逐项锁定。
+  // `fushi/test/utils/jp_codepoint_fold_test.dart` 的 parity 测试逐项锁定。
   static int _jsFoldCodePoint(int cp) {
     int out = fullwidthAsciiToHalfwidth(cp);
     if (out >= 0x41 && out <= 0x5A) {

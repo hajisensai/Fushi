@@ -21,7 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 String _read(String relative) {
   final File f = File(relative);
   expect(f.existsSync(), isTrue,
-      reason: 'run tests from hibiki/ package root: $relative');
+      reason: 'run tests from fushi/ package root: $relative');
   return f.readAsStringSync().replaceAll('\r\n', '\n');
 }
 

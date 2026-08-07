@@ -18,7 +18,7 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 ///   2. 普通正文大图仍是 lazy（不回退 TODO-1074 懒加载）。
 ///   3. gaiji 内联小图仍是 eager（既有行为不变）。
 ///
-/// Run (PowerShell, from hibiki/)：
+/// Run (PowerShell, from fushi/)：
 ///   $env:FUSHI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/merged_image_eager_load_test.dart -d windows
 void main() {

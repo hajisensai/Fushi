@@ -11,7 +11,7 @@
 // or dropping the column multiplier back to a column-blind block count) turns
 // this red.
 //
-// Run: node hibiki/test/pages/popup_auto_expand_dictionaries_test.js
+// Run: node fushi/test/pages/popup_auto_expand_dictionaries_test.js
 // (also driven from popup_auto_expand_dictionaries_test.dart so it executes
 //  inside `flutter test`).
 

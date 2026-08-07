@@ -21,7 +21,7 @@ import '../helpers/scan_scale.dart';
 void main() {
   test('lib/ 下不得实际使用 SDK ReorderableListView / ReorderableGridView', () {
     final Directory libDir = Directory('lib');
-    expect(libDir.existsSync(), isTrue, reason: '测试须从 hibiki/ 下运行');
+    expect(libDir.existsSync(), isTrue, reason: '测试须从 fushi/ 下运行');
 
     // 只查真实构造调用，不查注释里提到的名字（多处注释正当地解释「为什么不用
     // 它」，那些恰恰是应当保留的设计记录）。

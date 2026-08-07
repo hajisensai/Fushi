@@ -67,10 +67,10 @@ void main() {
           reason: 'macos/ 目录应随 fork 删除');
     });
 
-    test('hibiki/pubspec.yaml 把 flutter_onnxruntime override 到 vendored fork',
+    test('fushi/pubspec.yaml 把 flutter_onnxruntime override 到 vendored fork',
         () {
       final pubspec =
-          File('${root.path}/hibiki/pubspec.yaml').readAsStringSync();
+          File('${root.path}/fushi/pubspec.yaml').readAsStringSync();
       final override = RegExp(
           r'flutter_onnxruntime:\s*\n\s+path:\s*\.\./third_party/flutter_onnxruntime');
       expect(override.hasMatch(pubspec), isTrue,

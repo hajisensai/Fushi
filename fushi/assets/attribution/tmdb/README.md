@@ -66,4 +66,4 @@ msedge --headless=new --disable-gpu --hide-scrollbars \
 - 展示尺寸不得比应用自身 logo 更显眼（当前 24dp 高，与设置行图标徽标同量级）。
 - logo 与 i18n key `about_tmdb_attribution` 是一对：**删 key 前不要先删署名，反之亦然**；
   要走一起走（移除 TMDB 刮削含内置 key 时）。
-- 守卫：`hibiki/test/settings/tmdb_attribution_test.dart`。
+- 守卫：`fushi/test/settings/tmdb_attribution_test.dart`。

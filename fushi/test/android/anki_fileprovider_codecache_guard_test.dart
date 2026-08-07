@@ -20,7 +20,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 /// `provider_paths.xml` 不再声明能覆盖 code_cache 的根，或写入目录脱离 code_cache 假设，
 /// AnkiDroid 外字制卡会再次静默断裂，本测试转红。
 void main() {
-  // Tests run with CWD = `hibiki/`.
+  // Tests run with CWD = `fushi/`.
   final File providerPaths = File(
     'android/app/src/main/res/xml/provider_paths.xml',
   );

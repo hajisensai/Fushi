@@ -79,7 +79,7 @@ void main() {
         'lib/src/media/audiobook/audiobook_clip_text_render.dart',
       );
       expect(src.existsSync(), isTrue,
-          reason: 'run tests from hibiki/ package root');
+          reason: 'run tests from fushi/ package root');
       final String code = src.readAsStringSync();
       // 必须捕获异常带 stack 并记日志，禁止裸 catch (_) { return null; }。
       expect(code.contains('catch (e, st)'), isTrue,

@@ -15,7 +15,7 @@
 //   3. IPA-only dict (pitchPositions: [], transcriptions: [...]) — the group is
 //      kept under deduplicatePitchAccents and the transcriptions still render.
 //
-// Run: node hibiki/test/pages/popup_pitch_transcriptions_test.js
+// Run: node fushi/test/pages/popup_pitch_transcriptions_test.js
 // (also driven from popup_pitch_transcriptions_test.dart so it executes inside
 //  `flutter test`).
 

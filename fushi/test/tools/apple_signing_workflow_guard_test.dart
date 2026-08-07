@@ -10,7 +10,7 @@
 //   4. 无人值守 runner 上少了 set-key-partition-list，codesign 会等一个永远不来的
 //      钥匙串 UI 授权，表现为 job 挂死到超时。
 //
-// 纯 dart:io，不依赖 Flutter 运行时；从 hibiki/ 向上找仓库根。
+// 纯 dart:io，不依赖 Flutter 运行时；从 fushi/ 向上找仓库根。
 
 import 'dart:io';
 
@@ -78,12 +78,12 @@ void main() {
     // 上传到 Release 的 artifact 必须来自未签名产物目录，而不是 flutter build ipa
     // 的输出（build/ios/ipa）。
     expect(
-      content.contains('path: hibiki/build/release-artifacts/fushi-*-ios.ipa'),
+      content.contains('path: fushi/build/release-artifacts/fushi-*-ios.ipa'),
       isTrue,
       reason: 'Release 资产必须来自 release-artifacts/（未签名打包路径）',
     );
     expect(
-      content.contains('path: hibiki/build/ios/ipa'),
+      content.contains('path: fushi/build/ios/ipa'),
       isFalse,
       reason: 'App Store 签名 IPA 不得作为 Release 资产上传',
     );
@@ -152,7 +152,7 @@ void main() {
 
   test('ITSAppUsesNonExemptEncryption 已声明，TestFlight 不卡出口合规', () {
     final plist =
-        File('${root.path}/hibiki/ios/Runner/Info.plist').readAsStringSync();
+        File('${root.path}/fushi/ios/Runner/Info.plist').readAsStringSync();
     expect(
       plist.contains('ITSAppUsesNonExemptEncryption'),
       isTrue,

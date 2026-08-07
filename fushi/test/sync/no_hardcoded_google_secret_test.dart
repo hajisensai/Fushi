@@ -19,7 +19,7 @@ void main() {
       () {
     final Directory dir = Directory('lib');
     expect(dir.existsSync(), isTrue,
-        reason: 'run from the hibiki/ package root');
+        reason: 'run from the fushi/ package root');
 
     // The gitignored file legitimately holds the real secret and is never
     // committed, so it is excluded from the committed-surface scan.

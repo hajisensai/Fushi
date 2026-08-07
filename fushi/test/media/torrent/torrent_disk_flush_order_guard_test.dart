@@ -20,7 +20,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  // 测试的工作目录是 `hibiki/`，packages 在它的上一级。
+  // 测试的工作目录是 `fushi/`，packages 在它的上一级。
   final File pipelineTest =
       File('../packages/fushi_torrent/test/embedded_pipeline_test.dart');
 

@@ -25,7 +25,7 @@ import 'test_helpers.dart';
 /// 场景取用户口径：竖排 vertical-rl + 连续滚动。跨章与同章两条分支都断言，且落点
 /// 在 settle 之后复测一次（防重锚把落点冲回章首——BUG-696 根因③的症状面）。
 ///
-/// Run (from hibiki/):
+/// Run (from fushi/):
 ///   tool\run_windows_itest.ps1 integration_test\reader_favorite_jump_itest.dart
 bool _webViewShown() =>
     find.byKey(const ValueKey<String>('fushi_webview')).evaluate().isNotEmpty;

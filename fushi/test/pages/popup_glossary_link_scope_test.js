@@ -35,7 +35,7 @@
 //  (5) image link internals keep their own position:relative (separate code
 //      path, applyImageStyles, TODO-859/350).
 //
-// Run: node hibiki/test/pages/popup_glossary_link_scope_test.js
+// Run: node fushi/test/pages/popup_glossary_link_scope_test.js
 
 const assert = require("assert");
 const fs = require("fs");

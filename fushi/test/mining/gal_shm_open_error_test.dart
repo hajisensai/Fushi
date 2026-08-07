@@ -292,7 +292,7 @@ void main() {
   group('native ↔ Dart token 契约守卫 (BUG-1216)', () {
     File resolve(String relative) {
       final File direct = File(relative);
-      return direct.existsSync() ? direct : File('hibiki/$relative');
+      return direct.existsSync() ? direct : File('fushi/$relative');
     }
 
     test('native 为每条 open 出口发机器可读 token，Dart 侧逐个认得', () {

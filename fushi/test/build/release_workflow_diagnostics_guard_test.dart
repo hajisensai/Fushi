@@ -157,7 +157,7 @@ void main() {
       'Run Android comprehensive automation contract',
     );
 
-    expect(removeAliyunMirrors, contains('working-directory: hibiki/android'));
+    expect(removeAliyunMirrors, contains('working-directory: fushi/android'));
     expect(removeAliyunMirrors,
         contains('sed -i "/maven.*aliyun/d" build.gradle'));
     expect(
@@ -345,7 +345,7 @@ void main() {
 
     expect(
       smoke,
-      contains(r'hibiki\build\windows\x64\runner\Release\ffmpeg.exe'),
+      contains(r'fushi\build\windows\x64\runner\Release\ffmpeg.exe'),
       reason: 'release must test the exact ffmpeg.exe copied beside hibiki.exe',
     );
     // BUG-1420: ffprobe is a second, independent executable with its own
@@ -355,7 +355,7 @@ void main() {
     // no runtime error ever surfaces. Demand the same -version gate on it.
     expect(
       smoke,
-      contains(r'hibiki\build\windows\x64\runner\Release\ffprobe.exe'),
+      contains(r'fushi\build\windows\x64\runner\Release\ffprobe.exe'),
       reason:
           'release must test the exact ffprobe.exe copied beside hibiki.exe '
           '(BUG-1420: it was never built nor bundled, and both of its consumers '

@@ -11,10 +11,10 @@ import 'package:http/http.dart' as http;
 
 import '../helpers/source_guard.dart';
 
-/// 读一份仓库内源码（守卫用）。测试从 `hibiki/` 包根跑，故一律相对包根寻址。
+/// 读一份仓库内源码（守卫用）。测试从 `fushi/` 包根跑，故一律相对包根寻址。
 String _read(String path) {
   final File f = File(path);
-  expect(f.existsSync(), isTrue, reason: '$path 不存在（请从 hibiki/ 包根跑测试）');
+  expect(f.existsSync(), isTrue, reason: '$path 不存在（请从 fushi/ 包根跑测试）');
   return f.readAsStringSync();
 }
 
@@ -118,7 +118,7 @@ void main() {
   group('源码守卫：同步层不得再留下绕过代理的直连暗路（BUG-1348）', () {
     String read(String path) {
       final File f = File(path);
-      expect(f.existsSync(), isTrue, reason: '$path 不存在（请从 hibiki/ 包根跑测试）');
+      expect(f.existsSync(), isTrue, reason: '$path 不存在（请从 fushi/ 包根跑测试）');
       return f.readAsStringSync();
     }
 

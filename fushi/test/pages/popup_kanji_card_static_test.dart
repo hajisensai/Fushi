@@ -17,7 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 // native libs are rebuilt with the S3 kanji exports across all 5 platforms, so
 // the card will not appear on a real lookup until that rebuild + device verify.
 // This static guard + the node behavior tests
-// (hibiki/test/utils/misc/popup_asset_behavior_test.js) cover the render
+// (fushi/test/utils/misc/popup_asset_behavior_test.js) cover the render
 // pipeline that is ready now; they do NOT assert the FFI returns kanji.
 void main() {
   group('kanji card data is wired through the popup injection path', () {

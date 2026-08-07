@@ -24,7 +24,7 @@
 // versions emitted a bare `left`, so an assertion that ignored the source went
 // green either way -- that was the masked regression.
 //
-// Run: node hibiki/test/reader/reader_paged_touch_swipe_behavior_test.js
+// Run: node fushi/test/reader/reader_paged_touch_swipe_behavior_test.js
 // (also driven from reader_paged_touch_swipe_behavior_test.dart so it executes
 //  inside `flutter test`).
 

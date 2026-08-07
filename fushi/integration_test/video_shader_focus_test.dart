@@ -6,7 +6,7 @@
 // ② Anime4K 一键下载——直接调 downloadAnime4kFiles（app 运行时网络环境，走镜像回退）
 //    把 Mode A (Fast) 预设拉到 mpv_shaders/，断言文件真实落盘且内容是 GLSL。
 //
-// 运行：在 hibiki/ 下 `.\tool\run_windows_itest.ps1 integration_test\video_shader_focus_test.dart`
+// 运行：在 fushi/ 下 `.\tool\run_windows_itest.ps1 integration_test\video_shader_focus_test.dart`
 // （FUSHI_TEST_HIDDEN 离屏）。需要真机 media_kit native + 测试视频
 // D:\hibiki_video_test\sample.mp4（本机已置）。无设备/无网络环境会 skip 相应断言。
 import 'dart:async';

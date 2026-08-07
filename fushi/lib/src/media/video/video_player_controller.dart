@@ -1097,7 +1097,7 @@ class VideoPlayerController extends ChangeNotifier
     // 一次性设的 `audio-pitch-correction=yes`（VideoMpvConfig，[applyMpvConfigToPlayer]），
     // 与每次调速无关。**切勿**为「保音高」给这里的 `Player()` 传开启该配置的
     // `PlayerConfiguration`——那会让视频每次调速重写 af 滤镜图、在 Windows 上回归
-    // TODO-070 的调速闪退。守卫：`hibiki/test/media/video/video_speed_pitch_guard_test.dart`。
+    // TODO-070 的调速闪退。守卫：`fushi/test/media/video/video_speed_pitch_guard_test.dart`。
     final Player player = _player ?? Player();
     if (_player == null) {
       _player = player;

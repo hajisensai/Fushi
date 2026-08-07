@@ -1,5 +1,5 @@
 // TODO-1387 behavior harness: executes the REAL document wheel handler inside
-// hibiki/assets/popup/popup.js against synthetic touchpad / mouse wheel events and
+// fushi/assets/popup/popup.js against synthetic touchpad / mouse wheel events and
 // asserts the popup actually SCROLLS (real displacement), not merely that the
 // tuning constants exist. Run by popup_wheel_scroll_behavior_test.dart via node;
 // prints the success marker on the last line. Node-only; the Dart wrapper skips

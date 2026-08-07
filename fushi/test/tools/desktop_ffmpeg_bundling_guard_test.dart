@@ -5,7 +5,7 @@
 //   - 配方   tool/ffmpeg-min/build-ffmpeg-min.sh 决定编出哪些 exe、含哪些组件；
 //   - 产物   third_party/ffmpeg-min/<平台>/ 是手工 vendor 回来的二进制；
 //   - 装配   .github/workflows/release-desktop.yml 把产物拷进各平台 bundle；
-//   - 消费   hibiki/lib/src/media/video/ffmpeg_backend.dart 的 resolve*Executable()
+//   - 消费   fushi/lib/src/media/video/ffmpeg_backend.dart 的 resolve*Executable()
 //            按「覆盖 > 程序旁捆绑 > PATH」找它们。
 // 四者之间没有任何自动关联，于是：
 //   - BUG-1058：改了配方忘了重新 vendor（已由 ffmpeg_min_vendored_recipe_guard 堵住）；

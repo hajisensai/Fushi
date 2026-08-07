@@ -31,7 +31,7 @@ void main() {
   const String path =
       'lib/src/pages/implementations/reader_fushi/chrome.part.dart';
 
-  /// 读整份 chrome.part.dart 源码（相对 `hibiki/` 工作目录，与仓库其它
+  /// 读整份 chrome.part.dart 源码（相对 `fushi/` 工作目录，与仓库其它
   /// `*_guard_test` 一致）。
   String readSource() {
     return File(path).readAsStringSync();

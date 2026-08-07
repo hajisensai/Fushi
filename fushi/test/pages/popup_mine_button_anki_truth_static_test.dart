@@ -27,7 +27,7 @@ import 'package:flutter_test/flutter_test.dart';
 // re-render could clear. We regression-lock the fix here.
 //
 // Behavior coverage lives in
-// hibiki/test/utils/misc/popup_asset_behavior_test.js
+// fushi/test/utils/misc/popup_asset_behavior_test.js
 // (lookup-time detection / re-lookup re-mine / edge-case re-verify-on-click).
 void main() {
   late String source;

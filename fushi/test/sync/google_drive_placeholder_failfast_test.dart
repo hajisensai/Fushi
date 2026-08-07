@@ -74,7 +74,7 @@ void main() {
         'runDesktopOAuthLoopback', () {
       final File src = File('lib/src/sync/google_drive_auth.dart');
       expect(src.existsSync(), isTrue,
-          reason: 'run from the hibiki/ package root');
+          reason: 'run from the fushi/ package root');
       final String body = src.readAsStringSync();
 
       final int guardIdx = body.indexOf('!desktopCredentialsConfigured');

@@ -32,7 +32,7 @@ import 'test_helpers.dart';
 ///   - `[perf-engine]`：engine-only `searchDictionary` 批量计时（首查/复查两遍），
 ///     与 `[dict-perf]` 分项日志对照可拆出 native/convert/build/popupJson 占比。
 ///
-/// Run (PowerShell, from hibiki/)：
+/// Run (PowerShell, from fushi/)：
 ///   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 `
 ///     -RunId perf-real-01 integration_test/lookup_latency_perf_itest.dart
 void main() {

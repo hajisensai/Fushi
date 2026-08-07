@@ -35,7 +35,7 @@
 //      reveal until app restart) - exactly the user's repeated "still no
 //      reaction" reports.
 //
-// Run (PowerShell, from hibiki/):
+// Run (PowerShell, from fushi/):
 //   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 \
 //       integration_test/floating_lyric_tap_lookup_itest.dart
 

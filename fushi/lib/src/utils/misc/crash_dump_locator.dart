@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 
 /// TODO-607 P0-3：定位 native runner 写出的 Windows minidump（崩溃转储）。
 ///
-/// native 侧（`hibiki/windows/runner/crash_dump.cpp` 的 `WriteDumpFilter`）在进程
+/// native 侧（`fushi/windows/runner/crash_dump.cpp` 的 `WriteDumpFilter`）在进程
 /// 未捕获异常时，经 `SetUnhandledExceptionFilter` 把 minidump 写进应用自有目录
 /// `%LOCALAPPDATA%\Hibiki\crashdumps\`，文件名 `hibiki-<pid>-<tickcount>.dmp`
 /// （两边硬钉同一确定路径，与 `wgc_capture.log` 同根，无 bundle id 推测）。

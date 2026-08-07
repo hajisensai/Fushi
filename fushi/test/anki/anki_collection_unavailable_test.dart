@@ -112,7 +112,7 @@ void main() {
     test('classifies collection-unavailable with ANKI_COLLECTION_UNAVAILABLE',
         () {
       final File f = File(
-        '../hibiki/android/app/src/main/java/app/fushi/reader/'
+        '../fushi/android/app/src/main/java/app/fushi/reader/'
         'AnkiChannelHandler.java',
       );
       // Run from either repo root or the hibiki package directory.

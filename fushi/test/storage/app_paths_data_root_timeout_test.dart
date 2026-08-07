@@ -121,7 +121,7 @@ void main() {
   test('源码守卫：数据根存在性探测不得再用阻塞式 existsSync()，必须走带超时的异步 exists()', () {
     final File? f = <String>[
       'lib/src/storage/app_paths.dart',
-      'hibiki/lib/src/storage/app_paths.dart',
+      'fushi/lib/src/storage/app_paths.dart',
     ].map(File.new).cast<File?>().firstWhere(
         (File? f) => f != null && f.existsSync(),
         orElse: () => null);

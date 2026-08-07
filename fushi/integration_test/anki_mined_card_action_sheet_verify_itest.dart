@@ -34,7 +34,7 @@ import 'test_helpers.dart';
 /// 这是 ✓ 点击最终落地的宿主行为级证据（不是源码 grep）。端到端「popup.js ✓ 经真桥
 /// 弹单」需真 Anki 后端有同词卡，属可见窗 + 装 Anki 的目视，标 PARTIAL。
 ///
-/// Run (PowerShell, from hibiki/)：
+/// Run (PowerShell, from fushi/)：
 ///   flutter test integration_test/anki_mined_card_action_sheet_verify_itest.dart -d windows
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

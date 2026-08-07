@@ -31,11 +31,11 @@ void main() {
     );
     expect(
       mainWorkflow,
-      contains('dart ../../hibiki/tool/flutter_test_failures.dart'),
+      contains('dart ../../fushi/tool/flutter_test_failures.dart'),
     );
     expect(
       releaseWorkflow,
-      contains('dart ../../hibiki/tool/flutter_test_failures.dart'),
+      contains('dart ../../fushi/tool/flutter_test_failures.dart'),
     );
   });
 

@@ -24,7 +24,7 @@ import 'test_helpers.dart';
 /// `body { font-size: <fontSize>px !important; }`, reader_content_styles.dart).
 /// On Windows this exercises the forked flutter_inappwebview_windows engine.
 ///
-/// Run (PowerShell, from hibiki/):
+/// Run (PowerShell, from fushi/):
 ///   $env:FUSHI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/desktop_reader_css_dom_test.dart -d windows
 void main() {

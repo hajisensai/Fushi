@@ -19,7 +19,7 @@ void main() {
   const List<String> popupMirrors = <String>[
     'assets/popup/popup.js',
     'assets/browser_extension/vendor/popup.js',
-    // 第三份镜像在仓库根 tools/ 下（本测试 cwd 是 hibiki/）。
+    // 第三份镜像在仓库根 tools/ 下（本测试 cwd 是 fushi/）。
     '../tools/browser-extension/vendor/popup.js',
   ];
 

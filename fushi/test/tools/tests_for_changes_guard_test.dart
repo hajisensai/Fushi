@@ -5,9 +5,9 @@
 // `docs/agent/fast-workflow.md` 里原来挂着一份手写的「按触发条件加跑」清单，
 // 一共点名 9 个测试。那份表的分类维度是「资产种类」（workflow / 扩展 / 二进制 /
 // native），而真实触发面的维度是「哪棵源码树」。两者不对齐的后果是：
-// `hibiki/android/` 30+ 条守卫**一条触发规则都没有**、`packages/*/windows` 同样
-// 零覆盖、`hibiki/windows/` 60+ 条守卫只被点了 1 个名。改一行
-// `hibiki/windows/runner/flutter_window.cpp` 会牵动几十条守卫，清单一条都没提。
+// `fushi/android/` 30+ 条守卫**一条触发规则都没有**、`packages/*/windows` 同样
+// 零覆盖、`fushi/windows/` 60+ 条守卫只被点了 1 个名。改一行
+// `fushi/windows/runner/flutter_window.cpp` 会牵动几十条守卫，清单一条都没提。
 // 这是「合入的 PR 把红带进 develop」已发生 3 次的共同根因之一（TODO-2720）。
 //
 // ## 为什么守卫必须存在
@@ -47,7 +47,7 @@ void main() {
         fs: fs,
       ).keys.toSet();
 
-  /// 朴素侧：**独立枚举** hibiki/test 下的测试文件，与 listAppTestFiles 无共享代码。
+  /// 朴素侧：**独立枚举** fushi/test 下的测试文件，与 listAppTestFiles 无共享代码。
   ///
   /// 故意写成最笨的形态（手写递归 + `String.contains`），这样它不可能和结构化
   /// 提取器在同一个地方出错。它算出来的是下界，结构化侧只能比它多不能比它少。
@@ -86,7 +86,7 @@ void main() {
   group('tests_for_changes 推导规则', () {
     test('索引规模哨兵：扫描面不得塌掉', () {
       expect(index.length, greaterThanOrEqualTo(1700),
-          reason: 'hibiki/test 下应有 2100+ 个 *_test.dart（实测 2180）；'
+          reason: 'fushi/test 下应有 2100+ 个 *_test.dart（实测 2180）；'
               '数量塌掉说明 listAppTestFiles 的枚举坏了，'
               '而坏掉的表现是「推导结果变少」——不会有人自己发现');
       final int withFace =
@@ -113,10 +113,10 @@ void main() {
       expect(
         extractRepoPathReferences(
           'final Directory d = '
-          "Directory(p.join(root.path, 'hibiki', 'windows', 'runner'));",
+          "Directory(p.join(root.path, 'fushi', 'windows', 'runner'));",
           fs,
         ),
-        contains('hibiki/windows/runner'),
+        contains('fushi/windows/runner'),
         reason: 'p.join 段链那一遍死了——这段语料里一个斜杠都没有，'
             '只有这一遍认得，而本仓大量 native 守卫正是这么写路径的',
       );
@@ -144,28 +144,28 @@ void main() {
       const Map<String, List<String>> replacedHandWrittenRules =
           <String, List<String>>{
         '.github/workflows/build-multiplatform.yml': <String>[
-          'hibiki/test/build/workflow_sed_inplace_portability_guard_test.dart',
-          'hibiki/test/tools/powershell_51_compat_guard_test.dart',
-          'hibiki/test/mining/magpie_bundled_install_test.dart',
+          'fushi/test/build/workflow_sed_inplace_portability_guard_test.dart',
+          'fushi/test/tools/powershell_51_compat_guard_test.dart',
+          'fushi/test/mining/magpie_bundled_install_test.dart',
         ],
         'tool/setup_worktree.ps1': <String>[
-          'hibiki/test/tools/powershell_51_compat_guard_test.dart',
+          'fushi/test/tools/powershell_51_compat_guard_test.dart',
         ],
         'tools/browser-extension/manifest.json': <String>[
-          'hibiki/test/build/browser_extension_mirror_full_guard_test.dart',
-          'hibiki/test/lookup/browser_extension_installer_test.dart',
+          'fushi/test/build/browser_extension_mirror_full_guard_test.dart',
+          'fushi/test/lookup/browser_extension_installer_test.dart',
         ],
         'docs/bugs/BUG-9999-x.md': <String>[
-          'hibiki/test/tools/bugs_per_file_guard_test.dart',
+          'fushi/test/tools/bugs_per_file_guard_test.dart',
         ],
         'third_party/ffmpeg-min/recipe.md': <String>[
-          'hibiki/test/tools/ffmpeg_min_vendored_self_contained_guard_test.dart',
+          'fushi/test/tools/ffmpeg_min_vendored_self_contained_guard_test.dart',
         ],
         'third_party/ffmpeg_kit_flutter/ios/x.podspec': <String>[
-          'hibiki/test/tools/ffmpeg_kit_podspec_license_guard_test.dart',
+          'fushi/test/tools/ffmpeg_kit_podspec_license_guard_test.dart',
         ],
-        'hibiki/windows/runner/flutter_window.cpp': <String>[
-          'hibiki/test/mining/gal_ipc_contract_single_source_test.dart',
+        'fushi/windows/runner/flutter_window.cpp': <String>[
+          'fushi/test/mining/gal_ipc_contract_single_source_test.dart',
         ],
       };
 
@@ -182,20 +182,20 @@ void main() {
     });
 
     test('原先零触发规则的 native 树，现在每棵都推得出测试', () {
-      // 表里每一项在替换前的手写清单里都是**零覆盖**（`hibiki/windows` 只有 1 条）。
+      // 表里每一项在替换前的手写清单里都是**零覆盖**（`fushi/windows` 只有 1 条）。
       // 下界取实测值的约 80%，只在量级塌掉时才响。
       const Map<String, int> blindSpots = <String, int>{
-        'hibiki/android/app/src/main/AndroidManifest.xml': 10,
-        'hibiki/android/app/build.gradle': 6,
+        'fushi/android/app/src/main/AndroidManifest.xml': 10,
+        'fushi/android/app/build.gradle': 6,
         'packages/gamepads_windows/windows/gamepad.cpp': 3,
         'packages/flutter_inappwebview_windows/windows/CMakeLists.txt': 4,
-        'hibiki/ios/Runner/Info.plist': 5,
-        'hibiki/macos/Runner/MainFlutterWindow.swift': 6,
-        'hibiki/linux/CMakeLists.txt': 2,
+        'fushi/ios/Runner/Info.plist': 5,
+        'fushi/macos/Runner/MainFlutterWindow.swift': 6,
+        'fushi/linux/CMakeLists.txt': 2,
         'native/fushidicts/CMakeLists.txt': 9,
         'native/galgame_hook/include/voice_hook_ipc.h': 8,
         'third_party/desktop_drop/windows/desktop_drop_plugin.cpp': 4,
-        'hibiki/windows/runner/flutter_window.cpp': 55,
+        'fushi/windows/runner/flutter_window.cpp': 55,
       };
       final List<String> tooThin = <String>[];
       blindSpots.forEach((String changed, int floor) {
@@ -208,15 +208,15 @@ void main() {
     });
 
     test('逐树规模哨兵：结构化提取不得少于独立朴素扫描', () {
-      // 朴素侧只认 `hibiki/android` 这种含斜杠的逐字写法；结构化侧还认
-      // `p.join(root, 'hibiki', 'android')`。所以结构化 ≥ 朴素是**恒等式级**的期望，
+      // 朴素侧只认 `fushi/android` 这种含斜杠的逐字写法；结构化侧还认
+      // `p.join(root, 'fushi', 'android')`。所以结构化 ≥ 朴素是**恒等式级**的期望，
       // 一旦反过来，就是结构化侧的某一遍扫描坏了。
       const List<String> trees = <String>[
-        'hibiki/windows',
-        'hibiki/android',
-        'hibiki/ios',
-        'hibiki/macos',
-        'hibiki/linux',
+        'fushi/windows',
+        'fushi/android',
+        'fushi/ios',
+        'fushi/macos',
+        'fushi/linux',
         'tools/browser-extension',
         '.github/workflows',
         'native/fushidicts',
@@ -238,16 +238,16 @@ void main() {
 
     test('逐树规模哨兵：绝对下界（实测值的约 80%）', () {
       const Map<String, int> floors = <String, int>{
-        'hibiki/windows': 58,
-        'hibiki/android': 29,
+        'fushi/windows': 58,
+        'fushi/android': 29,
         'tools/browser-extension': 38,
         '.github/workflows': 15,
         'packages/flutter_inappwebview_windows': 15,
         'native/fushidicts': 9,
         'native/galgame_hook': 7,
-        'hibiki/ios': 5,
-        'hibiki/macos': 6,
-        'hibiki/linux': 2,
+        'fushi/ios': 5,
+        'fushi/macos': 6,
+        'fushi/linux': 2,
       };
       final List<String> thin = <String>[];
       floors.forEach((String tree, int floor) {
@@ -314,15 +314,15 @@ void main() {
 
     test('Dart 源码树的改动不由本工具输出（默认整批 35 条兜底）', () {
       expect(
-          isDefaultBatchCoveredChange('hibiki/lib/src/models/app_model.dart'),
+          isDefaultBatchCoveredChange('fushi/lib/src/models/app_model.dart'),
           isTrue);
       expect(
-          isDefaultBatchCoveredChange('hibiki/test/tools/x_test.dart'), isTrue);
+          isDefaultBatchCoveredChange('fushi/test/tools/x_test.dart'), isTrue);
       expect(
           isDefaultBatchCoveredChange('packages/fushi_core/lib/src/db.dart'),
           isTrue);
       expect(
-          isDefaultBatchCoveredChange('hibiki/windows/runner/x.cpp'), isFalse,
+          isDefaultBatchCoveredChange('fushi/windows/runner/x.cpp'), isFalse,
           reason: 'native 树绝不能被当成「已被整批覆盖」而吞掉');
       expect(
           isDefaultBatchCoveredChange(
@@ -333,7 +333,7 @@ void main() {
     test('两处硬编码目录名必须仍对得上仓库布局', () {
       // 工具里只有这两组硬编码名字。硬编码本身不是问题，**哑掉**才是：
       // 仓库改了布局而常量没跟上，路径解析会静默退化——容器目录不再被拒，
-      // 一次对 `hibiki` 的引用就把整棵树拉进触发面，推导结果从「精准」变成「全跑」。
+      // 一次对 `fushi` 的引用就把整棵树拉进触发面，推导结果从「精准」变成「全跑」。
       for (final RepoPath container in kContainerDirs) {
         final Directory dir = Directory('${fs.root.path}/$container');
         expect(dir.existsSync(), isTrue, reason: '容器目录 $container 不在了');
@@ -346,7 +346,7 @@ void main() {
     });
 
     test('索引里不得混进构建产物路径（否则索引因机器而异）', () {
-      // 本机有 `hibiki/build/windows/x64/...`、CI 的干净 checkout 没有。
+      // 本机有 `fushi/build/windows/x64/...`、CI 的干净 checkout 没有。
       // 一旦这类路径进了索引，本机推导出的测试集就和 CI 的不一样——
       // 这是「本机全绿 CI 红」最难查的一种。
       //
@@ -366,13 +366,13 @@ void main() {
 
     test('存在性判定必须逐段精确大小写（Windows NTFS 大小写不敏感）', () {
       // 直接用 existsSync 时，注释里的「Android/iOS/macOS/Windows/Linux」会让
-      // `hibiki/Linux` 在 Windows 上判为存在、在 Linux CI 上判为不存在——
+      // `fushi/Linux` 在 Windows 上判为存在、在 Linux CI 上判为不存在——
       // 同一份索引两个平台两个样，本机全绿 CI 红。
-      expect(fs.exists('hibiki/linux'), isTrue,
+      expect(fs.exists('fushi/linux'), isTrue,
           reason: '真实目录必须判存在，否则这条测试在守一个空契约');
-      expect(fs.exists('hibiki/Linux'), isFalse, reason: '大小写不匹配必须判不存在');
-      expect(fs.exists('hibiki/windows'), isTrue);
-      expect(fs.exists('hibiki/Windows'), isFalse);
+      expect(fs.exists('fushi/Linux'), isFalse, reason: '大小写不匹配必须判不存在');
+      expect(fs.exists('fushi/windows'), isTrue);
+      expect(fs.exists('fushi/Windows'), isFalse);
     });
 
     test('fast-workflow.md 的「按触发条件加跑」必须指向本工具而不是名字表', () {

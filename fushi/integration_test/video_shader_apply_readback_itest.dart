@@ -6,7 +6,7 @@
 //   ② 对照被证伪的旧法（setProperty('glsl-shaders-append', ...)）：回读为空 → 复现
 //      「Anime4K 开了跟没开一样」的空下发根因（media_kit 丢弃 mpv 返回码、静默失败）。
 //
-// 运行：hibiki/ 下 `.\tool\run_windows_itest.ps1 integration_test\video_shader_apply_readback_itest.dart`
+// 运行：fushi/ 下 `.\tool\run_windows_itest.ps1 integration_test\video_shader_apply_readback_itest.dart`
 // 不联网、不需测试视频——glsl-shaders 是 mpv ctx 级属性，无需 open 文件即可读写。
 import 'dart:io';
 

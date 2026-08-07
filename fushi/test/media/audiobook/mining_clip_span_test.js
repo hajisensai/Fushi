@@ -13,7 +13,7 @@
 //       sentence.
 // It also exercises the pure helpers spanSentenceRange / textBetween directly.
 //
-// Run: node hibiki/test/media/audiobook/mining_clip_span_test.js
+// Run: node fushi/test/media/audiobook/mining_clip_span_test.js
 // (also driven from the matching .dart so it runs inside `flutter test`).
 
 const assert = require('assert');

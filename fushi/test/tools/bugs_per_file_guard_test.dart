@@ -4,7 +4,7 @@
 // （撞号 + 顶部插入 git 冲突），改成 per-file 后这两类冲突从工作流里消失。本测试守住
 // 该数据结构不变式，防有人把正文又塞回 docs/BUGS.md（退回老结构）。
 //
-// 纯 dart:io，不依赖 Flutter 运行时；从 hibiki/ 向上找仓库根。
+// 纯 dart:io，不依赖 Flutter 运行时；从 fushi/ 向上找仓库根。
 
 import 'dart:io';
 

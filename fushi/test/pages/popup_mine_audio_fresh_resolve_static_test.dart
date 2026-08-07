@@ -16,7 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 // 写进 payload.audio；播放路径 (createAudioButton / resolveCachedAudioUrl) 不动。
 //
 // 两层守护：
-// ① 行为级——hibiki/test/utils/misc/popup_asset_behavior_test.js 的
+// ① 行为级——fushi/test/utils/misc/popup_asset_behavior_test.js 的
 //    testMiningResolvesFreshAudioEvenWhenCacheHoldsSameWord 用 Node 真执行
 //    buildMinePayload，断言播放缓存同词后制卡仍发第二次 resolveWordAudio（撤修复
 //    复用缓存则只 1 次 → 转红）。本文件用 Node 跑该 harness。

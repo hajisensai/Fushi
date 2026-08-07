@@ -154,7 +154,7 @@ void main() {
     // widget/单测都探不到。少了这一行，用户翻开关就完全没反应，而且**没有任何
     // 其它测试会红**——所以这条守卫是必要的，不是凑数。
     final File f = File('lib/src/models/app_model.dart');
-    expect(f.existsSync(), isTrue, reason: 'run from the hibiki/ package root');
+    expect(f.existsSync(), isTrue, reason: 'run from the fushi/ package root');
     final String src = f.readAsStringSync();
     final int call = src.indexOf('host.applyLimits(');
     expect(call, greaterThanOrEqualTo(0),

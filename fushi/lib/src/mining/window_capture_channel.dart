@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 /// TODO-1162 外部窗口挖矿 M0（仅 Windows）：枚举系统可见顶层窗口 + 对选定窗口抓一帧
 /// 静态截图（Windows.Graphics.Capture 单帧），经 MethodChannel 返回给 Dart。
 ///
-/// native 侧（`hibiki/windows/runner/window_capture.cpp`）注册 `window_capture`
+/// native 侧（`fushi/windows/runner/window_capture.cpp`）注册 `window_capture`
 /// channel，暴露两个方法：
 ///   - `listWindows` -> `List<Map>`：每项 `{hwnd:int, title:String}`。
 ///   - `captureWindow` -> `Map`：`{pngBytes:Uint8List}` 或 `{error:String}`。

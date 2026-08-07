@@ -88,7 +88,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:fushi/src/models/theme_notifier.dart'
     show ThemeNotifier, CustomThemeEntry;
-// TODO-930: re-export the multi-theme value type so `hibiki/models.dart`
+// TODO-930: re-export the multi-theme value type so `fushi/models.dart`
 // consumers (theme swatch row, CustomThemePage) can name it.
 export 'package:fushi/src/models/theme_notifier.dart' show CustomThemeEntry;
 import 'package:fushi/src/models/audio_controller.dart';

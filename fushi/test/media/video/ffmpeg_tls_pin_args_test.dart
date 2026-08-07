@@ -113,7 +113,7 @@ void main() {
   });
 
   group('ffmpeg 源码 tls pin 补丁存在且完整（BUG-891）', () {
-    // 相对仓库根：hibiki/ 是 CWD，补丁在上一级 third_party/。
+    // 相对仓库根：fushi/ 是 CWD，补丁在上一级 third_party/。
     final File patch = File(
         '../third_party/ffmpeg_kit_flutter/patches/ffmpeg-tls-pin-sha256.patch');
 

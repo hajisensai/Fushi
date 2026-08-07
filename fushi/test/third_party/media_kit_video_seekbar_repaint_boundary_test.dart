@@ -20,7 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// `media_kit_video` drops either boundary (the large-window flicker returns).
 /// See `third_party/media_kit_video/PATCHES.md` (TODO-1243 follow-up).
 void main() {
-  // Tests run with CWD = `hibiki/`; the vendored package lives at the workspace
+  // Tests run with CWD = `fushi/`; the vendored package lives at the workspace
   // root.
   const String desktopPath =
       '../third_party/media_kit_video/lib/media_kit_video_controls/'

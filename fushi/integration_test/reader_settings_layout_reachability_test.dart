@@ -45,7 +45,7 @@ import 'test_helpers.dart';
 /// 根本没挂 main.dart 的 `wrapWithGlobalNavigation`，所以裸 Tab 不会被中和成
 /// DoNothingIntent，Flutter 原生遍历直接可用，无需先开实验焦点导航开关。
 ///
-/// Run (PowerShell, from hibiki/):
+/// Run (PowerShell, from fushi/):
 ///   $env:FUSHI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/reader_settings_layout_reachability_test.dart -d windows
 

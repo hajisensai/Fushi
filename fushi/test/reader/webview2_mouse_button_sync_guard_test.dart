@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 为什么在 hibiki 侧做源码扫描：真值来源 `custom_platform_view.dart` 属 vendored fork
 /// （`packages/flutter_inappwebview_windows`），它自己的 test 目录不进 CI 的 unit test
-/// 门（真门是 Build Release APK 的 Run unit tests，只跑 `hibiki/test`）。行为侧差分逻辑
+/// 门（真门是 Build Release APK 的 Run unit tests，只跑 `fushi/test`）。行为侧差分逻辑
 /// 已由该包的 `test/mouse_button_mask_diff_test.dart` 覆盖；这里钉死接线结构，防回退。
 ///
 /// 回归形态：WebView2 的 `VirtualKeyState`（windows/in_app_webview/in_app_webview.h）是

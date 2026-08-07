@@ -21,7 +21,7 @@ const double _min = 8.0;
 const double _max = 72.0;
 
 File _repoFile(String relative) {
-  // 测试 cwd = hibiki/（flutter test 的包根）。仓库根是它的上一级。
+  // 测试 cwd = fushi/（flutter test 的包根）。仓库根是它的上一级。
   final File inPackage = File(relative);
   if (inPackage.existsSync()) return inPackage;
   return File('../$relative');
@@ -82,7 +82,7 @@ void main() {
   group('BUG-1139 (3) 源码守卫', () {
     test('C++ 覆盖窗关掉 WebView2 原生缩放并复位持久 ZoomFactor', () {
       final String cpp =
-          _repoFile('hibiki/windows/runner/global_lookup_window.cpp')
+          _repoFile('fushi/windows/runner/global_lookup_window.cpp')
               .readAsStringSync();
       expect(cpp.contains('put_IsZoomControlEnabled(FALSE)'), isTrue,
           reason: '原生 Ctrl+滚轮缩放必须关掉：几何链看不见 ZoomFactor');
@@ -102,7 +102,7 @@ void main() {
 
     test('app 外注入装 Ctrl+滚轮监听，回传净档数，且不就地改 zoom', () {
       final String dart = _repoFile(
-              'hibiki/lib/src/pages/implementations/popup_settings_injection.dart')
+              'fushi/lib/src/pages/implementations/popup_settings_injection.dart')
           .readAsStringSync();
       final int start = dart.indexOf('_globalLookupZoomWheelJs = ');
       expect(start, greaterThan(0), reason: 'app 外 Ctrl+滚轮注入常量必须存在');
@@ -135,7 +135,7 @@ void main() {
       // 行为级断言在 node harness（global_lookup_host_test.mjs 的 Z1，负向验证过：
       // 去掉换算即 exit 1）。那个 harness 不在 CI 里跑，所以这里补一条 CI 可见的
       // 源码守卫，防止有人把换算删掉后 CI 依然全绿。
-      final String host = _repoFile('hibiki/assets/popup/global_lookup_host.js')
+      final String host = _repoFile('fushi/assets/popup/global_lookup_host.js')
           .readAsStringSync();
       expect(host.contains('function frameContentZoom('), isTrue,
           reason: '缺 zoom 读取：iframe 的 documentElement.style.zoom 是唯一来源');
@@ -153,8 +153,8 @@ void main() {
 
     test('瞬态覆盖窗与剪贴板面板都接了这根 handler（两表面绝不漂开）', () {
       for (final String path in <String>[
-        'hibiki/lib/src/lookup/global_lookup_controller.dart',
-        'hibiki/lib/src/lookup/clipboard_panel_controller.dart',
+        'fushi/lib/src/lookup/global_lookup_controller.dart',
+        'fushi/lib/src/lookup/clipboard_panel_controller.dart',
       ]) {
         final String src = _repoFile(path).readAsStringSync();
         expect(src.contains('maybeHandleOverlayZoomFontStep('), isTrue,

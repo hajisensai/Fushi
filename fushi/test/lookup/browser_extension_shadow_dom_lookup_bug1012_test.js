@@ -9,7 +9,7 @@
 //      `nodeType !== TEXT_NODE` 处直接 return null（Yomitan 能读、Hibiki 读不了的
 //      根因）。修复后必须沿 element.shadowRoot 下钻到内部文字节点并成功取词。
 //
-// 运行：node hibiki/test/lookup/browser_extension_shadow_dom_lookup_bug1012_test.js
+// 运行：node fushi/test/lookup/browser_extension_shadow_dom_lookup_bug1012_test.js
 // 由同名 .dart wrapper 通过 Process.run('node', ...) 驱动（无 node 时 skip）。
 
 const assert = require('node:assert');

@@ -27,7 +27,7 @@ import 'test_helpers.dart';
 /// restoreToCharOffset; cross-chapter bakes charOffset into the restore chain
 /// landing inside rb/rtc DOM.
 ///
-/// Run (from hibiki/):
+/// Run (from fushi/):
 ///   tool\run_windows_itest.ps1 integration_test\reader_favorite_jump_rtc_itest.dart
 bool _webViewShown() =>
     find.byKey(const ValueKey<String>('fushi_webview')).evaluate().isNotEmpty;

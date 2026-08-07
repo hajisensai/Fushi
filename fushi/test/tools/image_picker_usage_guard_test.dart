@@ -20,7 +20,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/scan_scale.dart';
 
-/// 允许直接引用 image_picker 的文件（相对 hibiki/ 包根、正斜杠路径）。
+/// 允许直接引用 image_picker 的文件（相对 fushi/ 包根、正斜杠路径）。
 const Set<String> _allowedFiles = <String>{
   'lib/src/utils/misc/gallery_image_picker.dart',
   'lib/src/creator/enhancements/camera_enhancement.dart',

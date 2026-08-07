@@ -19,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// registrant 不再注册 anki channel、或 `PopupEngineHolder` 不再向 registrant 传
 /// Context，副 engine 制卡会再次抛 MissingPluginException，本测试转红。
 void main() {
-  // Tests run with CWD = `hibiki/`.
+  // Tests run with CWD = `fushi/`.
   final File registrant = File(
     'android/app/src/main/java/app/fushi/reader/FloatingDictPluginRegistrant.java',
   );

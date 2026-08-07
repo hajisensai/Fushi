@@ -1,14 +1,14 @@
 // 守卫：ios/macos 下 Flutter 机器生成文件不得被 git 跟踪。
 //
-// 背景（BUG 记录见 docs/bugs/）：hibiki/ios/Flutter/Generated.xcconfig 等文件曾被
+// 背景（BUG 记录见 docs/bugs/）：fushi/ios/Flutter/Generated.xcconfig 等文件曾被
 // 强行 add 入库，内容烧死了单台机器的 FLUTTER_ROOT（如 D:\flutter_sdk\...），导致
 // 其它机器 checkout 后 iOS `pod install` 直接报
 // "cannot load such file -- .../D:\flutter_sdk\...\podhelper" 失败。
-// 这些文件本就在 hibiki/ios/.gitignore 里声明忽略，必须由每台机器的 flutter 工具
+// 这些文件本就在 fushi/ios/.gitignore 里声明忽略，必须由每台机器的 flutter 工具
 // 自行生成。本测试用 `git ls-files -i -c` 找出「已跟踪但被 .gitignore 忽略」的文件，
-// 排除有意跟踪的图标资源（被 hibiki/.gitignore 的 golden-diff `*.png` 规则连带匹配）。
+// 排除有意跟踪的图标资源（被 fushi/.gitignore 的 golden-diff `*.png` 规则连带匹配）。
 //
-// 纯 dart:io + git CLI，不依赖 Flutter 运行时；从 hibiki/ 向上找仓库根。
+// 纯 dart:io + git CLI，不依赖 Flutter 运行时；从 fushi/ 向上找仓库根。
 
 import 'dart:io';
 
@@ -42,8 +42,8 @@ void main() {
         '-c',
         '--exclude-standard',
         '--',
-        'hibiki/ios',
-        'hibiki/macos',
+        'fushi/ios',
+        'fushi/macos',
       ],
       workingDirectory: root.path,
     );

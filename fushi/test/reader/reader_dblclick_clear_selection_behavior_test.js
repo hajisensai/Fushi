@@ -18,7 +18,7 @@
 // Reverting the fix (dropping removeAllRanges) leaves the selection non-collapsed,
 // so the furigana guard bails and show-all-rt is NOT toggled -> red.
 //
-// Run: node hibiki/test/reader/reader_dblclick_clear_selection_behavior_test.js
+// Run: node fushi/test/reader/reader_dblclick_clear_selection_behavior_test.js
 // (also driven from reader_dblclick_clear_selection_behavior_test.dart so it runs
 //  inside `flutter test`).
 

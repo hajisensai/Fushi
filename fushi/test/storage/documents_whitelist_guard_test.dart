@@ -38,7 +38,7 @@ void main() {
   test('lib/ 里所有 documents 根顶层派生点都收进了迁移白名单', () {
     final Directory lib = Directory('lib');
     expect(lib.existsSync(), isTrue,
-        reason: '本测试假定 cwd 为 hibiki/（flutter test 默认）');
+        reason: '本测试假定 cwd 为 fushi/（flutter test 默认）');
 
     final List<File> sources = dartSources(lib);
     expectScanScale(sources.length,

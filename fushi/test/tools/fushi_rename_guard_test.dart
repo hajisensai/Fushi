@@ -363,7 +363,7 @@ final List<_ForbiddenPattern> _forbiddenPathForms = <_ForbiddenPattern>[
   ),
 ];
 
-/// 路径形态组的扫描根（相对 `hibiki/`；目录或单文件皆可）。
+/// 路径形态组的扫描根（相对 `fushi/`；目录或单文件皆可）。
 const List<String> _pathFormScanRoots = <String>[
   '../.github/workflows',
   '../native/fushi_torrent',
@@ -456,7 +456,7 @@ Iterable<File> _pathFormScanFiles() sync* {
   }
 }
 
-/// 扫描根（相对 `hibiki/`，即 flutter test 的 cwd）。
+/// 扫描根（相对 `fushi/`，即 flutter test 的 cwd）。
 const List<String> _scanRoots = <String>[
   'lib',
   '../packages/fushi_core/lib',

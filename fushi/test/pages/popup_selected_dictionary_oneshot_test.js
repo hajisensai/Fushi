@@ -17,7 +17,7 @@
 // glossary/frequency/pitch builders short-circuit. Reverting the fix (leaving the
 // selection sticky / removing the reset helpers) turns this red.
 //
-// Run: node hibiki/test/pages/popup_selected_dictionary_oneshot_test.js
+// Run: node fushi/test/pages/popup_selected_dictionary_oneshot_test.js
 // (also driven from popup_selected_dictionary_oneshot_test.dart so it executes
 //  inside `flutter test`).
 

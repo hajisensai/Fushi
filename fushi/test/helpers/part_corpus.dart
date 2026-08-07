@@ -35,7 +35,7 @@ List<String> partCorpusFiles({
     ..sort();
   if (parts.isEmpty) {
     throw StateError('$partDir 下一个 *.part.dart 都没有——要么目录结构变了，'
-        '要么工作目录不是 hibiki/；此时语料只剩主壳，'
+        '要么工作目录不是 fushi/；此时语料只剩主壳，'
         '所有落在 part 里的守卫（含负向断言）都会真空通过');
   }
   return <String>[shell, ...parts];

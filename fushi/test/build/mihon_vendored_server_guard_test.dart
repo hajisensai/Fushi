@@ -18,7 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// 仓库根（测试从 `hibiki/` 下跑，与本目录其它 workflow 守卫同约定）。
+/// 仓库根（测试从 `fushi/` 下跑，与本目录其它 workflow 守卫同约定）。
 const String _repositoryRoot = '..';
 const String _vendorRoot = '$_repositoryRoot/third_party/m_extension_server';
 const String _upstreamSource = '$_vendorRoot/upstream_src';
@@ -483,7 +483,7 @@ void main() {
       'controller/MExtensionServerController.kt',
     ));
     final String runtime = maskComments(_read(
-      '$_repositoryRoot/hibiki/lib/src/media/manga/mihon/'
+      '$_repositoryRoot/fushi/lib/src/media/manga/mihon/'
       'desktop_mihon_runtime.dart',
     ));
 

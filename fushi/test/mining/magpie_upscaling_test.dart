@@ -1306,7 +1306,7 @@ void main() {
     });
 
     test('正常退出必须收干净：注入即登记 ExitFlushRegistry', () {
-      // close() 在 hibiki/lib 里零调用，桌面点 X 走 exit(0)。不登记退出链，
+      // close() 在 fushi/lib 里零调用，桌面点 X 走 exit(0)。不登记退出链，
       // detached 起的 Magpie 会活过 Hibiki，配置里的 autoScale 也留着。
       final int attachIndex =
           sessionSource.indexOf('void attachMagpieUpscaling(');

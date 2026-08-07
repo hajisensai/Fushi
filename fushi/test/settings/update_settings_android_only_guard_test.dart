@@ -144,7 +144,7 @@ void main() {
     );
     expect(
       workflow,
-      contains('hibiki/build/release-artifacts/fushi-*-windows-setup.exe'),
+      contains('fushi/build/release-artifacts/fushi-*-windows-setup.exe'),
     );
     expect(
       workflow,

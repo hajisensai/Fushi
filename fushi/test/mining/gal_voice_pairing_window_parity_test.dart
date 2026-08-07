@@ -7,7 +7,7 @@ import 'package:path/path.dart' as p;
 import '../helpers/source_guard.dart';
 
 /// 从当前目录向上找到含 `native/galgame_hook` 的仓库根。测试的 cwd 在本地是
-/// `hibiki/`、在 CI 上也可能是仓库根，故不写死层级；找不到返回 null。
+/// `fushi/`、在 CI 上也可能是仓库根，故不写死层级；找不到返回 null。
 Directory? _findRepoRoot() {
   Directory dir = Directory.current;
   for (int i = 0; i < 6; i++) {

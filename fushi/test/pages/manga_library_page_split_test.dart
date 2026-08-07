@@ -17,7 +17,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import '../helpers/source_guard.dart';
 
 /// BUG-1164：PR#474 让书架按 `mangaOnly` 分流（普通书架排除漫画，漫画只在独立
-/// 漫画书架出现），但全仓 `git grep 'MangaLibraryPage\|mangaOnly' -- hibiki/test`
+/// 漫画书架出现），但全仓 `git grep 'MangaLibraryPage\|mangaOnly' -- fushi/test`
 /// 零命中——这条用户直接可见的行为一条测试都没有。
 ///
 /// 这里守两件事：

@@ -17,7 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 接线*：若 provider 不再订阅这些流，本测试转红，提醒回归者书架将退回「导入不
 /// 自动出现」。
 void main() {
-  // Tests run with CWD = `hibiki/`.
+  // Tests run with CWD = `fushi/`.
   final File source = File('lib/src/media/sources/reader_fushi_source.dart');
 
   test('reader_fushi_source.dart exists', () {

@@ -22,7 +22,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 /// its base (|dy| ≈ 0). The reported bug: <rt> shifts down ~half a base glyph
 /// (「かん挤在两个汉字之间 / ろく浮到基字右侧错位」) — i.e. large |dy|.
 ///
-/// Run (from hibiki/): tool\run_windows_itest.ps1 integration_test\reader_vertical_ruby_probe_itest.dart
+/// Run (from fushi/): tool\run_windows_itest.ps1 integration_test\reader_vertical_ruby_probe_itest.dart
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 

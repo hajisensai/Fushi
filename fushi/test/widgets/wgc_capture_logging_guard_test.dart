@@ -219,11 +219,11 @@ void main() {
       'runner installs process-level minidump filter and chains the previous filter',
       () {
     final String mainCpp = _read(<String>[
-      'hibiki/windows/runner/main.cpp',
+      'fushi/windows/runner/main.cpp',
       'windows/runner/main.cpp',
     ], 'main.cpp');
     final String crashCpp = _read(<String>[
-      'hibiki/windows/runner/crash_dump.cpp',
+      'fushi/windows/runner/crash_dump.cpp',
       'windows/runner/crash_dump.cpp',
     ], 'crash_dump.cpp');
 
@@ -271,7 +271,7 @@ void main() {
       'Dart startup folds WGC log into ErrorLogService upload chain (Windows only)',
       () {
     final String mainDart = _read(<String>[
-      'hibiki/lib/main.dart',
+      'fushi/lib/main.dart',
       'lib/main.dart',
     ], 'main.dart');
     expect(mainDart.contains('WgcCaptureLog.foldIntoErrorLog()'), isTrue,

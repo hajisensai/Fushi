@@ -21,7 +21,7 @@ import '../helpers/source_guard.dart';
 /// local copy. This test guards the mechanism so it cannot silently regress to a
 /// network fetch and so the committed archives stay real (not empty/LFS/wrong).
 void main() {
-  // Tests run with CWD = `hibiki/`; the vendored package lives at workspace root.
+  // Tests run with CWD = `fushi/`; the vendored package lives at workspace root.
   const String pkgRoot = '../third_party/media_kit_libs_windows_video';
   final File cmakeFile = File('$pkgRoot/windows/CMakeLists.txt');
 

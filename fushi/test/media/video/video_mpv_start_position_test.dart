@@ -11,7 +11,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 
-/// 被守卫的源文件（相对 `hibiki/` 包根，`flutter test` 的 cwd）。
+/// 被守卫的源文件（相对 `fushi/` 包根，`flutter test` 的 cwd）。
 const String _kControllerPath = 'lib/src/media/video/video_player_controller.dart';
 
 void main() {
@@ -35,7 +35,7 @@ void main() {
     setUpAll(() {
       final File f = File(_kControllerPath);
       expect(f.existsSync(), isTrue,
-          reason: '守卫目标不存在：$_kControllerPath（测试 cwd 应为 hibiki/ 包根）');
+          reason: '守卫目标不存在：$_kControllerPath（测试 cwd 应为 fushi/ 包根）');
       source = f.readAsStringSync();
     });
 

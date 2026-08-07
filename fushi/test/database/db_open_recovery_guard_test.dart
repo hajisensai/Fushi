@@ -10,7 +10,7 @@ void main() {
   late String src;
 
   setUpAll(() {
-    // Test cwd is hibiki/; the DB lives in the sibling hibiki_core package.
+    // Test cwd is fushi/; the DB lives in the sibling fushi_core package.
     final File f =
         File('../packages/fushi_core/lib/src/database/database.dart');
     expect(f.existsSync(), isTrue, reason: 'database.dart must be reachable');

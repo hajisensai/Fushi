@@ -59,7 +59,7 @@ import 'test_helpers.dart';
 ///
 /// 启动期网络噪声经 `runFushiItest` 守卫放行。
 ///
-/// Run (PowerShell, from hibiki/):
+/// Run (PowerShell, from fushi/):
 ///   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 \
 ///       integration_test/reader_collection_jump_sentence_tail_itest.dart
 

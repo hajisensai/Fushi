@@ -360,7 +360,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
     // ⚠️ 这条降级会**静默**吞掉字幕，所以它掩盖过一次真 bug：随包的精简 ffmpeg 自己
     // 就漏编了 movtext（BUG-1058），桌面端每次导出都走到这里，用户只看到"导出成功但
     // 没字幕"。入库二进制已重新 vendor 修好，且由
-    // hibiki/test/tools/ffmpeg_min_vendored_recipe_guard_test.dart 守住不再漂移；
+    // fushi/test/tools/ffmpeg_min_vendored_recipe_guard_test.dart 守住不再漂移；
     // 降级本身保留，因为它要兜的是用户自带的第三方 ffmpeg，那个仍然不可控。
     // 失败原因照常写进错误日志（下方 ErrorLogService），排查时先看那条。
     if (!result.produced && subtitlePaths.isNotEmpty) {

@@ -22,7 +22,7 @@
 // This EXECUTES the real popup.js wheel handler against a minimal fake DOM and
 // asserts preventDefault / scrollBy per surface. Reverting the guard turns it red.
 //
-// Run: node hibiki/test/lookup/browser_extension_page_scroll_bug732_test.js
+// Run: node fushi/test/lookup/browser_extension_page_scroll_bug732_test.js
 // (also driven from browser_extension_page_scroll_bug732_test.dart inside
 //  `flutter test`).
 

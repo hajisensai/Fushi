@@ -93,7 +93,7 @@ void main() {
 
     test('源码守卫：injector 输出解码不得回退到 SystemEncoding', () {
       final File source = File('lib/src/mining/galgame_audio_source.dart');
-      expect(source.existsSync(), isTrue, reason: '测试须在 hibiki/ 下运行才能读到源码');
+      expect(source.existsSync(), isTrue, reason: '测试须在 fushi/ 下运行才能读到源码');
       final String code = source.readAsStringSync();
       // 匹配「构造调用」而不是「文字提及」：文件里有一段注释解释本 bug 为什么发生，
       // 会提到 SystemEncoding 这个名字，那是文档不是回归。
@@ -257,7 +257,7 @@ void main() {
     test('源码守卫：失败构造器不得靠 assert 拦非法原因', () {
       final File source =
           File('lib/src/mining/gal_hook_session_controller.dart');
-      expect(source.existsSync(), isTrue, reason: '测试须在 hibiki/ 下运行才能读到源码');
+      expect(source.existsSync(), isTrue, reason: '测试须在 fushi/ 下运行才能读到源码');
       final String code = source.readAsStringSync();
       final int start = code.indexOf('const GalHookLaunchResult.failed(');
       expect(start, greaterThan(-1), reason: '失败构造器没了，本守卫失去锚点');
@@ -364,7 +364,7 @@ void main() {
     test('源码守卫：launchGame 不得退回 bool 返回值', () {
       final File source =
           File('lib/src/mining/gal_hook_session_controller.dart');
-      expect(source.existsSync(), isTrue, reason: '测试须在 hibiki/ 下运行才能读到源码');
+      expect(source.existsSync(), isTrue, reason: '测试须在 fushi/ 下运行才能读到源码');
       final String code = source.readAsStringSync();
       expect(
         code.contains('Future<GalHookLaunchResult> launchGame('),

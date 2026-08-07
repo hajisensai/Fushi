@@ -20,7 +20,7 @@ void main() {
     final File src = File(
       'lib/src/media/audiobook/audiobook_import_dialog.dart',
     );
-    expect(src.existsSync(), isTrue, reason: '源文件必须存在（相对 hibiki/ 包根）');
+    expect(src.existsSync(), isTrue, reason: '源文件必须存在（相对 fushi/ 包根）');
     final String code = src.readAsStringSync();
 
     final int saveIdx = code.indexOf('saveAudiobook(audiobook)');

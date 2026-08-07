@@ -211,15 +211,15 @@ void main() {
             orElse: () => null);
 
     final File? nativePreExit = firstExisting(<String>[
-      'hibiki/lib/src/platform/desktop/windows_native_pre_exit.dart',
+      'fushi/lib/src/platform/desktop/windows_native_pre_exit.dart',
       'lib/src/platform/desktop/windows_native_pre_exit.dart',
     ]);
     final File? lifecycle = firstExisting(<String>[
-      'hibiki/lib/src/platform/desktop/desktop_lifecycle_service.dart',
+      'fushi/lib/src/platform/desktop/desktop_lifecycle_service.dart',
       'lib/src/platform/desktop/desktop_lifecycle_service.dart',
     ]);
     final File? updater = firstExisting(<String>[
-      'hibiki/lib/src/utils/misc/platform_updater.dart',
+      'fushi/lib/src/utils/misc/platform_updater.dart',
       'lib/src/utils/misc/platform_updater.dart',
     ]);
     final File? managerSource = firstExisting(<String>[

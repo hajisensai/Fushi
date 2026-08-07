@@ -9,7 +9,7 @@
 // 本测试是最强可落地层的源码扫描守卫（C++ 链接行为无法在 Dart 单测里直接执行）：
 // 守住这两个不变式，防止将来同步上游/重构时把 delay-load 或探测悄悄丢掉。
 //
-// 纯 dart:io，不依赖 Flutter 运行时；从 hibiki/ 向上找仓库根。
+// 纯 dart:io，不依赖 Flutter 运行时；从 fushi/ 向上找仓库根。
 
 import 'dart:io';
 

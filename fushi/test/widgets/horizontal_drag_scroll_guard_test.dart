@@ -57,7 +57,7 @@ void main() {
 
   test('每个横向滚动区都放开了鼠标拖动（或在豁免清单里说明了原因）', () {
     final Directory libDir = Directory('lib');
-    expect(libDir.existsSync(), isTrue, reason: '测试须从 hibiki/ 下运行');
+    expect(libDir.existsSync(), isTrue, reason: '测试须从 fushi/ 下运行');
 
     final List<String> offenders = <String>[];
     int scanned = 0;

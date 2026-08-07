@@ -26,7 +26,7 @@ import 'package:fushi/src/mining/immersion_mining_request.dart';
 /// *mechanism*: the build whitelist carries `mov`, and the Dart pipeline never
 /// emits a `.m4a`/`.mp4` the bundled build can't produce.
 void main() {
-  // Tests run with CWD = `hibiki/`; the build script lives at the workspace root.
+  // Tests run with CWD = `fushi/`; the build script lives at the workspace root.
   String workspaceFile(String relative) =>
       File('../$relative').readAsStringSync();
 

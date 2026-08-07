@@ -182,7 +182,7 @@ void main() {
     test('failure path shows a toast (source scan)', () {
       // FushiToast 桌面实现挂在真实 app 的 navigator overlay 上，widget 测试
       // 环境不可达——「失败必有提示」这半边契约用源码扫描锁住（「失败必有日志」
-      // 半边在上面的 widget 测试已验真行为）。测试 cwd 是 hibiki/，相对路径稳定。
+      // 半边在上面的 widget 测试已验真行为）。测试 cwd 是 fushi/，相对路径稳定。
       final String source = File('lib/src/media/import/import_flow_mixin.dart')
           .readAsStringSync();
       expect(

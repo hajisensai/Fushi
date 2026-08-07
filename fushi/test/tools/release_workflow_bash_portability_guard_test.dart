@@ -8,7 +8,7 @@
 // 本守卫锁定：release-desktop.yml 里绝不能再出现 mapfile/readarray，否则 apple
 // 发布任务会再次崩。
 //
-// 纯 dart:io，不依赖 Flutter 运行时；从 hibiki/ 向上找仓库根。
+// 纯 dart:io，不依赖 Flutter 运行时；从 fushi/ 向上找仓库根。
 
 import 'dart:io';
 

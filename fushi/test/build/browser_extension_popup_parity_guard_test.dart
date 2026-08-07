@@ -46,7 +46,7 @@ void main() {
         expect(bytes('$extTools/vendor/$rel'), app,
             reason:
                 'tools/browser-extension/vendor/$rel drifted from assets/popup/$rel — '
-                're-run: cp hibiki/assets/popup/$rel into both extension vendor dirs '
+                're-run: cp fushi/assets/popup/$rel into both extension vendor dirs '
                 '(and content.css via generate-content-css.mjs).');
         expect(bytes('$extAssets/vendor/$rel'), app,
             reason:

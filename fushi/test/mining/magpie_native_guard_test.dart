@@ -14,7 +14,7 @@ import 'package:fushi/src/mining/magpie_upscaling.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  // flutter test 的 cwd 是包根（hibiki/），用相对路径解析，Linux CI 同样可跑。
+  // flutter test 的 cwd 是包根（fushi/），用相对路径解析，Linux CI 同样可跑。
   final File cpp = File('windows/runner/flutter_window.cpp');
   final File header = File('windows/runner/flutter_window.h');
   final File dartChannel = File('lib/src/mining/magpie_scaling_channel.dart');

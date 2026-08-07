@@ -66,7 +66,7 @@ void main() {
   test('lib/ 下除唯一真相源外不得手写 Windows 文件名黑名单 RegExp', () {
     final Directory libDir = Directory('lib');
     expect(libDir.existsSync(), isTrue,
-        reason: '需在 hibiki/ 包根下运行（flutter test 默认即是）');
+        reason: '需在 fushi/ 包根下运行（flutter test 默认即是）');
 
     final List<String> violations = <String>[];
     final Iterable<File> files = libDir

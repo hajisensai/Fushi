@@ -49,7 +49,7 @@ import '../helpers/source_guard.dart';
 /// 刻意**不**收 `columnTransformer:` —— 那是**改名**（v57 removed_at→deleted_at），
 /// 不是列的诞生地；收了会把一堆老列错标成 v57。
 ///
-/// ## 为什么守在 `hibiki/test/` 而不是 `packages/fushi_core/test/`
+/// ## 为什么守在 `fushi/test/` 而不是 `packages/fushi_core/test/`
 ///
 /// 两个原因，都不是随手放的：
 ///   1. 共享词法掩码 `test/helpers/source_guard.dart` 属于 `hibiki` 包的 test 根，
@@ -57,9 +57,9 @@ import '../helpers/source_guard.dart';
 ///      手写注释剥离（`test/tools/source_guard_adoption_test.dart`），在 core 包
 ///      内复制一份掩码实现正是它要防的事。
 ///   2. `packages/*/test` 只由 CI 的 `Run package tests` 覆盖，本地全量门
-///      （`hibiki/` 下的 `flutter_test_failures.dart`）根本跑不到它——这正是
+///      （`fushi/` 下的 `flutter_test_failures.dart`）根本跑不到它——这正是
 ///      BUG-1352 的成因，那条守卫（`package_schema_version_literal_guard_test.dart`）
-///      的结论就是「schema 版本号的守卫留在 `hibiki/test/database/`」。本条同理。
+///      的结论就是「schema 版本号的守卫留在 `fushi/test/database/`」。本条同理。
 ///
 /// 只校验 `tables.dart`（源），不校验 `database.g.dart`：生成文件里的 doc 是
 /// codegen 从 `tables.dart` 逐字复制的**派生副本**，源头改对了它必然跟着对，

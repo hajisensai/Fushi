@@ -33,7 +33,7 @@ import 'test_helpers.dart';
 ///   仍在真渲染、右键 DOM 事件可派发、Flutter 选区路径可用。原生菜单「只出一个」
 ///   的最终目视需可见窗，标 BLOCKED。
 ///
-/// Run (PowerShell, from hibiki/)：
+/// Run (PowerShell, from fushi/)：
 ///   $env:FUSHI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/reader_dblclick_context_menu_verify_itest.dart -d windows
 void main() {

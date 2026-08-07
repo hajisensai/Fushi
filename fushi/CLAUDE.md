@@ -155,7 +155,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - **音频**：`just_audio: ^0.9.31`（通过 `fushi_audio`）
 - **国际化**：`slang: ^3.13.0` / `slang_flutter`，17 种语言
 - **内部包**：`fushi_core` / `fushi_dictionary` / `fushi_anki` / `fushi_audio` / `fushi_platform`
-- **dependency_overrides**：`flutter_inappwebview_windows` / `flutter_inappwebview_android` / `network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `ffmpeg_kit_flutter` / `media_kit_*` 等 vendored 本地包（见 `hibiki/pubspec.yaml` 与 `docs/agent/build.md`）；`file_picker` 用 pub.dev 版（**不是** fork）
+- **dependency_overrides**：`flutter_inappwebview_windows` / `flutter_inappwebview_android` / `network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `ffmpeg_kit_flutter` / `media_kit_*` 等 vendored 本地包（见 `fushi/pubspec.yaml` 与 `docs/agent/build.md`）；`file_picker` 用 pub.dev 版（**不是** fork）
 
 ## 数据模型
 

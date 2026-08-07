@@ -12,7 +12,7 @@ void main() {
   test('no bare empty catch blocks in lib/src/sync', () {
     final Directory dir = Directory('lib/src/sync');
     expect(dir.existsSync(), isTrue,
-        reason: 'run from the hibiki/ package root');
+        reason: 'run from the fushi/ package root');
 
     // Matches an empty (whitespace-only) catch body in either form:
     //   `catch (...) {}` / `catch (...) { }` / `catch (...) {\n}`

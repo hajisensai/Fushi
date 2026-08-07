@@ -15,7 +15,7 @@ import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 /// `dimdenGD/chrome-lens-ocr` 的 `src/utils/proto_generated/*.cjs`，由
 /// protoc-gen-js 从 Chromium `third_party/lens_server_proto/*.proto` 生成。
 /// 该项目是独立 JS 实现，与本仓声明的血统（`1Selxo/Mangatan` →
-/// `W1ght/Niratan` → Hibiki，见 `hibiki/docs/licenses/google_lens_ocr.md`）无
+/// `W1ght/Niratan` → Hibiki，见 `fushi/docs/licenses/google_lens_ocr.md`）无
 /// 派生关系，可作独立证伪源。raw URL 前缀：
 /// `https://raw.githubusercontent.com/dimdenGD/chrome-lens-ocr/main/src/utils/proto_generated/`
 ///

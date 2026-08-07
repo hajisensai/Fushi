@@ -23,7 +23,7 @@ import '../helpers/scan_scale.dart';
 /// the *contract*: if any Dart source under `lib/` still reaches for a given
 /// [ImageSource] but Info.plist drops its usage key, this test goes red.
 void main() {
-  // Tests run with CWD = `hibiki/`.
+  // Tests run with CWD = `fushi/`.
   final Directory libDir = Directory('lib');
   final File plistFile = File('ios/Runner/Info.plist');
 

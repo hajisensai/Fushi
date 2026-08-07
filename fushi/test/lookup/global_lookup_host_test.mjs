@@ -1,5 +1,5 @@
 // TODO-867 P3b — global_lookup_host.js renderStack DOM-diff harness (node).
-// Run: node hibiki/test/lookup/global_lookup_host_test.mjs
+// Run: node fushi/test/lookup/global_lookup_host_test.mjs
 //
 // global_lookup_host.js is the app-OUTSIDE nested-stack host: it diffs a
 // { popups: [...] } payload into a live frames Map of iframe shells. jsdom is

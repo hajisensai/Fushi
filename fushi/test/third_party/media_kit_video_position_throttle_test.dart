@@ -75,7 +75,7 @@ void main() {
 
   group('TODO-1243 source guards: controls quantize position before setState',
       () {
-    // Tests run with CWD = `hibiki/`; vendored packages live at the workspace
+    // Tests run with CWD = `fushi/`; vendored packages live at the workspace
     // root.
     const String extPath =
         '../third_party/media_kit_video/lib/media_kit_video_controls/'

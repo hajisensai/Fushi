@@ -17,7 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// App / 打开真 DB），故用源码扫描守卫，与 `app_model_init_retry_race_guard_test.dart` 同范式。
 void main() {
   String read(String rel) {
-    final File? f = <String>[rel, 'hibiki/$rel']
+    final File? f = <String>[rel, 'fushi/$rel']
         .map(File.new)
         .cast<File?>()
         .firstWhere((File? f) => f != null && f.existsSync(),

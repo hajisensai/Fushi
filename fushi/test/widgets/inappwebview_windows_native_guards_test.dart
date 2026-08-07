@@ -7,9 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 ///   - process_exit_gate_guard_test.dart（TODO-618 fix3）
 ///   - webview2_disable_external_drop_guard_test.dart（TODO-648 / BUG-361）
 ///   - wgc_capture_lifecycle_log_guard_test.dart（TODO-506）
-/// 各守卫保持独立 test() 块（保失败隔离），断言逐字搬运。放在 hibiki/test/ 下
+/// 各守卫保持独立 test() 块（保失败隔离），断言逐字搬运。放在 fushi/test/ 下
 /// 是因为 _read 的双候选相对路径（'packages/...' 与 '../packages/...'）依赖从
-/// 仓库根或 hibiki/ 运行。本机无 MSVC 不能编译该 native fork，由 CI 编译验证；
+/// 仓库根或 fushi/ 运行。本机无 MSVC 不能编译该 native fork，由 CI 编译验证；
 /// 源码扫描守卫保证逻辑不回退。
 String _read(List<String> candidates, String name) {
   final File? file = candidates.map(File.new).cast<File?>().firstWhere(

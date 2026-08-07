@@ -12,7 +12,7 @@ void main() {
   setUpAll(() {
     final File src = File('lib/src/sync/sync_auto_trigger.dart');
     expect(src.existsSync(), isTrue,
-        reason: 'run from the hibiki/ package root');
+        reason: 'run from the fushi/ package root');
     body = src.readAsStringSync();
   });
 

@@ -20,7 +20,7 @@
 // This EXECUTES the real popup.js against a minimal fake DOM. Reverting either
 // fix turns this red.
 //
-// Run: node hibiki/test/pages/popup_glossary_export_parity_test.js
+// Run: node fushi/test/pages/popup_glossary_export_parity_test.js
 // (also driven from popup_glossary_export_parity_test.dart inside `flutter test`).
 
 const assert = require('assert');

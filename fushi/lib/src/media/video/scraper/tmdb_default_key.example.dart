@@ -1,5 +1,5 @@
 // 模板（入库）。把真值填进同目录的 `tmdb_default_key.dart`，再执行一次：
-//   git update-index --skip-worktree hibiki/lib/src/media/video/scraper/tmdb_default_key.dart
+//   git update-index --skip-worktree fushi/lib/src/media/video/scraper/tmdb_default_key.dart
 // 真值只留本地、不显示 dirty、永不提交。
 //
 // 真值来源：https://www.themoviedb.org/settings/api → Developer Plan（免费，非商业）

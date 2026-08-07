@@ -17,7 +17,7 @@
 // 运行时**逐字节等价**（转义与裸字节产生同一个 String），但文件变回纯文本，
 // git 从此正常做三方合并、diff 可读。
 //
-// 纯 dart:io，不依赖 Flutter 运行时；从 hibiki/ 向上找仓库根。
+// 纯 dart:io，不依赖 Flutter 运行时；从 fushi/ 向上找仓库根。
 
 import 'dart:io';
 
@@ -39,8 +39,8 @@ Directory _repoRoot() {
 /// 扫描范围：本仓自有的 Dart 源码根。**不含** third_party / vendored 包
 /// （上游产物不归我们管，且不参与本仓的并发合并热点）。
 const List<String> _scanRoots = <String>[
-  'hibiki/lib',
-  'hibiki/test',
+  'fushi/lib',
+  'fushi/test',
   'packages/fushi_core/lib',
   'packages/fushi_dictionary/lib',
   'packages/fushi_anki/lib',

@@ -27,7 +27,7 @@ import 'test_helpers.dart';
 ///   - `[chapter-perf]`：每次跨章一行分段 breakdown（[ReaderChapterPerfTrace]）。
 ///   - `[xchapter-perf]`：本测试的汇总（每段中位数/总和）。
 ///
-/// Run (PowerShell, from hibiki/)：
+/// Run (PowerShell, from fushi/)：
 ///   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 `
 ///     -RunId xchapter-01 integration_test/reader_cross_chapter_perf_itest.dart
 void main() {

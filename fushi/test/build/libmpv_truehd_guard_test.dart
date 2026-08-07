@@ -113,7 +113,7 @@ void main() {
     }
   }
 
-  // Tests run with CWD = `hibiki/`; vendored packages live at the workspace root.
+  // Tests run with CWD = `fushi/`; vendored packages live at the workspace root.
   final String pubspec = File('pubspec.yaml').readAsStringSync();
 
   String fork(String relative) =>

@@ -2,9 +2,9 @@
 //
 // 为什么（BUG-1225）——这条理由必须具体到能阻止再犯，写"需要写权限"没有用：
 //
-//   `VoiceHookReader::SelectTextThread`（`hibiki/windows/runner/voice_hook_reader.cpp:446`）
+//   `VoiceHookReader::SelectTextThread`（`fushi/windows/runner/voice_hook_reader.cpp:446`）
 //   会对**映射内**的 `SharedHeader::selected_text_thread_id`
-//   （`hibiki/windows/runner/voice_hook_ipc.h:162`，`volatile uint64_t`）做一次
+//   （`fushi/windows/runner/voice_hook_ipc.h:162`，`volatile uint64_t`）做一次
 //   `InterlockedExchange64` 原子写。那不是普通赋值、也不是 memcpy，所以按 `=` 或
 //   `memcpy` 搜"读端写不写共享内存"会**搜不到它**——本守卫的存在就是因为有人（作者本人）
 //   正是这样漏检的，差点把 `FILE_MAP_WRITE` 去掉。
@@ -24,8 +24,8 @@
 // 第一条断言会先失败并指明"前提没了，本守卫可以连同写权限一起撤"——守卫自己会退休，
 // 不会变成一条没人敢动的化石。
 //
-// 🔴 这条守卫只到**源码扫描**这一层。`hibiki/windows/runner/voice_hook_reader.cpp` 由
-// `hibiki/windows/runner/CMakeLists.txt` 编译进 Flutter Windows runner，与
+// 🔴 这条守卫只到**源码扫描**这一层。`fushi/windows/runner/voice_hook_reader.cpp` 由
+// `fushi/windows/runner/CMakeLists.txt` 编译进 Flutter Windows runner，与
 // `native/galgame_hook/` 那套 ctest **不是同一个构建单元**，那 22 条 ctest 一行都跑不到它。
 // 所以它证明不了运行时行为，只能保证"这两处源码事实同时成立或同时不成立"。
 
@@ -34,16 +34,16 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 
-/// 从当前 cwd 向上找含 `hibiki/windows/runner` 的仓库根。
+/// 从当前 cwd 向上找含 `fushi/windows/runner` 的仓库根。
 Directory _repoRoot() {
   var dir = Directory.current;
   for (var i = 0; i < 6; i++) {
-    if (Directory('${dir.path}/hibiki/windows/runner').existsSync()) return dir;
+    if (Directory('${dir.path}/fushi/windows/runner').existsSync()) return dir;
     final Directory parent = dir.parent;
     if (parent.path == dir.path) break;
     dir = parent;
   }
-  fail('找不到含 hibiki/windows/runner 的仓库根（从 ${Directory.current.path} 向上）');
+  fail('找不到含 fushi/windows/runner 的仓库根（从 ${Directory.current.path} 向上）');
 }
 
 /// 剥掉 `//` 行注释与 `/* */` 块注释再匹配。
@@ -64,7 +64,7 @@ String _functionBody(String source, String signature) {
 void main() {
   final Directory root = _repoRoot();
   final String readerPath =
-      '${root.path}/hibiki/windows/runner/voice_hook_reader.cpp';
+      '${root.path}/fushi/windows/runner/voice_hook_reader.cpp';
   // 契约只有一份真相源：host 读侧的手抄副本已删除，直接读 native 头
   // （守卫见 test/mining/gal_ipc_contract_single_source_test.dart）。
   final String ipcPath =

@@ -9,7 +9,7 @@
 //
 // 注：第一阶段写的“溢出仍是硬裁”已经过时——第二阶段给这个浮窗加了真正的
 // 垂直滚动（滚轮 + 指示条），句尾不再永久丢失，见
-// hibiki/test/build/gal_overlay_scroll_guard_test.dart。顶端对齐从“止损”变成了
+// fushi/test/build/gal_overlay_scroll_guard_test.dart。顶端对齐从“止损”变成了
 // 滚动能成立的前提：排版必须从 text_rect_.top 起画，滚动才等于平移绘制原点。
 import 'dart:io';
 

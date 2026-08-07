@@ -26,7 +26,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// re-disabled at the base, or the manifest stops referencing the config, the
 /// Android paired-device path silently breaks again and this test goes red.
 void main() {
-  // Tests run with CWD = `hibiki/`.
+  // Tests run with CWD = `fushi/`.
   final File configFile = File(
     'android/app/src/main/res/xml/network_security_config.xml',
   );

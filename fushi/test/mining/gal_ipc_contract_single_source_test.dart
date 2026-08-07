@@ -8,7 +8,7 @@ import '../helpers/source_guard.dart';
 /// galgame voice hook 的**进程间契约只能有一份真相源**：
 /// `native/galgame_hook/include/voice_hook_ipc.h`。
 ///
-/// 为什么要守卫：host 读侧曾经在 `hibiki/windows/runner/voice_hook_ipc.h` 放一份手抄副本，
+/// 为什么要守卫：host 读侧曾经在 `fushi/windows/runner/voice_hook_ipc.h` 放一份手抄副本，
 /// 注释写着「真相源在独立仓库 hibiki-hook，须同步」。那个仓库后来合进本仓，人工同步这一步
 /// 就退化成纯粹的漂移源——本体 `hibiki.exe` 编副本、随包内置的 helper 编真相源，两边的
 /// 常量与**结构布局**各活各的。
@@ -25,7 +25,7 @@ import '../helpers/source_guard.dart';
 /// 所以守的是结构而不是数值：**host 侧不得存在第二处契约定义**，且读侧必须直接 include
 /// 真相源。数值一致由「同一个文件」保证，不需要也不应该靠人对齐。
 void main() {
-  /// 仓库根：`flutter test` 的 cwd 是 `hibiki/`，也允许从仓库根跑。
+  /// 仓库根：`flutter test` 的 cwd 是 `fushi/`，也允许从仓库根跑。
   Directory repoRoot() {
     for (final String candidate in <String>['..', '.']) {
       final Directory native =
@@ -37,8 +37,8 @@ void main() {
 
   /// app 侧 Windows 原生树（runner + 插件桥），即「不得再有第二份契约」的范围。
   Directory hostWindowsTree(Directory root) {
-    final Directory dir = Directory(p.join(root.path, 'hibiki', 'windows'));
-    expect(dir.existsSync(), isTrue, reason: 'hibiki/windows 不存在，扫描范围是空的');
+    final Directory dir = Directory(p.join(root.path, 'fushi', 'windows'));
+    expect(dir.existsSync(), isTrue, reason: 'fushi/windows 不存在，扫描范围是空的');
     return dir;
   }
 
@@ -62,7 +62,7 @@ void main() {
     test('host 读侧 include 的必须是 native 真相源本身，不是任何本地副本', () {
       final Directory root = repoRoot();
       final File reader = File(p.join(
-          root.path, 'hibiki', 'windows', 'runner', 'voice_hook_reader.cpp'));
+          root.path, 'fushi', 'windows', 'runner', 'voice_hook_reader.cpp'));
       expect(reader.existsSync(), isTrue, reason: '读侧实现不见了，扫描范围是空的');
       // 注释里的 include 不算数（旧副本的注释里就写着这个路径）。
       final String masked = maskComments(reader.readAsStringSync());
@@ -72,7 +72,7 @@ void main() {
           reason: '读侧必须 include 契约头，才谈得上「include 的是哪一份」');
       final String includePath = include!.group(1)!;
       final String resolved = p.normalize(
-          p.join(root.path, 'hibiki', 'windows', 'runner', includePath));
+          p.join(root.path, 'fushi', 'windows', 'runner', includePath));
       // 判据是**解析后的真实文件**落在真相源目录，不是「路径串长得像」：
       // 任何本地副本（含同名文件）都解析不到 native/galgame_hook/include 去。
       expect(
@@ -86,7 +86,7 @@ void main() {
           reason: 'include 的路径不存在，这份改动根本编不过');
     });
 
-    test('hibiki/windows 下不得有第二处契约定义（常量或结构）', () {
+    test('fushi/windows 下不得有第二处契约定义（常量或结构）', () {
       final Directory tree = hostWindowsTree(repoRoot());
       final List<File> sources = tree
           .listSync(recursive: true, followLinks: false)
@@ -121,7 +121,7 @@ void main() {
     /// 这个动作。文案里再写它，用户只会照做一遍然后发现毫无变化——处置必须是「更新本体」。
     String valueOf(String file, String key) {
       final File json =
-          File(p.join(repoRoot().path, 'hibiki', 'lib', 'i18n', file));
+          File(p.join(repoRoot().path, 'fushi', 'lib', 'i18n', file));
       expect(json.existsSync(), isTrue, reason: '$file 不存在，扫描范围是空的');
       final RegExpMatch? match =
           RegExp('"$key"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"')

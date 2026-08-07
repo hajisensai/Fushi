@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('_stripCredentials wipes the device-local pairing/baseline tables', () {
     final File f = File('lib/src/sync/backup_service.dart');
-    expect(f.existsSync(), isTrue, reason: 'run from the hibiki/ package root');
+    expect(f.existsSync(), isTrue, reason: 'run from the fushi/ package root');
     final String s = f.readAsStringSync();
 
     // The device-local table registry names both tables.

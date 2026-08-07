@@ -19,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// This scans the source instead of driving the settings widget (which needs the
 /// full provider graph + DB) so the guard stays cheap and fails loudly if either
-/// half regresses. Tests run with CWD = `hibiki/`.
+/// half regresses. Tests run with CWD = `fushi/`.
 void main() {
   final File bindingUi = File(
     'lib/src/pages/implementations/profile_management_page.dart',

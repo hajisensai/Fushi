@@ -12,7 +12,7 @@ void main() {
     // 否则负向守卫会因被守的代码搬出读取范围而无意义地恒过。
     final String code = readReaderPageSource();
     expect(code.contains('InAppWebView('), isTrue,
-        reason: '合并语料应含 reader WebView 构建；测试需在 hibiki/ 目录下运行');
+        reason: '合并语料应含 reader WebView 构建；测试需在 fushi/ 目录下运行');
 
     // 特例的特征：onReceivedError 分支内同时判 Platform.isWindows 与拦截域 host。
     final bool hasWindowsHostSpecialCase =

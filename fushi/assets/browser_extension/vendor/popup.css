@@ -1472,7 +1472,7 @@ html.global-lookup[data-theme="dark"] body {
    span/div[class*="gloss-sc-"]{float:none!important;position:static!important;display:inline}
    是 BUG-520 的根因——display:inline 把所有词典靠 div block 布局做的分行
    压成一行、行高为 0 的图标容器互相重叠，禁止再引入（守卫见
-   hibiki/test/pages/popup_glossary_link_scope_test.js 第 (3) 节）。
+   fushi/test/pages/popup_glossary_link_scope_test.js 第 (3) 节）。
    上面的 a.gloss-sc-a 规则保留：它还兜住词典自带 styles.css 对 <a> 的
    float/position（BUG-435 的次要成因），且 <a> 本就是行内元素零副作用。 */
 

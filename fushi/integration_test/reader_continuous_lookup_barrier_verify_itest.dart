@@ -32,7 +32,7 @@ import 'test_helpers.dart';
 ///   3. 断言弹窗仍在（连续查词未被关窗逻辑堵塞），且查词序号推进/选区落到新词——
 ///      证明「点弹窗外的新词，一次就换查」，不是「只关栈、要点两次」。
 ///
-/// Run (PowerShell, from hibiki/)：
+/// Run (PowerShell, from fushi/)：
 ///   $env:FUSHI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/reader_continuous_lookup_barrier_verify_itest.dart -d windows
 void main() {

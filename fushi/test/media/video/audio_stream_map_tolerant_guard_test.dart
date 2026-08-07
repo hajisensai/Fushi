@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 越界根因：`currentAudioStreamIndex` 用 libmpv `tracks.audio` 的轨序号，挂外挂音频
 /// 或枚举顺序与 ffmpeg `0:a:N` 不一致时会越界。`?` 是浏览器无关的健壮降级。
 void main() {
-  // 仓库根（test 工作目录是 hibiki/）。
+  // 仓库根（test 工作目录是 fushi/）。
   String src(String rel) => File(rel).readAsStringSync();
 
   // 匹配 `0:a:` 后跟一个 `$...`（裸标识符或 `${...}`）插值，再看其后**第一个非空白**

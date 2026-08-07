@@ -21,7 +21,7 @@ import 'test_helpers.dart';
 /// `.expression-scroll{overflow-x:auto}` 让该盒成为滚动容器，滚动容器的**顶部**溢出
 /// 永远够不到（scrollTop 不能为负）= 永久 CLIP。所以判据是 rt 的顶不得越过容器顶。
 ///
-/// 跑法（仓库 hibiki/ 下，离屏、不抢焦点、隔离 WebView2 profile）：
+/// 跑法（仓库 fushi/ 下，离屏、不抢焦点、隔离 WebView2 profile）：
 ///   .\tool\run_windows_itest.ps1 integration_test\popup_headword_ruby_dom_itest.dart
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =

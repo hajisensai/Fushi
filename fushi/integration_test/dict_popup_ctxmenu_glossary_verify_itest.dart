@@ -46,7 +46,7 @@ import 'test_helpers.dart';
 ///   - .gloss-image-link 仍由 popup.css 拿到 position:relative（图片布局零回归）。
 ///   真引擎 computed-style + DOM-rect 证据，不是源码 grep。
 ///
-/// Run (PowerShell, from hibiki/)：
+/// Run (PowerShell, from fushi/)：
 ///   flutter test integration_test/dict_popup_ctxmenu_glossary_verify_itest.dart -d windows
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =

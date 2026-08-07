@@ -3,7 +3,7 @@
 //
 // 双路落盘：
 // - Android（flutter drive + test_driver/integration_test_screenshots.dart）：
-//   binding.takeScreenshot → 宿主机 hibiki/screenshots/<name>.png。
+//   binding.takeScreenshot → 宿主机 fushi/screenshots/<name>.png。
 // - Windows 离屏（tool/run_windows_itest.ps1）：根 RenderView.toImage →
 //   <evidenceDir>/screenshots/<name>.png（同 observe_offscreen_test 约定）。
 //

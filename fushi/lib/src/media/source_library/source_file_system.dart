@@ -6,7 +6,7 @@
 //
 // 🔴 命名红线（守卫测试钉死：test/media/source_library/source_file_system_test.dart）：
 // 「来源库」域（本目录 media/source_library/）与 jidoujisho 血统的 UI 媒体源
-// `abstract class MediaSource`（媒体源/标签页概念，hibiki/lib/src/media/media_source.dart，
+// `abstract class MediaSource`（媒体源/标签页概念，fushi/lib/src/media/media_source.dart，
 // 实现在 media/sources/）是两个语义无关的体系。本域类型一律用 SourceLibrary* /
 // Source* 前缀（SourceLibraryScanner / SourceLibraryCredentialStore /
 // [SourceFileSystem]），**绝不能再声明 MediaSource* 前缀的新类型**，重名会撞符号。

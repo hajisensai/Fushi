@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// AppModel 太大、依赖整页初始化 + Drift + FFI，无法在单测里实例化并驱动
 /// dispose()/searchDictionary() 的真实路径，故这里用源码扫描守卫锁住三簇加固不回归。
-/// 测试从 `hibiki/` 工作目录运行，读 `lib/src/models/app_model.dart`。
+/// 测试从 `fushi/` 工作目录运行，读 `lib/src/models/app_model.dart`。
 void main() {
   final File file = File('lib/src/models/app_model.dart');
   late final String source;

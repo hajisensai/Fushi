@@ -162,14 +162,14 @@ void main() {
       //   所以豁免**跟随文件移动**，不是新开豁免；旧路径同时移出名单，免得
       //   将来真有人在那条路径上新写一份 switch 却被这条陈旧条目放行。
       const Set<String> allowlist = <String>{
-        'hibiki/lib/src/media/manga/reader/manga_fushi_page.dart',
+        'fushi/lib/src/media/manga/reader/manga_fushi_page.dart',
       };
       final RegExp caseRe =
           RegExp(r"case\s+'\.?(?:png|jpe?g|webp|gif|svg)'\s*:");
       final List<String> offenders = <String>[];
       int scanned = 0;
       for (final String libDir in <String>[
-        'hibiki/lib',
+        'fushi/lib',
         'packages/fushi_anki/lib',
         'packages/fushi_core/lib',
         'packages/fushi_audio/lib',

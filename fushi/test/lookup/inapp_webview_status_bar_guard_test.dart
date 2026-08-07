@@ -20,7 +20,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// fork 的 WebView 实现源码（相对 `hibiki/` 的测试 cwd）。
+/// fork 的 WebView 实现源码（相对 `fushi/` 的测试 cwd）。
 const String _forkSourcePath =
     '../packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview.cpp';
 

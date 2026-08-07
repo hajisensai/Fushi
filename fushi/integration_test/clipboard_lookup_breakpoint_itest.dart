@@ -21,7 +21,7 @@ import 'helpers/library_fixture.dart' show readyAppModel;
 ///
 /// 不写 OS 剪贴板（系统级共享资源，会打断用户），端到端剪贴板->查词由 widget 守卫覆盖。
 ///
-/// Run (PowerShell, from hibiki/)：
+/// Run (PowerShell, from fushi/)：
 ///   $env:FUSHI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/clipboard_lookup_breakpoint_itest.dart -d windows
 void main() {

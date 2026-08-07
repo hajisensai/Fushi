@@ -3,7 +3,7 @@
 // OALD10, while protecting an ordinary definition that happens to use the word
 // "redirect".
 //
-// Run: node hibiki/test/pages/popup_redirect_entry_filter_test.js
+// Run: node fushi/test/pages/popup_redirect_entry_filter_test.js
 
 const assert = require('assert');
 const fs = require('fs');

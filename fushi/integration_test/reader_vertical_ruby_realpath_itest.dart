@@ -31,7 +31,7 @@ import 'test_helpers.dart';
 /// carrying the exact 貫(かん)禄(ろく) / 安達 mono-ruby the user screenshotted
 /// (with <rp> fallback parens, real-EPUB markup), before and after a jump.
 ///
-/// Run (PowerShell, from hibiki/):
+/// Run (PowerShell, from fushi/):
 ///   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 \
 ///       -Visible integration_test/reader_vertical_ruby_realpath_itest.dart
 

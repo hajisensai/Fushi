@@ -23,7 +23,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 里在源码层钉住启动契约防回归（真机验收另行）。
 void main() {
   const String service =
-      '../hibiki/android/app/src/main/java/app/fushi/reader/FloatingLyricService.java';
+      '../fushi/android/app/src/main/java/app/fushi/reader/FloatingLyricService.java';
 
   String read() => File(service).readAsStringSync().replaceAll('\r\n', '\n');
 

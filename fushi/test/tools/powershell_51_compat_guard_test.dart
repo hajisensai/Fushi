@@ -14,7 +14,7 @@
 // 不受此限（仓库里绝大多数 .ps1 走 pwsh，禁掉 PS7 语法会误伤）。新增一处
 // `powershell -File` 调用，对应脚本自动进入守卫范围。
 //
-// 纯 dart:io，不依赖 Flutter 运行时；cwd 是 hibiki/，所以跨出仓库根用 '../'。
+// 纯 dart:io，不依赖 Flutter 运行时；cwd 是 fushi/，所以跨出仓库根用 '../'。
 //
 // 受约束脚本集合是运行时从 yml 里解析出来的，源码里没有那些 .ps1 的路径字面量，
 // 所以 `tool/tests_for_changes.dart` 的静态提取看不见它们 —— 这里显式声明触发面。

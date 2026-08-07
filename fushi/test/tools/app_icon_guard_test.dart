@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 这些是无法用 widget 测试覆盖的「跨语言契约 / 资源引用」，用源码扫描兜底。
 void main() {
   String read(String relative) {
-    // 测试在 hibiki/ 下运行；相对路径即相对该目录。
+    // 测试在 fushi/ 下运行；相对路径即相对该目录。
     final File f = File(relative);
     expect(f.existsSync(), isTrue, reason: '缺失文件: $relative');
     return f.readAsStringSync();

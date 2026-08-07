@@ -2,7 +2,7 @@
 // that signal must wait for FontFaceSet.ready; otherwise a cold nested lookup
 // reveals one fallback-font frame.
 //
-// Run: node hibiki/test/pages/popup_font_ready_gate_test.js
+// Run: node fushi/test/pages/popup_font_ready_gate_test.js
 
 const assert = require('assert');
 const fs = require('fs');

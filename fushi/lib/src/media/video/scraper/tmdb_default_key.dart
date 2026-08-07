@@ -7,7 +7,7 @@
 // 同 google_oauth_secret.dart / dandanplay_secret.dart 的既有约定。
 //
 // 本机要启用内置 key 时：把真值填到本文件，再执行一次——
-//   git update-index --skip-worktree hibiki/lib/src/media/video/scraper/tmdb_default_key.dart
+//   git update-index --skip-worktree fushi/lib/src/media/video/scraper/tmdb_default_key.dart
 // 真值只留本地、不显示 dirty、永不提交。CI 发布构建从 GitHub Actions secret
 // TMDB_API_KEY 注入（见 main.yml / build-multiplatform.yml）。
 //

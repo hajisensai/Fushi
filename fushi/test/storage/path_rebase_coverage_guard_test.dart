@@ -42,7 +42,7 @@ void main() {
   Set<String> allTextColumns() {
     final File file = File(tablesPath);
     expect(file.existsSync(), isTrue,
-        reason: '本测试假定 cwd 为 hibiki/（flutter test 默认）：$tablesPath');
+        reason: '本测试假定 cwd 为 fushi/（flutter test 默认）：$tablesPath');
     final Set<String> out = <String>{};
     String? table;
     for (final String line in file.readAsLinesSync()) {

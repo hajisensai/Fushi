@@ -28,7 +28,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// is dropped or flipped back to `true`, the Android no-picture path silently
 /// regresses and this test goes red.
 void main() {
-  // Tests run with CWD = `hibiki/`.
+  // Tests run with CWD = `fushi/`.
   final File manifestFile = File('android/app/src/main/AndroidManifest.xml');
 
   test('manifest disables SurfaceControl backend (EnableSurfaceControl=false)',

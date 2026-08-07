@@ -1,6 +1,6 @@
 // 模板（入库）。拷成同目录的 `dandanplay_secret.dart` 并填入真实值。
 // 真值只留本地：填好后执行一次——
-//   git update-index --skip-worktree hibiki/lib/src/media/video/dandanplay_secret.dart
+//   git update-index --skip-worktree fushi/lib/src/media/video/dandanplay_secret.dart
 // 真值便不显示 dirty、绝不会误提交。
 //
 // 真值来源：dandanplay 开放平台开发者中心 https://dev.dandanplay.com

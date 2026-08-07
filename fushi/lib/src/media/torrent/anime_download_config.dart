@@ -72,7 +72,7 @@ class QbConnectionConfig {
   /// BUG-1207：这里过去只规约 [backendAuto]，显式的 [backendEmbedded] 一律原样
   /// 放行——于是移动端（Android/iOS 从不构建也从不打包 `libfushi_torrent_ffi.so`：
   /// `native/fushi_torrent/CMakeLists.txt` 只有 WIN32/APPLE 分支，
-  /// `hibiki/android/app/build.gradle` 的 externalNativeBuild 只含 fushidicts）
+  /// `fushi/android/app/build.gradle` 的 externalNativeBuild 只含 fushidicts）
   /// 会解析出一个根本不存在的后端：`EmbeddedTorrentHost.open` 吞掉 `ArgumentError`
   /// 返回 null，`_torrentBackendFor` 静默造一个 `QbTorrentBackend`，而设置页仍显示
   /// 「内置引擎」选中、并把只有内置引擎才读的下载目录暴露给用户改（改了不被任何人

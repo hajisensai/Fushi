@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 // third state (graceful degrade).
 //
 // Behaviour coverage (mine -> green ✓↩ -> updateEntry; supersession; no-id
-// degrade) lives in hibiki/test/utils/misc/popup_asset_behavior_test.js. This
+// degrade) lives in fushi/test/utils/misc/popup_asset_behavior_test.js. This
 // static guard locks the wiring so the third state cannot silently regress to
 // the old two-state behaviour, WITHOUT breaking the TODO-084/087 guards
 // (popup_mine_button_anki_truth_static_test.dart), which still require the

@@ -18,7 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// accidental drag-volume returns and this goes red. See
 /// `third_party/media_kit_video/PATCHES.md`.
 void main() {
-  // Tests run with CWD = `hibiki/`; vendored packages live at the workspace root.
+  // Tests run with CWD = `fushi/`; vendored packages live at the workspace root.
   const String controlsPath =
       '../third_party/media_kit_video/lib/media_kit_video_controls/'
       'src/controls/material_desktop.dart';

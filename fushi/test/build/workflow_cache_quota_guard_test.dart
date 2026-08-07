@@ -24,7 +24,7 @@ import '../helpers/source_guard.dart';
 /// 2. **同一份 Gradle 缓存被存了两遍。** `main.yml` / `release.yml` 在缓存步骤
 ///    **之前**用 `sed -i` 删掉了 `build.gradle` / `settings.gradle` 里的 aliyun
 ///    镜像行，而 `build-multiplatform.yml` 的同名 sed 在缓存步骤**之后**。
-///    两边 `hashFiles('hibiki/android/**/*.gradle*')` 因此算在不同内容上，
+///    两边 `hashFiles('fushi/android/**/*.gradle*')` 因此算在不同内容上，
 ///    产出两条 key：`Linux-gradle-6facc6ed…`（2,901,298,096 B）与
 ///    `Linux-gradle-5709404c…`（2,901,388,049 B）——差 89,953 B，实质同一份，
 ///    白占 2.7 GB。⇒ 三个 workflow 的 Gradle 缓存 path + key 必须逐字相同，

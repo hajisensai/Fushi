@@ -17,7 +17,7 @@
 // genuinely empty selection container or by an unmapped Anki {sentence} field
 // (the other diagnostic the mining path now surfaces).
 //
-// Run: node hibiki/test/reader/reader_get_sentence_context_boundary_test.js
+// Run: node fushi/test/reader/reader_get_sentence_context_boundary_test.js
 // (also driven from the matching .dart so it runs inside `flutter test`).
 
 const assert = require('assert');

@@ -15,7 +15,7 @@
 // mining payload (and that an entry whose only glossary is hidden yields an empty
 // <ol></ol> / {} — no empty card content). Reverting the fix turns this red.
 //
-// Run: node hibiki/test/pages/popup_mining_hidden_dictionary_test.js
+// Run: node fushi/test/pages/popup_mining_hidden_dictionary_test.js
 // (also driven from popup_mining_hidden_dictionary_test.dart so it executes inside
 //  `flutter test`).
 

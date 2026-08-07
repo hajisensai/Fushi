@@ -9,7 +9,7 @@ import '../helpers/source_guard.dart';
 /// BSD/macOS 的 sed 与 GNU sed 在 `-i` 上语义不同：BSD 的 `-i` **必须**带备份
 /// 后缀，写成 `sed -i "脚本" 文件` 时它会把紧跟的脚本吃成后缀、再把文件名当成
 /// 脚本执行，于是固定报
-/// `sed: 1: "hibiki/lib/src/media/vi ...": extra characters at the end of h command`
+/// `sed: 1: "fushi/lib/src/media/vi ...": extra characters at the end of h command`
 /// 并以 1 退出。develop 上的 `Build and Test` / `Build Desktop and Apple` 两个
 /// workflow 的 macos + ios 作业就是这样在「Provide gitignored TMDB API key stub」
 /// 步骤上固定红的（run 30708854995 / 30706194279）。

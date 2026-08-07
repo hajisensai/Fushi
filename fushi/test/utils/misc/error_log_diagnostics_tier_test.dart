@@ -76,7 +76,7 @@ void main() {
     test('WGC 折入错误日志走 logDiagnostic', () {
       final String src = _read(<String>[
         'lib/src/utils/misc/wgc_capture_log.dart',
-        'hibiki/lib/src/utils/misc/wgc_capture_log.dart',
+        'fushi/lib/src/utils/misc/wgc_capture_log.dart',
       ], 'wgc_capture_log.dart');
       expect(
           RegExp(r"logDiagnostic\(\s*'WGC\.captureLog'").hasMatch(src), isTrue,
@@ -89,7 +89,7 @@ void main() {
     test('UpdateChecker 预期网络失败三分支走 logDiagnostic', () {
       final String src = _read(<String>[
         'lib/src/utils/misc/update_checker_release.dart',
-        'hibiki/lib/src/utils/misc/update_checker_release.dart',
+        'fushi/lib/src/utils/misc/update_checker_release.dart',
       ], 'update_checker_release.dart');
       // 折叠空白，稳健匹配「方法名(  'label',  t.update_network_failure」跨行调用。
       final String collapsed = src.replaceAll(RegExp(r'\s+'), ' ');

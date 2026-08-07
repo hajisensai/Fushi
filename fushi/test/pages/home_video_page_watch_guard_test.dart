@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 视频库将退回「导入不自动出现」。DB 流本身的行为由
 /// `test/database/video_books_test.dart` 的 `watchVideoBookUids` 组守。
 void main() {
-  // Tests run with CWD = `hibiki/`.
+  // Tests run with CWD = `fushi/`.
   final File page = File('lib/src/pages/implementations/home_video_page.dart');
 
   test('home_video_page.dart exists', () {

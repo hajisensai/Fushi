@@ -105,7 +105,7 @@ void main() {
     late String source;
 
     setUpAll(() {
-      // 测试 cwd 是 hibiki/；源码相对路径稳定（范式同 video_import_dialog_busy_guard_test）。
+      // 测试 cwd 是 fushi/；源码相对路径稳定（范式同 video_import_dialog_busy_guard_test）。
       source = File('lib/src/media/video/video_import_dialog.dart')
           .readAsStringSync();
     });

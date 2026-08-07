@@ -19,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// Activity's `configChanges` drops `navigation`, the gamepad-reconnect path
 /// silently regresses and this test goes red.
 void main() {
-  // Tests run with CWD = `hibiki/`.
+  // Tests run with CWD = `fushi/`.
   final File manifestFile = File('android/app/src/main/AndroidManifest.xml');
 
   test('every <activity> android:configChanges includes navigation', () {

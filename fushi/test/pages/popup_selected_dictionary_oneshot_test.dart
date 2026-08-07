@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// TODO-645 / BUG-358: the popup mining dictionary selection must be one-shot.
 ///
-/// 根因：`hibiki/assets/popup/popup.js` 的 `selectedDictionaries[idx]`（记某词条
+/// 根因：`fushi/assets/popup/popup.js` 的 `selectedDictionaries[idx]`（记某词条
 /// 长按选了哪本词典，填 Anki `{selected-glossary}` 字段）原来只在用户长按同一词典
 /// 取消时清。制卡成功 / 换词重渲染都不清，于是换词复用常驻热槽 WebView（同 entryIdx）
 /// 时残留选择粘到下一张卡，静默带上次选的词典。修复对齐句子上下文镜像的一次性生命周期：

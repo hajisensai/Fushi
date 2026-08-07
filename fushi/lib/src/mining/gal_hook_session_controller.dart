@@ -629,7 +629,7 @@ class GalHookSessionController extends ChangeNotifier {
   static const int _voiceCacheMax = 200;
 
   /// Loopback 环形缓冲的**真实**容量：native `kRingSeconds = 60`
-  /// （hibiki/windows/runner/audio_loopback_capture.cpp:21）。
+  /// （fushi/windows/runner/audio_loopback_capture.cpp:21）。
   /// 这是 `grabRecent` 回取长度的唯一硬上限，与任何窗口时长无关（BUG-1094）。
   static const int _loopbackRingCapacityMs = 60000;
 
@@ -4368,7 +4368,7 @@ class GalHookSessionController extends ChangeNotifier {
   /// 退出 / 销毁前把超分收干净，并**等它真的收完**。
   ///
   /// 为什么必须显式登记进 [ExitFlushRegistry]：桌面点 X 走 `exit(0)` 快杀，[close] 在
-  /// hibiki/lib 里一次都没被调用过。不接这一步，我们 detached 起的 Magpie 会活过 Hibiki
+  /// fushi/lib 里一次都没被调用过。不接这一步，我们 detached 起的 Magpie 会活过 Hibiki
   /// 的死亡，配置里那条 `autoScale=Fullscreen` 也留着 —— 用户下次**不经 Hibiki**双击
   /// 游戏就被自动全屏超分，那是我们没被授权做的事。
   Future<void> shutdownMagpieUpscaling() async {

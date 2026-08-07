@@ -19,7 +19,7 @@ void main() {
         () {
       final File src = File('lib/src/sync/sync_manager.dart');
       expect(src.existsSync(), isTrue,
-          reason: 'run from the hibiki/ package root');
+          reason: 'run from the fushi/ package root');
       final String body = src.readAsStringSync();
 
       final int idx = body.indexOf('Future<SyncBookResult> _handleExport(');

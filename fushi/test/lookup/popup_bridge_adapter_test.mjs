@@ -1,5 +1,5 @@
 // Unit test for assets/popup/popup_bridge_adapter.js (TODO-617).
-// Run: node hibiki/test/lookup/popup_bridge_adapter_test.mjs
+// Run: node fushi/test/lookup/popup_bridge_adapter_test.mjs
 //
 // Verifies the adapter maps window.flutter_inappwebview.callHandler onto
 // chrome.webview.postMessage with a {handler, args, id} envelope, and that the

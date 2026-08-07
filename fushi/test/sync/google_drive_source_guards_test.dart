@@ -22,7 +22,7 @@ void main() {
 
     test('every api.files.list( call passes spaces: _space.spaces', () {
       expect(handler.existsSync(), isTrue,
-          reason: 'run from the hibiki/ package root');
+          reason: 'run from the fushi/ package root');
       final String src = handler.readAsStringSync();
 
       // Split the source into each files.list( ... ); call block by bracket
@@ -95,7 +95,7 @@ void main() {
 
     String source() {
       expect(spaceFile.existsSync(), isTrue,
-          reason: 'run from the hibiki/ package root');
+          reason: 'run from the fushi/ package root');
       return spaceFile.readAsStringSync();
     }
 
@@ -122,7 +122,7 @@ void main() {
 
     String source() {
       expect(authFile.existsSync(), isTrue,
-          reason: 'run from the hibiki/ package root');
+          reason: 'run from the fushi/ package root');
       return authFile.readAsStringSync();
     }
 

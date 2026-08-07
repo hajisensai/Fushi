@@ -11,7 +11,7 @@ void main() {
       File('lib/src/pages/implementations/reader_fushi_page.dart');
 
   test('reader source file exists', () {
-    expect(reader.existsSync(), isTrue, reason: '从 hibiki/ 目录跑 flutter test');
+    expect(reader.existsSync(), isTrue, reason: '从 fushi/ 目录跑 flutter test');
   });
 
   test('_readerChromeHeight is a scaled getter, not a const 56', () {

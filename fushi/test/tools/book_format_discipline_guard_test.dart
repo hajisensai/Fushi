@@ -30,7 +30,7 @@ import 'package:fushi_core/fushi_core.dart';
 import '../helpers/source_guard.dart';
 import '../helpers/scan_scale.dart';
 
-/// DAO 所在文件（相对 `hibiki/`，故要跳出去一层）。
+/// DAO 所在文件（相对 `fushi/`，故要跳出去一层）。
 const String kDaoFile =
     '../packages/fushi_core/lib/src/database/database.dart';
 

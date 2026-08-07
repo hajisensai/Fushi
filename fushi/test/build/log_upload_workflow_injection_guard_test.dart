@@ -63,13 +63,13 @@ void main() {
           contains(r'LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}'));
       // 写穿真实密钥文件（不是 example），且两个常量都写。
       expect(workflow,
-          contains('dst=hibiki/lib/src/utils/misc/log_upload_secret.dart'));
+          contains('dst=fushi/lib/src/utils/misc/log_upload_secret.dart'));
       expect(workflow, contains('const String kLogUploadEndpoint = %s;'));
       expect(workflow, contains('const String kLogUploadToken = %s;'));
       // 未配置 secret 时回退到入库空占位，保证 fresh CI 仍可编译、不暴露端点。
       expect(
           workflow,
-          contains('cp hibiki/lib/src/utils/misc/'
+          contains('cp fushi/lib/src/utils/misc/'
               'log_upload_secret.example.dart "\$dst"'));
     });
   }

@@ -104,11 +104,11 @@ void main() {
         root,
         'docs/bugs/BUG-005-foo.md',
         '## BUG-005 · 示例标题\n- **[x] ① 已修复** — abc123\n'
-            '- **[x] ② 已加自动化测试** — hibiki/test/tools/bug_005_foo_test.dart\n');
+            '- **[x] ② 已加自动化测试** — fushi/test/tools/bug_005_foo_test.dart\n');
     writeFile(root, 'docs/bugs/BUG-006-bar.md', bugDoc(6, '另一条'));
     writeFile(root, 'lib/foo.dart',
         '// 修 BUG-005：根因在 foo.dart:42。debug-005 与 BUG-0055 都不该被改。\nvoid main() {}\n');
-    writeFile(root, 'hibiki/test/tools/bug_005_foo_test.dart',
+    writeFile(root, 'fushi/test/tools/bug_005_foo_test.dart',
         "void main() {\n  test('BUG-005 回归守卫', () {});\n}\n");
     git(root, <String>['init', '-q', '.']);
     git(root, <String>['config', 'user.email', 'fixture@example.com']);
@@ -140,12 +140,12 @@ void main() {
       expect(lib, contains('debug-005'));
       expect(lib, contains('BUG-0055'));
       // ④ 测试名 + 测试文件名
-      expect(exists(root, 'hibiki/test/tools/bug_009_foo_test.dart'), isTrue);
-      expect(readFile(root, 'hibiki/test/tools/bug_009_foo_test.dart'),
+      expect(exists(root, 'fushi/test/tools/bug_009_foo_test.dart'), isTrue);
+      expect(readFile(root, 'fushi/test/tools/bug_009_foo_test.dart'),
           contains("test('BUG-009 回归守卫'"));
       // bug 文件正文里指向测试文件的路径也跟着改
       expect(readFile(root, 'docs/bugs/BUG-009-foo.md'),
-          contains('hibiki/test/tools/bug_009_foo_test.dart'));
+          contains('fushi/test/tools/bug_009_foo_test.dart'));
       // 索引自动重建
       expect(readFile(root, 'docs/BUGS.md'), contains('[BUG-009](bugs/BUG-009-foo.md)'));
       expect(readFile(root, 'docs/BUGS.md'), isNot(contains('BUG-005')));
@@ -181,7 +181,7 @@ void main() {
       );
       expect(exists(root, 'docs/bugs/BUG-005-foo.md'), isTrue);
       expect(readFile(root, 'lib/foo.dart'), contains('BUG-005'));
-      expect(exists(root, 'hibiki/test/tools/bug_005_foo_test.dart'), isTrue);
+      expect(exists(root, 'fushi/test/tools/bug_005_foo_test.dart'), isTrue);
     });
 
     test('目标号被其它分支占用（跨分支扫描口径）→ 抛错且不动文件', () async {
@@ -238,12 +238,12 @@ void main() {
       final printed = out.join('\n');
       expect(printed, contains('[dry-run]'));
       expect(printed, contains('docs/bugs/BUG-005-foo.md  →  docs/bugs/BUG-009-foo.md'));
-      expect(printed, contains('hibiki/test/tools/bug_005_foo_test.dart'));
+      expect(printed, contains('fushi/test/tools/bug_005_foo_test.dart'));
       expect(printed, contains('lib/foo.dart:1'));
       // 落盘检查：文件名与内容全部原样
       expect(exists(root, 'docs/bugs/BUG-005-foo.md'), isTrue);
       expect(exists(root, 'docs/bugs/BUG-009-foo.md'), isFalse);
-      expect(exists(root, 'hibiki/test/tools/bug_005_foo_test.dart'), isTrue);
+      expect(exists(root, 'fushi/test/tools/bug_005_foo_test.dart'), isTrue);
       expect(readFile(root, 'lib/foo.dart'), beforeLib);
       expect(readFile(root, 'docs/bugs/BUG-005-foo.md'), beforeDoc);
       expect(readFile(root, 'docs/BUGS.md'), beforeIndex);
@@ -576,7 +576,7 @@ void main() {
       git(root, <String>['add', 'lib/foo.dart', 'docs/BUGS.md']);
       git(root, <String>['commit', '-qm', 'partial']);
       writeFile(root, 'docs/bugs/BUG-005-foo.md', bugDoc(5, '刚建还没提交'));
-      writeFile(root, 'hibiki/test/tools/bug_005_foo_test.dart', '// BUG-005 守卫\n');
+      writeFile(root, 'fushi/test/tools/bug_005_foo_test.dart', '// BUG-005 守卫\n');
       Directory.current = root;
 
       await bug.cmdRenumber(
@@ -587,7 +587,7 @@ void main() {
       expect(exists(root, 'docs/bugs/BUG-009-foo.md'), isTrue);
       expect(exists(root, 'docs/bugs/BUG-005-foo.md'), isFalse);
       expect(readFile(root, 'docs/bugs/BUG-009-foo.md'), startsWith('## BUG-009 · '));
-      expect(exists(root, 'hibiki/test/tools/bug_009_foo_test.dart'), isTrue);
+      expect(exists(root, 'fushi/test/tools/bug_009_foo_test.dart'), isTrue);
       expect(readFile(root, 'lib/foo.dart'), contains('BUG-009'));
       expect(await bug.findResidualRefs(5), isEmpty);
       expect(bug.cmdCheck(), 0);

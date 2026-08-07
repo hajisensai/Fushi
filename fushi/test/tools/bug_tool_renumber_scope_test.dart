@@ -55,7 +55,7 @@ const String indexShell = '# Bug 跟踪\n\n---\n\n'
 // —— base 侧（develop）那条合法的 BUG-9246，以及所有指向它的引用。改号后必须一字不变。
 const String baseBugDoc = '## BUG-9246 · helper 版本漂移\n'
     '- **[x] ① 已修复** — abc1234\n'
-    '- **[x] ② 已加自动化测试** — hibiki/test/tools/helper_version_drift_bug_9246_test.dart\n';
+    '- **[x] ② 已加自动化测试** — fushi/test/tools/helper_version_drift_bug_9246_test.dart\n';
 const String baseLib = '// 修 BUG-9246：helper 版本漂移，根因在 helper.dart:88。\n'
     'void helper() {}\n';
 const String baseTest = 'void main() {\n'
@@ -69,14 +69,14 @@ const String baseDoc = '# 构建\n\n见 [BUG-9246](../bugs/BUG-9246-helper-versi
 const Map<String, String> baseSideFiles = <String, String>{
   'docs/bugs/BUG-9246-helper-version-drift.md': baseBugDoc,
   'lib/helper.dart': baseLib,
-  'hibiki/test/tools/helper_version_drift_bug_9246_test.dart': baseTest,
+  'fushi/test/tools/helper_version_drift_bug_9246_test.dart': baseTest,
   'docs/agent/build.md': baseDoc,
 };
 
 // —— PR 侧那条 BUG-9246 及其五类位置。
 const String prBugDoc = '## BUG-9246 · 阅读器恢复位置丢失\n'
     '- **[x] ① 已修复** — def5678\n'
-    '- **[x] ② 已加自动化测试** — hibiki/test/reader/reader_restore_bug_9246_test.dart\n';
+    '- **[x] ② 已加自动化测试** — fushi/test/reader/reader_restore_bug_9246_test.dart\n';
 const String prLib = '// 见 BUG-9246：恢复位置在 restore.dart:120 被覆盖。\n'
     'void restore() {}\n';
 const String prTest = 'void main() {\n'
@@ -121,9 +121,9 @@ Directory makeCollisionFixture(
 
   git(root, <String>['checkout', '-q', '-b', 'feature']);
   writeFile(root, 'docs/bugs/BUG-9246-reader-restore.md', prBugDoc);
-  writeFile(root, 'hibiki/lib/src/reader/restore.dart', prLib);
-  writeFile(root, 'hibiki/test/reader/reader_restore_bug_9246_test.dart', prTest);
-  writeFile(root, 'hibiki/lib/src/reader/notes.dart', lookalikeCorpus);
+  writeFile(root, 'fushi/lib/src/reader/restore.dart', prLib);
+  writeFile(root, 'fushi/test/reader/reader_restore_bug_9246_test.dart', prTest);
+  writeFile(root, 'fushi/lib/src/reader/notes.dart', lookalikeCorpus);
   extraPrFiles.forEach((String rel, String content) => writeFile(root, rel, content));
   if (touchBaseBugFile) {
     writeFile(
@@ -206,7 +206,7 @@ void main() {
       expect(readFile(root, 'lib/helper.dart'), contains('BUG-9246'));
       expect(readFile(root, 'docs/agent/build.md'),
           contains('[BUG-9246](../bugs/BUG-9246-helper-version-drift.md)'));
-      expect(readFile(root, 'hibiki/test/tools/helper_version_drift_bug_9246_test.dart'),
+      expect(readFile(root, 'fushi/test/tools/helper_version_drift_bug_9246_test.dart'),
           contains("group('BUG-9246 helper 版本漂移'"));
       // git 视角：base 侧文件一个都没进改动集。
       final status =
@@ -264,18 +264,18 @@ void main() {
       // ② 正文 H2（守卫 bugs_per_file_guard_test 扫这里，只改文件名会 CI 红）
       expect(readFile(root, 'docs/bugs/BUG-9250-reader-restore.md'), startsWith('## BUG-9250 · '));
       // ③ 代码注释引用
-      expect(readFile(root, 'hibiki/lib/src/reader/restore.dart'), contains('见 BUG-9250：'));
-      expect(readFile(root, 'hibiki/lib/src/reader/restore.dart'), isNot(contains('BUG-9246')));
+      expect(readFile(root, 'fushi/lib/src/reader/restore.dart'), contains('见 BUG-9250：'));
+      expect(readFile(root, 'fushi/lib/src/reader/restore.dart'), isNot(contains('BUG-9246')));
       // ④ 测试名与 group 名
-      final prTestNow = readFile(root, 'hibiki/test/reader/reader_restore_bug_9250_test.dart');
+      final prTestNow = readFile(root, 'fushi/test/reader/reader_restore_bug_9250_test.dart');
       expect(prTestNow, contains("group('BUG-9250 阅读器恢复位置'"));
       expect(prTestNow, contains("test('BUG-9250 恢复后偏移不丢'"));
       // ⑤ 测试文件名内嵌号（最容易漏的一类）
-      expect(exists(root, 'hibiki/test/reader/reader_restore_bug_9250_test.dart'), isTrue);
-      expect(exists(root, 'hibiki/test/reader/reader_restore_bug_9246_test.dart'), isFalse);
+      expect(exists(root, 'fushi/test/reader/reader_restore_bug_9250_test.dart'), isTrue);
+      expect(exists(root, 'fushi/test/reader/reader_restore_bug_9246_test.dart'), isFalse);
       // bug 正文里指向测试文件的路径也跟着改
       expect(readFile(root, 'docs/bugs/BUG-9250-reader-restore.md'),
-          contains('hibiki/test/reader/reader_restore_bug_9250_test.dart'));
+          contains('fushi/test/reader/reader_restore_bug_9250_test.dart'));
     });
   });
 
@@ -284,7 +284,7 @@ void main() {
       final root = makeCollisionFixture(temps);
       await bug.cmdRenumber(<String>['9246', '9250'], scanner: stubScanner(<int>{9246}));
 
-      final notes = readFile(root, 'hibiki/lib/src/reader/notes.dart');
+      final notes = readFile(root, 'fushi/lib/src/reader/notes.dart');
       expect(notes, contains('TODO-9246'), reason: '他域编号被改了');
       expect(notes, contains('3f9c9246ab7d0e5592468899aabbccddeeff00112233445566778899aabbccdd'),
           reason: 'SHA-256 十六进制里的数字被改了');
@@ -356,7 +356,7 @@ void main() {
       await bug.cmdRenumber(<String>['9246', '9250'], scanner: stubScanner(<int>{9246}));
 
       expect(exists(root, 'docs/bugs/BUG-9250-reader-restore.md'), isTrue);
-      expect(exists(root, 'hibiki/test/reader/reader_restore_bug_9250_test.dart'), isTrue);
+      expect(exists(root, 'fushi/test/reader/reader_restore_bug_9250_test.dart'), isTrue);
       expect(readFile(root, 'lib/helper.dart'), baseLib);
       expect(bug.cmdCheck(), 0);
     });
@@ -377,7 +377,7 @@ void main() {
       expect(printed, contains('[dry-run]'));
       expect(printed, contains('docs/bugs/BUG-9246-helper-version-drift.md'),
           reason: 'dry-run 要显式说明 base 侧那份不碰');
-      expect(printed, contains('hibiki/test/reader/reader_restore_bug_9246_test.dart'));
+      expect(printed, contains('fushi/test/reader/reader_restore_bug_9246_test.dart'));
       expect(readFile(root, 'lib/helper.dart'), beforeBase);
       expect(readFile(root, 'docs/bugs/BUG-9246-reader-restore.md'), beforePr);
       expect(exists(root, 'docs/bugs/BUG-9250-reader-restore.md'), isFalse);

@@ -1,5 +1,5 @@
 // TODO-867 P2 — global-lookup popup card-chrome + flex-wrap sub-box CSS guard.
-// Run: node hibiki/test/lookup/global_lookup_popup_style_test.mjs
+// Run: node fushi/test/lookup/global_lookup_popup_style_test.mjs
 //
 // popup.css is SHARED by the in-app popup and the app-OUTSIDE Windows global
 // lookup window. The P2 styling (hoshi card chrome + flex-wrap variable-height

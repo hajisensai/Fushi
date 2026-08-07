@@ -44,7 +44,7 @@ void main() {
       () {
     final Directory dir = Directory('integration_test');
     expect(dir.existsSync(), isTrue,
-        reason: 'run from the hibiki/ package root (cwd=hibiki/)');
+        reason: 'run from the fushi/ package root (cwd=fushi/)');
 
     final List<String> offenders = <String>[];
     int inScope = 0;
