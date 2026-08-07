@@ -189,24 +189,28 @@ class MigrationManifest {
     }
   }
 
+  /// 归档里主库条目的候选名：Fushi 侧新归档（复用 BackupService.createBackup）
+  /// 条目名是 `fushi.db`；老 Hibiki app 导出的迁移归档条目名是 `hibiki.db`
+  /// （老包已发布、wire 冻结，属「读旧数据的迁移代码」豁免）。新名优先。
+  static const List<String> _dbEntryNames = <String>['fushi.db', 'hibiki.db'];
+
   /// 从批次归档提取 DB（若含）并计算行数/版本。返回 (tableCounts,
-  /// schemaVersion)；归档不含 [dbEntryName] 时返回空表 + null。
+  /// schemaVersion)；归档不含任何 [_dbEntryNames] 条目时返回空表 + null。
   ///
   /// 单独解出 DB entry 到临时目录再打开（DB 通常几十 MB，可接受）。
   static Future<(Map<String, int>, int?)> countsFromArchive(
-    String archivePath, {
-    String dbEntryName = 'hibiki.db',
-  }) async {
+    String archivePath,
+  ) async {
     final InputFileStream input = InputFileStream(archivePath);
     Directory? tmp;
     try {
       final Archive zip = ZipDecoder().decodeBuffer(input);
       final ArchiveFile? entry = zip.files.cast<ArchiveFile?>().firstWhere(
-          (ArchiveFile? f) => f!.name == dbEntryName,
+          (ArchiveFile? f) => _dbEntryNames.contains(f!.name),
           orElse: () => null);
       if (entry == null) return (const <String, int>{}, null);
       tmp = await Directory.systemTemp.createTemp('fushi_migration_manifest_');
-      final String dbPath = p.join(tmp.path, dbEntryName);
+      final String dbPath = p.join(tmp.path, entry.name);
       final OutputFileStream out = OutputFileStream(dbPath);
       entry.writeContent(out);
       await out.close();
@@ -229,7 +233,6 @@ class MigrationManifest {
     required String sourceAppVersion,
     required int nowMs,
     bool archiveContainsDb = false,
-    String dbEntryName = 'hibiki.db',
   }) async {
     final File archive = File(archivePath);
     final int size = await archive.length();
@@ -237,8 +240,7 @@ class MigrationManifest {
     Map<String, int> counts = const <String, int>{};
     int? schemaVersion;
     if (archiveContainsDb) {
-      (counts, schemaVersion) =
-          await countsFromArchive(archivePath, dbEntryName: dbEntryName);
+      (counts, schemaVersion) = await countsFromArchive(archivePath);
     }
     return MigrationManifest(
       version: currentVersion,

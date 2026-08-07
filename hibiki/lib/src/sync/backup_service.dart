@@ -17,7 +17,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 /// Optional file-tree categories a backup export can include. The database
-/// (`hibiki.db`) is NOT a category - it carries every table's metadata
+/// (`fushi.db`) is NOT a category - it carries every table's metadata
 /// (books / stats / favorites / profiles / settings / dictionary records) whose
 /// rows FK into each other, so it is ALWAYS exported as one consistent blob;
 /// only the bulky sidecar file trees below are individually selectable.
@@ -449,7 +449,10 @@ class BackupService {
 
   final String _appVersion;
 
-  static const String _dbName = 'hibiki.db';
+  /// 备份归档里主库条目名 = 活库文件名（fushi_core 单一真相源）。写侧（导出/
+  /// bak/临时提取路径）一律用它；读老归档（Hibiki 时代备份 / 迁移压缩包，条目名
+  /// `hibiki.db`）经 [_findDbEntry] 做 legacy 回退（Never break userspace）。
+  static const String _dbName = fushiDatabaseFileName;
   static const String _metaName = 'backup_meta.json';
   static const String _dictionaryResourcesPrefix = 'dictionaryResources';
   static const String _booksPrefix = 'hoshi_books';
@@ -467,7 +470,7 @@ class BackupService {
 
   /// Matches a packed local-audio database file (and its `-wal`/`-shm`
   /// siblings). Only these are packed from the support directory so the export
-  /// never sweeps in `hibiki.db` or other unrelated support files.
+  /// never sweeps in `fushi.db` or other unrelated support files.
   static final RegExp _localAudioFileName =
       RegExp(r'^local_audio_\d+\.db(-wal|-shm)?$');
 
@@ -498,7 +501,7 @@ class BackupService {
   /// Device-local tables that must NEVER travel in a shared backup and are
   /// always restored from this device's pre-restore bak on an overwrite import
   /// (BUG-816). Same philosophy as [SyncRepository.deviceLocalPrefKeys]:
-  ///   - `hibiki_paired_peers` — LAN pairing rows including the plaintext auth
+  ///   - `fushi_paired_peers` — LAN pairing rows including the plaintext auth
   ///     `token` (a live credential the HBK-AUDIT-012 pref-key sweep missed
   ///     because it lives in its own table, not `preferences`).
   ///   - `sync_baselines`      — per-asset incremental-sync causality; carrying
@@ -513,7 +516,7 @@ class BackupService {
   /// safe. The merge engine already skips both, so only the overwrite path needs
   /// the restore.
   static const List<String> _deviceLocalTables = <String>[
-    'hibiki_paired_peers',
+    'fushi_paired_peers',
     'sync_baselines',
     'manga_extension_stores',
     'manga_extensions',
@@ -621,7 +624,7 @@ class BackupService {
   /// Sidecar file holding this device's sync config across an import. Written
   /// BEFORE the destructive DB overwrite so a crash mid-import is recoverable
   /// (a startup sweep re-applies it). Deleted once the import completes.
-  static const String _preserveSidecar = 'hibiki.db.sync-preserve.json';
+  static const String _preserveSidecar = '$_dbName.sync-preserve.json';
 
   String get _dbPath => p.join(_dbDirectory, _dbName);
 
@@ -750,12 +753,13 @@ class BackupService {
       // in meta, so the (one-time) peek is skipped for them.
       int? dbVideoBookCount;
       int? dbAudiobookCount;
+      final ArchiveFile? dbEntry = _findDbEntry(archive);
       final bool needPeek =
           (meta?.videoBookCount == null || meta?.audiobookCount == null) &&
-              archive.findFile(_dbName) != null;
+              dbEntry != null;
       if (needPeek) {
         final ({int videos, int audiobooks})? peek =
-            await _peekContentRowCounts(zipPath);
+            await _peekContentRowCounts(zipPath, dbEntry.name);
         dbVideoBookCount = peek?.videos;
         dbAudiobookCount = peek?.audiobooks;
       }
@@ -771,24 +775,26 @@ class BackupService {
     }
   }
 
-  /// Streams the backup's `hibiki.db` blob (the small metadata DB — media lives
-  /// in separate zip entries) to a temp file and returns its `video_books` and
-  /// `audiobooks` row counts, or null on any failure. Used by [summarizeBackupFile]
-  /// to offer the video / audiobooks import toggles for OLD backups that predate
-  /// [BackupMeta.videoBookCount] / [BackupMeta.audiobookCount] (BUG-779 / BUG-781).
-  /// Reuses the isolate-backed [_extractEntriesStreaming] so a large metadata DB
-  /// never materializes on the UI isolate.
+  /// Streams the backup's main-DB blob (entry [dbEntryName]; the small metadata
+  /// DB — media lives in separate zip entries) to a temp file and returns its
+  /// `video_books` and `audiobooks` row counts, or null on any failure. Used by
+  /// [summarizeBackupFile] to offer the video / audiobooks import toggles for
+  /// OLD backups that predate [BackupMeta.videoBookCount] /
+  /// [BackupMeta.audiobookCount] (BUG-779 / BUG-781). Reuses the isolate-backed
+  /// [_extractEntriesStreaming] so a large metadata DB never materializes on
+  /// the UI isolate.
   static Future<({int videos, int audiobooks})?> _peekContentRowCounts(
     String zipPath,
+    String dbEntryName,
   ) async {
     final Directory tmp =
-        await Directory.systemTemp.createTemp('hibiki_content_peek_');
+        await Directory.systemTemp.createTemp('fushi_content_peek_');
     final String dbTmp = p.join(tmp.path, _dbName);
     try {
       await _extractEntriesStreaming(
         zipPath: zipPath,
         entries: <MapEntry<String, String>>[
-          MapEntry<String, String>(_dbName, dbTmp),
+          MapEntry<String, String>(dbEntryName, dbTmp),
         ],
       );
       final sqlite.Database db =
@@ -1837,6 +1843,14 @@ class BackupService {
     }
   }
 
+  /// 归档里主库条目的解析（读侧唯一入口）：新备份条目名是 [_dbName]（fushi.db），
+  /// 老 Hibiki 时代的备份 / Android 迁移压缩包条目名是
+  /// [legacyHibikiDatabaseFileName]（hibiki.db）。旧条目名属于「读旧数据的迁移
+  /// 代码」豁免；写侧（导出/提取目标路径）永远只落新名。
+  static ArchiveFile? _findDbEntry(Archive archive) =>
+      archive.findFile(_dbName) ??
+      archive.findFile(legacyHibikiDatabaseFileName);
+
   /// Validate a backup ZIP. Returns metadata if valid.
   ///
   /// Streams the central directory via [InputFileStream] instead of reading the
@@ -1851,7 +1865,7 @@ class BackupService {
       final archive = ZipDecoder().decodeBuffer(input);
       final BackupMeta? meta = _readBackupMeta(archive);
       if (meta == null) return null;
-      if (archive.findFile(_dbName) == null) return null;
+      if (_findDbEntry(archive) == null) return null;
       return meta;
     } catch (e, st) {
       // A null result tells the UI "invalid backup". Surface the real reason
@@ -1914,7 +1928,7 @@ class BackupService {
     final InputFileStream input = InputFileStream(zipPath);
     try {
       final archive = ZipDecoder().decodeBuffer(input);
-      final dbFile = archive.findFile(_dbName);
+      final ArchiveFile? dbFile = _findDbEntry(archive);
       if (dbFile == null) throw StateError('No $_dbName in backup archive');
 
       // TODO-1183: determinate progress across every streamed byte.
@@ -2249,8 +2263,8 @@ class BackupService {
   /// one Drift transaction, so a crash leaves the DB already-consistent (the
   /// transaction either committed or rolled back); this sidecar only drives
   /// startup cleanup of the temp `merge-src` + `pre-merge.bak` files.
-  static const String _mergeSidecar = 'hibiki.db.merge-preserve.json';
-  static const String _mergeSrcName = 'hibiki.db.merge-src';
+  static const String _mergeSidecar = '$_dbName.merge-preserve.json';
+  static const String _mergeSrcName = '$_dbName.merge-src';
 
   /// MERGE a backup into the current database instead of overwriting it
   /// (TODO-888). The device keeps everything it has; the backup only ADDS what
@@ -2291,7 +2305,7 @@ class BackupService {
     final InputFileStream input = InputFileStream(zipPath);
     try {
       final Archive archive = ZipDecoder().decodeBuffer(input);
-      final ArchiveFile? dbFile = archive.findFile(_dbName);
+      final ArchiveFile? dbFile = _findDbEntry(archive);
       if (dbFile == null) throw StateError('No $_dbName in backup archive');
 
       // TODO-1183: determinate progress across every streamed byte.
@@ -2426,11 +2440,11 @@ class BackupService {
   }
 
   /// Temp filename for the preview-only extracted backup DB (TODO-1195 part B).
-  static const String _mergePreviewSrcName = 'hibiki.db.merge-preview-src';
+  static const String _mergePreviewSrcName = '$_dbName.merge-preview-src';
 
   /// Read-only estimate of what a MERGE import of [zipPath] would change on this
   /// device, for the import confirm dialog (TODO-1195 part B). Extracts ONLY the
-  /// backup's `hibiki.db` to a temp file, migrates it to the current schema,
+  /// backup's main-DB entry to a temp file, migrates it to the current schema,
   /// ATTACHes it to the still-open [liveDb] and runs [BackupMergeEngine.preview]
   /// (no mutation, no transaction), then detaches and cleans up. Best-effort:
   /// any failure returns null so the caller shows a generic dialog and the
@@ -2451,7 +2465,7 @@ class BackupService {
       } finally {
         await input.close();
       }
-      final ArchiveFile? dbFile = archive.findFile(_dbName);
+      final ArchiveFile? dbFile = _findDbEntry(archive);
       if (dbFile == null) return null;
 
       // TODO-1261: the merge only materialises REACHABLE video rows (streaming

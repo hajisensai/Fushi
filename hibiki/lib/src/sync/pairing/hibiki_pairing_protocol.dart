@@ -56,7 +56,7 @@ class FushiPairSession {
   final String? remoteAddress;
 
   /// TODO-961 M1b: client 自报的稳定 deviceId（配对时上报），confirm 成功后作为
-  /// `hibiki_paired_peers.peerId` 落库的 UNIQUE 身份。可空——旧 client / 未上报时
+  /// `fushi_paired_peers.peerId` 落库的 UNIQUE 身份。可空——旧 client / 未上报时
   /// 为 null，confirm 回退派发共享 token（不落 per-peer 行，Never break userspace）。
   final String? clientDeviceId;
 

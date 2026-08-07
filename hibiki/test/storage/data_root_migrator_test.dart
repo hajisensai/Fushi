@@ -40,7 +40,7 @@ void main() {
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
-  /// 在旧 documents 根下铺一个 epub 内容文件 + 视频封面，在旧 support 根下铺 hibiki.db
+  /// 在旧 documents 根下铺一个 epub 内容文件 + 视频封面，在旧 support 根下铺 fushi.db
   /// 与一个 local_audio_*.db，并在 DB 里写各类绝对路径行。返回 (newDataRoot, prefWrites)。
   Future<void> seedDb() async {
     // 文件树。
@@ -168,7 +168,7 @@ void main() {
       expect(
           File(p.join(newDocs.path, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
           isTrue);
-      expect(File(p.join(newSupport.path, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(newSupport.path, 'fushi.db')).existsSync(), isTrue);
       expect(File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
           isTrue);
       // 旧根已删。
@@ -230,7 +230,7 @@ void main() {
 
     test('失败回滚：DB rebase 阶段失败 → 旧根保留、未切换、新根清、未写 data_root', () async {
       await seedDb();
-      // 把 support 根里的 hibiki.db 删掉再造一个目录占名，使迁移后在新 support 打开
+      // 把 support 根里的 fushi.db 删掉再造一个目录占名，使迁移后在新 support 打开
       // 报错？更可控：让目标新根落在一个「文件」上，使 createSync 抛错触发搬动失败回滚。
       final String newDataRoot = p.join(tmp.path, 'blocked_root');
       // 在新 dataRoot 应在的位置放一个同名文件，createSync(recursive) 会抛 FileSystem。
@@ -255,7 +255,7 @@ void main() {
           File(p.join(oldDocs.path, 'hoshi_books', 'Bk', 'a.html'))
               .existsSync(),
           isTrue);
-      expect(File(p.join(oldSupport.path, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(oldSupport.path, 'fushi.db')).existsSync(), isTrue);
       // 未写 data_root。
       expect(wrote, isFalse);
     });
@@ -294,7 +294,7 @@ void main() {
       expect(
           File(p.join(oldDocsPath, 'hoshi_books', 'Bk', 'a.html')).existsSync(),
           isTrue);
-      expect(File(p.join(oldSupportPath, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(oldSupportPath, 'fushi.db')).existsSync(), isTrue);
 
       final FushiDatabase db = FushiDatabase(oldSupportPath);
       try {
@@ -373,7 +373,7 @@ void main() {
     test('prefs 保护：默认根迁移时 shared_preferences.json 留在旧 support 原地，DB+数据搬到新根',
         () async {
       // 模拟「默认根迁移」：oldSupport 即平台固定落点，顶层放真实
-      // shared_preferences.json（含真实 data_root 值），以及 hibiki.db、local_audio。
+      // shared_preferences.json（含真实 data_root 值），以及 fushi.db、local_audio。
       await seedDb();
       final File prefsFile =
           File(p.join(oldSupportPath, 'shared_preferences.json'))
@@ -411,12 +411,12 @@ void main() {
       expect(
           File(p.join(newSupport.path, 'shared_preferences.json')).existsSync(),
           isFalse);
-      // (b) hibiki.db 已到新 support。
-      expect(File(p.join(newSupport.path, 'hibiki.db')).existsSync(), isTrue);
+      // (b) fushi.db 已到新 support。
+      expect(File(p.join(newSupport.path, 'fushi.db')).existsSync(), isTrue);
       expect(File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
           isTrue);
-      // hibiki.db 已从旧 support 移走（只剩 prefs 族）。
-      expect(File(p.join(oldSupportPath, 'hibiki.db')).existsSync(), isFalse);
+      // fushi.db 已从旧 support 移走（只剩 prefs 族）。
+      expect(File(p.join(oldSupportPath, 'fushi.db')).existsSync(), isFalse);
       expect(File(p.join(oldSupportPath, 'local_audio_1.db')).existsSync(),
           isFalse);
       // (c) documents 数据到了新根。
@@ -474,7 +474,7 @@ void main() {
       ));
 
       // 整树搬齐：DB + local_audio + documents。
-      expect(File(p.join(newSupport.path, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(newSupport.path, 'fushi.db')).existsSync(), isTrue);
       expect(File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
           isTrue);
       expect(
@@ -526,7 +526,7 @@ void main() {
       );
 
       // 旧根原样保留。
-      expect(File(p.join(oldSupport.path, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(oldSupport.path, 'fushi.db')).existsSync(), isTrue);
     });
   });
 
@@ -796,7 +796,7 @@ void main() {
 
       // exe 未被删、旧根完整、未写 pref。
       expect(File(exe).existsSync(), isTrue);
-      expect(File(p.join(oldSupport.path, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(oldSupport.path, 'fushi.db')).existsSync(), isTrue);
       expect(wrote, isFalse);
     });
 
@@ -847,7 +847,7 @@ void main() {
             wrote = t.dataRootPrefValue,
         resolvedExecutablePath: exe,
       ));
-      expect(File(p.join(newSupport.path, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(newSupport.path, 'fushi.db')).existsSync(), isTrue);
       expect(
           File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
               .existsSync(),
@@ -886,7 +886,7 @@ void main() {
       expect(Directory(p.join(newDataRoot, 'documents')).existsSync(), isFalse);
       expect(Directory(p.join(newDataRoot, 'support')).existsSync(), isFalse);
       // 旧根完整、数据回滚保留。
-      expect(File(p.join(oldSupportPath, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(oldSupportPath, 'fushi.db')).existsSync(), isTrue);
       expect(
           File(p.join(oldDocsPath, 'hoshi_books', 'Bk', 'a.html')).existsSync(),
           isTrue);
@@ -990,7 +990,7 @@ void main() {
       expect(
           File(p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
           isTrue);
-      expect(File(p.join(oldSupportPath, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(oldSupportPath, 'fushi.db')).existsSync(), isTrue);
       expect(File(p.join(oldSupportPath, 'local_audio_1.db')).existsSync(),
           isTrue);
       // 新根半成品（documents/support 子树）已清理，用户选定的目标本体保留（此处为空目录）。
@@ -1028,7 +1028,7 @@ void main() {
             File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
                 .existsSync(),
             isTrue);
-        expect(File(p.join(newSupport.path, 'hibiki.db')).existsSync(), isTrue);
+        expect(File(p.join(newSupport.path, 'fushi.db')).existsSync(), isTrue);
         expect(File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
             isTrue);
         // 提交后才删源 → 旧根已删。
@@ -1093,7 +1093,7 @@ void main() {
         commitLocation: (DataRootMigrationTarget t) async {},
       ));
       final String newSupportPath = p.join(newDataRoot, 'support');
-      expect(File(p.join(newSupportPath, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(newSupportPath, 'fushi.db')).existsSync(), isTrue);
 
       // 第二次：另一个源迁到**已含数据**的同一目标 → 目标非空拒绝，不覆盖不动源。
       final Directory otherDocs = Directory(p.join(tmp.path, 'o2', 'documents'))
@@ -1101,7 +1101,7 @@ void main() {
       final Directory otherSupport =
           Directory(p.join(tmp.path, 'o2', 'support'))
             ..createSync(recursive: true);
-      File(p.join(otherSupport.path, 'hibiki.db'))
+      File(p.join(otherSupport.path, 'fushi.db'))
         ..createSync(recursive: true)
         ..writeAsBytesSync(<int>[7, 7, 7]);
       bool wrote = false;
@@ -1118,8 +1118,8 @@ void main() {
       );
       expect(wrote, isFalse);
       // 目标里第一次迁移的数据完好；第二个源不动。
-      expect(File(p.join(newSupportPath, 'hibiki.db')).existsSync(), isTrue);
-      expect(File(p.join(otherSupport.path, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(newSupportPath, 'fushi.db')).existsSync(), isTrue);
+      expect(File(p.join(otherSupport.path, 'fushi.db')).existsSync(), isTrue);
     });
   });
 }

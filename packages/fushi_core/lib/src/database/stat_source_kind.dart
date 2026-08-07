@@ -2,7 +2,7 @@
 /// statistics_tombstones 四张表的 `source_type` 列）。
 ///
 /// 原常量定义在 pages 层 `stat_activity.dart`；它们是 **schema 值域的一部分**
-/// 且写入点跨层（lookup 浮窗 / 阅读器 / 视频页 / core DAO），故挪进 hibiki_core
+/// 且写入点跨层（lookup 浮窗 / 阅读器 / 视频页 / core DAO），故挪进 fushi_core
 /// （同 activity_event_types.dart 的理由）。
 ///
 /// ⚠️ 与合集/书架域（`MediaKind`）**互不通用**：本域只有 book / video 两桶

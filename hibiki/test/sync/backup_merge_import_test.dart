@@ -77,12 +77,11 @@ void main() {
     expect(keys, <String>{'local-only', 'shared', 'backup-only'});
 
     // No temp/bak leak.
-    expect(
-        File(p.join(curDir.path, 'hibiki.db.merge-src')).existsSync(), false);
-    expect(File(p.join(curDir.path, 'hibiki.db.pre-merge.bak')).existsSync(),
+    expect(File(p.join(curDir.path, 'fushi.db.merge-src')).existsSync(), false);
+    expect(File(p.join(curDir.path, 'fushi.db.pre-merge.bak')).existsSync(),
         false);
     expect(
-        File(p.join(curDir.path, 'hibiki.db.merge-preserve.json')).existsSync(),
+        File(p.join(curDir.path, 'fushi.db.merge-preserve.json')).existsSync(),
         false);
   });
 
@@ -784,7 +783,7 @@ void main() {
     await srcDb.insertEpubBook(_book('from-src'));
     await srcDb.close();
 
-    final String safe = p.join(sDir.path, 'hibiki.db').replaceAll(r'\', '/');
+    final String safe = p.join(sDir.path, 'fushi.db').replaceAll(r'\', '/');
     await target.customStatement("ATTACH DATABASE '$safe' AS probe");
     try {
       await expectLater(
@@ -925,8 +924,7 @@ void main() {
     expect(preview.newBooks, 2);
     expect(preview.updatedReaderPositions, 1); // shared position advanced
     // Preview leaves no temp/attached state behind.
-    expect(
-        File(p.join(curDir.path, 'hibiki.db.merge-preview-src')).existsSync(),
+    expect(File(p.join(curDir.path, 'fushi.db.merge-preview-src')).existsSync(),
         false);
   });
 

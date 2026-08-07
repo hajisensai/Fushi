@@ -12,7 +12,7 @@ import 'package:fushi/src/storage/data_root_migrator.dart';
 /// BUG-1188：「选目录」迁移到不了新装形态 —— 目标解析归一化 + 端到端布局守卫。
 ///
 /// 修前实测（真 `DataRootMigrator.migrate()`）：老安装照 BUG-1115 文档指引选
-/// `<Documents>\Hibiki`，产出的是 `Hibiki\documents` + `Hibiki\support`，并且 `hibiki.db`
+/// `<Documents>\Hibiki`，产出的是 `Hibiki\documents` + `Hibiki\support`，并且 `fushi.db`
 /// 被一起搬进文档目录；而**全新安装**是 `<Documents>\Hibiki\data` + 平台固定 support 根。
 /// 同一个物理位置有两种持久化表达、两种磁盘布局，用户整理完永远回不到新装形态。
 ///
@@ -54,7 +54,7 @@ void main() {
       );
 
   /// 在 [documentsRoot] 下铺白名单内容 + 用户自己的文件，在 [supportRoot] 下铺
-  /// `hibiki.db`（含指向 documents 根的绝对路径行）与 `shared_preferences.json`。
+  /// `fushi.db`（含指向 documents 根的绝对路径行）与 `shared_preferences.json`。
   Future<void> seed({
     required Directory documentsRoot,
     required Directory supportRoot,
@@ -211,9 +211,9 @@ void main() {
               .existsSync(),
           isFalse);
       expect(
-          File(p.join(platformSupport.path, 'hibiki.db')).existsSync(), isTrue,
+          File(p.join(platformSupport.path, 'fushi.db')).existsSync(), isTrue,
           reason: 'DB 必须留在平台固定落点（新装的落点），绝不搬进用户文档目录');
-      expect(File(p.join(newDocs.path, 'hibiki.db')).existsSync(), isFalse);
+      expect(File(p.join(newDocs.path, 'fushi.db')).existsSync(), isFalse);
       // 内容真的搬过去了，用户自己的文件与 prefs 一字未动。
       expect(
           File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
@@ -333,7 +333,7 @@ void main() {
               .existsSync(),
           isTrue);
       expect(
-          File(p.join(platformSupport.path, 'hibiki.db')).existsSync(), isTrue);
+          File(p.join(platformSupport.path, 'fushi.db')).existsSync(), isTrue);
       expect(
           File(p.join(platformSupport.path, 'local_audio_1.db')).existsSync(),
           isTrue);
@@ -388,13 +388,13 @@ void main() {
       expect(prefsFile.readAsStringSync(),
           equals('{"flutter.data_root":"keep-me"}'));
       // 数据搬回旧根，平台落点里不留本次搬进去的东西。
-      expect(File(p.join(oldSupport.path, 'hibiki.db')).existsSync(), isTrue);
+      expect(File(p.join(oldSupport.path, 'fushi.db')).existsSync(), isTrue);
       expect(
           File(p.join(oldDocs.path, 'hoshi_books', 'Bk', 'a.html'))
               .existsSync(),
           isTrue);
-      expect(File(p.join(platformSupport.path, 'hibiki.db')).existsSync(),
-          isFalse);
+      expect(
+          File(p.join(platformSupport.path, 'fushi.db')).existsSync(), isFalse);
       expect(Directory(defaultDocsRoot).existsSync(), isFalse);
     });
   });

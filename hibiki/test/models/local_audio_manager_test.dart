@@ -323,7 +323,7 @@ void main() {
     final File orphanWal = File('${directory.path}/local_audio_2.db-wal')
       ..writeAsStringSync('w');
     // an unrelated file that must NOT be touched
-    final File other = File('${directory.path}/hibiki.db')
+    final File other = File('${directory.path}/fushi.db')
       ..writeAsStringSync('h');
 
     await manager.pruneOrphans(<String>[keep.path]);

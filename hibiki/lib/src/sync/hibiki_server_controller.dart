@@ -369,7 +369,7 @@ class FushiSyncServerController extends ChangeNotifier {
   }
 
   /// TODO-961 M1b: server confirm 成功回调——把一台新配对设备的 per-peer 凭据 upsert
-  /// 进 `hibiki_paired_peers`（peerId UNIQUE，重复配对同一设备只轮换其 token）。
+  /// 进 `fushi_paired_peers`（peerId UNIQUE，重复配对同一设备只轮换其 token）。
   /// token 是敏感凭据，绝不写日志。
   Future<void> _persistPairedPeer(
       FushiPairedPeerRegistration registration) async {

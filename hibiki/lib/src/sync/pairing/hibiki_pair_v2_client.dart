@@ -62,7 +62,7 @@ class FushiPairV2Client {
   /// 要求 PIN 时同样判为 'pin'（无从取得 PIN）。
   ///
   /// [clientDeviceId] 是本机稳定 deviceId（TODO-961 M1b）：随 pair/v2 上报，host 用它
-  /// 作 `hibiki_paired_peers.peerId` 落库并回派本设备专属 per-peer token。可空——host
+  /// 作 `fushi_paired_peers.peerId` 落库并回派本设备专属 per-peer token。可空——host
   /// 侧无此字段时回退共享 token（向后兼容）。
   Future<FushiPairV2Outcome> pair({
     required String deviceName,

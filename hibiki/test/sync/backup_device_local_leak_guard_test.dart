@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// BUG-816 regression guard (source scan): the LAN pairing `token` and sync
-/// baselines live in their OWN tables (`hibiki_paired_peers` / `sync_baselines`),
+/// baselines live in their OWN tables (`fushi_paired_peers` / `sync_baselines`),
 /// which the `preferences`-key credential sweeps cannot reach. A future refactor
 /// that drops the table wipe from `_stripCredentials` would silently re-leak the
 /// plaintext pairing token into every shared backup. Lock the invariant in
@@ -22,7 +22,7 @@ void main() {
     final int listEnd = s.indexOf('];', listStart);
     expect(listEnd, greaterThan(listStart));
     final String listBody = s.substring(listStart, listEnd);
-    expect(listBody.contains("'hibiki_paired_peers'"), isTrue,
+    expect(listBody.contains("'fushi_paired_peers'"), isTrue,
         reason:
             'pairing table (holds the plaintext token) must be device-local');
     expect(listBody.contains("'sync_baselines'"), isTrue,

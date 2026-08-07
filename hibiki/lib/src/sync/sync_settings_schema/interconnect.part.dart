@@ -842,7 +842,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   late final TextEditingController _portController;
   bool _loaded = false;
 
-  // TODO-961 M1b: 已配对设备（per-peer token 表 hibiki_paired_peers 的行）。开启
+  // TODO-961 M1b: 已配对设备（per-peer token 表 fushi_paired_peers 的行）。开启
   // 主机时加载，用于「移除已配对设备」列表；吊销后刷新。
   List<FushiPairedPeerRow> _pairedPeers = const <FushiPairedPeerRow>[];
 

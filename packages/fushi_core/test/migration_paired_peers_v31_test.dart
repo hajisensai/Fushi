@@ -3,12 +3,13 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// TODO-1017 阶段1：互联 per-peer 授权凭据表 hibiki_paired_peers 的建表迁移
-/// （v30 -> v31）与 DB 方法的守护测试。
+/// TODO-1017 阶段1：互联 per-peer 授权凭据表 fushi_paired_peers 的建表迁移
+/// （v30 -> v31；历史上以旧名 hibiki_paired_peers 建出，v69 起统一新名）与
+/// DB 方法的守护测试。
 ///
 /// 覆盖：
-/// ① v30 -> v31 升级：建出 hibiki_paired_peers，且旧库既有行零丢（Never break
-///    userspace，无损迁移）。
+/// ① v30 -> 当前 升级：建出 fushi_paired_peers（<31 阶梯按当前 Dart 表定义
+///    直接建新名），且旧库既有行零丢（Never break userspace，无损迁移）。
 /// ② fresh DB：onCreate 的 createAll 已含新表，多次开库幂等（表已存在不重建）。
 /// ③ upsertPairedPeer 幂等（peerId UNIQUE 冲突键整行更新，不新增行）、
 ///    getPairedPeers 按 pairedAtMs 升序、revokePairedPeer 返回删除行数。
@@ -18,7 +19,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// v30 时已存在的表并写真实行，PRAGMA user_version = 30 触发 onUpgrade(30 -> 当前)。
 
 /// 手写一个 v30 库：epub_books（v16 book-key 形态）+ 一条真实行，user_version=30。
-/// 开库触发 onUpgrade(30 -> 当前)，只有 from<31 步会 createTable(hibikiPairedPeers)。
+/// 开库触发 onUpgrade(30 -> 当前)，只有 from<31 步会 createTable(fushiPairedPeers)。
 FushiDatabase _openMigratedFromV30() {
   return FushiDatabase.forTesting(
     NativeDatabase.memory(
@@ -57,7 +58,7 @@ FushiDatabase _openDowngradedFromFuture() {
     NativeDatabase.memory(
       setup: (raw) {
         raw.execute('''
-CREATE TABLE hibiki_paired_peers (
+CREATE TABLE fushi_paired_peers (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   peer_id TEXT NOT NULL UNIQUE,
   device_name TEXT,
@@ -66,7 +67,7 @@ CREATE TABLE hibiki_paired_peers (
   last_seen_ip TEXT
 )''');
         raw.execute(
-          "INSERT INTO hibiki_paired_peers "
+          "INSERT INTO fushi_paired_peers "
           "(peer_id, token, paired_at_ms) VALUES ('p-future', 'tok', 1)",
         );
         raw.execute('PRAGMA user_version = 99');
@@ -76,7 +77,7 @@ CREATE TABLE hibiki_paired_peers (
 }
 
 void main() {
-  test('v30 -> v31 creates hibiki_paired_peers with zero loss of old rows',
+  test('v30 -> current creates fushi_paired_peers with zero loss of old rows',
       () async {
     final FushiDatabase db = _openMigratedFromV30();
     addTearDown(db.close);
@@ -87,10 +88,21 @@ void main() {
         await db.customSelect('PRAGMA user_version').getSingle();
     expect(ver.read<int>('user_version'), db.schemaVersion,
         reason: 'migration must land on the current schema version');
-    // hibiki_paired_peers 自 v31（TODO-1017 阶段1）引入；断言下界而非瞬时值，
+    // paired peers 表自 v31（TODO-1017 阶段1）引入；断言下界而非瞬时值，
     // 使后续 schema bump 不会把这个迁移守护测试拖 stale。
     expect(db.schemaVersion, greaterThanOrEqualTo(31),
-        reason: 'hibiki_paired_peers 自 v31 引入，schema 版本不应回退到其之前');
+        reason: 'paired peers 表自 v31 引入，schema 版本不应回退到其之前');
+
+    // 终局清算（v69）：走完整阶梯建出的必须是新名，旧名零残留。
+    final List<QueryRow> tables = await db
+        .customSelect(
+          "SELECT name FROM sqlite_master WHERE type = 'table' "
+          "AND name IN ('fushi_paired_peers', 'hibiki_paired_peers')",
+        )
+        .get();
+    expect(tables.map((QueryRow r) => r.read<String>('name')).toList(),
+        <String>['fushi_paired_peers'],
+        reason: '<31 阶梯按当前表定义直接建新名；旧名只允许出现在 v69 改名步里');
 
     // Old epub_books row survived the upgrade untouched (Never break userspace).
     final List<EpubBookRow> books = await db.getAllEpubBooks();
@@ -103,10 +115,9 @@ void main() {
     expect(peers, isEmpty, reason: '空表 = 无已配对对端 = auth 未接线前行为零变化');
   });
 
-  test('fresh DB has hibiki_paired_peers from createAll and is idempotent',
+  test('fresh DB has fushi_paired_peers from createAll and is idempotent',
       () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     // onCreate's createAll must include the new table; querying it proves it
@@ -119,8 +130,7 @@ void main() {
   test(
       'upsert is idempotent, getPairedPeers sorts by pairedAtMs, revoke counts',
       () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     // Insert two peers OUT of pairedAtMs order to prove the sort.

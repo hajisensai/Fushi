@@ -20,7 +20,7 @@ void main() {
 
   setUp(() {
     tempDir = Directory.systemTemp.createTempSync('hibiki_downgrade_test');
-    dbPath = '${tempDir.path}/hibiki.db';
+    dbPath = '${tempDir.path}/fushi.db';
   });
 
   tearDown(() {

@@ -1,6 +1,6 @@
 /// activity_events 表（schema v49）的字符串值域常量。
 ///
-/// 落 DB 的 `event_type` / `media_type` 取这些值。定义在 hibiki_core 是因为它们是
+/// 落 DB 的 `event_type` / `media_type` 取这些值。定义在 fushi_core 是因为它们是
 /// **schema 的值域一部分**，且写入点散落在多个 package/层（阅读器页、视频页、EPUB
 /// 导入器、视频仓库），统一在核心层定义避免各层重复字面量或跨层 import UI。
 library;

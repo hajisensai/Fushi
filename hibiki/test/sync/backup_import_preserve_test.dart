@@ -82,9 +82,9 @@ void main() {
     expect(await afterDb.getPref('sync_root_folder_id'), isNull);
 
     // Sidecar + pre-restore copy cleaned up (no disk leak):
-    expect(File('${currentDir.path}/hibiki.db.sync-preserve.json').existsSync(),
+    expect(File('${currentDir.path}/fushi.db.sync-preserve.json').existsSync(),
         isFalse);
-    expect(File('${currentDir.path}/hibiki.db.pre-restore.bak').existsSync(),
+    expect(File('${currentDir.path}/fushi.db.pre-restore.bak').existsSync(),
         isFalse);
   });
 
@@ -99,7 +99,7 @@ void main() {
     await db.close();
 
     // Sidecar left behind by the crashed import (raw stored values).
-    await File('${dir.path}/hibiki.db.sync-preserve.json').writeAsString(
+    await File('${dir.path}/fushi.db.sync-preserve.json').writeAsString(
       jsonEncode(<String, String>{
         'sync_backend_type': 'dropbox',
         'sync_webdav_password': _b64('recovered'),
@@ -115,7 +115,7 @@ void main() {
     expect(await repo.getWebDavPassword(), 'recovered');
     expect(await db2.getPref('sync_root_folder_id'), isNull); // cache cleared
     expect(
-        File('${dir.path}/hibiki.db.sync-preserve.json').existsSync(), isFalse);
+        File('${dir.path}/fushi.db.sync-preserve.json').existsSync(), isFalse);
   });
 
   test(

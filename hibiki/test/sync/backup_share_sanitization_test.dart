@@ -14,7 +14,7 @@ import 'temp_dir_cleanup.dart';
 /// BUG-816: a backup meant to be SHARED must not leak this device's personal
 /// data. Every personal item follows its OWNING feature category — untick the
 /// feature and its data disappears from the export — and the LAN pairing
-/// credential (`hibiki_paired_peers.token`) plus device-local sync baselines
+/// credential (`fushi_paired_peers.token`) plus device-local sync baselines
 /// never travel at all. The overwrite import mirrors each strip by preserving
 /// THIS device's rows from bak, so a category-excluded backup never wipes them.
 void main() {
@@ -43,10 +43,10 @@ void main() {
   int seq = 0;
   Future<FushiDatabase> openBackupDb(String zipPath) async {
     final Archive archive = await readZip(zipPath);
-    final ArchiveFile dbFile = archive.findFile('hibiki.db')!;
+    final ArchiveFile dbFile = archive.findFile('fushi.db')!;
     final Directory dir = Directory(p.join(work.path, 'exdb${seq++}'))
       ..createSync(recursive: true);
-    File(p.join(dir.path, 'hibiki.db'))
+    File(p.join(dir.path, 'fushi.db'))
         .writeAsBytesSync(dbFile.content as List<int>);
     return FushiDatabase(dir.path);
   }
@@ -74,8 +74,7 @@ void main() {
       {String favMarker = 'srcfav'}) async {
     final String dbDir = p.join(src.path, 'db');
     Directory(dbDir).createSync(recursive: true);
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     await db.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'Bk',
       title: 'Bk',
@@ -195,7 +194,7 @@ void main() {
 
       final FushiDatabase ex = await openBackupDb(zip);
       addTearDown(ex.close);
-      expect(await tableCount(ex, 'hibiki_paired_peers'), 0,
+      expect(await tableCount(ex, 'fushi_paired_peers'), 0,
           reason: 'LAN pairing token must never leave the device');
       expect(await tableCount(ex, 'sync_baselines'), 0,
           reason: 'sync baselines are device-local causality');
@@ -345,7 +344,7 @@ void main() {
           await seedAndImport(zip, importCats: BackupCategory.values.toSet());
       addTearDown(cur.close);
       final rows = await cur
-          .customSelect('SELECT peer_id, token FROM hibiki_paired_peers')
+          .customSelect('SELECT peer_id, token FROM fushi_paired_peers')
           .get();
       expect(rows.length, 1);
       expect(rows.single.read<String>('peer_id'), 'mydev');

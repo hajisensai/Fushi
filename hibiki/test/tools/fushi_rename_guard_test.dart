@@ -157,10 +157,35 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     // 等词首形态，含 _$Hibiki* 生成类）。词中内嵌形态不属类名族、刻意不匹配：
     // MangaHibikiPage 等含 hibiki 文件名的类（本轮不 git mv，半径控制）、
     // kMagpieHibikiProfilePrefix（值 'Hibiki: ' 是 Magpie 配置持久化契约）、
-    // 'runningHibikiProcesses'（update-handoff JSON wire 键）、
-    // 'hibiki_paired_peers'（SQL 表名，见 tables.dart 的 tableName 钉死注释）。
+    // 'runningHibikiProcesses'（update-handoff JSON wire 键）。
     name: 'Hibiki*-类名族',
     regex: RegExp(r'(?<![A-Za-z0-9])Hibiki[A-Z]'),
+  ),
+  _ForbiddenPattern(
+    // W1：SQL 表 hibiki_paired_peers 已在 v69 迁移改名 fushi_paired_peers。
+    // 旧表名只允许活在 fushi_core 的 v69 ALTER TABLE RENAME 迁移步里。
+    name: 'hibiki_paired_peers',
+    regex: RegExp('hibiki_paired_peers'),
+    allowed: <String, String>{
+      'packages/fushi_core/lib/src/database/database.dart':
+          'v69 迁移步 ALTER TABLE hibiki_paired_peers RENAME TO '
+              'fushi_paired_peers 及其 _tableExists 守卫：读旧库做一次性改名的'
+              '迁移代码，旧表名是必要输入。',
+    },
+  ),
+  _ForbiddenPattern(
+    // W1：主库文件已是 fushi.db（fushiDatabaseFileName）。旧文件名只允许活在
+    // 「读旧数据的迁移代码」里：开库前一次性改名 + 老归档条目名回退。
+    name: 'hibiki.db',
+    regex: RegExp(r'hibiki\.db'),
+    allowed: <String, String>{
+      'packages/fushi_core/lib/src/database/database.dart':
+          'legacyHibikiDatabaseFileName 常量：_openDb 打开任何连接前把 '
+              'hibiki.db(+wal/shm) 一次性改名成 fushi.db 的迁移输入。',
+      'lib/src/migration/migration_manifest.dart':
+          '_dbEntryNames 的 legacy 候选：老 Hibiki app 导出的迁移归档条目名'
+              '（wire 冻结），读旧归档必需。',
+    },
   ),
 ];
 

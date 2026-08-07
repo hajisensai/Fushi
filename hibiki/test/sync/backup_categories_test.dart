@@ -132,14 +132,14 @@ void main() {
     }
   }
 
-  /// Extracts the packed `hibiki.db` from [zipPath] into a fresh dir under [into]
+  /// Extracts the packed `fushi.db` from [zipPath] into a fresh dir under [into]
   /// and opens it, so a test can assert on the exported DB blob's rows directly.
   Future<FushiDatabase> openBackupDb(String zipPath, Directory into) async {
     final Archive archive = await readZip(zipPath);
-    final ArchiveFile dbFile = archive.findFile('hibiki.db')!;
+    final ArchiveFile dbFile = archive.findFile('fushi.db')!;
     final Directory dir = Directory(p.join(into.path, 'exdb'))
       ..createSync(recursive: true);
-    File(p.join(dir.path, 'hibiki.db'))
+    File(p.join(dir.path, 'fushi.db'))
         .writeAsBytesSync(dbFile.content as List<int>);
     return FushiDatabase(dir.path);
   }
@@ -154,8 +154,7 @@ void main() {
       buildDataSource() async {
     final String dbDir = p.join(src.path, 'db');
     Directory(dbDir).createSync(recursive: true);
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     await db.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'Bk',
       title: 'Bk',
@@ -211,7 +210,7 @@ void main() {
           f.isFile && f.name.startsWith('videos/') && f.name.endsWith('.mp4')),
       isTrue,
     );
-    expect(archive.findFile('hibiki.db'), isNotNull);
+    expect(archive.findFile('fushi.db'), isNotNull);
     // Meta records every packed tree's root.
     expect(meta.booksRoot, isNotNull);
     expect(meta.audiobooksRoot, isNotNull);
@@ -229,7 +228,7 @@ void main() {
     await built.db.close();
 
     final archive = await readZip(zip);
-    expect(archive.findFile('hibiki.db'), isNotNull,
+    expect(archive.findFile('fushi.db'), isNotNull,
         reason: 'db is always packed');
     expect(archive.findFile('hoshi_books/Bk/original.epub'), isNotNull);
     // Unselected trees are absent.
@@ -253,7 +252,7 @@ void main() {
     await built.db.close();
 
     final archive = await readZip(zip);
-    expect(archive.findFile('hibiki.db'), isNotNull);
+    expect(archive.findFile('fushi.db'), isNotNull);
     expect(archive.findFile('hoshi_books/Bk/original.epub'), isNull);
     expect(archive.findFile('audiobooks/h/a.mp3'), isNull);
     expect(archive.findFile('custom_fonts/MyFont.ttf'), isNull);
@@ -414,19 +413,18 @@ void main() {
   });
 
   test(
-      'selecting localAudio packs the local_audio_*.db files (not hibiki.db) '
+      'selecting localAudio packs the local_audio_*.db files (not fushi.db) '
       'and import restores them + rebases the local_audio_dbs pref', () async {
     final String dbDir = p.join(src.path, 'db');
     Directory(dbDir).createSync(recursive: true);
-    // Two local-audio DBs + a wal sidecar living flat next to hibiki.db.
+    // Two local-audio DBs + a wal sidecar living flat next to fushi.db.
     await writeFile(p.join(dbDir, 'local_audio_111.db'), 'LA1');
     await writeFile(p.join(dbDir, 'local_audio_111.db-wal'), 'LA1WAL');
     await writeFile(p.join(dbDir, 'local_audio_222.db'), 'LA2');
     // An unrelated support file that must NOT be swept into the backup.
     await writeFile(p.join(dbDir, 'unrelated.db'), 'NOPE');
 
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     await db.setPref(
       'local_audio_dbs',
       jsonEncode(<Map<String, Object?>>[
@@ -457,18 +455,18 @@ void main() {
     expect(archive.findFile('localAudio/local_audio_111.db'), isNotNull);
     expect(archive.findFile('localAudio/local_audio_111.db-wal'), isNotNull);
     expect(archive.findFile('localAudio/local_audio_222.db'), isNotNull);
-    // hibiki.db is always packed, but the unrelated support file is not, and no
-    // hibiki.db copy leaks under the localAudio/ prefix.
+    // fushi.db is always packed, but the unrelated support file is not, and no
+    // fushi.db copy leaks under the localAudio/ prefix.
     expect(archive.findFile('localAudio/unrelated.db'), isNull);
     expect(
       archive.files.any((ArchiveFile f) =>
-          f.name.startsWith('localAudio/') && f.name.endsWith('hibiki.db')),
+          f.name.startsWith('localAudio/') && f.name.endsWith('fushi.db')),
       isFalse,
     );
     expect(meta.localAudioRoot, dbDir);
 
     // Restore into a fresh device with a DIFFERENT support dir → the pref must
-    // be rebased and the files must land flat alongside the new hibiki.db.
+    // be rebased and the files must land flat alongside the new fushi.db.
     final String dstDbDir = p.join(dst.path, 'db');
     Directory(dstDbDir).createSync(recursive: true);
     await BackupService.restoreBackup(
@@ -587,8 +585,7 @@ void main() {
     await writeFile(p.join(books, 'Keep', 'text', 'c1.html'), 'HK');
     await writeFile(p.join(books, 'Drop', 'd.epub'), 'DROP');
 
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     await db.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'Keep',
       title: 'Keep',

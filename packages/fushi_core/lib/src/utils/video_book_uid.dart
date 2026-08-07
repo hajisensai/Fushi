@@ -1,4 +1,4 @@
-/// 视频条目跨设备稳定 bookUid 派生（单一真相源，在 hibiki_core 内，供 v38 拆集迁移
+/// 视频条目跨设备稳定 bookUid 派生（单一真相源，在 fushi_core 内，供 v38 拆集迁移
 /// 与 app 导入路径共用）。
 ///
 /// 与书的身份哲学（`bookKey = sanitizeTtuFilename(title)`）对齐：**只取文件名（去

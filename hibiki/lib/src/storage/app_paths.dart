@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:fushi_core/fushi_core.dart' show hibikiDatabaseFileName;
+import 'package:fushi_core/fushi_core.dart'
+    show fushiDatabaseFileName, legacyHibikiDatabaseFileName;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,7 +23,7 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 ///     Hibiki 专属容器 `<Documents>/Hibiki/data`；**老安装**仍锚定历史扁平布局
 ///     `<Documents>` 本身（见 [_resolveDefaultDocumentsRoot]）。
 ///   - [supportRoot] —— 数据库根（`getApplicationSupportDirectory`，
-///     Windows = `%APPDATA%\<pkg>`）。`hibiki.db` 与 per-source local-audio DB 落这里。
+///     Windows = `%APPDATA%\<pkg>`）。`fushi.db` 与 per-source local-audio DB 落这里。
 ///   - [tempRoot] —— 可丢弃的临时目录（`getTemporaryDirectory`）。
 ///
 /// **E0 是纯收敛、行为等价**：解析逻辑（先 [hibikiTestDirectory] 测试分支，否则
@@ -144,9 +145,9 @@ class AppPaths {
   /// `Hibiki`，由 [documentsContainerPrefKey] 锚点冻结（同 flat/nested 锚点
   /// 哲学：存量布局一经判定永不漂移，改名不搬书库——DB 里的绝对路径都指着它）。
   static List<String> get defaultDocumentsChildSegments => <String>[
-    _documentsContainerName ?? 'Fushi',
-    'data',
-  ];
+        _documentsContainerName ?? 'Fushi',
+        'data',
+      ];
 
   /// nested 容器名锚点（SharedPreferences，与布局锚点同通道）。值 `Hibiki`
   /// （存量安装）或 `Fushi`（新装/已迁移）。
@@ -318,7 +319,8 @@ class AppPaths {
   /// 判定 + 固化默认布局。**唯一做探测 IO 的地方**，只由 [resolve] 在启动期调用一次；
   /// 已判定（本进程判过 / prefs 有锚点）就直接沿用，不再探测。
   ///
-  /// 判据是 support 根下有没有 `hibiki.db`——即「这台机器上是否已经有一个跑过的安装」。
+  /// 判据是 support 根下有没有主库文件（`fushi.db`，兼看旧名 `hibiki.db`）——即
+  /// 「这台机器上是否已经有一个跑过的安装」。
   /// 刻意**不**看 Documents 里有没有 `videos` / `browser` / `thumbnails` 这类目录：那些
   /// 名字在用户自己的文档目录里撞名概率不低，全新安装会被误判成老安装、继续摊开。
   /// support 根是平台固定落点（`%APPDATA%\<pkg>`），不随本次改动移动，判据稳定。
@@ -336,7 +338,7 @@ class AppPaths {
     final bool flat = await _existingInstallHasDatabase();
     _legacyFlatDocumentsRoot = flat;
     // 固化锚点（best-effort）。写失败只意味着下次启动再探一次，不改变本次结果——而下次
-    // 探测的判据（hibiki.db 是否存在）此时只会更成立，不会翻转成新布局。
+    // 探测的判据（主库文件是否存在）此时只会更成立，不会翻转成新布局。
     try {
       await prefs?.setString(documentsLayoutPrefKey,
           flat ? documentsLayoutFlat : documentsLayoutNested);
@@ -385,12 +387,19 @@ class AppPaths {
   /// support 根下是否已有主库文件 = 本机已存在跑过的安装。与 [_probeDataRootExists] 同一
   /// 纪律：**只准异步 `exists()` + 超时**，绝不 `existsSync()`（这条路径同样在启动最早期
   /// 的主 isolate 上跑）。超时/抛错都按「老安装」处理（保守）。
+  ///
+  /// 兼看旧文件名 [legacyHibikiDatabaseFileName]：老安装在第一次开库前主库还叫
+  /// `hibiki.db`（开库时 fushi_core 才做一次性改名），这里若只认新名会把老安装
+  /// 误判成全新安装。
   static Future<bool> _existingInstallHasDatabase() async {
     try {
       final Directory support = await _resolveSupportRoot();
-      return await File(p.join(support.path, hibikiDatabaseFileName))
-          .exists()
-          .timeout(const Duration(seconds: 2), onTimeout: () => true);
+      Future<bool> dbExists(String fileName) =>
+          File(p.join(support.path, fileName))
+              .exists()
+              .timeout(const Duration(seconds: 2), onTimeout: () => true);
+      return await dbExists(fushiDatabaseFileName) ||
+          await dbExists(legacyHibikiDatabaseFileName);
     } catch (_) {
       return true;
     }

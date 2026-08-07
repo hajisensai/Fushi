@@ -10,6 +10,7 @@ import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show backupImportRestart;
 import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart' show fushiDatabaseFileName;
 import 'package:path/path.dart' as p;
 
 /// 「从 Hibiki 导入」页（改名迁移计划 P2-2/P2-3，Fushi 侧）。
@@ -111,8 +112,10 @@ class _MigrationImportPageState extends State<MigrationImportPage> {
       // 合并后聚合校验：逐表行数不得低于各批清单最大值。
       final Map<String, int> expected =
           MigrationImporter.aggregateExpectedCounts(scan.ready);
+      // 合并导入落到的是活库（mergeRestoreBackup 内部开库时 fushi_core 已把
+      // legacy hibiki.db 改名），所以行数校验必须查新文件名。
       final String dbPath =
-          p.join(appModel.databaseDirectory.path, 'hibiki.db');
+          p.join(appModel.databaseDirectory.path, fushiDatabaseFileName);
       final List<String> countProblems = MigrationImporter.verifyImportedCounts(
           dbPath: dbPath, expected: expected);
       if (countProblems.isNotEmpty) {

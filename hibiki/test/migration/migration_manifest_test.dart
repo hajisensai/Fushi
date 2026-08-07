@@ -115,6 +115,17 @@ void main() {
           await MigrationManifest.countsFromArchive(zip2);
       expect(c2, isEmpty);
       expect(s2, isNull);
+
+      // Fushi 侧新归档（BackupService.createBackup 产出）条目名是 fushi.db，
+      // 同一入口也必须认（迁移导出/导入现在都走新名）。
+      final String zip3 = p.join(tmp.path, 'core-new.zip');
+      final ZipFileEncoder enc3 = ZipFileEncoder()..create(zip3);
+      await enc3.addFile(File(dbPath), 'fushi.db');
+      enc3.close();
+      final (Map<String, int> c3, int? s3) =
+          await MigrationManifest.countsFromArchive(zip3);
+      expect(c3['epub_books'], 5);
+      expect(s3, 62);
     });
 
     test('computeForArchive 端到端：清单能验证自己的归档', () async {

@@ -20,7 +20,7 @@ import 'tables.dart';
 
 part 'database.g.dart';
 
-/// Thrown when the on-disk database was created by a NEWER build of Hibiki than
+/// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
 ///
 /// 降级保护：当用户用旧版应用打开由新版创建的库时，绝不 DROP/迁移/重建，而是抛出此
@@ -41,13 +41,13 @@ class FushiDatabaseDowngradeException implements Exception {
   @override
   String toString() =>
       'FushiDatabaseDowngradeException: database was created by a newer '
-      'version of Hibiki (schema v$dbVersion); this app only understands '
+      'version of Fushi (schema v$dbVersion); this app only understands '
       'schema v$appSchemaVersion. Opening was refused to protect your data.';
 }
 
 /// Thrown when the database could NOT be opened even after the full WAL/IOERR
 /// recovery ladder (checkpoint → DELETE journal → physical sidecar rebuild)
-/// ran — i.e. the main `hibiki.db` file itself is corrupt, not just a stale
+/// ran — i.e. the main `fushi.db` file itself is corrupt, not just a stale
 /// `-wal` / `-shm` sidecar. Mirrors [FushiDatabaseDowngradeException]: it is a
 /// dedicated, app-recognisable terminal type so the app layer can show an
 /// actionable "import a backup / clear data" notice INSTEAD of looping the
@@ -105,7 +105,7 @@ bool _isSidecarOpenError(Object e) {
 /// ("SQLite format 3\u0000"). See https://www.sqlite.org/fileformat.html .
 final List<int> _kSqliteMagic = 'SQLite format 3\u0000'.codeUnits; // 16 bytes
 
-/// Whether the MAIN `hibiki.db` file is itself a structurally valid SQLite
+/// Whether the MAIN `fushi.db` file is itself a structurally valid SQLite
 /// database, judged ONLY by its file header — deliberately WITHOUT opening a
 /// connection (a read-only open of a WAL db still engages the `-wal`/`-shm`
 /// sidecar, which is the very thing that is broken here, so it would falsely
@@ -178,14 +178,14 @@ Future<QueryExecutor> _openWithRecovery(
     if (!_mainDbHeaderIsValid(path)) {
       throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
     }
-    debugPrint('[hibiki-db] sidecar open error on "$path" '
+    debugPrint('[fushi-db] sidecar open error on "$path" '
         '(main db healthy → recovering): $e\n$stack');
   }
 
   // ── Layer 1 — checkpoint the WAL back into the main DB, then leave WAL mode.
   //    A raw connection that does NOT pre-set WAL can usually still open even
   //    when a stale -shm is poisoned; wal_checkpoint(TRUNCATE) flushes every
-  //    already-committed WAL frame into hibiki.db (NO DATA LOSS), then
+  //    already-committed WAL frame into fushi.db (NO DATA LOSS), then
   //    journal_mode=DELETE drops the -wal/-shm cleanly. MUST run before any
   //    physical sidecar delete (Layer 2) so committed-but-uncheckpointed
   //    transactions are preserved.
@@ -198,11 +198,11 @@ Future<QueryExecutor> _openWithRecovery(
       recover.close();
     }
     debugPrint(
-        '[hibiki-db] Layer 1 recovery OK (checkpoint+DELETE) for "$path"');
+        '[fushi-db] Layer 1 recovery OK (checkpoint+DELETE) for "$path"');
     return NativeDatabase.createInBackground(dbFile, setup: applyPragmas);
   } catch (e, stack) {
     if (!_isSidecarOpenError(e)) rethrow;
-    debugPrint('[hibiki-db] Layer 1 still failing on "$path": $e\n$stack');
+    debugPrint('[fushi-db] Layer 1 still failing on "$path": $e\n$stack');
   }
 
   // ── Layer 2 — physical sidecar rebuild. Layer 1 could not even open a raw
@@ -220,17 +220,17 @@ Future<QueryExecutor> _openWithRecovery(
     return NativeDatabase.createInBackground(dbFile, setup: applyPragmas);
   } catch (e, stack) {
     if (!_isSidecarOpenError(e)) rethrow;
-    // ── Layer 3 — sidecar gone yet still failing ⇒ the main hibiki.db is
+    // ── Layer 3 — sidecar gone yet still failing ⇒ the main fushi.db is
     //    corrupt after all. Terminal: hand the app a recognisable type so it can
     //    stop the Retry loop and offer restore/clear instead of looping.
     debugPrint(
-        '[hibiki-db] Layer 2 rebuild failed, DB unrecoverable: $e\n$stack');
+        '[fushi-db] Layer 2 rebuild failed, DB unrecoverable: $e\n$stack');
     throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
   }
 }
 
 /// Layer 2 helper: snapshot then physically remove the stale `-wal` / `-shm`
-/// sidecars so SQLite rebuilds them from a clean `hibiki.db`.
+/// sidecars so SQLite rebuilds them from a clean `fushi.db`.
 ///
 /// 🔴 Data-safety invariant (TODO-905 red line): this NEVER touches the main
 /// `.db` file — it only deletes the `$path-wal` / `$path-shm` suffixes. A
@@ -250,7 +250,7 @@ Future<void> _rebuildSidecar(File dbFile) async {
         await src.copy('$path.corrupt-bak-$stamp$suffix');
       } catch (e) {
         debugPrint(
-            '[hibiki-db] snapshot of "${src.path}" failed (non-fatal): $e');
+            '[fushi-db] snapshot of "${src.path}" failed (non-fatal): $e');
       }
     }
   }
@@ -274,18 +274,52 @@ Future<void> _rebuildSidecar(File dbFile) async {
 
   await deleteSidecar('$path-wal');
   await deleteSidecar('$path-shm');
-  debugPrint('[hibiki-db] Layer 2: deleted stale -wal/-shm for "$path" '
+  debugPrint('[fushi-db] Layer 2: deleted stale -wal/-shm for "$path" '
       '(main .db untouched, .corrupt-bak-$stamp snapshot kept)');
 }
 
 /// 主库在 support 根下的文件名。唯一真相源：除了 [_openDb] 自身，app 层判定「这台机器
-/// 上是否已经有一个跑过的 Hibiki 安装」时也要认这个文件（见 `AppPaths` 的默认 documents
+/// 上是否已经有一个跑过的安装」时也要认这个文件（见 `AppPaths` 的默认 documents
 /// 布局判据），故抽成导出常量而不是各处重复字面量。
-const String hibikiDatabaseFileName = 'hibiki.db';
+const String fushiDatabaseFileName = 'fushi.db';
+
+/// 旧主库文件名（Fushi 改名前的 Hibiki 时代）。只允许迁移代码引用：[_openDb] 在
+/// 打开任何连接前把它整套（.db / -wal / -shm）改名成 [fushiDatabaseFileName]，
+/// app 层「本机是否已有安装」的判据也要兼看它（旧安装升级后第一次开库前旧名还在）。
+const String legacyHibikiDatabaseFileName = 'hibiki.db';
+
+/// Fushi 终局清算 W1：`hibiki.db` → `fushi.db` 一次性文件改名，必须发生在任何
+/// SQLite 连接打开之前（WAL 库的 `-wal`/`-shm` 与主文件名绑定，开着连接改名等于
+/// 撕裂 sidecar）。改名顺序刻意是 **sidecar 先、主文件最后**：判据只看两个主文件
+/// （`fushi.db` 不存在且 `hibiki.db` 存在才迁移），所以中途被杀后重启会重新进入
+/// 本分支，把剩下的文件补完 —— 反过来先改主文件的话，残留的 `hibiki.db-wal` 里
+/// 已提交的 WAL 帧会被永远遗弃（丢数据）。
+Future<void> _migrateLegacyDatabaseFileName(String dbDirectory) async {
+  final File newDb = File(p.join(dbDirectory, fushiDatabaseFileName));
+  final File oldDb = File(p.join(dbDirectory, legacyHibikiDatabaseFileName));
+  if (await newDb.exists() || !await oldDb.exists()) return;
+  try {
+    for (final String suffix in <String>['-wal', '-shm', '']) {
+      final File src = File('${oldDb.path}$suffix');
+      if (await src.exists()) {
+        await src.rename('${newDb.path}$suffix');
+      }
+    }
+  } on FileSystemException {
+    // 主进程与 `:popup` 进程同时首开时，双方都会进到这里；输家的 rename 会因
+    // 源文件已被赢家改走而失败。只要赢家已把主文件改出来，迁移就算完成；
+    // 否则是真 IO 故障，照实抛（宁可开库失败也不能静默建空库盖住旧数据）。
+    if (!await newDb.exists()) rethrow;
+    return;
+  }
+  debugPrint('[fushi-db] renamed legacy hibiki.db(+sidecars) -> fushi.db '
+      'in "$dbDirectory"');
+}
 
 LazyDatabase _openDb(String dbDirectory, {bool isMainProcess = true}) {
   return LazyDatabase(() async {
-    final file = File(p.join(dbDirectory, hibikiDatabaseFileName));
+    await _migrateLegacyDatabaseFileName(dbDirectory);
+    final file = File(p.join(dbDirectory, fushiDatabaseFileName));
     return _openWithRecovery(file, allowSidecarDelete: isMainProcess);
   });
 }
@@ -424,7 +458,7 @@ class FushiDatabase extends _$FushiDatabase {
   FushiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 68;
+  int get schemaVersion => 69;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -785,13 +819,17 @@ class FushiDatabase extends _$FushiDatabase {
             }
           }
           if (from < 31) {
-            // TODO-1017 阶段1：互联 per-peer 授权凭据表 hibiki_paired_peers。无损
+            // TODO-1017 阶段1：互联 per-peer 授权凭据表（历史上以旧名
+            // hibiki_paired_peers 建出；v69 起统一为 fushi_paired_peers）。无损
             // 迁移：只 createTable，不 DROP / 不改列 / 不删行 / 不回填行（旧库升级
             // 后此表空 = 无已配对对端 = auth 接线未开启前行为零变化，Never break
             // userspace）。守卫幂等（fresh DB 已由 onCreate 的 createAll 建好，用
-            // _tableExists 守卫避免重复创建，重复升级 no-op）。
-            if (!await _tableExists('hibiki_paired_peers')) {
-              await m.createTable(hibikiPairedPeers);
+            // _tableExists 守卫避免重复创建，重复升级 no-op）。注意 drift 迁移步
+            // 永远按**当前** Dart 表定义建表（本文件既有惯例），所以从 <31 一路
+            // 升上来的库在这里直接建出 v69 的新名 fushi_paired_peers，下面的 v69
+            // 改名步对它天然 no-op。
+            if (!await _tableExists('fushi_paired_peers')) {
+              await m.createTable(fushiPairedPeers);
             }
           }
           if (from < 32) {
@@ -1421,6 +1459,18 @@ class FushiDatabase extends _$FushiDatabase {
               }
             }
           }
+          if (from < 69) {
+            // v69（Fushi 终局清算 W1）：hibiki_paired_peers → fushi_paired_peers
+            // 表改名。纯 RENAME：不 DROP / 不改列 / 不删行 / 不回填行，UNIQUE
+            // (peer_id) 的 sqlite_autoindex 随表自动迁移，本表无显式索引/触发器。
+            // 双守卫幂等：旧名不存在（<31 阶梯已直接建新名 / fresh DB）或新名已
+            // 存在（重复升级）都 no-op。旧名此后只允许活在本迁移步里。
+            if (await _tableExists('hibiki_paired_peers') &&
+                !await _tableExists('fushi_paired_peers')) {
+              await customStatement(
+                  'ALTER TABLE hibiki_paired_peers RENAME TO fushi_paired_peers');
+            }
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -1714,7 +1764,7 @@ class FushiDatabase extends _$FushiDatabase {
   /// 代价远大于丢一条脏数据。
   ///
   /// 解析逻辑与 app 侧 `galgame_library.dart` 的 `decodeGalgameLibrary` 同构，
-  /// 但这里是独立实现：hibiki_core 是 app 的依赖，不能反向 import app 代码。
+  /// 但这里是独立实现：fushi_core 是 app 的依赖，不能反向 import app 代码。
   Future<void> _backfillGalgamesFromPreferences() async {
     final int existing = await galgames.count().getSingle();
     if (existing > 0) {
@@ -1901,7 +1951,7 @@ class FushiDatabase extends _$FushiDatabase {
       }
 
       debugPrint(
-        '[hibiki-migration v26] audiobook book_key backfill: '
+        '[fushi-migration v26] audiobook book_key backfill: '
         'rewritten=$rewritten, '
         'skippedAmbiguousOldKey=$skippedAmbiguousOldKey, '
         'skippedTargetOccupied=$skippedTargetOccupied '
@@ -1973,7 +2023,7 @@ class FushiDatabase extends _$FushiDatabase {
       }
 
       debugPrint(
-        '[hibiki-migration v29] EPUB-backed audiobook srt_books backfill: '
+        '[fushi-migration v29] EPUB-backed audiobook srt_books backfill: '
         'inserted=$inserted '
         '(standalone 字幕书无 audiobooks 行天然豁免，重复迁移幂等)',
       );
@@ -2035,7 +2085,7 @@ class FushiDatabase extends _$FushiDatabase {
       await customStatement('UPDATE shelf_entries SET series_id = NULL');
       await customStatement('DELETE FROM series');
       debugPrint(
-        '[hibiki-migration v38] series→collection converted='
+        '[fushi-migration v38] series→collection converted='
         '$convertedCollections',
       );
     });
@@ -2275,7 +2325,7 @@ class FushiDatabase extends _$FushiDatabase {
         }
         splitCount += 1;
       }
-      debugPrint('[hibiki-migration v38] playlist videos split=$splitCount');
+      debugPrint('[fushi-migration v38] playlist videos split=$splitCount');
 
       // favorite_sentences（收藏句）改写并入**同一事务**：整个 v38 拆集要么全成要么全
       // 回滚。否则若拆集事务先提交、收藏改写在两步之间崩溃，重跑时 parent 已删 → splitMap
@@ -2899,7 +2949,7 @@ class FushiDatabase extends _$FushiDatabase {
       .get();
 
   /// 监听视频库 uid 集合。插入/删除行时发出更新后的 uid 列表；库页据此在任意
-  /// 导入路径（页内 / 拖拽 / 外部「用 Hibiki 打开」/ 远端下载）落库后自动重查，
+  /// 导入路径（页内 / 拖拽 / 外部「用 Fushi 打开」/ 远端下载）落库后自动重查，
   /// 无需每个调用点各自记得刷新（BUG-793）。注意 Drift 的表级失效会让纯列更新
   /// （封面回写、播放进度）也触发本流，故消费方按集合是否变化去重，避免自愈
   /// 写回引发的重刷环。
@@ -3258,31 +3308,29 @@ class FushiDatabase extends _$FushiDatabase {
   Future<void> trustMangaSigner(MangaTrustedSignersCompanion signer) =>
       into(mangaTrustedSigners).insertOnConflictUpdate(signer);
 
-  // ── hibiki_paired_peers (TODO-1017 阶段1) ────────────────────────
+  // ── fushi_paired_peers (TODO-1017 阶段1) ────────────────────────
   // 互联 per-peer 授权凭据 CRUD。🔴 token 是敏感凭据（明文列存，方案待定），
-  // 绝不写日志、绝不进 sync/backup 明文导出。本阶段仅提供表 + 方法，不接线 auth。
+  // 绝不写日志、绝不进 sync/backup 明文导出。
 
   /// 全部已配对对端，按 pairedAtMs 升序（配对先后稳定排序）、id 升序兜底同戳。
-  Future<List<FushiPairedPeerRow>> getPairedPeers() =>
-      (select(hibikiPairedPeers)
-            ..orderBy([
-              (t) => OrderingTerm(expression: t.pairedAtMs),
-              (t) => OrderingTerm(expression: t.id),
-            ]))
-          .get();
+  Future<List<FushiPairedPeerRow>> getPairedPeers() => (select(fushiPairedPeers)
+        ..orderBy([
+          (t) => OrderingTerm(expression: t.pairedAtMs),
+          (t) => OrderingTerm(expression: t.id),
+        ]))
+      .get();
 
   /// 按 peerId 幂等 upsert（存在则整行更新）。ON CONFLICT 目标必须显式指定
   /// [peerId]（非主键 id）：不指定时 drift 默认按主键 id 冲突，而 upsert 契约是
   /// 按 peerId 认定同一设备（id 自增每次不同），会误撞 peerId UNIQUE 抛错。
   /// 重复配对同一设备只更新其 token / deviceName / lastSeenIp，不新增行。
   Future<void> upsertPairedPeer(FushiPairedPeersCompanion peer) =>
-      into(hibikiPairedPeers).insert(peer,
-          onConflict:
-              DoUpdate((_) => peer, target: [hibikiPairedPeers.peerId]));
+      into(fushiPairedPeers).insert(peer,
+          onConflict: DoUpdate((_) => peer, target: [fushiPairedPeers.peerId]));
 
   /// 吊销一台已配对设备（按 peerId 删行），返回删除的行数（0 = 无此对端）。
   Future<int> revokePairedPeer(String peerId) =>
-      (delete(hibikiPairedPeers)..where((t) => t.peerId.equals(peerId))).go();
+      (delete(fushiPairedPeers)..where((t) => t.peerId.equals(peerId))).go();
 
   // ── series (TODO-616 A) ─────────────────────────────────────────
   /// 全部系列，按 sortOrder 升序、id 升序（卡片列表稳定排序）。
@@ -6428,7 +6476,7 @@ class FushiDatabase extends _$FushiDatabase {
   static const String _kLegacyUidPrefix = 'reader_ttu/hoshi://book/';
 
   /// Delegates to the core-local copy of `sanitizeTtuFilename`
-  /// (`../utils/ttu_sanitize.dart`). hibiki_core cannot depend on the app
+  /// (`../utils/ttu_sanitize.dart`). fushi_core cannot depend on the app
   /// package, so the core copy stands in for the app truth source
   /// `hibiki/lib/src/sync/ttu_filename.dart`. Core copy and app copy MUST
   /// stay byte-identical: the migrated bookKey has to equal the key
