@@ -8,18 +8,18 @@
   "notes": "Manual desktop debug-channel build from bridge-hibiki-final @ d863f0c. Debug releases are prerelease and never Latest.",
   "assets": [
     {
-      "name": "hibiki-1.3.1-debug.10156-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.1-debug.10156-ios.ipa",
-      "releaseSequence": 10156,
-      "tag": "v1.3.1-debug.10156+4ffdd29",
-      "version": "1.3.1-debug.10156"
+      "name": "fushi-1.3.2-debug.10182-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/fushi-1.3.2-debug.10182-ios.ipa",
+      "releaseSequence": 10182,
+      "tag": "v1.3.2-debug.10182+d863f0c",
+      "version": "1.3.2-debug.10182"
     },
     {
-      "name": "hibiki-1.3.1-debug.10156-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.1-debug.10156-macos.zip",
-      "releaseSequence": 10156,
-      "tag": "v1.3.1-debug.10156+4ffdd29",
-      "version": "1.3.1-debug.10156"
+      "name": "fushi-1.3.2-debug.10182-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/fushi-1.3.2-debug.10182-macos.zip",
+      "releaseSequence": 10182,
+      "tag": "v1.3.2-debug.10182+d863f0c",
+      "version": "1.3.2-debug.10182"
     },
     {
       "name": "hibiki-1.3.1-debug.10157-8322df4-debug.apk",
