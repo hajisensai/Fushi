@@ -21,8 +21,8 @@ import 'package:fushi/src/ocr/manga_ocr_folder_job.dart'
         kMangaOcrOutDirName,
         kMangaOcrOutputFileName;
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
-import 'package:fushi/src/sync/hibiki_manga_ocr_host.dart';
-import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/fushi_manga_ocr_host.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 
@@ -131,10 +131,10 @@ void main() {
     );
     await server.start();
     addTearDown(server.stop);
-    await repo.setHibikiClientUrls(<FushiClientUrl>[
+    await repo.setFushiClientUrls(<FushiClientUrl>[
       FushiClientUrl(url: 'http://127.0.0.1:${server.port}'),
     ]);
-    await repo.setHibikiClientToken('tok');
+    await repo.setFushiClientToken('tok');
     return server;
   }
 
@@ -171,7 +171,7 @@ void main() {
     expect(target.capability.modelsMissing, isTrue);
 
     // token 清空 → 隐藏。
-    await repo.setHibikiClientToken(null);
+    await repo.setFushiClientToken(null);
     expect(await client.probe(), isNull);
   });
 
@@ -231,11 +231,11 @@ void main() {
     final FushiSyncServer notReady = await spawn(false);
     final FushiSyncServer isReady = await spawn(true);
     // 未就绪的排在前面：修复前会被第一个命中并返回，就绪的那台永远选不上。
-    await repo.setHibikiClientUrls(<FushiClientUrl>[
+    await repo.setFushiClientUrls(<FushiClientUrl>[
       FushiClientUrl(url: 'http://127.0.0.1:${notReady.port}'),
       FushiClientUrl(url: 'http://127.0.0.1:${isReady.port}'),
     ]);
-    await repo.setHibikiClientToken('tok');
+    await repo.setFushiClientToken('tok');
 
     final MangaOcrRemoteTarget? target = await buildClient().probe();
     expect(target, isNotNull);

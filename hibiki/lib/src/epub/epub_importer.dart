@@ -10,7 +10,7 @@ import 'package:fushi/src/epub/book_title_conflict.dart';
 import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 import 'package:fushi/src/epub/epub_parser.dart';
 import 'package:fushi/src/epub/epub_storage.dart';
 

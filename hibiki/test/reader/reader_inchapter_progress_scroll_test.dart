@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show parseReaderStableProgressDetails, readerScrollProgressRefreshAllowed;
 
 import '../helpers/source_guard.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// BUG-213：章内原生滚动进度不更新（用户：「章内滚动进度不会动，只有到下一章了
 /// 进度才会更新一次」）。
@@ -15,7 +15,7 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// Dart 侧经纯函数门控走 `_refreshProgressFromScroll()` 的 coalesce 守卫调
 /// `_refreshProgress()`，进度边滑边实时更新而不是只在滑停后跳一下。
 ///
-/// reader_hibiki_page.dart 太重（WebView + DB + provider）不便整页 mount，门控逻辑
+/// reader_fushi_page.dart 太重（WebView + DB + provider）不便整页 mount，门控逻辑
 /// 抽成 [readerScrollProgressRefreshAllowed] 纯函数在此锁定真值表；JS 通道与 Dart
 /// 接线由源码扫描守卫锁定，防回归。
 void main() {

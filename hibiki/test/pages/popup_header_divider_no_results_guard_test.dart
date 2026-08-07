@@ -91,11 +91,11 @@ void main() {
   test('reader/video popup headers no longer carry an unconditional border',
       () {
     for (final String path in <String>[
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-      'lib/src/pages/implementations/video_hibiki_page.dart',
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+      'lib/src/pages/implementations/video_fushi_page.dart',
     ]) {
       final String src = File(path).readAsStringSync();
-      final int headerIdx = path.contains('reader_hibiki_page')
+      final int headerIdx = path.contains('reader_fushi_page')
           ? src.indexOf('Widget? buildPopupAudioControls()')
           : src.indexOf('Widget? buildPopupHeaderFor(');
       expect(headerIdx, greaterThanOrEqualTo(0),

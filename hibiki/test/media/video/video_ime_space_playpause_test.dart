@@ -5,7 +5,7 @@ import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 import 'package:fushi/src/platform/windows_ime_space_channel.dart';
 import 'package:fushi/src/platform/windows_ime_space_dispatch.dart';
 
-import '../../pages/video_hibiki_page_source_corpus.dart';
+import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// ⚠️ 部分假绿（2026-08-02 定性）：group
 /// `[假绿·前提已证伪] isVideoImeSpacePlayPause` 的**断言前提已被引擎源码证伪**。
@@ -129,7 +129,7 @@ void main() {
   });
 
   test('视频页最外层 Focus.onKeyEvent 接入 IME 空格回退（源码守卫）', () {
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
 
     // 回退 helper 存在，且经沉浸锁门控触发与页级覆盖同语义的 playOrPause。
     final int start = src.indexOf('bool _handleVideoImeSpacePlayPause(');
@@ -238,7 +238,7 @@ void main() {
   });
 
   test('BUG-1239 视频页注册 native 通道并守住路由/文本框/浮层边界', () {
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
     expect(
       src,
       contains(

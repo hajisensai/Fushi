@@ -8,7 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
-import 'package:fushi/src/pages/hibiki_page_placeholders.dart';
+import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:fushi/utils.dart';
 

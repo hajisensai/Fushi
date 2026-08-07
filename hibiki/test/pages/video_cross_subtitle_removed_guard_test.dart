@@ -41,7 +41,7 @@ void main() {
 
   test('视频页 / 快捷键源码无任何跨字幕录制 symbol', () {
     final List<String> sources = <String>[
-      'lib/src/pages/implementations/video_hibiki_page.dart',
+      'lib/src/pages/implementations/video_fushi_page.dart',
       'lib/src/media/video/video_player_shortcuts.dart',
       'lib/src/shortcuts/shortcut_action.dart',
       'lib/src/shortcuts/shortcut_defaults.dart',

@@ -9,7 +9,7 @@ import 'package:fushi/utils.dart';
 /// 「披露集合 == 真实删除集合」的行为断言。
 enum DeletionDisclosureTarget {
   /// 书架里的书（EPUB / 漫画 / PDF / 字幕书）。单删与批量删走同一底层链路
-  /// `ReaderHibikiSource.deleteBook`，披露内容因此完全一致。
+  /// `ReaderFushiSource.deleteBook`，披露内容因此完全一致。
   shelfBook,
 
   /// 已附加的有声书。只删有声书，书本身留在架上。
@@ -40,7 +40,7 @@ DeletionDisclosure buildDeletionDisclosure({
 }) {
   switch (target) {
     case DeletionDisclosureTarget.shelfBook:
-      // 真实删除集合见 ReaderHibikiSource.deleteBook：
+      // 真实删除集合见 ReaderFushiSource.deleteBook：
       //   1) FushiDatabase.deleteEpubBook 事务删阅读进度/书签/字幕 cue/有声书行/
       //      书架行/标签映射；
       //   2) AudiobookStorage.deletePersistDir(bookKey) 与 (srt.uid) 递归删

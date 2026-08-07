@@ -48,7 +48,7 @@ void main() {
 
   setUpAll(() {
     part = File(
-      'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+      'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
     ).readAsStringSync().replaceAll('\r\n', '\n');
   });
 

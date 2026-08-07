@@ -264,26 +264,26 @@ double supportingPaneWidthForLayout(double width) {
 
 /// 书籍 / 视频快捷设置宽窗 master-detail 左父菜单的固定宽度。比
 /// [supportingPaneWidthForLayout] 更窄，给右侧详情留更多空间。
-const double kHibikiSettingsSupportingPaneWidth = 208.0;
+const double kFushiSettingsSupportingPaneWidth = 208.0;
 
 /// 书籍 / 视频快捷设置切换到宽窗 master-detail（左父菜单 + 右详情）的**宽度**阈值。
 /// 窄于此值走窄窗 push。
 ///
-/// 与 [kHibikiSettingsWideMinHeight] 一起构成确定性的几何判据
+/// 与 [kFushiSettingsWideMinHeight] 一起构成确定性的几何判据
 /// `_isWide = maxWidth >= 阈值 && maxHeight >= 阈值`：两个 sheet 共用同一组常量，
 /// 同一台设备 / 同一窗口尺寸下视频与书籍必然同时进 / 同时不进横屏（不再用「post-frame
 /// 测左父菜单内容是否溢出」那套会随内容高度发散、导致同设备两种表现的回退）。
-const double kHibikiSettingsWideThreshold = 560.0;
+const double kFushiSettingsWideThreshold = 560.0;
 
 /// 书籍 / 视频快捷设置进入宽窗 master-detail 所需的**最小可用高度**阈值。窗口比这
 /// 更矮时左父菜单放不下，回退窄窗 push（不出滚动条）。书籍设置已把阅读进度并入右侧
 /// 外观详情、左父菜单只留分类导航 + 动作，使两个 sheet 的左栏都能在此高度内放下。
-const double kHibikiSettingsWideMinHeight = 440.0;
+const double kFushiSettingsWideMinHeight = 440.0;
 
 /// 桌面宽窗下书籍 / 视频 / 阅读器快捷设置弹窗（[FushiDialogFrame]）的最大内容宽度。
 /// 全屏 push 的设置类页面（如 `BookCssEditorPage`）也用它约束正文宽度，与限宽弹窗
 /// 里的兄弟设置页保持同宽，消除各处重复出现的 `900` 魔法数。
-const double kHibikiSettingsDialogMaxWidth = 900.0;
+const double kFushiSettingsDialogMaxWidth = 900.0;
 
 class DesktopContentLayout extends StatelessWidget {
   const DesktopContentLayout({

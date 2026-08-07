@@ -2022,7 +2022,7 @@ class VideoPlayerController extends ChangeNotifier
   /// [AudiobookPlayerController.flushPosition]）。
   ///
   /// 必须在 [Player] 仍存活时调用（[positionMs] 读 `_player.state.position`）：
-  /// [VideoHibikiPage.dispose] 先 `flushPosition()` 再 `dispose()`；换集前
+  /// [VideoFushiPage.dispose] 先 `flushPosition()` 再 `dispose()`；换集前
   /// （[_switchEpisode]）也调一次记录当前集精确进度。未 [load]（无 player /
   /// 无 bookUid）时 no-op 安全。
   Future<void> flushPosition() async {
@@ -2808,7 +2808,7 @@ class VideoPlayerController extends ChangeNotifier
     // 退出前强制记录当前位置：周期保存的整秒节流会吞掉退出瞬间同一整秒内的最后
     // 几百毫秒进度。这里在 [_player] 仍存活时同步读位置并 fire-and-forget 写一次
     // （绕过节流），保证「退出再进恢复到上次位置」。可 await 的可靠落库由
-    // [VideoHibikiPage.dispose] 在调用本方法前先 [flushPosition] 完成。
+    // [VideoFushiPage.dispose] 在调用本方法前先 [flushPosition] 完成。
     _forceSavePositionSync();
     _tick?.cancel();
     _tick = null;

@@ -189,7 +189,7 @@ void main() {
     await db.addToCollection(collectionId, MediaKind.epub, bookKey);
 
     final String identifierBefore =
-        ReaderHibikiSource.mediaIdentifierFor(bookKey);
+        ReaderFushiSource.mediaIdentifierFor(bookKey);
 
     await BookFormatRebuild.convert(
       db: db,
@@ -200,7 +200,7 @@ void main() {
 
     // ① 身份逐字节不变。
     expect(asManga.bookKey, bookKey);
-    expect(ReaderHibikiSource.mediaIdentifierFor(asManga.bookKey),
+    expect(ReaderFushiSource.mediaIdentifierFor(asManga.bookKey),
         identifierBefore);
     // ② 书架恰好一条（书架列的就是 EpubBooks 行）。
     expect(await db.getAllEpubBooks(), hasLength(1));
@@ -212,9 +212,9 @@ void main() {
     expect(posAsManga.updatedAt, 1712345678901);
     // ④ 跳回原文进正确阅读器。
     expect(
-      ReaderHibikiSource.mediaSourceKeyFor(
+      ReaderFushiSource.mediaSourceKeyFor(
           BookFormat.parseOrEpub(asManga.format)),
-      MangaHibikiSource.kUniqueKey,
+      MangaFushiSource.kUniqueKey,
     );
     // 合集成员没断。
     expect(
@@ -229,7 +229,7 @@ void main() {
     final EpubBookRow asBook = await row();
 
     expect(asBook.bookKey, bookKey, reason: '①往返后主键仍逐字节不变');
-    expect(ReaderHibikiSource.mediaIdentifierFor(asBook.bookKey),
+    expect(ReaderFushiSource.mediaIdentifierFor(asBook.bookKey),
         identifierBefore);
     expect(await db.getAllEpubBooks(), hasLength(1), reason: '②往返后仍恰好一条');
     final ReaderPositionRow posAsBook = (await db.getReaderPosition(bookKey))!;
@@ -237,9 +237,9 @@ void main() {
     expect(posAsBook.charOffset, 777);
     expect(posAsBook.updatedAt, 1712345678901, reason: '③最后阅读时刻不丢');
     expect(
-      ReaderHibikiSource.mediaSourceKeyFor(
+      ReaderFushiSource.mediaSourceKeyFor(
           BookFormat.parseOrEpub(asBook.format)),
-      ReaderHibikiSource.instance.uniqueKey,
+      ReaderFushiSource.instance.uniqueKey,
       reason: '④转回书后必须回到 EPUB 阅读器',
     );
     expect(
@@ -404,7 +404,7 @@ void main() {
     expect(after.coverPath, PdfImporter.kCoverFileName);
     expect(after.mangaReadingMode, isNull);
     expect(
-      ReaderHibikiSource.mediaSourceKeyFor(
+      ReaderFushiSource.mediaSourceKeyFor(
           BookFormat.parseOrEpub(after.format)),
       ReaderPdfSource.kUniqueKey,
       reason: '转回 PDF 后必须进 PDF 阅读器，不是 EPUB 阅读器',

@@ -75,7 +75,7 @@ void main() {
       expectNoOverflow(surface);
     }
 
-    await runHibikiItest(
+    await runFushiItest(
       label: 'min-window',
       collectedErrors: errors,
       body: () async {

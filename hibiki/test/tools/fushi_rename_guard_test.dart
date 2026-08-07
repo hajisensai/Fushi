@@ -238,10 +238,23 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   ),
   _ForbiddenPattern(
     // 类名族清算：Hibiki* → Fushi*（HibikiDatabase/HibikiToast/_HibikiCardState
-    // 等词首形态，含 _$Hibiki* 生成类）。词中内嵌形态不属类名族、刻意不匹配：
-    // MangaHibikiPage 等含 hibiki 文件名的类（W4 才 git mv，半径控制）。
+    // 等词首形态，含 _$Hibiki* 生成类）。
     name: 'Hibiki*-类名族',
     regex: RegExp(r'(?<![A-Za-z0-9])Hibiki[A-Z]'),
+  ),
+  _ForbiddenPattern(
+    // W4：含 hibiki/hoshi 文件名的 Dart 文件已 git mv 成 fushi 形态，词中内嵌
+    // 类名（ReaderFushiPage/MangaFushiSource 等当年的 `\w+Hibiki[A-Z]\w*`）
+    // 同批改毕。负向前瞻放行三个命名跟随冻结本名的符号：
+    // kHibikiPackageName（旧包身份迁移常量，见 app.hibiki.reader 白名单理由）、
+    // legacyHibikiDatabaseFileName（旧库文件名迁移常量，见 hibiki.db 白名单）、
+    // runningHibikiProcesses（update-handoff 旧 wire 键读侧回退，见同名禁模式）。
+    // 词尾内嵌小写形态（tagIncludeHibiki JSON 键族、AudioSourceKind.hibikiRemote
+    // 邻接局部量 isHibiki/hadHibiki）是冻结 wire/持久化邻接命名，刻意不匹配。
+    name: '词中 Hibiki 内嵌类名',
+    regex: RegExp(
+        r'[A-Za-z0-9_]Hibiki(?!PackageName\b|DatabaseFileName\b|Processes\b)'
+        r'[A-Z]'),
   ),
   _ForbiddenPattern(
     // W2-6：update-handoff JSON wire 键已是 'runningFushiProcesses'（写侧只写
@@ -306,8 +319,9 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
 //   * 内部静态库 target `hoshidicts`、`hoshi::` 命名空间/`HOSHI_EXPORT` 宏；
 //   * 公共头子目录 `fushidicts_include/hoshidicts/`（源码 #include "hoshidicts/*"）；
 //   * `.hoshidicts_1` 磁盘分片名（词典持久化契约）；
-//   * hibiki_torrent 内层文件名（hibiki_torrent.h / hibiki_torrent_ffi.cpp /
-//     hibiki_torrent_bindings.dart）与旧 DLL 加载回退名 hibiki_torrent_ffi.dll；
+//   * hibiki_torrent 内层 native 文件名（hibiki_torrent.h / hibiki_torrent_ffi.cpp）
+//     与旧 DLL 加载回退名 hibiki_torrent_ffi.dll（Dart 侧 bindings 文件已在 W4
+//     改名 fushi_torrent_bindings.dart）；
 //   * `native-hoshidicts-gate.yml` 文件名（连字符形态，galgame_hook 注释引用）。
 // 豁免（不进扫描面）：docs/bugs|specs|reviews|plans 历史文档、
 // native/fushidicts/UPSTREAM.md（上游出处 + 新旧对照表，见下方自证测试）、

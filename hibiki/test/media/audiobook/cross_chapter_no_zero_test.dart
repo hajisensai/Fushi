@@ -10,7 +10,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 void main() {
   group('SRT 跨章章内进度 (TODO-746)', () {
@@ -80,7 +80,7 @@ void main() {
     late String src;
     setUpAll(() {
       src = File(
-        'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+        'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
       ).readAsStringSync();
     });
 

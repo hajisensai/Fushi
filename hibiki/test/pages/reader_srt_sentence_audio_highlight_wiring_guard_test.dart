@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// BUG-395 接线守卫：「普通 EPUB + SRT 音频」被 matcher 匹配后 cue 是
 /// `sasayaki://...`，但 reader setup 期 `_prepareSentenceAudioCuesJson` 旧代码在

@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-131 守卫：锁定「打开书籍白屏优化」的开书路径接线，防回归。
-/// reader_hibiki_page.dart 太重（WebView + DB + profile providers）不便在 host
+/// reader_fushi_page.dart 太重（WebView + DB + profile providers）不便在 host
 /// widget 测试里整页 mount，纯函数等价性由 book_open_char_counts_test.dart 覆盖；
 /// 这里用源码扫描守住 _initBook 的关键时序/数据流不变量。
 ///
@@ -107,7 +107,7 @@ void main() {
     expect(containsCodeLine(src, 'void _invalidateFavoriteSentenceCache()'),
         isTrue);
 
-    // TODO-589 batch7: 这些方法搬进了 reader_hibiki/chrome.part.dart（合并语料末尾）。
+    // TODO-589 batch7: 这些方法搬进了 reader_fushi/chrome.part.dart（合并语料末尾）。
     // 旧写法用「下一个方法名」当右边界，方法一被搬走/改名窗口就整段错位；改成花括号
     // 配对后窗口与成员顺序、文件归属无关。旧右边界 `_buildTopProgressBar` 的存在性
     // 单独锁住，不因这次迁移丢覆盖。

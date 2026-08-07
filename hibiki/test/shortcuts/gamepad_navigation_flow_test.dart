@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
-import 'package:fushi/src/utils/components/hibiki_focus_ring.dart';
+import 'package:fushi/src/utils/components/fushi_focus_ring.dart';
 
 /// End-to-end check that the universal navigation layer composes: a directional
 /// key moves focus, gameButtonA activates the focused control (pushing a route),

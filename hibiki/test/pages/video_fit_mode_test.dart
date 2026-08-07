@@ -6,7 +6,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/models/preferences_repository.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 FushiDatabase _testDb() {
   return FushiDatabase.forTesting(
@@ -90,7 +90,7 @@ void main() {
   test('source guard: video page fit follows the videoFitMode preference', () {
     // TODO-590 batch15：全屏路由侧 Video（含 fit: videoFitModeToBoxFit(_videoFitMode)）
     // 随 fullscreen 域搬到 fullscreen.part.dart，故改读合并语料；窗口侧 Video 仍在主壳。
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
     // Windowed + fullscreen both go through the mapping helper.
     final int mappedFitCount =
         'fit: videoFitModeToBoxFit(_videoFitMode)'.allMatches(src).length;

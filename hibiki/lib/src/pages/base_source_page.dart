@@ -130,7 +130,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 在 barrier 上水平拖累计位移过阈即关一层（[dismissTopPopup]，与光标 B/Esc 逐层
   /// 退回同语义；TODO-834 后这与「点 barrier 真空白清整栈」不同——滑动是明确的
   /// 关前置弹窗手势，对齐手机顶栏 [SwipeDismissWrapper] 的逐层关），仅当
-  /// [ReaderHibikiSource.enableSwipeToClose] 开启时生效。
+  /// [ReaderFushiSource.enableSwipeToClose] 开启时生效。
   /// 单击经 Flutter 手势竞技场仍走 onTap，与拖动互斥。阈值/灵敏度复用
   /// [swipeDismissThreshold]（与顶栏 [SwipeDismissWrapper] 同一公式，不漂移）。
   final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
@@ -147,7 +147,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     // 双向水平（左右皆可），与手机 [SwipeDismissWrapper] 的 _dragX.abs() 一致；
     // 过阈关一层（[dismissTopPopup]）。阈值/位移累积由共享纯追踪器统一，不漂移。
     if (_barrierSwipe.end(
-      sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
     )) {
       dismissTopPopup();
     }
@@ -213,7 +213,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 是一次性清整栈（[clearDictionaryResult] → 会话收尾，保留隐藏热槽 BUG-092）—
   /// 视频/有声书/首页等横排表面维持「点空白关栈」旧语义不变。
   ///
-  /// 阅读器覆写此钩子（见 reader_hibiki_page.dart）：barrier 叠在阅读器 WebView 之上，
+  /// 阅读器覆写此钩子（见 reader_fushi_page.dart）：barrier 叠在阅读器 WebView 之上，
   /// 点弹窗外的新词正文若只关栈，tap 到不了底下的 WebView，必须再点一次才查新词
   /// （查词被关窗逻辑堵塞）。覆写后用 WebView 的 RenderBox 把 [globalPos] 逆映成
   /// CSS 坐标转发给选词：命中词→无缝换新查词弹窗（复用热槽），命中真空白→才关栈。
@@ -337,7 +337,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         language: JapaneseLanguage.instance,
       );
 
-      final bool arEnabled = ReaderHibikiSource.instance.autoReadOnLookup;
+      final bool arEnabled = ReaderFushiSource.instance.autoReadOnLookup;
       if (arEnabled && dictionaryResult.entries.isNotEmpty) {
         final entry = dictionaryResult.entries.first;
         final expression = entry.word;
@@ -422,7 +422,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   /// BUG-717 ②：当前查词代次快照。阅读器把显示与高亮 eval 解耦后，捕获它传给
   /// [reanchorTopPopup]，异步回来时若已有更新查词（[_searchGeneration] 已 bump）就丢弃
-  /// 迟到的重锚。见 reader_hibiki `_highlightAndShowPopup`。
+  /// 迟到的重锚。见 reader_fushi `_highlightAndShowPopup`。
   int get activeLookupGeneration => _searchGeneration;
 
   /// BUG-717 ②：把最近显示的顶层弹窗重锚到高亮 eval 精修后的词 bbox [rect]。仅当
@@ -648,15 +648,15 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                           // 仅当滑动关闭开关开启时挂横拖识别（否则只 onTap，与旧行为一致）。
                           // 竞技场天然分流：单击走 onTap、横拖走 onHorizontalDrag*，互斥。
                           onHorizontalDragStart:
-                              ReaderHibikiSource.instance.enableSwipeToClose
+                              ReaderFushiSource.instance.enableSwipeToClose
                                   ? _onBarrierHorizontalDragStart
                                   : null,
                           onHorizontalDragUpdate:
-                              ReaderHibikiSource.instance.enableSwipeToClose
+                              ReaderFushiSource.instance.enableSwipeToClose
                                   ? _onBarrierHorizontalDragUpdate
                                   : null,
                           onHorizontalDragEnd:
-                              ReaderHibikiSource.instance.enableSwipeToClose
+                              ReaderFushiSource.instance.enableSwipeToClose
                                   ? _onBarrierHorizontalDragEnd
                                   : null,
                           child: Container(
@@ -761,7 +761,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         overrideFillColor: appModel.overrideDictionaryColor,
         onDismiss: () => _dismissPopupAt(index),
         // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
-        enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
+        enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,
         // TODO-407①：顶层仍渲染"X 关闭"并走既有关闭汇聚点 [_dismissPopupAt(0)]
         // （不破坏 BUG-072 续播 / 清句 / 清栈）。
         onClose: () => _dismissPopupAt(index),
@@ -1060,7 +1060,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   }) {
     // TODO-108：查词弹窗位置计算的单一收口点（reader/有声书/独立查词页家族共用），
     // 底部固定模式忽略选区放屏幕底部全宽面板。video 家族在 dictionary_page_mixin
-    // 用同一个 [resolvePopupRect] 收口（不碰 video_hibiki_page）。reserve/padding/
+    // 用同一个 [resolvePopupRect] 收口（不碰 video_fushi_page）。reserve/padding/
     // verticalWriting 走本类 getter（子类可 override，如 reader 预留底栏）。
     final Rect anchored = resolvePopupRect(
       selectionRect: sel,

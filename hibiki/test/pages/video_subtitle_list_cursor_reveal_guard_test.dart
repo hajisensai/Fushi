@@ -4,7 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// BUG-391：视频字幕列表 / 选集列表侧栏鼠标光标消失（r5·声明式 opaque 根因修）。
 ///
@@ -32,7 +32,7 @@ void main() {
   group('源码守卫：字幕列表侧栏光标唤回（BUG-391）', () {
     late String src;
     setUpAll(() {
-      src = readVideoHibikiSource();
+      src = readVideoFushiSource();
     });
 
     test('存在 _withSubtitleListCursorReveal 且复用 _handleSubtitleHover 救场', () {

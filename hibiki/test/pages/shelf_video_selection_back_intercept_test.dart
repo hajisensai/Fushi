@@ -142,11 +142,11 @@ void main() {
     final String videoSrc =
         read('lib/src/pages/implementations/home_video_page.dart');
     final String shelfSrc =
-        read('lib/src/pages/implementations/reader_hibiki_history_page.dart');
+        read('lib/src/pages/implementations/reader_fushi_history_page.dart');
 
     for (final MapEntry<String, String> e in <String, String>{
       'home_video_page': videoSrc,
-      'reader_hibiki_history_page': shelfSrc,
+      'reader_fushi_history_page': shelfSrc,
     }.entries) {
       final int buildStart = e.value.indexOf('Widget build(BuildContext');
       expect(buildStart, isNonNegative, reason: '${e.key} 应有 build 方法');

@@ -36,17 +36,17 @@ void main() {
     );
   });
 
-  test('手动配对先跑 reachability 探测（scope ①：fetchHibikiPing）', () {
+  test('手动配对先跑 reachability 探测（scope ①：fetchFushiPing）', () {
     expect(
       source.contains('Future<void> _attemptManualPair(String rawUrl) async {'),
       isTrue,
       reason: '手动 IP 配对编排方法 _attemptManualPair 丢失',
     );
-    // 探测走已有的 /api/ping 客户端 fetchHibikiPing——配对前先确认可达 + 是 hibiki。
+    // 探测走已有的 /api/ping 客户端 fetchFushiPing——配对前先确认可达 + 是 hibiki。
     expect(
-      source.contains('await fetchHibikiPing('),
+      source.contains('await fetchFushiPing('),
       isTrue,
-      reason: '手动 IP 配对未先跑 reachability 探测（fetchHibikiPing）',
+      reason: '手动 IP 配对未先跑 reachability 探测（fetchFushiPing）',
     );
     // 探测失败 / 非 hibiki 必须有 UI 反馈（向后兼容：仍保留地址供手粘 token）。
     expect(

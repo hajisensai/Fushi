@@ -17,7 +17,7 @@ String _withoutLineComments(String source) => maskComments(source);
 
 void main() {
   final String chrome =
-      File('lib/src/pages/implementations/reader_hibiki/chrome.part.dart')
+      File('lib/src/pages/implementations/reader_fushi/chrome.part.dart')
           .readAsStringSync();
   final String bar = _between(
     chrome,
@@ -66,10 +66,10 @@ void main() {
 
   test('all selection convergence/lifecycle paths remove the bar', () {
     final String lookup =
-        File('lib/src/pages/implementations/reader_hibiki/lookup.part.dart')
+        File('lib/src/pages/implementations/reader_fushi/lookup.part.dart')
             .readAsStringSync();
     final String page =
-        File('lib/src/pages/implementations/reader_hibiki_page.dart')
+        File('lib/src/pages/implementations/reader_fushi_page.dart')
             .readAsStringSync();
     expect(
       _between(
@@ -102,7 +102,7 @@ void main() {
   test('ordinary Android native selection menu has all four requested actions',
       () {
     final String webview =
-        File('lib/src/pages/implementations/reader_hibiki/webview.part.dart')
+        File('lib/src/pages/implementations/reader_fushi/webview.part.dart')
             .readAsStringSync();
     final String menu = _between(
         webview, 'contextMenu: isWindowsPlatform', 'initialUserScripts:');

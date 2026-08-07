@@ -14,7 +14,7 @@ import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -233,7 +233,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
               context,
               adaptivePageRoute<void>(
                 context: context,
-                builder: (_) => VideoHibikiPage.neutralized(
+                builder: (_) => VideoFushiPage.neutralized(
                   bookUid: episode.bookUid,
                   repo: repo,
                   playlistCollectionId: collection.id,

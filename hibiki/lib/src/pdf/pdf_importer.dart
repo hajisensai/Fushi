@@ -10,7 +10,7 @@ import 'package:fushi/src/epub/epub_storage.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 
 /// PDF 阅读器（Phase 1）的导入器：把一份 PDF 作为「第二种书」落进 `EpubBooks`
 /// 表（`format='pdf'`），复用整套书架 / 进度 / 删除管线，而非另建平行表。
@@ -24,7 +24,7 @@ import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
 ///   Phase 3 的事）。
 ///
 /// 删除零改动复用 [FushiDatabase.deleteEpubBook]（按 bookKey 级联）+
-/// [ReaderHibikiSource.deleteBook] 的磁盘清理（`EpubStorage.deleteBookDir`）。
+/// [ReaderFushiSource.deleteBook] 的磁盘清理（`EpubStorage.deleteBookDir`）。
 class PdfImporter {
   PdfImporter._();
 

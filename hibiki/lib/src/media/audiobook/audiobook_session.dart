@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
-import 'package:fushi/src/utils/misc/hibiki_audio_handler.dart';
+import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// 进程级常驻有声书会话（TODO-291 阶段2）。
@@ -676,7 +676,7 @@ class SessionBookInfo {
   final Audiobook audiobook;
   final String title;
 
-  /// 媒体标识（用于「回到书」时按 source 打开，如 `reader_hibiki://book/<key>`）。
+  /// 媒体标识（用于「回到书」时按 source 打开，如 `reader_fushi://book/<key>`）。
   final String mediaIdentifier;
 
   /// True only when this session was resolved from the SrtBooks table.

@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart'
-    show ReaderHibikiSource;
+import 'package:fushi/src/media/sources/reader_fushi_source.dart'
+    show ReaderFushiSource;
 import 'package:fushi/src/models/app_model.dart' show AppModel;
 import 'package:fushi/src/shortcuts/input_binding.dart'
     show InputBinding, ModifierKey, ShortcutBindingSet;
@@ -44,10 +44,10 @@ import 'test_helpers.dart';
 ///      `skipToCue` 同步写入 :708-711 并 notifyListeners），不依赖像素截图。
 ///
 /// 焦点机制：reader 页根 `Focus(autofocus:true, onKeyEvent:_handleKeyEvent)`
-/// （reader_hibiki_page.dart:1919-1922）。打开书后该节点 autofocus，
+/// （reader_fushi_page.dart:1919-1922）。打开书后该节点 autofocus，
 /// `tester.sendKeyEvent` 即经它进入被测的 `_handleKeyEvent` 解析链。
 ///
-/// 启动期网络噪声（更新检查 Handshake/证书过期）经 `runHibikiItest` 守卫放行。
+/// 启动期网络噪声（更新检查 Handshake/证书过期）经 `runFushiItest` 守卫放行。
 ///
 /// Run (PowerShell, from hibiki/):
 ///   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 \
@@ -97,7 +97,7 @@ void main() {
     'TODO-992 continuous scroll: remapped Left/Right drive audiobook '
     'prev/next sentence instead of only turning the page',
     (WidgetTester tester) async {
-      await runHibikiItest(
+      await runFushiItest(
         label: 'arrow-skip',
         body: () async {
           app.main();
@@ -126,9 +126,9 @@ void main() {
           }
 
           final String entryKey =
-              'srt_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
+              'srt_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
           final String altEntryKey =
-              'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
+              'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
           Finder bookEntry = find.byKey(ValueKey<String>(entryKey));
           for (int i = 0; i < 40; i++) {
             await tester.pump(const Duration(milliseconds: 500));
@@ -166,11 +166,11 @@ void main() {
                   '(got ${ctrl.chapterCueCount})');
 
           // 强制连续滚动模式（报告里的精确场景）。
-          await ReaderHibikiSource.instance.setReaderViewMode('continuous');
+          await ReaderFushiSource.instance.setReaderViewMode('continuous');
           for (int i = 0; i < 6; i++) {
             await tester.pump(const Duration(milliseconds: 200));
           }
-          expect(ReaderHibikiSource.readerSettings?.isContinuousMode, isTrue,
+          expect(ReaderFushiSource.readerSettings?.isContinuousMode, isTrue,
               reason: 'reader must be in continuous scroll mode for TODO-992');
 
           // 建立确定性基线 cue（中段，避开首/末句边界），不经键、纯程序定位。

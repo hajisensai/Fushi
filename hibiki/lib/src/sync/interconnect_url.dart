@@ -6,7 +6,7 @@ import 'package:fushi/src/sync/webdav_ops.dart';
 /// Hibiki's LAN host mode is plain HTTP unless the host explicitly enables
 /// TLS. Manual entry therefore defaults bare `host:port` input to `http://`
 /// while preserving an explicit `https://` for pinned TLS hosts.
-String normalizeHibikiInterconnectManualUrl(String rawUrl) {
+String normalizeFushiInterconnectManualUrl(String rawUrl) {
   final String trimmed = rawUrl.trim();
   final RegExpMatch? explicitScheme =
       RegExp(r'^([A-Za-z][A-Za-z0-9+.-]*):\/\/').firstMatch(trimmed);

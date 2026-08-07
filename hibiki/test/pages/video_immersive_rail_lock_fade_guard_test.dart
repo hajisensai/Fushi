@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫（TODO-1287）：沉浸模式退出按钮「不会消失」的回归防护。
 ///
@@ -28,7 +28,7 @@ String _section(String src, String startToken, String endToken) {
 void main() {
   late String src;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   test('存在 _withImmersiveLockAutoHide wrapper', () {

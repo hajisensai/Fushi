@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
-import 'package:fushi/src/utils/components/hibiki_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 Future<T?> showAppDialog<T>({
   required BuildContext context,

@@ -6,7 +6,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi/src/sync/forwarded_mine_payload.dart';
-import 'package:fushi/src/sync/hibiki_remote_mining_client.dart';
+import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 
 /// 假发送器：捕获转发出去的 payload，返回预设响应，或抛鉴权错。

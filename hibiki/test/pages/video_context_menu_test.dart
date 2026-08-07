@@ -1,16 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：桌面右键上下文菜单（TODO-048c）。整页 widget 测试依赖真实 libmpv
 /// player（测试宿主无 libmpv，`load()` / `Player` 构造即抛），故按既有视频守卫范式
 /// （见 video_player_keyboard_static_test.dart）在源码层钉死结构不变量。
 void main() {
   // TODO-590 batch16: 右键触发点 onSecondaryTapUp 在 _buildVideoControlsInner、
-  // 截断锚点 _buildVideoBody 都已搬到 video_hibiki/layout.part.dart，故改读「主壳 + 全部
+  // 截断锚点 _buildVideoBody 都已搬到 video_fushi/layout.part.dart，故改读「主壳 + 全部
   // part」合并语料；_handleSecondaryTap / _buildVideoContextMenuItems 仍在主壳，切片照旧。
-  final String page = readVideoHibikiSource();
+  final String page = readVideoFushiSource();
 
   // 窗口=方法体（花括号配对），不再是 `idx + 400 / 1800 / 2000` 的定长切片：
   // _handleSecondaryTap 实测 1797 字符——旧的 1800 窗口离方法末尾只剩 3 个字符，

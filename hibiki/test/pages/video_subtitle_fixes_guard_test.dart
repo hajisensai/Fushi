@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'reader_history_source_corpus.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// Source guards for the 2026-06-08 video subtitle fix batch. media_kit cannot
 /// run headless and OS-level drag/focus can't be widget-tested, so each fix
-/// locks its call-site invariant in `video_hibiki_page.dart` rather than driving
+/// locks its call-site invariant in `video_fushi_page.dart` rather than driving
 /// a real player.
 ///
 /// - BUG-130: 点击画面不暂停（media_kit 桌面 `playAndPauseOnTap` 默认 false）。
@@ -14,7 +14,7 @@ import 'video_hibiki_page_source_corpus.dart';
 /// - BUG-132: 退出后导入字幕丢（播放列表恢复不按路径加载 app 文档目录里的导入文件）。
 /// - BUG-133: 视频画面拖入字幕无反应（窗口模式缺页级拖放目标）。
 void main() {
-  final String src = readVideoHibikiSource();
+  final String src = readVideoFushiSource();
   final String homeVideoSrc =
       File('lib/src/pages/implementations/home_video_page.dart')
           .readAsStringSync();

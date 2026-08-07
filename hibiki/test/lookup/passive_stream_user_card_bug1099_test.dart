@@ -27,7 +27,7 @@ void main() {
   setUp(() {
     DesktopLookupService.instance.debugReset();
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = false;
-    DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = false;
+    DesktopForegroundGuard.debugForegroundOwnedByFushiAppFamily = false;
     DesktopForegroundGuard.debugHiddenWindowsRunner = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -38,7 +38,7 @@ void main() {
   tearDown(() {
     DesktopLookupService.instance.debugReset();
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = null;
-    DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = null;
+    DesktopForegroundGuard.debugForegroundOwnedByFushiAppFamily = null;
     DesktopForegroundGuard.debugHiddenWindowsRunner = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(

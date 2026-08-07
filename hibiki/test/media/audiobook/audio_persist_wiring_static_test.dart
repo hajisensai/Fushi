@@ -47,7 +47,7 @@ void main() {
   /// （并自 audiobook_session_ownership_static_test.dart。）
   group('audiobook session ownership (TODO-291 阶段2)', () {
     final String reader = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
+      'lib/src/pages/implementations/reader_fushi_page.dart',
     ).readAsStringSync();
     final String session = File(
       'lib/src/media/audiobook/audiobook_session.dart',

@@ -1,7 +1,7 @@
 // TODO-1000 真机集成测试：YouTube 直链在真实 libmpv 窗口上**真播放**（BUG-528 修复验证）。
 //
 // 跑完整失败路径：resolveYoutubeSource(androidVr 流+字幕) → 构造 UrlStreamVideoClient →
-// 打开 VideoHibikiPage.neutralizedRemote → 真实播放 → 断言 position 自然前进（证明 libmpv
+// 打开 VideoFushiPage.neutralizedRemote → 真实播放 → 断言 position 自然前进（证明 libmpv
 // 能解码 androidVr 签发的 ≤1080p video-only 流 + 外挂 audio-only 音轨，非黑屏）。并断言
 // controller 的**制卡源**被正确设成低分辨率视频（miningVideoUrl）+ audio-only 音频源。
 //
@@ -24,8 +24,8 @@ import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/youtube_source_resolver.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart'
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 
 import 'test_helpers.dart';
@@ -85,17 +85,17 @@ void main() {
         final NavigatorState navigator =
             tester.state<NavigatorState>(find.byType(Navigator).first);
         unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => VideoHibikiPage.neutralizedRemote(
+          builder: (_) => VideoFushiPage.neutralizedRemote(
             info: info,
             repo: repo,
             client: client,
           ),
         )));
 
-        VideoHibikiTestHooks? readHooks() {
-          if (find.byType(VideoHibikiPage).evaluate().isEmpty) return null;
-          return tester.state<State<VideoHibikiPage>>(
-              find.byType(VideoHibikiPage)) as VideoHibikiTestHooks;
+        VideoFushiTestHooks? readHooks() {
+          if (find.byType(VideoFushiPage).evaluate().isEmpty) return null;
+          return tester.state<State<VideoFushiPage>>(
+              find.byType(VideoFushiPage)) as VideoFushiTestHooks;
         }
 
         // 等控制器就绪（load 完成 → debugPositionMs 非 null），流媒体首帧慢，给足 60s。
@@ -109,7 +109,7 @@ void main() {
         }
         expect(ready, isTrue, reason: '流控制器应就绪（load 后 debugPositionMs 非 null）');
 
-        final VideoHibikiTestHooks hooks = readHooks()!;
+        final VideoFushiTestHooks hooks = readHooks()!;
         debugPrint('[yt-itest] ready durationMs=${hooks.debugDurationMs}');
 
         // 真实播放：位置应自然前进（= libmpv 真在解码 androidVr 流，非黑屏卡 loading）。
@@ -142,7 +142,7 @@ void main() {
         await navigator.maybePop();
         for (int i = 0; i < 20; i++) {
           await tester.pump(const Duration(milliseconds: 100));
-          if (find.byType(VideoHibikiPage).evaluate().isEmpty) break;
+          if (find.byType(VideoFushiPage).evaluate().isEmpty) break;
         }
       } finally {
         FlutterError.onError = oldHandler;

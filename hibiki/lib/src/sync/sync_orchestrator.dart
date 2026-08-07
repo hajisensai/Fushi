@@ -12,7 +12,7 @@ import 'package:fushi/src/sync/collection_sync_engine.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_service_config.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_asset_store.dart';
@@ -857,7 +857,7 @@ class SyncOrchestrator {
 
   /// 收集本设备当前在库的资产键（按 mediaType 分组），供删除墓碑消费端算 deleteLocal
   /// 候选（远端有删除标记 ∧ 本地仍在库）。itemKey 与写墓碑点严格一致：book/audiobook =
-  /// bookKey（[writeSyncDeletionTombstone] 调用点 reader_hibiki_source / audiobook），
+  /// bookKey（[writeSyncDeletionTombstone] 调用点 reader_fushi_source / audiobook），
   /// video = bookUid（video_book_repository），localaudio = displayName，
   /// srtbook = srt_books.uid（仅 standalone，见下）。
   ///
@@ -1645,7 +1645,7 @@ class SyncOrchestrator {
   ///
   /// 此前只遍历本地 `VideoBooks`，对每条比对 host 进度。但 client 流式看的远端视频
   /// 在本地**没有 VideoBooks 行**（[home_video_page._openRemote] 只 push 不 upsert，
-  /// 进度只落 `video_remote_position_<uid>` prefs，见 video_hibiki_page._persistRemotePosition）
+  /// 进度只落 `video_remote_position_<uid>` prefs，见 video_fushi_page._persistRemotePosition）
   /// → 旧 sweep 永远扫不到，流式视频进度无法纳入全量双向同步（TODO-816 子问题1 断点①）。
   ///
   /// 修复：同步基底统一为 uid 集合 = 「本地 VideoBooks 行 uid」∪「本地有

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/port_kill_confirm.dart';
 import 'package:fushi/src/sync/port_process_terminator.dart';
-import 'package:fushi/src/utils/components/hibiki_destructive_confirm_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
 
 /// 「一键结束占用端口进程」杀前确认弹窗（PR#420 审查红线修复）的 widget 测试。
 ///

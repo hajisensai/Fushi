@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫（BUG-923）：沉浸模式下鼠标光标 + 沉浸退出按钮**静止超时**也要隐藏。
 ///
@@ -18,7 +18,7 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   late String src;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   /// 切出 `_pokeLockButton` 方法体（到下一个方法 / extension 结束）。

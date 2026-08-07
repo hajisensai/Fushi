@@ -1,14 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/manga/reader/manga_hibiki_page.dart';
+import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:path/path.dart' as p;
 
 /// BUG-1221：漫画页图解析出的路径必须保留磁盘上的**真实大小写**。
 ///
 /// `p.canonicalize` 在 Windows 上会把整条路径折成小写（`path` 包
 /// `style/windows.dart:181` `canonicalizePart(part) => part.toLowerCase()`；POSIX
-/// 无此覆写）。[MangaHibikiPage.resolveMangaResource] 此前直接返回它的结果，于是
+/// 无此覆写）。[MangaFushiPage.resolveMangaResource] 此前直接返回它的结果，于是
 /// 漫画包里 `Vol1/P001.JPG` 被记成 `vol1/p001.jpg`。
 ///
 /// 本地跑在 Windows 上时 `File.exists` 不区分大小写，所以**只断言 existsSync 抓不到
@@ -51,7 +51,7 @@ void main() {
     test('解析「$entry」保留真实大小写，与磁盘条目逐字节一致', () {
       writeImage(entry);
       final String? resolved =
-          MangaHibikiPage.resolveMangaResource(root.path, entry);
+          MangaFushiPage.resolveMangaResource(root.path, entry);
 
       expect(resolved, isNotNull, reason: '文件真实存在，解析不该返回 null');
       expect(onDiskEntries(), contains(relOf(resolved!)),
@@ -66,9 +66,9 @@ void main() {
 
   test('URL 入口 resolveImageUrlToFile 同样保留大小写', () {
     writeImage('Vol1/P001.JPG');
-    final String? resolved = MangaHibikiPage.resolveImageUrlToFile(
+    final String? resolved = MangaFushiPage.resolveImageUrlToFile(
       root.path,
-      'https://${MangaHibikiPage.kMangaHost}/img/Vol1/P001.JPG',
+      'https://${MangaFushiPage.kMangaHost}/img/Vol1/P001.JPG',
     );
     expect(resolved, isNotNull);
     expect(onDiskEntries(), contains(relOf(resolved!)));
@@ -76,7 +76,7 @@ void main() {
 
   test('百分号编码的混合大小写条目解码后仍保留大小写', () {
     writeImage('Vol 1/P001.JPG');
-    final String? resolved = MangaHibikiPage.resolveMangaResource(
+    final String? resolved = MangaFushiPage.resolveMangaResource(
       root.path,
       'Vol%201/P001.JPG',
     );
@@ -88,11 +88,11 @@ void main() {
     test('../ 逃逸仍被拒绝', () {
       writeImage('Vol1/P001.JPG');
       expect(
-        MangaHibikiPage.resolveMangaResource(root.path, '../escaped.jpg'),
+        MangaFushiPage.resolveMangaResource(root.path, '../escaped.jpg'),
         isNull,
       );
       expect(
-        MangaHibikiPage.resolveMangaResource(
+        MangaFushiPage.resolveMangaResource(
             root.path, 'Vol1/../../escaped.jpg'),
         isNull,
       );
@@ -111,7 +111,7 @@ void main() {
       final String escape =
           p.relative(p.join(outside.path, 'Secret.JPG'), from: root.path);
       expect(
-        MangaHibikiPage.resolveMangaResource(root.path, escape),
+        MangaFushiPage.resolveMangaResource(root.path, escape),
         isNull,
         reason: '解析到 root 之外的真实文件必须被拒绝',
       );
@@ -120,7 +120,7 @@ void main() {
     test('缺文件返回 null（不因大小写保留而误判存在）', () {
       writeImage('Vol1/P001.JPG');
       expect(
-        MangaHibikiPage.resolveMangaResource(root.path, 'Vol1/missing.JPG'),
+        MangaFushiPage.resolveMangaResource(root.path, 'Vol1/missing.JPG'),
         isNull,
       );
     });

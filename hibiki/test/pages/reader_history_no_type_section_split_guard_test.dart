@@ -21,7 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// `*_static_test` 的源码切片范式。i18n key 仍保留（向后兼容，仅不再渲染）。
 void main() {
   const String path =
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart';
+      'lib/src/pages/implementations/reader_fushi_history_page.dart';
 
   String readBody() {
     final String source = File(path).readAsStringSync();

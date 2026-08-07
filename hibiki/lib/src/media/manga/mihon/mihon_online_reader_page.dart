@@ -7,7 +7,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_library.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
-import 'package:fushi/src/media/manga/reader/manga_hibiki_page.dart';
+import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/utils.dart';
 
 /// Resolves a Mihon chapter and hands it to Hibiki's existing manga reader.
@@ -85,7 +85,7 @@ class _MihonChapterReaderPageState extends State<MihonChapterReaderPage> {
     final MihonReaderChapter? resolved = _resolved;
     if (resolved != null) {
       return FushiAppUiScaleNeutralizer(
-        child: MangaHibikiPage(
+        child: MangaFushiPage(
           item: null,
           bookKey: _readerBookKey,
           onlineChapter: resolved,

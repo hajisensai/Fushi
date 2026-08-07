@@ -113,7 +113,7 @@ void main() {
         mediaIdentifier: 'Bk',
         title: 'Bk',
         mediaTypeIdentifier: 'reader_media_type',
-        mediaSourceIdentifier: 'reader_hibiki',
+        mediaSourceIdentifier: 'reader_fushi',
         uniqueKey: 'reader/Bk',
         imageUrl: Value(
             Uri.file(docs(<String>['fushi_books', 'Bk', 'cover.jpg']))

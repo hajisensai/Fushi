@@ -15,7 +15,7 @@ import 'package:fushi/src/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
 import 'package:fushi/src/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/collection_sync_engine.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_service_config.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -38,7 +38,7 @@ import 'package:path/path.dart' as p;
 /// | 参数 | 用途 | 生产传值 |
 /// |---|---|---|
 /// | [importBookFromFile] | 把 .epub 导入书库的真实逻辑 | `EpubImporter.importFromPath` |
-/// | [cleanupBookOnDisk] | deleteBook 时清理 DB 行以外的磁盘资源（Audiobook persist dir 等） | `ReaderHibikiSource.instance.deleteBook` 磁盘部分 |
+/// | [cleanupBookOnDisk] | deleteBook 时清理 DB 行以外的磁盘资源（Audiobook persist dir 等） | `ReaderFushiSource.instance.deleteBook` 磁盘部分 |
 /// | [localAudioEntries] | 当前已注册的本地音频来源列表（T3.1）| `AppModel.localAudioEntries` |
 /// | [localAudioStagingDir] | importLocalAudio 解包用临时目录（T3.1）| `Directory.systemTemp` 或应用 temp |
 /// | [onLocalAudioImported] | 注册已解包的本地音频包（T3.1）| `AppModel.importSyncedLocalAudioDb` |
@@ -107,7 +107,7 @@ class AppModelLibraryHostService
   final Future<void> Function(File epubFile)? _importBookFromFile;
 
   /// 书籍磁盘清理回调（可选；null 时只执行 DB 删除，跳过 AudiobookStorage/SrtBook 清理）。
-  /// 生产传 ReaderHibikiSource 实例的磁盘清理部分。
+  /// 生产传 ReaderFushiSource 实例的磁盘清理部分。
   final Future<void> Function(EpubBookRow row)? _cleanupBookOnDisk;
 
   /// 视频磁盘清理回调（可选；null 时只执行 DB 删除 + 上传副本目录回收）。
@@ -496,7 +496,7 @@ class AppModelLibraryHostService
       // TODO-1195 part B：用户删书记墓碑，避免旧备份合并导入时复活。
       await _db.deleteEpubBook(row.bookKey, tombstone: true);
 
-      // extractDir 磁盘目录：DB 删除后再清理（与 reader_hibiki_source 同顺序）。
+      // extractDir 磁盘目录：DB 删除后再清理（与 reader_fushi_source 同顺序）。
       if (row.extractDir.isNotEmpty) {
         final Directory dir = Directory(row.extractDir);
         if (dir.existsSync()) await dir.delete(recursive: true);
@@ -1026,8 +1026,8 @@ class AppModelLibraryHostService
         // spawn `ffmpeg -i`（每项超时基线 60s、大文件到 1200s、无缓存、每次 GET 全量
         // 重跑），大库（如 511 个视频）轻易超过 client 的 15s listTimeout → 远端视频
         // 判空 → 手机整页空。内嵌轨是**播放时**才需要的信息，已由 `/streamurl` 端点
-        // (`hibiki_sync_server.dart` `_embeddedSubtitleTracksForRequest`) 在拉流时按需
-        // 探测并下发（client 唯一消费者 video_hibiki_page 读的是 streamurl 响应，列表
+        // (`fushi_sync_server.dart` `_embeddedSubtitleTracksForRequest`) 在拉流时按需
+        // 探测并下发（client 唯一消费者 video_fushi_page 读的是 streamurl 响应，列表
         // 的 embeddedSubtitleTracks 零消费）。故此处保持 embeddedSubtitleTracks 为空、
         // hasSubtitle 只反映廉价的外挂 sidecar——列表变纯 DB/stat 读，与 listBooks 对称、
         // 毫秒返回。
@@ -1204,7 +1204,7 @@ class AppModelLibraryHostService
   /// 读 host 端 [id] 视频的播放断点（TODO-653 / TODO-816 断点②）。
   ///
   /// 真相源是 `video_remote_position_<bookUid>` + `video_remote_position_at_<bookUid>`
-  /// prefs（host 本机播放与远端 resume 路径统一写此键空间，见 video_hibiki_page
+  /// prefs（host 本机播放与远端 resume 路径统一写此键空间，见 video_fushi_page
   /// `_persistPosition` / `_persistRemotePosition`）。
   ///
   /// 向后兼容：TODO-816 之前 host 本机播放只写 `VideoBooks.lastPositionMs`、不写 prefs，

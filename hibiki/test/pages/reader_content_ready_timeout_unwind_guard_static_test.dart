@@ -19,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 守卫断言修复结构在位：①超时回调体内既有 `_readerContentReady = true` 又有
 /// `_isNavigatingToChapter = false` 与 `_failNavigation()`；②`_failNavigation` helper
 /// 本身仍清 `_restoreInFlight` 并 complete/清空 completer（防被掏空）。删掉任一即红。
-/// ReaderHibikiPage 过重（WebView + 音频 + 全 ProviderContainer），无法在 widget test
+/// ReaderFushiPage 过重（WebView + 音频 + 全 ProviderContainer），无法在 widget test
 /// 可靠拉起跑该超时回调，故落在最强可靠可落地的源码语料层（与 reader_* 一系列
 /// *_static_test 同纪律）。
 void main() {
@@ -31,7 +31,7 @@ void main() {
 
   test('内容就绪兜底超时回调必须连同解开导航态（restore/navigate/completer）', () {
     final String src = read(
-        'lib/src/pages/implementations/reader_hibiki/navigation.part.dart');
+        'lib/src/pages/implementations/reader_fushi/navigation.part.dart');
 
     // 取 `_startContentReadyTimeout` 体到下一个方法 `_clearContentReadyTimeout` 之间，
     // 保证断言只落在该超时回调上、不被文件别处的同名语句误判为通过。

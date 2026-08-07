@@ -67,7 +67,7 @@ void main() {
 
   test('延后一帧的跨章收尾必须带 _navigateGeneration 代际守卫', () {
     final String src = read(
-        'lib/src/pages/implementations/reader_hibiki/navigation.part.dart');
+        'lib/src/pages/implementations/reader_fushi/navigation.part.dart');
     final int start = src.indexOf('void _onRestoreComplete() {');
     expect(start, greaterThan(-1), reason: '找不到 _onRestoreComplete');
     // 以收尾内容定位块（_onRestoreComplete 里不只一个 postFrame 回调），

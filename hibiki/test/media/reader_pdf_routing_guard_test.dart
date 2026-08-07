@@ -24,17 +24,17 @@ void main() {
     // reader_fushi 是 EPUB 源的冻结持久化键；两源键必须互异，否则 mediaSources map 覆盖、
     // 路由塌缩到单一源。
     expect(ReaderPdfSource.instance.uniqueKey,
-        isNot(ReaderHibikiSource.instance.uniqueKey));
+        isNot(ReaderFushiSource.instance.uniqueKey));
   });
 
   test('书架列书按 format 路由：format==pdf 的行带 ReaderPdfSource 源标识', () {
     // _bookToMediaItem 必须按 format 分流 mediaSourceIdentifier；缺这条 → PDF 行用
     // 'reader_fushi' 打开 → EPUB 阅读器解析 PDF → 崩。
     // BUG-1316：派生已收敛成公开具名函数，判据从源码语料升级成直接调它。
-    expect(ReaderHibikiSource.mediaSourceKeyFor(BookFormat.pdf),
+    expect(ReaderFushiSource.mediaSourceKeyFor(BookFormat.pdf),
         ReaderPdfSource.kUniqueKey,
         reason: 'PDF 行 mediaSourceIdentifier 应取 ReaderPdfSource.kUniqueKey');
-    expect(ReaderHibikiSource.mediaSourceKeyFor(BookFormat.epub),
+    expect(ReaderFushiSource.mediaSourceKeyFor(BookFormat.epub),
         isNot(ReaderPdfSource.kUniqueKey),
         reason: 'EPUB 不得塌缩到 PDF 源');
   });
@@ -116,7 +116,7 @@ void main() {
   });
 
   test('书架 PDF 进度按页计，且用 1-based 页序（第 1 页也算在读）', () {
-    final String src = read('lib/src/media/sources/reader_hibiki_source.dart');
+    final String src = read('lib/src/media/sources/reader_fushi_source.dart');
     // 0-based 会让停在第 1 页的书 position==0 → 不进「继续阅读」。
     expect(src.contains('(pos?.sectionIndex ?? 0) + 1'), isTrue,
         reason: 'PDF 进度用 1-based 页序，停在第 1 页也要计入在读');

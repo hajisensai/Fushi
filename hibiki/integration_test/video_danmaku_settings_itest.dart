@@ -23,7 +23,7 @@ import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -60,16 +60,16 @@ void main() {
       final NavigatorState navigator =
           tester.state<NavigatorState>(find.byType(Navigator).first);
       unawaited(navigator.push<void>(MaterialPageRoute<void>(
-        builder: (_) => VideoHibikiPage(bookUid: _kVideoBookUid, repo: repo),
+        builder: (_) => VideoFushiPage(bookUid: _kVideoBookUid, repo: repo),
       )));
 
-      VideoHibikiTestHooks hooks() =>
-          tester.state<State<VideoHibikiPage>>(find.byType(VideoHibikiPage))
-              as VideoHibikiTestHooks;
+      VideoFushiTestHooks hooks() =>
+          tester.state<State<VideoFushiPage>>(find.byType(VideoFushiPage))
+              as VideoFushiTestHooks;
       bool ready = false;
       for (int i = 0; i < 24; i++) {
         await tester.pump(const Duration(milliseconds: 250));
-        if (find.byType(VideoHibikiPage).evaluate().isNotEmpty &&
+        if (find.byType(VideoFushiPage).evaluate().isNotEmpty &&
             hooks().debugPositionMs != null) {
           ready = true;
           break;

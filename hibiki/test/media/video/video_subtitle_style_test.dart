@@ -214,7 +214,7 @@ void main() {
   });
 
   group('videoSubtitleControlsReserve 按平台真实几何 + 随缩放（BUG-238 / BUG-901）', () {
-    // 视频页控制条几何基线（×1.0）：与 video_hibiki_page.dart 同名常量保持一致。
+    // 视频页控制条几何基线（×1.0）：与 video_fushi_page.dart 同名常量保持一致。
     const double buttonBarBase = 56;
     const double seekGapBase = 8;
     // BUG-901：移动 reserve 抬到「进度条**触摸热区**上缘 + 呼吸间距」——热区含可见轨道

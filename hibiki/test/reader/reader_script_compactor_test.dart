@@ -18,7 +18,7 @@ import 'package:fushi/src/reader/reader_selection_scripts.dart';
 /// 2. **全部**真实注入 JS 载荷（selection / longPressDrag / caret / 分页 / 连续 / VN
 ///    三种 shell）——断言扫描器扫完干净、被删的每一行都确实是空行或整行注释、幂等。
 /// 3. 用 node `--check` 真解析：**最终拼装脚本**（= 引擎源码，
-///    `readerHibikiEngineSourceUncompacted()`）压缩前后都必须是合法 JS。这才是生产上
+///    `readerFushiEngineSourceUncompacted()`）压缩前后都必须是合法 JS。这才是生产上
 ///    真正被 compact 的东西。
 /// 4. **装配完整性**（见 group「setup 装配完整性」）：reader 侧还有约 100 条守卫只断言
 ///    某个生成函数**返回的字符串**里含某符号——它们证明不了这个串真的被拼进最终注入的
@@ -229,9 +229,9 @@ tail`;
   group('setup 装配完整性（子载荷真的被拼进最终脚本）', () {
     // 三种 view-mode 各自的最终拼装脚本（生产上真正交给压缩器的那份）。
     final Map<String, String> assembledByMode = <String, String>{
-      'paged': readerHibikiEngineSourceUncompacted(),
-      'continuous': readerHibikiEngineSourceUncompacted(continuousMode: true),
-      'vn': readerHibikiEngineSourceUncompacted(vnMode: true),
+      'paged': readerFushiEngineSourceUncompacted(),
+      'continuous': readerFushiEngineSourceUncompacted(continuousMode: true),
+      'vn': readerFushiEngineSourceUncompacted(vnMode: true),
     };
     final String assembled = assembledByMode['paged']!;
 
@@ -327,7 +327,7 @@ tail`;
 /// 全部真正被 [ReaderScriptCompactor.compact] 处理过的 JS 载荷。
 ///
 /// `engine` 是**最终拼装脚本**——生产上交给压缩器的正是它（`_buildReaderEngineSource`
-/// 的返回值，经 `readerHibikiEngineSourceUncompacted()` 直接取到）。
+/// 的返回值，经 `readerFushiEngineSourceUncompacted()` 直接取到）。
 ///
 /// BUG-1140 第二阶段①之前，这里是把 `webview.part.dart` 的三引号模板抠出来、按一张
 /// 手写 `subs` 替身表重建一遍。那张表是**查找表**：新增插值会 fail，**删掉**一个载荷
@@ -350,7 +350,7 @@ Map<String, String> _realPayloads() {
     'pagination.continuous':
         _stripScriptTags(ReaderPaginationScripts.continuousShellSource()),
     'pagination.vn': _stripScriptTags(ReaderVisualNovelScripts.vnShellScript()),
-    'engine': readerHibikiEngineSourceUncompacted(),
+    'engine': readerFushiEngineSourceUncompacted(),
   };
 }
 

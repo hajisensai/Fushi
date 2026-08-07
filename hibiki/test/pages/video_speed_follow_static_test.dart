@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// Source guards for TODO-502: video speed changes must feel immediate.
 ///
@@ -12,7 +12,7 @@ import 'video_hibiki_page_source_corpus.dart';
 ///
 /// TODO-590 batch12: the speed methods (_setSpeed / persistence pair /
 /// long-press trio / _adjustSpeed) were extracted to
-/// video_hibiki/speed.part.dart, so the page source is read through the merged
+/// video_fushi/speed.part.dart, so the page source is read through the merged
 /// corpus (main shell + parts). The lone _setSpeed `setState(() {})` rebuild is
 /// now routed through the shell `_rebuild(() {})` forwarder (extensions cannot
 /// call @protected State.setState) — behaviour-identical, so the assertion
@@ -31,7 +31,7 @@ void main() {
   setUpAll(() {
     expect(schema.existsSync(), isTrue);
     expect(host.existsSync(), isTrue);
-    pageSrc = readVideoHibikiSource();
+    pageSrc = readVideoFushiSource();
     schemaSrc = schema.readAsStringSync();
     hostSrc = host.readAsStringSync();
   });

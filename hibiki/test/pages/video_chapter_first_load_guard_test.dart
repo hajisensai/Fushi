@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 void main() {
-  group('VideoHibikiPage chapter first-load guards (TODO-521)', () {
-    // 章节监听 / 同步方法已搬进 video_hibiki/chapter.part.dart（TODO-590 batch8）；
+  group('VideoFushiPage chapter first-load guards (TODO-521)', () {
+    // 章节监听 / 同步方法已搬进 video_fushi/chapter.part.dart（TODO-590 batch8）；
     // 主壳的 _applyLoad 调用点与 part 的定义都要在合并语料里才能断言。
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
 
     test('controller and _hasChapters are aligned in the same setState', () {
       final int applyLoad = src.indexOf('Future<void> _applyLoad({');

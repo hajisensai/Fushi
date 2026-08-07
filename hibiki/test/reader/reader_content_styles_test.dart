@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
 import '../helpers/source_guard.dart';
 
@@ -225,7 +225,7 @@ void main() {
       expect(css, contains('@font-face'));
       expect(
         css,
-        contains('${ReaderHibikiSource.kResourceScheme}://fushi.local/fonts/'),
+        contains('${ReaderFushiSource.kResourceScheme}://fushi.local/fonts/'),
       );
       expect(css, isNot(contains('https://fushi.local/fonts/')));
     });
@@ -1072,13 +1072,13 @@ void main() {
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
-      ReaderHibikiSource.readerSettings = settings;
-      addTearDown(() => ReaderHibikiSource.readerSettings = null);
+      ReaderFushiSource.readerSettings = settings;
+      addTearDown(() => ReaderFushiSource.readerSettings = null);
 
-      expect(ReaderHibikiSource.instance.readerMarginLeft, 2);
-      expect(ReaderHibikiSource.instance.readerMarginRight, 2);
-      expect(ReaderHibikiSource.instance.readerMarginTop, 0);
-      expect(ReaderHibikiSource.instance.readerMarginBottom, 0);
+      expect(ReaderFushiSource.instance.readerMarginLeft, 2);
+      expect(ReaderFushiSource.instance.readerMarginRight, 2);
+      expect(ReaderFushiSource.instance.readerMarginTop, 0);
+      expect(ReaderFushiSource.instance.readerMarginBottom, 0);
     });
 
     test('source margin setters normalize out-of-range input', () async {
@@ -1087,33 +1087,33 @@ void main() {
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
-      ReaderHibikiSource.readerSettings = settings;
-      addTearDown(() => ReaderHibikiSource.readerSettings = null);
+      ReaderFushiSource.readerSettings = settings;
+      addTearDown(() => ReaderFushiSource.readerSettings = null);
 
-      await ReaderHibikiSource.instance.setReaderMarginLeft(99);
-      await ReaderHibikiSource.instance.setReaderMarginRight(-10);
-      expect(ReaderHibikiSource.instance.readerMarginLeft, 50);
-      expect(ReaderHibikiSource.instance.readerMarginRight, 0);
+      await ReaderFushiSource.instance.setReaderMarginLeft(99);
+      await ReaderFushiSource.instance.setReaderMarginRight(-10);
+      expect(ReaderFushiSource.instance.readerMarginLeft, 50);
+      expect(ReaderFushiSource.instance.readerMarginRight, 0);
     });
   });
 
-  group('ReaderHibikiSource live settings callbacks', () {
+  group('ReaderFushiSource live settings callbacks', () {
     test('style setting writes trigger the live callback', () async {
       final FushiDatabase db =
           FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
-      ReaderHibikiSource.readerSettings = settings;
-      addTearDown(() => ReaderHibikiSource.readerSettings = null);
+      ReaderFushiSource.readerSettings = settings;
+      addTearDown(() => ReaderFushiSource.readerSettings = null);
 
       int calls = 0;
-      ReaderHibikiSource.onSettingsChangedLive = () => calls++;
-      addTearDown(() => ReaderHibikiSource.onSettingsChangedLive = null);
+      ReaderFushiSource.onSettingsChangedLive = () => calls++;
+      addTearDown(() => ReaderFushiSource.onSettingsChangedLive = null);
 
-      await ReaderHibikiSource.instance.setReaderFontSize(25);
-      await ReaderHibikiSource.instance.setReaderPrioritizeReaderStyles(true);
-      await ReaderHibikiSource.instance.addCustomFont(name: 'Test Font');
+      await ReaderFushiSource.instance.setReaderFontSize(25);
+      await ReaderFushiSource.instance.setReaderPrioritizeReaderStyles(true);
+      await ReaderFushiSource.instance.addCustomFont(name: 'Test Font');
 
       expect(calls, 3);
     });
@@ -1369,11 +1369,11 @@ void main() {
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
-      ReaderHibikiSource.readerSettings = settings;
-      addTearDown(() => ReaderHibikiSource.readerSettings = null);
+      ReaderFushiSource.readerSettings = settings;
+      addTearDown(() => ReaderFushiSource.readerSettings = null);
 
-      await ReaderHibikiSource.instance.setReaderPageColumns(2);
-      expect(ReaderHibikiSource.instance.readerPageColumns, 2);
+      await ReaderFushiSource.instance.setReaderPageColumns(2);
+      expect(ReaderFushiSource.instance.readerPageColumns, 2);
       final Map<String, String> prefs = await db.getAllPrefs();
       expect(prefs['src:reader_fushi:page_columns'], '2');
     });

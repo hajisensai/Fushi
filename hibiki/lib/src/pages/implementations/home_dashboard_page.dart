@@ -36,7 +36,7 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -768,7 +768,7 @@ class _HomeDashboardPageState
           const <MediaItem>[];
       final Set<String> localBookKeys = <String>{
         for (final MediaItem item in books)
-          ReaderHibikiSource.parseBookKey(item.mediaIdentifier) ??
+          ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
               item.mediaIdentifier,
       };
       final Set<String> localVideoUids = <String>{
@@ -782,7 +782,7 @@ class _HomeDashboardPageState
         remoteVideos: remoteVideos,
       );
       // 设备来源标注：配对时存下的 host 设备名（多地址时取第一个启用且有名的）。
-      final List<FushiClientUrl> urls = await syncRepo.getHibikiClientUrls();
+      final List<FushiClientUrl> urls = await syncRepo.getFushiClientUrls();
       String? deviceName;
       for (final FushiClientUrl u in urls) {
         final String? name = u.deviceName;
@@ -826,8 +826,8 @@ class _HomeDashboardPageState
     final Map<String, MediaItem> booksByKey = <String, MediaItem>{};
     for (final MediaItem item in books) {
       final String? key =
-          ReaderHibikiSource.parseBookKey(item.mediaIdentifier) ??
-              ReaderHibikiSource.parseSrtBookUid(item.mediaIdentifier);
+          ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
+              ReaderFushiSource.parseSrtBookUid(item.mediaIdentifier);
       if (key != null) booksByKey[key] = item;
     }
     final Map<String, VideoBookRow> videosByUid = <String, VideoBookRow>{
@@ -950,7 +950,7 @@ class _HomeDashboardPageState
     for (final MediaItem item in books) {
       if (item.position > 0 && item.position < item.duration) {
         final String bookKey =
-            ReaderHibikiSource.parseBookKey(item.mediaIdentifier) ??
+            ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
                 item.mediaIdentifier;
         final int recent = lastReadByKey[bookKey] ?? 0;
         final int percent =
@@ -959,7 +959,7 @@ class _HomeDashboardPageState
           kind: _bookMediaKind(item),
           // BUG-1018 (A1)：书名走与书架卡同一 override 通道（编辑对话框改名后
           // 首页「继续」区同步显示新名），不直接读 DB 原名。
-          title: ReaderHibikiSource.instance.getDisplayTitleFromMediaItem(item),
+          title: ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item),
           recentMs: recent,
           percent: percent,
           progress: percent / 100,
@@ -1156,7 +1156,7 @@ class _HomeDashboardPageState
     final List<_ContinueEntry> entries = <_ContinueEntry>[];
     for (final MediaItem item in books) {
       final String? bookKey =
-          ReaderHibikiSource.parseBookKey(item.mediaIdentifier);
+          ReaderFushiSource.parseBookKey(item.mediaIdentifier);
       // standalone SRT 书无 epub 导入时间戳（不在 epub_books），本轮不进最近添加。
       final int addedMs =
           bookKey == null ? 0 : (_epubImportedAtByKey[bookKey] ?? 0);
@@ -1164,7 +1164,7 @@ class _HomeDashboardPageState
       entries.add(_ContinueEntry(
         kind: _bookMediaKind(item),
         // BUG-1018 (A1)：与继续卡同一 override 显示名通道。
-        title: ReaderHibikiSource.instance.getDisplayTitleFromMediaItem(item),
+        title: ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item),
         recentMs: addedMs,
         collectionName: statCollectionName(
           _bookCollectionKey(item),
@@ -1227,7 +1227,7 @@ class _HomeDashboardPageState
   /// `hoshi://srtbook/<uid>`（BUG-1018 A3），其余按 EPUB。两者在「继续/最近添加」
   /// 区块行为一致（[_ContinueEntry.isBook]），但身份不该被抹平成同一个值。
   MediaKind _bookMediaKind(MediaItem item) =>
-      ReaderHibikiSource.parseSrtBookUid(item.mediaIdentifier) != null
+      ReaderFushiSource.parseSrtBookUid(item.mediaIdentifier) != null
           ? MediaKind.srt
           : MediaKind.epub;
 
@@ -1236,10 +1236,10 @@ class _HomeDashboardPageState
   /// 回退 epub 键（查不中合集，安全降级）。
   String _bookCollectionKey(MediaItem item) {
     final String? bookKey =
-        ReaderHibikiSource.parseBookKey(item.mediaIdentifier);
+        ReaderFushiSource.parseBookKey(item.mediaIdentifier);
     if (bookKey != null) return MediaKind.epub.compositeKey(bookKey);
     final String? srtUid =
-        ReaderHibikiSource.parseSrtBookUid(item.mediaIdentifier);
+        ReaderFushiSource.parseSrtBookUid(item.mediaIdentifier);
     if (srtUid != null) return MediaKind.srt.compositeKey(srtUid);
     // 有意的 miss-key 兜底：entryKey 是完整 hoshi:// 标识而非 bookKey，
     // 查不中合集，安全降级为散卡。
@@ -1486,7 +1486,7 @@ class _HomeDashboardPageState
     if (entry.isGame) return _gameCover(tokens, entry.game!);
     return FadeInImage(
       placeholder: MemoryImage(kTransparentImage),
-      image: ReaderHibikiSource.instance.getDisplayThumbnailFromMediaItem(
+      image: ReaderFushiSource.instance.getDisplayThumbnailFromMediaItem(
         appModel: appModel,
         item: entry.book!,
       ),
@@ -2217,7 +2217,7 @@ class _HomeDashboardPageState
       final String? bookKey = entry.mediaKey;
       if (bookKey != null && bookKey.isNotEmpty) {
         final String title =
-            ReaderHibikiSource.instance.overrideTitleForBookKey(bookKey) ??
+            ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
                 entry.title;
         // 书事件的 mediaKey 无类型标记：按 core 跨域映射表
         // [shelfKindsOfActivityMedia] 的既定顺序（epub 键优先，standalone SRT
@@ -2309,7 +2309,7 @@ class _HomeDashboardPageState
               height: 56,
               child: FadeInImage(
                 placeholder: MemoryImage(kTransparentImage),
-                image: ReaderHibikiSource.instance
+                image: ReaderFushiSource.instance
                     .getDisplayThumbnailFromMediaItem(
                   appModel: appModel,
                   item: book,

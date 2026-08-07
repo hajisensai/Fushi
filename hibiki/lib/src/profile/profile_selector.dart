@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
-import 'package:fushi/src/utils/components/hibiki_dropdown.dart';
+import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// Compact profile selector widget for embedding in settings pages.

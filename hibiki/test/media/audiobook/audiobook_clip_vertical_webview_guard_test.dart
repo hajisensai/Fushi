@@ -134,7 +134,7 @@ void main() {
       'source guard: caller routes vertical to the WebView renderers, '
       'horizontal to Flutter raster, both feed the JPEG pipeline', () {
     final String code = File(
-      'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+      'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
     ).readAsStringSync();
     // Vertical branch dispatches to the offscreen WebView renderers.
     expect(code.contains('renderAudiobookClipFramesViaWebView'), isTrue);
@@ -151,7 +151,7 @@ void main() {
   // 回 .mov（那是 mjpeg 时代的产物）。
   test('BUG-809/TODO-2357: output container is .mp4, never .mov', () {
     final String code = File(
-      'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+      'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
     ).readAsStringSync();
     expect(code.contains("videoExt = 'mp4'"), isTrue);
     expect(code.contains("'mov'"), isFalse,
@@ -170,7 +170,7 @@ void main() {
   // 旧约束（移动端不许用 libx264）如今是错的，留着会阻止正确实现。
   test('TODO-2357: 编码器无平台分支，参数表是单一常量', () {
     final String src = File(
-      'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+      'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
     ).readAsStringSync().replaceAll('\r\n', '\n');
     final String body =
         methodBody(src, 'Future<void> _runAudiobookClipPipeline({');

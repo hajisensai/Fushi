@@ -2,7 +2,7 @@
 ///
 /// 根因：书架删 standalone SRT（`bookKey` 空）时只走 `SrtBookRepository.delete(uid)`，
 /// 而它当时没有传播参数、从不写墓碑——用户选的 `DeleteScope` 被静默丢弃。srt-backed
-/// 的字幕书（`bookKey` 非空）另有 `ReaderHibikiSource.deleteBook` 写 `book` 墓碑，
+/// 的字幕书（`bookKey` 非空）另有 `ReaderFushiSource.deleteBook` 写 `book` 墓碑，
 /// 所以只有纯字幕书这一类失效，恰好对上用户报的症状。
 ///
 /// 本文件盯住修复后的契约：**身份键 = uid ⟺ standalone**，写墓碑与「在库键」两侧

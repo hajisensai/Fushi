@@ -6,7 +6,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 /// TODO-113: 翻页滑动灵敏度系数的持久化 + 阈值生效守卫。
 ///
 /// 系数缩放 JS `_gestureEnd` 的距离阈值（基础 44px / 快速短滑 22px）。reader 注入
-/// 脚本 `reader_hibiki_page._buildReaderSetupScript` 与本测试共用纯函数
+/// 脚本 `reader_fushi_page._buildReaderSetupScript` 与本测试共用纯函数
 /// [ReaderSettings.swipePageTurnDistThresholds]，所以「改系数 → 阈值变」在 UI 与 JS
 /// 两侧一致；真正的触摸翻页手感走 WebView，归设备集成验证。
 void main() {

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：**hover 触发**的音量/倍速轻浮层不得关闭 push-aside 字幕列表（BUG-792）。
 ///
@@ -19,7 +19,7 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   late String src;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   /// 切 `_showControlPopover` 的**方法定义体**（signature 到下一个方法 `_hideControlPopover`）。

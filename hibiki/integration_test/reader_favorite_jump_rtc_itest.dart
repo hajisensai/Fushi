@@ -4,11 +4,11 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart'
-    show ReaderHibikiSource;
+import 'package:fushi/src/media/sources/reader_fushi_source.dart'
+    show ReaderFushiSource;
 import 'package:fushi/src/models/app_model.dart' show AppModel;
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
-    show ReaderHibikiPage;
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
+    show ReaderFushiPage;
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart' show readyAppModel, seedReaderBook;
@@ -168,7 +168,7 @@ void main() {
     'TODO-1308 favorite jump lands at the sentence char position on a rb/rtc '
     'mono-ruby chapter (not the chapter start), vertical-rl paginated + continuous',
     (WidgetTester tester) async {
-      await runHibikiItest(
+      await runFushiItest(
         label: 'favjump-rtc',
         body: () async {
           app.main();
@@ -209,9 +209,9 @@ void main() {
           await _waitFor(tester, _contentReady, 'hoshi content');
 
           final Future<dynamic> Function(String source)? runJs =
-              ReaderHibikiPage.debugEvaluateJavascript;
+              ReaderFushiPage.debugEvaluateJavascript;
           final Future<void> Function(FavoriteSentence)? jump =
-              ReaderHibikiPage.debugJumpToFavorite;
+              ReaderFushiPage.debugJumpToFavorite;
           expect(runJs, isNotNull,
               reason: 'reader must expose debugEvaluateJavascript');
           expect(jump, isNotNull,
@@ -219,9 +219,9 @@ void main() {
 
           // Phase A: DEFAULT paginated mode (vertical-rl). The user's app default
           // is paginated, so this is the most likely real path.
-          await ReaderHibikiSource.instance.setReaderWritingMode('vertical-rl');
-          await ReaderHibikiSource.instance.setReaderViewMode('paginated');
-          ReaderHibikiSource.onLayoutReloadLive?.call();
+          await ReaderFushiSource.instance.setReaderWritingMode('vertical-rl');
+          await ReaderFushiSource.instance.setReaderViewMode('paginated');
+          ReaderFushiSource.onLayoutReloadLive?.call();
           for (int i = 0; i < 16; i++) {
             await tester.pump(const Duration(milliseconds: 250));
           }
@@ -242,8 +242,8 @@ void main() {
           await _verifyJumpInMode(tester, runJs!, jump, bookKey, 'paginated');
 
           // Phase B: continuous mode (the BUG-696-documented user scenario).
-          await ReaderHibikiSource.instance.setReaderViewMode('continuous');
-          ReaderHibikiSource.onLayoutReloadLive?.call();
+          await ReaderFushiSource.instance.setReaderViewMode('continuous');
+          ReaderFushiSource.onLayoutReloadLive?.call();
           for (int i = 0; i < 16; i++) {
             await tester.pump(const Duration(milliseconds: 250));
           }

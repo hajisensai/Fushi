@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// BUG-547 / TODO-1136：悬浮阅读进度文字直接叠在正文上，浅色书/复杂背景下看不清。
 /// 修复在文字后加一层毛玻璃背景（ClipRRect > BackdropFilter(ImageFilter.blur) >

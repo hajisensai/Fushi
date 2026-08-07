@@ -57,7 +57,7 @@ void main() {
 
     setUpAll(() {
       audiobookPart = libFile(
-        'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+        'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
       );
     });
 

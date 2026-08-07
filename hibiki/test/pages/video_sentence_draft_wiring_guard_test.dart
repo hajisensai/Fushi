@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// TODO-393「查词窗口句子上下文制卡」(视频车道) 接线守卫。
 ///
@@ -30,7 +30,7 @@ void main() {
     expect(src, contains('onSetSentenceContext: onSetSentenceContextToDraft'));
   });
 
-  group('video_hibiki_page', () {
+  group('video_fushi_page', () {
     // TODO-590 batch13: `_lookupAt`（含 `_lastLookupSentence = sentence;` /
     // `_miningDraft.clear();` / `await pushNestedPopup(`）已搬进
     // lookup_favorite.part.dart，改读合并语料。
@@ -42,7 +42,7 @@ void main() {
     // 方法签名作 end marker。`_popNestedPopupAt` / `_lookupAt` 切片不受影响。
     late String src;
     setUpAll(() {
-      src = readVideoHibikiSource();
+      src = readVideoFushiSource();
     });
 
     String region(String startSig, String endSig) {

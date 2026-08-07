@@ -13,10 +13,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// 锁死页面两处接线不被后续重构悄悄拆掉。
 void main() {
   final String fullscreenPart = File(
-    'lib/src/pages/implementations/video_hibiki/fullscreen.part.dart',
+    'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',
   ).readAsStringSync().replaceAll('\r\n', '\n');
   final String mainShell = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
+    'lib/src/pages/implementations/video_fushi_page.dart',
   ).readAsStringSync().replaceAll('\r\n', '\n');
 
   test('全屏路由 pageBuilder 内容必须包进 _wrapVideoGamepadControls（BUG-697）', () {

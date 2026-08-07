@@ -7,7 +7,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
-import 'package:fushi/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 手柄绑定实时录键（快捷键设置重构批2）：编辑对话框的手柄通道与键盘/鼠标一致，
 /// 提供「捕获区 + 显式停止」的实时录键；下拉菜单降级为「从列表选择」兜底。

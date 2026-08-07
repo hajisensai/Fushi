@@ -36,9 +36,9 @@ void main() {
   }
 
   MediaItem srtItem(String uid) {
-    final ReaderHibikiSource source = ReaderHibikiSource.instance;
+    final ReaderFushiSource source = ReaderFushiSource.instance;
     return MediaItem(
-      mediaIdentifier: ReaderHibikiSource.mediaIdentifierForSrtUid(uid),
+      mediaIdentifier: ReaderFushiSource.mediaIdentifierForSrtUid(uid),
       title: '字幕书',
       mediaTypeIdentifier: source.mediaType.uniqueKey,
       mediaSourceIdentifier: source.uniqueKey,
@@ -51,23 +51,23 @@ void main() {
 
   group('standalone SRT media identity (BUG-1018 A3)', () {
     test('srt identifiers are per-uid and round-trip losslessly', () {
-      final String a = ReaderHibikiSource.mediaIdentifierForSrtUid('srtbook_1');
-      final String b = ReaderHibikiSource.mediaIdentifierForSrtUid('srtbook_2');
+      final String a = ReaderFushiSource.mediaIdentifierForSrtUid('srtbook_1');
+      final String b = ReaderFushiSource.mediaIdentifierForSrtUid('srtbook_2');
       expect(a, isNot(b));
-      expect(ReaderHibikiSource.parseSrtBookUid(a), 'srtbook_1');
-      expect(ReaderHibikiSource.parseSrtBookUid(b), 'srtbook_2');
+      expect(ReaderFushiSource.parseSrtBookUid(a), 'srtbook_1');
+      expect(ReaderFushiSource.parseSrtBookUid(b), 'srtbook_2');
       // 与 EPUB 书身份空间不相交：互不解析。
-      expect(ReaderHibikiSource.parseBookKey(a), isNull);
+      expect(ReaderFushiSource.parseBookKey(a), isNull);
       expect(
-        ReaderHibikiSource.parseSrtBookUid(
-            ReaderHibikiSource.mediaIdentifierFor('someBookKey')),
+        ReaderFushiSource.parseSrtBookUid(
+            ReaderFushiSource.mediaIdentifierFor('someBookKey')),
         isNull,
       );
     });
 
     test('override title on one standalone SRT book does not leak to another',
         () async {
-      final ReaderHibikiSource source = ReaderHibikiSource.instance;
+      final ReaderFushiSource source = ReaderFushiSource.instance;
       final MediaItem itemA = srtItem('srtbook_a');
       final MediaItem itemB = srtItem('srtbook_b');
       addTearDown(
@@ -88,7 +88,7 @@ void main() {
       final SrtBookRepository repo = SrtBookRepository(db);
       await repo.save(standaloneSrtBook('srtbook_author'));
 
-      final ReaderHibikiSource source = ReaderHibikiSource.instance;
+      final ReaderFushiSource source = ReaderFushiSource.instance;
       await source.setAuthorFromMediaItem(
         item: srtItem('srtbook_author'),
         author: '  某作者  ',
@@ -110,7 +110,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      await ReaderHibikiSource.instance.setAuthorFromMediaItem(
+      await ReaderFushiSource.instance.setAuthorFromMediaItem(
         item: srtItem('srtbook_missing'),
         author: 'X',
       );
@@ -146,7 +146,7 @@ void main() {
 
     test('save without a new image leaves NO 0-byte override cover behind',
         () async {
-      final ReaderHibikiSource source = ReaderHibikiSource.instance;
+      final ReaderFushiSource source = ReaderFushiSource.instance;
       final MediaItem item = srtItem('srtbook_cover');
       final String filename = source.getOverrideThumbnailFilename(
         appModel: appModel,
@@ -165,7 +165,7 @@ void main() {
     });
 
     test('picking a real image writes it; clearing deletes it', () async {
-      final ReaderHibikiSource source = ReaderHibikiSource.instance;
+      final ReaderFushiSource source = ReaderFushiSource.instance;
       final MediaItem item = srtItem('srtbook_cover2');
       final String filename = source.getOverrideThumbnailFilename(
         appModel: appModel,
@@ -201,7 +201,7 @@ void main() {
   /// 键各不相同；EPUB 转漫画后连书架也读不回来。
   group('override identity is per-book, not per-reader (BUG-1317)', () {
     const String kBookKey = 'bug1317_book';
-    final String kMediaId = ReaderHibikiSource.mediaIdentifierFor(kBookKey);
+    final String kMediaId = ReaderFushiSource.mediaIdentifierFor(kBookKey);
 
     /// 书族三源共用同一 `fushi://book/<bookKey>` 身份，只有源键不同——这正是
     /// `_bookToMediaItem` 按 format 现算出来的三种形态。
@@ -219,8 +219,8 @@ void main() {
     }
 
     List<MediaSource> bookSources() => <MediaSource>[
-          ReaderHibikiSource.instance,
-          MangaHibikiSource.instance,
+          ReaderFushiSource.instance,
+          MangaFushiSource.instance,
           ReaderPdfSource.instance,
         ];
 
@@ -263,10 +263,10 @@ void main() {
 
     test('规范键只含 mediaIdentifier —— 源键一次都不出现', () async {
       addTearDown(() => purge(kMediaId));
-      final String epubKey = ReaderHibikiSource.instance
-          .getOverrideTitleKey(bookItem(ReaderHibikiSource.instance));
-      final String mangaKey = MangaHibikiSource.instance
-          .getOverrideTitleKey(bookItem(MangaHibikiSource.instance));
+      final String epubKey = ReaderFushiSource.instance
+          .getOverrideTitleKey(bookItem(ReaderFushiSource.instance));
+      final String mangaKey = MangaFushiSource.instance
+          .getOverrideTitleKey(bookItem(MangaFushiSource.instance));
       final String pdfKey = ReaderPdfSource.instance
           .getOverrideTitleKey(bookItem(ReaderPdfSource.instance));
 
@@ -281,9 +281,9 @@ void main() {
 
     test('新键写入读出：三种 format 下互相可见', () async {
       addTearDown(() => purge(kMediaId));
-      // 用户在漫画身份下改名（编辑弹窗按真实 format 解析出 MangaHibikiSource）。
-      await MangaHibikiSource.instance.setOverrideTitleFromMediaItem(
-        item: bookItem(MangaHibikiSource.instance),
+      // 用户在漫画身份下改名（编辑弹窗按真实 format 解析出 MangaFushiSource）。
+      await MangaFushiSource.instance.setOverrideTitleFromMediaItem(
+        item: bookItem(MangaFushiSource.instance),
         title: '用户改的名',
       );
 
@@ -300,16 +300,16 @@ void main() {
       for (final MediaSource legacy in bookSources()) {
         // 一源一本书，避免互相干扰。
         final String mediaId =
-            ReaderHibikiSource.mediaIdentifierFor('legacy_${legacy.uniqueKey}');
+            ReaderFushiSource.mediaIdentifierFor('legacy_${legacy.uniqueKey}');
         addTearDown(() => purge(mediaId));
         await writeLegacyTitle(legacy, mediaId, '旧名_${legacy.uniqueKey}');
 
         // 读侧恒用 EPUB 源（首页 / 统计 / 通知栏走的 _overrideTitleForIdentifier
         // 就是这条路），必须能穿透到另外两个源的旧命名空间。
         final MediaItem readItem =
-            bookItem(ReaderHibikiSource.instance, mediaIdentifier: mediaId);
+            bookItem(ReaderFushiSource.instance, mediaIdentifier: mediaId);
         expect(
-          ReaderHibikiSource.instance.getOverrideTitleFromMediaItem(readItem),
+          ReaderFushiSource.instance.getOverrideTitleFromMediaItem(readItem),
           '旧名_${legacy.uniqueKey}',
           reason: '旧位置（${legacy.uniqueKey} 命名空间 + 旧键形态）必须被回退读到',
         );
@@ -318,7 +318,7 @@ void main() {
         expect(readLegacyTitle(legacy, mediaId), isNull,
             reason: '命中后必须删掉旧键，否则回退层永远清不掉');
         expect(
-          ReaderHibikiSource.instance.overrideStore.getPreference<String?>(
+          ReaderFushiSource.instance.overrideStore.getPreference<String?>(
             key: 'override_title://$mediaId',
             defaultValue: null,
           ),
@@ -330,27 +330,27 @@ void main() {
 
     test('转化 epub 到 manga 再转回后 override 书名不丢', () async {
       final String mediaId =
-          ReaderHibikiSource.mediaIdentifierFor('bug1317_convert');
+          ReaderFushiSource.mediaIdentifierFor('bug1317_convert');
       addTearDown(() => purge(mediaId));
       // 存量：用户在 EPUB 时代改过名（旧位置）。
-      await writeLegacyTitle(ReaderHibikiSource.instance, mediaId, '我的书');
+      await writeLegacyTitle(ReaderFushiSource.instance, mediaId, '我的书');
 
       // 转成漫画：源键变 reader_manga。
       expect(
-        MangaHibikiSource.instance.getOverrideTitleFromMediaItem(
-          bookItem(MangaHibikiSource.instance, mediaIdentifier: mediaId),
+        MangaFushiSource.instance.getOverrideTitleFromMediaItem(
+          bookItem(MangaFushiSource.instance, mediaIdentifier: mediaId),
         ),
         '我的书',
       );
       // 在漫画身份下再改一次名。
-      await MangaHibikiSource.instance.setOverrideTitleFromMediaItem(
-        item: bookItem(MangaHibikiSource.instance, mediaIdentifier: mediaId),
+      await MangaFushiSource.instance.setOverrideTitleFromMediaItem(
+        item: bookItem(MangaFushiSource.instance, mediaIdentifier: mediaId),
         title: '我的漫画',
       );
       // 转回 EPUB：仍是最新的名字，没有被旧值复活。
       expect(
-        ReaderHibikiSource.instance.getOverrideTitleFromMediaItem(
-          bookItem(ReaderHibikiSource.instance, mediaIdentifier: mediaId),
+        ReaderFushiSource.instance.getOverrideTitleFromMediaItem(
+          bookItem(ReaderFushiSource.instance, mediaIdentifier: mediaId),
         ),
         '我的漫画',
       );
@@ -358,7 +358,7 @@ void main() {
 
     test('清除改名后旧位置不会把旧名复活', () async {
       final String mediaId =
-          ReaderHibikiSource.mediaIdentifierFor('bug1317_clear');
+          ReaderFushiSource.mediaIdentifierFor('bug1317_clear');
       addTearDown(() => purge(mediaId));
       await writeLegacyTitle(ReaderPdfSource.instance, mediaId, '旧名');
 
@@ -368,8 +368,8 @@ void main() {
       );
 
       expect(
-        ReaderHibikiSource.instance.getOverrideTitleFromMediaItem(
-          bookItem(ReaderHibikiSource.instance, mediaIdentifier: mediaId),
+        ReaderFushiSource.instance.getOverrideTitleFromMediaItem(
+          bookItem(ReaderFushiSource.instance, mediaIdentifier: mediaId),
         ),
         isNull,
         reason: '清除后必须真的没有名字，不能被旧位置回退复活',
@@ -378,14 +378,14 @@ void main() {
 
     test('书架 / 首页 / 统计 / 通知栏四个消费面拿到同一个值', () async {
       const String bookKey = 'bug1317_surfaces';
-      final String mediaId = ReaderHibikiSource.mediaIdentifierFor(bookKey);
+      final String mediaId = ReaderFushiSource.mediaIdentifierFor(bookKey);
       addTearDown(() => purge(mediaId));
       // 存量场景：书是漫画，用户在旧版本改过名（写进 reader_manga 命名空间）。
-      await writeLegacyTitle(MangaHibikiSource.instance, mediaId, '四处一致');
+      await writeLegacyTitle(MangaFushiSource.instance, mediaId, '四处一致');
 
       // 书架：卡片持有 _bookToMediaItem 产出的真实源 item，走 item 通道。
       final String shelf = displayTitleForBook(
-        item: bookItem(MangaHibikiSource.instance, mediaIdentifier: mediaId),
+        item: bookItem(MangaFushiSource.instance, mediaIdentifier: mediaId),
         rawTitle: '原始书名',
       );
       // 首页「继续阅读」/ 活动流：只有 bookKey。
@@ -394,9 +394,9 @@ void main() {
       // 阅读统计明细行（reading_statistics_page）与有声书通知栏元数据
       // （audiobook_session_launcher）走的是同一个入口。
       final String? stats =
-          ReaderHibikiSource.instance.overrideTitleForBookKey(bookKey);
+          ReaderFushiSource.instance.overrideTitleForBookKey(bookKey);
       final String? notification =
-          ReaderHibikiSource.instance.overrideTitleForBookKey(bookKey);
+          ReaderFushiSource.instance.overrideTitleForBookKey(bookKey);
 
       expect(shelf, '四处一致');
       expect(home, '四处一致');
@@ -413,7 +413,7 @@ void main() {
 
     MediaItem coverItem(MediaSource source, String bookKey) {
       return MediaItem(
-        mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(bookKey),
+        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
         title: '原始书名',
         mediaTypeIdentifier: source.mediaType.uniqueKey,
         mediaSourceIdentifier: source.uniqueKey,
@@ -448,8 +448,8 @@ void main() {
       const String bookKey = 'cover_same';
       final Set<String> names = <String>{
         for (final MediaSource source in <MediaSource>[
-          ReaderHibikiSource.instance,
-          MangaHibikiSource.instance,
+          ReaderFushiSource.instance,
+          MangaFushiSource.instance,
           ReaderPdfSource.instance,
         ])
           source.getOverrideThumbnailFilename(
@@ -460,10 +460,10 @@ void main() {
       expect(names.length, 1, reason: '同一本书三种 format 必须落到同一个封面文件名');
       // 旧文件名（源键烧进 hash）必须与规范名不同 —— 否则回退层测的是同一个东西。
       expect(
-        ReaderHibikiSource.instance.legacyOverrideThumbnailFilename(
+        ReaderFushiSource.instance.legacyOverrideThumbnailFilename(
           appModel: appModel,
-          item: coverItem(ReaderHibikiSource.instance, bookKey),
-          sourceId: ReaderHibikiSource.instance.uniqueKey,
+          item: coverItem(ReaderFushiSource.instance, bookKey),
+          sourceId: ReaderFushiSource.instance.uniqueKey,
         ),
         isNot(names.single),
       );
@@ -471,8 +471,8 @@ void main() {
 
     test('旧封面文件名三源各一，都能被回退读到并就地 rename 成规范名', () {
       for (final MediaSource legacy in <MediaSource>[
-        ReaderHibikiSource.instance,
-        MangaHibikiSource.instance,
+        ReaderFushiSource.instance,
+        MangaFushiSource.instance,
         ReaderPdfSource.instance,
       ]) {
         final String bookKey = 'cover_legacy_${legacy.uniqueKey}';
@@ -491,9 +491,9 @@ void main() {
 
         // 读侧恒用 EPUB 源（首页 / 书架 hero 都合成 EPUB 身份）。
         final File? resolved =
-            ReaderHibikiSource.instance.resolveOverrideThumbnailFile(
+            ReaderFushiSource.instance.resolveOverrideThumbnailFile(
           appModel: appModel,
-          item: coverItem(ReaderHibikiSource.instance, bookKey),
+          item: coverItem(ReaderFushiSource.instance, bookKey),
         );
         expect(resolved, isNotNull,
             reason: '${legacy.uniqueKey} 的旧封面文件名必须被回退读到');
@@ -508,19 +508,19 @@ void main() {
       const String bookKey = 'cover_convert';
       // 存量：EPUB 时代写下的旧文件名。
       final String legacyPath =
-          ReaderHibikiSource.instance.legacyOverrideThumbnailFilename(
+          ReaderFushiSource.instance.legacyOverrideThumbnailFilename(
         appModel: appModel,
-        item: coverItem(ReaderHibikiSource.instance, bookKey),
-        sourceId: ReaderHibikiSource.instance.uniqueKey,
+        item: coverItem(ReaderFushiSource.instance, bookKey),
+        sourceId: ReaderFushiSource.instance.uniqueKey,
       );
       File(legacyPath).parent.createSync(recursive: true);
       File(legacyPath).writeAsBytesSync(<int>[7, 7]);
 
       // 书转成漫画后由漫画源读。
       final File? resolved =
-          MangaHibikiSource.instance.resolveOverrideThumbnailFile(
+          MangaFushiSource.instance.resolveOverrideThumbnailFile(
         appModel: appModel,
-        item: coverItem(MangaHibikiSource.instance, bookKey),
+        item: coverItem(MangaFushiSource.instance, bookKey),
       );
       expect(resolved, isNotNull);
       expect(resolved!.lengthSync(), 2);
@@ -528,17 +528,17 @@ void main() {
 
     test('清除封面后旧文件名不会把封面复活', () async {
       const String bookKey = 'cover_clear';
-      final MediaItem item = coverItem(MangaHibikiSource.instance, bookKey);
+      final MediaItem item = coverItem(MangaFushiSource.instance, bookKey);
       final String legacyPath =
-          MangaHibikiSource.instance.legacyOverrideThumbnailFilename(
+          MangaFushiSource.instance.legacyOverrideThumbnailFilename(
         appModel: appModel,
         item: item,
-        sourceId: MangaHibikiSource.instance.uniqueKey,
+        sourceId: MangaFushiSource.instance.uniqueKey,
       );
       File(legacyPath).parent.createSync(recursive: true);
       File(legacyPath).writeAsBytesSync(<int>[5]);
 
-      await MangaHibikiSource.instance.setOverrideThumbnailFromMediaItem(
+      await MangaFushiSource.instance.setOverrideThumbnailFromMediaItem(
         appModel: appModel,
         item: item,
         file: null,
@@ -546,9 +546,9 @@ void main() {
       );
 
       expect(
-        ReaderHibikiSource.instance.resolveOverrideThumbnailFile(
+        ReaderFushiSource.instance.resolveOverrideThumbnailFile(
           appModel: appModel,
-          item: coverItem(ReaderHibikiSource.instance, bookKey),
+          item: coverItem(ReaderFushiSource.instance, bookKey),
         ),
         isNull,
         reason: '清除后旧文件名必须一起删掉，否则回退层会把封面复活',

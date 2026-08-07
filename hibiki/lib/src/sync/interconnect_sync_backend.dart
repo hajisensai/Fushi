@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_service_config.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
@@ -15,7 +15,7 @@ import 'package:fushi/src/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/tls/hibiki_pinning_http.dart';
+import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
 import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
@@ -32,7 +32,7 @@ typedef FushiProbe = Future<bool> Function(String url, String token);
 /// client）。探测中的 [SyncAuthError] 立即向上传播——所有候选共用一个 token，一次拒绝
 /// 即全部失败；无可达候选时抛可重试的 [SyncBackendError]。指纹是地址身份的一部分，
 /// 故必须随选中地址一起流出。
-Future<FushiClientUrl> resolveReachableHibikiCandidate(
+Future<FushiClientUrl> resolveReachableFushiCandidate(
   List<FushiClientUrl> candidates,
   String token,
   FushiProbe probe,
@@ -54,7 +54,7 @@ Future<FushiClientUrl> resolveReachableHibikiCandidate(
 }
 
 /// TODO-961 M1: https 候选地址的固定 pinned 可达性探测（不经可注入的测试缝，因为
-/// 它必须真正建立 pinned TLS 连接才有意义）。语义同 [_defaultHibikiProbe]：可达 →
+/// 它必须真正建立 pinned TLS 连接才有意义）。语义同 [_defaultFushiProbe]：可达 →
 /// true，鉴权失败 → 抛 [SyncAuthError]（停止尝试其余地址），其余失败 → false。
 Future<bool> _pinnedReachabilityProbe(
     String url, String token, String fingerprint) async {
@@ -82,7 +82,7 @@ Future<bool> _pinnedReachabilityProbe(
 /// Default probe: a short-timeout WebDAV connection test. Connectivity
 /// failures and timeouts map to `false` (unreachable); a rejected token
 /// surfaces as [SyncAuthError] so the resolver stops trying other addresses.
-Future<bool> _defaultHibikiProbe(String url, String token) async {
+Future<bool> _defaultFushiProbe(String url, String token) async {
   WebDavOps? ops;
   try {
     ops = WebDavOps(
@@ -119,7 +119,7 @@ class InterconnectSyncBackend extends SyncBackend
     with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults
     implements RemoteBookClient, RemoteVideoClient, RemoteCoverFetcher {
   InterconnectSyncBackend._({FushiProbe? probe})
-      : _probe = probe ?? _defaultHibikiProbe;
+      : _probe = probe ?? _defaultFushiProbe;
   static final InterconnectSyncBackend instance = InterconnectSyncBackend._();
 
   /// Test seam: inject a fake reachability probe.
@@ -208,14 +208,14 @@ class InterconnectSyncBackend extends SyncBackend
   Future<String?> get currentEmail async => 'hibiki';
 
   Future<void> _loadConfig(SyncRepository repo) async {
-    final List<FushiClientUrl> candidates = (await repo.getHibikiClientUrls())
+    final List<FushiClientUrl> candidates = (await repo.getFushiClientUrls())
         .where((FushiClientUrl u) => u.enabled)
         .toList();
-    final String? token = await repo.getHibikiClientToken();
+    final String? token = await repo.getFushiClientToken();
     // BUG-1183：这里原本无条件 `_sessionResolved = false`，而 [restoreAuth] 又是每个
     // 消费方（书架 / 视频页 / 首页 dashboard）取 client 的必经之路，且本类是**单例**。
     // 净效果：每切一次页面就把已经探明可达的地址作废一次，下一次网络操作要重跑
-    // [resolveReachableHibikiCandidate] 的全候选串行探测（https 候选还要各做一次带
+    // [resolveReachableFushiCandidate] 的全候选串行探测（https 候选还要各做一次带
     // 指纹钉扎的 TLS 握手），三个页面之间还互相踩。
     //
     // 会话该不该重来，取决于**配置是否真的变了**——地址集合、启用状态、钉扎指纹、
@@ -285,7 +285,7 @@ class InterconnectSyncBackend extends SyncBackend
       throw SyncAuthError('Fushi server credentials not configured');
     }
     final FushiClientUrl chosen =
-        await resolveReachableHibikiCandidate(_candidates, token, _probe);
+        await resolveReachableFushiCandidate(_candidates, token, _probe);
     final String normalized = WebDavOps.normalizeUrl(chosen.url);
     if (_ops == null ||
         _ops!.baseUrl != normalized ||
@@ -323,12 +323,12 @@ class InterconnectSyncBackend extends SyncBackend
     _sessionResolved = false;
     // 登出后配置身份归零，下次 restoreAuth 必然重探测（BUG-1183）。
     _configSignature = null;
-    await repo.setHibikiClientUrls(const <FushiClientUrl>[]);
-    // Also wipe the legacy single-url key, else getHibikiClientUrls would
+    await repo.setFushiClientUrls(const <FushiClientUrl>[]);
+    // Also wipe the legacy single-url key, else getFushiClientUrls would
     // migrate it back on the next read.
     // ignore: deprecated_member_use_from_same_package
-    await repo.setHibikiClientUrl(null);
-    await repo.setHibikiClientToken(null);
+    await repo.setFushiClientUrl(null);
+    await repo.setFushiClientToken(null);
   }
 
   @override

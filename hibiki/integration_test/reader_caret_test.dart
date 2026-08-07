@@ -10,10 +10,10 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/epub/epub_importer.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
 
 import 'helpers/focus_driver.dart';
@@ -72,9 +72,9 @@ void main() {
       }
 
       // Shelf entries key off the media identifier (fushi://book/<id>), not the
-      // raw row id — see reader_hibiki_history_page.dart `book_entry_<mediaId>`.
+      // raw row id — see reader_fushi_history_page.dart `book_entry_<mediaId>`.
       final String seededKey =
-          'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
+          'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
       final Finder seededEntry = find.byKey(ValueKey<String>(seededKey));
       for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 500));
@@ -107,7 +107,7 @@ void main() {
       expect(contentReady, isTrue, reason: 'Reader content ready within 60s');
       await tester.pump(const Duration(seconds: 3));
 
-      final eval = ReaderHibikiPage.debugEvaluateJavascript;
+      final eval = ReaderFushiPage.debugEvaluateJavascript;
       expect(eval, isNotNull,
           reason: 'Reader debug JS hook must be set (debug/profile build).');
 

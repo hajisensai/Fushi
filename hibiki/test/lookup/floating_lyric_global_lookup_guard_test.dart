@@ -77,7 +77,7 @@ void main() {
   group('desktop floating-lyric routes are overlay-first (source scan)', () {
     test('reader 路由（lyrics.part.dart）：覆盖窗优先，切 tab 回落保留', () {
       final String src =
-          read('lib/src/pages/implementations/reader_hibiki/lyrics.part.dart');
+          read('lib/src/pages/implementations/reader_fushi/lyrics.part.dart');
       final int fnAt = src.indexOf('Future<void> _lookupFromFloatingLyric(');
       expect(fnAt, greaterThan(-1));
       final String fn = src.substring(fnAt);

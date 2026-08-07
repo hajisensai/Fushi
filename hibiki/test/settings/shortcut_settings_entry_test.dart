@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -49,11 +49,11 @@ void main() {
     addTearDown(db.close);
 
     final ReaderSettings? prevReaderSettings =
-        ReaderHibikiSource.readerSettings;
+        ReaderFushiSource.readerSettings;
     final ReaderSettings readerSettings = ReaderSettings(db);
     await readerSettings.refreshFromDb();
-    ReaderHibikiSource.readerSettings = readerSettings;
-    addTearDown(() => ReaderHibikiSource.readerSettings = prevReaderSettings);
+    ReaderFushiSource.readerSettings = readerSettings;
+    addTearDown(() => ReaderFushiSource.readerSettings = prevReaderSettings);
 
     final ThemeNotifier themeNotifier =
         ThemeNotifier(db, () => const TextTheme())
@@ -96,7 +96,7 @@ void main() {
               context: ctx,
               appModel: ref.read(appProvider),
               ref: ref,
-              readerSource: ReaderHibikiSource.instance,
+              readerSource: ReaderFushiSource.instance,
               refresh: () {},
             );
             destinations = buildSettingsSchema(sctx);

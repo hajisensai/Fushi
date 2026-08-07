@@ -6,7 +6,7 @@
 /// `<所选文件夹>/manga_ocr_out/manga.json`（图片本就在本地，不回传）。
 ///
 /// 传输契约与 [FushiRemoteMiningClient] 同构：候选地址来自
-/// [SyncRepository.getHibikiClientUrls]、`Basic base64(hibiki:token)` 鉴权、
+/// [SyncRepository.getFushiClientUrls]、`Basic base64(hibiki:token)` 鉴权、
 /// https 带指纹走钉扎 client。老 host 的 capabilities 无 `mangaOcr` 字段 →
 /// [probe] 返回 null → UI 隐藏远程选项（版本 skew 零破坏）。
 library;
@@ -26,7 +26,7 @@ import 'package:fushi/src/ocr/manga_ocr_folder_job.dart'
         kMangaOcrOutDirName,
         kMangaOcrOutputFileName;
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/tls/hibiki_pinning_http.dart';
+import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 
 /// 轮询退避：500ms 起步 ×1.5 递增，封顶 5s。纯函数便于单测单调性与上限。
@@ -193,10 +193,10 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
 
   @override
   Future<MangaOcrRemoteTarget?> probe() async {
-    final List<FushiClientUrl> candidates = (await _repo.getHibikiClientUrls())
+    final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
         .where((FushiClientUrl u) => u.enabled)
         .toList(growable: false);
-    final String? token = await _repo.getHibikiClientToken();
+    final String? token = await _repo.getFushiClientToken();
     if (candidates.isEmpty || token == null || token.isEmpty) return null;
 
     // 「支持但模型明确未下载」的第一台：所有候选都不可用时才拿它回填，让 UI 有
@@ -257,7 +257,7 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
       final (http.Client c, bool close) =
           _clientFor(target.baseUrl, fingerprint: target.fingerprintSha256);
       try {
-        final String? token = await _repo.getHibikiClientToken();
+        final String? token = await _repo.getFushiClientToken();
         if (token == null) return;
         final Uri? uri = _uri(target.baseUrl, '/api/ocr/job/$id');
         if (uri == null) return;
@@ -272,7 +272,7 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
     controller.onListen = () {
       unawaited(() async {
         try {
-          final String? token = await _repo.getHibikiClientToken();
+          final String? token = await _repo.getFushiClientToken();
           if (token == null || token.isEmpty) {
             throw const MangaOcrRemoteException('no_host');
           }

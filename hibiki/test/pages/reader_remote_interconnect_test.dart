@@ -13,8 +13,8 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier, HomeTab;
-import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/ttu_filename.dart';
@@ -109,7 +109,7 @@ void main() {
             builder: (BuildContext context, Widget? child) =>
                 child ?? const SizedBox.shrink(),
             home: Scaffold(
-              body: ReaderHibikiHistoryPage(
+              body: ReaderFushiHistoryPage(
                 mangaOnly: mangaOnly,
                 remoteBookClientLoader: () async => remoteClient,
                 remoteBookDownloadDestination: (RemoteBookInfo book) async =>
@@ -167,7 +167,7 @@ void main() {
     );
 
     final String source =
-        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
+        File('lib/src/pages/implementations/reader_fushi_history_page.dart')
             .readAsStringSync();
     expect(source, isNot(contains('浏览电脑')));
     expect(source.toLowerCase(), isNot(contains('computer')));
@@ -569,7 +569,7 @@ void main() {
   });
 
   testWidgets('BUG-1181: 漫画书架实例从不拉远端书（它根本不消费）', (WidgetTester tester) async {
-    // 漫画书架就是 ReaderHibikiHistoryPage(mangaOnly: true)——与书架**同一个 State
+    // 漫画书架就是 ReaderFushiHistoryPage(mangaOnly: true)——与书架**同一个 State
     // 类**。它此前也注册了 homeShellTabNotifier 监听，且回调判的是 `== HomeTab.books`，
     // 于是切到书架时两个实例各拉一遍远端书，漫画那份在 build 里被 `!_mangaOnly` 丢掉。
     homeShellTabNotifier.value = HomeTab.manga;

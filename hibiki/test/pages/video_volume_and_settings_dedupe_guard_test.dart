@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：桌面音量 / 倍速改为固定锚点轻浮层 + 顶栏设置入口去重（TODO-438）。
 ///
@@ -25,7 +25,7 @@ void main() {
     'lib/src/media/video/video_volume_overlays.dart',
   );
 
-  final String src = readVideoHibikiSource();
+  final String src = readVideoFushiSource();
   late String overlaySrc;
   setUpAll(() {
     expect(overlays.existsSync(), isTrue, reason: '音量可见层 helper 应存在');
@@ -253,7 +253,7 @@ void main() {
 }
 
 String methodBody(String startSig) {
-  final String src = readVideoHibikiSource();
+  final String src = readVideoFushiSource();
   final int start = src.indexOf(startSig);
   expect(start, greaterThanOrEqualTo(0), reason: '需有 $startSig');
   final List<int> ends = <int>[

@@ -4,7 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// BUG-930：视频字幕列表左边缘的宽度拖拽把手（[_subtitleListResizeHandle]，BUG-877）在桌面
 /// hover 时不显 `resizeLeftRight`（左右箭头）光标——用户看不到「可调宽」的提示。
@@ -26,7 +26,7 @@ void main() {
   group('源码守卫：字幕列表宽度把手光标不被原生唤回盖掉（BUG-930）', () {
     late String src;
     setUpAll(() {
-      src = readVideoHibikiSource();
+      src = readVideoFushiSource();
     });
 
     test('主壳声明 _pointerOverSubtitleResizeHandle 标志', () {

@@ -3,9 +3,9 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/epub/epub_book.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 void main() {
   group('normalizeHref', () {
@@ -317,7 +317,7 @@ void main() {
       );
 
       final result = book.resolveInternalLink(
-        '${ReaderHibikiSource.kResourceScheme}://fushi.local/epub/OEBPS/ch2.xhtml#frag',
+        '${ReaderFushiSource.kResourceScheme}://fushi.local/epub/OEBPS/ch2.xhtml#frag',
       );
       expect(result, isNotNull);
       expect(result!.chapterIndex, 1);

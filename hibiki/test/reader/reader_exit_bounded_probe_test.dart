@@ -141,7 +141,7 @@ void main() {
 
     test('_syncAndFlushPosition 必须走限时探针契约，不得裸 await 探针', () {
       const String path =
-          'lib/src/pages/implementations/reader_hibiki/navigation.part.dart';
+          'lib/src/pages/implementations/reader_fushi/navigation.part.dart';
       final String source = maskComments(read(path));
       final int start = source.indexOf('Future<void> _syncAndFlushPosition()');
       expect(start, isNonNegative, reason: '找不到 _syncAndFlushPosition');
@@ -189,7 +189,7 @@ void main() {
 
     test('进程退出 flush 仍不得触碰 WebView 探针', () {
       const String path =
-          'lib/src/pages/implementations/reader_hibiki/navigation.part.dart';
+          'lib/src/pages/implementations/reader_fushi/navigation.part.dart';
       final String source = maskComments(read(path));
       final int start =
           source.indexOf('Future<void> _flushAllForProcessExit()');

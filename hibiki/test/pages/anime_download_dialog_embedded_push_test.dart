@@ -12,7 +12,7 @@ import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
-import 'package:fushi/src/utils/components/hibiki_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 
 import '../helpers/test_platform_services.dart';
 

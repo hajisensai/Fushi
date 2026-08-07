@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import '../../pages/video_hibiki_page_source_corpus.dart';
+import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// TODO-451 guard: video volume is remembered per video bookUid.
 ///
@@ -23,7 +23,7 @@ void main() {
 
   setUpAll(() {
     expect(controllerFile.existsSync(), isTrue);
-    page = readVideoHibikiSource();
+    page = readVideoFushiSource();
     controller = controllerFile.readAsStringSync();
   });
 

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 /// 收藏面板「阅读位置百分比」纯折算 [favoriteBookProgressFraction] 单测（用户反馈：
 /// 收藏列表看不出每条在书里的位置）。section+章内偏移 → 全局偏移 → /总字符 = 全书分数。

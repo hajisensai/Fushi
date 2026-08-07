@@ -84,7 +84,7 @@ void main() {
     // non-deterministically report Hibiki as already-foreground and early-return
     // bringPendingLookupToFront before it reaches the mocked window_manager.
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = false;
-    DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = false;
+    DesktopForegroundGuard.debugForegroundOwnedByFushiAppFamily = false;
     DesktopForegroundGuard.debugHiddenWindowsRunner = false;
     DesktopLookupService.instance.debugReset();
   });
@@ -93,7 +93,7 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = null;
-    DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = null;
+    DesktopForegroundGuard.debugForegroundOwnedByFushiAppFamily = null;
     DesktopForegroundGuard.debugHiddenWindowsRunner = null;
     DesktopLookupService.instance.debugReset();
   });

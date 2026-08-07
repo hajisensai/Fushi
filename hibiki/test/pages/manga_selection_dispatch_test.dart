@@ -3,7 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/mokuro_payload.dart';
-import 'package:fushi/src/pages/implementations/manga_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 
 void main() {
@@ -113,7 +113,7 @@ void main() {
         ],
       );
 
-      final String? resolved = MangaHibikiPage.resolveMangaPageImage(
+      final String? resolved = MangaFushiPage.resolveMangaPageImage(
         payload,
         root.path,
         1,
@@ -126,7 +126,7 @@ void main() {
         isNot(spreadFirst.readAsBytesSync()),
       );
       expect(
-        MangaHibikiPage.resolveMangaPageImage(payload, root.path, 2),
+        MangaFushiPage.resolveMangaPageImage(payload, root.path, 2),
         isNull,
       );
     });
@@ -137,7 +137,7 @@ void main() {
   group('选词路径收敛不变式（ERRATA H2/C1）', () {
     test('漫画页恰好注册一个 onTextSelected JS handler', () {
       final File page = File(
-        'lib/src/media/manga/reader/manga_hibiki_page.dart',
+        'lib/src/media/manga/reader/manga_fushi_page.dart',
       );
       expect(page.existsSync(), isTrue);
       final String src = page.readAsStringSync();
@@ -150,7 +150,7 @@ void main() {
 
     test('漫画页绝不再挂第二个 pointerup JS 监听', () {
       final File page = File(
-        'lib/src/media/manga/reader/manga_hibiki_page.dart',
+        'lib/src/media/manga/reader/manga_fushi_page.dart',
       );
       final String src = page.readAsStringSync();
       // 全工程唯一的 pointerup 选词监听内嵌在 manga_overlay_html（mangaWindowDocument）。
@@ -160,7 +160,7 @@ void main() {
 
     test('漫画页按本次 OCR 命中的书写方向驱动根弹窗布局', () {
       final String src = File(
-        'lib/src/media/manga/reader/manga_hibiki_page.dart',
+        'lib/src/media/manga/reader/manga_fushi_page.dart',
       ).readAsStringSync();
       expect(
         src.contains(
@@ -177,7 +177,7 @@ void main() {
 
     test('制卡只在旧 payload 回退当前 spread，新 payload 使用精确命中页', () {
       final String src = File(
-        'lib/src/media/manga/reader/manga_hibiki_page.dart',
+        'lib/src/media/manga/reader/manga_fushi_page.dart',
       ).readAsStringSync();
       expect(src.contains('selectPageForMining: _selectPageForMining'), isTrue);
       expect(

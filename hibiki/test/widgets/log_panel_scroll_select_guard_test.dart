@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 // BUG-119 守卫（TODO-762 起从 TextField 迁到 ListView.builder 后更新）：
 // 日志页（错误日志 / 调试日志）按住鼠标拖拽选区想往上滑复制时，视口曾被「拽回」。
@@ -124,7 +124,7 @@ void main() {
       'FushiLogPanel source uses ListView.builder + SelectionArea on the '
       'BUG-119-gating scroll controller (no eager full-text render)', () {
     final String source = File(
-      'lib/src/utils/components/hibiki_material_components.dart',
+      'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
     final String panel = source.substring(
       source.indexOf('class _FushiLogPanelState'),
@@ -212,7 +212,7 @@ void main() {
       'copy-all / share route through full widget.log, not the viewport '
       'selection (no _selectedText), and there is a Copy-All entry', () {
     final String source = File(
-      'lib/src/utils/components/hibiki_material_components.dart',
+      'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
     final String panel = source.substring(
       source.indexOf('class _FushiLogPanelState'),
@@ -431,7 +431,7 @@ void main() {
       'BUG-448 source guard: each log line Text is width-bounded (ConstrainedBox '
       '+ ClipRect) so SelectionArea hit-test cannot go out of bounds', () {
     final String source = File(
-      'lib/src/utils/components/hibiki_material_components.dart',
+      'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
     final String panel = source.substring(
       source.indexOf('class _FushiLogPanelState'),
@@ -532,7 +532,7 @@ void main() {
       'passes animated:true (edge auto-scroll allowed), jumpTo animated:false',
       () {
     final String source = File(
-      'lib/src/utils/components/hibiki_material_components.dart',
+      'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
     // 判据带 animated 维度。
     expect(source, contains('required bool animated'),

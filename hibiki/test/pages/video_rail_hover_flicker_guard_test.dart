@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫（BUG-284）：视频右 / 左浮动学习按钮 rail 在鼠标 hover 时不闪烁。
 ///
@@ -16,7 +16,7 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   late String src;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   test('存在 rail hover 单一真相源 _railHovered（ValueNotifier）并在 dispose 释放', () {

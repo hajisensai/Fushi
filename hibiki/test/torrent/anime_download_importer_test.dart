@@ -20,7 +20,7 @@ import 'package:fushi/src/media/torrent/anime_download_service.dart'
     show AnimeDownloadImportOutcome;
 import 'package:fushi/src/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
-import 'package:fushi/src/utils/misc/hibiki_time_format.dart'
+import 'package:fushi/src/utils/misc/fushi_time_format.dart'
     show FushiTimeFormat;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;

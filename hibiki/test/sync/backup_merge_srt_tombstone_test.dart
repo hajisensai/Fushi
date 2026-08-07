@@ -59,7 +59,7 @@ void main() {
     final String zip = await makeBackupWithBook(srcRoot);
 
     // Target device had the same book, then the user DELETED it from the shelf
-    // (tombstone:true — the real reader_hibiki_source delete path).
+    // (tombstone:true — the real reader_fushi_source delete path).
     final Directory curRoot =
         await Directory.systemTemp.createTemp('srtt_cur_');
     addTearDown(() => cleanupTempDir(curRoot));

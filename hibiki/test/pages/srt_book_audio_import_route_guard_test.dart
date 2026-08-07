@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import '../pages/reader_history_source_corpus.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-1032 回归守卫：SRT 字幕书的音频真值必须统一落 SrtBooks.audioPaths，三入口
 /// 归一到 SrtBookRepository.replaceAudio。历史上书架卡片「导入音频」入口误弹

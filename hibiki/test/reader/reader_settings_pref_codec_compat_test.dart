@@ -9,7 +9,7 @@ import 'package:fushi_core/fushi_core.dart';
 ///
 /// 同一 `src:reader_fushi:*` DB key 有两个历史写入方：
 /// - ReaderSettings._set → 裸 `toString()`（'false' / '22.0'）；
-/// - ReaderHibikiSource 在 `readerSettings == null` 窗口的
+/// - ReaderFushiSource 在 `readerSettings == null` 窗口的
 ///   `?? setPreference(...)` 回退 → PrefCodec 标签值（'b:false' / 'd:22.0'）。
 ///
 /// 修复前 ReaderSettings._parseValue 只认裸值：读到标签值时 bool/int/double
@@ -28,18 +28,18 @@ void main() {
   setUp(() {
     db = _testDb();
     MediaSource.setDatabase(db);
-    ReaderHibikiSource.readerSettings = null;
+    ReaderFushiSource.readerSettings = null;
   });
 
   tearDown(() async {
-    ReaderHibikiSource.readerSettings = null;
+    ReaderFushiSource.readerSettings = null;
     await db.close();
   });
 
   test('(a) 回退路径双写复现：setReaderFontSize 落标签值，ReaderSettings 重启后必须读回', () async {
     // readerSettings == null → 走 MediaSource.setPreference 回退，
     // 落 PrefCodec 标签值到 ReaderSettings 的同一 DB key。
-    await ReaderHibikiSource.instance.setReaderFontSize(30);
+    await ReaderFushiSource.instance.setReaderFontSize(30);
 
     final Map<String, String> prefs = await db.getAllPrefs();
     expect(prefs['src:reader_fushi:font_size'], 'd:30.0',

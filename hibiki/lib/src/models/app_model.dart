@@ -78,7 +78,7 @@ import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/hibiki_server_controller.dart';
+import 'package:fushi/src/sync/fushi_server_controller.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -104,9 +104,9 @@ import 'package:fushi/src/models/file_export_manager.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/models/local_audio_source_pref.dart';
 import 'package:fushi/src/models/anki_integration.dart';
-import 'package:fushi/src/sync/hibiki_remote_lookup_client.dart';
-import 'package:fushi/src/sync/hibiki_remote_mining_client.dart';
-import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
+import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
+import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/remote_audio_lookup_bytes.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
 import 'package:fushi/src/media/video/video_cover_extractor.dart'
@@ -119,7 +119,7 @@ import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/immersion_capture_channel.dart';
 import 'package:fushi/src/mining/youtube_clip_miner.dart';
-import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/sync/yomitan_api_server_manager.dart';
@@ -207,7 +207,7 @@ final pipSearchPositionProvider = StateProvider<int>((ref) => 0);
 
 // Theme helper functions moved to theme_notifier.dart.
 // Re-export for backward compatibility.
-ColorScheme buildHibikiColorScheme({
+ColorScheme buildFushiColorScheme({
   required Color seedColor,
   required Brightness brightness,
   DynamicSchemeVariant variant = DynamicSchemeVariant.tonalSpot,
@@ -216,7 +216,7 @@ ColorScheme buildHibikiColorScheme({
   Color? tertiary,
   Color? primaryContainer,
 }) =>
-    theme_notifier.buildHibikiColorScheme(
+    theme_notifier.buildFushiColorScheme(
       seedColor: seedColor,
       brightness: brightness,
       variant: variant,
@@ -643,7 +643,7 @@ class AppModel with ChangeNotifier {
         // 分支，跳过但留痕（语义与旧 default 一致）。
         switch (SyncTombstoneKind.tryParse(c.mediaType)) {
           case SyncTombstoneKind.book:
-            await ReaderHibikiSource.instance.deleteBook(
+            await ReaderFushiSource.instance.deleteBook(
               db: database,
               bookKey: c.itemKey,
               appModel: this,
@@ -721,7 +721,7 @@ class AppModel with ChangeNotifier {
       // 合集专属同步（仅 collectionsUpdated>0、无书内容导入）也必须刷新书架 tab：
       // 否则后台把合集成员落库后，书架非响应式的 _shelfMapsFuture 永不重载，合集
       // 不成组（书架合集不渲染，直到重启 app）。refreshTab 触发本 tab 的
-      // tabRefreshNotifier，ReaderHibikiHistoryPage 监听后重载合集折叠映射。
+      // tabRefreshNotifier，ReaderFushiHistoryPage 监听后重载合集折叠映射。
       ReaderMediaType.instance.refreshTab();
     }
 
@@ -835,7 +835,7 @@ class AppModel with ChangeNotifier {
       toggleFloatingLyricStream: audioCtrl.toggleFloatingLyricStream,
     ),
   )
-    ..skipActionSeconds = (() => ReaderHibikiSource.instance.skipActionSeconds)
+    ..skipActionSeconds = (() => ReaderFushiSource.instance.skipActionSeconds)
     ..onFloatingLyricClosePersist = (() => setShowFloatingLyric(false))
     ..onToggleFloatingLyricFromNotification = toggleFloatingLyricFromControls;
   late DictionaryImportManager _dictImportManager;
@@ -1796,14 +1796,14 @@ class AppModel with ChangeNotifier {
     /// A list of media sources that the app will support at runtime.
     final Map<MediaType, List<MediaSource>> availableMediaSources = {
       ReaderMediaType.instance: [
-        ReaderHibikiSource.instance,
+        ReaderFushiSource.instance,
         // PDF 阅读器 Phase 1：注册第二个 reader 源。书架/页头恒用第一个（默认源），PDF 行
         // 仅在打开时经 mediaSourceIdentifier='reader_pdf' 路由到本源、进 ReaderPdfPage。
         // 通用 init 循环与 refreshPrefCache 按 mediaSources 遍历，自动接管本源初始化。
         ReaderPdfSource.instance,
         // 漫画 OCR P1：第三个 reader 源。format=='manga' 的行在打开时经
-        // mediaSourceIdentifier='reader_manga' 路由到本源、进 MangaHibikiPage。
-        MangaHibikiSource.instance,
+        // mediaSourceIdentifier='reader_manga' 路由到本源、进 MangaFushiPage。
+        MangaFushiSource.instance,
       ],
       DictionaryMediaType.instance: [],
     };
@@ -2289,7 +2289,7 @@ class AppModel with ChangeNotifier {
       // TODO-864: 视频字幕字体同样在首帧前从 videoSubtitle 目标解析。
       _subtitleFontFamily =
           await AppFontLoader.resolveAndLoad(readerSettings.videoSubtitleFonts);
-      ReaderHibikiSource.readerSettings = readerSettings;
+      ReaderFushiSource.readerSettings = readerSettings;
 
       // Start polling physical controllers on platforms that need it (desktop);
       // start() is a no-op where the engine already delivers gameButton* keys.
@@ -2311,7 +2311,7 @@ class AppModel with ChangeNotifier {
         ]),
       ]);
 
-      // BUG-207: load the shortcut registry only AFTER ReaderHibikiSource has
+      // BUG-207: load the shortcut registry only AFTER ReaderFushiSource has
       // run initialise() (which populates its in-memory preference cache from
       // the DB). Reading shortcut_bindings_json before the cache is loaded saw
       // an empty cache -> null -> resetToDefaults, and getPreference's
@@ -2321,7 +2321,7 @@ class AppModel with ChangeNotifier {
       // loadShortcutRegistry).
       await loadShortcutRegistry(
         shortcutRegistry,
-        ReaderHibikiSource.instance,
+        ReaderFushiSource.instance,
         defaultTargetPlatform,
       );
 
@@ -2564,7 +2564,7 @@ class AppModel with ChangeNotifier {
 
       await Future.wait(<Future<void>>[
         JapaneseLanguage.instance.initialise(),
-        ReaderHibikiSource.instance.initialise(),
+        ReaderFushiSource.instance.initialise(),
         Future.wait(<Future<void>>[
           for (Field field in globalFields)
             for (Enhancement enhancement in enhancements[field]!.values)
@@ -2575,11 +2575,11 @@ class AppModel with ChangeNotifier {
       // 弹窗进程也要加载用户的快捷键绑定：弹窗内的「上/下一个词条」（Alt+滚轮）由
       // popup_settings_injection 把 shortcutRegistry 里的滚轮绑定注入给 popup.js，
       // 不加载就只能发默认值、用户改的键在这个进程里不生效。与主 initialise() 同样
-      // 排在 ReaderHibikiSource.initialise() 之后（BUG-207：偏好缓存必须先就位，
+      // 排在 ReaderFushiSource.initialise() 之后（BUG-207：偏好缓存必须先就位，
       // 否则读到空缓存会把用户快照写成 's:null'）。
       await loadShortcutRegistry(
         shortcutRegistry,
-        ReaderHibikiSource.instance,
+        ReaderFushiSource.instance,
         defaultTargetPlatform,
       );
 
@@ -2612,7 +2612,7 @@ class AppModel with ChangeNotifier {
     // immediately instead of only after an app restart.
     await loadShortcutRegistry(
       shortcutRegistry,
-      ReaderHibikiSource.instance,
+      ReaderFushiSource.instance,
       defaultTargetPlatform,
     );
     // TODO-855: after a full reload the in-memory cache holds the latest DB
@@ -2765,7 +2765,7 @@ class AppModel with ChangeNotifier {
       // 仅 JS 消费（content.js 据此决定是否给浮动弹窗启用水平拖关手势）。走 theme 传输通道
       // 与 --fushi-color-scheme 同法（那个也被当 data-theme 而非 CSS 值消费）。值 '1'/'0'。
       '--fushi-swipe-close':
-          ReaderHibikiSource.instance.enableSwipeToClose ? '1' : '0',
+          ReaderFushiSource.instance.enableSwipeToClose ? '1' : '0',
       // BUG-1026：查词弹窗滚轮速度倍率下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。
       // content.js fushiRender 读它设 window.__fushiPopupWheelSpeed（与 in-app 注入同名
       // 全局），popup.js 的 wheel factor 乘它。走 theme 通道与 --fushi-swipe-close 同法。
@@ -4321,7 +4321,7 @@ class AppModel with ChangeNotifier {
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
 
-    if (ReaderHibikiSource.instance.keepScreenAwake) {
+    if (ReaderFushiSource.instance.keepScreenAwake) {
       try {
         await WakelockPlus.enable();
       } catch (e) {
@@ -4825,10 +4825,10 @@ class AppModel with ChangeNotifier {
     final SessionBookInfo? info = audiobookSession.book;
     if (info == null) return;
     final MediaItem? item =
-        await ReaderHibikiSource.instance.mediaItemForBookKey(info.bookKey);
+        await ReaderFushiSource.instance.mediaItemForBookKey(info.bookKey);
     if (item == null) return;
     // 源必须跟着 item 自己的 mediaSourceIdentifier 走（它已按当前 format 现算）：
-    // 写死 ReaderHibikiSource 会让漫画 / PDF 书用 EPUB 阅读器打开。
+    // 写死 ReaderFushiSource 会让漫画 / PDF 书用 EPUB 阅读器打开。
     await openMedia(
       ref: ref,
       mediaSource: item.getMediaSource(appModel: this),

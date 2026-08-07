@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// BUG-111 守卫（源码扫描，沿用 reader_bottom_chrome_gate_static_test.dart 范式）。
 ///

@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/startup/observe_blank_detector.dart';
 import 'package:fushi/src/startup/test_environment.dart';
 
@@ -124,15 +124,15 @@ Future<ObserveShot> captureFlutterFrame(
 /// 阅读器 WebView 是否已创建（onWebViewCreated 注册了抓图钩子）。跨模式可靠信号：
 /// 章节阅读器与歌词模式（有声书）都会触发 onWebViewCreated → 钩子非空，比等
 /// `fushi_webview` widget key 更稳（歌词模式可能是不同页 / 不同 key）。
-bool readerWebViewReady() => ReaderHibikiPage.debugCaptureWebView != null;
+bool readerWebViewReady() => ReaderFushiPage.debugCaptureWebView != null;
 
 /// 抓阅读器 EPUB 正文（WebView2，经 CDP Page.captureScreenshot，真离屏可用）为 PNG。
 ///
-/// 走 ReaderHibikiPage.debugCaptureWebView 钩子（仅 debug/profile 注册）。钩子为空
+/// 走 ReaderFushiPage.debugCaptureWebView 钩子（仅 debug/profile 注册）。钩子为空
 /// （未在阅读器页 / release build）时返回 saved=false，不抛。
 Future<ObserveShot> captureReaderWebView(String name) async {
   final Future<Uint8List?> Function()? hook =
-      ReaderHibikiPage.debugCaptureWebView;
+      ReaderFushiPage.debugCaptureWebView;
   if (hook == null) {
     return ObserveShot(
         name: name, path: '', saved: false, nonBlank: false, bytes: 0);

@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/hibiki_sync_server.dart';
-import 'package:fushi/src/sync/pairing/hibiki_pair_v2_client.dart';
-import 'package:fushi/src/sync/tls/hibiki_tls_identity.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart';
+import 'package:fushi/src/sync/pairing/fushi_pair_v2_client.dart';
+import 'package:fushi/src/sync/tls/fushi_tls_identity.dart';
 
 /// TODO-1330：互联「测试连接」端到端回归——复现用户的内网场景整链：
 ///   1. host 起真 FushiSyncServer（默认开 TLS，自签证书）+ per-peer token 存储。

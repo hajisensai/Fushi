@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
-import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 
 // BUG-015 regression. 宽屏设置「外观」详情：焦点在最底部的整宽开关「反转底栏方向」，
 // 按方向键左，焦点会跳到上方的「主题」色块行（一个同面板的对角候选），而不是离开

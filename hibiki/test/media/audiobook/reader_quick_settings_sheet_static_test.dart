@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart'
     show kSettingsRowTitleMaxLines;
 
-import '../../pages/reader_hibiki_page_source_corpus.dart';
+import '../../pages/reader_fushi_page_source_corpus.dart';
 
 void main() {
   test('reader quick settings owns the in-book settings hierarchy', () {
@@ -388,9 +388,9 @@ void main() {
         readerSource.substring(desktopBranch, mobileBranch);
     expect(desktopSource, contains('FushiDialogFrame('));
     // master-detail 需要更宽画布（左父菜单 + 右详情）；520 太窄进不了分栏。
-    // TODO-1142：魔法数 900 抽成共享 kHibikiSettingsDialogMaxWidth（全屏 push 的
+    // TODO-1142：魔法数 900 抽成共享 kFushiSettingsDialogMaxWidth（全屏 push 的
     // 书籍 CSS 编辑页也引用它约束正文宽度，与限宽弹窗兄弟页同宽）。
-    expect(desktopSource, contains('maxWidth: kHibikiSettingsDialogMaxWidth'));
+    expect(desktopSource, contains('maxWidth: kFushiSettingsDialogMaxWidth'));
     expect(desktopSource, isNot(contains('maxWidth: 900')));
     expect(desktopSource, contains('maxHeightFactor: 0.80'));
     expect(desktopSource, isNot(contains('=> Dialog(')));
@@ -405,10 +405,10 @@ void main() {
     // 宽窗用主页同款 supporting-pane（左父菜单 + 右详情），阈值走共享常量。
     expect(source, contains('MaterialSupportingPaneLayout('));
     expect(source, contains('SupportingPaneSide.start'));
-    expect(source, contains('minSplitWidth: kHibikiSettingsWideThreshold'));
+    expect(source, contains('minSplitWidth: kFushiSettingsWideThreshold'));
     // 左父菜单收窄到共享常量（不再硬编码 248）。
     expect(source,
-        contains('supportingWidth: kHibikiSettingsSupportingPaneWidth'));
+        contains('supportingWidth: kFushiSettingsSupportingPaneWidth'));
     // 宽窗判定（constraints.maxWidth >= 阈值）已下沉到共享外壳；阅读器经
     // isWide / onWideChanged 与外壳交互（见 master_detail_settings_sheet_test）。
     expect(source, contains('isWide: _isWide'));
@@ -466,7 +466,7 @@ void main() {
 
     // 左父菜单用更窄的固定宽度（共享常量），不再吃硬编码 248。
     expect(source,
-        contains('supportingWidth: kHibikiSettingsSupportingPaneWidth'));
+        contains('supportingWidth: kFushiSettingsSupportingPaneWidth'));
 
     // 确定性几何判据（宽且高都 >= 共享阈值）已下沉到共享外壳
     // FushiMasterDetailSettingsSheet（master_detail_settings_sheet_test 守它）；阅读器

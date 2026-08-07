@@ -1,4 +1,4 @@
-import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 
 // 统计来源标识 kStatSourceBook / kStatSourceVideo（命名统一 Phase 3.4）已挪进
 // hibiki_core 的 stat_source_kind.dart（同枚举 StatSourceKind）——它们是 schema

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// 源码守卫（headless WebView 不可用，锁注入 JS 行为）：
 /// - BUG-368：分页模式鼠标在正文上横向拖动必须像触摸横滑一样翻页（pointermove 里把
@@ -31,7 +31,7 @@ void main() {
 
   setUpAll(() {
     // TODO-589 batch8: setup 脚本(pointermove/wheel 边界)已搬到
-    // reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+    // reader_fushi/webview.part.dart，改读「主壳 + 全部 part」合并语料。
     source = maskCommentsAndScriptLines(readReaderPageSource());
     // setup 段不是任何一个函数体，没有结构边界可用，只能靠两条**真代码**语句夹出来；
     // 但因为语料已掩码，这两个标记不可能锚到注释里的同名文本上。

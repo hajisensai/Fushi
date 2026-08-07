@@ -5,8 +5,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
-import '../pages/video_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
+import '../pages/video_fushi_page_source_corpus.dart';
 
 /// describeMineOutcome 是制卡结果→(用户消息, 是否成功, 是否记账) 的单一真相。
 /// 此前该四分支 switch 在 5 个调用点（mixin/reader/video/app_model/floating）各
@@ -81,8 +81,8 @@ void main() {
     // TODO-589/590: reader 与 video 的制卡方法已搬进各自的 `*.part.dart`，读合并
     // 语料（主壳 + 全部 part）才能命中搬出去的 describeMineOutcome。
     String read(String p) {
-      if (p.endsWith('reader_hibiki_page.dart')) return readReaderPageSource();
-      if (p.endsWith('video_hibiki_page.dart')) return readVideoHibikiSource();
+      if (p.endsWith('reader_fushi_page.dart')) return readReaderPageSource();
+      if (p.endsWith('video_fushi_page.dart')) return readVideoFushiSource();
       final String src = File(p).readAsStringSync();
       // TODO-1303：app_model 的 remoteMineResultFromOutcome 是「outcome → RemoteMineResult
       // 远端契约」的单一真相（与 describeMineOutcome「outcome → 用户消息」正交），它合法地
@@ -96,8 +96,8 @@ void main() {
 
     final sites = <String>[
       'lib/src/pages/implementations/dictionary_page_mixin.dart',
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-      'lib/src/pages/implementations/video_hibiki_page.dart',
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+      'lib/src/pages/implementations/video_fushi_page.dart',
       'lib/src/pages/implementations/floating_dict_page.dart',
       'lib/src/models/app_model.dart',
     ];

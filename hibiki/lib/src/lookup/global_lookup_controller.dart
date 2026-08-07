@@ -28,7 +28,7 @@ import 'package:fushi/src/lookup/global_lookup_render.dart';
 import 'package:fushi/src/lookup/global_lookup_stack.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -963,7 +963,7 @@ class GlobalLookupController {
     // 尊重用户「滑动关闭弹窗」(enableSwipeToClose) 偏好——关时忽略，与 in-app
     // 弹窗一致（Windows 默认 false，鼠标框选与下滑同形）。
     if (handler == 'topPullReleased') {
-      if (ReaderHibikiSource.instance.enableSwipeToClose) {
+      if (ReaderFushiSource.instance.enableSwipeToClose) {
         GlobalLookupChannel.hide();
       }
       return;

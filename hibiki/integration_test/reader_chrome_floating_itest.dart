@@ -12,7 +12,7 @@ import 'package:fushi/main.dart' as app;
 import 'package:fushi/media.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 import 'helpers/focus_driver.dart';
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
@@ -39,9 +39,9 @@ import 'test_helpers.dart';
 ///  4. auto-hide timing (best-effort): after reveal, pump the configured
 ///     duration; the floating bottom bar (fushi_play_bar) auto-hides.
 ///
-/// Triggering: prefs via ReaderHibikiSource.instance.toggleXxx() (fire-and-forget
+/// Triggering: prefs via ReaderFushiSource.instance.toggleXxx() (fire-and-forget
 /// async, pump to land); reader re-anchor via the same settings-UI notify entry
-/// ReaderHibikiSource.onChromeReanchorLive?.call() (clears transient +
+/// ReaderFushiSource.onChromeReanchorLive?.call() (clears transient +
 /// _applyChromeInsetsAndReanchor pushes new inset to WebView); bottom tap reveal
 /// via the real JS bridge window.flutter_inappwebview.callHandler('onTapEmpty')
 /// (reader_selection_scripts.dart:652 -> webview.part.dart:1320 onTapEmpty
@@ -74,22 +74,22 @@ void main() {
         // Defaults now float: top progress ON, top floating ON, bottom floating
         // (tap_empty_hide_chrome) ON. Assert once so a silently-changed default
         // fails loudly here.
-        expect(ReaderHibikiSource.instance.showTopProgressBar, isTrue,
+        expect(ReaderFushiSource.instance.showTopProgressBar, isTrue,
             reason: 'top progress must default ON.');
-        expect(ReaderHibikiSource.instance.topProgressFloating, isTrue,
+        expect(ReaderFushiSource.instance.topProgressFloating, isTrue,
             reason: 'top progress must default to floating.');
-        expect(ReaderHibikiSource.instance.tapEmptyToHideChrome, isTrue,
+        expect(ReaderFushiSource.instance.tapEmptyToHideChrome, isTrue,
             reason: 'bottom bar must default to floating.');
 
         // This test exercises the squeeze -> floating transition, so force both
         // back to the squeeze baseline BEFORE the reader mounts (prefs land in
         // the single app DB and are read on first load).
-        ReaderHibikiSource.instance.toggleTopProgressFloating();
-        ReaderHibikiSource.instance.toggleTapEmptyToHideChrome();
+        ReaderFushiSource.instance.toggleTopProgressFloating();
+        ReaderFushiSource.instance.toggleTapEmptyToHideChrome();
         await _pumpForPref(tester);
-        expect(ReaderHibikiSource.instance.topProgressFloating, isFalse,
+        expect(ReaderFushiSource.instance.topProgressFloating, isFalse,
             reason: 'forced squeeze baseline: top floating off.');
-        expect(ReaderHibikiSource.instance.tapEmptyToHideChrome, isFalse,
+        expect(ReaderFushiSource.instance.tapEmptyToHideChrome, isFalse,
             reason: 'forced squeeze baseline: bottom floating off.');
 
         // BUG-1106：Tab 遍历前必须先开实验焦点导航开关——关闭（默认）时裸 Tab 被全局
@@ -102,7 +102,7 @@ void main() {
         await _openBooksTab(tester, driver);
 
         final String seededKey =
-            'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
+            'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
         final Finder seededEntry = find.byKey(ValueKey<String>(seededKey));
         for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
           await tester.pump(const Duration(milliseconds: 500));
@@ -114,12 +114,12 @@ void main() {
         await tester.pump(const Duration(seconds: 3));
 
         for (int i = 0;
-            i < 40 && find.byType(ReaderHibikiPage).evaluate().isEmpty;
+            i < 40 && find.byType(ReaderFushiPage).evaluate().isEmpty;
             i++) {
           await tester.pump(const Duration(milliseconds: 250));
         }
-        expect(find.byType(ReaderHibikiPage), findsOneWidget,
-            reason: 'ReaderHibikiPage must mount after openMedia.');
+        expect(find.byType(ReaderFushiPage), findsOneWidget,
+            reason: 'ReaderFushiPage must mount after openMedia.');
 
         const Key webViewKey = ValueKey<String>('fushi_webview');
         bool webViewPresent = false;
@@ -144,7 +144,7 @@ void main() {
         }
         expect(contentReady, isTrue, reason: 'Reader content ready within 60s');
 
-        final eval = ReaderHibikiPage.debugEvaluateJavascript;
+        final eval = ReaderFushiPage.debugEvaluateJavascript;
         expect(eval, isNotNull,
             reason: 'Reader debug JS hook must be set (debug/profile build).');
 
@@ -221,11 +221,11 @@ void main() {
         // Goal 1: reclaim blank. show_top_progress_bar ON->OFF -> top-inset
         // back to 0, first line top back to ~0.
         // ───────────────────────────────────────────────────────────────
-        ReaderHibikiSource.instance.toggleShowTopProgressBar();
+        ReaderFushiSource.instance.toggleShowTopProgressBar();
         await _pumpForPref(tester);
-        expect(ReaderHibikiSource.instance.showTopProgressBar, isFalse,
+        expect(ReaderFushiSource.instance.showTopProgressBar, isFalse,
             reason: 'progress-off pref must land false');
-        ReaderHibikiSource.onChromeReanchorLive?.call();
+        ReaderFushiSource.onChromeReanchorLive?.call();
 
         final double offTopInset = await settleCssVar(
           readChromeTopInset,
@@ -247,10 +247,10 @@ void main() {
         // squeeze, 18px), then switch to floating -> top-inset back to 0, first
         // line top back to ~0 (strip overlays body, not pushed down).
         // ───────────────────────────────────────────────────────────────
-        ReaderHibikiSource.instance.toggleShowTopProgressBar(); // restore ON
+        ReaderFushiSource.instance.toggleShowTopProgressBar(); // restore ON
         await _pumpForPref(tester);
-        expect(ReaderHibikiSource.instance.showTopProgressBar, isTrue);
-        ReaderHibikiSource.onChromeReanchorLive?.call();
+        expect(ReaderFushiSource.instance.showTopProgressBar, isTrue);
+        ReaderFushiSource.onChromeReanchorLive?.call();
         final double reTopInset = await settleCssVar(
           readChromeTopInset,
           (v) => v >= kTopReservePx - 1.0,
@@ -259,11 +259,11 @@ void main() {
             reason: 'precondition: restoring progress ON re-adds 18px. '
                 'got=$reTopInset');
 
-        ReaderHibikiSource.instance.toggleTopProgressFloating(); // to floating
+        ReaderFushiSource.instance.toggleTopProgressFloating(); // to floating
         await _pumpForPref(tester);
-        expect(ReaderHibikiSource.instance.topProgressFloating, isTrue,
+        expect(ReaderFushiSource.instance.topProgressFloating, isTrue,
             reason: 'top floating pref must land true');
-        ReaderHibikiSource.onChromeReanchorLive?.call();
+        ReaderFushiSource.onChromeReanchorLive?.call();
 
         final double floatTopInset = await settleCssVar(
           readChromeTopInset,
@@ -288,11 +288,11 @@ void main() {
         // onTapEmpty reveals the bar -> bottom-inset unchanged (floating bottom
         // bar does not take text space, visible body height does not shrink).
         // ───────────────────────────────────────────────────────────────
-        ReaderHibikiSource.instance.toggleTapEmptyToHideChrome();
+        ReaderFushiSource.instance.toggleTapEmptyToHideChrome();
         await _pumpForPref(tester);
-        expect(ReaderHibikiSource.instance.tapEmptyToHideChrome, isTrue,
+        expect(ReaderFushiSource.instance.tapEmptyToHideChrome, isTrue,
             reason: 'bottom floating pref must land true');
-        ReaderHibikiSource.onChromeReanchorLive?.call();
+        ReaderFushiSource.onChromeReanchorLive?.call();
 
         final double floatBottomInset = await settleCssVar(
           readChromeBottomInset,
@@ -378,7 +378,7 @@ void main() {
         // _armChromeAutoHide uses a real Timer (not tester fake clock), so
         // advance wall-clock time then pump for the setState to rebuild.
         // ───────────────────────────────────────────────────────────────
-        final int autoHideMs = ReaderHibikiSource.instance.autoHideChromeMillis;
+        final int autoHideMs = ReaderFushiSource.instance.autoHideChromeMillis;
         debugPrint('[CHROME975] auto-hide millis=$autoHideMs');
         // Witness the same surface that just revealed. The top progress strip
         // (floating) is the _showChrome-independent witness; fall back to the
@@ -409,8 +409,8 @@ void main() {
                 'auto-hide.');
 
         // ── Restore prefs + exit ────────────────────────────────────────
-        ReaderHibikiSource.instance.toggleTopProgressFloating();
-        ReaderHibikiSource.instance.toggleTapEmptyToHideChrome();
+        ReaderFushiSource.instance.toggleTopProgressFloating();
+        ReaderFushiSource.instance.toggleTapEmptyToHideChrome();
         await _pumpForPref(tester);
 
         final NavigatorState nav =
@@ -516,13 +516,13 @@ Future<void> _activateBook(WidgetTester tester, String bookKey) async {
   final WidgetRef ref = appElement;
 
   final MediaItem? item =
-      await ReaderHibikiSource.instance.mediaItemForBookKey(bookKey);
+      await ReaderFushiSource.instance.mediaItemForBookKey(bookKey);
   expect(item, isNotNull,
       reason: 'Seeded book must resolve to a MediaItem (key=$bookKey)');
 
   unawaited(appModel.openMedia(
     ref: ref,
-    mediaSource: ReaderHibikiSource.instance,
+    mediaSource: ReaderFushiSource.instance,
     item: item!,
   ));
   for (int i = 0; i < 8; i++) {

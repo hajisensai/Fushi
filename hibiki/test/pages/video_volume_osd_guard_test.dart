@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// Source guard for mpv/asbplayer-style volume and brightness feedback.
 ///
@@ -17,7 +17,7 @@ void main() {
   late String overlaySrc;
   setUpAll(() {
     expect(overlays.existsSync(), isTrue);
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
     overlaySrc = overlays.readAsStringSync();
   });
 
@@ -225,7 +225,7 @@ void main() {
 
     // The shared controls inner builder is the single owner that mounts both
     // overlays with no fullscreen gating (window + fullscreen both render them).
-    // TODO-590 batch16: _buildVideoControlsInner moved to video_hibiki/layout.part
+    // TODO-590 batch16: _buildVideoControlsInner moved to video_fushi/layout.part
     // (appended last in the corpus) while _buildLevelHudOverlay lives in the
     // earlier volume_osd.part — so the old `_buildLevelHudOverlay {` end anchor now
     // sorts *before* the start and yields -1. Use the next method in layout.part

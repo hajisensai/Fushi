@@ -13,7 +13,7 @@ import 'package:material_color_utilities/material_color_utilities.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
-import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 Color _readableOnColor(Color color) {
   return ThemeData.estimateBrightnessForColor(color) == Brightness.dark
@@ -53,7 +53,7 @@ ColorScheme buildSystemThemeColorScheme({
   );
 }
 
-/// [buildHibikiColorScheme] 的纯函数 memo：`ColorScheme.fromSeed` 走 HCT 色调板
+/// [buildFushiColorScheme] 的纯函数 memo：`ColorScheme.fromSeed` 走 HCT 色调板
 /// 生成、单次非平凡；阅读设置抽屉的主题选择器每次 rebuild 会对每张色卡各调一次
 /// （系统 + 预设 7 + 自定义 N），拖字号 slider 时每个 tick 全表 setState 就是
 /// 每 tick 一场 HCT 风暴（BUG-969）。入参→结果是纯映射，按参数键缓存即可整体
@@ -71,7 +71,7 @@ final Map<_FushiSchemeKey, ColorScheme> _hibikiSchemeCache =
     <_FushiSchemeKey, ColorScheme>{};
 const int _hibikiSchemeCacheLimit = 64;
 
-ColorScheme buildHibikiColorScheme({
+ColorScheme buildFushiColorScheme({
   required Color seedColor,
   required Brightness brightness,
   DynamicSchemeVariant variant = DynamicSchemeVariant.tonalSpot,
@@ -947,7 +947,7 @@ class ThemeNotifier extends ChangeNotifier {
       return legacy();
     }
 
-    return buildHibikiColorScheme(
+    return buildFushiColorScheme(
       seedColor: _seedColor,
       brightness: brightness,
       variant: _variant,
@@ -1190,7 +1190,7 @@ class ThemeNotifier extends ChangeNotifier {
   /// TODO-977: 音频高亮（原 sasayaki 跟随高亮）颜色，**全局、与阅读器主题解耦**。
   ///
   /// 旧设计把该色绑死在 custom-theme 主题条目里（`customThemeSasayakiColor`），
-  /// 非自定义主题时阅读器音频高亮恒用主题 primary（reader_hibiki_page.dart:300），
+  /// 非自定义主题时阅读器音频高亮恒用主题 primary（reader_fushi_page.dart:300），
   /// 用户无处改色——「一直用主色」。本偏好是单值全局色，置非空时由
   /// `resolveReaderThemeColors` 覆盖所有主题分支的 sasayaki 角色色；为 null 时
   /// 沿用旧的随主题取色行为（向后兼容，老用户不受影响）。
@@ -1385,7 +1385,7 @@ class ThemeNotifier extends ChangeNotifier {
   // applyCustomTheme 只落 seed + 角色色 + `app_theme_key='custom-theme'`，**不再写**
   // `custom_theme_dark`、**不再写** `brightness_mode`。切到自定义主题保留用户当前的
   // 全局明暗（浅色态切自定义=浅色，深色态=深色），明暗变体由
-  // buildHibikiColorScheme(seed, brightness) 在 light/dark 各自从 seed 派生。
+  // buildFushiColorScheme(seed, brightness) 在 light/dark 各自从 seed 派生。
   // 想改明暗用全局的 brightness 选择器，自带/自定义一视同仁。
   //
   // 向后兼容（Never break userspace）：老用户历史一直双写过 `brightness_mode`，故其

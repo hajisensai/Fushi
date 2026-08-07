@@ -3,14 +3,14 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 import '../pages/reader_history_source_corpus.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 import '../sync/sync_settings_schema_source_corpus.dart';
 import '../helpers/scan_scale.dart';
 
 void main() {
   const Map<String, List<String>> requiredComponentTokens =
       <String, List<String>>{
-    'lib/src/utils/components/hibiki_design_tokens.dart': <String>[
+    'lib/src/utils/components/fushi_design_tokens.dart': <String>[
       'class FushiDesignTokens',
       'class FushiRadii',
       'class FushiSurfaceColors',
@@ -19,7 +19,7 @@ void main() {
       'final FushiDensityTokens density',
       'static FushiDesignTokens of',
     ],
-    'lib/src/utils/components/hibiki_material_components.dart': <String>[
+    'lib/src/utils/components/fushi_material_components.dart': <String>[
       'class FushiCard',
       'class FushiListItem',
       'enum FushiListDensity',
@@ -72,10 +72,10 @@ void main() {
     'lib/src/settings/settings_home_page.dart': <String>[
       'FushiPageHeader',
     ],
-    'lib/src/utils/components/hibiki_list_tile.dart': <String>[
+    'lib/src/utils/components/fushi_list_tile.dart': <String>[
       'FushiListItem',
     ],
-    'lib/src/utils/components/hibiki_text_selection_controls.dart': <String>[
+    'lib/src/utils/components/fushi_text_selection_controls.dart': <String>[
       'FushiCard',
       'FushiOverflowMenu',
     ],
@@ -136,7 +136,7 @@ void main() {
       'AdaptiveSettingsSection',
       'FushiFilePickerRow',
     ],
-    'lib/src/pages/implementations/reader_hibiki_history_page.dart': <String>[
+    'lib/src/pages/implementations/reader_fushi_history_page.dart': <String>[
       'FushiPageHeader',
       'FushiCard',
       'FushiTagChip',
@@ -250,7 +250,7 @@ void main() {
       'FushiTagChip',
       'FushiDesignTokens',
     ],
-    'lib/src/utils/misc/hibiki_toast.dart': <String>[
+    'lib/src/utils/misc/fushi_toast.dart': <String>[
       'FushiDesignTokens',
     ],
     // Merged from app_model_popup_dictionary_md3_static_test.dart: the desktop
@@ -311,7 +311,7 @@ void main() {
       final File file = File(entry.key);
       expect(file.existsSync(), isTrue, reason: '${entry.key} must exist');
       final String source =
-          entry.key.endsWith('reader_hibiki_history_page.dart')
+          entry.key.endsWith('reader_fushi_history_page.dart')
               ? readReaderHistorySource()
               : entry.key.endsWith('sync_settings_schema.dart')
                   ? readSyncSettingsSchemaSource()
@@ -328,7 +328,7 @@ void main() {
       final File file = File(entry.key);
       expect(file.existsSync(), isTrue, reason: '${entry.key} must exist');
       final String source =
-          entry.key.endsWith('reader_hibiki_history_page.dart')
+          entry.key.endsWith('reader_fushi_history_page.dart')
               ? readReaderHistorySource()
               : entry.key.endsWith('sync_settings_schema.dart')
                   ? readSyncSettingsSchemaSource()
@@ -347,12 +347,12 @@ void main() {
         'Card(',
         'surfaceContainerLowest',
       ],
-      'lib/src/utils/components/hibiki_list_tile.dart': <String>[
+      'lib/src/utils/components/fushi_list_tile.dart': <String>[
         'ListTile(',
         'dense: true',
         'fontSize:',
       ],
-      'lib/src/utils/components/hibiki_text_selection_controls.dart': <String>[
+      'lib/src/utils/components/fushi_text_selection_controls.dart': <String>[
         'toolbarBuilder: (context, child) => Card(',
         'PopupMenuButton',
       ],
@@ -430,7 +430,7 @@ void main() {
         'fontSize: 13',
         'fontSize: 11',
       ],
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart': <String>[
+      'lib/src/pages/implementations/reader_fushi_history_page.dart': <String>[
         'Material(',
         'surfaceContainerLow',
         'BorderRadius.circular(12)',
@@ -583,7 +583,7 @@ void main() {
         '=> Dialog(',
         'SafeArea(',
       ],
-      'lib/src/utils/misc/hibiki_toast.dart': <String>[
+      'lib/src/utils/misc/fushi_toast.dart': <String>[
         'BorderRadius.circular(24)',
         'fontSize: 14',
       ],
@@ -626,13 +626,13 @@ void main() {
 
     for (final MapEntry<String, List<String>> entry in bannedByFile.entries) {
       final String fileSource =
-          entry.key.endsWith('reader_hibiki_history_page.dart')
+          entry.key.endsWith('reader_fushi_history_page.dart')
               ? readReaderHistorySource()
               : entry.key.endsWith('sync_settings_schema.dart')
                   ? readSyncSettingsSchemaSource()
                   : File(entry.key).readAsStringSync();
       final String source =
-          entry.key.endsWith('reader_hibiki_history_page.dart')
+          entry.key.endsWith('reader_fushi_history_page.dart')
               ? _withoutTransparentInkHosts(
                   _functionSource(
                     fileSource,
@@ -675,9 +675,9 @@ void main() {
       'PopupMenuButton(',
     ];
     const Map<String, String> allowedFiles = <String, String>{
-      'lib/src/utils/components/hibiki_design_tokens.dart':
+      'lib/src/utils/components/fushi_design_tokens.dart':
           'Token source owns app radii and semantic surface roles.',
-      'lib/src/utils/components/hibiki_material_components.dart':
+      'lib/src/utils/components/fushi_material_components.dart':
           'Shared MD3 component implementation may map tokens to framework widgets.',
       'lib/src/utils/components/settings_shared.dart':
           'Shared adaptive settings primitives own compact settings controls.',
@@ -718,7 +718,7 @@ void main() {
               'dictionary_popup_webview.',
       'lib/src/pages/implementations/history_reader_page.dart':
           'History preview uses content-derived surface and text metrics.',
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart':
+      'lib/src/pages/implementations/reader_fushi_history_page.dart':
           'Book-cover overlays and drag affordances are reader-shelf content.',
       // CoverBadge 是压在封面图上的角标胶囊（字幕/云端/播放列表等），把书架/
       // 视频卡上至少三份手抄的同款胶囊收口成一个组件。胶囊几何（radius 10）
@@ -796,24 +796,24 @@ void main() {
               'data layer with no Flutter import, same reviewed exception '
               'class as mokuro_payload / manga_ocr_folder_job / '
               'google_lens_ocr_service.',
-      'lib/src/pages/implementations/reader_hibiki_page.dart':
+      'lib/src/pages/implementations/reader_fushi_page.dart':
           'Hoshi reader content and reader chrome have separate migration rules.',
-      // TODO-589 batch1: reader_hibiki_page.dart 拆成主壳 + reader_hibiki/*.part.dart；
+      // TODO-589 batch1: reader_fushi_page.dart 拆成主壳 + reader_fushi/*.part.dart；
       // 同一份「reader content / 悬浮歌词数据」豁免随搬运延伸到 part 文件（零行为变化）。
-      'lib/src/pages/implementations/reader_hibiki/lyrics.part.dart':
+      'lib/src/pages/implementations/reader_fushi/lyrics.part.dart':
           'Lyrics-mode HTML font size and FloatingLyricStyle font size are '
               'user content passed to LyricsModeHtml / the platform overlay '
               'channel, not page chrome — same rationale as the parent '
-              'reader_hibiki_page.dart allowlist (extracted verbatim).',
+              'reader_fushi_page.dart allowlist (extracted verbatim).',
       // TODO-589 batch7: reader chrome 域(底栏/设置 sheet/进度条/主题/收藏句/图片查看)
-      // 拆到 reader_hibiki/chrome.part.dart；同一份「reader content / 阅读器 chrome」
+      // 拆到 reader_fushi/chrome.part.dart；同一份「reader content / 阅读器 chrome」
       // 豁免随搬运延伸到该 part（零行为变化，逐字符搬运自父文件）。
-      'lib/src/pages/implementations/reader_hibiki/chrome.part.dart':
+      'lib/src/pages/implementations/reader_fushi/chrome.part.dart':
           'Top reading-progress text size (_infoFontSize) and the Windows '
               'image context-menu font size are reader content / chrome, '
-              'same rationale as the parent reader_hibiki_page.dart allowlist '
+              'same rationale as the parent reader_fushi_page.dart allowlist '
               '(extracted verbatim).',
-      // BUG-1425：reader_hibiki/webview.part.dart 的豁免已删除。它的理由写的是
+      // BUG-1425：reader_fushi/webview.part.dart 的豁免已删除。它的理由写的是
       // 「shellScript 收到 fontSize: s.fontSize.round()」，但该文件如今一个禁用
       // token 都不剩（`shellScript` 这个符号在整个 lib/src 里也已不存在），豁免早与
       // 代码脱节。下面的「no dead allowlist entries」断言会让同类过期豁免立刻红。
@@ -891,7 +891,7 @@ void main() {
               'timed video content typography, the same reviewed exception '
               'class as the video_danmaku_overlay entry it was extracted from '
               'and the user-configurable subtitle caption font size in '
-              'video_hibiki/layout.part.dart. Routing it through a shared MD3 '
+              'video_fushi/layout.part.dart. Routing it through a shared MD3 '
               'type role would break the contract the file documents '
               '(inherit: false, so the host DefaultTextStyle cannot desync '
               'measurement from render) and reintroduce the measure-18px / '
@@ -946,63 +946,63 @@ void main() {
               'parity with the in-player sheet (TODO-286); it is caption content, '
               'not page chrome — same rationale as video_quick_settings_sheet. '
               'TODO-586：随 video destination 拆到 settings_schema_video.dart。',
-      'lib/src/pages/implementations/video_hibiki_page.dart':
+      'lib/src/pages/implementations/video_fushi_page.dart':
           'Video player page chrome (track-switch menu, media controls) '
               'follows media-page rules like reader/audiobook.',
-      // TODO-590: video_hibiki_page.dart 拆成主壳 + video_hibiki/*.part.dart；
+      // TODO-590: video_fushi_page.dart 拆成主壳 + video_fushi/*.part.dart；
       // 同一份 video player page chrome 豁免随搬运延伸到含 chrome token 的 part 文件
       // （零行为变化，逐字符抽出）。
-      'lib/src/pages/implementations/video_hibiki/episode.part.dart':
+      'lib/src/pages/implementations/video_fushi/episode.part.dart':
           'Episode push-aside sidebar + auto-advance countdown overlay '
-              'chrome extracted verbatim from video_hibiki_page.dart '
+              'chrome extracted verbatim from video_fushi_page.dart '
               '(TODO-590 batch4); same media-page rationale as the parent '
               'video player page allowlist entry.',
-      'lib/src/pages/implementations/video_hibiki/subtitle.part.dart':
+      'lib/src/pages/implementations/video_fushi/subtitle.part.dart':
           'Subtitle source menu / import / loading-overlay / subtitle jump-list '
-              'side panel chrome extracted verbatim from video_hibiki_page.dart '
+              'side panel chrome extracted verbatim from video_fushi_page.dart '
               '(TODO-590 batch5); the fontSize:/ListTile chrome (jump panel + '
               'source side panel rows, caption font scales with appUiScale) is '
               'the same reviewed media-page exception class as the parent '
               'video player page allowlist entry.',
-      'lib/src/pages/implementations/video_hibiki/flicker_notice.part.dart':
+      'lib/src/pages/implementations/video_fushi/flicker_notice.part.dart':
           'Black-flicker warning banner chrome (errorContainer '
               'BorderRadius.circular(12) frame + fontSize title/body '
               'labels) added by TODO-1119/BUG-545 as an errorContainer-'
               'semantic notice bar over the video controls; same reviewed '
               'media-page exception class as the parent video player page '
               'allowlist entry.',
-      'lib/src/pages/implementations/video_hibiki/controls_popover.part.dart':
+      'lib/src/pages/implementations/video_fushi/controls_popover.part.dart':
           'Volume / playback-speed compact control popover chrome '
               '(BorderRadius/surfaceContainerHighest frame, fontSize speed '
               'label, VideoVolumePopoverCard) extracted verbatim from '
-              'video_hibiki_page.dart (TODO-590 batch6); the popover frame + '
+              'video_fushi_page.dart (TODO-590 batch6); the popover frame + '
               'speed-label typography scales with appUiScale and is the same '
               'reviewed media-page exception class as the parent video player '
               'page allowlist entry.',
-      'lib/src/pages/implementations/video_hibiki/controls_theme.part.dart':
+      'lib/src/pages/implementations/video_fushi/controls_theme.part.dart':
           'Mobile/desktop media-controls theme + horizontal-seek absolute-time '
               'HUD indicator chrome (BorderRadius.circular frame, fontSize '
               'target/delta time labels in _buildSeekIndicator) extracted from '
-              'video_hibiki_page.dart (TODO-590) and extended by TODO-916; the '
+              'video_fushi_page.dart (TODO-590) and extended by TODO-916; the '
               'seek HUD typography scales with appUiScale and is the same '
               'reviewed media-page exception class as the parent video player '
               'page allowlist entry and the sibling control popover/OSD entries.',
-      'lib/src/pages/implementations/video_hibiki/volume_osd.part.dart':
+      'lib/src/pages/implementations/video_fushi/volume_osd.part.dart':
           'Volume + OSD / level-HUD / brightness overlay chrome '
               '(left-top OSD notification card with BorderRadius/fontSize, '
               'volume & brightness level HUD indicators) extracted verbatim '
-              'from video_hibiki_page.dart (TODO-590 batch7); these are '
+              'from video_fushi_page.dart (TODO-590 batch7); these are '
               'video-subsystem transient overlays whose size/color/typography '
               'scale with appUiScale, the same reviewed media-page exception '
               'class as the parent video player page allowlist entry and the '
               'sibling video_volume_overlays.dart HUD entry.',
-      'lib/src/pages/implementations/video_hibiki/audio_track.part.dart':
+      'lib/src/pages/implementations/video_fushi/audio_track.part.dart':
           'Audio-track side panel chrome (track-list ListTile rows) extracted '
-              'verbatim from video_hibiki_page.dart (TODO-590 batch9); the '
+              'verbatim from video_fushi_page.dart (TODO-590 batch9); the '
               'ListTile track rows are the same reviewed media-page exception '
               'class as the parent video player page allowlist entry and the '
               'sibling subtitle/chapter side panels.',
-      'lib/src/pages/implementations/video_hibiki/quality.part.dart':
+      'lib/src/pages/implementations/video_fushi/quality.part.dart':
           'HLS quality side panel chrome (variant-list ListTile rows, TODO-1158) '
               'is the same reviewed media-page exception class as the sibling '
               'audio_track.part.dart / subtitle side panels — a translucent video '
@@ -1013,9 +1013,9 @@ void main() {
               'as the sibling audio_track.part.dart / quality.part.dart video '
               'side panels — a translucent video side-panel list of searched '
               'anime episodes to bind danmaku, not ordinary page chrome.',
-      'lib/src/pages/implementations/video_hibiki/layout.part.dart':
+      'lib/src/pages/implementations/video_fushi/layout.part.dart':
           'Subtitle caption render tree (fontSize: _subtitleStyle.fontSize) '
-              'extracted verbatim from video_hibiki_page.dart (TODO-590 '
+              'extracted verbatim from video_fushi_page.dart (TODO-590 '
               'batch16); the user-configurable subtitle caption font size is '
               'content, not page chrome — the same reviewed media-page '
               'exception class as the parent video player page allowlist entry '
@@ -1295,20 +1295,20 @@ void main() {
       'lib/src/pages/implementations/popup_settings_injection.dart': <String>{
         'surfaceContainerHigh'
       },
-      'lib/src/pages/implementations/reader_hibiki/chrome.part.dart': <String>{
+      'lib/src/pages/implementations/reader_fushi/chrome.part.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
         'surfaceContainerHigh',
         'surfaceContainerHighest',
         'fontSize:'
       },
-      'lib/src/pages/implementations/reader_hibiki/lyrics.part.dart': <String>{
+      'lib/src/pages/implementations/reader_fushi/lyrics.part.dart': <String>{
         'fontSize:'
       },
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart': <String>{
+      'lib/src/pages/implementations/reader_fushi_history_page.dart': <String>{
         'surfaceContainerHighest'
       },
-      'lib/src/pages/implementations/reader_hibiki_page.dart': <String>{
+      'lib/src/pages/implementations/reader_fushi_page.dart': <String>{
         'BorderRadius.circular('
       },
       'lib/src/pages/implementations/reader_history/card_widgets.part.dart':
@@ -1333,37 +1333,37 @@ void main() {
         'BorderRadius.circular(',
         'surfaceContainerHighest'
       },
-      'lib/src/pages/implementations/video_hibiki/audio_track.part.dart':
+      'lib/src/pages/implementations/video_fushi/audio_track.part.dart':
           <String>{'ListTile('},
-      'lib/src/pages/implementations/video_hibiki/controls_popover.part.dart':
+      'lib/src/pages/implementations/video_fushi/controls_popover.part.dart':
           <String>{'surfaceContainerHighest', 'fontSize:'},
-      'lib/src/pages/implementations/video_hibiki/controls_theme.part.dart':
+      'lib/src/pages/implementations/video_fushi/controls_theme.part.dart':
           <String>{'BorderRadius.circular(', 'fontSize:'},
-      'lib/src/pages/implementations/video_hibiki/episode.part.dart': <String>{
+      'lib/src/pages/implementations/video_fushi/episode.part.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
         'fontSize:'
       },
-      'lib/src/pages/implementations/video_hibiki/flicker_notice.part.dart':
+      'lib/src/pages/implementations/video_fushi/flicker_notice.part.dart':
           <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
         'fontSize:'
       },
-      'lib/src/pages/implementations/video_hibiki/layout.part.dart': <String>{
+      'lib/src/pages/implementations/video_fushi/layout.part.dart': <String>{
         'fontSize:'
       },
-      'lib/src/pages/implementations/video_hibiki/quality.part.dart': <String>{
+      'lib/src/pages/implementations/video_fushi/quality.part.dart': <String>{
         'ListTile('
       },
-      'lib/src/pages/implementations/video_hibiki/subtitle.part.dart': <String>{
+      'lib/src/pages/implementations/video_fushi/subtitle.part.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
         'ListTile('
       },
-      'lib/src/pages/implementations/video_hibiki/volume_osd.part.dart':
+      'lib/src/pages/implementations/video_fushi/volume_osd.part.dart':
           <String>{'BorderRadius.circular(', 'fontSize:'},
-      'lib/src/pages/implementations/video_hibiki_page.dart': <String>{
+      'lib/src/pages/implementations/video_fushi_page.dart': <String>{
         'fontSize:',
         'ListTile('
       },
@@ -1383,14 +1383,14 @@ void main() {
       'lib/src/utils/components/cover_badge.dart': <String>{
         'BorderRadius.circular('
       },
-      'lib/src/utils/components/hibiki_design_tokens.dart': <String>{
+      'lib/src/utils/components/fushi_design_tokens.dart': <String>{
         'BorderRadius.circular(',
         'surfaceContainerLow',
         'surfaceContainerHigh',
         'surfaceContainerHighest',
         'fontSize:'
       },
-      'lib/src/utils/components/hibiki_material_components.dart': <String>{
+      'lib/src/utils/components/fushi_material_components.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
         'surfaceContainerHigh',
@@ -1638,7 +1638,7 @@ void main() {
   });
 
   test('reader history hover overlays use design tokens', () {
-    // BookDragTarget 已从 reader_hibiki_history_page.dart 提取为独立文件
+    // BookDragTarget 已从 reader_fushi_history_page.dart 提取为独立文件
     // book_drag_target.dart（history 页只剩调用点），守卫跟随到新文件。
     final String source = File(
       'lib/src/pages/implementations/book_drag_target.dart',
@@ -1679,7 +1679,7 @@ void main() {
 
   test('shared icon button uses MD3 design tokens', () {
     final String source = File(
-      'lib/src/utils/components/hibiki_icon_button.dart',
+      'lib/src/utils/components/fushi_icon_button.dart',
     ).readAsStringSync();
     final String buildSource = _sectionSource(
       source,
@@ -2348,11 +2348,11 @@ void main() {
       'lib/src/pages/implementations/shortcut_settings/'
           'binding_edit_dialog.part.dart',
       'lib/src/sync/sync_compare_dialog.dart',
-      'lib/src/utils/components/hibiki_text_selection_controls.dart',
+      'lib/src/utils/components/fushi_text_selection_controls.dart',
     ];
 
     final String sharedMenu = File(
-      'lib/src/utils/components/hibiki_material_components.dart',
+      'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
     expect(sharedMenu, contains('class FushiPopupMenuItem<T>'));
     expect(sharedMenu, contains('minHeight: 48'));
@@ -2360,7 +2360,7 @@ void main() {
     expect(sharedMenu, contains('PopupMenuPosition.under'));
 
     final String dropdown =
-        File('lib/src/utils/components/hibiki_dropdown.dart')
+        File('lib/src/utils/components/fushi_dropdown.dart')
             .readAsStringSync();
     expect(dropdown, contains('MenuAnchor('));
     expect(dropdown, contains('tokens.radii.menuRadius'));
@@ -2394,7 +2394,7 @@ void main() {
 
   test('transient routes use shared MD3 motion tokens', () {
     final File motionFile =
-        File('lib/src/utils/components/hibiki_motion_tokens.dart');
+        File('lib/src/utils/components/fushi_motion_tokens.dart');
     expect(motionFile.existsSync(), isTrue);
 
     final String motion = motionFile.readAsStringSync();
@@ -2410,7 +2410,7 @@ void main() {
     final String sheet =
         File('lib/src/utils/adaptive/adaptive_widgets.dart').readAsStringSync();
     final String menu = File(
-      'lib/src/utils/components/hibiki_material_components.dart',
+      'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
     final String home =
         File('lib/src/pages/implementations/home_page.dart').readAsStringSync();
@@ -2429,7 +2429,7 @@ void main() {
 
   test('shared MD3 primitives animate state changes', () {
     final String motion =
-        File('lib/src/utils/components/hibiki_motion_tokens.dart')
+        File('lib/src/utils/components/fushi_motion_tokens.dart')
             .readAsStringSync();
     expect(motion, contains('hibikiMd3StateDuration'));
     expect(motion, contains('hibikiMd3StateCurve'));
@@ -2437,7 +2437,7 @@ void main() {
     expect(motion, contains('Easing.standard'));
 
     final String components = File(
-      'lib/src/utils/components/hibiki_material_components.dart',
+      'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
     for (final (String start, String end) in <(String, String)>[
       ('class FushiCard', 'enum FushiListDensity'),
@@ -2464,7 +2464,7 @@ void main() {
 
   test('selected list items use primary foreground and a subtle outline', () {
     final String components = File(
-      'lib/src/utils/components/hibiki_material_components.dart',
+      'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
     final String listItem = _sectionSource(
       components,
@@ -2598,7 +2598,7 @@ void main() {
     for (final String path in <String>[
       'lib/src/pages/base_tab_page.dart',
       'lib/src/media/media_type.dart',
-      'lib/src/media/sources/reader_hibiki_source.dart',
+      'lib/src/media/sources/reader_fushi_source.dart',
     ]) {
       final String source = File(path).readAsStringSync();
       expect(source, isNot(contains('material_floating_search_bar')),
@@ -3271,7 +3271,7 @@ void main() {
 
   test('reader popup audio controls use shared MD3 micro spacing tokens', () {
     final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
+      'lib/src/pages/implementations/reader_fushi_page.dart',
     ).readAsStringSync();
     final String popupAudio = _functionSource(
       source,

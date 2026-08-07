@@ -15,7 +15,7 @@ void main() {
     for (final File file in dartFiles) {
       final String normalized = file.path.replaceAll('\\', '/');
       final String source = file.readAsStringSync();
-      if (normalized == 'lib/src/focus/hibiki_focus_scroll.dart') {
+      if (normalized == 'lib/src/focus/fushi_focus_scroll.dart') {
         expect(source, contains('Scrollable.ensureVisible'));
         continue;
       }

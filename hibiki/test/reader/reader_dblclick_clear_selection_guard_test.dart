@@ -19,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 一起防回归。
 void main() {
   final File webview = File(
-    'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+    'lib/src/pages/implementations/reader_fushi/webview.part.dart',
   );
 
   test('webview.part.dart exists', () {

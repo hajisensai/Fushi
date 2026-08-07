@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
@@ -52,7 +52,7 @@ void main() {
                   context: context,
                   appModel: _TestAppModel(),
                   ref: ref,
-                  readerSource: ReaderHibikiSource.instance,
+                  readerSource: ReaderFushiSource.instance,
                   refresh: () {},
                 );
                 return const SizedBox.shrink();
@@ -163,7 +163,7 @@ void main() {
                 context: context,
                 appModel: _TestAppModel(),
                 ref: ref,
-                readerSource: ReaderHibikiSource.instance,
+                readerSource: ReaderFushiSource.instance,
                 refresh: () {},
               );
               return Scaffold(

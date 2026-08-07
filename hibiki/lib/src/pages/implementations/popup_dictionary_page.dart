@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -371,11 +371,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   Widget _buildSwipeChrome(Widget child) {
     if (_popup.entries.length > 1 ||
-        !ReaderHibikiSource.instance.enableSwipeToClose) {
+        !ReaderFushiSource.instance.enableSwipeToClose) {
       return child;
     }
     return SwipeDismissWrapper(
-      sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
       onDismiss: _close,
       child: child,
     );
@@ -457,7 +457,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       isDark: isDark,
       showBorder: false,
       swipeDismissible: !isBase,
-      enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
+      enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,
       overrideFillColor: isBase
           ? Colors.transparent
           : (appModel.overrideDictionaryColor ?? tokens.surfaces.page),

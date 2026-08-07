@@ -13,7 +13,7 @@ import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
 import 'helpers/library_fixture.dart' show showBooksTab;
@@ -92,8 +92,8 @@ void main() {
       // 1.3%（vh 单位），margin px = innerHeight·0.013 在整数视口高下几乎必为
       // 小数（仅 innerHeight 为 1000 整数倍时退化），pitch 随之变成小数。
       // 原值在 finally 中恢复，不污染全局偏好。
-      origMarginTop = ReaderHibikiSource.instance.readerMarginTop;
-      await ReaderHibikiSource.instance.setReaderMarginTop(1.3);
+      origMarginTop = ReaderFushiSource.instance.readerMarginTop;
+      await ReaderFushiSource.instance.setReaderMarginTop(1.3);
 
       // Do not require the exact shelf card to be mounted before opening it.
       // A populated shelf is lazily built and may sort a just-imported fixture
@@ -109,17 +109,17 @@ void main() {
       // _activateBook opens the reader via appModel.openMedia (the deterministic
       // off-screen path). Before waiting on the WebView, assert the reader page
       // itself mounted, so a silent open failure shows up here as a missing
-      // ReaderHibikiPage rather than being misread downstream as a WebView
+      // ReaderFushiPage rather than being misread downstream as a WebView
       // mount timeout.
       for (int i = 0;
-          i < 40 && find.byType(ReaderHibikiPage).evaluate().isEmpty;
+          i < 40 && find.byType(ReaderFushiPage).evaluate().isEmpty;
           i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }
-      expect(find.byType(ReaderHibikiPage), findsOneWidget,
-          reason: 'ReaderHibikiPage must mount after openMedia — if this '
+      expect(find.byType(ReaderFushiPage), findsOneWidget,
+          reason: 'ReaderFushiPage must mount after openMedia — if this '
               'fails the reader never opened (not a WebView timeout).');
-      debugPrint('[M1] ReaderHibikiPage mounted');
+      debugPrint('[M1] ReaderFushiPage mounted');
 
       // === Wait for WebView ===
       const Key webViewKey = ValueKey<String>('fushi_webview');
@@ -149,7 +149,7 @@ void main() {
       debugPrint('[M1] Reader content ready');
 
       // === Acquire JS evaluator hook ===
-      final eval = ReaderHibikiPage.debugEvaluateJavascript;
+      final eval = ReaderFushiPage.debugEvaluateJavascript;
       expect(eval, isNotNull,
           reason: 'Reader debug JS hook must be set when WebView is created. '
               'Run in a debug/profile build (asserts enabled).');
@@ -383,7 +383,7 @@ void main() {
       debugPrint('[M1] === PAGINATION TESTS PASSED ===');
     } finally {
       if (origMarginTop != null) {
-        await ReaderHibikiSource.instance.setReaderMarginTop(origMarginTop);
+        await ReaderFushiSource.instance.setReaderMarginTop(origMarginTop);
       }
       FlutterError.onError = oldHandler;
     }
@@ -397,7 +397,7 @@ void main() {
 /// cards in one, so a focus-driven Enter is a no-op and the reader never opens
 /// (TODO-783). Bypass the UI focus tree entirely: resolve the book's
 /// [MediaItem] from its key and drive [AppModel.openMedia] directly — the same
-/// call the real card tap makes — which pushes [ReaderHibikiPage] onto the
+/// call the real card tap makes — which pushes [ReaderFushiPage] onto the
 /// navigator regardless of focus-tree state.
 Future<void> _activateBook(
   WidgetTester tester,
@@ -416,7 +416,7 @@ Future<void> _activateBook(
   final WidgetRef ref = appElement;
 
   final MediaItem? item =
-      await ReaderHibikiSource.instance.mediaItemForBookKey(bookKey);
+      await ReaderFushiSource.instance.mediaItemForBookKey(bookKey);
   expect(item, isNotNull,
       reason: 'Seeded book must resolve to a MediaItem (key=$bookKey)');
 
@@ -427,7 +427,7 @@ Future<void> _activateBook(
   // _initBook run; the route-lifetime future is intentionally unawaited.
   unawaited(appModel.openMedia(
     ref: ref,
-    mediaSource: ReaderHibikiSource.instance,
+    mediaSource: ReaderFushiSource.instance,
     item: item,
   ));
   for (int i = 0; i < 8; i++) {

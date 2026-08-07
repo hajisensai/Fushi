@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 import '../helpers/source_guard.dart';
 
 /// BUG-931：视频播放器里的两个 UX 契约，用源码扫描守卫锁死，防未来重构悄悄回退。
@@ -35,7 +35,7 @@ void main() {
   group('BUG-931 视频收藏 OSD / 无进度条守卫', () {
     test('收藏快捷键不再唤起控制条进度条（_toggleFavoriteCurrentCue 无 _pokeControlsVisible）',
         () {
-      final String src = readVideoHibikiSource();
+      final String src = readVideoFushiSource();
       final String body =
           _methodBody(src, 'Future<void> _toggleFavoriteCurrentCue() async {');
       expect(
@@ -53,7 +53,7 @@ void main() {
     });
 
     test('视频页所有短提示走左上角 OSD，全域无 FushiToast.show（底部 toast）', () {
-      final String src = readVideoHibikiSource();
+      final String src = readVideoFushiSource();
       expect(
         src.contains('FushiToast.show'),
         isFalse,

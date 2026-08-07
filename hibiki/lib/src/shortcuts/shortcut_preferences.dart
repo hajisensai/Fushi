@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
 const String _prefKey = 'shortcut_bindings_json';
 
 Future<void> loadShortcutRegistry(
   FushiShortcutRegistry registry,
-  ReaderHibikiSource source,
+  ReaderFushiSource source,
   TargetPlatform platform,
 ) async {
   final String? json = source.getPreference<String?>(
@@ -25,7 +25,7 @@ Future<void> loadShortcutRegistry(
 
 Future<void> saveShortcutRegistry(
   FushiShortcutRegistry registry,
-  ReaderHibikiSource source,
+  ReaderFushiSource source,
 ) async {
   await source.setPreference<String>(
     key: _prefKey,

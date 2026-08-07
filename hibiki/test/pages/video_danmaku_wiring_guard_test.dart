@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/utils.dart';
 import '../helpers/video_quick_settings_harness.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 // 阶段 B：面板消费 schema 投影，widget 用例经共享 harness（内存 DB AppModel +
 // 可变状态 host）构造；行为断言（回调写穿）保持不变。
@@ -180,7 +180,7 @@ void main() {
   test(
       'source guard: danmaku layer is local-only, non-blocking and under subtitles',
       () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
     final String overlay =
         File('lib/src/media/video/video_danmaku_overlay.dart')
             .readAsStringSync();
@@ -211,7 +211,7 @@ void main() {
   });
 
   test('source guard: danmaku settings reload or clear the current video', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     expect(page, contains('Future<void> _setVideoDanmakuEnabled'));
     expect(page, contains('Future<void> _setVideoDanmakuOnlineEnabled'));
@@ -235,7 +235,7 @@ void main() {
   });
 
   test('source guard: danmaku style/filter/manual-match wired end to end', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
     final String overlay =
         File('lib/src/media/video/video_danmaku_overlay.dart')
             .readAsStringSync();
@@ -266,7 +266,7 @@ void main() {
   test(
       'BUG-1057 source guard: manual bind gates on fetch status before '
       'persisting the episode', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
     final int start = page.indexOf('Future<void> _bindDanmakuEpisode');
     expect(start, greaterThanOrEqualTo(0));
     final int end = page.indexOf('\n  /// 手动匹配侧栏内容', start);
@@ -293,7 +293,7 @@ void main() {
   test(
       'BUG-1057 source guard: cached-episode load only re-matches on a genuine '
       'empty hit', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
     final int start = page.indexOf('Future<void> _loadDanmakuForVideo');
     expect(start, greaterThanOrEqualTo(0));
     final int end = page.indexOf('void _clearDanmakuForCurrentVideo', start);

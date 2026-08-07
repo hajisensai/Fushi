@@ -14,7 +14,7 @@ import '../helpers/test_platform_services.dart';
 /// reuses it for every lookup (via [DictionaryPageMixin.pushNestedPopup] with
 /// `reuseWarmSlot: true`), so the popup WebView is never cold-loaded per lookup.
 /// These tests exercise the shared mixin reuse contract directly (the real
-/// VideoHibikiPage needs media_kit, which is unavailable in the test harness).
+/// VideoFushiPage needs media_kit, which is unavailable in the test harness).
 class MixinTestAppModel extends AppModel {
   MixinTestAppModel({this.results = const <DictionaryEntry>[]})
       : super(testPlatformServices());
@@ -80,7 +80,7 @@ class MixinHostPageState extends ConsumerState<MixinHostPage>
   @override
   ThemeData get mixinTheme => Theme.of(context);
 
-  /// Mirror VideoHibikiPage._seedWarmPopup.
+  /// Mirror VideoFushiPage._seedWarmPopup.
   void seedWarmSlot() {
     setState(() => controller.seedWarmSlot());
   }

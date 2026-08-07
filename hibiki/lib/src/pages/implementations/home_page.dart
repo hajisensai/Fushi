@@ -30,7 +30,7 @@ import 'package:fushi/src/media/audiobook/now_listening_mini_bar.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart'
+import 'package:fushi/src/focus/fushi_focus_controller.dart'
     show FushiFocusController, FushiFocusRoot;
 import 'package:fushi/src/shortcuts/input_binding.dart'
     show GamepadButton, ModifierKey;
@@ -189,7 +189,7 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
 /// pushed 路由——阅读器、设置详情、对话框——继承 MacosWindowScope 用原生 ToolBar。
 /// 侧栏项由 [activeTabs] 动态生成（与底栏/rail 的 [homeActiveTabs] 同一真值，video /
 /// games 开关变化时自动增删），选中身份走 [homeShellTabNotifier]。
-Sidebar buildHibikiMacosSidebar({required List<HomeTab> activeTabs}) {
+Sidebar buildFushiMacosSidebar({required List<HomeTab> activeTabs}) {
   return Sidebar(
     minWidth: 220,
     builder: (BuildContext context, ScrollController scrollController) {
@@ -829,7 +829,7 @@ class _HomePageState extends BasePageState<HomePage>
       tabs.map(_navItemFor).toList();
 
   /// macOS-native shell (Approach B): the MacosWindow + Sidebar live at the app
-  /// ROOT (main.dart builder, via [buildHibikiMacosSidebar]) so pushed routes
+  /// ROOT (main.dart builder, via [buildFushiMacosSidebar]) so pushed routes
   /// also inherit a MacosWindowScope. Here HomePage only renders the visible
   /// tab's body in a [MacosScaffold] with a native ToolBar titled by the current
   /// destination. Settings tab reuses the same full-screen two-pane content the

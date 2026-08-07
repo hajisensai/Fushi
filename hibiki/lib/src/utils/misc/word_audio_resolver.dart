@@ -5,7 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
-import 'package:fushi/src/sync/hibiki_remote_lookup_client.dart'
+import 'package:fushi/src/sync/fushi_remote_lookup_client.dart'
     show RemoteLookupUnreachableError;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart'

@@ -20,44 +20,44 @@ void main() {
 
     setUpAll(() {
       audiobookPart = libFile(
-        'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+        'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
       );
     });
 
     test('emptySelection branch records an ErrorLogService entry', () {
-      expect(audiobookPart, contains('ReaderHibiki.exportClip.emptySelection'),
+      expect(audiobookPart, contains('ReaderFushi.exportClip.emptySelection'),
           reason: '空选区/纯外字分支此前只 debugPrint，必须补 ErrorLogService '
               '(TODO-1005/BUG-472)。');
     });
 
     test('noAudio branch records an ErrorLogService entry', () {
-      expect(audiobookPart, contains('ReaderHibiki.exportClip.noAudio'),
+      expect(audiobookPart, contains('ReaderFushi.exportClip.noAudio'),
           reason: '无音频分支此前只 debugPrint，必须补 ErrorLogService。');
     });
 
     test('unsupportedRange branch keeps its ErrorLogService entry', () {
       expect(
-          audiobookPart, contains('ReaderHibiki.exportClip.unsupportedRange'),
+          audiobookPart, contains('ReaderFushi.exportClip.unsupportedRange'),
           reason: '跨章/跨文件/零长区间分支必须保留 ErrorLogService（明确用户文案）。');
     });
 
     test('M2 audio-clip-null branch records an ErrorLogService entry', () {
-      expect(audiobookPart, contains('ReaderHibiki.exportClip.audioClipFailed'),
+      expect(audiobookPart, contains('ReaderFushi.exportClip.audioClipFailed'),
           reason: 'M2 裁音频返回 null 此前只弹 toast、零日志——这正是用户看到的'
               '「点了没反应、日志空白」。必须补 ErrorLogService (TODO-1005/BUG-472)。');
     });
 
     test('M3 overlay/text-render null branches record ErrorLogService entries',
         () {
-      expect(audiobookPart, contains('ReaderHibiki.exportClip.noOverlay'),
+      expect(audiobookPart, contains('ReaderFushi.exportClip.noOverlay'),
           reason: 'M3 无 Overlay 早返回必须记 ErrorLogService。');
       expect(
-          audiobookPart, contains('ReaderHibiki.exportClip.textRenderFailed'),
+          audiobookPart, contains('ReaderFushi.exportClip.textRenderFailed'),
           reason: 'M3 文本图渲染失败早返回必须记 ErrorLogService。');
     });
 
     test('M4 synth-failure branch records an ErrorLogService entry', () {
-      expect(audiobookPart, contains('ReaderHibiki.exportClip.synthFailed'),
+      expect(audiobookPart, contains('ReaderFushi.exportClip.synthFailed'),
           reason: 'M4 合成失败必须在管线层记一条 ErrorLogService 摘要。');
     });
 
@@ -65,9 +65,9 @@ void main() {
         () {
       // BUG-472(a) follow-up：dispatcher 的 exportable 分支还有两处只 toast 的早
       // 返回（inputFile == null 兜底 / 区间超长 refuse），此前漏补日志。
-      expect(audiobookPart, contains('ReaderHibiki.exportClip.inputFileNull'),
+      expect(audiobookPart, contains('ReaderFushi.exportClip.inputFileNull'),
           reason: 'inputFile == null 兜底必须记 ErrorLogService。');
-      expect(audiobookPart, contains('ReaderHibiki.exportClip.rangeTooLong'),
+      expect(audiobookPart, contains('ReaderFushi.exportClip.rangeTooLong'),
           reason: '区间超长 refuse 必须记 ErrorLogService。');
     });
 

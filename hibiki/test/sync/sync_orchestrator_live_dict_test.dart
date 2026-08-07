@@ -6,7 +6,7 @@
 ///   仍会调用 ensureNamespace(__dictionaries__)。
 ///
 /// 词典名使用真实 CJK 名（「明镜」），覆盖 server URI 解码路径。
-/// server 端双重解码 bug 已在 hibiki_sync_server.dart 修复（去掉
+/// server 端双重解码 bug 已在 fushi_sync_server.dart 修复（去掉
 /// _handleLibraryDictionaries 里多余的 Uri.decodeComponent 调用）。
 library;
 
@@ -17,7 +17,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/app_model_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -62,10 +62,10 @@ Future<InterconnectSyncBackend> _buildClientBackend({
 }) async {
   final FushiDatabase db = _memDb();
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<FushiClientUrl>[
+  await repo.setFushiClientUrls(<FushiClientUrl>[
     FushiClientUrl(url: base, enabled: true),
   ]);
-  await repo.setHibikiClientToken(token);
+  await repo.setFushiClientToken(token);
   final InterconnectSyncBackend backend =
       InterconnectSyncBackend.withProbe((String u, String t) async => true);
   await backend.restoreAuth(repo);

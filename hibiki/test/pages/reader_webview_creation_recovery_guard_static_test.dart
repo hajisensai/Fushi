@@ -63,9 +63,9 @@ void main() {
 
   test('reader onReceivedError 命中 sentinel 走 toast + pop 恢复', () {
     final String webviewPart =
-        read('lib/src/pages/implementations/reader_hibiki/webview.part.dart');
+        read('lib/src/pages/implementations/reader_fushi/webview.part.dart');
     final String readerPage =
-        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+        read('lib/src/pages/implementations/reader_fushi_page.dart');
 
     // reader 端 sentinel 常量与字面量。
     expect(

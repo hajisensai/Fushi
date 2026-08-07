@@ -3,7 +3,7 @@
 // 用户诉求：主窗最小化/被遮挡着听书时点悬浮字幕上的词，结果必须弹在 app 外
 // （与 Ctrl+Alt+D 全局热键同款的 NOACTIVATE 覆盖窗、跟着光标），而不是弹进
 // 看不见的主窗（in-app 弹窗 / 切主窗词典 tab）。两条桌面 Dart 路由（reader 在场
-// 的 reader_hibiki/lyrics.part.dart 与 app 级 AppModel 默认 handler）共用本适配
+// 的 reader_fushi/lyrics.part.dart 与 app 级 AppModel 默认 handler）共用本适配
 // 器，分词共用同一把 [floatingLyricSearchTerm]，消除两处分词漂移。
 //
 // 平台边界：Android 的悬浮歌词 native overlay 自带 PopupDictActivity，点词根本
@@ -18,7 +18,7 @@ import 'package:fushi/src/models/app_model.dart';
 /// 桌面悬浮字幕条点词时，从整句文本与点击字符索引解析出真正要查的词
 /// （TODO-376）。优先用语言分词器 Language.wordFromIndex 切出的 [word]；切不出
 /// （空白 / 标点 / 引擎未就绪）则回退整句 [text]。两者皆空返回空串，调用方据此
-/// no-op。顶层纯函数便于单测（原居 reader_hibiki_page.dart，TODO-872 随点词路由
+/// no-op。顶层纯函数便于单测（原居 reader_fushi_page.dart，TODO-872 随点词路由
 /// 收拢至此）。
 String floatingLyricSearchTerm({
   required String text,

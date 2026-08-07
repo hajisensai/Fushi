@@ -98,7 +98,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 85 个页面实现，主要包括：
 - `home_page.dart` -- 首页外壳；`home_dashboard_page.dart` -- 首页 dashboard；同级 tab 页 `home_reader_page.dart` / `home_video_page.dart` / `home_game_page.dart` / `home_dictionary_page.dart`。
-- `reader_hibiki_page.dart` (~3200 行主体 + `reader_hibiki/` 下 8 个域 part 文件) -- 核心阅读器页面：
+- `reader_fushi_page.dart` (~3200 行主体 + `reader_fushi/` 下 8 个域 part 文件) -- 核心阅读器页面：
   - **WebView 架构**: `InAppWebView` + `fushi.local` 虚拟域名拦截（`shouldInterceptRequest`），EPUB HTML/CSS/字体/图片全部经过安全校验后在拦截器中提供。
   - **分页系统**: JS 端 `fushiReader` 分页引擎 + Dart 端 `ReaderPaginationScripts`，支持分页/连续两种模式。
   - **文本选择**: JS `onTextSelected` → Dart `ReaderSelectionData` → 词典查询 → 浮层展示。
@@ -109,16 +109,16 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
   - **阅读统计**: `ReadingTimeTracker` + 字符计数，session 级别统计。
   - **Profile 系统**: 按 bookUid + mediaType 自动解析并切换 Profile。
   - **自定义字体**: 白名单校验 + 文件头魔数验证（TrueType/OpenType/WOFF/WOFF2/TTC）。
-- `reader_hibiki_history_page.dart` -- 阅读器与书架。
+- `reader_fushi_history_page.dart` -- 阅读器与书架。
 - `dictionary_*` 系列 -- 词典相关页面。
-- 设置：schema 化体系在 `lib/src/settings/`（`settings_home_page.dart` 主从入口 + `settings_schema_*.dart` 各分类 schema）；`hibiki_settings_page.dart` 是应用内入口壳，`anki_settings_page.dart` / `shortcut_settings_page.dart` / `miscellaneous_settings_page.dart` 走 `SettingsDestination.body` 逃生口（旧 `display_settings_page.dart` / `switch_settings_page.dart` 已删除）。
+- 设置：schema 化体系在 `lib/src/settings/`（`settings_home_page.dart` 主从入口 + `settings_schema_*.dart` 各分类 schema）；`fushi_settings_page.dart` 是应用内入口壳，`anki_settings_page.dart` / `shortcut_settings_page.dart` / `miscellaneous_settings_page.dart` 走 `SettingsDestination.body` 逃生口（旧 `display_settings_page.dart` / `switch_settings_page.dart` 已删除）。
 - `profile_management_page.dart` -- Profile 管理。
 - `collections_page.dart` / `tag_*` 系列 -- 集合与标签。
 - `reading_statistics_page.dart` -- 阅读统计。
 
-### 9. 视频播放 (`video_hibiki_page.dart` + `lib/src/media/video/`)
+### 9. 视频播放 (`video_fushi_page.dart` + `lib/src/media/video/`)
 
-- `lib/src/pages/implementations/video_hibiki_page.dart`（6358 行主体）+ `video_hibiki/` 下 18 个 part（共 6966 行，最大 `subtitle.part.dart` 1375 行）-- 视频播放页：字幕查词/制卡、倍速、沉浸模式。
+- `lib/src/pages/implementations/video_fushi_page.dart`（6358 行主体）+ `video_fushi/` 下 18 个 part（共 6966 行，最大 `subtitle.part.dart` 1375 行）-- 视频播放页：字幕查词/制卡、倍速、沉浸模式。
 - `home_video_page.dart`（3080 行）-- 视频首页（书架/合集/继续观看）。
 - `lib/src/media/video/` -- 视频导入与管理（含 `video_import_dialog.dart`）。
 - 播放栈 media_kit（`third_party/` vendored，Windows 构建需下载 mpv/ANGLE，见 `CLAUDE.local.md` 代理说明）。
@@ -128,7 +128,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - `interconnect_*.dart` -- 局域网互联（设备配对、远程书库/视频、远程查词）。
 - `aggregate_sync_service.dart` / `backup_merge_engine.dart` -- 聚合同步与备份合并引擎。
 - `cloud_remote_book_client.dart` -- 云端远程书籍客户端；另有 Google Drive / WebDAV / Dropbox / FTP 等 backend。
-- DB 侧配对设备表 `FushiPairedPeers`（定义在 `hibiki_core`）。
+- DB 侧配对设备表 `FushiPairedPeers`（定义在 `fushi_core`）。
 
 ### 11. torrent 下载 (`lib/src/media/torrent/`)
 
@@ -150,16 +150,16 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 ## 关键依赖与配置
 
 - **状态管理**：`flutter_riverpod: ^2.3.6`
-- **数据库**：`drift: ">=2.33.0 <2.34.0"` + `sqlite3_flutter_libs`（通过 `hibiki_core`）
+- **数据库**：`drift: ">=2.33.0 <2.34.0"` + `sqlite3_flutter_libs`（通过 `fushi_core`）
 - **WebView**：`flutter_inappwebview: ^6.1.5`
-- **音频**：`just_audio: ^0.9.31`（通过 `hibiki_audio`）
+- **音频**：`just_audio: ^0.9.31`（通过 `fushi_audio`）
 - **国际化**：`slang: ^3.13.0` / `slang_flutter`，17 种语言
-- **内部包**：`hibiki_core` / `hibiki_dictionary` / `hibiki_anki` / `hibiki_audio` / `hibiki_platform`
+- **内部包**：`fushi_core` / `fushi_dictionary` / `fushi_anki` / `fushi_audio` / `fushi_platform`
 - **dependency_overrides**：`flutter_inappwebview_windows` / `flutter_inappwebview_android` / `network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `ffmpeg_kit_flutter` / `media_kit_*` 等 vendored 本地包（见 `hibiki/pubspec.yaml` 与 `docs/agent/build.md`）；`file_picker` 用 pub.dev 版（**不是** fork）
 
 ## 数据模型
 
-数据模型全部定义在 `hibiki_core`（53 张 Drift 表，schema v59），本模块仅消费。互联配对设备表 `FushiPairedPeers` 也在其中。
+数据模型全部定义在 `fushi_core`（53 张 Drift 表，schema v59），本模块仅消费。互联配对设备表 `FushiPairedPeers` 也在其中。
 
 ## 测试与质量
 

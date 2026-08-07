@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// 开书/跨章性能守卫（阅读器渐进重建 phase1）：`_prepareSentenceAudioCuesJson` 不得
 /// 每次章节加载都重查全书 cue。

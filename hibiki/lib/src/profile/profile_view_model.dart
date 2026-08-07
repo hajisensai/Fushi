@@ -8,7 +8,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 
@@ -330,7 +330,7 @@ final profileViewModelProvider =
     // reload the dictionary cache + native engine to pick up the new enable
     // list / order / language visibility for the switched-to profile.
     await appModel.reloadDictionariesFromDb();
-    await ReaderHibikiSource.readerSettings?.refreshFromDb();
+    await ReaderFushiSource.readerSettings?.refreshFromDb();
   }
 
   return ProfileViewModel(repo, onApplied, profileDraftCoordinator);

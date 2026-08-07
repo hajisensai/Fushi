@@ -17,7 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('buildBookImportButton passes no explicit size (BUG-735)', () {
     final String source =
-        File('lib/src/media/sources/reader_hibiki_source.dart')
+        File('lib/src/media/sources/reader_fushi_source.dart')
             .readAsStringSync();
 
     // Isolate the buildBookImportButton method body up to the closing of the
@@ -25,7 +25,7 @@ void main() {
     final int start = source.indexOf('Widget buildBookImportButton(');
     expect(start, greaterThanOrEqualTo(0),
         reason:
-            'buildBookImportButton must exist in reader_hibiki_source.dart.');
+            'buildBookImportButton must exist in reader_fushi_source.dart.');
     final int end = source.indexOf('\n  }', start);
     expect(end, greaterThan(start),
         reason: 'Could not find the end of buildBookImportButton.');

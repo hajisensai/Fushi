@@ -2,7 +2,7 @@
 ///
 /// ## 守什么
 ///
-/// `format` 是阅读器路由的**唯一真相源**：`reader_hibiki_source.dart` 按它三态分流，
+/// `format` 是阅读器路由的**唯一真相源**：`reader_fushi_source.dart` 按它三态分流，
 /// 未知值会**全部 fallback 到 EPUB 阅读器**——不是静默隐身，是用错阅读器打开、在解析
 /// 路径出错。列上没有 CHECK 约束（为什么没加见 `BookFormat` 的文档：SQLite 加 CHECK
 /// 要重建核心书表，风险大于收益），所以纪律必须由**类型 + 本守卫**兜住：
@@ -163,7 +163,7 @@ void main() {
     expect(BookFormat.pdf.dbValue, 'pdf');
     expect(BookFormat.manga.dbValue, 'manga');
     expect(BookFormat.values.length, 3,
-        reason: '新增格式要同步 reader_hibiki_source 的路由与 isPagedImageBook 判据');
+        reason: '新增格式要同步 reader_fushi_source 的路由与 isPagedImageBook 判据');
   });
 
   test('按页翻的书判据覆盖 pdf 与 manga（章计数下游全靠它排除）', () {

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// BUG-1067 接线守卫：从收藏夹的视频句子跳转进播放器时，必须解析并透传该视频所属
 /// 的主 playlist 合集 id（`playlistCollectionId`）。否则视频初始化时系列级音轨/字幕
-/// 调轴记忆分支（video_hibiki_page 的 `widget.playlistCollectionId != null` 门，schema
+/// 调轴记忆分支（video_fushi_page 的 `widget.playlistCollectionId != null` 门，schema
 /// v52）被整段跳过，退回读本集 per-book 默认值（音轨 null / 调轴 0），表现为「从收藏
 /// 跳转后音轨与调好的字幕轴又被重置」。
 ///
@@ -30,7 +30,7 @@ void main() {
     );
   });
 
-  test('_openVideoSentence 把解析出的 playlistCollectionId 透传进 VideoHibikiPage', () {
+  test('_openVideoSentence 把解析出的 playlistCollectionId 透传进 VideoFushiPage', () {
     // 定位到 _openVideoSentence 里的 neutralized 构造调用段。
     final int openIdx = src.indexOf('Future<void> _openVideoSentence(');
     expect(openIdx, greaterThanOrEqualTo(0), reason: '_openVideoSentence 必须存在');
@@ -46,7 +46,7 @@ void main() {
     expect(
       openBody,
       contains('playlistCollectionId: playlistCollectionId'),
-      reason: '必须把解析出的合集 id 透传进 VideoHibikiPage.neutralized，否则记忆分支被跳过',
+      reason: '必须把解析出的合集 id 透传进 VideoFushiPage.neutralized，否则记忆分支被跳过',
     );
   });
 }

@@ -6,7 +6,7 @@ import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
-import 'package:fushi/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// TODO-1050b (mouse binding small-glyph rendering) + TODO-1060② (prefill from a
 /// visual empty slot) behavioural coverage on the public ShortcutBindingEditDialog.

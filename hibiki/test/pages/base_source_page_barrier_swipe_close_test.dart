@@ -188,13 +188,13 @@ void main() {
   setUpAll(installFakeInAppWebViewPlatform);
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.en);
-    await ReaderHibikiSource.instance.setDismissSwipeSensitivity(0.6);
+    await ReaderFushiSource.instance.setDismissSwipeSensitivity(0.6);
   });
 
   testWidgets(
       'switch ON: horizontal drag past threshold on the barrier closes ONE '
       'layer (keeps parent)', (WidgetTester tester) async {
-    await ReaderHibikiSource.instance.setEnableSwipeToClose(true);
+    await ReaderFushiSource.instance.setEnableSwipeToClose(true);
     final appModel = BarrierSwipeAppModel();
     final hostKey = GlobalKey<BarrierSwipeHostPageState>();
     await tester.pumpWidget(
@@ -219,7 +219,7 @@ void main() {
   testWidgets(
       'switch ON: leftward (negative) drag past threshold also closes one '
       'layer (bidirectional like mobile)', (WidgetTester tester) async {
-    await ReaderHibikiSource.instance.setEnableSwipeToClose(true);
+    await ReaderFushiSource.instance.setEnableSwipeToClose(true);
     final appModel = BarrierSwipeAppModel();
     final hostKey = GlobalKey<BarrierSwipeHostPageState>();
     await tester.pumpWidget(
@@ -240,7 +240,7 @@ void main() {
 
   testWidgets('switch ON: drag below threshold does NOT close any layer',
       (WidgetTester tester) async {
-    await ReaderHibikiSource.instance.setEnableSwipeToClose(true);
+    await ReaderFushiSource.instance.setEnableSwipeToClose(true);
     final appModel = BarrierSwipeAppModel();
     final hostKey = GlobalKey<BarrierSwipeHostPageState>();
     await tester.pumpWidget(
@@ -262,7 +262,7 @@ void main() {
   testWidgets(
       'switch OFF: horizontal drag past threshold does NOT close (no swipe), '
       'tap clears the whole stack (TODO-834)', (WidgetTester tester) async {
-    await ReaderHibikiSource.instance.setEnableSwipeToClose(false);
+    await ReaderFushiSource.instance.setEnableSwipeToClose(false);
     final appModel = BarrierSwipeAppModel();
     final hostKey = GlobalKey<BarrierSwipeHostPageState>();
     await tester.pumpWidget(
@@ -295,7 +295,7 @@ void main() {
       'switch ON: a tap (not a drag) clears the whole stack (TODO-834; '
       'tap/drag arena does not swallow each other)',
       (WidgetTester tester) async {
-    await ReaderHibikiSource.instance.setEnableSwipeToClose(true);
+    await ReaderFushiSource.instance.setEnableSwipeToClose(true);
     final appModel = BarrierSwipeAppModel();
     final hostKey = GlobalKey<BarrierSwipeHostPageState>();
     await tester.pumpWidget(
@@ -323,7 +323,7 @@ void main() {
       'switch ON: pointer hover on the barrier still reaches '
       'onDismissBarrierHover (drag handlers do not swallow hover)',
       (WidgetTester tester) async {
-    await ReaderHibikiSource.instance.setEnableSwipeToClose(true);
+    await ReaderFushiSource.instance.setEnableSwipeToClose(true);
     final appModel = BarrierSwipeAppModel();
     final hostKey = GlobalKey<BarrierSwipeHostPageState>();
     await tester.pumpWidget(
@@ -379,7 +379,7 @@ void main() {
   testWidgets(
       'TODO-880 switch ON: horizontal drag on the TOP popup BODY closes only '
       'the top layer (keeps parent)', (WidgetTester tester) async {
-    await ReaderHibikiSource.instance.setEnableSwipeToClose(true);
+    await ReaderFushiSource.instance.setEnableSwipeToClose(true);
     final appModel = BarrierSwipeAppModel();
     final hostKey = GlobalKey<BarrierSwipeHostPageState>();
     await tester.pumpWidget(

@@ -6,7 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/epub/epub_parser.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show charCountsFromChaptersJson, countChapterChars, parseBookOnly;
 
 /// TODO-131: 守卫开书路径的「DB 计数复用」与「解析/计数拆分」契约。

@@ -50,7 +50,7 @@ void main() {
     // DictionaryPopupLayer handles child layer chrome separately.
     expect(src, contains('_buildSwipeChrome'));
     expect(src, isNot(contains('child: card')));
-    expect(src, contains('ReaderHibikiSource.instance.enableSwipeToClose'));
+    expect(src, contains('ReaderFushiSource.instance.enableSwipeToClose'));
     expect(src, contains('() => _popAt(index)'));
   });
 }

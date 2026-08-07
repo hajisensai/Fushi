@@ -1,7 +1,7 @@
 // 守卫：`native/fushi_torrent` 的 C ABI 头文件与手写镜像的 Dart FFI 绑定必须
 // 逐符号、逐参数对齐。
 //
-// 为什么需要它：`packages/fushi_torrent/lib/src/ffi/hibiki_torrent_bindings.dart`
+// 为什么需要它：`packages/fushi_torrent/lib/src/ffi/fushi_torrent_bindings.dart`
 // 是**手写镜像**（`ffigen.yaml` 明确允许：本机没有 LLVM/libclang 时不跑 ffigen）。
 // 手写就会漂，而 FFI 的漂移**不会**给你一个干净的报错：
 // - 少写一个符号 → 用户运行时 `lookup` 抛（只有装了新 DLL 的用户才撞上）；
@@ -92,7 +92,7 @@ void main() {
   final File headerFile =
       File('../native/fushi_torrent/hibiki_torrent_include/hibiki_torrent.h');
   final File bindingsFile = File(
-      '../packages/fushi_torrent/lib/src/ffi/hibiki_torrent_bindings.dart');
+      '../packages/fushi_torrent/lib/src/ffi/fushi_torrent_bindings.dart');
 
   test('C ABI 头文件与手写 FFI 绑定：符号集合必须完全一致', () {
     expect(headerFile.existsSync(), isTrue,
@@ -111,7 +111,7 @@ void main() {
     final Set<String> missing = exported.difference(lookedUp);
     expect(missing, isEmpty,
         reason: '这些 C 导出没有对应的 Dart 绑定：$missing\n'
-            '新增 HT_EXPORT 之后必须同步 hibiki_torrent_bindings.dart '
+            '新增 HT_EXPORT 之后必须同步 fushi_torrent_bindings.dart '
             '（本机有 LLVM 就 `dart run ffigen --config ffigen.yaml`，'
             '没有就照既有风格手写镜像）。漏了的话，只有装上新 DLL 的用户会在运行时'
             '撞到 lookup 抛异常。');

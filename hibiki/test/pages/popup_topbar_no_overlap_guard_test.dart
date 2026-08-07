@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:fushi/src/utils/components/hibiki_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 
 import '../widgets/widget_test_helpers.dart';
 
@@ -112,7 +112,7 @@ void main() {
     // 源码守卫：reader 音频行必须内部 FittedBox(scaleDown) + mainAxisSize.min，窄宽等比
     // 缩小而非裁切/溢出。弹窗跑真 WebView 无法 headless 全量挂，故锁源码契约。
     final String src = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
+      'lib/src/pages/implementations/reader_fushi_page.dart',
     ).readAsStringSync();
     final int start = src.indexOf('Widget? buildPopupAudioControls()');
     expect(start, isNonNegative,

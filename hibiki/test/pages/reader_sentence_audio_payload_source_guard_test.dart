@@ -9,7 +9,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// BUG-300 source guard：有声书文字跟随高亮在阅读器里不显示，根因是 reader 的
 /// `_prepareSentenceAudioCuesJson` 手写内联循环构造给 JS 的 sasayaki cue payload 时

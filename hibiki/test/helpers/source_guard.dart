@@ -569,7 +569,7 @@ List<List<int>> _tripleQuotedSpans(String src) {
 /// 先按 Dart 词法掩码，再对每个三引号串的内容按 **JS 词法**掩一遍。
 ///
 /// 为什么需要它：本仓有一批 Dart 文件把大段 JS/CSS 放在三引号串里
-/// （`reader_hibiki/webview.part.dart`、`reader_visual_novel_scripts.dart`、
+/// （`reader_fushi/webview.part.dart`、`reader_visual_novel_scripts.dart`、
 /// `reader_content_styles.dart`）。[maskComments] **按设计保留串内容**（这样
 /// `'https://x'` 里的 `//` 才不会被当注释砍掉），代价是串内的 JS/CSS 注释原样留着，
 /// 扫这些语料的守卫会被一条 JS 注释骗绿。
@@ -866,8 +866,8 @@ int _balancedBraceEnd(String structural, int open) {
 /// 红、禁止型断言假绿），不是报错。
 ///
 /// 实例（BUG-1426 之后的 reader 合并语料）：`'wheel', function(e)` 逐字相同的两处 ——
-/// spread 独立文档自带那份在主壳 `reader_hibiki_page.dart:566`，正文引擎那份在
-/// `reader_hibiki/webview.part.dart:1408`，而语料是「主壳在前、part 按路径排序在后」，
+/// spread 独立文档自带那份在主壳 `reader_fushi_page.dart:566`，正文引擎那份在
+/// `reader_fushi/webview.part.dart:1408`，而语料是「主壳在前、part 按路径排序在后」，
 /// 第一处必然是 spread 那份。
 ///
 /// **不做「取第 N 处匹配」**：序号是脆的 —— 语料拼接顺序、part 文件改名、再多一份同
@@ -1220,7 +1220,7 @@ String switchCaseBody(
 ///
 /// BUG-1426 之后语料里有**两份** wheel 监听：spread 独立文档自带的那份
 /// （`buildSpreadPageHtml`，直送 `onWheelPaginate`，没有连续/分页轴向门控）在
-/// 主壳里、位置更靠前；正文引擎那份在 `reader_hibiki/webview.part.dart`。
+/// 主壳里、位置更靠前；正文引擎那份在 `reader_fushi/webview.part.dart`。
 /// 裸 `indexOf("addEventListener('wheel'")` 会锚到前者，让所有钉正文轴向门控的
 /// 守卫在「实现完全正确」时转红（本函数就是被这条实测打出来的）。
 ///

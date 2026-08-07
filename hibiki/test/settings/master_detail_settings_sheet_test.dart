@@ -40,9 +40,9 @@ void main() {
     expect(shell, contains('LayoutBuilder('));
     // 确定性几何判据：宽且高都 >= 共享阈值常量才进宽窗（与书籍/视频原判据等价）。
     expect(shell,
-        contains('constraints.maxWidth >= kHibikiSettingsWideThreshold'));
+        contains('constraints.maxWidth >= kFushiSettingsWideThreshold'));
     expect(shell,
-        contains('constraints.maxHeight >= kHibikiSettingsWideMinHeight'));
+        contains('constraints.maxHeight >= kFushiSettingsWideMinHeight'));
     // 宽/窄分发：宽窗交给调用方 wideBuilder（两边发散），窄窗在外壳包
     // SingleChildScrollView + AnimatedSize（200ms / topCenter）。
     expect(shell, contains('return wideBuilder(context, constraints);'));

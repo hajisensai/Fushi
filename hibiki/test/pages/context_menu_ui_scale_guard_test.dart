@@ -216,7 +216,7 @@ void main() {
 
     test('漫画阅读器右键菜单：锚点经 Overlay 换算，边界用 overlay.size', () {
       final String source =
-          read('lib/src/media/manga/reader/manga_hibiki_page.dart');
+          read('lib/src/media/manga/reader/manga_fushi_page.dart');
       final String fn = slice(
         source,
         'Future<void> _showReaderContextMenu(String payloadJson)',
@@ -243,9 +243,9 @@ void main() {
 
     test('阅读器菜单 / 选区操作条：不得手动乘界面缩放', () {
       final String chrome =
-          read('lib/src/pages/implementations/reader_hibiki/chrome.part.dart');
+          read('lib/src/pages/implementations/reader_fushi/chrome.part.dart');
       final String shell =
-          read('lib/src/pages/implementations/reader_hibiki_page.dart');
+          read('lib/src/pages/implementations/reader_fushi_page.dart');
 
       // 注释里可以解释这段历史，但代码里不能再出现该 getter 与乘法。
       expect(
@@ -262,7 +262,7 @@ void main() {
 
     test('日志面板选区工具条：锚点经 Overlay 换算', () {
       final String source =
-          read('lib/src/utils/components/hibiki_material_components.dart');
+          read('lib/src/utils/components/fushi_material_components.dart');
       final String fn = slice(
         source,
         'Widget _buildContextMenu(',

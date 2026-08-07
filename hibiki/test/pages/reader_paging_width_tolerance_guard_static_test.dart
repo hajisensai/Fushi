@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 3. readerViewportNeedsRepaginate 宽、高用同一 1px 容差表达式（对称，消除特例）。
 void main() {
   final String src = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
+    'lib/src/pages/implementations/reader_fushi_page.dart',
   ).readAsStringSync();
 
   String syncPageSizeBody() {

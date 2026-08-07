@@ -117,7 +117,7 @@ Future<void> _dragOn(
 void main() {
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.en);
-    await ReaderHibikiSource.instance.setDismissSwipeSensitivity(0.6);
+    await ReaderFushiSource.instance.setDismissSwipeSensitivity(0.6);
   });
 
   testWidgets(

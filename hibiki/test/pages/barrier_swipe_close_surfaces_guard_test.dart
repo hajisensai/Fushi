@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// TODO-1052 (parent TODO-716 phase 2): the desktop "horizontal swipe over the
 /// dismiss barrier closes one popup layer" gesture — first shipped on
@@ -13,7 +13,7 @@ import 'video_hibiki_page_source_corpus.dart';
 /// (texthooker was a third such surface; its page was removed when galgame
 /// captions were unified into the lookup popup, so it is no longer guarded.)
 ///   - each barrier gates its onHorizontalDrag* handlers on
-///     `ReaderHibikiSource.instance.enableSwipeToClose` (switch OFF => only tap,
+///     `ReaderFushiSource.instance.enableSwipeToClose` (switch OFF => only tap,
 ///     old desktop behaviour, never-break);
 ///   - each routes the drag through the shared [BarrierSwipeDismissTracker]
 ///     (single source of truth, no threshold magic-number drift), passing the
@@ -45,13 +45,13 @@ void _assertBarrierSwipeWiring(String label, String src) {
   expect(src.contains('onHorizontalDragEnd:'), isTrue,
       reason: '$label barrier must handle onHorizontalDragEnd');
   expect(
-    src.contains('ReaderHibikiSource.instance.enableSwipeToClose'),
+    src.contains('ReaderFushiSource.instance.enableSwipeToClose'),
     isTrue,
     reason: '$label must gate barrier drag on enableSwipeToClose (switch OFF '
         '=> tap-only, never-break)',
   );
   expect(
-    src.contains('ReaderHibikiSource.instance.dismissSwipeSensitivity'),
+    src.contains('ReaderFushiSource.instance.dismissSwipeSensitivity'),
     isTrue,
     reason: '$label must feed the live dismissSwipeSensitivity to the tracker',
   );
@@ -62,7 +62,7 @@ void main() {
     test(
         'video routes barrier drag through the shared tracker, closes one '
         'layer', () {
-      final String src = readVideoHibikiSource();
+      final String src = readVideoFushiSource();
       _assertBarrierSwipeWiring('video', src);
       // Over-threshold drag closes ONE layer (top visible index), never clears
       // the whole stack (clearing stays the onTapUp path).

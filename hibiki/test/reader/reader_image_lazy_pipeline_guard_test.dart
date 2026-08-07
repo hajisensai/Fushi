@@ -21,7 +21,7 @@ import '../helpers/source_guard.dart';
 ///   3. 调用顺序本身仍锁住（第二道防线：万一有人删了显式 eager，顺序还在）。
 void main() {
   final File webviewFile = File(
-    'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+    'lib/src/pages/implementations/reader_fushi/webview.part.dart',
   );
   String webviewSrc() => webviewFile.readAsStringSync();
 
@@ -120,7 +120,7 @@ void main() {
 
     test('预热跟随阅读方向，而不是写死 +1', () {
       final File navFile = File(
-        'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+        'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
       );
       final String src =
           navFile.readAsStringSync().replaceAll(RegExp(r'\s+'), ' ');

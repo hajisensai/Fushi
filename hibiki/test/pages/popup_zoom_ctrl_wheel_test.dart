@@ -282,7 +282,7 @@ void main() {
       );
       // 根因修在组件唯一出口：不得沿用 Material 的 Duration.zero 默认值。
       final String buttonSrc = File(
-        'lib/src/utils/components/hibiki_icon_button.dart',
+        'lib/src/utils/components/fushi_icon_button.dart',
       ).readAsStringSync();
       expect(
         buttonSrc.contains('waitDuration: kIconButtonTooltipHoverDelay'),

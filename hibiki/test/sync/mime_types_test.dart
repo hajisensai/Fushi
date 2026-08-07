@@ -9,7 +9,7 @@
 // 本文件：
 // ① BUG-1122 回归——`.webp` 在所有入口都必须推成 image/webp（旧 sync server 副本
 //   缺 webp → 封面按 application/octet-stream 下发，对端 WebView 拒绝内联渲染）；
-//   server HTTP 层回归见 hibiki_sync_server_books_test.dart。
+//   server HTTP 层回归见 fushi_sync_server_books_test.dart。
 // ② 各历史分歧扩展名断言（旧副本间覆盖面差集：aac/wav 只在 anki、字幕/视频只在
 //   server、css/js/字体只在 EPUB……并集后处处一致）。
 // ③ anki 镜像逐项一致守卫——改任一侧表必须同步另一侧。
@@ -156,13 +156,13 @@ void main() {
     test('lib 下 image 扩展名 case 标签只允许出现在白名单文件', () {
       final Directory root = _repoRoot();
       // 允许保留的例外（各自注释说明了不并表的原因）：
-      // - manga_hibiki_page.dart：漫画图片服务，刻意 jpeg 兜底（非 octet-stream）。
+      // - manga_fushi_page.dart：漫画图片服务，刻意 jpeg 兜底（非 octet-stream）。
       //   PR#474 把实现从 `pages/implementations/` 搬到 `media/manga/reader/`
       //   （旧路径只剩 3 行 re-export shim），`_mangaMimeForPath` 逐字未变，
       //   所以豁免**跟随文件移动**，不是新开豁免；旧路径同时移出名单，免得
       //   将来真有人在那条路径上新写一份 switch 却被这条陈旧条目放行。
       const Set<String> allowlist = <String>{
-        'hibiki/lib/src/media/manga/reader/manga_hibiki_page.dart',
+        'hibiki/lib/src/media/manga/reader/manga_fushi_page.dart',
       };
       final RegExp caseRe =
           RegExp(r"case\s+'\.?(?:png|jpe?g|webp|gif|svg)'\s*:");

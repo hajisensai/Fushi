@@ -14,7 +14,7 @@ import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi/src/media/media_extensions.dart';
 import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 
 /// 已知漫画页图扩展名（mokuro 惯例）＝图片扩展名基集。
 ///

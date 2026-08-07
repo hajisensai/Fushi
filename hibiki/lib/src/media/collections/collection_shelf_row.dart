@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
-import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/media/collections/collection_drag.dart';
 import 'package:fushi/utils.dart';
 

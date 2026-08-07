@@ -1,6 +1,6 @@
-[根目录](../../CLAUDE.md) > [packages](../) > **hibiki_audio**
+[根目录](../../CLAUDE.md) > [packages](../) > **fushi_audio**
 
-# hibiki_audio
+# fushi_audio
 
 ## 模块职责
 
@@ -8,7 +8,7 @@
 
 ## 入口与启动
 
-- 库入口：`lib/hibiki_audio.dart`
+- 库入口：`lib/fushi_audio.dart`
 - 播放控制器：`lib/src/audiobook/audiobook_controller.dart` -- `AudiobookPlayerController` (ChangeNotifier)，管理 `just_audio` 播放器。
 - 无独立启动，由主应用页面按需实例化控制器。
 
@@ -39,7 +39,7 @@
 
 - `just_audio: ^0.9.31` -- 音频播放引擎。
 - `audio_session: ^0.1.13` -- 音频会话管理。
-- `hibiki_core` -- 数据库（AudioCues/SrtBooks/ReaderPositions 等表）。
+- `fushi_core` -- 数据库（AudioCues/SrtBooks/ReaderPositions 等表）。
 - `xml / flutter_charset_detector` -- 字幕格式解析。
 - `drift` -- 直接使用数据库类型。
 
@@ -59,7 +59,7 @@
 
 ## 相关文件清单
 
-- `lib/hibiki_audio.dart` -- 库入口
+- `lib/fushi_audio.dart` -- 库入口
 - `lib/src/parsers/` -- 字幕解析器（8 个）
 - `lib/src/audiobook/` -- 有声书核心（控制器/仓库/模型，14 个文件）
 - `lib/src/matching/` -- 匹配与对齐（6 个文件）

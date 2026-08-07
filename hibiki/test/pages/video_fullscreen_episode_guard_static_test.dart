@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 void main() {
   // BUG-120: 全屏下切集黑屏 00:00 + 左上标题不刷新。根因 = media_kit 全屏是推到根
@@ -17,7 +17,7 @@ void main() {
   // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，标题接线
   // （`_topBarTitle()` 的两处调用）随之搬出主壳，故改读合并语料；`_topBarTitle()`
   // 定义与 `_buildBottomSlotButton(` 端点仍在主壳（语料最前段），切片不受影响。
-  final String pageSource = readVideoHibikiSource();
+  final String pageSource = readVideoFushiSource();
 
   test('load() reuses Player/VideoController across episodes (no recreate)',
       () {

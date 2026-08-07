@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
 import '../helpers/source_guard.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-656「试滚范式」根治：跨章不再用瞬时坐标阈值 `scrollTop<=2`，而是「内容真的
 /// 滚不动」才到边界。触摸看手势起点是否已在边界，滚轮看相邻拍位置是否无变化 / 竖排
@@ -174,8 +174,8 @@ void main() {
 /// 两件事必须分开定，合在一起就出错：
 /// - **起点**：BUG-1426 之后语料里有两份 wheel 监听，签名逐字相同
 ///   （`'wheel', function(e)`）。spread 独立文档自带那份在主壳
-///   `reader_hibiki_page.dart:566`，正文引擎那份在
-///   `reader_hibiki/webview.part.dart:1408`，而语料是「主壳在前」⇒ 按签名文本
+///   `reader_fushi_page.dart:566`，正文引擎那份在
+///   `reader_fushi/webview.part.dart:1408`，而语料是「主壳在前」⇒ 按签名文本
 ///   `indexOf`（含 `methodBody` 的内建定位）必然锚到 spread 那份，守错对象。所以起点
 ///   走语义判据 [bodyEngineWheelListenerStart]（按块内 `fushiContinuousMode` 认）。
 /// - **右边界**：旧写法 `indexOf('}, {passive:')` 一旦监听器漏写 passive 选项就一路

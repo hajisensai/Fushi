@@ -16,7 +16,7 @@ import '../pages/reader_history_source_corpus.dart';
 ///    整组要求型断言当场变绿——要求型锚点最典型的假绿。现在一律先过
 ///    [maskCommentsAndStrings]（本文件锚点全是代码标识符，没有一条需要读串内容）。
 /// 2. **锚点即写法**：`'FushiDialogFrame('` 漏命名构造器形态、又被
-///    `XxxHibikiDialogFrame(` 假命中；`'FushiDesignTokens.of(context)'` 把**局部
+///    `XxxFushiDialogFrame(` 假命中；`'FushiDesignTokens.of(context)'` 把**局部
 ///    变量名** `context` 写进了契约；`'return IconButton(' / 'child: IconButton(' /
 ///    'trailing: IconButton(' / 'suffixIcon: IconButton('` 四条前缀只是为了绕开
 ///    `FushiIconButton(` 含子串 `IconButton(`，换个调用位置就整条漏。全部换成带

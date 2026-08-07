@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_button_assets.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
-import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 /// 手柄按钮外形（TODO-942 P1）：面键/摇杆/系统键是圆钮，肩键/扳机是横向胶囊。
 enum GamepadPadShape { circle, pill }

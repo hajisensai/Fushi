@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// rendering, auto-scroll, real chapter jump) is verified on device.
 void main() {
   final File chrome = File(
-    'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+    'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
   );
   late String src;
 
@@ -34,7 +34,7 @@ void main() {
     // _openGallery wires onOpenImage to _openImageViewer.
     expect(src.contains('onOpenImage: (EpubImageRef ref) =>'), isTrue);
     expect(
-        src.contains('_openImageViewer(ReaderHibikiSource.epubUrl(ref.src))'),
+        src.contains('_openImageViewer(ReaderFushiSource.epubUrl(ref.src))'),
         isTrue,
         reason: 'gallery thumbnail tap must reuse _openImageViewer');
   });

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-700 T8 回归守卫：阅读 caret 激活时按物理「下」到可视底边，应**翻页**
 /// （和正文 Down 翻页同路径），而不是晋升底栏。底栏已被 ExcludeFocus 移出焦点

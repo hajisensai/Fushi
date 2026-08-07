@@ -18,7 +18,7 @@ import 'package:fushi/src/media/video/youtube_source_resolver.dart';
 ///   默认自动应用最佳轨（[pickBestYoutubeCaptionTrack]：人工>ASR·精确语言），含 autoTranslate
 ///   母语对照变体。
 ///
-/// VideoHibikiPage 过重（需完整 app + media_kit controller）无法在 widget test 拉起私有状态
+/// VideoFushiPage 过重（需完整 app + media_kit controller）无法在 widget test 拉起私有状态
 /// 与菜单构建，故这里落最强可落地层：① 源码语料守卫（切片断言列表回填/菜单按轨表渲染/懒加载
 /// 均在位、且**不再**把行吊在 cue 门控上——删任一即红）；② 真逻辑单测（A3 选轨 + trackKey +
 /// 懒下载 URL + 合成源不被误判「关闭」）。
@@ -28,9 +28,9 @@ void main() {
   setUpAll(() {
     String read(String p) =>
         File(p).readAsStringSync().replaceAll('\r\n', '\n');
-    pageSrc = read('lib/src/pages/implementations/video_hibiki_page.dart');
+    pageSrc = read('lib/src/pages/implementations/video_fushi_page.dart');
     subtitleSrc =
-        read('lib/src/pages/implementations/video_hibiki/subtitle.part.dart');
+        read('lib/src/pages/implementations/video_fushi/subtitle.part.dart');
   });
 
   group('源码守卫：track-list-first + lazy-cue-on-select', () {

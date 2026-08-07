@@ -16,7 +16,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// (which happens inside [MediaSource.initialise] -> _loadPreferencesFromDb).
 ///
 /// These tests drive the REAL [loadShortcutRegistry] against the REAL
-/// [ReaderHibikiSource] singleton backed by an in-memory Drift database, so the
+/// [ReaderFushiSource] singleton backed by an in-memory Drift database, so the
 /// whole load path (getPreference<String?> on the source cache ->
 /// loadFromJsonString / resetToDefaults) is exercised end to end.
 ///
@@ -44,7 +44,7 @@ void main() {
   });
 
   late FushiDatabase db;
-  late ReaderHibikiSource source;
+  late ReaderFushiSource source;
 
   // A non-default custom binding for a video action: KeyG (no modifiers) mapped
   // to "toggle play/pause", which defaults to Space/P/MediaPlayPause and never
@@ -62,7 +62,7 @@ void main() {
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     MediaSource.setDatabase(db);
-    source = ReaderHibikiSource.instance;
+    source = ReaderFushiSource.instance;
     // Start every test from an empty in-memory cache so prior tests (or the
     // shared singleton) cannot leak state. _loadPreferencesFromDb clears first,
     // and the DB is empty here, so this yields a clean, empty cache.

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 // 守卫：阅读器两种底栏（有声书播放条 / 设置条）必须绑定独立的
 // reverseReaderBottomBar，而不是首页导航栏的 reverseNavigationBar。

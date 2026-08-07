@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：字幕动态避让进度条（TODO-129，反转 TODO-089 的恒抬升）的接线不被回退，
 /// 且 TODO-364 的「单一真相源」修复不被退回旧镜像 + 第二个 Timer。
@@ -30,7 +30,7 @@ void main() {
   setUpAll(() {
     expect(style.existsSync(), isTrue, reason: '字幕样式源文件应存在');
     expect(overlay.existsSync(), isTrue, reason: '字幕 overlay 源文件应存在');
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
     styleSrc = style.readAsStringSync();
     overlaySrc = overlay.readAsStringSync();
   });
@@ -172,16 +172,16 @@ void main() {
     expect(fork.contains('const Offset(0.0, 16.0)'), isFalse,
         reason: '不应残留写死的 16px 下压常量（宿主看不见 → 避让算错，BUG-1224）');
     // 页面必须显式把同一份常量喂给桌面 theme（而非依赖 fork 构造器默认值漂移）。
-    // theme 在 `extension on _VideoHibikiPageState` 里，静态常量须限定类名，故容忍该前缀。
+    // theme 在 `extension on _VideoFushiPageState` 里，静态常量须限定类名，故容忍该前缀。
     expect(
-        RegExp(r'seekBarContainerHeight:\s*(?:_VideoHibikiPageState\.)?\s*'
+        RegExp(r'seekBarContainerHeight:\s*(?:_VideoFushiPageState\.)?\s*'
                 r'_videoDesktopSeekBarContainerHeight')
             .hasMatch(src),
         isTrue,
         reason: '桌面 theme 必须显式传热区高，与字幕避让同源（BUG-1224）');
     expect(
         RegExp(r'seekBarBottomButtonBarOverlap:\s*'
-                r'(?:_VideoHibikiPageState\.)?\s*'
+                r'(?:_VideoFushiPageState\.)?\s*'
                 r'_videoDesktopSeekBarButtonBarOverlap')
             .hasMatch(src),
         isTrue,

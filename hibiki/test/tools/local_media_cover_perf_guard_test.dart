@@ -33,7 +33,7 @@ void main() {
       File('lib/src/pages/implementations/home_video_page.dart')
           .readAsStringSync();
   final String historyPageSrc =
-      File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
+      File('lib/src/pages/implementations/reader_fushi_history_page.dart')
           .readAsStringSync();
   final String mediaSourceSrc =
       File('lib/src/media/media_source.dart').readAsStringSync();

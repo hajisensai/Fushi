@@ -1,7 +1,7 @@
 /// 单一「扩展名 → MIME」推断真相源（命名统一轮 G8 + BUG-1122）。
 ///
 /// 此前这段 switch 在 6 处各持一份漂移副本：
-/// - `hibiki/lib/src/sync/hibiki_sync_server.dart` `_guessContentType`
+/// - `hibiki/lib/src/sync/fushi_sync_server.dart` `_guessContentType`
 ///   （WebDAV / 流式 / 字幕端点；**缺 `.webp` → webp 封面按
 ///   application/octet-stream 下发，即 BUG-1122**）；
 /// - `hibiki/lib/src/sync/sync_utils.dart` `guessSyncContentType`（云端上传）；

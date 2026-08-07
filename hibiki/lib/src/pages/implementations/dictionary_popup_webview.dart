@@ -1257,7 +1257,7 @@ JSON.stringify((function(){
       '（净缩放=1），否则会被全局界面缩放的 FittedBox 拉糊。'
       '当前 scale=$appUiScale。'
       '修法：把承载本 WebView 及其同坐标系弹窗的整块区域用 '
-      'FushiAppUiScaleNeutralizer 包裹（参见 reader_hibiki_source / '
+      'FushiAppUiScaleNeutralizer 包裹（参见 reader_fushi_source / '
       'home_dictionary_page / popup_dictionary_page）。',
     );
     final t = Translations.of(context);
@@ -1595,7 +1595,7 @@ JSON.stringify((function(){
             // BUG-293: the mine/update bridge handlers MUST always return a
             // MinePopupResult JSON and never let an exception escape into the
             // native inappwebview JS-handler bridge. An override
-            // (e.g. VideoHibikiPage._mineVideoCard) or writeDictionaryMediaCache
+            // (e.g. VideoFushiPage._mineVideoCard) or writeDictionaryMediaCache
             // can throw during the re-mine media-capture path (ffmpeg / window
             // screenshot / WebView2 frame); an unhandled exception crossing the
             // Dart->native JS-handler boundary takes the whole process down

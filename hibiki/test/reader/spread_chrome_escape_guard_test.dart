@@ -4,13 +4,13 @@ import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show buildSpreadPageHtml;
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/source_guard.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// BUG-1280 守卫：从书架打开书后自动切进「双页漫画」（spread）展开，就再也唤不出
 /// 底栏、退不出这本书。
@@ -203,14 +203,14 @@ void main() {
     });
 
     // `spread_mode` 有两处兜底默认：[ReaderSettings.spreadMode] 是阅读器真正
-    // 读的那个，[ReaderHibikiSource.readerSpreadMode] 是 readerSettings 未就绪时
+    // 读的那个，[ReaderFushiSource.readerSpreadMode] 是 readerSettings 未就绪时
     // （设置页 / 冷启动）读的那个。两处漂开 = 设置页显示的默认与阅读器实际用的默认
     // 相反。上面两条真行为测试只覆盖 ReaderSettings，单独把 source 那处改回 auto
     // 全套照样绿——所以必须有这条跨文件一致性断言。
     test('两处兜底默认必须一致，且都是 off', () {
       const String kSettingsFile = 'lib/src/reader/reader_settings.dart';
       const String kSourceFile =
-          'lib/src/media/sources/reader_hibiki_source.dart';
+          'lib/src/media/sources/reader_fushi_source.dart';
       final String settingsSrc = File(kSettingsFile).readAsStringSync();
       final String sourceSrc = File(kSourceFile).readAsStringSync();
 

@@ -16,7 +16,7 @@ void main() {
           'src:reader_fushi:font_catalog');
       expect(dbSourcePrefKey('reader_fushi', ''), 'src:reader_fushi:');
       expect(dbSourcePrefKey('reader_fushi', 'x'), 'src:reader_fushi:x');
-      expect(dbSourcePrefKey('video_hibiki', 'k'), 'src:video_hibiki:k');
+      expect(dbSourcePrefKey('video_fushi', 'k'), 'src:video_fushi:k');
     });
 
     test('backup_service 的冻结 reader_fushi const key 与编码器输出一致（防漂移）', () {
@@ -84,7 +84,7 @@ void main() {
       // 持久化身份键的字面值收敛在单一常量（Fushi 改名 P6-3 收口）；
       // 现值 'reader_fushi'：历史值 'reader_ttu' 已由 v70 Drift 迁移改写存量。
       final String src2 =
-          File('lib/src/media/sources/reader_hibiki_source.dart')
+          File('lib/src/media/sources/reader_fushi_source.dart')
               .readAsStringSync();
       expect(src2,
           contains("const String kReaderSourcePersistedKey = 'reader_fushi';"),

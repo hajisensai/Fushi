@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as html_dom;
@@ -272,7 +272,7 @@ class EpubBook {
   ({int chapterIndex, String? fragment})? resolveInternalLink(String url) {
     final Uri? uri = Uri.tryParse(url);
     if (uri == null) return null;
-    if (uri.host != ReaderHibikiSource.kHost) return null;
+    if (uri.host != ReaderFushiSource.kHost) return null;
     if (!uri.path.startsWith('/epub/')) return null;
 
     final String epubPath = _canonicalEpubPath(
@@ -363,7 +363,7 @@ class EpubBook {
 
 /// TODO-723: resolves an `<img src>` (which the WebView resolves relative to the
 /// *current chapter document*) into an **epub-root-relative href** that
-/// [ReaderHibikiSource.epubUrl] / the `/epub/<path>` intercept treat as relative
+/// [ReaderFushiSource.epubUrl] / the `/epub/<path>` intercept treat as relative
 /// to the EPUB root. Mirrors [EpubSpreadAnalyzer._resolveImagePath] /
 /// [_resolveSpreadImageUrl]: join against the chapter's directory then POSIX-
 /// normalize. Pure (no book/IO state) so the root-cause path is directly
@@ -384,7 +384,7 @@ String resolveImageHref(String chapterHref, String src) {
 /// [chapterIndex] is the owning spine chapter; [orderInBook] is a 0-based index
 /// across the whole book (stable reading order); [src] is the **epub-root-
 /// relative href** (already resolved against the owning chapter's directory via
-/// [resolveImageHref]) suitable for [ReaderHibikiSource.epubUrl].
+/// [resolveImageHref]) suitable for [ReaderFushiSource.epubUrl].
 class EpubImageRef {
   const EpubImageRef({
     required this.chapterIndex,
@@ -643,7 +643,7 @@ String fallbackMimeType(String path) => mimeTypeForFilePath(path);
 /// 扩展名都合法，所以「按扩展名猜」天然是漏的：漏一个就整本正文空白且无错误日志。
 ///
 /// 唯一实现，两处消费：[EpubParser] 筛 spine 用它；阅读器资源拦截器
-/// (`reader_hibiki/webview.part.dart` 的 `_readerResourcePayload`) 判「要不要净化 +
+/// (`reader_fushi/webview.part.dart` 的 `_readerResourcePayload`) 判「要不要净化 +
 /// 注样式 + 当文档渲染」也用它。**不要抄第二份平行谓词**——抄本会漂移，一边改了另一
 /// 边没跟就是静默空白页。
 ///

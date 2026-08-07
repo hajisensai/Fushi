@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// BUG-134/147 follow-up source guard（随 TODO-274 + BUG-248B + BUG-257 刷新）。
 ///
@@ -14,7 +14,7 @@ import 'video_hibiki_page_source_corpus.dart';
 ///   [_centeredBottomControlBar]（BUG-257：底栏从两套主题各写一遍合并为单一 helper，
 ///   按 `desktop:` 参数择按钮组件），故进度/播放/seek 各图标只出现一次。
 void main() {
-  final String src = readVideoHibikiSource();
+  final String src = readVideoFushiSource();
 
   String region(String startSig, String endSig) {
     final int start = src.indexOf(startSig);
@@ -151,7 +151,7 @@ void main() {
   /// 难稳定复现移动分支。
   group('移动端字幕/音轨/设置按钮接线（BUG-248 底座）', () {
     final File page = File(
-      'lib/src/pages/implementations/video_hibiki_page.dart',
+      'lib/src/pages/implementations/video_fushi_page.dart',
     );
     final File themePair = File(
       'lib/src/media/video/video_controls_theme_pair.dart',
@@ -165,7 +165,7 @@ void main() {
           reason: '视频 controls 主题配对 helper 应存在');
       // TODO-590 batch11：_mobileControlsTheme 已搬到 controls_theme.part.dart，读「合并语料」
       // （主壳 + 全部 part）；其余断言命中的 VideoControlItem/VideoControlButton 分支与接线仍在主壳。
-      src = readVideoHibikiSource();
+      src = readVideoFushiSource();
       themePairSrc = themePair.readAsStringSync();
     });
 

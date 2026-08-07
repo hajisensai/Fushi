@@ -5,7 +5,7 @@ import 'package:fushi/models.dart';
 void main() {
   group('custom theme color scheme', () {
     test('uses explicit Material role colors when provided', () {
-      final ColorScheme scheme = buildHibikiColorScheme(
+      final ColorScheme scheme = buildFushiColorScheme(
         seedColor: const Color(0xFF006875),
         brightness: Brightness.light,
         primary: const Color(0xFF101010),
@@ -21,11 +21,11 @@ void main() {
     });
 
     test('derives secondaryContainer from custom secondary', () {
-      final ColorScheme base = buildHibikiColorScheme(
+      final ColorScheme base = buildFushiColorScheme(
         seedColor: const Color(0xFF006875),
         brightness: Brightness.light,
       );
-      final ColorScheme custom = buildHibikiColorScheme(
+      final ColorScheme custom = buildFushiColorScheme(
         seedColor: const Color(0xFF006875),
         brightness: Brightness.light,
         secondary: const Color(0xFFFF0000),
@@ -36,11 +36,11 @@ void main() {
     });
 
     test('derives tertiaryContainer from custom tertiary', () {
-      final ColorScheme base = buildHibikiColorScheme(
+      final ColorScheme base = buildFushiColorScheme(
         seedColor: const Color(0xFF006875),
         brightness: Brightness.light,
       );
-      final ColorScheme custom = buildHibikiColorScheme(
+      final ColorScheme custom = buildFushiColorScheme(
         seedColor: const Color(0xFF006875),
         brightness: Brightness.light,
         tertiary: const Color(0xFF00FF00),
@@ -51,11 +51,11 @@ void main() {
     });
 
     test('leaves containers at seed defaults when role not overridden', () {
-      final ColorScheme base = buildHibikiColorScheme(
+      final ColorScheme base = buildFushiColorScheme(
         seedColor: const Color(0xFF006875),
         brightness: Brightness.light,
       );
-      final ColorScheme custom = buildHibikiColorScheme(
+      final ColorScheme custom = buildFushiColorScheme(
         seedColor: const Color(0xFF006875),
         brightness: Brightness.light,
         primary: const Color(0xFFAA0000),

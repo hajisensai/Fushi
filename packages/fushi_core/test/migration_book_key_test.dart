@@ -225,8 +225,8 @@ CREATE TABLE media_items (
           "INSERT INTO media_items "
           "(media_identifier, title, media_type_identifier, media_source_identifier, unique_key, position, duration, can_delete, can_edit) "
           "VALUES "
-          "('hoshi://book/1', 'Book A', 'reader', 'reader_hibiki', 'hoshi://book/1', 0, 0, 1, 1),"
-          "('hoshi://book/2', 'Book A', 'reader', 'reader_hibiki', 'hoshi://book/2', 0, 0, 1, 1)",
+          "('hoshi://book/1', 'Book A', 'reader', 'reader_fushi', 'hoshi://book/1', 0, 0, 1, 1),"
+          "('hoshi://book/2', 'Book A', 'reader', 'reader_fushi', 'hoshi://book/2', 0, 0, 1, 1)",
         );
 
         // ── preferences (two audiobook_pos key spaces + others) ───────

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// TODO-1058: mouse-wheel over the video PICTURE adjusts volume (desktop).
 ///
@@ -26,7 +26,7 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   late String src;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   String region(String startSig, String endSig) {
@@ -84,7 +84,7 @@ void main() {
     );
     expect(wheel.contains('_adjustVolume(delta)'), isTrue,
         reason: 'wheel adjusts through the shared _adjustVolume channel');
-    expect(wheel.contains('_VideoHibikiPageState._volumeStep'), isTrue,
+    expect(wheel.contains('_VideoFushiPageState._volumeStep'), isTrue,
         reason:
             'wheel uses the shared _volumeStep, up-scroll increases volume');
   });

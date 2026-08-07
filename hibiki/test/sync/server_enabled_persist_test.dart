@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
-import 'package:fushi/src/sync/hibiki_server_controller.dart';
+import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi/src/sync/fushi_server_controller.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -74,7 +74,7 @@ void main() {
       // 修复前：catch 块含 `await repo.setServerEnabled(false);`
       // 修复后：catch 块只有 `_server = null` / `notifyListeners()` / return。
       final String src =
-          File('lib/src/sync/hibiki_server_controller.dart').readAsStringSync();
+          File('lib/src/sync/fushi_server_controller.dart').readAsStringSync();
 
       // 定位 start() 方法体（从方法签名到下一个顶层方法）
       final int startIdx =

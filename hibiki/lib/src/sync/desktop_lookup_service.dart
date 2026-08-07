@@ -393,7 +393,7 @@ class DesktopLookupService extends ChangeNotifier
 
   Future<void> _handleClipboardChange() async {
     // app 在前台 = 本 app 内复制（制卡/选词复制），不弹查词。
-    final bool foreground = _focused || await _isHibikiForeground();
+    final bool foreground = _focused || await _isFushiForeground();
     if (!shouldTriggerOnClipboard(foreground)) return;
     final String? text = await _readClipboardText();
     if (text == null) return;
@@ -460,7 +460,7 @@ class DesktopLookupService extends ChangeNotifier
   /// 点词），故先清 [_lastText] 越过去重——即便与上次查的是同一个词也要再查一次；
   /// 也不受 [shouldTriggerOnClipboard] 的「app 内复制不弹」聚焦过滤约束（聚焦过滤
   /// 只针对被动的剪贴板变化）。Windows 桌面悬浮字幕点词经
-  /// `reader_hibiki_page.dart` 的 `_lookupFromFloatingLyric` 调到这里，从而复用
+  /// `reader_fushi_page.dart` 的 `_lookupFromFloatingLyric` 调到这里，从而复用
   /// 剪贴板查词出口（主窗查词 tab），而不是在阅读器内弹 in-app 浮层。
   ///
   /// 注意：本方法只负责**排队**待查词（设 [pendingText] + 通知），与剪贴板/热键
@@ -511,7 +511,7 @@ class DesktopLookupService extends ChangeNotifier
     // TODO-615：前台判据抖动时此守卫可能漏判，导致先前误触的任务栏 flash 仍残留；
     // 已前台路径 early-return 前主动 clear 一次，把残留高亮幂等熄灭（FLASHW_STOP
     // 对没有 flash 的窗口是 no-op）。
-    if (await _isHibikiForeground()) {
+    if (await _isFushiForeground()) {
       await WindowCaptionChannel.clearTaskbarFlash();
       return;
     }
@@ -536,11 +536,11 @@ class DesktopLookupService extends ChangeNotifier
   /// [windowManager.isFocused]：词典 WebView/原生子窗口拿焦点时，插件可能报告
   /// 主窗未聚焦，但 `GetForegroundWindow` 仍属于当前 Hibiki 进程。此时继续
   /// show/focus 主窗会触发任务栏请求注意态。
-  Future<bool> _isHibikiForeground() async {
+  Future<bool> _isFushiForeground() async {
     if (DesktopForegroundGuard.isForegroundOwnedByCurrentProcess()) {
       return true;
     }
-    if (DesktopForegroundGuard.isForegroundOwnedByHibikiAppFamily()) {
+    if (DesktopForegroundGuard.isForegroundOwnedByFushiAppFamily()) {
       return true;
     }
     return _isWindowFocused();

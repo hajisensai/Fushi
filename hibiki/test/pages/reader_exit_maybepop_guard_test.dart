@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// PopScope，导致关书后书架陈旧、关书自动同步不触发。
 ///
 /// 前因后果：
-/// - 阅读器路由外层是 `PopScope(canPop: false)`（reader_hibiki_page.dart），
+/// - 阅读器路由外层是 `PopScope(canPop: false)`（reader_fushi_page.dart），
 ///   它的 `onPopInvokedWithResult` 才是唯一的退出闸门——里面 `await onWillPop()`，
 ///   而 `BaseSourcePageState.onWillPop` 依次做：
 ///     ① `onSourcePagePop()`——最终阅读位置 flush 落库（BUG-203 依赖它，否则
@@ -29,7 +29,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 的源码切片范式：切出 `onExitReader` 回调块做静态断言，防复发。
 void main() {
   const String path =
-      'lib/src/pages/implementations/reader_hibiki/chrome.part.dart';
+      'lib/src/pages/implementations/reader_fushi/chrome.part.dart';
 
   /// 读整份 chrome.part.dart 源码（相对 `hibiki/` 工作目录，与仓库其它
   /// `*_guard_test` 一致）。

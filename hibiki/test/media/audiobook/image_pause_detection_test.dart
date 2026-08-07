@@ -78,7 +78,7 @@ void main() {
 
     // Dart highlight() 须把 imagePauseSec>0 经 pauseEnabled 传进两条 JS 高亮路径。
     final String pageSrc = File(
-      'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+      'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
     ).readAsStringSync();
     expect(pageSrc, contains('controller.imagePauseSec.value > 0'),
         reason: 'reader 须按 imagePauseSec>0 算出 pauseEnabled 传给 bridge');
@@ -105,7 +105,7 @@ void main() {
     // _onRestoreComplete（初次开书 + 跨章推进完成的汇聚点）须调用重置，
     // 避免恢复到中段后首次 cue 推进跨越中间所有插图 reveal 到远处图。
     final String navSrc = File(
-      'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+      'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
     ).readAsStringSync();
     final int restoreIdx = navSrc.indexOf('void _onRestoreComplete()');
     expect(restoreIdx, greaterThan(-1));

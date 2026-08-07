@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫（BUG-106）：控制条自动隐藏时，鼠标光标也应隐藏。
 /// media_kit 的 `MaterialDesktopVideoControlsThemeData.hideMouseOnControlsRemoval`
@@ -19,7 +19,7 @@ void main() {
     // 选集列表打开时不隐藏视频列光标（从源头消除跨列 none→basic 竞态），其余时间仍
     // 隐藏（默认 = true，保 BUG-106）。故守卫从字面 `: true` 收紧为「绑这两个列表
     // notifier 的否定表达式」，既钉住 BUG-106 默认隐藏语义，又钉住 BUG-391 的列表豁免。
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
     expect(
       RegExp(r'hideMouseOnControlsRemoval:\s*'
               r'!\(_subtitleListVisible\.value \|\| _episodeListVisible\.value\)')
@@ -34,7 +34,7 @@ void main() {
 
   test('controls auto-hide delay is 2 seconds in both themes (TODO-056)', () {
     // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，改读合并语料。
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
     // 桌面 + 移动两套主题各显式设 controlsHoverDuration = 2 秒。
     final int count = RegExp(
       r'controlsHoverDuration: const Duration\(seconds: 2\)',

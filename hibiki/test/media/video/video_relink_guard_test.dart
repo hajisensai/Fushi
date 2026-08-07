@@ -16,7 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 也不再有空操作 pop）。纯字符串静态守卫，不跑 libmpv / 拾取器。
 void main() {
   const String pagePath =
-      'lib/src/pages/implementations/video_hibiki_page.dart';
+      'lib/src/pages/implementations/video_fushi_page.dart';
   late String source;
 
   setUpAll(() {

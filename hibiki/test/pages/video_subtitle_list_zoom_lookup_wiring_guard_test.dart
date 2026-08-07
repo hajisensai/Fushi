@@ -1,13 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 视频字幕列表「缩放 / 字号持久化 / Shift 查词」页面级接线的 source guard
 /// （BUG-877 / BUG-878 / BUG-879 / BUG-880 / BUG-881）。这些接线活在 5500 行的
-/// [VideoHibikiPage]（主壳 + part 文件），无法在无头 libmpv 下驱动，故按源扫描守卫；
+/// [VideoFushiPage]（主壳 + part 文件），无法在无头 libmpv 下驱动，故按源扫描守卫；
 /// 面板本体行为由 `video_subtitle_jump_panel_test.dart` 的 widget 测试覆盖。
 void main() {
-  final String src = readVideoHibikiSource();
+  final String src = readVideoFushiSource();
 
   group('BUG-877 面板宽度可自定义 + 持久化', () {
     test('面板宽度从 Drift preferences 读（未自定义按屏宽自适应）', () {
@@ -58,7 +58,7 @@ void main() {
     test('面板收到 hoverAutoLookupEnabled（与画面字幕同源）', () {
       expect(
         RegExp(r'VideoSubtitleJumpPanel\([\s\S]*?hoverAutoLookupEnabled:\s*'
-                r'ReaderHibikiSource\.instance\.hoverAutoLookup')
+                r'ReaderFushiSource\.instance\.hoverAutoLookup')
             .hasMatch(src),
         isTrue,
         reason: '列表 Shift-悬停查词门控必须与画面字幕共用同一 hoverAutoLookup',

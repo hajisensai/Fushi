@@ -16,7 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 借用是纯展示数据，不该被标签筛选裁剪。此守卫锁死数据来源不回归。
 void main() {
   final String source = File(
-    'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    'lib/src/pages/implementations/reader_fushi_history_page.dart',
   ).readAsStringSync();
 
   // 切出 _buildBodyWithSrtBooks 方法体（到下一个方法 _buildShelfGroupSlivers 为止），

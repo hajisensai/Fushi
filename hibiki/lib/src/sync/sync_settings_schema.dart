@@ -29,15 +29,15 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_device_name.dart';
 import 'package:fushi/src/sync/interconnect_url.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
-import 'package:fushi/src/sync/hibiki_server_controller.dart';
-import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/fushi_server_controller.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
-import 'package:fushi/src/sync/pairing/hibiki_pair_v2_client.dart';
-import 'package:fushi/src/sync/pairing/hibiki_ping_client.dart';
+import 'package:fushi/src/sync/pairing/fushi_pair_v2_client.dart';
+import 'package:fushi/src/sync/pairing/fushi_ping_client.dart';
 import 'package:fushi/src/sync/pairing/discovered_pairing_probe.dart';
 import 'package:fushi/src/sync/sftp_sync_backend.dart';
-import 'package:fushi/src/sync/tls/hibiki_tofu_probe.dart';
+import 'package:fushi/src/sync/tls/fushi_tofu_probe.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
@@ -57,7 +57,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:fushi/src/utils/misc/hibiki_share.dart';
+import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
 /// [summarizeSyncReport] 的实现搬去了 manual_sync_ui.dart（媒体页下拉同步共用），
@@ -704,7 +704,7 @@ class _SyncSettingsState {
       interconnectSyncVideoFiles =
           await _repo.isInterconnectSyncVideoFilesEnabled();
       serverEnabled = await _repo.isServerEnabled();
-      hasClientConnection = (await _repo.getHibikiClientUrls()).isNotEmpty;
+      hasClientConnection = (await _repo.getFushiClientUrls()).isNotEmpty;
       _loaded = true;
       _settingsContext.refresh();
     } finally {

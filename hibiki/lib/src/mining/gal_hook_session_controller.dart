@@ -17,7 +17,7 @@ import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
-import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 
 /// 落 `activity_events` 的一条游戏活动写入契约。默认实现走 [FushiDatabase.
 /// addActivityEvent]（[kActivityGame] / [kActivityMediaGame]）；单测可注入假写入方

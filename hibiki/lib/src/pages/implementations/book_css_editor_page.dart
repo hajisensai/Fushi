@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/hibiki_page_placeholders.dart';
+import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/utils.dart';
 
 class BookCssEditorPage extends ConsumerStatefulWidget {
@@ -349,7 +349,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(
-              maxWidth: kHibikiSettingsDialogMaxWidth,
+              maxWidth: kFushiSettingsDialogMaxWidth,
             ),
             child: SizedBox(
               width: double.infinity,
@@ -372,7 +372,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
           heightFactor: 1,
           child: ConstrainedBox(
             constraints: const BoxConstraints(
-              maxWidth: kHibikiSettingsDialogMaxWidth,
+              maxWidth: kFushiSettingsDialogMaxWidth,
             ),
             child: SizedBox(
               width: double.infinity,

@@ -17,7 +17,7 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart'
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
     show isEpubBackedAudiobookSrt;
 import 'package:fushi_audio/fushi_audio.dart';
 

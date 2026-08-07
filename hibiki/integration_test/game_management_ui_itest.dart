@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
-import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:fushi/src/pages/implementations/home_game_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
@@ -24,7 +24,7 @@ void main() {
 
   testWidgets('游戏库、捕获台与诊断页在真实 Windows 宿主中可达且会话保活', (WidgetTester tester) async {
     final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
-    await runHibikiItest(
+    await runFushiItest(
       label: 'game-management-ui',
       collectedErrors: errors,
       body: () async {
@@ -66,7 +66,7 @@ void main() {
           reason: '游戏分段导航应在真 app 中注册单一 Hibiki 焦点目标',
         );
         expect(
-          await _focusThroughHibiki(
+          await _focusThroughFushi(
             driver,
             gameSections,
             const FushiFocusId('game-library-tab-sections'),
@@ -91,7 +91,7 @@ void main() {
             find.byKey(ValueKey<String>('game-line-${line.id}'));
         expect(lineCard, findsOneWidget);
         expect(
-          await _activateHibikiTarget(
+          await _activateFushiTarget(
             driver,
             lineCard,
             FushiFocusId('game-line-${line.id}'),
@@ -118,7 +118,7 @@ void main() {
             find.byType(FushiAdjustableSegmented<GameSection>);
         expect(captureSections, findsOneWidget);
         expect(
-          await _focusThroughHibiki(
+          await _focusThroughFushi(
             driver,
             captureSections,
             const FushiFocusId('game-capture-tab-sections'),
@@ -136,12 +136,12 @@ void main() {
   });
 }
 
-Future<bool> _activateHibikiTarget(
+Future<bool> _activateFushiTarget(
   FocusDriver driver,
   Finder target,
   FushiFocusId focusId,
 ) async {
-  if (await _focusThroughHibiki(driver, target, focusId)) {
+  if (await _focusThroughFushi(driver, target, focusId)) {
     await driver.activate();
     return true;
   }
@@ -165,7 +165,7 @@ bool _invokeActivateIntent(WidgetTester tester, Finder managedTarget) {
   return true;
 }
 
-Future<bool> _focusThroughHibiki(
+Future<bool> _focusThroughFushi(
   FocusDriver driver,
   Finder target,
   FushiFocusId focusId,

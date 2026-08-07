@@ -44,9 +44,9 @@ void main() {
     );
     expect(main, contains('MacosWindow('),
         reason: 'main.dart builder must wrap the navigator in MacosWindow.');
-    expect(main, contains('buildHibikiMacosSidebar('),
+    expect(main, contains('buildFushiMacosSidebar('),
         reason: 'root MacosWindow must use the shared sidebar builder.');
-    expect(home, contains('Sidebar buildHibikiMacosSidebar('));
+    expect(home, contains('Sidebar buildFushiMacosSidebar('));
     expect(home, contains('SidebarItems('));
     expect(home, contains('homeShellTabNotifier'),
         reason: 'sidebar selection is shared with HomePage via the notifier.');
@@ -61,7 +61,7 @@ void main() {
         reason: 'root sidebar must derive its destinations from the dynamic '
             'HomeTab active-tab list, not a hardcoded set.');
     expect(home, contains('required List<HomeTab> activeTabs'),
-        reason: 'buildHibikiMacosSidebar takes the dynamic active-tab list.');
+        reason: 'buildFushiMacosSidebar takes the dynamic active-tab list.');
     expect(home, contains('homeNavItemFor('),
         reason: 'sidebar/rail/bottom-bar share one HomeTab->nav-item map.');
   });

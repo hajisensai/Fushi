@@ -1,6 +1,6 @@
-[根目录](../../CLAUDE.md) > [packages](../) > **hibiki_anki**
+[根目录](../../CLAUDE.md) > [packages](../) > **fushi_anki**
 
-# hibiki_anki
+# fushi_anki
 
 ## 模块职责
 
@@ -8,7 +8,7 @@ Anki 集成模块：定义 Anki 服务抽象接口，提供 AnkiDroid（Android 
 
 ## 入口与启动
 
-- 库入口：`lib/hibiki_anki.dart`
+- 库入口：`lib/fushi_anki.dart`
 - 服务抽象：`lib/src/anki_service.dart` -- `AnkiService` 抽象类。
 - 无独立启动流程，由主应用 `AppModel` 根据平台选择具体实现。
 
@@ -25,13 +25,13 @@ Anki 集成模块：定义 Anki 服务抽象接口，提供 AnkiDroid（Android 
 
 - `shared_preferences: ^2.2.2` -- 持久化 AnkiConnect 地址等设置。
 - `http: ^1.1.0` -- AnkiConnect HTTP 通信。
-- 无 hibiki_core 依赖（独立模块）。
+- 无 fushi_core 依赖（独立模块）。
 
 ## 数据模型
 
 - `AnkiModels` -- 牌组/模型/字段元数据。
 - `LapisPreset` -- 预设导出模板配置。
-- AnkiMapping（定义在 `hibiki_core/tables.dart`）-- Anki 导出映射配置。
+- AnkiMapping（定义在 `fushi_core/tables.dart`）-- Anki 导出映射配置。
 
 ## 测试与质量
 
@@ -40,7 +40,7 @@ Anki 集成模块：定义 Anki 服务抽象接口，提供 AnkiDroid（Android 
 
 ## 相关文件清单
 
-- `lib/hibiki_anki.dart` -- 库入口
+- `lib/fushi_anki.dart` -- 库入口
 - `lib/src/anki_service.dart` -- 服务抽象
 - `lib/src/anki_models.dart` -- 数据模型
 - `lib/src/base_anki_repository.dart` -- 共享基类

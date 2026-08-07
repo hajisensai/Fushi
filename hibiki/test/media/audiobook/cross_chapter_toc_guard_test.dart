@@ -15,7 +15,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 void main() {
   group('SRT 跨章导航目标决策 (TODO-807)', () {
@@ -89,7 +89,7 @@ void main() {
     late String src;
     setUpAll(() {
       src = File(
-        'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+        'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
       ).readAsStringSync();
     });
 
@@ -113,7 +113,7 @@ void main() {
 
     test('被动跨章命中 nav 页保位（_navigateToChapter / _handleCueCrossChapter 均守卫）', () {
       final String navSrc = File(
-        'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+        'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
       ).readAsStringSync();
       expect(navSrc.contains('isChapterNav('), isTrue,
           reason: '_navigateToChapter 纵深防御：被动导航不落 nav 页');

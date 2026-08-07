@@ -7,9 +7,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart'
-    show ReaderHibikiHistoryPage;
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
+    show ReaderFushiHistoryPage;
 import 'package:integration_test/integration_test.dart';
 
 import 'helpers/library_fixture.dart';
@@ -44,19 +44,19 @@ void main() {
       // 2) 确定性打开阅读器 fixture：焦点卡激活在离屏/非焦点下偶发不触发书卡 onTap，
       //    故用书架页测试钩子按 mediaIdentifier 走书卡同路径 appModel.openMedia。
       final String bookKey = await seedReaderBook(tester);
-      final String mediaId = ReaderHibikiSource.mediaIdentifierFor(bookKey);
+      final String mediaId = ReaderFushiSource.mediaIdentifierFor(bookKey);
       final Finder seededEntry =
           find.byKey(ValueKey<String>('book_entry_$mediaId'));
       for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 500));
       }
       expect(seededEntry, findsOneWidget, reason: '播种的书应出现在书架');
-      expect(ReaderHibikiHistoryPage.debugOpenBook, isNotNull,
+      expect(ReaderFushiHistoryPage.debugOpenBook, isNotNull,
           reason: '书架页打开书测试钩子应已注册（debug/profile build）');
       // openMedia 会初始化音频处理器；纯离屏会挂，-Visible 下能完成。加超时兜底
       // fail-fast，绝不让测试无限挂起。
       try {
-        await ReaderHibikiHistoryPage.debugOpenBook!(mediaId)
+        await ReaderFushiHistoryPage.debugOpenBook!(mediaId)
             .timeout(const Duration(seconds: 30));
       } on TimeoutException {
         debugPrint('[observe] openMedia 超时（音频处理器初始化在纯离屏阻塞？改用 -Visible）');

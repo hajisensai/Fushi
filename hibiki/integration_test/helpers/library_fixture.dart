@@ -14,7 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fushi/main.dart' show FushiReaderApp;
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/media/media_item.dart' show MediaItem;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomePage, HomeTab;
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
@@ -61,7 +61,7 @@ Future<void> showBooksTab(WidgetTester tester) async {
 }
 
 /// 经生产路径打开一本已入库的书：按 bookKey 解析 [MediaItem] →
-/// [AppModel.openMedia]（与书卡 onTap 完全同一调用），把 [ReaderHibikiPage]
+/// [AppModel.openMedia]（与书卡 onTap 完全同一调用），把 [ReaderFushiPage]
 /// 推上 navigator。
 ///
 /// 不依赖书架视口/排序/焦点树：已入库 fixture 可能被书架排序排到当前视口外
@@ -73,7 +73,7 @@ Future<void> openBookViaProductionPath(
   String bookKey,
 ) async {
   final MediaItem? item =
-      await ReaderHibikiSource.instance.mediaItemForBookKey(bookKey);
+      await ReaderFushiSource.instance.mediaItemForBookKey(bookKey);
   expect(item, isNotNull,
       reason: 'seeded book must resolve to a MediaItem (key=$bookKey)');
 
@@ -88,7 +88,7 @@ Future<void> openBookViaProductionPath(
   final WidgetRef ref = appElement;
   unawaited(appModel.openMedia(
     ref: ref,
-    mediaSource: ReaderHibikiSource.instance,
+    mediaSource: ReaderFushiSource.instance,
     item: item,
   ));
   for (int i = 0; i < 8; i++) {

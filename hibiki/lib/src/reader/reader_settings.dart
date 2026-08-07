@@ -8,7 +8,7 @@ import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
 /// The independent font targets a user can configure (TODO-049 / TODO-864):
 /// 软件系统字体 ([appUi]) / 小说正文字体 ([body]) / 词典字体 ([dictionary]) /
@@ -33,7 +33,7 @@ enum FontTarget {
 /// All reader display/behavior settings, decoupled from the media source.
 ///
 /// Reads/writes share the same Drift `preferences` table keys as
-/// `ReaderHibikiSource` (two writers, one key set).
+/// `ReaderFushiSource` (two writers, one key set).
 /// Key format: `src:reader_fushi:<shortKey>`. 存量旧键（`src:reader_ttu:` 命名
 /// 空间 + `ttu_` shortKey 前缀）已由 v70 Drift 迁移一次性改写。
 class ReaderSettings {
@@ -47,7 +47,7 @@ class ReaderSettings {
 
   /// TODO-362（PR#3 响应式页边距）：正文左右两侧默认各留白 2%（百分比 = vw），每行
   /// 因此变窄；上下默认 0%（垂直预留由 chrome inset + 字号决定，见
-  /// `ReaderContentStyles`）。四个值是「单一真相」默认，被 `ReaderHibikiSource`
+  /// `ReaderContentStyles`）。四个值是「单一真相」默认，被 `ReaderFushiSource`
   /// 的 fallback 默认引用，避免三处来源（settings / source / aggregate）互相矛盾。
   static const double defaultMarginTopPercent = 0;
   static const double defaultMarginBottomPercent = 0;

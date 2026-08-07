@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show CustomThemeEntry, kCustomThemeDefaultSeed;
 import 'package:fushi/src/profile/profile_view_model.dart';
@@ -100,7 +100,7 @@ Future<bool> showSettingsConfirmationDialog(
 }
 
 void notifyReaderSettingsChanged(SettingsContext settingsContext) {
-  ReaderHibikiSource.onSettingsChangedLive?.call();
+  ReaderFushiSource.onSettingsChangedLive?.call();
   settingsContext.refresh();
 }
 
@@ -110,7 +110,7 @@ void notifyReaderSettingsChanged(SettingsContext settingsContext) {
 /// than a live CSS re-injection. Fires the reader's layout-reload hook so the
 /// pagination engine re-runs; the CSS-only path cannot express these changes.
 void notifyReaderLayoutChanged(SettingsContext settingsContext) {
-  ReaderHibikiSource.onLayoutReloadLive?.call();
+  ReaderFushiSource.onLayoutReloadLive?.call();
   settingsContext.refresh();
 }
 
@@ -120,7 +120,7 @@ void notifyReaderLayoutChanged(SettingsContext settingsContext) {
 /// rebuilds once and re-reads the preference live, instead of only refreshing
 /// the quick-settings sheet (which left the reader stale until re-entry).
 void notifyReaderChromeChanged(SettingsContext settingsContext) {
-  ReaderHibikiSource.onChromeReloadLive?.call();
+  ReaderFushiSource.onChromeReloadLive?.call();
   settingsContext.refresh();
 }
 
@@ -133,7 +133,7 @@ void notifyReaderChromeChanged(SettingsContext settingsContext) {
 /// bounce to chapter start). Pure floating reveal/hide does NOT use this — only
 /// the mode/visibility-of-progress switches that move the reserve do.
 void notifyReaderChromeReanchored(SettingsContext settingsContext) {
-  ReaderHibikiSource.onChromeReanchorLive?.call();
+  ReaderFushiSource.onChromeReanchorLive?.call();
   settingsContext.refresh();
 }
 
@@ -319,7 +319,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
       children: <Widget>[
         FushiSchemeSwatch(
           colors: hibikiSchemeSwatchColors(
-            buildHibikiColorScheme(
+            buildFushiColorScheme(
               seedColor: systemColor,
               brightness: Theme.of(settingsContext.context).brightness,
             ),
@@ -346,7 +346,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
               entry) {
             return FushiSchemeSwatch(
               colors: hibikiSchemeSwatchColors(
-                buildHibikiColorScheme(
+                buildFushiColorScheme(
                   seedColor: entry.value.seed,
                   brightness: entry.value.brightness,
                   variant: entry.value.variant,
@@ -372,7 +372,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
           final String key = 'custom-theme:${e.id}';
           return FushiSchemeSwatch(
             colors: hibikiSchemeSwatchColors(
-              buildHibikiColorScheme(
+              buildFushiColorScheme(
                 seedColor: Color(e.seed),
                 brightness:
                     appModel.isDarkMode ? Brightness.dark : Brightness.light,
@@ -409,7 +409,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
         // （Enter / A）即可新建，无需长按。
         FushiSchemeSwatch(
           colors: hibikiSchemeSwatchColors(
-            buildHibikiColorScheme(
+            buildFushiColorScheme(
               seedColor: const Color(kCustomThemeDefaultSeed),
               brightness:
                   appModel.isDarkMode ? Brightness.dark : Brightness.light,

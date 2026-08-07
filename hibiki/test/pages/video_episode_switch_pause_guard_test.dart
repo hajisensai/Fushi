@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 分支处理。撤掉这个 pause 或把它挪到 pushReplacement 之后即转红。
 void main() {
   final File episodePart =
-      File('lib/src/pages/implementations/video_hibiki/episode.part.dart');
+      File('lib/src/pages/implementations/video_fushi/episode.part.dart');
 
   late String switchBody;
 

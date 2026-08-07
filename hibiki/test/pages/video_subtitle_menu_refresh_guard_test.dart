@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// BUG-1329 的静态守卫：下载 / 导入字幕后，字幕轨列表必须**当场**多出那一条，而不是
 /// 作废整份枚举缓存、等一个在面板已经开着时永远不会再来的「进入字幕分类」事件。
@@ -11,7 +11,7 @@ import 'video_hibiki_page_source_corpus.dart';
 ///  - 旧的 `_invalidateSubtitleMenuSourcesCache`（清缓存 key 等下次重探）彻底消失；
 ///  - `_subtitleMenuLoading` 的每一个置真点都有配对的收敛路径，不存在「抛错就永远转圈」。
 void main() {
-  final String src = readVideoHibikiSource();
+  final String src = readVideoFushiSource();
 
   /// 掩掉注释后的同一份语料。源码扫描守卫若把注释也算数，「把调用点注释掉」这种
   /// 改动就能原样骗过它（本仓已被这类假绿咬过多次）；下面所有 contains 断言都跑在

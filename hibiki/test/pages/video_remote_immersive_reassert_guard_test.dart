@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// BUG-370 源码守卫：视频就绪（`_applyLoad` 成功 setState）后必须重申沉浸隐藏系统栏
 /// （移动端 `_applyVideoImmersiveMode`）。
@@ -14,7 +14,7 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   late String src;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   test('_applyLoad 成功 setState 后重申 _applyVideoImmersiveMode', () {

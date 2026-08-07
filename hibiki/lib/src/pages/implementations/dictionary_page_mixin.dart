@@ -219,7 +219,7 @@ mixin DictionaryPageMixin {
   /// TODO-108：video 家族（及独立查词页 / 首页查词）查词弹窗位置计算的单一收口点——
   /// 等价于 base_source_page._calculatePopupPosition 之于 reader 家族。底部固定模式时
   /// 忽略选区位置返回屏幕底部全宽 dock 面板（[dockedPopupRect]），否则沿用原跟随逻辑
-  /// （[calcPopupPosition]，尺寸随界面大小放大）。在共享 mixin 收口而非 video_hibiki_page，
+  /// （[calcPopupPosition]，尺寸随界面大小放大）。在共享 mixin 收口而非 video_fushi_page，
   /// 一处分流即覆盖 buildNestedPopupLayer / buildPopupLoadingPlaceholder 两个调用点，且
   /// 不触碰 video 页本体。盒子尺寸口径与原两处一致（maxWidth/Height × appUiScale，padding
   /// 与 reserve 走 calcPopupPosition 默认 6/0）。
@@ -693,7 +693,7 @@ mixin DictionaryPageMixin {
             ? null
             : onDictionaryPopupInputToken,
         // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
-        enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
+        enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,
         // TODO-407①：顶层仍渲染"X 关闭"，走既有关闭汇聚点 onPop(0)
         // （清整栈，不破坏 BUG-072 续播 / 清句 / 清栈）。
         onClose: () => onPop(index),
@@ -972,7 +972,7 @@ mixin DictionaryPageMixin {
         searchTerm: trimmed,
       );
       mixinAppModel.addToDictionaryHistory(result: result);
-      if (autoRead && ReaderHibikiSource.instance.autoReadOnLookup) {
+      if (autoRead && ReaderFushiSource.instance.autoReadOnLookup) {
         final first = result.entries.first;
         if (first.word.isNotEmpty) {
           autoReadWord(first.word, first.reading,

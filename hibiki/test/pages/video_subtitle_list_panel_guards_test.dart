@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// video_subtitle_list_panel 组合并守卫（守卫审计合并产物；断言零丢弃）：
 /// - 单标题：原 video_subtitle_list_double_title_guard_test.dart 并入；
@@ -32,13 +32,13 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   late String src;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   group('单标题（BUG-245 / TODO-280 / TODO-314）', () {
     /// 截取 push-aside 字幕面板列构造器 [_subtitleJumpSidePanel] 方法体。
     ///
-    /// TODO-590 batch5：`_subtitleJumpSidePanel` 已抽到 `video_hibiki/subtitle.part.dart`
+    /// TODO-590 batch5：`_subtitleJumpSidePanel` 已抽到 `video_fushi/subtitle.part.dart`
     /// 并成为合并语料里的最后一个方法（其后只剩 extension 闭合 `}`），不再有「下一个顶层
     /// 方法签名」可作结束端点，故改用花括号配对截取方法体。
     String pushAsidePanelBody() {
@@ -75,7 +75,7 @@ void main() {
     test('字幕列表已无 overlay 路径（不再走 _buildVideoSidePanelContent 的 subtitleList 分支）',
         () {
       // overlay 内容构造器不应再对 subtitleList 单独分支（该 kind 已删）。
-      // TODO-590 batch10：_buildVideoSidePanelContent 已抽到 video_hibiki/side_panel.part.dart
+      // TODO-590 batch10：_buildVideoSidePanelContent 已抽到 video_fushi/side_panel.part.dart
       // 并是该 part 末方法；旧的 _buildAudioTracksSidePanel 终点失效（它在 audio_track.part，
       // 排在合并语料里 side_panel.part 之前，即在搬出后的 content 之前）。改用 part 顶格
       // extension 闭合 `\n}` 作终点（content 体内无顶格 `}`）。

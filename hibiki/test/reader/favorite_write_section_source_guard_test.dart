@@ -16,7 +16,7 @@ void main() {
 
   test('page shell 定义选区章号快照字段 + _favoriteSectionIndex 消费 getter', () {
     final String src =
-        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+        read('lib/src/pages/implementations/reader_fushi_page.dart');
     expect(src, contains('int? _cachedSelectionSectionIndex;'),
         reason: '选区时刻快照所属章号的字段必须存在');
     expect(
@@ -33,9 +33,9 @@ void main() {
       '收藏 toggle 与制卡写入的 section 取自 _favoriteSectionIndex（非裸 _lookupSectionIndex）',
       () {
     final String chrome =
-        read('lib/src/pages/implementations/reader_hibiki/chrome.part.dart');
+        read('lib/src/pages/implementations/reader_fushi/chrome.part.dart');
     final String mining =
-        read('lib/src/pages/implementations/reader_hibiki/mining.part.dart');
+        read('lib/src/pages/implementations/reader_fushi/mining.part.dart');
     expect(chrome, contains('final int section = _favoriteSectionIndex;'),
         reason: '收藏 toggle 的 section 必须来自选区快照 getter');
     expect(mining, contains('final int section = _favoriteSectionIndex;'),
@@ -49,9 +49,9 @@ void main() {
 
   test('三个选区缓存点都同批快照 section；isFavorited 查询消费快照', () {
     final String lookup =
-        read('lib/src/pages/implementations/reader_hibiki/lookup.part.dart');
+        read('lib/src/pages/implementations/reader_fushi/lookup.part.dart');
     final String chrome =
-        read('lib/src/pages/implementations/reader_hibiki/chrome.part.dart');
+        read('lib/src/pages/implementations/reader_fushi/chrome.part.dart');
     // 主 onTextSelected 路径 + 歌词 cue 路径都写快照。
     expect('x$lookup'.split('_cachedSelectionSectionIndex =').length - 1,
         greaterThanOrEqualTo(2),

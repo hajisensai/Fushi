@@ -119,11 +119,11 @@ void main() {
   group('reader navigation 阅读统计 / 位置落盘补 log', () {
     late String src;
     setUpAll(() => src = libFile(
-        'lib/src/pages/implementations/reader_hibiki/navigation.part.dart'));
+        'lib/src/pages/implementations/reader_fushi/navigation.part.dart'));
 
     test('_flushReadingStats catch 保留 debugPrint 且补 ErrorLogService.log', () {
       final String body = fnBody(src, 'Future<void> _flushReadingStats(');
-      expect(body, contains('ReaderHibiki._flushReadingStats'));
+      expect(body, contains('ReaderFushi._flushReadingStats'));
       expect(logRe.hasMatch(body), isTrue);
       expect(body, contains("debugPrint('[ReaderFushi] stats flush error"),
           reason: 'fail-open 未变：保留原 debugPrint。');
@@ -131,7 +131,7 @@ void main() {
 
     test('_persistPosition 的 repo.save 包 catch 并补 ErrorLogService.log', () {
       final String body = fnBody(src, 'Future<void> _persistPosition(');
-      expect(body, contains('ReaderHibiki._persistPosition'));
+      expect(body, contains('ReaderFushi._persistPosition'));
       expect(logRe.hasMatch(body), isTrue);
     });
   });

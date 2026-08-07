@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show runUiScaleReanchorOrchestration;
 
 /// TODO-697 item①：693 修复（连续模式改 appUiScale 重锚）此前只有 7 个纯函数真值表 +
@@ -14,7 +14,7 @@ import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
 /// 「begin 在 commit 之前、begin<0 不 commit、门控抑制不求值、求值异常吞掉不外抛」的
 /// 真实运行时语义。
 ///
-/// 这是 headless 下能落地的**最窄真行为层**：完整 mount `ReaderHibikiPage` 不可行——
+/// 这是 headless 下能落地的**最窄真行为层**：完整 mount `ReaderFushiPage` 不可行——
 /// 测试用的 fake InAppWebView 平台（见 `test/helpers/fake_inappwebview_platform.dart`）
 /// 是惰性的，其 `_controller` 永不就绪（恒 null），门控 `controllerAvailable:false` 直接
 /// 早返回，根本到不了 begin/commit。故退到注入式编排核心，仍是运行时执行而非源码扫描。

@@ -6,7 +6,7 @@ import '../../helpers/scan_scale.dart';
 
 void main() {
   final File wrapper = File(
-    'lib/src/media/drag_drop/hibiki_file_drop_target.dart',
+    'lib/src/media/drag_drop/fushi_file_drop_target.dart',
   );
 
   test('desktop_drop is only imported inside the platform-gated wrapper', () {
@@ -18,7 +18,7 @@ void main() {
       scanned++;
       if (e.path
           .replaceAll('\\', '/')
-          .endsWith('src/media/drag_drop/hibiki_file_drop_target.dart')) {
+          .endsWith('src/media/drag_drop/fushi_file_drop_target.dart')) {
         continue;
       }
       final String src = e.readAsStringSync();

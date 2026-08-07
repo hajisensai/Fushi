@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_screenshot_filename.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 void main() {
   group('videoScreenshotBaseName', () {
@@ -67,7 +67,7 @@ void main() {
   });
 
   group('_saveScreenshot 源码守卫', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
     final int start = page.indexOf('Future<void> _saveScreenshot()');
     late final String body;
 

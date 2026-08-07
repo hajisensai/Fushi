@@ -17,8 +17,8 @@ export 'src/media/types/dictionary_media_type.dart';
 export 'src/media/types/reader_media_type.dart';
 
 export 'src/media/sources/reader_media_source.dart';
-export 'src/media/sources/reader_hibiki_source.dart';
+export 'src/media/sources/reader_fushi_source.dart';
 export 'src/media/sources/reader_pdf_source.dart';
-export 'src/media/sources/manga_hibiki_source.dart';
+export 'src/media/sources/manga_fushi_source.dart';
 
 export 'src/media/video/video_immersive_mode.dart';

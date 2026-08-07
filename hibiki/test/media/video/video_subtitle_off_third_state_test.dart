@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_subtitle_source.dart';
 import 'package:path/path.dart' as p;
 
-import '../../pages/video_hibiki_page_source_corpus.dart';
+import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// TODO-818：视频字幕「关闭」第三态。
 ///
@@ -67,7 +67,7 @@ void main() {
   });
 
   group('TODO-818 源码守卫：关闭哨兵堵住两个自动重选向量', () {
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
 
     String region(String startSig, String endSig) {
       final int start = src.indexOf(startSig);

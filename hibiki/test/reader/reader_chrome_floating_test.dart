@@ -6,7 +6,7 @@ import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-975: 阅读器顶部进度/底栏 悬浮化 + 关进度回收空白。
 ///
@@ -111,15 +111,15 @@ void main() {
   });
 
   group('floating chrome defaults on (top progress + bottom bar float)', () {
-    setUp(() => ReaderHibikiSource.readerSettings = null);
-    tearDown(() => ReaderHibikiSource.readerSettings = null);
+    setUp(() => ReaderFushiSource.readerSettings = null);
+    tearDown(() => ReaderFushiSource.readerSettings = null);
 
     test('topProgressFloating defaults true; autoHide defaults 3000', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       expect(source.topProgressFloating, isTrue);
@@ -132,12 +132,12 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       final ReaderSettings perBook = ReaderSettings(db);
       await perBook.refreshFromDb();
-      ReaderHibikiSource.readerSettings = perBook;
+      ReaderFushiSource.readerSettings = perBook;
 
       // 默认悬浮开启；toggle 一次落到关闭并持久化。
       expect(source.topProgressFloating, isTrue);
@@ -157,7 +157,7 @@ void main() {
 
       final ReaderSettings perBook = ReaderSettings(db);
       await perBook.refreshFromDb();
-      ReaderHibikiSource.readerSettings = perBook;
+      ReaderFushiSource.readerSettings = perBook;
 
       await perBook.setAutoHideChromeMillis(4000);
       expect(perBook.autoHideChromeMillis, 4000);
@@ -226,7 +226,7 @@ void main() {
 
     test('reserve-changing chrome prefs go through the re-anchor channel', () {
       expect(
-        src.contains('ReaderHibikiSource.onChromeReanchorLive = ()'),
+        src.contains('ReaderFushiSource.onChromeReanchorLive = ()'),
         isTrue,
         reason: '改预留高的 chrome 偏好必须注册 onChromeReanchorLive 重锚通道',
       );

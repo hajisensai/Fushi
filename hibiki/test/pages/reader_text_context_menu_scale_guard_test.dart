@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// TODO-954 守卫：阅读器**文字选区右键菜单**（查词 / 复制 / 收藏 / 导出）随界面大小
 /// 缩放，且导出入口从查词弹窗 header 迁到选区右键（Windows Flutter 菜单 + 移动端原生

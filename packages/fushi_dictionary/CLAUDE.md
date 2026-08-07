@@ -1,6 +1,6 @@
-[根目录](../../CLAUDE.md) > [packages](../) > **hibiki_dictionary**
+[根目录](../../CLAUDE.md) > [packages](../) > **fushi_dictionary**
 
-# hibiki_dictionary
+# fushi_dictionary
 
 ## 模块职责
 
@@ -8,7 +8,7 @@
 
 ## 入口与启动
 
-- 库入口：`lib/hibiki_dictionary.dart`
+- 库入口：`lib/fushi_dictionary.dart`
 - FFI 核心：`lib/src/engine/fushidicts.dart` -- 通过 `dart:ffi` 调用 C++ `fushidicts` 原生库。
 - FFI 绑定：`lib/src/ffi/fushidicts_ffi_bindings.dart` -- 自动/手动生成的 FFI 函数签名。
 - 应用启动时调用 `FushiDicts.preloadTransforms()` 预加载语言变换表。
@@ -34,7 +34,7 @@
 ## 关键依赖与配置
 
 - `ffi: ^2.1.3` -- dart:ffi 基础。
-- `hibiki_core` -- 数据库层依赖。
+- `fushi_core` -- 数据库层依赖。
 - `kana_kit: ^2.0.0` -- 假名/罗马字转换。
 - `ruby_text` -- 注音文字渲染。
 - `archive / async_zip / flutter_archive` -- 压缩包处理（词典导入）。
@@ -45,7 +45,7 @@
 - `FushiTermResult` -- FFI 查询返回的词条结果（expression / reading / glossaries / frequencies / pitches）。
 - `DictionaryEntry` -- Dart 层的词典条目。
 - `DictionarySearchResult` -- 搜索结果集合。
-- 词典元数据存储在 `hibiki_core` 的 `DictionaryMetadata` 表。
+- 词典元数据存储在 `fushi_core` 的 `DictionaryMetadata` 表。
 
 ## 测试与质量
 
@@ -55,7 +55,7 @@
 
 ## 相关文件清单
 
-- `lib/hibiki_dictionary.dart` -- 库入口（导出全部公开 API）
+- `lib/fushi_dictionary.dart` -- 库入口（导出全部公开 API）
 - `lib/src/engine/fushidicts.dart` -- FFI 核心
 - `lib/src/engine/dictionary.dart` -- 词典抽象
 - `lib/src/ffi/fushidicts_ffi_bindings.dart` -- FFI 绑定

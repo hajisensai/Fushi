@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫（BUG-463）：视频内顶栏（media_kit 控制条 [topButtonBar]）必须避让系统
 /// 状态栏 / 刘海，否则顶栏左右按钮被遮挡、点不到（用户报「视频顶栏的按钮会被挡住」）。
@@ -19,7 +19,7 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   late String src;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   test('移动控制主题把 topButtonBarMargin 接到 _videoTopBarMargin()（不回退默认无顶部 inset）',

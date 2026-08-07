@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫（TODO-633 制卡历史）：制卡成功的**三条**真实路径都必须额外落一条
 /// `mined_sentences` 历史行，否则收藏夹页「制卡句」分段恒为空。
@@ -35,7 +35,7 @@ void main() {
   test('video 覆写 onMineEntry 在成功分支额外落一条 mined_sentences', () {
     // TODO-590 batch14: `_recordMinedSentenceForVideo` 已搬进 lookup_mining.part.dart，
     // 读合并语料（主壳 + 全部 part）才能命中。
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
     expect(src, contains('_recordMinedSentenceForVideo('),
         reason: 'video 成功制卡必须落制卡历史行');
     expect(src, contains('Future<void> _recordMinedSentenceForVideo('));

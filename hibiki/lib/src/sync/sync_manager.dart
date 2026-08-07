@@ -448,7 +448,7 @@ class SyncManager {
   // ── Direction ─────────────────────────────────────────────────────
 
   /// 云通道书籍进度的同步方向判定——「取较新时间戳」LWW 范式，与互联侧统一的
-  /// `resolvePositionLww`（hibiki_library_host_service.dart）同族。差异（故命名统一
+  /// `resolvePositionLww`（fushi_library_host_service.dart）同族。差异（故命名统一
   /// 轮未并入，合并需单独评审）：本函数返回**同步方向枚举**而非胜者值；两侧「无记录」
   /// 用 null 表达并各自导出/导入；tie-break 比的是阅读分数且带存储网格量化
   /// （BUG-162），不是单维位置取大。

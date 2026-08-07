@@ -78,7 +78,7 @@ class FushiSettingsSubPageHeader extends StatelessWidget {
 /// 复用主/子页切换 Element 的 [narrowKey] 也由调用方决定（阅读器带 key、视频不带）。
 ///
 /// 宽窗判定使用确定性几何判据（窗口宽且高都 >= 共享阈值常量
-/// `kHibikiSettingsWideThreshold` 560 × `kHibikiSettingsWideMinHeight` 440），不测内容
+/// `kFushiSettingsWideThreshold` 560 × `kFushiSettingsWideMinHeight` 440），不测内容
 /// 高度——同设备同尺寸下书籍/视频表现一致，高度不足时直接 push 而非出滚动条。判定结果
 /// 经 [onWideChanged] 回写给调用方的 `_isWide` State 字段，供 [PopScope.canPop] 在下一
 /// 帧读取（宽窗下返回键直接关弹窗，不卡在「返回上一级」）。
@@ -170,8 +170,8 @@ class FushiMasterDetailSettingsSheet extends StatelessWidget {
           builder: (BuildContext context, BoxConstraints constraints) {
             // 确定性几何判据：宽且高都够才进宽窗 master-detail，否则窄窗 push。
             final bool wide =
-                constraints.maxWidth >= kHibikiSettingsWideThreshold &&
-                    constraints.maxHeight >= kHibikiSettingsWideMinHeight;
+                constraints.maxWidth >= kFushiSettingsWideThreshold &&
+                    constraints.maxHeight >= kFushiSettingsWideMinHeight;
             onWideChanged(wide);
             if (wide) {
               return wideBuilder(context, constraints);

@@ -7,7 +7,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
-import 'package:fushi/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -736,7 +736,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           // autoRead 覆盖：null 沿用全局 autoReadOnLookup（正常输入查词不变），
           // 桌面剪贴板/热键路径显式传 false 抑制朗读。
           final bool shouldAutoRead =
-              autoRead ?? ReaderHibikiSource.instance.autoReadOnLookup;
+              autoRead ?? ReaderFushiSource.instance.autoReadOnLookup;
           if (shouldAutoRead) {
             final entry = result.entries.first;
             if (entry.word.isNotEmpty) {
@@ -933,15 +933,15 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                       // TODO-1052：桌面对齐手机——barrier 上水平拖过阈关一层（逐层关）。
                       // 仅当滑动关闭开关开启时挂横拖（否则只 onTap）。竞技场分流单击/横拖。
                       onHorizontalDragStart:
-                          ReaderHibikiSource.instance.enableSwipeToClose
+                          ReaderFushiSource.instance.enableSwipeToClose
                               ? _onBarrierHorizontalDragStart
                               : null,
                       onHorizontalDragUpdate:
-                          ReaderHibikiSource.instance.enableSwipeToClose
+                          ReaderFushiSource.instance.enableSwipeToClose
                               ? _onBarrierHorizontalDragUpdate
                               : null,
                       onHorizontalDragEnd:
-                          ReaderHibikiSource.instance.enableSwipeToClose
+                          ReaderFushiSource.instance.enableSwipeToClose
                               ? _onBarrierHorizontalDragEnd
                               : null,
                       child: const ColoredBox(color: Colors.transparent),
@@ -982,7 +982,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   /// TODO-1052：查词浮层 barrier 上「桌面水平拖过阈关一层」的纯状态追踪器（与
   /// reader/audiobook、video、texthooker 共用 [BarrierSwipeDismissTracker]，阈值/
-  /// 位移单一真相源、不漂移）。仅当 [ReaderHibikiSource.enableSwipeToClose] 开启时挂
+  /// 位移单一真相源、不漂移）。仅当 [ReaderFushiSource.enableSwipeToClose] 开启时挂
   /// 到 barrier（否则只 onTap，与旧行为一致）。过阈关一层（逐层关，非清整栈）。
   final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
 
@@ -996,7 +996,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   void _onBarrierHorizontalDragEnd(DragEndDetails details) {
     if (_barrierSwipe.end(
-      sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
     )) {
       _popNestedPopupAt(_popup.lastVisibleIndex);
     }

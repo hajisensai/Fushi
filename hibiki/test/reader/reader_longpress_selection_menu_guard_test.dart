@@ -95,7 +95,7 @@ void main() {
   group('Dart 端：选区菜单同时给「复制」与「查词」两条出口（共存）', () {
     test('webview.part.dart 注册 onSelectionMenu -> _handleSelectionMenu', () {
       final String src =
-          File('lib/src/pages/implementations/reader_hibiki/webview.part.dart')
+          File('lib/src/pages/implementations/reader_fushi/webview.part.dart')
               .readAsStringSync();
       expect(src, contains("handlerName: 'onSelectionMenu'"),
           reason: '缺 onSelectionMenu handler 注册');
@@ -105,7 +105,7 @@ void main() {
 
     test('chrome.part.dart _handleSelectionMenu 同时提供复制 + 查词', () {
       final String src =
-          File('lib/src/pages/implementations/reader_hibiki/chrome.part.dart')
+          File('lib/src/pages/implementations/reader_fushi/chrome.part.dart')
               .readAsStringSync();
       final String body = _between(src, 'Future<void> _handleSelectionMenu(',
           'Future<void> _clearReaderAppSelection(');

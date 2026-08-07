@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// BUG-455 守卫：阅读器查词弹窗顶栏「收藏句子」读 `currentMediaSource.currentSentence`，
 /// 为空就误报「未选择句子」(no_sentence_selected)。tap 查词走 `_handleTextSelected` 已

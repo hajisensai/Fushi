@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show readerScrollCaretFollowAllowed;
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-937：连续/滚动模式下手动滚动正文时，字符级焦点环（caret）不跟随可视区
 /// （用户：「滚动模式，焦点不会跟着页面动」）。
@@ -20,7 +20,7 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// 之后；只在连续模式 + caret 激活在正文（非弹窗非歌词）时触发，分页模式 / caret 未激活
 /// / 弹窗滚动零影响。
 ///
-/// reader_hibiki_page.dart 太重（WebView + DB + provider）不便整页 mount，门控逻辑抽成
+/// reader_fushi_page.dart 太重（WebView + DB + provider）不便整页 mount，门控逻辑抽成
 /// [readerScrollCaretFollowAllowed] 纯函数在此锁定真值表；调用点接线与节流去抖由
 /// 源码扫描守卫锁定，防回归。
 void main() {

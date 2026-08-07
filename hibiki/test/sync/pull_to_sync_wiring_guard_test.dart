@@ -102,7 +102,7 @@ void main() {
 
   test('三页都挂了同步进度条（下拉可能跑几十秒）', () {
     for (final String file in <String>[
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+      'lib/src/pages/implementations/reader_fushi_history_page.dart',
       'lib/src/pages/implementations/home_video_page.dart',
       'lib/src/pages/implementations/home_dictionary_page.dart',
     ]) {

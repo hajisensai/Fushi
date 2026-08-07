@@ -7,8 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
@@ -52,7 +52,7 @@ Future<ScrollController> _pumpSyncDetail(
   await repo.setBackendType(SyncBackendType.hibikiServer);
   // Several URLs → a tall, variable-height URL list, exaggerating the unequal
   // section heights that destabilise a lazy list's extent estimate.
-  await repo.setHibikiClientUrls(<FushiClientUrl>[
+  await repo.setFushiClientUrls(<FushiClientUrl>[
     const FushiClientUrl(url: 'http://192.168.1.10:38765'),
     const FushiClientUrl(url: 'http://192.168.1.11:38765'),
     const FushiClientUrl(url: 'http://192.168.1.12:38765'),
@@ -101,7 +101,7 @@ Future<ScrollController> _pumpSyncDetail(
                   context: context,
                   appModel: ref.read(appProvider),
                   ref: ref,
-                  readerSource: ReaderHibikiSource.instance,
+                  readerSource: ReaderFushiSource.instance,
                   refresh: () {},
                 );
                 return renderer.buildDetailContent(

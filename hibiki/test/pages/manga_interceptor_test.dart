@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/manga_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
@@ -19,32 +19,32 @@ void main() {
 
     test('树内图片路径可解析（保留子目录结构）', () {
       final String? resolved =
-          MangaHibikiPage.resolveMangaResource(root.path, 'vol1/p001.jpg');
+          MangaFushiPage.resolveMangaResource(root.path, 'vol1/p001.jpg');
       expect(resolved, isNotNull);
       expect(File(resolved!).existsSync(), isTrue);
     });
 
     test('percent-encoded 路径解码后解析（与 mangaImageUrl 编码对称）', () {
       final String? resolved =
-          MangaHibikiPage.resolveMangaResource(root.path, 'vol1/p001%2Ejpg');
+          MangaFushiPage.resolveMangaResource(root.path, 'vol1/p001%2Ejpg');
       expect(resolved, isNotNull);
     });
 
     test('路径穿越被拒（../../ 越出 images 根）', () {
-      final String? resolved = MangaHibikiPage.resolveMangaResource(
+      final String? resolved = MangaFushiPage.resolveMangaResource(
           root.path, '../../../etc/passwd');
       expect(resolved, isNull);
     });
 
     test('encoded 穿越同样被拒（%2E%2E%2F）', () {
-      final String? resolved = MangaHibikiPage.resolveMangaResource(
+      final String? resolved = MangaFushiPage.resolveMangaResource(
           root.path, '%2E%2E%2F%2E%2E%2Fsecret.txt');
       expect(resolved, isNull);
     });
 
     test('树内缺文件回 null', () {
       final String? resolved =
-          MangaHibikiPage.resolveMangaResource(root.path, 'vol1/missing.jpg');
+          MangaFushiPage.resolveMangaResource(root.path, 'vol1/missing.jpg');
       expect(resolved, isNull);
     });
   });
@@ -62,19 +62,19 @@ void main() {
     tearDown(() => root.deleteSync(recursive: true));
 
     test('manga.local 图片 URL 解析到树内文件', () {
-      final String? resolved = MangaHibikiPage.resolveImageUrlToFile(
+      final String? resolved = MangaFushiPage.resolveImageUrlToFile(
           root.path, 'https://manga.local/img/p001.jpg');
       expect(resolved, isNotNull);
     });
 
     test('错误 host / 非 img 路径回 null', () {
       expect(
-        MangaHibikiPage.resolveImageUrlToFile(
+        MangaFushiPage.resolveImageUrlToFile(
             root.path, 'https://fushi.local/img/p001.jpg'),
         isNull,
       );
       expect(
-        MangaHibikiPage.resolveImageUrlToFile(
+        MangaFushiPage.resolveImageUrlToFile(
             root.path, 'https://manga.local/other/p001.jpg'),
         isNull,
       );
@@ -82,7 +82,7 @@ void main() {
   });
 
   test('漫画虚拟域与阅读器 fushi.local 互异（两拦截器绝不混叠）', () {
-    expect(MangaHibikiPage.kMangaHost, isNot('fushi.local'));
-    expect(MangaHibikiPage.kMangaHost, 'manga.local');
+    expect(MangaFushiPage.kMangaHost, isNot('fushi.local'));
+    expect(MangaFushiPage.kMangaHost, 'manga.local');
   });
 }

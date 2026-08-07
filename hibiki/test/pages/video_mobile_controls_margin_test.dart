@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：移动端视频控制条的进度条 / 按钮条几何不变量，覆盖三个修复：
 ///
@@ -23,7 +23,7 @@ import 'video_hibiki_page_source_corpus.dart';
 /// VideoController，widget 测试里难稳定复现移动控制条几何。
 void main() {
   final File page = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
+    'lib/src/pages/implementations/video_fushi_page.dart',
   );
 
   late String src;
@@ -32,7 +32,7 @@ void main() {
     expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
     // TODO-590 batch11：_mobileControlsTheme 已搬到 controls_theme.part.dart，读「合并语料」
     // （主壳 + 全部 part）；针对的 _videoBottomSystemInset / 常量 / getter 仍在主壳故照样命中。
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
 
     // 截取 _mobileControlsTheme 方法体。搬出后它是 controls_theme.part 的末方法，原下界
     // _hasRoomyVideoBottomBar 在主壳、排到了它之前（合并语料 part 整体追加在主壳后），

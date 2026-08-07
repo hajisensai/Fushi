@@ -14,7 +14,7 @@ void main() {
   late String appModel;
   setUpAll(() {
     handler =
-        File('lib/src/utils/misc/hibiki_audio_handler.dart').readAsStringSync();
+        File('lib/src/utils/misc/fushi_audio_handler.dart').readAsStringSync();
     controller =
         File('lib/src/models/audio_controller.dart').readAsStringSync();
     session = File(

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/forwarded_mine_payload.dart';
-import 'package:fushi/src/sync/hibiki_remote_api_handlers.dart';
-import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
+import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/immersion_mine_payload.dart';
 
 /// TODO-1303 契约守卫：`/api/mine` 响应体现在除 `result` 外，还摊开诊断

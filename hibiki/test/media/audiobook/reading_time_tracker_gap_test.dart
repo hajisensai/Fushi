@@ -110,7 +110,7 @@ void main() {
     late String src;
     setUpAll(() {
       src = maskComments(
-          File('lib/src/pages/implementations/reader_hibiki_page.dart')
+          File('lib/src/pages/implementations/reader_fushi_page.dart')
               .readAsStringSync());
     });
 
@@ -146,10 +146,10 @@ void main() {
   group('BUG-1052 单一时钟：会话时长累计器不被任何重锚吃掉', () {
     test('EPUB 阅读器不再持有可被重置的墙钟基准字段', () {
       final String page = maskComments(
-          File('lib/src/pages/implementations/reader_hibiki_page.dart')
+          File('lib/src/pages/implementations/reader_fushi_page.dart')
               .readAsStringSync());
       final String nav = maskComments(File(
-              'lib/src/pages/implementations/reader_hibiki/navigation.part.dart')
+              'lib/src/pages/implementations/reader_fushi/navigation.part.dart')
           .readAsStringSync());
       // 字段本体必须已删除（注释里可以留历史说明，故只查声明与赋值形态）。
       expect(page.contains('DateTime _sessionStartTime'), isFalse);
@@ -163,7 +163,7 @@ void main() {
 
     test('恢复完成（每次重排版都会跑）不得重锚会话时钟', () {
       final String nav = maskComments(File(
-              'lib/src/pages/implementations/reader_hibiki/navigation.part.dart')
+              'lib/src/pages/implementations/reader_fushi/navigation.part.dart')
           .readAsStringSync());
       final int i = nav.indexOf('void _onRestoreComplete()');
       expect(i, greaterThanOrEqualTo(0));
@@ -177,7 +177,7 @@ void main() {
 
     test('无新字数的早退路径不清空累计器（时长留到下次落库）', () {
       final String nav = maskComments(File(
-              'lib/src/pages/implementations/reader_hibiki/navigation.part.dart')
+              'lib/src/pages/implementations/reader_fushi/navigation.part.dart')
           .readAsStringSync());
       final int i = nav.indexOf('Future<void> _flushReadingStats()');
       expect(i, greaterThanOrEqualTo(0));

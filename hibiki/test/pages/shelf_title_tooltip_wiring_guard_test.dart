@@ -34,7 +34,7 @@ void main() {
 
   test('书架：继续阅读 hero 标题接标题溢出 Tooltip（TODO-2497）', () {
     expect(
-      countIn('lib/src/pages/implementations/reader_hibiki_history_page.dart'),
+      countIn('lib/src/pages/implementations/reader_fushi_history_page.dart'),
       greaterThanOrEqualTo(1),
       reason: '书架继续阅读 hero 标题必须接 ShelfTitleOverflowTooltip',
     );

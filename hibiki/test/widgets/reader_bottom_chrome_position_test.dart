@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 // Regression guard for: reader bottom control bar (play / settings) rendering at
 // the TOP of the screen.
 //
-// Root cause (reader_hibiki_page.dart, commit 1038e899a): the bottom chrome's
+// Root cause (reader_fushi_page.dart, commit 1038e899a): the bottom chrome's
 // `Positioned(bottom: 0)` was wrapped in a `FocusScope` that was itself the direct
 // child of the reader `Stack`:
 //

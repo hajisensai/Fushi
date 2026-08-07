@@ -16,7 +16,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 /// 修复 = [VideoControlsFocusGate]：全屏路由在栈上时卸载窗口侧 controls，保证任意
 /// 时刻只有一个 Focus 持有该节点，退全屏后窗口侧重挂、节点重新 attach。
 ///
-/// 真实 `VideoHibikiPage` 无法 headless 加载（media_kit 测试宿主无 libmpv），页面
+/// 真实 `VideoFushiPage` 无法 headless 加载（media_kit 测试宿主无 libmpv），页面
 /// 接线由 `video_page_keyboard_focus_static_test.dart` 源码守卫；本文件在同构 harness
 /// 上验证机制本身（与 media_kit material_desktop.dart 同款 CallbackShortcuts→Focus
 /// 结构 + 真实 [FullscreenInheritedWidget] + 真实 gate）。

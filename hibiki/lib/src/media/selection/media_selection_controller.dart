@@ -1,6 +1,6 @@
 /// 库页多选的共享状态机（书架 / 视频库共用一份）。
 ///
-/// 抽出来的理由：书架（`reader_hibiki_history_page.dart`）与视频库
+/// 抽出来的理由：书架（`reader_fushi_history_page.dart`）与视频库
 /// （`home_video_page.dart`）此前各自维护形状完全相同的三件套——散卡选中集
 /// `Set<String>`、合集整选集 `Set<int>`、模式位 `bool`——外加各自一份
 /// toggle / 全选 / 反选。补 Shift 区间选与长按扫选时若继续各写一遍，两页行为

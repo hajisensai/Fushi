@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/epub/epub_storage.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
-import 'package:fushi/src/utils/components/hibiki_destructive_confirm_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
 import 'package:path/path.dart' as p;
 
 /// BUG-1305：删除确认文案与真实删除范围对不上。
@@ -112,7 +112,7 @@ void main() {
       );
 
       final String historyPage = readSource(
-          'lib/src/pages/implementations/reader_hibiki_history_page.dart');
+          'lib/src/pages/implementations/reader_fushi_history_page.dart');
       expect(
         historyPage
             .contains('deleteMembersDisclosure: buildDeletionDisclosure'),
@@ -140,7 +140,7 @@ void main() {
 
     test('checked-state disclosure is gated on the checkbox state', () {
       final String dialog = readSource(
-          'lib/src/utils/components/hibiki_destructive_confirm_dialog.dart');
+          'lib/src/utils/components/fushi_destructive_confirm_dialog.dart');
       expect(
         dialog.contains('if (_checked && widget.checkedDisclosure != null)'),
         isTrue,

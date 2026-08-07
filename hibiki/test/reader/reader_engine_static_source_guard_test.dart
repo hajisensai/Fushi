@@ -27,7 +27,7 @@ void main() {
 
   setUpAll(() {
     webview = File(
-      'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+      'lib/src/pages/implementations/reader_fushi/webview.part.dart',
     ).readAsStringSync().replaceAll('\r\n', '\n');
   });
 
@@ -75,20 +75,20 @@ void main() {
     });
 
     test('同一进程里同一模式的引擎源码恒定（memoize 的前提）', () {
-      expect(readerHibikiEngineSource(), same(readerHibikiEngineSource()));
-      expect(readerHibikiEngineSource(continuousMode: true),
-          same(readerHibikiEngineSource(continuousMode: true)));
-      expect(readerHibikiEngineSource(vnMode: true),
-          same(readerHibikiEngineSource(vnMode: true)));
+      expect(readerFushiEngineSource(), same(readerFushiEngineSource()));
+      expect(readerFushiEngineSource(continuousMode: true),
+          same(readerFushiEngineSource(continuousMode: true)));
+      expect(readerFushiEngineSource(vnMode: true),
+          same(readerFushiEngineSource(vnMode: true)));
       // 三种模式各自不同（没有被 memoize key 串味）。
       expect(
-          readerHibikiEngineSource() ==
-              readerHibikiEngineSource(continuousMode: true),
+          readerFushiEngineSource() ==
+              readerFushiEngineSource(continuousMode: true),
           isFalse);
     });
 
     test('引擎只定义不执行，install 之外没有顶层副作用', () {
-      final String src = readerHibikiEngineSource().trim();
+      final String src = readerFushiEngineSource().trim();
       expect(
         src.startsWith('window.__fushiEngine = {'),
         isTrue,
@@ -111,9 +111,9 @@ void main() {
         'caret': ReaderCaretScripts.source(),
       };
       final Map<String, String> engines = <String, String>{
-        'paged': readerHibikiEngineSourceUncompacted(),
-        'continuous': readerHibikiEngineSourceUncompacted(continuousMode: true),
-        'vn': readerHibikiEngineSourceUncompacted(vnMode: true),
+        'paged': readerFushiEngineSourceUncompacted(),
+        'continuous': readerFushiEngineSourceUncompacted(continuousMode: true),
+        'vn': readerFushiEngineSourceUncompacted(vnMode: true),
       };
       engines.forEach((String mode, String engine) {
         payloads.forEach((String name, String payload) {
@@ -146,9 +146,9 @@ void main() {
         'vn': 'vn',
       };
       final Map<String, String> engines = <String, String>{
-        'paged': readerHibikiEngineSource(),
-        'continuous': readerHibikiEngineSource(continuousMode: true),
-        'vn': readerHibikiEngineSource(vnMode: true),
+        'paged': readerFushiEngineSource(),
+        'continuous': readerFushiEngineSource(continuousMode: true),
+        'vn': readerFushiEngineSource(vnMode: true),
       };
       engines.forEach((String mode, String engine) {
         expect(
@@ -165,7 +165,7 @@ void main() {
     });
 
     test('caret / furigana 的初始化改成读运行时 config', () {
-      final String engine = readerHibikiEngineSource();
+      final String engine = readerFushiEngineSource();
       expect(engine.contains('window.fushiCaret.init({'), isTrue);
       expect(engine.contains('color: C.caretColor,'), isTrue);
       expect(engine.contains("C.furiganaMode === 'partial'"), isTrue);
@@ -175,7 +175,7 @@ void main() {
 
   group('3. 每章注入载荷必须保持极小（收益本身）', () {
     test('boot 载荷只有 config + 一次 install 调用，不含引擎本体', () {
-      final String boot = readerHibikiEngineBoot(_sampleConfig());
+      final String boot = readerFushiEngineBoot(_sampleConfig());
       expect(
         boot.length,
         lessThan(4096),
@@ -233,7 +233,7 @@ void main() {
       }
 
       final String navigation = File(
-        'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+        'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n');
       final int gate = navigation.indexOf('void _acceptRestoreComplete({');
       final int effects = navigation.indexOf(
@@ -264,7 +264,7 @@ void main() {
       expect(evalIdx, greaterThan(buildIdx));
       expect(markIdx, greaterThan(evalIdx));
       expect(
-        readerHibikiEngineSource()
+        readerFushiEngineSource()
             .contains("if (document.readyState === 'complete')"),
         isTrue,
         reason: 'shell 的 load / readyState 双分支 boot 语义保持不变',
@@ -297,10 +297,10 @@ void main() {
       final Directory tmp = Directory.systemTemp.createTempSync('fushi-engine');
       try {
         for (final MapEntry<String, String> entry in <String, String>{
-          'paged': readerHibikiEngineSource(),
-          'continuous': readerHibikiEngineSource(continuousMode: true),
-          'vn': readerHibikiEngineSource(vnMode: true),
-          'boot': readerHibikiEngineBoot(_sampleConfig()),
+          'paged': readerFushiEngineSource(),
+          'continuous': readerFushiEngineSource(continuousMode: true),
+          'vn': readerFushiEngineSource(vnMode: true),
+          'boot': readerFushiEngineBoot(_sampleConfig()),
         }.entries) {
           final File f = File('${tmp.path}/${entry.key}.js')
             ..writeAsStringSync(entry.value);

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// TODO-066 源码守卫：阅读器字符光标在按住方向键时随 OS 自动重复
 /// ([KeyRepeatEvent]) 连续逐字移动，而激活 / 退出不随重复连发。

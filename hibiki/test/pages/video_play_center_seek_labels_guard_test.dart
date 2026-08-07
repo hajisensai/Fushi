@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：视频底栏 play 钉在几何中心 + seek 按钮带可见标注（TODO-315 / BUG-257）。
 ///
@@ -24,7 +24,7 @@ void main() {
     // （主壳 + 全部 part）。`_centeredBottomControlBar(controller, desktop: true/false)`
     // 两个委托点现在分别落在桌面/移动主题（part 文件），单读主壳已找不到，故必须读合并语料。
     // `_centeredBottomControlBar` / `_buildBottomSlotButton` 等切片仍在主壳，落在语料开头不受影响。
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
     final int start = src.indexOf('Widget _centeredBottomControlBar(');
     expect(start, greaterThanOrEqualTo(0),
         reason: '需有共享底栏构造器 _centeredBottomControlBar');

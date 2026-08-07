@@ -7,11 +7,11 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
-import 'package:fushi/src/utils/misc/hibiki_share.dart';
+import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/epub/epub_book.dart' show fallbackMimeType;
 import 'package:fushi/src/media/media_extensions.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart'
-    show ReaderHibikiSource;
+import 'package:fushi/src/media/sources/reader_fushi_source.dart'
+    show ReaderFushiSource;
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
@@ -72,7 +72,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
 
   /// 防剧透遮罩总开关：与阅读器同一偏好（`ttu_blur_images`）。关闭时图片库始终原图。
   bool get _blurEnabled =>
-      ReaderHibikiSource.readerSettings?.blurImages ?? false;
+      ReaderFushiSource.readerSettings?.blurImages ?? false;
 
   @override
   void initState() {

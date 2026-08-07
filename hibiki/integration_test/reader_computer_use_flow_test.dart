@@ -11,9 +11,9 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart'
     show GamepadButton, ModifierKey;
 import 'package:fushi/src/shortcuts/reader_space_override.dart'
@@ -193,7 +193,7 @@ Future<void> _openSeededBook(
   await tester.pump(const Duration(milliseconds: 500));
 
   final String seededEntryKey =
-      'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
+      'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
   final Finder seededEntry = find.byKey(ValueKey<String>(seededEntryKey));
   for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
     await tester.pump(const Duration(milliseconds: 500));
@@ -250,7 +250,7 @@ Future<Future<dynamic> Function(String source)> _waitForReaderReady(
       reason: 'Reader content must become ready');
   await tester.pump(const Duration(seconds: 3));
 
-  final eval = ReaderHibikiPage.debugEvaluateJavascript;
+  final eval = ReaderFushiPage.debugEvaluateJavascript;
   expect(eval, isNotNull,
       reason: 'Reader debug JS hook must be available in integration runs');
   final ReaderPageSnapshot readyState = await _readPageState(eval!);
@@ -679,7 +679,7 @@ JSON.stringify((function() {
   final raw = await eval(source);
   return CaretSnapshot.fromJson(
     jsonDecode(raw as String) as Map<String, dynamic>,
-    surface: ReaderHibikiPage.debugCaretSurface?.call() ?? 'unknown',
+    surface: ReaderFushiPage.debugCaretSurface?.call() ?? 'unknown',
   );
 }
 
@@ -692,7 +692,7 @@ Future<PopupSnapshot> _waitForPopupResult(
   for (int i = 0; i < 120; i++) {
     await tester.pump(const Duration(milliseconds: 250));
     final Future<dynamic> Function(String source)? topEval =
-        ReaderHibikiPage.debugEvaluateTopPopup;
+        ReaderFushiPage.debugEvaluateTopPopup;
     if (topEval == null) continue;
     final raw = await topEval(_popupSnapshotJs);
     if (raw == null) continue;
@@ -753,7 +753,7 @@ Future<void> _closePopupAndReturnToReader(
       if (!await _hasVisibleTopPopup()) {
         popupGone = true;
         final String surface =
-            ReaderHibikiPage.debugCaretSurface?.call() ?? 'unknown';
+            ReaderFushiPage.debugCaretSurface?.call() ?? 'unknown';
         if (surface == 'reader') {
           evidence.recordCheck(
             'escape_returns_reader_caret_round_$round',
@@ -771,14 +771,14 @@ Future<void> _closePopupAndReturnToReader(
     if (popupGone) break;
   }
   final String surface =
-      ReaderHibikiPage.debugCaretSurface?.call() ?? 'unknown';
+      ReaderFushiPage.debugCaretSurface?.call() ?? 'unknown';
   fail('Escape did not close the visible dictionary popup and return focus '
       'to reader caret. popupGone=$popupGone surface=$surface');
 }
 
 Future<bool> _hasVisibleTopPopup() async {
   final Future<dynamic> Function(String source)? topEval =
-      ReaderHibikiPage.debugEvaluateTopPopup;
+      ReaderFushiPage.debugEvaluateTopPopup;
   if (topEval == null) return false;
   final raw = await topEval('document.readyState');
   return raw != null;

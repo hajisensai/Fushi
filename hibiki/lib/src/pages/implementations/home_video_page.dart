@@ -12,12 +12,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
-import 'package:fushi/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
@@ -74,12 +74,12 @@ import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/pages/implementations/video_statistics_page.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
@@ -99,7 +99,7 @@ import 'package:fushi/src/utils/misc/shelf_ordering.dart';
 import 'package:path/path.dart' as p;
 
 /// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
-/// dashboard 继续卡/活动条同一条路径），统一经 [VideoHibikiPage.neutralized]
+/// dashboard 继续卡/活动条同一条路径），统一经 [VideoFushiPage.neutralized]
 /// 在路由层中和全局缩放（video_render_fixes_guard 守卫的接线）。
 /// [playlistCollectionId] 非空 = 作为合集一集打开（剧集面板/上下集/连播），
 /// null = 散卡单视频。返回的 Future 在播放页关闭后完成（调用方据此刷新）。
@@ -113,7 +113,7 @@ Future<void> openLocalVideoBook({
     context,
     adaptivePageRoute<void>(
       context: context,
-      builder: (_) => VideoHibikiPage.neutralized(
+      builder: (_) => VideoFushiPage.neutralized(
         bookUid: bookUid,
         repo: repo,
         playlistCollectionId: playlistCollectionId,
@@ -126,7 +126,7 @@ Future<void> openLocalVideoBook({
 ///
 /// 仅在实验性视频开关开启时由 [HomePage] 装配进底栏（见 home_page.dart 的
 /// [HomeTab.video]）。列出 [VideoBookRepository.listAll] 的视频卡片，点开进
-/// [VideoHibikiPage] 播放/查词/制卡；顶栏导入按钮（同样受实验开关门控）打开
+/// [VideoFushiPage] 播放/查词/制卡；顶栏导入按钮（同样受实验开关门控）打开
 /// [VideoImportDialog] 新建导入，与书架的视频导入入口共用同一对话框与仓库。
 ///
 /// 标签：视频书与书架（EPUB/SRT）**共用同一套标签系统**（共享 `BookTags` 标签池
@@ -733,7 +733,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   // ── 批量选择（与书架 tab 对齐）────────────────────────────────────
-  // 书架 [reader_hibiki_history_page] 早有这套（_selectionMode / _selectedKeys /
+  // 书架 [reader_fushi_history_page] 早有这套（_selectionMode / _selectedKeys /
   // 批量打标签 + 删除）；视频 tab 共用同一 [FushiTagFilterBar]（其 selectionMode /
   // onToggleSelectionMode 入参书架已用、视频此前没传）。这里给视频补上 wiring，
   // 批量操作语义对齐书架（批量打标签 + 批量删除），但因视频书是扁平 bookUid，
@@ -1373,7 +1373,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       context,
       adaptivePageRoute<void>(
         context: context,
-        builder: (_) => VideoHibikiPage.neutralizedRemote(
+        builder: (_) => VideoFushiPage.neutralizedRemote(
           info: video,
           repo: widget.repo,
           client: client,
@@ -2162,7 +2162,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     const bool canImport = true;
     final List<BookTagRow> allTags =
         ref.watch(allTagsProvider).valueOrNull ?? const <BookTagRow>[];
-    // 页头/布局与书架 [reader_hibiki_history_page]、词典 [home_dictionary_page]
+    // 页头/布局与书架 [reader_fushi_history_page]、词典 [home_dictionary_page]
     // 统一：不再用自带 Scaffold + adaptiveAppBar（小标题 + 标准 IconButton），改成
     // DesktopContentLayout + FushiPageHeader（大标题 + FushiIconButton），三个
     // 首页 tab 的标题字号与动作按钮位置因此完全一致。外层 Scaffold 由 HomePage 提供。
@@ -3980,7 +3980,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Widget _buildPageHeader(bool canImport) {
     final List<Widget> actions = <Widget>[
       // 图标顺序与书架完全一致：导入 → 收藏夹 → 统计。书架
-      // [reader_hibiki_history_page._buildPageHeader] 把导入按钮放在第一位
+      // [reader_fushi_history_page._buildPageHeader] 把导入按钮放在第一位
       // （buildBookImportButton），收藏夹、统计紧随其后；视频 tab 照此对齐
       // （TODO-162：此前视频把导入放在末尾，与书架不一致）。视频导入仍受
       // [canImport] 门控（仅视频 tab 才有导入入口），这里只调整位置不改门控。
@@ -4194,7 +4194,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// [selectedTagIdsProvider] 与书架联动；批量选择动作经 [onToggleSelectionMode]
   /// 与书架对齐（TODO-063：此前视频 tab 没传，缺了「标签设置旁的选择」）。
   ///
-  /// 渲染条件：与书架 [reader_hibiki_history_page._buildTagBar] 一致——**永远渲染
+  /// 渲染条件：与书架 [reader_fushi_history_page._buildTagBar] 一致——**永远渲染
   /// 整栏**（不再「无标签隐藏」），批量选择按钮才能常驻露出（否则空标签库点不到
   /// 批量入口、无法批量删除）。组件内部「管理标签」齿轮仍只在有标签时显示，故无
   /// 标签时整栏只剩「批量选择」按钮。
@@ -4932,7 +4932,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// 批量操作栏（底部，仅选择态显示）：选中计数 + 全选 / 反选 + 打标签 + 删除。
-  /// 与书架 [reader_hibiki_history_page._buildBatchActionBar] 对齐。
+  /// 与书架 [reader_fushi_history_page._buildBatchActionBar] 对齐。
   Widget _buildBatchActionBar() {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);

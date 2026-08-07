@@ -16,7 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 守卫断言修复结构在位：①`_initBook` 含 try{ await _initBookInner ... } catch；
 /// ②catch 分支调恢复路径（FushiToast.show + Navigator.of(context).pop()）；
 /// ③真正的 init 逻辑（DB await 链入口 _resolveProfileAndSettings）搬进 `_initBookInner`。
-/// 删掉 try/catch 或恢复路径即红。ReaderHibikiPage 过重（WebView + 音频 + 全
+/// 删掉 try/catch 或恢复路径即红。ReaderFushiPage 过重（WebView + 音频 + 全
 /// ProviderContainer），无法在 widget test 可靠拉起跑 _initBook，故落在最强可靠可落地的
 /// 源码语料层（与 reader_* 一系列 *_static_test 同纪律）。
 void main() {
@@ -28,7 +28,7 @@ void main() {
 
   test('_initBook 用 top-level try/catch 包裹 _initBookInner 并确定性恢复加载态', () {
     final String src =
-        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+        read('lib/src/pages/implementations/reader_fushi_page.dart');
 
     // ① 真正的 init 链被抽进 _initBookInner（DB await 入口在其中）。
     expect(src.contains('Future<void> _initBookInner() async {'), isTrue,

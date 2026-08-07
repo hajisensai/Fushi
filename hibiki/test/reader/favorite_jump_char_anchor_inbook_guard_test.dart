@@ -25,10 +25,10 @@ import '../helpers/source_guard.dart';
 /// 轴向归一守卫（连续保位 hint 竖排为负 scrollX，旧 `> 0` 判据在竖排永假）。
 void main() {
   final String chrome = File(
-    'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+    'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
   ).readAsStringSync();
   final String nav = File(
-    'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+    'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
   ).readAsStringSync();
   final String js = File(
     'lib/src/reader/reader_pagination_scripts.dart',

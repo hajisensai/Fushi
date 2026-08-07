@@ -32,26 +32,26 @@ void main() {
     }
   });
 
-  test('MangaHibikiSource 注册在 ReaderMediaType 下（三源并存不互覆）', () {
+  test('MangaFushiSource 注册在 ReaderMediaType 下（三源并存不互覆）', () {
     final AppModel appModel = AppModel(testPlatformServices());
     appModel.populateMediaTypes();
     appModel.populateMediaSources();
 
-    expect(MangaHibikiSource.instance.mediaType, ReaderMediaType.instance);
+    expect(MangaFushiSource.instance.mediaType, ReaderMediaType.instance);
 
     final Map<String, MediaSource>? readerSources =
         appModel.mediaSources[ReaderMediaType.instance];
     expect(readerSources, isNotNull);
     expect(
       readerSources!['reader_manga'],
-      same(MangaHibikiSource.instance),
+      same(MangaFushiSource.instance),
     );
     // 既有 EPUB / PDF 源必须仍在（无覆盖）。
-    expect(readerSources['reader_fushi'], same(ReaderHibikiSource.instance));
+    expect(readerSources['reader_fushi'], same(ReaderFushiSource.instance));
     expect(readerSources['reader_pdf'], same(ReaderPdfSource.instance));
   });
 
-  test('漫画 MediaItem 经 getMediaSource 解析到 MangaHibikiSource', () {
+  test('漫画 MediaItem 经 getMediaSource 解析到 MangaFushiSource', () {
     // 这正是书架打开路径在 appModel.openMedia 前做的查表：证明打开漫画会路由到
     // 漫画源（currentMediaSource / 制卡 / 关书同步都依赖它）。
     final AppModel appModel = AppModel(testPlatformServices());
@@ -60,10 +60,10 @@ void main() {
 
     final MediaItem mangaItem = MediaItem(
       // 身份统一 fushi://book/<bookKey>（无 manga:// 特例）。
-      mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor('テスト漫画'),
+      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('テスト漫画'),
       title: 'テスト漫画',
       mediaTypeIdentifier: ReaderMediaType.instance.uniqueKey,
-      mediaSourceIdentifier: MangaHibikiSource.kUniqueKey,
+      mediaSourceIdentifier: MangaFushiSource.kUniqueKey,
       position: 0,
       duration: 1,
       canDelete: false,
@@ -72,7 +72,7 @@ void main() {
 
     expect(
       mangaItem.getMediaSource(appModel: appModel),
-      same(MangaHibikiSource.instance),
+      same(MangaFushiSource.instance),
     );
   });
 }

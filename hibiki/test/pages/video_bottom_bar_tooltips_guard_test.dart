@@ -2,14 +2,14 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// Source guard: the shared video bottom transport buttons keep tooltips and
 /// i18n keys. media_kit controls are not stable in headless widget tests, so
 /// this pins the page structure instead.
 void main() {
   final File page = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
+    'lib/src/pages/implementations/video_fushi_page.dart',
   );
   final File baseI18n = File('lib/i18n/strings.i18n.json');
   final File generated = File('lib/i18n/strings.g.dart');
@@ -27,7 +27,7 @@ void main() {
     expect(baseI18n.existsSync(), isTrue, reason: 'base i18n file must exist');
     expect(generated.existsSync(), isTrue, reason: 'strings.g.dart must exist');
     src = page.readAsStringSync();
-    corpus = readVideoHibikiSource();
+    corpus = readVideoFushiSource();
     i18nSrc = baseI18n.readAsStringSync();
     genSrc = generated.readAsStringSync();
   });
@@ -94,7 +94,7 @@ void main() {
 
   test('desktop and mobile bottom bars both delegate to the shared helper', () {
     // TODO-590 batch11：两套 controls 主题的底栏委托串已搬到 controls_theme.part.dart，
-    // 改读合并语料；CRLF 已在 readVideoHibikiSource 内归一为 LF，行内字面量按 LF 写。
+    // 改读合并语料；CRLF 已在 readVideoFushiSource 内归一为 LF，行内字面量按 LF 写。
     expect(
       'Expanded(\n          child: _centeredBottomControlBar(controller, desktop: true)'
           .allMatches(corpus)

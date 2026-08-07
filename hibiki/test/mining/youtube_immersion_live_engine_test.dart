@@ -49,7 +49,7 @@ void main() {
           'miningVideoNull=${src.miningVideoUrl == null}');
       expect(src.cues, isNotEmpty, reason: '字幕 cue = 制卡句子来源');
 
-      // controller.miningSource / miningAudioSource 的同款取法（见 video_hibiki_page）：
+      // controller.miningSource / miningAudioSource 的同款取法（见 video_fushi_page）：
       // GIF/帧从低分辨率 miningVideoUrl（回落 streamUrl），音频从 audio-only。
       final String miningVideo = src.miningVideoUrl ?? src.streamUrl;
       final String? miningAudio = src.audioStreamUrl;

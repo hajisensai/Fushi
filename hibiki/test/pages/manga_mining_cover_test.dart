@@ -4,7 +4,7 @@ import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_spread_model.dart';
 import 'package:fushi/src/media/manga/mokuro_payload.dart';
-import 'package:fushi/src/pages/implementations/manga_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
 import 'package:path/path.dart' as p;
 
 /// ERRATA C2：制卡卡图从**当前 spread 首页**经 firstPageOfSpread →
@@ -39,8 +39,8 @@ void main() {
         spreadOffset: 0,
       );
       final int page =
-          MangaHibikiPage.firstPageOfSpread(spreads, currentSpread);
-      return MangaHibikiPage.resolveMangaResource(
+          MangaFushiPage.firstPageOfSpread(spreads, currentSpread);
+      return MangaFushiPage.resolveMangaResource(
           imagesDir.path, payload().images[page].url);
     }
 

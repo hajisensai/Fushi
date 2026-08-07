@@ -46,7 +46,7 @@ enum ShelfSelectionSurface { books, video }
 ///   - SRT 键 = `'srt_' + srtUid` → `('srt', srtUid)`；
 ///   - EPUB 键 = `'hoshi://book/<bookKey>'`（MediaItem.mediaIdentifier）→
 ///     `('epub', bookKey)`（内联解析 `hoshi://book/` URI，与
-///     `ReaderHibikiSource.parseBookKey` 同语义，但保持本函数 widget/DB-free 可单测）。
+///     `ReaderFushiSource.parseBookKey` 同语义，但保持本函数 widget/DB-free 可单测）。
 ///   - 无法识别（非 srt_ 前缀且非 hoshi://book/）→ null（调用方跳过该条）。
 /// - [ShelfSelectionSurface.video]：视频库 `_selectedUids`——裸 bookUid →
 ///   `('video', selectionKey)`（视频选择集本就直接是 bookUid，无前缀）。
@@ -143,14 +143,14 @@ String _longestCommonPrefix(List<String> items) {
   return prefix;
 }
 
-/// 内联解析 `hoshi://book/<bookKey>`（与 ReaderHibikiSource.parseBookKey 同语义，
+/// 内联解析 `hoshi://book/<bookKey>`（与 ReaderFushiSource.parseBookKey 同语义，
 /// 复制到本 widget-free 文件以便纯函数单测，不引依赖）。
 ///
 /// BUG-658 / TODO-1344：取前缀之后的 RAW 余串，绝不 percent-decode。sanitizeTtu
 /// Filename 会把标题里的 `/?<>\\:|%"*` 编成 `%XX`，因此合法 bookKey 本身可能含字面
 /// `%3F`/`%3C` 等（如 `業物語 %3C物語%3E (...)`、`...Sheep%3F`）。旧实现用
 /// `Uri.pathSegments` 解析会把这些反解码（`%3F`→`?`），得到的键与存库主键不符，
-/// 导致这类书排序错位、且与 ReaderHibikiSource.parseBookKey 的行为分叉。裸切片对含
+/// 导致这类书排序错位、且与 ReaderFushiSource.parseBookKey 的行为分叉。裸切片对含
 /// `%` 与不含 `%` 的键都无损，且与旧结果对不含 `%` 的键完全一致。
 String? _parseFushiBookKey(String identifier) {
   const String prefix = 'fushi://book/';

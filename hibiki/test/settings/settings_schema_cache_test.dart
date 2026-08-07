@@ -61,7 +61,7 @@ void main() {
               context: ctx,
               appModel: ref.read(appProvider),
               ref: ref,
-              readerSource: ReaderHibikiSource.instance,
+              readerSource: ReaderFushiSource.instance,
               refresh: () {},
             );
             return const SizedBox.shrink();

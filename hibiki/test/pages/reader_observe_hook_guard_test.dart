@@ -5,10 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('阅读器注册并在 dispose 清理 debugCaptureWebView 钩子', () {
     final String page = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
+      'lib/src/pages/implementations/reader_fushi_page.dart',
     ).readAsStringSync();
     final String webviewPart = File(
-      'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+      'lib/src/pages/implementations/reader_fushi/webview.part.dart',
     ).readAsStringSync();
 
     expect(
@@ -16,7 +16,7 @@ void main() {
         'static Future<Uint8List?> Function()? debugCaptureWebView',
       ),
       isTrue,
-      reason: '应在 ReaderHibikiPage 声明 debugCaptureWebView 测试钩子',
+      reason: '应在 ReaderFushiPage 声明 debugCaptureWebView 测试钩子',
     );
     expect(
       webviewPart.contains('debugCaptureWebView ='),

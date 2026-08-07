@@ -1,5 +1,5 @@
-import 'package:fushi/src/sync/pairing/hibiki_ping_client.dart';
-import 'package:fushi/src/sync/tls/hibiki_tofu_probe.dart';
+import 'package:fushi/src/sync/pairing/fushi_ping_client.dart';
+import 'package:fushi/src/sync/tls/fushi_tofu_probe.dart';
 
 /// TODO-961: LAN 发现设备的「配对前探测」结果——探明的 base URL（含 scheme）、
 /// https 钉扎指纹（明文 http 为 null）与 /api/ping 应答。
@@ -16,7 +16,7 @@ class DiscoveredPairingProbeResult {
   /// https 路径的 TOFU 捕获指纹（ping 回传优先）；明文 http 为 null。
   final String? fingerprint;
 
-  /// host 的 /api/ping 应答（isHibiki 恒为 true，否则整体返回 null）。
+  /// host 的 /api/ping 应答（isFushi 恒为 true，否则整体返回 null）。
   final FushiPingResult ping;
 }
 
@@ -59,7 +59,7 @@ Future<DiscoveredPairingProbeResult?> probeDiscoveredPairingEndpoint({
           {String? pinnedFingerprint}) doPing =
       ping ??
           (String baseUrl, {String? pinnedFingerprint}) =>
-              fetchHibikiPing(baseUrl, pinnedFingerprint: pinnedFingerprint);
+              fetchFushiPing(baseUrl, pinnedFingerprint: pinnedFingerprint);
 
   for (final String baseUrl in discoveredPairingCandidateUrls(
     host: host,

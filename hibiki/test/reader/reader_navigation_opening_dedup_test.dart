@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// 源码守卫：阅读器三个导航入口的「代际 token + restore completer + 初始锚点字段 +
 /// fragment + restoreInFlight + setState 清 ready + 启动超时」开场白，以及失败收尾，

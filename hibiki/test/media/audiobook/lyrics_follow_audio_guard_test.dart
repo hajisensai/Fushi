@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
-import '../../pages/reader_hibiki_page_source_corpus.dart';
+import '../../pages/reader_fushi_page_source_corpus.dart';
 
 /// BUG-019 回归守卫：歌词模式「自动音频跟随」开关必须真控制自动滚动。
 ///

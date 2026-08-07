@@ -354,9 +354,9 @@ void main() {
     });
 
     MediaItem srtItem(String uid) {
-      final ReaderHibikiSource source = ReaderHibikiSource.instance;
+      final ReaderFushiSource source = ReaderFushiSource.instance;
       return MediaItem(
-        mediaIdentifier: ReaderHibikiSource.mediaIdentifierForSrtUid(uid),
+        mediaIdentifier: ReaderFushiSource.mediaIdentifierForSrtUid(uid),
         title: '字幕书',
         mediaTypeIdentifier: source.mediaType.uniqueKey,
         mediaSourceIdentifier: source.uniqueKey,
@@ -368,7 +368,7 @@ void main() {
     }
 
     test('写 override → 同路径换图双键驱逐 → 清除删文件并再驱逐', () async {
-      final ReaderHibikiSource source = ReaderHibikiSource.instance;
+      final ReaderFushiSource source = ReaderFushiSource.instance;
       final MediaItem item = srtItem('srtbook_svc_cover');
       final String filename = source.getOverrideThumbnailFilename(
         appModel: appModel,

@@ -8,10 +8,10 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:fushi/src/epub/epub_book.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi_audio/fushi_audio.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
@@ -53,7 +53,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onJumpToCharOffset,
     this.charProgress,
     this.onPageMarginChanged,
-    this.isHibikiReader = false,
+    this.isFushiReader = false,
     this.epubBook,
     this.chapterLabel,
     this.onStyleChanged,
@@ -112,7 +112,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   final VoidCallback? onToggleLyricsMode;
 
   /// When true, skip AudiobookBridge JS calls and disable ttu-only features.
-  final bool isHibikiReader;
+  final bool isFushiReader;
 
   final EpubBook? epubBook;
 
@@ -139,7 +139,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
 
 class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     with SettingsContextHost<ReaderQuickSettingsSheet> {
-  ReaderHibikiSource get _src => ReaderHibikiSource.instance;
+  ReaderFushiSource get _src => ReaderFushiSource.instance;
 
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _charJumpController = TextEditingController();
@@ -177,14 +177,14 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   }
 
   Future<void> _updateSetting(String key, Object value) async {
-    if (!widget.isHibikiReader) {
+    if (!widget.isFushiReader) {
       await AudiobookBridge.setReaderSetting(
         widget.webViewController,
         key: key,
         value: value,
       );
     }
-    final ReaderHibikiSource src = ReaderHibikiSource.instance;
+    final ReaderFushiSource src = ReaderFushiSource.instance;
     switch (key) {
       case 'fontSize':
         await src.setReaderFontSize((value as num).toDouble());
@@ -230,7 +230,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       case 'prioritizeReaderStyles':
         await src.setReaderPrioritizeReaderStyles(value as bool);
     }
-    if (widget.isHibikiReader) {
+    if (widget.isFushiReader) {
       const layoutKeys = {
         'writingMode',
         'viewMode',
@@ -310,8 +310,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         return SizedBox(
           height: constraints.maxHeight,
           child: MaterialSupportingPaneLayout(
-            minSplitWidth: kHibikiSettingsWideThreshold,
-            supportingWidth: kHibikiSettingsSupportingPaneWidth,
+            minSplitWidth: kFushiSettingsWideThreshold,
+            supportingWidth: kFushiSettingsSupportingPaneWidth,
             supportingSide: SupportingPaneSide.start,
             dividerColor: dividerColor,
             // 左父菜单项不多时垂直居中（progress/分类/动作整体居中），
@@ -563,12 +563,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   /// 把某个 [ReaderGroup] 投影成 schema 渲染内容。写路径走 schema item 的
   /// `setReaderPref*` + notify helper，与本面板的 `_updateSetting` 落同一存储。
   ///
-  /// 实时更新由 notify helper 经 `ReaderHibikiSource` 的回调驱动，且是按 key
+  /// 实时更新由 notify helper 经 `ReaderFushiSource` 的回调驱动，且是按 key
   /// 精确的：CSS-only key 走 `notifyReaderSettingsChanged`（=
   /// `onSettingsChangedLive`，CSS 注入），结构性布局 key（view mode / writing
   /// mode / columns / spread / prioritize reader styles）走
   /// `notifyReaderLayoutChanged`（= `onLayoutReloadLive`，整章重排）。schema
-  /// 投影项实时从 `ReaderHibikiSource.instance` 读写，本 refresh 回调只需
+  /// 投影项实时从 `ReaderFushiSource.instance` 读写，本 refresh 回调只需
   /// setState 重读 live 值即可。
   SettingsContext _settingsContext() {
     return createSettingsContext(appModel: widget.appModel, ref: widget.ref);
@@ -2001,7 +2001,7 @@ class _RepeatIconButtonState extends State<_RepeatIconButton> {
       onLongPressEnd: (_) => _stop(),
       // BUG-912 #3：手势被取消（指针滑出 / 识别器被上层夺走）而非正常 End 时，
       // onLongPressEnd 不必然回调；不补 cancel 的话 _timer 会持续每 100ms 连触
-      // widget.onPressed()（数值狂涨 / 狂降）直到 dispose。与 video_hibiki_page.dart
+      // widget.onPressed()（数值狂涨 / 狂降）直到 dispose。与 video_fushi_page.dart
       // 的 _VideoRepeatGestureButton 对齐。
       onLongPressCancel: () => _stop(),
       child: FushiIconButton(

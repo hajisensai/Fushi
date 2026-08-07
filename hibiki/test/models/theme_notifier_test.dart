@@ -424,9 +424,9 @@ void main() {
     });
   });
 
-  group('buildHibikiColorScheme', () {
+  group('buildFushiColorScheme', () {
     test('returns base scheme when no overrides', () {
-      final cs = buildHibikiColorScheme(
+      final cs = buildFushiColorScheme(
         seedColor: const Color(0xFF1F4959),
         brightness: Brightness.light,
       );
@@ -434,7 +434,7 @@ void main() {
     });
 
     test('applies primary override', () {
-      final cs = buildHibikiColorScheme(
+      final cs = buildFushiColorScheme(
         seedColor: const Color(0xFF1F4959),
         brightness: Brightness.light,
         primary: const Color(0xFF00FF00),
@@ -443,7 +443,7 @@ void main() {
     });
 
     test('applies secondary with derived container', () {
-      final cs = buildHibikiColorScheme(
+      final cs = buildFushiColorScheme(
         seedColor: const Color(0xFF1F4959),
         brightness: Brightness.light,
         secondary: const Color(0xFFFF0000),

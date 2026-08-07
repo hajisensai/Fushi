@@ -58,7 +58,7 @@ void main() {
 
   setUpAll(() {
     audiobookPart = libFile(
-      'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+      'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
     );
   });
 
@@ -115,7 +115,7 @@ void main() {
 
     test('divergence path logs the fallback reason (no assert)', () {
       final String body = fnBody(audiobookPart, 'void _exportAudiobookClip(');
-      expect(body, contains('ReaderHibiki.exportClip.audioFileIndexDivergence'),
+      expect(body, contains('ReaderFushi.exportClip.audioFileIndexDivergence'),
           reason: 'M1：分歧回退必须记 ErrorLogService（release 会剥 assert）。');
       // 明确不用 assert 作为护栏（release 会被剥）。
       expect(body.contains('assert(dynamicPlan'), isFalse,

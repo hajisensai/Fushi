@@ -87,12 +87,12 @@ void main() {
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      await repo.setHibikiClientUrls(const <FushiClientUrl>[
+      await repo.setFushiClientUrls(const <FushiClientUrl>[
         FushiClientUrl(url: 'http://192.168.1.5:8765'),
         FushiClientUrl(url: 'http://home.ddns.net:8765', enabled: false),
       ]);
 
-      final List<FushiClientUrl> urls = await repo.getHibikiClientUrls();
+      final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
       expect(urls.map((FushiClientUrl u) => u.url).toList(),
           <String>['http://192.168.1.5:8765', 'http://home.ddns.net:8765']);
       expect(urls.map((FushiClientUrl u) => u.enabled).toList(),
@@ -109,7 +109,7 @@ void main() {
       // single-url key is set (no new list key).
       await db.setPref('sync_hibiki_client_url', 'http://192.168.1.5:8765');
 
-      final List<FushiClientUrl> urls = await repo.getHibikiClientUrls();
+      final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
       expect(urls, hasLength(1));
       expect(urls.first.url, 'http://192.168.1.5:8765');
       expect(urls.first.enabled, isTrue);
@@ -120,7 +120,7 @@ void main() {
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      expect(await repo.getHibikiClientUrls(), isEmpty);
+      expect(await repo.getFushiClientUrls(), isEmpty);
     });
 
     test('new list takes precedence over the legacy single url', () async {
@@ -129,55 +129,55 @@ void main() {
       final SyncRepository repo = SyncRepository(db);
 
       await db.setPref('sync_hibiki_client_url', 'http://legacy.example:8765');
-      await repo.setHibikiClientUrls(const <FushiClientUrl>[
+      await repo.setFushiClientUrls(const <FushiClientUrl>[
         FushiClientUrl(url: 'http://new.example:8765'),
       ]);
 
-      final List<FushiClientUrl> urls = await repo.getHibikiClientUrls();
+      final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
       expect(urls, hasLength(1));
       expect(urls.first.url, 'http://new.example:8765');
     });
 
-    test('addHibikiClientUrl appends a new url, keeping order and token',
+    test('addFushiClientUrl appends a new url, keeping order and token',
         () async {
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      await repo.setHibikiClientUrls(
+      await repo.setFushiClientUrls(
           const <FushiClientUrl>[FushiClientUrl(url: 'http://lan:8765')]);
-      await repo.setHibikiClientToken('tok');
+      await repo.setFushiClientToken('tok');
 
       final List<FushiClientUrl> result =
-          await repo.addHibikiClientUrl('http://wan:8765');
+          await repo.addFushiClientUrl('http://wan:8765');
 
       expect(result.map((FushiClientUrl u) => u.url).toList(),
           <String>['http://lan:8765', 'http://wan:8765']);
-      expect(await repo.getHibikiClientToken(), 'tok'); // token untouched
+      expect(await repo.getFushiClientToken(), 'tok'); // token untouched
     });
 
-    test('addHibikiClientUrl does not add a duplicate', () async {
+    test('addFushiClientUrl does not add a duplicate', () async {
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      await repo.setHibikiClientUrls(
+      await repo.setFushiClientUrls(
           const <FushiClientUrl>[FushiClientUrl(url: 'http://lan:8765')]);
 
       final List<FushiClientUrl> result =
-          await repo.addHibikiClientUrl('http://lan:8765');
+          await repo.addFushiClientUrl('http://lan:8765');
 
       expect(result, hasLength(1));
-      expect(await repo.getHibikiClientUrls(), hasLength(1));
+      expect(await repo.getFushiClientUrls(), hasLength(1));
     });
 
     // ── TODO-961 M1: TOFU 指纹记录器 ────────────────────────────────────
-    test('addHibikiClientUrl 新增 https 条目即带指纹与展示名（创建即钉扎）', () async {
+    test('addFushiClientUrl 新增 https 条目即带指纹与展示名（创建即钉扎）', () async {
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      final List<FushiClientUrl> result = await repo.addHibikiClientUrl(
+      final List<FushiClientUrl> result = await repo.addFushiClientUrl(
         'https://host:38765',
         fingerprint: 'aa:bb:cc',
         deviceName: 'Hibiki · mac',
@@ -187,70 +187,70 @@ void main() {
       expect(result.first.fingerprintSha256, 'aa:bb:cc');
       expect(result.first.deviceName, 'Hibiki · mac');
       // 落盘后回读一致。
-      final List<FushiClientUrl> reread = await repo.getHibikiClientUrls();
+      final List<FushiClientUrl> reread = await repo.getFushiClientUrls();
       expect(reread.first.fingerprintSha256, 'aa:bb:cc');
     });
 
-    test('addHibikiClientUrl 指纹相同时幂等（不变更，含大小写/冒号归一化）', () async {
+    test('addFushiClientUrl 指纹相同时幂等（不变更，含大小写/冒号归一化）', () async {
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      await repo.addHibikiClientUrl('https://host:38765',
+      await repo.addFushiClientUrl('https://host:38765',
           fingerprint: 'aa:bb:cc');
       // 同一指纹换大小写 + 去冒号：归一化后相等，不应抛、不应改。
       final List<FushiClientUrl> result = await repo
-          .addHibikiClientUrl('https://host:38765', fingerprint: 'AABBCC');
+          .addFushiClientUrl('https://host:38765', fingerprint: 'AABBCC');
 
       expect(result, hasLength(1));
       expect(result.first.fingerprintSha256, 'aa:bb:cc'); // 保留原存值。
     });
 
-    test('addHibikiClientUrl 把明文老条目首次升级为 https 指纹（storedFp 空允许写入）', () async {
+    test('addFushiClientUrl 把明文老条目首次升级为 https 指纹（storedFp 空允许写入）', () async {
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      await repo.setHibikiClientUrls(
+      await repo.setFushiClientUrls(
           const <FushiClientUrl>[FushiClientUrl(url: 'https://host:38765')]);
 
       final List<FushiClientUrl> result = await repo
-          .addHibikiClientUrl('https://host:38765', fingerprint: 'aa:bb:cc');
+          .addFushiClientUrl('https://host:38765', fingerprint: 'aa:bb:cc');
 
       expect(result, hasLength(1));
       expect(result.first.fingerprintSha256, 'aa:bb:cc');
     });
 
     test(
-        'addHibikiClientUrl 指纹变更必抛 FushiFingerprintMismatchException 且不覆盖（MITM 守卫）',
+        'addFushiClientUrl 指纹变更必抛 FushiFingerprintMismatchException 且不覆盖（MITM 守卫）',
         () async {
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      await repo.addHibikiClientUrl('https://host:38765',
+      await repo.addFushiClientUrl('https://host:38765',
           fingerprint: 'aa:bb:cc');
 
       // 同一 URL 再来一个 **不同** 指纹 → 拒绝并抛异常。
       expect(
-        () => repo.addHibikiClientUrl('https://host:38765',
+        () => repo.addFushiClientUrl('https://host:38765',
             fingerprint: 'de:ad:be'),
         throwsA(isA<FushiFingerprintMismatchException>()),
       );
 
       // 已存指纹绝不被覆盖：仍是首记录值。
-      final List<FushiClientUrl> reread = await repo.getHibikiClientUrls();
+      final List<FushiClientUrl> reread = await repo.getFushiClientUrls();
       expect(reread, hasLength(1));
       expect(reread.first.fingerprintSha256, 'aa:bb:cc');
     });
 
-    test('addHibikiClientUrl 明文 http（无指纹）路径保持向后兼容', () async {
+    test('addFushiClientUrl 明文 http（无指纹）路径保持向后兼容', () async {
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
       final List<FushiClientUrl> result =
-          await repo.addHibikiClientUrl('http://lan:8765');
+          await repo.addFushiClientUrl('http://lan:8765');
 
       expect(result, hasLength(1));
       expect(result.first.fingerprintSha256, isNull);

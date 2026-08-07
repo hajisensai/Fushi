@@ -6,7 +6,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 /// 鼠标滚轮翻页节流间隔（毫秒）的持久化守卫。
 ///
 /// 旧实现把节流写死成 250ms（偏快），现改为可调、默认 450ms（更慢）。JS 端
-/// `reader_hibiki_page._buildReaderSetupScript` 把 `s.wheelPageTurnInterval`
+/// `reader_fushi_page._buildReaderSetupScript` 把 `s.wheelPageTurnInterval`
 /// 注入到 `setTimeout(..., N)`，真正的翻页节流效果走 WebView，归设备集成验证。
 void main() {
   Future<ReaderSettings> defaultSettings(FushiDatabase db) async {

@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// pointermove 超 6px 清掉 `hasStart`，touchend 被吞，`onSwipe` 永不触发 → 触摸
 /// 滑动不再翻页。原静态守卫只断言源码子串，没执行 JS，漏掉了这个回归。
 ///
-/// 这里在 `flutter test` 内通过 Node 真执行从 reader_hibiki_page.dart 抽取的
+/// 这里在 `flutter test` 内通过 Node 真执行从 reader_fushi_page.dart 抽取的
 /// 真实事件处理器（伪 DOM + 派发 pointer/touch 事件序列），断言分页模式触摸
 /// 横滑触发 onSwipe。撤掉 TODO-553 修复，该 Node 测试断言失败、本 Dart 守卫转红。
 ///

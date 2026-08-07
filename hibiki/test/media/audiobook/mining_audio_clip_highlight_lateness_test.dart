@@ -124,7 +124,7 @@ void main() {
     // 那条行为断言钉住），并禁止任何把 fps 直接钉成 <24 字面量的写法。
     test('源码守卫：动态导出 fps 来自 clipExportFps，且无 <24 的裸字面量', () {
       final String src = File(
-              'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart')
+              'lib/src/pages/implementations/reader_fushi/audiobook.part.dart')
           .readAsStringSync()
           .replaceAll('\r\n', '\n');
       final String body =

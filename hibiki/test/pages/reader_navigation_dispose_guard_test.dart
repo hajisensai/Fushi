@@ -4,13 +4,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   final String readerPage = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
+    'lib/src/pages/implementations/reader_fushi_page.dart',
   ).readAsStringSync();
   final String navigationPart = File(
-    'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+    'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
   ).readAsStringSync();
   final String audiobookPart = File(
-    'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+    'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
   ).readAsStringSync();
 
   String bodyBetween(String source, String start, String end) {

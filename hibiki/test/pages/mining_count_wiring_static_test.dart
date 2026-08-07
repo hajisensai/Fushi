@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：制卡成功必须计入 `mining_statistics`（统计页「制卡 N」卡片的数据源）。
 ///
@@ -11,7 +11,7 @@ import 'video_hibiki_page_source_corpus.dart';
 /// 真正制卡的两条路径都各自绕过它——
 ///   - reader：`BaseSourcePageState.onMineFromPopup`（reader 覆写，**不 mixin
 ///     DictionaryPageMixin**，走独立体系，自带私有 `_recordMined`）；
-///   - video：`_VideoHibikiPageState` 覆写 `onMineEntry`。
+///   - video：`_VideoFushiPageState` 覆写 `onMineEntry`。
 /// 于是 `mining_statistics` 永远 0 行。
 ///
 /// 现状（架构整理阶段0 Task4）：四分支 outcome→消息/成功/记账 映射收口为
@@ -40,7 +40,7 @@ void main() {
   test('video onMineEntry 成功分支把制卡计入视频统计', () {
     // TODO-590 batch14: 制卡记账（describeMineOutcome / recordMined）已随
     // `_mineVideoCard` 搬进 lookup_mining.part.dart，读合并语料才能命中。
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
     // video mixin 了 DictionaryPageMixin，record 时调 protected recordMined()。
     // TODO-590 batch14: `_mineVideoCard` 搬进 extension 后不能直调 @protected，故经
     // 主壳 `_recordMinedForVideo()` 转发（纯 1 行委托，等价于直调 recordMined）；

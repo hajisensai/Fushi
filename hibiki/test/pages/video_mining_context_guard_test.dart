@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// Source guard for video mining context.
 ///
@@ -18,7 +18,7 @@ void main() {
   // shell（_mineVideoCard）扫 OSD/中止接线，engine 扫抽取器编排。行为不变，只是搬了家。
   late String engine;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
     engine = readImmersionMiningEngineSource();
   });
 

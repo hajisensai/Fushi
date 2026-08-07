@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import '../../pages/video_hibiki_page_source_corpus.dart';
+import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// BUG-190 source guard（TODO-080/092）：字幕在 Hibiki 一律走可点
 /// [VideoSubtitleOverlay]（cue 同步 + 逐字查词），libmpv / media_kit 不该自己渲染
@@ -10,7 +10,7 @@ import '../../pages/video_hibiki_page_source_corpus.dart';
 /// player，故用源码扫描守住「禁用内置渲染」的不变量（纯函数 map 本身由
 /// video_mpv_config_test.dart 覆盖）：
 ///
-/// 1. [VideoHibikiPage] 的窗口侧与全屏路由侧两个 `Video(...)` 都把
+/// 1. [VideoFushiPage] 的窗口侧与全屏路由侧两个 `Video(...)` 都把
 ///    `subtitleViewConfiguration` 设成 `SubtitleViewConfiguration(visible: false)`，
 ///    彻底关掉 media_kit 内置 `SubtitleView`（否则不可点字幕叠在 overlay 上 →
 ///    点字幕穿透 / 随机透明 / 横竖屏残留黑底）。
@@ -42,10 +42,10 @@ void main() {
     r'buildGraphicSubtitleVisibilityProperties\(\)\s*,?\s*\)',
   );
 
-  group('video_hibiki_page disables media_kit built-in SubtitleView', () {
+  group('video_fushi_page disables media_kit built-in SubtitleView', () {
     // TODO-590 batch15：全屏路由侧 Video（含 visible:false）随 fullscreen 域搬到
     // fullscreen.part.dart，故改读合并语料；窗口侧 Video 仍在主壳（语料最前段）。
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
 
     test('both Video widgets set subtitleViewConfiguration visible:false', () {
       // 两处 Video（窗口侧 + 全屏路由侧）都必须显式禁用内置 SubtitleView。

@@ -12,13 +12,13 @@ import '../helpers/source_guard.dart';
 /// 且没被悄悄退回旧形态。窗口一律用 [methodBody] 的花括号配对，不用定长字符窗口。
 void main() {
   final String navigation = File(
-    'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+    'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
   ).readAsStringSync();
   final String webview = File(
-    'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+    'lib/src/pages/implementations/reader_fushi/webview.part.dart',
   ).readAsStringSync();
   final String page = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
+    'lib/src/pages/implementations/reader_fushi_page.dart',
   ).readAsStringSync();
 
   group('前置 ①：恢复锚由实时进度接管（否则重建 = 回退到章首并落库）', () {
@@ -78,15 +78,15 @@ void main() {
           methodBody(webview, 'onWebViewCreated: (controller) {');
       expect(
           containsCodeLine(
-              body, 'identical(ReaderHibikiPage.debugHookOwner, this)'),
+              body, 'identical(ReaderFushiPage.debugHookOwner, this)'),
           isTrue,
           reason: '重装合法性必须按所有者身份判（State 不重建，第二次 onWebViewCreated 合法）');
-      expect(containsCodeLine(body, 'ReaderHibikiPage.debugHookOwner = this;'),
+      expect(containsCodeLine(body, 'ReaderFushiPage.debugHookOwner = this;'),
           isTrue,
           reason: '装钩子时必须登记所有者，否则身份判据永远是 null 分支、检测力度归零');
       for (final String stale in <String>[
-        'ReaderHibikiPage.debugEvaluateJavascript == null,',
-        'ReaderHibikiPage.debugCaptureWebView == null,',
+        'ReaderFushiPage.debugEvaluateJavascript == null,',
+        'ReaderFushiPage.debugCaptureWebView == null,',
       ]) {
         expect(containsCodeLine(body, stale), isFalse,
             reason: '旧断言把「同一页重装」误判成「两个阅读器同时活着」，'
@@ -96,7 +96,7 @@ void main() {
 
     test('dispose 释放钩子所有权', () {
       final String body = methodBody(page, 'void dispose() {');
-      expect(containsCodeLine(body, 'ReaderHibikiPage.debugHookOwner = null;'),
+      expect(containsCodeLine(body, 'ReaderFushiPage.debugHookOwner = null;'),
           isTrue,
           reason: '不释放所有权，下一个阅读器装钩子时会被身份判据判成「两个阅读器」');
     });
@@ -119,7 +119,7 @@ void main() {
               '裸 await 变成未捕获异步错误（TODO-2603 前置 ③）');
       expect(evalIdx, greaterThan(tryIdx));
       expect(catchIdx, greaterThan(evalIdx));
-      expect(containsCodeLine(body, "'ReaderHibiki._refreshProgress.eval'"),
+      expect(containsCodeLine(body, "'ReaderFushi._refreshProgress.eval'"),
           isTrue,
           reason: 'fail-open 不得吞成静默：必须带 source tag 落 ErrorLogService.log');
       expect(

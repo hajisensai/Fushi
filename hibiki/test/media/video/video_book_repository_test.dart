@@ -233,7 +233,7 @@ void main() {
 
   test('per-episode position survives a playlistJson round-trip via repo',
       () async {
-    // Mirrors the exit-flush path: VideoHibikiPage._persistPosition encodes the
+    // Mirrors the exit-flush path: VideoFushiPage._persistPosition encodes the
     // updated _episodes back to playlistJson; on re-open _init reads
     // entry.positionMs and seeks there. This locks the persistence half.
     final db = FushiDatabase.forTesting(NativeDatabase.memory());

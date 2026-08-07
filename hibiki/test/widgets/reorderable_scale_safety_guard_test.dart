@@ -74,12 +74,12 @@ void main() {
 
   test('自实现重排件仍在（消缩放的替代实现不得被误删）', () {
     expect(
-      File('lib/src/utils/components/hibiki_reorderable_column.dart')
+      File('lib/src/utils/components/fushi_reorderable_column.dart')
           .existsSync(),
       isTrue,
     );
     expect(
-      File('lib/src/utils/components/hibiki_reorderable_grid.dart')
+      File('lib/src/utils/components/fushi_reorderable_grid.dart')
           .existsSync(),
       isTrue,
     );

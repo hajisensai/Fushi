@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
@@ -12,7 +12,7 @@ void main() {
       'paged': ReaderPaginationScripts.paginatedShellSource(),
       'continuous': ReaderPaginationScripts.continuousShellSource(),
       'vn': ReaderVisualNovelScripts.vnShellScript(),
-      'engine': readerHibikiEngineSourceUncompacted(),
+      'engine': readerFushiEngineSourceUncompacted(),
     });
     final Directory temp = Directory.systemTemp.createTempSync(
       'fushi-reader-production-js-',

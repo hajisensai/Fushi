@@ -17,7 +17,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
-import 'package:fushi/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 import '../helpers/test_platform_services.dart';
 

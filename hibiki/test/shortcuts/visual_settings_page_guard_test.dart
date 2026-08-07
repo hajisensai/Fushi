@@ -124,7 +124,7 @@ void main() {
     // preference (display-only), so it survives restart and never touches the
     // binding registry.
     expect(
-      src.contains('ReaderHibikiSource.instance.gamepadGlyphBrand'),
+      src.contains('ReaderFushiSource.instance.gamepadGlyphBrand'),
       isTrue,
       reason: 'brand must be seeded from the persisted display preference',
     );

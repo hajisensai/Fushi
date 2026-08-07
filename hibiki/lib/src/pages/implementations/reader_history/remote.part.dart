@@ -1,8 +1,8 @@
-// GENERATED-NOTE: extracted from reader_hibiki_history_page.dart (TODO-587).
-part of '../reader_hibiki_history_page.dart';
+// GENERATED-NOTE: extracted from reader_fushi_history_page.dart (TODO-587).
+part of '../reader_fushi_history_page.dart';
 
 /// remote domain methods extracted via part-of (TODO-587); shared private scope.
-extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
+extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   Future<RemoteBookClient?> _resolveRemoteBookClient() async {
     final Future<RemoteBookClient?> Function()? injected =
         _pageWidget.remoteBookClientLoader;
@@ -41,7 +41,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
   /// 完整拉取，漫画那次的结果在 build 里被 `!_mangaOnly` 直接丢掉——纯浪费一整轮网络。
   ///
   /// BUG-1182：`showRemoteEntries` 开关此前只在 build 的 `showRemote` 处生效（本文件
-  /// 上游 `reader_hibiki_history_page.dart` 的 remote 门控），拉取照发不误。关掉「显示
+  /// 上游 `reader_fushi_history_page.dart` 的 remote 门控），拉取照发不误。关掉「显示
   /// 远端条目」的用户仍然全额付网络代价，只是结果被丢弃。门控前移到取数之前。
   /// 用 `appModelNoUpdate`（不 watch）：本门控只读 prefsRepo，与 AppModel 的通知无关；
   /// 而本 getter 会在 prefsRepo 回调等非 build 时机被调用，那里 `ref.watch` 非法。
@@ -288,7 +288,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     } catch (e, stack) {
       failed = true;
       ErrorLogService.instance
-          .log('ReaderHibikiHistoryPage.deleteRemoteBook', e, stack);
+          .log('ReaderFushiHistoryPage.deleteRemoteBook', e, stack);
     }
     if (!mounted) return;
     // 失败必须给可见提示：原实现只写日志就刷新列表，书还在原处、用户以为自己看错了。
@@ -418,7 +418,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
         } catch (e, stack) {
           // 排序/系列元数据迁移失败不能让已成功的下载失败。
           ErrorLogService.instance
-              .log('ReaderHibikiHistoryPage.migrateShelfEntryKey', e, stack);
+              .log('ReaderFushiHistoryPage.migrateShelfEntryKey', e, stack);
         }
       }
       // tags 稳健档：LWW 合并 host 传来的标签时钟 + 移除墓碑（删除/改名跨端传播、
@@ -458,7 +458,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       // EPUB 已成功入库，只是有声书没拉到：给专用可见提示（不静默吞），并照常
       // 刷新书架（EPUB 行已在）。不在 finally 后再弹「下载成功」。
       ErrorLogService.instance.log(
-          'ReaderHibikiHistoryPage.downloadRemoteAudiobook', e.cause, stack);
+          'ReaderFushiHistoryPage.downloadRemoteAudiobook', e.cause, stack);
       _rebuild(() => _downloadingBooks.remove(book.title));
       if (!mounted) return;
       ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
@@ -469,7 +469,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       return;
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibikiHistoryPage.downloadRemoteBook', e, stack);
+          .log('ReaderFushiHistoryPage.downloadRemoteBook', e, stack);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(t.remote_book_download_failed)),
@@ -533,7 +533,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       }
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibikiHistoryPage.downloadRemoteBookProgress', e, stack);
+          .log('ReaderFushiHistoryPage.downloadRemoteBookProgress', e, stack);
     }
 
     // 有声书播放断点 → prefs（与 resume/播放写键空间同源，见 sync sweep）。
@@ -550,7 +550,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
         }
       } catch (e, stack) {
         ErrorLogService.instance.log(
-            'ReaderHibikiHistoryPage.downloadRemoteAudiobookPosition',
+            'ReaderFushiHistoryPage.downloadRemoteAudiobookPosition',
             e,
             stack);
       }
@@ -628,7 +628,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       }
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibikiHistoryPage.downloadRemoteAudiobook', e, stack);
+          .log('ReaderFushiHistoryPage.downloadRemoteAudiobook', e, stack);
       // 包成可见错误：调用方 catch 后弹专用提示，不与 EPUB 失败混淆。
       throw _RemoteAudiobookException(e);
     } finally {
@@ -791,7 +791,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     } catch (e, stack) {
       failed = true;
       ErrorLogService.instance
-          .log('ReaderHibikiHistoryPage.deleteRemoteSrt', e, stack);
+          .log('ReaderFushiHistoryPage.deleteRemoteSrt', e, stack);
     }
     if (!mounted) return;
     if (failed) {
@@ -868,7 +868,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       );
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibikiHistoryPage.downloadRemoteSrtAudiobook', e, stack);
+          .log('ReaderFushiHistoryPage.downloadRemoteSrtAudiobook', e, stack);
       if (audioTmp != null) {
         try {
           if (audioTmp.existsSync()) audioTmp.deleteSync();

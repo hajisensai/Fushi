@@ -57,7 +57,7 @@ void main() {
         'book sentence-audio container is platform-aware '
         '(iOS .m4a / desktop+Android .aac), BUG-644', () {
       final String source = libFile(
-        'lib/src/pages/implementations/reader_hibiki/mining.part.dart',
+        'lib/src/pages/implementations/reader_fushi/mining.part.dart',
       );
       expect(source, contains(r"'sentence.${immersionMiningAudioExtension()}'"),
           reason: 'Book/audiobook sentence audio must derive its container '

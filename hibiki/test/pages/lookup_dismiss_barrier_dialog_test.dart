@@ -185,7 +185,7 @@ void main() {
     for (final ({String path, String name}) page
         in const <({String path, String name})>[
       (
-        path: 'lib/src/pages/implementations/video_hibiki_page.dart',
+        path: 'lib/src/pages/implementations/video_fushi_page.dart',
         name: '视频页'
       ),
       (

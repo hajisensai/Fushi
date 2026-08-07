@@ -3,11 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart'
-    show ReaderHibikiSource;
+import 'package:fushi/src/media/sources/reader_fushi_source.dart'
+    show ReaderFushiSource;
 import 'package:fushi/src/models/app_model.dart' show AppModel;
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
-    show ReaderHibikiPage;
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
+    show ReaderFushiPage;
 import 'package:fushi_audio/fushi_audio.dart' show AudiobookPlayerController;
 
 import 'helpers/focus_driver.dart';
@@ -63,7 +63,7 @@ void main() {
   testWidgets(
     'reader automation can open an audiobook and enter lyrics mode',
     (WidgetTester tester) async {
-      await runHibikiItest(
+      await runFushiItest(
         label: 'lyrics-mode-entry',
         body: () async {
           app.main();
@@ -90,13 +90,13 @@ void main() {
           }
 
           Finder bookEntry = find.byKey(ValueKey<String>(
-            'srt_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}',
+            'srt_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}',
           ));
           for (int i = 0; i < 40; i++) {
             await tester.pump(const Duration(milliseconds: 500));
             if (bookEntry.evaluate().isNotEmpty) break;
             final Finder fallback = find.byKey(ValueKey<String>(
-              'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}',
+              'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}',
             ));
             if (fallback.evaluate().isNotEmpty) {
               bookEntry = fallback;
@@ -119,9 +119,9 @@ void main() {
           expect(controller.chapterCueCount, greaterThan(0),
               reason: 'fixture must provide subtitle cues for lyrics mode');
 
-          expect(ReaderHibikiPage.debugOpenQuickSettings, isNotNull,
+          expect(ReaderFushiPage.debugOpenQuickSettings, isNotNull,
               reason: 'profile/debug builds must expose quick-settings hook');
-          await ReaderHibikiPage.debugOpenQuickSettings!();
+          await ReaderFushiPage.debugOpenQuickSettings!();
           await tester.pump(const Duration(seconds: 1));
 
           final Finder lyricsToggle =
@@ -135,10 +135,10 @@ void main() {
           await _pumpUntil(tester, _lyricsReady,
               reason:
                   'lyrics page must report ready after enabling lyrics mode');
-          expect(ReaderHibikiPage.debugLyricsModeReady?.call(), isTrue);
+          expect(ReaderFushiPage.debugLyricsModeReady?.call(), isTrue);
 
           final dynamic sentinel =
-              await ReaderHibikiPage.debugEvaluateJavascript?.call(
+              await ReaderFushiPage.debugEvaluateJavascript?.call(
             "Boolean(window.__lyricsSetCue && document.getElementById('lc'))",
           );
           expect(

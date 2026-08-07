@@ -4,11 +4,11 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart'
-    show ReaderHibikiSource;
+import 'package:fushi/src/media/sources/reader_fushi_source.dart'
+    show ReaderFushiSource;
 import 'package:fushi/src/models/app_model.dart' show AppModel;
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
-    show ReaderHibikiPage;
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
+    show ReaderFushiPage;
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart' show readyAppModel, seedReaderBook;
@@ -18,7 +18,7 @@ import 'test_helpers.dart';
 /// TODO-1308 问题②（BUG-696）真实路径验证：书内收藏面板跳转必须落在收藏句的
 /// 字符位置，而不是章节开头。
 ///
-/// 走的就是产品路径：`ReaderHibikiPage.debugJumpToFavorite` 直连
+/// 走的就是产品路径：`ReaderFushiPage.debugJumpToFavorite` 直连
 /// `_jumpToFavoriteSentence`（quick settings sheet 的 onJumpToFavorite 同一方法）。
 /// 修复前该方法把绝对字符索引 /10000 当分数 → 恒落章节开头（fvco==0）。
 ///
@@ -69,7 +69,7 @@ void main() {
     'TODO-1308 in-book favorite jump lands at the sentence char position '
     '(not the chapter start), vertical-rl continuous',
     (WidgetTester tester) async {
-      await runHibikiItest(
+      await runFushiItest(
         label: 'favjump',
         body: () async {
           app.main();
@@ -109,18 +109,18 @@ void main() {
           await _waitFor(tester, _webViewShown, 'reader WebView');
           await _waitFor(tester, _contentReady, 'hoshi content');
 
-          await ReaderHibikiSource.instance.setReaderWritingMode('vertical-rl');
-          await ReaderHibikiSource.instance.setReaderViewMode('continuous');
-          ReaderHibikiSource.onLayoutReloadLive?.call();
+          await ReaderFushiSource.instance.setReaderWritingMode('vertical-rl');
+          await ReaderFushiSource.instance.setReaderViewMode('continuous');
+          ReaderFushiSource.onLayoutReloadLive?.call();
           for (int i = 0; i < 16; i++) {
             await tester.pump(const Duration(milliseconds: 250));
           }
           await _waitFor(tester, _contentReady, 'continuous content');
 
           final Future<dynamic> Function(String source)? runJs =
-              ReaderHibikiPage.debugEvaluateJavascript;
+              ReaderFushiPage.debugEvaluateJavascript;
           final Future<void> Function(FavoriteSentence)? jump =
-              ReaderHibikiPage.debugJumpToFavorite;
+              ReaderFushiPage.debugJumpToFavorite;
           expect(runJs, isNotNull,
               reason: 'reader must expose debugEvaluateJavascript');
           expect(jump, isNotNull,

@@ -23,7 +23,7 @@ void main() {
   const String popupPagePath =
       'lib/src/pages/implementations/popup_dictionary_page.dart';
   const String lookupFavoritePath =
-      'lib/src/pages/implementations/video_hibiki/lookup_favorite.part.dart';
+      'lib/src/pages/implementations/video_fushi/lookup_favorite.part.dart';
   const String lookupAudioPath =
       'lib/src/utils/misc/lookup_audio_playback.dart';
   // 词典 FFI 引擎在同工作区的兄弟包。

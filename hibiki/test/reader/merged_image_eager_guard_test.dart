@@ -51,7 +51,7 @@ void main() {
         () {
       // 守卫两端接线一致：注入端类名与初始化端放行判定用同一个 marker。
       final File webviewFile = File(
-        'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+        'lib/src/pages/implementations/reader_fushi/webview.part.dart',
       );
       final String src = webviewFile.readAsStringSync();
       expect(src.contains('class="fushi-merged-image"'), isTrue,

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 /// 回归守卫：锁死应用的 editorial type scale（[FushiTypeScale]）真正渲染出来，
 /// 而不是被 Flutter 的 geometry 盖回 M3 默认。

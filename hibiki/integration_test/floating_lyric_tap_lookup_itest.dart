@@ -48,8 +48,8 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart'
-    show ReaderHibikiSource;
+import 'package:fushi/src/media/sources/reader_fushi_source.dart'
+    show ReaderFushiSource;
 import 'package:fushi/src/models/app_model.dart' show AppModel;
 import 'package:fushi_audio/fushi_audio.dart' show AudiobookPlayerController;
 
@@ -205,7 +205,7 @@ void main() {
     'a REAL (host-rendered) global lookup card, not the blank READY-SAFETY '
     'fallback - including after the overlay WebView2 process tree dies',
     (WidgetTester tester) async {
-      await runHibikiItest(
+      await runFushiItest(
         label: 'float-tap-lookup',
         body: () async {
           app.main();
@@ -236,9 +236,9 @@ void main() {
           }
 
           final String entryKey =
-              'srt_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
+              'srt_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
           final String altEntryKey =
-              'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
+              'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
           Finder bookEntry = find.byKey(ValueKey<String>(entryKey));
           for (int i = 0; i < 40; i++) {
             await tester.pump(const Duration(milliseconds: 500));

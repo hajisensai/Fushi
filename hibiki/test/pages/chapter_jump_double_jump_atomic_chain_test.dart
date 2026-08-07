@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// BUG-615 / TODO-1309 ② 源码守卫：跨章「精确跳转」双跳（首跳只到章节）。
 ///

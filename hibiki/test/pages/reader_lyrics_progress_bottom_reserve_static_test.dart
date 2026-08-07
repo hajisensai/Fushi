@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 
 import '../helpers/source_guard.dart';
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// BUG-379：歌词模式（LyricsModeHtml）进度条跑进底栏。
 ///

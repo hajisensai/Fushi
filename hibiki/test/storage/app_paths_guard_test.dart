@@ -148,7 +148,7 @@ void main() {
     // 守卫——加源码扫描防这两个 caller 回退直连 path_provider 数据根。
     test('subtitle.part.dart 字幕写路径经 AppPaths.videoSubtitlesDirectory', () {
       final String src =
-          read('lib/src/pages/implementations/video_hibiki/subtitle.part.dart');
+          read('lib/src/pages/implementations/video_fushi/subtitle.part.dart');
       // Jimaku 下载 saveDir(:468) 与外挂字幕导入 destDir(:651) 两处写目录都经
       // AppPaths.videoSubtitlesDirectory()——跟随桌面自定义数据根，不落回平台 Documents。
       expect(

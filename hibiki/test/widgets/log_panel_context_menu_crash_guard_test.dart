@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 import '../helpers/source_guard.dart';
 
@@ -237,7 +237,7 @@ void main() {
       'TODO-1380 source guard: context menu anchors come from the tracked '
       'pointer-down position, never from geometry-dependent getters', () {
     final String source = File(
-      'lib/src/utils/components/hibiki_material_components.dart',
+      'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
     // 只扫代码：注释统一换成**等长空白**（共享 `maskComments`），避免误伤注释里
     // 解释这些 getter 为何被禁的文字。旧写法只丢整行 `//`，块注释与行尾注释都漏

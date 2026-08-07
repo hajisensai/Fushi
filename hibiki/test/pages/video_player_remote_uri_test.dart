@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 void main() {
-  final String page = readVideoHibikiSource();
+  final String page = readVideoFushiSource();
 
   group('TODO-434 远端视频片段导出守卫', () {
     test('远端直连流只提示先下载，不进入片段导出状态', () {

@@ -13,7 +13,7 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 /// 跨章。修法 = arm-then-fire 二次确认（同方向第一次到边界只武装、第二次才跨章），由
 /// 纯函数 [ReaderPaginationScripts.continuousWheelBoundaryEmit] 锁定。
 ///
-/// 这是 reader_hibiki_page.dart 滚轮监听器边界确认逻辑的纯 Dart 影子（headless WebView
+/// 这是 reader_fushi_page.dart 滚轮监听器边界确认逻辑的纯 Dart 影子（headless WebView
 /// 不可用，按项目范式：纯函数单测 + 源码守卫）。
 void main() {
   ({bool emit, String? nextArmedDir}) confirm({

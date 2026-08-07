@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 守卫：视频播放设置面板已从 bespoke 深色单列 `showModalBottomSheet` 迁移到与阅读器
 /// 同款 master-detail（`VideoQuickSettingsSheet` + 桌面 `FushiDialogFrame(900)` /
@@ -35,9 +35,9 @@ void main() {
   test('video player settings uses the shared master-detail sheet', () {
     // TODO-590 batch10：side-panel 域（_buildVideoSidePanelChild /
     // _buildVideoSidePanelOverlay / VideoTranslucentSidePanel 构造）已抽到
-    // video_hibiki/side_panel.part.dart，改读合并语料才能命中这些 marker；
+    // video_fushi/side_panel.part.dart，改读合并语料才能命中这些 marker；
     // _showPlayerSettings / _buildVideoQuickSettingsSheet 仍在主壳（合并语料含主壳）。
-    final String source = readVideoHibikiSource();
+    final String source = readVideoFushiSource();
     final String showMethod = _member(
       source,
       'void _showPlayerSettings(',
@@ -309,10 +309,10 @@ void main() {
   });
 
   test('video settings side panel owns UI scale and hover lifetime', () {
-    final String source = readVideoHibikiSource();
+    final String source = readVideoFushiSource();
     // TODO-314：字幕列表改 push-aside 后 overlay 版 _buildSubtitleListSidePanel 已删。
     // TODO-590 batch10：整个 side-panel 域（_buildVideoSidePanelOverlay /
-    // _buildVideoSidePanelContent）已抽到 video_hibiki/side_panel.part.dart。该 part 在合并
+    // _buildVideoSidePanelContent）已抽到 video_fushi/side_panel.part.dart。该 part 在合并
     // 语料末尾，_buildVideoSidePanelContent 是它的末方法（下方断言要的
     // `kind != settings` / `FushiAppUiScale` / `scale: _videoUiScale` 都落在 content 体里），
     // 其紧邻后继是 part 顶格 extension 闭合 `\n}`；overlay→content 之间无顶格 `}`，故用
@@ -373,7 +373,7 @@ void main() {
     // TODO-364：poke 仍派合成 hover 驱动 media_kit 自己的可见性/Timer（单一真相源），
     // 但不再另翻 Hibiki 镜像（相位反根因）。
     expect(pokeMethod,
-        contains('device: _VideoHibikiPageState._syntheticHoverDevice'));
+        contains('device: _VideoFushiPageState._syntheticHoverDevice'));
     expect(pokeMethod, isNot(contains('_markControlsVisible(true);')),
         reason: 'poke 不应再乐观翻镜像（可见性由 media_kit 收合成 hover 后推送，TODO-364）');
     // TODO-364：_markControlsVisible 收敛成仅门控收起（assert(!visible)）+ 重派生；
@@ -391,7 +391,7 @@ void main() {
     expect(
         syntheticHoverMethod,
         contains(
-            'event.device == _VideoHibikiPageState._syntheticHoverDevice'));
+            'event.device == _VideoFushiPageState._syntheticHoverDevice'));
     expect(
         hoverHandlerMethod, contains('if (!_isSyntheticControlsHover(event))'));
     // TODO-364：真实 hover 不再乐观翻镜像（可见性由 media_kit onHover 推送）。

@@ -46,7 +46,7 @@ void main() {
         reason: 'host 能力槽声明 mpv 目录回调');
 
     final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+        read('lib/src/pages/implementations/video_fushi_page.dart');
     expect(page.contains('appModel.setVideoMpvShaderDir('), isTrue,
         reason: '选定目录落库持久化（页面回调）');
   });

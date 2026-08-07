@@ -1,6 +1,6 @@
-[根目录](../../CLAUDE.md) > [packages](../) > **hibiki_platform**
+[根目录](../../CLAUDE.md) > [packages](../) > **fushi_platform**
 
-# hibiki_platform
+# fushi_platform
 
 ## 模块职责
 
@@ -8,7 +8,7 @@
 
 ## 入口与启动
 
-- 库入口：`lib/hibiki_platform.dart`
+- 库入口：`lib/fushi_platform.dart`
 - 无独立启动流程，由主应用注入具体实现。
 
 ## 对外接口
@@ -28,7 +28,7 @@
 
 ## 相关文件清单
 
-- `lib/hibiki_platform.dart` -- 库入口
+- `lib/fushi_platform.dart` -- 库入口
 - `lib/src/tts_engine.dart` -- TTS 抽象
 - `lib/src/platform_integration.dart` -- 平台集成抽象
 - `lib/src/storage_paths.dart` -- 存储路径抽象

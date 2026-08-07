@@ -117,9 +117,9 @@ void main() {
   // 把退出瞬间位置可靠落库（对齐阅读器 `onWillPop` 先 await 落库再 pop）。后台生命
   // 周期也要 flush，覆盖硬杀进程（dispose 不跑）。这两条无法纯单测（需真实 libmpv），
   // 故在源码层钉死结构。
-  group('VideoHibikiPage exit/background flush wiring (问题 1)', () {
+  group('VideoFushiPage exit/background flush wiring (问题 1)', () {
     final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+        read('lib/src/pages/implementations/video_fushi_page.dart');
 
     test('PopScope intercepts the route pop (canPop:false) to await the flush',
         () {
@@ -381,9 +381,9 @@ void main() {
   // TODO-099: video page forces landscape on enter, restores on exit.
   // Mobile-only; desktop is no-op. Source-level guard (needs a real device
   // orientation system, cannot be exercised in a pure unit test).
-  group('VideoHibikiPage forced landscape wiring (TODO-099)', () {
+  group('VideoFushiPage forced landscape wiring (TODO-099)', () {
     final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+        read('lib/src/pages/implementations/video_fushi_page.dart');
 
     test('initState locks landscape on entering the video page', () {
       final RegExpMatch? body = RegExp(

@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///    即导出不再垫底。
 void main() {
   final File webview =
-      File('lib/src/pages/implementations/reader_hibiki/webview.part.dart');
+      File('lib/src/pages/implementations/reader_fushi/webview.part.dart');
 
   test('webview.part.dart：移动端菜单隐藏系统项 + 补复制 + 导出前置', () {
     expect(webview.existsSync(), isTrue,

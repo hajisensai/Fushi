@@ -16,7 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
@@ -69,7 +69,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   @override
   void initState() {
     super.initState();
-    _gamepadBrand = ReaderHibikiSource.instance.gamepadGlyphBrand;
+    _gamepadBrand = ReaderFushiSource.instance.gamepadGlyphBrand;
     // Surface the hint only on a gamepad-related surface (this settings page),
     // never as a startup popup — a mouse/keyboard-only user is not nagged.
     unawaited(_checkGameInputAvailability());
@@ -88,13 +88,13 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   Future<void> _onGamepadBrandChanged(GamepadBrand brand) async {
     if (brand == _gamepadBrand) return;
     setState(() => _gamepadBrand = brand);
-    await ReaderHibikiSource.instance.setGamepadGlyphBrand(brand);
+    await ReaderFushiSource.instance.setGamepadGlyphBrand(brand);
   }
 
   Future<void> _save() async {
     await saveShortcutRegistry(
       _registry,
-      ReaderHibikiSource.instance,
+      ReaderFushiSource.instance,
     );
   }
 
@@ -542,7 +542,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
       context: context,
       appModel: appModel,
       ref: ref,
-      readerSource: ReaderHibikiSource.instance,
+      readerSource: ReaderFushiSource.instance,
       refresh: () {
         if (mounted) setState(() {});
       },

@@ -11,7 +11,7 @@
 // then serves until killed (5-minute safety cap).
 import 'dart:io';
 
-import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
 
 Future<void> main(List<String> args) async {

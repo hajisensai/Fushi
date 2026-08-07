@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// BUG-239 源码守卫：阅读器统一手势 `_gestureEnd` 的 onSwipe 回传必须被连续模式
 /// 门控（连续模式不发跨轴 onSwipe）。headless WebView 不可用，门控数值正确性由
@@ -9,7 +9,7 @@ void main() {
 
   setUpAll(() {
     // TODO-589 batch8: setup 脚本(_buildReaderSetupScript)已搬到
-    // reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+    // reader_fushi/webview.part.dart，改读「主壳 + 全部 part」合并语料。
     source = readReaderPageSource();
   });
 

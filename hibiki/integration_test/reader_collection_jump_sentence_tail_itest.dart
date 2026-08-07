@@ -5,11 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart'
-    show ReaderHibikiSource;
+import 'package:fushi/src/media/sources/reader_fushi_source.dart'
+    show ReaderFushiSource;
 import 'package:fushi/src/models/app_model.dart' show AppModel;
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
-    show ReaderHibikiPage;
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
+    show ReaderFushiPage;
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart' show readyAppModel, seedReaderBook;
@@ -54,10 +54,10 @@ import 'test_helpers.dart';
 /// 句尾 `bottom` 取法与产品 JS 同口径：句尾字符 collapsed range 的 `rect.top` 加上
 /// 一个行高（`line-height` 或 `fontSize*1.5` 兜底），即句尾字符所在行的底边。
 ///
-/// 探针用 `ReaderHibikiPage.debugEvaluateJavascript`（reader 页对真实 WebView 暴露的
+/// 探针用 `ReaderFushiPage.debugEvaluateJavascript`（reader 页对真实 WebView 暴露的
 /// 测试钩子）跑 `getBoundingClientRect`，**不**用像素截图（bg 下 WebView 截图可能白框）。
 ///
-/// 启动期网络噪声经 `runHibikiItest` 守卫放行。
+/// 启动期网络噪声经 `runFushiItest` 守卫放行。
 ///
 /// Run (PowerShell, from hibiki/):
 ///   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 \
@@ -96,7 +96,7 @@ void main() {
     'TODO-982/BUG-461 continuous scroll: favorite-sentence jump fits the whole '
     'sentence — tail bottom stays above the reader bottom-chrome band',
     (WidgetTester tester) async {
-      await runHibikiItest(
+      await runFushiItest(
         label: 'coll-jump',
         body: () async {
           app.main();
@@ -147,25 +147,25 @@ void main() {
           // （整章重排，CSS-only 的 onSettingsChangedLive 表达不了写排方向切换）。这里
           // 严格复刻产品同一路径：先写两个偏好，再 fire onLayoutReloadLive 触发
           // 重排，等内容重新就绪。
-          await ReaderHibikiSource.instance.setReaderWritingMode('horizontal-tb');
-          await ReaderHibikiSource.instance.setReaderViewMode('continuous');
+          await ReaderFushiSource.instance.setReaderWritingMode('horizontal-tb');
+          await ReaderFushiSource.instance.setReaderViewMode('continuous');
           // 设一个非零顶部正文边距：连续模式横排里 paddingTop = marginTop·vh +
           // chromeTopInset，而 BUG-461 的可见区上沿 bandTop = chromeTopInset。只有
           // paddingTop > bandTop（即 marginTop·vh > 0）时，句首贴内容顶后才可能比
           // 「贴可见区上沿」低一截，使一条本身放得下可见区的句子的句尾溢出底沿——
           // 这正是修复要解决的「放得下却被切尾」窗口。chromeTopInset 取 0 时窗口宽度
           // = marginTop·vh，10vh 给足余量。
-          await ReaderHibikiSource.instance.setReaderMarginTop(10);
-          ReaderHibikiSource.onLayoutReloadLive?.call();
+          await ReaderFushiSource.instance.setReaderMarginTop(10);
+          ReaderFushiSource.onLayoutReloadLive?.call();
           for (int i = 0; i < 16; i++) {
             await tester.pump(const Duration(milliseconds: 250));
           }
           await _waitFor(tester, _contentReady, 'continuous content');
-          expect(ReaderHibikiSource.readerSettings?.isContinuousMode, isTrue,
+          expect(ReaderFushiSource.readerSettings?.isContinuousMode, isTrue,
               reason: 'reader must be in continuous scroll mode for TODO-982');
 
           final Future<dynamic> Function(String source)? runJs =
-              ReaderHibikiPage.debugEvaluateJavascript;
+              ReaderFushiPage.debugEvaluateJavascript;
           expect(runJs, isNotNull,
               reason: 'reader must expose debugEvaluateJavascript hook');
 

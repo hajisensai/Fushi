@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// reader live 设置 hook / eval 异步守卫的回归测试（源码扫描，沿用
 /// `settings_renderer_test.dart` 的静态断言模式：`File(...).readAsStringSync()`
@@ -30,12 +30,12 @@ void main() {
     // 每个 tag 只出现在对应的 catchError / try-catch 守卫块内；守卫被移除即消失。
     const List<String> guardTags = <String>[
       // 两个 live hook 的 catchError 日志 tag（防 fire-and-forget Future 逃 zone）
-      'ReaderHibiki.onSettingsChangedLive',
-      'ReaderHibiki.onLayoutReloadLive',
+      'ReaderFushi.onSettingsChangedLive',
+      'ReaderFushi.onLayoutReloadLive',
       // 三个 evaluateJavascript 点的 try/catch no-op 守卫 tag
-      'ReaderHibiki.applyStylesLive.eval',
-      'ReaderHibiki.reloadWithCurrentSettings.eval',
-      'ReaderHibiki.updateLyricsStyleLive.eval',
+      'ReaderFushi.applyStylesLive.eval',
+      'ReaderFushi.reloadWithCurrentSettings.eval',
+      'ReaderFushi.updateLyricsStyleLive.eval',
     ];
     for (final String tag in guardTags) {
       expect(
@@ -49,7 +49,7 @@ void main() {
 
     // BUG-969：拖 slider 风暴收敛——onSettingsChangedLive 经 _liveSettingsRunner
     // 合并触发（unawaited trigger），_applyStylesLive() 在 runner 动作内 await 且被
-    // try/catch 归集到 'ReaderHibiki.onSettingsChangedLive' 日志 tag（上面 guardTags
+    // try/catch 归集到 'ReaderFushi.onSettingsChangedLive' 日志 tag（上面 guardTags
     // 已断言 tag 在位）。两处都不能退回裸 fire-and-forget（await 边界后异常无主逃逸）。
     expect(src, contains('unawaited(_liveSettingsRunner.trigger()'),
         reason:

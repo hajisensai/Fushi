@@ -70,7 +70,7 @@ void main() {
 
     test('speed.part：长按 start/move 把 localPosition 写入跟随 notifier，end 清空', () {
       final String src = readSource(
-              'lib/src/pages/implementations/video_hibiki/speed.part.dart')
+              'lib/src/pages/implementations/video_fushi/speed.part.dart')
           .readAsStringSync();
       final int startIdx = src.indexOf('_handleVideoLongPressStart(');
       final int moveIdx = src.indexOf('_handleVideoLongPressMoveUpdate(');
@@ -107,7 +107,7 @@ void main() {
 
     test('layout.part：视频 Stack 挂载跟随徽章层', () {
       final String src = readSource(
-              'lib/src/pages/implementations/video_hibiki/layout.part.dart')
+              'lib/src/pages/implementations/video_fushi/layout.part.dart')
           .readAsStringSync();
       expect(src.contains('_buildLongPressSpeedBadgeOverlay()'), isTrue,
           reason: '视频 Stack 必须挂长按倍速跟随徽章层');

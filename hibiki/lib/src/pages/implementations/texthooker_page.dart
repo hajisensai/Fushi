@@ -9,7 +9,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/mining/gal_hook_failure_text.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
@@ -1122,7 +1122,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   void _onBarrierHorizontalDragEnd(DragEndDetails details) {
     if (_barrierSwipe.end(
-      sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
     )) {
       popNestedPopupAt(_topVisiblePopupIndex, _popup);
     }
@@ -1944,14 +1944,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             behavior: HitTestBehavior.translucent,
             onTap: () => popNestedPopupAt(_topVisiblePopupIndex, _popup),
             onHorizontalDragStart:
-                ReaderHibikiSource.instance.enableSwipeToClose
+                ReaderFushiSource.instance.enableSwipeToClose
                     ? _onBarrierHorizontalDragStart
                     : null,
             onHorizontalDragUpdate:
-                ReaderHibikiSource.instance.enableSwipeToClose
+                ReaderFushiSource.instance.enableSwipeToClose
                     ? _onBarrierHorizontalDragUpdate
                     : null,
-            onHorizontalDragEnd: ReaderHibikiSource.instance.enableSwipeToClose
+            onHorizontalDragEnd: ReaderFushiSource.instance.enableSwipeToClose
                 ? _onBarrierHorizontalDragEnd
                 : null,
             child: const ColoredBox(color: Colors.transparent),

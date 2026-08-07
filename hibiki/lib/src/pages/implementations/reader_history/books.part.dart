@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from reader_hibiki_history_page.dart (TODO-587).
-part of '../reader_hibiki_history_page.dart';
+// GENERATED-NOTE: extracted from reader_fushi_history_page.dart (TODO-587).
+part of '../reader_fushi_history_page.dart';
 
 /// TODO-919 / BUG-441：判定一条 [SrtBook] 是否为「EPUB 有声书配对行」。
 ///
@@ -29,7 +29,7 @@ bool isEpubBackedAudiobookSrt(SrtBook book) {
 }
 
 /// books domain methods extracted via part-of (TODO-587); shared private scope.
-extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
+extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
   Widget? _buildSrtBookTagLabels(int srtBookId) => _tagLabelsFromMap(
         ref.watch(srtBookTagMapProvider).valueOrNull,
         srtBookId,
@@ -126,7 +126,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     // 存量的旧文件名（源键烧进 hash）并就地迁移；裸 getOverrideThumbnailFilename
     // 只拿得到规范路径，会把还没迁移的封面判成「没有」。
     final File? overrideCover =
-        ReaderHibikiSource.instance.resolveOverrideThumbnailFile(
+        ReaderFushiSource.instance.resolveOverrideThumbnailFile(
       appModel: appModel,
       item: _srtBookMediaItem(book),
     );
@@ -164,15 +164,15 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       // mediaIdentifierFor('')，override 书名/封面互相踩、作者保存静默 no-op。
       // EPUB 配对行照旧走 bookKey 身份（与 EPUB 卡同源，进度/override 共享）。
       mediaIdentifier: book.bookKey.isNotEmpty
-          ? ReaderHibikiSource.mediaIdentifierFor(book.bookKey)
-          : ReaderHibikiSource.mediaIdentifierForSrtUid(book.uid),
+          ? ReaderFushiSource.mediaIdentifierFor(book.bookKey)
+          : ReaderFushiSource.mediaIdentifierForSrtUid(book.uid),
       title: book.title,
       // BUG-1018 (A3)：standalone SRT 书作者列真值在 srt_books.author，回填供
       // 编辑对话框预填/保存往返。EPUB 配对行作者真值在 epubBooks.author（编辑
       // 保存按 bookKey 写穿），此处不冒充。
       author: book.bookKey.isEmpty ? book.author : null,
-      mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
+      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
       position: prog?.position ?? 0,
       duration: prog?.duration ?? 1,
       canDelete: false,
@@ -195,10 +195,10 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       return;
     }
     // BUG-456: SRT books must use the normal media entry so AppModel registers
-    // ReaderHibikiSource; direct page pushes leave currentMediaSource null.
+    // ReaderFushiSource; direct page pushes leave currentMediaSource null.
     await appModel.openMedia(
       ref: ref,
-      mediaSource: ReaderHibikiSource.instance,
+      mediaSource: ReaderFushiSource.instance,
       item: _srtBookMediaItem(book),
     );
   }
@@ -559,7 +559,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         final SrtBook? book = await repo.findByUid(uid);
         if (book != null) {
           if (book.bookKey.isNotEmpty) {
-            await ReaderHibikiSource.instance.deleteBook(
+            await ReaderFushiSource.instance.deleteBook(
               db: appModel.database,
               bookKey: book.bookKey,
               scope: scope,
@@ -578,7 +578,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         final String? bookKey = _parseBookKey(key);
         if (bookKey != null) {
           final DeleteBookResult result =
-              await ReaderHibikiSource.instance.deleteBook(
+              await ReaderFushiSource.instance.deleteBook(
             db: appModel.database,
             bookKey: bookKey,
             scope: scope,
@@ -627,7 +627,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     if (_selection.isEmpty) return false;
     final FushiDatabase db = appModel.database;
     // 存在性真值必须取自**书架选择键的来源表**，不是名字相近的 `media_items`：
-    // 书架 EPUB 卡的选择键是 `ReaderHibikiSource.mediaIdentifierFor(bookKey)`，
+    // 书架 EPUB 卡的选择键是 `ReaderFushiSource.mediaIdentifierFor(bookKey)`，
     // bookKey 的真值在 `epub_books`（`hibikiBooksProvider` 也是从这里取的）；
     // `getAllMediaItems()` 是另一张表、另一套 mediaIdentifier 语义，拿它做判据
     // 会把全部选中项误判成幽灵键而整批剔光。
@@ -639,7 +639,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final int dropped = _selection.retainExisting(
       loose: <String>{
         for (final EpubBookRow row in epubBooks)
-          ReaderHibikiSource.mediaIdentifierFor(row.bookKey),
+          ReaderFushiSource.mediaIdentifierFor(row.bookKey),
         for (final SrtBook book in srtBooks) 'srt_${book.uid}',
       },
       collections: <int>{for (final MediaCollectionRow c in collections) c.id},
@@ -873,7 +873,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     if (scope == null) return;
 
     if (book.bookKey.isNotEmpty) {
-      await ReaderHibikiSource.instance.deleteBook(
+      await ReaderFushiSource.instance.deleteBook(
         db: appModel.database,
         bookKey: book.bookKey,
         scope: scope,
@@ -940,7 +940,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     if (scope == null) return;
 
     final DeleteBookResult result =
-        await ReaderHibikiSource.instance.deleteBook(
+        await ReaderFushiSource.instance.deleteBook(
       db: appModel.database,
       bookKey: bookKey,
       scope: scope,
@@ -1130,7 +1130,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   }
 
   /// 拖入书文件 → 打开 [BookImportDialog]，预填 EPUB（及可选字幕）路径。
-  /// 复用 [ReaderHibikiSource.buildBookImportButton] 的 repo/打开/刷新范式。
+  /// 复用 [ReaderFushiSource.buildBookImportButton] 的 repo/打开/刷新范式。
   Future<void> _openBookImportPrefilled({
     required String epubPath,
     required String? subtitlePath,

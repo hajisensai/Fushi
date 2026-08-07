@@ -1,0 +1,3 @@
+// Compatibility export for plugins and tests that imported the prototype path.
+// The implementation lives in the standalone manga module.
+export 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';

@@ -215,7 +215,7 @@ void main() {
   group('TODO-669: host wiring (desktop only)', () {
     test('desktop controls theme injects onHoverPosition', () {
       final String themeSrc = File(
-        'lib/src/pages/implementations/video_hibiki/controls_theme.part.dart',
+        'lib/src/pages/implementations/video_fushi/controls_theme.part.dart',
       ).readAsStringSync();
       final int desktopStart = themeSrc.indexOf('_desktopControlsTheme(');
       final int mobileStart = themeSrc.indexOf('_mobileControlsTheme(');
@@ -239,7 +239,7 @@ void main() {
 
     test('thumbnail preview overlay is mounted in the controls Stack', () {
       final String layoutSrc = File(
-        'lib/src/pages/implementations/video_hibiki/layout.part.dart',
+        'lib/src/pages/implementations/video_fushi/layout.part.dart',
       ).readAsStringSync();
       expect(
         layoutSrc.contains('_buildThumbnailPreviewOverlay(controller)'),
@@ -303,7 +303,7 @@ void main() {
     test('host wires onSeekEnd -> notifyExternalSeek in BOTH control themes',
         () {
       final String themeSrc = File(
-        'lib/src/pages/implementations/video_hibiki/controls_theme.part.dart',
+        'lib/src/pages/implementations/video_fushi/controls_theme.part.dart',
       ).readAsStringSync();
       final int desktopStart = themeSrc.indexOf('_desktopControlsTheme(');
       final int mobileStart = themeSrc.indexOf('_mobileControlsTheme(');

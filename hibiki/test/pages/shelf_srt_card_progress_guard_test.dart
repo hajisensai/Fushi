@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// BUG-728 guard：书架有声书进度条。EPUB-backed 有声书在书架**只渲染成 SRT 卡**
 /// （其 EpubBooks 行被 `srtBookKeys` 过滤出 EPUB 卡列表，见
-/// `reader_hibiki_history_page.dart` 的 `epubBooks = books.where(... !srtBookKeys...)`），
+/// `reader_fushi_history_page.dart` 的 `epubBooks = books.where(... !srtBookKeys...)`），
 /// 而 SRT 卡以前不传 `metadata:` 且 `_srtBookMediaItem` 硬编码 `position:0, duration:1`
 /// → 有声书书架永远没有进度条（用户「有声书好像少了进度条」）。
 ///
@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// `_progressBar`。用源码扫描锁死三根线，避免回归。
 void main() {
   final String historyPage = File(
-    'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    'lib/src/pages/implementations/reader_fushi_history_page.dart',
   ).readAsStringSync();
   final String booksPart = File(
     'lib/src/pages/implementations/reader_history/books.part.dart',

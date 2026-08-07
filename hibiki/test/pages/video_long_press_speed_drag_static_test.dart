@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 长按倍速可顺滑横向拖动连续调速（TODO-338）的守卫。
 ///
@@ -12,54 +12,54 @@ import 'video_hibiki_page_source_corpus.dart';
 ///
 /// **修法**：加 `onLongPressMoveUpdate` → [_handleVideoLongPressMoveUpdate]，以长按
 /// 固定加速速为基准，把相对长按起点的横向位移（右正左负）按
-/// [VideoHibikiPage.longPressDragSpeedPerPixel] 线性映射、clamp 到 0.5..4.0、snap 到
+/// [VideoFushiPage.longPressDragSpeedPerPixel] 线性映射、clamp 到 0.5..4.0、snap 到
 /// 0.1x 步进，连续 setSpeed（不持久），松手恢复原速。
 ///
 /// media_kit/libmpv 在测试宿主不可用，无法纯单测真实拖动手势，故守两层：
-/// 1. 纯函数 [VideoHibikiPage.longPressDragSpeedFor] 的映射 / clamp / snap 逻辑；
+/// 1. 纯函数 [VideoFushiPage.longPressDragSpeedFor] 的映射 / clamp / snap 逻辑；
 /// 2. 源码守卫：手势绑了 onLongPressMoveUpdate、handler 以基准速连续调速、松手清基准。
 ///
 /// TODO-590 batch12：长按倍速三段 handler ([_handleVideoLongPressStart] /
 /// [_handleVideoLongPressMoveUpdate] / [_handleVideoLongPressEnd]) 随 speed 域
-/// 抽到 video_hibiki/speed.part.dart，故源码守卫改读合并语料（主壳 + part）；手势
+/// 抽到 video_fushi/speed.part.dart，故源码守卫改读合并语料（主壳 + part）；手势
 /// 绑定点仍在主壳的 build 体里，`_functionSource` 切片落在 part 里的方法体。
 void main() {
   group('longPressDragSpeedFor — 横向位移→倍速映射', () {
     const double base = 2.0; // 长按固定加速速。
 
     test('零位移 → 维持基准速', () {
-      expect(VideoHibikiPage.longPressDragSpeedFor(base, 0), 2.0);
+      expect(VideoFushiPage.longPressDragSpeedFor(base, 0), 2.0);
     });
 
     test('向右拖加速、向左拖减速（200px ≈ 1.0x）', () {
       // 右 200px → 2.0 + 1.0 = 3.0x。
-      expect(VideoHibikiPage.longPressDragSpeedFor(base, 200), 3.0);
+      expect(VideoFushiPage.longPressDragSpeedFor(base, 200), 3.0);
       // 左 200px → 2.0 - 1.0 = 1.0x。
-      expect(VideoHibikiPage.longPressDragSpeedFor(base, -200), 1.0);
+      expect(VideoFushiPage.longPressDragSpeedFor(base, -200), 1.0);
     });
 
     test('snap 到 0.1x 步进（避免每像素抖动）', () {
       // 右 36px → 2.0 + 0.18 = 2.18 → snap 2.2（向上）。
-      expect(VideoHibikiPage.longPressDragSpeedFor(base, 36), 2.2);
+      expect(VideoFushiPage.longPressDragSpeedFor(base, 36), 2.2);
       // 右 24px → 2.0 + 0.12 = 2.12 → snap 2.1（向下）。
-      expect(VideoHibikiPage.longPressDragSpeedFor(base, 24), 2.1);
+      expect(VideoFushiPage.longPressDragSpeedFor(base, 24), 2.1);
     });
 
     test('clamp 到 0.5..4.0（拖过界不溢出）', () {
-      expect(VideoHibikiPage.longPressDragSpeedFor(base, 100000),
-          VideoHibikiPage.longPressDragMaxSpeed);
-      expect(VideoHibikiPage.longPressDragSpeedFor(base, -100000),
-          VideoHibikiPage.longPressDragMinSpeed);
+      expect(VideoFushiPage.longPressDragSpeedFor(base, 100000),
+          VideoFushiPage.longPressDragMaxSpeed);
+      expect(VideoFushiPage.longPressDragSpeedFor(base, -100000),
+          VideoFushiPage.longPressDragMinSpeed);
     });
 
     test('上下限常量取值（0.5 / 4.0）', () {
-      expect(VideoHibikiPage.longPressDragMinSpeed, 0.5);
-      expect(VideoHibikiPage.longPressDragMaxSpeed, 4.0);
+      expect(VideoFushiPage.longPressDragMinSpeed, 0.5);
+      expect(VideoFushiPage.longPressDragMaxSpeed, 4.0);
     });
   });
 
   group('源码接线守卫', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     test('手势绑了 onLongPressMoveUpdate（与 start/end 同处）', () {
       expect(
@@ -97,7 +97,7 @@ void main() {
       expect(move.contains('if (base == null) return;'), isTrue,
           reason: '非长按手势中（无基准）不响应拖动');
       expect(
-        move.contains('VideoHibikiPage.longPressDragSpeedFor('),
+        move.contains('VideoFushiPage.longPressDragSpeedFor('),
         isTrue,
         reason: 'move 必须经纯函数映射横向位移',
       );

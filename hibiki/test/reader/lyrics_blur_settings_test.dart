@@ -75,11 +75,11 @@ void main() {
     setUp(() {
       db = _testDb();
       MediaSource.setDatabase(db);
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
     });
 
     tearDown(() async {
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
       await db.close();
     });
 
@@ -88,7 +88,7 @@ void main() {
       await settings.refreshFromDb();
 
       expect(settings.lyricsBlur, isFalse);
-      expect(ReaderHibikiSource.instance.lyricsBlur, isFalse);
+      expect(ReaderFushiSource.instance.lyricsBlur, isFalse);
     });
 
     test('lyrics blur persists through ReaderSettings', () async {
@@ -103,7 +103,7 @@ void main() {
     });
 
     test('lyrics blur uses its own independent key', () async {
-      await ReaderHibikiSource.instance.setLyricsBlur(true);
+      await ReaderFushiSource.instance.setLyricsBlur(true);
 
       final Map<String, String> prefs = await db.getAllPrefs();
       expect(prefs.containsKey('src:reader_fushi:lyrics_blur'), isTrue);

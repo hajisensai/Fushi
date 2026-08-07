@@ -13,9 +13,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 经 _resolveWebViewSpaceAction 走 resolveReaderSpaceOverride 统一解析。
 void main() {
   final File webview =
-      File('lib/src/pages/implementations/reader_hibiki/webview.part.dart');
+      File('lib/src/pages/implementations/reader_fushi/webview.part.dart');
   final File caret =
-      File('lib/src/pages/implementations/reader_hibiki/caret.part.dart');
+      File('lib/src/pages/implementations/reader_fushi/caret.part.dart');
 
   /// 折叠所有空白（含换行/多空格）为单空格，令断言匹配「真实 token 序列」而非精确
   /// 格式（换行、缩进重排不会误伤守卫）。

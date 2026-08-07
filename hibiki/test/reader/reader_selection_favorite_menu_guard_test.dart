@@ -29,7 +29,7 @@ String _between(String src, String startMarker, String endMarker) {
 
 void main() {
   final String chrome =
-      File('lib/src/pages/implementations/reader_hibiki/chrome.part.dart')
+      File('lib/src/pages/implementations/reader_fushi/chrome.part.dart')
           .readAsStringSync();
 
   String selectionMenuBody() => _between(

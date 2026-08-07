@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// TODO-1074 守卫（根因 B）：EPUB 图片响应带 `max-age` 缓存，不再 `no-cache`。
 ///

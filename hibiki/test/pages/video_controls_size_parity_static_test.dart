@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 void main() {
   test('desktop and mobile controls use shared normal/fullscreen sizing', () {
-    // TODO-590 batch11：两套 controls 主题已搬到 video_hibiki/controls_theme.part.dart，
+    // TODO-590 batch11：两套 controls 主题已搬到 video_fushi/controls_theme.part.dart，
     // 读「合并语料」（主壳 + 全部 part）才能命中它们 + 全文计数仍覆盖主题体内的引用。
-    final String source = readVideoHibikiSource();
+    final String source = readVideoFushiSource();
 
     // 两套 media_kit controls 主题方法体区间（桌面 + 移动），用于把「主题构造器参数」类
     // 计数限定在主题里——BUG-238 让 _subtitleControlsBottomReserve 也用了同名命名参数
@@ -140,11 +140,11 @@ void main() {
       () {
     // _pushNeutralizedVideoFullscreen / _buildFullscreenButton 仍在主壳（合并语料前段），
     // 此切片相对顺序不变；统一读合并语料即可。
-    final String source = readVideoHibikiSource();
+    final String source = readVideoFushiSource();
 
     expect(source, contains('Future<void> _pushNeutralizedVideoFullscreen('),
         reason:
-            'media_kit default fullscreen route is outside VideoHibikiPage.neutralized; Hibiki must push its own neutralized route');
+            'media_kit default fullscreen route is outside VideoFushiPage.neutralized; Hibiki must push its own neutralized route');
     final int helper = source.indexOf(
       'Future<void> _pushNeutralizedVideoFullscreen(',
     );

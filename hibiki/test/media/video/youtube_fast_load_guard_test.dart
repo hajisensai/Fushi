@@ -20,7 +20,7 @@ void main() {
   late String resolverSrc;
   setUpAll(() {
     launchSrc = read('lib/src/media/video/stream_video_launch.dart');
-    pageSrc = read('lib/src/pages/implementations/video_hibiki_page.dart');
+    pageSrc = read('lib/src/pages/implementations/video_fushi_page.dart');
     resolverSrc = read('lib/src/media/video/youtube_source_resolver.dart');
   });
 

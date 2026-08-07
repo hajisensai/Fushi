@@ -343,7 +343,7 @@ void main() {
     }
 
     const String readerPath =
-        'lib/src/pages/implementations/reader_hibiki/caret.part.dart';
+        'lib/src/pages/implementations/reader_fushi/caret.part.dart';
 
     test('阅读器 readerDismissDict 分支只关词典、绝不退书', () {
       final String slice =
@@ -384,7 +384,7 @@ void main() {
     });
 
     test('漫画：globalBack 有弹窗关弹窗、无弹窗退出（此前 Esc 是死键）', () {
-      const String path = 'lib/src/media/manga/reader/manga_hibiki_page.dart';
+      const String path = 'lib/src/media/manga/reader/manga_fushi_page.dart';
       final String code = maskComments(File(path).readAsStringSync());
       expect(code.contains('MangaReaderInputAction.backOrExit'), isTrue,
           reason: '漫画必须有「退出」这个落点动作');

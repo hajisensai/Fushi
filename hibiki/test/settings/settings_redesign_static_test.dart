@@ -174,7 +174,7 @@ void main() {
 
   test('settings home no longer uses the old linear adaptive page', () {
     final String source = readNormalizedSource(
-        'lib/src/pages/implementations/hibiki_settings_page.dart');
+        'lib/src/pages/implementations/fushi_settings_page.dart');
 
     expect(source, contains('SettingsHomePage'));
     expect(source, contains('buildReaderQuickSettingsDestination'));
@@ -186,7 +186,7 @@ void main() {
 
   test('reader settings dialog uses shared MD3 dialog chrome', () {
     final String source = readNormalizedSource(
-        'lib/src/pages/implementations/hibiki_settings_page.dart');
+        'lib/src/pages/implementations/fushi_settings_page.dart');
 
     expect(containsIdentifierCall(source, 'FushiDialogFrame'), isTrue);
     expect(containsIdentifierCall(source, 'FushiModalSheetFrame'), isTrue);
@@ -472,7 +472,7 @@ void main() {
     expect(
       containsCodeLine(
         source,
-        'await ReaderHibikiSource.readerSettings?.refreshFromDb()',
+        'await ReaderFushiSource.readerSettings?.refreshFromDb()',
       ),
       isTrue,
     );

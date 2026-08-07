@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// BUG-468 守卫：Windows 阅读器右键曾同时弹两个菜单——Hibiki 自定义的 Flutter 选区菜单
 /// （`_showReaderTextContextMenu`）和 WebView2 原生菜单（复制/打印/更多工具）。`contextMenu`

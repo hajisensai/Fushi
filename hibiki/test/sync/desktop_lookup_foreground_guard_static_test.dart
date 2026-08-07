@@ -88,22 +88,22 @@ void main() {
       'Future<void> bringPendingLookupToFront()',
     );
     final int focusHelperStart =
-        service.indexOf('Future<bool> _isHibikiForeground()');
+        service.indexOf('Future<bool> _isFushiForeground()');
     expect(bringStart, isNonNegative);
     expect(focusHelperStart, isNonNegative);
     final String bringBody = service.substring(bringStart, focusHelperStart);
 
     expect(bringBody.contains('DesktopForegroundGuard.isHiddenWindowsRunner'),
         isTrue);
-    expect(bringBody.contains('await _isHibikiForeground()'), isTrue);
+    expect(bringBody.contains('await _isFushiForeground()'), isTrue);
     expect(
-      bringBody.indexOf('await _isHibikiForeground()') <
+      bringBody.indexOf('await _isFushiForeground()') <
           bringBody.indexOf('windowManager.show()'),
       isTrue,
       reason: 'Foreground guard must run before show/focus.',
     );
     expect(service.contains('isForegroundOwnedByCurrentProcess()'), isTrue);
-    expect(service.contains('isForegroundOwnedByHibikiAppFamily()'), isTrue,
+    expect(service.contains('isForegroundOwnedByFushiAppFamily()'), isTrue,
         reason: 'Foreground guard must also treat Hibiki popup/app-family '
             'windows as internal copies.');
   });
@@ -255,7 +255,7 @@ void main() {
       'Future<void> bringPendingLookupToFront()',
     );
     final int focusHelperStart =
-        service.indexOf('Future<bool> _isHibikiForeground()');
+        service.indexOf('Future<bool> _isFushiForeground()');
     expect(bringStart, isNonNegative);
     expect(focusHelperStart, isNonNegative);
     final String bringBody = service.substring(bringStart, focusHelperStart);

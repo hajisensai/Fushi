@@ -18,7 +18,7 @@ void main() {
   final File homeVideo =
       File('lib/src/pages/implementations/home_video_page.dart');
   final File historyPage =
-      File('lib/src/pages/implementations/reader_hibiki_history_page.dart');
+      File('lib/src/pages/implementations/reader_fushi_history_page.dart');
 
   late String mergeSrc;
   late String importSrc;
@@ -143,7 +143,7 @@ void main() {
     // globalToLocal 消祖先 Transform.scale，非 SDK/pub 的 Overlay 平移代理，BUG-778）。
     // 断言按新现实：文件必须存在、含 globalToLocal（消缩放核心），且详情页真在用。
     final File reorderGrid =
-        File('lib/src/utils/components/hibiki_reorderable_grid.dart');
+        File('lib/src/utils/components/fushi_reorderable_grid.dart');
     expect(reorderGrid.existsSync(), isTrue,
         reason: '书籍合集详情页网格拖排依赖消缩放 2D 组件 FushiReorderableGrid');
     expect(reorderGrid.readAsStringSync().contains('globalToLocal'), isTrue,
@@ -328,7 +328,7 @@ void main() {
 
   test('BUG-777：书架 recency 读 reader_positions.updatedAt，假名次不回潮', () {
     final String sourceSrc =
-        File('lib/src/media/sources/reader_hibiki_source.dart')
+        File('lib/src/media/sources/reader_fushi_source.dart')
             .readAsStringSync();
     // 唯一 recency 真相源（批量 DAO + provider）。
     expect(sourceSrc.contains('bookLastReadAtProvider'), isTrue,

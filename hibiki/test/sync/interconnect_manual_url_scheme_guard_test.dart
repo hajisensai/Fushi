@@ -19,7 +19,7 @@ void main() {
     test('manual add/edit normalizes raw user text before storing it', () {
       final String source = interconnectSource.readAsStringSync();
 
-      expect(source, contains('normalizeHibikiInterconnectManualUrl(result)'));
+      expect(source, contains('normalizeFushiInterconnectManualUrl(result)'));
       expect(
         source,
         contains('copy.add(FushiClientUrl(url: normalizedResult))'),

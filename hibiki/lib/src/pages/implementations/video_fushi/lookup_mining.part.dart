@@ -1,0 +1,544 @@
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch14).
+part of '../video_fushi_page.dart';
+
+/// Dictionary-lookup mining (制卡) domain extracted via part-of (TODO-590
+/// batch14); shared private scope. Behaviour-preserving: every method body is
+/// moved character-for-character except two kinds of @protected-member
+/// normalisations forced by the extension boundary (an extension is not seen as
+/// an instance member of the State subclass, so it cannot call @protected
+/// members directly):
+/// 1. the two `setState(...)` rebuilds (inside [_toggleCueSelectedForCard] and
+///    [_clearSelectedMiningCues]) → routed through the main shell's
+///    `_rebuild(...)` forwarder;
+/// 2. the `recordMined()` call (inside [_mineVideoCard]) → routed through the
+///    main shell's `_recordMinedForVideo()` forwarder.
+/// Both forwarders are the established part paradigm (pure 1-line delegation,
+/// zero behaviour change). No host-class static needed re-qualification: every collaborator
+/// ([buildSelectedSubtitleCueContext], [miningClipTimeMs], [resolveMiningCueForPosition],
+/// [extractClipGifViaFfmpeg], [extractAudioSegmentViaFfmpeg], [describeMineOutcome],
+/// [statTodayKey], [downsampleCardScreenshot], [AnkiMiningContext], etc.) is a
+/// top-level / mixin symbol in the same library.
+///
+/// The three @override mixin hooks — [onMineEntry], [onUpdateEntry] and the two
+/// `onSetSentenceContextToDraft` / `onClearSentenceDraftToDraft` getters — must
+/// stay in the main shell (an extension cannot carry `@override`). The two
+/// getters already forward to private targets ([_setSentenceContextToDraft] /
+/// [_clearSentenceDraft]), so only their private targets moved here. The two
+/// `Future<MinePopupResult>` hooks became one-line forwarders in the shell
+/// delegating to the byte-exact bodies [_onMineEntryImpl] / [_onUpdateEntryImpl]
+/// living here. [buildPopupHeaderFor] stays in the shell (favourite header).
+///
+/// Covers the sentence-context draft helpers ([_cueRange],
+/// [_setSentenceContextToDraft], [_clearSentenceDraft]), the subtitle-list card
+/// selection ([_isCueSelectedForCard], [_toggleCueSelectedForCard],
+/// [_clearSelectedMiningCues], [_selectedMiningCueForCard]), the mining range
+/// resolver ([_resolveVideoMiningRange]), the mine/update entry bodies
+/// ([_onMineEntryImpl], [_onUpdateEntryImpl]), the card landing path
+/// ([_mineVideoCard]) and the mined-sentence history row ([_recordMinedSentenceForVideo]).
+extension _VideoLookupMining on _VideoFushiPageState {
+  /// 把一条 cue 的画面/音频时间窗转成草稿可合并的区间。视频所有 cue 同属一个视频文件，
+  /// [audioFileIndex] 统一用 0（合并恒成功，取 min start / max end）。null cue → null
+  /// 区间（草稿据此退化为只合文本，不静默拼坏区间）。
+  AudioPlaybackRange? _cueRange(AudioCue? cue) {
+    if (cue == null) return null;
+    return AudioPlaybackRange(
+      audioFileIndex: 0,
+      startMs: cue.startMs,
+      endMs: cue.endMs,
+    );
+  }
+
+  /// 以当前查词 cue（[_lastLookupCue]）为锚，在 [VideoPlayerController.cues]（按 startMs
+  /// 升序）里取它之前 [prevCount] 条、之后 [nextCount] 条作上下文，整体设进草稿（覆盖
+  /// 上次选择，不累积）。无 cue / 无控制器时清空上下文返回 0。
+  Future<int> _setSentenceContextToDraft(int prevCount, int nextCount) async {
+    final VideoPlayerController? controller = _controller;
+    final AudioCue? anchor = _lastLookupCue;
+    if (controller == null || anchor == null) {
+      _miningDraft.setContext();
+      return _miningDraft.length;
+    }
+    final List<AudioCue> cues = controller.cues;
+    final int idx = cues.indexOf(anchor);
+    if (idx < 0) {
+      _miningDraft.setContext();
+      return _miningDraft.length;
+    }
+    final int prevStart = (idx - prevCount).clamp(0, idx);
+    final List<MiningDraftSentence> prev = <MiningDraftSentence>[
+      for (int i = prevStart; i < idx; i++)
+        MiningDraftSentence(
+            sentence: cues[i].text, audioRange: _cueRange(cues[i])),
+    ];
+    final int nextEnd = (idx + 1 + nextCount).clamp(idx + 1, cues.length);
+    final List<MiningDraftSentence> next = <MiningDraftSentence>[
+      for (int i = idx + 1; i < nextEnd; i++)
+        MiningDraftSentence(
+            sentence: cues[i].text, audioRange: _cueRange(cues[i])),
+    ];
+    _miningDraft.setContext(prev: prev, next: next);
+    return _miningDraft.length;
+  }
+
+  Future<int> _clearSentenceDraft() async {
+    _miningDraft.clear();
+    return _miningDraft.length;
+  }
+
+  /// 制卡（覆写 [DictionaryPageMixin.onMineEntry]）：在词典 [fields]（已含单词
+  /// 发音 `{audio}`、例句字段等）基础上，注入视频专属上下文——当前帧截图
+  /// coverPath（→`{book-cover}`）+ 当前字幕 cue 的音频片段（裁**当前选中音轨**）
+  /// sasayakiAudioPath（→`{sentence-audio}`）+ 例句 sentence。复用现有 Anki 字段。
+  bool _isCueSelectedForCard(AudioCue cue) =>
+      _selectedMiningCueStarts.contains(cue.startMs);
+
+  void _toggleCueSelectedForCard(AudioCue cue) {
+    _rebuild(() {
+      if (!_selectedMiningCueStarts.add(cue.startMs)) {
+        _selectedMiningCueStarts.remove(cue.startMs);
+      }
+    });
+  }
+
+  void _clearSelectedMiningCues() {
+    if (_selectedMiningCueStarts.isEmpty) return;
+    _rebuild(_selectedMiningCueStarts.clear);
+  }
+
+  AudioCue? _selectedMiningCueForCard(VideoPlayerController controller) {
+    return buildSelectedSubtitleCueContext(
+      cues: controller.cues,
+      selectedStartMs: _selectedMiningCueStarts,
+    );
+  }
+
+  /// 视频制卡/覆盖共用的「解析这一张卡的区间 + 文本」。把三个并存入口收口成一处，避免
+  /// [onMineEntry] / [onUpdateEntry] 两份漂移：
+  /// - **字幕列表多选**（TODO-102，[_selectedMiningCueStarts] 非空）优先：用
+  ///   [buildSelectedSubtitleCueContext] 合成的单段区间 + join 文本，**不掺查词草稿**。
+  /// - 否则**查词窗口多句合一草稿**（TODO-270 E）：当前 cue 取「lookup 缓存 → currentCue
+  ///   → 按位置解析」多段兜底（含 gap，BUG-188）；文本用 [MiningSentenceDraft.composeText]
+  ///   合并草稿全部句 + 当前句，区间用 [MiningSentenceDraft.composeAudioRange] 合并成首句
+  ///   起→末句止（草稿空时等价于单句原行为：trim 文本 + 单 cue 区间）。
+  ///
+  /// [usedSelectedCue] 回传「本次是否走了字幕列表多选」，供成功后清多选用。
+  ({
+    int clipStartMs,
+    int clipEndMs,
+    String sentence,
+    String? cueSentence,
+    bool usedSelectedCue
+  }) _resolveVideoMiningRange(VideoPlayerController controller) {
+    final AudioCue? selectedCue = _selectedMiningCueForCard(controller);
+    if (selectedCue != null) {
+      // 字幕列表多选（独立入口）：单段区间就是合成 cue 的时间窗，文本即其 join。
+      // TODO-680 / BUG-392：cue 时间是字幕文件坐标，裁音频/封面前逆变换回播放器轴
+      // （+ delayMs），否则字幕调轴后裁的位置整体偏移 delayMs。
+      return (
+        clipStartMs: miningClipTimeMs(selectedCue.startMs, controller.delayMs),
+        clipEndMs: miningClipTimeMs(selectedCue.endMs, controller.delayMs),
+        sentence: selectedCue.text,
+        cueSentence: selectedCue.text,
+        usedSelectedCue: true,
+      );
+    }
+
+    // 查词窗口多句合一（TODO-270 E）。当前 cue 多段兜底（含 gap，BUG-188）。
+    final AudioCue? cue = _lastLookupCue ??
+        controller.currentCue ??
+        resolveMiningCueForPosition(
+          cues: controller.cues,
+          positionMs: controller.positionMs ?? 0,
+          delayMs: controller.delayMs,
+        );
+    // 草稿全部句 + 当前查词句合成 sentence（草稿空 → 单句 _lastLookupSentence trim）。
+    final String mergedSentence = _miningDraft.composeText(_lastLookupSentence);
+    // 草稿全部句区间 + 当前 cue 区间合并成首句起→末句止（草稿空 → 单 cue 区间）。
+    final AudioPlaybackRange? mergedRange = _miningDraft.composeAudioRange(
+      cue == null
+          ? null
+          : AudioPlaybackRange(
+              audioFileIndex: 0,
+              startMs: cue.startMs,
+              endMs: cue.endMs,
+            ),
+    );
+    // TODO-680 / BUG-392：mergedRange / cue 的 startMs/endMs 都是字幕文件坐标，裁
+    // 音频/封面前逆变换回播放器轴（+ delayMs），与字幕显示用的 effectiveSubtitlePositionMs
+    // 方向相反，保证裁的就是用户实际听到/看到的那段。
+    return (
+      clipStartMs: miningClipTimeMs(
+          mergedRange?.startMs ?? cue?.startMs ?? 0, controller.delayMs),
+      clipEndMs: miningClipTimeMs(
+          mergedRange?.endMs ?? cue?.endMs ?? 0, controller.delayMs),
+      // 多句时 cueSentence 用合并文本与 sentence 一致；草稿空时退回单 cue 文本作 fallback。
+      cueSentence: _miningDraft.isEmpty ? cue?.text : mergedSentence,
+      sentence: mergedSentence,
+      usedSelectedCue: false,
+    );
+  }
+
+  Future<MinePopupResult> _onMineEntryImpl(Map<String, String> fields) async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return const MinePopupResult();
+
+    final ({
+      int clipStartMs,
+      int clipEndMs,
+      String sentence,
+      String? cueSentence,
+      bool usedSelectedCue,
+    }) range = _resolveVideoMiningRange(controller);
+    final int queuedEpisode = _currentEpisode;
+    final AudioCue? historyCue = _lastLookupCue;
+    final VideoMiningHistorySnapshot historySnapshot =
+        VideoMiningHistorySnapshot.capture(
+      fields: fields,
+      sentence: range.sentence,
+      documentTitle: _title ?? widget.bookUid,
+      bookKey: widget.bookUid,
+      sectionIndex: _favoriteSectionIndex,
+      cueStartMs: historyCue?.startMs,
+      cueEndMs: historyCue?.endMs,
+      dateKey: statTodayKey(),
+    );
+
+    final MinePopupResult result = await _mineVideoCard(
+      fields: fields,
+      // 音频/封面区间 = 合并后的首句起→末句止（单句即该 cue 时间窗，两端相等→不抽）。
+      clipStartMs: range.clipStartMs,
+      clipEndMs: range.clipEndMs,
+      sentence: range.sentence,
+      cueSentence: range.cueSentence,
+    );
+    // result.ankiConnect 是「制卡成功」信号（两后端成功时都置 true；noteId 仅
+    // AnkiConnect 非空，故清选中句不能以 noteId 为判据，否则 AnkiDroid 成功也不清）。
+    if (result.ankiConnect) {
+      // TODO-633: success also lands one mined-sentence history row with the
+      // video locator (bookUid + episode + cue time window), mirroring the
+      // favorite-sentence anchors so collections can jump back via the video page.
+      unawaited(_recordMinedSentenceForVideo(historySnapshot, result.noteId));
+      if (!mounted || _currentEpisode != queuedEpisode) return result;
+      if (range.usedSelectedCue) {
+        _clearSelectedMiningCues();
+      } else {
+        // TODO-270 E：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，两端在
+        // 同一事件归零、不漂移）。下一次查词从空草稿重新累积。
+        _miningDraft.clear();
+      }
+    }
+    return result;
+  }
+
+  Future<MinePopupResult> _onUpdateEntryImpl(
+    int noteId,
+    Map<String, String> fields,
+  ) async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return const MinePopupResult();
+
+    final ({
+      int clipStartMs,
+      int clipEndMs,
+      String sentence,
+      String? cueSentence,
+      bool usedSelectedCue,
+    }) range = _resolveVideoMiningRange(controller);
+    final int queuedEpisode = _currentEpisode;
+
+    final MinePopupResult result = await _mineVideoCard(
+      fields: fields,
+      clipStartMs: range.clipStartMs,
+      clipEndMs: range.clipEndMs,
+      sentence: range.sentence,
+      cueSentence: range.cueSentence,
+      updateNoteId: noteId,
+    );
+    if (result.ankiConnect) {
+      if (!mounted || _currentEpisode != queuedEpisode) return result;
+      if (range.usedSelectedCue) {
+        _clearSelectedMiningCues();
+      } else {
+        _miningDraft.clear();
+      }
+    }
+    return result;
+  }
+
+  /// 制卡 `documentTitle`（渲染到 Anki `{document-title}`）。播放列表（[_isPlaylist]）
+  /// 且系列名（[_playlistTitle]）非空时拼「系列名 - 剧集名」；单视频 / 远端退化为剧集名
+  /// （[_title]）。纯拼接逻辑下沉到顶层 [composeVideoMiningDocumentTitle] 便于单测。
+  String? _videoMiningDocumentTitle() => composeVideoMiningDocumentTitle(
+        isPlaylist: _isPlaylist,
+        playlistTitle: _playlistTitle,
+        episodeTitle: _title,
+      );
+
+  /// 视频制卡/覆盖的落卡链路（单句 [onMineEntry]/[onUpdateEntry] 走这里）：把音频/封面
+  /// 区间 `[clipStartMs, clipEndMs]`（单句即该 cue 的时间窗）抽成 GIF + 音频片段，配
+  /// [sentence]/[cueSentence]/[fields] 经 [BaseAnkiRepository] 生成**一张**卡，回 OSD。
+  /// [updateNoteId] 为空时新制一张（计入视频统计），非空时按 id 覆盖那张卡（不计入统计、
+  /// 走 [BaseAnkiRepository.updateMinedNote]）。返回 [MinePopupResult]：成功带回 note id
+  /// （新制时来自 addNote，覆盖时即 [updateNoteId]），让弹窗保持「最新可改」第三态。
+  /// 区间非正（`clipEndMs <= clipStartMs`，如无 cue）时不抽媒体、回退当前帧截图作封面。
+  Future<MinePopupResult> _mineVideoCard({
+    required Map<String, String> fields,
+    required int clipStartMs,
+    required int clipEndMs,
+    required String sentence,
+    String? cueSentence,
+    int? updateNoteId,
+  }) async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return const MinePopupResult();
+
+    // 入队前立即冻结所有播放器/页面输入。换集会复用或 dispose controller，后续任务绝不能
+    // 到真正出队时再读“当前集”。截图 Future 也在点击当下启动，current-frame 模式不会因
+    // 本地 pushReplacement / 远端换流而截到下一集或访问已释放播放器。
+    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    final MiningMediaCompression mediaCompression =
+        MiningMediaCompression.resolve(
+      imageTier: appModel.miningImageQuality,
+      audioTier: appModel.miningAudioQuality,
+      // 顶格档的动图参数随格式变（AVIF 源直通 / WebP·GIF 封顶），故必须把格式一并传进来
+      // 解析——否则顶格档会拿到 GIF 的封顶值，用户选了 AVIF 也享受不到原图档。
+      format: appModel.videoMiningAnimatedFormat,
+    );
+    final String? mediaSource = controller.miningSource;
+    final String? audioSource = controller.miningAudioSource;
+    final int? audioStreamIndex = controller.currentAudioStreamIndex;
+    final int audioStreamCount = controller.realAudioStreamCount;
+    final int episode = _currentEpisode;
+    final String? documentTitle = _videoMiningDocumentTitle();
+    final VideoMiningImageMode imageMode = appModel.videoMiningImageMode;
+    final MiningAnimatedFormat animatedFormat =
+        appModel.videoMiningAnimatedFormat;
+    final String? bookTitleTag = appModel.autoAddBookNameToTags
+        ? BaseAnkiRepository.sanitizeTitleTag(_title)
+        : null;
+    final String? collectionTag = appModel.autoAddBookNameToTags
+        ? BaseAnkiRepository.sanitizeTitleTag(_playlistTitle)
+        : null;
+    final Future<Uint8List?> currentFrameSnapshot =
+        controller.screenshot().catchError((Object error, StackTrace stack) {
+      // 截图在入队时就启动，必须立刻接住异常；否则任务排队期间 Future 已失败会成为
+      // unhandled async error。GIF/字幕起点帧路径仍可继续，截图只作为对应模式/兜底。
+      try {
+        ErrorLogService.instance.log(
+          'mineVideoCard.snapshotCurrentFrame',
+          error,
+          stack,
+        );
+      } catch (_) {}
+      return null;
+    });
+    // 不 await：先把本任务按点击顺序送进共享队列，轮到它时再解析临时目录。否则两个
+    // 连续点击可能因 path_provider 返回先后不同而逆序入队。
+    final Future<String> tempDir =
+        getTemporaryDirectory().then((Directory value) => value.path);
+    // BUG-891：远端 Hibiki 库视频的 miningSource 是自签 https 流 URL。把该 host 当前会话
+    // 已 TOFU 钉扎的证书指纹带给引擎，使 ffmpeg（自编 ffmpeg-kit `--enable-gnutls` + pin
+    // 补丁）按指纹接受自签流抽音频/帧，绕过「Protocol not found」。非 Hibiki host（本地 /
+    // YouTube / 直链）为 null，不钉扎。
+    final RemoteVideoClient? remoteClient = _effectiveRemoteClient;
+    final String? mediaSourceTlsPin = remoteClient is InterconnectSyncBackend
+        ? remoteClient.activeFingerprintSha256
+        : null;
+    // BUG-1004：互联 host（LAN Hibiki 库）远端流——注入「host 端裁音频段」裁切器：host 用
+    // 本地文件裁好句子音频再经已鉴权/钉扎的下载通道回传，client 全程不用 ffmpeg 抓远端流，
+    // 从根上绕开 client ffmpeg 打不开 host 自签 https/token 流的整类失败（BUG-891 pin 路径
+    // 的残余缺口：移动端指纹缺失/URL 编码/网络脆弱仍 I/O error）。老 host 无 clipaudio 端点
+    // → 404 → 裁切器返 null → 引擎回退现有 ffmpeg-over-URL 抽取。非 Hibiki host（本地/
+    // YouTube/直链）不注入。
+    final RemoteVideoInfo? remoteInfo = _effectiveRemoteInfo;
+    Future<String?> Function({
+      required int startMs,
+      required int endMs,
+      required String outputPath,
+    })? remoteAudioClipper;
+    if (remoteClient is InterconnectSyncBackend && remoteInfo != null) {
+      final InterconnectSyncBackend backend = remoteClient;
+      final String remoteId = remoteInfo.id;
+      final int ac = mediaCompression.audioChannels;
+      final String bitrate = mediaCompression.audioBitrate;
+      remoteAudioClipper = ({
+        required int startMs,
+        required int endMs,
+        required String outputPath,
+      }) async {
+        final File dest = File(outputPath);
+        try {
+          await backend.getRemoteVideoAudioClip(
+            remoteId,
+            dest,
+            startMs: startMs,
+            endMs: endMs,
+            episodeIndex: episode,
+            audioStreamIndex: audioStreamIndex,
+            audioStreamCount: audioStreamCount,
+            audioChannels: ac,
+            audioBitrate: bitrate,
+          );
+          if (dest.existsSync() && dest.lengthSync() > 0) return dest.path;
+        } catch (e, st) {
+          // 老 host 无端点(404)/网络失败：记录并回 null，让引擎回退直连 ffmpeg 抽取。
+          ErrorLogService.instance.log('mineVideoCard.remoteAudioClip', e, st);
+        }
+        if (dest.existsSync()) {
+          try {
+            dest.deleteSync();
+          } catch (_) {}
+        }
+        return null;
+      };
+    }
+    // TODO-1000：委托统一沉浸制卡引擎。媒体降级阶梯 / 无音频中止 / 组 context / 落卡都在
+    // 引擎内；本壳只管 OSD + 视频统计。
+    //
+    // BUG-1205：两个失败摘要过去靠**同一个 onFailure 的调用顺序**区分（首个当 GIF、末个
+    // 当音频）。引擎现在让封面与音频并行跑，顺序不再确定——改按来源取：封面失败进
+    // [coverFailure]（喂「降级为静态」OSD 的原因），音频失败进 [audioFailure]（喂「无音频
+    // 中止」OSD 的原因）。语义由参数名承载，不再依赖时序。
+    String? coverFailure;
+    String? audioFailure;
+    final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
+      ImmersionMiningRequest(
+        fields: fields,
+        mediaSource: mediaSource,
+        audioSource: audioSource,
+        mediaSourceTlsPinSha256: mediaSourceTlsPin,
+        // BUG-1004：互联 host 远端流句子音频优先走 host 端裁（绕开 client ffmpeg 抓远端流）。
+        remoteAudioClipper: remoteAudioClipper,
+        clipStartMs: clipStartMs,
+        clipEndMs: clipEndMs,
+        sentence: sentence,
+        cueSentence: cueSentence,
+        // TODO-761（方案 B）：播放列表下拼「系列名 - 剧集名」，单视频/远端仍是剧集名，零变化。
+        documentTitle: documentTitle,
+        audioStreamIndex: audioStreamIndex,
+        audioStreamCount: audioStreamCount,
+        // TODO-115：视频来源 → 卡片追加 `video` 分类标签。
+        source: AnkiMiningSource.video,
+        // TODO-681 / BUG-393：番名/标题作书名标签，开关关闭或无标题时 null 不追加。
+        bookTitleTag: bookTitleTag,
+        // 合集/系列名标签（同上开关）：播放列表下用系列名 _playlistTitle（col.name，已在内存）
+        // 作独立 tag，与剧集名并列；单视频/远端无系列名时为 null 不追加。
+        collectionTag: collectionTag,
+        updateNoteId: updateNoteId,
+        stillFallback: () => currentFrameSnapshot,
+        // 用户在 Anki 设置里选的封面图片模式（GIF / 制卡时当前帧 / 字幕开头帧）；
+        // 默认 gif=现状。静态模式引擎不置 degradedToStill，故不弹「降级为静态」OSD。
+        imageMode: imageMode,
+        // 动图编码格式（默认 AVIF）。引擎在编码失败时会自动降级 GIF 重试一次——旧版本
+        // 包捆绑的 ffmpeg 没有 libsvtav1/libwebp，靠这条保证不会因换默认格式而制不出卡。
+        animatedFormat: animatedFormat,
+      ),
+      compression: mediaCompression,
+      tempDir: tempDir,
+      repo: repo,
+      // 各取首个摘要：同一来源多次回退（GIF→起点帧→当前帧）时，最先的那条最贴近根因。
+      onCoverFailure: (String summary) => coverFailure ??= summary,
+      onAudioFailure: (String summary) => audioFailure ??= summary,
+    );
+    // BUG-296 / TODO-390：应带句子音频却抽取失败 → 显式 OSD + 中止，不建无音频卡。
+    if (res.aborted) {
+      if (mounted) {
+        _showOsd(
+          t.card_export_failed_detail(
+            reason: audioFailure == null
+                ? 'sentence audio export failed'
+                : 'sentence audio export failed: $audioFailure',
+          ),
+          severity: ToastSeverity.error,
+        );
+      }
+      return const MinePopupResult();
+    }
+    // W2a：动图降级为静态帧时可感知 OSD（原因取 GIF 失败摘要，最贴近根因）。
+    if (res.degradedToStill && mounted) {
+      _showOsd(
+        t.card_cover_degraded_to_static(
+          reason: coverFailure ?? 'animated clip unavailable',
+        ),
+        severity: ToastSeverity.warning,
+      );
+    }
+    final MineOutcome outcome = res.outcome! as MineOutcome;
+    final MinePopupResult result = outcome.result == MineResult.success
+        ? MinePopupResult(ankiConnect: true, noteId: outcome.noteId)
+        : const MinePopupResult();
+    if (!context.mounted) return result;
+    // 牌组名仅 success 需要（避免给失败分支白白 loadSettings）。
+    final String deckName = outcome.result == MineResult.success
+        ? (await repo.loadSettings()).selectedDeckName ?? ''
+        : '';
+    // overwrite=true（updateNoteId 非空）→ 收口产 card_overwritten + record=false；
+    // 新制 → card_exported + record=true（消息/记账判定统一在 describeMineOutcome）。
+    final described = describeMineOutcome(
+      outcome,
+      deckName: deckName,
+      overwrite: updateNoteId != null,
+    );
+    // 新制成功计入视频统计（dictionarySourceType=video）；覆盖 record=false 故不记账。
+    // 本页覆写了 onMineEntry、绕过基类成功分支，故在此显式记账（与 mixin 同一路径）。
+    if (described.record) unawaited(_recordMinedForVideo());
+    // TODO-971：制卡成功（card_exported / card_overwritten，含牌组名）走突出 OSD——
+    // 居中、更大、停留更久，区别于音量/亮度小角标，避免用户「制卡了没反馈」。
+    // describeMineOutcome 早就算出了 status，此前只被拿去选 prominent 布尔、颜色
+    // 整个丢掉，于是视频页制卡成功与失败长得一模一样。透传语义即可对齐其它入口。
+    _showOsd(
+      described.message,
+      prominent: true,
+      severity: mineToastSeverity(described.status),
+    );
+    return result;
+  }
+
+  /// TODO-633: land one mined-sentence history row for a video card. Locator
+  /// anchors mirror _toggleFavoriteSentenceForVideo (bookUid + episode +
+  /// cue.startMs/duration) so collections reuses _openVideoSentence to jump back.
+  /// Best-effort; failure is swallowed + logged (does not break mining).
+  Future<void> _recordMinedSentenceForVideo(
+    VideoMiningHistorySnapshot snapshot,
+    int? noteId,
+  ) async {
+    try {
+      await appModel.database.addMinedSentence(
+        source: kStatSourceVideo,
+        dateKey: snapshot.dateKey,
+        expression: snapshot.expression,
+        reading: snapshot.reading,
+        glossary: snapshot.glossary,
+        sentence: snapshot.sentence,
+        documentTitle: snapshot.documentTitle,
+        bookKey: snapshot.bookKey,
+        sectionIndex: snapshot.sectionIndex,
+        normCharOffset: snapshot.normCharOffset,
+        normCharLength: snapshot.normCharLength,
+        noteId: noteId,
+      );
+    } catch (e, st) {
+      debugPrint('[fushi-stats] video addMinedSentence failed: $e\n$st');
+    }
+  }
+}
+
+/// 纯函数：据是否播放列表 + 系列名 + 剧集名算制卡 `documentTitle`（TODO-761，方案 B）。
+///
+/// - 播放列表且系列名非空 → 「系列名 - 剧集名」（剧集名为空时只回系列名，避免尾随分隔符）。
+/// - 单视频 / 远端 / 系列名为空（[isPlaylist] 假或 [playlistTitle] 空）→ 原 [episodeTitle]，
+///   向后兼容零变化。
+/// 分隔符固定 " - "（与卡片标题习惯一致）；不做系列名==剧集名去重（避免过度设计）。
+String? composeVideoMiningDocumentTitle({
+  required bool isPlaylist,
+  required String? playlistTitle,
+  required String? episodeTitle,
+}) {
+  if (!isPlaylist || playlistTitle == null || playlistTitle.isEmpty) {
+    return episodeTitle;
+  }
+  if (episodeTitle == null || episodeTitle.isEmpty) {
+    return playlistTitle;
+  }
+  return '$playlistTitle - $episodeTitle';
+}

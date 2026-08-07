@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 void main() {
   // BUG-785: 歌词模式改为可跨会话恢复（用户请求「重进书籍还在歌词模式」）。fresh open
@@ -24,14 +24,14 @@ void main() {
     );
     expect(
       initSource,
-      isNot(contains('_lyricsMode = ReaderHibikiSource.instance.lyricsMode')),
+      isNot(contains('_lyricsMode = ReaderFushiSource.instance.lyricsMode')),
       reason: 'fresh open 不应由 persisted lyrics_mode 直接驱动 UI 模式（仍先正文）。',
     );
     // BUG-785: 捕获意图代替抹除——保留偏好以便延迟恢复。
     expect(
       initSource,
       contains(
-          '_pendingLyricsRestore = ReaderHibikiSource.instance.lyricsMode;'),
+          '_pendingLyricsRestore = ReaderFushiSource.instance.lyricsMode;'),
       reason: 'fresh open 应把持久化歌词模式记成待恢复意图。',
     );
     expect(

@@ -20,9 +20,9 @@ import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier, HomeTab;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
-import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
-import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -254,21 +254,21 @@ void main() {
 
     // 一本在读的书（0 < position < duration 才进「继续」区）。
     final MediaItem book = MediaItem(
-      mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor('测试书key'),
+      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('测试书key'),
       title: '原书名',
-      mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
+      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
       position: 50,
       duration: 100,
       canDelete: false,
       canEdit: true,
     );
     // 编辑对话框同一写入通道设置 override 书名；测试后清除（instance 是单例）。
-    await ReaderHibikiSource.instance.setOverrideTitleFromMediaItem(
+    await ReaderFushiSource.instance.setOverrideTitleFromMediaItem(
       item: book,
       title: '改后的书名',
     );
-    addTearDown(() => ReaderHibikiSource.instance
+    addTearDown(() => ReaderFushiSource.instance
         .setOverrideTitleFromMediaItem(item: book, title: null));
 
     await tester.pumpWidget(ProviderScope(
@@ -304,10 +304,10 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final MediaItem book = MediaItem(
-      mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor('横滑书key'),
+      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('横滑书key'),
       title: '横滑测试书',
-      mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
+      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
       position: 50,
       duration: 100,
       canDelete: false,

@@ -11,7 +11,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fushi/models.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -154,12 +154,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Bottom-docked popup':
       'test/pages/dictionary_popup_layer_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
   // 持久化/焦点/写穿由 settings_flatten_anki_profile_test 覆盖；真正加标签的消费点在
-  // 制卡路径 reader_hibiki/mining.part.dart 与 video_hibiki/lookup_mining.part.dart 的
+  // 制卡路径 reader_fushi/mining.part.dart 与 video_fushi/lookup_mining.part.dart 的
   // bookTitleTag（读 appModel.autoAddBookNameToTags）。原 tags_field_auto_add_book_test
   // 测的是已删死契约 TagsField.onCreatorOpenAction，已随该契约删除。
   'cardCreation/Auto-add book title to tags':
       'test/settings/settings_flatten_anki_profile_test.dart + live consume in '
-          'reader_hibiki/mining.part.dart & video_hibiki/lookup_mining.part.dart (bookTitleTag)',
+          'reader_fushi/mining.part.dart & video_fushi/lookup_mining.part.dart (bookTitleTag)',
   // TODO-1650: 制卡图片/GIF 清晰度 + 音频质量两滑块（替代旧「压缩」开关）。写
   // AppModel.miningImageQuality / miningAudioQuality（prefsRepo），焦点遍历能切到
   // 并写穿 DB（changed=true），但消费点在 ffmpeg/截图编码参数（非 reader CSS / 主题
@@ -197,7 +197,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'interconnect/Mine to paired device':
       'test/anki/remote_mining_anki_repository_test.dart + '
           'test/sync/forwarded_mine_payload_test.dart + '
-          'test/sync/hibiki_remote_mining_service_test.dart',
+          'test/sync/fushi_remote_mining_service_test.dart',
   'system/Low memory mode': 'test/models/app_model_low_memory_mode_test.dart',
   'system/Keyboard & gamepad focus navigation':
       'test/shortcuts/global_space_no_activate_test.dart + main.dart 门控安装 FushiFocusRoot/Ring',
@@ -370,7 +370,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Floating control bar':
       'DEVICE: WebView onTapEmpty chrome + test/reader/reader_chrome_floating_test.dart',
   // TODO-727: 顶部「阅读进度」百分比指示的显隐开关。生效点在 reader 页 _showTopProgress
-  // getter 末尾的 && ReaderHibikiSource.showTopProgressBar 与门（WebView 阅读器顶栏 Text
+  // getter 末尾的 && ReaderFushiSource.showTopProgressBar 与门（WebView 阅读器顶栏 Text
   // 显隐，非 reader CSS / 主题树）；由专项 getter 真值表 + 源码守卫覆盖。默认 true=保持现状。
   'reading/Reading progress indicator':
       'test/settings/top_progress_toggle_guard_test.dart',
@@ -545,11 +545,11 @@ void main() {
     addTearDown(db.close);
 
     final ReaderSettings? prevReaderSettings =
-        ReaderHibikiSource.readerSettings;
+        ReaderFushiSource.readerSettings;
     final ReaderSettings readerSettings = ReaderSettings(db);
     await readerSettings.refreshFromDb();
-    ReaderHibikiSource.readerSettings = readerSettings;
-    addTearDown(() => ReaderHibikiSource.readerSettings = prevReaderSettings);
+    ReaderFushiSource.readerSettings = readerSettings;
+    addTearDown(() => ReaderFushiSource.readerSettings = prevReaderSettings);
 
     final ThemeNotifier themeNotifier =
         ThemeNotifier(db, () => const TextTheme())
@@ -624,7 +624,7 @@ void main() {
               context: ctx,
               appModel: ref.read(appProvider),
               ref: ref,
-              readerSource: ReaderHibikiSource.instance,
+              readerSource: ReaderFushiSource.instance,
               refresh: () {},
             );
             final List<SettingsDestination> all = buildSettingsSchema(sctx);

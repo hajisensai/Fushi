@@ -12,7 +12,7 @@ import 'package:fushi/main.dart' as app;
 import 'package:fushi/media.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 import 'helpers/focus_driver.dart';
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
@@ -69,14 +69,14 @@ void main() {
       // （top_progress_floating=true，悬浮不占预留），故本测试在开书前显式切回挤压
       // 模式，保住原始触发场景（进度键经单一 app DB 共享，开书前写入会被 per-book
       // ReaderSettings 首载读到）。
-      expect(ReaderHibikiSource.instance.showTopProgressBar, isTrue,
+      expect(ReaderFushiSource.instance.showTopProgressBar, isTrue,
           reason: '顶部阅读进度必须默认开启（BUG-470 的触发条件）。若默认被改，'
               '此测试需显式经偏好开启 show_top_progress_bar。');
-      if (ReaderHibikiSource.instance.topProgressFloating) {
-        ReaderHibikiSource.instance.toggleTopProgressFloating();
+      if (ReaderFushiSource.instance.topProgressFloating) {
+        ReaderFushiSource.instance.toggleTopProgressFloating();
         await tester.pump(const Duration(milliseconds: 500));
       }
-      expect(ReaderHibikiSource.instance.topProgressFloating, isFalse,
+      expect(ReaderFushiSource.instance.topProgressFloating, isFalse,
           reason: '本测试需挤压（非悬浮）模式——挤压模式才会占 18px 预留，'
               '正是 BUG-470 关心的首载 inset 缺口场景。');
 
@@ -93,7 +93,7 @@ void main() {
 
       // 书架条目按 media identifier（fushi://book/<id>）取键，不是裸 row id。
       final String seededKey =
-          'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
+          'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
       final Finder seededEntry = find.byKey(ValueKey<String>(seededKey));
       for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 500));
@@ -108,15 +108,15 @@ void main() {
       await _activateBook(tester, bookKey);
       await tester.pump(const Duration(seconds: 3));
 
-      // 先断言 ReaderHibikiPage 真挂载，让「打开失败」显式暴露在这里，而非下游被
+      // 先断言 ReaderFushiPage 真挂载，让「打开失败」显式暴露在这里，而非下游被
       // 误读成 WebView mount 超时。
       for (int i = 0;
-          i < 40 && find.byType(ReaderHibikiPage).evaluate().isEmpty;
+          i < 40 && find.byType(ReaderFushiPage).evaluate().isEmpty;
           i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }
-      expect(find.byType(ReaderHibikiPage), findsOneWidget,
-          reason: 'ReaderHibikiPage must mount after openMedia — if this '
+      expect(find.byType(ReaderFushiPage), findsOneWidget,
+          reason: 'ReaderFushiPage must mount after openMedia — if this '
               'fails the reader never opened (not a WebView timeout).');
 
       // Cold WebView2 init on a freshly isolated profile (the Windows harness
@@ -145,7 +145,7 @@ void main() {
       }
       expect(contentReady, isTrue, reason: 'Reader content ready within 60s');
 
-      final eval = ReaderHibikiPage.debugEvaluateJavascript;
+      final eval = ReaderFushiPage.debugEvaluateJavascript;
       expect(eval, isNotNull,
           reason: 'Reader debug JS hook must be set (debug/profile build).');
 
@@ -300,7 +300,7 @@ Future<String> _seedTestBook(WidgetTester tester) async {
 /// 确定性打开书架书（与 reader_pagination_test._activateBook 同一手法）：书架卡片的
 /// Enter→activate→openMedia 绑定只在卡片处于 FushiFocusRoot 下才装上，测试书架没包它，
 /// 故焦点驱动 Enter 是 no-op、阅读器永远打不开（TODO-783）。绕过焦点树：从 key 解析
-/// MediaItem，直接驱动 AppModel.openMedia（与真实卡片 tap 同一调用），把 ReaderHibikiPage
+/// MediaItem，直接驱动 AppModel.openMedia（与真实卡片 tap 同一调用），把 ReaderFushiPage
 /// push 上导航栈，与焦点树状态无关。
 Future<void> _activateBook(WidgetTester tester, String bookKey) async {
   final BuildContext appContext =
@@ -315,7 +315,7 @@ Future<void> _activateBook(WidgetTester tester, String bookKey) async {
   final WidgetRef ref = appElement;
 
   final MediaItem? item =
-      await ReaderHibikiSource.instance.mediaItemForBookKey(bookKey);
+      await ReaderFushiSource.instance.mediaItemForBookKey(bookKey);
   expect(item, isNotNull,
       reason: 'Seeded book must resolve to a MediaItem (key=$bookKey)');
 
@@ -324,7 +324,7 @@ Future<void> _activateBook(WidgetTester tester, String bookKey) async {
   // pump 帧让 push + 阅读器异步 _initBook 跑起来；路由生命周期 future 故意不 await。
   unawaited(appModel.openMedia(
     ref: ref,
-    mediaSource: ReaderHibikiSource.instance,
+    mediaSource: ReaderFushiSource.instance,
     item: item!,
   ));
   for (int i = 0; i < 8; i++) {

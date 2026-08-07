@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../../pages/video_hibiki_page_source_corpus.dart';
+import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// BUG-081 source guard: when the user manually loads/switches a subtitle for a
 /// single video at runtime, the parsed cues must be persisted (repo.saveCues)
@@ -12,7 +12,7 @@ import '../../pages/video_hibiki_page_source_corpus.dart';
 /// than driving a real player (the saveCues/loadCues DB round-trip itself is
 /// covered by video_book_repository_test.dart).
 void main() {
-  final String src = readVideoHibikiSource();
+  final String src = readVideoFushiSource();
 
   String region(String startSig, String endSig) {
     final int start = src.indexOf(startSig);

@@ -7,7 +7,7 @@ import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart'
     show jimakuLanguageLabel;
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/hibiki_page_placeholders.dart';
+import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/utils.dart';
 
 class DownloadSubscriptionsPanel extends ConsumerStatefulWidget {

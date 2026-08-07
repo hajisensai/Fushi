@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
@@ -205,10 +205,10 @@ void main() {
         FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<FushiClientUrl>[
+    await repo.setFushiClientUrls(<FushiClientUrl>[
       FushiClientUrl(url: 'http://127.0.0.1:${server.port}'),
     ]);
-    await repo.setHibikiClientToken(token);
+    await repo.setFushiClientToken(token);
 
     final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
     backend.clearCache();

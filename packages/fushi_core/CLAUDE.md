@@ -1,6 +1,6 @@
-[根目录](../../CLAUDE.md) > [packages](../) > **hibiki_core**
+[根目录](../../CLAUDE.md) > [packages](../) > **fushi_core**
 
-# hibiki_core
+# fushi_core
 
 ## 模块职责
 
@@ -8,8 +8,8 @@
 
 ## 入口与启动
 
-- 库入口：`lib/hibiki_core.dart`
-- 数据库在 `lib/src/database/database.dart` 中通过 `FushiDatabase(dbDirectory)` 构造，内部使用 `NativeDatabase.createInBackground()` 在后台线程打开 `hibiki.db`。
+- 库入口：`lib/fushi_core.dart`
+- 数据库在 `lib/src/database/database.dart` 中通过 `FushiDatabase(dbDirectory)` 构造，内部使用 `NativeDatabase.createInBackground()` 在后台线程打开 `fushi.db`。
 - PRAGMA 配置：`journal_mode=WAL`，`foreign_keys=ON`。
 
 ## 对外接口
@@ -91,12 +91,12 @@
 
 ## 相关文件清单
 
-- `lib/hibiki_core.dart` -- 库入口
+- `lib/fushi_core.dart` -- 库入口
 - `lib/src/database/database.dart` -- 数据库定义与 CRUD
 - `lib/src/database/database.g.dart` -- 生成文件（勿手动修改）
 - `lib/src/database/tables.dart` -- 全部表定义
 - `lib/src/database/pref_codec.dart` -- 偏好编解码
-- `lib/src/models/hibiki_text_selection.dart` -- 文本选区模型
+- `lib/src/models/fushi_text_selection.dart` -- 文本选区模型
 
 ## 变更记录 (Changelog)
 

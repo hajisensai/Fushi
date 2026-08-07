@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 
 import '../helpers/source_guard.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// TODO-761（方案 B）：播放列表中的视频制卡，`documentTitle`（渲染到 Anki
 /// `{document-title}`）应额外带上播放列表（系列）名，拼成「系列名 - 剧集名」，
@@ -107,7 +107,7 @@ void main() {
     setUpAll(() {
       // 必须先剥行注释：否则把 helper 调用降级成注释、生产改回裸 `_title`，
       // 下面的 contains 仍会命中注释里的字面量而假绿。
-      src = maskComments(readVideoHibikiSource());
+      src = maskComments(readVideoFushiSource());
     });
 
     test('_init 播放列表分支记合集名到 _playlistTitle', () {

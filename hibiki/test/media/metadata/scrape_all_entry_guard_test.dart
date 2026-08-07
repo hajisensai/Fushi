@@ -8,7 +8,7 @@ void main() {
       'lib/src/pages/implementations/home_video_page.dart',
     ).readAsStringSync();
     final String books = File(
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+      'lib/src/pages/implementations/reader_fushi_history_page.dart',
     ).readAsStringSync();
     final String games = File(
       'lib/src/pages/implementations/games_library_page.dart',
@@ -32,7 +32,7 @@ void main() {
       'lib/src/pages/implementations/home_video_page.dart',
     ).readAsStringSync();
     final String books = File(
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+      'lib/src/pages/implementations/reader_fushi_history_page.dart',
     ).readAsStringSync();
     final String games = File(
       'lib/src/pages/implementations/games_library_page.dart',

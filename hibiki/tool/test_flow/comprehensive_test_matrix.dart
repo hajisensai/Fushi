@@ -248,7 +248,7 @@ abstract final class TestScenarios {
   static const TestScenario syncP2pRoundtrip = TestScenario(
     id: ScenarioId.syncP2pRoundtrip,
     commands: <String>[
-      'flutter test test/sync/hibiki_p2p_roundtrip_test.dart',
+      'flutter test test/sync/fushi_p2p_roundtrip_test.dart',
     ],
     assertions: <String>[
       'local Hibiki sync server stores progress JSON',

@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 即无声失败」。
 void main() {
   final String chrome = File(
-    'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+    'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
   ).readAsStringSync();
 
   /// 取 `_jumpToFavoriteSentence` 函数体（到下一个方法 `_favoritePositionLabel` 前）。

@@ -4,7 +4,7 @@ import 'reader_history_source_corpus.dart';
 
 /// BUG-456 source guard: SRT/audiobook shelf entries must enter the reader via
 /// AppModel.openMedia, just like normal EPUB entries. That call registers
-/// ReaderHibikiSource as currentMediaSource; a direct Navigator.push leaves it
+/// ReaderFushiSource as currentMediaSource; a direct Navigator.push leaves it
 /// null, so lookup sentence writes and favorite/mining sentence reads become
 /// silent no-ops.
 void main() {
@@ -20,7 +20,7 @@ void main() {
     expect(openSrtBook, contains('ref: ref'));
     expect(
       openSrtBook,
-      contains('mediaSource: ReaderHibikiSource.instance'),
+      contains('mediaSource: ReaderFushiSource.instance'),
     );
     expect(openSrtBook, contains('item: _srtBookMediaItem(book)'));
 
@@ -30,7 +30,7 @@ void main() {
       reason: 'Direct pushes bypass AppModel.openMedia and leave '
           'currentMediaSource null for SRT books.',
     );
-    expect(openSrtBook, isNot(contains('ReaderHibikiPage(')));
+    expect(openSrtBook, isNot(contains('ReaderFushiPage(')));
     expect(openSrtBook, isNot(contains('FushiAppUiScaleNeutralizer(')));
   });
 

@@ -25,7 +25,7 @@ void main() {
     'lib/src/pages/implementations/profile_management_page.dart',
   );
   final File videoPage = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
+    'lib/src/pages/implementations/video_fushi_page.dart',
   );
 
   test('media-type binding UI lists video alongside the other media types', () {

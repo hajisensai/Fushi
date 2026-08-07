@@ -8,7 +8,7 @@
 ///
 /// 但 `MediaItem.uniqueKey` 不是 `mediaIdentifier`，而是
 /// `'$mediaSourceIdentifier/$mediaIdentifier'`（`media_item.dart`），
-/// 而 `mediaSourceIdentifier` 由 `ReaderHibikiSource.mediaSourceKeyFor(format)`
+/// 而 `mediaSourceIdentifier` 由 `ReaderFushiSource.mediaSourceKeyFor(format)`
 /// **按当前 format 现算** —— 转化必然把它从 `reader_fushi` 换成 `reader_manga`
 /// （或反过来）。`MediaItems.uniqueKey` 又是 UNIQUE 列。于是：
 ///
@@ -48,9 +48,9 @@ void main() {
         '必然改它。置 true 会让 openMedia 在转化前后各插一条 media_items，'
         '同一本书在最近打开流里裂成两条，且 UNIQUE 列救不了（键本来就不同）。'
         '书的「最近阅读」现算自 ReaderPositions，从不需要 media_items。';
-    expect(ReaderHibikiSource.instance.implementsHistory, isFalse, reason: why);
+    expect(ReaderFushiSource.instance.implementsHistory, isFalse, reason: why);
     expect(ReaderPdfSource.instance.implementsHistory, isFalse, reason: why);
-    expect(MangaHibikiSource.instance.implementsHistory, isFalse, reason: why);
+    expect(MangaFushiSource.instance.implementsHistory, isFalse, reason: why);
   });
 
   test('分裂机制是真的：同一本书三种 format 派生出三个互异的 MediaItem.uniqueKey', () {
@@ -59,14 +59,14 @@ void main() {
     // true 之前，先在这里看见「改了会发生什么」。
     const String bookKey = 'Scanned Volume 01';
     final String mediaIdentifier =
-        ReaderHibikiSource.mediaIdentifierFor(bookKey);
+        ReaderFushiSource.mediaIdentifierFor(bookKey);
     final Set<String> uniqueKeys = <String>{
       for (final BookFormat format in BookFormat.values)
         MediaItem(
           mediaIdentifier: mediaIdentifier,
           title: bookKey,
           mediaTypeIdentifier: ReaderMediaType.instance.uniqueKey,
-          mediaSourceIdentifier: ReaderHibikiSource.mediaSourceKeyFor(format),
+          mediaSourceIdentifier: ReaderFushiSource.mediaSourceKeyFor(format),
           position: 0,
           duration: 1,
           canDelete: false,
@@ -78,7 +78,7 @@ void main() {
             'uniqueKey 却互异——差的正是 mediaSourceIdentifier。'
             '这就是 implementsHistory 一旦为 true 就会分裂历史的机制。');
     // 反面：身份本身没变，变的只有源标识。
-    expect(mediaIdentifier, ReaderHibikiSource.mediaIdentifierFor(bookKey),
+    expect(mediaIdentifier, ReaderFushiSource.mediaIdentifierFor(bookKey),
         reason: 'mediaIdentifier 只由 bookKey 决定，与 format 无关——'
             '转化不改 bookKey ⇒ 它逐字节不变');
   });
@@ -102,7 +102,7 @@ void main() {
     }
     expect(
       found,
-      <String>{'ReaderHibikiSource', 'ReaderPdfSource', 'MangaHibikiSource'},
+      <String>{'ReaderFushiSource', 'ReaderPdfSource', 'MangaFushiSource'},
       reason: '发现了未登记的书族媒体源：${found.toList()..sort()}。'
           '书族源共用同一个 EpubBooks 身份、且会被「书 ↔ 漫画」转化在它们之间'
           '切换，所以每一个都必须 implementsHistory:false 并在本文件第一条断言里'

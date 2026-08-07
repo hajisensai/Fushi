@@ -8,7 +8,7 @@ import 'package:fushi/src/media/video/video_subtitle_source.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-import '../../pages/video_hibiki_page_source_corpus.dart';
+import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// TODO-1246 guard：单视频重开时「尊重字幕自带样式」开关（respectAssStyle）失效的根因是
 /// DB 缓存的 [AudioCue] 不携带解析期样式 [AudioCue.markup]（瞬态，DB 往返丢弃）。修复在
@@ -100,7 +100,7 @@ void main() {
   test(
       '_loadSingle re-parses external text subtitle files to recover markup '
       '(TODO-1246 call-site guard)', () {
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
 
     // 助手存在且严格门控：仅磁盘上存在的外挂文本格式档案才可重解析（内嵌轨/哨兵/缺档不重解析）。
     final int helperAt =
@@ -159,7 +159,7 @@ void main() {
     // respectAssStyle 拿不到 cueStyle → 「尊重字幕自带样式」对内嵌轨完全不生效。修复须让
     // _loadSingle 在持久化源是 embedded:<n> 且 DB 有文本 cue 时经 _restorePersistedSubtitle
     // 重解析已抽取的缓存档案恢复 markup（与播放列表换集同路径，命中缓存不触发 ffmpeg 重抽取）。
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
     final int start = src.indexOf('Future<void> _loadSingle(');
     expect(start, greaterThanOrEqualTo(0));
     final int end =

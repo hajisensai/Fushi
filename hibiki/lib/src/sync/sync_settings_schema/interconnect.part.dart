@@ -72,8 +72,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   }
 
   Future<void> _load() async {
-    final List<FushiClientUrl> urls = await _repo.getHibikiClientUrls();
-    final String? token = await _repo.getHibikiClientToken();
+    final List<FushiClientUrl> urls = await _repo.getFushiClientUrls();
+    final String? token = await _repo.getFushiClientToken();
     if (!mounted) return;
     setState(() {
       _urls = urls;
@@ -92,8 +92,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   /// pairing). The URL list always reloads; the token field only reloads when
   /// it has no focus, so we never clobber text the user is actively typing.
   Future<void> _reloadFromStore() async {
-    final List<FushiClientUrl> urls = await _repo.getHibikiClientUrls();
-    final String? token = await _repo.getHibikiClientToken();
+    final List<FushiClientUrl> urls = await _repo.getFushiClientUrls();
+    final String? token = await _repo.getFushiClientToken();
     if (!mounted) return;
     setState(() {
       _urls = urls;
@@ -106,7 +106,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   }
 
   Future<void> _persistUrls() async {
-    await _repo.setHibikiClientUrls(_urls);
+    await _repo.setFushiClientUrls(_urls);
     // Keep the role lock honest: deleting the last URL must release the server
     // toggle; adding one must lock it. Every URL mutation routes through here.
     _syncSettings(widget.settingsContext)
@@ -116,9 +116,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   Future<void> _saveToken() async {
     try {
       final String token = _tokenController.text.trim();
-      await _repo.setHibikiClientToken(token.isEmpty ? null : token);
+      await _repo.setFushiClientToken(token.isEmpty ? null : token);
     } catch (e, stack) {
-      ErrorLogService.instance.log('SyncConfig.saveHibikiToken', e, stack);
+      ErrorLogService.instance.log('SyncConfig.saveFushiToken', e, stack);
     }
   }
 
@@ -185,9 +185,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     if (result == null || result.isEmpty) return;
     final String normalizedResult;
     try {
-      normalizedResult = normalizeHibikiInterconnectManualUrl(result);
+      normalizedResult = normalizeFushiInterconnectManualUrl(result);
     } catch (e, stack) {
-      ErrorLogService.instance.log('SyncConfig.addHibikiUrl', e, stack);
+      ErrorLogService.instance.log('SyncConfig.addFushiUrl', e, stack);
       if (mounted) _showSnackBar(context, t.sync_connection_failed);
       return;
     }
@@ -246,12 +246,12 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     }
 
     // /api/ping 探测：确认 hibiki + 支持 v2 + 取展示名/指纹（https 用捕获指纹钉扎读）。
-    final FushiPingResult? ping = await fetchHibikiPing(
+    final FushiPingResult? ping = await fetchFushiPing(
       baseUrl,
       pinnedFingerprint: capturedFingerprint,
     );
     if (!mounted) return;
-    if (ping == null || !ping.isHibiki || !ping.supportsPairV2) {
+    if (ping == null || !ping.isFushi || !ping.supportsPairV2) {
       _showSnackBar(context, t.sync_pair_not_hibiki);
       return;
     }
@@ -639,7 +639,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     String? fingerprint,
   ) async {
     try {
-      await _pairRepo.addHibikiClientUrl(
+      await _pairRepo.addFushiClientUrl(
         baseUrl,
         fingerprint: fingerprint,
         deviceName: null,
@@ -648,7 +648,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
       ErrorLogService.instance.log('PairV2.fingerprintChanged', e, stack);
       return t.sync_pair_fingerprint_changed;
     }
-    await _pairRepo.setHibikiClientToken(token);
+    await _pairRepo.setFushiClientToken(token);
     _syncSettings(_pairSettingsContext).reloadClientConfig();
     return t.sync_pair_success;
   }
@@ -1282,7 +1282,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
       if (probe != null && probe.ping.supportsPairV2) {
         // 先记录探明 scheme 的地址（host 拒绝也保留，可回退手粘 token）；钉扎
         // 指纹在配对成功后经 _onPairSuccess 落库（TOFU 记录器）。
-        await repo.addHibikiClientUrl(probe.baseUrl);
+        await repo.addFushiClientUrl(probe.baseUrl);
         // A client connection now exists → lock this device out of server mode.
         state.setHasClientConnection(true);
         await _runPairingV2(
@@ -1313,7 +1313,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
   ) async {
     // Always record the address (deduped) so the user keeps the URL even if
     // the host declines and they fall back to pasting the token.
-    await repo.addHibikiClientUrl(device.webDavUrl);
+    await repo.addFushiClientUrl(device.webDavUrl);
     // A client connection now exists → lock this device out of server mode.
     state.setHasClientConnection(true);
 
@@ -1334,7 +1334,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
         final String? token =
             body is Map<String, dynamic> ? body['token'] as String? : null;
         if (token != null && token.isNotEmpty) {
-          await repo.setHibikiClientToken(token);
+          await repo.setFushiClientToken(token);
           message = t.sync_pair_success;
         } else {
           message = t.sync_pair_failed;

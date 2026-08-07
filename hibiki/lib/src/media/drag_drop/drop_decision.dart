@@ -2,7 +2,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 
 /// 拖拽落点所在的 tab 表面。
 ///
-/// [manga] = 漫画库（`ReaderHibikiHistoryPage(mangaOnly: true)` 的壳）。它与
+/// [manga] = 漫画库（`ReaderFushiHistoryPage(mangaOnly: true)` 的壳）。它与
 /// [books] 共用同一个页面和同一份 drop target；差别**只在漫画载体优先**，其余
 /// 一切（epub / 视频 / 字幕 / URL）行为与 [books] 完全一致（见 decideDropIntent
 /// 里的委托）——那是改动前就有的行为，不在此处收窄。

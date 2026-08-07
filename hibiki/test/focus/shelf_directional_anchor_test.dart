@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
-import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 
 // TODO-1062 (BUG shelf-gamepad-nav) A2/B 守卫：书架页头图标行（导入 + 管理来源，右对齐）
 // + 标签排序栏（整理 swap_vert 在最右）+ 书籍网格，同在一个 body FocusTraversalGroup。

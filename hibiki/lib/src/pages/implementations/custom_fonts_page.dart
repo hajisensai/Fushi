@@ -589,11 +589,11 @@ class _CustomFontsPageState extends BasePageState {
   @override
   void initState() {
     super.initState();
-    _settings = ReaderHibikiSource.readerSettings;
+    _settings = ReaderFushiSource.readerSettings;
     if (_settings == null) {
       final rs = ReaderSettings(appModel.database);
       rs.refreshFromDb().then((_) {
-        ReaderHibikiSource.readerSettings = rs;
+        ReaderFushiSource.readerSettings = rs;
         if (!mounted) return;
         _loadFonts(rs);
       });
@@ -656,7 +656,7 @@ class _CustomFontsPageState extends BasePageState {
     }
     await _settings!.refreshFromDb();
     await appModel.refreshAppFont();
-    ReaderHibikiSource.onSettingsChangedLive?.call();
+    ReaderFushiSource.onSettingsChangedLive?.call();
   }
 
   Directory get _fontsDir {

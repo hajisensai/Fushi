@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 反向守卫（TODO-899）：桌面端「画面边缘竖拖调音量/亮度」手势（原 TODO-754）已移除。
 ///
@@ -17,7 +17,7 @@ import 'video_hibiki_page_source_corpus.dart';
 /// 「不该再存在的代码」的反向守卫，源码断言比 widget 行为更精确、能防日后被加回来。
 void main() {
   group('TODO-899 反向守卫 — 桌面边缘竖拖手势已删除', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     test('GestureDetector 不再绑 onVerticalDrag*（接线已删）', () {
       expect(
@@ -67,7 +67,7 @@ void main() {
   });
 
   group('TODO-899 正向守卫 — 移动端 media_kit 竖滑保留', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     test('移动控制条仍启用 media_kit volumeGesture / brightnessGesture', () {
       // 移动端竖滑是独立路径，与被删的桌面手势零共享，必须保留。

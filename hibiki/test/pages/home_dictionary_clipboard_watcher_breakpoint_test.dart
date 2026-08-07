@@ -156,14 +156,14 @@ void main() {
     clipboardWatcherCalls.clear();
     clipboardText = '';
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = false;
-    DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = false;
+    DesktopForegroundGuard.debugForegroundOwnedByFushiAppFamily = false;
     DesktopForegroundGuard.debugHiddenWindowsRunner = false;
     DesktopLookupService.instance.debugReset();
   });
 
   tearDown(() {
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = null;
-    DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = null;
+    DesktopForegroundGuard.debugForegroundOwnedByFushiAppFamily = null;
     DesktopForegroundGuard.debugHiddenWindowsRunner = null;
     DesktopLookupService.instance.debugReset();
   });

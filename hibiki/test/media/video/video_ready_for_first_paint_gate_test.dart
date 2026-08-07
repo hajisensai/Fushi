@@ -90,7 +90,7 @@ void main() {
 
   group('页面首开就绪门控 (TODO-1297)', () {
     final String src =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+        read('lib/src/pages/implementations/video_fushi_page.dart');
 
     test('首开就绪判据用 isReadyForFirstPaint（含缓冲结束），非仅 hasFirstFrame', () {
       expect(

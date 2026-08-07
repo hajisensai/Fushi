@@ -8,7 +8,7 @@ import 'sync_settings_schema_source_corpus.dart';
 ///
 /// 根因是 UI 呈现困惑，不是功能 bug：host 端显示的是共享服务器令牌
 /// (getServerPassword / sync_server_password)；client 端存的是配对时 host 按设备铸造的
-/// per-peer token (getHibikiClientToken)。二者天生不同、且 _validateAuth 同时受理——过去
+/// per-peer token (getFushiClientToken)。二者天生不同、且 _validateAuth 同时受理——过去
 /// 把 client 令牌当成一个显眼数字摆出来 + 加说明解释「为何两端不一样」，反而更困惑。
 ///
 /// 现在的修复：client 令牌配对后自动填入，已连接就只显示「已连接」状态，原始令牌收进
@@ -18,7 +18,7 @@ import 'sync_settings_schema_source_corpus.dart';
 ///  (1) client 令牌框收进「手动填写」折叠 (ExpansionTile + sync_client_token_manual)，
 ///      已连接显示 sync_client_connected 状态，且不再带 sync_client_token_hint 说明；
 ///  (2) server 令牌显示保留 sync_server_token，且不再带 sync_server_token_self_hint 说明；
-///  (3) 令牌取值来源不被对调：client 读 getHibikiClientToken、server 读 getServerPassword；
+///  (3) 令牌取值来源不被对调：client 读 getFushiClientToken、server 读 getServerPassword；
 ///  (4) server _validateAuth 仍「共享令牌 + 任一 per-peer token」双接受（澄清 UI 不得
 ///      连带砍掉双接受，Never break userspace）。
 void main() {
@@ -67,23 +67,23 @@ void main() {
         reason: 'server 令牌不应再带解释性说明——隐藏 client 令牌后无需解释差异。');
   });
 
-  test('令牌取值来源不被对调：client 读 getHibikiClientToken、server 读 getServerPassword',
+  test('令牌取值来源不被对调：client 读 getFushiClientToken、server 读 getServerPassword',
       () {
     final String corpus = readSyncSettingsSchemaSource();
     final String client = clientWidgetSlice(corpus);
     final String server = serverWidgetSlice(corpus);
-    expect(client.contains('getHibikiClientToken()'), isTrue,
-        reason: 'client 必须读 per-peer 客户端令牌（getHibikiClientToken）。');
+    expect(client.contains('getFushiClientToken()'), isTrue,
+        reason: 'client 必须读 per-peer 客户端令牌（getFushiClientToken）。');
     expect(client.contains('getServerPassword()'), isFalse,
         reason: 'client 不得读 host 共享令牌。');
     expect(server.contains('getServerPassword()'), isTrue,
         reason: 'server 必须显示共享服务器令牌（getServerPassword）。');
-    expect(server.contains('getHibikiClientToken()'), isFalse,
+    expect(server.contains('getFushiClientToken()'), isFalse,
         reason: 'server 不得显示客户端 per-peer 令牌。');
   });
 
   test('server _validateAuth 仍双接受：共享 _token + 任一 per-peer token', () {
-    final String s = File('lib/src/sync/hibiki_sync_server.dart')
+    final String s = File('lib/src/sync/fushi_sync_server.dart')
         .readAsStringSync()
         .replaceAll('\r\n', '\n');
     final int start =
