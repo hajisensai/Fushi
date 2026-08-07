@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 /// TODO-963 M2: `/api/ping` 的 client 侧响应模型。无鉴权探测，配对前用。
 class FushiPingResult {
   const FushiPingResult({
-    required this.isHibiki,
+    required this.isFushi,
     required this.supportsPairV2,
     required this.tlsEnabled,
     this.fingerprint,
@@ -14,7 +14,7 @@ class FushiPingResult {
   });
 
   /// host 自报为 fushi（`app == 'fushi'`）。非 fushi / 非 JSON → false。
-  final bool isHibiki;
+  final bool isFushi;
 
   /// host 支持 v2 配对协议（`pairing.v2 == true`）。
   final bool supportsPairV2;
@@ -58,8 +58,8 @@ Future<FushiPingResult?> fetchFushiPing(
     final dynamic decoded = jsonDecode(resp.body);
     if (decoded is! Map) return null;
     final Map<String, dynamic> json = decoded.cast<String, dynamic>();
-    final bool isHibiki = json['app'] == 'fushi';
-    if (!isHibiki) return null;
+    final bool isFushi = json['app'] == 'fushi';
+    if (!isFushi) return null;
     final dynamic pairing = json['pairing'];
     final bool supportsPairV2 = pairing is Map && pairing['v2'] == true;
     final dynamic tls = json['tls'];
@@ -67,7 +67,7 @@ Future<FushiPingResult?> fetchFushiPing(
     final String? fingerprint =
         tls is Map ? tls['fingerprint'] as String? : null;
     return FushiPingResult(
-      isHibiki: true,
+      isFushi: true,
       supportsPairV2: supportsPairV2,
       tlsEnabled: tlsEnabled,
       fingerprint: fingerprint,

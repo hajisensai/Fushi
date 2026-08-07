@@ -205,7 +205,7 @@ void main() {
     'a REAL (host-rendered) global lookup card, not the blank READY-SAFETY '
     'fallback - including after the overlay WebView2 process tree dies',
     (WidgetTester tester) async {
-      await runHibikiItest(
+      await runFushiItest(
         label: 'float-tap-lookup',
         body: () async {
           app.main();

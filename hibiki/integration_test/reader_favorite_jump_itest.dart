@@ -69,7 +69,7 @@ void main() {
     'TODO-1308 in-book favorite jump lands at the sentence char position '
     '(not the chapter start), vertical-rl continuous',
     (WidgetTester tester) async {
-      await runHibikiItest(
+      await runFushiItest(
         label: 'favjump',
         body: () async {
           app.main();

@@ -24,7 +24,7 @@ void main() {
     final FushiPingResult? r =
         await fetchFushiPing('https://host:38765', httpClient: mock);
     expect(r, isNotNull);
-    expect(r!.isHibiki, isTrue);
+    expect(r!.isFushi, isTrue);
     expect(r.supportsPairV2, isTrue);
     expect(r.tlsEnabled, isTrue);
     expect(r.fingerprint, 'aa:bb');

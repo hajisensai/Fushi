@@ -168,7 +168,7 @@ void main() {
     'TODO-1308 favorite jump lands at the sentence char position on a rb/rtc '
     'mono-ruby chapter (not the chapter start), vertical-rl paginated + continuous',
     (WidgetTester tester) async {
-      await runHibikiItest(
+      await runFushiItest(
         label: 'favjump-rtc',
         body: () async {
           app.main();

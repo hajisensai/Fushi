@@ -47,7 +47,7 @@ import 'test_helpers.dart';
 /// （reader_fushi_page.dart:1919-1922）。打开书后该节点 autofocus，
 /// `tester.sendKeyEvent` 即经它进入被测的 `_handleKeyEvent` 解析链。
 ///
-/// 启动期网络噪声（更新检查 Handshake/证书过期）经 `runHibikiItest` 守卫放行。
+/// 启动期网络噪声（更新检查 Handshake/证书过期）经 `runFushiItest` 守卫放行。
 ///
 /// Run (PowerShell, from hibiki/):
 ///   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 \
@@ -97,7 +97,7 @@ void main() {
     'TODO-992 continuous scroll: remapped Left/Right drive audiobook '
     'prev/next sentence instead of only turning the page',
     (WidgetTester tester) async {
-      await runHibikiItest(
+      await runFushiItest(
         label: 'arrow-skip',
         body: () async {
           app.main();

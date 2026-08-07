@@ -63,7 +63,7 @@ void main() {
   testWidgets(
     'reader automation can open an audiobook and enter lyrics mode',
     (WidgetTester tester) async {
-      await runHibikiItest(
+      await runFushiItest(
         label: 'lyrics-mode-entry',
         body: () async {
           app.main();

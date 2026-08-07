@@ -150,7 +150,7 @@ void main() {
     'TODO-1308 vertical-rl furigana stays aligned with its base through the '
     'real reader render path (before and after a jump)',
     (WidgetTester tester) async {
-      await runHibikiItest(
+      await runFushiItest(
         label: 'vruby',
         body: () async {
           app.main();

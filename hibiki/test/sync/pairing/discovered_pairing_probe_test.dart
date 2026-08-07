@@ -10,14 +10,14 @@ import 'package:fushi/src/sync/pairing/fushi_ping_client.dart';
 ///   ping 定案；全部失败返回 null（调用方回落 v1 明文老路径）。
 void main() {
   const FushiPingResult v2TlsPing = FushiPingResult(
-    isHibiki: true,
+    isFushi: true,
     supportsPairV2: true,
     tlsEnabled: true,
     fingerprint: 'aa:bb:cc',
     deviceName: 'Host PC',
   );
   const FushiPingResult v2PlainPing = FushiPingResult(
-    isHibiki: true,
+    isFushi: true,
     supportsPairV2: true,
     tlsEnabled: false,
   );
@@ -134,7 +134,7 @@ void main() {
 
     test('ping 未回传指纹时以 TOFU 捕获值钉扎', () async {
       const FushiPingResult noFpPing = FushiPingResult(
-        isHibiki: true,
+        isFushi: true,
         supportsPairV2: true,
         tlsEnabled: true,
       );

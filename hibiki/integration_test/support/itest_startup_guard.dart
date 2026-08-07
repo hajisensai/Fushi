@@ -21,7 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// void main() {
 ///   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 ///   testWidgets('xxx', (tester) async {
-///     await runHibikiItest(label: 'shelf-organize', body: () async {
+///     await runFushiItest(label: 'shelf-organize', body: () async {
 ///       app.main();
 ///       expect(await waitForHome(tester), isTrue);
 ///       // ... 焦点驱动断言 ...
@@ -51,7 +51,7 @@ bool isBenignStartupNetworkError(FlutterErrorDetails details) {
 
 /// 把捕获到的 FlutterError 过滤掉启动期网络噪声后，断言剩余为空。
 ///
-/// 暴露为独立函数，便于 itest 主体跑完后显式收口（也可由 [runHibikiItest]
+/// 暴露为独立函数，便于 itest 主体跑完后显式收口（也可由 [runFushiItest]
 /// 自动调用）。
 void assertNoFatalStartupErrors(List<FlutterErrorDetails> errors) {
   final List<FlutterErrorDetails> fatal =
@@ -74,7 +74,7 @@ void assertNoFatalStartupErrors(List<FlutterErrorDetails> errors) {
 /// - 若 [body] 自身抛出，原异常向上传播（不被守卫吞掉），但 `onError` 仍被复原。
 ///
 /// [collectedErrors] 可选传入外部 list，便于 body 内自查捕获到了什么。
-Future<void> runHibikiItest({
+Future<void> runFushiItest({
   required Future<void> Function() body,
   String label = 'itest',
   List<FlutterErrorDetails>? collectedErrors,

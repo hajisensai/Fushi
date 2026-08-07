@@ -128,7 +128,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - `interconnect_*.dart` -- 局域网互联（设备配对、远程书库/视频、远程查词）。
 - `aggregate_sync_service.dart` / `backup_merge_engine.dart` -- 聚合同步与备份合并引擎。
 - `cloud_remote_book_client.dart` -- 云端远程书籍客户端；另有 Google Drive / WebDAV / Dropbox / FTP 等 backend。
-- DB 侧配对设备表 `FushiPairedPeers`（定义在 `hibiki_core`）。
+- DB 侧配对设备表 `FushiPairedPeers`（定义在 `fushi_core`）。
 
 ### 11. torrent 下载 (`lib/src/media/torrent/`)
 
@@ -150,16 +150,16 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 ## 关键依赖与配置
 
 - **状态管理**：`flutter_riverpod: ^2.3.6`
-- **数据库**：`drift: ">=2.33.0 <2.34.0"` + `sqlite3_flutter_libs`（通过 `hibiki_core`）
+- **数据库**：`drift: ">=2.33.0 <2.34.0"` + `sqlite3_flutter_libs`（通过 `fushi_core`）
 - **WebView**：`flutter_inappwebview: ^6.1.5`
-- **音频**：`just_audio: ^0.9.31`（通过 `hibiki_audio`）
+- **音频**：`just_audio: ^0.9.31`（通过 `fushi_audio`）
 - **国际化**：`slang: ^3.13.0` / `slang_flutter`，17 种语言
-- **内部包**：`hibiki_core` / `hibiki_dictionary` / `hibiki_anki` / `hibiki_audio` / `hibiki_platform`
+- **内部包**：`fushi_core` / `fushi_dictionary` / `fushi_anki` / `fushi_audio` / `fushi_platform`
 - **dependency_overrides**：`flutter_inappwebview_windows` / `flutter_inappwebview_android` / `network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `ffmpeg_kit_flutter` / `media_kit_*` 等 vendored 本地包（见 `hibiki/pubspec.yaml` 与 `docs/agent/build.md`）；`file_picker` 用 pub.dev 版（**不是** fork）
 
 ## 数据模型
 
-数据模型全部定义在 `hibiki_core`（53 张 Drift 表，schema v59），本模块仅消费。互联配对设备表 `FushiPairedPeers` 也在其中。
+数据模型全部定义在 `fushi_core`（53 张 Drift 表，schema v59），本模块仅消费。互联配对设备表 `FushiPairedPeers` 也在其中。
 
 ## 测试与质量
 

@@ -16,7 +16,7 @@ class DiscoveredPairingProbeResult {
   /// https 路径的 TOFU 捕获指纹（ping 回传优先）；明文 http 为 null。
   final String? fingerprint;
 
-  /// host 的 /api/ping 应答（isHibiki 恒为 true，否则整体返回 null）。
+  /// host 的 /api/ping 应答（isFushi 恒为 true，否则整体返回 null）。
   final FushiPingResult ping;
 }
 

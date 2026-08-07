@@ -57,7 +57,7 @@ import 'test_helpers.dart';
 /// 探针用 `ReaderFushiPage.debugEvaluateJavascript`（reader 页对真实 WebView 暴露的
 /// 测试钩子）跑 `getBoundingClientRect`，**不**用像素截图（bg 下 WebView 截图可能白框）。
 ///
-/// 启动期网络噪声经 `runHibikiItest` 守卫放行。
+/// 启动期网络噪声经 `runFushiItest` 守卫放行。
 ///
 /// Run (PowerShell, from hibiki/):
 ///   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 \
@@ -96,7 +96,7 @@ void main() {
     'TODO-982/BUG-461 continuous scroll: favorite-sentence jump fits the whole '
     'sentence — tail bottom stays above the reader bottom-chrome band',
     (WidgetTester tester) async {
-      await runHibikiItest(
+      await runFushiItest(
         label: 'coll-jump',
         body: () async {
           app.main();

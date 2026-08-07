@@ -251,7 +251,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       pinnedFingerprint: capturedFingerprint,
     );
     if (!mounted) return;
-    if (ping == null || !ping.isHibiki || !ping.supportsPairV2) {
+    if (ping == null || !ping.isFushi || !ping.supportsPairV2) {
       _showSnackBar(context, t.sync_pair_not_hibiki);
       return;
     }

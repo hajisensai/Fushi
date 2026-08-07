@@ -89,7 +89,7 @@ void main() {
   testWidgets(
     'reader top/bottom margin change applies live without reopening the book',
     (WidgetTester tester) async {
-      await runHibikiItest(
+      await runFushiItest(
         label: 'margin',
         body: () async {
           app.main();
