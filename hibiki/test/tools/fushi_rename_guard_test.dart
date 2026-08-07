@@ -36,8 +36,6 @@ class _ForbiddenPattern {
   final Map<String, String> allowed;
 }
 
-const String _sasayakiFrozenNote = '（P6-4b 冻结契约点，进度台账有案）';
-
 final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   _ForbiddenPattern(
     // P6-1：JS 桥全局已是 window.fushiReader。
@@ -93,28 +91,21 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     },
   ),
   _ForbiddenPattern(
-    // P6-4b：Sasayaki* → SubtitleRematch*/sentenceAudio*。
+    // P6-4b：Sasayaki* → SubtitleRematch*/sentenceAudio*；W2-2：四个持久化冻结
+    // 点全解冻（sasayaki:// scheme / sasayakiColor JSON 键 /
+    // custom_theme_sasayaki_color 偏好键 → fushi_core v71 迁移改写；
+    // {sasayaki-audio} handlebars 别名 → BaseAnkiRepository 载入期迁移改写）。
     name: 'sasayaki',
     regex: RegExp('sasayaki', caseSensitive: false),
     allowed: <String, String>{
-      'lib/src/models/theme_notifier.dart':
-          "自定义主题的 'sasayakiColor' JSON 键（custom_themes 旧数据/分享码）与 "
-              "'custom_theme_sasayaki_color' 偏好键（Drift preferences 表）是持久化"
-              '契约$_sasayakiFrozenNote。',
-      'lib/src/pages/implementations/anki_settings_page.dart':
-          "'{sasayaki-audio}' 是 {sentence-audio} 的 handlebars 旧别名（用户卡模板"
-              '契约），其展示标签读冻结 i18n key handlebar_sasayaki_audio'
-              '$_sasayakiFrozenNote。',
-      'lib/i18n/strings.g.dart':
-          'Slang 生成文件：冻结 i18n key handlebar_sasayaki_audio 的 getter 与'
-              '各语言展示值（i18n 值面清扫是独立事项）。生成源是 *.i18n.json，'
-              '不手改。',
-      'packages/fushi_anki/lib/src/anki_models.dart':
-          "'{sasayaki-audio}' handlebars 旧别名的解析/枚举/兼容判定（用户卡模板"
-              '契约）$_sasayakiFrozenNote。',
-      'packages/fushi_audio/lib/src/matching/subtitle_rematch_codec.dart':
-          "'sasayaki://' scheme 字面量落 Drift DB 的 AudioCue.text_fragment_id 列，"
-              '持久化契约$_sasayakiFrozenNote。',
+      'packages/fushi_core/lib/src/database/database.dart':
+          "v71 迁移步的旧值输入：'sasayaki://' scheme 前缀、'sasayakiColor' "
+              "JSON 键、'custom_theme_sasayaki_color' 偏好键。读旧库做一次性"
+              '改写的迁移代码，旧字面量是必要输入。',
+      'packages/fushi_anki/lib/src/base_anki_repository.dart':
+          "'{sasayaki-audio}' handlebars 旧别名：loadSettings 载入期一次性改写"
+              '为 {sentence-audio} 的迁移输入（SharedPreferences 无版本阶梯，'
+              '载入期改写即迁移通道）。',
     },
   ),
   _ForbiddenPattern(

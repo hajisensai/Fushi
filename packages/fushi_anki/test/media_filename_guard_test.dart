@@ -71,7 +71,7 @@ const AnkiSettings _settings = AnkiSettings(
   fieldMappings: <String, String>{
     'Expression': '{expression}',
     'Audio': '{audio}',
-    'SentenceAudio': '{sasayaki-audio}',
+    'SentenceAudio': '{sentence-audio}',
   },
   allowDupes: true,
 );
@@ -203,20 +203,20 @@ void main() {
 
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(channel, (MethodCall call) async {
-              switch (call.method) {
-                case 'addFileToMedia':
-                  final args = Map<String, dynamic>.from(call.arguments as Map);
-                  final String preferredName = args['preferredName'] as String;
-                  preferredNames.add(preferredName);
-                  return preferredName;
-                case 'addNote':
-                  final args = Map<String, dynamic>.from(call.arguments as Map);
-                  addedNotes.add(List<String>.from(args['fields'] as List));
-                  return true;
-                default:
-                  fail('Unexpected AnkiDroid channel call: ${call.method}');
-              }
-            });
+          switch (call.method) {
+            case 'addFileToMedia':
+              final args = Map<String, dynamic>.from(call.arguments as Map);
+              final String preferredName = args['preferredName'] as String;
+              preferredNames.add(preferredName);
+              return preferredName;
+            case 'addNote':
+              final args = Map<String, dynamic>.from(call.arguments as Map);
+              addedNotes.add(List<String>.from(args['fields'] as List));
+              return true;
+            default:
+              fail('Unexpected AnkiDroid channel call: ${call.method}');
+          }
+        });
         addTearDown(() {
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
               .setMockMethodCallHandler(channel, null);

@@ -224,7 +224,7 @@ void main() {
       ],
       fieldMappings: <String, String>{
         'ExpressionAudio': '{audio}',
-        'SentenceAudio': '{sasayaki-audio}',
+        'SentenceAudio': '{sentence-audio}',
         'Picture': '{book-cover}',
         'Glossary': '{glossary}',
       },
@@ -324,7 +324,7 @@ void main() {
         ),
       ],
       fieldMappings: <String, String>{
-        'SentenceAudio': '{sasayaki-audio}',
+        'SentenceAudio': '{sentence-audio}',
       },
     ));
 

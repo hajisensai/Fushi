@@ -16,13 +16,13 @@ AudioCue _cue({required int sid, required String frag}) => AudioCue()
 
 void main() {
   final cues = [
-    _cue(sid: 0, frag: 'sasayaki://s=0&ns=0&ne=5'),
-    _cue(sid: 1, frag: 'sasayaki://s=0&ns=5&ne=9'),
+    _cue(sid: 0, frag: 'fushi-cue://s=0&ns=0&ne=5'),
+    _cue(sid: 1, frag: 'fushi-cue://s=0&ns=5&ne=9'),
   ];
 
   test('frag payload resolves by textFragmentId', () {
     final cue = cueForPointerPayload(
-        '{"type":"frag","id":"sasayaki://s=0&ns=5&ne=9"}', cues);
+        '{"type":"frag","id":"fushi-cue://s=0&ns=5&ne=9"}', cues);
     expect(cue?.sentenceIndex, 1);
   });
 

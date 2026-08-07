@@ -12,7 +12,7 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'reader_hibiki_page_source_corpus.dart';
 
 /// BUG-300 source guard：有声书文字跟随高亮在阅读器里不显示，根因是 reader 的
-/// `_prepareSasayakiCuesJson` 手写内联循环构造给 JS 的 sasayaki cue payload 时
+/// `_prepareSentenceAudioCuesJson` 手写内联循环构造给 JS 的 sasayaki cue payload 时
 /// 漏了 cue 原文 `text` 字段 —— JS `collectSasayakiCueRanges`（BUG-060 改造）必须
 /// 用 `cue.text` 在实时 DOM 里就近重定位高亮，缺 text 时只能按错位的提示偏移回落，
 /// 高亮落空。修复改为直接复用 `AudiobookBridge.buildSasayakiPayload`（必含 text），
@@ -26,7 +26,7 @@ void main() {
   final String bridgeSrc =
       File('lib/src/media/audiobook/audiobook_bridge.dart').readAsStringSync();
 
-  /// 截取 _prepareSasayakiCuesJson 方法体：从其签名到下一个方法
+  /// 截取 _prepareSentenceAudioCuesJson 方法体：从其签名到下一个方法
   /// _injectAudiobookBridge 之前（reader 文件里这两个方法相邻）。
   final int prepStart = readerSrc
       .indexOf('Future<String?> _prepareSentenceAudioCuesJson() async {');

@@ -1,19 +1,19 @@
 import '../audiobook/audiobook_model.dart';
 import 'epub_srt_matcher.dart';
 
-/// Sasayaki 匹配信息在 `AudioCue.textFragmentId` 上的编码方案。
+/// 字幕重匹配信息在 `AudioCue.textFragmentId` 上的编码方案。
 ///
 /// 约定：
-/// - 命中的 cue：`sasayaki://s=<sectionIndex>&ns=<normStart>&ne=<normEnd>`
+/// - 命中的 cue：`fushi-cue://s=<sectionIndex>&ns=<normStart>&ne=<normEnd>`
 /// - 未命中的 cue：保留原来的 `srt://<n>` / DOM id 等原值，不被改写
 ///
-/// 这样做的好处：不用改 Isar schema / .g.dart，同一份 `AudioCue` 既可服务
-/// cues→epub 合成书（用现有 `[data-cue-id]` 高亮），也可服务 Sasayaki
+/// 这样做的好处：不用改 DB schema，同一份 `AudioCue` 既可服务
+/// cues→epub 合成书（用现有 `[data-cue-id]` 高亮），也可服务重匹配
 /// 风格的原生 EPUB 匹配（用 normChar 偏移定位）。
 class SubtitleRematchCodec {
-  // scheme 字面量 'sasayaki://' 是持久化契约：编码结果写入 Drift DB 的
-  // AudioCue.textFragmentId 列，旧库数据必须继续可解码，冻结不改。
-  static const String _scheme = 'sasayaki://';
+  // scheme 字面量写入 Drift DB 的 AudioCue.textFragmentId 列；历史值
+  // 'sasayaki://' 已由 fushi_core v71 迁移一次性改写为本前缀。
+  static const String _scheme = 'fushi-cue://';
 
   /// 编码命中结果为 textFragmentId。
   static String encodeHit({
@@ -24,7 +24,7 @@ class SubtitleRematchCodec {
     return '${_scheme}s=$sectionIndex&ns=$normCharStart&ne=$normCharEnd';
   }
 
-  /// 若 [raw] 不是 sasayaki:// 形式则返回 null。
+  /// 若 [raw] 不是 fushi-cue:// 形式则返回 null。
   static SubtitleRematchFragment? tryDecode(String raw) {
     if (!raw.startsWith(_scheme)) {
       return null;

@@ -3,7 +3,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 
 /// TODO-948/952: unit tests for the pure field-mapping diagnostic helpers used
 /// by the mining "no sentence / unmapped field" toast. These answer "does any
-/// Anki field consume {sentence} / {sasayaki-audio}?" purely from the persisted
+/// Anki field consume {sentence} / {sentence-audio}?" purely from the persisted
 /// [AnkiSettings.fieldMappings] (Anki field name -> handlebar template), with no
 /// rendering and no runtime data — the honest "why is the field empty" signal.
 void main() {
@@ -55,18 +55,26 @@ void main() {
       );
     });
 
-    test('matches {sasayaki-audio} for the sentence-audio diagnostic', () {
+    test('matches {sentence-audio} for the sentence-audio diagnostic', () {
       expect(
         AnkiHandlebarOptions.anyFieldConsumesToken(
-          {'SentenceAudio': '{sasayaki-audio}'},
-          '{sasayaki-audio}',
+          {'SentenceAudio': '{sentence-audio}'},
+          '{sentence-audio}',
         ),
         isTrue,
       );
       expect(
         AnkiHandlebarOptions.anyFieldConsumesToken(
           {'Word': '{audio}'},
-          '{sasayaki-audio}',
+          '{sentence-audio}',
+        ),
+        isFalse,
+      );
+      // 退役别名 {sasayaki-audio} 已由载入期迁移改写为 {sentence-audio}，
+      // 诊断只认新键：仅映射旧别名不算消费句子音频。
+      expect(
+        AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
+          {'SentenceAudio': '{sasayaki-audio}'},
         ),
         isFalse,
       );

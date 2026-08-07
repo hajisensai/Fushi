@@ -102,7 +102,7 @@ CREATE TABLE galgame_tag_mappings (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 70,
+    expect(db.schemaVersion, 71,
         reason: 'v62 给 galgames 加 upscaling_mode（每游戏窗口超分档位）');
 
     // 列真的建出来了（不只是 Dart 侧读到默认值）。
@@ -190,8 +190,7 @@ CREATE TABLE galgame_tag_mappings (
   });
 
   test('v62：fresh 库由 onCreate 建出 upscaling_mode，默认空串', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     await db.upsertGalgame(GalgamesCompanion.insert(

@@ -59,7 +59,7 @@ CREATE TABLE statistics_tombstones (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 70, reason: 'v60 = reading_statistics.pages_read');
+    expect(db.schemaVersion, 71, reason: 'v60 = reading_statistics.pages_read');
 
     final List<ReadingStatisticRow> rows = await db.getAllReadingStatistics();
     expect(rows, hasLength(1));
@@ -107,8 +107,7 @@ CREATE TABLE statistics_tombstones (
   });
 
   test('v60：fresh 库由 onCreate 直接建出该列（不依赖迁移梯子）', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     await db.addReadingStatistic(

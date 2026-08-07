@@ -458,7 +458,7 @@ class FushiDatabase extends _$FushiDatabase {
   FushiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 70;
+  int get schemaVersion => 71;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1550,6 +1550,43 @@ class FushiDatabase extends _$FushiDatabase {
                   column: 'unique_key',
                   from: 'reader_ttu/',
                   to: 'reader_fushi/');
+            }
+          }
+          if (from < 71) {
+            // v71（Fushi 终局清算 W2-2）：sasayaki 族存量持久化值一次性改写。
+            // 三个落库位（W2 盘点结论）：
+            //  1. audio_cues.text_fragment_id —— 字幕重匹配命中编码的 scheme
+            //     前缀 `sasayaki://` → `fushi-cue://`（SubtitleRematchCodec）；
+            //  2. preferences/profile_settings 的 custom_themes 值 —— 自定义
+            //     主题条目 JSON 里的 'sasayakiColor' 键 →
+            //     'sentenceAudioHighlightColor'（值是 PrefCodec 编码的
+            //     List<String>，条目引号被转义，故用裸词 REPLACE；该词撞上
+            //     用户主题名的概率可忽略，且主题分享码不含此键——'sk' 段）；
+            //  3. preferences/profile_settings 的偏好键
+            //     custom_theme_sasayaki_color → custom_theme_sentence_audio_color
+            //     （精确匹配整键；OR REPLACE 防半合成库新旧并存撞主键）。
+            // {sasayaki-audio} handlebars 别名存在 SharedPreferences（非本库），
+            // 由 BaseAnkiRepository 载入期迁移改写，刻意不在此步。
+            if (await _tableExists('audio_cues')) {
+              await _rewriteTextPrefix(
+                  table: 'audio_cues',
+                  column: 'text_fragment_id',
+                  from: 'sasayaki://',
+                  to: 'fushi-cue://');
+            }
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await customStatement('UPDATE $table '
+                  "SET value = REPLACE(value, 'sasayakiColor', "
+                  "'sentenceAudioHighlightColor') "
+                  "WHERE key = 'custom_themes' "
+                  "AND value LIKE '%sasayakiColor%'");
+              await customStatement('UPDATE OR REPLACE $table '
+                  "SET key = 'custom_theme_sentence_audio_color' "
+                  "WHERE key = 'custom_theme_sasayaki_color'");
             }
           }
         },

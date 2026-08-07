@@ -475,17 +475,18 @@ void main() {
         reason: 'there is no sentence-audio media to map for this card');
   });
 
-  test('legacy {book-cover}/{sasayaki-audio} aliases are not reported missing',
-      () async {
-    // TODO-1298 改名前建的 Lapis 卡组持久化里 Picture 仍是 {book-cover}、
-    // SentenceAudio 仍是 {sasayaki-audio}（都渲染同一媒体）。诊断必须认这些别名，
-    // 否则误报「缺少游戏卡片字段: {card-image}」，尽管画面/句音其实已通过别名落卡。
+  test('legacy {book-cover} alias is not reported missing', () async {
+    // TODO-1298 改名前建的 Lapis 卡组持久化里 Picture 仍是 {book-cover}（与
+    // {card-image} 渲染同一媒体）。诊断必须认这个别名，否则误报「缺少游戏卡片
+    // 字段: {card-image}」，尽管画面其实已通过别名落卡。
+    // （句子音频旧别名 {sasayaki-audio} 已退役：存量模板由 loadSettings 载入期
+    // 迁移改写为 {sentence-audio}，运行时映射只会是新键。）
     final TexthookerLineEntry entry = service.appendLine('旧别名映射台词')!;
     final _RecordingRepo repo = _RecordingRepo(
       settings: const AnkiSettings(fieldMappings: <String, String>{
         'Sentence': '{sentence}',
         'Picture': '{book-cover}',
-        'SentenceAudio': '{sasayaki-audio}',
+        'SentenceAudio': '{sentence-audio}',
         'Audio': '{audio}',
       }),
     );

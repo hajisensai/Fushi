@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 70);
-    expect(db.schemaVersion, 70);
+    expect(version.read<int>('user_version'), 71);
+    expect(db.schemaVersion, 71);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -227,7 +227,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 70);
+    expect(version.read<int>('user_version'), 71);
   });
 
   test(
@@ -250,8 +250,7 @@ void main() {
       raw.dispose();
     }
 
-    FushiDatabase migrated =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    FushiDatabase migrated = FushiDatabase.atFile(dbPath, isMainProcess: false);
     expect(await migrated.getPref(_obsoleteKey), isNull);
     expect(await migrated.getPref('theme'), 's:dark');
     await migrated.close();
@@ -259,7 +258,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 70);
+      expect(probe.select('PRAGMA user_version').first.values.first, 71);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '

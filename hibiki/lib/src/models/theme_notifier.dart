@@ -263,9 +263,10 @@ class CustomThemeEntry {
         if (secondaryColor != null) 'secondaryColor': secondaryColor,
         if (tertiaryColor != null) 'tertiaryColor': tertiaryColor,
         if (containerColor != null) 'containerColor': containerColor,
-        // JSON 键 'sasayakiColor' 是持久化契约（custom_themes 旧数据/分享码），冻结不改。
+        // JSON 键与字段同名；历史键 'sasayakiColor'（custom_themes 旧行）已由
+        // v71 Drift 迁移一次性改写。分享码不含此键（用 'sk' 段），不受影响。
         if (sentenceAudioHighlightColor != null)
-          'sasayakiColor': sentenceAudioHighlightColor,
+          'sentenceAudioHighlightColor': sentenceAudioHighlightColor,
         if (linkColor != null) 'linkColor': linkColor,
       };
 
@@ -282,8 +283,7 @@ class CustomThemeEntry {
       secondaryColor: asInt(json['secondaryColor']),
       tertiaryColor: asInt(json['tertiaryColor']),
       containerColor: asInt(json['containerColor']),
-      // JSON 键 'sasayakiColor' 冻结（见 toJson）。
-      sentenceAudioHighlightColor: asInt(json['sasayakiColor']),
+      sentenceAudioHighlightColor: asInt(json['sentenceAudioHighlightColor']),
       linkColor: asInt(json['linkColor']),
     );
   }
@@ -1176,11 +1176,12 @@ class ThemeNotifier extends ChangeNotifier {
   Future<void> setCustomThemeContainerColor(Color? c) =>
       _setColorPref('custom_theme_container_color', c);
 
-  // 偏好键 'custom_theme_sasayaki_color' 是持久化契约（Drift preferences 表），冻结不改。
+  // 历史键 'custom_theme_sasayaki_color'（Drift preferences 表）已由 v71
+  // Drift 迁移搬到本键。
   Color? get customThemeSentenceAudioHighlightColor =>
-      _colorPref('custom_theme_sasayaki_color');
+      _colorPref('custom_theme_sentence_audio_color');
   Future<void> setCustomThemeSentenceAudioHighlightColor(Color? c) =>
-      _setColorPref('custom_theme_sasayaki_color', c);
+      _setColorPref('custom_theme_sentence_audio_color', c);
 
   Color? get customThemeLinkColor => _colorPref('custom_theme_link_color');
   Future<void> setCustomThemeLinkColor(Color? c) =>
@@ -1338,7 +1339,7 @@ class ThemeNotifier extends ChangeNotifier {
       legacyContainerColor:
           _get('custom_theme_container_color', defaultValue: 0) as int,
       legacySentenceAudioHighlightColor:
-          _get('custom_theme_sasayaki_color', defaultValue: 0) as int,
+          _get('custom_theme_sentence_audio_color', defaultValue: 0) as int,
       legacyLinkColor: _get('custom_theme_link_color', defaultValue: 0) as int,
       idGenerator: _customThemeIdGenerator,
     );

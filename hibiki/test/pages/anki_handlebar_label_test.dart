@@ -43,11 +43,10 @@ void main() {
     );
   });
 
-  test('{sasayaki-audio} keeps its label but is marked deprecated', () {
-    expect(
-      ankiHandlebarLabel('{sasayaki-audio}'),
-      t.handlebar_deprecated_label(label: t.handlebar_sasayaki_audio),
-    );
+  test('retired {sasayaki-audio} falls back to the raw literal', () {
+    // 句子音频旧别名已退役（载入期迁移改写为 {sentence-audio}，i18n key 已删）：
+    // ankiHandlebarLabel 走 default 分支原样返回字面量，不再有专属标签。
+    expect(ankiHandlebarLabel('{sasayaki-audio}'), '{sasayaki-audio}');
   });
 
   test('{card-image} maps to t.handlebar_card_image (TODO-1298)', () {
