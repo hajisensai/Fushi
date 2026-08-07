@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 // TODO-1132 回归守卫：浏览器扩展的「按住 Shift 悬停查词」是查词主路径。用户复诉「在浏览器按
 // Shift 没反应」。历史上 5657c55d1（TODO-1132 v40）把发查词逻辑从 mousemove 处理器里抽成
-// hibikiSendLookup()，1219 P1-P3 又在 content.js 前后加了字幕拦截/面板脚本——任何一次重构都可能
+// fushiSendLookup()，1219 P1-P3 又在 content.js 前后加了字幕拦截/面板脚本——任何一次重构都可能
 // 悄悄把 mousemove→shiftKey→hoshiSelection.selectFromPosition→chrome.runtime.sendMessage('lookup')
 // 这条接线拆断而无人察觉（源码扫描守不住「是否真的被触发」）。这里在受控 vm 里真加载 content.js、
 // 捕获它注册的 document mousemove 监听器、用带 shiftKey 的事件触发，断言最终真的发出了 lookup 消息。
@@ -141,7 +141,7 @@ test('Shift + mousemove 命中日文时真的发出 lookup 查词消息', () => 
   const ev = { shiftKey: true, clientX: 300, clientY: 400 };
   for (const fn of docListeners.mousemove) fn(ev);
 
-  assert.strictEqual(dataset.hibikiTerm, '世界', 'mousemove 未把命中的词写进诊断 dataset');
+  assert.strictEqual(dataset.fushiTerm, '世界', 'mousemove 未把命中的词写进诊断 dataset');
   const lookups = sent.filter((m) => m && m.type === 'lookup');
   assert.strictEqual(lookups.length, 1, 'Shift 悬停未发出恰好一次 lookup 查词');
   assert.strictEqual(lookups[0].term, '世界', 'lookup 携带的词不对');
@@ -213,15 +213,15 @@ test('查词暂停经 storage.onChanged 热更新启停，无需刷新页面', (
 test('悬浮字幕自动查词复用同词去重，移开复位后可重查', () => {
   const h = loadContentAndFireShift();
   const cue = { startMs: 1000, endMs: 2000, text: '世界です' };
-  h.windowObj.hibikiLookupAtPoint(300, 400, cue, { auto: true });
-  h.windowObj.hibikiLookupAtPoint(310, 400, cue, { auto: true });
+  h.windowObj.fushiLookupAtPoint(300, 400, cue, { auto: true });
+  h.windowObj.fushiLookupAtPoint(310, 400, cue, { auto: true });
   assert.strictEqual(
     h.sent.filter((m) => m && m.type === 'lookup').length,
     1,
     '同一句同一词的自动悬停不得重复发请求',
   );
-  h.windowObj.hibikiResetAutoLookupDedupe();
-  h.windowObj.hibikiLookupAtPoint(310, 400, cue, { auto: true });
+  h.windowObj.fushiResetAutoLookupDedupe();
+  h.windowObj.fushiLookupAtPoint(310, 400, cue, { auto: true });
   assert.strictEqual(
     h.sent.filter((m) => m && m.type === 'lookup').length,
     2,
@@ -229,12 +229,12 @@ test('悬浮字幕自动查词复用同词去重，移开复位后可重查', ()
   );
 });
 
-// BUG-1024 回归守卫：在途闸（hibikiPending）过去是裸 bool，只在 sendMessage 回调里复位。
-// MV3 background service worker 若在消息在途时被系统终止，回调永不触发 → hibikiPending
+// BUG-1024 回归守卫：在途闸（fushiPending）过去是裸 bool，只在 sendMessage 回调里复位。
+// MV3 background service worker 若在消息在途时被系统终止，回调永不触发 → fushiPending
 // 永久停在 true → 此后所有 Shift 悬停被在途闸整条吞掉（用户报「Shift 查词弹窗不敏感」）。
 // 这两条锁死：① 超过截止时间必须放行新查词（死锁不可复活）；② 截止时间内仍然拦截（防洪不退化）。
 function fireShiftLookup(docListeners, x, y) {
-  // 先松开 Shift：复位同词去重（hibikiLastTerm=''），使同一个桩词可以再次触发查词。
+  // 先松开 Shift：复位同词去重（fushiLastTerm=''），使同一个桩词可以再次触发查词。
   for (const fn of docListeners.mousemove) fn({ shiftKey: false, clientX: x, clientY: y });
   for (const fn of docListeners.mousemove) fn({ shiftKey: true, clientX: x, clientY: y });
 }

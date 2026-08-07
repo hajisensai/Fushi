@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // A（BUG-783 后续）行为守卫：content.js 的「YouTube 真整集字幕」provider。
 // 在受控 vm 里真加载 subtitle-adapters.js + content.js，桩掉 chrome.runtime.sendMessage 捕获
 // {type:'youtubeCaptions'} 请求并回罐装 server 响应，断言：
-//   1) YouTube 页触发请求，把 server 返回的多轨（人工/自动）写进 hibikiEpisodeCues 并通知面板；
+//   1) YouTube 页触发请求，把 server 返回的多轨（人工/自动）写进 fushiEpisodeCues 并通知面板；
 //   2) 同语言人工/自动轨标签去重（不互相覆盖）；
 //   3) 空 tracks（无字幕/失败）不写轨、允许重试（回退 DOM live 采样）。
 
@@ -97,7 +97,7 @@ test('YouTube 页拉取 server 字幕并写入 store + 通知面板', () => {
   });
   assert.ok(h.fetcher, '缺 1500ms YouTube 字幕拉取器');
   const notified = [];
-  h.windowObj.hibikiSubtitlePanelOnCues = (key) => notified.push(key);
+  h.windowObj.fushiSubtitlePanelOnCues = (key) => notified.push(key);
 
   h.fetcher.fn();
 
@@ -105,7 +105,7 @@ test('YouTube 页拉取 server 字幕并写入 store + 通知面板', () => {
   assert.ok(req, '必须发出 youtubeCaptions 请求');
   assert.strictEqual(req.videoId, 'abc123');
 
-  const store = h.windowObj.hibikiEpisodeCues;
+  const store = h.windowObj.fushiEpisodeCues;
   const key = 'yt-abc123|日本語';
   assert.ok(store[key], 'server 字幕轨必须进 store');
   assert.strictEqual(store[key].length, 1);
@@ -130,7 +130,7 @@ test('同语言人工/自动轨标签去重（不互相覆盖）', () => {
     ]),
   });
   h.fetcher.fn();
-  const store = h.windowObj.hibikiEpisodeCues;
+  const store = h.windowObj.fushiEpisodeCues;
   assert.ok(store['yt-abc123|English'], '人工轨');
   assert.ok(store['yt-abc123|English (自动)'], '自动轨标签加 (自动) 后缀，不覆盖人工轨');
   assert.strictEqual(store['yt-abc123|English'][0].text, 'manual');
@@ -140,7 +140,7 @@ test('同语言人工/自动轨标签去重（不互相覆盖）', () => {
 test('空 tracks（无字幕/失败）不写轨且允许重试', () => {
   const h = loadYoutube({ response: okTracks([]) });
   h.fetcher.fn();
-  const store = h.windowObj.hibikiEpisodeCues || {};
+  const store = h.windowObj.fushiEpisodeCues || {};
   assert.strictEqual(Object.keys(store).length, 0, '无字幕不得凭空造轨');
   // 空响应 → fetchedFor 复位 → 下轮可重试（server 稍后就绪）。
   h.setResponse(okTracks([
@@ -150,5 +150,5 @@ test('空 tracks（无字幕/失败）不写轨且允许重试', () => {
   h.fetcher.fn();
   assert.strictEqual(h.sent.filter((m) => m.type === 'youtubeCaptions').length, 2,
     '空响应后必须允许重试');
-  assert.ok(h.windowObj.hibikiEpisodeCues['yt-abc123|日本語'], '重试成功后写入轨');
+  assert.ok(h.windowObj.fushiEpisodeCues['yt-abc123|日本語'], '重试成功后写入轨');
 });

@@ -14,7 +14,7 @@ async function cfg() {
       ? saved.token : FUSHI_DEFAULTS.token;
   return { base: `http://${host}:${port}`, token };
 }
-function authHeader(token) { return 'Basic ' + btoa('hibiki:' + token); }
+function authHeader(token) { return 'Basic ' + btoa('fushi:' + token); }
 
 // BUG-1079：/api/extension/status 请求体统一自报「浏览器中实际加载的版本」
 // （FUSHI_DEFAULTS.build + manifest version）。此前写死 '{}'，app 端对浏览器里实际
@@ -85,27 +85,27 @@ async function diagnoseConnection(force) {
 // - 正在 Netflix 逐句回放录制 → 跳过（reload 会杀掉 offscreen 录制，等录完下次查词再说）。
 // BUG-1079：latch 不再是「永久静默」——每次心跳仍重新比对（决策抽成 self-update.js 的
 // 纯状态机）：已 reload 过仍不一致 = 自更新失效（用户从别的目录加载 / 磁盘没刷成 /
-// 浏览器拒绝 reload），落 chrome.storage.local.hibikiUpdateStale {remote, local} 供
+// 浏览器拒绝 reload），落 chrome.storage.local.fushiUpdateStale {remote, local} 供
 // action-popup 显示「需手动重载」提示 + 图标角标；恢复一致时清除 stale 与角标。
 async function maybeSelfReload(data) {
   try {
     const remote = data && data.extensionBuild;
     const local = FUSHI_DEFAULTS.build;
     const st = await chrome.storage.local.get(
-        ['hibikiReloadedForBuild', 'hibikiUpdateStale']);
+        ['fushiReloadedForBuild', 'fushiUpdateStale']);
     const decision = self.FUSHI_SELF_UPDATE.decide(
-        remote, local, st.hibikiReloadedForBuild, await isOffscreenRecording());
+        remote, local, st.fushiReloadedForBuild, await isOffscreenRecording());
     if (decision.action === 'clear') {
-      if (st.hibikiUpdateStale) {
-        await chrome.storage.local.remove(['hibikiUpdateStale']);
+      if (st.fushiUpdateStale) {
+        await chrome.storage.local.remove(['fushiUpdateStale']);
         refreshUpdateBadge();
       }
       return;
     }
     if (decision.action === 'stale') {
-      const prev = st.hibikiUpdateStale;
+      const prev = st.fushiUpdateStale;
       if (!prev || prev.remote !== remote || prev.local !== local) {
-        await chrome.storage.local.set({ hibikiUpdateStale: decision.stale });
+        await chrome.storage.local.set({ fushiUpdateStale: decision.stale });
       }
       refreshUpdateBadge();
       return;
@@ -115,8 +115,8 @@ async function maybeSelfReload(data) {
     // （chrome.runtime.reload() 会让所有已注入页的 content script 上下文失效 → 不补的话
     // 用户必须手动刷新浏览器才恢复）。
     await chrome.storage.local.set({
-      hibikiReloadedForBuild: remote,
-      hibikiReinjectPending: true,
+      fushiReloadedForBuild: remote,
+      fushiReinjectPending: true,
     });
     chrome.runtime.reload();
   } catch (_) { /* 自更新失败不影响查词本身 */ }
@@ -128,8 +128,8 @@ async function maybeSelfReload(data) {
 async function refreshUpdateBadge() {
   try {
     if (await isOffscreenRecording()) return; // 录制角标优先
-    const st = await chrome.storage.local.get(['hibikiUpdateStale']);
-    const stale = !!st.hibikiUpdateStale;
+    const st = await chrome.storage.local.get(['fushiUpdateStale']);
+    const stale = !!st.fushiUpdateStale;
     chrome.action.setBadgeBackgroundColor({ color: stale ? '#F9A825' : '#00000000' });
     chrome.action.setBadgeText({ text: stale ? '↑' : '' });
   } catch (_) { /* badge 在某些上下文不可用：忽略 */ }
@@ -138,8 +138,8 @@ async function refreshUpdateBadge() {
 // BUG-1047：自更新 chrome.runtime.reload() 会让所有已打开标签页里注入的 content script
 // 上下文失效（"Extension context invalidated"），这些页在用户手动刷新前扩展就是死的。
 // reload 后由新 SW 把 content script 重新注入已打开的普通网页，页面无感恢复，无需刷新浏览器。
-// - 仅对 reload 前置的 hibikiReinjectPending 标记生效，普通 SW 冷启动不全量重注入；
-// - 逐页探测 window.__hibikiExtension（content.js 注入后置真、隔离世界随 reload 被拆即丢），
+// - 仅对 reload 前置的 fushiReinjectPending 标记生效，普通 SW 冷启动不全量重注入；
+// - 逐页探测 window.__fushiExtension（content.js 注入后置真、隔离世界随 reload 被拆即丢），
 //   已有活着的 content script 就跳过，避免重复注入导致重复监听；
 // - 受限页（chrome:// / 扩展页 / file://）与注入被拒的 tab 逐个 try/catch 忽略。
 async function reinjectOpenTabs() {
@@ -157,7 +157,7 @@ async function reinjectOpenTabs() {
       try {
         const probe = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          func: () => !!window.__hibikiExtension,
+          func: () => !!window.__fushiExtension,
         });
         if (probe && probe[0] && probe[0].result === true) continue;
         if (Array.isArray(g.css) && g.css.length) {
@@ -173,9 +173,9 @@ async function reinjectOpenTabs() {
 
 async function maybeReinjectAfterReload() {
   try {
-    const st = await chrome.storage.local.get(['hibikiReinjectPending']);
-    if (!st.hibikiReinjectPending) return;
-    await chrome.storage.local.set({ hibikiReinjectPending: false });
+    const st = await chrome.storage.local.get(['fushiReinjectPending']);
+    if (!st.fushiReinjectPending) return;
+    await chrome.storage.local.set({ fushiReinjectPending: false });
     await reinjectOpenTabs();
   } catch (_) { /* 重注入失败：用户仍可手动刷新恢复，不影响其它功能 */ }
 }
@@ -219,16 +219,16 @@ maybeReinjectAfterReload(); // BUG-1047：若上一轮是自更新 reload，补�
 // 用 chrome.alarms 每 60s（< 120s 窗口）唤醒 SW 打一次 /api/extension/status 刷新 last-seen，
 // 让连接指示真实反映「扩展已加载可达」，app 重启后 ≤60s 自愈。复用 checkVersionOnStartup
 // （既刷 last-seen 又顺带比对版本），自更新仍只在 build 变化时触发一次、由 BUG-1047 无感恢复。
-try { chrome.alarms.create('hibikiHeartbeat', { periodInMinutes: 1 }); } catch (_) { /* 无 alarms 权限：跳过心跳 */ }
+try { chrome.alarms.create('fushiHeartbeat', { periodInMinutes: 1 }); } catch (_) { /* 无 alarms 权限：跳过心跳 */ }
 if (chrome.alarms && chrome.alarms.onAlarm) {
   chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm && alarm.name === 'hibikiHeartbeat') checkVersionOnStartup();
+    if (alarm && alarm.name === 'fushiHeartbeat') checkVersionOnStartup();
   });
 }
 
 // TODO-1000 Netflix：offscreen 文档承载 tabCapture MediaRecorder。批量生成时按字幕逐句「回放
 // 录制」——每句 seek 到句首、播到句尾录成一段自包含 webm（beginClip/endClip），随 mineClip 发给
-// Hibiki 转 GIF+句子音频。点扩展图标启动（需 activeTab 手势 + 关硬件加速才非黑），跨集自动切换。
+// Fushi 转 GIF+句子音频。点扩展图标启动（需 activeTab 手势 + 关硬件加速才非黑），跨集自动切换。
 let captureActive = false;
 
 async function ensureOffscreen() {
@@ -249,8 +249,8 @@ function setRecordingBadge(on) {
     chrome.action.setBadgeText({ text: on ? '●' : '' });
     chrome.action.setTitle({
       title: on
-          ? 'Hibiki：正在生成 Netflix 制卡（逐句回放录制中）'
-          : 'Hibiki：点击生成 Netflix 制卡队列（逐集自动回放录制）',
+          ? 'Fushi：正在生成 Netflix 制卡（逐句回放录制中）'
+          : 'Fushi：点击生成 Netflix 制卡队列（逐集自动回放录制）',
     });
   } catch (_) { /* setBadge 在某些上下文不可用：忽略，不影响录制 */ }
   // BUG-1079：录制角标撤下后恢复自更新失效角标（若 stale 仍在）。录制中绝不动录制红点。
@@ -302,21 +302,21 @@ async function stopTabCapture() {
 // - Netflix 剧集播放页且本集有待生成项 → **就地**逐句回放录制（不 reload！Netflix DRM 会拒绝
 //   为一个正在被录屏的**新加载**播放器解密 → M7375；录一个**已经在放**的播放器则没问题）。
 // - YouTube → 让页面跑 YouTube 队列生成（等同点浮动按钮）。
-async function hibikiIconClick(tab) {
-  const got = await chrome.storage.local.get(['hibikiQueue', 'hibikiNfBatch']);
-  if (got.hibikiNfBatch && got.hibikiNfBatch.active) {
+async function fushiIconClick(tab) {
+  const got = await chrome.storage.local.get(['fushiQueue', 'fushiNfBatch']);
+  if (got.fushiNfBatch && got.fushiNfBatch.active) {
     await stopTabCapture();
-    try { await chrome.storage.local.remove(['hibikiNfBatch']); } catch (_) {}
-    try { await chrome.tabs.sendMessage(tab.id, { type: 'hibikiToastMsg', text: '已取消生成' }); } catch (_) {}
+    try { await chrome.storage.local.remove(['fushiNfBatch']); } catch (_) {}
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'fushiToastMsg', text: '已取消生成' }); } catch (_) {}
     return;
   }
   const url = tab.url || '';
   if (url.indexOf('youtube.com') >= 0) {
-    try { await chrome.tabs.sendMessage(tab.id, { type: 'hibikiRunYoutube' }); } catch (_) {}
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'fushiRunYoutube' }); } catch (_) {}
     return;
   }
   if (url.indexOf('netflix.com') < 0) return;
-  const q = Array.isArray(got.hibikiQueue) ? got.hibikiQueue : [];
+  const q = Array.isArray(got.fushiQueue) ? got.fushiQueue : [];
   // 队列里所有含待生成项的剧集（去重）。当前正播这集若在其中，排到最前 → 它就地录（不导航、手势
   // 现成，最稳）；其余集靠导航（导航时**不录**，到位再录，避开「加载中录屏」的 M7375）。
   const episodes = [];
@@ -324,12 +324,12 @@ async function hibikiIconClick(tab) {
     if (it && it.site === 'netflix' && it.netflixId && episodes.indexOf(it.netflixId) < 0) episodes.push(it.netflixId);
   }
   if (!episodes.length) {
-    try { await chrome.tabs.sendMessage(tab.id, { type: 'hibikiToastMsg', text: '队列里没有 Netflix 待生成项' }); } catch (_) {}
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'fushiToastMsg', text: '队列里没有 Netflix 待生成项' }); } catch (_) {}
     return;
   }
   const curId = (url.match(/\/watch\/(\d+)/) || [])[1];
   if (curId && episodes.indexOf(curId) > 0) { episodes.splice(episodes.indexOf(curId), 1); episodes.unshift(curId); }
-  await chrome.storage.local.set({ hibikiNfBatch: { active: true, episodes: episodes, idx: 0, originalUrl: url } });
+  await chrome.storage.local.set({ fushiNfBatch: { active: true, episodes: episodes, idx: 0, originalUrl: url } });
   if (curId && episodes[0] === curId) {
     // 第一集就是当前播放页 → 就地录：立刻起录屏（手势现成消费），content 收到 storage 变化即跑。
     await startTabCapture(tab.id);
@@ -342,15 +342,15 @@ async function hibikiIconClick(tab) {
 // TODO-1184：manifest 的 action 现在设了 default_popup（vendor/action-popup.html）→ 点图标只会
 // 打开 popup，chrome.action.onClicked **永不触发**（故不再注册它）。原「点图标起录/跑队列」入口
 // 迁到 action-popup.js 的「开始生成/录制」按钮：按钮点击是用户手势，query 到当前 tab 后发
-// hibikiIconAction 消息到这里，由下方 onMessage 分支调用同一个 hibikiIconClick（逻辑不变，只换触发口）。
+// fushiIconAction 消息到这里，由下方 onMessage 分支调用同一个 fushiIconClick（逻辑不变，只换触发口）。
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // 发给 offscreen 的消息由 offscreen 处理，background 不插手。
   if (msg && msg.target === 'offscreen') return false;
   // TODO-1184：来自 action popup「开始生成/录制」按钮的手势入口（替代已失效的 onClicked）。
-  // popup 已 query 到当前 tab（{id,url}），这里直接跑原 hibikiIconClick（Netflix 就地录 / YouTube 队列）。
-  if (msg && msg.type === 'hibikiIconAction') {
-    hibikiIconClick(msg.tab || {}).catch(() => {});
+  // popup 已 query 到当前 tab（{id,url}），这里直接跑原 fushiIconClick（Netflix 就地录 / YouTube 队列）。
+  if (msg && msg.type === 'fushiIconAction') {
+    fushiIconClick(msg.tab || {}).catch(() => {});
     sendResponse({ ok: true });
     return true;
   }
@@ -511,7 +511,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true });
       } else if (msg.type === 'nfFinish') {
         await stopTabCapture();
-        try { await chrome.storage.local.remove(['hibikiNfBatch']); } catch (_) {}
+        try { await chrome.storage.local.remove(['fushiNfBatch']); } catch (_) {}
         if (_sender.tab && _sender.tab.id != null && msg.originalUrl && _sender.tab.url !== msg.originalUrl) {
           try { await chrome.tabs.update(_sender.tab.id, { url: msg.originalUrl }); } catch (_) {}
         }

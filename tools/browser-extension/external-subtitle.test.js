@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // B（asb 招牌）行为守卫：面板加载用户外挂字幕文件 + 时轴偏移。
 // 在受控 vm 里真加载 subtitle-panel.js，桩掉 file input / FileReader / chrome.runtime.sendMessage，
 // 驱动完整加载流，断言：
-//   ① 选文件 → 经 server 解析 → 外挂轨写进 hibikiEpisodeCues 并成为面板当前轨；
+//   ① 选文件 → 经 server 解析 → 外挂轨写进 fushiEpisodeCues 并成为面板当前轨；
 //   ② 时轴偏移 nudge：整轨 cue 时间随偏移平移（对齐视频）；
 //   ③ 不支持格式 → 提示、不造轨。
 
@@ -81,10 +81,10 @@ function loadPanel(opts) {
   const toasts = [];
   let captionResp = opts.response;
   const windowObj = {
-    hibikiEpisodeCues: opts.store || {},
+    fushiEpisodeCues: opts.store || {},
     postMessage() {},
     addEventListener: (type, fn) => { (documentListeners[type] = documentListeners[type] || []).push(fn); },
-    hibikiToast: (m) => toasts.push(m),
+    fushiToast: (m) => toasts.push(m),
   };
   const documentObj = {
     body,
@@ -124,8 +124,8 @@ function loadPanel(opts) {
   return {
     body, video, windowObj, createdInputs, toasts,
     enable: () => fireToggle(true),
-    panel: () => findByIdDeep(body, 'hibiki-subtitle-panel'),
-    reopen: () => findByIdDeep(body, 'hibiki-subtitle-reopen'),
+    panel: () => findByIdDeep(body, 'fushi-subtitle-panel'),
+    reopen: () => findByIdDeep(body, 'fushi-subtitle-reopen'),
     setResponse: (r) => { captionResp = r; },
     tick: () => { const t = intervals.find((it) => it.ms === 200); if (t) t.fn(); },
     dropFiles: function (files) {
@@ -139,9 +139,9 @@ function loadPanel(opts) {
     },
     // 驱动加载：点重开片→点＋→喂文件→触发 change。
     loadFile: function (name, content) {
-      const chip = findByIdDeep(body, 'hibiki-subtitle-reopen');
+      const chip = findByIdDeep(body, 'fushi-subtitle-reopen');
       if (chip && chip.handlers.click) chip.handlers.click[0]({ stopPropagation() {} });
-      const panel = findByIdDeep(body, 'hibiki-subtitle-panel');
+      const panel = findByIdDeep(body, 'fushi-subtitle-panel');
       const loadBtn = findBtnByTitle(panel, '加载外挂字幕')[0];
       assert.ok(loadBtn, '缺 ＋ 加载外挂字幕按钮');
       loadBtn.handlers.click[0]({ stopPropagation() {} });
@@ -162,7 +162,7 @@ test('① 选文件→server 解析→外挂轨写进 store 并成为当前轨',
   });
   h.loadFile('movie.ja.srt', 'dummy');
   const key = 'example.com/video/1|外挂:movie.ja.srt';
-  const store = h.windowObj.hibikiEpisodeCues;
+  const store = h.windowObj.fushiEpisodeCues;
   assert.ok(store[key], '外挂轨必须写进 store');
   assert.strictEqual(store[key].length, 2);
   assert.strictEqual(store[key][0].startMs, 1500);
@@ -170,7 +170,7 @@ test('① 选文件→server 解析→外挂轨写进 store 并成为当前轨',
   // 面板显示该轨（当前轨 + 行渲染）。
   const panel = h.panel();
   assert.ok(panel, '加载后面板必须显示');
-  const rows = findByClassDeep(panel, 'hibiki-sub-text');
+  const rows = findByClassDeep(panel, 'fushi-sub-text');
   assert.strictEqual(rows.length, 2, '外挂轨两句必须渲染成行');
   assert.ok(h.toasts.some((t) => t.indexOf('已加载') >= 0), '必须提示加载成功');
 });
@@ -182,11 +182,11 @@ test('② 时轴偏移：读取侧平移（面板/seek 用偏移值，store 保�
   });
   h.loadFile('x.srt', 'dummy');
   const key = 'example.com/video/1|外挂:x.srt';
-  const store = h.windowObj.hibikiEpisodeCues;
+  const store = h.windowObj.fushiEpisodeCues;
   assert.strictEqual(store[key][0].startMs, 1000);
   // 偏移条可见（asb 移植后任意当前轨都显示），点 +0.5s 按钮。
   const panel = h.panel();
-  const offsetBar = findByClassDeep(panel, 'hibiki-sub-offset')[0];
+  const offsetBar = findByClassDeep(panel, 'fushi-sub-offset')[0];
   assert.ok(offsetBar, '当前轨必须显示时轴偏移条');
   assert.notStrictEqual(offsetBar.style._props.display, 'none');
   const plus = findBtnByTitle(offsetBar, '＋0.5')[0];
@@ -196,7 +196,7 @@ test('② 时轴偏移：读取侧平移（面板/seek 用偏移值，store 保�
   // 面板行 seek 与时间戳用偏移后的值。
   assert.strictEqual(store[key][0].startMs, 1000, 'store 必须保持原始 cue（读取侧偏移）');
   assert.strictEqual(store[key][0].endMs, 2000);
-  const ts = findByClassDeep(h.panel(), 'hibiki-sub-ts')[0];
+  const ts = findByClassDeep(h.panel(), 'fushi-sub-ts')[0];
   assert.ok(ts, '缺行时间戳按钮');
   ts.handlers.click[0]({ stopPropagation() {} });
   assert.strictEqual(h.video.currentTime, 1.5, '行点击 seek 必须用偏移后的 1500ms');
@@ -208,7 +208,7 @@ test('③ 不支持格式 → 提示、不造轨', () => {
     response: { ok: true, status: 200, data: { error: 'unsupported', cues: [] } },
   });
   h.loadFile('notes.txt', 'dummy');
-  const store = h.windowObj.hibikiEpisodeCues;
+  const store = h.windowObj.fushiEpisodeCues;
   assert.strictEqual(Object.keys(store).length, 0, '不支持格式不得造轨');
   assert.ok(h.toasts.some((t) => t.indexOf('不支持') >= 0), '必须提示格式不支持');
 });
@@ -221,7 +221,7 @@ test('④ 拖放外挂字幕会自动开启列表并加载轨道', () => {
   const ev = h.dropFiles([{ name: 'drop.ja.srt', size: 120, _content: 'dummy' }]);
   assert.strictEqual(ev.prevented, true, '支持的字幕文件 drop 必须被接管');
   assert.ok(h.panel(), '主动拖放字幕后应自动开启并显示列表');
-  assert.ok(h.windowObj.hibikiEpisodeCues['example.com/video/1|外挂:drop.ja.srt']);
+  assert.ok(h.windowObj.fushiEpisodeCues['example.com/video/1|外挂:drop.ja.srt']);
 });
 
 test('⑤ 外挂字幕按视频矩形叠到画面上，站点轨不重复叠字', () => {
@@ -233,7 +233,7 @@ test('⑤ 外挂字幕按视频矩形叠到画面上，站点轨不重复叠字'
   h.loadFile('overlay.srt', 'dummy');
   h.video.currentTime = 2;
   h.tick();
-  const overlay = findByIdDeep(h.body, 'hibiki-subtitle-overlay');
+  const overlay = findByIdDeep(h.body, 'fushi-subtitle-overlay');
   assert.ok(overlay, '当前外挂 cue 应创建视频叠字');
   assert.strictEqual(overlay.textContent, '画面上的外挂字幕');
   assert.strictEqual(overlay.style.left, '500px');

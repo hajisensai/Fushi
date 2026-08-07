@@ -6,10 +6,10 @@
 //     zoom 由 popup_settings_injection.dart 设在 document.documentElement.style.zoom；
 //   - 扩展（Shadow DOM 化后）：滚动者是 shadow host（#hibiki-popup-host，
 //     overflow-y:auto + max-height），#entries-container 在 shadow 内被中和为
-//     overflow:visible，不可滚；zoom 由 content.js hibikiRender 设在 host.style.zoom。
+//     overflow:visible，不可滚；zoom 由 content.js fushiRender 设在 host.style.zoom。
 //
 // 历史回归（本守卫锁死）：Shadow DOM 化初版把滚轮目标写成 #entries-container 的
-// scrollBy（两个表面都是 no-op：容器都不可滚）、把 zoom 改读容器的 --hibiki-popup-zoom
+// scrollBy（两个表面都是 no-op：容器都不可滚）、把 zoom 改读容器的 --fushi-popup-zoom
 // 计算变量（in-app 从不下发该变量 → 恒 1）。结果：扩展弹窗与 in-app 弹窗滚轮全部失效，
 // 且无任何测试能抓住（镜像字节守卫只保同步、不保行为）。
 //
@@ -57,20 +57,20 @@ void main() {
               reason: 'in-app 必须回落读 documentElement.style.zoom（注入端设它）');
           expect(src, contains('scroller.style && scroller.style.zoom'),
               reason: '扩展表面必须读 shadow host 的 style.zoom（content.js 设它）');
-          // 回归形态：读容器 --hibiki-popup-zoom 计算变量（in-app 从不下发 → 恒 1）。
+          // 回归形态：读容器 --fushi-popup-zoom 计算变量（in-app 从不下发 → 恒 1）。
           final RegExp brokenZoomRead = RegExp(
-              r"popupCurrentZoom[\s\S]{0,400}?getPropertyValue\('--hibiki-popup-zoom'\)");
+              r"popupCurrentZoom[\s\S]{0,400}?getPropertyValue\('--(hibiki|fushi)-popup-zoom'\)");
           expect(brokenZoomRead.hasMatch(src), isFalse,
-              reason: '禁止 popupCurrentZoom 读 --hibiki-popup-zoom 计算变量');
+              reason: '禁止 popupCurrentZoom 读 --fushi-popup-zoom 计算变量');
         });
       });
     }
 
-    test('扩展侧 zoom 真值契约：content.js hibikiRender 把 zoom 设在 shadow host 上', () {
+    test('扩展侧 zoom 真值契约：content.js fushiRender 把 zoom 设在 shadow host 上', () {
       final String js =
           File('assets/browser_extension/content.js').readAsStringSync();
-      expect(js, contains('hibikiHost.style.zoom'),
-          reason: 'content.js 必须把 --hibiki-popup-zoom 落到 host.style.zoom，'
+      expect(js, contains('fushiHost.style.zoom'),
+          reason: 'content.js 必须把 --fushi-popup-zoom 落到 host.style.zoom，'
               '否则 popupCurrentZoom 在扩展表面读不到真值');
     });
 

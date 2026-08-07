@@ -107,9 +107,9 @@ void main() {
 
       test('[$root] content.css keeps the extension-only overlay', () {
         final String content = read('$root/vendor/content.css');
-        expect(content.contains('#hibiki-subtitle-panel'), isTrue,
+        expect(content.contains('#fushi-subtitle-panel'), isTrue,
             reason: '$root/vendor/content.css lost the Netflix subtitle panel');
-        expect(content.contains('--hibiki-popup-max-width'), isTrue,
+        expect(content.contains('--fushi-popup-max-width'), isTrue,
             reason:
                 '$root/vendor/content.css lost the floating-popup sizing overlay');
         // Scoped forms of the document-level popup.css rules must be present.

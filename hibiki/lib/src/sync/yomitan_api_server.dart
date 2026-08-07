@@ -34,7 +34,7 @@ const List<String> _apiKeyParameterNames = <String>[
 /// 兼容 `Kuuuube/yomitan-api` 的独立 HTTP server（宽松兼容），同时是 Hibiki 浏览器扩展
 /// （Netflix 等流媒体查词/制卡）的 API surface。只接受 POST；可选 API key 鉴权（支持
 /// x-api-key / Bearer / 裸 Authorization / query / body，也支持扩展用的
-/// `Basic base64('hibiki:'+key)`）。端点：serverVersion/yomitanVersion/termEntries/tokenize
+/// `Basic base64('fushi:'+key)`）。端点：serverVersion/yomitanVersion/termEntries/tokenize
 /// （yomitan-api 兼容）+ `/api/lookup/dictionary` + `/api/mine`（BUG-530：浏览器扩展契约，
 /// 与 FushiSyncServer 共享 [buildRemoteDictionaryLookupResponse]/[buildRemoteMineResponse]）。
 /// 浏览器扩展连接探活的 POST 端点集合：命中其一即视作「扩展（或 in-app 弹窗）活跃」。
@@ -173,7 +173,7 @@ class YomitanApiServer {
           authorization.toLowerCase().startsWith(bearerPrefix.toLowerCase())) {
         return authorization.substring(bearerPrefix.length);
       }
-      // BUG-530：Hibiki 浏览器扩展用 `Basic base64('hibiki:'+key)`（与 FushiSyncServer
+      // BUG-530：Fushi 浏览器扩展用 `Basic base64('fushi:'+key)`（与 FushiSyncServer
       // 同款鉴权），密码段=API key。解码取冒号后的 password 段与 _apiKey 比对。
       const String basicPrefix = 'Basic ';
       if (authorization.length > basicPrefix.length &&
@@ -382,7 +382,7 @@ class YomitanApiServer {
 
   /// 弹窗尺寸精细化 Phase D：浏览器扩展弹窗被拖右下角把手调整尺寸后，content.js 经
   /// background（POST `/api/extension/popup-size` {maxWidth,maxHeight}）回写最终基准最大宽
-  /// 高。走与查词同一 [_authMiddleware]（Basic `hibiki:'+key`）鉴权——**不在**免鉴权白名
+  /// 高。走与查词同一 [_authMiddleware]（Basic `fushi:'+key`）鉴权——**不在**免鉴权白名
   /// 单里，绝不新开无鉴权写入口。收到 → 交给注入的 [_onExtensionPopupSize] sink（app 侧
   /// clamp 250-2000/200-1600 + 「拖即解锁」extensionPopupIndependentSize + 只写扩展键，
   /// 绝不碰 overlay/popupMax）。未注入（旧 app / 配对 host）时 404，无副作用（向后兼容）。

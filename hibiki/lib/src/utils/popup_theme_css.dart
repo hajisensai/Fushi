@@ -35,7 +35,7 @@ String cssRgba035(Color c) => 'rgba(${cssRgbTriplet(c)}, 0.35)';
 /// - [surfaceContainerHigh]：in-app 两个注入器传 `scheme.surfaceContainerHigh`，
 ///   浏览器扩展侧历史行为是 `overrideDictionaryColor ?? scheme.surfaceContainerHigh`；
 /// - [dictionaryColumns]：`popupDictionaryColumns` 偏好。
-/// 扩展独有的 `--hibiki-color-scheme` / `--hibiki-popup-*` / `--hibiki-swipe-close`
+/// 扩展独有的 `--fushi-color-scheme` / `--fushi-popup-*` / `--fushi-swipe-close`
 /// 与 in-app 独有的 `data-theme` 属性、文档 class 仍留在各调用点。
 Map<String, String> buildPopupThemeCssVars({
   required ColorScheme scheme,

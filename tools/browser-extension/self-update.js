@@ -47,7 +47,7 @@
 
   // options 页「版本与更新」卡片：把自更新链路的状态翻成用户可读文案（纯函数，node 可测）。
   // 三态：stale（自动更新失效，需手动重载）/ dev（无内容指纹的开发副本，不参与自动更新）/
-  // ok（正常：Hibiki 升级 → 磁盘副本刷新 → 扩展自动 reload）。
+  // ok（正常：Fushi 升级 → 磁盘副本刷新 → 扩展自动 reload）。
   function describeUpdateState(defaults, stale) {
     var build = (defaults && typeof defaults.build === 'string' && defaults.build)
         ? defaults.build : '';
@@ -56,7 +56,7 @@
       return {
         tone: 'warn',
         title: '自动更新未生效',
-        detail: 'Hibiki 已内置新版扩展（' + short(stale.remote) + '），请到 chrome://extensions '
+        detail: 'Fushi 已内置新版扩展（' + short(stale.remote) + '），请到 chrome://extensions '
             + '找到本扩展点「重新加载」。当前加载：' + (short(stale.local) || '未知') + '。',
         build: build,
       };
@@ -65,14 +65,14 @@
       return {
         tone: 'neutral',
         title: '开发副本（不参与自动更新）',
-        detail: '此副本没有内容指纹（未经 Hibiki 安装助手解压），不会自动跟随 Hibiki 更新。',
+        detail: '此副本没有内容指纹（未经 Fushi 安装助手解压），不会自动跟随 Fushi 更新。',
         build: '',
       };
     }
     return {
       tone: 'ok',
-      title: '随 Hibiki 自动更新',
-      detail: 'Hibiki 升级后会刷新磁盘副本，扩展在下次心跳/查词时自动重载到最新版。',
+      title: '随 Fushi 自动更新',
+      detail: 'Fushi 升级后会刷新磁盘副本，扩展在下次心跳/查词时自动重载到最新版。',
       build: build,
     };
   }

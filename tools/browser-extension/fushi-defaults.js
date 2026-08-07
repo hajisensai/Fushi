@@ -1,4 +1,4 @@
-// TODO-1087：扩展与 Hibiki app 内 yomitan-api server 通信的「自动配置」默认值。
+// TODO-1087：扩展与 Fushi app 内 yomitan-api server 通信的「自动配置」默认值。
 //
 // 打包进 app 时这里是占位默认（host=127.0.0.1 / port=19633 = kYomitanApiDefaultPort /
 // token 空）。安装助手（browser_extension_installer.dart 的 prepareBundledBrowserExtension）

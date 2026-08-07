@@ -8,15 +8,15 @@ const vm = require('node:vm');
 // 根因：content.js 的 place() 落点逻辑在「下方放不下 → 翻到词上方」时，只把 top 夹到边距 8
 // （`top = Math.max(8, ay - H - 4)`），从不把弹窗高度夹到可用空间。当词典结果多、弹窗较高而视口
 // 不够高（vh < ~2×弹窗高）时，翻上方后 top 被夹到 8，弹窗从 8 往下铺开，直接盖住上半屏的词。
-// 修复：把落点收敛进纯函数 hibikiComputePlacement——下方能放整只→落下方；上方能放整只→落上方；
+// 修复：把落点收敛进纯函数 fushiComputePlacement——下方能放整只→落下方；上方能放整只→落上方；
 // 两侧都放不下→选空间更大的一侧并把弹窗高度夹到该侧空间（内部滚动），弹窗底/顶恰贴词边，绝不覆盖。
 // 本测试在受控 vm 里真加载 content.js，直接调用其顶层纯函数，断言：弹窗矩形在纵向上**永不**与被查
 // 词矩形重叠，且落在视口内。含旧逻辑必然翻车的高弹窗场景。
 
 const CONTENT = path.join(__dirname, 'content.js');
 
-// 加载 content.js 到最小 vm 沙箱，返回 sandbox 以取顶层纯函数（hibikiComputePlacement /
-// hibikiComputeResizedSize，均不触发任何 DOM 定位）。
+// 加载 content.js 到最小 vm 沙箱，返回 sandbox 以取顶层纯函数（fushiComputePlacement /
+// fushiComputeResizedSize，均不触发任何 DOM 定位）。
 function loadSandbox() {
   const src = fs.readFileSync(CONTENT, 'utf8');
   const noop = () => {};
@@ -60,11 +60,11 @@ function loadSandbox() {
 }
 
 function loadPlacement() {
-  return loadSandbox().hibikiComputePlacement;
+  return loadSandbox().fushiComputePlacement;
 }
 
 function loadResized() {
-  return loadSandbox().hibikiComputeResizedSize;
+  return loadSandbox().fushiComputeResizedSize;
 }
 
 // 弹窗实际渲染高度：被夹高时用 maxHeight，否则用自然高度。
@@ -85,9 +85,9 @@ const VP = { width: 1200, height: 800 };
 const SIZE_SHORT = { width: 400, height: 200 };
 const SIZE_TALL = { width: 400, height: 360 };
 
-test('顶层纯函数 hibikiComputePlacement 存在', () => {
+test('顶层纯函数 fushiComputePlacement 存在', () => {
   const fn = loadPlacement();
-  assert.strictEqual(typeof fn, 'function', 'content.js 未导出 hibikiComputePlacement 全局函数');
+  assert.strictEqual(typeof fn, 'function', 'content.js 未导出 fushiComputePlacement 全局函数');
 });
 
 // 核心回归：矮视口 + 高弹窗 + 词在上半屏——旧逻辑翻上方后夹到 top=8、从 8 往下盖住词，本例必须不覆盖。
@@ -139,13 +139,13 @@ test('词贴视口底时弹窗翻到词上方且不覆盖', () => {
   assert.ok(!overlapsVertically(pos, SIZE_SHORT, anchor), '弹窗覆盖了被查词');
 });
 
-// ── Phase D：拖拽调整尺寸的纯函数 hibikiComputeResizedSize ──
+// ── Phase D：拖拽调整尺寸的纯函数 fushiComputeResizedSize ──
 // 宽敞 bounds（视口大、可用空间远超上下限），只考验位移折算与下限。
 const WIDE_BOUNDS = { minW: 250, minH: 200, maxW: 2000, maxH: 1600 };
 
-test('顶层纯函数 hibikiComputeResizedSize 存在', () => {
+test('顶层纯函数 fushiComputeResizedSize 存在', () => {
   assert.strictEqual(typeof loadResized(), 'function',
-    'content.js 未导出 hibikiComputeResizedSize 全局函数');
+    'content.js 未导出 fushiComputeResizedSize 全局函数');
 });
 
 test('zoom=1：位移直接加到基准宽高', () => {

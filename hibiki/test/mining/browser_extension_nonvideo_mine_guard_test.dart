@@ -8,11 +8,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// 上查词后点弹窗「制卡」，扩展弹出 `✗ 没找到当前字幕，稍候再试` 且卡片没建成。
 ///
 /// 根因：批量剪辑重构后 `bridge-shim.js` 的 `mineEntry` **无条件**走视频剪辑队列
-/// `window.hibikiEnqueue`，而它要求一个视频时间窗（`hibikiCurrentCueWindowV()`）。
-/// 普通网页没有视频/字幕，取窗返回 null → `hibikiEnqueue` 返回 `{reason:'no-cue'}`
+/// `window.fushiEnqueue`，而它要求一个视频时间窗（`fushiCurrentCueWindowV()`）。
+/// 普通网页没有视频/字幕，取窗返回 null → `fushiEnqueue` 返回 `{reason:'no-cue'}`
 /// → 误报「没找到当前字幕」，制卡链路被这条视频专属分支吞掉。
 ///
-/// 根因修复：`mineEntry` 先判 `hibikiSite()`。非 youtube/netflix 的站点回落到
+/// 根因修复：`mineEntry` 先判 `fushiSite()`。非 youtube/netflix 的站点回落到
 /// background.js 早已存在的 `type:'mine'`（纯文本挖词，直接 POST {fields,sentence}）
 /// 立即制卡；剪辑队列 + `no-cue` 提示只对流媒体页保留。
 ///
@@ -26,15 +26,15 @@ void main() {
 
   group('TODO-1271 非视频页制卡回落即时制卡（不误报没有字幕）', () {
     mirrors.forEach((String name, String root) {
-      test('[$name] mineEntry 按 hibikiSite 门控：非流媒体走即时制卡回落', () {
+      test('[$name] mineEntry 按 fushiSite 门控：非流媒体走即时制卡回落', () {
         final String src = File('$root/bridge-shim.js').readAsStringSync();
 
         // 1. mineEntry 必须先判站点，不再无条件入队视频剪辑队列。
         expect(
-          src.contains("var site = (typeof hibikiSite === 'function') "
-              "? hibikiSite() : 'other';"),
+          src.contains("var site = (typeof fushiSite === 'function') "
+              "? fushiSite() : 'other';"),
           isTrue,
-          reason: '$root bridge-shim.js mineEntry 未按 hibikiSite 门控站点',
+          reason: '$root bridge-shim.js mineEntry 未按 fushiSite 门控站点',
         );
 
         // 2. 非 youtube/netflix 站点回落到 background 的纯文本挖词（type:'mine'）。
@@ -54,7 +54,7 @@ void main() {
         final int gate = src.indexOf("if (site !== 'youtube' "
             "&& site !== 'netflix')");
         final int enqueue =
-            src.indexOf('window.hibikiEnqueue(args[0], sentence)');
+            src.indexOf('window.fushiEnqueue(args[0], sentence)');
         final int noCueToast = src.indexOf("res.reason === 'no-cue'");
         expect(gate >= 0 && enqueue > gate, isTrue,
             reason: '$root bridge-shim.js 视频剪辑入队必须在非流媒体门控之后');

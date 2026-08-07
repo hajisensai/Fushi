@@ -1,7 +1,7 @@
 // asb 移植：通用流媒体字幕桥（manifest 里 world:MAIN、document_start 注入，站点见 manifest
 // matches）。做的事与 netflix-bridge.js 同构——在页面主世界拦截站点自己的网络层，拿到字幕轨
 // URL 后用页面身份（cookie）抓字幕原文，postMessage 送隔离世界 content.js 解析进
-// window.hibikiEpisodeCues（`${host+path}|${label}` 轨）。字幕面板 / 覆盖层 / 查词 / 快捷键
+// window.fushiEpisodeCues（`${host+path}|${label}` 轨）。字幕面板 / 覆盖层 / 查词 / 快捷键
 // 零站点特例地消费这些轨。
 //
 // 四类手法全部来自 asbplayer（extension/src/entrypoints/*-page.ts，MIT；
@@ -13,7 +13,7 @@
 // 红线与 netflix-bridge 相同：所有 hook 纯透传、异常绝不外泄、绝不影响站点自身播放。
 //
 // 时序竞态同 netflix-bridge：本脚本 document_start 抓字幕，content.js document_idle 才注册
-// 接收端 → 抓到的 payload 一律存档，content.js 就绪后发 {__hibikiStream:'replayCues'} 整批重放。
+// 接收端 → 抓到的 payload 一律存档，content.js 就绪后发 {__fushiStream:'replayCues'} 整批重放。
 //
 // 验证状态（诚实标注）：Netflix/YouTube 走既有已验证路径；本文件四站点为 implemented_unverified
 // ——提取逻辑逐行对照 asbplayer 已上线代码移植、纯函数部分有 node 单测，但本仓库开发环境无
@@ -126,8 +126,8 @@
 // ── 浏览器运行时（node 单测里 window/document 缺省 → 整段跳过）──
 (function () {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
-  if (window.__hibikiStreamBridge) return; // 防重复注入
-  window.__hibikiStreamBridge = true;
+  if (window.__fushiStreamBridge) return; // 防重复注入
+  window.__fushiStreamBridge = true;
   var A = (typeof self !== 'undefined' ? self : window).FUSHI_STREAM_ADAPTERS;
   var site = A.siteForHost(location.hostname);
   if (!site) return;
@@ -143,7 +143,7 @@
   }
   function postCues(label, format, text) {
     var payload = {
-      __hibikiStream: 'cues',
+      __fushiStream: 'cues',
       path: location.pathname,
       lang: label,
       format: format,
@@ -169,7 +169,7 @@
 
   window.addEventListener('message', function (e) {
     if (e.origin !== ORIGIN || e.source !== window || !e.data) return;
-    if (e.data.__hibikiStream === 'replayCues') {
+    if (e.data.__fushiStream === 'replayCues') {
       // content.js（隔离世界）接收端就绪：重放全部已存档 cue，消除注入时序竞态。
       for (var i = 0; i < archive.length; i++) post(archive[i]);
     }
@@ -243,7 +243,7 @@
         var url = arguments[1];
         if (typeof url === 'string') {
           var c = noteUrl(url);
-          if (c) this.__hibikiVodTitleId = c.titleId;
+          if (c) this.__fushiVodTitleId = c.titleId;
         }
       } catch (_) {}
       return origOpen.apply(this, arguments);
@@ -251,8 +251,8 @@
     var origSend = window.XMLHttpRequest.prototype.send;
     window.XMLHttpRequest.prototype.send = function () {
       try {
-        if (this.__hibikiVodTitleId && typeof arguments[0] === 'string') {
-          noteBody(this.__hibikiVodTitleId, arguments[0]);
+        if (this.__fushiVodTitleId && typeof arguments[0] === 'string') {
+          noteBody(this.__fushiVodTitleId, arguments[0]);
         }
       } catch (_) {}
       return origSend.apply(this, arguments);

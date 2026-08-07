@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///    「未连接」，app 重启后一直「未连接」。扩展改用 chrome.alarms 每 60s 心跳打
 ///    /api/extension/status 刷新 last-seen；app 侧时间窗放宽到 150s 留一次丢包余量。
 /// ② 需刷新浏览器：自更新 chrome.runtime.reload() 会让所有已打开页的 content script 上下文
-///    失效，用户必须手动刷新才恢复。reload 前置 hibikiReinjectPending，reload 后由新 SW
+///    失效，用户必须手动刷新才恢复。reload 前置 fushiReinjectPending，reload 后由新 SW
 ///    把 content script 重新注入已打开网页（需 scripting 权限 + 放宽 host_permissions）。
 ///
 /// flutter test cwd is the hibiki package root. background.js / manifest.json 的两镜像
@@ -31,9 +31,9 @@ void main() {
 
       test('[$name] background registers a periodic heartbeat alarm', () {
         final String src = File('$root/background.js').readAsStringSync();
-        expect(src.contains("chrome.alarms.create('hibikiHeartbeat'"), isTrue,
+        expect(src.contains("chrome.alarms.create('fushiHeartbeat'"), isTrue,
             reason:
-                '$root background.js must create the hibikiHeartbeat alarm');
+                '$root background.js must create the fushiHeartbeat alarm');
         expect(src.contains('periodInMinutes: 1'), isTrue,
             reason: '$root background.js heartbeat must fire ~every 60s '
                 '(< the 150s app-side seen window)');
@@ -42,7 +42,7 @@ void main() {
         // 心跳复用 checkVersionOnStartup —— 既刷 last-seen 又顺带比对版本。
         expect(
             src.contains(
-                "if (alarm && alarm.name === 'hibikiHeartbeat') checkVersionOnStartup();"),
+                "if (alarm && alarm.name === 'fushiHeartbeat') checkVersionOnStartup();"),
             isTrue,
             reason:
                 '$root background.js heartbeat must ping the server (refresh '
@@ -83,12 +83,12 @@ void main() {
 
       test('[$name] self-reload flags a pending re-injection', () {
         final String src = File('$root/background.js').readAsStringSync();
-        expect(src.contains('hibikiReinjectPending: true'), isTrue,
+        expect(src.contains('fushiReinjectPending: true'), isTrue,
             reason:
-                '$root background.js maybeSelfReload must set hibikiReinjectPending '
+                '$root background.js maybeSelfReload must set fushiReinjectPending '
                 'before chrome.runtime.reload() so the new SW knows to re-inject');
         // 标记必须在 reload 之前落盘。
-        final int flag = src.indexOf('hibikiReinjectPending: true');
+        final int flag = src.indexOf('fushiReinjectPending: true');
         final int reload = src.indexOf('chrome.runtime.reload();');
         expect(flag >= 0 && reload > flag, isTrue,
             reason: '$root background.js must persist the pending flag before '
@@ -106,13 +106,13 @@ void main() {
             reason:
                 '$root background.js must re-inject via chrome.scripting.executeScript');
         // 探测已存活的 content script，避免重复注入导致重复监听。
-        expect(src.contains('window.__hibikiExtension'), isTrue,
+        expect(src.contains('window.__fushiExtension'), isTrue,
             reason:
-                '$root background.js must probe window.__hibikiExtension to skip '
+                '$root background.js must probe window.__fushiExtension to skip '
                 'tabs whose content script is still alive');
         // 只对 reload 前置标记生效（不是每次 SW 冷启动都全量重注入）。
         expect(
-            src.contains("chrome.storage.local.get(['hibikiReinjectPending'])"),
+            src.contains("chrome.storage.local.get(['fushiReinjectPending'])"),
             isTrue,
             reason:
                 '$root background.js must gate re-injection on the pending flag');

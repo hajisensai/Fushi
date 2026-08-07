@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// ② 扩展状态请求写死 '{}'，app 端对浏览器里实际加载的版本零感知，扩展管理页只显示
 ///    app 内置指纹，无从提示「浏览器里那份已过期」。
 ///
-/// 修复链路：self-update.js 纯状态机（reload 一次 → 仍不一致落 hibikiUpdateStale →
+/// 修复链路：self-update.js 纯状态机（reload 一次 → 仍不一致落 fushiUpdateStale →
 /// 恢复一致清除）+ action-popup 提示 + 图标角标（录制角标优先）+ 状态请求自报
 /// build/version + server 解析回调 + app_model 记录 + 扩展管理页双行版本卡与警示条。
 ///
@@ -36,11 +36,11 @@ void main() {
             reason:
                 '$root background.js must decide via the pure state machine '
                 'instead of an early-return latch');
-        expect(src.contains('hibikiUpdateStale: decision.stale'), isTrue,
+        expect(src.contains('fushiUpdateStale: decision.stale'), isTrue,
             reason: '$root background.js must persist the stale marker when a '
                 'reload already happened but builds still mismatch');
         expect(
-            src.contains("chrome.storage.local.remove(['hibikiUpdateStale'])"),
+            src.contains("chrome.storage.local.remove(['fushiUpdateStale'])"),
             isTrue,
             reason: '$root background.js must clear the stale marker once '
                 'builds match again');
@@ -79,12 +79,12 @@ void main() {
             File('$root/vendor/action-popup.js').readAsStringSync();
         expect(html.contains('id="hp-update"'), isTrue,
             reason: '$root action-popup.html missing the update notice row');
-        expect(js.contains('hibikiUpdateNotice'), isTrue,
+        expect(js.contains('fushiUpdateNotice'), isTrue,
             reason: '$root action-popup.js missing the notice copy function');
-        expect(js.contains("chrome.storage.local.get(['hibikiUpdateStale']"),
+        expect(js.contains("chrome.storage.local.get(['fushiUpdateStale']"),
             isTrue,
-            reason: '$root action-popup.js must read hibikiUpdateStale');
-        expect(js.contains('changes.hibikiUpdateStale'), isTrue,
+            reason: '$root action-popup.js must read fushiUpdateStale');
+        expect(js.contains('changes.fushiUpdateStale'), isTrue,
             reason: '$root action-popup.js must react to stale changes live');
       });
     });

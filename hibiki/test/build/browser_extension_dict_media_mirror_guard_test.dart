@@ -22,7 +22,7 @@ void main() {
         final String src =
             File('$root/vendor/dict-media.js').readAsStringSync();
         // Extension branch: env-gated http rewrite to the server media endpoint.
-        expect(src.contains('__hibikiDictMedia'), isTrue,
+        expect(src.contains('__fushiDictMedia'), isTrue,
             reason: '$root dict-media.js missing extension env gate');
         expect(src.contains('/api/media/dictionary'), isTrue,
             reason: '$root dict-media.js missing http media endpoint rewrite');
@@ -35,9 +35,9 @@ void main() {
         final String src = File('$root/bridge-shim.js').readAsStringSync();
         expect(src.contains("type: 'dictMediaConfig'"), isTrue,
             reason: '$root bridge-shim.js does not request dictMediaConfig');
-        expect(src.contains('window.__hibikiDictMedia'), isTrue,
+        expect(src.contains('window.__fushiDictMedia'), isTrue,
             reason:
-                '$root bridge-shim.js does not set window.__hibikiDictMedia');
+                '$root bridge-shim.js does not set window.__fushiDictMedia');
       });
 
       test('[$name] background.js answers dictMediaConfig with base + token',
@@ -57,7 +57,7 @@ void main() {
             reason: '$root netflix-bridge.js missing JSON.parse hook');
         expect(src.contains('timedtexttracks'), isTrue,
             reason: '$root netflix-bridge.js missing timedtexttracks sniff');
-        expect(src.contains("__hibikiNf: 'cues'"), isTrue,
+        expect(src.contains("__fushiNf: 'cues'"), isTrue,
             reason: '$root netflix-bridge.js missing cross-world cues bridge');
       });
 
@@ -72,10 +72,10 @@ void main() {
 
       test('[$name] content.js receives full-episode cues', () {
         final String src = File('$root/content.js').readAsStringSync();
-        expect(src.contains("e.data.__hibikiNf !== 'cues'"), isTrue,
+        expect(src.contains("e.data.__fushiNf !== 'cues'"), isTrue,
             reason: '$root content.js missing full-episode cues receiver');
-        expect(src.contains('hibikiEpisodeCues'), isTrue,
-            reason: '$root content.js missing hibikiEpisodeCues store');
+        expect(src.contains('fushiEpisodeCues'), isTrue,
+            reason: '$root content.js missing fushiEpisodeCues store');
       });
 
       test('[$name] netflix-bridge runs at document_start', () {
@@ -89,26 +89,26 @@ void main() {
       test('[$name] subtitle-panel.js builds the Netflix subtitle list panel',
           () {
         final String src = File('$root/subtitle-panel.js').readAsStringSync();
-        expect(src.contains("'hibiki-subtitle-panel'"), isTrue,
+        expect(src.contains("'fushi-subtitle-panel'"), isTrue,
             reason: '$root subtitle-panel.js missing panel element id');
-        expect(src.contains('window.hibikiEpisodeCues'), isTrue,
-            reason: '$root subtitle-panel.js must consume hibikiEpisodeCues');
-        expect(src.contains("__hibikiNf: 'seek'"), isTrue,
+        expect(src.contains('window.fushiEpisodeCues'), isTrue,
+            reason: '$root subtitle-panel.js must consume fushiEpisodeCues');
+        expect(src.contains("__fushiNf: 'seek'"), isTrue,
             reason: '$root subtitle-panel.js must reuse the P1 seek bridge');
-        expect(src.contains('window.hibikiSubtitlePanelOnCues'), isTrue,
+        expect(src.contains('window.fushiSubtitlePanelOnCues'), isTrue,
             reason: '$root subtitle-panel.js missing cues-update subscription');
       });
 
       test('[$name] content.js exposes cues store + lookup entry for the panel',
           () {
         final String src = File('$root/content.js').readAsStringSync();
-        expect(src.contains('window.hibikiEpisodeCues = hibikiEpisodeCues'),
+        expect(src.contains('window.fushiEpisodeCues = fushiEpisodeCues'),
             isTrue,
-            reason: '$root content.js must expose hibikiEpisodeCues on window');
-        expect(src.contains('window.hibikiLookupAtPoint'), isTrue,
+            reason: '$root content.js must expose fushiEpisodeCues on window');
+        expect(src.contains('window.fushiLookupAtPoint'), isTrue,
             reason:
-                '$root content.js must expose hibikiLookupAtPoint for panel row lookup');
-        expect(src.contains('window.hibikiSubtitlePanelOnCues'), isTrue,
+                '$root content.js must expose fushiLookupAtPoint for panel row lookup');
+        expect(src.contains('window.fushiSubtitlePanelOnCues'), isTrue,
             reason: '$root content.js must notify the panel on new cues');
       });
 
@@ -123,44 +123,44 @@ void main() {
 
       test('[$name] content.css styles the subtitle panel', () {
         final String src = File('$root/vendor/content.css').readAsStringSync();
-        expect(src.contains('#hibiki-subtitle-panel'), isTrue,
+        expect(src.contains('#fushi-subtitle-panel'), isTrue,
             reason: '$root vendor/content.css missing subtitle panel styles');
       });
 
       // TODO-1219 P3：精确窗制卡——面板行制卡用该行整集拦截的精确 [startMs,endMs] 覆盖 DOM 采样窗。
       test('[$name] content.js mines with the panel row precise window', () {
         final String src = File('$root/content.js').readAsStringSync();
-        // hibikiEnqueue 优先消费面板行查词设下的精确窗（hibikiPendingCueWindow），否则回落 DOM 采样。
-        expect(src.contains('hibikiPendingCueWindow'), isTrue,
+        // fushiEnqueue 优先消费面板行查词设下的精确窗（fushiPendingCueWindow），否则回落 DOM 采样。
+        expect(src.contains('fushiPendingCueWindow'), isTrue,
             reason:
                 '$root content.js must thread a precise cue window for panel-row mining');
         expect(
             src.contains(
-                'cw ? { text: cw.text || \'\', startV: cw.startMs, endV: cw.endMs } : hibikiCurrentCueWindowV()'),
+                'cw ? { text: cw.text || \'\', startV: cw.startMs, endV: cw.endMs } : fushiCurrentCueWindowV()'),
             isTrue,
             reason:
-                '$root content.js hibikiEnqueue must prefer the precise window over DOM sampling');
+                '$root content.js fushiEnqueue must prefer the precise window over DOM sampling');
         // 录制边距 + 去重不得丢（复核修订 5 红线）。
         expect(
             src.contains(
                 'startV: Math.max(0, w.startV - 200), endV: w.endV + 200'),
             isTrue,
             reason: '$root content.js must keep the -200/+200 record margins');
-        expect(src.contains('hibikiQueueKey'), isTrue,
+        expect(src.contains('fushiQueueKey'), isTrue,
             reason: '$root content.js must keep TODO-1222 dedup');
       });
 
       // TODO-1219 P3：录制前撤推挤——批量录制整标签页前恢复播放器全宽（录制画面不带面板黑边）。
       test('[$name] batch capture suspends and resumes the panel push', () {
         final String src = File('$root/content.js').readAsStringSync();
-        expect(src.contains('window.hibikiSubtitlePanelSuspendPush()'), isTrue,
+        expect(src.contains('window.fushiSubtitlePanelSuspendPush()'), isTrue,
             reason:
-                '$root content.js hibikiRunNetflixBatch must un-push the player before capture');
-        expect(src.contains('window.hibikiSubtitlePanelResumePush()'), isTrue,
+                '$root content.js fushiRunNetflixBatch must un-push the player before capture');
+        expect(src.contains('window.fushiSubtitlePanelResumePush()'), isTrue,
             reason:
                 '$root content.js must re-apply the panel push after capture');
-        final int suspend = src.indexOf('hibikiSubtitlePanelSuspendPush()');
-        final int resume = src.indexOf('hibikiSubtitlePanelResumePush()');
+        final int suspend = src.indexOf('fushiSubtitlePanelSuspendPush()');
+        final int resume = src.indexOf('fushiSubtitlePanelResumePush()');
         expect(suspend >= 0 && resume > suspend, isTrue,
             reason:
                 '$root content.js must suspend push before capture and resume after');
@@ -170,19 +170,19 @@ void main() {
           '[$name] subtitle-panel.js exposes push suspend/resume + precise row window',
           () {
         final String src = File('$root/subtitle-panel.js').readAsStringSync();
-        expect(src.contains('window.hibikiSubtitlePanelSuspendPush'), isTrue,
+        expect(src.contains('window.fushiSubtitlePanelSuspendPush'), isTrue,
             reason:
                 '$root subtitle-panel.js must expose SuspendPush for batch capture');
-        expect(src.contains('window.hibikiSubtitlePanelResumePush'), isTrue,
+        expect(src.contains('window.fushiSubtitlePanelResumePush'), isTrue,
             reason:
                 '$root subtitle-panel.js must expose ResumePush for batch capture');
         expect(src.contains('st.pushSuspended'), isTrue,
             reason:
                 '$root subtitle-panel.js applyPush must be gated while suspended');
-        // 行文本查词把该行精确 [startMs,endMs] 传进 hibikiLookupAtPoint。
+        // 行文本查词把该行精确 [startMs,endMs] 传进 fushiLookupAtPoint。
         expect(
             src.contains(
-                'window.hibikiLookupAtPoint(e.clientX, e.clientY, { startMs: cue.startMs, endMs: cue.endMs, text: cue.text })'),
+                'window.fushiLookupAtPoint(e.clientX, e.clientY, { startMs: cue.startMs, endMs: cue.endMs, text: cue.text })'),
             isTrue,
             reason:
                 '$root subtitle-panel.js row lookup must carry the precise cue window');
@@ -258,7 +258,7 @@ void main() {
             reason: '$root subtitle-panel.js missing supported file picker');
         expect(src.contains("document.addEventListener('drop'"), isTrue,
             reason: '$root subtitle-panel.js missing drag-and-drop loading');
-        expect(src.contains("'hibiki-subtitle-overlay'"), isTrue,
+        expect(src.contains("'fushi-subtitle-overlay'"), isTrue,
             reason: '$root subtitle-panel.js missing video subtitle overlay');
         expect(src.contains('st.overlayAutoLookup'), isTrue,
             reason:
@@ -316,9 +316,9 @@ void main() {
             reason: '$root action-popup.html missing the subtitle-list toggle');
         expect(html.contains('面板在视频播放页侧栏'), isTrue,
             reason: '$root action-popup.html missing the toggle hint text');
-        expect(js.contains('hibikiReadPanelEnabled'), isTrue,
+        expect(js.contains('fushiReadPanelEnabled'), isTrue,
             reason:
-                '$root action-popup.js must read the panel setting via hibikiReadPanelEnabled');
+                '$root action-popup.js must read the panel setting via fushiReadPanelEnabled');
         expect(js.contains("chrome.storage.local.get(['netflixSubtitlePanel']"),
             isTrue,
             reason:
@@ -356,7 +356,7 @@ void main() {
         expect(src.contains('cueArchive'), isTrue,
             reason:
                 '$root netflix-bridge.js must archive fetched cue payloads');
-        expect(src.contains("d.__hibikiNf === 'replayCues'"), isTrue,
+        expect(src.contains("d.__fushiNf === 'replayCues'"), isTrue,
             reason:
                 '$root netflix-bridge.js must replay archived cues on replayCues');
       });
@@ -364,8 +364,8 @@ void main() {
       test('[$name] content.js requests a cue replay once its receiver is up',
           () {
         final String src = File('$root/content.js').readAsStringSync();
-        final int receiver = src.indexOf("e.data.__hibikiNf !== 'cues'");
-        final int replay = src.indexOf("{ __hibikiNf: 'replayCues' }");
+        final int receiver = src.indexOf("e.data.__fushiNf !== 'cues'");
+        final int replay = src.indexOf("{ __fushiNf: 'replayCues' }");
         expect(receiver >= 0 && replay > receiver, isTrue,
             reason:
                 '$root content.js must post replayCues after registering the '
@@ -414,9 +414,9 @@ void main() {
             reason:
                 '$root subtitle-panel.js must not early-return on non-Netflix '
                 'hosts (TODO-1363 universal panel)');
-        expect(src.contains('window.hibikiVideoKey'), isTrue,
+        expect(src.contains('window.fushiVideoKey'), isTrue,
             reason: '$root subtitle-panel.js must key tracks via the shared '
-                'hibikiVideoKey contract');
+                'fushiVideoKey contract');
         expect(src.contains('v.currentTime = ms / 1000'), isTrue,
             reason: '$root subtitle-panel.js must seek generic sites via '
                 'video.currentTime (Netflix keeps the DRM bridge)');
@@ -424,14 +424,14 @@ void main() {
 
       test('[$name] content.js provides universal subtitle providers', () {
         final String src = File('$root/content.js').readAsStringSync();
-        expect(src.contains('function hibikiHarvestTextTracks'), isTrue,
+        expect(src.contains('function fushiHarvestTextTracks'), isTrue,
             reason: '$root content.js must harvest HTML5 video.textTracks '
                 '(generic full-track provider, TODO-1363)');
         expect(src.contains('FUSHI_LIVE_LANG'), isTrue,
             reason:
                 '$root content.js must promote DOM-sampled cues into a live '
                 'track (YouTube/self-drawn captions, TODO-1363)');
-        expect(src.contains('window.hibikiVideoKey = hibikiVideoKey'), isTrue,
+        expect(src.contains('window.fushiVideoKey = fushiVideoKey'), isTrue,
             reason:
                 '$root content.js must expose the shared video-key contract');
       });
@@ -475,7 +475,7 @@ void main() {
 
   // dict-media.js 是「两 vendor 字节一致 + app 语义一致」的特殊形态：vendor 版在
   // rewriteDictionaryMediaPath / rewriteDictLinks 里有正当的扩展环境分叉
-  // （TODO-1215 __hibikiDictMedia → /api/media/dictionary），但 constructDictCss
+  // （TODO-1215 __fushiDictMedia → /api/media/dictionary），但 constructDictCss
   // （词典自带 CSS 的作用域化，含 at-rule 处理）不允许分叉——历史上 vendor 副本漏掉了
   // app 版的 at-rule 逻辑，扩展里 @font-face/@keyframes/@media 被错误加前缀。
   // 这里逐字符比对三副本的 constructDictCss 函数全文，之后任何单侧改动必红。

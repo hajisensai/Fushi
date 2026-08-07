@@ -219,12 +219,12 @@ void main() {
         '(TODO-1185)', () async {
       // TODO-1185 follow-up：浏览器扩展弹窗尺寸跟随 app 内弹窗尺寸设置。app 注入的
       // browserExtensionThemeColors 把用户配置的 popupMaxWidth/Height 作为
-      // --hibiki-popup-max-width / --hibiki-popup-max-height 放进查词响应 theme 字段，
+      // --fushi-popup-max-width / --fushi-popup-max-height 放进查词响应 theme 字段，
       // content.js 逐项 setProperty 到 #entries-container，content.css 同名 var(...) 消费。
       Map<String, String> provider() => <String, String>{
             '--md-primary': 'rgb(1, 2, 3)',
-            '--hibiki-popup-max-width': '520px',
-            '--hibiki-popup-max-height': '640px',
+            '--fushi-popup-max-width': '520px',
+            '--fushi-popup-max-height': '640px',
           };
       await startServer(apiKey: 'k123', themeColorsProvider: provider);
       final HttpClientResponse resp = await _post(
@@ -236,8 +236,8 @@ void main() {
       expect(resp.statusCode, 200);
       final Map<String, dynamic> j = await _json(resp);
       final Map<String, dynamic> theme = j['theme'] as Map<String, dynamic>;
-      expect(theme['--hibiki-popup-max-width'], '520px');
-      expect(theme['--hibiki-popup-max-height'], '640px');
+      expect(theme['--fushi-popup-max-width'], '520px');
+      expect(theme['--fushi-popup-max-height'], '640px');
     });
 
     test('lookup response omits theme when provider absent (backward compat)',

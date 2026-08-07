@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // TODO-1219 复诉根因守卫：主世界 netflix-bridge.js document_start 抓字幕并 postMessage，隔离世界
 // content.js document_idle 才注册接收端——先于接收端发出的 cue 消息永久丢失，store 空 → 勾选面板
 // 开关无物可挂（用户「必须刷新页面才加载出来」）、只剩预取下一集轨（「面板出现但列表空」）。
-// 修复契约：bridge 存档所有已抓 cue payload，收到 {__hibikiNf:'replayCues'} 时整批重放。
+// 修复契约：bridge 存档所有已抓 cue payload，收到 {__fushiNf:'replayCues'} 时整批重放。
 // 本测试在受控 vm 里真加载 netflix-bridge.js：喂 JSON.parse 一份含 timedtexttracks 的播放清单
 // （全语言多轨），等 fetch 完成后清空收件箱，再发 replayCues，断言全部轨被重放。
 
@@ -74,7 +74,7 @@ test('bridge 抓全语言轨并在 replayCues 时整批重放（修「勾选要�
   vm.runInContext('JSON.parse(' + JSON.stringify(JSON.stringify(makeManifest())) + ')', h.ctx);
   await settle();
   assert.strictEqual(h.fetched.length, 3, '三条语言轨都必须被抓取（无语言过滤）');
-  const first = h.posted.filter((p) => p.msg && p.msg.__hibikiNf === 'cues');
+  const first = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cues');
   assert.strictEqual(first.length, 3, '三条轨都必须 post 给隔离世界');
   const langs = first.map((p) => p.msg.lang).sort();
   assert.deepStrictEqual(langs, ['en', 'ja', 'zh-Hans'], '语言标签原样透传');
@@ -86,10 +86,10 @@ test('bridge 抓全语言轨并在 replayCues 时整批重放（修「勾选要�
     fn({
       origin: 'https://www.netflix.com',
       source: h.windowObj,
-      data: { __hibikiNf: 'replayCues' },
+      data: { __fushiNf: 'replayCues' },
     });
   }
-  const replayed = h.posted.filter((p) => p.msg && p.msg.__hibikiNf === 'cues');
+  const replayed = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cues');
   assert.strictEqual(replayed.length, 3, 'replayCues 必须整批重放已存档的轨');
   assert.deepStrictEqual(replayed.map((p) => p.msg.lang).sort(), ['en', 'ja', 'zh-Hans']);
   // 重放的是同一份 payload（存档非重新抓取）。
@@ -102,8 +102,8 @@ test('replayCues 只认同源同窗消息（不被宿主页第三方 iframe 驱�
   await settle();
   h.posted.length = 0;
   for (const fn of h.listeners) {
-    fn({ origin: 'https://evil.example', source: h.windowObj, data: { __hibikiNf: 'replayCues' } });
-    fn({ origin: 'https://www.netflix.com', source: {}, data: { __hibikiNf: 'replayCues' } });
+    fn({ origin: 'https://evil.example', source: h.windowObj, data: { __fushiNf: 'replayCues' } });
+    fn({ origin: 'https://www.netflix.com', source: {}, data: { __fushiNf: 'replayCues' } });
   }
   assert.strictEqual(h.posted.length, 0, '跨源/跨窗的 replayCues 必须被忽略');
 });
@@ -115,7 +115,7 @@ test('BUG-769 opaque origin（file://）下 cue 往返不丢：自投用 "/"、�
   const h = loadBridge({ locationOrigin: 'file://', windowOrigin: 'null' });
   vm.runInContext('JSON.parse(' + JSON.stringify(JSON.stringify(makeManifest())) + ')', h.ctx);
   await settle();
-  const cues = h.posted.filter((p) => p.msg && p.msg.__hibikiNf === 'cues');
+  const cues = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cues');
   assert.strictEqual(cues.length, 3, 'file:// 下仍抓全 3 轨');
   // targetOrigin 必须是 "/"（= 仅同源同窗投递，对不透明源成立）；绝不能是 location.origin/'file://'。
   for (const p of cues) {
@@ -125,9 +125,9 @@ test('BUG-769 opaque origin（file://）下 cue 往返不丢：自投用 "/"、�
   // content.js 晚注入后请求重放：e.origin 为不透明源序列化 'null'，接收端须认可（ORIGIN=window.origin='null'）。
   h.posted.length = 0;
   for (const fn of h.listeners) {
-    fn({ origin: 'null', source: h.windowObj, data: { __hibikiNf: 'replayCues' } });
+    fn({ origin: 'null', source: h.windowObj, data: { __fushiNf: 'replayCues' } });
   }
-  const replayed = h.posted.filter((p) => p.msg && p.msg.__hibikiNf === 'cues');
+  const replayed = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cues');
   assert.strictEqual(replayed.length, 3, 'file:// opaque origin 的 replayCues 必须被接收端认可并整批重放');
   for (const p of replayed) {
     assert.strictEqual(p.origin, '/', '重放同样用 "/" 作 targetOrigin');

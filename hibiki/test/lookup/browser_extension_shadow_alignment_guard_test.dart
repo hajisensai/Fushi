@@ -43,7 +43,7 @@ void main() {
 
   test('extension still renders the popup inside a shadow root', () {
     final String source = _read('../tools/browser-extension/content.js');
-    expect(source, contains("hibikiHost.attachShadow({ mode: 'open' })"));
+    expect(source, contains("fushiHost.attachShadow({ mode: 'open' })"));
     expect(source, contains("c.id = 'entries-container'"));
   });
 }

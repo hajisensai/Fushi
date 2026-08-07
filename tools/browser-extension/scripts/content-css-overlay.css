@@ -19,23 +19,23 @@
        the host page, not the standalone 400x360 WebView document the in-app popup
        lives in. Without a size box it stretches to fill the whole viewport. Bound
        it to the app default (400 wide, 360 tall, internal scroll); the optional
-       --hibiki-popup-* vars (lookup response may inject) still override. */
-    width: var(--hibiki-popup-max-width, 400px);
+       --fushi-popup-* vars (lookup response may inject) still override. */
+    width: var(--fushi-popup-max-width, 400px);
     max-width: calc(100vw - 16px);
-    max-height: min(var(--hibiki-popup-max-height, 360px), 80vh);
+    max-height: min(var(--fushi-popup-max-height, 360px), 80vh);
     overflow-x: hidden;
     overflow-y: auto;
     padding: 0 10px 10px;
-    /* TODO-1185：消费查词响应下发的 --hibiki-popup-zoom（词典字号，跟随 app 弹窗字号设置）。
+    /* TODO-1185：消费查词响应下发的 --fushi-popup-zoom（词典字号，跟随 app 弹窗字号设置）。
        用 CSS zoom 整体缩放弹窗内容（与 in-app 弹窗把 documentElement.style.zoom 缩放同效）；
        content.js place() 会按此 zoom 除算 fixed 定位坐标，避免放大偏移。缺省 1 = 零影响。 */
-    zoom: var(--hibiki-popup-zoom, 1);
+    zoom: var(--fushi-popup-zoom, 1);
 }
 
 /* 制卡队列浮动 chip（TODO-1184）：头部 pill（计数 + 生成）+ 可展开列表（逐项删除）。
-   #hibiki-queue-chip 是 content.js 挂在宿主页 body 上的独立元素（不在 #entries-container 内），
+   #fushi-queue-chip 是 content.js 挂在宿主页 body 上的独立元素（不在 #entries-container 内），
    用具体 ID 选择器，绝不污染宿主页其它节点。 */
-#hibiki-queue-chip {
+#fushi-queue-chip {
     position: fixed;
     right: 16px;
     bottom: 16px;
@@ -47,7 +47,7 @@
     user-select: none;
 }
 
-#hibiki-queue-chip .hibiki-queue-header {
+#fushi-queue-chip .fushi-queue-header {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -58,12 +58,12 @@
     cursor: pointer;
 }
 
-#hibiki-queue-chip .hibiki-queue-label {
+#fushi-queue-chip .fushi-queue-label {
     flex: 1 1 auto;
     min-width: 0;
 }
 
-#hibiki-queue-chip .hibiki-queue-gen {
+#fushi-queue-chip .fushi-queue-gen {
     flex-shrink: 0;
     border: none;
     border-radius: 12px;
@@ -74,11 +74,11 @@
     cursor: pointer;
 }
 
-#hibiki-queue-chip .hibiki-queue-gen:active {
+#fushi-queue-chip .fushi-queue-gen:active {
     opacity: 0.6;
 }
 
-#hibiki-queue-chip .hibiki-queue-list {
+#fushi-queue-chip .fushi-queue-list {
     margin-top: 6px;
     max-height: 240px;
     overflow-y: auto;
@@ -87,7 +87,7 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
-#hibiki-queue-chip .hibiki-queue-row {
+#fushi-queue-chip .fushi-queue-row {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -95,11 +95,11 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-#hibiki-queue-chip .hibiki-queue-row:last-child {
+#fushi-queue-chip .fushi-queue-row:last-child {
     border-bottom: none;
 }
 
-#hibiki-queue-chip .hibiki-queue-row-text {
+#fushi-queue-chip .fushi-queue-row-text {
     flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
@@ -107,7 +107,7 @@
     white-space: nowrap;
 }
 
-#hibiki-queue-chip .hibiki-queue-row-del {
+#fushi-queue-chip .fushi-queue-row-del {
     flex-shrink: 0;
     width: 20px;
     height: 20px;
@@ -122,23 +122,23 @@
     cursor: pointer;
 }
 
-#hibiki-queue-chip .hibiki-queue-row-del:active {
+#fushi-queue-chip .fushi-queue-row-del:active {
     opacity: 0.6;
 }
 
 /* TODO-1219 P2：Netflix 整集字幕列表面板（subtitle-panel.js 挂在宿主页 / fullscreenElement 上的
-   独立元素 #hibiki-subtitle-panel，不在 #entries-container 内）。全部用具体 ID/后代选择器，绝不
+   独立元素 #fushi-subtitle-panel，不在 #entries-container 内）。全部用具体 ID/后代选择器，绝不
    污染宿主页其它节点。配色复用 MD3 --md-* 变量（Dart 注入时跟随 app 主题；未注入时用字面兜底），
    与查词弹窗同源。z-index 低于查词弹窗（2147483647）一档，使弹窗盖在面板之上。 */
-#hibiki-subtitle-panel {
-    --hibiki-sub-font-scale: 1;
-    --hibiki-sub-surface: var(--md-surface, #14151a);
-    --hibiki-sub-on-surface: var(--md-on-surface, #e6e1e5);
-    --hibiki-sub-on-variant: var(--md-on-surface-variant, #c4c8be);
-    --hibiki-sub-outline: var(--md-outline-variant, rgba(255, 255, 255, 0.12));
-    --hibiki-sub-primary: var(--md-primary, #9dd7b8);
-    --hibiki-sub-primary-container: var(--md-primary-container, #223d31);
-    --hibiki-sub-on-primary-container: var(--md-on-primary-container, #b9f2cf);
+#fushi-subtitle-panel {
+    --fushi-sub-font-scale: 1;
+    --fushi-sub-surface: var(--md-surface, #14151a);
+    --fushi-sub-on-surface: var(--md-on-surface, #e6e1e5);
+    --fushi-sub-on-variant: var(--md-on-surface-variant, #c4c8be);
+    --fushi-sub-outline: var(--md-outline-variant, rgba(255, 255, 255, 0.12));
+    --fushi-sub-primary: var(--md-primary, #9dd7b8);
+    --fushi-sub-primary-container: var(--md-primary-container, #223d31);
+    --fushi-sub-on-primary-container: var(--md-on-primary-container, #b9f2cf);
     position: fixed;
     top: 0;
     right: 0;
@@ -148,37 +148,37 @@
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-    background: var(--hibiki-sub-surface);
-    color: var(--hibiki-sub-on-surface);
+    background: var(--fushi-sub-surface);
+    color: var(--fushi-sub-on-surface);
     font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif;
     box-shadow: -4px 0 16px rgba(0, 0, 0, 0.35);
     -webkit-user-select: none;
     user-select: none;
 }
 
-#hibiki-subtitle-panel[data-theme="light"] {
-    --hibiki-sub-surface: var(--md-surface, #fbfdf7);
-    --hibiki-sub-on-surface: var(--md-on-surface, #191c19);
-    --hibiki-sub-on-variant: var(--md-on-surface-variant, #44483f);
-    --hibiki-sub-outline: var(--md-outline-variant, rgba(0, 0, 0, 0.12));
-    --hibiki-sub-primary: var(--md-primary, #386a58);
-    --hibiki-sub-primary-container: var(--md-primary-container, #b9f2cf);
-    --hibiki-sub-on-primary-container: var(--md-on-primary-container, #00210f);
+#fushi-subtitle-panel[data-theme="light"] {
+    --fushi-sub-surface: var(--md-surface, #fbfdf7);
+    --fushi-sub-on-surface: var(--md-on-surface, #191c19);
+    --fushi-sub-on-variant: var(--md-on-surface-variant, #44483f);
+    --fushi-sub-outline: var(--md-outline-variant, rgba(0, 0, 0, 0.12));
+    --fushi-sub-primary: var(--md-primary, #386a58);
+    --fushi-sub-primary-container: var(--md-primary-container, #b9f2cf);
+    --fushi-sub-on-primary-container: var(--md-on-primary-container, #00210f);
 }
 
-#hibiki-subtitle-panel .hibiki-sub-header {
+#fushi-subtitle-panel .fushi-sub-header {
     flex: 0 0 auto;
     padding: 8px 6px 8px 14px;
-    border-bottom: 1px solid var(--hibiki-sub-outline);
+    border-bottom: 1px solid var(--fushi-sub-outline);
 }
 
-#hibiki-subtitle-panel .hibiki-sub-title-row {
+#fushi-subtitle-panel .fushi-sub-title-row {
     display: flex;
     align-items: center;
     gap: 2px;
 }
 
-#hibiki-subtitle-panel .hibiki-sub-title {
+#fushi-subtitle-panel .fushi-sub-title {
     flex: 1 1 auto;
     min-width: 0;
     font-size: 15px;
@@ -188,7 +188,7 @@
     white-space: nowrap;
 }
 
-#hibiki-subtitle-panel .hibiki-sub-iconbtn {
+#fushi-subtitle-panel .fushi-sub-iconbtn {
     flex: 0 0 auto;
     min-width: 26px;
     height: 26px;
@@ -196,86 +196,86 @@
     border: none;
     border-radius: 13px;
     background: transparent;
-    color: var(--hibiki-sub-on-variant);
+    color: var(--fushi-sub-on-variant);
     font: 600 13px/1 sans-serif;
     cursor: pointer;
 }
 
-#hibiki-subtitle-panel .hibiki-sub-iconbtn:hover {
+#fushi-subtitle-panel .fushi-sub-iconbtn:hover {
     background: rgba(128, 128, 128, 0.16);
 }
 
-#hibiki-subtitle-panel .hibiki-sub-iconbtn.is-on {
-    color: var(--hibiki-sub-primary);
+#fushi-subtitle-panel .fushi-sub-iconbtn.is-on {
+    color: var(--fushi-sub-primary);
 }
 
-#hibiki-subtitle-panel .hibiki-sub-lang {
+#fushi-subtitle-panel .fushi-sub-lang {
     margin-top: 6px;
     max-width: 100%;
     padding: 3px 6px;
-    border: 1px solid var(--hibiki-sub-outline);
+    border: 1px solid var(--fushi-sub-outline);
     border-radius: 6px;
     background: transparent;
-    color: var(--hibiki-sub-on-surface);
+    color: var(--fushi-sub-on-surface);
     font-size: 12px;
 }
 
 /* B（asb 招牌）：外挂字幕时轴偏移条——仅当前轨为外挂字幕时显示（JS 控制 display）。 */
-#hibiki-subtitle-panel .hibiki-sub-offset {
+#fushi-subtitle-panel .fushi-sub-offset {
     display: flex;
     align-items: center;
     gap: 4px;
     margin-top: 6px;
 }
 
-#hibiki-subtitle-panel .hibiki-sub-offset-val {
+#fushi-subtitle-panel .fushi-sub-offset-val {
     min-width: 44px;
     text-align: center;
     font-size: 12px;
-    color: var(--hibiki-sub-on-surface);
+    color: var(--fushi-sub-on-surface);
     font-variant-numeric: tabular-nums;
 }
 
-#hibiki-subtitle-panel .hibiki-sub-list {
+#fushi-subtitle-panel .fushi-sub-list {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    font-size: calc(14px * var(--hibiki-sub-font-scale));
+    font-size: calc(14px * var(--fushi-sub-font-scale));
 }
 
-#hibiki-subtitle-panel .hibiki-sub-empty {
+#fushi-subtitle-panel .fushi-sub-empty {
     padding: 40px 16px;
     text-align: center;
-    color: var(--hibiki-sub-on-variant);
+    color: var(--fushi-sub-on-variant);
     font-size: 13px;
     opacity: 0.8;
 }
 
-#hibiki-subtitle-panel .hibiki-sub-row {
+#fushi-subtitle-panel .fushi-sub-row {
     display: flex;
     align-items: flex-start;
     gap: 8px;
     padding: 8px 10px 8px 8px;
-    border-bottom: 1px solid var(--hibiki-sub-outline);
+    border-bottom: 1px solid var(--fushi-sub-outline);
 }
 
-#hibiki-subtitle-panel .hibiki-sub-row.is-current {
-    background: var(--hibiki-sub-primary-container);
+#fushi-subtitle-panel .fushi-sub-row.is-current {
+    background: var(--fushi-sub-primary-container);
 }
 
-#hibiki-subtitle-panel .hibiki-sub-row.is-current .hibiki-sub-text,
-#hibiki-subtitle-panel .hibiki-sub-row.is-current .hibiki-sub-ts {
-    color: var(--hibiki-sub-on-primary-container);
+#fushi-subtitle-panel .fushi-sub-row.is-current .fushi-sub-text,
+#fushi-subtitle-panel .fushi-sub-row.is-current .fushi-sub-ts {
+    color: var(--fushi-sub-on-primary-container);
 }
 
-#hibiki-subtitle-panel .hibiki-sub-ts {
+#fushi-subtitle-panel .fushi-sub-ts {
     flex: 0 0 auto;
     min-width: 44px;
     padding: 1px 4px 0 0;
     border: none;
     background: transparent;
-    color: var(--hibiki-sub-on-variant);
+    color: var(--fushi-sub-on-variant);
     font: inherit;
     font-variant-numeric: tabular-nums;
     text-align: left;
@@ -283,11 +283,11 @@
     white-space: nowrap;
 }
 
-#hibiki-subtitle-panel .hibiki-sub-ts:hover {
+#fushi-subtitle-panel .fushi-sub-ts:hover {
     text-decoration: underline;
 }
 
-#hibiki-subtitle-panel .hibiki-sub-text {
+#fushi-subtitle-panel .fushi-sub-text {
     flex: 1 1 auto;
     min-width: 0;
     line-height: 1.35;
@@ -299,7 +299,7 @@
 }
 
 /* 关闭后右缘重开小片 */
-#hibiki-subtitle-reopen {
+#fushi-subtitle-reopen {
     position: fixed;
     top: 50%;
     right: 0;
@@ -316,12 +316,12 @@
     box-shadow: -2px 0 10px rgba(0, 0, 0, 0.4);
 }
 
-#hibiki-subtitle-reopen[data-theme="light"] {
+#fushi-subtitle-reopen[data-theme="light"] {
     background: rgba(56, 106, 88, 0.94);
 }
 
 /* 用户外挂字幕：只显示当前外挂轨，不复制站点原生字幕。按 video rect 动态定位，文本仍可点击查词。 */
-#hibiki-subtitle-overlay {
+#fushi-subtitle-overlay {
     position: fixed;
     z-index: 2147483637;
     transform: translate(-50%, -50%);
@@ -340,7 +340,7 @@
 }
 
 /* 拖字幕文件时的单一全局提示；pointer-events:none，绝不抢宿主页 drop。 */
-#hibiki-subtitle-drop-hint {
+#fushi-subtitle-drop-hint {
     position: fixed;
     inset: 24px;
     z-index: 2147483646;

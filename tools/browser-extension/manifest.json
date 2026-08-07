@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Hibiki Reader Bridge",
+  "name": "Fushi Reader Bridge",
   "version": "0.1.0",
-  "description": "Look up words on web pages using Hibiki's dictionaries.",
+  "description": "Look up words on web pages using Fushi's dictionaries.",
   "permissions": ["storage", "activeTab", "tabCapture", "offscreen", "scripting", "alarms"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": { "service_worker": "background.js" },
@@ -41,5 +41,5 @@
     { "resources": ["vendor/content.css"], "matches": ["<all_urls>"] }
   ],
   "options_page": "options.html",
-  "action": { "default_title": "Hibiki Reader Bridge", "default_popup": "vendor/action-popup.html" }
+  "action": { "default_title": "Fushi Reader Bridge", "default_popup": "vendor/action-popup.html" }
 }

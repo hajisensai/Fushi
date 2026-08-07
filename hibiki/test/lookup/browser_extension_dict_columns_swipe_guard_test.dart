@@ -8,7 +8,7 @@
 //     落到 document.documentElement，让 masonry 读数 / effective 收敛 / grid 继承三条路径命中。
 //
 //  2) 滑动关闭：app 的 enableSwipeToClose 偏好此前未随 theme 下发，扩展浮动弹窗也没有任何拖手势
-//     （只 mousedown 点外部关窗）。修法：browserExtensionThemeColors() 下发 --hibiki-swipe-close
+//     （只 mousedown 点外部关窗）。修法：browserExtensionThemeColors() 下发 --fushi-swipe-close
 //     ('1'/'0')，content.js 据此在弹窗宿主上启用水平拖关手势（设置项文案即「水平滑动关闭查词弹窗」）。
 //
 // 纯源码不变量（CI 只跑 .dart）。两 content.js 镜像的字节一致由
@@ -19,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('browser extension dict-columns + swipe-close app parity', () {
-    test('browserExtensionThemeColors 下发 --dict-columns 与 --hibiki-swipe-close',
+    test('browserExtensionThemeColors 下发 --dict-columns 与 --fushi-swipe-close',
         () {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();
@@ -29,14 +29,14 @@ void main() {
       expect(src, contains("'--dict-columns': '\$popupDictionaryColumns'"),
           reason: 'theme 必须下发 --dict-columns（扩展多列布局的列数来源）');
       // 滑动关闭：把 enableSwipeToClose 偏好以 '1'/'0' 随 theme 下发给 content.js。
-      expect(src, contains("'--hibiki-swipe-close'"),
-          reason: 'theme 必须下发 --hibiki-swipe-close 供 content.js 决定是否启用拖关手势');
+      expect(src, contains("'--fushi-swipe-close'"),
+          reason: 'theme 必须下发 --fushi-swipe-close 供 content.js 决定是否启用拖关手势');
       expect(
           RegExp(r'ReaderHibikiSource\.instance\.enableSwipeToClose\s*\?\s*'
                   "'1'\\s*:\\s*'0'")
               .hasMatch(src),
           isTrue,
-          reason: '--hibiki-swipe-close 值必须取自 enableSwipeToClose 偏好（1/0）');
+          reason: '--fushi-swipe-close 值必须取自 enableSwipeToClose 偏好（1/0）');
     });
 
     test(
@@ -56,24 +56,24 @@ void main() {
               '否则 popup.js masonry 从 documentElement 读不到 → 恒单列（用户报的多列不生效）');
     });
 
-    test('content.js 读 --hibiki-swipe-close 并装水平拖关手势', () {
+    test('content.js 读 --fushi-swipe-close 并装水平拖关手势', () {
       final String js =
           File('assets/browser_extension/content.js').readAsStringSync();
       // 偏好门控标志：只有开启才真正关窗。
-      expect(js, contains("theme['--hibiki-swipe-close']"),
-          reason: 'content.js 必须读 app 下发的 --hibiki-swipe-close 偏好');
-      expect(js, contains('hibikiSwipeCloseEnabled'),
-          reason: '必须有门控标志 hibikiSwipeCloseEnabled（关时纯 no-op）');
-      // 手势安装函数存在、挂在弹窗宿主上、并调 hibikiRemoveContainer 关窗。
-      expect(js, contains('function hibikiInstallSwipeClose('),
-          reason: '必须有水平拖关手势安装函数 hibikiInstallSwipeClose');
-      expect(js, contains('hibikiInstallSwipeClose(hibikiHost)'),
-          reason: '手势必须挂到弹窗宿主 hibikiHost 上');
+      expect(js, contains("theme['--fushi-swipe-close']"),
+          reason: 'content.js 必须读 app 下发的 --fushi-swipe-close 偏好');
+      expect(js, contains('fushiSwipeCloseEnabled'),
+          reason: '必须有门控标志 fushiSwipeCloseEnabled（关时纯 no-op）');
+      // 手势安装函数存在、挂在弹窗宿主上、并调 fushiRemoveContainer 关窗。
+      expect(js, contains('function fushiInstallSwipeClose('),
+          reason: '必须有水平拖关手势安装函数 fushiInstallSwipeClose');
+      expect(js, contains('fushiInstallSwipeClose(fushiHost)'),
+          reason: '手势必须挂到弹窗宿主 fushiHost 上');
       // 水平主导判据 + 过阈才关（避免竖向滚动/选区误触）。
       expect(js, contains('FUSHI_SWIPE_CLOSE_THRESHOLD'),
           reason: '必须有水平拖关阈值常量');
-      expect(js, contains('hibikiRemoveContainer()'),
-          reason: '过阈后必须调 hibikiRemoveContainer() 真正关窗');
+      expect(js, contains('fushiRemoveContainer()'),
+          reason: '过阈后必须调 fushiRemoveContainer() 真正关窗');
       // pointer（桌面鼠标）+ touch（移动浏览器）双家族，且 pointer 路径排除 touch 避免双触发。
       expect(js, contains("addEventListener('pointerdown'"),
           reason: '桌面鼠标走 pointer 路径');

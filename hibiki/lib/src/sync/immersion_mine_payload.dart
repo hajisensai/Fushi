@@ -48,7 +48,7 @@ class ImmersionMinePayload {
   /// BUG-1416 —— 片段的**时间基锚点**：[clipBytes] 的 t=0 对应的**视频时间**（毫秒）。
   ///
   /// 录制不是从字幕句首开整的：扩展 seek 到 `cueStart-200` 后要等 seek 落定、等缓冲、
-  /// 等 `currentTime` 真前进（`content.js` 的 `hibikiWaitForPlaying`，40ms 轮询）才发
+  /// 等 `currentTime` 真前进（`content.js` 的 `fushiWaitForPlaying`，40ms 轮询）才发
   /// `beginClip`，再经一次 IPC 往返才真正 `recorder.start()`。这段推进量既非零也不固定，
   /// **不能假设 t=0 == cueStart-200**。故由扩展在 `beginClip` 前后各采一次 `v.currentTime`、
   /// 取中点实测下发。null = 老版扩展没发（此时无法把任何视频时间换算成片段内偏移）。

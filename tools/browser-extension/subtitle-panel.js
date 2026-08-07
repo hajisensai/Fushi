@@ -1,26 +1,26 @@
 // TODO-1219 P2 / TODO-1363：通用字幕列表面板（content script 隔离世界，manifest bundle 里排在
-// content.js 之后加载，随 <all_urls> 注入所有站点）。消费 window.hibikiEpisodeCues 里按
+// content.js 之后加载，随 <all_urls> 注入所有站点）。消费 window.fushiEpisodeCues 里按
 // `${videoKey}|${lang}` 存档的字幕轨——Netflix 走整集拦截、原生 TextTrack 站点走 textTracks 收割、
 // YouTube 等自绘字幕站点走 DOM 采样 live 轨（provider 全在 content.js，面板零站点特例）——渲染成
 // 近似 app 内 VideoSubtitleJumpPanel 的侧栏：头部标题 + 语言/轨切换 + A-/A+ 字号 + 自动滚动
 // 开关 + 关闭；每行时间戳 + 文本 + 当前句高亮。行为：
-//   · 时间戳点击 → Netflix（DRM）复用 P1 的 nfSeek（postMessage {__hibikiNf:'seek',ms}，走
+//   · 时间戳点击 → Netflix（DRM）复用 P1 的 nfSeek（postMessage {__fushiNf:'seek',ms}，走
 //     Netflix 官方 player.seek，不触发 M7375，不碰 DRM）；其余站点直接 video.currentTime。
-//   · 文本点击 → window.hibikiLookupAtPoint（content.js 暴露，复用同一套 hoshiSelection 取词
-//     + 查词弹窗 hibikiRender）；文本保留真实 DOM，全局 mousemove+Shift 划词照常生效。
-//   · 制卡入口 = 上述查词弹窗自带的「制卡」按钮（bridge-shim mineEntry → window.hibikiEnqueue，
+//   · 文本点击 → window.fushiLookupAtPoint（content.js 暴露，复用同一套 hoshiSelection 取词
+//     + 查词弹窗 fushiRender）；文本保留真实 DOM，全局 mousemove+Shift 划词照常生效。
+//   · 制卡入口 = 上述查词弹窗自带的「制卡」按钮（bridge-shim mineEntry → window.fushiEnqueue，
 //     携带真实词 fields + 句子），面板不再另造合成 fields 的行级按钮。行的精确 [startMs,endMs]
 //     窗留给 P3（截图剪裁 + 精确窗覆盖 DOM 采样）。
 //   · 当前句高亮 + 自动滚动：面板自持 200ms 计时器读 <video>.currentTime，对当前轨 cues 二分
 //     命中当前句（精确窗，胜过 DOM 文本匹配），高亮对应行并（开启时）滚入视图。
-// 面板只依赖 window.hibikiEpisodeCues / window.hibikiLookupAtPoint / postMessage 三个契约，
+// 面板只依赖 window.fushiEpisodeCues / window.fushiLookupAtPoint / postMessage 三个契约，
 // 不跨文件依赖 content.js 的 const 词法作用域，Netflix DOM 抖动时降级为纯覆盖（不推挤）。
 (function () {
   'use strict';
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
-  var PANEL_ID = 'hibiki-subtitle-panel';
-  var REOPEN_ID = 'hibiki-subtitle-reopen';
+  var PANEL_ID = 'fushi-subtitle-panel';
+  var REOPEN_ID = 'fushi-subtitle-reopen';
   var PANEL_WIDTH = 320;
   var FONT_STEPS = [0.85, 1.0, 1.15, 1.3];
   var PUSH_SELECTORS = [
@@ -93,11 +93,11 @@
     showPanel();
   }
 
-  // 当前视频身份 key：与 content.js 各 provider 写 store 用的同一把 key（window.hibikiVideoKey
+  // 当前视频身份 key：与 content.js 各 provider 写 store 用的同一把 key（window.fushiVideoKey
   // 契约）。契约缺失（加载顺序异常/单测隔离）时本地回落同构实现。
   function videoKey() {
     try {
-      if (typeof window.hibikiVideoKey === 'function') return window.hibikiVideoKey();
+      if (typeof window.fushiVideoKey === 'function') return window.fushiVideoKey();
     } catch (_) {}
     var m = (location.pathname || '').match(/\/watch\/(\d+)/);
     if (/(^|\.)netflix\.com$/.test(location.hostname) && m) return m[1];
@@ -124,7 +124,7 @@
   // DOM 采样 live 轨的伪语言码（content.js FUSHI_LIVE_LANG）：排序垫底 + 显示中文标签。
   var LIVE_LANG = 'live';
   function tracksForVideo() {
-    var store = window.hibikiEpisodeCues || null;
+    var store = window.fushiEpisodeCues || null;
     var vid = videoKey();
     var out = [];
     if (!store || !vid) return out;
@@ -185,7 +185,7 @@
     if (/(^|\.)netflix\.com$/.test(location.hostname)) {
       // Netflix（DRM 平台边界）：走主世界 bridge 的官方 player.seek（直接改 currentTime 会触发 M7375）。
       // BUG-769：自投用 targetOrigin '/'，file:// opaque origin 下 location.origin('file://')≠recipient('null') 会抛错。
-      try { window.postMessage({ __hibikiNf: 'seek', ms: ms }, '/'); } catch (_) {}
+      try { window.postMessage({ __fushiNf: 'seek', ms: ms }, '/'); } catch (_) {}
       return;
     }
     var v = videoEl();
@@ -246,19 +246,19 @@
     panel.style.width = PANEL_WIDTH + 'px';
 
     var header = document.createElement('div');
-    header.className = 'hibiki-sub-header';
+    header.className = 'fushi-sub-header';
 
     var titleRow = document.createElement('div');
-    titleRow.className = 'hibiki-sub-title-row';
+    titleRow.className = 'fushi-sub-title-row';
 
     var title = document.createElement('div');
-    title.className = 'hibiki-sub-title';
+    title.className = 'fushi-sub-title';
     title.textContent = '字幕列表';
     titleRow.appendChild(title);
 
     function iconBtn(label, tip, onClick) {
       var b = document.createElement('button');
-      b.className = 'hibiki-sub-iconbtn';
+      b.className = 'fushi-sub-iconbtn';
       b.type = 'button';
       b.textContent = label;
       b.title = tip;
@@ -286,7 +286,7 @@
     header.appendChild(titleRow);
 
     var langSelect = document.createElement('select');
-    langSelect.className = 'hibiki-sub-lang';
+    langSelect.className = 'fushi-sub-lang';
     langSelect.addEventListener('change', function () {
       st.activeLang = langSelect.value;
       st.builtLang = null;
@@ -297,11 +297,11 @@
 
     // asb 移植：字幕时轴偏移条——任意当前轨（检测轨/外挂轨）都可偏移。−/＋ 微调让字幕对齐视频。
     var offsetBar = document.createElement('div');
-    offsetBar.className = 'hibiki-sub-offset';
+    offsetBar.className = 'fushi-sub-offset';
     offsetBar.style.display = 'none';
     function offBtn(label, deltaMs) {
       var b = document.createElement('button');
-      b.className = 'hibiki-sub-iconbtn';
+      b.className = 'fushi-sub-iconbtn';
       b.type = 'button';
       b.textContent = label;
       b.title = '字幕时轴偏移 ' + label + ' 秒';
@@ -309,14 +309,14 @@
       return b;
     }
     var offsetLabel = document.createElement('span');
-    offsetLabel.className = 'hibiki-sub-offset-val';
+    offsetLabel.className = 'fushi-sub-offset-val';
     offsetBar.appendChild(offBtn('−0.5', -500));
     offsetBar.appendChild(offBtn('−0.1', -100));
     offsetBar.appendChild(offsetLabel);
     offsetBar.appendChild(offBtn('＋0.1', 100));
     offsetBar.appendChild(offBtn('＋0.5', 500));
     var resetBtn = document.createElement('button');
-    resetBtn.className = 'hibiki-sub-iconbtn';
+    resetBtn.className = 'fushi-sub-iconbtn';
     resetBtn.type = 'button';
     resetBtn.textContent = '⟲';
     resetBtn.title = '重置时轴偏移';
@@ -329,7 +329,7 @@
     panel.appendChild(header);
 
     var list = document.createElement('div');
-    list.className = 'hibiki-sub-list';
+    list.className = 'fushi-sub-list';
     panel.appendChild(list);
     st.listEl = list;
 
@@ -345,7 +345,7 @@
     applyFontScale();
   }
   function applyFontScale() {
-    if (st.panel) st.panel.style.setProperty('--hibiki-sub-font-scale', String(FONT_STEPS[st.fontScaleIndex]));
+    if (st.panel) st.panel.style.setProperty('--fushi-sub-font-scale', String(FONT_STEPS[st.fontScaleIndex]));
   }
   function toggleAutoScroll(btn) {
     st.autoScroll = !st.autoScroll;
@@ -446,7 +446,7 @@
     if (!st.cues.length) {
       hideSubtitleOverlay();
       var empty = document.createElement('div');
-      empty.className = 'hibiki-sub-empty';
+      empty.className = 'fushi-sub-empty';
       empty.textContent = '暂无字幕（站内开启字幕后自动采集出现）';
       list.appendChild(empty);
       st.builtLang = st.activeLang;
@@ -468,10 +468,10 @@
 
   function buildRow(cue, idx) {
     var row = document.createElement('div');
-    row.className = 'hibiki-sub-row';
+    row.className = 'fushi-sub-row';
 
     var ts = document.createElement('button');
-    ts.className = 'hibiki-sub-ts';
+    ts.className = 'fushi-sub-ts';
     ts.type = 'button';
     ts.textContent = fmtTs(cue.startMs);
     ts.title = '跳转到此句';
@@ -479,13 +479,13 @@
     row.appendChild(ts);
 
     var text = document.createElement('div');
-    text.className = 'hibiki-sub-text';
+    text.className = 'fushi-sub-text';
     text.textContent = cue.text;
     text.addEventListener('click', function (e) {
       e.stopPropagation();
-      if (typeof window.hibikiLookupAtPoint === 'function') {
-        // TODO-1219 P3：带上该行整集拦截的精确窗，制卡（hibikiEnqueue）用它而非 DOM 采样。
-        window.hibikiLookupAtPoint(e.clientX, e.clientY, { startMs: cue.startMs, endMs: cue.endMs, text: cue.text });
+      if (typeof window.fushiLookupAtPoint === 'function') {
+        // TODO-1219 P3：带上该行整集拦截的精确窗，制卡（fushiEnqueue）用它而非 DOM 采样。
+        window.fushiLookupAtPoint(e.clientX, e.clientY, { startMs: cue.startMs, endMs: cue.endMs, text: cue.text });
       } else {
         seekTo(cue.startMs);
       }
@@ -520,13 +520,13 @@
   function ensureSubtitleOverlay() {
     if (!st.overlayEl) {
       var el = document.createElement('div');
-      el.id = 'hibiki-subtitle-overlay';
+      el.id = 'fushi-subtitle-overlay';
       el.setAttribute('data-theme', resolveTheme());
       el.addEventListener('click', function (e) {
         e.stopPropagation();
         var cue = st.overlayCue;
-        if (cue && typeof window.hibikiLookupAtPoint === 'function') {
-          window.hibikiLookupAtPoint(e.clientX, e.clientY, {
+        if (cue && typeof window.fushiLookupAtPoint === 'function') {
+          window.fushiLookupAtPoint(e.clientX, e.clientY, {
             startMs: cue.startMs, endMs: cue.endMs, text: cue.text,
           });
         }
@@ -536,16 +536,16 @@
         applyOverlayBlur(el);
       });
       // 悬浮字幕自动查词：只在覆盖层内启用，按与 content.js Shift 悬停同样的 4px 位移阈值
-      // 限流；取词、同词去重、在途闸和精确 cue 窗全部复用 hibikiLookupAtPoint。
+      // 限流；取词、同词去重、在途闸和精确 cue 窗全部复用 fushiLookupAtPoint。
       el.addEventListener('mousemove', function (e) {
         if (!st.overlayAutoLookup || !st.overlayCue ||
-            typeof window.hibikiLookupAtPoint !== 'function') return;
+            typeof window.fushiLookupAtPoint !== 'function') return;
         if (Math.abs(e.clientX - st.autoLookupLastX) < 4 &&
             Math.abs(e.clientY - st.autoLookupLastY) < 4) return;
         st.autoLookupLastX = e.clientX;
         st.autoLookupLastY = e.clientY;
         var cue = st.overlayCue;
-        window.hibikiLookupAtPoint(
+        window.fushiLookupAtPoint(
           e.clientX,
           e.clientY,
           { startMs: cue.startMs, endMs: cue.endMs, text: cue.text },
@@ -557,8 +557,8 @@
         applyOverlayBlur(el);
         st.autoLookupLastX = -1;
         st.autoLookupLastY = -1;
-        if (typeof window.hibikiResetAutoLookupDedupe === 'function') {
-          window.hibikiResetAutoLookupDedupe();
+        if (typeof window.fushiResetAutoLookupDedupe === 'function') {
+          window.fushiResetAutoLookupDedupe();
         }
       });
       st.overlayEl = el;
@@ -668,7 +668,7 @@
 
   // ── B（asb 招牌）：加载用户外挂字幕文件 + 时轴偏移微调 ──
   function toast(msg) {
-    try { if (typeof window.hibikiToast === 'function') window.hibikiToast(msg); } catch (_) {}
+    try { if (typeof window.fushiToast === 'function') window.fushiToast(msg); } catch (_) {}
   }
   function isExternalLang(lang) {
     return typeof lang === 'string' && lang.indexOf(EXT_PREFIX) === 0;
@@ -705,7 +705,7 @@
           { type: 'parseSubtitle', filename: file.name, content: content },
           function (resp) {
             try {
-              if (chrome.runtime.lastError) { toast('字幕加载失败：未连上 Hibiki'); return; }
+              if (chrome.runtime.lastError) { toast('字幕加载失败：未连上 Fushi'); return; }
               applyExternalSubtitle(file.name, resp);
             } catch (_) {}
           });
@@ -730,7 +730,7 @@
     var label = EXT_PREFIX + String(filename).replace(/\|/g, '_');
     var key = videoKey() + '|' + label;
     // 外挂轨与检测轨同构：store 存原始 cue，偏移走统一的读取侧 trackOffsets（重新加载即归零）。
-    var store = window.hibikiEpisodeCues || (window.hibikiEpisodeCues = Object.create(null));
+    var store = window.fushiEpisodeCues || (window.fushiEpisodeCues = Object.create(null));
     store[key] = base;
     delete st.trackOffsets[key];
     st.activeLang = label;
@@ -745,10 +745,10 @@
     var c = resp && resp.connection;
     if (!c) return fallback;
     if (c.state === 'yomitan-conflict') {
-      return '端口 ' + (c.port || 19633) + ' 被 Yomitan API 占用：请先在 Yomitan 高级设置关闭 Enable Yomitan API，再开启 Hibiki 的 Yomitan API 服务器';
+      return '端口 ' + (c.port || 19633) + ' 被 Yomitan API 占用：请先在 Yomitan 高级设置关闭 Enable Yomitan API，再开启 Fushi 的 Yomitan API 服务器';
     }
-    if (c.state === 'unauthorized') return 'Hibiki API 密钥不匹配：请在扩展设置中恢复自动配置';
-    if (c.state === 'offline') return 'Hibiki API 未开启：请在 Hibiki 设置 → 查词中开启 Yomitan API 服务器';
+    if (c.state === 'unauthorized') return 'Fushi API 密钥不匹配：请在扩展设置中恢复自动配置';
+    if (c.state === 'offline') return 'Fushi API 未开启：请在 Fushi 设置 → 查词中开启 Yomitan API 服务器';
     return fallback;
   }
 
@@ -759,7 +759,7 @@
   function showDropHint() {
     if (!st.dropHint) {
       st.dropHint = document.createElement('div');
-      st.dropHint.id = 'hibiki-subtitle-drop-hint';
+      st.dropHint.id = 'fushi-subtitle-drop-hint';
       st.dropHint.textContent = '松开以加载字幕';
     }
     var parent = parentForOverlay();
@@ -906,7 +906,7 @@
     }
     return true;
   }
-  window.hibikiSubtitleShortcut = function (action) {
+  window.fushiSubtitleShortcut = function (action) {
     if (!videoEl()) return false;
     if (!st.cues.length) recomputeShortcutCues();
     switch (action) {
@@ -922,25 +922,25 @@
       // 受 netflixSubtitlePanel 门控且默认关，状态放这里会导致「没开面板就不能隐藏字幕」。
       // 这里只做转发，content.js 未就绪时返回 false（不吞按键，站点行为原样）。
       case 'toggle-subtitle-hide':
-        return typeof window.hibikiToggleSubtitleHiding === 'function'
-          ? window.hibikiToggleSubtitleHiding() === true
+        return typeof window.fushiToggleSubtitleHiding === 'function'
+          ? window.fushiToggleSubtitleHiding() === true
           : false;
     }
     return false;
   };
 
-  // TODO-1219 P3：Netflix 批量录制（content.js hibikiRunNetflixBatch）录整标签页前调用，撤销推挤让
+  // TODO-1219 P3：Netflix 批量录制（content.js fushiRunNetflixBatch）录整标签页前调用，撤销推挤让
   // 播放器全宽（录制画面不带面板黑边）；录完调 resume 重挂。挂起期间 applyPush 被 pushSuspended 门控。
-  window.hibikiSubtitlePanelSuspendPush = function () {
+  window.fushiSubtitlePanelSuspendPush = function () {
     st.pushSuspended = true;
     clearPush();
   };
-  window.hibikiSubtitlePanelResumePush = function () {
+  window.fushiSubtitlePanelResumePush = function () {
     st.pushSuspended = false;
     if (!st.hidden && st.panel && st.panel.parentNode) applyPush();
   };
 
-  window.hibikiSubtitlePanelOnCues = function (_key) {
+  window.fushiSubtitlePanelOnCues = function (_key) {
     if (!st.enabled) return;
     sync();
   };
