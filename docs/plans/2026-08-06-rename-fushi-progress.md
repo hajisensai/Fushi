@@ -24,10 +24,10 @@
 - [x] P2-1 Android 身份替换（develop 15fd787e0…64386eaf4）：applicationId/namespace/taskAffinity/Java·Kotlin 包目录/label/图标 alias/URL scheme fushi://和 Bonjour _fushi-sync/MethodChannel 前缀五端同 PR；FushiFileProvider/FushiBridge/资源改名；新包名 release APK 构建绿（335.1MB）；全量门 17619 绿
 - [x] P2-2 `MigrationImporter`（同批落地）：scan/归档校验/mergeRestore 逐批合并/行数聚合校验/失败保留（4 单测）+ MigrationImportPage + dashboard 检测 banner + 设置入口按运行包名切方向
 - [x] P2-3 卸载引导（同批落地）：dashboard 卸载 banner（ACTION_DELETE + resumed 生命周期复查，绝不乐观标成功）
-- [~] Phase 3 Windows（主线已提交 7e674a6f1，构建验证中）：`fushi.exe`/安装器 AppName/`FushiSingleInstanceMutex` 三处同步/`Fushi.Video` ProgID 迁移+旧键清理/`%APPDATA%\Hibiki`→`Fushi` 搬迁
+- [x] Phase 3 Windows（develop 215c9cc24 批）：fushi.exe 构建绿+版本信息 Fushi 验证；%APPDATA% 搬迁+documents 容器锚点；fushi.iss（AppId 不变/双 mutex/旧键清理）；全量门 17619 绿（清 39 红含 fork sentinel 与重启标志两处真断裂）。原文案：`fushi.exe`/安装器 AppName/`FushiSingleInstanceMutex` 三处同步/`Fushi.Video` ProgID 迁移+旧键清理/`%APPDATA%\Hibiki`→`Fushi` 搬迁
 - [x] Phase 5 更新桥（cdffe37c0）：Windows `synthesizeStableAssetNames` 行随 Phase 3 切 fushi（Android 无更新桥需求：跨包名不能就地更新，迁移链即通道）
-- [~] P6-2 `hoshidicts`→`fushidicts`：fable 子代理独立 worktree 进行中（构建门由主代理合并后统一跑）
-- [~] P6-6 native 产物：fable 子代理独立 worktree 进行中（IPC 两侧同批、DLL 旧名回退）
+- [x] P6-2 `hoshidicts`→`fushidicts`（fable 子代理交付 4867d9f15，已合入主线）：22 个 C ABI 符号、JNI 与 FushiBridge 对齐（修复 P2-1 遗留真断裂）、CMake/xcconfig/CI 全链；合并后 analyze 绿+定向绿。构建门：Android/Windows 待下轮构建复核
+- [x] P6-6 native 产物（fable 子代理交付 e090a6021，已合入主线）：三件套 fushi_voice_*、IPC shm/event/marker 两侧同批、fushi_torrent_ffi + DLL 旧名回退、Unity 程序集 Fushi.UnityAudioExtract；1362 定向绿。保留：C++ namespace hibiki_voice_hook（内部符号，需双架构构建验证，后续项）
 - [ ] P6-5 pub 包名体系：`hibiki`→`fushi` app 包 + 6 内部包 + workspace + 全仓 import（最后做，单独 PR，不与他人并行）
 - [ ] 收尾：源码扫描守卫（旧代号零残留 + 白名单收口）+ 变异实测
 - [x] Phase 4 外部注册台账（agent 无法代办，清单见下）
