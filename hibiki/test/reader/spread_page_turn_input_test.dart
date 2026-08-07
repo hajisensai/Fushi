@@ -32,8 +32,8 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// （`onWheelPaginate` / `onSwipe` / 新的 `onSpreadKey`），Dart 侧不新增翻页语义——
 /// 节流、跨章冷却、虚拟页翻页仍是 `_paginate` → `_handlePageTurnLimit` 那一份。
 void main() {
-  const String leftUrl = 'hoshi.local/OEBPS/img/left.png';
-  const String rightUrl = 'hoshi.local/OEBPS/img/right.png';
+  const String leftUrl = 'fushi.local/OEBPS/img/left.png';
+  const String rightUrl = 'fushi.local/OEBPS/img/right.png';
 
   String htmlWith({String keyBridgeScript = ''}) => buildSpreadPageHtml(
         leftUrl: leftUrl,

@@ -35,8 +35,8 @@ void main() {
   const String kEmptyTapBridge = 'onSpreadTapEmpty';
 
   group('spread 文档有唤出底栏的通道 (BUG-1280)', () {
-    const String leftUrl = 'hoshi.local/OEBPS/img/left.png';
-    const String rightUrl = 'hoshi.local/OEBPS/img/right.png';
+    const String leftUrl = 'fushi.local/OEBPS/img/left.png';
+    const String rightUrl = 'fushi.local/OEBPS/img/right.png';
     final String html = buildSpreadPageHtml(
       leftUrl: leftUrl,
       rightUrl: rightUrl,

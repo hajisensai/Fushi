@@ -95,7 +95,7 @@ void main() {
     // Raster <img> path preserved.
     expect(helper, contains("target.tagName === 'IMG'"));
     // SVG cover path: find the wrapped block svg and resolve its <image> href
-    // (xlink:href / href) against document.baseURI to an absolute hoshi.local
+    // (xlink:href / href) against document.baseURI to an absolute fushi.local
     // URL that _openImageViewer accepts.
     expect(helper, contains("querySelector('svg.block-img')"));
     expect(helper, contains("getAttribute('xlink:href')"));

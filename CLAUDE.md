@@ -28,7 +28,7 @@
 - 视频页面：`hibiki/lib/src/pages/implementations/video_hibiki_page.dart`（6358 行主体 + `video_hibiki/` 下 18 个 part 共 6966 行）；视频首页 `home_video_page.dart`（3080 行）。
 - 书架页面：`hibiki/lib/src/pages/implementations/reader_hibiki_history_page.dart`；首页 dashboard：`pages/implementations/home_dashboard_page.dart`。
 - reader source：`hibiki/lib/src/media/sources/reader_hibiki_source.dart`（`ReaderHibikiSource`）。
-- 阅读器 JS/CSS：`hibiki/lib/src/reader/`（17 个 JS/CSS 注入封装，`reader_pagination_scripts.dart` 等）；JS 桥接全局是 `window.hoshiReader`（历史命名，是真实符号，勿改）。
+- 阅读器 JS/CSS：`hibiki/lib/src/reader/`（17 个 JS/CSS 注入封装，`reader_pagination_scripts.dart` 等）；JS 桥接全局是 `window.fushiReader`（2026-08 终局清算已改名；`hoshiCaret`/`__hoshi*` 等其余 hoshi 前缀运行时符号待后续批次）。
 - 全局状态：`hibiki/lib/src/models/app_model.dart`（`AppModel`，~5150 行，初始化流程 + 子系统委托核心，改前先理解）。
 - Drift 数据库：`packages/fushi_core/lib/src/database/database.dart` 和 `tables.dart`（schema v62，53 张表，WAL）。
 - 词典：Dart 封装 `packages/fushi_dictionary/lib/src/engine/fushidicts.dart` + FFI 绑定 `lib/src/ffi/fushidicts_ffi_bindings.dart`；C++ 引擎源码全在 `native/hoshidicts/`（包内已无 C++），`hoshidicts_external/` 是 vendored 第三方，上游同步基线见 `native/hoshidicts/UPSTREAM.md`。

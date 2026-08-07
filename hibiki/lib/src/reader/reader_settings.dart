@@ -890,7 +890,7 @@ class ReaderSettings {
 }
 
 class ReaderCustomFontCss {
-  static const String kReaderResourceHost = 'hoshi.local';
+  static const String kReaderResourceHost = 'fushi.local';
   static const String kReaderResourceScheme = 'hibiki-reader';
 
   static ({String fontFamily, String fontFaces}) build(

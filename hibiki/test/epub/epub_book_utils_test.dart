@@ -291,7 +291,7 @@ void main() {
       );
 
       final result =
-          book.resolveInternalLink('https://hoshi.local/epub/OEBPS/ch2.xhtml');
+          book.resolveInternalLink('https://fushi.local/epub/OEBPS/ch2.xhtml');
       expect(result, isNotNull);
       expect(result!.chapterIndex, 1);
       expect(result.fragment, isNull);
@@ -317,7 +317,7 @@ void main() {
       );
 
       final result = book.resolveInternalLink(
-        '${ReaderHibikiSource.kResourceScheme}://hoshi.local/epub/OEBPS/ch2.xhtml#frag',
+        '${ReaderHibikiSource.kResourceScheme}://fushi.local/epub/OEBPS/ch2.xhtml#frag',
       );
       expect(result, isNotNull);
       expect(result!.chapterIndex, 1);
@@ -338,7 +338,7 @@ void main() {
       );
 
       final result = book
-          .resolveInternalLink('https://hoshi.local/epub/ch1.xhtml#section2');
+          .resolveInternalLink('https://fushi.local/epub/ch1.xhtml#section2');
       expect(result, isNotNull);
       expect(result!.chapterIndex, 0);
       expect(result.fragment, 'section2');
@@ -380,14 +380,14 @@ void main() {
 
       expect(
           book.resolveInternalLink(
-              'https://hoshi.local/epub/nonexistent.xhtml'),
+              'https://fushi.local/epub/nonexistent.xhtml'),
           isNull);
     });
 
     // BUG-097: the WebView resolves a relative `<a href>` against the document
     // URL, so the clicked link can carry `./` / `../` / duplicate slashes that
     // the canonicalized stored href does not. These must still resolve (else the
-    // caller opens a blank OS browser for hoshi.local instead of jumping).
+    // caller opens a blank OS browser for fushi.local instead of jumping).
     group('BUG-097 path normalization (../ ./ // resolve, not external)', () {
       final book = EpubBook(
         title: 'Test',
@@ -409,14 +409,14 @@ void main() {
 
       test('parent-relative (../) link resolves to the chapter', () {
         final result = book.resolveInternalLink(
-            'https://hoshi.local/epub/OEBPS/text/../ch1.xhtml');
+            'https://fushi.local/epub/OEBPS/text/../ch1.xhtml');
         expect(result, isNotNull);
         expect(result!.chapterIndex, 0);
       });
 
       test('current-dir (./) link resolves to the chapter', () {
         final result = book.resolveInternalLink(
-            'https://hoshi.local/epub/OEBPS/./text/ch2.xhtml#frag');
+            'https://fushi.local/epub/OEBPS/./text/ch2.xhtml#frag');
         expect(result, isNotNull);
         expect(result!.chapterIndex, 1);
         expect(result.fragment, 'frag');
@@ -424,7 +424,7 @@ void main() {
 
       test('duplicate slashes resolve to the chapter', () {
         final result = book
-            .resolveInternalLink('https://hoshi.local/epub/OEBPS//ch1.xhtml');
+            .resolveInternalLink('https://fushi.local/epub/OEBPS//ch1.xhtml');
         expect(result, isNotNull);
         expect(result!.chapterIndex, 0);
       });

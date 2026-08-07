@@ -40,20 +40,20 @@ void main() {
   });
 
   group('ReaderHibikiSource.isExternalUrl (BUG-097 内链不外开)', () {
-    test('内部 hoshi.local 书内 URL 永不当外部链接(未解析时不弹系统浏览器)', () {
+    test('内部 fushi.local 书内 URL 永不当外部链接(未解析时不弹系统浏览器)', () {
       expect(
         ReaderHibikiSource.isExternalUrl(
-            'https://hoshi.local/epub/OEBPS/ch2.xhtml'),
+            'https://fushi.local/epub/OEBPS/ch2.xhtml'),
         isFalse,
       );
       expect(
         ReaderHibikiSource.isExternalUrl(
-            'https://hoshi.local/epub/text/note.xhtml#n1'),
+            'https://fushi.local/epub/text/note.xhtml#n1'),
         isFalse,
       );
       expect(
         ReaderHibikiSource.isExternalUrl(
-            '${ReaderHibikiSource.kResourceScheme}://hoshi.local/epub/OEBPS/ch2.xhtml'),
+            '${ReaderHibikiSource.kResourceScheme}://fushi.local/epub/OEBPS/ch2.xhtml'),
         isFalse,
       );
     });
@@ -64,10 +64,10 @@ void main() {
       if (Platform.isMacOS || Platform.isIOS) {
         expect(
           url,
-          '${ReaderHibikiSource.kResourceScheme}://hoshi.local/epub/OEBPS/ch%202.xhtml',
+          '${ReaderHibikiSource.kResourceScheme}://fushi.local/epub/OEBPS/ch%202.xhtml',
         );
       } else {
-        expect(url, 'https://hoshi.local/epub/OEBPS/ch%202.xhtml');
+        expect(url, 'https://fushi.local/epub/OEBPS/ch%202.xhtml');
       }
     });
 
@@ -131,8 +131,8 @@ void main() {
         result.fontFaces,
         contains(
           Platform.isMacOS || Platform.isIOS
-              ? '${ReaderHibikiSource.kResourceScheme}://hoshi.local/fonts/'
-              : 'https://hoshi.local/fonts/',
+              ? '${ReaderHibikiSource.kResourceScheme}://fushi.local/fonts/'
+              : 'https://fushi.local/fonts/',
         ),
       );
       expect(result.fontFaces, isNot(contains('..')));
@@ -162,7 +162,7 @@ void main() {
 
       expect(
         result.fontFaces,
-        contains('${ReaderHibikiSource.kResourceScheme}://hoshi.local/fonts/'),
+        contains('${ReaderHibikiSource.kResourceScheme}://fushi.local/fonts/'),
       );
     });
 
@@ -524,8 +524,7 @@ void main() {
       expect(row!.author, '夏目漱石');
     });
 
-    test('MangaHibikiSource 也支持作者编辑并委托写入 epubBooks.author（BUG-1083）',
-        () async {
+    test('MangaHibikiSource 也支持作者编辑并委托写入 epubBooks.author（BUG-1083）', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);

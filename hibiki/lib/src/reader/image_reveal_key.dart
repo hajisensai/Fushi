@@ -1,13 +1,12 @@
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/reader/reader_settings.dart'
-    show ReaderCustomFontCss;
+import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
 
 /// EPUB 图片防剧透遮罩「已揭开」状态的稳定归一化 key（BUG-898）。
 ///
 /// 阅读器 WebView 的 JS `__hoshiImageRevealKey` 与图片库 [IllustrationsViewerPage] 的
-/// 磁盘 `File`，各自看到「同一张图」的原始标识不同：前者是 `hoshi.local` 虚拟域名下的
-/// 绝对资源 URL（`https://hoshi.local/epub/OEBPS/images/foo%20bar.jpg`，macOS/iOS 为自定义
+/// 磁盘 `File`，各自看到「同一张图」的原始标识不同：前者是 `fushi.local` 虚拟域名下的
+/// 绝对资源 URL（`https://fushi.local/epub/OEBPS/images/foo%20bar.jpg`，macOS/iOS 为自定义
 /// scheme 变体），后者是原生磁盘绝对路径。要让两端共享同一份持久化揭开状态
 /// （Drift `revealed_images` 表），必须先把两种原始标识归一到**同一个 key**。
 ///
@@ -24,7 +23,7 @@ class ImageRevealKey {
 
   /// 把阅读器侧回传的原始 key [raw] 归一到稳定 key。
   ///
-  /// - [raw] 是 `hoshi.local` 资源绝对 URL（任意 scheme）→ 取 path、剥 `/epub/` 前缀
+  /// - [raw] 是 `fushi.local` 资源绝对 URL（任意 scheme）→ 取 path、剥 `/epub/` 前缀
   ///   （path 已 percent-decode）→ extractDir 相对路径。
   /// - [raw] 已是 extractDir 相对路径（改造后的 JS 常态）→ 仅做正斜杠 / `.` / `..` 归一。
   ///
@@ -32,7 +31,7 @@ class ImageRevealKey {
   static String? normalize(String raw) {
     if (raw.isEmpty) return null;
     final Uri? uri = Uri.tryParse(raw);
-    // hoshi.local 绝对 URL：uri.path 是 **未解码** 的（保留 %20 等），剥 `/epub/` 前缀后
+    // fushi.local 绝对 URL：uri.path 是 **未解码** 的（保留 %20 等），剥 `/epub/` 前缀后
     // 必须 decodeComponent 才能与磁盘真实文件名（真实空格）对齐（与 JS 侧 decodeURIComponent
     // 对称）。
     if (uri != null && uri.host == host) {

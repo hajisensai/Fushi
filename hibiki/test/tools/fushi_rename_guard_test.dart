@@ -45,6 +45,13 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     regex: RegExp('hoshiReader', caseSensitive: false),
   ),
   _ForbiddenPattern(
+    // W3：阅读器虚拟拦截域已是 fushi.local（纯运行时符号，每次页面加载现拼，
+    // 无持久化形态；`hoshi://book/` mediaIdentifier 是另一符号、DB 持久化契约，
+    // 刻意不在此模式内）。
+    name: 'hoshi.local',
+    regex: RegExp(r'hoshi\.local', caseSensitive: false),
+  ),
+  _ForbiddenPattern(
     // P6-3：setTtu*/getTtu* 访问器已换 setReader*/getReader*。
     // （`ttu_*` 持久化键值本身冻结在 reader_settings.dart，不在此模式内。）
     name: 'setTtu/getTtu',

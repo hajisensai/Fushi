@@ -616,7 +616,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   // and from shouldOverrideUrlLoading (fallback for non-click navigations).
   // [url] is the browser-resolved absolute URL of the clicked <a> (or the
   // navigation target). Internal book links jump within the reader; genuine
-  // external schemes go to the OS handler; an unresolved hoshi.local link stays
+  // external schemes go to the OS handler; an unresolved fushi.local link stays
   // put (never pops a blank OS browser — see _openExternalUrl / BUG-097).
   Future<void> _handleInternalLinkUrl(String url) async {
     if (url.isEmpty) return;
@@ -703,12 +703,12 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
 
   // HBK-AUDIT-038: open a genuinely external link (http/https/mailto/tel) in the
   // OS handler instead of silently cancelling it. Non-external schemes are
-  // ignored so we never hand the OS an internal hoshi.local URL.
+  // ignored so we never hand the OS an internal fushi.local URL.
   Future<void> _openExternalUrl(String url) async {
     final Uri? uri = Uri.tryParse(url);
     if (uri == null) return;
     // BUG-097: an unresolved internal link (host == kHost) must stay in the
-    // reader — never pop a blank OS browser for our virtual hoshi.local host.
+    // reader — never pop a blank OS browser for our virtual fushi.local host.
     if (!ReaderHibikiSource.isExternalUrl(url)) return;
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);

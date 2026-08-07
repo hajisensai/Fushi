@@ -11,7 +11,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - **主入口**：`lib/main.dart` -- `main()` 函数，启动流程：
   1. `WidgetsFlutterBinding.ensureInitialized()`
   2. 系统 UI 配置（edge-to-edge、方向锁定、splash 颜色获取）
-  3. 创建 `ProviderContainer`，立即 `runApp(HoshiReaderApp())`
+  3. 创建 `ProviderContainer`，立即 `runApp(FushiReaderApp())`
   4. 初始化错误日志服务（`ErrorLogService` / `DebugLogService`）
   5. 初始化文件日志（`FlutterLogs`，仅移动端）
   6. `FushiDicts.preloadTransforms()` 预加载词典变换表
@@ -99,8 +99,8 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 85 个页面实现，主要包括：
 - `home_page.dart` -- 首页外壳；`home_dashboard_page.dart` -- 首页 dashboard；同级 tab 页 `home_reader_page.dart` / `home_video_page.dart` / `home_game_page.dart` / `home_dictionary_page.dart`。
 - `reader_hibiki_page.dart` (~3200 行主体 + `reader_hibiki/` 下 8 个域 part 文件) -- 核心阅读器页面：
-  - **WebView 架构**: `InAppWebView` + `hoshi.local` 虚拟域名拦截（`shouldInterceptRequest`），EPUB HTML/CSS/字体/图片全部经过安全校验后在拦截器中提供。
-  - **分页系统**: JS 端 `hoshiReader` 分页引擎 + Dart 端 `ReaderPaginationScripts`，支持分页/连续两种模式。
+  - **WebView 架构**: `InAppWebView` + `fushi.local` 虚拟域名拦截（`shouldInterceptRequest`），EPUB HTML/CSS/字体/图片全部经过安全校验后在拦截器中提供。
+  - **分页系统**: JS 端 `fushiReader` 分页引擎 + Dart 端 `ReaderPaginationScripts`，支持分页/连续两种模式。
   - **文本选择**: JS `onTextSelected` → Dart `ReaderSelectionData` → 词典查询 → 浮层展示。
   - **手势系统**: 触摸/指针/滚轮统一处理（滑动翻页、点击高亮、双击振假名切换、图片点击查看）。
   - **有声书集成**: `AudiobookPlayerController` + `AudiobookBridge` + `HighlightBridge`，支持 cue 同步高亮、跨章节追踪、音量键句子导航。

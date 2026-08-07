@@ -733,7 +733,7 @@ static const int cap = 60000;
     const String src = '''
 final String js = \'\'\'
   // window.fushiReader.paginate('forward')
-  const url = 'https://hoshi.local/x';
+  const url = 'https://fushi.local/x';
 \'\'\';
 ''';
 
@@ -752,7 +752,7 @@ final String js = \'\'\'
 
     test('串里的 URL 不被砍（旧手写「按首个 // 截断」会砍）', () {
       expect(
-        maskCommentsAndScriptLines(src).contains('https://hoshi.local/x'),
+        maskCommentsAndScriptLines(src).contains('https://fushi.local/x'),
         isTrue,
       );
     });

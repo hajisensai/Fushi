@@ -192,7 +192,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
       data: html,
       mimeType: 'text/html',
       encoding: 'utf-8',
-      baseUrl: WebUri('https://hoshi.local/lyrics'),
+      baseUrl: WebUri('https://fushi.local/lyrics'),
     );
   }
 

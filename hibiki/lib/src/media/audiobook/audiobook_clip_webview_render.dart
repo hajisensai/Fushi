@@ -191,7 +191,7 @@ Future<void> renderAudiobookClipFramesViaWebView({
         data: html,
         mimeType: 'text/html',
         encoding: 'utf-8',
-        baseUrl: WebUri('https://hoshi.local/clip'),
+        baseUrl: WebUri('https://fushi.local/clip'),
       ),
       initialSettings: InAppWebViewSettings(
         transparentBackground: false,

@@ -215,7 +215,7 @@ namespace flutter_inappwebview_plugin
 
     std::map<UINT64, std::shared_ptr<NavigationAction>> navigationActions_ = {};
     // 已被 shouldInterceptRequest 注入 2xx 响应的主框架 document URL（去 fragment）。
-    // 用于 NavigationCompleted 纠正 hoshi.local 这类自定义拦截域的 DNS 假失败。
+    // 用于 NavigationCompleted 纠正 fushi.local 这类自定义拦截域的 DNS 假失败。
     std::set<std::string> mainFrameInjectedOkUrls_ = {};
     std::shared_ptr<NavigationAction> lastNavigationAction_;
     bool isLoading_ = false;

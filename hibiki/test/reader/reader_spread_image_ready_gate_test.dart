@@ -22,8 +22,8 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// 保留 cf0adf642 的冷却窗重锚接线（撤回任一 → 对应用例转红）。
 void main() {
   group('buildSpreadPageHtml gates spreadReady on image load (TODO-1229)', () {
-    const String leftUrl = 'hoshi.local/OEBPS/img/left.png';
-    const String rightUrl = 'hoshi.local/OEBPS/img/right.png';
+    const String leftUrl = 'fushi.local/OEBPS/img/left.png';
+    const String rightUrl = 'fushi.local/OEBPS/img/right.png';
     final String html = buildSpreadPageHtml(
       leftUrl: leftUrl,
       rightUrl: rightUrl,

@@ -227,7 +227,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   }
 
   // BUG-097: decide whether a navigation URL belongs to the OS browser. Internal
-  // book content lives on the [kHost] virtual host (https://hoshi.local/...), so
+  // book content lives on the [kHost] virtual host (https://fushi.local/...), so
   // an internal link that failed to resolve to a chapter must NEVER be handed to
   // the OS — that opens a blank page for a non-existent host. Only genuine
   // external schemes on a different host are external.

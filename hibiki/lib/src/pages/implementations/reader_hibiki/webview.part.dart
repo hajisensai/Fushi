@@ -1,7 +1,7 @@
 // GENERATED-NOTE: extracted from reader_hibiki_page.dart (TODO-589 batch8).
 part of '../reader_hibiki_page.dart';
 
-/// webview (EPUB WebView 构建 / hoshi.local 资源拦截 + 净化 / 单 IIFE setup 脚本)
+/// webview (EPUB WebView 构建 / fushi.local 资源拦截 + 净化 / 单 IIFE setup 脚本)
 /// 域 helper，经 part-of 抽出（TODO-589 batch8·最后一批）；与主壳共享私有作用域。
 /// 行为保持：方法体逐字搬运（含引擎源码构造器整段内联 JS 模板字符串的
 /// 反引号/转义/缩进/$ 插值，做过提取前后字节级对比自证），仅做下列扩展不可直接
@@ -36,7 +36,7 @@ class _ReaderResourceResponse {
 }
 
 extension _ReaderWebView on _ReaderHibikiPageState {
-  // ── URL & Resource Serving (mirrors Hoshi Android's hoshi.local scheme) ──
+  // ── URL & Resource Serving (mirrors Hoshi Android's fushi.local scheme) ──
 
   String _chapterUrl(int index) {
     if (_book == null || index < 0 || index >= _book!.chapters.length) {
@@ -394,7 +394,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   // <img>, SVG <image>, and CSS background-image — TODO-1174 broadened the
   // classifier, so an SVG-only or multi-image illustration page must re-emit
   // every image or the merge would silently drop illustrations). Each relative
-  // src is resolved to an absolute hoshi.local /epub URL relative to *that* image
+  // src is resolved to an absolute fushi.local /epub URL relative to *that* image
   // chapter's own href, so a text chapter absorbing images from a different
   // directory still points at the right files (the served text chapter's baseURI
   // would otherwise mis-resolve them); already-absolute (data:/scheme) refs pass
@@ -523,7 +523,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   /// 「翻一下要大半秒」。
   ///
   /// 这里在**当前章已经读起来之后**，用一个隐藏的 `new Image()` 把下一章的图按同样的
-  /// URL 请求一遍：走的是同一个 `hoshi.local` 拦截器、同一份缓存条目，等用户真的翻过去
+  /// URL 请求一遍：走的是同一个 `fushi.local` 拦截器、同一份缓存条目，等用户真的翻过去
   /// 时那些图已经在缓存里。纯预热，不改 DOM、不参与任何几何计算；失败静默（预热不到就
   /// 退回原来的现付现取）。
   ///
@@ -2489,7 +2489,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         if (request.isForMainFrame ?? false) {
           debugPrint('[ReaderFushi] onReceivedError: ${error.description} '
               'url=${request.url}');
-          // Windows 拦截域 (hoshi.local) 的 NavigationCompleted 假失败已在 fork
+          // Windows 拦截域 (fushi.local) 的 NavigationCompleted 假失败已在 fork
           // 引擎层根治（packages/flutter_inappwebview_windows：主框架已注入 2xx
           // 时按成功走 onLoadStop），此处不再做事后补偿；下面是真实加载失败处理。
           if (_restoreExpectedGeneration != _navigateGeneration) return;
