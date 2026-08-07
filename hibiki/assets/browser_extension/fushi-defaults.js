@@ -11,7 +11,7 @@
 // BUG-726：安装助手/启动刷新还会写入 build（扩展内容指纹）。background.js 用它与查词
 // 响应里的 extensionBuild 比对，不一致即 chrome.runtime.reload() 从磁盘拉新（自更新）。
 // 占位默认不带 build（→ 永不触发 reload）。
-self.HIBIKI_DEFAULTS = {
+self.FUSHI_DEFAULTS = {
   host: '127.0.0.1',
   port: 19633,
   token: '',

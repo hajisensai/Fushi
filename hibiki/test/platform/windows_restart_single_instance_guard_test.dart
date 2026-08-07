@@ -5,7 +5,7 @@
 // 根因：数据迁移成功后 DesktopLifecycleService.restartApp 以 detached 模式拉起带
 // restartMarkerArg 的新进程，随后旧进程才走 prepareForProcessExit + exit(0)。在「拉起
 // 新进程」与「旧进程真正退出」之间，旧进程仍持有 windows/runner/main.cpp 的命名单实例
-// 互斥量 `HibikiSingleInstanceMutex`。新进程裸调 CreateMutexW 拿到 ERROR_ALREADY_EXISTS，
+// 互斥量 `FushiSingleInstanceMutex`。新进程裸调 CreateMutexW 拿到 ERROR_ALREADY_EXISTS，
 // 被误判为「用户二次启动」→ 前置旧窗口 + return EXIT_SUCCESS，从不启动 Flutter 引擎。
 // 于是重启落空：数据已迁到新根、data_root pref 已写，但 app 从未以新 data_root 重新
 // AppPaths.resolve()。这与 TODO-960 记录的「locale 切换重启撞单实例互斥量把 app 关掉」
@@ -33,7 +33,7 @@ void main() {
     test('Dart 重启标志常量稳定（与 native runner 逐字符匹配）', () {
       // native runner 的 kRestartMarkerArg 必须与本常量逐字符一致，否则等待逻辑
       // 永远不触发，重启又会被单实例守卫吞掉。
-      expect(DesktopLifecycleService.restartMarkerArg, '--hibiki-restarted');
+      expect(DesktopLifecycleService.restartMarkerArg, '--fushi-restarted');
     });
 
     test('native runner：带重启标志检测到已有实例时等待互斥量、不直接退出', () {
@@ -42,7 +42,7 @@ void main() {
       // native 侧重启标志常量字面量必须与 Dart 侧一致。
       expect(
         src.contains('constexpr wchar_t kRestartMarkerArg[] = '
-            'L"--hibiki-restarted";'),
+            'L"--fushi-restarted";'),
         isTrue,
         reason: 'native runner must define the restart marker matching '
             'DesktopLifecycleService.restartMarkerArg',

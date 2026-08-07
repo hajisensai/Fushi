@@ -5,12 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// Source-scan guards for TODO-959 / BUG-476 (迁移重启新进程冷启动黑屏).
 ///
 /// The data-root migration restarts the app: a detached new process is started
-/// with `--hibiki-restarted` and the old process calls `exit(0)`. Between the
+/// with `--fushi-restarted` and the old process calls `exit(0)`. Between the
 /// old process exiting and the new process drawing its first Flutter frame
 /// there used to be a black/undefined window:
 ///   1. The runner window class had `hbrBackground = 0` (no background brush)
 ///      yet was created `WS_VISIBLE`, so the empty window painted black.
-///   2. The Dart `--hibiki-restarted` branch only grabbed foreground, never
+///   2. The Dart `--fushi-restarted` branch only grabbed foreground, never
 ///      changing those black pixels.
 ///
 /// The fix is two-pronged and native, so it cannot run on the Dart host:
@@ -54,8 +54,8 @@ void main() {
   });
 
   group('TODO-959 direction 2: restarted process creates a hidden window', () {
-    test('runner detects the --hibiki-restarted marker', () {
-      expect(cpp.contains('--hibiki-restarted'), isTrue);
+    test('runner detects the --fushi-restarted marker', () {
+      expect(cpp.contains('--fushi-restarted'), isTrue);
       expect(cpp.contains('IsRestartedProcess('), isTrue,
           reason: 'runner must independently detect the restart marker.');
     });

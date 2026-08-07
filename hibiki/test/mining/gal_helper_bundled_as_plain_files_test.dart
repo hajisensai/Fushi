@@ -18,7 +18,7 @@ import 'package:hibiki/src/mining/galgame_helper_installer.dart';
 void main() {
   final File script =
       File('../native/galgame_hook/tools/install_into_bundle.ps1');
-  final File iss = File('windows/installer/hibiki.iss');
+  final File iss = File('windows/installer/fushi.iss');
   final List<File> workflows = <File>[
     File('../.github/workflows/release-desktop.yml'),
     File('../.github/workflows/build-multiplatform.yml'),

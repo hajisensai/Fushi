@@ -820,9 +820,9 @@ WindowsInstallerFailureSummary summarizeWindowsInstallerFailure({
   if (mentionsRunningApp) {
     return WindowsInstallerFailureSummary(
       type: 'app_mutex_running',
-      message: 'Inno Setup reported that Hibiki was still running. The '
-          'installer is guarded by HibikiSingleInstanceMutex, so every active '
-          'hibiki.exe process must be closed before the silent installer can '
+      message: 'Inno Setup reported that Fushi was still running. The '
+          'installer is guarded by FushiSingleInstanceMutex, so every active '
+          'fushi.exe process must be closed before the silent installer can '
           'continue.',
     );
   }

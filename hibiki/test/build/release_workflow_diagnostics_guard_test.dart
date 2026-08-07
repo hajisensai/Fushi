@@ -236,7 +236,7 @@ void main() {
     final String publishJob = workflowJob(workflow, 'publish');
 
     expect(windowsJob, contains('flutter build windows --release'));
-    expect(windowsJob, contains('hibiki-*-windows-setup.exe'));
+    expect(windowsJob, contains('fushi-*-windows-setup.exe'));
 
     expect(macosJob, contains('flutter build macos --release'));
     expect(macosJob, contains('ditto -c -k --keepParent'));

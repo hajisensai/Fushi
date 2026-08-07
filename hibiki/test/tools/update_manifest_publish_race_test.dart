@@ -43,7 +43,7 @@ void main() {
     final ProcessResult desktop = await fx.publish(
       label: 'desktop',
       artifactsSubdir: 'art_desktop',
-      assetGlob: 'hibiki-*-windows-setup.exe',
+      assetGlob: 'fushi-*-windows-setup.exe',
     );
     expect(desktop.exitCode, 0, reason: _io(desktop));
 
@@ -60,7 +60,7 @@ void main() {
     final ProcessResult desktop = await fx.publish(
       label: 'desktop',
       artifactsSubdir: 'art_desktop',
-      assetGlob: 'hibiki-*-windows-setup.exe',
+      assetGlob: 'fushi-*-windows-setup.exe',
     );
     expect(desktop.exitCode, 0, reason: _io(desktop));
 
@@ -92,7 +92,7 @@ void main() {
       fx.publish(
         label: 'desktop',
         artifactsSubdir: 'art_desktop',
-        assetGlob: 'hibiki-*-windows-setup.exe',
+        assetGlob: 'fushi-*-windows-setup.exe',
       ),
     ]);
     for (final ProcessResult r in results) {
@@ -127,7 +127,7 @@ void main() {
     final ProcessResult newDesktop = await fx.publish(
       label: 'desktop',
       artifactsSubdir: 'art_desktop',
-      assetGlob: 'hibiki-*-windows-setup.exe',
+      assetGlob: 'fushi-*-windows-setup.exe',
     );
     expect(newDesktop.exitCode, 0, reason: _io(newDesktop));
 
@@ -156,7 +156,7 @@ void main() {
     final ProcessResult newDesktop = await fx.publish(
       label: 'desktop',
       artifactsSubdir: 'art_desktop',
-      assetGlob: 'hibiki-*-windows-setup.exe',
+      assetGlob: 'fushi-*-windows-setup.exe',
     );
     expect(newDesktop.exitCode, 0, reason: _io(newDesktop));
 
@@ -224,7 +224,7 @@ class _Fixture {
   static const int defaultSeq = 5633;
 
   final String apkName = 'hibiki-0.11.1-debug.5633-3cf5905-debug.apk';
-  final String exeName = 'hibiki-0.11.1-debug.5633-windows-setup.exe';
+  final String exeName = 'fushi-0.11.1-debug.5633-windows-setup.exe';
 
   static Future<_Fixture> create() async {
     final Directory workspace = Directory.current.parent;
@@ -241,7 +241,7 @@ class _Fixture {
     _writeAsset(
         root, 'art_android_old', 'hibiki-0.11.1-debug.5630-08dc73c-debug.apk');
     _writeAsset(
-        root, 'art_desktop', 'hibiki-0.11.1-debug.5633-windows-setup.exe');
+        root, 'art_desktop', 'fushi-0.11.1-debug.5633-windows-setup.exe');
 
     final String originUrl =
         Uri.file(origin.path, windows: Platform.isWindows).toString();

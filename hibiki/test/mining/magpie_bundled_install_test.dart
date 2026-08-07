@@ -320,7 +320,7 @@ void main() {
 
     test('Inno Setup 递归收目录，随包资产无需单独列条目', () {
       final String installer =
-          File('windows/installer/hibiki.iss').readAsStringSync();
+          File('windows/installer/fushi.iss').readAsStringSync();
       expect(installer, contains('recursesubdirs'));
     });
   });

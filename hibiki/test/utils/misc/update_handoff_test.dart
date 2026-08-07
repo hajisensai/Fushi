@@ -413,7 +413,7 @@ void main() {
       );
 
       expect(running.type, 'app_mutex_running');
-      expect(running.message, contains('HibikiSingleInstanceMutex'));
+      expect(running.message, contains('FushiSingleInstanceMutex'));
       expect(missing.type, 'missing_log');
     });
   });
@@ -458,7 +458,7 @@ void main() {
       expect(record?.installerLaunchSucceeded, isNull,
           reason:
               'the helper writes installer launch outcome after parent exit');
-      expect(startedExecutable, endsWith('hibiki_update_launcher.exe'));
+      expect(startedExecutable, endsWith('fushi_update_launcher.exe'));
       expect(
           startedArgs,
           containsAllInOrder(<String>[
@@ -495,7 +495,7 @@ void main() {
           ),
           startProcess: (String executable, List<String> args) async {
             throw const ProcessException(
-              'hibiki_update_launcher.exe',
+              'fushi_update_launcher.exe',
               <String>[],
               'boom',
             );

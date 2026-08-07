@@ -127,7 +127,7 @@ void main() {
     expect(
       workflow,
       contains(
-        r'hibiki-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe',
+        r'fushi-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe',
       ),
     );
     expect(workflow, contains('Prepare Windows installer release asset'));
@@ -138,7 +138,7 @@ void main() {
     );
     expect(
       workflow,
-      contains('hibiki/build/release-artifacts/hibiki-*-windows-setup.exe'),
+      contains('hibiki/build/release-artifacts/fushi-*-windows-setup.exe'),
     );
     expect(
       workflow,

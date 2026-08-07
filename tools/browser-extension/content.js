@@ -18,8 +18,8 @@ window.__hoshiCssHighlightsSupported = false;
 // 设计，注入宿主页后宿主页自身 hover/click 会误触 selectText→clearSelection，拆掉刚画的划词高亮；
 // popup.js 读此 flag 后只处理落在 #entries-container 内的事件（content.js 与 popup.js 同隔离世界共享 window）。
 window.__hibikiExtension = true;
-const HIBIKI_MOD = 'shiftKey';
-const HIBIKI_MAX_LEN = 12;
+const FUSHI_MOD = 'shiftKey';
+const FUSHI_MAX_LEN = 12;
 let hibikiContainer = null;
 // BUG-688：弹窗渲染进 Shadow DOM，宿主网页 CSS 无法穿透 shadow 边界（ruby/行距/定位等
 // 与 in-app WebView 弹窗一致）。hibikiHost 是挂在宿主页的 shadow 宿主元素（负责 fixed 定位），
@@ -37,7 +37,7 @@ let hibikiPending = false;
 // 此后所有 Shift 悬停被在途闸整条吞掉（弹窗越来越不敏感）。记发起时刻，超过此截止时间
 // 就当上一次已废弃、放行新查词（回调仍会正常复位，此值只是「回调永不来」的安全兜底）。
 let hibikiPendingSince = 0;
-const HIBIKI_PENDING_TIMEOUT_MS = 1500;
+const FUSHI_PENDING_TIMEOUT_MS = 1500;
 
 // 「查词时暂停」取代旧的「悬停字幕时暂停」。新键显式值优先；旧
 // subtitleHoverPause 只作升级兼容读取，避免用户更新扩展后原选择突然丢失。
@@ -164,8 +164,8 @@ function hibikiSubtitleTextNow() {
   }
   return '';
 }
-const HIBIKI_LIVE_CUE_MAX_MS = 12000;
-const HIBIKI_LIVE_LANG = 'live';
+const FUSHI_LIVE_CUE_MAX_MS = 12000;
+const FUSHI_LIVE_LANG = 'live';
 let hibikiSamplerGeneration = 0;
 let hibikiSamplerState = null;
 
@@ -240,7 +240,7 @@ function hibikiBindSamplerVideo(state) {
 }
 
 function hibikiHasRecordedLiveTrack(key) {
-  const track = hibikiEpisodeCues[key + '|' + HIBIKI_LIVE_LANG];
+  const track = hibikiEpisodeCues[key + '|' + FUSHI_LIVE_LANG];
   return !!(track && track.length);
 }
 
@@ -316,7 +316,7 @@ function hibikiSampleCue() {
       return;
     }
     // YouTube 自动字幕在同一 DOM 节点中逐字扩长；12 秒内追加到当前行。
-    if (state.liveCue && nowV - state.liveCue.startMs < HIBIKI_LIVE_CUE_MAX_MS) {
+    if (state.liveCue && nowV - state.liveCue.startMs < FUSHI_LIVE_CUE_MAX_MS) {
       state.curText += addedText;
       hibikiLiveCueAppend(state, addedText, nowV);
       return;
@@ -483,7 +483,7 @@ function hibikiLiveCueStart(state, text, startV, allowReplay) {
     state.liveCueReplay = false;
     return;
   }
-  const key = state.key + '|' + HIBIKI_LIVE_LANG;
+  const key = state.key + '|' + FUSHI_LIVE_LANG;
   const track = hibikiEpisodeCues[key] || (hibikiEpisodeCues[key] = []);
   if (allowReplay) {
     // 真实 seek 或同 key 的新 video 代际回到已采区间时，页面先给较短快照、再逐字扩长；
@@ -511,7 +511,7 @@ function hibikiLiveCueAppend(state, addedText, nowV) {
   state.liveCue.text += addedText;
   // 句子仍在屏幕上时保持一个向后的暂定窗；真正换句/清空时由 hibikiLiveCueEnd 定格。
   state.liveCue.endMs = Math.max(state.liveCue.endMs, nowV + 1500);
-  const key = state.key + '|' + HIBIKI_LIVE_LANG;
+  const key = state.key + '|' + FUSHI_LIVE_LANG;
   hibikiNotifyPanel(key);
   return true;
 }
@@ -1142,7 +1142,7 @@ try { setTimeout(function () { hibikiMaybeResumeNetflixBatch(true); }, 1500); } 
 // 年龄分级/成熟度评级 overlay（TODO-1391：制卡录制会把它录进卡片截图/gif），绝不碰 DRM/seek/自动
 // 切集计时器（不改变播放行为）。由 options 开关 netflixHideNextEpisode 门控——缺省=隐藏（用户诉求），
 // 仅在显式存 false 时才显示；storage.onChanged 实时生效。CSS 规则常驻，Netflix 重建元素也照样命中。
-const HIBIKI_NF_HIDE_NEXT_ID = 'hibiki-nf-hide-next';
+const FUSHI_NF_HIDE_NEXT_ID = 'hibiki-nf-hide-next';
 function hibikiNetflixNextEpisodeSelectors() {
   return [
     '[data-uia="next-episode-seamless-button"]',
@@ -1160,11 +1160,11 @@ function hibikiNetflixNextEpisodeSelectors() {
 }
 function hibikiApplyNetflixNextEpisodeHiding(hide) {
   if (hibikiSite() !== 'netflix') return;
-  const existing = document.getElementById(HIBIKI_NF_HIDE_NEXT_ID);
+  const existing = document.getElementById(FUSHI_NF_HIDE_NEXT_ID);
   if (!hide) { if (existing) { try { existing.remove(); } catch (_) {} } return; }
   if (existing) return;
   const style = document.createElement('style');
-  style.id = HIBIKI_NF_HIDE_NEXT_ID;
+  style.id = FUSHI_NF_HIDE_NEXT_ID;
   style.textContent =
       hibikiNetflixNextEpisodeSelectors().join(',') + '{display:none!important}';
   try { (document.head || document.documentElement).appendChild(style); } catch (_) {}
@@ -1199,7 +1199,7 @@ try {
 // 所有权：本模块是 subtitleHidden 的**唯一**持有者（读 storage、注入 style、翻转、toast）。
 // subtitle-panel.js 只是把快捷键转发过来——因为面板整体受 netflixSubtitlePanel 门控且默认关，
 // 状态若放在面板里，用户没开面板时隐藏字幕就会失效。
-const HIBIKI_HIDE_SUBS_ID = 'hibiki-hide-subs';
+const FUSHI_HIDE_SUBS_ID = 'hibiki-hide-subs';
 let hibikiSubtitleHidden = false;
 
 function hibikiSubtitleHideSelectors() {
@@ -1213,11 +1213,11 @@ function hibikiSubtitleHideSelectors() {
 }
 
 function hibikiApplySubtitleHiding(hide) {
-  const existing = document.getElementById(HIBIKI_HIDE_SUBS_ID);
+  const existing = document.getElementById(FUSHI_HIDE_SUBS_ID);
   if (!hide) { if (existing) { try { existing.remove(); } catch (_) {} } return; }
   if (existing) return;
   const style = document.createElement('style');
-  style.id = HIBIKI_HIDE_SUBS_ID;
+  style.id = FUSHI_HIDE_SUBS_ID;
   // ::cue（原生 <track> 字幕）必须单独成一条规则：它只接受受限属性集，且与普通选择器
   // 并列时若被浏览器判为无效会**整条规则**失效，连带把上面的站点字幕也藏不掉。
   style.textContent =
@@ -1265,7 +1265,7 @@ try {
 let hibikiSwipeCloseEnabled = false;
 let hibikiSwipeStart = null;
 // 水平拖过此像素即关（固定阈值；in-app 的灵敏度滑块暂不移植，待真机再定是否需要）。
-const HIBIKI_SWIPE_CLOSE_THRESHOLD = 64;
+const FUSHI_SWIPE_CLOSE_THRESHOLD = 64;
 
 // 在弹窗宿主 [host] 上装水平拖关手势（每个 host 只装一次）。监听始终挂上，是否真正关窗由
 // hibikiSwipeCloseEnabled 门控（theme 到达后置位）→ 关时纯 no-op，开时水平主导且过阈才关。
@@ -1279,7 +1279,7 @@ function hibikiInstallSwipeClose(host) {
     const dx = x - hibikiSwipeStart.x;
     const dy = y - hibikiSwipeStart.y;
     // 水平主导（|dx| > 1.5·|dy|，避开竖向滚动/选竖排）且过阈 → 关。
-    if (Math.abs(dx) > HIBIKI_SWIPE_CLOSE_THRESHOLD &&
+    if (Math.abs(dx) > FUSHI_SWIPE_CLOSE_THRESHOLD &&
         Math.abs(dx) > Math.abs(dy) * 1.5) {
       hibikiSwipeStart = null;
       hibikiRemoveContainer();
@@ -1519,7 +1519,7 @@ function hibikiRemoveContainer() {
 // 绕开命中测试：找到包含光标的字幕容器，遍历其文本节点、逐字符用 Range.getBoundingClientRect 找出
 // 光标 (x,y) 落在哪个字上，返回该字所在的 Range（供 hoshiSelection.selectFromPosition 展开成词）。
 // 只在 getCharacterAtPoint 失败时兜底。
-const HIBIKI_SUBTITLE_SELECTORS = [
+const FUSHI_SUBTITLE_SELECTORS = [
   '.player-timedtext-text-container', // Netflix
   '.player-timedtext',
   '[class*="timedtext"]',
@@ -1529,7 +1529,7 @@ const HIBIKI_SUBTITLE_SELECTORS = [
 
 function hibikiSubtitleCaretAtPoint(x, y) {
   let container = null;
-  for (const sel of HIBIKI_SUBTITLE_SELECTORS) {
+  for (const sel of FUSHI_SUBTITLE_SELECTORS) {
     for (const el of document.querySelectorAll(sel)) {
       const r = el.getBoundingClientRect();
       if (r.width && r.height && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
@@ -1565,7 +1565,7 @@ function hibikiSubtitleCaretAtPoint(x, y) {
 
 document.addEventListener('mousemove', (e) => {
   if (hibikiNfBatchRunning) return; // 批量回放录制中：不查词、不自动暂停，免误触把当前句录制截断
-  if (!e[HIBIKI_MOD]) { hibikiLastTerm = ''; return; } // 松开 Shift 复位，下次可重查同词
+  if (!e[FUSHI_MOD]) { hibikiLastTerm = ''; return; } // 松开 Shift 复位，下次可重查同词
   // TODO-1279：Shift 悬停取词是「纯悬停扫描」——浏览器会在 Shift 按住+指针移动时把原生文本选区从
   // 既有 caret 扩到指针，与我们自绘的覆盖层高亮叠出一条多余的蓝色原生选区（用户报「一个我们的选区、
   // 一个浏览器自带的蓝色选区」）。纯悬停（无鼠标键按下，e.buttons===0）时清掉原生选区，只留覆盖层
@@ -1577,7 +1577,7 @@ document.addEventListener('mousemove', (e) => {
   hibikiLastY = e.clientY;
   // 在途闸：上一次查词还没回来就不发新请求（防洪）。BUG-1024：带截止时间——超时视为
   // 上一次已废弃（回调被杀死的 worker 吞掉），放行本次，避免永久卡死。
-  if (hibikiPending && Date.now() - hibikiPendingSince < HIBIKI_PENDING_TIMEOUT_MS) return;
+  if (hibikiPending && Date.now() - hibikiPendingSince < FUSHI_PENDING_TIMEOUT_MS) return;
   // 取词：复用 Flutter app 同款 window.hoshiSelection（vendor/selection.js，manifest 里先于本脚本加载）——
   // 统一处理 furigana/ruby、词边界、跨文本节点扩词，取词一致性与阅读器/视频查词同源（TODO-1150）。
   if (!window.hoshiSelection || typeof window.hoshiSelection.getCharacterAtPoint !== 'function') return;
@@ -1600,7 +1600,7 @@ document.addEventListener('mousemove', (e) => {
   if (!hit) return;
   // selectFromPosition 向左扩到词首、向右扫最多 MAX_LEN 字（跨节点收 ranges）并存进 hoshiSelection.selection，
   // 供随后 highlightSelection 高亮 + 取 bbox；内部 fire 的 textSelected 在扩展里经 bridge-shim 是 no-op（无副作用）。
-  const term = window.hoshiSelection.selectFromPosition(hit.node, hit.offset, HIBIKI_MAX_LEN, e.clientX, e.clientY);
+  const term = window.hoshiSelection.selectFromPosition(hit.node, hit.offset, FUSHI_MAX_LEN, e.clientX, e.clientY);
   // TODO-1218②：立刻快照被查词的锚点几何（selection.js getSelectionRect）。不能等响应回来才量——
   // 那时并发的 selectText 可能已清掉 hoshiSelection.selection → highlightSelection 返回 null → 锚点
   // 退回鼠标坐标（弹窗比词底高半行）。随响应传给 hibikiRender 作回退锚点。
@@ -1695,7 +1695,7 @@ window.hibikiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
     }
   }
   if (!hit) return;
-  const term = window.hoshiSelection.selectFromPosition(hit.node, hit.offset, HIBIKI_MAX_LEN, clientX, clientY);
+  const term = window.hoshiSelection.selectFromPosition(hit.node, hit.offset, FUSHI_MAX_LEN, clientX, clientY);
   hibikiClearNativeSelection(); // TODO-1279：显式点击查词同样清掉浏览器原生蓝色选区，只留覆盖层高亮
   let anchorRect = null;
   try {
@@ -1705,7 +1705,7 @@ window.hibikiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
   } catch (_) { anchorRect = null; }
   const autoLookup = !!(options && options.auto === true);
   if (autoLookup && hibikiPending &&
-      Date.now() - hibikiPendingSince < HIBIKI_PENDING_TIMEOUT_MS) return;
+      Date.now() - hibikiPendingSince < FUSHI_PENDING_TIMEOUT_MS) return;
   if (autoLookup) {
     const cueKey = cueWindow
       ? String(cueWindow.startMs) + ':' + String(cueWindow.endMs) + ':' + String(cueWindow.text || '')
@@ -1805,15 +1805,15 @@ function hibikiComputeResizedSize(start, delta, zoom, bounds) {
 // 基准最大宽/高的允许范围（逻辑像素）。与 app 设置页两滑杆 + Dart 侧
 // effective_lookup_size.dart 的 kLookupPopupMin/MaxWidth/Height 单一同源——拖拽与滑杆写同一
 // 真值，故边界必须一致，否则拖拽能写出滑杆写不出的越界值（app 侧仍会再 clamp 一次兜底）。
-const HIBIKI_POPUP_MIN_WIDTH = 250;
-const HIBIKI_POPUP_MIN_HEIGHT = 200;
-const HIBIKI_RESIZE_GRIP_SIZE = 18;
+const FUSHI_POPUP_MIN_WIDTH = 250;
+const FUSHI_POPUP_MIN_HEIGHT = 200;
+const FUSHI_RESIZE_GRIP_SIZE = 18;
 
 // 把拖拽把手移到弹窗当前渲染矩形的右下角（视口坐标；host 是 fixed，坐标即视口系）。
 function hibikiPositionResizeGrip() {
   if (!hibikiResizeGrip || !hibikiHost) return;
   const r = hibikiHost.getBoundingClientRect();
-  const s = HIBIKI_RESIZE_GRIP_SIZE;
+  const s = FUSHI_RESIZE_GRIP_SIZE;
   hibikiResizeGrip.style.left = (r.right - s) + 'px';
   hibikiResizeGrip.style.top = (r.bottom - s) + 'px';
 }
@@ -1846,7 +1846,7 @@ function hibikiInstallResizeDrag(grip) {
       startX: x, startY: y, baseW: baseW, baseH: baseH, zoom: z,
       moved: false,
       bounds: {
-        minW: HIBIKI_POPUP_MIN_WIDTH, minH: HIBIKI_POPUP_MIN_HEIGHT,
+        minW: FUSHI_POPUP_MIN_WIDTH, minH: FUSHI_POPUP_MIN_HEIGHT,
         // 视口可用空间（右/下边界 − 弹窗左上角）÷zoom = 基准尺度上界；不撑出视口、不遮被查词。
         maxW: (box.maxRight - box.left) / z,
         maxH: (box.maxBottom - box.top) / z,
@@ -1908,8 +1908,8 @@ function hibikiEnsureResizeGrip() {
     g.id = 'hibiki-popup-resize-grip';
     // 顶层 fixed；z-index 与 host 齐平（同值时 DOM 靠后者胜出 → 把手可点）；斜纹视觉暗示可拖。
     g.style.cssText =
-      'position:fixed;left:0;top:0;width:' + HIBIKI_RESIZE_GRIP_SIZE + 'px;height:' +
-      HIBIKI_RESIZE_GRIP_SIZE + 'px;z-index:2147483647;cursor:nwse-resize;' +
+      'position:fixed;left:0;top:0;width:' + FUSHI_RESIZE_GRIP_SIZE + 'px;height:' +
+      FUSHI_RESIZE_GRIP_SIZE + 'px;z-index:2147483647;cursor:nwse-resize;' +
       'pointer-events:auto;touch-action:none;' +
       'background:linear-gradient(135deg,transparent 0 46%,rgba(128,128,128,0.75) 46% 54%,' +
       'transparent 54% 66%,rgba(128,128,128,0.75) 66% 74%,transparent 74%);';

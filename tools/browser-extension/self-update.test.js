@@ -78,11 +78,11 @@ const bg = fs.readFileSync(path.join(__dirname, 'background.js'), 'utf8');
 
 test('background 经 importScripts 装载 self-update 状态机并用它决策', () => {
   assert.match(bg, /importScripts\('hibiki-defaults\.js', 'connection-diagnostics\.js', 'self-update\.js'\)/);
-  assert.match(bg, /HIBIKI_SELF_UPDATE\.decide\(/);
+  assert.match(bg, /FUSHI_SELF_UPDATE\.decide\(/);
 });
 
 test('background 状态请求不再写死 {}：心跳/启动检查与连接诊断都自报版本', () => {
-  assert.match(bg, /HIBIKI_SELF_UPDATE\.statusRequestBody\(/);
+  assert.match(bg, /FUSHI_SELF_UPDATE\.statusRequestBody\(/);
   // /api/extension/status 的两处 fetch 都用 statusRequestBody()。
   const statusFetches = bg.split("'/api/extension/status'").length - 1;
   const reportingBodies = bg.split('body: statusRequestBody(),').length - 1;

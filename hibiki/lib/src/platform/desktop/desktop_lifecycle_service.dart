@@ -12,7 +12,7 @@ class DesktopLifecycleService implements PlatformLifecycleService {
   /// 重启时附加给新进程的命令行标志（TODO-959）。新进程的 [main] 见到它就在启动后
   /// 主动 `windowManager.show()` + `focus()` 抢前台——分离启动（detached）的新进程在
   /// Windows 上不一定自动获得前台焦点，否则数据迁移重启会出现短暂黑/不可见窗口。
-  static const String restartMarkerArg = '--hibiki-restarted';
+  static const String restartMarkerArg = '--fushi-restarted';
 
   /// 桌面端通过「分离启动自身可执行文件 + 退出当前进程」实现重启（TODO-935 E3）。
   /// 复用更新器同款手法（`platform_updater.dart` 的 `Process.start(detached)`）。

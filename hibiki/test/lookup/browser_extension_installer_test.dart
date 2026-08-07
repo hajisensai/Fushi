@@ -50,7 +50,7 @@ void main() {
   });
 
   // TODO-1087：自动配置注入函数。buildBrowserExtensionDefaultsJs 把 server 真值写成
-  // 扩展的 hibiki-defaults.js（self.FUSHI_DEFAULTS）。测注入结果字面正确 + 转义安全。
+  // 扩展的 fushi-defaults.js（self.FUSHI_DEFAULTS）。测注入结果字面正确 + 转义安全。
   group('buildBrowserExtensionDefaultsJs', () {
     test('emits host/port/token into self.FUSHI_DEFAULTS', () {
       final String js = buildBrowserExtensionDefaultsJs(
@@ -82,7 +82,7 @@ void main() {
   });
 
   // BUG-726：扩展内容指纹 + build 注入/解析。指纹是「app 升级 → 磁盘副本刷新 → 扩展自
-  // reload」链路的身份真值：解压时写进 hibiki-defaults.js（build），查词响应下发同一指纹
+  // reload」链路的身份真值：解压时写进 fushi-defaults.js（build），查词响应下发同一指纹
   //（extensionBuild），两侧一致 = 最新，不一致 = 扩展 reload 拉新。
   group('browser extension fingerprint (BUG-726)', () {
     test('deterministic over content, order-independent', () {
@@ -110,14 +110,14 @@ void main() {
           isNot(computeBrowserExtensionFingerprint(b)));
     });
 
-    test('ignores hibiki-defaults.js (rewritten on every extract)', () {
+    test('ignores fushi-defaults.js (rewritten on every extract)', () {
       final Map<String, List<int>> a = <String, List<int>>{
         'background.js': <int>[1],
-        'hibiki-defaults.js': <int>[9, 9],
+        'fushi-defaults.js': <int>[9, 9],
       };
       final Map<String, List<int>> b = <String, List<int>>{
         'background.js': <int>[1],
-        'hibiki-defaults.js': <int>[7],
+        'fushi-defaults.js': <int>[7],
       };
       expect(computeBrowserExtensionFingerprint(a),
           computeBrowserExtensionFingerprint(b));
@@ -136,7 +136,7 @@ void main() {
     });
 
     test('prepareBundledBrowserExtension writes fingerprint into defaults', () {
-      // 生产接线守卫（源码扫描）：解压时必须把指纹写进 hibiki-defaults.js 的 build，
+      // 生产接线守卫（源码扫描）：解压时必须把指纹写进 fushi-defaults.js 的 build，
       // 否则启动刷新（refreshBundledBrowserExtensionIfStale）恒判陈旧、每次启动全量重写。
       final String src = File('lib/src/lookup/browser_extension_installer.dart')
           .readAsStringSync();
@@ -144,13 +144,13 @@ void main() {
     });
   });
 
-  // TODO-1087：扩展默认端口/主机守卫。打包扩展的 hibiki-defaults.js 与 background.js
+  // TODO-1087：扩展默认端口/主机守卫。打包扩展的 fushi-defaults.js 与 background.js
   // 的默认必须指向本机环回 + kYomitanApiDefaultPort(19633)，否则「加载已解压」后默认连不上。
   group('bundled extension default connection', () {
-    test('hibiki-defaults.js defaults to 127.0.0.1:19633', () {
-      final File defaults = File('assets/browser_extension/hibiki-defaults.js');
+    test('fushi-defaults.js defaults to 127.0.0.1:19633', () {
+      final File defaults = File('assets/browser_extension/fushi-defaults.js');
       expect(defaults.existsSync(), isTrue,
-          reason: 'missing bundled hibiki-defaults.js');
+          reason: 'missing bundled fushi-defaults.js');
       final String src = defaults.readAsStringSync();
       expect(src, contains('self.FUSHI_DEFAULTS'));
       expect(src, contains("host: '127.0.0.1'"));
@@ -163,8 +163,8 @@ void main() {
       // 必须 importScripts 默认文件 + cfg() 引用 FUSHI_DEFAULTS 作回落。
       // 不匹配闭合括号：TODO-1087 诊断特性后 importScripts 追加了
       // 'connection-diagnostics.js'（同一 importScripts 调用多参），
-      // hibiki-defaults.js 仍被导入，守卫只认「该文件被 importScripts」这个契约。
-      expect(src, contains("importScripts('hibiki-defaults.js'"));
+      // fushi-defaults.js 仍被导入，守卫只认「该文件被 importScripts」这个契约。
+      expect(src, contains("importScripts('fushi-defaults.js'"));
       expect(src, contains('FUSHI_DEFAULTS'));
       // 不再无条件默认 port=0（那会导致默认连不上）。
       expect(src, isNot(contains('port = 0')));

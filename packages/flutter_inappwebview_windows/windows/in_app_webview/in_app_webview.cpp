@@ -197,7 +197,7 @@ namespace flutter_inappwebview_plugin
       // app lifetime, so we intentionally do not pair a CoUninitialize.
       CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
       const std::wstring userDataFolder =
-        OptionalEnvWide(L"HIBIKI_WEBVIEW2_USER_DATA_FOLDER");
+        OptionalEnvWide(L"FUSHI_WEBVIEW2_USER_DATA_FOLDER");
       // BUG-1091: allow media autoplay without a user gesture. WebView2 has NO
       // per-view equivalent of `mediaPlaybackRequiresUserGesture` (the Dart-side
       // setting silently did nothing on this fork), so Chromium's autoplay policy

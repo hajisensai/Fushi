@@ -28,12 +28,12 @@ void main() {
       reason: 'BUG-1048：钩子必须交给 low_level_mouse_hook 的专用线程安装',
     );
     expect(
-      window.contains('hibiki::ArmLowLevelMouseHook'),
+      window.contains('fushi::ArmLowLevelMouseHook'),
       isTrue,
       reason: '浮窗显示时应通过专用线程装钩子',
     );
     expect(
-      window.contains('hibiki::DisarmLowLevelMouseHook'),
+      window.contains('fushi::DisarmLowLevelMouseHook'),
       isTrue,
       reason: '浮窗隐藏/析构时必须卸钩子，否则钩子会一直拦全系统鼠标',
     );

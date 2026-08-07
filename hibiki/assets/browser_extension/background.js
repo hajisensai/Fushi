@@ -1,28 +1,28 @@
-// TODO-1087：自动配置默认值。app 安装助手在解压时把当前 server 真值写进 hibiki-defaults.js，
+// TODO-1087：自动配置默认值。app 安装助手在解压时把当前 server 真值写进 fushi-defaults.js，
 // 于是加载已解压扩展后无需手填。用户仍可在 options 手动覆盖（chrome.storage.local 优先于默认）。
-try { importScripts('hibiki-defaults.js', 'connection-diagnostics.js', 'self-update.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
-const HIBIKI_DEFAULTS =
-    (self.HIBIKI_DEFAULTS) || { host: '127.0.0.1', port: 19633, token: '' };
+try { importScripts('fushi-defaults.js', 'connection-diagnostics.js', 'self-update.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
+const FUSHI_DEFAULTS =
+    (self.FUSHI_DEFAULTS) || { host: '127.0.0.1', port: 19633, token: '' };
 
 async function cfg() {
   const saved = await chrome.storage.local.get(['host', 'port', 'token']);
   const host = (saved.host != null && saved.host !== '')
-      ? saved.host : HIBIKI_DEFAULTS.host;
+      ? saved.host : FUSHI_DEFAULTS.host;
   const port = (saved.port != null && saved.port !== 0)
-      ? saved.port : HIBIKI_DEFAULTS.port;
+      ? saved.port : FUSHI_DEFAULTS.port;
   const token = (saved.token != null && saved.token !== '')
-      ? saved.token : HIBIKI_DEFAULTS.token;
+      ? saved.token : FUSHI_DEFAULTS.token;
   return { base: `http://${host}:${port}`, token };
 }
 function authHeader(token) { return 'Basic ' + btoa('hibiki:' + token); }
 
 // BUG-1079：/api/extension/status 请求体统一自报「浏览器中实际加载的版本」
-// （HIBIKI_DEFAULTS.build + manifest version）。此前写死 '{}'，app 端对浏览器里实际
+// （FUSHI_DEFAULTS.build + manifest version）。此前写死 '{}'，app 端对浏览器里实际
 // 跑的是哪个 build 零感知。旧 app 忽略 body → 向后兼容。
 function statusRequestBody() {
   try {
-    return self.HIBIKI_SELF_UPDATE.statusRequestBody(
-        HIBIKI_DEFAULTS, chrome.runtime.getManifest().version);
+    return self.FUSHI_SELF_UPDATE.statusRequestBody(
+        FUSHI_DEFAULTS, chrome.runtime.getManifest().version);
   } catch (_) { return '{}'; }
 }
 
@@ -56,10 +56,10 @@ async function diagnoseConnection(force) {
       });
       legacy = { status: old.status, body: await responseJson(old) };
     }
-    const preliminary = self.HIBIKI_CONNECTION.classify(primary, legacy, null, false);
-    if (preliminary !== self.HIBIKI_CONNECTION.states.connected &&
-        preliminary !== self.HIBIKI_CONNECTION.states.legacy &&
-        preliminary !== self.HIBIKI_CONNECTION.states.unauthorized) {
+    const preliminary = self.FUSHI_CONNECTION.classify(primary, legacy, null, false);
+    if (preliminary !== self.FUSHI_CONNECTION.states.connected &&
+        preliminary !== self.FUSHI_CONNECTION.states.legacy &&
+        preliminary !== self.FUSHI_CONNECTION.states.unauthorized) {
       const v = await fetch(base + '/serverVersion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -70,14 +70,14 @@ async function diagnoseConnection(force) {
   } catch (_) {
     networkError = true;
   }
-  const state = self.HIBIKI_CONNECTION.classify(primary, legacy, version, networkError);
+  const state = self.FUSHI_CONNECTION.classify(primary, legacy, version, networkError);
   const value = { state, base, port: Number(new URL(base).port) || 19633 };
   connectionCache = { key: cacheKey, at: now, value };
   return value;
 }
 
 // BUG-726：扩展自更新。app 启动时会把 <appSupport> 的已解压副本刷新到当前内置版本，并把
-// 内容指纹写进 hibiki-defaults.js（build）+ 随查词响应下发（extensionBuild）。这里比对
+// 内容指纹写进 fushi-defaults.js（build）+ 随查词响应下发（extensionBuild）。这里比对
 // 两者：不一致 = 磁盘上已有新版而当前加载的还是旧版 → chrome.runtime.reload() 从磁盘拉新
 // （等价于扩展管理页的「重新加载」，未解压包路径不变）。防护：
 // - 任一侧缺指纹（旧 app / 占位默认）→ 不动（向后兼容，绝不空转 reload）；
@@ -90,10 +90,10 @@ async function diagnoseConnection(force) {
 async function maybeSelfReload(data) {
   try {
     const remote = data && data.extensionBuild;
-    const local = HIBIKI_DEFAULTS.build;
+    const local = FUSHI_DEFAULTS.build;
     const st = await chrome.storage.local.get(
         ['hibikiReloadedForBuild', 'hibikiUpdateStale']);
-    const decision = self.HIBIKI_SELF_UPDATE.decide(
+    const decision = self.FUSHI_SELF_UPDATE.decide(
         remote, local, st.hibikiReloadedForBuild, await isOffscreenRecording());
     if (decision.action === 'clear') {
       if (st.hibikiUpdateStale) {

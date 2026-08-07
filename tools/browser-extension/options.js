@@ -1,6 +1,6 @@
 // Hibiki 浏览器扩展设置：自动连接优先，用户覆盖与字幕偏好存 chrome.storage.local。
 const $ = (id) => document.getElementById(id);
-const D = self.HIBIKI_DEFAULTS || { host: '127.0.0.1', port: 19633, token: '' };
+const D = self.FUSHI_DEFAULTS || { host: '127.0.0.1', port: 19633, token: '' };
 const settingDefaults = Object.freeze({
   netflixSubtitlePanel: false,
   subtitleOverlayEnabled: true,
@@ -96,15 +96,15 @@ async function refreshConnection(force) {
   const connection = response && response.connection
     ? response.connection
     : { state: 'offline', port: effectivePort(), base: 'http://127.0.0.1:' + effectivePort() };
-  const copy = self.HIBIKI_CONNECTION.copy(connection.state, connection.port);
+  const copy = self.FUSHI_CONNECTION.copy(connection.state, connection.port);
   if (card) card.dataset.tone = copy.tone;
   if (title) title.textContent = copy.title;
   if (detail) detail.textContent = copy.detail;
   if (endpoint) endpoint.textContent = connection.base || ('http://127.0.0.1:' + effectivePort());
   if (button) button.disabled = false;
 
-  if (connection.state === self.HIBIKI_CONNECTION.states.unauthorized ||
-      connection.state === self.HIBIKI_CONNECTION.states.wrongService) {
+  if (connection.state === self.FUSHI_CONNECTION.states.unauthorized ||
+      connection.state === self.FUSHI_CONNECTION.states.wrongService) {
     $('advancedConnection').open = true;
   }
 }
@@ -176,12 +176,12 @@ async function refreshUpdateCard() {
   const titleEl = $('updTitle');
   const detailEl = $('updDetail');
   const buildEl = $('updBuild');
-  if (!titleEl || !self.HIBIKI_SELF_UPDATE) return;
+  if (!titleEl || !self.FUSHI_SELF_UPDATE) return;
   let stale = null;
   try {
     stale = (await chrome.storage.local.get('hibikiUpdateStale')).hibikiUpdateStale || null;
   } catch (_) { /* storage 不可用：按无 stale 渲染 */ }
-  const s = self.HIBIKI_SELF_UPDATE.describeUpdateState(self.HIBIKI_DEFAULTS, stale);
+  const s = self.FUSHI_SELF_UPDATE.describeUpdateState(self.FUSHI_DEFAULTS, stale);
   titleEl.textContent = '版本与更新 · ' + s.title;
   if (detailEl) detailEl.textContent = s.detail;
   if (buildEl) buildEl.textContent = s.build ? 'build ' + s.build : '';

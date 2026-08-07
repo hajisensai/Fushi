@@ -11,7 +11,7 @@ const vm = require('node:vm');
 //   3) HTML5 video.textTracks 全量收割：原生字幕轨站点直接得到整集列表（含标签清洗与增量刷新）。
 
 const ADAPTERS = path.join(__dirname, 'subtitle-adapters.js');
-const CONTENT = process.env.HIBIKI_CONTENT_UNDER_TEST ||
+const CONTENT = process.env.FUSHI_CONTENT_UNDER_TEST ||
   path.join(__dirname, 'content.js');
 
 function loadContent(opts) {

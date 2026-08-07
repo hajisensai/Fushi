@@ -8,7 +8,7 @@
 (function (root, factory) {
   var api = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  if (root) root.HIBIKI_SELF_UPDATE = api;
+  if (root) root.FUSHI_SELF_UPDATE = api;
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
@@ -20,7 +20,7 @@
   });
 
   // remote = server 下发的内置指纹（extensionBuild）；local = 当前加载副本的
-  // HIBIKI_DEFAULTS.build；reloadedFor = storage 里记录的「已为哪个 build reload 过」；
+  // FUSHI_DEFAULTS.build；reloadedFor = storage 里记录的「已为哪个 build reload 过」；
   // recording = 正在逐句回放录制（reload 会杀 offscreen 录制，跳过本轮）。
   function decide(remote, local, reloadedFor, recording) {
     if (!remote || !local) return { action: actions.none };

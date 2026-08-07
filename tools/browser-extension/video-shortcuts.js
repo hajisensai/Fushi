@@ -14,7 +14,7 @@
 (function (root, factory) {
   var api = factory();
   try { if (typeof module !== 'undefined' && module.exports) module.exports = api; } catch (_) { /* no-op */ }
-  if (root) root.HIBIKI_VIDEO_SHORTCUTS = api;
+  if (root) root.FUSHI_VIDEO_SHORTCUTS = api;
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
@@ -67,7 +67,7 @@
 // ── 浏览器运行时（node 单测里 window/document 缺省 → 整段跳过）──
 (function () {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
-  var api = (typeof self !== 'undefined' ? self : window).HIBIKI_VIDEO_SHORTCUTS;
+  var api = (typeof self !== 'undefined' ? self : window).FUSHI_VIDEO_SHORTCUTS;
   var bindingKeys = {
     'prev-cue': 'videoShortcutPrevCue',
     'next-cue': 'videoShortcutNextCue',

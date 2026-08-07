@@ -5,16 +5,16 @@ import 'package:flutter_test/flutter_test.dart';
 /// BUG-1014 回归守卫：Windows 安装器不得在更新时无条件重写桌面快捷方式。
 ///
 /// 根因：`hibiki.iss` 的 `[Icons]` 旧版无条件创建 `{userdesktop}\Hibiki`，
-/// 每次应用内静默更新（/VERYSILENT）都把已存在的 `Hibiki.lnk` 重写一遍，
+/// 每次应用内静默更新（/VERYSILENT）都把已存在的 `Fushi.lnk` 重写一遍，
 /// Explorer 把重写的快捷方式当作变更/新项，丢弃 `Shell\Bags` 里记住的坐标，
 /// 桌面图标被重排回默认格子 → 用户观感「每次更新图标移位」。
 ///
 /// 修复：桌面图标改为可选 `desktopicon` 任务（默认勾选，保持首装即有图标的旧行为），
-/// 并加 `Check: ShouldCreateDesktopIcon` —— 仅在 `{userdesktop}\Hibiki.lnk` 尚不
+/// 并加 `Check: ShouldCreateDesktopIcon` —— 仅在 `{userdesktop}\Fushi.lnk` 尚不
 /// 存在时才创建，更新时跳过、不重写、位置保留。
 void main() {
   String readInstallerScript() {
-    final File file = File('windows/installer/hibiki.iss');
+    final File file = File('windows/installer/fushi.iss');
     expect(
       file.existsSync(),
       isTrue,
@@ -28,14 +28,14 @@ void main() {
 
     // 找到 [Icons] 段里的桌面快捷方式行。
     final RegExp desktopIconLine = RegExp(
-      r'^\s*Name:\s*"\{userdesktop\}\\Hibiki".*$',
+      r'^\s*Name:\s*"\{userdesktop\}\\Fushi".*$',
       multiLine: true,
     );
     final Iterable<RegExpMatch> matches = desktopIconLine.allMatches(iss);
     expect(
       matches.length,
       1,
-      reason: 'expected exactly one {userdesktop}\\Hibiki icon entry',
+      reason: 'expected exactly one {userdesktop}\\Fushi icon entry',
     );
     final String line = matches.first.group(0)!;
 
@@ -61,7 +61,7 @@ void main() {
     final RegExp fn = RegExp(
       r'function\s+ShouldCreateDesktopIcon\s*\(\s*\)\s*:\s*Boolean\s*;'
       r'.*?Result\s*:=\s*not\s+FileExists\s*\(\s*'
-      r"ExpandConstant\s*\(\s*'\{userdesktop\}\\Hibiki\.lnk'\s*\)\s*\)\s*;"
+      r"ExpandConstant\s*\(\s*'\{userdesktop\}\\Fushi\.lnk'\s*\)\s*\)\s*;"
       r'.*?end\s*;',
       dotAll: true,
     );
@@ -69,7 +69,7 @@ void main() {
       fn.hasMatch(iss),
       isTrue,
       reason: 'ShouldCreateDesktopIcon must return '
-          'not FileExists({userdesktop}\\Hibiki.lnk) (BUG-1014).',
+          'not FileExists({userdesktop}\\Fushi.lnk) (BUG-1014).',
     );
   });
 
@@ -98,7 +98,7 @@ void main() {
   // BUG-1014 后续回归守卫：ISCC 的 { } 块注释不支持嵌套，注释体内出现 Inno 常量
   // （形如 {userdesktop} / {app}）时，常量的第一个 `}` 会提前闭合整个块注释，其后
   // 的文字被当代码解析 -> "Column NN: Syntax error. Compile aborted."（原始事故：
-  // 第 163 行 `{userdesktop}\Hibiki.lnk` 提前闭合块注释）。仓库约定 [Code] 段注释
+  // 第 163 行 `{userdesktop}\Fushi.lnk` 提前闭合块注释）。仓库约定 [Code] 段注释
   // 一律用 `//` 行注释（见 commit 588f30177）。本守卫扫描 [Code] 段，逐字符跟踪
   // 字符串/行注释/块注释状态，断言任何 { } 块注释体内都不再出现会闭合它的内层 `{`。
   test('no [Code] block comment embeds an Inno constant that closes it early',

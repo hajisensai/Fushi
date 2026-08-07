@@ -1,7 +1,7 @@
 (function (root, factory) {
   var api = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  if (root) root.HIBIKI_CONNECTION = api;
+  if (root) root.FUSHI_CONNECTION = api;
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 

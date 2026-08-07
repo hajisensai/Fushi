@@ -21,7 +21,7 @@
 (function (root, factory) {
   var api = factory();
   try { if (typeof module !== 'undefined' && module.exports) module.exports = api; } catch (_) { /* 页面自带 module 时忽略 */ }
-  if (root) root.HIBIKI_STREAM_ADAPTERS = api;
+  if (root) root.FUSHI_STREAM_ADAPTERS = api;
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
@@ -128,7 +128,7 @@
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (window.__hibikiStreamBridge) return; // 防重复注入
   window.__hibikiStreamBridge = true;
-  var A = (typeof self !== 'undefined' ? self : window).HIBIKI_STREAM_ADAPTERS;
+  var A = (typeof self !== 'undefined' ? self : window).FUSHI_STREAM_ADAPTERS;
   var site = A.siteForHost(location.hostname);
   if (!site) return;
 

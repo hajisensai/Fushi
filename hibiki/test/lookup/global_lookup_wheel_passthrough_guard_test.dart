@@ -308,7 +308,7 @@ void main() {
           'DefWindowProc（顶层窗不往下传），卡片一样滚不动',
     );
     expect(
-      winSrc.contains('case hibiki::kLowLevelMouseWheelMessage:'),
+      winSrc.contains('case fushi::kLowLevelMouseWheelMessage:'),
       isTrue,
       reason: '消息必须真的接进 HandleMessage，否则钩子吞了就石沉大海',
     );

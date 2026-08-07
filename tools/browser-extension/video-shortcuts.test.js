@@ -166,14 +166,14 @@ async function loadOptionsRuntime(initialSettings = {}) {
   ];
   const elements = Object.fromEntries(ids.map((id) => [id, makeOptionsElement(id)]));
   const self = {
-    HIBIKI_DEFAULTS: { host: '127.0.0.1', port: 19633, token: '' },
-    HIBIKI_CONNECTION: {
+    FUSHI_DEFAULTS: { host: '127.0.0.1', port: 19633, token: '' },
+    FUSHI_CONNECTION: {
       states: { unauthorized: 'unauthorized', wrongService: 'wrong-service' },
       copy() {
         return { tone: 'good', title: '已连接', detail: '测试连接正常' };
       },
     },
-    HIBIKI_SELF_UPDATE: {
+    FUSHI_SELF_UPDATE: {
       describeUpdateState() {
         return { title: '已是最新', detail: '测试 build', build: 'test' };
       },

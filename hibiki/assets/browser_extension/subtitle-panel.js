@@ -121,7 +121,7 @@
     return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
   }
 
-  // DOM 采样 live 轨的伪语言码（content.js HIBIKI_LIVE_LANG）：排序垫底 + 显示中文标签。
+  // DOM 采样 live 轨的伪语言码（content.js FUSHI_LIVE_LANG）：排序垫底 + 显示中文标签。
   var LIVE_LANG = 'live';
   function tracksForVideo() {
     var store = window.hibikiEpisodeCues || null;

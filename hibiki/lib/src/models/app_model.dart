@@ -5638,7 +5638,7 @@ class AppModel with ChangeNotifier {
   /// 幂等 + 不覆盖既有真值（安全 + 向后兼容）：
   /// - token：仅当 [yomitanApiKey] 为空时才生成一枚随机 token 并落盘；**绝不覆盖**用户手填
   ///   或此前已配对的非空 token（覆盖会踢掉扩展已保存的 token 造成 401）。播种在启动/注入前
-  ///   完成，保证 server 实际使用的 token 与随后注入扩展 `hibiki-defaults.js` 的 token 一致。
+  ///   完成，保证 server 实际使用的 token 与随后注入扩展 `fushi-defaults.js` 的 token 一致。
   /// - server：仅当当前未启用时才置位并启动；已启用则**跳过不重启**（不打断在跑的 server、
   ///   不干扰活动连接）。[startYomitanApiServer] 本身也幂等（管理器 `if (_server != null)`）。
   ///

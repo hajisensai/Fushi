@@ -11,7 +11,7 @@ import 'package:path_provider/path_provider.dart';
 /// 助手把随 app 打包的扩展解压到磁盘 + 给出「开发者模式 → 加载已解压 → 粘贴路径」引导。
 ///
 /// TODO-1087：解压时把当前 yomitan-api server 的 host/port/token 写进扩展的
-/// `hibiki-defaults.js`，于是「加载已解压扩展」后无需用户手填连接信息（自动配置）。
+/// `fushi-defaults.js`，于是「加载已解压扩展」后无需用户手填连接信息（自动配置）。
 
 /// 目标浏览器（决定扩展管理页 URL）。
 enum BrowserKind { chrome, edge }
@@ -30,7 +30,7 @@ String browserExtensionsPageUrl(BrowserKind kind) {
 const String _kBundlePrefix = 'assets/browser_extension/';
 
 /// TODO-1087：扩展要连的 Hibiki yomitan-api server 连接信息（自动配置真值）。
-/// 由安装助手写进扩展的 `hibiki-defaults.js`，扩展默认即用、无需用户手填。
+/// 由安装助手写进扩展的 `fushi-defaults.js`，扩展默认即用、无需用户手填。
 class BrowserExtensionServerConfig {
   const BrowserExtensionServerConfig({
     required this.host,
@@ -48,9 +48,9 @@ class BrowserExtensionServerConfig {
   final String token;
 }
 
-const String _kDefaultsFileName = 'hibiki-defaults.js';
+const String _kDefaultsFileName = 'fushi-defaults.js';
 
-/// 生成扩展 `hibiki-defaults.js` 的内容：注入当前 server 真值作为默认。
+/// 生成扩展 `fushi-defaults.js` 的内容：注入当前 server 真值作为默认。
 /// 纯函数，便于测试；host/token 走 JSON 编码避免注入/转义问题。
 ///
 /// BUG-726：[build] 是本次解压的扩展内容指纹（[computeBrowserExtensionFingerprint]）。
@@ -78,7 +78,7 @@ String buildBrowserExtensionDefaultsJs(
 }
 
 /// BUG-726：扩展内容指纹。对「相对路径 → 字节」的全量 map（排除安装时会被重写的
-/// `hibiki-defaults.js`）按路径排序后做 sha256，取前 16 hex。纯函数，便于测试；
+/// `fushi-defaults.js`）按路径排序后做 sha256，取前 16 hex。纯函数，便于测试；
 /// 同一份内置扩展在任何机器上指纹恒等，内容变（app 升级带来新扩展）指纹必变。
 String computeBrowserExtensionFingerprint(Map<String, List<int>> assets) {
   final List<String> keys =
@@ -93,7 +93,7 @@ String computeBrowserExtensionFingerprint(Map<String, List<int>> assets) {
   return sha256.convert(input.takeBytes()).toString().substring(0, 16);
 }
 
-/// BUG-726：从已解压副本的 `hibiki-defaults.js` 源码里解析 `build` 指纹。
+/// BUG-726：从已解压副本的 `fushi-defaults.js` 源码里解析 `build` 指纹。
 /// 旧版副本（无 build 键）返回 null —— 与当前指纹必然不等，触发刷新，正是所求。
 String? parseBrowserExtensionBuild(String defaultsJs) {
   final RegExpMatch? m =
@@ -105,7 +105,7 @@ String? parseBrowserExtensionBuild(String defaultsJs) {
 /// 绝对路径（供用户在浏览器「加载已解压的扩展程序」时粘贴）。每次调用覆盖写入，保证与
 /// app 内置版本一致（升级即刷新）。仅桌面有意义。
 ///
-/// TODO-1087：传入 [serverConfig] 时，用其真值重写解压出的 `hibiki-defaults.js`，
+/// TODO-1087：传入 [serverConfig] 时，用其真值重写解压出的 `fushi-defaults.js`，
 /// 于是扩展默认即连本机 app、无需用户手填 host/port/token。不传则保留打包内的占位默认。
 Future<String> prepareBundledBrowserExtension({
   BrowserExtensionServerConfig? serverConfig,
@@ -173,7 +173,7 @@ String? _bundledFingerprintCache;
 /// 用户浏览器里的扩展弹窗永远停在安装当天的旧版（BUG-621/688 修了也到不了浏览器）。
 ///
 /// - 副本目录不存在（用户从没装过扩展）→ 不落盘、返回 false；
-/// - 副本 `hibiki-defaults.js` 里的 build 指纹与内置一致 → 已最新、返回 false；
+/// - 副本 `fushi-defaults.js` 里的 build 指纹与内置一致 → 已最新、返回 false；
 /// - 否则整目录重解压（注入 [serverConfig] 真值 + 新指纹）→ 返回 true。
 Future<bool> refreshBundledBrowserExtensionIfStale({
   required BrowserExtensionServerConfig serverConfig,

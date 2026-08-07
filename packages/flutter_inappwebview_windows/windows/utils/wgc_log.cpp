@@ -53,7 +53,7 @@ namespace flutter_inappwebview_plugin
     {
       wchar_t root[MAX_PATH];
       const DWORD len =
-        GetEnvironmentVariableW(L"HIBIKI_TEST_ROOT", root, MAX_PATH);
+        GetEnvironmentVariableW(L"FUSHI_TEST_ROOT", root, MAX_PATH);
       if (len == 0 || len >= MAX_PATH) {
         return std::wstring();
       }

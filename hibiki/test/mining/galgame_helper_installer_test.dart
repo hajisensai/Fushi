@@ -674,7 +674,7 @@ void main() {
       '../.github/workflows/release-desktop.yml',
     ).readAsStringSync();
     final String installer =
-        File('windows/installer/hibiki.iss').readAsStringSync();
+        File('windows/installer/fushi.iss').readAsStringSync();
 
     test('组包脚本清单与 Dart 安装清单逐文件一致', () {
       for (final String arch in <String>['x64', 'x86']) {

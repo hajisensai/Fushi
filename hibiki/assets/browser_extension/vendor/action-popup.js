@@ -146,7 +146,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
       chrome.runtime.sendMessage({ type: 'connectionStatus', force: true }, (resp) => {
         try { if (chrome.runtime.lastError) return; } catch (_) { return; }
         const c = resp && resp.connection ? resp.connection : { state: 'offline', port: 19633 };
-        const copy = self.HIBIKI_CONNECTION.copy(c.state, c.port);
+        const copy = self.FUSHI_CONNECTION.copy(c.state, c.port);
         if (connEl) connEl.dataset.tone = copy.tone;
         if (connTitleEl) connTitleEl.textContent = copy.title;
         if (connDetailEl) connDetailEl.textContent = copy.detail;
