@@ -555,11 +555,7 @@ class FushiSyncServer {
     if (reqPath == '/api/extension/status') {
       if (method != 'POST') return shelf.Response(405);
       return _jsonResponse(<String, dynamic>{
-        // 'app': 'hibiki' 是浏览器扩展 wire 契约：商店里的旧扩展严格比对
-        // body.app === 'hibiki'，切了就断连。扩展仓 connection-diagnostics.js
-        // 已改为接受 'fushi' | 'hibiki' 双值；等扩展商店版本普及双值兼容后
-        // 这里才切 'fushi'（进度台账有案）。
-        'app': 'hibiki',
+        'app': 'fushi',
         'ready': true,
         'port': port,
       });

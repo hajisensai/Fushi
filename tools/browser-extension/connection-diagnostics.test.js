@@ -3,17 +3,17 @@ const assert = require('node:assert/strict');
 
 const diagnostics = require('./connection-diagnostics.js');
 
-test('Hibiki status endpoint wins when it is ready', () => {
+test('Fushi status endpoint wins when it is ready', () => {
   assert.equal(
-    diagnostics.classify({ status: 200, body: { app: 'hibiki', ready: true } }),
+    diagnostics.classify({ status: 200, body: { app: 'fushi', ready: true } }),
     diagnostics.states.connected,
   );
 });
 
-test("renamed app reporting 'fushi' is accepted as connected (dual-value transition)", () => {
+test("pre-rename 'hibiki' wire value is no longer accepted (extension was never published)", () => {
   assert.equal(
-    diagnostics.classify({ status: 200, body: { app: 'fushi', ready: true } }),
-    diagnostics.states.connected,
+    diagnostics.classify({ status: 200, body: { app: 'hibiki', ready: true } }),
+    diagnostics.states.wrongService,
   );
 });
 

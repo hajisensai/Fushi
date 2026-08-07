@@ -16,11 +16,8 @@
 
   function classify(primary, legacy, version, networkError) {
     if (networkError) return states.offline;
-    // Fushi 改名过渡：app 端 /api/extension/status 目前仍返回 'hibiki'
-    // （商店里的旧扩展严格比对，切了就断连）；扩展侧先双值兼容，
-    // 等商店版本普及后 app 端才切 'fushi'。两个值都算 connected。
     if (primary && primary.status === 200 && primary.body &&
-        (primary.body.app === 'fushi' || primary.body.app === 'hibiki')) {
+        primary.body.app === 'fushi') {
       return states.connected;
     }
     if ((primary && (primary.status === 401 || primary.status === 403)) ||

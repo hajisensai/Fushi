@@ -104,7 +104,7 @@ class GoogleDriveAuth {
   // 包名 + 签名 SHA-1 自动解析对应 client，传 null 即可。iOS 必须显式提供
   // iOS 型 clientId，且 Info.plist 需配反转 client id 的 URL scheme 作回调。
   static const _iosClientId =
-      '963096957716-a9f20m4rsbenns50qn0l2cleq9cj5g0b.apps.googleusercontent.com';
+      '963096957716-a5iep3fd7jqsef4vdb2c4nq7mm7i3rnn.apps.googleusercontent.com';
 
   static final _desktopClientId = auth.ClientId(
     _oauthClientId,

@@ -284,10 +284,7 @@ class YomitanApiServer {
     }
     final String? extensionBuild = _extensionBuildProvider?.call();
     return _json(<String, dynamic>{
-      // 'app': 'hibiki' 是浏览器扩展 wire 契约：商店里的旧扩展严格比对，切了
-      // 就断连。扩展仓 connection-diagnostics.js 已改为接受 'fushi' | 'hibiki'
-      // 双值；等扩展商店版本普及双值兼容后这里才切 'fushi'（进度台账有案）。
-      'app': 'hibiki',
+      'app': 'fushi',
       'ready': true,
       'port': port,
       if (extensionBuild != null) 'extensionBuild': extensionBuild,

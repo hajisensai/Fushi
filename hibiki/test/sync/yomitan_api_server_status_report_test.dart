@@ -88,7 +88,7 @@ void main() {
       expect(resp.statusCode, 200);
       final Map<String, dynamic> j = await _json(resp);
       // 响应契约不变：仍回带内置指纹 + ready。
-      expect(j['app'], 'hibiki');
+      expect(j['app'], 'fushi');
       expect(j['ready'], true);
       expect(j['extensionBuild'], 'ffff0000ffff0000');
       expect(reports, <(String, String?)>[('abcd1234abcd1234', '0.3.0')]);
@@ -106,7 +106,7 @@ void main() {
           await _postRaw(server.port, '/api/extension/status', '{}');
       expect(resp.statusCode, 200);
       final Map<String, dynamic> j = await _json(resp);
-      expect(j['app'], 'hibiki');
+      expect(j['app'], 'fushi');
       expect(j['extensionBuild'], 'ffff0000ffff0000');
       expect(reports, isEmpty);
       expect(seenCount, 1, reason: '旧扩展仍刷新 last-seen');
@@ -147,7 +147,7 @@ void main() {
           '/api/extension/status',
           jsonEncode(<String, dynamic>{'build': 'abcd1234abcd1234'}));
       expect(resp.statusCode, 200);
-      expect((await _json(resp))['app'], 'hibiki');
+      expect((await _json(resp))['app'], 'fushi');
     });
   });
 }

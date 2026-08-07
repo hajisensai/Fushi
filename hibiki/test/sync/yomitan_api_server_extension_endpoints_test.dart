@@ -183,7 +183,7 @@ void main() {
       );
       expect(resp.statusCode, 200);
       final Map<String, dynamic> j = await _json(resp);
-      expect(j['app'], 'hibiki');
+      expect(j['app'], 'fushi');
       expect(j['ready'], true);
       expect(j['port'], server.port);
     });

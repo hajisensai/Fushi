@@ -9,16 +9,16 @@
       "client_info": {
         "mobilesdk_app_id": "1:963096957716:android:000000000000000000",
         "android_client_info": {
-          "package_name": "app.hibiki.reader"
+          "package_name": "app.fushi.reader"
         }
       },
       "oauth_client": [
         {
-          "client_id": "963096957716-lo3p56f7fknr3g2ege3arn00qel061ug.apps.googleusercontent.com",
+          "client_id": "963096957716-o3vcj318pj5s9s6iik4k046e80tnsgmc.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "app.hibiki.reader",
-            "certificate_hash": "284a9f6d361fb1b2b5e815bad036b3c72628ff33"
+            "package_name": "app.fushi.reader",
+            "certificate_hash": "cc3946e7aec470e1fe5adbe5a2bdd54e893e65b3"
           }
         },
         {
