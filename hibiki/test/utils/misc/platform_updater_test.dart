@@ -604,9 +604,9 @@ void main() {
   group('platform capability helpers include macOS in-app install', () {
     test('synthesizeStableAssetNames lists the macOS zip', () {
       final List<String> names = synthesizeStableAssetNames('0.4.2');
-      // macOS 已切 fushi 资产名；Windows 在更新桥版本发布前保持 hibiki（Phase 5）。
+      // 本分支是更新桥版本：合成名全量 fushi（Phase 5，装上桥后更新指向 Fushi 产物）。
       expect(names, contains('fushi-0.4.2-macos.zip'));
-      expect(names, contains('hibiki-0.4.2-windows-setup.exe'));
+      expect(names, contains('fushi-0.4.2-windows-setup.exe'));
     });
   });
 
