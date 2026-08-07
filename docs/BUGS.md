@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1364 条。点号进各自文件。
+> 共 1365 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1459](bugs/BUG-1459-installer-appdir-process-lock.md) | ✅ | ✅ | 安装器无法替换被残留子进程锁定的文件 |
 | [BUG-1458](bugs/BUG-1458-sync-collections-tombstone-day-red.md) | 🚧 | 🚧 | 集合同步墓碑用例在develop稳定红-疑日期敏感 |
 | [BUG-1457](bugs/BUG-1457-ai6-clean-voice.md) | ✅ | ✅ | AI6 制卡误用混合 BGM |
 | [BUG-1456](bugs/BUG-1456-manga-source-preview-loading.md) | ✅ | ✅ | 漫画源预览并发拉图、超时与重复操作 |

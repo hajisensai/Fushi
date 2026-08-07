@@ -194,6 +194,37 @@ begin
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
+{ BUG-1459: the mutex layer only proves the main exe exited. Helper processes
+  launched from the install dir (ffmpeg.exe audio jobs, galgame helper) can
+  outlive it and keep their image files locked, so the file-copy phase dies
+  with "could not replace ...\ffmpeg.exe (DeleteFile code 5)". Sweep by image
+  PATH under the target dir (not by name) so unrelated same-named processes
+  elsewhere on the machine are untouched. }
+procedure KillProcessesUnderDir(const Dir: String);
+var
+  ResultCode: Integer;
+  EscapedDir: String;
+  Cmd: String;
+begin
+  EscapedDir := Dir;
+  StringChangeEx(EscapedDir, '''', '''''', True);
+  Cmd := '-NoProfile -ExecutionPolicy Bypass -Command "$d = ''' + EscapedDir + '''; ' +
+    'if (-not $d.EndsWith(''\'')) { $d += ''\'' }; ' +
+    'Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($d, [System.StringComparison]::OrdinalIgnoreCase) } | ' +
+    'Stop-Process -Force -ErrorAction SilentlyContinue"';
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Cmd, '',
+       SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+{ Runs after the user confirms install, before file copy — the last hook where
+  we can still release file locks. Empty result string = proceed. }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  KillProcessesUnderDir(ExpandConstant('{app}'));
+  Sleep(500);
+end;
+
 // BUG-1014: preserve the user's desktop icon position across updates.
 // Return False (skip creating the desktop shortcut) when {userdesktop}\Fushi.lnk
 // already exists, so an update never rewrites it -- Explorer keeps the remembered
