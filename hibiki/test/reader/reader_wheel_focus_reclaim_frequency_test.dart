@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
 import '../helpers/source_guard.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 const Duration _kSettle = Duration(milliseconds: 450);
 
@@ -10,7 +10,7 @@ const Duration _kSettle = Duration(milliseconds: 450);
 /// `_focusOwnership.reclaim(FocusReclaimCause.gesture)` 的次数。
 typedef _BurstCounts = ({int pageTurns, int focusReclaims});
 
-/// 复刻 `onWheelPaginate` handler（`reader_hibiki/webview.part.dart`）的真实判定顺序：
+/// 复刻 `onWheelPaginate` handler（`reader_fushi/webview.part.dart`）的真实判定顺序：
 ///   ① 横向 tick 先过 [ReaderWheelGestureGate]；判「属于已认领手势」→ 早退（不 reclaim）。
 ///   ② 放行的 tick **先** `_focusOwnership.reclaim(FocusReclaimCause.gesture)`；
 ///   ③ 再进 `_paginate`；`_paginationInFlight` 为真时被入口守卫直接丢弃。

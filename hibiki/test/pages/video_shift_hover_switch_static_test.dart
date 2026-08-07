@@ -101,7 +101,7 @@ void main() {
       expect(
           hover.contains('HardwareKeyboard.instance.isShiftPressed'), isTrue);
       expect(
-        hover.contains('ReaderHibikiSource.instance.hoverAutoLookup'),
+        hover.contains('ReaderFushiSource.instance.hoverAutoLookup'),
         isTrue,
       );
       // 8px 平方阈值节流。

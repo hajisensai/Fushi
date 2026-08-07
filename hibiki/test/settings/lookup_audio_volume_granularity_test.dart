@@ -77,7 +77,7 @@ void main() {
                       context: context,
                       appModel: appModel,
                       ref: ref,
-                      readerSource: ReaderHibikiSource.instance,
+                      readerSource: ReaderFushiSource.instance,
                       refresh: () => setState(() {}),
                     );
                     return const MaterialSettingsRenderer().buildDetailContent(
@@ -102,11 +102,11 @@ void main() {
     MediaSource.setDatabase(db);
     final ReaderSettings readerSettings = ReaderSettings(db);
     await readerSettings.refreshFromDb();
-    ReaderHibikiSource.readerSettings = readerSettings;
+    ReaderFushiSource.readerSettings = readerSettings;
   });
 
   tearDown(() async {
-    ReaderHibikiSource.readerSettings = null;
+    ReaderFushiSource.readerSettings = null;
     await db.close();
   });
 
@@ -114,7 +114,7 @@ void main() {
     testWidgets('drag snaps to the 1% grid, not the old 5% grid', (
       WidgetTester tester,
     ) async {
-      await ReaderHibikiSource.instance.setLookupAudioVolume(50);
+      await ReaderFushiSource.instance.setLookupAudioVolume(50);
       await tester.pumpWidget(buildHarness(AppModel(testPlatformServices())));
       await tester.pump();
 
@@ -131,7 +131,7 @@ void main() {
       await tester.drag(find.byType(Slider), Offset(trackWidth * 0.025, 0));
       await tester.pump();
 
-      final int volume = ReaderHibikiSource.instance.lookupAudioVolume;
+      final int volume = ReaderFushiSource.instance.lookupAudioVolume;
       expect(volume, isNot(50), reason: '拖动确实改了音量');
       expect(volume, inInclusiveRange(51, 54));
       expect(volume % 5, isNot(0),
@@ -160,7 +160,7 @@ void main() {
       // notifyReaderSettingsChanged 在 await 之后重建；pumpAndSettle 排空该
       // 异步写 + 重建，单次 pump 会漏掉读数刷新（值已同步进 _cache 故不受影响）。
       await tester.pumpAndSettle();
-      expect(ReaderHibikiSource.instance.lookupAudioVolume, 95,
+      expect(ReaderFushiSource.instance.lookupAudioVolume, 95,
           reason: '左方向键 = -5%（键步经 step 与 1% 拖动档位解耦）');
       expect(find.text('${t.lookup_audio_volume} (95%)'), findsOneWidget,
           reason: '标题实时读数跟随（没有读数细步进等于白调）');
@@ -170,11 +170,11 @@ void main() {
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pump();
-      expect(ReaderHibikiSource.instance.lookupAudioVolume, 100);
+      expect(ReaderFushiSource.instance.lookupAudioVolume, 100);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pump();
-      expect(ReaderHibikiSource.instance.lookupAudioVolume, 95);
+      expect(ReaderFushiSource.instance.lookupAudioVolume, 95);
 
       // 持久化往返：新 ReaderSettings 从 DB 重读得到同一个值。
       final ReaderSettings restored = ReaderSettings(db);
@@ -203,14 +203,14 @@ void main() {
         reason: 'D-pad 左右被音量行消费（不移动焦点）',
       );
       await tester.pump();
-      expect(ReaderHibikiSource.instance.lookupAudioVolume, 95);
+      expect(ReaderFushiSource.instance.lookupAudioVolume, 95);
 
       Actions.maybeInvoke<GamepadButtonIntent>(
         controller.activeContext!,
         const GamepadButtonIntent(GamepadButton.dpadRight),
       );
       await tester.pump();
-      expect(ReaderHibikiSource.instance.lookupAudioVolume, 100);
+      expect(ReaderFushiSource.instance.lookupAudioVolume, 100);
     });
   });
 

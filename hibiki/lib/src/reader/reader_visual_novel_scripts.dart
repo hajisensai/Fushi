@@ -926,7 +926,7 @@ window.fushiReader = {
       })
       .catch((error) => {
         // TODO-1085 (BUG-513): notifyRestoreComplete is the ONLY signal that
-        // clears the Dart-side loading mask (reader_hibiki_page.dart's
+        // clears the Dart-side loading mask (reader_fushi_page.dart's
         // `if (!_readerContentReady) Positioned.fill(ColoredBox)`). It is the
         // last statement of the happy path AND every restore method awaits this
         // same readyPromise, so a reject anywhere in the chain (buildSourceIndexes

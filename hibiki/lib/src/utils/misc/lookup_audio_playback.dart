@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/audio_mime.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -44,7 +44,7 @@ Future<void> playLookupAudio(
   // drive-letter paths (BUG-046).
   await TtsChannel.instance.playAudioRef(
     url,
-    volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
+    volume: ReaderFushiSource.instance.lookupAudioVolumeGain,
   );
 }
 
@@ -140,7 +140,7 @@ Future<bool> autoReadWordUnified(
 
   return await TtsChannel.instance.playAudioRef(
     ref,
-    volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
+    volume: ReaderFushiSource.instance.lookupAudioVolumeGain,
   );
 }
 

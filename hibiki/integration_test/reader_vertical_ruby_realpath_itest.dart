@@ -5,11 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart'
-    show ReaderHibikiSource;
+import 'package:fushi/src/media/sources/reader_fushi_source.dart'
+    show ReaderFushiSource;
 import 'package:fushi/src/models/app_model.dart' show AppModel;
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
-    show ReaderHibikiPage;
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
+    show ReaderFushiPage;
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart' show readyAppModel, seedReaderBook;
@@ -192,16 +192,16 @@ void main() {
           // Keep vertical-rl (the machine default) + continuous scroll (the
           // reported scenario). writingMode/viewMode are structural layout keys:
           // fire onLayoutReloadLive to re-run pagination (the product path).
-          await ReaderHibikiSource.instance.setReaderWritingMode('vertical-rl');
-          await ReaderHibikiSource.instance.setReaderViewMode('continuous');
-          ReaderHibikiSource.onLayoutReloadLive?.call();
+          await ReaderFushiSource.instance.setReaderWritingMode('vertical-rl');
+          await ReaderFushiSource.instance.setReaderViewMode('continuous');
+          ReaderFushiSource.onLayoutReloadLive?.call();
           for (int i = 0; i < 16; i++) {
             await tester.pump(const Duration(milliseconds: 250));
           }
           await _waitFor(tester, _contentReady, 'continuous content');
 
           final Future<dynamic> Function(String source)? runJs =
-              ReaderHibikiPage.debugEvaluateJavascript;
+              ReaderFushiPage.debugEvaluateJavascript;
           expect(runJs, isNotNull,
               reason: 'reader must expose debugEvaluateJavascript hook');
 
@@ -249,7 +249,7 @@ void main() {
           final Map<String, dynamic> after = await probe('AFTER jump');
 
           // Capture real pixels (authoritative evidence).
-          final captureHook = ReaderHibikiPage.debugCaptureWebView;
+          final captureHook = ReaderFushiPage.debugCaptureWebView;
           if (captureHook != null) {
             try {
               await captureHook();

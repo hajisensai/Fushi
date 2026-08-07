@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-806 守卫：框选 tap 坐标探针 + barrier-hover 真坐标系修复（源码扫描，
 /// 沿用 `reader_live_settings_guard_test.dart` 的合并语料 + `contains` 静态断言

@@ -16,7 +16,7 @@ void main() {
       expectPartManifestMatchesDisk(
         manifest: readerHistoryFiles(),
         shellPath:
-            'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+            'lib/src/pages/implementations/reader_fushi_history_page.dart',
         partDirPath: 'lib/src/pages/implementations/reader_history',
       );
     });

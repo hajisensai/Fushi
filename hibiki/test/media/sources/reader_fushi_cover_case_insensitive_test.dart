@@ -18,7 +18,7 @@ import 'package:path/path.dart' as p;
 /// coverPath verbatim, no re-parse), File(join(extractDir,
 /// "oebps/images/cover.jpg")) misses the real "OEBPS/Images/Cover.jpg" -> cover
 /// gone. Fix: resolve the declared cover case-insensitively against the real
-/// extracted files as a last resort ([ReaderHibikiSource.resolveCaseInsensitive]
+/// extracted files as a last resort ([ReaderFushiSource.resolveCaseInsensitive]
 /// wired into _resolveCoverUrl).
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -34,7 +34,7 @@ void main() {
     List<String> listDir(String d) => tree[d] ?? const <String>[];
 
     test('小写声明 href 解析到大小写保留的真实文件', () {
-      final String? r = ReaderHibikiSource.resolveCaseInsensitive(
+      final String? r = ReaderFushiSource.resolveCaseInsensitive(
         extractDir: '/x/Book',
         relPaths: <String>['oebps/images/cover.jpg'],
         listDir: listDir,
@@ -43,7 +43,7 @@ void main() {
     });
 
     test('声明封面优先于 cover 兜底(首个能解析的候选取胜)', () {
-      final String? r = ReaderHibikiSource.resolveCaseInsensitive(
+      final String? r = ReaderFushiSource.resolveCaseInsensitive(
         extractDir: '/x/Book',
         relPaths: <String>['oebps/images/cover.jpg', 'cover.jpg'],
         listDir: listDir,
@@ -52,7 +52,7 @@ void main() {
     });
 
     test('声明封面无法解析时回落 cover 兜底', () {
-      final String? r = ReaderHibikiSource.resolveCaseInsensitive(
+      final String? r = ReaderFushiSource.resolveCaseInsensitive(
         extractDir: '/x/Book',
         relPaths: <String>['oebps/images/missing.jpg', 'cover.jpg'],
         listDir: listDir,
@@ -61,7 +61,7 @@ void main() {
     });
 
     test('全部候选都不存在返回 null', () {
-      final String? r = ReaderHibikiSource.resolveCaseInsensitive(
+      final String? r = ReaderFushiSource.resolveCaseInsensitive(
         extractDir: '/x/Book',
         relPaths: <String>['nope/none.png'],
         listDir: listDir,
@@ -70,7 +70,7 @@ void main() {
     });
 
     test('绝对路径候选被跳过(仅解析相对 href)', () {
-      final String? r = ReaderHibikiSource.resolveCaseInsensitive(
+      final String? r = ReaderFushiSource.resolveCaseInsensitive(
         extractDir: '/x/Book',
         relPaths: <String>['/etc/passwd'],
         listDir: listDir,
@@ -83,11 +83,11 @@ void main() {
     late Directory tempDir;
 
     setUp(() {
-      ReaderHibikiSource.debugResetCoverCache();
+      ReaderFushiSource.debugResetCoverCache();
       tempDir = Directory.systemTemp.createTempSync('hibiki_cover_ci_');
     });
     tearDown(() {
-      ReaderHibikiSource.debugResetCoverCache();
+      ReaderFushiSource.debugResetCoverCache();
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     });
 
@@ -122,7 +122,7 @@ void main() {
       );
 
       final MediaItem? item =
-          await ReaderHibikiSource.instance.mediaItemForBookKey('CaseBook');
+          await ReaderFushiSource.instance.mediaItemForBookKey('CaseBook');
       expect(item, isNotNull);
       expect(item!.imageUrl, isNotNull,
           reason: '封面在盘上存在，只是 coverPath 大小写不符——不得塌成 null(BUG-612)');
@@ -141,7 +141,7 @@ void main() {
   // 在大小写不敏感宿主(Windows/macOS)导入时被 p.canonicalize 小写化，解压文件却保留
   // 真实大小写(TODO-739)；到 Android/Linux(大小写敏感 FS)后裸探测按小写落空 →
   // coverPath=null → 制出的卡无封面(书架却因 case-insensitive 兜底正常显示)。修复:
-  // 制卡复用书架同一个 [ReaderHibikiSource.resolveCoverFilePath]，两条路径对封面
+  // 制卡复用书架同一个 [ReaderFushiSource.resolveCoverFilePath]，两条路径对封面
   // 文件解析对称。下面既守护解析行为(真机/CI 端到端)，也守护接线(源码扫描)。
   group('resolveCoverFilePath 制卡封面 case-insensitive 解析对称 (TODO-1388/BUG-703)',
       () {
@@ -166,7 +166,7 @@ void main() {
         ..writeAsBytesSync(<int>[0xFF, 0xD8, 0xFF]);
 
       // mining 拿到的 coverHref 是被大小写不敏感宿主小写化过的相对路径。
-      final String? resolved = ReaderHibikiSource.resolveCoverFilePath(
+      final String? resolved = ReaderFushiSource.resolveCoverFilePath(
         extractDir: extractDir,
         coverPath: 'oebps/images/cover.jpg',
       );
@@ -190,7 +190,7 @@ void main() {
         ..createSync(recursive: true)
         ..writeAsBytesSync(<int>[0xFF, 0xD8, 0xFF]);
 
-      final String? resolved = ReaderHibikiSource.resolveCoverFilePath(
+      final String? resolved = ReaderFushiSource.resolveCoverFilePath(
         extractDir: extractDir,
         coverPath: null,
       );
@@ -204,7 +204,7 @@ void main() {
       final String extractDir = p.join(tempDir.path, 'Empty');
       Directory(extractDir).createSync(recursive: true);
 
-      final String? resolved = ReaderHibikiSource.resolveCoverFilePath(
+      final String? resolved = ReaderFushiSource.resolveCoverFilePath(
         extractDir: extractDir,
         coverPath: 'oebps/images/cover.jpg',
       );
@@ -225,7 +225,7 @@ void main() {
     List<String> listDir(String d) => tree[d] ?? const <String>[];
 
     test('小写声明 href 在大小写敏感 FS 上仍解析到真实大小写文件', () {
-      final String? r = ReaderHibikiSource.resolveCaseInsensitive(
+      final String? r = ReaderFushiSource.resolveCaseInsensitive(
         extractDir: '/dev/Book',
         relPaths: <String>['oebps/images/cover.jpg'],
         listDir: listDir,
@@ -240,11 +240,11 @@ void main() {
     // 源码扫描守卫: 无论平台大小写敏感与否恒定判定——若有人把制卡封面解析改回裸
     // `File(p.join(_extractDir!, coverHref)).existsSync()`(对大小写不敏感、Android
     // 上会丢封面)，此测试立即变红。这是修复本质(制卡与显示对称)的最强可落地守卫。
-    test('mining.part.dart 调用 ReaderHibikiSource.resolveCoverFilePath', () {
+    test('mining.part.dart 调用 ReaderFushiSource.resolveCoverFilePath', () {
       final String src =
-          File('lib/src/pages/implementations/reader_hibiki/mining.part.dart')
+          File('lib/src/pages/implementations/reader_fushi/mining.part.dart')
               .readAsStringSync();
-      expect(src, contains('ReaderHibikiSource.resolveCoverFilePath('),
+      expect(src, contains('ReaderFushiSource.resolveCoverFilePath('),
           reason: '制卡封面必须复用书架同一个 case-insensitive 兜底解析');
       expect(
           src, isNot(contains('File(p.join(_extractDir!, _book!.coverHref))')),
@@ -252,7 +252,7 @@ void main() {
     });
 
     test('书架 _resolveCoverUrl 也经 resolveCoverFilePath(两条路径同源)', () {
-      final String src = File('lib/src/media/sources/reader_hibiki_source.dart')
+      final String src = File('lib/src/media/sources/reader_fushi_source.dart')
           .readAsStringSync();
       expect(src, contains('resolveCoverFilePath('),
           reason: '书架与制卡必须共享同一封面解析，避免两份漂移');

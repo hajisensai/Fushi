@@ -43,7 +43,7 @@ import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
@@ -116,14 +116,14 @@ export 'package:fushi/src/shortcuts/dictionary_caret_controller.dart'
     show CaretSurface;
 import 'package:fushi/src/shortcuts/reader_space_override.dart';
 
-part 'reader_hibiki/lyrics.part.dart';
-part 'reader_hibiki/mining.part.dart';
-part 'reader_hibiki/lookup.part.dart';
-part 'reader_hibiki/navigation.part.dart';
-part 'reader_hibiki/audiobook.part.dart';
-part 'reader_hibiki/caret.part.dart';
-part 'reader_hibiki/chrome.part.dart';
-part 'reader_hibiki/webview.part.dart';
+part 'reader_fushi/lyrics.part.dart';
+part 'reader_fushi/mining.part.dart';
+part 'reader_fushi/lookup.part.dart';
+part 'reader_fushi/navigation.part.dart';
+part 'reader_fushi/audiobook.part.dart';
+part 'reader_fushi/caret.part.dart';
+part 'reader_fushi/chrome.part.dart';
+part 'reader_fushi/webview.part.dart';
 
 /// TODO-904: native WebView2 实例创建失败时，fork 经 onReceivedError 合成的
 /// [WebResourceError] 描述里携带的 sentinel 前缀（须与
@@ -180,7 +180,7 @@ bool shouldReclaimReaderFocusAfterGesture({
 /// 视口尺寸变化是否大到需要重排分页（BUG-210 / TODO-146）。
 ///
 /// 桌面端用户报「翻页有时跳回章节开头」。根因不在 JS `paginate`（真实 Chromium
-/// 引擎下逐页步进稳健，BUG-169 修复有效），而在 [_ReaderHibikiPageState._syncPageSize]
+/// 引擎下逐页步进稳健，BUG-169 修复有效），而在 [_ReaderFushiPageState._syncPageSize]
 /// 的旧判定：宽度用**精确浮点不等** `w != _lastSyncedWidth`（零容差），高度才用
 /// `(h - last).abs() >= 1`（1px 容差）。Windows 桌面（`flutter_inappwebview_windows`
 /// fork 渲染 EPUB）在翻页/重绘时常报 sub-pixel 视口宽抖动，零容差让任意 0.x px 宽差
@@ -206,7 +206,7 @@ bool shouldReclaimReaderFocusAfterGesture({
 }
 
 /// TODO-690 / BUG-399：桌面窗口拖边框 resize 后阅读器文字渲染错乱、不自动重排，
-/// 翻页才恢复。唯一 resize→重排入口是 [_ReaderHibikiPageState.didChangeMetrics]
+/// 翻页才恢复。唯一 resize→重排入口是 [_ReaderFushiPageState.didChangeMetrics]
 /// → `_syncPageSize`，但 Windows 拖边框时 `didChangeMetrics` / `MediaQuery.size`
 /// 更新滞后，JS 分页几何缓存（`--page-width/height` / `this.pageWidth` / `_contW`
 /// / `paginationMetrics`）无人失效，导致错位。修复用阅读器树内的透明 `LayoutBuilder`
@@ -262,7 +262,7 @@ DateTime contentReadyTimeoutDeadline({
 }
 
 /// 阅读器主题用的四个颜色角色：正文背景、正文字色、私语(振假名/sasayaki)叠色、
-/// 是否暗色。preset 主题在 [_ReaderHibikiPageState._themeMap] 里手调，其余主题
+/// 是否暗色。preset 主题在 [_ReaderFushiPageState._themeMap] 里手调，其余主题
 /// （light-theme / system-theme / 任意未覆盖的 key）由 [resolveReaderThemeColors]
 /// 回落到真实 ColorScheme 派生，避免再写死成白底（BUG-208 / TODO-143）。
 typedef ReaderThemeColors = ({
@@ -1103,7 +1103,7 @@ String readerColorToCssRgba(Color c, {double? alphaOverride}) {
   return 'rgba($r,$g,$b,${alpha.toStringAsFixed(2)})';
 }
 
-/// TODO-575 批1: 自定义字体文件头魔数校验（从 [_ReaderHibikiPageState._isValidFontData]
+/// TODO-575 批1: 自定义字体文件头魔数校验（从 [_ReaderFushiPageState._isValidFontData]
 /// 凿出的纯逻辑）。读前 4 字节大端拼成签名，命中字体容器魔数表才放行。
 ///
 /// 命中表（与旧内联实现逐项一致）：TrueType `0x00010000` / OpenType-CFF `OTTO`
@@ -1120,7 +1120,7 @@ bool isValidFontData(Uint8List data) {
 }
 
 /// TODO-575 批1: 全局字符偏移 → (章节索引, 章内进度) 的纯查表核心，从
-/// [_ReaderHibikiPageState._jumpToGlobalCharOffset] 凿出（原函数保留 navigate/JS
+/// [_ReaderFushiPageState._jumpToGlobalCharOffset] 凿出（原函数保留 navigate/JS
 /// IO 壳调它，不整体上移）。
 ///
 /// - [cumulativeChars]：每章起始的累积字符数（`_chapterCumulativeChars`）。
@@ -1211,8 +1211,8 @@ class _BookLocateResult {
   final bool exists;
 }
 
-class ReaderHibikiPage extends BaseSourcePage {
-  const ReaderHibikiPage({
+class ReaderFushiPage extends BaseSourcePage {
+  const ReaderFushiPage({
     required this.bookKey,
     super.item,
     this.initialBookmarkJump,
@@ -1294,11 +1294,11 @@ class ReaderHibikiPage extends BaseSourcePage {
   static Future<void> Function(FavoriteSentence fav)? debugJumpToFavorite;
 
   @override
-  BaseSourcePageState<ReaderHibikiPage> createState() =>
-      _ReaderHibikiPageState();
+  BaseSourcePageState<ReaderFushiPage> createState() =>
+      _ReaderFushiPageState();
 }
 
-class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
+class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     with WidgetsBindingObserver
     implements ReaderAudiobookView, DictionaryCaretHost {
   InAppWebViewController? _controller;
@@ -1524,7 +1524,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   ///    接管。恢复锚因此**结构性地**始终等于当前阅读位置，崩溃回调不需要再临时
   ///    拷 `_lastProgress*`；
   /// ② `onWebViewCreated` 的调试钩子断言改成所有者身份判据
-  ///    （[ReaderHibikiPage.debugHookOwner]），同一 State 重装合法、两个阅读器
+  ///    （[ReaderFushiPage.debugHookOwner]），同一 State 重装合法、两个阅读器
   ///    同时活着仍会炸；
   /// ③ `_refreshProgress` 的 `evaluateJavascript` 补了 try/catch + 日志。
   ///
@@ -1535,7 +1535,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// flush 侧仍要做满：取消轮询与 debounce（报废 controller 上的
   /// `evaluateJavascript` 会抛成未捕获异步错误）、落盘当前位置、丢掉 controller。
   late final WebViewDeathGuard _webViewDeathGuard = WebViewDeathGuard(
-    surface: 'reader_hibiki',
+    surface: 'reader_fushi',
     flushBeforeRebuild: () async {
       _progressPollTimer?.cancel();
       _progressPollTimer = null;
@@ -1663,7 +1663,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     try {
       await _applyStylesLive();
     } catch (e, s) {
-      ErrorLogService.instance.log('ReaderHibiki.onSettingsChangedLive', e, s);
+      ErrorLogService.instance.log('ReaderFushi.onSettingsChangedLive', e, s);
     }
     if (!mounted) return;
     // BUG-712 ①：highlightOnTap 是 JS 侧点词门控镜像的另一半，设置热更新时同步。
@@ -1775,7 +1775,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _progressCurrentChars != null &&
       _progressTotalChars != null &&
       _progressTotalChars! > 0 &&
-      ReaderHibikiSource.instance.showTopProgressBar;
+      ReaderFushiSource.instance.showTopProgressBar;
 
   /// 顶部进度信息条的预留高（单一真相源 [kTopProgressStripHeight]）。历史值为裸
   /// `_infoFontSize * 1.5`，未计入 BUG-547 毛玻璃 pill 后加的上下内边距，导致挤压模式
@@ -1785,12 +1785,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   /// TODO-975 决策#2：顶部进度是否悬浮（点击唤出 + 自动收起 + 不占预留）。
   bool get _topProgressFloating =>
-      ReaderHibikiSource.instance.topProgressFloating;
+      ReaderFushiSource.instance.topProgressFloating;
 
   /// TODO-975 决策#3：底栏是否悬浮 == 「点空白处隐藏控制栏」开关。复用既有偏好，
   /// 不另设开关（单一真相源、消除并列特例）。
   bool get _bottomBarFloating =>
-      ReaderHibikiSource.instance.tapEmptyToHideChrome;
+      ReaderFushiSource.instance.tapEmptyToHideChrome;
 
   /// TODO-975：顶部进度的预留高（单一真相源）。关进度 / 悬浮态恒 0（需求 A：关进度
   /// 回收 18px），挤压且显示时占 [_infoStripHeight]。
@@ -1858,14 +1858,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   void initState() {
     super.initState();
     assert(() {
-      ReaderHibikiPage.debugOpenQuickSettings = () async {
+      ReaderFushiPage.debugOpenQuickSettings = () async {
         unawaited(_showAppearanceSheet());
         await Future<void>.delayed(Duration.zero);
       };
-      ReaderHibikiPage.debugToggleLyricsMode = _toggleLyricsMode;
-      ReaderHibikiPage.debugLyricsModeReady =
+      ReaderFushiPage.debugToggleLyricsMode = _toggleLyricsMode;
+      ReaderFushiPage.debugLyricsModeReady =
           () => mounted && _lyricsMode && _lyricsPageReady;
-      ReaderHibikiPage.debugJumpToFavorite = _jumpToFavoriteSentence;
+      ReaderFushiPage.debugJumpToFavorite = _jumpToFavoriteSentence;
       return true;
     }());
     WidgetsBinding.instance.addObserver(this);
@@ -1875,22 +1875,22 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // (keyboard/gamepad) highlight mode; rebuild it when the mode flips so it
     // appears/disappears with the input device, not only on focus changes.
     FocusManager.instance.addHighlightModeListener(_onHighlightModeChanged);
-    ReaderHibikiSource.onSettingsChangedLive = () {
+    ReaderFushiSource.onSettingsChangedLive = () {
       if (!mounted) return;
       // BUG-969：经 _liveSettingsRunner 合并（错误处理/tap-gate 同步/setState
       // 都在 runner 动作内），拖动风暴收敛为背靠背串行趟。
       unawaited(_liveSettingsRunner.trigger());
     };
-    ReaderHibikiSource.onLayoutReloadLive = () {
+    ReaderFushiSource.onLayoutReloadLive = () {
       if (!mounted) return;
       unawaited(
           _reloadWithCurrentSettings().catchError((Object e, StackTrace s) {
-        ErrorLogService.instance.log('ReaderHibiki.onLayoutReloadLive', e, s);
+        ErrorLogService.instance.log('ReaderFushi.onLayoutReloadLive', e, s);
       }));
     };
     // 纯 Flutter chrome 布局变化（如反转底栏）只需重建一次重读偏好，
     // 不动 WebView 内容、不重锚、不重排分页。
-    ReaderHibikiSource.onChromeReloadLive = () {
+    ReaderFushiSource.onChromeReloadLive = () {
       if (!mounted) return;
       setState(() {});
     };
@@ -1898,7 +1898,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // 挤压↔悬浮切换）。除重建外还需重新下发 chrome insets 并重锚连续模式滚动位置，
     // 否则预留高变化触发的 reflow 会把 window.scrollY 归零弹回章首。切换悬浮模式时
     // 先收起临时可见态（新模式从隐藏起步、reserve 自洽）。
-    ReaderHibikiSource.onChromeReanchorLive = () {
+    ReaderFushiSource.onChromeReanchorLive = () {
       if (!mounted) return;
       _cancelChromeAutoHide();
       setState(() {
@@ -1907,7 +1907,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       unawaited(_applyChromeInsetsAndReanchor().catchError(
         (Object e, StackTrace s) {
           ErrorLogService.instance
-              .log('ReaderHibiki.onChromeReanchorLive', e, s);
+              .log('ReaderFushi.onChromeReanchorLive', e, s);
         },
       ));
     };
@@ -1928,7 +1928,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       await _initBookInner();
     } catch (e, stack) {
       debugPrint('[ReaderFushi] _initBook failed: $e\n$stack');
-      ErrorLogService.instance.log('ReaderHibiki._initBook', e, stack);
+      ErrorLogService.instance.log('ReaderFushi._initBook', e, stack);
       if (!mounted) return;
       FushiToast.show(
           msg: t.reader_open_failed, severity: ToastSeverity.error);
@@ -1950,7 +1950,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       final Set<String> keys = await db.getRevealedImageKeys(widget.bookKey);
       _revealedImageKeys.addAll(keys);
     } catch (e, s) {
-      ErrorLogService.instance.log('ReaderHibiki.loadRevealedImageKeys', e, s);
+      ErrorLogService.instance.log('ReaderFushi.loadRevealedImageKeys', e, s);
     }
   }
 
@@ -1958,7 +1958,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final FushiDatabase db = appModelNoUpdate.database;
 
     // TODO-131: profile→settings 链与 book 定位→解析链互不依赖（前者动
-    // ReaderHibikiSource.readerSettings / active profile，后者动 _book / _extractDir），
+    // ReaderFushiSource.readerSettings / active profile，后者动 _book / _extractDir），
     // 并行起跑把 profile/settings 的 DB 往返与 EPUB 解析 isolate 重叠，缩短白屏。
     final Future<void> profileSettingsFuture = _resolveProfileAndSettings(db);
     final Future<_BookLocateResult> bookLocateFuture = _locateBookOnDisk(db);
@@ -1974,7 +1974,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     await profileSettingsFuture;
     if (!mounted) return;
-    _settings = ReaderHibikiSource.readerSettings;
+    _settings = ReaderFushiSource.readerSettings;
 
     final _BookLocateResult located = await bookLocateFuture;
     if (!mounted) return;
@@ -2118,7 +2118,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       }
     }
 
-    final ReaderHibikiSource src = ReaderHibikiSource.instance;
+    final ReaderFushiSource src = ReaderFushiSource.instance;
     if (src.volumePageTurningEnabled) {
       _setupVolumeKeyHandlers();
     }
@@ -2131,7 +2131,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // 这里把「上次是歌词模式」记成待恢复意图（保留偏好、不再抹除），等 EPUB 内容就绪
     // + 有声书已挂载后（见 _onChapterLoadComplete）再切歌词，等价用户手动切、已知安全。
     _lyricsMode = false;
-    _pendingLyricsRestore = ReaderHibikiSource.instance.lyricsMode;
+    _pendingLyricsRestore = ReaderFushiSource.instance.lyricsMode;
 
     _audioSlotResolved = true;
 
@@ -2200,7 +2200,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       unawaited(_persistRecomputedCharCounts(counts));
     }).catchError((Object e, StackTrace s) {
       ErrorLogService.instance
-          .log('ReaderHibiki._recomputeCharCountsInBackground', e, s);
+          .log('ReaderFushi._recomputeCharCountsInBackground', e, s);
     }));
   }
 
@@ -2318,7 +2318,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   /// TODO-1192: 把后台按新口径（[japaneseCharCount]）重算出的每章字数回写进
   /// [EpubBooks.chaptersJson]，并打上当前口径版本 [kChapterCharCountCaliber]，使书架
-  /// 总字数（[ReaderHibikiSource] 直接读 chaptersJson 的 characters）与下次开书都用
+  /// 总字数（[ReaderFushiSource] 直接读 chaptersJson 的 characters）与下次开书都用
   /// 新口径，不必每次开书重算。只覆写 `characters` / `charCaliber` 两个字段、保留原有
   /// 条目结构（id/href/mediaType 等）——绝不改章节数或顺序；数量不符（竞态换书 / 脏
   /// 数据）宁可跳过不写，也不写坏结构（下次开书再算）。
@@ -2342,7 +2342,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           .updateEpubBookChaptersJson(bookKey, jsonEncode(updated));
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibiki._persistRecomputedCharCounts', e, stack);
+          .log('ReaderFushi._persistRecomputedCharCounts', e, stack);
     }
   }
 
@@ -2355,22 +2355,22 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     assert(() {
       // TODO-2603：页面走了就释放钩子所有权，下一个阅读器才能装（无条件清，与旧行为
       // 逐字一致——钩子本来就是无条件清的，这里只多清一个所有者字段）。
-      ReaderHibikiPage.debugHookOwner = null;
-      ReaderHibikiPage.debugEvaluateJavascript = null;
-      ReaderHibikiPage.debugCaptureWebView = null;
-      ReaderHibikiPage.debugCaretSurface = null;
-      ReaderHibikiPage.debugEvaluateTopPopup = null;
-      ReaderHibikiPage.debugInjectAudiobookBridge = null;
-      ReaderHibikiPage.debugOpenQuickSettings = null;
-      ReaderHibikiPage.debugToggleLyricsMode = null;
-      ReaderHibikiPage.debugLyricsModeReady = null;
-      ReaderHibikiPage.debugJumpToFavorite = null;
+      ReaderFushiPage.debugHookOwner = null;
+      ReaderFushiPage.debugEvaluateJavascript = null;
+      ReaderFushiPage.debugCaptureWebView = null;
+      ReaderFushiPage.debugCaretSurface = null;
+      ReaderFushiPage.debugEvaluateTopPopup = null;
+      ReaderFushiPage.debugInjectAudiobookBridge = null;
+      ReaderFushiPage.debugOpenQuickSettings = null;
+      ReaderFushiPage.debugToggleLyricsMode = null;
+      ReaderFushiPage.debugLyricsModeReady = null;
+      ReaderFushiPage.debugJumpToFavorite = null;
       return true;
     }());
-    ReaderHibikiSource.onSettingsChangedLive = null;
-    ReaderHibikiSource.onLayoutReloadLive = null;
-    ReaderHibikiSource.onChromeReloadLive = null;
-    ReaderHibikiSource.onChromeReanchorLive = null;
+    ReaderFushiSource.onSettingsChangedLive = null;
+    ReaderFushiSource.onLayoutReloadLive = null;
+    ReaderFushiSource.onChromeReloadLive = null;
+    ReaderFushiSource.onChromeReanchorLive = null;
     FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
     final ExitFlushCallback? exitFlush = _exitFlushCallback;
     if (exitFlush != null) {
@@ -2415,7 +2415,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // 当前 zone 成未捕获异步错误。与本文件其它 unawaited future 惯例对齐。
       unawaited(
           appModel.audiobookSession.stop().catchError((Object e, StackTrace s) {
-        ErrorLogService.instance.log('ReaderHibiki.disposeStopAudiobook', e, s);
+        ErrorLogService.instance.log('ReaderFushi.disposeStopAudiobook', e, s);
       }));
     }
     _readingTimeTracker?.dispose();
@@ -2472,7 +2472,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (!appModel.audiobookBackgroundPlay) {
       unawaited(
           appModel.audiobookSession.stop().catchError((Object e, StackTrace s) {
-        ErrorLogService.instance.log('ReaderHibiki.popStopAudiobook', e, s);
+        ErrorLogService.instance.log('ReaderFushi.popStopAudiobook', e, s);
       }));
     }
   }
@@ -2699,7 +2699,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     );
 
     // TODO-690 / BUG-399：透明 LayoutBuilder 作为桌面窗口 resize → 重排的通道。
-    // 位于 FushiAppUiScaleNeutralizer 之下（路由层 ReaderHibikiSource.buildLaunchPage
+    // 位于 FushiAppUiScaleNeutralizer 之下（路由层 ReaderFushiSource.buildLaunchPage
     // 已用 Neutralizer 包裹本页），在 WebView 子树外层。builder **零几何变换**：只读
     // constraints 交给 _onReaderConstraintsChanged（尾沿防抖起 _syncPageSize），原样返回
     // reader 子树。constraints.biggest 与 _syncPageSize 读的 MediaQuery.size 同处反缩放
@@ -2929,20 +2929,20 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _sanitizedHtmlCache.clear();
   }
 
-  /// TODO-756b：把“鼠标悬停即自动查词”开关（[ReaderHibikiSource.hoverAutoLookup]）
+  /// TODO-756b：把“鼠标悬停即自动查词”开关（[ReaderFushiSource.hoverAutoLookup]）
   /// live 下发给 WebView 的全局 `window.__hoverAutoLookup`。setup 脚本注入初值，此处
   /// 在配置变化时改同一全局，无需整章重注入。半销毁 WebView 抛 PlatformException 时
   /// 就地兜底（与 [_applyStylesLive] 同纪律），下发本就无意义 → 安全 no-op。
   Future<void> _applyHoverAutoLookupLive() async {
     if (_controller == null) return;
-    final bool enabled = ReaderHibikiSource.instance.hoverAutoLookup;
+    final bool enabled = ReaderFushiSource.instance.hoverAutoLookup;
     try {
       await _controller!.evaluateJavascript(
         source: 'window.__hoverAutoLookup = $enabled;',
       );
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibiki.applyHoverAutoLookupLive', e, stack);
+          .log('ReaderFushi.applyHoverAutoLookupLive', e, stack);
     }
   }
 
@@ -2957,7 +2957,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   Future<void> _applyStylesLive() async {
     if (_controller == null || _settings == null) return;
     _invalidateStyleCache();
-    // _settings 即 ReaderHibikiSource.readerSettings 本体，setReaderPref* 已在触发本
+    // _settings 即 ReaderFushiSource.readerSettings 本体，setReaderPref* 已在触发本
     // 回调前写穿同一对象，无需再 _syncSettingsFromHive 自拷贝（旧 TTU 死桥）。
     if (!mounted || _controller == null) return;
     // TODO-756b：把“悬停即查词”开关下发到 WebView 的 window.__hoverAutoLookup（mousemove
@@ -3009,7 +3009,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // controller 非 null 但底层 WebView 平台视图已销毁时 evaluateJavascript
       // 抛 PlatformException。无活动 WebView 时套样式本就无意义 → 安全 no-op。
       ErrorLogService.instance
-          .log('ReaderHibiki.applyStylesLive.eval', e, stack);
+          .log('ReaderFushi.applyStylesLive.eval', e, stack);
       return;
     }
     if (!mounted || _controller == null) return;
@@ -3583,7 +3583,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // ── Reader chrome helpers kept in the shell ─────────────────────────
   // `_colorToCssRgba` / `_toDouble` stay here because their other call sites
   // live in the still-in-shell WebView region; the rest of the reader chrome
-  // domain lives in `reader_hibiki/chrome.part.dart` (TODO-589 batch7).
+  // domain lives in `reader_fushi/chrome.part.dart` (TODO-589 batch7).
 
   static String? _colorToCssRgba(Color? c) {
     if (c == null) return null;

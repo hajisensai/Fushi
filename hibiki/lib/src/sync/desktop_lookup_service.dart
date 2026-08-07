@@ -460,7 +460,7 @@ class DesktopLookupService extends ChangeNotifier
   /// 点词），故先清 [_lastText] 越过去重——即便与上次查的是同一个词也要再查一次；
   /// 也不受 [shouldTriggerOnClipboard] 的「app 内复制不弹」聚焦过滤约束（聚焦过滤
   /// 只针对被动的剪贴板变化）。Windows 桌面悬浮字幕点词经
-  /// `reader_hibiki_page.dart` 的 `_lookupFromFloatingLyric` 调到这里，从而复用
+  /// `reader_fushi_page.dart` 的 `_lookupFromFloatingLyric` 调到这里，从而复用
   /// 剪贴板查词出口（主窗查词 tab），而不是在阅读器内弹 in-app 浮层。
   ///
   /// 注意：本方法只负责**排队**待查词（设 [pendingText] + 通知），与剪贴板/热键

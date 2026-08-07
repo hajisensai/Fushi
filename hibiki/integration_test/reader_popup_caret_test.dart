@@ -14,10 +14,10 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/epub/epub_importer.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 import 'helpers/focus_driver.dart';
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
@@ -100,7 +100,7 @@ void main() {
         await tester.pumpAndSettle();
       }
       final String seededKey =
-          'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
+          'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
       final Finder seededEntry = find.byKey(ValueKey<String>(seededKey));
       for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 500));
@@ -125,9 +125,9 @@ void main() {
       expect(contentReady, isTrue, reason: 'reader content ready');
       await tester.pump(const Duration(seconds: 3));
 
-      final eval = ReaderHibikiPage.debugEvaluateJavascript;
+      final eval = ReaderFushiPage.debugEvaluateJavascript;
       expect(eval, isNotNull);
-      String? surface() => ReaderHibikiPage.debugCaretSurface?.call();
+      String? surface() => ReaderFushiPage.debugCaretSurface?.call();
 
       // ── Enter the reader cursor (the CaretSurface machine's entry) ───
       // Verified on both Android and Windows (WebView2): the reader setup script
@@ -164,7 +164,7 @@ void main() {
       for (int i = 0; i < 80; i++) {
         await tester.pump(const Duration(milliseconds: 250));
         if (find.byType(DictionaryPopupWebView).evaluate().isEmpty) continue;
-        final eval2 = ReaderHibikiPage.debugEvaluateTopPopup;
+        final eval2 = ReaderFushiPage.debugEvaluateTopPopup;
         if (eval2 == null) continue;
         popupShown = true;
         caretType = (await eval2('typeof window.fushiCaret')).toString();
@@ -172,7 +172,7 @@ void main() {
       }
       expect(popupShown, isTrue,
           reason: 'a popup WebView opens for the lookup');
-      final popupEval = ReaderHibikiPage.debugEvaluateTopPopup!;
+      final popupEval = ReaderFushiPage.debugEvaluateTopPopup!;
 
       // ── The SAME caret + selection are injected into the popup ───────
       // These read-only checks verify the new integration points: the reader

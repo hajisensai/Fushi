@@ -13,7 +13,7 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/magpie_upscaling.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_game_page.dart';
@@ -34,7 +34,7 @@ typedef GalHookPreferenceWriter = Future<void> Function(
 );
 
 /// 「悬停即查词」开关的读取口（设置项 `hover_auto_lookup`）。真值在
-/// [ReaderHibikiSource]（media source 偏好store，与本控制器用的 prefsRepo 不是同一
+/// [ReaderFushiSource]（media source 偏好store，与本控制器用的 prefsRepo 不是同一
 /// 个存储），所以单独开一条读取口而不是复用 [GalHookPreferenceReader]。
 typedef GalHookHoverAutoLookupReader = bool Function();
 
@@ -453,12 +453,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 「悬停即查词」当前值。默认真值在 [ReaderHibikiSource]（与阅读器 / 视频字幕
+  /// 「悬停即查词」当前值。默认真值在 [ReaderFushiSource]（与阅读器 / 视频字幕
   /// 同一个开关），测试可注入替身。
   bool _readHoverAutoLookup() {
     final GalHookHoverAutoLookupReader? reader = _hoverAutoLookupReader;
     if (reader != null) return reader();
-    return ReaderHibikiSource.instance.hoverAutoLookup;
+    return ReaderFushiSource.instance.hoverAutoLookup;
   }
 
   /// BUG-756b 同款纪律：设置页改完「悬停即查词」后调用，把最新值推给已经开着的

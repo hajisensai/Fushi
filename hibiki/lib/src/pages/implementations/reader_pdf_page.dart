@@ -23,7 +23,7 @@ import 'package:fushi/utils.dart';
 
 /// PDF 阅读器页面（Phase 1 渲染 / Phase 2 点选查词 / Phase 3 页码进度 / Phase 4 制卡）。
 ///
-/// 与 EPUB 的 [ReaderHibikiPage] 平行：那边是 WebView + JS 选区 + 章内字符偏移，这边是
+/// 与 EPUB 的 [ReaderFushiPage] 平行：那边是 WebView + JS 选区 + 章内字符偏移，这边是
 /// pdfrx（PDFium）+ 字符级 `charRects` + **页码**。两者最终汇到同一批共享设施：
 /// [BaseSourcePageState.searchDictionaryResult]（查词弹窗/朗读）、[ReaderPositionRepository]
 /// （阅读位置）、[ReadingTimeTracker]（时长统计）、[AnkiMiningContext]（制卡）。

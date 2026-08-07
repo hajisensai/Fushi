@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from reader_hibiki_page.dart (TODO-589 batch1).
-part of '../reader_hibiki_page.dart';
+// GENERATED-NOTE: extracted from reader_fushi_page.dart (TODO-589 batch1).
+part of '../reader_fushi_page.dart';
 
 const int kLyricsModeMaxInitialCues = 600;
 
@@ -74,7 +74,7 @@ class LyricsCueWindow {
 /// batch1); shared private scope. Behaviour-preserving: bodies are verbatim
 /// except `setState(` forwarded through the main shell `_rebuild(` helper
 /// (extensions cannot call the @protected State.setState directly).
-extension _ReaderLyrics on _ReaderHibikiPageState {
+extension _ReaderLyrics on _ReaderFushiPageState {
   // ── Lyrics Mode ──────────────────────────────────────────────────
 
   Future<void> _toggleLyricsMode() async {
@@ -93,7 +93,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
     _rebuild(() => _lyricsModeTransition = true);
     try {
       _rebuild(() => _lyricsMode = entering);
-      await ReaderHibikiSource.instance.setLyricsMode(entering);
+      await ReaderFushiSource.instance.setLyricsMode(entering);
 
       if (entering) {
         // 文档即将被 LyricsModeHtml 整页替换（其中无 window.fushiCaret）。若此刻
@@ -131,7 +131,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
             onTimeout: () => false,
           );
         } catch (e, stack) {
-          ErrorLogService.instance.log('ReaderHibiki.lyricsRestore', e, stack);
+          ErrorLogService.instance.log('ReaderFushi.lyricsRestore', e, stack);
         }
       }
     } finally {
@@ -173,13 +173,13 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
       backgroundColor: colorToCss(bg),
       textColor: colorToCss(fg),
       accentColor: colorToCss(accent),
-      fontSize: ReaderHibikiSource.instance.lyricsFontSize,
-      marginTop: ReaderHibikiSource.instance.lyricsMarginTop,
-      marginBottom: ReaderHibikiSource.instance.lyricsMarginBottom,
-      marginLeft: ReaderHibikiSource.instance.lyricsMarginLeft,
-      marginRight: ReaderHibikiSource.instance.lyricsMarginRight,
-      vertical: ReaderHibikiSource.instance.lyricsVerticalWriting,
-      blur: ReaderHibikiSource.instance.lyricsBlur,
+      fontSize: ReaderFushiSource.instance.lyricsFontSize,
+      marginTop: ReaderFushiSource.instance.lyricsMarginTop,
+      marginBottom: ReaderFushiSource.instance.lyricsMarginBottom,
+      marginLeft: ReaderFushiSource.instance.lyricsMarginLeft,
+      marginRight: ReaderFushiSource.instance.lyricsMarginRight,
+      vertical: ReaderFushiSource.instance.lyricsVerticalWriting,
+      blur: ReaderFushiSource.instance.lyricsBlur,
     );
 
     // BUG-1280：歌词是第三个把文档交给 WebView 的地方（另两个是
@@ -196,10 +196,10 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
     );
   }
 
-  /// TODO-368: 歌词字幕文字色——用户设过自定义色（[ReaderHibikiSource.lyricsTextColor]
+  /// TODO-368: 歌词字幕文字色——用户设过自定义色（[ReaderFushiSource.lyricsTextColor]
   /// 非哨兵 0）则用它，否则回退主题文字色 [_themeTextColor]（向后兼容默认跟随主题）。
   Color _lyricsTextColor() {
-    final int custom = ReaderHibikiSource.instance.lyricsTextColor;
+    final int custom = ReaderFushiSource.instance.lyricsTextColor;
     if (custom != 0) return Color(custom);
     return _themeTextColor();
   }
@@ -224,7 +224,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
     final Color bg = _themeBackgroundColor();
     final Color fg = _lyricsTextColor();
     final Color accent = _readerLyricAccentColor();
-    final double fontSize = ReaderHibikiSource.instance.lyricsFontSize;
+    final double fontSize = ReaderFushiSource.instance.lyricsFontSize;
 
     String colorToCss(Color c) => readerColorToCssRgba(c);
 
@@ -232,7 +232,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
     final String fgCss = colorToCss(fg);
     final String accentCss = colorToCss(accent);
 
-    final ReaderHibikiSource src = ReaderHibikiSource.instance;
+    final ReaderFushiSource src = ReaderFushiSource.instance;
     final double mt = src.lyricsMarginTop;
     final double mb = src.lyricsMarginBottom;
     final double ml = src.lyricsMarginLeft;
@@ -251,7 +251,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
       // 与 _applyStylesLive/_reloadWithCurrentSettings 对称：半销毁 WebView 上
       // eval 抛 PlatformException，安全 no-op（lyrics 路径也不再裸露孤儿 await）。
       ErrorLogService.instance
-          .log('ReaderHibiki.updateLyricsStyleLive.eval', e, stack);
+          .log('ReaderFushi.updateLyricsStyleLive.eval', e, stack);
       return;
     }
     // cue 文本随字号/边距重排，激活中的焦点环坐标会过期——重测一次跟上新布局。
@@ -260,7 +260,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
   }
 
   void _showLyricsModeHintIfNeeded() {
-    final ReaderHibikiSource src = ReaderHibikiSource.instance;
+    final ReaderFushiSource src = ReaderFushiSource.instance;
     final bool shown = src.getPreference<bool>(
       key: 'lyrics_mode_hint_shown',
       defaultValue: false,

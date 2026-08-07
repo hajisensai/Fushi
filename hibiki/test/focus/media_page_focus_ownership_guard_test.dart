@@ -23,14 +23,14 @@ void main() {
     // popup header ↔ 正文之间的焦点来回属于**页面内部**焦点转移（在两个都由
     // Flutter 拥有的节点之间搬运），不是「从原生控件手里夺回」，套 cause 模型是
     // 硬凑。这几处保留裸调，但必须留在 caret 域内。
-    'lib/src/pages/implementations/reader_hibiki/caret.part.dart',
+    'lib/src/pages/implementations/reader_fushi/caret.part.dart',
   };
 
   const List<String> mediaPageRoots = <String>[
     'lib/src/pages/implementations/video_hibiki_page.dart',
     'lib/src/pages/implementations/video_hibiki',
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
-    'lib/src/pages/implementations/reader_hibiki',
+    'lib/src/pages/implementations/reader_fushi_page.dart',
+    'lib/src/pages/implementations/reader_fushi',
     // 漫画阅读器（pages/implementations/manga_hibiki_page.dart 只是 3 行兼容
     // export，真实现在这里）。它曾是三个媒体页里唯一零焦点回收的那个。
     'lib/src/media/manga/reader',
@@ -82,7 +82,7 @@ void main() {
   test('三个媒体页都接入了 PageFocusOwnership', () {
     for (final String page in <String>[
       'lib/src/pages/implementations/video_hibiki_page.dart',
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
+      'lib/src/pages/implementations/reader_fushi_page.dart',
       'lib/src/media/manga/reader/manga_hibiki_page.dart',
     ]) {
       final String source = File(page).readAsStringSync();

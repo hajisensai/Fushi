@@ -1122,7 +1122,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   void _onBarrierHorizontalDragEnd(DragEndDetails details) {
     if (_barrierSwipe.end(
-      sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
     )) {
       popNestedPopupAt(_topVisiblePopupIndex, _popup);
     }
@@ -1944,14 +1944,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             behavior: HitTestBehavior.translucent,
             onTap: () => popNestedPopupAt(_topVisiblePopupIndex, _popup),
             onHorizontalDragStart:
-                ReaderHibikiSource.instance.enableSwipeToClose
+                ReaderFushiSource.instance.enableSwipeToClose
                     ? _onBarrierHorizontalDragStart
                     : null,
             onHorizontalDragUpdate:
-                ReaderHibikiSource.instance.enableSwipeToClose
+                ReaderFushiSource.instance.enableSwipeToClose
                     ? _onBarrierHorizontalDragUpdate
                     : null,
-            onHorizontalDragEnd: ReaderHibikiSource.instance.enableSwipeToClose
+            onHorizontalDragEnd: ReaderFushiSource.instance.enableSwipeToClose
                 ? _onBarrierHorizontalDragEnd
                 : null,
             child: const ColoredBox(color: Colors.transparent),

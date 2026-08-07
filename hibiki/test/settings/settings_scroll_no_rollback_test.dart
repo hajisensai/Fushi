@@ -8,7 +8,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/models.dart';
 import 'package:fushi/src/focus/hibiki_focus_controller.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -40,11 +40,11 @@ void main() {
         FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
-    final ReaderSettings? prevReader = ReaderHibikiSource.readerSettings;
+    final ReaderSettings? prevReader = ReaderFushiSource.readerSettings;
     final ReaderSettings readerSettings = ReaderSettings(db);
     await readerSettings.refreshFromDb();
-    ReaderHibikiSource.readerSettings = readerSettings;
-    addTearDown(() => ReaderHibikiSource.readerSettings = prevReader);
+    ReaderFushiSource.readerSettings = readerSettings;
+    addTearDown(() => ReaderFushiSource.readerSettings = prevReader);
 
     final ThemeNotifier themeNotifier =
         ThemeNotifier(db, () => const TextTheme())
@@ -96,7 +96,7 @@ void main() {
                     context: ctx,
                     appModel: ref.read(appProvider),
                     ref: ref,
-                    readerSource: ReaderHibikiSource.instance,
+                    readerSource: ReaderFushiSource.instance,
                     refresh: () {},
                   );
                   final SettingsDestination reading = buildSettingsSchema(sctx)

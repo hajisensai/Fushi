@@ -17,7 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// ② webview.part.dart 的 setup IIFE 顶部排一个幂等 microtask 无条件摘 `fushi-cloak`，兜底任意抛点
 ///    （caret/furigana 等），彻底消除「cloak 依赖整段 IIFE 不抛」这个脆弱契约。
 ///
-/// 守卫落在最强可靠可落地的源码语料层（ReaderHibikiPage 过重无法在 widget test 拉起跑该 boot，
+/// 守卫落在最强可靠可落地的源码语料层（ReaderFushiPage 过重无法在 widget test 拉起跑该 boot，
 /// 与 reader_* 一系列 *_static_test / BUG-868 守卫同纪律）。删掉任一保护即红。
 void main() {
   String read(String rel) {
@@ -55,7 +55,7 @@ void main() {
 
   test('reader-setup IIFE 必须无条件兜底摘 fushi-cloak（BUG-1017 ②）', () {
     final String src =
-        read('lib/src/pages/implementations/reader_hibiki/webview.part.dart');
+        read('lib/src/pages/implementations/reader_fushi/webview.part.dart');
 
     // 顶部幂等 microtask 兜底摘 cloak：Promise.resolve().then 里 getElementById('fushi-cloak').remove()。
     // BUG-1140 第二阶段①：整段 setup 由 IIFE 变成 `window.__fushiEngine.install(C)`

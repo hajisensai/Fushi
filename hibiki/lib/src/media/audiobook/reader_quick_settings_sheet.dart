@@ -11,7 +11,7 @@ import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/focus/hibiki_focus_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi_audio/fushi_audio.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
@@ -53,7 +53,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onJumpToCharOffset,
     this.charProgress,
     this.onPageMarginChanged,
-    this.isHibikiReader = false,
+    this.isFushiReader = false,
     this.epubBook,
     this.chapterLabel,
     this.onStyleChanged,
@@ -112,7 +112,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   final VoidCallback? onToggleLyricsMode;
 
   /// When true, skip AudiobookBridge JS calls and disable ttu-only features.
-  final bool isHibikiReader;
+  final bool isFushiReader;
 
   final EpubBook? epubBook;
 
@@ -139,7 +139,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
 
 class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     with SettingsContextHost<ReaderQuickSettingsSheet> {
-  ReaderHibikiSource get _src => ReaderHibikiSource.instance;
+  ReaderFushiSource get _src => ReaderFushiSource.instance;
 
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _charJumpController = TextEditingController();
@@ -177,14 +177,14 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   }
 
   Future<void> _updateSetting(String key, Object value) async {
-    if (!widget.isHibikiReader) {
+    if (!widget.isFushiReader) {
       await AudiobookBridge.setReaderSetting(
         widget.webViewController,
         key: key,
         value: value,
       );
     }
-    final ReaderHibikiSource src = ReaderHibikiSource.instance;
+    final ReaderFushiSource src = ReaderFushiSource.instance;
     switch (key) {
       case 'fontSize':
         await src.setReaderFontSize((value as num).toDouble());
@@ -230,7 +230,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       case 'prioritizeReaderStyles':
         await src.setReaderPrioritizeReaderStyles(value as bool);
     }
-    if (widget.isHibikiReader) {
+    if (widget.isFushiReader) {
       const layoutKeys = {
         'writingMode',
         'viewMode',
@@ -563,12 +563,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   /// 把某个 [ReaderGroup] 投影成 schema 渲染内容。写路径走 schema item 的
   /// `setReaderPref*` + notify helper，与本面板的 `_updateSetting` 落同一存储。
   ///
-  /// 实时更新由 notify helper 经 `ReaderHibikiSource` 的回调驱动，且是按 key
+  /// 实时更新由 notify helper 经 `ReaderFushiSource` 的回调驱动，且是按 key
   /// 精确的：CSS-only key 走 `notifyReaderSettingsChanged`（=
   /// `onSettingsChangedLive`，CSS 注入），结构性布局 key（view mode / writing
   /// mode / columns / spread / prioritize reader styles）走
   /// `notifyReaderLayoutChanged`（= `onLayoutReloadLive`，整章重排）。schema
-  /// 投影项实时从 `ReaderHibikiSource.instance` 读写，本 refresh 回调只需
+  /// 投影项实时从 `ReaderFushiSource.instance` 读写，本 refresh 回调只需
   /// setState 重读 live 值即可。
   SettingsContext _settingsContext() {
     return createSettingsContext(appModel: widget.appModel, ref: widget.ref);

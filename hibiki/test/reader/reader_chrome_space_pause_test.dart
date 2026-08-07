@@ -6,7 +6,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/reader_space_override.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// BUG-204：焦点落在阅读器底栏控件（_chromeFocusScope）时，裸 Space 仍应
 /// 播放/暂停有声书，而不是被吞成 ignored、冒泡到全局导航被中和成
@@ -93,7 +93,7 @@ void main() {
 
     test('TODO-700 T8：两条底栏都用 ExcludeFocus 退出焦点遍历池', () {
       final String chrome = File(
-        'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+        'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
       ).readAsStringSync();
       // 底栏 ExcludeFocus 外壳已收敛到单一 _wrapBottomChromeBar helper
       //（清理 wave2）：ExcludeFocus 唯一在 helper 内、两条底栏都经它包装。

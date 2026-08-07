@@ -11,7 +11,7 @@ void main() {
   late String src;
   setUpAll(() {
     final File f =
-        File('lib/src/pages/implementations/reader_hibiki_page.dart');
+        File('lib/src/pages/implementations/reader_fushi_page.dart');
     expect(f.existsSync(), isTrue, reason: '文件不存在');
     src = f.readAsStringSync();
   });

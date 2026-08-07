@@ -7,7 +7,7 @@ import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
 import 'package:fushi/src/media/collections/collection_shelf_row.dart'
     show unifiedShelfCardLayout;
 import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart'
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
     show kShelfBookCardAspectRatio;
 import 'package:fushi/src/utils/components/hibiki_reorderable_grid.dart';
 import 'package:fushi/utils.dart';
@@ -57,7 +57,7 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
   final VoidCallback onChanged;
 
   /// 「删除合集」时可选连同成员本体一起删（默认不删，保持只解链语义）。调用方
-  /// （持 AppModel + [ReaderHibikiSource] / [VideoBookRepository]）注入：按每个成员
+  /// （持 AppModel + [ReaderFushiSource] / [VideoBookRepository]）注入：按每个成员
   /// (mediaType, entryKey) 删底层书/有声书/视频本体 + 磁盘副本，并释放空间。
   /// null = 详情页不提供该选项（确认框不显示复选框），退回纯解链删除。
   final Future<void> Function(List<MediaCollectionItemRow> members)?

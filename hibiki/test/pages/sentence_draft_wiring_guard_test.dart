@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// TODO-393「查词窗口句子上下文制卡」(取代 TODO-382 单按钮逐句追加)：宿主接线守卫。
 ///

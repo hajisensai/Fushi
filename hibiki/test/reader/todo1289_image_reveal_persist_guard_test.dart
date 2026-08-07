@@ -78,7 +78,7 @@ void main() {
 
     test('点击揭开（webview.part.dart）回传 key + 分页脚本嵌入会话集', () {
       final String src = _read(
-        'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+        'lib/src/pages/implementations/reader_fushi/webview.part.dart',
       );
       // 点击揭开回传。
       expect(src, contains("callHandler('onImageRevealed', key)"));
@@ -94,7 +94,7 @@ void main() {
 
     test('会话集字段声明在阅读器 State（随本书阅读会话存活）', () {
       final String page =
-          _read('lib/src/pages/implementations/reader_hibiki_page.dart');
+          _read('lib/src/pages/implementations/reader_fushi_page.dart');
       expect(
           page, contains('final Set<String> _revealedImageKeys = <String>{};'));
     });

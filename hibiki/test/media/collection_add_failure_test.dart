@@ -104,7 +104,7 @@ void main() {
 
   test('三个库页都必须走这一份编排，不得再各自裸调 addToCollection', () {
     const List<String> pages = <String>[
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+      'lib/src/pages/implementations/reader_fushi_history_page.dart',
       'lib/src/pages/implementations/home_video_page.dart',
       'lib/src/pages/implementations/games_library_page.dart',
     ];

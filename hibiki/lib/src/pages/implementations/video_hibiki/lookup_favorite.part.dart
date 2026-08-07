@@ -104,7 +104,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
   /// 收藏/取消收藏当前查词所在的字幕句（视频端，TODO-047 ④）。来源标
   /// [kFavoriteSentenceSourceVideo]、记 [dateKey]=今日键，使其计入视频统计的「收藏语句」
   /// 卡片，并能在收藏夹页按视频来源展示。不恢复 BUG-123 删除的单词 ☆ 按钮——这是
-  /// 句子收藏星标，与书内 [ReaderHibikiPage] 的 buildPopupAudioControls 星标同语义。
+  /// 句子收藏星标，与书内 [ReaderFushiPage] 的 buildPopupAudioControls 星标同语义。
   Future<void> _toggleFavoriteSentenceForVideo() async {
     final String sentence = _lastLookupSentence;
     if (sentence.isEmpty) {

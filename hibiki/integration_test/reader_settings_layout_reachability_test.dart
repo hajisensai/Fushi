@@ -95,7 +95,7 @@ Future<void> _pumpSheet(
               webViewController: _FakeInAppWebViewController(),
               appModel: _testAppModel(),
               ref: ref,
-              isHibikiReader: true,
+              isFushiReader: true,
               lyricsMode: lyricsMode,
               onToggleLyricsMode: () {},
               extractDir: extractDir,

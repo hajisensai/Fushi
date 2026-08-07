@@ -118,8 +118,8 @@ List<MediaItem> filterShelfEntriesByMangaSplit(
             mangaOnly)
         .toList();
 
-class ReaderHibikiHistoryPage extends HistoryReaderPage {
-  const ReaderHibikiHistoryPage({
+class ReaderFushiHistoryPage extends HistoryReaderPage {
+  const ReaderFushiHistoryPage({
     this.mangaOnly = false,
     this.navigation,
     this.remoteBookClientLoader,
@@ -160,19 +160,19 @@ class ReaderHibikiHistoryPage extends HistoryReaderPage {
 
   @override
   BaseHistoryPageState<BaseHistoryPage> createState() =>
-      _ReaderHibikiHistoryPageState();
+      _ReaderFushiHistoryPageState();
 }
 
-class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
+class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     extends HistoryReaderPageState {
-  ReaderHibikiHistoryPage get _pageWidget => widget as ReaderHibikiHistoryPage;
+  ReaderFushiHistoryPage get _pageWidget => widget as ReaderFushiHistoryPage;
   bool get _mangaOnly => _pageWidget.mangaOnly;
 
   @override
   MediaType get mediaType => mediaSource.mediaType;
 
   @override
-  ReaderHibikiSource get mediaSource => ReaderHibikiSource.instance;
+  ReaderFushiSource get mediaSource => ReaderFushiSource.instance;
 
   Future<Map<String, _AudiobookInfo>>? _batchAudiobookInfoFuture;
   Map<String, _AudiobookInfo> _batchAudiobookInfoResult = const {};
@@ -244,7 +244,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   // BUG-728：EPUB-backed 有声书在书架**只渲染成 SRT 卡**（其 EpubBooks 行被
   // `srtBookKeys` 过滤出 EPUB 卡列表），而 SRT 卡以前不画进度条。这里收录当前
   // `books`（hibikiBooksProvider）里每本 EpubBooks 行**已算好的** position/duration
-  // （经 [ReaderHibikiSource.computeBookProgress]，含听书 normCharOffset 回退），
+  // （经 [ReaderFushiSource.computeBookProgress]，含听书 normCharOffset 回退），
   // 供 SRT 卡按 bookKey 复用同一进度，无需重复读 DB / 重算。
   Map<String, ({int position, int duration})> _epubProgressByBookKey = const {};
 
@@ -456,7 +456,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     homeShellTabNotifier.removeListener(_onShellTabActivated);
     appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
     assert(() {
-      ReaderHibikiHistoryPage.debugOpenBook = null;
+      ReaderFushiHistoryPage.debugOpenBook = null;
       return true;
     }());
     super.dispose();
@@ -467,7 +467,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final AsyncValue<List<MediaItem>> books =
         ref.watch(hibikiBooksProvider(JapaneseLanguage.instance));
     assert(() {
-      ReaderHibikiHistoryPage.debugOpenBook = (String mediaId) async {
+      ReaderFushiHistoryPage.debugOpenBook = (String mediaId) async {
         final List<MediaItem> items = ref
                 .read(hibikiBooksProvider(JapaneseLanguage.instance))
                 .valueOrNull ??
@@ -584,7 +584,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                             return matchesMediaSearch(
                               query: _searchQuery,
                               titles: <String>[
-                                ReaderHibikiSource.instance
+                                ReaderFushiSource.instance
                                     .getDisplayTitleFromMediaItem(item),
                                 item.title,
                               ],
@@ -854,7 +854,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       };
 
   /// 每本书（bookKey → reader_positions.updatedAt 毫秒）的最后阅读时间；
-  /// 关书时经 [ReaderHibikiSource.onSourceExit] 与书列表同点失效（BUG-777）。
+  /// 关书时经 [ReaderFushiSource.onSourceExit] 与书列表同点失效（BUG-777）。
   Map<String, int> get _lastReadAtByBookKey =>
       ref.watch(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};
 
@@ -1769,7 +1769,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     for (final MediaCollectionItemRow m in members) {
       switch (MediaKind.tryParse(m.mediaType)) {
         case MediaKind.epub:
-          await ReaderHibikiSource.instance.deleteBook(
+          await ReaderFushiSource.instance.deleteBook(
             db: appModel.database,
             bookKey: m.entryKey,
             appModel: appModel,
@@ -1779,7 +1779,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           final SrtBook? book = await repo.findByUid(m.entryKey);
           if (book != null) {
             if (book.bookKey.isNotEmpty) {
-              await ReaderHibikiSource.instance.deleteBook(
+              await ReaderFushiSource.instance.deleteBook(
                 db: appModel.database,
                 bookKey: book.bookKey,
                 appModel: appModel,
@@ -2136,7 +2136,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       // 菜单——转化恰好是「这本书用哪个阅读器打开」的开关，与「标记已读完」
       // 「换封面」同一层级。方向由当前卡自己的源标识决定，不额外读库：
       // `mediaSourceIdentifier` 就是 `EpubBooks.format` 派生出来的
-      // （`ReaderHibikiSource.mediaSourceKeyFor`），与书架的漫画/书分流同一判据。
+      // （`ReaderFushiSource.mediaSourceKeyFor`），与书架的漫画/书分流同一判据。
       DialogListAction(
         label: _isMangaItem(item)
             ? t.book_convert_to_book_action
@@ -2343,7 +2343,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   /// 这张卡是不是漫画。判据与书架的漫画/书分流
   /// （[filterShelfEntriesByMangaSplit]）逐字相同：`mediaSourceIdentifier` 由
-  /// `EpubBooks.format` 经 `ReaderHibikiSource.mediaSourceKeyFor` 派生，卡上已有，
+  /// `EpubBooks.format` 经 `ReaderFushiSource.mediaSourceKeyFor` 派生，卡上已有，
   /// 不必为了画一行菜单再去读一次库。
   bool _isMangaItem(MediaItem item) =>
       item.mediaSourceIdentifier == MangaHibikiSource.kUniqueKey;
@@ -2411,7 +2411,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   String? _parseBookKey(String mediaIdentifier) =>
-      ReaderHibikiSource.parseBookKey(mediaIdentifier);
+      ReaderFushiSource.parseBookKey(mediaIdentifier);
 
   // ── 拖拽导入（books 表面） ──────────────────────────────────────────────────
 }

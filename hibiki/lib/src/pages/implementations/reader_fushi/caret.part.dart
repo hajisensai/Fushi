@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from reader_hibiki_page.dart (TODO-589 batch6).
-part of '../reader_hibiki_page.dart';
+// GENERATED-NOTE: extracted from reader_fushi_page.dart (TODO-589 batch6).
+part of '../reader_fushi_page.dart';
 
 /// caret domain (keyboard / gamepad / shortcut key navigation + char-level
 /// reading cursor: enter / exit / move / scroll-page / activate / lookup /
@@ -23,7 +23,7 @@ part of '../reader_hibiki_page.dart';
 /// `caretSetState` / `caretExitPrimaryRing`) cannot live on an extension and
 /// stay in the shell, reachable via the shared private class scope, as does
 /// the audiobook middle-click helper `_seekToClickedSentence`.
-extension _ReaderCaret on _ReaderHibikiPageState {
+extension _ReaderCaret on _ReaderFushiPageState {
   /// 当前按下的修饰键集合（Ctrl/Shift/Alt/Meta）。键盘快捷解析与底栏焦点的
   /// Space 覆写共用，避免两处各自重建一份。
   /// 实现已抽到 [activeModifierKeys]（漫画页也要同一份，各自重建必漂）；
@@ -257,7 +257,7 @@ extension _ReaderCaret on _ReaderHibikiPageState {
       modifiers: modifiers,
       rtl: _isRtlReading,
       boundAction: bareArrowBinding,
-      reverse: ReaderHibikiSource.instance.reverseArrowPageTurn,
+      reverse: ReaderFushiSource.instance.reverseArrowPageTurn,
       physicalKey: imeFallbackPhysicalKey,
     );
     return spaceOverride ??

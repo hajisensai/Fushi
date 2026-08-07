@@ -99,7 +99,7 @@ void main() {
 
   test('audiobook clip pipeline emits .aac audio, never .m4a/.mp4', () {
     final String pipeline = libFile(
-      'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+      'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
     );
     // The audio clip output path passed to extractAudioSegmentViaFfmpeg.
     expect(pipeline, contains(r"outputPath: '$base.aac'"),

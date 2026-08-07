@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -36,7 +36,7 @@ class _MiscellaneousSettingsPageState
       context: context,
       appModel: appModel,
       ref: ref,
-      readerSource: ReaderHibikiSource.instance,
+      readerSource: ReaderFushiSource.instance,
       refresh: () {
         if (mounted) setState(() {});
       },

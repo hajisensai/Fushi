@@ -483,7 +483,7 @@ BookSyncDiff computeBookSyncDiff({
 /// false，远端书卡永远只有占位图（TODO-033 #4：远端书籍没封面的根因，
 /// TODO-007 只修对了绝对路径的视频侧）。
 ///
-/// 探测顺序与 reader_hibiki_source 的封面解析一致：先 [extractDir] + 声明的相对
+/// 探测顺序与 reader_fushi_source 的封面解析一致：先 [extractDir] + 声明的相对
 /// href（去掉前导 `/`），再回退到约定名 `cover.jpg/jpeg/png`，取首个存在者。
 /// [coverPath] 本身已是存在的绝对路径时（视频侧 / 旧数据）原样返回。
 String? resolveEpubCoverFilePath({

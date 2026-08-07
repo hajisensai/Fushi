@@ -9,7 +9,7 @@ import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/sync/backup_service.dart'
     show rebaseFontCatalogJson, rebaseFontListJson;
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
 /// 配置方案导入失败：文件损坏 / 类型魔数不符 / 版本不兼容 / 结构非法。
 ///

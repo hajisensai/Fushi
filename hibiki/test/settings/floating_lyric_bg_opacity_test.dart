@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-576: 悬浮歌词/字幕条「背景透明度」可调，且默认下调到 70（≈更不挡视野）。
 ///
@@ -86,7 +86,7 @@ void main() {
       // app 级（无 reader）样式：app_model._appLevelFloatingLyricStyle。
       final String appModel =
           File('lib/src/models/app_model.dart').readAsStringSync();
-      // reader 级样式：reader_hibiki_page._readerFloatingLyricStyle。
+      // reader 级样式：reader_fushi_page._readerFloatingLyricStyle。
       final String reader = readReaderPageSource();
 
       for (final String src in <String>[appModel, reader]) {

@@ -9,7 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -94,10 +94,10 @@ void main() {
       importedAt: 0,
     ));
     epubItems.add(MediaItem(
-      mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(bookKey),
+      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
       title: title,
-      mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
+      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
       position: 0,
       duration: 1,
       canDelete: false,
@@ -136,7 +136,7 @@ void main() {
             builder: (BuildContext context, Widget? child) =>
                 child ?? const SizedBox.shrink(),
             home: Scaffold(
-              body: ReaderHibikiHistoryPage(
+              body: ReaderFushiHistoryPage(
                 remoteBookClientLoader: () async => null,
               ),
             ),
@@ -169,7 +169,7 @@ void main() {
         reason: '命中的 SRT 卡必须渲染');
     expect(
       find.byKey(ValueKey<String>(
-          'book_entry_${ReaderHibikiSource.mediaIdentifierFor('epubMiss')}')),
+          'book_entry_${ReaderFushiSource.mediaIdentifierFor('epubMiss')}')),
       findsNothing,
       reason: '未命中的 EPUB 卡必须被筛掉',
     );

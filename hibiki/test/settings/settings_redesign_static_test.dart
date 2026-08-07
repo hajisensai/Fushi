@@ -472,7 +472,7 @@ void main() {
     expect(
       containsCodeLine(
         source,
-        'await ReaderHibikiSource.readerSettings?.refreshFromDb()',
+        'await ReaderFushiSource.readerSettings?.refreshFromDb()',
       ),
       isTrue,
     );

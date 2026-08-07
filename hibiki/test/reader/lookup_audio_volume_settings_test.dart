@@ -17,11 +17,11 @@ void main() {
   setUp(() {
     db = _testDb();
     MediaSource.setDatabase(db);
-    ReaderHibikiSource.readerSettings = null;
+    ReaderFushiSource.readerSettings = null;
   });
 
   tearDown(() async {
-    ReaderHibikiSource.readerSettings = null;
+    ReaderFushiSource.readerSettings = null;
     await db.close();
   });
 
@@ -30,8 +30,8 @@ void main() {
     await settings.refreshFromDb();
 
     expect(settings.lookupAudioVolume, 100);
-    expect(ReaderHibikiSource.instance.lookupAudioVolume, 100);
-    expect(ReaderHibikiSource.instance.lookupAudioVolumeGain, 1.0);
+    expect(ReaderFushiSource.instance.lookupAudioVolume, 100);
+    expect(ReaderFushiSource.instance.lookupAudioVolumeGain, 1.0);
   });
 
   test('lookup audio volume persists through ReaderSettings', () async {
@@ -46,14 +46,14 @@ void main() {
   });
 
   test('lookup audio volume source fallback clamps and persists', () async {
-    await ReaderHibikiSource.instance.setLookupAudioVolume(125);
+    await ReaderFushiSource.instance.setLookupAudioVolume(125);
 
-    expect(ReaderHibikiSource.instance.lookupAudioVolume, 100);
-    expect(ReaderHibikiSource.instance.lookupAudioVolumeGain, 1.0);
+    expect(ReaderFushiSource.instance.lookupAudioVolume, 100);
+    expect(ReaderFushiSource.instance.lookupAudioVolumeGain, 1.0);
 
-    await ReaderHibikiSource.instance.setLookupAudioVolume(-5);
-    expect(ReaderHibikiSource.instance.lookupAudioVolume, 0);
-    expect(ReaderHibikiSource.instance.lookupAudioVolumeGain, 0.0);
+    await ReaderFushiSource.instance.setLookupAudioVolume(-5);
+    expect(ReaderFushiSource.instance.lookupAudioVolume, 0);
+    expect(ReaderFushiSource.instance.lookupAudioVolumeGain, 0.0);
 
     final Map<String, String> prefs = await db.getAllPrefs();
     expect(prefs['src:reader_fushi:lookup_audio_volume'], 'i:0');

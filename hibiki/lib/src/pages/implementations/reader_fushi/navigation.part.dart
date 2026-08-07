@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from reader_hibiki_page.dart (TODO-589 batch4).
-part of '../reader_hibiki_page.dart';
+// GENERATED-NOTE: extracted from reader_fushi_page.dart (TODO-589 batch4).
+part of '../reader_fushi_page.dart';
 
 /// navigation (chapter navigation / internal links / spread paging / page-turn
 /// limits) + position restore / progress refresh / scroll-callback domain
@@ -17,7 +17,7 @@ part of '../reader_hibiki_page.dart';
 /// (lookup, batch3) and the audiobook-cue wiring that physically interleaved
 /// these blocks remain in the shell, reachable via the shared private class
 /// scope.
-extension _ReaderNavigation on _ReaderHibikiPageState {
+extension _ReaderNavigation on _ReaderFushiPageState {
   /// BUG-438 / TODO-889：内容就绪兜底超时，改 wall-clock 绝对 deadline。
   ///
   /// 旧实现每次 cancel 旧 8s timer 再起新 8s（相对 deadline）：手柄连/断 inset 抖动
@@ -535,7 +535,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       await _loadChapterDirectly(index);
       ReaderChapterPerfTrace.mark('loadUrl');
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHibiki._navigateToChapter', e, stack);
+      ErrorLogService.instance.log('ReaderFushi._navigateToChapter', e, stack);
       debugPrint('[ReaderFushi] _navigateToChapter loadUrl failed: $e');
       _failNavigation();
     }
@@ -606,7 +606,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       await _controller!.evaluateJavascript(source: js);
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibiki._applyPendingPreciseLocate', e, stack);
+          .log('ReaderFushi._applyPendingPreciseLocate', e, stack);
       debugPrint('[ReaderFushi] _applyPendingPreciseLocate failed: $e');
     }
   }
@@ -676,7 +676,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       await _loadChapterDirectly(index);
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibiki._navigateToChapterWithFragment', e, stack);
+          .log('ReaderFushi._navigateToChapterWithFragment', e, stack);
       debugPrint(
           '[ReaderFushi] _navigateToChapterWithFragment loadUrl failed: $e');
       _failNavigation();
@@ -696,7 +696,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       );
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibiki._jumpToFragmentInPlace', e, stack);
+          .log('ReaderFushi._jumpToFragmentInPlace', e, stack);
       debugPrint('[ReaderFushi] _jumpToFragmentInPlace failed: $e');
     }
   }
@@ -709,11 +709,11 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     if (uri == null) return;
     // BUG-097: an unresolved internal link (host == kHost) must stay in the
     // reader — never pop a blank OS browser for our virtual fushi.local host.
-    if (!ReaderHibikiSource.isExternalUrl(url)) return;
+    if (!ReaderFushiSource.isExternalUrl(url)) return;
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHibiki._openExternalUrl', e, stack);
+      ErrorLogService.instance.log('ReaderFushi._openExternalUrl', e, stack);
       debugPrint('[ReaderFushi] _openExternalUrl failed for $url: $e');
     }
   }
@@ -751,7 +751,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       _rebuildSpreadMap();
       if (mounted) _rebuild(() {});
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHibiki._runEdgeAnalysis', e, stack);
+      ErrorLogService.instance.log('ReaderFushi._runEdgeAnalysis', e, stack);
     }
   }
 
@@ -787,7 +787,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     try {
       await _loadSpreadPage(entry);
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHibiki._navigateToSpread', e, stack);
+      ErrorLogService.instance.log('ReaderFushi._navigateToSpread', e, stack);
       debugPrint('[ReaderFushi] _navigateToSpread failed: $e');
       _failNavigation();
     }
@@ -857,7 +857,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         mimeType: 'text/html',
         encoding: 'utf-8',
         baseUrl: WebUri(
-          ReaderHibikiSource.epubUrl(_book!.chapters[entry.chapterIndex].href),
+          ReaderFushiSource.epubUrl(_book!.chapters[entry.chapterIndex].href),
         ),
       );
     } catch (e) {
@@ -869,7 +869,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   String _resolveSpreadImageUrl(String chapterHref, String imgSrc) {
     final String chapterDir = p.posix.dirname(chapterHref);
     final String resolved = p.posix.normalize(p.posix.join(chapterDir, imgSrc));
-    return ReaderHibikiSource.epubUrl(resolved);
+    return ReaderFushiSource.epubUrl(resolved);
   }
 
   void _handlePageTurnLimit(String direction, {bool inertia = false}) {
@@ -970,7 +970,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       // no-op 返回；与 reloadWithCurrentSettings / _syncPositionFromWebViewProgress
       // 同一 fail-open 范式：不吞成静默，补 ErrorLogService.log。
       ErrorLogService.instance
-          .log('ReaderHibiki._refreshProgress.eval', e, stack);
+          .log('ReaderFushi._refreshProgress.eval', e, stack);
       return;
     }
     if (result == null) {
@@ -1055,7 +1055,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         unawaited(_applyChromeInsetsAndReanchor().catchError(
           (Object e, StackTrace s) {
             ErrorLogService.instance
-                .log('ReaderHibiki.refreshProgress.topInsetRepush', e, s);
+                .log('ReaderFushi.refreshProgress.topInsetRepush', e, s);
           },
         ));
       }
@@ -1108,7 +1108,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       );
     } catch (e, stack) {
       ErrorLogService.instance.log(
-        'ReaderHibiki.syncPositionFromWebViewProgress.eval',
+        'ReaderFushi.syncPositionFromWebViewProgress.eval',
         e,
         stack,
       );
@@ -1206,7 +1206,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       );
     } catch (e, stack) {
       // fail-open：本次位置未落盘（后续 debounce/flush 会重试），补日志便于诊断。
-      ErrorLogService.instance.log('ReaderHibiki._persistPosition', e, stack);
+      ErrorLogService.instance.log('ReaderFushi._persistPosition', e, stack);
     }
 
     // 读到全书末尾（最后一章 + 章内进度到末尾）→ 自动写「已读完」时间戳。
@@ -1310,7 +1310,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       probeBudget: kReaderExitProbeBudget,
       onProbeFailure: (Object error, StackTrace stack) {
         ErrorLogService.instance
-            .log('ReaderHibiki.syncAndFlushPosition.probe', error, stack);
+            .log('ReaderFushi.syncAndFlushPosition.probe', error, stack);
       },
     );
   }
@@ -1442,7 +1442,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       // fail-open：本次统计增量丢弃（计数器已清零，不会重复累加），补 debugPrint +
       // ErrorLogService.log 使 DB 写异常线上可诊断。
       debugPrint('[ReaderFushi] stats flush error: $e');
-      ErrorLogService.instance.log('ReaderHibiki._flushReadingStats', e, stack);
+      ErrorLogService.instance.log('ReaderFushi._flushReadingStats', e, stack);
     }
   }
 }

@@ -8,16 +8,16 @@ import 'package:fushi/src/reader/reader_settings.dart';
 ///  ② showBottomBarCue —— per-reader，默认 true。
 /// （③ topProgressPosition / ① gamepadAutoimmersive 在各自提交追加 group。）
 ///
-/// 复用 reader_hibiki_source_test 的 per-reader 分层断言范式（同一 DB key，
+/// 复用 reader_fushi_source_test 的 per-reader 分层断言范式（同一 DB key，
 /// ReaderSettings._set 用 value.toString() 编码 'true'，与 source.setPreference
 /// 的 'b:true' 区分，坐实写经哪条路径）。
 void main() {
   group('showBottomBarCue is per-reader (TODO-728②)', () {
     setUp(() {
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
     });
     tearDown(() {
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
     });
 
     test('defaults to true and round-trips through the global source pref',
@@ -26,7 +26,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       // 默认 true = 现状（始终显示 cue）。
@@ -47,12 +47,12 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       final ReaderSettings perBook = ReaderSettings(db);
       await perBook.refreshFromDb();
-      ReaderHibikiSource.readerSettings = perBook;
+      ReaderFushiSource.readerSettings = perBook;
 
       expect(source.showBottomBarCue, isTrue);
 
@@ -90,10 +90,10 @@ void main() {
 
   group('topProgressPosition is per-reader (TODO-728 3)', () {
     setUp(() {
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
     });
     tearDown(() {
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
     });
 
     test('defaults to center and round-trips through the global source pref',
@@ -102,7 +102,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       expect(source.topProgressPosition, 'center');
@@ -121,7 +121,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
       await db.setPref('src:reader_fushi:top_progress_position', 's:bottom');
       await source.refreshPreferencesFromDb();
@@ -134,12 +134,12 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       final ReaderSettings perBook = ReaderSettings(db);
       await perBook.refreshFromDb();
-      ReaderHibikiSource.readerSettings = perBook;
+      ReaderFushiSource.readerSettings = perBook;
 
       expect(source.topProgressPosition, 'center');
 

@@ -166,7 +166,7 @@ class SrtBookRepository {
   ///
   /// 墓碑**只对 standalone 行写**（该行 `bookKey` 为空）：这类纯字幕书无 EpubBooks 行，
   /// 跨设备身份就是 uid。srt-backed 行（`bookKey` 非空）的身份是 bookKey，它的墓碑由
-  /// `ReaderHibikiSource.deleteBook` 写成 `book` 种类——两者互斥，同一资产绝不会产生
+  /// `ReaderFushiSource.deleteBook` 写成 `book` 种类——两者互斥，同一资产绝不会产生
   /// 两条墓碑、也就不会在对端弹出两条重复的删除确认。
   Future<int> delete(String uid, {bool propagateDeletion = false}) async {
     // 身份判据要在删行前读（删完就查不到 bookKey 了）。

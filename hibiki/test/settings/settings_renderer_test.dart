@@ -8,7 +8,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -128,7 +128,7 @@ Widget _buildHome(
           context: context,
           appModel: ref.read(appProvider),
           ref: ref,
-          readerSource: ReaderHibikiSource.instance,
+          readerSource: ReaderFushiSource.instance,
           refresh: () {},
         ),
       );
@@ -797,8 +797,8 @@ void main() {
     final AppModel appModel = await _prefsBackedAppModel(db);
     final ReaderSettings readerSettings = ReaderSettings(db);
     await readerSettings.refreshFromDb();
-    ReaderHibikiSource.readerSettings = readerSettings;
-    addTearDown(() => ReaderHibikiSource.readerSettings = null);
+    ReaderFushiSource.readerSettings = readerSettings;
+    addTearDown(() => ReaderFushiSource.readerSettings = null);
 
     await tester.pumpWidget(
       _harness(
@@ -842,7 +842,7 @@ void main() {
     row.onChanged(35);
     await tester.pump();
 
-    expect(ReaderHibikiSource.instance.lookupAudioVolume, 35);
+    expect(ReaderFushiSource.instance.lookupAudioVolume, 35);
   });
 
   testWidgets('app UI scale slider commits only on drag end, not during drag',

@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// BUG-756 回归守卫：歌词模式（`LyricsModeHtml` 独立文档）唤不出隐藏底栏 + ESC 退不出。
 ///
@@ -114,7 +114,7 @@ void main() {
     expect(
       src,
       contains(
-          '_pendingLyricsRestore = ReaderHibikiSource.instance.lyricsMode;'),
+          '_pendingLyricsRestore = ReaderFushiSource.instance.lyricsMode;'),
     );
     // EPUB 内容就绪 + 有声书已挂载后再切歌词（等价手动切、规避 iOS 白屏），一次性触发。
     final int t = src.indexOf('if (_pendingLyricsRestore) {');

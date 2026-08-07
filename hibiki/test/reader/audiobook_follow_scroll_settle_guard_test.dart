@@ -29,7 +29,7 @@ void main() {
     'lib/src/reader/reader_pagination_scripts.dart',
   ).readAsStringSync();
   final String audiobookPart = File(
-    'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+    'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
   ).readAsStringSync();
 
   /// 取 `_continuousShellScript` 函数体（连续模式那份 fushiReader），避免误把分页 shell

@@ -31,7 +31,7 @@ void main() {
 
   test('reader 与 fork 的 WebView 创建失败 sentinel 字面量必须一致', () {
     final String readerSrc =
-        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+        read('lib/src/pages/implementations/reader_fushi_page.dart');
     final String forkSrc = read(
       '../packages/flutter_inappwebview_windows/lib/src/in_app_webview/in_app_webview.dart',
     );

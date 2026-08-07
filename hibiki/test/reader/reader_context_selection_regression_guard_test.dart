@@ -20,10 +20,10 @@ String _between(String source, String start, String end) {
 void main() {
   test('Windows right-click menu is single-flight and above popup WebView', () {
     final String state = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
+      'lib/src/pages/implementations/reader_fushi_page.dart',
     ).readAsStringSync();
     final String chrome = File(
-      'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+      'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
     ).readAsStringSync();
     final String body = _between(
       chrome,

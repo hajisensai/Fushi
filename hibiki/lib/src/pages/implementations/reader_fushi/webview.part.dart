@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from reader_hibiki_page.dart (TODO-589 batch8).
-part of '../reader_hibiki_page.dart';
+// GENERATED-NOTE: extracted from reader_fushi_page.dart (TODO-589 batch8).
+part of '../reader_fushi_page.dart';
 
 /// webview (EPUB WebView 构建 / fushi.local 资源拦截 + 净化 / 单 IIFE setup 脚本)
 /// 域 helper，经 part-of 抽出（TODO-589 batch8·最后一批）；与主壳共享私有作用域。
@@ -35,14 +35,14 @@ class _ReaderResourceResponse {
   final Uint8List data;
 }
 
-extension _ReaderWebView on _ReaderHibikiPageState {
+extension _ReaderWebView on _ReaderFushiPageState {
   // ── URL & Resource Serving (mirrors Hoshi Android's fushi.local scheme) ──
 
   String _chapterUrl(int index) {
     if (_book == null || index < 0 || index >= _book!.chapters.length) {
       return 'about:blank';
     }
-    return ReaderHibikiSource.epubUrl(_book!.chapters[index].href);
+    return ReaderFushiSource.epubUrl(_book!.chapters[index].href);
   }
 
   Future<void> _loadChapterDirectly(int index) async {
@@ -70,9 +70,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       Platform.isMacOS || Platform.isIOS;
 
   static bool _isReaderResourceUrl(WebUri url) {
-    if (url.host != ReaderHibikiSource.kHost) return false;
+    if (url.host != ReaderFushiSource.kHost) return false;
     return url.scheme == 'https' ||
-        url.scheme == ReaderHibikiSource.kResourceScheme;
+        url.scheme == ReaderFushiSource.kResourceScheme;
   }
 
   static String? _contentEncodingForMime(String mime) {
@@ -115,7 +115,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     if (path.startsWith('/fonts/')) {
       final String raw = path.substring('/fonts/'.length);
       final String fontPath = Uri.decodeComponent(raw);
-      final String? safeFontPath = ReaderHibikiSource.safeCustomFontPath(
+      final String? safeFontPath = ReaderFushiSource.safeCustomFontPath(
         fontPath,
         allowedRoots: <String>[
           p.join(appModel.appDirectory.path, 'custom_fonts')
@@ -212,7 +212,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     if (mime == 'text/css') {
       // 插入后按插入序逐出最老条目（[_kSanitizedCssCacheLimit] 封顶，见字段注释）。
       while (_sanitizedCssCache.length >=
-              _ReaderHibikiPageState._kSanitizedCssCacheLimit &&
+              _ReaderFushiPageState._kSanitizedCssCacheLimit &&
           !_sanitizedCssCache.containsKey(filePath)) {
         _sanitizedCssCache.remove(_sanitizedCssCache.keys.first);
       }
@@ -260,7 +260,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     try {
       response = await _readerResourcePayload(url);
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHibiki.interceptResource', e, stack);
+      ErrorLogService.instance.log('ReaderFushi.interceptResource', e, stack);
       response = _notFound('resource intercept failed: $url');
     }
     return WebResourceResponse(
@@ -283,7 +283,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           : _notFound('unknown custom scheme URL: ${request.url}');
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibiki.customSchemeResource', e, stack);
+          .log('ReaderFushi.customSchemeResource', e, stack);
       response = _notFound('custom scheme resource failed: ${request.url}');
     }
     return CustomSchemeResponse(
@@ -332,7 +332,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     _sanitizedHtmlCache.remove(filePath);
     _sanitizedHtmlCache[filePath] = bytes;
     while (_sanitizedHtmlCache.length >
-        _ReaderHibikiPageState._kChapterHtmlCacheLimit) {
+        _ReaderFushiPageState._kChapterHtmlCacheLimit) {
       _sanitizedHtmlCache.remove(_sanitizedHtmlCache.keys.first);
     }
   }
@@ -418,7 +418,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         final bool isAbsolute = src.startsWith('data:') || src.contains('://');
         final String absoluteUrl = isAbsolute
             ? src
-            : ReaderHibikiSource.epubUrl(
+            : ReaderFushiSource.epubUrl(
                 p.posix.normalize(p.posix.join(chapterDir, src)));
         // TODO-1339 / BUG-1140 第二轮：显式 `loading="eager"`。这些前导插图是章首
         // **结构性**内容（firstContentEdge 只计入非零尺寸媒体，挂 lazy 会让章首锚跳过
@@ -493,7 +493,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         _putChapterHtml(filePath, built);
       } catch (e, stack) {
         ErrorLogService.instance
-            .log('ReaderHibiki._prefetchAdjacentChapter', e, stack);
+            .log('ReaderFushi._prefetchAdjacentChapter', e, stack);
       } finally {
         if (_prefetchingHtmlPath == filePath) {
           _prefetchingHtmlPath = null;
@@ -530,8 +530,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   /// **配额**（PR#469 审查）：预热是把整解码后的位图塞进 WebView 图片缓存，整页插图书
   /// （1600×2400 PNG × N）在移动端是实打实的内存压力，而 HTML 预取那边早有
   /// `_kChapterHtmlCacheLimit` LRU 上限。这里同样封顶：最多
-  /// [_ReaderHibikiPageState._kImagePrefetchMaxCount] 张、累计原始字节不超过
-  /// [_ReaderHibikiPageState._kImagePrefetchMaxBytes]（按磁盘文件大小计，读 stat 不读内容），
+  /// [_ReaderFushiPageState._kImagePrefetchMaxCount] 张、累计原始字节不超过
+  /// [_ReaderFushiPageState._kImagePrefetchMaxBytes]（按磁盘文件大小计，读 stat 不读内容），
   /// 超出即停——预热本就是尽力而为，少热几张只是少省一点，不影响正确性。
   void _prefetchAdjacentChapterImages(int index) {
     final EpubBook? book = _book;
@@ -544,9 +544,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     final String chapterDir =
         p.posix.dirname(normalizeHref(book.chapters[index].href));
     final List<String> urls = <String>[];
-    int budget = _ReaderHibikiPageState._kImagePrefetchMaxBytes;
+    int budget = _ReaderFushiPageState._kImagePrefetchMaxBytes;
     for (final String src in srcs) {
-      if (urls.length >= _ReaderHibikiPageState._kImagePrefetchMaxCount) break;
+      if (urls.length >= _ReaderFushiPageState._kImagePrefetchMaxCount) break;
       if (budget <= 0) break;
       final String trimmed = src.trim();
       if (trimmed.isEmpty) continue;
@@ -554,7 +554,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       if (trimmed.startsWith('data:') || trimmed.contains('://')) continue;
       final String rel = p.posix.normalize(p.posix.join(chapterDir, trimmed));
       budget -= _imageFileSizeBytes(extractDir, rel);
-      urls.add(ReaderHibikiSource.epubUrl(rel));
+      urls.add(ReaderFushiSource.epubUrl(rel));
     }
     if (urls.isEmpty) return;
     final String json = jsonEncode(urls);
@@ -666,8 +666,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       scanNonJapaneseText: appModel.scanNonJapaneseText,
       // TODO-756b：是否“鼠标悬停即自动查词”。live 变更经 _applyHoverAutoLookupLive
       // 改同一个 JS 全局，无需整章重注入。
-      hoverAutoLookup: ReaderHibikiSource.instance.hoverAutoLookup,
-      highlightOnTap: ReaderHibikiSource.instance.highlightOnTap,
+      hoverAutoLookup: ReaderFushiSource.instance.hoverAutoLookup,
+      highlightOnTap: ReaderFushiSource.instance.highlightOnTap,
       showChrome: _showChrome,
       debugLogging: DebugLogService.instance.enabled,
       swipeDistThreshold: swipeThresholds.dist,
@@ -1804,7 +1804,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         databaseEnabled: false,
         domStorageEnabled: false,
         resourceCustomSchemes: _usesReaderResourceCustomScheme
-            ? <String>[ReaderHibikiSource.kResourceScheme]
+            ? <String>[ReaderFushiSource.kResourceScheme]
             : const <String>[],
         useShouldInterceptRequest: !_usesReaderResourceCustomScheme,
         mixedContentMode: MixedContentMode.MIXED_CONTENT_COMPATIBILITY_MODE,
@@ -1823,21 +1823,21 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           // 主人就是本 State（重建重装），都合法；主人是**另一个** State 才是真的两个
           // 阅读器同时活着——检测力度与旧断言等价，只是不再误伤重装。
           assert(
-            ReaderHibikiPage.debugHookOwner == null ||
-                identical(ReaderHibikiPage.debugHookOwner, this),
+            ReaderFushiPage.debugHookOwner == null ||
+                identical(ReaderFushiPage.debugHookOwner, this),
             'reader debug hooks are owned by another live reader — a previous '
             'reader did not clear them on dispose, or two readers are live at '
             'once.',
           );
-          ReaderHibikiPage.debugHookOwner = this;
-          ReaderHibikiPage.debugEvaluateJavascript =
+          ReaderFushiPage.debugHookOwner = this;
+          ReaderFushiPage.debugEvaluateJavascript =
               (String source) => controller.evaluateJavascript(source: source);
-          ReaderHibikiPage.debugCaptureWebView =
+          ReaderFushiPage.debugCaptureWebView =
               () => controller.takeScreenshot();
-          ReaderHibikiPage.debugCaretSurface = () => _caretSurface.name;
-          ReaderHibikiPage.debugEvaluateTopPopup =
+          ReaderFushiPage.debugCaretSurface = () => _caretSurface.name;
+          ReaderFushiPage.debugEvaluateTopPopup =
               (String source) async => _webviewTopPopupState?.debugEval(source);
-          ReaderHibikiPage.debugInjectAudiobookBridge = () =>
+          ReaderFushiPage.debugInjectAudiobookBridge = () =>
               AudiobookBridge.inject(controller,
                   primaryColor: _themeSentenceAudioHighlightColor());
           return true;
@@ -1879,7 +1879,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
               await _handleTextSelected(ReaderSelectionData.fromJson(payload));
             } catch (e, stack) {
               ErrorLogService.instance
-                  .log('ReaderHibiki.onTextSelected', e, stack);
+                  .log('ReaderFushi.onTextSelected', e, stack);
               debugPrint('[ReaderFushi] onTextSelected error: $e');
             }
           },
@@ -1899,7 +1899,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
               await _handleSelectionMenu(ReaderSelectionData.fromJson(payload));
             } catch (e, stack) {
               ErrorLogService.instance
-                  .log('ReaderHibiki.onSelectionMenu', e, stack);
+                  .log('ReaderFushi.onSelectionMenu', e, stack);
               debugPrint('[ReaderFushi] onSelectionMenu error: $e');
             }
           },
@@ -1977,13 +1977,13 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
               _focusOwnership.reclaim(FocusReclaimCause.gesture);
               return;
             }
-            if (!shiftKey && !ReaderHibikiSource.instance.highlightOnTap) {
+            if (!shiftKey && !ReaderFushiSource.instance.highlightOnTap) {
               // Tap consumed without a selection/popup — reclaim reader focus.
               _focusOwnership.reclaim(FocusReclaimCause.gesture);
               return;
             }
-            final double x = _ReaderHibikiPageState._toDouble(args[0]) ?? 0;
-            final double y = _ReaderHibikiPageState._toDouble(args[1]) ?? 0;
+            final double x = _ReaderFushiPageState._toDouble(args[0]) ?? 0;
+            final double y = _ReaderFushiPageState._toDouble(args[1]) ?? 0;
             // Selection → onTextSelected → popup, which takes focus itself; do
             // not reclaim here or we would fight the popup for focus.
             _selectTextAt(x, y);
@@ -2000,8 +2000,8 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             // onDismissBarrierHover 入口一致，防平台事件路由差异漏网。换词经
             // prunePopupStack(0) 复用热槽无缝替换，同词由 JS selectText 的 fromHover
             // 同词短路去重，二者协同不叠层不闪。
-            final double x = _ReaderHibikiPageState._toDouble(args[0]) ?? 0;
-            final double y = _ReaderHibikiPageState._toDouble(args[1]) ?? 0;
+            final double x = _ReaderFushiPageState._toDouble(args[0]) ?? 0;
+            final double y = _ReaderFushiPageState._toDouble(args[1]) ?? 0;
             // TODO-851：悬停路径传 fromHover:true，命中空白不触发 onTapEmpty。
             _selectTextAt(x, y, fromHover: true);
           },
@@ -2028,7 +2028,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             // 而非旧的挤压 _toggleChrome。未开启（挤压）时维持旧行为（不响应空白点）。
             if (_anyChromeFloating) {
               _handleFloatingChromeReveal();
-            } else if (ReaderHibikiSource.instance.tapEmptyToHideChrome) {
+            } else if (ReaderFushiSource.instance.tapEmptyToHideChrome) {
               _toggleChrome();
             }
             // Tap on empty space handed OS focus to the WebView; reclaim it so
@@ -2137,7 +2137,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
             final String dir = args[0] as String;
             final bool invert =
-                ReaderHibikiSource.instance.invertSwipeDirection;
+                ReaderFushiSource.instance.invertSwipeDirection;
             // BUG-横排滑动翻页方向不随书写方向翻转：滑动/鼠标拖动翻页此前只看
             // invertSwipeDirection 开关，不看书写方向，横排与竖排共用同一套映射。
             // 键盘方向键早已用 `leftIsForward = rtl ^ reverse` 按书写方向翻转
@@ -2170,7 +2170,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             final String dir = args[0] as String;
             final String axis = args[1] as String;
             final int throttleMs =
-                ReaderHibikiSource.instance.wheelPageTurnInterval;
+                ReaderFushiSource.instance.wheelPageTurnInterval;
             // BUG-1380：闸门的 token 消费必须晚于「这一 tick 能不能翻页」的确认。
             // 换章加载/restore 在飞时 _paginate 会直接丢弃这一 tick，若此刻仍认领
             // token，整段惯性的后续 tick 全在闸门早退 → 用户这一次滑动零反馈。
@@ -2235,7 +2235,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             // 故分页跨章经 _paginate 内部调 _handlePageTurnLimit 时不会被自己盖的戳
             // 吞掉（章末翻得过去）。
             final int throttleMs =
-                ReaderHibikiSource.instance.wheelPageTurnInterval;
+                ReaderFushiSource.instance.wheelPageTurnInterval;
             if (throttleMs > 0 && _lastPaginateTime != null) {
               final int elapsedMs =
                   DateTime.now().difference(_lastPaginateTime!).inMilliseconds;
@@ -2311,10 +2311,10 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           callback: (args) async {
             if (args.isEmpty) return;
             final double x = args.length > 1
-                ? (_ReaderHibikiPageState._toDouble(args[1]) ?? 0)
+                ? (_ReaderFushiPageState._toDouble(args[1]) ?? 0)
                 : 0;
             final double y = args.length > 2
-                ? (_ReaderHibikiPageState._toDouble(args[2]) ?? 0)
+                ? (_ReaderFushiPageState._toDouble(args[2]) ?? 0)
                 : 0;
             await _showReaderImageContextMenu(args[0] as String, Offset(x, y));
           },
@@ -2401,8 +2401,8 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             if (!isSeekToClickedSentenceButton(registry, button)) {
               return;
             }
-            final double x = _ReaderHibikiPageState._toDouble(args[1]) ?? 0;
-            final double y = _ReaderHibikiPageState._toDouble(args[2]) ?? 0;
+            final double x = _ReaderFushiPageState._toDouble(args[1]) ?? 0;
+            final double y = _ReaderFushiPageState._toDouble(args[2]) ?? 0;
             await _seekToClickedSentence(x, y);
           },
         );
@@ -2479,7 +2479,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           debugPrint('[ReaderFushi] WebView creation failed: '
               '${error.description}');
           ErrorLogService.instance.log(
-              'ReaderHibiki.onWebViewCreationFailed', error.description, null);
+              'ReaderFushi.onWebViewCreationFailed', error.description, null);
           if (!mounted) return;
           FushiToast.show(
               msg: t.reader_open_failed, severity: ToastSeverity.error);
@@ -2543,7 +2543,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       return result == true || result == 'true' || result == 1 || result == '1';
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibiki.isLoadedLyricsDocument', e, stack);
+          .log('ReaderFushi.isLoadedLyricsDocument', e, stack);
       return false;
     }
   }
@@ -2686,7 +2686,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       }
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibiki._onChapterLoadComplete', e, stack);
+          .log('ReaderFushi._onChapterLoadComplete', e, stack);
       debugPrint('[ReaderFushi] _onChapterLoadComplete failed: $e');
     }
   }
@@ -2697,7 +2697,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
 /// 守卫测试用它断言「引擎里确实含有全部载荷」「引擎与导航状态无关」——这条链路
 /// 此前完全没有：所有脚本守卫都只断言各 builder 的返回值，没人断言那些返回值真的
 /// 进了注入物，漏装一个载荷 ~100 条测试照样全绿。
-String readerHibikiEngineSource({
+String readerFushiEngineSource({
   bool vnMode = false,
   bool continuousMode = false,
 }) =>
@@ -2707,7 +2707,7 @@ String readerHibikiEngineSource({
     );
 
 /// 每次导航下发的那一小份（config + install 调用），供守卫测试断言它不含引擎本体。
-String readerHibikiEngineBoot(ReaderEngineConfig config) =>
+String readerFushiEngineBoot(ReaderEngineConfig config) =>
     _ReaderWebView.readerEngineBoot(config);
 
 /// 压缩**之前**的引擎源码 = 生产上真正交给 [ReaderScriptCompactor] 的那份。
@@ -2717,7 +2717,7 @@ String readerHibikiEngineBoot(ReaderEngineConfig config) =>
 /// 模板抠出来、按一张手写替身表重建的——那张表是查找表，**新增**插值会 StateError
 /// （响亮），**删掉**一个载荷完全静默：整份注入物少一块，压缩覆盖跟着少一块，而没有
 /// 一条测试会红。现在直接向生产代码要同一份对象，那个不对称从根上没有了。
-String readerHibikiEngineSourceUncompacted({
+String readerFushiEngineSourceUncompacted({
   bool vnMode = false,
   bool continuousMode = false,
 }) =>

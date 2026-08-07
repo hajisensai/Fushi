@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
-import '../../pages/reader_hibiki_page_source_corpus.dart';
+import '../../pages/reader_fushi_page_source_corpus.dart';
 
 // TODO-708 P2: 悬浮字幕「圆角半径」+「宽度」自定义，镜像现成透明度偏好链路。守卫：
 //   1) FloatingLyricStyle 新增字段默认 0 = 平台原生观感（never-break userspace）；

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// 查词弹窗焦点系统守卫。
 ///

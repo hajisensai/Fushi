@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from reader_hibiki_page.dart (TODO-589 batch3).
-part of '../reader_hibiki_page.dart';
+// GENERATED-NOTE: extracted from reader_fushi_page.dart (TODO-589 batch3).
+part of '../reader_fushi_page.dart';
 
 /// lookup (查词 / text-selection → dictionary) domain helpers extracted via
 /// part-of (TODO-589 batch3); shared private scope. Behaviour-preserving:
@@ -14,7 +14,7 @@ part of '../reader_hibiki_page.dart';
 /// `@protected` `BaseSourcePageState.prunePopupStack`, which the analyzer
 /// rejects from an extension body — `invalid_use_of_protected_member`). Both
 /// remain reachable from here via the shared private class scope.
-extension _ReaderLookup on _ReaderHibikiPageState {
+extension _ReaderLookup on _ReaderFushiPageState {
   // ── Text Selection → Dictionary ───────────────────────────────────
 
   /// [fromHover]（默认 false）透传给 [ReaderSelectionScripts.selectInvocation]：
@@ -41,7 +41,7 @@ extension _ReaderLookup on _ReaderHibikiPageState {
       // 都 fire-and-forget 调本方法（不 await、不 catch），半销毁 WebView 上
       // evaluateJavascript 抛 MissingPluginException 会无主逃当前 zone。`_controller
       // != null` 防不了通道已废，必须就地兜底；选词失败 no-op，不影响后续手势。
-      ErrorLogService.instance.log('ReaderHibiki.selectTextAt.eval', e, stack);
+      ErrorLogService.instance.log('ReaderFushi.selectTextAt.eval', e, stack);
     }
   }
 
@@ -54,18 +54,18 @@ extension _ReaderLookup on _ReaderHibikiPageState {
   void _syncTapGateJs() {
     final InAppWebViewController? controller = _controller;
     if (controller == null) return;
-    final bool lookup = ReaderHibikiSource.instance.highlightOnTap;
+    final bool lookup = ReaderFushiSource.instance.highlightOnTap;
     try {
       controller
           .evaluateJavascript(
               source: 'window.__fushiTapGate = '
                   '{ chrome: $_showChrome, lookup: $lookup, maxLen: 400 };')
           .catchError((Object e, StackTrace s) {
-        ErrorLogService.instance.log('ReaderHibiki.syncTapGate', e, s);
+        ErrorLogService.instance.log('ReaderFushi.syncTapGate', e, s);
         return null;
       });
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHibiki.syncTapGate', e, stack);
+      ErrorLogService.instance.log('ReaderFushi.syncTapGate', e, stack);
     }
   }
 
@@ -89,7 +89,7 @@ extension _ReaderLookup on _ReaderHibikiPageState {
       );
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibiki.clearLookupState.eval', e, stack);
+          .log('ReaderFushi.clearLookupState.eval', e, stack);
     }
   }
 
@@ -127,7 +127,7 @@ extension _ReaderLookup on _ReaderHibikiPageState {
       // null，防不了通道已废 —— 必须 try/catch 兜底。弹窗已显示，重锚失败仅停在选区
       // rect（查词弹窗不中断）。
       ErrorLogService.instance
-          .log('ReaderHibiki.highlightAndShowPopup.eval', e, stack);
+          .log('ReaderFushi.highlightAndShowPopup.eval', e, stack);
     }
   }
 
@@ -141,7 +141,7 @@ extension _ReaderLookup on _ReaderHibikiPageState {
     // 草稿若不在此清空，上一个词攒的上下文会带到下一个词的卡（用户报「弹窗会缓存」）。
     _miningDraft.clear();
 
-    final bool shouldPause = ReaderHibikiSource.instance.pauseOnLookup;
+    final bool shouldPause = ReaderFushiSource.instance.pauseOnLookup;
     final AudiobookPlayerController? abc = _audiobookController;
     if (shouldPause && abc != null && abc.isPlaying) {
       abc.pause();
@@ -216,7 +216,7 @@ extension _ReaderLookup on _ReaderHibikiPageState {
           }
         }
       } catch (e, stack) {
-        ErrorLogService.instance.log('ReaderHibiki.lyricsCueContext', e, stack);
+        ErrorLogService.instance.log('ReaderFushi.lyricsCueContext', e, stack);
       }
       _lookupCue ??= _audiobookController?.currentCue;
       _syncCueSentence();

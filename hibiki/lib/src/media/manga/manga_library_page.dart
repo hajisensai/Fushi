@@ -4,7 +4,7 @@ import 'package:fushi/src/media/manga/manga_browse_page.dart';
 import 'package:fushi/src/media/manga/manga_sources_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
 
@@ -40,7 +40,7 @@ class MangaLibraryPage extends StatelessWidget {
           kind: MediaLibraryViewKind.library,
           label: t.library_view_shelf,
           builder: (BuildContext context, Widget navigation) =>
-              ReaderHibikiHistoryPage(mangaOnly: true, navigation: navigation),
+              ReaderFushiHistoryPage(mangaOnly: true, navigation: navigation),
         ),
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.browse,

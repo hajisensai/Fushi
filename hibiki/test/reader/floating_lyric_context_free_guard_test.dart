@@ -16,7 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 本守卫锁死整支 lyrics.part.dart 不再依赖 `Theme.of(context)`，防回归。
 void main() {
   const String path =
-      'lib/src/pages/implementations/reader_hibiki/lyrics.part.dart';
+      'lib/src/pages/implementations/reader_fushi/lyrics.part.dart';
 
   late String src;
 

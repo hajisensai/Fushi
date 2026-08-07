@@ -20,7 +20,7 @@ void main() {
   /// 剥掉整行 `//` 注释后再扫。讲「BUG-1210 之前长什么样」「这一步为什么不能省」的
   /// 注释里必然写着下面要断言的每一个符号名，连注释一起扫等于让文档给自己背书：
   /// 把真实实现删光、只留注释也照样绿。**变异实测证实过**——删掉共享实现里
-  /// `if (!ReaderHibikiSource.instance.autoReadOnLookup) return;`（即用户明确关掉
+  /// `if (!ReaderFushiSource.instance.autoReadOnLookup) return;`（即用户明确关掉
   /// 自动朗读也照读不误）后，本测试原版仍然全绿。
   // 统一走共享 helper maskComments（词法扫描：行注释 + 块注释 + 不误伤串里的 //）；
   // 原本地实现只跳「整行 //」，块注释与含引号行的行尾注释都能绕过。

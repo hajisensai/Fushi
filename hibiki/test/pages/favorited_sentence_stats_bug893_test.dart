@@ -90,7 +90,7 @@ void main() {
   group('source guards (lock the fix)', () {
     test('reader 书内收藏写入端补了 dateKey', () {
       final String src =
-          File('lib/src/pages/implementations/reader_hibiki/chrome.part.dart')
+          File('lib/src/pages/implementations/reader_fushi/chrome.part.dart')
               .readAsStringSync();
       // 锚定方法「定义」（`Future<void> _toggleFavoriteSentence()`），不是它的调用点。
       final int def = src.indexOf('Future<void> _toggleFavoriteSentence(');

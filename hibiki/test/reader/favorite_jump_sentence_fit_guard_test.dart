@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// BUG-461 回归守卫（源码扫描）：连续(滚动)模式收藏句跳转必须把句长(句尾偏移)透传到
 /// JS，按字符**区间**整句对齐进可见区，而不是只把句首贴顶（句尾被阅读底栏切 = 用户报的

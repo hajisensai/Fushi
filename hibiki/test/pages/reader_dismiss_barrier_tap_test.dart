@@ -10,7 +10,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/test_platform_services.dart';
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 class _BarrierTapAppModel extends AppModel {
   _BarrierTapAppModel() : super(testPlatformServices());

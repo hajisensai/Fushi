@@ -12,7 +12,7 @@ import 'package:fushi/src/focus/hibiki_focus_controller.dart';
 import 'package:fushi/src/focus/hibiki_focus_target.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -91,10 +91,10 @@ void main() {
       importedAt: 0,
     ));
     epubItems.add(MediaItem(
-      mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(bookKey),
+      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
       title: title,
-      mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
+      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
       position: 0,
       duration: 1,
       canDelete: false,
@@ -119,7 +119,7 @@ void main() {
             builder: (BuildContext context, Widget? child) =>
                 FushiFocusRoot(child: child ?? const SizedBox.shrink()),
             home: Scaffold(
-              body: ReaderHibikiHistoryPage(
+              body: ReaderFushiHistoryPage(
                 remoteBookClientLoader: () async => null,
               ),
             ),
@@ -132,7 +132,7 @@ void main() {
     await seedEpub('memberKey', '成员书');
     final int cid = await db.createMediaCollection('系列甲');
     await db.addToCollection(cid, MediaKind.epub, 'memberKey');
-    final String mediaId = ReaderHibikiSource.mediaIdentifierFor('memberKey');
+    final String mediaId = ReaderFushiSource.mediaIdentifierFor('memberKey');
 
     tester.view.physicalSize = const Size(1400, 1200);
     tester.view.devicePixelRatio = 1.0;

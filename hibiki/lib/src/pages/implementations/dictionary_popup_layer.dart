@@ -3,7 +3,7 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
@@ -623,7 +623,7 @@ class DictionaryPopupLayer extends StatelessWidget {
       // 不再冒泡进滑动判定，彻底消除"框选误触滑动关闭"。
       final Widget topRegion = _swipeActive
           ? SwipeDismissWrapper(
-              sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+              sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
               onDismiss: onDismiss,
               child: topBar,
             )
@@ -693,7 +693,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     final Widget shell = (topBar != null || !_swipeActive)
         ? content
         : SwipeDismissWrapper(
-            sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+            sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
             onDismiss: onDismiss,
             child: content,
           );
@@ -1099,7 +1099,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
   bool? _pointerIsHorizontal;
 
   double get _threshold => swipeDismissThreshold(
-        ReaderHibikiSource.instance.dismissSwipeSensitivity,
+        ReaderFushiSource.instance.dismissSwipeSensitivity,
       );
 
   @override

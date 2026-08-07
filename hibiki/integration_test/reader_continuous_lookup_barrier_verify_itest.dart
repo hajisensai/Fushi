@@ -10,9 +10,9 @@ import 'package:integration_test/integration_test.dart';
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/media/media_item.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
 import 'helpers/library_fixture.dart';
@@ -76,7 +76,7 @@ void main() {
         await appModel.database
             .setPref('src:reader_fushi:writing_mode', 'horizontal-tb');
         // highlight_on_tap 默认即 true（single-tap 查词），无需显式设置。
-        await ReaderHibikiSource.readerSettings?.refreshFromDb();
+        await ReaderFushiSource.readerSettings?.refreshFromDb();
 
         final String bookKey = await EpubImporter.import(
           db: appModel.database,
@@ -84,9 +84,9 @@ void main() {
           fileName: 'verify_continuous_lookup.epub',
         );
 
-        final ReaderHibikiSource source = ReaderHibikiSource.instance;
+        final ReaderFushiSource source = ReaderFushiSource.instance;
         final MediaItem item = MediaItem(
-          mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(bookKey),
+          mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
           title: bookKey,
           mediaTypeIdentifier: source.mediaType.uniqueKey,
           mediaSourceIdentifier: source.uniqueKey,
@@ -125,7 +125,7 @@ void main() {
         await tester.pump(const Duration(seconds: 3));
 
         final Future<dynamic> Function(String source)? runInWebView =
-            ReaderHibikiPage.debugEvaluateJavascript;
+            ReaderFushiPage.debugEvaluateJavascript;
         expect(runInWebView, isNotNull, reason: 'reader JS hook must be set');
 
         // 找两个不同的可查词点（"猫" 在生成 EPUB 正文里重复出现）。
@@ -141,10 +141,10 @@ void main() {
         final double x2 = (pts['x2'] as num).toDouble();
         final double y2 = (pts['y2'] as num).toDouble();
 
-        // reader state：`_ReaderHibikiPageState` 私有，无法直接命名类型；取无类型
+        // reader state：`_ReaderFushiPageState` 私有，无法直接命名类型；取无类型
         // State 再走 dynamic 调用它继承自 BaseSourcePageState 的 `isDictionaryShown`
         // / `onDismissBarrierTap`（后者是 @protected 钩子，也是 barrier 的生产入口）。
-        final State rawState = tester.state(find.byType(ReaderHibikiPage));
+        final State rawState = tester.state(find.byType(ReaderFushiPage));
         final dynamic readerState = rawState;
 
         bool dictShown() => readerState.isDictionaryShown as bool;
@@ -187,7 +187,7 @@ void main() {
         navigator.pop();
         await tester.pump(const Duration(seconds: 2));
         for (int i = 0;
-            i < 40 && ReaderHibikiPage.debugEvaluateJavascript != null;
+            i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
             i++) {
           await tester.pump(const Duration(milliseconds: 250));
         }

@@ -46,7 +46,7 @@ final hibikiBooksProvider =
     FutureProvider.family<List<MediaItem>, Language>((ref, language) {
   // BUG-793：订阅 EPUB 书集合变化，任意导入路径落库后自动重算书架。
   ref.watch(_epubBookKeysProvider);
-  return ReaderHibikiSource.instance.getBooksFromDb(
+  return ReaderFushiSource.instance.getBooksFromDb(
     appModel: ref.watch(appProvider),
   );
 });
@@ -61,7 +61,7 @@ final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
 /// 每本书的「最后阅读时间」（`reader_positions.updatedAt` 毫秒，key=bookKey，
 /// EPUB/SRT 同源——SRT 书经阅读器落位置也用 bookKey）。BUG-777：继续阅读 hero
 /// 与书架「最近阅读」排序的唯一 recency 真相源；关书时与 [hibikiBooksProvider]
-/// 同点失效（[ReaderHibikiSource.onSourceExit]），不会陈旧。
+/// 同点失效（[ReaderFushiSource.onSourceExit]），不会陈旧。
 final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
   final FushiDatabase db = ref.watch(appProvider).database;
   final List<ReaderPositionRow> rows = await db.getAllReaderPositions();
@@ -126,7 +126,7 @@ final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
   return (position: 0, duration: 1);
 }
 
-/// [ReaderHibikiSource.deleteBook] 的结果（TODO-1359）。
+/// [ReaderFushiSource.deleteBook] 的结果（TODO-1359）。
 ///
 /// 旧接口只回 `Future<bool>`，删除失败时调用方拿不到任何原因，只能弹一个笼统的
 /// 「删除书籍失败」toast——用户「报错日志呢？为什么删不掉？」正是这个信息丢失的症
@@ -154,8 +154,8 @@ class DeleteBookResult {
 /// 全仓对该字面量的引用一律走本常量（改名守卫锚点）。
 const String kReaderSourcePersistedKey = 'reader_fushi';
 
-class ReaderHibikiSource extends ReaderMediaSource {
-  ReaderHibikiSource._()
+class ReaderFushiSource extends ReaderMediaSource {
+  ReaderFushiSource._()
       : super(
           uniqueKey: kReaderSourcePersistedKey,
           sourceName: t.source_name_bookshelf,
@@ -165,8 +165,8 @@ class ReaderHibikiSource extends ReaderMediaSource {
           implementsHistory: false,
         );
 
-  static ReaderHibikiSource get instance => _instance;
-  static final ReaderHibikiSource _instance = ReaderHibikiSource._();
+  static ReaderFushiSource get instance => _instance;
+  static final ReaderFushiSource _instance = ReaderFushiSource._();
 
   static int get defaultScrollingSpeed => 100;
 
@@ -190,7 +190,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// 三种书共用 `mediaIdentifier`（`hoshi://book/<bookKey>`，与 format 无关），
   /// 路由只认 `mediaSourceIdentifier`，而它**只能**由**当前**的 `format` 现算。
   /// 书架列书（[_bookToMediaItem]）与所有「手上只有 bookKey、要跳回原文」的入口
-  /// （收藏句 / 制卡句）必须共用本函数：任何自己写死 `ReaderHibikiSource.instance`
+  /// （收藏句 / 制卡句）必须共用本函数：任何自己写死 `ReaderFushiSource.instance`
   /// 的入口，在漫画 / PDF 书上**今天就已经**用错阅读器打开（漫画行的 `epubPath`
   /// 是 `manga.json`、`chaptersJson` 是 `'[]'`，落到 EPUB 阅读器直接在解析路径
   /// 出错），书 ↔ 漫画转化只是把它从「导入即错」放大成「转化后突然错」。
@@ -207,7 +207,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   // HBK-AUDIT-127: percent-encode the href when building the URL so it is
   // symmetric with the consumer side, which decodes the whole post-'/epub/'
-  // path with Uri.decodeComponent (reader_hibiki_page.dart, epub_book.dart).
+  // path with Uri.decodeComponent (reader_fushi_page.dart, epub_book.dart).
   // Encoding per path segment (and rejoining with '/') preserves the path
   // structure while escaping spaces and literal '%' (which a raw href would
   // leave to be mis-decoded or to throw on decode). Mirrors fontUrl's encoding.
@@ -370,7 +370,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   // its _pendingCue/_pendingAudioFiles + setPendingSentenceAudio/
   // clearPendingSentenceAudio machinery. They had zero callers, so the override
   // always returned null; the live sentence-audio mining is done inline in
-  // reader_hibiki_page.dart. The misleading overridesAutoAudio:true flag was
+  // reader_fushi_page.dart. The misleading overridesAutoAudio:true flag was
   // dropped from the constructor (now defaults to false) for the same reason.
 
   @override
@@ -398,7 +398,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   }) {
     final String bookKey = _extractBookKey(item?.mediaIdentifier ?? '');
     return FushiAppUiScaleNeutralizer(
-      child: ReaderHibikiPage(
+      child: ReaderFushiPage(
         item: item,
         bookKey: bookKey,
         initialBookmarkJump: initialBookmarkJump,
@@ -408,14 +408,14 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   // HBK-AUDIT-126: parseBookKey returns null for an empty/unknown identifier.
   // We log the failure so the corruption is observable instead of swallowed;
-  // an empty-string sentinel remains only because ReaderHibikiPage.bookKey is a
-  // non-null String and ReaderHibikiPage already renders an empty/error state
+  // an empty-string sentinel remains only because ReaderFushiPage.bookKey is a
+  // non-null String and ReaderFushiPage already renders an empty/error state
   // for an unknown key.
   static String _extractBookKey(String identifier) {
     final String? bookKey = parseBookKey(identifier);
     if (bookKey == null) {
       ErrorLogService.instance.log(
-        'ReaderHibikiSource._extractBookKey',
+        'ReaderFushiSource._extractBookKey',
         'unparseable media identifier: "$identifier"',
         StackTrace.current,
       );
@@ -471,7 +471,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   @override
   BasePage buildHistoryPage({MediaItem? item, Widget? navigation}) {
-    return ReaderHibikiHistoryPage(navigation: navigation);
+    return ReaderFushiHistoryPage(navigation: navigation);
   }
 
   // ── Book listing from Drift ─────────────────────────────────────────
@@ -526,7 +526,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
             .toList();
       } catch (e, stack) {
         ErrorLogService.instance
-            .log('ReaderHibikiSource.sectionChars', e, stack);
+            .log('ReaderFushiSource.sectionChars', e, stack);
       }
     }
     final int totalChars = sectionChars.fold<int>(0, (a, b) => a + b);
@@ -856,8 +856,8 @@ class ReaderHibikiSource extends ReaderMediaSource {
         final String reason = '找不到这本书的数据（bookKey="$bookKey" 无对应行，'
             '可能已删除或书架条目已失效）';
         ErrorLogService.instance
-            .logDiagnostic('ReaderHibikiSource.deleteBook', reason);
-        debugPrint('[ReaderHibikiSource] deleteBook: $reason');
+            .logDiagnostic('ReaderFushiSource.deleteBook', reason);
+        debugPrint('[ReaderFushiSource] deleteBook: $reason');
         return DeleteBookResult.failure(reason);
       }
 
@@ -920,8 +920,8 @@ class ReaderHibikiSource extends ReaderMediaSource {
         }
       } catch (e, stack) {
         ErrorLogService.instance
-            .log('ReaderHibikiSource.deleteBook.cleanup', e, stack);
-        debugPrint('[ReaderHibikiSource] deleteBook post-DB cleanup failed '
+            .log('ReaderFushiSource.deleteBook.cleanup', e, stack);
+        debugPrint('[ReaderFushiSource] deleteBook post-DB cleanup failed '
             '(DB rows already removed; on-disk copy may leak): $e');
       }
 
@@ -934,8 +934,8 @@ class ReaderHibikiSource extends ReaderMediaSource {
         await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
       } catch (e, stack) {
         ErrorLogService.instance
-            .log('ReaderHibikiSource.deleteBook.vacuum', e, stack);
-        debugPrint('[ReaderHibikiSource] VACUUM after delete failed: $e');
+            .log('ReaderFushiSource.deleteBook.vacuum', e, stack);
+        debugPrint('[ReaderFushiSource] VACUUM after delete failed: $e');
       }
       // 真删了 EPUB 行，或清理了按 bookKey 关联的 SRT 行/磁盘副本，才算删除成功。
       // 过了上面的早退守卫后两者至少有一个为真，这里如实回报删除结果。
@@ -944,12 +944,12 @@ class ReaderHibikiSource extends ReaderMediaSource {
       }
       final String reason = 'DB 删除未移除任何行（bookKey="$bookKey"，deletedRows=0）';
       ErrorLogService.instance
-          .logDiagnostic('ReaderHibikiSource.deleteBook', reason);
-      debugPrint('[ReaderHibikiSource] deleteBook: $reason');
+          .logDiagnostic('ReaderFushiSource.deleteBook', reason);
+      debugPrint('[ReaderFushiSource] deleteBook: $reason');
       return DeleteBookResult.failure(reason);
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHibikiSource.deleteBook', e, stack);
-      debugPrint('[ReaderHibikiSource] deleteBook failed: $e');
+      ErrorLogService.instance.log('ReaderFushiSource.deleteBook', e, stack);
+      debugPrint('[ReaderFushiSource] deleteBook failed: $e');
       return DeleteBookResult.failure(e.toString());
     }
   }
@@ -1706,7 +1706,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
     try {
       return (jsonDecode(raw) as List<dynamic>).cast<Map<String, dynamic>>();
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHibikiSource.customFonts', e, stack);
+      ErrorLogService.instance.log('ReaderFushiSource.customFonts', e, stack);
       return <Map<String, dynamic>>[];
     }
   }
@@ -1745,7 +1745,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
         await f.delete();
       }
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHibikiSource.deleteFont', e, stack);
+      ErrorLogService.instance.log('ReaderFushiSource.deleteFont', e, stack);
       debugPrint('[Fushi] failed to delete custom font file $filePath: $e');
     }
   }

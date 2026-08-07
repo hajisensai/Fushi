@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/focus/hibiki_focus_controller.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
@@ -92,7 +92,7 @@ Future<double> _settledOffset(
                   context: context,
                   appModel: ref.read(appProvider),
                   ref: ref,
-                  readerSource: ReaderHibikiSource.instance,
+                  readerSource: ReaderFushiSource.instance,
                   refresh: () {},
                 );
                 return const MaterialSettingsRenderer().buildDetailContent(

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// 悬停查词（hover）路径的连续化守卫（「按住 Shift 一路滑，弹窗跟着光标走」）。
 ///

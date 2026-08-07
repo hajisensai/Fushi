@@ -693,7 +693,7 @@ mixin DictionaryPageMixin {
             ? null
             : onDictionaryPopupInputToken,
         // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
-        enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
+        enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,
         // TODO-407①：顶层仍渲染"X 关闭"，走既有关闭汇聚点 onPop(0)
         // （清整栈，不破坏 BUG-072 续播 / 清句 / 清栈）。
         onClose: () => onPop(index),
@@ -972,7 +972,7 @@ mixin DictionaryPageMixin {
         searchTerm: trimmed,
       );
       mixinAppModel.addToDictionaryHistory(result: result);
-      if (autoRead && ReaderHibikiSource.instance.autoReadOnLookup) {
+      if (autoRead && ReaderFushiSource.instance.autoReadOnLookup) {
         final first = result.entries.first;
         if (first.word.isNotEmpty) {
           autoReadWord(first.word, first.reading,

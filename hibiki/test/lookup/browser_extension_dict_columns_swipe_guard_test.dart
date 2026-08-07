@@ -32,7 +32,7 @@ void main() {
       expect(src, contains("'--fushi-swipe-close'"),
           reason: 'theme 必须下发 --fushi-swipe-close 供 content.js 决定是否启用拖关手势');
       expect(
-          RegExp(r'ReaderHibikiSource\.instance\.enableSwipeToClose\s*\?\s*'
+          RegExp(r'ReaderFushiSource\.instance\.enableSwipeToClose\s*\?\s*'
                   "'1'\\s*:\\s*'0'")
               .hasMatch(src),
           isTrue,

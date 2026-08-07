@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// BUG-162 回归守卫（源码扫描，沿用 `reanchor_charoffset_guard_test.dart` 的
 /// `File(...).readAsStringSync()` + `contains` 模式）。
@@ -22,7 +22,7 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// 谁把恢复退回纯粗粒度分数路径、或保存不再报精确偏移，本测试红。
 void main() {
   // TODO-589 batch8: fushiProgressDetails(setup 脚本) + initialCharOffset 注入
-  // 已搬到 reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+  // 已搬到 reader_fushi/webview.part.dart，改读「主壳 + 全部 part」合并语料。
   final String pageSrc = readReaderPageSource();
   final String jsSrc = File(
     'lib/src/reader/reader_pagination_scripts.dart',

@@ -343,7 +343,7 @@ void main() {
     }
 
     const String readerPath =
-        'lib/src/pages/implementations/reader_hibiki/caret.part.dart';
+        'lib/src/pages/implementations/reader_fushi/caret.part.dart';
 
     test('阅读器 readerDismissDict 分支只关词典、绝不退书', () {
       final String slice =

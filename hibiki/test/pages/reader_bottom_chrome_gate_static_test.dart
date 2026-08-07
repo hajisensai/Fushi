@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// 阅读器切章/spread 冷开时底栏(bottom chrome)闪烁/延迟出现的回归守卫（源码扫描，
 /// 沿用 reader_paginate_lyrics_guard_static_test.dart 的 `_functionSource` 范式）。

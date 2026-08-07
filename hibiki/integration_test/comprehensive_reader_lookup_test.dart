@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 import 'helpers/library_fixture.dart';
 import 'helpers/pagination_test_harness.dart';
@@ -52,7 +52,7 @@ void main() {
         'Hoshi content ready',
       );
 
-      final eval = ReaderHibikiPage.debugEvaluateJavascript;
+      final eval = ReaderFushiPage.debugEvaluateJavascript;
       expect(eval, isNotNull);
       await eval!(paginationHarnessJs);
       final PaginationState before = PaginationState.fromJson(

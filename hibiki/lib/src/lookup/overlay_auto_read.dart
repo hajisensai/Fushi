@@ -11,7 +11,7 @@ import 'dart:async';
 
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/global_lookup_render.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';
@@ -55,7 +55,7 @@ class OverlayAutoRead {
   /// 一次 libmpv stop→load→play），播放结果经 wordAudioPlayed 桥真实回报，失败/
   /// 超时回落 Dart 播放器（受 BUG-1015 warmUp 保护），绝不静默丢发音。
   void autoReadFirstEntry(AppModel model, DictionarySearchResult result) {
-    if (!ReaderHibikiSource.instance.autoReadOnLookup) {
+    if (!ReaderFushiSource.instance.autoReadOnLookup) {
       return;
     }
     if (result.entries.isEmpty) {

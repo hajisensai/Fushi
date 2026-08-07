@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 
@@ -23,7 +23,7 @@ import 'test_helpers.dart';
 ///   1. the real, fully-initialised app renders home in the hidden runner;
 ///   2. focus TRAVERSAL works on the live UI (FocusDriver / synthetic Tab —
 ///      no coordinate taps), reaching multiple real focus targets;
-///   3. a reading-setting change on the LIVE [ReaderHibikiSource.readerSettings]
+///   3. a reading-setting change on the LIVE [ReaderFushiSource.readerSettings]
 ///      flows into the render pipeline — [ReaderContentStyles.css] really
 ///      changes (T1 effect probe on the real settings instance + real DB),
 ///      not just a persisted value.
@@ -98,13 +98,13 @@ void main() {
               'runner)');
 
       // 3) The live reader-settings instance the app actually renders from.
-      liveSettings = ReaderHibikiSource.readerSettings;
+      liveSettings = ReaderFushiSource.readerSettings;
       expect(liveSettings, isNotNull,
-          reason: 'Real app should wire ReaderHibikiSource.readerSettings');
+          reason: 'Real app should wire ReaderFushiSource.readerSettings');
       await liveSettings!.refreshFromDb();
 
       final ReaderCssEffectProbe probe =
-          ReaderCssEffectProbe(() => ReaderHibikiSource.readerSettings!);
+          ReaderCssEffectProbe(() => ReaderFushiSource.readerSettings!);
       final EffectSnapshot before = probe.capture();
 
       // Flip the writing mode on the live instance (the same instance the UI
@@ -115,7 +115,7 @@ void main() {
       final String flipped =
           originalMode.startsWith('vertical') ? 'horizontal-tb' : 'vertical-rl';
       await liveSettings.setWritingMode(flipped);
-      await ReaderHibikiSource.readerSettings!.refreshFromDb();
+      await ReaderFushiSource.readerSettings!.refreshFromDb();
 
       final EffectVerdict verdict = probe.compare(before, probe.capture());
       debugPrint('[desktop-settings] effect changed=${verdict.changed} '

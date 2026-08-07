@@ -278,7 +278,7 @@ Future<int?> showMangaPageJumpDialog(
 
 /// 漫画阅读器页面（漫画 OCR P1：L5 媒体源路由 / L6 渲染 / L7 查词+制卡）。
 ///
-/// 与 EPUB 的 [ReaderHibikiPage]、PDF 的 [ReaderPdfPage] 平行的「第三种书」：mokuro
+/// 与 EPUB 的 [ReaderFushiPage]、PDF 的 [ReaderPdfPage] 平行的「第三种书」：mokuro
 /// 页图 + 透明 OCR 覆盖层在 WebView 里渲染（文档由 [mangaWindowDocument] 生成），
 /// 汇入同一批共享设施：[BaseSourcePageState.searchDictionaryResult]（查词弹窗）、
 /// [ReaderPositionRepository]（阅读位置，sectionIndex=0-based 页码）、
@@ -2575,7 +2575,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   /// 注册**全工程唯一**的 `onTextSelected` Dart handler（ERRATA H2）。触发它的
   /// pointerup 监听内嵌且仅存在于 [mangaWindowDocument]（L3），本方法绝不注册第二个
   /// pointerup。payload 解码成 [ReaderSelectionData] 转发 [processMangaSelection]，
-  /// 镜像 reader_hibiki 的现代形态（webview.part.dart）。
+  /// 镜像 reader_fushi 的现代形态（webview.part.dart）。
   void _registerSelectionHandlers(InAppWebViewController controller) {
     controller.addJavaScriptHandler(
       handlerName: 'onTextSelected',
@@ -3464,7 +3464,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           WebResourceRequest request, WebResourceError error) async {
         if (!(request.isForMainFrame ?? false)) return;
         // Windows WebView2 对未解析虚拟域的主帧导航报错，即使 shouldInterceptRequest
-        // 已提供文档。视作加载完成（镜像 reader_hibiki 的同款处理）。
+        // 已提供文档。视作加载完成（镜像 reader_fushi 的同款处理）。
         if (Platform.isWindows &&
             request.url.host == MangaHibikiPage.kMangaHost) {
           unawaited(_markWindowReady(controller));

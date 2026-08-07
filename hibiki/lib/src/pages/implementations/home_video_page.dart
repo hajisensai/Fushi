@@ -733,7 +733,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   // ── 批量选择（与书架 tab 对齐）────────────────────────────────────
-  // 书架 [reader_hibiki_history_page] 早有这套（_selectionMode / _selectedKeys /
+  // 书架 [reader_fushi_history_page] 早有这套（_selectionMode / _selectedKeys /
   // 批量打标签 + 删除）；视频 tab 共用同一 [FushiTagFilterBar]（其 selectionMode /
   // onToggleSelectionMode 入参书架已用、视频此前没传）。这里给视频补上 wiring，
   // 批量操作语义对齐书架（批量打标签 + 批量删除），但因视频书是扁平 bookUid，
@@ -2162,7 +2162,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     const bool canImport = true;
     final List<BookTagRow> allTags =
         ref.watch(allTagsProvider).valueOrNull ?? const <BookTagRow>[];
-    // 页头/布局与书架 [reader_hibiki_history_page]、词典 [home_dictionary_page]
+    // 页头/布局与书架 [reader_fushi_history_page]、词典 [home_dictionary_page]
     // 统一：不再用自带 Scaffold + adaptiveAppBar（小标题 + 标准 IconButton），改成
     // DesktopContentLayout + FushiPageHeader（大标题 + FushiIconButton），三个
     // 首页 tab 的标题字号与动作按钮位置因此完全一致。外层 Scaffold 由 HomePage 提供。
@@ -3980,7 +3980,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Widget _buildPageHeader(bool canImport) {
     final List<Widget> actions = <Widget>[
       // 图标顺序与书架完全一致：导入 → 收藏夹 → 统计。书架
-      // [reader_hibiki_history_page._buildPageHeader] 把导入按钮放在第一位
+      // [reader_fushi_history_page._buildPageHeader] 把导入按钮放在第一位
       // （buildBookImportButton），收藏夹、统计紧随其后；视频 tab 照此对齐
       // （TODO-162：此前视频把导入放在末尾，与书架不一致）。视频导入仍受
       // [canImport] 门控（仅视频 tab 才有导入入口），这里只调整位置不改门控。
@@ -4194,7 +4194,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// [selectedTagIdsProvider] 与书架联动；批量选择动作经 [onToggleSelectionMode]
   /// 与书架对齐（TODO-063：此前视频 tab 没传，缺了「标签设置旁的选择」）。
   ///
-  /// 渲染条件：与书架 [reader_hibiki_history_page._buildTagBar] 一致——**永远渲染
+  /// 渲染条件：与书架 [reader_fushi_history_page._buildTagBar] 一致——**永远渲染
   /// 整栏**（不再「无标签隐藏」），批量选择按钮才能常驻露出（否则空标签库点不到
   /// 批量入口、无法批量删除）。组件内部「管理标签」齿轮仍只在有标签时显示，故无
   /// 标签时整栏只剩「批量选择」按钮。
@@ -4932,7 +4932,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// 批量操作栏（底部，仅选择态显示）：选中计数 + 全选 / 反选 + 打标签 + 删除。
-  /// 与书架 [reader_hibiki_history_page._buildBatchActionBar] 对齐。
+  /// 与书架 [reader_fushi_history_page._buildBatchActionBar] 对齐。
   Widget _buildBatchActionBar() {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);

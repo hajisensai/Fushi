@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import '../../pages/reader_hibiki_page_source_corpus.dart';
+import '../../pages/reader_fushi_page_source_corpus.dart';
 
 /// 源码守卫（BUG-032）：退到后台时必须**连同音频播放位置一起 flush**。
 ///

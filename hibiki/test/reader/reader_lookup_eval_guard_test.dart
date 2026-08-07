@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-678 / BUG-390：阅读器**查词路径** evaluateJavascript 的异步守卫回归测试
 /// （源码扫描，沿用 `reader_live_settings_guard_test.dart` 的静态断言模式：
@@ -23,13 +23,13 @@ void main() {
     // 每个 tag 只出现在对应查词 eval 点的 try/catch / catchError 守卫块内。
     const List<String> guardTags = <String>[
       // _highlightAndShowPopup：选区高亮 eval（BUG-005 漏网主点，原只有 finally 无 catch）
-      'ReaderHibiki.highlightAndShowPopup.eval',
+      'ReaderFushi.highlightAndShowPopup.eval',
       // _selectTextAt：onTap / onShiftHover / onDismissBarrierHover fire-and-forget 调
-      'ReaderHibiki.selectTextAt.eval',
+      'ReaderFushi.selectTextAt.eval',
       // _clearLookupState → _clearSelectionJs：onAllPopupsDismissed fire-and-forget 调
-      'ReaderHibiki.clearLookupState.eval',
+      'ReaderFushi.clearLookupState.eval',
       // _handleTextSelected 歌词分支：cue context eval（已纳入既有 try 块）
-      'ReaderHibiki.lyricsCueContext',
+      'ReaderFushi.lyricsCueContext',
     ];
     for (final String tag in guardTags) {
       expect(
@@ -58,7 +58,7 @@ void main() {
     final int showIdx =
         src.indexOf('showDeferredPopup(selectionRect: fallbackRect);');
     final int evalIdx =
-        src.indexOf("'ReaderHibiki.highlightAndShowPopup.eval'");
+        src.indexOf("'ReaderFushi.highlightAndShowPopup.eval'");
     expect(
       showIdx,
       greaterThanOrEqualTo(0),
@@ -69,7 +69,7 @@ void main() {
     expect(
       evalIdx,
       greaterThanOrEqualTo(0),
-      reason: 'ReaderHibiki.highlightAndShowPopup.eval guard tag missing.',
+      reason: 'ReaderFushi.highlightAndShowPopup.eval guard tag missing.',
     );
     expect(
       showIdx,

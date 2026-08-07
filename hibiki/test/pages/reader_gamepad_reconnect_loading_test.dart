@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 /// BUG-438 / TODO-889：手柄重连后阅读器无限 loading。
 ///
 /// 根因链（investigator 已定位 file:line）：
-///   reader_hibiki_page.dart didChangeMetrics → 旧实现每帧 postFrame 直连
+///   reader_fushi_page.dart didChangeMetrics → 旧实现每帧 postFrame 直连
 ///   _syncPageSize（未去抖）→ 手柄连/断引发系统 inset 抖动 → 宽变判定触发
 ///   _navigateToChapter → navigation.part.dart _beginNavigation 置
 ///   _readerContentReady=false 重挂 loading 遮罩，并调 _startContentReadyTimeout。
@@ -95,10 +95,10 @@ void main() {
 
   group('BUG-438 source guards', () {
     final String readerSrc = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
+      'lib/src/pages/implementations/reader_fushi_page.dart',
     ).readAsStringSync();
     final String navSrc = File(
-      'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+      'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
     ).readAsStringSync();
     final String mainActivitySrc = File(
       'android/app/src/main/java/app/fushi/reader/MainActivity.java',

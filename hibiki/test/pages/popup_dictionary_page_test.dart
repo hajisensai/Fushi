@@ -400,8 +400,8 @@ void main() {
     // 的 popupPagePath -> [popup-perf] 用例接管。
     expect(model, contains('MediaSource.setDatabase(_database)'),
         reason: 'popup init must attach MediaSource prefs to the popup DB.');
-    expect(model, contains('ReaderHibikiSource.instance.initialise()'),
-        reason: 'popup init must hydrate ReaderHibikiSource preferences.');
+    expect(model, contains('ReaderFushiSource.instance.initialise()'),
+        reason: 'popup init must hydrate ReaderFushiSource preferences.');
   });
 
   testWidgets(

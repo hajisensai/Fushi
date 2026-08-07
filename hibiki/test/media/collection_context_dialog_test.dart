@@ -287,7 +287,7 @@ void main() {
   // ---------------------------------------------------------------------------
   group('三库页合集菜单接线对账', () {
     const Map<String, String> pagesWithDeleteMembers = <String, String>{
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart':
+      'lib/src/pages/implementations/reader_fushi_history_page.dart':
           't.delete_collection_also_books',
       'lib/src/pages/implementations/home_video_page.dart':
           't.delete_collection_also_videos',

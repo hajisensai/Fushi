@@ -12,7 +12,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
@@ -91,7 +91,7 @@ void main() {
             builder: (BuildContext context, Widget? child) =>
                 child ?? const SizedBox.shrink(),
             home: Scaffold(
-              body: ReaderHibikiHistoryPage(
+              body: ReaderFushiHistoryPage(
                 remoteBookClientLoader: () async => client,
                 remoteBookDownloadDestination: (RemoteBookInfo book) async =>
                     File('${pathProviderDir.path}/${book.title.hashCode}.epub'),

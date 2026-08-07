@@ -40,11 +40,11 @@ void main() {
       MediaSource.setDatabase(db);
       final ReaderSettings readerSettings = ReaderSettings(db);
       await readerSettings.refreshFromDb();
-      ReaderHibikiSource.readerSettings = readerSettings;
+      ReaderFushiSource.readerSettings = readerSettings;
     });
 
     tearDown(() async {
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
       await db.close();
     });
 
@@ -60,7 +60,7 @@ void main() {
                   context: context,
                   appModel: AppModel(testPlatformServices()),
                   ref: ref,
-                  readerSource: ReaderHibikiSource.instance,
+                  readerSource: ReaderFushiSource.instance,
                   refresh: () {},
                 );
                 final SettingsStepperItem item =

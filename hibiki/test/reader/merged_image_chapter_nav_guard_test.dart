@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///      off 模式也必须走虚拟页 map 跳过被吸收章。
 void main() {
   final Directory base = Directory(
-    'lib/src/pages/implementations/reader_hibiki',
+    'lib/src/pages/implementations/reader_fushi',
   );
   String read(String name) => File('${base.path}/$name').readAsStringSync();
 

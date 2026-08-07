@@ -9,16 +9,16 @@ import 'package:flutter_test/flutter_test.dart';
 /// 纯函数真值表单测保证逻辑正确，本守卫保证它们接进了真实路径且没退回错误模型。
 void main() {
   final String navigation = File(
-    'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+    'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
   ).readAsStringSync();
   final String chrome = File(
-    'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+    'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
   ).readAsStringSync();
   final String page = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
+    'lib/src/pages/implementations/reader_fushi_page.dart',
   ).readAsStringSync();
   final String webview = File(
-    'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+    'lib/src/pages/implementations/reader_fushi/webview.part.dart',
   ).readAsStringSync();
 
   /// 切 [src] 里名为 [name] 的方法体（从签名到下一处 `\n  }` 顶层闭合）。

@@ -18,9 +18,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 自动出现」。
 void main() {
   // Tests run with CWD = `hibiki/`.
-  final File source = File('lib/src/media/sources/reader_hibiki_source.dart');
+  final File source = File('lib/src/media/sources/reader_fushi_source.dart');
 
-  test('reader_hibiki_source.dart exists', () {
+  test('reader_fushi_source.dart exists', () {
     expect(source.existsSync(), isTrue);
   });
 

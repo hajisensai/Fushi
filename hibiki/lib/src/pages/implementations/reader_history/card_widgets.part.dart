@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from reader_hibiki_history_page.dart (TODO-587).
-part of '../reader_hibiki_history_page.dart';
+// GENERATED-NOTE: extracted from reader_fushi_history_page.dart (TODO-587).
+part of '../reader_fushi_history_page.dart';
 
 /// 自适应标签列在给定可用高度下能放几个 chip slot。
 ///
@@ -64,7 +64,7 @@ const double kShelfTitleFooterHeight = 40.0;
 const double kShelfBookCardAspectRatio = 160 / 260;
 
 /// card domain methods extracted via part-of (TODO-587); shared private scope.
-extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
+extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
   Widget _tagChip(BookTagRow tag) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(

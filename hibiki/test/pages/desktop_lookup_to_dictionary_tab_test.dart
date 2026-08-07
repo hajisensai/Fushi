@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// 根因守卫：桌面剪贴板/热键查词不再 push 一个独立的全屏查词页（旧
 /// [DesktopLookupOverlay] 方案），而是统一为「唤前台 → 切到首页『查词』tab → 预填词
@@ -78,7 +78,7 @@ void main() {
     // autoRead 默认仍沿用 autoReadOnLookup（不破坏正常输入查词的朗读行为）。
     expect(
         src.contains(
-            'autoRead ?? ReaderHibikiSource.instance.autoReadOnLookup'),
+            'autoRead ?? ReaderFushiSource.instance.autoReadOnLookup'),
         isTrue,
         reason: '默认必须沿用 autoReadOnLookup，向后兼容正常查词的朗读');
   });

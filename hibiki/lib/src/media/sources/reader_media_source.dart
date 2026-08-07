@@ -25,13 +25,13 @@ abstract class ReaderMediaSource extends MediaSource {
   /// 现算（转化后会变）。override 书名 / 封面必须跟着**书**走，不跟着阅读器走，
   /// 所以三源统一存进 EPUB 源的偏好命名空间。
   @override
-  MediaSource get overrideStore => ReaderHibikiSource.instance;
+  MediaSource get overrideStore => ReaderFushiSource.instance;
 
   /// BUG-1317 读取期回退：存量 override 按写入时的 format 散落在三个源各自的
   /// `src:<sourceId>:` 命名空间里，三个都要试。
   @override
   List<MediaSource> get legacyOverrideStores => <MediaSource>[
-        ReaderHibikiSource.instance,
+        ReaderFushiSource.instance,
         MangaHibikiSource.instance,
         ReaderPdfSource.instance,
       ];

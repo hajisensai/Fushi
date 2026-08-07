@@ -7,7 +7,7 @@
 /// ## 为什么要收敛成枚举
 ///
 /// 列上没有 CHECK 约束,写入侧此前是裸 `String`。一旦写进枚举外的值,路由
-/// (`reader_hibiki_source.dart` 的 `isPdf ? ... : isManga ? ... : 本源`)会**全部
+/// (`reader_fushi_source.dart` 的 `isPdf ? ... : isManga ? ... : 本源`)会**全部
 /// fallback 到 EPUB 阅读器** —— 不是静默隐身,而是用错阅读器打开、在解析路径出错。
 /// 收敛成枚举后,「写进未知值」在**编译期**就不可表达。
 ///

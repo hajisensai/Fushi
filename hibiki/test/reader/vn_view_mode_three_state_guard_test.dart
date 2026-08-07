@@ -31,7 +31,7 @@ void main() {
       'lib/src/settings/settings_schema_reading.dart',
     ).readAsStringSync();
     webview = File(
-      'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+      'lib/src/pages/implementations/reader_fushi/webview.part.dart',
     ).readAsStringSync();
     vnScripts = File(
       'lib/src/reader/reader_visual_novel_scripts.dart',

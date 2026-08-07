@@ -187,7 +187,7 @@ void main() {
 
     test('阅读器句子音频据两档 resolve 并传桌面 ffmpeg 档', () {
       final String src = File(
-        'lib/src/pages/implementations/reader_hibiki/mining.part.dart',
+        'lib/src/pages/implementations/reader_fushi/mining.part.dart',
       ).readAsStringSync();
       expect(
         src.contains('MiningMediaCompression.resolve') &&

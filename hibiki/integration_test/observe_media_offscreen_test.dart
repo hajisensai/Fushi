@@ -11,13 +11,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomePage, HomeTab;
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show HomeVideoPage;
-import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart'
-    show ReaderHibikiHistoryPage;
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
+    show ReaderFushiHistoryPage;
 import 'package:integration_test/integration_test.dart';
 
 import 'helpers/focus_driver.dart';
@@ -57,7 +57,7 @@ void main() {
       //    偶发不触发书卡 onTap（截图证实仍停书架），故用书架页测试钩子按
       //    mediaIdentifier 直接 openMedia（与书卡 onTap 同一路径），确定性可靠。
       final String bookKey = await seedAudiobook(tester);
-      final String mediaId = ReaderHibikiSource.mediaIdentifierFor(bookKey);
+      final String mediaId = ReaderFushiSource.mediaIdentifierFor(bookKey);
 
       // 先等书出现在书架（provider 已含该书，debugOpenBook 才查得到）。
       final Finder seededEntry =
@@ -66,12 +66,12 @@ void main() {
         await tester.pump(const Duration(milliseconds: 500));
       }
       expect(seededEntry, findsWidgets, reason: '播种的有声书应出现在书架');
-      expect(ReaderHibikiHistoryPage.debugOpenBook, isNotNull,
+      expect(ReaderFushiHistoryPage.debugOpenBook, isNotNull,
           reason: '书架页打开书测试钩子应已注册（debug/profile build）');
       // openMedia 对有声书会初始化音频处理器，离屏/headless 下可能阻塞（实测会挂）。
       // 加超时兜底：宁可 fail-fast 也绝不让测试无限挂起（曾挂 1 小时）。
       try {
-        await ReaderHibikiHistoryPage.debugOpenBook!(mediaId)
+        await ReaderFushiHistoryPage.debugOpenBook!(mediaId)
             .timeout(const Duration(seconds: 30));
       } on TimeoutException {
         debugPrint('[observe-media] openMedia 超时（疑音频处理器初始化在离屏阻塞）');

@@ -19,10 +19,10 @@ void main() {
   final String appModel =
       File('lib/src/models/app_model.dart').readAsStringSync();
   final String reader = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
+    'lib/src/pages/implementations/reader_fushi_page.dart',
   ).readAsStringSync();
   final String readerChrome = File(
-    'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+    'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
   ).readAsStringSync();
 
   test('macOS fullscreen toggles through the single NSWindow owner', () {

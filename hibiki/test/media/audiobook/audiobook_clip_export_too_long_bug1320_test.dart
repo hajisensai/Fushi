@@ -101,7 +101,7 @@ void main() {
 
     test('dispatcher routes tooLong to the dedicated toast, not 跨章 copy', () {
       final String part = File(
-        'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+        'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n');
       // tooLong 分支必须弹专属文案；不允许再把超长路由回 unsupported_range 文案。
       final int caseAt =
@@ -216,7 +216,7 @@ void main() {
 
     setUpAll(() {
       part = File(
-        'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+        'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n');
     });
 

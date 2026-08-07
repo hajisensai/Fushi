@@ -8,7 +8,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -16,7 +16,7 @@ import 'package:fushi_core/fushi_core.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
-/// ReaderHibikiPage 首个 widget 冒烟测试（阅读器渐进重建 phase1）。
+/// ReaderFushiPage 首个 widget 冒烟测试（阅读器渐进重建 phase1）。
 ///
 /// 背景：13000+ 行的阅读器页此前**零运行时覆盖**——全部依赖源码字符串守卫，
 /// 对「代码被搬走/重写但行为变了」几乎无效。本文件对齐
@@ -67,7 +67,7 @@ void main() {
                 onPressed: () {
                   Navigator.of(context).push(MaterialPageRoute<void>(
                     builder: (_) =>
-                        const ReaderHibikiPage(bookKey: 'no/such-book'),
+                        const ReaderFushiPage(bookKey: 'no/such-book'),
                   ));
                 },
                 child: const Text('open'),
@@ -83,7 +83,7 @@ void main() {
     // init 链（profile/settings 并行 + 书本定位）跑完：书不在盘上 → toast + pop。
     await tester.pumpAndSettle();
 
-    expect(find.byType(ReaderHibikiPage), findsNothing,
+    expect(find.byType(ReaderFushiPage), findsNothing,
         reason: 'BUG-437 契约：init 失败必须 pop 退回上一页');
     expect(find.byType(CircularProgressIndicator), findsNothing,
         reason: '不允许把 spinner 永挂在屏幕上');

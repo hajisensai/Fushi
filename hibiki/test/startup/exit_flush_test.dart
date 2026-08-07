@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';

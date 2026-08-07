@@ -453,7 +453,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
 
   /// 「悬停即查词」门控（BUG-879，与 `VideoSubtitleOverlay.hoverAutoLookupEnabled` 同源）：
   /// true 时列表行文本纯悬停即查词，false 时退回按住 Shift 悬停才查词。由页面层从
-  /// `ReaderHibikiSource.instance.hoverAutoLookup` 传入。默认 false（向后兼容）。
+  /// `ReaderFushiSource.instance.hoverAutoLookup` 传入。默认 false（向后兼容）。
   final bool hoverAutoLookupEnabled;
 
   final double fontSize;

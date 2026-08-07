@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// BUG-1423：阅读器 `readerToggleChrome` 快捷键（键盘 / 手柄）在悬浮底栏下必须进
 /// 临时显隐状态机，而不是去翻不可见的 `_showChrome` 旗标。

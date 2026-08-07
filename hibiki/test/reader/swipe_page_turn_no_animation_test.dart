@@ -1,7 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -65,7 +65,7 @@ void main() {
     // sensitivity-scaled C.swipeDistThreshold, not the old literal threshold.
     // If someone reverts to `absDx >= 72`, this fails.
     // TODO-589 batch8: swipe 阈值/连续模式 wheel(setup 脚本)已搬到
-    // reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+    // reader_fushi/webview.part.dart，改读「主壳 + 全部 part」合并语料。
     final String src = readReaderPageSource();
 
     expect(
@@ -104,7 +104,7 @@ void main() {
     // 有「仅竖排（isVertical）才显式 scrollBy({left: ...}) 横向滚动」；(3) 横排
     // 连续仍是早返回（不触发 onSwipe / preventDefault）。
     // TODO-589 batch8: swipe 阈值/连续模式 wheel(setup 脚本)已搬到
-    // reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+    // reader_fushi/webview.part.dart，改读「主壳 + 全部 part」合并语料。
     final String src = readReaderPageSource();
 
     // 定位 wheel 监听块（从 addEventListener('wheel' 到其闭合 `}, {passive`)。

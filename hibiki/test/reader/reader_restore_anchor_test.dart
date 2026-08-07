@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show readerPositionSaveArgs;
 import 'package:fushi/src/reader/reader_restore_anchor.dart';
 
@@ -128,7 +128,7 @@ void main() {
 
 /// 阅读器「实时进度 ↔ 恢复锚 ↔ 落库」这一圈的最小复刻。
 ///
-/// 每个方法对应 `reader_hibiki/navigation.part.dart` 里的一段真实调用顺序，注释里
+/// 每个方法对应 `reader_fushi/navigation.part.dart` 里的一段真实调用顺序，注释里
 /// 标了对应的生产符号；跨过的只有 WebView / DB 这两个 I/O 边界。
 class _ReaderProgressLoop {
   /// `_initialProgress` / `_initialCharOffset` / `_initialCharOffsetEnd` /

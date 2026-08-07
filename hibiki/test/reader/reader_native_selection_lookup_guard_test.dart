@@ -11,9 +11,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 静态断言范式钉死结构。
 void main() {
   final File webview =
-      File('lib/src/pages/implementations/reader_hibiki/webview.part.dart');
+      File('lib/src/pages/implementations/reader_fushi/webview.part.dart');
   final File chrome =
-      File('lib/src/pages/implementations/reader_hibiki/chrome.part.dart');
+      File('lib/src/pages/implementations/reader_fushi/chrome.part.dart');
 
   test('webview.part.dart：pointerup 早退只认 nativeMoved，不认残留原生选区', () {
     expect(webview.existsSync(), isTrue,
@@ -50,7 +50,7 @@ void main() {
     // 根因③：_showReaderTextContextMenu 从 onSecondaryTapDown fire-and-forget 调，
     // 首个 evaluateJavascript 必须 try/catch（靠此 ErrorLogService tag 标识），否则
     // WebView 半销毁时抛 PlatformException 逃 zone → 记为 fatal → 右键闪退。
-    expect(src, contains("'ReaderHibiki.showReaderTextContextMenu'"),
+    expect(src, contains("'ReaderFushi.showReaderTextContextMenu'"),
         reason: 'BUG-927 回退：右键菜单首个 evaluateJavascript 必须 try/catch，'
             '异常记 ErrorLogService 后 return，勿退回裸 eval 让异常逃 zone 闪退');
   });

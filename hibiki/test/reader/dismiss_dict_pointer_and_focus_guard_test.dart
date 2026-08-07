@@ -1,21 +1,21 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// BUG-1071 源码守卫：关闭词典（查词弹窗）的三症同源修复。原生平台 WebView 抢 OS
 /// 焦点 + 鼠标键无运行时消费者这两个根因在 headless 单测里难稳定复现（无真实平台
 /// 焦点/原生指针），故用接线守卫固化关键不变式，防回归被删（对齐
 /// reader_resumed_focus_reclaim_static_test.dart 的做法）。
 void main() {
-  // 症① 鼠标键关词典：消费者搬到 reader_hibiki/webview.part.dart 的 onPointerSeek，
+  // 症① 鼠标键关词典：消费者搬到 reader_fushi/webview.part.dart 的 onPointerSeek，
   // 读「主壳 + 全部 part」合并语料。
   final String corpus = readReaderPageSource();
 
   late String pageSrc;
   setUpAll(() {
     final File f =
-        File('lib/src/pages/implementations/reader_hibiki_page.dart');
+        File('lib/src/pages/implementations/reader_fushi_page.dart');
     expect(f.existsSync(), isTrue, reason: '主壳文件不存在');
     pageSrc = f.readAsStringSync().replaceAll('\r\n', '\n');
   });

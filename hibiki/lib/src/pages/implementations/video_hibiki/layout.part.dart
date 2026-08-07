@@ -334,7 +334,7 @@ extension _VideoLayout on _VideoHibikiPageState {
                           // TODO-756b：开了“悬停即查词”则纯悬停（无需 Shift）即查词；
                           // 关闭退回 756a 的 Shift+悬停。视频与阅读器共享 instance。
                           hoverAutoLookupEnabled:
-                              ReaderHibikiSource.instance.hoverAutoLookup,
+                              ReaderFushiSource.instance.hoverAutoLookup,
                           onHoverChanged: _handleSubtitleHover,
                           hitTester: _subtitleHitTester,
                           // 字级选词光标环（videoEnterCaret，手柄/键盘查词）。

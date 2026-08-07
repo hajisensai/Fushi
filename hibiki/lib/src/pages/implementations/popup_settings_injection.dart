@@ -14,7 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -141,7 +141,7 @@ String? _fontStyleJsMemoKey;
 String _fontStyleJsMemoValue = '';
 
 ({String cacheKey, String js}) _dictionaryFontStyleJsMemo(AppModel appModel) {
-  // BUG: `ReaderHibikiSource.readerSettings` is only populated while a book /
+  // BUG: `ReaderFushiSource.readerSettings` is only populated while a book /
   // reader is open. In the app-external clipboard-lookup flow (VN / game, no
   // book), it is null, so the user's configured dictionary font was never
   // injected and popup.css's hard-coded "Hiragino Sans" fell back to the system
@@ -154,7 +154,7 @@ String _fontStyleJsMemoValue = '';
   // it uninitialised and reading it would throw LateInitializationError. When
   // unavailable, fall back to no injected font (pre-fix behaviour); in the real
   // app-external lookup flow the DB is always open by then, so the font applies.
-  final ReaderSettings? settings = ReaderHibikiSource.readerSettings ??
+  final ReaderSettings? settings = ReaderFushiSource.readerSettings ??
       (appModel.isDatabaseReady ? ReaderSettings(appModel.database) : null);
   if (settings == null) return const (cacheKey: 'no-settings', js: '');
   final List<Map<String, dynamic>> fonts = settings.dictionaryFonts;
@@ -561,7 +561,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       ? popupKeyBindingsJson(appModel.shortcutRegistry, theme.platform)
       : 'null';
   final String audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
-  final String lookupAudioVolume = ReaderHibikiSource
+  final String lookupAudioVolume = ReaderFushiSource
       .instance.lookupAudioVolumeGain
       .clamp(0.0, 1.0)
       .toStringAsFixed(4);

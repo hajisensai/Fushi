@@ -37,15 +37,15 @@ void main() {
   final String booksPart =
       read('lib/src/pages/implementations/reader_history/books.part.dart');
   final String historyPage =
-      read('lib/src/pages/implementations/reader_hibiki_history_page.dart');
+      read('lib/src/pages/implementations/reader_fushi_history_page.dart');
   final String miningPart =
-      read('lib/src/pages/implementations/reader_hibiki/mining.part.dart');
+      read('lib/src/pages/implementations/reader_fushi/mining.part.dart');
   final String chromePart =
-      read('lib/src/pages/implementations/reader_hibiki/chrome.part.dart');
+      read('lib/src/pages/implementations/reader_fushi/chrome.part.dart');
   final String navigationPart =
-      read('lib/src/pages/implementations/reader_hibiki/navigation.part.dart');
+      read('lib/src/pages/implementations/reader_fushi/navigation.part.dart');
   final String readerPage =
-      read('lib/src/pages/implementations/reader_hibiki_page.dart');
+      read('lib/src/pages/implementations/reader_fushi_page.dart');
 
   group('门面本体', () {
     test('displayTitleForVideo 是显式 no-op（视频 raw 即显示名，守卫知道这里想过）', () {
@@ -153,7 +153,7 @@ void main() {
     });
   });
 
-  group('书架（books.part.dart / reader_hibiki_history_page.dart）', () {
+  group('书架（books.part.dart / reader_fushi_history_page.dart）', () {
     test('SRT 上屏名统一入口 _srtDisplayTitle 委托门面', () {
       expect(
         booksPart,
@@ -285,7 +285,7 @@ void main() {
       expect(chromePart, isNot(contains('displayTitleFor')));
     });
 
-    test('查词计数身份（reader_hibiki_page.dart lookupBookIdentity）恒 raw', () {
+    test('查词计数身份（reader_fushi_page.dart lookupBookIdentity）恒 raw', () {
       expect(
         readerPage,
         contains('(bookKey: widget.bookKey, title: _book?.title);'),

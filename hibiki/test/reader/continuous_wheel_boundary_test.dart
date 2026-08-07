@@ -12,7 +12,7 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 /// `onBoundarySwipe`，滚轮无此通道 → 滚到章末/章首再滚没反应。修复后滚轮复用同款
 /// atStart/atEnd 判定，只在「到底」才回传 `onBoundarySwipe`，未到底放行正常滚动。
 ///
-/// 这是 reader_hibiki_page.dart 连续模式 wheel 监听器边界判定的纯 Dart 影子
+/// 这是 reader_fushi_page.dart 连续模式 wheel 监听器边界判定的纯 Dart 影子
 /// （headless WebView 不可用，按项目测试范式：纯函数单测 + 源码守卫）。
 void main() {
   String? wheel({

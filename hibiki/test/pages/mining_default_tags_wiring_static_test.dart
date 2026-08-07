@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫（TODO-115）：制卡默认标签接线。

@@ -46,7 +46,7 @@ void main() {
 
   test('Dart 侧注册 onReanchorSettled handler 并补刷进度', () {
     final String webview =
-        read('lib/src/pages/implementations/reader_hibiki/webview.part.dart');
+        read('lib/src/pages/implementations/reader_fushi/webview.part.dart');
     expect(webview, contains("handlerName: 'onReanchorSettled'"),
         reason: 'webview.part.dart 必须注册 settle 通知 handler');
     final int start = webview.indexOf("handlerName: 'onReanchorSettled'");
@@ -57,9 +57,9 @@ void main() {
 
   test('旧的轮询重试机制不得复活（120ms×8 兜底已被事件驱动替代）', () {
     final String nav = read(
-        'lib/src/pages/implementations/reader_hibiki/navigation.part.dart');
+        'lib/src/pages/implementations/reader_fushi/navigation.part.dart');
     final String page =
-        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+        read('lib/src/pages/implementations/reader_fushi_page.dart');
     expect(nav, isNot(contains('_maybeArmProgressReanchorRetry')),
         reason: '轮询重试武装点已删（根因已在 JS 侧事件化）');
     expect(page, isNot(contains('Timer? _progressReanchorRetryTimer')),
@@ -69,7 +69,7 @@ void main() {
 
   test('onAfterCommit 补刷仍在（重锚 commit 成功路径不回归）', () {
     final String chrome =
-        read('lib/src/pages/implementations/reader_hibiki/chrome.part.dart');
+        read('lib/src/pages/implementations/reader_fushi/chrome.part.dart');
     // TODO-1309：连续模式恢复的 onAfterCommit 从单行箭头改为 async 块——commit 清
     // `_reanchorPending` + 打 B-3 settle 窗之后，先应用排队的章内精确定位
     // （_applyPendingPreciseLocate，跨章搜索跳转的 scrollToSearchMatch），再

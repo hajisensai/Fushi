@@ -62,7 +62,7 @@ void main() {
   });
 
   test('书架卡片外壳把 onSecondaryTap 配线到长按回调（源码守卫）', () {
-    // TODO-587: reader_hibiki_history_page 拆成主壳 + reader_history/*.part.dart；
+    // TODO-587: reader_fushi_history_page 拆成主壳 + reader_history/*.part.dart；
     // _bookCardShell 现落在 card_widgets.part.dart，故读合并语料。
     final String text = readReaderHistorySource();
     expect(

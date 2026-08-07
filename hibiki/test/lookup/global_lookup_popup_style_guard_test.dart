@@ -597,7 +597,7 @@ void main() {
       // The controller still gates the resulting topPullReleased on the pref.
       expect(controller.contains("handler == 'topPullReleased'"), isTrue);
       expect(
-          controller.contains('ReaderHibikiSource.instance.enableSwipeToClose'),
+          controller.contains('ReaderFushiSource.instance.enableSwipeToClose'),
           isTrue,
           reason: 'swipe close stays preference-gated (close-X is the primary '
               'mouse affordance; swipe preserved to avoid mouse mis-drag)');

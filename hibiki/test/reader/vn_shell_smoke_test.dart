@@ -89,7 +89,7 @@ void main() {
       'chrome _didScroll treats only "scrolled" as a real turn (not '
       '"revealed")', () {
     final String chrome = File(
-      'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+      'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
     ).readAsStringSync();
     expect(
       chrome.contains("== 'scrolled'"),
@@ -104,7 +104,7 @@ void main() {
   });
 
   // TODO-1085 / BUG-513 症状①：VN 模式常驻遮罩。Dart 侧 loading 遮罩
-  // (reader_hibiki_page.dart `if (!_readerContentReady) Positioned.fill(ColoredBox)`)
+  // (reader_fushi_page.dart `if (!_readerContentReady) Positioned.fill(ColoredBox)`)
   // 只由 JS 的 notifyRestoreComplete -> callHandler('onRestoreComplete') 清除。
   // notifyRestoreComplete 是 initialize() readyPromise 链的最后一步，且所有 restore
   // 方法都 await 这同一个 readyPromise —— 链上任何一步 reject 都会静默吞掉 notify，
@@ -153,7 +153,7 @@ void main() {
       'restore handler validates and gates the reported document generation '
       'before settling Dart state', () {
     final String webview = File(
-      'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+      'lib/src/pages/implementations/reader_fushi/webview.part.dart',
     ).readAsStringSync();
     final String callback = _extractRestoreHandlerCallback(webview);
 
@@ -181,7 +181,7 @@ void main() {
     );
 
     final String navigation = File(
-      'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+      'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
     ).readAsStringSync();
     final int gateStart = navigation.indexOf('void _acceptRestoreComplete({');
     final int settleStart =

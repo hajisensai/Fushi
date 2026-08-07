@@ -20,7 +20,7 @@ void main() {
       'lib/src/reader/reader_pagination_scripts.dart',
     ).readAsStringSync();
     webview = File(
-      'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+      'lib/src/pages/implementations/reader_fushi/webview.part.dart',
     ).readAsStringSync();
   });
 

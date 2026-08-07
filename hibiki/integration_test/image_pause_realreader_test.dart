@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
@@ -98,9 +98,9 @@ void main() {
     await tester.pump(const Duration(seconds: 4));
 
     final Future<dynamic> Function(String)? runJs =
-        ReaderHibikiPage.debugEvaluateJavascript;
+        ReaderFushiPage.debugEvaluateJavascript;
     final Future<void> Function()? injectBridge =
-        ReaderHibikiPage.debugInjectAudiobookBridge;
+        ReaderFushiPage.debugInjectAudiobookBridge;
     expect(runJs, isNotNull, reason: 'debug JS hook set (debug build)');
     expect(injectBridge, isNotNull, reason: 'bridge inject hook set');
 

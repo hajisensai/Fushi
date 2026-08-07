@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from reader_hibiki_page.dart (TODO-589 batch7).
-part of '../reader_hibiki_page.dart';
+// GENERATED-NOTE: extracted from reader_fushi_page.dart (TODO-589 batch7).
+part of '../reader_fushi_page.dart';
 
 /// chrome domain (page-turn pagination / reader image viewer + context menu /
 /// media-notification toggle / bottom chrome bars + chrome insets / appearance
@@ -16,8 +16,8 @@ part of '../reader_hibiki_page.dart';
 /// stay in the shell because their other call sites live in the still-in-shell
 /// WebView region — `_colorToCssRgba` (called from `_customThemeTextCss`) and
 /// `_toDouble` (called from `_addBookmarkAtCurrentPosition`) — referenced here
-/// fully qualified as `_ReaderHibikiPageState._colorToCssRgba` /
-/// `_ReaderHibikiPageState._toDouble`.
+/// fully qualified as `_ReaderFushiPageState._colorToCssRgba` /
+/// `_ReaderFushiPageState._toDouble`.
 ///
 /// The two class statics whose only call sites moved with this domain
 /// (`_themeMap`, used by `_readerThemeColors`; `_didScroll`, used by
@@ -27,7 +27,7 @@ part of '../reader_hibiki_page.dart';
 /// `_readerChromeBaseHeight` / `_readerPopupHeaderBaseHeight` constants) cannot
 /// live on an extension and stay in the shell, reachable via the shared private
 /// class scope.
-extension _ReaderChrome on _ReaderHibikiPageState {
+extension _ReaderChrome on _ReaderFushiPageState {
   /// TODO-1229 案A：章界连续输入穿透守卫。滚轮惯性节流（450ms）远短于换章加载
   /// （数百 ms restore），跨章那一下之后排队的翻页 tick 会在新章 restore 未落定时
   /// 立即再翻——章首插图页/首页整页被越过；更糟 fushiReader 尚未就绪时
@@ -72,7 +72,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     final bool cooling = chapterTurnCoolingDown(
       lastInputAt: _lastChapterTurnInputAt,
       now: DateTime.now(),
-      cooldown: _ReaderHibikiPageState._kChapterTurnCooldown,
+      cooldown: _ReaderFushiPageState._kChapterTurnCooldown,
     );
     if (cooling) _lastChapterTurnInputAt = DateTime.now();
     return cooling;
@@ -157,7 +157,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   File? _readerImageFileForUrl(String imgUrl) {
     final Uri? uri = Uri.tryParse(imgUrl);
     if (uri == null || _extractDir == null) return null;
-    if (uri.host != ReaderHibikiSource.kHost) return null;
+    if (uri.host != ReaderFushiSource.kHost) return null;
     if (!uri.path.startsWith('/epub/')) return null;
     final String epubPath =
         Uri.decodeComponent(uri.path.substring('/epub/'.length));
@@ -274,7 +274,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         );
       } catch (e, stack) {
         ErrorLogService.instance
-            .log('ReaderHibiki.showReaderTextContextMenu', e, stack);
+            .log('ReaderFushi.showReaderTextContextMenu', e, stack);
         return;
       }
       final String selectedText =
@@ -654,7 +654,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       );
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibiki.clearReaderAppSelection', e, stack);
+          .log('ReaderFushi.clearReaderAppSelection', e, stack);
     }
   }
 
@@ -681,7 +681,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       // 异常会逃当前 zone。失败退回 null —— 菜单「查词」调用方据此用 selectedText 兜底
       // 补满 currentSentence 非空契约，导出路径走空选区文案。
       ErrorLogService.instance.log(
-          'ReaderHibiki.fillLookupStateFromNativeSelection.eval', e, stack);
+          'ReaderFushi.fillLookupStateFromNativeSelection.eval', e, stack);
       return null;
     }
     if (!mounted) return null;
@@ -787,7 +787,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       );
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibiki.hideReaderSelectionHandles', e, stack);
+          .log('ReaderFushi.hideReaderSelectionHandles', e, stack);
     }
   }
 
@@ -809,7 +809,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       );
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibiki.extractSelectionClipImages.eval', e, stack);
+          .log('ReaderFushi.extractSelectionClipImages.eval', e, stack);
       return const <({int normOffset, Uint8List bytes})>[];
     }
     if (!mounted) return const <({int normOffset, Uint8List bytes})>[];
@@ -825,7 +825,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       if (ext == '.svg') {
         // 裸矢量 SVG：Image.memory 不解码矢量图，跳过（光栅封面内层位图另由 JS 解析）。
         ErrorLogService.instance.log(
-          'ReaderHibiki.extractSelectionClipImages.skipSvg',
+          'ReaderFushi.extractSelectionClipImages.skipSvg',
           'skip vector SVG clip image (Image.memory cannot decode): '
               '${file.path}',
           StackTrace.current,
@@ -843,7 +843,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         images.add((normOffset: ref.normOffset, bytes: downsampled));
       } catch (e, stack) {
         ErrorLogService.instance
-            .log('ReaderHibiki.extractSelectionClipImages.read', e, stack);
+            .log('ReaderFushi.extractSelectionClipImages.read', e, stack);
       }
     }
     return images;
@@ -961,9 +961,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           images: images,
           currentChapter: currentChapter,
           fileForRef: (EpubImageRef ref) =>
-              _readerImageFileForUrl(ReaderHibikiSource.epubUrl(ref.src)),
+              _readerImageFileForUrl(ReaderFushiSource.epubUrl(ref.src)),
           onOpenImage: (EpubImageRef ref) =>
-              _openImageViewer(ReaderHibikiSource.epubUrl(ref.src)),
+              _openImageViewer(ReaderFushiSource.epubUrl(ref.src)),
           onJumpTo: (EpubImageRef ref) {
             Navigator.pop(routeContext);
             unawaited(_navigateToChapter(ref.chapterIndex, manual: true));
@@ -1079,7 +1079,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   void _reapplyChromeInsetsAfterFirstLoad() {
     unawaited(_applyChromeInsets().catchError((Object e, StackTrace s) {
       ErrorLogService.instance
-          .log('ReaderHibiki.reapplyChromeInsetsAfterFirstLoad', e, s);
+          .log('ReaderFushi.reapplyChromeInsetsAfterFirstLoad', e, s);
     }));
   }
 
@@ -1108,7 +1108,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   void _armChromeAutoHide() {
     _cancelChromeAutoHide();
-    final int millis = ReaderHibikiSource.instance.autoHideChromeMillis;
+    final int millis = ReaderFushiSource.instance.autoHideChromeMillis;
     _chromeAutoHideTimer = Timer(Duration(milliseconds: millis), () {
       if (!mounted) return;
       _rebuild(() {
@@ -1249,13 +1249,13 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       stillAlive: () => mounted && _controller != null,
       onBeginError: (Object e, StackTrace stack) =>
           ErrorLogService.instance.log(
-        'ReaderHibiki.reanchorContinuousForUiScale.begin',
+        'ReaderFushi.reanchorContinuousForUiScale.begin',
         e,
         stack,
       ),
       onCommitError: (Object e, StackTrace stack) =>
           ErrorLogService.instance.log(
-        'ReaderHibiki.reanchorContinuousForUiScale.commit',
+        'ReaderFushi.reanchorContinuousForUiScale.commit',
         e,
         stack,
       ),
@@ -1305,13 +1305,13 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       stillAlive: () => mounted && _controller != null,
       onBeginError: (Object e, StackTrace stack) =>
           ErrorLogService.instance.log(
-        'ReaderHibiki.reanchorContinuousAfterRestore.begin',
+        'ReaderFushi.reanchorContinuousAfterRestore.begin',
         e,
         stack,
       ),
       onCommitError: (Object e, StackTrace stack) =>
           ErrorLogService.instance.log(
-        'ReaderHibiki.reanchorContinuousAfterRestore.commit',
+        'ReaderFushi.reanchorContinuousAfterRestore.commit',
         e,
         stack,
       ),
@@ -1372,13 +1372,13 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       stillAlive: () => mounted && _controller != null,
       onBeginError: (Object e, StackTrace stack) =>
           ErrorLogService.instance.log(
-        'ReaderHibiki.reanchorForStyleChange.begin',
+        'ReaderFushi.reanchorForStyleChange.begin',
         e,
         stack,
       ),
       onCommitError: (Object e, StackTrace stack) =>
           ErrorLogService.instance.log(
-        'ReaderHibiki.reanchorForStyleChange.commit',
+        'ReaderFushi.reanchorForStyleChange.commit',
         e,
         stack,
       ),
@@ -1411,7 +1411,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
             children: <Widget>[
               ReaderChromeScaler(
                 scale: _readerChromeScale,
-                baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
+                baseHeight: _ReaderFushiPageState._readerChromeBaseHeight,
                 child: bar,
               ),
               ColoredBox(
@@ -1454,7 +1454,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           key: const ValueKey<String>('fushi_play_bar'),
           bar: AudiobookPlayBar(
             controller: ctrl,
-            skipActionSeconds: ReaderHibikiSource.instance.skipActionSeconds,
+            skipActionSeconds: ReaderFushiSource.instance.skipActionSeconds,
             onOpenSettings: _showAppearanceSheet,
             backgroundColor: _themeBackgroundColor(),
             foregroundColor: _themeTextColor(),
@@ -1462,9 +1462,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
             // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
             // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
             invertSkip:
-                ReaderHibikiSource.instance.invertAudiobookSkipDirection,
+                ReaderFushiSource.instance.invertAudiobookSkipDirection,
             // TODO-728: per-reader toggle for the current-sentence cue.
-            showCue: ReaderHibikiSource.instance.showBottomBarCue,
+            showCue: ReaderFushiSource.instance.showBottomBarCue,
           ),
         );
       },
@@ -1506,7 +1506,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       bar: ColoredBox(
         color: _themeBackgroundColor(),
         child: SizedBox(
-          height: _ReaderHibikiPageState._readerChromeBaseHeight,
+          height: _ReaderFushiPageState._readerChromeBaseHeight,
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
             child: Row(
@@ -1537,8 +1537,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // （见 _buildTopProgressBar / topProgressPillShowsBlur），关闭后再挂回。
     _rebuild(() => _appearanceSheetOpen = true);
     try {
-      // _settings 就是 ReaderHibikiSource.readerSettings 本体（见 initState 绑定），
-      // 面板控件经 ReaderHibikiSource.instance.ttu* 实时读写同一对象，开面板前后都
+      // _settings 就是 ReaderFushiSource.readerSettings 本体（见 initState 绑定），
+      // 面板控件经 ReaderFushiSource.instance.ttu* 实时读写同一对象，开面板前后都
       // 无需设置同步——旧 TTU 双存储时代的 _syncSettings*Hive 已是写回自身的死桥，
       // 且 _syncSettingsToHive 会触发 17× onSettingsChangedLive 的 DB/WebView 风暴。
       final List<TtuTocEntry> toc = _buildTtuToc();
@@ -1572,7 +1572,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         webViewController: _controller!,
         appModel: appModel,
         ref: ref,
-        isHibikiReader: true,
+        isFushiReader: true,
         initialSubPage: initialSubPage,
         onStyleChanged: _applyStylesLive,
         onThemeChanged: _onThemeChanged,
@@ -1788,7 +1788,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       // 半销毁的 WebView 上 evaluateJavascript 抛 PlatformException；此处尚未改
       // 任何恢复状态，安全 no-op 返回（此前这是 try 块外的孤儿 await，会逃 zone）。
       ErrorLogService.instance
-          .log('ReaderHibiki.reloadWithCurrentSettings.eval', e, stack);
+          .log('ReaderFushi.reloadWithCurrentSettings.eval', e, stack);
       return;
     }
     if (!mounted || _controller == null) return;
@@ -1825,7 +1825,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       await _loadChapterDirectly(_currentChapter);
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibiki.reloadWithCurrentSettings', e, stack);
+          .log('ReaderFushi.reloadWithCurrentSettings', e, stack);
       debugPrint('[ReaderFushi] reloadWithCurrentSettings failed: $e');
       _restoreInFlight = false;
       if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
@@ -1847,7 +1847,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     final double ratio =
         (_progressCurrentChars! / _progressTotalChars!).clamp(0.0, 1.0);
     final Color infoColor = _themeTextColor();
-    final String position = ReaderHibikiSource.instance.topProgressPosition;
+    final String position = ReaderFushiSource.instance.topProgressPosition;
 
     // TODO-1136 / BUG-frosted：进度文字直接叠在正文上，浅色书/复杂背景下看不清，
     //  在文字后面加一层毛玻璃（frosted glass）背景提升可读性——经典配方
@@ -1876,7 +1876,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       '  ${(ratio * 100).toStringAsFixed(2)}%',
       key: const ValueKey<String>('fushi_progress'),
       style: TextStyle(
-          fontSize: _ReaderHibikiPageState._infoFontSize, color: infoColor),
+          fontSize: _ReaderFushiPageState._infoFontSize, color: infoColor),
       textAlign: readerTopProgressTextAlign(position),
     );
 
@@ -2043,7 +2043,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   String? get _customThemeTextCss {
     final Color c = _themeTextColor();
-    return _ReaderHibikiPageState._colorToCssRgba(c);
+    return _ReaderFushiPageState._colorToCssRgba(c);
   }
 
   String? get _customHighlightCss {

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -61,7 +61,7 @@ class AudiobookSessionLauncher {
         audiobook: audiobook,
         // BUG-1018 (A1)：通知/悬浮窗元数据走与书架同一 override 书名通道，
         // 编辑对话框改名后媒体通知同步显示新名；无 override 回退 DB 原名。
-        title: ReaderHibikiSource.instance.overrideTitleForBookKey(bookKey) ??
+        title: ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
             title,
         mediaIdentifier: 'fushi://book/$bookKey',
         isSrtBookSource: false,
@@ -102,8 +102,8 @@ class AudiobookSessionLauncher {
     // BUG-1018 (A1)：override 书名按身份取——EPUB 配对行挂在 bookKey 身份上，
     // standalone SRT 书挂在 `hoshi://srtbook/<uid>` 身份上（A3）。
     final String? overrideTitle = srtBook.bookKey.isNotEmpty
-        ? ReaderHibikiSource.instance.overrideTitleForBookKey(srtBook.bookKey)
-        : ReaderHibikiSource.instance.overrideTitleForSrtUid(srtBook.uid);
+        ? ReaderFushiSource.instance.overrideTitleForBookKey(srtBook.bookKey)
+        : ReaderFushiSource.instance.overrideTitleForSrtUid(srtBook.uid);
 
     return AudiobookSessionStartRequest(
       info: SessionBookInfo(

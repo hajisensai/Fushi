@@ -1,22 +1,22 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 import '../helpers/source_guard.dart';
 
 void main() {
   // BUG-021: 阅读器底栏「调整」面板打开慢半拍。
   //
-  // 根因：阅读器页面的 _settings 与 ReaderHibikiSource.readerSettings 是同一个
-  // 对象（initState 里 `_settings = ReaderHibikiSource.readerSettings`，二者再无
+  // 根因：阅读器页面的 _settings 与 ReaderFushiSource.readerSettings 是同一个
+  // 对象（initState 里 `_settings = ReaderFushiSource.readerSettings`，二者再无
   // 其它赋值点）。旧 TTU「全局 prefs ↔ profile prefs」双存储时代的
   // _syncSettingsToHive / _syncSettingsFromHive 现在退化成「把对象的值写回它自
-  // 己」的死桥。其中 _syncSettingsToHive 走 ReaderHibikiSource.setReaderPref*，每个
+  // 己」的死桥。其中 _syncSettingsToHive 走 ReaderFushiSource.setReaderPref*，每个
   // setter 还会 onSettingsChangedLive?.call() → _applyStylesLive（17 次 DB 读 +
   // CSS 重生成 + WebView evaluateJavascript 往返 + setState）。点「调整」到面板
   // 出现之间，先空跑 17× 的 DB/WebView 风暴 = 慢半拍。
   //
   // 修复：删掉这两个死桥及其全部调用点（面板控件经
-  // ReaderHibikiSource.instance.ttu* 实时读写同一对象，无需任何同步）。
+  // ReaderFushiSource.instance.ttu* 实时读写同一对象，无需任何同步）。
   // 本守卫防止它们被重新引入。reader/WebView 类无法 widget 测真实 InAppWebView，
   // 源码扫描守卫为最强可落地层。
   final String source = readReaderPageSource();
@@ -35,7 +35,7 @@ void main() {
       stripped.contains('_syncSettingsFromHive'),
       isFalse,
       reason: '_syncSettingsFromHive 同为写回自身的死桥（_settings === '
-          'ReaderHibikiSource.readerSettings）；勿重新引入',
+          'ReaderFushiSource.readerSettings）；勿重新引入',
     );
   });
 
@@ -49,7 +49,7 @@ void main() {
     expect(
       sheet.contains('.setReaderPref'),
       isFalse,
-      reason: '面板用 ReaderHibikiSource.instance.ttu* 实时读 _settings；开面板前'
+      reason: '面板用 ReaderFushiSource.instance.ttu* 实时读 _settings；开面板前'
           '不得再经 setReaderPref* 写回（会触发 onSettingsChangedLive 的 DB/WebView 风暴）',
     );
   });

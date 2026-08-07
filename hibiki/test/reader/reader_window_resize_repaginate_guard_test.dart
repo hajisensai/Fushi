@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-690 / BUG-399：桌面拖窗口边框 resize 后阅读器文字渲染错乱、不自动重排，翻页
 /// 才恢复。根因——唯一 resize→重排入口是 didChangeMetrics→_syncPageSize，但 Windows

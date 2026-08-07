@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show TableUpdateQuery;
 import 'package:flutter/material.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -643,7 +643,7 @@ Future<void> _runAutoSync({
   required ScaffoldMessengerState? messenger,
   SyncReportCallback? onReport,
 }) async {
-  final String? bookKey = ReaderHibikiSource.parseBookKey(mediaIdentifier);
+  final String? bookKey = ReaderFushiSource.parseBookKey(mediaIdentifier);
   if (bookKey == null || !_bookKeyPattern.hasMatch(mediaIdentifier)) return;
   if (_syncingIds.contains('__all__')) return;
   if (!_syncingIds.add(mediaIdentifier)) return;

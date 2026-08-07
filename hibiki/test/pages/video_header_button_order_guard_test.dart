@@ -7,7 +7,7 @@ import '../helpers/source_guard.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
 /// 守卫（TODO-162）：视频页（HomeVideoPage）顶栏三个动作按钮的排列顺序，必须与
-/// 书架（ReaderHibikiHistoryPage）顶栏三个动作按钮的相对顺序完全一致——以书架为基准。
+/// 书架（ReaderFushiHistoryPage）顶栏三个动作按钮的相对顺序完全一致——以书架为基准。
 ///
 /// 书架顺序：导入（buildBookImportButton / srt_import） → 收藏夹（collections） →
 /// 统计（reading_statistics）。
@@ -20,7 +20,7 @@ void main() {
   final File videoSrc =
       File('lib/src/pages/implementations/home_video_page.dart');
   final File shelfSrc =
-      File('lib/src/pages/implementations/reader_hibiki_history_page.dart');
+      File('lib/src/pages/implementations/reader_fushi_history_page.dart');
 
   /// 截取某文件中 [_buildPageHeader] 方法体内 actions 列表字面量的源码，顺序断言只在
   /// 该区间内做，避免命中页面其它位置的同名 tooltip / 图标。
@@ -32,7 +32,7 @@ void main() {
   ///
   /// 起点必须命中**定义**而不是调用点。两个语料文件里裸名 `_buildPageHeader` 都是
   /// 先命中调用点（`home_video_page.dart` 的 `if (!isCupertinoPlatform(context))
-  /// _buildPageHeader(canImport)` / `reader_hibiki_history_page.dart` 的
+  /// _buildPageHeader(canImport)` / `reader_fushi_history_page.dart` 的
   /// `_buildPageHeader()`），定义在几百上千行之后。用裸名 `indexOf` 定起点的话，
   /// 只要将来有人在调用点与定义之间写一个持有 `actions = <Widget>[` 的**无关方法**，
   /// 切出来的就是那个方法的列表，真实页头的顺序回归会静默漏掉（复核方 MUT_G 已实证

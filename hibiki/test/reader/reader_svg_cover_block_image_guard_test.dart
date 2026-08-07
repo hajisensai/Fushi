@@ -6,7 +6,7 @@
 // 改这里前先分清你要锁的是语义还是注入，别在本文件里重造装配断言。
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
@@ -77,7 +77,7 @@ void main() {
   test('BUG-025 tap handler resolves <svg><image> covers to a zoomable URL',
       () {
     // TODO-589 batch8: _fushiBlockImageUrl/onImageTap 在 setup 脚本/handler，
-    // 已搬到 reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+    // 已搬到 reader_fushi/webview.part.dart，改读「主壳 + 全部 part」合并语料。
     final String source = readReaderPageSource();
 
     expect(

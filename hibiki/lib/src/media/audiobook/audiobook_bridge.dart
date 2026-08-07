@@ -517,7 +517,7 @@ window.__fushiAnnotate = function(chapterHref) {
   /// 「渲染坐标系（浏览器 DOM）」逐字不一致导致的累积偏移（BUG-060）。
   /// 纯函数，可单测。
   ///
-  /// BUG-405：reader setup 路径（ReaderHibikiPage._prepareSasayakiCuesJson）也
+  /// BUG-405：reader setup 路径（ReaderFushiPage._prepareSasayakiCuesJson）也
   /// 复用本函数构造 payload，确保与有声书桥接路径共用同一份必含 text 的契约，
   /// 不再各自手写循环漏字段；因此本函数是正式 API，不再标 @visibleForTesting。
   static List<Map<String, dynamic>> buildSentenceAudioPayload(

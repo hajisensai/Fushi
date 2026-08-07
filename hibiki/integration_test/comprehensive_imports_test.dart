@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 
 import 'helpers/focus_driver.dart';
@@ -49,7 +49,7 @@ void main() {
         tester.element(find.byType(MaterialApp).first),
       );
       final AppModel appModel = container.read(appProvider);
-      originalCustomFonts = ReaderHibikiSource.instance.customFonts
+      originalCustomFonts = ReaderFushiSource.instance.customFonts
           .where((Map<String, dynamic> font) {
         return font['name'] != 'Comprehensive Test Font';
       }).toList();
@@ -59,7 +59,7 @@ void main() {
       final File fontFile = File('${fontDir.path}/comprehensive-test-font.ttf');
       await fontFile.writeAsBytes(await _loadSystemFontBytes(), flush: true);
 
-      await ReaderHibikiSource.instance.setCustomFonts(<Map<String, dynamic>>[
+      await ReaderFushiSource.instance.setCustomFonts(<Map<String, dynamic>>[
         <String, dynamic>{
           'name': 'Comprehensive Test Font',
           'path': fontFile.path,
@@ -67,7 +67,7 @@ void main() {
         },
       ]);
       final ({String fontFamily, String fontFaces}) css =
-          ReaderHibikiSource.instance.buildCustomFontCss();
+          ReaderFushiSource.instance.buildCustomFontCss();
       expect(css.fontFamily, contains('Comprehensive Test Font'));
       expect(css.fontFaces, contains('@font-face'));
 
@@ -86,7 +86,7 @@ void main() {
       assertStrictErrors(errors);
     } finally {
       if (originalCustomFonts != null) {
-        await ReaderHibikiSource.instance.setCustomFonts(originalCustomFonts);
+        await ReaderFushiSource.instance.setCustomFonts(originalCustomFonts);
       }
       FlutterError.onError = oldHandler;
     }

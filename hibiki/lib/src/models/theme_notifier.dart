@@ -1190,7 +1190,7 @@ class ThemeNotifier extends ChangeNotifier {
   /// TODO-977: 音频高亮（原 sasayaki 跟随高亮）颜色，**全局、与阅读器主题解耦**。
   ///
   /// 旧设计把该色绑死在 custom-theme 主题条目里（`customThemeSasayakiColor`），
-  /// 非自定义主题时阅读器音频高亮恒用主题 primary（reader_hibiki_page.dart:300），
+  /// 非自定义主题时阅读器音频高亮恒用主题 primary（reader_fushi_page.dart:300），
   /// 用户无处改色——「一直用主色」。本偏好是单值全局色，置非空时由
   /// `resolveReaderThemeColors` 覆盖所有主题分支的 sasayaki 角色色；为 null 时
   /// 沿用旧的随主题取色行为（向后兼容，老用户不受影响）。

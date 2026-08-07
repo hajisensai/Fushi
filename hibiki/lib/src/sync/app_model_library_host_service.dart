@@ -38,7 +38,7 @@ import 'package:path/path.dart' as p;
 /// | 参数 | 用途 | 生产传值 |
 /// |---|---|---|
 /// | [importBookFromFile] | 把 .epub 导入书库的真实逻辑 | `EpubImporter.importFromPath` |
-/// | [cleanupBookOnDisk] | deleteBook 时清理 DB 行以外的磁盘资源（Audiobook persist dir 等） | `ReaderHibikiSource.instance.deleteBook` 磁盘部分 |
+/// | [cleanupBookOnDisk] | deleteBook 时清理 DB 行以外的磁盘资源（Audiobook persist dir 等） | `ReaderFushiSource.instance.deleteBook` 磁盘部分 |
 /// | [localAudioEntries] | 当前已注册的本地音频来源列表（T3.1）| `AppModel.localAudioEntries` |
 /// | [localAudioStagingDir] | importLocalAudio 解包用临时目录（T3.1）| `Directory.systemTemp` 或应用 temp |
 /// | [onLocalAudioImported] | 注册已解包的本地音频包（T3.1）| `AppModel.importSyncedLocalAudioDb` |
@@ -107,7 +107,7 @@ class AppModelLibraryHostService
   final Future<void> Function(File epubFile)? _importBookFromFile;
 
   /// 书籍磁盘清理回调（可选；null 时只执行 DB 删除，跳过 AudiobookStorage/SrtBook 清理）。
-  /// 生产传 ReaderHibikiSource 实例的磁盘清理部分。
+  /// 生产传 ReaderFushiSource 实例的磁盘清理部分。
   final Future<void> Function(EpubBookRow row)? _cleanupBookOnDisk;
 
   /// 视频磁盘清理回调（可选；null 时只执行 DB 删除 + 上传副本目录回收）。
@@ -496,7 +496,7 @@ class AppModelLibraryHostService
       // TODO-1195 part B：用户删书记墓碑，避免旧备份合并导入时复活。
       await _db.deleteEpubBook(row.bookKey, tombstone: true);
 
-      // extractDir 磁盘目录：DB 删除后再清理（与 reader_hibiki_source 同顺序）。
+      // extractDir 磁盘目录：DB 删除后再清理（与 reader_fushi_source 同顺序）。
       if (row.extractDir.isNotEmpty) {
         final Directory dir = Directory(row.extractDir);
         if (dir.existsSync()) await dir.delete(recursive: true);

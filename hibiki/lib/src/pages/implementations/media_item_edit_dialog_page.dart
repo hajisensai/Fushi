@@ -218,7 +218,7 @@ class _MediaItemEditDialogPageState
       // MediaItems and the edit looks like it "did not save". Invalidate the
       // book providers so the shelf re-reads the DB rows.
       // 覆盖全部书族源（EPUB / 漫画 / PDF 都 extends ReaderMediaSource）：漫画作者编辑
-      // （MangaHibikiSource，非 ReaderHibikiSource）此前落在此条件外，改完书架不刷新。
+      // （MangaHibikiSource，非 ReaderFushiSource）此前落在此条件外，改完书架不刷新。
       if (mediaSource is ReaderMediaSource) {
         ref.invalidate(hibikiBooksProvider);
         ref.invalidate(srtBooksProvider);

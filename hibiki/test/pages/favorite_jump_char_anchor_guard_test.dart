@@ -29,7 +29,7 @@ void main() {
 
   test('reader 跳转分支：charAnchor 走精确字符锚恢复、preserve 时抑制持久化', () {
     final String src =
-        File('lib/src/pages/implementations/reader_hibiki_page.dart')
+        File('lib/src/pages/implementations/reader_fushi_page.dart')
             .readAsStringSync();
     expect(src, contains('final int? charAnchor = bm.charAnchor;'),
         reason: '读取跳转携带的绝对字符锚');
@@ -45,7 +45,7 @@ void main() {
 
   test('_persistPosition 单点拦截：preserve 跳转不落盘覆盖原进度', () {
     final String src =
-        File('lib/src/pages/implementations/reader_hibiki/navigation.part.dart')
+        File('lib/src/pages/implementations/reader_fushi/navigation.part.dart')
             .readAsStringSync();
     // 抑制守卫必须在写 _lastSaved* / upsert 之前（debounce 与退出 flush 都汇聚此处）。
     final int guardIdx = src.indexOf('if (_suppressPositionPersist)');

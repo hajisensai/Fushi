@@ -99,7 +99,7 @@ abstract class MediaSource {
   static void setDatabase(FushiDatabase db) => _sharedDb = db;
 
   /// Shared database for subclasses that persist beyond the preference cache
-  /// (e.g. ReaderHibikiSource writing back epubBooks.author for BUG-220). Null
+  /// (e.g. ReaderFushiSource writing back epubBooks.author for BUG-220). Null
   /// until [setDatabase] runs in [AppModel.initialise].
   @protected
   FushiDatabase? get sharedDatabase => _sharedDb;
@@ -449,7 +449,7 @@ abstract class MediaSource {
   //
   // 而一本书的 `mediaSourceIdentifier` 由 `EpubBooks.format` **现算**
   // （epub→`reader_fushi` / manga→`reader_manga` / pdf→`reader_pdf`，见
-  // `ReaderHibikiSource._bookToMediaItem`），三者共享同一 `hoshi://book/<bookKey>`
+  // `ReaderFushiSource._bookToMediaItem`），三者共享同一 `hoshi://book/<bookKey>`
   // 身份。于是同一本书在「书架用真实源」与「首页 / 统计 / 通知栏用合成的 EPUB 源」
   // 两条路径上读到不同的键——改名后四处显示不一致；EPUB 转成漫画后连书架侧也读不
   // 回来，用户自定义书名与封面静默丢失。

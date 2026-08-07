@@ -58,7 +58,7 @@ void main() {
     test('面板收到 hoverAutoLookupEnabled（与画面字幕同源）', () {
       expect(
         RegExp(r'VideoSubtitleJumpPanel\([\s\S]*?hoverAutoLookupEnabled:\s*'
-                r'ReaderHibikiSource\.instance\.hoverAutoLookup')
+                r'ReaderFushiSource\.instance\.hoverAutoLookup')
             .hasMatch(src),
         isTrue,
         reason: '列表 Shift-悬停查词门控必须与画面字幕共用同一 hoverAutoLookup',

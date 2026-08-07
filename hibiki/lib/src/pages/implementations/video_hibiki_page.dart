@@ -24,7 +24,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 // 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 FushiToast
@@ -463,7 +463,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   final bool initialFullscreen;
 
   /// 打开视频播放页的**唯一入口**：在路由层用 [FushiAppUiScaleNeutralizer] 把整页中和
-  /// （与阅读器 [ReaderHibikiSource.buildLaunchPage] 同范式）。
+  /// （与阅读器 [ReaderFushiSource.buildLaunchPage] 同范式）。
   ///
   /// 根因（用户报「视频没画面」）：全局 [FushiAppUiScale] 用 `FittedBox(BoxFit.fill)` 把
   /// 整棵子树渲染进一个缩放画布再拉大；media_kit 的 [Video] 在桌面是平台 Texture，落在
@@ -1452,7 +1452,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 音频共用，与字幕列表多选 [_selectedMiningCueStarts] 同观感，但属不同入口）。制卡
   /// 成功或关闭整条查词浮层栈后清空。视频所有 cue 同属一个视频文件，故区间合并恒成功
   /// （[MiningSentenceDraft] 把 [AudioPlaybackRange.audioFileIndex] 当文件键，视频统一
-  /// 用 0）。reader/有声书车道（[ReaderHibikiPage] 的 `_miningDraft`）共用同一草稿模型。
+  /// 用 0）。reader/有声书车道（[ReaderFushiPage] 的 `_miningDraft`）共用同一草稿模型。
   final MiningSentenceDraft _miningDraft = MiningSentenceDraft();
 
   /// TODO-393「上 N 句 / 下 N 句」上下文选择（视频车道）：弹窗选「上 N 句 / 下 N 句」
@@ -1483,7 +1483,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 「本次查词浮层是我们因查词而主动暂停了正在播放的视频」标记。
   ///
-  /// 查词暂停 / 关浮层恢复与阅读器 [ReaderHibikiPage] 同源：浮层打开时若视频在播放则
+  /// 查词暂停 / 关浮层恢复与阅读器 [ReaderFushiPage] 同源：浮层打开时若视频在播放则
   /// 暂停（让用户读词），浮层栈**全部关闭**后再自动恢复播放。video 页用
   /// [DictionaryPageMixin]（没有 reader 的 `onAllPopupsDismissed` 钩子），故用本标记 +
   /// 在 [_popNestedPopupAt] 这唯一的关栈汇聚点恢复，覆盖遮罩点击 / 返回键 / 浮层
@@ -3739,7 +3739,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// TODO-1052：查词浮层 barrier 上「桌面水平拖过阈关一层」的纯状态追踪器（与
   /// reader/audiobook 经 base_source_page、home_dictionary、texthooker 共用同一
   /// [BarrierSwipeDismissTracker]，阈值/位移逻辑单一真相源、不漂移）。仅当
-  /// [ReaderHibikiSource.enableSwipeToClose] 开启时挂到 barrier（否则只 onTapUp，
+  /// [ReaderFushiSource.enableSwipeToClose] 开启时挂到 barrier（否则只 onTapUp，
   /// 与旧行为一致）。过阈关一层 = [_popNestedPopupAt]（_topVisiblePopupIndex），与
   /// 光标 B/Esc / 返回键逐层退回同语义，不清整栈（清整栈仍是点真空白的 onTapUp）。
   final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
@@ -3754,21 +3754,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   void _onDismissBarrierHorizontalDragEnd(DragEndDetails details) {
     if (_barrierSwipe.end(
-      sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
     )) {
       _popNestedPopupAt(_topVisiblePopupIndex);
     }
   }
 
   /// Shift-悬停在 barrier 上「连续切换查词」的节流锚 + 去重键（TODO-756a，与阅读器
-  /// [ReaderHibikiPage.onDismissBarrierHover] 同语义）。[Offset.zero] / 空句 / -1 表示
+  /// [ReaderFushiPage.onDismissBarrierHover] 同语义）。[Offset.zero] / 空句 / -1 表示
   /// 未进入（松开 Shift / 离开时复位），下次按 Shift 进入即触发。
   Offset _barrierHoverLastPos = Offset.zero;
   String _barrierHoverLastSentence = '';
   int _barrierHoverLastGrapheme = -1;
 
   /// 桌面 Shift-鼠标悬停在查词浮层 dismiss barrier 上「连续切换查词」（BUG-861，与阅读器
-  /// [ReaderHibikiPage.onDismissBarrierHover] 同语义）。
+  /// [ReaderFushiPage.onDismissBarrierHover] 同语义）。
   ///
   /// 根因：首次查词打开浮层后，全屏 dismiss barrier（[_buildPopupOverlay]）盖在字幕之上，
   /// 字幕盒自己的 [MouseRegion.onHover]（[VideoSubtitleOverlay] 的 `_handleShiftHover`）被
@@ -3786,7 +3786,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 未按 Shift 也照常记录）。
     _lastGlobalPointerPos = event.position;
     if (!HardwareKeyboard.instance.isShiftPressed &&
-        !ReaderHibikiSource.instance.hoverAutoLookup) {
+        !ReaderFushiSource.instance.hoverAutoLookup) {
       // 未按 Shift 且未开「悬停即查词」：复位节流锚 + 去重键，使下次按 Shift 进入即触发。
       _barrierHoverLastPos = Offset.zero;
       _barrierHoverLastSentence = '';
@@ -4104,15 +4104,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                         // （否则只 onTapUp，与旧行为一致）。竞技场天然分流：单击走 onTapUp、
                         // 横拖走 onHorizontalDrag*，互斥不冲突（与 base_source_page 同范式）。
                         onHorizontalDragStart:
-                            ReaderHibikiSource.instance.enableSwipeToClose
+                            ReaderFushiSource.instance.enableSwipeToClose
                                 ? _onDismissBarrierHorizontalDragStart
                                 : null,
                         onHorizontalDragUpdate:
-                            ReaderHibikiSource.instance.enableSwipeToClose
+                            ReaderFushiSource.instance.enableSwipeToClose
                                 ? _onDismissBarrierHorizontalDragUpdate
                                 : null,
                         onHorizontalDragEnd:
-                            ReaderHibikiSource.instance.enableSwipeToClose
+                            ReaderFushiSource.instance.enableSwipeToClose
                                 ? _onDismissBarrierHorizontalDragEnd
                                 : null,
                         child: const ColoredBox(color: Colors.transparent),

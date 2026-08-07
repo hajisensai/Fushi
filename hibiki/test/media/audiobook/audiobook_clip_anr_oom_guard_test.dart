@@ -33,7 +33,7 @@ void main() {
   const String textRenderPath =
       'lib/src/media/audiobook/audiobook_clip_text_render.dart';
   const String audiobookPartPath =
-      'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart';
+      'lib/src/pages/implementations/reader_fushi/audiobook.part.dart';
 
   group('(a) JPEG 编码卸到后台 isolate（不在 UI isolate 同步跑 2MP 解码/编码）', () {
     test('encodeClipTextFrameAsJpgAsync 存在且经 Isolate.run 卸载', () {

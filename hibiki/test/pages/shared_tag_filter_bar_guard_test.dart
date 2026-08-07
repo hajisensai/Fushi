@@ -29,7 +29,7 @@ void main() {
 
   test('书架标签栏改用共享 FushiTagFilterBar（不再内联 _TagBarContent）', () {
     final String shelf =
-        _read('lib/src/pages/implementations/reader_hibiki_history_page.dart');
+        _read('lib/src/pages/implementations/reader_fushi_history_page.dart');
     expect(shelf.contains('FushiTagFilterBar('), isTrue);
     expect(shelf.contains('class _TagBarContent'), isFalse,
         reason: '内联标签栏类应已提取为共享组件');

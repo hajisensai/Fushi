@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-2527：本文件所有窗口从**掩码语料**上切、断言一律 [containsCodeLine]。
 ///
@@ -18,7 +18,7 @@ void main() {
 
   setUpAll(() {
     // TODO-589 batch8: setup 脚本(鼠标拖动状态机)已搬到
-    // reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+    // reader_fushi/webview.part.dart，改读「主壳 + 全部 part」合并语料。
     // TODO-2527: 语料先掩码——三引号里的 JS 注释与 Dart 注释一起变等长空白，
     // 下标与原文逐字节对齐，切片位置不变、注释不再能满足任何断言。
     setupScript = _between(

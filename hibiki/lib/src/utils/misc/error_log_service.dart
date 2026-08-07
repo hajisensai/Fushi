@@ -518,7 +518,7 @@ void recordLookupStackDepth(int depth, String? topTerm) {
 /// ② 返回给用户看的**简短 toast 文案**（带后端带回的简短原因，无原因则降级到
 ///    通用文案）。
 ///
-/// 单一真相源：5 个调用点（dictionary_page_mixin / reader_hibiki_page /
+/// 单一真相源：5 个调用点（dictionary_page_mixin / reader_fushi_page /
 /// floating_dict_page / video_hibiki_page / app_model）都走这里，避免「记日志 +
 /// 文案」逻辑被复制 5 份后各自漂移。[outcome] 应满足 `result == MineResult.error`。
 String logMineFailure(MineOutcome outcome) {
@@ -563,7 +563,7 @@ String? localizeAnkiMineError(String? code) {
 /// 把一次制卡结果映射成「给用户看的消息 + 是否成功 + 是否应计入制卡统计」的单一真相。
 ///
 /// 此前这套四分支 switch（success/duplicate/notConfigured/error）在 5 个调用点
-/// （dictionary_page_mixin / reader_hibiki_page / video_hibiki_page /
+/// （dictionary_page_mixin / reader_fushi_page / video_hibiki_page /
 /// floating_dict_page / app_model）各复制一份，新增 outcome 类型或改文案要改 5 处。
 /// 收口于此后各调用点只决定**怎么展示**（toast / OSD）与**是否记账/返回 bool**。
 ///

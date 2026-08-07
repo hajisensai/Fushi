@@ -10,9 +10,9 @@ import 'package:integration_test/integration_test.dart';
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/media/media_item.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
 import 'test_helpers.dart';
@@ -74,7 +74,7 @@ void main() {
             .setPref('src:reader_fushi:writing_mode', 'horizontal-tb');
         await appModel.database
             .setPref('src:reader_fushi:furigana_mode', 'toggle');
-        await ReaderHibikiSource.readerSettings?.refreshFromDb();
+        await ReaderFushiSource.readerSettings?.refreshFromDb();
 
         final String bookKey = await EpubImporter.import(
           db: appModel.database,
@@ -82,9 +82,9 @@ void main() {
           fileName: 'verify_dblclick.epub',
         );
 
-        final ReaderHibikiSource source = ReaderHibikiSource.instance;
+        final ReaderFushiSource source = ReaderFushiSource.instance;
         final MediaItem item = MediaItem(
-          mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(bookKey),
+          mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
           title: bookKey,
           mediaTypeIdentifier: source.mediaType.uniqueKey,
           mediaSourceIdentifier: source.uniqueKey,
@@ -124,7 +124,7 @@ void main() {
         await tester.pump(const Duration(seconds: 3));
 
         final Future<dynamic> Function(String source)? runInWebView =
-            ReaderHibikiPage.debugEvaluateJavascript;
+            ReaderFushiPage.debugEvaluateJavascript;
         expect(runInWebView, isNotNull,
             reason: 'Reader debug JS hook must be set');
 
@@ -170,7 +170,7 @@ void main() {
         navigator.pop();
         await tester.pump(const Duration(seconds: 2));
         for (int i = 0;
-            i < 40 && ReaderHibikiPage.debugEvaluateJavascript != null;
+            i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
             i++) {
           await tester.pump(const Duration(milliseconds: 250));
         }

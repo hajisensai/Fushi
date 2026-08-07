@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from reader_hibiki_history_page.dart (TODO-587).
-part of '../reader_hibiki_history_page.dart';
+// GENERATED-NOTE: extracted from reader_fushi_history_page.dart (TODO-587).
+part of '../reader_fushi_history_page.dart';
 
 /// 书架删除确认弹窗。[onConfirm] 回传用户在「同步删除」勾选框选择的 [DeleteScope]
 /// （勾选=[DeleteScope.syncEverywhere] 记墓碑传播到其他设备；默认不勾=

@@ -24,7 +24,7 @@ import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
 ///   Phase 3 的事）。
 ///
 /// 删除零改动复用 [FushiDatabase.deleteEpubBook]（按 bookKey 级联）+
-/// [ReaderHibikiSource.deleteBook] 的磁盘清理（`EpubStorage.deleteBookDir`）。
+/// [ReaderFushiSource.deleteBook] 的磁盘清理（`EpubStorage.deleteBookDir`）。
 class PdfImporter {
   PdfImporter._();
 

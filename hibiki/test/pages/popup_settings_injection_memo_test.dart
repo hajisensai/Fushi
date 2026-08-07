@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -30,11 +30,11 @@ void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
     debugResetPopupSettingsInjectionCaches();
-    ReaderHibikiSource.readerSettings = null;
+    ReaderFushiSource.readerSettings = null;
   });
 
   tearDown(() {
-    ReaderHibikiSource.readerSettings = null;
+    ReaderFushiSource.readerSettings = null;
     debugResetPopupSettingsInjectionCaches();
     LocaleSettings.setLocale(AppLocale.en);
   });
@@ -337,9 +337,9 @@ void main() {
           FushiDatabase.forTesting(NativeDatabase.memory());
       final ReaderSettings settings = ReaderSettings(db);
       await settings.loadFromPrefsSnapshot(const <String, String>{});
-      ReaderHibikiSource.readerSettings = settings;
+      ReaderFushiSource.readerSettings = settings;
       addTearDown(() async {
-        ReaderHibikiSource.readerSettings = null;
+        ReaderFushiSource.readerSettings = null;
         await db.close();
         if (tempDir.existsSync()) {
           await tempDir.delete(recursive: true);
@@ -450,13 +450,13 @@ void main() {
           },
         ]),
       });
-      ReaderHibikiSource.readerSettings = settings;
+      ReaderFushiSource.readerSettings = settings;
 
       appModel = MemoAppModel()..appDirectoryOverride = tempDir;
     });
 
     tearDown(() async {
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
       await db.close();
       if (tempDir.existsSync()) {
         await tempDir.delete(recursive: true);

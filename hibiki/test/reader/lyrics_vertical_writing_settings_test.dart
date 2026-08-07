@@ -17,11 +17,11 @@ void main() {
   setUp(() {
     db = _testDb();
     MediaSource.setDatabase(db);
-    ReaderHibikiSource.readerSettings = null;
+    ReaderFushiSource.readerSettings = null;
   });
 
   tearDown(() async {
-    ReaderHibikiSource.readerSettings = null;
+    ReaderFushiSource.readerSettings = null;
     await db.close();
   });
 
@@ -31,7 +31,7 @@ void main() {
     await settings.refreshFromDb();
 
     expect(settings.lyricsVerticalWriting, isFalse);
-    expect(ReaderHibikiSource.instance.lyricsVerticalWriting, isFalse);
+    expect(ReaderFushiSource.instance.lyricsVerticalWriting, isFalse);
   });
 
   test('lyrics vertical writing persists through ReaderSettings', () async {
@@ -49,7 +49,7 @@ void main() {
   // ttu_writing_mode（它默认 vertical-rl，复用会连坐正文默认竖排）。
   test('lyrics vertical uses its own key, never touches ttu_writing_mode',
       () async {
-    await ReaderHibikiSource.instance.setLyricsVerticalWriting(true);
+    await ReaderFushiSource.instance.setLyricsVerticalWriting(true);
 
     final Map<String, String> prefs = await db.getAllPrefs();
     expect(

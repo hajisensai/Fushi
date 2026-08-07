@@ -33,7 +33,7 @@ String statementAt(String src, String anchor) {
 /// **不是** fushiSelection 查词选区；③ 命中后写系统剪贴板 Clipboard.setData。
 void main() {
   final File caret =
-      File('lib/src/pages/implementations/reader_hibiki/caret.part.dart');
+      File('lib/src/pages/implementations/reader_fushi/caret.part.dart');
   final File scripts = File('lib/src/reader/reader_selection_scripts.dart');
 
   test('caret.part.dart：Ctrl+C → 谓词门控 Windows + 取原生选区 + 写剪贴板', () {

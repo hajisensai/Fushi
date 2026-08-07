@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from reader_hibiki_page.dart (TODO-589 batch2).
-part of '../reader_hibiki_page.dart';
+// GENERATED-NOTE: extracted from reader_fushi_page.dart (TODO-589 batch2).
+part of '../reader_fushi_page.dart';
 
 /// mining (制卡/Anki card creation) domain helpers extracted via part-of
 /// (TODO-589 batch2); shared private scope. Behaviour-preserving: bodies are
@@ -11,7 +11,7 @@ part of '../reader_hibiki_page.dart';
 /// the main shell (Dart extensions cannot satisfy a superclass virtual
 /// contract); they delegate into `_onMineFromPopupInner` / `_onUpdateFromPopupInner`
 /// here via the shared `_miningQueue`.
-extension _ReaderMining on _ReaderHibikiPageState {
+extension _ReaderMining on _ReaderFushiPageState {
   /// TODO-270 D：reader 制卡/覆盖共用的「构造制卡上下文」。返回构造好的
   /// [AnkiMiningContext] 与一个 `cleanup` 闭包（清理句子音频临时目录，调用方在 mine/
   /// update 完成后必须调用）。当句子音频导出失败（已弹 toast）时返回 `context: null`，
@@ -32,10 +32,10 @@ extension _ReaderMining on _ReaderHibikiPageState {
     // 小写化 (epub_parser _itemRelHref)，解压文件却保留真实大小写 (TODO-739)；书到
     // Android/Linux (大小写敏感 FS) 后裸探测按小写落空 → coverPath=null → 制出的卡
     // 无封面（书架却因 case-insensitive 兜底正常显示）。复用书架同一个兜底
-    // (ReaderHibikiSource.resolveCoverFilePath) 命中真实文件，让制卡与显示一致。
+    // (ReaderFushiSource.resolveCoverFilePath) 命中真实文件，让制卡与显示一致。
     String? coverPath;
     if (_extractDir != null) {
-      coverPath = ReaderHibikiSource.resolveCoverFilePath(
+      coverPath = ReaderFushiSource.resolveCoverFilePath(
         extractDir: _extractDir!,
         coverPath: _book?.coverHref,
       );
@@ -61,7 +61,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
           sentenceAudioTempDir.deleteSync(recursive: true);
         } catch (e, stack) {
           ErrorLogService.instance
-              .log('ReaderHibiki.mineEntry.cleanupAudio', e, stack);
+              .log('ReaderFushi.mineEntry.cleanupAudio', e, stack);
         }
       }
     }
@@ -139,7 +139,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
     if (requestedSentenceAudioClip && sentenceAudioPath == null) {
       cleanupSentenceAudioTempDir();
       ErrorLogService.instance.log(
-        'ReaderHibiki.mineEntry.sentenceAudio',
+        'ReaderFushi.mineEntry.sentenceAudio',
         sentenceAudioFailure == null
             ? 'sentence audio export failed'
             : 'sentence audio export failed: $sentenceAudioFailure',

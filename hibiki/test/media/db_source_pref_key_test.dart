@@ -84,7 +84,7 @@ void main() {
       // 持久化身份键的字面值收敛在单一常量（Fushi 改名 P6-3 收口）；
       // 现值 'reader_fushi'：历史值 'reader_ttu' 已由 v70 Drift 迁移改写存量。
       final String src2 =
-          File('lib/src/media/sources/reader_hibiki_source.dart')
+          File('lib/src/media/sources/reader_fushi_source.dart')
               .readAsStringSync();
       expect(src2,
           contains("const String kReaderSourcePersistedKey = 'reader_fushi';"),

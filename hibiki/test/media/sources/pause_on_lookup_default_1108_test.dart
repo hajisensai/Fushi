@@ -19,7 +19,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final ReaderHibikiSource source = ReaderHibikiSource.instance;
+      final ReaderFushiSource source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       expect(source.pauseOnLookup, isTrue, reason: '未设过时默认开启（TODO-1108 用户诉求）');
@@ -32,7 +32,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final ReaderHibikiSource source = ReaderHibikiSource.instance;
+      final ReaderFushiSource source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       // 老用户曾显式关闭：写穿存储再从 DB 重载，模拟应用重启后的读取路径。
@@ -53,7 +53,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final ReaderHibikiSource source = ReaderHibikiSource.instance;
+      final ReaderFushiSource source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       await source.setPauseOnLookup(value: true);

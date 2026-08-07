@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-627 / BUG-349 源码守卫：PC 阅读遇插画滚轮翻不了下一页的三处根因修复
 /// 不得回退（headless WebView 不可用，数值正确性由纯函数影子覆盖，这里只锁 JS/Dart
@@ -23,7 +23,7 @@ void main() {
     scriptsSource = File('lib/src/reader/reader_pagination_scripts.dart')
         .readAsStringSync();
     // TODO-589 batch8: 连续模式 wheel onBoundarySwipe 在 setup 脚本里，已搬到
-    // reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+    // reader_fushi/webview.part.dart，改读「主壳 + 全部 part」合并语料。
     pageSource = readReaderPageSource();
   });
 

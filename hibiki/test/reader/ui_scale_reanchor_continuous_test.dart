@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show readerUiScaleReanchorAllowed, readerRestoreReanchorAllowed;
 
 import '../helpers/source_guard.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-693：改 appUiScale（整体界面缩放）时，**连续/滚动模式**阅读位置被弹回章节开头。
 ///
@@ -21,7 +21,7 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// 采样首个可见字符偏移并置 `_reanchorPending`（挡住 reflow 归零 scroll 污染落库）→
 /// postFrame settle 后阶段 2 把锚滚回视口首边并清旗。
 ///
-/// reader_hibiki_page.dart 太重（真 InAppWebView + DB + provider）不便整页 mount，门控逻辑
+/// reader_fushi_page.dart 太重（真 InAppWebView + DB + provider）不便整页 mount，门控逻辑
 /// 抽成 [readerUiScaleReanchorAllowed] 纯函数在此锁定真值表；JS 两阶段重锚原语 + Dart
 /// 接线由源码扫描守卫锁定，防回归。
 ///

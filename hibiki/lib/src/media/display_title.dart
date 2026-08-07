@@ -1,5 +1,5 @@
 import 'package:fushi/src/media/media_item.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -19,8 +19,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// # 三套存储机制（保留不动，本门面只做只读薄委托）
 ///
 /// - **书**：偏好 override 层（[MediaSource.getDisplayTitleFromMediaItem] /
-///   [ReaderHibikiSource.overrideTitleForBookKey] /
-///   [ReaderHibikiSource.overrideTitleForSrtUid]，全同步零 IO），raw 真值在
+///   [ReaderFushiSource.overrideTitleForBookKey] /
+///   [ReaderFushiSource.overrideTitleForSrtUid]，全同步零 IO），raw 真值在
 ///   `epub_books.title` / `srt_books.title`。
 /// - **视频**：直改 `video_books.title` 列——**无覆盖层是正确设计**，raw 即显示名。
 /// - **游戏**：[GalgameEntry.displayName]（customData.name > nameCn > name）。
@@ -34,12 +34,12 @@ import 'package:fushi_core/fushi_core.dart';
 /// 书（EPUB / SRT / 有声书）的显示名解析。
 ///
 /// 三通道按序取一（与既有身份规则一致，零新逻辑，全部委托
-/// [ReaderHibikiSource] 既有 API）：
+/// [ReaderFushiSource] 既有 API）：
 ///
 /// 1. [item]：已持有完整 [MediaItem] 的调用方（书架卡 / 长按弹窗同源）。
 ///    ⚠️ 坑：[MediaSource.getOverrideTitleFromMediaItem] 在 `!item.canEdit` 时
 ///    **静默返 null**——合成 [MediaItem] 必须 `canEdit: true`（参照
-///    `reader_hibiki_source.dart` `_overrideTitleForIdentifier` 的合成方式），
+///    `reader_fushi_source.dart` `_overrideTitleForIdentifier` 的合成方式），
 ///    否则 override 永远失效且无任何报错。
 /// 2. [bookKey]：EPUB 身份（含 EPUB 配对的 SRT/有声书行——它们与 EPUB 卡共享
 ///    `hoshi://book/<bookKey>` 身份，见 BUG-1018 A3）。空串视同未提供。
@@ -57,7 +57,7 @@ String displayTitleForBook({
   String? srtUid,
   required String rawTitle,
 }) {
-  final ReaderHibikiSource source = ReaderHibikiSource.instance;
+  final ReaderFushiSource source = ReaderFushiSource.instance;
   if (item != null) {
     // getDisplayTitleFromMediaItem = override ?? item.title；item 通道下
     // item.title 就是 raw，语义与其余通道一致。

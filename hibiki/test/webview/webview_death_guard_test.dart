@@ -68,7 +68,7 @@ void main() {
   test('afterRebuild 为 null = 只救命不重建（阅读器那种恢复锚会写回退的宿主）', () async {
     int flushes = 0;
     final WebViewDeathGuard guard = WebViewDeathGuard(
-      surface: 'reader_hibiki',
+      surface: 'reader_fushi',
       flushBeforeRebuild: () async => flushes++,
       reporter: (_, __) {},
     );

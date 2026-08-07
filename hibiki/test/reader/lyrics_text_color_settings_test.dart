@@ -17,11 +17,11 @@ void main() {
   setUp(() {
     db = _testDb();
     MediaSource.setDatabase(db);
-    ReaderHibikiSource.readerSettings = null;
+    ReaderFushiSource.readerSettings = null;
   });
 
   tearDown(() async {
-    ReaderHibikiSource.readerSettings = null;
+    ReaderFushiSource.readerSettings = null;
     await db.close();
   });
 
@@ -31,7 +31,7 @@ void main() {
     await settings.refreshFromDb();
 
     expect(settings.lyricsTextColor, 0);
-    expect(ReaderHibikiSource.instance.lyricsTextColor, 0);
+    expect(ReaderFushiSource.instance.lyricsTextColor, 0);
   });
 
   test('lyrics text color persists through ReaderSettings', () async {
@@ -46,11 +46,11 @@ void main() {
   });
 
   test('clearing lyrics text color returns to sentinel 0', () async {
-    await ReaderHibikiSource.instance.setLyricsTextColor(0xFFAABBCC);
-    expect(ReaderHibikiSource.instance.lyricsTextColor, 0xFFAABBCC);
+    await ReaderFushiSource.instance.setLyricsTextColor(0xFFAABBCC);
+    expect(ReaderFushiSource.instance.lyricsTextColor, 0xFFAABBCC);
 
-    await ReaderHibikiSource.instance.clearLyricsTextColor();
-    expect(ReaderHibikiSource.instance.lyricsTextColor, 0);
+    await ReaderFushiSource.instance.clearLyricsTextColor();
+    expect(ReaderFushiSource.instance.lyricsTextColor, 0);
 
     final Map<String, String> prefs = await db.getAllPrefs();
     expect(prefs['src:reader_fushi:lyrics_text_color'], 'i:0');

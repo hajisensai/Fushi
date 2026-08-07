@@ -107,7 +107,7 @@ void main() {
   group('TODO-861 source guards', () {
     test('② webview.part 不再硬编码 scanNonJapaneseText = true', () {
       final String src = _read(
-        'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+        'lib/src/pages/implementations/reader_fushi/webview.part.dart',
       );
       expect(src, isNot(contains('window.scanNonJapaneseText = true;')),
           reason: '注入端必须读 pref，不能回退硬编码 true');
@@ -128,14 +128,14 @@ void main() {
 
     test('④ 点击派发处含「blurred 优先揭开吞放大」分支（防双触发）', () {
       final String src = _read(
-        'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+        'lib/src/pages/implementations/reader_fushi/webview.part.dart',
       );
       expect(src, contains('_fushiRevealBlurredImage'));
     });
 
     test('④ 长按 onImageLongPress 前也先 _fushiRevealBlurredImage（揭开优先一致）', () {
       final String src = _read(
-        'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+        'lib/src/pages/implementations/reader_fushi/webview.part.dart',
       );
       // 长按定时器体内：必须在调用 onImageLongPress 之前先尝试揭开仍 blurred 的图。
       final int revealIdx =

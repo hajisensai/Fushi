@@ -136,7 +136,7 @@ void main() {
   group('TODO-1333 source-scan guard: TOC flatten never hides absorbed images',
       () {
     final File chrome = File(
-      'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+      'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
     );
     final File flatten = File('lib/src/reader/ttu_toc_flatten.dart');
 

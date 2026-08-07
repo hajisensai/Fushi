@@ -14,18 +14,18 @@ import 'package:fushi/utils.dart';
 ///
 /// 设计要点（与 PDF 同款「漫画只是第三种书身份」）：
 /// - 漫画与 EPUB/PDF **共用一张 `EpubBooks` 表、一块书架、一套删除/进度管线**。书架列书
-///   仍走 [ReaderHibikiSource.getBooksFromDb]（列全部行，format-agnostic）；漫画行靠
-///   `EpubBooks.format=='manga'` 在 [ReaderHibikiSource] 的 `_bookToMediaItem` 里被打上
+///   仍走 [ReaderFushiSource.getBooksFromDb]（列全部行，format-agnostic）；漫画行靠
+///   `EpubBooks.format=='manga'` 在 [ReaderFushiSource] 的 `_bookToMediaItem` 里被打上
 ///   `mediaSourceIdentifier: `[kUniqueKey]，从而在**打开时**被路由到本源、进
-///   [MangaHibikiPage]，而不是 EPUB 的 [ReaderHibikiPage]。
+///   [MangaHibikiPage]，而不是 EPUB 的 [ReaderFushiPage]。
 /// - 漫画复用 EPUB 的媒体标识方案（`hoshi://book/<bookKey>`，bookKey 是 `EpubBooks`
 ///   主键，与 format 无关）——**没有漫画专属 scheme 特例**：路由只认
 ///   `mediaSourceIdentifier`，而关书自动同步（`triggerAutoSyncAfterClose` 的
 ///   `hoshi://book/` 前缀识别）天然工作。
-/// - 阅读器设置（翻页/查词等偏好）统一读 `ReaderHibikiSource.instance`，本源不重复一套。
+/// - 阅读器设置（翻页/查词等偏好）统一读 `ReaderFushiSource.instance`，本源不重复一套。
 ///
 /// 本源只在打开一本漫画时被 `item.getMediaSource` 解析并短暂成为 `_currentMediaSource`；
-/// 书架页头/搜索/源切换 UI 恒用默认的 [ReaderHibikiSource]，故本源的
+/// 书架页头/搜索/源切换 UI 恒用默认的 [ReaderFushiSource]，故本源的
 /// [getActions]/[buildHistoryPage] 极少被触达，实现取与 PDF 源一致的安全回退。
 class MangaHibikiSource extends ReaderMediaSource {
   MangaHibikiSource._()
@@ -39,7 +39,7 @@ class MangaHibikiSource extends ReaderMediaSource {
         );
 
   /// 媒体源唯一键（持久化标识，与 `reader_fushi`/`reader_pdf` 互异）。
-  /// [ReaderHibikiSource] 的 `_bookToMediaItem` 用它把 `format=='manga'` 的行路由到本源。
+  /// [ReaderFushiSource] 的 `_bookToMediaItem` 用它把 `format=='manga'` 的行路由到本源。
   static const String kUniqueKey = 'reader_manga';
 
   static MangaHibikiSource get instance => _instance;
@@ -71,7 +71,7 @@ class MangaHibikiSource extends ReaderMediaSource {
     Bookmark? initialBookmarkJump,
   }) {
     final String bookKey =
-        ReaderHibikiSource.parseBookKey(item?.mediaIdentifier ?? '') ?? '';
+        ReaderFushiSource.parseBookKey(item?.mediaIdentifier ?? '') ?? '';
     // 漫画在 WebView 里按原生密度渲染；与阅读器一致包 UI-scale 中和层，
     // 保证弹窗坐标契约（JS getClientRects 视口坐标 → 屏幕坐标恒等映射）。
     return FushiAppUiScaleNeutralizer(
@@ -96,7 +96,7 @@ class MangaHibikiSource extends ReaderMediaSource {
     ];
   }
 
-  /// 「导入漫画」按钮。与 [ReaderHibikiSource.buildBookImportButton] 并列而非复用：
+  /// 「导入漫画」按钮。与 [ReaderFushiSource.buildBookImportButton] 并列而非复用：
   /// 两者打开的是不同对话框，仅外观规格（尺寸/宽窗展开成图标+文字）保持一致。
   Widget buildMangaImportButton({
     required BuildContext context,
@@ -125,7 +125,7 @@ class MangaHibikiSource extends ReaderMediaSource {
 
   @override
   BasePage buildHistoryPage({MediaItem? item, Widget? navigation}) {
-    return ReaderHibikiHistoryPage(navigation: navigation);
+    return ReaderFushiHistoryPage(navigation: navigation);
   }
 
   /// 漫画是 `EpubBooks`（`format=='manga'`）的行，和 EPUB 共用可编辑的 `author` 列，
@@ -134,7 +134,7 @@ class MangaHibikiSource extends ReaderMediaSource {
   @override
   bool get supportsAuthorEdit => true;
 
-  /// 委托给 [ReaderHibikiSource]：作者写库逻辑（按 bookKey 写 `epubBooks.author`）与源
+  /// 委托给 [ReaderFushiSource]：作者写库逻辑（按 bookKey 写 `epubBooks.author`）与源
   /// 实例无关（走 sharedDatabase + item.mediaIdentifier），漫画行的 bookKey 解析一致，
   /// 直接复用同一条写入路径，不重复实现。
   @override
@@ -142,6 +142,6 @@ class MangaHibikiSource extends ReaderMediaSource {
     required MediaItem item,
     required String? author,
   }) =>
-      ReaderHibikiSource.instance
+      ReaderFushiSource.instance
           .setAuthorFromMediaItem(item: item, author: author);
 }

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// BUG-763/766 守卫：「制卡·选择句子上下文」现为 **app 原生顶层 Flutter 对话框**
 /// （[SentenceContextDialog]），**不再**画在查词弹窗 WebView 内（那受弹窗表面尺寸/半透明

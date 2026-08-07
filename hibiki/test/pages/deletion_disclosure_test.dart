@@ -112,7 +112,7 @@ void main() {
       );
 
       final String historyPage = readSource(
-          'lib/src/pages/implementations/reader_hibiki_history_page.dart');
+          'lib/src/pages/implementations/reader_fushi_history_page.dart');
       expect(
         historyPage
             .contains('deleteMembersDisclosure: buildDeletionDisclosure'),

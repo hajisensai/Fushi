@@ -10,9 +10,9 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/epub/epub_importer.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
@@ -87,9 +87,9 @@ void main() {
       // Open the reader via the SOURCE's real launch page (the exact widget the
       // shelf pushes). Avoids relying on focus traversal through a crowded
       // shelf, which is what failed when prior runs accumulated duplicate books.
-      final ReaderHibikiSource source = ReaderHibikiSource.instance;
+      final ReaderFushiSource source = ReaderFushiSource.instance;
       final MediaItem item = MediaItem(
-        mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(bookKey),
+        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
         title: bookKey,
         mediaTypeIdentifier: source.mediaType.uniqueKey,
         mediaSourceIdentifier: source.uniqueKey,
@@ -124,7 +124,7 @@ void main() {
       expect(contentReady, isTrue, reason: 'Reader content must become ready');
       await tester.pump(const Duration(seconds: 4));
 
-      final runJs = ReaderHibikiPage.debugEvaluateJavascript;
+      final runJs = ReaderFushiPage.debugEvaluateJavascript;
       expect(runJs, isNotNull, reason: 'Reader JS hook must be set');
 
       // Inject the harness (builds metrics safely before reading state).
@@ -201,8 +201,8 @@ void main() {
       // still scrolls (BUG-239/TODO-345 re-added scrollBy for this mode).
       await appModel.database
           .setPref('src:reader_fushi:view_mode', 'continuous');
-      await ReaderHibikiSource.readerSettings?.refreshFromDb();
-      expect(ReaderHibikiSource.readerSettings?.isContinuousMode, isTrue,
+      await ReaderFushiSource.readerSettings?.refreshFromDb();
+      expect(ReaderFushiSource.readerSettings?.isContinuousMode, isTrue,
           reason: 'continuous mode must be active after pref + refresh');
 
       final NavigatorState navOpen2 =
@@ -224,7 +224,7 @@ void main() {
       // AND fushiReader is present, then drive paginate. Generous fixed settle
       // covers the headless reopen + WebView2 init latency.
       await tester.pump(const Duration(seconds: 8));
-      final runJs2 = ReaderHibikiPage.debugEvaluateJavascript;
+      final runJs2 = ReaderFushiPage.debugEvaluateJavascript;
       expect(runJs2, isNotNull,
           reason: 'reopened reader must reinstall the JS hook');
 
@@ -263,7 +263,7 @@ void main() {
       // Restore the user's default mode (do not leave continuous behind).
       await appModel.database
           .setPref('src:reader_fushi:view_mode', 'paginated');
-      await ReaderHibikiSource.readerSettings?.refreshFromDb();
+      await ReaderFushiSource.readerSettings?.refreshFromDb();
 
       debugPrint('[t375] === PASSED: section kept + precise charOffset '
           'preserved; page-turn alive (scrolled=$scrolledCount) ===');

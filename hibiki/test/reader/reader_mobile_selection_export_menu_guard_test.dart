@@ -27,7 +27,7 @@ String _between(String src, String startMarker, String endMarker) {
 
 void main() {
   final String chrome =
-      File('lib/src/pages/implementations/reader_hibiki/chrome.part.dart')
+      File('lib/src/pages/implementations/reader_fushi/chrome.part.dart')
           .readAsStringSync();
 
   group('① 手机拖选菜单补「导出片段」（同桌面 i18n key + 同音频门控）', () {
@@ -98,7 +98,7 @@ void main() {
   group('④ 点空白取消残留拖选（自然清除路径）', () {
     test('onTapEmpty 清除 app 自绘选区', () {
       final String webview =
-          File('lib/src/pages/implementations/reader_hibiki/webview.part.dart')
+          File('lib/src/pages/implementations/reader_fushi/webview.part.dart')
               .readAsStringSync();
       final String body = _between(
           webview, "handlerName: 'onTapEmpty'", "handlerName: 'onSwipe'");

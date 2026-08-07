@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：制卡成功必须计入 `mining_statistics`（统计页「制卡 N」卡片的数据源）。

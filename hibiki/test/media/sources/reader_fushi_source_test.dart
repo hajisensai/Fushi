@@ -15,10 +15,10 @@ import 'package:fushi/src/sync/ttu_filename.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('ReaderHibikiSource shelf actions', () {
+  group('ReaderFushiSource shelf actions', () {
     test('bookshelf home actions do not expose the tweaks button', () {
       final String source = File(
-        'lib/src/media/sources/reader_hibiki_source.dart',
+        'lib/src/media/sources/reader_fushi_source.dart',
       ).readAsStringSync();
       final String historySource = readReaderHistorySource();
 
@@ -39,32 +39,32 @@ void main() {
     });
   });
 
-  group('ReaderHibikiSource.isExternalUrl (BUG-097 内链不外开)', () {
+  group('ReaderFushiSource.isExternalUrl (BUG-097 内链不外开)', () {
     test('内部 fushi.local 书内 URL 永不当外部链接(未解析时不弹系统浏览器)', () {
       expect(
-        ReaderHibikiSource.isExternalUrl(
+        ReaderFushiSource.isExternalUrl(
             'https://fushi.local/epub/OEBPS/ch2.xhtml'),
         isFalse,
       );
       expect(
-        ReaderHibikiSource.isExternalUrl(
+        ReaderFushiSource.isExternalUrl(
             'https://fushi.local/epub/text/note.xhtml#n1'),
         isFalse,
       );
       expect(
-        ReaderHibikiSource.isExternalUrl(
-            '${ReaderHibikiSource.kResourceScheme}://fushi.local/epub/OEBPS/ch2.xhtml'),
+        ReaderFushiSource.isExternalUrl(
+            '${ReaderFushiSource.kResourceScheme}://fushi.local/epub/OEBPS/ch2.xhtml'),
         isFalse,
       );
     });
 
     test('Apple 平台 EPUB 资源 URL 走 WebKit custom scheme', () {
-      final String url = ReaderHibikiSource.epubUrl('OEBPS/ch 2.xhtml');
+      final String url = ReaderFushiSource.epubUrl('OEBPS/ch 2.xhtml');
 
       if (Platform.isMacOS || Platform.isIOS) {
         expect(
           url,
-          '${ReaderHibikiSource.kResourceScheme}://fushi.local/epub/OEBPS/ch%202.xhtml',
+          '${ReaderFushiSource.kResourceScheme}://fushi.local/epub/OEBPS/ch%202.xhtml',
         );
       } else {
         expect(url, 'https://fushi.local/epub/OEBPS/ch%202.xhtml');
@@ -73,27 +73,27 @@ void main() {
 
     test('真正的外部 http/https/mailto 链接 → 外部打开', () {
       expect(
-        ReaderHibikiSource.isExternalUrl('https://example.com/page'),
+        ReaderFushiSource.isExternalUrl('https://example.com/page'),
         isTrue,
       );
       expect(
-        ReaderHibikiSource.isExternalUrl('http://example.com/'),
+        ReaderFushiSource.isExternalUrl('http://example.com/'),
         isTrue,
       );
       expect(
-        ReaderHibikiSource.isExternalUrl('mailto:a@b.com'),
+        ReaderFushiSource.isExternalUrl('mailto:a@b.com'),
         isTrue,
       );
     });
 
     test('非外部 scheme / 无法解析 → 不外开', () {
-      expect(ReaderHibikiSource.isExternalUrl('fushi://book/foo'), isFalse);
-      expect(ReaderHibikiSource.isExternalUrl('about:blank'), isFalse);
-      expect(ReaderHibikiSource.isExternalUrl('://broken'), isFalse);
+      expect(ReaderFushiSource.isExternalUrl('fushi://book/foo'), isFalse);
+      expect(ReaderFushiSource.isExternalUrl('about:blank'), isFalse);
+      expect(ReaderFushiSource.isExternalUrl('://broken'), isFalse);
     });
   });
 
-  group('ReaderHibikiSource custom font helpers', () {
+  group('ReaderFushiSource custom font helpers', () {
     late Directory tempDir;
 
     setUp(() async {
@@ -112,7 +112,7 @@ void main() {
       await fontFile.writeAsBytes(<int>[0, 1, 0, 0]);
       final rawPath = p.join(fontsDir.path, '..', 'fonts', 'font.ttf');
 
-      final result = ReaderHibikiSource.customFontCssForEntries(
+      final result = ReaderFushiSource.customFontCssForEntries(
         <Map<String, dynamic>>[
           <String, dynamic>{
             'name': 'Test Font',
@@ -131,7 +131,7 @@ void main() {
         result.fontFaces,
         contains(
           Platform.isMacOS || Platform.isIOS
-              ? '${ReaderHibikiSource.kResourceScheme}://fushi.local/fonts/'
+              ? '${ReaderFushiSource.kResourceScheme}://fushi.local/fonts/'
               : 'https://fushi.local/fonts/',
         ),
       );
@@ -162,7 +162,7 @@ void main() {
 
       expect(
         result.fontFaces,
-        contains('${ReaderHibikiSource.kResourceScheme}://fushi.local/fonts/'),
+        contains('${ReaderFushiSource.kResourceScheme}://fushi.local/fonts/'),
       );
     });
 
@@ -174,7 +174,7 @@ void main() {
       final outsideFont = File(p.join(outsideDir.path, 'font.ttf'));
       await outsideFont.writeAsBytes(<int>[0, 1, 0, 0]);
 
-      final result = ReaderHibikiSource.customFontCssForEntries(
+      final result = ReaderFushiSource.customFontCssForEntries(
         <Map<String, dynamic>>[
           <String, dynamic>{
             'name': 'Outside Font',
@@ -198,7 +198,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       // Profile A: a custom shortcut binding is persisted.
@@ -230,10 +230,10 @@ void main() {
       // The static reader-settings snapshot is a reader-page-owned cache that
       // the video page never refreshes. Tests below pin it explicitly so the
       // "stale reader snapshot" never silently leaks the real fix.
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
     });
     tearDown(() {
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
     });
 
     test(
@@ -243,7 +243,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
 
       // 当前(视频)上下文：用户关闭"查词时自动阅读" → 写穿 DB + source 缓存。
       await source.setPreference<bool>(
@@ -258,7 +258,7 @@ void main() {
       if (!staleReaderSnapshot.autoReadOnLookup) {
         await staleReaderSnapshot.toggleAutoReadOnLookup();
       }
-      ReaderHibikiSource.readerSettings = staleReaderSnapshot;
+      ReaderFushiSource.readerSettings = staleReaderSnapshot;
 
       // 视频字幕查词读 source.autoReadOnLookup：必须反映当前 profile 的真实设置(false)，
       // 而不是陈旧的阅读器快照(true)。修复前会读到 true → 自动阅读，红。
@@ -278,7 +278,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       // Profile A: 关闭自动阅读并落 DB。
@@ -300,7 +300,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       // 默认 true。
@@ -328,10 +328,10 @@ void main() {
 
   group('popup swipe-to-close is profile-aware (TODO-496)', () {
     setUp(() {
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
     });
     tearDown(() {
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
     });
 
     test(
@@ -341,7 +341,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
       await source.setPreference<bool>(
         key: 'enable_swipe_to_close',
@@ -353,7 +353,7 @@ void main() {
       if (staleReaderSnapshot.enableSwipeToClose) {
         await staleReaderSnapshot.setEnableSwipeToClose(false);
       }
-      ReaderHibikiSource.readerSettings = staleReaderSnapshot;
+      ReaderFushiSource.readerSettings = staleReaderSnapshot;
 
       expect(
         source.enableSwipeToClose,
@@ -367,10 +367,10 @@ void main() {
 
   group('hoverAutoLookup preference (TODO-756b)', () {
     setUp(() {
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
     });
     tearDown(() {
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
     });
 
     test('defaults to false and round-trips through DB', () async {
@@ -378,7 +378,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       // Default: 756a behavior (Shift required), hover-auto OFF.
@@ -406,7 +406,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
       expect(source.hoverAutoLookup, isFalse);
 
@@ -419,10 +419,10 @@ void main() {
 
   group('invertAudiobookSkipDirection is per-reader (TODO-830)', () {
     setUp(() {
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
     });
     tearDown(() {
-      ReaderHibikiSource.readerSettings = null;
+      ReaderFushiSource.readerSettings = null;
     });
 
     test(
@@ -432,7 +432,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       // Default = false (现有行为：左=上一句、右=下一句)。
@@ -455,12 +455,12 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       await source.refreshPreferencesFromDb();
 
       final ReaderSettings perBook = ReaderSettings(db);
       await perBook.refreshFromDb();
-      ReaderHibikiSource.readerSettings = perBook;
+      ReaderFushiSource.readerSettings = perBook;
 
       // Per-reader default false.
       expect(source.invertAudiobookSkipDirection, isFalse);
@@ -480,7 +480,7 @@ void main() {
     });
   });
 
-  group('ReaderHibikiSource author editing (BUG-220 子3)', () {
+  group('ReaderFushiSource author editing (BUG-220 子3)', () {
     EpubBooksCompanion bookWithAuthor(String key, {String? author}) {
       return EpubBooksCompanion.insert(
         bookKey: key,
@@ -495,7 +495,7 @@ void main() {
     }
 
     test('supportsAuthorEdit is true for the EPUB shelf source', () {
-      expect(ReaderHibikiSource.instance.supportsAuthorEdit, isTrue);
+      expect(ReaderFushiSource.instance.supportsAuthorEdit, isTrue);
     });
 
     test('setAuthorFromMediaItem writes the author into epubBooks.author',
@@ -505,9 +505,9 @@ void main() {
       MediaSource.setDatabase(db);
       await db.insertEpubBook(bookWithAuthor('Kokoro'));
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       final item = MediaItem(
-        mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor('Kokoro'),
+        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('Kokoro'),
         title: 'Kokoro',
         mediaTypeIdentifier: source.mediaType.uniqueKey,
         mediaSourceIdentifier: source.uniqueKey,
@@ -535,7 +535,7 @@ void main() {
       expect(MangaHibikiSource.instance.supportsAuthorEdit, isTrue);
 
       final item = MediaItem(
-        mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor('MangaVol1'),
+        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('MangaVol1'),
         title: 'MangaVol1',
         mediaTypeIdentifier: MangaHibikiSource.instance.mediaType.uniqueKey,
         mediaSourceIdentifier: MangaHibikiSource.instance.uniqueKey,
@@ -549,7 +549,7 @@ void main() {
 
       final row = await db.getEpubBook('MangaVol1');
       expect(row!.author, '藤本タツキ',
-          reason: '漫画作者编辑委托 ReaderHibikiSource 写同一 epubBooks.author 列');
+          reason: '漫画作者编辑委托 ReaderFushiSource 写同一 epubBooks.author 列');
     });
 
     test('setAuthorFromMediaItem trims and clears a blank author to NULL',
@@ -559,9 +559,9 @@ void main() {
       MediaSource.setDatabase(db);
       await db.insertEpubBook(bookWithAuthor('Botchan', author: '夏目漱石'));
 
-      final source = ReaderHibikiSource.instance;
+      final source = ReaderFushiSource.instance;
       final item = MediaItem(
-        mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor('Botchan'),
+        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('Botchan'),
         title: 'Botchan',
         mediaTypeIdentifier: source.mediaType.uniqueKey,
         mediaSourceIdentifier: source.uniqueKey,
@@ -595,7 +595,7 @@ void main() {
     });
   });
 
-  group('ReaderHibikiSource.deleteBook honesty (BUG-439)', () {
+  group('ReaderFushiSource.deleteBook honesty (BUG-439)', () {
     final TestWidgetsFlutterBinding binding =
         TestWidgetsFlutterBinding.ensureInitialized();
     late Directory ppDir;
@@ -636,7 +636,7 @@ void main() {
       await db.insertEpubBook(epubBook('Kokoro'));
 
       final DeleteBookResult result =
-          await ReaderHibikiSource.instance.deleteBook(
+          await ReaderFushiSource.instance.deleteBook(
         db: db,
         bookKey: 'Kokoro',
       );
@@ -658,10 +658,10 @@ void main() {
       // TODO-1359：失败结果必须携带原因（供 toast 展示 + 已写入 ErrorLogService），
       // 不能只回一个信息全无的 bool。
       final DeleteBookResult emptyKeyResult =
-          await ReaderHibikiSource.instance.deleteBook(db: db, bookKey: '');
+          await ReaderFushiSource.instance.deleteBook(db: db, bookKey: '');
       expect(emptyKeyResult.deleted, isFalse);
       expect(emptyKeyResult.failureReason, isNotNull);
-      final DeleteBookResult missingKeyResult = await ReaderHibikiSource
+      final DeleteBookResult missingKeyResult = await ReaderFushiSource
           .instance
           .deleteBook(db: db, bookKey: 'no-such-book');
       expect(missingKeyResult.deleted, isFalse);
@@ -669,7 +669,7 @@ void main() {
     });
   });
 
-  group('ReaderHibikiSource.deleteBook TODO-1359 (删不掉 + 无原因)', () {
+  group('ReaderFushiSource.deleteBook TODO-1359 (删不掉 + 无原因)', () {
     final TestWidgetsFlutterBinding binding =
         TestWidgetsFlutterBinding.ensureInitialized();
     late Directory ppDir;
@@ -724,7 +724,7 @@ void main() {
         importedAt: DateTime.now().millisecondsSinceEpoch,
       ));
 
-      final DeleteBookResult result = await ReaderHibikiSource.instance
+      final DeleteBookResult result = await ReaderFushiSource.instance
           .deleteBook(db: db, bookKey: 'LockedBook');
 
       // The DB row (source of truth) is gone → this book is deleted for the
@@ -740,7 +740,7 @@ void main() {
     // 让 deleteBookDir 抛出的异常重新冒泡到最外层 catch → 又回到「删不掉」。
     test('post-DB on-disk cleanups are wrapped in a tolerant try/catch', () {
       final String src = File(
-        'lib/src/media/sources/reader_hibiki_source.dart',
+        'lib/src/media/sources/reader_fushi_source.dart',
       ).readAsStringSync();
       final int start = src.indexOf('Future<DeleteBookResult> deleteBook(');
       final int end =
@@ -751,7 +751,7 @@ void main() {
 
       final int rowDelete = body.indexOf('deleteEpubBook(bookKey');
       final int cleanupCatch =
-          body.indexOf("'ReaderHibikiSource.deleteBook.cleanup'");
+          body.indexOf("'ReaderFushiSource.deleteBook.cleanup'");
       final int diskCleanup = body.indexOf('EpubStorage.deleteBookDir(');
       final int vacuum = body.indexOf("customStatement('VACUUM')");
       expect(rowDelete, greaterThanOrEqualTo(0));
@@ -774,7 +774,7 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
-      final DeleteBookResult result = await ReaderHibikiSource.instance
+      final DeleteBookResult result = await ReaderFushiSource.instance
           .deleteBook(db: db, bookKey: 'ghost-shelf-entry');
       expect(result.deleted, isFalse);
       expect(result.failureReason, isNotNull);
@@ -784,7 +784,7 @@ void main() {
   });
 
   group(
-      'ReaderHibikiSource book-key identifier round-trip '
+      'ReaderFushiSource book-key identifier round-trip '
       '(BUG-658 / TODO-1344 特殊字符标题导入后打不开/删不掉)', () {
     // deleteBook resolves on-disk persist/extract dirs via path_provider.
     final TestWidgetsFlutterBinding binding =
@@ -834,9 +834,9 @@ void main() {
         'Solo~ttu-star~Book', // star sentinel, no %
       ];
       for (final String key in keys) {
-        final String id = ReaderHibikiSource.mediaIdentifierFor(key);
+        final String id = ReaderFushiSource.mediaIdentifierFor(key);
         expect(
-          ReaderHibikiSource.parseBookKey(id),
+          ReaderFushiSource.parseBookKey(id),
           key,
           reason: 'identifier "$id" must decode back to the exact stored key',
         );
@@ -849,24 +849,24 @@ void main() {
       expect(sanitizeTtuFilename(gouTitle), gouKey);
       expect(sanitizeTtuFilename(androidsTitle), androidsKey);
       expect(
-        ReaderHibikiSource.parseBookKey(
-            ReaderHibikiSource.mediaIdentifierFor(gouKey)),
+        ReaderFushiSource.parseBookKey(
+            ReaderFushiSource.mediaIdentifierFor(gouKey)),
         gouKey,
       );
       expect(
-        ReaderHibikiSource.parseBookKey(
-            ReaderHibikiSource.mediaIdentifierFor(androidsKey)),
+        ReaderFushiSource.parseBookKey(
+            ReaderFushiSource.mediaIdentifierFor(androidsKey)),
         androidsKey,
       );
     });
 
     test('parseBookKey returns null for non-book identifiers', () {
-      expect(ReaderHibikiSource.parseBookKey('srt_abc'), isNull);
-      expect(ReaderHibikiSource.parseBookKey('about:blank'), isNull);
-      expect(ReaderHibikiSource.parseBookKey(''), isNull);
-      expect(ReaderHibikiSource.parseBookKey('fushi://book/'), isNull,
+      expect(ReaderFushiSource.parseBookKey('srt_abc'), isNull);
+      expect(ReaderFushiSource.parseBookKey('about:blank'), isNull);
+      expect(ReaderFushiSource.parseBookKey(''), isNull);
+      expect(ReaderFushiSource.parseBookKey('fushi://book/'), isNull,
           reason: 'empty remainder is not a valid key');
-      expect(ReaderHibikiSource.parseBookKey('fushi://video/x'), isNull);
+      expect(ReaderFushiSource.parseBookKey('fushi://video/x'), isNull);
     });
 
     test(
@@ -893,8 +893,8 @@ void main() {
       // parses the key back out of that identifier. Before the fix this decoded
       // `%3F`->`?`, so the lookup returned null → book_file_not_found + delete
       // returned false (the exact reported symptom).
-      final String identifier = ReaderHibikiSource.mediaIdentifierFor(key);
-      final String? parsed = ReaderHibikiSource.parseBookKey(identifier);
+      final String identifier = ReaderFushiSource.mediaIdentifierFor(key);
+      final String? parsed = ReaderFushiSource.parseBookKey(identifier);
       expect(parsed, key);
 
       // Open path: getEpubBook(parsedKey) must find the row.
@@ -904,16 +904,16 @@ void main() {
       // Delete path: deleteBook(parsedKey) must actually remove it and report
       // success (not the false / "删不掉" dead-end).
       final DeleteBookResult delResult =
-          await ReaderHibikiSource.instance.deleteBook(db: db, bookKey: parsed);
+          await ReaderFushiSource.instance.deleteBook(db: db, bookKey: parsed);
       expect(delResult.deleted, isTrue);
       expect(await db.getEpubBook(key), isNull);
     });
   });
 
-  group('ReaderHibikiSource author wiring guards (BUG-220 子3 源码守卫)', () {
+  group('ReaderFushiSource author wiring guards (BUG-220 子3 源码守卫)', () {
     test('_bookToMediaItem fills MediaItem.author from the EpubBookRow', () {
       final String source = File(
-        'lib/src/media/sources/reader_hibiki_source.dart',
+        'lib/src/media/sources/reader_fushi_source.dart',
       ).readAsStringSync();
       // The shelf MediaItem must carry the DB author so the detail dialog shows
       // it; missing this line regresses BUG-220 子3-a (author never displayed).
@@ -922,7 +922,7 @@ void main() {
 
     test('author override writes back to epubBooks.author column', () {
       final String source = File(
-        'lib/src/media/sources/reader_hibiki_source.dart',
+        'lib/src/media/sources/reader_fushi_source.dart',
       ).readAsStringSync();
       expect(source, contains('bool get supportsAuthorEdit => true'));
       expect(source, contains('updateEpubBookAuthor'));
@@ -1046,7 +1046,7 @@ void main() {
         '_bookToMediaItem 把 computeBookProgress 结果喂进 MediaItem.position/duration '
         '(锁死「算了没接上」)', () {
       final String source = File(
-        'lib/src/media/sources/reader_hibiki_source.dart',
+        'lib/src/media/sources/reader_fushi_source.dart',
       ).readAsStringSync();
       // 修复必须真接上渲染：_bookToMediaItem 调 computeBookProgress 并用它的
       // position/duration 建 MediaItem。断了这根线(PM 怀疑的「char_offset 纳入了但渲染
@@ -1177,7 +1177,7 @@ void main() {
 
     test('源码守卫：_bookToMediaItem 把 normCharOffset 传进 computeBookProgress', () {
       final String source = File(
-        'lib/src/media/sources/reader_hibiki_source.dart',
+        'lib/src/media/sources/reader_fushi_source.dart',
       ).readAsStringSync();
       // 断了这根线（只传 charOffset）就退回 BUG-728 症状：听书进度停在章边界。
       expect(source, contains('normCharOffset: pos?.normCharOffset'));

@@ -98,7 +98,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 85 个页面实现，主要包括：
 - `home_page.dart` -- 首页外壳；`home_dashboard_page.dart` -- 首页 dashboard；同级 tab 页 `home_reader_page.dart` / `home_video_page.dart` / `home_game_page.dart` / `home_dictionary_page.dart`。
-- `reader_hibiki_page.dart` (~3200 行主体 + `reader_hibiki/` 下 8 个域 part 文件) -- 核心阅读器页面：
+- `reader_fushi_page.dart` (~3200 行主体 + `reader_fushi/` 下 8 个域 part 文件) -- 核心阅读器页面：
   - **WebView 架构**: `InAppWebView` + `fushi.local` 虚拟域名拦截（`shouldInterceptRequest`），EPUB HTML/CSS/字体/图片全部经过安全校验后在拦截器中提供。
   - **分页系统**: JS 端 `fushiReader` 分页引擎 + Dart 端 `ReaderPaginationScripts`，支持分页/连续两种模式。
   - **文本选择**: JS `onTextSelected` → Dart `ReaderSelectionData` → 词典查询 → 浮层展示。
@@ -109,7 +109,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
   - **阅读统计**: `ReadingTimeTracker` + 字符计数，session 级别统计。
   - **Profile 系统**: 按 bookUid + mediaType 自动解析并切换 Profile。
   - **自定义字体**: 白名单校验 + 文件头魔数验证（TrueType/OpenType/WOFF/WOFF2/TTC）。
-- `reader_hibiki_history_page.dart` -- 阅读器与书架。
+- `reader_fushi_history_page.dart` -- 阅读器与书架。
 - `dictionary_*` 系列 -- 词典相关页面。
 - 设置：schema 化体系在 `lib/src/settings/`（`settings_home_page.dart` 主从入口 + `settings_schema_*.dart` 各分类 schema）；`hibiki_settings_page.dart` 是应用内入口壳，`anki_settings_page.dart` / `shortcut_settings_page.dart` / `miscellaneous_settings_page.dart` 走 `SettingsDestination.body` 逃生口（旧 `display_settings_page.dart` / `switch_settings_page.dart` 已删除）。
 - `profile_management_page.dart` -- Profile 管理。

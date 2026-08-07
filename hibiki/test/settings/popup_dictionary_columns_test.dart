@@ -96,7 +96,7 @@ void main() {
                     context: context,
                     appModel: appModel,
                     ref: ref,
-                    readerSource: ReaderHibikiSource.instance,
+                    readerSource: ReaderFushiSource.instance,
                     refresh: () => setState(() {}),
                   );
                   return const MaterialSettingsRenderer().buildDetailContent(
@@ -120,11 +120,11 @@ void main() {
     MediaSource.setDatabase(db);
     final ReaderSettings readerSettings = ReaderSettings(db);
     await readerSettings.refreshFromDb();
-    ReaderHibikiSource.readerSettings = readerSettings;
+    ReaderFushiSource.readerSettings = readerSettings;
   });
 
   tearDown(() async {
-    ReaderHibikiSource.readerSettings = null;
+    ReaderFushiSource.readerSettings = null;
     await db.close();
   });
 
@@ -166,7 +166,7 @@ void main() {
                   context: context,
                   appModel: appModel,
                   ref: ref,
-                  readerSource: ReaderHibikiSource.instance,
+                  readerSource: ReaderFushiSource.instance,
                   refresh: () {},
                 );
                 return const SizedBox();

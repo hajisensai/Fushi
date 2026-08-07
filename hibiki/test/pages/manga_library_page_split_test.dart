@@ -9,10 +9,10 @@ import 'package:fushi/src/media/manga/manga_library_page.dart';
 import 'package:fushi/src/media/manga/manga_sources_page.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/manga_hibiki_source.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 
 import '../helpers/source_guard.dart';
 
@@ -40,7 +40,7 @@ MediaItem _item(String identifier, String sourceKey) => MediaItem(
 void main() {
   final MediaItem manga1 = _item('m1', MangaHibikiSource.kUniqueKey);
   final MediaItem manga2 = _item('m2', MangaHibikiSource.kUniqueKey);
-  final MediaItem novel = _item('n1', ReaderHibikiSource.instance.uniqueKey);
+  final MediaItem novel = _item('n1', ReaderFushiSource.instance.uniqueKey);
   final MediaItem other = _item('o1', 'some_other_source');
   final List<MediaItem> corpus = <MediaItem>[manga1, novel, manga2, other];
 
@@ -106,8 +106,8 @@ void main() {
       );
       final Widget shelf = shell.views.first.builder(
           tester.element(find.byType(SizedBox)), const SizedBox.shrink());
-      expect(shelf, isA<ReaderHibikiHistoryPage>());
-      expect((shelf as ReaderHibikiHistoryPage).mangaOnly, isTrue);
+      expect(shelf, isA<ReaderFushiHistoryPage>());
+      expect((shelf as ReaderFushiHistoryPage).mangaOnly, isTrue);
       // 「浏览」是在线来源清单（mokuro.moe 与已启用 Mihon 源并列），不是别的域的页。
       expect(
         shell.views[1].builder(
@@ -126,7 +126,7 @@ void main() {
         isA<ModuleSettingsView>(),
       );
       // 反向锚：普通书架的默认值必须仍是 false，否则漫画会在两边都出现。
-      expect(const ReaderHibikiHistoryPage().mangaOnly, isFalse);
+      expect(const ReaderFushiHistoryPage().mangaOnly, isFalse);
     });
 
     test('导航形态与扩展宿主是否可用完全解耦（iOS/Linux 同构）', () {

@@ -14,7 +14,7 @@ void main() {
       'BUG-748: _fushiVnTapIsBlank uses client-rect hit-test, not just a '
       'clamped text-node check', () {
     final String src = File(
-      'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+      'lib/src/pages/implementations/reader_fushi/webview.part.dart',
     ).readAsStringSync();
 
     final int fnStart = src.indexOf('function _fushiVnTapIsBlank(');

@@ -93,7 +93,7 @@ void main() {
     test('reader toggles setImageChapterPauseActive at sequence entry/exit',
         () {
       final String src = File(
-        'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+        'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
       ).readAsStringSync();
       expect(
           src.contains('controller.setImageChapterPauseActive(true);'), isTrue);

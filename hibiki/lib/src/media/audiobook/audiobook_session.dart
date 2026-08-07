@@ -676,7 +676,7 @@ class SessionBookInfo {
   final Audiobook audiobook;
   final String title;
 
-  /// 媒体标识（用于「回到书」时按 source 打开，如 `reader_hibiki://book/<key>`）。
+  /// 媒体标识（用于「回到书」时按 source 打开，如 `reader_fushi://book/<key>`）。
   final String mediaIdentifier;
 
   /// True only when this session was resolved from the SrtBooks table.

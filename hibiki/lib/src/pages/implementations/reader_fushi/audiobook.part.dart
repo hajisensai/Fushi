@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from reader_hibiki_page.dart (TODO-589 batch5).
-part of '../reader_hibiki_page.dart';
+// GENERATED-NOTE: extracted from reader_fushi_page.dart (TODO-589 batch5).
+part of '../reader_fushi_page.dart';
 
 /// TODO-746　SRT cue cross-chapter in-chapter progress (0..1). When
 /// `span = last - first <= 0` (single-cue chapter / no resolvable in-chapter
@@ -125,7 +125,7 @@ List<int> imageOnlyChaptersToPauseBetween({
 /// orchestrator (`_initBook`) and the audiobook chrome (`_buildAudiobookBar`
 /// / `buildPopupAudioControls` / `_currentChapterLabel`) remain in the shell,
 /// reachable via the shared private class scope.
-extension _ReaderAudiobook on _ReaderHibikiPageState {
+extension _ReaderAudiobook on _ReaderFushiPageState {
   Future<void> _resolveAndApplyProfile(
     FushiDatabase db, {
     ProfileMediaKind? mediaTypeOverride,
@@ -172,15 +172,15 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   Future<void> _resolveProfileAndSettings(FushiDatabase db) async {
     await _resolveAndApplyProfile(db);
     if (!mounted) return;
-    if (ReaderHibikiSource.readerSettings == null) {
+    if (ReaderFushiSource.readerSettings == null) {
       final ReaderSettings rs = ReaderSettings(db);
       await rs.refreshFromDb();
-      ReaderHibikiSource.readerSettings = rs;
+      ReaderFushiSource.readerSettings = rs;
     }
   }
 
   void _setupVolumeKeyHandlers() {
-    final ReaderHibikiSource src = ReaderHibikiSource.instance;
+    final ReaderFushiSource src = ReaderFushiSource.instance;
     VolumeKeyChannel.instance.setHandlers(
       onVolumeUp: () => _onVolumeKey(isUp: true),
       onVolumeDown: () => _onVolumeKey(isUp: false),
@@ -191,9 +191,9 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   }
 
   void _onVolumeKey({required bool isUp}) {
-    final ReaderHibikiSource src = ReaderHibikiSource.instance;
+    final ReaderFushiSource src = ReaderFushiSource.instance;
     // 音量键翻页/句子导航共用固定节流（原可调「翻页速度」已移除，TODO-737）。
-    final int speedMs = ReaderHibikiSource.defaultScrollingSpeed;
+    final int speedMs = ReaderFushiSource.defaultScrollingSpeed;
     final bool inverted = src.volumePageTurningInverted;
     final bool goForward = inverted ? isUp : !isUp;
 
@@ -279,7 +279,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
 
     if (_audiobookController == null && _lyricsMode) {
       _lyricsMode = false;
-      await ReaderHibikiSource.instance.setLyricsMode(false);
+      await ReaderFushiSource.instance.setLyricsMode(false);
     }
   }
 
@@ -322,7 +322,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         cues: req.cues,
       );
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHibiki.startSession', e, stack);
+      ErrorLogService.instance.log('ReaderFushi.startSession', e, stack);
       debugPrint('[ReaderFushi] audiobook session start failed: $e');
       if (mounted) {
         FushiToast.show(
@@ -1085,7 +1085,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         // TODO-1005 / BUG-472：此前只 debugPrint，in-app 日志页空白。补 ErrorLogService
         // 让「ffmpeg 还没跑就失败」也落进可查日志。
         ErrorLogService.instance.log(
-          'ReaderHibiki.exportClip.emptySelection',
+          'ReaderFushi.exportClip.emptySelection',
           'empty/gaiji-only selection (no renderable text); '
               'audioFileCount=$audioFileCount',
           StackTrace.current,
@@ -1101,7 +1101,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         );
         // TODO-1005 / BUG-472：此前只 debugPrint，in-app 日志页空白。补 ErrorLogService。
         ErrorLogService.instance.log(
-          'ReaderHibiki.exportClip.noAudio',
+          'ReaderFushi.exportClip.noAudio',
           'no audio files for this book (audioFileCount=$audioFileCount); '
               'selectedText="${selectedText.trim()}"',
           StackTrace.current,
@@ -1119,7 +1119,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           'audioFileCount=$audioFileCount.',
         );
         ErrorLogService.instance.log(
-          'ReaderHibiki.exportClip.unsupportedRange',
+          'ReaderFushi.exportClip.unsupportedRange',
           'selection has no single-file cue range (cross-chapter/cross-file)',
           StackTrace.current,
         );
@@ -1136,7 +1136,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           '> ${kAudiobookClipMaxDurationMs}ms) — refusing export.',
         );
         ErrorLogService.instance.log(
-          'ReaderHibiki.exportClip.rangeTooLong',
+          'ReaderFushi.exportClip.rangeTooLong',
           'selection range too long, refusing export '
               '(durationMs=${sentenceRange == null ? -1 : sentenceRange.endMs - sentenceRange.startMs} > '
               'maxMs=$kAudiobookClipMaxDurationMs, '
@@ -1158,7 +1158,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           // TODO-1005 / BUG-472：此前只 toast、零日志，in-app 日志页空白。补
           // ErrorLogService（沿用同款 input/startMs/endMs 字段）让该兜底也可查。
           ErrorLogService.instance.log(
-            'ReaderHibiki.exportClip.inputFileNull',
+            'ReaderFushi.exportClip.inputFileNull',
             'exportable range has no input audio file '
                 '(audioFileIndex=${range.audioFileIndex}, '
                 'audioFileCount=${audioFiles.length}, '
@@ -1206,7 +1206,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
             'static to avoid cutting the wrong audio file.',
           );
           ErrorLogService.instance.log(
-            'ReaderHibiki.exportClip.audioFileIndexDivergence',
+            'ReaderFushi.exportClip.audioFileIndexDivergence',
             'dynamic audioFileIndex=${dynamicPlan.audioFileIndex} '
                 '!= static range.audioFileIndex=${range.audioFileIndex}; '
                 'dropping dynamic plan, falling back to single-cue static '
@@ -1411,7 +1411,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         // 也曾静默）。在管线层补一条带完整上下文的 ErrorLogService，连同底层日志一起
         // 让用户/排障能看到「在哪一步、裁哪段、哪个文件」失败。
         ErrorLogService.instance.log(
-          'ReaderHibiki.exportClip.audioClipFailed',
+          'ReaderFushi.exportClip.audioClipFailed',
           'extractAudioSegmentViaFfmpeg returned null '
               '(startMs=$clipStartMs, endMs=$clipEndMs, '
               'durationMs=${clipEndMs - clipStartMs}, input=${inputFile.path})',
@@ -1430,7 +1430,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       if (overlay == null) {
         // TODO-1005 / BUG-472：离屏渲染缺 Overlay 此前只 toast、零日志。
         ErrorLogService.instance.log(
-          'ReaderHibiki.exportClip.noOverlay',
+          'ReaderFushi.exportClip.noOverlay',
           'no Overlay available for offscreen text render '
               '(text="$text")',
           StackTrace.current,
@@ -1476,7 +1476,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           await _deleteClipFramesDir(framesDir);
           framesDir = null;
           ErrorLogService.instance.log(
-            'ReaderHibiki.exportClip.dynamicFallback',
+            'ReaderFushi.exportClip.dynamicFallback',
             'dynamic multi-cue clip synth failed, falling back to static '
                 '(cues=${dynamicPlan.cueSpans.length})',
             StackTrace.current,
@@ -1505,7 +1505,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         if (pngBytes == null) {
           // TODO-1005 / BUG-472：文本图渲染失败此前只 toast、零日志。
           ErrorLogService.instance.log(
-            'ReaderHibiki.exportClip.textRenderFailed',
+            'ReaderFushi.exportClip.textRenderFailed',
             'renderAudiobookClipTextToPng returned null (text="$text")',
             StackTrace.current,
           );
@@ -1525,7 +1525,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
             await encodeClipTextFrameAsJpgAsync(pngBytes);
         if (jpgBytes == null) {
           ErrorLogService.instance.log(
-            'ReaderHibiki.exportClip.jpgEncodeFailed',
+            'ReaderFushi.exportClip.jpgEncodeFailed',
             'encodeClipTextFrameAsJpgAsync returned null '
                 '(pngLen=${pngBytes.length}, text="$text")',
             StackTrace.current,
@@ -1559,7 +1559,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           // 让失败原因（inputMissing / ffmpegUnavailable / ffmpegFailed / outputMissing）
           // 与上下文一起出现在 in-app 日志页。
           ErrorLogService.instance.log(
-            'ReaderHibiki.exportClip.synthFailed',
+            'ReaderFushi.exportClip.synthFailed',
             'video synth failed: ${synth.failure} ${synth.detail ?? ''}',
             StackTrace.current,
           );
@@ -1613,7 +1613,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       }
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHibiki.exportClip.pipeline', e, stack);
+          .log('ReaderFushi.exportClip.pipeline', e, stack);
       debugPrint('[ReaderFushi] export-clip pipeline error: $e');
       if (mounted) {
         FushiToast.show(
@@ -1782,7 +1782,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         '${synth.failure} ${synth.detail ?? ''}',
       );
       ErrorLogService.instance.log(
-        'ReaderHibiki.exportClip.dynamicSynthFailed',
+        'ReaderFushi.exportClip.dynamicSynthFailed',
         'dynamic seq video synth failed: ${synth.failure} '
             '${synth.detail ?? ''} (frames=$frameNo)',
         StackTrace.current,
@@ -1831,7 +1831,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       // 导入了新音频：强制重 load（停旧会话再起新），否则同书会复用旧控制器不换源。
       await _resolveAudioSlot(forceReload: true);
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHibiki.openAudioImport', e, stack);
+      ErrorLogService.instance.log('ReaderFushi.openAudioImport', e, stack);
       debugPrint('[ReaderFushi] resolveAudioSlot after import failed: $e');
     }
     if (mounted) _rebuild(() {});
@@ -1874,7 +1874,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
             msg: t.audiobook_import_success, severity: ToastSeverity.success);
       }
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHibiki.srtBookAudioPicker', e, stack);
+      ErrorLogService.instance.log('ReaderFushi.srtBookAudioPicker', e, stack);
       debugPrint('[ReaderFushi] srtBookAudioPicker failed: $e');
       if (mounted) {
         FushiToast.show(

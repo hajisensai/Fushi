@@ -3,7 +3,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 
 /// 漫画库的拖入曾是个功能空洞：`MangaLibraryPage` 只是
-/// `ReaderHibikiHistoryPage(mangaOnly: true)` 的壳，白拿了书架的 drop target，但
+/// `ReaderFushiHistoryPage(mangaOnly: true)` 的壳，白拿了书架的 drop target，但
 /// 分类与决策两层从没加过漫画语义——拖 `.mokuro` / `.cbz` / 页图**目录**进去全部
 /// 静默无反应（分类落 unknown → decideDropIntent 返回 ignore），而这些东西按钮
 /// 导入路径全都支持。拖 `.cbr` 同样静默。

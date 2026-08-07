@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/shortcuts/reader_space_override.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-1370 / BUG-687：长按左右键连续切句 / 连续翻页。
 ///

@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show imagePageProgressAnchor;
 
 import '../helpers/source_guard.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-796 (Bug 1)：在目录里「导航到封面」时顶部阅读进度（百分比）不刷新。
 ///

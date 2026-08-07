@@ -18,7 +18,7 @@ void main() {
       expect(playback, contains('playAudioRef('));
       expect(
         playback,
-        contains('volume: ReaderHibikiSource.instance.lookupAudioVolumeGain'),
+        contains('volume: ReaderFushiSource.instance.lookupAudioVolumeGain'),
         reason: 'the Dart fallback (playLookupAudio) must still pass the '
             'configured volume',
       );

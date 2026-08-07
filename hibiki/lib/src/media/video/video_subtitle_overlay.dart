@@ -331,7 +331,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
 
   /// TODO-756b：是否“鼠标悬停即自动查词”。true 时 [_handleShiftHover] 不再要求按住
   /// Shift，纯悬停划过字幕字符即经 [onCharHover] 查词；false 时退回 756a 的
-  /// Shift+悬停门控。由页面侧从 `ReaderHibikiSource.instance.hoverAutoLookup` 传入。
+  /// Shift+悬停门控。由页面侧从 `ReaderFushiSource.instance.hoverAutoLookup` 传入。
   /// 移动端无 OS hover，本标志为何值都不产生 hover 事件、自然不触发。
   final bool hoverAutoLookupEnabled;
 

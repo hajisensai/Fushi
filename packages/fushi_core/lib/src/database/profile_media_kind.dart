@@ -4,7 +4,7 @@
 /// `audiobook` / `lyrics` 两个「阅读模式」种类（同一本 `MediaKind.epub` 书按
 /// 是否挂有声书 / 字幕 / 歌词模式解析到不同 Profile 绑定），不存在
 /// `MediaKind → ProfileMediaKind` 的忠实映射——解析依赖运行时挂载状态
-/// （见 reader_hibiki `_resolveAndApplyProfile`），不是静态种类换算。
+/// （见 reader_fushi `_resolveAndApplyProfile`），不是静态种类换算。
 library;
 
 /// Profile 绑定的媒体种类（命名统一 Phase 3.4，模式照 `SentenceSourceKind` /

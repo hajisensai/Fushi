@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫（TODO-633 制卡历史）：制卡成功的**三条**真实路径都必须额外落一条

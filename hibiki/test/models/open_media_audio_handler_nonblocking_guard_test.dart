@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// 开媒体反馈守卫（渐进重建 phase2）：audio_service 冷启不得阻塞 Navigator.push。
 ///

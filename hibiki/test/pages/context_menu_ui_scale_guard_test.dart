@@ -243,9 +243,9 @@ void main() {
 
     test('阅读器菜单 / 选区操作条：不得手动乘界面缩放', () {
       final String chrome =
-          read('lib/src/pages/implementations/reader_hibiki/chrome.part.dart');
+          read('lib/src/pages/implementations/reader_fushi/chrome.part.dart');
       final String shell =
-          read('lib/src/pages/implementations/reader_hibiki_page.dart');
+          read('lib/src/pages/implementations/reader_fushi_page.dart');
 
       // 注释里可以解释这段历史，但代码里不能再出现该 getter 与乘法。
       expect(

@@ -19,16 +19,16 @@ import 'package:flutter_test/flutter_test.dart';
 ///     与设置热更新（onSettingsChangedLive）都调用它。
 void main() {
   final String webviewPart = File(
-    'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+    'lib/src/pages/implementations/reader_fushi/webview.part.dart',
   ).readAsStringSync();
   final String lookupPart = File(
-    'lib/src/pages/implementations/reader_hibiki/lookup.part.dart',
+    'lib/src/pages/implementations/reader_fushi/lookup.part.dart',
   ).readAsStringSync();
   final String chromePart = File(
-    'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+    'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
   ).readAsStringSync();
   final String mainShell = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
+    'lib/src/pages/implementations/reader_fushi_page.dart',
   ).readAsStringSync();
 
   test('setup script seeds the tap gate mirror with live Dart truth', () {

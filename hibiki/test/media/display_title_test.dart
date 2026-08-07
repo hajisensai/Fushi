@@ -16,7 +16,7 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  final ReaderHibikiSource source = ReaderHibikiSource.instance;
+  final ReaderFushiSource source = ReaderFushiSource.instance;
 
   /// 与 `_overrideTitleForIdentifier` 同款合成 item（canEdit:true 是坑位——
   /// false 时 getOverrideTitleFromMediaItem 静默返 null）。
@@ -42,7 +42,7 @@ void main() {
   group('displayTitleForBook', () {
     test('bookKey 通道：无 override 回退 raw，有 override 返回 override', () async {
       const String bookKey = 'p4_facade_book_a';
-      final String id = ReaderHibikiSource.mediaIdentifierFor(bookKey);
+      final String id = ReaderFushiSource.mediaIdentifierFor(bookKey);
       addTearDown(() => setOverride(id, null));
 
       expect(
@@ -58,7 +58,7 @@ void main() {
 
     test('srtUid 通道：standalone SRT 身份独立解析', () async {
       const String uid = 'p4_facade_srt_a';
-      final String id = ReaderHibikiSource.mediaIdentifierForSrtUid(uid);
+      final String id = ReaderFushiSource.mediaIdentifierForSrtUid(uid);
       addTearDown(() => setOverride(id, null));
 
       expect(displayTitleForBook(srtUid: uid, rawTitle: '字幕书'), '字幕书');
@@ -69,8 +69,8 @@ void main() {
     test('双通道分派：bookKey 非空压过 srtUid，bookKey 空串回落 srtUid', () async {
       const String bookKey = 'p4_facade_book_b';
       const String uid = 'p4_facade_srt_b';
-      final String epubId = ReaderHibikiSource.mediaIdentifierFor(bookKey);
-      final String srtId = ReaderHibikiSource.mediaIdentifierForSrtUid(uid);
+      final String epubId = ReaderFushiSource.mediaIdentifierFor(bookKey);
+      final String srtId = ReaderFushiSource.mediaIdentifierForSrtUid(uid);
       addTearDown(() => setOverride(epubId, null));
       addTearDown(() => setOverride(srtId, null));
 
@@ -90,7 +90,7 @@ void main() {
 
     test('item 通道：canEdit:false 静默拿不到 override（坑位守卫），true 正常', () async {
       const String bookKey = 'p4_facade_book_c';
-      final String id = ReaderHibikiSource.mediaIdentifierFor(bookKey);
+      final String id = ReaderFushiSource.mediaIdentifierFor(bookKey);
       addTearDown(() => setOverride(id, null));
       await setOverride(id, '新名C');
 
@@ -177,7 +177,7 @@ void main() {
   group('displayTitleForStatRow', () {
     test('反查不到 bookKey 原样返回；命中后走 bookKey override 通道', () async {
       const String bookKey = 'p4_facade_stat_a';
-      final String id = ReaderHibikiSource.mediaIdentifierFor(bookKey);
+      final String id = ReaderFushiSource.mediaIdentifierFor(bookKey);
       addTearDown(() => setOverride(id, null));
       final Map<String, String> byTitle = <String, String>{'统计原名': bookKey};
 

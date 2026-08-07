@@ -5,11 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart'
-    show ReaderHibikiSource;
+import 'package:fushi/src/media/sources/reader_fushi_source.dart'
+    show ReaderFushiSource;
 import 'package:fushi/src/models/app_model.dart' show AppModel;
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
-    show ReaderHibikiPage;
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
+    show ReaderFushiPage;
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart' show readyAppModel, seedReaderBook;
@@ -104,7 +104,7 @@ void main() {
           }
 
           // Capture originals so we restore global prefs at the end.
-          final ReaderHibikiSource src = ReaderHibikiSource.instance;
+          final ReaderFushiSource src = ReaderFushiSource.instance;
           final double origMt = src.readerMarginTop;
           final double origMb = src.readerMarginBottom;
           final double origFont = src.readerFontSize;
@@ -135,7 +135,7 @@ void main() {
           await _waitFor(tester, _contentReady, 'hoshi content');
 
           final Future<dynamic> Function(String source)? runJs =
-              ReaderHibikiPage.debugEvaluateJavascript;
+              ReaderFushiPage.debugEvaluateJavascript;
           expect(runJs, isNotNull,
               reason: 'reader must expose debugEvaluateJavascript hook');
 

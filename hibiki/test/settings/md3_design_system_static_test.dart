@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 import '../pages/reader_history_source_corpus.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 import '../sync/sync_settings_schema_source_corpus.dart';
 import '../helpers/scan_scale.dart';
 
@@ -136,7 +136,7 @@ void main() {
       'AdaptiveSettingsSection',
       'FushiFilePickerRow',
     ],
-    'lib/src/pages/implementations/reader_hibiki_history_page.dart': <String>[
+    'lib/src/pages/implementations/reader_fushi_history_page.dart': <String>[
       'FushiPageHeader',
       'FushiCard',
       'FushiTagChip',
@@ -311,7 +311,7 @@ void main() {
       final File file = File(entry.key);
       expect(file.existsSync(), isTrue, reason: '${entry.key} must exist');
       final String source =
-          entry.key.endsWith('reader_hibiki_history_page.dart')
+          entry.key.endsWith('reader_fushi_history_page.dart')
               ? readReaderHistorySource()
               : entry.key.endsWith('sync_settings_schema.dart')
                   ? readSyncSettingsSchemaSource()
@@ -328,7 +328,7 @@ void main() {
       final File file = File(entry.key);
       expect(file.existsSync(), isTrue, reason: '${entry.key} must exist');
       final String source =
-          entry.key.endsWith('reader_hibiki_history_page.dart')
+          entry.key.endsWith('reader_fushi_history_page.dart')
               ? readReaderHistorySource()
               : entry.key.endsWith('sync_settings_schema.dart')
                   ? readSyncSettingsSchemaSource()
@@ -430,7 +430,7 @@ void main() {
         'fontSize: 13',
         'fontSize: 11',
       ],
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart': <String>[
+      'lib/src/pages/implementations/reader_fushi_history_page.dart': <String>[
         'Material(',
         'surfaceContainerLow',
         'BorderRadius.circular(12)',
@@ -626,13 +626,13 @@ void main() {
 
     for (final MapEntry<String, List<String>> entry in bannedByFile.entries) {
       final String fileSource =
-          entry.key.endsWith('reader_hibiki_history_page.dart')
+          entry.key.endsWith('reader_fushi_history_page.dart')
               ? readReaderHistorySource()
               : entry.key.endsWith('sync_settings_schema.dart')
                   ? readSyncSettingsSchemaSource()
                   : File(entry.key).readAsStringSync();
       final String source =
-          entry.key.endsWith('reader_hibiki_history_page.dart')
+          entry.key.endsWith('reader_fushi_history_page.dart')
               ? _withoutTransparentInkHosts(
                   _functionSource(
                     fileSource,
@@ -718,7 +718,7 @@ void main() {
               'dictionary_popup_webview.',
       'lib/src/pages/implementations/history_reader_page.dart':
           'History preview uses content-derived surface and text metrics.',
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart':
+      'lib/src/pages/implementations/reader_fushi_history_page.dart':
           'Book-cover overlays and drag affordances are reader-shelf content.',
       // CoverBadge 是压在封面图上的角标胶囊（字幕/云端/播放列表等），把书架/
       // 视频卡上至少三份手抄的同款胶囊收口成一个组件。胶囊几何（radius 10）
@@ -796,24 +796,24 @@ void main() {
               'data layer with no Flutter import, same reviewed exception '
               'class as mokuro_payload / manga_ocr_folder_job / '
               'google_lens_ocr_service.',
-      'lib/src/pages/implementations/reader_hibiki_page.dart':
+      'lib/src/pages/implementations/reader_fushi_page.dart':
           'Hoshi reader content and reader chrome have separate migration rules.',
-      // TODO-589 batch1: reader_hibiki_page.dart 拆成主壳 + reader_hibiki/*.part.dart；
+      // TODO-589 batch1: reader_fushi_page.dart 拆成主壳 + reader_fushi/*.part.dart；
       // 同一份「reader content / 悬浮歌词数据」豁免随搬运延伸到 part 文件（零行为变化）。
-      'lib/src/pages/implementations/reader_hibiki/lyrics.part.dart':
+      'lib/src/pages/implementations/reader_fushi/lyrics.part.dart':
           'Lyrics-mode HTML font size and FloatingLyricStyle font size are '
               'user content passed to LyricsModeHtml / the platform overlay '
               'channel, not page chrome — same rationale as the parent '
-              'reader_hibiki_page.dart allowlist (extracted verbatim).',
+              'reader_fushi_page.dart allowlist (extracted verbatim).',
       // TODO-589 batch7: reader chrome 域(底栏/设置 sheet/进度条/主题/收藏句/图片查看)
-      // 拆到 reader_hibiki/chrome.part.dart；同一份「reader content / 阅读器 chrome」
+      // 拆到 reader_fushi/chrome.part.dart；同一份「reader content / 阅读器 chrome」
       // 豁免随搬运延伸到该 part（零行为变化，逐字符搬运自父文件）。
-      'lib/src/pages/implementations/reader_hibiki/chrome.part.dart':
+      'lib/src/pages/implementations/reader_fushi/chrome.part.dart':
           'Top reading-progress text size (_infoFontSize) and the Windows '
               'image context-menu font size are reader content / chrome, '
-              'same rationale as the parent reader_hibiki_page.dart allowlist '
+              'same rationale as the parent reader_fushi_page.dart allowlist '
               '(extracted verbatim).',
-      // BUG-1425：reader_hibiki/webview.part.dart 的豁免已删除。它的理由写的是
+      // BUG-1425：reader_fushi/webview.part.dart 的豁免已删除。它的理由写的是
       // 「shellScript 收到 fontSize: s.fontSize.round()」，但该文件如今一个禁用
       // token 都不剩（`shellScript` 这个符号在整个 lib/src 里也已不存在），豁免早与
       // 代码脱节。下面的「no dead allowlist entries」断言会让同类过期豁免立刻红。
@@ -1295,20 +1295,20 @@ void main() {
       'lib/src/pages/implementations/popup_settings_injection.dart': <String>{
         'surfaceContainerHigh'
       },
-      'lib/src/pages/implementations/reader_hibiki/chrome.part.dart': <String>{
+      'lib/src/pages/implementations/reader_fushi/chrome.part.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
         'surfaceContainerHigh',
         'surfaceContainerHighest',
         'fontSize:'
       },
-      'lib/src/pages/implementations/reader_hibiki/lyrics.part.dart': <String>{
+      'lib/src/pages/implementations/reader_fushi/lyrics.part.dart': <String>{
         'fontSize:'
       },
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart': <String>{
+      'lib/src/pages/implementations/reader_fushi_history_page.dart': <String>{
         'surfaceContainerHighest'
       },
-      'lib/src/pages/implementations/reader_hibiki_page.dart': <String>{
+      'lib/src/pages/implementations/reader_fushi_page.dart': <String>{
         'BorderRadius.circular('
       },
       'lib/src/pages/implementations/reader_history/card_widgets.part.dart':
@@ -1638,7 +1638,7 @@ void main() {
   });
 
   test('reader history hover overlays use design tokens', () {
-    // BookDragTarget 已从 reader_hibiki_history_page.dart 提取为独立文件
+    // BookDragTarget 已从 reader_fushi_history_page.dart 提取为独立文件
     // book_drag_target.dart（history 页只剩调用点），守卫跟随到新文件。
     final String source = File(
       'lib/src/pages/implementations/book_drag_target.dart',
@@ -2598,7 +2598,7 @@ void main() {
     for (final String path in <String>[
       'lib/src/pages/base_tab_page.dart',
       'lib/src/media/media_type.dart',
-      'lib/src/media/sources/reader_hibiki_source.dart',
+      'lib/src/media/sources/reader_fushi_source.dart',
     ]) {
       final String source = File(path).readAsStringSync();
       expect(source, isNot(contains('material_floating_search_bar')),
@@ -3271,7 +3271,7 @@ void main() {
 
   test('reader popup audio controls use shared MD3 micro spacing tokens', () {
     final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
+      'lib/src/pages/implementations/reader_fushi_page.dart',
     ).readAsStringSync();
     final String popupAudio = _functionSource(
       source,

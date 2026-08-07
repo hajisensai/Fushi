@@ -34,7 +34,7 @@ void main() {
           title: 't',
           format: BookFormat.epub,
         ).mediaSourceIdentifier,
-        ReaderHibikiSource.instance.uniqueKey,
+        ReaderFushiSource.instance.uniqueKey,
       );
       expect(
         buildCollectionReaderMediaItem(
@@ -54,7 +54,7 @@ void main() {
       );
     });
 
-    test('与书架列书共用同一派生点 ReaderHibikiSource.mediaSourceKeyFor', () {
+    test('与书架列书共用同一派生点 ReaderFushiSource.mediaSourceKeyFor', () {
       for (final BookFormat format in BookFormat.values) {
         expect(
           buildCollectionReaderMediaItem(
@@ -62,17 +62,17 @@ void main() {
             title: 't',
             format: format,
           ).mediaSourceIdentifier,
-          ReaderHibikiSource.mediaSourceKeyFor(format),
+          ReaderFushiSource.mediaSourceKeyFor(format),
           reason: '两条入口一旦各写各的，漫画/PDF 就会在其中一条上永远错（$format）',
         );
       }
     });
   });
 
-  group('ReaderHibikiSource.mediaSourceKeyFor', () {
+  group('ReaderFushiSource.mediaSourceKeyFor', () {
     test('三种 format 各自映射到不同的源键（不得出现两态合并）', () {
       final Set<String> keys =
-          BookFormat.values.map(ReaderHibikiSource.mediaSourceKeyFor).toSet();
+          BookFormat.values.map(ReaderFushiSource.mediaSourceKeyFor).toSet();
       expect(keys.length, BookFormat.values.length,
           reason: '任意两种 format 共用一个源键 = 其中一种被用错阅读器打开');
     });

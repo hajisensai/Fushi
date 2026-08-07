@@ -19,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///   (2) `_buildLegacyBook` 增 `{String? coverHref}` 形参并在 `EpubBook(...)` 透传，
 ///       调用点传 `bookRow?.coverPath`。
 ///
-/// 守卫断言修复结构在位；删掉任一 coverHref 透传即红。ReaderHibikiPage 过重
+/// 守卫断言修复结构在位；删掉任一 coverHref 透传即红。ReaderFushiPage 过重
 /// （WebView + 音频 + 全 ProviderContainer），无法在 widget test 可靠拉起跑
 /// `_buildBookFromDb` / `_buildLegacyBook`（皆为 State 私有方法），故落在最强可靠
 /// 可落地的源码语料层（与 reader_* 一系列 *_static_test 同纪律）。
@@ -33,7 +33,7 @@ void main() {
   test('回退路径 _buildBookFromDb / _buildLegacyBook 构造 EpubBook 时携带 coverHref',
       () {
     final String src =
-        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+        read('lib/src/pages/implementations/reader_fushi_page.dart');
 
     // 界定三段函数体的切片边界（按定义顺序：_buildBookFromDb -> _buildLegacyBook ->
     // _persistRecomputedCharCounts）。

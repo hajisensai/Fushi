@@ -14,7 +14,7 @@ library;
 import 'package:flutter/foundation.dart';
 
 import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
 /// 一个持久化字段在数据根迁移里的处置。
 enum PathRebaseKind {
@@ -133,7 +133,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       'MediaItems',
       'imageUrl',
       PathRebaseKind.documentsRooted,
-      '本地书封面存 file://<绝对路径> URI（reader_hibiki_source.dart 的 '
+      '本地书封面存 file://<绝对路径> URI（reader_fushi_source.dart 的 '
           'Uri.file(candidate)，候选全在 <documents>/fushi_books 下；SRT 书同款）。'
           '远端源存 http(s) URL，scheme 非 file 时改写器原样跳过。'),
   PathRebaseColumn('MediaItems', 'audioUrl', PathRebaseKind.notAPath,

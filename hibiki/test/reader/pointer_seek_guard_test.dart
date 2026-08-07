@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// Source-scan guard: the reader page must wire the non-left mouse button to
 /// the seek-to-clicked-sentence path (JS mousedown → onPointerSeek →
@@ -7,7 +7,7 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// from silently dropping the middle-click seek or its binding gate.
 void main() {
   // TODO-589 batch8: onPointerSeek handler + setup mousedown 已搬到
-  // reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+  // reader_fushi/webview.part.dart，改读「主壳 + 全部 part」合并语料。
   final src = readReaderPageSource();
 
   test('reader page reports non-left mouse button via onPointerSeek', () {

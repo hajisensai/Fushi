@@ -18,7 +18,7 @@ void main() {
   final File homeVideo =
       File('lib/src/pages/implementations/home_video_page.dart');
   final File historyPage =
-      File('lib/src/pages/implementations/reader_hibiki_history_page.dart');
+      File('lib/src/pages/implementations/reader_fushi_history_page.dart');
 
   late String mergeSrc;
   late String importSrc;
@@ -328,7 +328,7 @@ void main() {
 
   test('BUG-777：书架 recency 读 reader_positions.updatedAt，假名次不回潮', () {
     final String sourceSrc =
-        File('lib/src/media/sources/reader_hibiki_source.dart')
+        File('lib/src/media/sources/reader_fushi_source.dart')
             .readAsStringSync();
     // 唯一 recency 真相源（批量 DAO + provider）。
     expect(sourceSrc.contains('bookLastReadAtProvider'), isTrue,

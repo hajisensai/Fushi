@@ -5,7 +5,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 import '../pages/video_hibiki_page_source_corpus.dart';
 
 // BUG-089: a card-mining failure used to vanish — backends returned a bare
@@ -77,7 +77,7 @@ void main() {
     // channels and cannot be widget-tested directly, so we guard at the source.
     final List<String> callSites = <String>[
       'lib/src/pages/implementations/dictionary_page_mixin.dart',
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
+      'lib/src/pages/implementations/reader_fushi_page.dart',
       'lib/src/pages/implementations/floating_dict_page.dart',
       'lib/src/pages/implementations/video_hibiki_page.dart',
       'lib/src/models/app_model.dart',
@@ -101,9 +101,9 @@ void main() {
         final File f = File(path);
         expect(f.existsSync(), isTrue, reason: 'missing call site: $path');
         // TODO-589 batch2 / TODO-590 batch14: reader 与 video 的制卡方法分别搬进
-        // reader_hibiki/mining.part.dart 与 video_hibiki/lookup_mining.part.dart，
+        // reader_fushi/mining.part.dart 与 video_hibiki/lookup_mining.part.dart，
         // 读合并语料（主壳 + 全部 part）才能命中搬出去的 mineEntry / describeMineOutcome。
-        final String src = path.endsWith('reader_hibiki_page.dart')
+        final String src = path.endsWith('reader_fushi_page.dart')
             ? readReaderPageSource()
             : path.endsWith('video_hibiki_page.dart')
                 ? readVideoHibikiSource()

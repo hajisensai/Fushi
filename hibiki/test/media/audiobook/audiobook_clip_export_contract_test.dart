@@ -41,7 +41,7 @@ void main() {
 
     test('reader plan falls back before rendering differing cue text', () {
       final String source = File(
-        'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+        'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
       ).readAsStringSync();
       // BUG-1320：不可导出时不再裸 `return null`——tooLong 的窗口要透传出去
       // （否则超长选区回落单句锚，静默产出「全文卡片 + 一句声音」）。锚点只取判据本身，

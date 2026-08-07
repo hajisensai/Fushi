@@ -25,11 +25,11 @@ void main() {
   /// 当时之所以没红，仅仅因为其中一条注释恰好写成 `ExcludeFocus (see`——括号前多了
   /// 一个空格。删掉那个空格守卫立刻假红。掩码等长，计数语义不变。
   String chromeSource() => maskCommentsAndScriptLines(File(
-        'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+        'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n'));
 
   String caretSource() => maskCommentsAndScriptLines(File(
-        'lib/src/pages/implementations/reader_hibiki/caret.part.dart',
+        'lib/src/pages/implementations/reader_fushi/caret.part.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n'));
 
   test('两条底栏（有声书条 + 设置条）经单一 _wrapBottomChromeBar 外壳被 ExcludeFocus 包住', () {

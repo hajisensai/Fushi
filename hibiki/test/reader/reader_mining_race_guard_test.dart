@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/reader_fushi_page_source_corpus.dart';
 import '../helpers/source_guard.dart';
 
 /// TODO-644 / BUG-357 回归守卫：制卡并发 race（句子/cue 句 + 加粗偏移错配）。

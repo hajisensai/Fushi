@@ -4,11 +4,11 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// BUG-270 (TODO-296 B) 守卫：锁定跨章 sanitize-HTML LRU 缓存 + 下一章预取的接线。
 ///
-/// reader_hibiki_page.dart 太重（WebView + DB + profile providers）不便整页 mount，
+/// reader_fushi_page.dart 太重（WebView + DB + profile providers）不便整页 mount，
 /// 故缓存/预取/失效的接线用源码扫描守住；LRU 的淘汰/命中语义用一份与实现等价的
 /// 纯算法行为测试覆盖（证明算法正确，源码守卫证明它被正确接到三个点）。
 void main() {
@@ -19,7 +19,7 @@ void main() {
       // TODO-589 batch8: _interceptRequest / _chapterHtmlBytes /
       // _putChapterHtml / _buildSanitizedChapterHtmlBytes /
       // _prefetchAdjacentChapter / _onChapterLoadComplete 已搬到
-      // reader_hibiki/webview.part.dart，故改读「主壳 + 全部 part」合并语料。
+      // reader_fushi/webview.part.dart，故改读「主壳 + 全部 part」合并语料。
       // TODO-2527: 语料先掩码 + 窗口改花括号配对。旧写法七个窗口全是「本方法名 →
       // **下一个**方法名」的文本切片（其中两个直接切到语料尾部），窗口里夹着别的方法
       // 体和大段注释；`_kChapterHtmlCacheLimit` / `_prefetchingHtmlPath` /

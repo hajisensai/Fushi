@@ -21,14 +21,14 @@ import 'package:path/path.dart' as p;
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('ReaderHibikiSource.resolveCoverUrlFor 纯函数 last-good 回落 (BUG-513)', () {
-    setUp(ReaderHibikiSource.debugResetCoverCache);
-    tearDown(ReaderHibikiSource.debugResetCoverCache);
+  group('ReaderFushiSource.resolveCoverUrlFor 纯函数 last-good 回落 (BUG-513)', () {
+    setUp(ReaderFushiSource.debugResetCoverCache);
+    tearDown(ReaderFushiSource.debugResetCoverCache);
 
     test('探测命中：返回首个存在候选的 file 协议 URL 并写入缓存', () async {
       final Map<String, String> cache = <String, String>{};
       const String hit = '/books/Kokoro/cover.jpg';
-      final String? url = await ReaderHibikiSource.resolveCoverUrlFor(
+      final String? url = await ReaderFushiSource.resolveCoverUrlFor(
         bookKey: 'Kokoro',
         candidates: <String>[
           '/books/Kokoro/cover.jpg',
@@ -43,7 +43,7 @@ void main() {
     });
 
     test('声明封面路径优先于 cover 兜底(两者都存在时取首个)', () async {
-      final String? url = await ReaderHibikiSource.resolveCoverUrlFor(
+      final String? url = await ReaderFushiSource.resolveCoverUrlFor(
         bookKey: 'Botchan',
         candidates: <String>[
           '/books/Botchan/OEBPS/images/decl.png',
@@ -59,7 +59,7 @@ void main() {
       final Map<String, String> cache = <String, String>{};
       const String hit = '/books/Kokoro/cover.jpg';
 
-      final String? first = await ReaderHibikiSource.resolveCoverUrlFor(
+      final String? first = await ReaderFushiSource.resolveCoverUrlFor(
         bookKey: 'Kokoro',
         candidates: <String>[hit],
         probe: (String path) async => path == hit,
@@ -67,7 +67,7 @@ void main() {
       );
       expect(first, Uri.file(hit).toString());
 
-      final String? second = await ReaderHibikiSource.resolveCoverUrlFor(
+      final String? second = await ReaderFushiSource.resolveCoverUrlFor(
         bookKey: 'Kokoro',
         candidates: <String>[hit],
         probe: (String _) async => false,
@@ -79,7 +79,7 @@ void main() {
     });
 
     test('从未成功过(缓存为空)且探测落空：返回 null(不凭空捏造路径)', () async {
-      final String? url = await ReaderHibikiSource.resolveCoverUrlFor(
+      final String? url = await ReaderFushiSource.resolveCoverUrlFor(
         bookKey: 'NoCover',
         candidates: <String>['/books/NoCover/cover.jpg'],
         probe: (String _) async => false,
@@ -90,7 +90,7 @@ void main() {
 
     test('空 bookKey：不进缓存、不回落(避免不同书串味)', () async {
       final Map<String, String> cache = <String, String>{'': 'file:///stale'};
-      final String? url = await ReaderHibikiSource.resolveCoverUrlFor(
+      final String? url = await ReaderFushiSource.resolveCoverUrlFor(
         bookKey: '',
         candidates: <String>['/x/cover.jpg'],
         probe: (String _) async => false,
@@ -100,10 +100,10 @@ void main() {
     });
   });
 
-  group('ReaderHibikiSource.coverCandidatePaths 候选顺序 (BUG-513)', () {
+  group('ReaderFushiSource.coverCandidatePaths 候选顺序 (BUG-513)', () {
     test('有声明封面：声明路径在前，cover.jpg/jpeg/png 兜底在后', () {
       final String extractDir = p.join('books', 'Kokoro');
-      final List<String> c = ReaderHibikiSource.coverCandidatePaths(
+      final List<String> c = ReaderFushiSource.coverCandidatePaths(
         extractDir: extractDir,
         coverPath: 'OEBPS/cover-img.png',
       );
@@ -116,7 +116,7 @@ void main() {
     });
 
     test('无声明封面：仅 cover 兜底', () {
-      final List<String> c = ReaderHibikiSource.coverCandidatePaths(
+      final List<String> c = ReaderFushiSource.coverCandidatePaths(
         extractDir: p.join('books', 'Botchan'),
       );
       expect(c, <String>[
@@ -131,11 +131,11 @@ void main() {
     late Directory tempDir;
 
     setUp(() {
-      ReaderHibikiSource.debugResetCoverCache();
+      ReaderFushiSource.debugResetCoverCache();
       tempDir = Directory.systemTemp.createTempSync('hibiki_cover_cache_');
     });
     tearDown(() {
-      ReaderHibikiSource.debugResetCoverCache();
+      ReaderFushiSource.debugResetCoverCache();
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     });
 
@@ -166,7 +166,7 @@ void main() {
         ..writeAsBytesSync(<int>[0xFF, 0xD8, 0xFF]);
       await db.insertEpubBook(bookWithCover('Kokoro', extractDir.path));
 
-      final ReaderHibikiSource source = ReaderHibikiSource.instance;
+      final ReaderFushiSource source = ReaderFushiSource.instance;
 
       final MediaItem? first = await source.mediaItemForBookKey('Kokoro');
       final String expectedUrl = Uri.file(cover.path).toString();

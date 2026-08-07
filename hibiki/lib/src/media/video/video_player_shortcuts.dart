@@ -284,7 +284,7 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
 
 /// BUG-924：词典浮层开着时，让**任一**已映射的视频快捷键先关掉顶层浮层并消费掉这一次
 /// 按键，而不是穿透去控制后面的视频（对齐阅读器：浮层可见时导航/退出类键先关浮层，见
-/// `reader_hibiki/caret.part.dart` 的 `readerDismissDict` 及各键 `isDictionaryShown` 分支）。
+/// `reader_fushi/caret.part.dart` 的 `readerDismissDict` 及各键 `isDictionaryShown` 分支）。
 ///
 /// 纯函数、无页面依赖，方便单测：把 [base] 里每个回调包一层守卫——[isPopupVisible] 为真时
 /// 调 [dismissPopup] 关一层浮层后 return（不跑原动作）；为假时原样执行 [base] 的回调。视频

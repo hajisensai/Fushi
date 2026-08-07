@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 void main() {
   // BUG-117: 书内跳转超链接点击「只加遮罩、不跳转」。根因（设备日志实证）=

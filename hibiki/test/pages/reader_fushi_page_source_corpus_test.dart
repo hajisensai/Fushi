@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/part_corpus_disk_guard.dart';
-import 'reader_hibiki_page_source_corpus.dart';
+import 'reader_fushi_page_source_corpus.dart';
 
 /// 阅读器页「合并语料」自身的守卫。
 ///
@@ -17,15 +17,15 @@ void main() {
   group('阅读器页合并语料覆盖磁盘上的全部 part', () {
     test('主壳 + 每个 part 都在清单里、顺序确定（漏登记 = 负向断言真空通过）', () {
       expectPartManifestMatchesDisk(
-        manifest: readerHibikiPageFiles(),
-        shellPath: 'lib/src/pages/implementations/reader_hibiki_page.dart',
-        partDirPath: 'lib/src/pages/implementations/reader_hibiki',
+        manifest: readerFushiPageFiles(),
+        shellPath: 'lib/src/pages/implementations/reader_fushi_page.dart',
+        partDirPath: 'lib/src/pages/implementations/reader_fushi',
       );
     });
 
     test('每个 part 的内容真的进了语料（不只是路径进了清单）', () {
       expectPartContentsInCorpus(
-        manifest: readerHibikiPageFiles(),
+        manifest: readerFushiPageFiles(),
         corpus: readReaderPageSource(),
       );
     });

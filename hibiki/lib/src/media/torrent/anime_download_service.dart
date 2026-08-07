@@ -120,7 +120,7 @@ List<String> resolveVideoAbsolutePaths(
   return out;
 }
 
-/// 阅读库支持的书籍扩展名（当前只有 EPUB —— reader_hibiki 走 EPUB）。
+/// 阅读库支持的书籍扩展名（当前只有 EPUB —— reader_fushi 走 EPUB）。
 const Set<String> kBookExtensions = <String>{'.epub'};
 
 /// 把种子文件列表解析为书籍（epub）绝对路径列表。纯函数，与

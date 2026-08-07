@@ -128,13 +128,13 @@ void main() {
 
     setUpAll(() {
       webview = File(
-        'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+        'lib/src/pages/implementations/reader_fushi/webview.part.dart',
       ).readAsStringSync();
       chrome = File(
-        'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+        'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
       ).readAsStringSync();
       page = File(
-        'lib/src/pages/implementations/reader_hibiki_page.dart',
+        'lib/src/pages/implementations/reader_fushi_page.dart',
       ).readAsStringSync();
     });
 
@@ -236,10 +236,10 @@ void main() {
 
     setUpAll(() {
       webview = File(
-        'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+        'lib/src/pages/implementations/reader_fushi/webview.part.dart',
       ).readAsStringSync();
       chrome = File(
-        'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+        'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
       ).readAsStringSync();
     });
 

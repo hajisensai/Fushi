@@ -34,7 +34,7 @@ void main() {
 
   test('host clamps only a physical terminal snapshot to total', () {
     final String webview = File(
-      'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+      'lib/src/pages/implementations/reader_fushi/webview.part.dart',
     ).readAsStringSync();
     expect(
       webview,

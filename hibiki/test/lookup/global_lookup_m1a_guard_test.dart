@@ -50,7 +50,7 @@ void main() {
     });
 
     test('autoRead is gated on the autoReadOnLookup preference', () {
-      expect(shared.contains('ReaderHibikiSource.instance.autoReadOnLookup'),
+      expect(shared.contains('ReaderFushiSource.instance.autoReadOnLookup'),
           isTrue);
     });
 
@@ -163,7 +163,7 @@ void main() {
     test('overlay gates topPullReleased on enableSwipeToClose preference', () {
       final String src = read('lib/src/lookup/global_lookup_controller.dart');
       expect(src.contains("handler == 'topPullReleased'"), isTrue);
-      expect(src.contains('ReaderHibikiSource.instance.enableSwipeToClose'),
+      expect(src.contains('ReaderFushiSource.instance.enableSwipeToClose'),
           isTrue);
     });
   });

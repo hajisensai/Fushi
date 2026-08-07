@@ -11,7 +11,7 @@ import '../helpers/source_guard.dart';
 ///    canRequestFocus (it must remain a pure pointer surface, not a focus node).
 void main() {
   final String chrome = File(
-    'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+    'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
   ).readAsStringSync();
 
   // 只看真代码：注释统一交给共享的 `maskComments`（换成**等长**空白），文档注释里
@@ -57,7 +57,7 @@ void main() {
 
   test('chromeToggled 判据不吃 overlayClosed 那组严格门控', () {
     final String page = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
+      'lib/src/pages/implementations/reader_fushi_page.dart',
     ).readAsStringSync();
     final int start = page.indexOf('bool _canOwnReaderFocus(');
     expect(start, isNonNegative);

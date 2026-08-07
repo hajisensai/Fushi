@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../../pages/reader_hibiki_page_source_corpus.dart';
+import '../../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-702 源码守卫：有声书「退出即停（默认）/ 后台续播（可选）」。
 ///

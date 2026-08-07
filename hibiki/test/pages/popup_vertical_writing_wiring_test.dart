@@ -32,7 +32,7 @@ void main() {
 
   test('reader overrides popupVerticalWriting from writingMode', () {
     final String src =
-        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+        read('lib/src/pages/implementations/reader_fushi_page.dart');
     expect(
         RegExp(r'popupVerticalWriting\s*=>[\s\S]{0,80}writingMode')
             .hasMatch(src),

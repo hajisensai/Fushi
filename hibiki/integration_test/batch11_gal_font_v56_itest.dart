@@ -10,7 +10,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/main.dart' as app;
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -208,7 +208,7 @@ Future<void> _openLookupSettingsPage(WidgetTester tester) async {
             context: ctx,
             appModel: ref.read(appProvider),
             ref: ref,
-            readerSource: ReaderHibikiSource.instance,
+            readerSource: ReaderFushiSource.instance,
             refresh: () {},
           );
           final SettingsDestination lookup = buildSettingsSchema(sctx)

@@ -8,9 +8,9 @@ import 'package:integration_test/integration_test.dart';
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/media/media_item.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/reader/reader_chapter_perf_trace.dart';
 
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
@@ -54,7 +54,7 @@ void main() {
           .setPref('src:reader_fushi:view_mode', 'pagination');
       await appModel.database
           .setPref('src:reader_fushi:writing_mode', 'horizontal-tb');
-      await ReaderHibikiSource.readerSettings?.refreshFromDb();
+      await ReaderFushiSource.readerSettings?.refreshFromDb();
 
       // 带**真实体量**插图（1600×2400 PNG）的书：合成 fixture 原来的「图片章」是内联
       // SVG，解码几乎免费，跨章计时里完全测不到图片这一段——而真实书的整页插图正是
@@ -66,9 +66,9 @@ void main() {
         fileName: 'perf_cross_chapter_images.epub',
       );
 
-      final ReaderHibikiSource source = ReaderHibikiSource.instance;
+      final ReaderFushiSource source = ReaderFushiSource.instance;
       final MediaItem item = MediaItem(
-        mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(bookKey),
+        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
         title: bookKey,
         mediaTypeIdentifier: source.mediaType.uniqueKey,
         mediaSourceIdentifier: source.uniqueKey,
@@ -106,7 +106,7 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
 
       final Future<dynamic> Function(String source)? runInWebView =
-          ReaderHibikiPage.debugEvaluateJavascript;
+          ReaderFushiPage.debugEvaluateJavascript;
       expect(runInWebView, isNotNull);
 
       ReaderChapterPerfTrace.reset();
@@ -123,16 +123,16 @@ void main() {
       // 落点正确性基线：跨章不只要快，还必须落对章、落对位置（前进=章首、
       // 后退=章末）。每次跨章后读真实 DOM（baseURI = 当前章文档）与 JS 侧
       // calculateProgress()，任何优化都必须保住这两条。
-      // 注意：一律走 `ReaderHibikiPage.debugEvaluateJavascript` 的**当下**值，不缓存
+      // 注意：一律走 `ReaderFushiPage.debugEvaluateJavascript` 的**当下**值，不缓存
       // 闭包——中段落点用例会 pop + 重新 push 阅读器，缓存的旧引用指向已销毁的控制器。
       Future<String> currentChapterFile() async {
-        final dynamic raw = await ReaderHibikiPage.debugEvaluateJavascript!(
+        final dynamic raw = await ReaderFushiPage.debugEvaluateJavascript!(
             "(document.baseURI || '').split('/').pop()");
         return raw?.toString() ?? '';
       }
 
       Future<double> currentProgress() async {
-        final dynamic raw = await ReaderHibikiPage.debugEvaluateJavascript!(
+        final dynamic raw = await ReaderFushiPage.debugEvaluateJavascript!(
             'window.fushiReader ? window.fushiReader.calculateProgress() : -1');
         if (raw is num) return raw.toDouble();
         return double.tryParse(raw?.toString() ?? '') ?? -1;
@@ -198,7 +198,7 @@ void main() {
       // 的真实插图章中段取锚，重进后要求落回同一位置。容差自校准：用同一章、同一版式
       // 下「翻一页」实测跨过的字符数当上界 —— 漂一张整页插图 ≥ 一页，必然超出。
       Future<int> firstVisibleChar() async {
-        final dynamic raw = await ReaderHibikiPage.debugEvaluateJavascript!(
+        final dynamic raw = await ReaderFushiPage.debugEvaluateJavascript!(
             'window.fushiReader ? window.fushiReader.getFirstVisibleCharOffset() : -1');
         if (raw is num) return raw.toInt();
         return int.tryParse(raw?.toString() ?? '') ?? -1;
@@ -206,7 +206,7 @@ void main() {
 
       Future<void> swipe(String dir) async {
         final int before = ReaderChapterPerfTrace.completed.length;
-        await ReaderHibikiPage.debugEvaluateJavascript!(
+        await ReaderFushiPage.debugEvaluateJavascript!(
           "window.flutter_inappwebview.callHandler('onBoundarySwipe', '$dir');",
         );
         for (int p = 0; p < 1500; p++) {
@@ -225,7 +225,7 @@ void main() {
 
       // 翻进章内中段（不是章首、不是章末）。
       for (int i = 0; i < 3; i++) {
-        await ReaderHibikiPage.debugEvaluateJavascript!(
+        await ReaderFushiPage.debugEvaluateJavascript!(
             "window.fushiReader.paginate('forward');");
         await tester.pump(const Duration(milliseconds: 400));
       }
@@ -238,7 +238,7 @@ void main() {
       navigator.pop();
       await tester.pump(const Duration(seconds: 2));
       for (int i = 0;
-          i < 40 && ReaderHibikiPage.debugEvaluateJavascript != null;
+          i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
           i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }
@@ -261,7 +261,7 @@ void main() {
       final String restoredChapter = await currentChapterFile();
       final int restoredChar = await firstVisibleChar();
       // 自校准容差：同章同版式下翻一页跨过多少字符。
-      await ReaderHibikiPage
+      await ReaderFushiPage
           .debugEvaluateJavascript!("window.fushiReader.paginate('forward');");
       await tester.pump(const Duration(milliseconds: 600));
       final int nextPageChar = await firstVisibleChar();
@@ -303,7 +303,7 @@ void main() {
       navigator.pop();
       await tester.pump(const Duration(seconds: 2));
       for (int i = 0;
-          i < 40 && ReaderHibikiPage.debugEvaluateJavascript != null;
+          i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
           i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }

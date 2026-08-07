@@ -857,7 +857,7 @@ class SyncOrchestrator {
 
   /// 收集本设备当前在库的资产键（按 mediaType 分组），供删除墓碑消费端算 deleteLocal
   /// 候选（远端有删除标记 ∧ 本地仍在库）。itemKey 与写墓碑点严格一致：book/audiobook =
-  /// bookKey（[writeSyncDeletionTombstone] 调用点 reader_hibiki_source / audiobook），
+  /// bookKey（[writeSyncDeletionTombstone] 调用点 reader_fushi_source / audiobook），
   /// video = bookUid（video_book_repository），localaudio = displayName，
   /// srtbook = srt_books.uid（仅 standalone，见下）。
   ///

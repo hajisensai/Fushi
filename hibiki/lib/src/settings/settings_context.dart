@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/video_settings_host.dart';
@@ -18,13 +18,13 @@ class SettingsContext {
   final BuildContext context;
   final AppModel appModel;
   final WidgetRef ref;
-  final ReaderHibikiSource readerSource;
+  final ReaderFushiSource readerSource;
   final VoidCallback refresh;
 
   /// 视频播放上下文能力槽；null = 不在视频播放页（全局设置）。
   final VideoSettingsHost? video;
 
-  ReaderSettings? get readerSettings => ReaderHibikiSource.readerSettings;
+  ReaderSettings? get readerSettings => ReaderFushiSource.readerSettings;
 }
 
 /// 设置宿主（State）统一构造 [SettingsContext] 的入口：readerSource 恒为单例、
@@ -42,7 +42,7 @@ mixin SettingsContextHost<T extends StatefulWidget> on State<T> {
       context: context,
       appModel: appModel,
       ref: ref,
-      readerSource: ReaderHibikiSource.instance,
+      readerSource: ReaderFushiSource.instance,
       refresh: () {
         if (!mounted) return;
         beforeRefresh?.call();

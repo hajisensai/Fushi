@@ -22,7 +22,7 @@ void main() {
     expect(MangaHibikiSource.kUniqueKey, 'reader_manga');
     expect(MangaHibikiSource.instance.uniqueKey, 'reader_manga');
     expect(MangaHibikiSource.instance.uniqueKey,
-        isNot(ReaderHibikiSource.instance.uniqueKey));
+        isNot(ReaderFushiSource.instance.uniqueKey));
     expect(MangaHibikiSource.instance.uniqueKey,
         isNot(ReaderPdfSource.instance.uniqueKey));
   });
@@ -30,18 +30,18 @@ void main() {
   test('书架列书按 format 路由：format==manga 的行带 MangaHibikiSource 源标识', () {
     // BUG-1316：路由派生已收敛成公开的具名函数，故判据从「源码里有那串三元」升级
     // 成**直接调它**——行为断言比语料锚点强，也不会被等价改写绕过。
-    expect(ReaderHibikiSource.mediaSourceKeyFor(BookFormat.manga),
+    expect(ReaderFushiSource.mediaSourceKeyFor(BookFormat.manga),
         MangaHibikiSource.kUniqueKey,
         reason: '漫画行 mediaSourceIdentifier 应取 MangaHibikiSource.kUniqueKey');
     // PDF 分流不能被漫画分流破坏（向后兼容守卫）。
-    expect(ReaderHibikiSource.mediaSourceKeyFor(BookFormat.pdf),
+    expect(ReaderFushiSource.mediaSourceKeyFor(BookFormat.pdf),
         ReaderPdfSource.kUniqueKey);
-    expect(ReaderHibikiSource.mediaSourceKeyFor(BookFormat.epub),
-        ReaderHibikiSource.instance.uniqueKey);
+    expect(ReaderFushiSource.mediaSourceKeyFor(BookFormat.epub),
+        ReaderFushiSource.instance.uniqueKey);
   });
 
   test('_bookToMediaItem 走共享派生点，不得再内联自己的一套三元', () {
-    final String src = read('lib/src/media/sources/reader_hibiki_source.dart');
+    final String src = read('lib/src/media/sources/reader_fushi_source.dart');
     expect(src.contains('mediaSourceIdentifier: mediaSourceKeyFor(format)'),
         isTrue,
         reason: '书架列书必须与「跳回原文」入口共用 mediaSourceKeyFor：'
@@ -69,7 +69,7 @@ void main() {
         read('lib/src/media/manga/reader/manga_hibiki_page.dart');
     // 打开时从 fushi://book/ 标识解析 bookKey（与 PDF 完全同构），关书自动同步
     // （triggerAutoSyncAfterClose 的 fushi://book/ 前缀识别）天然工作。
-    expect(source.contains('ReaderHibikiSource.parseBookKey'), isTrue,
+    expect(source.contains('ReaderFushiSource.parseBookKey'), isTrue,
         reason: 'buildLaunchPage 必须用共享的 fushi://book/ 解析器');
     expect(source.contains('manga://'), isFalse, reason: '不再有 manga:// 身份特例');
     expect(page.contains('manga://'), isFalse, reason: '页面也不得引入 manga:// 身份');
@@ -93,7 +93,7 @@ void main() {
   });
 
   test('书架漫画进度按页计（与 PDF 共用 1-based 页序分支）', () {
-    final String src = read('lib/src/media/sources/reader_hibiki_source.dart');
+    final String src = read('lib/src/media/sources/reader_fushi_source.dart');
     expect(src.contains('(pos?.sectionIndex ?? 0) + 1'), isTrue,
         reason: '页码型书进度用 1-based 页序，停在第 1 页也要计入在读');
     expect(src.contains('pageBased'), isTrue, reason: 'PDF/漫画共用页码型进度分支');

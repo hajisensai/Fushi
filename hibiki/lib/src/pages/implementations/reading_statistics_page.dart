@@ -1297,7 +1297,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   String _bookDisplayTitle(String title) {
     final String? bookKey = _bookKeyByTitle[title];
     if (bookKey == null) return title;
-    return ReaderHibikiSource.instance.overrideTitleForBookKey(bookKey) ??
+    return ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
         title;
   }
 

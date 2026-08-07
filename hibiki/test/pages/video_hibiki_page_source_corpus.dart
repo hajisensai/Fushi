@@ -6,7 +6,7 @@ import '../helpers/part_corpus.dart';
 import '../helpers/source_guard.dart';
 
 /// TODO-590: `video_hibiki_page.dart` 正被分批拆成主壳 + `video_hibiki/*.part.dart`
-/// 一组 part 文件（零行为重构，照搬 TODO-589 reader_hibiki 范式）。原来逐文件硬编码
+/// 一组 part 文件（零行为重构，照搬 TODO-589 reader_fushi 范式）。原来逐文件硬编码
 /// 读单文件的静态守卫，凡断言落在已搬出主壳的方法体里，必须改读这份「合并语料」：
 /// 主壳 + 全部 part 文件按固定顺序拼接（主壳在前，保 build 域内 widget 相对顺序断言）。
 ///
