@@ -30,7 +30,10 @@
 - [x] P6-6 native 产物（fable 子代理 e090a6021，develop b1ff91994 批）：三件套 fushi_voice_*、IPC shm/event/marker 两侧同批、fushi_torrent_ffi + DLL 旧名回退、Unity 程序集 Fushi.UnityAudioExtract；1362 定向绿。保留：C++ namespace hibiki_voice_hook（内部符号，需双架构构建验证，后续项）
 - [ ] P6-5 pub 包名体系：`hibiki`→`fushi` app 包 + 6 内部包 + workspace + 全仓 import（最后做，单独 PR，不与他人并行）
 - [ ] 收尾：源码扫描守卫（旧代号零残留 + 白名单收口）+ 变异实测
-- [x] Phase 4 外部注册台账（agent 无法代办，清单见下）
+- [x] 云同步改名（2026-08-07 用户新增指令）主线部分：删 Hoshi/ッツ 共享 Google Drive 功能（ttuShared 空间/开关/repo 方法/2 i18n key，恒用 appdata 隐藏空间——完整 drive 敏感 scope 随之消除，Phase 4 的重审风险项作废）；kSyncRootFolderName→fushi-data；Google Drive 根远端改名迁移三段
+- [~] 云同步改名子代理部分：Dropbox/OneDrive/WebDAV/FTP/SFTP/interconnect host 的 fushi-data 迁移（fable 子代理进行中）
+- [~] P6-5 pub 包名体系：fable 子代理进行中（含自跑全量门；app 目录名 hibiki/ 保持——CI/文档路径半径不成比例，报告将说明）
+- [x] Phase 4 外部注册台账（agent 无法代办，清单见下；Google 同意屏重审风险已随 Hoshi 功能删除作废）
 
 ## Phase 0 身份对照表（唯一真相源）
 
