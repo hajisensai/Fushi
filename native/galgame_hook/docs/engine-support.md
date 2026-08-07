@@ -1,7 +1,7 @@
 # Galgame 引擎支持矩阵
 
 > 此文件由 `engine-support.yaml` 通过 `tools/generate_engine_support.py` 自动生成，禁止手工编辑。
-> 状态基线：2026-07-23；来源：`hajisensai/hibiki/docs/specs/galgame-mining/engine-adapter-plan.md`（1. 当前真相）。
+> 状态基线：2026-07-23；来源：`hajisensai/fushi/docs/specs/galgame-mining/engine-adapter-plan.md`（1. 当前真相）。
 > “已验证”只代表下方明确列出的真实样本、版本和能力，不外推到同家族的其它游戏。
 
 ## 总览
@@ -100,9 +100,9 @@ Tests：`tests/siglus_ovk_test.cpp`、`tests/siglus_launch_test.cpp`、`tests/si
 - DirectSound and process-loopback are mixed-output fallbacks and must not be described as clean voice.
 - The candidate resource parser accepts only the bounded fixed 272-byte index layout with stored Ogg members that pass structural/EOS validation; Ogg CRC is not validated.
 
-Fixtures：`tests/fixtures/elf_ai6_replay.json`、`../../hibiki/test/fixtures/galhook/elf_ai6_replay.json`
+Fixtures：`tests/fixtures/elf_ai6_replay.json`、`../../fushi/test/fixtures/galhook/elf_ai6_replay.json`
 
-Tests：`tests/elf_ai6_adapter_test.cpp`、`tests/resource_audio_ready_test.cpp`、`../../hibiki/test/mining/elf_ai6_pairing_test.dart`
+Tests：`tests/elf_ai6_adapter_test.cpp`、`tests/resource_audio_ready_test.cpp`、`../../fushi/test/mining/elf_ai6_pairing_test.dart`
 
 ### RealLive / old VisualArt's (`reallive`)
 

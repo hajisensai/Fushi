@@ -5,7 +5,7 @@
 //  Single source of truth for the browser-extension popup styling.
 //
 //  The in-app dictionary popup is a standalone WebView document styled by
-//  hibiki/assets/popup/popup.css. The extension injects the SAME popup.js render
+//  fushi/assets/popup/popup.css. The extension injects the SAME popup.js render
 //  output into a #entries-container <div> on every host page via a content
 //  script, so popup.css's document-level rules (*, html, body, bare hr/a,
 //  ::selection, ::-webkit-scrollbar, html[data-theme]) would reset / recolor /
@@ -39,11 +39,11 @@ const scriptsDir = dirname(fileURLToPath(import.meta.url));
 // scripts -> browser-extension -> tools -> <repo root>
 const repoRoot = join(scriptsDir, '..', '..', '..');
 
-const POPUP_CSS = join(repoRoot, 'hibiki', 'assets', 'popup', 'popup.css');
+const POPUP_CSS = join(repoRoot, 'fushi', 'assets', 'popup', 'popup.css');
 const OVERLAY = join(scriptsDir, 'content-css-overlay.css');
 const OUTPUTS = [
   join(repoRoot, 'tools', 'browser-extension', 'vendor', 'content.css'),
-  join(repoRoot, 'hibiki', 'assets', 'browser_extension', 'vendor', 'content.css'),
+  join(repoRoot, 'fushi', 'assets', 'browser_extension', 'vendor', 'content.css'),
 ];
 
 /** Split a selector list on TOP-LEVEL commas only (commas inside :where(...) etc. are kept). */
@@ -190,7 +190,7 @@ function generate() {
     ' *  content.css — GENERATED, DO NOT EDIT BY HAND.\n' +
     ' *\n' +
     ' *  Produced by tools/browser-extension/scripts/generate-content-css.mjs from\n' +
-    ' *  hibiki/assets/popup/popup.css (shared dictionary-popup styling, document-\n' +
+    ' *  fushi/assets/popup/popup.css (shared dictionary-popup styling, document-\n' +
     ' *  level rules re-rooted at #entries-container so nothing leaks to the host\n' +
     ' *  page — TODO-1090) plus content-css-overlay.css (extension-only rules).\n' +
     ' *\n' +

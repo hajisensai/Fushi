@@ -19,7 +19,7 @@
 // Catching the use-after-free reliably is heap-layout dependent, so run it with
 // several dictionaries loaded (it only checks the queried one) to exercise the
 // allocator. The companion deterministic guard is the source scan at
-// hibiki/test/dictionary/dict_name_lifetime_guard_test.dart.
+// fushi/test/dictionary/dict_name_lifetime_guard_test.dart.
 #include <cstdio>
 #include <string>
 #include <vector>

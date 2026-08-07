@@ -231,12 +231,12 @@
       "adapter_path": "hook/adapters/elf_ai6_adapter.inc",
       "fixture_paths": [
         "tests/fixtures/elf_ai6_replay.json",
-        "../../hibiki/test/fixtures/galhook/elf_ai6_replay.json"
+        "../../fushi/test/fixtures/galhook/elf_ai6_replay.json"
       ],
       "test_paths": [
         "tests/elf_ai6_adapter_test.cpp",
         "tests/resource_audio_ready_test.cpp",
-        "../../hibiki/test/mining/elf_ai6_pairing_test.dart"
+        "../../fushi/test/mining/elf_ai6_pairing_test.dart"
       ]
     },
     {

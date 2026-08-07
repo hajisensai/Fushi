@@ -19,14 +19,14 @@ native/fushi_torrent/
     hibiki_torrent.h                   # C ABI 头（ffigen 入口；各函数契约见注释）
 packages/fushi_torrent/               # Dart 侧
   ffigen.yaml                          # 从上面头文件生成绑定
-  lib/src/ffi/hibiki_torrent_bindings.dart   # 绑定
+  lib/src/ffi/fushi_torrent_bindings.dart   # 绑定
   lib/src/embedded_torrent_engine.dart        # EmbeddedTorrentEngine + EmbeddedTorrentSession
   lib/src/testing/local_seed_rig.dart         # 本地做种 rig（确定性测试脚手架）
   tool/version_harness.dart            # 工具链证明 harness（1a）
   tool/download_harness.dart           # 真实网络手动冒烟（真机验收用）
   test/ffi_smoke_test.dart             # 冒烟测试（无库则 skip）
   test/embedded_pipeline_test.dart     # 端到端管线测试（本地 rig，零外网）
-hibiki/lib/src/media/torrent/
+fushi/lib/src/media/torrent/
   embedded_torrent_backend.dart        # EmbeddedTorrentBackend implements TorrentBackend
 ```
 
@@ -105,7 +105,7 @@ cmake --build build --config Release
 cd packages/fushi_torrent && dart pub get
 # 端到端管线（本地 rig 做种，零外网、确定性；缺 DLL 整组 skip）：
 FUSHI_TORRENT_LIB=<绝对路径>/fushi_torrent_ffi.dll dart test
-# app 侧 TorrentBackend 契约（在 hibiki/ 下）：
+# app 侧 TorrentBackend 契约（在 fushi/ 下）：
 FUSHI_TORRENT_LIB=... flutter test test/media/torrent/embedded_torrent_backend_test.dart
 # 真实网络手动冒烟（真机验收）：
 dart run tool/download_harness.dart <dll> "<magnet>" <saveDir>
@@ -113,7 +113,7 @@ dart run tool/download_harness.dart <dll> "<magnet>" <saveDir>
 
 ### CI 覆盖缺口（已知，未解决）
 
-所有需要真 DLL 的用例（`packages/fushi_torrent/test/*`、`hibiki` 侧的
+所有需要真 DLL 的用例（`packages/fushi_torrent/test/*`、`fushi` 侧的
 `embedded_torrent_backend_test.dart` / `embedded_torrent_host_test.dart`）在 CI
 上**一次都没跑过**，原因有两层，都不是「加个环境变量」能解决的：
 
@@ -125,12 +125,12 @@ dart run tool/download_harness.dart <dll> "<magnet>" <saveDir>
 要真正补上，得在 CI 上构建 Linux 版 libtorrent 2.x + 本 bridge（`.so`），是独立
 任务，不该混进功能 PR。在那之前，**任何必须守住的不变量都不能只靠要 DLL 的
 用例**——把它做成不依赖 native 的纯 Dart 用例（例：`pruneResumeFiles` 的
-「计划 id 未加载时拒绝剪枝」守卫在 `hibiki/test/media/torrent/
+「计划 id 未加载时拒绝剪枝」守卫在 `fushi/test/media/torrent/
 resume_prune_guard_test.dart`，无 DLL 也跑）。
 
 ## ffigen 重生成绑定
 
-`lib/src/ffi/hibiki_torrent_bindings.dart` 由 `ffigen.yaml` 对 `hibiki_torrent.h`
+`lib/src/ffi/fushi_torrent_bindings.dart` 由 `ffigen.yaml` 对 `hibiki_torrent.h`
 生成。本机需装 LLVM/libclang：
 
 ```bash
@@ -170,7 +170,7 @@ flutter windows 构建也不便注入 vcpkg 工具链文件。故：
    + `libssl-3-x64` + `libcrypto-3-x64`，共 ~11MB）收拢到
    `prebuilt/windows-x64/`（git 忽略，不入库——repo 不放二进制，构建/发布
    流程各自现产或从 release 拉取）。
-2. **随包**：`hibiki/windows/CMakeLists.txt` 在 fushidicts 之后加了
+2. **随包**：`fushi/windows/CMakeLists.txt` 在 fushidicts 之后加了
    **copy-if-present** 块——`prebuilt/windows-x64/*.dll` 存在则 `install` 到
    `hibiki.exe` 旁，不存在则跳过。因此 `flutter build windows` **不依赖
    vcpkg/libtorrent**：没跑过产出脚本的机器照常构建，只是 app 运行期

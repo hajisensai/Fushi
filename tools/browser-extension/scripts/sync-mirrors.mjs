@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 扩展镜像一键同步：tools/browser-extension（真源）→ hibiki/assets/browser_extension（Flutter
+// 扩展镜像一键同步：tools/browser-extension（真源）→ fushi/assets/browser_extension（Flutter
 // asset 打包镜像）。此前同步靠「手动 cp + Dart 字节守卫兜底」，漏拷任一文件守卫即红且提示晦涩；
 // 现在改动扩展后跑一次本脚本即可，守卫只做最后防线。
 //
@@ -8,7 +8,7 @@
 //
 // 排除项（不进 app bundle）：*.test.js、scripts/、README.md。
 // 另外校验 vendor/ 四件套（popup.js/popup.css/popup.html/selection.js）与其上游
-// hibiki/assets/popup/ 是否字节一致——它们的真源在 app 侧，方向是 assets/popup → 两处 vendor/，
+// fushi/assets/popup/ 是否字节一致——它们的真源在 app 侧，方向是 assets/popup → 两处 vendor/，
 // 本脚本**绝不**反向覆盖，只报告漂移（同步命令见输出提示）。vendor/dict-media.js 允许有
 // 扩展侧分叉（image:// → http 重写），不在校验列表。
 import fs from 'node:fs';
@@ -18,8 +18,8 @@ import url from 'node:url';
 const HERE = path.dirname(url.fileURLToPath(import.meta.url));
 const SRC = path.resolve(HERE, '..'); // tools/browser-extension
 const REPO = path.resolve(SRC, '..', '..'); // 仓库根
-const DEST = path.join(REPO, 'hibiki', 'assets', 'browser_extension');
-const POPUP_UPSTREAM = path.join(REPO, 'hibiki', 'assets', 'popup');
+const DEST = path.join(REPO, 'fushi', 'assets', 'browser_extension');
+const POPUP_UPSTREAM = path.join(REPO, 'fushi', 'assets', 'popup');
 const VENDOR_FROM_POPUP = ['popup.js', 'popup.css', 'popup.html', 'selection.js'];
 
 const checkOnly = process.argv.includes('--check');
@@ -87,8 +87,8 @@ for (const name of VENDOR_FROM_POPUP) {
   if (!sameBytes(upstream, vendor)) {
     vendorDrift++;
     actions.push(
-      `vendor 漂移: vendor/${name} ≠ hibiki/assets/popup/${name}` +
-      `（上游在 assets/popup，手动: cp hibiki/assets/popup/${name} tools/browser-extension/vendor/${name} 后重跑本脚本）`);
+      `vendor 漂移: vendor/${name} ≠ fushi/assets/popup/${name}` +
+      `（上游在 assets/popup，手动: cp fushi/assets/popup/${name} tools/browser-extension/vendor/${name} 后重跑本脚本）`);
   }
 }
 
@@ -101,7 +101,7 @@ if (checkOnly) {
     process.exit(1);
   }
 } else {
-  console.log(drift === 0 ? '镜像本已一致 ✓' : `已同步 ${drift} 个文件 → hibiki/assets/browser_extension`);
+  console.log(drift === 0 ? '镜像本已一致 ✓' : `已同步 ${drift} 个文件 → fushi/assets/browser_extension`);
   if (vendorDrift > 0) {
     console.error(`注意：${vendorDrift} 个 vendor 文件与 assets/popup 上游不一致（见上，需手动处理）`);
     process.exit(1);

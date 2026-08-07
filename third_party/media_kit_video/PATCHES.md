@@ -14,7 +14,7 @@ Upstream `onPointerUp()` (and `onPointerMove()`) unconditionally call
 
 When the controls subtree is torn down while a seek-bar drag is in progress —
 which Hibiki does on fullscreen enter/exit and on episode switch via
-`VideoControlsFocusGate` (`hibiki/lib/.../video_hibiki_page.dart`) — the pointer
+`VideoControlsFocusGate` (`fushi/lib/.../video_hibiki_page.dart`) — the pointer
 release lands on a disposed `State`, and `context` is null. The crash users hit:
 
 ```text
@@ -28,7 +28,7 @@ adds `if (!mounted) return;` to the top of both `onPointerUp()` and
 `onPointerMove()`, matching the existing `mounted` guard style. `onPointerDown()`
 only calls `setState` (already guarded), so it is left unchanged.
 
-Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_guard_test.dart`.
+Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`.
 
 ## BUG-566: mobile seek bar use-after-dispose (mirror of BUG-235)
 
@@ -49,7 +49,7 @@ guard. `onPointerDown()` and the `onPan*` handlers only call `setState`
 (already guarded) / widget callbacks and do not dereference `context`, so they
 are left unchanged — same as desktop.
 
-Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_guard_test.dart`.
+Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`.
 
 ## TODO-364: publish real controls visibility (`visibilityNotifier`)
 
@@ -81,7 +81,7 @@ dodge from that single source of truth (`_mediaKitControlsVisible` →
 `_applyControlsVisibilityFromMediaKit` in `video_hibiki_page.dart`), deleting its
 old mirror + second timer.
 
-Source-guard test: `hibiki/test/third_party/media_kit_video_visibility_notifier_guard_test.dart`.
+Source-guard test: `fushi/test/third_party/media_kit_video_visibility_notifier_guard_test.dart`.
 
 ## TODO-1059: restart auto-hide timer on host signal (`restartHideTimerSignal`)
 
@@ -113,7 +113,7 @@ pokes it from the bottom button presses via `_pokeControlsVisible()` (which, on
 mobile, now fires this signal instead of the desktop synthetic-hover path — see
 `controls_visibility.part.dart`).
 
-Source-guard test: `hibiki/test/third_party/media_kit_video_restart_hide_timer_guard_test.dart`.
+Source-guard test: `fushi/test/third_party/media_kit_video_restart_hide_timer_guard_test.dart`.
 
 ## TODO-565: notify host on user seek-bar interaction (`onSeekStart`)
 
@@ -149,7 +149,7 @@ themes (`_desktopControlsTheme` / `_mobileControlsTheme` in
 `video_hibiki_page.dart`), so starting a progress-bar drag invalidates the jump
 snapshot just like every other seek entry point.
 
-Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_guard_test.dart`.
+Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`.
 
 ## BUG-796 follow-up: surface the committed seek target on drag/tap (`onSeekEnd(Duration)`)
 
@@ -184,7 +184,7 @@ protection as `seekMs` (authoritative cue re-sync + suppress the lagging positio
 **without** re-issuing `player.seek` (the bar already sought). Only the commit
 (pointer-up / tap) notifies; intermediate drag-move seeks do not.
 
-Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_guard_test.dart`
+Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`
 (group `BUG-796 follow-up: seek-bar onSeekEnd(target) patch survives re-vendor`).
 
 ## BUG-374: play/pause on `onTap` (arena-respecting), not `onTapDown`
@@ -207,7 +207,7 @@ to the side-rail play/pause buttons on both `material_desktop.dart` and
 `material.dart`. Normal "tap the video area to pause" still works — it just waits
 one arena resolution (imperceptible).
 
-Source-guard test: `hibiki/test/pages/video_play_pause_tap_arena_guard_test.dart`.
+Source-guard test: `fushi/test/pages/video_play_pause_tap_arena_guard_test.dart`.
 
 ## TODO-669: surface seek-bar hover position (`onHoverPosition`)
 
@@ -238,7 +238,7 @@ control theme (`_desktopControlsTheme` in `video_hibiki_page.dart`); the mobile
 theme deliberately does not (touch has no hover), keeping mobile behaviour
 unchanged.
 
-Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_guard_test.dart`.
+Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`.
 
 ## TODO-916: show controls on `onTap` (arena-respecting), not `Listener.onPointerDown`
 
@@ -270,7 +270,7 @@ unchanged — single tap still toggles the controls, just one arena resolution l
 (imperceptible). Desktop `material_desktop.dart` is untouched (it already toggles
 via `MouseRegion.onHover`, never on pointer-down).
 
-Source-guard test: `hibiki/test/third_party/media_kit_video_controls_tap_arena_guard_test.dart`.
+Source-guard test: `fushi/test/third_party/media_kit_video_controls_tap_arena_guard_test.dart`.
 
 ## TODO-1097: remove desktop drag-to-adjust-volume gesture
 
@@ -294,7 +294,7 @@ touch gestures (`material.dart`) and the long-press temporary speed-up
 (`speed.part.dart`, a `LongPress` gesture family) are unrelated to `onPanUpdate`
 and untouched.
 
-Source-guard test: `hibiki/test/third_party/media_kit_video_desktop_drag_volume_guard_test.dart`.
+Source-guard test: `fushi/test/third_party/media_kit_video_desktop_drag_volume_guard_test.dart`.
 
 ## TODO-1243: quantize controls playback position (integrated-GPU 100% load)
 
@@ -333,7 +333,7 @@ danmaku overlay and chapter markers read the controller position on their own
 black-flicker detector (`VideoBlackFlickerDetector`, TODO-1119) samples mpv frame
 counters on its own 1 s timer and is independent of these listeners.
 
-Source-guard test: `hibiki/test/third_party/media_kit_video_position_throttle_test.dart`.
+Source-guard test: `fushi/test/third_party/media_kit_video_position_throttle_test.dart`.
 
 ## TODO-1243 follow-up: RepaintBoundary-isolate the seek bar + position clock (large-window iGPU 100%)
 
@@ -371,7 +371,7 @@ layer isolation — no behaviour, geometry, frame rate or seeking change; the
 throttle above is unchanged and complementary (it bounds build/relayout
 frequency, the boundary bounds raster area).
 
-Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_repaint_boundary_test.dart`.
+Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_repaint_boundary_test.dart`.
 
 ## BUG-1224: expose the desktop seek-bar push-down as a theme field (`seekBarBottomButtonBarOverlap`)
 
@@ -401,5 +401,5 @@ layout is unchanged) to `MaterialDesktopVideoControlsThemeData` + `copyWith`, an
 and to `videoSubtitleControlsReserve`, so the controls layout and the subtitle
 avoidance are computed from one source instead of two guesses.
 
-Source-guard test: `hibiki/test/pages/video_subtitle_push_up_guard_test.dart`
+Source-guard test: `fushi/test/pages/video_subtitle_push_up_guard_test.dart`
 (`BUG-1224：桌面 theme 与字幕避让读同一份进度条几何…`).

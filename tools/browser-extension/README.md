@@ -24,26 +24,26 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `fushi-defaults.js` | SW/options | 安装助手写入的自动配置（host/port/token/build 指纹） |
 | `offscreen.html/js` | offscreen | tabCapture MediaRecorder（Netflix 逐句回放录制） |
 | `options.html/css/js` | options | 设置页：连接、字幕偏好、逐动作视频快捷键、版本与更新卡片 |
-| `vendor/` | — | `popup.{js,css,html}`+`selection.js` = app 查词弹窗原样拷贝（上游 `hibiki/assets/popup/`）；`dict-media.js` 允许扩展分叉；`content.css` 由生成器产出；`action-popup.*` 扩展独有 |
+| `vendor/` | — | `popup.{js,css,html}`+`selection.js` = app 查词弹窗原样拷贝（上游 `fushi/assets/popup/`）；`dict-media.js` 允许扩展分叉；`content.css` 由生成器产出；`action-popup.*` 扩展独有 |
 | `scripts/` | 开发 | `generate-content-css.mjs`（popup.css → 零特异性重根 content.css）、`sync-mirrors.mjs`（镜像同步） |
 
 ## 三份镜像与同步（改代码必读）
 
 ```
-hibiki/assets/popup/  ──(手动 cp，方向固定)──▶  vendor/popup.js 等四件套
-tools/browser-extension/（真源，本目录） ──(node scripts/sync-mirrors.mjs)──▶ hibiki/assets/browser_extension/（Flutter asset）
+fushi/assets/popup/  ──(手动 cp，方向固定)──▶  vendor/popup.js 等四件套
+tools/browser-extension/（真源，本目录） ──(node scripts/sync-mirrors.mjs)──▶ fushi/assets/browser_extension/（Flutter asset）
 scripts/generate-content-css.mjs ──▶ 两处 vendor/content.css
 ```
 
 - **任何改动后跑 `node scripts/sync-mirrors.mjs`**（或 `--check` 只校验）。`*.test.js`、
   `scripts/`、`README.md` 不进 bundle；`THIRD_PARTY_LICENSES.md` 必须进入 bundle 与安装目录。
-- Dart 守卫（`hibiki/test/build/browser_extension_*` 等 30+ 个）会把「两镜像字节一致」当
+- Dart 守卫（`fushi/test/build/browser_extension_*` 等 30+ 个）会把「两镜像字节一致」当
   最后防线，漏同步 CI 必红。
-- 新增文件放本目录**平级**（或 `vendor/`）——`hibiki/pubspec.yaml` 只声明了这两层 asset 目录。
+- 新增文件放本目录**平级**（或 `vendor/`）——`fushi/pubspec.yaml` 只声明了这两层 asset 目录。
 
 ## 安装（导入浏览器）流水线
 
-1. 本目录随 app 以 Flutter asset 打包（镜像 `hibiki/assets/browser_extension/`）。
+1. 本目录随 app 以 Flutter asset 打包（镜像 `fushi/assets/browser_extension/`）。
 2. app 扩展页「准备扩展」→ `browser_extension_installer.dart` 解压到
    `<appSupport>/hibiki-browser-extension/`，并把**当前 server 真值**（host/port/token）与
    **内容指纹 build**（全部文件排除 `fushi-defaults.js` 的 sha256 前 16 hex）写进
@@ -73,7 +73,7 @@ app 升级
 查词 `/api/lookup/dictionary` · 单词音频 `/api/lookup/audio` · 制卡 `/api/mine` · 查重
 `/api/duplicate` · 状态/心跳 `/api/extension/status` · 弹窗尺寸 `/api/extension/popup-size` ·
 YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitle/parse`。
-服务端实现：`hibiki/lib/src/sync/yomitan_api_server.dart`。
+服务端实现：`fushi/lib/src/sync/yomitan_api_server.dart`。
 
 ## 字幕轨数据流（面板零站点特例）
 
@@ -143,5 +143,5 @@ Ctrl+Enter。Windows app 外按焦点分流：可聚焦的剪贴板面板只有�
 node --test            # 本目录全部 *.test.js（node 内置 runner，零依赖）
 ```
 
-Dart 侧守卫（跑法见仓库根 CLAUDE.md）：`hibiki/test/{build,lookup,mining,sync,...}/browser_extension_*`
+Dart 侧守卫（跑法见仓库根 CLAUDE.md）：`fushi/test/{build,lookup,mining,sync,...}/browser_extension_*`
 做镜像字节一致 + 功能链存在性扫描。扩展 JS 单测目前不在 CI，提 PR 前请本地跑过。

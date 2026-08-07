@@ -2,7 +2,7 @@
 
 > 移动端的 Android AAR / iOS xcframework 都是**手工在构建机编好再拷进本仓**的，配方
 > 不随产物走。可复现配方见本目录的 `build_x264_*.sh`，能力守卫见
-> `hibiki/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart`（它会在二进制与 Dart 侧
+> `fushi/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart`（它会在二进制与 Dart 侧
 > 契约脱节时当场红，并指明该重跑哪个脚本）。
 
 ## 重编 ffmpeg-kit（TODO-2357 起：必须带 x264）
@@ -52,7 +52,7 @@ configure 串与 libavcodec 里的 `libx264` / `x264 - core` 符号，确认"配
 
 ## 本仓对上游 podspec 的改动（同步上游时必须重放）
 
-`third_party/ffmpeg_kit_flutter` 是 vendored 包（`hibiki/pubspec.yaml` 的 `dependency_overrides`
+`third_party/ffmpeg_kit_flutter` 是 vendored 包（`fushi/pubspec.yaml` 的 `dependency_overrides`
 用 `path:` 指进来），下列改动**不在上游**，重新 vendor 上游版本时会被冲掉，必须逐条重放：
 
 | 文件 | 改动 | 原因 |
@@ -84,7 +84,7 @@ end
 包根另有一份上游原件 `LICENSE`（LGPLv3），供 `macos/ffmpeg_kit_flutter.podspec` 使用——
 macOS 走 cocoapods 上游**非 GPL** 预编译包，指向 LGPLv3 是对的，两个文件不要合并。
 
-守卫：`hibiki/test/tools/ffmpeg_kit_podspec_license_guard_test.dart`（源码扫描，Windows 可跑，
+守卫：`fushi/test/tools/ffmpeg_kit_podspec_license_guard_test.dart`（源码扫描，Windows 可跑，
 CocoaPods 那条正则是照抄的）。
 
 ## 背景（BUG-891）
@@ -104,7 +104,7 @@ ffmpeg（远端视频制卡句子音频 / GIF / 帧封面）时报 `Protocol not
 
 只加 gnutls 不打补丁也能让 https 通，但那是 ffmpeg 默认的 `tls_verify=0`（**接受任意
 证书**，可被 MITM）。本补丁把它升级成「只认钉扎证书」，逐字对齐 app 现有的 TOFU 钉扎
-（`hibiki/lib/src/sync/tls/hibiki_tls_identity.dart` 的 `fingerprintOf()` = DER 的
+（`fushi/lib/src/sync/tls/fushi_tls_identity.dart` 的 `fingerprintOf()` = DER 的
 sha256），因此**不是安全降级，是真钉扎**。Dart 侧只对已 TOFU 钉扎的 Hibiki 自签主机
 传 `-tls_pin_sha256 <fp>`（公网源不传，保持默认）。
 

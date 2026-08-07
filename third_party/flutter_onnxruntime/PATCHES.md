@@ -2,7 +2,7 @@
 
 Vendored from pub.dev `flutter_onnxruntime` **1.8.3**. Referenced via
 `dependency_overrides` (`path: ../third_party/flutter_onnxruntime`) in
-`hibiki/pubspec.yaml`.
+`fushi/pubspec.yaml`.
 
 ## Why vendored
 
@@ -19,11 +19,11 @@ error: package 'flutter-onnxruntime' requires minimum platform version 14.0
 ```
 
 Hibiki's project targets **macOS 10.15** and a lower iOS deployment target
-(`hibiki/macos/Podfile` + `Runner.xcodeproj`), and must not drop older Apple
+(`fushi/macos/Podfile` + `Runner.xcodeproj`), and must not drop older Apple
 users (Never break userspace). Hibiki's built-in ONNX manga OCR is only wired
 for **Windows / Linux / Android** anyway — on Apple the manga reader degrades to
 the interconnect-host OCR or the Gemini cloud OCR path (see
-`hibiki/lib/src/ocr/ocr_inference_ort.dart` `isLocalOnnxRuntimeAvailable`).
+`fushi/lib/src/ocr/ocr_inference_ort.dart` `isLocalOnnxRuntimeAvailable`).
 
 ## Delta vs upstream 1.8.3
 

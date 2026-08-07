@@ -1,5 +1,5 @@
 ﻿# 构建内置 libtorrent 引擎的 Windows DLL 并把运行时依赖收拢到
-# prebuilt/windows-x64/ 供 flutter windows runner 随包（见 hibiki/windows/
+# prebuilt/windows-x64/ 供 flutter windows runner 随包（见 fushi/windows/
 # CMakeLists.txt 的 copy-if-present 集成）。
 #
 # 为什么不在 flutter build 时现编：libtorrent 经 vcpkg 首次源码编译约 40min

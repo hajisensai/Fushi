@@ -114,7 +114,7 @@ test('asbplayer MIT notice is retained in source and bundled extension', () => {
   const sourceNotice = path.join(__dirname, 'THIRD_PARTY_LICENSES.md');
   const bundledNotice = path.resolve(
     __dirname,
-    '../../hibiki/assets/browser_extension/THIRD_PARTY_LICENSES.md',
+    '../../fushi/assets/browser_extension/THIRD_PARTY_LICENSES.md',
   );
   const expected = 'Copyright (c) 2020-2026 asbplayer authors';
   assert.match(fs.readFileSync(sourceNotice, 'utf8'), /MIT License/);

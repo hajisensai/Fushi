@@ -47,9 +47,9 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # Must stay identical to galgameHelperRequiredFiles() in
-# hibiki/lib/src/mining/galgame_helper_installer.dart. Two copies of a contract
+# fushi/lib/src/mining/galgame_helper_installer.dart. Two copies of a contract
 # is exactly the shape that caused BUG-1345, so it is pinned by a guard test:
-# hibiki/test/mining/gal_helper_bundle_manifest_parity_test.dart parses this
+# fushi/test/mining/gal_helper_bundle_manifest_parity_test.dart parses this
 # file and fails if the two lists ever diverge.
 $RequiredFiles = @{
   'x86' = @(

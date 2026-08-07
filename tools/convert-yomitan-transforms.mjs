@@ -24,7 +24,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const YOMITAN_LANG_DIR = path.resolve(__dirname, '../../yomitan/ext/js/language');
 const ORIGINAL_TRANSFORMS = path.join(YOMITAN_LANG_DIR, 'language-transforms.js');
 const BACKUP_TRANSFORMS   = ORIGINAL_TRANSFORMS + '.bak';
-const OUTPUT_DIR = path.resolve(__dirname, '../hibiki/assets/transforms');
+const OUTPUT_DIR = path.resolve(__dirname, '../fushi/assets/transforms');
 
 // ---------------------------------------------------------------------------
 // Language table: code → { dir, file, exportName }

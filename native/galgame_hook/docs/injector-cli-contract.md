@@ -3,7 +3,7 @@
 Hibiki 与 `hibiki_voice_injector.exe` 之间是**进程边界 + 命令行 + stdout 文本握手**，
 没有共享代码。任何一侧改这组 flag 都必须先改本文件，否则两仓会各自漂移。
 
-- Hibiki 侧生产者：`hibiki/lib/src/mining/galgame_audio_source.dart` 的
+- Hibiki 侧生产者：`fushi/lib/src/mining/galgame_audio_source.dart` 的
   `buildEngineHookInjectorArguments`（唯一构造点）。
 - hibiki-hook 侧消费者：`injector/injector_main.cpp` 的 `main()` 参数循环。
 
@@ -30,7 +30,7 @@ Hibiki 与 `hibiki_voice_injector.exe` 之间是**进程边界 + 命令行 + std
 两侧共用一套 Windows argv 规则，互为逆变换：
 
 1. **用户输入 → token**（Hibiki 侧，`parseGameLaunchArguments`，
-   `hibiki/lib/src/mining/galgame_library.dart`）：用户在设置里写的是**一整行命令行**
+   `fushi/lib/src/mining/galgame_library.dart`）：用户在设置里写的是**一整行命令行**
    （形如 `-windowed --save="D:\My Saves"`），按 `CommandLineToArgvW` 规则拆成 token。
 2. **token → 一个 `--arg`**（Hibiki 侧）：token 原样作为进程参数交给 `Process.start`，
    由 Dart/Windows 负责这一跳的转义。
