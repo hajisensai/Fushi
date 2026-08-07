@@ -144,7 +144,7 @@ void main() {
       expect(en.toLowerCase(), contains('launch it again'),
           reason: 'restarting the game is the only fix when the game process '
               'still holds the previous component');
-      expect(zh, contains('Hibiki'), reason: '要说清组件是内置的，用户没有单独装它这一步');
+      expect(zh, contains('Fushi'), reason: '要说清组件是内置的，用户没有单独装它这一步');
     });
   });
 }

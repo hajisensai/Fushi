@@ -434,8 +434,8 @@ void main() {
     expect(rebaser.rebase('/home/u/Documents/videos_backup/x.mkv'),
         equals('/home/u/Documents/videos_backup/x.mkv'));
     // 大小写不敏感：hibikiExport 在 Windows 上会被搬走，路径必须一起改。
-    expect(rebaser.rebase('/home/u/Documents/FushiExport/card.jpg'),
-        equals('/home/u/Documents/Hibiki/data/FushiExport/card.jpg'));
+    expect(rebaser.rebase('/home/u/Documents/HibikiExport/card.jpg'),
+        equals('/home/u/Documents/Hibiki/data/HibikiExport/card.jpg'));
     // 根本体本身。
     expect(rebaser.rebase('/home/u/Documents'),
         equals('/home/u/Documents/Hibiki/data'));

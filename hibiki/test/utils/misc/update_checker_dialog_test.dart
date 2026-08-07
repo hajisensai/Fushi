@@ -392,7 +392,7 @@ void main() {
     expect(find.textContaining('5678'), findsWidgets);
     expect(find.textContaining('libmpv-2.dll'), findsWidgets);
     expect(find.textContaining('code 5'), findsWidgets);
-    expect(find.textContaining('Close Hibiki'), findsOneWidget);
+    expect(find.textContaining('Close Fushi'), findsOneWidget);
     expect(find.textContaining('retry'), findsOneWidget);
     expect(find.textContaining('restart Windows'), findsOneWidget);
   });
