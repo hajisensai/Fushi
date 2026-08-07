@@ -21,11 +21,14 @@ on:
   # 合仓后必须用 paths **白名单**而不是原来的 paths-ignore：helper 现在住在 Hibiki 主仓库里，
   # 沿用 paths-ignore 会让主仓库任何一次非文档提交都去重建并重发 helper release。
   # 本 workflow 自身改动也要触发（否则改了发布逻辑却发不出去）。
-  push:
-    branches: [develop]
-    paths:
-      - 'native/galgame_hook/**'
-      - '.github/workflows/voice-hook-helper.yml'
+  # ⚠️ Fushi 改名过渡期（2026-08-07 用户指示）：暂停 push 自动发布——新版 Fushi
+  # 尚未正式就绪，自动发布会让老 Hibiki 用户经应用内更新拉到改名后的构建
+  # （Android 并存装新包 / helper 组件名对不上），迁移链发布前恢复本块。
+  # push:
+  #   branches: [develop]
+  #   paths:
+  #     - 'native/galgame_hook/**'
+  #     - '.github/workflows/voice-hook-helper.yml'
 
 # 同一时刻只跑一份发布（push 连发时后车顶掉前车，避免并发 upsert 同一 release 竞态）。
 concurrency:

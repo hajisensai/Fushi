@@ -83,7 +83,13 @@ void main() {
       () {
     final String workflow =
         File('../.github/workflows/release-desktop.yml').readAsStringSync();
-    expect(workflow, contains("push:\n    branches: ['main', 'develop']"));
+    // Fushi 过渡期（2026-08-07 用户指示）：push 自动发布已停用（注释形态保留，
+    // 迁移链发布后恢复）。守卫改钉「停用是有意的」：注释掉的 push 块仍在，
+    // 且激活触发只剩 release/workflow_dispatch（防止有人误删整块或悄悄恢复）。
+    expect(workflow, contains(r"#   branches: ['main', 'develop']"),
+        reason: 'push 触发块应以注释形态保留（过渡期停用，非删除）');
+    expect(workflow, isNot(contains('\n  push:\n')),
+        reason: 'Fushi 迁移链发布前不得恢复 push 自动发布');
     expect(workflow, contains('Release channel: debug, beta, or formal'));
     expect(workflow, contains('- debug'));
     expect(workflow, contains(r'case "$EVENT" in'));
