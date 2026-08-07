@@ -29,7 +29,7 @@ class DropboxSyncBackend extends SyncBackend
   DropboxSyncBackend._();
   static final DropboxSyncBackend instance = DropboxSyncBackend._();
 
-  static const _clientId = 'lt0ufixv6si14dc';
+  static const _clientId = 'dv2sk1o33j6pfi8';
 
   /// Whether a real OAuth app key has been configured. Until it is, the
   /// backend cannot authenticate, so the UI hides it from the picker.

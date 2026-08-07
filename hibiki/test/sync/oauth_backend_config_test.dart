@@ -27,7 +27,7 @@ void main() {
     });
 
     test('real client id reports configured', () {
-      expect(isClientIdConfigured('lt0ufixv6si14dc'), isTrue);
+      expect(isClientIdConfigured('dv2sk1o33j6pfi8'), isTrue);
       expect(
         isClientIdConfigured('49f7e6d1-fab5-48ef-90ab-13ce04986b46'),
         isTrue,
