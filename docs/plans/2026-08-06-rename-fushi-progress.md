@@ -90,6 +90,10 @@
 - [x] W1 DB 层：`fushi_paired_peers` 表改名（**实际 v68→v69**，任务书 v62 系过期口径）+ `fushi.db` 开库前改名（sidecar 先主文件后、老归档回退）+ fushi_core 清扫；3 提交（`a34881aac`/`335804844`/`992b7db2d`），254+45 定向绿
 - [ ] W2 存量值改写（已派，7 子项逐项提交）：`reader_ttu` 族/sasayaki 族/`hoshi://book|srtbook` 前缀行改写/`hibikiExport`→`fushiExport`/Magpie `'Hibiki: '`/`runningHibikiProcesses` wire 键/`hoshi_books`+`google_drive_hoshi_compat`+`hoshi_anki_settings`——Drift 迁移自 v70 起
 - [ ] W4 文件名 git mv：`reader_hibiki_*`/`video_hibiki_page`/`hibiki_text_selection` 等含旧词文件与类名词中形态（MangaHibikiPage 族）
+- [ ] W6 native 目录改名（已派，与 W2 树不相交并行）：`native/hibiki_torrent`→`fushi_torrent`、`native/hoshidicts`→`fushidicts`（含 external/include/src 内层与 HOSHI_ROOT/hoshi-tests 构建标识；vendored pristine 内容不动）
+- [ ] W7 Anki 新卡默认 tag `hibiki`→`fushi`（老卡 tag 是用户 Anki 库外部数据不动；等 W2 落地后做,避 i18n 冲突）——2026-08-07 用户拍板
+- [ ] W8 `hibiki/` 应用目录改名（用户拍板要改；必须排在 W2/W4 合并后、终局门前,避免与在飞分支的 mega 冲突;牵 melos/CI/docs/Mac 同步脚本全套路径）
 - [ ] 终局门 + 守卫白名单清空核查 + push develop
+- 用户侧新增拍板：GitHub 仓库改名（hajisensai/hibiki→fushi + hibiki-hook→fushi-hook）用户未表态；TMDB/ASC 网页操作用户自办
 
 外部注册进度（用户侧）：Google 全完成（Android `-o3vcj`/iOS `-a5iep` client 已建已落码，同意屏改名）；新 keystore 已生成（`C:\Users\wrds\fushi-keys\`，SHA1 CC:39:...:B3，4 个 CI secrets 已配，key.properties 已落主 checkout 与本 worktree）；Dropbox 新 app 已建已落码（差 Permissions 勾 scope + redirect URI 两步）；Entra redirect 用户在改；TMDB/ASC 未动。
