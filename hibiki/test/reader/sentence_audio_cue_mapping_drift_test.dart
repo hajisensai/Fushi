@@ -14,7 +14,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 /// ① 上游 N 字漂移自愈（用 cue 原文在 DOM 就近重定位，不用死的偏移）；
 /// ② 漂移不传播（每条 cue 独立锚定）；
 /// ③ 窗口受限 + 单调 ⇒ 不跳到远处重复句；④ 未命中回落提示偏移。
-List<int> _resolve(String fullNorm, List<SasayakiCueHint> cues,
+List<int> _resolve(String fullNorm, List<SentenceAudioCueHint> cues,
         {int window = 256}) =>
     ReaderPaginationScripts.resolveCueNormStartsForTesting(
       fullNorm: fullNorm,
@@ -26,8 +26,8 @@ void main() {
   group('resolveCueNormStarts (BUG-060)', () {
     test('无漂移：解析起点等于命中位置', () {
       const String full = 'あいうえおかきくけこさしすせそ';
-      final out = _resolve(full, const <SasayakiCueHint>[
-        SasayakiCueHint(needle: 'かきくけこ', hint: 5, length: 5),
+      final out = _resolve(full, const <SentenceAudioCueHint>[
+        SentenceAudioCueHint(needle: 'かきくけこ', hint: 5, length: 5),
       ]);
       expect(out, <int>[5]);
     });
@@ -35,8 +35,8 @@ void main() {
     test('上游 +2 字漂移：按原文重定位到真实位置(7)，而非死提示(5)', () {
       // DOM 比匹配坐标在前部多了 2 个字（ＸＹ），提示仍说 5。
       const String full = 'ＸＹあいうえおかきくけこさしすせそ';
-      final out = _resolve(full, const <SasayakiCueHint>[
-        SasayakiCueHint(needle: 'かきくけこ', hint: 5, length: 5),
+      final out = _resolve(full, const <SentenceAudioCueHint>[
+        SentenceAudioCueHint(needle: 'かきくけこ', hint: 5, length: 5),
       ]);
       expect(out, <int>[7]);
     });
@@ -44,9 +44,9 @@ void main() {
     test('漂移不传播：前句漂移不影响后句各自命中', () {
       // 前部多 2 字；两句提示都偏 2，但各自按原文重定位到真实位置。
       const String full = 'ＸＹあいうえおかきくけこさしすせそたちつてと';
-      final out = _resolve(full, const <SasayakiCueHint>[
-        SasayakiCueHint(needle: 'かきくけこ', hint: 5, length: 5), // 真实 7
-        SasayakiCueHint(needle: 'たちつてと', hint: 15, length: 5), // 真实 17
+      final out = _resolve(full, const <SentenceAudioCueHint>[
+        SentenceAudioCueHint(needle: 'かきくけこ', hint: 5, length: 5), // 真实 7
+        SentenceAudioCueHint(needle: 'たちつてと', hint: 15, length: 5), // 真实 17
       ]);
       expect(out, <int>[7, 17]);
     });
@@ -54,8 +54,8 @@ void main() {
     test('窗口受限 + 就近：远处重复句不抢，取离提示最近的那个', () {
       // 同一句在 5 和 500 各出现一次；提示 5、窗口 256 → 取 5，不跳 500。
       final String full = 'かきくけこ${'を' * 495}かきくけこ'; // 第二处在 500
-      final out = _resolve(full, const <SasayakiCueHint>[
-        SasayakiCueHint(needle: 'かきくけこ', hint: 5, length: 5),
+      final out = _resolve(full, const <SentenceAudioCueHint>[
+        SentenceAudioCueHint(needle: 'かきくけこ', hint: 5, length: 5),
       ]);
       expect(out.single, 0); // 第一处在 index 0（最近 hint=5）
     });
@@ -64,25 +64,26 @@ void main() {
       // needle 在 0 和 20 各出现；第一句吃掉 0，第二句 hint 指向 20，
       // 即便 0 也匹配，也不能回退。
       const String full = 'かきくけこ#####かきくけこ#####';
-      final out = _resolve(full, const <SasayakiCueHint>[
-        SasayakiCueHint(needle: 'かきくけこ', hint: 0, length: 5), // → 0
-        SasayakiCueHint(needle: 'かきくけこ', hint: 10, length: 5), // → 10（不回退到 0）
+      final out = _resolve(full, const <SentenceAudioCueHint>[
+        SentenceAudioCueHint(needle: 'かきくけこ', hint: 0, length: 5), // → 0
+        SentenceAudioCueHint(
+            needle: 'かきくけこ', hint: 10, length: 5), // → 10（不回退到 0）
       ]);
       expect(out, <int>[0, 10]);
     });
 
     test('未命中：回落到裁剪后的提示偏移', () {
       const String full = 'あいうえおかきくけこ';
-      final out = _resolve(full, const <SasayakiCueHint>[
-        SasayakiCueHint(needle: 'まったく無い句', hint: 3, length: 6),
+      final out = _resolve(full, const <SentenceAudioCueHint>[
+        SentenceAudioCueHint(needle: 'まったく無い句', hint: 3, length: 6),
       ]);
       expect(out.single, 3); // 回落提示
     });
 
     test('未命中且提示越界：裁剪到文本末尾', () {
       const String full = 'あいうえお';
-      final out = _resolve(full, const <SasayakiCueHint>[
-        SasayakiCueHint(needle: 'xyz不存在', hint: 999, length: 4),
+      final out = _resolve(full, const <SentenceAudioCueHint>[
+        SentenceAudioCueHint(needle: 'xyz不存在', hint: 999, length: 4),
       ]);
       expect(out.single, full.length);
     });
@@ -94,24 +95,24 @@ void main() {
     // full 索引: あ0 い1 う2 え3 お4 か5 き6 く7 け8 こ9 さ10 し11 す12 せ13 そ14
     test('回落不污染游标：不可命中 cue(hint 越界)后，可命中 cue 仍锚定真实位置', () {
       const String full = 'あいうえおかきくけこさしすせそ';
-      final out = _resolve(full, const <SasayakiCueHint>[
+      final out = _resolve(full, const <SentenceAudioCueHint>[
         // cue1 在 DOM 搜不到（转写差异 / gaiji 被剥 / 模糊匹配）。matcher 给的
         // hint=8、length=2 把旧游标推到 10，越过 cue2 真实位置 5。
-        SasayakiCueHint(needle: 'みつからん', hint: 8, length: 2),
+        SentenceAudioCueHint(needle: 'みつからん', hint: 8, length: 2),
         // cue2「かきくけこ」DOM 真实位置 5，能精确命中，不该被前句回落污染推到 10。
-        SasayakiCueHint(needle: 'かきくけこ', hint: 5, length: 5),
+        SentenceAudioCueHint(needle: 'かきくけこ', hint: 5, length: 5),
       ]);
       expect(out[1], 5, reason: '可命中 cue 必须自愈到 5，不被前一条回落 cue 的游标污染');
     });
 
     test('回落不污染游标：连续两条不可命中后，真实可命中句仍命中', () {
       const String full = 'あいうえおかきくけこさしすせそたちつてと';
-      final out = _resolve(full, const <SasayakiCueHint>[
+      final out = _resolve(full, const <SentenceAudioCueHint>[
         // 两条都搜不到且 hint 越界靠后；旧实现累积把游标推到很靠后。
-        SasayakiCueHint(needle: 'なし1', hint: 12, length: 3),
-        SasayakiCueHint(needle: 'なし2', hint: 14, length: 3),
+        SentenceAudioCueHint(needle: 'なし1', hint: 12, length: 3),
+        SentenceAudioCueHint(needle: 'なし2', hint: 14, length: 3),
         // 真实「かきくけこ」在 5，必须能命中。
-        SasayakiCueHint(needle: 'かきくけこ', hint: 5, length: 5),
+        SentenceAudioCueHint(needle: 'かきくけこ', hint: 5, length: 5),
       ]);
       expect(out[2], 5, reason: '多条回落不得累积推进游标越过真实可命中句');
     });
@@ -119,14 +120,14 @@ void main() {
 
   // 源码守卫：JS collectSasayakiCueRanges 必须与上面被测的 Dart 影子同算法
   // （文本就近 + 单调 + 窗口 + 回落），任一支柱被回归删掉就回到「死偏移累积漂移」。
-  group('JS sasayaki anchoring wiring guard (BUG-060)', () {
+  group('JS sentenceAudioHighlight anchoring wiring guard (BUG-060)', () {
     test('JS 用 cue 原文在实时 DOM 就近重定位（非死偏移逐字计数）', () {
       final String src = File(
         'lib/src/reader/reader_pagination_scripts.dart',
       ).readAsStringSync();
 
       // 运行时按 DOM 文本建归一化反查表。
-      expect(src.contains('buildSasayakiNormIndex:'), isTrue,
+      expect(src.contains('buildSentenceAudioNormIndex:'), isTrue,
           reason: '需一次性构建实时 DOM 的归一化全文 + 反查表');
       // 反查表必须按 UTF-16 码元粒度（代理对 push 两条），与 full.indexOf 的
       // 码元偏移对齐，否则 CJK 扩展 B+ 汉字后高亮错位（W-1）。
@@ -155,9 +156,11 @@ void main() {
       ).readAsStringSync();
 
       // 锁定 collectSasayakiCueRanges 函数体。
-      final int fnStart = src.indexOf('collectSasayakiCueRanges: function');
+      final int fnStart =
+          src.indexOf('collectSentenceAudioCueRanges: function');
       expect(fnStart, greaterThanOrEqualTo(0));
-      final int fnEnd = src.indexOf('applySasayakiCues: function', fnStart);
+      final int fnEnd =
+          src.indexOf('applySentenceAudioCues: function', fnStart);
       expect(fnEnd, greaterThan(fnStart));
       final String fnBody = src.substring(fnStart, fnEnd);
 
@@ -239,9 +242,9 @@ void main() {
       // cue 原文是片假名「カタカナ」，先折叠成 needle「かたかな」（运行期 foldNormalize）。
       final String needle =
           ReaderPaginationScripts.foldNormalizeForTesting('カタカナ');
-      final out = _resolve(full, <SasayakiCueHint>[
+      final out = _resolve(full, <SentenceAudioCueHint>[
         // hint 故意给 0（不准），靠 DOM 文本就近重定位到真实位置 5。
-        SasayakiCueHint(needle: needle, hint: 0, length: 4),
+        SentenceAudioCueHint(needle: needle, hint: 0, length: 4),
       ]);
       expect(out.single, 5, reason: '折叠后 needle 必须命中真实位置 5，而非回落 hint=0');
     });
@@ -249,15 +252,17 @@ void main() {
     test('未折叠的片假名 needle 在平假名全文里落空（证伪：这正是修复前症状）', () {
       const String full = 'あいうえおかたかなさしすせそ';
       // 不经折叠（模拟旧 JS：normalizeText 只剥），片假名 needle 在平假名全文里搜不到。
-      final out = _resolve(full, const <SasayakiCueHint>[
-        SasayakiCueHint(needle: 'カタカナ', hint: 0, length: 4),
+      final out = _resolve(full, const <SentenceAudioCueHint>[
+        SentenceAudioCueHint(needle: 'カタカナ', hint: 0, length: 4),
       ]);
       expect(out.single, 0, reason: '未折叠时 indexOf 落空 → 回落 hint=0（这是被修复的错误行为）');
     });
   });
 
   // 源码守卫：JS 运行期归一化必须做值折叠并用于 needle + full（防回归删回「只剥不折」）。
-  group('JS sasayaki value-folding wiring guard (TODO-630/BUG-366)', () {
+  group(
+      'JS sentenceAudioHighlight value-folding wiring guard (TODO-630/BUG-366)',
+      () {
     final String src = File(
       'lib/src/reader/reader_pagination_scripts.dart',
     ).readAsStringSync();
@@ -276,32 +281,37 @@ void main() {
 
     test('full 索引也折叠（与 needle 同坐标系）', () {
       expect(src.contains('this.foldCodePoint(text.codePointAt(i))'), isTrue,
-          reason: 'buildSasayakiNormIndex 的 full 也须折叠，否则 needle/full 坐标系分叉');
+          reason:
+              'buildSentenceAudioNormIndex 的 full 也须折叠，否则 needle/full 坐标系分叉');
     });
   });
 
   // 源码守卫：观测日志（解定位僵局）必须存在于关键节点（防回归删）。
-  group('JS sasayaki highlight observability guard (TODO-630)', () {
+  group('JS sentenceAudioHighlight highlight observability guard (TODO-630)',
+      () {
     final String src = File(
       'lib/src/reader/reader_pagination_scripts.dart',
     ).readAsStringSync();
 
-    test('applySasayakiCues 打 payload cue 数 + 一次性诊断（cssHighlights/背景色）', () {
+    test('applySentenceAudioCues 打 payload cue 数 + 一次性诊断（cssHighlights/背景色）',
+        () {
       expect(
-          src.contains('[sasayaki-hl] applySasayakiCues payloadCues='), isTrue);
-      expect(
-          src.contains('[sasayaki-hl] diag cssHighlightsSupported='), isTrue);
-      expect(src.contains('--hoshi-sasayaki-background-color'), isTrue,
-          reason: '一次性诊断须读 sasayaki 背景色变量（透明/缺失也是「看不见」原因）');
+          src.contains(
+              '[sentence-audio-hl] applySentenceAudioCues payloadCues='),
+          isTrue);
+      expect(src.contains('[sentence-audio-hl] diag cssHighlightsSupported='),
+          isTrue);
+      expect(src.contains('--hoshi-sentence-audio-background-color'), isTrue,
+          reason: '一次性诊断须读 sentenceAudioHighlight 背景色变量（透明/缺失也是「看不见」原因）');
     });
 
-    test('collectSasayakiCueRanges 打 cue 数 + 空 range 计数', () {
-      expect(src.contains('[sasayaki-hl] collectRanges cues='), isTrue);
+    test('collectSentenceAudioCueRanges 打 cue 数 + 空 range 计数', () {
+      expect(src.contains('[sentence-audio-hl] collectRanges cues='), isTrue);
       expect(src.contains('emptyRanges'), isTrue);
     });
 
-    test('highlightSasayakiCue 打 range/ruby 数（或为何 return null）', () {
-      expect(src.contains('[sasayaki-hl] highlightCue ranges='), isTrue);
+    test('highlightSentenceAudioCue 打 range/ruby 数（或为何 return null）', () {
+      expect(src.contains('[sentence-audio-hl] highlightCue ranges='), isTrue);
       expect(src.contains('RETURN_NULL_no_segments'), isTrue);
     });
   });

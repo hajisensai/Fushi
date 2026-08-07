@@ -137,7 +137,7 @@ void main() {
           ..bookKey = 'book'
           ..chapterHref = 'chapter'
           ..sentenceIndex = normStart ~/ 10
-          ..textFragmentId = SasayakiMatchCodec.encodeHit(
+          ..textFragmentId = SubtitleRematchCodec.encodeHit(
             sectionIndex: 0,
             normCharStart: normStart,
             normCharEnd: normEnd,

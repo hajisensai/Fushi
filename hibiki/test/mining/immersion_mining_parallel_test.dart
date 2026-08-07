@@ -129,7 +129,7 @@ void main() {
     final ImmersionMiningResult res = await mining;
     expect(res.aborted, false);
     expect(repo.minedContext!.coverPath, endsWith('.gif'));
-    expect(repo.minedContext!.sasayakiAudioPath, isNotNull);
+    expect(repo.minedContext!.sentenceAudioPath, isNotNull);
   });
 
   test('失败摘要按来源分流：封面失败不会串进音频通道，反之亦然', () async {

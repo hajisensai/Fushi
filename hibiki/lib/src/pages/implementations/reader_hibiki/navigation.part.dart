@@ -1233,8 +1233,8 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   void _syncPositionFromCurrentCue() {
     final AudioCue? cue = _audiobookController?.currentCue;
     if (cue == null) return;
-    final SasayakiFragment? frag =
-        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    final SubtitleRematchFragment? frag =
+        SubtitleRematchCodec.tryDecode(cue.textFragmentId);
     if (frag != null) {
       _lastProgressSection = frag.sectionIndex;
       if (frag.sectionIndex >= 0 &&

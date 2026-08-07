@@ -176,17 +176,26 @@ class EpubSrtMatcher {
     final String big = idx.normText;
     final int totalLen = big.length;
 
-    final int start =
-        _findStart(big, cues, similarityThreshold, preNormCueTexts);
-    debugPrint('[sasayaki] matcher: sections=${sections.length} '
-        'totalNormLen=$totalLen cues=${cues.length} startCursor=$start '
-        'threshold=$similarityThreshold');
+    final int start = _findStart(
+      big,
+      cues,
+      similarityThreshold,
+      preNormCueTexts,
+    );
+    debugPrint(
+      '[sentenceAudioHighlight] matcher: sections=${sections.length} '
+      'totalNormLen=$totalLen cues=${cues.length} startCursor=$start '
+      'threshold=$similarityThreshold',
+    );
     for (int si = 0; si < sections.length; si++) {
       final int s0 = idx.sectionNormStarts[si];
-      final int s1 =
-          (si + 1 < sections.length) ? idx.sectionNormStarts[si + 1] : totalLen;
-      debugPrint('[sasayaki] matcher.section[$si] href="${sections[si].href}" '
-          'normStart=$s0 normLen=${s1 - s0}');
+      final int s1 = (si + 1 < sections.length)
+          ? idx.sectionNormStarts[si + 1]
+          : totalLen;
+      debugPrint(
+        '[sentenceAudioHighlight] matcher.section[$si] href="${sections[si].href}" '
+        'normStart=$s0 normLen=${s1 - s0}',
+      );
     }
 
     final List<CueMatch> results = <CueMatch>[];
@@ -211,8 +220,10 @@ class EpubSrtMatcher {
         if (recovered >= 0) {
           cursor = recovered;
           consecutiveMisses = 0;
-          debugPrint('[sasayaki] matcher.recover cursor=$cursor '
-              'cue="${_clip(cue.text, 24)}"');
+          debugPrint(
+            '[sentenceAudioHighlight] matcher.recover cursor=$cursor '
+            'cue="${_clip(cue.text, 24)}"',
+          );
         }
       }
 
@@ -223,15 +234,27 @@ class EpubSrtMatcher {
         if (found >= 0 && found + nc.length <= windowEnd) {
           final int matchEnd = found + nc.length;
           final int secIdx = _sectionForOffset(idx.sectionNormStarts, found);
-          results.add(CueMatch(
-            cueSentenceIndex: cue.sentenceIndex,
-            sectionIndex: secIdx,
-            normCharStart: found - idx.sectionNormStarts[secIdx],
-            normCharEnd: matchEnd - idx.sectionNormStarts[secIdx],
-            score: 1,
-          ));
-          _logHit(matched, cue, nc, big, found, matchEnd, secIdx,
-              idx.sectionNormStarts[secIdx], 1, ci == cues.length - 1);
+          results.add(
+            CueMatch(
+              cueSentenceIndex: cue.sentenceIndex,
+              sectionIndex: secIdx,
+              normCharStart: found - idx.sectionNormStarts[secIdx],
+              normCharEnd: matchEnd - idx.sectionNormStarts[secIdx],
+              score: 1,
+            ),
+          );
+          _logHit(
+            matched,
+            cue,
+            nc,
+            big,
+            found,
+            matchEnd,
+            secIdx,
+            idx.sectionNormStarts[secIdx],
+            1,
+            ci == cues.length - 1,
+          );
           cursor = matchEnd;
           matched++;
           consecutiveMisses = 0;
@@ -267,29 +290,45 @@ class EpubSrtMatcher {
       if (bestSim >= similarityThreshold && bestPos >= 0) {
         final int matchEnd = bestPos + bestLen;
         final int secIdx = _sectionForOffset(idx.sectionNormStarts, bestPos);
-        results.add(CueMatch(
-          cueSentenceIndex: cue.sentenceIndex,
-          sectionIndex: secIdx,
-          normCharStart: bestPos - idx.sectionNormStarts[secIdx],
-          normCharEnd: matchEnd - idx.sectionNormStarts[secIdx],
-          score: bestSim,
-        ));
-        _logHit(matched, cue, nc, big, bestPos, matchEnd, secIdx,
-            idx.sectionNormStarts[secIdx], bestSim, ci == cues.length - 1);
+        results.add(
+          CueMatch(
+            cueSentenceIndex: cue.sentenceIndex,
+            sectionIndex: secIdx,
+            normCharStart: bestPos - idx.sectionNormStarts[secIdx],
+            normCharEnd: matchEnd - idx.sectionNormStarts[secIdx],
+            score: bestSim,
+          ),
+        );
+        _logHit(
+          matched,
+          cue,
+          nc,
+          big,
+          bestPos,
+          matchEnd,
+          secIdx,
+          idx.sectionNormStarts[secIdx],
+          bestSim,
+          ci == cues.length - 1,
+        );
         cursor = matchEnd;
         matched++;
         consecutiveMisses = 0;
       } else {
         results.add(CueMatch.unmatched);
         consecutiveMisses++;
-        debugPrint('[sasayaki] matcher.miss sid=${cue.sentenceIndex} '
-            'cue="${_clip(cue.text, 24)}" consecutive=$consecutiveMisses');
+        debugPrint(
+          '[sentenceAudioHighlight] matcher.miss sid=${cue.sentenceIndex} '
+          'cue="${_clip(cue.text, 24)}" consecutive=$consecutiveMisses',
+        );
       }
     }
 
-    debugPrint('[sasayaki] matcher done: matched=$matched/${cues.length} '
-        'rate=${(matched * 100 / cues.length).toStringAsFixed(1)}% '
-        'finalCursor=$cursor/$totalLen');
+    debugPrint(
+      '[sentenceAudioHighlight] matcher done: matched=$matched/${cues.length} '
+      'rate=${(matched * 100 / cues.length).toStringAsFixed(1)}% '
+      'finalCursor=$cursor/$totalLen',
+    );
 
     return MatchResult(
       matches: results,
@@ -312,12 +351,14 @@ class EpubSrtMatcher {
   ) {
     if (hitIndex < 5 || isLast) {
       final String snippet = big.substring(found, matchEnd);
-      debugPrint('[sasayaki] matcher.hit#$hitIndex sid=${cue.sentenceIndex} '
-          'sec=$secIdx ns=${found - secBase} '
-          'score=${score.toStringAsFixed(3)} '
-          'cue="${_clip(cue.text, 24)}" '
-          'norm="${_clip(nc, 24)}" '
-          'big="${_clip(snippet, 24)}"');
+      debugPrint(
+        '[sentenceAudioHighlight] matcher.hit#$hitIndex sid=${cue.sentenceIndex} '
+        'sec=$secIdx ns=${found - secBase} '
+        'score=${score.toStringAsFixed(3)} '
+        'cue="${_clip(cue.text, 24)}" '
+        'norm="${_clip(nc, 24)}" '
+        'big="${_clip(snippet, 24)}"',
+      );
     }
   }
 
@@ -409,7 +450,7 @@ class EpubSrtMatcher {
         final int outKey = tn == 1
             ? haystack.codeUnitAt(outIdx)
             : (haystack.codeUnitAt(outIdx) << 16) |
-                haystack.codeUnitAt(outIdx + 1);
+                  haystack.codeUnitAt(outIdx + 1);
         final int outOldCount = cGrams[outKey]!;
         final int outNCount = effectiveNGrams[outKey] ?? 0;
         // If this gram was contributing to matches, check if removing reduces it.
@@ -427,7 +468,7 @@ class EpubSrtMatcher {
         final int inKey = tn == 1
             ? haystack.codeUnitAt(inIdx)
             : (haystack.codeUnitAt(inIdx) << 16) |
-                haystack.codeUnitAt(inIdx + 1);
+                  haystack.codeUnitAt(inIdx + 1);
         final int inOldCount = cGrams[inKey] ?? 0;
         final int inNCount = effectiveNGrams[inKey] ?? 0;
         // If adding this gram brings the candidate count to within needle range.
@@ -455,11 +496,15 @@ class EpubSrtMatcher {
   /// 取前 [defaultProbeCount] 条 cue，跳过 `＊` 开头 & 太短的，在全书做 indexOf
   /// （精确 + 模糊兜底），返回最小命中偏移；全部 miss 则回到 0。
   static int _findStart(
-      String big, List<AudioCue> cues, double similarityThreshold,
-      [List<String>? preNormCueTexts]) {
+    String big,
+    List<AudioCue> cues,
+    double similarityThreshold, [
+    List<String>? preNormCueTexts,
+  ]) {
     int? minStart;
-    final int limit =
-        cues.length < defaultProbeCount ? cues.length : defaultProbeCount;
+    final int limit = cues.length < defaultProbeCount
+        ? cues.length
+        : defaultProbeCount;
     for (int i = 0; i < limit; i++) {
       final String raw = cues[i].text;
       if (raw.startsWith('＊') || raw.startsWith('*')) {

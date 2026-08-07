@@ -250,7 +250,7 @@ window.__hoshiResetPrevHighlight = function() {
   /// `__hoshiIsSkippable` 保留 — 归一化偏移计算需要它。
   /// 删除了 `__hoshiLoadSasayakiRefs`（不再依赖 ttu IndexedDB）。
   /// cue 应用改为调用 `window.fushiReader.applySasayakiCues()`。
-  static const String _sasayakiFn = '''
+  static const String _sentenceAudioFn = '''
 window.__hoshiIsSkippable = function(c) {
   if (c >= 0x30 && c <= 0x39) return false;
   if (c >= 0x41 && c <= 0x5A) return false;
@@ -278,21 +278,21 @@ window.__hoshiIsSkippable = function(c) {
   return true;
 };
 
-window.__hoshiClearSasayakiApplied = function() {
-  if (window.fushiReader && typeof window.fushiReader.clearSasayakiCue === 'function') {
-    window.fushiReader.clearSasayakiCue();
+window.__hoshiClearSentenceAudioApplied = function() {
+  if (window.fushiReader && typeof window.fushiReader.clearSentenceAudioCue === 'function') {
+    window.fushiReader.clearSentenceAudioCue();
   }
 };
 
-window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
+window.__hoshiApplySentenceAudioCues = function(sectionIndex, cuesJson) {
   if (!document.body && !document.documentElement) return;
-  if (window.fushiReader && typeof window.fushiReader.applySasayakiCues === 'function') {
-    window.fushiReader.applySasayakiCues(cuesJson);
+  if (window.fushiReader && typeof window.fushiReader.applySentenceAudioCues === 'function') {
+    window.fushiReader.applySentenceAudioCues(cuesJson);
     return;
   }
 };
 
-window.__hoshiSasayakiAnchorEl = function(key) {
+window.__hoshiSentenceAudioAnchorEl = function(key) {
   var r = window.fushiReader;
   if (!r) return null;
   // BUG-898 根因：这里原本是 `if(cueRangesMap) {...} else if(cueWrappers) {...}`。
@@ -316,27 +316,27 @@ window.__hoshiSasayakiAnchorEl = function(key) {
   return null;
 };
 
-window.__hoshiHighlightSasayakiCueById = function(key, reveal, pauseEnabled) {
+window.__hoshiHighlightSentenceAudioCueById = function(key, reveal, pauseEnabled) {
   if (reveal === undefined) reveal = true;
   var r = window.fushiReader;
-  if (!r || typeof r.highlightSasayakiCue !== 'function') return false;
-  var anchor = window.__hoshiSasayakiAnchorEl(key);
+  if (!r || typeof r.highlightSentenceAudioCue !== 'function') return false;
+  var anchor = window.__hoshiSentenceAudioAnchorEl(key);
   var revealedImage = false;
   if (anchor && typeof window.__hoshiImagePauseAdvance === 'function') {
     revealedImage = window.__hoshiImagePauseAdvance(anchor, reveal, pauseEnabled);
   }
   // 跨过插图且需 reveal 时：让 reader 只高亮不自动滚（已滚到插图）；否则正常 reveal。
-  r.highlightSasayakiCue(key, revealedImage ? false : reveal);
+  r.highlightSentenceAudioCue(key, revealedImage ? false : reveal);
   return true;
 };
 ''';
 
   /// 章节导航 — 通过 flutter_inappwebview.callHandler 请求 Dart 侧跳章。
   static const String _chapterNavFn = '''
-window.__sasayakiAutoNav = window.__sasayakiAutoNav || false;
+window.__sentenceAudioAutoNav = window.__sentenceAudioAutoNav || false;
 
-window.__sasayakiRequestNav = async function(n) {
-  window.__sasayakiAutoNav = true;
+window.__sentenceAudioRequestNav = async function(n) {
+  window.__sentenceAudioAutoNav = true;
   try {
     if (window.flutter_inappwebview) {
       await window.flutter_inappwebview.callHandler('onChapterNavigationRequested', n);
@@ -344,7 +344,7 @@ window.__sasayakiRequestNav = async function(n) {
   } catch (e) {
     console.error('[hoshi] chapter nav error: ' + e);
   } finally {
-    queueMicrotask(function() { window.__sasayakiAutoNav = false; });
+    queueMicrotask(function() { window.__sentenceAudioAutoNav = false; });
   }
 };
 ''';
@@ -428,7 +428,7 @@ window.__hoshiAnnotate = function(chapterHref) {
 
     await controller.evaluateJavascript(source: _highlightFn);
     await controller.evaluateJavascript(source: _cueClickFn);
-    await controller.evaluateJavascript(source: _sasayakiFn);
+    await controller.evaluateJavascript(source: _sentenceAudioFn);
     await controller.evaluateJavascript(source: _chapterNavFn);
     await controller.evaluateJavascript(source: _annotateFn);
   }
@@ -451,15 +451,15 @@ window.__hoshiAnnotate = function(chapterHref) {
       return;
     }
     final String raw = cue.textFragmentId;
-    final SasayakiFragment? frag = SasayakiMatchCodec.tryDecode(raw);
+    final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(raw);
     // BUG-366/TODO-630 诊断：播放期逐句高亮的路径分叉。frag==null（如纯 SRT cue
     // 的 textFragmentId='[data-cue-id=...]'）走普通 __hoshiHighlight，完全不碰
     // sasayaki 高亮系统——即使 setup 期建了 range 也不会激活 ::highlight。
     // TODO-724：pauseEnabled = imagePauseSec>0；仅它为真时跨图才滚到插图。
     if (frag != null) {
       await controller.evaluateJavascript(
-        source: 'if(typeof __hoshiHighlightSasayakiCueById!=="undefined")'
-            'window.__hoshiHighlightSasayakiCueById('
+        source: 'if(typeof __hoshiHighlightSentenceAudioCueById!=="undefined")'
+            'window.__hoshiHighlightSentenceAudioCueById('
             '${jsonEncode(raw)}, $reveal, $pauseEnabled);',
       );
       return;
@@ -520,14 +520,14 @@ window.__hoshiAnnotate = function(chapterHref) {
   /// BUG-405：reader setup 路径（ReaderHibikiPage._prepareSasayakiCuesJson）也
   /// 复用本函数构造 payload，确保与有声书桥接路径共用同一份必含 text 的契约，
   /// 不再各自手写循环漏字段；因此本函数是正式 API，不再标 @visibleForTesting。
-  static List<Map<String, dynamic>> buildSasayakiPayload(
+  static List<Map<String, dynamic>> buildSentenceAudioPayload(
     List<AudioCue> cues,
     int sectionIndex,
   ) {
     final List<Map<String, dynamic>> payload = <Map<String, dynamic>>[];
     for (final AudioCue cue in cues) {
-      final SasayakiFragment? frag =
-          SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+      final SubtitleRematchFragment? frag =
+          SubtitleRematchCodec.tryDecode(cue.textFragmentId);
       if (frag == null) {
         continue;
       }
@@ -545,20 +545,20 @@ window.__hoshiAnnotate = function(chapterHref) {
   }
 
   /// 对齐 iOS Sasayaki 的 applySasayakiCues。
-  static Future<void> applySasayakiCues(
+  static Future<void> applySentenceAudioCues(
     InAppWebViewController controller, {
     required int sectionIndex,
     required List<AudioCue> cues,
   }) async {
     final List<Map<String, dynamic>> payload =
-        buildSasayakiPayload(cues, sectionIndex);
+        buildSentenceAudioPayload(cues, sectionIndex);
     if (payload.isEmpty) {
       return;
     }
     final String json = jsonEncode(payload);
     await controller.evaluateJavascript(
       source:
-          'if(typeof __hoshiApplySasayakiCues!=="undefined")__hoshiApplySasayakiCues($sectionIndex,$json);',
+          'if(typeof __hoshiApplySentenceAudioCues!=="undefined")__hoshiApplySentenceAudioCues($sectionIndex,$json);',
     );
   }
 
@@ -581,8 +581,8 @@ window.__hoshiAnnotate = function(chapterHref) {
     await controller.evaluateJavascript(
       source: '''
 (async function(){
-  if (typeof __sasayakiRequestNav !== "undefined") {
-    await __sasayakiRequestNav($sectionIndex);
+  if (typeof __sentenceAudioRequestNav !== "undefined") {
+    await __sentenceAudioRequestNav($sectionIndex);
   } else if (window.flutter_inappwebview) {
     await window.flutter_inappwebview.callHandler('onChapterNavigationRequested', $sectionIndex);
   }
@@ -596,9 +596,9 @@ window.__hoshiAnnotate = function(chapterHref) {
     if (json['hibiki-message-type'] != 'seekToSentence') {
       return null;
     }
-    final String? sasayakiKey = json['sasayakiKey'] as String?;
-    if (sasayakiKey != null && sasayakiKey.isNotEmpty) {
-      return AudiobookClickEvent(sasayakiKey: sasayakiKey);
+    final String? sentenceAudioKey = json['sentenceAudioKey'] as String?;
+    if (sentenceAudioKey != null && sentenceAudioKey.isNotEmpty) {
+      return AudiobookClickEvent(sentenceAudioKey: sentenceAudioKey);
     }
     final String chapter = json['chapter'] as String? ?? '';
     final int sid = (json['sid'] as num?)?.toInt() ?? -1;
@@ -683,7 +683,8 @@ window.__hoshiAnnotate = function(chapterHref) {
     );
   }
 
-  static Future<({int sectionIndex, int sectionCharOffset})?> getReaderCharOffset(
+  static Future<({int sectionIndex, int sectionCharOffset})?>
+      getReaderCharOffset(
     InAppWebViewController controller,
   ) async {
     return null;
@@ -875,12 +876,12 @@ class AudiobookClickEvent {
   const AudiobookClickEvent({
     this.chapterHref = '',
     this.sentenceIndex = -1,
-    this.sasayakiKey,
+    this.sentenceAudioKey,
   });
 
   final String chapterHref;
   final int sentenceIndex;
-  final String? sasayakiKey;
+  final String? sentenceAudioKey;
 }
 
 class BookSearchResult {

@@ -118,7 +118,8 @@ void main() {
       expect(navSrc.contains('isChapterNav('), isTrue,
           reason: '_navigateToChapter 纵深防御：被动导航不落 nav 页');
       expect(src.contains('isChapterNav('), isTrue,
-          reason: '_handleCueCrossChapter（sasayaki 路径 B）守卫 nav 页');
+          reason:
+              '_handleCueCrossChapter（sentenceAudioHighlight 路径 B）守卫 nav 页');
     });
   });
 }

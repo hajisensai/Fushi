@@ -7,7 +7,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
-import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
+import 'package:hibiki/src/media/audiobook/subtitle_rematch.dart';
 import 'package:hibiki/src/media/import/epub_backed_srt_book.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
@@ -151,7 +151,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
     0,
   );
   AudiobookHealth health;
-  final bool runMatcher = SasayakiRematch.supportedFormats.contains(ext);
+  final bool runMatcher = SubtitleRematch.supportedFormats.contains(ext);
   if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
     report(0.55, messages.matching);
     MatchResult? matchResult;
@@ -173,7 +173,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
       searchWindow: chosenWindow,
       similarityThreshold: similarityThreshold,
     );
-    SasayakiMatchCodec.applyToCues(cues: cues, result: matchResult);
+    SubtitleRematchCodec.applyToCues(cues: cues, result: matchResult);
     final int pct = (matchResult.matchRate * 100).round();
     health = AudiobookHealth.fromRatePct(
       ratePct: pct,

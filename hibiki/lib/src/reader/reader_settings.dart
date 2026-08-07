@@ -246,9 +246,9 @@ class ReaderSettings {
       _set<bool>('vn_click_advance', v);
 
   /// Merge Sasayaki cues that straddle a screen boundary (M1 feature).
-  bool get visualNovelMergeCrossScreenSasayakiCues =>
+  bool get visualNovelMergeCrossScreenSentenceAudioCues =>
       _get<bool>('vn_merge_cross_screen_cues', false);
-  Future<void> setVisualNovelMergeCrossScreenSasayakiCues(bool v) =>
+  Future<void> setVisualNovelMergeCrossScreenSentenceAudioCues(bool v) =>
       _set<bool>('vn_merge_cross_screen_cues', v);
 
   String get theme => _get<String>('ttu_theme', 'light-theme');

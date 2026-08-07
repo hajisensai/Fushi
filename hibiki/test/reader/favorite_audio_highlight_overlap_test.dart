@@ -34,7 +34,7 @@ void main() {
 
         expect(block, contains('background-color'), reason: color);
         expect(block, contains('text-decoration-line: underline'),
-            reason: '收藏高亮和 hoshi-sasayaki 音频背景重叠时，必须还有独立可见语义');
+            reason: '收藏高亮和 hoshi-sentence-audio 音频背景重叠时，必须还有独立可见语义');
         expect(block, contains('text-decoration-color'), reason: color);
         expect(block, contains('text-decoration-thickness'), reason: color);
       }
@@ -76,7 +76,8 @@ void main() {
       }
 
       expect(bridge, contains('_rubyForNode'),
-          reason: 'HighlightBridge 需要像 sasayaki/selection 一样识别 ruby 节点');
+          reason:
+              'HighlightBridge 需要像 sentenceAudioHighlight/selection 一样识别 ruby 节点');
       expect(bridge, contains('rubyElements'),
           reason: 'ruby 元素应从 CSS Highlight range / fallback span 包裹中分流出来');
       expect(

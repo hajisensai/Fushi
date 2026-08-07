@@ -99,7 +99,7 @@ void main() {
         context: const AnkiMiningContext(
           sentence: '猫がいる',
           coverPath: '/x/cover.jpg',
-          sasayakiAudioPath: '/x/audio.aac',
+          sentenceAudioPath: '/x/audio.aac',
           source: AnkiMiningSource.book,
           bookTitleTag: 'B',
         ),

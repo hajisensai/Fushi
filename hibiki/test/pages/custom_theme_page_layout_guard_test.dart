@@ -37,21 +37,22 @@ void main() {
     });
 
     test(
-        'sasayaki + selection sit in the audiobook section, '
+        'sentenceAudioHighlight + selection sit in the audiobook section, '
         'font/bg/link in reader section', () {
       // The audiobook-lyrics section header must appear before the
       // reader-colors header, and sasayaki/selection must be ordered after the
       // audiobook header but before the reader header.
       final int audiobookIdx = source.indexOf('t.section_audiobook_lyrics');
       final int readerIdx = source.indexOf('t.section_reader_colors');
-      final int sasayakiIdx = source.indexOf('t.color_sasayaki');
+      final int sentenceAudioIdx =
+          source.indexOf('t.color_sentence_audio_highlight');
       final int selectionIdx = source.indexOf('t.selection_color');
       final int fontIdx = source.indexOf('t.font_color');
 
       expect(audiobookIdx, greaterThanOrEqualTo(0));
       expect(readerIdx, greaterThan(audiobookIdx));
-      expect(sasayakiIdx, greaterThan(audiobookIdx));
-      expect(sasayakiIdx, lessThan(readerIdx),
+      expect(sentenceAudioIdx, greaterThan(audiobookIdx));
+      expect(sentenceAudioIdx, lessThan(readerIdx),
           reason: '笹語高亮应位于有声书板块（在阅读器板块之前）');
       expect(selectionIdx, greaterThan(audiobookIdx));
       expect(selectionIdx, lessThan(readerIdx), reason: '选区高亮应位于有声书板块');

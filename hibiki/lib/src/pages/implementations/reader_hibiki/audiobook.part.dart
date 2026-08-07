@@ -22,7 +22,7 @@ double? audiobookSrtCrossChapterProgress({
 /// null — callers must then preserve the current scroll and never zero.
 /// Reuses the restore-path formula `normCharStart / chapterChars`.
 @visibleForTesting
-double? audiobookSasayakiCrossChapterProgress({
+double? audiobookSentenceAudioCrossChapterProgress({
   required int normCharStart,
   required int chapterChars,
 }) {
@@ -253,7 +253,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       // _primeAudioCuesForCurrentBook 重灌（_prepareSasayakiCuesJson 复用它，
       // 不再每章重查全书 cue）。
       _cachedAllCues = null;
-      _cachedSasayaki = false;
+      _cachedSentenceAudio = false;
     }
     if (forceReload && session.isActive) {
       // 导入了新音频：必须重 load，stop 旧会话让 session.start 走全新加载分支。
@@ -367,8 +367,8 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       _cachedAllCues = cues;
       // BUG-395：SRT 书可被 matcher 匹配进真 EPUB（cue 为 sasayaki://），此处不能
       // 硬编码 false——与 _prepareSasayakiCuesJson 的判据保持一致，按 cue 内容计算。
-      _cachedSasayaki = cues.any(
-        (c) => SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
+      _cachedSentenceAudio = cues.any(
+        (c) => SubtitleRematchCodec.tryDecode(c.textFragmentId) != null,
       );
       final (Map<int, int> m, List<(int, int)> r) = _buildSrtChapterMap(cues);
       _srtCueChapterMap = m;
@@ -383,14 +383,14 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     final List<AudioCue> allCues = await repo.cuesForBook(bookKey);
     controller.setAllBookCues(allCues);
     _cachedAllCues = allCues;
-    _cachedSasayaki = allCues.any(
-      (c) => SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
+    _cachedSentenceAudio = allCues.any(
+      (c) => SubtitleRematchCodec.tryDecode(c.textFragmentId) != null,
     );
 
     // SRT 格式导入的 Audiobook 在 matcher 全部失败时，cue 的
     // chapterHref 仍为 'srt://default'，按 EPUB 章节 href 查不到。
     // 与 SrtBook 路径对齐，直接用全部 cue。
-    if (_cachedSasayaki || audiobookCuesUseWholeBookForChapter(allCues)) {
+    if (_cachedSentenceAudio || audiobookCuesUseWholeBookForChapter(allCues)) {
       controller.setChapterCues(allCues);
       return;
     }
@@ -422,8 +422,8 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     final AudioCue? cue = _audiobookController?.cueAtCurrentPositionInBook();
     if (cue == null || _book == null) return;
 
-    final SasayakiFragment? frag =
-        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    final SubtitleRematchFragment? frag =
+        SubtitleRematchCodec.tryDecode(cue.textFragmentId);
     if (frag != null &&
         frag.sectionIndex >= 0 &&
         frag.sectionIndex < _book!.chapters.length) {
@@ -431,7 +431,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       // TODO-746: reuse the shared in-chapter progress helper (DRY). On initial
       // open a null (unknown char count) falls back to 0.0 = chapter start,
       // which is a sane initial anchor and preserves the original behaviour.
-      _initialProgress = audiobookSasayakiCrossChapterProgress(
+      _initialProgress = audiobookSentenceAudioCrossChapterProgress(
             normCharStart: frag.normCharStart,
             chapterChars: _chapterCharCounts[frag.sectionIndex],
           ) ??
@@ -568,8 +568,8 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
 
     final AudioCue? cue = controller.currentCue;
     if (cue != null) {
-      final SasayakiFragment? frag =
-          SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+      final SubtitleRematchFragment? frag =
+          SubtitleRematchCodec.tryDecode(cue.textFragmentId);
       if (frag != null && frag.sectionIndex != _currentChapter) {
         AudiobookBridge.highlight(_controller!);
         return;
@@ -689,11 +689,11 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // 0.0 = that chapter's own start, which is the original behaviour for a
     // matched cue and is NOT a zero-to-chapter-1 (it is its real chapter).
     final AudioCue? cue = _audiobookController?.currentCue;
-    final SasayakiFragment? frag =
-        cue == null ? null : SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    final SubtitleRematchFragment? frag =
+        cue == null ? null : SubtitleRematchCodec.tryDecode(cue.textFragmentId);
     double? progress;
     if (frag != null && newSection < _chapterCharCounts.length) {
-      progress = audiobookSasayakiCrossChapterProgress(
+      progress = audiobookSentenceAudioCrossChapterProgress(
         normCharStart: frag.normCharStart,
         chapterChars: _chapterCharCounts[newSection],
       );
@@ -795,7 +795,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       return;
     }
     final List<AudioCue> targetCues =
-        controller.sasayakiCuesForSection(targetSec);
+        controller.sentenceAudioCuesForSection(targetSec);
     if (targetCues.isEmpty) {
       await _navigateToChapter(targetSec);
       return;
@@ -828,8 +828,8 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   ///   [audiobookSrtCrossChapterProgress] 公式）折算成分数口径。
   int _absoluteCharPositionForCue(AudioCue cue) {
     if (_book == null || _chapterCumulativeChars.isEmpty) return 0;
-    final SasayakiFragment? frag =
-        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    final SubtitleRematchFragment? frag =
+        SubtitleRematchCodec.tryDecode(cue.textFragmentId);
     if (frag != null) {
       return computeCharWatermark(
         chapterCumulativeChars: _chapterCumulativeChars,
@@ -865,8 +865,8 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
 
   int get _lookupSectionIndex {
     if (_lyricsMode && _lookupCue != null) {
-      final SasayakiFragment? frag =
-          SasayakiMatchCodec.tryDecode(_lookupCue!.textFragmentId);
+      final SubtitleRematchFragment? frag =
+          SubtitleRematchCodec.tryDecode(_lookupCue!.textFragmentId);
       if (frag != null) return frag.sectionIndex;
     }
     return _currentChapter;
@@ -875,10 +875,11 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   AudioCue? _findCueForOffset(int normalizedOffset) {
     final AudiobookPlayerController? ctrl = _audiobookController;
     if (ctrl == null) return null;
-    final List<AudioCue> cues = ctrl.sasayakiCuesForSection(_currentChapter);
+    final List<AudioCue> cues =
+        ctrl.sentenceAudioCuesForSection(_currentChapter);
     for (final AudioCue cue in cues) {
-      final SasayakiFragment? frag =
-          SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+      final SubtitleRematchFragment? frag =
+          SubtitleRematchCodec.tryDecode(cue.textFragmentId);
       if (frag == null) continue;
       if (frag.normCharStart <= normalizedOffset &&
           frag.normCharEnd > normalizedOffset) {
@@ -937,9 +938,9 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       return allCues;
     }
 
-    final List<AudioCue> sectionCues =
-        _audiobookController?.sasayakiCuesForSection(_lookupSectionIndex) ??
-            const <AudioCue>[];
+    final List<AudioCue> sectionCues = _audiobookController
+            ?.sentenceAudioCuesForSection(_lookupSectionIndex) ??
+        const <AudioCue>[];
     if (sectionCues.isNotEmpty) {
       return sectionCues;
     }
@@ -1322,8 +1323,8 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // 归属锚点）；`span` 与 result.cueSpans 同序等长（classify 只包一层不可变拷贝），故
     // 下标对齐。选区无夹图时 _cachedSelectionImages 为空 → 分配结果全空列表，零差异。
     final List<int?> cueNormStarts = span.map((AudioCue c) {
-      final SasayakiFragment? frag =
-          SasayakiMatchCodec.tryDecode(c.textFragmentId);
+      final SubtitleRematchFragment? frag =
+          SubtitleRematchCodec.tryDecode(c.textFragmentId);
       return (frag != null && frag.normCharStart >= 0)
           ? frag.normCharStart
           : null;
@@ -1451,7 +1452,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         // TODO-1013：逐句高亮跟随色 = 有声书当前句跟读高亮（sasayaki），与阅读器正文
         // `::highlight(hoshi-sasayaki)` 同一真相源（ReaderThemeColors.sasayaki），
         // 导出卡片把它当整句背景衬底，复刻「逐句高亮跟随」样式。
-        highlight: themeColors.sasayaki,
+        highlight: themeColors.sentenceAudioHighlight,
       );
 
       videoFile = File('$base.$videoExt');

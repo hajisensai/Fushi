@@ -464,7 +464,7 @@ void main() {
     // property of the shell shim, so those stay asserted on the shell slice.
     final String engine = readImmersionMiningEngineSource();
     expect(engine, contains('extractAudioSegmentViaFfmpeg'));
-    expect(engine, contains('sasayakiAudioPath: audioPath'));
+    expect(engine, contains('sentenceAudioPath: audioPath'));
     expect(engine, contains('repo.mineEntry('));
     expect(mineBody, contains('ImmersionMiningEngine().mine('));
     expect(mineBody, isNot(contains('autoRead')));

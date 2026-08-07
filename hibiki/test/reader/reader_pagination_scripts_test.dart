@@ -92,10 +92,10 @@ void main() {
       );
     });
 
-    test('clearSasayakiCueInvocation', () {
+    test('clearSentenceAudioCueInvocation', () {
       expect(
-        ReaderPaginationScripts.clearSasayakiCueInvocation(),
-        'window.fushiReader.clearSasayakiCue()',
+        ReaderPaginationScripts.clearSentenceAudioCueInvocation(),
+        'window.fushiReader.clearSentenceAudioCue()',
       );
     });
 
@@ -189,11 +189,13 @@ void main() {
       expect(fragIdx < charIdx, isTrue, reason: 'fragment 跳转优先级必须高于精确字符锚');
     });
 
-    test('sasayaki cues are read from config when present', () {
+    test('sentenceAudioHighlight cues are read from config when present', () {
       final String script = ReaderPaginationScripts.paginatedShellSource();
-      expect(script,
-          contains('window.fushiReader.applySasayakiCues(C.sasayakiCues)'));
-      expect(script, contains('C.sasayakiCues !== null'));
+      expect(
+          script,
+          contains(
+              'window.fushiReader.applySentenceAudioCues(C.sentenceAudioCues)'));
+      expect(script, contains('C.sentenceAudioCues !== null'));
     });
 
     test('defines onRestoreComplete callback', () {
@@ -287,15 +289,16 @@ void main() {
       expect(result, 'window.fushiReader.scrollToSearchMatch("猫", 100)');
     });
 
-    test('highlightSasayakiCueInvocation escapes cue id and embeds bool', () {
+    test('highlightSentenceAudioCueInvocation escapes cue id and embeds bool',
+        () {
       final String result =
-          ReaderPaginationScripts.highlightSasayakiCueInvocation(
+          ReaderPaginationScripts.highlightSentenceAudioCueInvocation(
         'cue"1',
         reveal: true,
       );
       expect(
         result,
-        'window.fushiReader.highlightSasayakiCue("cue\\"1", true)',
+        'window.fushiReader.highlightSentenceAudioCue("cue\\"1", true)',
       );
     });
   });

@@ -62,7 +62,7 @@ void main() {
     pagedIsBefore = _functionSource(
       source,
       '  isTextOffsetBeforeViewportPaged: function(node, offset, text, vertical, firstEdge) {',
-      '\n  buildSasayakiNormIndex:',
+      '\n  buildSentenceAudioNormIndex:',
     );
     pagedGetFirstCode = _stripJsLineComments(pagedGetFirst);
     pagedScanCode = _stripJsLineComments(pagedScan);

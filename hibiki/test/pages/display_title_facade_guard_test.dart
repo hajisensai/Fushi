@@ -269,7 +269,7 @@ void main() {
       final String fn = slice(
         miningPart,
         'Future<void> _recordMinedSentence(',
-        'Future<String?> _prepareSasayakiCuesJson()',
+        'Future<String?> _prepareSentenceAudioCuesJson()',
         where: '_recordMinedSentence',
       );
       expect(fn, contains('documentTitle: _book?.title,'));

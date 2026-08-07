@@ -246,7 +246,7 @@ void main() {
       context: AnkiMiningContext(
         sentence: '',
         coverPath: cover.path,
-        sasayakiAudioPath: sentenceAudio.path,
+        sentenceAudioPath: sentenceAudio.path,
       ),
     );
 
@@ -334,7 +334,7 @@ void main() {
       }),
       context: AnkiMiningContext(
         sentence: '',
-        sasayakiAudioPath: sentenceAudio.path,
+        sentenceAudioPath: sentenceAudio.path,
       ),
     );
     expect(outcome.result, MineResult.success);

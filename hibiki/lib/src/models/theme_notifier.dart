@@ -214,7 +214,7 @@ class CustomThemeEntry {
     this.secondaryColor,
     this.tertiaryColor,
     this.containerColor,
-    this.sasayakiColor,
+    this.sentenceAudioHighlightColor,
     this.linkColor,
   });
 
@@ -228,7 +228,7 @@ class CustomThemeEntry {
   final int? secondaryColor;
   final int? tertiaryColor;
   final int? containerColor;
-  final int? sasayakiColor;
+  final int? sentenceAudioHighlightColor;
   final int? linkColor;
 
   CustomThemeEntry copyWith({
@@ -247,7 +247,7 @@ class CustomThemeEntry {
       secondaryColor: secondaryColor,
       tertiaryColor: tertiaryColor,
       containerColor: containerColor,
-      sasayakiColor: sasayakiColor,
+      sentenceAudioHighlightColor: sentenceAudioHighlightColor,
       linkColor: linkColor,
     );
   }
@@ -263,7 +263,9 @@ class CustomThemeEntry {
         if (secondaryColor != null) 'secondaryColor': secondaryColor,
         if (tertiaryColor != null) 'tertiaryColor': tertiaryColor,
         if (containerColor != null) 'containerColor': containerColor,
-        if (sasayakiColor != null) 'sasayakiColor': sasayakiColor,
+        // JSON 键 'sasayakiColor' 是持久化契约（custom_themes 旧数据/分享码），冻结不改。
+        if (sentenceAudioHighlightColor != null)
+          'sasayakiColor': sentenceAudioHighlightColor,
         if (linkColor != null) 'linkColor': linkColor,
       };
 
@@ -280,7 +282,8 @@ class CustomThemeEntry {
       secondaryColor: asInt(json['secondaryColor']),
       tertiaryColor: asInt(json['tertiaryColor']),
       containerColor: asInt(json['containerColor']),
-      sasayakiColor: asInt(json['sasayakiColor']),
+      // JSON 键 'sasayakiColor' 冻结（见 toJson）。
+      sentenceAudioHighlightColor: asInt(json['sasayakiColor']),
       linkColor: asInt(json['linkColor']),
     );
   }
@@ -325,7 +328,7 @@ LegacyCustomThemeMigration migrateLegacyCustomTheme({
   required int legacySecondaryColor,
   required int legacyTertiaryColor,
   required int legacyContainerColor,
-  required int legacySasayakiColor,
+  required int legacySentenceAudioHighlightColor,
   required int legacyLinkColor,
   required String Function() idGenerator,
 }) {
@@ -357,7 +360,7 @@ LegacyCustomThemeMigration migrateLegacyCustomTheme({
       legacySecondaryColor != 0 ||
       legacyTertiaryColor != 0 ||
       legacyContainerColor != 0 ||
-      legacySasayakiColor != 0 ||
+      legacySentenceAudioHighlightColor != 0 ||
       legacyLinkColor != 0;
 
   if (!configured) {
@@ -380,7 +383,7 @@ LegacyCustomThemeMigration migrateLegacyCustomTheme({
     secondaryColor: nz(legacySecondaryColor),
     tertiaryColor: nz(legacyTertiaryColor),
     containerColor: nz(legacyContainerColor),
-    sasayakiColor: nz(legacySasayakiColor),
+    sentenceAudioHighlightColor: nz(legacySentenceAudioHighlightColor),
     linkColor: nz(legacyLinkColor),
   );
   return LegacyCustomThemeMigration(
@@ -1173,9 +1176,10 @@ class ThemeNotifier extends ChangeNotifier {
   Future<void> setCustomThemeContainerColor(Color? c) =>
       _setColorPref('custom_theme_container_color', c);
 
-  Color? get customThemeSasayakiColor =>
+  // 偏好键 'custom_theme_sasayaki_color' 是持久化契约（Drift preferences 表），冻结不改。
+  Color? get customThemeSentenceAudioHighlightColor =>
       _colorPref('custom_theme_sasayaki_color');
-  Future<void> setCustomThemeSasayakiColor(Color? c) =>
+  Future<void> setCustomThemeSentenceAudioHighlightColor(Color? c) =>
       _setColorPref('custom_theme_sasayaki_color', c);
 
   Color? get customThemeLinkColor => _colorPref('custom_theme_link_color');
@@ -1333,7 +1337,7 @@ class ThemeNotifier extends ChangeNotifier {
           _get('custom_theme_tertiary_color', defaultValue: 0) as int,
       legacyContainerColor:
           _get('custom_theme_container_color', defaultValue: 0) as int,
-      legacySasayakiColor:
+      legacySentenceAudioHighlightColor:
           _get('custom_theme_sasayaki_color', defaultValue: 0) as int,
       legacyLinkColor: _get('custom_theme_link_color', defaultValue: 0) as int,
       idGenerator: _customThemeIdGenerator,
@@ -1395,7 +1399,7 @@ class ThemeNotifier extends ChangeNotifier {
     Color? secondaryColor,
     Color? tertiaryColor,
     Color? containerColor,
-    Color? sasayakiColor,
+    Color? sentenceAudioHighlightColor,
     Color? linkColor,
   }) async {
     // TODO-930: write the same values into the new list model so the share-code
@@ -1410,7 +1414,8 @@ class ThemeNotifier extends ChangeNotifier {
     await setCustomThemeSecondaryColor(secondaryColor);
     await setCustomThemeTertiaryColor(tertiaryColor);
     await setCustomThemeContainerColor(containerColor);
-    await setCustomThemeSasayakiColor(sasayakiColor);
+    await setCustomThemeSentenceAudioHighlightColor(
+        sentenceAudioHighlightColor);
     await setCustomThemeLinkColor(linkColor);
 
     int? argb(Color? c) => c?.toARGB32();
@@ -1426,7 +1431,7 @@ class ThemeNotifier extends ChangeNotifier {
       secondaryColor: argb(secondaryColor),
       tertiaryColor: argb(tertiaryColor),
       containerColor: argb(containerColor),
-      sasayakiColor: argb(sasayakiColor),
+      sentenceAudioHighlightColor: argb(sentenceAudioHighlightColor),
       linkColor: argb(linkColor),
     );
     await upsertCustomTheme(entry);

@@ -1,6 +1,6 @@
 import 'audio_text_normalizer.dart';
 import '../audiobook/audiobook_model.dart';
-import 'sasayaki_match_codec.dart';
+import 'subtitle_rematch_codec.dart';
 
 /// 播放区间：audioFileIndex + 时间范围。
 class AudioPlaybackRange {
@@ -47,8 +47,9 @@ class CollectionAudioMatcher {
       int bestDist = 1 << 30;
 
       for (final AudioCue cue in cues) {
-        final SasayakiFragment? frag =
-            SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+        final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+          cue.textFragmentId,
+        );
         if (frag == null || frag.sectionIndex != sectionIndex) {
           continue;
         }

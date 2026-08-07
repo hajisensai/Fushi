@@ -124,9 +124,9 @@ void main() {
       expect(repo.minedContext!.coverPath, endsWith('.gif'));
       expect(
           File(repo.minedContext!.coverPath!).lengthSync(), greaterThan(100));
-      expect(repo.minedContext!.sasayakiAudioPath,
+      expect(repo.minedContext!.sentenceAudioPath,
           endsWith('immersion_audio.${immersionMiningAudioExtension()}'));
-      expect(File(repo.minedContext!.sasayakiAudioPath!).lengthSync(),
+      expect(File(repo.minedContext!.sentenceAudioPath!).lengthSync(),
           greaterThan(100));
     }, skip: ffmpeg == null ? 'ffmpeg unavailable' : false);
 

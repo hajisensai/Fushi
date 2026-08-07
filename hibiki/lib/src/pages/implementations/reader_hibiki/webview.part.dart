@@ -627,7 +627,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   /// boot 下发，引擎运行时读取。新增 per-nav 参数一律加在这里，不得回到脚本里插值。
   ReaderEngineConfig _buildReaderEngineConfig({
     required int navigationGeneration,
-    String? sasayakiCuesJson,
+    String? sentenceAudioCuesJson,
   }) {
     final ReaderSettings s = _settings!;
     // TODO-113: 滑动翻页距离阈值随灵敏度系数缩放。基础值 44px（纯距离触发）/ 22px
@@ -698,8 +698,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       vnScreenMode: s.visualNovelScreenMode,
       vnSentencesPerScreen: s.visualNovelSentencesPerScreen,
       vnPreserveDialogue: s.visualNovelPreserveDialogueBubbles,
-      vnMergeCrossScreenSasayakiCues: s.visualNovelMergeCrossScreenSasayakiCues,
-      sasayakiCuesJson: sasayakiCuesJson,
+      vnMergeCrossScreenSentenceAudioCues:
+          s.visualNovelMergeCrossScreenSentenceAudioCues,
+      sentenceAudioCuesJson: sentenceAudioCuesJson,
     );
   }
 
@@ -1838,7 +1839,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
               (String source) async => _webviewTopPopupState?.debugEval(source);
           ReaderHibikiPage.debugInjectAudiobookBridge = () =>
               AudiobookBridge.inject(controller,
-                  primaryColor: _themeSasayakiColor());
+                  primaryColor: _themeSentenceAudioHighlightColor());
           return true;
         }());
         _startContentReadyTimeout();
@@ -2619,11 +2620,11 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     final int gen = _navigateGeneration;
     final int chapterSnapshot = _currentChapter;
     try {
-      String? sasayakiCuesJson;
+      String? sentenceAudioCuesJson;
       if (_audiobookController != null) {
-        sasayakiCuesJson = await _prepareSasayakiCuesJson();
+        sentenceAudioCuesJson = await _prepareSentenceAudioCuesJson();
       }
-      ReaderChapterPerfTrace.mark('sasayakiCues');
+      ReaderChapterPerfTrace.mark('sentenceAudioCues');
       if (_currentChapter != chapterSnapshot || _navigateGeneration != gen) {
         return;
       }
@@ -2632,7 +2633,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       // Dart 侧每章重新拼装 + 压缩近万行（实测 buildSetupScript 中位数 9ms）。
       final ReaderEngineConfig engineConfig = _buildReaderEngineConfig(
         navigationGeneration: gen,
-        sasayakiCuesJson: sasayakiCuesJson,
+        sentenceAudioCuesJson: sentenceAudioCuesJson,
       );
       final String engineSource = readerEngineSource(
         vnMode: engineConfig.vnMode,

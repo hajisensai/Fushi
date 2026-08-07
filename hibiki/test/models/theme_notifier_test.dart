@@ -206,7 +206,7 @@ void main() {
       expect(notifier.customThemeSecondaryColor, isNull);
       expect(notifier.customThemeTertiaryColor, isNull);
       expect(notifier.customThemeContainerColor, isNull);
-      expect(notifier.customThemeSasayakiColor, isNull);
+      expect(notifier.customThemeSentenceAudioHighlightColor, isNull);
       expect(notifier.customThemeLinkColor, isNull);
     });
   });
@@ -1033,7 +1033,7 @@ void main() {
         legacySecondaryColor: 0,
         legacyTertiaryColor: 0,
         legacyContainerColor: 0,
-        legacySasayakiColor: 0,
+        legacySentenceAudioHighlightColor: 0,
         legacyLinkColor: 0,
         idGenerator: () => 'ct-x',
       );
@@ -1057,7 +1057,7 @@ void main() {
         legacySecondaryColor: 0,
         legacyTertiaryColor: 0,
         legacyContainerColor: 0,
-        legacySasayakiColor: 0,
+        legacySentenceAudioHighlightColor: 0,
         legacyLinkColor: 0,
         idGenerator: () => 'ct-x',
       );
@@ -1080,7 +1080,7 @@ void main() {
         legacySecondaryColor: 0,
         legacyTertiaryColor: 0,
         legacyContainerColor: 0,
-        legacySasayakiColor: 0,
+        legacySentenceAudioHighlightColor: 0,
         legacyLinkColor: 0,
         idGenerator: () => 'ct-should-not-be-used',
       );

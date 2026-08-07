@@ -22,7 +22,7 @@ void main() {
   final String src = readReaderPageSource();
 
   final int prepStart =
-      src.indexOf('Future<String?> _prepareSasayakiCuesJson() async {');
+      src.indexOf('Future<String?> _prepareSentenceAudioCuesJson() async {');
   final int injectStart =
       src.indexOf('Future<void> _injectAudiobookBridge() async {');
 

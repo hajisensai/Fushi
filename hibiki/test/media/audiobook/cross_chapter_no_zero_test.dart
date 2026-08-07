@@ -52,24 +52,24 @@ void main() {
     });
   });
 
-  group('sasayaki 跨章章内进度 (TODO-746)', () {
+  group('sentenceAudioHighlight 跨章章内进度 (TODO-746)', () {
     test('frag 落在该章中段 → normCharStart/chapterChars，不归 0', () {
       expect(
-        audiobookSasayakiCrossChapterProgress(
+        audiobookSentenceAudioCrossChapterProgress(
             normCharStart: 250, chapterChars: 1000),
         0.25,
       );
     });
     test('章字符数为 0 (未知/空章) → null (调用方退回该章章首 0.0，非归到第一章)', () {
       expect(
-        audiobookSasayakiCrossChapterProgress(
+        audiobookSentenceAudioCrossChapterProgress(
             normCharStart: 250, chapterChars: 0),
         isNull,
       );
     });
     test('clamp 上界：normCharStart 超章字符 → 1.0 不溢出', () {
       expect(
-        audiobookSasayakiCrossChapterProgress(
+        audiobookSentenceAudioCrossChapterProgress(
             normCharStart: 2000, chapterChars: 1000),
         1.0,
       );
@@ -84,9 +84,9 @@ void main() {
       ).readAsStringSync();
     });
 
-    test('sasayaki 跨章 (_handleCueCrossChapter) 复用章内进度纯函数', () {
+    test('sentenceAudioHighlight 跨章 (_handleCueCrossChapter) 复用章内进度纯函数', () {
       expect(
-        src.contains('audiobookSasayakiCrossChapterProgress('),
+        src.contains('audiobookSentenceAudioCrossChapterProgress('),
         isTrue,
         reason: '跨章必须复用进度公式落到 cue 真实位置，不得走缺省 progress=0.0',
       );

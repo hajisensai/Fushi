@@ -25,7 +25,8 @@ class AnkiRepository extends BaseAnkiRepository {
       if (migrated != null) {
         try {
           return AnkiSettings.fromJson(
-              jsonDecode(migrated) as Map<String, dynamic>);
+            jsonDecode(migrated) as Map<String, dynamic>,
+          );
         } catch (e, stack) {
           debugPrint('AnkiRepository.loadSettings.legacy: $e\n$stack');
         }
@@ -56,23 +57,27 @@ class AnkiRepository extends BaseAnkiRepository {
       // throw a CastError that escapes the PlatformException-only catch. Parse
       // ids and names defensively instead.
       final decks = decksRaw.entries
-          .map((e) =>
-              AnkiDeck(id: _asInt(e.key), name: e.value?.toString() ?? ''))
+          .map(
+            (e) => AnkiDeck(id: _asInt(e.key), name: e.value?.toString() ?? ''),
+          )
           .toList();
 
       final noteTypes = <AnkiNoteType>[];
       for (final entry in modelsRaw.entries) {
         final name = entry.value?.toString() ?? '';
-        final fieldsRaw =
-            await _channel.invokeMethod('getFieldList', {'model': name});
+        final fieldsRaw = await _channel.invokeMethod('getFieldList', {
+          'model': name,
+        });
         final fields = List<String>.from(fieldsRaw as List? ?? []);
         noteTypes.add(
-            AnkiNoteType(id: _asInt(entry.key), name: name, fields: fields));
+          AnkiNoteType(id: _asInt(entry.key), name: name, fields: fields),
+        );
       }
 
       if (decks.isEmpty || noteTypes.isEmpty) {
         return const AnkiFetchResult.error(
-            'No AnkiDroid decks or note types found.');
+          'No AnkiDroid decks or note types found.',
+        );
       }
 
       final updated = await updateSettings((current) {
@@ -108,7 +113,8 @@ class AnkiRepository extends BaseAnkiRepository {
       // surface it as a fetch error instead.
       debugPrint('AnkiRepository.fetchConfiguration: $e\n$stack');
       return const AnkiFetchResult.error(
-          'Unexpected response from AnkiDroid. Update AnkiDroid and retry.');
+        'Unexpected response from AnkiDroid. Update AnkiDroid and retry.',
+      );
     }
   }
 
@@ -153,19 +159,25 @@ class AnkiRepository extends BaseAnkiRepository {
   }) async {
     final settings = await loadSettings();
 
-    final deck = settings.availableDecks
-            .firstWhereOrNull((d) => d.id == settings.selectedDeckId) ??
+    final deck =
+        settings.availableDecks.firstWhereOrNull(
+          (d) => d.id == settings.selectedDeckId,
+        ) ??
         (settings.selectedDeckName != null
-            ? settings.availableDecks
-                .firstWhereOrNull((d) => d.name == settings.selectedDeckName)
+            ? settings.availableDecks.firstWhereOrNull(
+                (d) => d.name == settings.selectedDeckName,
+              )
             : null);
     if (deck == null) return const MineOutcome.notConfigured();
 
-    final noteType = settings.availableNoteTypes
-            .firstWhereOrNull((t) => t.id == settings.selectedNoteTypeId) ??
+    final noteType =
+        settings.availableNoteTypes.firstWhereOrNull(
+          (t) => t.id == settings.selectedNoteTypeId,
+        ) ??
         (settings.selectedNoteTypeName != null
             ? settings.availableNoteTypes.firstWhereOrNull(
-                (t) => t.name == settings.selectedNoteTypeName)
+                (t) => t.name == settings.selectedNoteTypeName,
+              )
             : null);
     if (noteType == null) return const MineOutcome.notConfigured();
 
@@ -195,8 +207,10 @@ class AnkiRepository extends BaseAnkiRepository {
           ? (fields[noteType.fields.first] ?? '')
           : '';
       if (firstFieldValue.isNotEmpty) {
-        final readingIdx =
-            _findReadingFieldIndex(noteType, settings.fieldMappings);
+        final readingIdx = _findReadingFieldIndex(
+          noteType,
+          settings.fieldMappings,
+        );
         try {
           final isDupe = await _channel.invokeMethod('checkForDuplicates', {
             'models': [noteType.name],
@@ -242,13 +256,15 @@ class AnkiRepository extends BaseAnkiRepository {
       // 字段使用。与 AnkiConnect 后端对称。旧版 native 返回字符串 "Added note"（无 id），
       // 升级前装的 app 仍可工作：_asNoteId 解析失败时返回 null = 优雅降级（弹窗进不了
       // 「最新可改」第三态，与现状一致，Never break userspace）。
-      final dynamic addResult =
-          await _channel.invokeMethod('addNote', <String, dynamic>{
-        'deck': deck.name,
-        'model': noteType.name,
-        'fields': fieldArray,
-        'tags': tags,
-      });
+      final dynamic addResult = await _channel.invokeMethod(
+        'addNote',
+        <String, dynamic>{
+          'deck': deck.name,
+          'model': noteType.name,
+          'fields': fieldArray,
+          'tags': tags,
+        },
+      );
       return MineOutcome.success(
         noteId: _asNoteId(addResult),
         audioWarning: audioWarning,
@@ -306,8 +322,8 @@ class AnkiRepository extends BaseAnkiRepository {
       context.coverPath != null
           ? _addCoverImage(context.coverPath!)
           : Future<String?>.value(null),
-      context.sasayakiAudioPath != null
-          ? _addSasayakiAudio(context.sasayakiAudioPath!)
+      context.sentenceAudioPath != null
+          ? _addSentenceAudio(context.sentenceAudioPath!)
           : Future<String?>.value(null),
       payload.audio.isNotEmpty
           ? _addRemoteAudio(payload.audio)
@@ -316,7 +332,7 @@ class AnkiRepository extends BaseAnkiRepository {
     ];
     final List<dynamic> mediaResults = await Future.wait(mediaFutures);
     final String? coverRef = mediaResults[0] as String?;
-    final String? sasayakiRef = mediaResults[1] as String?;
+    final String? sentenceAudioRef = mediaResults[1] as String?;
     final AudioFetchOutcome remoteAudio = mediaResults[2] as AudioFetchOutcome;
     final String? rawAudio = remoteAudio.ref;
     final Map<String, String> dictionaryMediaTags =
@@ -327,7 +343,7 @@ class AnkiRepository extends BaseAnkiRepository {
       payload: payload,
       context: context,
       coverRef: coverRef,
-      sasayakiRef: sasayakiRef,
+      sentenceAudioRef: sentenceAudioRef,
       processedAudio: rawAudio != null ? '[sound:$rawAudio]' : '',
       dictionaryMediaTags: dictionaryMediaTags,
       audioWarning: remoteAudio.failureReason,
@@ -358,8 +374,9 @@ class AnkiRepository extends BaseAnkiRepository {
 
       final AnkiMiningPayload payload;
       try {
-        final json =
-            Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
+        final json = Map<String, dynamic>.from(
+          jsonDecode(rawPayloadJson) as Map,
+        );
         payload = AnkiMiningPayload.fromJson(json);
       } catch (e, stack) {
         return MineOutcome.failure(
@@ -445,33 +462,41 @@ class AnkiRepository extends BaseAnkiRepository {
   // NoteInfo.getId），native 已按 id 降序去重。失败 / 拿不到时静默回空（fail-soft）。
   @override
   Future<List<MinedNoteRef>> findMatchingNotes(
-      String expression, String reading) async {
+    String expression,
+    String reading,
+  ) async {
     if (expression.isEmpty) return const <MinedNoteRef>[];
     final settings = await loadSettings();
     final noteType = settings.selectedNoteType;
     if (noteType == null) return const <MinedNoteRef>[];
     final readingIdx = _findReadingFieldIndex(noteType, settings.fieldMappings);
     try {
-      final dynamic raw =
-          await _channel.invokeMethod('findNotesByContent', <String, dynamic>{
-        'models': [noteType.name],
-        'key': expression,
-        'reading': reading,
-        'readingFieldIndices': [readingIdx],
-      });
+      final dynamic raw = await _channel.invokeMethod(
+        'findNotesByContent',
+        <String, dynamic>{
+          'models': [noteType.name],
+          'key': expression,
+          'reading': reading,
+          'readingFieldIndices': [readingIdx],
+        },
+      );
       if (raw is! List) return const <MinedNoteRef>[];
       final result = <MinedNoteRef>[];
       for (final item in raw) {
         if (item is! Map) continue;
         final rawId = item['noteId'];
-        final int? id =
-            rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+        final int? id = rawId is int
+            ? rawId
+            : int.tryParse(rawId?.toString() ?? '');
         if (id == null) continue;
-        result.add(MinedNoteRef(
-          noteId: id,
-          preview: BaseAnkiRepository.previewFromFieldValue(
-              item['preview']?.toString() ?? ''),
-        ));
+        result.add(
+          MinedNoteRef(
+            noteId: id,
+            preview: BaseAnkiRepository.previewFromFieldValue(
+              item['preview']?.toString() ?? '',
+            ),
+          ),
+        );
       }
       return result;
     } catch (e, stack) {
@@ -498,10 +523,10 @@ class AnkiRepository extends BaseAnkiRepository {
   @override
   Future<bool> openNoteInAnki(int noteId) async {
     try {
-      final dynamic ok =
-          await _channel.invokeMethod('openNote', <String, dynamic>{
-        'noteId': noteId,
-      });
+      final dynamic ok = await _channel.invokeMethod(
+        'openNote',
+        <String, dynamic>{'noteId': noteId},
+      );
       return ok == true;
     } catch (e, stack) {
       debugPrint('AnkiRepository.openNoteInAnki: $e');
@@ -565,8 +590,10 @@ class AnkiRepository extends BaseAnkiRepository {
   }
 
   Future<String?> _addCoverImage(String path) async {
-    final preferredName =
-        await _preferredMediaNameForFile(path, 'hibiki_cover_');
+    final preferredName = await _preferredMediaNameForFile(
+      path,
+      'hibiki_cover_',
+    );
     if (preferredName == null) return null;
     final raw = await _addMediaFile(path, preferredName, mimeTypeForPath(path));
     return raw != null
@@ -574,9 +601,11 @@ class AnkiRepository extends BaseAnkiRepository {
         : null;
   }
 
-  Future<String?> _addSasayakiAudio(String path) async {
-    final preferredName =
-        await _preferredMediaNameForFile(path, 'hibiki_audio_');
+  Future<String?> _addSentenceAudio(String path) async {
+    final preferredName = await _preferredMediaNameForFile(
+      path,
+      'hibiki_audio_',
+    );
     if (preferredName == null) return null;
     final raw = await _addMediaFile(path, preferredName, mimeTypeForPath(path));
     return raw != null ? '[sound:$raw]' : null;
@@ -650,13 +679,17 @@ class AnkiRepository extends BaseAnkiRepository {
             // (HBK-AUDIT-019). TODO-779: surface the failure instead of dropping
             // it silently — the card is still created, only the audio is missing.
             if (response.statusCode != 200) {
-              final reason =
-                  audioFetchHttpFailureReason(response.statusCode, url);
+              final reason = audioFetchHttpFailureReason(
+                response.statusCode,
+                url,
+              );
               debugPrint('AnkiRepository._addRemoteAudio: $reason');
               return AudioFetchOutcome.failed(reason);
             }
-            final bytes =
-                await response.fold<List<int>>([], (a, b) => a..addAll(b));
+            final bytes = await response.fold<List<int>>(
+              [],
+              (a, b) => a..addAll(b),
+            );
             final cacheDir = await _mediaCacheDir();
             final ext = _audioExtension(response.headers.contentType, url);
             // BUG-933：远端音频 sha256 卸到后台 isolate。
@@ -698,12 +731,17 @@ class AnkiRepository extends BaseAnkiRepository {
       final cacheDir = await _mediaCacheDir();
       // 命名与主 app 的 writeDictionaryMediaCache 共用同一 helper（防漂移；也修了旧
       // split('.').last 在无扩展名时把整串当扩展名的边角）。
-      final filename =
-          ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
+      final filename = ankiDictionaryMediaCacheFilename(
+        media.dictionary,
+        media.path,
+      );
       final file = File('${cacheDir.path}/$filename');
       if (!file.existsSync()) return null;
-      final result =
-          await _addMediaFile(file.path, filename, mimeTypeForPath(media.path));
+      final result = await _addMediaFile(
+        file.path,
+        filename,
+        mimeTypeForPath(media.path),
+      );
       return result != null ? ankiInlineMediaReference(result) : null;
     } catch (e, stack) {
       debugPrint('AnkiRepository._addDictionaryMedia: $e\n$stack');
@@ -712,16 +750,23 @@ class AnkiRepository extends BaseAnkiRepository {
   }
 
   Future<String?> _addMediaFile(
-      String filePath, String preferredName, String mimeType) async {
+    String filePath,
+    String preferredName,
+    String mimeType,
+  ) async {
     try {
-      final String stagedPath =
-          await _stageForMediaProvider(filePath, preferredName);
-      final result =
-          await _channel.invokeMethod('addFileToMedia', <String, dynamic>{
-        'filename': stagedPath,
-        'preferredName': preferredName,
-        'mimeType': mimeType,
-      });
+      final String stagedPath = await _stageForMediaProvider(
+        filePath,
+        preferredName,
+      );
+      final result = await _channel.invokeMethod(
+        'addFileToMedia',
+        <String, dynamic>{
+          'filename': stagedPath,
+          'preferredName': preferredName,
+          'mimeType': mimeType,
+        },
+      );
       return result as String?;
     } catch (e, stack) {
       debugPrint('AnkiRepository._addMediaFile $preferredName: $e\n$stack');
@@ -745,7 +790,9 @@ class AnkiRepository extends BaseAnkiRepository {
   /// FileProvider 覆盖的 `anki-media` 缓存目录，让**每一种**交给 AnkiDroid 的媒体都落在
   /// 声明过的根里。已在 temp 下的媒体原样返回（零行为改动、不多余复制）。
   Future<String> _stageForMediaProvider(
-      String filePath, String preferredName) async {
+    String filePath,
+    String preferredName,
+  ) async {
     final String tempRoot = Directory.systemTemp.path;
     if (filePath == tempRoot ||
         filePath.startsWith('$tempRoot${Platform.pathSeparator}') ||
@@ -795,7 +842,9 @@ class AnkiRepository extends BaseAnkiRepository {
   }
 
   int _findReadingFieldIndex(
-      AnkiNoteType noteType, Map<String, String> fieldMappings) {
+    AnkiNoteType noteType,
+    Map<String, String> fieldMappings,
+  ) {
     for (var i = 0; i < noteType.fields.length; i++) {
       final handlebar = fieldMappings[noteType.fields[i]] ?? '';
       if (handlebar == '{reading}') return i;
@@ -808,7 +857,9 @@ class AnkiRepository extends BaseAnkiRepository {
     if (legacyDeck != null && legacyDeck != 'Default') {
       final settings = AnkiSettings(selectedDeckName: legacyDeck);
       await prefs.setString(
-          BaseAnkiRepository.settingsKey, jsonEncode(settings.toJson()));
+        BaseAnkiRepository.settingsKey,
+        jsonEncode(settings.toJson()),
+      );
     }
   }
 }

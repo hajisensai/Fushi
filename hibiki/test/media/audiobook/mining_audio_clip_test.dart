@@ -190,7 +190,9 @@ void main() {
     // gap (cue == null). The sentence audio must still be recovered from the cue
     // texts via text matching - this is the exact case where local-audiobook
     // mining produced no sentence audio. Reverting the text-fallback turns it red.
-    test('recovers gap-word sentence audio for non-sasayaki cues via text', () {
+    test(
+        'recovers gap-word sentence audio for non-rematch-encoded cues via text',
+        () {
       final List<AudioCue> cues = <AudioCue>[
         _cue(
           startMs: 1000,
@@ -1017,7 +1019,7 @@ AudioCue _cue({
 }
 
 String _frag(int sectionIndex, int start, int end) =>
-    SasayakiMatchCodec.encodeHit(
+    SubtitleRematchCodec.encodeHit(
       sectionIndex: sectionIndex,
       normCharStart: start,
       normCharEnd: end,

@@ -34,8 +34,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   bool _useTertiaryColor = false;
   Color? _containerColor;
   bool _useContainerColor = false;
-  Color? _sasayakiColor;
-  bool _useSasayakiColor = false;
+  Color? _sentenceAudioHighlightColor;
+  bool _useSentenceAudioHighlightColor = false;
   Color? _linkColor;
   bool _useLinkColor = false;
 
@@ -107,9 +107,10 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     // TODO-977：音频高亮色是**全局偏好**（与主题解耦），从 appModel.audioHighlightColor
     // 读，不再依赖被编辑的 custom-theme 条目；这样它对所有主题生效，编辑它也不强制
     // 切到本自定义主题。entry/encode/decode 仍保留 sasayakiColor 字段供分享码兼容。
-    _sasayakiColor = appModelNoUpdate.audioHighlightColor;
-    _useSasayakiColor = _sasayakiColor != null;
-    _sasayakiColor ??= HibikiColor.defaultSasayakiColor;
+    _sentenceAudioHighlightColor = appModelNoUpdate.audioHighlightColor;
+    _useSentenceAudioHighlightColor = _sentenceAudioHighlightColor != null;
+    _sentenceAudioHighlightColor ??=
+        HibikiColor.defaultSentenceAudioHighlightColor;
     _linkColor = roleColor(
         entry?.linkColor, () => appModelNoUpdate.customThemeLinkColor);
     _useLinkColor = _linkColor != null;
@@ -137,7 +138,9 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       secondaryColor: _useSecondaryColor ? argb(_secondaryColor) : null,
       tertiaryColor: _useTertiaryColor ? argb(_tertiaryColor) : null,
       containerColor: _useContainerColor ? argb(_containerColor) : null,
-      sasayakiColor: _useSasayakiColor ? argb(_sasayakiColor) : null,
+      sentenceAudioHighlightColor: _useSentenceAudioHighlightColor
+          ? argb(_sentenceAudioHighlightColor)
+          : null,
       linkColor: _useLinkColor ? argb(_linkColor) : null,
     );
   }
@@ -230,10 +233,13 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
           _containerColor!.toARGB32().toRadixString(16).padLeft(8, '0');
       code += ':cr$containerHex';
     }
-    if (_useSasayakiColor && _sasayakiColor != null) {
-      final sasayakiHex =
-          _sasayakiColor!.toARGB32().toRadixString(16).padLeft(8, '0');
-      code += ':sk$sasayakiHex';
+    if (_useSentenceAudioHighlightColor &&
+        _sentenceAudioHighlightColor != null) {
+      final sentenceAudioHex = _sentenceAudioHighlightColor!
+          .toARGB32()
+          .toRadixString(16)
+          .padLeft(8, '0');
+      code += ':sk$sentenceAudioHex';
     }
     if (_useLinkColor && _linkColor != null) {
       final linkHex = _linkColor!.toARGB32().toRadixString(16).padLeft(8, '0');
@@ -252,7 +258,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     Color? secondaryColor,
     Color? tertiaryColor,
     Color? containerColor,
-    Color? sasayakiColor,
+    Color? sentenceAudioHighlightColor,
     Color? linkColor,
   })? _decodeTheme(String code) {
     final parts = code.trim().split(':');
@@ -275,7 +281,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     Color? secondaryColor;
     Color? tertiaryColor;
     Color? containerColor;
-    Color? sasayakiColor;
+    Color? sentenceAudioHighlightColor;
     Color? linkColor;
     for (int i = 3; i < parts.length; i++) {
       if (parts[i].startsWith('fc')) {
@@ -301,7 +307,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         if (v != null) containerColor = Color(v);
       } else if (parts[i].startsWith('sk')) {
         final v = int.tryParse(parts[i].substring(2), radix: 16);
-        if (v != null) sasayakiColor = Color(v);
+        if (v != null) sentenceAudioHighlightColor = Color(v);
       } else if (parts[i].startsWith('lk')) {
         final v = int.tryParse(parts[i].substring(2), radix: 16);
         if (v != null) linkColor = Color(v);
@@ -317,7 +323,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       secondaryColor: secondaryColor,
       tertiaryColor: tertiaryColor,
       containerColor: containerColor,
-      sasayakiColor: sasayakiColor,
+      sentenceAudioHighlightColor: sentenceAudioHighlightColor,
       linkColor: linkColor,
     );
   }
@@ -342,7 +348,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         Color? secondaryColor,
         Color? tertiaryColor,
         Color? containerColor,
-        Color? sasayakiColor,
+        Color? sentenceAudioHighlightColor,
         Color? linkColor,
       }) result) {
     setState(() {
@@ -376,13 +382,15 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       _useTertiaryColor = result.tertiaryColor != null;
       _containerColor = result.containerColor ?? generated.primaryContainer;
       _useContainerColor = result.containerColor != null;
-      _sasayakiColor = result.sasayakiColor ?? HibikiColor.defaultSasayakiColor;
-      _useSasayakiColor = result.sasayakiColor != null;
+      _sentenceAudioHighlightColor = result.sentenceAudioHighlightColor ??
+          HibikiColor.defaultSentenceAudioHighlightColor;
+      _useSentenceAudioHighlightColor =
+          result.sentenceAudioHighlightColor != null;
       _linkColor = result.linkColor ?? generated.primary;
       _useLinkColor = result.linkColor != null;
     });
     // TODO-977：导入的音频高亮色也写穿全局偏好（与主题解耦），保持与手动改色一致。
-    appModel.setAudioHighlightColor(result.sasayakiColor);
+    appModel.setAudioHighlightColor(result.sentenceAudioHighlightColor);
   }
 
   Future<void> _importTheme() async {
@@ -526,20 +534,21 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
           title: t.section_audiobook_lyrics,
           children: [
             _buildOptionalColorPicker(
-              label: t.color_sasayaki,
-              description: t.color_sasayaki_desc,
-              preview: _buildSasayakiPreview(cs),
-              enabled: _useSasayakiColor,
+              label: t.color_sentence_audio_highlight,
+              description: t.color_sentence_audio_highlight_desc,
+              preview: _buildSentenceAudioPreview(cs),
+              enabled: _useSentenceAudioHighlightColor,
               // TODO-977：音频高亮是全局偏好，开关/改色立即写穿，对所有主题生效，
               // 不必依赖「保存并切到本自定义主题」。关闭 → 写 null 回退到随主题取色。
               onEnabledChanged: (bool value) {
-                setState(() => _useSasayakiColor = value);
-                appModel.setAudioHighlightColor(value ? _sasayakiColor : null);
+                setState(() => _useSentenceAudioHighlightColor = value);
+                appModel.setAudioHighlightColor(
+                    value ? _sentenceAudioHighlightColor : null);
               },
-              color: _sasayakiColor!,
+              color: _sentenceAudioHighlightColor!,
               onChanged: (Color color) {
-                setState(() => _sasayakiColor = color);
-                if (_useSasayakiColor) {
+                setState(() => _sentenceAudioHighlightColor = color);
+                if (_useSentenceAudioHighlightColor) {
                   appModel.setAudioHighlightColor(color);
                 }
               },
@@ -868,9 +877,9 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                     vertical: tokens.spacing.gap / 4,
                   ),
                   decoration: BoxDecoration(
-                    color: _useSasayakiColor
-                        ? _sasayakiColor
-                        : HibikiColor.defaultSasayakiColor,
+                    color: _useSentenceAudioHighlightColor
+                        ? _sentenceAudioHighlightColor
+                        : HibikiColor.defaultSentenceAudioHighlightColor,
                     borderRadius: tokens.radii.chipRadius,
                   ),
                   child: Text(
@@ -887,9 +896,9 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                       TextSpan(
                         text: '字幕同期',
                         style: TextStyle(
-                          backgroundColor: _useSasayakiColor
-                              ? _sasayakiColor
-                              : HibikiColor.defaultSasayakiColor,
+                          backgroundColor: _useSentenceAudioHighlightColor
+                              ? _sentenceAudioHighlightColor
+                              : HibikiColor.defaultSentenceAudioHighlightColor,
                         ),
                       ),
                       const TextSpan(text: 'テスト　'),
@@ -1094,12 +1103,13 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     );
   }
 
-  Widget _buildSasayakiPreview(ColorScheme cs) {
+  Widget _buildSentenceAudioPreview(ColorScheme cs) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
-    final Color sas =
-        _useSasayakiColor ? _sasayakiColor! : HibikiColor.defaultSasayakiColor;
+    final Color sas = _useSentenceAudioHighlightColor
+        ? _sentenceAudioHighlightColor!
+        : HibikiColor.defaultSentenceAudioHighlightColor;
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.gap,

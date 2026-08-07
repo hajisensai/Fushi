@@ -295,7 +295,7 @@ class _Harness {
       audiobook: _audiobook(),
       audioFiles: <File>[audioFile],
     );
-    final List<AudioCue> cues = <AudioCue>[_sasayakiCue(0, section: 5)];
+    final List<AudioCue> cues = <AudioCue>[_sentenceAudioCue(0, section: 5)];
     controller.setAllBookCues(cues);
     controller.setChapterCues(cues);
     controller.followAudio.value = true;
@@ -308,13 +308,13 @@ class _Harness {
   }
 }
 
-AudioCue _sasayakiCue(int startMs, {required int section}) {
+AudioCue _sentenceAudioCue(int startMs, {required int section}) {
   return AudioCue()
     ..id = null
     ..bookKey = 'book'
     ..chapterHref = 'chapter'
     ..sentenceIndex = startMs ~/ 1000
-    ..textFragmentId = SasayakiMatchCodec.encodeHit(
+    ..textFragmentId = SubtitleRematchCodec.encodeHit(
       sectionIndex: section,
       normCharStart: 0,
       normCharEnd: 10,

@@ -10,8 +10,8 @@ import 'package:hibiki/utils.dart';
 /// Sasayaki 重匹配入口，被 [AudiobookImportDialog]（已附加视图）和书架
 /// 长按菜单复用。把"弹 searchWindow slider" 和"跑 matcher + 落库 + toast"
 /// 统一在这里，两处 UI 不再各持一份容易漂移的副本。
-class SasayakiRematch {
-  const SasayakiRematch._();
+class SubtitleRematch {
+  const SubtitleRematch._();
 
   /// 只有 SRT/LRC/VTT/ASS 走 matcher；SMIL/JSON 有硬时间码锚点，与 window 无关。
   static const Set<String> supportedFormats = <String>{
@@ -100,8 +100,8 @@ class SasayakiRematch {
       final int? prev = mw == null ? null : int.tryParse(mw.group(1)!);
       if (prev != null) {
         window = prev.clamp(
-          SasayakiWindowSlider.minWindow,
-          SasayakiWindowSlider.maxWindow,
+          SubtitleRematchWindowSlider.minWindow,
+          SubtitleRematchWindowSlider.maxWindow,
         );
       }
       final RegExpMatch? mt =
@@ -148,14 +148,14 @@ class SasayakiRematch {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SasayakiWindowSlider(
+            SubtitleRematchWindowSlider(
               value: window,
               onChanged: (v) => setSheet(() => window = v),
               onAutoTap: handleAuto,
               autoBusy: autoBusy,
             ),
             SizedBox(height: tokens.spacing.rowVertical),
-            SasayakiThresholdSlider(
+            SubtitleRematchThresholdSlider(
               value: threshold,
               onChanged: (v) => setSheet(() => threshold = v),
             ),
@@ -209,14 +209,14 @@ class SasayakiRematch {
   }) async {
     if (sections.isEmpty) {
       HibikiToast.show(
-        msg: t.sasayaki_no_sections,
+        msg: t.audiobook_rematch_no_sections,
         severity: ToastSeverity.error,
       );
       return null;
     }
     if (cues.isEmpty) {
       HibikiToast.show(
-        msg: t.sasayaki_no_cues_to_match,
+        msg: t.audiobook_rematch_no_cues_to_match,
         severity: ToastSeverity.error,
       );
       return null;
@@ -230,21 +230,21 @@ class SasayakiRematch {
       final MapEntry<int, double>? best = r.best;
       if (best == null || best.value <= 0) {
         HibikiToast.show(
-          msg: t.sasayaki_all_zero,
+          msg: t.audiobook_rematch_all_zero,
           severity: ToastSeverity.warning,
         );
         return null;
       }
       final String pctStr = (best.value * 100).toStringAsFixed(2);
       HibikiToast.show(
-        msg: t.sasayaki_auto_picked(window: best.key, pct: pctStr),
+        msg: t.audiobook_rematch_auto_picked(window: best.key, pct: pctStr),
         severity: ToastSeverity.success,
       );
       return best.key;
     } catch (e, st) {
       debugPrint('[hibiki-audiobook] autoProbe failed: $e\n$st');
       HibikiToast.show(
-        msg: t.sasayaki_auto_failed(error: e),
+        msg: t.audiobook_rematch_auto_failed(error: e),
         severity: ToastSeverity.error,
       );
       return null;
@@ -257,7 +257,7 @@ class SasayakiRematch {
     try {
       return epubSectionsFromExtractDir(extractDir);
     } catch (e, stack) {
-      ErrorLogService.instance.log('SasayakiRematch.loadSections', e, stack);
+      ErrorLogService.instance.log('SubtitleRematch.loadSections', e, stack);
       debugPrint('[hibiki-audiobook] loadSections failed: $e');
       return const <EpubSection>[];
     }
@@ -274,7 +274,7 @@ class SasayakiRematch {
       final List<AudioCue> cues = await repo.cuesForBook(ab.bookKey);
       if (cues.isEmpty) {
         HibikiToast.show(
-          msg: t.sasayaki_no_stored_cues,
+          msg: t.audiobook_rematch_no_stored_cues,
           severity: ToastSeverity.error,
         );
         return;
@@ -282,7 +282,7 @@ class SasayakiRematch {
       final List<EpubSection> sections = epubSectionsFromExtractDir(extractDir);
       if (sections.isEmpty) {
         HibikiToast.show(
-          msg: t.sasayaki_no_chapters,
+          msg: t.audiobook_rematch_no_chapters,
           severity: ToastSeverity.error,
         );
         return;
@@ -293,7 +293,7 @@ class SasayakiRematch {
         searchWindow: searchWindow,
         similarityThreshold: similarityThreshold,
       );
-      SasayakiMatchCodec.applyToCues(cues: cues, result: result);
+      SubtitleRematchCodec.applyToCues(cues: cues, result: result);
       await repo.saveCues(
         bookKey: ab.bookKey,
         cues: cues,
@@ -307,13 +307,13 @@ class SasayakiRematch {
       );
       await repo.updateHealthOverlay(bookKey: ab.bookKey, health: health);
       HibikiToast.show(
-        msg: t.sasayaki_rematch_result(pct: pctStr, window: searchWindow),
+        msg: t.audiobook_rematch_result(pct: pctStr, window: searchWindow),
         severity: ToastSeverity.success,
       );
     } catch (e, st) {
-      debugPrint('[hibiki-audiobook] SasayakiRematch failed: $e\n$st');
+      debugPrint('[hibiki-audiobook] SubtitleRematch failed: $e\n$st');
       HibikiToast.show(
-        msg: t.sasayaki_rematch_failed(error: e),
+        msg: t.audiobook_rematch_failed(error: e),
         severity: ToastSeverity.error,
       );
     }
@@ -327,8 +327,8 @@ class _MatchParams {
 }
 
 /// 复用的 searchWindow 选择器。
-class SasayakiWindowSlider extends StatelessWidget {
-  const SasayakiWindowSlider({
+class SubtitleRematchWindowSlider extends StatelessWidget {
+  const SubtitleRematchWindowSlider({
     required this.value,
     required this.onChanged,
     this.onAutoTap,
@@ -353,10 +353,10 @@ class SasayakiWindowSlider extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(t.sasayaki_search_window, style: tokens.type.listTitle),
+        Text(t.audiobook_rematch_search_window, style: tokens.type.listTitle),
         SizedBox(height: tokens.spacing.gap / 2),
         Text(
-          t.sasayaki_window_hint,
+          t.audiobook_rematch_window_hint,
           style: tokens.type.metadata,
         ),
         SizedBox(height: tokens.spacing.gap),
@@ -387,7 +387,8 @@ class SasayakiWindowSlider extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                t.sasayaki_default_value(n: EpubSrtMatcher.defaultSearchWindow),
+                t.audiobook_rematch_default_value(
+                    n: EpubSrtMatcher.defaultSearchWindow),
                 style: tokens.type.metadata,
               ),
             ),
@@ -402,8 +403,9 @@ class SasayakiWindowSlider extends StatelessWidget {
                             adaptiveIndicator(context: context, strokeWidth: 2),
                       )
                     : const Icon(Icons.auto_awesome_outlined, size: 16),
-                label: Text(
-                    autoBusy ? t.sasayaki_matching : t.sasayaki_auto_match),
+                label: Text(autoBusy
+                    ? t.audiobook_rematch_matching
+                    : t.audiobook_rematch_auto_match),
               ),
           ],
         ),
@@ -413,8 +415,8 @@ class SasayakiWindowSlider extends StatelessWidget {
 }
 
 /// 复用的 similarityThreshold 选择器。
-class SasayakiThresholdSlider extends StatelessWidget {
-  const SasayakiThresholdSlider({
+class SubtitleRematchThresholdSlider extends StatelessWidget {
+  const SubtitleRematchThresholdSlider({
     required this.value,
     required this.onChanged,
     super.key,
@@ -430,10 +432,11 @@ class SasayakiThresholdSlider extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(t.sasayaki_similarity_threshold, style: tokens.type.listTitle),
+        Text(t.audiobook_rematch_similarity_threshold,
+            style: tokens.type.listTitle),
         SizedBox(height: tokens.spacing.gap / 2),
         Text(
-          t.sasayaki_threshold_hint,
+          t.audiobook_rematch_threshold_hint,
           style: tokens.type.metadata,
         ),
         SizedBox(height: tokens.spacing.gap),
@@ -460,7 +463,7 @@ class SasayakiThresholdSlider extends StatelessWidget {
           ],
         ),
         Text(
-          t.sasayaki_default_value(
+          t.audiobook_rematch_default_value(
               n: EpubSrtMatcher.defaultSimilarityThreshold),
           style: tokens.type.metadata,
         ),

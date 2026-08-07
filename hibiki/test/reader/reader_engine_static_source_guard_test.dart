@@ -204,7 +204,7 @@ void main() {
 
     test('per-nav 参数确实进了 config 字面量（含 cue 原样拼接）', () {
       final ReaderEngineConfig cfg = _sampleConfig(
-        sasayakiCuesJson: '[{"id":"c1","start":0}]',
+        sentenceAudioCuesJson: '[{"id":"c1","start":0}]',
       );
       final String literal = cfg.toJsLiteral();
       final Map<String, dynamic> decoded =
@@ -214,8 +214,8 @@ void main() {
       expect(decoded['chromeBottomInset'], 64);
       expect(decoded['furiganaMode'], 'toggle');
       expect(decoded['dartPageWidth'], 800);
-      expect((decoded['sasayakiCues'] as List<dynamic>).length, 1);
-      expect(_sampleConfig().toJsLiteral().contains('"sasayakiCues":null'),
+      expect((decoded['sentenceAudioCues'] as List<dynamic>).length, 1);
+      expect(_sampleConfig().toJsLiteral().contains('"sentenceAudioCues":null'),
           isTrue);
     });
 
@@ -322,7 +322,7 @@ ProcessResult _runNode(List<String> args) {
   }
 }
 
-ReaderEngineConfig _sampleConfig({String? sasayakiCuesJson}) =>
+ReaderEngineConfig _sampleConfig({String? sentenceAudioCuesJson}) =>
     ReaderEngineConfig(
       navigationGeneration: 17,
       continuousMode: false,
@@ -354,8 +354,8 @@ ReaderEngineConfig _sampleConfig({String? sasayakiCuesJson}) =>
       vnScreenMode: 'block',
       vnSentencesPerScreen: 1,
       vnPreserveDialogue: false,
-      vnMergeCrossScreenSasayakiCues: false,
-      sasayakiCuesJson: sasayakiCuesJson,
+      vnMergeCrossScreenSentenceAudioCues: false,
+      sentenceAudioCuesJson: sentenceAudioCuesJson,
     );
 
 String _stripScriptTags(String js) => js

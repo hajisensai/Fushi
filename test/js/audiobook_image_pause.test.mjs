@@ -142,7 +142,7 @@ test("揭整章：无 blurred 图时安全返回 0", () => {
 // 只 set cueWrappers）→ 第一分支恒进入、找不到 range、return null，cueWrappers 兜底被 else
 // 永久跳过 → anchor 恒 null → __hoshiImagePauseAdvance 永不调用 → 整条图片暂停+揭遮罩失效。
 // 修法：cueRangesMap 未命中就无条件兜底 cueWrappers。本用例锁死这个兜底。
-const anchorElSrc = extract("__hoshiSasayakiAnchorEl");
+const anchorElSrc = extract("__hoshiSentenceAudioAnchorEl");
 
 function resolveAnchorId(cssHighlights, rangeMapEntries) {
   const setup = `
@@ -153,9 +153,9 @@ function resolveAnchorId(cssHighlights, rangeMapEntries) {
     };
   `;
   return runInDom(
-    `<span id="w" class="hoshi-sasayaki-cue">句</span>`,
+    `<span id="w" class="hoshi-sentence-audio-cue">句</span>`,
     anchorElSrc + setup,
-    `var a = window.__hoshiSasayakiAnchorEl('K');
+    `var a = window.__hoshiSentenceAudioAnchorEl('K');
      document.body.setAttribute('data-result', a ? (a.id || a.nodeName) : 'null');`,
   );
 }

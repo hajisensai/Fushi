@@ -29,15 +29,15 @@ void main() {
   ).readAsStringSync();
 
   group('BUG-110 ruby 高亮改元素 class（消竖排深色带）', () {
-    test('sasayaki：ruby 节点分流出 ::highlight，改加 ruby class', () {
+    test('sentenceAudioHighlight：ruby 节点分流出 ::highlight，改加 ruby class', () {
       expect(pagination, contains('cueRubyElements'),
           reason:
-              'sasayaki 须用 cueRubyElements 单独存 <ruby> 元素，不混进 ::highlight range');
+              'sentenceAudioHighlight 须用 cueRubyElements 单独存 <ruby> 元素，不混进 ::highlight range');
       expect(pagination, contains('rubyForNode'),
           reason: '须用 rubyForNode 判定节点是否在 <ruby> 内以分流');
-      expect(pagination, contains('hoshi-sasayaki-ruby-active'),
+      expect(pagination, contains('hoshi-sentence-audio-ruby-active'),
           reason:
-              'sasayaki 的 ruby 元素须用 class hoshi-sasayaki-ruby-active 高亮（单次绘背景）');
+              'sentenceAudioHighlight 的 ruby 元素须用 class hoshi-sentence-audio-ruby-active 高亮（单次绘背景）');
     });
 
     test('selection：ruby 节点分流出 ::highlight，改加 ruby class', () {
@@ -50,20 +50,20 @@ void main() {
     });
 
     test('CSS：两个 ruby-active class 都有背景规则', () {
-      expect(styles, contains('ruby.hoshi-sasayaki-ruby-active'),
-          reason: 'reader CSS 须给 ruby.hoshi-sasayaki-ruby-active 设背景');
+      expect(styles, contains('ruby.hoshi-sentence-audio-ruby-active'),
+          reason: 'reader CSS 须给 ruby.hoshi-sentence-audio-ruby-active 设背景');
       expect(styles, contains('ruby.hoshi-selection-ruby-active'),
           reason: 'reader CSS 须给 ruby.hoshi-selection-ruby-active 设背景');
     });
 
-    test('sasayaki：普通正文也不用 ::highlight，改由 cue span 画窄条', () {
+    test('sentenceAudioHighlight：普通正文也不用 ::highlight，改由 cue span 画窄条', () {
       expect(
-        pagination.contains("CSS.highlights.set('hoshi-sasayaki'"),
+        pagination.contains("CSS.highlights.set('hoshi-sentence-audio'"),
         isFalse,
-        reason: 'sasayaki 普通正文不能再走 CSS Highlight；竖排下它会按行盒刷宽背景',
+        reason: 'sentenceAudioHighlight 普通正文不能再走 CSS Highlight；竖排下它会按行盒刷宽背景',
       );
       final int applyStart =
-          pagination.indexOf('applySasayakiCues: function(cues)');
+          pagination.indexOf('applySentenceAudioCues: function(cues)');
       expect(applyStart, isNonNegative);
       final int applyEnd =
           pagination.indexOf('rubyForNode: function', applyStart);
@@ -71,7 +71,7 @@ void main() {
       final String applyBody = pagination.substring(applyStart, applyEnd);
       expect(
         applyBody,
-        contains("wrapper.className = 'hoshi-sasayaki-cue'"),
+        contains("wrapper.className = 'hoshi-sentence-audio-cue'"),
         reason: 'CSS Highlight 支持时普通正文也要包 cue span，才能用 CSS 画 1em 窄条',
       );
       expect(
@@ -120,7 +120,8 @@ void main() {
     test('CSS：查词+音频同 ruby 重叠时用双类特异性让查词胜出', () {
       expect(
         styles,
-        contains('ruby.hoshi-selection-ruby-active.hoshi-sasayaki-ruby-active'),
+        contains(
+            'ruby.hoshi-selection-ruby-active.hoshi-sentence-audio-ruby-active'),
         reason: '同一 ruby 带两 class 时须有双类规则让查词不透明色胜出（查词优先）',
       );
     });

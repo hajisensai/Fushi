@@ -55,20 +55,22 @@ void main() {
     });
   });
 
-  group('TODO-630 有声书高亮诊断埋点 [sasayaki-hl]', () {
+  group('TODO-630 有声书高亮诊断埋点 [sentence-audio-hl]', () {
     late String corpus;
     setUpAll(() {
       corpus = readReaderPageSource();
     });
 
-    test('Dart 端 prepareCues 决策有日志（书源 + cachedSasayaki + payloadLen 留痕）', () {
-      expect(corpus, contains('[sasayaki-hl] prepareCues path='),
-          reason: 'prepareCues 的高亮决策（书源/是否 sasayaki/payload 条数）必须留痕，'
+    test('Dart 端 prepareCues 决策有日志（书源 + cachedSentenceAudio + payloadLen 留痕）',
+        () {
+      expect(corpus, contains('[sentence-audio-hl] prepareCues path='),
+          reason:
+              'prepareCues 的高亮决策（书源/是否 sentenceAudioHighlight/payload 条数）必须留痕，'
               '是「完全没高亮」真机定位的证据来源（BUG-395）');
       expect(corpus, contains(r'path=$pathTag'),
           reason: 'BUG-395：SRT 与 Audiobook 两源判据归一后，pathTag 仍标明书源以便定位');
-      expect(corpus, contains(r'path=$pathTag-SASAYAKI'),
-          reason: 'sasayaki 书建 payload 的分支必须留痕（含 payloadLen）');
+      expect(corpus, contains(r'path=$pathTag-SENTENCE-AUDIO'),
+          reason: 'sentenceAudioHighlight 书建 payload 的分支必须留痕（含 payloadLen）');
     });
 
     // BUG-914：audiobook_bridge 播放期逐 cue 热路径的 [sasayaki-hl] highlight raw= /

@@ -51,14 +51,14 @@ extension _ReaderMining on _ReaderHibikiPageState {
         appModel.currentMediaSource?.currentCueSentence.text ?? '';
     final int? snapshotSentenceOffset = _cachedSentenceOffset;
 
-    String? sasayakiAudioPath;
-    Directory? sasayakiTempDir;
+    String? sentenceAudioPath;
+    Directory? sentenceAudioTempDir;
     bool requestedSentenceAudioClip = false;
     String? sentenceAudioFailure;
-    void cleanupSasayakiTempDir() {
-      if (sasayakiTempDir != null && sasayakiTempDir.existsSync()) {
+    void cleanupSentenceAudioTempDir() {
+      if (sentenceAudioTempDir != null && sentenceAudioTempDir.existsSync()) {
         try {
-          sasayakiTempDir.deleteSync(recursive: true);
+          sentenceAudioTempDir.deleteSync(recursive: true);
         } catch (e, stack) {
           ErrorLogService.instance
               .log('ReaderHibiki.mineEntry.cleanupAudio', e, stack);
@@ -87,13 +87,13 @@ extension _ReaderMining on _ReaderHibikiPageState {
           clip.audioFileIndex >= 0 &&
           clip.audioFileIndex < audioFiles.length) {
         final File inputFile = audioFiles[clip.audioFileIndex];
-        sasayakiTempDir =
+        sentenceAudioTempDir =
             Directory.systemTemp.createTempSync('hibiki_mine_sentence_audio_');
         // 句子音频容器与视频制卡保持同一平台规则：iOS 用 `.m4a`，让 AnkiMobile
         // 把 localhost URL 当作可下载音频；桌面/Android 继续用 `.aac`（adts），避免
         // 桌面 ffmpeg-min 缺 mp4/ipod/m4a muxer 时 exit -22（BUG-460 / BUG-644）。
         final String outputPath = p.join(
-          sasayakiTempDir.path,
+          sentenceAudioTempDir.path,
           'sentence.${immersionMiningAudioExtension()}',
         );
         requestedSentenceAudioClip = true;
@@ -105,7 +105,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
           imageTier: appModel.miningImageQuality,
           audioTier: appModel.miningAudioQuality,
         );
-        sasayakiAudioPath = await TtsChannel.instance.extractAudioSegment(
+        sentenceAudioPath = await TtsChannel.instance.extractAudioSegment(
           inputPath: inputFile.path,
           startMs: clip.startMs,
           endMs: clip.endMs,
@@ -136,8 +136,8 @@ extension _ReaderMining on _ReaderHibikiPageState {
       }
     }
 
-    if (requestedSentenceAudioClip && sasayakiAudioPath == null) {
-      cleanupSasayakiTempDir();
+    if (requestedSentenceAudioClip && sentenceAudioPath == null) {
+      cleanupSentenceAudioTempDir();
       ErrorLogService.instance.log(
         'ReaderHibiki.mineEntry.sentenceAudio',
         sentenceAudioFailure == null
@@ -153,7 +153,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
         ),
         severity: ToastSeverity.error,
       );
-      return (context: null, cleanup: cleanupSasayakiTempDir);
+      return (context: null, cleanup: cleanupSentenceAudioTempDir);
     }
 
     // 合集名标签（同「自动添加书名到标签」开关）：反查当前书/有声书所属合集名，作独立 tag。
@@ -180,7 +180,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
       cueSentence: snapshotCueSentence.isNotEmpty ? snapshotCueSentence : null,
       documentTitle: displayDocumentTitle,
       coverPath: coverPath,
-      sasayakiAudioPath: sasayakiAudioPath,
+      sentenceAudioPath: sentenceAudioPath,
       sentenceOffset: snapshotSentenceOffset,
       // TODO-115: 书籍来源 → 卡片追加 `book` 分类标签（reader 不走 DictionaryPageMixin）。
       source: AnkiMiningSource.book,
@@ -196,7 +196,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
       collectionTag: collectionTag,
     );
 
-    return (context: miningContext, cleanup: cleanupSasayakiTempDir);
+    return (context: miningContext, cleanup: cleanupSentenceAudioTempDir);
   }
 
   /// 反查当前书/有声书所属合集名（供制卡「合集名标签」用）。折叠归属跟随
@@ -361,7 +361,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
       return;
     }
 
-    final bool hasSentenceAudio = (context.sasayakiAudioPath ?? '').isNotEmpty;
+    final bool hasSentenceAudio = (context.sentenceAudioPath ?? '').isNotEmpty;
     if (hasSentenceAudio &&
         !AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(fieldMappings)) {
       debugPrint('[mine-diag] sentence audio attached but no field maps '
@@ -442,7 +442,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
     }
   }
 
-  Future<String?> _prepareSasayakiCuesJson() async {
+  Future<String?> _prepareSentenceAudioCuesJson() async {
     // BUG-395：逐句高亮策略判据归一到「cue 是否 sasayaki 编码」（与 playback 端
     // SasayakiMatchCodec.tryDecode 同一判据），不再用 _srtBookUid（音频格式=srt）
     // 当代理。旧代码在 _srtBookUid!=null 时**无条件 return null**：但「普通 EPUB +
@@ -462,24 +462,24 @@ extension _ReaderMining on _ReaderHibikiPageState {
     if (allCues == null) {
       allCues = await _loadHighlightCues();
       if (allCues == null) {
-        debugPrint('[sasayaki-hl] prepareCues path=NONE '
+        debugPrint('[sentence-audio-hl] prepareCues path=NONE '
             '(srtUid=null, audiobookKey=null) -> return null');
         return null;
       }
       _cachedAllCues = allCues;
-      _cachedSasayaki = allCues.any(
-        (c) => SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
+      _cachedSentenceAudio = allCues.any(
+        (c) => SubtitleRematchCodec.tryDecode(c.textFragmentId) != null,
       );
     }
 
     final String pathTag = _srtBookUid != null ? 'SRT' : 'AUDIOBOOK';
-    if (!_cachedSasayaki) {
+    if (!_cachedSentenceAudio) {
       // 真正非 sasayaki 的书：纯 [data-cue-id] 字幕（合成书走 __hoshiHighlight 选择器）
       // 或 matcher 全失败（无锚点）。逐句高亮不走 sasayaki range，保持早退。
-      debugPrint('[sasayaki-hl] prepareCues path=$pathTag '
+      debugPrint('[sentence-audio-hl] prepareCues path=$pathTag '
           'srtUid=$_srtBookUid audiobookKey=$_audiobookBookKey '
-          'allCues=${allCues.length} cachedSasayaki=false '
-          '-> SKIPPED (no sasayaki cues)');
+          'allCues=${allCues.length} cachedSentenceAudio=false '
+          '-> SKIPPED (no sentenceAudioHighlight cues)');
       return null;
     }
 
@@ -487,10 +487,10 @@ extension _ReaderMining on _ReaderHibikiPageState {
     // 同一份必含 cue 原文 text 的 payload 契约 —— JS collectSasayakiCueRanges 靠
     // cue.text 在实时 DOM 就近重定位高亮（BUG-060/300），缺 text 会落空。
     final List<Map<String, dynamic>> payload =
-        AudiobookBridge.buildSasayakiPayload(allCues, _currentChapter);
+        AudiobookBridge.buildSentenceAudioPayload(allCues, _currentChapter);
     // BUG-366/TODO-630 诊断：sasayaki 书最终送进 WebView 的 payload 条数。
     // payloadLen=0 表示当前章无命中 cue（applySasayakiCues 不会被调用）。
-    debugPrint('[sasayaki-hl] prepareCues path=$pathTag-SASAYAKI '
+    debugPrint('[sentence-audio-hl] prepareCues path=$pathTag-SENTENCE-AUDIO '
         'srtUid=$_srtBookUid chapter=$_currentChapter '
         'allCues=${allCues.length} payloadLen=${payload.length}');
     if (payload.isEmpty) return null;
@@ -515,7 +515,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
     if (_controller == null || _audiobookController == null) return;
 
     await AudiobookBridge.inject(_controller!,
-        primaryColor: _themeSasayakiColor());
+        primaryColor: _themeSentenceAudioHighlightColor());
 
     final List<AudioCue>? allCues = _cachedAllCues;
     if (allCues == null) return;
@@ -530,7 +530,8 @@ extension _ReaderMining on _ReaderHibikiPageState {
         _srtChapterRanges = r;
       }
     } else if (_audiobookBookKey != null) {
-      if (_cachedSasayaki || audiobookCuesUseWholeBookForChapter(allCues)) {
+      if (_cachedSentenceAudio ||
+          audiobookCuesUseWholeBookForChapter(allCues)) {
         _audiobookController!.setChapterCues(allCues);
         _audiobookController!.setAllBookCues(allCues);
       } else {

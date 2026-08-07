@@ -204,7 +204,8 @@ void main() {
       expect(code.contains('i == widget.highlightIndex'), isTrue,
           reason: 'the highlighted sentence is chosen by highlightIndex');
       expect(code.contains('color: layout.highlight'), isTrue,
-          reason: 'highlighted line paints the sasayaki highlight backing');
+          reason:
+              'highlighted line paints the sentenceAudioHighlight highlight backing');
       // 批量渲染入口存在。
       expect(code.contains('renderAudiobookClipFrames'), isTrue);
     },

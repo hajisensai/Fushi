@@ -69,8 +69,8 @@ class ReaderWheelGestureGate {
 
 /// 一条 sasayaki cue 的运行时定位输入：归一化原文 [needle]、匹配时算出的
 /// 归一化偏移提示 [hint]、提示长度 [length]（仅在未命中回落时用于推进游标）。
-class SasayakiCueHint {
-  const SasayakiCueHint({
+class SentenceAudioCueHint {
+  const SentenceAudioCueHint({
     required this.needle,
     required this.hint,
     required this.length,
@@ -87,7 +87,7 @@ class ReaderPaginationScripts {
   /// sasayaki 高亮就近重定位的搜索半径（归一化字符）。整句 needle 很长，
   /// 半径内出现同一整句重复的概率极低；半径限制 + 单调游标 ⇒ 不会跳到远处
   /// 重复句（BUG-060 用户担心的「来回跳动」）。
-  static const int kSasayakiSearchWindow = 256;
+  static const int kSentenceAudioSearchWindow = 256;
 
   /// 把 cue 的归一化偏移（提示）+ 原文，映射成在 [fullNorm]（实时 DOM 的
   /// 归一化文本）里的解析起点。这是 JS `collectSasayakiCueRanges` 搜索逻辑的
@@ -100,12 +100,12 @@ class ReaderPaginationScripts {
   @visibleForTesting
   static List<int> resolveCueNormStartsForTesting({
     required String fullNorm,
-    required List<SasayakiCueHint> cues,
-    int window = kSasayakiSearchWindow,
+    required List<SentenceAudioCueHint> cues,
+    int window = kSentenceAudioSearchWindow,
   }) {
     final List<int> out = <int>[];
     int cursor = 0;
-    for (final SasayakiCueHint c in cues) {
+    for (final SentenceAudioCueHint c in cues) {
       final String needle = c.needle;
       final int hint = c.hint;
       int resolved;
@@ -717,14 +717,14 @@ class ReaderPaginationScripts {
     return null;
   }
 
-  static String highlightSasayakiCueInvocation(
+  static String highlightSentenceAudioCueInvocation(
     String cueId, {
     required bool reveal,
   }) =>
-      'window.fushiReader.highlightSasayakiCue(${_jsStringLiteral(cueId)}, $reveal)';
+      'window.fushiReader.highlightSentenceAudioCue(${_jsStringLiteral(cueId)}, $reveal)';
 
-  static String clearSasayakiCueInvocation() =>
-      'window.fushiReader.clearSasayakiCue()';
+  static String clearSentenceAudioCueInvocation() =>
+      'window.fushiReader.clearSentenceAudioCue()';
 
   static String scrollToSearchMatchInvocation(String query, int hintOffset) =>
       'window.fushiReader.scrollToSearchMatch(${_jsStringLiteral(query)}, $hintOffset)';
@@ -1326,7 +1326,7 @@ window.__hoshiInstallShell = function(C) {
     if (!rect || rect.width <= 0 || rect.height <= 0) return false;
     return vertical ? rect.left >= firstEdge : rect.bottom <= firstEdge;
   },
-  buildSasayakiNormIndex: function() {
+  buildSentenceAudioNormIndex: function() {
     // 一次性遍历 DOM 文本节点（createWalker 跳过振假名 rt/rp），构建归一化
     // 全文 full 与反查表 map：map[k] = {node,start,end}（第 k 个归一化字符在其
     // 文本节点内的原始 UTF-16 偏移区间）。归一化口径 = isMatchableChar，与
@@ -1379,7 +1379,7 @@ window.__hoshiInstallShell = function(C) {
     if (curNode) ranges.push({ node: curNode, start: curStart, end: curEnd });
     return ranges;
   },
-  collectSasayakiCueRanges: function(cues) {
+  collectSentenceAudioCueRanges: function(cues) {
     // BUG-060：高亮坐标由实时 DOM 权威定位。匹配时算出的 start/length 仅作
     // 「提示」，运行时用 cue 原文 text 在实时 DOM 的归一化全文里就近、单调地
     // 重新定位 —— 摆脱 package:html(匹配坐标系) 与浏览器 DOM(渲染坐标系) 逐字
@@ -1389,7 +1389,7 @@ window.__hoshiInstallShell = function(C) {
     // ReaderPaginationScripts.resolveCueNormStartsForTesting 同算法。
     var out = [];
     if (!cues.length) return out;
-    var idx = this.buildSasayakiNormIndex();
+    var idx = this.buildSentenceAudioNormIndex();
     var full = idx.full;
     var map = idx.map;
     var WINDOW = 256;
@@ -1435,27 +1435,27 @@ window.__hoshiInstallShell = function(C) {
     // TODO-630/BUG-366 observability：full 长度 + 多少 cue 算出空 range（全空=路径/折叠未命中）。
     var emptyRanges = 0;
     for (var oi = 0; oi < out.length; oi++) { if (!out[oi].ranges.length) emptyRanges++; }
-    try { console.log('[sasayaki-hl] collectRanges cues=' + cues.length + ' fullLen=' + full.length +
+    try { console.log('[sentence-audio-hl] collectRanges cues=' + cues.length + ' fullLen=' + full.length +
       ' emptyRanges=' + emptyRanges + (out.length ? ' firstNeedleLen=' + (this.foldNormalize(cues[0].text || '').length) : '')); } catch (e) {}
     return out;
   },
-  applySasayakiCues: function(cues) {
+  applySentenceAudioCues: function(cues) {
     if (window.hoshiSelection) window.hoshiSelection.clearSelection();
-    this.resetSasayakiCues();
+    this.resetSentenceAudioCues();
     // TODO-630/BUG-366 observability：payload 是否带 cue、CSS highlights 支持与否、
     // sasayaki 背景色变量值（透明/缺失 → 即使 range 命中也看不见）。一次性诊断只打一行。
     try {
       var n = cues && cues.length ? cues.length : 0;
-      if (!this.__sasayakiDiagLogged) {
-        this.__sasayakiDiagLogged = true;
+      if (!this.__sentenceAudioDiagLogged) {
+        this.__sentenceAudioDiagLogged = true;
         var bg = '';
-        try { bg = getComputedStyle(document.documentElement).getPropertyValue('--hoshi-sasayaki-background-color'); } catch (e) {}
-        console.log('[sasayaki-hl] diag cssHighlightsSupported=' + (!!window.__hoshiCssHighlightsSupported) +
-          ' sasayakiBg="' + (bg || '').trim() + '"');
+        try { bg = getComputedStyle(document.documentElement).getPropertyValue('--hoshi-sentence-audio-background-color'); } catch (e) {}
+        console.log('[sentence-audio-hl] diag cssHighlightsSupported=' + (!!window.__hoshiCssHighlightsSupported) +
+          ' sentenceAudioBg="' + (bg || '').trim() + '"');
       }
-      console.log('[sasayaki-hl] applySasayakiCues payloadCues=' + n);
+      console.log('[sentence-audio-hl] applySentenceAudioCues payloadCues=' + n);
     } catch (e) {}
-    var cueSegments = this.collectSasayakiCueRanges(cues);
+    var cueSegments = this.collectSentenceAudioCueRanges(cues);
     // BUG-643：普通正文也不能再走 ::highlight(hoshi-sasayaki)。竖排 WebKit 会按
     // line-height 行盒刷背景，导致无振假名的「の顔色が変わった」比 ruby 基字更宽。
     // 改为：ruby 节点继续收集到 cueRubyElements；普通文本包 hoshi-sasayaki-cue span，
@@ -1477,7 +1477,7 @@ window.__hoshiInstallShell = function(C) {
           range.setStart(segments[j].node, segments[j].start);
           range.setEnd(segments[j].node, segments[j].end);
           var wrapper = document.createElement('span');
-          wrapper.className = 'hoshi-sasayaki-cue';
+          wrapper.className = 'hoshi-sentence-audio-cue';
           wrapper.appendChild(range.extractContents());
           range.insertNode(wrapper);
           wrappers.push(wrapper);
@@ -1494,19 +1494,19 @@ window.__hoshiInstallShell = function(C) {
     var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     return el && el.closest ? el.closest('ruby') : null;
   },
-  highlightSasayakiCue: function(cueId, reveal) {
-    this.clearSasayakiCue();
-    if (window.__hoshiCssHighlightsSupported) CSS.highlights.delete('hoshi-sasayaki');
+  highlightSentenceAudioCue: function(cueId, reveal) {
+    this.clearSentenceAudioCue();
+    if (window.__hoshiCssHighlightsSupported) CSS.highlights.delete('hoshi-sentence-audio');
     var wrappers = this.cueWrappers.get(cueId) || [];
     var rubyElements = this.cueRubyElements.get(cueId) || [];
     // TODO-630/BUG-366 observability：本 cue 拿到几个文本 span/ruby；0+0 → 直接 return null（不高亮）。
-    try { console.log('[sasayaki-hl] highlightCue ranges=' + wrappers.length + ' ruby=' + rubyElements.length +
+    try { console.log('[sentence-audio-hl] highlightCue ranges=' + wrappers.length + ' ruby=' + rubyElements.length +
       (!wrappers.length && !rubyElements.length ? ' RETURN_NULL_no_segments' : '')); } catch (e) {}
     if (!wrappers.length && !rubyElements.length) return null;
     this.activeCueId = cueId;
-    wrappers.forEach(function(wrapper) { wrapper.classList.add('hoshi-sasayaki-active'); });
+    wrappers.forEach(function(wrapper) { wrapper.classList.add('hoshi-sentence-audio-active'); });
     // ruby 元素用 class 高亮（背景画在元素上，避免 ::highlight 对 ruby 双绘，BUG-110）
-    rubyElements.forEach(function(ruby) { ruby.classList.add('hoshi-sasayaki-ruby-active'); });
+    rubyElements.forEach(function(ruby) { ruby.classList.add('hoshi-sentence-audio-ruby-active'); });
     if (reveal) {
       var target = wrappers.length ? wrappers[0] : rubyElements[0];
       if (target && this.revealElement && this.revealElement(target)) {
@@ -1563,20 +1563,20 @@ window.__hoshiInstallShell = function(C) {
     }
     return null;
   },
-  clearSasayakiCue: function() {
+  clearSentenceAudioCue: function() {
     if (!this.activeCueId) return;
-    if (window.__hoshiCssHighlightsSupported) CSS.highlights.delete('hoshi-sasayaki');
+    if (window.__hoshiCssHighlightsSupported) CSS.highlights.delete('hoshi-sentence-audio');
     var rubyElements = this.cueRubyElements.get(this.activeCueId) || [];
-    rubyElements.forEach(function(ruby) { ruby.classList.remove('hoshi-sasayaki-ruby-active'); });
+    rubyElements.forEach(function(ruby) { ruby.classList.remove('hoshi-sentence-audio-ruby-active'); });
     var wrappers = this.cueWrappers.get(this.activeCueId) || [];
-    wrappers.forEach(function(wrapper) { wrapper.classList.remove('hoshi-sasayaki-active'); });
+    wrappers.forEach(function(wrapper) { wrapper.classList.remove('hoshi-sentence-audio-active'); });
     this.activeCueId = null;
   },
-  resetSasayakiCues: function() {
+  resetSentenceAudioCues: function() {
     if (window.hoshiSelection) window.hoshiSelection.clearSelection();
-    if (window.__hoshiCssHighlightsSupported) CSS.highlights.delete('hoshi-sasayaki');
+    if (window.__hoshiCssHighlightsSupported) CSS.highlights.delete('hoshi-sentence-audio');
     this.cueRubyElements.forEach(function(rubyElements) {
-      rubyElements.forEach(function(ruby) { ruby.classList.remove('hoshi-sasayaki-ruby-active'); });
+      rubyElements.forEach(function(ruby) { ruby.classList.remove('hoshi-sentence-audio-ruby-active'); });
     });
     this.cueRubyElements.clear();
     this.cueRangesMap.clear();
@@ -1700,9 +1700,9 @@ window.__hoshiInstallShell = function(C) {
     }''';
 
   /// 有声书 cue 下发：旧实现「有 cue 才注入这一行」，现在「有 cue 才调用」。
-  static const String _sharedSasayakiInitJs = '''
-    if (C.sasayakiCues !== null && C.sasayakiCues !== undefined) {
-      window.fushiReader.applySasayakiCues(C.sasayakiCues);
+  static const String _sharedSentenceAudioInitJs = '''
+    if (C.sentenceAudioCues !== null && C.sentenceAudioCues !== undefined) {
+      window.fushiReader.applySentenceAudioCues(C.sentenceAudioCues);
     }''';
 
   static const String _sharedInitViewport = '''
@@ -1936,7 +1936,7 @@ if (document.readyState === 'complete') {
     // BUG-1140 第二阶段①：三选一从「Dart 注入期挑一条语句」改成「运行时按同一优先级
     // 读 C 分派」。判据逐条对齐旧实现（fragment 非空 > charOffset >= 0 > progress）。
     const String initialRestoreScript = _paginatedInitialRestoreJs;
-    const String sasayakiInit = _sharedSasayakiInitJs;
+    const String sentenceAudioInit = _sharedSentenceAudioInitJs;
 
     const int bottomOverlapPx = ReaderLayoutDefaults.bottomOverlapPx;
     const double imageWidthRatio = ReaderLayoutDefaults.imageWidthViewportRatio;
@@ -2712,7 +2712,7 @@ $initImages
     if (window.fushiReader.paginationMetrics !== undefined) {
       window.fushiReader.paginationMetrics = null;
     }
-    $sasayakiInit
+    $sentenceAudioInit
     $initialRestoreScript
   });
 };
@@ -2762,7 +2762,7 @@ $_sharedInitBoot
     // 偏移（initialCharOffsetEnd>句首）时透传给 restoreToCharOffset 做整句区间对齐。
     // BUG-1140 第二阶段①：判据整体搬到运行时，逐条对齐旧的 Dart 三元式。
     const String initialRestoreScript = _continuousInitialRestoreJs;
-    const String sasayakiInit = _sharedSasayakiInitJs;
+    const String sentenceAudioInit = _sharedSentenceAudioInitJs;
 
     const double imageWidthRatio = ReaderLayoutDefaults.imageWidthViewportRatio;
 
@@ -3324,7 +3324,7 @@ $initImages
     if (window.fushiReader.paginationMetrics !== undefined) {
       window.fushiReader.paginationMetrics = null;
     }
-    $sasayakiInit
+    $sentenceAudioInit
     $initialRestoreScript
   });
 };

@@ -161,7 +161,7 @@ void main() {
       expect(
         source,
         contains(
-            'if (requestedSentenceAudioClip && sasayakiAudioPath == null)'),
+            'if (requestedSentenceAudioClip && sentenceAudioPath == null)'),
         reason:
             'A requested but failed sentence-audio export must stop card mining '
             'with a visible error instead of continuing as a success.',
@@ -192,7 +192,7 @@ void main() {
       );
 
       final int guardIndex = source.indexOf(
-        'if (requestedSentenceAudioClip && sasayakiAudioPath == null)',
+        'if (requestedSentenceAudioClip && sentenceAudioPath == null)',
       );
       final int mineIndex = source.indexOf('outcome = await repo.mineEntry');
       expect(guardIndex, greaterThanOrEqualTo(0));
