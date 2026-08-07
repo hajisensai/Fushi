@@ -33,7 +33,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 /// 横排/竖排 × 单列/多列 共 4 种布局，各跑 3 变体。截图落盘 `<evidenceDir>` 供人工复核。
 ///
 /// Run (PowerShell, from repo root)：
-///   .\hibiki\tool\run_windows_itest.ps1 integration_test\reader_page_edge_leak_verify_itest.dart
+///   .\fushi\tool\run_windows_itest.ps1 integration_test\reader_page_edge_leak_verify_itest.dart
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 

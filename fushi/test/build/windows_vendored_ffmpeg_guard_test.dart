@@ -157,7 +157,7 @@ void main() {
     }
     expect(
       windowsJob,
-      contains(r'hibiki\build\windows\x64\runner\Release'),
+      contains(r'fushi\build\windows\x64\runner\Release'),
       reason: 'vendored ffmpeg must be installed into the Windows Release '
           'bundle directory so it ships next to the app exe',
     );

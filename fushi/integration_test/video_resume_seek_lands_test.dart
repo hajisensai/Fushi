@@ -19,7 +19,7 @@
 //   adb push resume_probe.mp4 /sdcard/Android/data/app.fushi.reader/files/resume_probe.mp4
 //   flutter test integration_test/video_resume_seek_lands_test.dart -d emulator-5556 --no-pub
 // 运行（Windows 离屏，素材由 ffmpeg 现造，无需预置）：
-//   .\hibiki\tool\run_windows_itest.ps1 integration_test\video_resume_seek_lands_test.dart
+//   .\fushi\tool\run_windows_itest.ps1 integration_test\video_resume_seek_lands_test.dart
 import 'dart:async';
 import 'dart:io';
 

@@ -15,7 +15,7 @@
 // 反解 → 真动作 → 真关闭。链路上任何一环漂移，这条测试就红。
 //
 // 运行：
-//   .\hibiki\tool\run_windows_itest.ps1 integration_test\dismiss_dict_popup_input_windows_itest.dart
+//   .\fushi\tool\run_windows_itest.ps1 integration_test\dismiss_dict_popup_input_windows_itest.dart
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kBackMouseButton;
 import 'package:flutter/material.dart';
