@@ -28,7 +28,7 @@ void main() {
     expect(js, contains('_hoshiBlockImageUrl(e.target'));
   });
 
-  test('reader resolves hoshi.local image URLs to files before actions', () {
+  test('reader resolves fushi.local image URLs to files before actions', () {
     final String source = readReaderPageSource();
 
     expect(source, contains('File? _readerImageFileForUrl(String imgUrl)'));

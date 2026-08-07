@@ -8,7 +8,7 @@ import 'package:path/path.dart' as p;
 /// TODO-049: 词典弹窗字体的 CSS 构造。
 ///
 /// 词典弹窗是一个独立的小 WebView（assets/popup/popup.css 里把 `font-family` 写死成
-/// `"Hiragino Sans", ...`），既不走阅读器的 `hoshi.local/fonts/` 拦截器，Windows 端
+/// `"Hiragino Sans", ...`），既不走阅读器的 `fushi.local/fonts/` 拦截器，Windows 端
 /// 又用 about:blank 的 `NavigateToString` 加载，无法用相对/虚拟 URL 引用磁盘字体文件。
 ///
 /// 为在 5 平台一致地支持用户配置的词典字体，这里用两条零跨平台差异的注入路径：

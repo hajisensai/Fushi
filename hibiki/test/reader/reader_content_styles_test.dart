@@ -225,9 +225,9 @@ void main() {
       expect(css, contains('@font-face'));
       expect(
         css,
-        contains('${ReaderHibikiSource.kResourceScheme}://hoshi.local/fonts/'),
+        contains('${ReaderHibikiSource.kResourceScheme}://fushi.local/fonts/'),
       );
-      expect(css, isNot(contains('https://hoshi.local/fonts/')));
+      expect(css, isNot(contains('https://fushi.local/fonts/')));
     });
 
     test('selection color override (opaque) appears verbatim in css', () async {

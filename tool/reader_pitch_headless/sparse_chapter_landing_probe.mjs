@@ -24,14 +24,14 @@ const imgCss=`:root{--hoshi-image-max-width:${W-40}px;--hoshi-image-max-height:$
  img:not(.block-img){max-width:100%;max-height:var(--hoshi-image-max-height,${H}px);object-fit:contain;} p{margin:0 0 1em 0;}`;
 const cssPaginated=`html,body{margin:0;padding:0;}html{overflow:hidden;} body{width:${W}px;height:${H}px;padding:0 20px;box-sizing:border-box;column-width:${W-40}px;column-gap:22px;column-fill:auto;font-size:22px;line-height:1.8;overflow:hidden;writing-mode:horizontal-tb;}${imgCss}`;
 const cssContinuous=`html,body{margin:0;padding:0;} body{width:${W}px;padding:0 20px;box-sizing:border-box;font-size:22px;line-height:1.8;writing-mode:horizontal-tb;}${imgCss}`;
-const img=(n)=>`<img loading="lazy" src="https://hoshi.local/img${n}.png" alt="">`;
+const img=(n)=>`<img loading="lazy" src="https://fushi.local/img${n}.png" alt="">`;
 // 「文字少+图片」封面章：一行题名 + 5 张整页插图（尾图=章末）。HELD_FROM 起的图响应扣住,
 // 模拟真机离屏懒图未加载(0 尺寸)。
 const body=`<p>題名</p>${img(1)}${img(2)}${img(3)}${img(4)}${img(5)}`;
 const HELD_FROM=2; // img2..img5 扣住(0 尺寸); img1 立即加载(章首可见,真机也已加载)
 function png(w,h){const raw=Buffer.alloc((w*3+1)*h);for(let y=0;y<h;y++){raw[y*(w*3+1)]=0;for(let x=0;x<w;x++){const o=y*(w*3+1)+1+x*3;raw[o]=136;raw[o+1]=136;raw[o+2]=136;}}const d=zlib.deflateSync(raw);const sig=Buffer.from([137,80,78,71,13,10,26,10]);const ih=Buffer.alloc(13);ih.writeUInt32BE(w,0);ih.writeUInt32BE(h,4);ih[8]=8;ih[9]=2;const crc=b=>{let c=~0;for(let i=0;i<b.length;i++){c^=b[i];for(let k=0;k<8;k++)c=(c>>>1)^(0xEDB88320&-(c&1));}return ~c;};const ch=(t,dd)=>{const l=Buffer.alloc(4);l.writeUInt32BE(dd.length,0);const tt=Buffer.from(t);const cc=Buffer.alloc(4);cc.writeUInt32BE(crc(Buffer.concat([tt,dd]))>>>0,0);return Buffer.concat([l,tt,dd,cc]);};return Buffer.concat([sig,ch('IHDR',ih),ch('IDAT',d),ch('IEND',Buffer.alloc(0))]);}
 const bigPng=png(300,760);
-async function measure(pg,mode){return await pg.evaluate((mode)=>{const r=window.hoshiReader;if(mode==='paginated'){const c=r.getScrollContext();const m=r.buildPaginationMetrics();return {pos:r.getPagePosition(c),unit:c.pageSize,metricsMax:m.maxScroll};}const el=document.scrollingElement||document.documentElement;return {pos:el.scrollTop,unit:window.innerHeight,metricsMax: el.scrollHeight-el.clientHeight};},mode);}
+async function measure(pg,mode){return await pg.evaluate((mode)=>{const r=window.fushiReader;if(mode==='paginated'){const c=r.getScrollContext();const m=r.buildPaginationMetrics();return {pos:r.getPagePosition(c),unit:c.pageSize,metricsMax:m.maxScroll};}const el=document.scrollingElement||document.documentElement;return {pos:el.scrollTop,unit:window.innerHeight,metricsMax: el.scrollHeight-el.clientHeight};},mode);}
 async function run(mode){
   const shell=fs.readFileSync(path.join(os.tmpdir(),mode==='paginated'?'hoshi_shell_paginated.html':'hoshi_shell_continuous.html'),'utf8');
   const css=mode==='paginated'?cssPaginated:cssContinuous;
@@ -41,19 +41,19 @@ async function run(mode){
   const pg=await b.newPage(); await pg.setViewport({width:W,height:H});
   await pg.setRequestInterception(true);
   pg.on('request',async q=>{const u=q.url();
-   if(u==='https://hoshi.local/chapter')return q.respond({status:200,contentType:'text/html',body:full});
-   if(u.startsWith('https://hoshi.local/img')){const n=parseInt(u.match(/img(\d+)/)[1],10);
+   if(u==='https://fushi.local/chapter')return q.respond({status:200,contentType:'text/html',body:full});
+   if(u.startsWith('https://fushi.local/img')){const n=parseInt(u.match(/img(\d+)/)[1],10);
      if(n>=HELD_FROM){held.push(q);return;} // 扣住尾图响应=真机离屏懒图 0 尺寸态
      return q.respond({status:200,contentType:'image/png',body:bigPng});}
-   if(u.startsWith('https://hoshi.local'))return q.respond({status:404,body:''});
+   if(u.startsWith('https://fushi.local'))return q.respond({status:404,body:''});
    return q.continue();});
-  await pg.goto('https://hoshi.local/chapter',{waitUntil:'domcontentloaded',timeout:8000}).catch(()=>{});
+  await pg.goto('https://fushi.local/chapter',{waitUntil:'domcontentloaded',timeout:8000}).catch(()=>{});
   await new Promise(r=>setTimeout(r,500));
-  await pg.evaluate((mh,mw)=>{document.documentElement.style.setProperty('--hoshi-image-max-height',mh+'px');document.documentElement.style.setProperty('--hoshi-image-max-width',mw+'px');if(window.hoshiReader)window.hoshiReader.paginationMetrics=null;},H-40,W-40);
+  await pg.evaluate((mh,mw)=>{document.documentElement.style.setProperty('--hoshi-image-max-height',mh+'px');document.documentElement.style.setProperty('--hoshi-image-max-width',mw+'px');if(window.fushiReader)window.fushiReader.paginationMetrics=null;},H-40,W-40);
   await new Promise(r=>setTimeout(r,150));
-  await pg.evaluate(()=>window.hoshiReader.restoreProgress(0));
+  await pg.evaluate(()=>window.fushiReader.restoreProgress(0));
   await new Promise(r=>setTimeout(r,120));
-  await pg.evaluate(()=>window.hoshiReader.restoreProgress(0.99));
+  await pg.evaluate(()=>window.fushiReader.restoreProgress(0.99));
   await new Promise(r=>setTimeout(r,250));
   // 释放前:尾图仍 0 尺寸 -> 章末落点塌缩(复现「去到最开头」)。
   const before=await measure(pg,mode);

@@ -877,7 +877,7 @@ window.hoshiSelection = {
   // TODO-1127：抽取**当前原生选区**内夹带的 EPUB 插图（<img> 与光栅封面 <svg><image>），
   // 供有声书片段导出把「选区中间的插图」渲进卡片。返回按文档序的数组，每项
   // { src, normOffset }：src 是可交给宿主 _readerImageFileForUrl 解析成解压目录文件的绝对
-  // URL（hoshi.local/epub/...），normOffset 是该图在整书归一化文本坐标里的位置（用相邻文本
+  // URL（fushi.local/epub/...），normOffset 是该图在整书归一化文本坐标里的位置（用相邻文本
   // 节点算，供宿主把图挂到相对顺序正确的 cue 段后）。选区无图 / 无原生选区 → 空数组。
   nativeSelectionImages: function() {
     var sel = window.getSelection ? window.getSelection() : null;

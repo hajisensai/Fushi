@@ -93,6 +93,6 @@ Android 编排日志固定落在 `.codex-test/itest-logs/reader_computer_use_flo
 ## 禁止事项
 
 - 不在自动测试里使用 `tester.tap`、坐标点击或 adb `input tap`。
-- 不用 JS 调 `window.hoshiReader.paginate(...)` 代替用户翻页。
+- 不用 JS 调 `window.fushiReader.paginate(...)` 代替用户翻页。
 - 不直接调用 `onTextSelected` 代替 reader caret 查词。
 - 不打开用户已有书作为验收对象。

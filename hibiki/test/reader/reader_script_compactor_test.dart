@@ -44,7 +44,7 @@ var b = 2;
 
     test('保留行内尾注释与代码里的 //（URL / 正则）', () {
       const String src = '''
-var u = 'https://hoshi.local/epub/x.xhtml';
+var u = 'https://fushi.local/epub/x.xhtml';
 var re = /[^/]+/g;
 var c = 3; // 尾注释保留
 ''';

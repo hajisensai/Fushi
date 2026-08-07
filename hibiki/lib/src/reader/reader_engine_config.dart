@@ -10,7 +10,7 @@ import 'package:flutter/foundation.dart' show immutable;
 /// platform channel，又要让 WebView 的 JS 引擎从零解析编译（`evaluateJavascript` 的字符串
 /// 没有 V8 code cache）。实测 `evalSetupScript` 中位数 24ms，与章节体量无关 = 纯固定开销。
 ///
-/// 修法：引擎源码变成**零插值的静态资源**（`<script src>` 走 hoshi.local 拦截器 + 强缓存，
+/// 修法：引擎源码变成**零插值的静态资源**（`<script src>` 走 fushi.local 拦截器 + 强缓存，
 /// 见 `ReaderEngineScript`），只暴露一个 `window.__hoshiEngine.install(C)`；本类就是那个
 /// `C`——每次导航只下发这一小份 JSON，引擎在**运行时读取**它。
 ///

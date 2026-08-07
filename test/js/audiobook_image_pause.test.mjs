@@ -147,7 +147,7 @@ const anchorElSrc = extract("__hoshiSentenceAudioAnchorEl");
 function resolveAnchorId(cssHighlights, rangeMapEntries) {
   const setup = `
     window.__hoshiCssHighlightsSupported = ${cssHighlights};
-    window.hoshiReader = {
+    window.fushiReader = {
       cueRangesMap: new Map(${rangeMapEntries}),
       cueWrappers: new Map([['K', [document.getElementById('w')]]]),
     };

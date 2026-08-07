@@ -70,7 +70,7 @@ void main() {
     test('错误 host / 非 img 路径回 null', () {
       expect(
         MangaHibikiPage.resolveImageUrlToFile(
-            root.path, 'https://hoshi.local/img/p001.jpg'),
+            root.path, 'https://fushi.local/img/p001.jpg'),
         isNull,
       );
       expect(
@@ -81,8 +81,8 @@ void main() {
     });
   });
 
-  test('漫画虚拟域与阅读器 hoshi.local 互异（两拦截器绝不混叠）', () {
-    expect(MangaHibikiPage.kMangaHost, isNot('hoshi.local'));
+  test('漫画虚拟域与阅读器 fushi.local 互异（两拦截器绝不混叠）', () {
+    expect(MangaHibikiPage.kMangaHost, isNot('fushi.local'));
     expect(MangaHibikiPage.kMangaHost, 'manga.local');
   });
 }

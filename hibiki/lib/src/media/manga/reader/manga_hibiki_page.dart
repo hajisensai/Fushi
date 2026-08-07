@@ -290,7 +290,7 @@ Future<int?> showMangaPageJumpDialog(
 /// 存储契约：`p.join(row.extractDir, row.epubPath)` 指向 `manga.json`；页图在
 /// `<书目录>/images/<manga.json 里 url 的相对路径>`（url 恒正斜杠，落盘按平台分隔符）。
 ///
-/// 页面拥有专属虚拟域 [kMangaHost]（`manga.local`，与阅读器 `hoshi.local` 互异，两个
+/// 页面拥有专属虚拟域 [kMangaHost]（`manga.local`，与阅读器 `fushi.local` 互异，两个
 /// 拦截器绝不混叠），经带路径穿越守卫的拦截器 serve 本地页图。spread 模式窗口化
 /// loadData-per-window + translateX 翻页；webtoon 整本单文档竖滚（不窗口化）。
 ///
@@ -313,7 +313,7 @@ class MangaHibikiPage extends BaseSourcePage {
   /// restore the chapter from the restart descriptor in `sourceMetadata`.
   final MihonReaderChapter? onlineChapter;
 
-  /// 漫画拦截器专属虚拟域。必须与阅读器的 `hoshi.local` 互异。
+  /// 漫画拦截器专属虚拟域。必须与阅读器的 `fushi.local` 互异。
   static const String kMangaHost = 'manga.local';
 
   static String horizontalKeyTurn({

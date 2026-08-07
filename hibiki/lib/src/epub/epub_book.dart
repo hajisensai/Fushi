@@ -351,7 +351,7 @@ class EpubBook {
   // document URL, so the clicked link's path can carry `./` / `../` / duplicate
   // slashes that the stored chapter href (canonicalized at parse time) does not.
   // A strict `==` then missed legitimate internal links → the caller fell back
-  // to opening `https://hoshi.local/...` in the OS browser (blank page) instead
+  // to opening `https://fushi.local/...` in the OS browser (blank page) instead
   // of jumping. Canonicalize both sides (POSIX, slash-style agnostic) so the
   // comparison is symmetric regardless of redundant path segments.
   static String _canonicalEpubPath(String path) {

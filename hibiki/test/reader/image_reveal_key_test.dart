@@ -8,10 +8,10 @@ import 'package:path/path.dart' as p;
 /// fromFile（图片库）必须对「同一张图」产出逐字相等的 key，否则书内↔图片库无法同步。
 void main() {
   group('ImageRevealKey.normalize', () {
-    test('hoshi.local https 绝对 URL 剥 /epub/ 得相对路径', () {
+    test('fushi.local https 绝对 URL 剥 /epub/ 得相对路径', () {
       expect(
         ImageRevealKey.normalize(
-            'https://hoshi.local/epub/OEBPS/images/foo.jpg'),
+            'https://fushi.local/epub/OEBPS/images/foo.jpg'),
         'OEBPS/images/foo.jpg',
       );
     });
@@ -19,14 +19,14 @@ void main() {
     test('percent 编码解码（%20 → 空格），与磁盘真实文件名对齐', () {
       expect(
         ImageRevealKey.normalize(
-            'https://hoshi.local/epub/OEBPS/images/foo%20bar.jpg'),
+            'https://fushi.local/epub/OEBPS/images/foo%20bar.jpg'),
         'OEBPS/images/foo bar.jpg',
       );
     });
 
     test('macOS/iOS 自定义 scheme 变体同样剥前缀', () {
       expect(
-        ImageRevealKey.normalize('hoshi-resource://hoshi.local/epub/cover.svg'),
+        ImageRevealKey.normalize('fushi-resource://fushi.local/epub/cover.svg'),
         'cover.svg',
       );
     });
@@ -39,7 +39,7 @@ void main() {
     test('../ 折叠到规范相对路径', () {
       expect(
         ImageRevealKey.normalize(
-            'https://hoshi.local/epub/OEBPS/text/../images/x.jpg'),
+            'https://fushi.local/epub/OEBPS/text/../images/x.jpg'),
         'OEBPS/images/x.jpg',
       );
     });
@@ -74,7 +74,7 @@ void main() {
       final String extractDir = p.join('data', 'book', 'extract');
       final String file = p.join(extractDir, 'OEBPS', 'images', 'foo bar.jpg');
       // 阅读器 JS 看到的资源 URL（percent-encoded）。
-      const String url = 'https://hoshi.local/epub/OEBPS/images/foo%20bar.jpg';
+      const String url = 'https://fushi.local/epub/OEBPS/images/foo%20bar.jpg';
       final String? fromLib = ImageRevealKey.fromFile(file, extractDir);
       final String? fromReader = ImageRevealKey.normalize(url);
       expect(fromLib, 'OEBPS/images/foo bar.jpg');

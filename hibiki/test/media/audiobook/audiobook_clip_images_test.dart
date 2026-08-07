@@ -94,13 +94,13 @@ void main() {
 
   group('clipSelectionImagesFromResult (JS 契约解析)', () {
     test('解析合法JSON数组', () {
-      const String raw = '[{"src":"https://hoshi.local/epub/a.png",'
-          '"normOffset":42},{"src":"https://hoshi.local/epub/b.jpg",'
+      const String raw = '[{"src":"https://fushi.local/epub/a.png",'
+          '"normOffset":42},{"src":"https://fushi.local/epub/b.jpg",'
           '"normOffset":100}]';
       final List<({String src, int normOffset})> out =
           ReaderSelectionScripts.clipSelectionImagesFromResult(raw);
       expect(out.length, 2);
-      expect(out[0].src, 'https://hoshi.local/epub/a.png');
+      expect(out[0].src, 'https://fushi.local/epub/a.png');
       expect(out[0].normOffset, 42);
       expect(out[1].normOffset, 100);
     });
@@ -117,11 +117,11 @@ void main() {
 
     test('缺src跳过 缺normOffset归-1兜底挂前段', () {
       const String raw = '[{"normOffset":5},'
-          '{"src":"https://hoshi.local/epub/x.png"}]';
+          '{"src":"https://fushi.local/epub/x.png"}]';
       final List<({String src, int normOffset})> out =
           ReaderSelectionScripts.clipSelectionImagesFromResult(raw);
       expect(out.length, 1);
-      expect(out[0].src, 'https://hoshi.local/epub/x.png');
+      expect(out[0].src, 'https://fushi.local/epub/x.png');
       expect(out[0].normOffset, -1);
     });
 

@@ -1,7 +1,7 @@
 // TODO-1285 图片多列适配守卫 —— headless Chrome (= Android WebView / WebView2 同一
 // Blink) 实测「每页多列(pageColumns>=2)时整页插图**收进本列**、不溢出盖住相邻列正文」，
 // 并断言宽高比不被破坏（不挤压）。复刻 reader_content_styles.dart 的真实分页多列几何 +
-// reader_pagination_scripts.dart `hoshiReader._imageMaxBox` 的子列夹取逻辑（turn 轴图片
+// reader_pagination_scripts.dart `fushiReader._imageMaxBox` 的子列夹取逻辑（turn 轴图片
 // max = used 子列 columnWidth）。同时跑「旧全整-content-box 逻辑」对照证明守卫有牙齿：
 // 旧逻辑下宽插图溢出子列 → FAIL，新逻辑 → PASS。
 //

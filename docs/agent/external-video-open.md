@@ -15,7 +15,7 @@
    `firstExternalVideoArg(args)`（`lib/src/media/video/external_video.dart`）挑出
    第一个受支持的视频路径，存在性校验（`File.existsSync`）后暂存到顶层
    `_pendingExternalVideoPath`。
-3. **app 初始化完成后**：`_HoshiReaderAppState.build` 在 `isInitialised==true`
+3. **app 初始化完成后**：`_FushiReaderAppState.build` 在 `isInitialised==true`
    分支调度一次性 post-frame callback → `_openExternalVideo(path)`：
    - bookUid 用 `externalVideoBookUid(path)`（规范化路径的 sha1 前 12 位，前缀
      `video/ext/`）——**幂等**：同一文件重复打开复用同条记录、保留进度。
@@ -79,7 +79,7 @@ runner 用 `CreateMutexW(L"HibikiSingleInstanceMutex")` 做**真单实例**（�
 2. 首实例 `flutter_window.cpp::MessageHandler` 收到 `WM_COPYDATA` →
    `DecodeExternalVideoPath`（magic 不匹配则忽略）→ 经 `app.hibiki/external_video`
    MethodChannel `InvokeMethod("openExternalVideo", path)` 推给 Dart。
-3. Dart `_HoshiReaderAppState._handleExternalVideoChannel`（`main.dart`，仅 Windows
+3. Dart `_FushiReaderAppState._handleExternalVideoChannel`（`main.dart`，仅 Windows
    注册）：做与首启 argv 等价的校验（`isSupportedVideoFile` + `File.existsSync`），
    通过后复用 `_openExternalVideo`（同一打开链路，不另造第二套）。若首实例尚未初始化
    完成，则暂存到 `_pendingExternalVideoPath` 交由 `build` 的首启分支接手。
