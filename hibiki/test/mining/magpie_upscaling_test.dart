@@ -852,7 +852,7 @@ void main() {
       );
 
       expect(magpieUpscalingActionHint(missing), contains('Magpie'));
-      expect(magpieUpscalingActionHint(missing), contains('Hibiki'));
+      expect(magpieUpscalingActionHint(missing), contains('Fushi'));
       expect(magpieUpscalingActionHint(invalid), contains('Magpie'));
       expect(
         magpieUpscalingActionHint(missing),

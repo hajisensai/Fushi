@@ -98,8 +98,8 @@ void main() {
         reason: '必须可选择始终置顶模式');
     // spec 2026-07-10 §7：监听已上移 app 级，「仅在查词界面监听」的旧文案失效，
     // 置顶策略 hint 只描述置顶行为，且旧措辞不得复活。
-    expect(en.contains('Controls whether Hibiki stays above other windows'),
-        isTrue,
+    expect(
+        en.contains('Controls whether Fushi stays above other windows'), isTrue,
         reason: '英文文案描述窗口置顶策略');
     expect(en.contains('Only watches the clipboard and global hotkey'), isFalse,
         reason: '「仅在查词页监听」已随生命周期上移（spec §7）失效，不得复活');
