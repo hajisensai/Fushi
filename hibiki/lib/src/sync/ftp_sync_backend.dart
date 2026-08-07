@@ -9,10 +9,12 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_root_migration.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 class FtpSyncBackend extends SyncBackend
     with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
@@ -36,13 +38,12 @@ class FtpSyncBackend extends SyncBackend
   /// of failing at '/'.
   String get _rootPath => ftpRootPath(_homeDir);
 
-  /// Pure helper for [_rootPath]; exposed for testing.
+  /// Pure helper for [_rootPath]; exposed for testing. [name] 默认新根名，
+  /// Fushi 改名迁移探测旧根时传 [kLegacySyncRootFolderName]。
   @visibleForTesting
-  static String ftpRootPath(String home) {
+  static String ftpRootPath(String home, [String name = kSyncRootFolderName]) {
     final String trimmed = home.replaceAll(RegExp(r'/+$'), '');
-    return trimmed.isEmpty
-        ? '/$kSyncRootFolderName'
-        : '$trimmed/$kSyncRootFolderName';
+    return trimmed.isEmpty ? '/$name' : '$trimmed/$name';
   }
 
   /// Normalize a PWD reply into a clean directory path (strip surrounding
@@ -174,8 +175,30 @@ class FtpSyncBackend extends SyncBackend
 
         await _ensureConnected();
         try {
-          final exists = await _client!.checkFolderExistence(_rootPath);
-          if (!exists) {
+          // Fushi 改名迁移三段（找新根 → 旧根 RNFR/RNTO 改名 → 新建）。稳态
+          // 仍是一次 checkFolderExistence，与旧实现同价；旧根探测仅在新根缺席
+          // 时发生。结果经 rootFolderIdCache 记忆化。
+          final String? existing = await migrateLegacySyncRoot<String>(
+            find: (String name) async {
+              final String candidate = ftpRootPath(_homeDir, name);
+              return await _client!.checkFolderExistence(candidate)
+                  ? candidate
+                  : null;
+            },
+            renameLegacy: (String legacyPath) async {
+              // RNFR/RNTO 对目录整树改名。库只回 bool，false 必须抛出——迁移
+              // 失败要留痕并降级为新建新根，不能静默当成功。
+              final bool renamed = await _client!.rename(legacyPath, _rootPath);
+              if (!renamed) {
+                throw SyncBackendError(
+                    'FTP rename failed: $legacyPath -> $_rootPath');
+              }
+              return _rootPath;
+            },
+            onRenameError: (Object e, StackTrace st) => ErrorLogService.instance
+                .log('FtpSyncBackend.migrateLegacyRoot', e, st),
+          );
+          if (existing == null) {
             final created = await _client!.makeDirectory(_rootPath);
             if (!created) {
               throw SyncBackendError(

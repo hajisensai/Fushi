@@ -5,11 +5,13 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_root_migration.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/webdav_ops.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 class WebDavSyncBackend extends SyncBackend
     with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
@@ -85,6 +87,26 @@ class WebDavSyncBackend extends SyncBackend
     if (rootFolderIdCache != null) return rootFolderIdCache!;
 
     final path = '${_ops!.baseUrl}/$kSyncRootFolderName/';
+    // Fushi 改名迁移三段（找新根 → 旧根 MOVE 改名 → 新建）。稳态（新根已在）
+    // 仍是一次 PROPFIND，与旧实现的 ensureCollection 探测同价；旧根探测仅在
+    // 新根缺席时发生。结果经 rootFolderIdCache 记忆化。
+    final String? existing = await migrateLegacySyncRoot<String>(
+      find: (String name) async {
+        final String candidate = '${_ops!.baseUrl}/$name/';
+        return await _ops!.collectionExists(candidate) ? candidate : null;
+      },
+      renameLegacy: (String legacyPath) async {
+        await _ops!.movePath(legacyPath, path);
+        return path;
+      },
+      onRenameError: (Object e, StackTrace st) => ErrorLogService.instance
+          .log('WebDavSyncBackend.migrateLegacyRoot', e, st),
+    );
+    if (existing != null) {
+      rootFolderIdCache = existing;
+      return existing;
+    }
+
     await _ops!.ensureCollection(path);
     rootFolderIdCache = path;
     return path;

@@ -17,6 +17,22 @@ const String kSyncRootFolderName = 'fushi-data';
 /// 而旧根存在，把旧根**远端改名**成新根（数据原地不动，只换目录名）。
 const String kLegacySyncRootFolderName = 'hibiki-data';
 
+/// 该 folderId 是否以**路径段**形式嵌入了旧同步根名（`hibiki-data`）。
+///
+/// 路径式后端（Dropbox / WebDAV / FTP / SFTP / 互联）持久化的 folderId 是裸路径，
+/// 旧版本落盘的缓存会把 `hibiki-data` 钉死在路径里；恢复这种陈旧缓存会让
+/// findOrCreateRootFolder 的 Fushi 改名迁移永远没机会跑（根缓存命中直接短路）。
+/// [SyncFolderCache.restoreCache] 用本判据把它们过滤掉，强制走一次按名查/迁移。
+///
+/// 按段匹配（段边界 = 串首/尾或 `/`），不会误杀恰好含子串的书名
+/// （如 `hibiki-database`）；Google Drive 的不透明 ID 无斜杠也不可能整串等于
+/// 旧根名，天然不受影响。
+bool syncFolderIdEmbedsLegacyRoot(String folderId) {
+  final RegExp segment =
+      RegExp('(^|/)${RegExp.escape(kLegacySyncRootFolderName)}(/|\$)');
+  return segment.hasMatch(folderId);
+}
+
 /// Non-reentrant async mutex. Calling [withLock] from within a [withLock] callback will deadlock.
 class AsyncMutex {
   Completer<void>? _completer;
@@ -76,14 +92,21 @@ mixin SyncFolderCache {
     folderIdCache.clear();
   }
 
+  /// 恢复持久化缓存。嵌着旧根名（`hibiki-data` 路径段）的条目一律丢弃
+  /// （[syncFolderIdEmbedsLegacyRoot]）：那是改名迁移前落盘的陈旧路径，恢复它会让
+  /// 根缓存命中短路掉 findOrCreateRootFolder 里的迁移逻辑，旧数据永远搬不过来。
+  /// 丢弃只是缓存未命中——下一轮按名查/建会把新 folderId 重新学回来。
   void restoreCache({
     String? rootFolderId,
     Map<String, String>? titleToFolderId,
   }) {
     rootFolderIdCache =
-        rootFolderId == null ? null : normalizeFolderId(rootFolderId);
+        (rootFolderId == null || syncFolderIdEmbedsLegacyRoot(rootFolderId))
+            ? null
+            : normalizeFolderId(rootFolderId);
     if (titleToFolderId != null) {
       titleToFolderId.forEach((String title, String id) {
+        if (syncFolderIdEmbedsLegacyRoot(id)) return;
         folderIdCache[title] = normalizeFolderId(id);
       });
     }

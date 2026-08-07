@@ -10,7 +10,9 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_root_migration.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -230,6 +232,17 @@ class OneDriveSyncBackend extends SyncBackend
     return resp;
   }
 
+  Future<http.Response> _graphPatch(
+      String path, Map<String, dynamic> body) async {
+    final resp = await (await obtainSyncHttpClient()).patch(
+      Uri.parse('$_apiBase$path'),
+      headers: _authHeaders,
+      body: jsonEncode(body),
+    );
+    _checkResponse(resp, 'PATCH $path');
+    return resp;
+  }
+
   Future<http.Response> _graphPut(String path, List<int> bytes,
       {String contentType = 'application/octet-stream'}) async {
     final resp = await (await obtainSyncHttpClient()).put(
@@ -275,14 +288,32 @@ class OneDriveSyncBackend extends SyncBackend
   Future<String> findOrCreateRootFolder() async {
     if (rootFolderIdCache != null) return rootFolderIdCache!;
 
-    // Try to find existing folder.
-    try {
-      final resp = await _graphGet('/me/drive/root:/$_rootFolderName');
-      final json = jsonDecode(resp.body) as Map<String, dynamic>;
-      rootFolderIdCache = json['id'] as String;
-      return rootFolderIdCache!;
-    } on SyncBackendError catch (e) {
-      if (!e.isRetryable) rethrow; // Only catch 404.
+    // Fushi 改名迁移三段（找新根 → 旧根 Graph PATCH 改名 → 新建）。根在普通
+    // My Drive 根路径（`/me/drive/root:/<name>`，非 approot）；item id 不随改名
+    // 变化，云端数据原地不动。结果经 rootFolderIdCache 记忆化，旧根探测仅在
+    // 新根缺席时发生。
+    final String? existing = await migrateLegacySyncRoot<String>(
+      find: (String name) async {
+        try {
+          final resp = await _graphGet('/me/drive/root:/$name');
+          final json = jsonDecode(resp.body) as Map<String, dynamic>;
+          return json['id'] as String;
+        } on SyncBackendError catch (e) {
+          if (e.isRetryable) return null; // 404：不存在。
+          rethrow;
+        }
+      },
+      renameLegacy: (String legacyId) async {
+        await _graphPatch(
+            '/me/drive/items/$legacyId', {'name': _rootFolderName});
+        return legacyId;
+      },
+      onRenameError: (Object e, StackTrace st) => ErrorLogService.instance
+          .log('OneDriveSyncBackend.migrateLegacyRoot', e, st),
+    );
+    if (existing != null) {
+      rootFolderIdCache = existing;
+      return existing;
     }
 
     // Create the folder. (GET above already handled the existing case;
