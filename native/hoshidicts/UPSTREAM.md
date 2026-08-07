@@ -71,3 +71,18 @@
 
 - 本机无 C++ 编译器（MSVC/NDK），native 改动由 **CI Linux ctest**（TODO-578 接入）+ **5 平台 build** 验。
 - ctest 守卫：`tests/freq_pitch_import_query_test.cpp`（freq/pitch import→query e2e）+ `text_processor` / `kanji` 现有用例不回退。
+
+## 2026-08 Hibiki→Fushi 改名映射（P6-2）
+
+产品改名 Fushi 后，本引擎**对外符号面**同步改为 `fushidicts`；**目录名、内部静态库 target `hoshidicts`、`hoshidicts_src/`、`hoshidicts_include/`、`hoshidicts_external/`、内部命名空间/宏（`HOSHI_EXPORT`、`hoshi::`、`HoshiThread`）保持不变**，与上游 diff 的对照面最小化。对照表：
+
+| 旧名 | 新名 | 说明 |
+|---|---|---|
+| C ABI 导出前缀 `hoshidicts_*`（22 个函数） | `fushidicts_*` | `fushidicts_ffi.cpp`，Dart 绑定同步 |
+| CMake target/产物 `hoshidicts_ffi`（`hoshidicts_ffi.dll` / `libhoshidicts_ffi.{so,dylib}`） | `fushidicts_ffi`（`fushidicts_ffi.dll` / `libfushidicts_ffi.{so,dylib}`） | Windows/Linux/macOS/Android |
+| iOS 合并归档 `libhoshidicts_ffi_merged.a` | `libfushidicts_ffi_merged.a` | `merge_ios_archives.sh` |
+| CMake target `hoshidicts_jni`（`libhoshidicts_jni.so`） | `fushidicts_jni`（`libfushidicts_jni.so`） | Android popup JNI |
+| JNI 注册 `Java_app_hibiki_reader_HoshiBridge_*` | `Java_app_fushi_reader_FushiBridge_*` | Kotlin 侧为 `app.fushi.reader.FushiBridge`（P2-1 已改） |
+| 桥源文件 `hoshidicts_ffi.cpp` / `hoshidicts_jni.cpp` | `fushidicts_ffi.cpp` / `fushidicts_jni.cpp` | 仅这两个桥文件改名 |
+| 构建变量 `HOSHIDICTS_*`（CMake/xcconfig/脚本环境契约） | `FUSHIDICTS_*` | `AppInfo.xcconfig` / 两个 pbxproj / `build_fushidicts_ffi.sh` |
+| Dart 封装 `HoshiDicts` 及 `Hoshi*` 结果类 | `FushiDicts` / `Fushi*` | `packages/hibiki_dictionary/lib/src/engine/fushidicts.dart` |

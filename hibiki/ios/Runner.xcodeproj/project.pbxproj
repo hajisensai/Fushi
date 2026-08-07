@@ -136,7 +136,7 @@
 			buildConfigurationList = 97C147051CF9000F007C117D /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
 				913B847A994ABA4520129689 /* [CP] Check Pods Manifest.lock */,
-				B20200000000000000000001 /* Build HoshiDicts FFI */,
+				B20200000000000000000001 /* Build FushiDicts FFI */,
 				9740EEB61CF901F6004384FC /* Run Script */,
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
@@ -290,7 +290,7 @@
 			shellPath = /bin/sh;
 			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build";
 		};
-		B20200000000000000000001 /* Build HoshiDicts FFI */ = {
+		B20200000000000000000001 /* Build FushiDicts FFI */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -299,17 +299,17 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
-				"$(HOSHIDICTS_SOURCE_DIR)/CMakeLists.txt",
+				"$(FUSHIDICTS_SOURCE_DIR)/CMakeLists.txt",
 			);
-			name = "Build HoshiDicts FFI";
+			name = "Build FushiDicts FFI";
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(HOSHIDICTS_MERGED_ARCHIVE)",
+				"$(FUSHIDICTS_MERGED_ARCHIVE)",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "/bin/bash \"$PROJECT_DIR/build_hoshidicts_ffi.sh\"\n";
+			shellScript = "/bin/bash \"$PROJECT_DIR/build_fushidicts_ffi.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -404,9 +404,9 @@
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
-				HOSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
-				HOSHIDICTS_MERGED_ARCHIVE = "$(HOSHIDICTS_BUILD_DIR)/libhoshidicts_ffi_merged.a";
-				HOSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
+				FUSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
+				FUSHIDICTS_MERGED_ARCHIVE = "$(FUSHIDICTS_BUILD_DIR)/libfushidicts_ffi_merged.a";
+				FUSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -416,7 +416,7 @@
 					"$(inherited)",
 					"-Wl,-export_dynamic",
 					"-force_load",
-					"$(HOSHIDICTS_MERGED_ARCHIVE)",
+					"$(FUSHIDICTS_MERGED_ARCHIVE)",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.fushi.reader;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -541,9 +541,9 @@
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
-				HOSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
-				HOSHIDICTS_MERGED_ARCHIVE = "$(HOSHIDICTS_BUILD_DIR)/libhoshidicts_ffi_merged.a";
-				HOSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
+				FUSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
+				FUSHIDICTS_MERGED_ARCHIVE = "$(FUSHIDICTS_BUILD_DIR)/libfushidicts_ffi_merged.a";
+				FUSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -553,7 +553,7 @@
 					"$(inherited)",
 					"-Wl,-export_dynamic",
 					"-force_load",
-					"$(HOSHIDICTS_MERGED_ARCHIVE)",
+					"$(FUSHIDICTS_MERGED_ARCHIVE)",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.fushi.reader;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -572,9 +572,9 @@
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
-				HOSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
-				HOSHIDICTS_MERGED_ARCHIVE = "$(HOSHIDICTS_BUILD_DIR)/libhoshidicts_ffi_merged.a";
-				HOSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
+				FUSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
+				FUSHIDICTS_MERGED_ARCHIVE = "$(FUSHIDICTS_BUILD_DIR)/libfushidicts_ffi_merged.a";
+				FUSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -584,7 +584,7 @@
 					"$(inherited)",
 					"-Wl,-export_dynamic",
 					"-force_load",
-					"$(HOSHIDICTS_MERGED_ARCHIVE)",
+					"$(FUSHIDICTS_MERGED_ARCHIVE)",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.fushi.reader;
 				PRODUCT_NAME = "$(TARGET_NAME)";

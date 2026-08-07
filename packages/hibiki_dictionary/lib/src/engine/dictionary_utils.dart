@@ -1,10 +1,10 @@
-import 'hoshidicts.dart';
+import 'fushidicts.dart';
 
-Future<HoshiImportResult> importDictionaryViaHoshidicts({
+Future<FushiImportResult> importDictionaryViaFushidicts({
   required String zipPath,
   required String outputDir,
   String breadcrumbDir = '',
 }) async {
-  return HoshiDicts.importDictionary(zipPath, outputDir,
+  return FushiDicts.importDictionary(zipPath, outputDir,
       breadcrumbDir: breadcrumbDir);
 }

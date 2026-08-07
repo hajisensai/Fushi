@@ -9,23 +9,23 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 ///
 /// 同时守住边界：汉字多读音词的空读音**不能**被硬塞进任一真读音组。
 void main() {
-  HoshiLookupResult makeResult({
+  FushiLookupResult makeResult({
     required String expression,
     required String reading,
     required String dictName,
     required String gloss,
   }) {
-    return HoshiLookupResult(
+    return FushiLookupResult(
       matched: expression,
       deinflected: expression,
       trace: const [],
       preprocessorSteps: 0,
-      term: HoshiTermResult(
+      term: FushiTermResult(
         expression: expression,
         reading: reading,
         rules: '',
         glossaries: [
-          HoshiGlossaryEntry(
+          FushiGlossaryEntry(
             dictName: dictName,
             glossary: jsonEncode(gloss),
             definitionTags: '',
@@ -38,7 +38,7 @@ void main() {
     );
   }
 
-  List<Map<String, dynamic>> groups(List<HoshiLookupResult> results) {
+  List<Map<String, dynamic>> groups(List<FushiLookupResult> results) {
     final json = buildPopupJsonFromLookup(results: results, maximumTerms: 100);
     return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
   }

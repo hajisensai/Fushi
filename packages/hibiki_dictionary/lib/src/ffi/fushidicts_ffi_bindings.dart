@@ -4,13 +4,13 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 
 DynamicLibrary _openNativeLib() {
-  if (Platform.isAndroid) return DynamicLibrary.open('libhoshidicts_ffi.so');
-  if (Platform.isWindows) return DynamicLibrary.open('hoshidicts_ffi.dll');
-  if (Platform.isMacOS) return DynamicLibrary.open('libhoshidicts_ffi.dylib');
-  if (Platform.isLinux) return DynamicLibrary.open('libhoshidicts_ffi.so');
+  if (Platform.isAndroid) return DynamicLibrary.open('libfushidicts_ffi.so');
+  if (Platform.isWindows) return DynamicLibrary.open('fushidicts_ffi.dll');
+  if (Platform.isMacOS) return DynamicLibrary.open('libfushidicts_ffi.dylib');
+  if (Platform.isLinux) return DynamicLibrary.open('libfushidicts_ffi.so');
   if (Platform.isIOS) return DynamicLibrary.process();
   throw UnsupportedError(
-      'hoshidicts: unsupported platform ${Platform.operatingSystem}');
+      'fushidicts: unsupported platform ${Platform.operatingSystem}');
 }
 
 // ── C struct mirrors ────────────────────────────────────────────────
@@ -191,68 +191,68 @@ typedef _FreeStringDart = void Function(Pointer<Utf8> s);
 
 // ── bindings class ──────────────────────────────────────────────────
 
-class HoshidictsFfiBindings {
-  HoshidictsFfiBindings() {
+class FushidictsFfiBindings {
+  FushidictsFfiBindings() {
     _lib = _openNativeLib();
 
     import_ = _lib.lookupFunction<
         FfiImportResult Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>),
-        _ImportDart>('hoshidicts_import');
+        _ImportDart>('fushidicts_import');
     probeDictContent =
         _lib.lookupFunction<_ProbeDictContentNative, _ProbeDictContentDart>(
-            'hoshidicts_probe_dict_content');
+            'fushidicts_probe_dict_content');
     freeImportResult = _lib.lookupFunction<
         Void Function(Pointer<FfiImportResult>),
-        _FreeImportResultDart>('hoshidicts_free_import_result');
+        _FreeImportResultDart>('fushidicts_free_import_result');
     create = _lib.lookupFunction<Pointer<Void> Function(), _CreateDart>(
-        'hoshidicts_create');
+        'fushidicts_create');
     destroy = _lib.lookupFunction<Void Function(Pointer<Void>), _DestroyDart>(
-        'hoshidicts_destroy');
+        'fushidicts_destroy');
     addTermDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
-        'hoshidicts_add_term_dict');
+        'fushidicts_add_term_dict');
     addFreqDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
-        'hoshidicts_add_freq_dict');
+        'fushidicts_add_freq_dict');
     addPitchDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
-        'hoshidicts_add_pitch_dict');
+        'fushidicts_add_pitch_dict');
     addKanjiDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
-        'hoshidicts_add_kanji_dict');
+        'fushidicts_add_kanji_dict');
     loadTransforms = _lib.lookupFunction<
         Void Function(Pointer<Void>, Pointer<Utf8>),
-        _LoadTransformsDart>('hoshidicts_load_transforms');
+        _LoadTransformsDart>('fushidicts_load_transforms');
     query = _lib.lookupFunction<
         FfiQueryResult Function(Pointer<Void>, Pointer<Utf8>),
-        _QueryDart>('hoshidicts_query');
+        _QueryDart>('fushidicts_query');
     freeQueryResult = _lib.lookupFunction<
         Void Function(Pointer<FfiQueryResult>),
-        _FreeQueryResultDart>('hoshidicts_free_query_result');
+        _FreeQueryResultDart>('fushidicts_free_query_result');
     lookup = _lib.lookupFunction<
         FfiLookupResults Function(Pointer<Void>, Pointer<Utf8>, Int32, Int32),
-        _LookupDart>('hoshidicts_lookup');
+        _LookupDart>('fushidicts_lookup');
     freeLookupResults = _lib.lookupFunction<
         Void Function(Pointer<FfiLookupResults>),
-        _FreeLookupResultsDart>('hoshidicts_free_lookup_results');
+        _FreeLookupResultsDart>('fushidicts_free_lookup_results');
     getStyles = _lib.lookupFunction<FfiDictStyles Function(Pointer<Void>),
-        _GetStylesDart>('hoshidicts_get_styles');
+        _GetStylesDart>('fushidicts_get_styles');
     freeStyles = _lib.lookupFunction<Void Function(Pointer<FfiDictStyles>),
-        _FreeStylesDart>('hoshidicts_free_styles');
+        _FreeStylesDart>('fushidicts_free_styles');
     getMedia = _lib.lookupFunction<
         FfiMediaFile Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>),
-        _GetMediaDart>('hoshidicts_get_media');
+        _GetMediaDart>('fushidicts_get_media');
     freeMedia = _lib.lookupFunction<Void Function(Pointer<FfiMediaFile>),
-        _FreeMediaDart>('hoshidicts_free_media');
+        _FreeMediaDart>('fushidicts_free_media');
     queryKanji = _lib.lookupFunction<
         FfiKanjiResults Function(Pointer<Void>, Pointer<Utf8>),
-        _QueryKanjiDart>('hoshidicts_query_kanji');
+        _QueryKanjiDart>('fushidicts_query_kanji');
     freeKanjiResults = _lib.lookupFunction<
         Void Function(Pointer<FfiKanjiResults>),
-        _FreeKanjiResultsDart>('hoshidicts_free_kanji_results');
+        _FreeKanjiResultsDart>('fushidicts_free_kanji_results');
     lookupPopupJson = _lib.lookupFunction<
         Pointer<Utf8> Function(
             Pointer<Void>, Pointer<Utf8>, Int32, Int32, Int32),
-        _LookupPopupJsonDart>('hoshidicts_lookup_popup_json');
+        _LookupPopupJsonDart>('fushidicts_lookup_popup_json');
     freeString =
         _lib.lookupFunction<Void Function(Pointer<Utf8>), _FreeStringDart>(
-            'hoshidicts_free_string');
+            'fushidicts_free_string');
   }
   late final DynamicLibrary _lib;
 

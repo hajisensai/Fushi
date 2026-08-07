@@ -67,8 +67,8 @@ add_subdirectory("runner")
 include(flutter/generated_plugins.cmake)
 
 # === hoshidicts native dictionary engine ===
-set(HOSHIDICTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/hoshidicts")
-add_subdirectory("${HOSHIDICTS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/hoshidicts")
+set(FUSHIDICTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/hoshidicts")
+add_subdirectory("${FUSHIDICTS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/hoshidicts")
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can
@@ -100,7 +100,7 @@ if(PLUGIN_BUNDLED_LIBRARIES)
 endif()
 
 # Install hoshidicts DLL next to the executable
-install(TARGETS hoshidicts_ffi RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+install(TARGETS fushidicts_ffi RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 # === 内置 libtorrent 引擎（可选，vendored 预编译）===

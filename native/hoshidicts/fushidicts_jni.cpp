@@ -9,7 +9,7 @@
 #include "hoshidicts/query.hpp"
 #include "hoshidicts/popup_json.hpp"
 
-struct HoshidictsHandle {
+struct FushidictsHandle {
   DictionaryQuery query;
   Deinflector deinflector;
 };
@@ -78,69 +78,69 @@ std::string build_kanji_json(const std::vector<KanjiResult>& kanji) {
 extern "C" {
 
 JNIEXPORT jlong JNICALL
-Java_app_hibiki_reader_HoshiBridge_nativeCreate(JNIEnv*, jclass) {
-  return reinterpret_cast<jlong>(new HoshidictsHandle());
+Java_app_fushi_reader_FushiBridge_nativeCreate(JNIEnv*, jclass) {
+  return reinterpret_cast<jlong>(new FushidictsHandle());
 }
 
 JNIEXPORT void JNICALL
-Java_app_hibiki_reader_HoshiBridge_nativeDestroy(JNIEnv*, jclass, jlong handle) {
-  delete reinterpret_cast<HoshidictsHandle*>(handle);
+Java_app_fushi_reader_FushiBridge_nativeDestroy(JNIEnv*, jclass, jlong handle) {
+  delete reinterpret_cast<FushidictsHandle*>(handle);
 }
 
 JNIEXPORT void JNICALL
-Java_app_hibiki_reader_HoshiBridge_nativeAddTermDict(JNIEnv* env, jclass,
+Java_app_fushi_reader_FushiBridge_nativeAddTermDict(JNIEnv* env, jclass,
                                                      jlong handle,
                                                      jstring path) {
   const char* p = env->GetStringUTFChars(path, nullptr);
-  reinterpret_cast<HoshidictsHandle*>(handle)->query.add_term_dict(p);
+  reinterpret_cast<FushidictsHandle*>(handle)->query.add_term_dict(p);
   env->ReleaseStringUTFChars(path, p);
 }
 
 JNIEXPORT void JNICALL
-Java_app_hibiki_reader_HoshiBridge_nativeAddFreqDict(JNIEnv* env, jclass,
+Java_app_fushi_reader_FushiBridge_nativeAddFreqDict(JNIEnv* env, jclass,
                                                      jlong handle,
                                                      jstring path) {
   const char* p = env->GetStringUTFChars(path, nullptr);
-  reinterpret_cast<HoshidictsHandle*>(handle)->query.add_freq_dict(p);
+  reinterpret_cast<FushidictsHandle*>(handle)->query.add_freq_dict(p);
   env->ReleaseStringUTFChars(path, p);
 }
 
 JNIEXPORT void JNICALL
-Java_app_hibiki_reader_HoshiBridge_nativeAddPitchDict(JNIEnv* env, jclass,
+Java_app_fushi_reader_FushiBridge_nativeAddPitchDict(JNIEnv* env, jclass,
                                                       jlong handle,
                                                       jstring path) {
   const char* p = env->GetStringUTFChars(path, nullptr);
-  reinterpret_cast<HoshidictsHandle*>(handle)->query.add_pitch_dict(p);
+  reinterpret_cast<FushidictsHandle*>(handle)->query.add_pitch_dict(p);
   env->ReleaseStringUTFChars(path, p);
 }
 
 JNIEXPORT void JNICALL
-Java_app_hibiki_reader_HoshiBridge_nativeAddKanjiDict(JNIEnv* env, jclass,
+Java_app_fushi_reader_FushiBridge_nativeAddKanjiDict(JNIEnv* env, jclass,
                                                       jlong handle,
                                                       jstring path) {
   const char* p = env->GetStringUTFChars(path, nullptr);
-  reinterpret_cast<HoshidictsHandle*>(handle)->query.add_kanji_dict(p);
+  reinterpret_cast<FushidictsHandle*>(handle)->query.add_kanji_dict(p);
   env->ReleaseStringUTFChars(path, p);
 }
 
 JNIEXPORT void JNICALL
-Java_app_hibiki_reader_HoshiBridge_nativeLoadTransforms(JNIEnv* env, jclass,
+Java_app_fushi_reader_FushiBridge_nativeLoadTransforms(JNIEnv* env, jclass,
                                                         jlong handle,
                                                         jstring json) {
   const char* j = env->GetStringUTFChars(json, nullptr);
-  reinterpret_cast<HoshidictsHandle*>(handle)->deinflector.load_transforms_json(
+  reinterpret_cast<FushidictsHandle*>(handle)->deinflector.load_transforms_json(
       j);
   env->ReleaseStringUTFChars(json, j);
 }
 
 JNIEXPORT jstring JNICALL
-Java_app_hibiki_reader_HoshiBridge_nativeLookupJson(JNIEnv* env, jclass,
+Java_app_fushi_reader_FushiBridge_nativeLookupJson(JNIEnv* env, jclass,
                                                     jlong handle,
                                                     jstring text,
                                                     jint max_results,
                                                     jint scan_length,
                                                     jint max_terms) {
-  auto* h = reinterpret_cast<HoshidictsHandle*>(handle);
+  auto* h = reinterpret_cast<FushidictsHandle*>(handle);
   const char* t = env->GetStringUTFChars(text, nullptr);
   Lookup lookup(h->query, h->deinflector);
   auto results =
@@ -155,10 +155,10 @@ Java_app_hibiki_reader_HoshiBridge_nativeLookupJson(JNIEnv* env, jclass,
 }
 
 JNIEXPORT jstring JNICALL
-Java_app_hibiki_reader_HoshiBridge_nativeQueryKanjiJson(JNIEnv* env, jclass,
+Java_app_fushi_reader_FushiBridge_nativeQueryKanjiJson(JNIEnv* env, jclass,
                                                         jlong handle,
                                                         jstring character) {
-  auto* h = reinterpret_cast<HoshidictsHandle*>(handle);
+  auto* h = reinterpret_cast<FushidictsHandle*>(handle);
   const char* c = env->GetStringUTFChars(character, nullptr);
   std::vector<KanjiResult> kanji = h->query.query_kanji(c);
   env->ReleaseStringUTFChars(character, c);
@@ -167,19 +167,19 @@ Java_app_hibiki_reader_HoshiBridge_nativeQueryKanjiJson(JNIEnv* env, jclass,
 }
 
 JNIEXPORT jstring JNICALL
-Java_app_hibiki_reader_HoshiBridge_nativeGetStylesJson(JNIEnv* env, jclass,
+Java_app_fushi_reader_FushiBridge_nativeGetStylesJson(JNIEnv* env, jclass,
                                                        jlong handle) {
-  auto* h = reinterpret_cast<HoshidictsHandle*>(handle);
+  auto* h = reinterpret_cast<FushidictsHandle*>(handle);
   std::string json = build_styles_json(h->query);
   return env->NewStringUTF(json.c_str());
 }
 
 JNIEXPORT jbyteArray JNICALL
-Java_app_hibiki_reader_HoshiBridge_nativeGetMedia(JNIEnv* env, jclass,
+Java_app_fushi_reader_FushiBridge_nativeGetMedia(JNIEnv* env, jclass,
                                                   jlong handle,
                                                   jstring dict_name,
                                                   jstring media_path) {
-  auto* h = reinterpret_cast<HoshidictsHandle*>(handle);
+  auto* h = reinterpret_cast<FushidictsHandle*>(handle);
   const char* dn = env->GetStringUTFChars(dict_name, nullptr);
   const char* mp = env->GetStringUTFChars(media_path, nullptr);
   auto data = h->query.get_media_file(dn, mp);

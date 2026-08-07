@@ -355,7 +355,7 @@ String buildPopupEntriesJs(DictionarySearchResult result) {
   final String entriesJson = result.popupJson ??
       DictionaryPopupWebViewState.buildLookupEntriesJson(result);
   final String kanjiResultsJson = jsonEncode(
-    result.kanjiResults.map((HoshiKanjiResult k) => k.toMap()).toList(),
+    result.kanjiResults.map((FushiKanjiResult k) => k.toMap()).toList(),
   );
   return '''    try { window.lookupEntries = $entriesJson; } catch(e) { window.lookupEntries = []; }
     try { window.kanjiResults = $kanjiResultsJson; } catch(e) { window.kanjiResults = []; }

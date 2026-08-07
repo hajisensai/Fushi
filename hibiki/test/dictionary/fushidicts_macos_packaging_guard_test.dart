@@ -13,8 +13,8 @@ void main() {
   test('native CMake gives the macOS dylib an @rpath install name', () {
     final String cmake = read('../native/hoshidicts/CMakeLists.txt');
 
-    expect(cmake, contains('add_library(hoshidicts_ffi SHARED'));
-    expect(cmake, contains('if(APPLE AND NOT HOSHIDICTS_IOS)'),
+    expect(cmake, contains('add_library(fushidicts_ffi SHARED'));
+    expect(cmake, contains('if(APPLE AND NOT FUSHIDICTS_IOS)'),
         reason: 'macOS (non-iOS) needs an @rpath dylib id for app-bundle '
             'loading; iOS switched to a force_loaded merged static archive.');
     expect(cmake, contains('INSTALL_NAME_DIR "@rpath"'));
@@ -30,8 +30,8 @@ void main() {
     expect(cmake, contains('std::unexpected(1)'));
     expect(cmake, contains('target_compile_features(hoshidicts PUBLIC'));
     expect(cmake, contains('cxx_std_23'));
-    expect(cmake, contains('target_compile_features(hoshidicts_ffi PRIVATE'));
-    expect(cmake, contains('target_compile_features(hoshidicts_jni PRIVATE'));
+    expect(cmake, contains('target_compile_features(fushidicts_ffi PRIVATE'));
+    expect(cmake, contains('target_compile_features(fushidicts_jni PRIVATE'));
   });
 
   test('macOS Runner builds hoshidicts and copies the dylib into Frameworks',
@@ -39,17 +39,17 @@ void main() {
     final String project = read('macos/Runner.xcodeproj/project.pbxproj');
     final String config = read('macos/Runner/Configs/AppInfo.xcconfig');
 
-    expect(config, contains('HOSHIDICTS_SOURCE_DIR'));
+    expect(config, contains('FUSHIDICTS_SOURCE_DIR'));
     expect(config, contains('../../native/hoshidicts'));
-    expect(config, contains('HOSHIDICTS_DYLIB_NAME = libhoshidicts_ffi.dylib'));
+    expect(config, contains('FUSHIDICTS_DYLIB_NAME = libfushidicts_ffi.dylib'));
 
-    expect(project, contains('Build HoshiDicts FFI'));
+    expect(project, contains('Build FushiDicts FFI'));
     expect(project, contains('cmake -S'));
-    expect(project, contains('HOSHIDICTS_SOURCE_DIR'));
-    expect(project, contains('--target hoshidicts_ffi'));
+    expect(project, contains('FUSHIDICTS_SOURCE_DIR'));
+    expect(project, contains('--target fushidicts_ffi'));
     expect(project, contains(r'$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH'));
-    expect(project, contains('libhoshidicts_ffi.dylib'));
-    expect(project, contains(r'@rpath/$HOSHIDICTS_DYLIB_NAME'));
+    expect(project, contains('libfushidicts_ffi.dylib'));
+    expect(project, contains(r'@rpath/$FUSHIDICTS_DYLIB_NAME'));
     expect(project, contains('install_name_tool -id'));
 
     final RegExp runnerPhases = RegExp(
@@ -57,7 +57,7 @@ void main() {
     );
     final String phases = runnerPhases.firstMatch(project)!.group(1)!;
     expect(phases.indexOf('3399D490228B24CF009A79C7 /* ShellScript */'),
-        lessThan(phases.indexOf('Build HoshiDicts FFI')),
+        lessThan(phases.indexOf('Build FushiDicts FFI')),
         reason: 'copy the dylib after Flutter embeds the macOS app bundle.');
   });
 
@@ -76,12 +76,12 @@ void main() {
 
     expect(workflow, contains('Verify macOS hoshidicts dylib bundle'));
     expect(workflow, contains(r'find "$app_dir/Contents/Frameworks"'));
-    expect(workflow, contains('libhoshidicts_ffi.dylib'));
+    expect(workflow, contains('libfushidicts_ffi.dylib'));
     expect(workflow, contains(r'otool -D "$dylib"'));
     expect(workflow, contains(r'otool -L "$dylib"'));
     expect(workflow, contains('@executable_path/../Frameworks'));
     expect(workflow, contains('ctypes.CDLL'));
-    expect(workflow, contains('hoshidicts_create'));
+    expect(workflow, contains('fushidicts_create'));
 
     expect(
       workflow.indexOf('Verify macOS hoshidicts dylib bundle'),

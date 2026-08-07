@@ -14,7 +14,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
   3. 创建 `ProviderContainer`，立即 `runApp(HoshiReaderApp())`
   4. 初始化错误日志服务（`ErrorLogService` / `DebugLogService`）
   5. 初始化文件日志（`FlutterLogs`，仅移动端）
-  6. `HoshiDicts.preloadTransforms()` 预加载词典变换表
+  6. `FushiDicts.preloadTransforms()` 预加载词典变换表
   7. `appModel.initialise()` 完成后 `isInitialised=true`，从 `LoadingPage` 跳转到 `HomePage`
   8. 后台预热 WebView 引擎（仅移动端非低内存模式）
 - **弹窗词典入口**：`lib/popup_main.dart` -- `@pragma('vm:entry-point') popupMain()`
@@ -70,7 +70,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 - `AppModel` -- 全局应用状态（Riverpod `appProvider`，5149 行），管理初始化、主题、语言、词典、导航。
   - **初始化流程** (`initialise()`): PackageInfo → 目录创建 → Drift DB 打开 → 偏好加载 → Profile 确保 → 词典缓存 → 媒体历史 → 主题调色板 → 语言/格式/增强/快捷操作注册 → 搜索预热
-  - **词典搜索** (`searchDictionary()`): emoji/标点/孤立代理项清洗 → 缓存查找 → HoshiDicts FFI lookup → 结果构建
+  - **词典搜索** (`searchDictionary()`): emoji/标点/孤立代理项清洗 → 缓存查找 → FushiDicts FFI lookup → 结果构建
   - **词典导入** (`importDictionary()` / `importDictionaryFromDirectory()`): 格式自动检测(zip/dsl/mdx) → hoshidicts FFI 导入 → 资源目录写入 → 词典类型检测(term/freq/pitch/kanji)
   - **媒体管理** (`openMedia()` / `closeMedia()`): 沉浸模式 → 自适应路由 → wakelock → 音频服务
   - **子系统委托**: 主题 → `ThemeNotifier`，偏好 → `PreferencesRepository`，历史 → `MediaHistoryRepository`，词典 → `DictionaryRepository`

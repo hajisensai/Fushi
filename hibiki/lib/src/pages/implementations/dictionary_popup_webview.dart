@@ -2279,7 +2279,7 @@ JSON.stringify((function(){
   // _rebuildStylesCache() always assigns a new Map, so identity change == content change.
   // TODO-895: public so the shared buildPopupSettingsJs uses the SAME cached encoding.
   static String dictionaryStylesJson() {
-    final Map<String, String> styles = HoshiDicts.dictionaryStyles;
+    final Map<String, String> styles = FushiDicts.dictionaryStyles;
     if (!identical(styles, _cachedStylesRef)) {
       _cachedStylesJson = jsonEncode(styles);
       _cachedStylesRef = styles;

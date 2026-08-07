@@ -6,12 +6,12 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
-import '../ffi/hoshidicts_ffi_bindings.dart';
+import '../ffi/fushidicts_ffi_bindings.dart';
 
 // ── Dart data classes ───────────────────────────────────────────────
 
-class HoshiGlossaryEntry {
-  const HoshiGlossaryEntry({
+class FushiGlossaryEntry {
+  const FushiGlossaryEntry({
     required this.dictName,
     required this.glossary,
     required this.definitionTags,
@@ -23,21 +23,21 @@ class HoshiGlossaryEntry {
   final String termTags;
 }
 
-class HoshiFrequency {
-  const HoshiFrequency({required this.value, required this.displayValue});
+class FushiFrequency {
+  const FushiFrequency({required this.value, required this.displayValue});
   final int value;
   final String displayValue;
 }
 
-class HoshiFrequencyEntry {
-  const HoshiFrequencyEntry(
+class FushiFrequencyEntry {
+  const FushiFrequencyEntry(
       {required this.dictName, required this.frequencies});
   final String dictName;
-  final List<HoshiFrequency> frequencies;
+  final List<FushiFrequency> frequencies;
 }
 
-class HoshiPitchEntry {
-  const HoshiPitchEntry({
+class FushiPitchEntry {
+  const FushiPitchEntry({
     required this.dictName,
     required this.pitchPositions,
     this.transcriptions = const <String>[],
@@ -51,8 +51,8 @@ class HoshiPitchEntry {
   final List<String> transcriptions;
 }
 
-class HoshiTermResult {
-  const HoshiTermResult({
+class FushiTermResult {
+  const FushiTermResult({
     required this.expression,
     required this.reading,
     required this.rules,
@@ -63,19 +63,19 @@ class HoshiTermResult {
   final String expression;
   final String reading;
   final String rules;
-  final List<HoshiGlossaryEntry> glossaries;
-  final List<HoshiFrequencyEntry> frequencies;
-  final List<HoshiPitchEntry> pitches;
+  final List<FushiGlossaryEntry> glossaries;
+  final List<FushiFrequencyEntry> frequencies;
+  final List<FushiPitchEntry> pitches;
 }
 
-class HoshiTransformGroup {
-  const HoshiTransformGroup({required this.name, required this.description});
+class FushiTransformGroup {
+  const FushiTransformGroup({required this.name, required this.description});
   final String name;
   final String description;
 }
 
-class HoshiLookupResult {
-  const HoshiLookupResult({
+class FushiLookupResult {
+  const FushiLookupResult({
     required this.matched,
     required this.deinflected,
     required this.trace,
@@ -84,13 +84,13 @@ class HoshiLookupResult {
   });
   final String matched;
   final String deinflected;
-  final List<HoshiTransformGroup> trace;
-  final HoshiTermResult term;
+  final List<FushiTransformGroup> trace;
+  final FushiTermResult term;
   final int preprocessorSteps;
 }
 
-class HoshiImportResult {
-  const HoshiImportResult({
+class FushiImportResult {
+  const FushiImportResult({
     required this.success,
     required this.title,
     required this.termCount,
@@ -114,14 +114,14 @@ class HoshiImportResult {
   final String error;
 }
 
-class HoshiDictStyle {
-  const HoshiDictStyle({required this.dictName, required this.styles});
+class FushiDictStyle {
+  const FushiDictStyle({required this.dictName, required this.styles});
   final String dictName;
   final String styles;
 }
 
-class HoshiKanjiResult {
-  const HoshiKanjiResult({
+class FushiKanjiResult {
+  const FushiKanjiResult({
     required this.character,
     required this.onyomi,
     required this.kunyomi,
@@ -135,8 +135,8 @@ class HoshiKanjiResult {
   /// [DictionarySearchResult] JSON payload (e.g. when the popup process
   /// receives a serialized search result across the process boundary). Missing
   /// or null fields degrade to empty/zero so a partial payload never throws.
-  factory HoshiKanjiResult.fromMap(Map<String, dynamic> map) {
-    return HoshiKanjiResult(
+  factory FushiKanjiResult.fromMap(Map<String, dynamic> map) {
+    return FushiKanjiResult(
       character: map['character'] as String? ?? '',
       onyomi: map['onyomi'] as String? ?? '',
       kunyomi: map['kunyomi'] as String? ?? '',
@@ -189,12 +189,12 @@ String _utf8OrEmpty(Pointer<Utf8> p) {
   }
 }
 
-HoshiTermResult _convertTerm(FfiTermResult ffi) {
-  final glossaries = <HoshiGlossaryEntry>[];
+FushiTermResult _convertTerm(FfiTermResult ffi) {
+  final glossaries = <FushiGlossaryEntry>[];
   if (ffi.glossaryCount > 0 && ffi.glossaries != nullptr) {
     for (int i = 0; i < ffi.glossaryCount; i++) {
       final g = ffi.glossaries[i];
-      glossaries.add(HoshiGlossaryEntry(
+      glossaries.add(FushiGlossaryEntry(
         dictName: _utf8OrEmpty(g.dictName),
         glossary: _utf8OrEmpty(g.glossary),
         definitionTags: _utf8OrEmpty(g.definitionTags),
@@ -203,25 +203,25 @@ HoshiTermResult _convertTerm(FfiTermResult ffi) {
     }
   }
 
-  final frequencies = <HoshiFrequencyEntry>[];
+  final frequencies = <FushiFrequencyEntry>[];
   if (ffi.frequencyCount > 0 && ffi.frequencies != nullptr) {
     for (int i = 0; i < ffi.frequencyCount; i++) {
       final f = ffi.frequencies[i];
-      final freqs = <HoshiFrequency>[];
+      final freqs = <FushiFrequency>[];
       for (int j = 0; j < f.count; j++) {
-        freqs.add(HoshiFrequency(
+        freqs.add(FushiFrequency(
           value: f.values[j],
           displayValue: _utf8OrEmpty(f.displayValues[j]),
         ));
       }
-      frequencies.add(HoshiFrequencyEntry(
+      frequencies.add(FushiFrequencyEntry(
         dictName: _utf8OrEmpty(f.dictName),
         frequencies: freqs,
       ));
     }
   }
 
-  final pitches = <HoshiPitchEntry>[];
+  final pitches = <FushiPitchEntry>[];
   if (ffi.pitchCount > 0 && ffi.pitches != nullptr) {
     for (int i = 0; i < ffi.pitchCount; i++) {
       final p = ffi.pitches[i];
@@ -235,7 +235,7 @@ HoshiTermResult _convertTerm(FfiTermResult ffi) {
           transcriptions.add(_utf8OrEmpty(p.transcriptions[j]));
         }
       }
-      pitches.add(HoshiPitchEntry(
+      pitches.add(FushiPitchEntry(
         dictName: _utf8OrEmpty(p.dictName),
         pitchPositions: positions,
         transcriptions: transcriptions,
@@ -243,7 +243,7 @@ HoshiTermResult _convertTerm(FfiTermResult ffi) {
     }
   }
 
-  return HoshiTermResult(
+  return FushiTermResult(
     expression: _utf8OrEmpty(ffi.expression),
     reading: _utf8OrEmpty(ffi.reading),
     rules: _utf8OrEmpty(ffi.rules),
@@ -253,14 +253,14 @@ HoshiTermResult _convertTerm(FfiTermResult ffi) {
   );
 }
 
-HoshiKanjiResult _convertKanji(FfiKanjiResult ffi) {
+FushiKanjiResult _convertKanji(FfiKanjiResult ffi) {
   final meanings = <String>[];
   if (ffi.meaningCount > 0 && ffi.meanings != nullptr) {
     for (int i = 0; i < ffi.meaningCount; i++) {
       meanings.add(_utf8OrEmpty(ffi.meanings[i]));
     }
   }
-  return HoshiKanjiResult(
+  return FushiKanjiResult(
     character: _utf8OrEmpty(ffi.character),
     onyomi: _utf8OrEmpty(ffi.onyomi),
     kunyomi: _utf8OrEmpty(ffi.kunyomi),
@@ -273,22 +273,22 @@ HoshiKanjiResult _convertKanji(FfiKanjiResult ffi) {
 
 // ── main wrapper class ──────────────────────────────────────────────
 
-class HoshiDicts {
+class FushiDicts {
   // ── lifecycle ──────────────────────────────────────────────────
 
-  HoshiDicts() {
-    _bindings ??= HoshidictsFfiBindings();
+  FushiDicts() {
+    _bindings ??= FushidictsFfiBindings();
     _handle = _bindings!.create();
   }
-  static HoshidictsFfiBindings? _bindings;
+  static FushidictsFfiBindings? _bindings;
   Pointer<Void>? _handle;
 
   // ── singleton ──────────────────────────────────────────────────
-  static HoshiDicts? _instance;
+  static FushiDicts? _instance;
   static Map<String, String> _stylesCache = {};
 
-  static HoshiDicts get instance {
-    assert(_instance != null, 'HoshiDicts.initialize() must be called first');
+  static FushiDicts get instance {
+    assert(_instance != null, 'FushiDicts.initialize() must be called first');
     return _instance!;
   }
 
@@ -303,7 +303,7 @@ class HoshiDicts {
           await rootBundle.loadString('assets/transforms/manifest.json');
       languages = List<String>.from(jsonDecode(manifest) as List);
     } catch (e) {
-      debugPrint('[HoshiDicts.preloadTransforms(manifest)] $e');
+      debugPrint('[FushiDicts.preloadTransforms(manifest)] $e');
       return;
     }
     final jsons = <String>[];
@@ -313,7 +313,7 @@ class HoshiDicts {
             await rootBundle.loadString('assets/transforms/$lang.json');
         jsons.add(json);
       } catch (e) {
-        debugPrint('[HoshiDicts.preloadTransforms($lang)] $e');
+        debugPrint('[FushiDicts.preloadTransforms($lang)] $e');
       }
     }
     _cachedTransformJsons = jsons;
@@ -328,7 +328,7 @@ class HoshiDicts {
 
   static void initialize(List<String> paths) {
     _instance?.dispose();
-    final h = HoshiDicts();
+    final h = FushiDicts();
     h._loadCachedTransforms();
     for (final p in paths) {
       h.addTermDict(p);
@@ -346,7 +346,7 @@ class HoshiDicts {
     List<String> kanjiPaths = const [],
   }) {
     _instance?.dispose();
-    final h = HoshiDicts();
+    final h = FushiDicts();
     h._loadCachedTransforms();
     for (final p in termPaths) {
       h.addTermDict(p);
@@ -438,7 +438,7 @@ class HoshiDicts {
   /// Static (handle-free): only reads blobs.bin/hash.table on disk, so it can
   /// run during type migration before any query handle exists.
   static int probeDictContent(String dir) {
-    _bindings ??= HoshidictsFfiBindings();
+    _bindings ??= FushidictsFfiBindings();
     final p = dir.toNativeUtf8(allocator: calloc);
     try {
       return _bindings!.probeDictContent(p);
@@ -459,11 +459,11 @@ class HoshiDicts {
   // ── import (static, no handle needed) ───────────────────────────
   // The C++ side spawns a pthread with 32 MB stack to handle deep
   // recursion in zip/JSON parsing, so this can safely run in any isolate.
-  static Future<HoshiImportResult> importDictionary(
+  static Future<FushiImportResult> importDictionary(
       String zipPath, String outputDir,
       {String breadcrumbDir = ''}) async {
     return Isolate.run(() {
-      _bindings ??= HoshidictsFfiBindings();
+      _bindings ??= FushidictsFfiBindings();
       final zp = zipPath.toNativeUtf8(allocator: calloc);
       final od = outputDir.toNativeUtf8(allocator: calloc);
       // TODO-892: native writes a synchronous '.import_step' crash breadcrumb
@@ -478,7 +478,7 @@ class HoshiDicts {
           // detected_type/title/error NULL; guard every conversion so a failed
           // import reports cleanly instead of crashing on null deref
           // (HBK-AUDIT-032).
-          return HoshiImportResult(
+          return FushiImportResult(
             success: r.success != 0,
             title: _utf8OrEmpty(r.title),
             termCount: r.termCount,
@@ -503,14 +503,14 @@ class HoshiDicts {
   }
 
   // ── query ───────────────────────────────────────────────────────
-  List<HoshiTermResult> query(String expression) {
+  List<FushiTermResult> query(String expression) {
     final ep = expression.toNativeUtf8(allocator: calloc);
     try {
       final r = _bindings!.query(_handle!, ep);
       final rPtr = calloc<FfiQueryResult>();
       rPtr.ref = r;
       try {
-        final results = <HoshiTermResult>[];
+        final results = <FushiTermResult>[];
         for (int i = 0; i < r.count; i++) {
           results.add(_convertTerm(r.terms[i]));
         }
@@ -525,14 +525,14 @@ class HoshiDicts {
   }
 
   // ── kanji query ─────────────────────────────────────────────────
-  List<HoshiKanjiResult> queryKanji(String character) {
+  List<FushiKanjiResult> queryKanji(String character) {
     final cp = character.toNativeUtf8(allocator: calloc);
     try {
       final r = _bindings!.queryKanji(_handle!, cp);
       final rPtr = calloc<FfiKanjiResults>();
       rPtr.ref = r;
       try {
-        final results = <HoshiKanjiResult>[];
+        final results = <FushiKanjiResult>[];
         for (int i = 0; i < r.count; i++) {
           results.add(_convertKanji(r.results[i]));
         }
@@ -550,7 +550,7 @@ class HoshiDicts {
   static const int defaultScanLength = 16;
 
   // ── lookup (with deinflection) ──────────────────────────────────
-  List<HoshiLookupResult> lookup(
+  List<FushiLookupResult> lookup(
     String text, {
     int maxResults = defaultMaxResults,
     int scanLength = defaultScanLength,
@@ -562,17 +562,17 @@ class HoshiDicts {
       final rPtr = calloc<FfiLookupResults>();
       rPtr.ref = r;
       try {
-        final results = <HoshiLookupResult>[];
+        final results = <FushiLookupResult>[];
         for (int i = 0; i < r.count; i++) {
           final src = r.results[i];
-          final trace = <HoshiTransformGroup>[];
+          final trace = <FushiTransformGroup>[];
           for (int j = 0; j < src.traceCount; j++) {
-            trace.add(HoshiTransformGroup(
+            trace.add(FushiTransformGroup(
               name: _utf8OrEmpty(src.trace[j].name),
               description: _utf8OrEmpty(src.trace[j].description),
             ));
           }
-          results.add(HoshiLookupResult(
+          results.add(FushiLookupResult(
             matched: _utf8OrEmpty(src.matched),
             deinflected: _utf8OrEmpty(src.deinflected),
             trace: trace,
@@ -615,14 +615,14 @@ class HoshiDicts {
   }
 
   // ── styles ──────────────────────────────────────────────────────
-  List<HoshiDictStyle> getStyles() {
+  List<FushiDictStyle> getStyles() {
     final r = _bindings!.getStyles(_handle!);
     final rPtr = calloc<FfiDictStyles>();
     rPtr.ref = r;
     try {
-      final styles = <HoshiDictStyle>[];
+      final styles = <FushiDictStyle>[];
       for (int i = 0; i < r.count; i++) {
-        styles.add(HoshiDictStyle(
+        styles.add(FushiDictStyle(
           dictName: _utf8OrEmpty(r.items[i].dictName),
           styles: _utf8OrEmpty(r.items[i].styles),
         ));
@@ -656,7 +656,7 @@ class HoshiDicts {
           // 404 rather than crashing; the true fix (size=0 / error flag on
           // alloc failure) belongs in hoshidicts_ffi.cpp.
           debugPrint(
-            '[hoshidicts] getMediaFile: native allocation failed for '
+            '[fushidicts] getMediaFile: native allocation failed for '
             '"$dictName/$mediaPath" (size=${r.size}, data=null); reporting '
             'as not-found.',
           );
@@ -674,10 +674,10 @@ class HoshiDicts {
 
   static T withPaths<T>(
     List<String> paths,
-    T Function(HoshiDicts h) action, {
+    T Function(FushiDicts h) action, {
     List<String> kanjiPaths = const [],
   }) {
-    final h = HoshiDicts();
+    final h = FushiDicts();
     h._loadCachedTransforms();
     for (final p in paths) {
       h.addTermDict(p);

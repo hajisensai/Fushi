@@ -14,7 +14,7 @@ binary_dir="$1"
 out="$2"
 
 deps=(
-  "$binary_dir/libhoshidicts_ffi.a"
+  "$binary_dir/libfushidicts_ffi.a"
   "$binary_dir/libhoshidicts.a"
   "$binary_dir/hoshidicts_external/zstd/build/cmake/lib/libzstd.a"
   "$binary_dir/hoshidicts_external/libdeflate/libdeflate.a"

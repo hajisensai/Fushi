@@ -35,19 +35,19 @@ DictionarySearchResult _bigSearchResult(String term, int popupJsonChars) {
 }
 
 /// 造一条估算体积由 glossary 字符串主导的 FFI 查词结果。
-List<HoshiLookupResult> _bigFfiResults(String term, int glossaryChars) {
+List<FushiLookupResult> _bigFfiResults(String term, int glossaryChars) {
   return [
-    HoshiLookupResult(
+    FushiLookupResult(
       matched: term,
       deinflected: term,
       trace: const [],
       preprocessorSteps: 0,
-      term: HoshiTermResult(
+      term: FushiTermResult(
         expression: term,
         reading: term,
         rules: '',
         glossaries: [
-          HoshiGlossaryEntry(
+          FushiGlossaryEntry(
             dictName: 'test',
             glossary: 'g' * glossaryChars,
             definitionTags: '',
@@ -85,7 +85,7 @@ void main() {
           DictionaryEntry(word: '猫', reading: 'ねこ', meaning: 'x' * 500),
         ],
         kanjiResults: const [
-          HoshiKanjiResult(
+          FushiKanjiResult(
             character: '猫',
             onyomi: 'ビョウ',
             kunyomi: 'ねこ',
@@ -102,13 +102,13 @@ void main() {
     });
 
     test(
-        'estimateHoshiLookupResultsBytes counts glossary strings at 2 bytes '
+        'estimateFushiLookupResultsBytes counts glossary strings at 2 bytes '
         'per code unit', () {
-      final int small = estimateHoshiLookupResultsBytes(_bigFfiResults('a', 0));
+      final int small = estimateFushiLookupResultsBytes(_bigFfiResults('a', 0));
       final int big =
-          estimateHoshiLookupResultsBytes(_bigFfiResults('a', 100000));
+          estimateFushiLookupResultsBytes(_bigFfiResults('a', 100000));
       expect(big - small, 200000);
-      expect(estimateHoshiLookupResultsBytes(const []), greaterThan(0),
+      expect(estimateFushiLookupResultsBytes(const []), greaterThan(0),
           reason: '空列表也有列表本身的开销，估算恒为正');
     });
   });

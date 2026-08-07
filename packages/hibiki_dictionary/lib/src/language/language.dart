@@ -6,7 +6,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
-import '../engine/hoshidicts.dart';
+import '../engine/fushidicts.dart';
 import '../formats/dictionary_format.dart';
 import '../models/dictionary_entry.dart';
 import '../models/dictionary_search_result.dart';
@@ -409,7 +409,7 @@ abstract class Language {
   }
 }
 
-String buildLookupEntryExtra(HoshiLookupResult r, HoshiGlossaryEntry g) {
+String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) {
   return jsonEncode({
     'definitionTags': g.definitionTags,
     'termTags': g.termTags,
@@ -438,7 +438,7 @@ String buildLookupEntryExtra(HoshiLookupResult r, HoshiGlossaryEntry g) {
 
 DictionarySearchResult buildResultFromLookup({
   required String searchTerm,
-  required List<HoshiLookupResult> results,
+  required List<FushiLookupResult> results,
   required int maximumTerms,
 }) {
   int bestLength = 0;
@@ -467,7 +467,7 @@ DictionarySearchResult buildResultFromLookup({
 }
 
 String buildPopupJsonFromLookup({
-  required List<HoshiLookupResult> results,
+  required List<FushiLookupResult> results,
   required int maximumTerms,
 }) {
   if (results.isEmpty) return '[]';
@@ -477,8 +477,8 @@ String buildPopupJsonFromLookup({
   final groupReading = <String, String>{};
   final groupMatched = <String, String>{};
   final groupDeinflected = <String, String>{};
-  final groupFrequencies = <String, List<HoshiFrequencyEntry>>{};
-  final groupPitches = <String, List<HoshiPitchEntry>>{};
+  final groupFrequencies = <String, List<FushiFrequencyEntry>>{};
+  final groupPitches = <String, List<FushiPitchEntry>>{};
   final seenFreqs = <String, Set<String>>{};
   final seenPitches = <String, Set<String>>{};
   final groupGlossaries = <String,

@@ -40,7 +40,7 @@ void popupMain() {
       ),
     );
 
-    await HoshiDicts.preloadTransforms();
+    await FushiDicts.preloadTransforms();
     final appModel = container.read(appProvider);
     unawaited(appModel.initialiseForDictionaryPopup());
   }, (exception, stack) {

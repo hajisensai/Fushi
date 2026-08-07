@@ -61,14 +61,14 @@ void main() {
       'A: _rebuildDictPathsCache rebuilds the engine even when all path '
       'buckets are empty (deleting the last dictionary must reload)', () {
     final String body = bodyOf('void _rebuildDictPathsCache(');
-    expect(body.contains('HoshiDicts.initializeTyped'), isTrue,
+    expect(body.contains('FushiDicts.initializeTyped'), isTrue,
         reason: 'rebuild must drive the FFI engine');
     // The call to initializeTyped must NOT be gated behind an
     // `isNotEmpty`-style guard that skips the rebuild for an empty path set —
     // that is exactly the hole that left a stale engine after deleting the last
     // dictionary (BUG-171 hole A).
     expect(
-      RegExp(r'isNotEmpty\s*\)\s*\{?\s*HoshiDicts\.initializeTyped')
+      RegExp(r'isNotEmpty\s*\)\s*\{?\s*FushiDicts\.initializeTyped')
           .hasMatch(body.replaceAll(RegExp(r'\s+'), ' ')),
       isFalse,
       reason: 'initializeTyped must run for an empty path set too; an empty '
@@ -79,9 +79,9 @@ void main() {
 
   test('A2: _rebuildDictPathsCacheAsync also rebuilds unconditionally', () {
     final String body = bodyOf('Future<void> _rebuildDictPathsCacheAsync(');
-    expect(body.contains('HoshiDicts.initializeTyped'), isTrue);
+    expect(body.contains('FushiDicts.initializeTyped'), isTrue);
     expect(
-      RegExp(r'isNotEmpty\s*\)\s*\{?\s*HoshiDicts\.initializeTyped')
+      RegExp(r'isNotEmpty\s*\)\s*\{?\s*FushiDicts\.initializeTyped')
           .hasMatch(body.replaceAll(RegExp(r'\s+'), ' ')),
       isFalse,
       reason: 'async rebuild must not skip initializeTyped on empty path set '

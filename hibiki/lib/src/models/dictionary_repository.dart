@@ -53,11 +53,11 @@ class DictionaryRepository {
     maxBytes: searchCacheMaxBytes,
     sizeOf: estimateDictionarySearchResultBytes,
   );
-  final LruCache<String, List<HoshiLookupResult>> _ffiLookupCache =
-      LruCache<String, List<HoshiLookupResult>>(
+  final LruCache<String, List<FushiLookupResult>> _ffiLookupCache =
+      LruCache<String, List<FushiLookupResult>>(
     2000,
     maxBytes: ffiLookupCacheMaxBytes,
-    sizeOf: estimateHoshiLookupResultsBytes,
+    sizeOf: estimateFushiLookupResultsBytes,
   );
 
   // ── getters ──────────────────────────────────────────────────────────
@@ -270,10 +270,10 @@ class DictionaryRepository {
 
   /// [cacheKey] 由 `buildFfiLookupCacheKey` 生成，**含引擎结果上限**——不是裸
   /// searchTerm。上限进了键，load-more 的更大上限才不会命中上一轮的短结果集。
-  List<HoshiLookupResult>? getCachedFfiLookup(String cacheKey) =>
+  List<FushiLookupResult>? getCachedFfiLookup(String cacheKey) =>
       _ffiLookupCache[cacheKey];
 
-  void cacheFfiLookup(String cacheKey, List<HoshiLookupResult> results) {
+  void cacheFfiLookup(String cacheKey, List<FushiLookupResult> results) {
     _ffiLookupCache.maxBytes = _isLowMemory()
         ? ffiLookupCacheMaxBytesLowMemory
         : ffiLookupCacheMaxBytes;
@@ -405,7 +405,7 @@ int estimateDictionarySearchResultBytes(DictionarySearchResult result) {
         entry.extra.length;
     overhead += _kObjectOverheadBytes;
   }
-  for (final HoshiKanjiResult kanji in result.kanjiResults) {
+  for (final FushiKanjiResult kanji in result.kanjiResults) {
     chars += kanji.character.length +
         kanji.onyomi.length +
         kanji.kunyomi.length +
@@ -421,34 +421,34 @@ int estimateDictionarySearchResultBytes(DictionarySearchResult result) {
 
 /// 粗估一次 FFI lookup 结果列表（[HoshiLookupResult]，已 marshal 成 Dart
 /// 对象）的常驻字节数：把所有可得字符串长度按 UTF-16 累加 + 对象开销。
-int estimateHoshiLookupResultsBytes(List<HoshiLookupResult> results) {
+int estimateFushiLookupResultsBytes(List<FushiLookupResult> results) {
   int chars = 0;
   int overhead = _kObjectOverheadBytes; // 外层列表本身。
-  for (final HoshiLookupResult result in results) {
+  for (final FushiLookupResult result in results) {
     overhead += _kObjectOverheadBytes;
     chars += result.matched.length + result.deinflected.length;
-    for (final HoshiTransformGroup group in result.trace) {
+    for (final FushiTransformGroup group in result.trace) {
       overhead += _kObjectOverheadBytes;
       chars += group.name.length + group.description.length;
     }
-    final HoshiTermResult term = result.term;
+    final FushiTermResult term = result.term;
     chars += term.expression.length + term.reading.length + term.rules.length;
-    for (final HoshiGlossaryEntry glossary in term.glossaries) {
+    for (final FushiGlossaryEntry glossary in term.glossaries) {
       overhead += _kObjectOverheadBytes;
       chars += glossary.dictName.length +
           glossary.glossary.length +
           glossary.definitionTags.length +
           glossary.termTags.length;
     }
-    for (final HoshiFrequencyEntry freq in term.frequencies) {
+    for (final FushiFrequencyEntry freq in term.frequencies) {
       overhead += _kObjectOverheadBytes;
       chars += freq.dictName.length;
-      for (final HoshiFrequency f in freq.frequencies) {
+      for (final FushiFrequency f in freq.frequencies) {
         overhead += _kObjectOverheadBytes;
         chars += f.displayValue.length;
       }
     }
-    for (final HoshiPitchEntry pitch in term.pitches) {
+    for (final FushiPitchEntry pitch in term.pitches) {
       overhead += _kObjectOverheadBytes + pitch.pitchPositions.length * 8;
       chars += pitch.dictName.length;
       for (final String transcription in pitch.transcriptions) {

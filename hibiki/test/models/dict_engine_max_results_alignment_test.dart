@@ -22,42 +22,42 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 /// 3. **接线守卫**：`app_model.dart` 真的把 `effectiveMaxTerms` 传给了引擎，
 ///    且 FFI 缓存读写走的是带上限的键。
 void main() {
-  HoshiLookupResult makeResult({
+  FushiLookupResult makeResult({
     required String matched,
     required String expression,
     required String reading,
     required List<String> dictNames,
   }) {
-    return HoshiLookupResult(
+    return FushiLookupResult(
       matched: matched,
       deinflected: expression,
-      trace: const <HoshiTransformGroup>[],
+      trace: const <FushiTransformGroup>[],
       preprocessorSteps: 0,
-      term: HoshiTermResult(
+      term: FushiTermResult(
         expression: expression,
         reading: reading,
         rules: '',
         // 引擎侧 query_raw 的 `glossaries.push_back` 无条件执行：每个返回的 term
         // 至少带一条 glossary。fixture 必须尊重这个前提，否则守的不是真实契约。
-        glossaries: <HoshiGlossaryEntry>[
+        glossaries: <FushiGlossaryEntry>[
           for (final String d in dictNames)
-            HoshiGlossaryEntry(
+            FushiGlossaryEntry(
               dictName: d,
               glossary: jsonEncode('$expression の意味（$d）'),
               definitionTags: '',
               termTags: '',
             ),
         ],
-        frequencies: const <HoshiFrequencyEntry>[],
-        pitches: const <HoshiPitchEntry>[],
+        frequencies: const <FushiFrequencyEntry>[],
+        pitches: const <FushiPitchEntry>[],
       ),
     );
   }
 
   /// 模拟引擎按 `max_results` 排序后截断：`matched` 长者在前（partial_sort 的
   /// 首要比较键），故 fixture 本身按 matched 码点长度降序构造。
-  List<HoshiLookupResult> engineResults({required int count}) {
-    return <HoshiLookupResult>[
+  List<FushiLookupResult> engineResults({required int count}) {
+    return <FushiLookupResult>[
       for (int i = 0; i < count; i++)
         makeResult(
           // 全部是同一个查询串「図書館建設計画案」的前缀——scan_candidates 只产出
@@ -73,8 +73,8 @@ void main() {
   group('BUG-1307 ① 降上限后输出逐字不变', () {
     for (final int maxTerms in <int>[1, 3, 10, 25]) {
       test('maxTerms=$maxTerms：200 条 vs 截到 $maxTerms 条，entries 完全一致', () {
-        final List<HoshiLookupResult> full = engineResults(count: 200);
-        final List<HoshiLookupResult> capped = full.take(maxTerms).toList();
+        final List<FushiLookupResult> full = engineResults(count: 200);
+        final List<FushiLookupResult> capped = full.take(maxTerms).toList();
 
         final DictionarySearchResult fromFull = buildResultFromLookup(
           searchTerm: '図書館',
@@ -102,7 +102,7 @@ void main() {
       });
 
       test('maxTerms=$maxTerms：popupJson 逐字节一致', () {
-        final List<HoshiLookupResult> full = engineResults(count: 200);
+        final List<FushiLookupResult> full = engineResults(count: 200);
         expect(
           buildPopupJsonFromLookup(
               results: full.take(maxTerms).toList(), maximumTerms: maxTerms),
@@ -138,8 +138,8 @@ void main() {
 
     test('load-more 的新上限不会命中首查的短结果集', () {
       // 首查 10 → load-more 20（base_source_page.loadMoreForLayer 的 newMax）。
-      final Map<String, List<HoshiLookupResult>> cache =
-          <String, List<HoshiLookupResult>>{};
+      final Map<String, List<FushiLookupResult>> cache =
+          <String, List<FushiLookupResult>>{};
       cache[buildFfiLookupCacheKey(term: '図書館', maxResults: 10)] =
           engineResults(count: 10);
       expect(cache[buildFfiLookupCacheKey(term: '図書館', maxResults: 20)], isNull,
@@ -156,9 +156,9 @@ void main() {
       source = f.readAsStringSync();
     });
 
-    test('HoshiDicts.instance.lookup 的 maxResults 是 effectiveMaxTerms', () {
+    test('FushiDicts.instance.lookup 的 maxResults 是 effectiveMaxTerms', () {
       final RegExp call = RegExp(
-        r'HoshiDicts\.instance\.lookup\(\s*searchTerm,\s*maxResults:\s*([A-Za-z0-9_]+)\s*,',
+        r'FushiDicts\.instance\.lookup\(\s*searchTerm,\s*maxResults:\s*([A-Za-z0-9_]+)\s*,',
         multiLine: true,
       );
       final Iterable<RegExpMatch> ms = call.allMatches(source);
