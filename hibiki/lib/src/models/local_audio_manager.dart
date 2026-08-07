@@ -334,7 +334,7 @@ class LocalAudioManager {
       if (await File(resolved).exists()) {
         validConfigs.add(_configFor(entry));
       } else {
-        debugPrint('[hibiki-audio] DB missing, skipping: $resolved'
+        debugPrint('[fushi-audio] DB missing, skipping: $resolved'
             '${resolved == entry.path ? '' : ' (stored: ${entry.path})'}');
       }
     }

@@ -455,7 +455,7 @@ Future<FfmpegRunResult> _runCliFfmpeg({
       }
       fallbackReason = _bundledFallbackReason(bundledResult, isWindows);
       debugPrint(
-        '[hibiki-ffmpeg] bundled ffmpeg ran but produced no usable output '
+        '[fushi-ffmpeg] bundled ffmpeg ran but produced no usable output '
         '(returnCode=${bundledResult.returnCode}); '
         'falling back to PATH ffmpeg: $bundled',
       );
@@ -473,7 +473,7 @@ Future<FfmpegRunResult> _runCliFfmpeg({
       fallbackReason = 'bundled ffmpeg launch failed '
           '(errorCode=${e.errorCode}, message=${e.message})';
       debugPrint(
-        '[hibiki-ffmpeg] bundled ffmpeg failed to launch '
+        '[fushi-ffmpeg] bundled ffmpeg failed to launch '
         '(errorCode=${e.errorCode}); falling back to PATH ffmpeg: $bundled',
       );
     }
@@ -591,8 +591,8 @@ class CliFfmpegBackend implements FfmpegBackend {
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) =>
       _runCliFfmpeg(
         // 新名优先，旧名回退（改名前公开的用户环境变量）。
-      override: Platform.environment['FUSHI_FFMPEG'] ??
-          Platform.environment['HIBIKI_FFMPEG'],
+        override: Platform.environment['FUSHI_FFMPEG'] ??
+            Platform.environment['HIBIKI_FFMPEG'],
         bundledPath: _bundledFfmpegPath(),
         isWindows: Platform.isWindows,
         args: args,
@@ -604,7 +604,7 @@ class CliFfmpegBackend implements FfmpegBackend {
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
       _runCliFfprobe(
         override: Platform.environment['FUSHI_FFPROBE'] ??
-          Platform.environment['HIBIKI_FFPROBE'],
+            Platform.environment['HIBIKI_FFPROBE'],
         bundledPath: _bundledFfprobePath(),
         args: args,
         timeout: timeout,

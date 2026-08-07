@@ -166,7 +166,7 @@ class AudiobookSessionLauncher {
 
   Future<(String, String?, String?)> _bookMeta(String bookKey) async {
     final EpubBookRow? row = await _db.getEpubBook(bookKey);
-    if (row == null) return ('Hibiki', null, null);
+    if (row == null) return ('Fushi', null, null);
     String? coverPath;
     if (row.coverPath != null && row.coverPath!.isNotEmpty) {
       String coverRel = row.coverPath!;

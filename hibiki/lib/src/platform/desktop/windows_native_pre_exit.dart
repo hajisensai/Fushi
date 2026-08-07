@@ -53,11 +53,11 @@ class WindowsNativePreExit {
     try {
       await _channel.invokeMethod<void>('prepareForProcessExit');
     } on MissingPluginException catch (e) {
-      debugPrint('[Hibiki] Windows native pre-exit hook unavailable: $e');
+      debugPrint('[Fushi] Windows native pre-exit hook unavailable: $e');
     } on PlatformException catch (e) {
-      debugPrint('[Hibiki] Windows native pre-exit hook failed: $e');
+      debugPrint('[Fushi] Windows native pre-exit hook failed: $e');
     } catch (e) {
-      debugPrint('[Hibiki] Windows native pre-exit hook failed: $e');
+      debugPrint('[Fushi] Windows native pre-exit hook failed: $e');
     }
   }
 }

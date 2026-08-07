@@ -7,12 +7,12 @@ import 'package:http/testing.dart';
 
 // TODO-963 M2: fetchHibikiPing 解析 /api/ping 响应的单元测试（注入 MockClient）。
 void main() {
-  test('解析 hibiki host：v2 配对 + 展示名 + 指纹', () async {
+  test('解析 fushi host：v2 配对 + 展示名 + 指纹', () async {
     final MockClient mock = MockClient((http.Request req) async {
       expect(req.url.path, '/api/ping');
       return http.Response(
         jsonEncode(<String, dynamic>{
-          'app': 'hibiki',
+          'app': 'fushi',
           'pairing': <String, dynamic>{'v2': true},
           'tls': <String, dynamic>{'enabled': true, 'fingerprint': 'aa:bb'},
           'deviceName': 'Hibiki · mac',
@@ -31,7 +31,7 @@ void main() {
     expect(r.deviceName, 'Hibiki · mac');
   });
 
-  test('非 hibiki 响应（app 字段缺失）→ null', () async {
+  test('非 fushi 响应（app 字段缺失）→ null', () async {
     final MockClient mock = MockClient((http.Request req) async {
       return http.Response(jsonEncode(<String, dynamic>{'app': 'other'}), 200);
     });
@@ -52,7 +52,7 @@ void main() {
     final MockClient mock = MockClient((http.Request req) async {
       return http.Response(
         jsonEncode(<String, dynamic>{
-          'app': 'hibiki',
+          'app': 'fushi',
           'pairing': <String, dynamic>{'v2': true},
           'tls': <String, dynamic>{'enabled': false},
         }),

@@ -125,7 +125,7 @@ void main() {
       final String body = fnBody(src, 'Future<void> _flushReadingStats(');
       expect(body, contains('ReaderHibiki._flushReadingStats'));
       expect(logRe.hasMatch(body), isTrue);
-      expect(body, contains("debugPrint('[ReaderHibiki] stats flush error"),
+      expect(body, contains("debugPrint('[ReaderFushi] stats flush error"),
           reason: 'fail-open 未变：保留原 debugPrint。');
     });
 

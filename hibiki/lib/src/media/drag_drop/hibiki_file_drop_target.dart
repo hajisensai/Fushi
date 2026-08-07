@@ -90,6 +90,6 @@ class HibikiFileDropTarget extends StatelessWidget {
 
   void _log(String message) {
     final String label = debugLabel == null ? '' : '[$debugLabel] ';
-    debugPrint('[hibiki-drop] $label$message');
+    debugPrint('[fushi-drop] $label$message');
   }
 }

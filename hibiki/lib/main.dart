@@ -165,13 +165,13 @@ void main([List<String> args = const <String>[]]) {
           await windowManager.show();
           await windowManager.focus();
         } catch (e) {
-          debugPrint('[Hibiki] restart window focus skipped: $e');
+          debugPrint('[Fushi] restart window focus skipped: $e');
           // 兜底：上面的 focus() 抢前台失败不致命，但隐藏建窗的窗口若未 show 就会
           // 永久不可见。再尝试一次纯 show()，仍失败也只能记录（极端环境）。
           try {
             await windowManager.show();
           } catch (e2) {
-            debugPrint('[Hibiki] restart window show fallback failed: $e2');
+            debugPrint('[Fushi] restart window show fallback failed: $e2');
           }
         }
       }
@@ -188,11 +188,11 @@ void main([List<String> args = const <String>[]]) {
             await WindowCaptionChannel.setWindowIcon(iconPath);
           }
         } catch (e) {
-          debugPrint('[Hibiki] window icon restore failed: $e');
+          debugPrint('[Fushi] window icon restore failed: $e');
         }
       }
     }
-    JustAudioMediaKit.title = 'Hibiki';
+    JustAudioMediaKit.title = 'Fushi';
     // 关闭 pitch-shift 控制（默认 true）。开启时 media_kit 的 setRate 会在每次调速时
     // 重写 mpv 的 `af` 音频滤镜图（scaletempo:scale=…）；在 Windows 上播放过程中反复
     // 重配滤镜图会触发 libmpv 进程级崩溃（有声书拖动倍速闪退，BUG-070）。本 app 从不
@@ -253,7 +253,7 @@ void main([List<String> args = const <String>[]]) {
     try {
       WakelockPlus.disable();
     } catch (e) {
-      debugPrint('[Hibiki] wakelock disable on startup failed: $e');
+      debugPrint('[Fushi] wakelock disable on startup failed: $e');
     }
     if (Platform.isAndroid || Platform.isIOS) {
       // Home/menu shell: hide the Android status bar (keep the nav bar) so the
@@ -277,7 +277,7 @@ void main([List<String> args = const <String>[]]) {
             await HibikiChannels.splash.invokeMethod<int>('getSplashColor');
         if (raw != null && raw != 0) _savedSplashColor = Color(raw);
       } catch (e) {
-        debugPrint('[Hibiki] getSplashColor failed: $e');
+        debugPrint('[Fushi] getSplashColor failed: $e');
       }
 
       SystemChrome.setPreferredOrientations([
@@ -399,7 +399,7 @@ void main([List<String> args = const <String>[]]) {
         final WebViewPrewarmSession session = WebViewPrewarmSession(
           disposeWebView: () => warmup.dispose(),
           onFinished: (String reason) =>
-              debugPrint('[Hibiki] WebView engine pre-warm ended: $reason'),
+              debugPrint('[Fushi] WebView engine pre-warm ended: $reason'),
         );
         try {
           // 桌面端等首帧，保证 Flutter view 已 attach（WebView2 前提）。
@@ -425,7 +425,7 @@ void main([List<String> args = const <String>[]]) {
           await warmup.run();
           session.armTimeout();
         } catch (e) {
-          debugPrint('[Hibiki] WebView warmup failed (non-fatal): $e');
+          debugPrint('[Fushi] WebView warmup failed (non-fatal): $e');
           await session.finish('run failed: $e');
         }
       }));
@@ -458,7 +458,7 @@ void main([List<String> args = const <String>[]]) {
           DesktopLookupDispatcher.instance.start(appModel: appModel);
           await appModel.applyDesktopClipboardLifecycle();
         } catch (e) {
-          debugPrint('[Hibiki] global lookup start failed (non-fatal): $e');
+          debugPrint('[Fushi] global lookup start failed (non-fatal): $e');
         }
       }));
     }
@@ -726,7 +726,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       await DesktopWindowPlacement.saveCurrentBoundsNow()
           .timeout(const Duration(milliseconds: 800));
     } catch (e) {
-      debugPrint('[Hibiki] desktop window placement save on exit failed: $e');
+      debugPrint('[Fushi] desktop window placement save on exit failed: $e');
     }
     // ① 切断 Bonsoir 事件源（事件订阅同步 cancel；原生 stop fire-and-forget）。
     //    收紧超时到 1.5s：cutEventSourceForExit 不再 await 原生 stop，正常瞬间返回。
@@ -735,16 +735,15 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           .shutdownForExitFast()
           .timeout(const Duration(milliseconds: 1500));
     } on TimeoutException {
-      debugPrint(
-          '[Hibiki] sync source fast shutdown timed out; exiting anyway');
+      debugPrint('[Fushi] sync source fast shutdown timed out; exiting anyway');
     } catch (e) {
-      debugPrint('[Hibiki] sync source fast shutdown failed: $e');
+      debugPrint('[Fushi] sync source fast shutdown failed: $e');
     }
     // ② flush 活跃页面 pending 进度/统计（缓存值落库，不碰退出期正在拆的 WebView）。
     try {
       await ExitFlushRegistry.instance.flushAll();
     } catch (e) {
-      debugPrint('[Hibiki] exit flush failed: $e');
+      debugPrint('[Fushi] exit flush failed: $e');
     }
     // ②' TODO-132 诉求B：有界 drain 退出书 fire-and-forget 触发的、仍在飞的 app-scope
     //    关书同步（[BookExitSyncScope]）。退出书 export 与页面生命周期解耦后会继续
@@ -756,14 +755,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       await BookExitSyncScope.instance
           .drain(timeout: const Duration(seconds: 5));
     } catch (e) {
-      debugPrint('[Hibiki] book-exit sync drain failed: $e');
+      debugPrint('[Fushi] book-exit sync drain failed: $e');
     }
     // ③ close database：WAL checkpoint + 排空后台 isolate pending 写。退出最后一道
     //    数据完整性闸门——必须在 exit(0) 之前完成。
     try {
       await appModel.closeDatabase();
     } catch (e) {
-      debugPrint('[Hibiki] database close on exit failed: $e');
+      debugPrint('[Fushi] database close on exit failed: $e');
     }
     // ④ 进程级快杀（desktop lifecycle = exit(0)），跳过 destroy() 的同步插件拆除。
     await appModel.platformServices.lifecycle.exitApp();
@@ -783,7 +782,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       try {
         await ExitFlushRegistry.instance.flushAll(clearCallbacks: false);
       } catch (e) {
-        debugPrint('[Hibiki] android background flush failed: $e');
+        debugPrint('[Fushi] android background flush failed: $e');
       }
     }();
     _androidBackgroundFlushInFlight = run;
@@ -810,9 +809,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           .shutdownForExit()
           .timeout(const Duration(milliseconds: 1500));
     } on TimeoutException {
-      debugPrint('[Hibiki] sync source shutdown on exit timed out; continuing');
+      debugPrint('[Fushi] sync source shutdown on exit timed out; continuing');
     } catch (e) {
-      debugPrint('[Hibiki] sync source shutdown on exit failed: $e');
+      debugPrint('[Fushi] sync source shutdown on exit failed: $e');
     }
 
     try {
@@ -823,13 +822,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       }
       await ExitFlushRegistry.instance.flushAll();
     } catch (e) {
-      debugPrint('[Hibiki] lifecycle detach flush failed: $e');
+      debugPrint('[Fushi] lifecycle detach flush failed: $e');
     }
 
     try {
       await appModel.closeDatabase();
     } catch (e) {
-      debugPrint('[Hibiki] database close on lifecycle detach failed: $e');
+      debugPrint('[Fushi] database close on lifecycle detach failed: $e');
     }
   }
 
@@ -1047,7 +1046,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         }
       }
     } catch (e) {
-      debugPrint('[Hibiki] external video upsert failed: $e');
+      debugPrint('[Fushi] external video upsert failed: $e');
       return;
     }
 
@@ -1076,7 +1075,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       if (navigatorContext == null ||
           !UpdateChecker.canShowDialogFromContext(navigatorContext)) {
         debugPrint(
-          '[Hibiki] windows update handoff reconcile deferred: '
+          '[Fushi] windows update handoff reconcile deferred: '
           'navigator context unavailable',
         );
         return;

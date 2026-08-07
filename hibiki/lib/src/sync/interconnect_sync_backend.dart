@@ -48,7 +48,7 @@ Future<HibikiClientUrl> resolveReachableHibikiCandidate(
     if (reachable) return candidate;
   }
   throw SyncBackendError(
-    'No reachable Hibiki server address',
+    'No reachable Fushi server address',
     isRetryable: true,
   );
 }
@@ -72,7 +72,7 @@ Future<bool> _pinnedReachabilityProbe(
   } on SyncAuthError {
     rethrow;
   } catch (e) {
-    debugPrint('[hibiki-client] pinned probe failed for $url: $e');
+    debugPrint('[fushi-client] pinned probe failed for $url: $e');
     return false;
   } finally {
     ops?.close(force: true);
@@ -101,7 +101,7 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
     // Unreachable, timed out, or the server returned an error — skip this
     // address, but log why so a running-but-erroring server is distinguishable
     // from "down" (HBK-AUDIT-166).
-    debugPrint('[hibiki-client] probe failed for $url: $e');
+    debugPrint('[fushi-client] probe failed for $url: $e');
     return false;
   } finally {
     // force: abort any connect still in flight when we timed out, so an
@@ -282,7 +282,7 @@ class InterconnectSyncBackend extends SyncBackend
     if (_sessionResolved) return;
     final String? token = _token;
     if (token == null) {
-      throw SyncAuthError('Hibiki server credentials not configured');
+      throw SyncAuthError('Fushi server credentials not configured');
     }
     final HibikiClientUrl chosen =
         await resolveReachableHibikiCandidate(_candidates, token, _probe);
@@ -307,7 +307,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> authenticate({required SyncRepository repo}) async {
     await _loadConfig(repo);
     if (_candidates.isEmpty || _token == null) {
-      throw SyncAuthError('Hibiki server credentials not configured');
+      throw SyncAuthError('Fushi server credentials not configured');
     }
     // Probes + selects a reachable address (or throws), confirming the token
     // is accepted by the server.
@@ -395,7 +395,7 @@ class InterconnectSyncBackend extends SyncBackend
           await _ops!.putBytes(coverPath, coverData, format.mimeType);
         }
       } catch (e) {
-        debugPrint('[hibiki-client] cover upload failed: $e');
+        debugPrint('[fushi-client] cover upload failed: $e');
       }
     }
 

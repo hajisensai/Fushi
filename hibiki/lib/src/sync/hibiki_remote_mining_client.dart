@@ -119,7 +119,7 @@ class HibikiRemoteMiningClient implements RemoteMineSender {
       path: path,
       body: body,
       timeout: timeout,
-      authErrorMessage: 'Hibiki server rejected remote mining token',
+      authErrorMessage: 'Fushi server rejected remote mining token',
     );
     return outcome.json;
   }

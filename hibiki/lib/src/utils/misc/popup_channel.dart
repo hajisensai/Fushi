@@ -73,7 +73,7 @@ class PopupChannel {
     } catch (e, stack) {
       ErrorLogService.instance
           .log('PopupChannel.getInitialProcessText', e, stack);
-      debugPrint('[Hibiki-popup] getInitialProcessText failed: $e');
+      debugPrint('[Fushi-popup] getInitialProcessText failed: $e');
       return (text: null, charIndex: -1, anchor: null, subtitle: null);
     }
   }
@@ -120,7 +120,7 @@ class PopupChannel {
       await _channel.invokeMethod<void>('finishPopup');
     } catch (e, stack) {
       ErrorLogService.instance.log('PopupChannel.finishPopup', e, stack);
-      debugPrint('[Hibiki-popup] finishPopup failed: $e');
+      debugPrint('[Fushi-popup] finishPopup failed: $e');
     }
   }
 }

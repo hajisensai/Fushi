@@ -507,7 +507,7 @@ mixin DictionaryPageMixin {
         dateKey: dateKey,
       );
     } catch (e, st) {
-      debugPrint('[hibiki-stats] addMiningCount failed: $e\n$st');
+      debugPrint('[fushi-stats] addMiningCount failed: $e\n$st');
     }
     // TODO-1204：并行写 per-book 制卡计数（视频带 bookUid+标题；无书来源 title=''）。
     final ({String? bookKey, String? title})? identity = lookupBookIdentity;
@@ -519,7 +519,7 @@ mixin DictionaryPageMixin {
         dateKey: dateKey,
       );
     } catch (e, st) {
-      debugPrint('[hibiki-stats] addMineCountPerBook failed: $e\n$st');
+      debugPrint('[fushi-stats] addMineCountPerBook failed: $e\n$st');
     }
   }
 
@@ -548,10 +548,10 @@ mixin DictionaryPageMixin {
         dateKey: _statTodayKey(),
       )
           .catchError((Object e, StackTrace st) {
-        debugPrint('[hibiki-stats] addLookupCount failed: $e\n$st');
+        debugPrint('[fushi-stats] addLookupCount failed: $e\n$st');
       }));
     } catch (e, st) {
-      debugPrint('[hibiki-stats] addLookupCount failed (sync): $e\n$st');
+      debugPrint('[fushi-stats] addLookupCount failed (sync): $e\n$st');
     }
   }
 
@@ -581,7 +581,7 @@ mixin DictionaryPageMixin {
         noteId: noteId,
       );
     } catch (e, st) {
-      debugPrint('[hibiki-stats] addMinedSentence failed: $e\n$st');
+      debugPrint('[fushi-stats] addMinedSentence failed: $e\n$st');
     }
   }
 

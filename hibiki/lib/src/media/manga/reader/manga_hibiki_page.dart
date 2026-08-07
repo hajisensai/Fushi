@@ -1525,7 +1525,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   // ── 拦截器（manga.local）──────────────────────────────────────────────
 
   static WebResourceResponse _notFound(String reason) {
-    debugPrint('[MangaHibiki] 404: $reason');
+    debugPrint('[MangaFushi] 404: $reason');
     return WebResourceResponse(
       contentType: 'text/plain',
       statusCode: 404,
@@ -1536,7 +1536,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   }
 
   static WebResourceResponse _forbidden(String reason) {
-    debugPrint('[MangaHibiki] 403: $reason');
+    debugPrint('[MangaFushi] 403: $reason');
     return WebResourceResponse(
       contentType: 'text/plain',
       statusCode: 403,
@@ -2592,7 +2592,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           await processMangaSelection(data);
         } catch (e, stack) {
           ErrorLogService.instance.log('MangaHibiki.onTextSelected', e, stack);
-          debugPrint('[MangaHibiki] onTextSelected error: $e');
+          debugPrint('[MangaFushi] onTextSelected error: $e');
         }
       },
     );
@@ -2950,7 +2950,8 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   void _queueZoomPreferencePersist(int value) {
     (_zoomPreferenceDebouncer ??= MangaZoomPreferenceDebouncer(
       persist: appModel.setMangaZoomPercent,
-    )).queue(value);
+    ))
+        .queue(value);
   }
 
   Future<void> _jumpToPage(int oneBasedPage) async {

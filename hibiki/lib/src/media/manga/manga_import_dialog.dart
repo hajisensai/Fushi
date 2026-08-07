@@ -350,7 +350,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       },
       action: () async {
         reportProgress(0, '');
-        debugPrint('[hibiki-import] manga route: carrier=$carrier path=$path');
+        debugPrint('[fushi-import] manga route: carrier=$carrier path=$path');
         reportProgress(0.5, t.import_step_importing_epub);
 
         // 载体在选中那一刻已定死，这里只照着分派——不再二次嗅探扩展名或读包。

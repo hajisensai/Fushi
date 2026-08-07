@@ -1256,10 +1256,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         dateKey: statTodayKey(),
       )
           .catchError((Object e, StackTrace st) {
-        debugPrint('[hibiki-stats] addLookupCount failed: $e\n$st');
+        debugPrint('[fushi-stats] addLookupCount failed: $e\n$st');
       }));
     } catch (e, st) {
-      debugPrint('[hibiki-stats] addLookupCount failed (sync): $e\n$st');
+      debugPrint('[fushi-stats] addLookupCount failed (sync): $e\n$st');
     }
   }
 

@@ -50,7 +50,7 @@ class DesktopDropReinitializer {
     } on MissingPluginException {
       // desktop_drop without the TODO-1275 patch: nothing to restore.
     } catch (e) {
-      debugPrint('[hibiki-drop] reinitialize failed: $e');
+      debugPrint('[fushi-drop] reinitialize failed: $e');
     }
   }
 }

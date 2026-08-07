@@ -74,7 +74,7 @@ class BookExitSyncScope {
       await all.timeout(timeout);
     } on TimeoutException {
       debugPrint(
-          '[Hibiki] book-exit sync drain timed out after ${timeout.inSeconds}s; '
+          '[Fushi] book-exit sync drain timed out after ${timeout.inSeconds}s; '
           'exiting anyway (remote transfer may be partial)');
     }
   }
@@ -88,7 +88,7 @@ class BookExitSyncScope {
       await future;
     } catch (e) {
       // 单个关书同步失败不该影响 drain 等其余 Future，也不该让退出报错。
-      debugPrint('[Hibiki] book-exit sync future failed during drain: $e');
+      debugPrint('[Fushi] book-exit sync future failed during drain: $e');
     }
   }
 }

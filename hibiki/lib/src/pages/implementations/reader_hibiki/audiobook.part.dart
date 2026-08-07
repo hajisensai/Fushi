@@ -163,7 +163,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       }
     } catch (e, st) {
       debugPrint(
-          '[ReaderHibiki] profile resolution failed (non-fatal): $e\n$st');
+          '[ReaderFushi] profile resolution failed (non-fatal): $e\n$st');
     }
   }
 
@@ -186,7 +186,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       onVolumeDown: () => _onVolumeKey(isUp: false),
     );
     VolumeKeyChannel.instance.setInterceptEnabled(true);
-    debugPrint('[ReaderHibiki] volume key handlers installed '
+    debugPrint('[ReaderFushi] volume key handlers installed '
         '(inverted=${src.volumePageTurningInverted})');
   }
 
@@ -323,7 +323,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibiki.startSession', e, stack);
-      debugPrint('[ReaderHibiki] audiobook session start failed: $e');
+      debugPrint('[ReaderFushi] audiobook session start failed: $e');
       if (mounted) {
         HibikiToast.show(
             msg: t.audiobook_load_error, severity: ToastSeverity.error);
@@ -438,7 +438,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           0.0;
       _lastProgressSection = _currentChapter;
       _lastProgressValue = _initialProgress;
-      debugPrint('[ReaderHibiki] restore from audio cue: '
+      debugPrint('[ReaderFushi] restore from audio cue: '
           'chapter=$_currentChapter progress=$_initialProgress');
       return;
     }
@@ -462,7 +462,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
             0.0;
         _lastProgressSection = srtChapter;
         _lastProgressValue = _initialProgress;
-        debugPrint('[ReaderHibiki] restore from SRT cue: '
+        debugPrint('[ReaderFushi] restore from SRT cue: '
             'chapter=$srtChapter progress=$_initialProgress');
         return;
       }
@@ -476,7 +476,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     _initialProgress = 0.0;
     _lastProgressSection = fallbackChapter;
     _lastProgressValue = 0.0;
-    debugPrint('[ReaderHibiki] restore from audio cue chapter: '
+    debugPrint('[ReaderFushi] restore from audio cue chapter: '
         'chapter=$_currentChapter href=${cue.chapterHref}');
   }
 
@@ -1079,7 +1079,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     switch (result.kind) {
       case AudiobookClipBoundaryKind.emptySelection:
         debugPrint(
-          '[ReaderHibiki] export-clip M1: empty/gaiji-only selection — '
+          '[ReaderFushi] export-clip M1: empty/gaiji-only selection — '
           'no renderable text (selectedText.isEmpty).',
         );
         // TODO-1005 / BUG-472：此前只 debugPrint，in-app 日志页空白。补 ErrorLogService
@@ -1096,7 +1096,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         return;
       case AudiobookClipBoundaryKind.noAudio:
         debugPrint(
-          '[ReaderHibiki] export-clip M1: no audio files for this book '
+          '[ReaderFushi] export-clip M1: no audio files for this book '
           '(audioFileCount=$audioFileCount).',
         );
         // TODO-1005 / BUG-472：此前只 debugPrint，in-app 日志页空白。补 ErrorLogService。
@@ -1112,7 +1112,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         return;
       case AudiobookClipBoundaryKind.unsupportedRange:
         debugPrint(
-          '[ReaderHibiki] export-clip M1: no single-file cue range '
+          '[ReaderFushi] export-clip M1: no single-file cue range '
           '(cross-chapter / cross-file / gap). sentenceRange='
           '${sentenceRange == null ? 'null' : 'file=${sentenceRange.audioFileIndex} '
               '${sentenceRange.startMs}->${sentenceRange.endMs}ms'}, '
@@ -1131,7 +1131,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         // BUG-1320：超时长上限此前并进 unsupportedRange，同章长选区被误报「跨章或
         // 跨音频文件」。分类层已拆出 tooLong，这里给诚实文案（含上限）。
         debugPrint(
-          '[ReaderHibiki] export-clip: range too long '
+          '[ReaderFushi] export-clip: range too long '
           '(${sentenceRange == null ? 'null' : '${sentenceRange.endMs - sentenceRange.startMs}ms'} '
           '> ${kAudiobookClipMaxDurationMs}ms) — refusing export.',
         );
@@ -1182,7 +1182,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         // 回退裁的仍是整段选区音频，不再塌缩成单句。
         if (dynamicPlan != null && !dynamicPlan.cueTextMatches) {
           debugPrint(
-            '[ReaderHibiki] export-clip: cue text != selection — static '
+            '[ReaderFushi] export-clip: cue text != selection — static '
             'exact-selection card over the full selection window.',
           );
           dynamicPlan = null;
@@ -1200,7 +1200,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         if (dynamicPlan != null &&
             dynamicPlan.audioFileIndex != range.audioFileIndex) {
           debugPrint(
-            '[ReaderHibiki] export-clip: dynamic/static audioFileIndex '
+            '[ReaderFushi] export-clip: dynamic/static audioFileIndex '
             'divergence (dynamic=${dynamicPlan.audioFileIndex} '
             'static=${range.audioFileIndex}) — falling back to single-cue '
             'static to avoid cutting the wrong audio file.',
@@ -1216,7 +1216,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           dynamicPlan = null;
         }
         debugPrint(
-          '[ReaderHibiki] export-clip start: text="${selectedText.trim()}" '
+          '[ReaderFushi] export-clip start: text="${selectedText.trim()}" '
           'audioFileIndex=${range.audioFileIndex} '
           'startMs=${range.startMs} endMs=${range.endMs} '
           'durationMs=${range.endMs - range.startMs} '
@@ -1552,7 +1552,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         );
         if (!synth.isSuccess || synth.outputPath == null) {
           debugPrint(
-            '[ReaderHibiki] export-clip synth failed: '
+            '[ReaderFushi] export-clip synth failed: '
             '${synth.failure} ${synth.detail ?? ''}',
           );
           // TODO-1005 / BUG-472：synth 内部已记 ffmpeg 真因；这里补一条管线级摘要，
@@ -1614,7 +1614,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     } catch (e, stack) {
       ErrorLogService.instance
           .log('ReaderHibiki.exportClip.pipeline', e, stack);
-      debugPrint('[ReaderHibiki] export-clip pipeline error: $e');
+      debugPrint('[ReaderFushi] export-clip pipeline error: $e');
       if (mounted) {
         HibikiToast.show(
             msg: t.audiobook_export_clip_failed, severity: ToastSeverity.error);
@@ -1778,7 +1778,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     );
     if (!synth.isSuccess || synth.outputPath == null) {
       debugPrint(
-        '[ReaderHibiki] export-clip dynamic synth failed: '
+        '[ReaderFushi] export-clip dynamic synth failed: '
         '${synth.failure} ${synth.detail ?? ''}',
       );
       ErrorLogService.instance.log(
@@ -1832,7 +1832,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       await _resolveAudioSlot(forceReload: true);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibiki.openAudioImport', e, stack);
-      debugPrint('[ReaderHibiki] resolveAudioSlot after import failed: $e');
+      debugPrint('[ReaderFushi] resolveAudioSlot after import failed: $e');
     }
     if (mounted) _rebuild(() {});
   }
@@ -1875,7 +1875,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibiki.srtBookAudioPicker', e, stack);
-      debugPrint('[ReaderHibiki] srtBookAudioPicker failed: $e');
+      debugPrint('[ReaderFushi] srtBookAudioPicker failed: $e');
       if (mounted) {
         HibikiToast.show(
             msg: t.audiobook_import_error, severity: ToastSeverity.error);

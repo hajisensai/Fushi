@@ -64,7 +64,7 @@ String buildBrowserExtensionDefaultsJs(
   final String host = jsonEncode(config.host);
   final String token = jsonEncode(config.token);
   final StringBuffer b = StringBuffer();
-  b.writeln('// TODO-1087: written by Hibiki install helper on extract.');
+  b.writeln('// TODO-1087: written by Fushi install helper on extract.');
   b.writeln('// Priority: chrome.storage.local (manual override) > this file.');
   b.writeln('self.FUSHI_DEFAULTS = {');
   b.writeln('  host: $host,');

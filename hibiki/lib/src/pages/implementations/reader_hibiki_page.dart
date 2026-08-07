@@ -1927,7 +1927,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     try {
       await _initBookInner();
     } catch (e, stack) {
-      debugPrint('[ReaderHibiki] _initBook failed: $e\n$stack');
+      debugPrint('[ReaderFushi] _initBook failed: $e\n$stack');
       ErrorLogService.instance.log('ReaderHibiki._initBook', e, stack);
       if (!mounted) return;
       HibikiToast.show(
@@ -1979,7 +1979,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final _BookLocateResult located = await bookLocateFuture;
     if (!mounted) return;
     if (!located.exists) {
-      debugPrint('[ReaderHibiki] book ${widget.bookKey} not found on disk');
+      debugPrint('[ReaderFushi] book ${widget.bookKey} not found on disk');
       HibikiToast.show(
           msg: t.book_file_not_found, severity: ToastSeverity.error);
       // 与 _initBook catch 同款 _popInProgress 合流（防与用户手动退出竞发连退两级）。
@@ -1999,13 +1999,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     try {
       _book = await compute(parseBookOnly, extractDir);
       debugPrint(
-          '[ReaderHibiki] parsed EPUB: ${_book!.chapters.length} chapters');
+          '[ReaderFushi] parsed EPUB: ${_book!.chapters.length} chapters');
       if (bookRow != null) {
         charsFromDb = charCountsFromChaptersJson(
             bookRow.chaptersJson, _book!.chapters.length);
       }
     } on FormatException catch (e) {
-      debugPrint('[ReaderHibiki] EPUB parse failed ($e), trying DB metadata');
+      debugPrint('[ReaderFushi] EPUB parse failed ($e), trying DB metadata');
       _book = await _buildBookFromDb(db, widget.bookKey, extractDir);
       if (!mounted) return;
       _book ??= _buildLegacyBook(extractDir, coverHref: bookRow?.coverPath);
@@ -2019,7 +2019,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
 
     final List<String> hrefs = _book!.chapters.map((ch) => ch.href).toList();
-    debugPrint('[ReaderHibiki] chapter hrefs: $hrefs');
+    debugPrint('[ReaderFushi] chapter hrefs: $hrefs');
 
     if (charsFromDb != null) {
       // TODO-1192: 先立刻用命中的计数（即便是旧口径 v1，先让进度/总字数有值不闪 0）；
@@ -2083,14 +2083,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _lastProgressSection = _currentChapter;
       _lastProgressValue = _initialProgress;
       _lastProgressCharOffset = _initialCharOffset;
-      debugPrint('[ReaderHibiki] restore from bookmark: '
+      debugPrint('[ReaderFushi] restore from bookmark: '
           'chapter=$_currentChapter progress=$_initialProgress '
           'charAnchor=$_initialCharOffset '
           'preserveSavedPosition=$_suppressPositionPersist');
     } else {
       final ReaderPosition? saved = await savedPositionFuture;
       if (!mounted) return;
-      debugPrint('[ReaderHibiki] restore lookup: bookKey=${widget.bookKey} '
+      debugPrint('[ReaderFushi] restore lookup: bookKey=${widget.bookKey} '
           'saved=$saved section=${saved?.sectionIndex} '
           'offset=${saved?.normCharOffset}');
       if (saved != null &&
@@ -2114,7 +2114,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       try {
         WakelockPlus.enable();
       } catch (e) {
-        debugPrint('[Hibiki] wakelock enable failed: $e');
+        debugPrint('[Fushi] wakelock enable failed: $e');
       }
     }
 
@@ -2267,7 +2267,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       }).toList();
     }
 
-    debugPrint('[ReaderHibiki] built from DB: ${chapters.length} chapters, '
+    debugPrint('[ReaderFushi] built from DB: ${chapters.length} chapters, '
         '${toc.length} toc entries');
 
     return EpubBook(
@@ -2425,7 +2425,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     try {
       WakelockPlus.disable();
     } catch (e) {
-      debugPrint('[Hibiki] wakelock disable failed: $e');
+      debugPrint('[Fushi] wakelock disable failed: $e');
     }
     super.dispose();
   }
@@ -2599,7 +2599,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (!widthChanged && !heightChanged) return;
     // BUG-111: 诊断——窗口/缩放 settle 或 resize 后，把真实视口与已分页基线比对。
     // 若 content-ready 后这里报 widthChanged，说明初始分页宽度偏窄、正在自动重排铺满。
-    debugPrint('[ReaderHibiki] _syncPageSize w=$w h=$h '
+    debugPrint('[ReaderFushi] _syncPageSize w=$w h=$h '
         'paginated=$_paginatedWidth x $_paginatedHeight '
         'widthChanged=$widthChanged heightChanged=$heightChanged');
     _lastSyncedWidth = w;

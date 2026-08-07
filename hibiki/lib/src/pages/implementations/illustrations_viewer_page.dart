@@ -157,7 +157,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
         } catch (e, stack) {
           ErrorLogService.instance
               .log('IllustrationsViewer.readImage', e, stack);
-          debugPrint('[Hibiki] illustration read failed: $e');
+          debugPrint('[Fushi] illustration read failed: $e');
         }
       }
     } catch (e, stack) {

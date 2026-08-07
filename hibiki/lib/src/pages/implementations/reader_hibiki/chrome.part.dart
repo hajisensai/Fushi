@@ -1812,7 +1812,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     }
     _restoreCompleter = Completer<bool>();
     _restoreInFlight = true;
-    debugPrint('[ReaderHibiki] reloadWithCurrentSettings: '
+    debugPrint('[ReaderFushi] reloadWithCurrentSettings: '
         'chapter=$_currentChapter progress=$_initialProgress '
         'generation=$gen continuous=${_settings?.isContinuousMode}');
 
@@ -1826,7 +1826,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     } catch (e, stack) {
       ErrorLogService.instance
           .log('ReaderHibiki.reloadWithCurrentSettings', e, stack);
-      debugPrint('[ReaderHibiki] reloadWithCurrentSettings failed: $e');
+      debugPrint('[ReaderFushi] reloadWithCurrentSettings failed: $e');
       _restoreInFlight = false;
       if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
         _restoreCompleter!.complete(false);

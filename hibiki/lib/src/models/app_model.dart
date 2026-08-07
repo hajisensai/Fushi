@@ -784,7 +784,7 @@ class AppModel with ChangeNotifier {
 
   String _mediaTrackingAppVersion = 'unknown';
   String get _mediaTrackingUserAgent =>
-      'hajisensai/Hibiki/$_mediaTrackingAppVersion '
+      'hajisensai/Fushi/$_mediaTrackingAppVersion '
       '(https://github.com/hajisensai/hibiki)';
 
   /// Dictionary metadata, history, and search caches.
@@ -1351,12 +1351,11 @@ class AppModel with ChangeNotifier {
             collapsedLanguages: d.collapsedLanguages,
           );
           dictRepo.persistDictionary(updated);
-          debugPrint(
-              '[Hibiki] reclassified kanji→term (mixed dict): ${d.name}');
+          debugPrint('[Fushi] reclassified kanji→term (mixed dict): ${d.name}');
         } catch (e, stack) {
           ErrorLogService.instance
               .log('AppModel.dictKanjiReclassify', e, stack);
-          debugPrint('[Hibiki] kanji reclassify error for ${d.name}: $e');
+          debugPrint('[Fushi] kanji reclassify error for ${d.name}: $e');
         }
         continue;
       }
@@ -1392,10 +1391,10 @@ class AppModel with ChangeNotifier {
           collapsedLanguages: d.collapsedLanguages,
         );
         dictRepo.persistDictionary(updated);
-        debugPrint('[Hibiki] migrated dict type: ${d.name} → ${detected.name}');
+        debugPrint('[Fushi] migrated dict type: ${d.name} → ${detected.name}');
       } catch (e, stack) {
         ErrorLogService.instance.log('AppModel.dictTypeMigration', e, stack);
-        debugPrint('[Hibiki] dict type migration error for ${d.name}: $e');
+        debugPrint('[Fushi] dict type migration error for ${d.name}: $e');
       } finally {
         raf.closeSync();
       }
@@ -2111,21 +2110,21 @@ class AppModel with ChangeNotifier {
   /// [initialise] so the in-flight guard holds.
   Future<void> _initialiseOnce() async {
     try {
-      debugPrint('[Hibiki] init: PackageInfo + DeviceInfo');
+      debugPrint('[Fushi] init: PackageInfo + DeviceInfo');
 
       /// Prepare entities that may be repeatedly used at runtime.
       _packageInfo = await PackageInfo.fromPlatform();
       _mediaTrackingAppVersion = _packageInfo.version;
       await platformServices.init();
 
-      debugPrint('[Hibiki] init: directories (early, needed for DB)');
+      debugPrint('[Fushi] init: directories (early, needed for DB)');
       // TODO-1260：这一步内部解析数据根（含对自定义数据根盘的 stat）。盘掉线时最易 hang，
       // 故写启动面包屑 + 叠超时（超时→错误屏 Retry，不再无限加载）。
       ErrorLogService.instance
           .markInitStep('resolve-data-roots（AppPaths.resolve / 数据根 stat）');
       await _guardInitIo('resolve-data-roots', _prepareRuntimeDirectories());
 
-      debugPrint('[Hibiki] init: Drift database');
+      debugPrint('[Fushi] init: Drift database');
       ErrorLogService.instance
           .markInitStep('open-database（Drift 打开 hibiki.db）');
       _database = HibikiDatabase(_databaseDirectory.path);
@@ -2154,7 +2153,7 @@ class AppModel with ChangeNotifier {
       mediaHistoryRepo = MediaHistoryRepository(_database);
       clipboardHistoryRepo = ClipboardHistoryRepository(_database);
 
-      debugPrint('[Hibiki] init: repositories (parallel)');
+      debugPrint('[Fushi] init: repositories (parallel)');
       await Future.wait(<Future<void>>[
         prefsRepo.loadFromDb(),
         profileRepo.ensureDefaultProfile(),
@@ -2182,7 +2181,7 @@ class AppModel with ChangeNotifier {
       themeNotifier.addListener(notifyListeners);
       _themeListenerAdded = true;
 
-      debugPrint('[Hibiki] init: directories + system palette (parallel)');
+      debugPrint('[Fushi] init: directories + system palette (parallel)');
       _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
       _thumbnailsDirectory =
           Directory(path.join(appDirectory.path, 'thumbnails'));
@@ -2226,7 +2225,7 @@ class AppModel with ChangeNotifier {
         alternateExportDirectory: _alternateExportDirectory,
       );
 
-      debugPrint('[Hibiki] init: populate maps + audio DB (parallel)');
+      debugPrint('[Fushi] init: populate maps + audio DB (parallel)');
       populateLanguages();
       populateLocales();
       LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
@@ -2250,7 +2249,7 @@ class AppModel with ChangeNotifier {
       ]);
 
       debugPrint(
-          '[Hibiki] init: reader settings + enhancements + quick actions + media sources (parallel)');
+          '[Fushi] init: reader settings + enhancements + quick actions + media sources (parallel)');
       MediaSource.setDatabase(_database);
       final readerSettings = ReaderSettings(_database);
       await readerSettings.loadFromPrefsSnapshot(prefsSnapshot);
@@ -2267,7 +2266,7 @@ class AppModel with ChangeNotifier {
         );
         if (relocated > 0) {
           debugPrint(
-              '[Hibiki] init: relocated $relocated stale custom-font path(s) to current custom_fonts dir');
+              '[Fushi] init: relocated $relocated stale custom-font path(s) to current custom_fonts dir');
         }
       } catch (e, stack) {
         ErrorLogService.instance.log('AppModel.healFontPaths', e, stack);
@@ -2317,7 +2316,7 @@ class AppModel with ChangeNotifier {
         defaultTargetPlatform,
       );
 
-      debugPrint('[Hibiki] init: search preload (parallel)');
+      debugPrint('[Fushi] init: search preload (parallel)');
       final String warmupChar =
           JapaneseLanguage.instance.helloWorld.substring(0, 1);
       unawaited(Future.wait(<Future<void>>[
@@ -2338,11 +2337,11 @@ class AppModel with ChangeNotifier {
         ),
       ]).catchError((Object e, StackTrace stack) {
         ErrorLogService.instance.log('AppModel.searchWarmup', e, stack);
-        debugPrint('[Hibiki] search warmup failed (non-fatal): $e');
+        debugPrint('[Fushi] search warmup failed (non-fatal): $e');
         return <void>[];
       }));
 
-      debugPrint('[Hibiki] init: DONE');
+      debugPrint('[Fushi] init: DONE');
       // TODO-1260：启动正常跑完，清掉启动步进面包屑（否则下次启动会误报上次 hang）。
       ErrorLogService.instance.clearInitStep();
       _isInitialised = true;
@@ -2427,7 +2426,7 @@ class AppModel with ChangeNotifier {
       // dedicated "data location unavailable" escape screen (Retry / explicit
       // opt-in-to-default); do NOT set _initError so the generic error screen
       // doesn't shadow it. The real data is untouched on e.configuredPath.
-      debugPrint('[Hibiki] init PAUSED (data root unavailable): $e\n$stack');
+      debugPrint('[Fushi] init PAUSED (data root unavailable): $e\n$stack');
       ErrorLogService.instance
           .log('AppModel.initialise.dataRootUnavailable', e, stack);
       _dataRootUnavailable = e;
@@ -2437,7 +2436,7 @@ class AppModel with ChangeNotifier {
       // touching the file (no DROP / migration ran). Surface a dedicated,
       // non-retryable notice instead of the generic init-error screen, and
       // STOP — never continue init, never delete or rebuild the DB.
-      debugPrint('[Hibiki] init REFUSED (DB downgrade): $e\n$stack');
+      debugPrint('[Fushi] init REFUSED (DB downgrade): $e\n$stack');
       ErrorLogService.instance.log('AppModel.initialise.downgrade', e, stack);
       _downgradeError = e;
       _initError = '$e';
@@ -2447,14 +2446,14 @@ class AppModel with ChangeNotifier {
       // path and exhausted — the main hibiki.db is corrupt. Surface a dedicated,
       // actionable notice (restore backup / clear data) instead of looping the
       // generic Retry button forever against the same un-openable file.
-      debugPrint('[Hibiki] init FAILED (DB unrecoverable): $e\n$stack');
+      debugPrint('[Fushi] init FAILED (DB unrecoverable): $e\n$stack');
       ErrorLogService.instance
           .log('AppModel.initialise.unrecoverableDb', e, stack);
       _unrecoverableDbError = e;
       _initError = '$e';
       notifyListeners();
     } catch (e, stack) {
-      debugPrint('[Hibiki] init FAILED: $e\n$stack');
+      debugPrint('[Fushi] init FAILED: $e\n$stack');
       ErrorLogService.instance.log('AppModel.initialise', e, stack);
       _initError = '$e';
       notifyListeners();
@@ -2463,7 +2462,7 @@ class AppModel with ChangeNotifier {
 
   Future<void> initialiseForDictionaryPopup() async {
     if (_isInitialised) {
-      debugPrint('[Hibiki-popup] init: already initialised, '
+      debugPrint('[Fushi-popup] init: already initialised, '
           'refreshing prefs if changed');
       // TODO-855: only do the expensive full reload when the main app actually
       // mutated a preference / switched profile since the last lookup; a cheap
@@ -2473,15 +2472,15 @@ class AppModel with ChangeNotifier {
       return;
     }
     try {
-      debugPrint('[Hibiki-popup] init: PackageInfo + DeviceInfo');
+      debugPrint('[Fushi-popup] init: PackageInfo + DeviceInfo');
       _packageInfo = await PackageInfo.fromPlatform();
       _mediaTrackingAppVersion = _packageInfo.version;
       await platformServices.init();
 
-      debugPrint('[Hibiki-popup] init: directories');
+      debugPrint('[Fushi-popup] init: directories');
       await _prepareRuntimeDirectories();
 
-      debugPrint('[Hibiki-popup] init: Drift database');
+      debugPrint('[Fushi-popup] init: Drift database');
       // TODO-905 D3: the :popup process must NOT delete a poisoned -wal/-shm
       // sidecar (the main process owns recovery); it backs off on IOERR.
       _database = HibikiDatabase(_databaseDirectory.path, isMainProcess: false);
@@ -2575,7 +2574,7 @@ class AppModel with ChangeNotifier {
         defaultTargetPlatform,
       );
 
-      debugPrint('[Hibiki-popup] init: DONE');
+      debugPrint('[Fushi-popup] init: DONE');
       _isInitialised = true;
       // TODO-855: prime the prefs-version watermark from the freshly loaded
       // cache so the first warm-reuse lookup doesn't trigger a redundant reload.
@@ -2583,7 +2582,7 @@ class AppModel with ChangeNotifier {
       notifyListeners();
     } catch (e, stack) {
       ErrorLogService.instance.log('AppModel.popupInit', e, stack);
-      debugPrint('[Hibiki-popup] init FAILED: $e\n$stack');
+      debugPrint('[Fushi-popup] init FAILED: $e\n$stack');
       _initError = '$e';
       notifyListeners();
     }
@@ -3787,7 +3786,7 @@ class AppModel with ChangeNotifier {
             dictionary.indexUrl,
           );
           if (!remote.succeeded) {
-            debugPrint('[Hibiki] auto dict update could not check '
+            debugPrint('[Fushi] auto dict update could not check '
                 '${dictionary.name}');
             continue;
           }
@@ -3802,7 +3801,7 @@ class AppModel with ChangeNotifier {
           // 单本失败不中断其余（移植 Hoshi 的 failures-collect 语义）。
           ErrorLogService.instance
               .log('AppModel.autoUpdateDictionary', e, stack);
-          debugPrint('[Hibiki] auto dict update failed for '
+          debugPrint('[Fushi] auto dict update failed for '
               '${dictionary.name}: $e');
         }
       }
@@ -4317,7 +4316,7 @@ class AppModel with ChangeNotifier {
       try {
         await WakelockPlus.enable();
       } catch (e) {
-        debugPrint('[Hibiki] wakelock enable failed: $e');
+        debugPrint('[Fushi] wakelock enable failed: $e');
       }
     }
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -4371,7 +4370,7 @@ class AppModel with ChangeNotifier {
     try {
       await WakelockPlus.disable();
     } catch (e) {
-      debugPrint('[Hibiki] wakelock disable failed: $e');
+      debugPrint('[Fushi] wakelock disable failed: $e');
     }
     // Returning to the home/menu shell: hide the Android status bar again
     // (TODO-097) instead of plain edge-to-edge. iOS/desktop unchanged.
@@ -5044,7 +5043,7 @@ class AppModel with ChangeNotifier {
       await platformServices.lifecycle.moveTaskToBack();
     } catch (e, stack) {
       ErrorLogService.instance.log('AppModel.moveToBack', e, stack);
-      debugPrint('[Hibiki] moveToBack failed: $e');
+      debugPrint('[Fushi] moveToBack failed: $e');
     }
   }
 

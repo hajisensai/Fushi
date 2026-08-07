@@ -52,7 +52,7 @@ void main() {
         reason: 'route visibility is checked when each OS drop event arrives');
     expect(src.contains('onDragUpdated'), isTrue,
         reason: 'hover/update logs are needed to diagnose Windows drop paths');
-    expect(src.contains('[hibiki-drop]'), isTrue,
+    expect(src.contains('[fushi-drop]'), isTrue,
         reason: 'Windows drag/drop failures need visible diagnostic logs');
   });
 

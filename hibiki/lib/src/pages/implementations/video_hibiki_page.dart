@@ -1923,8 +1923,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         await profileVm.switchProfile(resolvedId);
       }
     } catch (e, st) {
-      debugPrint(
-          '[VideoHibiki] profile resolution failed (non-fatal): $e\n$st');
+      debugPrint('[VideoFushi] profile resolution failed (non-fatal): $e\n$st');
     }
   }
 
@@ -6359,7 +6358,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) {
     final DroppedFiles files = classifyDroppedFiles(paths);
     debugPrint(
-      '[hibiki-drop] [video-playback] classified '
+      '[fushi-drop] [video-playback] classified '
       'subtitles=${files.subtitles.length} audios=${files.audios.length} '
       'videos=${files.videos.length} books=${files.books.length} '
       'dictionaries=${files.dictionaries.length} unknown=${files.unknown.length}',
@@ -6370,7 +6369,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       return;
     }
     if (files.subtitles.isNotEmpty) {
-      debugPrint('[hibiki-drop] [video-playback] intent=unsupportedSubtitle');
+      debugPrint('[fushi-drop] [video-playback] intent=unsupportedSubtitle');
       _showOsd(
         t.video_subtitle_import_unsupported,
         severity: ToastSeverity.error,
@@ -6378,12 +6377,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       return;
     }
     if (files.audios.isNotEmpty && files.videos.isEmpty) {
-      debugPrint('[hibiki-drop] [video-playback] intent=unsupportedAudio');
+      debugPrint('[fushi-drop] [video-playback] intent=unsupportedAudio');
       _showOsd(t.video_drop_audio_unsupported, severity: ToastSeverity.error);
       return;
     }
     if (files.hasAny) {
-      debugPrint('[hibiki-drop] [video-playback] intent=unsupportedSurface');
+      debugPrint('[fushi-drop] [video-playback] intent=unsupportedSurface');
       _showOsd(t.video_drop_subtitle_only, severity: ToastSeverity.error);
     }
   }

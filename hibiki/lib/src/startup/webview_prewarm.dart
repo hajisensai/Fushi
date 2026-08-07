@@ -22,7 +22,7 @@ bool shouldPrewarmWebView({
 /// renderer 进程」，而 renderer 一旦被系统 OOM kill，`WebViewClient
 /// .onRenderProcessGone` 没人接管时 Android 的默认动作就是**杀掉整个 app
 /// 进程**（`AwBrowserTerminator` → SIGTRAP）。CI Android appSmoke 连续 4 次
-/// 就死在这条路上：`[Hibiki] WebView engine pre-warm` 一次都没打印过（说明
+/// 就死在这条路上：`[Fushi] WebView engine pre-warm` 一次都没打印过（说明
 /// dispose 从未执行），随后 `Render process crash wasn't handled by all
 /// associated webviews, triggering application crash`。
 ///

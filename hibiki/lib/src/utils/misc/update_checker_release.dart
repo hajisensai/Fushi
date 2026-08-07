@@ -390,7 +390,7 @@ class UpdateChecker {
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('UpdateChecker.check', e, stack);
-      debugPrint('[Hibiki] update check failed: $e');
+      debugPrint('[Fushi] update check failed: $e');
       onError?.call(e); // TODO-898：手动检查失败反馈。
     } finally {
       // TODO-821：先注销 abort 回调（避免后续 cancel 误关已释放的 client），清空在途令牌，
@@ -427,7 +427,7 @@ class UpdateChecker {
     } catch (e, stack) {
       ErrorLogService.instance
           .log('UpdateChecker.autoInstallBackoff', e, stack);
-      debugPrint('[Hibiki] auto-install backoff check failed: $e');
+      debugPrint('[Fushi] auto-install backoff check failed: $e');
       return false;
     }
   }
@@ -461,7 +461,7 @@ class UpdateChecker {
         } else {
           ErrorLogService.instance.log('UpdateChecker.httpGet', error);
         }
-        debugPrint('[Hibiki] update check failed ($host): $error');
+        debugPrint('[Fushi] update check failed ($host): $error');
       },
     );
   }
@@ -657,7 +657,7 @@ class UpdateChecker {
           } else {
             ErrorLogService.instance.log('UpdateChecker.redirectTag', error);
           }
-          debugPrint('[Hibiki] update redirect-tag failed ($host): $error');
+          debugPrint('[Fushi] update redirect-tag failed ($host): $error');
         },
       );
       if (tag != null) return _StableRedirectTag(repo: repo, tag: tag);
@@ -979,7 +979,7 @@ class UpdateChecker {
               ErrorLogService.instance
                   .log('UpdateChecker.download', error, stack);
             }
-            debugPrint('[Hibiki] download source failed ($url): $error');
+            debugPrint('[Fushi] download source failed ($url): $error');
           },
           cancellation: cancellation,
         );
@@ -1036,7 +1036,7 @@ class UpdateChecker {
       }
     } on UpdateDownloadCancelledException {
       // 用户主动取消（TODO-738）：不是失败，不记错误日志、不弹「下载失败」。
-      debugPrint('[Hibiki] update download cancelled by user');
+      debugPrint('[Fushi] update download cancelled by user');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.update_cancelled)),
@@ -1083,14 +1083,14 @@ class UpdateChecker {
         Error.throwWithStackTrace(error, stack);
       }
       debugPrint(
-          '[Hibiki] download asset 404 (stale manifest?); re-resolving manifest');
+          '[Fushi] download asset 404 (stale manifest?); re-resolving manifest');
       final UpdateAsset? fresh = await reResolveAsset();
       if (fresh == null || fresh.url == asset.url) {
         // 重取拿不到新 asset，或 URL 未变（asset 真被删且 manifest 尚未更新）——
         // 无可重试的新目标，冒泡原始 404 走既有失败路径。
         Error.throwWithStackTrace(error, stack);
       }
-      debugPrint('[Hibiki] retrying download with re-resolved asset url');
+      debugPrint('[Fushi] retrying download with re-resolved asset url');
       return download(fresh);
     }
   }
@@ -1126,7 +1126,7 @@ class UpdateChecker {
       return selection?.asset;
     } catch (e, stack) {
       ErrorLogService.instance.log('UpdateChecker.reResolveAsset', e, stack);
-      debugPrint('[Hibiki] re-resolve download asset failed: $e');
+      debugPrint('[Fushi] re-resolve download asset failed: $e');
       return null;
     }
   }
@@ -1140,8 +1140,7 @@ class UpdateChecker {
       const String message =
           'dialog navigator unavailable before handoff marker reconcile';
       ErrorLogService.instance.log('UpdateChecker.windowsHandoff', message);
-      debugPrint(
-          '[Hibiki] windows update handoff reconcile deferred: $message');
+      debugPrint('[Fushi] windows update handoff reconcile deferred: $message');
       return;
     }
     try {
@@ -1181,7 +1180,7 @@ class UpdateChecker {
           // best-effort：删失败（AV/索引器占用等）不影响成功提示；下次 7 天 GC 兜底。
           ErrorLogService.instance
               .log('UpdateChecker.windowsHandoff.deleteInstaller', e, stack);
-          debugPrint('[Hibiki] delete installed update installer failed: $e');
+          debugPrint('[Fushi] delete installed update installer failed: $e');
         }
       }
 
@@ -1206,7 +1205,7 @@ class UpdateChecker {
           // best-effort：删失败（AV/句柄占用等）不影响成功提示；下次 GC 按 mtime 兜底。
           ErrorLogService.instance
               .log('UpdateChecker.windowsHandoff.deleteStaging', e, stack);
-          debugPrint('[Hibiki] delete installed update staging dir failed: $e');
+          debugPrint('[Fushi] delete installed update staging dir failed: $e');
         }
       }
 
@@ -1233,7 +1232,7 @@ class UpdateChecker {
         e,
         stack,
       );
-      debugPrint('[Hibiki] windows update handoff reconcile failed: $e');
+      debugPrint('[Fushi] windows update handoff reconcile failed: $e');
     }
   }
 
@@ -1253,7 +1252,7 @@ class UpdateChecker {
     } catch (e, stack) {
       ErrorLogService.instance
           .log('UpdateChecker.macAutoInstallBackoff', e, stack);
-      debugPrint('[Hibiki] mac auto-install backoff check failed: $e');
+      debugPrint('[Fushi] mac auto-install backoff check failed: $e');
       return false;
     }
   }
@@ -1271,7 +1270,7 @@ class UpdateChecker {
       const String message =
           'dialog navigator unavailable before mac handoff reconcile';
       ErrorLogService.instance.log('UpdateChecker.macHandoff', message);
-      debugPrint('[Hibiki] mac update handoff reconcile deferred: $message');
+      debugPrint('[Fushi] mac update handoff reconcile deferred: $message');
       return;
     }
     try {
@@ -1349,7 +1348,7 @@ class UpdateChecker {
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('UpdateChecker.macHandoff', e, stack);
-      debugPrint('[Hibiki] mac update handoff reconcile failed: $e');
+      debugPrint('[Fushi] mac update handoff reconcile failed: $e');
     }
   }
 

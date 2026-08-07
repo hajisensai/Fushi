@@ -910,7 +910,7 @@ Future<void> _cleanupSegmentFiles(
     }
   } catch (e, stack) {
     ErrorLogService.instance.log('UpdateChecker.cleanupSegments', e, stack);
-    debugPrint('[Hibiki] cleanup segment files failed: $e');
+    debugPrint('[Fushi] cleanup segment files failed: $e');
   }
 }
 
@@ -1114,13 +1114,13 @@ Future<File?> _downloadSegmented({
   } catch (e, stack) {
     // 某段重试耗尽：整体退化单线程（清理分段，调用方重下）。
     ErrorLogService.instance.log('UpdateChecker.segmentFailed', e, stack);
-    debugPrint('[Hibiki] segmented download failed, fall back single: $e');
+    debugPrint('[Fushi] segmented download failed, fall back single: $e');
     await _cleanupSegmentFiles(stagingPaths);
     return null;
   }
   if (etagMismatch) {
     // ETag 不一致（镜像共享 IP 轮换后端）→ 放弃分段，退单线程整体重下。
-    debugPrint('[Hibiki] segment ETag/If-Range mismatch, fall back single');
+    debugPrint('[Fushi] segment ETag/If-Range mismatch, fall back single');
     await _cleanupSegmentFiles(stagingPaths);
     return null;
   }
@@ -1130,7 +1130,7 @@ Future<File?> _downloadSegmented({
     await _concatSegments(stagingPaths, segments.length);
   } catch (e, stack) {
     ErrorLogService.instance.log('UpdateChecker.concatSegments', e, stack);
-    debugPrint('[Hibiki] concat segments failed, fall back single: $e');
+    debugPrint('[Fushi] concat segments failed, fall back single: $e');
     await _cleanupSegmentFiles(stagingPaths);
     await _deleteFile(stagingPaths.partFile);
     return null;
@@ -1241,7 +1241,7 @@ Future<UpdateDownloadResponse> _openHttpDownload(
   String version,
 ) async {
   final HttpClientRequest request = await client.getUrl(uri);
-  request.headers.set('User-Agent', 'Hibiki/$version');
+  request.headers.set('User-Agent', 'Fushi/$version');
   for (final MapEntry<String, String> entry in headers.entries) {
     request.headers.set(entry.key, entry.value);
   }
@@ -1302,7 +1302,7 @@ Future<void> _writeStagingOwnerBestEffort(
     await owner.write(paths.ownerFile);
   } catch (e, stack) {
     ErrorLogService.instance.log('UpdateChecker.writeDownloadOwner', e, stack);
-    debugPrint('[Hibiki] write update download owner failed: $e');
+    debugPrint('[Fushi] write update download owner failed: $e');
   }
 }
 
@@ -1371,7 +1371,7 @@ Future<void> _seedStagingFromLegacyPart(
   } catch (e, stack) {
     ErrorLogService.instance
         .log('UpdateChecker.seedLegacyDownloadPart', e, stack);
-    debugPrint('[Hibiki] seed legacy update part failed: $e');
+    debugPrint('[Fushi] seed legacy update part failed: $e');
   }
 }
 
@@ -1444,7 +1444,7 @@ Future<File> _promoteCompleteDownload(
     return promoted;
   } catch (e, stack) {
     ErrorLogService.instance.log('UpdateChecker.promoteDownload', e, stack);
-    debugPrint('[Hibiki] promote update download failed: $e');
+    debugPrint('[Fushi] promote update download failed: $e');
     await metadata.write(stagingPaths.metadataFile);
     await _deleteFile(paths.partFile);
     await _deleteFile(paths.ownerFile);

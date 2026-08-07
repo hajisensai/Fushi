@@ -48,7 +48,7 @@ class BangumiClient {
 
   /// Bangumi API 要求可识别的 User-Agent（否则可能被限流/拒绝）。
   static const String _userAgent =
-      'hibiki-reader/scraper (https://github.com/hajisensai)';
+      'fushi-reader/scraper (https://github.com/hajisensai)';
 
   /// 搜索关键词 [keyword]，返回动画候选（最多 [limit] 条）。
   ///

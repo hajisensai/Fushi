@@ -851,16 +851,16 @@ class _BookImportDialogState extends State<BookImportDialog>
             _authorCtrl.text.trim().isEmpty ? null : _authorCtrl.text.trim();
 
         debugPrint(
-            '[hibiki-import] route: epub=$_epubPath sub=$_subtitlePath audio=${_audioPaths.length} files');
+            '[fushi-import] route: epub=$_epubPath sub=$_subtitlePath audio=${_audioPaths.length} files');
         String? tail;
         if (_epubPath != null && _hasSubtitles) {
-          debugPrint('[hibiki-import] → _importEpubWithAlignment');
+          debugPrint('[fushi-import] → _importEpubWithAlignment');
           tail = await _importEpubWithAlignment(title: title);
         } else if (_hasSubtitles) {
-          debugPrint('[hibiki-import] → _importSubtitleBook');
+          debugPrint('[fushi-import] → _importSubtitleBook');
           await _importSubtitleBook(title: title, author: authorText);
         } else {
-          debugPrint('[hibiki-import] → _importEpubOnly');
+          debugPrint('[fushi-import] → _importEpubOnly');
           await _importEpubOnly(title: title);
         }
 
@@ -887,7 +887,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       uid,
       0,
     );
-    debugPrint('[hibiki-import] subtitleBook: parsed ${cues.length} cues');
+    debugPrint('[fushi-import] subtitleBook: parsed ${cues.length} cues');
 
     String bookKey = '';
     if (cues.isNotEmpty) {
@@ -909,7 +909,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           policy: DuplicatePolicy.ask(_askOnDuplicate),
         );
         debugPrint(
-            '[hibiki-import] subtitleBook: EPUB import done, key=$bookKey');
+            '[fushi-import] subtitleBook: EPUB import done, key=$bookKey');
       } on DuplicateImportCancelledException {
         // 取消必须冒泡到顶层中止整次导入，不能被吞成 bookId=0 继续。
         rethrow;
@@ -920,7 +920,7 @@ class _BookImportDialogState extends State<BookImportDialog>
         // EPUB 是字幕书的正文载体，载体生成/导入失败这本书就不可读，必须让整次
         // 导入失败而不是落孤儿壳行。与上面的取消同理冒泡到顶层报错。
         ErrorLogService.instance.log('BookImportDialog.epubImport', e, stack);
-        debugPrint('[hibiki-import] EPUB generation/import failed: $e');
+        debugPrint('[fushi-import] EPUB generation/import failed: $e');
         rethrow;
       }
     }
@@ -981,7 +981,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       book.coverPath = dest;
     }
 
-    debugPrint('[hibiki-import] SrtBook save: uid=$uid title="$title" '
+    debugPrint('[fushi-import] SrtBook save: uid=$uid title="$title" '
         'bookKey=$bookKey cues=${cues.length}');
 
     await widget.repo.save(book);

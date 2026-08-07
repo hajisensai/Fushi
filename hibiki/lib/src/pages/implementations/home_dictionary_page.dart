@@ -402,11 +402,11 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
     final List<String> importPaths = classifyDroppedFilesForDictionary(paths);
     debugPrint(
-      '[hibiki-drop] [home-dictionary] importPaths=${importPaths.length} '
+      '[fushi-drop] [home-dictionary] importPaths=${importPaths.length} '
       'paths=${paths.length} global=$globalPosition',
     );
     if (importPaths.isEmpty) {
-      debugPrint('[hibiki-drop] [home-dictionary] intent=unsupportedSurface');
+      debugPrint('[fushi-drop] [home-dictionary] intent=unsupportedSurface');
       HibikiToast.show(
         msg: t.drag_drop_unsupported_on_dictionary,
         severity: ToastSeverity.error,

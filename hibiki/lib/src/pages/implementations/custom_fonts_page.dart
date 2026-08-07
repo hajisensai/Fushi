@@ -395,11 +395,11 @@ Future<List<String>> _getSystemFonts() async {
     try {
       final result =
           await _fontsChannel.invokeMethod<List<dynamic>>('listSystemFonts');
-      debugPrint('[hibiki-fonts] channel returned ${result?.length} fonts');
+      debugPrint('[fushi-fonts] channel returned ${result?.length} fonts');
       _cachedSystemFonts = result?.cast<String>() ?? [];
     } catch (e, stack) {
       ErrorLogService.instance.log('CustomFontsPage.listSystemFonts', e, stack);
-      debugPrint('[hibiki-fonts] channel error: $e');
+      debugPrint('[fushi-fonts] channel error: $e');
       _cachedSystemFonts = [];
     }
   }
@@ -445,11 +445,11 @@ Future<List<String>> _getDesktopSystemFonts() async {
         if (name.isNotEmpty) names.add(name);
       }
     } catch (e) {
-      debugPrint('[hibiki-fonts] error scanning $dirPath: $e');
+      debugPrint('[fushi-fonts] error scanning $dirPath: $e');
     }
   }
   final sorted = names.toList()..sort();
-  debugPrint('[hibiki-fonts] desktop scan found ${sorted.length} fonts');
+  debugPrint('[fushi-fonts] desktop scan found ${sorted.length} fonts');
   return sorted;
 }
 
@@ -865,7 +865,7 @@ class _CustomFontsPageState extends BasePageState {
       return count;
     } catch (e, stack) {
       ErrorLogService.instance.log('CustomFontsPage.extractArchive', e, stack);
-      debugPrint('[hibiki-fonts] archive extract failed: $e');
+      debugPrint('[fushi-fonts] archive extract failed: $e');
       HibikiToast.show(
         msg: t.custom_fonts_archive_error,
         severity: ToastSeverity.error,
@@ -919,7 +919,7 @@ class _CustomFontsPageState extends BasePageState {
       for (int i = 0; i < allUrls.length; i++) {
         final currentUrl = allUrls[i];
         debugPrint(
-            '[hibiki-fonts] trying source ${i + 1}/${allUrls.length}: $currentUrl');
+            '[fushi-fonts] trying source ${i + 1}/${allUrls.length}: $currentUrl');
         progressNotifier.value = null;
         try {
           await dio.download(
@@ -937,7 +937,7 @@ class _CustomFontsPageState extends BasePageState {
               !await _isZipFile(tempFile) &&
               !await _isValidFontFile(tempFile)) {
             debugPrint(
-                '[hibiki-fonts] source ${i + 1} returned non-font data, skipping');
+                '[fushi-fonts] source ${i + 1} returned non-font data, skipping');
             lastError =
                 Exception('Downloaded file is not a valid font or archive');
             await tempFile.delete();
@@ -948,7 +948,7 @@ class _CustomFontsPageState extends BasePageState {
         } on DioError catch (e) {
           if (e.type == DioErrorType.cancel) rethrow;
           lastError = e;
-          debugPrint('[hibiki-fonts] source ${i + 1} failed: ${e.type.name}');
+          debugPrint('[fushi-fonts] source ${i + 1} failed: ${e.type.name}');
           final f = File(tempPath);
           if (await f.exists()) await f.delete();
         }
@@ -1003,9 +1003,9 @@ class _CustomFontsPageState extends BasePageState {
     } on DioError catch (e, stack) {
       if (mounted) Navigator.pop(context);
       if (e.type != DioErrorType.cancel) {
-        debugPrint('[hibiki-fonts] DioError: type=${e.type} '
+        debugPrint('[fushi-fonts] DioError: type=${e.type} '
             'status=${e.response?.statusCode} msg=${e.message}');
-        debugPrint('[hibiki-fonts] stack: $stack');
+        debugPrint('[fushi-fonts] stack: $stack');
         HibikiToast.show(
           msg: '${t.custom_fonts_download_failed}: ${e.type.name}',
           toastLength: Toast.LENGTH_LONG,
@@ -1016,8 +1016,8 @@ class _CustomFontsPageState extends BasePageState {
       if (await f.exists()) await f.delete();
     } catch (e, stack) {
       if (mounted) Navigator.pop(context);
-      debugPrint('[hibiki-fonts] download failed: $e');
-      debugPrint('[hibiki-fonts] stack: $stack');
+      debugPrint('[fushi-fonts] download failed: $e');
+      debugPrint('[fushi-fonts] stack: $stack');
       HibikiToast.show(
         msg: '${t.custom_fonts_download_failed}: $e',
         toastLength: Toast.LENGTH_LONG,
@@ -1113,7 +1113,7 @@ class _CustomFontsPageState extends BasePageState {
         if (await f.exists()) await f.delete();
       } catch (e, stack) {
         ErrorLogService.instance.log('CustomFontsPage.deleteFont', e, stack);
-        debugPrint('[Hibiki] failed to delete font file $filePath: $e');
+        debugPrint('[Fushi] failed to delete font file $filePath: $e');
       }
     }
     HibikiToast.show(

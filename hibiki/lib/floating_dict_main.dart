@@ -32,7 +32,7 @@ void floatingDictMain() {
 
     unawaited(appModel.initialiseForDictionaryPopup());
   }, (exception, stack) {
-    debugPrint('[Hibiki-floatingDict] uncaught: $exception\n$stack');
+    debugPrint('[Fushi-floatingDict] uncaught: $exception\n$stack');
   });
 }
 

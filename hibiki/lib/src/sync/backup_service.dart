@@ -3637,7 +3637,7 @@ class BackupService {
         final Object? url = e['url'];
         if (url is String && AudioSourceConfig.isLoopbackAudioUrl(url)) {
           debugPrint(
-            '[hibiki-audio] imported remote audio source points at a loopback '
+            '[fushi-audio] imported remote audio source points at a loopback '
             'host and will not resolve on this device until re-pointed: $url',
           );
         }

@@ -568,7 +568,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       return epubSectionsFromExtractDir(widget.extractDir!);
     } catch (e, stack) {
       ErrorLogService.instance.log('AudiobookImport.loadSections', e, stack);
-      debugPrint('[hibiki-audiobook] probe loadSections failed: $e');
+      debugPrint('[fushi-audiobook] probe loadSections failed: $e');
       return const <EpubSection>[];
     }
   }
@@ -588,7 +588,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       return await parseCuesForFormat(File(path), widget.bookKey, 0);
     } catch (e, stack) {
       ErrorLogService.instance.log('AudiobookImport.parseCues', e, stack);
-      debugPrint('[hibiki-audiobook] probe parseCues failed: $e');
+      debugPrint('[fushi-audiobook] probe parseCues failed: $e');
       return const <AudioCue>[];
     }
   }
@@ -605,7 +605,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     }
 
     debugPrint(
-        '[hibiki-audiobook] doImport bookKey.len=${widget.bookKey.length} '
+        '[fushi-audiobook] doImport bookKey.len=${widget.bookKey.length} '
         'hash=${widget.bookKey.hashCode} key=${widget.bookKey}');
     setState(() => importing = true);
     reportProgress(0, '');

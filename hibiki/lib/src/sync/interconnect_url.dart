@@ -17,7 +17,7 @@ String normalizeHibikiInterconnectManualUrl(String rawUrl) {
       explicitScheme.group(1)!.toLowerCase() == 'https') {
     withScheme = trimmed;
   } else {
-    throw SyncBackendError('Hibiki URL must use http:// or https://');
+    throw SyncBackendError('Fushi URL must use http:// or https://');
   }
   return WebDavOps.normalizeUrl(withScheme);
 }

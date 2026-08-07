@@ -69,9 +69,9 @@ class MediaHandleRegistry {
     try {
       await callback().timeout(perCallbackTimeout);
     } on TimeoutException {
-      debugPrint('[Hibiki] media handle release timed out; continuing');
+      debugPrint('[Fushi] media handle release timed out; continuing');
     } catch (e) {
-      debugPrint('[Hibiki] media handle release failed: $e');
+      debugPrint('[Fushi] media handle release failed: $e');
     }
   }
 }
