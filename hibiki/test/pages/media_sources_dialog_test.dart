@@ -113,12 +113,12 @@ Future<void> _seedBook(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('empty scan-root list still shows Hibiki Interconnect',
+  testWidgets('empty scan-root list still shows Fushi Interconnect',
       (tester) async {
     final HibikiDatabase db = _memDb();
     addTearDown(db.close);
     await _pumpDialog(tester, db, 'video');
-    expect(find.text('Hibiki Interconnect'), findsOneWidget);
+    expect(find.text('Fushi Interconnect'), findsOneWidget);
     expect(find.text('No sources yet'), findsNothing);
   });
 
@@ -142,7 +142,7 @@ void main() {
     );
     await _pumpDialog(tester, db, 'manga');
 
-    expect(find.text('Hibiki Interconnect'), findsOneWidget);
+    expect(find.text('Fushi Interconnect'), findsOneWidget);
     // BUG-1431：mokuro.moe 是个网站，不是扫描根，已挪到「来源」视图的「漫画源」
     // 一节（`MokuroMoeSourceRow`），与扩展提供的在线源同级。这条反向锚防止它被
     // 重新塞回本地扫描根列表。
