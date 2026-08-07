@@ -18,8 +18,11 @@ import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 // `ensureFolderIdTrailingSlash` on every cache-population site.
 
 /// A slash-less collection href, exactly as a Nutstore-style server returns it.
-const String _rootId = 'https://dav.example.com/hibiki-data/';
-const String _slashlessBookHref = 'https://dav.example.com/hibiki-data/屍人荘の殺人';
+/// （根名用当前 [kSyncRootFolderName]=fushi-data：restoreCache 会把嵌旧根名
+/// hibiki-data 的陈旧持久化 id 整条丢弃以触发 Fushi 改名迁移，旧名 fixture 在
+/// 这里会被过滤掉、测不到尾斜杠自愈。）
+const String _rootId = 'https://dav.example.com/fushi-data/';
+const String _slashlessBookHref = 'https://dav.example.com/fushi-data/屍人荘の殺人';
 
 void main() {
   group('ensureFolderIdTrailingSlash', () {
@@ -44,11 +47,10 @@ void main() {
 
     test('restoreCache heals a slash-less persisted id and root id', () {
       backend.restoreCache(
-        rootFolderId: 'https://dav.example.com/hibiki-data',
+        rootFolderId: 'https://dav.example.com/fushi-data',
         titleToFolderId: const {'屍人荘の殺人': _slashlessBookHref},
       );
-      expect(
-          backend.cachedRootFolderId, 'https://dav.example.com/hibiki-data/');
+      expect(backend.cachedRootFolderId, 'https://dav.example.com/fushi-data/');
       expect(backend.cachedFolderIds['屍人荘の殺人'], '$_slashlessBookHref/');
     });
 
@@ -97,11 +99,10 @@ void main() {
 
     test('restoreCache heals slash-less persisted ids', () {
       backend.restoreCache(
-        rootFolderId: 'https://dav.example.com/hibiki-data',
+        rootFolderId: 'https://dav.example.com/fushi-data',
         titleToFolderId: const {'屍人荘の殺人': _slashlessBookHref},
       );
-      expect(
-          backend.cachedRootFolderId, 'https://dav.example.com/hibiki-data/');
+      expect(backend.cachedRootFolderId, 'https://dav.example.com/fushi-data/');
       expect(backend.cachedFolderIds['屍人荘の殺人'], '$_slashlessBookHref/');
     });
   });

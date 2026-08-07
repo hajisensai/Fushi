@@ -15,6 +15,7 @@ import 'package:hibiki/src/sync/lan_discovery_service.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_root_migration.dart';
 import 'package:hibiki/src/sync/tls/hibiki_tls_identity.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -270,6 +271,15 @@ class HibikiSyncServerController extends ChangeNotifier {
       // 集合。server 不直连 DB，经这两个回调打通存储层（清缓存在 server 内部完成）。
       ..onPeerPaired = _persistPairedPeer
       ..pairedPeerTokensProvider = _loadPairedPeerTokens;
+    // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
+    // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着
+    // `hibiki-data/` → 本地整目录 rename（同盘原子，不搬数据）。幂等；失败留痕
+    // 降级（client 会新建空新根，下次 host 启动重试），绝不挡 server 启动。
+    await migrateLegacySyncRootDirectory(
+      syncDataDir: server.syncDataDir,
+      onError: (Object e, StackTrace st) => ErrorLogService.instance
+          .log('HibikiServerController.migrateLegacySyncRoot', e, st),
+    );
     try {
       await server.start();
       _server = server;

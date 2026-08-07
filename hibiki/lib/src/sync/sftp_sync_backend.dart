@@ -8,10 +8,12 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_root_migration.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 class SftpSyncBackend extends SyncBackend
     with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
@@ -19,7 +21,7 @@ class SftpSyncBackend extends SyncBackend
   static final SftpSyncBackend instance = SftpSyncBackend._();
 
   /// Sync root folder, RELATIVE to the SFTP login directory (the user's home),
-  /// never the server filesystem root. An absolute '/hibiki-data' fails on
+  /// never the server filesystem root. An absolute '/fushi-data' fails on
   /// a normal non-chrooted sshd (permission denied at '/'). The name is shared
   /// via [kSyncRootFolderName] so one library syncs across every backend.
   @visibleForTesting
@@ -118,7 +120,22 @@ class SftpSyncBackend extends SyncBackend
         if (rootFolderIdCache != null) return rootFolderIdCache!;
 
         final sftp = await _ensureConnected();
-        await _mkdirIfAbsent(sftp, rootFolderName);
+        // Fushi 改名迁移三段（找新根 → 旧根 sftp.rename 改名 → 新建）。稳态仍
+        // 是一次 stat，与旧实现的 _mkdirIfAbsent 探测同价；旧根探测仅在新根缺
+        // 席时发生。结果经 rootFolderIdCache 记忆化。路径都相对登录 home。
+        final String? existing = await migrateLegacySyncRoot<String>(
+          find: (String name) async =>
+              await _directoryExists(sftp, name) ? name : null,
+          renameLegacy: (String legacyPath) async {
+            await sftp.rename(legacyPath, rootFolderName);
+            return rootFolderName;
+          },
+          onRenameError: (Object e, StackTrace st) => ErrorLogService.instance
+              .log('SftpSyncBackend.migrateLegacyRoot', e, st),
+        );
+        if (existing == null) {
+          await _mkdirIfAbsent(sftp, rootFolderName);
+        }
         rootFolderIdCache = rootFolderName;
         return rootFolderName;
       });
@@ -561,6 +578,18 @@ class SftpSyncBackend extends SyncBackend
         await sftp.mkdir(path);
         return;
       }
+      rethrow;
+    }
+  }
+
+  /// [path] 是否存在且是目录。存在但是普通文件 → false（迁移探测时把它当
+  /// 「不存在」，落到 [_mkdirIfAbsent] 抛出清晰的「exists but is not a
+  /// directory」错误，而不是把文件当根用）。
+  Future<bool> _directoryExists(SftpClient sftp, String path) async {
+    try {
+      return (await sftp.stat(path)).isDirectory;
+    } on SftpStatusError catch (e) {
+      if (e.code == SftpStatusCode.noSuchFile) return false;
       rethrow;
     }
   }
