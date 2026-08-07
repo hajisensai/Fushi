@@ -13,7 +13,7 @@
 - [x] P6-1 `window.hoshiReader` → `window.fushiReader`（82 文件；分支提交 45865b679，阅读器/有声书/macos 定向 2242 绿）
 - [x] P6-3 ttu 清算（develop ee0655c88）：31 个 i18n key →`reader_*`；`setTtu*`→`setReader*`；`'reader_ttu'` 收口 `kReaderSourcePersistedKey`。**白名单**：`ttu_models.dart`/`ttu_filename.dart`（ッツ第三方 wire 契约，文件头注明禁单方改）、`reader_settings.dart` 内 `ttu_*` 现役持久化键值（冻结，P2-2 新包换新键时迁移）
 - [x] P6-4a `Ht*`→`Ft*`（11 类；develop 20f50fc10，torrent 定向 147 绿）
-- [~] P6-4b `Sasayaki*`→描述性名：fable 子代理进行中。契约已定：`{sasayaki-audio}` handlebars 变量与 `custom_themes` JSON 键 `sasayakiColor` **冻结**（持久化），其余全改——**实测面 ~500 处远超预估**，且含两个 userspace 契约需先定策略：① Anki handlebars 模板变量（`handlebar_sasayaki_audio` 对应的用户模板变量，乱改破用户现有卡模板）；② `sasayakiColor` 疑似入库的主题自定义色键（custom_theme 持久化待查）。纯内部符号（SasayakiCue/AutoNav/JS 桥）可机械换，两个契约点需映射或冻结
+- [x] P6-4b（fable 子代理 2af7d512d，develop b1ff91994 批）：107 文件 Sasayaki*→SubtitleRematch*/sentenceAudio*、19 个 i18n key；**4 个持久化冻结点**：{sasayaki-audio} handlebars、handlebar_sasayaki_audio key、sasayakiColor JSON 键、sasayaki:// scheme（落 AudioCue.text_fragment_id 列）、custom_theme_sasayaki_color 偏好键——**实测面 ~500 处远超预估**，且含两个 userspace 契约需先定策略：① Anki handlebars 模板变量（`handlebar_sasayaki_audio` 对应的用户模板变量，乱改破用户现有卡模板）；② `sasayakiColor` 疑似入库的主题自定义色键（custom_theme 持久化待查）。纯内部符号（SasayakiCue/AutoNav/JS 桥）可机械换，两个契约点需映射或冻结
 - [ ] P6-4c 代码字符串残留 hibiki 清扫 + 白名单收口（与 P2-1 通道前缀联动，随 Phase 2 做）
 - [x] P1-1 `MigrationExporter` 核心（`lib/src/migration/migration_exporter.dart`：分批调 createBackup、断点 state.json、幂等跳过；**尚缺**：Android 中转目录取路径接线 + 从设置页触发——归 P1-3 一起做）
 - [x] P1-2 `MigrationManifest` v1（`migration_manifest.dart`：归档 sha256+size + 14 表行数 + schema 版本；8 单测绿；对计划的偏差已记回计划 §P1-2）
@@ -26,8 +26,8 @@
 - [x] P2-3 卸载引导（同批落地）：dashboard 卸载 banner（ACTION_DELETE + resumed 生命周期复查，绝不乐观标成功）
 - [x] Phase 3 Windows（develop 215c9cc24 批）：fushi.exe 构建绿+版本信息 Fushi 验证；%APPDATA% 搬迁+documents 容器锚点；fushi.iss（AppId 不变/双 mutex/旧键清理）；全量门 17619 绿（清 39 红含 fork sentinel 与重启标志两处真断裂）。原文案：`fushi.exe`/安装器 AppName/`FushiSingleInstanceMutex` 三处同步/`Fushi.Video` ProgID 迁移+旧键清理/`%APPDATA%\Hibiki`→`Fushi` 搬迁
 - [x] Phase 5 更新桥（cdffe37c0）：Windows `synthesizeStableAssetNames` 行随 Phase 3 切 fushi（Android 无更新桥需求：跨包名不能就地更新，迁移链即通道）
-- [x] P6-2 `hoshidicts`→`fushidicts`（fable 子代理交付 4867d9f15，已合入主线）：22 个 C ABI 符号、JNI 与 FushiBridge 对齐（修复 P2-1 遗留真断裂）、CMake/xcconfig/CI 全链；合并后 analyze 绿+定向绿。构建门：Android/Windows 待下轮构建复核
-- [x] P6-6 native 产物（fable 子代理交付 e090a6021，已合入主线）：三件套 fushi_voice_*、IPC shm/event/marker 两侧同批、fushi_torrent_ffi + DLL 旧名回退、Unity 程序集 Fushi.UnityAudioExtract；1362 定向绿。保留：C++ namespace hibiki_voice_hook（内部符号，需双架构构建验证，后续项）
+- [x] P6-2 `hoshidicts`→`fushidicts`（fable 子代理 4867d9f15，develop b1ff91994 批）：22 个 C ABI 符号、JNI 与 FushiBridge 对齐（修复 P2-1 遗留真断裂）、CMake/xcconfig/CI 全链；合并后 analyze 绿+定向绿。构建门：Android/Windows 待下轮构建复核
+- [x] P6-6 native 产物（fable 子代理 e090a6021，develop b1ff91994 批）：三件套 fushi_voice_*、IPC shm/event/marker 两侧同批、fushi_torrent_ffi + DLL 旧名回退、Unity 程序集 Fushi.UnityAudioExtract；1362 定向绿。保留：C++ namespace hibiki_voice_hook（内部符号，需双架构构建验证，后续项）
 - [ ] P6-5 pub 包名体系：`hibiki`→`fushi` app 包 + 6 内部包 + workspace + 全仓 import（最后做，单独 PR，不与他人并行）
 - [ ] 收尾：源码扫描守卫（旧代号零残留 + 白名单收口）+ 变异实测
 - [x] Phase 4 外部注册台账（agent 无法代办，清单见下）
@@ -67,4 +67,4 @@
 6. 新 Android keystore 生成并配到 CI secrets（拍板不复用旧签名）。
 7. 浏览器扩展商店条目改名（打包密钥不变）。
 
-> 2026-08-07 全量门：FLUTTER TEST VERDICT: PASSED - 17615 tests ran；develop 推进至 d23fa7f79（Phase 1 整批）。
+> 全量门史：17615 绿(d23fa7f79 P1)→17619 绿(64386eaf4 P2)→17619 绿(215c9cc24 P3)→17619 绿(b1ff91994 P6-2/6/4b 合并批)。
