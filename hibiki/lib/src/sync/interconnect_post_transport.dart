@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/tls/hibiki_pinning_http.dart';
+import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:http/http.dart' as http;
 
@@ -11,8 +11,8 @@ import 'package:http/http.dart' as http;
 /// 回收」的实现。
 ///
 /// **为什么抽出来**——这套逻辑此前被逐行复制过多份：
-/// `hibiki_remote_lookup_client.dart` 的 `_postLookup`、
-/// `hibiki_remote_mining_client.dart` 的 `_post`（它的类注释自己就写着「传输契约与
+/// `fushi_remote_lookup_client.dart` 的 `_postLookup`、
+/// `fushi_remote_mining_client.dart` 的 `_post`（它的类注释自己就写着「传输契约与
 /// [FushiRemoteLookupClient] 完全同构」），
 /// 另有 `interconnect_manga_ocr_client.dart` 的 GET 版 `probe` 和
 /// `InterconnectSyncBackend` 走 `WebDavOps` 的第四份。每加一个互联端点就再抄一遍，
@@ -61,10 +61,10 @@ class InterconnectPostTransport {
     required Duration timeout,
     required String authErrorMessage,
   }) async {
-    final List<FushiClientUrl> candidates = (await _repo.getHibikiClientUrls())
+    final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
         .where((FushiClientUrl u) => u.enabled)
         .toList(growable: false);
-    final String? token = await _repo.getHibikiClientToken();
+    final String? token = await _repo.getFushiClientToken();
     if (candidates.isEmpty || token == null || token.isEmpty) {
       // 未配对/未启用/无 token：不是「设备不可达」，按「无结果」处理。
       return (json: null, allUnreachable: false);

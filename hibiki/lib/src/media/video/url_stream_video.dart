@@ -5,7 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/media/video/youtube_source_resolver.dart'
     show isYoutubeUrl, youtubeVideoIdOrNull, YoutubeCaptionTrack;

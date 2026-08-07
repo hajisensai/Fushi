@@ -13,7 +13,7 @@ import 'package:http/testing.dart';
 /// [InterconnectPostTransport] 直接守卫。
 ///
 /// 这套「已启用候选按序 fallback + Basic 鉴权 + https 带指纹强制钉扎 + 每候选独立回收」
-/// 的逻辑此前在 `hibiki_remote_lookup_client.dart` 与 `hibiki_remote_mining_client.dart`
+/// 的逻辑此前在 `fushi_remote_lookup_client.dart` 与 `fushi_remote_mining_client.dart`
 /// 各抄了一份（后者的类注释自己就写着「传输契约与前者完全同构」），另有 mangaOcr 的
 /// GET 版与 `InterconnectSyncBackend` 走 WebDavOps 的第四份。抄漏一处钉扎/回收就是真
 /// 事故（TODO-961 gap①），故收敛成一份并在此直接锁语义——制卡侧原本只有 1 个测试，
@@ -28,8 +28,8 @@ Future<SyncRepository> _repo({
   String? token = 'tok',
 }) async {
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(urls);
-  await repo.setHibikiClientToken(token);
+  await repo.setFushiClientUrls(urls);
+  await repo.setFushiClientToken(token);
   return repo;
 }
 

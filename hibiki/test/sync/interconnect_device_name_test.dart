@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/interconnect_device_name.dart';
 import 'package:fushi_platform/fushi_platform.dart';
 import 'package:http/http.dart' as http;

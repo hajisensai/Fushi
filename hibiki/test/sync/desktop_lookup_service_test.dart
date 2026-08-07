@@ -17,7 +17,7 @@ void main() {
   setUp(() {
     DesktopLookupService.instance.debugReset();
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = false;
-    DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = false;
+    DesktopForegroundGuard.debugForegroundOwnedByFushiAppFamily = false;
     DesktopForegroundGuard.debugHiddenWindowsRunner = false;
     // TODO-615: bringPendingLookupToFront 现在会经 WindowCaptionChannel 下发
     // clearTaskbarFlash 到 app.fushi/window。在 Windows 测试宿主上，未 mock 的平台
@@ -31,7 +31,7 @@ void main() {
   });
   tearDown(() {
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = null;
-    DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = null;
+    DesktopForegroundGuard.debugForegroundOwnedByFushiAppFamily = null;
     DesktopForegroundGuard.debugHiddenWindowsRunner = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, null);
@@ -238,7 +238,7 @@ void main() {
     final TestDefaultBinaryMessenger messenger =
         tester.binding.defaultBinaryMessenger;
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = false;
-    DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = true;
+    DesktopForegroundGuard.debugForegroundOwnedByFushiAppFamily = true;
     messenger.setMockMethodCallHandler(SystemChannels.platform,
         (MethodCall call) async {
       platformCalls.add(call.method);

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/hibiki_server_controller.dart';
-import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/fushi_server_controller.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/utils.dart';
 
 /// BUG-987：互联首次配对被发起端放弃（超时/断网/取消）后，host 那个仍「审批未决」的

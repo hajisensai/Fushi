@@ -15,7 +15,7 @@ import 'package:fushi/src/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
 import 'package:fushi/src/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/collection_sync_engine.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_service_config.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -1026,7 +1026,7 @@ class AppModelLibraryHostService
         // spawn `ffmpeg -i`（每项超时基线 60s、大文件到 1200s、无缓存、每次 GET 全量
         // 重跑），大库（如 511 个视频）轻易超过 client 的 15s listTimeout → 远端视频
         // 判空 → 手机整页空。内嵌轨是**播放时**才需要的信息，已由 `/streamurl` 端点
-        // (`hibiki_sync_server.dart` `_embeddedSubtitleTracksForRequest`) 在拉流时按需
+        // (`fushi_sync_server.dart` `_embeddedSubtitleTracksForRequest`) 在拉流时按需
         // 探测并下发（client 唯一消费者 video_hibiki_page 读的是 streamurl 响应，列表
         // 的 embeddedSubtitleTracks 零消费）。故此处保持 embeddedSubtitleTracks 为空、
         // hasSubtitle 只反映廉价的外挂 sidecar——列表变纯 DB/stat 读，与 listBooks 对称、

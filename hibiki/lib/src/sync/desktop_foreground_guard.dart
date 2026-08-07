@@ -13,7 +13,7 @@ abstract final class DesktopForegroundGuard {
   static bool? debugForegroundOwnedByCurrentProcess;
 
   @visibleForTesting
-  static bool? debugForegroundOwnedByHibikiAppFamily;
+  static bool? debugForegroundOwnedByFushiAppFamily;
 
   @visibleForTesting
   static bool? debugHiddenWindowsRunner;
@@ -37,13 +37,13 @@ abstract final class DesktopForegroundGuard {
     }
   }
 
-  static bool isForegroundOwnedByHibikiAppFamily() {
-    final bool? override = debugForegroundOwnedByHibikiAppFamily;
+  static bool isForegroundOwnedByFushiAppFamily() {
+    final bool? override = debugForegroundOwnedByFushiAppFamily;
     if (override != null) return override;
     if (!Platform.isWindows) return false;
     try {
       return _WindowsForegroundProbe.instance
-          .isForegroundOwnedByHibikiAppFamily();
+          .isForegroundOwnedByFushiAppFamily();
     } on Object {
       return false;
     }
@@ -91,13 +91,13 @@ final class _WindowsForegroundProbe {
     }
   }
 
-  bool isForegroundOwnedByHibikiAppFamily() {
+  bool isForegroundOwnedByFushiAppFamily() {
     final int? pid = _foregroundProcessId();
     if (pid == null) return false;
     if (pid == _getCurrentProcessId()) return true;
     final String? imagePath = _processImagePath(pid);
     if (imagePath == null) return false;
-    return _looksLikeHibikiExecutable(imagePath);
+    return _looksLikeFushiExecutable(imagePath);
   }
 
   int? _foregroundProcessId() {
@@ -134,7 +134,7 @@ final class _WindowsForegroundProbe {
     }
   }
 
-  static bool _looksLikeHibikiExecutable(String imagePath) {
+  static bool _looksLikeFushiExecutable(String imagePath) {
     final String foregroundExe = _basenameLower(imagePath);
     final String currentExe = _basenameLower(Platform.resolvedExecutable);
     if (foregroundExe == currentExe) return true;

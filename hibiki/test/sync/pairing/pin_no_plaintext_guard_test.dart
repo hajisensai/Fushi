@@ -21,7 +21,7 @@ String _stripComments(String src) => maskComments(src);
 void main() {
   test('pair/v2 响应体只含白名单字段，绝不含 PIN', () {
     final String src = _stripComments(
-        File('lib/src/sync/hibiki_sync_server.dart').readAsStringSync());
+        File('lib/src/sync/fushi_sync_server.dart').readAsStringSync());
     // 定位 _handlePairV2 的响应构造，断言它返回 sessionId/pinRequired/hostNonce，
     // 且整个 v2 响应 map 字面不含 "'pin'"（PIN 字段名）。
     // 定位方法定义（带签名）而非路由里的调用点——两处都出现符号名。
@@ -78,7 +78,7 @@ void main() {
 
   test('协议核心不持有/不打印任何明文 PIN 出网调用', () {
     final String src = _stripComments(
-        File('lib/src/sync/pairing/hibiki_pairing_protocol.dart')
+        File('lib/src/sync/pairing/fushi_pairing_protocol.dart')
             .readAsStringSync());
     // computePinProof 把 PIN 作为 HMAC key（不可逆），断言它确实经 Hmac 处理。
     expect(src.contains('Hmac(sha256'), isTrue,

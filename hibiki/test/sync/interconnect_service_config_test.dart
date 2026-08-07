@@ -111,7 +111,7 @@ void main() {
   });
 
   test('BUG-1311：明文互联会话不得请求 service-config（403 必然，问了只是伪造失败）', () async {
-    // 复刻真实 host 在明文会话上的行为：`hibiki_sync_server.dart` 的
+    // 复刻真实 host 在明文会话上的行为：`fushi_sync_server.dart` 的
     // `_handleInterconnectServiceConfig` 在 `_securityContext == null` 时恒返回
     // `403 HTTPS required for service config`。而 TLS 默认是关的，存量 host 一律
     // 走这条分支——客户端照发请求就会每轮同步收一条 SyncAuthError。
@@ -127,10 +127,10 @@ void main() {
     }));
 
     final SyncRepository repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<FushiClientUrl>[
+    await repo.setFushiClientUrls(<FushiClientUrl>[
       FushiClientUrl(url: 'http://127.0.0.1:${server.port}', enabled: true),
     ]);
-    await repo.setHibikiClientToken('peer-token');
+    await repo.setFushiClientToken('peer-token');
     final InterconnectSyncBackend backend =
         InterconnectSyncBackend.withProbe((String u, String t) async => true);
     await backend.restoreAuth(repo);

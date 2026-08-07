@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/hibiki_server_controller.dart';
+import 'package:fushi/src/sync/fushi_server_controller.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'sync_settings_schema_source_corpus.dart';
@@ -45,7 +45,7 @@ void main() {
   group('source guards: controller wires library service (Task-6)', () {
     test('controller forwards libraryService into FushiSyncServer', () {
       final String src =
-          File('lib/src/sync/hibiki_server_controller.dart').readAsStringSync();
+          File('lib/src/sync/fushi_server_controller.dart').readAsStringSync();
       expect(src.contains('libraryService:'), isTrue,
           reason: 'controller 必须把库服务注入 server，否则 host 端点恒 404');
     });
@@ -185,7 +185,7 @@ void main() {
 
     test('controller stop only persists disabled when explicitly asked', () {
       final String controller =
-          File('lib/src/sync/hibiki_server_controller.dart').readAsStringSync();
+          File('lib/src/sync/fushi_server_controller.dart').readAsStringSync();
       // An app-exit/transient stop must leave serverEnabled untouched so the
       // next launch restores hosting; only a user toggle-off persists disabled.
       expect(controller, contains('stop({bool persistDisabled = false})'),

@@ -36,7 +36,7 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -782,7 +782,7 @@ class _HomeDashboardPageState
         remoteVideos: remoteVideos,
       );
       // 设备来源标注：配对时存下的 host 设备名（多地址时取第一个启用且有名的）。
-      final List<FushiClientUrl> urls = await syncRepo.getHibikiClientUrls();
+      final List<FushiClientUrl> urls = await syncRepo.getFushiClientUrls();
       String? deviceName;
       for (final FushiClientUrl u in urls) {
         final String? name = u.deviceName;

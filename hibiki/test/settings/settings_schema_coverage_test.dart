@@ -197,7 +197,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'interconnect/Mine to paired device':
       'test/anki/remote_mining_anki_repository_test.dart + '
           'test/sync/forwarded_mine_payload_test.dart + '
-          'test/sync/hibiki_remote_mining_service_test.dart',
+          'test/sync/fushi_remote_mining_service_test.dart',
   'system/Low memory mode': 'test/models/app_model_low_memory_mode_test.dart',
   'system/Keyboard & gamepad focus navigation':
       'test/shortcuts/global_space_no_activate_test.dart + main.dart 门控安装 FushiFocusRoot/Ring',

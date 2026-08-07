@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 // TODO-766 / BUG: 查词能播放出声但制卡卡片无音频。
 //
 // 根因：远端 host 给词音频文件 URL 签一个 5 分钟过期的 token
-// (hibiki_sync_server.dart `_pruneAudioTokens`)。查词点 ♪ 播放走
+// (fushi_sync_server.dart `_pruneAudioTokens`)。查词点 ♪ 播放走
 // resolveCachedAudioUrl → 立即播，token 新鲜成功；但制卡 buildMinePayload 原本
 // 也走 resolveCachedAudioUrl，命中播放缓存后直接返回那个旧 URL，制卡可能发生在
 // 播放很久之后 → token 已被 prune → repo 裸 HttpClient GET 拿到 404 → 静默返

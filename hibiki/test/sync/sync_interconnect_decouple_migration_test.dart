@@ -21,7 +21,7 @@ void main() {
       await db.setPref('sync_backend_type', 'hibikiServer');
       // 互联自身的独立字段本就不依赖 backendType，迁移不该动它们。
       await repo.setServerEnabled(true);
-      await repo.addHibikiClientUrl('https://peer.local:38765/');
+      await repo.addFushiClientUrl('https://peer.local:38765/');
 
       expect(await repo.isInterconnectEnabled(), isFalse);
 
@@ -32,7 +32,7 @@ void main() {
       expect(await repo.getBackendType(), SyncBackendType.googleDrive);
       // 互联独立配置原样保留。
       expect(await repo.isServerEnabled(), isTrue);
-      expect((await repo.getHibikiClientUrls()).isNotEmpty, isTrue);
+      expect((await repo.getFushiClientUrls()).isNotEmpty, isTrue);
     });
 
     test('is a no-op for a cloud backend (interconnect stays off)', () async {

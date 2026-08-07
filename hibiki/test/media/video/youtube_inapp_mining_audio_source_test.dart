@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1301（BUG-600）：油管应用内制卡「没句子音频、没 gif」的根因是应用内播放路径

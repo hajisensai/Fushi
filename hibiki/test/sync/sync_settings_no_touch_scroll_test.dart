@@ -45,7 +45,7 @@ Future<double> _settledOffset(
   final Directory storeDir = Directory.systemTemp.createTempSync('hibiki_sync');
   final SyncRepository repo = SyncRepository(db);
   await repo.setBackendType(SyncBackendType.hibikiServer);
-  await repo.setHibikiClientUrls(<FushiClientUrl>[
+  await repo.setFushiClientUrls(<FushiClientUrl>[
     const FushiClientUrl(url: 'http://192.168.1.10:38765'),
     const FushiClientUrl(url: 'http://192.168.1.11:38765'),
     const FushiClientUrl(url: 'http://192.168.1.12:38765'),

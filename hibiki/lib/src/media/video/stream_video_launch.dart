@@ -1,7 +1,7 @@
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/youtube_source_resolver.dart';
 import 'package:fushi/src/media/video/youtube_stream_cache.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 

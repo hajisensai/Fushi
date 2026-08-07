@@ -393,7 +393,7 @@ class DesktopLookupService extends ChangeNotifier
 
   Future<void> _handleClipboardChange() async {
     // app 在前台 = 本 app 内复制（制卡/选词复制），不弹查词。
-    final bool foreground = _focused || await _isHibikiForeground();
+    final bool foreground = _focused || await _isFushiForeground();
     if (!shouldTriggerOnClipboard(foreground)) return;
     final String? text = await _readClipboardText();
     if (text == null) return;
@@ -511,7 +511,7 @@ class DesktopLookupService extends ChangeNotifier
     // TODO-615：前台判据抖动时此守卫可能漏判，导致先前误触的任务栏 flash 仍残留；
     // 已前台路径 early-return 前主动 clear 一次，把残留高亮幂等熄灭（FLASHW_STOP
     // 对没有 flash 的窗口是 no-op）。
-    if (await _isHibikiForeground()) {
+    if (await _isFushiForeground()) {
       await WindowCaptionChannel.clearTaskbarFlash();
       return;
     }
@@ -536,11 +536,11 @@ class DesktopLookupService extends ChangeNotifier
   /// [windowManager.isFocused]：词典 WebView/原生子窗口拿焦点时，插件可能报告
   /// 主窗未聚焦，但 `GetForegroundWindow` 仍属于当前 Hibiki 进程。此时继续
   /// show/focus 主窗会触发任务栏请求注意态。
-  Future<bool> _isHibikiForeground() async {
+  Future<bool> _isFushiForeground() async {
     if (DesktopForegroundGuard.isForegroundOwnedByCurrentProcess()) {
       return true;
     }
-    if (DesktopForegroundGuard.isForegroundOwnedByHibikiAppFamily()) {
+    if (DesktopForegroundGuard.isForegroundOwnedByFushiAppFamily()) {
       return true;
     }
     return _isWindowFocused();

@@ -12,9 +12,9 @@ import 'package:fushi/src/media/video/video_subtitle_source.dart'
     show buildParsedSubtitleResponse;
 import 'package:fushi/src/media/video/youtube_source_resolver.dart'
     show resolveYoutubeCaptionsForExtension;
-import 'package:fushi/src/sync/hibiki_remote_api_handlers.dart';
-import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
-import 'package:fushi/src/sync/hibiki_sync_server.dart'
+import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
+import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart'
     show SyncServerPortInUseException, isAddressInUseError;
 import 'package:fushi/src/sync/yomitan_term_entries_adapter.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';

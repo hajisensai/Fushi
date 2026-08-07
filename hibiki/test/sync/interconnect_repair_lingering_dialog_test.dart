@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/hibiki_server_controller.dart';
-import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/fushi_server_controller.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/utils.dart';
 
 /// TODO-1330 / BUG-708：公网 PIN 配对被取消 / 从未 confirm 后，host 那个「已允许、常驻

@@ -70,7 +70,7 @@ void main() {
   });
 
   test('BUG-617：控制器审批弹窗对 pinRequired 会话常驻显示 PIN 到 confirm', () {
-    final String controller = File('lib/src/sync/hibiki_server_controller.dart')
+    final String controller = File('lib/src/sync/fushi_server_controller.dart')
         .readAsStringSync()
         .replaceAll('\r\n', '\n');
     // server 的 confirm 到达信号接进控制器（收起常驻 PIN 弹窗）。

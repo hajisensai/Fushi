@@ -21,10 +21,10 @@ void main() {
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<FushiClientUrl>[
+    await repo.setFushiClientUrls(<FushiClientUrl>[
       const FushiClientUrl(url: 'http://192.168.1.10:8384'),
     ]);
-    await repo.setHibikiClientToken('token-a');
+    await repo.setFushiClientToken('token-a');
   });
 
   tearDown(() async => db.close());
@@ -64,7 +64,7 @@ void main() {
     await backend.authenticate(repo: repo);
     expect(probes, 1);
 
-    await repo.setHibikiClientToken('token-b');
+    await repo.setFushiClientToken('token-b');
     await backend.restoreAuth(repo);
     await backend.authenticate(repo: repo);
     expect(probes, 2, reason: '令牌变了必须重探，否则会拿旧凭据打新会话');
@@ -81,7 +81,7 @@ void main() {
     await backend.authenticate(repo: repo);
     expect(probes, 1);
 
-    await repo.setHibikiClientUrls(<FushiClientUrl>[
+    await repo.setFushiClientUrls(<FushiClientUrl>[
       const FushiClientUrl(url: 'http://192.168.1.99:8384'),
     ]);
     await backend.restoreAuth(repo);
@@ -101,7 +101,7 @@ void main() {
     expect(probes, 1);
 
     // 给同一个地址挂上钉扎指纹 = 换了身份。
-    await repo.setHibikiClientUrls(<FushiClientUrl>[
+    await repo.setFushiClientUrls(<FushiClientUrl>[
       const FushiClientUrl(
         url: 'http://192.168.1.10:8384',
         fingerprintSha256: 'aa:bb:cc',
@@ -130,7 +130,7 @@ void main() {
     await backend.authenticate(repo: repo);
     expect(probes, 1);
 
-    await repo.setHibikiClientUrls(<FushiClientUrl>[
+    await repo.setFushiClientUrls(<FushiClientUrl>[
       const FushiClientUrl(
         url: 'http://192.168.1.10:8384',
         deviceName: '书房台式机',
@@ -157,7 +157,7 @@ void main() {
     await backend.restoreAuth(repo);
     final int before = backend.sessionIdentityRevision.value;
 
-    await repo.setHibikiClientUrls(<FushiClientUrl>[
+    await repo.setFushiClientUrls(<FushiClientUrl>[
       const FushiClientUrl(url: 'http://192.168.1.99:8384'),
     ]);
     await backend.restoreAuth(repo);
@@ -174,7 +174,7 @@ void main() {
     await backend.restoreAuth(repo);
     final int before = backend.sessionIdentityRevision.value;
 
-    await repo.setHibikiClientToken('token-b');
+    await repo.setFushiClientToken('token-b');
     await backend.restoreAuth(repo);
 
     expect(backend.sessionIdentityRevision.value, greaterThan(before),
@@ -208,10 +208,10 @@ void main() {
     expect(probes, 1);
 
     await backend.signOut(repo: repo);
-    await repo.setHibikiClientUrls(<FushiClientUrl>[
+    await repo.setFushiClientUrls(<FushiClientUrl>[
       const FushiClientUrl(url: 'http://192.168.1.10:8384'),
     ]);
-    await repo.setHibikiClientToken('token-a');
+    await repo.setFushiClientToken('token-a');
     await backend.restoreAuth(repo);
     await backend.authenticate(repo: repo);
     expect(probes, 2, reason: '登出抹掉会话身份，重新配上同样的地址也要重探一次');

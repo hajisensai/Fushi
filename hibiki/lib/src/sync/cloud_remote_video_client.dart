@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:fushi/src/sync/hibiki_library_host_service.dart'
+import 'package:fushi/src/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteVideoSource;

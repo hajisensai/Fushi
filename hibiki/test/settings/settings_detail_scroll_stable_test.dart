@@ -52,7 +52,7 @@ Future<ScrollController> _pumpSyncDetail(
   await repo.setBackendType(SyncBackendType.hibikiServer);
   // Several URLs → a tall, variable-height URL list, exaggerating the unequal
   // section heights that destabilise a lazy list's extent estimate.
-  await repo.setHibikiClientUrls(<FushiClientUrl>[
+  await repo.setFushiClientUrls(<FushiClientUrl>[
     const FushiClientUrl(url: 'http://192.168.1.10:38765'),
     const FushiClientUrl(url: 'http://192.168.1.11:38765'),
     const FushiClientUrl(url: 'http://192.168.1.12:38765'),

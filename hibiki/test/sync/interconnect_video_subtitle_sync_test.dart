@@ -18,8 +18,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_sidecar.dart';
 import 'package:fushi/src/sync/app_model_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
-import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
@@ -59,10 +59,10 @@ Future<InterconnectSyncBackend> _clientBackend({
 }) async {
   final FushiDatabase db = _memDb();
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<FushiClientUrl>[
+  await repo.setFushiClientUrls(<FushiClientUrl>[
     FushiClientUrl(url: base, enabled: true),
   ]);
-  await repo.setHibikiClientToken(token);
+  await repo.setFushiClientToken(token);
   final InterconnectSyncBackend backend =
       InterconnectSyncBackend.withProbe((String u, String t) async => true);
   await backend.restoreAuth(repo);

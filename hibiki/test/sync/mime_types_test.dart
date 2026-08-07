@@ -9,7 +9,7 @@
 // 本文件：
 // ① BUG-1122 回归——`.webp` 在所有入口都必须推成 image/webp（旧 sync server 副本
 //   缺 webp → 封面按 application/octet-stream 下发，对端 WebView 拒绝内联渲染）；
-//   server HTTP 层回归见 hibiki_sync_server_books_test.dart。
+//   server HTTP 层回归见 fushi_sync_server_books_test.dart。
 // ② 各历史分歧扩展名断言（旧副本间覆盖面差集：aac/wav 只在 anki、字幕/视频只在
 //   server、css/js/字体只在 EPUB……并集后处处一致）。
 // ③ anki 镜像逐项一致守卫——改任一侧表必须同步另一侧。

@@ -25,7 +25,7 @@ import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/youtube_source_resolver.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart'
+import 'package:fushi/src/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 
 import 'test_helpers.dart';

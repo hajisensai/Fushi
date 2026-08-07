@@ -6,8 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/sync/app_model_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
-import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/dashboard_remote_merge.dart';
@@ -191,10 +191,10 @@ void main() {
           FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(clientDb.close);
       final SyncRepository repo = SyncRepository(clientDb);
-      await repo.setHibikiClientUrls(<FushiClientUrl>[
+      await repo.setFushiClientUrls(<FushiClientUrl>[
         FushiClientUrl(url: 'http://127.0.0.1:${server.port}', enabled: true),
       ]);
-      await repo.setHibikiClientToken(token);
+      await repo.setFushiClientToken(token);
       final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
           (String url, String tok) async => true);
       await backend.restoreAuth(repo);

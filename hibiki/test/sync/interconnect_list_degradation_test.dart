@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -58,10 +58,10 @@ void main() {
         FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
     addTearDown(() async => db.close());
     final SyncRepository repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<FushiClientUrl>[
+    await repo.setFushiClientUrls(<FushiClientUrl>[
       FushiClientUrl(url: base, enabled: true),
     ]);
-    await repo.setHibikiClientToken(token);
+    await repo.setFushiClientToken(token);
     final InterconnectSyncBackend backend =
         InterconnectSyncBackend.withProbe((String u, String t) async => true);
     await backend.restoreAuth(repo);

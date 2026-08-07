@@ -1,4 +1,4 @@
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 新首页仪表盘互联数据混排的纯函数层（「继续/活动也走 hibiki 互联」）。

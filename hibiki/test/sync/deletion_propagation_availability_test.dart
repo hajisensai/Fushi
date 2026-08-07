@@ -49,14 +49,14 @@ void main() {
 
     test('互联启用 + 填了对端地址 → 有通道', () async {
       await repo.setInterconnectEnabled(true);
-      await repo.setHibikiClientUrls(
+      await repo.setFushiClientUrls(
           <FushiClientUrl>[FushiClientUrl(url: 'https://192.168.1.7:8443')]);
 
       expect(await hasDeletionPropagationChannel(repo), isTrue);
     });
 
     test('填了对端地址但互联没启用 → 无通道（通道枚举本就不含它）', () async {
-      await repo.setHibikiClientUrls(
+      await repo.setFushiClientUrls(
           <FushiClientUrl>[FushiClientUrl(url: 'https://192.168.1.7:8443')]);
 
       expect(await hasDeletionPropagationChannel(repo), isFalse);

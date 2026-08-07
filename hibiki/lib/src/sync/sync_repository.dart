@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -339,7 +339,7 @@ class SyncRepository {
       case SyncBackendType.hibikiServer:
         // 互联双向：本机连别人（已填对端地址）或别人连本机（开着服务且有已配对
         // 对端——对端会经 `/api/tombstones` 读走本机墓碑）都算通道存在。
-        if ((await getHibikiClientUrls()).isNotEmpty) return true;
+        if ((await getFushiClientUrls()).isNotEmpty) return true;
         return await isServerEnabled() &&
             (await _db.getPairedPeers()).isNotEmpty;
     }
@@ -720,39 +720,39 @@ class SyncRepository {
 
   // ── Hibiki Client (connect to another Hibiki instance) ─────────
 
-  static const _keyHibikiClientUrl = 'sync_hibiki_client_url';
-  static const _keyHibikiClientUrls = 'sync_hibiki_client_urls';
-  static const _keyHibikiClientToken = 'sync_hibiki_client_token';
+  static const _keyFushiClientUrl = 'sync_hibiki_client_url';
+  static const _keyFushiClientUrls = 'sync_hibiki_client_urls';
+  static const _keyFushiClientToken = 'sync_hibiki_client_token';
 
-  /// 旧的单地址 API，仅为向后兼容保留；新代码请用 [getHibikiClientUrls]。
-  @Deprecated('Use getHibikiClientUrls / setHibikiClientUrls')
-  Future<String?> getHibikiClientUrl() => _getStringOrNull(_keyHibikiClientUrl);
-  @Deprecated('Use getHibikiClientUrls / setHibikiClientUrls')
-  Future<void> setHibikiClientUrl(String? v) =>
-      _setOrDelete(_keyHibikiClientUrl, v);
+  /// 旧的单地址 API，仅为向后兼容保留；新代码请用 [getFushiClientUrls]。
+  @Deprecated('Use getFushiClientUrls / setFushiClientUrls')
+  Future<String?> getFushiClientUrl() => _getStringOrNull(_keyFushiClientUrl);
+  @Deprecated('Use getFushiClientUrls / setFushiClientUrls')
+  Future<void> setFushiClientUrl(String? v) =>
+      _setOrDelete(_keyFushiClientUrl, v);
 
   /// 有序候选地址列表（下标即优先级）。新键缺失时，从旧的单地址键迁移种子，
   /// 保证老用户无感。
-  Future<List<FushiClientUrl>> getHibikiClientUrls() async {
-    final raw = await _getStringOrNull(_keyHibikiClientUrls);
+  Future<List<FushiClientUrl>> getFushiClientUrls() async {
+    final raw = await _getStringOrNull(_keyFushiClientUrls);
     if (raw != null) {
       final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
       return list.map(FushiClientUrl.fromJson).toList();
     }
-    final legacy = await _getStringOrNull(_keyHibikiClientUrl);
+    final legacy = await _getStringOrNull(_keyFushiClientUrl);
     if (legacy != null && legacy.isNotEmpty) {
       return <FushiClientUrl>[FushiClientUrl(url: legacy)];
     }
     return const <FushiClientUrl>[];
   }
 
-  Future<void> setHibikiClientUrls(List<FushiClientUrl> urls) async {
+  Future<void> setFushiClientUrls(List<FushiClientUrl> urls) async {
     if (urls.isEmpty) {
-      await _deleteKey(_keyHibikiClientUrls);
+      await _deleteKey(_keyFushiClientUrls);
       return;
     }
     await _setString(
-      _keyHibikiClientUrls,
+      _keyFushiClientUrls,
       jsonEncode(urls.map((FushiClientUrl u) => u.toJson()).toList()),
     );
   }
@@ -767,12 +767,12 @@ class SyncRepository {
   ///   [FushiFingerprintMismatchException]，**绝不覆盖已存指纹**（疑似 MITM）。
   /// - 已存指纹为空（明文老条目）→ 允许首次写入指纹（http 升级为 https 钉扎）。
   /// - 指纹相同 / 本次 [fingerprint] 为 null（明文 http）→ 幂等：仅补 deviceName。
-  Future<List<FushiClientUrl>> addHibikiClientUrl(
+  Future<List<FushiClientUrl>> addFushiClientUrl(
     String url, {
     String? fingerprint,
     String? deviceName,
   }) async {
-    final List<FushiClientUrl> urls = await getHibikiClientUrls();
+    final List<FushiClientUrl> urls = await getFushiClientUrls();
     final int existingIdx = urls.indexWhere((FushiClientUrl u) => u.url == url);
 
     final String? incomingFp =
@@ -806,7 +806,7 @@ class SyncRepository {
       }
       final List<FushiClientUrl> updated = <FushiClientUrl>[...urls];
       updated[existingIdx] = upgraded;
-      await setHibikiClientUrls(updated);
+      await setFushiClientUrls(updated);
       return updated;
     }
 
@@ -818,7 +818,7 @@ class SyncRepository {
         deviceName: deviceName,
       ),
     ];
-    await setHibikiClientUrls(updated);
+    await setFushiClientUrls(updated);
     return updated;
   }
 
@@ -830,17 +830,17 @@ class SyncRepository {
     return norm(a) == norm(b);
   }
 
-  Future<String?> getHibikiClientToken() async {
-    final encoded = await _getStringOrNull(_keyHibikiClientToken);
+  Future<String?> getFushiClientToken() async {
+    final encoded = await _getStringOrNull(_keyFushiClientToken);
     return encoded != null ? _decodeSecret(encoded) : null;
   }
 
-  Future<void> setHibikiClientToken(String? v) async {
+  Future<void> setFushiClientToken(String? v) async {
     if (v == null) {
-      await _deleteKey(_keyHibikiClientToken);
+      await _deleteKey(_keyFushiClientToken);
       return;
     }
-    await _setString(_keyHibikiClientToken, _encodeSecret(v));
+    await _setString(_keyFushiClientToken, _encodeSecret(v));
   }
 
   // ── Device-local key catalog ──────────────────────────────────────
@@ -881,9 +881,9 @@ class SyncRepository {
     _keyDeviceId,
     _keyLanRequiresPin,
     _keyServerTlsEnabled,
-    _keyHibikiClientUrls,
-    _keyHibikiClientToken,
-    _keyHibikiClientUrl,
+    _keyFushiClientUrls,
+    _keyFushiClientToken,
+    _keyFushiClientUrl,
     // 合集同步因果基线：描述「本设备见过共享清单到什么时刻」，跨设备携带会让
     // 新设备把没见过的墓碑误判成旧闻而复活成员（见 getCollectionsSyncBaselineMs）。
     _keyCollectionsBaselineMs,

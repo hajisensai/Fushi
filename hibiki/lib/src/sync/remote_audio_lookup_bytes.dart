@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/utils/misc/audio_mime.dart';
 
 /// TODO-1335 ②：把 `resolveLookupAudioUrl` 解析出的单词音频 URL/路径归一成字节 +

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
 
 /// 守卫：断点 prefs 键「三件套」抽成 [PositionPrefKeys] 生成器后，**键字符串必须
 /// 逐字节不变**——这些键落在用户 Drift `preferences` 表里，是持久化契约；任何

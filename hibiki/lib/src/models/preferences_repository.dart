@@ -1554,10 +1554,10 @@ class PreferencesRepository extends ChangeNotifier {
     final List<AudioSourceConfig> result = <AudioSourceConfig>[...sources];
 
     // hibikiRemote 恒在列首（缺则补），历史行为不变。
-    final bool hasHibikiRemote = result.any(
+    final bool hasFushiRemote = result.any(
       (AudioSourceConfig source) => source.kind == AudioSourceKind.hibikiRemote,
     );
-    if (!hasHibikiRemote) {
+    if (!hasFushiRemote) {
       result.insert(0, AudioSourceConfig.hibikiRemote());
     }
 
