@@ -188,7 +188,7 @@ void main() {
         target: target,
         closeResources: () async {},
         commitLocation: (DataRootMigrationTarget t) async => committed = t,
-        documentsTopLevelIncludeNames: AppPaths.hibikiOwnedDocumentsEntries,
+        documentsTopLevelIncludeNames: AppPaths.fushiOwnedDocumentsEntries,
       ));
 
       // 与全新安装逐字节同形。
@@ -260,7 +260,7 @@ void main() {
             newDocumentsRoot: defaultDocsRoot,
             // 默认位置：support 根不变。
             newSupportRoot: platformSupport.path,
-            documentsScopeEntries: AppPaths.hibikiOwnedDocumentsEntries,
+            documentsScopeEntries: AppPaths.fushiOwnedDocumentsEntries,
           );
 
       await runOnce();

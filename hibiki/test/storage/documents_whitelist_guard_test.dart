@@ -6,7 +6,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 import '../helpers/scan_scale.dart';
 
 /// TODO-1226 守卫：documents 根顶层派生点 ↔ 迁移白名单
-/// [AppPaths.hibikiOwnedDocumentsEntries] 一致性。
+/// [AppPaths.fushiOwnedDocumentsEntries] 一致性。
 ///
 /// 默认数据根时 documents 根 = 共享用户 `Documents`，数据根迁移引擎只搬白名单命中的
 /// 顶层项。若有人新增 `<documents>/<child>` 派生点而忘了收进白名单，那个子目录会在
@@ -59,7 +59,7 @@ void main() {
       }
       final Set<String> notWhitelisted = found
           .where((String name) =>
-              !AppPaths.hibikiOwnedDocumentsEntries.contains(name))
+              !AppPaths.fushiOwnedDocumentsEntries.contains(name))
           .toSet();
       if (notWhitelisted.isNotEmpty) {
         missing[f.path] = notWhitelisted;
@@ -69,15 +69,15 @@ void main() {
     expect(
       missing,
       isEmpty,
-      reason: '发现未收进 AppPaths.hibikiOwnedDocumentsEntries 的 documents 根顶层'
+      reason: '发现未收进 AppPaths.fushiOwnedDocumentsEntries 的 documents 根顶层'
           '派生点（数据根迁移会把它们留在旧位置）。请把这些子目录名加进白名单，或改用'
           '已白名单的目录：$missing',
     );
   });
 
   test('白名单项是合法的顶层基名（非空、不含路径分隔符）', () {
-    expect(AppPaths.hibikiOwnedDocumentsEntries, isNotEmpty);
-    for (final String name in AppPaths.hibikiOwnedDocumentsEntries) {
+    expect(AppPaths.fushiOwnedDocumentsEntries, isNotEmpty);
+    for (final String name in AppPaths.fushiOwnedDocumentsEntries) {
       expect(name.trim(), equals(name));
       expect(name, isNotEmpty);
       expect(name.contains('/'), isFalse, reason: name);
@@ -93,10 +93,10 @@ void main() {
     expect(wiring.existsSync(), isTrue);
     final String src = wiring.readAsStringSync();
     expect(
-      src.contains('hibikiOwnedDocumentsEntries'),
+      src.contains('fushiOwnedDocumentsEntries'),
       isTrue,
       reason: '数据根迁移 UI 必须在默认根（共享 Documents）时把 '
-          'AppPaths.hibikiOwnedDocumentsEntries 传给 DataRootMigrationRequest.'
+          'AppPaths.fushiOwnedDocumentsEntries 传给 DataRootMigrationRequest.'
           'documentsTopLevelIncludeNames，否则会整树搬移用户 Documents（TODO-1226）。',
     );
   });

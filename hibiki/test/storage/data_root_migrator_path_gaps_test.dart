@@ -297,7 +297,7 @@ void main() {
       closeResources: () async {},
       commitLocation: (DataRootMigrationTarget t) async =>
           prefWrites.add(t.dataRootPrefValue!),
-      documentsTopLevelIncludeNames: AppPaths.hibikiOwnedDocumentsEntries,
+      documentsTopLevelIncludeNames: AppPaths.fushiOwnedDocumentsEntries,
     ));
     expect(prefWrites, equals(<String>[newDataRoot]));
     expectRebasedOnto(await snapshot(newSupport.path), newDocs.path);
@@ -348,7 +348,7 @@ void main() {
       target: DataRootMigrationTarget.customRoot(newDataRoot),
       closeResources: () async {},
       commitLocation: (DataRootMigrationTarget t) async {},
-      documentsTopLevelIncludeNames: AppPaths.hibikiOwnedDocumentsEntries,
+      documentsTopLevelIncludeNames: AppPaths.fushiOwnedDocumentsEntries,
     ));
 
     // 真正走一次 applyProfile（= 用户切 Profile），再看 live prefs 有没有被写回旧根。
@@ -396,7 +396,7 @@ void main() {
           oldDocumentsRoot: oldDocs.path,
           newDocumentsRoot: newDocs,
           newSupportRoot: oldSupport.path,
-          documentsScopeEntries: AppPaths.hibikiOwnedDocumentsEntries,
+          documentsScopeEntries: AppPaths.fushiOwnedDocumentsEntries,
         );
 
     await runOnce();
@@ -422,7 +422,7 @@ void main() {
     const DocumentsPathRebaser rebaser = DocumentsPathRebaser(
       oldRoot: '/home/u/Documents',
       newRoot: '/home/u/Documents/Hibiki/data',
-      scopeTopLevelNames: AppPaths.hibikiOwnedDocumentsEntries,
+      scopeTopLevelNames: AppPaths.fushiOwnedDocumentsEntries,
     );
     expect(rebaser.rebase('/home/u/Documents/audiobooks/a.mp3'),
         equals('/home/u/Documents/Hibiki/data/audiobooks/a.mp3'));
@@ -465,7 +465,7 @@ void main() {
           oldDocumentsRoot: oldDocs.path,
           newDocumentsRoot: p.join(tmp.path, 'newroot', 'documents'),
           newSupportRoot: oldSupport.path,
-          documentsScopeEntries: AppPaths.hibikiOwnedDocumentsEntries,
+          documentsScopeEntries: AppPaths.fushiOwnedDocumentsEntries,
         ),
         throwsA(isA<StateError>()),
       );
@@ -481,7 +481,7 @@ void main() {
     const DocumentsPathRebaser rebaser = DocumentsPathRebaser(
       oldRoot: '/home/u/Documents',
       newRoot: '/home/u/Documents/Hibiki/data',
-      scopeTopLevelNames: AppPaths.hibikiOwnedDocumentsEntries,
+      scopeTopLevelNames: AppPaths.fushiOwnedDocumentsEntries,
     );
     for (final String key in <String>[
       'theme_mode',

@@ -6,16 +6,6 @@ import 'package:path_provider/path_provider.dart';
 
 class DesktopDirectoryService implements PlatformDirectoryService {
   @override
-  Future<String> getHibikiExportDirectory() async {
-    final docs = await getApplicationDocumentsDirectory();
-    final hibikiDir = Directory(p.join(docs.path, 'Hibiki'));
-    if (!hibikiDir.existsSync()) {
-      hibikiDir.createSync(recursive: true);
-    }
-    return hibikiDir.path;
-  }
-
-  @override
   Future<List<String>> getExternalStorageDirectories() async => [];
 
   @override

@@ -6,18 +6,6 @@ import 'package:path/path.dart' as p;
 
 class AndroidDirectoryService implements PlatformDirectoryService {
   @override
-  Future<String> getHibikiExportDirectory() async {
-    final dcim = await ExternalPath.getExternalStoragePublicDirectory(
-      ExternalPath.DIRECTORY_DCIM,
-    );
-    final hibikiDir = Directory(p.join(dcim, 'hibiki'));
-    if (!hibikiDir.existsSync()) {
-      hibikiDir.createSync(recursive: true);
-    }
-    return hibikiDir.path;
-  }
-
-  @override
   Future<List<String>> getExternalStorageDirectories() async {
     return await ExternalPath.getExternalStorageDirectories() ?? const [];
   }

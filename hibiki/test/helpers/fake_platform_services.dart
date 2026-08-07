@@ -7,11 +7,6 @@ import 'package:fushi_platform/fushi_platform.dart';
 // Defaults mirror the old _Stub* behaviour: no I/O, no platform channels.
 
 class FakeDirectoryService implements PlatformDirectoryService {
-  String exportDir = '/tmp/hibiki-test';
-
-  @override
-  Future<String> getHibikiExportDirectory() async => exportDir;
-
   @override
   Future<List<String>> getExternalStorageDirectories() async => const [];
 

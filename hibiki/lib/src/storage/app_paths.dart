@@ -137,10 +137,10 @@ class AppPaths {
 
   /// [documentsLayoutNested] 下平台 Documents 到 documents 根的相对路径段。
   ///
-  /// 为什么是 `Hibiki/data` 而不是 `Hibiki`：`<Documents>/Hibiki` 已经是**用户可见导出
-  /// 目录**（`DesktopDirectoryService.getHibikiExportDirectory` /
-  /// `IosDirectoryService`，卡片导出物落点，刻意不随数据根走）。数据根取它下面的
-  /// `data/`，用户文档根下只多出一个 `Hibiki/` 伞，内部数据与导出物各占一层、互不淹没。
+  /// 为什么是 `Hibiki/data` 而不是 `Hibiki`：`<Documents>/Hibiki` 历史上是**用户可见
+  /// 导出目录**（旧 `getHibikiExportDirectory` 服务链，W2-4 已删除该死代码——导出实际
+  /// 一直走 appDirectory 下的 fallback 目录）。数据根取它下面的 `data/`，用户文档根下
+  /// 只多出一个容器伞，内部数据与导出物各占一层、互不淹没。
   /// Fushi 改名（Phase 3）：新装容器名 `Fushi`；存量 nested 安装的目录还叫
   /// `Hibiki`，由 [documentsContainerPrefKey] 锚点冻结（同 flat/nested 锚点
   /// 哲学：存量布局一经判定永不漂移，改名不搬书库——DB 里的绝对路径都指着它）。
@@ -265,7 +265,7 @@ class AppPaths {
 
   /// BUG-1115：无自定义数据根时的 documents 根。
   ///
-  /// 历史上这里直接返回平台 `Documents`，于是 [hibikiOwnedDocumentsEntries] 那 16 个目录
+  /// 历史上这里直接返回平台 `Documents`，于是 [fushiOwnedDocumentsEntries] 那 16 个目录
   /// 全摊在用户文档根下（TODO-935 E0 收敛十几处 `getApplicationDocumentsDirectory()` 时
   /// 刻意保持零迁移，把「默认根 = 共享用户目录」固化成了常态）。现在默认改为 Hibiki 专属
   /// 容器 `<Documents>/Hibiki/data`；**老安装保持扁平布局不动**（见
@@ -460,7 +460,11 @@ class AppPaths {
   ///    `join(appDirectory, 'videos')`）。
   ///  - `custom_fonts` —— 字体导入/加载（`custom_fonts_page.dart` 等
   ///    `join(appDirectory, 'custom_fonts')`）。
-  ///  - `hibikiExport` —— `AppModel.prepareFallbackHibikiDirectory`。
+  ///  - `fushiExport` —— `AppModel.prepareExportDirectory`（`export_directory.dart`）。
+  ///  - `hibikiExport` —— 上一条的存量旧名。启动准备目录时就地改名 `fushiExport`
+  ///    （W2-4），但改名可能因句柄占用等失败而留在旧名——数据根搬迁必须继续认它，
+  ///    否则旧目录会被留在旧位置（数据分家）。无派生点是有意的（守卫单向：派生点
+  ///    必须进白名单，白名单允许含仅存量的旧名）。
   ///  - `browser` / `thumbnails` / `dictionaryResources` /
   ///    `dictionaryImportWorkingDirectory` / `webArchive` ——
   ///    `AppModel` 运行时目录系列派生。
@@ -472,7 +476,7 @@ class AppPaths {
   ///
   /// 守卫测试 `test/storage/documents_whitelist_guard_test.dart` 扫描源码派生点，
   /// 新增 `<documents>/<child>` 派生而漏加这里会红。
-  static const Set<String> hibikiOwnedDocumentsEntries = <String>{
+  static const Set<String> fushiOwnedDocumentsEntries = <String>{
     'audiobooks',
     'hoshi_books',
     'video_covers',
@@ -483,6 +487,7 @@ class AppPaths {
     'videos',
     'anime_downloads',
     'custom_fonts',
+    'fushiExport',
     'hibikiExport',
     'browser',
     'thumbnails',
@@ -496,7 +501,7 @@ class AppPaths {
   ///
   /// 一般规则是「新数据根不能位于旧数据目录内部」（自我嵌套 → 边搬边把目标搬进自己）。
   /// 但共享根是个例外：那里的迁移是**白名单选择性搬移**——只有
-  /// [hibikiOwnedDocumentsEntries] 里的顶层项会被搬走，别的顶层项一律不碰。所以只要新根
+  /// [fushiOwnedDocumentsEntries] 里的顶层项会被搬走，别的顶层项一律不碰。所以只要新根
   /// 的顶层段不是白名单里的名字，它在搬移中就是个旁观者，`Documents\Hibiki` 这种「把散
   /// 落的 16 个目录收进一个自己的子目录」的迁移是安全的，不该被一刀切拒绝。
   ///
@@ -509,7 +514,7 @@ class AppPaths {
   static bool isSafeNestedTargetInSharedDocuments({
     required String sharedDocumentsRoot,
     required String newDataRoot,
-    Set<String> ownedEntries = hibikiOwnedDocumentsEntries,
+    Set<String> ownedEntries = fushiOwnedDocumentsEntries,
   }) {
     final String canonRoot = p.canonicalize(sharedDocumentsRoot);
     final String canonNew = p.canonicalize(newDataRoot);

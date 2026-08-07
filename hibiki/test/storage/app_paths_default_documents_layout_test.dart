@@ -10,7 +10,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 /// BUG-1115 单测：**默认**（未配置自定义数据根）documents 根的布局判定。
 ///
 /// 历史行为是 documents 根 = 平台 `Documents` **本身**，于是
-/// [AppPaths.hibikiOwnedDocumentsEntries] 那 16 个目录全摊在用户文档根下。现在：
+/// [AppPaths.fushiOwnedDocumentsEntries] 那 16 个目录全摊在用户文档根下。现在：
 ///  - 全新安装 → `<Documents>/Hibiki/data`（Hibiki 专属容器）；
 ///  - 老安装（support 根下已有 `hibiki.db`）→ 仍是扁平的平台 `Documents`，零迁移；
 ///  - 判定结果**一次性固化**进 SharedPreferences，之后不再探测——布局在同一台机器上
@@ -181,7 +181,7 @@ void main() {
     });
 
     test('白名单顶层项本身不是安全目标（会被搬走 → 目标边搬边消失）', () {
-      for (final String owned in AppPaths.hibikiOwnedDocumentsEntries) {
+      for (final String owned in AppPaths.fushiOwnedDocumentsEntries) {
         expect(
           AppPaths.isSafeNestedTargetInSharedDocuments(
             sharedDocumentsRoot: platformDocuments.path,

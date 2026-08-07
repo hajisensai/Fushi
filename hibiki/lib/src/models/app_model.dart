@@ -24,6 +24,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/export_directory.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
@@ -1990,39 +1991,20 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  /// Return the app external directory found in the public DCIM directory.
-  /// This path also initialises the folder if it does not exist, and includes
+  /// Return the export directory under the internal app directory. This also
+  /// initialises the folder if it does not exist (migrating the legacy
+  /// `hibikiExport` name in place, see `export_directory.dart`), and includes
   /// a .nomedia file within the folder.
-  Future<Directory> prepareHibikiDirectory() async {
-    try {
-      final String dirPath =
-          await platformServices.directory.getHibikiExportDirectory();
-      final Directory hibikiDirectory = Directory(dirPath);
-      await platformServices.directory
-          .excludeFromMediaScanner(hibikiDirectory.path);
-      return hibikiDirectory;
-    } catch (e, stack) {
-      ErrorLogService.instance.log('AppModel.prepareHibikiDirectory', e, stack);
-      debugPrint('DCIM unavailable, using fallback directory.');
-      return prepareFallbackHibikiDirectory();
-    }
-  }
-
-  /// Return the app external directory found in the internal app directory.
-  /// This path also initialises the folder if it does not exist, and includes
-  /// a .nomedia file within the folder.
-  Future<Directory> prepareFallbackHibikiDirectory() async {
-    String directoryPath = path.join(appDirectory.path, 'hibikiExport');
-
-    Directory hibikiDirectory = Directory(directoryPath);
-
-    if (!hibikiDirectory.existsSync()) {
-      hibikiDirectory.createSync(recursive: true);
-    }
+  Future<Directory> prepareExportDirectory() async {
+    final Directory exportDirectory = prepareExportDirectoryAt(
+      appDirectory.path,
+      onMigrationError: (Object e, StackTrace stack) => ErrorLogService.instance
+          .log('AppModel.prepareExportDirectory.renameLegacy', e, stack),
+    );
     await platformServices.directory
-        .excludeFromMediaScanner(hibikiDirectory.path);
+        .excludeFromMediaScanner(exportDirectory.path);
 
-    return hibikiDirectory;
+    return exportDirectory;
   }
 
   /// Preloads the app icon so that there is no pop-in.
@@ -2204,7 +2186,7 @@ class AppModel with ChangeNotifier {
           dictionaryResourceDirectory.create(recursive: true),
           refreshSystemPalette(),
           () async {
-            _exportDirectory = await prepareFallbackHibikiDirectory();
+            _exportDirectory = await prepareExportDirectory();
             _alternateExportDirectory = _exportDirectory;
           }(),
         ]),
@@ -2521,7 +2503,7 @@ class AppModel with ChangeNotifier {
           Directory(path.join(appDirectory.path, 'dictionaryResources'));
       _dictionaryImportWorkingDirectory = Directory(
           path.join(appDirectory.path, 'dictionaryImportWorkingDirectory'));
-      _exportDirectory = await prepareFallbackHibikiDirectory();
+      _exportDirectory = await prepareExportDirectory();
       _alternateExportDirectory = _exportDirectory;
       _webArchiveDirectory =
           Directory(path.join(appDirectory.path, 'webArchive'));

@@ -134,6 +134,18 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     },
   ),
   _ForbiddenPattern(
+    // W2-4：导出目录已是 fushiExport（export_directory.dart），存量旧目录由
+    // prepareExportDirectoryAt 启动就地改名。
+    name: 'hibikiExport',
+    regex: RegExp('hibikiExport', caseSensitive: false),
+    allowed: <String, String>{
+      'lib/src/storage/export_directory.dart':
+          'kLegacyExportDirectoryName：启动就地改名迁移的旧目录名输入。',
+      'lib/src/storage/app_paths.dart': '数据根搬迁白名单的双名条目：改名失败留在旧名的存量目录仍须随迁移'
+          '搬走，否则数据分家。',
+    },
+  ),
+  _ForbiddenPattern(
     // Phase 3：Windows 单实例互斥体已是 FushiSingleInstanceMutex。
     name: 'HibikiSingleInstanceMutex',
     regex: RegExp('HibikiSingleInstanceMutex'),

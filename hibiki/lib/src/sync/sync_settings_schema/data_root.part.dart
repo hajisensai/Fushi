@@ -266,7 +266,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
         // TODO-1226：默认根 = 共享用户 Documents → 只搬 Hibiki 自有顶层项白名单，
         // 且迁移引擎绝不删除 Documents 本体；自定义专属根（<root>/documents）→ 整树。
         documentsTopLevelIncludeNames:
-            sharedDocumentsRoot ? AppPaths.hibikiOwnedDocumentsEntries : null,
+            sharedDocumentsRoot ? AppPaths.fushiOwnedDocumentsEntries : null,
       );
       await const DataRootMigrator().migrate(req);
 

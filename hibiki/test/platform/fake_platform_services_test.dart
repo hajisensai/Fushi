@@ -62,11 +62,6 @@ void main() {
   });
 
   group('FakeDirectoryService', () {
-    test('getHibikiExportDirectory returns exportDir', () async {
-      final svc = FakeDirectoryService()..exportDir = '/custom/path';
-      expect(await svc.getHibikiExportDirectory(), equals('/custom/path'));
-    });
-
     test('getExternalStorageDirectories returns empty by default', () async {
       expect(
         await FakeDirectoryService().getExternalStorageDirectories(),
