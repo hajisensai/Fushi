@@ -152,13 +152,12 @@ const List<String> kAndroidReleaseAbis = <String>[
 /// 由其自带 assets 清单，见 `update_checker_release.dart` 的 `buildReleaseFromManifest`，TODO-705）。
 List<String> synthesizeStableAssetNames(String version) {
   final List<String> names = <String>[
-    // 终态全 fushi（2026-08-07 用户拍板）。macOS 已切；Windows/Android 走
-    // 「更新桥」：各发一个仍以 hibiki-* 资产名发布、但本函数已合成 fushi-* 的
-    // 最后旧名版本（改名迁移计划 Phase 5），老包沿旧名升到桥、桥再升到 fushi。
-    // 在桥版本发布前，这两行必须与 CI 实际产物名一致，否则当前包 stable 更新 404。
-    'hibiki-$version-windows-setup.exe',
+    // 本分支就是「更新桥」版本（改名迁移计划 Phase 5）：以 hibiki-* 资产名发布
+    // （老包沿旧名升上来），但本函数合成 fushi-*——桥装上后，后续 stable 更新
+    // 直接指向 Fushi 的产物名。debug 通道走 manifest 自带 assets 清单，不经此函数。
+    'fushi-$version-windows-setup.exe',
     'fushi-$version-macos.zip',
-    for (final String abi in kAndroidReleaseAbis) 'hibiki-$version-$abi.apk',
+    for (final String abi in kAndroidReleaseAbis) 'fushi-$version-$abi.apk',
   ];
   return List<String>.unmodifiable(names);
 }

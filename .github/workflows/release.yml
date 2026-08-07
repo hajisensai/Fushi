@@ -278,16 +278,18 @@ jobs:
     - name: Decode keystore
       if: steps.channel.outputs.needs_release_keystore == 'true'
       run: |
-        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > hibiki/android/hibiki-release.jks
+        # 更新桥分支：主仓 KEYSTORE_* secrets 已轮换为 Fushi 新签名；本分支产物必须
+        # 沿用旧 Hibiki 签名（否则存量安装无法原地升级），故读 LEGACY_* secrets。
+        echo "${{ secrets.LEGACY_KEYSTORE_BASE64 }}" | base64 -d > hibiki/android/hibiki-release.jks
 
     - name: Create key.properties
       if: steps.channel.outputs.needs_release_keystore == 'true'
       working-directory: hibiki/android
       run: |
         cat > key.properties <<EOF
-        storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-        keyPassword=${{ secrets.KEY_PASSWORD }}
-        keyAlias=${{ secrets.KEY_ALIAS }}
+        storePassword=${{ secrets.LEGACY_KEYSTORE_PASSWORD }}
+        keyPassword=${{ secrets.LEGACY_KEY_PASSWORD }}
+        keyAlias=${{ secrets.LEGACY_KEY_ALIAS }}
         storeFile=hibiki-release.jks
         EOF
 
