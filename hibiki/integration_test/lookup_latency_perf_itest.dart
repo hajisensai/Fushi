@@ -67,9 +67,9 @@ void main() {
           '(real=$realDicts)');
 
       await appModel.database
-          .setPref('src:reader_ttu:ttu_view_mode', 'pagination');
+          .setPref('src:reader_fushi:view_mode', 'pagination');
       await appModel.database
-          .setPref('src:reader_ttu:ttu_writing_mode', 'horizontal-tb');
+          .setPref('src:reader_fushi:writing_mode', 'horizontal-tb');
       await ReaderHibikiSource.readerSettings?.refreshFromDb();
 
       final String bookKey = await EpubImporter.import(

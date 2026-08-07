@@ -10,7 +10,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 /// BUG-1115 单测：**默认**（未配置自定义数据根）documents 根的布局判定。
 ///
 /// 历史行为是 documents 根 = 平台 `Documents` **本身**，于是
-/// [AppPaths.hibikiOwnedDocumentsEntries] 那 16 个目录全摊在用户文档根下。现在：
+/// [AppPaths.fushiOwnedDocumentsEntries] 那 16 个目录全摊在用户文档根下。现在：
 ///  - 全新安装 → `<Documents>/Hibiki/data`（Hibiki 专属容器）；
 ///  - 老安装（support 根下已有 `hibiki.db`）→ 仍是扁平的平台 `Documents`，零迁移；
 ///  - 判定结果**一次性固化**进 SharedPreferences，之后不再探测——布局在同一台机器上
@@ -83,7 +83,7 @@ void main() {
       expect((await AppPaths.audiobooksDirectory()).path,
           equals(p.join(nested(), 'audiobooks')));
       expect((await AppPaths.epubBooksDirectory()).path,
-          isNot(equals(p.join(platformDocuments.path, 'hoshi_books'))));
+          isNot(equals(p.join(platformDocuments.path, 'fushi_books'))));
     });
 
     test('老安装（support 下有 hibiki.db）→ 保持扁平布局，一个字节都不搬', () async {
@@ -96,7 +96,7 @@ void main() {
       expect((await AppPaths.audiobooksDirectory()).path,
           equals(p.join(platformDocuments.path, 'audiobooks')));
       expect((await AppPaths.epubBooksDirectory()).path,
-          equals(p.join(platformDocuments.path, 'hoshi_books')));
+          equals(p.join(platformDocuments.path, 'fushi_books')));
     });
 
     test('判定结果固化进 prefs（新装写 nested）', () async {
@@ -181,7 +181,7 @@ void main() {
     });
 
     test('白名单顶层项本身不是安全目标（会被搬走 → 目标边搬边消失）', () {
-      for (final String owned in AppPaths.hibikiOwnedDocumentsEntries) {
+      for (final String owned in AppPaths.fushiOwnedDocumentsEntries) {
         expect(
           AppPaths.isSafeNestedTargetInSharedDocuments(
             sharedDocumentsRoot: platformDocuments.path,
@@ -237,7 +237,7 @@ void main() {
         AppPaths.isSafeNestedTargetInSharedDocuments(
           sharedDocumentsRoot: platformDocuments.path,
           newDataRoot: p.join(platformDocuments.path, 'audiobooks'),
-          ownedEntries: const <String>{'hoshi_books'},
+          ownedEntries: const <String>{'fushi_books'},
         ),
         isTrue,
       );

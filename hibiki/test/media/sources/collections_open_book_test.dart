@@ -21,7 +21,7 @@ void main() {
           title: 'MyBook',
           format: format,
         );
-        expect(opened.mediaIdentifier, 'hoshi://book/MyBook',
+        expect(opened.mediaIdentifier, 'fushi://book/MyBook',
             reason: '身份是 bookKey，转化前后必须一致（$format）');
         expect(opened.title, 'MyBook');
       }

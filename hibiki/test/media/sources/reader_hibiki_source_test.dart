@@ -87,7 +87,7 @@ void main() {
     });
 
     test('非外部 scheme / 无法解析 → 不外开', () {
-      expect(ReaderHibikiSource.isExternalUrl('hoshi://book/foo'), isFalse);
+      expect(ReaderHibikiSource.isExternalUrl('fushi://book/foo'), isFalse);
       expect(ReaderHibikiSource.isExternalUrl('about:blank'), isFalse);
       expect(ReaderHibikiSource.isExternalUrl('://broken'), isFalse);
     });
@@ -214,7 +214,7 @@ void main() {
 
       // Switching to Profile B (no custom shortcuts): applyProfile deletes the
       // pref row that is absent from the new profile.
-      await db.deletePref('src:reader_ttu:shortcut_bindings_json');
+      await db.deletePref('src:reader_fushi:shortcut_bindings_json');
       await source.refreshPreferencesFromDb();
 
       // The stale Profile A value must not survive in the in-memory cache.
@@ -290,7 +290,7 @@ void main() {
 
       // 模拟切到 Profile B(自动阅读=开)：applyProfile 写穿 DB，refreshPrefCache
       // 重载每个 source 的 _preferences。
-      await db.setPref('src:reader_ttu:auto_read_on_lookup', 'true');
+      await db.setPref('src:reader_fushi:auto_read_on_lookup', 'true');
       await source.refreshPreferencesFromDb();
       expect(source.autoReadOnLookup, isTrue);
     });
@@ -311,7 +311,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
       expect(source.autoReadOnLookup, isFalse);
       expect(
-        await db.getPref('src:reader_ttu:auto_read_on_lookup'),
+        await db.getPref('src:reader_fushi:auto_read_on_lookup'),
         'b:false',
       );
 
@@ -320,7 +320,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
       expect(source.autoReadOnLookup, isTrue);
       expect(
-        await db.getPref('src:reader_ttu:auto_read_on_lookup'),
+        await db.getPref('src:reader_fushi:auto_read_on_lookup'),
         'b:true',
       );
     });
@@ -388,7 +388,7 @@ void main() {
       await source.setHoverAutoLookup(value: true);
       expect(source.hoverAutoLookup, isTrue);
       expect(
-        await db.getPref('src:reader_ttu:hover_auto_lookup'),
+        await db.getPref('src:reader_fushi:hover_auto_lookup'),
         'b:true',
       );
 
@@ -396,7 +396,7 @@ void main() {
       await source.setHoverAutoLookup(value: false);
       expect(source.hoverAutoLookup, isFalse);
       expect(
-        await db.getPref('src:reader_ttu:hover_auto_lookup'),
+        await db.getPref('src:reader_fushi:hover_auto_lookup'),
         'b:false',
       );
     });
@@ -411,7 +411,7 @@ void main() {
       expect(source.hoverAutoLookup, isFalse);
 
       // Simulate switching to a profile that enabled hover-auto.
-      await db.setPref('src:reader_ttu:hover_auto_lookup', 'b:true');
+      await db.setPref('src:reader_fushi:hover_auto_lookup', 'b:true');
       await source.refreshPreferencesFromDb();
       expect(source.hoverAutoLookup, isTrue);
     });
@@ -443,7 +443,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(source.invertAudiobookSkipDirection, isTrue);
       expect(
-        await db.getPref('src:reader_ttu:invert_audiobook_skip_direction'),
+        await db.getPref('src:reader_fushi:invert_audiobook_skip_direction'),
         'b:true',
       );
     });
@@ -474,7 +474,7 @@ void main() {
       // 编码（'true'），而 source.setPreference 会用 PrefCodec.encode（'b:true'）。
       // 两路径共用同一 DB key，但编码不同——'true' 坐实走了 per-reader 分层。
       expect(
-        await db.getPref('src:reader_ttu:invert_audiobook_skip_direction'),
+        await db.getPref('src:reader_fushi:invert_audiobook_skip_direction'),
         'true',
       );
     });
@@ -864,9 +864,9 @@ void main() {
       expect(ReaderHibikiSource.parseBookKey('srt_abc'), isNull);
       expect(ReaderHibikiSource.parseBookKey('about:blank'), isNull);
       expect(ReaderHibikiSource.parseBookKey(''), isNull);
-      expect(ReaderHibikiSource.parseBookKey('hoshi://book/'), isNull,
+      expect(ReaderHibikiSource.parseBookKey('fushi://book/'), isNull,
           reason: 'empty remainder is not a valid key');
-      expect(ReaderHibikiSource.parseBookKey('hoshi://video/x'), isNull);
+      expect(ReaderHibikiSource.parseBookKey('fushi://video/x'), isNull);
     });
 
     test(

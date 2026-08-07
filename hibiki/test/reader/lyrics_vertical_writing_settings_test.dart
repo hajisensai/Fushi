@@ -52,8 +52,9 @@ void main() {
     await ReaderHibikiSource.instance.setLyricsVerticalWriting(true);
 
     final Map<String, String> prefs = await db.getAllPrefs();
-    expect(prefs.containsKey('src:reader_ttu:lyrics_vertical_writing'), isTrue);
+    expect(
+        prefs.containsKey('src:reader_fushi:lyrics_vertical_writing'), isTrue);
     // ttu_writing_mode must NOT be written by the lyrics toggle.
-    expect(prefs.containsKey('src:reader_ttu:ttu_writing_mode'), isFalse);
+    expect(prefs.containsKey('src:reader_fushi:writing_mode'), isFalse);
   });
 }

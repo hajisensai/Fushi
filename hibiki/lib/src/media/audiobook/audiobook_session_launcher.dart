@@ -63,7 +63,7 @@ class AudiobookSessionLauncher {
         // 编辑对话框改名后媒体通知同步显示新名；无 override 回退 DB 原名。
         title: ReaderHibikiSource.instance.overrideTitleForBookKey(bookKey) ??
             title,
-        mediaIdentifier: 'hoshi://book/$bookKey',
+        mediaIdentifier: 'fushi://book/$bookKey',
         isSrtBookSource: false,
         author: author,
         coverPath: coverPath,
@@ -110,7 +110,7 @@ class AudiobookSessionLauncher {
         bookKey: key,
         audiobook: synthetic,
         title: overrideTitle ?? srtBook.title,
-        mediaIdentifier: 'hoshi://book/'
+        mediaIdentifier: 'fushi://book/'
             '${srtBook.bookKey.isNotEmpty ? srtBook.bookKey : key}',
         isSrtBookSource: true,
         author: srtBook.author,

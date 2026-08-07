@@ -11,7 +11,7 @@ Future<FushiDatabase> _openDb() async {
 
 void main() {
   group('ReaderPositions table', () {
-    test('upsert and retrieve by ttuBookId', () async {
+    test('upsert and retrieve by bookKey', () async {
       final db = await _openDb();
       final now = DateTime.now().millisecondsSinceEpoch;
 

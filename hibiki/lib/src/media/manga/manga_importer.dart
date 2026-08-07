@@ -61,7 +61,7 @@ bool _isMangaImageFile(String path) =>
 ///
 /// 落库列映射（与 PDF 同语义）：
 /// - `epubPath` = `manga.json`（书目录内页/框结构文件名，阅读器 `extractDir/epubPath` 还原）。
-/// - `extractDir` = 书目录（`<hoshi_books>/<bookKey>/`）。
+/// - `extractDir` = 书目录（`<fushi_books>/<bookKey>/`）。
 /// - `coverPath` = 第一页页图的相对路径（`images/...`，书架封面复用同一解析）。
 /// - `chapterCount` = 页数；`chaptersJson = '[]'`。
 /// - `mangaReadingMode` = null（导入时留空 = 跟随阅读器按页图长宽比自动判定）。

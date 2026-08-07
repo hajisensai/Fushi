@@ -119,7 +119,7 @@ class WindowsInstallerDiagnostics {
     this.currentInstallDir,
     this.targetInstallDir,
     this.detectedInstallLocations = const <WindowsDetectedInstallLocation>[],
-    this.runningHibikiProcesses = const <WindowsProcessInfo>[],
+    this.runningFushiProcesses = const <WindowsProcessInfo>[],
     this.libmpvModuleHolders = const <WindowsProcessInfo>[],
     this.innoLogDeleteFileFailures = const <WindowsInnoDeleteFileFailure>[],
     this.pathMismatchWarning,
@@ -129,7 +129,7 @@ class WindowsInstallerDiagnostics {
   final String? currentInstallDir;
   final String? targetInstallDir;
   final List<WindowsDetectedInstallLocation> detectedInstallLocations;
-  final List<WindowsProcessInfo> runningHibikiProcesses;
+  final List<WindowsProcessInfo> runningFushiProcesses;
   final List<WindowsProcessInfo> libmpvModuleHolders;
   final List<WindowsInnoDeleteFileFailure> innoLogDeleteFileFailures;
   final String? pathMismatchWarning;
@@ -148,7 +148,7 @@ class WindowsInstallerDiagnostics {
     String? currentInstallDir,
     String? targetInstallDir,
     List<WindowsDetectedInstallLocation>? detectedInstallLocations,
-    List<WindowsProcessInfo>? runningHibikiProcesses,
+    List<WindowsProcessInfo>? runningFushiProcesses,
     List<WindowsProcessInfo>? libmpvModuleHolders,
     List<WindowsInnoDeleteFileFailure>? innoLogDeleteFileFailures,
     String? pathMismatchWarning,
@@ -160,8 +160,8 @@ class WindowsInstallerDiagnostics {
       targetInstallDir: targetInstallDir ?? this.targetInstallDir,
       detectedInstallLocations:
           detectedInstallLocations ?? this.detectedInstallLocations,
-      runningHibikiProcesses:
-          runningHibikiProcesses ?? this.runningHibikiProcesses,
+      runningFushiProcesses:
+          runningFushiProcesses ?? this.runningFushiProcesses,
       libmpvModuleHolders: libmpvModuleHolders ?? this.libmpvModuleHolders,
       innoLogDeleteFileFailures:
           innoLogDeleteFileFailures ?? this.innoLogDeleteFileFailures,
@@ -180,7 +180,7 @@ class WindowsUpdateHandoffRecord {
     this.currentInstallDir,
     this.targetInstallDir,
     this.detectedInstallLocations = const <WindowsDetectedInstallLocation>[],
-    this.runningHibikiProcesses = const <WindowsProcessInfo>[],
+    this.runningFushiProcesses = const <WindowsProcessInfo>[],
     this.libmpvModuleHolders = const <WindowsProcessInfo>[],
     this.innoLogDeleteFileFailures = const <WindowsInnoDeleteFileFailure>[],
     this.pathMismatchWarning,
@@ -217,7 +217,13 @@ class WindowsUpdateHandoffRecord {
       detectedInstallLocations: _listOfMaps(json['detectedInstallLocations'])
           .map(WindowsDetectedInstallLocation.fromJson)
           .toList(growable: false),
-      runningHibikiProcesses: _listOfMaps(json['runningHibikiProcesses'])
+      // W2-6 真实跨版本 wire 兼容：旧键 'runningHibikiProcesses' 只在**读侧**
+      // 保留——「hibiki → fushi 更新桥」时代的旧版二进制写下 marker、装完由新版
+      // 读取，这是唯一会见到旧键的窗口。写侧只写新键。清理条件：更新桥通道
+      // 退役（不再存在从旧 Hibiki 版本直升本包的升级路径）后删除旧键回退。
+      runningFushiProcesses: _listOfMaps(
+        json['runningFushiProcesses'] ?? json['runningHibikiProcesses'],
+      )
           .map(WindowsProcessInfo.fromJson)
           .where((WindowsProcessInfo process) => process.pid > 0)
           .toList(growable: false),
@@ -264,7 +270,7 @@ class WindowsUpdateHandoffRecord {
   final String? currentInstallDir;
   final String? targetInstallDir;
   final List<WindowsDetectedInstallLocation> detectedInstallLocations;
-  final List<WindowsProcessInfo> runningHibikiProcesses;
+  final List<WindowsProcessInfo> runningFushiProcesses;
   final List<WindowsProcessInfo> libmpvModuleHolders;
   final List<WindowsInnoDeleteFileFailure> innoLogDeleteFileFailures;
   final String? pathMismatchWarning;
@@ -293,7 +299,7 @@ class WindowsUpdateHandoffRecord {
         currentInstallDir: currentInstallDir,
         targetInstallDir: targetInstallDir,
         detectedInstallLocations: detectedInstallLocations,
-        runningHibikiProcesses: runningHibikiProcesses,
+        runningFushiProcesses: runningFushiProcesses,
         libmpvModuleHolders: libmpvModuleHolders,
         innoLogDeleteFileFailures: innoLogDeleteFileFailures,
         pathMismatchWarning: pathMismatchWarning,
@@ -313,8 +319,8 @@ class WindowsUpdateHandoffRecord {
               .map((WindowsDetectedInstallLocation location) =>
                   location.toJson())
               .toList(growable: false),
-        if (runningHibikiProcesses.isNotEmpty)
-          'runningHibikiProcesses': runningHibikiProcesses
+        if (runningFushiProcesses.isNotEmpty)
+          'runningFushiProcesses': runningFushiProcesses
               .map((WindowsProcessInfo process) => process.toJson())
               .toList(growable: false),
         if (libmpvModuleHolders.isNotEmpty)
@@ -372,7 +378,7 @@ class WindowsUpdateHandoffRecord {
     String? currentInstallDir,
     String? targetInstallDir,
     List<WindowsDetectedInstallLocation>? detectedInstallLocations,
-    List<WindowsProcessInfo>? runningHibikiProcesses,
+    List<WindowsProcessInfo>? runningFushiProcesses,
     List<WindowsProcessInfo>? libmpvModuleHolders,
     List<WindowsInnoDeleteFileFailure>? innoLogDeleteFileFailures,
     String? pathMismatchWarning,
@@ -408,8 +414,8 @@ class WindowsUpdateHandoffRecord {
       targetInstallDir: targetInstallDir ?? this.targetInstallDir,
       detectedInstallLocations:
           detectedInstallLocations ?? this.detectedInstallLocations,
-      runningHibikiProcesses:
-          runningHibikiProcesses ?? this.runningHibikiProcesses,
+      runningFushiProcesses:
+          runningFushiProcesses ?? this.runningFushiProcesses,
       libmpvModuleHolders: libmpvModuleHolders ?? this.libmpvModuleHolders,
       innoLogDeleteFileFailures:
           innoLogDeleteFileFailures ?? this.innoLogDeleteFileFailures,
@@ -479,7 +485,7 @@ abstract final class WindowsUpdateHandoff {
         currentInstallDir: diagnostics.currentInstallDir,
         targetInstallDir: diagnostics.targetInstallDir,
         detectedInstallLocations: diagnostics.detectedInstallLocations,
-        runningHibikiProcesses: diagnostics.runningHibikiProcesses,
+        runningFushiProcesses: diagnostics.runningFushiProcesses,
         libmpvModuleHolders: diagnostics.libmpvModuleHolders,
         innoLogDeleteFileFailures: diagnostics.innoLogDeleteFileFailures,
         pathMismatchWarning: diagnostics.pathMismatchWarning,

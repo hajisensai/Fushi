@@ -693,7 +693,7 @@ window.__fushiAnnotate = function(chapterHref) {
   static Future<void> scrollToTtuCharOffset(
     InAppWebViewController controller, {
     required int section,
-    required int ttuCharOffset,
+    required int exactCharOffset,
     required int expectedNormOffset,
     required int restoreToken,
   }) async {}
@@ -804,15 +804,15 @@ class ReaderViewportPos {
   const ReaderViewportPos({
     required this.section,
     required this.offset,
-    this.ttuCharOffset,
+    this.exactCharOffset,
   });
   final int section;
   final int offset;
-  final int? ttuCharOffset;
+  final int? exactCharOffset;
 
   @override
   String toString() =>
-      'ReaderViewportPos(section=$section, offset=$offset, ttu=$ttuCharOffset)';
+      'ReaderViewportPos(section=$section, offset=$offset, ttu=$exactCharOffset)';
 }
 
 /// ttu 阅读器设定快照（保留类型供现有代码编译）。

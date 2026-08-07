@@ -38,7 +38,7 @@ class MangaHibikiSource extends ReaderMediaSource {
           implementsHistory: false,
         );
 
-  /// 媒体源唯一键（持久化标识，与 `reader_ttu`/`reader_pdf` 互异）。
+  /// 媒体源唯一键（持久化标识，与 `reader_fushi`/`reader_pdf` 互异）。
   /// [ReaderHibikiSource] 的 `_bookToMediaItem` 用它把 `format=='manga'` 的行路由到本源。
   static const String kUniqueKey = 'reader_manga';
 

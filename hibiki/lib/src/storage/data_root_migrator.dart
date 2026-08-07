@@ -190,7 +190,7 @@ class DataRootMigrationRequest {
   /// - `null` ⇒ [oldDocumentsRoot] 是 Hibiki 专属目录（自定义数据根的
   ///   `<root>/documents`）：整树搬移、迁移成功后整目录删除（原行为不变）。
   /// - 非 null ⇒ [oldDocumentsRoot] 是**共享用户目录**（默认根 = 平台 `Documents`）：
-  ///   只搬基名命中白名单的顶层项（生产传 `AppPaths.hibikiOwnedDocumentsEntries`），
+  ///   只搬基名命中白名单的顶层项（生产传 `AppPaths.fushiOwnedDocumentsEntries`），
   ///   用户自己的文件 / shell junction（My Music 等 ACL 全拒目录）一概不碰；迁移成功
   ///   后**绝不删除** [oldDocumentsRoot] 本体（白名单项已随搬移离开源根）。
   ///

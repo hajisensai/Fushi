@@ -83,7 +83,7 @@ Widget _harness(AppModel appModel, String bookKey) {
             child ?? const SizedBox.shrink(),
         home: MangaHibikiPage(
           item: MediaItem(
-            mediaIdentifier: 'hoshi://book/$bookKey',
+            mediaIdentifier: 'fushi://book/$bookKey',
             mediaSourceIdentifier: 'reader_manga',
             title: 'Test Manga',
             mediaTypeIdentifier: 'reader',
@@ -177,8 +177,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final _MangaTestAppModel appModel = _MangaTestAppModel(db);
     final Directory bookDir = _bookDir();
@@ -203,8 +202,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final _MangaTestAppModel appModel = _MangaTestAppModel(db);
     final Directory bookDir = _bookDir();

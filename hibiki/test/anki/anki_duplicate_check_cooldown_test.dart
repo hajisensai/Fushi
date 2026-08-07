@@ -43,7 +43,7 @@ void main() {
       ],
     );
     SharedPreferences.setMockInitialValues(
-      {'hoshi_anki_settings': jsonEncode(settings.toJson())},
+      {'fushi_anki_settings': jsonEncode(settings.toJson())},
     );
   }
 

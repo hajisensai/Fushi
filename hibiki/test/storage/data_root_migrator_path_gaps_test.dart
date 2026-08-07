@@ -77,7 +77,7 @@ void main() {
       p.join('game_covers', 'g1.jpg'),
       p.join('video_covers', 'v1.jpg'),
       p.join('video_subtitles', 'ep01.ass'),
-      p.join('hoshi_books', 'Bk', 'cover.jpg'),
+      p.join('fushi_books', 'Bk', 'cover.jpg'),
       p.join('anime_downloads', 'content', '.keep'),
       p.join('custom_fonts', 'a.ttf'),
     ]) {
@@ -116,7 +116,7 @@ void main() {
         mediaSourceIdentifier: 'reader_hibiki',
         uniqueKey: 'reader/Bk',
         imageUrl: Value(
-            Uri.file(docs(<String>['hoshi_books', 'Bk', 'cover.jpg']))
+            Uri.file(docs(<String>['fushi_books', 'Bk', 'cover.jpg']))
                 .toString()),
         position: 0,
         duration: 0,
@@ -166,7 +166,7 @@ void main() {
           'local_audio_db_path', p.join(dbDir, 'local_audio_1.db'));
       await db.setPref('video_mpv_shader_dir', p.join('G:', 'mpv', 'shaders'));
       await db.setPref(
-        'src:reader_ttu:font_catalog',
+        'src:reader_fushi:font_catalog',
         jsonEncode(<String, dynamic>{
           'version': 1,
           'fonts': <Map<String, dynamic>>[
@@ -208,7 +208,7 @@ void main() {
         'download_save_root_history',
         'local_audio_db_path',
         'video_mpv_shader_dir',
-        'src:reader_ttu:font_catalog',
+        'src:reader_fushi:font_catalog',
       ]) {
         out['pref.$key'] = prefs[key];
       }
@@ -246,7 +246,7 @@ void main() {
         reason: '用户原位外部视频不该被改写');
     expect(
         snap['media.reader/Bk.image'],
-        equals(Uri.file(at(<String>['hoshi_books', 'Bk', 'cover.jpg']))
+        equals(Uri.file(at(<String>['fushi_books', 'Bk', 'cover.jpg']))
             .toString()));
     expect(snap['media.reader/Remote.image'],
         equals('https://example.com/cover.jpg'),
@@ -279,7 +279,7 @@ void main() {
         reason: '用户外部 mpv 目录绝不能被改写');
 
     final Map<String, dynamic> catalog =
-        jsonDecode(snap['pref.src:reader_ttu:font_catalog']!)
+        jsonDecode(snap['pref.src:reader_fushi:font_catalog']!)
             as Map<String, dynamic>;
     expect((catalog['fonts'] as List<dynamic>).single['path'],
         equals(at(<String>['custom_fonts', 'a.ttf'])));
@@ -297,7 +297,7 @@ void main() {
       closeResources: () async {},
       commitLocation: (DataRootMigrationTarget t) async =>
           prefWrites.add(t.dataRootPrefValue!),
-      documentsTopLevelIncludeNames: AppPaths.hibikiOwnedDocumentsEntries,
+      documentsTopLevelIncludeNames: AppPaths.fushiOwnedDocumentsEntries,
     ));
     expect(prefWrites, equals(<String>[newDataRoot]));
     expectRebasedOnto(await snapshot(newSupport.path), newDocs.path);
@@ -319,7 +319,7 @@ void main() {
       final List<QueryRow> rows = await pre
           .customSelect(
               "SELECT key, value FROM profile_settings WHERE category = 'pref' "
-              "AND key IN ('video_remote_subtitle', 'src:reader_ttu:font_catalog', "
+              "AND key IN ('video_remote_subtitle', 'src:reader_fushi:font_catalog', "
               "'download_save_root')")
           .get();
       final Map<String, String> snapshotted = <String, String>{
@@ -328,8 +328,10 @@ void main() {
       };
       expect(
           snapshotted.keys.toSet(),
-          equals(
-              <String>{'video_remote_subtitle', 'src:reader_ttu:font_catalog'}),
+          equals(<String>{
+            'video_remote_subtitle',
+            'src:reader_fushi:font_catalog'
+          }),
           reason: 'download_save_root 是设备本地键，按设计不进 Profile 快照');
       expect(jsonDecode(snapshotted['video_remote_subtitle']!)['remote/1#ep0'],
           equals(docs(<String>['video_subtitles', 'ep01.ass'])),
@@ -346,7 +348,7 @@ void main() {
       target: DataRootMigrationTarget.customRoot(newDataRoot),
       closeResources: () async {},
       commitLocation: (DataRootMigrationTarget t) async {},
-      documentsTopLevelIncludeNames: AppPaths.hibikiOwnedDocumentsEntries,
+      documentsTopLevelIncludeNames: AppPaths.fushiOwnedDocumentsEntries,
     ));
 
     // 真正走一次 applyProfile（= 用户切 Profile），再看 live prefs 有没有被写回旧根。
@@ -362,7 +364,7 @@ void main() {
         reason: '设备本地键不进快照，切 Profile 后仍是迁移后的新值',
       );
       expect(
-        (jsonDecode(prefs['src:reader_ttu:font_catalog']!)
+        (jsonDecode(prefs['src:reader_fushi:font_catalog']!)
             as Map<String, dynamic>)['fonts'][0]['path'],
         equals(p.join(newDocs.path, 'custom_fonts', 'a.ttf')),
       );
@@ -394,7 +396,7 @@ void main() {
           oldDocumentsRoot: oldDocs.path,
           newDocumentsRoot: newDocs,
           newSupportRoot: oldSupport.path,
-          documentsScopeEntries: AppPaths.hibikiOwnedDocumentsEntries,
+          documentsScopeEntries: AppPaths.fushiOwnedDocumentsEntries,
         );
 
     await runOnce();
@@ -420,7 +422,7 @@ void main() {
     const DocumentsPathRebaser rebaser = DocumentsPathRebaser(
       oldRoot: '/home/u/Documents',
       newRoot: '/home/u/Documents/Hibiki/data',
-      scopeTopLevelNames: AppPaths.hibikiOwnedDocumentsEntries,
+      scopeTopLevelNames: AppPaths.fushiOwnedDocumentsEntries,
     );
     expect(rebaser.rebase('/home/u/Documents/audiobooks/a.mp3'),
         equals('/home/u/Documents/Hibiki/data/audiobooks/a.mp3'));
@@ -463,7 +465,7 @@ void main() {
           oldDocumentsRoot: oldDocs.path,
           newDocumentsRoot: p.join(tmp.path, 'newroot', 'documents'),
           newSupportRoot: oldSupport.path,
-          documentsScopeEntries: AppPaths.hibikiOwnedDocumentsEntries,
+          documentsScopeEntries: AppPaths.fushiOwnedDocumentsEntries,
         ),
         throwsA(isA<StateError>()),
       );
@@ -479,7 +481,7 @@ void main() {
     const DocumentsPathRebaser rebaser = DocumentsPathRebaser(
       oldRoot: '/home/u/Documents',
       newRoot: '/home/u/Documents/Hibiki/data',
-      scopeTopLevelNames: AppPaths.hibikiOwnedDocumentsEntries,
+      scopeTopLevelNames: AppPaths.fushiOwnedDocumentsEntries,
     );
     for (final String key in <String>[
       'theme_mode',

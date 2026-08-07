@@ -56,6 +56,6 @@ void main() {
     expect(ReaderHibikiSource.instance.lookupAudioVolumeGain, 0.0);
 
     final Map<String, String> prefs = await db.getAllPrefs();
-    expect(prefs['src:reader_ttu:lookup_audio_volume'], 'i:0');
+    expect(prefs['src:reader_fushi:lookup_audio_volume'], 'i:0');
   });
 }

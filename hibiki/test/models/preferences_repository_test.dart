@@ -828,7 +828,7 @@ void main() {
       expect(await repo.readPrefsVersionFromDb(), 0);
       await db.setPref('app_ui_scale', PrefCodec.encode(1.25));
       expect(await repo.readPrefsVersionFromDb(), 1);
-      await db.setPref('src:reader_ttu:ttu_font_size', PrefCodec.encode(20));
+      await db.setPref('src:reader_fushi:font_size', PrefCodec.encode(20));
       expect(await repo.readPrefsVersionFromDb(), 2);
     });
 

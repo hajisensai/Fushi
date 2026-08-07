@@ -289,7 +289,7 @@ class EpubImporter {
   /// platform rejects `rename(2)`. Android's app-storage layer (fuse/sdcardfs
   /// and custom data roots on removable volumes) can reject a directory rename
   /// even for a vacated same-parent sibling (`FileSystemException: Rename
-  /// failed, path = '.../hoshi_books/.tmp-<ts>'`); a bare `renameSync` there
+  /// failed, path = '.../fushi_books/.tmp-<ts>'`); a bare `renameSync` there
   /// aborts the whole remote-book download, so the audiobook never downloads
   /// and the shelf/sync marker never updates. Copy+delete is the portable move
   /// primitive and cannot fail with ENOTEMPTY/ENOTDIR/EXDEV the way rename can.

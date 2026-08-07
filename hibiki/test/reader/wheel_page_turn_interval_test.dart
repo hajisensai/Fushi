@@ -16,8 +16,7 @@ void main() {
   }
 
   test('wheelPageTurnInterval defaults to 450ms', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 
@@ -25,8 +24,7 @@ void main() {
   });
 
   test('reading default does not persist a synthetic preference row', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 
@@ -34,7 +32,7 @@ void main() {
 
     final Map<String, String> prefs = await db.getAllPrefs();
     expect(
-      prefs.containsKey('src:reader_ttu:wheel_page_turn_interval'),
+      prefs.containsKey('src:reader_fushi:wheel_page_turn_interval'),
       isFalse,
       reason: 'a synchronous getter must not start an unawaitable DB write; '
           'tests and app shutdown can close the DB before that write finishes',
@@ -42,8 +40,7 @@ void main() {
   });
 
   test('setWheelPageTurnInterval round-trips through DB', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 

@@ -145,7 +145,8 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(perBook.topProgressFloating, isFalse);
       expect(source.topProgressFloating, isFalse);
-      expect(await db.getPref('src:reader_ttu:top_progress_floating'), 'false');
+      expect(
+          await db.getPref('src:reader_fushi:top_progress_floating'), 'false');
     });
 
     test('autoHideChromeMillis round-trips + normalizes a bad stored value',
@@ -161,10 +162,10 @@ void main() {
       await perBook.setAutoHideChromeMillis(4000);
       expect(perBook.autoHideChromeMillis, 4000);
       expect(
-          await db.getPref('src:reader_ttu:auto_hide_chrome_millis'), '4000');
+          await db.getPref('src:reader_fushi:auto_hide_chrome_millis'), '4000');
 
       // 越界存值（旧脏数据）读取时归一回区间。
-      await db.setPref('src:reader_ttu:auto_hide_chrome_millis', '99999');
+      await db.setPref('src:reader_fushi:auto_hide_chrome_millis', '99999');
       await perBook.refreshFromDb();
       expect(perBook.autoHideChromeMillis, 10000);
     });

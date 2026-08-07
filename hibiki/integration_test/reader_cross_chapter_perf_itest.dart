@@ -51,9 +51,9 @@ void main() {
       expect(appModel.isInitialised, isTrue);
 
       await appModel.database
-          .setPref('src:reader_ttu:ttu_view_mode', 'pagination');
+          .setPref('src:reader_fushi:view_mode', 'pagination');
       await appModel.database
-          .setPref('src:reader_ttu:ttu_writing_mode', 'horizontal-tb');
+          .setPref('src:reader_fushi:writing_mode', 'horizontal-tb');
       await ReaderHibikiSource.readerSettings?.refreshFromDb();
 
       // 带**真实体量**插图（1600×2400 PNG）的书：合成 fixture 原来的「图片章」是内联

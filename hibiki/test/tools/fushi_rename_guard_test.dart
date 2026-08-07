@@ -36,8 +36,6 @@ class _ForbiddenPattern {
   final Map<String, String> allowed;
 }
 
-const String _sasayakiFrozenNote = '（P6-4b 冻结契约点，进度台账有案）';
-
 final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   _ForbiddenPattern(
     // P6-1：JS 桥全局已是 window.fushiReader。
@@ -46,40 +44,84 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   ),
   _ForbiddenPattern(
     // W3：阅读器虚拟拦截域已是 fushi.local（纯运行时符号，每次页面加载现拼，
-    // 无持久化形态；`hoshi://book/` mediaIdentifier 是另一符号、DB 持久化契约，
-    // 刻意不在此模式内）。
+    // 无持久化形态）。
     name: 'hoshi.local',
     regex: RegExp(r'hoshi\.local', caseSensitive: false),
   ),
   _ForbiddenPattern(
+    // W2-3：mediaIdentifier scheme 已是 fushi://book/ / fushi://srtbook/，
+    // 存量行由 v73 迁移改写、override 封面 hash 文件名由启动清扫归位。
+    name: 'hoshi://',
+    regex: RegExp('hoshi://'),
+    allowed: <String, String>{
+      'packages/fushi_core/lib/src/database/database.dart':
+          'v16 阶梯（legacy uid / identifier 重键）与 v73 前缀改写步的旧值'
+              '输入：读旧库做一次性改写的迁移代码。',
+      'lib/src/media/override_thumbnail_migration.dart':
+          '按新 identifier 反推旧形态 hash 文件名的清扫输入（hoshi:// 前缀'
+              '换回构造旧 key）。',
+    },
+  ),
+  _ForbiddenPattern(
     // P6-3：setTtu*/getTtu* 访问器已换 setReader*/getReader*。
-    // （`ttu_*` 持久化键值本身冻结在 reader_settings.dart，不在此模式内。）
     name: 'setTtu/getTtu',
     regex: RegExp(r'\b(?:set|get)Ttu'),
   ),
   _ForbiddenPattern(
-    // P6-4b：Sasayaki* → SubtitleRematch*/sentenceAudio*。
+    // W2-1：阅读器源持久化键已是 'reader_fushi'（kReaderSourcePersistedKey），
+    // 存量行由 v70 迁移改写（preferences/profile_settings/media_items 三处）。
+    name: 'reader_ttu',
+    regex: RegExp('reader_ttu'),
+    allowed: <String, String>{
+      'packages/fushi_core/lib/src/database/database.dart':
+          'v16 阶梯 _kLegacyUidPrefix（reader_ttu/hoshi://book/）与 v70 改写步的'
+              '旧前缀输入：读旧库做一次性改写的迁移代码，旧字面量是必要输入。',
+      'lib/src/media/override_thumbnail_migration.dart':
+          'BUG-1317 前 legacy 封面文件名烧入的历史源键（reader_ttu 当年的'
+              '字面量永远不变），清扫反推旧 hash 名的必要输入。',
+    },
+  ),
+  _ForbiddenPattern(
+    // W2-1：pref shortKey 的死前缀 ttu_ 已剥除（'ttu_font_size' → 'font_size'
+    // 等 27 键），存量由 v70 迁移改写。引号锚定只抓字符串字面量形态；负向前瞻
+    // 放行冻结身份模块 ttu_sanitize.dart 的相对 import（bookKey 编码本体，
+    // ~ttu-star~ 哨兵落盘，勿改）。
+    name: "'ttu_ shortKey 前缀",
+    regex: RegExp(r"'ttu_(?!sanitize\.dart')"),
+    allowed: <String, String>{
+      'packages/fushi_core/lib/src/database/database.dart':
+          '历史 SQL 列名 ttu_book_id / ttu_char_offset（v16/v24 迁移阶梯输入）'
+              '与 v70 剥前缀步的旧前缀输入，只活在迁移代码里。',
+    },
+  ),
+  _ForbiddenPattern(
+    // W2-1：ttu 词首 camel 符号（ttuFontSize 等 22 个 getter → reader*、
+    // ttuRegex → readerRegex、ttuCharOffset → exactCharOffset）。冻结的
+    // TtuProgress/sanitizeTtuFilename 是词中 Ttu 形态，刻意不匹配。
+    name: 'ttu*-camel 符号',
+    regex: RegExp(r'\bttu[A-Z]'),
+    allowed: <String, String>{
+      'packages/fushi_core/lib/src/database/database.dart':
+          "legacy 书签 JSON 的 'ttuBookId' wire 键及其局部变量（迁移代码），"
+              '命名跟随冻结 wire 本名。',
+    },
+  ),
+  _ForbiddenPattern(
+    // P6-4b：Sasayaki* → SubtitleRematch*/sentenceAudio*；W2-2：四个持久化冻结
+    // 点全解冻（sasayaki:// scheme / sasayakiColor JSON 键 /
+    // custom_theme_sasayaki_color 偏好键 → fushi_core v71 迁移改写；
+    // {sasayaki-audio} handlebars 别名 → BaseAnkiRepository 载入期迁移改写）。
     name: 'sasayaki',
     regex: RegExp('sasayaki', caseSensitive: false),
     allowed: <String, String>{
-      'lib/src/models/theme_notifier.dart':
-          "自定义主题的 'sasayakiColor' JSON 键（custom_themes 旧数据/分享码）与 "
-              "'custom_theme_sasayaki_color' 偏好键（Drift preferences 表）是持久化"
-              '契约$_sasayakiFrozenNote。',
-      'lib/src/pages/implementations/anki_settings_page.dart':
-          "'{sasayaki-audio}' 是 {sentence-audio} 的 handlebars 旧别名（用户卡模板"
-              '契约），其展示标签读冻结 i18n key handlebar_sasayaki_audio'
-              '$_sasayakiFrozenNote。',
-      'lib/i18n/strings.g.dart':
-          'Slang 生成文件：冻结 i18n key handlebar_sasayaki_audio 的 getter 与'
-              '各语言展示值（i18n 值面清扫是独立事项）。生成源是 *.i18n.json，'
-              '不手改。',
-      'packages/fushi_anki/lib/src/anki_models.dart':
-          "'{sasayaki-audio}' handlebars 旧别名的解析/枚举/兼容判定（用户卡模板"
-              '契约）$_sasayakiFrozenNote。',
-      'packages/fushi_audio/lib/src/matching/subtitle_rematch_codec.dart':
-          "'sasayaki://' scheme 字面量落 Drift DB 的 AudioCue.text_fragment_id 列，"
-              '持久化契约$_sasayakiFrozenNote。',
+      'packages/fushi_core/lib/src/database/database.dart':
+          "v71 迁移步的旧值输入：'sasayaki://' scheme 前缀、'sasayakiColor' "
+              "JSON 键、'custom_theme_sasayaki_color' 偏好键。读旧库做一次性"
+              '改写的迁移代码，旧字面量是必要输入。',
+      'packages/fushi_anki/lib/src/base_anki_repository.dart':
+          "'{sasayaki-audio}' handlebars 旧别名：loadSettings 载入期一次性改写"
+              '为 {sentence-audio} 的迁移输入（SharedPreferences 无版本阶梯，'
+              '载入期改写即迁移通道）。',
     },
   ),
   _ForbiddenPattern(
@@ -108,6 +150,18 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     },
   ),
   _ForbiddenPattern(
+    // W2-4：导出目录已是 fushiExport（export_directory.dart），存量旧目录由
+    // prepareExportDirectoryAt 启动就地改名。
+    name: 'hibikiExport',
+    regex: RegExp('hibikiExport', caseSensitive: false),
+    allowed: <String, String>{
+      'lib/src/storage/export_directory.dart':
+          'kLegacyExportDirectoryName：启动就地改名迁移的旧目录名输入。',
+      'lib/src/storage/app_paths.dart': '数据根搬迁白名单的双名条目：改名失败留在旧名的存量目录仍须随迁移'
+          '搬走，否则数据分家。',
+    },
+  ),
+  _ForbiddenPattern(
     // Phase 3：Windows 单实例互斥体已是 FushiSingleInstanceMutex。
     name: 'HibikiSingleInstanceMutex',
     regex: RegExp('HibikiSingleInstanceMutex'),
@@ -120,17 +174,10 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   _ForbiddenPattern(
     // W5：JS 运行时 camel 符号族已是 fushi*/Fushi*（window.fushiSelection、
     // fushiCaret、__fushi* 内部符号、[FushiVN]/[FushiInit] log tag、陈旧
-    // HoshiDicts/HoshiLookupResult 引擎类引用等）。解析冻结持久化格式
-    // `hoshi://book/<key>` 的 Dart 私有名命名跟随格式本名，见白名单。
+    // HoshiDicts/HoshiLookupResult 引擎类引用等）。W2-3 后 hoshi://book/
+    // 解析器（_fushiBookKeyPattern / _parseFushiBookKey）也已随格式改名。
     name: 'hoshi*-camel 运行时符号族',
     regex: RegExp('[Hh]oshi[A-Z]'),
-    allowed: <String, String>{
-      'lib/src/sync/app_model_library_host_service.dart':
-          '_hoshiBookKeyPattern：解析冻结 mediaIdentifier 格式 hoshi://book/'
-              '<key>（DB 持久化契约，行改写归 W2），命名跟随格式本名。',
-      'lib/src/utils/misc/shelf_ordering.dart':
-          '_parseHoshiBookKey：同上，解析冻结 hoshi://book/ 键格式。',
-    },
   ),
   _ForbiddenPattern(
     // W5：注入 CSS 变量/类/data-属性/Highlight registry 名已是
@@ -140,11 +187,48 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   ),
   _ForbiddenPattern(
     // W5：snake 运行时名（JS handler/ValueKey/DOM id/词典媒体缓存文件前缀）
-    // 已是 fushi_*。白名单法逐段列举——冻结的 hoshi_books / hoshi_anki_settings /
-    // google_drive_hoshi_compat 等磁盘目录/偏好键刻意不在此模式内。
+    // 已是 fushi_*。白名单法逐段列举（hoshi_books / hoshi_anki_settings /
+    // google_drive_hoshi_compat 在下面各有独立禁模式与迁移白名单）。
     name: 'hoshi_* snake 运行时名',
     regex: RegExp(r'hoshi_(?:content_ready|lyrics_ready|progress|play_bar'
         r'|webview|lyrics_mode_toggle|shell_|dict_|audio_css)'),
+  ),
+  _ForbiddenPattern(
+    // W2-7：书库目录已是 fushi_books（books_directory.dart 启动就地改名 +
+    // fushi_core v72 库内路径改写 + 备份归档前缀写侧切新）。
+    name: 'hoshi_books',
+    regex: RegExp('hoshi_books'),
+    allowed: <String, String>{
+      'lib/src/storage/books_directory.dart':
+          'kLegacyBooksDirectoryName：启动就地改名迁移的旧目录名输入。',
+      'lib/src/storage/app_paths.dart': '数据根搬迁白名单的双名条目：改名失败留在旧名的存量目录仍须随迁移'
+          '搬走（同 hibikiExport 条目）。',
+      'lib/src/sync/backup_service.dart':
+          '_legacyBooksPrefix：旧 Hibiki 归档书树前缀的读侧回退'
+              '（archiveBooksPrefix），跨版本归档契约。',
+      'packages/fushi_core/lib/src/database/database.dart':
+          'v72 迁移步的旧目录段输入（extract_dir / image_url REPLACE）。',
+    },
+  ),
+  _ForbiddenPattern(
+    // W2-7：Hoshi 共享空间功能已删，残留偏好行由 v72 迁移清掉。
+    name: 'google_drive_hoshi_compat',
+    regex: RegExp('google_drive_hoshi_compat'),
+    allowed: <String, String>{
+      'packages/fushi_core/lib/src/database/database.dart':
+          'v72 迁移步的清行输入（DELETE WHERE key = ...）。',
+    },
+  ),
+  _ForbiddenPattern(
+    // W2-7：Anki 设置 SharedPreferences 键已是 fushi_anki_settings，存量由
+    // BaseAnkiRepository.readSettingsJson 载入期搬键。
+    name: 'hoshi_anki_settings',
+    regex: RegExp('hoshi_anki_settings'),
+    allowed: <String, String>{
+      'packages/fushi_anki/lib/src/base_anki_repository.dart':
+          '_legacySettingsKey：载入期搬键迁移的旧键输入'
+              '（SharedPreferences 无版本阶梯，载入期搬移即迁移通道）。',
+    },
   ),
   _ForbiddenPattern(
     // W5：Apple 端阅读器资源 scheme 已是 fushi-reader（纯运行时 URL scheme，
@@ -155,11 +239,33 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   _ForbiddenPattern(
     // 类名族清算：Hibiki* → Fushi*（HibikiDatabase/HibikiToast/_HibikiCardState
     // 等词首形态，含 _$Hibiki* 生成类）。词中内嵌形态不属类名族、刻意不匹配：
-    // MangaHibikiPage 等含 hibiki 文件名的类（本轮不 git mv，半径控制）、
-    // kMagpieHibikiProfilePrefix（值 'Hibiki: ' 是 Magpie 配置持久化契约）、
-    // 'runningHibikiProcesses'（update-handoff JSON wire 键）。
+    // MangaHibikiPage 等含 hibiki 文件名的类（W4 才 git mv，半径控制）。
     name: 'Hibiki*-类名族',
     regex: RegExp(r'(?<![A-Za-z0-9])Hibiki[A-Z]'),
+  ),
+  _ForbiddenPattern(
+    // W2-6：update-handoff JSON wire 键已是 'runningFushiProcesses'（写侧只写
+    // 新键）；旧键只允许活在读侧回退（真实跨版本 wire：hibiki→fushi 更新桥时代
+    // 的旧二进制写 marker、新版读，清理条件锚在 update_handoff.dart 注释）。
+    name: 'runningHibikiProcesses',
+    regex: RegExp('runningHibikiProcesses'),
+    allowed: <String, String>{
+      'lib/src/utils/misc/update_handoff.dart':
+          'fromJson 的旧键读侧回退：旧 Hibiki 过渡版写的 marker 在升级后由新版'
+              '读取，是唯一会见到旧键的窗口；写侧只写新键。',
+    },
+  ),
+  _ForbiddenPattern(
+    // W2-5：Magpie 配置 profile 名前缀已是 'Fushi: '
+    // （kMagpieFushiProfilePrefix）；存量 'Hibiki: ' 条目由启动对账
+    // （magpieConfigWithLegacyProfilePrefixRenamed）就地改名。
+    name: "'Hibiki: ' Magpie 前缀",
+    regex: RegExp("'Hibiki: '"),
+    allowed: <String, String>{
+      'lib/src/mining/magpie_upscaling.dart':
+          'kMagpieLegacyProfilePrefix：启动就地改名迁移的旧前缀输入，只允许'
+              '该改名函数消费。',
+    },
   ),
   _ForbiddenPattern(
     // W1：SQL 表 hibiki_paired_peers 已在 v69 迁移改名 fushi_paired_peers。

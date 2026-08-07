@@ -15,14 +15,14 @@ void main() {
   });
 
   test('path.join does not create intermediate directories', () {
-    final String path = p.join(tmpDir.path, 'hoshi_books', '42');
-    expect(path, endsWith(p.join('hoshi_books', '42')));
+    final String path = p.join(tmpDir.path, 'fushi_books', '42');
+    expect(path, endsWith(p.join('fushi_books', '42')));
     expect(Directory(path).existsSync(), isFalse);
   });
 
   test('rename from temp to final succeeds when target does not exist', () {
-    final String tempDir = p.join(tmpDir.path, 'hoshi_books', '999');
-    final String finalDir = p.join(tmpDir.path, 'hoshi_books', '1');
+    final String tempDir = p.join(tmpDir.path, 'fushi_books', '999');
+    final String finalDir = p.join(tmpDir.path, 'fushi_books', '1');
     Directory(tempDir).createSync(recursive: true);
     File(p.join(tempDir, 'test.txt')).writeAsStringSync('hello');
 
@@ -33,8 +33,8 @@ void main() {
   });
 
   test('rename to existing directory throws (proving the bug)', () {
-    final String tempDir = p.join(tmpDir.path, 'hoshi_books', '999');
-    final String finalDir = p.join(tmpDir.path, 'hoshi_books', '1');
+    final String tempDir = p.join(tmpDir.path, 'fushi_books', '999');
+    final String finalDir = p.join(tmpDir.path, 'fushi_books', '1');
     Directory(tempDir).createSync(recursive: true);
     Directory(finalDir).createSync(recursive: true);
     // 目标目录非空：POSIX 的 rename(2) 只在目标为空目录时才原子替换并成功（那样不抛，

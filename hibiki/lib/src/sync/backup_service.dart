@@ -455,7 +455,15 @@ class BackupService {
   static const String _dbName = fushiDatabaseFileName;
   static const String _metaName = 'backup_meta.json';
   static const String _dictionaryResourcesPrefix = 'dictionaryResources';
-  static const String _booksPrefix = 'hoshi_books';
+
+  /// 书树条目在归档里的前缀。写侧一律用它；读侧经 [archiveBooksPrefix] 对旧
+  /// Hibiki 归档（前缀 `hoshi_books`）做 legacy 回退（Never break userspace，
+  /// 同 [_dbName] 的 `_findDbEntry` 先例）。
+  static const String _booksPrefix = 'fushi_books';
+
+  /// 旧 Hibiki 时代备份/迁移归档的书树前缀（W2-7 读侧回退输入；旧字面量只
+  /// 允许活在读旧归档的回退里）。
+  static const String _legacyBooksPrefix = 'hoshi_books';
   static const String _audiobooksPrefix = 'audiobooks';
   static const String _fontsPrefix = 'custom_fonts';
   static const String _videosPrefix = 'videos';
@@ -480,16 +488,16 @@ class BackupService {
 
   /// Persisted preference key (ReaderSettings prefix included) whose JSON
   /// value is the canonical catalog `{version, fonts:[{id, name, path}]}`.
-  static const String _fontCatalogPrefKey = 'src:reader_ttu:font_catalog';
+  static const String _fontCatalogPrefKey = 'src:reader_fushi:font_catalog';
 
   /// Persisted legacy shadow preference keys (ReaderSettings prefix included)
   /// whose JSON value is a font list `[{name, path, enabled}]`. These remain
   /// import-compatible while `font_catalog` is the canonical model.
   static const List<String> _legacyFontPrefKeys = <String>[
-    'src:reader_ttu:custom_fonts',
-    'src:reader_ttu:app_ui_fonts',
-    'src:reader_ttu:dict_fonts',
-    'src:reader_ttu:video_sub_fonts',
+    'src:reader_fushi:custom_fonts',
+    'src:reader_fushi:app_ui_fonts',
+    'src:reader_fushi:dict_fonts',
+    'src:reader_fushi:video_sub_fonts',
   ];
 
   /// Preference key holding the favorite-sentence JSON list (mirrors
@@ -671,7 +679,8 @@ class BackupService {
         dictDirs.add(dictSeg);
         continue;
       }
-      final String? bookSeg = _firstSegmentUnder(name, _booksPrefix);
+      final String? bookSeg = _firstSegmentUnder(name, _booksPrefix) ??
+          _firstSegmentUnder(name, _legacyBooksPrefix);
       if (bookSeg != null) {
         bookDirs.add(bookSeg);
         continue;
@@ -2094,8 +2103,8 @@ class BackupService {
       try {
         if (booksRootDirectory != null &&
             wants(BackupCategory.books) &&
-            await _prepareTreeReapply(
-                zipPath, archive, _booksPrefix, booksRootDirectory,
+            await _prepareTreeReapply(zipPath, archive,
+                archiveBooksPrefix(archive), booksRootDirectory,
                 onBytes: reportBytes)) {
           toCommit.add(booksRootDirectory);
         }
@@ -2388,7 +2397,7 @@ class BackupService {
       }
       if (booksRootDirectory != null && wants(BackupCategory.books)) {
         await _copyTreeIfAbsent(
-            zipPath, archive, _booksPrefix, booksRootDirectory,
+            zipPath, archive, archiveBooksPrefix(archive), booksRootDirectory,
             onBytes: reportBytes);
       }
       if (audiobooksRootDirectory != null && wants(BackupCategory.audiobooks)) {
@@ -3354,6 +3363,18 @@ class BackupService {
   /// Splitting write (slow, GB-scale, failure-prone) from the swap (fast rename)
   /// lets the caller stage ALL trees before committing ANY — a write failure
   /// then swaps nothing and leaves every existing tree intact (review W2).
+  /// 该归档实际使用的书树前缀：任一条目落在新前缀（[_booksPrefix]）下即用新，
+  /// 否则回退旧前缀 [_legacyBooksPrefix]（旧 Hibiki app 导出的备份/迁移归档）。
+  /// 一份归档只会有一代前缀，不存在混排。`@visibleForTesting`：读侧回退是
+  /// 跨版本契约，测试直接对两代归档断言。
+  @visibleForTesting
+  static String archiveBooksPrefix(Archive archive) {
+    for (final ArchiveFile file in archive) {
+      if (file.name.startsWith('$_booksPrefix/')) return _booksPrefix;
+    }
+    return _legacyBooksPrefix;
+  }
+
   static Future<bool> _prepareTreeReapply(
     String zipPath,
     Archive archive,

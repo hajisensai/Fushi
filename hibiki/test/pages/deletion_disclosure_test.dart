@@ -201,7 +201,7 @@ void main() {
       });
 
       final Directory extractDir =
-          Directory(p.join(root.path, 'hoshi_books', 'bookA'))
+          Directory(p.join(root.path, 'fushi_books', 'bookA'))
             ..createSync(recursive: true);
       final File nested = File(p.join(extractDir.path, 'OEBPS', 'ch1.xhtml'))
         ..createSync(recursive: true)

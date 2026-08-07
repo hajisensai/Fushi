@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
-/// 通用句子音频键 `{sentence-audio}` 守卫 + 旧别名向后兼容。
+/// 通用句子音频键 `{sentence-audio}` 守卫 + 旧别名退役负向守卫。
 ///
-/// `{sentence-audio}` 是句子音频的通用占位符（语义中性、名副其实），取代名不副实的
-/// 内部历史命名 `{sasayaki-audio}` 成为 Lapis `SentenceAudio` 字段的默认映射。旧键
-/// `{sasayaki-audio}` 保留为别名：两者都读同一个 `context.sasayakiAudioPath`，渲染
-/// 结果必须逐字节相同——老配置 / 老卡片模板不受影响。
+/// `{sentence-audio}` 是句子音频的通用占位符（语义中性、名副其实），是 Lapis
+/// `SentenceAudio` 字段的默认映射。历史别名 `{sasayaki-audio}` 已退役：存量用户
+/// 模板由 `BaseAnkiRepository.loadSettings` 载入期一次性改写为 `{sentence-audio}`，
+/// 渲染器 / 候选列表 / 诊断均不再受理旧别名——本文件同时锁定这组负向语义。
 void main() {
   const AnkiMiningPayload payload = AnkiMiningPayload(expression: '言葉');
 
@@ -23,52 +23,46 @@ void main() {
       expect(value, 'sentence.mp3');
     });
 
-    test('{sentence-audio} == {sasayaki-audio} 逐字节相同（向后兼容）', () {
+    test('退役别名 {sasayaki-audio} 不再被渲染器认领（未知 token → 空串）', () {
       final AnkiMiningContext ctx = contextWithAudio('hibiki_audio_x.mp3');
-      final String sentenceAudio = AnkiHandlebarRenderer.render(
-        '{sentence-audio}',
-        payload,
-        ctx,
+      expect(
+        AnkiHandlebarRenderer.render('{sasayaki-audio}', payload, ctx),
+        '',
+        reason: '别名已由载入期迁移改写为 {sentence-audio}，渲染器走 default 空串',
       );
-      final String legacyAliasAudio = AnkiHandlebarRenderer.render(
-        '{sasayaki-audio}',
-        payload,
-        ctx,
+      // 新键仍正常读 sentenceAudioPath。
+      expect(
+        AnkiHandlebarRenderer.render('{sentence-audio}', payload, ctx),
+        'hibiki_audio_x.mp3',
       );
-      expect(legacyAliasAudio, sentenceAudio);
     });
 
-    test('sentenceAudioPath 为 null 时两者都渲染空串', () {
+    test('sentenceAudioPath 为 null 时渲染空串', () {
       final AnkiMiningContext ctx = contextWithAudio(null);
       expect(
         AnkiHandlebarRenderer.render('{sentence-audio}', payload, ctx),
         '',
       );
-      expect(
-        AnkiHandlebarRenderer.render('{sasayaki-audio}', payload, ctx),
-        '',
-      );
     });
 
-    test('两者都渲染媒体引用串（模拟 backend 落盘后回填）逐字节相同', () {
-      // backend 把音频落盘后用 `[sound:ref]` 覆盖 sasayakiAudioPath 再渲染。
+    test('渲染媒体引用串（模拟 backend 落盘后回填）', () {
+      // backend 把音频落盘后用 `[sound:ref]` 覆盖 sentenceAudioPath 再渲染。
       const String mediaRef = '[sound:hibiki_audio_abc.mp3]';
       final AnkiMiningContext ctx = contextWithAudio(mediaRef);
       expect(
         AnkiHandlebarRenderer.render('{sentence-audio}', payload, ctx),
         mediaRef,
       );
-      expect(
-        AnkiHandlebarRenderer.render('{sentence-audio}', payload, ctx),
-        AnkiHandlebarRenderer.render('{sasayaki-audio}', payload, ctx),
-      );
     });
   });
 
   group('AnkiHandlebarOptions.coreOptions', () {
-    test('含新键 {sentence-audio} 且仍保留旧别名 {sasayaki-audio}', () {
+    test('含新键 {sentence-audio}，退役别名 {sasayaki-audio} 不在候选', () {
       expect(AnkiHandlebarOptions.coreOptions, contains('{sentence-audio}'));
-      expect(AnkiHandlebarOptions.coreOptions, contains('{sasayaki-audio}'));
+      expect(
+        AnkiHandlebarOptions.coreOptions,
+        isNot(contains('{sasayaki-audio}')),
+      );
     });
   });
 
@@ -82,16 +76,16 @@ void main() {
       );
     });
 
-    test('旧别名 {sasayaki-audio} 被消费时也为 true（向后兼容诊断）', () {
+    test('退役别名 {sasayaki-audio} 不再计入（已由载入期迁移改写）', () {
       expect(
         AnkiHandlebarOptions.anyFieldConsumesSentenceAudio({
           'SentenceAudio': '{sasayaki-audio}',
         }),
-        isTrue,
+        isFalse,
       );
     });
 
-    test('没有字段消费任一句子音频键时为 false', () {
+    test('没有字段消费句子音频键时为 false', () {
       expect(
         AnkiHandlebarOptions.anyFieldConsumesSentenceAudio({
           'Expression': '{expression}',
@@ -104,7 +98,7 @@ void main() {
 
   group('LapisNoteType default mapping', () {
     test(
-      'SentenceAudio 默认映射到通用键 {sentence-audio}（不再是内部命名 sentenceAudioHighlight）',
+      'SentenceAudio 默认映射到通用键 {sentence-audio}（不再是内部历史命名别名）',
       () {
         expect(
           LapisNoteType.defaultFieldMappings['SentenceAudio'],

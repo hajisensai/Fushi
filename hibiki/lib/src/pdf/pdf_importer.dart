@@ -17,7 +17,7 @@ import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
 ///
 /// 与 [EpubImporter] 的差别：PDF 不解压、无章节 HTML。落库形态：
 /// - `epubPath` = 拷进书目录的 PDF 文件名（`document.pdf`）。
-/// - `extractDir` = 该书目录（`<hoshi_books>/<bookKey>/`），阅读器用
+/// - `extractDir` = 该书目录（`<fushi_books>/<bookKey>/`），阅读器用
 ///   `p.join(extractDir, epubPath)` 还原 PDF 绝对路径。
 /// - `coverPath` = pdfrx 栅格化首页得到的 `cover.png`（书架封面复用同一解析）。
 /// - `chapterCount` = PDF 总页数；`chaptersJson='[]'`（PDF 无章字数，页码进度是

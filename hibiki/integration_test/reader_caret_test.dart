@@ -71,7 +71,7 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      // Shelf entries key off the media identifier (hoshi://book/<id>), not the
+      // Shelf entries key off the media identifier (fushi://book/<id>), not the
       // raw row id — see reader_hibiki_history_page.dart `book_entry_<mediaId>`.
       final String seededKey =
           'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';

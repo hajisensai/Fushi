@@ -106,7 +106,7 @@ void main() {
       await ReaderHibikiSource.instance.setLyricsBlur(true);
 
       final Map<String, String> prefs = await db.getAllPrefs();
-      expect(prefs.containsKey('src:reader_ttu:lyrics_blur'), isTrue);
+      expect(prefs.containsKey('src:reader_fushi:lyrics_blur'), isTrue);
     });
   });
 }

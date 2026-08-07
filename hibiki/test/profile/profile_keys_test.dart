@@ -73,13 +73,15 @@ void main() {
         () {
       // Persisted form: src:<sourceId>:override_title://<sourceId>/<uniqueKey>
       expect(
-        ProfileKeys.isExcludedPref('src:reader_ttu:override_title://reader_ttu/'
-            'reader_ttu/hoshi://book/我的书'),
+        ProfileKeys.isExcludedPref(
+            'src:reader_fushi:override_title://reader_fushi/'
+            'reader_fushi/fushi://book/我的书'),
         isTrue,
       );
       expect(
-        ProfileKeys.isExcludedPref('src:reader_ttu:override_title://reader_ttu/'
-            'reader_ttu/hoshi://srtbook/srtbook_123'),
+        ProfileKeys.isExcludedPref(
+            'src:reader_fushi:override_title://reader_fushi/'
+            'reader_fushi/fushi://srtbook/srtbook_123'),
         isTrue,
       );
     });

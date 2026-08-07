@@ -18,10 +18,10 @@ import 'package:path/path.dart' as path;
 /// 一个 [MediaSource] 偏好在 Drift `preferences` 表里的命名空间化 key：
 /// `src:<sourceId>:<key>`。这是该格式的**单一真相源**——`MediaSource._dbPrefKey`
 /// 与跨层重建旧 reader 源偏好的 [ProfileRepository.applyProfile] 都调它，避免上层
-/// 服务硬编码 `src:reader_ttu:...` 字符串来猜下层私有 key 格式（历史耦合）。
+/// 服务硬编码 `src:reader_fushi:...` 字符串来猜下层私有 key 格式（历史耦合）。
 ///
 /// ⚠️ 这是持久化 key 编码：格式绝不能变（变了即丢用户偏好，never break userspace），
-/// `reader_ttu` 等历史 sourceId 是冻结值。守卫测试断言其输出逐字节等于旧字符串。
+/// `reader_fushi` 等历史 sourceId 是冻结值。守卫测试断言其输出逐字节等于旧字符串。
 String dbSourcePrefKey(String sourceId, String key) => 'src:$sourceId:$key';
 
 /// A source for a [MediaType] that will appear on the list of sources when
@@ -448,7 +448,7 @@ abstract class MediaSource {
   //      独立缓存，所以光把源键从 key 字符串里拿掉并不够。
   //
   // 而一本书的 `mediaSourceIdentifier` 由 `EpubBooks.format` **现算**
-  // （epub→`reader_ttu` / manga→`reader_manga` / pdf→`reader_pdf`，见
+  // （epub→`reader_fushi` / manga→`reader_manga` / pdf→`reader_pdf`，见
   // `ReaderHibikiSource._bookToMediaItem`），三者共享同一 `hoshi://book/<bookKey>`
   // 身份。于是同一本书在「书架用真实源」与「首页 / 统计 / 通知栏用合成的 EPUB 源」
   // 两条路径上读到不同的键——改名后四处显示不一致；EPUB 转成漫画后连书架侧也读不

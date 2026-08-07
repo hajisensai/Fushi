@@ -60,17 +60,17 @@ void main() {
     expect(src.contains('manga_hibiki_source.dart'), isTrue);
   });
 
-  // ── 身份：hoshi://book/<bookKey>，无 manga:// 特例 ──────────────────
+  // ── 身份：fushi://book/<bookKey>，无 manga:// 特例 ──────────────────
 
-  test('漫画身份统一 hoshi://book/<bookKey>，源与页面都不引入 manga:// 标识', () {
+  test('漫画身份统一 fushi://book/<bookKey>，源与页面都不引入 manga:// 标识', () {
     final String source =
         read('lib/src/media/sources/manga_hibiki_source.dart');
     final String page =
         read('lib/src/media/manga/reader/manga_hibiki_page.dart');
-    // 打开时从 hoshi://book/ 标识解析 bookKey（与 PDF 完全同构），关书自动同步
-    // （triggerAutoSyncAfterClose 的 hoshi://book/ 前缀识别）天然工作。
+    // 打开时从 fushi://book/ 标识解析 bookKey（与 PDF 完全同构），关书自动同步
+    // （triggerAutoSyncAfterClose 的 fushi://book/ 前缀识别）天然工作。
     expect(source.contains('ReaderHibikiSource.parseBookKey'), isTrue,
-        reason: 'buildLaunchPage 必须用共享的 hoshi://book/ 解析器');
+        reason: 'buildLaunchPage 必须用共享的 fushi://book/ 解析器');
     expect(source.contains('manga://'), isFalse, reason: '不再有 manga:// 身份特例');
     expect(page.contains('manga://'), isFalse, reason: '页面也不得引入 manga:// 身份');
   });

@@ -16,7 +16,7 @@ FushiDatabase _testDb() {
   );
 }
 
-const String _prefPrefix = 'src:reader_ttu:';
+const String _prefPrefix = 'src:reader_fushi:';
 const String _catalogPref = '${_prefPrefix}font_catalog';
 const String _targetsPref = '${_prefPrefix}font_targets';
 

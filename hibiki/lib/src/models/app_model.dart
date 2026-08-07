@@ -23,7 +23,10 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/books_directory.dart';
+import 'package:fushi/src/storage/export_directory.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
@@ -1990,39 +1993,20 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  /// Return the app external directory found in the public DCIM directory.
-  /// This path also initialises the folder if it does not exist, and includes
+  /// Return the export directory under the internal app directory. This also
+  /// initialises the folder if it does not exist (migrating the legacy
+  /// `hibikiExport` name in place, see `export_directory.dart`), and includes
   /// a .nomedia file within the folder.
-  Future<Directory> prepareHibikiDirectory() async {
-    try {
-      final String dirPath =
-          await platformServices.directory.getHibikiExportDirectory();
-      final Directory hibikiDirectory = Directory(dirPath);
-      await platformServices.directory
-          .excludeFromMediaScanner(hibikiDirectory.path);
-      return hibikiDirectory;
-    } catch (e, stack) {
-      ErrorLogService.instance.log('AppModel.prepareHibikiDirectory', e, stack);
-      debugPrint('DCIM unavailable, using fallback directory.');
-      return prepareFallbackHibikiDirectory();
-    }
-  }
-
-  /// Return the app external directory found in the internal app directory.
-  /// This path also initialises the folder if it does not exist, and includes
-  /// a .nomedia file within the folder.
-  Future<Directory> prepareFallbackHibikiDirectory() async {
-    String directoryPath = path.join(appDirectory.path, 'hibikiExport');
-
-    Directory hibikiDirectory = Directory(directoryPath);
-
-    if (!hibikiDirectory.existsSync()) {
-      hibikiDirectory.createSync(recursive: true);
-    }
+  Future<Directory> prepareExportDirectory() async {
+    final Directory exportDirectory = prepareExportDirectoryAt(
+      appDirectory.path,
+      onMigrationError: (Object e, StackTrace stack) => ErrorLogService.instance
+          .log('AppModel.prepareExportDirectory.renameLegacy', e, stack),
+    );
     await platformServices.directory
-        .excludeFromMediaScanner(hibikiDirectory.path);
+        .excludeFromMediaScanner(exportDirectory.path);
 
-    return hibikiDirectory;
+    return exportDirectory;
   }
 
   /// Preloads the app icon so that there is no pop-in.
@@ -2124,6 +2108,17 @@ class AppModel with ChangeNotifier {
           .markInitStep('resolve-data-roots（AppPaths.resolve / 数据根 stat）');
       await _guardInitIo('resolve-data-roots', _prepareRuntimeDirectories());
 
+      // W2-7：存量书库目录 hoshi_books → fushi_books 就地改名。必须在 DB 打开
+      // **之前**跑：v72 迁移在首次打开时把 extract_dir / image_url 里的目录段
+      // 改写成新名，先改磁盘再开库，同一次启动内两侧一致。改名失败不阻塞
+      // （上报错误日志，下次启动重试自愈；旧目录原地保留，数据零丢失）。
+      migrateLegacyBooksDirectoryAt(
+        _appDirectory.path,
+        onMigrationError: (Object e, StackTrace stack) => ErrorLogService
+            .instance
+            .log('AppModel.migrateLegacyBooksDirectory', e, stack),
+      );
+
       debugPrint('[Fushi] init: Drift database');
       ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');
       _database = FushiDatabase(_databaseDirectory.path);
@@ -2204,11 +2199,26 @@ class AppModel with ChangeNotifier {
           dictionaryResourceDirectory.create(recursive: true),
           refreshSystemPalette(),
           () async {
-            _exportDirectory = await prepareFallbackHibikiDirectory();
+            _exportDirectory = await prepareExportDirectory();
             _alternateExportDirectory = _exportDirectory;
           }(),
         ]),
       );
+
+      // W2-3：override 封面文件名的 hoshi://→fushi:// 前缀换代一次性清扫
+      // （文件名是 identifier 的 hashCode，v73 改写库内 identifier 后旧文件
+      // 不再命中）。pref 门控幂等；清扫不干净（rename 失败）不落标记，下次
+      // 启动重试。放在 thumbnails 目录建好、DB 迁移已跑完之后。
+      if (!prefsRepo.containsKey(kOverrideThumbnailPrefixMigratedPrefKey)) {
+        final bool clean = await migrateOverrideThumbnailPrefixes(
+          db: _database,
+          thumbnailsDirectory: thumbnailsDirectory,
+        );
+        if (clean) {
+          await prefsRepo.setPref(
+              kOverrideThumbnailPrefixMigratedPrefKey, true);
+        }
+      }
 
       // TODO-1260：内部对每本词典的资源目录做 exists() 探测（数据根派生），同样叠超时。
       ErrorLogService.instance
@@ -2521,7 +2531,7 @@ class AppModel with ChangeNotifier {
           Directory(path.join(appDirectory.path, 'dictionaryResources'));
       _dictionaryImportWorkingDirectory = Directory(
           path.join(appDirectory.path, 'dictionaryImportWorkingDirectory'));
-      _exportDirectory = await prepareFallbackHibikiDirectory();
+      _exportDirectory = await prepareExportDirectory();
       _alternateExportDirectory = _exportDirectory;
       _webArchiveDirectory =
           Directory(path.join(appDirectory.path, 'webArchive'));

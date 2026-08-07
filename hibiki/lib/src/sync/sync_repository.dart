@@ -32,8 +32,7 @@ class FushiClientUrl {
         if (deviceName != null) 'deviceName': deviceName,
       };
 
-  factory FushiClientUrl.fromJson(Map<String, dynamic> json) =>
-      FushiClientUrl(
+  factory FushiClientUrl.fromJson(Map<String, dynamic> json) => FushiClientUrl(
         url: json['url'] as String,
         enabled: json['enabled'] as bool? ?? true,
         fingerprintSha256: json['fingerprintSha256'] as String?,
@@ -774,8 +773,7 @@ class SyncRepository {
     String? deviceName,
   }) async {
     final List<FushiClientUrl> urls = await getHibikiClientUrls();
-    final int existingIdx =
-        urls.indexWhere((FushiClientUrl u) => u.url == url);
+    final int existingIdx = urls.indexWhere((FushiClientUrl u) => u.url == url);
 
     final String? incomingFp =
         (fingerprint != null && fingerprint.isNotEmpty) ? fingerprint : null;
@@ -859,8 +857,8 @@ class SyncRepository {
   /// 这是"哪些 key 属于设备本地"的唯一真相源；备份导入只引用本清单，杜绝两处漂移。
   static const List<String> deviceLocalPrefKeys = <String>[
     _keyBackendType,
-    // Hoshi 共享空间功能已移除；旧键 google_drive_hoshi_compat 仍属设备本地。
-    'google_drive_hoshi_compat',
+    // （旧键 google_drive_hoshi_compat 已由 fushi_core v72 迁移清行：Hoshi 共享
+    // 空间功能删除后它无任何读写方；导入的旧备份库开库时同样被清，故无需再列。）
     _keyDesktopCredentials,
     _keyOneDriveToken,
     _keyDropboxToken,

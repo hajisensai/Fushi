@@ -7,11 +7,11 @@ import 'package:fushi/src/storage/app_paths.dart';
 
 /// Manages on-disk storage of extracted EPUB content.
 ///
-/// Layout: `<appDocDir>/hoshi_books/<bookKey>/`
+/// Layout: `<appDocDir>/fushi_books/<bookKey>/`
 ///   - `META-INF/`, OPF, chapter HTML, images, CSS, fonts (extracted from ZIP)
 ///   - `original.epub` (optional — kept for re-export)
 ///
-/// NOTE: pre-v16 books were stored under `<appDocDir>/hoshi_books/<int id>/`.
+/// NOTE: pre-v16 books were stored under `<appDocDir>/fushi_books/<int id>/`.
 /// Those directories are NOT renamed on migration — the truth is the
 /// `epub_books.extract_dir` column. Use [bookDirectory]/[bookPath] only when
 /// importing a NEW book; to locate an EXISTING book read its `extractDir`
@@ -27,16 +27,16 @@ class EpubStorage {
   /// through to [AppPaths.documentsRootDirectory].
   @visibleForTesting
   static set debugBaseDirectoryOverride(String? path) {
-    _cachedBaseDir = path == null ? null : p.join(path, 'hoshi_books');
+    _cachedBaseDir = path == null ? null : p.join(path, 'fushi_books');
   }
 
   /// Base directory for all extracted books.
   static Future<String> baseDirectory() async {
     if (_cachedBaseDir != null) return _cachedBaseDir!;
     // TODO-935 E0：经唯一入口 [AppPaths] 取 documents 根（内部 honor 测试分支），
-    // 派生 `<documents>/hoshi_books`——与旧解析逐字节等价。
+    // 派生 `<documents>/fushi_books`——与旧解析逐字节等价。
     final Directory appDir = await AppPaths.documentsRootDirectory();
-    _cachedBaseDir = p.join(appDir.path, 'hoshi_books');
+    _cachedBaseDir = p.join(appDir.path, 'fushi_books');
     return _cachedBaseDir!;
   }
 

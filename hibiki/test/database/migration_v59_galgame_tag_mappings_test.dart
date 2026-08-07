@@ -85,7 +85,7 @@ CREATE TABLE galgame_sessions (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 68,
+    expect(db.schemaVersion, 73,
         reason: 'v59 新建 galgame_tag_mappings（BUG-1113 游戏接入共享标签池）');
 
     final GalgameRow? legacy = await db.getGalgame('legacy_game');
@@ -112,8 +112,7 @@ CREATE TABLE galgame_sessions (
   });
 
   test('v59：fresh 库由 onCreate 直接建出该表（不依赖迁移梯子）', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     expect(await db.getAllGameTagMappings(), isEmpty,

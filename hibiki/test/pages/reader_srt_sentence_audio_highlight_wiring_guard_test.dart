@@ -5,7 +5,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'reader_hibiki_page_source_corpus.dart';
 
 /// BUG-395 接线守卫：「普通 EPUB + SRT 音频」被 matcher 匹配后 cue 是
-/// `sasayaki://...`，但 reader setup 期 `_prepareSasayakiCuesJson` 旧代码在
+/// `sasayaki://...`，但 reader setup 期 `_prepareSentenceAudioCuesJson` 旧代码在
 /// `_srtBookUid != null` 时**无条件早退 return null** → `applySasayakiCues` 永不
 /// 调用 → JS `cueRangesMap` 恒空 → playback 每次 `highlightSasayakiCue` 都
 /// `RETURN_NULL_no_segments`，正文无任何有声书跟随高亮（章节级跟随仍正常，因其走

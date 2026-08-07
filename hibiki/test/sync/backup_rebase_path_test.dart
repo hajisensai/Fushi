@@ -5,51 +5,51 @@ void main() {
   group('rebasePath', () {
     test('replaces the old root prefix with the new root (posix)', () {
       expect(
-        rebasePath('/old/app/hoshi_books/MyBook/original.epub',
-            '/old/app/hoshi_books', '/new/app/hoshi_books'),
-        '/new/app/hoshi_books/MyBook/original.epub',
+        rebasePath('/old/app/fushi_books/MyBook/original.epub',
+            '/old/app/fushi_books', '/new/app/fushi_books'),
+        '/new/app/fushi_books/MyBook/original.epub',
       );
     });
 
     test('replaces the old root prefix (windows backslash)', () {
       expect(
-        rebasePath(r'C:\OldA\hoshi_books\Bk\cover.jpg', r'C:\OldA\hoshi_books',
-            r'D:\NewB\hoshi_books'),
-        r'D:\NewB\hoshi_books\Bk\cover.jpg',
+        rebasePath(r'C:\OldA\fushi_books\Bk\cover.jpg', r'C:\OldA\fushi_books',
+            r'D:\NewB\fushi_books'),
+        r'D:\NewB\fushi_books\Bk\cover.jpg',
       );
     });
 
     test('returns the path unchanged when it is not under the old root', () {
       expect(
-        rebasePath('/somewhere/else/x.epub', '/old/app/hoshi_books',
-            '/new/app/hoshi_books'),
+        rebasePath('/somewhere/else/x.epub', '/old/app/fushi_books',
+            '/new/app/fushi_books'),
         '/somewhere/else/x.epub',
       );
     });
 
     test('maps the root itself to the new root', () {
       expect(
-        rebasePath('/old/app/hoshi_books', '/old/app/hoshi_books',
-            '/new/app/hoshi_books'),
-        '/new/app/hoshi_books',
+        rebasePath('/old/app/fushi_books', '/old/app/fushi_books',
+            '/new/app/fushi_books'),
+        '/new/app/fushi_books',
       );
     });
 
     test('tolerates a trailing separator on the old root', () {
       expect(
-        rebasePath('/old/hoshi_books/Bk/f.epub', '/old/hoshi_books/',
-            '/new/hoshi_books'),
-        '/new/hoshi_books/Bk/f.epub',
+        rebasePath('/old/fushi_books/Bk/f.epub', '/old/fushi_books/',
+            '/new/fushi_books'),
+        '/new/fushi_books/Bk/f.epub',
       );
     });
 
     test('does not treat a sibling sharing a name prefix as under the root',
         () {
-      // "/old/hoshi_books_extra" must NOT match root "/old/hoshi_books".
+      // "/old/fushi_books_extra" must NOT match root "/old/fushi_books".
       expect(
-        rebasePath('/old/hoshi_books_extra/f.epub', '/old/hoshi_books',
-            '/new/hoshi_books'),
-        '/old/hoshi_books_extra/f.epub',
+        rebasePath('/old/fushi_books_extra/f.epub', '/old/fushi_books',
+            '/new/fushi_books'),
+        '/old/fushi_books_extra/f.epub',
       );
     });
   });
@@ -62,11 +62,11 @@ void main() {
         createdAt: DateTime(2026, 6, 5),
         bookCount: 2,
         statsCount: 0,
-        booksRoot: '/old/app/hoshi_books',
+        booksRoot: '/old/app/fushi_books',
         audiobooksRoot: '/old/app/audiobooks',
       );
       final back = BackupMeta.fromJson(m.toJson());
-      expect(back.booksRoot, '/old/app/hoshi_books');
+      expect(back.booksRoot, '/old/app/fushi_books');
       expect(back.audiobooksRoot, '/old/app/audiobooks');
     });
 

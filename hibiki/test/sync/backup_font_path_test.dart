@@ -135,20 +135,20 @@ void main() {
 
       final FushiDatabase srcDb = FushiDatabase(srcDir.path);
       await srcDb.setPref(
-        'src:reader_ttu:custom_fonts',
+        'src:reader_fushi:custom_fonts',
         jsonEncode(<Map<String, dynamic>>[
           {'name': 'Klee One', 'path': bodyFontPath, 'enabled': true},
         ]),
       );
       await srcDb.setPref(
-        'src:reader_ttu:app_ui_fonts',
+        'src:reader_fushi:app_ui_fonts',
         jsonEncode(<Map<String, dynamic>>[
           {'name': 'Mincho', 'path': uiFontPath, 'enabled': true},
           {'name': 'Yu Gothic', 'path': null, 'enabled': true},
         ]),
       );
       await srcDb.setPref(
-        'src:reader_ttu:dict_fonts',
+        'src:reader_fushi:dict_fonts',
         jsonEncode(<Map<String, dynamic>>[
           {'name': 'Klee One', 'path': bodyFontPath, 'enabled': false},
         ]),
@@ -156,13 +156,13 @@ void main() {
       // TODO-864: video subtitle font target also carries an absolute path that
       // must be stripped/rebased on export+import.
       await srcDb.setPref(
-        'src:reader_ttu:video_sub_fonts',
+        'src:reader_fushi:video_sub_fonts',
         jsonEncode(<Map<String, dynamic>>[
           {'name': 'Mincho', 'path': uiFontPath, 'enabled': true},
         ]),
       );
       await srcDb.setPref(
-        'src:reader_ttu:font_catalog',
+        'src:reader_fushi:font_catalog',
         jsonEncode(<String, dynamic>{
           'version': 1,
           'fonts': <Map<String, dynamic>>[
@@ -173,7 +173,7 @@ void main() {
         }),
       );
       await srcDb.setPref(
-        'src:reader_ttu:font_targets',
+        'src:reader_fushi:font_targets',
         jsonEncode(<String, dynamic>{
           'version': 1,
           'targets': <String, dynamic>{
@@ -239,7 +239,7 @@ void main() {
       final Map<String, String> prefs = await dstDb.getAllPrefs();
 
       final List<dynamic> body =
-          jsonDecode(prefs['src:reader_ttu:custom_fonts']!) as List<dynamic>;
+          jsonDecode(prefs['src:reader_fushi:custom_fonts']!) as List<dynamic>;
       expect((body[0] as Map)['path'], '${dstFontsDir.path}/Klee_1.ttf');
       expect(
         await File((body[0] as Map)['path'] as String).exists(),
@@ -248,12 +248,12 @@ void main() {
       );
 
       final List<dynamic> ui =
-          jsonDecode(prefs['src:reader_ttu:app_ui_fonts']!) as List<dynamic>;
+          jsonDecode(prefs['src:reader_fushi:app_ui_fonts']!) as List<dynamic>;
       expect((ui[0] as Map)['path'], '${dstFontsDir.path}/Mincho_2.otf');
       expect((ui[1] as Map)['path'], isNull);
 
       final List<dynamic> dict =
-          jsonDecode(prefs['src:reader_ttu:dict_fonts']!) as List<dynamic>;
+          jsonDecode(prefs['src:reader_fushi:dict_fonts']!) as List<dynamic>;
       expect((dict[0] as Map)['path'], '${dstFontsDir.path}/Klee_1.ttf');
       expect((dict[0] as Map)['enabled'], false);
 
@@ -261,7 +261,8 @@ void main() {
       // rebased onto this device's root (not leaked), proving the new key is in
       // both `_legacyFontPrefKeys` whitelists.
       final List<dynamic> videoSub =
-          jsonDecode(prefs['src:reader_ttu:video_sub_fonts']!) as List<dynamic>;
+          jsonDecode(prefs['src:reader_fushi:video_sub_fonts']!)
+              as List<dynamic>;
       expect((videoSub[0] as Map)['path'], '${dstFontsDir.path}/Mincho_2.otf');
       expect(
         (videoSub[0] as Map)['path'],
@@ -271,7 +272,7 @@ void main() {
       );
 
       final Map<String, dynamic> catalog =
-          jsonDecode(prefs['src:reader_ttu:font_catalog']!)
+          jsonDecode(prefs['src:reader_fushi:font_catalog']!)
               as Map<String, dynamic>;
       final List<dynamic> catalogFonts = catalog['fonts'] as List<dynamic>;
       final Map<String, Object?> catalogPathById = <String, Object?>{
@@ -283,7 +284,7 @@ void main() {
       expect(catalogPathById['font_3'], isNull);
 
       final Map<String, dynamic> targets =
-          jsonDecode(prefs['src:reader_ttu:font_targets']!)
+          jsonDecode(prefs['src:reader_fushi:font_targets']!)
               as Map<String, dynamic>;
       final Map<String, dynamic> targetRows =
           (targets['targets'] as Map<dynamic, dynamic>).cast<String, dynamic>();

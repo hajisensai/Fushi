@@ -66,8 +66,7 @@ CREATE TABLE epub_books (
   test('v51：可插入并读回 format=pdf 的 PDF 行（完整 schema，走真 insertEpubBook）', () async {
     // 用完整 schema 的 forTesting 库（onCreate 建全表 @v51，含 book_tombstones 等
     // insertEpubBook 依赖的表）——手搭 v50 shape 只有 epub_books，跑不了真插入 DAO。
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final String key = await db.insertEpubBook(
       EpubBooksCompanion.insert(
@@ -110,6 +109,6 @@ CREATE TABLE epub_books (
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 68);
+    expect(db.schemaVersion, 73);
   });
 }

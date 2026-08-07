@@ -41,7 +41,7 @@ void main() {
       return;
     }
 
-    // 隔离 DB + 存储根，避免碰真实用户库（用内存库 + 临时 hoshi_books 根）。
+    // 隔离 DB + 存储根，避免碰真实用户库（用内存库 + 临时 fushi_books 根）。
     final Directory tmpRoot =
         Directory.systemTemp.createTempSync('hibiki_pdf_phase1_');
     addTearDown(() {

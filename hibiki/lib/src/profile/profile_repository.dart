@@ -197,7 +197,7 @@ class ProfileRepository {
           prefMap[row.key] = row.value;
         case ProfileKeys.categoryReader:
           // 旧快照里 reader 偏好按 MediaSource 命名空间还原；用单一真相编码器
-          // 而非硬编码 `src:reader_ttu:` 猜下层私有 key 格式（[dbSourcePrefKey]）。
+          // 而非硬编码 `src:reader_fushi:` 猜下层私有 key 格式（[dbSourcePrefKey]）。
           prefMap[dbSourcePrefKey(kReaderSourcePersistedKey, row.key)] =
               row.value;
         default:
@@ -430,7 +430,7 @@ class ProfileRepository {
 
   /// 字体配置的持久化 key（与 backup_service 同一组值；那边因 const 上下文
   /// 保留字面量并由 `db_source_pref_key_test` 锁一致）。这里经单一真相编码器
-  /// [dbSourcePrefKey] 生成，不再硬编码 `src:reader_ttu:` 格式。
+  /// [dbSourcePrefKey] 生成，不再硬编码 `src:reader_fushi:` 格式。
   static final String _fontCatalogPrefKey =
       dbSourcePrefKey(kReaderSourcePersistedKey, 'font_catalog');
   static final List<String> _legacyFontPrefKeys = <String>[

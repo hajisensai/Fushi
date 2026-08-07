@@ -20,8 +20,8 @@ void main() {
     }
   });
 
-  group('bookDirectory / bookPath (reuse hoshi_books root, PDF 同惯例)', () {
-    test('bookDirectory is <base>/hoshi_books/<bookKey> and is created',
+  group('bookDirectory / bookPath (reuse fushi_books root, PDF 同惯例)', () {
+    test('bookDirectory is <base>/fushi_books/<bookKey> and is created',
         () async {
       final String path = await MangaStorage.bookPath('vol1');
       expect(Directory(path).existsSync(), isFalse,
@@ -30,7 +30,7 @@ void main() {
       final String dir = await MangaStorage.bookDirectory('vol1');
       expect(Directory(dir).existsSync(), isTrue);
       expect(p.basename(dir), 'vol1');
-      expect(p.basename(p.dirname(dir)), 'hoshi_books');
+      expect(p.basename(p.dirname(dir)), 'fushi_books');
       expect(dir, path);
     });
 

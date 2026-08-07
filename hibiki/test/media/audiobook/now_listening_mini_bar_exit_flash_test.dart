@@ -110,7 +110,7 @@ void main() {
         bookKey: 'a',
         audiobook: ab('a'),
         title: 'Test Book',
-        mediaIdentifier: 'hoshi://book/a',
+        mediaIdentifier: 'fushi://book/a',
       ),
       audioFiles: <File>[makeFile('hibiki-minibar-flash.mp3')],
       prefs: const SessionPrefs(
@@ -185,7 +185,7 @@ void main() {
         bookKey: 'a',
         audiobook: ab('a'),
         title: 'Test Book',
-        mediaIdentifier: 'hoshi://book/a',
+        mediaIdentifier: 'fushi://book/a',
       ),
       audioFiles: <File>[makeFile('hibiki-minibar-locked-tree.mp3')],
       prefs: const SessionPrefs(
@@ -237,7 +237,7 @@ void main() {
         bookKey: 'a',
         audiobook: ab('a'),
         title: 'Test Book',
-        mediaIdentifier: 'hoshi://book/a',
+        mediaIdentifier: 'fushi://book/a',
       ),
       audioFiles: <File>[makeFile('hibiki-minibar-post-frame.mp3')],
       prefs: const SessionPrefs(
@@ -303,7 +303,7 @@ void main() {
         bookKey: 'a',
         audiobook: ab('a'),
         title: 'Test Book',
-        mediaIdentifier: 'hoshi://book/a',
+        mediaIdentifier: 'fushi://book/a',
       ),
       audioFiles: <File>[makeFile('hibiki-minibar-notify.mp3')],
       prefs: const SessionPrefs(

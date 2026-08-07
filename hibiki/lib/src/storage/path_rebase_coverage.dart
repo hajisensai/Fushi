@@ -134,7 +134,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       'imageUrl',
       PathRebaseKind.documentsRooted,
       '本地书封面存 file://<绝对路径> URI（reader_hibiki_source.dart 的 '
-          'Uri.file(candidate)，候选全在 <documents>/hoshi_books 下；SRT 书同款）。'
+          'Uri.file(candidate)，候选全在 <documents>/fushi_books 下；SRT 书同款）。'
           '远端源存 http(s) URL，scheme 非 file 时改写器原样跳过。'),
   PathRebaseColumn('MediaItems', 'audioUrl', PathRebaseKind.notAPath,
       '历史 MediaItem 的远端音频 URL 字段；生产代码无写入点（jidoujisho 血统遗留）。'),
@@ -223,7 +223,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
           '来源库扫描 = **外部**绝对路径。四种都不是数据根内路径，改写恒 no-op；调用'
           '保留作防御。'),
   PathRebaseColumn('EpubBooks', 'extractDir', PathRebaseKind.documentsRooted,
-      '<documents>/hoshi_books/<bookKey> 绝对目录。'),
+      '<documents>/fushi_books/<bookKey> 绝对目录。'),
   PathRebaseColumn('EpubBooks', 'chaptersJson', PathRebaseKind.notAPath,
       '书内相对 href 列表，无绝对路径。'),
   PathRebaseColumn(

@@ -997,8 +997,8 @@ void main() {
       expect(settings.marginRight, 2);
 
       final Map<String, String> prefs = await db.getAllPrefs();
-      expect(prefs['src:reader_ttu:ttu_margin_left'], '2.0');
-      expect(prefs['src:reader_ttu:ttu_margin_right'], '2.0');
+      expect(prefs['src:reader_fushi:margin_left'], '2.0');
+      expect(prefs['src:reader_fushi:margin_right'], '2.0');
     });
 
     test('default css emits 2vw left/right padding and 0vh top/bottom',
@@ -1075,10 +1075,10 @@ void main() {
       ReaderHibikiSource.readerSettings = settings;
       addTearDown(() => ReaderHibikiSource.readerSettings = null);
 
-      expect(ReaderHibikiSource.instance.ttuMarginLeft, 2);
-      expect(ReaderHibikiSource.instance.ttuMarginRight, 2);
-      expect(ReaderHibikiSource.instance.ttuMarginTop, 0);
-      expect(ReaderHibikiSource.instance.ttuMarginBottom, 0);
+      expect(ReaderHibikiSource.instance.readerMarginLeft, 2);
+      expect(ReaderHibikiSource.instance.readerMarginRight, 2);
+      expect(ReaderHibikiSource.instance.readerMarginTop, 0);
+      expect(ReaderHibikiSource.instance.readerMarginBottom, 0);
     });
 
     test('source margin setters normalize out-of-range input', () async {
@@ -1092,8 +1092,8 @@ void main() {
 
       await ReaderHibikiSource.instance.setReaderMarginLeft(99);
       await ReaderHibikiSource.instance.setReaderMarginRight(-10);
-      expect(ReaderHibikiSource.instance.ttuMarginLeft, 50);
-      expect(ReaderHibikiSource.instance.ttuMarginRight, 0);
+      expect(ReaderHibikiSource.instance.readerMarginLeft, 50);
+      expect(ReaderHibikiSource.instance.readerMarginRight, 0);
     });
   });
 
@@ -1354,7 +1354,7 @@ void main() {
       expect(settings.pageColumns, 3, reason: 'getter 立即反读新值');
 
       final Map<String, String> prefs = await db.getAllPrefs();
-      expect(prefs['src:reader_ttu:ttu_page_columns'], '3',
+      expect(prefs['src:reader_fushi:page_columns'], '3',
           reason: '每页列数必须落到 preferences 表（写穿）');
 
       // 独立实例重新从 DB 加载，仍读到 3（真持久化，非内存态）。
@@ -1373,9 +1373,9 @@ void main() {
       addTearDown(() => ReaderHibikiSource.readerSettings = null);
 
       await ReaderHibikiSource.instance.setReaderPageColumns(2);
-      expect(ReaderHibikiSource.instance.ttuPageColumns, 2);
+      expect(ReaderHibikiSource.instance.readerPageColumns, 2);
       final Map<String, String> prefs = await db.getAllPrefs();
-      expect(prefs['src:reader_ttu:ttu_page_columns'], '2');
+      expect(prefs['src:reader_fushi:page_columns'], '2');
     });
   });
 }

@@ -19,7 +19,7 @@ int _now() => DateTime.now().millisecondsSinceEpoch;
 void main() {
   Future<String> makeBackupWithBook(Directory root) async {
     final String dbDir = p.join(root.path, 'support');
-    final String books = p.join(root.path, 'documents', 'hoshi_books');
+    final String books = p.join(root.path, 'documents', 'fushi_books');
     Directory(dbDir).createSync(recursive: true);
     File(p.join(books, 'B1', 'text', 'ch0.html'))
       ..createSync(recursive: true)
@@ -70,7 +70,7 @@ void main() {
       bookKey: 'B1',
       title: 'B1',
       epubPath: 'B1.epub',
-      extractDir: p.join(curRoot.path, 'documents', 'hoshi_books', 'B1'),
+      extractDir: p.join(curRoot.path, 'documents', 'fushi_books', 'B1'),
       chapterCount: 1,
       chaptersJson: '["c"]',
       importedAt: _now(),

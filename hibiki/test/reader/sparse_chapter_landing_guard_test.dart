@@ -105,8 +105,8 @@ void main() {
       for (final String shell in <String>[paged, continuous]) {
         expect(shell.contains("setAttribute('loading', 'lazy')"), isTrue,
             reason: '普通图仍须 lazy 分支在场（不回退 TODO-1074）');
-        expect(
-            shell.contains('ttuRegex.test(document.body.textContent'), isTrue,
+        expect(shell.contains('readerRegex.test(document.body.textContent'),
+            isTrue,
             reason: '纯图片章判定须基于正文可匹配文本（有文本=非纯图片=仍 lazy）');
       }
     });

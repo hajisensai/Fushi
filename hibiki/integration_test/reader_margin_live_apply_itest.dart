@@ -105,9 +105,9 @@ void main() {
 
           // Capture originals so we restore global prefs at the end.
           final ReaderHibikiSource src = ReaderHibikiSource.instance;
-          final double origMt = src.ttuMarginTop;
-          final double origMb = src.ttuMarginBottom;
-          final double origFont = src.ttuFontSize;
+          final double origMt = src.readerMarginTop;
+          final double origMb = src.readerMarginBottom;
+          final double origFont = src.readerFontSize;
 
           await seedReaderBook(tester, fileName: 'margin_live_apply.epub');
           final FocusDriver driver = FocusDriver(tester);

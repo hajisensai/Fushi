@@ -26,10 +26,10 @@ import 'lapis_preset.dart';
 @immutable
 class AudioFetchOutcome {
   const AudioFetchOutcome._({this.ref, this.failureReason})
-    : assert(
-        ref == null || failureReason == null,
-        'A successful audio fetch (ref) cannot also carry a failure reason.',
-      );
+      : assert(
+          ref == null || failureReason == null,
+          'A successful audio fetch (ref) cannot also carry a failure reason.',
+        );
 
   /// 成功：拿到裸媒体引用 [ref]。
   const AudioFetchOutcome.stored(String ref) : this._(ref: ref);
@@ -64,11 +64,43 @@ class RenderedMinedFields {
 
 abstract class BaseAnkiRepository {
   @protected
-  static const settingsKey = 'hoshi_anki_settings';
+  static const settingsKey = 'fushi_anki_settings';
+
+  /// 存量 SharedPreferences 键（W2-7 迁移输入）：[readSettingsJson] 载入期把
+  /// 值搬到 [settingsKey] 后删除旧键。旧字面量只允许活在这一处迁移代码里。
+  static const String _legacySettingsKey = 'hoshi_anki_settings';
+
+  /// 载入期一次性迁移（W2-2）：把存量用户卡模板里的音频旧别名
+  /// `{sasayaki-audio}` 就地改写为 `{sentence-audio}`（两者从来渲染同一个值，
+  /// 改写零语义变化），命中即回写持久层。幂等：改写后源串不再含旧 token。
+  /// 旧字面量只允许活在这一处迁移代码里——渲染器/枚举/诊断均已不再受理别名。
+  /// 清理条件：无（SharedPreferences 无版本阶梯，载入期改写即是它的迁移通道）。
+  static const String _legacySentenceAudioAlias = '{sasayaki-audio}';
+
+  /// 读原始设置 JSON 的**唯一通道**：两个载入期迁移（W2-7 键搬移 + W2-2 别名
+  /// 改写）都收敛在这里。子类若覆写 [loadSettings]（AnkiDroid 的 legacy deck
+  /// 迁移）也必须经由本方法取原始串，否则迁移被绕过。返回 null = 从未存过。
+  @protected
+  Future<String?> readSettingsJson(SharedPreferences prefs) async {
+    String? raw = prefs.getString(settingsKey);
+    if (raw == null) {
+      final String? legacy = prefs.getString(_legacySettingsKey);
+      if (legacy != null) {
+        await prefs.setString(settingsKey, legacy);
+        await prefs.remove(_legacySettingsKey);
+        raw = legacy;
+      }
+    }
+    if (raw != null && raw.contains(_legacySentenceAudioAlias)) {
+      raw = raw.replaceAll(_legacySentenceAudioAlias, '{sentence-audio}');
+      await prefs.setString(settingsKey, raw);
+    }
+    return raw;
+  }
 
   Future<AnkiSettings> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(settingsKey);
+    final String? raw = await readSettingsJson(prefs);
     if (raw == null) return const AnkiSettings();
     try {
       return AnkiSettings.fromJson(jsonDecode(raw) as Map<String, dynamic>);
@@ -118,9 +150,10 @@ abstract class BaseAnkiRepository {
     required int noteId,
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async => MineOutcome.failure(
-    'This Anki backend does not support overwriting a mined card.',
-  );
+  }) async =>
+      MineOutcome.failure(
+        'This Anki backend does not support overwriting a mined card.',
+      );
 
   /// TODO-614：按「与查重同一条件」反查一张可被覆写的**已存在** note id。
   ///
@@ -135,7 +168,8 @@ abstract class BaseAnkiRepository {
   Future<int?> findOverwriteTargetNoteId(
     String expression,
     String reading,
-  ) async => null;
+  ) async =>
+      null;
 
   /// TODO-1007/1008：按「与查重同一条件」（第一字段=expression）反查 Anki 中**所有**
   /// 已存在的同词卡，返回它们的 [MinedNoteRef]（noteId + 一行预览），**不受
@@ -151,7 +185,8 @@ abstract class BaseAnkiRepository {
   Future<List<MinedNoteRef>> findMatchingNotes(
     String expression,
     String reading,
-  ) async => const <MinedNoteRef>[];
+  ) async =>
+      const <MinedNoteRef>[];
 
   /// TODO-1007/1008：读取一张已存在 note（[noteId]）的现有字段（字段名 → 值），供
   /// note viewer 只读展示。两后端各自覆写（AnkiConnect `notesInfo` / AnkiDroid
@@ -191,7 +226,8 @@ abstract class BaseAnkiRepository {
   /// （调用方决定提示还是静默跳过）。**默认实现 = 优雅降级**：返回 `null`。
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
     String modelName,
-  ) async => null;
+  ) async =>
+      null;
 
   /// 覆写 [modelName] 的 styling（CSS）。返回 `false` = 后端不支持（默认
   /// 降级）；成功返回 `true`；后端失败照抛。
@@ -204,7 +240,8 @@ abstract class BaseAnkiRepository {
   Future<bool> updateNoteTypeTemplates(
     String modelName,
     List<AnkiCardTemplate> templates,
-  ) async => false;
+  ) async =>
+      false;
 
   // ── 媒体存储优化（字节级去重，见 anki_media_dedup.dart）────────────────
 
@@ -227,7 +264,8 @@ abstract class BaseAnkiRepository {
     Future<void> Function(Map<String, dynamic> entry)? onJournal,
     AnkiMediaDedupOnProgress? onProgress,
     bool Function()? shouldCancel,
-  }) async => null;
+  }) async =>
+      null;
 
   @protected
   AnkiDeck selectDeckAfterFetch(List<AnkiDeck> decks, AnkiSettings current) =>
@@ -371,10 +409,8 @@ abstract class BaseAnkiRepository {
     // 块级标签承担换行分词，直接删空会把相邻词粘连成一个词；字幕行内标签则
     // 紧贴正文、删空才不会在日文句中引入假空格。两份实现不强并（G11）。
     final String noTags = value.replaceAll(RegExp(r'<[^>]*>'), ' ');
-    final String collapsed = noTags
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+    final String collapsed =
+        noTags.replaceAll('&nbsp;', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
     if (collapsed.length <= maxLen) return collapsed;
     return '${collapsed.substring(0, maxLen)}…';
   }

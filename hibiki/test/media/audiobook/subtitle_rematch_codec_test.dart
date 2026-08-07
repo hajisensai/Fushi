@@ -21,7 +21,7 @@ void main() {
         normCharStart: 15,
         normCharEnd: 42,
       );
-      expect(raw, 'sasayaki://s=2&ns=15&ne=42');
+      expect(raw, 'fushi-cue://s=2&ns=15&ne=42');
 
       final SubtitleRematchFragment? f = SubtitleRematchCodec.tryDecode(raw);
       expect(f, isNotNull);
@@ -35,13 +35,13 @@ void main() {
     });
 
     test('参数缺失返回 null', () {
-      expect(SubtitleRematchCodec.tryDecode('sasayaki://s=1'), isNull);
-      expect(SubtitleRematchCodec.tryDecode('sasayaki://s=1&ns=2'), isNull);
+      expect(SubtitleRematchCodec.tryDecode('fushi-cue://s=1'), isNull);
+      expect(SubtitleRematchCodec.tryDecode('fushi-cue://s=1&ns=2'), isNull);
     });
 
     test('参数乱序仍能解码', () {
       final SubtitleRematchFragment? f =
-          SubtitleRematchCodec.tryDecode('sasayaki://ne=9&s=0&ns=4');
+          SubtitleRematchCodec.tryDecode('fushi-cue://ne=9&s=0&ns=4');
       expect(f, isNotNull);
       expect(f!.sectionIndex, 0);
       expect(f.normCharStart, 4);
@@ -83,9 +83,9 @@ void main() {
           SubtitleRematchCodec.applyToCues(cues: cues, result: fixture);
 
       expect(applied, 2);
-      expect(cues[0].textFragmentId, 'sasayaki://s=0&ns=0&ne=8');
+      expect(cues[0].textFragmentId, 'fushi-cue://s=0&ns=0&ne=8');
       expect(cues[1].textFragmentId, '');
-      expect(cues[2].textFragmentId, 'sasayaki://s=1&ns=20&ne=35');
+      expect(cues[2].textFragmentId, 'fushi-cue://s=1&ns=20&ne=35');
     });
 
     test('clearUnmatched=false 时未命中保留原值（字幕合成书路径）', () {
@@ -102,9 +102,9 @@ void main() {
       );
 
       expect(applied, 2);
-      expect(cues[0].textFragmentId, 'sasayaki://s=0&ns=0&ne=8');
+      expect(cues[0].textFragmentId, 'fushi-cue://s=0&ns=0&ne=8');
       expect(cues[1].textFragmentId, 'srt://1');
-      expect(cues[2].textFragmentId, 'sasayaki://s=1&ns=20&ne=35');
+      expect(cues[2].textFragmentId, 'fushi-cue://s=1&ns=20&ne=35');
     });
 
     test('长度不一致抛 ArgumentError', () {
@@ -124,17 +124,17 @@ void main() {
   group('SubtitleRematchCodec.computeMatchRate', () {
     test('全 sentenceAudioHighlight fragment → 1.0', () {
       final List<AudioCue> cues = <AudioCue>[
-        mkCue(0, frag: 'sasayaki://s=0&ns=0&ne=5'),
-        mkCue(1, frag: 'sasayaki://s=0&ns=5&ne=10'),
+        mkCue(0, frag: 'fushi-cue://s=0&ns=0&ne=5'),
+        mkCue(1, frag: 'fushi-cue://s=0&ns=5&ne=10'),
       ];
       expect(SubtitleRematchCodec.computeMatchRate(cues), 1.0);
     });
 
     test('混合 → 正确比例', () {
       final List<AudioCue> cues = <AudioCue>[
-        mkCue(0, frag: 'sasayaki://s=0&ns=0&ne=5'),
+        mkCue(0, frag: 'fushi-cue://s=0&ns=0&ne=5'),
         mkCue(1, frag: 'srt://1'),
-        mkCue(2, frag: 'sasayaki://s=0&ns=10&ne=15'),
+        mkCue(2, frag: 'fushi-cue://s=0&ns=10&ne=15'),
         mkCue(3, frag: 'srt://3'),
       ];
       expect(SubtitleRematchCodec.computeMatchRate(cues), 0.5);

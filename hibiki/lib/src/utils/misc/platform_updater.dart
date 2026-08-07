@@ -767,7 +767,7 @@ class WindowsInstaller {
     final String? targetInstallDir = diagnostics.targetInstallDir;
     final Map<int, WindowsProcessInfo> blockers = <int, WindowsProcessInfo>{};
     for (final WindowsProcessInfo process
-        in diagnostics.runningHibikiProcesses) {
+        in diagnostics.runningFushiProcesses) {
       blockers[process.pid] = process;
     }
     for (final WindowsProcessInfo process in diagnostics.libmpvModuleHolders) {
@@ -833,8 +833,8 @@ Future<WindowsInstallerDiagnostics> collectWindowsInstallerDiagnostics({
     ...await queryWindowsRegisteredInstallLocations(),
     ...detectWindowsHistoricalInstallLocations(),
   ];
-  final List<WindowsProcessInfo> runningHibikiProcesses =
-      (await queryWindowsHibikiProcesses())
+  final List<WindowsProcessInfo> runningFushiProcesses =
+      (await queryWindowsFushiProcesses())
           .where((WindowsProcessInfo process) =>
               currentProcessId == null || process.pid != currentProcessId)
           .toList(growable: false);
@@ -849,7 +849,7 @@ Future<WindowsInstallerDiagnostics> collectWindowsInstallerDiagnostics({
     currentInstallDir: currentInstallDir,
     targetInstallDir: targetInstallDir,
     detectedInstallLocations: detectedInstallLocations,
-    runningHibikiProcesses: runningHibikiProcesses,
+    runningFushiProcesses: runningFushiProcesses,
     libmpvModuleHolders: libmpvModuleHolders,
     pathMismatchWarning: windowsInstallPathMismatchWarning(
       targetInstallDir: targetInstallDir,
@@ -961,7 +961,7 @@ String? windowsInstallPathMismatchWarning({
       '$details';
 }
 
-Future<List<WindowsProcessInfo>> queryWindowsHibikiProcesses() async {
+Future<List<WindowsProcessInfo>> queryWindowsFushiProcesses() async {
   if (!Platform.isWindows) return const <WindowsProcessInfo>[];
   const String command =
       "Get-CimInstance Win32_Process -Filter \"Name = 'fushi.exe' OR Name = 'hibiki.exe'\" | "

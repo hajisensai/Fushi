@@ -73,7 +73,7 @@ CREATE TABLE galgame_sessions (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 68,
+    expect(db.schemaVersion, 73,
         reason: 'v56 给 galgames 加 launch_args（可配置游戏启动参数）');
 
     final GalgameRow? legacy = await db.getGalgame('legacy_game');
@@ -136,8 +136,7 @@ CREATE TABLE galgame_sessions (
   });
 
   test('v56：fresh 库由 onCreate 建出 launch_args，默认空串', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     await db.upsertGalgame(GalgamesCompanion.insert(

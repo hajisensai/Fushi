@@ -28,7 +28,7 @@ void main() {
   /// Builds a backup carrying one book + one reading-statistics row.
   Future<String> buildBackup() async {
     final String dbDir = p.join(srcRoot.path, 'support');
-    final String books = p.join(srcRoot.path, 'documents', 'hoshi_books');
+    final String books = p.join(srcRoot.path, 'documents', 'fushi_books');
     Directory(dbDir).createSync(recursive: true);
     File(p.join(books, 'B1', 'text', 'ch0.html'))
       ..createSync(recursive: true)
@@ -81,7 +81,7 @@ void main() {
       dbDirectory: curDbDir,
       zipPath: zip,
       categories: categories,
-      booksRootDirectory: p.join(curRoot.path, 'documents', 'hoshi_books'),
+      booksRootDirectory: p.join(curRoot.path, 'documents', 'fushi_books'),
     );
 
     final FushiDatabase cur = FushiDatabase(curDbDir);
@@ -105,7 +105,7 @@ void main() {
       dbDirectory: curDbDir,
       zipPath: zip,
       categories: categories,
-      booksRootDirectory: p.join(curRoot.path, 'documents', 'hoshi_books'),
+      booksRootDirectory: p.join(curRoot.path, 'documents', 'fushi_books'),
     );
 
     final FushiDatabase cur = FushiDatabase(curDbDir);
@@ -116,7 +116,7 @@ void main() {
         reason: 'statistics still merge');
     // Book content files must NOT be copied when books is unticked.
     expect(
-      File(p.join(curRoot.path, 'documents', 'hoshi_books', 'B1', 'text',
+      File(p.join(curRoot.path, 'documents', 'fushi_books', 'B1', 'text',
               'ch0.html'))
           .existsSync(),
       isFalse,
@@ -135,7 +135,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
-      booksRootDirectory: p.join(curRoot.path, 'documents', 'hoshi_books'),
+      booksRootDirectory: p.join(curRoot.path, 'documents', 'fushi_books'),
     );
 
     final FushiDatabase cur = FushiDatabase(curDbDir);

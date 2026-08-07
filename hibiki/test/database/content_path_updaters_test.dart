@@ -16,25 +16,25 @@ void main() {
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'Bk',
         title: 'Bk',
-        epubPath: '/old/hoshi_books/Bk/original.epub',
-        extractDir: '/old/hoshi_books/Bk',
+        epubPath: '/old/fushi_books/Bk/original.epub',
+        extractDir: '/old/fushi_books/Bk',
         chapterCount: 1,
         chaptersJson: '["c"]',
         importedAt: 0,
-        coverPath: const Value('/old/hoshi_books/Bk/cover.jpg'),
+        coverPath: const Value('/old/fushi_books/Bk/cover.jpg'),
       ));
 
       await db.updateEpubBookContentPaths(
         'Bk',
-        epubPath: '/new/hoshi_books/Bk/original.epub',
-        extractDir: '/new/hoshi_books/Bk',
-        coverPath: '/new/hoshi_books/Bk/cover.jpg',
+        epubPath: '/new/fushi_books/Bk/original.epub',
+        extractDir: '/new/fushi_books/Bk',
+        coverPath: '/new/fushi_books/Bk/cover.jpg',
       );
 
       final row = await db.getEpubBook('Bk');
-      expect(row!.epubPath, '/new/hoshi_books/Bk/original.epub');
-      expect(row.extractDir, '/new/hoshi_books/Bk');
-      expect(row.coverPath, '/new/hoshi_books/Bk/cover.jpg');
+      expect(row!.epubPath, '/new/fushi_books/Bk/original.epub');
+      expect(row.extractDir, '/new/fushi_books/Bk');
+      expect(row.coverPath, '/new/fushi_books/Bk/cover.jpg');
       expect(row.title, 'Bk', reason: 'non-path columns untouched');
     });
 

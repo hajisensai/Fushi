@@ -308,8 +308,9 @@ class MagpieUpscalingService extends ChangeNotifier {
     try {
       Map<String, dynamic>? config = await _readConfig();
       if (config == null) return;
-      // 先算一遍：没有孤儿就**一个字节都不写、更不发 QUIT**。
-      if (!magpieConfigWithHibikiAutoScaleCleared(config: config).applied) {
+      // 先算一遍：既无待改名的旧前缀条目也无孤儿，就**一个字节都不写、更不发
+      // QUIT**。
+      if (!_reconciledConfig(config).applied) {
         return;
       }
       if (_safeIsMagpieRunning() && _isBundledMagpieRunning()) {
@@ -321,12 +322,26 @@ class MagpieUpscalingService extends ChangeNotifier {
         config = await _readConfig();
         if (config == null) return;
       }
-      final MagpieProfileWriteResult result =
-          magpieConfigWithHibikiAutoScaleCleared(config: config);
+      final MagpieProfileWriteResult result = _reconciledConfig(config);
       if (result.applied) await _writeConfig(result.config!);
     } catch (_) {
       // 对账是 best-effort：下次启动还会再对一次。
     }
+  }
+
+  /// 启动对账的合成改写：W2-5 旧前缀（`Hibiki: `）条目就地改名 + 孤儿
+  /// autoScale 清零，一次写盘同时落两件事。顺序敏感：先改名，再按新前缀
+  /// 清零——这样无论孤儿是哪一代前缀写下的都会被关回去。任一步 applied 即
+  /// 视为需要写盘；两步都 skip 时原样返回 skip（调用方零写盘）。
+  MagpieProfileWriteResult _reconciledConfig(Map<String, dynamic> config) {
+    final MagpieProfileWriteResult renamed =
+        magpieConfigWithLegacyProfilePrefixRenamed(config: config);
+    final Map<String, dynamic> base =
+        renamed.applied ? renamed.config! : config;
+    final MagpieProfileWriteResult cleared =
+        magpieConfigWithFushiAutoScaleCleared(config: base);
+    if (cleared.applied) return cleared;
+    return renamed;
   }
 
   /// 「我们那份 Magpie 正在跑」的正向判据。
@@ -620,7 +635,7 @@ class MagpieUpscalingService extends ChangeNotifier {
   /// profile 显示名。带 `Hibiki` 前缀是为了让用户在 Magpie 的 UI 里一眼认出「这条是谁加的」。
   String _profileNameFor(MagpieWindowIdentity identity) {
     final String base = identity.executablePath.split(RegExp(r'[\\/]')).last;
-    return '$kMagpieHibikiProfilePrefix'
+    return '$kMagpieFushiProfilePrefix'
         '${base.isEmpty ? identity.windowClassName : base}';
   }
 

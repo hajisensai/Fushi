@@ -442,7 +442,7 @@ void main() {
       db = FushiDatabase.forTesting(NativeDatabase.memory());
       final ReaderSettings settings = ReaderSettings(db);
       await settings.loadFromPrefsSnapshot(<String, String>{
-        'src:reader_ttu:dict_fonts': jsonEncode(<Map<String, dynamic>>[
+        'src:reader_fushi:dict_fonts': jsonEncode(<Map<String, dynamic>>[
           <String, dynamic>{
             'name': 'MemoFont',
             'path': fontFile.path,

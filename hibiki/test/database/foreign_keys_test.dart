@@ -150,7 +150,7 @@ void main() {
       ),
     );
     await db.setMediaTypeProfile('reader', profileId);
-    await db.setBookProfile('reader_ttu/hoshi://book/1', profileId);
+    await db.setBookProfile('reader_fushi/fushi://book/1', profileId);
 
     await db.deleteProfile(profileId);
 

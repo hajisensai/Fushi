@@ -36,7 +36,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(source.showBottomBarCue, isFalse);
       expect(
-        await db.getPref('src:reader_ttu:show_bottom_bar_cue'),
+        await db.getPref('src:reader_fushi:show_bottom_bar_cue'),
         'b:false',
       );
     });
@@ -62,7 +62,7 @@ void main() {
       expect(source.showBottomBarCue, isFalse);
       // 走 per-reader 分层：ReaderSettings._set 用 'false'（非 'b:false'）。
       expect(
-        await db.getPref('src:reader_ttu:show_bottom_bar_cue'),
+        await db.getPref('src:reader_fushi:show_bottom_bar_cue'),
         'false',
       );
     });
@@ -111,7 +111,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(source.topProgressPosition, 'right');
       expect(
-        await db.getPref('src:reader_ttu:top_progress_position'),
+        await db.getPref('src:reader_fushi:top_progress_position'),
         's:right',
       );
     });
@@ -123,7 +123,7 @@ void main() {
 
       final source = ReaderHibikiSource.instance;
       await source.refreshPreferencesFromDb();
-      await db.setPref('src:reader_ttu:top_progress_position', 's:bottom');
+      await db.setPref('src:reader_fushi:top_progress_position', 's:bottom');
       await source.refreshPreferencesFromDb();
       expect(source.topProgressPosition, 'center');
     });
@@ -150,7 +150,7 @@ void main() {
       // per-reader path: ReaderSettings._set uses value.toString() ('left'),
       // not the source PrefCodec ('s:left').
       expect(
-        await db.getPref('src:reader_ttu:top_progress_position'),
+        await db.getPref('src:reader_fushi:top_progress_position'),
         'left',
       );
     });

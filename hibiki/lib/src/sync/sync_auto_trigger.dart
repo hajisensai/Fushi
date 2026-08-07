@@ -20,7 +20,7 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-final _bookKeyPattern = RegExp(r'hoshi://book/(.+)');
+final _bookKeyPattern = RegExp(r'fushi://book/(.+)');
 
 int _activeSyncs = 0;
 final ValueNotifier<bool> syncInProgress = ValueNotifier<bool>(false);

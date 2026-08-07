@@ -12,7 +12,8 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// 根因修复的证据来源，删掉就又会抓瞎：
 /// - `[xchapter]`：连续模式跨章三路径（滚轮/触摸/指针）+ Dart 汇合点，定位
 ///   「没到章首就跨章」到底走哪条输入、什么几何值触发。
-/// - `[sasayaki-hl]`：有声书逐句高亮在 Dart 端的 prepareCues **决策点**留痕。BUG-395
+/// - `[sentence-audio-hl]`（历史名 `[sasayaki-hl]`）：有声书逐句高亮在 Dart 端的
+///   prepareCues **决策点**留痕。BUG-395
 ///   前 SRT 书在 `_srtBookUid!=null` 时无条件 return null（绕开 sasayaki 系统），
 ///   正是这条日志暴露了「SRT 书被匹配进真 EPUB 后 cue 是 sasayaki:// 却建不了
 ///   range」的真因；BUG-395 已把 SRT/Audiobook 两源判据归一，prepareCues 决策探针

@@ -1274,8 +1274,6 @@ String _ankiHandlebarBaseLabel(String option) {
       return t.handlebar_video_clip;
     case '{sentence-audio}':
       return t.handlebar_sentence_audio;
-    case '{sasayaki-audio}':
-      return t.handlebar_sasayaki_audio;
     default:
       return option;
   }

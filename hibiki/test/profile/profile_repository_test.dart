@@ -216,8 +216,8 @@ void main() {
       final db = await _openDb();
       final repo = _repo(db);
       const String overrideTitleKey =
-          'src:reader_ttu:override_title://reader_ttu/'
-          'reader_ttu/hoshi://book/我的书';
+          'src:reader_fushi:override_title://reader_fushi/'
+          'reader_fushi/fushi://book/我的书';
 
       final pid = await repo.createProfile('A');
       await db.setPref('audiobook_pos_bookA', '111');

@@ -148,10 +148,11 @@ class DeleteBookResult {
   final String? failureReason;
 }
 
-/// 阅读器媒体源的**持久化身份键**。字面值冻结（DB pref 前缀 `src:reader_ttu:`、
-/// 历史行的 sourceKey 都用它）；改名迁移（Fushi P2-2）落地前不得更改。
-/// 全仓对该字面量的引用一律走本常量（改名守卫白名单锚点）。
-const String kReaderSourcePersistedKey = 'reader_ttu';
+/// 阅读器媒体源的**持久化身份键**（DB pref 前缀 `src:reader_fushi:`、
+/// media_items 的 sourceKey 行都用它）。历史值 `reader_ttu` 已由 v70 Drift 迁移
+/// （W2-1）一次性改写为本值；旧字面量只允许活在 fushi_core 的迁移阶梯里。
+/// 全仓对该字面量的引用一律走本常量（改名守卫锚点）。
+const String kReaderSourcePersistedKey = 'reader_fushi';
 
 class ReaderHibikiSource extends ReaderMediaSource {
   ReaderHibikiSource._()
@@ -246,7 +247,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   ///
   /// BUG-658 / TODO-1344: extract the RAW remainder after the fixed prefix —
   /// this must be the exact inverse of [mediaIdentifierFor], which embeds the
-  /// key with plain string interpolation (`'hoshi://book/$bookKey'`, no
+  /// key with plain string interpolation (`'fushi://book/$bookKey'`, no
   /// encoding). A sanitized bookKey can itself contain literal percent-escapes:
   /// [sanitizeTtuFilename] maps every `/?<>\\:|%"*` in the title to its `%XX`
   /// form, so a title like `Do Androids Dream of Electric Sheep?` or
@@ -261,7 +262,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// that contain no `%` (the common case), so nothing that worked before
   /// changes. Mirrors the HBK-AUDIT-127 encode/decode-symmetry fix for
   /// [epubUrl]/[fontUrl].
-  static const String _bookIdentifierPrefix = 'hoshi://book/';
+  static const String _bookIdentifierPrefix = 'fushi://book/';
 
   static String? parseBookKey(String identifier) {
     if (!identifier.startsWith(_bookIdentifierPrefix)) return null;
@@ -277,7 +278,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// save silently no-opped (parseBookKey returned null). Their identity is
   /// the stable `SrtBook.uid` under a distinct prefix that can never collide
   /// with a sanitized EPUB bookKey identifier.
-  static const String _srtBookIdentifierPrefix = 'hoshi://srtbook/';
+  static const String _srtBookIdentifierPrefix = 'fushi://srtbook/';
 
   static String mediaIdentifierForSrtUid(String uid) =>
       '$_srtBookIdentifierPrefix$uid';
@@ -1091,7 +1092,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   // The video page (and any DictionaryPageMixin surface) never refreshes
   // [readerSettings], so going through it leaked a stale "last reader profile"
   // value — subtitle lookups auto-read even after the user turned the setting
-  // off. The DB row (`src:reader_ttu:auto_read_on_lookup`) is identical for
+  // off. The DB row (`src:reader_fushi:auto_read_on_lookup`) is identical for
   // both code paths, so there is a single source of truth and no migration.
   bool get autoReadOnLookup =>
       getPreference<bool>(key: 'auto_read_on_lookup', defaultValue: true);
@@ -1337,12 +1338,12 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   // ── ttu 阅读器设置 ─────────────────────────────────────────────────
 
-  double get ttuFontSize =>
+  double get readerFontSize =>
       readerSettings?.fontSize ??
-      getPreference<double>(key: 'ttu_font_size', defaultValue: 20);
+      getPreference<double>(key: 'font_size', defaultValue: 20);
   Future<void> setReaderFontSize(double v) async {
     await (readerSettings?.setFontSize(v) ??
-        setPreference<double>(key: 'ttu_font_size', value: v));
+        setPreference<double>(key: 'font_size', value: v));
     onSettingsChangedLive?.call();
   }
 
@@ -1407,7 +1408,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
-  /// TODO-907: 歌词竖排开关（独立 key，**不复用** `ttu_writing_mode` 正文真值）。
+  /// TODO-907: 歌词竖排开关（独立 key，**不复用** `writing_mode` 正文真值）。
   /// 默认 `false` = 横排。切换走整页重建（`_loadLyricsPage`），不在此触发 live。
   bool get lyricsVerticalWriting =>
       readerSettings?.lyricsVerticalWriting ??
@@ -1430,58 +1431,58 @@ class ReaderHibikiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
-  double get ttuLineHeight =>
+  double get readerLineHeight =>
       readerSettings?.lineHeight ??
-      getPreference<double>(key: 'ttu_line_height', defaultValue: 1.65);
+      getPreference<double>(key: 'line_height', defaultValue: 1.65);
   Future<void> setReaderLineHeight(double v) async {
     await (readerSettings?.setLineHeight(v) ??
-        setPreference<double>(key: 'ttu_line_height', value: v));
+        setPreference<double>(key: 'line_height', value: v));
     onSettingsChangedLive?.call();
   }
 
-  String get ttuWritingMode =>
+  String get readerWritingMode =>
       readerSettings?.writingMode ??
       getPreference<String>(
-        key: 'ttu_writing_mode',
+        key: 'writing_mode',
         defaultValue: 'vertical-rl',
       );
   Future<void> setReaderWritingMode(String v) async {
     await (readerSettings?.setWritingMode(v) ??
-        setPreference<String>(key: 'ttu_writing_mode', value: v));
+        setPreference<String>(key: 'writing_mode', value: v));
     onSettingsChangedLive?.call();
   }
 
-  String get ttuViewMode =>
+  String get readerViewMode =>
       readerSettings?.viewMode ??
       getPreference<String>(
-        key: 'ttu_view_mode',
+        key: 'view_mode',
         defaultValue: 'paginated',
       );
   Future<void> setReaderViewMode(String v) async {
     await (readerSettings?.setViewMode(v) ??
-        setPreference<String>(key: 'ttu_view_mode', value: v));
+        setPreference<String>(key: 'view_mode', value: v));
     onSettingsChangedLive?.call();
   }
 
-  String get ttuTheme =>
+  String get readerTheme =>
       readerSettings?.theme ??
       getPreference<String>(
-        key: 'ttu_theme',
+        key: 'theme',
         defaultValue: 'light-theme',
       );
   Future<void> setReaderTheme(String v) async {
     await (readerSettings?.setTheme(v) ??
-        setPreference<String>(key: 'ttu_theme', value: v));
+        setPreference<String>(key: 'theme', value: v));
     onSettingsChangedLive?.call();
   }
 
-  String get ttuFuriganaMode {
+  String get readerFuriganaMode {
     final ReaderSettings? settings = readerSettings;
     if (settings != null) {
       return settings.furiganaMode;
     }
     final dynamic legacy =
-        getPreference<bool?>(key: 'ttu_hide_furigana', defaultValue: null);
+        getPreference<bool?>(key: 'hide_furigana', defaultValue: null);
     if (legacy != null) {
       final String oldStyle = _legacyFuriganaStyle;
       final String mode = (legacy as bool) ? 'hide' : 'show';
@@ -1490,137 +1491,137 @@ class ReaderHibikiSource extends ReaderMediaSource {
             ? oldStyle
             : mode,
       );
-      setPreference<String>(key: 'ttu_furigana_mode', value: merged);
+      setPreference<String>(key: 'furigana_mode', value: merged);
       // HBK-AUDIT-125: remove the legacy key via deletePreference. The old
       // setPreference<bool?>(value: null) could not represent null through
       // PrefCodec.encode and persisted the literal string 's:null', leaving a
       // junk row that was re-decoded as the String 'null' on every read.
-      deletePreference(key: 'ttu_hide_furigana');
+      deletePreference(key: 'hide_furigana');
       return merged;
     }
     return normalizeFuriganaMode(
-      getPreference<String>(key: 'ttu_furigana_mode', defaultValue: 'show'),
+      getPreference<String>(key: 'furigana_mode', defaultValue: 'show'),
     );
   }
 
   Future<void> setReaderFuriganaMode(String v) async {
     await (readerSettings?.setFuriganaMode(v) ??
         setPreference<String>(
-          key: 'ttu_furigana_mode',
+          key: 'furigana_mode',
           value: normalizeFuriganaMode(v),
         ));
     onSettingsChangedLive?.call();
   }
 
-  double get ttuTextIndentation =>
+  double get readerTextIndentation =>
       readerSettings?.textIndentation ??
-      getPreference<double>(key: 'ttu_text_indentation', defaultValue: 0);
+      getPreference<double>(key: 'text_indentation', defaultValue: 0);
   Future<void> setReaderTextIndentation(double v) async {
     await (readerSettings?.setTextIndentation(v) ??
-        setPreference<double>(key: 'ttu_text_indentation', value: v));
+        setPreference<double>(key: 'text_indentation', value: v));
     onSettingsChangedLive?.call();
   }
 
   /// TODO-861①：段落间距（em）。纯 CSS（live re-inject）。默认 0。
-  double get ttuParagraphSpacing =>
+  double get readerParagraphSpacing =>
       readerSettings?.paragraphSpacing ??
-      getPreference<double>(key: 'ttu_paragraph_spacing', defaultValue: 0);
+      getPreference<double>(key: 'paragraph_spacing', defaultValue: 0);
   Future<void> setReaderParagraphSpacing(double v) async {
     await (readerSettings?.setParagraphSpacing(v) ??
-        setPreference<double>(key: 'ttu_paragraph_spacing', value: v));
+        setPreference<double>(key: 'paragraph_spacing', value: v));
     onSettingsChangedLive?.call();
   }
 
   /// TODO-861④：图片防剧透模糊开关。切换需重跑分页脚本给大图加 `blurred` 类
   /// （非纯 CSS），故 schema 走 `notifyReaderLayoutChanged`（结构 reload），不在此
   /// 触发 live。默认 false。
-  bool get ttuBlurImages =>
+  bool get readerBlurImages =>
       readerSettings?.blurImages ??
-      getPreference<bool>(key: 'ttu_blur_images', defaultValue: false);
+      getPreference<bool>(key: 'blur_images', defaultValue: false);
   Future<void> setReaderBlurImages(bool v) async {
     await (readerSettings?.setBlurImages(v) ??
-        setPreference<bool>(key: 'ttu_blur_images', value: v));
+        setPreference<bool>(key: 'blur_images', value: v));
     onSettingsChangedLive?.call();
   }
 
-  double get ttuMarginTop =>
+  double get readerMarginTop =>
       readerSettings?.marginTop ??
       getPreference<double>(
-        key: 'ttu_margin_top',
+        key: 'margin_top',
         defaultValue: ReaderSettings.defaultMarginTopPercent,
       );
   Future<void> setReaderMarginTop(double v) async {
     final double normalized = ReaderSettings.normalizeMarginPercent(v);
     await (readerSettings?.setMarginTop(normalized) ??
-        setPreference<double>(key: 'ttu_margin_top', value: normalized));
+        setPreference<double>(key: 'margin_top', value: normalized));
     onSettingsChangedLive?.call();
   }
 
-  double get ttuMarginBottom =>
+  double get readerMarginBottom =>
       readerSettings?.marginBottom ??
       getPreference<double>(
-        key: 'ttu_margin_bottom',
+        key: 'margin_bottom',
         defaultValue: ReaderSettings.defaultMarginBottomPercent,
       );
   Future<void> setReaderMarginBottom(double v) async {
     final double normalized = ReaderSettings.normalizeMarginPercent(v);
     await (readerSettings?.setMarginBottom(normalized) ??
-        setPreference<double>(key: 'ttu_margin_bottom', value: normalized));
+        setPreference<double>(key: 'margin_bottom', value: normalized));
     onSettingsChangedLive?.call();
   }
 
-  double get ttuMarginLeft =>
+  double get readerMarginLeft =>
       readerSettings?.marginLeft ??
       getPreference<double>(
-        key: 'ttu_margin_left',
+        key: 'margin_left',
         defaultValue: ReaderSettings.defaultMarginLeftPercent,
       );
   Future<void> setReaderMarginLeft(double v) async {
     final double normalized = ReaderSettings.normalizeMarginPercent(v);
     await (readerSettings?.setMarginLeft(normalized) ??
-        setPreference<double>(key: 'ttu_margin_left', value: normalized));
+        setPreference<double>(key: 'margin_left', value: normalized));
     onSettingsChangedLive?.call();
   }
 
-  double get ttuMarginRight =>
+  double get readerMarginRight =>
       readerSettings?.marginRight ??
       getPreference<double>(
-        key: 'ttu_margin_right',
+        key: 'margin_right',
         defaultValue: ReaderSettings.defaultMarginRightPercent,
       );
   Future<void> setReaderMarginRight(double v) async {
     final double normalized = ReaderSettings.normalizeMarginPercent(v);
     await (readerSettings?.setMarginRight(normalized) ??
-        setPreference<double>(key: 'ttu_margin_right', value: normalized));
+        setPreference<double>(key: 'margin_right', value: normalized));
     onSettingsChangedLive?.call();
   }
 
-  int get ttuPageColumns =>
+  int get readerPageColumns =>
       readerSettings?.pageColumns ??
-      getPreference<int>(key: 'ttu_page_columns', defaultValue: 0);
+      getPreference<int>(key: 'page_columns', defaultValue: 0);
   Future<void> setReaderPageColumns(int v) async {
     await (readerSettings?.setPageColumns(v) ??
-        setPreference<int>(key: 'ttu_page_columns', value: v));
+        setPreference<int>(key: 'page_columns', value: v));
     onSettingsChangedLive?.call();
   }
 
   // BUG-1280：默认与 [ReaderSettings.spreadMode] 同为 'off'（两处必须一致，否则
   // readerSettings 未就绪时读到的默认与阅读器实际用的默认相反）。
-  String get ttuSpreadMode =>
+  String get readerSpreadMode =>
       readerSettings?.spreadMode ??
-      getPreference<String>(key: 'ttu_spread_mode', defaultValue: 'off');
+      getPreference<String>(key: 'spread_mode', defaultValue: 'off');
   Future<void> setReaderSpreadMode(String v) async {
     await (readerSettings?.setSpreadMode(v) ??
-        setPreference<String>(key: 'ttu_spread_mode', value: v));
+        setPreference<String>(key: 'spread_mode', value: v));
     onSettingsChangedLive?.call();
   }
 
-  String get ttuSpreadDirection =>
+  String get readerSpreadDirection =>
       readerSettings?.spreadDirection ??
-      getPreference<String>(key: 'ttu_spread_direction', defaultValue: 'rtl');
+      getPreference<String>(key: 'spread_direction', defaultValue: 'rtl');
   Future<void> setReaderSpreadDirection(String v) async {
     await (readerSettings?.setSpreadDirection(v) ??
-        setPreference<String>(key: 'ttu_spread_direction', value: v));
+        setPreference<String>(key: 'spread_direction', value: v));
     onSettingsChangedLive?.call();
   }
 
@@ -1632,65 +1633,65 @@ class ReaderHibikiSource extends ReaderMediaSource {
   // sheet via its layout-key reload) drives the structural reload — which now
   // rebuilds the spread map before reloading. Firing onLayoutReloadLive here too
   // would double-reload.
-  bool get ttuMergeImagePages =>
+  bool get readerMergeImagePages =>
       readerSettings?.mergeImagePages ??
-      getPreference<bool>(key: 'ttu_merge_image_pages', defaultValue: false);
+      getPreference<bool>(key: 'merge_image_pages', defaultValue: false);
   Future<void> setReaderMergeImagePages(bool v) async {
     await (readerSettings?.setMergeImagePages(v) ??
-        setPreference<bool>(key: 'ttu_merge_image_pages', value: v));
+        setPreference<bool>(key: 'merge_image_pages', value: v));
     onSettingsChangedLive?.call();
   }
 
-  bool get ttuEnableVerticalFontKerning =>
+  bool get readerEnableVerticalFontKerning =>
       readerSettings?.enableVerticalFontKerning ??
-      getPreference<bool>(key: 'ttu_vert_kerning', defaultValue: false);
+      getPreference<bool>(key: 'vert_kerning', defaultValue: false);
   Future<void> setReaderEnableVerticalFontKerning(bool v) async {
     await (readerSettings?.setEnableVerticalFontKerning(v) ??
-        setPreference<bool>(key: 'ttu_vert_kerning', value: v));
+        setPreference<bool>(key: 'vert_kerning', value: v));
     onSettingsChangedLive?.call();
   }
 
-  bool get ttuEnableFontVPAL =>
+  bool get readerEnableFontVPAL =>
       readerSettings?.enableFontVPAL ??
-      getPreference<bool>(key: 'ttu_font_vpal', defaultValue: false);
+      getPreference<bool>(key: 'font_vpal', defaultValue: false);
   Future<void> setReaderEnableFontVPAL(bool v) async {
     await (readerSettings?.setEnableFontVPAL(v) ??
-        setPreference<bool>(key: 'ttu_font_vpal', value: v));
+        setPreference<bool>(key: 'font_vpal', value: v));
     onSettingsChangedLive?.call();
   }
 
-  String get ttuVerticalTextOrientation =>
+  String get readerVerticalTextOrientation =>
       readerSettings?.verticalTextOrientation ??
       getPreference<String>(
-        key: 'ttu_vert_text_orient',
+        key: 'vert_text_orient',
         defaultValue: 'mixed',
       );
   Future<void> setReaderVerticalTextOrientation(String v) async {
     await (readerSettings?.setVerticalTextOrientation(v) ??
-        setPreference<String>(key: 'ttu_vert_text_orient', value: v));
+        setPreference<String>(key: 'vert_text_orient', value: v));
     onSettingsChangedLive?.call();
   }
 
-  bool get ttuEnableTextJustification =>
+  bool get readerEnableTextJustification =>
       readerSettings?.enableTextJustification ??
-      getPreference<bool>(key: 'ttu_text_justify', defaultValue: false);
+      getPreference<bool>(key: 'text_justify', defaultValue: false);
   Future<void> setReaderEnableTextJustification(bool v) async {
     await (readerSettings?.setEnableTextJustification(v) ??
-        setPreference<bool>(key: 'ttu_text_justify', value: v));
+        setPreference<bool>(key: 'text_justify', value: v));
     onSettingsChangedLive?.call();
   }
 
-  bool get ttuPrioritizeReaderStyles =>
+  bool get readerPrioritizeReaderStyles =>
       readerSettings?.prioritizeReaderStyles ??
-      getPreference<bool>(key: 'ttu_reader_styles', defaultValue: false);
+      getPreference<bool>(key: 'reader_styles', defaultValue: false);
   Future<void> setReaderPrioritizeReaderStyles(bool v) async {
     await (readerSettings?.setPrioritizeReaderStyles(v) ??
-        setPreference<bool>(key: 'ttu_reader_styles', value: v));
+        setPreference<bool>(key: 'reader_styles', value: v));
     onSettingsChangedLive?.call();
   }
 
   String get _legacyFuriganaStyle =>
-      getPreference<String>(key: 'ttu_furigana_style', defaultValue: 'partial')
+      getPreference<String>(key: 'furigana_style', defaultValue: 'partial')
           .toLowerCase();
 
   // ── Custom fonts ────────────────────────────────────────────────────

@@ -458,7 +458,7 @@ class FushiDatabase extends _$FushiDatabase {
   FushiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 69;
+  int get schemaVersion => 73;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1471,6 +1471,216 @@ class FushiDatabase extends _$FushiDatabase {
                   'ALTER TABLE hibiki_paired_peers RENAME TO fushi_paired_peers');
             }
           }
+          if (from < 70) {
+            // v70（Fushi 终局清算 W2-1）：阅读器源持久化键 'reader_ttu' →
+            // 'reader_fushi'，连带 pref shortKey 的死前缀 'ttu_' 剥除（命名空间段
+            // 已写明 reader，shortKey 再带 ttu_ 是纯冗余）。旧字面量此后只允许
+            // 活在本迁移步与 v16 阶梯（_kLegacyUidPrefix 族）里。
+            //
+            // 落库位共三处（W2 盘点结论，tables.dart 逐表核对）：
+            //  1. preferences.key —— `src:reader_ttu:<shortKey>` 命名空间 +
+            //     BUG-1317 前的 legacy override_title 键内嵌双源键段
+            //     `override_title://reader_ttu/reader_ttu/<mediaId>`；
+            //  2. profile_settings.key —— category='pref' 行存整串 pref key
+            //     （同 1 的两种形态），category='reader' 旧快照行存裸 shortKey；
+            //  3. media_items —— media_source_identifier = 'reader_ttu' 与
+            //     unique_key 前缀 `reader_ttu/<mediaId>`。
+            // 其余表（shelf/stats/collections/mined 等）存裸 bookKey 或
+            // mediaType 值域，不含源键，刻意不动。
+            //
+            // 顺序敏感：先换命名空间段，再改写换名后键里的 legacy override 内嵌
+            // 段，最后剥 shortKey 前缀。UPDATE OR REPLACE：preferences.key 是主键
+            // （media_items.unique_key 是 UNIQUE），真实旧库不可能同时存在新旧两
+            // 形态（新命名空间从未被旧版本写过），但半合成库里撞上时保留改写结果
+            // 而不是让整条 onUpgrade 中断（= 库打不开）。幂等由 from<70 门槛保证；
+            // 语句本身也天然幂等（改写后无旧前缀行可匹配）。
+            const String oldNs = 'src:reader_ttu:';
+            const String newNs = 'src:reader_fushi:';
+            const String oldLegacyOverride =
+                'src:reader_fushi:override_title://reader_ttu/reader_ttu/';
+            const String newLegacyOverride =
+                'src:reader_fushi:override_title://reader_fushi/reader_fushi/';
+            const String oldShort = 'src:reader_fushi:ttu_';
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await _rewriteTextPrefix(
+                  table: table, column: 'key', from: oldNs, to: newNs);
+              await _rewriteTextPrefix(
+                  table: table,
+                  column: 'key',
+                  from: oldLegacyOverride,
+                  to: newLegacyOverride);
+              await _rewriteTextPrefix(
+                  table: table, column: 'key', from: oldShort, to: newNs);
+            }
+            if (await _tableExists('profile_settings')) {
+              // 旧 'reader' 类别快照行存裸 shortKey（无命名空间），单独剥前缀。
+              await _rewriteTextPrefix(
+                  table: 'profile_settings',
+                  column: 'key',
+                  from: 'ttu_',
+                  to: '',
+                  extraWhere: "category = 'reader'");
+            }
+            // current_source/<mediaType> 偏好把源 uniqueKey 当**值**存：
+            // 新写入是 PrefCodec 标签形态 's:reader_ttu'，历史裸写是
+            // 'reader_ttu'，两种都改写（不动其它值恰为该串的无关键）。
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await customStatement(
+                  "UPDATE $table SET value = 's:reader_fushi' "
+                  "WHERE key LIKE 'current\\_source/%' ESCAPE '\\' "
+                  "AND value = 's:reader_ttu'");
+              await customStatement("UPDATE $table SET value = 'reader_fushi' "
+                  "WHERE key LIKE 'current\\_source/%' ESCAPE '\\' "
+                  "AND value = 'reader_ttu'");
+            }
+            if (await _tableExists('media_items')) {
+              await customStatement('UPDATE OR REPLACE media_items '
+                  "SET media_source_identifier = 'reader_fushi' "
+                  "WHERE media_source_identifier = 'reader_ttu'");
+              await _rewriteTextPrefix(
+                  table: 'media_items',
+                  column: 'unique_key',
+                  from: 'reader_ttu/',
+                  to: 'reader_fushi/');
+            }
+          }
+          if (from < 71) {
+            // v71（Fushi 终局清算 W2-2）：sasayaki 族存量持久化值一次性改写。
+            // 三个落库位（W2 盘点结论）：
+            //  1. audio_cues.text_fragment_id —— 字幕重匹配命中编码的 scheme
+            //     前缀 `sasayaki://` → `fushi-cue://`（SubtitleRematchCodec）；
+            //  2. preferences/profile_settings 的 custom_themes 值 —— 自定义
+            //     主题条目 JSON 里的 'sasayakiColor' 键 →
+            //     'sentenceAudioHighlightColor'（值是 PrefCodec 编码的
+            //     List<String>，条目引号被转义，故用裸词 REPLACE；该词撞上
+            //     用户主题名的概率可忽略，且主题分享码不含此键——'sk' 段）；
+            //  3. preferences/profile_settings 的偏好键
+            //     custom_theme_sasayaki_color → custom_theme_sentence_audio_color
+            //     （精确匹配整键；OR REPLACE 防半合成库新旧并存撞主键）。
+            // {sasayaki-audio} handlebars 别名存在 SharedPreferences（非本库），
+            // 由 BaseAnkiRepository 载入期迁移改写，刻意不在此步。
+            if (await _tableExists('audio_cues')) {
+              await _rewriteTextPrefix(
+                  table: 'audio_cues',
+                  column: 'text_fragment_id',
+                  from: 'sasayaki://',
+                  to: 'fushi-cue://');
+            }
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await customStatement('UPDATE $table '
+                  "SET value = REPLACE(value, 'sasayakiColor', "
+                  "'sentenceAudioHighlightColor') "
+                  "WHERE key = 'custom_themes' "
+                  "AND value LIKE '%sasayakiColor%'");
+              await customStatement('UPDATE OR REPLACE $table '
+                  "SET key = 'custom_theme_sentence_audio_color' "
+                  "WHERE key = 'custom_theme_sasayaki_color'");
+            }
+          }
+          if (from < 72) {
+            // v72（Fushi 终局清算 W2-7）：书库目录名 hoshi_books → fushi_books
+            // 的库内路径改写 + 已删功能残留偏好清理。磁盘目录本体由 app 启动期
+            // 在**开库前**就地改名（books_directory.dart），本步与之同一启动内
+            // 生效。REPLACE 是逐字面替换；WHERE LIKE 只是过滤优化（`_` 通配符
+            // 带来的伪命中行会被 REPLACE no-op，无害，刻意不 ESCAPE）。
+            //  1. epub_books.extract_dir —— `<documents>/hoshi_books/<bookKey>`
+            //     绝对路径（epub/manga/pdf 三种书共用一列）；Windows 反斜杠与
+            //     POSIX 正斜杠两种分隔符形态都改。
+            //  2. media_items.image_url —— 本地书封面 file:// URI（恒正斜杠，
+            //     目录名是纯 ASCII 不会被百分号编码）。
+            //  3. google_drive_hoshi_compat —— Hoshi 共享空间功能已删（云同步
+            //     改名批），键已无任何读写方，残留行直接清掉（preferences +
+            //     profile_settings 快照），不搬空值。
+            if (await _tableExists('epub_books')) {
+              await customStatement('UPDATE epub_books SET extract_dir = '
+                  "REPLACE(extract_dir, '/hoshi_books/', '/fushi_books/') "
+                  "WHERE extract_dir LIKE '%/hoshi_books/%'");
+              await customStatement('UPDATE epub_books SET extract_dir = '
+                  "REPLACE(extract_dir, '\\hoshi_books\\', '\\fushi_books\\') "
+                  "WHERE extract_dir LIKE '%\\hoshi_books\\%'");
+            }
+            if (await _tableExists('media_items')) {
+              await customStatement('UPDATE media_items SET image_url = '
+                  "REPLACE(image_url, '/hoshi_books/', '/fushi_books/') "
+                  'WHERE image_url IS NOT NULL '
+                  "AND image_url LIKE '%/hoshi_books/%'");
+            }
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await customStatement('DELETE FROM $table '
+                  "WHERE key = 'google_drive_hoshi_compat'");
+            }
+          }
+          if (from < 73) {
+            // v73（Fushi 终局清算 W2-3）：mediaIdentifier scheme 前缀
+            // `hoshi://book/` / `hoshi://srtbook/` → `fushi://book/` /
+            // `fushi://srtbook/` 的存量行改写。落库位（W2 盘点，tables.dart
+            // 全表核对）：
+            //  1. media_items.media_identifier —— 裸前缀形态；
+            //  2. media_items.unique_key —— `<源键>/<mediaId>` 复合形态：只换
+            //     URI 段（REPLACE 带 `/` 左锚），**保留源键段**（v16 的
+            //     audiobook uid 迁移丢过源前缀，别抄那个骨架）；
+            //  3. preferences / profile_settings 的 override_title 键——规范
+            //     `override_title://<mediaId>` 与 BUG-1317 前的 legacy
+            //     `override_title://<src>/<src>/<mediaId>` 两形态，URI 段一并
+            //     改写（UPDATE OR REPLACE 防半合成库新旧并存撞主键）。
+            // 其余表存裸 bookKey / SrtBook.uid，无 scheme 前缀，刻意不动。
+            // override 封面的 hashCode 派生**文件名**在磁盘不在库，由 app 启动
+            // 期 override_thumbnail_migration.dart 一次性清扫。
+            if (await _tableExists('media_items')) {
+              for (final List<String> pair in <List<String>>[
+                <String>['hoshi://book/', 'fushi://book/'],
+                <String>['hoshi://srtbook/', 'fushi://srtbook/'],
+              ]) {
+                await _rewriteTextPrefix(
+                    table: 'media_items',
+                    column: 'media_identifier',
+                    from: pair[0],
+                    to: pair[1]);
+                await customStatement('UPDATE OR REPLACE media_items '
+                    "SET unique_key = REPLACE(unique_key, '/${pair[0]}', "
+                    "'/${pair[1]}') "
+                    "WHERE unique_key LIKE '%/${pair[0]}%'");
+                // v16 阶梯给 v15 时代旧库写出的 unique_key 是**裸**
+                // `hoshi://book/<key>`（无源键段）——上面带 `/` 左锚的 REPLACE
+                // 够不着它，会留下 media_identifier 已新、unique_key 还旧的
+                // 两列不一致。前缀锚定改写补齐（复合形态左起是源键、不会被
+                // 此前缀命中，两条互不重叠）。
+                await _rewriteTextPrefix(
+                    table: 'media_items',
+                    column: 'unique_key',
+                    from: pair[0],
+                    to: pair[1]);
+              }
+            }
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await customStatement('UPDATE OR REPLACE $table SET key = '
+                  "REPLACE(REPLACE(key, 'hoshi://book/', 'fushi://book/'), "
+                  "'hoshi://srtbook/', 'fushi://srtbook/') "
+                  "WHERE key LIKE '%override\\_title://%' ESCAPE '\\' "
+                  "AND (key LIKE '%hoshi://book/%' "
+                  "OR key LIKE '%hoshi://srtbook/%')");
+            }
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -1753,6 +1963,32 @@ class FushiDatabase extends _$FushiDatabase {
       variables: [Variable<String>(tableName)],
     ).get();
     return rows.isNotEmpty;
+  }
+
+  /// 迁移用批量文本前缀改写：把 [table].[column] 里以 [from] 开头的值改写成
+  /// [to] + 余下部分（`to` 可为空串 = 剥前缀）。`LIKE` 的 `_`/`%` 通配符已按
+  /// ESCAPE 规则转义，前缀是逐字面匹配。`UPDATE OR REPLACE`：目标列可能是主键
+  /// （preferences.key）或 UNIQUE（media_items.unique_key），改写撞上已有行时
+  /// 保留改写结果而不是让整条 onUpgrade 中断。调用方负责 `_tableExists` 守卫。
+  Future<void> _rewriteTextPrefix({
+    required String table,
+    required String column,
+    required String from,
+    required String to,
+    String? extraWhere,
+  }) async {
+    if (!_identifierRe.hasMatch(table) || !_identifierRe.hasMatch(column)) {
+      throw ArgumentError('not a valid identifier: $table.$column');
+    }
+    String sqlQuote(String s) => s.replaceAll("'", "''");
+    final String likePrefix =
+        sqlQuote(from).replaceAllMapped(RegExp(r'[_%\\]'), (m) => '\\${m[0]}');
+    await customStatement(
+      'UPDATE OR REPLACE $table '
+      "SET $column = '${sqlQuote(to)}' || substr($column, ${from.length + 1}) "
+      "WHERE $column LIKE '$likePrefix%' ESCAPE '\\'"
+      '${extraWhere == null ? '' : ' AND ($extraWhere)'}',
+    );
   }
 
   /// v55 一次性回填：把偏好表 legacy key `galgame_library` 里的 6 字段 JSON 列表

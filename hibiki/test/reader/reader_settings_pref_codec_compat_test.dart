@@ -7,7 +7,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-1116 守卫：ReaderSettings 读侧必须兼容 PrefCodec 类型标签值。
 ///
-/// 同一 `src:reader_ttu:*` DB key 有两个历史写入方：
+/// 同一 `src:reader_fushi:*` DB key 有两个历史写入方：
 /// - ReaderSettings._set → 裸 `toString()`（'false' / '22.0'）；
 /// - ReaderHibikiSource 在 `readerSettings == null` 窗口的
 ///   `?? setPreference(...)` 回退 → PrefCodec 标签值（'b:false' / 'd:22.0'）。
@@ -42,7 +42,7 @@ void main() {
     await ReaderHibikiSource.instance.setReaderFontSize(30);
 
     final Map<String, String> prefs = await db.getAllPrefs();
-    expect(prefs['src:reader_ttu:ttu_font_size'], 'd:30.0',
+    expect(prefs['src:reader_fushi:font_size'], 'd:30.0',
         reason: '回退路径写 PrefCodec 标签值（复现双编码前提）');
 
     // 模拟重启：新 ReaderSettings 实例从 DB 加载。修复前 _parseValue 不认
@@ -54,7 +54,7 @@ void main() {
   });
 
   test('(b) bool 标签值：b:false → showTopProgressBar == false', () async {
-    await db.setPref('src:reader_ttu:show_top_progress_bar', 'b:false');
+    await db.setPref('src:reader_fushi:show_top_progress_bar', 'b:false');
 
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();
@@ -63,7 +63,7 @@ void main() {
   });
 
   test('(c) int 标签值：i:600 → wheelPageTurnInterval == 600', () async {
-    await db.setPref('src:reader_ttu:wheel_page_turn_interval', 'i:600');
+    await db.setPref('src:reader_fushi:wheel_page_turn_interval', 'i:600');
 
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();
@@ -72,7 +72,7 @@ void main() {
   });
 
   test('(d) String 标签值：s:horizontal-tb → writingMode 不吃进污染串', () async {
-    await db.setPref('src:reader_ttu:ttu_writing_mode', 's:horizontal-tb');
+    await db.setPref('src:reader_fushi:writing_mode', 's:horizontal-tb');
 
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();
@@ -81,9 +81,9 @@ void main() {
   });
 
   test('(e) 旧裸值行为不回归：26.5 / false / vertical-rl 逐值不变', () async {
-    await db.setPref('src:reader_ttu:ttu_font_size', '26.5');
-    await db.setPref('src:reader_ttu:show_top_progress_bar', 'false');
-    await db.setPref('src:reader_ttu:ttu_writing_mode', 'vertical-rl');
+    await db.setPref('src:reader_fushi:font_size', '26.5');
+    await db.setPref('src:reader_fushi:show_top_progress_bar', 'false');
+    await db.setPref('src:reader_fushi:writing_mode', 'vertical-rl');
 
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();
@@ -93,8 +93,8 @@ void main() {
   });
 
   test('(f) z: 显式 null 标签 → 回落默认值不崩', () async {
-    await db.setPref('src:reader_ttu:ttu_font_size', 'z:');
-    await db.setPref('src:reader_ttu:show_top_progress_bar', 'z:');
+    await db.setPref('src:reader_fushi:font_size', 'z:');
+    await db.setPref('src:reader_fushi:show_top_progress_bar', 'z:');
 
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();

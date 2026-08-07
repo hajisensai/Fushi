@@ -42,7 +42,7 @@ void main() {
       expect(source.pauseOnLookup, isFalse,
           reason: '显式设过的存储值必须覆盖默认，改默认值不得翻转老用户选择');
       expect(
-        await db.getPref('src:reader_ttu:pause_on_lookup'),
+        await db.getPref('src:reader_fushi:pause_on_lookup'),
         'b:false',
       );
     });
@@ -61,7 +61,7 @@ void main() {
 
       expect(source.pauseOnLookup, isTrue);
       expect(
-        await db.getPref('src:reader_ttu:pause_on_lookup'),
+        await db.getPref('src:reader_fushi:pause_on_lookup'),
         'b:true',
       );
     });

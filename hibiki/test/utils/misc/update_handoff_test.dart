@@ -126,7 +126,7 @@ void main() {
         ],
         'pathMismatchWarning':
             r'Registered install location D:\Program\Hibiki differs from current D:\Portable\Hibiki.',
-        'runningHibikiProcesses': <Map<String, dynamic>>[
+        'runningFushiProcesses': <Map<String, dynamic>>[
           <String, dynamic>{
             'pid': 4321,
             'path': r'D:\Portable\Hibiki\hibiki.exe',
@@ -152,9 +152,49 @@ void main() {
       expect(json['targetInstallDir'], r'D:\Portable\Hibiki');
       expect(json['detectedInstallLocations'], isA<List<dynamic>>());
       expect(json['pathMismatchWarning'], contains(r'D:\Program\Hibiki'));
-      expect(json['runningHibikiProcesses'], isA<List<dynamic>>());
+      expect(json['runningFushiProcesses'], isA<List<dynamic>>());
       expect(json['libmpvModuleHolders'], isA<List<dynamic>>());
       expect(json['innoLogDeleteFileFailures'], isA<List<dynamic>>());
+    });
+
+    test(
+        'W2-6 wire 兼容：旧 Hibiki 过渡版写的 runningHibikiProcesses 键读侧仍认，'
+        '写侧只写新键', () {
+      final WindowsUpdateHandoffRecord record =
+          WindowsUpdateHandoffRecord.fromJson(<String, dynamic>{
+        'targetVersion': '1.2.3',
+        'installerPath': r'C:\tmp\fushi-1.2.3-windows-setup.exe',
+        'innoLogPath': r'C:\tmp\fushi-1.2.3.install.log',
+        'startedAt': '2026-08-07T10:30:00Z',
+        // 旧键：hibiki→fushi 更新桥时代的旧二进制写下的 marker。
+        'runningHibikiProcesses': <Map<String, dynamic>>[
+          <String, dynamic>{'pid': 777, 'name': 'hibiki.exe'},
+        ],
+      });
+      expect(record.runningFushiProcesses.single.pid, 777,
+          reason: '旧键必须被读侧回退解析');
+
+      final Map<String, dynamic> json = record.toJson();
+      expect(json['runningFushiProcesses'], isA<List<dynamic>>(),
+          reason: '写侧只写新键');
+      expect(json.containsKey('runningHibikiProcesses'), isFalse,
+          reason: '写侧绝不再写旧键');
+
+      // 新旧并存时新键胜出（新键是本代写入，旧键只是残影）。
+      final WindowsUpdateHandoffRecord both =
+          WindowsUpdateHandoffRecord.fromJson(<String, dynamic>{
+        'targetVersion': '1.2.3',
+        'installerPath': 'x',
+        'innoLogPath': 'y',
+        'startedAt': '2026-08-07T10:30:00Z',
+        'runningFushiProcesses': <Map<String, dynamic>>[
+          <String, dynamic>{'pid': 111},
+        ],
+        'runningHibikiProcesses': <Map<String, dynamic>>[
+          <String, dynamic>{'pid': 222},
+        ],
+      });
+      expect(both.runningFushiProcesses.single.pid, 111);
     });
   });
 
@@ -577,7 +617,7 @@ void main() {
               '${dir.path}${Platform.pathSeparator}hibiki.exe',
           currentInstallDir: dir.path,
           targetInstallDir: dir.path,
-          runningHibikiProcesses: <WindowsProcessInfo>[
+          runningFushiProcesses: <WindowsProcessInfo>[
             WindowsProcessInfo(
               pid: 5678,
               name: 'hibiki.exe',
@@ -631,7 +671,7 @@ void main() {
               '${dir.path}${Platform.pathSeparator}hibiki.exe',
           currentInstallDir: dir.path,
           targetInstallDir: dir.path,
-          runningHibikiProcesses: const <WindowsProcessInfo>[
+          runningFushiProcesses: const <WindowsProcessInfo>[
             WindowsProcessInfo(
               pid: 6789,
               name: 'hibiki.exe',
@@ -651,7 +691,7 @@ void main() {
               'image name; Dart must not hard-abort the update');
       final WindowsUpdateHandoffRecord? record =
           await WindowsUpdateHandoff.read(marker);
-      expect(record?.runningHibikiProcesses.single.pid, 6789);
+      expect(record?.runningFushiProcesses.single.pid, 6789);
       expect(record?.installerLaunchSucceeded, isNull);
       expect(record?.launchError, isNull);
     });

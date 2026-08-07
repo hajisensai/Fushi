@@ -92,7 +92,7 @@ void main() {
       // 1.3%（vh 单位），margin px = innerHeight·0.013 在整数视口高下几乎必为
       // 小数（仅 innerHeight 为 1000 整数倍时退化），pitch 随之变成小数。
       // 原值在 finally 中恢复，不污染全局偏好。
-      origMarginTop = ReaderHibikiSource.instance.ttuMarginTop;
+      origMarginTop = ReaderHibikiSource.instance.readerMarginTop;
       await ReaderHibikiSource.instance.setReaderMarginTop(1.3);
 
       // Do not require the exact shelf card to be mounted before opening it.

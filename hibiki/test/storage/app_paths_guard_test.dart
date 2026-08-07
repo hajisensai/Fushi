@@ -57,7 +57,7 @@ void main() {
           '${docs.path}${Platform.pathSeparator}$child';
       // 这些常量是各模块原先硬编码的子目录名——AppPaths 必须用相同字面量。
       expect(join('audiobooks'), endsWith('audiobooks'));
-      expect(join('hoshi_books'), endsWith('hoshi_books'));
+      expect(join('fushi_books'), endsWith('fushi_books'));
       expect(join('video_covers'), endsWith('video_covers'));
       expect(join('video_subtitles'), endsWith('video_subtitles'));
       expect(join('mpv_shaders'), endsWith('mpv_shaders'));

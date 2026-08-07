@@ -15,9 +15,9 @@ void main() {
       expect(ref.entryKey, 'abc-123');
     });
 
-    test('books surface: hoshi://book/<bookKey> → (epub, bookKey)', () {
+    test('books surface: fushi://book/<bookKey> → (epub, bookKey)', () {
       final ShelfEntryRef? ref = shelfSelectionToEntry(
-          'hoshi://book/mybook_key', ShelfSelectionSurface.books);
+          'fushi://book/mybook_key', ShelfSelectionSurface.books);
       expect(ref, isNotNull);
       expect(ref!.mediaType, MediaKind.epub);
       expect(ref.entryKey, 'mybook_key');
@@ -33,14 +33,14 @@ void main() {
       // key). The raw slice must keep them verbatim.
       const String key = '業物語 %3C物語%3E (講談社ＢＯＸ)';
       final ShelfEntryRef? ref = shelfSelectionToEntry(
-          'hoshi://book/$key', ShelfSelectionSurface.books);
+          'fushi://book/$key', ShelfSelectionSurface.books);
       expect(ref, isNotNull);
       expect(ref!.mediaType, MediaKind.epub);
       expect(ref.entryKey, key,
           reason: '%3C/%3E must NOT be decoded back to </>');
 
       final ShelfEntryRef? ref2 = shelfSelectionToEntry(
-          'hoshi://book/Do Androids Dream of Electric Sheep%3F',
+          'fushi://book/Do Androids Dream of Electric Sheep%3F',
           ShelfSelectionSurface.books);
       expect(ref2!.entryKey, 'Do Androids Dream of Electric Sheep%3F');
     });

@@ -84,7 +84,7 @@ void main() {
       final FushiDatabase db =
           FushiDatabase.forTesting(NativeDatabase.memory());
       await db.setPref(
-        'src:reader_ttu:font_catalog',
+        'src:reader_fushi:font_catalog',
         jsonEncode(<String, Object?>{
           'version': 1,
           'fonts': <Map<String, Object?>>[
@@ -145,7 +145,7 @@ void main() {
       final FushiDatabase db =
           FushiDatabase.forTesting(NativeDatabase.memory());
       await db.setPref(
-        'src:reader_ttu:custom_fonts',
+        'src:reader_fushi:custom_fonts',
         jsonEncode(<Map<String, Object?>>[
           <String, Object?>{
             'name': 'Legacy',

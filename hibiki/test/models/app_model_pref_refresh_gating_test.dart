@@ -155,7 +155,7 @@ void main() {
 
     // MediaSource.setPreference writes a namespaced key straight through
     // _db.setPref (e.g. reader/lyrics font size); it must bump too.
-    await db.setPref('src:reader_ttu:ttu_font_size', PrefCodec.encode(22));
+    await db.setPref('src:reader_fushi:font_size', PrefCodec.encode(22));
 
     await appModel.refreshPrefCacheIfChanged();
     expect(appModel.refreshCount, 2,

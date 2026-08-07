@@ -8,13 +8,13 @@ import 'package:fushi/utils.dart';
 
 SettingsDestination buildReadingDestination() {
   bool isVertical(SettingsContext c) =>
-      c.readerSource.ttuWritingMode.startsWith('vertical');
+      c.readerSource.readerWritingMode.startsWith('vertical');
   // 「每页列数」(pageColumns) 只在翻页(paginated)模式生效：CSS multicol 列模型只
   // 存在于 _paginatedLayoutCss，连续(continuous)滚动与 VN 模式的布局根本不含
   // column-count / 子列宽（reader_content_styles.dart 只把 columnsCss 传给
   // _paginatedLayoutCss）。故非翻页模式下把该项隐藏，避免用户改了没反应、误判「功能坏了」。
   bool isPaginated(SettingsContext c) =>
-      c.readerSource.ttuViewMode == 'paginated';
+      c.readerSource.readerViewMode == 'paginated';
   return SettingsDestination(
     id: SettingsDestinationId.reading,
     title: t.settings_destination_reading,
@@ -57,7 +57,7 @@ SettingsDestination buildReadingDestination() {
                 tooltip: t.reader_vn,
               ),
             ],
-            selected: (SettingsContext c) => c.readerSource.ttuViewMode,
+            selected: (SettingsContext c) => c.readerSource.readerViewMode,
             onChanged: (SettingsContext c, String v) {
               c.readerSource.setReaderViewMode(v);
               notifyReaderLayoutChanged(c);
@@ -84,7 +84,7 @@ SettingsDestination buildReadingDestination() {
                 tooltip: t.reader_vertical,
               ),
             ],
-            selected: (SettingsContext c) => c.readerSource.ttuWritingMode,
+            selected: (SettingsContext c) => c.readerSource.readerWritingMode,
             onChanged: (SettingsContext c, String v) {
               c.readerSource.setReaderWritingMode(v);
               notifyReaderLayoutChanged(c);
@@ -116,7 +116,7 @@ SettingsDestination buildReadingDestination() {
                 tooltip: t.spread_auto,
               ),
             ],
-            selected: (SettingsContext c) => c.readerSource.ttuSpreadMode,
+            selected: (SettingsContext c) => c.readerSource.readerSpreadMode,
             onChanged: (SettingsContext c, String v) {
               c.readerSource.setReaderSpreadMode(v);
               notifyReaderLayoutChanged(c);
@@ -128,7 +128,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.swap_horiz_outlined,
             controlBelow: true,
             visible: (SettingsContext c) =>
-                c.readerSource.ttuSpreadMode != 'off',
+                c.readerSource.readerSpreadMode != 'off',
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
               order: 6,
@@ -148,7 +148,8 @@ SettingsDestination buildReadingDestination() {
                 tooltip: t.spread_direction_ltr,
               ),
             ],
-            selected: (SettingsContext c) => c.readerSource.ttuSpreadDirection,
+            selected: (SettingsContext c) =>
+                c.readerSource.readerSpreadDirection,
             onChanged: (SettingsContext c, String v) {
               c.readerSource.setReaderSpreadDirection(v);
               notifyReaderLayoutChanged(c);
@@ -177,7 +178,7 @@ SettingsDestination buildReadingDestination() {
               ),
             ],
             selected: (SettingsContext c) =>
-                c.readerSource.ttuVerticalTextOrientation,
+                c.readerSource.readerVerticalTextOrientation,
             onChanged: (SettingsContext c, String v) {
               c.readerSource.setReaderVerticalTextOrientation(v);
               notifyReaderSettingsChanged(c);
@@ -214,7 +215,7 @@ SettingsDestination buildReadingDestination() {
                 tooltip: t.reader_furigana_toggle,
               ),
             ],
-            selected: (SettingsContext c) => c.readerSource.ttuFuriganaMode,
+            selected: (SettingsContext c) => c.readerSource.readerFuriganaMode,
             onChanged: (SettingsContext c, String v) {
               c.readerSource.setReaderFuriganaMode(v);
               notifyReaderSettingsChanged(c);
@@ -241,7 +242,7 @@ SettingsDestination buildReadingDestination() {
               group: ReaderGroup.layout,
               order: 1,
             ),
-            value: (SettingsContext c) => c.readerSource.ttuFontSize,
+            value: (SettingsContext c) => c.readerSource.readerFontSize,
             format: (double v) => '${v.round()}',
             onChanged: (SettingsContext c, double v) {
               c.readerSource.setReaderFontSize(v);
@@ -259,10 +260,11 @@ SettingsDestination buildReadingDestination() {
               group: ReaderGroup.layout,
               order: 2,
             ),
-            value: (SettingsContext c) => c.readerSource.ttuLineHeight,
+            value: (SettingsContext c) => c.readerSource.readerLineHeight,
             format: (double v) => v.toStringAsFixed(2),
             onChanged: (SettingsContext c, double v) {
-              c.readerSource.setReaderLineHeight((v * 100).roundToDouble() / 100);
+              c.readerSource
+                  .setReaderLineHeight((v * 100).roundToDouble() / 100);
               notifyReaderSettingsChanged(c);
             },
           ),
@@ -277,7 +279,7 @@ SettingsDestination buildReadingDestination() {
               group: ReaderGroup.layout,
               order: 3,
             ),
-            value: (SettingsContext c) => c.readerSource.ttuTextIndentation,
+            value: (SettingsContext c) => c.readerSource.readerTextIndentation,
             format: (double v) => '${v.round()}',
             onChanged: (SettingsContext c, double v) {
               c.readerSource.setReaderTextIndentation(v);
@@ -297,7 +299,7 @@ SettingsDestination buildReadingDestination() {
               group: ReaderGroup.layout,
               order: 18,
             ),
-            value: (SettingsContext c) => c.readerSource.ttuParagraphSpacing,
+            value: (SettingsContext c) => c.readerSource.readerParagraphSpacing,
             format: (double v) => '${v.toStringAsFixed(1)}em',
             onChanged: (SettingsContext c, double v) {
               c.readerSource
@@ -320,7 +322,7 @@ SettingsDestination buildReadingDestination() {
               order: 7,
             ),
             value: (SettingsContext c) =>
-                c.readerSource.ttuPageColumns.toDouble(),
+                c.readerSource.readerPageColumns.toDouble(),
             format: (double v) =>
                 v.round() == 0 ? t.reader_page_columns_auto : '${v.round()}',
             onChanged: (SettingsContext c, double v) {
@@ -342,7 +344,7 @@ SettingsDestination buildReadingDestination() {
               group: ReaderGroup.layout,
               order: 8,
             ),
-            value: (SettingsContext c) => c.readerSource.ttuMarginTop,
+            value: (SettingsContext c) => c.readerSource.readerMarginTop,
             format: (double v) => '${v.round()}%',
             onChanged: (SettingsContext c, double v) {
               c.readerSource.setReaderMarginTop(v);
@@ -360,7 +362,7 @@ SettingsDestination buildReadingDestination() {
               group: ReaderGroup.layout,
               order: 9,
             ),
-            value: (SettingsContext c) => c.readerSource.ttuMarginBottom,
+            value: (SettingsContext c) => c.readerSource.readerMarginBottom,
             format: (double v) => '${v.round()}%',
             onChanged: (SettingsContext c, double v) {
               c.readerSource.setReaderMarginBottom(v);
@@ -378,7 +380,7 @@ SettingsDestination buildReadingDestination() {
               group: ReaderGroup.layout,
               order: 10,
             ),
-            value: (SettingsContext c) => c.readerSource.ttuMarginLeft,
+            value: (SettingsContext c) => c.readerSource.readerMarginLeft,
             format: (double v) => '${v.round()}%',
             onChanged: (SettingsContext c, double v) {
               c.readerSource.setReaderMarginLeft(v);
@@ -396,7 +398,7 @@ SettingsDestination buildReadingDestination() {
               group: ReaderGroup.layout,
               order: 11,
             ),
-            value: (SettingsContext c) => c.readerSource.ttuMarginRight,
+            value: (SettingsContext c) => c.readerSource.readerMarginRight,
             format: (double v) => '${v.round()}%',
             onChanged: (SettingsContext c, double v) {
               c.readerSource.setReaderMarginRight(v);
@@ -752,7 +754,7 @@ SettingsDestination buildReadingDestination() {
               order: 14,
             ),
             value: (SettingsContext c) =>
-                c.readerSource.ttuEnableTextJustification,
+                c.readerSource.readerEnableTextJustification,
             onChanged: (SettingsContext c, bool value) {
               c.readerSource.setReaderEnableTextJustification(value);
               notifyReaderSettingsChanged(c);
@@ -768,7 +770,7 @@ SettingsDestination buildReadingDestination() {
               order: 15,
             ),
             value: (SettingsContext c) =>
-                c.readerSource.ttuEnableVerticalFontKerning,
+                c.readerSource.readerEnableVerticalFontKerning,
             onChanged: (SettingsContext c, bool value) {
               c.readerSource.setReaderEnableVerticalFontKerning(value);
               notifyReaderSettingsChanged(c);
@@ -783,7 +785,7 @@ SettingsDestination buildReadingDestination() {
               group: ReaderGroup.layout,
               order: 16,
             ),
-            value: (SettingsContext c) => c.readerSource.ttuEnableFontVPAL,
+            value: (SettingsContext c) => c.readerSource.readerEnableFontVPAL,
             onChanged: (SettingsContext c, bool value) {
               c.readerSource.setReaderEnableFontVPAL(value);
               notifyReaderSettingsChanged(c);
@@ -798,7 +800,7 @@ SettingsDestination buildReadingDestination() {
               order: 17,
             ),
             value: (SettingsContext c) =>
-                c.readerSource.ttuPrioritizeReaderStyles,
+                c.readerSource.readerPrioritizeReaderStyles,
             onChanged: (SettingsContext c, bool value) {
               c.readerSource.setReaderPrioritizeReaderStyles(value);
               notifyReaderLayoutChanged(c);
@@ -814,7 +816,7 @@ SettingsDestination buildReadingDestination() {
               group: ReaderGroup.layout,
               order: 19,
             ),
-            value: (SettingsContext c) => c.readerSource.ttuBlurImages,
+            value: (SettingsContext c) => c.readerSource.readerBlurImages,
             onChanged: (SettingsContext c, bool value) {
               c.readerSource.setReaderBlurImages(value);
               notifyReaderLayoutChanged(c);
@@ -832,7 +834,7 @@ SettingsDestination buildReadingDestination() {
               group: ReaderGroup.layout,
               order: 20,
             ),
-            value: (SettingsContext c) => c.readerSource.ttuMergeImagePages,
+            value: (SettingsContext c) => c.readerSource.readerMergeImagePages,
             onChanged: (SettingsContext c, bool value) {
               c.readerSource.setReaderMergeImagePages(value);
               notifyReaderLayoutChanged(c);

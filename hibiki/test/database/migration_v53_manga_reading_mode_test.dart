@@ -70,8 +70,7 @@ CREATE TABLE epub_books (
   test('v53：可插入并读回 format=manga 的漫画行 + mangaReadingMode 覆盖值', () async {
     // 用完整 schema 的 forTesting 库（onCreate 建全表 @v53，含 insertEpubBook
     // 依赖的表）——手搭 v51 shape 只有 epub_books，跑不了真插入 DAO。
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     // 漫画行，手动覆盖为 webtoon。
@@ -117,6 +116,6 @@ CREATE TABLE epub_books (
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 68);
+    expect(db.schemaVersion, 73);
   });
 }

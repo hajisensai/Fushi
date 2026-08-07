@@ -179,7 +179,7 @@ void main() {
           },
         ],
       });
-      await db.setPref('src:reader_ttu:font_catalog', catalog);
+      await db.setPref('src:reader_fushi:font_catalog', catalog);
 
       final String json =
           await repo.exportProfileToJson(pid, fontsRootDirectory: fontsRoot);
@@ -190,7 +190,7 @@ void main() {
           (e as Map<String, dynamic>)['key'] as String: e['value'] as String,
       };
       final Map<String, dynamic> exportedCatalog =
-          jsonDecode(kv['src:reader_ttu:font_catalog']!)
+          jsonDecode(kv['src:reader_fushi:font_catalog']!)
               as Map<String, dynamic>;
       final String exportedPath =
           (exportedCatalog['fonts'] as List<dynamic>).first['path'] as String;

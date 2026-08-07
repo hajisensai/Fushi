@@ -88,7 +88,7 @@ class _MigrationImportPageState extends State<MigrationImportPage> {
       await WidgetsBinding.instance.endOfFrame;
       await appModel.closeDatabase();
       final String booksRoot =
-          p.join(appModel.appDirectory.path, 'hoshi_books');
+          p.join(appModel.appDirectory.path, 'fushi_books');
       final String audiobooksRoot =
           p.join(appModel.appDirectory.path, 'audiobooks');
       final String fontsRoot =

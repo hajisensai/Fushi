@@ -92,9 +92,8 @@ Future<Map<String, dynamic>> _runCase({
   required int dragDx,
   required int dragDy,
 }) async {
-  await appModel.database.setPref('src:reader_ttu:ttu_view_mode', 'continuous');
-  await appModel.database
-      .setPref('src:reader_ttu:ttu_writing_mode', writingMode);
+  await appModel.database.setPref('src:reader_fushi:view_mode', 'continuous');
+  await appModel.database.setPref('src:reader_fushi:writing_mode', writingMode);
   await ReaderHibikiSource.readerSettings?.refreshFromDb();
 
   final String bookKey = await EpubImporter.import(

@@ -34,7 +34,7 @@ class ReaderPdfSource extends ReaderMediaSource {
           implementsHistory: false,
         );
 
-  /// 媒体源唯一键（持久化标识，永不复用 `reader_ttu`）。[ReaderHibikiSource] 的
+  /// 媒体源唯一键（持久化标识，永不复用 `reader_fushi`）。[ReaderHibikiSource] 的
   /// `_bookToMediaItem` 用它把 `format=='pdf'` 的行路由到本源。
   static const String kUniqueKey = 'reader_pdf';
 

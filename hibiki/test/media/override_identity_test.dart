@@ -16,7 +16,7 @@ import '../helpers/test_platform_services.dart';
 ///
 /// - A3：standalone SRT 书（bookKey 空串哨兵）以前全部共享
 ///   `mediaIdentifierFor('')`，override 书名互相踩、作者保存静默 no-op。现在
-///   身份是 `hoshi://srtbook/<uid>`（每书唯一），作者真实写穿 SrtBooks.author。
+///   身份是 `fushi://srtbook/<uid>`（每书唯一），作者真实写穿 SrtBooks.author。
 /// - 附带：编辑保存没选新封面时不再落 0 字节 override 封面文件。
 ///
 /// BUG-1317：override 书名 / 封面的键与存储命名空间都把**源键**烧了进去，而
@@ -196,14 +196,14 @@ void main() {
   /// BUG-1317：override 书名 / 封面的身份是**书**，不是「用哪个阅读器打开」。
   ///
   /// 旧实现把源键烧进了 key 字符串（出现两次）与偏好命名空间（`src:<src>:`），而
-  /// 一本书的源键由 `EpubBooks.format` 现算（epub→reader_ttu / manga→reader_manga
+  /// 一本书的源键由 `EpubBooks.format` 现算（epub→reader_fushi / manga→reader_manga
   /// / pdf→reader_pdf）。于是漫画 / PDF 书改名后，书架、首页、统计、通知栏读到的
   /// 键各不相同；EPUB 转漫画后连书架也读不回来。
   group('override identity is per-book, not per-reader (BUG-1317)', () {
     const String kBookKey = 'bug1317_book';
     final String kMediaId = ReaderHibikiSource.mediaIdentifierFor(kBookKey);
 
-    /// 书族三源共用同一 `hoshi://book/<bookKey>` 身份，只有源键不同——这正是
+    /// 书族三源共用同一 `fushi://book/<bookKey>` 身份，只有源键不同——这正是
     /// `_bookToMediaItem` 按 format 现算出来的三种形态。
     MediaItem bookItem(MediaSource source, {String mediaIdentifier = ''}) {
       return MediaItem(

@@ -32,17 +32,17 @@ enum FontTarget {
 
 /// All reader display/behavior settings, decoupled from the media source.
 ///
-/// Reads/writes use the same Drift `preferences` table keys as the old
-/// `ReaderTtuSource` so existing user settings migrate automatically.
-/// Key format: `src:reader_ttu:<shortKey>`.
+/// Reads/writes share the same Drift `preferences` table keys as
+/// `ReaderHibikiSource` (two writers, one key set).
+/// Key format: `src:reader_fushi:<shortKey>`. 存量旧键（`src:reader_ttu:` 命名
+/// 空间 + `ttu_` shortKey 前缀）已由 v70 Drift 迁移一次性改写。
 class ReaderSettings {
   ReaderSettings(this._db);
 
   final FushiDatabase _db;
   final Map<String, dynamic> _cache = <String, dynamic>{};
 
-  /// 经单一真相编码器 [dbSourcePrefKey] 得到 `src:reader_ttu:`；`reader_ttu`
-  /// 是冻结的历史 sourceId（旧数据兼容，勿改）。
+  /// 经单一真相编码器 [dbSourcePrefKey] 得到 `src:reader_fushi:`。
   static final String _prefix = dbSourcePrefKey(kReaderSourcePersistedKey, '');
 
   /// TODO-362（PR#3 响应式页边距）：正文左右两侧默认各留白 2%（百分比 = vw），每行
@@ -80,31 +80,31 @@ class ReaderSettings {
   }
 
   Future<void> _migrateMargins() async {
-    final double? first = _cache['ttu_first_dimension_margin'] as double?;
-    final double? second = _cache['ttu_second_dimension_margin'] as double?;
+    final double? first = _cache['first_dimension_margin'] as double?;
+    final double? second = _cache['second_dimension_margin'] as double?;
     if (first == null && second == null) return;
-    if (!_cache.containsKey('ttu_margin_top')) {
+    if (!_cache.containsKey('margin_top')) {
       final double topBottom = first ?? 0;
       final double leftRight = second ?? 0;
-      await _set<double>('ttu_margin_top', topBottom);
-      await _set<double>('ttu_margin_bottom', topBottom);
-      await _set<double>('ttu_margin_left', leftRight);
-      await _set<double>('ttu_margin_right', leftRight);
+      await _set<double>('margin_top', topBottom);
+      await _set<double>('margin_bottom', topBottom);
+      await _set<double>('margin_left', leftRight);
+      await _set<double>('margin_right', leftRight);
     }
-    _cache.remove('ttu_first_dimension_margin');
-    _cache.remove('ttu_second_dimension_margin');
-    _cache.remove('ttu_second_dimension_max');
-    await _db.deletePref('${_prefix}ttu_first_dimension_margin');
-    await _db.deletePref('${_prefix}ttu_second_dimension_margin');
-    await _db.deletePref('${_prefix}ttu_second_dimension_max');
+    _cache.remove('first_dimension_margin');
+    _cache.remove('second_dimension_margin');
+    _cache.remove('second_dimension_max');
+    await _db.deletePref('${_prefix}first_dimension_margin');
+    await _db.deletePref('${_prefix}second_dimension_margin');
+    await _db.deletePref('${_prefix}second_dimension_max');
   }
 
   Future<void> _ensureResponsiveMarginDefaults() async {
     final Map<String, double> defaults = <String, double>{
-      'ttu_margin_top': defaultMarginTopPercent,
-      'ttu_margin_bottom': defaultMarginBottomPercent,
-      'ttu_margin_left': defaultMarginLeftPercent,
-      'ttu_margin_right': defaultMarginRightPercent,
+      'margin_top': defaultMarginTopPercent,
+      'margin_bottom': defaultMarginBottomPercent,
+      'margin_left': defaultMarginLeftPercent,
+      'margin_right': defaultMarginRightPercent,
     };
     for (final MapEntry<String, double> entry in defaults.entries) {
       if (_cache.containsKey(entry.key)) continue;
@@ -139,8 +139,8 @@ class ReaderSettings {
 
   // ── Display settings (same Hive keys as old ReaderTtuSource) ──────
 
-  double get fontSize => _get<double>('ttu_font_size', 22);
-  Future<void> setFontSize(double v) => _set<double>('ttu_font_size', v);
+  double get fontSize => _get<double>('font_size', 22);
+  Future<void> setFontSize(double v) => _set<double>('font_size', v);
 
   double get lyricsFontSize => _get<double>('lyrics_font_size', 24);
   Future<void> setLyricsFontSize(double v) =>
@@ -171,7 +171,7 @@ class ReaderSettings {
   Future<void> setLyricsMarginRight(double v) =>
       _set<double>('lyrics_margin_right', v);
 
-  /// TODO-907: 歌词模式竖排开关，**独立**于正文 `ttu_writing_mode`（正文默认
+  /// TODO-907: 歌词模式竖排开关，**独立**于正文 `writing_mode`（正文默认
   /// vertical-rl，复用会连坐正文）。默认 `false` = 横排，向后兼容历史行为。
   bool get lyricsVerticalWriting =>
       _get<bool>('lyrics_vertical_writing', false);
@@ -184,14 +184,14 @@ class ReaderSettings {
   bool get lyricsBlur => _get<bool>('lyrics_blur', false);
   Future<void> setLyricsBlur(bool v) => _set<bool>('lyrics_blur', v);
 
-  double get lineHeight => _get<double>('ttu_line_height', 1.65);
-  Future<void> setLineHeight(double v) => _set<double>('ttu_line_height', v);
+  double get lineHeight => _get<double>('line_height', 1.65);
+  Future<void> setLineHeight(double v) => _set<double>('line_height', v);
 
-  String get writingMode => _get<String>('ttu_writing_mode', 'vertical-rl');
-  Future<void> setWritingMode(String v) => _set<String>('ttu_writing_mode', v);
+  String get writingMode => _get<String>('writing_mode', 'vertical-rl');
+  Future<void> setWritingMode(String v) => _set<String>('writing_mode', v);
 
-  String get viewMode => _get<String>('ttu_view_mode', 'paginated');
-  Future<void> setViewMode(String v) => _set<String>('ttu_view_mode', v);
+  String get viewMode => _get<String>('view_mode', 'paginated');
+  Future<void> setViewMode(String v) => _set<String>('view_mode', v);
 
   /// `true` only in the legacy native-scroll (连续) mode. VN mode is a
   /// distinct page-flip stage, NOT continuous — keep this strict so the
@@ -206,7 +206,7 @@ class ReaderSettings {
 
   // ── VN (Visual-Novel) settings (TODO-909) ──────────────────────────────
   // Defaults copied from hoshi a ReaderSettings.kt (🔒③). per-Profile global,
-  // same `src:reader_ttu:` Drift mechanism as view_mode. M0 wires these into
+  // same `src:reader_fushi:` Drift mechanism as view_mode. M0 wires these into
   // the VN shell; the dedicated settings UI for them lands in M1.
 
   /// Typewriter reveal speed in chars/sec (0 = instant). hoshi default 45.
@@ -251,73 +251,72 @@ class ReaderSettings {
   Future<void> setVisualNovelMergeCrossScreenSentenceAudioCues(bool v) =>
       _set<bool>('vn_merge_cross_screen_cues', v);
 
-  String get theme => _get<String>('ttu_theme', 'light-theme');
-  Future<void> setTheme(String v) => _set<String>('ttu_theme', v);
+  String get theme => _get<String>('theme', 'light-theme');
+  Future<void> setTheme(String v) => _set<String>('theme', v);
 
   String get furiganaMode {
-    final dynamic raw = _cache['ttu_hide_furigana'];
+    final dynamic raw = _cache['hide_furigana'];
     final bool? legacy = raw is bool ? raw : null;
     if (legacy != null) {
       final String oldStyle =
-          _get<String>('ttu_furigana_style', 'partial').toLowerCase();
+          _get<String>('furigana_style', 'partial').toLowerCase();
       final String mode = legacy ? 'hide' : 'show';
       final String merged = normalizeFuriganaMode(
         (legacy && (oldStyle == 'partial' || oldStyle == 'toggle'))
             ? oldStyle
             : mode,
       );
-      _set<String>('ttu_furigana_mode', merged);
-      _cache.remove('ttu_hide_furigana');
-      _db.deletePref('${_prefix}ttu_hide_furigana');
-      _db.deletePref('${_prefix}ttu_furigana_style');
+      _set<String>('furigana_mode', merged);
+      _cache.remove('hide_furigana');
+      _db.deletePref('${_prefix}hide_furigana');
+      _db.deletePref('${_prefix}furigana_style');
       return merged;
     }
     return normalizeFuriganaMode(
-      _get<String>('ttu_furigana_mode', 'show'),
+      _get<String>('furigana_mode', 'show'),
     );
   }
 
   Future<void> setFuriganaMode(String v) =>
-      _set<String>('ttu_furigana_mode', normalizeFuriganaMode(v));
+      _set<String>('furigana_mode', normalizeFuriganaMode(v));
 
-  double get textIndentation => _get<double>('ttu_text_indentation', 0);
+  double get textIndentation => _get<double>('text_indentation', 0);
   Future<void> setTextIndentation(double v) =>
-      _set<double>('ttu_text_indentation', v);
+      _set<double>('text_indentation', v);
 
   /// TODO-861①（移植 Hoshi `ebf5423`）：段落间距（em）。>0 时给 `<p>` 注入主轴方向
   /// 的 margin（横排 top/bottom、竖排 left/right，见 `ReaderContentStyles.css`）。
   /// 默认 `0` = 无段间距，向后兼容历史行为。
-  double get paragraphSpacing => _get<double>('ttu_paragraph_spacing', 0);
+  double get paragraphSpacing => _get<double>('paragraph_spacing', 0);
   Future<void> setParagraphSpacing(double v) =>
-      _set<double>('ttu_paragraph_spacing', v);
+      _set<double>('paragraph_spacing', v);
 
   /// TODO-861④（移植 Hoshi `f286108`）：图片防剧透模糊。开启时大图（block-img，
   /// 含 svg 封面）盖 24px 高斯模糊，点击一次揭开。默认 `false` = 不模糊，向后兼容。
-  bool get blurImages => _get<bool>('ttu_blur_images', false);
-  Future<void> setBlurImages(bool v) => _set<bool>('ttu_blur_images', v);
+  bool get blurImages => _get<bool>('blur_images', false);
+  Future<void> setBlurImages(bool v) => _set<bool>('blur_images', v);
 
-  double get marginTop =>
-      _get<double>('ttu_margin_top', defaultMarginTopPercent);
+  double get marginTop => _get<double>('margin_top', defaultMarginTopPercent);
   Future<void> setMarginTop(double v) =>
-      _set<double>('ttu_margin_top', normalizeMarginPercent(v));
+      _set<double>('margin_top', normalizeMarginPercent(v));
 
   double get marginBottom =>
-      _get<double>('ttu_margin_bottom', defaultMarginBottomPercent);
+      _get<double>('margin_bottom', defaultMarginBottomPercent);
   Future<void> setMarginBottom(double v) =>
-      _set<double>('ttu_margin_bottom', normalizeMarginPercent(v));
+      _set<double>('margin_bottom', normalizeMarginPercent(v));
 
   double get marginLeft =>
-      _get<double>('ttu_margin_left', defaultMarginLeftPercent);
+      _get<double>('margin_left', defaultMarginLeftPercent);
   Future<void> setMarginLeft(double v) =>
-      _set<double>('ttu_margin_left', normalizeMarginPercent(v));
+      _set<double>('margin_left', normalizeMarginPercent(v));
 
   double get marginRight =>
-      _get<double>('ttu_margin_right', defaultMarginRightPercent);
+      _get<double>('margin_right', defaultMarginRightPercent);
   Future<void> setMarginRight(double v) =>
-      _set<double>('ttu_margin_right', normalizeMarginPercent(v));
+      _set<double>('margin_right', normalizeMarginPercent(v));
 
-  int get pageColumns => _get<int>('ttu_page_columns', 0);
-  Future<void> setPageColumns(int v) => _set<int>('ttu_page_columns', v);
+  int get pageColumns => _get<int>('page_columns', 0);
+  Future<void> setPageColumns(int v) => _set<int>('page_columns', v);
 
   /// `off`, `on`, or `auto`.
   ///
@@ -326,41 +325,40 @@ class ReaderSettings {
   /// 手势契约完全不同的独立文档（[buildSpreadPageHtml]，无正文 fushiReader）。
   /// 双页展开保留为显式选项（阅读器快捷设置里的 off/on/auto 三选一），只是不再
   /// 是没设置过的用户的默认落点。已显式设过本键的用户读到的是自己的存值，不受影响。
-  String get spreadMode => _get<String>('ttu_spread_mode', 'off');
-  Future<void> setSpreadMode(String v) => _set<String>('ttu_spread_mode', v);
+  String get spreadMode => _get<String>('spread_mode', 'off');
+  Future<void> setSpreadMode(String v) => _set<String>('spread_mode', v);
 
   /// `ltr` or `rtl`.
-  String get spreadDirection => _get<String>('ttu_spread_direction', 'rtl');
+  String get spreadDirection => _get<String>('spread_direction', 'rtl');
   Future<void> setSpreadDirection(String v) =>
-      _set<String>('ttu_spread_direction', v);
+      _set<String>('spread_direction', v);
 
   /// TODO-1128: when true, the reader folds each run of trailing standalone
   /// single-image (0-char) chapters into the preceding text chapter's
   /// continuous flow instead of paging to each illustration separately.
   /// Default false (conservative first ship); a structural layout key.
-  bool get mergeImagePages => _get<bool>('ttu_merge_image_pages', false);
-  Future<void> setMergeImagePages(bool v) =>
-      _set<bool>('ttu_merge_image_pages', v);
+  bool get mergeImagePages => _get<bool>('merge_image_pages', false);
+  Future<void> setMergeImagePages(bool v) => _set<bool>('merge_image_pages', v);
 
-  bool get enableVerticalFontKerning => _get<bool>('ttu_vert_kerning', false);
+  bool get enableVerticalFontKerning => _get<bool>('vert_kerning', false);
   Future<void> setEnableVerticalFontKerning(bool v) =>
-      _set<bool>('ttu_vert_kerning', v);
+      _set<bool>('vert_kerning', v);
 
-  bool get enableFontVPAL => _get<bool>('ttu_font_vpal', false);
-  Future<void> setEnableFontVPAL(bool v) => _set<bool>('ttu_font_vpal', v);
+  bool get enableFontVPAL => _get<bool>('font_vpal', false);
+  Future<void> setEnableFontVPAL(bool v) => _set<bool>('font_vpal', v);
 
   String get verticalTextOrientation =>
-      _get<String>('ttu_vert_text_orient', 'mixed');
+      _get<String>('vert_text_orient', 'mixed');
   Future<void> setVerticalTextOrientation(String v) =>
-      _set<String>('ttu_vert_text_orient', v);
+      _set<String>('vert_text_orient', v);
 
-  bool get enableTextJustification => _get<bool>('ttu_text_justify', false);
+  bool get enableTextJustification => _get<bool>('text_justify', false);
   Future<void> setEnableTextJustification(bool v) =>
-      _set<bool>('ttu_text_justify', v);
+      _set<bool>('text_justify', v);
 
-  bool get prioritizeReaderStyles => _get<bool>('ttu_reader_styles', false);
+  bool get prioritizeReaderStyles => _get<bool>('reader_styles', false);
   Future<void> setPrioritizeReaderStyles(bool v) =>
-      _set<bool>('ttu_reader_styles', v);
+      _set<bool>('reader_styles', v);
 
   // ── Behavior settings ─────────────────────────────────────────────
 
