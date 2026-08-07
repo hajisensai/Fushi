@@ -309,7 +309,7 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
 ];
 
 // ---------------------------------------------------------------------------
-// W6：native 目录与残余构建标识改名（native/hibiki_torrent→native/fushi_torrent、
+// W6/W8：native 目录、残余构建标识与应用目录改名（native/hibiki_torrent→native/fushi_torrent、
 // native/hoshidicts→native/fushidicts + 内层 hoshidicts_{src,include,external}→
 // fushidicts_*）。这组禁的是**路径/构建标识形态**，与上面的代码位组不同：
 // 扫描面覆盖构建脚本、workflow、docs/agent、native 自树、包与测试，注释**也算**
@@ -360,6 +360,19 @@ final List<_ForbiddenPattern> _forbiddenPathForms = <_ForbiddenPattern>[
   _ForbiddenPattern(
     name: 'HIBIKI_TORRENT_LIB 测试环境变量',
     regex: RegExp('HIBIKI_TORRENT_LIB'),
+  ),
+  _ForbiddenPattern(
+    // W8：应用目录已整体 git mv 为 fushi/（原 hibiki/）。禁「hibiki/<应用一级
+    // 子目录>」路径形态（正/反斜杠都算）。子目录白名单式锚定让 reader_hibiki/、
+    // video_hibiki/（part 目录真实符号）、app.hibiki/*（method channel）、
+    // GitHub 仓库名 hajisensai/hibiki/releases、~/dev/hibiki/（Mac 克隆根）等
+    // 非应用目录词天然不命中；本机仓库根 vs_claude_code/hibiki/ 由负向后顾放行。
+    // 历史档案（docs/bugs|reviews|plans|specs、fushi/docs/*）与冻结身份词
+    // （hibiki.git 远端裸库名、hibiki-*.apk 资产名等无斜杠形态）不在命中面。
+    name: 'hibiki/<app 子目录> 路径',
+    regex: RegExp(r'(?<!vs_claude_code[/\\])hibiki[/\\](?:lib\b|test|tool\b|'
+        r'assets|android|ios\b|macos|windows|linux|integration_test|pubspec|'
+        r'i18n|CLAUDE\.md|build\b|docs\b)'),
   ),
 ];
 
