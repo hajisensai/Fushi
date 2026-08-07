@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $PSScriptRoot
-$AppDir = Join-Path $Root "hibiki"
+$AppDir = Join-Path $Root "fushi"
 $Dart = "D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat"
 if (-not (Test-Path $Dart)) {
   $Dart = "dart"

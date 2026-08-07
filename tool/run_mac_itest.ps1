@@ -2,7 +2,7 @@
 # Pushes committed history to the Mac, fast-forwards its checkout, then runs a
 # Hibiki integration test against the REAL macOS app under HIBIKI_TEST_HIDDEN
 # (the runner parks itself off-screen + .accessory + non-key, so it never
-# appears or steals foreground — see hibiki/macos/Runner/MainFlutterWindow.swift).
+# appears or steals foreground — see fushi/macos/Runner/MainFlutterWindow.swift).
 # Phase 3 of the test-flow refactor (Windows is the conductor; the Mac runs).
 #
 # The test TARGET must be committed first (the Mac builds from committed
@@ -29,7 +29,7 @@ Write-Host "[mac-itest] syncing committed history to Mac..." -ForegroundColor Cy
 $lines = @(
   'export LANG=en_US.UTF-8',
   'export PATH=$HOME/flutter/bin:$HOME/.gem/ruby/2.6.0/bin:$PATH',
-  'cd ~/dev/hibiki && git fetch origin && git merge --ff-only origin/develop && cd hibiki',
+  'cd ~/dev/hibiki && git fetch origin && git merge --ff-only origin/develop && cd fushi',
   "HIBIKI_TEST_HIDDEN=1 flutter test $Target -d macos --no-pub"
 )
 $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($lines -join "`n")))

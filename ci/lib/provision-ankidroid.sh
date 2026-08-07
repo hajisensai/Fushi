@@ -52,7 +52,7 @@ provision_ankidroid() {
   # 1. Install AnkiDroid if absent.
   if ! MSYS_NO_PATHCONV=1 $ADBD shell pm path "$ANKI_PKG" >/dev/null 2>&1; then
     echo ">>> AnkiDroid not installed; downloading from mirror..."
-    local tmp_anki="$REPO_ROOT/hibiki/.anki_apk_download.apk"
+    local tmp_anki="$REPO_ROOT/fushi/.anki_apk_download.apk"
     if ! curl -L --ssl-no-revoke -o "$tmp_anki" "$ANKI_APK_URL"; then
       echo ">>> WARN: AnkiDroid download failed — anki_integration will fail." >&2
       rm -f "$tmp_anki"

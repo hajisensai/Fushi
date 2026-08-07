@@ -6,7 +6,7 @@
 #   - AnkiRepository.fetchConfiguration() -> real decks + note types
 #   - isDuplicate() against the live collection
 #   - mineEntry() add-or-duplicate
-# (see hibiki/integration_test/anki_integration_test.dart)
+# (see fushi/integration_test/anki_integration_test.dart)
 #
 # The AnkiDroid provisioning recipe (install + collection + permission grant)
 # and its rationale live in ci/lib/provision-ankidroid.sh, shared with the
@@ -37,7 +37,7 @@ ADBD="$ADB -s $DEVICE"
 # shellcheck source=ci/lib/provision-ankidroid.sh
 source "$REPO_ROOT/ci/lib/provision-ankidroid.sh"
 
-cd "$REPO_ROOT/hibiki"
+cd "$REPO_ROOT/fushi"
 
 # --- 1. Device online ---
 if ! $ADB devices 2>/dev/null | grep -q "$DEVICE[[:space:]].*device"; then

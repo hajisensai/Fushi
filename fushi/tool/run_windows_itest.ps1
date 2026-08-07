@@ -8,7 +8,7 @@
 # app"). The test runner then starts with a unique run id, off-screen window mode,
 # isolated app data/log/temp roots, and an isolated WebView2 profile.
 #
-# Usage (from hibiki/):
+# Usage (from fushi/):
 #   .\tool\run_windows_itest.ps1
 #   .\tool\run_windows_itest.ps1 integration_test\app_smoke_test.dart
 #   .\tool\run_windows_itest.ps1 -DryRun integration_test\app_smoke_test.dart
@@ -144,7 +144,7 @@ function Get-FushiProcessSnapshot {
     [Parameter(Mandatory = $true)][string]$CurrentRunId,
     [Parameter(Mandatory = $true)][string]$RunnerPathPrefix
   )
-  $processes = @(Get-Process -Name "hibiki" -ErrorAction SilentlyContinue)
+  $processes = @(Get-Process -Name "fushi" -ErrorAction SilentlyContinue)
   $byId = @{}
   foreach ($process in $processes) {
     $byId[[int]$process.Id] = $process

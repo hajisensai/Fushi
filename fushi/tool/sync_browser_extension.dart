@@ -1,5 +1,5 @@
 // 浏览器扩展镜像同步（G15）：`tools/browser-extension/` 是唯一真相源，
-// `hibiki/assets/browser_extension/` 是随 app 打包的只读镜像（安装助手
+// `fushi/assets/browser_extension/` 是随 app 打包的只读镜像（安装助手
 // browser_extension_installer.dart 从 AssetManifest 解压它）。
 //
 // 历史上两镜像纯手工双写，已漂移过一次（58a7d4fa 修的就是 dict-media.js 漂移）。
@@ -7,7 +7,7 @@
 // `test/build/browser_extension_mirror_full_guard_test.dart` 在 CI 单测门里做
 // 全目录字节比对硬失败——改了 tools/ 忘跑本脚本会直接红。
 //
-// 用法（在 hibiki/ 下）：
+// 用法（在 fushi/ 下）：
 //   dart run tool/sync_browser_extension.dart          # 同步 tools/ → assets/
 //   dart run tool/sync_browser_extension.dart --check  # 只校验，漂移则退出码 1
 //
@@ -43,13 +43,13 @@ List<String> collectMirroredFiles(Directory root) {
 void main(List<String> args) {
   final bool checkOnly = args.contains('--check');
 
-  // 脚本位于 hibiki/tool/，据此定位仓库根，cwd 无关。
+  // 脚本位于 fushi/tool/，据此定位仓库根，cwd 无关。
   final String scriptDir = p.dirname(Platform.script.toFilePath());
-  final String hibikiRoot = p.normalize(p.join(scriptDir, '..'));
+  final String fushiRoot = p.normalize(p.join(scriptDir, '..'));
   final Directory source = Directory(
-      p.normalize(p.join(hibikiRoot, '..', 'tools', 'browser-extension')));
+      p.normalize(p.join(fushiRoot, '..', 'tools', 'browser-extension')));
   final Directory mirror =
-      Directory(p.join(hibikiRoot, 'assets', 'browser_extension'));
+      Directory(p.join(fushiRoot, 'assets', 'browser_extension'));
 
   if (!source.existsSync()) {
     stderr.writeln('找不到源目录：${source.path}');

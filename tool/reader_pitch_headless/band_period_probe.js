@@ -1,7 +1,7 @@
 // Reader vertical pagination geometry probe (headless Chrome).
 //
 // WHY THIS EXISTS (BUG-405): the Dart algebraic guard
-// `hibiki/test/reader/reader_vertical_pitch_invariant_test.dart` defines realPitch as
+// `fushi/test/reader/reader_vertical_pitch_invariant_test.dart` defines realPitch as
 // `columnWidth + gap` (the *nominal* value), so it structurally cannot tell whether the
 // browser's *actual* multicol column period matches that nominal pitch. A "cumulative
 // pagination offset" P0 was raised on the hypothesis that the real period drifts from the

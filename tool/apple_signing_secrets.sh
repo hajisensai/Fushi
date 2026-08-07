@@ -174,7 +174,7 @@ if [ -n "$IOS_PROFILE" ]; then
     ok "name = $PROFILE_NAME"
 
     EXPECTED_BUNDLE_ID="$(sed -n 's/.*PRODUCT_BUNDLE_IDENTIFIER = \(.*\);/\1/p' \
-      "$REPO_ROOT/hibiki/ios/Runner.xcodeproj/project.pbxproj" | grep -v RunnerTests | head -n 1)"
+      "$REPO_ROOT/fushi/ios/Runner.xcodeproj/project.pbxproj" | grep -v RunnerTests | head -n 1)"
     if [ "$PROFILE_BUNDLE_ID" = "$EXPECTED_BUNDLE_ID" ]; then
       ok "bundle id = ${PROFILE_BUNDLE_ID}（与 Runner.xcodeproj 一致）"
     else

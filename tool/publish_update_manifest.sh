@@ -113,7 +113,7 @@ WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 # Default to the real GitHub remote. MANIFEST_REMOTE_OVERRIDE lets the
-# offline race test (hibiki/test/tools/update_manifest_publish_race_test.dart)
+# offline race test (fushi/test/tools/update_manifest_publish_race_test.dart)
 # point at a local bare repo; it is never set in CI.
 REMOTE="${MANIFEST_REMOTE_OVERRIDE:-https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}.git}"
 git -C "$WORK_DIR" init -q

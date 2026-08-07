@@ -108,7 +108,7 @@ echo ">>> Emulator booted."
 # shellcheck source=ci/lib/provision-ankidroid.sh
 source "$REPO_ROOT/ci/lib/provision-ankidroid.sh"
 
-cd "$REPO_ROOT/hibiki"
+cd "$REPO_ROOT/fushi"
 
 # ── Build once ──
 if [ "$SKIP_BUILD" = false ]; then

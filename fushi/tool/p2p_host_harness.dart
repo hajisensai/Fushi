@@ -3,7 +3,7 @@
 // http://10.0.2.2:<port> (emulator) or http://<host-lan-ip>:<port> (device).
 //
 // Driven by .codex-test/tools/p2p-interop.ps1 — not shipped, not imported by
-// the app. Run from the hibiki package dir with the Flutter SDK's dart:
+// the app. Run from the fushi package dir with the Flutter SDK's dart:
 //   dart run tool/p2p_host_harness.dart [port]
 //
 // Prints a single machine-readable line once the server is listening:

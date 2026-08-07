@@ -202,7 +202,7 @@ $packages = @(
     "$root\packages\fushi_anki",
     "$root\packages\fushi_audio",
     "$root\packages\fushi_platform",
-    "$root\hibiki"
+    "$root\fushi"
 )
 
 foreach ($pkg in $packages) {
@@ -231,4 +231,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "`nBootstrap complete. Build with, e.g.:" -ForegroundColor Green
-Write-Host "  cd hibiki; & '$flutter' build windows --release"
+Write-Host "  cd fushi; & '$flutter' build windows --release"

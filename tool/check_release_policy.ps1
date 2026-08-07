@@ -124,10 +124,10 @@ foreach ($relativePath in $workflowPaths) {
   Require-Text $relativePath $content 'echo "tag=$TAG"' 'the versioned tag must still be emitted so the manifest `tag` field drives client version comparison (TODO-1049)'
 }
 
-$buildGradle = Read-RepoFile 'hibiki/android/app/build.gradle'
-Require-Text 'hibiki/android/app/build.gradle' $buildGradle 'def versionCodeBase = 1000000000' 'one-time versionCode migration floor must stay above every historically-shipped versionCode (TODO-414)'
-Require-Text 'hibiki/android/app/build.gradle' $buildGradle 'def maxVersionCode = 2100000000' 'versionCode ceiling guard must match Android''s 2.1e9 limit (TODO-414)'
-Require-Text 'hibiki/android/app/build.gradle' $buildGradle 'output.versionCodeOverride = computed' 'versionCode must be the bounds-checked computed value (TODO-414)'
+$buildGradle = Read-RepoFile 'fushi/android/app/build.gradle'
+Require-Text 'fushi/android/app/build.gradle' $buildGradle 'def versionCodeBase = 1000000000' 'one-time versionCode migration floor must stay above every historically-shipped versionCode (TODO-414)'
+Require-Text 'fushi/android/app/build.gradle' $buildGradle 'def maxVersionCode = 2100000000' 'versionCode ceiling guard must match Android''s 2.1e9 limit (TODO-414)'
+Require-Text 'fushi/android/app/build.gradle' $buildGradle 'output.versionCodeOverride = computed' 'versionCode must be the bounds-checked computed value (TODO-414)'
 
 $desktopWorkflow = Read-RepoFile '.github/workflows/release-desktop.yml'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '--build-number "${{ steps.channel.outputs.release_sequence }}"' 'desktop build number must use the shared release sequence'
@@ -138,7 +138,7 @@ Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-w
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-macos.zip' 'desktop workflow must upload macOS zip assets'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-ios.ipa' 'desktop workflow must upload iOS IPA assets'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Publish mirror update manifest (Apple assets)' 'Apple release assets must merge into the update manifest'
-# Apple 签名链路：细粒度不变式由 hibiki/test/tools/apple_signing_workflow_guard_test.dart
+# Apple 签名链路：细粒度不变式由 fushi/test/tools/apple_signing_workflow_guard_test.dart
 # 守（每个 PR 都跑）。这里只锁发布策略层面的那一条 —— TestFlight 上传绝不能挂到 push
 # 事件上：push 的 debug 通道每次提交都会跑，每次上传都消耗一个不可回收的构建号
 # （同一语义版本下 CFBundleVersion 必须单调递增）。
@@ -153,12 +153,12 @@ Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'native/ga
 # check could not tell Release from Debug, and unpacking into the wrong directory
 # ships an installer with no helper at all while the build stays green.
 # (The anti-regression side -- never copying zips back into galgame_helper/ --
-# lives in hibiki/test/mining/gal_helper_bundled_as_plain_files_test.dart.)
-Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'install_into_bundle.ps1 -BundleDirectory "$PWD\hibiki\build\windows\x64\runner\Release"' 'Windows release payload must unpack both helper architectures into the packaged Release bundle (BUG-1449)'
+# lives in fushi/test/mining/gal_helper_bundled_as_plain_files_test.dart.)
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'install_into_bundle.ps1 -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Release"' 'Windows release payload must unpack both helper architectures into the packaged Release bundle (BUG-1449)'
 
 $multiplatformWorkflow = Read-RepoFile '.github/workflows/build-multiplatform.yml'
 Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 'native/galgame_hook/tools/build_distribution.ps1 -RunTests' 'Windows CI must exercise the same bundled helper build as release'
-Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 'install_into_bundle.ps1 -BundleDirectory "$PWD\hibiki\build\windows\x64\runner\Debug"' 'Windows debug bundle must exercise the same build-time helper unpack as release (BUG-1449)'
+Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 'install_into_bundle.ps1 -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Debug"' 'Windows debug bundle must exercise the same build-time helper unpack as release (BUG-1449)'
 
 # BUG-1292: Magpie has no download path left, so the bundled slim archive is the
 # ONLY way window upscaling can ever install. If a Windows workflow stops

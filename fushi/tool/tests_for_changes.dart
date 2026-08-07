@@ -4,14 +4,14 @@
 //
 // `docs/agent/fast-workflow.md` 里的默认整批 35 条守卫，扫的是 Dart 源码树，
 // 目录枚举、自动纳入新文件，所以「整批跑」就够了。真正会漏的是另一半：
-// **读 native / 非 Dart 树的守卫**（`hibiki/windows`、`hibiki/android`、
+// **读 native / 非 Dart 树的守卫**（`fushi/windows`、`fushi/android`、
 // `packages/*/windows`、`native/`、`tools/browser-extension`、`.github/workflows`、
 // `third_party/` …）。它们的触发面不在 Dart 树里，整批清单抓不到，于是文档里
 // 长期挂着一份**手写的 9 个测试名**当「按触发条件加跑」清单。
 //
 // 那份名字表的分类维度是「资产种类」（workflow / 扩展 / 二进制 / native），
 // 而真实触发面的维度是「哪棵源码树」。两者不对齐，结果是五棵最大的 native 树里
-// 只有一棵被点了一个名——改一行 `hibiki/windows/runner/*.cpp` 会牵动十几条守卫，
+// 只有一棵被点了一个名——改一行 `fushi/windows/runner/*.cpp` 会牵动十几条守卫，
 // 清单一条都没提。**这是「合入的 PR 把红带进 develop」的共同根因之一。**
 //
 // ## 判据：不再点名，改为从仓库现状推导
@@ -33,8 +33,8 @@
 // - **不剥注释**。注释里点名一棵树，本身就是「这个测试和那棵树有关」的证据；
 //   而且 `tool/` 下没法 import `test/helpers/source_guard.dart`（它依赖
 //   `package:flutter_test`），自己再写一遍词法器只会多一处会烂的实现。
-// - 路径候选取**后缀最长匹配**，并且允许补 `hibiki/` 前缀（测试的 cwd 是
-//   `hibiki/`，`'windows/runner/x.cpp'` 这种写法指的是 `hibiki/windows/...`）。
+// - 路径候选取**后缀最长匹配**，并且允许补 `fushi/` 前缀（测试的 cwd 是
+//   `fushi/`，`'windows/runner/x.cpp'` 这种写法指的是 `fushi/windows/...`）。
 // - 引用到**文件**时，同目录的其它文件也算触发（新增文件才不会被漏掉）。
 //
 // 唯一的收敛手段是**磁盘存在性**：候选路径必须真的在仓库里存在。这既滤掉了 URL、
@@ -42,15 +42,15 @@
 //
 // ## 用法
 //
-//   cd hibiki
+//   cd fushi
 //   dart run tool/tests_for_changes.dart --base=origin/develop
-//   dart run tool/tests_for_changes.dart hibiki/windows/runner/flutter_window.cpp
+//   dart run tool/tests_for_changes.dart fushi/windows/runner/flutter_window.cpp
 //   dart run tool/tests_for_changes.dart --base=origin/develop --explain
 //   dart run tool/tests_for_changes.dart --stats
 //
-// 输出是可直接喂给 `flutter test` 的、相对 `hibiki/` 的测试路径，每行一个：
+// 输出是可直接喂给 `flutter test` 的、相对 `fushi/` 的测试路径，每行一个：
 //
-//   cd hibiki && dart run tool/flutter_test_failures.dart --no-pub \
+//   cd fushi && dart run tool/flutter_test_failures.dart --no-pub \
 //     --output-dir=../.codex-test/flutter-test-trigger \
 //     $(dart run tool/tests_for_changes.dart --base=origin/develop)
 //
@@ -66,12 +66,12 @@ typedef RepoPath = String;
 /// 只有这两个是硬编码的名字，而且它们的腐烂是**响的**不是**哑的**——
 /// `tests_for_changes_guard_test.dart` 断言两者都存在且各含 ≥5 个子目录，
 /// 仓库真改了布局会当场红。
-const Set<RepoPath> kContainerDirs = <RepoPath>{'hibiki', 'packages'};
+const Set<RepoPath> kContainerDirs = <RepoPath>{'fushi', 'packages'};
 
 /// 非源码、且**各机器有无不一致**的目录名。
 ///
 /// 它们必须被排除，理由不是「没用」而是「会让索引因机器而异」：本机有
-/// `hibiki/build/windows/x64/...`、CI 的干净 checkout 没有，同一条路径字面量
+/// `fushi/build/windows/x64/...`、CI 的干净 checkout 没有，同一条路径字面量
 /// 在两处解析成不同深度，于是本机推导出的测试集和 CI 的不一样。索引必须只由
 /// **入库内容**决定。
 const Set<String> kNonSourceDirs = <String>{
@@ -90,9 +90,9 @@ const Set<String> kNonSourceDirs = <String>{
 /// 「整批跑」本来就抓得到，再输出一遍只会把结果淹掉、让人不看。
 /// `--include-dart` 可关掉这层过滤。
 const List<String> kDefaultBatchCoveredGlobs = <String>[
-  'hibiki/lib/',
-  'hibiki/test/',
-  'hibiki/integration_test/',
+  'fushi/lib/',
+  'fushi/test/',
+  'fushi/integration_test/',
 ];
 
 /// 仓库磁盘视图。抽成对象是为了让守卫测试能对着真仓库跑同一份逻辑，
@@ -100,7 +100,7 @@ const List<String> kDefaultBatchCoveredGlobs = <String>[
 class RepoFs {
   RepoFs(this.root);
 
-  /// 仓库根目录（含 `hibiki/pubspec.yaml` 与 `native/`）。
+  /// 仓库根目录（含 `fushi/pubspec.yaml` 与 `native/`）。
   final Directory root;
 
   final Map<RepoPath, bool> _existsCache = <RepoPath, bool>{};
@@ -131,7 +131,7 @@ class RepoFs {
   ///
   /// 不能直接用 `existsSync`：Windows 的 NTFS 大小写不敏感，且会静默吃掉路径段
   /// 末尾的空格与点。于是注释里的「Android/iOS/macOS/Windows/Linux」会被判成
-  /// `hibiki/Linux` 存在——**在 Linux CI 上却不存在**，同一份索引两个平台两个样。
+  /// `fushi/Linux` 存在——**在 Linux CI 上却不存在**，同一份索引两个平台两个样。
   /// 逐段比对目录列表把这两类幽灵一次性掐掉。
   bool exists(RepoPath repoPath) => _existsCache.putIfAbsent(repoPath, () {
         final List<String> segments = repoPath.split('/');
@@ -157,18 +157,18 @@ class RepoFs {
       .toSet();
 }
 
-/// 从 [start] 起向上找仓库根：以 `hibiki/pubspec.yaml` + `native/` 同时存在为准。
+/// 从 [start] 起向上找仓库根：以 `fushi/pubspec.yaml` + `native/` 同时存在为准。
 Directory locateRepoRoot(Directory start) {
   Directory dir = start.absolute;
   for (int depth = 0; depth < 12; depth++) {
-    final bool hasApp = File('${dir.path}/hibiki/pubspec.yaml').existsSync();
+    final bool hasApp = File('${dir.path}/fushi/pubspec.yaml').existsSync();
     final bool hasNative = Directory('${dir.path}/native').existsSync();
     if (hasApp && hasNative) return dir;
     final Directory parent = dir.parent;
     if (parent.path == dir.path) break;
     dir = parent;
   }
-  throw StateError('定位不到仓库根（找不到 hibiki/pubspec.yaml + native/）：'
+  throw StateError('定位不到仓库根（找不到 fushi/pubspec.yaml + native/）：'
       '${start.absolute.path}');
 }
 
@@ -178,7 +178,7 @@ Directory locateRepoRoot(Directory start) {
 /// 1. 丢掉 `.` / `..` / 空段；
 /// 2. 从最长后缀往最短试，要求首段是仓库一级目录；
 /// 3. 同一后缀内，**从最长前缀往最短退**，落到最近的一个真实存在的祖先；
-/// 4. 都不成时，给各级后缀补 `hibiki/` 前缀再走一遍（测试 cwd 是 `hibiki/`）。
+/// 4. 都不成时，给各级后缀补 `fushi/` 前缀再走一遍（测试 cwd 是 `fushi/`）。
 ///
 /// 第 3 步不是可有可无的收尾，它兜住三类实测漏网：
 /// - 指向**构建产物**的路径（`native/galgame_hook/dist` 磁盘上不存在）；
@@ -215,8 +215,8 @@ RepoPath? normalizeRepoPath(String candidate, RepoFs fs) {
     for (int end = segments.length; end > start; end--) {
       final String tail = segments.sublist(start, end).join('/');
       if (topLevel.contains(segments[start])) consider(tail);
-      // 首段不是一级目录时，可能是相对 `hibiki/` 写的（`windows/runner/x.cpp`）。
-      consider('hibiki/$tail');
+      // 首段不是一级目录时，可能是相对 `fushi/` 写的（`windows/runner/x.cpp`）。
+      consider('fushi/$tail');
     }
   }
   return best;
@@ -240,8 +240,8 @@ final RegExp _simpleQuoted =
 ///
 /// 两遍扫描取并集：
 /// - **含斜杠字面量**：`'../packages/gamepads_windows/windows'`、
-///   `'\${root.path}/hibiki/windows/runner'`（插值前缀靠后缀匹配丢掉）。
-/// - **join 段链**：`p.join(root.path, 'hibiki', 'windows')` 这种一个斜杠都没有的
+///   `'\${root.path}/fushi/windows/runner'`（插值前缀靠后缀匹配丢掉）。
+/// - **join 段链**：`p.join(root.path, 'fushi', 'windows')` 这种一个斜杠都没有的
 ///   写法，只靠第一遍会全漏——本仓大多数 native 守卫正是这么写路径的。
 Set<RepoPath> extractRepoPathReferences(String source, RepoFs fs) {
   final Set<RepoPath> refs = <RepoPath>{};
@@ -361,11 +361,11 @@ class TestTriggerFace {
   bool get isEmpty => referencedPaths.isEmpty && declaredGlobs.isEmpty;
 }
 
-/// 枚举 `hibiki/test/` 下全部 `*_test.dart`，返回仓库根相对路径。
+/// 枚举 `fushi/test/` 下全部 `*_test.dart`，返回仓库根相对路径。
 List<RepoPath> listAppTestFiles(RepoFs fs) {
-  final Directory testDir = Directory('${fs.root.path}/hibiki/test');
+  final Directory testDir = Directory('${fs.root.path}/fushi/test');
   if (!testDir.existsSync()) {
-    throw StateError('hibiki/test 不存在，扫描面是空的');
+    throw StateError('fushi/test 不存在，扫描面是空的');
   }
   final List<RepoPath> out = <RepoPath>[];
   for (final FileSystemEntity e
@@ -410,7 +410,7 @@ bool isDefaultBatchCoveredChange(RepoPath changed) {
 ///
 /// - `ref` 是目录 ⇒ 目录下全部文件都算；
 /// - `ref` 是文件 ⇒ 该文件本身，外加**同目录**的其它文件（新增文件不能被漏掉），
-///   但同目录必须有 ≥2 层深度，免得 `hibiki/pubspec.yaml` 把整个 `hibiki/` 拉进来。
+///   但同目录必须有 ≥2 层深度，免得 `fushi/pubspec.yaml` 把整个 `fushi/` 拉进来。
 bool changeTriggersReference(RepoPath changed, RepoPath ref, RepoFs fs) {
   if (changed == ref) return true;
   if (fs.isDirectory(ref)) return changed.startsWith('$ref/');
@@ -467,7 +467,7 @@ RepoPath normalizeChangedPath(String raw, RepoFs fs) {
       return segments.sublist(start).join('/');
     }
   }
-  return 'hibiki/${segments.join('/')}';
+  return 'fushi/${segments.join('/')}';
 }
 
 /// 把仓库路径归到「树」（前两段）——统计与哨兵的粒度。
@@ -476,9 +476,9 @@ RepoPath treeOf(RepoPath repoPath) {
   return seg.length >= 2 ? '${seg[0]}/${seg[1]}' : seg.first;
 }
 
-/// 把仓库根相对的测试路径转成 `flutter test` 在 `hibiki/` 下能直接吃的相对路径。
-RepoPath toFlutterTestArg(RepoPath repoPath) => repoPath.startsWith('hibiki/')
-    ? repoPath.substring('hibiki/'.length)
+/// 把仓库根相对的测试路径转成 `flutter test` 在 `fushi/` 下能直接吃的相对路径。
+RepoPath toFlutterTestArg(RepoPath repoPath) => repoPath.startsWith('fushi/')
+    ? repoPath.substring('fushi/'.length)
     : repoPath;
 
 Iterable<String> _lines(String input) =>

@@ -2,7 +2,7 @@
 // System WebView / Windows WebView2 的同一 Blink 引擎) 实测「改 N 真的每屏渲染 N
 // 列」，横排 (horizontal-tb) 与竖排 (vertical-rl) 都验。
 //
-// 为什么需要它：`hibiki/test/reader/reader_content_styles_test.dart` 的 TODO-1285
+// 为什么需要它：`fushi/test/reader/reader_content_styles_test.dart` 的 TODO-1285
 // 守卫是**纯字符串断言**（`css` 里含 `column-count: N` + 子列宽表达式），结构上
 // **测不出**浏览器 multicol 是否真把内容排成每屏 N 列——尤其竖排 multicol 的列沿
 // inline 轴（vertical-rl = 自上而下 Y 轴）推进，语义与横排（沿 X 轴）不同，字符串
