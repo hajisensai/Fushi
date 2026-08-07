@@ -193,11 +193,22 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   _ForbiddenPattern(
     // 类名族清算：Hibiki* → Fushi*（HibikiDatabase/HibikiToast/_HibikiCardState
     // 等词首形态，含 _$Hibiki* 生成类）。词中内嵌形态不属类名族、刻意不匹配：
-    // MangaHibikiPage 等含 hibiki 文件名的类（本轮不 git mv，半径控制）、
-    // kMagpieHibikiProfilePrefix（值 'Hibiki: ' 是 Magpie 配置持久化契约）、
-    // 'runningHibikiProcesses'（update-handoff JSON wire 键）。
+    // MangaHibikiPage 等含 hibiki 文件名的类（W4 才 git mv，半径控制）、
+    // 'runningHibikiProcesses'（update-handoff JSON wire 键，W2-6 处理）。
     name: 'Hibiki*-类名族',
     regex: RegExp(r'(?<![A-Za-z0-9])Hibiki[A-Z]'),
+  ),
+  _ForbiddenPattern(
+    // W2-5：Magpie 配置 profile 名前缀已是 'Fushi: '
+    // （kMagpieFushiProfilePrefix）；存量 'Hibiki: ' 条目由启动对账
+    // （magpieConfigWithLegacyProfilePrefixRenamed）就地改名。
+    name: "'Hibiki: ' Magpie 前缀",
+    regex: RegExp("'Hibiki: '"),
+    allowed: <String, String>{
+      'lib/src/mining/magpie_upscaling.dart':
+          'kMagpieLegacyProfilePrefix：启动就地改名迁移的旧前缀输入，只允许'
+              '该改名函数消费。',
+    },
   ),
   _ForbiddenPattern(
     // W1：SQL 表 hibiki_paired_peers 已在 v69 迁移改名 fushi_paired_peers。

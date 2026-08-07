@@ -239,7 +239,7 @@ void main() {
       final MagpieProfileWriteResult result = magpieConfigWithAutoScaleProfile(
         config: baseConfig(defaultScalingMode: 3),
         identity: kGame,
-        profileName: 'Hibiki: sakura.exe',
+        profileName: 'Fushi: sakura.exe',
         hibikiExecutablePath: kHibikiExe,
       );
       expect(result.applied, isTrue);
@@ -249,7 +249,7 @@ void main() {
       final Map<Object?, Object?> added = profiles[1]! as Map<Object?, Object?>;
 
       // `_LoadProfile` 里 name/packaged/pathRule/classNameRule 缺一不可，缺了整条被丢弃。
-      expect(added['name'], 'Hibiki: sakura.exe');
+      expect(added['name'], 'Fushi: sakura.exe');
       expect(added['packaged'], isFalse);
       expect(added['pathRule'], kGame.executablePath);
       expect(added['classNameRule'], kGame.windowClassName);
@@ -292,7 +292,7 @@ void main() {
           },
         ]),
         identity: kGame,
-        profileName: 'Hibiki: sakura.exe',
+        profileName: 'Fushi: sakura.exe',
         hibikiExecutablePath: kHibikiExe,
       );
       expect(result.applied, isTrue);
@@ -915,7 +915,7 @@ void main() {
   group('启动期对账：把上次留下的孤儿关回去', () {
     /// 造一条我们建的、开着自动缩放的孤儿 profile。
     Map<String, dynamic> orphanConfig({
-      String name = '${kMagpieHibikiProfilePrefix}sakura.exe',
+      String name = '${kMagpieFushiProfilePrefix}sakura.exe',
       int autoScale = kMagpieAutoScaleFullscreen,
       List<Map<String, dynamic>> alsoUserProfiles =
           const <Map<String, dynamic>>[],
@@ -945,7 +945,7 @@ void main() {
         },
       ]);
       final MagpieProfileWriteResult result =
-          magpieConfigWithHibikiAutoScaleCleared(config: config);
+          magpieConfigWithFushiAutoScaleCleared(config: config);
       expect(result.applied, isTrue);
       final List<Object?> profiles =
           result.config!['profiles']! as List<Object?>;
@@ -959,11 +959,11 @@ void main() {
 
     test('没有孤儿 -> alreadySatisfied（调用方据此一个字节都不写）', () {
       expect(
-        magpieConfigWithHibikiAutoScaleCleared(config: baseConfig()).skipReason,
+        magpieConfigWithFushiAutoScaleCleared(config: baseConfig()).skipReason,
         MagpieProfileSkipReason.alreadySatisfied,
       );
       expect(
-        magpieConfigWithHibikiAutoScaleCleared(
+        magpieConfigWithFushiAutoScaleCleared(
           config: orphanConfig(autoScale: kMagpieAutoScaleDisabled),
         ).skipReason,
         MagpieProfileSkipReason.alreadySatisfied,
@@ -973,23 +973,105 @@ void main() {
     test('默认 profile（第 0 项）永远不被当成我们的', () {
       final Map<String, dynamic> config = baseConfig();
       (config['profiles']! as List<Object?>)[0] = <String, dynamic>{
-        'name': '${kMagpieHibikiProfilePrefix}fake',
+        'name': '${kMagpieFushiProfilePrefix}fake',
         'autoScale': kMagpieAutoScaleFullscreen,
         'scalingMode': 0,
       };
       expect(
-        magpieConfigWithHibikiAutoScaleCleared(config: config).skipReason,
+        magpieConfigWithFushiAutoScaleCleared(config: config).skipReason,
         MagpieProfileSkipReason.alreadySatisfied,
       );
     });
 
     test('profiles 缺失 -> schemaMismatch，不猜着写', () {
       expect(
-        magpieConfigWithHibikiAutoScaleCleared(
+        magpieConfigWithFushiAutoScaleCleared(
           config: <String, dynamic>{'theme': 1},
         ).skipReason,
         MagpieProfileSkipReason.schemaMismatch,
       );
+    });
+
+    group('W2-5 旧前缀就地改名迁移', () {
+      test("'Hibiki: X' -> 'Fushi: X'，其余字段与用户 profile 一字节不动", () {
+        final Map<String, dynamic> config =
+            baseConfig(extraProfiles: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'name': 'Hibiki: sakura.exe',
+            'packaged': false,
+            'pathRule': kGame.executablePath,
+            'classNameRule': kGame.windowClassName,
+            'autoScale': kMagpieAutoScaleFullscreen,
+            'scalingMode': 2,
+          },
+          <String, dynamic>{
+            'name': 'My own game',
+            'packaged': false,
+            'pathRule': r'D:\Games\other.exe',
+            'classNameRule': 'OtherClass',
+            'autoScale': kMagpieAutoScaleFullscreen,
+            'scalingMode': 3,
+          },
+        ]);
+        final MagpieProfileWriteResult result =
+            magpieConfigWithLegacyProfilePrefixRenamed(config: config);
+        expect(result.applied, isTrue);
+        final List<Object?> profiles =
+            result.config!['profiles']! as List<Object?>;
+        final Map<Object?, Object?> renamed =
+            profiles[1]! as Map<Object?, Object?>;
+        expect(renamed['name'], 'Fushi: sakura.exe');
+        expect(renamed['autoScale'], kMagpieAutoScaleFullscreen,
+            reason: '改名迁移只动 name，autoScale 归清零函数管');
+        expect(renamed['scalingMode'], 2);
+        final Map<Object?, Object?> user =
+            profiles[2]! as Map<Object?, Object?>;
+        expect(user['name'], 'My own game', reason: '用户自己的 profile 不许动');
+      });
+
+      test('无旧前缀条目 -> alreadySatisfied（幂等：改名后再跑零写盘）', () {
+        expect(
+          magpieConfigWithLegacyProfilePrefixRenamed(
+            config: orphanConfig(),
+          ).skipReason,
+          MagpieProfileSkipReason.alreadySatisfied,
+        );
+      });
+
+      test('默认 profile（第 0 项）与 profiles 缺失都不写', () {
+        final Map<String, dynamic> config = baseConfig();
+        (config['profiles']! as List<Object?>)[0] = <String, dynamic>{
+          'name': 'Hibiki: fake',
+          'autoScale': kMagpieAutoScaleFullscreen,
+          'scalingMode': 0,
+        };
+        expect(
+          magpieConfigWithLegacyProfilePrefixRenamed(config: config).skipReason,
+          MagpieProfileSkipReason.alreadySatisfied,
+        );
+        expect(
+          magpieConfigWithLegacyProfilePrefixRenamed(
+            config: <String, dynamic>{'theme': 1},
+          ).skipReason,
+          MagpieProfileSkipReason.schemaMismatch,
+        );
+      });
+
+      test('对账合成序：旧前缀孤儿先改名、再被新前缀清零', () {
+        final Map<String, dynamic> config =
+            orphanConfig(name: 'Hibiki: sakura.exe');
+        final MagpieProfileWriteResult renamed =
+            magpieConfigWithLegacyProfilePrefixRenamed(config: config);
+        expect(renamed.applied, isTrue);
+        final MagpieProfileWriteResult cleared =
+            magpieConfigWithFushiAutoScaleCleared(config: renamed.config!);
+        expect(cleared.applied, isTrue,
+            reason: '改名后的条目必须仍被孤儿清零认出（哪一代前缀写的孤儿都要关回去）');
+        final Map<Object?, Object?> entry = (cleared.config!['profiles']!
+            as List<Object?>)[1]! as Map<Object?, Object?>;
+        expect(entry['name'], 'Fushi: sakura.exe');
+        expect(entry['autoScale'], kMagpieAutoScaleDisabled);
+      });
     });
 
     group('服务侧编排', () {

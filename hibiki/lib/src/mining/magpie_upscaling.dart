@@ -44,9 +44,14 @@ const int kMagpieAutoScaleDisabled = 0;
 /// 我们建的 profile 的名字前缀。
 ///
 /// 🔴 **这是持久化契约，不是显示细节**：启动期对账（`reconcileOrphansOnStartup`）靠它
-/// 认出上一次进程崩溃 / 被 `exit(0)` 快杀时留下的孤儿 profile。改了前缀 = 认不出旧版本
-/// 写过的那些，用户机器上会永久留着一条「双击游戏就自动全屏超分」的规则。
-const String kMagpieHibikiProfilePrefix = 'Hibiki: ';
+/// 认出上一次进程崩溃 / 被 `exit(0)` 快杀时留下的孤儿 profile。存量
+/// [kMagpieLegacyProfilePrefix] 条目由 [magpieConfigWithLegacyProfilePrefixRenamed]
+/// 在同一处对账里就地改名（W2-5），因此本前缀始终认得全部我们建的条目。
+const String kMagpieFushiProfilePrefix = 'Fushi: ';
+
+/// 旧 Hibiki 版本写入 Magpie 配置的前缀（W2-5 迁移输入）。旧字面量只允许活在
+/// 就地改名迁移里；除 [magpieConfigWithLegacyProfilePrefixRenamed] 外不得消费。
+const String kMagpieLegacyProfilePrefix = 'Hibiki: ';
 
 /// 用户可选的超分策略（三态）。
 ///
@@ -417,17 +422,12 @@ MagpieProfileWriteResult magpieConfigWithAutoScaleDisabled({
   });
 }
 
-/// **纯函数**：把配置里所有由 Hibiki 建的 profile（名字带 [kMagpieHibikiProfilePrefix]
-/// 前缀）的自动缩放一次性关回去。
-///
-/// 与 [magpieConfigWithAutoScaleDisabled] 的区别只在**认谁**：那个按窗口身份关单条，
-/// 用于本次会话的正常收尾；这个按名字前缀批量关，用于**启动期对账** —— 上次进程崩溃、
-/// 断电或被任务管理器结束时收尾根本没跑过，配置里会留下一批 `autoScale=Fullscreen`
-/// 的孤儿，而那时我们既没有窗口 hwnd 也没有身份可用（那是上个进程的内存）。
-///
-/// 一条都不用改时返回 [MagpieProfileSkipReason.alreadySatisfied] —— 调用方据此
-/// **一个字节都不写**，也就不会无谓地和别的 Magpie 实例抢配置文件。
-MagpieProfileWriteResult magpieConfigWithHibikiAutoScaleCleared({
+/// **纯函数**（W2-5 迁移）：把配置里所有旧版本建的 profile（名字带
+/// [kMagpieLegacyProfilePrefix] 前缀）就地改名为 [kMagpieFushiProfilePrefix] 前缀，
+/// 其余字段一字节不动。幂等：改名后配置里无旧前缀可匹配。容错：`profiles` 缺失 /
+/// 非列表 / 条目形状不符一律跳过（Magpie 是外部工具，schema 可能变），返回
+/// [MagpieProfileSkipReason.schemaMismatch] 或 alreadySatisfied，调用方零写盘。
+MagpieProfileWriteResult magpieConfigWithLegacyProfilePrefixRenamed({
   required Map<String, dynamic> config,
 }) {
   final Object? rawProfiles = config['profiles'];
@@ -443,7 +443,54 @@ MagpieProfileWriteResult magpieConfigWithHibikiAutoScaleCleared({
     final Object? entry = profiles[i];
     if (entry is! Map) continue;
     final Object? name = entry['name'];
-    if (name is! String || !name.startsWith(kMagpieHibikiProfilePrefix)) {
+    if (name is! String || !name.startsWith(kMagpieLegacyProfilePrefix)) {
+      continue;
+    }
+    profiles[i] = <String, dynamic>{
+      ..._asStringKeyed(entry.cast<Object?, Object?>()),
+      'name': kMagpieFushiProfilePrefix +
+          name.substring(kMagpieLegacyProfilePrefix.length),
+    };
+    changed = true;
+  }
+  if (!changed) {
+    return const MagpieProfileWriteResult.skipped(
+      MagpieProfileSkipReason.alreadySatisfied,
+    );
+  }
+  return MagpieProfileWriteResult.applied(<String, dynamic>{
+    ...config,
+    'profiles': profiles,
+  });
+}
+
+/// **纯函数**：把配置里所有由我们建的 profile（名字带 [kMagpieFushiProfilePrefix]
+/// 前缀）的自动缩放一次性关回去。
+///
+/// 与 [magpieConfigWithAutoScaleDisabled] 的区别只在**认谁**：那个按窗口身份关单条，
+/// 用于本次会话的正常收尾；这个按名字前缀批量关，用于**启动期对账** —— 上次进程崩溃、
+/// 断电或被任务管理器结束时收尾根本没跑过，配置里会留下一批 `autoScale=Fullscreen`
+/// 的孤儿，而那时我们既没有窗口 hwnd 也没有身份可用（那是上个进程的内存）。
+///
+/// 一条都不用改时返回 [MagpieProfileSkipReason.alreadySatisfied] —— 调用方据此
+/// **一个字节都不写**，也就不会无谓地和别的 Magpie 实例抢配置文件。
+MagpieProfileWriteResult magpieConfigWithFushiAutoScaleCleared({
+  required Map<String, dynamic> config,
+}) {
+  final Object? rawProfiles = config['profiles'];
+  if (rawProfiles is! List || rawProfiles.isEmpty) {
+    return const MagpieProfileWriteResult.skipped(
+      MagpieProfileSkipReason.schemaMismatch,
+    );
+  }
+  final List<Object?> profiles = List<Object?>.from(rawProfiles);
+  bool changed = false;
+  // 从 1 开始：第 0 项是默认 profile，它没有 name，永远不是我们建的。
+  for (int i = 1; i < profiles.length; i++) {
+    final Object? entry = profiles[i];
+    if (entry is! Map) continue;
+    final Object? name = entry['name'];
+    if (name is! String || !name.startsWith(kMagpieFushiProfilePrefix)) {
       continue;
     }
     if (entry['autoScale'] == kMagpieAutoScaleDisabled) continue;
