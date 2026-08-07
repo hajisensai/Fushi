@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22.1)
 cmake_policy(SET CMP0077 NEW)
 
-project(hoshidicts_ffi LANGUAGES C CXX)
+project(fushidicts_ffi LANGUAGES C CXX)
 
 # Linux links the hoshidicts static archive and its bundled static deps into
 # libhoshidicts_ffi.so. Build those objects as PIC so GNU ld can embed them.
@@ -15,7 +15,7 @@ endif()
 # its static deps, then force_load that into Runner from the Xcode build phase.
 # Everything must be PIC so it can be linked into the app executable.
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-  set(HOSHIDICTS_IOS ON)
+  set(FUSHIDICTS_IOS ON)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
@@ -33,8 +33,8 @@ int main() {
   std::expected<int, int> fail = std::unexpected(1);
   return ok.value() == 23 && fail.error() == 1 ? 0 : 1;
 }
-" HOSHIDICTS_HAS_STD_EXPECTED)
-if(NOT HOSHIDICTS_HAS_STD_EXPECTED)
+" FUSHIDICTS_HAS_STD_EXPECTED)
+if(NOT FUSHIDICTS_HAS_STD_EXPECTED)
   message(FATAL_ERROR
       "hoshidicts/glaze requires C++23 std::expected/std::unexpected. "
       "Select a compiler and standard library that provide <expected>.")
@@ -100,9 +100,9 @@ target_include_directories(hoshidicts PUBLIC
 )
 
 # Platform-conditional linking
-set(HOSHIDICTS_PLATFORM_LIBS "")
+set(FUSHIDICTS_PLATFORM_LIBS "")
 if(ANDROID)
-  list(APPEND HOSHIDICTS_PLATFORM_LIBS log)
+  list(APPEND FUSHIDICTS_PLATFORM_LIBS log)
 endif()
 
 target_link_libraries(hoshidicts PRIVATE
@@ -111,36 +111,36 @@ target_link_libraries(hoshidicts PRIVATE
     libdeflate_static
     unordered_dense
     utf8proc::utf8proc
-    ${HOSHIDICTS_PLATFORM_LIBS}
+    ${FUSHIDICTS_PLATFORM_LIBS}
 )
 
-if(HOSHIDICTS_IOS)
+if(FUSHIDICTS_IOS)
   # iOS: STATIC so the FFI + hoshidicts symbols end up in the Runner image, which
   # is where DynamicLibrary.process() resolves them from.
-  add_library(hoshidicts_ffi STATIC
-      hoshidicts_ffi.cpp
+  add_library(fushidicts_ffi STATIC
+      fushidicts_ffi.cpp
   )
 else()
-  add_library(hoshidicts_ffi SHARED
-      hoshidicts_ffi.cpp
+  add_library(fushidicts_ffi SHARED
+      fushidicts_ffi.cpp
   )
 endif()
 
-target_compile_features(hoshidicts_ffi PRIVATE
+target_compile_features(fushidicts_ffi PRIVATE
     cxx_std_23
 )
 
-target_include_directories(hoshidicts_ffi PRIVATE
+target_include_directories(fushidicts_ffi PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hoshidicts_include
 )
 
-target_link_libraries(hoshidicts_ffi PRIVATE
+target_link_libraries(fushidicts_ffi PRIVATE
     hoshidicts
-    ${HOSHIDICTS_PLATFORM_LIBS}
+    ${FUSHIDICTS_PLATFORM_LIBS}
 )
 
-if(APPLE AND NOT HOSHIDICTS_IOS)
-  set_target_properties(hoshidicts_ffi PROPERTIES
+if(APPLE AND NOT FUSHIDICTS_IOS)
+  set_target_properties(fushidicts_ffi PROPERTIES
       INSTALL_NAME_DIR "@rpath"
       BUILD_WITH_INSTALL_NAME_DIR TRUE
   )
@@ -150,47 +150,47 @@ endif()
 # single self-contained archive (libhoshidicts_ffi_merged.a) so the Xcode build
 # phase can force_load exactly one file into Runner. libtool -static resolves the
 # recursive INTERFACE link deps for us via generator expressions.
-if(HOSHIDICTS_IOS)
-  set(HOSHIDICTS_MERGED_ARCHIVE
-      ${CMAKE_BINARY_DIR}/libhoshidicts_ffi_merged.a)
+if(FUSHIDICTS_IOS)
+  set(FUSHIDICTS_MERGED_ARCHIVE
+      ${CMAKE_BINARY_DIR}/libfushidicts_ffi_merged.a)
   # Merge the FFI archive + its static deps into one archive that the iOS Runner
   # force_loads. Delegated to a helper script because the merge must run inside
   # Xcode's per-target env (EFFECTIVE_PLATFORM_NAME / CONFIGURATION) and reference
   # dependency archives in other CMake subprojects, which the Xcode generator
   # cannot express via $<TARGET_FILE> for cross-project targets.
   add_custom_command(
-      TARGET hoshidicts_ffi POST_BUILD
+      TARGET fushidicts_ffi POST_BUILD
       COMMAND bash
           ${CMAKE_CURRENT_SOURCE_DIR}/merge_ios_archives.sh
           ${CMAKE_BINARY_DIR}
-          ${HOSHIDICTS_MERGED_ARCHIVE}
-      COMMENT "Merging hoshidicts static archives into libhoshidicts_ffi_merged.a"
+          ${FUSHIDICTS_MERGED_ARCHIVE}
+      COMMENT "Merging hoshidicts static archives into libfushidicts_ffi_merged.a"
       VERBATIM)
 endif()
 
 # Windows: set output name without 'lib' prefix
 if(WIN32)
-  set_target_properties(hoshidicts_ffi PROPERTIES
+  set_target_properties(fushidicts_ffi PROPERTIES
       PREFIX ""
-      OUTPUT_NAME "hoshidicts_ffi"
+      OUTPUT_NAME "fushidicts_ffi"
   )
 endif()
 
 # JNI bridge for Android Kotlin popup (only built on Android)
 if(ANDROID)
-  add_library(hoshidicts_jni SHARED
-      hoshidicts_jni.cpp
+  add_library(fushidicts_jni SHARED
+      fushidicts_jni.cpp
   )
 
-  target_compile_features(hoshidicts_jni PRIVATE
+  target_compile_features(fushidicts_jni PRIVATE
       cxx_std_23
   )
 
-  target_include_directories(hoshidicts_jni PRIVATE
+  target_include_directories(fushidicts_jni PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/hoshidicts_include
   )
 
-  target_link_libraries(hoshidicts_jni PRIVATE
+  target_link_libraries(fushidicts_jni PRIVATE
       hoshidicts
       log
   )

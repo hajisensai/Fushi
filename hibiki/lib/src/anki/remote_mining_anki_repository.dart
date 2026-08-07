@@ -63,7 +63,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   bool _authRejectedReported = false;
 
   static Uint8List? _defaultDictMediaLoader(String dictionary, String path) =>
-      HoshiDicts.instance.getMediaFile(dictionary, path);
+      FushiDicts.instance.getMediaFile(dictionary, path);
 
   static Future<Uint8List?> _defaultFileByteLoader(String path) async {
     final File file = File(path);

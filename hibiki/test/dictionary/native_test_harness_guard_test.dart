@@ -91,7 +91,7 @@ void main() {
 
     expect(workflow, contains('Verify macOS hoshidicts dylib bundle'));
     expect(workflow, contains('ctypes.CDLL'));
-    expect(workflow, contains('hoshidicts_create'));
-    expect(workflow, contains('hoshidicts_destroy'));
+    expect(workflow, contains('fushidicts_create'));
+    expect(workflow, contains('fushidicts_destroy'));
   });
 }

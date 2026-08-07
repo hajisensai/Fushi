@@ -21,14 +21,14 @@ void main() {
   }
 
   test('native FFI exports the kanji C symbols', () {
-    final String ffi = read('../native/hoshidicts/hoshidicts_ffi.cpp');
+    final String ffi = read('../native/hoshidicts/fushidicts_ffi.cpp');
     for (final String sym in <String>[
-      'hoshidicts_add_kanji_dict',
-      'hoshidicts_query_kanji',
-      'hoshidicts_free_kanji_results',
+      'fushidicts_add_kanji_dict',
+      'fushidicts_query_kanji',
+      'fushidicts_free_kanji_results',
     ]) {
       expect(ffi.contains(sym), isTrue,
-          reason: 'hoshidicts_ffi.cpp must export $sym (TODO-094b S3)');
+          reason: 'fushidicts_ffi.cpp must export $sym (TODO-094b S3)');
     }
     // The FFI result struct must carry every KanjiResult field.
     expect(ffi.contains('struct FfiKanjiResult'), isTrue);
@@ -49,12 +49,12 @@ void main() {
 
   test('Dart bindings look up the kanji C symbols by their exact names', () {
     final String bindings = read(
-        '../packages/hibiki_dictionary/lib/src/ffi/hoshidicts_ffi_bindings.dart');
+        '../packages/hibiki_dictionary/lib/src/ffi/fushidicts_ffi_bindings.dart');
     // The lookupFunction string MUST match the C export name byte-for-byte.
     for (final String sym in <String>[
-      'hoshidicts_add_kanji_dict',
-      'hoshidicts_query_kanji',
-      'hoshidicts_free_kanji_results',
+      'fushidicts_add_kanji_dict',
+      'fushidicts_query_kanji',
+      'fushidicts_free_kanji_results',
     ]) {
       expect(bindings.contains("'$sym'"), isTrue,
           reason: 'bindings must lookupFunction $sym');
@@ -65,17 +65,17 @@ void main() {
 
   test('engine exposes addKanjiDict / queryKanji and converts every field', () {
     final String engine =
-        read('../packages/hibiki_dictionary/lib/src/engine/hoshidicts.dart');
+        read('../packages/hibiki_dictionary/lib/src/engine/fushidicts.dart');
     expect(engine.contains('void addKanjiDict(String path)'), isTrue);
-    expect(engine.contains('List<HoshiKanjiResult> queryKanji('), isTrue);
-    expect(engine.contains('class HoshiKanjiResult'), isTrue);
-    expect(engine.contains('HoshiKanjiResult _convertKanji('), isTrue);
+    expect(engine.contains('List<FushiKanjiResult> queryKanji('), isTrue);
+    expect(engine.contains('class FushiKanjiResult'), isTrue);
+    expect(engine.contains('FushiKanjiResult _convertKanji('), isTrue);
     // initializeTyped must accept the kanji bucket so S4 can route kanji dicts.
     expect(engine.contains('List<String> kanjiPaths'), isTrue);
   });
 
   test('Android JNI mirrors the kanji bindings symmetrically', () {
-    final String jni = read('../native/hoshidicts/hoshidicts_jni.cpp');
+    final String jni = read('../native/hoshidicts/fushidicts_jni.cpp');
     expect(jni.contains('nativeAddKanjiDict'), isTrue);
     expect(jni.contains('nativeQueryKanjiJson'), isTrue);
     final String bridge = read(

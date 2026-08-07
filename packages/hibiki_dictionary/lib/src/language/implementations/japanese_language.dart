@@ -6,7 +6,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:kana_kit/kana_kit.dart';
 import 'package:hibiki_dictionary/src/language/ruby_text.dart';
 
-import '../../engine/hoshidicts.dart';
+import '../../engine/fushidicts.dart';
 import '../../formats/yomichan_dictionary_format.dart';
 import '../../models/dictionary_entry.dart';
 import '../language.dart';
@@ -49,14 +49,14 @@ class JapaneseLanguage extends Language {
       LinkedHashMap<String, int>();
 
   static int _lookupMatchedLength(String text) {
-    if (!HoshiDicts.isInitialized) return 0;
+    if (!FushiDicts.isInitialized) return 0;
     final String key = text.length > 20 ? text.substring(0, 20) : text;
     final cached = _matchLengthCache.remove(key);
     if (cached != null) {
       _matchLengthCache[key] = cached;
       return cached;
     }
-    final results = HoshiDicts.instance.lookup(text, maxResults: 1);
+    final results = FushiDicts.instance.lookup(text, maxResults: 1);
     final int len = results.isEmpty ? 0 : results.first.matched.length;
     _matchLengthCache[key] = len;
     while (_matchLengthCache.length > _maxMatchCache) {
@@ -70,7 +70,7 @@ class JapaneseLanguage extends Language {
 
   @override
   List<String> textToWords(String text) {
-    if (!HoshiDicts.isInitialized || text.isEmpty) {
+    if (!FushiDicts.isInitialized || text.isEmpty) {
       return text.split('').where((c) => c.isNotEmpty).toList();
     }
     final words = <String>[];

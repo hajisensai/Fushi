@@ -68,7 +68,7 @@ class DictionaryImportManager {
   /// 当成错误展示，用户看到成功结果出现在错误日志里困惑。改为仅在真正需要排查的
   /// 情况（导入失败、或成功但 0 词条＝被吞空）才写入；正常成功不再落错误日志。
   /// BUG-927 想要的诊断（失败 / 0 词条）依旧可在错误日志查到。
-  void _logImportResultSummary(String source, HoshiImportResult result) {
+  void _logImportResultSummary(String source, FushiImportResult result) {
     final int total = result.termCount +
         result.metaCount +
         result.freqCount +
@@ -216,9 +216,9 @@ class DictionaryImportManager {
 
         ErrorLogService.instance
             .markImportStart('native 词典导入(目录)未返回：${directory.path}');
-        final HoshiImportResult result;
+        final FushiImportResult result;
         try {
-          result = await importDictionaryViaHoshidicts(
+          result = await importDictionaryViaFushidicts(
             zipPath: tempZipPath,
             outputDir: tempOutputDir.path,
             breadcrumbDir: ErrorLogService.instance.importStepBreadcrumbDir,
@@ -346,9 +346,9 @@ class DictionaryImportManager {
       tempOutputDir.createSync(recursive: true);
 
       ErrorLogService.instance.markImportStart('native 词典导入未返回：${file.path}');
-      final HoshiImportResult result;
+      final FushiImportResult result;
       try {
-        result = await importDictionaryViaHoshidicts(
+        result = await importDictionaryViaFushidicts(
           zipPath: file.path,
           outputDir: tempOutputDir.path,
           breadcrumbDir: ErrorLogService.instance.importStepBreadcrumbDir,

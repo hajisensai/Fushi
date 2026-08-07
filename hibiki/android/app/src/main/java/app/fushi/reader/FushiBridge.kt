@@ -14,7 +14,7 @@ object FushiBridge {
     private var initialized = false
 
     init {
-        System.loadLibrary("hoshidicts_jni")
+        System.loadLibrary("fushidicts_jni")
     }
 
     @Synchronized

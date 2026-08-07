@@ -256,8 +256,8 @@ class HibikiSyncServerController extends ChangeNotifier {
       // them. Null-safe: before the engine is initialised it yields null and
       // the endpoint answers 404.
       dictionaryMediaProvider: (String dict, String mediaPath) =>
-          HoshiDicts.isInitialized
-              ? HoshiDicts.instance.getMediaFile(dict, mediaPath)
+          FushiDicts.isInitialized
+              ? FushiDicts.instance.getMediaFile(dict, mediaPath)
               : null,
     )
       ..onPairRequest = _promptPairApproval

@@ -10,7 +10,7 @@ void main() {
     return file.readAsStringSync();
   }
 
-  String readHoshidictsCmake() {
+  String readFushidictsCmake() {
     final File file = File('../native/hoshidicts/CMakeLists.txt');
     expect(file.existsSync(), isTrue,
         reason: 'expected hoshidicts CMake at ${file.absolute.path}');
@@ -81,7 +81,7 @@ void main() {
   });
 
   test('Linux hoshidicts static archives are PIC before shared FFI link', () {
-    final String cmake = readHoshidictsCmake();
+    final String cmake = readFushidictsCmake();
     final int linuxGuardStart =
         cmake.indexOf('if(CMAKE_SYSTEM_NAME STREQUAL "Linux")');
     final int picSetting =
@@ -91,7 +91,7 @@ void main() {
     final int staticTargetStart =
         cmake.indexOf('add_library(hoshidicts STATIC');
     final int sharedTargetStart =
-        cmake.indexOf('add_library(hoshidicts_ffi SHARED');
+        cmake.indexOf('add_library(fushidicts_ffi SHARED');
 
     expect(linuxGuardStart, isNonNegative);
     expect(picSetting, greaterThan(linuxGuardStart));
@@ -104,7 +104,7 @@ void main() {
       picSetting,
       lessThan(bundledDepsStart),
       reason: 'Linux links hoshidicts.a plus bundled static dependencies into '
-          'libhoshidicts_ffi.so; PIC must be enabled before those static '
+          'libfushidicts_ffi.so; PIC must be enabled before those static '
           'targets are created or ld fails during the Flutter Linux link step.',
     );
   });

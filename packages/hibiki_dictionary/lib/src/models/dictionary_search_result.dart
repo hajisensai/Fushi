@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import '../engine/hoshidicts.dart' show HoshiKanjiResult;
+import '../engine/fushidicts.dart' show FushiKanjiResult;
 import 'dictionary_entry.dart';
 
 class DictionarySearchResult {
@@ -15,7 +15,7 @@ class DictionarySearchResult {
       entries: entriesJson.map(DictionaryEntry.fromJson).toList(),
       kanjiResults: kanjiJson
           .map((dynamic e) =>
-              HoshiKanjiResult.fromMap(Map<String, dynamic>.from(e as Map)))
+              FushiKanjiResult.fromMap(Map<String, dynamic>.from(e as Map)))
           .toList(),
     );
   }
@@ -37,7 +37,7 @@ class DictionarySearchResult {
   /// terms or when no kanji dictionary is loaded. S4 populates this so the S5
   /// popup can render the kanji card; it does NOT replace [entries] (a single
   /// kanji can be both a term headword and a kanji entry).
-  final List<HoshiKanjiResult> kanjiResults;
+  final List<FushiKanjiResult> kanjiResults;
 
   String? popupJson;
 
@@ -45,7 +45,7 @@ class DictionarySearchResult {
   /// term [entries], [popupJson], [bestLength] and [scrollPosition]. Used by the
   /// search path to attach a single-kanji lookup's kanji-dictionary results to a
   /// freshly built term result without mutating the (final) term fields.
-  DictionarySearchResult withKanjiResults(List<HoshiKanjiResult> kanji) {
+  DictionarySearchResult withKanjiResults(List<FushiKanjiResult> kanji) {
     final DictionarySearchResult copy = DictionarySearchResult(
       searchTerm: searchTerm,
       entries: entries,

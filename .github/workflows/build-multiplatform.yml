@@ -253,7 +253,7 @@ jobs:
           set -euo pipefail
           "$CC" --version
           "$CXX" --version
-          cat > /tmp/hoshidicts_expected.cpp <<'CPP'
+          cat > /tmp/fushidicts_expected.cpp <<'CPP'
           #include <expected>
           #ifndef __cpp_lib_expected
           #error __cpp_lib_expected missing
@@ -264,7 +264,7 @@ jobs:
             return ok.value() == 23 && fail.error() == 1 ? 0 : 1;
           }
           CPP
-          "$CXX" -std=c++23 /tmp/hoshidicts_expected.cpp -o /tmp/hoshidicts_expected
+          "$CXX" -std=c++23 /tmp/fushidicts_expected.cpp -o /tmp/fushidicts_expected
       # Native engine e2e/guard suite (TODO-578): build the real hoshidicts
       # static lib via the unified CMake/ctest harness and run every native test
       # (UAF dict-name, kanji round-trip, media import/query, freq+pitch, plus
@@ -412,7 +412,7 @@ jobs:
           test -n "$compiler_file"
           grep -F 'set(CMAKE_CXX_COMPILER_ID "GNU")' "$compiler_file"
 
-          cat > /tmp/hoshidicts_flutter_cmake_expected.cpp <<'CPP'
+          cat > /tmp/fushidicts_flutter_cmake_expected.cpp <<'CPP'
           #include <expected>
           #ifndef __cpp_lib_expected
           #error __cpp_lib_expected missing
@@ -424,8 +424,8 @@ jobs:
           }
           CPP
           "$RUNNER_TEMP/hibiki-linux-toolchain/clang++" -std=c++23 \
-            /tmp/hoshidicts_flutter_cmake_expected.cpp \
-            -o /tmp/hoshidicts_flutter_cmake_expected
+            /tmp/fushidicts_flutter_cmake_expected.cpp \
+            -o /tmp/fushidicts_flutter_cmake_expected
       - name: Build Linux (debug)
         working-directory: hibiki
         shell: bash
@@ -600,24 +600,24 @@ jobs:
         run: |
           set -euo pipefail
           app_dir="build/macos/Build/Products/Debug/fushi.app"
-          dylib="$app_dir/Contents/Frameworks/libhoshidicts_ffi.dylib"
+          dylib="$app_dir/Contents/Frameworks/libfushidicts_ffi.dylib"
           test -f "$dylib"
-          found="$(find "$app_dir/Contents/Frameworks" -maxdepth 1 -type f -name 'libhoshidicts_ffi.dylib' -print -quit)"
+          found="$(find "$app_dir/Contents/Frameworks" -maxdepth 1 -type f -name 'libfushidicts_ffi.dylib' -print -quit)"
           test "$found" = "$dylib"
           otool -D "$dylib"
-          test "$(otool -D "$dylib" | tail -n +2)" = "@rpath/libhoshidicts_ffi.dylib"
+          test "$(otool -D "$dylib" | tail -n +2)" = "@rpath/libfushidicts_ffi.dylib"
           otool -L "$dylib"
           otool -l "$app_dir/Contents/MacOS/hibiki" | grep -A2 LC_RPATH | grep -F '@executable_path/../Frameworks'
           DYLIB_PATH="$dylib" python3 - <<'PY'
           import ctypes
           import os
           lib = ctypes.CDLL(os.environ["DYLIB_PATH"])
-          lib.hoshidicts_create.restype = ctypes.c_void_p
-          lib.hoshidicts_destroy.argtypes = [ctypes.c_void_p]
-          handle = lib.hoshidicts_create()
+          lib.fushidicts_create.restype = ctypes.c_void_p
+          lib.fushidicts_destroy.argtypes = [ctypes.c_void_p]
+          handle = lib.fushidicts_create()
           if not handle:
-              raise SystemExit("hoshidicts_create returned null")
-          lib.hoshidicts_destroy(handle)
+              raise SystemExit("fushidicts_create returned null")
+          lib.fushidicts_destroy(handle)
           print("hoshidicts dylib smoke ok")
           PY
       - name: Run macOS comprehensive automation contract

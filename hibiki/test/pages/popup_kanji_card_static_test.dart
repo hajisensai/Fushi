@@ -44,9 +44,9 @@ void main() {
       );
       expect(
         injector,
-        contains('.map((HoshiKanjiResult k) => k.toMap())'),
+        contains('.map((FushiKanjiResult k) => k.toMap())'),
         reason: 'kanji results must be serialized via the typed '
-            'HoshiKanjiResult.toMap contract.',
+            'FushiKanjiResult.toMap contract.',
       );
       expect(injector, contains('final String kanjiResultsJson = jsonEncode('));
       expect(
@@ -84,7 +84,7 @@ void main() {
           reason: 'the renderer must read the injected kanji payload');
     });
 
-    test('renders every real HoshiKanjiResult field', () {
+    test('renders every real FushiKanjiResult field', () {
       // The field names here must match HoshiKanjiResult.toMap (Dart).
       for (final field in <String>[
         'character',

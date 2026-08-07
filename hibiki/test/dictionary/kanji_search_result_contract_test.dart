@@ -21,9 +21,9 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 void main() {
-  group('HoshiKanjiResult serialization', () {
+  group('FushiKanjiResult serialization', () {
     test('toMap / fromMap round-trips every field', () {
-      const HoshiKanjiResult original = HoshiKanjiResult(
+      const FushiKanjiResult original = FushiKanjiResult(
         character: '日',
         onyomi: 'ニチ ジツ',
         kunyomi: 'ひ -び -か',
@@ -32,8 +32,8 @@ void main() {
         meanings: <String>['day', 'sun', 'Japan'],
         dictName: 'KANJIDIC',
       );
-      final HoshiKanjiResult restored =
-          HoshiKanjiResult.fromMap(original.toMap());
+      final FushiKanjiResult restored =
+          FushiKanjiResult.fromMap(original.toMap());
       expect(restored.character, original.character);
       expect(restored.onyomi, original.onyomi);
       expect(restored.kunyomi, original.kunyomi);
@@ -44,8 +44,8 @@ void main() {
     });
 
     test('fromMap degrades missing / null fields without throwing', () {
-      final HoshiKanjiResult r =
-          HoshiKanjiResult.fromMap(<String, dynamic>{'character': '水'});
+      final FushiKanjiResult r =
+          FushiKanjiResult.fromMap(<String, dynamic>{'character': '水'});
       expect(r.character, '水');
       expect(r.onyomi, '');
       expect(r.kunyomi, '');
@@ -68,8 +68,8 @@ void main() {
             meaning: 'sun',
           ),
         ],
-        kanjiResults: const <HoshiKanjiResult>[
-          HoshiKanjiResult(
+        kanjiResults: const <FushiKanjiResult>[
+          FushiKanjiResult(
             character: '日',
             onyomi: 'ニチ',
             kunyomi: 'ひ',
@@ -86,7 +86,7 @@ void main() {
       expect(restored.entries.length, 1);
       expect(restored.entries.single.word, '日');
       expect(restored.kanjiResults.length, 1);
-      final HoshiKanjiResult k = restored.kanjiResults.single;
+      final FushiKanjiResult k = restored.kanjiResults.single;
       expect(k.character, '日');
       expect(k.onyomi, 'ニチ');
       expect(k.strokes, 4);
@@ -121,8 +121,8 @@ void main() {
       termOnly.popupJson = '[{"term":"日"}]';
 
       final DictionarySearchResult withKanji =
-          termOnly.withKanjiResults(const <HoshiKanjiResult>[
-        HoshiKanjiResult(
+          termOnly.withKanjiResults(const <FushiKanjiResult>[
+        FushiKanjiResult(
           character: '日',
           onyomi: 'ニチ',
           kunyomi: 'ひ',

@@ -131,11 +131,11 @@ void main() {
 
     test('queryKanjiForTerm only queries the engine for a single kanji', () {
       final String body =
-          bodyOf(appModel, 'List<HoshiKanjiResult> queryKanjiForTerm(');
+          bodyOf(appModel, 'List<FushiKanjiResult> queryKanjiForTerm(');
       expect(body.contains('isSingleKanji('), isTrue,
           reason: 'must gate the engine call on isSingleKanji so multi-char '
               'terms and kana/latin singletons skip the kanji query');
-      expect(body.contains('HoshiDicts.instance.queryKanji('), isTrue,
+      expect(body.contains('FushiDicts.instance.queryKanji('), isTrue,
           reason: 'must call the FFI queryKanji for a real single kanji');
     });
   });

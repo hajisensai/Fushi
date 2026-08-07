@@ -1330,7 +1330,7 @@ class AppModel with ChangeNotifier {
         try {
           final dir = path.join(dictionaryResourceDirectory.path, d.name);
           if (!Directory(dir).existsSync()) continue;
-          final int mask = HoshiDicts.probeDictContent(dir);
+          final int mask = FushiDicts.probeDictContent(dir);
           const int hasTerm = 0x1;
           const int hasKanji = 0x2;
           if (mask & hasTerm == 0) continue; // pure kanji dict, nothing to fix
@@ -1419,7 +1419,7 @@ class AppModel with ChangeNotifier {
       ));
     }
     final b = bucketDictPaths(entries);
-    HoshiDicts.initializeTyped(
+    FushiDicts.initializeTyped(
       termPaths: b.term,
       freqPaths: b.freq,
       pitchPaths: b.pitch,
@@ -1448,7 +1448,7 @@ class AppModel with ChangeNotifier {
         ),
     ];
     final b = bucketDictPaths(entries);
-    HoshiDicts.initializeTyped(
+    FushiDicts.initializeTyped(
       termPaths: b.term,
       freqPaths: b.freq,
       pitchPaths: b.pitch,
@@ -3987,10 +3987,10 @@ class AppModel with ChangeNotifier {
   /// non-kanji singletons, or when no kanji dictionary is loaded — so the term
   /// lookup path is never slowed for ordinary word lookups. The engine call is
   /// only made for a real single kanji (TODO-094 S4).
-  List<HoshiKanjiResult> queryKanjiForTerm(String searchTerm) {
-    if (!isSingleKanji(searchTerm)) return const <HoshiKanjiResult>[];
-    if (!HoshiDicts.isInitialized) return const <HoshiKanjiResult>[];
-    return HoshiDicts.instance.queryKanji(searchTerm);
+  List<FushiKanjiResult> queryKanjiForTerm(String searchTerm) {
+    if (!isSingleKanji(searchTerm)) return const <FushiKanjiResult>[];
+    if (!FushiDicts.isInitialized) return const <FushiKanjiResult>[];
+    return FushiDicts.instance.queryKanji(searchTerm);
   }
 
   Future<DictionarySearchResult> searchDictionary({
@@ -4042,7 +4042,7 @@ class AppModel with ChangeNotifier {
       return cached;
     }
 
-    if (!HoshiDicts.isInitialized) {
+    if (!FushiDicts.isInitialized) {
       return DictionarySearchResult(searchTerm: searchTerm);
     }
 
@@ -4051,9 +4051,9 @@ class AppModel with ChangeNotifier {
     // bucket independently and attach the results to whatever term result comes
     // back (or surface a kanji-only result when no term matches). Computed once
     // here so all local FFI return paths below carry the same kanji payload.
-    final List<HoshiKanjiResult> kanjiResults = queryKanjiForTerm(searchTerm);
+    final List<FushiKanjiResult> kanjiResults = queryKanjiForTerm(searchTerm);
 
-    List<HoshiLookupResult>? ffiResults =
+    List<FushiLookupResult>? ffiResults =
         dictRepo.getCachedFfiLookup(ffiCacheKey);
     DictionarySearchResult? result;
 
@@ -4090,7 +4090,7 @@ class AppModel with ChangeNotifier {
       //    同一个查询串的前缀（`scan_candidates` 只产出前缀），故「码点最长」与
       //    「UTF-16 最长」是同一个元素，它必在 `partial_sort` 后排首位、
       //    永远落在 top-N 内。
-      ffiResults = HoshiDicts.instance.lookup(
+      ffiResults = FushiDicts.instance.lookup(
         searchTerm,
         maxResults: effectiveMaxTerms,
       );
@@ -4976,7 +4976,7 @@ class AppModel with ChangeNotifier {
     _prefsRepo?.removeListener(notifyListeners);
     databaseCloseNotifier.notifyListeners();
     await _database.close();
-    HoshiDicts.disposeInstance();
+    FushiDicts.disposeInstance();
   }
 
   @override
@@ -5567,9 +5567,9 @@ class AppModel with ChangeNotifier {
       },
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
-        if (!HoshiDicts.isInitialized) return '';
-        final List<HoshiLookupResult> r =
-            HoshiDicts.instance.lookup(w, maxResults: 1);
+        if (!FushiDicts.isInitialized) return '';
+        final List<FushiLookupResult> r =
+            FushiDicts.instance.lookup(w, maxResults: 1);
         return r.isEmpty ? '' : r.first.term.reading;
       },
     );

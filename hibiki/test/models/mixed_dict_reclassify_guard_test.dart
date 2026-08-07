@@ -57,7 +57,7 @@ void main() {
       final String body = bodyOf(appModel, 'void _migrateDictionaryTypes(');
       expect(body.contains('d.type == DictionaryType.kanji'), isTrue,
           reason: 'must single out already-imported type==kanji dictionaries');
-      expect(body.contains('HoshiDicts.probeDictContent('), isTrue,
+      expect(body.contains('FushiDicts.probeDictContent('), isTrue,
           reason: 'classification must come from the native single source of '
               'truth (probe blobs.bin), not a fragile Dart blob header read');
       expect(body.contains('type: DictionaryType.term'), isTrue,

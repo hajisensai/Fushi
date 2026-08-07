@@ -247,7 +247,7 @@ static void* import_thread_fn(void* arg) {
 }
 
 HOSHI_EXPORT
-FfiImportResult hoshidicts_import(const char* zip_path, const char* output_dir, const char* breadcrumb_dir) {
+FfiImportResult fushidicts_import(const char* zip_path, const char* output_dir, const char* breadcrumb_dir) {
   ImportThreadArgs args;
   args.zip_path = zip_path;
   args.output_dir = output_dir;
@@ -270,7 +270,7 @@ FfiImportResult hoshidicts_import(const char* zip_path, const char* output_dir, 
 }
 
 HOSHI_EXPORT
-void hoshidicts_free_import_result(FfiImportResult* r) {
+void fushidicts_free_import_result(FfiImportResult* r) {
   if (!r) return;
   free(r->title);
   free(r->detected_type);
@@ -278,59 +278,59 @@ void hoshidicts_free_import_result(FfiImportResult* r) {
 }
 
 HOSHI_EXPORT
-int32_t hoshidicts_probe_dict_content(const char* dir) {
+int32_t fushidicts_probe_dict_content(const char* dir) {
   if (!dir) return 0;
   return static_cast<int32_t>(probe_dict_content(std::string(dir)));
 }
 
 // ── query handle ────────────────────────────────────────────────────
 
-struct HoshidictsHandle {
+struct FushidictsHandle {
   DictionaryQuery query;
   Deinflector deinflector;
 };
 
 HOSHI_EXPORT
-void* hoshidicts_create() {
-  return new HoshidictsHandle();
+void* fushidicts_create() {
+  return new FushidictsHandle();
 }
 
 HOSHI_EXPORT
-void hoshidicts_destroy(void* handle) {
-  delete static_cast<HoshidictsHandle*>(handle);
+void fushidicts_destroy(void* handle) {
+  delete static_cast<FushidictsHandle*>(handle);
 }
 
 HOSHI_EXPORT
-void hoshidicts_add_term_dict(void* handle, const char* path) {
-  static_cast<HoshidictsHandle*>(handle)->query.add_term_dict(path);
+void fushidicts_add_term_dict(void* handle, const char* path) {
+  static_cast<FushidictsHandle*>(handle)->query.add_term_dict(path);
 }
 
 HOSHI_EXPORT
-void hoshidicts_add_freq_dict(void* handle, const char* path) {
-  static_cast<HoshidictsHandle*>(handle)->query.add_freq_dict(path);
+void fushidicts_add_freq_dict(void* handle, const char* path) {
+  static_cast<FushidictsHandle*>(handle)->query.add_freq_dict(path);
 }
 
 HOSHI_EXPORT
-void hoshidicts_add_pitch_dict(void* handle, const char* path) {
-  static_cast<HoshidictsHandle*>(handle)->query.add_pitch_dict(path);
+void fushidicts_add_pitch_dict(void* handle, const char* path) {
+  static_cast<FushidictsHandle*>(handle)->query.add_pitch_dict(path);
 }
 
 HOSHI_EXPORT
-void hoshidicts_add_kanji_dict(void* handle, const char* path) {
-  static_cast<HoshidictsHandle*>(handle)->query.add_kanji_dict(path);
+void fushidicts_add_kanji_dict(void* handle, const char* path) {
+  static_cast<FushidictsHandle*>(handle)->query.add_kanji_dict(path);
 }
 
 HOSHI_EXPORT
-void hoshidicts_load_transforms(void* handle, const char* json) {
-  static_cast<HoshidictsHandle*>(handle)->deinflector.load_transforms_json(json);
+void fushidicts_load_transforms(void* handle, const char* json) {
+  static_cast<FushidictsHandle*>(handle)->deinflector.load_transforms_json(json);
 }
 
 // ── query ───────────────────────────────────────────────────────────
 
 HOSHI_EXPORT
-FfiQueryResult hoshidicts_query(void* handle, const char* expression) {
+FfiQueryResult fushidicts_query(void* handle, const char* expression) {
   FfiQueryResult r{};
-  auto& q = static_cast<HoshidictsHandle*>(handle)->query;
+  auto& q = static_cast<FushidictsHandle*>(handle)->query;
   auto terms = q.query(expression);
   r.count = static_cast<int32_t>(terms.size());
   r.terms = static_cast<FfiTermResult*>(malloc(sizeof(FfiTermResult) * r.count));
@@ -341,7 +341,7 @@ FfiQueryResult hoshidicts_query(void* handle, const char* expression) {
 }
 
 HOSHI_EXPORT
-void hoshidicts_free_query_result(FfiQueryResult* r) {
+void fushidicts_free_query_result(FfiQueryResult* r) {
   if (!r) return;
   for (int i = 0; i < r->count; i++) {
     free_term(r->terms[i]);
@@ -352,9 +352,9 @@ void hoshidicts_free_query_result(FfiQueryResult* r) {
 // ── kanji query ─────────────────────────────────────────────────────
 
 HOSHI_EXPORT
-FfiKanjiResults hoshidicts_query_kanji(void* handle, const char* character) {
+FfiKanjiResults fushidicts_query_kanji(void* handle, const char* character) {
   FfiKanjiResults r{};
-  auto& q = static_cast<HoshidictsHandle*>(handle)->query;
+  auto& q = static_cast<FushidictsHandle*>(handle)->query;
   auto kanji = q.query_kanji(character);
   r.count = static_cast<int32_t>(kanji.size());
   r.results = static_cast<FfiKanjiResult*>(malloc(sizeof(FfiKanjiResult) * r.count));
@@ -377,7 +377,7 @@ FfiKanjiResults hoshidicts_query_kanji(void* handle, const char* character) {
 }
 
 HOSHI_EXPORT
-void hoshidicts_free_kanji_results(FfiKanjiResults* r) {
+void fushidicts_free_kanji_results(FfiKanjiResults* r) {
   if (!r) return;
   for (int i = 0; i < r->count; i++) {
     auto& k = r->results[i];
@@ -397,9 +397,9 @@ void hoshidicts_free_kanji_results(FfiKanjiResults* r) {
 // ── lookup ──────────────────────────────────────────────────────────
 
 HOSHI_EXPORT
-FfiLookupResults hoshidicts_lookup(void* handle, const char* text, int32_t max_results, int32_t scan_length) {
+FfiLookupResults fushidicts_lookup(void* handle, const char* text, int32_t max_results, int32_t scan_length) {
   FfiLookupResults r{};
-  auto* h = static_cast<HoshidictsHandle*>(handle);
+  auto* h = static_cast<FushidictsHandle*>(handle);
   Lookup lookup(h->query, h->deinflector);
   auto results = lookup.lookup(text, max_results, static_cast<size_t>(scan_length));
   r.count = static_cast<int32_t>(results.size());
@@ -422,7 +422,7 @@ FfiLookupResults hoshidicts_lookup(void* handle, const char* text, int32_t max_r
 }
 
 HOSHI_EXPORT
-void hoshidicts_free_lookup_results(FfiLookupResults* r) {
+void fushidicts_free_lookup_results(FfiLookupResults* r) {
   if (!r) return;
   for (int i = 0; i < r->count; i++) {
     free(r->results[i].matched);
@@ -440,9 +440,9 @@ void hoshidicts_free_lookup_results(FfiLookupResults* r) {
 // ── styles ──────────────────────────────────────────────────────────
 
 HOSHI_EXPORT
-FfiDictStyles hoshidicts_get_styles(void* handle) {
+FfiDictStyles fushidicts_get_styles(void* handle) {
   FfiDictStyles r{};
-  auto& q = static_cast<HoshidictsHandle*>(handle)->query;
+  auto& q = static_cast<FushidictsHandle*>(handle)->query;
   auto styles = q.get_styles();
   r.count = static_cast<int32_t>(styles.size());
   r.items = static_cast<FfiDictStyle*>(malloc(sizeof(FfiDictStyle) * r.count));
@@ -454,7 +454,7 @@ FfiDictStyles hoshidicts_get_styles(void* handle) {
 }
 
 HOSHI_EXPORT
-void hoshidicts_free_styles(FfiDictStyles* r) {
+void fushidicts_free_styles(FfiDictStyles* r) {
   if (!r) return;
   for (int i = 0; i < r->count; i++) {
     free(r->items[i].dict_name);
@@ -471,9 +471,9 @@ struct FfiMediaFile {
 };
 
 HOSHI_EXPORT
-FfiMediaFile hoshidicts_get_media(void* handle, const char* dict_name, const char* media_path) {
+FfiMediaFile fushidicts_get_media(void* handle, const char* dict_name, const char* media_path) {
   FfiMediaFile r{};
-  auto& q = static_cast<HoshidictsHandle*>(handle)->query;
+  auto& q = static_cast<FushidictsHandle*>(handle)->query;
   auto data = q.get_media_file(dict_name, media_path);
   r.size = static_cast<int32_t>(data.size());
   r.data = static_cast<uint8_t*>(malloc(r.size));
@@ -482,7 +482,7 @@ FfiMediaFile hoshidicts_get_media(void* handle, const char* dict_name, const cha
 }
 
 HOSHI_EXPORT
-void hoshidicts_free_media(FfiMediaFile* r) {
+void fushidicts_free_media(FfiMediaFile* r) {
   if (!r) return;
   free(r->data);
 }
@@ -490,10 +490,10 @@ void hoshidicts_free_media(FfiMediaFile* r) {
 // ── popup JSON (single source of truth for both FFI and JNI) ───────
 
 HOSHI_EXPORT
-char* hoshidicts_lookup_popup_json(void* handle, const char* text,
+char* fushidicts_lookup_popup_json(void* handle, const char* text,
                                    int32_t max_results, int32_t scan_length,
                                    int32_t max_terms) {
-  auto* h = static_cast<HoshidictsHandle*>(handle);
+  auto* h = static_cast<FushidictsHandle*>(handle);
   Lookup lookup(h->query, h->deinflector);
   auto results = lookup.lookup(text, max_results,
                                static_cast<size_t>(scan_length));
@@ -502,7 +502,7 @@ char* hoshidicts_lookup_popup_json(void* handle, const char* text,
 }
 
 HOSHI_EXPORT
-void hoshidicts_free_string(char* s) {
+void fushidicts_free_string(char* s) {
   free(s);
 }
 

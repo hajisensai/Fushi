@@ -355,25 +355,25 @@ void main() {
   });
 
   group('buildPopupJsonFromLookup parity', () {
-    List<HoshiLookupResult> makeLookupResults() {
+    List<FushiLookupResult> makeLookupResults() {
       return [
-        HoshiLookupResult(
+        FushiLookupResult(
           matched: '食べた',
           deinflected: '食べる',
           trace: [],
           preprocessorSteps: 0,
-          term: HoshiTermResult(
+          term: FushiTermResult(
             expression: '食べる',
             reading: 'たべる',
             rules: '',
             glossaries: [
-              HoshiGlossaryEntry(
+              FushiGlossaryEntry(
                 dictName: 'JMdict',
                 glossary: jsonEncode(['to eat', 'to consume']),
                 definitionTags: 'v1',
                 termTags: 'common',
               ),
-              HoshiGlossaryEntry(
+              FushiGlossaryEntry(
                 dictName: '大辞泉',
                 glossary: jsonEncode({
                   'tag': 'div',
@@ -386,19 +386,19 @@ void main() {
               ),
             ],
             frequencies: [
-              HoshiFrequencyEntry(
+              FushiFrequencyEntry(
                 dictName: 'BCCWJ',
                 frequencies: [
-                  HoshiFrequency(value: 500, displayValue: '500'),
-                  HoshiFrequency(value: 0, displayValue: 'Top 500'),
+                  FushiFrequency(value: 500, displayValue: '500'),
+                  FushiFrequency(value: 0, displayValue: 'Top 500'),
                 ],
               ),
             ],
             pitches: [
-              HoshiPitchEntry(dictName: 'NHK', pitchPositions: [2]),
+              FushiPitchEntry(dictName: 'NHK', pitchPositions: [2]),
               // IPA transcription dict: no pitch positions, only transcriptions.
               // Exercises the TODO-687 block3 passthrough end to end.
-              HoshiPitchEntry(
+              FushiPitchEntry(
                 dictName: 'IPA',
                 pitchPositions: [],
                 transcriptions: ['taꜜbeɾɯ', 'tabeɾu'],
@@ -406,17 +406,17 @@ void main() {
             ],
           ),
         ),
-        HoshiLookupResult(
+        FushiLookupResult(
           matched: '食べた',
           deinflected: '食べる',
           trace: [],
           preprocessorSteps: 0,
-          term: HoshiTermResult(
+          term: FushiTermResult(
             expression: '食べる',
             reading: 'たべる',
             rules: '',
             glossaries: [
-              HoshiGlossaryEntry(
+              FushiGlossaryEntry(
                 dictName: 'Kenkyusha',
                 glossary: jsonEncode('eat; consume'),
                 definitionTags: '',
@@ -424,16 +424,16 @@ void main() {
               ),
             ],
             frequencies: [
-              HoshiFrequencyEntry(
+              FushiFrequencyEntry(
                 dictName: 'JPDB',
                 frequencies: [
-                  HoshiFrequency(value: 120, displayValue: '#120'),
+                  FushiFrequency(value: 120, displayValue: '#120'),
                 ],
               ),
             ],
             pitches: [
-              HoshiPitchEntry(dictName: 'NHK', pitchPositions: [2]),
-              HoshiPitchEntry(
+              FushiPitchEntry(dictName: 'NHK', pitchPositions: [2]),
+              FushiPitchEntry(
                 dictName: 'IPA',
                 pitchPositions: [],
                 transcriptions: ['taꜜbeɾɯ', 'tabeɾu'],
@@ -517,21 +517,21 @@ void main() {
       // 与 C++ build_popup_json（native/hoshidicts/hoshidicts_src/popup_json.cpp）
       // 语义对齐：仅在 matched != deinflected 且 deinflected 非空时生成**单条**
       // {"name":"matched → deinflected","description":""}，否则为空数组。
-      HoshiLookupResult make({
+      FushiLookupResult make({
         required String matched,
         required String deinflected,
       }) =>
-          HoshiLookupResult(
+          FushiLookupResult(
             matched: matched,
             deinflected: deinflected,
             trace: [],
             preprocessorSteps: 0,
-            term: HoshiTermResult(
+            term: FushiTermResult(
               expression: '食べる',
               reading: 'たべる',
               rules: '',
               glossaries: [
-                HoshiGlossaryEntry(
+                FushiGlossaryEntry(
                   dictName: 'JMdict',
                   glossary: jsonEncode(['to eat']),
                   definitionTags: '',

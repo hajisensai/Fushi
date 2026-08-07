@@ -881,7 +881,7 @@ class ClipboardPanelController {
       final GlobalLookupMediaRequest? request = resolveGlobalLookupMedia(url);
       if (request == null) return Uint8List(0);
       final Uint8List? bytes =
-          HoshiDicts.instance.getMediaFile(request.dictionary, request.path);
+          FushiDicts.instance.getMediaFile(request.dictionary, request.path);
       return bytes ?? Uint8List(0);
     } catch (_) {
       return Uint8List(0);

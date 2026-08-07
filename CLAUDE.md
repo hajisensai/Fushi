@@ -31,7 +31,7 @@
 - 阅读器 JS/CSS：`hibiki/lib/src/reader/`（17 个 JS/CSS 注入封装，`reader_pagination_scripts.dart` 等）；JS 桥接全局是 `window.hoshiReader`（历史命名，是真实符号，勿改）。
 - 全局状态：`hibiki/lib/src/models/app_model.dart`（`AppModel`，~5150 行，初始化流程 + 子系统委托核心，改前先理解）。
 - Drift 数据库：`packages/hibiki_core/lib/src/database/database.dart` 和 `tables.dart`（schema v62，53 张表，WAL）。
-- 词典：Dart 封装 `packages/hibiki_dictionary/lib/src/engine/hoshidicts.dart` + FFI 绑定 `lib/src/ffi/hoshidicts_ffi_bindings.dart`；C++ 引擎源码全在 `native/hoshidicts/`（包内已无 C++），`hoshidicts_external/` 是 vendored 第三方，上游同步基线见 `native/hoshidicts/UPSTREAM.md`。
+- 词典：Dart 封装 `packages/hibiki_dictionary/lib/src/engine/fushidicts.dart` + FFI 绑定 `lib/src/ffi/fushidicts_ffi_bindings.dart`；C++ 引擎源码全在 `native/hoshidicts/`（包内已无 C++），`hoshidicts_external/` 是 vendored 第三方，上游同步基线见 `native/hoshidicts/UPSTREAM.md`。
 - 有声书：`packages/hibiki_audio/` + `hibiki/lib/src/media/audiobook/`（导入入口 `book_import_dialog.dart` / `audiobook_import_dialog.dart`）。
 - 互联/同步：`hibiki/lib/src/sync/`（`interconnect_*.dart`、`aggregate_sync_service.dart`、`backup_*`）。
 - galgame 制卡：Flutter 侧 `hibiki/lib/src/lookup/`（overlay 浮窗）+ `hibiki/lib/src/mining/galgame_*`；C++ hook（injector + hook DLL + vendored LunaHook）在本仓 `native/galgame_hook/`。`tools/build_distribution.ps1` 单独构建两架构 helper zip；zip 随 Windows 主包进入 `galgame_helper/` 供离线首装，同时由根 `.github/workflows/voice-hook-helper.yml` 发布供旧包/后台更新。helper **不链接进 `Hibiki.exe`**，运行时仍是隔离子进程/DLL。

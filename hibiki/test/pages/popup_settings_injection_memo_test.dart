@@ -368,8 +368,8 @@ void main() {
   /// 弹窗永远用旧样式，且全链静默）。这个前提之前零覆盖。
   group('stylesJson identity 前提（memo 正确性最脆的一环）', () {
     test('dictionaryStyles / dictionaryStylesJson 未变时返回同一实例', () {
-      final Map<String, String> first = HoshiDicts.dictionaryStyles;
-      final Map<String, String> second = HoshiDicts.dictionaryStyles;
+      final Map<String, String> first = FushiDicts.dictionaryStyles;
+      final Map<String, String> second = FushiDicts.dictionaryStyles;
       expect(identical(first, second), isTrue,
           reason: 'dictionaryStyles 不得每次返回防御性副本——memo 靠 map 身份判'
               '变化，每次新实例会让 memo 永远不命中（性能修复失效）');
@@ -383,7 +383,7 @@ void main() {
 
     test('_stylesCache 只允许整体重赋值，禁止就地 mutate', () {
       final String src = File(
-        '../packages/hibiki_dictionary/lib/src/engine/hoshidicts.dart',
+        '../packages/hibiki_dictionary/lib/src/engine/fushidicts.dart',
       ).readAsStringSync();
 
       // 所有就地修改形态（下标写 / add* / remove* / clear / update* / putIfAbsent）一律禁止。

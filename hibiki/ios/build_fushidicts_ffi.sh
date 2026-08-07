@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${HOSHIDICTS_SOURCE_DIR:?HOSHIDICTS_SOURCE_DIR is not set}"
-: "${HOSHIDICTS_BUILD_DIR:?HOSHIDICTS_BUILD_DIR is not set}"
-: "${HOSHIDICTS_MERGED_ARCHIVE:?HOSHIDICTS_MERGED_ARCHIVE is not set}"
+: "${FUSHIDICTS_SOURCE_DIR:?FUSHIDICTS_SOURCE_DIR is not set}"
+: "${FUSHIDICTS_BUILD_DIR:?FUSHIDICTS_BUILD_DIR is not set}"
+: "${FUSHIDICTS_MERGED_ARCHIVE:?FUSHIDICTS_MERGED_ARCHIVE is not set}"
 
 # Homebrew cmake is not on Xcode's default PATH.
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -25,7 +25,7 @@ if [[ -z "$cmake_sysroot" || "$cmake_sysroot" != /* ]]; then
   cmake_sysroot="$(xcrun --sdk "${PLATFORM_NAME:-iphoneos}" --show-sdk-path)"
 fi
 
-cache="$HOSHIDICTS_BUILD_DIR/CMakeCache.txt"
+cache="$FUSHIDICTS_BUILD_DIR/CMakeCache.txt"
 if [[ -f "$cache" ]]; then
   cached_generator="$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "$cache" | head -n 1)"
   cached_archs="$(sed -n 's/^CMAKE_OSX_ARCHITECTURES:.*=//p' "$cache" | head -n 1)"
@@ -33,18 +33,18 @@ if [[ -f "$cache" ]]; then
   if [[ "$cached_generator" != "Unix Makefiles" ||
         "$cached_archs" != "$cmake_archs" ||
         "$cached_sysroot" != "$cmake_sysroot" ]]; then
-    rm -rf "$HOSHIDICTS_BUILD_DIR"
+    rm -rf "$FUSHIDICTS_BUILD_DIR"
   fi
 fi
 
-cmake -S "$HOSHIDICTS_SOURCE_DIR" -B "$HOSHIDICTS_BUILD_DIR" \
+cmake -S "$FUSHIDICTS_SOURCE_DIR" -B "$FUSHIDICTS_BUILD_DIR" \
   -DCMAKE_SYSTEM_NAME=iOS \
   -DCMAKE_OSX_SYSROOT="$cmake_sysroot" \
   -DCMAKE_OSX_ARCHITECTURES="$cmake_archs" \
   -DCMAKE_OSX_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-15.0}"
-cmake --build "$HOSHIDICTS_BUILD_DIR" --target hoshidicts_ffi --config "$CONFIGURATION"
+cmake --build "$FUSHIDICTS_BUILD_DIR" --target fushidicts_ffi --config "$CONFIGURATION"
 
-if [[ ! -f "$HOSHIDICTS_MERGED_ARCHIVE" ]]; then
-  echo "error: $HOSHIDICTS_MERGED_ARCHIVE was not produced" >&2
+if [[ ! -f "$FUSHIDICTS_MERGED_ARCHIVE" ]]; then
+  echo "error: $FUSHIDICTS_MERGED_ARCHIVE was not produced" >&2
   exit 1
 fi

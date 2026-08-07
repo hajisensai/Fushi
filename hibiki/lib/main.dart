@@ -359,7 +359,7 @@ void main([List<String> args = const <String>[]]) {
     /// [AppModel.isInitialised] will flip to true and notify listeners when
     /// done, causing [FushiReaderApp] to navigate from [LoadingPage] to
     /// [HomePage].
-    await HoshiDicts.preloadTransforms();
+    await FushiDicts.preloadTransforms();
 
     final appModel = container.read(appProvider);
     await appModel.initialise();
