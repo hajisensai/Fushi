@@ -96,7 +96,7 @@
 - `lib/src/database/database.g.dart` -- 生成文件（勿手动修改）
 - `lib/src/database/tables.dart` -- 全部表定义
 - `lib/src/database/pref_codec.dart` -- 偏好编解码
-- `lib/src/models/hibiki_text_selection.dart` -- 文本选区模型
+- `lib/src/models/fushi_text_selection.dart` -- 文本选区模型
 
 ## 变更记录 (Changelog)
 

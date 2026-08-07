@@ -307,7 +307,7 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
 //   * 公共头子目录 `fushidicts_include/hoshidicts/`（源码 #include "hoshidicts/*"）；
 //   * `.hoshidicts_1` 磁盘分片名（词典持久化契约）；
 //   * hibiki_torrent 内层文件名（hibiki_torrent.h / hibiki_torrent_ffi.cpp /
-//     hibiki_torrent_bindings.dart）与旧 DLL 加载回退名 hibiki_torrent_ffi.dll；
+//     fushi_torrent_bindings.dart）与旧 DLL 加载回退名 hibiki_torrent_ffi.dll；
 //   * `native-hoshidicts-gate.yml` 文件名（连字符形态，galgame_hook 注释引用）。
 // 豁免（不进扫描面）：docs/bugs|specs|reviews|plans 历史文档、
 // native/fushidicts/UPSTREAM.md（上游出处 + 新旧对照表，见下方自证测试）、

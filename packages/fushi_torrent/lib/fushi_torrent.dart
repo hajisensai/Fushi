@@ -3,4 +3,4 @@
 library;
 
 export 'src/embedded_torrent_engine.dart';
-export 'src/ffi/hibiki_torrent_bindings.dart';
+export 'src/ffi/fushi_torrent_bindings.dart';

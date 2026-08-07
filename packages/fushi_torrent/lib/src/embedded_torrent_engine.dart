@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
-import 'ffi/hibiki_torrent_bindings.dart';
+import 'ffi/fushi_torrent_bindings.dart';
 
 /// 内置 libtorrent 引擎的 Dart 侧薄封装（阶段1b：真实下载管线）。
 ///
