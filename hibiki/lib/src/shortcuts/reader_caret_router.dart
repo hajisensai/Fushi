@@ -19,7 +19,7 @@ enum CaretAction {
 
   /// Context "click" at the cursor (A / Enter): follow a hyperlink, click an
   /// interactive control (popup audio/expand buttons), or — on plain text —
-  /// look up the word. The JS [hoshiCaret.activate] decides which, mirroring a
+  /// look up the word. The JS [fushiCaret.activate] decides which, mirroring a
   /// mouse click / Enter on whatever the cursor sits on.
   activate,
 

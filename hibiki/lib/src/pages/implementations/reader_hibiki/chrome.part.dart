@@ -430,7 +430,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   // TODO-1317：移动端「长按拖选」松手后弹的选区菜单（复制 / 查词）。BUG-609 把拖选松手直接
   // 送去查词，丢了「选中一段文本区间复制」的原有能力（用户报「长按没有选择了，变成长按选择
-  // 文字查词了」）。这里让拖选出的 app 自绘选区（`window.hoshiSelection.selection`，非原生
+  // 文字查词了」）。这里让拖选出的 app 自绘选区（`window.fushiSelection.selection`，非原生
   // 选区，不复活 TODO-1279 掉的双选区）在松手后弹菜单：选「复制」把整段选区文本进剪贴板，选
   // 「查词」复用 tap 查词的 [_handleTextSelected]（查词弹窗内含制卡）。两者共存，不再二选一
   // 只剩查词。锚点用与图片右键同一套「WebView 局部坐标经 [_webViewKey] RenderBox ->
@@ -640,7 +640,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   // Clear the reader's app-drawn selection (hoshi-selection CSS Custom Highlight)
   // *and* the native selection with it: ReaderSelectionScripts.clearInvocation()
-  // runs hoshiSelection.clearSelection(), whose first statement is
+  // runs fushiSelection.clearSelection(), whose first statement is
   // `window.getSelection()?.removeAllRanges()` (reader_selection_scripts.dart
   // `clearSelection`). BUG-1344 depends on that — WKWebView otherwise paints the
   // defocused native selection as a grey block that survives app switching.
@@ -676,7 +676,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         source: ReaderSelectionScripts.nativeSelectionSentenceRangeInvocation(),
       );
     } catch (e, stack) {
-      // BUG-005 同根因（TODO-678）：半销毁 WebView / window.hoshiSelection 未注入时
+      // BUG-005 同根因（TODO-678）：半销毁 WebView / window.fushiSelection 未注入时
       // eval 抛 MissingPluginException / TypeError，且本方法被菜单 fire-and-forget 调用，
       // 异常会逃当前 zone。失败退回 null —— 菜单「查词」调用方据此用 selectedText 兜底
       // 补满 currentSentence 非空契约，导出路径走空选区文案。
@@ -783,7 +783,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     _removeSelectionActionBar();
     try {
       await _controller?.evaluateJavascript(
-        source: 'window.hoshiSelection.hideSelectionHandles()',
+        source: 'window.fushiSelection.hideSelectionHandles()',
       );
     } catch (e, stack) {
       ErrorLogService.instance
@@ -1158,7 +1158,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   /// 是触屏唯一能唤出控制栏的通道，于是 VN 下底栏（悬浮态默认几秒后自动收起）一旦
   /// 收起就永远唤不回来。现在 JS 只回传「这是一次 VN 空白点」，翻页还是唤栏由 Dart
   /// 这个**状态拥有者**判定（chrome 可见性只有 Dart 知道：悬浮态的真值是
-  /// `_chromeTransientVisible`，JS 侧 `__hoshiTapGate.chrome` 镜像的是 `_showChrome`，
+  /// `_chromeTransientVisible`，JS 侧 `__fushiTapGate.chrome` 镜像的是 `_showChrome`，
   /// 悬浮态下恒 true，根本区分不出「已自动收起」）。
   ///
   /// 顺带修好一处旧漏：JS 直调 paginate 会丢弃返回值，屏到章末返回 "limit" 也没人
@@ -2113,7 +2113,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         customHighlightCss: _customHighlightCss);
     await _controller!.evaluateJavascript(
       source:
-          'if (!window.__hoshiCssHighlightsSupported) { window.fushiReader && window.fushiReader.buildNodeOffsets(); }',
+          'if (!window.__fushiCssHighlightsSupported) { window.fushiReader && window.fushiReader.buildNodeOffsets(); }',
     );
   }
 

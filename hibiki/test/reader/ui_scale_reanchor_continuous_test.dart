@@ -482,7 +482,7 @@ void main() {
 /// `'''` 会被读成「空串 + 新串」，三引号里的花括号被当成串内容抹掉、配对跑偏。
 /// 先按 Dart 侧稳定标记切出 JS blob，再在里面用 JS 词法配对函数体。
 String _continuousShellJs(String maskedSource) {
-  const String start = 'window.__hoshiShells.continuous = function(C) {';
+  const String start = 'window.__fushiShells.continuous = function(C) {';
   const String end = '</script>';
   final int startIndex = maskedSource.indexOf(start);
   expect(startIndex, isNonNegative, reason: '找不到连续模式 shell 起点：$start');

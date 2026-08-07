@@ -693,7 +693,7 @@ class ReaderPaginationScripts {
 
   static String stableProgressInvocation() =>
       'window.fushiReader && !window.fushiReader._reanchorPending '
-      '&& window.hoshiProgressDetails ? window.hoshiProgressDetails() : null';
+      '&& window.fushiProgressDetails ? window.fushiProgressDetails() : null';
 
   static String updatePageSizeInvocation(double width, double height) =>
       'window.fushiReader && window.fushiReader.updatePageSize($width, $height)';
@@ -808,7 +808,7 @@ class ReaderPaginationScripts {
   /// 进程里逐字不变，于是可以 memoize（见 `readerEngineSource`）。
   ///
   /// 每个 shell 函数体与改动前对应 shell 的 IIFE 内容逐字对应（`$x` → `C.x`），
-  /// 词法作用域自洽：shell 顶层只声明 `_hoshiBootInitialize`，其余全部写 `window.*`
+  /// 词法作用域自洽：shell 顶层只声明 `_fushiBootInitialize`，其余全部写 `window.*`
   /// 全局，与外层手势层之间没有任何跨作用域引用（守卫
   /// `test/reader/reader_engine_static_source_guard_test.dart`）。
   static String engineShell({
@@ -819,12 +819,12 @@ class ReaderPaginationScripts {
         ? ReaderVisualNovelScripts.vnShellScript()
         : (continuousMode ? continuousShellSource() : paginatedShellSource());
     return '''<script>
-window.__hoshiShells = {};
+window.__fushiShells = {};
 ${_stripShellScriptTags(shell)}
-window.__hoshiInstallShell = function(C) {
-  if (C.vnMode) return window.__hoshiShells.vn(C);
-  if (C.continuousMode) return window.__hoshiShells.continuous(C);
-  return window.__hoshiShells.paginated(C);
+window.__fushiInstallShell = function(C) {
+  if (C.vnMode) return window.__fushiShells.vn(C);
+  if (C.continuousMode) return window.__fushiShells.continuous(C);
+  return window.__fushiShells.paginated(C);
 };
 </script>''';
   }
@@ -1021,7 +1021,7 @@ window.__hoshiInstallShell = function(C) {
   },
   // TODO-1349（续·用户复诉「文字少也会去到最开头」）：把仍标记 loading="lazy" 的图强制翻成
   // eager 触发 load。往前翻到「文字少+图片」章的章末时，尾部整页插图仍是 lazy（非纯图片章
-  // __hoshiImageOnlyChapter=false），离屏 → 永不 load → 0 尺寸被 buildPaginationMetrics
+  // __fushiImageOnlyChapter=false），离屏 → 永不 load → 0 尺寸被 buildPaginationMetrics
   // 排除（分页 maxScroll 塌缩到章首）/ 被 scrollToChapterEnd 可见性判据跳过（连续停章首），
   // 且懒图 __imgReanchorProgress 重锚永不触发（尾图永不进视口 = 鸡生蛋）。这里在章末恢复时
   // 强制 load 打破鸡生蛋，图尺寸解析后走既有 load 回调重锚（分页 scrollToProgressPaged /
@@ -1440,7 +1440,7 @@ window.__hoshiInstallShell = function(C) {
     return out;
   },
   applySentenceAudioCues: function(cues) {
-    if (window.hoshiSelection) window.hoshiSelection.clearSelection();
+    if (window.fushiSelection) window.fushiSelection.clearSelection();
     this.resetSentenceAudioCues();
     // TODO-630/BUG-366 observability：payload 是否带 cue、CSS highlights 支持与否、
     // sasayaki 背景色变量值（透明/缺失 → 即使 range 命中也看不见）。一次性诊断只打一行。
@@ -1450,7 +1450,7 @@ window.__hoshiInstallShell = function(C) {
         this.__sentenceAudioDiagLogged = true;
         var bg = '';
         try { bg = getComputedStyle(document.documentElement).getPropertyValue('--hoshi-sentence-audio-background-color'); } catch (e) {}
-        console.log('[sentence-audio-hl] diag cssHighlightsSupported=' + (!!window.__hoshiCssHighlightsSupported) +
+        console.log('[sentence-audio-hl] diag cssHighlightsSupported=' + (!!window.__fushiCssHighlightsSupported) +
           ' sentenceAudioBg="' + (bg || '').trim() + '"');
       }
       console.log('[sentence-audio-hl] applySentenceAudioCues payloadCues=' + n);
@@ -1496,7 +1496,7 @@ window.__hoshiInstallShell = function(C) {
   },
   highlightSentenceAudioCue: function(cueId, reveal) {
     this.clearSentenceAudioCue();
-    if (window.__hoshiCssHighlightsSupported) CSS.highlights.delete('hoshi-sentence-audio');
+    if (window.__fushiCssHighlightsSupported) CSS.highlights.delete('hoshi-sentence-audio');
     var wrappers = this.cueWrappers.get(cueId) || [];
     var rubyElements = this.cueRubyElements.get(cueId) || [];
     // TODO-630/BUG-366 observability：本 cue 拿到几个文本 span/ruby；0+0 → 直接 return null（不高亮）。
@@ -1528,8 +1528,8 @@ window.__hoshiInstallShell = function(C) {
         if (sid !== null) return JSON.stringify({ type: 'sid', id: sid });
       }
     }
-    if (!window.hoshiSelection || !window.hoshiSelection.getCaretRange) return null;
-    var caret = window.hoshiSelection.getCaretRange(x, y);
+    if (!window.fushiSelection || !window.fushiSelection.getCaretRange) return null;
+    var caret = window.fushiSelection.getCaretRange(x, y);
     if (!caret) return null;
     var node = caret.startContainer, off = caret.startOffset;
     var found = null;
@@ -1565,7 +1565,7 @@ window.__hoshiInstallShell = function(C) {
   },
   clearSentenceAudioCue: function() {
     if (!this.activeCueId) return;
-    if (window.__hoshiCssHighlightsSupported) CSS.highlights.delete('hoshi-sentence-audio');
+    if (window.__fushiCssHighlightsSupported) CSS.highlights.delete('hoshi-sentence-audio');
     var rubyElements = this.cueRubyElements.get(this.activeCueId) || [];
     rubyElements.forEach(function(ruby) { ruby.classList.remove('hoshi-sentence-audio-ruby-active'); });
     var wrappers = this.cueWrappers.get(this.activeCueId) || [];
@@ -1573,8 +1573,8 @@ window.__hoshiInstallShell = function(C) {
     this.activeCueId = null;
   },
   resetSentenceAudioCues: function() {
-    if (window.hoshiSelection) window.hoshiSelection.clearSelection();
-    if (window.__hoshiCssHighlightsSupported) CSS.highlights.delete('hoshi-sentence-audio');
+    if (window.fushiSelection) window.fushiSelection.clearSelection();
+    if (window.__fushiCssHighlightsSupported) CSS.highlights.delete('hoshi-sentence-audio');
     this.cueRubyElements.forEach(function(rubyElements) {
       rubyElements.forEach(function(ruby) { ruby.classList.remove('hoshi-sentence-audio-ruby-active'); });
     });
@@ -1644,7 +1644,7 @@ window.__hoshiInstallShell = function(C) {
     var range = document.createRange();
     range.setStart(startNode, startOffset);
     range.setEnd(endNode, endOffset);
-    if (window.__hoshiCssHighlightsSupported) {
+    if (window.__fushiCssHighlightsSupported) {
       CSS.highlights.set('hoshi-search', new Highlight(range));
     }
     if (this.scrollToRange) {
@@ -1662,7 +1662,7 @@ window.__hoshiInstallShell = function(C) {
     return this.calculateProgress();
   },
   clearSearchHighlight: function() {
-    if (window.__hoshiCssHighlightsSupported) {
+    if (window.__fushiCssHighlightsSupported) {
       CSS.highlights.delete('hoshi-search');
     }
   },
@@ -1717,7 +1717,7 @@ window.__hoshiInstallShell = function(C) {
   /// TODO-861④（移植 Hoshi `f286108`）：[blurImages] 为 true 时给标记为 block-img 的
   /// 大图（含 svg 封面）加 `blurred` 类（CSS 盖 24px 模糊），并装一次性点击监听揭开。
   /// 揭开（移除 `blurred`）连同「吞掉本次放大」由 webview.part.dart 的点击派发处统一
-  /// 处理（见 `_hoshiRevealBlurredImage`），这里只负责加类 + 标记可揭开。
+  /// 处理（见 `_fushiRevealBlurredImage`），这里只负责加类 + 标记可揭开。
   /// TODO-1339 测试钩子：暴露共享图片初始化脚本，让 live-WebView 集成测试能证明
   /// 图片合并注入的前导插图（`.hoshi-merged-image`）保持 eager（不被挂 lazy），
   /// 从而 firstContentEdge 计入全部前导图、章首锚不跳过第一张。
@@ -1730,28 +1730,28 @@ window.__hoshiInstallShell = function(C) {
     // blur 开关，均经 _reloadWithCurrentSettings→_loadChapterDirectly）会重跑
     // initialize→_sharedInitImages，无条件给所有 block-img 重加 `blurred` → 揭开丢失。
     // 修复：把「本次阅读会话已揭开」的稳定 key（<img> src / <svg><image> href 相对
-    // baseURI 解析成绝对 URL）注入成 map，_hoshiBlurImage 命中则跳过重新遮罩。揭开
+    // baseURI 解析成绝对 URL）注入成 map，_fushiBlurImage 命中则跳过重新遮罩。揭开
     // 状态的真相源是 Dart 侧 _revealedImageKeys（内存会话集），经 onImageRevealed
     // 回传持久，重载时再嵌入这里。domStorageEnabled=false 故不用 localStorage。
     // BUG-1140 第二阶段①：整块从「blurImages 为假时**整段不注入**」改成「函数照常
-    // 定义、副作用照常受 C.blurImages 门控」。行为等价：`window.__hoshiMarkImageRevealed`
-    // / `window.__hoshiImageRevealKey` 两个全局仍**只在开了防剧透遮罩时**才挂上
-    // （caret / 有声书桥接都用 `if (window.__hoshiImageRevealKey && …)` 探测），
-    // `_hoshiBlurImage` 也仍只在开关为真时被调用。
+    // 定义、副作用照常受 C.blurImages 门控」。行为等价：`window.__fushiMarkImageRevealed`
+    // / `window.__fushiImageRevealKey` 两个全局仍**只在开了防剧透遮罩时**才挂上
+    // （caret / 有声书桥接都用 `if (window.__fushiImageRevealKey && …)` 探测），
+    // `_fushiBlurImage` 也仍只在开关为真时被调用。
     const String blurFn = '''
-  var _hoshiRevealedKeys = Object.create(null);
+  var _fushiRevealedKeys = Object.create(null);
   if (C.blurImages) {
-    var __hoshiKeys = C.revealedKeys;
-    if (__hoshiKeys && __hoshiKeys.length) {
-      for (var i = 0; i < __hoshiKeys.length; i++) { _hoshiRevealedKeys[__hoshiKeys[i]] = true; }
+    var __fushiKeys = C.revealedKeys;
+    if (__fushiKeys && __fushiKeys.length) {
+      for (var i = 0; i < __fushiKeys.length; i++) { _fushiRevealedKeys[__fushiKeys[i]] = true; }
     }
   }
   // TODO-1367：暴露给有声书桥接（audiobook_bridge）——音频跟随读过某张图时把它的稳定
-  // reveal key 登记进本活集，日后该图（含尚未 load 的懒图）真正 load 走 _hoshiBlurImage
+  // reveal key 登记进本活集，日后该图（含尚未 load 的懒图）真正 load 走 _fushiBlurImage
   // 时命中 key 跳过遮罩，与点击 / 手柄揭开同一套「已揭开不再遮罩」真相源（会话内存活集）。
   if (C.blurImages) {
-    window.__hoshiMarkImageRevealed = function(key) {
-      if (key) _hoshiRevealedKeys[key] = true;
+    window.__fushiMarkImageRevealed = function(key) {
+      if (key) _fushiRevealedKeys[key] = true;
     };
   }
   // BUG-898：稳定 reveal key 归一到「extractDir 相对、decode、正斜杠」路径（如
@@ -1759,7 +1759,7 @@ window.__hoshiInstallShell = function(C) {
   // 完全一致 —— 三端（阅读器 WebView / 图片库 / Drift 持久表）共享同一 key，才能双向同步。
   // 用 new URL(raw, baseURI) 折叠 ../ 并解析相对 src → 剥 fushi.local 的 /epub/ 前缀 +
   // decodeURIComponent → 相对路径。host 非本资源域（不该发生）时回退原始串。
-  function _hoshiImageRevealKey(element) {
+  function _fushiImageRevealKey(element) {
     if (!element) return '';
     var raw = '';
     if (element.tagName === 'IMG') {
@@ -1780,15 +1780,15 @@ window.__hoshiInstallShell = function(C) {
     } catch (e) { return raw; }
   }
   if (C.blurImages) {
-    window.__hoshiImageRevealKey = _hoshiImageRevealKey;
+    window.__fushiImageRevealKey = _fushiImageRevealKey;
   }
-  function _hoshiBlurImage(element) {
-    var key = _hoshiImageRevealKey(element);
-    if (key && _hoshiRevealedKeys[key]) return;
+  function _fushiBlurImage(element) {
+    var key = _fushiImageRevealKey(element);
+    if (key && _fushiRevealedKeys[key]) return;
     element.classList.add('blurred');
   }''';
-    const String blurSvgCall = 'if (C.blurImages) _hoshiBlurImage(svg);';
-    const String blurImgCall = 'if (C.blurImages) _hoshiBlurImage(img);';
+    const String blurSvgCall = 'if (C.blurImages) _fushiBlurImage(svg);';
+    const String blurImgCall = 'if (C.blurImages) _fushiBlurImage(img);';
     return '''
 $blurFn
   Array.from(document.querySelectorAll('svg')).forEach(function(svg) {
@@ -1831,7 +1831,7 @@ $blurFn
   //     下次 paginate 用纳入真实图尺寸的几何重建（与 TODO-627 首帧那次失效同源）。
   // 竖排 SVG 封面（<svg><image>）走上面 querySelectorAll('svg') 的同步分支（尺寸取
   // 属性/viewBox，无需 onload），本改动不触及 → BUG-025 行为不变。
-  function _hoshiClassifyBlockImg(img) {
+  function _fushiClassifyBlockImg(img) {
     var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
     if (isGaiji) return false;
     if (img.naturalWidth > 256 || img.naturalHeight > 256) {
@@ -1855,7 +1855,7 @@ $blurFn
   // 真实撑开尺寸，metrics 计入全部图。ttuRegex 单字符匹配（无 /g，test 无状态）在首个可匹配
   // 字符即短路 → 文本章几乎零开销、只对纯图片章全扫（文本极少）。图文混排章仍 lazy（不回退
   // TODO-1074 懒加载优化）；非图片章（有文本）完全 no-op（向后兼容）。
-  var __hoshiImageOnlyChapter =
+  var __fushiImageOnlyChapter =
       !window.fushiReader.ttuRegex.test(document.body.textContent || '');
   Array.from(document.querySelectorAll('img')).forEach(function(img) {
     var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
@@ -1870,17 +1870,17 @@ $blurFn
     // 章首锚落到第一张。仅影响合并书的少量前导插图，不回退 TODO-1074 普通图懒加载。
     var isMergedLeadImg = img.closest && img.closest('.hoshi-merged-image');
     // gaiji 内联小图参与文字几何：保持 eager 同步解码，不加 lazy。
-    // TODO-1349：纯图片章的图同理 eager（见上 __hoshiImageOnlyChapter 长注释）。
-    if (!isGaiji && !isMergedLeadImg && !__hoshiImageOnlyChapter) {
+    // TODO-1349：纯图片章的图同理 eager（见上 __fushiImageOnlyChapter 长注释）。
+    if (!isGaiji && !isMergedLeadImg && !__fushiImageOnlyChapter) {
       img.setAttribute('loading', 'lazy');
     }
     img.setAttribute('decoding', 'async');
     if (img.complete && img.naturalWidth > 0) {
-      _hoshiClassifyBlockImg(img);
+      _fushiClassifyBlockImg(img);
     } else {
       // 未完成：restore 不等它。真正 load 后补做 block-img 归类并失效 metrics。
       img.addEventListener('load', function() {
-        if (_hoshiClassifyBlockImg(img)) {
+        if (_fushiClassifyBlockImg(img)) {
           var r = window.fushiReader;
           if (r && r.paginationMetrics !== undefined) r.paginationMetrics = null;
           // TODO-1229 案B / BUG-1140 第二轮：懒加载 block 图 load 后整章几何后移，冻结的
@@ -1912,7 +1912,7 @@ $blurFn
   // gesture setup still installs), and surface the real error on the console so
   // the underlying init failure can still be diagnosed and fixed.
   static const String _sharedInitBoot = '''
-function _hoshiBootInitialize() {
+function _fushiBootInitialize() {
   try {
     window.fushiReader.initialize();
   } catch (e) {
@@ -1920,10 +1920,10 @@ function _hoshiBootInitialize() {
   }
 }
 window.addEventListener('load', function() {
-  _hoshiBootInitialize();
+  _fushiBootInitialize();
 });
 if (document.readyState === 'complete') {
-  _hoshiBootInitialize();
+  _fushiBootInitialize();
 }
 ''';
 
@@ -1946,8 +1946,8 @@ if (document.readyState === 'complete') {
     final String initImages = _sharedInitImages();
 
     return '''<script>
-window.__hoshiShells.paginated = function(C) {
-window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+window.__fushiShells.paginated = function(C) {
+window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 window.fushiReader = {
   // 跨章分段计时总开关（Dart [ReaderChapterPerfTrace.enabled] → C.perfTraceEnabled）。
   // false = 生产路径，perfMark / perfSnapshot 零开销。
@@ -2307,7 +2307,7 @@ $_sharedJs
   },
   // BUG-1241：最后一页的 progress 是「视口首字符 / 全章字符」，只要末页还能显示多行，
   // 它就天然停在 0.99 左右，不能拿来判断用户是否真的到达章末。末页判定必须读分页
-  // 几何的 terminal clamp；hoshiProgressDetails 会在此为 true 时把持久进度钳到 100%。
+  // 几何的 terminal clamp；fushiProgressDetails 会在此为 true 时把持久进度钳到 100%。
   isAtEnd: function() {
     var metrics = this.paginationMetrics || this.buildPaginationMetrics();
     var context = this.getScrollContext();
@@ -2769,8 +2769,8 @@ $_sharedInitBoot
     final String initImages = _sharedInitImages();
 
     return '''<script>
-window.__hoshiShells.continuous = function(C) {
-window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+window.__fushiShells.continuous = function(C) {
+window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 window.fushiReader = {
   // 跨章分段计时总开关（Dart [ReaderChapterPerfTrace.enabled] → C.perfTraceEnabled）。
   // false = 生产路径，perfMark / perfSnapshot 零开销。
@@ -3376,7 +3376,7 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
     hasDown = false;
     // TODO-1317: a mobile long-press drag-select owns this touch; never cross
     // chapters from a selection gesture.
-    if (window.__hoshiTextSelectDragActive) return;
+    if (window.__fushiTextSelectDragActive) return;
     var dx = x - downX;
     var dy = y - downY;
     if (Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) return;

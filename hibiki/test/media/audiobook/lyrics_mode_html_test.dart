@@ -32,8 +32,8 @@ void main() {
 
       // BUG-280: tap-to-lookup now fires from the raw pointer-up/touch-end path
       // (see _lyTapEnd) instead of the synthesized DOM 'click', so it still
-      // calls hoshiSelection.selectText.
-      expect(html, contains('window.hoshiSelection.selectText('));
+      // calls fushiSelection.selectText.
+      expect(html, contains('window.fushiSelection.selectText('));
       expect(html, isNot(contains('-webkit-user-select: none;')));
       expect(html, isNot(contains('user-select: none;')));
       expect(html, isNot(contains('var _longPressed')));
@@ -330,13 +330,13 @@ void main() {
         // selection off. Forward the whole arguments object.
         expect(
           html,
-          contains('origSelectText.apply(window.hoshiSelection, arguments)'),
+          contains('origSelectText.apply(window.fushiSelection, arguments)'),
         );
         // The broken 3-arg forwarding must be gone.
         expect(
           html,
           isNot(contains(
-              'origSelectText.call(window.hoshiSelection, x, y, maxLen)')),
+              'origSelectText.call(window.fushiSelection, x, y, maxLen)')),
         );
       });
     });

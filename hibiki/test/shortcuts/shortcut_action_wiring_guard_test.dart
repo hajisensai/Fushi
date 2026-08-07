@@ -63,8 +63,8 @@ void main() {
       'lib/src/shortcuts/global_navigation.dart',
       // 查词弹窗「上/下一个词条」（popupNextEntry / popupPrevEntry）的执行体：弹窗
       // 内容是 WebView，滚轮事件先到 popup.js，故这里把注册表里的滚轮绑定序列化成
-      // window.__hoshiEntryWheelBindings 注入过去，popup.js 命中即调
-      // hoshiFocusDictionaryEntryMove。它与 globalExternalLookup 同类——不经页面
+      // window.__fushiEntryWheelBindings 注入过去，popup.js 命中即调
+      // fushiFocusDictionaryEntryMove。它与 globalExternalLookup 同类——不经页面
       // _executeShortcutAction 派发，但绝不是死项。
       'lib/src/pages/implementations/popup_settings_injection.dart',
     ];

@@ -46,7 +46,7 @@ const source = fs.readFileSync(readerPath, 'utf8');
 // Extract the self-contained handler slice: from the continuous-mode flag down
 // to (but excluding) the non-left mouse seek listener. Every function the
 // handlers call is declared inside this slice, so it runs standalone.
-const sliceStart = source.indexOf('var hoshiContinuousMode = C.continuousMode;');
+const sliceStart = source.indexOf('var fushiContinuousMode = C.continuousMode;');
 assert.ok(sliceStart >= 0, 'missing handler slice start marker');
 const sliceEndMarker = '// 非左键';
 const sliceEnd = source.indexOf(sliceEndMarker, sliceStart);
@@ -117,7 +117,7 @@ function makeHarness(continuousMode) {
 
   const windowObj = {
     fushiReader: { isVertical() { return false; } },
-    hoshiSelection: null,
+    fushiSelection: null,
     getSelection() { return { isCollapsed: true, removeAllRanges() {} }; },
     getComputedStyle() { return body; },
     scrollBy() {},

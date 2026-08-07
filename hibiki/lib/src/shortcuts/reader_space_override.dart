@@ -128,7 +128,7 @@ bool swipeLeftIsForward({required bool invert, required bool rtl}) =>
 /// 本谓词只判定「这是不是 Windows 该接管的复制手势」：必须是
 /// Windows + 仅 Ctrl 修饰（无 Shift/Alt/Meta，避开 Ctrl+Shift+C 等其它组合）
 /// + 键是 C。命中后由调用方取 `window.getSelection()`（浏览器原生选区，**不是**
-/// `window.hoshiSelection` 查词选区）的文本写入系统剪贴板。其余一律返回 false，
+/// `window.fushiSelection` 查词选区）的文本写入系统剪贴板。其余一律返回 false，
 /// 交回默认处理，不吞键、不改任何现有行为。
 bool readerShouldHandleDesktopCopy({
   required LogicalKeyboardKey key,

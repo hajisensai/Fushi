@@ -47,16 +47,16 @@ test("mixed kanji/kana lookup skips ruby-reserve layout text", () => {
   const start = win.document.querySelector("#start").firstChild;
 
   assert.equal(
-    win.hoshiSelection.selectFromPosition(start, 0, 20),
+    win.fushiSelection.selectFromPosition(start, 0, 20),
     "打ち合わせ",
   );
-  assert.equal(win.hoshiSelection.getSentence(start, 0), "打ち合わせ。");
+  assert.equal(win.fushiSelection.getSentence(start, 0), "打ち合わせ。");
 });
 
 test("furigana hit resolves to the visible ruby base, not its reserve", () => {
   const win = createPopupSelection();
   const reading = win.document.querySelector("#second-reading").firstChild;
-  const resolved = win.hoshiSelection.resolveRubyBase(reading);
+  const resolved = win.fushiSelection.resolveRubyBase(reading);
 
   assert.equal(resolved?.node.textContent, "合");
 });

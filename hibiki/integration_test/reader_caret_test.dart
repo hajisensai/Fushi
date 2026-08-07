@@ -22,7 +22,7 @@ import 'test_helpers.dart';
 
 /// Char-level reading cursor — real-DOM verification.
 ///
-/// Opens a book and drives [ReaderCaretScripts] (`window.hoshiCaret`) through the
+/// Opens a book and drives [ReaderCaretScripts] (`window.fushiCaret`) through the
 /// reader's debug JS hook on a real WebView, asserting the parts that the Dart
 /// unit tests cannot reach: enter lands on a visible character, forward/backward
 /// round-trip, the writing-mode physical→logical mapping is live, look-up reuses
@@ -59,7 +59,7 @@ void main() {
       // we deterministically exercise the paginated chapter reader. Tapping a
       // pre-existing shelf book is unsafe: a book with a saved audiobook reopens
       // in lyrics mode (_lyricsMode restored from its saved state), which loads
-      // the lyrics page instead of a chapter and never injects window.hoshiCaret
+      // the lyrics page instead of a chapter and never injects window.fushiCaret
       // — a stale shelf book is exactly what made this test spuriously fail.
       final String bookKey = await _seedTestBook(tester);
       final navTargets = findPrimaryNavigationTargets();
@@ -112,16 +112,16 @@ void main() {
           reason: 'Reader debug JS hook must be set (debug/profile build).');
 
       // The caret module is injected by the reader setup script.
-      final caretType = (await eval!('typeof window.hoshiCaret')).toString();
-      expect(caretType, 'object', reason: 'window.hoshiCaret must be injected');
+      final caretType = (await eval!('typeof window.fushiCaret')).toString();
+      expect(caretType, 'object', reason: 'window.fushiCaret must be injected');
 
       Future<Map<String, dynamic>> sig() async {
         final raw = await eval(
-          'JSON.stringify({active:window.hoshiCaret.isActive(),'
-          'off:window.hoshiCaret.offset,'
-          'len:(window.hoshiCaret.node?window.hoshiCaret.node.textContent.length:0),'
-          'ch:(window.hoshiCaret.node?'
-          'window.hoshiCaret.node.textContent.substr(window.hoshiCaret.offset,1):null)})',
+          'JSON.stringify({active:window.fushiCaret.isActive(),'
+          'off:window.fushiCaret.offset,'
+          'len:(window.fushiCaret.node?window.fushiCaret.node.textContent.length:0),'
+          'ch:(window.fushiCaret.node?'
+          'window.fushiCaret.node.textContent.substr(window.fushiCaret.offset,1):null)})',
         );
         return jsonDecode(raw as String) as Map<String, dynamic>;
       }
@@ -168,7 +168,7 @@ void main() {
 
       // ── writing-mode physical→logical mapping on real geometry ────────
       final bool vertical =
-          (await eval('window.hoshiCaret._vertical()')) == true;
+          (await eval('window.fushiCaret._vertical()')) == true;
       debugPrint('[CARET] writing-mode vertical-rl=$vertical');
       // Reading-axis keys: vertical-rl DOWN advances / UP retreats; horizontal
       // RIGHT advances / LEFT retreats. Advance one char then retreat — must land
@@ -225,8 +225,8 @@ void main() {
       // a real word.
       await eval(ReaderCaretScripts.reanchorInvocation('forward'));
       final caretChar = await eval(
-        '(window.hoshiCaret.node?window.hoshiCaret.node.textContent'
-        '.substr(window.hoshiCaret.offset,1):null)',
+        '(window.fushiCaret.node?window.fushiCaret.node.textContent'
+        '.substr(window.fushiCaret.offset,1):null)',
       );
       debugPrint('[CARET] lookup at char=$caretChar');
       final lookupOk = await eval(ReaderCaretScripts.lookupInvocation());
@@ -234,13 +234,13 @@ void main() {
           reason: 'lookup() must select the word at the caret '
               '(char=$caretChar)');
       final selText = await eval(
-        'JSON.stringify(window.hoshiSelection && window.hoshiSelection.selection'
-        ' ? window.hoshiSelection.selection.text : null)',
+        'JSON.stringify(window.fushiSelection && window.fushiSelection.selection'
+        ' ? window.fushiSelection.selection.text : null)',
       );
       final decodedSel = jsonDecode(selText as String);
       debugPrint('[CARET] lookup selection=$decodedSel');
       expect(decodedSel, isNotNull,
-          reason: 'caret lookup must populate hoshiSelection (tap pipeline)');
+          reason: 'caret lookup must populate fushiSelection (tap pipeline)');
 
       // ── activate() — the A/Enter "context click" — routes plain text to the
       // same lookup on the real WebView (a hyperlink would instead navigate, a
@@ -309,7 +309,7 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
         for (int i = 0; i < 20; i++) {
           await tester.pump(const Duration(milliseconds: 150));
-          if ((await eval('window.hoshiCaret.isActive()')) == true) {
+          if ((await eval('window.fushiCaret.isActive()')) == true) {
             activeAfterEnter = true;
             break;
           }
@@ -322,7 +322,7 @@ void main() {
       // Confirm the cursor is active right before the leaving Escape, so the
       // poll below tests a real active→inactive transition rather than passing
       // trivially on an already-inactive cursor.
-      expect((await eval('window.hoshiCaret.isActive()')) == true, isTrue,
+      expect((await eval('window.fushiCaret.isActive()')) == true, isTrue,
           reason: 'cursor must be active before the leaving Escape');
       // Escape leaves the cursor. The earlier eval-lookup can leave a dictionary
       // result showing; the correct B/Esc order is "Escape closes the popup
@@ -334,7 +334,7 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         for (int i = 0; i < 14; i++) {
           await tester.pump(const Duration(milliseconds: 150));
-          if ((await eval('window.hoshiCaret.isActive()')) != true) {
+          if ((await eval('window.fushiCaret.isActive()')) != true) {
             inactiveAfterEscape = true;
             break;
           }

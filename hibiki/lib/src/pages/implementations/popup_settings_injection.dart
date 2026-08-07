@@ -41,7 +41,7 @@ class PopupSettingsOptions {
   /// App-outside (Windows bare-WebView2 global lookup) frame. Adds the
   /// `global-lookup` document class and the monochrome icon-font override, and
   /// is what gates the popup keyboard-binding injection
-  /// (`window.__hoshiPopupKeyBindings`; in-app hosts get an explicit `null`).
+  /// (`window.__fushiPopupKeyBindings`; in-app hosts get an explicit `null`).
   ///
   /// It does NOT hide `.mine-button` any more — this doc used to claim "no card
   /// mining outside the app", but that premise was retired by TODO-1188 /
@@ -246,11 +246,11 @@ const String _globalLookupIconFontJs = '''
 /// 步进本身不在 JS 里算：只回传**净档数**（rAF 内合帧累加，一次快滚不会打出十几次
 /// 往返），夹紧与步长仍归 Dart 的 `steppedPopupZoomFontSize` / `clampPopupZoomFontSize`
 /// 单一同源（TODO-1353 已有守卫），JS 侧不再镜像一份 8..72 边界。
-/// `__hoshiZoomWheelInstalled` 与 in-app 那份同名：同一个 realm 永远只装一套。
+/// `__fushiZoomWheelInstalled` 与 in-app 那份同名：同一个 realm 永远只装一套。
 const String _globalLookupZoomWheelJs = '''
     (function(){
-      if (window.__hoshiZoomWheelInstalled) return;
-      window.__hoshiZoomWheelInstalled = true;
+      if (window.__fushiZoomWheelInstalled) return;
+      window.__fushiZoomWheelInstalled = true;
       var pendingSteps = 0;
       var flushScheduled = false;
       function flushZoomSteps(){
@@ -362,7 +362,7 @@ String buildPopupEntriesJs(DictionarySearchResult result) {
 ''';
 }
 
-/// 查词弹窗「上/下一个词条」的滚轮绑定 JSON（注入成 `window.__hoshiEntryWheelBindings`）。
+/// 查词弹窗「上/下一个词条」的滚轮绑定 JSON（注入成 `window.__fushiEntryWheelBindings`）。
 ///
 /// 这两个动作的执行体在 popup.js —— 弹窗内容是 WebView，滚轮事件先到它的 JS，Dart
 /// 侧根本收不到（也不该收：只有指针真在弹窗内才算数）。所以「可改键」这件事就是把
@@ -415,7 +415,7 @@ String _webKeyName(LogicalKeyboardKey key) {
   return key.keyLabel.toLowerCase().replaceAll(' ', '');
 }
 
-/// 查词弹窗 scope 的**键盘**绑定 JSON（注入成 `window.__hoshiPopupKeyBindings`）。
+/// 查词弹窗 scope 的**键盘**绑定 JSON（注入成 `window.__fushiPopupKeyBindings`）。
 ///
 /// 形状与 [popupEntryWheelBindingsJson] 同构，只是把 `dir` 换成 `key`：
 ///
@@ -632,21 +632,21 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 当前「界面大小」系数与「词典字号」暴露给弹窗（与上面 zoom 同源，每次注入刷新为
     // 最新真值）。滚轮监听器（dictionary_popup_webview 的 _zoomWheelJs，onLoadStop 装一次）
     // 读这两个全局算新字号 → 立即 documentElement.style.zoom，再回调 Dart 持久化。
-    window.__hoshiPopupUiScale = ${appModel.appUiScale};
-    window.__hoshiPopupFontSize = ${appModel.dictionaryFontSize};
+    window.__fushiPopupUiScale = ${appModel.appUiScale};
+    window.__fushiPopupFontSize = ${appModel.dictionaryFontSize};
     // BUG-1026: 查词弹窗滚轮速度倍率。popup.js 的 wheel 监听器把 factor 乘以它
     // （缺省 1.0）。三种 in-app 弹窗都经此 head 注入；浏览器扩展走 theme 通道另发。
-    window.__hoshiPopupWheelSpeed = ${appModel.popupWheelSpeed};
+    window.__fushiPopupWheelSpeed = ${appModel.popupWheelSpeed};
     // 查词弹窗「上/下一个词条」的滚轮绑定（ShortcutAction.popupNextEntry /
     // popupPrevEntry，默认 Alt+滚轮下/上）。popup.js 的 wheel 监听读它，命中即调
-    // hoshiFocusDictionaryEntryMove 并吃掉该事件（不滚动内容）。三种 in-app 弹窗
+    // fushiFocusDictionaryEntryMove 并吃掉该事件（不滚动内容）。三种 in-app 弹窗
     // 都经此 head 注入；浏览器扩展没有这条注入通道，用 popup.js 里的同款默认值。
-    window.__hoshiEntryWheelBindings = $wheelBindingsJson;
+    window.__fushiEntryWheelBindings = $wheelBindingsJson;
     // 查词弹窗 scope 的键盘绑定：制卡（popupMineEntry，默认 Ctrl+Enter）+ 上/下一个词条
     // （默认无键盘绑定，走 Alt+滚轮）。popup.js 的 keydown 监听读它并分派。
     // null = 本宿主由 Dart 派发，JS 侧不参与（见上方 popupKeyBindings 的注释）；
     // 浏览器扩展没有这条注入通道，读到 undefined，用 popup.js 里的同款内置默认值。
-    window.__hoshiPopupKeyBindings = $popupKeyBindings;
+    window.__fushiPopupKeyBindings = $popupKeyBindings;
     window.audioSources = $audioSourcesJson;
     window.needsAudio = true;
     window.lookupAudioVolume = $lookupAudioVolume;

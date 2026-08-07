@@ -20,7 +20,7 @@ import 'reader_hibiki_page_source_corpus.dart';
 /// 全局开关 `AppModel.experimentalFocusNavigationEnabled`（默认关闭）原本只在
 /// `main.dart`（挂 FushiFocusRoot/Ring + wrapWithGlobalNavigation）和
 /// `global_navigation.dart`（手柄分发/方向键移焦/手柄 B）被消费。阅读器页面自带一套
-/// 独立的 WebView 字符光标（hoshiCaret）焦点导航，挂在自己的 `Focus.onKeyEvent`
+/// 独立的 WebView 字符光标（fushiCaret）焦点导航，挂在自己的 `Focus.onKeyEvent`
 /// 与 `GamepadButtonIntent` action 上，与开关解耦 —— 所以开关关闭时书里仍能用
 /// 键盘/手柄进光标查词、显示焦点环、方向键跳底栏。
 ///

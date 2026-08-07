@@ -230,8 +230,8 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         _applyChapterHighlights();
       }
       // TODO-724：跳章 / 位置恢复完成后重置有声书图片暂停的 cue 推进锚点
-      // (__hoshiPrevHighlight)。否则恢复到章节中段后，首次 cue 推进时 prev 仍指向很早
-      // 的元素，__hoshiImageBetween 会跨越中间所有插图、误把视口 reveal 到一张远处的图
+      // (__fushiPrevHighlight)。否则恢复到章节中段后，首次 cue 推进时 prev 仍指向很早
+      // 的元素，__fushiImageBetween 会跨越中间所有插图、误把视口 reveal 到一张远处的图
       // （BUG-007 的 reveal 滚图被恢复 + 大跨度 cue 放大）。本路径同时覆盖初次开书与
       // 有声书跨章推进（_handleCueCrossChapter→_navigateToChapter 完成后均回到这里）。
       // 与 718 的 _reanchorContinuousAfterRestore（连续模式重锚）零共享状态，正交独立。
@@ -296,7 +296,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   /// 歌词/未就绪由纯函数统一抑制。
   ///
   /// BUG-380：rAF 节流后回传可能高频到来，走 [_refreshProgressFromScroll] 的「在飞 +
-  /// 待重跑」coalesce 守卫，避免较重的 hoshiProgressDetails 调用堆积。
+  /// 待重跑」coalesce 守卫，避免较重的 fushiProgressDetails 调用堆积。
   void _handleReaderScroll() {
     // TODO-736 B-3：样式重锚 commit 清旗后的 settle 尾沿去抖。改字号/字体/主题 reflow 在
     // commit（_reanchorClearedAt 打点）之后还会有几帧 settle，其间 WebView 自发的瞬态归零

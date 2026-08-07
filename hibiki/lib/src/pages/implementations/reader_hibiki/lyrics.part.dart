@@ -96,9 +96,9 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
       await ReaderHibikiSource.instance.setLyricsMode(entering);
 
       if (entering) {
-        // 文档即将被 LyricsModeHtml 整页替换（其中无 window.hoshiCaret）。若此刻
+        // 文档即将被 LyricsModeHtml 整页替换（其中无 window.fushiCaret）。若此刻
         // reader caret 正激活，surface 会滞留 reader，之后方向键会对歌词文档调
-        // window.hoshiCaret.move() 报错、caret 卡死——进入前先丢掉旧 caret。
+        // window.fushiCaret.move() 报错、caret 卡死——进入前先丢掉旧 caret。
         _exitCaret();
         await _resolveAndApplyProfile(
           appModelNoUpdate.database,
@@ -277,7 +277,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
 
   Future<void> _exitLyricsMode() async {
     // 离开歌词模式会重载 reader 章节，lyrics caret JS 随之消失；复位 surface，
-    // 否则方向键/A 会被误路由到已不存在的 hoshiLyricsCaret。
+    // 否则方向键/A 会被误路由到已不存在的 fushiLyricsCaret。
     if (_caretSurface == CaretSurface.lyrics) {
       _rebuild(() => _caretSurface = CaretSurface.none);
     }

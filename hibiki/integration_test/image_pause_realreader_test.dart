@@ -23,7 +23,7 @@ import 'test_helpers.dart';
 ///
 /// 不需要真实音频/cue 管线——本残留是「真实分页下 reveal 行为」问题，与音频无关；
 /// 通过 `debugInjectAudiobookBridge` 注入真实 bridge，再用 `debugEvaluateJavascript`
-/// 直接驱动 `__hoshiHighlight`（产品 reveal 路径）。
+/// 直接驱动 `__fushiHighlight`（产品 reveal 路径）。
 ///
 /// Run:
 ///   flutter drive --driver=test_driver/integration_test.dart \
@@ -114,10 +114,10 @@ void main() {
         jsonDecode(setup as String) as Map<String, dynamic>;
     expect(setupMap['hasPic'], isTrue, reason: 'full-page image injected');
     expect(setupMap['hasHighlight'], isTrue,
-        reason: 'real __hoshiHighlight injected by bridge');
+        reason: 'real __fushiHighlight injected by bridge');
 
     // ── 模拟 cue 推进：先 reveal 图片前一句 m100，再推进到图片后一句 m101 ──
-    await runJs("window.__hoshiHighlight('#m100', true);");
+    await runJs("window.__fushiHighlight('#m100', true);");
     await tester.pump(const Duration(milliseconds: 600));
     final double m100Frac = await _frac(runJs, 'm100');
     final String alignAfterM100 = await _align(runJs);
@@ -125,7 +125,7 @@ void main() {
         '[IMGPAUSE-E2E] after m100: m100Frac=$m100Frac align=$alignAfterM100');
 
     // 推进到 m101 —— 中间隔着整页插图 → 应 reveal 到插图(暂停时看得到图)。
-    await runJs("window.__hoshiHighlight('#m101', true);");
+    await runJs("window.__fushiHighlight('#m101', true);");
     await tester.pump(const Duration(milliseconds: 600));
     final double picFrac = await _frac(runJs, 'rrPic');
     final double m101FracAtCross = await _frac(runJs, 'm101');
@@ -134,7 +134,7 @@ void main() {
         'm101Frac=$m101FracAtCross align=$alignAtCross');
 
     // ── 模拟恢复：重新 reveal 当前 cue m101（插图后正文）应显示出来 ─────────
-    await runJs("window.__hoshiHighlight('#m101', true);");
+    await runJs("window.__fushiHighlight('#m101', true);");
     await tester.pump(const Duration(milliseconds: 600));
     final double m101FracAfterResume = await _frac(runJs, 'm101');
     final double picFracAfterResume = await _frac(runJs, 'rrPic');
@@ -187,7 +187,7 @@ const String _insertImageJs = r'''
     }
     return JSON.stringify({
       hasPic: !!document.getElementById('rrPic'),
-      hasHighlight: typeof window.__hoshiHighlight === 'function'
+      hasHighlight: typeof window.__fushiHighlight === 'function'
     });
   } catch (e) {
     return JSON.stringify({err: '' + e});
@@ -225,7 +225,7 @@ String _fracJs(String id) => '''
 Future<String> _align(Future<dynamic> Function(String) runJs) async {
   try {
     final dynamic raw =
-        await runJs('window.hoshiTestHarness.getPaginationState();');
+        await runJs('window.fushiTestHarness.getPaginationState();');
     final Map<String, dynamic> s =
         jsonDecode(raw as String) as Map<String, dynamic>;
     final int scroll = (s['scroll'] as num?)?.toInt() ?? 0;

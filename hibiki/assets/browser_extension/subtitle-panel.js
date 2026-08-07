@@ -6,7 +6,7 @@
 // 开关 + 关闭；每行时间戳 + 文本 + 当前句高亮。行为：
 //   · 时间戳点击 → Netflix（DRM）复用 P1 的 nfSeek（postMessage {__fushiNf:'seek',ms}，走
 //     Netflix 官方 player.seek，不触发 M7375，不碰 DRM）；其余站点直接 video.currentTime。
-//   · 文本点击 → window.fushiLookupAtPoint（content.js 暴露，复用同一套 hoshiSelection 取词
+//   · 文本点击 → window.fushiLookupAtPoint（content.js 暴露，复用同一套 fushiSelection 取词
 //     + 查词弹窗 fushiRender）；文本保留真实 DOM，全局 mousemove+Shift 划词照常生效。
 //   · 制卡入口 = 上述查词弹窗自带的「制卡」按钮（bridge-shim mineEntry → window.fushiEnqueue，
 //     携带真实词 fields + 句子），面板不再另造合成 fields 的行级按钮。行的精确 [startMs,endMs]

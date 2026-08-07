@@ -86,7 +86,7 @@ String buildFrameSettingsJs({
   // (kPopupTopPullReleaseJs) into the overlay iframe too. It was only injected on
   // the in-app popup path; the overlay iframe never received it, so the desktop
   // "swipe down to close" gesture was dead in the app-external window. The JS
-  // self-guards against double-install (window.__hoshiTopPullInstalled) and
+  // self-guards against double-install (window.__fushiTopPullInstalled) and
   // reports through flutter_inappwebview.callHandler('topPullReleased'), which
   // the controller already gates on the enableSwipeToClose preference.
   // 真机第 4 轮 — 仅面板 root 注入选词区标记 + 引擎命中区间（码点下标；

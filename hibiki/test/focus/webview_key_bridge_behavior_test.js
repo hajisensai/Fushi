@@ -195,7 +195,7 @@ function key(over) {
   // popup.js 的「已制卡动作」面板开着时会把深度 +1。桥是 capture 且在 onLoadStop
   // 就注册，比面板自己的 capture 监听早得多——不让位就会抢走面板的 Esc，用户想关
   // 面板结果整个查词窗被关掉。
-  env.sandbox.window.__hoshiPopupModalDepth = 1;
+  env.sandbox.window.__fushiPopupModalDepth = 1;
   const esc = dispatch(env, 'keydown', key());
   assert.deepStrictEqual(env.calls, [],
     '模态开着时 Esc 必须留给面板自己');
@@ -207,11 +207,11 @@ function key(over) {
     '鼠标键同样让位——点面板上的按钮不该把查词窗关掉');
 
   // 面板叠开再逐层关闭（↗ 多卡选择套在 ✓ 操作单之上）：深度归零才恢复。
-  env.sandbox.window.__hoshiPopupModalDepth = 2;
+  env.sandbox.window.__fushiPopupModalDepth = 2;
   dispatch(env, 'keydown', key());
   assert.deepStrictEqual(env.calls, [], '嵌套面板期间仍让位');
 
-  env.sandbox.window.__hoshiPopupModalDepth = 0;
+  env.sandbox.window.__fushiPopupModalDepth = 0;
   dispatch(env, 'keydown', key());
   assert.deepStrictEqual(env.calls, [['hostInputToken', 'Escape']],
     '面板全关后必须恢复转发');
@@ -243,7 +243,7 @@ function key(over) {
     '只用键盘的宿主不得生成鼠标监听（零行为变化）');
 
   // 老宿主是正文 WebView，那里没有 popup 模态概念，不该被这个全局影响。
-  env.sandbox.window.__hoshiPopupModalDepth = 1;
+  env.sandbox.window.__fushiPopupModalDepth = 1;
   env.calls.length = 0;
   dispatch(env, 'keydown', key({ key: ' ', code: 'Space' }));
   assert.deepStrictEqual(env.calls, [['onSpaceKey', ' ']],

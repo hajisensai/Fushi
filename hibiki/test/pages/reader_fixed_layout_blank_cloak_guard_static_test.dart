@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// （VN 外壳早已用 try/catch 包 boot 修好同类，见 reader_visual_novel_scripts.dart；分页/连续漏了。）
 ///
 /// 修复两层：
-/// ① `_sharedInitBoot` 经 `_hoshiBootInitialize` 用 try/catch 包 `initialize()` 并 console.error
+/// ① `_sharedInitBoot` 经 `_fushiBootInitialize` 用 try/catch 包 `initialize()` 并 console.error
 ///    暴露真错——异常被就地含住，IIFE 继续跑到尾部摘 cloak。分页/连续外壳共享此 boot，一改两覆盖。
 /// ② webview.part.dart 的 setup IIFE 顶部排一个幂等 microtask 无条件摘 `hoshi-cloak`，兜底任意抛点
 ///    （caret/furigana 等），彻底消除「cloak 依赖整段 IIFE 不抛」这个脆弱契约。
@@ -36,9 +36,9 @@ void main() {
     expect(end, greaterThan(start), reason: 'boot 常量未闭合');
     final String boot = src.substring(start, end);
 
-    // boot 定义受保护的 `_hoshiBootInitialize`：try 里调 initialize()，catch 里 console.error。
-    expect(boot.contains('function _hoshiBootInitialize()'), isTrue,
-        reason: 'boot 必须经受保护的 _hoshiBootInitialize 调用 initialize()');
+    // boot 定义受保护的 `_fushiBootInitialize`：try 里调 initialize()，catch 里 console.error。
+    expect(boot.contains('function _fushiBootInitialize()'), isTrue,
+        reason: 'boot 必须经受保护的 _fushiBootInitialize 调用 initialize()');
     expect(boot.contains('try {'), isTrue,
         reason: 'boot 必须 try 包 initialize()');
     expect(boot.contains('window.fushiReader.initialize();'), isTrue,
@@ -47,9 +47,9 @@ void main() {
         reason: 'boot 必须 catch 住 initialize() 的同步抛（否则冲出 IIFE 卡 cloak）');
     expect(boot.contains('console.error'), isTrue,
         reason: 'boot catch 必须 console.error 暴露真错供定位');
-    // 裸调用（不经 _hoshiBootInitialize）会绕过保护 —— boot 里两处触发都必须走它
-    // （带分号的调用点，排除 `function _hoshiBootInitialize()` 定义本身）。
-    expect(RegExp(r'_hoshiBootInitialize\(\);').allMatches(boot).length, 2,
+    // 裸调用（不经 _fushiBootInitialize）会绕过保护 —— boot 里两处触发都必须走它
+    // （带分号的调用点，排除 `function _fushiBootInitialize()` 定义本身）。
+    expect(RegExp(r'_fushiBootInitialize\(\);').allMatches(boot).length, 2,
         reason: 'load 事件与 readyState==="complete" 两处都必须走受保护的 boot');
   });
 
@@ -58,7 +58,7 @@ void main() {
         read('lib/src/pages/implementations/reader_hibiki/webview.part.dart');
 
     // 顶部幂等 microtask 兜底摘 cloak：Promise.resolve().then 里 getElementById('hoshi-cloak').remove()。
-    // BUG-1140 第二阶段①：整段 setup 由 IIFE 变成 `window.__hoshiEngine.install(C)`
+    // BUG-1140 第二阶段①：整段 setup 由 IIFE 变成 `window.__fushiEngine.install(C)`
     // 的函数体（外链静态引擎，执行时刻不变）。按 install 签名定位，不绑定外层写法
     // ——本守卫钉的是函数体内容，与是否包了压缩器 / 是不是 IIFE 无关。
     final int iifeStart = src.indexOf('install: function(C) {');

@@ -1116,7 +1116,7 @@ class SyncDeletionTombstones extends Table {
 // ── revealed_images ─────────────────────────────────────────────────
 // 图片防剧透遮罩「已揭开」状态的持久真相源。per-(bookKey, imageKey)：imageKey =
 // extractDir 相对、解码、正斜杠归一的图片路径（如 `OEBPS/images/foo.jpg`）。阅读器
-// WebView（JS __hoshiImageRevealKey）与图片库 IllustrationsViewerPage（File 相对路径）
+// WebView（JS __fushiImageRevealKey）与图片库 IllustrationsViewerPage（File 相对路径）
 // 都归一到这同一个 key，实现「书内揭开↔图片库揭开」双向同步（同一张图只存一行）。
 // 揭开即 insertOnConflictUpdate 一行（幂等）；空表 = 全部保持遮罩（旧库升级后行为与旧版
 // 完全一致，Never break userspace）。删书经 EpubBooks FK cascade 连带清本表。范式仿

@@ -872,7 +872,7 @@ int _balancedBraceEnd(String structural, int open) {
 ///
 /// **不做「取第 N 处匹配」**：序号是脆的 —— 语料拼接顺序、part 文件改名、再多一份同
 /// 签名监听都会把序号挤歪，而挤歪后守卫照样绿着守错了对象。所以起点必须由调用方用
-/// **语义判据**定（如 [bodyEngineWheelListenerStart] 按块内 `hoshiContinuousMode`
+/// **语义判据**定（如 [bodyEngineWheelListenerStart] 按块内 `fushiContinuousMode`
 /// 认正文那份），右边界才由本函数用结构配对定。
 ///
 /// 右边界用配对而不是「下一个固定文本」（旧写法 `indexOf('}, {passive:')`）：监听器
@@ -1224,7 +1224,7 @@ String switchCaseBody(
 /// 裸 `indexOf("addEventListener('wheel'")` 会锚到前者，让所有钉正文轴向门控的
 /// 守卫在「实现完全正确」时转红（本函数就是被这条实测打出来的）。
 ///
-/// 判据用**块内是否含 `hoshiContinuousMode`**：连续/分页分流是正文那份独有的语义，
+/// 判据用**块内是否含 `fushiContinuousMode`**：连续/分页分流是正文那份独有的语义，
 /// 比「取第几个」稳——将来再多一份独立文档的 wheel 监听也不会把锚点挤歪。
 /// 找不到返回 -1，由调用方断言。
 int bodyEngineWheelListenerStart(String source) {
@@ -1233,7 +1233,7 @@ int bodyEngineWheelListenerStart(String source) {
   while (idx >= 0) {
     final int end = source.indexOf('}, {passive:', idx);
     if (end > idx &&
-        source.substring(idx, end).contains('hoshiContinuousMode')) {
+        source.substring(idx, end).contains('fushiContinuousMode')) {
       return idx;
     }
     idx = source.indexOf(needle, idx + needle.length);

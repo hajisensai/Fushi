@@ -215,7 +215,7 @@ void main() {
       );
       expect(selectRe.allMatches(src).length, 1,
           reason: '选词必须是唯一调用点，且显式传 maxLength=40');
-      expect(src.contains('hoshiSelection.selectText('), isFalse,
+      expect(src.contains('fushiSelection.selectText('), isFalse,
           reason: '旧的按坐标猜节点入口已下线，不得复活成第二条选词路径');
     });
   });

@@ -7,7 +7,7 @@ import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
 /// 根因竞态：`_onRestoreComplete` 调 `_reanchorContinuousAfterRestore()`（不 await）→ 编排
 /// `evalBegin` 在 JS 侧同步置 `window.fushiReader._reanchorPending = true`（清旗推迟到 postFrame
 /// 的 `evalCommit`）；紧接着 `_onRestoreComplete` 里的首发 `_refreshProgress()` 执行，但
-/// `stableProgressInvocation` = `!_reanchorPending ? hoshiProgressDetails() : null` → 旗为 true
+/// `stableProgressInvocation` = `!_reanchorPending ? fushiProgressDetails() : null` → 旗为 true
 /// 返 null → `_refreshProgress` 早退，`_progressCurrentChars` 保持 null → 进度条隐藏。用户滑动
 /// 时旗已 commit 清掉 → 刷新成功 → 条出现。
 ///

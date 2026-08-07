@@ -7,10 +7,10 @@ const vm = require('node:vm');
 // TODO-1132 回归守卫：浏览器扩展的「按住 Shift 悬停查词」是查词主路径。用户复诉「在浏览器按
 // Shift 没反应」。历史上 5657c55d1（TODO-1132 v40）把发查词逻辑从 mousemove 处理器里抽成
 // fushiSendLookup()，1219 P1-P3 又在 content.js 前后加了字幕拦截/面板脚本——任何一次重构都可能
-// 悄悄把 mousemove→shiftKey→hoshiSelection.selectFromPosition→chrome.runtime.sendMessage('lookup')
+// 悄悄把 mousemove→shiftKey→fushiSelection.selectFromPosition→chrome.runtime.sendMessage('lookup')
 // 这条接线拆断而无人察觉（源码扫描守不住「是否真的被触发」）。这里在受控 vm 里真加载 content.js、
 // 捕获它注册的 document mousemove 监听器、用带 shiftKey 的事件触发，断言最终真的发出了 lookup 消息。
-// 只 stub 浏览器全局，不改 content.js；hoshiSelection 用最小桩返回一个命中字与一个词。
+// 只 stub 浏览器全局，不改 content.js；fushiSelection 用最小桩返回一个命中字与一个词。
 
 const CONTENT = path.join(__dirname, 'content.js');
 
@@ -104,7 +104,7 @@ function loadContentAndFireShift(options) {
     innerWidth: 1200,
     innerHeight: 800,
     // 与 Flutter app 同款 vendor/selection.js 的最小行为桩：命中一个字、扩成一个词。
-    hoshiSelection: {
+    fushiSelection: {
       getCharacterAtPoint: () => ({ node: { textContent: '世界です', nodeType: 3 }, offset: 0 }),
       selectFromPosition: () => '世界',
       getSelectionRect: () => ({ x: 100, y: 100, width: 20, height: 16 }),

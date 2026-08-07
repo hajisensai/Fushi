@@ -122,7 +122,7 @@ void main() {
     // TODO-737：分页滚轮已从 onSwipe 改为新 handler onWheelPaginate（方向脱钩
     // invertSwipeDirection）。BUG-1342 后 handler 调用在跨 document helper 中，wheel
     // listener 的分页通道标记是 _handlePagedWheelTick(e)。
-    final int guardIdx = wheelBlock.indexOf('if (hoshiContinuousMode)');
+    final int guardIdx = wheelBlock.indexOf('if (fushiContinuousMode)');
     expect(guardIdx, greaterThanOrEqualTo(0),
         reason: 'wheel must branch on continuous mode before the paginated '
             'onWheelPaginate page-turn');

@@ -171,16 +171,16 @@ void main() {
 
     test('popup.js：读注入表、null 关掉自己，且只复用既有的加号点击入口', () {
       final String js = File('assets/popup/popup.js').readAsStringSync();
-      expect(js, contains('window.__hoshiPopupKeyBindings'));
+      expect(js, contains('window.__fushiPopupKeyBindings'));
       expect(js, contains("document.addEventListener('keydown'"));
       // null = 本宿主由 Dart 派发 → JS 必须整个不参与，否则 WebView 键盘桥一旦把同一次
       // 按键既给 JS 又冒泡回 Flutter，就会制出两张卡。
       expect(js, contains('if (raw === null) return null;'));
       // IME 组词期间的 Enter 属于输入法（确认候选词）。在一个日语学习工具里抢掉它是回归。
       expect(js, contains('e.isComposing'));
-      // 必须复用 hoshiPopupMineFirstEntry 去点那颗按钮：三态/单飞门/查重全在按钮 onclick
+      // 必须复用 fushiPopupMineFirstEntry 去点那颗按钮：三态/单飞门/查重全在按钮 onclick
       // 里，另起一条 mine 桥既绕过它们，也会撞上「mineEntry 桥有且只有一处」的既有守卫。
-      expect(js, contains('hoshiPopupMineFirstEntry()'));
+      expect(js, contains('fushiPopupMineFirstEntry()'));
       expect(
         "callHandler('mineEntry'".allMatches(js).length,
         1,
@@ -190,7 +190,7 @@ void main() {
 
     test('注入端：只有 app 外表面下发真绑定，app 内显式收 null', () {
       // 扫剥注释后的源码：讲「为什么 app 内要收 null」的注释里就写着 globalLookup /
-      // __hoshiPopupKeyBindings，连注释一起扫等于让文档给自己背书。
+      // __fushiPopupKeyBindings，连注释一起扫等于让文档给自己背书。
       //
       // 剥离交给共享原语（等长空白，不再改变长度/行数）。这里用
       // `maskCommentsAndScriptLines` 而不是 `maskComments`：本文件把大段 JS 放在
@@ -213,7 +213,7 @@ void main() {
           reason: 'app 外才下发真绑定、app 内必须显式收 null——'
               '两边都开就会双触发制出两张卡');
       expect(norm,
-          contains(r'window.__hoshiPopupKeyBindings = $popupKeyBindings;'));
+          contains(r'window.__fushiPopupKeyBindings = $popupKeyBindings;'));
     });
 
     test('视频页：制卡键合并在「浮层可见先关浮层」守卫之后', () {

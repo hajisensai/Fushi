@@ -10,7 +10,7 @@ import 'dart:ui';
 /// Writing-mode (horizontal vs. vertical-rl) and continuous-vs-paged scrolling
 /// are resolved here, against the live computed style / `window.fushiReader`
 /// state — the single source of truth. Word lookup reuses
-/// `window.hoshiSelection.selectFromPosition`, so a caret lookup hits the exact
+/// `window.fushiSelection.selectFromPosition`, so a caret lookup hits the exact
 /// same dictionary pipeline as a tap.
 ///
 /// This Dart class only builds the script and the `evaluateJavascript`
@@ -22,30 +22,30 @@ class ReaderCaretScripts {
   /// Activate the caret (restore remembered position if still visible, else the
   /// first visible character). Returns `{ok, rect}`.
   static String enterInvocation() =>
-      'JSON.stringify(window.hoshiCaret.enter())';
+      'JSON.stringify(window.fushiCaret.enter())';
 
   /// Deactivate the caret and hide the ring (keeps the remembered position).
-  static String exitInvocation() => 'window.hoshiCaret.exit()';
+  static String exitInvocation() => 'window.fushiCaret.exit()';
 
   /// Hide the ring but keep the caret active/owned (used when the user switches
   /// to the mouse); [resumeInvocation] re-shows it for keyboard/gamepad.
-  static String suspendInvocation() => 'window.hoshiCaret.suspend()';
+  static String suspendInvocation() => 'window.fushiCaret.suspend()';
   static String resumeInvocation() =>
-      'JSON.stringify(window.hoshiCaret.resume())';
+      'JSON.stringify(window.fushiCaret.resume())';
 
   /// Move the caret. [dir] is a physical direction (`up`/`down`/`left`/`right`)
   /// or a logical one (`forward`/`backward`/`lineNext`/`linePrev`). Returns
   /// `{status, rect}` where status ∈ moved | pageForward | pageBackward |
   /// blocked.
   static String moveInvocation(String dir) =>
-      "JSON.stringify(window.hoshiCaret.move('$dir'))";
+      "JSON.stringify(window.fushiCaret.move('$dir'))";
 
   /// Whole-page scroll accelerator (LB/RB) on the active caret surface.
   /// [forward] true scrolls toward reading order. Returns the same
   /// `{status, rect}` shape as [moveInvocation] (popup → moved/blocked,
   /// paged reader → pageForward/pageBackward) so callers reuse [moveStatus].
   static String scrollPageInvocation(bool forward) =>
-      'JSON.stringify(window.hoshiCaret.scrollPage($forward))';
+      'JSON.stringify(window.fushiCaret.scrollPage($forward))';
 
   /// Jump the popup caret to the next/previous dictionary section header
   /// (`summary.dict-label`), Yomitan-style "go to dictionary". [forward] true
@@ -54,34 +54,34 @@ class ReaderCaretScripts {
   /// (`moved`/`blocked`) so callers reuse [moveStatus] / [rectOf]. Popup-only:
   /// the reader has no dictionary sections, so this no-ops there (`blocked`).
   static String jumpDictInvocation(bool forward) =>
-      'JSON.stringify(window.hoshiCaret.jumpDict($forward))';
+      'JSON.stringify(window.fushiCaret.jumpDict($forward))';
 
   /// Toggle popup caret scrolling between the default browser movement and
   /// explicit instant movement for e-ink screens.
   static String instantScrollInvocation(bool enabled) =>
-      'window.hoshiCaret.setInstantScroll($enabled)';
+      'window.fushiCaret.setInstantScroll($enabled)';
 
   /// After a page turn, place the caret at the entering edge of the new page
   /// ([edge] = `forward` → first visible char, `backward` → last visible char).
   static String reanchorInvocation(String edge) =>
-      "JSON.stringify(window.hoshiCaret.reanchor('$edge'))";
+      "JSON.stringify(window.fushiCaret.reanchor('$edge'))";
 
   /// Look up the word at the caret (reuses the tap dictionary pipeline).
-  static String lookupInvocation() => 'window.hoshiCaret.lookup()';
+  static String lookupInvocation() => 'window.fushiCaret.lookup()';
 
   /// Context "click" at the caret: follow a hyperlink, click an interactive
   /// control (popup audio/expand buttons), or — on plain text — look up the
   /// word. Returns `'link'` | `'activated'` | `'lookup'` | `'none'`.
-  static String activateInvocation() => 'window.hoshiCaret.activate()';
+  static String activateInvocation() => 'window.fushiCaret.activate()';
 
   /// Long-press at the caret. Used by gamepad hold-A for actions that are not
   /// the same as short activation, such as marking a popup dictionary summary
   /// without toggling its disclosure row.
-  static String longPressInvocation() => 'window.hoshiCaret.longPress()';
+  static String longPressInvocation() => 'window.fushiCaret.longPress()';
 
   /// Re-measure the ring after a relayout; re-anchors if the node detached.
   static String refreshInvocation() =>
-      'JSON.stringify(window.hoshiCaret.refresh())';
+      'JSON.stringify(window.fushiCaret.refresh())';
 
   /// Configure the ring colour and the chrome insets used for the
   /// "is on the current page" viewport test. [scopeSelector] (a CSS selector)
@@ -94,7 +94,7 @@ class ReaderCaretScripts {
     String? scopeSelector,
   }) {
     final String scope = scopeSelector == null ? 'null' : "'$scopeSelector'";
-    return "window.hoshiCaret.init({color:'$color',insetTop:$insetTop,"
+    return "window.fushiCaret.init({color:'$color',insetTop:$insetTop,"
         'insetBottom:$insetBottom,scopeSelector:$scope})';
   }
 
@@ -145,7 +145,7 @@ class ReaderCaretScripts {
   }
 
   // 互指注释（参照本仓 _jsStringLiteral 双实现先例）：本对象的字符模型 / 焦点环 JS 辅助与
-  // [ReaderLyricsCaretScripts]（window.hoshiLyricsCaret）各自内联一份——两者注入**不同文档**、
+  // [ReaderLyricsCaretScripts]（window.fushiLyricsCaret）各自内联一份——两者注入**不同文档**、
   // 运行时无共享对象，且两侧 source() 都是不可插值的 r"""...""" 原始串，无法经 Dart 常量收敛。
   // 下列辅助与 reader_lyrics_caret 对应方法**逐字节相同**，改任一侧必须同步另一侧：_charLen /
   // _charRect / _applyRingStyle / _rectJson / _prevIndex / _hideRing。故意分叉（各自特化，勿强行
@@ -153,7 +153,7 @@ class ReaderCaretScripts {
   // vs hoshi-lyrics-caret-ring）、_drawRing（本文件做视口 clamp）、_walker（本文件走 document.body
   // 全文）。
   static String source() => r"""
-window.hoshiCaret = {
+window.fushiCaret = {
   active: false,
   node: null,
   offset: 0,
@@ -250,8 +250,8 @@ window.hoshiCaret = {
     return true;
   },
   _walker: function() {
-    if (window.hoshiSelection && typeof window.hoshiSelection.createWalker === 'function') {
-      return window.hoshiSelection.createWalker(document.body); // rejects furigana
+    if (window.fushiSelection && typeof window.fushiSelection.createWalker === 'function') {
+      return window.fushiSelection.createWalker(document.body); // rejects furigana
     }
     return document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
   },
@@ -988,7 +988,7 @@ window.hoshiCaret = {
 
   lookup: function() {
     if (!this.active || !this.node) return false;
-    var s = window.hoshiSelection;
+    var s = window.fushiSelection;
     if (!s || typeof s.selectFromPosition !== 'function') return false;
     s.clearSelection();
     var text = s.selectFromPosition(this.node, this.offset, 400);
@@ -1017,8 +1017,8 @@ window.hoshiCaret = {
         if (this.el.classList && this.el.classList.contains('blurred')) {
           this.el.classList.remove('blurred');
           // TODO-1289：键盘/手柄揭开也持久——回传稳定 key 给 Dart 会话集。
-          if (window.__hoshiImageRevealKey && window.flutter_inappwebview) {
-            var revealKey = window.__hoshiImageRevealKey(this.el);
+          if (window.__fushiImageRevealKey && window.flutter_inappwebview) {
+            var revealKey = window.__fushiImageRevealKey(this.el);
             if (revealKey) window.flutter_inappwebview.callHandler('onImageRevealed', revealKey);
           }
           return 'activated';
@@ -1052,8 +1052,8 @@ window.hoshiCaret = {
     if (!target) return 'none';
 
     var summary = target.closest && target.closest('summary.dict-label');
-    if (summary && typeof window.__hoshiDictLongPress === 'function') {
-      window.__hoshiDictLongPress(summary);
+    if (summary && typeof window.__fushiDictLongPress === 'function') {
+      window.__fushiDictLongPress(summary);
       return 'dict';
     }
 

@@ -10,7 +10,7 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// 也进不了底栏）。本守卫锁死「Down 到底边 == 翻页」这一名实相符的语义，并在源码
 /// 层扫描确认死路径符号不再复活。
 ///
-/// 纯决策函数 [readerCaretMoveOutcome] 把 hoshiCaret.move 返回的 status +
+/// 纯决策函数 [readerCaretMoveOutcome] 把 fushiCaret.move 返回的 status +
 /// 物理方向映射到 Dart 侧动作，脱离 WebView 可单测（caret 移动的 JS 行为本身在
 /// 设备复测覆盖）。
 void main() {

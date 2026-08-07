@@ -218,10 +218,10 @@ void main() {
       expect(harness.pushCount, 1);
       String lastPushScript() => harness.scripts
           .lastWhere((String s) => s.contains('window.lookupEntries'));
-      // 首推：静态段 + in-app 固定块（__hoshiResetPopupScroll / i18nCtx）都下发。
+      // 首推：静态段 + in-app 固定块（__fushiResetPopupScroll / i18nCtx）都下发。
       expect(lastPushScript(), contains('window.i18nCtx'),
           reason: '首推必须带 in-app 固定块（新页面无 window.* 状态）');
-      expect(lastPushScript(), contains('window.__hoshiResetPopupScroll ='));
+      expect(lastPushScript(), contains('window.__fushiResetPopupScroll ='));
       await harness.firePopupRendered();
 
       final DictionaryPopupWebViewState state =
@@ -236,7 +236,7 @@ void main() {
       final String secondPush = lastPushScript();
       expect(secondPush, isNot(contains('window.i18nCtx')),
           reason: '设置未变时固定 i18n 块不得重复注入（并入静态段失效节奏）');
-      expect(secondPush, isNot(contains('window.__hoshiResetPopupScroll =')));
+      expect(secondPush, isNot(contains('window.__fushiResetPopupScroll =')));
       expect(secondPush, contains('window.renderPopup()'));
       await harness.firePopupRendered();
 

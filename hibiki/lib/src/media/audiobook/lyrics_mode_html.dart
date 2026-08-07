@@ -343,7 +343,7 @@ function setCue(index, scroll) {
 // ── Dart bridge ──
 window.__lyricsSetCue = function(index, scroll) { setCue(index, scroll); };
 window.__lyricsGetCurrentIndex = function() { return _currentIdx; };
-// 供 hoshiLyricsCaret 行间移动时把目标 cue 居中（复用同一滚动动画）。
+// 供 fushiLyricsCaret 行间移动时把目标 cue 居中（复用同一滚动动画）。
 window.__lyricsScrollToCue = function(index) {
   if (index >= 0 && index < _cues.length) scrollToCenter(_cues[index]);
 };
@@ -385,8 +385,8 @@ function _lyTapEnd(x, y) {
   }
   // TODO-908: 模糊态下点句显形（同视频「点击显形」语义）；非模糊态无影响。
   if (document.body.classList.contains('lyrics-blur')) cueEl.classList.add('revealed');
-  if (window.hoshiSelection) {
-    window.hoshiSelection.selectText(x, y, 400);
+  if (window.fushiSelection) {
+    window.fushiSelection.selectText(x, y, 400);
   }
 }
 var _lc = document.getElementById('lc');
@@ -443,13 +443,13 @@ _lc.addEventListener('mousedown', function(e) {
 
 // ── 歌词模式：覆写 selection 回调，附加 cue 元数据 ──
 (function() {
-  var origSelectText = window.hoshiSelection.selectText;
+  var origSelectText = window.fushiSelection.selectText;
   // BUG-844: 必须透传全部实参（含第 4 个 fromHover）。旧重写只声明 (x,y,maxLen)、
   // 只转发 3 参，把 Shift-悬停/纯悬停查词路径（selectInvocation 传 fromHover=true）
   // 的 fromHover 吞成 undefined → origSelectText 当成真点击：命中空白误 fire
   // onTapEmpty（关弹窗/唤底栏闪烁）、同词再悬停被 toggle 掉选区。用 apply 原样转发
   // 整个 arguments，语义与正文选区完全一致。
-  window.hoshiSelection.selectText = function(x, y, maxLen, fromHover) {
+  window.fushiSelection.selectText = function(x, y, maxLen, fromHover) {
     var hitEl = document.elementFromPoint(x, y);
     var cueEl = hitEl ? hitEl.closest('.cue') : null;
     if (cueEl) {
@@ -460,7 +460,7 @@ _lc.addEventListener('mousedown', function(e) {
     } else {
       window.__lyricsCueContext = null;
     }
-    return origSelectText.apply(window.hoshiSelection, arguments);
+    return origSelectText.apply(window.fushiSelection, arguments);
   };
 })();
 

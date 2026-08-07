@@ -1,7 +1,7 @@
 // BUG-1012 行为守卫：浏览器扩展取词必须穿透 open Shadow DOM。
 //
 // 用 node:vm 在最小 fake DOM 里真执行 assets/popup/selection.js 的取词引擎
-// `window.hoshiSelection.getCharacterAtPoint`，覆盖两个场景：
+// `window.fushiSelection.getCharacterAtPoint`，覆盖两个场景：
 //   A. 普通文本（caretPositionFromPoint 命中文本节点）—— 向后兼容，必须照常取词。
 //   B. Web Component（<bili-comments> 之类 shadow root 渲染，B 站评论区形态）：
 //      caretPositionFromPoint / elementFromPoint 只在顶层 document 下钻，命中的是
@@ -181,7 +181,7 @@ function run() {
   // 场景 A：普通文本，向后兼容。
   {
     const ctx = buildContext('plain');
-    const hit = ctx.window.hoshiSelection.getCharacterAtPoint(HIT_X, HIT_Y);
+    const hit = ctx.window.fushiSelection.getCharacterAtPoint(HIT_X, HIT_Y);
     assert.ok(hit, '[plain] 普通文本必须能取词（向后兼容）');
     assert.strictEqual(hit.node.textContent, TEXT, '[plain] 取到的文字节点内容应为评论文字');
     assert.strictEqual(hit.offset, 0, '[plain] 命中点应落在字符 0');
@@ -198,7 +198,7 @@ function run() {
       '[shadow] 前置：顶层 caretPositionFromPoint 应命中 shadow 宿主（元素节点）',
     );
 
-    const hit = ctx.window.hoshiSelection.getCharacterAtPoint(HIT_X, HIT_Y);
+    const hit = ctx.window.fushiSelection.getCharacterAtPoint(HIT_X, HIT_Y);
     assert.ok(
       hit,
       '[shadow] 修复后必须穿透 shadow DOM 取到文字（修复前此处为 null —— B 站评论区读不了的根因）',

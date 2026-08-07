@@ -528,7 +528,7 @@ String mangaPageDivHtml(MokuroImage page, String imgSrc,
 ///
 /// OCR 框有两条明确的查词入口（单击 / Shift 悬停），都走同一个字级选词函数
 /// `_selectOcrChar()`：命中层先定位到字符节点，再调
-/// `hoshiSelection.selectFromPosition(node, 0, 40, x, y)`。第三个参数是
+/// `fushiSelection.selectFromPosition(node, 0, 40, x, y)`。第三个参数是
 /// maxLength，漏传 → 扫描循环 gate `< undefined` 恒假 → text 恒空 →
 /// onTextSelected 永不触发（查词哑火）。Task 19 的内联选区 JS 只注入
 /// ReaderSelectionScripts 的定义。手势机与选词 pointerup 共存；裸图单击保持 no-op。
@@ -664,7 +664,7 @@ String mangaWindowDocument(
       '<style>'
       // BUG-051：禁用原生文字选区 + 图片拖拽。桌面 WebView 上鼠标拖动会触发浏览器
       // 原生 image drag-and-drop / 文字选区，拖出一个半透明残影（用户称「秃瓢」）并
-      // 抢走指针，让 swipe→onMangaTurn 哑火。查词走坐标式 DOM 读取（hoshiSelection
+      // 抢走指针，让 swipe→onMangaTurn 哑火。查词走坐标式 DOM 读取（fushiSelection
       // 用 elementFromPoint + TreeWalker + createRange，不依赖 window.getSelection），
       // 故禁 user-select 不影响查词，反而让鼠标拖动变成干净的 swipe。
       'html,body{margin:0;padding:0;background:#000;height:100%;'
@@ -1024,7 +1024,7 @@ String _mangaGestureJs({
   }
   function _selectOcrChar(x, y, fromHover){
     var charEl = _hitOcrChar(x, y);
-    var selection = window.hoshiSelection;
+    var selection = window.fushiSelection;
     if (!charEl || !selection) return false;
     var node = charEl.firstChild;
     if (!node || node.nodeType !== Node.TEXT_NODE) return false;

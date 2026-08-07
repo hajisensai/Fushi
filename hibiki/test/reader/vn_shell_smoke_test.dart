@@ -32,7 +32,7 @@ void main() {
           'the immutable document generation',
     );
     // 整份 shell 被包成运行时可复用的安装函数（引擎静态化的前提）。
-    expect(shell.contains('window.__hoshiShells.vn = function(C) {'), isTrue);
+    expect(shell.contains('window.__fushiShells.vn = function(C) {'), isTrue);
   });
 
   // TODO-909 M0 reveal contract. reveal（打字渐显）是 M1 功能；M0 在 webview 的

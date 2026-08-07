@@ -147,7 +147,7 @@ void main() {
       // 逐字同签名、在语料里更靠前（见 _wheelBlock 注释），锚错时下面的 needle 会
       // 集体落空 —— 但那时报的是「实现没了」，会把人引向生产代码。这条先红，直接
       // 说清是守卫自己锚歪了。
-      expect(wheel.contains('hoshiContinuousMode'), isTrue,
+      expect(wheel.contains('fushiContinuousMode'), isTrue,
           reason: '窗口锚到了没有连续/分页门控的那份 wheel 监听（spread 独立文档），'
               '守卫在守错对象');
       expect(wheel.contains('onSpreadTapEmpty'), isFalse,
@@ -177,7 +177,7 @@ void main() {
 ///   `reader_hibiki_page.dart:566`，正文引擎那份在
 ///   `reader_hibiki/webview.part.dart:1408`，而语料是「主壳在前」⇒ 按签名文本
 ///   `indexOf`（含 `methodBody` 的内建定位）必然锚到 spread 那份，守错对象。所以起点
-///   走语义判据 [bodyEngineWheelListenerStart]（按块内 `hoshiContinuousMode` 认）。
+///   走语义判据 [bodyEngineWheelListenerStart]（按块内 `fushiContinuousMode` 认）。
 /// - **右边界**：旧写法 `indexOf('}, {passive:')` 一旦监听器漏写 passive 选项就一路
 ///   吞到下一个监听器，所以改成 [balancedBlockFrom] 的花括号配对。
 String _wheelBlock(String source) {

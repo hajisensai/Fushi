@@ -12,7 +12,7 @@ import 'reader_hibiki_page_source_corpus.dart';
 /// 本守卫钉死：① 旧 WebView HTML 模态（openSentenceContextModal / .scm-* 样式）已彻底删除；
 /// ② 词条「调整上下文」按钮改成 `callHandler('openSentenceContextModal', {entryIndex, matched})`；
 /// ③ Dart 侧新 handler → layer → base/mixin 弹原生对话框，确认制卡回 WebView 精确点中该词条
-/// （hoshiPopupMineEntryByIndex / mineEntryByIndex）；④ 宿主后端预览/增减回调仍在（对话框复用）。
+/// （fushiPopupMineEntryByIndex / mineEntryByIndex）；④ 宿主后端预览/增减回调仍在（对话框复用）。
 /// 无头测试照不到真实 WebView，故用源码扫描守卫钉死每段接线（对话框行为另见 widget 测试）。
 void main() {
   String read(String relativePath) {
@@ -66,9 +66,9 @@ void main() {
       expect(js.contains(':scope > .entry'), isTrue);
     });
 
-    test('popup.js 提供 hoshiPopupMineEntryByIndex 供确认制卡精确回点', () {
+    test('popup.js 提供 fushiPopupMineEntryByIndex 供确认制卡精确回点', () {
       final String js = read('assets/popup/popup.js');
-      expect(js.contains('window.hoshiPopupMineEntryByIndex'), isTrue);
+      expect(js.contains('window.fushiPopupMineEntryByIndex'), isTrue);
       // 回点同样按 :scope > .entry DOM 序，点该词条的 .mine-button。
       expect(
           js.contains("querySelectorAll(':scope > .entry')") &&
@@ -86,7 +86,7 @@ void main() {
       expect(src.contains('onOpenSentenceContextModal'), isTrue);
       // 确认制卡回点：Dart 精确点第 idx 个词条（复用 mineEntry 全逻辑）。
       expect(src.contains('Future<void> mineEntryByIndex('), isTrue);
-      expect(src.contains('hoshiPopupMineEntryByIndex'), isTrue);
+      expect(src.contains('fushiPopupMineEntryByIndex'), isTrue);
       // 预览/增减 handler 仍在（对话框仍复用后端）。
       expect(src.contains("handlerName: 'sentenceContextPreview'"), isTrue);
     });

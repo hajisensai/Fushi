@@ -2758,7 +2758,7 @@ class AppModel with ChangeNotifier {
       '--fushi-swipe-close':
           ReaderHibikiSource.instance.enableSwipeToClose ? '1' : '0',
       // BUG-1026：查词弹窗滚轮速度倍率下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。
-      // content.js fushiRender 读它设 window.__hoshiPopupWheelSpeed（与 in-app 注入同名
+      // content.js fushiRender 读它设 window.__fushiPopupWheelSpeed（与 in-app 注入同名
       // 全局），popup.js 的 wheel factor 乘它。走 theme 通道与 --fushi-swipe-close 同法。
       '--hibiki-wheel-speed': popupWheelSpeed.toStringAsFixed(3),
     };

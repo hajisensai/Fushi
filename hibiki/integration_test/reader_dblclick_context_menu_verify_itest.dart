@@ -223,9 +223,9 @@ String _dblclickProbeJs() => r'''
   var point = visibleTextPoint();
   if (!point) return JSON.stringify({ok: false, error: 'no visible text'});
 
-  var characterHit = !!(window.hoshiSelection &&
-    window.hoshiSelection.getCharacterAtPoint &&
-    window.hoshiSelection.getCharacterAtPoint(point.x, point.y));
+  var characterHit = !!(window.fushiSelection &&
+    window.fushiSelection.getCharacterAtPoint &&
+    window.fushiSelection.getCharacterAtPoint(point.x, point.y));
 
   var hadShowAllRt = document.body.classList.contains('show-all-rt');
 

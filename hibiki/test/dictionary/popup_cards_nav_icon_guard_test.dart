@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 ///   #7 词典卡片：`.glossary-group` 是 Niratan 描边卡（1px 描边 + 圆角 + inset 顶部高光 +
 ///      薄贴地投影，无 background 填充；照抄 Niratan Features/Popup/popup.css）。
-///   #5 词条导航：popup.js 暴露 `hoshiFocusDictionaryEntry/Move/Reset`，当前词条走
+///   #5 词条导航：popup.js 暴露 `fushiFocusDictionaryEntry/Move/Reset`，当前词条走
 ///      `.entry-current` 的 #1a73e8 纯 CSS 边框蓝三角（零字体依赖）。
 ///   #1338 制卡图标乱码：制卡按钮保留 ✓/✓↩ 文本标记（应用户要求不走 SVG），但用
 ///      `.mine-button` 单色符号字体栈切断对注入词典字体的继承，且 ↩ 追加 VS15(U+FE0E)
@@ -114,13 +114,13 @@ void main() {
       setUpAll(() => js = read(relPath));
 
       test(
-          '#5 暴露 hoshiFocusDictionaryEntry/Move/Reset + data-hoshi-entry-index',
+          '#5 暴露 fushiFocusDictionaryEntry/Move/Reset + data-hoshi-entry-index',
           () {
-        expect(js.contains('window.hoshiFocusDictionaryEntry ='), isTrue,
+        expect(js.contains('window.fushiFocusDictionaryEntry ='), isTrue,
             reason: '聚焦指定下标词条 API');
-        expect(js.contains('window.hoshiFocusDictionaryEntryMove ='), isTrue,
+        expect(js.contains('window.fushiFocusDictionaryEntryMove ='), isTrue,
             reason: '相对上/下一条词条 API（Dart 焦点驱动调用点）');
-        expect(js.contains('window.hoshiFocusDictionaryEntryReset ='), isTrue,
+        expect(js.contains('window.fushiFocusDictionaryEntryReset ='), isTrue,
             reason: '清除当前词条焦点 API');
         expect(js.contains('data-hoshi-entry-index'), isTrue,
             reason: '词条打索引属性，DOM 可观测');

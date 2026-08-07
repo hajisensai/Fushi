@@ -666,7 +666,7 @@ function fireDocumentClick(
     return Promise.resolve(true);
   };
   let selectCalls = 0;
-  context.window.hoshiSelection = {
+  context.window.fushiSelection = {
     selectText() {
       selectCalls += 1;
     },

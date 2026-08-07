@@ -143,7 +143,7 @@ html {
 
 .entry {
     padding: 8px 0;
-    /* TODO-1325 #5 part1: hoshiFocusDictionaryEntryMove 的 scrollIntoView 落点留白，
+    /* TODO-1325 #5 part1: fushiFocusDictionaryEntryMove 的 scrollIntoView 落点留白，
        避免当前词条被顶部句子横幅(.global-lookup-sentence)或弹窗边缘贴死。 */
     scroll-margin-top: 14px;
     scroll-margin-bottom: 14px;
@@ -157,8 +157,8 @@ html {
 
 /* TODO-1325 #5 part1: 多词条焦点导航——当前词条(.entry-current)在其标题行左侧画一枚
    #1a73e8 蓝三角(纯 CSS 边框三角，零字体依赖，与折叠三角同法，且不受注入词典字体影响)。
-   焦点态由 hoshiFocusDictionaryEntryMove('next'|'prev') 切换 .entry-current，与逐字光标
-   hoshiCaret 正交(只移动词条级指示与视口，不动 caret ring)。三角绝对定位在 body 左侧
+   焦点态由 fushiFocusDictionaryEntryMove('next'|'prev') 切换 .entry-current，与逐字光标
+   fushiCaret 正交(只移动词条级指示与视口，不动 caret ring)。三角绝对定位在 body 左侧
    10px 留白里，垂直居中于标题行，随字号自适应。 */
 .entry-current .entry-header {
     position: relative;
@@ -506,7 +506,7 @@ html.global-lookup .mine-button:not(:disabled) {
 
 /* BUG-842：.hoshi-btn-tip 是内联动作按钮（调整上下文 / 清空已加句子 等）的 DOM 悬停/
    聚焦提示，取代会在离屏 WebView2（DComp visual→WGC→texture）上飞到窗口角落的原生
-   title。与 .audio-hint 共用视觉；由 popup.js setInlineButtonTip / __hoshiShowButtonTip
+   title。与 .audio-hint 共用视觉；由 popup.js setInlineButtonTip / __fushiShowButtonTip
    按屏幕坐标定位。 */
 .audio-hint,
 .inline-hint,

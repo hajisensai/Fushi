@@ -20,23 +20,23 @@ void main() {
       reason: '必须从 ReaderSettings.isContinuousMode 注入 continuousMode 标志',
     );
     expect(
-      source.contains(r'var hoshiContinuousMode = C.continuousMode;'),
+      source.contains(r'var fushiContinuousMode = C.continuousMode;'),
       isTrue,
-      reason: 'setup 脚本必须把 continuousMode 注入成 JS 变量 hoshiContinuousMode',
+      reason: 'setup 脚本必须把 continuousMode 注入成 JS 变量 fushiContinuousMode',
     );
   });
 
-  test('onSwipe firing in _gestureEnd is gated by !hoshiContinuousMode', () {
-    // _gestureEnd 的滑动→onSwipe 分支必须以 !hoshiContinuousMode 开头。
+  test('onSwipe firing in _gestureEnd is gated by !fushiContinuousMode', () {
+    // _gestureEnd 的滑动→onSwipe 分支必须以 !fushiContinuousMode 开头。
     expect(
-      source.contains('if (!hoshiContinuousMode && absDx > absDy'),
+      source.contains('if (!fushiContinuousMode && absDx > absDy'),
       isTrue,
-      reason: '连续模式不得在 _gestureEnd 回传 onSwipe（轴向冲突），必须 !hoshiContinuousMode 门控',
+      reason: '连续模式不得在 _gestureEnd 回传 onSwipe（轴向冲突），必须 !fushiContinuousMode 门控',
     );
   });
 
   test('does not regress to the unconditional horizontal-only onSwipe', () {
-    // 旧实现是无条件的 `if (absDx > absDy && (...)`（无 hoshiContinuousMode 门控）。
+    // 旧实现是无条件的 `if (absDx > absDy && (...)`（无 fushiContinuousMode 门控）。
     expect(
       source.contains('if (absDx > absDy && (absDx >='),
       isFalse,

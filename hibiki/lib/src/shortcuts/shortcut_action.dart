@@ -41,7 +41,7 @@ enum ShortcutScope {
   // 查词弹窗内部的导航动作（Yomitan 式「上/下一个词条」）。这些动作**不经
   // resolveKeyboard / 页面派发**：弹窗内容是 WebView，输入事件先到 WebView 的
   // JS，故绑定由 popup_settings_injection 注入给 popup.js，命中即调
-  // hoshiFocusDictionaryEntryMove。它跨所有弹窗宿主（阅读器 / 视频 / 首页词典 /
+  // fushiFocusDictionaryEntryMove。它跨所有弹窗宿主（阅读器 / 视频 / 首页词典 /
   // 桌面全局查词窗）常驻，与任何页面 scope 都不竞争，故自成独立 co-active 组。
   dictionaryPopup;
 
@@ -414,8 +414,8 @@ enum ShortcutAction {
   //
   // 执行体不在 Dart 侧：弹窗内容是 WebView，滚轮事件先到 popup.js，故
   // popup_settings_injection 把这两个动作的滚轮绑定注入成
-  // `window.__hoshiEntryWheelBindings`，popup.js 的 wheel 监听命中即调
-  // `hoshiFocusDictionaryEntryMove('next'|'prev')`（TODO-1325 #5 part1 已有的能力，
+  // `window.__fushiEntryWheelBindings`，popup.js 的 wheel 监听命中即调
+  // `fushiFocusDictionaryEntryMove('next'|'prev')`（TODO-1325 #5 part1 已有的能力，
   // 此前只有阅读器选字光标模式下的硬编码 `.` / `,` 能触发，既不可改键也不覆盖
   // 视频/首页/全局查词的弹窗）。
   popupNextEntry(ShortcutScope.dictionaryPopup, 'popup_next_entry'),
@@ -431,7 +431,7 @@ enum ShortcutAction {
   //     readerCreateCardFromPopup（Never break userspace，默认键与本动作一致）；视频页读
   //     本动作的键盘绑定（见 video_hibiki_page 的 _buildVideoShortcuts）。
   //   · app 外（焦点在裸 WebView2 表面）：绑定经 popup_settings_injection 注入成
-  //     window.__hoshiPopupKeyBindings，由 popup.js 自己判定。
+  //     window.__fushiPopupKeyBindings，由 popup.js 自己判定。
   //   · 浏览器扩展：没有注入通道，吃 popup.js 里的同款内置默认值。
   // in-app 宿主会被显式注入 `null` 关掉 JS 侧判定——那里由 Dart 负责，两边都开就有在
   // 「WebView 键盘桥把同一次按键同时喂给 Flutter 和 JS」时制出两张卡的风险。

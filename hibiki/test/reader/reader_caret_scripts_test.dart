@@ -11,61 +11,61 @@ void main() {
   group('ReaderCaretScripts invocations', () {
     test('enter / exit / lookup / refresh', () {
       expect(ReaderCaretScripts.enterInvocation(),
-          'JSON.stringify(window.hoshiCaret.enter())');
-      expect(ReaderCaretScripts.exitInvocation(), 'window.hoshiCaret.exit()');
+          'JSON.stringify(window.fushiCaret.enter())');
+      expect(ReaderCaretScripts.exitInvocation(), 'window.fushiCaret.exit()');
       expect(ReaderCaretScripts.suspendInvocation(),
-          'window.hoshiCaret.suspend()');
+          'window.fushiCaret.suspend()');
       expect(ReaderCaretScripts.resumeInvocation(),
-          'JSON.stringify(window.hoshiCaret.resume())');
+          'JSON.stringify(window.fushiCaret.resume())');
       expect(
-          ReaderCaretScripts.lookupInvocation(), 'window.hoshiCaret.lookup()');
+          ReaderCaretScripts.lookupInvocation(), 'window.fushiCaret.lookup()');
       expect(ReaderCaretScripts.activateInvocation(),
-          'window.hoshiCaret.activate()');
+          'window.fushiCaret.activate()');
       expect(ReaderCaretScripts.longPressInvocation(),
-          'window.hoshiCaret.longPress()');
+          'window.fushiCaret.longPress()');
       expect(ReaderCaretScripts.refreshInvocation(),
-          'JSON.stringify(window.hoshiCaret.refresh())');
+          'JSON.stringify(window.fushiCaret.refresh())');
     });
 
     test('move passes the direction token through', () {
       expect(ReaderCaretScripts.moveInvocation('left'),
-          "JSON.stringify(window.hoshiCaret.move('left'))");
+          "JSON.stringify(window.fushiCaret.move('left'))");
       expect(ReaderCaretScripts.moveInvocation('forward'),
-          "JSON.stringify(window.hoshiCaret.move('forward'))");
+          "JSON.stringify(window.fushiCaret.move('forward'))");
     });
 
     test('scrollPage passes the direction boolean through (LB/RB page flip)',
         () {
       expect(ReaderCaretScripts.scrollPageInvocation(true),
-          'JSON.stringify(window.hoshiCaret.scrollPage(true))');
+          'JSON.stringify(window.fushiCaret.scrollPage(true))');
       expect(ReaderCaretScripts.scrollPageInvocation(false),
-          'JSON.stringify(window.hoshiCaret.scrollPage(false))');
+          'JSON.stringify(window.fushiCaret.scrollPage(false))');
       expect(ReaderCaretScripts.instantScrollInvocation(true),
-          'window.hoshiCaret.setInstantScroll(true)');
+          'window.fushiCaret.setInstantScroll(true)');
       expect(ReaderCaretScripts.instantScrollInvocation(false),
-          'window.hoshiCaret.setInstantScroll(false)');
+          'window.fushiCaret.setInstantScroll(false)');
     });
 
     test('jumpDict passes the direction boolean through (TODO-070 go-to-dict)',
         () {
       expect(ReaderCaretScripts.jumpDictInvocation(true),
-          'JSON.stringify(window.hoshiCaret.jumpDict(true))');
+          'JSON.stringify(window.fushiCaret.jumpDict(true))');
       expect(ReaderCaretScripts.jumpDictInvocation(false),
-          'JSON.stringify(window.hoshiCaret.jumpDict(false))');
+          'JSON.stringify(window.fushiCaret.jumpDict(false))');
     });
 
     test('reanchor passes the edge token through', () {
       expect(ReaderCaretScripts.reanchorInvocation('forward'),
-          "JSON.stringify(window.hoshiCaret.reanchor('forward'))");
+          "JSON.stringify(window.fushiCaret.reanchor('forward'))");
       expect(ReaderCaretScripts.reanchorInvocation('backward'),
-          "JSON.stringify(window.hoshiCaret.reanchor('backward'))");
+          "JSON.stringify(window.fushiCaret.reanchor('backward'))");
     });
 
     test('init embeds colour + insets, scopeSelector defaults to null', () {
       expect(
         ReaderCaretScripts.initInvocation(
             color: '#ff8a00', insetTop: 24.0, insetBottom: 48.0),
-        "window.hoshiCaret.init({color:'#ff8a00',insetTop:24.0,"
+        "window.fushiCaret.init({color:'#ff8a00',insetTop:24.0,"
         'insetBottom:48.0,scopeSelector:null})',
       );
     });
@@ -78,7 +78,7 @@ void main() {
           insetBottom: 0,
           scopeSelector: '.glossary-content',
         ),
-        "window.hoshiCaret.init({color:'#ff8a00',insetTop:0.0,"
+        "window.fushiCaret.init({color:'#ff8a00',insetTop:0.0,"
         "insetBottom:0.0,scopeSelector:'.glossary-content'})",
       );
     });
@@ -140,7 +140,7 @@ void main() {
     setUp(() => js = ReaderCaretScripts.source());
 
     test('defines the caret object and public API', () {
-      expect(js, contains('window.hoshiCaret'));
+      expect(js, contains('window.fushiCaret'));
       expect(js, contains('enter:'));
       expect(js, contains('exit:'));
       expect(js, contains('move:'));
@@ -251,7 +251,7 @@ void main() {
     test('long-press can mark popup dictionary summaries without toggling', () {
       expect(js, contains('longPress: function()'));
       expect(js, contains("closest('summary.dict-label')"));
-      expect(js, contains('window.__hoshiDictLongPress(summary)'));
+      expect(js, contains('window.__fushiDictLongPress(summary)'));
       expect(js, contains("return 'dict'"));
     });
 
@@ -290,7 +290,7 @@ void main() {
     });
 
     test('caret lookup reuses the selection pipeline', () {
-      expect(js, contains('window.hoshiSelection'));
+      expect(js, contains('window.fushiSelection'));
       expect(js, contains('selectFromPosition'));
     });
 

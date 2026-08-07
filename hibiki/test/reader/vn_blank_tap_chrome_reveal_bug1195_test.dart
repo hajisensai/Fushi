@@ -247,19 +247,19 @@ void main() {
       final String code = _stripLineComments(webview);
       final int callAt = code.indexOf("callHandler('onVnBlankTap')");
       expect(callAt, greaterThan(0));
-      // 回传点之前最近的分支条件必须同时门控 hoshiVnMode 与 hoshiVnClickAdvance。
+      // 回传点之前最近的分支条件必须同时门控 fushiVnMode 与 fushiVnClickAdvance。
       final String before = code.substring(0, callAt);
-      final int branchAt = before.lastIndexOf('hoshiVnMode');
+      final int branchAt = before.lastIndexOf('fushiVnMode');
       expect(branchAt, greaterThan(0),
-          reason: 'onVnBlankTap 必须落在 hoshiVnMode 门控之内');
+          reason: 'onVnBlankTap 必须落在 fushiVnMode 门控之内');
       final String guard = before.substring(branchAt);
       expect(
-        guard.contains('hoshiVnClickAdvance'),
+        guard.contains('fushiVnClickAdvance'),
         isTrue,
         reason: 'VN 点击推进关掉时也不得回传，否则等于给非 VN 语义开了后门',
       );
       expect(
-        guard.contains('_hoshiVnTapIsBlank('),
+        guard.contains('_fushiVnTapIsBlank('),
         isTrue,
         reason: '只有落在字面外的点才算空白点；点到文字仍应查词',
       );
@@ -301,7 +301,7 @@ void main() {
       // _handleVnBlankTap 只由 onVnBlankTap handler 触发；handler 注册处不含任何
       // 非 VN 入口。这里再钉一次：决策点里没有任何「非 VN 也走这条」的分支。
       expect(
-        body.contains('hoshiContinuousMode') || body.contains('paginatedMode'),
+        body.contains('fushiContinuousMode') || body.contains('paginatedMode'),
         isFalse,
         reason: 'VN 决策点不得感知其它 view-mode——它本来就只由 VN 分支触发，'
             '出现别的模式判断就说明信号源被放宽了',

@@ -90,9 +90,9 @@ void main() {
     test('引擎只定义不执行，install 之外没有顶层副作用', () {
       final String src = readerHibikiEngineSource().trim();
       expect(
-        src.startsWith('window.__hoshiEngine = {'),
+        src.startsWith('window.__fushiEngine = {'),
         isTrue,
-        reason: '引擎顶层只能是一个 window.__hoshiEngine 对象字面量赋值；'
+        reason: '引擎顶层只能是一个 window.__fushiEngine 对象字面量赋值；'
             '顶层副作用会脱离 install 的时序控制',
       );
       expect(src.endsWith('};'), isTrue);
@@ -153,20 +153,20 @@ void main() {
       engines.forEach((String mode, String engine) {
         expect(
           engine
-              .contains('window.__hoshiShells.${expected[mode]} = function(C)'),
+              .contains('window.__fushiShells.${expected[mode]} = function(C)'),
           isTrue,
           reason: '\$mode 引擎必须装 \${expected[mode]} shell',
         );
         // 分流仍读运行时 C：Dart 只决定嵌哪一份，不决定运行时走哪条分支。
         expect(engine.contains('if (C.vnMode)'), isTrue);
         expect(engine.contains('if (C.continuousMode)'), isTrue);
-        expect(engine.contains('window.__hoshiInstallShell(C);'), isTrue);
+        expect(engine.contains('window.__fushiInstallShell(C);'), isTrue);
       });
     });
 
     test('caret / furigana 的初始化改成读运行时 config', () {
       final String engine = readerHibikiEngineSource();
-      expect(engine.contains('window.hoshiCaret.init({'), isTrue);
+      expect(engine.contains('window.fushiCaret.init({'), isTrue);
       expect(engine.contains('color: C.caretColor,'), isTrue);
       expect(engine.contains("C.furiganaMode === 'partial'"), isTrue);
       expect(engine.contains("C.furiganaMode === 'toggle'"), isTrue);
@@ -184,15 +184,15 @@ void main() {
       );
       expect(
         boot.contains(
-            'window.__hoshiEngine.install(window.__fushiReaderConfig);'),
+            'window.__fushiEngine.install(window.__fushiReaderConfig);'),
         isTrue,
       );
       // 引擎独有符号一个都不许出现在每章载荷里。
       for (final String engineOnly in <String>[
-        'window.__hoshiShells.paginated = function(C)',
+        'window.__fushiShells.paginated = function(C)',
         'buildNodeOffsets',
-        'window.hoshiSelection',
-        'window.hoshiCaret.init({',
+        'window.fushiSelection',
+        'window.fushiCaret.init({',
       ]) {
         expect(
           boot.contains(engineOnly),

@@ -29,7 +29,7 @@ void main() {
   });
 
   test('still exposes the methods the caret depends on', () {
-    expect(js, contains('window.hoshiSelection'));
+    expect(js, contains('window.fushiSelection'));
     expect(js, contains('createWalker'));
     expect(js, contains('clearSelection'));
   });

@@ -7,12 +7,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// （随 app 打包的 assets/ 与真源 tools/）都守，且必须逐字节一致。
 ///
 /// 覆盖：
-/// - 取词复用 window.hoshiSelection.getCharacterAtPoint + selectFromPosition（不再用
+/// - 取词复用 window.fushiSelection.getCharacterAtPoint + selectFromPosition（不再用
 ///   已删的 fushiCaretFromPoint / expandWordWindow）。
 /// - 弹窗锚点=被查词的视口 bbox（highlightSelection 返回 rect → wordRect.x/y），
 ///   不再贴鼠标坐标（旧签名 fushiRender(popupJson, x, y, theme) 已消失）。
 /// - 高亮匹配长度用服务端 result.bestLength（缺失回落 term.length）。
-/// - 关窗清理调用 hoshiSelection.clearSelection() 撤高亮。
+/// - 关窗清理调用 fushiSelection.clearSelection() 撤高亮。
 void main() {
   // flutter test 的 cwd 是 hibiki 包根。两份镜像分别在 assets/ 与 ../tools/。
   final File assetsContent = File('assets/browser_extension/content.js');
@@ -26,29 +26,29 @@ void main() {
               reason: 'missing ${content.path}');
         });
 
-        test('取词复用 hoshiSelection（getCharacterAtPoint + selectFromPosition）',
+        test('取词复用 fushiSelection（getCharacterAtPoint + selectFromPosition）',
             () {
           final String src = content.readAsStringSync();
-          expect(src.contains('window.hoshiSelection.getCharacterAtPoint('),
+          expect(src.contains('window.fushiSelection.getCharacterAtPoint('),
               isTrue,
               reason:
-                  '${content.path} 未用 hoshiSelection.getCharacterAtPoint 取词');
+                  '${content.path} 未用 fushiSelection.getCharacterAtPoint 取词');
           expect(
-              src.contains('window.hoshiSelection.selectFromPosition('), isTrue,
+              src.contains('window.fushiSelection.selectFromPosition('), isTrue,
               reason:
-                  '${content.path} 未用 hoshiSelection.selectFromPosition 扩词');
+                  '${content.path} 未用 fushiSelection.selectFromPosition 扩词');
           // 旧取词路径已删（否则说明回退）。
           expect(src.contains('fushiCaretFromPoint'), isFalse,
               reason: '${content.path} 残留已删的 fushiCaretFromPoint');
           expect(src.contains('expandWordWindow('), isFalse,
               reason:
-                  '${content.path} 仍调用 expandWordWindow（应改走 hoshiSelection）');
+                  '${content.path} 仍调用 expandWordWindow（应改走 fushiSelection）');
         });
 
         test('弹窗钉在被查词旁（高亮 rect 锚点，非鼠标坐标）', () {
           final String src = content.readAsStringSync();
           expect(
-              src.contains('window.hoshiSelection.highlightSelection(termLen)'),
+              src.contains('window.fushiSelection.highlightSelection(termLen)'),
               isTrue,
               reason:
                   '${content.path} fushiRender 未调用 highlightSelection 取词 bbox+高亮');
@@ -76,7 +76,7 @@ void main() {
 
         test('关窗清理撤高亮（clearSelection）', () {
           final String src = content.readAsStringSync();
-          expect(src.contains('window.hoshiSelection.clearSelection()'), isTrue,
+          expect(src.contains('window.fushiSelection.clearSelection()'), isTrue,
               reason: '${content.path} 关窗未调用 clearSelection 撤高亮');
           // clearSelection 必须落在 fushiRemoveContainer（统一关窗点）里。
           final int removeIdx = src.indexOf('function fushiRemoveContainer()');
@@ -112,7 +112,7 @@ void main() {
           final String rectsBody =
               src.substring(rectsIdx, (rectsIdx + 900).clamp(0, src.length));
           expect(
-              rectsBody.contains('window.hoshiSelection.selection') &&
+              rectsBody.contains('window.fushiSelection.selection') &&
                   rectsBody.contains('.ranges') &&
                   rectsBody.contains('getClientRects()'),
               isTrue,

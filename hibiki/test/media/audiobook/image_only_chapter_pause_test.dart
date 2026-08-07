@@ -1,6 +1,6 @@
 // TODO-1037 / BUG-487：有声书跨章会一步跳过「独立成章的纯图片页」，即使开了
 // 「图片等待」也跳过——因为图片等待原本只在已渲染章同一 DOM 内相邻 cue 锚点间
-// 判定（window.__hoshiImageBetween），而纯图片章没有 cue、整章在不同 DOM，跨章
+// 判定（window.__fushiImageBetween），而纯图片章没有 cue、整章在不同 DOM，跨章
 // 时 document.contains(prev) 直接返回 null，onImageDetected 从不触发。
 //
 // 本测试两层：

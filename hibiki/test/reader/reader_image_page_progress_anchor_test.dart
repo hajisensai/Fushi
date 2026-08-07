@@ -8,7 +8,7 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// TODO-796 (Bug 1)：在目录里「导航到封面」时顶部阅读进度（百分比）不刷新。
 ///
 /// 根因：封面/插图是纯图片页（`paginationMetrics.totalChars==0`）→ JS
-/// `hoshiProgressDetails()` 返空串 → `parseReaderStableProgressDetails` 返 null →
+/// `fushiProgressDetails()` 返空串 → `parseReaderStableProgressDetails` 返 null →
 /// `_refreshProgress` 旧逻辑 `if (snapshot == null) return;` 一律早退，
 /// `_progressCurrentChars/_progressTotalChars` 保持上一章旧值，顶部百分比卡住。
 ///

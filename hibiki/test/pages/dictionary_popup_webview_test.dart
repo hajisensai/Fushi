@@ -41,9 +41,9 @@ void main() {
       // BUG-297 / TODO-393：换词复用热槽 WebView 时，renderPopup 之前必须先 (a) 复位
       // 视口滚动（热槽 DOM 残留旧滚动位置），(b) 归零 JS 句子上下文镜像标量（否则重建的
       // 「上 N / 下 N」选择器据残留值着色，与已清的宿主草稿不一致）。断言三者顺序：
-      // __hoshiResetPopupScroll → resetSentenceContextMirror → renderPopup。
+      // __fushiResetPopupScroll → resetSentenceContextMirror → renderPopup。
       final int scrollResetAt =
-          source.indexOf('window.__hoshiResetPopupScroll();');
+          source.indexOf('window.__fushiResetPopupScroll();');
       final int mirrorResetAt =
           source.indexOf('window.resetSentenceContextMirror();');
       final int renderAt = source.indexOf('window.renderPopup();');
@@ -95,7 +95,7 @@ void main() {
       );
       final int renderTokenAt = source.indexOf('window.__hibikiRenderToken =');
       final int resetAt =
-          source.indexOf('window.__hoshiResetPopupScroll = function() {');
+          source.indexOf('window.__fushiResetPopupScroll = function() {');
       expect(instantScrollAt, greaterThanOrEqualTo(0));
       expect(renderTokenAt, greaterThan(instantScrollAt),
           reason: 'BUG-480 render tokens must be stamped after the shared '

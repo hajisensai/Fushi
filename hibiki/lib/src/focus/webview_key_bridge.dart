@@ -63,7 +63,7 @@ library;
 /// 注意它与 [mouseButtons] 是否为空**无关**——弹窗要在「用户当前没绑鼠标键、之后
 /// 才绑上」时也能生效，listener 必须恒装、只让表变。
 ///
-/// [deferToPopupModal] 为 true 时，`window.__hoshiPopupModalDepth > 0`（popup.js 里
+/// [deferToPopupModal] 为 true 时，`window.__fushiPopupModalDepth > 0`（popup.js 里
 /// 有模态面板开着，如「已制卡动作」面板）期间整座桥让位。**查词弹窗必须打开它**：
 /// 桥是 capture 阶段且在 `onLoadStop` 就注册，比模态自己的 capture 监听早得多，不
 /// 让位就会抢走模态的 Escape——用户想关面板，结果整个查词窗被关掉（popup.js 那处
@@ -90,16 +90,16 @@ String webViewKeyBridgeScript({
   final String keyList = keys.map(_jsStringLiteral).join(', ');
   final String buttonList = mouseButtons.join(', ');
   final String installFlag =
-      _jsStringLiteral('__hoshiKeyBridgeInstalled_$handlerName');
-  final String keysVar = _jsStringLiteral('__hoshiKeyBridgeKeys_$handlerName');
+      _jsStringLiteral('__fushiKeyBridgeInstalled_$handlerName');
+  final String keysVar = _jsStringLiteral('__fushiKeyBridgeKeys_$handlerName');
   final String buttonsVar =
-      _jsStringLiteral('__hoshiKeyBridgeButtons_$handlerName');
+      _jsStringLiteral('__fushiKeyBridgeButtons_$handlerName');
   final String repeatGuard =
       forwardRepeats ? '' : '\n    if (e.repeat) return;';
   // 模态让位对键盘与鼠标同时成立：面板开着时点它上面的按钮，侧键也不该把整个查词窗
   // 关掉。故各监听体内统一先判这一条。
   const String modalGuard =
-      '\n    if ((window.__hoshiPopupModalDepth || 0) > 0) return;';
+      '\n    if ((window.__fushiPopupModalDepth || 0) > 0) return;';
   final String popupModalGuard = deferToPopupModal ? modalGuard : '';
   final String propagationGuard =
       stopPropagation ? '\n    e.stopImmediatePropagation();' : '';
@@ -131,7 +131,7 @@ String webViewKeyBridgeScript({
   window[$buttonsVar] = [$buttonList];
   if (window[$installFlag]) return;
   window[$installFlag] = true;
-  function _hoshiBridgeTokens(e) {
+  function _fushiBridgeTokens(e) {
     var mods = '';
     if (e.ctrlKey) mods += 'Ctrl+';
     if (e.shiftKey) mods += 'Shift+';
@@ -151,7 +151,7 @@ String webViewKeyBridgeScript({
       if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return;
     }
     var _keys = window[$keysVar] || [];
-    var _cand = _hoshiBridgeTokens(e);
+    var _cand = _fushiBridgeTokens(e);
     var _hit = null;
     for (var i = 0; i < _cand.length; i++) {
       if (_keys.indexOf(_cand[i]) !== -1) { _hit = _cand[i]; break; }

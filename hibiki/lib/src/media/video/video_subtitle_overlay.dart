@@ -346,7 +346,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
   final VideoSubtitleHitTester? hitTester;
 
   /// 选词光标（手柄查词，videoEnterCaret）当前停在的登记表下标；null = 光标未激活。
-  /// 命中该下标的字符外画一圈主题色光标环（与阅读器 hoshiCaret 环同语义）。下标由
+  /// 命中该下标的字符外画一圈主题色光标环（与阅读器 fushiCaret 环同语义）。下标由
   /// 页面驱动（进入锚点 / [moveSubtitleCaretEntry] 移动），几何真相源在本 overlay 的
   /// 登记表；越界（cue 已切换等）不画环，页面在下一次输入时重锚。
   final int? caretEntryIndex;

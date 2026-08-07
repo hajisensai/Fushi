@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// TODO-948/952 characterization test: pin down what
-/// `hoshiSelection.getSentenceContext` returns for the boundary DOM shapes the
+/// `fushiSelection.getSentenceContext` returns for the boundary DOM shapes the
 /// user's "card has no sentence/sentence audio" report blamed (no `<p>`, no
 /// sentence delimiter, sentence split across sibling text nodes, and an empty
 /// container).

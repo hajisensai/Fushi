@@ -38,7 +38,7 @@ function makeSandbox(fontReady, configured) {
         return Promise.resolve();
       },
     },
-    hoshiRelayoutDictionaries() { calls.relayout += 1; },
+    fushiRelayoutDictionaries() { calls.relayout += 1; },
   };
   const sandbox = {
     Promise,

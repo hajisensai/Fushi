@@ -96,13 +96,13 @@ void main() {
     expect(bound, contains("'Escape', 'Ctrl+KeyD'"),
         reason: '宿主声明的键（含组合键）必须原样进表');
     expect(bound,
-        contains("window['__hoshiKeyBridgeButtons_hostInputToken'] = [3]"),
+        contains("window['__fushiKeyBridgeButtons_hostInputToken'] = [3]"),
         reason: '鼠标绑定必须进表——弹窗表面此前完全没有非左键通道');
     expect(
-        empty, contains("window['__hoshiKeyBridgeKeys_hostInputToken'] = []"),
+        empty, contains("window['__fushiKeyBridgeKeys_hostInputToken'] = []"),
         reason: '空表也要下发，用于清掉热槽 WebView 上残留的旧表');
     expect(
-        bound, contains("window['__hoshiKeyBridgeInstalled_hostInputToken']"),
+        bound, contains("window['__fushiKeyBridgeInstalled_hostInputToken']"),
         reason: '幂等安装守卫：热槽反复注入不得叠加 listener');
     expect(bound, contains('if (e.repeat) return;'),
         reason: '按住关词典键不该逐层关掉整条弹窗栈');

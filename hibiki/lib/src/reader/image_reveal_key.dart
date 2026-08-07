@@ -4,7 +4,7 @@ import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
 
 /// EPUB 图片防剧透遮罩「已揭开」状态的稳定归一化 key（BUG-898）。
 ///
-/// 阅读器 WebView 的 JS `__hoshiImageRevealKey` 与图片库 [IllustrationsViewerPage] 的
+/// 阅读器 WebView 的 JS `__fushiImageRevealKey` 与图片库 [IllustrationsViewerPage] 的
 /// 磁盘 `File`，各自看到「同一张图」的原始标识不同：前者是 `fushi.local` 虚拟域名下的
 /// 绝对资源 URL（`https://fushi.local/epub/OEBPS/images/foo%20bar.jpg`，macOS/iOS 为自定义
 /// scheme 变体），后者是原生磁盘绝对路径。要让两端共享同一份持久化揭开状态

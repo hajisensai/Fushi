@@ -37,15 +37,15 @@ void main() {
     // 但因为语料已掩码，这两个标记不可能锚到注释里的同名文本上。
     setupScript = _between(
       source,
-      r'var hoshiContinuousMode = C.continuousMode;',
-      'window.hoshiProgressDetails = function()',
+      r'var fushiContinuousMode = C.continuousMode;',
+      'window.fushiProgressDetails = function()',
     );
   });
 
   group('BUG-368 paged mouse drag over text converts to page swipe', () {
     test('pointermove native-text branch resolves a paged page direction', () {
       final String pointerMove = _listenerBody(setupScript, 'pointermove');
-      // 转换发生在 native-text-start 分支内，且仅分页模式（!hoshiContinuousMode）。
+      // 转换发生在 native-text-start 分支内，且仅分页模式（!fushiContinuousMode）。
       // 窗口取该 `if` 的**块本体**（花括号配对）：旧写法 `substring(nativeBranch)` 一路
       // 吃到 listener 末尾，把 if 之后的通用拖动分支也算进窗口——那里有同名的
       // `_fushiReaderMouseDragClaimed = true` / `_fushiReaderClearMouseSelection()`，
@@ -55,7 +55,7 @@ void main() {
         'if (_fushiReaderMouseNativeTextStart)',
         lexicon: SourceLexicon.js,
       );
-      expect(containsCodeLine(branch, '!hoshiContinuousMode'), isTrue,
+      expect(containsCodeLine(branch, '!fushiContinuousMode'), isTrue,
           reason: '正文拖动转翻页只在分页模式，连续模式仍是拖动滚动');
       expect(
           containsCodeLine(branch, '_fushiReaderMouseDragResolvePageDirection'),

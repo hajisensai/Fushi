@@ -57,14 +57,14 @@ void main() {
       await eval!(paginationHarnessJs);
       final PaginationState before = PaginationState.fromJson(
         jsonDecode(await eval(
-          'window.hoshiTestHarness.getPaginationState();',
+          'window.fushiTestHarness.getPaginationState();',
         ) as String) as Map<String, dynamic>,
       );
       await eval('window.fushiReader.paginate("forward");');
       await tester.pump(const Duration(seconds: 1));
       final PaginationState after = PaginationState.fromJson(
         jsonDecode(await eval(
-          'window.hoshiTestHarness.getPaginationState();',
+          'window.fushiTestHarness.getPaginationState();',
         ) as String) as Map<String, dynamic>,
       );
       expect(after.scroll, greaterThanOrEqualTo(before.scroll));

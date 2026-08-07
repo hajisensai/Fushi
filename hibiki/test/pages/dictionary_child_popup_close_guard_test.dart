@@ -343,7 +343,7 @@ void main() {
               'glossary-content tap must fire tapOutside when __hasChildPopup '
               '(parent text closes the child popup)');
       // 叶子层仍选词：selectText 仍在分支内（在门控之后作为 falsy 路径）。
-      expect(branch, contains('window.hoshiSelection?.selectText('),
+      expect(branch, contains('window.fushiSelection?.selectText('),
           reason: 'leaf layer still selects a word (TODO-859 not regressed)');
     });
 

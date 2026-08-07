@@ -89,7 +89,7 @@ void main() {
       // Always import a FRESH EPUB (no audiobook) and open that exact book, so
       // the reader is the paginated chapter view. Tapping a pre-existing shelf
       // book is unsafe: one with a saved audiobook reopens in lyrics mode, which
-      // loads the lyrics page (not a chapter) and never injects window.hoshiCaret.
+      // loads the lyrics page (not a chapter) and never injects window.fushiCaret.
       final String bookKey = await _seedTestBook(tester, appModel);
       final navTargets = findPrimaryNavigationTargets();
       if (navTargets.isNotEmpty) {
@@ -131,7 +131,7 @@ void main() {
 
       // ── Enter the reader cursor (the CaretSurface machine's entry) ───
       // Verified on both Android and Windows (WebView2): the reader setup script
-      // runs and window.hoshiCaret is defined for a paginated book. Entry is an
+      // runs and window.fushiCaret is defined for a paginated book. Entry is an
       // async evaluateJavascript round-trip, so poll the surface state.
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       bool enteredReader = false;
@@ -158,7 +158,7 @@ void main() {
 
       // Wait for the popup WebView to mount, load (onLoadStop injects the caret)
       // and become reachable via the reader's topPopupState. Poll on the actual
-      // injected marker (window.hoshiCaret) so we don't race the load.
+      // injected marker (window.fushiCaret) so we don't race the load.
       bool popupShown = false;
       String caretType = 'no-popup';
       for (int i = 0; i < 80; i++) {
@@ -167,7 +167,7 @@ void main() {
         final eval2 = ReaderHibikiPage.debugEvaluateTopPopup;
         if (eval2 == null) continue;
         popupShown = true;
-        caretType = (await eval2('typeof window.hoshiCaret')).toString();
+        caretType = (await eval2('typeof window.fushiCaret')).toString();
         if (caretType == 'object') break;
       }
       expect(popupShown, isTrue,
@@ -176,19 +176,19 @@ void main() {
 
       // ── The SAME caret + selection are injected into the popup ───────
       // These read-only checks verify the new integration points: the reader
-      // injects window.hoshiCaret on the popup's load, and selection.js exposes
+      // injects window.fushiCaret on the popup's load, and selection.js exposes
       // the refactored selectFromPosition the caret lookup reuses.
       expect(caretType, 'object',
           reason: 'the char caret module is injected into the popup WebView');
 
       Future<String> typeOf(String expr) async =>
           (await popupEval('typeof ($expr)')).toString();
-      expect(await typeOf('window.hoshiCaret.init'), 'function');
-      expect(await typeOf('window.hoshiCaret.enter'), 'function');
-      expect(await typeOf('window.hoshiCaret.move'), 'function');
-      expect(await typeOf('window.hoshiCaret.lookup'), 'function');
+      expect(await typeOf('window.fushiCaret.init'), 'function');
+      expect(await typeOf('window.fushiCaret.enter'), 'function');
+      expect(await typeOf('window.fushiCaret.move'), 'function');
+      expect(await typeOf('window.fushiCaret.lookup'), 'function');
       expect(
-          await typeOf('window.hoshiSelection.selectFromPosition'), 'function',
+          await typeOf('window.fushiSelection.selectFromPosition'), 'function',
           reason: 'popup selection.js exposes selectFromPosition (caret lookup '
               'reuses it)');
 
@@ -219,19 +219,19 @@ void main() {
         }
         final String d = 'surface=${surface()} '
             "gc=${await popupEval("document.querySelectorAll('.glossary-content').length")} "
-            'active=${await popupEval('!!(window.hoshiCaret&&window.hoshiCaret.isActive())')}';
+            'active=${await popupEval('!!(window.fushiCaret&&window.fushiCaret.isActive())')}';
         expect(transferred, isTrue,
             reason: 'cursor must auto-transfer onto the rendered popup [$d]');
         expect(
             (await popupEval(
-                    '!!(window.hoshiCaret&&window.hoshiCaret.isActive())')) ==
+                    '!!(window.fushiCaret&&window.fushiCaret.isActive())')) ==
                 true,
             isTrue,
             reason: 'popup cursor active after transfer [$d]');
         // The popup cursor now navigates the whole popup (no scopeSelector), so
         // a gamepad can reach interactive controls and every kanji, not just the
         // definition body.
-        expect(await popupEval('window.hoshiCaret.scopeSelector'), isNull);
+        expect(await popupEval('window.fushiCaret.scopeSelector'), isNull);
 
         // Arrow keys move the popup cursor; it stays on the popup.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);

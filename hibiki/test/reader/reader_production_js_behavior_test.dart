@@ -150,7 +150,7 @@ assert(mergeInput[0].mediaStop === true && mergeInput[0].endCharCount === 10,
 assert(mergeInput[2].mediaStop === true && mergeInput[2].endCharCount === 30,
   'middle/tail media did not remain visible with adjacent text');
 
-const progressStart = data.engine.indexOf('window.hoshiProgressDetails = function()');
+const progressStart = data.engine.indexOf('window.fushiProgressDetails = function()');
 const progressEnd = data.engine.indexOf('\n  };', progressStart);
 assert(progressStart >= 0 && progressEnd > progressStart,
   'production progress assembly missing');
@@ -164,17 +164,17 @@ const progressReader = {
   isAtEnd: () => false
 };
 progressWindow.fushiReader = progressReader;
-assert(progressWindow.hoshiProgressDetails() === '90,100,7',
+assert(progressWindow.fushiProgressDetails() === '90,100,7',
   'non-terminal progress must remain fractional');
 progressReader.isAtEnd = () => true;
-assert(progressWindow.hoshiProgressDetails() === '100,100,7',
+assert(progressWindow.fushiProgressDetails() === '100,100,7',
   'physical terminal must clamp to total');
 progressReader.paginationMetrics = {totalChars: 0};
 progressReader.isAtEnd = () => false;
-assert(progressWindow.hoshiProgressDetails() === '',
+assert(progressWindow.fushiProgressDetails() === '',
   'pure-image middle page must not complete');
 progressReader.isAtEnd = () => true;
-assert(progressWindow.hoshiProgressDetails() === '1,1,-1',
+assert(progressWindow.fushiProgressDetails() === '1,1,-1',
   'pure-image terminal must emit the synthetic completion snapshot');
 
 process.stdout.write('OK');

@@ -237,7 +237,7 @@ tail`;
 
     // 载荷是**字面**拼接，所以每个子载荷必须整段原样出现在产物里。这是「被拼进去」
     // 最强的直接证据：哨兵符号会因为外壳/兄弟载荷里也出现同名符号而假绿（实测删掉
-    // caret 载荷后 `window.hoshiCaret` 仍在——它由 caret 初始化调用带进来），整段比对不会。
+    // caret 载荷后 `window.fushiCaret` 仍在——它由 caret 初始化调用带进来），整段比对不会。
     test('最终脚本里各子载荷整段原样在场', () {
       final Map<String, String> payloads = <String, String>{
         'selection': ReaderSelectionScripts.source(),
@@ -269,10 +269,10 @@ tail`;
 
     test('最终脚本里各子载荷的运行时哨兵同时在场', () {
       const Map<String, String> sentinels = <String, String>{
-        'selection': 'window.hoshiSelection',
+        'selection': 'window.fushiSelection',
         'pagination': 'window.fushiReader',
-        'caret': 'window.hoshiCaret',
-        'longPressDrag': '__hoshiTextSelectDragActive',
+        'caret': 'window.fushiCaret',
+        'longPressDrag': '__fushiTextSelectDragActive',
         'keyBridge': "'onSpaceKey'",
       };
       for (final MapEntry<String, String> entry in sentinels.entries) {
@@ -285,10 +285,10 @@ tail`;
     test('压缩之后哨兵依然在场（压缩不得吃掉任何子载荷）', () {
       final String compacted = ReaderScriptCompactor.compact(assembled);
       for (final String sentinel in <String>[
-        'window.hoshiSelection',
+        'window.fushiSelection',
         'window.fushiReader',
-        'window.hoshiCaret',
-        '__hoshiTextSelectDragActive',
+        'window.fushiCaret',
+        '__fushiTextSelectDragActive',
         "'onSpaceKey'",
       ]) {
         expect(compacted, contains(sentinel),

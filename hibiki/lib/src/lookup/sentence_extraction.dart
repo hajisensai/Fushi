@@ -9,7 +9,7 @@
 // can show the word in context.
 //
 // It deliberately mirrors the reader's DOM-based sentence walk in
-// reader_selection_scripts.dart (hoshiSelection.getSentenceContext): walk
+// reader_selection_scripts.dart (fushiSelection.getSentenceContext): walk
 // BACKWARD from the selection start until a sentence delimiter (that delimiter
 // is NOT included — the sentence begins after it), then FORWARD from the
 // selection end until a delimiter (that delimiter IS included, plus any trailing
@@ -41,12 +41,12 @@ class SentenceExtractionResult {
 }
 
 /// Sentence-terminating delimiters. Byte-identical to
-/// `hoshiSelection.sentenceDelimiters` in reader_selection_scripts.dart
+/// `fushiSelection.sentenceDelimiters` in reader_selection_scripts.dart
 /// ('。！？.!?\n\r'): the char AFTER one of these starts a new sentence.
 const String kSentenceDelimiters = '。！？.!?\n\r';
 
 /// Trailing closing punctuation pulled INTO the sentence after its terminating
-/// delimiter. Byte-identical to `hoshiSelection.trailingSentenceChars`
+/// delimiter. Byte-identical to `fushiSelection.trailingSentenceChars`
 /// ('。、！？…‥」』）)】〉》〕｝}］]').
 const String kTrailingSentenceChars = '。、！？…‥」』）)】〉》〕｝}］]';
 

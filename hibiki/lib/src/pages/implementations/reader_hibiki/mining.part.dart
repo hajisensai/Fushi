@@ -474,7 +474,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
 
     final String pathTag = _srtBookUid != null ? 'SRT' : 'AUDIOBOOK';
     if (!_cachedSentenceAudio) {
-      // 真正非 sasayaki 的书：纯 [data-cue-id] 字幕（合成书走 __hoshiHighlight 选择器）
+      // 真正非 sasayaki 的书：纯 [data-cue-id] 字幕（合成书走 __fushiHighlight 选择器）
       // 或 matcher 全失败（无锚点）。逐句高亮不走 sasayaki range，保持早退。
       debugPrint('[sentence-audio-hl] prepareCues path=$pathTag '
           'srtUid=$_srtBookUid audiobookKey=$_audiobookBookKey '

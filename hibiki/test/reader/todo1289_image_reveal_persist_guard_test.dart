@@ -14,56 +14,56 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 ///
 /// 根因——揭开只删 WebView 内 DOM 的 `blurred` class，章节 (重)载 / 布局设置切换会
 /// 重跑 initialize→_sharedInitImages 无条件重加 `blurred`，把揭开状态冲掉。修复把
-/// 「本次会话已揭开」的稳定 key 注入分页脚本，`_hoshiBlurImage` 命中即跳过重新遮罩；
+/// 「本次会话已揭开」的稳定 key 注入分页脚本，`_fushiBlurImage` 命中即跳过重新遮罩；
 /// 揭开状态由 Dart 会话集经 `onImageRevealed` 回传持久。这些守卫锁住三条不变量：
 ///   1. 分页/连续脚本在 C.blurImages 为真时消费 C.revealedKeys 并跳过已揭开图片；
-///   2. 揭开 key 计算器 `window.__hoshiImageRevealKey` 暴露给点击/焦点两条揭开路径；
+///   2. 揭开 key 计算器 `window.__fushiImageRevealKey` 暴露给点击/焦点两条揭开路径；
 ///   3. 点击（webview.part.dart）与键盘/手柄（caret）揭开都回传 onImageRevealed。
 String _read(String relPath) => File(relPath).readAsStringSync();
 
 void main() {
   group('TODO-1289 分页脚本消费已揭开集（不再无条件重新遮罩）', () {
-    test('blurImages=true 时嵌入 revealedKeys 并让 _hoshiBlurImage 跳过命中项', () {
+    test('blurImages=true 时嵌入 revealedKeys 并让 _fushiBlurImage 跳过命中项', () {
       final String js = ReaderPaginationScripts.paginatedShellSource();
       // 已揭开集被嵌入并建成查找表。
-      expect(js, contains('var _hoshiRevealedKeys = Object.create(null);'));
+      expect(js, contains('var _fushiRevealedKeys = Object.create(null);'));
       // BUG-1140 第二阶段①：已揭开集不再插进源码，改由运行时 C.revealedKeys 读。
-      expect(js, contains('var __hoshiKeys = C.revealedKeys;'));
+      expect(js, contains('var __fushiKeys = C.revealedKeys;'));
       // 遮罩前先看 key 是否已揭开——命中直接 return，不再重加 blurred。
-      expect(js, contains('if (key && _hoshiRevealedKeys[key]) return;'));
+      expect(js, contains('if (key && _fushiRevealedKeys[key]) return;'));
       // 揭开 key 计算器暴露给点击/焦点揭开路径复用。
       expect(
-          js, contains('window.__hoshiImageRevealKey = _hoshiImageRevealKey;'));
+          js, contains('window.__fushiImageRevealKey = _fushiImageRevealKey;'));
     });
 
     test('连续模式同样透传 revealedKeys（重排/重载不复原遮罩）', () {
       final String js = ReaderPaginationScripts.continuousShellSource();
-      expect(js, contains('var _hoshiRevealedKeys = Object.create(null);'));
-      expect(js, contains('var __hoshiKeys = C.revealedKeys;'));
-      expect(js, contains('if (key && _hoshiRevealedKeys[key]) return;'));
+      expect(js, contains('var _fushiRevealedKeys = Object.create(null);'));
+      expect(js, contains('var __fushiKeys = C.revealedKeys;'));
+      expect(js, contains('if (key && _fushiRevealedKeys[key]) return;'));
     });
 
     test('blurImages=false 时不装遮罩/揭开副作用（边界，零行为变化）', () {
       // 改动前是「blurImages 为假整段不注入」；引擎静态化后函数照常定义，
       // **副作用**（重新遮罩、两个 window 全局的暴露）仍受同一个开关门控。
       final String js = ReaderPaginationScripts.paginatedShellSource();
-      expect(js, contains('if (C.blurImages) _hoshiBlurImage(svg);'));
-      expect(js, contains('if (C.blurImages) _hoshiBlurImage(img);'));
+      expect(js, contains('if (C.blurImages) _fushiBlurImage(svg);'));
+      expect(js, contains('if (C.blurImages) _fushiBlurImage(img);'));
       expect(
         js,
-        contains('window.__hoshiImageRevealKey = _hoshiImageRevealKey;'),
+        contains('window.__fushiImageRevealKey = _fushiImageRevealKey;'),
         reason: '揭开 key 计算器仍要暴露给点击/焦点揭开路径复用',
       );
       // 两个 window 全局只在开了防剧透遮罩时才挂上（caret / 有声书桥接都靠这个
       // 全局在不在来探测），否则行为与改动前不一致。
       final int gate = js.indexOf('if (C.blurImages) {');
       final int export =
-          js.indexOf('window.__hoshiImageRevealKey = _hoshiImageRevealKey;');
+          js.indexOf('window.__fushiImageRevealKey = _fushiImageRevealKey;');
       expect(gate, isNonNegative);
       expect(export, greaterThan(gate),
           reason: '揭开 key 计算器的 window 暴露必须落在 C.blurImages 门控之内');
       final int markExport =
-          js.indexOf('window.__hoshiMarkImageRevealed = function(key)');
+          js.indexOf('window.__fushiMarkImageRevealed = function(key)');
       expect(markExport, greaterThan(gate), reason: '会话内揭开登记同样受同一个开关门控');
     });
   });
@@ -72,7 +72,7 @@ void main() {
     test('焦点/手柄揭开（caret 脚本）回传稳定 key', () {
       final String js = ReaderCaretScripts.source();
       expect(js, contains("this.el.classList.remove('blurred');"));
-      expect(js, contains('window.__hoshiImageRevealKey(this.el)'));
+      expect(js, contains('window.__fushiImageRevealKey(this.el)'));
       expect(js, contains("callHandler('onImageRevealed', revealKey)"));
     });
 

@@ -1,7 +1,7 @@
 // TODO-1349 续（用户复诉「安達としまむら2 往前翻还是会去到最开头，因为文字少」）忠实行为探针。
 //
 // 往前翻上一章走 restoreProgress(0.99)（章尾语义）。「文字少+图片」封面章不是纯图片章
-// （含少量文字 → __hoshiImageOnlyChapter=false），整页插图仍 loading="lazy"。真机 WebView 里
+// （含少量文字 → __fushiImageOnlyChapter=false），整页插图仍 loading="lazy"。真机 WebView 里
 // 离屏懒图不发请求 → 0 尺寸 → 被 buildPaginationMetrics（分页 maxScroll 塌缩）/ scrollToChapterEnd
 // 可见性判据（连续停章首）排除 → 往前翻落章首（用户「去到最开头」）。但 headless Chrome 不延迟
 // 离屏懒图（实测立即请求并加载全部图），故自然跑复现不出真机 0 尺寸态。本探针在拦截器里**扣住

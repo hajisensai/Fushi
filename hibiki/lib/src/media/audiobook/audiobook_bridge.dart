@@ -46,7 +46,7 @@ class AudiobookBridge {
   /// 可见性 —— 阅读器多栏 overflow:hidden scrollLeft 离散翻页会把整页插图一帧跳过，
   /// IO 永不达阈值，故历史上图片暂停一直无效，见 BUG-007）。
   static const String _highlightFn = '''
-window.__hoshiImageBetween = function(prev, el) {
+window.__fushiImageBetween = function(prev, el) {
   if (!prev || !el || prev === el || !document.contains(prev)) return null;
   var a = prev, b = el;
   if (prev.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) {
@@ -65,24 +65,24 @@ window.__hoshiImageBetween = function(prev, el) {
 
 // TODO-1178 / TODO-1367：揭开「上一句 prev → 当前句 el」区间内音频已读过的插图的防
 // 剧透模糊遮罩（blurred 类，CSS filter:blur 盖在 img.block-img.blurred /
-// svg.block-img.blurred 上）。与 __hoshiImageBetween 的暂停判据平行、不改动它：那个
+// svg.block-img.blurred 上）。与 __fushiImageBetween 的暂停判据平行、不改动它：那个
 // 只取第一张图作暂停锚点，本函数遍历区间全部图一次全揭，一次推进跨多图也全揭。
 //
 // TODO-1367 根因（用户报「遮罩没去掉」）：旧实现只 querySelectorAll('img.blurred') +
 // classList.remove，两处漏洞：① 区间内的插图常是 loading=lazy 的离屏懒图，cue 推进跨
-// 过它时它还没 load、还没被 _hoshiClassifyBlockImg 加上 blurred 类 → 'img.blurred'
-// 选择器抓不到 → 随后图片暂停把视口滚到它、它才 load，此刻 _hoshiBlurImage 见 key 不在
+// 过它时它还没 load、还没被 _fushiClassifyBlockImg 加上 blurred 类 → 'img.blurred'
+// 选择器抓不到 → 随后图片暂停把视口滚到它、它才 load，此刻 _fushiBlurImage 见 key 不在
 // 已揭活集 → 补加 blurred → 用户看到「暂停在一张仍然模糊的图上」。② 就算当场揭掉也不
 // 持久：章节 (重)载 / 布局切换重跑 _sharedInitImages 会无条件重加 blurred（TODO-1289
 // 同款重遮罩）。修法与点击 / 手柄揭开对齐：对区间内每张（含未 load 懒图）登记稳定 reveal
-// key 进「本会话已揭开」活集（__hoshiMarkImageRevealed，令日后 load 时 _hoshiBlurImage
+// key 进「本会话已揭开」活集（__fushiMarkImageRevealed，令日后 load 时 _fushiBlurImage
 // 跳过遮罩）+ 有 blurred 类当场删除 + 回传 onImageRevealed 让 Dart 会话集持久（重载不再
 // 遮罩）。只揭音频已跨过（读到）的图；未读到的保持模糊。仅图片防剧透模糊开启时有效
-// （__hoshiImageRevealKey 只有 blurImages 才注入）；关闭时无 blurred 类 / 无 key 机制，
+// （__fushiImageRevealKey 只有 blurImages 才注入）；关闭时无 blurred 类 / 无 key 机制，
 // 前置守卫直接 no-op，绝不动懒加载 / DOM（向后兼容零副作用）。返回处理的图片数量。
-window.__hoshiRevealBlurredBetween = function(prev, el) {
+window.__fushiRevealBlurredBetween = function(prev, el) {
   if (!prev || !el || prev === el || !document.contains(prev)) return 0;
-  if (typeof window.__hoshiImageRevealKey !== 'function') return 0;
+  if (typeof window.__fushiImageRevealKey !== 'function') return 0;
   var a = prev, b = el;
   if (prev.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) {
     a = el; b = prev;
@@ -99,9 +99,9 @@ window.__hoshiRevealBlurredBetween = function(prev, el) {
           (b.compareDocumentPosition(m) & (Node.DOCUMENT_POSITION_PRECEDING | Node.DOCUMENT_POSITION_CONTAINED_BY)))) {
       continue;
     }
-    var key = window.__hoshiImageRevealKey(m);
-    if (key && typeof window.__hoshiMarkImageRevealed === 'function') {
-      window.__hoshiMarkImageRevealed(key);
+    var key = window.__fushiImageRevealKey(m);
+    if (key && typeof window.__fushiMarkImageRevealed === 'function') {
+      window.__fushiMarkImageRevealed(key);
     }
     if (m.classList && m.classList.contains('blurred')) {
       m.classList.remove('blurred');
@@ -115,13 +115,13 @@ window.__hoshiRevealBlurredBetween = function(prev, el) {
 };
 
 // BUG-898：揭开当前章（文档）内**全部**防剧透模糊图。纯图片章（无 cue，音频跨到它时走
-// _pauseThroughImageOnlyChapters → awaitImageChapterPause 停留，不经 __hoshiRevealBlurredBetween
+// _pauseThroughImageOnlyChapters → awaitImageChapterPause 停留，不经 __fushiRevealBlurredBetween
 // 的 prev→el 区间判定）音频停在模糊图上——用户看到「暂停在一张仍然模糊的图上」。逻辑与
-// __hoshiRevealBlurredBetween 一致（登记 key 进已揭活集 + 删 blurred 类 + 回传 onImageRevealed
-// 持久化），只是不限区间、揭整章。仅 blurImages 开时 __hoshiImageRevealKey 存在，否则前置
+// __fushiRevealBlurredBetween 一致（登记 key 进已揭活集 + 删 blurred 类 + 回传 onImageRevealed
+// 持久化），只是不限区间、揭整章。仅 blurImages 开时 __fushiImageRevealKey 存在，否则前置
 // 守卫 no-op（无 blurred 类 / 无 key 机制，向后兼容零副作用）。返回处理的图片数。
-window.__hoshiRevealAllBlurred = function() {
-  if (typeof window.__hoshiImageRevealKey !== 'function') return 0;
+window.__fushiRevealAllBlurred = function() {
+  if (typeof window.__fushiImageRevealKey !== 'function') return 0;
   var media = document.querySelectorAll('img, svg');
   var revealed = 0;
   for (var i = 0; i < media.length; i++) {
@@ -130,9 +130,9 @@ window.__hoshiRevealAllBlurred = function() {
         (m.classList.contains('gaiji') || m.classList.contains('gaiji-line'))) {
       continue;
     }
-    var key = window.__hoshiImageRevealKey(m);
-    if (key && typeof window.__hoshiMarkImageRevealed === 'function') {
-      window.__hoshiMarkImageRevealed(key);
+    var key = window.__fushiImageRevealKey(m);
+    if (key && typeof window.__fushiMarkImageRevealed === 'function') {
+      window.__fushiMarkImageRevealed(key);
     }
     if (m.classList && m.classList.contains('blurred')) {
       m.classList.remove('blurred');
@@ -145,7 +145,7 @@ window.__hoshiRevealAllBlurred = function() {
   return revealed;
 };
 
-window.__hoshiRevealTarget = function(t) {
+window.__fushiRevealTarget = function(t) {
   if (!t) return;
   var r = window.fushiReader;
   // 分页模式 fushiReader 没有 scrollToTarget、且 body overflow:hidden 下原生
@@ -174,14 +174,14 @@ window.__hoshiRevealTarget = function(t) {
 // TODO-724：滚图必须受 imagePauseSec(>0) 门控。imagePauseSec=0 时图片暂停关闭，
 // 不应把视口无预兆滚到插图——返回 false 让调用方按正常 cue 跟随 reveal el。
 // 只有 imagePauseSec>0（图片暂停开启）时才滚到插图，配合 Dart 的暂停让用户看见图。
-window.__hoshiImagePauseAdvance = function(el, reveal, pauseEnabled) {
-  var prev = window.__hoshiPrevHighlight;
-  var crossed = window.__hoshiImageBetween(prev, el);
-  window.__hoshiPrevHighlight = el;
+window.__fushiImagePauseAdvance = function(el, reveal, pauseEnabled) {
+  var prev = window.__fushiPrevHighlight;
+  var crossed = window.__fushiImageBetween(prev, el);
+  window.__fushiPrevHighlight = el;
   // TODO-1178：音频已读到（跨过）的图揭开防剧透模糊。独立于图片暂停：在下面
   // reveal/pauseEnabled 门控之前无条件揭区间内所有 blurred 图；未开图片模糊时
   // 无元素带 blurred 类，remove 天然 no-op，与图片暂停功能解耦、零副作用。
-  window.__hoshiRevealBlurredBetween(prev, el);
+  window.__fushiRevealBlurredBetween(prev, el);
   if (!crossed) return false;
   if (window.flutter_inappwebview) {
     window.flutter_inappwebview.callHandler('onImageDetected');
@@ -197,40 +197,40 @@ window.__hoshiImagePauseAdvance = function(el, reveal, pauseEnabled) {
         try { crossed.decode(); } catch (e) {}
       }
     }
-    window.__hoshiRevealTarget(crossed);
+    window.__fushiRevealTarget(crossed);
     return true;
   }
   return false;
 };
 
-window.__hoshiHighlight = function(selector, reveal, pauseEnabled) {
+window.__fushiHighlight = function(selector, reveal, pauseEnabled) {
   if (reveal === undefined) reveal = true;
   document.querySelectorAll('.hoshi-active').forEach(function(e) {
     e.classList.remove('hoshi-active');
   });
-  if (!selector) { window.__hoshiPrevHighlight = null; return; }
+  if (!selector) { window.__fushiPrevHighlight = null; return; }
   var el = document.querySelector(selector);
   if (!el) return;
-  var revealedImage = window.__hoshiImagePauseAdvance(el, reveal, pauseEnabled);
+  var revealedImage = window.__fushiImagePauseAdvance(el, reveal, pauseEnabled);
   el.classList.add('hoshi-active');
   if (reveal && !revealedImage) {
-    window.__hoshiRevealTarget(el);
+    window.__fushiRevealTarget(el);
   }
 };
 
 // TODO-724：跳章 / 位置恢复完成后由 Dart 调用，重置 cue 推进锚点。
 // 否则恢复到中段后首次 cue 推进时 prev 仍指向很早的元素，
-// __hoshiImageBetween 会跨越中间所有插图、误把视口 reveal 到一张远处的图。
-window.__hoshiResetPrevHighlight = function() {
-  window.__hoshiPrevHighlight = null;
+// __fushiImageBetween 会跨越中间所有插图、误把视口 reveal 到一张远处的图。
+window.__fushiResetPrevHighlight = function() {
+  window.__fushiPrevHighlight = null;
 };
 ''';
 
   /// SRT cue 点击事件：委托事件监听 [data-cue-id]，通过 callHandler 通知 Dart。
   static const String _cueClickFn = '''
 (function() {
-  if (window.__hoshiCueClickBound) return;
-  window.__hoshiCueClickBound = true;
+  if (window.__fushiCueClickBound) return;
+  window.__fushiCueClickBound = true;
   document.addEventListener('click', function(e) {
     var sel = window.getSelection();
     if (sel && !sel.isCollapsed) return;
@@ -247,11 +247,11 @@ window.__hoshiResetPrevHighlight = function() {
 
   /// Sasayaki 句子高亮 + 点击事件。
   ///
-  /// `__hoshiIsSkippable` 保留 — 归一化偏移计算需要它。
-  /// 删除了 `__hoshiLoadSasayakiRefs`（不再依赖 ttu IndexedDB）。
+  /// `__fushiIsSkippable` 保留 — 归一化偏移计算需要它。
+  /// 删除了 `__fushiLoadSasayakiRefs`（不再依赖 ttu IndexedDB）。
   /// cue 应用改为调用 `window.fushiReader.applySasayakiCues()`。
   static const String _sentenceAudioFn = '''
-window.__hoshiIsSkippable = function(c) {
+window.__fushiIsSkippable = function(c) {
   if (c >= 0x30 && c <= 0x39) return false;
   if (c >= 0x41 && c <= 0x5A) return false;
   if (c >= 0x61 && c <= 0x7A) return false;
@@ -278,13 +278,13 @@ window.__hoshiIsSkippable = function(c) {
   return true;
 };
 
-window.__hoshiClearSentenceAudioApplied = function() {
+window.__fushiClearSentenceAudioApplied = function() {
   if (window.fushiReader && typeof window.fushiReader.clearSentenceAudioCue === 'function') {
     window.fushiReader.clearSentenceAudioCue();
   }
 };
 
-window.__hoshiApplySentenceAudioCues = function(sectionIndex, cuesJson) {
+window.__fushiApplySentenceAudioCues = function(sectionIndex, cuesJson) {
   if (!document.body && !document.documentElement) return;
   if (window.fushiReader && typeof window.fushiReader.applySentenceAudioCues === 'function') {
     window.fushiReader.applySentenceAudioCues(cuesJson);
@@ -292,17 +292,17 @@ window.__hoshiApplySentenceAudioCues = function(sectionIndex, cuesJson) {
   }
 };
 
-window.__hoshiSentenceAudioAnchorEl = function(key) {
+window.__fushiSentenceAudioAnchorEl = function(key) {
   var r = window.fushiReader;
   if (!r) return null;
   // BUG-898 根因：这里原本是 `if(cueRangesMap) {...} else if(cueWrappers) {...}`。
-  // 但 __hoshiCssHighlightsSupported 在现代 WebView 恒为 true 且 cueRangesMap **从不被
+  // 但 __fushiCssHighlightsSupported 在现代 WebView 恒为 true 且 cueRangesMap **从不被
   // 填充**（applySasayakiCues 只 set cueWrappers，无 cueRangesMap.set），于是第一分支恒
   // 进入、`ranges` 恒 undefined、直接 return null——cueWrappers 兜底被 `else` 永久跳过。
-  // 结果 anchor 恒为 null → __hoshiHighlightSasayakiCueById 的 `if(anchor)` 守卫使
-  // __hoshiImagePauseAdvance 永不调用 → 有声书跨图既不暂停也不揭遮罩（用户报「章节正文里
+  // 结果 anchor 恒为 null → __fushiHighlightSasayakiCueById 的 `if(anchor)` 守卫使
+  // __fushiImagePauseAdvance 永不调用 → 有声书跨图既不暂停也不揭遮罩（用户报「章节正文里
   // 的图被直接无视」）。修法：cueRangesMap 命中不了就**无条件兜底** cueWrappers（拆 else）。
-  if (window.__hoshiCssHighlightsSupported && r.cueRangesMap && r.cueRangesMap.get) {
+  if (window.__fushiCssHighlightsSupported && r.cueRangesMap && r.cueRangesMap.get) {
     var ranges = r.cueRangesMap.get(key);
     if (ranges && ranges[0]) {
       var n = ranges[0].startContainer;
@@ -316,14 +316,14 @@ window.__hoshiSentenceAudioAnchorEl = function(key) {
   return null;
 };
 
-window.__hoshiHighlightSentenceAudioCueById = function(key, reveal, pauseEnabled) {
+window.__fushiHighlightSentenceAudioCueById = function(key, reveal, pauseEnabled) {
   if (reveal === undefined) reveal = true;
   var r = window.fushiReader;
   if (!r || typeof r.highlightSentenceAudioCue !== 'function') return false;
-  var anchor = window.__hoshiSentenceAudioAnchorEl(key);
+  var anchor = window.__fushiSentenceAudioAnchorEl(key);
   var revealedImage = false;
-  if (anchor && typeof window.__hoshiImagePauseAdvance === 'function') {
-    revealedImage = window.__hoshiImagePauseAdvance(anchor, reveal, pauseEnabled);
+  if (anchor && typeof window.__fushiImagePauseAdvance === 'function') {
+    revealedImage = window.__fushiImagePauseAdvance(anchor, reveal, pauseEnabled);
   }
   // 跨过插图且需 reveal 时：让 reader 只高亮不自动滚（已滚到插图）；否则正常 reveal。
   r.highlightSentenceAudioCue(key, revealedImage ? false : reveal);
@@ -351,9 +351,9 @@ window.__sentenceAudioRequestNav = async function(n) {
 
   /// 自动句子标注函数：按日文句末标点分割文本节点，包裹 data-hoshi-sid span。
   static const String _annotateFn = '''
-window.__hoshiAnnotate = function(chapterHref) {
-  if (document.__hoshiAnnotated) return;
-  document.__hoshiAnnotated = true;
+window.__fushiAnnotate = function(chapterHref) {
+  if (document.__fushiAnnotated) return;
+  document.__fushiAnnotated = true;
 
   var sidCounter = 0;
   var sentenceEnd = /[。！？」』）]/;
@@ -380,8 +380,8 @@ window.__hoshiAnnotate = function(chapterHref) {
       buf += text[i];
       if (sentenceEnd.test(text[i]) || i === text.length - 1) {
         var span = document.createElement('span');
-        span.dataset.hoshiSid = String(sidCounter++);
-        span.dataset.hoshiChapter = chapterHref;
+        span.dataset.fushiSid = String(sidCounter++);
+        span.dataset.fushiChapter = chapterHref;
         span.textContent = buf;
         frag.appendChild(span);
         buf = '';
@@ -446,55 +446,55 @@ window.__hoshiAnnotate = function(chapterHref) {
     if (cue == null || cue.textFragmentId.isEmpty) {
       await controller.evaluateJavascript(
         source:
-            'if(typeof __hoshiHighlight!=="undefined")__hoshiHighlight("");',
+            'if(typeof __fushiHighlight!=="undefined")__fushiHighlight("");',
       );
       return;
     }
     final String raw = cue.textFragmentId;
     final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(raw);
     // BUG-366/TODO-630 诊断：播放期逐句高亮的路径分叉。frag==null（如纯 SRT cue
-    // 的 textFragmentId='[data-cue-id=...]'）走普通 __hoshiHighlight，完全不碰
+    // 的 textFragmentId='[data-cue-id=...]'）走普通 __fushiHighlight，完全不碰
     // sasayaki 高亮系统——即使 setup 期建了 range 也不会激活 ::highlight。
     // TODO-724：pauseEnabled = imagePauseSec>0；仅它为真时跨图才滚到插图。
     if (frag != null) {
       await controller.evaluateJavascript(
-        source: 'if(typeof __hoshiHighlightSentenceAudioCueById!=="undefined")'
-            'window.__hoshiHighlightSentenceAudioCueById('
+        source: 'if(typeof __fushiHighlightSentenceAudioCueById!=="undefined")'
+            'window.__fushiHighlightSentenceAudioCueById('
             '${jsonEncode(raw)}, $reveal, $pauseEnabled);',
       );
       return;
     }
     await controller.evaluateJavascript(
-      source: 'if(typeof __hoshiHighlight!=="undefined")'
-          '__hoshiHighlight(${jsonEncode(raw)}, $reveal, $pauseEnabled);',
+      source: 'if(typeof __fushiHighlight!=="undefined")'
+          '__fushiHighlight(${jsonEncode(raw)}, $reveal, $pauseEnabled);',
     );
   }
 
-  /// 重置 cue 推进锚点（`__hoshiPrevHighlight`）。
+  /// 重置 cue 推进锚点（`__fushiPrevHighlight`）。
   ///
   /// TODO-724：跳章 / 位置恢复完成后调用。否则恢复到章节中段后，首次 cue 推进时
-  /// `__hoshiPrevHighlight` 仍指向很早的元素，`__hoshiImageBetween` 会跨越中间
-  /// 所有插图、误把视口 reveal 到一张远处的图。与高亮清空（`__hoshiHighlight("")`）
+  /// `__fushiPrevHighlight` 仍指向很早的元素，`__fushiImageBetween` 会跨越中间
+  /// 所有插图、误把视口 reveal 到一张远处的图。与高亮清空（`__fushiHighlight("")`）
   /// 不同：那是清当前高亮 class，本方法只把推进锚点归零，不动可见高亮。
   static Future<void> resetImagePauseAnchor(
     InAppWebViewController controller,
   ) async {
     await controller.evaluateJavascript(
-      source: 'if(typeof __hoshiResetPrevHighlight!=="undefined")'
-          '__hoshiResetPrevHighlight();',
+      source: 'if(typeof __fushiResetPrevHighlight!=="undefined")'
+          '__fushiResetPrevHighlight();',
     );
   }
 
   /// BUG-898：揭开当前章内全部防剧透模糊图。纯图片章走 [awaitImageChapterPause] 停留、
-  /// 不经 `__hoshiRevealBlurredBetween`（那要 prev→el 两个 cue 锚点），音频会停在模糊图
+  /// 不经 `__fushiRevealBlurredBetween`（那要 prev→el 两个 cue 锚点），音频会停在模糊图
   /// 上。停留前调本方法揭遮罩——回传的 key 经 `onImageRevealed` handler 持久化 + 登记
   /// 会话集。`blurImages` 关时 JS 前置守卫 no-op（零副作用）。
   static Future<void> revealAllBlurred(
     InAppWebViewController controller,
   ) async {
     await controller.evaluateJavascript(
-      source: 'if(typeof __hoshiRevealAllBlurred!=="undefined")'
-          '__hoshiRevealAllBlurred();',
+      source: 'if(typeof __fushiRevealAllBlurred!=="undefined")'
+          '__fushiRevealAllBlurred();',
     );
   }
 
@@ -504,8 +504,8 @@ window.__hoshiAnnotate = function(chapterHref) {
     required String selector,
   }) async {
     await controller.evaluateJavascript(
-      source: 'if(typeof __hoshiHighlight!=="undefined")'
-          '__hoshiHighlight(${jsonEncode(selector)});',
+      source: 'if(typeof __fushiHighlight!=="undefined")'
+          '__fushiHighlight(${jsonEncode(selector)});',
     );
   }
 
@@ -558,7 +558,7 @@ window.__hoshiAnnotate = function(chapterHref) {
     final String json = jsonEncode(payload);
     await controller.evaluateJavascript(
       source:
-          'if(typeof __hoshiApplySentenceAudioCues!=="undefined")__hoshiApplySentenceAudioCues($sectionIndex,$json);',
+          'if(typeof __fushiApplySentenceAudioCues!=="undefined")__fushiApplySentenceAudioCues($sectionIndex,$json);',
     );
   }
 
@@ -568,8 +568,8 @@ window.__hoshiAnnotate = function(chapterHref) {
     required String chapterHref,
   }) async {
     await controller.evaluateJavascript(
-      source: 'if(typeof __hoshiAnnotate!=="undefined")'
-          '__hoshiAnnotate(${jsonEncode(chapterHref)});',
+      source: 'if(typeof __fushiAnnotate!=="undefined")'
+          '__fushiAnnotate(${jsonEncode(chapterHref)});',
     );
   }
 

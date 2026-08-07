@@ -79,7 +79,7 @@ void main() {
       () {
         // 改动前：Dart 的 shellScript 按 vnMode/continuousMode 三选一**插值**出一份
         // shell。现在 Dart 只决定嵌哪一份 shell，运行时分流点是引擎里的
-        // window.__hoshiInstallShell（读 C）—— 判据与顺序必须逐条保留。
+        // window.__fushiInstallShell（读 C）—— 判据与顺序必须逐条保留。
         final String engine = ReaderPaginationScripts.engineShell(
             vnMode: true, continuousMode: false);
         final int vnIdx = engine.indexOf('if (C.vnMode)');
@@ -90,7 +90,7 @@ void main() {
         expect(vnIdx < contIdx, isTrue,
             reason: 'vnMode branch must precede continuousMode branch');
         expect(
-          engine.contains('window.__hoshiShells.vn = function(C)'),
+          engine.contains('window.__fushiShells.vn = function(C)'),
           isTrue,
           reason: 'the VN engine must carry the VN shell installer',
         );
@@ -226,7 +226,7 @@ void main() {
           reason: 'VN blank-tap must be routed to Dart, not paginated in JS',
         );
         expect(
-          webview.contains('hoshiVnClickAdvance'),
+          webview.contains('fushiVnClickAdvance'),
           isTrue,
           reason: 'VN click-advance flag must be injected',
         );

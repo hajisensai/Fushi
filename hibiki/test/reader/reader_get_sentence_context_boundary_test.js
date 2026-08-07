@@ -1,4 +1,4 @@
-// TODO-948/952 characterization harness for hoshiSelection.getSentenceContext.
+// TODO-948/952 characterization harness for fushiSelection.getSentenceContext.
 //
 // PURPOSE: This test does NOT change getSentenceContext behaviour. It EXECUTES
 // the real JS (extracted verbatim from reader_selection_scripts.dart) against a
@@ -25,7 +25,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-// --- Extract the verbatim hoshiSelection source from the Dart raw string. ---
+// --- Extract the verbatim fushiSelection source from the Dart raw string. ---
 const scriptsPath = path.resolve(
   __dirname,
   '../../lib/src/reader/reader_selection_scripts.dart',
@@ -154,8 +154,8 @@ function loadHoshiSelection(document) {
   const sandbox = { window: windowObj, document, Node, NodeFilter, Math, console };
   vm.createContext(sandbox);
   vm.runInContext(jsSource, sandbox, { filename: 'hoshi-selection.js' });
-  assert.ok(windowObj.hoshiSelection, 'window.hoshiSelection must be defined');
-  return windowObj.hoshiSelection;
+  assert.ok(windowObj.fushiSelection, 'window.fushiSelection must be defined');
+  return windowObj.fushiSelection;
 }
 
 function record(label, value) {

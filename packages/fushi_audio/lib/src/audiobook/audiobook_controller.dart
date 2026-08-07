@@ -461,7 +461,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// TODO-1037：跨章推进经过「独立成章的纯图片页」时的停留。
   ///
   /// 与 [triggerImagePause] 的区别：后者是 reader 在**已渲染章同一 DOM 内**两条
-  /// 相邻 cue 锚点间跨过 `<img>` 时调用（`window.__hoshiImageBetween`），用一次性
+  /// 相邻 cue 锚点间跨过 `<img>` 时调用（`window.__fushiImageBetween`），用一次性
   /// Timer 暂停 + 到点自恢复，调用方不等待。但纯图片章没有 cue → cue 驱动的跨章会
   /// 一步从文本章 N 跳到下一个有文本的章 N+k，中间整章是图片的章从不挂载、从不被
   /// 那条 DOM 内判定看见（两锚点在不同章 DOM，`document.contains(prev)` 直接返回

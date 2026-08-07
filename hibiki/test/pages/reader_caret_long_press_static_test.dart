@@ -41,8 +41,8 @@ void main() {
     final String source = File('assets/popup/popup.js').readAsStringSync();
 
     expect(
-        source, contains('summary.__hoshiToggleSelection = toggleSelection'));
-    expect(source, contains('window.__hoshiDictLongPress'));
+        source, contains('summary.__fushiToggleSelection = toggleSelection'));
+    expect(source, contains('window.__fushiDictLongPress'));
     expect(source, contains("typeof toggle !== 'function'"));
   });
 }

@@ -42,21 +42,21 @@ class ReaderSelectionScripts {
     int maxLength, {
     bool fromHover = false,
   }) =>
-      'window.hoshiSelection.selectText($x, $y, $maxLength, $fromHover)';
+      'window.fushiSelection.selectText($x, $y, $maxLength, $fromHover)';
 
   static String highlightInvocation(int count) =>
-      'JSON.stringify(window.hoshiSelection.highlightSelection($count))';
+      'JSON.stringify(window.fushiSelection.highlightSelection($count))';
 
-  static String clearInvocation() => 'window.hoshiSelection.clearSelection()';
+  static String clearInvocation() => 'window.fushiSelection.clearSelection()';
 
   /// TODO-1317: 移动端「长按拖选」手势 IIFE（注入进阅读器 setup script）。触屏在正文
-  /// 长按 [delayMs] 毫秒进入拖选态，拖动经 `window.hoshiSelection.updateRangeSelection`
+  /// 长按 [delayMs] 毫秒进入拖选态，拖动经 `window.fushiSelection.updateRangeSelection`
   /// 扩展 app 自绘选区（CSS Custom Highlight `hoshi-selection`，绝不建立原生选区，
   /// 保住 TODO-1279 触屏无双选区），松手经 `endRangeSelection` 弹选区菜单（复制 / 查词，
   /// 走 `onSelectionMenu`）—— 选区间(可复制)与查词/制卡共存，不再被强制查词；原地未拖动
   /// 退回单击查词（`selectText`，保住慢速点词）。移动 > [slop]px
   /// 未及 [delayMs] 判为滑动/滚动，放弃拖选（长按 vs swipe 消歧）。置全局标志
-  /// `window.__hoshiTextSelectDragActive`，翻页（`_gestureEnd`）与边界跨章（`_bEnd`）
+  /// `window.__fushiTextSelectDragActive`，翻页（`_gestureEnd`）与边界跨章（`_bEnd`）
   /// 见到即让路，绝不与拖选争同一次触摸（消除拖选后误翻页 / 双查词）。
   ///
   /// 单独一个 IIFE、只挂 document 上的 touch 监听，与图片长按（`onImageLongPress`，
@@ -75,12 +75,12 @@ class ReaderSelectionScripts {
   var lpsTimer = null;
   var lpsActive = false;
   var lpsStartX = 0, lpsStartY = 0;
-  window.__hoshiTextSelectDragActive = false;
+  window.__fushiTextSelectDragActive = false;
   function lpsClearTimer() { if (lpsTimer) { clearTimeout(lpsTimer); lpsTimer = null; } }
   function lpsReset() {
     lpsClearTimer();
     lpsActive = false;
-    window.__hoshiTextSelectDragActive = false;
+    window.__fushiTextSelectDragActive = false;
   }
   // Arm only over real matchable text, never over links / form controls / caret
   // ring / block images (those own their own gestures). getCharacterAtPoint is
@@ -91,8 +91,8 @@ class ReaderSelectionScripts {
         el.closest('a[href], img, .block-img-wrapper, input, textarea, select, button, [contenteditable="true"], [data-hoshi-clk], #hoshi-caret-ring, [data-hoshi-sel-handle]')) {
       return false;
     }
-    return !!(window.hoshiSelection && window.hoshiSelection.getCharacterAtPoint &&
-      window.hoshiSelection.getCharacterAtPoint(x, y));
+    return !!(window.fushiSelection && window.fushiSelection.getCharacterAtPoint &&
+      window.fushiSelection.getCharacterAtPoint(x, y));
   }
   document.addEventListener('touchstart', function(e) {
     lpsReset();
@@ -104,12 +104,12 @@ class ReaderSelectionScripts {
     lpsStartY = t.clientY;
     lpsTimer = setTimeout(function() {
       lpsTimer = null;
-      if (window.hoshiSelection && window.hoshiSelection.beginRangeSelection &&
-          window.hoshiSelection.beginRangeSelection(lpsStartX, lpsStartY)) {
+      if (window.fushiSelection && window.fushiSelection.beginRangeSelection &&
+          window.fushiSelection.beginRangeSelection(lpsStartX, lpsStartY)) {
         lpsActive = true;
         // Set BEFORE touchend so tap/swipe (_gestureEnd) and boundary cross-chapter
         // (_bEnd) both bail: the drag-select owns this touch exclusively.
-        window.__hoshiTextSelectDragActive = true;
+        window.__fushiTextSelectDragActive = true;
       }
     }, LPS_DELAY);
   }, {passive: true});
@@ -119,8 +119,8 @@ class ReaderSelectionScripts {
     if (lpsActive) {
       // Own the gesture: block native scroll and extend the app-drawn selection.
       if (e.cancelable) e.preventDefault();
-      if (window.hoshiSelection && window.hoshiSelection.updateRangeSelection) {
-        window.hoshiSelection.updateRangeSelection(t.clientX, t.clientY);
+      if (window.fushiSelection && window.fushiSelection.updateRangeSelection) {
+        window.fushiSelection.updateRangeSelection(t.clientX, t.clientY);
       }
       return;
     }
@@ -138,14 +138,14 @@ class ReaderSelectionScripts {
     var t = (e.changedTouches && e.changedTouches[0]) || null;
     var x = t ? t.clientX : lpsStartX;
     var y = t ? t.clientY : lpsStartY;
-    var fired = window.hoshiSelection && window.hoshiSelection.endRangeSelection &&
-      window.hoshiSelection.endRangeSelection(x, y);
-    if (!fired && window.hoshiSelection && window.hoshiSelection.selectText) {
+    var fired = window.fushiSelection && window.fushiSelection.endRangeSelection &&
+      window.fushiSelection.endRangeSelection(x, y);
+    if (!fired && window.fushiSelection && window.fushiSelection.selectText) {
       // Long-press without a drag: behave exactly like a tap (word lookup),
       // preserving slow-steady-tap word lookup (TODO-971).
-      window.hoshiSelection.selectText(x, y, LPS_MAXLEN);
+      window.fushiSelection.selectText(x, y, LPS_MAXLEN);
     }
-    // Keep __hoshiTextSelectDragActive true until the next touchstart resets it:
+    // Keep __fushiTextSelectDragActive true until the next touchstart resets it:
     // a trailing compatibility pointerup (order vs touchend varies by WebView)
     // must still see the flag so _gestureEnd bails -> no double lookup.
     lpsClearTimer();
@@ -157,7 +157,7 @@ class ReaderSelectionScripts {
 
   /// BUG-402：取**浏览器原生选区**（`window.getSelection()`）的纯文本，给桌面
   /// Windows 的 Ctrl+C 复制兼容层用。刻意走原生 `getSelection()` 而非
-  /// `window.hoshiSelection`（后者是查词选区，是另一套坐标/状态），因为短拖/竖拖
+  /// `window.fushiSelection`（后者是查词选区，是另一套坐标/状态），因为短拖/竖拖
   /// 时原生选区照样建立，与查词逻辑无关（selectstart 在拖动起约 400ms 被
   /// preventDefault 只影响查词高亮路径）。结果由 [nativeSelectionTextFromResult]
   /// 解析。JSON.stringify 让结果稳定为带引号的字符串，便于解析 + 兼容各平台
@@ -188,7 +188,7 @@ class ReaderSelectionScripts {
   /// 返回的 JSON 由 [surroundingSentencesFromResult] 解析。[prevCount] / [nextCount]
   /// 是想要的最大句数（实际可能更少，到段首/文首即止）。
   static String surroundingSentencesInvocation(int prevCount, int nextCount) =>
-      'JSON.stringify(window.hoshiSelection.getSurroundingSentences('
+      'JSON.stringify(window.fushiSelection.getSurroundingSentences('
       '$prevCount, $nextCount))';
 
   /// 解析 [surroundingSentencesInvocation] 的结果为 `(prev, next)` 两组句子上下文，
@@ -237,13 +237,13 @@ class ReaderSelectionScripts {
   /// 回传 JSON 字段与 onTextSelected 同构（[ReaderSelectionData.fromJson] 直接可解），
   /// 让右键导出复用 tap 路径同一套选区→cue 状态，不另起特例。无选区回传 `null`。
   static String nativeSelectionSentenceRangeInvocation() =>
-      'JSON.stringify(window.hoshiSelection.nativeSelectionSentenceRange())';
+      'JSON.stringify(window.fushiSelection.nativeSelectionSentenceRange())';
 
   /// TODO-1127：取**当前原生选区**内夹带的 EPUB 插图（<img> / 光栅封面 <svg><image>）。
   /// 回传 JSON 数组，每项 `{src, normOffset}`，由 [clipSelectionImagesFromResult] 解析。
   /// 供有声书片段导出把「选区中间的插图」按相对顺序渲进卡片。
   static String nativeSelectionImagesInvocation() =>
-      'JSON.stringify(window.hoshiSelection.nativeSelectionImages())';
+      'JSON.stringify(window.fushiSelection.nativeSelectionImages())';
 
   /// 解析 [nativeSelectionImagesInvocation] 的结果为选区插图列表：每项 [src]（可交给
   /// 宿主 `_readerImageFileForUrl` 解析成解压目录文件的绝对 URL）+ [normOffset]（该图在
@@ -362,8 +362,8 @@ const JAPANESE_RANGES = [
   [0x3000, 0x303f],
   ...FULLWIDTH_CHARACTER_RANGES,
 ];
-window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
-window.hoshiSelection = {
+window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+window.fushiSelection = {
   selection: null,
   // TODO-1317: mobile long-press drag-select anchor / whether the finger
   // actually dragged (vs a stationary long-press that falls back to word lookup).
@@ -1242,7 +1242,7 @@ window.hoshiSelection = {
   // so it is left to render once post-lookup (highlightSelection from Dart).
   renderSelectionHighlight: function() {
     if (!this.selection || !this.selection.text) return;
-    if (window.__hoshiCssHighlightsSupported) {
+    if (window.__fushiCssHighlightsSupported) {
       this.highlightSelection(this.selection.text.length + 1);
     }
   },
@@ -1559,7 +1559,7 @@ window.hoshiSelection = {
         }
       }
     }
-    if (window.__hoshiCssHighlightsSupported) {
+    if (window.__fushiCssHighlightsSupported) {
       // BUG-110：<ruby> 内的字不放进 ::highlight（竖排下 ::highlight 把 ruby 基字盒
       // 画两遍 → 半透明叠加成深色带遮字），改给 <ruby> 元素加 class 单次绘背景。
       var highlights = [];
@@ -1649,13 +1649,13 @@ window.hoshiSelection = {
       parent.normalize();
     }
     this.highlightWrappers = [];
-    if (!window.__hoshiCssHighlightsSupported && window.fushiReader && window.fushiReader.buildNodeOffsets) {
+    if (!window.__fushiCssHighlightsSupported && window.fushiReader && window.fushiReader.buildNodeOffsets) {
       window.fushiReader.buildNodeOffsets();
     }
   },
   clearSelection: function() {
     window.getSelection()?.removeAllRanges();
-    if (window.__hoshiCssHighlightsSupported) {
+    if (window.__fushiCssHighlightsSupported) {
       CSS.highlights.delete('hoshi-selection');
       this.clearSelectionRubyHighlights();
     } else {

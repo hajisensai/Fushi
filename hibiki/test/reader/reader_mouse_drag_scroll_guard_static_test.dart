@@ -23,8 +23,8 @@ void main() {
     // 下标与原文逐字节对齐，切片位置不变、注释不再能满足任何断言。
     setupScript = _between(
       maskCommentsAndScriptLines(readReaderPageSource()),
-      r'var hoshiContinuousMode = C.continuousMode;',
-      'window.hoshiProgressDetails = function()',
+      r'var fushiContinuousMode = C.continuousMode;',
+      'window.fushiProgressDetails = function()',
     );
   });
 
@@ -51,16 +51,16 @@ void main() {
     // 砍掉 PC 鼠标左键拖动平移：连续模式 _fushiReaderMouseDragStartAllowed 返 false，
     // 鼠标左键回归原生选字/划词；不再捕获正文做 JS scrollBy 平移（卡顿 + 鼠标拖动提前
     // 跨章的来源）。分页模式仍走下方 caret 命中逻辑（拖动转翻页 BUG-368 不受影响）。
-    expect(containsCodeLine(guard, 'if (hoshiContinuousMode) return false;'),
+    expect(containsCodeLine(guard, 'if (fushiContinuousMode) return false;'),
         isTrue,
         reason: '连续模式鼠标左键回归原生选字/划词，不再捕获正文拖动平移（已砍）');
-    expect(containsCodeLine(guard, 'if (hoshiContinuousMode) return true;'),
+    expect(containsCodeLine(guard, 'if (fushiContinuousMode) return true;'),
         isFalse,
         reason: '旧的「连续模式捕获正文拖动平移」已砍，防回归');
     final int continuousModeIndex =
-        guard.indexOf('if (hoshiContinuousMode) return false;');
+        guard.indexOf('if (fushiContinuousMode) return false;');
     final int readerTextHitIndex =
-        guard.indexOf('window.hoshiSelection.getCharacterAtPoint');
+        guard.indexOf('window.fushiSelection.getCharacterAtPoint');
     final int caretHitIndex =
         guard.indexOf('return !_fushiReaderCaretRangeAtPoint');
     expect(readerTextHitIndex, greaterThan(continuousModeIndex),
@@ -167,7 +167,7 @@ void main() {
         containsCodeLine(scrollFn, 'window.scrollBy({left: 0, top:'), isTrue);
 
     final String pointerMove = _jsListener(setupScript, 'pointermove');
-    expect(containsCodeLine(pointerMove, 'if (hoshiContinuousMode)'), isTrue);
+    expect(containsCodeLine(pointerMove, 'if (fushiContinuousMode)'), isTrue);
     expect(containsCodeLine(pointerMove, "callHandler('onSwipe'"), isFalse,
         reason: 'continuous pointer drag should scroll, not page-turn');
   });
@@ -234,7 +234,7 @@ void main() {
 
     final String mouseDown = _jsListener(setupScript, 'mousedown');
     expect(containsCodeLine(mouseDown, 'if (e.button === 0) return;'), isTrue);
-    expect(containsCodeLine(mouseDown, 'e.button === 2 && _hoshiBlockImageUrl'),
+    expect(containsCodeLine(mouseDown, 'e.button === 2 && _fushiBlockImageUrl'),
         isTrue);
     expect(containsCodeLine(mouseDown, "callHandler('onPointerSeek'"), isTrue);
   });
@@ -251,7 +251,7 @@ void main() {
     expect(containsCodeLine(engages, '_fushiReaderPointerPrimaryButton(e)'),
         isTrue);
     expect(containsCodeLine(engages, "e.pointerType === 'touch'"), isTrue);
-    expect(containsCodeLine(engages, 'return hoshiContinuousMode'), isTrue,
+    expect(containsCodeLine(engages, 'return fushiContinuousMode'), isTrue,
         reason: 'paged-mode touch must not enter the pointer drag machine');
 
     final String pointerDown = _jsListener(setupScript, 'pointerdown');
@@ -262,7 +262,7 @@ void main() {
     final String pointerMove = _jsListener(setupScript, 'pointermove');
     expect(
         containsCodeLine(
-            pointerMove, "e.pointerType === 'touch' && !hoshiContinuousMode"),
+            pointerMove, "e.pointerType === 'touch' && !fushiContinuousMode"),
         isTrue,
         reason: 'paged-mode touch moves must return before claiming a drag, '
             'leaving touchend -> _gestureEnd -> onSwipe to turn the page');
@@ -274,7 +274,7 @@ void main() {
     final String pointerCancel = _jsListener(setupScript, 'pointercancel');
     expect(
         containsCodeLine(
-            pointerCancel, "e.pointerType === 'touch' && !hoshiContinuousMode"),
+            pointerCancel, "e.pointerType === 'touch' && !fushiContinuousMode"),
         isTrue,
         reason: 'paged-mode touch pointercancel must bail before resetting the '
             'drag machine, mirroring the pointermove exclusion');

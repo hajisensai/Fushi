@@ -724,7 +724,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   ///      时正在跟随播放，由该方法主动 pause→等→play，不照搬「非播放即早退」）。
   ///
   /// 坑2（锚点重置时序）：每次导航完成时 `_onChapterLoadComplete` 会调
-  /// `AudiobookBridge.resetImagePauseAnchor` 把 `__hoshiPrevHighlight` 归零，这对
+  /// `AudiobookBridge.resetImagePauseAnchor` 把 `__fushiPrevHighlight` 归零，这对
   /// 本路径无害——纯图片章无 cue、不依赖 DOM 内相邻锚点判定，且到达目标章后锚点
   /// 自然重置，cue 推进干净续上。
   ///
@@ -770,7 +770,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         if (!mounted || _lyricsMode) break;
         if (!loaded) continue;
         // BUG-898：停留前揭开该纯图片章的防剧透模糊图（此路径无 cue，不经区间揭遮罩
-        // 原语 __hoshiRevealBlurredBetween，否则音频停在一张仍模糊的图上）。
+        // 原语 __fushiRevealBlurredBetween，否则音频停在一张仍模糊的图上）。
         final InAppWebViewController? webCtrl = _controller;
         if (webCtrl != null) {
           await AudiobookBridge.revealAllBlurred(webCtrl);

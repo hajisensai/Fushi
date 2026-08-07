@@ -101,15 +101,15 @@ void main() {
       });
 
       // TODO-1190：网页源文高亮——强制 DOM 包裹路径（隔离世界的 CSS Custom Highlight 不绘制）。
-      test('1190 content.js 强制 DOM 包裹高亮（__hoshiCssHighlightsSupported=false）',
+      test('1190 content.js 强制 DOM 包裹高亮（__fushiCssHighlightsSupported=false）',
           () {
         final String src = content.readAsStringSync();
-        expect(src.contains('window.__hoshiCssHighlightsSupported = false'),
+        expect(src.contains('window.__fushiCssHighlightsSupported = false'),
             isTrue,
             reason: '$root content.js 未强制 DOM 包裹高亮路径 → 隔离世界 CSS 高亮不绘制（用户报没高亮）');
         // 高亮调用 + 关窗撤销仍在（与 1150 守卫互补）。
         expect(
-            src.contains('window.hoshiSelection.highlightSelection(termLen)'),
+            src.contains('window.fushiSelection.highlightSelection(termLen)'),
             isTrue,
             reason: '$root content.js 丢了 highlightSelection 调用');
       });

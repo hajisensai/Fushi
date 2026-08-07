@@ -8,7 +8,7 @@
 //      and the re-based {selStart, selLen} offsets.
 //   2. a DOUBLE-SIDED CONSISTENCY guard — the delimiter tables in
 //      sentence_extraction.dart MUST stay byte-identical to the reader's DOM
-//      sentence walk (hoshiSelection.sentenceDelimiters / trailingSentenceChars
+//      sentence walk (fushiSelection.sentenceDelimiters / trailingSentenceChars
 //      in reader_selection_scripts.dart). If the reader ever retunes its
 //      sentence boundaries, this test fails until the extractor is re-synced, so
 //      the app-external capture can never silently drift from the in-app reader.

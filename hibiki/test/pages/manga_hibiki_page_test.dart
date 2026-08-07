@@ -569,7 +569,7 @@ void main() {
     // JS 本身的通用不变式由 test/focus/webview_key_bridge_test.dart 守，这里只钉
     // 本页特有的接线：键表、幂等、独占、不转发长按。
     final String script = MangaHibikiPage.navigationKeyBridgeScript;
-    expect(script, contains('__hoshiKeyBridgeInstalled_onMangaNavigationKey'),
+    expect(script, contains('__fushiKeyBridgeInstalled_onMangaNavigationKey'),
         reason: '每次换加载窗口都会重新注入，必须幂等，否则 listener 叠加导致一次按键翻两页');
     expect(script, contains("'ArrowLeft'"));
     expect(script, contains("'ArrowRight'"));

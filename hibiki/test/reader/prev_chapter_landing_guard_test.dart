@@ -21,7 +21,7 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 ///      `restoreProgress(progress>=0.99)` 路由到它（与分页 `contentLastPageScroll` 对称）。
 ///   2. 纯图片章的 `<img>` 被 `_sharedInitImages` 无条件挂 `loading="lazy"` → 离屏图永不进
 ///      视口 margin → 永不 load → 0 尺寸被 `buildPaginationMetrics` 的 first/lastContentEdge
-///      排除 → 分页版 maxScroll 塌缩。修复 = 纯图片章（`__hoshiImageOnlyChapter`）的图保持
+///      排除 → 分页版 maxScroll 塌缩。修复 = 纯图片章（`__fushiImageOnlyChapter`）的图保持
 ///      eager（与 gaiji / 合并前导插图同理）。
 ///
 /// 行为断言在 `tool/reader_pitch_headless/prev_chapter_landing_probe.mjs`（headless Chrome
@@ -70,14 +70,14 @@ void main() {
         final String shell = ReaderPaginationScripts.paginatedShellSource();
         final String n = norm(shell);
         // 纯图片章检测存在。
-        expect(n.contains('__hoshiImageOnlyChapter'), isTrue,
+        expect(n.contains('__fushiImageOnlyChapter'), isTrue,
             reason: '必须检测纯图片章（continuous=$continuous）以对其 <img> 保持 eager');
         // lazy 门控必须放行纯图片章（否则离屏图 0 尺寸致 maxScroll 塌缩）。
         final int lazyIdx = n.indexOf("setAttribute('loading', 'lazy')");
         expect(lazyIdx, greaterThan(0));
         final String guardWindow =
             n.substring((lazyIdx - 400).clamp(0, n.length), lazyIdx);
-        expect(guardWindow.contains('!__hoshiImageOnlyChapter'), isTrue,
+        expect(guardWindow.contains('!__fushiImageOnlyChapter'), isTrue,
             reason: 'loading=lazy 门控必须排除纯图片章（continuous=$continuous）');
       }
     });

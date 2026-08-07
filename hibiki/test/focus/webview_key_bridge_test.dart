@@ -49,9 +49,9 @@ void main() {
 
     test('只拦声明的键（token 表按 handler 挂在 window 上，可热更新）', () {
       expect(spaceBridge,
-          contains("window['__hoshiKeyBridgeKeys_onSpaceKey'] = [' ']"));
+          contains("window['__fushiKeyBridgeKeys_onSpaceKey'] = [' ']"));
       expect(spaceBridge,
-          contains("window['__hoshiKeyBridgeKeys_onSpaceKey'] || []"));
+          contains("window['__fushiKeyBridgeKeys_onSpaceKey'] || []"));
     });
 
     test('e.key 与 e.code 双通道（注册表 token 用 DOM code 命名）', () {
@@ -69,7 +69,7 @@ void main() {
       expect(
           multi,
           contains(
-              "window['__hoshiKeyBridgeKeys_onMangaKey'] = ['ArrowLeft', 'ArrowRight', ' ']"));
+              "window['__fushiKeyBridgeKeys_onMangaKey'] = ['ArrowLeft', 'ArrowRight', ' ']"));
       expect(multi, contains("callHandler('onMangaKey', _hit)"));
     });
 
@@ -99,13 +99,13 @@ void main() {
       // 漫画每次换加载窗口都重新 evaluate 一次；没有守卫就会叠加 listener，
       // 一次按键回传多次 → 翻页翻两页。
       expect(spaceBridge,
-          contains("window['__hoshiKeyBridgeInstalled_onSpaceKey']"));
+          contains("window['__fushiKeyBridgeInstalled_onSpaceKey']"));
       final String other = webViewKeyBridgeScript(
         handlerName: 'onMangaNavigationKey',
         keys: const <String>['ArrowLeft'],
       );
       expect(other,
-          contains("window['__hoshiKeyBridgeInstalled_onMangaNavigationKey']"),
+          contains("window['__fushiKeyBridgeInstalled_onMangaNavigationKey']"),
           reason: 'flag 必须按 handler 区分，否则同文档里两份桥互相把对方挡掉');
     });
 
@@ -115,7 +115,7 @@ void main() {
         keys: const <String>["'", r'\'],
       );
       expect(weird,
-          contains(r"window['__hoshiKeyBridgeKeys_onWeird'] = ['\'', '\\']"));
+          contains(r"window['__fushiKeyBridgeKeys_onWeird'] = ['\'', '\\']"));
     });
 
     test('键表槽按 handlerName 派生，装在 window 上（可热更新且互不覆盖）', () {
@@ -132,9 +132,9 @@ void main() {
       expect(spaceBridge.trimRight(), endsWith('})();'));
       final int open = spaceBridge.indexOf('(function () {');
       final int decl =
-          spaceBridge.indexOf("window['__hoshiKeyBridgeKeys_onSpaceKey'] =");
+          spaceBridge.indexOf("window['__fushiKeyBridgeKeys_onSpaceKey'] =");
       final int install =
-          spaceBridge.indexOf("window['__hoshiKeyBridgeInstalled_onSpaceKey']");
+          spaceBridge.indexOf("window['__fushiKeyBridgeInstalled_onSpaceKey']");
       final int close = spaceBridge.lastIndexOf('})();');
       expect(decl, greaterThan(open));
       expect(decl, lessThan(close), reason: '键表赋值必须落在 IIFE 体内');
@@ -154,11 +154,11 @@ void main() {
       );
       final String both = '$reader\n$manga';
       expect(
-          both, contains("window['__hoshiKeyBridgeKeys_onSpaceKey'] = [' ']"));
+          both, contains("window['__fushiKeyBridgeKeys_onSpaceKey'] = [' ']"));
       expect(
           both,
           contains(
-              "window['__hoshiKeyBridgeKeys_onMangaKey'] = ['ArrowLeft', 'ArrowRight']"));
+              "window['__fushiKeyBridgeKeys_onMangaKey'] = ['ArrowLeft', 'ArrowRight']"));
       expect('(function () {'.allMatches(both).length, 2,
           reason: '每份桥各自一个 IIFE');
       expect('})();'.allMatches(both).length, 2);
@@ -184,7 +184,7 @@ void main() {
       expect(withMouse, contains("addEventListener('contextmenu'"),
           reason: '绑到右键时要压掉原生菜单');
       expect(withMouse,
-          contains("window['__hoshiKeyBridgeButtons_hostInputToken'] = []"),
+          contains("window['__fushiKeyBridgeButtons_hostInputToken'] = []"),
           reason: '未声明按钮时仍要下发空表，用于清掉热槽上残留的旧表');
     });
   });

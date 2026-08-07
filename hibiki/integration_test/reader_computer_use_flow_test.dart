@@ -663,7 +663,7 @@ Future<CaretSnapshot> _readCaret(
 ) async {
   const String source = r'''
 JSON.stringify((function() {
-  var c = window.hoshiCaret;
+  var c = window.fushiCaret;
   var node = c && c.node;
   var text = node && node.textContent ? node.textContent : '';
   var off = c && typeof c.offset === 'number' ? c.offset : -1;
@@ -719,7 +719,7 @@ JSON.stringify((function() {
   return {
     readyState: document.readyState,
     renderType: typeof window.renderPopup,
-    caretType: typeof window.hoshiCaret,
+    caretType: typeof window.fushiCaret,
     hasContainer: !!container,
     containerWidth: rect ? Math.round(rect.width) : 0,
     containerHeight: rect ? Math.round(rect.height) : 0,

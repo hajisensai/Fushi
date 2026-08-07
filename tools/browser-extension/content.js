@@ -13,7 +13,7 @@ try { document.documentElement.setAttribute('data-fushi-cs', 'v46'); } catch (_)
 // 页面渲染引擎必然绘制，与世界隔离无关；关窗时 clearSelection→clearHighlightWrappers 还原）。
 // selection.js 先于本脚本加载，这里覆盖它探测出的 true。app 内查词 selection.js 跑在主世界，
 // 不加载 content.js，CSS 高亮照常，互不影响。
-window.__hoshiCssHighlightsSupported = false;
+window.__fushiCssHighlightsSupported = false;
 // TODO-1218①：标记「本页由扩展注入」。popup.js 的页面级 selectText 监听器本为 app 内嵌套弹窗
 // 设计，注入宿主页后宿主页自身 hover/click 会误触 selectText→clearSelection，拆掉刚画的划词高亮；
 // popup.js 读此 flag 后只处理落在 #entries-container 内的事件（content.js 与 popup.js 同隔离世界共享 window）。
@@ -1386,7 +1386,7 @@ function fushiClearHighlightOverlay() {
 
 // TODO-1279：清掉浏览器原生文本选区（window.getSelection 的蓝色高亮）。只动原生 DOM Selection，
 // 不碰我们自绘的 #fushi-highlight-overlay 覆盖层（独立 <div>，与原生选区无关），也不碰
-// hoshiSelection.selection（纯 JS 取词状态，覆盖层就从它的 ranges 只读取几何）。塌缩/空选区时
+// fushiSelection.selection（纯 JS 取词状态，覆盖层就从它的 ranges 只读取几何）。塌缩/空选区时
 // no-op：避免无谓清掉输入框 caret 或没有可见蓝色时反复调用。
 function fushiClearNativeSelection() {
   try {
@@ -1395,13 +1395,13 @@ function fushiClearNativeSelection() {
   } catch (_) { /* 某些跨域/detached 上下文 getSelection 可能抛：静默 */ }
 }
 
-// 从 hoshiSelection.selection.ranges 取前 charCount 个「码点」的视口系 client rects（只读
+// 从 fushiSelection.selection.ranges 取前 charCount 个「码点」的视口系 client rects（只读
 // Range.getClientRects，**不改宿主页 DOM**），并算出整体 bbox 作弹窗锚点。返回 {rects, bounds}。
 // 与 selection.js highlightSelection 的裁词逻辑同构，但不做 DOM 包裹。
 function fushiSelectionRects(charCount) {
   const rects = [];
   let bx = null;
-  const sel = window.hoshiSelection && window.hoshiSelection.selection;
+  const sel = window.fushiSelection && window.fushiSelection.selection;
   if (!sel || !Array.isArray(sel.ranges) || !sel.ranges.length) return { rects, bounds: null };
   let remaining = charCount;
   for (const r of sel.ranges) {
@@ -1478,10 +1478,10 @@ function fushiRemoveContainer() {
   window.__hibikiRoot = null;
   // TODO-1272：关窗即撤覆盖层高亮（被查词高亮跟随弹窗生命周期，弹窗在则在、弹窗关则撤）。
   fushiClearHighlightOverlay();
-  // TODO-1150（yomitan 式）：关窗即撤 selection 状态与任何 DOM 包裹高亮（嵌套查词用）。hoshiSelection 未加载/无选区时是 no-op。
+  // TODO-1150（yomitan 式）：关窗即撤 selection 状态与任何 DOM 包裹高亮（嵌套查词用）。fushiSelection 未加载/无选区时是 no-op。
   try {
-    if (window.hoshiSelection && typeof window.hoshiSelection.clearSelection === 'function') {
-      window.hoshiSelection.clearSelection();
+    if (window.fushiSelection && typeof window.fushiSelection.clearSelection === 'function') {
+      window.fushiSelection.clearSelection();
     }
   } catch (_) { /* no-op */ }
   // 淡出后再从 DOM 移除 host 节点（与入场淡入及 app 外 .global-lookup-dismissing 的 200ms
@@ -1515,9 +1515,9 @@ function fushiRemoveContainer() {
 }
 
 // 流媒体字幕的取词兜底：Netflix 等在字幕**上面**盖了视频覆盖层（如 .watch-video--flag-container），
-// 会把 caretRangeFromPoint 截走 → hoshiSelection.getCharacterAtPoint 命中空覆盖层而非字幕文字。这里
+// 会把 caretRangeFromPoint 截走 → fushiSelection.getCharacterAtPoint 命中空覆盖层而非字幕文字。这里
 // 绕开命中测试：找到包含光标的字幕容器，遍历其文本节点、逐字符用 Range.getBoundingClientRect 找出
-// 光标 (x,y) 落在哪个字上，返回该字所在的 Range（供 hoshiSelection.selectFromPosition 展开成词）。
+// 光标 (x,y) 落在哪个字上，返回该字所在的 Range（供 fushiSelection.selectFromPosition 展开成词）。
 // 只在 getCharacterAtPoint 失败时兜底。
 const FUSHI_SUBTITLE_SELECTORS = [
   '.player-timedtext-text-container', // Netflix
@@ -1578,10 +1578,10 @@ document.addEventListener('mousemove', (e) => {
   // 在途闸：上一次查词还没回来就不发新请求（防洪）。BUG-1024：带截止时间——超时视为
   // 上一次已废弃（回调被杀死的 worker 吞掉），放行本次，避免永久卡死。
   if (fushiPending && Date.now() - fushiPendingSince < FUSHI_PENDING_TIMEOUT_MS) return;
-  // 取词：复用 Flutter app 同款 window.hoshiSelection（vendor/selection.js，manifest 里先于本脚本加载）——
+  // 取词：复用 Flutter app 同款 window.fushiSelection（vendor/selection.js，manifest 里先于本脚本加载）——
   // 统一处理 furigana/ruby、词边界、跨文本节点扩词，取词一致性与阅读器/视频查词同源（TODO-1150）。
-  if (!window.hoshiSelection || typeof window.hoshiSelection.getCharacterAtPoint !== 'function') return;
-  let hit = window.hoshiSelection.getCharacterAtPoint(e.clientX, e.clientY);
+  if (!window.fushiSelection || typeof window.fushiSelection.getCharacterAtPoint !== 'function') return;
+  let hit = window.fushiSelection.getCharacterAtPoint(e.clientX, e.clientY);
   // getCharacterAtPoint 命中失败（多为流媒体字幕上盖了视频覆盖层截走了 caret）→ 字幕逐字兜底绕开覆盖层。
   if (!hit) {
     const subRange = fushiSubtitleCaretAtPoint(e.clientX, e.clientY);
@@ -1598,16 +1598,16 @@ document.addEventListener('mousemove', (e) => {
       : 'null';
   } catch (_) {}
   if (!hit) return;
-  // selectFromPosition 向左扩到词首、向右扫最多 MAX_LEN 字（跨节点收 ranges）并存进 hoshiSelection.selection，
+  // selectFromPosition 向左扩到词首、向右扫最多 MAX_LEN 字（跨节点收 ranges）并存进 fushiSelection.selection，
   // 供随后 highlightSelection 高亮 + 取 bbox；内部 fire 的 textSelected 在扩展里经 bridge-shim 是 no-op（无副作用）。
-  const term = window.hoshiSelection.selectFromPosition(hit.node, hit.offset, FUSHI_MAX_LEN, e.clientX, e.clientY);
+  const term = window.fushiSelection.selectFromPosition(hit.node, hit.offset, FUSHI_MAX_LEN, e.clientX, e.clientY);
   // TODO-1218②：立刻快照被查词的锚点几何（selection.js getSelectionRect）。不能等响应回来才量——
-  // 那时并发的 selectText 可能已清掉 hoshiSelection.selection → highlightSelection 返回 null → 锚点
+  // 那时并发的 selectText 可能已清掉 fushiSelection.selection → highlightSelection 返回 null → 锚点
   // 退回鼠标坐标（弹窗比词底高半行）。随响应传给 fushiRender 作回退锚点。
   let fushiAnchorRect = null;
   try {
-    if (window.hoshiSelection && typeof window.hoshiSelection.getSelectionRect === 'function') {
-      fushiAnchorRect = window.hoshiSelection.getSelectionRect(e.clientX, e.clientY);
+    if (window.fushiSelection && typeof window.fushiSelection.getSelectionRect === 'function') {
+      fushiAnchorRect = window.fushiSelection.getSelectionRect(e.clientX, e.clientY);
     }
   } catch (_) { fushiAnchorRect = null; }
   try { document.documentElement.dataset.fushiTerm = term || ''; } catch (_) {}
@@ -1683,11 +1683,11 @@ function fushiSendLookup(term, anchorRect, cueWindow) {
 }
 
 // TODO-1219 P2：面板行内文本「显式点击查词」的入口（供 subtitle-panel.js 调用）。点击命中的
-// (clientX,clientY) 复用与 mousemove 划词同一套 hoshiSelection 取词（含流媒体字幕覆盖层兜底），
+// (clientX,clientY) 复用与 mousemove 划词同一套 fushiSelection 取词（含流媒体字幕覆盖层兜底），
 // 选中后走 fushiSendLookup 发查词 + 渲染弹窗，取词/高亮/锚点与全局划词完全一致。
 window.fushiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
-  if (!window.hoshiSelection || typeof window.hoshiSelection.getCharacterAtPoint !== 'function') return;
-  let hit = window.hoshiSelection.getCharacterAtPoint(clientX, clientY);
+  if (!window.fushiSelection || typeof window.fushiSelection.getCharacterAtPoint !== 'function') return;
+  let hit = window.fushiSelection.getCharacterAtPoint(clientX, clientY);
   if (!hit) {
     const subRange = fushiSubtitleCaretAtPoint(clientX, clientY);
     if (subRange && subRange.startContainer.nodeType === Node.TEXT_NODE) {
@@ -1695,12 +1695,12 @@ window.fushiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
     }
   }
   if (!hit) return;
-  const term = window.hoshiSelection.selectFromPosition(hit.node, hit.offset, FUSHI_MAX_LEN, clientX, clientY);
+  const term = window.fushiSelection.selectFromPosition(hit.node, hit.offset, FUSHI_MAX_LEN, clientX, clientY);
   fushiClearNativeSelection(); // TODO-1279：显式点击查词同样清掉浏览器原生蓝色选区，只留覆盖层高亮
   let anchorRect = null;
   try {
-    if (window.hoshiSelection && typeof window.hoshiSelection.getSelectionRect === 'function') {
-      anchorRect = window.hoshiSelection.getSelectionRect(clientX, clientY);
+    if (window.fushiSelection && typeof window.fushiSelection.getSelectionRect === 'function') {
+      anchorRect = window.fushiSelection.getSelectionRect(clientX, clientY);
     }
   } catch (_) { anchorRect = null; }
   const autoLookup = !!(options && options.auto === true);
@@ -1966,7 +1966,7 @@ function fushiApplyTheme(c, theme, applyBox) {
   // popup.js 的 wheel 监听器读（content/popup 同隔离世界共享 window）。非法/缺失 → 1.0。
   {
     const ws = parseFloat(theme['--hibiki-wheel-speed']);
-    window.__hoshiPopupWheelSpeed = (isFinite(ws) && ws > 0) ? ws : 1;
+    window.__fushiPopupWheelSpeed = (isFinite(ws) && ws > 0) ? ws : 1;
   }
   // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
   if (applyBox && fushiHost) {
@@ -2010,9 +2010,9 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
     if (hl.rects.length) {
       fushiDrawHighlightOverlay(hl.rects); // 覆盖层高亮：宿主页 DOM 重绘/事件冲不掉它
       wordRect = hl.bounds;
-    } else if (window.hoshiSelection && typeof window.hoshiSelection.highlightSelection === 'function') {
+    } else if (window.fushiSelection && typeof window.fushiSelection.highlightSelection === 'function') {
       // 兜底：selection 结构异常（无 ranges）时退回旧的 bbox 计算，只为拿锚点，不画 DOM 包裹高亮。
-      wordRect = window.hoshiSelection.highlightSelection(termLen);
+      wordRect = window.fushiSelection.highlightSelection(termLen);
     }
   } catch (_) { wordRect = null; }
   // TODO-1218②：取词 rects 拿不到（并发 selectText 清了 selection）时用查词时快照的锚点，避免退回鼠标坐标。

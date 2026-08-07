@@ -9,7 +9,7 @@ import 'package:flutter/foundation.dart';
 /// JS code to inject into the WebView for pagination testing.
 const String paginationHarnessJs = r'''
 (function() {
-  window.hoshiTestHarness = {
+  window.fushiTestHarness = {
     visibleBounds: function() {
       var cs = getComputedStyle(document.body);
       var top = Math.max(0, parseFloat(cs.paddingTop) || 0);
@@ -231,8 +231,8 @@ const String paginationHarnessJs = r'''
     },
 
     getProgressDetails: function() {
-      if (typeof hoshiProgressDetails === 'function') {
-        return hoshiProgressDetails();
+      if (typeof fushiProgressDetails === 'function') {
+        return fushiProgressDetails();
       }
       return '0,0';
     }

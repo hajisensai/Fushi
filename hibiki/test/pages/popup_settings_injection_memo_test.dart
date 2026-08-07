@@ -218,17 +218,17 @@ void main() {
       (
         name: 'appUiScale（界面大小 → zoom）',
         mutate: (MemoAppModel m) => m.appUiScaleValue = 1.5,
-        marker: 'window.__hoshiPopupUiScale = 1.5',
+        marker: 'window.__fushiPopupUiScale = 1.5',
       ),
       (
         name: 'dictionaryFontSize（词典字号 → zoom）',
         mutate: (MemoAppModel m) => m.dictionaryFontSizeValue = 24,
-        marker: 'window.__hoshiPopupFontSize = 24.0',
+        marker: 'window.__fushiPopupFontSize = 24.0',
       ),
       (
         name: 'popupWheelSpeed（BUG-1026 滚轮速度）',
         mutate: (MemoAppModel m) => m.popupWheelSpeedValue = 2.5,
-        marker: 'window.__hoshiPopupWheelSpeed = 2.5',
+        marker: 'window.__fushiPopupWheelSpeed = 2.5',
       ),
       (
         name: 'enabledAudioSources（音源列表）',

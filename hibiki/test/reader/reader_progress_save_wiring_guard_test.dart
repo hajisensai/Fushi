@@ -70,8 +70,8 @@ void main() {
           reason: '_lastUserInputAt 字段已删');
       expect(webview, isNot(contains('onReaderUserInput')),
           reason: 'onReaderUserInput JS handler + 打点通道已删');
-      expect(webview, isNot(contains('_hoshiNotifyUserInput')),
-          reason: 'JS 侧 _hoshiNotifyUserInput 输入打点 helper 已删');
+      expect(webview, isNot(contains('_fushiNotifyUserInput')),
+          reason: 'JS 侧 _fushiNotifyUserInput 输入打点 helper 已删');
     });
   });
 

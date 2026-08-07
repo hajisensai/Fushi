@@ -1,4 +1,4 @@
-// TODO-1104 harness for hoshiSelection drag-selection sentence span.
+// TODO-1104 harness for fushiSelection drag-selection sentence span.
 //
 // PURPOSE: The user reported that mining an audiobook card from a DRAG selection
 // spanning multiple sentences only captured (text + audio for) the START
@@ -136,8 +136,8 @@ function loadHoshiSelection(document, fushiReader) {
   const sandbox = { window: windowObj, document, Node, NodeFilter, Math, console };
   vm.createContext(sandbox);
   vm.runInContext(jsSource, sandbox, { filename: 'hoshi-selection.js' });
-  assert.ok(windowObj.hoshiSelection, 'window.hoshiSelection must be defined');
-  return windowObj.hoshiSelection;
+  assert.ok(windowObj.fushiSelection, 'window.fushiSelection must be defined');
+  return windowObj.fushiSelection;
 }
 
 let passed = 0;

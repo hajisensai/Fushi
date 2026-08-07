@@ -1111,7 +1111,7 @@ function flushTimers() {
 }
 
 // 33. TODO-1190 (app-external nested highlight): host.highlightFrame(index,count)
-//     evals popup.js's hoshiSelection.highlightSelection(count) INSIDE the target
+//     evals popup.js's fushiSelection.highlightSelection(count) INSIDE the target
 //     (parent) frame's realm, marking the searched word in the parent card. A bad
 //     index / non-positive count is a no-op (returns false, no eval) so a failed
 //     highlight never breaks the lookup.
@@ -1128,8 +1128,8 @@ function flushTimers() {
   );
   assert.ok(hl, 'highlightSelection(3) eval ran in the PARENT frame-0 realm');
   assert.ok(
-    /window\.hoshiSelection/.test(hl.code),
-    'highlight goes through popup.js window.hoshiSelection',
+    /window\.fushiSelection/.test(hl.code),
+    'highlight goes through popup.js window.fushiSelection',
   );
   // Wrong-realm guard: nothing was injected into the child frame-1.
   assert.ok(

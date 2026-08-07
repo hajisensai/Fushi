@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-// BUG-748：VN 居中竖排布局下「点击空白翻页」永不触发。_hoshiVnTapIsBlank 靠
+// BUG-748：VN 居中竖排布局下「点击空白翻页」永不触发。_fushiVnTapIsBlank 靠
 // caretPositionFromPoint/caretRangeFromPoint，它们把任意点（含空白边距）clamp 到
 // 最近字符，故旧判据「resolve 到 text node 即非空白」把整个视口都判成词 → blank-tap
 // advance 从不触发（Windows 离屏 289 点扫描 0 blank）。根因修复：拿到 clamp 后的 caret
@@ -11,15 +11,15 @@ import 'package:flutter_test/flutter_test.dart';
 // 命中测试（getClientRects）而不是只看 text node。
 void main() {
   test(
-      'BUG-748: _hoshiVnTapIsBlank uses client-rect hit-test, not just a '
+      'BUG-748: _fushiVnTapIsBlank uses client-rect hit-test, not just a '
       'clamped text-node check', () {
     final String src = File(
       'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
     ).readAsStringSync();
 
-    final int fnStart = src.indexOf('function _hoshiVnTapIsBlank(');
+    final int fnStart = src.indexOf('function _fushiVnTapIsBlank(');
     expect(fnStart, greaterThanOrEqualTo(0),
-        reason: '_hoshiVnTapIsBlank must exist');
+        reason: '_fushiVnTapIsBlank must exist');
     // isolate the function body up to the next top-level function decl so the
     // assertions are about THIS function, not the whole file.
     final int fnEnd =

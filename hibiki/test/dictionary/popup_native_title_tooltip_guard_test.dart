@@ -37,7 +37,7 @@ void main() {
     test('存在 DOM 提示助手 setInlineButtonTip，且会移除 title 并挂 .hoshi-btn-tip', () {
       expect(js, contains('function setInlineButtonTip('),
           reason: '需要 DOM 提示助手替代原生 title');
-      expect(js, contains('function __hoshiShowButtonTip('),
+      expect(js, contains('function __fushiShowButtonTip('),
           reason: '需要按屏幕坐标定位 .hoshi-btn-tip 的展示函数');
       // 关键：助手必须显式去掉原生 title（否则离屏 WebView2 上仍会飞）。
       expect(
@@ -49,7 +49,7 @@ void main() {
       expect(js, contains("className: 'hoshi-btn-tip'"),
           reason: 'DOM 提示元素类名为 hoshi-btn-tip');
       // 监听只挂一次（refresh 反复调用不叠加）。
-      expect(js, contains('dataset.hoshiTipBound'),
+      expect(js, contains('dataset.fushiTipBound'),
           reason: '用 dataset 标志保证监听只挂一次');
     });
 

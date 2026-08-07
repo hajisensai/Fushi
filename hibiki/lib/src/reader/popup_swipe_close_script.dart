@@ -13,8 +13,8 @@
 // 「滑动关闭弹窗」(enableSwipeToClose) 偏好决定，本脚本只负责手势识别与上报。
 const String kPopupTopPullReleaseJs = '''
 (function(){
-  if(window.__hoshiTopPullInstalled) return;
-  window.__hoshiTopPullInstalled = true;
+  if(window.__fushiTopPullInstalled) return;
+  window.__fushiTopPullInstalled = true;
   var startY = null;
   var pulled = false;
   function atTop(){

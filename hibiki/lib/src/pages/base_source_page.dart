@@ -24,7 +24,7 @@ import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/utils.dart';
 
 /// Number of characters of the body text that the looked-up word actually
-/// occupies, used to drive the in-text lookup highlight (`hoshiSelection
+/// occupies, used to drive the in-text lookup highlight (`fushiSelection
 /// .highlightSelection`).
 ///
 /// BUG-206: this must be the length of the **inflected surface form as it

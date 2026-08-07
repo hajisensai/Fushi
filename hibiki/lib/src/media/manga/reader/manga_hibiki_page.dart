@@ -296,7 +296,7 @@ Future<int?> showMangaPageJumpDialog(
 ///
 /// 选词接线（防串框契约 ERRATA H2/C1）：本页注册**恰好一个**
 /// `onTextSelected` Dart handler；全工程唯一的 pointerup 选词监听内嵌在
-/// [mangaWindowDocument]（调 `hoshiSelection.selectFromPosition(node, 0, 40, x, y)`，
+/// [mangaWindowDocument]（调 `fushiSelection.selectFromPosition(node, 0, 40, x, y)`，
 /// 第三参 maxLength 漏传会让扫描 gate 恒假、查词全程哑火），本页绝不再注册第二个。
 class MangaHibikiPage extends BaseSourcePage {
   const MangaHibikiPage({

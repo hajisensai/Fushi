@@ -133,7 +133,7 @@ const String kReaderWebViewCreationFailedSentinel =
     'FUSHI_INAPPWEBVIEW_CREATION_FAILED';
 
 /// What the reader-surface caret move resolves to in Dart, given the physical
-/// key direction and the `status` hoshiCaret.move returned.
+/// key direction and the `status` fushiCaret.move returned.
 enum ReaderCaretMoveOutcome {
   /// In-page move (status `moved`) or a benign block — nothing for Dart to do.
   none,
@@ -452,7 +452,7 @@ bool chapterTurnCoolingDown({
 
 /// TODO-796：图片/封面页（纯 `<img>`，全章无可读文本）的进度 UI 兜底锚点。
 ///
-/// 这类页 `paginationMetrics.totalChars==0` → JS `hoshiProgressDetails()` 返空串
+/// 这类页 `paginationMetrics.totalChars==0` → JS `fushiProgressDetails()` 返空串
 /// → `parseReaderStableProgressDetails` 返 null → `_refreshProgress` 旧逻辑一律早
 /// 退，顶部百分比沿用上一章旧值（导航到封面进度不变 = BUG-796 之一）。封面/插图
 /// 没有章内文本进度可言，但它在全书里有确定位置——用该章在累计前缀里的章首绝对
@@ -748,7 +748,7 @@ ShortcutAction? resolveSpreadKeyBridgeAction(
 /// 避免恢复期程序化滚动、歌词模式或控制器未就绪时误触发：
 /// - [restoreInFlight]：章节恢复/重载期间 WebView 正被程序化滚动到锚点；
 /// - [lyricsMode]：歌词模式不是正文阅读，无章内进度语义；
-/// - !`readerContentReady`：内容尚未就绪，`hoshiProgressDetails` 可能算不出总数；
+/// - !`readerContentReady`：内容尚未就绪，`fushiProgressDetails` 可能算不出总数；
 /// - !`controllerAvailable`：WebView 控制器已释放（dispose 竞态）。
 ///
 /// 纯函数，无副作用，供单测锁定门控真值表（撤销任一守卫 → 对应用例转红）。
@@ -953,7 +953,7 @@ typedef ReaderStableProgressDetails = ({
   int charOffset,
 });
 
-/// Parses `window.hoshiProgressDetails()` after the JS-side settled gate.
+/// Parses `window.fushiProgressDetails()` after the JS-side settled gate.
 ///
 /// A stable `0,total,0` is a valid chapter-start position (manual chapter
 /// jumps must still persist it). `null`/empty/invalid/zero-total results mean
@@ -1262,7 +1262,7 @@ class ReaderHibikiPage extends BaseSourcePage {
   @visibleForTesting
   static Future<dynamic> Function(String source)? debugEvaluateTopPopup;
 
-  /// Test hook: inject the real audiobook bridge JS (`__hoshiHighlight`,
+  /// Test hook: inject the real audiobook bridge JS (`__fushiHighlight`,
   /// image-pause helpers, sasayaki highlight) on demand. Lets integration tests
   /// drive the production highlight / image-pause reveal path on a plain
   /// (non-audiobook) book in the real paginated WebView, without seeding a full
@@ -1544,7 +1544,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     },
   );
   // BUG-380: 滚动进度刷新的「在飞 + 待重跑」守卫。rAF 节流后滚动回传可能高频到来，
-  // 每次 _refreshProgress 都 evaluateJavascript 跑较重的 hoshiProgressDetails（遍历全章
+  // 每次 _refreshProgress 都 evaluateJavascript 跑较重的 fushiProgressDetails（遍历全章
   // TextNode + caretRangeFromPoint），未加守卫会让多次调用堆积。_scrollProgressInFlight
   // 标记当前是否有一次滚动触发的刷新在途；在途时再来的滚动回传只置 _scrollProgressPending，
   // 飞完后补跑一次（coalesce），既不堆积又不丢最终位置。仅作用于滚动路径，不影响 10s 轮询
@@ -3078,7 +3078,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       if (!mounted || _controller == null) return;
       await _controller!.evaluateJavascript(
         source:
-            'if (!window.__hoshiCssHighlightsSupported) { window.fushiReader && window.fushiReader.buildNodeOffsets(); }',
+            'if (!window.__fushiCssHighlightsSupported) { window.fushiReader && window.fushiReader.buildNodeOffsets(); }',
       );
       // HBK-AUDIT-117: theme persistence moved to _onThemeChanged — it is
       // unrelated to highlight application and must not be gated on favorites.

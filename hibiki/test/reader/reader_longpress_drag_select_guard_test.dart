@@ -27,7 +27,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 /// 真机长按拖选选中 + 查词/制卡、不出双选区只能真触屏 WebView 验（离屏 pointer:fine
 /// 不触发 coarse），故这里用生成的 JS/CSS 源码扫描钉死契约。
 void main() {
-  group('app 自绘拖选 API（window.hoshiSelection）', () {
+  group('app 自绘拖选 API（window.fushiSelection）', () {
     final String js = ReaderSelectionScripts.source();
 
     test('暴露长按拖选三段式扩展选区 API + 共享 fireTextSelected', () {
@@ -53,7 +53,7 @@ void main() {
       final int r = js.indexOf('renderSelectionHighlight: function');
       final int rEnd = js.indexOf('beginRangeSelection: function');
       final String renderBody = js.substring(r, rEnd);
-      expect(renderBody, contains('window.__hoshiCssHighlightsSupported'),
+      expect(renderBody, contains('window.__fushiCssHighlightsSupported'),
           reason: '拖选实时高亮必须门控在 CSS Custom Highlight 路径');
       expect(renderBody, contains('highlightSelection'),
           reason: '拖选复用 tap 的 highlightSelection 高亮器');
@@ -102,7 +102,7 @@ void main() {
     });
 
     test('置全局标志与翻页/边界手势消歧', () {
-      expect(js, contains('window.__hoshiTextSelectDragActive = true'),
+      expect(js, contains('window.__fushiTextSelectDragActive = true'),
           reason: '缺与 _gestureEnd(翻页)/_bEnd(跨章) 消歧的全局标志');
     });
 
@@ -121,7 +121,7 @@ void main() {
   group('翻页/边界手势对拖选让路（消歧守卫）', () {
     test('连续模式边界跨章手势见到拖选标志即让路（不误跨章）', () {
       final String js = ReaderPaginationScripts.continuousShellSource();
-      expect(js, contains('if (window.__hoshiTextSelectDragActive) return;'),
+      expect(js, contains('if (window.__fushiTextSelectDragActive) return;'),
           reason: '_bEnd（跨章）必须在拖选进行时让路');
     });
   });

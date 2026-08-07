@@ -119,7 +119,7 @@ function loadContent(storedHidden) {
     innerWidth: 1200,
     innerHeight: 800,
     matchMedia: () => ({ matches: false }),
-    hoshiSelection: {
+    fushiSelection: {
       getCharacterAtPoint: () => null,
       selectFromPosition: () => '',
       clearSelection() {},

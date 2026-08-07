@@ -13,8 +13,8 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 ///
 /// 这条链路横跨三段，任何一段改名都会让功能静默失效（用户侧表现是「滚轮跳词条
 /// 没反应」，且没有任何报错）：
-///   注册表 wheelBindings → popup_settings_injection 注入 window.__hoshiEntryWheelBindings
-///   → popup.js 的 wheel 监听 → hoshiFocusDictionaryEntryMove。
+///   注册表 wheelBindings → popup_settings_injection 注入 window.__fushiEntryWheelBindings
+///   → popup.js 的 wheel 监听 → fushiFocusDictionaryEntryMove。
 /// 故除了数据层往返，这里还钉住 Dart 注入的全局名与 popup.js 读取的全局名一致。
 void main() {
   group('WheelBinding 序列化往返', () {
@@ -277,7 +277,7 @@ void main() {
     });
 
     test('Dart 注入的全局名与 popup.js 读取的全局名一致，且三镜像都带这段', () {
-      const String globalName = '__hoshiEntryWheelBindings';
+      const String globalName = '__fushiEntryWheelBindings';
       final String injection =
           File('lib/src/pages/implementations/popup_settings_injection.dart')
               .readAsStringSync();
@@ -295,7 +295,7 @@ void main() {
         expect(js.contains('popupEntryWheelAction'), isTrue,
             reason: '$path 缺少滚轮 → 词条导航的判定函数');
         expect(
-            js.contains('hoshiFocusDictionaryEntryMove(entryAction)'), isTrue,
+            js.contains('fushiFocusDictionaryEntryMove(entryAction)'), isTrue,
             reason: '$path 没把命中的滚轮接到词条焦点移动上');
         // 未注入时（浏览器扩展）必须有 Alt+滚轮默认，否则扩展里这功能是死的。
         expect(js.contains('HOSHI_ENTRY_WHEEL_DEFAULT_BINDINGS'), isTrue,

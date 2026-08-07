@@ -11,7 +11,7 @@ import 'package:flutter/foundation.dart' show immutable;
 /// 没有 V8 code cache）。实测 `evalSetupScript` 中位数 24ms，与章节体量无关 = 纯固定开销。
 ///
 /// 修法：引擎源码变成**零插值的静态资源**（`<script src>` 走 fushi.local 拦截器 + 强缓存，
-/// 见 `ReaderEngineScript`），只暴露一个 `window.__hoshiEngine.install(C)`；本类就是那个
+/// 见 `ReaderEngineScript`），只暴露一个 `window.__fushiEngine.install(C)`；本类就是那个
 /// `C`——每次导航只下发这一小份 JSON，引擎在**运行时读取**它。
 ///
 /// 因此本类是「per-nav 参数」的唯一真相源：**任何随导航/设置变化的值都必须落在这里**，

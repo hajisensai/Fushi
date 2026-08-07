@@ -2044,7 +2044,7 @@
   // 更新线程键状态表，覆盖窗又是 WS_EX_NOACTIVATE、不在前台输入队列里。于是修饰键
   // 只能作为**数据**送到这一层，由 JS 合成一条带显式 flag 的 WheelEvent。
   //
-  // 判定语义仍然全部留在既有 JS 里，host 不做策略（绑定真值 __hoshiEntryWheelBindings
+  // 判定语义仍然全部留在既有 JS 里，host 不做策略（绑定真值 __fushiEntryWheelBindings
   // 在 popup.js，用户可改键位；缩放档距在 Dart）：
   //   ctrlKey → _globalLookupZoomWheelJs 的 window wheel 监听 → callHandler
   //             ('popupZoomFontStep') → jsMessage → Dart maybeHandleOverlayZoomFontStep
@@ -2254,7 +2254,7 @@
   // did, so the source word in the parent card was left unmarked. The controller
   // resolves the parent's insertion-order frame index + the matched char count
   // and calls this; we find that frame and eval popup.js's own
-  // window.hoshiSelection.highlightSelection(count) inside its iframe realm (the
+  // window.fushiSelection.highlightSelection(count) inside its iframe realm (the
   // popup.js selection already spans the just-clicked word). No-op on a bad index
   // / count / missing frame so a failed highlight never breaks the lookup.
   function highlightFrame(frameIndex, count) {
@@ -2286,9 +2286,9 @@
     }
     try {
       win.eval(
-          'window.hoshiSelection && ' +
-          'window.hoshiSelection.highlightSelection && ' +
-          'window.hoshiSelection.highlightSelection(' + count + ');');
+          'window.fushiSelection && ' +
+          'window.fushiSelection.highlightSelection && ' +
+          'window.fushiSelection.highlightSelection(' + count + ');');
       return true;
     } catch (e) {
       return false;

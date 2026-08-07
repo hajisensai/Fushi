@@ -435,7 +435,7 @@ void main() {
       expect(doc.contains('flex-direction:row'), isTrue);
       expect(doc.contains('direction:rtl'), isTrue);
       // 内联选词 JS 源进文档
-      expect(doc.contains('window.hoshiSelection'), isTrue);
+      expect(doc.contains('window.fushiSelection'), isTrue);
       // 调 selectText 前必须 null-guard bridge
       expect(doc.contains('window.flutter_inappwebview'), isTrue);
       expect(doc.contains('selection.selectFromPosition(node, 0, 40, x, y)'),

@@ -353,7 +353,7 @@ function buildSentenceContextPicker() {
 // （SentenceContextDialog，宿主经 openSentenceContextModal 桥接弹出），不再画在查词
 // 弹窗 WebView 内（那受弹窗表面尺寸/半透明限制，句子框重叠、显示不全）。
 // 这里只保留词条上「调整上下文」按钮 → callHandler('openSentenceContextModal',
-// {entryIndex, matched})，与确认制卡回点用的 hoshiPopupMineEntryByIndex（见文件末尾）。
+// {entryIndex, matched})，与确认制卡回点用的 fushiPopupMineEntryByIndex（见文件末尾）。
 
 
 function el(tag, props = {}, children = []) {
@@ -1483,12 +1483,12 @@ function showMinedCardActionPanel(matches, options) {
         // 本面板的 capture 监听早得多——不声明「模态开着」它就会抢在上面这个 onKey 前面
         // 吃掉 Esc，于是用户想关面板却把整个查词窗关了（正是上面那行注释要防的事）。
         // 深度计数而非布尔：面板可能叠开（↗ 多卡选择套在 ✓ 操作单之上）。
-        window.__hoshiPopupModalDepth = (window.__hoshiPopupModalDepth || 0) + 1;
+        window.__fushiPopupModalDepth = (window.__fushiPopupModalDepth || 0) + 1;
         const finish = (result) => {
             if (settled) return;
             settled = true;
-            window.__hoshiPopupModalDepth =
-                Math.max(0, (window.__hoshiPopupModalDepth || 1) - 1);
+            window.__fushiPopupModalDepth =
+                Math.max(0, (window.__fushiPopupModalDepth || 1) - 1);
             document.removeEventListener('keydown', onKey, true);
             backdrop.remove();
             if (ownsDocument) rootEl.classList.remove(MINED_ACTION_OPEN_CLASS);
@@ -2331,47 +2331,47 @@ function showAudioError(button) {
 // 同型的原生右键菜单错位已由 dictionary_popup_webview.dart 换 Flutter showMenu 规避，但 title
 // 无法拦截/重定位。这里给内联动作按钮改用 DOM 内自绘提示（随纹理正确合成），并去掉原生
 // title。复用 .audio-hint 的视觉（popup.css 里 .hoshi-btn-tip 与其共用规则）。
-let __hoshiBtnTipEl = null;
-let __hoshiBtnTipHideTimer = 0;
-function __hoshiShowButtonTip(button) {
-    const text = button && button.dataset ? button.dataset.hoshiTip : '';
+let __fushiBtnTipEl = null;
+let __fushiBtnTipHideTimer = 0;
+function __fushiShowButtonTip(button) {
+    const text = button && button.dataset ? button.dataset.fushiTip : '';
     if (!text) return;
-    if (__hoshiBtnTipHideTimer) {
-        clearTimeout(__hoshiBtnTipHideTimer);
-        __hoshiBtnTipHideTimer = 0;
+    if (__fushiBtnTipHideTimer) {
+        clearTimeout(__fushiBtnTipHideTimer);
+        __fushiBtnTipHideTimer = 0;
     }
-    if (!__hoshiBtnTipEl || !__hoshiBtnTipEl.isConnected) {
-        __hoshiBtnTipEl = el('div', { className: 'hoshi-btn-tip' });
-        __hibikiOverlayParent().appendChild(__hoshiBtnTipEl);
+    if (!__fushiBtnTipEl || !__fushiBtnTipEl.isConnected) {
+        __fushiBtnTipEl = el('div', { className: 'hoshi-btn-tip' });
+        __hibikiOverlayParent().appendChild(__fushiBtnTipEl);
     }
-    __hoshiBtnTipEl.textContent = text;
-    __hoshiBtnTipEl.classList.remove('visible'); // 先复位再量尺寸定位
+    __fushiBtnTipEl.textContent = text;
+    __fushiBtnTipEl.classList.remove('visible'); // 先复位再量尺寸定位
     // 先量尺寸再定位：按钮行在弹窗顶部，优先置于按钮下方居中；下方放不下再翻到上方，
     // 并夹在视口内。锚定屏幕坐标而非视口边缘，in-app 全窗弹窗与 app 外覆盖窗都可见。
     const btnRect = button.getBoundingClientRect();
-    const tipRect = __hoshiBtnTipEl.getBoundingClientRect();
+    const tipRect = __fushiBtnTipEl.getBoundingClientRect();
     let left = btnRect.left + btnRect.width / 2 - tipRect.width / 2;
     left = Math.max(4, Math.min(left, window.innerWidth - tipRect.width - 4));
     let top = btnRect.bottom + 6;
     if (top + tipRect.height > window.innerHeight - 4) {
         top = btnRect.top - tipRect.height - 6;
     }
-    __hoshiBtnTipEl.style.left = left + 'px';
-    __hoshiBtnTipEl.style.top = Math.max(4, top) + 'px';
+    __fushiBtnTipEl.style.left = left + 'px';
+    __fushiBtnTipEl.style.top = Math.max(4, top) + 'px';
     requestAnimationFrame(() => {
-        if (__hoshiBtnTipEl) __hoshiBtnTipEl.classList.add('visible');
+        if (__fushiBtnTipEl) __fushiBtnTipEl.classList.add('visible');
     });
 }
-function __hoshiHideButtonTip() {
-    if (!__hoshiBtnTipEl) return;
-    __hoshiBtnTipEl.classList.remove('visible');
-    if (__hoshiBtnTipHideTimer) clearTimeout(__hoshiBtnTipHideTimer);
-    __hoshiBtnTipHideTimer = setTimeout(() => {
-        if (__hoshiBtnTipEl) {
-            __hoshiBtnTipEl.remove();
-            __hoshiBtnTipEl = null;
+function __fushiHideButtonTip() {
+    if (!__fushiBtnTipEl) return;
+    __fushiBtnTipEl.classList.remove('visible');
+    if (__fushiBtnTipHideTimer) clearTimeout(__fushiBtnTipHideTimer);
+    __fushiBtnTipHideTimer = setTimeout(() => {
+        if (__fushiBtnTipEl) {
+            __fushiBtnTipEl.remove();
+            __fushiBtnTipEl = null;
         }
-        __hoshiBtnTipHideTimer = 0;
+        __fushiBtnTipHideTimer = 0;
     }, 220);
 }
 // 给内联动作按钮挂 DOM 悬停/聚焦提示（替代会在离屏 WebView2 上飞走的原生 title）。
@@ -2381,19 +2381,19 @@ function setInlineButtonTip(button, text) {
     if (!button) return;
     button.removeAttribute('title');
     if (!text) {
-        delete button.dataset.hoshiTip;
+        delete button.dataset.fushiTip;
         button.removeAttribute('aria-label');
         return;
     }
-    button.dataset.hoshiTip = text;
+    button.dataset.fushiTip = text;
     button.setAttribute('aria-label', text);
-    if (button.dataset.hoshiTipBound === '1') return;
-    button.dataset.hoshiTipBound = '1';
-    button.addEventListener('pointerenter', function() { __hoshiShowButtonTip(button); });
-    button.addEventListener('focus', function() { __hoshiShowButtonTip(button); });
-    button.addEventListener('pointerleave', __hoshiHideButtonTip);
-    button.addEventListener('blur', __hoshiHideButtonTip);
-    button.addEventListener('pointerdown', __hoshiHideButtonTip);
+    if (button.dataset.fushiTipBound === '1') return;
+    button.dataset.fushiTipBound = '1';
+    button.addEventListener('pointerenter', function() { __fushiShowButtonTip(button); });
+    button.addEventListener('focus', function() { __fushiShowButtonTip(button); });
+    button.addEventListener('pointerleave', __fushiHideButtonTip);
+    button.addEventListener('blur', __fushiHideButtonTip);
+    button.addEventListener('pointerdown', __fushiHideButtonTip);
 }
 
 // TODO-1251: 当词条本来就没有配置音频源（resolveWordAudio 返回 null）时，旧行为只瞬间
@@ -2851,7 +2851,7 @@ function createEntryHeader(entry, idx) {
             onclick: function() {
                 // BUG-763/766：改弹 app 原生顶层对话框（不再画在查词弹窗 WebView 内）。
                 // entryIndex 用点击时的稳定 DOM 序（:scope > .entry），与确认制卡回点的
-                // hoshiPopupMineEntryByIndex 同一套索引。
+                // fushiPopupMineEntryByIndex 同一套索引。
                 var entryEl = adjustBtn.closest('.entry');
                 var idx = 0;
                 if (entryEl && entryEl.parentNode) {
@@ -2880,7 +2880,7 @@ function createEntryHeader(entry, idx) {
     return header;
 }
 
-window.hoshiPopupMineFirstEntry = async function() {
+window.fushiPopupMineFirstEntry = async function() {
     const mineButton = __hibikiRootNode().querySelector('.mine-button');
     if (!mineButton || mineButton.disabled) {
         return false;
@@ -2894,7 +2894,7 @@ window.hoshiPopupMineFirstEntry = async function() {
 // 瞬态查词覆盖窗带 WS_EX_NOACTIVATE、永不接收键盘焦点（且 runner 无键盘转发），本监听在
 // 那个表面上收不到任何 keydown——不是没接线，是物理上到不了，别把它算进「都能用」。
 // 制卡默认 Ctrl+Enter；app 外的裸 WebView2 表面由 popup_settings_injection
-// 注入 window.__hoshiPopupKeyBindings 覆盖成用户在「快捷键」设置里配的绑定（dictionaryPopup
+// 注入 window.__fushiPopupKeyBindings 覆盖成用户在「快捷键」设置里配的绑定（dictionaryPopup
 // scope 的三个动作）。三种取值语义各不相同，别合并：
 //   · undefined（浏览器扩展：没有注入通道）→ 用下面的内置默认；
 //   · null（app 内宿主：Dart 侧派发）→ 本监听整个关掉，避免同一次按键被 JS 和 Flutter
@@ -2902,7 +2902,7 @@ window.hoshiPopupMineFirstEntry = async function() {
 //   · 某个动作是 []（未绑 / 用户清空）→ 该动作关掉，而不是回退默认（否则「清空」等于没清）。
 // 表里带上 next/prev 而不只是 mine，是因为 Flutter 侧的通道开关按 scope 生效：设置页会给
 // 本 scope 每个动作都渲染键盘入口，只认 mine 会让另两个成为「能配、按了没反应」的死绑定。
-// 制卡实现上只调 hoshiPopupMineFirstEntry() 去点那颗按钮，**绝不另起第二条制卡桥调用**：
+// 制卡实现上只调 fushiPopupMineFirstEntry() 去点那颗按钮，**绝不另起第二条制卡桥调用**：
 // 三态（＋/✓/✓↩︎）、单飞门、查重刷新全在按钮的 onclick 里，另起一条既会绕过它们，也会
 // 撞上「本文件里制卡桥有且只有一处调用」的守卫测试（popup_append_sentence_asset_test）。
 const HOSHI_POPUP_KEY_DEFAULT_BINDINGS = {
@@ -2913,8 +2913,8 @@ const HOSHI_POPUP_KEY_DEFAULT_BINDINGS = {
 // 本次 keydown 命中哪个弹窗动作：'mine' / 'next' / 'prev' / null。判据与滚轮那套同构：
 // 键名归一后相等，且当前按下的修饰键集合与某条绑定**全等**（故 Ctrl+Enter 绝不会被
 // Ctrl+Shift+Enter 误触）。
-function hoshiPopupKeyAction(e) {
-    const raw = window.__hoshiPopupKeyBindings;
+function fushiPopupKeyAction(e) {
+    const raw = window.__fushiPopupKeyBindings;
     if (raw === null) return null;
     const cfg = (raw && typeof raw === 'object') ? raw : HOSHI_POPUP_KEY_DEFAULT_BINDINGS;
     // Flutter 侧 _webKeyName 的同款归一：全小写 + 去空格，空格键特判成 'space'。
@@ -2939,27 +2939,27 @@ function hoshiPopupKeyAction(e) {
 //   · 输入框/可编辑区一律放行（宿主页的搜索框、弹窗自己的句子编辑框都靠这条）；
 //   · IME 组词期间放行（e.isComposing）——日语输入法的 Enter 是用来确认候选词的，抢了它
 //     就等于把输入法打坏，这在一个日语学习工具里是不可接受的回归；
-//   · 只有 hoshiPopupMineFirstEntry() 真的点到了按钮（返回 true）才 preventDefault，
+//   · 只有 fushiPopupMineFirstEntry() 真的点到了按钮（返回 true）才 preventDefault，
 //     没弹窗 / 按钮禁用时事件原样交还给页面。
-function hoshiPopupIsEditableTarget(t) {
+function fushiPopupIsEditableTarget(t) {
     if (!t) return false;
     if (t.isContentEditable) return true;
     const tag = String(t.tagName || '').toUpperCase();
     return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
-window.__hoshiPopupKeyListener = async function(e) {
+window.__fushiPopupKeyListener = async function(e) {
     if (!e || e.isComposing || e.repeat) return;
-    if (hoshiPopupIsEditableTarget(e.target)) return;
-    const action = hoshiPopupKeyAction(e);
+    if (fushiPopupIsEditableTarget(e.target)) return;
+    const action = fushiPopupKeyAction(e);
     if (!action) return;
     let handled = false;
     try {
         if (action === 'mine') {
-            handled = (await window.hoshiPopupMineFirstEntry()) === true;
-        } else if (typeof window.hoshiFocusDictionaryEntryMove === 'function') {
+            handled = (await window.fushiPopupMineFirstEntry()) === true;
+        } else if (typeof window.fushiFocusDictionaryEntryMove === 'function') {
             // 与 Alt+滚轮同一执行体：只有焦点真的移动了才算接管；单词条 / 已到首尾时返回
             // 'blocked'，这一帧交还给页面（不吞按键）。
-            handled = window.hoshiFocusDictionaryEntryMove(action) === 'moved';
+            handled = window.fushiFocusDictionaryEntryMove(action) === 'moved';
         }
     } catch (_) { handled = false; }
     if (handled) {
@@ -2968,12 +2968,12 @@ window.__hoshiPopupKeyListener = async function(e) {
     }
 };
 try {
-    document.addEventListener('keydown', window.__hoshiPopupKeyListener, true);
+    document.addEventListener('keydown', window.__fushiPopupKeyListener, true);
 } catch (_) { /* 无 document（node 单测直接 require 本文件）：跳过 */ }
 
 // BUG-763/766：确认「制卡前调整」原生对话框时，Dart 回点第 idx 个词条（:scope > .entry
 // DOM 序，与打开对话框时的 entryIndex 同源）的制卡按钮，复用其全部制卡/查重/覆写逻辑。
-window.hoshiPopupMineEntryByIndex = function(idx) {
+window.fushiPopupMineEntryByIndex = function(idx) {
     const root = __hibikiRootNode();
     const first = root && root.querySelector('.entry');
     const container = first && first.parentNode;
@@ -2992,7 +2992,7 @@ window.hoshiPopupMineEntryByIndex = function(idx) {
 // 给每条打 data-hoshi-entry-index，给当前条加 .entry-current（popup.css 用
 // .entry-current .entry-header::before 画 #1a73e8 蓝三角，零字体依赖，与折叠三角同法），并
 // scrollIntoView 进视口。Dart 焦点驱动（阅读器 caret 管线 → DictionaryPopupWebViewState.
-// focusEntryMove → 这里）按 next/prev 调用。与逐字光标 hoshiCaret 正交：只移动词条级指示与
+// focusEntryMove → 这里）按 next/prev 调用。与逐字光标 fushiCaret 正交：只移动词条级指示与
 // 视口，绝不触碰 caret ring；用户决策「咱们没有前进后退·咱们是嵌套查词」，故不做历史栈。
 (function() {
     const CONTAINER_ID = 'entries-container';
@@ -3076,9 +3076,9 @@ window.hoshiPopupMineEntryByIndex = function(idx) {
         return entries.length;
     }
 
-    window.hoshiFocusDictionaryEntry = focusEntry;
-    window.hoshiFocusDictionaryEntryMove = moveEntry;
-    window.hoshiFocusDictionaryEntryReset = resetEntry;
+    window.fushiFocusDictionaryEntry = focusEntry;
+    window.fushiFocusDictionaryEntryMove = moveEntry;
+    window.fushiFocusDictionaryEntryReset = resetEntry;
 })();
 
 // 「自动展开」的单位是「行」，不是「本」：展开数 = window.autoExpandRows × 该词条有效列数。
@@ -3139,9 +3139,9 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
             summary.classList.add('selected');
         }
     };
-    summary.__hoshiToggleSelection = toggleSelection;
-    window.__hoshiDictLongPress = (summaryEl) => {
-        const toggle = summaryEl?.__hoshiToggleSelection;
+    summary.__fushiToggleSelection = toggleSelection;
+    window.__fushiDictLongPress = (summaryEl) => {
+        const toggle = summaryEl?.__fushiToggleSelection;
         if (typeof toggle !== 'function') return false;
         toggle();
         return true;
@@ -3582,7 +3582,7 @@ function _firePopupRendered(stillRendering) {
         _reportPopupHeight();
         // 词典方框排列：渲染完成后（含首条 + 其余条两次调用）铺 masonry。masonry 在下一帧
         // RAF 里跑，跑完会自行 _reportPopupHeight() 复报修正后的高度。
-        window.hoshiRelayoutDictionaries();
+        window.fushiRelayoutDictionaries();
     };
 
     // Custom file fonts are injected immediately before renderPopup(), but
@@ -3746,7 +3746,7 @@ function scheduleMasonry() {
 }
 
 // 宿主改列数 / 外部触发时可调；渲染钩子已在 _firePopupRendered / updatePopupIncremental 里调。
-window.hoshiRelayoutDictionaries = () => {
+window.fushiRelayoutDictionaries = () => {
     observeMasonryTargets();
     scheduleMasonry();
 };
@@ -4159,7 +4159,7 @@ window.updatePopupIncremental = function() {
     applyCustomCSS();
 
     // 增量追加了新的词典方框，重排 masonry 并观察新卡片。
-    window.hoshiRelayoutDictionaries();
+    window.fushiRelayoutDictionaries();
 
     window.flutter_inappwebview.callHandler('popupRendered',
         __hibikiScrollHeight(),
@@ -4272,7 +4272,7 @@ function popupAncestorAbsorbsVerticalWheel(target, deltaPx) {
 }
 // 查词弹窗「上/下一个词条」的滚轮绑定（Yomitan 的 Next/Previous entry）。默认
 // Alt+滚轮下 = 下一条、Alt+滚轮上 = 上一条；in-app 由 popup_settings_injection 注入
-// window.__hoshiEntryWheelBindings 覆盖成用户在「快捷键」设置里配的绑定（动作
+// window.__fushiEntryWheelBindings 覆盖成用户在「快捷键」设置里配的绑定（动作
 // ShortcutAction.popupNextEntry / popupPrevEntry）。浏览器扩展没有那条注入通道，
 // 就吃这里的默认值。
 const HOSHI_ENTRY_WHEEL_DEFAULT_BINDINGS = {
@@ -4283,7 +4283,7 @@ const HOSHI_ENTRY_WHEEL_DEFAULT_BINDINGS = {
 // 判据：deltaY 的符号给方向，当前按下的修饰键集合必须与某条绑定**全等**（故
 // Alt+滚轮绝不会被 Ctrl+Alt+滚轮误触）。裸滚轮永远留给内容滚动，绝不劫持。
 function popupEntryWheelAction(e) {
-    const raw = window.__hoshiEntryWheelBindings;
+    const raw = window.__fushiEntryWheelBindings;
     const cfg = (raw && typeof raw === 'object')
         ? raw
         : HOSHI_ENTRY_WHEEL_DEFAULT_BINDINGS;
@@ -4331,8 +4331,8 @@ const __hibikiPopupWheelListener = (e) => {
     // 的前置早退保证：走到这里的滚轮要么在弹窗 shadow 内（扩展），要么整份文档就是
     // 弹窗（in-app）。
     const entryAction = popupEntryWheelAction(e);
-    if (entryAction && typeof window.hoshiFocusDictionaryEntryMove === 'function') {
-        if (window.hoshiFocusDictionaryEntryMove(entryAction) === 'moved') {
+    if (entryAction && typeof window.fushiFocusDictionaryEntryMove === 'function') {
+        if (window.fushiFocusDictionaryEntryMove(entryAction) === 'moved') {
             e.preventDefault();
             return;
         }
@@ -4390,12 +4390,12 @@ const __hibikiPopupWheelListener = (e) => {
     const coarseMouseNotch = !_popupWheelFineDevice &&
         (e.deltaMode !== 0 || absY >= POPUP_WHEEL_MOUSE_NOTCH_PX);
     // BUG-1026: 用户可调「滚轮速度」倍率。in-app 由 popup_settings_injection 注入
-    // window.__hoshiPopupWheelSpeed；浏览器扩展经查词响应 theme 的 --hibiki-wheel-speed
+    // window.__fushiPopupWheelSpeed；浏览器扩展经查词响应 theme 的 --hibiki-wheel-speed
     // 由 content.js 设同名全局（content/popup 同隔离世界共享 window）。缺省/非法 → 1.0，
     // 与改前逐帧一致。倍率同乘粗鼠标(0.24)与触控板(1.0)，作为统一滚轮速度旋钮。
-    const wheelSpeed = (typeof window.__hoshiPopupWheelSpeed === 'number' &&
-        isFinite(window.__hoshiPopupWheelSpeed) && window.__hoshiPopupWheelSpeed > 0)
-        ? window.__hoshiPopupWheelSpeed
+    const wheelSpeed = (typeof window.__fushiPopupWheelSpeed === 'number' &&
+        isFinite(window.__fushiPopupWheelSpeed) && window.__fushiPopupWheelSpeed > 0)
+        ? window.__fushiPopupWheelSpeed
         : 1;
     const factor = (coarseMouseNotch
         ? POPUP_WHEEL_PIXEL_FACTOR
@@ -4526,7 +4526,7 @@ document.addEventListener('click', (e) => {
             window.flutter_inappwebview.callHandler('tapOutside');
             return;
         }
-        window.hoshiSelection?.selectText(e.clientX, e.clientY, 20);
+        window.fushiSelection?.selectText(e.clientX, e.clientY, 20);
         return;
     }
     // TODO-859 方案1：用「点击是否落在某张词条卡片内」的正向判定取代旧黑名单。旧逻辑
@@ -4563,7 +4563,7 @@ document.addEventListener('mousemove', function(e) {
     var dx = e.clientX - _popupShiftLastX, dy = e.clientY - _popupShiftLastY;
     if (dx * dx + dy * dy < 64) return;
     _popupShiftLastX = e.clientX; _popupShiftLastY = e.clientY;
-    if (window.hoshiSelection) {
-        window.hoshiSelection.selectText(e.clientX, e.clientY, 20);
+    if (window.fushiSelection) {
+        window.fushiSelection.selectText(e.clientX, e.clientY, 20);
     }
 }, {passive: true});

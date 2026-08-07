@@ -7,7 +7,7 @@
 /// inside the **current cue** only: Up/Down hop between cue rows by
 /// `data-cue-index` (reusing the document's own `__lyricsScrollToCue` to centre
 /// the row), Left/Right step character-by-character within the focused cue. Word
-/// lookup reuses `window.hoshiSelection.selectFromPosition`, so a caret lookup
+/// lookup reuses `window.fushiSelection.selectFromPosition`, so a caret lookup
 /// hits the exact same dictionary pipeline as a tap, with `__lyricsCueContext`
 /// set so the favourite/sentence metadata matches the click path.
 ///
@@ -18,41 +18,41 @@ class ReaderLyricsCaretScripts {
 
   /// Activate the caret on the current playing cue. Returns `{ok, rect}`.
   static String enterInvocation() =>
-      'JSON.stringify(window.hoshiLyricsCaret.enter())';
+      'JSON.stringify(window.fushiLyricsCaret.enter())';
 
   /// Deactivate the caret and hide the ring.
-  static String exitInvocation() => 'window.hoshiLyricsCaret.exit()';
+  static String exitInvocation() => 'window.fushiLyricsCaret.exit()';
 
   /// Hide the ring but keep the caret active (mouse switch); [resumeInvocation]
   /// re-shows it for keyboard/gamepad.
-  static String suspendInvocation() => 'window.hoshiLyricsCaret.suspend()';
+  static String suspendInvocation() => 'window.fushiLyricsCaret.suspend()';
   static String resumeInvocation() =>
-      'JSON.stringify(window.hoshiLyricsCaret.resume())';
+      'JSON.stringify(window.fushiLyricsCaret.resume())';
 
   /// Move the caret. `up`/`down` hop cue rows; `left`/`right` (and logical
   /// `forward`/`backward`) step characters within the focused cue. Returns
   /// `{status, rect}` with status ∈ moved | blocked.
   static String moveInvocation(String dir) =>
-      "JSON.stringify(window.hoshiLyricsCaret.move('$dir'))";
+      "JSON.stringify(window.fushiLyricsCaret.move('$dir'))";
 
   /// Whole-page accelerator (LB/RB): jump several cue rows. Same `{status, rect}`
   /// shape as [moveInvocation] (moved/blocked).
   static String scrollPageInvocation(bool forward) =>
-      'JSON.stringify(window.hoshiLyricsCaret.scrollPage($forward))';
+      'JSON.stringify(window.fushiLyricsCaret.scrollPage($forward))';
 
   /// Re-measure the ring after a relayout; re-anchors to the current cue if the
   /// node detached.
   static String refreshInvocation() =>
-      'JSON.stringify(window.hoshiLyricsCaret.refresh())';
+      'JSON.stringify(window.fushiLyricsCaret.refresh())';
 
   /// Look up the word at the caret (reuses the tap dictionary pipeline).
-  static String lookupInvocation() => 'window.hoshiLyricsCaret.lookup()';
+  static String lookupInvocation() => 'window.fushiLyricsCaret.lookup()';
 
   /// A/Enter at the caret — lyrics rows are plain text, so this looks up the word.
-  static String activateInvocation() => 'window.hoshiLyricsCaret.activate()';
+  static String activateInvocation() => 'window.fushiLyricsCaret.activate()';
 
   /// Gamepad hold-A at the caret — also a lookup in lyrics mode.
-  static String longPressInvocation() => 'window.hoshiLyricsCaret.longPress()';
+  static String longPressInvocation() => 'window.fushiLyricsCaret.longPress()';
 
   /// Configure the ring colour and viewport insets.
   static String initInvocation({
@@ -60,11 +60,11 @@ class ReaderLyricsCaretScripts {
     required double insetTop,
     required double insetBottom,
   }) =>
-      "window.hoshiLyricsCaret.init({color:'$color',insetTop:$insetTop,"
+      "window.fushiLyricsCaret.init({color:'$color',insetTop:$insetTop,"
       'insetBottom:$insetBottom})';
 
   // 互指注释（参照本仓 _jsStringLiteral 双实现先例）：本对象的字符模型 / 焦点环 JS 辅助与
-  // [ReaderCaretScripts]（window.hoshiCaret）各自内联一份——两者注入**不同文档**（本文件=有声书
+  // [ReaderCaretScripts]（window.fushiCaret）各自内联一份——两者注入**不同文档**（本文件=有声书
   // 歌词模式 LyricsModeHtml，reader_caret=分页 reader 页 / 词典弹窗），运行时无共享对象，且两侧
   // source() 都是不可插值的 r"""...""" 原始串，无法经 Dart 常量收敛。下列辅助与 reader_caret 对应
   // 方法**逐字节相同**，改任一侧必须同步另一侧：_charLen / _charRect / _applyRingStyle / _rectJson
@@ -72,7 +72,7 @@ class ReaderLyricsCaretScripts {
   // 标点/scope 门控）、_ensureRing（ring id hoshi-lyrics-caret-ring vs hoshi-caret-ring）、
   // _drawRing（本文件不做视口 clamp）、_walker（本文件按 cue 子树取 root 参数）。
   static String source() => r"""
-window.hoshiLyricsCaret = {
+window.fushiLyricsCaret = {
   active: false,
   cueIndex: -1,
   node: null,
@@ -97,8 +97,8 @@ window.hoshiLyricsCaret = {
 
   _cues: function() { return document.querySelectorAll('.cue'); },
   _walker: function(root) {
-    if (window.hoshiSelection && typeof window.hoshiSelection.createWalker === 'function') {
-      return window.hoshiSelection.createWalker(root);
+    if (window.fushiSelection && typeof window.fushiSelection.createWalker === 'function') {
+      return window.fushiSelection.createWalker(root);
     }
     return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
   },
@@ -330,7 +330,7 @@ window.hoshiLyricsCaret = {
   },
   lookup: function() {
     if (!this.active || !this.node) return false;
-    var s = window.hoshiSelection;
+    var s = window.fushiSelection;
     if (!s || typeof s.selectFromPosition !== 'function') return false;
     this._setCueContext();
     if (typeof s.clearSelection === 'function') s.clearSelection();

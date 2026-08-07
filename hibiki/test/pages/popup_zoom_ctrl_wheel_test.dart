@@ -15,12 +15,12 @@ import '../widgets/widget_test_helpers.dart';
 ///  1. 词典字号的步进 / 夹紧纯函数（[steppedPopupZoomFontSize] /
 ///     [clampPopupZoomFontSize]）——JS wheel 监听与 Dart 持久化两侧共用同一语义。
 ///  2. 源码里 Ctrl+滚轮监听（`_zoomWheelJs`）、其 onLoadStop 注入、`popupZoomFont`
-///     回调、以及 buildPopupSettingsJs 暴露的 `__hoshiPopupFontSize/UiScale` 都在位，
+///     回调、以及 buildPopupSettingsJs 暴露的 `__fushiPopupFontSize/UiScale` 都在位，
 ///     防止后续重构悄悄拆掉某一环导致缩放不生效 / 不持久化。
 ///  3. TODO-1353 复诉：弹窗顶栏必须有**可见的** A−/A+ 手动字号按钮（触屏没有
 ///     Ctrl+滚轮，这是移动端唯一入口）+ 可见 Tooltip 提示（桌面附带
 ///     dictionary_font_size_zoom_hint），且按钮与滚轮共用同一 JS 步进
-///     `window.__hoshiPopupZoomStep`（夹紧 / 即时 zoom / 持久化语义不漂移）。
+///     `window.__fushiPopupZoomStep`（夹紧 / 即时 zoom / 持久化语义不漂移）。
 void main() {
   group('DictionaryPopupWebViewState 字号步进/夹紧 (TODO-1353)', () {
     test('上滚放大一档、下滚缩小一档（16 基准）', () {
@@ -67,7 +67,7 @@ void main() {
     ).readAsStringSync();
 
     test('wheel 监听只在 ctrlKey 时拦截并 preventDefault', () {
-      expect(webviewSrc.contains('__hoshiZoomWheelInstalled'), isTrue);
+      expect(webviewSrc.contains('__fushiZoomWheelInstalled'), isTrue);
       expect(webviewSrc.contains("addEventListener('wheel'"), isTrue);
       expect(webviewSrc.contains('e.ctrlKey'), isTrue);
       expect(webviewSrc.contains('e.preventDefault()'), isTrue);
@@ -82,21 +82,21 @@ void main() {
       expect(webviewSrc.contains('setDictionaryFontSize('), isTrue);
     });
 
-    test('注入体暴露 __hoshiPopupFontSize / __hoshiPopupUiScale 供 JS 就地算 zoom', () {
-      expect(injectionSrc.contains('window.__hoshiPopupFontSize'), isTrue);
-      expect(injectionSrc.contains('window.__hoshiPopupUiScale'), isTrue);
+    test('注入体暴露 __fushiPopupFontSize / __fushiPopupUiScale 供 JS 就地算 zoom', () {
+      expect(injectionSrc.contains('window.__fushiPopupFontSize'), isTrue);
+      expect(injectionSrc.contains('window.__fushiPopupUiScale'), isTrue);
     });
 
-    test('步进本体收口 window.__hoshiPopupZoomStep：wheel 与 A−/A+ 共用一条路径', () {
+    test('步进本体收口 window.__fushiPopupZoomStep：wheel 与 A−/A+ 共用一条路径', () {
       // JS 侧唯一步进实现（夹紧 + 就地 zoom + popupZoomFont 持久化）……
       expect(
-        webviewSrc.contains('window.__hoshiPopupZoomStep = function(dir)'),
+        webviewSrc.contains('window.__fushiPopupZoomStep = function(dir)'),
         isTrue,
       );
       // ……wheel 监听调它……
       expect(
         webviewSrc
-            .contains('window.__hoshiPopupZoomStep(e.deltaY < 0 ? 1 : -1)'),
+            .contains('window.__fushiPopupZoomStep(e.deltaY < 0 ? 1 : -1)'),
         isTrue,
       );
       // ……Dart 手动按钮入口也调它（不得另写一份步进语义）。
@@ -166,7 +166,7 @@ void main() {
     });
 
     test('按钮接线：走 zoomFontStep（与滚轮同一路径）且桌面 Tooltip 附带滚轮提示', () {
-      // 点按必须经 zoomFontStep → __hoshiPopupZoomStep（同夹紧 [8,72]、同持久化），
+      // 点按必须经 zoomFontStep → __fushiPopupZoomStep（同夹紧 [8,72]、同持久化），
       // 不得在 layer 里另算字号。
       expect(layerSrc.contains('zoomFontStep(zoomIn: zoomIn)'), isTrue);
       expect(layerSrc.contains('Icons.text_decrease'), isTrue);

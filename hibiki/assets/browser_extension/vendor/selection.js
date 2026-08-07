@@ -13,8 +13,8 @@ const JAPANESE_RANGES = [
     [0xff5b, 0xff60], [0xffe0, 0xffee],
 ];
 
-window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
-window.hoshiSelection = {
+window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+window.fushiSelection = {
     selection: null,
     highlightWrappers: [],
     scanDelimiters: '。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─\n\r"\'“”‘’«»‹›',
@@ -288,7 +288,7 @@ window.hoshiSelection = {
     // Build the popup word selection starting at (node, offset): expand a
     // non-Japanese hit left to its token start, scan forward up to maxLength
     // chars, and fire textSelected (→ a deeper lookup). Shared by the tap path
-    // (selectText) and the keyboard/gamepad caret (window.hoshiCaret.lookup).
+    // (selectText) and the keyboard/gamepad caret (window.fushiCaret.lookup).
     // x/y are optional — the caret omits them, so the rect falls back to the
     // first char's bounding box. Caller clears any prior selection first.
     selectFromPosition(node, offset, maxLength, x, y) {
@@ -392,7 +392,7 @@ window.hoshiSelection = {
             }
         }
 
-        if (window.__hoshiCssHighlightsSupported) {
+        if (window.__fushiCssHighlightsSupported) {
             const highlights = trimmedRanges.map(seg => {
                 const range = document.createRange();
                 range.setStart(seg.node, seg.start);
@@ -434,7 +434,7 @@ window.hoshiSelection = {
 
     clearSelection() {
         window.getSelection()?.removeAllRanges();
-        if (window.__hoshiCssHighlightsSupported) {
+        if (window.__fushiCssHighlightsSupported) {
             CSS.highlights.delete('hoshi-selection');
         } else {
             this.clearHighlightWrappers();

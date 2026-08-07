@@ -54,7 +54,7 @@ void main() {
           controllerAvailable: true,
         ),
         isFalse,
-        reason: '内容未就绪时 hoshiProgressDetails 可能算不出总数',
+        reason: '内容未就绪时 fushiProgressDetails 可能算不出总数',
       );
     });
 
@@ -210,7 +210,7 @@ void main() {
       final String body = methodBody(src, 'void _refreshProgressFromScroll()');
       // 在飞时再来的滚动只置 pending，不并发跑第二次 evaluateJavascript。
       expect(containsCodeLine(body, 'if (_scrollProgressInFlight) {'), isTrue,
-          reason: '在飞期必须只置 pending，避免 hoshiProgressDetails 调用堆积');
+          reason: '在飞期必须只置 pending，避免 fushiProgressDetails 调用堆积');
       expect(containsCodeLine(body, '_scrollProgressPending = true;'), isTrue);
       // 飞完后若有 pending 补跑一次，保证最终静止位置一定被刷到。
       expect(containsCodeLine(body, 'whenComplete('), isTrue,
@@ -237,9 +237,9 @@ void main() {
             'gate，_reanchorPending 时返回 null，不能直接读瞬态 progress=0',
       );
       expect(
-        containsCodeLine(body, "source: 'window.hoshiProgressDetails()'"),
+        containsCodeLine(body, "source: 'window.fushiProgressDetails()'"),
         isFalse,
-        reason: '裸 hoshiProgressDetails 会绕过 _reanchorPending/settled gate',
+        reason: '裸 fushiProgressDetails 会绕过 _reanchorPending/settled gate',
       );
     });
   });
@@ -252,7 +252,7 @@ void main() {
 /// 抹掉，配对当场跑偏。先按 Dart 侧的稳定标记把 JS blob 切出来，再在里面用 JS 词法
 /// 配对函数体。两个标记都是代码本体，掩码后仍在。
 String _engineJs(String maskedSource) {
-  const String start = 'window.__hoshiEngine = {';
+  const String start = 'window.__fushiEngine = {';
   const String end = r'$longPressDragJs';
   final int startIndex = maskedSource.indexOf(start);
   expect(startIndex, isNonNegative, reason: '找不到注入引擎脚本起点：$start');

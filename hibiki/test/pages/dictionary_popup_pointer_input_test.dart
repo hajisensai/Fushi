@@ -85,7 +85,7 @@ void main() {
       // 键表照常下发（键盘那条路不受指针所有权影响）。
       expect(js.contains("'Escape'"), isTrue);
       // 按钮表为空：热槽 WebView 上万一有历史遗留的监听也永不命中。
-      expect(js.contains('__hoshiKeyBridgeButtons_hostInputToken'), isTrue);
+      expect(js.contains('__fushiKeyBridgeButtons_hostInputToken'), isTrue);
       expect(RegExp(r'Buttons_hostInputToken.\] = \[\];').hasMatch(js), isTrue);
     });
 

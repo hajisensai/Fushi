@@ -22,7 +22,7 @@ class EpubSection {
 ///
 /// 偏移以**规范化后**（白名单保留假名/汉字/字母数字，其余剥掉）的字符位置
 /// 给出。运行时高亮若需要 DOM 坐标，WebView 侧必须用**完全相同的规范化
-/// 规则**（见 `audiobook_bridge.dart::__hoshiIsSkippable`）走 text node 数过来。
+/// 规则**（见 `audiobook_bridge.dart::__fushiIsSkippable`）走 text node 数过来。
 class CueMatch {
   const CueMatch({
     required this.cueSentenceIndex,

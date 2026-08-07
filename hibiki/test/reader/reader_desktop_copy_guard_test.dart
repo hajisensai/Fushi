@@ -30,7 +30,7 @@ String statementAt(String src, String anchor) {
 /// 复制链路涉 WebView2 + 平台键盘转发，widget 测试照不到真实复制，故这里用源码
 /// 扫描钉死三件事：① 键事件处理调用纯谓词 readerShouldHandleDesktopCopy 且门控
 /// isWindowsPlatform；② 取的是浏览器原生 getSelection（window.getSelection），
-/// **不是** hoshiSelection 查词选区；③ 命中后写系统剪贴板 Clipboard.setData。
+/// **不是** fushiSelection 查词选区；③ 命中后写系统剪贴板 Clipboard.setData。
 void main() {
   final File caret =
       File('lib/src/pages/implementations/reader_hibiki/caret.part.dart');
@@ -52,10 +52,10 @@ void main() {
     expect(src, contains('Clipboard.setData'),
         reason: '复制必须写系统剪贴板 Clipboard.setData');
     expect(src, contains('nativeSelectionTextInvocation'),
-        reason: '必须取浏览器原生选区，不碰 hoshiSelection 查词选区');
+        reason: '必须取浏览器原生选区，不碰 fushiSelection 查词选区');
   });
 
-  test('reader_selection_scripts.dart：取 window.getSelection 而非 hoshiSelection',
+  test('reader_selection_scripts.dart：取 window.getSelection 而非 fushiSelection',
       () {
     final String src = scripts.readAsStringSync();
     final int start = src.indexOf('nativeSelectionTextInvocation');
@@ -64,7 +64,7 @@ void main() {
     // invocation 方法体里必须是浏览器原生 getSelection。
     final String body = src.substring(start, start + 200);
     expect(body, contains('window.getSelection'), reason: '复制取的是浏览器原生选区');
-    expect(body.contains('hoshiSelection'), isFalse,
-        reason: '不得用 hoshiSelection 查词选区（BUG-368 注释，是另一套）');
+    expect(body.contains('fushiSelection'), isFalse,
+        reason: '不得用 fushiSelection 查词选区（BUG-368 注释，是另一套）');
   });
 }

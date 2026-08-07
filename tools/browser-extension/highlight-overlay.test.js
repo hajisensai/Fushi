@@ -128,7 +128,7 @@ function loadAndLookup() {
     innerHeight: 800,
     matchMedia: () => ({ matches: false }),
     // 与 app 同款 selection.js 的最小行为桩：命中一个字、扩成词、并暴露 selection.ranges 供覆盖层取 rects。
-    hoshiSelection: {
+    fushiSelection: {
       selection: { ranges: [{ node: hostTextNode, start: 0, end: 2 }], text: '世界' },
       getCharacterAtPoint: () => ({ node: hostTextNode, offset: 0 }),
       selectFromPosition: () => '世界',

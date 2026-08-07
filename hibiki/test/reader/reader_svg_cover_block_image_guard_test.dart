@@ -76,20 +76,20 @@ void main() {
 
   test('BUG-025 tap handler resolves <svg><image> covers to a zoomable URL',
       () {
-    // TODO-589 batch8: _hoshiBlockImageUrl/onImageTap 在 setup 脚本/handler，
+    // TODO-589 batch8: _fushiBlockImageUrl/onImageTap 在 setup 脚本/handler，
     // 已搬到 reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
     final String source = readReaderPageSource();
 
     expect(
       source,
-      contains('function _hoshiBlockImageUrl(target)'),
+      contains('function _fushiBlockImageUrl(target)'),
       reason: 'tap resolution must be centralised so svg covers are handled '
           'alongside <img>',
     );
 
     final String helper = _functionSource(
       source,
-      'function _hoshiBlockImageUrl(target)',
+      'function _fushiBlockImageUrl(target)',
       'function _gestureEnd',
     );
     // Raster <img> path preserved.
@@ -104,7 +104,7 @@ void main() {
     // The tap branch must route through the helper, not the old IMG-only check.
     // TODO-861④ refactor: the resolved element is bound to `tapEl` (so the blur
     // reveal can run before zoom), then passed to the shared resolver — same
-    // invariant, still elementFromPoint(x, y) -> _hoshiBlockImageUrl.
+    // invariant, still elementFromPoint(x, y) -> _fushiBlockImageUrl.
     expect(
       source,
       contains('var tapEl = document.elementFromPoint(x, y);'),
@@ -112,7 +112,7 @@ void main() {
     );
     expect(
       source,
-      contains('_hoshiBlockImageUrl(tapEl)'),
+      contains('_fushiBlockImageUrl(tapEl)'),
       reason: 'the single-tap branch must use the shared resolver',
     );
   });

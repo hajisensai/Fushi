@@ -15,7 +15,7 @@
 //     handler instead of hoshi's native `FushiReaderRestore.postMessage`.
 //   * media-semantics is an M0 no-op stub (images render from cloned chapter
 //     markup); Sasayaki / highlights / E-Ink overlay are M1 (their hoshi calls
-//     are guarded by `window.hoshiHighlights` / popupHost checks, safe at M0).
+//     are guarded by `window.fushiHighlights` / popupHost checks, safe at M0).
 //   * Config placeholders become Dart interpolation; `clickAdvance` is NOT a
 //     hoshi JS concern -- the host (webview.part.dart) binds blank-tap ->
 //     `paginate("forward")`.
@@ -24,7 +24,7 @@
 // invokes via short-circuit guards (paginate / calculateProgress /
 // applySasayakiCues / highlightSasayakiCue / clearSasayakiCue). Methods the VN
 // object does not define (pageInfo / scrollToCharOffset / beginUiScaleReanchor /
-// hoshiProgressDetails) stay no-op via those `&&` / `typeof` guards.
+// fushiProgressDetails) stay no-op via those `&&` / `typeof` guards.
 //
 // ignore_for_file: lines_longer_than_80_chars
 library;
@@ -41,7 +41,7 @@ class ReaderVisualNovelScripts {
   /// VN shell 的静态源码（`<script>…</script>`，零 per-nav 插值）。
   ///
   /// BUG-1140 第二阶段①：原来 `vnShellScript({initialProgress, revealSpeed, …})`
-  /// 把每次导航的参数插进源码；现在整段被包成 `window.__hoshiShells.vn = function(C)`，
+  /// 把每次导航的参数插进源码；现在整段被包成 `window.__fushiShells.vn = function(C)`，
   /// 参数由运行时读 `C`。恢复锚三选一的优先级与旧 Dart 三元式逐条相同。
   static String vnShellScript() => _shell();
 
@@ -62,7 +62,7 @@ class ReaderVisualNovelScripts {
     // consumed by applyImageMaxVars below.
     const double imageWidthRatio = ReaderLayoutDefaults.imageWidthViewportRatio;
     return '''<script>
-window.__hoshiShells.vn = function(C) {
+window.__fushiShells.vn = function(C) {
 (function(global) {
   'use strict';
 
@@ -2559,8 +2559,8 @@ window.fushiReader = {
     this.refreshSentenceAudioCuePresentation();
   },
   patchHighlightsForVisualNovel: function() {
-    var highlights = window.hoshiHighlights;
-    if (!highlights || highlights.hoshiVisualNovelPatched) return;
+    var highlights = window.fushiHighlights;
+    if (!highlights || highlights.fushiVisualNovelPatched) return;
     var reader = this;
     var originalCreateHighlight = typeof highlights.createHighlight === 'function'
       ? highlights.createHighlight.bind(highlights)
@@ -2584,7 +2584,7 @@ window.fushiReader = {
         return originalRemoveHighlight(id);
       };
     }
-    highlights.hoshiVisualNovelPatched = true;
+    highlights.fushiVisualNovelPatched = true;
   },
   highlightSegmentsForChapterRawRange: function(offset, length) {
     return this.rangeMap.collectRawSegments(offset, length);
@@ -2607,7 +2607,7 @@ window.fushiReader = {
     });
   },
   clearCurrentHighlightWrappers: function() {
-    var highlights = window.hoshiHighlights;
+    var highlights = window.fushiHighlights;
     if (!highlights || !highlights.wrappers || typeof highlights.wrappers.forEach !== 'function') return;
     var wrapperGroups = [];
     highlights.wrappers.forEach(function(wrappers) {
@@ -2620,10 +2620,10 @@ window.fushiReader = {
   },
   applyCurrentScreenHighlights: function() {
     var highlights = Array.isArray(this.initialHighlights) ? this.initialHighlights : [];
-    if (!highlights.length || !window.hoshiHighlights || typeof window.hoshiHighlights.applyHighlights !== 'function') return;
+    if (!highlights.length || !window.fushiHighlights || typeof window.fushiHighlights.applyHighlights !== 'function') return;
     this.patchHighlightsForVisualNovel();
     this.clearCurrentHighlightWrappers();
-    window.hoshiHighlights.applyHighlights(highlights);
+    window.fushiHighlights.applyHighlights(highlights);
   },
   paginate: function(direction) {
     if (this.nativeSelectionActive) return "limit";
@@ -2824,15 +2824,15 @@ window.fushiReader = {
     var ranges = this.cueGeometryRanges.get(cueId) || [];
     var rects = [];
     ranges.forEach(function(range) {
-      if (window.hoshiRubyGeometry) {
-        window.hoshiRubyGeometry.rectsForRange(range).forEach(function(rect) { rects.push(rect); });
+      if (window.fushiRubyGeometry) {
+        window.fushiRubyGeometry.rectsForRange(range).forEach(function(rect) { rects.push(rect); });
       } else {
         Array.from(range.getClientRects()).forEach(function(rect) {
           rects.push({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
         });
       }
     });
-    return window.hoshiRubyGeometry ? window.hoshiRubyGeometry.mergeInlineRects(rects) : rects;
+    return window.fushiRubyGeometry ? window.fushiRubyGeometry.mergeInlineRects(rects) : rects;
   },
   renderSentenceAudioOverlay: function() {
     if (!this.activeCueId || !this.isEInkMode()) {

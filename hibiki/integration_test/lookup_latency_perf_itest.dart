@@ -133,10 +133,10 @@ void main() {
       bool dictShown() => readerState.isDictionaryShown as bool;
 
       // BUG-712 ①运行时证据：门控镜像必须已注入且放行（chrome+lookup 都 true 时
-      // tap 走 JS 直选路径，3 跳并 1 跳）；hoshiSelection 就绪是直选前提。
+      // tap 走 JS 直选路径，3 跳并 1 跳）；fushiSelection 就绪是直选前提。
       final dynamic gateRaw = await runInWebView(
-        'JSON.stringify({gate: window.__hoshiTapGate || null, '
-        'sel: !!window.hoshiSelection})',
+        'JSON.stringify({gate: window.__fushiTapGate || null, '
+        'sel: !!window.fushiSelection})',
       );
       debugPrint('[perf-e2e] tapGate=$gateRaw');
 

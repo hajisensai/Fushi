@@ -12,14 +12,14 @@ void main() {
     test('generates correct JS call (tap path defaults fromHover:false)', () {
       expect(
         ReaderSelectionScripts.selectInvocation(100.5, 200.0, 50),
-        'window.hoshiSelection.selectText(100.5, 200.0, 50, false)',
+        'window.fushiSelection.selectText(100.5, 200.0, 50, false)',
       );
     });
 
     test('handles zero coordinates', () {
       expect(
         ReaderSelectionScripts.selectInvocation(0, 0, 1),
-        'window.hoshiSelection.selectText(0.0, 0.0, 1, false)',
+        'window.fushiSelection.selectText(0.0, 0.0, 1, false)',
       );
     });
 
@@ -27,7 +27,7 @@ void main() {
     test('hover path passes fromHover:true', () {
       expect(
         ReaderSelectionScripts.selectInvocation(10, 20, 400, fromHover: true),
-        'window.hoshiSelection.selectText(10.0, 20.0, 400, true)',
+        'window.fushiSelection.selectText(10.0, 20.0, 400, true)',
       );
     });
   });
@@ -36,14 +36,14 @@ void main() {
     test('generates correct JS call', () {
       expect(
         ReaderSelectionScripts.highlightInvocation(5),
-        'JSON.stringify(window.hoshiSelection.highlightSelection(5))',
+        'JSON.stringify(window.fushiSelection.highlightSelection(5))',
       );
     });
 
     test('handles zero count', () {
       expect(
         ReaderSelectionScripts.highlightInvocation(0),
-        'JSON.stringify(window.hoshiSelection.highlightSelection(0))',
+        'JSON.stringify(window.fushiSelection.highlightSelection(0))',
       );
     });
   });
@@ -100,7 +100,7 @@ void main() {
     test('generates correct JS call', () {
       expect(
         ReaderSelectionScripts.clearInvocation(),
-        'window.hoshiSelection.clearSelection()',
+        'window.fushiSelection.clearSelection()',
       );
     });
   });
@@ -149,10 +149,10 @@ void main() {
       expect(result, endsWith('</script>'));
     });
 
-    test('contains hoshiSelection object', () {
+    test('contains fushiSelection object', () {
       expect(
         ReaderSelectionScripts.source(),
-        contains('window.hoshiSelection'),
+        contains('window.fushiSelection'),
       );
     });
   });
@@ -238,7 +238,7 @@ void main() {
     });
 
     test('includes CSS Highlights API support detection', () {
-      expect(js, contains('__hoshiCssHighlightsSupported'));
+      expect(js, contains('__fushiCssHighlightsSupported'));
       expect(js, contains('CSS.highlights'));
     });
 

@@ -1023,7 +1023,7 @@ class GlobalLookupController {
     // off the real word position):
     //   - onLinkClick: headword / kanji-tag / kanji-character / structured href.
     //   - textSelected: TAPPING PLAIN GLOSSARY TEXT — popup.js's
-    //     hoshiSelection.selectText -> selection.js callHandler('textSelected',
+    //     fushiSelection.selectText -> selection.js callHandler('textSelected',
     //     text, rect). The in-app popup (dictionary_popup_webview) registers
     //     BOTH; the app-external controller used to register only onLinkClick, so
     //     a body tap was silently dropped and "clicking plain text never opens a
@@ -1117,7 +1117,7 @@ class GlobalLookupController {
       await _renderStack();
       glog('nested: "$query" entries=${result.entries.length}');
       // TODO-1190 — mark the searched word inside the PARENT card's popup.js
-      // realm (host.highlightFrame -> hoshiSelection.highlightSelection). Only
+      // realm (host.highlightFrame -> fushiSelection.highlightSelection). Only
       // when the child search matched something; count = the matched char length
       // (same source the in-app lookupHighlightCharCount reads). No-op host-side
       // on a bad index / non-positive count.

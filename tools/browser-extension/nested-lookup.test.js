@@ -282,17 +282,17 @@ function makeSourceTextNode(text, base) {
   return { nodeType: 3, textContent: text, __rectBase: base };
 }
 
-// 装一个 hoshiSelection 桩：selection.ranges 指向宿主页原文节点（与真实 selectFromPosition 的
+// 装一个 fushiSelection 桩：selection.ranges 指向宿主页原文节点（与真实 selectFromPosition 的
 // 产物同形），供 fushiSelectionRects 只读取几何。
 function installSelection(windowObj, node, start, end) {
-  windowObj.hoshiSelection = {
+  windowObj.fushiSelection = {
     __node: node,
     selection: { ranges: [{ node, start, end }] },
     getSelectionRect() {
       return { x: node.__rectBase.left, y: node.__rectBase.top, width: 32, height: 20 };
     },
     highlightSelection() { return null; },
-    clearSelection() { windowObj.hoshiSelection.selection = null; },
+    clearSelection() { windowObj.fushiSelection.selection = null; },
     selectText() {},
     getCharacterAtPoint() { return null; },
     selectFromPosition() { return ''; },
@@ -325,8 +325,8 @@ function lookupResponder(entriesByTerm) {
 // fushiSendLookup），否则同词去重状态 fushiLastTerm 根本不会被写，相关守卫会假绿。
 function shiftHover(world, term, node, x, y) {
   const { windowObj, docListeners } = world;
-  windowObj.hoshiSelection.getCharacterAtPoint = () => ({ node, offset: 0 });
-  windowObj.hoshiSelection.selectFromPosition = () => term;
+  windowObj.fushiSelection.getCharacterAtPoint = () => ({ node, offset: 0 });
+  windowObj.fushiSelection.selectFromPosition = () => term;
   const move = { shiftKey: true, buttons: 0, clientX: x, clientY: y };
   for (const r of (docListeners.mousemove || [])) r.handler(move);
 }

@@ -8,7 +8,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 
 /// BUG-007 设备验证（真 InAppWebView）：cue 推进高亮从图片**前**一句推进到图片**后**
-/// 一句时（中间隔着 svg），`__hoshiHighlight` 的锚点间 DOM 检测必须真的触发
+/// 一句时（中间隔着 svg），`__fushiHighlight` 的锚点间 DOM 检测必须真的触发
 /// `onImageDetected`。
 ///
 /// 这正是离散翻页跳过整页插图的等价场景：s1 和 s2 是相邻的两个 cue 锚点，中间的 svg
@@ -51,15 +51,15 @@ void main() {
             );
           },
           onLoadStop: (InAppWebViewController controller, WebUri? url) async {
-            // 注入真实 bridge（含 __hoshiHighlight）。
+            // 注入真实 bridge（含 __fushiHighlight）。
             await AudiobookBridge.inject(controller);
-            // 先高亮图片前一句（建立 __hoshiPrevHighlight 锚点）。
+            // 先高亮图片前一句（建立 __fushiPrevHighlight 锚点）。
             await controller.evaluateJavascript(
-              source: "window.__hoshiHighlight('[data-hoshi-sid=s1]', false);",
+              source: "window.__fushiHighlight('[data-hoshi-sid=s1]', false);",
             );
             // 再推进到图片后一句 —— 中间隔着 svg，应触发检测。
             await controller.evaluateJavascript(
-              source: "window.__hoshiHighlight('[data-hoshi-sid=s2]', false);",
+              source: "window.__fushiHighlight('[data-hoshi-sid=s2]', false);",
             );
             if (!driven.isCompleted) driven.complete();
           },
@@ -106,10 +106,10 @@ void main() {
             await AudiobookBridge.inject(controller);
             await controller.evaluateJavascript(
                 source:
-                    "window.__hoshiHighlight('[data-hoshi-sid=s1]', true);");
+                    "window.__fushiHighlight('[data-hoshi-sid=s1]', true);");
             await controller.evaluateJavascript(
                 source:
-                    "window.__hoshiHighlight('[data-hoshi-sid=s2]', true);");
+                    "window.__fushiHighlight('[data-hoshi-sid=s2]', true);");
             if (!driven.isCompleted) driven.complete();
           },
         ),
@@ -153,7 +153,7 @@ void main() {
           },
           onLoadStop: (InAppWebViewController controller, WebUri? url) async {
             await controller.evaluateJavascript(source: '''
-              window.__hoshiCssHighlightsSupported = true;
+              window.__fushiCssHighlightsSupported = true;
               window.fushiReader = {
                 cueRangesMap: new Map(),
                 activeCueId: null,
@@ -173,10 +173,10 @@ void main() {
             await AudiobookBridge.inject(controller);
             await controller.evaluateJavascript(
                 source:
-                    "window.__hoshiHighlightSentenceAudioCueById('c1', false);");
+                    "window.__fushiHighlightSentenceAudioCueById('c1', false);");
             await controller.evaluateJavascript(
                 source:
-                    "window.__hoshiHighlightSentenceAudioCueById('c2', true);");
+                    "window.__fushiHighlightSentenceAudioCueById('c2', true);");
             if (!driven.isCompleted) driven.complete();
           },
         ),

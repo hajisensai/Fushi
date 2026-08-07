@@ -15,28 +15,28 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// 取整，非不动点、落相邻页）。**持久化恢复**（退出再进）当年漏修，仍走 ②。
 ///
 /// 修复：保存时把 `getFirstVisibleCharOffset()` 的 section 内精确字符偏移随
-/// `hoshiProgressDetails` 报上来、落 DB 新列 `char_offset`；恢复时 `>=0` 走新增的
+/// `fushiProgressDetails` 报上来、落 DB 新列 `char_offset`；恢复时 `>=0` 走新增的
 /// `restoreToCharOffset(charOffset)`（分页+连续都加，复用成熟 `scrollToCharOffset`），
 /// 否则回退 `restoreProgress(分数)`（旧存档兼容）。
 ///
 /// 谁把恢复退回纯粗粒度分数路径、或保存不再报精确偏移，本测试红。
 void main() {
-  // TODO-589 batch8: hoshiProgressDetails(setup 脚本) + initialCharOffset 注入
+  // TODO-589 batch8: fushiProgressDetails(setup 脚本) + initialCharOffset 注入
   // 已搬到 reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
   final String pageSrc = readReaderPageSource();
   final String jsSrc = File(
     'lib/src/reader/reader_pagination_scripts.dart',
   ).readAsStringSync();
 
-  test('hoshiProgressDetails 携带 getFirstVisibleCharOffset 精确偏移 (BUG-162)', () {
-    final int start = pageSrc.indexOf('window.hoshiProgressDetails = function');
+  test('fushiProgressDetails 携带 getFirstVisibleCharOffset 精确偏移 (BUG-162)', () {
+    final int start = pageSrc.indexOf('window.fushiProgressDetails = function');
     expect(start, greaterThanOrEqualTo(0),
-        reason: '找不到 hoshiProgressDetails 定义');
+        reason: '找不到 fushiProgressDetails 定义');
     final int end = pageSrc.indexOf('\n  };', start);
     expect(end, greaterThan(start));
     final String body = pageSrc.substring(start, end);
     expect(body.contains('getFirstVisibleCharOffset'), isTrue,
-        reason: 'hoshiProgressDetails 必须报告精确字符偏移，否则退出再进只能回退粗粒度分数');
+        reason: 'fushiProgressDetails 必须报告精确字符偏移，否则退出再进只能回退粗粒度分数');
   });
 
   test('分页+连续两条恢复路径都支持精确字符偏移恢复 (BUG-162)', () {

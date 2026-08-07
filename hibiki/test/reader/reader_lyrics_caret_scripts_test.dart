@@ -5,8 +5,8 @@ void main() {
   group('ReaderLyricsCaretScripts.source()', () {
     final String src = ReaderLyricsCaretScripts.source();
 
-    test('defines the hoshiLyricsCaret object and core API', () {
-      expect(src, contains('window.hoshiLyricsCaret'));
+    test('defines the fushiLyricsCaret object and core API', () {
+      expect(src, contains('window.fushiLyricsCaret'));
       for (final String fn in <String>[
         'enter:',
         'exit:',
@@ -29,37 +29,37 @@ void main() {
       expect(src, contains('_lineMove'));
     });
 
-    test('lookup reuses hoshiSelection.selectFromPosition with cue context',
+    test('lookup reuses fushiSelection.selectFromPosition with cue context',
         () {
-      expect(src, contains('window.hoshiSelection'));
+      expect(src, contains('window.fushiSelection'));
       expect(src, contains('selectFromPosition'));
       expect(src, contains('__lyricsCueContext'));
       expect(src, contains('data-text-fragment-id'));
     });
   });
 
-  group('ReaderLyricsCaretScripts invocations target hoshiLyricsCaret', () {
+  group('ReaderLyricsCaretScripts invocations target fushiLyricsCaret', () {
     test('enter/exit/move/scrollPage/lookup/activate/refresh', () {
       expect(ReaderLyricsCaretScripts.enterInvocation(),
-          'JSON.stringify(window.hoshiLyricsCaret.enter())');
+          'JSON.stringify(window.fushiLyricsCaret.enter())');
       expect(ReaderLyricsCaretScripts.exitInvocation(),
-          'window.hoshiLyricsCaret.exit()');
+          'window.fushiLyricsCaret.exit()');
       expect(ReaderLyricsCaretScripts.moveInvocation('up'),
-          "JSON.stringify(window.hoshiLyricsCaret.move('up'))");
+          "JSON.stringify(window.fushiLyricsCaret.move('up'))");
       expect(ReaderLyricsCaretScripts.scrollPageInvocation(true),
-          'JSON.stringify(window.hoshiLyricsCaret.scrollPage(true))');
+          'JSON.stringify(window.fushiLyricsCaret.scrollPage(true))');
       expect(ReaderLyricsCaretScripts.lookupInvocation(),
-          'window.hoshiLyricsCaret.lookup()');
+          'window.fushiLyricsCaret.lookup()');
       expect(ReaderLyricsCaretScripts.activateInvocation(),
-          'window.hoshiLyricsCaret.activate()');
+          'window.fushiLyricsCaret.activate()');
       expect(ReaderLyricsCaretScripts.refreshInvocation(),
-          'JSON.stringify(window.hoshiLyricsCaret.refresh())');
+          'JSON.stringify(window.fushiLyricsCaret.refresh())');
       expect(ReaderLyricsCaretScripts.suspendInvocation(),
-          'window.hoshiLyricsCaret.suspend()');
+          'window.fushiLyricsCaret.suspend()');
       expect(ReaderLyricsCaretScripts.resumeInvocation(),
-          'JSON.stringify(window.hoshiLyricsCaret.resume())');
+          'JSON.stringify(window.fushiLyricsCaret.resume())');
       expect(ReaderLyricsCaretScripts.longPressInvocation(),
-          'window.hoshiLyricsCaret.longPress()');
+          'window.fushiLyricsCaret.longPress()');
     });
 
     test('initInvocation carries ring color', () {
@@ -68,7 +68,7 @@ void main() {
         insetTop: 10,
         insetBottom: 0,
       );
-      expect(js, contains('window.hoshiLyricsCaret.init('));
+      expect(js, contains('window.fushiLyricsCaret.init('));
       expect(js, contains('rgba(1,2,3,0.98)'));
     });
   });

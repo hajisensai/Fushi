@@ -9,10 +9,10 @@ import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
 void main() {
   group('ReaderSelectionScripts.nativeSelection (BUG-402)', () {
-    test('invocation 取浏览器原生 getSelection 而非 hoshiSelection', () {
+    test('invocation 取浏览器原生 getSelection 而非 fushiSelection', () {
       final String js = ReaderSelectionScripts.nativeSelectionTextInvocation();
       expect(js, contains('window.getSelection'));
-      expect(js.contains('hoshiSelection'), isFalse);
+      expect(js.contains('fushiSelection'), isFalse);
     });
 
     test('Windows WebView2 回 JSON 引号字符串 → 解码出文本', () {

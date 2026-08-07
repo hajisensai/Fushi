@@ -229,7 +229,7 @@ void GlobalLookupWindow::HandleGlobalWheel(POINT screen_pt,
   // 所以把修饰键当**数据**显式送进 web 层，由已有的 JS 监听按用户绑定自行判定：
   //   Ctrl → _globalLookupZoomWheelJs → callHandler('popupZoomFontStep')
   //          → jsMessage → Dart maybeHandleOverlayZoomFontStep（PR#462 原链路整条复用）
-  //   Alt  → popup.js popupEntryWheelAction（绑定真值 __hoshiEntryWheelBindings 在 JS，
+  //   Alt  → popup.js popupEntryWheelAction（绑定真值 __fushiEntryWheelBindings 在 JS，
   //          用户可改键位，C++ 不得复制这份语义 —— 这里只做传输，不做策略）
   // 裸滚轮 / 仅 Shift 不绕道：那条原生路本来就是对的，绕道反而丢掉浏览器自己的
   // 平滑滚动与 Shift→deltaX 横滚转换。

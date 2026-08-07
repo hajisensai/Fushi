@@ -122,7 +122,7 @@ void main() {
 
     test('④ pagination 脚本 blurImages 时给大图加 blurred 类', () {
       final String src = _read('lib/src/reader/reader_pagination_scripts.dart');
-      expect(src, contains('_hoshiBlurImage'));
+      expect(src, contains('_fushiBlurImage'));
       expect(src, contains("element.classList.add('blurred')"));
     });
 
@@ -130,16 +130,16 @@ void main() {
       final String src = _read(
         'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
       );
-      expect(src, contains('_hoshiRevealBlurredImage'));
+      expect(src, contains('_fushiRevealBlurredImage'));
     });
 
-    test('④ 长按 onImageLongPress 前也先 _hoshiRevealBlurredImage（揭开优先一致）', () {
+    test('④ 长按 onImageLongPress 前也先 _fushiRevealBlurredImage（揭开优先一致）', () {
       final String src = _read(
         'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
       );
       // 长按定时器体内：必须在调用 onImageLongPress 之前先尝试揭开仍 blurred 的图。
       final int revealIdx =
-          src.indexOf('if (_hoshiRevealBlurredImage(pressEl)) return;');
+          src.indexOf('if (_fushiRevealBlurredImage(pressEl)) return;');
       final int longPressIdx = src.indexOf(
           "window.flutter_inappwebview.callHandler('onImageLongPress', imgUrl);");
       expect(revealIdx, isNonNegative, reason: '长按分支必须先尝试揭开 blurred 图');

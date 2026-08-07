@@ -74,8 +74,8 @@ function loadContent({ collapsed = false } = {}) {
     innerWidth: 1200, innerHeight: 800,
     getSelection: () => nativeSelection,
     getComputedStyle: () => ({ getPropertyValue: () => '' }),
-    // 覆盖层从 hoshiSelection.selection.ranges 只读取几何；给一个含 ranges 的最小取词状态。
-    hoshiSelection: {
+    // 覆盖层从 fushiSelection.selection.ranges 只读取几何；给一个含 ranges 的最小取词状态。
+    fushiSelection: {
       selection: { ranges: [{ node: { textContent: '世界です' }, start: 0, end: 2 }], text: '世界' },
       getCharacterAtPoint: () => ({ node: { textContent: '世界です', nodeType: 3 }, offset: 0 }),
       selectFromPosition() { return '世界'; },

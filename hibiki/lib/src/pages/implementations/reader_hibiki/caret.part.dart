@@ -632,7 +632,7 @@ extension _ReaderCaret on _ReaderHibikiPageState {
   }
 
   /// Enter the cursor on the READER content (A/Enter in the book with no cursor,
-  /// or returning from a dismissed popup). The reader's own hoshiCaret restores
+  /// or returning from a dismissed popup). The reader's own fushiCaret restores
   /// its remembered position, so this re-shows the ring where the user left it.
   Future<void> _enterCaret() async {
     if (_controller == null || !_readerContentReady || _caretBusy) return;

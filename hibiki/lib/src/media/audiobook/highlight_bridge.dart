@@ -14,7 +14,7 @@ class HighlightBridge {
 (function() {
   if (window.__hibikiHighlightsInstalled) return;
   window.__hibikiHighlightsInstalled = true;
-  window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+  window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 
   var BASE_COLORS = {
     yellow: [255,220,0],
@@ -163,7 +163,7 @@ class HighlightBridge {
   }
 
   function _skip(c) {
-    if (typeof __hoshiIsSkippable === 'function') return __hoshiIsSkippable(c);
+    if (typeof __fushiIsSkippable === 'function') return __fushiIsSkippable(c);
     if (window.fushiReader && window.fushiReader.isMatchableChar) {
       return !window.fushiReader.isMatchableChar(String.fromCodePoint(c));
     }
@@ -305,7 +305,7 @@ class HighlightBridge {
   // ── 应用高亮 ──
   window.__hibikiApplyHighlights = function(highlightsJson) {
     _syncHighlightVars();
-    if (window.__hoshiCssHighlightsSupported) {
+    if (window.__fushiCssHighlightsSupported) {
       window.__hibikiHighlightRangeMap = {};
       _clearCssRubyHighlights();
       if (!highlightsJson || highlightsJson.length === 0) {
@@ -435,7 +435,7 @@ class HighlightBridge {
 
   // ── 移除单条高亮 ──
   window.__hibikiRemoveHighlight = function(id) {
-    if (window.__hoshiCssHighlightsSupported) {
+    if (window.__fushiCssHighlightsSupported) {
       delete window.__hibikiHighlightRangeMap[id];
       _rebuildCssHighlights();
     } else {

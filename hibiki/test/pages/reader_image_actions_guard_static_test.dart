@@ -13,8 +13,8 @@ void main() {
     final String source = readReaderPageSource();
     final String js = _functionSource(
       source,
-      'function _hoshiBlockImageUrl(target)',
-      'window.hoshiProgressDetails',
+      'function _fushiBlockImageUrl(target)',
+      'window.fushiProgressDetails',
     );
 
     expect(js, contains("document.addEventListener('contextmenu'"));
@@ -25,7 +25,7 @@ void main() {
     expect(js, contains("callHandler('onImageLongPress'"));
     expect(js, contains('clearImageLongPressTimer'));
     expect(js, contains('imageLongPressConsumed'));
-    expect(js, contains('_hoshiBlockImageUrl(e.target'));
+    expect(js, contains('_fushiBlockImageUrl(e.target'));
   });
 
   test('reader resolves fushi.local image URLs to files before actions', () {

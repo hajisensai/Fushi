@@ -231,9 +231,9 @@ String _dragProbeJs({required int dragDx, required int dragDy}) => '''
 
   var point = visibleTextPoint();
   if (!point) return JSON.stringify({ok: false, error: 'no visible text'});
-  var characterHit = !!(window.hoshiSelection &&
-    window.hoshiSelection.getCharacterAtPoint &&
-    window.hoshiSelection.getCharacterAtPoint(point.x, point.y));
+  var characterHit = !!(window.fushiSelection &&
+    window.fushiSelection.getCharacterAtPoint &&
+    window.fushiSelection.getCharacterAtPoint(point.x, point.y));
   var beforeX = window.scrollX;
   var beforeY = window.scrollY;
   var target = document.elementFromPoint(point.x, point.y) || document.body;

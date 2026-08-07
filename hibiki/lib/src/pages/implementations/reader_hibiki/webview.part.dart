@@ -711,7 +711,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   /// 导航都要重新拼装近万行、再整份过一遍 [ReaderScriptCompactor]**（实测
   /// `buildSetupScript` 中位数 9ms，纯 Dart 侧固定开销，与章节体量无关）。
   ///
-  /// 现在整段 body 是 `window.__hoshiEngine.install(C)` 的函数体，per-nav 参数一律
+  /// 现在整段 body 是 `window.__fushiEngine.install(C)` 的函数体，per-nav 参数一律
   /// 运行时读 `C`（[ReaderEngineConfig]）。源码只依赖 view-mode 与编译期常量，一个
   /// 进程里逐字不变，于是可以按模式 memoize（[readerEngineSource]）：拼装 + 压缩从
   /// 每章一次降为每模式一次。
@@ -730,7 +730,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     const int tapSlop = ReaderSettings.tapSlopPx;
     final String selectionJs = ReaderSelectionScripts.source();
     // TODO-1317: mobile long-press drag-select gesture IIFE (own touch
-    // listeners, coordinates via window.__hoshiTextSelectDragActive).
+    // listeners, coordinates via window.__fushiTextSelectDragActive).
     final String longPressDragJs =
         ReaderSelectionScripts.longPressDragGestureScript();
     // 只嵌当前 view-mode 那一份 shell（注入体量与改动前一致）；运行时分流点仍在 JS
@@ -748,7 +748,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     final String caretJs = ReaderCaretScripts.source();
 
     return '''
-window.__hoshiEngine = {
+window.__fushiEngine = {
 install: function(C) {
   // BUG-1017: guarantee the `#hoshi-cloak` FOUC guard is always removed, even if
   // any synchronous statement in this setup IIFE throws before the tail reaches
@@ -763,11 +763,11 @@ install: function(C) {
   window.scanNonJapaneseText = C.scanNonJapaneseText;
   $selectionJs
   $paginationJs
-  window.__hoshiInstallShell(C);
+  window.__fushiInstallShell(C);
   $caretJs
   // TODO-975：insetBottom 与 chromeBottomInset 同源 _readerBottomReserve
   // （悬浮 0 / 挤压含底栏），由 Dart 侧算好放进 C。
-  window.hoshiCaret.init({
+  window.fushiCaret.init({
     color: C.caretColor,
     insetTop: C.caretInsetTop,
     insetBottom: C.caretInsetBottom,
@@ -776,10 +776,10 @@ install: function(C) {
   $furiganaJs
   // BUG-239: 连续模式不让 _gestureEnd 回传 onSwipe（交给原生滚动 + 边界 IIFE），
   // 消除横向滑动 90% 跳页与原生滚动的轴向冲突；分页模式照旧水平滑动翻页。
-  var hoshiContinuousMode = C.continuousMode;
+  var fushiContinuousMode = C.continuousMode;
   // TODO-909 M0: VN-mode blank-tap advance flag (see Dart above).
-  var hoshiVnMode = C.vnMode;
-  var hoshiVnClickAdvance = C.vnClickAdvance;
+  var fushiVnMode = C.vnMode;
+  var fushiVnClickAdvance = C.vnClickAdvance;
   window.__hoverAutoLookup = C.hoverAutoLookup;
   var startX = 0, startY = 0, startTime = 0, hasStart = false;
   var gestureExceededTapSlop = false;
@@ -802,7 +802,7 @@ install: function(C) {
     gestureExceededTapSlop = false;
     // TODO-1317: a fresh gesture (touch-start or mouse pointerdown) never
     // inherits a prior drag-select's flag; the drag-select timer re-arms it.
-    window.__hoshiTextSelectDragActive = false;
+    window.__fushiTextSelectDragActive = false;
   }
   function _gestureTrackMovement(x, y) {
     if (!hasStart || gestureExceededTapSlop) return;
@@ -822,7 +822,7 @@ install: function(C) {
   // (a 289-point scan found 0 blank points in centred vertical layout). Fix:
   // after resolving the clamped caret, verify the point actually falls inside the
   // resolved character's client rect; a clamped-but-outside hit is real blank.
-  function _hoshiVnTapIsBlank(x, y) {
+  function _fushiVnTapIsBlank(x, y) {
     try {
       var range = _fushiReaderCaretRangeAtPoint(x, y);
       if (!range || !range.startContainer) return true;
@@ -891,7 +891,7 @@ install: function(C) {
   // （890378f19 前的行为）。鼠标左键在两种模式都走 pointer 机（拖选/划词/拖动翻页）。
   function _fushiReaderPointerEngages(e) {
     if (!_fushiReaderPointerPrimaryButton(e)) return false;
-    if (e.pointerType === 'touch') return hoshiContinuousMode;
+    if (e.pointerType === 'touch') return fushiContinuousMode;
     return true;
   }
   function _fushiReaderPointerNoSelect(enabled) {
@@ -920,10 +920,10 @@ install: function(C) {
     // 桌面滚动改用滚轮。原来 return true 会让鼠标左键走 JS scrollBy 模拟平移——这是
     // 卡顿（每次 move 触发全文 progress 重算）+「鼠标拖动没到章首就跨章」的来源。
     // 分页模式仍走下方逻辑（鼠标拖动转翻页 BUG-368 不受影响）。
-    if (hoshiContinuousMode) return false;
-    if (window.hoshiSelection &&
-        window.hoshiSelection.getCharacterAtPoint &&
-        window.hoshiSelection.getCharacterAtPoint(e.clientX, e.clientY)) {
+    if (fushiContinuousMode) return false;
+    if (window.fushiSelection &&
+        window.fushiSelection.getCharacterAtPoint &&
+        window.fushiSelection.getCharacterAtPoint(e.clientX, e.clientY)) {
       return false;
     }
     return !_fushiReaderCaretRangeAtPoint(e.clientX, e.clientY);
@@ -969,7 +969,7 @@ install: function(C) {
     hasStart = false;
     if (!claimed) return false;
     if (e && e.preventDefault) e.preventDefault();
-    if (!hoshiContinuousMode && direction) {
+    if (!fushiContinuousMode && direction) {
       if (_fushiReaderMouseDragSwipeSent) return true;
       _fushiReaderMouseDragSwipeSent = true;
       window.flutter_inappwebview.callHandler('onSwipe', direction);
@@ -980,7 +980,7 @@ install: function(C) {
   // null when the tap isn't on one. Handles both raster <img> covers/figures
   // and fixed-layout EPUB <svg><image> covers (which are not IMG elements, so
   // their xlink:href must be resolved against document.baseURI).
-  function _hoshiBlockImageUrl(target) {
+  function _fushiBlockImageUrl(target) {
     if (!target) return null;
     if (target.tagName === 'IMG' && target.src) return target.src;
     var wrapper = target.closest ? target.closest('.block-img-wrapper') : null;
@@ -1002,7 +1002,7 @@ install: function(C) {
   // TODO-861④（移植 Hoshi `f286108`）：若点击落在仍带 `blurred` 类的防剧透大图上，
   // 先「揭开」（移除 blurred 类）并吞掉本次——不触发放大 lightbox；揭开后再点才正常
   // 放大。根因消解「点击=放大」与 iOS「点击=揭开」的语义冲突，无特例分支堆叠。
-  function _hoshiResolveBlockImageElement(target) {
+  function _fushiResolveBlockImageElement(target) {
     if (!target) return null;
     if ((target.tagName === 'IMG' || target.tagName === 'svg') && target.classList && target.classList.contains('block-img')) {
       return target;
@@ -1011,13 +1011,13 @@ install: function(C) {
     if (!wrapper) return null;
     return wrapper.querySelector('img.block-img') || wrapper.querySelector('svg.block-img');
   }
-  function _hoshiRevealBlurredImage(target) {
-    var el = _hoshiResolveBlockImageElement(target);
+  function _fushiRevealBlurredImage(target) {
+    var el = _fushiResolveBlockImageElement(target);
     if (el && el.classList && el.classList.contains('blurred')) {
       el.classList.remove('blurred');
       // TODO-1289：揭开状态持久——回传稳定 key 给 Dart 会话集，章节重载不再重新遮罩。
-      if (window.__hoshiImageRevealKey && window.flutter_inappwebview) {
-        var key = window.__hoshiImageRevealKey(el);
+      if (window.__fushiImageRevealKey && window.flutter_inappwebview) {
+        var key = window.__fushiImageRevealKey(el);
         if (key) window.flutter_inappwebview.callHandler('onImageRevealed', key);
       }
       return true;
@@ -1038,7 +1038,7 @@ install: function(C) {
   }
   document.addEventListener('contextmenu', function(e) {
     var target = _imageActionTarget(e);
-    var imgUrl = _hoshiBlockImageUrl(target);
+    var imgUrl = _fushiBlockImageUrl(target);
     if (!imgUrl) return;
     e.preventDefault();
     window.flutter_inappwebview.callHandler(
@@ -1052,13 +1052,13 @@ install: function(C) {
   // 上限）。Dart 是唯一写者：本脚本注入时带当前真值，之后 chrome 翻转与设置热更新由
   // _syncTapGateJs 刷新。tap 手势据此在 JS 侧直接 selectText（见 _gestureEnd 的 tap
   // 分支），砍掉 onTap→Dart→evaluateJavascript 的整个来回。
-  window.__hoshiTapGate = { chrome: C.showChrome, lookup: C.highlightOnTap, maxLen: 400 };
+  window.__fushiTapGate = { chrome: C.showChrome, lookup: C.highlightOnTap, maxLen: 400 };
   function _gestureEnd(x, y, e) {
     if (!hasStart) return;
     // TODO-1317: a mobile long-press drag-select owns this gesture (finalized
     // by the drag-select IIFE); suppress tap / swipe / image-tap so there is
     // no double lookup or accidental page turn.
-    if (window.__hoshiTextSelectDragActive) {
+    if (window.__fushiTextSelectDragActive) {
       clearImageLongPressTimer();
       imageLongPressConsumed = false;
       hasStart = false;
@@ -1082,9 +1082,9 @@ install: function(C) {
     var absDx = Math.abs(dx);
     var absDy = Math.abs(dy);
     var velocity = absDx / Math.max(1, elapsed) * 1000;
-    // BUG-239: 连续模式（hoshiContinuousMode）不在此回传 onSwipe——原生滚动沿书写轴
+    // BUG-239: 连续模式（fushiContinuousMode）不在此回传 onSwipe——原生滚动沿书写轴
     // 翻屏，到边界由 onBoundarySwipe 跨章；此处的水平 onSwipe 只属分页模式。
-    if (!hoshiContinuousMode && absDx > absDy && (absDx >= C.swipeDistThreshold || (absDx >= C.swipeFastDistThreshold && velocity >= 900))) {
+    if (!fushiContinuousMode && absDx > absDy && (absDx >= C.swipeDistThreshold || (absDx >= C.swipeFastDistThreshold && velocity >= 900))) {
       if (e && e.preventDefault) e.preventDefault();
       if (dx < 0) {
         window.flutter_inappwebview.callHandler('onSwipe', 'left');
@@ -1098,15 +1098,15 @@ install: function(C) {
       // 抖动仍是 tap；任何 touchmove/pointermove 曾越界都永久归为 pan，即使松手回到
       // 起点附近也不查词。横向主导、够不到翻页阈值的短滑则落到本 if 之外 → 空操作。
       var tapEl = document.elementFromPoint(x, y);
-      if (_hoshiRevealBlurredImage(tapEl)) {
+      if (_fushiRevealBlurredImage(tapEl)) {
         if (e && e.preventDefault) e.preventDefault();
         return;
       }
-      var imgUrl = _hoshiBlockImageUrl(tapEl);
+      var imgUrl = _fushiBlockImageUrl(tapEl);
       if (imgUrl) {
         window.flutter_inappwebview.callHandler('onImageTap', imgUrl);
-      } else if (hoshiVnMode && hoshiVnClickAdvance &&
-          _hoshiVnTapIsBlank(x, y) &&
+      } else if (fushiVnMode && fushiVnClickAdvance &&
+          _fushiVnTapIsBlank(x, y) &&
           window.fushiReader && window.fushiReader.paginate) {
         // TODO-909 M0: VN blank-tap. Only when the tap is NOT over matchable
         // text (so word lookup still wins on text).
@@ -1114,7 +1114,7 @@ install: function(C) {
         // `window.fushiReader.paginate('forward')` 把每一次空白点都吃掉，而空白点
         // 同时是触屏唯一能唤出控制栏的手势（onTapEmpty）→ VN 下底栏一自动收起就
         // 永远唤不回来。翻页还是唤栏必须由 Dart 判（chrome 可见性只有 Dart 知道：
-        // 悬浮态真值是 _chromeTransientVisible，JS 的 __hoshiTapGate.chrome 镜像的
+        // 悬浮态真值是 _chromeTransientVisible，JS 的 __fushiTapGate.chrome 镜像的
         // 是 _showChrome，悬浮态下恒 true，区分不出「已收起」）。见
         // chrome.part.dart 的 _handleVnBlankTap。
         if (e && e.preventDefault) e.preventDefault();
@@ -1134,16 +1134,16 @@ install: function(C) {
           } catch (err) {}
         }
         var shiftTap = !!(e && e.shiftKey);
-        var tapGate = window.__hoshiTapGate;
-        if (tapGate && window.hoshiSelection &&
+        var tapGate = window.__fushiTapGate;
+        if (tapGate && window.fushiSelection &&
             (shiftTap || (tapGate.chrome && tapGate.lookup))) {
           // BUG-712 ①（查词时延）：门控通过时 JS 直接选词——与旧链 Dart onTap→
           // _selectTextAt→evaluateJavascript(selectText) 跑的是完全同一个 selectText
           // （命中→onTextSelected、空白→onTapEmpty、链接/同字 toggle→静默），只是
           // 砍掉 JS→Dart→JS 一整个跨语言来回（Windows WebView2 单跳 5-15ms）。
           // 门控镜像由 Dart 单写（_syncTapGateJs：chrome 翻转/设置热更新时刷新）；
-          // 镜像缺失或 hoshiSelection 未就绪时回落旧 onTap 链，行为不变。
-          window.hoshiSelection.selectText(x, y, tapGate.maxLen || 400, false);
+          // 镜像缺失或 fushiSelection 未就绪时回落旧 onTap 链，行为不变。
+          window.fushiSelection.selectText(x, y, tapGate.maxLen || 400, false);
         } else {
           window.flutter_inappwebview.callHandler('onTap', x, y, shiftTap);
         }
@@ -1174,7 +1174,7 @@ install: function(C) {
     imageLongPressConsumed = false;
     clearImageLongPressTimer();
     _gestureStart(t.clientX, t.clientY);
-    var imgUrl = _hoshiBlockImageUrl(e.target || document.elementFromPoint(t.clientX, t.clientY));
+    var imgUrl = _fushiBlockImageUrl(e.target || document.elementFromPoint(t.clientX, t.clientY));
     if (!imgUrl) return;
     imageLongPressStartX = t.clientX;
     imageLongPressStartY = t.clientY;
@@ -1183,9 +1183,9 @@ install: function(C) {
       imageLongPressConsumed = true;
       // TODO-861④：长按仍带 `blurred` 类的防剧透图时，先揭开（移除类）并吞掉本次——
       // 与单击（_gestureEnd）/键盘·手柄激活（reader_caret_scripts.dart）语义一致：
-      // 「揭开优先」，揭开后再长按才弹出图片操作菜单。复用同一 _hoshiRevealBlurredImage。
+      // 「揭开优先」，揭开后再长按才弹出图片操作菜单。复用同一 _fushiRevealBlurredImage。
       var pressEl = document.elementFromPoint(imageLongPressStartX, imageLongPressStartY);
-      if (_hoshiRevealBlurredImage(pressEl)) return;
+      if (_fushiRevealBlurredImage(pressEl)) return;
       window.flutter_inappwebview.callHandler('onImageLongPress', imgUrl);
     }, 550);
   }, {passive: true});
@@ -1230,7 +1230,7 @@ install: function(C) {
     _gestureTrackMovement(e.clientX, e.clientY);
     // TODO-553: pointermove 的 button 恒 -1，不能用 _fushiReaderPointerEngages
     // （它查 button===0）；分页模式触摸只需在此直接放行回 touch swipe 路径。
-    if (e.pointerType === 'touch' && !hoshiContinuousMode) return;
+    if (e.pointerType === 'touch' && !fushiContinuousMode) return;
     if (_fushiReaderMouseDragPointerId !== null && e.pointerId !== _fushiReaderMouseDragPointerId) return;
     if (!_fushiReaderPointerStillDown(e) || !hasStart) return;
     var totalDx = e.clientX - startX;
@@ -1248,7 +1248,7 @@ install: function(C) {
       // 本次手势从「原生选词」转换为「拖动翻页」（清掉已起的选区、接管 pointer、
       // 后续走 _finishFushiReaderMouseDrag 回传 onSwipe）；否→保持原行为（竖向/短拖
       // 交还原生选区，仍可正常划词查词）。
-      var ntDir = (!hoshiContinuousMode)
+      var ntDir = (!fushiContinuousMode)
           ? _fushiReaderMouseDragResolvePageDirection(e.clientX, e.clientY)
           : null;
       if (ntDir) {
@@ -1282,7 +1282,7 @@ install: function(C) {
     var dy = e.clientY - _fushiReaderMouseDragLastY;
     _fushiReaderMouseDragLastX = e.clientX;
     _fushiReaderMouseDragLastY = e.clientY;
-    if (hoshiContinuousMode) {
+    if (fushiContinuousMode) {
       _fushiReaderMouseDragScrollBy(dx, dy);
     } else {
       _fushiReaderMouseDragPageDirection =
@@ -1294,7 +1294,7 @@ install: function(C) {
     if (!_fushiReaderPointerEngages(e)) return;
     if (_fushiReaderMouseDragPointerId !== null && e.pointerId !== _fushiReaderMouseDragPointerId) return;
     if (_fushiReaderMouseDragClaimed) {
-      if (!hoshiContinuousMode && !_fushiReaderMouseDragPageDirection) {
+      if (!fushiContinuousMode && !_fushiReaderMouseDragPageDirection) {
         _fushiReaderMouseDragPageDirection =
             _fushiReaderMouseDragResolvePageDirection(e.clientX, e.clientY);
       }
@@ -1331,7 +1331,7 @@ install: function(C) {
     _gestureEnd(e.clientX, e.clientY, e);
   }, {passive: false});
   document.addEventListener('pointercancel', function(e) {
-    if (e.pointerType === 'touch' && !hoshiContinuousMode) return;
+    if (e.pointerType === 'touch' && !fushiContinuousMode) return;
     if (_fushiReaderMouseDragPointerId !== null && e.pointerId !== _fushiReaderMouseDragPointerId) return;
     _fushiReaderMouseDragActive = false;
     _fushiReaderMouseDragClaimed = false;
@@ -1346,7 +1346,7 @@ install: function(C) {
   // 被首行排除，不干扰触摸手势。
   document.addEventListener('mousedown', function(e) {
     if (e.button === 0) return;
-    if (e.button === 2 && _hoshiBlockImageUrl(e.target || document.elementFromPoint(e.clientX, e.clientY))) {
+    if (e.button === 2 && _fushiBlockImageUrl(e.target || document.elementFromPoint(e.clientX, e.clientY))) {
       return;
     }
     e.preventDefault();
@@ -1410,7 +1410,7 @@ install: function(C) {
     // BUG-239 / TODO-345 同源门控：连续模式靠浏览器原生滚动（滚动轴 = 书写轴）。
     // 此处一旦在连续模式回传 onSwipe（90% 整屏跳页），就与原生滚动产生轴向冲突。
     var r = window.fushiReader;
-    if (hoshiContinuousMode) {
+    if (fushiContinuousMode) {
       // TODO-345: 横排连续滚动轴 = 纵向（与桌面鼠标滚轮的 deltaY 默认轴一致），
       // 放行原生滚动即可顺滑滚动。竖排连续滚动轴 = 横向（CSS overflow-x 可滚、
       // overflow-y:hidden），但桌面鼠标滚轮只产生 deltaY、不产生 deltaX，浏览器
@@ -1499,7 +1499,7 @@ install: function(C) {
   // [webViewKeyBridgeScript]；回传的 onSpaceKey 在 Dart 侧经
   // resolveReaderSpaceOverride 统一解析，与 Flutter 焦点路径同款语义。
 ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
-  window.hoshiProgressDetails = function() {
+  window.fushiProgressDetails = function() {
     var r = window.fushiReader;
     if (!r) return '';
     var p = r.calculateProgress();
@@ -1540,7 +1540,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
   // settle 才跳一下，不跟手。改成「rAF 节流 + 尾沿补一发」：滑动中每个动画帧最多回传
   // 一次（约 16ms/次，跟随刷新率，肉眼连续），滑停后短尾沿再补发一次最终位置，确保
   // 落点精确。Dart 侧 _refreshProgress 自带 in-flight 守卫（一次 evaluateJavascript
-  // 未返回不再发起下一次），避免高频上报把较重的 hoshiProgressDetails 调用堆积。
+  // 未返回不再发起下一次），避免高频上报把较重的 fushiProgressDetails 调用堆积。
   (function() {
     var _progressScrollRaf = 0;
     var _progressScrollTimer = null;
@@ -1623,7 +1623,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
   /// 分开写只是为了让引擎那半边可以 memoize。
   static String readerEngineBoot(ReaderEngineConfig config) =>
       'window.__fushiReaderConfig = ${config.toJsLiteral()};'
-      'window.__hoshiEngine.install(window.__fushiReaderConfig);';
+      'window.__fushiEngine.install(window.__fushiReaderConfig);';
 
   static String _stripScriptTags(String js) {
     return js
@@ -2589,7 +2589,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         _pendingLyricsHintOnReady = false;
         _showLyricsModeHintIfNeeded();
       }
-      // 注入歌词专用行级 caret（键盘/手柄逐词查词），镜像 reader 的 hoshiCaret 注入。
+      // 注入歌词专用行级 caret（键盘/手柄逐词查词），镜像 reader 的 fushiCaret 注入。
       // 文档刚加载，caret inactive；surface 在 _enterCaret 成功时才置 lyrics。
       await controller.evaluateJavascript(
           source: ReaderLyricsCaretScripts.source());
@@ -2647,7 +2647,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       ReaderChapterPerfTrace.mark('evalSetupScript');
       if (!mounted || _navigateGeneration != gen) return;
 
-      // The setup script rebuilds window.hoshiCaret fresh (inactive). If the
+      // The setup script rebuilds window.fushiCaret fresh (inactive). If the
       // reading cursor was on the reader, restore it on the new chapter's first
       // page. (If it's on a popup, the reader ring is already hidden — leave it.)
       if (_caretOnReader) {

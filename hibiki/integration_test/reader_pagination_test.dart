@@ -160,7 +160,7 @@ void main() {
 
       // === Full chapter scan ===
       debugPrint('[M1] === Full Chapter Scan ===');
-      final scanRaw = await eval('window.hoshiTestHarness.fullChapterScan();');
+      final scanRaw = await eval('window.fushiTestHarness.fullChapterScan();');
       final List<PageData> pages = parseChapterScan(scanRaw as String);
       debugPrint('[M1] Scanned ${pages.length} pages');
       expect(pages.length, greaterThan(0),
@@ -168,7 +168,7 @@ void main() {
 
       // Log layout + first pages for context in CI output.
       final settingsRaw =
-          await eval('window.hoshiTestHarness.validateRenderedSettings();')
+          await eval('window.fushiTestHarness.validateRenderedSettings();')
               as String;
       debugPrint('[M1] rendered: $settingsRaw');
       final RenderedSettings rendered =
@@ -280,11 +280,11 @@ void main() {
       // === I9: Position restoration across chrome toggle ===
       debugPrint('[M1] === I9: Position Restoration ===');
       final beforeState = PaginationState.fromJson(
-        _decode(await eval('window.hoshiTestHarness.getPaginationState();')
+        _decode(await eval('window.fushiTestHarness.getPaginationState();')
             as String),
       );
       final beforeMarkers = parseMarkers(
-          await eval('window.hoshiTestHarness.getVisibleMarkers();') as String);
+          await eval('window.fushiTestHarness.getVisibleMarkers();') as String);
 
       // Toggle reader chrome on/off via the real reader keyboard shortcut.
       // Coordinate taps are banned for off-screen integration tests because
@@ -295,7 +295,7 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
 
       final afterState = PaginationState.fromJson(
-        _decode(await eval('window.hoshiTestHarness.getPaginationState();')
+        _decode(await eval('window.fushiTestHarness.getPaginationState();')
             as String),
       );
       debugPrint('[M1] Scroll before=${beforeState.scroll} '
@@ -303,7 +303,7 @@ void main() {
 
       if (beforeMarkers.isNotEmpty) {
         final afterMarkers = parseMarkers(
-            await eval('window.hoshiTestHarness.getVisibleMarkers();')
+            await eval('window.fushiTestHarness.getVisibleMarkers();')
                 as String);
         final restoreViolations = validatePositionRestoration(
           beforeMarkers: beforeMarkers,
@@ -335,11 +335,11 @@ void main() {
       }
       await tester.pump(const Duration(milliseconds: 300));
       final midState = PaginationState.fromJson(
-        _decode(await eval('window.hoshiTestHarness.getPaginationState();')
+        _decode(await eval('window.fushiTestHarness.getPaginationState();')
             as String),
       );
       final midMarkers = parseMarkers(
-          await eval('window.hoshiTestHarness.getVisibleMarkers();') as String);
+          await eval('window.fushiTestHarness.getVisibleMarkers();') as String);
       expect(midState.scroll, greaterThan(0),
           reason: 'I10 setup: reader must be mid-chapter before rapid toggle');
       debugPrint('[M1] I10 mid scroll=${midState.scroll} '
@@ -353,11 +353,11 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
 
       final afterRapid = PaginationState.fromJson(
-        _decode(await eval('window.hoshiTestHarness.getPaginationState();')
+        _decode(await eval('window.fushiTestHarness.getPaginationState();')
             as String),
       );
       final afterRapidMarkers = parseMarkers(
-          await eval('window.hoshiTestHarness.getVisibleMarkers();') as String);
+          await eval('window.fushiTestHarness.getVisibleMarkers();') as String);
       debugPrint('[M1] I10 after rapid toggle scroll=${afterRapid.scroll} '
           'markers=${afterRapidMarkers.join(",")}');
       expect(afterRapid.scroll, greaterThan(0),

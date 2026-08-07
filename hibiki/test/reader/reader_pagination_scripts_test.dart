@@ -81,7 +81,7 @@ void main() {
       expect(
         ReaderPaginationScripts.stableProgressInvocation(),
         'window.fushiReader && !window.fushiReader._reanchorPending '
-        '&& window.hoshiProgressDetails ? window.hoshiProgressDetails() : null',
+        '&& window.fushiProgressDetails ? window.fushiProgressDetails() : null',
       );
     });
 

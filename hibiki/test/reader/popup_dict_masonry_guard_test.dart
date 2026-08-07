@@ -131,14 +131,14 @@ void main() {
   });
 
   test('渲染 + 增量都触发重排，且宿主可外部触发（改列数时）', () {
-    expect(js.contains('window.hoshiRelayoutDictionaries'), isTrue,
-        reason: '暴露 hoshiRelayoutDictionaries 供宿主改列数后重排 / 外部触发');
+    expect(js.contains('window.fushiRelayoutDictionaries'), isTrue,
+        reason: '暴露 fushiRelayoutDictionaries 供宿主改列数后重排 / 外部触发');
     // _firePopupRendered 是首条 + 其余条两次都会调的收尾钩子。
     final int fireAt = js.indexOf('function _firePopupRendered(');
     expect(fireAt, isNonNegative);
     final int fireEnd = js.indexOf('\n}', fireAt);
     expect(fireEnd, greaterThan(fireAt));
-    expect(js.substring(fireAt, fireEnd).contains('hoshiRelayoutDictionaries'),
+    expect(js.substring(fireAt, fireEnd).contains('fushiRelayoutDictionaries'),
         isTrue,
         reason: '渲染收尾 _firePopupRendered 必须重排 masonry（覆盖首条 + 其余条）');
   });

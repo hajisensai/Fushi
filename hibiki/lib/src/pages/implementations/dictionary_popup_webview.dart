@@ -300,7 +300,7 @@ class DictionaryPopupWebViewState
   /// 页面重载（onLoadStop）时置 null 强制重发（新页面无状态）。
   int? _lastSentStaticRevision;
 
-  /// BUG-717 ③：最近一次已注入的 in-app 固定块（`__hoshiResetPopupScroll` 钩子 +
+  /// BUG-717 ③：最近一次已注入的 in-app 固定块（`__fushiResetPopupScroll` 钩子 +
   /// 句子上下文 i18n 文案 + `sentenceContextPreviewEnabled`）的键。该块只随静态段
   /// 版本（含语言切换——locale 在 builder 的 memo 键里）与 preview 回调的有无变化，
   /// 此前每次查词都重发约 1-2KB。页面重载时同样置 null。
@@ -363,28 +363,28 @@ class DictionaryPopupWebViewState
 
   /// TODO-1353: Ctrl+滚轮缩放查词内容的 wheel 监听（onLoadStop 装一次，幂等 guard）。
   /// 只拦 `e.ctrlKey` 的 wheel（普通滚动不受影响），preventDefault 抑制 WebView 自带的
-  /// 页面缩放，读注入的 `window.__hoshiPopupFontSize` / `__hoshiPopupUiScale`（见
+  /// 页面缩放，读注入的 `window.__fushiPopupFontSize` / `__fushiPopupUiScale`（见
   /// popup_settings_injection buildPopupSettingsJs，每次注入刷新）算新字号并**就地**改
   /// documentElement.style.zoom 给即时反馈，再回调 Dart 的 `popupZoomFont` 持久化到
   /// `dictionaryFontSize`（下次开弹窗记住）。字号界与缩放界与 Dart 侧
   /// [_popupZoomFontMin]/[_popupZoomFontMax] / [popupContentZoom] 一致。
   ///
-  /// TODO-1353 复诉：步进本体抽成 `window.__hoshiPopupZoomStep(dir)`——Ctrl+滚轮与
+  /// TODO-1353 复诉：步进本体抽成 `window.__fushiPopupZoomStep(dir)`——Ctrl+滚轮与
   /// 弹窗顶栏 A−/A+ 手动按钮（[zoomFontStep]，触屏没有 Ctrl+滚轮的唯一入口）共用同一
   /// 份夹紧 + 就地 zoom + 持久化路径，杜绝两处步进语义漂移。
   static const String _zoomWheelJs = '''
 (function(){
-  if (window.__hoshiZoomWheelInstalled) return;
-  window.__hoshiZoomWheelInstalled = true;
+  if (window.__fushiZoomWheelInstalled) return;
+  window.__fushiZoomWheelInstalled = true;
   var MIN = 8, MAX = 72, STEP = 1;
-  window.__hoshiPopupZoomStep = function(dir){
-    var fs = window.__hoshiPopupFontSize;
+  window.__fushiPopupZoomStep = function(dir){
+    var fs = window.__fushiPopupFontSize;
     if (typeof fs !== 'number' || !isFinite(fs) || fs <= 0) fs = 16;
     fs += (dir > 0 ? STEP : -STEP);
     if (fs < MIN) fs = MIN;
     if (fs > MAX) fs = MAX;
-    window.__hoshiPopupFontSize = fs;
-    var scale = window.__hoshiPopupUiScale;
+    window.__fushiPopupFontSize = fs;
+    var scale = window.__fushiPopupUiScale;
     if (typeof scale !== 'number' || !isFinite(scale) || scale <= 0) scale = 1;
     var z = scale * fs / 16;
     if (z < 0.3) z = 0.3;
@@ -395,7 +395,7 @@ class DictionaryPopupWebViewState
   window.addEventListener('wheel', function(e){
     if (!e.ctrlKey) return;
     e.preventDefault();
-    window.__hoshiPopupZoomStep(e.deltaY < 0 ? 1 : -1);
+    window.__fushiPopupZoomStep(e.deltaY < 0 ? 1 : -1);
   }, { passive: false });
 })();
 ''';
@@ -427,20 +427,20 @@ class DictionaryPopupWebViewState
 
   /// TODO-1353 复诉：弹窗顶栏 A−/A+ 手动字号步进入口（用户复诉 Ctrl+滚轮不可发现，
   /// 且 Android/iOS 触屏根本没有 Ctrl+滚轮）。直接调用注入的
-  /// `window.__hoshiPopupZoomStep`，与 Ctrl+滚轮完全同一条路径：同 [8,72] 夹紧、就地改
+  /// `window.__fushiPopupZoomStep`，与 Ctrl+滚轮完全同一条路径：同 [8,72] 夹紧、就地改
   /// documentElement.style.zoom 即时生效不闪烁、经 `popupZoomFont` 回调持久化到
   /// `dictionaryFontSize`。WebView 未就绪（controller 为空 / 监听未装）时安全 no-op。
   void zoomFontStep({required bool zoomIn}) {
     _controller?.evaluateJavascript(
-      source: 'window.__hoshiPopupZoomStep'
-          ' && window.__hoshiPopupZoomStep(${zoomIn ? 1 : -1});',
+      source: 'window.__fushiPopupZoomStep'
+          ' && window.__fushiPopupZoomStep(${zoomIn ? 1 : -1});',
     );
   }
 
   static const String _scrollCheckJs = '''
 (function(){
-  if(!window.__hoshiScrollInstalled){
-    window.__hoshiScrollInstalled=true;
+  if(!window.__fushiScrollInstalled){
+    window.__fushiScrollInstalled=true;
     var t=0;
     function check(force){
       var now=Date.now();
@@ -453,11 +453,11 @@ class DictionaryPopupWebViewState
         window.flutter_inappwebview.callHandler('scrolledToBottom');
       }
     }
-    window.__hoshiScrollCheck=check;
+    window.__fushiScrollCheck=check;
     window.addEventListener('scroll',function(){check(false);},true);
   }
-  setTimeout(function(){window.__hoshiScrollCheck(true);},0);
-  setTimeout(function(){window.__hoshiScrollCheck(true);},150);
+  setTimeout(function(){window.__fushiScrollCheck(true);},0);
+  setTimeout(function(){window.__fushiScrollCheck(true);},150);
 })();
 ''';
 
@@ -523,19 +523,19 @@ JSON.stringify((function(){
   void highlightSelection(int charCount) {
     _controller?.evaluateJavascript(
       source:
-          'window.hoshiSelection?.highlightSelection && window.hoshiSelection.highlightSelection($charCount)',
+          'window.fushiSelection?.highlightSelection && window.fushiSelection.highlightSelection($charCount)',
     );
   }
 
   void clearSelection() {
     _controller?.evaluateJavascript(
       source:
-          'window.hoshiSelection?.clearSelection && window.hoshiSelection.clearSelection()',
+          'window.fushiSelection?.clearSelection && window.fushiSelection.clearSelection()',
     );
   }
 
   // ── Char-level reading cursor (driven from the reader page) ──────────
-  // The same window.hoshiCaret as the reader, injected on load and scoped to the
+  // The same window.fushiCaret as the reader, injected on load and scoped to the
   // definition body. The popup has no chrome insets (the WebView IS the popup)
   // and no fushiReader, so the cursor runs in horizontal + continuous-scroll
   // mode automatically. The reader reaches these via the popup's webViewKey.
@@ -657,7 +657,7 @@ JSON.stringify((function(){
   }
 
   /// TODO-1325 #5 part1: move the ENTRY-level focus (the blue-triangle
-  /// `.entry-current` indicator, driven by popup.js `hoshiFocusDictionaryEntryMove`)
+  /// `.entry-current` indicator, driven by popup.js `fushiFocusDictionaryEntryMove`)
   /// to the next/previous word entry in a multi-entry result, scrolling it into
   /// view. [forward] true → next entry below, false → previous above. Returns
   /// 'moved' when the focus advanced or 'blocked' at the first/last entry (or a
@@ -665,8 +665,8 @@ JSON.stringify((function(){
   /// entry indicator + viewport, never the caret ring.
   Future<String> focusEntryMove(bool forward) async {
     final Object? raw = await _controller?.evaluateJavascript(
-      source: 'window.hoshiFocusDictionaryEntryMove'
-          " ? window.hoshiFocusDictionaryEntryMove('${forward ? 'next' : 'prev'}')"
+      source: 'window.fushiFocusDictionaryEntryMove'
+          " ? window.fushiFocusDictionaryEntryMove('${forward ? 'next' : 'prev'}')"
           " : 'blocked'",
     );
     return raw?.toString() ?? 'blocked';
@@ -692,8 +692,8 @@ JSON.stringify((function(){
 
   Future<void> mineFirstVisibleEntry() async {
     await _controller?.evaluateJavascript(
-      source: 'window.hoshiPopupMineFirstEntry'
-          ' ? window.hoshiPopupMineFirstEntry() : false',
+      source: 'window.fushiPopupMineFirstEntry'
+          ' ? window.fushiPopupMineFirstEntry() : false',
     );
   }
 
@@ -702,8 +702,8 @@ JSON.stringify((function(){
   /// 「制卡指定词条」直接入口——mineEntry 契约要求 JS 先构造 payload）。
   Future<void> mineEntryByIndex(int idx) async {
     await _controller?.evaluateJavascript(
-      source: 'window.hoshiPopupMineEntryByIndex'
-          ' ? window.hoshiPopupMineEntryByIndex($idx) : false',
+      source: 'window.fushiPopupMineEntryByIndex'
+          ' ? window.fushiPopupMineEntryByIndex($idx) : false',
     );
   }
 
@@ -909,7 +909,7 @@ JSON.stringify((function(){
     // zoom + every window.* flag, incl. autoExpandRows) is produced by the
     // single source of truth in popup_settings_injection.dart — the SAME builder
     // the app-outside global-lookup window uses (options.globalLookup:false here).
-    // The in-app-only wiring (instant-scroll pref, __hoshiResetPopupScroll hook,
+    // The in-app-only wiring (instant-scroll pref, __fushiResetPopupScroll hook,
     // sentence-context i18n labels, load-more vs scroll-reset beforeRenderJs,
     // scroll-check) layers around it below. _lastThemeVarsJs still tracks the
     // in-app theme-vars string for the live theme-switch dedup in
@@ -937,7 +937,7 @@ JSON.stringify((function(){
     }
     final String staticSettingsJs =
         staticChanged ? staticSettings.combined : '';
-    // BUG-717 ③：in-app 固定块（__hoshiResetPopupScroll 钩子 + 句子上下文 i18n +
+    // BUG-717 ③：in-app 固定块（__fushiResetPopupScroll 钩子 + 句子上下文 i18n +
     // sentenceContextPreviewEnabled）并入静态段的失效节奏：随静态段版本重发
     // （语言切换 → builder memo 键含 locale → 新 revision → 必然重发），另跟踪
     // preview 回调有无（宿主换回调时也要刷新）。原来每次查词都重发这 1-2KB。
@@ -959,7 +959,7 @@ JSON.stringify((function(){
     final String beforeRenderJs = isLoadMore
         ? 'window.updatePopupIncremental();'
         : '''
-          window.__hoshiResetPopupScroll();
+          window.__fushiResetPopupScroll();
           // BUG-297 / TODO-393：换词复用常驻热槽 WebView 时只重注入 lookupEntries 不重载
           // 页面，popup.js 句子上下文镜像标量（sentenceCtxPrev/Next）不会自动归零。宿主
           // 已在换词处清空草稿（reader/video 的 _miningDraft.clear()），这里同步把 JS 镜像
@@ -990,7 +990,7 @@ JSON.stringify((function(){
   /// revision 失效（builder memo 键含 locale），文案随之重发。
   String _inAppStaticExtrasJs({required bool sentencePreviewEnabled}) {
     return '''
-      window.__hoshiResetPopupScroll = function() {
+      window.__fushiResetPopupScroll = function() {
         window.scrollTo(0, 0);
         document.documentElement.scrollTop = 0;
         document.body.scrollTop = 0;
@@ -1507,7 +1507,7 @@ JSON.stringify((function(){
         // TODO-1353: Ctrl+滚轮缩放回传的新词典字号 → 夹紧后持久化到 dictionaryFontSize。
         // JS 侧已就地改了 zoom（即时反馈），这里落 DB 让缩放跨弹窗 / 重开后记住。
         // setDictionaryFontSize 走 preferences（notifyListeners），下次 buildPopupSettingsJs
-        // 注入的 zoom 与 __hoshiPopupFontSize 即为新值，四端（书内 / 首页 / 视频 / 外部
+        // 注入的 zoom 与 __fushiPopupFontSize 即为新值，四端（书内 / 首页 / 视频 / 外部
         // 悬浮）共用同一 WebView 均生效。
         controller.addJavaScriptHandler(
           handlerName: 'popupZoomFont',
@@ -2059,7 +2059,7 @@ JSON.stringify((function(){
         _lastSentInAppExtrasKey = null;
         debugPrint('[popup-perf] webview loadStop $url');
         // Inject the same char caret as the reader (selection.js, a head script,
-        // has already defined window.hoshiSelection by load-stop). It stays
+        // has already defined window.fushiSelection by load-stop). It stays
         // dormant until the reader hands it the cursor on lookup.
         controller.evaluateJavascript(source: _topPullReleaseJs);
         // TODO-1353: 装一次 Ctrl+滚轮缩放监听（幂等 guard；warm 热槽也只装一次）。
@@ -2157,7 +2157,7 @@ JSON.stringify((function(){
   /// 继续冒泡——弹窗内的制卡（Ctrl+Enter）、切词条、宿主的关词典键全部不受影响。
   ///
   /// 取的是**浏览器原生选区**（[_selectedTextAcrossFrames] 穿透同源 iframe），刻意不碰
-  /// `window.hoshiSelection`——那是查词高亮的另一套坐标/状态（BUG-368/402 注释）。
+  /// `window.fushiSelection`——那是查词高亮的另一套坐标/状态（BUG-368/402 注释）。
   KeyEventResult _handleDesktopCopyKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     if (!readerShouldHandleDesktopCopy(

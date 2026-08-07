@@ -133,7 +133,7 @@ void main() {
 
       Future<Map<String, dynamic>?> readState() async {
         final dynamic raw =
-            await runJs('window.hoshiTestHarness.getPaginationState();');
+            await runJs('window.fushiTestHarness.getPaginationState();');
         final String? s = raw as String?;
         if (s == null || s == 'null') return null;
         return jsonDecode(s) as Map<String, dynamic>;
