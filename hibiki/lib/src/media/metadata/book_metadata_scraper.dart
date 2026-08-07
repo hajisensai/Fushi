@@ -74,7 +74,7 @@ class BookMetadataScraper {
   final BangumiApiClient _api;
 
   static const String _userAgent =
-      'hibiki-reader/book-scraper (https://github.com/hajisensai)';
+      'fushi-reader/book-scraper (https://github.com/hajisensai)';
 
   /// 按 [keyword] 搜书籍条目，返回带封面的候选（最多 [limit] 条）。
   ///

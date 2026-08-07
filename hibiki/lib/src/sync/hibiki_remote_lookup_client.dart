@@ -144,7 +144,7 @@ class HibikiRemoteLookupClient {
       path: path,
       body: body,
       timeout: _timeout,
-      authErrorMessage: 'Hibiki server rejected remote lookup token',
+      authErrorMessage: 'Fushi server rejected remote lookup token',
     );
   }
 }

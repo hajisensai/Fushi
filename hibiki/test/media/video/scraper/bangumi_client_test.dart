@@ -115,7 +115,7 @@ void main() {
       // UA 头必须带（Bangumi 要求可识别 UA）。
       expect(
         capturedHeaders?['user-agent'],
-        'hibiki-reader/scraper (https://github.com/hajisensai)',
+        'fushi-reader/scraper (https://github.com/hajisensai)',
       );
       expect(capturedHeaders?['content-type'], contains('application/json'));
       // body 结构正确（keyword + filter.type=[2]）。

@@ -141,7 +141,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   } catch (e, stack) {
     ErrorLogService.instance
         .log('AudiobookAlignmentService.parseEpub', e, stack);
-    debugPrint('[hibiki-import] parseFromExtracted failed: $e');
+    debugPrint('[fushi-import] parseFromExtracted failed: $e');
   }
   report(0.45, messages.parsing);
   final String ext = subtitlePath.split('.').last.toLowerCase();

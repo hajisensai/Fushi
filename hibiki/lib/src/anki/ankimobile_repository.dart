@@ -120,7 +120,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       );
     }
     return const AnkiFetchResult.error(
-      'AnkiMobile opened. Approve the request, then return to Hibiki.',
+      'AnkiMobile opened. Approve the request, then return to Fushi.',
     );
   }
 

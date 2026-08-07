@@ -55,7 +55,7 @@ class VndbMetadataAdapter implements GalgameMetadataAdapter {
   final Duration _timeout;
 
   static const String _userAgent =
-      'hibiki-reader/galgame-library (https://github.com/hajisensai)';
+      'fushi-reader/galgame-library (https://github.com/hajisensai)';
 
   @override
   GalgameMetadataSource get source => GalgameMetadataSource.vndb;

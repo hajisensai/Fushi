@@ -1745,7 +1745,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibikiSource.deleteFont', e, stack);
-      debugPrint('[Hibiki] failed to delete custom font file $filePath: $e');
+      debugPrint('[Fushi] failed to delete custom font file $filePath: $e');
     }
   }
 

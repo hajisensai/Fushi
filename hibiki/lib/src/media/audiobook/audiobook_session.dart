@@ -434,7 +434,7 @@ class AudiobookSession extends ChangeNotifier {
     final AudioCue? cue = controller.displayCueForFloatingLyric;
     if (cue != null) {
       handler.updateNotificationSubtitle(
-        title: _book?.title ?? 'Hibiki',
+        title: _book?.title ?? 'Fushi',
         subtitle: cue.text,
       );
     }
@@ -562,7 +562,7 @@ class AudiobookSession extends ChangeNotifier {
       onNextCue: () => _controller?.skipToNextCue(),
       onClose: _onFloatingLyricClose,
       onLockChanged: (bool locked) {
-        debugPrint('[Hibiki] floating-lyric position lock -> $locked');
+        debugPrint('[Fushi] floating-lyric position lock -> $locked');
       },
     );
   }
@@ -601,7 +601,7 @@ class AudiobookSession extends ChangeNotifier {
       artUri = File(coverPath).uri;
     }
     handler.setMediaItemInfo(
-      title: _book?.title ?? 'Hibiki',
+      title: _book?.title ?? 'Fushi',
       artist: _book?.author,
       duration: controller.duration,
       artUri: artUri,

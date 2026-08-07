@@ -126,7 +126,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
         // symptom users reported for local audiobooks ("card has no sentence
         // audio"). Surface a toast like the export-failure path, then continue.
         debugPrint(
-          '[ReaderHibiki] mine: audio present but no sentence-audio range '
+          '[ReaderFushi] mine: audio present but no sentence-audio range '
           '(lookupCue=null, sentenceRange=${_cachedSentenceRange != null}, '
           'draftSentences=${_miningDraft.length}).',
         );
@@ -384,7 +384,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
         dateKey: dateKey,
       );
     } catch (e, st) {
-      debugPrint('[hibiki-stats] reader addMiningCount failed: $e\n$st');
+      debugPrint('[fushi-stats] reader addMiningCount failed: $e\n$st');
     }
     // TODO-1204：并行写 per-book 制卡计数（book 来源，带 bookKey + 标题；title 与
     // 阅读统计 tile 的聚合键 [EpubBook.title] 对齐）。
@@ -398,7 +398,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
         dateKey: dateKey,
       );
     } catch (e, st) {
-      debugPrint('[hibiki-stats] reader addMineCountPerBook failed: $e\n$st');
+      debugPrint('[fushi-stats] reader addMineCountPerBook failed: $e\n$st');
     }
   }
 
@@ -438,7 +438,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
         noteId: noteId,
       );
     } catch (e, st) {
-      debugPrint('[hibiki-stats] reader addMinedSentence failed: $e\n$st');
+      debugPrint('[fushi-stats] reader addMinedSentence failed: $e\n$st');
     }
   }
 

@@ -86,7 +86,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   }
 
   static _ReaderResourceResponse _notFound(String reason) {
-    debugPrint('[ReaderHibiki] 404: $reason');
+    debugPrint('[ReaderFushi] 404: $reason');
     return _ReaderResourceResponse(
       contentType: 'text/plain',
       contentEncoding: 'utf-8',
@@ -98,7 +98,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   }
 
   static _ReaderResourceResponse _forbidden(String reason) {
-    debugPrint('[ReaderHibiki] 403: $reason');
+    debugPrint('[ReaderFushi] 403: $reason');
     return _ReaderResourceResponse(
       contentType: 'text/plain',
       contentEncoding: 'utf-8',
@@ -142,7 +142,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         return _notFound('font corrupted: $fontPath (${data.length} bytes)');
       }
       debugPrint(
-          '[ReaderHibiki] font served: $safeFontPath (${data.length} bytes)');
+          '[ReaderFushi] font served: $safeFontPath (${data.length} bytes)');
       final String mime = fallbackMimeType(safeFontPath);
       return _ReaderResourceResponse(
         contentType: mime,
@@ -1880,7 +1880,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             } catch (e, stack) {
               ErrorLogService.instance
                   .log('ReaderHibiki.onTextSelected', e, stack);
-              debugPrint('[ReaderHibiki] onTextSelected error: $e');
+              debugPrint('[ReaderFushi] onTextSelected error: $e');
             }
           },
         );
@@ -1900,7 +1900,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             } catch (e, stack) {
               ErrorLogService.instance
                   .log('ReaderHibiki.onSelectionMenu', e, stack);
-              debugPrint('[ReaderHibiki] onSelectionMenu error: $e');
+              debugPrint('[ReaderFushi] onSelectionMenu error: $e');
             }
           },
         );
@@ -1912,13 +1912,13 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           // 消费当前代 pending。
           callback: (List<dynamic> args) {
             if (args.length < 2 || args[1] is! num) {
-              debugPrint('[ReaderHibiki] onRestoreComplete missing generation');
+              debugPrint('[ReaderFushi] onRestoreComplete missing generation');
               return;
             }
             final num rawGeneration = args[1] as num;
             if (!rawGeneration.isFinite ||
                 rawGeneration != rawGeneration.toInt()) {
-              debugPrint('[ReaderHibiki] onRestoreComplete invalid generation');
+              debugPrint('[ReaderFushi] onRestoreComplete invalid generation');
               return;
             }
             _acceptRestoreComplete(
@@ -2449,11 +2449,11 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         _isNavigatingToChapter = false;
         ReaderChapterPerfTrace.mark('docLoad');
         final int chapterSnapshot = _currentChapter;
-        debugPrint('[ReaderHibiki] onLoadStop: url=$url '
+        debugPrint('[ReaderFushi] onLoadStop: url=$url '
             'chapter=$chapterSnapshot progress=$_initialProgress');
         if (_lyricsMode) {
           if (!await _isLoadedLyricsDocument(controller)) {
-            debugPrint('[ReaderHibiki] onLoadStop: stale non-lyrics page '
+            debugPrint('[ReaderFushi] onLoadStop: stale non-lyrics page '
                 'while lyrics mode is active, ignoring');
             return;
           }
@@ -2464,7 +2464,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         if (url != null &&
             Uri.parse(url.toString()).path != Uri.parse(expectedUrl).path) {
           debugPrint(
-              '[ReaderHibiki] onLoadStop: stale page (expected=$expectedUrl), ignoring');
+              '[ReaderFushi] onLoadStop: stale page (expected=$expectedUrl), ignoring');
           return;
         }
         await _onChapterLoadComplete(controller);
@@ -2476,7 +2476,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         // 恢复。命中 sentinel 时走与 _initBook 同款可见恢复（toast + 退回书架），
         // 不再永久 spinner。
         if (error.description.contains(kReaderWebViewCreationFailedSentinel)) {
-          debugPrint('[ReaderHibiki] WebView creation failed: '
+          debugPrint('[ReaderFushi] WebView creation failed: '
               '${error.description}');
           ErrorLogService.instance.log(
               'ReaderHibiki.onWebViewCreationFailed', error.description, null);
@@ -2487,7 +2487,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           return;
         }
         if (request.isForMainFrame ?? false) {
-          debugPrint('[ReaderHibiki] onReceivedError: ${error.description} '
+          debugPrint('[ReaderFushi] onReceivedError: ${error.description} '
               'url=${request.url}');
           // Windows 拦截域 (hoshi.local) 的 NavigationCompleted 假失败已在 fork
           // 引擎层根治（packages/flutter_inappwebview_windows：主框架已注入 2xx
@@ -2569,7 +2569,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     // 「两张整页图、正文 ≤20 字」的 image-only 章都无意义。Windows 早就是这个行为，
     // 这里把 Android 拉齐，而不是给 Android 再加一层特例。
     if (_spreadDocumentLoaded) {
-      debugPrint('[ReaderHibiki] onChapterLoadComplete: spread document, '
+      debugPrint('[ReaderFushi] onChapterLoadComplete: spread document, '
           'skipping body engine injection');
       return;
     }
@@ -2687,7 +2687,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     } catch (e, stack) {
       ErrorLogService.instance
           .log('ReaderHibiki._onChapterLoadComplete', e, stack);
-      debugPrint('[ReaderHibiki] _onChapterLoadComplete failed: $e');
+      debugPrint('[ReaderFushi] _onChapterLoadComplete failed: $e');
     }
   }
 }

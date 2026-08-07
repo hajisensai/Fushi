@@ -44,7 +44,7 @@ class _DictionaryDialogPageState extends BasePageState {
       if (paths.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           debugPrint(
-            '[hibiki-drop] [dictionary-dialog] initialImportPaths=${paths.length}',
+            '[fushi-drop] [dictionary-dialog] initialImportPaths=${paths.length}',
           );
           if (mounted) unawaited(_importDictionaryPaths(paths));
         });
@@ -526,11 +526,11 @@ class _DictionaryDialogPageState extends BasePageState {
 
     final List<String> importPaths = classifyDroppedFilesForDictionary(paths);
     debugPrint(
-      '[hibiki-drop] [dictionary-dialog] importPaths=${importPaths.length} '
+      '[fushi-drop] [dictionary-dialog] importPaths=${importPaths.length} '
       'paths=${paths.length} global=$globalPosition',
     );
     if (importPaths.isEmpty) {
-      debugPrint('[hibiki-drop] [dictionary-dialog] intent=unsupportedSurface');
+      debugPrint('[fushi-drop] [dictionary-dialog] intent=unsupportedSurface');
       HibikiToast.show(
         msg: t.drag_drop_unsupported_on_dictionary,
         severity: ToastSeverity.error,

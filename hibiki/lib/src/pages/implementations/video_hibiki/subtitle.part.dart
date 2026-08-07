@@ -943,7 +943,7 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     // BUG-1329：导入的新外挂字幕档当场并入字幕轨列表（不再等「下次进入字幕分类」重枚举）。
     _registerImportedSubtitleSource(dest);
     debugPrint(
-      '[hibiki-drop] [video-playback] externalSubtitle imported '
+      '[fushi-drop] [video-playback] externalSubtitle imported '
       'path=$dest',
     );
   }

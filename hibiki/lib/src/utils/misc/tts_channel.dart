@@ -399,7 +399,7 @@ class TtsChannel {
       await _channel.invokeMethod('stop');
     } catch (e, stack) {
       ErrorLogService.instance.log('TtsChannel.stop', e, stack);
-      debugPrint('[Hibiki] TTS stop failed: $e');
+      debugPrint('[Fushi] TTS stop failed: $e');
     }
   }
 }

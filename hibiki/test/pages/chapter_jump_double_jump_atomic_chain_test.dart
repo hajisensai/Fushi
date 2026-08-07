@@ -81,7 +81,7 @@ void main() {
   test('_applyPendingPreciseLocate 有代际守卫且消费一次', () {
     final String body = slice(
       'Future<void> _applyPendingPreciseLocate() async {',
-      'debugPrint(\'[ReaderHibiki] _applyPendingPreciseLocate failed',
+      'debugPrint(\'[ReaderFushi] _applyPendingPreciseLocate failed',
     );
     expect(body, contains('_preciseLocateQueue.consume('),
         reason: '消费必须经过 last-write-wins 队列的一次性代际守卫');

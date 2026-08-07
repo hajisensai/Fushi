@@ -1057,7 +1057,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       isImageArchive: MangaModule.isImageArchive,
     );
     debugPrint(
-      '[hibiki-drop] [reader-shelf] classified '
+      '[fushi-drop] [reader-shelf] classified '
       'books=${files.books.length} subtitles=${files.subtitles.length} '
       'audios=${files.audios.length} videos=${files.videos.length} '
       'mangas=${files.mangas.length} '
@@ -1087,7 +1087,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         _openMangaImportPrefilled(mangaPath: files.mangas.first);
       case DropIntent.unsupportedMangaArchive:
         debugPrint(
-          '[hibiki-drop] [reader-shelf] intent=unsupportedMangaArchive',
+          '[fushi-drop] [reader-shelf] intent=unsupportedMangaArchive',
         );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.drag_drop_manga_archive_unsupported)),
@@ -1100,7 +1100,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
               files.subtitles.isNotEmpty ? files.subtitles.first : null,
         );
       case DropIntent.needCardTarget:
-        debugPrint('[hibiki-drop] [reader-shelf] intent=needCardTarget');
+        debugPrint('[fushi-drop] [reader-shelf] intent=needCardTarget');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.drag_drop_need_card_target)),
         );
@@ -1119,7 +1119,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         // 自动切换一致（TODO-1306）。
         _openStreamImportPrefilled(streamUrl: files.urls.first);
       case DropIntent.unsupportedSurface:
-        debugPrint('[hibiki-drop] [reader-shelf] intent=unsupportedSurface');
+        debugPrint('[fushi-drop] [reader-shelf] intent=unsupportedSurface');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.drag_drop_unsupported_on_books)),
         );

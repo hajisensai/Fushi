@@ -329,7 +329,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
     return runImport(
       logTag: 'VideoImportDialog.importPlaylist',
       debugMessage: (Object e) =>
-          '[hibiki-drop] [video-import] importPlaylist failed: $e',
+          '[fushi-drop] [video-import] importPlaylist failed: $e',
       action: () async {
         final String content = await readTextWithEncoding(File(m3u8Path));
         final String baseDir = p.dirname(m3u8Path);
@@ -371,7 +371,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
 
         if (!mounted) return;
         debugPrint(
-          '[hibiki-drop] [video-import] importedPlaylist collection='
+          '[fushi-drop] [video-import] importedPlaylist collection='
           '${result.collectionId} episodes=${result.episodeUids.length} '
           'playlist=${p.basename(m3u8Path)}',
         );
@@ -397,7 +397,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
     await runImport(
       logTag: 'VideoImportDialog.pickFolder',
       debugMessage: (Object e) =>
-          '[hibiki-drop] [video-import] pickFolder failed: $e',
+          '[fushi-drop] [video-import] pickFolder failed: $e',
       action: () async {
         final List<String> videos = listVideoFilesInDirectory(dir);
         if (videos.isEmpty) {
@@ -511,7 +511,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
     await runImport(
       logTag: 'VideoImportDialog.import',
       debugMessage: (Object e) =>
-          '[hibiki-drop] [video-import] import failed: $e',
+          '[fushi-drop] [video-import] import failed: $e',
       action: () async {
         final String bookUid =
             await _uniqueBookUid(singleVideoBookUid(videoPath));
@@ -564,7 +564,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
 
         if (!mounted) return;
         debugPrint(
-          '[hibiki-drop] [video-import] imported bookUid=$bookUid '
+          '[fushi-drop] [video-import] imported bookUid=$bookUid '
           'video=${p.basename(videoPath)} subtitle=${subtitlePath == null ? 'none' : p.basename(subtitlePath)}',
         );
         Navigator.pop(context, bookUid);
@@ -586,7 +586,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
     return runImport(
       logTag: 'VideoImportDialog.importStream',
       debugMessage: (Object e) =>
-          '[hibiki-drop] [video-import] importStream failed: $e',
+          '[fushi-drop] [video-import] importStream failed: $e',
       action: () async {
         final String bookUid = await _uniqueBookUid(streamVideoBookUid(url));
         final String subtitleUrlRaw = _streamSubtitleUrlController.text.trim();
@@ -635,7 +635,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
             .recordVideoImportActivity(bookUid: bookUid, title: title);
         if (!mounted) return;
         debugPrint(
-          '[hibiki-drop] [video-import] importedStream bookUid=$bookUid '
+          '[fushi-drop] [video-import] importedStream bookUid=$bookUid '
           'url=$url',
         );
         Navigator.pop(context, bookUid);

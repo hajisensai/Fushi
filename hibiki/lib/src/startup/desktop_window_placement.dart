@@ -62,7 +62,7 @@ class DesktopWindowPlacement {
       await windowManager.setMinimumSize(minimumSizeForWorkArea(workArea));
       await windowManager.setBounds(initialBounds);
     } catch (e) {
-      debugPrint('[Hibiki] desktop window placement skipped: $e');
+      debugPrint('[Fushi] desktop window placement skipped: $e');
     }
   }
 
@@ -101,7 +101,7 @@ class DesktopWindowPlacement {
       ]);
       _lastSavedBounds = bounds;
     } catch (e) {
-      debugPrint('[Hibiki] desktop window placement save skipped: $e');
+      debugPrint('[Fushi] desktop window placement save skipped: $e');
     }
   }
 
@@ -234,7 +234,7 @@ class DesktopWindowPlacement {
           displays.map(_workAreaFromDisplay).whereType<Rect>().toList();
       if (workAreas.isNotEmpty) return workAreas;
     } catch (e) {
-      debugPrint('[Hibiki] screen work areas unavailable: $e');
+      debugPrint('[Fushi] screen work areas unavailable: $e');
     }
 
     if (_isUsableRect(fallbackBounds)) {
@@ -269,7 +269,7 @@ class DesktopWindowPlacement {
       final Rect bounds = Rect.fromLTWH(x, y, width, height);
       return _isUsableRect(bounds) ? bounds : null;
     } catch (e) {
-      debugPrint('[Hibiki] desktop window placement read skipped: $e');
+      debugPrint('[Fushi] desktop window placement read skipped: $e');
       return null;
     }
   }

@@ -81,7 +81,7 @@ class AudioController {
         ),
       );
     } catch (e) {
-      debugPrint('[Hibiki] AudioService.init failed (non-fatal): $e');
+      debugPrint('[Fushi] AudioService.init failed (non-fatal): $e');
       _audioHandler = HibikiAudioHandler(
         onPlayPause: () => _playController.add(null),
         onSeek: (pos) => _seekController.add(pos),

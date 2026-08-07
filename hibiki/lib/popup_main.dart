@@ -44,7 +44,7 @@ void popupMain() {
     final appModel = container.read(appProvider);
     unawaited(appModel.initialiseForDictionaryPopup());
   }, (exception, stack) {
-    debugPrint('[Hibiki-popup] uncaught: $exception\n$stack');
+    debugPrint('[Fushi-popup] uncaught: $exception\n$stack');
   });
 }
 

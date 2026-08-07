@@ -518,7 +518,7 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         noteId: noteId,
       );
     } catch (e, st) {
-      debugPrint('[hibiki-stats] video addMinedSentence failed: $e\n$st');
+      debugPrint('[fushi-stats] video addMinedSentence failed: $e\n$st');
     }
   }
 }

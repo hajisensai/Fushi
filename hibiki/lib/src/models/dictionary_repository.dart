@@ -98,7 +98,7 @@ class DictionaryRepository {
             .add(DictionarySearchResult.fromJson(row.resultJson));
       } catch (e, stack) {
         ErrorLogService.instance.log('DictRepo.historyLoad', e, stack);
-        debugPrint('[Hibiki] skipping corrupted dictionary history: $e');
+        debugPrint('[Fushi] skipping corrupted dictionary history: $e');
       }
     }
   }

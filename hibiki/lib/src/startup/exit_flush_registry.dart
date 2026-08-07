@@ -77,9 +77,9 @@ class ExitFlushRegistry {
     try {
       await callback().timeout(perCallbackTimeout);
     } on TimeoutException {
-      debugPrint('[Hibiki] exit flush callback timed out; continuing');
+      debugPrint('[Fushi] exit flush callback timed out; continuing');
     } catch (e) {
-      debugPrint('[Hibiki] exit flush callback failed: $e');
+      debugPrint('[Fushi] exit flush callback failed: $e');
     }
   }
 }

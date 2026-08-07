@@ -55,7 +55,7 @@ class BangumiMetadataAdapter implements GalgameMetadataAdapter {
 
   /// Bangumi 要求可识别的 User-Agent，否则可能被限流 / 拒绝。
   static const String _userAgent =
-      'hibiki-reader/galgame-library (https://github.com/hajisensai)';
+      'fushi-reader/galgame-library (https://github.com/hajisensai)';
 
   @override
   GalgameMetadataSource get source => GalgameMetadataSource.bgm;

@@ -14,7 +14,7 @@
 - [x] P6-3 ttu 清算（develop ee0655c88）：31 个 i18n key →`reader_*`；`setTtu*`→`setReader*`；`'reader_ttu'` 收口 `kReaderSourcePersistedKey`。**白名单**：`ttu_models.dart`/`ttu_filename.dart`（ッツ第三方 wire 契约，文件头注明禁单方改）、`reader_settings.dart` 内 `ttu_*` 现役持久化键值（冻结，P2-2 新包换新键时迁移）
 - [x] P6-4a `Ht*`→`Ft*`（11 类；develop 20f50fc10，torrent 定向 147 绿）
 - [x] P6-4b（fable 子代理 2af7d512d，develop b1ff91994 批）：107 文件 Sasayaki*→SubtitleRematch*/sentenceAudio*、19 个 i18n key；**4 个持久化冻结点**：{sasayaki-audio} handlebars、handlebar_sasayaki_audio key、sasayakiColor JSON 键、sasayaki:// scheme（落 AudioCue.text_fragment_id 列）、custom_theme_sasayaki_color 偏好键——**实测面 ~500 处远超预估**，且含两个 userspace 契约需先定策略：① Anki handlebars 模板变量（`handlebar_sasayaki_audio` 对应的用户模板变量，乱改破用户现有卡模板）；② `sasayakiColor` 疑似入库的主题自定义色键（custom_theme 持久化待查）。纯内部符号（SasayakiCue/AutoNav/JS 桥）可机械换，两个契约点需映射或冻结
-- [ ] P6-4c 代码字符串残留 hibiki 清扫 + 白名单收口（与 P2-1 通道前缀联动，随 Phase 2 做）
+- [~] P6-4c 代码字符串残留 hibiki 清扫 + 白名单收口：分支 worktree-agent-a4801e9a55f318ada 完成（提交 f0874b28b，77 文件：日志标签族 [Hibiki]/[hibiki-*]/[ReaderHibiki] 等→Fushi 形、UA hajisensai/Hibiki 与 hibiki-reader/*→fushi、realm "Fushi Sync"、'Hibiki server' 文案、/api/ping wire 'app' 两端同切 fushi（R11）；desktop_foreground_guard 词干 + updater DisplayIcon 检测补 fushi 真断裂修复），**待合并 develop**。**冻结加注**：/api/extension/status 的 'app':'hibiki'（扩展商店发布滞后，扩展端兼容前不切）。**剩余独立事项**：i18n 17 语言值面 "Hibiki" ~63 key/语言（migration_* 指旧 app 必须保留 Hibiki，需逐 key 判断）；X-Hibiki-* 互联 wire 头与 basic-auth username 'hibiki'（server 只验 password，装饰性）；%LOCALAPPDATA%\Hibiki（present_watchdog）与 DCIM/hibiki 磁盘路径、qB category 'hibiki'、sync_obfuscator 密钥种子 'hibiki'（持久化/外部契约，冻结）
 - [x] P1-1 `MigrationExporter` 核心（`lib/src/migration/migration_exporter.dart`：分批调 createBackup、断点 state.json、幂等跳过；**尚缺**：Android 中转目录取路径接线 + 从设置页触发——归 P1-3 一起做）
 - [x] P1-2 `MigrationManifest` v1（`migration_manifest.dart`：归档 sha256+size + 14 表行数 + schema 版本；8 单测绿；对计划的偏差已记回计划 §P1-2）
 - [x] P1-3 迁移 UI（develop 0ffb7cc1c + 73b4b6973 + MD3 修正，Android release APK 构建绿）：Android MigrationChannelHandler（探测/拉起/卸载/PROCESS_TEXT）+ `<queries>` + MigrationPage 三态引导 + 设置入口 + 15 i18n key。**验证态**：analyze 绿、Android release APK 构建绿（334.9MB）；真机 E2E 未做（标 implemented_unverified，待 P2 后一起真机跑）
@@ -28,11 +28,10 @@
 - [x] Phase 5 更新桥（cdffe37c0）：Windows `synthesizeStableAssetNames` 行随 Phase 3 切 fushi（Android 无更新桥需求：跨包名不能就地更新，迁移链即通道）
 - [x] P6-2 `hoshidicts`→`fushidicts`（fable 子代理 4867d9f15，develop b1ff91994 批）：22 个 C ABI 符号、JNI 与 FushiBridge 对齐（修复 P2-1 遗留真断裂）、CMake/xcconfig/CI 全链；合并后 analyze 绿+定向绿。构建门：Android/Windows 待下轮构建复核
 - [x] P6-6 native 产物（fable 子代理 e090a6021，develop b1ff91994 批）：三件套 fushi_voice_*、IPC shm/event/marker 两侧同批、fushi_torrent_ffi + DLL 旧名回退、Unity 程序集 Fushi.UnityAudioExtract；1362 定向绿。保留：C++ namespace hibiki_voice_hook（内部符号，需双架构构建验证，后续项）
-- [ ] P6-5 pub 包名体系：`hibiki`→`fushi` app 包 + 6 内部包 + workspace + 全仓 import（最后做，单独 PR，不与他人并行）
-- [ ] 收尾：源码扫描守卫（旧代号零残留 + 白名单收口）+ 变异实测
-- [x] 云同步改名（2026-08-07 用户新增指令）主线部分：删 Hoshi/ッツ 共享 Google Drive 功能（ttuShared 空间/开关/repo 方法/2 i18n key，恒用 appdata 隐藏空间——完整 drive 敏感 scope 随之消除，Phase 4 的重审风险项作废）；kSyncRootFolderName→fushi-data；Google Drive 根远端改名迁移三段
-- [~] 云同步改名子代理部分：Dropbox/OneDrive/WebDAV/FTP/SFTP/interconnect host 的 fushi-data 迁移（fable 子代理进行中）
-- [~] P6-5 pub 包名体系：fable 子代理进行中（含自跑全量门；app 目录名 hibiki/ 保持——CI/文档路径半径不成比例，报告将说明）
+- [x] P6-5 pub 包名体系（develop 31270161d，fable 子代理批 555785e28+d163b70a0）：`hibiki`→`fushi` app 包 + 6 内部包 + workspace（`fushi_workspace`）+ 全仓 import；app 目录名 hibiki/ 保持（CI/文档路径半径不成比例）
+- [~] 收尾：源码扫描守卫（旧代号零残留 + 白名单收口 + 过期豁免检测）：分支提交 ddc61451d（`hibiki/test/tools/fushi_rename_guard_test.dart`，扫 hibiki/lib + 6 个 fushi_* 包 lib，剥 Dart+内嵌 JS/CSS 注释，8 类模式；变异实测 2 例转红后还原），**待合并 develop**
+- [x] 云同步改名（2026-08-07 用户新增指令）主线部分（develop 1b326bc17 批）：删 Hoshi/ッツ 共享 Google Drive 功能（ttuShared 空间/开关/repo 方法/2 i18n key，恒用 appdata 隐藏空间——完整 drive 敏感 scope 随之消除，Phase 4 的重审风险项作废）；kSyncRootFolderName→fushi-data；Google Drive 根远端改名迁移三段
+- [x] 云同步改名五 backend 部分（develop ed101c712 批，fable 子代理）：Dropbox/OneDrive/WebDAV/FTP/SFTP/interconnect host 的 fushi-data 迁移
 - [x] Phase 4 外部注册台账（agent 无法代办，清单见下；Google 同意屏重审风险已随 Hoshi 功能删除作废）
 
 ## Phase 0 身份对照表（唯一真相源）

@@ -242,7 +242,7 @@ class SubtitleRematch {
       );
       return best.key;
     } catch (e, st) {
-      debugPrint('[hibiki-audiobook] autoProbe failed: $e\n$st');
+      debugPrint('[fushi-audiobook] autoProbe failed: $e\n$st');
       HibikiToast.show(
         msg: t.audiobook_rematch_auto_failed(error: e),
         severity: ToastSeverity.error,
@@ -258,7 +258,7 @@ class SubtitleRematch {
       return epubSectionsFromExtractDir(extractDir);
     } catch (e, stack) {
       ErrorLogService.instance.log('SubtitleRematch.loadSections', e, stack);
-      debugPrint('[hibiki-audiobook] loadSections failed: $e');
+      debugPrint('[fushi-audiobook] loadSections failed: $e');
       return const <EpubSection>[];
     }
   }
@@ -311,7 +311,7 @@ class SubtitleRematch {
         severity: ToastSeverity.success,
       );
     } catch (e, st) {
-      debugPrint('[hibiki-audiobook] SubtitleRematch failed: $e\n$st');
+      debugPrint('[fushi-audiobook] SubtitleRematch failed: $e\n$st');
       HibikiToast.show(
         msg: t.audiobook_rematch_failed(error: e),
         severity: ToastSeverity.error,

@@ -379,7 +379,7 @@ Future<void> _toggleWindowFullscreen() async {
     final bool current = await windowManager.isFullScreen();
     await windowManager.setFullScreen(!current);
   } catch (e) {
-    debugPrint('[Hibiki] window fullscreen toggle skipped: $e');
+    debugPrint('[Fushi] window fullscreen toggle skipped: $e');
   }
 }
 

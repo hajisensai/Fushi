@@ -836,7 +836,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       });
     } catch (e, stack) {
       ErrorLogService.instance.log('AudiobookPlayBar.search', e, stack);
-      debugPrint('[hibiki-search] error: $e');
+      debugPrint('[fushi-search] error: $e');
       if (!mounted || gen != _searchGeneration) return;
       setState(() {
         _searchResults = const [];

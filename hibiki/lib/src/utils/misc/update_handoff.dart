@@ -783,7 +783,7 @@ WindowsInstallerFailureSummary summarizeWindowsInstallerFailure({
     return WindowsInstallerFailureSummary(
       type: 'deletefile_code_5',
       message: 'The installer could not replace ${code5.path} because Windows '
-          'reported access denied (DeleteFile code 5). Close Hibiki and any '
+          'reported access denied (DeleteFile code 5). Close Fushi and any '
           'process using that file, then run the installer again.',
     );
   }
@@ -801,7 +801,7 @@ WindowsInstallerFailureSummary summarizeWindowsInstallerFailure({
   if (log == null || record.innoLogExists == false) {
     return const WindowsInstallerFailureSummary(
       type: 'missing_log',
-      message: 'The installer log was not created, so Hibiki could not confirm '
+      message: 'The installer log was not created, so Fushi could not confirm '
           'that Inno Setup started. This usually means the handoff launcher '
           'failed before the installer began.',
     );
@@ -837,7 +837,7 @@ WindowsInstallerFailureSummary summarizeWindowsInstallerFailure({
 
   return const WindowsInstallerFailureSummary(
     type: 'installer_incomplete',
-    message: 'The installer ran, but Hibiki restarted with the previous '
+    message: 'The installer ran, but Fushi restarted with the previous '
         'version. Check the installer log for the full Inno Setup details.',
   );
 }

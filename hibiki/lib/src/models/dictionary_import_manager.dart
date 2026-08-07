@@ -138,7 +138,7 @@ class DictionaryImportManager {
           if (hasFont) fontDirs.add(d);
         } catch (e, stack) {
           ErrorLogService.instance.log('DictImport.scanFontDir', e, stack);
-          debugPrint('[Hibiki] error scanning font dir ${d.path}: $e');
+          debugPrint('[Fushi] error scanning font dir ${d.path}: $e');
         }
       }
 
