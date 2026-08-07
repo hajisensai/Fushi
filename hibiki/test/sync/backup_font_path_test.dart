@@ -328,7 +328,7 @@ void main() {
         zipPath: zipPath,
         fontsRootDirectory: dstFontsDir.path,
       );
-      expect(File('${dstDir.path}/hibiki.db').existsSync(), isTrue);
+      expect(File('${dstDir.path}/fushi.db').existsSync(), isTrue);
     });
   });
 }

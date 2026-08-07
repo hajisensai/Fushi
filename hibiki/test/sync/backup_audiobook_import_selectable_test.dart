@@ -129,7 +129,7 @@ void main() {
     await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     await db.close();
     final List<int> dbBytes =
-        File(p.join(oldDbDir, 'hibiki.db')).readAsBytesSync();
+        File(p.join(oldDbDir, 'fushi.db')).readAsBytesSync();
 
     // Meta WITHOUT audiobookCount (older schema) and NO audiobooks/ entries.
     final List<int> metaBytes = utf8.encode(jsonEncode(<String, Object?>{

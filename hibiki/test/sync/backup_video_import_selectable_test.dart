@@ -141,7 +141,7 @@ void main() {
     await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     await db.close();
     final List<int> dbBytes =
-        File(p.join(oldDbDir, 'hibiki.db')).readAsBytesSync();
+        File(p.join(oldDbDir, 'fushi.db')).readAsBytesSync();
 
     // Meta WITHOUT videoBookCount (older schema) and NO videos/ entries.
     final List<int> metaBytes = utf8.encode(jsonEncode(<String, Object?>{

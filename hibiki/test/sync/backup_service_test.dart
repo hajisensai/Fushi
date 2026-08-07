@@ -187,9 +187,9 @@ void main() {
 
     test('restoreBackup writes db file and cleans wal/shm', () async {
       // Create fake existing db files
-      final dbPath = '${tmpDir.path}/hibiki.db';
-      final walPath = '${tmpDir.path}/hibiki.db-wal';
-      final shmPath = '${tmpDir.path}/hibiki.db-shm';
+      final dbPath = '${tmpDir.path}/fushi.db';
+      final walPath = '${tmpDir.path}/fushi.db-wal';
+      final shmPath = '${tmpDir.path}/fushi.db-shm';
       await File(dbPath).writeAsString('old data');
       await File(walPath).writeAsString('wal data');
       await File(shmPath).writeAsString('shm data');
@@ -205,6 +205,7 @@ void main() {
       );
       final metaBytes = utf8.encode(jsonEncode(meta.toJson()));
       final archive = Archive();
+      // 条目名刻意用 legacy hibiki.db：老 Hibiki 备份必须仍可恢复（读侧回退）。
       archive
           .addFile(ArchiveFile('hibiki.db', newDbContent.length, newDbContent));
       archive.addFile(
@@ -225,7 +226,7 @@ void main() {
       // successful import (no disk leak). A dummy non-DB current file yields no
       // device-local prefs to preserve, so no sidecar is written.
       expect(File('$dbPath.pre-restore.bak').existsSync(), isFalse);
-      expect(File('${tmpDir.path}/hibiki.db.sync-preserve.json').existsSync(),
+      expect(File('${tmpDir.path}/fushi.db.sync-preserve.json').existsSync(),
           isFalse);
     });
 
@@ -292,10 +293,10 @@ void main() {
         // Extract the exported DB and inspect its preferences table.
         final archive =
             ZipDecoder().decodeBytes(await File(outputPath).readAsBytes());
-        final dbBytes = archive.findFile('hibiki.db')!.content as List<int>;
+        final dbBytes = archive.findFile('fushi.db')!.content as List<int>;
         final restoreDir =
             await Directory.systemTemp.createTemp('backup_creds_r_');
-        await File('${restoreDir.path}/hibiki.db').writeAsBytes(dbBytes);
+        await File('${restoreDir.path}/fushi.db').writeAsBytes(dbBytes);
         final restored = FushiDatabase(restoreDir.path);
         try {
           // Credentials must be gone.
@@ -349,10 +350,10 @@ void main() {
 
         final archive =
             ZipDecoder().decodeBytes(await File(outputPath).readAsBytes());
-        final dbBytes = archive.findFile('hibiki.db')!.content as List<int>;
+        final dbBytes = archive.findFile('fushi.db')!.content as List<int>;
         final restoreDir =
             await Directory.systemTemp.createTemp('backup_dict_r_');
-        await File('${restoreDir.path}/hibiki.db').writeAsBytes(dbBytes);
+        await File('${restoreDir.path}/fushi.db').writeAsBytes(dbBytes);
         final restored = FushiDatabase(restoreDir.path);
         try {
           expect(await restored.getAllDictionaryMetadata(), isEmpty);
@@ -414,12 +415,12 @@ void main() {
         expect(archive.findFile('dictionaryResources/JMdict/media/pitch.png'),
             isNotNull);
 
-        final dbBytes = archive.findFile('hibiki.db')!.content as List<int>;
+        final dbBytes = archive.findFile('fushi.db')!.content as List<int>;
         final restoreDir =
             await Directory.systemTemp.createTemp('backup_dict_enabled_r_');
         final restoredDictDir = await Directory.systemTemp
             .createTemp('backup_dict_enabled_resources_r_');
-        await File('${restoreDir.path}/hibiki.db').writeAsBytes(dbBytes);
+        await File('${restoreDir.path}/fushi.db').writeAsBytes(dbBytes);
         await BackupService.restoreBackup(
           dbDirectory: restoreDir.path,
           zipPath: outputPath,
@@ -504,10 +505,10 @@ void main() {
         );
         expect(containsDictionaryResource, isFalse);
 
-        final dbBytes = archive.findFile('hibiki.db')!.content as List<int>;
+        final dbBytes = archive.findFile('fushi.db')!.content as List<int>;
         final restoreDir =
             await Directory.systemTemp.createTemp('backup_dict_missing_r_');
-        await File('${restoreDir.path}/hibiki.db').writeAsBytes(dbBytes);
+        await File('${restoreDir.path}/fushi.db').writeAsBytes(dbBytes);
         final restored = FushiDatabase(restoreDir.path);
         try {
           expect(await restored.getAllDictionaryMetadata(), isEmpty);
@@ -615,7 +616,7 @@ void main() {
       final dstDictDir =
           await Directory.systemTemp.createTemp('backup_bad_dict_resources_');
       try {
-        await File('${dstDir.path}/hibiki.db').writeAsString('current db');
+        await File('${dstDir.path}/fushi.db').writeAsString('current db');
         await Directory('${dstDictDir.path}/OldDict').create(recursive: true);
         await File('${dstDictDir.path}/OldDict/blobs.bin')
             .writeAsString('stale index');
@@ -633,8 +634,8 @@ void main() {
           await File('${dstDictDir.path}/OldDict/blobs.bin').readAsString(),
           'stale index',
         );
-        expect(await File('${dstDir.path}/hibiki.db').readAsString(),
-            'current db');
+        expect(
+            await File('${dstDir.path}/fushi.db').readAsString(), 'current db');
       } finally {
         if (dstDir.existsSync()) await cleanupTempDir(dstDir);
         if (dstDictDir.existsSync()) {
@@ -1084,9 +1085,9 @@ void main() {
           integrity.map((r) => r.data.values.first).toList(), <String>['ok']);
       final fk = await after.customSelect('PRAGMA foreign_key_check').get();
       expect(fk, isEmpty);
-      expect(File('${curDir.path}/hibiki.db.pre-restore.bak').existsSync(),
+      expect(File('${curDir.path}/fushi.db.pre-restore.bak').existsSync(),
           isFalse);
-      expect(File('${curDir.path}/hibiki.db.sync-preserve.json').existsSync(),
+      expect(File('${curDir.path}/fushi.db.sync-preserve.json').existsSync(),
           isFalse);
     });
 
@@ -1129,9 +1130,9 @@ void main() {
       // Nothing local to preserve → backup applied verbatim (settings included).
       expect(await after.getPref('reader_appearance'), 'BACKUP');
       expect((await after.getAllEpubBooks()).single.title, 'BackupBook');
-      expect(File('${dstDir.path}/hibiki.db.pre-restore.bak').existsSync(),
+      expect(File('${dstDir.path}/fushi.db.pre-restore.bak').existsSync(),
           isFalse);
-      expect(File('${dstDir.path}/hibiki.db.sync-preserve.json').existsSync(),
+      expect(File('${dstDir.path}/fushi.db.sync-preserve.json').existsSync(),
           isFalse);
     });
 
@@ -1145,7 +1146,7 @@ void main() {
       await db.close();
 
       // A crashed keep-settings import could leave the sidecar with no bak.
-      await File('${dir.path}/hibiki.db.sync-preserve.json')
+      await File('${dir.path}/fushi.db.sync-preserve.json')
           .writeAsString(jsonEncode(<String, dynamic>{'mode': 'settings'}));
 
       await BackupService.recoverPendingRestore(dir.path); // must not throw
@@ -1154,7 +1155,7 @@ void main() {
       addTearDown(after.close);
       // DB untouched, sidecar cleaned up.
       expect(await after.getPref('reader_appearance'), 'INTACT');
-      expect(File('${dir.path}/hibiki.db.sync-preserve.json').existsSync(),
+      expect(File('${dir.path}/fushi.db.sync-preserve.json').existsSync(),
           isFalse);
     });
   });

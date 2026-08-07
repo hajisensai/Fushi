@@ -43,10 +43,10 @@ void main() {
   int seq = 0;
   Future<FushiDatabase> openBackupDb(String zipPath) async {
     final Archive archive = await readZip(zipPath);
-    final ArchiveFile dbFile = archive.findFile('hibiki.db')!;
+    final ArchiveFile dbFile = archive.findFile('fushi.db')!;
     final Directory dir = Directory(p.join(work.path, 'exdb${seq++}'))
       ..createSync(recursive: true);
-    File(p.join(dir.path, 'hibiki.db'))
+    File(p.join(dir.path, 'fushi.db'))
         .writeAsBytesSync(dbFile.content as List<int>);
     return FushiDatabase(dir.path);
   }

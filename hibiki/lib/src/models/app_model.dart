@@ -2125,8 +2125,7 @@ class AppModel with ChangeNotifier {
       await _guardInitIo('resolve-data-roots', _prepareRuntimeDirectories());
 
       debugPrint('[Fushi] init: Drift database');
-      ErrorLogService.instance
-          .markInitStep('open-database（Drift 打开 hibiki.db）');
+      ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');
       _database = FushiDatabase(_databaseDirectory.path);
       _databaseOpened = true;
 

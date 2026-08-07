@@ -8,13 +8,13 @@ import 'package:sqlite3/sqlite3.dart' as sqlite3;
 ///
 /// Reproduces the "hard-killed → DB永远打不开" symptom with REAL on-disk files
 /// (a `NativeDatabase.memory()` has no real `-wal`/`-shm`, so it cannot trigger
-/// the sidecar open error at all). A healthy `hibiki.db` is seeded with rows,
+/// the sidecar open error at all). A healthy `fushi.db` is seeded with rows,
 /// then a poisoned sidecar is planted so the normal WAL open path fails. The
 /// recovery ladder must:
 ///   - Layer 1/2: open succeeds anyway and ALL seeded rows survive (the
 ///     checkpoint flushes WAL frames into the main db before the sidecar is
 ///     rebuilt — no data loss);
-///   - never delete the main `hibiki.db` (red line);
+///   - never delete the main `fushi.db` (red line);
 ///   - take a `.corrupt-bak` snapshot before deleting any sidecar;
 /// and when the MAIN db itself is corrupt, open must throw the dedicated
 /// [FushiDatabaseUnrecoverableException] (so the app stops the Retry loop
@@ -25,7 +25,7 @@ void main() {
 
   setUp(() {
     tempDir = Directory.systemTemp.createTempSync('hibiki_wal_recovery_test');
-    dbPath = '${tempDir.path}/hibiki.db';
+    dbPath = '${tempDir.path}/fushi.db';
   });
 
   tearDown(() {
@@ -90,7 +90,7 @@ void main() {
             'rebuild — never a fresh empty db)');
   });
 
-  test('recovery NEVER deletes the main hibiki.db and snapshots before delete',
+  test('recovery NEVER deletes the main fushi.db and snapshots before delete',
       () async {
     await seedHealthyDb();
     final int mainSizeBefore = File(dbPath).lengthSync();
@@ -107,7 +107,7 @@ void main() {
 
     // Red line: the main db file must still exist (never deleted).
     expect(File(dbPath).existsSync(), isTrue,
-        reason: 'recovery must NEVER delete the main hibiki.db');
+        reason: 'recovery must NEVER delete the main fushi.db');
     // Its content survived (size did not collapse to an empty rebuild).
     expect(File(dbPath).lengthSync(), greaterThanOrEqualTo(mainSizeBefore),
         reason: 'main db kept its pages (checkpoint folded WAL in, no wipe)');

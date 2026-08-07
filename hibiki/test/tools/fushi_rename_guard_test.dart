@@ -138,6 +138,20 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
               '迁移代码，旧表名是必要输入。',
     },
   ),
+  _ForbiddenPattern(
+    // W1：主库文件已是 fushi.db（fushiDatabaseFileName）。旧文件名只允许活在
+    // 「读旧数据的迁移代码」里：开库前一次性改名 + 老归档条目名回退。
+    name: 'hibiki.db',
+    regex: RegExp(r'hibiki\.db'),
+    allowed: <String, String>{
+      'packages/fushi_core/lib/src/database/database.dart':
+          'legacyHibikiDatabaseFileName 常量：_openDb 打开任何连接前把 '
+              'hibiki.db(+wal/shm) 一次性改名成 fushi.db 的迁移输入。',
+      'lib/src/migration/migration_manifest.dart':
+          '_dbEntryNames 的 legacy 候选：老 Hibiki app 导出的迁移归档条目名'
+              '（wire 冻结），读旧归档必需。',
+    },
+  ),
 ];
 
 /// 扫描根（相对 `hibiki/`，即 flutter test 的 cwd）。
