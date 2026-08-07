@@ -313,16 +313,13 @@ void main() {
     });
 
     test('Dart 源码树的改动不由本工具输出（默认整批 35 条兜底）', () {
-      expect(
-          isDefaultBatchCoveredChange('fushi/lib/src/models/app_model.dart'),
+      expect(isDefaultBatchCoveredChange('fushi/lib/src/models/app_model.dart'),
           isTrue);
       expect(
           isDefaultBatchCoveredChange('fushi/test/tools/x_test.dart'), isTrue);
-      expect(
-          isDefaultBatchCoveredChange('packages/fushi_core/lib/src/db.dart'),
+      expect(isDefaultBatchCoveredChange('packages/fushi_core/lib/src/db.dart'),
           isTrue);
-      expect(
-          isDefaultBatchCoveredChange('fushi/windows/runner/x.cpp'), isFalse,
+      expect(isDefaultBatchCoveredChange('fushi/windows/runner/x.cpp'), isFalse,
           reason: 'native 树绝不能被当成「已被整批覆盖」而吞掉');
       expect(
           isDefaultBatchCoveredChange(

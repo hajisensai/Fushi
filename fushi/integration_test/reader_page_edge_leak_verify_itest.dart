@@ -62,8 +62,7 @@ void main() {
       'paginated reader does NOT leak adjacent-page content into the page-edge '
       'padding band on real WebView2 (H/V x 1col/2col x fix variants)',
       (WidgetTester tester) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();

@@ -37,8 +37,7 @@ void main() {
   testWidgets(
       'generated reader CSS really applies in a live WebView (computed font-size '
       'follows the setting)', (WidgetTester tester) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();

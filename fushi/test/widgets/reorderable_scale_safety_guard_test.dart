@@ -79,8 +79,7 @@ void main() {
       isTrue,
     );
     expect(
-      File('lib/src/utils/components/fushi_reorderable_grid.dart')
-          .existsSync(),
+      File('lib/src/utils/components/fushi_reorderable_grid.dart').existsSync(),
       isTrue,
     );
   });

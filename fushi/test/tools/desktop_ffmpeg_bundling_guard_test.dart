@@ -96,7 +96,8 @@ void main() {
 
       jobs.forEach((String jobName, List<String> body) {
         final String text = body.join('\n');
-        for (final MapEntry<String, String> entry in _desktopPlatforms.entries)  {
+        for (final MapEntry<String, String> entry
+            in _desktopPlatforms.entries) {
           final String platform = entry.key;
           final String vendorDir = entry.value;
           // `flutter build <平台> --release` 是「这个 job 产出该平台发布物」的判据。

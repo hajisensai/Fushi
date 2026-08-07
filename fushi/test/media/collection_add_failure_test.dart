@@ -22,8 +22,7 @@ void main() {
   const int collectionId = 1;
 
   Future<FushiDatabase> openDb() async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(() async {
       try {
         await db.close();

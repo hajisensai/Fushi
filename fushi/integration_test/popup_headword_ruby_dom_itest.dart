@@ -186,8 +186,7 @@ void main() {
     final double rtFont = _px(g['rtFontSize'], 'rtFontSize');
     expect(g['rtPosition'], 'absolute');
     expect(_px(g['rtTopStyle'], 'rtTopStyle'), closeTo(0, 0.5));
-    expect(unitPad, greaterThan(0),
-        reason: '词头必须拿到纵向预留（修复前是 0）');
+    expect(unitPad, greaterThan(0), reason: '词头必须拿到纵向预留（修复前是 0）');
     expect(unitPad / expressionFont, closeTo(0.55, 0.02),
         reason: '预留是 0.55em，随字号等比（不是硬编码 px）');
     expect(rtFont / expressionFont, closeTo(0.5, 0.02),
@@ -201,7 +200,8 @@ void main() {
     expect(g['boxScrollTop'], 0);
     expect(rtTop, greaterThanOrEqualTo(boxTop - 0.5),
         reason: '注音顶 ($rtTop) 不得越过滚动容器顶 ($boxTop)——越过 = 永久被裁');
-    expect(_num(g['rtBottom']), lessThanOrEqualTo(_num(g['boxHeight']) + boxTop + 0.5),
+    expect(_num(g['rtBottom']),
+        lessThanOrEqualTo(_num(g['boxHeight']) + boxTop + 0.5),
         reason: '注音整块落在容器内');
 
     // ⑤ 回归对照：修复前的裸 rt 是溢出到容器顶之上的（证明这个探针能抓到 bug）。

@@ -12,7 +12,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 
 /// 被守卫的源文件（相对 `fushi/` 包根，`flutter test` 的 cwd）。
-const String _kControllerPath = 'lib/src/media/video/video_player_controller.dart';
+const String _kControllerPath =
+    'lib/src/media/video/video_player_controller.dart';
 
 void main() {
   group('BUG-1288 formatMpvStartSeconds', () {

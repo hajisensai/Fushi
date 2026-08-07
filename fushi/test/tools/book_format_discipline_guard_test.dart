@@ -31,8 +31,7 @@ import '../helpers/source_guard.dart';
 import '../helpers/scan_scale.dart';
 
 /// DAO 所在文件（相对 `fushi/`，故要跳出去一层）。
-const String kDaoFile =
-    '../packages/fushi_core/lib/src/database/database.dart';
+const String kDaoFile = '../packages/fushi_core/lib/src/database/database.dart';
 
 /// 枚举定义文件。
 const String kEnumFile =

@@ -347,8 +347,7 @@ void main() {
           debugPrint('[float-tap] glog outcome:\n$outcomeLog');
 
           final bool overlayShowing = await GlobalLookupChannel.isShowing();
-          final int overlayHwnd =
-              _findWindowByClass('FushiGlobalLookupWindow');
+          final int overlayHwnd = _findWindowByClass('FushiGlobalLookupWindow');
           final bool overlayVisibleNative =
               overlayHwnd != 0 && _isWindowVisible(overlayHwnd) != 0;
           debugPrint('[float-tap] overlay isShowing=$overlayShowing '

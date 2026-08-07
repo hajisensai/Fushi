@@ -91,8 +91,8 @@ void main() {
   // 测试的工作目录是 `fushi/`，native 与 packages 在它的上一级。
   final File headerFile =
       File('../native/fushi_torrent/hibiki_torrent_include/hibiki_torrent.h');
-  final File bindingsFile = File(
-      '../packages/fushi_torrent/lib/src/ffi/fushi_torrent_bindings.dart');
+  final File bindingsFile =
+      File('../packages/fushi_torrent/lib/src/ffi/fushi_torrent_bindings.dart');
 
   test('C ABI 头文件与手写 FFI 绑定：符号集合必须完全一致', () {
     expect(headerFile.existsSync(), isTrue,
@@ -103,8 +103,7 @@ void main() {
     final List<_CExport> exports = _parseHeader(headerFile.readAsStringSync());
     expect(exports, isNotEmpty, reason: '头文件里一个 HT_EXPORT 都没解析到，正则失效了');
 
-    final Set<String> exported =
-        exports.map((_CExport e) => e.name).toSet();
+    final Set<String> exported = exports.map((_CExport e) => e.name).toSet();
     final Set<String> lookedUp =
         _parseLookedUpSymbols(bindingsFile.readAsStringSync());
 

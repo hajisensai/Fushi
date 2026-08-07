@@ -147,7 +147,8 @@ void main() {
           // （整章重排，CSS-only 的 onSettingsChangedLive 表达不了写排方向切换）。这里
           // 严格复刻产品同一路径：先写两个偏好，再 fire onLayoutReloadLive 触发
           // 重排，等内容重新就绪。
-          await ReaderFushiSource.instance.setReaderWritingMode('horizontal-tb');
+          await ReaderFushiSource.instance
+              .setReaderWritingMode('horizontal-tb');
           await ReaderFushiSource.instance.setReaderViewMode('continuous');
           // 设一个非零顶部正文边距：连续模式横排里 paddingTop = marginTop·vh +
           // chromeTopInset，而 BUG-461 的可见区上沿 bandTop = chromeTopInset。只有

@@ -239,8 +239,7 @@ void main() {
       'TODO-1285: pageColumns renders N distinct column bands per page in the '
       'real WebView2 engine (horizontal + vertical), and JS pageStep matches '
       'the true page advance', (WidgetTester tester) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();
@@ -293,8 +292,7 @@ void main() {
       'TODO-1285/BUG-679: a wide block image OVERFLOWS the sub-column without '
       'the _imageMaxBox clamp and is CLAMPED with it, in the real WebView2 '
       'engine', (WidgetTester tester) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();
