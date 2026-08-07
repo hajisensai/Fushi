@@ -1,4 +1,4 @@
-library hibiki_core;
+library fushi_core;
 
 export 'src/database/activity_event_types.dart';
 export 'src/database/book_format.dart';

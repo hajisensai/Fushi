@@ -1,7 +1,7 @@
 /// 媒体附加图种类值域（`MediaImages.kind` 列，Jellyfin 图组对齐）。
 ///
 /// 只覆盖 `media_images.kind` 一列；与 media_kind.dart 说明的其余字符串值域
-/// **互不通用**。定义在 hibiki_core 是因为它是 schema 值域的一部分。
+/// **互不通用**。定义在 fushi_core 是因为它是 schema 值域的一部分。
 ///
 /// 命名纪律（术语表）：主封面统一叫 cover（列仍在 `VideoBooks.coverPath` /
 /// `MediaCollections.coverPath`，不进本表）；带字横图**不叫 thumb/thumbnail**

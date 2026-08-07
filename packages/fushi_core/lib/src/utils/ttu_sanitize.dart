@@ -1,8 +1,8 @@
-/// ッツ Ebook Reader 兼容的文件名 sanitize（hibiki_core 私有副本，不 barrel-export）。
+/// ッツ Ebook Reader 兼容的文件名 sanitize（fushi_core 私有副本，不 barrel-export）。
 ///
 /// app 侧真相源在 `hibiki/lib/src/sync/ttu_filename.dart`；这里保留一份逐字节等价的
 /// 副本，供 v38 拆集迁移在 core 内派生视频每集 bookUid（core 不能依赖 app 层）。刻意
-/// **不**从 hibiki_core barrel 导出（否则同时 import barrel + ttu_filename 的 app 文件
+/// **不**从 fushi_core barrel 导出（否则同时 import barrel + ttu_filename 的 app 文件
 /// 会触发 unnecessary_import 警告）。两份由 `video_book_uid_core_parity_test` 守卫，
 /// 任一处改了必须同步另一处。
 ///

@@ -20,7 +20,7 @@ import 'tables.dart';
 
 part 'database.g.dart';
 
-/// Thrown when the on-disk database was created by a NEWER build of Hibiki than
+/// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
 ///
 /// 降级保护：当用户用旧版应用打开由新版创建的库时，绝不 DROP/迁移/重建，而是抛出此
@@ -1764,7 +1764,7 @@ class FushiDatabase extends _$FushiDatabase {
   /// 代价远大于丢一条脏数据。
   ///
   /// 解析逻辑与 app 侧 `galgame_library.dart` 的 `decodeGalgameLibrary` 同构，
-  /// 但这里是独立实现：hibiki_core 是 app 的依赖，不能反向 import app 代码。
+  /// 但这里是独立实现：fushi_core 是 app 的依赖，不能反向 import app 代码。
   Future<void> _backfillGalgamesFromPreferences() async {
     final int existing = await galgames.count().getSingle();
     if (existing > 0) {
@@ -2949,7 +2949,7 @@ class FushiDatabase extends _$FushiDatabase {
       .get();
 
   /// 监听视频库 uid 集合。插入/删除行时发出更新后的 uid 列表；库页据此在任意
-  /// 导入路径（页内 / 拖拽 / 外部「用 Hibiki 打开」/ 远端下载）落库后自动重查，
+  /// 导入路径（页内 / 拖拽 / 外部「用 Fushi 打开」/ 远端下载）落库后自动重查，
   /// 无需每个调用点各自记得刷新（BUG-793）。注意 Drift 的表级失效会让纯列更新
   /// （封面回写、播放进度）也触发本流，故消费方按集合是否变化去重，避免自愈
   /// 写回引发的重刷环。
@@ -6476,7 +6476,7 @@ class FushiDatabase extends _$FushiDatabase {
   static const String _kLegacyUidPrefix = 'reader_ttu/hoshi://book/';
 
   /// Delegates to the core-local copy of `sanitizeTtuFilename`
-  /// (`../utils/ttu_sanitize.dart`). hibiki_core cannot depend on the app
+  /// (`../utils/ttu_sanitize.dart`). fushi_core cannot depend on the app
   /// package, so the core copy stands in for the app truth source
   /// `hibiki/lib/src/sync/ttu_filename.dart`. Core copy and app copy MUST
   /// stay byte-identical: the migrated bookKey has to equal the key

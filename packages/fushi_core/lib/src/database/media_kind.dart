@@ -2,7 +2,7 @@
 ///
 /// **只覆盖「合集/书架 mediaType」值域**：`MediaCollectionItems.mediaType` /
 /// `ShelfEntries.mediaType` / `BookTagMembershipTombstones.mediaType` /
-/// `CollectionMemberTombstones.mediaType`。定义在 hibiki_core 是因为它是
+/// `CollectionMemberTombstones.mediaType`。定义在 fushi_core 是因为它是
 /// **schema 值域的一部分**（同 activity_event_types.dart 的理由）。
 ///
 /// ⚠️ 与本仓其它 6 个字符串值域**互不通用**，混编即数据事故（跨域换算走

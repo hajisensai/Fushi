@@ -1570,7 +1570,7 @@ class GalgameTagMappings extends Table {
 }
 
 // ── manga_extension_stores ──────────────────────────────────────────
-/// v65：用户自行添加的 Mihon 扩展仓库。Hibiki 不预置第三方仓库。
+/// v65：用户自行添加的 Mihon 扩展仓库。Fushi 不预置第三方仓库。
 /// （本迁移在 PR 分支上先后写作 v63 / v64，两次都与 develop 已落地的迁移撞号，
 ///  最终顺延到 v65；见 database.dart 的 `if (from < 65)` 块。）
 @DataClassName('MangaExtensionStoreRow')
