@@ -84,11 +84,12 @@
 - [x] 合并门 5 红修复（4 品牌改名更新测试钉 + 1 回滚误改的 HibikiExport 冻结字面量）——`c6362d4c9`（merge `1c552c4ef`）
 
 工作流（各自独立 worktree fable 子代理，完成合并后勾）：
-- [ ] B 扩展全量清扫：UI 文案/符号族 hibiki*→fushi*/storage 键/alarm 名/Basic auth 用户名 'hibiki:' 双侧/manifest；镜像 sync-mirrors 重建；self-update.test.js 既有红修复
-- [ ] W1 DB 层：`hibiki_paired_peers`→`fushi_paired_peers`（v62→v63）；`hibiki.db`→`fushi.db` 打开前改名；fushi_core 残留清扫
-- [ ] W3 JS 桥：`window.hoshiReader`→`window.fushiReader`；`hoshi.local`→`fushi.local`（先验证无落库形态）
-- [ ] W2 存量值改写（最重，前三流落地后派）：`reader_ttu` 媒体键/`ttu_*` 偏好+i18n/`src:reader_ttu:` 前缀/sasayaki 全族（`{sasayaki-audio}` 模板、`sasayakiColor` 主题 JSON、`sasayaki://` scheme、`custom_theme_sasayaki_color`）/`hibikiExport`→`fushiExport`/Magpie `'Hibiki: '` 前缀/`runningHibikiProcesses` wire 键——每项配 Drift/磁盘迁移改写存量行
-- [ ] W4 文件名 git mv：`reader_hibiki_*`/`video_hibiki_page` 等含旧词文件与类名词中形态（MangaHibikiPage 族）
+- [x] B 扩展全量清扫（81 文件；agent 被限额 403 打断在 analyze，成果抢救提交 `ffea8f794`，merge `096f8bd31`，analyze+node 198 绿主代理补验）
+- [x] W3 JS 桥：`hoshi.local`→`fushi.local` 硬切（取证无落库形态）+ hoshiReader 探针/文档残留；40 文件 `51f4f6f12`，merge `f877c8998`（lib 侧 hoshiReader 已由 P6-1 完成）
+- [x] W5 运行时 hoshi 符号族（W3 盘出增补）：camel/大写/CSS/snake/`hibiki-reader` scheme/HOSHI_* 常量 6 族 ~2051 处、245 文件、8 提交（`1c8959019`..`6b25659e1`），守卫 4 禁模式变异实测，reader/lookup/tools/pages 4875 绿主代理补验
+- [x] W1 DB 层：`fushi_paired_peers` 表改名（**实际 v68→v69**，任务书 v62 系过期口径）+ `fushi.db` 开库前改名（sidecar 先主文件后、老归档回退）+ fushi_core 清扫；3 提交（`a34881aac`/`335804844`/`992b7db2d`），254+45 定向绿
+- [ ] W2 存量值改写（已派，7 子项逐项提交）：`reader_ttu` 族/sasayaki 族/`hoshi://book|srtbook` 前缀行改写/`hibikiExport`→`fushiExport`/Magpie `'Hibiki: '`/`runningHibikiProcesses` wire 键/`hoshi_books`+`google_drive_hoshi_compat`+`hoshi_anki_settings`——Drift 迁移自 v70 起
+- [ ] W4 文件名 git mv：`reader_hibiki_*`/`video_hibiki_page`/`hibiki_text_selection` 等含旧词文件与类名词中形态（MangaHibikiPage 族）
 - [ ] 终局门 + 守卫白名单清空核查 + push develop
 
 外部注册进度（用户侧）：Google 全完成（Android `-o3vcj`/iOS `-a5iep` client 已建已落码，同意屏改名）；新 keystore 已生成（`C:\Users\wrds\fushi-keys\`，SHA1 CC:39:...:B3，4 个 CI secrets 已配，key.properties 已落主 checkout 与本 worktree）；Dropbox 新 app 已建已落码（差 Permissions 勾 scope + redirect URI 两步）；Entra redirect 用户在改；TMDB/ASC 未动。
