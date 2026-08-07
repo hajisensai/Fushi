@@ -1866,8 +1866,6 @@
   "sync_error": "Kesalahan sinkronisasi: $message",
   "sync_exit_warning": "Sinkronisasi masih berlangsung. Keluar sekarang dapat menyebabkan kehilangan data.",
   "sync_exit_warning_title": "Sinkronisasi Berlangsung",
-  "sync_google_drive_hoshi_compat": "Share progress with Hoshi / ッツ",
-  "sync_google_drive_hoshi_compat_desc": "Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.",
   "sync_host": "Host",
   "sync_lan_discovery": "Perangkat LAN",
   "sync_lan_no_devices": "Tidak ada perangkat ditemukan",

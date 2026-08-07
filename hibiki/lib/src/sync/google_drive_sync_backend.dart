@@ -68,9 +68,8 @@ class GoogleDriveSyncBackend extends SyncBackend
   /// 构造时固定）与 spaces/根目录名都随之切换。[GoogleDriveSyncSpace.setSyncSpace]
   /// 变更时会各自清缓存/丢弃旧客户端。
   Future<void> _applySyncSpace(SyncRepository repo) async {
-    final space = GoogleDriveSyncSpace.fromHoshiCompat(
-      await repo.isGoogleDriveHoshiCompat(),
-    );
+    // Hoshi/ッツ 共享空间功能已按用户决策移除（2026-08-07）：恒用隐藏 appData 空间。
+    const GoogleDriveSyncSpace space = GoogleDriveSyncSpace.appData;
     _auth.setSyncSpace(space);
     _drive.setSyncSpace(space);
   }

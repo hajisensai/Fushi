@@ -1866,8 +1866,6 @@
   "sync_error": "Senkronizasyon hatası: $message",
   "sync_exit_warning": "Eşitleme hâlâ sürüyor. Şimdi çıkmak veri kaybına yol açabilir.",
   "sync_exit_warning_title": "Eşitleme Sürüyor",
-  "sync_google_drive_hoshi_compat": "Share progress with Hoshi / ッツ",
-  "sync_google_drive_hoshi_compat_desc": "Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.",
   "sync_host": "Sunucu",
   "sync_lan_discovery": "LAN cihazları",
   "sync_lan_no_devices": "Cihaz bulunamadı",

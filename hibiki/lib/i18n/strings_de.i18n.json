@@ -1866,8 +1866,6 @@
   "sync_error": "Synchronisierungsfehler: $message",
   "sync_exit_warning": "Die Synchronisierung läuft noch. Wenn du jetzt beendest, können Daten verloren gehen.",
   "sync_exit_warning_title": "Sync läuft",
-  "sync_google_drive_hoshi_compat": "Share progress with Hoshi / ッツ",
-  "sync_google_drive_hoshi_compat_desc": "Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.",
   "sync_host": "Host",
   "sync_lan_discovery": "LAN-Geräte",
   "sync_lan_no_devices": "Keine Geräte gefunden",

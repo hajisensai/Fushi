@@ -1866,8 +1866,6 @@
   "sync_error": "خطأ في المزامنة: $message",
   "sync_exit_warning": "المزامنة لا تزال قيد التنفيذ. قد يؤدي الخروج الآن إلى فقدان البيانات.",
   "sync_exit_warning_title": "المزامنة قيد التنفيذ",
-  "sync_google_drive_hoshi_compat": "Share progress with Hoshi / ッツ",
-  "sync_google_drive_hoshi_compat_desc": "Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.",
   "sync_host": "المضيف",
   "sync_lan_discovery": "أجهزة الشبكة المحلية",
   "sync_lan_no_devices": "لم يُعثر على أجهزة",

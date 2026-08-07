@@ -99,33 +99,6 @@ SettingsDestination buildSyncBackupDestination() {
             builder: (SettingsContext ctx) =>
                 _SyncAccountWidget(settingsContext: ctx),
           ),
-          // 「与 Hoshi/ッツ 共享 Google Drive」开关：仅 Google Drive 后端可见。开启后
-          // Drive 同步改用可见 My Drive / ttu-reader-data + 完整 drive scope，与
-          // Hoshi-Reader-Android / ッツ ebook-reader 落进同一云文件夹互相读写进度
-          // （[GoogleDriveSyncSpace]）。切换即换 scope（consent 时固定），必须登出重授权。
-          SettingsSwitchItem(
-            id: 'sync.google_drive_hoshi_compat',
-            title: t.sync_google_drive_hoshi_compat,
-            subtitle: t.sync_google_drive_hoshi_compat_desc,
-            icon: Icons.share_outlined,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType == SyncBackendType.googleDrive,
-            value: (SettingsContext ctx) =>
-                _syncSettings(ctx).googleDriveHoshiCompat,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).googleDriveHoshiCompat = value;
-              final SyncRepository repo = SyncRepository(ctx.appModel.database);
-              await repo.setGoogleDriveHoshiCompat(value);
-              // 换存储空间 = 换 OAuth scope，旧授权覆盖不了新 scope。登出当前 Google
-              // 账号并清缓存，让下次登录/同步以新 space 的 scope 重新授权（复用与账号行
-              // 登出一致的 signOut + clearCache + clearFolderCache 序列）。
-              final SyncBackend backend =
-                  resolveSyncBackend(SyncBackendType.googleDrive);
-              await backend.signOut(repo: repo);
-              backend.clearCache();
-              await repo.clearFolderCache();
-            },
-          ),
           SettingsCustomItem(
             id: 'sync.webdav_config',
             icon: Icons.dns_outlined,
@@ -649,7 +622,6 @@ class _SyncSettingsState {
   SyncBackendType backendType = SyncBackendType.googleDrive;
 
   /// 「与 Hoshi/ッツ 共享 Google Drive」开关（仅 Google Drive 后端有效）。
-  bool googleDriveHoshiCompat = false;
 
   /// 互联总开关（独立于 [backendType] 云备份后端选择）。为 true 时互联作为一条独立
   /// 通道运行，与云备份并存（不再是互斥的 backendType==hibikiServer 单选）。
@@ -716,7 +688,6 @@ class _SyncSettingsState {
     _loading = true;
     try {
       backendType = await _repo.getBackendType();
-      googleDriveHoshiCompat = await _repo.isGoogleDriveHoshiCompat();
       interconnectEnabled = await _repo.isInterconnectEnabled();
       autoSync = await _repo.isAutoSyncEnabled();
       syncStats = await _repo.isSyncStatsEnabled();

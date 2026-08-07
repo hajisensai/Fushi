@@ -16,6 +16,7 @@ import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:hibiki/utils.dart';
 
 class GoogleDriveError implements Exception {
   GoogleDriveError(this.message, {this.statusCode});
@@ -212,26 +213,49 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
     if (rootFolderIdCache != null) return rootFolderIdCache!;
 
     return _call((api) async {
-      final list = await api.files.list(
-        // 隐藏 appDataFolder 空间下必须显式带 spaces；可见 My Drive 模式用 'drive'
-        // （[GoogleDriveSyncSpace]，TODO-836）。
-        spaces: _space.spaces,
-        q: "trashed=false and mimeType='application/vnd.google-apps.folder' "
-            "and name='${_space.rootFolderName}'",
-        $fields: 'files(id,name)',
-      );
+      Future<String?> findByName(String name) async {
+        final list = await api.files.list(
+          // 隐藏 appDataFolder 空间下必须显式带 spaces（TODO-836）。
+          spaces: _space.spaces,
+          q: "trashed=false and mimeType='application/vnd.google-apps.folder' "
+              "and name='$name'",
+          $fields: 'files(id,name)',
+        );
+        if (list.files != null && list.files!.isNotEmpty) {
+          return list.files!.first.id!;
+        }
+        return null;
+      }
 
-      if (list.files != null && list.files!.isNotEmpty) {
-        rootFolderIdCache = list.files!.first.id!;
-        return rootFolderIdCache!;
+      final String? existing = await findByName(_space.rootFolderName);
+      if (existing != null) {
+        rootFolderIdCache = existing;
+        return existing;
+      }
+
+      // Fushi 改名迁移：新根不存在而旧根（hibiki-data）存在 → 远端改名。
+      // 云端数据原地不动，只换目录名；改名失败按无旧根处理（下次重试）。
+      final String? legacy = await findByName(kLegacySyncRootFolderName);
+      if (legacy != null) {
+        try {
+          await api.files
+              .update(drive.File()..name = _space.rootFolderName, legacy);
+          rootFolderIdCache = legacy;
+          return legacy;
+        } catch (e, st) {
+          // 改名失败（权限/瞬时错误）按无旧根处理，本次新建新根、下次同步重试
+          // 改名——但必须留痕，不吞异常。
+          ErrorLogService.instance
+              .log('GoogleDriveHandler.migrateLegacyRoot', e, st);
+        }
       }
 
       final created = await api.files.create(
         drive.File()
           ..name = _space.rootFolderName
           ..mimeType = 'application/vnd.google-apps.folder'
-          // parent 别名：appDataFolder（隐藏空间根）或 root（My Drive 根），把同步
-          // 根锚进当前空间（[GoogleDriveSyncSpace.rootParent]）。
+          // parent 别名：appDataFolder（隐藏空间根），把同步根锚进当前空间
+          // （[GoogleDriveSyncSpace.rootParent]）。
           ..parents = [_space.rootParent],
       );
       rootFolderIdCache = created.id!;

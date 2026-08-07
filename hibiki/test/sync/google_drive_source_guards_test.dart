@@ -99,25 +99,19 @@ void main() {
       return spaceFile.readAsStringSync();
     }
 
-    test('declares both the appdata and full-drive scopes', () {
+    test('declares only the hidden appdata scope（Hoshi 共享空间已移除）', () {
       final String s = source();
       expect(
           s.contains('https://www.googleapis.com/auth/drive.appdata'), isTrue,
           reason: 'appData space must keep the hidden drive.appdata scope');
-      expect(s.contains("'https://www.googleapis.com/auth/drive'"), isTrue,
-          reason: 'ttuShared must request full drive to read Hoshi-created '
-              'files (drive.file only sees files this app created)');
+      expect(s.contains("'https://www.googleapis.com/auth/drive'"), isFalse,
+          reason: '完整 drive 敏感 scope 只为已删除的 Hoshi 共享空间存在，'
+              '不得回潮（触发 Google 重新审核）');
     });
 
     test('never falls back to the visible drive.file scope', () {
       expect(source().contains('auth/drive.file'), isFalse,
-          reason: 'drive.file cannot see files another OAuth client (Hoshi) '
-              'created, so it can never interop — full drive is required');
-    });
-
-    test('pins the shared root folder name ttu-reader-data', () {
-      expect(source().contains("'ttu-reader-data'"), isTrue,
-          reason: 'the shared visible-Drive root MUST byte-match Hoshi/ッツ');
+          reason: 'drive.file 与隐藏 appdata 空间语义不符，禁用');
     });
   });
 

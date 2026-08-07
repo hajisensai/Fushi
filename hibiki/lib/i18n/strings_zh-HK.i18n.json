@@ -1866,8 +1866,6 @@
   "sync_error": "同步錯誤：$message",
   "sync_exit_warning": "同步尚未完成，現在退出可能會遺失資料。",
   "sync_exit_warning_title": "同步進行中",
-  "sync_google_drive_hoshi_compat": "Share progress with Hoshi / ッツ",
-  "sync_google_drive_hoshi_compat_desc": "Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.",
   "sync_host": "主機",
   "sync_lan_discovery": "區域網絡裝置",
   "sync_lan_no_devices": "找不到裝置",

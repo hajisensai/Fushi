@@ -8,7 +8,6 @@ import 'package:hibiki/src/sync/sync_utils.dart' show kSyncRootFolderName;
 /// 两个 app 因此在用户可见的 My Drive 下落进**同一个**根文件夹，进度文件（都是
 /// `progress_1_6_*` 明文 JSON）得以互相读写。改这个字面量会立刻破坏与 Hoshi/ッツ
 /// 的互通，勿动。
-const String kTtuSharedRootFolderName = 'ttu-reader-data';
 
 /// Google Drive 同步的「存储空间 + OAuth scope」配置。
 ///
@@ -57,17 +56,4 @@ class GoogleDriveSyncSpace {
     rootParent: 'appDataFolder',
     rootFolderName: kSyncRootFolderName,
   );
-
-  /// Hoshi/ッツ 共享：可见 My Drive / `ttu-reader-data` / 完整 `drive` scope。
-  static const GoogleDriveSyncSpace ttuShared = GoogleDriveSyncSpace(
-    id: 'ttu-shared',
-    scope: 'https://www.googleapis.com/auth/drive',
-    spaces: 'drive',
-    rootParent: 'root',
-    rootFolderName: kTtuSharedRootFolderName,
-  );
-
-  /// 由「Hoshi 兼容模式」开关（偏好 bool）解析出对应空间。
-  static GoogleDriveSyncSpace fromHoshiCompat(bool hoshiCompat) =>
-      hoshiCompat ? ttuShared : appData;
 }

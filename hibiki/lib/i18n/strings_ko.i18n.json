@@ -1866,8 +1866,6 @@
   "sync_error": "동기화 오류: $message",
   "sync_exit_warning": "동기화가 아직 진행 중입니다. 지금 종료하면 데이터가 손실될 수 있습니다.",
   "sync_exit_warning_title": "동기화 진행 중",
-  "sync_google_drive_hoshi_compat": "Share progress with Hoshi / ッツ",
-  "sync_google_drive_hoshi_compat_desc": "Sync reading progress via a shared Google Drive folder (ttu-reader-data). Needs full Drive access and re-sign-in.",
   "sync_host": "호스트",
   "sync_lan_discovery": "LAN 기기",
   "sync_lan_no_devices": "기기를 찾을 수 없음",
