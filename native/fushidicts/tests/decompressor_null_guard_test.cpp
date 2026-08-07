@@ -11,7 +11,7 @@
 // decompression site added later.
 //
 // Usage: decompressor_null_guard_test <fushidicts_src_dir>
-//   (the test build passes HOSHI_SRC via argv; falls back to a relative guess.)
+//   (the test build passes FUSHI_SRC via argv; falls back to a relative guess.)
 #include <cstdio>
 #include <filesystem>
 #include <fstream>

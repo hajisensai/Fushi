@@ -189,6 +189,153 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   ),
 ];
 
+// ---------------------------------------------------------------------------
+// W6：native 目录与残余构建标识改名（native/hibiki_torrent→native/fushi_torrent、
+// native/hoshidicts→native/fushidicts + 内层 hoshidicts_{src,include,external}→
+// fushidicts_*）。这组禁的是**路径/构建标识形态**，与上面的代码位组不同：
+// 扫描面覆盖构建脚本、workflow、docs/agent、native 自树、包与测试，注释**也算**
+// （路径引用大多活在注释里，注释里的旧路径同样把人带去不存在的目录）。
+//
+// 刻意不禁（不是路径形态，是冻结契约/上游对照面）：
+//   * 内部静态库 target `hoshidicts`、`hoshi::` 命名空间/`HOSHI_EXPORT` 宏；
+//   * 公共头子目录 `fushidicts_include/hoshidicts/`（源码 #include "hoshidicts/*"）；
+//   * `.hoshidicts_1` 磁盘分片名（词典持久化契约）；
+//   * hibiki_torrent 内层文件名（hibiki_torrent.h / hibiki_torrent_ffi.cpp /
+//     hibiki_torrent_bindings.dart）与旧 DLL 加载回退名 hibiki_torrent_ffi.dll；
+//   * `native-hoshidicts-gate.yml` 文件名（连字符形态，galgame_hook 注释引用）。
+// 豁免（不进扫描面）：docs/bugs|specs|reviews|plans 历史文档、
+// native/fushidicts/UPSTREAM.md（上游出处 + 新旧对照表，见下方自证测试）、
+// fushidicts_external/ vendored pristine 树、构建产物目录、git 历史。
+// ---------------------------------------------------------------------------
+
+final List<_ForbiddenPattern> _forbiddenPathForms = <_ForbiddenPattern>[
+  _ForbiddenPattern(
+    name: 'native/hibiki_torrent 路径',
+    regex: RegExp(r'native[/\\]hibiki_torrent'),
+  ),
+  _ForbiddenPattern(
+    name: 'packages/hibiki_torrent 路径',
+    regex: RegExp(r'packages[/\\]hibiki_torrent'),
+  ),
+  _ForbiddenPattern(
+    name: 'native/hoshidicts 路径',
+    regex: RegExp(r'native[/\\]hoshidicts'),
+  ),
+  _ForbiddenPattern(
+    name: 'hoshidicts_{src,include,external,build} 目录名',
+    regex: RegExp('hoshidicts_(?:src|include|external|build)'),
+  ),
+  _ForbiddenPattern(
+    name: 'HOSHI_ROOT/HOSHI_SRC CMake 变量',
+    regex: RegExp('HOSHI_(?:ROOT|SRC)'),
+  ),
+  _ForbiddenPattern(
+    name: 'hoshi-tests CI 构建目录',
+    regex: RegExp('hoshi-tests'),
+  ),
+  _ForbiddenPattern(
+    name: 'add_hoshi_test ctest 注册函数',
+    regex: RegExp('add_hoshi_test'),
+  ),
+  _ForbiddenPattern(
+    name: 'HIBIKI_TORRENT_LIB 测试环境变量',
+    regex: RegExp('HIBIKI_TORRENT_LIB'),
+  ),
+];
+
+/// 路径形态组的扫描根（相对 `hibiki/`；目录或单文件皆可）。
+const List<String> _pathFormScanRoots = <String>[
+  '../.github/workflows',
+  '../native/fushi_torrent',
+  '../native/fushidicts',
+  '../packages/fushi_torrent',
+  '../packages/fushi_dictionary',
+  '../docs/agent',
+  '../docs/readme',
+  '../tool',
+  '../tools',
+  '../CLAUDE.md',
+  '../README.md',
+  '../README.zh-CN.md',
+  'CLAUDE.md',
+  'lib',
+  'test',
+  'tool',
+  'windows',
+  'linux',
+  'android/app/build.gradle',
+  'android/app/src',
+  'ios/Runner.xcodeproj',
+  'macos/Runner/Configs',
+];
+
+/// 只读文本类扩展（避免撞上二进制夹具/产物）。
+const Set<String> _pathFormScanExtensions = <String>{
+  '.dart',
+  '.yaml',
+  '.yml',
+  '.md',
+  '.gradle',
+  '.ps1',
+  '.sh',
+  '.bat',
+  '.py',
+  '.mjs',
+  '.js',
+  '.cmake',
+  '.txt',
+  '.h',
+  '.hpp',
+  '.cpp',
+  '.cc',
+  '.pbxproj',
+  '.xcconfig',
+  '.kt',
+  '.java',
+  '.swift',
+};
+
+bool _pathFormExcluded(String normalizedPath) {
+  // vendored pristine 树 / 构建产物 / 工具缓存不属于我们的命名域。
+  for (final String segment in <String>[
+    '/fushidicts_external/',
+    '/.dart_tool/',
+    '/build/',
+    '/prebuilt/',
+    '/.git/',
+  ]) {
+    if (normalizedPath.contains(segment)) return true;
+  }
+  // 上游出处 + 新旧对照表（存活性由下方自证测试守着）。
+  if (normalizedPath.endsWith('native/fushidicts/UPSTREAM.md')) return true;
+  // 本守卫自身（禁模式字面量所在地）。
+  if (normalizedPath.endsWith('test/tools/fushi_rename_guard_test.dart')) {
+    return true;
+  }
+  return false;
+}
+
+Iterable<File> _pathFormScanFiles() sync* {
+  for (final String root in _pathFormScanRoots) {
+    final FileSystemEntityType type = FileSystemEntity.typeSync(root);
+    if (type == FileSystemEntityType.file) {
+      yield File(root);
+      continue;
+    }
+    expect(type, FileSystemEntityType.directory,
+        reason: '路径形态扫描根缺失：$root（目录被改名/移动了？）');
+    yield* Directory(root)
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((File f) {
+      final String path = _normalize(f.path);
+      final int dot = path.lastIndexOf('.');
+      final String ext = dot >= 0 ? path.substring(dot) : '';
+      return _pathFormScanExtensions.contains(ext);
+    });
+  }
+}
+
 /// 扫描根（相对 `hibiki/`，即 flutter test 的 cwd）。
 const List<String> _scanRoots = <String>[
   'lib',
@@ -272,5 +419,36 @@ void main() {
     expect(stale, isEmpty,
         reason: '白名单条目已无真实命中，请删除对应豁免（防止白名单退化成盲区）：\n'
             '${stale.join('\n')}');
+  });
+
+  test('W6：旧 native 路径/构建标识零残留（构建脚本+workflow+docs+测试，注释也算）', () {
+    final List<String> violations = <String>[];
+    for (final File f in _pathFormScanFiles()) {
+      final String path = _normalize(f.path);
+      if (_pathFormExcluded(path)) continue;
+      final String source = f.readAsStringSync();
+      for (final _ForbiddenPattern pattern in _forbiddenPathForms) {
+        for (final RegExpMatch m in pattern.regex.allMatches(source)) {
+          violations.add('[${pattern.name}] $path:${_lineOf(source, m.start)} '
+              '→ ${m.group(0)}');
+        }
+      }
+    }
+    expect(violations, isEmpty,
+        reason: '发现旧 native 路径/构建标识残留（W6 已改名 native/fushi_torrent、'
+            'native/fushidicts + fushidicts_{src,include,external}；历史文档走 '
+            'docs/bugs|specs|reviews|plans，不该出现在这些活跃面里）：\n'
+            '${violations.join('\n')}');
+  });
+
+  test('W6 豁免自证：UPSTREAM.md 仍记载旧目录形态（否则把它移回扫描面）', () {
+    final String upstream =
+        File('../native/fushidicts/UPSTREAM.md').readAsStringSync();
+    expect(
+        _forbiddenPathForms
+            .any((_ForbiddenPattern p) => p.regex.hasMatch(upstream)),
+        isTrue,
+        reason: 'UPSTREAM.md 已无任何旧目录/标识命中——它的扫描面豁免过期了，'
+            '请删掉 _pathFormExcluded 里的对应排除，防止豁免退化成盲区。');
   });
 }
