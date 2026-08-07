@@ -154,12 +154,11 @@ void main() {
   });
 
   group('接线守卫（源码扫描）', () {
-    test('README 区分可聚焦面板与 NOACTIVATE 瞬态窗，且两份镜像一致', () {
+    test('README 区分可聚焦面板与 NOACTIVATE 瞬态窗', () {
+      // README 不再镜像进 app assets（sync-mirrors.mjs 排除项：*.test.js、
+      // scripts/、README.md——文档不进 bundle），只对 tools 真源做内容断言。
       final String tools =
           File('../tools/browser-extension/README.md').readAsStringSync();
-      final String bundled =
-          File('assets/browser_extension/README.md').readAsStringSync();
-      expect(bundled, tools, reason: '扩展 README 的 tools 源与 app 内镜像必须同步');
       expect(tools, contains('只有在用户点入并获得键盘焦点后'));
       expect(tools, contains('WS_EX_NOACTIVATE'));
       expect(tools, contains('没有制卡快捷键'));
