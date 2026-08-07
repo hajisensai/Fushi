@@ -553,7 +553,7 @@ void main() {
       expect(startCalled, isFalse);
       expect(record?.installerLaunchSucceeded, isFalse);
       expect(record?.libmpvModuleHolders.single.pid, 9001);
-      expect(record?.launchError, contains('non-Hibiki process'));
+      expect(record?.launchError, contains('non-Fushi process'));
       expect(
           record?.launchError, contains('Close the listed process manually'));
     });
