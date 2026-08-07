@@ -298,7 +298,7 @@ void main() {
             js.contains('fushiFocusDictionaryEntryMove(entryAction)'), isTrue,
             reason: '$path 没把命中的滚轮接到词条焦点移动上');
         // 未注入时（浏览器扩展）必须有 Alt+滚轮默认，否则扩展里这功能是死的。
-        expect(js.contains('HOSHI_ENTRY_WHEEL_DEFAULT_BINDINGS'), isTrue,
+        expect(js.contains('FUSHI_ENTRY_WHEEL_DEFAULT_BINDINGS'), isTrue,
             reason: '$path 丢了未注入时的默认绑定');
       }
     });

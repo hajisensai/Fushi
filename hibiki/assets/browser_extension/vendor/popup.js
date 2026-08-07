@@ -2905,7 +2905,7 @@ window.fushiPopupMineFirstEntry = async function() {
 // 制卡实现上只调 fushiPopupMineFirstEntry() 去点那颗按钮，**绝不另起第二条制卡桥调用**：
 // 三态（＋/✓/✓↩︎）、单飞门、查重刷新全在按钮的 onclick 里，另起一条既会绕过它们，也会
 // 撞上「本文件里制卡桥有且只有一处调用」的守卫测试（popup_append_sentence_asset_test）。
-const HOSHI_POPUP_KEY_DEFAULT_BINDINGS = {
+const FUSHI_POPUP_KEY_DEFAULT_BINDINGS = {
     mine: [{ key: 'enter', mods: ['ctrl'] }],
     next: [],
     prev: [],
@@ -2916,7 +2916,7 @@ const HOSHI_POPUP_KEY_DEFAULT_BINDINGS = {
 function fushiPopupKeyAction(e) {
     const raw = window.__fushiPopupKeyBindings;
     if (raw === null) return null;
-    const cfg = (raw && typeof raw === 'object') ? raw : HOSHI_POPUP_KEY_DEFAULT_BINDINGS;
+    const cfg = (raw && typeof raw === 'object') ? raw : FUSHI_POPUP_KEY_DEFAULT_BINDINGS;
     // Flutter 侧 _webKeyName 的同款归一：全小写 + 去空格，空格键特判成 'space'。
     const name = e.key === ' ' ? 'space' : String(e.key || '').toLowerCase().replace(/ /g, '');
     if (!name) return null;
@@ -4275,7 +4275,7 @@ function popupAncestorAbsorbsVerticalWheel(target, deltaPx) {
 // window.__fushiEntryWheelBindings 覆盖成用户在「快捷键」设置里配的绑定（动作
 // ShortcutAction.popupNextEntry / popupPrevEntry）。浏览器扩展没有那条注入通道，
 // 就吃这里的默认值。
-const HOSHI_ENTRY_WHEEL_DEFAULT_BINDINGS = {
+const FUSHI_ENTRY_WHEEL_DEFAULT_BINDINGS = {
     next: [{ dir: 'down', mods: ['alt'] }],
     prev: [{ dir: 'up', mods: ['alt'] }],
 };
@@ -4286,7 +4286,7 @@ function popupEntryWheelAction(e) {
     const raw = window.__fushiEntryWheelBindings;
     const cfg = (raw && typeof raw === 'object')
         ? raw
-        : HOSHI_ENTRY_WHEEL_DEFAULT_BINDINGS;
+        : FUSHI_ENTRY_WHEEL_DEFAULT_BINDINGS;
     const dir = e.deltaY > 0 ? 'down' : (e.deltaY < 0 ? 'up' : null);
     if (!dir) return null;
     const pressed = [];

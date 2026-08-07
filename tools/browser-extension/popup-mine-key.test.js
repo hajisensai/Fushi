@@ -19,14 +19,14 @@ const POPUP = path.join(__dirname, 'vendor', 'popup.js');
 
 function loadKeyListener(bindings) {
   const src = fs.readFileSync(POPUP, 'utf8');
-  const START = 'const HOSHI_POPUP_KEY_DEFAULT_BINDINGS';
+  const START = 'const FUSHI_POPUP_KEY_DEFAULT_BINDINGS';
   const END = "document.addEventListener('keydown'";
   const start = src.indexOf(START);
   // keydown 注册被包在 `try {` 里，切到 addEventListener 之前会把 try 断成半截语法错，
   // 故回退到那个 try 之前——切片必须是自洽可执行的一段。
   const kd = src.indexOf(END, start);
   const end = kd < 0 ? -1 : src.lastIndexOf('try {', kd);
-  assert.ok(start >= 0, '切片起点锚失效：popup.js 里找不到 HOSHI_POPUP_KEY_DEFAULT_BINDINGS');
+  assert.ok(start >= 0, '切片起点锚失效：popup.js 里找不到 FUSHI_POPUP_KEY_DEFAULT_BINDINGS');
   assert.ok(end > start, '切片终点锚失效：找不到 keydown 注册');
   const slice = src.slice(start, end);
   // 真的切到了监听体，而不是切出一段空壳。
