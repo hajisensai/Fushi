@@ -20,6 +20,9 @@ void main() {
   bool isMirrored(String rel) {
     if (rel.endsWith('.test.js')) return false;
     if (rel == 'scripts' || rel.startsWith('scripts/')) return false;
+    // README 不进 app 资产包（与 tool/sync_browser_extension.dart 及
+    // scripts/sync-mirrors.mjs 的清单规则三方一致）。
+    if (rel == 'README.md') return false;
     return true;
   }
 

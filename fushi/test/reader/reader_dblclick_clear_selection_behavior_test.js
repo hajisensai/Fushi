@@ -29,7 +29,7 @@ const vm = require('vm');
 
 const readerPath = path.resolve(
   __dirname,
-  '../../lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+  '../../lib/src/pages/implementations/reader_fushi/webview.part.dart',
 );
 const source = fs.readFileSync(readerPath, 'utf8');
 

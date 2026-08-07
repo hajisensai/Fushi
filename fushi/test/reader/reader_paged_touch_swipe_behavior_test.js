@@ -7,7 +7,7 @@
 // pointermove cleared `hasStart`, and touchend was swallowed, so the
 // touchstart/touchend -> _gestureEnd -> onSwipe page-turn never fired. This test
 // EXECUTES the real reader event handlers (extracted verbatim from
-// reader_hibiki_page.dart) against a fake DOM and asserts that a paged-mode
+// reader_fushi_page.dart) against a fake DOM and asserts that a paged-mode
 // horizontal touch drag emits onSwipe FROM the touchend path, while pointerup
 // stays silent. Reverting the TODO-553 fix turns this red.
 //
@@ -35,11 +35,11 @@ const vm = require('vm');
 
 // TODO-589 batch8: reader setup script (_buildReaderSetupScript, which owns
 // the full handler slice below) was extracted verbatim to
-// reader_hibiki/webview.part.dart. The slice markers are unchanged, so the
+// reader_fushi/webview.part.dart. The slice markers are unchanged, so the
 // harness now reads the part file (the slice lives entirely inside it).
 const readerPath = path.resolve(
   __dirname,
-  '../../lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+  '../../lib/src/pages/implementations/reader_fushi/webview.part.dart',
 );
 const source = fs.readFileSync(readerPath, 'utf8');
 

@@ -23,6 +23,9 @@ import 'package:path/path.dart' as p;
 bool isMirroredExtensionFile(String rel) {
   if (rel.endsWith('.test.js')) return false;
   if (rel == 'scripts' || rel.startsWith('scripts/')) return false;
+  // README 是仓库文档，不进 app 资产包（与 scripts/sync-mirrors.mjs 的清单
+  // 规则一致——扩展清扫批已把它从镜像删除，popup_mine_key_binding 守卫同步）。
+  if (rel == 'README.md') return false;
   return true;
 }
 
