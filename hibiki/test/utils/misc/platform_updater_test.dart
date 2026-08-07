@@ -614,18 +614,18 @@ void main() {
     test('resolves the .app bundle from a Contents/MacOS executable', () {
       expect(
         macAppBundlePathForExecutable(
-          '/Applications/hibiki.app/Contents/MacOS/hibiki',
+          '/Applications/fushi.app/Contents/MacOS/fushi',
         ),
-        '/Applications/hibiki.app',
+        '/Applications/fushi.app',
       );
     });
 
     test('handles a nested user path', () {
       expect(
         macAppBundlePathForExecutable(
-          '/Users/me/Applications/hibiki.app/Contents/MacOS/hibiki',
+          '/Users/me/Applications/fushi.app/Contents/MacOS/fushi',
         ),
-        '/Users/me/Applications/hibiki.app',
+        '/Users/me/Applications/fushi.app',
       );
     });
 
@@ -650,7 +650,7 @@ void main() {
     String script() => buildMacSwapScript(
           parentPid: 4321,
           newAppPath: '/tmp/updates/mac-update-1.2.0.extracted/hibiki.app',
-          targetAppPath: '/Applications/hibiki.app',
+          targetAppPath: '/Applications/fushi.app',
           backupPath: '/tmp/updates/mac-update-1.2.0.backup',
           extractDir: '/tmp/updates/mac-update-1.2.0.extracted',
           resultPath: '/tmp/updates/mac-update-result.json',

@@ -11,7 +11,7 @@ import 'package:hibiki/src/utils/misc/webview_asset_url.dart';
 
 void main() {
   group('appleBundleWebViewAssetUrl', () {
-    const String executable = '/tmp/Hibiki.app/Contents/MacOS/hibiki';
+    const String executable = '/tmp/Fushi.app/Contents/MacOS/fushi';
     const String asset = 'assets/popup/popup.html';
 
     test('uses App.framework Resources flutter_assets on macOS bundles', () {
@@ -24,7 +24,7 @@ void main() {
 
       expect(
         Uri.parse(url).toFilePath(),
-        '/tmp/Hibiki.app/Contents/Frameworks/App.framework/Resources/flutter_assets/$asset',
+        '/tmp/Fushi.app/Contents/Frameworks/App.framework/Resources/flutter_assets/$asset',
       );
     });
 
@@ -39,7 +39,7 @@ void main() {
 
       expect(
         Uri.parse(url).toFilePath(),
-        '/tmp/Hibiki.app/Contents/Frameworks/App.framework/flutter_assets/$asset',
+        '/tmp/Fushi.app/Contents/Frameworks/App.framework/flutter_assets/$asset',
       );
     });
 
@@ -70,7 +70,7 @@ void main() {
 
       expect(
         Uri.parse(url).toFilePath(),
-        '/tmp/Hibiki.app/Contents/Frameworks/App.framework/Resources/flutter_assets/$asset',
+        '/tmp/Fushi.app/Contents/Frameworks/App.framework/Resources/flutter_assets/$asset',
       );
     });
   });
