@@ -118,6 +118,41 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     regex: RegExp('package:hibiki'),
   ),
   _ForbiddenPattern(
+    // W5：JS 运行时 camel 符号族已是 fushi*/Fushi*（window.fushiSelection、
+    // fushiCaret、__fushi* 内部符号、[FushiVN]/[FushiInit] log tag、陈旧
+    // HoshiDicts/HoshiLookupResult 引擎类引用等）。解析冻结持久化格式
+    // `hoshi://book/<key>` 的 Dart 私有名命名跟随格式本名，见白名单。
+    name: 'hoshi*-camel 运行时符号族',
+    regex: RegExp('[Hh]oshi[A-Z]'),
+    allowed: <String, String>{
+      'lib/src/sync/app_model_library_host_service.dart':
+          '_hoshiBookKeyPattern：解析冻结 mediaIdentifier 格式 hoshi://book/'
+              '<key>（DB 持久化契约，行改写归 W2），命名跟随格式本名。',
+      'lib/src/utils/misc/shelf_ordering.dart':
+          '_parseHoshiBookKey：同上，解析冻结 hoshi://book/ 键格式。',
+    },
+  ),
+  _ForbiddenPattern(
+    // W5：注入 CSS 变量/类/data-属性/Highlight registry 名已是
+    // --fushi-*/.fushi-*/data-fushi-*（每次注入现拼，无持久化形态）。
+    name: 'hoshi- CSS/DOM 词根',
+    regex: RegExp('hoshi-'),
+  ),
+  _ForbiddenPattern(
+    // W5：snake 运行时名（JS handler/ValueKey/DOM id/词典媒体缓存文件前缀）
+    // 已是 fushi_*。白名单法逐段列举——冻结的 hoshi_books / hoshi_anki_settings /
+    // google_drive_hoshi_compat 等磁盘目录/偏好键刻意不在此模式内。
+    name: 'hoshi_* snake 运行时名',
+    regex: RegExp(r'hoshi_(?:content_ready|lyrics_ready|progress|play_bar'
+        r'|webview|lyrics_mode_toggle|shell_|dict_|audio_css)'),
+  ),
+  _ForbiddenPattern(
+    // W5：Apple 端阅读器资源 scheme 已是 fushi-reader（纯运行时 URL scheme，
+    // 注册与拦截两侧同引 ReaderCustomFontCss.kReaderResourceScheme 常量）。
+    name: 'hibiki-reader-scheme',
+    regex: RegExp('hibiki-reader'),
+  ),
+  _ForbiddenPattern(
     // 类名族清算：Hibiki* → Fushi*（HibikiDatabase/HibikiToast/_HibikiCardState
     // 等词首形态，含 _$Hibiki* 生成类）。词中内嵌形态不属类名族、刻意不匹配：
     // MangaHibikiPage 等含 hibiki 文件名的类（本轮不 git mv，半径控制）、
