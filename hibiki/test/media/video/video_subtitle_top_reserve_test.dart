@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
-import 'package:hibiki/src/media/video/video_subtitle_style.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
+import 'package:fushi/src/media/video/video_subtitle_style.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-1069：视频顶部锚字幕（含强制置顶的副字幕）在控制条可见时盖住视频内嵌顶栏
 /// （标题栏 + 右上角菜单）。修复：顶部锚字幕顶缘对 `controlsTopReserve` 取下限避让，

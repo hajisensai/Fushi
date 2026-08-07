@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:googleapis_auth/googleapis_auth.dart' as auth;
-import 'package:hibiki/src/sync/google_drive_handler.dart';
+import 'package:fushi/src/sync/google_drive_handler.dart';
 
 void main() {
   group('googleDriveErrorIsUnauthorized (BUG-060)', () {

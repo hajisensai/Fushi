@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
 
 /// galgame 纯人声配对纯函数 [pickPairedVoiceOgg] 单测（真机验证的配对规律固化）：文本行
 /// 时间戳对应的语音优先取同 tick 资源；没有时再取 [T-330, T-130] 内、离期望偏移

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki_core/hibiki_core.dart' show MediaKind;
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi_core/fushi_core.dart' show MediaKind;
 
 /// 互联 wire format 黄金守卫（TODO-2120 的前置安全网）。
 ///

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/remote_cover_cache.dart';
+import 'package:fushi/src/sync/remote_cover_cache.dart';
 
 /// BUG-847：远端封面读盘缓存单测。命中直接读盘（跨重启不重下）、未命中回退网络。
 void main() {

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 
 /// BUG-021 守卫：反转有声书播放底栏只镜像整体布局，**不能**反转
 /// ⏮⏯⏭ 播放三联键的内部方向——快退/上一句永远在左、快进/下一句永远在右。

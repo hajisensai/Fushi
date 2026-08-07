@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// v61 迁移（BUG-1211「改的是合集封面，不是每一集的封面」）：`media_collections`
 /// 加 `cover_path` 列 = 合集**自有**封面图的绝对路径。

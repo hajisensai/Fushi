@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
     show runUiScaleReanchorOrchestration;
 
 /// TODO-933：连续/滚动模式下开书或退出再进，顶部阅读进度条初次不显示，要滑动一下才出来。

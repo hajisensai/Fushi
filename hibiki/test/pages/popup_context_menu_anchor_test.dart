@@ -16,7 +16,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 
 /// 与 `_showWindowsContextMenu` 完全同形的锚点算法（保持两处一致；算法一旦在实现里
 /// 改坏，这里的断言不会自动跟着坏 —— 故实现侧另有源码扫描守卫盯 `globalToLocal`）。

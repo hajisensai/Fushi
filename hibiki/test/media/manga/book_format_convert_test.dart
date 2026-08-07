@@ -1,7 +1,7 @@
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/manga/book_format_convert.dart';
+import 'package:fushi/src/media/manga/book_format_convert.dart';
 
 /// 「书 ↔ 漫画」转化的可行性判定。
 ///

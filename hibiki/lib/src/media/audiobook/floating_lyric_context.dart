@@ -1,4 +1,4 @@
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-708 P4：悬浮字幕「显示当前字幕的前后 N 行上下文」纯函数层（路线 A）。
 ///

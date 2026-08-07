@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/visual/keyboard_layout_view.dart';
+import 'package:fushi/src/shortcuts/visual/keyboard_layout_view.dart';
 
 /// TODO-942 P2：真实 ANSI 键盘布局纯函数单测。
 ///

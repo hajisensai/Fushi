@@ -1,5 +1,5 @@
 import 'package:flutter/services.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:share_plus/share_plus.dart';
 
 typedef ShareSelectedText = Future<void> Function(String text);

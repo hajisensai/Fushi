@@ -6,8 +6,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 void main() {
   testWidgets('开关行在焦点根下只有一个 Tab 停靠点，整行点击仍可切换', (WidgetTester tester) async {

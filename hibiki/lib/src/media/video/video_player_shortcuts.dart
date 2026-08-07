@@ -9,9 +9,9 @@ import 'package:flutter/services.dart'
         PhysicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 
-import 'package:hibiki/src/shortcuts/input_binding.dart' show ModifierKey;
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart' show ModifierKey;
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
 /// Coalesces a controller button and the synthetic secondary mouse click that
 /// some desktop controller mappers emit for the same physical press.

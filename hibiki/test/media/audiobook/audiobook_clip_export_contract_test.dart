@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_clip_export.dart';
+import 'package:fushi/src/media/audiobook/audiobook_clip_export.dart';
 
 void main() {
   group('exported card text follows the actual reader selection', () {

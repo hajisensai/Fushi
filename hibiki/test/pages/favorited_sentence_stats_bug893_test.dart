@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 // BUG-893：阅读统计「收藏语句」计数恒为 0。根因——reader 书内收藏写入端不带 dateKey，
 // 读取端又用 `dateKey != null` 过滤，把所有书内收藏滤光。修复：写入补 dateKey +

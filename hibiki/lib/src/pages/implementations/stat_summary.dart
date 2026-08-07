@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
-import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki/src/pages/implementations/stat_charts.dart';
-import 'package:hibiki/src/pages/implementations/stat_trends.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/pages/implementations/stat_trends.dart';
 
 /// 「范围与趋势」折线图的指标维度：字数 / 时长 / 速度。
 /// 参考设计顶部图的指标切换（macOS 统计页）。

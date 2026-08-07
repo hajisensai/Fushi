@@ -2,10 +2,10 @@ import 'package:drift/native.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/pages/implementations/media_collection_grid_detail_page.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-781（与 BUG-129/261/381 同族）回归守卫：合集详情页
 /// （[MediaCollectionGridDetailPage]）成员卡右键上下文菜单在界面大小≠100% 时的定位。

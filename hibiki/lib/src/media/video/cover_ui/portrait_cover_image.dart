@@ -1,7 +1,7 @@
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/media/video/cover_ui/cover_aspect_probe.dart';
+import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 
 /// 槽向自适应封面（Kazumi 式，用户拍板 2026-07-24 统一竖版；BUG-1299 推广为
 /// 横竖槽通用）。

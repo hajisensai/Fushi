@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
+import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
 
 void main() {
   group('dictionaryMediaWebResourceResponse', () {

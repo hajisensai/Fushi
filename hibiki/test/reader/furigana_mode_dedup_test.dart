@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 
 /// 特征/回归测试：furigana 模式归一化与样式映射的单一真相是
 /// [ReaderSettings]，[ReaderHibikiSource] 的同名方法只转调它。

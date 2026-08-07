@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/hibiki_reorder_drag_listener.dart';
+import 'package:fushi/src/utils/components/hibiki_reorder_drag_listener.dart';
 
 /// 守卫 [HibikiReorderDragListener] 的「按平台选即时/延迟起拖」分支——
 /// 修「Win 等桌面端鼠标必须长按 ~500ms 才能拖动重排」的回归防线。

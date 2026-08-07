@@ -7,17 +7,17 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/pages/base_page.dart';
-import 'package:hibiki/src/utils/misc/collection_exporter.dart';
-import 'package:hibiki/src/media/display_title.dart';
-import 'package:hibiki/src/media/video/m3u8_playlist.dart';
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
-import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+import 'package:fushi/media.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/utils/misc/collection_exporter.dart';
+import 'package:fushi/src/media/display_title.dart';
+import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 
 enum _CollectionType { sentence, mined, word }

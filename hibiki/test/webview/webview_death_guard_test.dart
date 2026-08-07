@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/webview/webview_death_guard.dart';
+import 'package:fushi/src/webview/webview_death_guard.dart';
 
 /// [WebViewDeathGuard] 的处置策略行为测试。
 ///

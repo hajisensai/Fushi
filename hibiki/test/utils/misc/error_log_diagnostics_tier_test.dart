@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// TODO-1083：报错日志分级契约。两类噪声——更新检查多镜像 failover 的瞬时网络失败、
 /// WGC 帧捕获生命周期取证（BUG-209）——不该混进用户可见的「报错日志」，但仍要能随

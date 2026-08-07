@@ -10,8 +10,8 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/media/video/scraper/title_normalizer.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/title_normalizer.dart';
 
 /// 缓存文件名（固定，落在注入的存储目录下）。
 const String _kCacheFileName = 'scraper_alias_cache.json';

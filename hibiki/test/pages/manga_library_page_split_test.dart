@@ -4,15 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/manga/manga_browse_page.dart';
-import 'package:hibiki/src/media/manga/manga_library_page.dart';
-import 'package:hibiki/src/media/manga/manga_sources_page.dart';
-import 'package:hibiki/src/media/media_item.dart';
-import 'package:hibiki/src/media/sources/manga_hibiki_source.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
-import 'package:hibiki/src/pages/implementations/module_settings_view.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
+import 'package:fushi/src/media/manga/manga_browse_page.dart';
+import 'package:fushi/src/media/manga/manga_library_page.dart';
+import 'package:fushi/src/media/manga/manga_sources_page.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/manga_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart';
+import 'package:fushi/src/pages/implementations/module_settings_view.dart';
+import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart';
 
 import '../helpers/source_guard.dart';
 

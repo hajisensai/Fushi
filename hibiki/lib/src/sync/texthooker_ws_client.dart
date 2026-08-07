@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-import 'package:hibiki/src/sync/texthooker_message.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
+import 'package:fushi/src/sync/texthooker_message.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
 
 /// WS 连接工厂（注入以便测试）。
 typedef WsChannelFactory = WebSocketChannel Function(String url);

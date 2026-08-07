@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/utils.dart';
 
 class _GroupedEntry {
   _GroupedEntry({

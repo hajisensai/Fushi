@@ -1,8 +1,8 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 
 /// TODO-728 持久化守卫：三项阅读器 chrome 偏好。
 ///  ② showBottomBarCue —— per-reader，默认 true。

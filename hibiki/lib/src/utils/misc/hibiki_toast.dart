@@ -3,13 +3,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-import 'package:hibiki/src/utils/misc/toast_severity.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/misc/toast_severity.dart';
 
 export 'package:fluttertoast/fluttertoast.dart' show Toast, ToastGravity;
 // 语义与调色板住在 toast_severity.dart（视频页 OSD 也用，见该文件头注释），
 // 这里再导出一次，让既有 `import hibiki_toast.dart` 的调用点无需改 import。
-export 'package:hibiki/src/utils/misc/toast_severity.dart';
+export 'package:fushi/src/utils/misc/toast_severity.dart';
 
 /// Global navigator key used by the desktop toast overlay.
 /// Must be assigned to the MaterialApp's navigatorKey.

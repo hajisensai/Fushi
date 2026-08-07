@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/window_capture_channel.dart';
+import 'package:fushi/src/mining/window_capture_channel.dart';
 
 /// TODO-1162 外部窗口挖矿 M0：`WindowCaptureChannel` 的 MethodChannel 契约（mock native）。
 ///

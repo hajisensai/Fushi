@@ -1,8 +1,8 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/m3u8_playlist.dart';
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 统一合集 Phase 2：[VideoBookRepository.importSplitPlaylist] 把一个多集播放列表拆成
 /// N 条独立 VideoBooks 行 + 一个 playlist 合集（成员按序），与 v38 迁移落库形状对齐。

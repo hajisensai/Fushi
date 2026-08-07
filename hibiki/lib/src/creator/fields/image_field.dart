@@ -5,9 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:progress_indicators/progress_indicators.dart';
 import 'package:gap/gap.dart';
 import 'package:transparent_image/transparent_image.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/models.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/models.dart';
 
 /// Returns audio information from context.
 class ImageField extends ImageExportField {

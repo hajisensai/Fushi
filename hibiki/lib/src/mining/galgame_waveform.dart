@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:hibiki/src/mining/galgame_audio_encode.dart' show PcmFormat;
+import 'package:fushi/src/mining/galgame_audio_encode.dart' show PcmFormat;
 
 /// galgame 一键制卡（docs/specs/galgame-mining）波形数据桥。
 ///

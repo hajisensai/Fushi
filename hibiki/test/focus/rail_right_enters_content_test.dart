@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
-import 'package:hibiki/src/shortcuts/gamepad_service.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 
 // TODO-814 回归守卫：平板/宽屏下底栏渲染成左侧竖向 nav rail（[adaptiveNavRail]）。
 // 焦点停在 rail 的某个导航项，按「右」方向键必须跨出 rail 进入右侧内容区（书架），

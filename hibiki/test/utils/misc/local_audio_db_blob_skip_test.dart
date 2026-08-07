@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/local_audio_db.dart';
+import 'package:fushi/src/utils/misc/local_audio_db.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 /// TODO-744: extractBlob 的输出文件名是 (file,source) 的稳定 hash，已存在即同字节，

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/misc/hibiki_toast.dart';
 
 /// A clickable MD3-style tag used in dictionary entries.
 class HibikiTag extends StatelessWidget {

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
 
 /// BUG-891 守卫：远端自签 Hibiki 主机制卡时，抽取器必须把该 host 的 TOFU 钉扎证书指纹
 /// 下发给 ffmpeg 的 `-tls_pin_sha256`——否则移动端自编 ffmpeg-kit（无 https/min 变体，

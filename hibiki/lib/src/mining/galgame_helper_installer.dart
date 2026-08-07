@@ -6,7 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// 统一日志出口（与同目录 `magpie_installer.dart` 的 `[magpie]` 同范式）。安装路径对用户
 /// 只有一句笼统 toast；报「装不上」时若这里零留痕，根本无从判断卡在校验、清单还是换入 ——

@@ -1,9 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:hibiki/src/settings/video_settings_host.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/settings/video_settings_host.dart';
 
 class SettingsContext {
   const SettingsContext({

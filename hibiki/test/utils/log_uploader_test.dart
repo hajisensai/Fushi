@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:hibiki/src/utils/misc/log_uploader.dart';
+import 'package:fushi/src/utils/misc/log_uploader.dart';
 
 void main() {
   const String endpoint = 'https://logs.example.com/api/logs';

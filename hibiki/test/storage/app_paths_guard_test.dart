@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/startup/test_environment.dart';
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:fushi/src/startup/test_environment.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 
 /// TODO-935 E0 守卫：钉死「应用数据根目录唯一入口 [AppPaths]」的收敛不被回退。
 ///
@@ -114,7 +114,7 @@ void main() {
       // 上游包不能 import app 层 AppPaths，故包内自有单一解析点 _documentsRoot；
       // 三处持久目录方法都经它，不再各自直连 path_provider。
       final String src = read(
-          '../packages/hibiki_audio/lib/src/audiobook/audiobook_storage.dart');
+          '../packages/fushi_audio/lib/src/audiobook/audiobook_storage.dart');
       expect(src.contains('_documentsRoot()'), isTrue,
           reason: 'audiobook_storage 必须有包内单一 documents 解析点 _documentsRoot');
       // _documentsRoot 是唯一真正调用 path_provider 的地方：三个持久目录方法都改读

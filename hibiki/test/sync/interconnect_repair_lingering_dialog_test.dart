@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_server_controller.dart';
-import 'package:hibiki/src/sync/hibiki_sync_server.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/sync/hibiki_server_controller.dart';
+import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/utils.dart';
 
 /// TODO-1330 / BUG-708：公网 PIN 配对被取消 / 从未 confirm 后，host 那个「已允许、常驻
 /// 显示 PIN 等对方输入」的弹窗不该继续占住审批槽，把随后的「重新配对」静默挡成拒绝。

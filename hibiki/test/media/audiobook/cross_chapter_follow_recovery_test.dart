@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-069：查词「从本句播放」跨多章，文字第一次只跟到一半（停在原章/中间章），
 /// 第二次点才到位。根因不在音频（音频秒到位），在 reader 文字跟随：
@@ -99,7 +99,7 @@ void main() {
 
     setUpAll(() {
       src = File(
-        '../packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart',
+        '../packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart',
       ).readAsStringSync();
     });
 

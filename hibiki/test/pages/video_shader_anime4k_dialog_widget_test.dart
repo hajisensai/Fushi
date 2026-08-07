@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/video/video_shader_downloader.dart';
-import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/video_shader_downloader.dart';
+import 'package:fushi/src/pages/implementations/video_shader_dialog.dart';
 
 /// Anime4K 预设选择对话框的 widget 行为：列出全部预设、已下载预设标 check、点击未下载
 /// 预设 pop 回该预设对象。

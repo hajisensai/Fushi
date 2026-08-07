@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 
 /// TODO-867 P1 — app-external global lookup must resolve dictionary media for
 /// BOTH custom schemes, symmetrically with the in-app InAppWebView.

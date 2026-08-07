@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:hibiki/src/ocr/ocr_inference.dart';
+import 'package:fushi/src/ocr/ocr_inference.dart';
 
 /// 漫画整卷 OCR 服务的稳定接口（设计 docs/specs/2026-07-24-manga-ocr-design.md §5.3 生产者 B）。
 ///

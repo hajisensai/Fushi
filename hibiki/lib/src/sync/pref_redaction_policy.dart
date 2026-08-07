@@ -1,4 +1,4 @@
-import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 
 /// 「一条 `preferences` key 能不能离开本设备」的**唯一真相源**。
 ///

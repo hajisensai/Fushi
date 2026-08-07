@@ -4,24 +4,24 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:hibiki/src/dictionary/dictionary_media_types.dart';
-import 'package:hibiki/src/media/video/video_subtitle_source.dart'
+import 'package:fushi/src/dictionary/dictionary_media_types.dart';
+import 'package:fushi/src/media/video/video_subtitle_source.dart'
     show
         EmbeddedSubtitleTrack,
         extractEmbeddedSubtitleTrackFile,
         listEmbeddedSubtitleTracks,
         subtitleExtensionForCodec,
         subtitleFormatForCodec;
-import 'package:hibiki/src/sync/aggregate_snapshot.dart';
-import 'package:hibiki/src/sync/collection_manifest.dart';
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki/src/sync/interconnect_service_config.dart';
-import 'package:hibiki/src/sync/hibiki_manga_ocr_host.dart';
-import 'package:hibiki/src/sync/interconnect_device_name.dart';
-import 'package:hibiki/src/sync/hibiki_remote_api_handlers.dart';
-import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
-import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
-import 'package:hibiki_core/hibiki_core.dart' show mimeTypeForFilePath;
+import 'package:fushi/src/sync/aggregate_snapshot.dart';
+import 'package:fushi/src/sync/collection_manifest.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/interconnect_service_config.dart';
+import 'package:fushi/src/sync/hibiki_manga_ocr_host.dart';
+import 'package:fushi/src/sync/interconnect_device_name.dart';
+import 'package:fushi/src/sync/hibiki_remote_api_handlers.dart';
+import 'package:fushi/src/sync/pairing/hibiki_pairing_protocol.dart';
+import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;

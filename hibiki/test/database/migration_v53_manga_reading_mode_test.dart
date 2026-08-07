@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart' show Value, QueryRow;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// v53 迁移（漫画 OCR，第三种书）：epub_books 加 `manga_reading_mode` 覆盖列
 /// （null=按页图长宽比自动判定 / 'spread' / 'webtoon'），把漫画当「第三种书」复用整套

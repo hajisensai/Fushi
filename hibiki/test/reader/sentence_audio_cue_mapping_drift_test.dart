@@ -7,8 +7,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-060：高亮坐标改由实时 DOM 权威定位。验证搜索逻辑三不变量：
 /// ① 上游 N 字漂移自愈（用 cue 原文在 DOM 就近重定位，不用死的偏移）；

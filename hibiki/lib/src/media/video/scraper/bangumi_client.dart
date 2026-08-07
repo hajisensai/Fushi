@@ -13,9 +13,9 @@ library;
 
 import 'dart:convert';
 
-import 'package:hibiki/src/media/metadata/bangumi_api_client.dart';
-import 'package:hibiki/src/media/metadata/bangumi_cover_url.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/metadata/bangumi_api_client.dart';
+import 'package:fushi/src/media/metadata/bangumi_cover_url.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:http/http.dart' as http;
 
 /// 刮削层统一网络异常：网络失败 / 非 2xx / JSON 解析异常时抛出，**绝不吞异常**，

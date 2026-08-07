@@ -1,15 +1,15 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
-import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
-import 'package:hibiki/src/media/manga/ocr/google_lens_ocr_service.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
-import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
+import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// `MangaOcrWizardDialog` 的**整套引擎依赖**（四个引擎的 runner + 默认引擎偏好）。
 ///

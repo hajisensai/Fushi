@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 音量按书持久化（BUG-031）：speed/delay/imagePause 都有 repo 读写键，唯独
 /// volume 之前完全没有。这条覆盖新加的 `readVolume`/`updateVolume` 往复，确保

@@ -1,9 +1,9 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
     show readerPositionSaveArgs;
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-285 / BUG-162（渐进重建 phase2）：`_persistPosition` 落库参数归一化凿成
 /// 纯函数 [readerPositionSaveArgs] 后的真行为测——替换旧的

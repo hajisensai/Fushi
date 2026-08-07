@@ -1,10 +1,10 @@
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/src/models/dictionary_repository.dart';
-import 'package:hibiki/src/startup/exit_flush_registry.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/models/dictionary_repository.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
 
 HibikiDatabase _testDb() {
   return HibikiDatabase.forTesting(

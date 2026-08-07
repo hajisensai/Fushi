@@ -1,4 +1,4 @@
-name: hibiki
+name: fushi
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
 version: 1.3.1+1204
@@ -38,18 +38,18 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  hibiki_core:
-    path: ../packages/hibiki_core
-  hibiki_dictionary:
-    path: ../packages/hibiki_dictionary
-  hibiki_anki:
-    path: ../packages/hibiki_anki
-  hibiki_audio:
-    path: ../packages/hibiki_audio
-  hibiki_platform:
-    path: ../packages/hibiki_platform
-  hibiki_torrent:
-    path: ../packages/hibiki_torrent
+  fushi_core:
+    path: ../packages/fushi_core
+  fushi_dictionary:
+    path: ../packages/fushi_dictionary
+  fushi_anki:
+    path: ../packages/fushi_anki
+  fushi_audio:
+    path: ../packages/fushi_audio
+  fushi_platform:
+    path: ../packages/fushi_platform
+  fushi_torrent:
+    path: ../packages/fushi_torrent
   google_sign_in: ^6.2.2
   extension_google_sign_in_as_googleapis_auth: ^2.0.12
   googleapis: ^13.2.0

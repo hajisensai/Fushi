@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/browser_extension_installer.dart';
+import 'package:fushi/src/lookup/browser_extension_installer.dart';
 
 void main() {
   group('browserExtensionsPageUrl', () {

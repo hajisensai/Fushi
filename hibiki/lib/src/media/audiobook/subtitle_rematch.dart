@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart'
+import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart'
     show AudiobookImportDialog;
 
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart'
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
     show epubSectionsFromExtractDir;
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// Sasayaki 重匹配入口，被 [AudiobookImportDialog]（已附加视图）和书架
 /// 长按菜单复用。把"弹 searchWindow slider" 和"跑 matcher + 落库 + toast"

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/pages/hibiki_page_placeholders.dart';
+import 'package:fushi/utils.dart';
 
 /// 编辑「单个本地音频库」的子来源：拖拽调整优先级顺序 + 逐源启用/禁用。
 ///

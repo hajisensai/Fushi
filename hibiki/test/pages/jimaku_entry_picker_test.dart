@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/jimaku_client.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_entry_picker.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
+import 'package:fushi/utils.dart';
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));

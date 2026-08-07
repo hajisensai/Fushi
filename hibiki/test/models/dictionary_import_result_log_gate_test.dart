@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/dictionary_import_manager.dart';
+import 'package:fushi/src/models/dictionary_import_manager.dart';
 
 /// TODO-943：词典导入**成功且有词条**的结果摘要不应再写进「错误日志」页
 /// （`ErrorLogService` 是单通道无级别日志器）。只有真正需要排查的情况——

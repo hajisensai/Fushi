@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/src/platform/floating_overlay_channel.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/platform/floating_overlay_channel.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 typedef FloatingDictSearchHandler = Future<DictionarySearchResult?> Function(
     String term);

@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/immersion_capture_channel.dart';
-import 'package:hibiki/src/mining/immersion_mining_request.dart';
-import 'package:hibiki/src/sync/immersion_mine_payload.dart';
+import 'package:fushi/src/mining/immersion_capture_channel.dart';
+import 'package:fushi/src/mining/immersion_mining_request.dart';
+import 'package:fushi/src/sync/immersion_mine_payload.dart';
 
 ImmersionMinePayload _payload({Uint8List? shot}) => ImmersionMinePayload(
       fields: const {'expression': '走る'},

@@ -2,8 +2,8 @@
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// Unit tests for the shared [DictionaryPopupController] — the single set of
 /// stack primitives across the reader / audiobook / video / home tab /

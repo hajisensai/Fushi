@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/video_side_panel.dart';
+import 'package:fushi/src/media/video/video_side_panel.dart';
 
 void main() {
   testWidgets('VideoTranslucentSidePanel keeps the video area visible',

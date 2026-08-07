@@ -6,8 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/utils/misc/log_upload_config.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/log_upload_config.dart';
 
 /// 上传结果状态。
 enum LogUploadStatus {

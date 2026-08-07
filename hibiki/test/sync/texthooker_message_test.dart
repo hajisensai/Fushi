@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/texthooker_message.dart';
+import 'package:fushi/src/sync/texthooker_message.dart';
 
 void main() {
   group('parseTexthookerMessage', () {

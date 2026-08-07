@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi/src/media/video/youtube_source_resolver.dart';
 
 /// 最小选流候选（TODO-1159）：pickPlaybackVideoStream 只依赖 height/codec/throttled，
 /// 免构造重量级 youtube_explode 的 VideoOnlyStreamInfo。

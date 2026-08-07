@@ -4,7 +4,7 @@
 // 未知状态词。这些分支一旦回归，UI 会显示「ETA ∞」「NaN」或裸英文状态词。
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/torrent/torrent_task_display.dart';
+import 'package:fushi/src/media/torrent/torrent_task_display.dart';
 
 void main() {
   group('torrentDisplayStatusFor', () {

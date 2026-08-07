@@ -3,25 +3,25 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
-import 'package:hibiki/src/lookup/clipboard_text_overlay_controller.dart';
-import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
-import 'package:hibiki/src/lookup/global_lookup_controller.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/settings/settings_actions.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/port_kill_confirm.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/sync/deletion_propagation.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
-import 'package:hibiki/src/sync/hibiki_sync_server.dart';
-import 'package:hibiki/src/sync/port_process_terminator.dart';
-import 'package:hibiki/src/sync/texthooker_ws_client_manager.dart';
-import 'package:hibiki/src/sync/yomitan_api_server.dart'
+import 'package:fushi/models.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/src/lookup/clipboard_panel_controller.dart';
+import 'package:fushi/src/lookup/clipboard_text_overlay_controller.dart';
+import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/settings/settings_actions.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/port_kill_confirm.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/port_process_terminator.dart';
+import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
+import 'package:fushi/src/sync/yomitan_api_server.dart'
     show kYomitanApiDefaultPort;
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 String _yomitanApiPortInUseMessage(int port) {
   return port == kYomitanApiDefaultPort

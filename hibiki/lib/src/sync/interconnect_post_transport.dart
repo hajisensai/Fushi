@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/tls/hibiki_pinning_http.dart';
-import 'package:hibiki/src/sync/webdav_ops.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/tls/hibiki_pinning_http.dart';
+import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:http/http.dart' as http;
 
 /// 互联客户端的 JSON POST 传输层：**唯一**一份「已启用候选按序 fallback +

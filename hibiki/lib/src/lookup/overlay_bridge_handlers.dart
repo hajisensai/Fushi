@@ -13,14 +13,14 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:hibiki/src/lookup/global_lookup_log.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
-import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/lookup/global_lookup_log.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// Pushes a deferred-bridge reply back to the owning overlay window's JS realm
 /// (window.__hibikiBridgeResolve via the channel's resolveBridge).

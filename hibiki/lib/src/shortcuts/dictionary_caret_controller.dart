@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 
 /// Which WebView surface the char-level reading cursor lives on. The cursor is
 /// on the reader content, or — after a dictionary lookup — on the top popup,

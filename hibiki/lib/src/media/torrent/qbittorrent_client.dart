@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
 
 /// 归一化 qBittorrent WebUI base URL：去掉尾部所有 `/`。纯函数，便于单测。
 String normalizeQbBaseUrl(String raw) {

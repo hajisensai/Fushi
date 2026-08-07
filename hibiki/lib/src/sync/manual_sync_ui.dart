@@ -1,17 +1,17 @@
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/sync/sync_activity.dart';
-import 'package:hibiki/src/sync/sync_auto_trigger.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
-import 'package:hibiki/src/sync/sync_error_messages.dart';
-import 'package:hibiki/src/sync/sync_message_dialog.dart';
-import 'package:hibiki/src/sync/sync_orchestrator.dart';
-import 'package:hibiki/src/sync/sync_progress.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/sync/sync_activity.dart';
+import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_conflict_prompter.dart';
+import 'package:fushi/src/sync/sync_error_messages.dart';
+import 'package:fushi/src/sync/sync_message_dialog.dart';
+import 'package:fushi/src/sync/sync_orchestrator.dart';
+import 'package:fushi/src/sync/sync_progress.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/utils.dart';
 
 /// 手动同步完成后的 SnackBar 摘要（消费 [SyncRunReport]）。纯函数，便于单测边界：
 /// 全 0 → "无新增"；多类型 → ` · ` 拼接；有失败 → 追加失败计数后缀。

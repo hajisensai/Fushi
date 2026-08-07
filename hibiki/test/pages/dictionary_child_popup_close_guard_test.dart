@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
 
 /// TODO-501 guard: when swipe-to-close is disabled, nested dictionary popups
 /// still need a visible, focusable X that pops only the current layer.

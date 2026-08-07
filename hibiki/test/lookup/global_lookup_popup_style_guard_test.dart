@@ -589,7 +589,7 @@ void main() {
       // must now be injected from the single shared source of truth.
       expect(
           render.contains(
-              "import 'package:hibiki/src/reader/popup_swipe_close_script.dart';"),
+              "import 'package:fushi/src/reader/popup_swipe_close_script.dart';"),
           isTrue,
           reason: 'must import the shared swipe-close source of truth');
       expect(render.contains(r'$kPopupTopPullReleaseJs'), isTrue,

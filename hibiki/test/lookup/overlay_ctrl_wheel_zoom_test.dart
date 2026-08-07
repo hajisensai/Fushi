@@ -14,7 +14,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/overlay_bridge_handlers.dart';
+import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 
 /// 与 DictionaryPopupWebViewState 的 _popupZoomFontMin/_popupZoomFontMax 同源。
 const double _min = 8.0;

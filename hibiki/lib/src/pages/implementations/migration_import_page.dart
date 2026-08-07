@@ -2,14 +2,14 @@ import 'dart:io';
 
 import 'package:external_path/external_path.dart';
 import 'package:flutter/material.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/migration/migration_exporter.dart';
-import 'package:hibiki/src/migration/migration_importer.dart';
-import 'package:hibiki/src/migration/migration_readonly.dart';
-import 'package:hibiki/src/sync/backup_service.dart';
-import 'package:hibiki/src/sync/sync_settings_schema.dart'
+import 'package:fushi/models.dart';
+import 'package:fushi/src/migration/migration_exporter.dart';
+import 'package:fushi/src/migration/migration_importer.dart';
+import 'package:fushi/src/migration/migration_readonly.dart';
+import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart'
     show backupImportRestart;
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
 
 /// 「从 Hibiki 导入」页（改名迁移计划 P2-2/P2-3，Fushi 侧）。

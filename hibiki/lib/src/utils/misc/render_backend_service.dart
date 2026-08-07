@@ -2,7 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 /// TODO-1232 A3：渲染后端（Impeller vs Skia）实验开关的 Dart 侧门面。
 ///

@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 import '../pages/reader_hibiki_page_source_corpus.dart';
 import '../pages/video_hibiki_page_source_corpus.dart';

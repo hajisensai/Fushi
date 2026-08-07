@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/backup_service.dart';
+import 'package:fushi/src/sync/backup_service.dart';
 
 /// Guard: the overwrite import's content-tree swap renames a freshly-extracted
 /// `.import-tmp` into place; on Windows an antivirus/indexer scanning the

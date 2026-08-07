@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/epub/epub_book.dart';
-import 'package:hibiki/src/epub/epub_edge_matcher.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi/src/epub/epub_edge_matcher.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 /// Analyzes adjacent image-only EPUB chapters for spread pairing.

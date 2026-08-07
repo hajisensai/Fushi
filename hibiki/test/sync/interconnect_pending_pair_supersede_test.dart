@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_server_controller.dart';
-import 'package:hibiki/src/sync/hibiki_sync_server.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/sync/hibiki_server_controller.dart';
+import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/utils.dart';
 
 /// BUG-987：互联首次配对被发起端放弃（超时/断网/取消）后，host 那个仍「审批未决」的
 /// 申请框会驻留至 60s autoDeny；期间同一 client「重新刷新」重发的配对全被 `_pairDialogOpen`

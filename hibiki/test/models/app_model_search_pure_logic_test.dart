@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:characters/characters.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:remove_emoji/remove_emoji.dart';
 
 void main() {

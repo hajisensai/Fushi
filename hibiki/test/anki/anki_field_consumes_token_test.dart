@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 /// TODO-948/952: unit tests for the pure field-mapping diagnostic helpers used
 /// by the mining "no sentence / unmapped field" toast. These answer "does any

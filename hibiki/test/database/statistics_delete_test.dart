@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1204 后续：统计页长按删除某本书/视频的统计 + 防同步复活墓碑。
 Future<HibikiDatabase> _openDb() async {

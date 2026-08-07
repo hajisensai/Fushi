@@ -2,9 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:hibiki/src/reader/reader_content_styles.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 class HighlightBridge {
   HighlightBridge._();

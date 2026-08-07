@@ -6,8 +6,8 @@ library;
 
 import 'dart:convert';
 
-import 'package:hibiki/src/media/media_search_text.dart';
-import 'package:hibiki/src/mining/galgame_library.dart';
+import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
 
 /// 排序维度（契约 §4.1）。[key] 是持久化字符串，**不可随意改**。
 enum GalgameSortField {

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-1312：`findActiveCueIndices` 纯函数守卫——同一时刻区间重叠的多条 cue **全部**
 /// 返回（升序），供视频字幕 overlay 把重叠 cue 都渲染出来（不再因越过被选那条 end 落

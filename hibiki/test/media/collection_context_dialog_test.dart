@@ -3,12 +3,12 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/src/media/collections/collection_context_dialog.dart';
-import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart'
+import 'package:fushi/src/media/collections/collection_context_dialog.dart';
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
     show DialogListAction;
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// 三库页统一合集上下文菜单的**行为**守卫（破坏性分支优先）。
 ///

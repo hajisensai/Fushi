@@ -9,10 +9,10 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/manga/mihon/mihon_bridge_runtime.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_child_process_containment.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_child_process_containment.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 
 const Duration kMihonSourceImageHeaderTimeout = Duration(seconds: 90);
 const Duration kMihonSourceImageIdleTimeout = Duration(seconds: 90);

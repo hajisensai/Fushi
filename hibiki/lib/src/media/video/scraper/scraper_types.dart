@@ -20,7 +20,7 @@
 /// `sidecar_scanner.dart` / `cover_scraper_service.dart`。
 library;
 
-import 'package:hibiki_core/hibiki_core.dart' show MediaImageKind;
+import 'package:fushi_core/fushi_core.dart' show MediaImageKind;
 
 /// 从文件名/目录名解析出的结构化信息（解析层输出）。
 class ParsedMediaName {

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 void main() {
   AudioPlaybackRange range(int fileIndex, int startMs, int endMs) =>

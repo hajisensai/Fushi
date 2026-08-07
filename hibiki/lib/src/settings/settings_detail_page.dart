@@ -1,12 +1,12 @@
 import 'package:flutter/widgets.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
-import 'package:hibiki/src/settings/material_settings_renderer.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_renderer.dart';
-import 'package:hibiki/src/settings/settings_schema.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
+import 'package:fushi/src/settings/material_settings_renderer.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_renderer.dart';
+import 'package:fushi/src/settings/settings_schema.dart';
+import 'package:fushi/utils.dart';
 
 /// Renders [destination] through the active platform's settings detail shell
 /// (Material → [HibikiPageScaffold] + 24px padding + [AdaptiveSettingsSection];

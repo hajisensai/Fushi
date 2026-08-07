@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 
 /// 守卫「游戏」tab（galgame 库）在首页顶层导航中的可见性与位置。galgame UX 统一后 games
 /// 是唯一的 galgame 入口（点游戏 → 台词进悬浮查词面板），生产里由 [homeActiveTabs] 的

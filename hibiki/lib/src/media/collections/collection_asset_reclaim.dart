@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import 'package:hibiki/src/media/video/video_storage.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 合集自有磁盘资产的回收（BUG-1319）。
 ///

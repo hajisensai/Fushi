@@ -4,11 +4,11 @@ import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as path;
 
-import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/models/dictionary_repository.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi/src/models/dictionary_repository.dart';
 
 class DictionaryImportManager {
   DictionaryImportManager({

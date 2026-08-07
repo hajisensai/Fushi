@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/torrent/anime_download_config.dart';
-import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
-import 'package:hibiki/src/media/torrent/anime_download_subscription.dart';
-import 'package:hibiki/src/media/torrent/nyaa_client.dart';
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
+import 'package:fushi/src/media/torrent/nyaa_client.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
 
 NyaaTorrent _torrent({
   required String hash,

@@ -9,9 +9,9 @@
 // 会恒真，点字直接弹「行不可用」——所以剥离点必须在 appendLine。
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
-import 'package:hibiki/src/utils/misc/ruby_markup.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/misc/ruby_markup.dart';
 
 /// 断言注音区间确实落在该行纯文本的期望基准上。
 void expectAlignedSpan(

@@ -22,18 +22,18 @@ import 'dart:io' show Platform, Process;
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/media/source_library/source_library_credential_store.dart';
-import 'package:hibiki/src/media/source_library/source_library_row.dart';
-import 'package:hibiki/src/media/source_library/source_library_scanner.dart';
-import 'package:hibiki/src/sync/ftp_sync_backend.dart';
-import 'package:hibiki/src/sync/sftp_sync_backend.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/webdav_sync_backend.dart';
-import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
+import 'package:fushi/src/media/source_library/source_library_row.dart';
+import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/sync/ftp_sync_backend.dart';
+import 'package:fushi/src/sync/sftp_sync_backend.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/webdav_sync_backend.dart';
+import 'package:fushi/src/pages/hibiki_page_placeholders.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
 /// 来源库列表内容体：按 [mediaKind] 过滤，提供添加 / 重新扫描 / 打开 / 移除 / 重排。
 ///

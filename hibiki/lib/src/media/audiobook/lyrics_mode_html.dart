@@ -1,5 +1,5 @@
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/src/reader/reader_selection_scripts.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
 class LyricsModeHtml {
   LyricsModeHtml._();

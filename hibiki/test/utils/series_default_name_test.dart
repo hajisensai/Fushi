@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
-import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/utils/misc/shelf_ordering.dart';
 
 /// TODO-1125 B：deriveSeriesDefaultName 纯函数守卫（widget/DB-free）。
 ///  - 剥各类卷号 / 集数 / 上下 / 罗马数字 / #N 尾标记后取最长公共前缀。

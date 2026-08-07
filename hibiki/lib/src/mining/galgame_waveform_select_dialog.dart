@@ -2,16 +2,16 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/media/video/audio_energy_probe.dart'
+import 'package:fushi/src/media/video/audio_energy_probe.dart'
     show downsampleEnergyEnvelope;
-import 'package:hibiki/src/media/video/subtitle_waveform_painter.dart'
+import 'package:fushi/src/media/video/subtitle_waveform_painter.dart'
     show SubtitleWaveformPainter;
-import 'package:hibiki/src/mining/galgame_audio_encode.dart' show pcmDurationMs;
-import 'package:hibiki/src/mining/galgame_audio_source.dart' show GalAudioSlice;
-import 'package:hibiki/src/mining/galgame_waveform.dart'
+import 'package:fushi/src/mining/galgame_audio_encode.dart' show pcmDurationMs;
+import 'package:fushi/src/mining/galgame_audio_source.dart' show GalAudioSlice;
+import 'package:fushi/src/mining/galgame_waveform.dart'
     show kGalWaveformWindowMs, pcmToEnergyEnvelope;
-import 'package:hibiki/src/mining/galgame_waveform_select.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/mining/galgame_waveform_select.dart';
+import 'package:fushi/utils.dart';
 
 /// galgame 一键制卡（docs/specs/galgame-mining）波形选区对话框。
 ///

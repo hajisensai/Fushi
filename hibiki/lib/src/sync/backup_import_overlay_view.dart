@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/models/app_model.dart' show BackupImportPhase;
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/app_model.dart' show BackupImportPhase;
 
 /// TODO-1151：本地备份「导入/恢复」期间的全屏遮罩内容。
 ///

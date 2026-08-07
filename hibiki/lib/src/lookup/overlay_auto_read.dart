@@ -9,13 +9,13 @@
 
 import 'dart:async';
 
-import 'package:hibiki/src/lookup/global_lookup_log.dart';
-import 'package:hibiki/src/lookup/global_lookup_render.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
-import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/src/lookup/global_lookup_log.dart';
+import 'package:fushi/src/lookup/global_lookup_render.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// 表面注入的「整栈渲染通道」：把脚本送进该表面的 WebView2。
 typedef OverlayScriptRunner = Future<void> Function(String script);

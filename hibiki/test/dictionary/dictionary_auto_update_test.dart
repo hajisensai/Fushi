@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// TODO-861③（移植 Hoshi `94d0c41`）：check-due 纯函数 + interval 枚举的表驱动守卫。
 void main() {

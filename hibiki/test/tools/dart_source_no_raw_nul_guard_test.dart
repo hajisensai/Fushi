@@ -1,6 +1,6 @@
 // 守卫：入库的 .dart 源文件里不得出现**裸 NUL 字节**。
 //
-// 背景（真实事故，本守卫因它而生）：`packages/hibiki_core/lib/src/database/database.dart`
+// 背景（真实事故，本守卫因它而生）：`packages/fushi_core/lib/src/database/database.dart`
 // 曾把 SQLite 魔数写成字面量 'SQLite format 3<裸NUL>'（16 字节），另有两处复合键
 // 用裸 NUL 当分隔符。NUL 本身是**故意的**、语义正确，问题出在文件层面——
 //
@@ -41,11 +41,11 @@ Directory _repoRoot() {
 const List<String> _scanRoots = <String>[
   'hibiki/lib',
   'hibiki/test',
-  'packages/hibiki_core/lib',
-  'packages/hibiki_dictionary/lib',
-  'packages/hibiki_anki/lib',
-  'packages/hibiki_audio/lib',
-  'packages/hibiki_platform/lib',
+  'packages/fushi_core/lib',
+  'packages/fushi_dictionary/lib',
+  'packages/fushi_anki/lib',
+  'packages/fushi_audio/lib',
+  'packages/fushi_platform/lib',
 ];
 
 void main() {

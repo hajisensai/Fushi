@@ -2,16 +2,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
-import 'package:hibiki/src/media/video/video_clip_subtitle.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi/src/media/video/video_clip_subtitle.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 
 // BUG-835：`extractFfmpegFailureReason` 的正准实现搬到 ffmpeg_backend.dart（最底层、
 // 无依赖），供共享的 [FfmpegRunResult.failureSummary] 与音频/视频两路径统一复用。此处
 // 再导出，保持既有 `import '.../video_clip_exporter.dart' show extractFfmpegFailureReason`
 // 调用点与测试不变。
-export 'package:hibiki/src/media/video/ffmpeg_backend.dart'
+export 'package:fushi/src/media/video/ffmpeg_backend.dart'
     show extractFfmpegFailureReason;
 
 enum VideoClipExportFailure {

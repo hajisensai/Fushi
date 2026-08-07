@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/sync/deletion_disclosure.dart';
-import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
+import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
-import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 两个合集详情页（视频剧集列表 [MediaCollectionDetailPage] 与书架网格
 /// [MediaCollectionGridDetailPage]）逐行手抄的四组共享行为收口（巡检 PR-3）：

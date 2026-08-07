@@ -6,12 +6,12 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_extension_store_client.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_extensions_page.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// keiyoushi 这类真实仓库的索引地址：注意路径里带 `raw`（GitHub 原始文件直链）。
 /// BUG-1441 的一半根因就长在这个字符串上——它曾经是可搜字段。

@@ -3,11 +3,11 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/storage/app_paths.dart';
-import 'package:hibiki/src/storage/data_root_migrator.dart';
+import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/data_root_migrator.dart';
 
 /// BUG-1188：「选目录」迁移到不了新装形态 —— 目标解析归一化 + 端到端布局守卫。
 ///

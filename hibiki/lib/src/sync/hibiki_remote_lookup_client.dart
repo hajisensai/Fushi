@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:hibiki/src/sync/interconnect_post_transport.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/src/sync/interconnect_post_transport.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:http/http.dart' as http;
 
 /// 互联配对查询：本次调用尝试了至少一个已启用候选地址，但**没有任何一个候选

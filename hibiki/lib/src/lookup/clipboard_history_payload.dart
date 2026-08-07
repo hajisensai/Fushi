@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:hibiki/src/models/clipboard_history_repository.dart';
+import 'package:fushi/src/models/clipboard_history_repository.dart';
 
 /// 构建注入 `window.__globalLookupHost.showClipboardHistory(...)` 的 payload。
 ///

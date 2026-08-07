@@ -11,11 +11,11 @@ import 'package:googleapis_auth/auth_io.dart' as auth_io;
 import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:http/http.dart' as http;
 
-import 'package:hibiki/src/sync/desktop_oauth.dart';
-import 'package:hibiki/src/sync/google_drive_sync_space.dart';
-import 'package:hibiki/src/sync/google_oauth_secret.dart';
-import 'package:hibiki/src/sync/sync_http.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/desktop_oauth.dart';
+import 'package:fushi/src/sync/google_drive_sync_space.dart';
+import 'package:fushi/src/sync/google_oauth_secret.dart';
+import 'package:fushi/src/sync/sync_http.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 
 class GoogleDriveAuthError implements Exception {
   GoogleDriveAuthError(this.message);

@@ -10,7 +10,7 @@
 // browser_extension_theme_var_parity_guard_test / popup_dictionary_columns_test 等）。
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 
 /// [c] 的不透明 CSS `rgb(r, g, b)` 串。算法保持 `(分量 * 255.0).round().clamp(0, 255)`
 /// 逐字节等价（与历史各手抄版一致），不得改成 `.toARGB32()` 等别的取整路径。

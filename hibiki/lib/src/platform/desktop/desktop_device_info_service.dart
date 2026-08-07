@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:hibiki_platform/hibiki_platform.dart';
+import 'package:fushi_platform/fushi_platform.dart';
 
 class DesktopDeviceInfoService implements PlatformDeviceInfoService {
   @override

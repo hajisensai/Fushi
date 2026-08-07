@@ -2,17 +2,17 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:hibiki_core/hibiki_core.dart' show GalgameSourceRow;
+import 'package:fushi_core/fushi_core.dart' show GalgameSourceRow;
 
-import 'package:hibiki/src/mining/galgame_cover_download.dart';
-import 'package:hibiki/src/media/metadata/scrape_cover_preview.dart';
-import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/mining/galgame_repository.dart';
-import 'package:hibiki/src/mining/galgame_scrape_controller.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_adapter.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/mining/galgame_cover_download.dart';
+import 'package:fushi/src/media/metadata/scrape_cover_preview.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/galgame_repository.dart';
+import 'package:fushi/src/mining/galgame_scrape_controller.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi/utils.dart';
 
 /// 游戏「刮削元数据」统一弹窗（对齐视频 `cover_match_dialog.dart` 的单弹窗闭环）。
 ///

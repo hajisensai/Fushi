@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/anki_settings_page.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/pages/implementations/anki_settings_page.dart';
+import 'package:fushi/utils.dart';
 
 void main() {
   setUp(() {

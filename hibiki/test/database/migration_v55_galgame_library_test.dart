@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show QueryRow, Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// v55 迁移（游戏库对齐 ReinaManager）：新表 galgames / galgame_sources /
 /// galgame_sessions，并把偏好表 legacy key `galgame_library` 里的 6 字段 JSON 列表

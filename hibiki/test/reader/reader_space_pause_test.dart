@@ -2,9 +2,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/reader_space_override.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/reader_space_override.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
 /// ⚠️ 部分假绿（2026-08-02 定性）：本文件里凡是构造 `LogicalKeyboardKey.process` 的
 /// 用例，**前提已被引擎源码证伪**——即 group

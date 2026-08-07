@@ -11,7 +11,7 @@ import 'dart:io';
 
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/cover_image.dart';
+import 'package:fushi/src/utils/cover_image.dart';
 
 /// 把 [provider] 真实解码进 ImageCache（等待首帧完成），模拟卡片渲染过一次。
 Future<void> resolveIntoCache(ImageProvider provider) async {

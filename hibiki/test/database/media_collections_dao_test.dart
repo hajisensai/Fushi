@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// [MediaCollections] / [MediaCollectionItems] DAO 测试（统一合集 Phase 1）。
 Future<HibikiDatabase> _openDb() async {

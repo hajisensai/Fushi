@@ -4,9 +4,9 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/torrent/anime_download_matching.dart';
-import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
-import 'package:hibiki/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/media/torrent/anime_download_matching.dart';
+import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
 
 /// 延迟字幕解析的结果：配好的字幕 + 失败原因（二选一有值）。
 class ResolvedPlanSubtitles {

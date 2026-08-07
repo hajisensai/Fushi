@@ -6,8 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
-import 'package:hibiki/src/media/torrent/anime_download_subtitle_resolver.dart';
+import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
 
 /// BUG-1206 的集成层：resolver 真的走 HTTP 拉条目文件、真的按包内文件名反查、
 /// 真的只下配得上的那几条。断言的是**发出去的请求**与**落盘的文件**，不是符号。

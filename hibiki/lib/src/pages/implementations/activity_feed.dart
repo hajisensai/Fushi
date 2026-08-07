@@ -1,5 +1,5 @@
-import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 首页 Activity 时间轴的纯数据层：把 [ActivityEventRow] 事件流聚合成「按日期分组、
 /// 每组内按 (标题, 事件类型) 合并」的时间线条目，并把「相对时间」算成结构化描述

@@ -6,7 +6,7 @@
 /// （与 union-only 的安全取舍一致）。纯 Dart：零 IO、零 Flutter 依赖，便于单测。
 library;
 
-import 'package:hibiki_core/hibiki_core.dart' show fnv1a32Utf16PairHex;
+import 'package:fushi_core/fushi_core.dart' show fnv1a32Utf16PairHex;
 
 /// 用户在删除某资产时选择的传播范围（源设备弹窗采集）。
 ///

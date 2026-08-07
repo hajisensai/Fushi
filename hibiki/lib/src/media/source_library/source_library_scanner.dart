@@ -26,26 +26,26 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/src/epub/book_title_conflict.dart';
-import 'package:hibiki/src/epub/epub_importer.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart';
-import 'package:hibiki/src/media/drag_drop/drop_classification.dart'
+import 'package:fushi/src/epub/book_title_conflict.dart';
+import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
-import 'package:hibiki/src/media/import/sidecar_finder.dart';
-import 'package:hibiki/src/media/manga/manga_importer.dart';
-import 'package:hibiki/src/media/source_library/source_file_system.dart';
-import 'package:hibiki/src/media/source_library/source_library_credential_store.dart';
-import 'package:hibiki/src/media/source_library/source_library_row.dart';
-import 'package:hibiki/src/media/video/external_video.dart'
+import 'package:fushi/src/media/import/sidecar_finder.dart';
+import 'package:fushi/src/media/manga/manga_importer.dart';
+import 'package:fushi/src/media/source_library/source_file_system.dart';
+import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
+import 'package:fushi/src/media/source_library/source_library_row.dart';
+import 'package:fushi/src/media/video/external_video.dart'
     show normalizeVideoPath;
-import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki/src/media/video/m3u8_playlist.dart';
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
-import 'package:hibiki/src/media/video/video_import_dialog.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/video/video_import_dialog.dart';
 
 /// EPUB extensions (lowercase, no leading dot).
 const Set<String> kScanEpubExtensions = <String>{'epub'};

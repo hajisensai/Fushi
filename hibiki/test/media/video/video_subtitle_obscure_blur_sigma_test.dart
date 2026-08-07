@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
+import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 
 /// BUG-742：听力沉浸「模糊态」的高斯模糊强度守卫。
 ///

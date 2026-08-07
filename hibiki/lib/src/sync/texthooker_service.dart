@@ -1,6 +1,6 @@
 import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/utils/misc/ruby_markup.dart';
+import 'package:fushi/src/utils/misc/ruby_markup.dart';
 
 enum TexthookerLineSource { websocket, engineHook, unknown }
 

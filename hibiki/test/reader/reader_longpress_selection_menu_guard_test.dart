@@ -7,7 +7,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_selection_scripts.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
 /// BUG-624 / TODO-1317：手机「长按没有选择了，变成长按选择文字查词了」回归守卫。
 ///

@@ -8,8 +8,8 @@
 //    ——正是用户点「键盘/手柄焦点导航」开关的场景。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 void main() {
   testWidgets('schema 式开关行（异步 onChanged + setState）保有滑块动画',

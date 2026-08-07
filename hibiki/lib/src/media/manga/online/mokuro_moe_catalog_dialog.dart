@@ -2,12 +2,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/import/import_dialog_frame.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_view.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/import/import_dialog_frame.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_view.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
+import 'package:fushi/utils.dart';
 
 /// mokuro.moe「在线目录」对话框（O1）：薄壳——外框 chrome 与 footer 动作按钮
 /// 在此，浏览/搜索/选卷/入队的全部状态与内容体在 [MokuroMoeCatalogView]

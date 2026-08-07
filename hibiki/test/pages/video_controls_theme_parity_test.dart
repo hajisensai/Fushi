@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
-import 'package:hibiki/src/media/video/video_controls_theme_pair.dart';
+import 'package:fushi/src/media/video/video_controls_theme_pair.dart';
 
 void main() {
   testWidgets('windowed and fullscreen resolve the identical control themes',

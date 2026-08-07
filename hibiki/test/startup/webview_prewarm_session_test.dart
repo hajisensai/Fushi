@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/startup/webview_prewarm.dart';
+import 'package:fushi/src/startup/webview_prewarm.dart';
 
 import '../helpers/source_guard.dart';
 

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/utils.dart';
 
 /// A global [Provider] for the card creator.
 final creatorProvider = ChangeNotifierProvider<CreatorModel>((ref) {

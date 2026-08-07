@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
-import 'package:hibiki/src/sync/remote_library_cache.dart';
-import 'package:hibiki/src/sync/remote_library_source.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/remote_library_cache.dart';
+import 'package:fushi/src/sync/remote_library_source.dart';
 
 /// BUG-1180 根因守卫：远端库列表的 TTL 缓存 + in-flight 去重 + 显式失效。
 ///

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/startup/test_environment.dart';
+import 'package:fushi/src/startup/test_environment.dart';
 
 void main() {
   test('hibikiTestDirectory resolves children under an explicit test root', () {

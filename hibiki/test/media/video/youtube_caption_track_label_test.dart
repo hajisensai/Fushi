@@ -4,7 +4,7 @@
 // 用例数据取自真实抓包：androidVr innertube player response 对 `dQw4w9WgXcQ` 返回 6 条轨，
 // `name.simpleText` **全部缺失**，故 [YoutubeCaptionTrack.languageName] 一律是语言码兜底值。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi/src/media/video/youtube_source_resolver.dart';
 
 /// 实测轨表（languageName 全部退化成 languageCode，= `t.languageName ?? t.languageCode` 的结果）。
 /// 注意其中**两条都是 `en`**，一条人工一条 ASR —— 原 bug 下这两行标签完全相同。

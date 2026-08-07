@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 // TODO-400: a user could not find the "ひびき" deck in the Anki settings. Root
 // cause was UX, not a missing API: ひびき is an Anki *deck*, not a note type, so

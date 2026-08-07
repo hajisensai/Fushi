@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_subtitle_source.dart';
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi/src/media/video/video_subtitle_source.dart';
+import 'package:fushi/src/media/video/youtube_source_resolver.dart';
 
 /// TODO-1302 / BUG-602 + 回归 TODO-1302（「YouTube 字幕直接没了」）源码守卫 + 逻辑单测。
 ///

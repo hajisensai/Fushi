@@ -17,8 +17,8 @@
 // S3 kanji exports (the current dev .dll/.so predate them) and is left to a
 // real-device pass — these tests intentionally do NOT fake a real kanji query.
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 void main() {
   group('FushiKanjiResult serialization', () {

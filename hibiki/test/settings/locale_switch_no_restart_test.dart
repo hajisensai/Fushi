@@ -15,11 +15,11 @@ import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/fake_platform_services.dart';
 

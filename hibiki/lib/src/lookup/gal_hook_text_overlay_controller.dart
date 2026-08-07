@@ -1,28 +1,28 @@
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
-import 'package:hibiki/src/lookup/global_lookup_controller.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_playback.dart';
-import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/mining/magpie_upscaling.dart';
-import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/pages/implementations/home_game_page.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart';
-import 'package:hibiki/src/platform/gal_hook_text_overlay_channel.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
-import 'package:hibiki/src/utils/misc/ruby_markup.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
+import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/magpie_upscaling.dart';
+import 'package:fushi/src/mining/magpie_upscaling_service.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/home_game_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/misc/ruby_markup.dart';
+import 'package:fushi/utils.dart';
 
 typedef GalHookPreferenceReader = Object? Function(
   String key, {

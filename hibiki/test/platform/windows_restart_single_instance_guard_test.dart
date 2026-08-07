@@ -20,7 +20,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/platform/desktop/desktop_lifecycle_service.dart';
+import 'package:fushi/src/platform/desktop/desktop_lifecycle_service.dart';
 
 void main() {
   String readSource(String rel) {

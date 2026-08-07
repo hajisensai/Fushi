@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// Column- and row-level guard for the **v24** reader-position migration
 /// (BUG-162): `reader_positions` drops the legacy `ttu_char_offset` column and

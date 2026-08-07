@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
+import 'package:fushi/src/media/collections/collection_shelf_row.dart';
 
 /// 统一合集 UI v2 Phase C：合集横排行组件行为测试。
 void main() {

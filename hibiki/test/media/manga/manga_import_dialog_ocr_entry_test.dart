@@ -31,10 +31,10 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/manga/manga_import_dialog.dart';
-import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/manga/manga_import_dialog.dart';
+import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 class _FakeRemoteRunner implements MangaOcrRemoteRunner {
   _FakeRemoteRunner({this.target});

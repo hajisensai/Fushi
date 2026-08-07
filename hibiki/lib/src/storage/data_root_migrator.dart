@@ -2,20 +2,20 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
 
-import 'package:hibiki/src/media/media_source.dart' show dbSourcePrefKey;
-import 'package:hibiki/src/media/video/video_subtitle_source.dart'
+import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
+import 'package:fushi/src/media/video/video_subtitle_source.dart'
     show SubtitleSource;
-import 'package:hibiki/src/models/local_audio_manager.dart'
+import 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioManager;
-import 'package:hibiki/src/profile/profile_keys.dart' show ProfileKeys;
-import 'package:hibiki/src/storage/app_paths.dart';
-import 'package:hibiki/src/storage/path_rebase_coverage.dart';
-import 'package:hibiki/src/sync/backup_service.dart'
+import 'package:fushi/src/profile/profile_keys.dart' show ProfileKeys;
+import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/path_rebase_coverage.dart';
+import 'package:fushi/src/sync/backup_service.dart'
     show
         joinPrefTag,
         normalizeAudioSourceConfigsJson,

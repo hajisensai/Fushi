@@ -8,7 +8,7 @@ library;
 
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// 弹「旧名 → 新名」确认框。
 ///

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
-import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
-import 'package:hibiki/utils.dart' show t, HibikiToast, ToastSeverity;
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/utils.dart' show t, HibikiToast, ToastSeverity;
 
 /// BUG-1040：把「一段期间内让查词弹窗让位」的执行权交回宿主页面的钩子。
 ///

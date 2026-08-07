@@ -2,10 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'package:hibiki/src/media/metadata/credential_redaction.dart';
-import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
+import 'package:fushi/src/media/metadata/credential_redaction.dart';
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
-import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
+import 'package:fushi/src/media/video/scraper/tmdb_client.dart';
 
 /// BUG-1219 审查发现的凭据泄露守卫。
 ///

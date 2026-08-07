@@ -4,10 +4,10 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:hibiki_core/hibiki_core.dart' show fnv1a32Hex;
+import 'package:fushi_core/fushi_core.dart' show fnv1a32Hex;
 import 'package:sqlite3/sqlite3.dart';
 
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 本地音频库这次**没能给出答案**的原因。共同点：库里到底有没有这个词，
 /// 这次**根本没查出来**——与「库读到了、里面确实没有」是两件事。

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
 
 /// Unit coverage for the unified word-audio play path: word audio is played by
 /// the popup's own HTML5 <audio> element on every surface (in-app InAppWebView,

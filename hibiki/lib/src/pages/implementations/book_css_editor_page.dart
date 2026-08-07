@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/src/epub/book_css_repository.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/epub/book_css_repository.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/hibiki_page_placeholders.dart';
+import 'package:fushi/utils.dart';
 
 class BookCssEditorPage extends ConsumerStatefulWidget {
   const BookCssEditorPage({super.key, required this.extractDir});

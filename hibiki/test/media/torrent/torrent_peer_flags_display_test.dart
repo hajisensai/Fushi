@@ -4,7 +4,7 @@
 // 这里守住字母映射的语义分支：D/d、U/u、K、?、修饰位、全 0 哨兵。
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/torrent/torrent_task_display.dart';
+import 'package:fushi/src/media/torrent/torrent_task_display.dart';
 
 void main() {
   group('formatTorrentPeerFlags', () {

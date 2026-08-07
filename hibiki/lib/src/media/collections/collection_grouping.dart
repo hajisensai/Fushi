@@ -1,4 +1,4 @@
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 统一合集 Phase 4：库网格分组核心（纯函数，widget-free 单测）。
 ///

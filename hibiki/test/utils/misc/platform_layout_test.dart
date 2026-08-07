@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/media/collections/collection_shelf_row.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 import '../../sync/desktop_lookup_foreground_guard_static_test.dart'
     show stripDartComments;

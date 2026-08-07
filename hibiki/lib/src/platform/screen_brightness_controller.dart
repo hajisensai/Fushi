@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 屏幕（背光）亮度控制器 —— 视频播放器左半区竖滑调亮度（TODO-057）用。
 ///

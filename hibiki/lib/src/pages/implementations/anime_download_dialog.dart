@@ -4,28 +4,28 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki/src/media/torrent/anime_download_config.dart';
-import 'package:hibiki/src/media/torrent/anime_download_matching.dart';
-import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
-import 'package:hibiki/src/media/torrent/anime_download_service.dart';
-import 'package:hibiki/src/media/torrent/anime_download_subscription.dart';
-import 'package:hibiki/src/media/torrent/download_network_proxy.dart'
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/anime_download_matching.dart';
+import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/torrent/anime_download_service.dart';
+import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
+import 'package:fushi/src/media/torrent/download_network_proxy.dart'
     show kDownloadDiscoveryTimeout;
-import 'package:hibiki/src/media/torrent/download_relocate_service.dart';
-import 'package:hibiki/src/media/torrent/nyaa_client.dart';
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
-import 'package:hibiki/src/media/torrent/torrent_task_display.dart';
-import 'package:hibiki/src/media/video/anilist_client.dart';
-import 'package:hibiki/src/media/video/jimaku_client.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_api_key_field.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_entry_picker.dart';
-import 'package:hibiki/src/pages/implementations/download_actions.dart';
-import 'package:hibiki/src/pages/implementations/downloads_page.dart';
-import 'package:hibiki/src/pages/implementations/torrent_detail_dialog.dart';
-import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/media/torrent/download_relocate_service.dart';
+import 'package:fushi/src/media/torrent/nyaa_client.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/torrent_task_display.dart';
+import 'package:fushi/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
+import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
+import 'package:fushi/src/pages/implementations/download_actions.dart';
+import 'package:fushi/src/pages/implementations/downloads_page.dart';
+import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
+import 'package:fushi/src/pages/hibiki_page_placeholders.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
 /// 「番剧下载」选种对话框：搜番（AniList）→ 选种（Nyaa）→ 确认字幕（Jimaku）→
 /// 推送 qBittorrent + 落盘 [AnimeDownloadPlan]（完成后由常驻服务自动入库挂合集）。

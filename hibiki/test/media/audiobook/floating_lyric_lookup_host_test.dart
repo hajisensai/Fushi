@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_host.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 
 /// TODO-354 ① 行为守卫：书架/首页（无 reader）开的悬浮字幕点词必须路由进常驻主窗口
 /// 查词宿主，而不再被 app 级 no-op handler 吞掉。

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/creator/fields/pitch_accent_field.dart';
+import 'package:fushi/src/creator/fields/pitch_accent_field.dart';
 
 void main() {
   group('PitchSvg.hiraToMora', () {

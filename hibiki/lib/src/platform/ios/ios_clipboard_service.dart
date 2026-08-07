@@ -1,5 +1,5 @@
 import 'package:flutter/services.dart';
-import 'package:hibiki_platform/hibiki_platform.dart';
+import 'package:fushi_platform/fushi_platform.dart';
 
 class IosClipboardService implements PlatformClipboardService {
   @override

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
-import 'package:hibiki/src/media/manga/manga_ocr_settings_section.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/utils.dart';
 
 /// 「漫画 OCR」设置组（隶属**漫画**设置分类，默认折叠）。
 ///

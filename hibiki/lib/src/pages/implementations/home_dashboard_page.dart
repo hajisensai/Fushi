@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
@@ -9,44 +9,44 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:hibiki/media.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/media/collections/collection_continue.dart';
-import 'package:hibiki/src/media/display_title.dart';
-import 'package:hibiki/src/media/media_cover_source.dart';
-import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
-import 'package:hibiki/src/media/tracking/media_tracking_labels.dart';
-import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
-import 'package:hibiki/src/media/tracking/media_tracking_service.dart';
-import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/mining/galgame_repository.dart';
-import 'package:hibiki/src/media/video/cover_ui/cover_orientation_builder.dart';
-import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
-import 'package:hibiki/src/media/video/video_home_layout.dart'
+import 'package:fushi/media.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/media/display_title.dart';
+import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/media/tracking/bangumi_api_client.dart';
+import 'package:fushi/src/media/tracking/media_tracking_labels.dart';
+import 'package:fushi/src/media/tracking/media_tracking_repository.dart';
+import 'package:fushi/src/media/tracking/media_tracking_service.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/galgame_repository.dart';
+import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
+import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/media/video/video_home_layout.dart'
     show VideoCardOrientation;
-import 'package:hibiki/src/media/video/m3u8_playlist.dart';
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/pages/base_module_tab_page.dart';
-import 'package:hibiki/src/pages/implementations/activity_feed.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart';
-import 'package:hibiki/src/pages/implementations/home_video_page.dart'
+import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/pages/base_module_tab_page.dart';
+import 'package:fushi/src/pages/implementations/activity_feed.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
-import 'package:hibiki/src/pages/implementations/stat_shared.dart';
-import 'package:hibiki/src/settings/settings_detail_page.dart';
-import 'package:hibiki/src/settings/settings_schema_tracking.dart';
-import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki/src/sync/remote_cover_image.dart';
-import 'package:hibiki/src/sync/remote_library_cache.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
-import 'package:hibiki/src/utils/misc/dashboard_remote_merge.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/migration/migration_target_channel.dart';
-import 'package:hibiki/src/pages/implementations/migration_page.dart';
-import 'package:hibiki/src/pages/implementations/migration_import_page.dart';
-import 'package:hibiki/src/migration/migration_importer.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_tracking.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/remote_cover_image.dart';
+import 'package:fushi/src/sync/remote_library_cache.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
+import 'package:fushi/src/utils/misc/dashboard_remote_merge.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/migration/migration_target_channel.dart';
+import 'package:fushi/src/pages/implementations/migration_page.dart';
+import 'package:fushi/src/pages/implementations/migration_import_page.dart';
+import 'package:fushi/src/migration/migration_importer.dart';
 
 /// 首页仪表盘（阅读向），参考 ReinaManager 首页改造：
 ///

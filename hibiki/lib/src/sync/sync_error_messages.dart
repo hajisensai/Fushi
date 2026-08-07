@@ -1,5 +1,5 @@
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/utils.dart';
 
 /// Localized friendly clause for a known error class, or null if the error is
 /// not one we recognize (caller decides the fallback).

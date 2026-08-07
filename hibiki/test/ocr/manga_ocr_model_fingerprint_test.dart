@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart';
-import 'package:hibiki/src/ocr/manga_ocr_model_fingerprint.dart';
-import 'package:hibiki/src/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_fingerprint.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
 import 'package:path/path.dart' as p;
 
 /// 两个文件的迷你清单（真清单是 470MB，测试只需要同样的结构）。

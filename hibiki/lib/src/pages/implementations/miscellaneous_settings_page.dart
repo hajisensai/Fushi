@@ -3,17 +3,17 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/pages/base_page.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_detail_page.dart';
-import 'package:hibiki/src/settings/settings_schema_widgets.dart';
-import 'package:hibiki/src/utils/misc/app_icon_preferences.dart';
-import 'package:hibiki/src/utils/misc/shortcut_icon_sync.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
-import 'package:hibiki/src/utils/window_caption_channel.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_widgets.dart';
+import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
+import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/window_caption_channel.dart';
+import 'package:fushi/utils.dart';
 
 /// 应用图标（app icon）设置子页。薄壳：把 [MiscellaneousSettingsBody] 投影进与
 /// 统一设置详情面板完全一致的页壳（见 [buildSettingsDetailShell]），不再使用自带

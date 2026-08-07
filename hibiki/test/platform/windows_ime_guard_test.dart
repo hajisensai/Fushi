@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/platform/windows_ime_guard.dart';
+import 'package:fushi/src/platform/windows_ime_guard.dart';
 
 /// BUG-1450：中文输入法激活时全表面快捷键失效。根因是 Flutter 的 Windows 窗口终生
 /// 保留 IME context，输入法吞掉所有按键（引擎报成 physical=0/logical=0）。修法是

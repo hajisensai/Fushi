@@ -13,9 +13,9 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:http/http.dart' as http;
 
 /// AniList GraphQL 搜索客户端。构造可注入 [http.Client]（默认自建）。

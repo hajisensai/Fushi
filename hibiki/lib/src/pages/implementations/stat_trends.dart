@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:hibiki/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/pages/implementations/stat_charts.dart';
 
 /// 趋势聚合的粒度：日 / 周 / 月。阅读统计与视频统计共用。
 enum StatTrendGranularity { daily, weekly, monthly }

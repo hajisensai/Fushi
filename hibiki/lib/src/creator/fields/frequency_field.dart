@@ -1,11 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/models.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/models.dart';
 
 /// Returns the frequency of a [DictionaryEntry].
 class FrequencyField extends Field {

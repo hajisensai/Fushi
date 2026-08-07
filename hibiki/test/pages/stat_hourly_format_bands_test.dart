@@ -3,11 +3,11 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/pages/implementations/stat_charts.dart';
-import 'package:hibiki/src/pages/implementations/stat_hourly_breakdown.dart';
-import 'package:hibiki/src/pages/implementations/stat_shared.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-2622：统计页时段图按 format 分色堆叠。
 ///

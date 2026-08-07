@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_detail_page.dart';
-import 'package:hibiki/src/settings/settings_renderer.dart';
-import 'package:hibiki/src/settings/settings_schema_widgets.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
-import 'package:hibiki/src/utils/components/settings_shared.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_renderer.dart';
+import 'package:fushi/src/settings/settings_schema_widgets.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 class MaterialSettingsRenderer implements SettingsRenderer {
   const MaterialSettingsRenderer();

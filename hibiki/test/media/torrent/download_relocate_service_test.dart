@@ -5,9 +5,9 @@
 // ② 字幕列的哨兵值（`embedded:<n>` / `off:`）与流媒体 URL **绝不能**当路径重写。
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/torrent/download_relocate_service.dart';
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
-import 'package:hibiki/src/media/video/video_path_migration.dart';
+import 'package:fushi/src/media/torrent/download_relocate_service.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/video/video_path_migration.dart';
 import 'package:path/path.dart' as p;
 
 /// 可编程后端：记录收到的调用，按需返回成功/失败。

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/dictionary_import_manager.dart';
+import 'package:fushi/src/models/dictionary_import_manager.dart';
 
 /// BUG-050 守卫：词典导入「发布到最终目录」的 rename 在 Windows 上会被
 /// Defender/搜索索引器的瞬时句柄占用打成 ERROR_ACCESS_DENIED(5) /

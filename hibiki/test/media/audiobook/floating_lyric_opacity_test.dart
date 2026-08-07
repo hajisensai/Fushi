@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 
 void main() {
   // TODO-370: 悬浮字幕「文字 / 按钮底色透明度」自定义。两值都是 0..100 百分比，作用于

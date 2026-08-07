@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/torrent/anti_leech.dart';
+import 'package:fushi/src/media/torrent/anti_leech.dart';
 
 const int kMiB = 1024 * 1024;
 

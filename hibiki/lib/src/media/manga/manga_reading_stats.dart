@@ -1,5 +1,5 @@
-import 'package:hibiki/src/epub/epub_book.dart';
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
 
 /// 漫画阅读的**字数**记账（统计口径接入）。
 ///

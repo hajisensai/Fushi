@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// BUG-791 守卫：查词弹窗按「表记 + 读音」分组时，空读音必须按 Yomitan
 /// 约定归一为「读音同表记」，否则同一个假名词（一部分词典给显式读音、一部分

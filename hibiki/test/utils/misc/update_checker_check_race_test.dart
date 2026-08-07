@@ -1,6 +1,6 @@
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 
 /// TODO-821：检查阶段「正在连接更新源」卡很久 → 把串行逐候选 `fetchFirstSuccessfulBody`
 /// 改成并发竞速选最快活源（`raceFirstSuccessfulBody`）。这些守卫固化并发语义的真实行为，

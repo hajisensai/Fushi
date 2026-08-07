@@ -3,11 +3,11 @@ import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 
-import 'package:hibiki/src/platform/desktop/windows_native_pre_exit.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
-import 'package:hibiki/src/utils/misc/mac_update_handoff.dart';
-import 'package:hibiki/src/utils/misc/update_handoff.dart';
-import 'package:hibiki/utils.dart'; // ErrorLogService
+import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/misc/mac_update_handoff.dart';
+import 'package:fushi/src/utils/misc/update_handoff.dart';
+import 'package:fushi/utils.dart'; // ErrorLogService
 
 export 'update_handoff.dart'
     show

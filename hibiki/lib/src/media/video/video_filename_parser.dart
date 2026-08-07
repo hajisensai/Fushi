@@ -2,14 +2,14 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/media_extensions.dart';
-import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/media_extensions.dart';
+import 'package:fushi/src/media/video/scraper/filename_parser.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 
 /// 视频扩展名表已收敛到共享真相源 [kVideoExtensions]（media_extensions.dart，
 /// 与刮削端 `FilenameParser` 同表）；此处 re-export 维持既有引用面（导入对话框 /
 /// 目录扫描 / torrent 选片 / 拖放同步守卫测试）。
-export 'package:hibiki/src/media/media_extensions.dart' show kVideoExtensions;
+export 'package:fushi/src/media/media_extensions.dart' show kVideoExtensions;
 
 /// 从视频文件名解析出的元信息：系列名 + 季 + 集号（Jellyfin / anitomy 式轻量实现）。
 ///

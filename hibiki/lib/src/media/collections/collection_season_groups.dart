@@ -1,6 +1,6 @@
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
 
 /// 合集内分季分组的**单一真相源**：键派生规则、多组判定、分节构建、按季重排。
 /// 纯函数无 IO，便于单测。

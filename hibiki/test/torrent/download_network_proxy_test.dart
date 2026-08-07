@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
+import 'package:fushi/src/media/torrent/download_network_proxy.dart';
 
 void main() {
   test('unknown stored mode remains backward-compatible with auto', () {

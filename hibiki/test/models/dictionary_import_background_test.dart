@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:archive/archive_io.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/dictionary_import_manager.dart';
+import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:path/path.dart' as path;
 
 /// TODO-082 守卫：词典导入不堵塞 UI（目录打包移到后台 isolate）、失败写

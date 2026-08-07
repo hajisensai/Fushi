@@ -3,12 +3,12 @@ import 'dart:io';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// TODO-880: restore "horizontal swipe-to-close on the popup BODY".
 ///

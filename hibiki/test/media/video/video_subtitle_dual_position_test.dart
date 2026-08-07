@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-1341 守卫：双字幕（同轨时间重叠、锚点各异的 cue，如 OP/ED 顶部 \an8 歌词 + 底部
 /// \an2 对白）同时在屏时，两条必须**各就各位**（顶部的在顶、底部的在底），不再被单一

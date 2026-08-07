@@ -1,5 +1,5 @@
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:hibiki_platform/hibiki_platform.dart';
+import 'package:fushi_platform/fushi_platform.dart';
 
 class IosDeviceInfoService implements PlatformDeviceInfoService {
   IosDeviceInfo? _cachedInfo;

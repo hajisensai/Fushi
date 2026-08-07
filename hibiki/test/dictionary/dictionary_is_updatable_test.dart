@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// TODO-609：Dictionary 来源 getter。在线来源词典把 revision/isUpdatable/
 /// indexUrl/downloadUrl 落进 metadata（弱类型，零 schema 迁移）。

@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:hibiki/src/media/drag_drop/card_hit_test.dart';
+import 'package:fushi/src/media/drag_drop/card_hit_test.dart';
 
 /// 收集当前屏上所有可作为字幕/音频拖放目标的卡片，提供按落点命中测试。
 /// 范型 T = 卡片元数据（书卡用 String bookKey，视频卡用 VideoBookRow）。

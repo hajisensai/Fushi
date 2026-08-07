@@ -5,13 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/utils/misc/local_audio_db.dart'
+import 'package:fushi/creator.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/utils/misc/local_audio_db.dart'
     show LocalAudioUnavailableError;
-import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart'
+import 'package:fushi/src/utils/misc/lookup_audio_playback.dart'
     show kLocalAudioQueryBudget, resolveLookupAudioUrl;
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// BUG-1005：把 [resolveLookupAudioUrl] 解析出的单词音频 ref 物化成本地 [File] 供 Anki 落
 /// 媒体。ref 可能是远端 `http(s)://` URL（forvo/jpod101/hibikiRemote 等远程发音源）或本地

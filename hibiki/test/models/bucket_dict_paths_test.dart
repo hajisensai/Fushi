@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// [bucketDictPaths] 是 FFI 引擎词典分桶的单一真相（同步 _rebuildDictPathsCache 与
 /// 异步 _rebuildDictPathsCacheAsync 共用）。此前分桶 switch 在两处逐字复制、无法单测

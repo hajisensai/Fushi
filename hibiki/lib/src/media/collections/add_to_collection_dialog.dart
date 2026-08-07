@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
+import 'package:fushi/utils.dart';
 
 /// 单卡「加入合集」的共享弹窗（书架 / 视频库 / 游戏库共用）。
 ///

@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/media_extensions.dart';
+import 'package:fushi/src/media/media_extensions.dart';
 
 /// 支持「从 app 外用 Hibiki 打开」的视频扩展名（小写，不含点）。
 ///

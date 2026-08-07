@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/present_watchdog.dart';
+import 'package:fushi/src/utils/misc/present_watchdog.dart';
 
 /// BUG-772 Task 4：present-watchdog 覆盖看门狗盲区（raster/present 楔死时 UI-isolate
 /// Timer 的逃生 UI 也送不上屏）。纯逻辑单测其「stall 判定只触发一次 + 首帧已出不误触发」

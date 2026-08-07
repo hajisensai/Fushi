@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 
 UpdateDirEntry _f(String name, DateTime modified) =>
     UpdateDirEntry(name: name, isDirectory: false, modified: modified);

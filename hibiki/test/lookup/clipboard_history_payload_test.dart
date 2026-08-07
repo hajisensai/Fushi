@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/clipboard_history_payload.dart';
-import 'package:hibiki/src/models/clipboard_history_repository.dart';
+import 'package:fushi/src/lookup/clipboard_history_payload.dart';
+import 'package:fushi/src/models/clipboard_history_repository.dart';
 
 void main() {
   // U+2028 (line separator) / U+2029 (paragraph separator) built from code

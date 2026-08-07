@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 void main() {
   test('settings detail pane is widened for desktop balance (760 -> 960)', () {

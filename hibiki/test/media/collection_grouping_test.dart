@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/collections/collection_grouping.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/collections/collection_grouping.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 统一合集 Phase 4 / 排序 v2：[groupByCollections] 折叠纯函数测试。
 /// v2 后本函数只折叠不排卡（卡片间序由页面按排序模式做）；组内序真相源 =

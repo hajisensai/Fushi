@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/utils.dart';
 
 /// An enhancement used to pick an appropriate term from a text field easily.
 class TextSegmentationEnhancement extends Enhancement {

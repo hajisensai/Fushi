@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/serial_task_queue.dart';
+import 'package:fushi/src/utils/misc/serial_task_queue.dart';
 
 void main() {
   group('SerialTaskQueue', () {

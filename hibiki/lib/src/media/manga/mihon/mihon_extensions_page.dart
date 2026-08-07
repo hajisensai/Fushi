@@ -4,14 +4,14 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/media_search_text.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_extension_store_client.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_source_browse_page.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/utils.dart';
 
 /// Mihon 扩展仓库与安装管理。
 ///

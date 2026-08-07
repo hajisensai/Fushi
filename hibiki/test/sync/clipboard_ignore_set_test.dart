@@ -4,8 +4,8 @@
 // 真实复制（未命中即整批过期）。
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/clipboard_dedupe.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/clipboard_dedupe.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
 
 void main() {
   group('ClipboardIgnoreSet', () {

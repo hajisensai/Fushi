@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
-import 'package:hibiki/src/shortcuts/visual/key_cap_widget.dart';
-import 'package:hibiki/src/shortcuts/visual/reverse_binding_index.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/shortcuts/visual/key_cap_widget.dart';
+import 'package:fushi/src/shortcuts/visual/reverse_binding_index.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 键帽分区类型（TODO-942）。决定键帽的视觉分区色与是否可点。
 ///

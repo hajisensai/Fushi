@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_schema_video.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_video.dart';
 
 /// 阶段 B 守卫：视频设置的唯一真相源是 settings_schema_video.dart——全局设置页直接
 /// 渲染其 sections，播放页快捷面板按 [VideoPlacement] 投影消费同一份声明。本文件

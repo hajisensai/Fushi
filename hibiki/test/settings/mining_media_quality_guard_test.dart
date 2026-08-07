@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/immersion_mining_request.dart'
+import 'package:fushi/src/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat;
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/source_guard.dart';
 
@@ -290,10 +290,10 @@ void main() {
     // 破图。`.webp` 缺项就是 BUG-1122 的原始形态，`.avif` 是同一个坑的下一个入口。
     test('每种动图格式的扩展名都在两张 MIME 表里（BUG-1122 同款）', () {
       final String core = File(
-        '../packages/hibiki_core/lib/src/utils/mime_types.dart',
+        '../packages/fushi_core/lib/src/utils/mime_types.dart',
       ).readAsStringSync();
       final String anki = File(
-        '../packages/hibiki_anki/lib/src/anki_models.dart',
+        '../packages/fushi_anki/lib/src/anki_models.dart',
       ).readAsStringSync();
       for (final MiningAnimatedFormat format in MiningAnimatedFormat.values) {
         final String ext = format.fileExtension;

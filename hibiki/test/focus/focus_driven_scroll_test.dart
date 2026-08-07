@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_scroll.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
 
 void main() {
   testWidgets('HibikiFocusScroll reveals a normal off-screen context',

@@ -5,7 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/models/app_model.dart' show AppModel, appProvider;
+import 'package:fushi/src/models/app_model.dart' show AppModel, appProvider;
 
 /// 打开实验「键盘/手柄焦点导航」总开关，并等树按新开关重建。
 ///

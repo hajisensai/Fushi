@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/import/import_carrier.dart';
-import 'package:hibiki/src/media/manga/manga_module.dart';
+import 'package:fushi/src/media/import/import_carrier.dart';
+import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:path/path.dart' as p;
 
 /// 反向守卫：**词典 zip 不许在导入入口层被判成漫画**。

@@ -1,8 +1,8 @@
 import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 class PopupChannel {
   PopupChannel._();

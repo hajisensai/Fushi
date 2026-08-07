@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_chrome_colors.dart';
-import 'package:hibiki/src/models/theme_notifier.dart';
+import 'package:fushi/src/media/video/video_chrome_colors.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
 
 /// UI 巡检 PR-4 P1：播放器 chrome 前景固定亮色体系。chrome 压在 media_kit fork
 /// 的固定深色 scrim 上，前景在**任何主题**下都必须是亮色——此前跟随 cs.primary /

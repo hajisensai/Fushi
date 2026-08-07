@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 
 /// media_kit 默认底部控制条的**进度条（seek bar）上缘**距视频底边的清空高度（逻辑像素）。
 ///

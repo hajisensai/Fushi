@@ -9,7 +9,7 @@ library;
 
 import 'dart:math' as math;
 
-import 'package:hibiki_core/hibiki_core.dart' show fullwidthAsciiToHalfwidth;
+import 'package:fushi_core/fushi_core.dart' show fullwidthAsciiToHalfwidth;
 
 /// 标题归一化与相似度工具。
 class TitleNormalizer {

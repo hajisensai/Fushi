@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 
 const int mihonStoreMaxBytes = 10 * 1024 * 1024;
 const int mihonExtensionApkMaxBytes = 100 * 1024 * 1024;

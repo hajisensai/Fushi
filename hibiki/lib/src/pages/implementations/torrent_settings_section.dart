@@ -3,14 +3,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki/src/media/torrent/anime_download_config.dart';
-import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
-import 'package:hibiki/src/media/torrent/download_save_root.dart';
-import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/download_network_proxy.dart';
+import 'package:fushi/src/media/torrent/download_save_root.dart';
+import 'package:fushi/src/media/torrent/qb_torrent_backend.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
 /// 下载设置表单在宽屏下的最大内容宽度。
 ///

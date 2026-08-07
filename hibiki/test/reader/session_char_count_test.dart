@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
     show ReadProgressResult, accumulateSessionChars;
 
 /// TODO-147 / BUG-211：锁定阅读统计「字数」的 high-water mark 计数语义。

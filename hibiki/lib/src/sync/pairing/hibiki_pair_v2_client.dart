@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
-import 'package:hibiki/src/sync/tls/hibiki_pinning_http.dart';
+import 'package:fushi/src/sync/pairing/hibiki_pairing_protocol.dart';
+import 'package:fushi/src/sync/tls/hibiki_pinning_http.dart';
 import 'package:http/http.dart' as http;
 
 /// TODO-961 M1: v2 配对的 client 侧驱动（与 server 的 `/api/pair/v2`

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gamepads/gamepads.dart' as gp;
 
-import 'package:hibiki/src/shortcuts/gamepad_service.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart';
 
 /// Verifies the pure folding from the `gamepads` plugin's normalized
 /// buttons/axes into the internal [GamepadFrameBits] frame. This is the

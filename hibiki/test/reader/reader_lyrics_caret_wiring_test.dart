@@ -43,7 +43,7 @@ void main() {
     expect(
       src,
       contains(
-        "export 'package:hibiki/src/shortcuts/dictionary_caret_controller.dart'",
+        "export 'package:fushi/src/shortcuts/dictionary_caret_controller.dart'",
       ),
     );
     expect(src, contains('show CaretSurface;'));

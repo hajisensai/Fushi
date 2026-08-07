@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-1034：字幕列表行高由 `ListView.itemExtentBuilder` **硬约束**，行高算少一点点，
 /// 换行后的末行就被直接裁掉（用户截图里当前播放行第二行的「ら」只露上半截）。

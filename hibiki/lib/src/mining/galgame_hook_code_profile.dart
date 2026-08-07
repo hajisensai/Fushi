@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 
 /// v1 六列（无 `options`）。旧文件与旧 Hibiki 版本仍在用，读写两侧都必须继续认它。
 const String _profileHeaderV1 =

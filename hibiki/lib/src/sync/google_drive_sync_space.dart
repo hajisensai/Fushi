@@ -1,6 +1,6 @@
 import 'package:meta/meta.dart';
 
-import 'package:hibiki/src/sync/sync_utils.dart' show kSyncRootFolderName;
+import 'package:fushi/src/sync/sync_utils.dart' show kSyncRootFolderName;
 
 /// ttu/Hoshi 共享同步的可见 Drive 根目录名。
 ///

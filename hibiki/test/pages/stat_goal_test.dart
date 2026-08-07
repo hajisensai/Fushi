@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/stat_trends.dart';
+import 'package:fushi/src/pages/implementations/stat_trends.dart';
 
 void main() {
   group('goalProgressFraction', () {

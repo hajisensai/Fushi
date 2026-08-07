@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
 /// 封面角标：压在封面图上的半透明黑胶囊（图标 / 文字，或两者）。
 ///

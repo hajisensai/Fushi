@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/shortcuts/gamepad_service.dart';
-import 'package:hibiki/src/shortcuts/global_navigation.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart';
+import 'package:fushi/src/shortcuts/global_navigation.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/utils.dart';
 
 /// TODO-942 残留缺口守卫：快捷键设置页顶部「列表 / 键盘皮肤」模式切换开关必须
 /// 可被手柄 / 键盘焦点操作。修复前它是一个裸 `SegmentedButton<bool>` —— 由多个

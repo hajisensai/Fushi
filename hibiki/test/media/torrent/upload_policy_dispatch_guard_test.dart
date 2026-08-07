@@ -14,17 +14,17 @@
 // ④ 老 DLL（无新符号）整体降级为不动作，绝不回退到 upload_mode。
 //
 // 要 DLL 的行为闭环（unchoke=0 时下载仍推进）在
-// packages/hibiki_torrent/test/upload_off_download_test.dart（缺 DLL skip）。
+// packages/fushi_torrent/test/upload_off_download_test.dart（缺 DLL skip）。
 
 import 'dart:convert';
 import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/torrent/anime_download_config.dart';
-import 'package:hibiki/src/media/torrent/embedded_torrent_host.dart';
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
-import 'package:hibiki_torrent/hibiki_torrent.dart';
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/embedded_torrent_host.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi_torrent/fushi_torrent.dart';
 
 final Pointer<Void> _fakeSession = Pointer<Void>.fromAddress(0xF00D);
 

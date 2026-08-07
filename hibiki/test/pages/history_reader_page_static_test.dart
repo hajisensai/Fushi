@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/history_reader_page.dart';
+import 'package:fushi/src/pages/implementations/history_reader_page.dart';
 
 import '../helpers/source_guard.dart';
 

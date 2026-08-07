@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
 
 /// galgame 一键制卡（docs/specs/galgame-mining）音频编码：把 loopback 抓到的**裸 PCM**
 /// 切片编码成 Anki 能播的 AAC/m4a 容器字节。

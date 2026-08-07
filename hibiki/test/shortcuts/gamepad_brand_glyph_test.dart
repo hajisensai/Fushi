@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
 
 /// TODO-1113: brand glyph mapping guards. These assert the **display-only**
 /// contract: switching [GamepadBrand] only changes the shown symbol/accent,

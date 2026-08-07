@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_anki/hibiki_anki.dart' show AnkiMiningSource;
-import 'package:hibiki/src/mining/external_window_mining.dart';
+import 'package:fushi_anki/fushi_anki.dart' show AnkiMiningSource;
+import 'package:fushi/src/mining/external_window_mining.dart';
 
 /// TODO-1162 外部窗口挖矿 M0：`buildExternalWindowRequest` 纯函数契约。
 /// BUG-1137：`source` 已改必填（曾默认 video 把 gal 卡误标成视频标签），

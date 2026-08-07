@@ -1,8 +1,8 @@
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/manga_arrow_override.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/manga_arrow_override.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
 void main() {
   group('resolveMangaArrowPageTurn', () {

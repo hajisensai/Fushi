@@ -1,5 +1,5 @@
-import 'package:hibiki/src/sync/sync_manifest_codec.dart';
-import 'package:hibiki_core/hibiki_core.dart' show fnv1a32Utf16PairHex;
+import 'package:fushi/src/sync/sync_manifest_codec.dart';
+import 'package:fushi_core/fushi_core.dart' show fnv1a32Utf16PairHex;
 import 'package:path/path.dart' as p;
 
 /// 云视频资产目录清单（多端库联合视图 §2.6 / 任务12）。

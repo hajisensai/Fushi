@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_helper_installer.dart';
+import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:path/path.dart' as p;
 
 /// BUG-1076 ④ 次生根因的行为测试：换入式安装 [galgameHelperSwapInstall] 必须保证安装目录

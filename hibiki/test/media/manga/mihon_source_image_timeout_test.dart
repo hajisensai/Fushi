@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/mihon/desktop_mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/desktop_mihon_runtime.dart';
 
 void main() {
   test('source image timeout is extended beyond the old fixed 45 seconds', () {

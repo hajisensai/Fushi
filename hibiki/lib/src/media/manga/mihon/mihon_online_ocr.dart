@@ -4,12 +4,12 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/manga/manga_ocr_background_job.dart';
-import 'package:hibiki/src/media/manga/mihon/manga_page_provider.dart';
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
-import 'package:hibiki/src/media/manga/ocr/google_lens_ocr_service.dart';
-import 'package:hibiki/src/media/manga/ocr/google_lens_protocol.dart';
-import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
+import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
+import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
 
 const int kMihonOnlineOcrMemoryPages = 24;
 

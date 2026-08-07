@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
+import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';
 
 void main() {
   group('LookupAutoReadCoordinator', () {

@@ -7,8 +7,8 @@ library;
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 

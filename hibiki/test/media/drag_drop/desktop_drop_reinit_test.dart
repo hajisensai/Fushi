@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/drag_drop/desktop_drop_reinitializer.dart';
+import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
 
 /// TODO-1275 / BUG-361 guards.
 ///

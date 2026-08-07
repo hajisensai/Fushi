@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/src/models/app_model.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 import '../helpers/test_platform_services.dart';
 

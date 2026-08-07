@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/torrent/anime_download_matching.dart';
-import 'package:hibiki/src/media/torrent/nyaa_client.dart';
-import 'package:hibiki/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/media/torrent/anime_download_matching.dart';
+import 'package:fushi/src/media/torrent/nyaa_client.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
 
 /// 直接 new 一个只有标题有意义的种子（episode/episodeRange 均从标题解析）。
 NyaaTorrent _torrent(String title) {

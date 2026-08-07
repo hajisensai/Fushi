@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_sync_server.dart';
-import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
+import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/pairing/hibiki_pairing_protocol.dart';
 import 'package:http/http.dart' as http;
 
 // TODO-961 M1 §3.6 behavior tests for /api/pair/v2 + /api/pair/v2/confirm.

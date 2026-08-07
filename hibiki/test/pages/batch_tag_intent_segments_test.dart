@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'reader_history_source_corpus.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-308：批量打标签的三段意图原来用 keep=`horizontal_rule`、remove=`remove`
 /// 两个几乎一样的横杠（语义相反却长得一样）+ 纯图标（tooltip 桌面悬停才出，手机/

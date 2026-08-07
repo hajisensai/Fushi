@@ -3,13 +3,13 @@ import 'dart:io' show Platform;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 
 // Architecture decision: platform branching uses runtime Platform.is* checks
 // centralized in this file, not Dart conditional imports.
 // Conditional imports (if (dart.library.io)) only distinguish web vs native,
 // which this app does not target. For platform-specific behavior beyond simple
-// boolean checks, use the service abstractions in package:hibiki_platform with
+// boolean checks, use the service abstractions in package:fushi_platform with
 // implementations under lib/src/platform/{android,ios,desktop}/.
 
 bool get isDesktopPlatform =>

@@ -2,10 +2,10 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:drift/drift.dart';
-import 'package:hibiki/src/media/collections/collection_season_groups.dart'
+import 'package:fushi/src/media/collections/collection_season_groups.dart'
     show collectionGroupKeyForFilename, isMultiSeasonGrouped;
-import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 const String kTrackingProviderBangumi = 'bangumi';
 

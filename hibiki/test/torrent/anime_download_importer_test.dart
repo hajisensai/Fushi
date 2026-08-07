@@ -14,15 +14,15 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/torrent/anime_download_importer.dart';
-import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
-import 'package:hibiki/src/media/torrent/anime_download_service.dart'
+import 'package:fushi/src/media/torrent/anime_download_importer.dart';
+import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/torrent/anime_download_service.dart'
     show AnimeDownloadImportOutcome;
-import 'package:hibiki/src/media/video/video_cover_extractor.dart'
+import 'package:fushi/src/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
-import 'package:hibiki/src/utils/misc/hibiki_time_format.dart'
+import 'package:fushi/src/utils/misc/hibiki_time_format.dart'
     show HibikiTimeFormat;
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;

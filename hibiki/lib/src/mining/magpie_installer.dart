@@ -9,7 +9,7 @@ import 'package:path/path.dart' as p;
 // 与 galgame helper 安装器共用的**纯工具**（sha256 侧车解析/比对、换入式安装与
 // .stale 清扫）。这些函数与 helper 语义无关，只是先在那里落地；此处 show 精确复用，
 // 避免第二份实现漂移。
-import 'package:hibiki/src/mining/galgame_helper_installer.dart'
+import 'package:fushi/src/mining/galgame_helper_installer.dart'
     show
         galgameHelperSwapInstall,
         galgameHelperSweepStaleFiles,

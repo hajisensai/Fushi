@@ -9,8 +9,8 @@ import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/manga/manga_json_writeback.dart';
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/manga_json_writeback.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
 
 String _mangaJson() {
   return jsonEncode(<String, Object?>{

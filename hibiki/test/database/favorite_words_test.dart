@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-829：getAllFavoriteWords 全量倒序（供收藏夹导出）。
 Future<HibikiDatabase> _openDb() async {

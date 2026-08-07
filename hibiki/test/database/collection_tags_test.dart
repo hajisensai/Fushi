@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 Future<HibikiDatabase> _openDb() async {
   // 生产连接经 applyPragmas 开启 foreign_keys；forTesting 直接吃传入 executor 不套

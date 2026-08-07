@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/clipboard_dedupe.dart';
+import 'package:fushi/src/sync/clipboard_dedupe.dart';
 
 void main() {
   group('dedupeClipboard', () {

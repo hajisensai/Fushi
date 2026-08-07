@@ -12,7 +12,7 @@ library;
 
 import 'dart:math' as math;
 
-import 'package:hibiki/src/ocr/ocr_types.dart';
+import 'package:fushi/src/ocr/ocr_types.dart';
 
 /// 按谓词做 union-find 聚类，返回每簇的原始下标列表。
 List<List<int>> _clusterBy(

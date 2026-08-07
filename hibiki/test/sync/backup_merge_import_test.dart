@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/backup_service.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'temp_dir_cleanup.dart';
 

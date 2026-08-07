@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/pages/implementations/media_sources_view.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/pages/implementations/media_sources_view.dart';
+import 'package:fushi/utils.dart';
 
 /// 库页三视图里的「来源」视图：本地扫描根 + 网络来源的管理页。
 ///

@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
-import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
-import 'package:hibiki/src/media/manga/manga_module.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/drag_drop/drop_decision.dart';
+import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:path/path.dart' as p;
 
 /// 反向守卫：**词典 zip 不许被当漫画导**。

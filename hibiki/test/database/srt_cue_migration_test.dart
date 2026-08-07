@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// Regression test for HBK-AUDIT-001: the v12 orphan cleanup must NOT wipe
 /// audio_cues owned by srt_books (standalone SRT subtitle books have no row in

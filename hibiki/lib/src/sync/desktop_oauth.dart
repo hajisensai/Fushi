@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Result of a desktop loopback OAuth flow: the authorization [code] plus the

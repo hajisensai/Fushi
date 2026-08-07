@@ -4,13 +4,13 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_volume_downloader.dart';
-import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
+import 'package:fushi/src/utils/misc/hibiki_toast.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// fake client：内存数据，零网络（封面留空走占位图标路径）。
 class _FakeClient extends MokuroMoeClient {

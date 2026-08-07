@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/immersion_mine_payload.dart';
+import 'package:fushi/src/sync/immersion_mine_payload.dart';
 
 void main() {
   test('parses fields+sentence+timestamp+screenshot', () {

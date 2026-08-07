@@ -7,17 +7,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/torrent/anime_download_config.dart';
-import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
-import 'package:hibiki/src/media/torrent/nyaa_client.dart';
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
-import 'package:hibiki/src/media/video/anilist_client.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/media/video/jimaku_client.dart';
-import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_entry_picker.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/torrent/nyaa_client.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/video/anilist_client.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
+import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 import '../helpers/test_platform_services.dart';
 

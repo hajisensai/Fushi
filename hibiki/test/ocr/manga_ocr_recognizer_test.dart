@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/ocr/manga_ocr_recognizer.dart';
-import 'package:hibiki/src/ocr/manga_ocr_tokenizer.dart';
-import 'package:hibiki/src/ocr/ocr_inference.dart';
-import 'package:hibiki/src/ocr/ocr_types.dart';
+import 'package:fushi/src/ocr/manga_ocr_recognizer.dart';
+import 'package:fushi/src/ocr/manga_ocr_tokenizer.dart';
+import 'package:fushi/src/ocr/ocr_inference.dart';
+import 'package:fushi/src/ocr/ocr_types.dart';
 import 'package:image/image.dart' as img;
 
 /// 测试词表：0=[PAD] 1=[UNK] 2=[CLS] 3=[SEP] 4=[MASK] 5=こ 6=ん 7=##は。

@@ -4,9 +4,9 @@ import 'dart:ui';
 import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
-import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
-import 'package:hibiki/src/media/manga/manga_view_prefs.dart';
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
 
 /// 把一页所有 mokuro block 渲染成绝对定位的透明 `<p class="ocr-box">` 层。
 ///

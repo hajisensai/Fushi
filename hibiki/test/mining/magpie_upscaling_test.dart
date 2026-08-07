@@ -12,10 +12,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/magpie_upscaling.dart';
-import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
-import 'package:hibiki/src/mining/magpie_upscaling_text.dart';
-import 'package:hibiki/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/mining/magpie_upscaling.dart';
+import 'package:fushi/src/mining/magpie_upscaling_service.dart';
+import 'package:fushi/src/mining/magpie_upscaling_text.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:path/path.dart' as p;
 
 /// 一份「Magpie 已经跑过一次、配置完整」的最小 config。

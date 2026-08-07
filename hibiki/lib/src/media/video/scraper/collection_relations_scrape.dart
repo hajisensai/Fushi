@@ -14,10 +14,10 @@
 library;
 
 import 'package:drift/drift.dart' show Value;
-import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/tmdb_client.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 相关作品关系类型（落库 wire 值见 [wire]，与 `collection_relations.relation_type`
 /// 列一一对应；UI 层按枚举渲染，不解析源词）。

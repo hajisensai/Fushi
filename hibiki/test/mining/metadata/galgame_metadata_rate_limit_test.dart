@@ -2,7 +2,7 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_rate_limit.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_rate_limit.dart';
 
 /// 虚拟时钟：`sleep` 直接把时间快进过去，测试零真实耗时。
 class _FakeClock {

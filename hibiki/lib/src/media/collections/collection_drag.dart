@@ -13,9 +13,9 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// [addMediaRefToCollection] 的结果：三种结局各自对应一条不同的用户可见提示。
 enum CollectionAddOutcome {

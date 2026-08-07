@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/collections/collection_shelf_row.dart';
 
 /// 合集横排行折叠（用户：「合集加个折叠」）：
 ///  - collapsed=false：行头 + 横向成员列表都在；

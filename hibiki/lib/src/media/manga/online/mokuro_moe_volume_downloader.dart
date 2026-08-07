@@ -24,11 +24,11 @@ import 'dart:typed_data';
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/epub/book_title_conflict.dart';
-import 'package:hibiki/src/media/manga/manga_importer.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
-import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/epub/book_title_conflict.dart';
+import 'package:fushi/src/media/manga/manga_importer.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
 
 /// 两次字节进度事件之间至少累积的字节数（避免大 CBZ 每 chunk 一事件淹没 UI）。
 const int kMokuroMoeProgressInterval = 512 * 1024;

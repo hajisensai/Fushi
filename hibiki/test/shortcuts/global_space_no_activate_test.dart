@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/global_navigation.dart';
+import 'package:fushi/src/shortcuts/global_navigation.dart';
 
 /// 焦点确认不走空格：[wrapWithGlobalNavigation] 把裸空格中和，使焦点落在控件上时空格
 /// 不再触发激活；Enter（与手柄 A，由框架默认提供）仍激活。这条行为不受实验性焦点导航

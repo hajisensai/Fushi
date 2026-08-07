@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/waveform_envelope_cache.dart';
+import 'package:fushi/src/media/video/waveform_envelope_cache.dart';
 
 /// TODO-1244：字幕对轴波形包络缓存的命中 / 失效 / 只缓存非空结果 单测。
 void main() {

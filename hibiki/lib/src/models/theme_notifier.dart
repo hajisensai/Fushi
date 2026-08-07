@@ -5,15 +5,15 @@ import 'dart:io';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 
 Color _readableOnColor(Color color) {
   return ThemeData.estimateBrightnessForColor(color) == Brightness.dark

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/sync_orchestrator.dart';
-import 'package:hibiki/src/sync/sync_settings_schema.dart';
+import 'package:fushi/src/sync/sync_orchestrator.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart';
 
 /// `summarizeSyncReport` 的边界测试。断言用语言无关信号（箭头 ↓↑、计数数字、
 /// ` · ` 分隔符个数），不绑定具体语言措辞，避免 17 语言下的脆弱。

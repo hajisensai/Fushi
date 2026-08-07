@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 /// BUG-474 (TODO-1012) source-scan guard: AnkiDroid 制卡时把词典 SVG 外字媒体写到
 /// `Directory.systemTemp/anki-media`，在 Android 上 `Directory.systemTemp` 解析到

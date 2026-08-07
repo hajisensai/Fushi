@@ -1,5 +1,5 @@
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// Host-owned service configuration that a paired child may import over the
 /// authenticated interconnect channel.

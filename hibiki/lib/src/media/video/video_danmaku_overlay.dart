@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-import 'package:hibiki/src/media/video/video_danmaku_layout.dart';
-import 'package:hibiki/src/media/video/video_danmaku_model.dart';
-import 'package:hibiki/src/media/video/video_danmaku_text_metrics.dart';
+import 'package:fushi/src/media/video/video_danmaku_layout.dart';
+import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_danmaku_text_metrics.dart';
 
 class VideoDanmakuOverlay extends StatefulWidget {
   const VideoDanmakuOverlay({

@@ -2,15 +2,15 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:hibiki/src/sync/aggregate_merge_service.dart';
-import 'package:hibiki/src/sync/aggregate_snapshot.dart';
-import 'package:hibiki/src/sync/sync_asset_store.dart';
-import 'package:hibiki_audio/hibiki_audio.dart'
+import 'package:fushi/src/sync/aggregate_merge_service.dart';
+import 'package:fushi/src/sync/aggregate_snapshot.dart';
+import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_audio/fushi_audio.dart'
     show
         FavoriteSentence,
         FavoriteSentenceRepository,
         kFavoriteSentenceTombstoneType;
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// Reserved top-level folder (under the backend root) that holds per-device
 /// aggregate snapshots. Named alongside `__dictionaries__` / `__local_audio__`,

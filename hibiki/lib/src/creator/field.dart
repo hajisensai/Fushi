@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/models.dart';
+import 'package:fushi/models.dart';
 
 /// An entity that represents a broad characteristic of an item being
 /// exported that is distinguishable enough to deserve its own core

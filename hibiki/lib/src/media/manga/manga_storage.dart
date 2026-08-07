@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/utils/misc/safe_file_name.dart';
+import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi/src/utils/misc/safe_file_name.dart';
 
 /// 漫画导入失败时抛出的领域异常：非法的 Mokuro 文件夹、路径穿越、缺图等。
 ///

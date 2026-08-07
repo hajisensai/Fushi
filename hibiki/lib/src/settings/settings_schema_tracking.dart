@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/media/tracking/media_tracking_settings_body.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/tracking/media_tracking_settings_body.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/utils.dart';
 
 SettingsDestination buildMediaTrackingDestination() {
   return SettingsDestination(

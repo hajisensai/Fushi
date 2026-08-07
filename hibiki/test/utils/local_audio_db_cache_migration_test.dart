@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-import 'package:hibiki/src/utils/misc/local_audio_db.dart';
+import 'package:fushi/src/utils/misc/local_audio_db.dart';
 
 /// BUG-1124 回归：本地音频缓存键的弱哈希碰撞 + 旧键缓存惰性迁移。
 ///

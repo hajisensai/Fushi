@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_asset_store.dart';
 
 /// 对任意 [SyncAssetStore] 实现跑同一组行为断言。后端集成测试可复用
 /// （传入真实后端工厂），单测传 FakeAssetStore。

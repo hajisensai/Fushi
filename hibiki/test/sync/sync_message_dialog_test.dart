@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/sync/sync_message_dialog.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/sync/sync_message_dialog.dart';
 
 void main() {
   setUp(() {

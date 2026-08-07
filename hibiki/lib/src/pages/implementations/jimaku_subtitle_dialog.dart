@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/media_search_text.dart';
-import 'package:hibiki/src/media/video/anilist_client.dart';
-import 'package:hibiki/src/media/video/jimaku_client.dart';
-import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_api_key_field.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/pages/hibiki_page_placeholders.dart';
+import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
+import 'package:fushi/utils.dart';
 
 /// 一条可下载的 Jimaku 字幕候选：所属条目名 + 文件。
 class JimakuCandidate {

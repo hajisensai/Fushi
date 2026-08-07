@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show FontLoader;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/woff2_decoder.dart';
+import 'package:fushi/src/models/woff2_decoder.dart';
 
 /// The committed fixture. It is tracked in git (`test/fixtures/fonts/`), so
 /// "not found" means the repo is broken, never "this machine happens to lack

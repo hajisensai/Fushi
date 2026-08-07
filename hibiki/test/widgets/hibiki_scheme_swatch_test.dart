@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 void main() {
   test('swatch colours are [text, background, button, menu] of the scheme', () {

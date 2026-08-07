@@ -10,16 +10,16 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-import 'package:hibiki/main.dart' as app;
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart'
+import 'package:fushi/main.dart' as app;
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart'
     show GamepadButton, ModifierKey;
-import 'package:hibiki/src/shortcuts/reader_space_override.dart'
+import 'package:fushi/src/shortcuts/reader_space_override.dart'
     show resolveReaderArrowPageTurn;
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/startup/test_environment.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/startup/test_environment.dart';
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';

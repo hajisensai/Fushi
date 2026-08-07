@@ -1,11 +1,11 @@
 import 'dart:io';
 
-import 'package:hibiki/src/media/video/m3u8_playlist.dart';
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/media/video/video_subtitle_source.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_subtitle_source.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:path/path.dart' as p;
 
 /// 在**主页视频卡**上拖入外挂字幕、把它挂到那张卡所代表视频书的结果分类。

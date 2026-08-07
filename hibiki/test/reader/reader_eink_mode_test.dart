@@ -1,11 +1,11 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/models/theme_notifier.dart';
-import 'package:hibiki/src/profile/profile_keys.dart';
-import 'package:hibiki/src/reader/reader_content_styles.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/profile/profile_keys.dart';
+import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 
 /// 墨水屏模式（eink_mode）守卫：
 ///  1. 阅读器 CSS 生成器的 eink 分支——纯黑白正文、线式高亮、关过渡、

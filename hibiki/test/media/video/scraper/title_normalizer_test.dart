@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/scraper/title_normalizer.dart';
+import 'package:fushi/src/media/video/scraper/title_normalizer.dart';
 
 void main() {
   group('TitleNormalizer.normalize', () {

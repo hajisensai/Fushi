@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/src/media/collections/shelf_sort.dart';
-import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
-import 'package:hibiki/src/pages/implementations/tag_management_page.dart';
-import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+import 'package:fushi/src/media/collections/shelf_sort.dart';
+import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
+import 'package:fushi/src/pages/implementations/tag_management_page.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
-import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
+import 'package:fushi/utils.dart';
 
 /// 书架 / 视频 tab 共享的标签筛选栏：横向 tag chip（点选筛选、长按拖拽重排）+ 末尾
 /// 「管理标签」齿轮；可选「批量选择」动作（仅书架多选书需要，[onToggleSelectionMode]

@@ -1,8 +1,8 @@
-import 'package:hibiki/src/media/video/url_stream_video.dart';
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
-import 'package:hibiki/src/media/video/youtube_stream_cache.dart';
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi/src/media/video/youtube_stream_cache.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 
 /// 流媒体书判据（TODO-1157）：`videoPath` 是可播 http/https 流 URL。

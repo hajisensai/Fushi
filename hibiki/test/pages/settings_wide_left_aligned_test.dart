@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 // 守卫:大屏全屏设置的「宽屏主从布局」导航(supporting)面板必须贴屏幕最左缘
 // (平板友好),而不是被居中限宽的 DesktopContentLayout 推离左缘。

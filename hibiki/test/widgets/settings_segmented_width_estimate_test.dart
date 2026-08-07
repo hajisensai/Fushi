@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 // Unit guards for the pure width estimator that decides whether a settings
 // segmented strip is laid out full-width (it fits) or falls back to a

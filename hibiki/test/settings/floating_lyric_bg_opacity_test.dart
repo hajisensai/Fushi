@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
 import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// TODO-576: 悬浮歌词/字幕条「背景透明度」可调，且默认下调到 70（≈更不挡视野）。

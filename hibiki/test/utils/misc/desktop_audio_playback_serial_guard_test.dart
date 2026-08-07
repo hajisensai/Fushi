@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_playback.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 
 String _read(String path) => File(path).readAsStringSync();
 

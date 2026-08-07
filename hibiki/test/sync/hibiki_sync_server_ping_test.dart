@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/hibiki_sync_server.dart';
 import 'package:http/http.dart' as http;
 
 // TODO-963 M2: /api/ping 无鉴权轻量探测端点的行为测试。

@@ -5,10 +5,10 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/media/manga/import/manga_archive_importer.dart';
-import 'package:hibiki/src/media/manga/manga_storage.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
+import 'package:fushi/src/media/manga/manga_storage.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 

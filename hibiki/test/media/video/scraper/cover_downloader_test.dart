@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/metadata/credential_redaction.dart';
-import 'package:hibiki/src/media/metadata/image_download.dart'
+import 'package:fushi/src/media/metadata/credential_redaction.dart';
+import 'package:fushi/src/media/metadata/image_download.dart'
     show kCoverImageDownloadTimeout;
-import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
-import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
-import 'package:hibiki/src/media/video/video_import_dialog.dart'
+import 'package:fushi/src/media/video/scraper/cover_downloader.dart';
+import 'package:fushi/src/media/video/video_import_dialog.dart'
     show videoCoverFileName;
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';

@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_schema_card_creation.dart';
-import 'package:hibiki/src/settings/settings_schema_system.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_settings_schema.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_card_creation.dart';
+import 'package:fushi/src/settings/settings_schema_system.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

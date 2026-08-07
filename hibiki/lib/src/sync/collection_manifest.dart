@@ -1,6 +1,6 @@
-import 'package:hibiki_core/hibiki_core.dart' show MediaRef;
+import 'package:fushi_core/fushi_core.dart' show MediaRef;
 
-import 'package:hibiki/src/sync/sync_manifest_codec.dart';
+import 'package:fushi/src/sync/sync_manifest_codec.dart';
 
 /// 合集同步清单（多端库联合视图 §2.3 任务3）。
 ///

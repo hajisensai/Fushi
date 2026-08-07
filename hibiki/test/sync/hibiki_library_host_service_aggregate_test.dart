@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/aggregate_snapshot.dart';
-import 'package:hibiki/src/sync/app_model_library_host_service.dart';
-import 'package:hibiki/src/sync/sync_asset_package_service.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/aggregate_snapshot.dart';
+import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1056 phase C host-service 聚合端点测试：互联 `/api/library/aggregate` 的
 /// service 层 getAggregateSnapshot / applyAggregateSnapshot 必须复用云后端 phase B

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 
 void main() {
   test('tag picker page library compiles', () {

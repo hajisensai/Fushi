@@ -10,9 +10,9 @@
 /// 和 **我该做什么**（[magpieUpscalingActionHint]）。只说状态不说处置等于没说。
 library;
 
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/mining/magpie_upscaling.dart';
-import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/mining/magpie_upscaling.dart';
+import 'package:fushi/src/mining/magpie_upscaling_service.dart';
 
 /// 这个状态值不值得在界面上占一行。
 ///

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 /// BUG-755 守卫：互联「手动填写令牌」折叠区里的 [HibikiTextField] 是带浮动标签的
 /// OutlineInputBorder 字段。浮动标签会骑在字段顶边、上半部分溢出到字段上方；而

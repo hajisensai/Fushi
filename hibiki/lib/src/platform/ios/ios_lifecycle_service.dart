@@ -1,5 +1,5 @@
 import 'package:flutter_exit_app/flutter_exit_app.dart';
-import 'package:hibiki_platform/hibiki_platform.dart';
+import 'package:fushi_platform/fushi_platform.dart';
 import 'package:restart_app/restart_app.dart';
 
 class IosLifecycleService implements PlatformLifecycleService {

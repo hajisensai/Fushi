@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// P5 MediaKind 枚举地基守卫：合集/书架 mediaType 值域的持久化串永不改变
 /// （Never break userspace）。

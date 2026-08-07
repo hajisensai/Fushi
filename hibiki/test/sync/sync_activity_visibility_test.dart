@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/manual_sync_ui.dart';
-import 'package:hibiki/src/sync/sync_activity.dart';
-import 'package:hibiki/src/sync/sync_auto_trigger.dart';
-import 'package:hibiki/src/sync/sync_progress.dart';
-import 'package:hibiki/src/sync/sync_progress_banner.dart';
+import 'package:fushi/src/sync/manual_sync_ui.dart';
+import 'package:fushi/src/sync/sync_activity.dart';
+import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/sync/sync_progress.dart';
+import 'package:fushi/src/sync/sync_progress_banner.dart';
 
 /// 「同步进度条只有一条线、没有任何文字」的回归守卫。
 ///

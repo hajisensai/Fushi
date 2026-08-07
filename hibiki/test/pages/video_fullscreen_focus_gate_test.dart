@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_controls_focus_gate.dart';
+import 'package:fushi/src/media/video/video_controls_focus_gate.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 /// TODO-040/042「视频快捷键失灵」根因与修复的行为测试。

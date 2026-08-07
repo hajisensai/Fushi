@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
 
 /// [StatContributionHeatmap.onDaySelected] 回调契约：
 /// - 点真实日格 → 触发一次 (dateKey, 当日值)；

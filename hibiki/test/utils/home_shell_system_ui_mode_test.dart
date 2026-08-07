@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// TODO-097 守卫：手机竖屏时常驻系统状态栏挤压 Hibiki 右上角动作图标。
 ///

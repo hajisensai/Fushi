@@ -1,7 +1,7 @@
 // 阶段2：QbConnectionConfig 的 backend 字段 codec / 向后兼容 / isConfigured。
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
 
 void main() {
   test('backend defaults to auto (resolves per platform)', () {

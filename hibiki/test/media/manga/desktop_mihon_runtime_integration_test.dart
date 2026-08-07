@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/mihon/desktop_mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/desktop_mihon_runtime.dart';
 
 void main() {
   final Directory resourceDirectory = Directory(

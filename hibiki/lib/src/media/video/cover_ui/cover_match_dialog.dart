@@ -1,21 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki/src/media/metadata/bangumi_api_client.dart'
+import 'package:fushi/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;
-import 'package:hibiki/src/media/metadata/credential_redaction.dart'
+import 'package:fushi/src/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
-import 'package:hibiki/src/media/metadata/scrape_cover_preview.dart';
-import 'package:hibiki/src/media/metadata/scrape_failure_view.dart';
-import 'package:hibiki/src/media/video/cover_ui/collection_rename_confirm_dialog.dart';
-import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
+import 'package:fushi/src/media/metadata/scrape_cover_preview.dart';
+import 'package:fushi/src/media/metadata/scrape_failure_view.dart';
+import 'package:fushi/src/media/video/cover_ui/collection_rename_confirm_dialog.dart';
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
-import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart'
+import 'package:fushi/src/media/video/scraper/collection_scrape_apply.dart'
     show proposedCollectionRename;
-import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart' show VideoBookRow;
+import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
 
 /// 「在线匹配封面」弹窗打开时的**合集入口**标识（BUG-1211）。
 ///

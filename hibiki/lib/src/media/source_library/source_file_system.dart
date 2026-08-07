@@ -25,7 +25,7 @@ import 'package:flutter/foundation.dart';
 import 'package:ftpconnect/ftpconnect.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/sync/webdav_ops.dart';
+import 'package:fushi/src/sync/webdav_ops.dart';
 
 /// 来源文件系统列目录返回的单个条目（文件或子目录）。
 ///

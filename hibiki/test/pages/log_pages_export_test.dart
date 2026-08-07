@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/pages/implementations/debug_log_page.dart';
-import 'package:hibiki/src/pages/implementations/error_log_page.dart';
-import 'package:hibiki/src/utils/misc/log_exporter.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/debug_log_page.dart';
+import 'package:fushi/src/pages/implementations/error_log_page.dart';
+import 'package:fushi/src/utils/misc/log_exporter.dart';
 
 // 守住「桌面端日志页有『另存为』按钮、移动端没有（仍有现成分享）」这条
 // 不变式。`showSaveLogAction` 读 dart:io 的 host 平台，无法在 widget 测试

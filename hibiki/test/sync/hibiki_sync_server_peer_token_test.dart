@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/hibiki_sync_server.dart';
 import 'package:http/http.dart' as http;
 
 /// TODO-961 M1b: per-peer token 派发 / 鉴权 / 吊销的 server 行为测试。

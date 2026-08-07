@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/torrent/anime_download_config.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 
 /// 「上传/做种」首用提示对话框。首次下载时弹一次：提醒上传默认关闭、询问是否
 /// 开启，并允许当场配置上传限速 / 做种时长 / 分享率上限。

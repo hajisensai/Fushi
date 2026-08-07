@@ -1,6 +1,6 @@
-import 'package:hibiki/src/sync/sync_asset_store.dart';
-import 'package:hibiki/src/sync/sync_file_ref.dart';
-import 'package:hibiki/src/sync/sync_utils.dart';
+import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/sync_utils.dart';
 
 /// 一次问清整个同步根的远端列举快照（增量同步 / TODO-2656）。
 ///

@@ -28,8 +28,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/startup/observe_blank_detector.dart';
-import 'package:hibiki/src/startup/test_environment.dart';
+import 'package:fushi/src/startup/observe_blank_detector.dart';
+import 'package:fushi/src/startup/test_environment.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:pdfrx/pdfrx.dart';
 

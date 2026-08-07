@@ -1,9 +1,9 @@
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/media_item.dart';
-import 'package:hibiki/src/models/media_history_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/models/media_history_repository.dart';
 
 HibikiDatabase _testDb() {
   return HibikiDatabase.forTesting(

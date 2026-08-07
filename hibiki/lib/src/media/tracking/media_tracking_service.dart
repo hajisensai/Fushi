@@ -1,16 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/media/collections/collection_season_groups.dart'
+import 'package:fushi/src/media/collections/collection_season_groups.dart'
     show isMultiSeasonGrouped;
-import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
-import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
-import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/media/video/scraper/title_normalizer.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/tracking/bangumi_api_client.dart';
+import 'package:fushi/src/media/tracking/media_tracking_repository.dart';
+import 'package:fushi/src/media/video/scraper/filename_parser.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/title_normalizer.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 const String kBangumiAccessTokenPref = 'media_tracking_bangumi_access_token';
 

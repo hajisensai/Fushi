@@ -1,13 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/focus/webview_key_bridge.dart';
-import 'package:hibiki/src/reader/reader_caret_scripts.dart';
-import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
-import 'package:hibiki/src/reader/reader_visual_novel_scripts.dart';
-import 'package:hibiki/src/reader/reader_script_compactor.dart';
-import 'package:hibiki/src/reader/reader_selection_scripts.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/src/focus/webview_key_bridge.dart';
+import 'package:fushi/src/reader/reader_caret_scripts.dart';
+import 'package:fushi/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
+import 'package:fushi/src/reader/reader_script_compactor.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
 /// TODO-perf（跨章）：setup 脚本注入前的整行注释/空行剥离必须是**语义等价**的——
 /// 它跑在每次跨章的热路径上，一旦剥错行就是整本书白屏。

@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/storage/data_root_migrator.dart';
+import 'package:fushi/src/storage/data_root_migrator.dart';
 
 import '../helpers/source_guard.dart';
 

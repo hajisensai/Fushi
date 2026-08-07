@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/reader_space_override.dart';
+import 'package:fushi/src/shortcuts/reader_space_override.dart';
 
 /// BUG-横排滑动翻页方向不随书写方向翻转：滑动 / 鼠标拖动翻页方向此前只看
 /// `invertSwipeDirection` 开关，横排与竖排共用同一套映射（横排方向反了）。键盘方向

@@ -3,12 +3,12 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/models/audio_source_config.dart';
-import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart'
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/audio_source_config.dart';
+import 'package:fushi/src/sync/hibiki_remote_lookup_client.dart'
     show RemoteLookupUnreachableError;
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/src/utils/misc/local_audio_db.dart'
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/local_audio_db.dart'
     show LocalAudioUnavailableError;
 
 /// 弱网下的连接超时上限：从 5s 放宽到 8s，减少慢握手被误判为失败（TODO-1057）。

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/ass_font_metrics.dart';
+import 'package:fushi/src/media/video/ass_font_metrics.dart';
 
 /// BUG-897：ASS 字号的 libass `ass_face_set_size` 语义（`em = Fontsize × upem / winCell`）
 /// 守卫——sfnt 表解析、TTC 多 face、OS/2 缺失回退 hhea、索引优先级与大小写。

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi/src/media/video/ffmpeg_backend.dart';
 
 /// 桌面 ffmpeg 可执行解析优先级：FUSHI_FFMPEG 覆盖 > 程序旁捆绑 ffmpeg > 系统 PATH。
 /// 让没装 ffmpeg 的电脑也能用捆绑的（开箱即用），同时保留显式覆盖与 PATH 回退。

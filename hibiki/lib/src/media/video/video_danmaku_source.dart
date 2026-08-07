@@ -5,8 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/src/media/video/video_danmaku_model.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/media/video/video_danmaku_model.dart';
 
 const List<String> _danmakuSidecarSuffixes = <String>[
   '.danmaku.xml',

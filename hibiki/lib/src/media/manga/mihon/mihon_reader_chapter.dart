@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 
 /// Fully resolved online chapter handed to the shared manga reader.
 class MihonReaderChapter {

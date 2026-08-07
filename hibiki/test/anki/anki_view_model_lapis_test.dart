@@ -1,7 +1,7 @@
 // ignore_for_file: invalid_use_of_protected_member
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/anki_view_model.dart';
 
 /// In-memory fake；覆写 loadSettings/saveSettings 避开 SharedPreferences，
 /// 复用 base 的 updateSettings。

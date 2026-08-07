@@ -2,10 +2,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/immersion_capture_channel.dart';
-import 'package:hibiki/src/mining/immersion_mining_request.dart';
-import 'package:hibiki/src/sync/immersion_mine_payload.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi/src/mining/immersion_capture_channel.dart';
+import 'package:fushi/src/mining/immersion_mining_request.dart';
+import 'package:fushi/src/sync/immersion_mine_payload.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
 
 /// BUG-1416：Netflix（沉浸捕获）选「静态帧」时，取的必须是**制卡那一刻**对应时间点的帧。
 ///

@@ -10,7 +10,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
 
 void main() {
   group('SRT 跨章章内进度 (TODO-746)', () {

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/collections/collection_one_key_sort.dart';
+import 'package:fushi/src/media/collections/collection_one_key_sort.dart';
 
 /// 合集「一键整理」比较规则的守卫。
 ///

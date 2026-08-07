@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
 
 void main() {
   test('elf_ai6 fixture keeps voice.arc above mixed loopback', () async {

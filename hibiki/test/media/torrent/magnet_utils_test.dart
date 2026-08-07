@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/torrent/magnet_utils.dart';
+import 'package:fushi/src/media/torrent/magnet_utils.dart';
 
 void main() {
   group('parseMagnetInfoHash', () {

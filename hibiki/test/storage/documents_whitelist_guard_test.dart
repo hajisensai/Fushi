@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import '../helpers/scan_scale.dart';
 
 /// TODO-1226 守卫：documents 根顶层派生点 ↔ 迁移白名单

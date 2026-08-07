@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/focus_geometry.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
-import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
+import 'package:fushi/src/focus/focus_geometry.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 
 /// TODO-617 M0 guard: HomeDictionaryPage popup stack lifted to the root Overlay
 /// (full window), no longer clamped by the result sub-area. Guards screen=window,

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
 
 // 复现书架 bug：左 rail 与右 body 各一个 FocusTraversalGroup。右 body 顶部是无
 // Scrollable 的「页头按钮」，下方是一个 ListView 内容。按 Down 必须落到同 body 组

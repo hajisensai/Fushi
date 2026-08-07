@@ -1,12 +1,12 @@
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_button_widget.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
-import 'package:hibiki/src/shortcuts/visual/reverse_binding_index.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_button_widget.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
+import 'package:fushi/src/shortcuts/visual/reverse_binding_index.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 单个手柄按钮在整图上的纯数据描述（TODO-942）。
 ///

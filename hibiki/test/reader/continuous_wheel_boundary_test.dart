@@ -5,7 +5,7 @@
 // 那里删掉模板中的 $caretJs / $selectionJs / $longPressDragJs 会立刻转红，本文件不会。
 // 改这里前先分清你要锁的是语义还是注入，别在本文件里重造装配断言。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
 /// TODO-627 / BUG-349：连续/滚动模式下桌面鼠标**滚轮**到达内容轴尽头时必须跨章。
 /// 连续模式靠原生滚动翻屏，章间切换原本只有触摸/指针的边界手势 IIFE 走

@@ -1,6 +1,6 @@
 import 'package:meta/meta.dart';
 
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// Default head padding (ms) prepended to a mining audio clip.
 ///

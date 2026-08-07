@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1165：getOrCreateTagByName 是跨设备按名重建标签映射的核心原语。
 /// 契约：命中同名返回既有 id（幂等，不建重复行）；未命中新建并返回 id。

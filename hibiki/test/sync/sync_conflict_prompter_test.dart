@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
-import 'package:hibiki/src/sync/sync_orchestrator.dart';
+import 'package:fushi/src/sync/sync_conflict_prompter.dart';
+import 'package:fushi/src/sync/sync_orchestrator.dart';
 
 SyncConflict _c(String k, int l, int r) => SyncConflict(
     assetKey: k,

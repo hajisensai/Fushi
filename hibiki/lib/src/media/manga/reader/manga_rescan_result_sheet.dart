@@ -11,7 +11,7 @@ library;
 
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/i18n/strings.g.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 结果卡片的采纳动作。
 enum MangaRescanAction {

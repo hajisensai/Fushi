@@ -5,8 +5,8 @@
 /// 保留抽帧封面，也不落一张错误海报。
 library;
 
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/media/video/scraper/title_normalizer.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/title_normalizer.dart';
 
 // ---------------------------------------------------------------------------
 // 权重与阈值（调参集中在此，均有注释说明取值理由）。

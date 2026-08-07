@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/youtube_stream_cache.dart';
+import 'package:fushi/src/media/video/youtube_stream_cache.dart';
 
 /// TODO-1314：YouTube 流解析持久缓存的守卫（过期解析 + 文件后端 + 失效剔除）。
 void main() {

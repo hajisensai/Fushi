@@ -2,20 +2,20 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/utils.dart';
 
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki/src/anki/anki_media_dedup_dialogs.dart';
-import 'package:hibiki/src/anki/lapis_backup_retention.dart';
-import 'package:hibiki/src/anki/lapis_style_editor_page.dart';
-import 'package:hibiki/src/anki/anki_view_model.dart';
-import 'package:hibiki/src/anki/lapis_template_service.dart';
-import 'package:hibiki/src/mining/immersion_mining_request.dart'
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
+import 'package:fushi/src/anki/lapis_backup_retention.dart';
+import 'package:fushi/src/anki/lapis_style_editor_page.dart';
+import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/lapis_template_service.dart';
+import 'package:fushi/src/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat, VideoMiningImageMode;
-import 'package:hibiki/src/platform/platform_providers.dart';
-import 'package:hibiki/src/platform/platform_services.dart';
-import 'package:hibiki/src/profile/profile_selector.dart';
+import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/profile/profile_selector.dart';
 
 /// Anki 设置正文（无脚手架）。直接平铺进「制卡」设置 destination 详情页
 /// （见 `SettingsDestination.body`），不再藏在一层独立路由子页里。返回一个

@@ -1,13 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki/src/anki/anki_media_dedup_runner.dart';
-import 'package:hibiki/src/anki/lapis_template_service.dart';
-import 'package:hibiki/src/anki/remote_mining_anki_repository.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/platform/platform_providers.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
+import 'package:fushi/src/anki/lapis_template_service.dart';
+import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/utils.dart';
 
 class AnkiUiState {
   const AnkiUiState({

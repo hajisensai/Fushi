@@ -1036,7 +1036,7 @@
 - `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart` — `_resolveAudioSlot`, `_primeAudioCuesForCurrentBook`, `_initSrtBookController`, `_buildSrtChapterMap`, `_onCueChanged`, `_syncPositionFromCurrentCue`, `_restoreFromCurrentAudioCue`, `_toggleLyricsMode`, `_exitLyricsMode`, `_handleCueCrossChapter`, `_handleBoundarySkip`, `dispose`
 - `hibiki/lib/src/media/audiobook/audiobook_import_dialog.dart` — `_parseCues`, `_doImport`, `_enterReplaceSubtitleMode`
 - `hibiki/lib/src/audiobook/audiobook_repository.dart` — `deleteAudiobook`, `saveAudiobook`, `saveCues`
-- `packages/hibiki_audio/lib/src/matching/cues_to_epub.dart` — `splitChapters`
+- `packages/fushi_audio/lib/src/matching/cues_to_epub.dart` — `splitChapters`
 - All 17 i18n locale files — `audio_panel_pick_new_subtitle` key
 
 ### Findings

@@ -1,14 +1,14 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/models/builtin_tags.dart';
-import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
-import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/builtin_tags.dart';
+import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
-import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
+import 'package:fushi/utils.dart';
 
 const List<int> kTagPresetColors = [
   0xFFEF5350, // red

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_path_match.dart';
+import 'package:fushi/src/mining/galgame_path_match.dart';
 import 'package:path/path.dart' as p;
 
 /// [galgamePathComponents] / [galgamePathIsWithin] 纯函数守卫。

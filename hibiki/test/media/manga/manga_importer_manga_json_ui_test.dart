@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/media/manga/manga_importer.dart';
-import 'package:hibiki/src/media/manga/manga_storage.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi/src/media/manga/manga_importer.dart';
+import 'package:fushi/src/media/manga/manga_storage.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 /// 在 [dir] 写一份内部 `manga.json`（[parseMangaJson] 格式，= 内置 OCR `ocrFolder`

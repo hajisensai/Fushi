@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/media/media_cover_service.dart';
-import 'package:hibiki/src/media/metadata/book_cover_scrape_dialog.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
+import 'package:fushi/utils.dart';
 
 /// The content of the dialog upon selecting 'Edit' in the
 /// [MediaItemDialogPage].

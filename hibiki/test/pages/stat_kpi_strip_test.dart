@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/stat_kpi_strip.dart';
+import 'package:fushi/src/pages/implementations/stat_kpi_strip.dart';
 
 /// TODO-1253 / BUG 守卫：顶部 KPI 概览条在手机窄屏下数字必须完整可见。
 ///

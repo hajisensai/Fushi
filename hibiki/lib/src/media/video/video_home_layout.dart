@@ -1,4 +1,4 @@
-import 'package:hibiki/src/media/video/cover_ui/cover_aspect_probe.dart';
+import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 
 /// 视频首页（hayase 式改版，TODO-2486）的布局与筛选纯函数。
 ///

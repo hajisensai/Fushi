@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/google_drive_auth.dart';
+import 'package:fushi/src/sync/google_drive_auth.dart';
 
 /// TODO-045: a desktop build that shipped the placeholder OAuth secret (CI
 /// builds, or a clone that never filled google_oauth_secret.dart) used to run

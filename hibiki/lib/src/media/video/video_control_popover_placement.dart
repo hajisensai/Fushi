@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
-import 'package:hibiki/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_control_customization.dart';
 
 class VideoControlPopoverPlacement {
   const VideoControlPopoverPlacement({

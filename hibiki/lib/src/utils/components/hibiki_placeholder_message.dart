@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 
 /// Used to show information or error messages across the application.
 /// For example, this is used for the empty placeholder messages on the home

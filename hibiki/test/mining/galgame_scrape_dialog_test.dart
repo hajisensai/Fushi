@@ -4,16 +4,16 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/mining/galgame_repository.dart';
-import 'package:hibiki/src/mining/galgame_scrape_controller.dart';
-import 'package:hibiki/src/mining/galgame_scrape_dialog.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_adapter.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/galgame_repository.dart';
+import 'package:fushi/src/mining/galgame_scrape_controller.dart';
+import 'package:fushi/src/mining/galgame_scrape_dialog.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi/utils.dart';
 
 /// 统一刮削弹窗守卫（对齐视频 cover_match_dialog 的单弹窗闭环）：
 /// 1. 打开即按预填词自动首搜，候选带「源 · ID · 发行日」副行与每行「使用」按钮；

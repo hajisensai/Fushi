@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/dandanplay_client.dart';
-import 'package:hibiki/src/media/video/danmaku_manual_match_panel.dart';
+import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 
 DandanplaySearchResult _hitResult() => const DandanplaySearchResult(
       status: DandanplayFetchStatus.hit,

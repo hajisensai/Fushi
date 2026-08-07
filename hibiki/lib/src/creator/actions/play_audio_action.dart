@@ -5,10 +5,10 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/utils.dart';
 
 /// An enhancement used effectively as a shortcut for previewing audio.
 class PlayAudioAction extends QuickAction {

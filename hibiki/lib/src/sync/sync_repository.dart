@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:hibiki/src/sync/hibiki_sync_server.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 触达一台 Hibiki 同步服务器的一个候选地址。同一台服务器通常可经多条路由
 /// 触达（局域网、外网），它们共享同一个 token，按列表顺序尝试、第一个可达者胜出。

@@ -4,32 +4,32 @@ import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
-import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
-import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
-import 'package:hibiki/src/media/import/import_dialog_frame.dart';
-import 'package:hibiki/src/media/import/import_flow_mixin.dart';
-import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/media/import/sidecar_finder.dart';
-import 'package:hibiki/src/media/video/m3u8_playlist.dart';
-import 'package:hibiki/src/media/video/url_stream_video.dart';
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
-import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki/src/media/media_cover_service.dart';
-import 'package:hibiki/src/media/video/video_cover_extractor.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:fushi/src/media/drag_drop/import_dialog_drop.dart';
+import 'package:fushi/src/media/import/import_dialog_frame.dart';
+import 'package:fushi/src/media/import/import_flow_mixin.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/import/sidecar_finder.dart';
+import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/video/video_cover_extractor.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:path/path.dart' as p;
 // TODO-817 M1c → 审计 §1-A: videoCoverFileName / extractVideoCover 已下沉到
 // media/video/video_cover_extractor.dart（视频封面抽取的归宿，使扫描器无需
 // import UI 层）；从这里 re-export 让既有调用点（home_video_page /
 // source_library_scanner / playlist_book_uid_test）零改动。
-export 'package:hibiki/src/media/video/video_cover_extractor.dart'
+export 'package:fushi/src/media/video/video_cover_extractor.dart'
     show videoCoverFileName, extractVideoCover, extractPlaylistCover;
 
 /// 为 m3u8 播放列表生成跨设备稳定 bookUid：`video/playlist/<sanitize(文件名)>`。

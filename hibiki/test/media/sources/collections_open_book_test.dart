@@ -8,9 +8,9 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/src/pages/implementations/collections_page.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/src/pages/implementations/collections_page.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 void main() {
   group('buildCollectionReaderMediaItem', () {

@@ -4,8 +4,8 @@ import 'dart:ui' as ui;
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_thumbnail_preview_controller.dart';
-import 'package:hibiki/src/media/video/video_thumbnail_preview_overlay.dart';
+import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
+import 'package:fushi/src/media/video/video_thumbnail_preview_overlay.dart';
 
 /// 造一个 1x1 的真 [ui.Image]（取帧 fake 返回值）。
 Future<ui.Image> _makeImage() async {

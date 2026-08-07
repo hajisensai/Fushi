@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// SourceLibraryKind(来源库 mediaKind 值域)冻结守卫:dbValue 是
 /// `MediaSources.mediaKind` 的落库串,改一个字符存量来源库全部失配。

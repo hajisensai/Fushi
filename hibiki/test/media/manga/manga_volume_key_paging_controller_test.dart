@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/reader/manga_volume_key_paging_controller.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

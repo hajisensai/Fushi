@@ -53,5 +53,5 @@ When changing any of the following, update both sides in the same change:
 | Native (this dir)        | Dart / Drift counterpart                         |
 |--------------------------|--------------------------------------------------|
 | `ChannelNames.java`      | `channel_constants.dart` (`HibikiChannels`)      |
-| `PopupDbReader.kt` queries | Drift tables in `packages/hibiki_core/.../tables.dart` |
+| `PopupDbReader.kt` queries | Drift tables in `packages/fushi_core/.../tables.dart` |
 | `PopupDbReader.EXPECTED_SCHEMA_VERSION` | `HibikiDatabase.schemaVersion` in `database.dart` |

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/video/video_control_customization.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/video_control_customization.dart';
 
 /// Single source of truth for the icon + label presentation of every
 /// [VideoControlItem] / [VideoControlButton].

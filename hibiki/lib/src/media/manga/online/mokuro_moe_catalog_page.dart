@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_view.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_view.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/utils.dart';
 
 /// 漫画库页三视图里的「浏览」视图：mokuro.moe 在线目录。
 ///

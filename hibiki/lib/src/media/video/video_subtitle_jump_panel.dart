@@ -4,10 +4,10 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/focus/hibiki_focus_scroll.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 String formatCueTimestamp(int startMs) =>
     HibikiTimeFormat.clock(Duration(milliseconds: startMs < 0 ? 0 : startMs));

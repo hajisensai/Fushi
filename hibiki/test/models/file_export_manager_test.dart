@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/file_export_manager.dart';
+import 'package:fushi/src/models/file_export_manager.dart';
 
 void main() {
   late FileExportManager manager;

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_sidecar.dart';
+import 'package:fushi/src/media/video/video_sidecar.dart';
 
 void main() {
   group('pickSidecar（按 app 学习语言优先）', () {

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/utils.dart';
 
 /// 库页视图种类：一个顶层 tab 内部的几个平级视图。
 ///

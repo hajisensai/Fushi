@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/settings/settings_schema_system.dart';
+import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 /// TODO-772: 设置页「应用版本」行曾把 versionName 与 Android versionCode 用

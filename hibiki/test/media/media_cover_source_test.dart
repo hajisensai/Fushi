@@ -3,10 +3,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart' show MediaKind;
+import 'package:fushi_core/fushi_core.dart' show MediaKind;
 
-import 'package:hibiki/src/media/media_cover_source.dart';
-import 'package:hibiki/src/sync/remote_cover_image.dart';
+import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/sync/remote_cover_image.dart';
 
 class _FakeRemoteCoverFetcher implements RemoteCoverFetcher {
   @override

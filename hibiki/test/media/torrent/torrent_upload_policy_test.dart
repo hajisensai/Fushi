@@ -1,8 +1,8 @@
 // 上传/做种策略纯函数：默认关上传、开启后做种时长/分享率上限截停。
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/torrent/anime_download_config.dart';
-import 'package:hibiki/src/media/torrent/torrent_upload_policy.dart';
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/torrent_upload_policy.dart';
 
 TorrentUploadMetrics _m({
   bool seeding = true,

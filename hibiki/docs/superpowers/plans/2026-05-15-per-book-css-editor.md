@@ -140,7 +140,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:hibiki/src/epub/book_css_repository.dart';
+import 'package:fushi/src/epub/book_css_repository.dart';
 
 void main() {
   late Directory tmpDir;
@@ -578,8 +578,8 @@ Create `hibiki/lib/src/pages/implementations/book_css_editor_page.dart`:
 
 ```dart
 import 'package:flutter/material.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/epub/book_css_repository.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/epub/book_css_repository.dart';
 
 class BookCssEditorPage extends StatefulWidget {
   const BookCssEditorPage({super.key, required this.extractDir});
@@ -898,8 +898,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:hibiki/src/epub/book_css_repository.dart';
-import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
+import 'package:fushi/src/epub/book_css_repository.dart';
+import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 
 // Minimal Slang stub — the real strings.g.dart pulls in too many
 // dependencies for a focused widget test.  We wrap the page in a
@@ -907,7 +907,7 @@ import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 // if that causes import issues the tests can be run with
 // `flutter test --dart-define=SLANG_MOCK=true` and a conditional
 // import.  For now we import the real generated file:
-import 'package:hibiki/i18n/strings.g.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 void main() {
   late Directory tmpDir;
@@ -1042,8 +1042,8 @@ The `extraActions()` method is synchronous and returns `List<Widget>`. `EpubStor
 Add import at top of `reader_hoshi_history_page.dart`:
 
 ```dart
-import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
+import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 ```
 
 Then in `extraActions()` (after the existing profile picker button, before the closing `];`), add:

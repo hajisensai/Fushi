@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
-import 'package:hibiki/utils.dart' show ErrorLogService;
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:fushi/utils.dart' show ErrorLogService;
 
 /// TODO-1303：远端制卡（浏览器扩展）失败必须**写进错误日志 + 回带诊断**，不再只
 /// `debugPrint` 进黑洞。`remoteMineResultFromOutcome` / `remoteMineError` 是那条真相路径：

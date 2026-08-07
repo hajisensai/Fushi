@@ -2,13 +2,13 @@ import 'dart:async' show unawaited;
 
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/media/torrent/anime_download_config.dart';
-import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
-import 'package:hibiki/src/media/torrent/magnet_utils.dart';
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/torrent_upload_consent_dialog.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/torrent/magnet_utils.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/torrent_upload_consent_dialog.dart';
+import 'package:fushi/utils.dart';
 
 /// 通用磁力推送的结果（调用方据此弹提示）。
 enum GenericPushOutcome {

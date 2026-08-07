@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
+import 'package:fushi/src/reader/reader_resource_sanitizer.dart';
 import '../helpers/source_guard.dart';
 
 /// BUG-1140 第二轮守卫：`loading` 属性的**Dart 侧**流水线。

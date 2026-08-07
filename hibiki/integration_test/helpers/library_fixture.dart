@@ -1,4 +1,4 @@
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -11,22 +11,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'package:hibiki/main.dart' show FushiReaderApp;
-import 'package:hibiki/src/epub/epub_importer.dart';
-import 'package:hibiki/src/media/media_item.dart' show MediaItem;
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart'
+import 'package:fushi/main.dart' show FushiReaderApp;
+import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi/src/media/media_item.dart' show MediaItem;
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomePage, HomeTab;
-import 'package:hibiki/src/pages/implementations/home_video_page.dart'
+import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show HomeVideoPage;
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/media/video/video_import_dialog.dart'
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_import_dialog.dart'
     show singleVideoBookUid;
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart'
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
     show filteredVideoBookUidsProvider;
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart' show VideoBooksCompanion;
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart' show VideoBooksCompanion;
 
 import 'generate_test_epub.dart' show EpubGenerator;
 import 'media_fixtures.dart';

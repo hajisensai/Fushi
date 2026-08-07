@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show Variable;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// v37→v38 统一合集迁移测试（TODO 统一合集 Phase 1）。
 ///

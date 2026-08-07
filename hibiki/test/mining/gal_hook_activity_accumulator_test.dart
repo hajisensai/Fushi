@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/gal_hook_activity_accumulator.dart';
+import 'package:fushi/src/mining/gal_hook_activity_accumulator.dart';
 
 /// [GalHookActivityAccumulator] 纯累计逻辑守卫：字符累加、活跃时长间隔封顶、中途
 /// flush 阈值、drain 保留计时连续性、reset 整体复位。

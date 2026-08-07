@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
+import 'package:fushi/src/sync/pairing/hibiki_pairing_protocol.dart';
 
 /// TODO-961 M1 §3.6 协议单元测试：nonce 生成、pinProof HMAC 计算/校验、错误 PIN
 /// 拒绝、pinRequired 分支、LAN 地址判定。全部纯函数，无 IO。

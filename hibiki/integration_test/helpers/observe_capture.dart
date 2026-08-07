@@ -4,9 +4,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
-import 'package:hibiki/src/startup/observe_blank_detector.dart';
-import 'package:hibiki/src/startup/test_environment.dart';
+import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/startup/observe_blank_detector.dart';
+import 'package:fushi/src/startup/test_environment.dart';
 
 /// 一次离屏观察抓图的结果。
 class ObserveShot {

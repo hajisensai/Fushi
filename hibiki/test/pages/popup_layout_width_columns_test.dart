@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 查词弹窗 / 查词页布局默认值守卫：
 ///  - TODO-1352：取消查词页宽屏强制内容宽度上限；放宽弹窗最大宽度滑块上限；外部悬浮

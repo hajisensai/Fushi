@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// Used for various dialogs, such as the dictionary, profiles and enhancements
 /// menus. Used for listing, selecting and reordering items.

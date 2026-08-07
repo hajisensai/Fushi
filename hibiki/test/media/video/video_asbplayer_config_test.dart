@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
+import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 
 void main() {
   test('defaults mirror asbplayer playback preferences', () {

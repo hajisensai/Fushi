@@ -9,12 +9,12 @@ import 'package:flutter/widgets.dart';
 // `GamepadButton` enum that would clash with Hibiki's.
 import 'package:gamepads/gamepads.dart' as gp;
 
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
-import 'package:hibiki/src/focus/page_scroll_registry.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_scroll.dart';
+import 'package:fushi/src/focus/page_scroll_registry.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
 /// Intent dispatched for a physical gamepad button on platforms where Flutter
 /// does NOT deliver `gameButton*` key events (desktop / Apple). The active page

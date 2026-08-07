@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/video_loading_overlay.dart';
+import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 
 Widget _harness(Widget child) {
   return MaterialApp(

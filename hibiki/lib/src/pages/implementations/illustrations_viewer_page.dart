@@ -4,20 +4,20 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
-import 'package:hibiki_core/hibiki_core.dart' show HibikiDatabase;
+import 'package:fushi_core/fushi_core.dart' show HibikiDatabase;
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
-import 'package:hibiki/src/utils/misc/hibiki_share.dart';
-import 'package:hibiki/src/epub/epub_book.dart' show fallbackMimeType;
-import 'package:hibiki/src/media/media_extensions.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart'
+import 'package:fushi/src/utils/misc/hibiki_share.dart';
+import 'package:fushi/src/epub/epub_book.dart' show fallbackMimeType;
+import 'package:fushi/src/media/media_extensions.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart'
     show ReaderHibikiSource;
-import 'package:hibiki/src/reader/image_reveal_key.dart';
-import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+import 'package:fushi/src/reader/image_reveal_key.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
-import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
+import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/utils.dart';
 
 /// 一张插画：解码用的字节 + 源磁盘文件（复制/分享需要真实文件路径）+ reveal key。
 class _Illustration {

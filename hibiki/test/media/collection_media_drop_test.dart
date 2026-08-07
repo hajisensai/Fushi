@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/src/media/collections/collection_drag.dart';
-import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
+import 'package:fushi/src/media/collections/collection_drag.dart';
+import 'package:fushi/src/media/collections/collection_shelf_row.dart';
 
 /// 「拖进合集直接自动分配进这个合集」：媒体卡拖到合集行头 / 合集封面卡即加入该合集。
 ///

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_cover_extractor.dart';
+import 'package:fushi/src/media/video/video_cover_extractor.dart';
 
 /// TODO-1237 ①：播放列表封面遍历取首个可用集。用注入的抽取器替身脱离 ffmpeg 测
 /// [extractPlaylistCover] 的回退逻辑（首集不可用 -> 退到后续集；全不可用 -> null；

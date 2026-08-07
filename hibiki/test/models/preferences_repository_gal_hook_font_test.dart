@@ -7,9 +7,9 @@
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/platform/gal_hook_text_overlay_channel.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 
 void main() {
   late HibikiDatabase db;

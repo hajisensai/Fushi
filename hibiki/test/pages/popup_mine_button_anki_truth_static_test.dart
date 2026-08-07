@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 // PRIMARY MECHANISM: when the popup renders a word (createEntryHeader runs as
 // part of renderPopup, which rebuilds the DOM on every lookup), the initial
 // `duplicateCheck` queries Anki live (AnkiConnect findNotes / AnkiDroid
-// findDuplicateNotes — see packages/hibiki_anki/test/ankiconnect_service_test
+// findDuplicateNotes — see packages/fushi_anki/test/ankiconnect_service_test
 // .dart's "isDuplicate" group) and sets a real `data-mined` state via
 // setMineState: card in Anki -> 已制卡 ✓, card absent -> 可制卡 +. The ✓ is NOT
 // decorative; data-mined is the source of truth for what a click does.
@@ -123,7 +123,7 @@ void main() {
   // '+' stuck disabled with zero feedback. Guard that the failure path always
   // restores the button to a clickable '+', so it can never get permanently
   // stuck. Pairs with the Dart-side contract test
-  // (`packages/hibiki_anki/test/mine_entry_never_throws_test.dart`).
+  // (`packages/fushi_anki/test/mine_entry_never_throws_test.dart`).
   // (Merged verbatim from popup_mine_button_recovers_static_test.dart.)
   test('popup mine button restores itself when mining throws (BUG-077)', () {
     final int onclickIdx = mineButtonBlock.indexOf('onclick: async () => {');

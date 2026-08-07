@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/google_drive_handler.dart';
-import 'package:hibiki/src/sync/google_drive_sync_backend.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/google_drive_handler.dart';
+import 'package:fushi/src/sync/google_drive_sync_backend.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 
 /// TODO-836 HARD GUARD: the whole point of the insufficient_scope fix is that
 /// the user's stale grant gets SIGNED OUT so the sign-in button reappears and

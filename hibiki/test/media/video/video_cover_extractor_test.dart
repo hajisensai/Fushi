@@ -5,9 +5,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/ffmpeg_backend.dart'
+import 'package:fushi/src/media/video/ffmpeg_backend.dart'
     show resolveFfmpegExecutable;
-import 'package:hibiki/src/media/video/video_cover_extractor.dart';
+import 'package:fushi/src/media/video/video_cover_extractor.dart';
 
 void main() {
   group('buildFfmpegEmbeddedCoverArgs', () {

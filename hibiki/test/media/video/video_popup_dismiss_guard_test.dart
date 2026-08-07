@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
+import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 
 /// BUG-924 守卫测试：词典浮层可见时，任一视频快捷键先关顶层浮层并**不**跑原动作；浮层
 /// 不可见时原动作照跑一次。这是「视频里关不掉词典 / 浮层开着按 d 竟然快进」的根因守卫

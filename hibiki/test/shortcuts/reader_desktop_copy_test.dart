@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/reader_space_override.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/reader_space_override.dart';
 
 void main() {
   group('readerShouldHandleDesktopCopy (BUG-402)', () {

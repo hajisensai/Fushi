@@ -1,5 +1,5 @@
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/webdav_ops.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/webdav_ops.dart';
 
 /// Normalizes a manually-entered Hibiki interconnect URL.
 ///

@@ -1,13 +1,13 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/pages/implementations/games_library_page.dart';
-import 'package:hibiki/src/pages/implementations/media_collection_grid_detail_page.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/pages/implementations/games_library_page.dart';
+import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
+import 'package:fushi/utils.dart';
 
 /// 游戏进合集：通用合集网格详情页（[MediaCollectionGridDetailPage]）加载 'game'
 /// 成员的 widget 测试。

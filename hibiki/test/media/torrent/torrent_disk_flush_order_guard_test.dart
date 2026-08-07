@@ -13,7 +13,7 @@
 // 「改回去」或者用 sleep / 重试来等落盘。
 //
 // 纯文本扫描：不需要 DLL、不需要 native 工具链，因此能跟着主 app 测试套件在任何
-// 平台的 CI 上跑 —— `packages/hibiki_torrent` 自己的测试在无 DLL 的平台整组 skip。
+// 平台的 CI 上跑 —— `packages/fushi_torrent` 自己的测试在无 DLL 的平台整组 skip。
 
 import 'dart:io';
 
@@ -22,7 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   // 测试的工作目录是 `hibiki/`，packages 在它的上一级。
   final File pipelineTest =
-      File('../packages/hibiki_torrent/test/embedded_pipeline_test.dart');
+      File('../packages/fushi_torrent/test/embedded_pipeline_test.dart');
 
   test('下载内容的逐字节比对必须排在 leecher.close() 之后', () {
     expect(pipelineTest.existsSync(), isTrue,

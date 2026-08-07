@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/focus/focus_geometry.dart';
+import 'package:fushi/src/focus/focus_geometry.dart';
 
 class HibikiFocusScroll {
   const HibikiFocusScroll._();

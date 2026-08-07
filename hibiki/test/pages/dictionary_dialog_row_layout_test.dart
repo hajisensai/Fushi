@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 // TODO-381 / TODO-422：词典管理行的布局守卫（不拉起整页 AppModel/Drift，只复刻
 // 行的真实结构 = HibikiListItem(leading: 折叠按钮, title: Expanded 名字 +

@@ -9,8 +9,8 @@
 /// （云备份通道 + 已启用的互联通道），不在这里重抄一遍，否则两处迟早漂开。
 library;
 
-import 'package:hibiki/src/sync/sync_auto_trigger.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 
 /// 本机是否存在可用于删除传播的同步通道。
 ///

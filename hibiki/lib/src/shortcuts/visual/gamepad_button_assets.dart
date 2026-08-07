@@ -1,5 +1,5 @@
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
 
 /// 手柄按钮 → 现成图标素材路径映射（TODO-942，用户决策「不要手绘，抄现成的」）。
 ///

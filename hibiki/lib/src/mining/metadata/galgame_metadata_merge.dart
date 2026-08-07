@@ -5,8 +5,8 @@ library;
 
 import 'dart:convert';
 
-import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
 
 /// `galgames.customDataJson` 的结构（契约 §1.3）。
 ///

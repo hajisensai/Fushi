@@ -3,14 +3,14 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show QueryRow, Value;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/profile/profile_repository.dart';
-import 'package:hibiki/src/storage/app_paths.dart';
-import 'package:hibiki/src/storage/data_root_migrator.dart';
-import 'package:hibiki/src/storage/path_rebase_coverage.dart';
+import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/data_root_migrator.dart';
+import 'package:fushi/src/storage/path_rebase_coverage.dart';
 
 /// BUG-1174：数据根迁移的**路径改写**四处存量缺陷的行为守卫。
 ///

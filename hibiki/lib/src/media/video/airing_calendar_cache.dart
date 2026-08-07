@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:hibiki/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/anilist_client.dart';
 
 /// 放送日历缓存（TODO-2487）：内存 + 偏好 JSON 两层，TTL 数小时。**不建
 /// Drift 表**（v65 被并行线程占用），偏好键 `airing_calendar_cache` 已在

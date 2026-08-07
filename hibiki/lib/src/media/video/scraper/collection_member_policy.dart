@@ -13,7 +13,7 @@
 /// 把这条信息扔掉，逼调用方再查一次库。
 library;
 
-import 'package:hibiki_core/hibiki_core.dart'
+import 'package:fushi_core/fushi_core.dart'
     show MediaCollectionItemRow, MediaKind;
 
 /// 从全库合集成员表算出「合集子篇 → 所属多成员合集 id」的映射：条目属于任一

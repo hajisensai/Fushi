@@ -21,7 +21,7 @@
 /// 真正的产物重建在 `book_format_rebuild.dart`。
 library;
 
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 转化目标。
 enum BookFormatTarget {

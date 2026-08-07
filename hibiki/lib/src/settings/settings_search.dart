@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:fushi/src/focus/hibiki_focus_scroll.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
 
 /// item 的可搜索标题：普通项就是 [SettingsItem.title]；[SettingsCustomItem]
 /// 的 title 通常为空（正文由 builder 自绘），可用

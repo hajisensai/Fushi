@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// BUG-1307 守卫：交给 C++ 引擎的结果上限必须**等于**本次真正要消费的词头预算
 /// （`effectiveMaxTerms`），不得再是硬编码常量。

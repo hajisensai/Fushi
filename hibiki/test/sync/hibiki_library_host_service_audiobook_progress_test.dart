@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/app_model_library_host_service.dart';
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki/src/sync/sync_asset_package_service.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// host-apply 测试（BUG-471）：互联有声书进度 live 端点必须真读写 host 自己的
 /// `audiobook_pos_<bookKey>` + `audiobook_pos_at_<bookKey>` prefs（修复根因：互联

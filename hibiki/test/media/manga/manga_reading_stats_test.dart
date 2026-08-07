@@ -1,8 +1,8 @@
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/manga_reading_stats.dart';
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/manga_reading_stats.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
 
 /// 守卫漫画的字数/页数记账（v60）：漫画此前 `charsRead` 恒 0，只记时长，统计页
 /// 永远显示 0 字。现在按已读页的 OCR 文本计字数、按已读页计页数，两个量纲各自

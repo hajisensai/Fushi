@@ -13,12 +13,12 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/popup_settings_injection.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/src/lookup/global_lookup_layout.dart';
-import 'package:hibiki/src/lookup/global_lookup_stack.dart';
-import 'package:hibiki/src/reader/popup_swipe_close_script.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/lookup/global_lookup_layout.dart';
+import 'package:fushi/src/lookup/global_lookup_stack.dart';
+import 'package:fushi/src/reader/popup_swipe_close_script.dart';
 
 // TODO-867 P3c — buildOverlayRenderScript (the single-frame TOP-LEVEL direct
 // renderPopup path) is RETIRED. The top-level WebView2 document is now

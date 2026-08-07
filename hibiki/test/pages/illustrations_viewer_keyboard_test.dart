@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
-import 'package:hibiki_core/hibiki_core.dart' show HibikiDatabase;
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/illustrations_viewer_page.dart';
+import 'package:fushi_core/fushi_core.dart' show HibikiDatabase;
 
 /// BUG-404：插画全屏画廊（`_FullScreenGallery`）必须自己持有键盘处理——
 /// ESC 退出（不依赖整页 PageRoute 下不稳定的全局 `_handleGlobalEscape`），

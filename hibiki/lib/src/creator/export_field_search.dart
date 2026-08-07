@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/utils.dart';
 
 /// 媒体导出字段（音频 / 图片）共用的搜索状态与回退取词逻辑。
 ///

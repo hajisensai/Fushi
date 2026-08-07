@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/overlay_bridge_handlers.dart';
+import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 
 /// BUG-730 — app-external mining (clipboard panel + transient global lookup)
 /// created cards whose `{sentence}` field was ALWAYS empty. The full pipeline

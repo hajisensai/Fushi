@@ -4,20 +4,20 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
-import 'package:hibiki/src/media/video/video_subtitle_source.dart'
+import 'package:fushi/src/media/video/video_subtitle_source.dart'
     show buildParsedSubtitleResponse;
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
+import 'package:fushi/src/media/video/youtube_source_resolver.dart'
     show resolveYoutubeCaptionsForExtension;
-import 'package:hibiki/src/sync/hibiki_remote_api_handlers.dart';
-import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
-import 'package:hibiki/src/sync/hibiki_sync_server.dart'
+import 'package:fushi/src/sync/hibiki_remote_api_handlers.dart';
+import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:fushi/src/sync/hibiki_sync_server.dart'
     show SyncServerPortInUseException, isAddressInUseError;
-import 'package:hibiki/src/sync/yomitan_term_entries_adapter.dart';
-import 'package:hibiki/src/sync/yomitan_tokenize_adapter.dart';
+import 'package:fushi/src/sync/yomitan_term_entries_adapter.dart';
+import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
 /// yomitan-api 默认端口（Kuuuube/yomitan-api）。
 const int kYomitanApiDefaultPort = 19633;

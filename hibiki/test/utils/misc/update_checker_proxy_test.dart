@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 // BUG-1348：代理解析层已从 update_checker 的 net part 搬进独立库（同步层要用同一套
 // 出口，而 part 没法被外部 import）。测试跟着搬 import，断言逐字不变。
-import 'package:hibiki/src/utils/net/app_proxy.dart';
+import 'package:fushi/src/utils/net/app_proxy.dart';
 
 /// 构造一条 `reg query ... /v ProxyEnable` 的典型输出。
 String _regEnable(String value) {

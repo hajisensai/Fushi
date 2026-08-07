@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/media/video/video_playback_source.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/media/video/video_playback_source.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
 
 /// 完成判定纯函数：进度 ≥ 90% 且尚未完成、且时长已知。
 bool shouldMarkCompleted(int? positionMs, int? durationMs, bool already) {

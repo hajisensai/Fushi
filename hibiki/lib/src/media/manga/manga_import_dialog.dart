@@ -4,17 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/epub/book_title_conflict.dart';
-import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
-import 'package:hibiki/src/media/import/import_carrier.dart';
-import 'package:hibiki/src/media/import/import_dialog_frame.dart';
-import 'package:hibiki/src/media/import/import_flow_mixin.dart';
-import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
-import 'package:hibiki/src/media/manga/manga_module.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/epub/book_title_conflict.dart';
+import 'package:fushi/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:fushi/src/media/import/import_carrier.dart';
+import 'package:fushi/src/media/import/import_dialog_frame.dart';
+import 'package:fushi/src/media/import/import_flow_mixin.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/media/manga/manga_module.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
+import 'package:fushi/utils.dart';
 
 /// 漫画导入对话框。
 ///

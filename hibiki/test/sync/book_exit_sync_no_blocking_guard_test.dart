@@ -38,7 +38,7 @@ void main() {
           '否则退出杀应用会把关书 export 打成半截（132B/132A 互补）。',
     );
     expect(
-      RegExp(r"import\s+'package:hibiki/src/sync/book_exit_sync_scope\.dart';")
+      RegExp(r"import\s+'package:fushi/src/sync/book_exit_sync_scope\.dart';")
           .hasMatch(body),
       isTrue,
       reason: 'sync_auto_trigger 必须导入 book_exit_sync_scope.dart',

@@ -1,8 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
-import 'package:hibiki/src/utils/components/hibiki_reorderable_column.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/hibiki_reorderable_column.dart';
 
 /// 把列表交给 [HibikiReorderableColumn]，并在 onReorder 时真正改顺序后重建——
 /// 模拟真实调用方（对话框）的用法。

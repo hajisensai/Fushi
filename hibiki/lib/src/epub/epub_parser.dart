@@ -5,8 +5,8 @@ import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
-import 'package:hibiki/src/epub/epub_book.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// Pure Dart EPUB parser — no native FFI, no WebView, no IndexedDB.
 ///

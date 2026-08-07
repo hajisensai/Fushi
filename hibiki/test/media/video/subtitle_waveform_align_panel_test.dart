@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/subtitle_waveform_align_panel.dart';
-import 'package:hibiki/src/media/video/subtitle_waveform_painter.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/subtitle_waveform_align_panel.dart';
+import 'package:fushi/src/media/video/subtitle_waveform_painter.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-1315 lazy waveform render / TODO-1316 in-zoom auto-align button tests.
 AudioCue _cue(int startMs, int endMs, {String text = ''}) {

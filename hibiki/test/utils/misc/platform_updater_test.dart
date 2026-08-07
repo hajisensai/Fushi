@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/platform_updater.dart';
+import 'package:fushi/src/utils/misc/platform_updater.dart';
 
 List<Map<String, dynamic>> _assets(List<String> names) => names
     .map((String n) => <String, dynamic>{

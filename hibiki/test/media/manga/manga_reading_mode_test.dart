@@ -1,8 +1,8 @@
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
 
 MokuroImage _img(double w, double h) =>
     MokuroImage(url: 'p', size: Size(w, h), blocks: const <MokuroBlock>[]);

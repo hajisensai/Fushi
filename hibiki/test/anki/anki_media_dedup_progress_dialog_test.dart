@@ -9,10 +9,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/anki/anki_media_dedup_dialogs.dart';
-import 'package:hibiki/src/anki/anki_media_dedup_runner.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
+import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 class _NullRepo extends BaseAnkiRepository {
   @override

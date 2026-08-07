@@ -1,5 +1,5 @@
-import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/qbittorrent_client.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
 
 /// [TorrentBackend] 的外接 qBittorrent 实现：纯转发适配器，把接口语义
 /// 一一映射到 [QBittorrentClient] 的 WebUI 调用，不加任何额外逻辑。

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 /// A-overlap 守卫：制卡 meaning 里外字（gaiji）框被词典自带 CSS
 /// `span[data-sc-img][data-sc-class="gaiji"] .gloss-image-container{width:15em!important}`

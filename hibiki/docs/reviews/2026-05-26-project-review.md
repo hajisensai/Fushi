@@ -4,7 +4,7 @@
 
 ### Scope
 
-- `packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart`
+- `packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart`
 - `hibiki/test/media/audiobook/audiobook_controller_seek_test.dart`
 - User-reported stack: `ReaderHibiki.loadAudiobook` timing out in `AudiobookPlayerController.load()`.
 
@@ -15,7 +15,7 @@
 - severity: high
 - status: fixed
 - files:
-  - `packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart`
+  - `packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart`
   - `hibiki/test/media/audiobook/audiobook_controller_seek_test.dart`
 - root cause: `AudiobookPlayerController.load()` called `AudioPlayer.setAudioSource()` with just_audio's default `preload: true`, so opening the reader synchronously waited for platform media loading/duration discovery. Multi-file books made this worse by probing every file with a separate `AudioPlayer.setFilePath()` before the actual playlist was installed.
 - impact: one slow, large, or stuck audio file could block `_initBook()` through `_resolveAudioSlot()` for 60 seconds and surface as `ReaderHibiki.loadAudiobook TimeoutException`.

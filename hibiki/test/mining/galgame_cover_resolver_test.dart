@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_cover_resolver.dart';
+import 'package:fushi/src/mining/galgame_cover_resolver.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 

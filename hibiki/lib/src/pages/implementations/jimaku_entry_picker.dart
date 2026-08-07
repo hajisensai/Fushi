@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/media/video/jimaku_client.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/utils.dart';
 
 /// Jimaku 字幕来源选择器。
 ///

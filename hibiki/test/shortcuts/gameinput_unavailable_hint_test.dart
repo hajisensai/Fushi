@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/gamepad_service.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart';
 
 /// TODO-1223 守卫：缺 GameInput.dll 时给用户提醒（不再静默降级）。
 ///

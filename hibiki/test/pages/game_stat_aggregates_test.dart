@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/pages/implementations/game_stat_aggregates.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/pages/implementations/game_stat_aggregates.dart';
 
 GalgameEntry _game(
   String id, {

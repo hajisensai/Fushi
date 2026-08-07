@@ -6,8 +6,8 @@
 // 同进程其它测试。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/anki/lapis_style_editor_page.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/src/anki/lapis_style_editor_page.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 void useWideWindow(WidgetTester tester) {
   tester.view.physicalSize = const Size(1600, 1400);

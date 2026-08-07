@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/magpie_installer.dart';
+import 'package:fushi/src/mining/magpie_installer.dart';
 import 'package:path/path.dart' as p;
 
 import 'offline_installer_guard.dart';
@@ -166,7 +166,7 @@ void main() {
       expect(
         source,
         contains(
-            "import 'package:hibiki/src/mining/galgame_helper_installer.dart' "
+            "import 'package:fushi/src/mining/galgame_helper_installer.dart' "
             'show galgameHelperSwapInstall, galgameHelperSweepStaleFiles, '
             'parseSha256Sidecar, sha256Matches;'),
         reason: '复用面必须逐个点名；退化成整包 import 就等于把对面的全部符号拉进来',

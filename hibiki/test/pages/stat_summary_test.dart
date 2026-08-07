@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/stat_charts.dart';
-import 'package:hibiki/src/pages/implementations/stat_summary.dart';
-import 'package:hibiki/src/pages/implementations/stat_trends.dart';
+import 'package:fushi/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/pages/implementations/stat_summary.dart';
+import 'package:fushi/src/pages/implementations/stat_trends.dart';
 
 /// 造一个每日数据点（升序序列的一格）。
 StatDayData _day(String dateKey, int chars, int ms) {

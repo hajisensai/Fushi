@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
-import 'package:hibiki/src/media/manga/ocr/manga_ocr_engine.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/utils.dart';
 
 /// 设置区「漫画 OCR」组的正文（隶属**漫画**设置分类）。
 ///

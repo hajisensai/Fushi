@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 
 /// TODO-872 — 桌面悬浮歌词点词必须优先走 867 app 外全局查词覆盖窗。
 ///

@@ -16,9 +16,9 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/pages/implementations/media_sources_dialog.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/source_guard.dart';
 

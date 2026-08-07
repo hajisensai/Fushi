@@ -1,4 +1,4 @@
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// 单句草稿条目：一次查词时累积的「这一句」+ 可选句子音频区间。
 ///

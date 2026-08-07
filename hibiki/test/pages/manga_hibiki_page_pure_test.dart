@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
-import 'package:hibiki/src/media/manga/manga_spread_model.dart';
-import 'package:hibiki/src/pages/implementations/manga_hibiki_page.dart';
+import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/media/manga/manga_spread_model.dart';
+import 'package:fushi/src/pages/implementations/manga_hibiki_page.dart';
 
 void main() {
   group('mangaWindowRange', () {

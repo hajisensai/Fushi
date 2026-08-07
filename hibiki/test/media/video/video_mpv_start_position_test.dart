@@ -9,7 +9,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/media/video/video_mpv_config.dart';
 
 /// 被守卫的源文件（相对 `hibiki/` 包根，`flutter test` 的 cwd）。
 const String _kControllerPath = 'lib/src/media/video/video_player_controller.dart';

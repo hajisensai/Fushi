@@ -4,12 +4,12 @@
 /// 合并结果（→ 展示 / `galgames` 上提列），落库由调用方负责。
 library;
 
-import 'package:hibiki/src/mining/metadata/adapters/bangumi_adapter.dart';
-import 'package:hibiki/src/mining/metadata/adapters/vndb_adapter.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_adapter.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi/src/mining/metadata/adapters/bangumi_adapter.dart';
+import 'package:fushi/src/mining/metadata/adapters/vndb_adapter.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
 
 /// mixed 解析结果：各源快照 + 合并后的展示 draft + 逐源失败原因。
 class GalgameMixedResolution {

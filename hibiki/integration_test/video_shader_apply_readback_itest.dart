@@ -16,7 +16,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/video/video_shader_manager.dart';
+import 'package:fushi/src/media/video/video_shader_manager.dart';
 
 /// 最小合法 mpv 用户着色器（MAIN 直通，能被 mpv 解析/编译）。
 const String _kPassthroughShader = '//!HOOK MAIN\n'

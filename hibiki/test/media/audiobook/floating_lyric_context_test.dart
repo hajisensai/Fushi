@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/floating_lyric_context.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-708 P4：悬浮字幕上下文窗口纯函数测试。
 ///

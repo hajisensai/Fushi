@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 
 /// TODO-1255：视频库本地封面全占位的自愈单测。
 ///

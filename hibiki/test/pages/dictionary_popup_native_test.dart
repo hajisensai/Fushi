@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_native.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_native.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../widgets/widget_test_helpers.dart';
 

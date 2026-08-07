@@ -11,8 +11,8 @@
 // then serves until killed (5-minute safety cap).
 import 'dart:io';
 
-import 'package:hibiki/src/sync/hibiki_sync_server.dart';
-import 'package:hibiki/src/sync/sync_utils.dart';
+import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/sync_utils.dart';
 
 Future<void> main(List<String> args) async {
   final int port = args.isNotEmpty ? int.parse(args.first) : 38765;

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 
 abstract class MihonBridgeRuntime implements MihonRuntime {
   Future<Object?> invokeBridge(

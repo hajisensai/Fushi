@@ -1,4 +1,4 @@
-import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
 
 /// 用户对「检测到同名书籍」弹窗的选择。
 ///

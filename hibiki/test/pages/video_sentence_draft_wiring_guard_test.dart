@@ -59,7 +59,7 @@ void main() {
       expect(
         src,
         contains(
-            "import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';"),
+            "import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';"),
       );
       expect(src, contains('final MiningSentenceDraft _miningDraft ='));
       // 覆写 mixin 钩子返回非空闭包 → popup 渲染上下文选择器。

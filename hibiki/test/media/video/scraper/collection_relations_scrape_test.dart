@@ -2,10 +2,10 @@ import 'dart:convert';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
-import 'package:hibiki/src/media/video/scraper/collection_relations_scrape.dart';
-import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart';
+import 'package:fushi/src/media/video/scraper/collection_relations_scrape.dart';
+import 'package:fushi/src/media/video/scraper/tmdb_client.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:sqlite3/common.dart' show CommonDatabase;

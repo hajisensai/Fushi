@@ -8,8 +8,8 @@
 // 播放位置（seekMs / skipToCue）与换片（setCues）时作废。
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 AudioCue _cue(int i, int s, int e) => AudioCue()
   ..bookKey = 'video/1'

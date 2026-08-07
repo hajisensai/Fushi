@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/src/media/collections/collection_drag.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/collections/collection_drag.dart';
+import 'package:fushi/utils.dart';
 
 /// 「拖进合集」落库失败必须给用户明确提示，**不得静默**。
 ///

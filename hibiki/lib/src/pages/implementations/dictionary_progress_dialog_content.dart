@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 class DictionaryProgressDialogContent extends StatelessWidget {
   const DictionaryProgressDialogContent({

@@ -19,15 +19,15 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart'
+import 'package:fushi/src/ocr/manga_ocr_folder_job.dart'
     show
         MangaOcrPageFile,
         enumerateMangaPages,
         kMangaOcrOutDirName,
         kMangaOcrOutputFileName;
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/tls/hibiki_pinning_http.dart';
-import 'package:hibiki/src/sync/webdav_ops.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/tls/hibiki_pinning_http.dart';
+import 'package:fushi/src/sync/webdav_ops.dart';
 
 /// 轮询退避：500ms 起步 ×1.5 递增，封顶 5s。纯函数便于单测单调性与上限。
 Duration mangaOcrPollDelay(int attempt) {

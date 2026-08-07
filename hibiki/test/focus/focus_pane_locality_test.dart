@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
 
 // 复现 BUG：宽屏设置「外观」详情里，焦点在右侧详情面板（一个 Scrollable）的
 // 「设计系统」段控上，按 Down 应去同面板下方的「主题」；但左侧导航面板（另一个

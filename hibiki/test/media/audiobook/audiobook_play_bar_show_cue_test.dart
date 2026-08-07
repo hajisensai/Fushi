@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 
 /// TODO-728②守卫：[AudiobookPlayBar.showCue] 控制底栏「当前句子」cue 文本的显隐。
 /// 默认 true = 现状（始终显示）；false = 隐藏文本但**保留 Expanded 占位**，使

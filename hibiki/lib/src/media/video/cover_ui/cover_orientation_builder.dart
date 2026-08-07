@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/media/video/cover_ui/cover_aspect_probe.dart';
-import 'package:hibiki/src/media/video/video_home_layout.dart';
+import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
+import 'package:fushi/src/media/video/video_home_layout.dart';
 
 /// 按封面固有朝向重建子树（TODO-2486 视频首页混排墙/横滚行的卡宽分流）。
 ///

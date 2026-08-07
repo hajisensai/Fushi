@@ -9,17 +9,17 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:pdfrx/pdfrx.dart';
 
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/anki/anki_view_model.dart';
-import 'package:hibiki/src/lookup/sentence_extraction.dart';
-import 'package:hibiki/src/pages/base_source_page.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki/src/pdf/pdf_engine.dart';
-import 'package:hibiki/src/startup/exit_flush_registry.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/lookup/sentence_extraction.dart';
+import 'package:fushi/src/pages/base_source_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/pdf/pdf_engine.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/utils.dart';
 
 /// PDF 阅读器页面（Phase 1 渲染 / Phase 2 点选查词 / Phase 3 页码进度 / Phase 4 制卡）。
 ///

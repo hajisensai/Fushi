@@ -1,11 +1,11 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
-import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
-import 'package:hibiki/src/media/tracking/media_tracking_service.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/tracking/bangumi_api_client.dart';
+import 'package:fushi/src/media/tracking/media_tracking_repository.dart';
+import 'package:fushi/src/media/tracking/media_tracking_service.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 class _FakeBangumiApi implements BangumiTrackingApi {
   BangumiUserCollection? collection;

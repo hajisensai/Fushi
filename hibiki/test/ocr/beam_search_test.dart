@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/ocr/beam_search.dart';
+import 'package:fushi/src/ocr/beam_search.dart';
 
 /// 词表约定：0 = start（[CLS]）、1 = EOS（[SEP]）、2..5 = 普通 token。
 const int kStart = 0;

@@ -13,8 +13,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/storage/data_root_migration_view.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/storage/data_root_migration_view.dart';
 
 void main() {
   group('DataRootMigrationView (TODO-959 机制A：搬移中遮罩)', () {

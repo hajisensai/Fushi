@@ -8,8 +8,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/storage/data_root_migrator.dart';
-import 'package:hibiki/src/sync/sync_settings_schema.dart';
+import 'package:fushi/src/storage/data_root_migrator.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart';
 import 'package:path/path.dart' as p;
 
 void main() {

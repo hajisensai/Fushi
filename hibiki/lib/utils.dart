@@ -33,7 +33,7 @@ export 'src/utils/misc/hibiki_color.dart';
 export 'src/utils/misc/hibiki_time_format.dart';
 export 'src/utils/misc/safe_file_name.dart';
 export 'src/utils/misc/hibiki_audio_handler.dart';
-export 'package:hibiki_core/src/models/hibiki_text_selection.dart';
+export 'package:fushi_core/src/models/hibiki_text_selection.dart';
 export 'src/utils/misc/volume_key_channel.dart';
 export 'src/utils/misc/tts_channel.dart';
 export 'src/utils/misc/word_audio_resolver.dart';

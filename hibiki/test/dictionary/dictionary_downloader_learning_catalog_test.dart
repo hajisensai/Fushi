@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// 推荐词典「学习语言」维度：非日语学习语言动态生成 wty 双语/单语条目，
 /// 日语路径必须与旧 [DictionaryDownloader.catalogForLang] 完全一致（零破坏）。

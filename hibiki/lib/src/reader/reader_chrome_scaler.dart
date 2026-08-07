@@ -1,5 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 
 /// 阅读器底栏铬层的「隐形」界面缩放。
 ///

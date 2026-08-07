@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_selection_data.dart';
+import 'package:fushi/src/reader/reader_selection_data.dart';
 
 void main() {
   group('ReaderSelectionData.fromJson', () {

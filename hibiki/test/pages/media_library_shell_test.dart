@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart';
+import 'package:fushi/utils.dart';
 
 /// [MediaLibraryShell] 的行为守卫（PR#550 审查补）。
 ///

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/pages/implementations/series_shelf_card.dart';
+import 'package:fushi/utils.dart';
 
 /// 统一合集 UI v2 Phase E：合集命名/重命名对话框（原 series_detail_page 的
 /// `showSeriesNameDialog`，随死掉的 SeriesDetailPage 整页删除迁居至此）。

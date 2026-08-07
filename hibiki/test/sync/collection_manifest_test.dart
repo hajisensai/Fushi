@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/collection_manifest.dart';
+import 'package:fushi/src/sync/collection_manifest.dart';
 
 /// 合集清单编解码纯函数测试（多端库联合视图 §2.3 任务3）：
 /// roundtrip 无损 + 确定性排序（内容相等 ⇒ 字节相等）+ 非法输入拒绝。

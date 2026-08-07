@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/google_drive_auth.dart';
+import 'package:fushi/src/sync/google_drive_auth.dart';
 
 /// Guards the mobile Google Drive auth fix (BUG-047): on Android/iOS the backend
 /// `restoreAuth` used to be a no-op (`return false`) and `GoogleDriveAuth` never

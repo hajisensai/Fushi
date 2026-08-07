@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/sync/pref_redaction_policy.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/sync/pref_redaction_policy.dart';
 
 class ProfileKeys {
   ProfileKeys._();

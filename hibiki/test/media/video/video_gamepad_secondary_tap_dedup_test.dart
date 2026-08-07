@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
+import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 
 void main() {
   group('VideoGamepadSecondaryTapDeduper (BUG-1453)', () {

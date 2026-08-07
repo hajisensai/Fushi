@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_button_widget.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_button_assets.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_layout_view.dart';
-import 'package:hibiki/src/shortcuts/visual/keyboard_layout_view.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_button_widget.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_button_assets.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_layout_view.dart';
+import 'package:fushi/src/shortcuts/visual/keyboard_layout_view.dart';
 
 /// TODO-1050a (gamepad brand glyph rendering) + TODO-1060② (empty-key tap opens
 /// assignment) behavioural coverage on the standalone visual sub-widgets.

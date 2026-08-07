@@ -3,9 +3,9 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
     show MissingPluginException, PlatformException;
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
 
 /// 「选一个文件夹并返回它的**真实文件系统绝对路径**」的统一入口。

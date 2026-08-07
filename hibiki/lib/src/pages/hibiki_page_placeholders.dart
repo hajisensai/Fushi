@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// 页面级「加载中 / 出错」占位的统一构建 mixin（审计 §1-K「页面骨架两套」）。
 ///

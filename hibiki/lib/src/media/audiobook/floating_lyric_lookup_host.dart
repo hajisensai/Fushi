@@ -1,10 +1,10 @@
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 悬浮字幕「点词查词」的一次请求（文本 + 命中字符 index）。
 class FloatingLyricLookupRequest {

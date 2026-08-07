@@ -1,4 +1,4 @@
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 class FakeAnkiRepository extends BaseAnkiRepository {
   AnkiSettings _settings = const AnkiSettings();

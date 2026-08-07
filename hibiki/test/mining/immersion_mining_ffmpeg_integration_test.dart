@@ -5,11 +5,11 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki/src/mining/immersion_capture_channel.dart';
-import 'package:hibiki/src/mining/immersion_mining_engine.dart';
-import 'package:hibiki/src/mining/immersion_mining_request.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/mining/immersion_capture_channel.dart';
+import 'package:fushi/src/mining/immersion_mining_engine.dart';
+import 'package:fushi/src/mining/immersion_mining_request.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
 
 /// 真跑系统 ffmpeg 的集成验证（TODO-1000）：确认「GIF 制卡」媒体链路端到端可产出真 GIF +
 /// 音频 + 静图，而不只是引擎的假抽取器逻辑。无 ffmpeg（FUSHI_FFMPEG 或 PATH 都没有）时整组

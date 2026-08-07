@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/google_drive_sync_space.dart';
-import 'package:hibiki/src/sync/sync_utils.dart' show kSyncRootFolderName;
+import 'package:fushi/src/sync/google_drive_sync_space.dart';
+import 'package:fushi/src/sync/sync_utils.dart' show kSyncRootFolderName;
 
 /// 守卫 Google Drive 两种存储空间的关键契约。
 ///

@@ -8,8 +8,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/anki/anki_media_dedup_runner.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 class _TempDirRunner extends AnkiMediaDedupRunner {
   _TempDirRunner(super.repository, this._dir);

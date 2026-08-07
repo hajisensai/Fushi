@@ -1,6 +1,6 @@
-import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/pages/implementations/stat_charts.dart';
 
 /// 游戏统计页的窗口聚合。
 ///

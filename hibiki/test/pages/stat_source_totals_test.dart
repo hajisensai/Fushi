@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/stat_source_totals.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/pages/implementations/stat_source_totals.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 守卫统计口径的来源拆分（用户要求「把游戏、漫画等加上支持」）：阅读统计页此前
 /// 只读 `reading_statistics`，视频字幕字数与游戏文本字数根本没进来，漫画又混在

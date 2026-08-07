@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_button_assets.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_button_assets.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
 
 /// TODO-942：手柄按钮 → Kenney「Input Prompts」(CC0) 素材映射守卫。
 ///

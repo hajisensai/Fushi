@@ -1,7 +1,7 @@
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/media/video/cover_ui/cover_aspect_probe.dart';
+import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 
 /// 宽幅（约 2.7:1）封面槽的填充组件 —— [PortraitCoverImage] 的镜像。
 ///

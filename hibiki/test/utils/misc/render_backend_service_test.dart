@@ -2,7 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/render_backend_service.dart';
+import 'package:fushi/src/utils/misc/render_backend_service.dart';
 
 /// TODO-1232 A3：渲染后端（关 Impeller）实验开关的 Dart 侧接线守卫。
 /// 真机切换后端需 realme 8 复测；这里只锁「channel 方法名 / 参数 / 缓存 / 平台

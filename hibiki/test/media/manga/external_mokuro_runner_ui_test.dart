@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
+import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
 import 'package:path/path.dart' as p;
 
 /// 可编程 fake 子进程运行器：不真 spawn，按注入的脚本回放。

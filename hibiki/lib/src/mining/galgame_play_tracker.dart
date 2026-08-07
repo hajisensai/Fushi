@@ -24,7 +24,7 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/mining/galgame_path_match.dart';
+import 'package:fushi/src/mining/galgame_path_match.dart';
 
 /// 计时语义（契约 §1.6）。
 enum GalgamePlayTimingMode {

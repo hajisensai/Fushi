@@ -1,4 +1,4 @@
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 学习活动的**来源**维度：供跨来源首页汇总与来源拆分纯函数使用。
 ///

@@ -4,8 +4,8 @@
 // 都用 [resolveDesktopLookupConsumer] 对同一个 pendingRequest 做互斥分区：
 // 判定不属于自己分区的请求一律不消费，故永不双消费、永不丢请求。
 
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
 
 /// 桌面查词请求的消费面（spec 2026-07-10 §4）。
 /// textWindow = 真透明剪切板文字窗（复用 FloatingLyricWindow 第二实例，text-only）。

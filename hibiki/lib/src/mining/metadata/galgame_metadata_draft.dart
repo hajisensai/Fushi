@@ -6,7 +6,7 @@ library;
 
 import 'dart:convert';
 
-import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
 
 /// 单个数据源抓到的一份元数据快照。
 ///

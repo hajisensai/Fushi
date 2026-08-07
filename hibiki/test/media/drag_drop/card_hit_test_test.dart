@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart' show Rect, Offset;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/drag_drop/card_hit_test.dart';
+import 'package:fushi/src/media/drag_drop/card_hit_test.dart';
 
 void main() {
   group('hitTestCards', () {

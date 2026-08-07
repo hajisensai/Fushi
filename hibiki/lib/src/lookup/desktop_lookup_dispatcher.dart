@@ -5,13 +5,13 @@
 
 import 'dart:async';
 
-import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
-import 'package:hibiki/src/lookup/clipboard_text_overlay_controller.dart';
-import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
-import 'package:hibiki/src/lookup/global_lookup_controller.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/lookup/clipboard_panel_controller.dart';
+import 'package:fushi/src/lookup/clipboard_text_overlay_controller.dart';
+import 'package:fushi/src/lookup/desktop_lookup_router.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
 
 class DesktopLookupDispatcher {
   DesktopLookupDispatcher._();

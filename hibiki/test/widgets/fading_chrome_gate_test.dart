@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/fading_chrome_gate.dart';
+import 'package:fushi/src/utils/components/fading_chrome_gate.dart';
 
 /// BUG-1301：视频页淡出型 chrome（剧集横轨 / 侧边沉浸锁 / on-rail 沉浸退出钮）
 /// 隐藏态留树只挡指针不挡焦点，手柄浏览后焦点滞留在 opacity=0 的控件上，

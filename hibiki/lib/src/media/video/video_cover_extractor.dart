@@ -26,15 +26,15 @@ library;
 
 import 'dart:io';
 
-import 'package:hibiki/src/media/media_cover_service.dart';
-import 'package:hibiki/src/media/metadata/image_download.dart'
+import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/metadata/image_download.dart'
     show looksLikeImageBytes;
-import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
-import 'package:hibiki/src/storage/app_paths.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+import 'package:fushi/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
     show extractVideoFrameViaFfmpeg;
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/src/utils/misc/safe_file_name.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/safe_file_name.dart';
 import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;

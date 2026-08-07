@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 // BUG-874：查词浮层打开时，根 Overlay 的全屏 dismiss barrier 盖在推挤式字幕列表侧栏之上、
 // 抢走点击 → 点列表里下一个词只会关浮层。修复让 barrier 先用 [VideoSubtitleListHitTester]

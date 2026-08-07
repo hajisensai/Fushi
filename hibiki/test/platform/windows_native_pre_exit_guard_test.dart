@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/platform/desktop/windows_native_pre_exit.dart';
+import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
 
 /// TODO-618 fix1 守卫：关窗路径与更新路径不共享同一个一次性 `prepareForExit` 守卫。
 ///

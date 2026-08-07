@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/aggregate_merge_service.dart';
-import 'package:hibiki_audio/hibiki_audio.dart'
+import 'package:fushi/src/sync/aggregate_merge_service.dart';
+import 'package:fushi_audio/fushi_audio.dart'
     show FavoriteSentence, kFavoriteSentenceSourceBook;
 
 FavoriteSentence _fs(

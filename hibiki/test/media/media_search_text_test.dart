@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/media_search_text.dart';
-import 'package:hibiki/src/mining/galgame_library_query.dart'
+import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/mining/galgame_library_query.dart'
     show normalizeGalgameSearchText;
 
 /// P5-A：书架 / 视频 / 游戏三个库页共用的搜索归一化与匹配。

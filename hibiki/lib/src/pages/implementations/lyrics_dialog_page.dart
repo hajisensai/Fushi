@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/utils.dart';
 
 /// Used by the Reader Lyrics Source.
 class LyricsDialogPage extends BasePage {

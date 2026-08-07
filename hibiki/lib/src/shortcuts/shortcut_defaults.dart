@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart' hide ModifierKey;
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
 class ShortcutDefaults {
   ShortcutDefaults._();

@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 收藏夹「可选范围清空」的底层原语守卫：书签 / 收藏句 / 制卡句 / 收藏词四类各自
 /// 有独立的批量清空入口，且**只删自己那类**——按类型勾选清空时互不牵连。

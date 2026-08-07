@@ -13,7 +13,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
-import 'package:hibiki/src/media/media_extensions.dart';
+import 'package:fushi/src/media/media_extensions.dart';
 
 /// sidecar 扫描结果：命中的海报文件 + 从 NFO 解析出的元数据。
 ///

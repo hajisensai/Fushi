@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki/src/anki/anki_view_model.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_native.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_native.dart';
+import 'package:fushi/utils.dart';
 
 class FloatingDictPage extends ConsumerStatefulWidget {
   const FloatingDictPage({

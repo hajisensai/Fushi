@@ -4,8 +4,8 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/epub/epub_book.dart';
-import 'package:hibiki/src/epub/epub_parser.dart';
+import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi/src/epub/epub_parser.dart';
 import 'package:path/path.dart' as p;
 
 /// BUG-1218：解析出的章节/资源路径必须保留磁盘上的**真实大小写**。

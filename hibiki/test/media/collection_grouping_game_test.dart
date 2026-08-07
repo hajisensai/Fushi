@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/collections/collection_grouping.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/collections/collection_grouping.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 游戏进合集：'game' mediaType 经 [groupByCollections] 折叠的纯函数测试。
 ///

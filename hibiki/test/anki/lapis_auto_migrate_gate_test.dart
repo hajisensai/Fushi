@@ -8,8 +8,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/anki/lapis_template_service.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/src/anki/lapis_template_service.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 class _TempDirLapisService extends LapisTemplateService {
   _TempDirLapisService(super.repository, this._dir);

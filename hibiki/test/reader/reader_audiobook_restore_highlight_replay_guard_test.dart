@@ -11,7 +11,7 @@ void main() {
   setUpAll(() {
     readerSource = readReaderPageSource();
     controllerSource = File(
-      '../packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart',
+      '../packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart',
     ).readAsStringSync();
   });
 

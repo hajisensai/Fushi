@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
 
 /// B 守卫：视频制卡封面改成「cue 时间段的循环 GIF」。验证纯参数构造（时长 clamp、
 /// 起点非负、调色板双遍滤镜、-loop 0、-ss/-t 在 -i 前快速定位）。

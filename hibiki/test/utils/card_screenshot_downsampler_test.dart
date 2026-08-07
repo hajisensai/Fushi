@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/card_screenshot_downsampler.dart';
+import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:image/image.dart' as img;
 
 /// TODO-646 守卫：制卡截图降采样。验证纯尺寸计算（只缩不放/等比/长边钉 1000）

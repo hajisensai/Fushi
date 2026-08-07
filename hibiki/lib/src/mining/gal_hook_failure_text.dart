@@ -1,6 +1,6 @@
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
 
 /// 结构化 injector 失败原因 → 用户可执行的处置文案。
 ///

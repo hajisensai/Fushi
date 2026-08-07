@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
 
 abstract class SettingsRenderer {
   Widget buildHomePage({

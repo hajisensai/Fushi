@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart';
 
 /// 守卫统计页「按书/按视频 tile 显示所属合集名」的解析契约：
 /// '<mediaType>|<entryKey>' 归属键（epub=bookKey / video=bookUid）经折叠归属主

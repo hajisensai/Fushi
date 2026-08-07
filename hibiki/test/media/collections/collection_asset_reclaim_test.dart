@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/collections/collection_asset_reclaim.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 import '../../helpers/source_guard.dart';

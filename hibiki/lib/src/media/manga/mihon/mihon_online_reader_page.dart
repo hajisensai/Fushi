@@ -3,12 +3,12 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/media/manga/mihon/mihon_library.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_reader_chapter.dart';
-import 'package:hibiki/src/media/manga/reader/manga_hibiki_page.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_library.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
+import 'package:fushi/src/media/manga/reader/manga_hibiki_page.dart';
+import 'package:fushi/utils.dart';
 
 /// Resolves a Mihon chapter and hands it to Hibiki's existing manga reader.
 ///

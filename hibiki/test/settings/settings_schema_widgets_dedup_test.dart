@@ -42,7 +42,7 @@ void main() {
         expect(
           src,
           contains(
-            "import 'package:hibiki/src/settings/settings_schema_widgets.dart';",
+            "import 'package:fushi/src/settings/settings_schema_widgets.dart';",
           ),
         );
       }

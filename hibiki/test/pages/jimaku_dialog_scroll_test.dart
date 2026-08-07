@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/jimaku_client.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
+import 'package:fushi/utils.dart';
 
 /// 矮屏（手机横屏 / 软键盘弹起时的可视高度）下验证 Jimaku 自动获取字幕对话框候选列表区。
 ///

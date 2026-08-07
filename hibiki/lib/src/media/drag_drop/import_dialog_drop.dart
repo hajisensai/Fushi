@@ -1,4 +1,4 @@
-import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 
 /// 拖入导入对话框时，按对话框类型把 [DroppedFiles] 解成「该写到哪些字段」的纯
 /// 数据结果。无 IO / 无 context，是三个导入对话框 `_handleDialogDrop` 的可测核心。

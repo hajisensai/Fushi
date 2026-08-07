@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_subtitle_style.dart';
+import 'package:fushi/src/media/video/video_subtitle_style.dart';
 
 void main() {
   test('default is high-contrast white text + soft black shadow (Niratan)', () {

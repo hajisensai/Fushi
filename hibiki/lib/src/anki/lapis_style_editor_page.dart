@@ -5,9 +5,9 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:hibiki/src/webview/webview_death_guard.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/src/webview/webview_death_guard.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 typedef LapisPreviewBuilder = Widget Function(
   BuildContext context,

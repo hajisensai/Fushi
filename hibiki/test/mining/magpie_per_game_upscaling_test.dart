@@ -13,10 +13,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/magpie_upscaling.dart';
-import 'package:hibiki/src/mining/magpie_upscaling_prompt.dart';
-import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/mining/magpie_upscaling.dart';
+import 'package:fushi/src/mining/magpie_upscaling_prompt.dart';
+import 'package:fushi/src/mining/magpie_upscaling_service.dart';
+import 'package:fushi/utils.dart';
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));

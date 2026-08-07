@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/media/video/video_panel_auto_scroll.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart'
+import 'package:fushi/src/media/video/video_panel_auto_scroll.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart'
     show formatCueTimestamp;
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// 视频内封章节（chapter）列表面板（TODO-424）。复用 [VideoTranslucentSidePanel]
 /// 的侧栏外壳，本 widget 只负责列出 [VideoPlayerController.chapters]：每行「序号 +

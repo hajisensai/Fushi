@@ -1,10 +1,10 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
-import 'package:hibiki/src/sync/aggregate_merge_service.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki_audio/hibiki_audio.dart' show FavoriteSentence;
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/aggregate_merge_service.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
+import 'package:fushi_core/fushi_core.dart';
 
 /// ATTACH-then-upsert merge engine for backup "merge" import (TODO-888).
 ///

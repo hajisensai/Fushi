@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/audio_energy_probe.dart';
-import 'package:hibiki/src/media/video/subtitle_auto_align.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/audio_energy_probe.dart';
+import 'package:fushi/src/media/video/subtitle_auto_align.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-701 stage1: pure-algorithm + ffmpeg args/parse unit tests.
 

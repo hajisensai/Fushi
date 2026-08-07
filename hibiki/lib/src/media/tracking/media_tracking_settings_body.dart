@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/media/collections/collection_season_groups.dart'
+import 'package:fushi/src/media/collections/collection_season_groups.dart'
     show collectionGroupKeyForFilename, isMultiSeasonGrouped;
-import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
-import 'package:hibiki/src/media/tracking/media_tracking_labels.dart';
-import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
-import 'package:hibiki/src/media/tracking/media_tracking_service.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/tracking/bangumi_api_client.dart';
+import 'package:fushi/src/media/tracking/media_tracking_labels.dart';
+import 'package:fushi/src/media/tracking/media_tracking_repository.dart';
+import 'package:fushi/src/media/tracking/media_tracking_service.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class MediaTrackingSettingsBody extends StatefulWidget {

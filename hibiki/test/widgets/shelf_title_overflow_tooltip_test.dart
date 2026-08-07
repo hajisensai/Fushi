@@ -2,9 +2,9 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
-import 'package:hibiki/src/utils/components/galgame_poster_card.dart';
-import 'package:hibiki/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
+import 'package:fushi/src/utils/components/galgame_poster_card.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 /// TODO-2490：库页卡片标题「显示不全」——两行省略号之外必须有看全名的途径。
 ///

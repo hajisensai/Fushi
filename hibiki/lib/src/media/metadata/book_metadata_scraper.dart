@@ -12,8 +12,8 @@ library;
 
 import 'dart:convert';
 
-import 'package:hibiki/src/media/metadata/bangumi_api_client.dart';
-import 'package:hibiki/src/media/metadata/bangumi_cover_url.dart';
+import 'package:fushi/src/media/metadata/bangumi_api_client.dart';
+import 'package:fushi/src/media/metadata/bangumi_cover_url.dart';
 import 'package:http/http.dart' as http;
 
 /// 书籍刮削领域异常（网络失败 / 非 2xx / JSON 异常）。绝不吞异常，交上层给用户可见提示。

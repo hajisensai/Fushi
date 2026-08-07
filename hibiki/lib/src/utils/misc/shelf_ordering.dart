@@ -5,7 +5,7 @@
 /// （MediaCollections 引用表）。本文件只保留选择键解码与合集默认名推导。
 library;
 
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 一条书架 / 视频选择键解码后的稳定身份 `(mediaType, entryKey)`。
 /// 直接喂 [HibikiDatabase.addToCollection] / [HibikiDatabase.upsertShelfOrder]。

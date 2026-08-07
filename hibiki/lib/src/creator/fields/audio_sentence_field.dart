@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/utils.dart';
 
 /// Returns audio information from context.
 class AudioSentenceField extends BaseAudioField {

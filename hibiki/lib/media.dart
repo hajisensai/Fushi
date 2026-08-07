@@ -1,5 +1,5 @@
 // jidoujisho 血统「UI 媒体源/标签页」体系的 barrel：MediaType / MediaSource
-// 抽象 + reader/dictionary 类型 + 各 reader 源实现（页面经 package:hibiki/media.dart
+// 抽象 + reader/dictionary 类型 + 各 reader 源实现（页面经 package:fushi/media.dart
 // 消费）。
 //
 // 「来源库」域（src/media/source_library/：SourceLibraryScanner /

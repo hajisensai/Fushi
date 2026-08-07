@@ -6,8 +6,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/anki/lapis_template_service.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/src/anki/lapis_template_service.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 /// 只把备份目录换成临时目录，其余走真实实现（避开 AppPaths 的平台通道）。
 class _TempDirLapisService extends LapisTemplateService {

@@ -3,16 +3,16 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_window_gif.dart'
+import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_window_gif.dart'
     show GalWindowAnimatedCapture;
-import 'package:hibiki/src/mining/immersion_mining_request.dart'
+import 'package:fushi/src/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat, VideoMiningImageMode;
-import 'package:hibiki/src/mining/window_capture_channel.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/src/mining/window_capture_channel.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 class _RecordingRepo extends BaseAnkiRepository {
   _RecordingRepo({

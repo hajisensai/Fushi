@@ -1,6 +1,6 @@
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/reader/manga_zoom_preference_debouncer.dart';
+import 'package:fushi/src/media/manga/reader/manga_zoom_preference_debouncer.dart';
 
 void main() {
   test('high-frequency zoom callbacks persist only the trailing value', () {

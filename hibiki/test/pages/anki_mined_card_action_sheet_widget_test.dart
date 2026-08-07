@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki/src/anki/anki_mined_card_action_sheet.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
+import 'package:fushi/utils.dart';
 
 /// TODO-1007/1008：点 ✓ 操作选择 + note viewer 的 widget 行为守卫。
 ///

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 
 /// loopback HTTP fake（照 `manga_ocr_model_downloader_test.dart` 的
 /// `_ModelServer` 思路）：按路径供响应体，记录完整请求 URI。

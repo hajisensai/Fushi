@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
 /// 单一真相：哪个 DOM 鼠标按钮触发「seek 到点击句」由快捷键注册表决定（默认中键）。
 /// 鼠标键是位置型动作，不进位置无关的 `_executeShortcutAction`，故单列此判定供

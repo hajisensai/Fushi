@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/metadata/bangumi_api_client.dart';
+import 'package:fushi/src/media/metadata/bangumi_api_client.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 

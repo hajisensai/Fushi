@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/pages/implementations/custom_fonts_page.dart';
-import 'package:hibiki/src/reader/font_catalog.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/reader/font_catalog.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/utils/components/hibiki_icon_button.dart';
 
 void main() {
   setUp(() {

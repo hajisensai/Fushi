@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/main.dart';
+import 'package:fushi/main.dart';
 
 void main() {
   group('hibikiSystemOverlayStyle', () {

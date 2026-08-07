@@ -6,20 +6,20 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
-import 'package:hibiki/src/reader/reader_chrome_floating.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:hibiki/src/sync/deletion_propagation.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/reader/reader_chrome_floating.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
+import 'package:fushi/utils.dart';
 
 /// BUG-793：EPUB 书 bookKey 集合的响应式来源。`.distinct(listEquals)` 按集合去重
 /// ——插入/删除触发，改作者/封面等纯列更新（集合不变）不触发，避免书架无谓重算。

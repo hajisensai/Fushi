@@ -1,7 +1,7 @@
-import 'package:hibiki/src/sync/forwarded_mine_payload.dart';
-import 'package:hibiki/src/sync/interconnect_post_transport.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/forwarded_mine_payload.dart';
+import 'package:fushi/src/sync/interconnect_post_transport.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:http/http.dart' as http;
 
 /// BUG-1185：远端查重的三态结果。查重是「用户据此决定要不要再制一张卡」的信息，

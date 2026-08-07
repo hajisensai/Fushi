@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/painting.dart';
-import 'package:hibiki/src/media/video/video_subtitle_source.dart';
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:fushi/src/media/video/video_subtitle_source.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:path/path.dart' as p;
 
 /// 视频媒体在磁盘上的「app 拥有」副本目录管理 + 删除回收（BUG-276 / TODO-365）。

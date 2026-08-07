@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:hibiki/src/utils/misc/platform_updater.dart';
+import 'package:fushi/src/utils/misc/platform_updater.dart';
 
 /// TODO-1024 / BUG-479：app 自更新「检查更新」的**结果缓存**。
 ///

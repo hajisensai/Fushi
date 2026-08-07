@@ -5,14 +5,14 @@ import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/epub/book_title_conflict.dart';
-import 'package:hibiki/src/epub/epub_book.dart';
-import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
-import 'package:hibiki/src/epub/epub_parser.dart';
-import 'package:hibiki/src/epub/epub_storage.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/epub/book_title_conflict.dart';
+import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/epub/epub_parser.dart';
+import 'package:fushi/src/epub/epub_storage.dart';
 
 class EpubImporter {
   EpubImporter._();

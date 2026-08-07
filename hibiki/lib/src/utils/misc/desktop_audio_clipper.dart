@@ -1,22 +1,22 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
+import 'package:fushi/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi/src/media/video/youtube_source_resolver.dart'
     show kYoutubeStreamReplayUserAgent;
-import 'package:hibiki/src/media/video/video_clip_exporter.dart'
+import 'package:fushi/src/media/video/video_clip_exporter.dart'
     show resolveAudioMapIndex;
 // 动图格式枚举与 VideoMiningImageMode 同住 mining 侧（两者都是「制卡封面怎么取」的
 // 取值域）。本文件只消费它选编码器参数，不反向依赖 mining 逻辑，无环。
-import 'package:hibiki/src/mining/immersion_mining_request.dart'
+import 'package:fushi/src/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat;
 import 'package:http/http.dart' as http;
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:meta/meta.dart';
 
 // resolveFfmpegExecutable 已移到 ffmpeg_backend.dart（执行配置的自然归宿）；
 // 从这里 re-export 让既有 importer 与测试仍从本文件解析它。
-export 'package:hibiki/src/media/video/ffmpeg_backend.dart'
+export 'package:fushi/src/media/video/ffmpeg_backend.dart'
     show resolveFfmpegExecutable;
 
 typedef FfmpegFailureReporter = void Function(String summary);

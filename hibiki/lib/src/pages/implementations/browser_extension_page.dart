@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki/src/lookup/browser_extension_installer.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/sync/yomitan_api_server.dart'
+import 'package:fushi/src/lookup/browser_extension_installer.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/sync/yomitan_api_server.dart'
     show kYomitanApiDefaultPort;
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// 桌面专属「浏览器扩展」页（顶层导航目的地，仅桌面显示）。
 ///

@@ -9,9 +9,9 @@
 // 绑定序列化。
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
 /// Localised label for a [ShortcutAction].
 extension ShortcutActionLabel on ShortcutAction {

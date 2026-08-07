@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/mining/galgame_repository.dart';
-import 'package:hibiki/src/pages/implementations/galgame_detail_page.dart';
-import 'package:hibiki/src/pages/implementations/game_stat_aggregates.dart';
-import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki/src/pages/implementations/stat_delete_confirm_dialog.dart';
-import 'package:hibiki/src/pages/implementations/stat_shared.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/galgame_repository.dart';
+import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
+import 'package:fushi/src/pages/implementations/game_stat_aggregates.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/utils.dart';
 
 /// 全游戏统计页。
 ///

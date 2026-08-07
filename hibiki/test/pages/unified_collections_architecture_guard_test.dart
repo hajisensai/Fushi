@@ -14,7 +14,7 @@ void main() {
   final File importDialog =
       File('lib/src/media/video/video_import_dialog.dart');
   final File database =
-      File('../packages/hibiki_core/lib/src/database/database.dart');
+      File('../packages/fushi_core/lib/src/database/database.dart');
   final File homeVideo =
       File('lib/src/pages/implementations/home_video_page.dart');
   final File historyPage =

@@ -3,14 +3,14 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/utils/misc/audio_mime.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/src/utils/misc/local_audio_db.dart'
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/misc/audio_mime.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/local_audio_db.dart'
     show LocalAudioUnavailableError, LocalAudioUnavailableReason;
-import 'package:hibiki/src/utils/misc/tts_channel.dart';
-import 'package:hibiki/src/utils/misc/word_audio_resolver.dart';
+import 'package:fushi/src/utils/misc/tts_channel.dart';
+import 'package:fushi/src/utils/misc/word_audio_resolver.dart';
 
 /// 单次本地音频库查询的**预算**上限：超过就不再等，把控制权还给 UI
 /// （自动发音不能为了一个库把查词卡住）。

@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/epub/book_title_conflict.dart';
-import 'package:hibiki/src/media/manga/import/manga_archive_importer.dart';
-import 'package:hibiki/src/media/manga/manga_importer.dart';
-import 'package:hibiki/src/media/manga/manga_ocr_background_job.dart';
-import 'package:hibiki/src/media/manga/manga_ocr_wizard_dialog.dart';
-import 'package:hibiki/src/media/manga/manga_ocr_wizard_engines.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
-import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/epub/book_title_conflict.dart';
+import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
+import 'package:fushi/src/media/manga/manga_importer.dart';
+import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
+import 'package:fushi/src/media/manga/manga_ocr_wizard_dialog.dart';
+import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
+import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
+import 'package:fushi/utils.dart';
 
 /// Narrow application-facing facade for the manga feature.
 ///

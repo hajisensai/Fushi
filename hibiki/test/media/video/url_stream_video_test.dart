@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart' show AudioCue;
-import 'package:hibiki/src/media/video/url_stream_video.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
+import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
+import 'package:fushi/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/youtube_source_resolver.dart'
     show YoutubeCaptionTrack;
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;

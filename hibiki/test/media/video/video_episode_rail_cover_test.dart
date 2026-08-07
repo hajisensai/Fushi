@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
-import 'package:hibiki/src/media/video/video_episode_rail.dart';
+import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/media/video/video_episode_rail.dart';
 import 'package:transparent_image/transparent_image.dart';
 
 /// v68 守卫：选集轨道（播放器/合集详情页共用）的 16:9 卡走朝向自适应，

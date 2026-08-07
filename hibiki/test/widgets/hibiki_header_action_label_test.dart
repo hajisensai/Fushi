@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
+import 'package:fushi/src/utils/components/hibiki_icon_button.dart';
 
 /// 统一合集 UI v2 Phase A：页头动作按钮的可展开文字标签。
 ///

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
     show runUiScaleReanchorOrchestration;
 
 /// TODO-697 item①：693 修复（连续模式改 appUiScale 重锚）此前只有 7 个纯函数真值表 +

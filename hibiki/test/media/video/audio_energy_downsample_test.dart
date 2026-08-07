@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/audio_energy_probe.dart';
+import 'package:fushi/src/media/video/audio_energy_probe.dart';
 
 /// TODO-1051 阶段A：波形包络「纯降采样函数」单测。
 ///

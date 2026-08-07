@@ -7,12 +7,12 @@
 
 import 'dart:io' show Platform;
 
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_routing.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/platform/clipboard_text_overlay_channel.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
-import 'package:hibiki/src/utils/misc/ruby_markup.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/platform/clipboard_text_overlay_channel.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/utils/misc/ruby_markup.dart';
 
 /// 背景不透明度（0.0–1.0）→ ARGB 背景色：alpha=opacity*255 的纯黑；opacity=0 即
 /// `0x00000000` 完全透明背景（文字始终由 native textColor 决定，恒实心）。纯函数，

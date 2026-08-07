@@ -11,20 +11,20 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart'
+import 'package:fushi/src/ocr/manga_ocr_folder_job.dart'
     show
         MangaOcrPageFile,
         enumerateMangaPages,
         kMangaOcrOutDirName,
         kMangaOcrOutputFileName;
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
-import 'package:hibiki/src/sync/hibiki_manga_ocr_host.dart';
-import 'package:hibiki/src/sync/hibiki_sync_server.dart';
-import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/sync/hibiki_manga_ocr_host.dart';
+import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 
 class _FakeOcrService implements MangaOcrService {
   _FakeOcrService({this.ready = true});

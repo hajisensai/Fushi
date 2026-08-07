@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/pages/implementations/galgame_home_page.dart';
-import 'package:hibiki/src/pages/implementations/game_diagnostics_page.dart';
-import 'package:hibiki/src/pages/implementations/game_shared.dart';
-import 'package:hibiki/src/pages/implementations/game_statistics_page.dart';
-import 'package:hibiki/src/pages/implementations/games_library_page.dart';
-import 'package:hibiki/src/pages/implementations/module_settings_view.dart';
-import 'package:hibiki/src/pages/implementations/texthooker_page.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/pages/implementations/galgame_home_page.dart';
+import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
+import 'package:fushi/src/pages/implementations/game_shared.dart';
+import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
+import 'package:fushi/src/pages/implementations/games_library_page.dart';
+import 'package:fushi/src/pages/implementations/module_settings_view.dart';
+import 'package:fushi/src/pages/implementations/texthooker_page.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/utils.dart';
 
 // GameSection / gameSectionNotifier 已迁到 game_shared.dart（三页共享），
 // 这里 re-export 保持既有 import 站点（如原生浮窗控制器）零改动。
-export 'package:hibiki/src/pages/implementations/game_shared.dart'
+export 'package:fushi/src/pages/implementations/game_shared.dart'
     show GameSection, gameSectionNotifier;
 
 typedef GameMonitorBuilder = Widget Function(

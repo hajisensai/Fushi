@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
-import 'package:hibiki/src/sync/texthooker_ws_client.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/sync/texthooker_ws_client.dart';
+import 'package:fushi/utils.dart';
 
 /// 游戏模块各页（首页 / 库 / 捕获工作台 / 设置 / 诊断）共享的枚举翻译映射、时间格式与
 /// 子区分段导航。巡检 PR-1 收敛点：此前 `_audioBackendLabel` 三份拷贝、

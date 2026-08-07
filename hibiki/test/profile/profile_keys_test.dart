@@ -1,10 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki/src/profile/profile_keys.dart';
-import 'package:hibiki/src/sync/backup_service.dart';
-import 'package:hibiki/src/sync/pref_redaction_policy.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/profile/profile_keys.dart';
+import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/src/sync/pref_redaction_policy.dart';
 
 void main() {
   group('ProfileKeys.isExcludedPref', () {

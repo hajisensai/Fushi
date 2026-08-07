@@ -17,10 +17,10 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
-import 'package:hibiki/src/lookup/overlay_window_channel.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/lookup/overlay_window_channel.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
 
-export 'package:hibiki/src/lookup/overlay_window_channel.dart'
+export 'package:fushi/src/lookup/overlay_window_channel.dart'
     show GlobalLookupShowResult;
 
 abstract final class GlobalLookupChannel {

@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// v59 迁移（BUG-1113「游戏没有标签」）：新建 `galgame_tag_mappings`，把游戏接进书 /
 /// 字幕书 / 视频 / 合集早已共用的那一个 `book_tags` 标签池。

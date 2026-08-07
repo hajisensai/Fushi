@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
-import 'package:hibiki/src/sync/obfuscating_sync_backend.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
 
 /// resolveSyncBackend 的包裹策略守卫（TODO-623 A1）：
 /// 云后端必须被 ObfuscatingSyncBackend 包裹（防扫盘），局域网 hibikiServer 不包裹。

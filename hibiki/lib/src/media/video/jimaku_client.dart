@@ -3,9 +3,9 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
 
 /// Jimaku（jimaku.cc）字幕条目：一个番剧/作品。
 class JimakuEntry {

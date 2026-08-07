@@ -6,11 +6,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../../pages/reader_history_source_corpus.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
-import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

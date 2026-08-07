@@ -7,8 +7,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:hibiki/main.dart' as app;
-import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart'
+import 'package:fushi/main.dart' as app;
+import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
     show hibikiMaterialNavKey;
 
 import 'helpers/library_fixture.dart';

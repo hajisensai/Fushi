@@ -14,7 +14,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
 
 /// Mirror of the production fill-only-if-empty gate: applies tag title/author to
 /// the current field values, returning the new (title, author). A non-empty

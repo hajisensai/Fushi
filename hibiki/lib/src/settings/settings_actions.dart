@@ -1,15 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/models/theme_notifier.dart'
+import 'package:fushi/models.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/models/theme_notifier.dart'
     show CustomThemeEntry, kCustomThemeDefaultSeed;
-import 'package:hibiki/src/profile/profile_view_model.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 const double _swatchSize = 48.0;

@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/remote_audio_lookup_bytes.dart';
-import 'package:hibiki/src/utils/misc/audio_mime.dart';
-import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
-import 'package:hibiki_core/hibiki_core.dart' show kMimeTypeByExtension;
+import 'package:fushi/src/sync/remote_audio_lookup_bytes.dart';
+import 'package:fushi/src/utils/misc/audio_mime.dart';
+import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi_core/fushi_core.dart' show kMimeTypeByExtension;
 
 /// 单词音频 MIME 共享表（audio_mime.dart）守卫：
 ///  1. 两个消费端（弹窗 `data:` URL / 127.0.0.1 音频端点）映射恒同、只差兜底——

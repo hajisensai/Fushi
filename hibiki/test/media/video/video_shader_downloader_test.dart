@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_shader_downloader.dart';
+import 'package:fushi/src/media/video/video_shader_downloader.dart';
 import 'package:path/path.dart' as p;
 
 /// 可编程的假 [HttpClientAdapter]：按 URL 给出响应或抛错，记录被请求的 URL 顺序，

@@ -6,11 +6,11 @@ import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_extension_store_client.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
-import 'package:hibiki/src/startup/exit_flush_registry.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
 
 /// 开箱即用的默认扩展仓库（用户指定）。没有它的话「漫画扩展」一节首次打开是空的，
 /// 用户得先自己知道一个仓库地址才能开始——而这个仓库就是社区事实标准。

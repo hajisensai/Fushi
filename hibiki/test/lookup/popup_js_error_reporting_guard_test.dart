@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// TODO-1392 观测性根治守卫：查词弹窗 JS 渲染路径（`renderPopup` / `__hibikiContainer`）
 /// 抛异常此前只 `console.error` → `onConsoleMessage` → `debugPrint`（永不进错误日志），

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// 刮削失败态的统一展示件（视频「在线匹配海报」弹窗 / 书籍「在线匹配封面」弹窗共用）。
 ///

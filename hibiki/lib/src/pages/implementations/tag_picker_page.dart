@@ -1,10 +1,10 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/tag_management_page.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/tag_management_page.dart';
+import 'package:fushi/utils.dart';
 
 class TagPickerPage extends ConsumerStatefulWidget {
   /// 两种目标二选一，共用同一标签池：媒体条目传 [media]（统一媒体身份

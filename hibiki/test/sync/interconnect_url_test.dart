@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/interconnect_url.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/interconnect_url.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
 
 void main() {
   group('normalizeHibikiInterconnectManualUrl', () {

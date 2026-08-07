@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/pages/implementations/game_shared.dart';
-import 'package:hibiki/src/pages/implementations/home_game_page.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/pages/implementations/game_shared.dart';
+import 'package:fushi/src/pages/implementations/home_game_page.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/utils.dart';
 
 import '../../integration_test/helpers/focus_driver.dart';
 

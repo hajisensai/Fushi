@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
+import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 
 /// ASS Fontname（GDI 全名）字重后缀解析纯函数守卫。
 /// 存在性探测在测试环境恒判缺失（FlutterTest 所有家族同字体），解析器返回 null →

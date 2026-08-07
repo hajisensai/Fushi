@@ -6,23 +6,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/models/theme_notifier.dart';
-import 'package:hibiki/src/platform/platform_providers.dart';
-import 'package:hibiki/src/platform/platform_services.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:hibiki/src/settings/material_settings_renderer.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_schema.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
-import 'package:hibiki/src/utils/components/settings_shared.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/settings/material_settings_renderer.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 import '../../integration_test/helpers/effect_probes.dart';
 import '../../integration_test/helpers/focus_driver.dart';
@@ -179,9 +179,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 hibiki_anki 真制卡
   // 测试咬住（tagIncludeHibiki/tagIncludeCategory 开/关各分支）。
   'cardCreation/Add "hibiki" tag':
-      'packages/hibiki_anki/test/mining_tag_and_parallel_test.dart',
+      'packages/fushi_anki/test/mining_tag_and_parallel_test.dart',
   'cardCreation/Add source category tag':
-      'packages/hibiki_anki/test/mining_tag_and_parallel_test.dart',
+      'packages/fushi_anki/test/mining_tag_and_parallel_test.dart',
   // 媒体去重的两个自动开关。与上面两个标签开关同因：写的是 AnkiSettings
   // （经 SharedPreferences，非本测试的内存 DB），故 changed=false；而「自动直接
   // 删除」还是**从属开关**，自动处理关着（默认）时刻意 disabled，焦点驱动本就

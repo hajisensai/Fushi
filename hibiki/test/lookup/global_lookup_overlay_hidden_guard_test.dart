@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/global_lookup_channel.dart';
+import 'package:fushi/src/lookup/global_lookup_channel.dart';
 
 /// TODO-1233 — 867 app 外查词覆盖窗的 `overlayHidden` 回调契约。
 ///

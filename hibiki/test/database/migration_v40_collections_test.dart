@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// v40 迁移（多端库联合视图 §2.3 任务1）：
 ///  ① media_collections 加 order_updated_at（默认 0，旧行原样保留）；

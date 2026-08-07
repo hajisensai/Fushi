@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_danmaku_model.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/utils.dart';
 import '../helpers/video_quick_settings_harness.dart';
 import 'video_hibiki_page_source_corpus.dart';
 

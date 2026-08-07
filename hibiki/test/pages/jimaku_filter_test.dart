@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/media_search_text.dart';
-import 'package:hibiki/src/media/video/jimaku_client.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
+import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 
 JimakuCandidate _cand(String fileName) => JimakuCandidate(
       entryName: 'Series',

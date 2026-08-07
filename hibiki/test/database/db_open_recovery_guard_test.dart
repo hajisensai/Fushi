@@ -12,7 +12,7 @@ void main() {
   setUpAll(() {
     // Test cwd is hibiki/; the DB lives in the sibling hibiki_core package.
     final File f =
-        File('../packages/hibiki_core/lib/src/database/database.dart');
+        File('../packages/fushi_core/lib/src/database/database.dart');
     expect(f.existsSync(), isTrue, reason: 'database.dart must be reachable');
     src = f.readAsStringSync();
   });

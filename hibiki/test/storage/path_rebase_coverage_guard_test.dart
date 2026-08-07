@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/media_source.dart' show dbSourcePrefKey;
-import 'package:hibiki/src/storage/path_rebase_coverage.dart';
+import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
+import 'package:fushi/src/storage/path_rebase_coverage.dart';
 import '../helpers/scan_scale.dart';
 
 /// BUG-1174 守卫：**路径 rebase 覆盖率**。
@@ -26,7 +26,7 @@ import '../helpers/scan_scale.dart';
 /// `notAPath` 声明，也不放过一个真的存绝对路径的新列。
 void main() {
   final String tablesPath = p.join(
-      '..', 'packages', 'hibiki_core', 'lib', 'src', 'database', 'tables.dart');
+      '..', 'packages', 'fushi_core', 'lib', 'src', 'database', 'tables.dart');
   final String migratorPath =
       p.join('lib', 'src', 'storage', 'data_root_migrator.dart');
 

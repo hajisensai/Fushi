@@ -4,16 +4,16 @@ import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
 // TODO-757：把制卡媒体压缩档位 re-export 给只 import tts_channel 的调用方
 // （阅读器句子音频走 TtsChannel 桌面回退，需要选档但没直接 import clipper）。
-export 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+export 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression, AudioMetadata;
-import 'package:hibiki/src/utils/misc/desktop_audio_playback.dart';
-import 'package:hibiki/src/utils/misc/desktop_tts.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/src/utils/misc/local_audio_db.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
+import 'package:fushi/src/utils/misc/desktop_tts.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/local_audio_db.dart';
 
 /// 一个本地音频库推给查询层的配置：库路径 + 启用子来源的优先级序。
 ///

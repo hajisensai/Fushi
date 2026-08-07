@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:googleapis_auth/googleapis_auth.dart' as auth;
-import 'package:hibiki/src/sync/google_drive_auth.dart';
+import 'package:fushi/src/sync/google_drive_auth.dart';
 
 /// Guards the desktop Google Drive auth fix (BUG-034): the session kept dropping
 /// on every app restart because the old flow (clientViaUserConsent) never

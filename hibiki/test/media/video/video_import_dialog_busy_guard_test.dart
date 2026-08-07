@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_import_dialog.dart'
+import 'package:fushi/src/media/video/video_import_dialog.dart'
     show videoImportCanImport;
 
 /// 守卫「视频导入对话框：导入进行中（`importing`，来自 ImportFlowMixin）一律

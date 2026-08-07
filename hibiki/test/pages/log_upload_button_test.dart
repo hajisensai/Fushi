@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/log_upload_config.dart';
+import 'package:fushi/src/utils/misc/log_upload_config.dart';
 
 void main() {
   // 上传门控接到真实端点常量（端点真值在 gitignored log_upload_secret.dart，
