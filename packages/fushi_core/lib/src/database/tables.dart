@@ -958,20 +958,15 @@ class CollectionMemberTombstones extends Table {
       {collectionName, collectionType, mediaType, entryKey};
 }
 
-// ── hibiki_paired_peers ─────────────────────────────
-// TODO-1017 阶段1：互联（Hibiki server 局域网配对）的 per-peer 授权凭据表。每个
-// 已配对设备一行，token 是该设备访问本机 Hibiki server 的长期凭据。范式仿
-// [MediaSources]（自增 id + text().unique() 身份列 + int 毫秒戳时间列）。本阶段
-// 仅建表 + DB 方法 + 迁移，不接线 auth（阶段2 再改 server controller），空表 =
-// 无人读 = 行为零变化（Never break userspace）。
+// ── fushi_paired_peers ─────────────────────────────
+// TODO-1017 阶段1：互联（Fushi server 局域网配对）的 per-peer 授权凭据表。每个
+// 已配对设备一行，token 是该设备访问本机 Fushi server 的长期凭据。范式仿
+// [MediaSources]（自增 id + text().unique() 身份列 + int 毫秒戳时间列）。
+// SQL 表名走 drift 默认 snake_case（fushi_paired_peers）；旧名 hibiki_paired_peers
+// 由 v69 迁移一次性 ALTER TABLE RENAME（终局清算：运行时/持久化零旧名，旧名只
+// 允许活在迁移步里）。
 @DataClassName('FushiPairedPeerRow')
 class FushiPairedPeers extends Table {
-  /// Fushi 改名只换 Dart 类名；SQL 表名是既有用户库的持久化契约，永远钉死
-  /// 旧 snake 名（不显式钉的话 drift 默认按类名 snake_case，一次 build_runner
-  /// 重生成就会静默漂成 fushi_paired_peers 破 schema）。
-  @override
-  String get tableName => 'hibiki_paired_peers';
-
   IntColumn get id => integer().autoIncrement()();
 
   /// 对端设备的稳定身份（配对握手时对端上报的 device/installation id）。

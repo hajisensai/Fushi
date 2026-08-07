@@ -498,7 +498,7 @@ class BackupService {
   /// Device-local tables that must NEVER travel in a shared backup and are
   /// always restored from this device's pre-restore bak on an overwrite import
   /// (BUG-816). Same philosophy as [SyncRepository.deviceLocalPrefKeys]:
-  ///   - `hibiki_paired_peers` — LAN pairing rows including the plaintext auth
+  ///   - `fushi_paired_peers` — LAN pairing rows including the plaintext auth
   ///     `token` (a live credential the HBK-AUDIT-012 pref-key sweep missed
   ///     because it lives in its own table, not `preferences`).
   ///   - `sync_baselines`      — per-asset incremental-sync causality; carrying
@@ -513,7 +513,7 @@ class BackupService {
   /// safe. The merge engine already skips both, so only the overwrite path needs
   /// the restore.
   static const List<String> _deviceLocalTables = <String>[
-    'hibiki_paired_peers',
+    'fushi_paired_peers',
     'sync_baselines',
     'manga_extension_stores',
     'manga_extensions',

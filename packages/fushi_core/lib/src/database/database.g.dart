@@ -14378,10 +14378,9 @@ class $FushiPairedPeersTable extends FushiPairedPeers
   String get aliasedName => _alias ?? actualTableName;
   @override
   String get actualTableName => $name;
-  static const String $name = 'hibiki_paired_peers';
+  static const String $name = 'fushi_paired_peers';
   @override
-  VerificationContext validateIntegrity(
-      Insertable<FushiPairedPeerRow> instance,
+  VerificationContext validateIntegrity(Insertable<FushiPairedPeerRow> instance,
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
@@ -25289,7 +25288,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $MediaCollectionItemsTable(this);
   late final $CollectionMemberTombstonesTable collectionMemberTombstones =
       $CollectionMemberTombstonesTable(this);
-  late final $FushiPairedPeersTable hibikiPairedPeers =
+  late final $FushiPairedPeersTable fushiPairedPeers =
       $FushiPairedPeersTable(this);
   late final $BookTombstonesTable bookTombstones = $BookTombstonesTable(this);
   late final $LookupMiningCountersTable lookupMiningCounters =
@@ -25374,7 +25373,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
         mediaCollections,
         mediaCollectionItems,
         collectionMemberTombstones,
-        hibikiPairedPeers,
+        fushiPairedPeers,
         bookTombstones,
         lookupMiningCounters,
         statisticsTombstones,
@@ -34572,8 +34571,8 @@ typedef $$ShelfEntriesTableUpdateCompanionBuilder = ShelfEntriesCompanion
   Value<int> rowid,
 });
 
-final class $$ShelfEntriesTableReferences extends BaseReferences<
-    _$FushiDatabase, $ShelfEntriesTable, ShelfEntryRow> {
+final class $$ShelfEntriesTableReferences
+    extends BaseReferences<_$FushiDatabase, $ShelfEntriesTable, ShelfEntryRow> {
   $$ShelfEntriesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static $SeriesTable _seriesIdTable(_$FushiDatabase db) =>
@@ -35990,8 +35989,7 @@ class $$FushiPairedPeersTableTableManager extends RootTableManager<
           createOrderingComposer: () =>
               $$FushiPairedPeersTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
-              $$FushiPairedPeersTableAnnotationComposer(
-                  $db: db, $table: table),
+              $$FushiPairedPeersTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<String> peerId = const Value.absent(),
@@ -43043,8 +43041,8 @@ class $FushiDatabaseManager {
       get collectionMemberTombstones =>
           $$CollectionMemberTombstonesTableTableManager(
               _db, _db.collectionMemberTombstones);
-  $$FushiPairedPeersTableTableManager get hibikiPairedPeers =>
-      $$FushiPairedPeersTableTableManager(_db, _db.hibikiPairedPeers);
+  $$FushiPairedPeersTableTableManager get fushiPairedPeers =>
+      $$FushiPairedPeersTableTableManager(_db, _db.fushiPairedPeers);
   $$BookTombstonesTableTableManager get bookTombstones =>
       $$BookTombstonesTableTableManager(_db, _db.bookTombstones);
   $$LookupMiningCountersTableTableManager get lookupMiningCounters =>

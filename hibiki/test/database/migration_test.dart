@@ -1076,10 +1076,10 @@ void main() {
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
       // NOTE(TODO-616/TODO-1017): schemaVersion is the single global getter,
-      // now 31 (v30 series/shelf_entries + v31 hibiki_paired_peers). This v28 DB
+      // now 31 (v30 series/shelf_entries + v31 paired peers 表). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 68,
+      expect(db.schemaVersion, 69,
           reason: 'global schemaVersion is now 38 (TODO-616 v30 + TODO-1017 '
               'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones + '
               'TODO-1157 v35 stream_spec_json + TODO-1252 v36 favorite_words '

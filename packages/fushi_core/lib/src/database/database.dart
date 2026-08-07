@@ -424,7 +424,7 @@ class FushiDatabase extends _$FushiDatabase {
   FushiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 68;
+  int get schemaVersion => 69;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -785,13 +785,17 @@ class FushiDatabase extends _$FushiDatabase {
             }
           }
           if (from < 31) {
-            // TODO-1017 阶段1：互联 per-peer 授权凭据表 hibiki_paired_peers。无损
+            // TODO-1017 阶段1：互联 per-peer 授权凭据表（历史上以旧名
+            // hibiki_paired_peers 建出；v69 起统一为 fushi_paired_peers）。无损
             // 迁移：只 createTable，不 DROP / 不改列 / 不删行 / 不回填行（旧库升级
             // 后此表空 = 无已配对对端 = auth 接线未开启前行为零变化，Never break
             // userspace）。守卫幂等（fresh DB 已由 onCreate 的 createAll 建好，用
-            // _tableExists 守卫避免重复创建，重复升级 no-op）。
-            if (!await _tableExists('hibiki_paired_peers')) {
-              await m.createTable(hibikiPairedPeers);
+            // _tableExists 守卫避免重复创建，重复升级 no-op）。注意 drift 迁移步
+            // 永远按**当前** Dart 表定义建表（本文件既有惯例），所以从 <31 一路
+            // 升上来的库在这里直接建出 v69 的新名 fushi_paired_peers，下面的 v69
+            // 改名步对它天然 no-op。
+            if (!await _tableExists('fushi_paired_peers')) {
+              await m.createTable(fushiPairedPeers);
             }
           }
           if (from < 32) {
@@ -1419,6 +1423,18 @@ class FushiDatabase extends _$FushiDatabase {
                   }
                 }
               }
+            }
+          }
+          if (from < 69) {
+            // v69（Fushi 终局清算 W1）：hibiki_paired_peers → fushi_paired_peers
+            // 表改名。纯 RENAME：不 DROP / 不改列 / 不删行 / 不回填行，UNIQUE
+            // (peer_id) 的 sqlite_autoindex 随表自动迁移，本表无显式索引/触发器。
+            // 双守卫幂等：旧名不存在（<31 阶梯已直接建新名 / fresh DB）或新名已
+            // 存在（重复升级）都 no-op。旧名此后只允许活在本迁移步里。
+            if (await _tableExists('hibiki_paired_peers') &&
+                !await _tableExists('fushi_paired_peers')) {
+              await customStatement(
+                  'ALTER TABLE hibiki_paired_peers RENAME TO fushi_paired_peers');
             }
           }
         },
@@ -3258,31 +3274,29 @@ class FushiDatabase extends _$FushiDatabase {
   Future<void> trustMangaSigner(MangaTrustedSignersCompanion signer) =>
       into(mangaTrustedSigners).insertOnConflictUpdate(signer);
 
-  // ── hibiki_paired_peers (TODO-1017 阶段1) ────────────────────────
+  // ── fushi_paired_peers (TODO-1017 阶段1) ────────────────────────
   // 互联 per-peer 授权凭据 CRUD。🔴 token 是敏感凭据（明文列存，方案待定），
-  // 绝不写日志、绝不进 sync/backup 明文导出。本阶段仅提供表 + 方法，不接线 auth。
+  // 绝不写日志、绝不进 sync/backup 明文导出。
 
   /// 全部已配对对端，按 pairedAtMs 升序（配对先后稳定排序）、id 升序兜底同戳。
-  Future<List<FushiPairedPeerRow>> getPairedPeers() =>
-      (select(hibikiPairedPeers)
-            ..orderBy([
-              (t) => OrderingTerm(expression: t.pairedAtMs),
-              (t) => OrderingTerm(expression: t.id),
-            ]))
-          .get();
+  Future<List<FushiPairedPeerRow>> getPairedPeers() => (select(fushiPairedPeers)
+        ..orderBy([
+          (t) => OrderingTerm(expression: t.pairedAtMs),
+          (t) => OrderingTerm(expression: t.id),
+        ]))
+      .get();
 
   /// 按 peerId 幂等 upsert（存在则整行更新）。ON CONFLICT 目标必须显式指定
   /// [peerId]（非主键 id）：不指定时 drift 默认按主键 id 冲突，而 upsert 契约是
   /// 按 peerId 认定同一设备（id 自增每次不同），会误撞 peerId UNIQUE 抛错。
   /// 重复配对同一设备只更新其 token / deviceName / lastSeenIp，不新增行。
   Future<void> upsertPairedPeer(FushiPairedPeersCompanion peer) =>
-      into(hibikiPairedPeers).insert(peer,
-          onConflict:
-              DoUpdate((_) => peer, target: [hibikiPairedPeers.peerId]));
+      into(fushiPairedPeers).insert(peer,
+          onConflict: DoUpdate((_) => peer, target: [fushiPairedPeers.peerId]));
 
   /// 吊销一台已配对设备（按 peerId 删行），返回删除的行数（0 = 无此对端）。
   Future<int> revokePairedPeer(String peerId) =>
-      (delete(hibikiPairedPeers)..where((t) => t.peerId.equals(peerId))).go();
+      (delete(fushiPairedPeers)..where((t) => t.peerId.equals(peerId))).go();
 
   // ── series (TODO-616 A) ─────────────────────────────────────────
   /// 全部系列，按 sortOrder 升序、id 升序（卡片列表稳定排序）。

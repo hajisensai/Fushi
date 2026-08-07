@@ -72,7 +72,7 @@ class FushiPairRequest {
 
 /// TODO-961 M1b: confirm 成功后要落库的一条 per-peer 授权凭据。server 生成 token、
 /// 通过注入的 [FushiSyncServer.onPeerPaired] 回调把本记录交给 controller 写进
-/// `hibiki_paired_peers` 表（server 不直连 DB，保持可单测 / 存储层无依赖）。
+/// `fushi_paired_peers` 表（server 不直连 DB，保持可单测 / 存储层无依赖）。
 class FushiPairedPeerRegistration {
   const FushiPairedPeerRegistration({
     required this.peerId,
@@ -263,7 +263,7 @@ class FushiSyncServer {
   void Function()? onPairSessionResolved;
 
   /// TODO-961 M1b: confirm 成功后把新派发的 per-peer 凭据交给 host 落库（写
-  /// `hibiki_paired_peers` 表）。注入而非直连 DB，保持 server 存储层无依赖、可单测。
+  /// `fushi_paired_peers` 表）。注入而非直连 DB，保持 server 存储层无依赖、可单测。
   /// null（未接线，如纯协议单测）时 confirm 回退派发共享 [_token]，不落 per-peer 行
   /// ——既有 pair_v2 行为零变化（Never break userspace）。
   Future<void> Function(FushiPairedPeerRegistration registration)?
