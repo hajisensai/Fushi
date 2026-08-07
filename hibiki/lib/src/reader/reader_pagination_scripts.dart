@@ -841,8 +841,8 @@ window.__fushiInstallShell = function(C) {
   cueRangesMap: new Map(),
   cueRubyElements: new Map(),
   activeCueId: null,
-  ttuRegexNegated: /[^0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゟァ-ヺー-ヿ０-９Ａ-Ｚａ-ｚｦ-ﾝ\u{2E80}-\u{2EFF}\u{2F00}-\u{2FDF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBE0}\u{2F800}-\u{2FA1F}\u{30000}-\u{323AF}]+/gimu,
-  ttuRegex: /[0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゟァ-ヺー-ヿ０-９Ａ-Ｚａ-ｚｦ-ﾝ\u{2E80}-\u{2EFF}\u{2F00}-\u{2FDF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBE0}\u{2F800}-\u{2FA1F}\u{30000}-\u{323AF}]/iu,
+  readerRegexNegated: /[^0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゟァ-ヺー-ヿ０-９Ａ-Ｚａ-ｚｦ-ﾝ\u{2E80}-\u{2EFF}\u{2F00}-\u{2FDF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBE0}\u{2F800}-\u{2FA1F}\u{30000}-\u{323AF}]+/gimu,
+  readerRegex: /[0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゟァ-ヺー-ヿ０-９Ａ-Ｚａ-ｚｦ-ﾝ\u{2E80}-\u{2EFF}\u{2F00}-\u{2FDF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBE0}\u{2F800}-\u{2FA1F}\u{30000}-\u{323AF}]/iu,
   nodeStartOffsets: new WeakMap(),
   // 跨章分段计时（JS 侧）。Dart 的 [ReaderChapterPerfTrace] 只能测到「setup 脚本注入完成
   // → onRestoreComplete 回来」这一整段（真机 ~30ms），无法区分那段里图片等待 / 字符偏移
@@ -931,13 +931,13 @@ window.__fushiInstallShell = function(C) {
     return !!(el && el.closest('rt, rp'));
   },
   normalizeText: function(text) {
-    return (text || '').replace(this.ttuRegexNegated, '');
+    return (text || '').replace(this.readerRegexNegated, '');
   },
   countChars: function(text) {
     return Array.from(this.normalizeText(text)).length;
   },
   isMatchableChar: function(char) {
-    return this.ttuRegex.test(char || '');
+    return this.readerRegex.test(char || '');
   },
   // TODO-630 / BUG-366：sasayaki 高亮运行期把 cue 原文 needle 在实时 DOM 归一化全文
   // full 里做 full.indexOf(needle) 重定位（BUG-060）。匹配坐标系（Dart
@@ -1852,11 +1852,11 @@ $blurFn
   // 排除 → 章末落点 maxScroll(contentLastPageScroll) 塌缩到章首 → 往前翻到本章停在封面（第
   // 一张图）而非最后一张图（用户报「从目录往前翻会去到封面」在分页模式的根因；连续模式另由
   // scrollToChapterEnd 覆盖，两墙互补）。与 gaiji / 合并前导插图同理保持 eager：无条件 load、
-  // 真实撑开尺寸，metrics 计入全部图。ttuRegex 单字符匹配（无 /g，test 无状态）在首个可匹配
+  // 真实撑开尺寸，metrics 计入全部图。readerRegex 单字符匹配（无 /g，test 无状态）在首个可匹配
   // 字符即短路 → 文本章几乎零开销、只对纯图片章全扫（文本极少）。图文混排章仍 lazy（不回退
   // TODO-1074 懒加载优化）；非图片章（有文本）完全 no-op（向后兼容）。
   var __fushiImageOnlyChapter =
-      !window.fushiReader.ttuRegex.test(document.body.textContent || '');
+      !window.fushiReader.readerRegex.test(document.body.textContent || '');
   Array.from(document.querySelectorAll('img')).forEach(function(img) {
     var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
     // TODO-1339：图片合并（前导插图折进后随文本章）注入的插图（`.fushi-merged-image`

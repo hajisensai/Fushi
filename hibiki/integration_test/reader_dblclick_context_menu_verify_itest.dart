@@ -69,11 +69,11 @@ void main() {
 
         // 分页模式 + 振假名 toggle 模式：让双击既能触发原生选词，又能验证振假名切换。
         await appModel.database
-            .setPref('src:reader_ttu:ttu_view_mode', 'pagination');
+            .setPref('src:reader_fushi:view_mode', 'pagination');
         await appModel.database
-            .setPref('src:reader_ttu:ttu_writing_mode', 'horizontal-tb');
+            .setPref('src:reader_fushi:writing_mode', 'horizontal-tb');
         await appModel.database
-            .setPref('src:reader_ttu:ttu_furigana_mode', 'toggle');
+            .setPref('src:reader_fushi:furigana_mode', 'toggle');
         await ReaderHibikiSource.readerSettings?.refreshFromDb();
 
         final String bookKey = await EpubImporter.import(

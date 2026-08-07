@@ -53,6 +53,6 @@ void main() {
     expect(ReaderHibikiSource.instance.lyricsTextColor, 0);
 
     final Map<String, String> prefs = await db.getAllPrefs();
-    expect(prefs['src:reader_ttu:lyrics_text_color'], 'i:0');
+    expect(prefs['src:reader_fushi:lyrics_text_color'], 'i:0');
   });
 }

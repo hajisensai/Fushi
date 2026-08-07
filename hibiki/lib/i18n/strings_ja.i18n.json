@@ -1500,7 +1500,7 @@
   "audiobook_rematch_matching": "マッチング中...",
   "audiobook_rematch_no_chapters": "EPUBにチャプターテキストがありません",
   "audiobook_rematch_no_cues_to_match": "マッチングするキューがありません",
-  "audiobook_rematch_no_sections": "ttuのチャプターテキストが見つかりません。自動マッチングできません",
+  "audiobook_rematch_no_sections": "チャプターテキストが見つかりません。自動マッチングできません",
   "audiobook_rematch_no_stored_cues": "保存されたキューがないため、再実行できません",
   "audiobook_rematch_failed": "再マッチングに失敗しました：$error",
   "audiobook_rematch_result": "再マッチング結果：$pct%（ウィンドウ：$window）",

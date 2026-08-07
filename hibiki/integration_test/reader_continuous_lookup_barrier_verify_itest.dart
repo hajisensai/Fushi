@@ -72,9 +72,9 @@ void main() {
 
         // 分页模式 + 单击查词开，让 onTap 走查词路径。
         await appModel.database
-            .setPref('src:reader_ttu:ttu_view_mode', 'pagination');
+            .setPref('src:reader_fushi:view_mode', 'pagination');
         await appModel.database
-            .setPref('src:reader_ttu:ttu_writing_mode', 'horizontal-tb');
+            .setPref('src:reader_fushi:writing_mode', 'horizontal-tb');
         // highlight_on_tap 默认即 true（single-tap 查词），无需显式设置。
         await ReaderHibikiSource.readerSettings?.refreshFromDb();
 

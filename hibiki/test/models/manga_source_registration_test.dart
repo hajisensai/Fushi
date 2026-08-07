@@ -47,7 +47,7 @@ void main() {
       same(MangaHibikiSource.instance),
     );
     // 既有 EPUB / PDF 源必须仍在（无覆盖）。
-    expect(readerSources['reader_ttu'], same(ReaderHibikiSource.instance));
+    expect(readerSources['reader_fushi'], same(ReaderHibikiSource.instance));
     expect(readerSources['reader_pdf'], same(ReaderPdfSource.instance));
   });
 

@@ -1500,7 +1500,7 @@
   "audiobook_rematch_matching": "Correspondance en cours...",
   "audiobook_rematch_no_chapters": "EPUB ne contient aucun texte de chapitre",
   "audiobook_rematch_no_cues_to_match": "Aucun repère à faire correspondre",
-  "audiobook_rematch_no_sections": "Aucun texte de chapitre ttu trouvé, correspondance automatique impossible",
+  "audiobook_rematch_no_sections": "Aucun texte de chapitre trouvé, correspondance automatique impossible",
   "audiobook_rematch_no_stored_cues": "Aucun repère enregistré, impossible de relancer",
   "audiobook_rematch_failed": "échec de la correspondance : $error",
   "audiobook_rematch_result": "Recorrespondance : $pct% (fenêtre : $window)",

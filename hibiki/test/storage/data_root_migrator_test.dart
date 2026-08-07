@@ -121,7 +121,7 @@ void main() {
       );
       // Font catalog pref points under documents root.
       await db.setPref(
-        'src:reader_ttu:font_catalog',
+        'src:reader_fushi:font_catalog',
         jsonEncode(<String, dynamic>{
           'version': 1,
           'fonts': <Map<String, dynamic>>[
@@ -218,7 +218,7 @@ void main() {
             (la.single as Map)['path'] as String, startsWith(newSupport.path));
         // font catalog rebased onto new documents root.
         final Map<String, dynamic> cat =
-            jsonDecode(prefs['src:reader_ttu:font_catalog']!)
+            jsonDecode(prefs['src:reader_fushi:font_catalog']!)
                 as Map<String, dynamic>;
         final String fpath =
             ((cat['fonts'] as List).single as Map)['path'] as String;
@@ -321,7 +321,7 @@ void main() {
         expect((localAudio.single as Map)['path'] as String,
             startsWith(oldSupportPath));
         final Map<String, dynamic> fontCatalog =
-            jsonDecode(prefs['src:reader_ttu:font_catalog']!)
+            jsonDecode(prefs['src:reader_fushi:font_catalog']!)
                 as Map<String, dynamic>;
         final String fontPath =
             ((fontCatalog['fonts'] as List).single as Map)['path'] as String;

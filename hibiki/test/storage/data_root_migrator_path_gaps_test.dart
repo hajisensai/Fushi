@@ -166,7 +166,7 @@ void main() {
           'local_audio_db_path', p.join(dbDir, 'local_audio_1.db'));
       await db.setPref('video_mpv_shader_dir', p.join('G:', 'mpv', 'shaders'));
       await db.setPref(
-        'src:reader_ttu:font_catalog',
+        'src:reader_fushi:font_catalog',
         jsonEncode(<String, dynamic>{
           'version': 1,
           'fonts': <Map<String, dynamic>>[
@@ -208,7 +208,7 @@ void main() {
         'download_save_root_history',
         'local_audio_db_path',
         'video_mpv_shader_dir',
-        'src:reader_ttu:font_catalog',
+        'src:reader_fushi:font_catalog',
       ]) {
         out['pref.$key'] = prefs[key];
       }
@@ -279,7 +279,7 @@ void main() {
         reason: '用户外部 mpv 目录绝不能被改写');
 
     final Map<String, dynamic> catalog =
-        jsonDecode(snap['pref.src:reader_ttu:font_catalog']!)
+        jsonDecode(snap['pref.src:reader_fushi:font_catalog']!)
             as Map<String, dynamic>;
     expect((catalog['fonts'] as List<dynamic>).single['path'],
         equals(at(<String>['custom_fonts', 'a.ttf'])));
@@ -319,7 +319,7 @@ void main() {
       final List<QueryRow> rows = await pre
           .customSelect(
               "SELECT key, value FROM profile_settings WHERE category = 'pref' "
-              "AND key IN ('video_remote_subtitle', 'src:reader_ttu:font_catalog', "
+              "AND key IN ('video_remote_subtitle', 'src:reader_fushi:font_catalog', "
               "'download_save_root')")
           .get();
       final Map<String, String> snapshotted = <String, String>{
@@ -328,8 +328,10 @@ void main() {
       };
       expect(
           snapshotted.keys.toSet(),
-          equals(
-              <String>{'video_remote_subtitle', 'src:reader_ttu:font_catalog'}),
+          equals(<String>{
+            'video_remote_subtitle',
+            'src:reader_fushi:font_catalog'
+          }),
           reason: 'download_save_root 是设备本地键，按设计不进 Profile 快照');
       expect(jsonDecode(snapshotted['video_remote_subtitle']!)['remote/1#ep0'],
           equals(docs(<String>['video_subtitles', 'ep01.ass'])),
@@ -362,7 +364,7 @@ void main() {
         reason: '设备本地键不进快照，切 Profile 后仍是迁移后的新值',
       );
       expect(
-        (jsonDecode(prefs['src:reader_ttu:font_catalog']!)
+        (jsonDecode(prefs['src:reader_fushi:font_catalog']!)
             as Map<String, dynamic>)['fonts'][0]['path'],
         equals(p.join(newDocs.path, 'custom_fonts', 'a.ttf')),
       );

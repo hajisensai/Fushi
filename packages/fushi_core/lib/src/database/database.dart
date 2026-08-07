@@ -458,7 +458,7 @@ class FushiDatabase extends _$FushiDatabase {
   FushiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 69;
+  int get schemaVersion => 70;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1471,6 +1471,87 @@ class FushiDatabase extends _$FushiDatabase {
                   'ALTER TABLE hibiki_paired_peers RENAME TO fushi_paired_peers');
             }
           }
+          if (from < 70) {
+            // v70（Fushi 终局清算 W2-1）：阅读器源持久化键 'reader_ttu' →
+            // 'reader_fushi'，连带 pref shortKey 的死前缀 'ttu_' 剥除（命名空间段
+            // 已写明 reader，shortKey 再带 ttu_ 是纯冗余）。旧字面量此后只允许
+            // 活在本迁移步与 v16 阶梯（_kLegacyUidPrefix 族）里。
+            //
+            // 落库位共三处（W2 盘点结论，tables.dart 逐表核对）：
+            //  1. preferences.key —— `src:reader_ttu:<shortKey>` 命名空间 +
+            //     BUG-1317 前的 legacy override_title 键内嵌双源键段
+            //     `override_title://reader_ttu/reader_ttu/<mediaId>`；
+            //  2. profile_settings.key —— category='pref' 行存整串 pref key
+            //     （同 1 的两种形态），category='reader' 旧快照行存裸 shortKey；
+            //  3. media_items —— media_source_identifier = 'reader_ttu' 与
+            //     unique_key 前缀 `reader_ttu/<mediaId>`。
+            // 其余表（shelf/stats/collections/mined 等）存裸 bookKey 或
+            // mediaType 值域，不含源键，刻意不动。
+            //
+            // 顺序敏感：先换命名空间段，再改写换名后键里的 legacy override 内嵌
+            // 段，最后剥 shortKey 前缀。UPDATE OR REPLACE：preferences.key 是主键
+            // （media_items.unique_key 是 UNIQUE），真实旧库不可能同时存在新旧两
+            // 形态（新命名空间从未被旧版本写过），但半合成库里撞上时保留改写结果
+            // 而不是让整条 onUpgrade 中断（= 库打不开）。幂等由 from<70 门槛保证；
+            // 语句本身也天然幂等（改写后无旧前缀行可匹配）。
+            const String oldNs = 'src:reader_ttu:';
+            const String newNs = 'src:reader_fushi:';
+            const String oldLegacyOverride =
+                'src:reader_fushi:override_title://reader_ttu/reader_ttu/';
+            const String newLegacyOverride =
+                'src:reader_fushi:override_title://reader_fushi/reader_fushi/';
+            const String oldShort = 'src:reader_fushi:ttu_';
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await _rewriteTextPrefix(
+                  table: table, column: 'key', from: oldNs, to: newNs);
+              await _rewriteTextPrefix(
+                  table: table,
+                  column: 'key',
+                  from: oldLegacyOverride,
+                  to: newLegacyOverride);
+              await _rewriteTextPrefix(
+                  table: table, column: 'key', from: oldShort, to: newNs);
+            }
+            if (await _tableExists('profile_settings')) {
+              // 旧 'reader' 类别快照行存裸 shortKey（无命名空间），单独剥前缀。
+              await _rewriteTextPrefix(
+                  table: 'profile_settings',
+                  column: 'key',
+                  from: 'ttu_',
+                  to: '',
+                  extraWhere: "category = 'reader'");
+            }
+            // current_source/<mediaType> 偏好把源 uniqueKey 当**值**存：
+            // 新写入是 PrefCodec 标签形态 's:reader_ttu'，历史裸写是
+            // 'reader_ttu'，两种都改写（不动其它值恰为该串的无关键）。
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await customStatement(
+                  "UPDATE $table SET value = 's:reader_fushi' "
+                  "WHERE key LIKE 'current\\_source/%' ESCAPE '\\' "
+                  "AND value = 's:reader_ttu'");
+              await customStatement("UPDATE $table SET value = 'reader_fushi' "
+                  "WHERE key LIKE 'current\\_source/%' ESCAPE '\\' "
+                  "AND value = 'reader_ttu'");
+            }
+            if (await _tableExists('media_items')) {
+              await customStatement('UPDATE OR REPLACE media_items '
+                  "SET media_source_identifier = 'reader_fushi' "
+                  "WHERE media_source_identifier = 'reader_ttu'");
+              await _rewriteTextPrefix(
+                  table: 'media_items',
+                  column: 'unique_key',
+                  from: 'reader_ttu/',
+                  to: 'reader_fushi/');
+            }
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -1753,6 +1834,32 @@ class FushiDatabase extends _$FushiDatabase {
       variables: [Variable<String>(tableName)],
     ).get();
     return rows.isNotEmpty;
+  }
+
+  /// 迁移用批量文本前缀改写：把 [table].[column] 里以 [from] 开头的值改写成
+  /// [to] + 余下部分（`to` 可为空串 = 剥前缀）。`LIKE` 的 `_`/`%` 通配符已按
+  /// ESCAPE 规则转义，前缀是逐字面匹配。`UPDATE OR REPLACE`：目标列可能是主键
+  /// （preferences.key）或 UNIQUE（media_items.unique_key），改写撞上已有行时
+  /// 保留改写结果而不是让整条 onUpgrade 中断。调用方负责 `_tableExists` 守卫。
+  Future<void> _rewriteTextPrefix({
+    required String table,
+    required String column,
+    required String from,
+    required String to,
+    String? extraWhere,
+  }) async {
+    if (!_identifierRe.hasMatch(table) || !_identifierRe.hasMatch(column)) {
+      throw ArgumentError('not a valid identifier: $table.$column');
+    }
+    String sqlQuote(String s) => s.replaceAll("'", "''");
+    final String likePrefix =
+        sqlQuote(from).replaceAllMapped(RegExp(r'[_%\\]'), (m) => '\\${m[0]}');
+    await customStatement(
+      'UPDATE OR REPLACE $table '
+      "SET $column = '${sqlQuote(to)}' || substr($column, ${from.length + 1}) "
+      "WHERE $column LIKE '$likePrefix%' ESCAPE '\\'"
+      '${extraWhere == null ? '' : ' AND ($extraWhere)'}',
+    );
   }
 
   /// v55 一次性回填：把偏好表 legacy key `galgame_library` 里的 6 字段 JSON 列表

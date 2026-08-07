@@ -66,15 +66,15 @@ window.__fushiShells.vn = function(C) {
 (function(global) {
   'use strict';
 
-  var ttuRegexNegated = /[^0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゞァ-ヺー０-９Ａ-Ｚａ-ｚｦ-ﾝ\\p{Radical}\\p{Unified_Ideograph}]+/gimu;
-  var ttuRegex = /[0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゞァ-ヺー０-９Ａ-Ｚａ-ｚｦ-ﾝ\\p{Radical}\\p{Unified_Ideograph}]/iu;
+  var readerRegexNegated = /[^0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゞァ-ヺー０-９Ａ-Ｚａ-ｚｦ-ﾝ\\p{Radical}\\p{Unified_Ideograph}]+/gimu;
+  var readerRegex = /[0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゞァ-ヺー０-９Ａ-Ｚａ-ｚｦ-ﾝ\\p{Radical}\\p{Unified_Ideograph}]/iu;
 
   function normalizeText(text) {
-    return String(text || '').replace(ttuRegexNegated, '');
+    return String(text || '').replace(readerRegexNegated, '');
   }
 
   function isMatchableChar(char) {
-    return ttuRegex.test(char || '');
+    return readerRegex.test(char || '');
   }
 
   function countChars(text) {

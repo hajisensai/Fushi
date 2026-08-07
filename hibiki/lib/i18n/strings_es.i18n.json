@@ -1500,7 +1500,7 @@
   "audiobook_rematch_matching": "Emparejando...",
   "audiobook_rematch_no_chapters": "EPUB no tiene texto de capítulos",
   "audiobook_rematch_no_cues_to_match": "No hay marcas para emparejar",
-  "audiobook_rematch_no_sections": "No se encontró texto de capítulo en ttu, no se puede emparejar automáticamente",
+  "audiobook_rematch_no_sections": "No se encontró texto de capítulo, no se puede emparejar automáticamente",
   "audiobook_rematch_no_stored_cues": "No hay marcas almacenadas, no se puede re-ejecutar",
   "audiobook_rematch_failed": "Re-emparejamiento fallido: $error",
   "audiobook_rematch_result": "Reemparejado: $pct% (ventana: $window)",

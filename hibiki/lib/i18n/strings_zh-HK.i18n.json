@@ -1500,7 +1500,7 @@
   "audiobook_rematch_matching": "比對中…",
   "audiobook_rematch_no_chapters": "EPUB 沒有章節文字",
   "audiobook_rematch_no_cues_to_match": "沒有字幕條目可供比對",
-  "audiobook_rematch_no_sections": "未讀到 ttu 章節文字，無法自動比對",
+  "audiobook_rematch_no_sections": "未讀到章節文字，無法自動比對",
   "audiobook_rematch_no_stored_cues": "沒有已存字幕條目，無法重跑",
   "audiobook_rematch_failed": "重跑失敗：$error",
   "audiobook_rematch_result": "重新比對：$pct%（視窗：$window）",

@@ -85,12 +85,12 @@ void main() {
     test(
         'normal text chapter still lazy-loads images (no TODO-1074 regression)',
         () {
-      // 纯图片章检测用 ttuRegex（有文本即短路→非纯图片→仍 lazy）。守卫接线在场即可，
+      // 纯图片章检测用 readerRegex（有文本即短路→非纯图片→仍 lazy）。守卫接线在场即可，
       // 行为（文本章 lazy）由 integration/headless 端到端断言。
       final String n = norm(ReaderPaginationScripts.paginatedShellSource());
       expect(n.contains("setAttribute('loading', 'lazy')"), isTrue,
           reason: '普通图仍须 lazy 分支在场（不回退 TODO-1074）');
-      expect(n.contains('ttuRegex.test(document.body.textContent'), isTrue,
+      expect(n.contains('readerRegex.test(document.body.textContent'), isTrue,
           reason: '纯图片章判定须基于正文可匹配文本（有文本=非纯图片=仍 lazy）');
     });
   });

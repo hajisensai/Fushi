@@ -200,7 +200,7 @@ void main() {
       // live settings snapshot, reopen the same book, and confirm paginate
       // still scrolls (BUG-239/TODO-345 re-added scrollBy for this mode).
       await appModel.database
-          .setPref('src:reader_ttu:ttu_view_mode', 'continuous');
+          .setPref('src:reader_fushi:view_mode', 'continuous');
       await ReaderHibikiSource.readerSettings?.refreshFromDb();
       expect(ReaderHibikiSource.readerSettings?.isContinuousMode, isTrue,
           reason: 'continuous mode must be active after pref + refresh');
@@ -262,7 +262,7 @@ void main() {
 
       // Restore the user's default mode (do not leave continuous behind).
       await appModel.database
-          .setPref('src:reader_ttu:ttu_view_mode', 'paginated');
+          .setPref('src:reader_fushi:view_mode', 'paginated');
       await ReaderHibikiSource.readerSettings?.refreshFromDb();
 
       debugPrint('[t375] === PASSED: section kept + precise charOffset '

@@ -1500,7 +1500,7 @@
   "audiobook_rematch_matching": "Corrispondenza in corso...",
   "audiobook_rematch_no_chapters": "EPUB non contiene testo di capitolo",
   "audiobook_rematch_no_cues_to_match": "Nessun riferimento da far corrispondere",
-  "audiobook_rematch_no_sections": "Nessun testo di capitolo ttu trovato, corrispondenza automatica impossibile",
+  "audiobook_rematch_no_sections": "Nessun testo di capitolo trovato, corrispondenza automatica impossibile",
   "audiobook_rematch_no_stored_cues": "Nessun riferimento memorizzato, impossibile riavviare",
   "audiobook_rematch_failed": "Corrispondenza fallita: $error",
   "audiobook_rematch_result": "Ricalcolato: $pct% (finestra: $window)",

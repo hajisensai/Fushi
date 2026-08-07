@@ -146,9 +146,9 @@ void main() {
         jsonEncode(<Map<String, Object?>>[
           <String, Object?>{'id': favMarker, 'text': 'a sentence'}
         ]));
-    await db.setPref('src:reader_ttu:font_catalog',
+    await db.setPref('src:reader_fushi:font_catalog',
         jsonEncode(<String, Object?>{'version': 1, 'fonts': <Object?>[]}));
-    await db.setPref('src:reader_ttu:custom_fonts', jsonEncode(<Object?>[]));
+    await db.setPref('src:reader_fushi:custom_fonts', jsonEncode(<Object?>[]));
     await db.setPref(
         'local_audio_dbs',
         jsonEncode(<Map<String, Object?>>[
@@ -248,8 +248,8 @@ void main() {
 
       final FushiDatabase ex = await openBackupDb(zip);
       addTearDown(ex.close);
-      expect(await prefCount(ex, 'src:reader_ttu:font_catalog'), 0);
-      expect(await prefCount(ex, 'src:reader_ttu:custom_fonts'), 0);
+      expect(await prefCount(ex, 'src:reader_fushi:font_catalog'), 0);
+      expect(await prefCount(ex, 'src:reader_fushi:custom_fonts'), 0);
     });
 
     test(

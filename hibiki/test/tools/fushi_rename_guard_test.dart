@@ -53,9 +53,44 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   ),
   _ForbiddenPattern(
     // P6-3：setTtu*/getTtu* 访问器已换 setReader*/getReader*。
-    // （`ttu_*` 持久化键值本身冻结在 reader_settings.dart，不在此模式内。）
     name: 'setTtu/getTtu',
     regex: RegExp(r'\b(?:set|get)Ttu'),
+  ),
+  _ForbiddenPattern(
+    // W2-1：阅读器源持久化键已是 'reader_fushi'（kReaderSourcePersistedKey），
+    // 存量行由 v70 迁移改写（preferences/profile_settings/media_items 三处）。
+    name: 'reader_ttu',
+    regex: RegExp('reader_ttu'),
+    allowed: <String, String>{
+      'packages/fushi_core/lib/src/database/database.dart':
+          'v16 阶梯 _kLegacyUidPrefix（reader_ttu/hoshi://book/）与 v70 改写步的'
+              '旧前缀输入：读旧库做一次性改写的迁移代码，旧字面量是必要输入。',
+    },
+  ),
+  _ForbiddenPattern(
+    // W2-1：pref shortKey 的死前缀 ttu_ 已剥除（'ttu_font_size' → 'font_size'
+    // 等 27 键），存量由 v70 迁移改写。引号锚定只抓字符串字面量形态；负向前瞻
+    // 放行冻结身份模块 ttu_sanitize.dart 的相对 import（bookKey 编码本体，
+    // ~ttu-star~ 哨兵落盘，勿改）。
+    name: "'ttu_ shortKey 前缀",
+    regex: RegExp(r"'ttu_(?!sanitize\.dart')"),
+    allowed: <String, String>{
+      'packages/fushi_core/lib/src/database/database.dart':
+          '历史 SQL 列名 ttu_book_id / ttu_char_offset（v16/v24 迁移阶梯输入）'
+              '与 v70 剥前缀步的旧前缀输入，只活在迁移代码里。',
+    },
+  ),
+  _ForbiddenPattern(
+    // W2-1：ttu 词首 camel 符号（ttuFontSize 等 22 个 getter → reader*、
+    // ttuRegex → readerRegex、ttuCharOffset → exactCharOffset）。冻结的
+    // TtuProgress/sanitizeTtuFilename 是词中 Ttu 形态，刻意不匹配。
+    name: 'ttu*-camel 符号',
+    regex: RegExp(r'\bttu[A-Z]'),
+    allowed: <String, String>{
+      'packages/fushi_core/lib/src/database/database.dart':
+          "legacy 书签 JSON 的 'ttuBookId' wire 键及其局部变量（迁移代码），"
+              '命名跟随冻结 wire 本名。',
+    },
   ),
   _ForbiddenPattern(
     // P6-4b：Sasayaki* → SubtitleRematch*/sentenceAudio*。

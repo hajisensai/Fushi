@@ -1500,7 +1500,7 @@
   "audiobook_rematch_matching": "Matching...",
   "audiobook_rematch_no_chapters": "EPUB has no chapter text",
   "audiobook_rematch_no_cues_to_match": "No cues to match",
-  "audiobook_rematch_no_sections": "No ttu chapter text found, cannot auto-match",
+  "audiobook_rematch_no_sections": "No chapter text found, cannot auto-match",
   "audiobook_rematch_no_stored_cues": "No stored cues, cannot re-run",
   "audiobook_rematch_failed": "Re-match failed: $error",
   "audiobook_rematch_result": "Rematched: $pct% (window: $window)",

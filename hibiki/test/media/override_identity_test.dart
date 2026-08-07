@@ -196,7 +196,7 @@ void main() {
   /// BUG-1317：override 书名 / 封面的身份是**书**，不是「用哪个阅读器打开」。
   ///
   /// 旧实现把源键烧进了 key 字符串（出现两次）与偏好命名空间（`src:<src>:`），而
-  /// 一本书的源键由 `EpubBooks.format` 现算（epub→reader_ttu / manga→reader_manga
+  /// 一本书的源键由 `EpubBooks.format` 现算（epub→reader_fushi / manga→reader_manga
   /// / pdf→reader_pdf）。于是漫画 / PDF 书改名后，书架、首页、统计、通知栏读到的
   /// 键各不相同；EPUB 转漫画后连书架也读不回来。
   group('override identity is per-book, not per-reader (BUG-1317)', () {

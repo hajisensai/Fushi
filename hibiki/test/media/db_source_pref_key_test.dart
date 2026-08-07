@@ -5,27 +5,28 @@ import 'package:fushi/src/media/media_source.dart';
 
 /// [dbSourcePrefKey] 是 MediaSource 偏好命名空间 key（`src:<source>:<key>`）的单一
 /// 真相编码器。此前 media_source 与 profile_repository 各自硬编码该格式（后者还钉死
-/// 历史名 reader_ttu）。本测试：①逐字节冻结格式（持久化红线，变了即丢用户偏好）；
-/// ②backup_service 的冻结 reader_ttu const key 与编码器输出一致（防漂移又不破 const）；
+/// 历史名 reader_ttu；存量旧键已由 v70 Drift 迁移一次性改写为 reader_fushi）。
+/// 本测试：①逐字节冻结格式（持久化红线，变了即丢用户偏好）；
+/// ②backup_service 的冻结 reader_fushi const key 与编码器输出一致（防漂移又不破 const）；
 /// ③media_source / profile_repository 都经编码器、不再硬编码格式。
 void main() {
   group('dbSourcePrefKey 偏好 key 编码单一真相', () {
     test('格式逐字节冻结 src:<source>:<key>（持久化红线）', () {
-      expect(dbSourcePrefKey('reader_ttu', 'font_catalog'),
-          'src:reader_ttu:font_catalog');
-      expect(dbSourcePrefKey('reader_ttu', ''), 'src:reader_ttu:');
-      expect(dbSourcePrefKey('reader_ttu', 'x'), 'src:reader_ttu:x');
+      expect(dbSourcePrefKey('reader_fushi', 'font_catalog'),
+          'src:reader_fushi:font_catalog');
+      expect(dbSourcePrefKey('reader_fushi', ''), 'src:reader_fushi:');
+      expect(dbSourcePrefKey('reader_fushi', 'x'), 'src:reader_fushi:x');
       expect(dbSourcePrefKey('video_hibiki', 'k'), 'src:video_hibiki:k');
     });
 
-    test('backup_service 的冻结 reader_ttu const key 与编码器输出一致（防漂移）', () {
+    test('backup_service 的冻结 reader_fushi const key 与编码器输出一致（防漂移）', () {
       final String backup =
           File('lib/src/sync/backup_service.dart').readAsStringSync();
       for (final String key in <String>[
-        dbSourcePrefKey('reader_ttu', 'font_catalog'),
-        dbSourcePrefKey('reader_ttu', 'custom_fonts'),
-        dbSourcePrefKey('reader_ttu', 'app_ui_fonts'),
-        dbSourcePrefKey('reader_ttu', 'dict_fonts'),
+        dbSourcePrefKey('reader_fushi', 'font_catalog'),
+        dbSourcePrefKey('reader_fushi', 'custom_fonts'),
+        dbSourcePrefKey('reader_fushi', 'app_ui_fonts'),
+        dbSourcePrefKey('reader_fushi', 'dict_fonts'),
       ]) {
         expect(backup, contains("'$key'"),
             reason: 'backup_service 的 $key 必须与 dbSourcePrefKey 输出逐字节一致');
@@ -42,12 +43,12 @@ void main() {
       expect(
           pr, contains('dbSourcePrefKey(kReaderSourcePersistedKey, row.key)'),
           reason: 'profile applyProfile 应转调编码器');
-      expect(pr.contains("'src:reader_ttu:\${row.key}'"), isFalse,
+      expect(pr.contains("'src:reader_fushi:\${row.key}'"), isFalse,
           reason: 'profile 不应再硬编码 media_source 私有 key 格式');
     });
 
     // G-硬编码去重：reader_settings / custom_fonts_page / profile_repository /
-    // data_root_migrator 的 `src:reader_ttu:` 字面量已改经编码器（值不变）。
+    // data_root_migrator 的 `src:reader_fushi:` 字面量已改经编码器（值不变）。
     // backup_service 因 const 上下文保留字面量，由上面的 parity 用例锁一致。
     test('reader_settings / custom_fonts_page / profile / migrator 字面量已转编码器',
         () {
@@ -64,12 +65,12 @@ void main() {
           File('lib/src/storage/path_rebase_coverage.dart').readAsStringSync();
       expect(rs, contains("dbSourcePrefKey(kReaderSourcePersistedKey, '')"),
           reason: 'ReaderSettings._prefix 应转调编码器');
-      expect(rs.contains("'src:reader_ttu:'"), isFalse,
+      expect(rs.contains("'src:reader_fushi:'"), isFalse,
           reason: 'reader_settings 不应再持有前缀字面量');
       expect(
           cf, contains('dbSourcePrefKey(kReaderSourcePersistedKey, shortKey)'),
           reason: 'custom_fonts_page._readerPrefKey 应转调编码器');
-      expect(cf.contains("'src:reader_ttu:'"), isFalse,
+      expect(cf.contains("'src:reader_fushi:'"), isFalse,
           reason: 'custom_fonts_page 不应再持有前缀字面量');
       for (final String src in <String>[pr, dm]) {
         expect(
@@ -77,16 +78,16 @@ void main() {
             contains(
                 "dbSourcePrefKey(kReaderSourcePersistedKey, 'font_catalog')"),
             reason: '字体 key 组应经编码器生成');
-        expect(src.contains("'src:reader_ttu:font_catalog'"), isFalse,
+        expect(src.contains("'src:reader_fushi:font_catalog'"), isFalse,
             reason: '不应再硬编码字体 key 字面量');
       }
-      // 持久化身份键的字面值冻结在单一常量（Fushi 改名 P6-3 收口）；
-      // 值必须保持 'reader_ttu'，改名迁移（P2-2）落地前不得更改。
+      // 持久化身份键的字面值收敛在单一常量（Fushi 改名 P6-3 收口）；
+      // 现值 'reader_fushi'：历史值 'reader_ttu' 已由 v70 Drift 迁移改写存量。
       final String src2 =
           File('lib/src/media/sources/reader_hibiki_source.dart')
               .readAsStringSync();
       expect(src2,
-          contains("const String kReaderSourcePersistedKey = 'reader_ttu';"),
+          contains("const String kReaderSourcePersistedKey = 'reader_fushi';"),
           reason: '持久化键字面值必须冻结在 kReaderSourcePersistedKey 单一常量');
     });
   });

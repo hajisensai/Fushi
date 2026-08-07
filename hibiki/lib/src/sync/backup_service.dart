@@ -480,16 +480,16 @@ class BackupService {
 
   /// Persisted preference key (ReaderSettings prefix included) whose JSON
   /// value is the canonical catalog `{version, fonts:[{id, name, path}]}`.
-  static const String _fontCatalogPrefKey = 'src:reader_ttu:font_catalog';
+  static const String _fontCatalogPrefKey = 'src:reader_fushi:font_catalog';
 
   /// Persisted legacy shadow preference keys (ReaderSettings prefix included)
   /// whose JSON value is a font list `[{name, path, enabled}]`. These remain
   /// import-compatible while `font_catalog` is the canonical model.
   static const List<String> _legacyFontPrefKeys = <String>[
-    'src:reader_ttu:custom_fonts',
-    'src:reader_ttu:app_ui_fonts',
-    'src:reader_ttu:dict_fonts',
-    'src:reader_ttu:video_sub_fonts',
+    'src:reader_fushi:custom_fonts',
+    'src:reader_fushi:app_ui_fonts',
+    'src:reader_fushi:dict_fonts',
+    'src:reader_fushi:video_sub_fonts',
   ];
 
   /// Preference key holding the favorite-sentence JSON list (mirrors

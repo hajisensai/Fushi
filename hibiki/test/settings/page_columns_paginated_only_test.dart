@@ -56,7 +56,7 @@ void main() {
       WidgetTester tester,
     ) async {
       // 捕获真实 SettingsContext + 生产 schema 里的该项；`isVisible` 只读
-      // `readerSource.ttuViewMode`，不依赖 BuildContext，故可在帧外异步切模式后复查。
+      // `readerSource.readerViewMode`，不依赖 BuildContext，故可在帧外异步切模式后复查。
       late SettingsContext settingsContext;
       late SettingsStepperItem item;
       await tester.pumpWidget(

@@ -1500,7 +1500,7 @@
   "audiobook_rematch_matching": "Correspondendo...",
   "audiobook_rematch_no_chapters": "EPUB não tem texto de capítulo",
   "audiobook_rematch_no_cues_to_match": "Nenhuma frase para corresponder",
-  "audiobook_rematch_no_sections": "Nenhum texto de capítulo ttu encontrado, não é possível corresponder automaticamente",
+  "audiobook_rematch_no_sections": "Nenhum texto de capítulo encontrado, não é possível corresponder automaticamente",
   "audiobook_rematch_no_stored_cues": "Nenhuma frase armazenada, não é possível reexecutar",
   "audiobook_rematch_failed": "Falha na correspondência: $error",
   "audiobook_rematch_result": "Recorrespondido: $pct% (janela: $window)",

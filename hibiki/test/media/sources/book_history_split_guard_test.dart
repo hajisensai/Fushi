@@ -9,7 +9,7 @@
 /// 但 `MediaItem.uniqueKey` 不是 `mediaIdentifier`，而是
 /// `'$mediaSourceIdentifier/$mediaIdentifier'`（`media_item.dart`），
 /// 而 `mediaSourceIdentifier` 由 `ReaderHibikiSource.mediaSourceKeyFor(format)`
-/// **按当前 format 现算** —— 转化必然把它从 `reader_ttu` 换成 `reader_manga`
+/// **按当前 format 现算** —— 转化必然把它从 `reader_fushi` 换成 `reader_manga`
 /// （或反过来）。`MediaItems.uniqueKey` 又是 UNIQUE 列。于是：
 ///
 /// > 只要有任何一个书族源把 `implementsHistory` 置成 true，

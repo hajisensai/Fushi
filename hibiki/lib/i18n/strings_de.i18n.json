@@ -1500,7 +1500,7 @@
   "audiobook_rematch_matching": "Abgleich läuft...",
   "audiobook_rematch_no_chapters": "EPUB hat keinen Kapiteltext",
   "audiobook_rematch_no_cues_to_match": "Keine Cues zum Abgleichen",
-  "audiobook_rematch_no_sections": "Kein ttu-Kapiteltext gefunden, automatischer Abgleich nicht möglich",
+  "audiobook_rematch_no_sections": "Kein Kapiteltext gefunden, automatischer Abgleich nicht möglich",
   "audiobook_rematch_no_stored_cues": "Keine gespeicherten Cues, erneuter Abgleich nicht möglich",
   "audiobook_rematch_failed": "Neuabgleich fehlgeschlagen: $error",
   "audiobook_rematch_result": "Neu abgeglichen: $pct% (Fenster: $window)",

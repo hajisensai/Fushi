@@ -648,7 +648,7 @@ class SyncManager {
       final progress = total > 0 ? exploredChars / total : 0.0;
       final timestampMs = localPosition.updatedAt;
 
-      final ttuProgress = TtuProgress(
+      final wireProgress = TtuProgress(
         dataId: 0,
         exploredCharCount: exploredChars,
         progress: progress,
@@ -658,7 +658,7 @@ class SyncManager {
       await _backend.updateProgressFile(
         folderId: folderId,
         fileId: progressFileId,
-        progress: ttuProgress,
+        progress: wireProgress,
       );
 
       // BUG-201: the call above is the authoritative remote progress transfer —

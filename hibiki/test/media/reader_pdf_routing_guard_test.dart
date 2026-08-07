@@ -17,10 +17,11 @@ void main() {
     return file.readAsStringSync();
   }
 
-  test('ReaderPdfSource.kUniqueKey 是独立键 reader_pdf，绝不复用 EPUB 的 reader_ttu', () {
+  test('ReaderPdfSource.kUniqueKey 是独立键 reader_pdf，绝不复用 EPUB 的 reader_fushi',
+      () {
     expect(ReaderPdfSource.kUniqueKey, 'reader_pdf');
     expect(ReaderPdfSource.instance.uniqueKey, 'reader_pdf');
-    // reader_ttu 是 EPUB 源的冻结持久化键；两源键必须互异，否则 mediaSources map 覆盖、
+    // reader_fushi 是 EPUB 源的冻结持久化键；两源键必须互异，否则 mediaSources map 覆盖、
     // 路由塌缩到单一源。
     expect(ReaderPdfSource.instance.uniqueKey,
         isNot(ReaderHibikiSource.instance.uniqueKey));
@@ -28,7 +29,7 @@ void main() {
 
   test('书架列书按 format 路由：format==pdf 的行带 ReaderPdfSource 源标识', () {
     // _bookToMediaItem 必须按 format 分流 mediaSourceIdentifier；缺这条 → PDF 行用
-    // 'reader_ttu' 打开 → EPUB 阅读器解析 PDF → 崩。
+    // 'reader_fushi' 打开 → EPUB 阅读器解析 PDF → 崩。
     // BUG-1316：派生已收敛成公开具名函数，判据从源码语料升级成直接调它。
     expect(ReaderHibikiSource.mediaSourceKeyFor(BookFormat.pdf),
         ReaderPdfSource.kUniqueKey,

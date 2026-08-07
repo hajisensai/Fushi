@@ -202,8 +202,8 @@ void main() {
       }
     });
 
-    // `ttu_spread_mode` 有两处兜底默认：[ReaderSettings.spreadMode] 是阅读器真正
-    // 读的那个，[ReaderHibikiSource.ttuSpreadMode] 是 readerSettings 未就绪时
+    // `spread_mode` 有两处兜底默认：[ReaderSettings.spreadMode] 是阅读器真正
+    // 读的那个，[ReaderHibikiSource.readerSpreadMode] 是 readerSettings 未就绪时
     // （设置页 / 冷启动）读的那个。两处漂开 = 设置页显示的默认与阅读器实际用的默认
     // 相反。上面两条真行为测试只覆盖 ReaderSettings，单独把 source 那处改回 auto
     // 全套照样绿——所以必须有这条跨文件一致性断言。
@@ -215,18 +215,18 @@ void main() {
       final String sourceSrc = File(kSourceFile).readAsStringSync();
 
       final RegExpMatch? settingsHit = RegExp(
-        r"_get<String>\(\s*'ttu_spread_mode'\s*,\s*'([a-z]+)'\s*\)",
+        r"_get<String>\(\s*'spread_mode'\s*,\s*'([a-z]+)'\s*\)",
       ).firstMatch(settingsSrc);
       final RegExpMatch? sourceHit = RegExp(
-        r"key:\s*'ttu_spread_mode'\s*,\s*defaultValue:\s*'([a-z]+)'",
+        r"key:\s*'spread_mode'\s*,\s*defaultValue:\s*'([a-z]+)'",
       ).firstMatch(sourceSrc);
 
       // `isNotNull` 在本文件里与 drift 的同名符号撞车（两边都被 import），
       // 故用显式 `!= null`，语义相同。
       expect(settingsHit != null, isTrue,
-          reason: '$kSettingsFile 里找不到 ttu_spread_mode 的兜底默认，守卫已失效');
+          reason: '$kSettingsFile 里找不到 spread_mode 的兜底默认，守卫已失效');
       expect(sourceHit != null, isTrue,
-          reason: '$kSourceFile 里找不到 ttu_spread_mode 的兜底默认，守卫已失效');
+          reason: '$kSourceFile 里找不到 spread_mode 的兜底默认，守卫已失效');
 
       final String settingsDefault = settingsHit!.group(1)!;
       final String sourceDefault = sourceHit!.group(1)!;

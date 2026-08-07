@@ -98,7 +98,7 @@ void main() {
     // ONLY catalog-referenced files, so without this the font would be treated
     // as an orphan and skipped.
     await db.setPref(
-      'src:reader_ttu:font_catalog',
+      'src:reader_fushi:font_catalog',
       jsonEncode(<String, Object?>{
         'version': 1,
         'fonts': <Map<String, Object?>>[

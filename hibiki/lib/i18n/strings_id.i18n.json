@@ -1500,7 +1500,7 @@
   "audiobook_rematch_matching": "Mencocokkan...",
   "audiobook_rematch_no_chapters": "EPUB tidak memiliki teks bab",
   "audiobook_rematch_no_cues_to_match": "Tidak ada cue untuk dicocokkan",
-  "audiobook_rematch_no_sections": "Teks bab ttu tidak ditemukan, tidak dapat mencocokkan otomatis",
+  "audiobook_rematch_no_sections": "Teks bab tidak ditemukan, tidak dapat mencocokkan otomatis",
   "audiobook_rematch_no_stored_cues": "Tidak ada cue tersimpan, tidak dapat menjalankan ulang",
   "audiobook_rematch_failed": "Pencocokan ulang gagal: $error",
   "audiobook_rematch_result": "Dicocokkan ulang: $pct% (jendela: $window)",

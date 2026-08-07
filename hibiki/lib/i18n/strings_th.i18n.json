@@ -1500,7 +1500,7 @@
   "audiobook_rematch_matching": "กำลังจับคู่...",
   "audiobook_rematch_no_chapters": "EPUB ไม่มีข้อความบท",
   "audiobook_rematch_no_cues_to_match": "ไม่มี cue ที่จะจับคู่",
-  "audiobook_rematch_no_sections": "ไม่พบข้อความบทจาก ttu ไม่สามารถจับคู่อัตโนมัติ",
+  "audiobook_rematch_no_sections": "ไม่พบข้อความบท ไม่สามารถจับคู่อัตโนมัติ",
   "audiobook_rematch_no_stored_cues": "ไม่มี cue ที่เก็บไว้ ไม่สามารถเรียกใช้ใหม่",
   "audiobook_rematch_failed": "การจับคู่ใหม่ล้มเหลว: $error",
   "audiobook_rematch_result": "จับคู่ใหม่: $pct% (หน้าต่าง: $window)",

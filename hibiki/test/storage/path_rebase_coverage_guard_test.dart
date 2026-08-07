@@ -207,11 +207,11 @@ void main() {
       'dict_fonts',
       'video_sub_fonts',
     ]) {
-      final String expected = dbSourcePrefKey('reader_ttu', body);
+      final String expected = dbSourcePrefKey('reader_fushi', body);
       expect(
         pathRebasePrefFor(expected),
         isNotNull,
-        reason: 'dbSourcePrefKey(reader_ttu, $body) = $expected 未在 '
+        reason: 'dbSourcePrefKey(reader_fushi, $body) = $expected 未在 '
             'kPathRebasePrefs 里登记（编码格式改了？）',
       );
     }

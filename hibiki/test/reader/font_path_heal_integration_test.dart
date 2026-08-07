@@ -18,7 +18,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const String prefix = 'src:reader_ttu:';
+  const String prefix = 'src:reader_fushi:';
   late Directory tmp;
   late Directory fontsDir; // current <documents>/custom_fonts
   late FushiDatabase db;

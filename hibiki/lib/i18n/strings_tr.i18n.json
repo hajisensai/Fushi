@@ -1500,7 +1500,7 @@
   "audiobook_rematch_matching": "Eşleştiriliyor...",
   "audiobook_rematch_no_chapters": "EPUB'de bölüm metni yok",
   "audiobook_rematch_no_cues_to_match": "Eşleştirilecek referans yok",
-  "audiobook_rematch_no_sections": "ttu bölüm metni bulunamadı, otomatik eşleştirme yapılamaz",
+  "audiobook_rematch_no_sections": "Bölüm metni bulunamadı, otomatik eşleştirme yapılamaz",
   "audiobook_rematch_no_stored_cues": "Kayıtlı referans yok, yeniden çalıştırılamaz",
   "audiobook_rematch_failed": "Yeniden eşleştirme başarısız: $error",
   "audiobook_rematch_result": "Yeniden eşleştirildi: $pct% (pencere: $window)",

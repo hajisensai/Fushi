@@ -76,8 +76,8 @@ void main() {
     // 同一 DB key；decode 端两者皆兼容——BUG-1116 后 ReaderSettings 与
     // MediaSource 读侧均走 PrefCodec.decodeUntyped（标签值 + 裸值都认）。
     final Map<String, String> prefs = await db.getAllPrefs();
-    expect(prefs['src:reader_ttu:show_top_progress_bar'], 'false',
-        reason: 'key 实际落 src:reader_ttu:show_top_progress_bar');
+    expect(prefs['src:reader_fushi:show_top_progress_bar'], 'false',
+        reason: 'key 实际落 src:reader_fushi:show_top_progress_bar');
   });
 
   test('ReaderHibikiSource 回退路径（无 readerSettings 时经 getPreference）', () async {
@@ -89,7 +89,7 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     final Map<String, String> prefs = await db.getAllPrefs();
-    expect(prefs['src:reader_ttu:show_top_progress_bar'], 'b:false',
+    expect(prefs['src:reader_fushi:show_top_progress_bar'], 'b:false',
         reason: '回退 toggle 也必须写穿同一 DB key');
     expect(ReaderHibikiSource.instance.showTopProgressBar, isFalse);
   });

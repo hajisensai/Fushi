@@ -1500,7 +1500,7 @@
   "audiobook_rematch_matching": "매칭 중...",
   "audiobook_rematch_no_chapters": "EPUB에 챕터 텍스트가 없습니다",
   "audiobook_rematch_no_cues_to_match": "매칭할 큐가 없습니다",
-  "audiobook_rematch_no_sections": "ttu 챕터 텍스트를 찾을 수 없어 자동 매칭 불가",
+  "audiobook_rematch_no_sections": "챕터 텍스트를 찾을 수 없어 자동 매칭 불가",
   "audiobook_rematch_no_stored_cues": "저장된 큐가 없어 다시 실행할 수 없습니다",
   "audiobook_rematch_failed": "재매칭 실패: $error",
   "audiobook_rematch_result": "재매칭: $pct% (윈도우: $window)",
