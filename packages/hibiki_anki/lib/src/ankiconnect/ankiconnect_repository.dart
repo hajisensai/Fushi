@@ -110,21 +110,21 @@ const int _isolateMediaThresholdBytes = 64 * 1024;
 /// AnkiConnect 上传路径：计算 sha256 文件名 + base64 数据。大媒体在后台 isolate 完成，
 /// 小媒体同步完成。返回记录 `(filename, base64Data)` 供 `storeMediaFile`。
 Future<({String filename, String base64Data})>
-    hibikiAnkiMediaEncodeForUploadAsync({
+hibikiAnkiMediaEncodeForUploadAsync({
   required String prefix,
   required List<int> bytes,
   required String sourceName,
   String fallbackExtension = 'bin',
 }) {
   ({String filename, String base64Data}) encode() => (
-        filename: hibikiAnkiMediaFilenameForBytes(
-          prefix: prefix,
-          bytes: bytes,
-          sourceName: sourceName,
-          fallbackExtension: fallbackExtension,
-        ),
-        base64Data: base64Encode(bytes),
-      );
+    filename: hibikiAnkiMediaFilenameForBytes(
+      prefix: prefix,
+      bytes: bytes,
+      sourceName: sourceName,
+      fallbackExtension: fallbackExtension,
+    ),
+    base64Data: base64Encode(bytes),
+  );
   if (bytes.length < _isolateMediaThresholdBytes) {
     return Future<({String filename, String base64Data})>.value(encode());
   }
@@ -140,11 +140,11 @@ Future<String> hibikiAnkiMediaFilenameForBytesAsync({
   String fallbackExtension = 'bin',
 }) {
   String compute() => hibikiAnkiMediaFilenameForBytes(
-        prefix: prefix,
-        bytes: bytes,
-        sourceName: sourceName,
-        fallbackExtension: fallbackExtension,
-      );
+    prefix: prefix,
+    bytes: bytes,
+    sourceName: sourceName,
+    fallbackExtension: fallbackExtension,
+  );
   if (bytes.length < _isolateMediaThresholdBytes) {
     return Future<String>.value(compute());
   }
@@ -169,8 +169,10 @@ String _mediaExtensionFromSource(
   String sourceName, {
   required String fallbackExtension,
 }) {
-  final String fallback =
-      _safeMediaExtension(fallbackExtension, fallback: 'bin');
+  final String fallback = _safeMediaExtension(
+    fallbackExtension,
+    fallback: 'bin',
+  );
   final Uri? uri = Uri.tryParse(sourceName);
   final String path = (uri != null && uri.path.isNotEmpty)
       ? uri.path
@@ -182,8 +184,10 @@ String _mediaExtensionFromSource(
 }
 
 String _safeMediaExtension(String extension, {required String fallback}) {
-  final String safe =
-      extension.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  final String safe = extension.toLowerCase().replaceAll(
+    RegExp(r'[^a-z0-9]'),
+    '',
+  );
   if (safe.isEmpty || safe.length > 12) return fallback;
   return safe;
 }
@@ -216,7 +220,8 @@ String _sha256Hex(List<int> bytes) {
   for (int chunk = 0; chunk < padded.length; chunk += 64) {
     for (int i = 0; i < 16; i++) {
       final int j = chunk + i * 4;
-      w[i] = ((padded[j] << 24) |
+      w[i] =
+          ((padded[j] << 24) |
               (padded[j + 1] << 16) |
               (padded[j + 2] << 8) |
               padded[j + 3]) &
@@ -311,8 +316,10 @@ class _MediaUploadCoordinator {
     _MediaUploadTransaction transaction,
     String filename,
   ) async {
-    _MediaUploadLeaseState state =
-        _states.putIfAbsent(filename, _MediaUploadLeaseState.new);
+    _MediaUploadLeaseState state = _states.putIfAbsent(
+      filename,
+      _MediaUploadLeaseState.new,
+    );
     while (state.cleanupAttempt != null) {
       await state.cleanupAttempt;
       state = _states.putIfAbsent(filename, _MediaUploadLeaseState.new);
@@ -384,8 +391,8 @@ class _MediaUploadCoordinator {
 /// peer. Files that existed before this attempt are never deletion candidates.
 class _MediaUploadTransaction {
   _MediaUploadTransaction(this.service)
-      : coordinator = _mediaUploadCoordinators[service] ??=
-            _MediaUploadCoordinator(service);
+    : coordinator = _mediaUploadCoordinators[service] ??=
+          _MediaUploadCoordinator(service);
 
   final AnkiConnectService service;
   final _MediaUploadCoordinator coordinator;
@@ -397,15 +404,14 @@ class _MediaUploadTransaction {
   Future<void> upload({
     required String filename,
     required Future<void> Function() write,
-  }) =>
-      _uploads[filename] ??= _upload(filename: filename, write: write);
+  }) => _uploads[filename] ??= _upload(filename: filename, write: write);
 
   Future<void> _upload({
     required String filename,
     required Future<void> Function() write,
   }) async {
-    final bool existedBefore = await (_existenceChecks[filename] ??=
-        service.mediaFileExists(filename));
+    final bool existedBefore = await (_existenceChecks[filename] ??= service
+        .mediaFileExists(filename));
     if (!existedBefore) {
       // Register before the write: a lost storeMediaFile response may still
       // mean Anki committed the file, so the failure path must try to remove it.
@@ -480,7 +486,7 @@ class _NoteFieldRewrite {
 
 class AnkiConnectRepository extends BaseAnkiRepository {
   AnkiConnectRepository({AnkiConnectService? service})
-      : _fixedService = service;
+    : _fixedService = service;
 
   final AnkiConnectService? _fixedService;
   AnkiConnectService? _cachedService;
@@ -528,7 +534,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
       if (deckNames.isEmpty || modelNames.isEmpty) {
         return const AnkiFetchResult.error(
-            'No Anki decks or note types found.');
+          'No Anki decks or note types found.',
+        );
       }
 
       final decks = <AnkiDeck>[];
@@ -635,19 +642,25 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final settings = await loadSettings();
     final service = _serviceForSettings(settings);
 
-    final deck = settings.availableDecks
-            .firstWhereOrNull((d) => d.id == settings.selectedDeckId) ??
+    final deck =
+        settings.availableDecks.firstWhereOrNull(
+          (d) => d.id == settings.selectedDeckId,
+        ) ??
         (settings.selectedDeckName != null
-            ? settings.availableDecks
-                .firstWhereOrNull((d) => d.name == settings.selectedDeckName)
+            ? settings.availableDecks.firstWhereOrNull(
+                (d) => d.name == settings.selectedDeckName,
+              )
             : null);
     if (deck == null) return const MineOutcome.notConfigured();
 
-    final noteType = settings.availableNoteTypes
-            .firstWhereOrNull((t) => t.id == settings.selectedNoteTypeId) ??
+    final noteType =
+        settings.availableNoteTypes.firstWhereOrNull(
+          (t) => t.id == settings.selectedNoteTypeId,
+        ) ??
         (settings.selectedNoteTypeName != null
             ? settings.availableNoteTypes.firstWhereOrNull(
-                (t) => t.name == settings.selectedNoteTypeName)
+                (t) => t.name == settings.selectedNoteTypeName,
+              )
             : null);
     if (noteType == null) return const MineOutcome.notConfigured();
 
@@ -772,8 +785,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     bool keepEmpty = false,
     bool deferMediaCommit = false,
   }) async {
-    final _MediaUploadTransaction mediaTransaction =
-        _MediaUploadTransaction(service);
+    final _MediaUploadTransaction mediaTransaction = _MediaUploadTransaction(
+      service,
+    );
     final List<Future<dynamic>> mediaFutures = <Future<dynamic>>[
       context.coverPath != null
           ? _storeLocalMedia(
@@ -783,11 +797,11 @@ class AnkiConnectRepository extends BaseAnkiRepository {
               'hibiki_cover_',
             )
           : Future<String?>.value(null),
-      context.sasayakiAudioPath != null
+      context.sentenceAudioPath != null
           ? _storeLocalMedia(
               service,
               mediaTransaction,
-              context.sasayakiAudioPath!,
+              context.sentenceAudioPath!,
               'hibiki_audio_',
             )
           : Future<String?>.value(null),
@@ -802,7 +816,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     try {
       final List<dynamic> mediaResults = await Future.wait(mediaFutures);
       final String? coverMediaRef = mediaResults[0] as String?;
-      final String? sasayakiMediaRef = mediaResults[1] as String?;
+      final String? sentenceAudioMediaRef = mediaResults[1] as String?;
       final AudioFetchOutcome remoteAudio =
           mediaResults[2] as AudioFetchOutcome;
       final Map<String, String> dictionaryMediaTags =
@@ -814,8 +828,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         payload: payload,
         context: context,
         coverRef: coverMediaRef != null ? '<img src="$coverMediaRef">' : null,
-        sasayakiRef:
-            sasayakiMediaRef != null ? '[sound:$sasayakiMediaRef]' : null,
+        sentenceAudioRef: sentenceAudioMediaRef != null
+            ? '[sound:$sentenceAudioMediaRef]'
+            : null,
         processedAudio: remoteAudioRef != null ? '[sound:$remoteAudioRef]' : '',
         dictionaryMediaTags: dictionaryMediaTags,
         audioWarning: remoteAudio.failureReason,
@@ -860,8 +875,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
       final AnkiMiningPayload payload;
       try {
-        final json =
-            Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
+        final json = Map<String, dynamic>.from(
+          jsonDecode(rawPayloadJson) as Map,
+        );
         payload = AnkiMiningPayload.fromJson(json);
       } catch (e, stack) {
         return MineOutcome.failure(
@@ -915,8 +931,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// [AnkiConnectRepository]（`AnkiConnectRepository.new` 直接当工厂用），
   /// `overlay_bridge_handlers` 的每次 duplicateCheck 桥调用都走一次——实例字段
   /// 存不住任何跨调用状态。AnkiConnect 主机是全局配置，「连不上」也是全局事实。
-  static const Duration kDuplicateCheckUnreachableCooldown =
-      Duration(seconds: 30);
+  static const Duration kDuplicateCheckUnreachableCooldown = Duration(
+    seconds: 30,
+  );
 
   static DateTime? _duplicateCheckUnreachableUntil;
 
@@ -955,11 +972,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       _duplicateCheckUnreachableUntil = null;
     }
     final settings = await loadSettings();
-    final deck = settings.availableDecks
-            .firstWhereOrNull((d) => d.id == settings.selectedDeckId) ??
+    final deck =
+        settings.availableDecks.firstWhereOrNull(
+          (d) => d.id == settings.selectedDeckId,
+        ) ??
         (settings.selectedDeckName != null
-            ? settings.availableDecks
-                .firstWhereOrNull((d) => d.name == settings.selectedDeckName)
+            ? settings.availableDecks.firstWhereOrNull(
+                (d) => d.name == settings.selectedDeckName,
+              )
             : null);
     final noteType = settings.selectedNoteType;
     if (deck == null || noteType == null || noteType.fields.isEmpty) {
@@ -983,8 +1003,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       if (e is SocketException ||
           e is TimeoutException ||
           e is http.ClientException) {
-        _duplicateCheckUnreachableUntil =
-            DateTime.now().add(kDuplicateCheckUnreachableCooldown);
+        _duplicateCheckUnreachableUntil = DateTime.now().add(
+          kDuplicateCheckUnreachableCooldown,
+        );
       }
       debugPrint('AnkiConnectRepository.isDuplicate: $e\n$stack');
       return false;
@@ -997,15 +1018,20 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   // 静默降级为 null（与 isDuplicate 同样 fail-soft，绝不让覆写探测把制卡链路搞崩）。
   @override
   Future<int?> findOverwriteTargetNoteId(
-      String expression, String reading) async {
+    String expression,
+    String reading,
+  ) async {
     final settings = await loadSettings();
     if (settings.overwriteScope != AnkiOverwriteScope.all) return null;
     if (expression.isEmpty) return null;
-    final deck = settings.availableDecks
-            .firstWhereOrNull((d) => d.id == settings.selectedDeckId) ??
+    final deck =
+        settings.availableDecks.firstWhereOrNull(
+          (d) => d.id == settings.selectedDeckId,
+        ) ??
         (settings.selectedDeckName != null
-            ? settings.availableDecks
-                .firstWhereOrNull((d) => d.name == settings.selectedDeckName)
+            ? settings.availableDecks.firstWhereOrNull(
+                (d) => d.name == settings.selectedDeckName,
+              )
             : null);
     final noteType = settings.selectedNoteType;
     if (deck == null || noteType == null || noteType.fields.isEmpty) {
@@ -1035,14 +1061,19 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   // 任一步失败静默回空列表（与 isDuplicate 同样 fail-soft）。
   @override
   Future<List<MinedNoteRef>> findMatchingNotes(
-      String expression, String reading) async {
+    String expression,
+    String reading,
+  ) async {
     if (expression.isEmpty) return const <MinedNoteRef>[];
     final settings = await loadSettings();
-    final deck = settings.availableDecks
-            .firstWhereOrNull((d) => d.id == settings.selectedDeckId) ??
+    final deck =
+        settings.availableDecks.firstWhereOrNull(
+          (d) => d.id == settings.selectedDeckId,
+        ) ??
         (settings.selectedDeckName != null
-            ? settings.availableDecks
-                .firstWhereOrNull((d) => d.name == settings.selectedDeckName)
+            ? settings.availableDecks.firstWhereOrNull(
+                (d) => d.name == settings.selectedDeckName,
+              )
             : null);
     final noteType = settings.selectedNoteType;
     if (deck == null || noteType == null || noteType.fields.isEmpty) {
@@ -1058,8 +1089,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       );
       if (ids.isEmpty) return const <MinedNoteRef>[];
       ids.sort((a, b) => b.compareTo(a)); // 最近（id 大）在前
-      final Map<int, Map<String, String>> infos =
-          await service.notesInfoMany(ids);
+      final Map<int, Map<String, String>> infos = await service.notesInfoMany(
+        ids,
+      );
       final String firstField = noteType.fields.first;
       return ids.map((id) {
         final fields = infos[id];
@@ -1128,13 +1160,15 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-      String modelName) async {
+    String modelName,
+  ) async {
     final service = await _getService();
     final List<String> existing = await service.getModelNames();
     if (!existing.contains(modelName)) return null;
     final List<String> fields = await service.getModelFields(modelName);
-    final List<AnkiCardTemplate> templates =
-        await service.modelTemplates(modelName);
+    final List<AnkiCardTemplate> templates = await service.modelTemplates(
+      modelName,
+    );
     final String css = await service.modelStyling(modelName);
     return AnkiNoteTypeDefinition(
       name: modelName,
@@ -1153,7 +1187,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
   @override
   Future<bool> updateNoteTypeTemplates(
-      String modelName, List<AnkiCardTemplate> templates) async {
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async {
     final service = await _getService();
     await service.updateModelTemplates(modelName, templates);
     return true;
@@ -1178,8 +1214,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     AnkiMediaDedupOnProgress? onProgress,
   }) async {
     final Map<String, int> sizes = <String, int>{};
-    await for (final FileSystemEntity entity
-        in mediaDir.list(followLinks: false)) {
+    await for (final FileSystemEntity entity in mediaDir.list(
+      followLinks: false,
+    )) {
       if (entity is! File) continue;
       final String name = entity.uri.pathSegments.last;
       if (name.isEmpty) continue;
@@ -1189,10 +1226,12 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         continue;
       }
       if (sizes.length % 100 == 0) {
-        onProgress?.call(AnkiMediaDedupProgress(
-          stage: AnkiMediaDedupStage.scanning,
-          done: sizes.length,
-        ));
+        onProgress?.call(
+          AnkiMediaDedupProgress(
+            stage: AnkiMediaDedupStage.scanning,
+            done: sizes.length,
+          ),
+        );
       }
     }
     return sizes;
@@ -1211,7 +1250,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   }) async {
     final Map<int, List<String>> bySize = <int, List<String>>{};
     sizes.forEach(
-        (String n, int s) => bySize.putIfAbsent(s, () => <String>[]).add(n));
+      (String n, int s) => bySize.putIfAbsent(s, () => <String>[]).add(n),
+    );
     final List<String> candidates = <String>[
       for (final List<String> names in bySize.values)
         if (names.length >= 2) ...names,
@@ -1220,12 +1260,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     int done = 0;
     for (final String name in candidates) {
       if (shouldCancel?.call() ?? false) break;
-      onProgress?.call(AnkiMediaDedupProgress(
-        stage: AnkiMediaDedupStage.hashing,
-        done: done,
-        total: candidates.length,
-        currentFile: name,
-      ));
+      onProgress?.call(
+        AnkiMediaDedupProgress(
+          stage: AnkiMediaDedupStage.hashing,
+          done: done,
+          total: candidates.length,
+          currentFile: name,
+        ),
+      );
       try {
         final Uint8List bytes = await _mediaFile(mediaDir, name).readAsBytes();
         nameToHash[name] = crypto.sha256.convert(bytes).toString();
@@ -1253,8 +1295,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     for (final String name in names) {
       if (!isReferencingMediaFile(name)) continue;
       try {
-        out[name] = utf8.decode(await _mediaFile(mediaDir, name).readAsBytes(),
-            allowMalformed: true);
+        out[name] = utf8.decode(
+          await _mediaFile(mediaDir, name).readAsBytes(),
+          allowMalformed: true,
+        );
       } on FileSystemException {
         // 扫描后被删走：没有正文就没有引用，跳过（BUG-1262）。
       }
@@ -1306,8 +1350,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final AnkiSettings settings = await loadSettings();
     final String? recorded = settings.lapisAppliedCssSha;
     if (recorded == null || recorded != lapisCssSha256(cssBefore)) return;
-    await updateSettings((AnkiSettings s) =>
-        s.copyWith(lapisAppliedCssSha: lapisCssSha256(cssAfter)));
+    await updateSettings(
+      (AnkiSettings s) =>
+          s.copyWith(lapisAppliedCssSha: lapisCssSha256(cssAfter)),
+    );
   }
 
   /// 一条笔记的字段改写计划（null = 这条笔记清不干净，整份副本不许删）。
@@ -1342,9 +1388,11 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   ) {
     final Set<String> hits = <String>{};
     for (final String m in modelNames) {
-      final bool inTemplates = modelTemplates[m]!.any((AnkiCardTemplate tpl) =>
-          textReferencesMediaName(tpl.front, dupe) ||
-          textReferencesMediaName(tpl.back, dupe));
+      final bool inTemplates = modelTemplates[m]!.any(
+        (AnkiCardTemplate tpl) =>
+            textReferencesMediaName(tpl.front, dupe) ||
+            textReferencesMediaName(tpl.back, dupe),
+      );
       if (inTemplates || textReferencesMediaName(modelCss[m]!, dupe)) {
         hits.add(m);
       }
@@ -1371,12 +1419,19 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         cancelled = cancelled || (shouldCancel?.call() ?? false);
 
     onProgress?.call(
-        const AnkiMediaDedupProgress(stage: AnkiMediaDedupStage.scanning));
-    final Map<String, int> sizes =
-        await _scanMediaSizes(mediaDir, onProgress: onProgress);
+      const AnkiMediaDedupProgress(stage: AnkiMediaDedupStage.scanning),
+    );
+    final Map<String, int> sizes = await _scanMediaSizes(
+      mediaDir,
+      onProgress: onProgress,
+    );
     final List<MediaDedupGroup> groups = planMediaDedupGroups(
-      await _hashSizeCollisions(mediaDir, sizes,
-          onProgress: onProgress, shouldCancel: shouldCancel),
+      await _hashSizeCollisions(
+        mediaDir,
+        sizes,
+        onProgress: onProgress,
+        shouldCancel: shouldCancel,
+      ),
       sizes: sizes,
     );
     if (checkCancel()) {
@@ -1392,8 +1447,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
     // 媒体文件**内部**的引用只作为「不许删」的证据：本轮不改写媒体正文，
     // 所以只要还有人从里面引用，这份副本就留着。
-    final Map<String, String> referencingMedia =
-        await _readReferencingMedia(mediaDir, sizes.keys);
+    final Map<String, String> referencingMedia = await _readReferencingMedia(
+      mediaDir,
+      sizes.keys,
+    );
 
     // 模板/styling 快照一次抓全（随改写更新，避免每个副本重复拉取）。
     final List<String> modelNames = await service.getModelNames();
@@ -1411,7 +1468,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final Set<String> modelsRewritten = <String>{};
 
     final int totalDupes = groups.fold<int>(
-        0, (int sum, MediaDedupGroup g) => sum + g.duplicates.length);
+      0,
+      (int sum, MediaDedupGroup g) => sum + g.duplicates.length,
+    );
     int processedDupes = 0;
     int bytesFreed = 0;
 
@@ -1420,13 +1479,15 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       for (final String dupe in group.duplicates) {
         // 取消在副本边界生效：当前副本要么完整处理、要么完全没动，绝不半截。
         if (checkCancel()) break outer;
-        onProgress?.call(AnkiMediaDedupProgress(
-          stage: AnkiMediaDedupStage.resolving,
-          done: processedDupes,
-          total: totalDupes,
-          currentFile: dupe,
-          bytesFreed: bytesFreed,
-        ));
+        onProgress?.call(
+          AnkiMediaDedupProgress(
+            stage: AnkiMediaDedupStage.resolving,
+            done: processedDupes,
+            total: totalDupes,
+            currentFile: dupe,
+            bytesFreed: bytesFreed,
+          ),
+        );
         processedDupes++;
         // ── 阶段一：全部判定与计划，一个字节都不写 ────────────────────
         // 顺序是刻意的：先把所有「不许删」的证据收齐再动手。上一版把模板/
@@ -1436,8 +1497,12 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         final Map<int, _NoteFieldRewrite> notePlan = <int, _NoteFieldRewrite>{};
         bool referencesResolvable = true;
         for (final int id in noteIds) {
-          final _NoteFieldRewrite? planned =
-              await _planNoteFieldRewrite(service, id, dupe, group.canonical);
+          final _NoteFieldRewrite? planned = await _planNoteFieldRewrite(
+            service,
+            id,
+            dupe,
+            group.canonical,
+          );
           if (planned == null) {
             referencesResolvable = false;
             continue;
@@ -1447,8 +1512,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
         // 媒体文件内部引用（css/js/svg 的 url()/@import/相对引用）。
         final bool referencedByMedia = referencingMedia.entries.any(
-            (MapEntry<String, String> e) =>
-                e.key != dupe && textReferencesMediaName(e.value, dupe));
+          (MapEntry<String, String> e) =>
+              e.key != dupe && textReferencesMediaName(e.value, dupe),
+        );
 
         if (!referencesResolvable || referencedByMedia) {
           skippedCount++;
@@ -1472,7 +1538,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           bytesFreed += planned.bytes;
           notesRewritten.addAll(notePlan.keys);
           modelsRewritten.addAll(
-              _modelsReferencing(modelNames, modelTemplates, modelCss, dupe));
+            _modelsReferencing(modelNames, modelTemplates, modelCss, dupe),
+          );
           continue;
         }
 
@@ -1504,20 +1571,30 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         for (final String m in modelNames) {
           final List<AnkiCardTemplate> tmpls = modelTemplates[m]!;
           bool templatesChanged = false;
-          final List<AnkiCardTemplate> newTmpls =
-              tmpls.map((AnkiCardTemplate tpl) {
-            final String front =
-                rewriteMediaReferences(tpl.front, dupe, group.canonical);
-            final String back =
-                rewriteMediaReferences(tpl.back, dupe, group.canonical);
+          final List<AnkiCardTemplate> newTmpls = tmpls.map((
+            AnkiCardTemplate tpl,
+          ) {
+            final String front = rewriteMediaReferences(
+              tpl.front,
+              dupe,
+              group.canonical,
+            );
+            final String back = rewriteMediaReferences(
+              tpl.back,
+              dupe,
+              group.canonical,
+            );
             if (front != tpl.front || back != tpl.back) {
               templatesChanged = true;
             }
             return AnkiCardTemplate(name: tpl.name, front: front, back: back);
           }).toList();
           final String css = modelCss[m]!;
-          final String newCss =
-              rewriteMediaReferences(css, dupe, group.canonical);
+          final String newCss = rewriteMediaReferences(
+            css,
+            dupe,
+            group.canonical,
+          );
           final bool cssChanged = newCss != css;
           if (!templatesChanged && !cssChanged) continue;
           await onJournal?.call(<String, dynamic>{
@@ -1554,12 +1631,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       }
     }
 
-    onProgress?.call(AnkiMediaDedupProgress(
-      stage: AnkiMediaDedupStage.resolving,
-      done: processedDupes,
-      total: totalDupes,
-      bytesFreed: bytesFreed,
-    ));
+    onProgress?.call(
+      AnkiMediaDedupProgress(
+        stage: AnkiMediaDedupStage.resolving,
+        done: processedDupes,
+        total: totalDupes,
+        bytesFreed: bytesFreed,
+      ),
+    );
     return AnkiMediaDedupReport(
       dryRun: dryRun,
       groupCount: groups.length,
@@ -1688,15 +1767,20 @@ class AnkiConnectRepository extends BaseAnkiRepository {
             // (HBK-AUDIT-019). TODO-779: surface the failure instead of dropping
             // it silently — the card is still created, only the audio is missing.
             if (response.statusCode != 200) {
-              final reason =
-                  audioFetchHttpFailureReason(response.statusCode, url);
+              final reason = audioFetchHttpFailureReason(
+                response.statusCode,
+                url,
+              );
               debugPrint('AnkiConnectRepository._storeRemoteAudio: $reason');
               return AudioFetchOutcome.failed(reason);
             }
-            final bytes =
-                await response.fold<List<int>>([], (a, b) => a..addAll(b));
-            final cacheDir =
-                Directory('${Directory.systemTemp.path}/anki-media');
+            final bytes = await response.fold<List<int>>(
+              [],
+              (a, b) => a..addAll(b),
+            );
+            final cacheDir = Directory(
+              '${Directory.systemTemp.path}/anki-media',
+            );
             if (!cacheDir.existsSync()) cacheDir.createSync(recursive: true);
             // HBK-AUDIT-062: derive the real extension from the response
             // Content-Type (falling back to the URL path, then mp3) so non-mp3
@@ -1791,8 +1875,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   ) async {
     // 命名/目录与主 app 的 writeDictionaryMediaCache 共用同一 helper（防漂移，
     // 否则文件名对不上→读不到→卡片留坏图）。HBK-AUDIT-062 无扩展名兜底已并入。
-    final filename =
-        ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
+    final filename = ankiDictionaryMediaCacheFilename(
+      media.dictionary,
+      media.path,
+    );
     final file = File('${ankiDictionaryMediaCacheDirPath()}/$filename');
     if (!file.existsSync()) {
       debugPrint(

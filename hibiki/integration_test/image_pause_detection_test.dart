@@ -125,7 +125,7 @@ void main() {
   });
 
   testWidgets(
-      'sasayaki cue: advancing across an image fires onImageDetected (BUG-007 gap1)',
+      'sentenceAudioHighlight cue: advancing across an image fires onImageDetected (BUG-007 gap1)',
       (WidgetTester tester) async {
     bool imageDetected = false;
     String? revealTarget;
@@ -157,7 +157,7 @@ void main() {
               window.fushiReader = {
                 cueRangesMap: new Map(),
                 activeCueId: null,
-                highlightSasayakiCue: function(id, reveal){ this.activeCueId = id; },
+                highlightSentenceAudioCue: function(id, reveal){ this.activeCueId = id; },
                 scrollToTarget: function(t){
                   window.flutter_inappwebview.callHandler('reportReveal',
                     (t && (t.id || t.tagName)) || null);
@@ -172,9 +172,11 @@ void main() {
             ''');
             await AudiobookBridge.inject(controller);
             await controller.evaluateJavascript(
-                source: "window.__hoshiHighlightSasayakiCueById('c1', false);");
+                source:
+                    "window.__hoshiHighlightSentenceAudioCueById('c1', false);");
             await controller.evaluateJavascript(
-                source: "window.__hoshiHighlightSasayakiCueById('c2', true);");
+                source:
+                    "window.__hoshiHighlightSentenceAudioCueById('c2', true);");
             if (!driven.isCompleted) driven.complete();
           },
         ),
@@ -186,7 +188,9 @@ void main() {
     }
     await tester.pump(const Duration(seconds: 1));
     expect(imageDetected, isTrue,
-        reason: 'sasayaki cue 从 s1 跨过 svg 推进到 s2 必须触发 onImageDetected');
-    expect(revealTarget, 'pic', reason: 'sasayaki 跨图、reveal=true 时也应把视口滚到插图');
+        reason:
+            'sentenceAudioHighlight cue 从 s1 跨过 svg 推进到 s2 必须触发 onImageDetected');
+    expect(revealTarget, 'pic',
+        reason: 'sentenceAudioHighlight 跨图、reveal=true 时也应把视口滚到插图');
   });
 }

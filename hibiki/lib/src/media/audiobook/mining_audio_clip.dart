@@ -262,8 +262,8 @@ AudioPlaybackRange? _rangeFromSentencePosition({
   // reader's current chapter / lyrics fragment, which is authoritative for the
   // selection regardless of cue coverage.
   if (cue != null) {
-    final SasayakiFragment? cueFragment =
-        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    final SubtitleRematchFragment? cueFragment =
+        SubtitleRematchCodec.tryDecode(cue.textFragmentId);
     if (cueFragment == null) {
       // The cue carries no sasayaki position (plain SRT selector / empty): it
       // cannot vouch for the section, and the section's cues may not be sasayaki
@@ -458,10 +458,10 @@ bool _canExpandTo(
 ) {
   if (candidate.audioFileIndex != anchor.audioFileIndex) return false;
 
-  final SasayakiFragment? anchorFragment =
-      SasayakiMatchCodec.tryDecode(anchor.textFragmentId);
-  final SasayakiFragment? candidateFragment =
-      SasayakiMatchCodec.tryDecode(candidate.textFragmentId);
+  final SubtitleRematchFragment? anchorFragment =
+      SubtitleRematchCodec.tryDecode(anchor.textFragmentId);
+  final SubtitleRematchFragment? candidateFragment =
+      SubtitleRematchCodec.tryDecode(candidate.textFragmentId);
   if (anchorFragment != null &&
       candidateFragment != null &&
       candidateFragment.sectionIndex != anchorFragment.sectionIndex) {
@@ -580,8 +580,8 @@ List<AudioCue> _collectSpanCues({
     final int rangeEnd = offset + sentenceNormCharLength;
     final List<AudioCue> hits = <AudioCue>[];
     for (final AudioCue c in cues) {
-      final SasayakiFragment? frag =
-          SasayakiMatchCodec.tryDecode(c.textFragmentId);
+      final SubtitleRematchFragment? frag =
+          SubtitleRematchCodec.tryDecode(c.textFragmentId);
       if (frag == null || frag.sectionIndex != sectionIndex) {
         continue;
       }

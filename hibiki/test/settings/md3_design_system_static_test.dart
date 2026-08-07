@@ -242,7 +242,7 @@ void main() {
       'HibikiSelectableChip',
       'HibikiModalSheetFrame',
     ],
-    'lib/src/media/audiobook/sasayaki_rematch.dart': <String>[
+    'lib/src/media/audiobook/subtitle_rematch.dart': <String>[
       'HibikiModalSheetFrame',
       'HibikiDialogFrame',
     ],
@@ -579,7 +579,7 @@ void main() {
         'SafeArea(',
         'HibikiDivider()',
       ],
-      'lib/src/media/audiobook/sasayaki_rematch.dart': <String>[
+      'lib/src/media/audiobook/subtitle_rematch.dart': <String>[
         '=> Dialog(',
         'SafeArea(',
       ],
@@ -2166,8 +2166,8 @@ void main() {
     }
   });
 
-  test('sasayaki rematch controls use shared MD3 tokens', () {
-    final String source = File('lib/src/media/audiobook/sasayaki_rematch.dart')
+  test('sentenceAudioHighlight rematch controls use shared MD3 tokens', () {
+    final String source = File('lib/src/media/audiobook/subtitle_rematch.dart')
         .readAsStringSync();
     final String rematchSheet = _functionSource(
       source,
@@ -2176,12 +2176,12 @@ void main() {
     );
     final String windowSlider = _sectionSource(
       source,
-      'class SasayakiWindowSlider extends StatelessWidget',
-      'class SasayakiThresholdSlider extends StatelessWidget',
+      'class SubtitleRematchWindowSlider extends StatelessWidget',
+      'class SubtitleRematchThresholdSlider extends StatelessWidget',
     );
     final String thresholdSlider = _sectionSource(
       source,
-      'class SasayakiThresholdSlider extends StatelessWidget',
+      'class SubtitleRematchThresholdSlider extends StatelessWidget',
       source.length,
     );
 

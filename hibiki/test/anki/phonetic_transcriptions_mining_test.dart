@@ -50,7 +50,7 @@ class _TestRepo extends BaseAnkiRepository {
         payload: payload,
         context: context,
         coverRef: null,
-        sasayakiRef: null,
+        sentenceAudioRef: null,
         processedAudio: '',
         dictionaryMediaTags: const <String, String>{},
       );

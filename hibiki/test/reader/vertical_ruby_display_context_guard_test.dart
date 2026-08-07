@@ -105,7 +105,7 @@ void main() {
           reason: '竖排必须 ruby-position:over(振假名在右、留在基字高亮盒外)');
       expect(
           css.contains(
-              'background-color: var(--hoshi-sasayaki-background-color) !important'),
+              'background-color: var(--hoshi-sentence-audio-background-color) !important'),
           isTrue,
           reason: 'BUG-716：ruby 有声书高亮整句 background-color 填充');
       expect(css.contains('--hoshi-highlight-lane-color'), isFalse,

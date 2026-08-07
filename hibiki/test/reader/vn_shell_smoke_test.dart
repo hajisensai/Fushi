@@ -291,7 +291,7 @@ void main() {
       buildAt,
     );
     final int cueMergeAt =
-        shell.indexOf('this.mergeSasayakiCrossScreenScreens(baseScreens)');
+        shell.indexOf('this.mergeSentenceAudioCrossScreenScreens(baseScreens)');
     expect(attachAt, greaterThan(buildAt));
     expect(
       attachAt,

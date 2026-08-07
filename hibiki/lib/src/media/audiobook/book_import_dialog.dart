@@ -12,7 +12,7 @@ import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart';
-import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
+import 'package:hibiki/src/media/audiobook/subtitle_rematch.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
 import 'package:hibiki/src/media/import/audiobook_health_summary.dart';
 import 'package:hibiki/src/media/import/import_carrier.dart';
@@ -117,7 +117,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   bool get _willRunMatcher {
     if (_epubPath == null || _subtitlePath == null) return false;
     final String ext = _subtitlePath!.split('.').last.toLowerCase();
-    return SasayakiRematch.supportedFormats.contains(ext);
+    return SubtitleRematch.supportedFormats.contains(ext);
   }
 
   bool get _hasSubtitles => _subtitlePath != null;
@@ -369,12 +369,12 @@ class _BookImportDialogState extends State<BookImportDialog>
           ),
           if (!_autoWindow) ...[
             SizedBox(height: tokens.spacing.gap),
-            SasayakiWindowSlider(
+            SubtitleRematchWindowSlider(
               value: _searchWindow,
               onChanged: (v) => setState(() => _searchWindow = v),
             ),
             SizedBox(height: tokens.spacing.gap),
-            SasayakiThresholdSlider(
+            SubtitleRematchThresholdSlider(
               value: _similarityThreshold,
               onChanged: (v) => setState(() => _similarityThreshold = v),
             ),

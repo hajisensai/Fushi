@@ -84,7 +84,7 @@ void main() {
   }
 
   testWidgets(
-    'exported clip paints the sasayaki highlight wash behind the sentence',
+    'exported clip paints the sentenceAudioHighlight highlight wash behind the sentence',
     (WidgetTester tester) async {
       const Color bg = Color(0xFF101010);
       const Color fg = Color(0xFFF0F0F0);
@@ -105,7 +105,7 @@ void main() {
       expect(
         img.hasPixelCloseTo(highlight),
         isTrue,
-        reason: '导出卡片必须把 highlight（sasayaki 逐句高亮跟随色）画成整句背景衬底。',
+        reason: '导出卡片必须把 highlight（sentenceAudioHighlight 逐句高亮跟随色）画成整句背景衬底。',
       );
     },
   );

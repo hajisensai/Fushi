@@ -2821,9 +2821,10 @@ class AppModel with ChangeNotifier {
   Future<void> setCustomThemeContainerColor(Color? c) =>
       themeNotifier.setCustomThemeContainerColor(c);
 
-  Color? get customThemeSasayakiColor => themeNotifier.customThemeSasayakiColor;
-  Future<void> setCustomThemeSasayakiColor(Color? c) =>
-      themeNotifier.setCustomThemeSasayakiColor(c);
+  Color? get customThemeSentenceAudioHighlightColor =>
+      themeNotifier.customThemeSentenceAudioHighlightColor;
+  Future<void> setCustomThemeSentenceAudioHighlightColor(Color? c) =>
+      themeNotifier.setCustomThemeSentenceAudioHighlightColor(c);
 
   /// TODO-977: 全局音频高亮颜色（与阅读器主题解耦），委托 ThemeNotifier。
   Color? get audioHighlightColor => themeNotifier.audioHighlightColor;
@@ -2844,7 +2845,7 @@ class AppModel with ChangeNotifier {
     Color? secondaryColor,
     Color? tertiaryColor,
     Color? containerColor,
-    Color? sasayakiColor,
+    Color? sentenceAudioHighlightColor,
     Color? linkColor,
   }) =>
       themeNotifier.applyCustomTheme(
@@ -2856,7 +2857,7 @@ class AppModel with ChangeNotifier {
         secondaryColor: secondaryColor,
         tertiaryColor: tertiaryColor,
         containerColor: containerColor,
-        sasayakiColor: sasayakiColor,
+        sentenceAudioHighlightColor: sentenceAudioHighlightColor,
         linkColor: linkColor,
       );
 
@@ -6077,7 +6078,7 @@ class _AppModelRemoteLookupService
         cueSentence: payload.cueSentence,
         documentTitle: payload.documentTitle,
         coverPath: coverPath,
-        sasayakiAudioPath: sentenceAudioPath,
+        sentenceAudioPath: sentenceAudioPath,
         sentenceOffset: payload.sentenceOffset,
         source: _forwardedSourceFromName(payload.source),
         bookTitleTag: payload.bookTitleTag,

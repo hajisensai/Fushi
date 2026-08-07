@@ -136,7 +136,7 @@ const tail = screen('tail', 30, 30, true);
 let mergeInput = null;
 vn.reader.screenMode = 'sentence';
 vn.reader.buildSentenceScreens = () => [lead, first, mixed, middle, second, tail];
-vn.reader.mergeSasayakiCrossScreenScreens = screens => {
+vn.reader.mergeSentenceAudioCrossScreenScreens = screens => {
   mergeInput = screens;
   return screens;
 };

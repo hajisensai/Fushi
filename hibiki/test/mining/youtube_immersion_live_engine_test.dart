@@ -80,14 +80,14 @@ void main() {
       // ignore: avoid_print
       print('[yt-mine] aborted=${res.aborted} '
           'cover=${repo.captured?.coverPath} '
-          'audio=${repo.captured?.sasayakiAudioPath}');
+          'audio=${repo.captured?.sentenceAudioPath}');
       expect(res.aborted, isFalse, reason: 'GIF+音频都应抽到，制卡不中止');
       final AnkiMiningContext ctx = repo.captured!;
       expect(ctx.coverPath, isNotNull);
       expect(ctx.coverPath, endsWith('.gif'), reason: '封面应是 cue GIF（非降级静帧）');
       expect(File(ctx.coverPath!).lengthSync(), greaterThan(1000));
-      expect(ctx.sasayakiAudioPath, isNotNull);
-      expect(File(ctx.sasayakiAudioPath!).lengthSync(), greaterThan(1000));
+      expect(ctx.sentenceAudioPath, isNotNull);
+      expect(File(ctx.sentenceAudioPath!).lengthSync(), greaterThan(1000));
       expect(ctx.sentence, isNotEmpty);
       expect(ctx.source, AnkiMiningSource.video);
     },

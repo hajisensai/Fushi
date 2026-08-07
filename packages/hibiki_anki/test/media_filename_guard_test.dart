@@ -60,9 +60,7 @@ class _ConfiguredAnkiRepository extends AnkiRepository {
 const AnkiSettings _settings = AnkiSettings(
   selectedDeckId: 1,
   selectedNoteTypeId: 2,
-  availableDecks: <AnkiDeck>[
-    AnkiDeck(id: 1, name: 'Mining'),
-  ],
+  availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
   availableNoteTypes: <AnkiNoteType>[
     AnkiNoteType(
       id: 2,
@@ -78,10 +76,8 @@ const AnkiSettings _settings = AnkiSettings(
   allowDupes: true,
 );
 
-String _payloadFor(String audioPath) => jsonEncode(<String, String>{
-      'expression': 'word',
-      'audio': audioPath,
-    });
+String _payloadFor(String audioPath) =>
+    jsonEncode(<String, String>{'expression': 'word', 'audio': audioPath});
 
 void main() {
   group('Anki media filenames', () {
@@ -100,50 +96,52 @@ void main() {
     });
 
     test(
-        'AnkiConnect does not reuse media names when a fixed local audio path changes content',
-        () async {
-      final service = _RecordingAnkiConnectService();
-      final repo = _ConfiguredAnkiConnectRepository(
-        service: service,
-        settings: _settings,
-      );
+      'AnkiConnect does not reuse media names when a fixed local audio path changes content',
+      () async {
+        final service = _RecordingAnkiConnectService();
+        final repo = _ConfiguredAnkiConnectRepository(
+          service: service,
+          settings: _settings,
+        );
 
-      audio.writeAsBytesSync(<int>[1, 2, 3]);
-      final MineOutcome first = await repo.mineEntry(
-        rawPayloadJson: _payloadFor(audio.path),
-        context: AnkiMiningContext(
-          sentence: 'first',
-          sasayakiAudioPath: audio.path,
-        ),
-      );
+        audio.writeAsBytesSync(<int>[1, 2, 3]);
+        final MineOutcome first = await repo.mineEntry(
+          rawPayloadJson: _payloadFor(audio.path),
+          context: AnkiMiningContext(
+            sentence: 'first',
+            sentenceAudioPath: audio.path,
+          ),
+        );
 
-      audio.writeAsBytesSync(<int>[9, 8, 7, 6]);
-      final MineOutcome second = await repo.mineEntry(
-        rawPayloadJson: _payloadFor(audio.path),
-        context: AnkiMiningContext(
-          sentence: 'second',
-          sasayakiAudioPath: audio.path,
-        ),
-      );
+        audio.writeAsBytesSync(<int>[9, 8, 7, 6]);
+        final MineOutcome second = await repo.mineEntry(
+          rawPayloadJson: _payloadFor(audio.path),
+          context: AnkiMiningContext(
+            sentence: 'second',
+            sentenceAudioPath: audio.path,
+          ),
+        );
 
-      expect(first.result, MineResult.success);
-      expect(second.result, MineResult.success);
-      expect(service.addedNotes, hasLength(2));
+        expect(first.result, MineResult.success);
+        expect(second.result, MineResult.success);
+        expect(service.addedNotes, hasLength(2));
 
-      final String firstWordAudio = service.addedNotes[0]['Audio']!;
-      final String secondWordAudio = service.addedNotes[1]['Audio']!;
-      expect(firstWordAudio, startsWith('[sound:hibiki_audio_'));
-      expect(secondWordAudio, startsWith('[sound:hibiki_audio_'));
-      expect(firstWordAudio, isNot(secondWordAudio));
+        final String firstWordAudio = service.addedNotes[0]['Audio']!;
+        final String secondWordAudio = service.addedNotes[1]['Audio']!;
+        expect(firstWordAudio, startsWith('[sound:hibiki_audio_'));
+        expect(secondWordAudio, startsWith('[sound:hibiki_audio_'));
+        expect(firstWordAudio, isNot(secondWordAudio));
 
-      final String firstSentenceAudio = service.addedNotes[0]['SentenceAudio']!;
-      final String secondSentenceAudio =
-          service.addedNotes[1]['SentenceAudio']!;
-      expect(firstSentenceAudio, startsWith('[sound:hibiki_audio_'));
-      expect(secondSentenceAudio, startsWith('[sound:hibiki_audio_'));
-      expect(firstSentenceAudio, isNot(secondSentenceAudio));
-      expect(service.storedFilenames.toSet(), hasLength(2));
-    });
+        final String firstSentenceAudio =
+            service.addedNotes[0]['SentenceAudio']!;
+        final String secondSentenceAudio =
+            service.addedNotes[1]['SentenceAudio']!;
+        expect(firstSentenceAudio, startsWith('[sound:hibiki_audio_'));
+        expect(secondSentenceAudio, startsWith('[sound:hibiki_audio_'));
+        expect(firstSentenceAudio, isNot(secondSentenceAudio));
+        expect(service.storedFilenames.toSet(), hasLength(2));
+      },
+    );
 
     test('content-derived media names use SHA-256 and preserve extension', () {
       expect(
@@ -172,92 +170,95 @@ void main() {
       );
     });
 
-    test('BUG-904: same path, different dictionary -> different cache name',
-        () {
-      const path = 'gaiji/x.svg';
-      final a = ankiDictionaryMediaCacheFilename('A', path);
-      final b = ankiDictionaryMediaCacheFilename('B', path);
-      // 跨词典必须落到不同文件，否则后制卡的词典嵌入前者的外字（串味）。
-      expect(a, isNot(b));
-      expect(a, 'hibiki_dict_2bd97ca34b2d23c7ac8666c112bf1aa849865b82.svg');
-      expect(b, 'hibiki_dict_834d0a756fd728a369a89c017bd202dbc766bc31.svg');
-      // 同 dict 同 path 稳定一致（writer 与 reader 才对得上）。
-      expect(
-        ankiDictionaryMediaCacheFilename('A', path),
-        ankiDictionaryMediaCacheFilename('A', path),
-      );
-      // NUL 分隔消除拼接歧义：('ab','c') 与 ('a','bc') 不得相同。
-      expect(
-        ankiDictionaryMediaCacheFilename('ab', 'c'),
-        isNot(ankiDictionaryMediaCacheFilename('a', 'bc')),
-      );
-    });
+    test(
+      'BUG-904: same path, different dictionary -> different cache name',
+      () {
+        const path = 'gaiji/x.svg';
+        final a = ankiDictionaryMediaCacheFilename('A', path);
+        final b = ankiDictionaryMediaCacheFilename('B', path);
+        // 跨词典必须落到不同文件，否则后制卡的词典嵌入前者的外字（串味）。
+        expect(a, isNot(b));
+        expect(a, 'hibiki_dict_2bd97ca34b2d23c7ac8666c112bf1aa849865b82.svg');
+        expect(b, 'hibiki_dict_834d0a756fd728a369a89c017bd202dbc766bc31.svg');
+        // 同 dict 同 path 稳定一致（writer 与 reader 才对得上）。
+        expect(
+          ankiDictionaryMediaCacheFilename('A', path),
+          ankiDictionaryMediaCacheFilename('A', path),
+        );
+        // NUL 分隔消除拼接歧义：('ab','c') 与 ('a','bc') 不得相同。
+        expect(
+          ankiDictionaryMediaCacheFilename('ab', 'c'),
+          isNot(ankiDictionaryMediaCacheFilename('a', 'bc')),
+        );
+      },
+    );
 
     test(
-        'AnkiDroid does not reuse preferred media names when a fixed local audio path changes content',
-        () async {
-      TestWidgetsFlutterBinding.ensureInitialized();
-      const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
-      final List<List<String>> addedNotes = <List<String>>[];
-      final List<String> preferredNames = <String>[];
+      'AnkiDroid does not reuse preferred media names when a fixed local audio path changes content',
+      () async {
+        TestWidgetsFlutterBinding.ensureInitialized();
+        const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
+        final List<List<String>> addedNotes = <List<String>>[];
+        final List<String> preferredNames = <String>[];
 
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (MethodCall call) async {
-        switch (call.method) {
-          case 'addFileToMedia':
-            final args = Map<String, dynamic>.from(call.arguments as Map);
-            final String preferredName = args['preferredName'] as String;
-            preferredNames.add(preferredName);
-            return preferredName;
-          case 'addNote':
-            final args = Map<String, dynamic>.from(call.arguments as Map);
-            addedNotes.add(List<String>.from(args['fields'] as List));
-            return true;
-          default:
-            fail('Unexpected AnkiDroid channel call: ${call.method}');
-        }
-      });
-      addTearDown(() {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(channel, null);
-      });
+            .setMockMethodCallHandler(channel, (MethodCall call) async {
+              switch (call.method) {
+                case 'addFileToMedia':
+                  final args = Map<String, dynamic>.from(call.arguments as Map);
+                  final String preferredName = args['preferredName'] as String;
+                  preferredNames.add(preferredName);
+                  return preferredName;
+                case 'addNote':
+                  final args = Map<String, dynamic>.from(call.arguments as Map);
+                  addedNotes.add(List<String>.from(args['fields'] as List));
+                  return true;
+                default:
+                  fail('Unexpected AnkiDroid channel call: ${call.method}');
+              }
+            });
+        addTearDown(() {
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(channel, null);
+        });
 
-      final repo = _ConfiguredAnkiRepository(_settings);
+        final repo = _ConfiguredAnkiRepository(_settings);
 
-      audio.writeAsBytesSync(<int>[1, 2, 3]);
-      final MineOutcome first = await repo.mineEntry(
-        rawPayloadJson: _payloadFor(audio.path),
-        context: AnkiMiningContext(
-          sentence: 'first',
-          sasayakiAudioPath: audio.path,
-        ),
-      );
+        audio.writeAsBytesSync(<int>[1, 2, 3]);
+        final MineOutcome first = await repo.mineEntry(
+          rawPayloadJson: _payloadFor(audio.path),
+          context: AnkiMiningContext(
+            sentence: 'first',
+            sentenceAudioPath: audio.path,
+          ),
+        );
 
-      audio.writeAsBytesSync(<int>[9, 8, 7, 6]);
-      final MineOutcome second = await repo.mineEntry(
-        rawPayloadJson: _payloadFor(audio.path),
-        context: AnkiMiningContext(
-          sentence: 'second',
-          sasayakiAudioPath: audio.path,
-        ),
-      );
+        audio.writeAsBytesSync(<int>[9, 8, 7, 6]);
+        final MineOutcome second = await repo.mineEntry(
+          rawPayloadJson: _payloadFor(audio.path),
+          context: AnkiMiningContext(
+            sentence: 'second',
+            sentenceAudioPath: audio.path,
+          ),
+        );
 
-      expect(first.result, MineResult.success);
-      expect(second.result, MineResult.success);
-      expect(addedNotes, hasLength(2));
+        expect(first.result, MineResult.success);
+        expect(second.result, MineResult.success);
+        expect(addedNotes, hasLength(2));
 
-      final String firstWordAudio = addedNotes[0][1];
-      final String secondWordAudio = addedNotes[1][1];
-      expect(firstWordAudio, startsWith('[sound:hibiki_audio_'));
-      expect(secondWordAudio, startsWith('[sound:hibiki_audio_'));
-      expect(firstWordAudio, isNot(secondWordAudio));
+        final String firstWordAudio = addedNotes[0][1];
+        final String secondWordAudio = addedNotes[1][1];
+        expect(firstWordAudio, startsWith('[sound:hibiki_audio_'));
+        expect(secondWordAudio, startsWith('[sound:hibiki_audio_'));
+        expect(firstWordAudio, isNot(secondWordAudio));
 
-      final String firstSentenceAudio = addedNotes[0][2];
-      final String secondSentenceAudio = addedNotes[1][2];
-      expect(firstSentenceAudio, startsWith('[sound:hibiki_audio_'));
-      expect(secondSentenceAudio, startsWith('[sound:hibiki_audio_'));
-      expect(firstSentenceAudio, isNot(secondSentenceAudio));
-      expect(preferredNames.toSet(), hasLength(2));
-    });
+        final String firstSentenceAudio = addedNotes[0][2];
+        final String secondSentenceAudio = addedNotes[1][2];
+        expect(firstSentenceAudio, startsWith('[sound:hibiki_audio_'));
+        expect(secondSentenceAudio, startsWith('[sound:hibiki_audio_'));
+        expect(firstSentenceAudio, isNot(secondSentenceAudio));
+        expect(preferredNames.toSet(), hasLength(2));
+      },
+    );
   });
 }

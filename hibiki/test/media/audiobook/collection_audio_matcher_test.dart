@@ -19,7 +19,7 @@ AudioCue _cue({
     ..audioFileIndex = audioFileIndex;
 }
 
-String _frag(int sec, int ns, int ne) => SasayakiMatchCodec.encodeHit(
+String _frag(int sec, int ns, int ne) => SubtitleRematchCodec.encodeHit(
       sectionIndex: sec,
       normCharStart: ns,
       normCharEnd: ne,
@@ -243,7 +243,7 @@ void main() {
       expect(result, isNull);
     });
 
-    test('no sasayaki cues falls through to text', () {
+    test('no sentenceAudioHighlight cues falls through to text', () {
       final cues = [
         _cue(
             audioFileIndex: 0,

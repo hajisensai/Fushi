@@ -20,7 +20,7 @@ void main() {
     'ecru-theme': (
       bg: Color(0xFFF7F6EB),
       fg: Color(0xDE000000),
-      sasayaki: Color(0x66A8C68C),
+      sentenceAudioHighlight: Color(0x66A8C68C),
       selection: Color(0x59C2B280),
       link: Color(0xFF7A6232),
       dark: false,
@@ -28,7 +28,7 @@ void main() {
     'black-theme': (
       bg: Color(0xFF000000),
       fg: Color(0xDEFFFFFF),
-      sasayaki: Color(0x663C78AA),
+      sentenceAudioHighlight: Color(0x663C78AA),
       selection: Color(0x66AA8750),
       link: Color(0xFF5B9BD5),
       dark: true,
@@ -98,7 +98,7 @@ void main() {
       const ReaderThemeColors custom = (
         bg: Color(0xFF102030),
         fg: Color(0xFFEEEEEE),
-        sasayaki: Color(0x66335577),
+        sentenceAudioHighlight: Color(0x66335577),
         selection: Color(0x66445566),
         link: Color(0xFF778899),
         dark: true,
@@ -127,12 +127,12 @@ void main() {
         presetMap: presetMap,
         scheme: scheme,
       );
-      expect(c.sasayaki, scheme.primary.withValues(alpha: 0.40));
+      expect(c.sentenceAudioHighlight, scheme.primary.withValues(alpha: 0.40));
       expect(c.selection, scheme.tertiary.withValues(alpha: 0.40));
       expect(c.link, scheme.primary);
       // 关键回归断言：不再是旧硬编码默认色。
-      expect(c.sasayaki, isNot(const Color(0x6687CEEB)),
-          reason: '旧默认 sasayaki 天蓝 = 没吃强调色（BUG-396）');
+      expect(c.sentenceAudioHighlight, isNot(const Color(0x6687CEEB)),
+          reason: '旧默认 sentenceAudioHighlight 天蓝 = 没吃强调色（BUG-396）');
       expect(c.selection, isNot(const Color(0x66A0A0A0)),
           reason: '旧默认 selection 灰 = 没吃强调色');
       expect(c.link, isNot(const Color(0xFF426CF5)),
@@ -146,7 +146,7 @@ void main() {
         presetMap: presetMap,
         scheme: scheme,
       );
-      expect(c.sasayaki, scheme.primary.withValues(alpha: 0.34));
+      expect(c.sentenceAudioHighlight, scheme.primary.withValues(alpha: 0.34));
       expect(c.selection, scheme.tertiary.withValues(alpha: 0.35));
       expect(c.link, scheme.primary);
     });
@@ -171,7 +171,7 @@ void main() {
   group('TODO-977 · 音频高亮全局覆盖（audioHighlightOverride）', () {
     const Color kOverride = Color(0xCCFF00AA);
 
-    test('system-theme：override 写穿 sasayaki，不再用 primary', () {
+    test('system-theme：override 写穿 sentenceAudioHighlight，不再用 primary', () {
       final ColorScheme scheme = lightScheme();
       final ReaderThemeColors c = resolveReaderThemeColors(
         themeKey: 'system-theme',
@@ -179,8 +179,9 @@ void main() {
         scheme: scheme,
         audioHighlightOverride: kOverride,
       );
-      expect(c.sasayaki, kOverride);
-      expect(c.sasayaki, isNot(scheme.primary.withValues(alpha: 0.40)),
+      expect(c.sentenceAudioHighlight, kOverride);
+      expect(c.sentenceAudioHighlight,
+          isNot(scheme.primary.withValues(alpha: 0.40)),
           reason: '设了全局音频高亮色后不应再用主题主色（BUG-464）');
       // 其它角色色不受影响。
       expect(c.selection, scheme.tertiary.withValues(alpha: 0.40));
@@ -188,24 +189,25 @@ void main() {
       expect(c.bg, scheme.surface);
     });
 
-    test('preset 主题：override 也写穿 sasayaki（覆盖手调底色）', () {
+    test('preset 主题：override 也写穿 sentenceAudioHighlight（覆盖手调底色）', () {
       final ReaderThemeColors c = resolveReaderThemeColors(
         themeKey: 'ecru-theme',
         presetMap: presetMap,
         scheme: lightScheme(),
         audioHighlightOverride: kOverride,
       );
-      expect(c.sasayaki, kOverride);
+      expect(c.sentenceAudioHighlight, kOverride);
       // preset 的其它角色色保持透传，零变化。
       expect(c.bg, const Color(0xFFF7F6EB));
       expect(c.selection, const Color(0x59C2B280));
     });
 
-    test('custom-theme：override 也写穿，压过 customColors.sasayaki', () {
+    test('custom-theme：override 也写穿，压过 customColors.sentenceAudioHighlight',
+        () {
       const ReaderThemeColors custom = (
         bg: Color(0xFF102030),
         fg: Color(0xFFEEEEEE),
-        sasayaki: Color(0x66335577),
+        sentenceAudioHighlight: Color(0x66335577),
         selection: Color(0x66445566),
         link: Color(0xFF778899),
         dark: true,
@@ -217,7 +219,7 @@ void main() {
         customColors: custom,
         audioHighlightOverride: kOverride,
       );
-      expect(c.sasayaki, kOverride);
+      expect(c.sentenceAudioHighlight, kOverride);
       expect(c.selection, custom.selection);
     });
 
@@ -229,7 +231,7 @@ void main() {
         scheme: scheme,
         audioHighlightOverride: null,
       );
-      expect(c.sasayaki, scheme.primary.withValues(alpha: 0.40));
+      expect(c.sentenceAudioHighlight, scheme.primary.withValues(alpha: 0.40));
     });
   });
 }

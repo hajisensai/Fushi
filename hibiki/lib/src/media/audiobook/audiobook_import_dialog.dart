@@ -16,7 +16,7 @@ import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
 import 'package:hibiki/src/media/import/import_flow_mixin.dart';
-import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
+import 'package:hibiki/src/media/audiobook/subtitle_rematch.dart';
 import 'package:hibiki/src/sync/deletion_disclosure.dart';
 import 'package:hibiki/src/sync/deletion_prompt.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
@@ -102,7 +102,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     if (_alignmentPath == null) return false;
     if (!_hasEpub) return false;
     final String ext = _alignmentPath!.split('.').last.toLowerCase();
-    return SasayakiRematch.supportedFormats.contains(ext);
+    return SubtitleRematch.supportedFormats.contains(ext);
   }
 
   bool get _canAutoProbe => _willRunMatcher;
@@ -318,7 +318,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   /// unrun 状态也允许重跑 — 历史脏记录的书借此给它跑一次。
   bool _canReMatch(Audiobook ab, AudiobookHealth health) {
     if (!_hasEpub) return false;
-    if (!SasayakiRematch.isEligible(ab)) return false;
+    if (!SubtitleRematch.isEligible(ab)) return false;
     switch (health.kind) {
       case HealthKind.partial:
       case HealthKind.failed:
@@ -348,15 +348,15 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       case HealthKind.ok:
         icon = Icons.check_circle;
         color = cs.tertiary;
-        label = t.sasayaki_health_label(pct: '$pctStr%', detail: tail);
+        label = t.audiobook_rematch_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.partial:
         icon = Icons.warning_amber;
         color = cs.secondary;
-        label = t.sasayaki_health_label(pct: '$pctStr%', detail: tail);
+        label = t.audiobook_rematch_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.failed:
         icon = Icons.error_outline;
         color = cs.error;
-        label = t.sasayaki_health_label(pct: '$pctStr%', detail: tail);
+        label = t.audiobook_rematch_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.running:
       case HealthKind.unrun:
       case HealthKind.notApplicable:
@@ -408,14 +408,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         ],
         if (!widget.audioOnly && _willRunMatcher) ...[
           SizedBox(height: tokens.spacing.rowVertical),
-          SasayakiWindowSlider(
+          SubtitleRematchWindowSlider(
             value: _searchWindow,
             onChanged: (v) => setState(() => _searchWindow = v),
             onAutoTap: _canAutoProbe ? _handleAutoProbe : null,
             autoBusy: _autoProbing,
           ),
           SizedBox(height: tokens.spacing.gap),
-          SasayakiThresholdSlider(
+          SubtitleRematchThresholdSlider(
             value: _similarityThreshold,
             onChanged: (v) => setState(() => _similarityThreshold = v),
           ),
@@ -548,7 +548,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         _probedCues = await _parseCuesForProbe();
         _probedCuesSourcePath = _alignmentPath;
       }
-      final int? best = await SasayakiRematch.runAutoProbe(
+      final int? best = await SubtitleRematch.runAutoProbe(
         sections: _probedSections ?? const <EpubSection>[],
         cues: _probedCues ?? const <AudioCue>[],
       );
@@ -581,7 +581,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     // probe 口径与 matcher 管线一致：仅 srt/lrc/vtt/ass；其余（含 ssa/smil/json/
     // 未知扩展名）返回空——与收敛前的显式四分支 + default 空返回逐位等价
     // （公共函数 default 落 SRT，故必须先用 supportedFormats 门控）。
-    if (!SasayakiRematch.supportedFormats.contains(ext)) {
+    if (!SubtitleRematch.supportedFormats.contains(ext)) {
       return const <AudioCue>[];
     }
     try {
@@ -845,7 +845,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       );
       return;
     }
-    await SasayakiRematch.promptAndRun(
+    await SubtitleRematch.promptAndRun(
       context: context,
       ab: ab,
       repo: widget.repo,
@@ -892,7 +892,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         searchWindow: _searchWindow,
         similarityThreshold: _similarityThreshold,
       );
-      SasayakiMatchCodec.applyToCues(cues: cues, result: result);
+      SubtitleRematchCodec.applyToCues(cues: cues, result: result);
       final int pct = (result.matchRate * 100).round();
       return AudiobookHealth.fromRatePct(
         ratePct: pct,

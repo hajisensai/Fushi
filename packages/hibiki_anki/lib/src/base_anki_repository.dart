@@ -26,8 +26,10 @@ import 'lapis_preset.dart';
 @immutable
 class AudioFetchOutcome {
   const AudioFetchOutcome._({this.ref, this.failureReason})
-      : assert(ref == null || failureReason == null,
-            'A successful audio fetch (ref) cannot also carry a failure reason.');
+    : assert(
+        ref == null || failureReason == null,
+        'A successful audio fetch (ref) cannot also carry a failure reason.',
+      );
 
   /// 成功：拿到裸媒体引用 [ref]。
   const AudioFetchOutcome.stored(String ref) : this._(ref: ref);
@@ -78,15 +80,18 @@ abstract class BaseAnkiRepository {
 
   Future<void> saveSettings(AnkiSettings settings) async {
     final prefs = await SharedPreferences.getInstance();
-    final bool saved =
-        await prefs.setString(settingsKey, jsonEncode(settings.toJson()));
+    final bool saved = await prefs.setString(
+      settingsKey,
+      jsonEncode(settings.toJson()),
+    );
     if (!saved) {
       throw StateError('Failed to persist Anki settings.');
     }
   }
 
   Future<AnkiSettings> updateSettings(
-      AnkiSettings Function(AnkiSettings) transform) async {
+    AnkiSettings Function(AnkiSettings) transform,
+  ) async {
     final current = await loadSettings();
     final updated = transform(current);
     await saveSettings(updated);
@@ -113,10 +118,9 @@ abstract class BaseAnkiRepository {
     required int noteId,
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure(
-        'This Anki backend does not support overwriting a mined card.',
-      );
+  }) async => MineOutcome.failure(
+    'This Anki backend does not support overwriting a mined card.',
+  );
 
   /// TODO-614：按「与查重同一条件」反查一张可被覆写的**已存在** note id。
   ///
@@ -129,8 +133,9 @@ abstract class BaseAnkiRepository {
   /// 只有能按内容反查真实 note id 的后端（[AnkiConnectRepository]）才覆写它。AnkiDroid
   /// 后端（只回 bool）继承默认降级，scope=all 对它仍不可覆写更早卡，与现状一致。
   Future<int?> findOverwriteTargetNoteId(
-          String expression, String reading) async =>
-      null;
+    String expression,
+    String reading,
+  ) async => null;
 
   /// TODO-1007/1008：按「与查重同一条件」（第一字段=expression）反查 Anki 中**所有**
   /// 已存在的同词卡，返回它们的 [MinedNoteRef]（noteId + 一行预览），**不受
@@ -144,8 +149,9 @@ abstract class BaseAnkiRepository {
   /// **默认实现 = 优雅降级**：基类返回空列表。两后端各自覆写（AnkiConnect 经 findNotes +
   /// notesInfo，AnkiDroid 经 ContentProvider findDuplicateNotes → NoteInfo.getId）。
   Future<List<MinedNoteRef>> findMatchingNotes(
-          String expression, String reading) async =>
-      const <MinedNoteRef>[];
+    String expression,
+    String reading,
+  ) async => const <MinedNoteRef>[];
 
   /// TODO-1007/1008：读取一张已存在 note（[noteId]）的现有字段（字段名 → 值），供
   /// note viewer 只读展示。两后端各自覆写（AnkiConnect `notesInfo` / AnkiDroid
@@ -184,8 +190,8 @@ abstract class BaseAnkiRepository {
   /// 与漂移判定。模型不存在或后端不支持返回 `null`；后端可达性错误照抛
   /// （调用方决定提示还是静默跳过）。**默认实现 = 优雅降级**：返回 `null`。
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-          String modelName) async =>
-      null;
+    String modelName,
+  ) async => null;
 
   /// 覆写 [modelName] 的 styling（CSS）。返回 `false` = 后端不支持（默认
   /// 降级）；成功返回 `true`；后端失败照抛。
@@ -196,8 +202,9 @@ abstract class BaseAnkiRepository {
   /// 降级）；成功返回 `true`；后端失败照抛。只在「从备份恢复」时使用——样式
   /// 客制化本身只动 styling。
   Future<bool> updateNoteTypeTemplates(
-          String modelName, List<AnkiCardTemplate> templates) async =>
-      false;
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async => false;
 
   // ── 媒体存储优化（字节级去重，见 anki_media_dedup.dart）────────────────
 
@@ -220,8 +227,7 @@ abstract class BaseAnkiRepository {
     Future<void> Function(Map<String, dynamic> entry)? onJournal,
     AnkiMediaDedupOnProgress? onProgress,
     bool Function()? shouldCancel,
-  }) async =>
-      null;
+  }) async => null;
 
   @protected
   AnkiDeck selectDeckAfterFetch(List<AnkiDeck> decks, AnkiSettings current) =>
@@ -230,23 +236,29 @@ abstract class BaseAnkiRepository {
           ? decks.firstWhereOrNull((d) => d.name == current.selectedDeckName)
           : null) ??
       decks.firstWhereOrNull(
-          (d) => !d.name.toLowerCase().startsWith('default')) ??
+        (d) => !d.name.toLowerCase().startsWith('default'),
+      ) ??
       decks.first;
 
   @protected
   AnkiNoteType selectNoteTypeAfterFetch(
-          List<AnkiNoteType> noteTypes, AnkiSettings current) =>
+    List<AnkiNoteType> noteTypes,
+    AnkiSettings current,
+  ) =>
       noteTypes.firstWhereOrNull((t) => t.id == current.selectedNoteTypeId) ??
       (current.selectedNoteTypeName != null
-          ? noteTypes
-              .firstWhereOrNull((t) => t.name == current.selectedNoteTypeName)
+          ? noteTypes.firstWhereOrNull(
+              (t) => t.name == current.selectedNoteTypeName,
+            )
           : null) ??
       noteTypes.firstWhereOrNull(LapisPreset.matches) ??
       noteTypes.first;
 
   @protected
   Map<String, String> fieldMappingsAfterFetch(
-      AnkiNoteType selectedNoteType, AnkiSettings current) {
+    AnkiNoteType selectedNoteType,
+    AnkiSettings current,
+  ) {
     if (LapisPreset.matches(selectedNoteType) &&
         !_currentSelectionMatchesLapis(current)) {
       return LapisPreset.applyDefaults(selectedNoteType, {});
@@ -255,9 +267,11 @@ abstract class BaseAnkiRepository {
   }
 
   bool _currentSelectionMatchesLapis(AnkiSettings current) {
-    final matched = current.availableNoteTypes.firstWhereOrNull((t) =>
-        t.id == current.selectedNoteTypeId ||
-        t.name == current.selectedNoteTypeName);
+    final matched = current.availableNoteTypes.firstWhereOrNull(
+      (t) =>
+          t.id == current.selectedNoteTypeId ||
+          t.name == current.selectedNoteTypeName,
+    );
     if (matched != null) return LapisPreset.matches(matched);
     return current.selectedNoteTypeName?.toLowerCase().contains('lapis') ??
         false;
@@ -357,8 +371,10 @@ abstract class BaseAnkiRepository {
     // 块级标签承担换行分词，直接删空会把相邻词粘连成一个词；字幕行内标签则
     // 紧贴正文、删空才不会在日文句中引入假空格。两份实现不强并（G11）。
     final String noTags = value.replaceAll(RegExp(r'<[^>]*>'), ' ');
-    final String collapsed =
-        noTags.replaceAll('&nbsp;', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    final String collapsed = noTags
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
     if (collapsed.length <= maxLen) return collapsed;
     return '${collapsed.substring(0, maxLen)}…';
   }
@@ -448,7 +464,7 @@ abstract class BaseAnkiRepository {
     required AnkiMiningPayload payload,
     required AnkiMiningContext context,
     required String? coverRef,
-    required String? sasayakiRef,
+    required String? sentenceAudioRef,
     required String processedAudio,
     required Map<String, String> dictionaryMediaTags,
     String? audioWarning,
@@ -459,7 +475,7 @@ abstract class BaseAnkiRepository {
       cueSentence: context.cueSentence,
       documentTitle: context.documentTitle,
       coverPath: coverRef,
-      sasayakiAudioPath: sasayakiRef,
+      sentenceAudioPath: sentenceAudioRef,
       sentenceOffset: context.sentenceOffset,
     );
 

@@ -71,7 +71,7 @@ void main() {
     await tester.pump();
   }
 
-  Widget sasayakiLikeBody() => Column(
+  Widget sentenceAudioLikeBody() => Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: const <Widget>[
@@ -94,7 +94,7 @@ void main() {
   bool isOverflow(Object? e) =>
       e != null && e.toString().toLowerCase().contains('overflow');
 
-  group('sasayaki rematch dialog (0.62 cap) mechanism', () {
+  group('sentenceAudioHighlight rematch dialog (0.62 cap) mechanism', () {
     testWidgets('scrollable false overflows at a short window (root cause)',
         (WidgetTester tester) async {
       await pumpFrame(
@@ -102,7 +102,7 @@ void main() {
         screen: const Size(360, 400),
         maxHeightFactor: 0.62,
         innerScrollable: false,
-        body: sasayakiLikeBody(),
+        body: sentenceAudioLikeBody(),
       );
       expect(isOverflow(tester.takeException()), isTrue,
           reason: 'non-scrolling two-slider Column overflows under 248px cap');
@@ -115,7 +115,7 @@ void main() {
         screen: const Size(360, 400),
         maxHeightFactor: 0.62,
         innerScrollable: true,
-        body: sasayakiLikeBody(),
+        body: sentenceAudioLikeBody(),
       );
       expect(tester.takeException(), isNull, reason: 'scrollable true scrolls');
       expect(

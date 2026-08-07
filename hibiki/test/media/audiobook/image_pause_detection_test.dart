@@ -40,23 +40,26 @@ void main() {
   test('shared cue-advance helper reveals the crossed image (BUG-007 gap2)',
       () {
     expect(src, contains('window.__hoshiImagePauseAdvance'),
-        reason: 'cue 推进检测抽成共享 helper，selector/sasayaki 两路径复用');
+        reason: 'cue 推进检测抽成共享 helper，selector/sentenceAudioHighlight 两路径复用');
     expect(src, contains('window.__hoshiRevealTarget'),
         reason: '命中插图、reveal 时须把视口滚到插图（否则暂停看不到图）');
   });
 
-  test('sasayaki cue path is wired to image-pause detection (BUG-007 gap1)',
+  test(
+      'sentenceAudioHighlight cue path is wired to image-pause detection (BUG-007 gap1)',
       () {
-    expect(src, contains('window.__hoshiSasayakiAnchorEl'),
-        reason: 'sasayaki cue 须能解析锚点元素（cueRangesMap/cueWrappers）');
+    expect(src, contains('window.__hoshiSentenceAudioAnchorEl'),
+        reason:
+            'sentenceAudioHighlight cue 须能解析锚点元素（cueRangesMap/cueWrappers）');
     expect(src, contains('cueRangesMap'),
-        reason: 'CSS-highlights 路径从 cueRangesMap 取 sasayaki cue 的 range 锚点');
+        reason:
+            'CSS-highlights 路径从 cueRangesMap 取 sentenceAudioHighlight cue 的 range 锚点');
     final int sasIdx =
-        src.indexOf('__hoshiHighlightSasayakiCueById = function');
+        src.indexOf('__hoshiHighlightSentenceAudioCueById = function');
     expect(sasIdx, greaterThan(-1));
     final String sasFn = src.substring(sasIdx, sasIdx + 600);
     expect(sasFn, contains('__hoshiImagePauseAdvance'),
-        reason: 'sasayaki 高亮路径须复用共享跨图检测核心');
+        reason: 'sentenceAudioHighlight 高亮路径须复用共享跨图检测核心');
   });
 
   // TODO-724：竖排滚动模式有声书自动播放跳到图片。两个根因守卫。
@@ -81,12 +84,13 @@ void main() {
         reason: 'reader 须按 imagePauseSec>0 算出 pauseEnabled 传给 bridge');
     expect(pageSrc, contains('pauseEnabled: pauseEnabled'),
         reason: 'highlight 调用须传 pauseEnabled');
-    expect(src, contains('window.__hoshiHighlightSasayakiCueById('),
-        reason: 'sasayaki 路径仍是图片暂停检测入口');
-    final int callIdx = src.indexOf('window.__hoshiHighlightSasayakiCueById(');
+    expect(src, contains('window.__hoshiHighlightSentenceAudioCueById('),
+        reason: 'sentenceAudioHighlight 路径仍是图片暂停检测入口');
+    final int callIdx =
+        src.indexOf('window.__hoshiHighlightSentenceAudioCueById(');
     final String call = src.substring(callIdx, callIdx + 120);
     expect(call, contains(r'$reveal, $pauseEnabled'),
-        reason: 'sasayaki 高亮 JS 调用须把 pauseEnabled 透传');
+        reason: 'sentenceAudioHighlight 高亮 JS 调用须把 pauseEnabled 透传');
   });
 
   test(

@@ -15,7 +15,7 @@ AudioCue _cue({
     ..bookKey = ''
     ..chapterHref = ''
     ..sentenceIndex = sentenceIndex
-    ..textFragmentId = SasayakiMatchCodec.encodeHit(
+    ..textFragmentId = SubtitleRematchCodec.encodeHit(
       sectionIndex: section,
       normCharStart: ns,
       normCharEnd: ne,
@@ -27,14 +27,14 @@ AudioCue _cue({
 }
 
 void main() {
-  group('buildSasayakiPayload (BUG-060)', () {
+  group('buildSentenceAudioPayload (BUG-060)', () {
     test('每条 entry 带 id/start/length/text，且 text == cue.text', () {
       final List<AudioCue> cues = <AudioCue>[
         _cue(sentenceIndex: 0, section: 0, ns: 10, ne: 18, text: '吾輩は猫である'),
         _cue(sentenceIndex: 1, section: 0, ns: 30, ne: 41, text: '名前はまだ無い'),
       ];
 
-      final payload = AudiobookBridge.buildSasayakiPayload(cues, 0);
+      final payload = AudiobookBridge.buildSentenceAudioPayload(cues, 0);
 
       expect(payload.length, 2);
       expect(payload.first.keys,
@@ -51,13 +51,13 @@ void main() {
         _cue(sentenceIndex: 1, section: 1, ns: 0, ne: 5, text: 'かきくけこ'),
       ];
 
-      final payload = AudiobookBridge.buildSasayakiPayload(cues, 1);
+      final payload = AudiobookBridge.buildSentenceAudioPayload(cues, 1);
 
       expect(payload.length, 1);
       expect(payload.single['text'], 'かきくけこ');
     });
 
-    test('非 sasayaki 的 cue 被跳过', () {
+    test('非 sentenceAudioHighlight 的 cue 被跳过', () {
       final AudioCue plain = AudioCue()
         ..bookKey = ''
         ..chapterHref = ''
@@ -68,8 +68,8 @@ void main() {
         ..endMs = 0
         ..audioFileIndex = 0;
 
-      expect(
-          AudiobookBridge.buildSasayakiPayload(<AudioCue>[plain], 0), isEmpty);
+      expect(AudiobookBridge.buildSentenceAudioPayload(<AudioCue>[plain], 0),
+          isEmpty);
     });
   });
 }

@@ -7,7 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'audiobook_model.dart';
 import '../matching/collection_audio_matcher.dart';
 import '../parsers/json_alignment_parser.dart';
-import '../matching/sasayaki_match_codec.dart';
+import '../matching/subtitle_rematch_codec.dart';
 
 /// 有声书播放控制器。
 ///
@@ -94,8 +94,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   AudioCue? cueAtCurrentPositionInBook() {
     if (_allBookCues.isEmpty) return _currentCue;
     final int audioFileIndex = _player.currentIndex ?? 0;
-    final int effectiveMs =
-        (_player.position.inMilliseconds - delayMs.value).clamp(0, 1 << 30);
+    final int effectiveMs = (_player.position.inMilliseconds - delayMs.value)
+        .clamp(0, 1 << 30);
     AudioCue? best;
     int bestStart = -1;
     for (final AudioCue cue in _allBookCues) {
@@ -134,8 +134,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     final int audioFileIndex = _player.currentIndex ?? 0;
     final List<AudioCue> fileCues = _chapterCuesForAudioFile(audioFileIndex);
     if (fileCues.isEmpty) return _currentCue;
-    final int effectiveMs =
-        (_player.position.inMilliseconds - delayMs.value).clamp(0, 1 << 30);
+    final int effectiveMs = (_player.position.inMilliseconds - delayMs.value)
+        .clamp(0, 1 << 30);
     return _displayCueFor(cues: fileCues, effectiveMs: effectiveMs);
   }
 
@@ -414,8 +414,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   @visibleForTesting
   static bool shouldSnapAfterImagePauseResume({
     required bool readerMovedDuringPause,
-  }) =>
-      !readerMovedDuringPause;
+  }) => !readerMovedDuringPause;
 
   void setImagePauseSec(int sec) {
     final int clamped = sec.clamp(0, 15);
@@ -499,10 +498,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (_player.playing) {
       // `_player.pause()` 要等平台确认；本轮若在这段窗口里被作废（用户按暂停 /
       // 退出阅读器 / 换书），done 已被完成，这里不再干等平台。
-      await Future.any<void>(<Future<void>>[
-        _player.pause(),
-        done.future,
-      ]);
+      await Future.any<void>(<Future<void>>[_player.pause(), done.future]);
     }
     if (!_ownsImageChapterPause(
       readerTransitionEpoch: readerTransitionEpoch,
@@ -730,7 +726,8 @@ class AudiobookPlayerController extends ChangeNotifier {
       } catch (e, stack) {
         debugPrint('AudiobookController.setSpeed: $e\n$stack');
         debugPrint(
-            '[hibiki-audiobook] initial setSpeed $initialSpeed failed: $e');
+          '[hibiki-audiobook] initial setSpeed $initialSpeed failed: $e',
+        );
       }
     }
 
@@ -742,7 +739,8 @@ class AudiobookPlayerController extends ChangeNotifier {
       } catch (e, stack) {
         debugPrint('AudiobookController.setVolume: $e\n$stack');
         debugPrint(
-            '[hibiki-audiobook] initial setVolume $initialVolume failed: $e');
+          '[hibiki-audiobook] initial setVolume $initialVolume failed: $e',
+        );
       }
     }
 
@@ -768,8 +766,9 @@ class AudiobookPlayerController extends ChangeNotifier {
         onPositionWrite;
     if (write == null) return _positionWriteTail;
 
-    final Future<void> operation =
-        _positionWriteTail.then<void>((_) => write(uid, posMs));
+    final Future<void> operation = _positionWriteTail.then<void>(
+      (_) => write(uid, posMs),
+    );
     // 尾链必须自行恢复，某一次写失败不能让所有后续 flush 永久短路；调用方仍拿到
     // 原始 operation，因此显式 flush/stop 可以观察并上抛本次错误。
     _positionWriteTail = operation.then<void>(
@@ -794,14 +793,15 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
     _lastSavedWholeSec = wholeSec;
     unawaited(
-      _enqueuePositionWrite(uid, posMs).catchError(
-        (Object error, StackTrace stack) {
-          debugPrint(
-            '[AudiobookPlayerController] periodic position write failed: '
-            '$error\n$stack',
-          );
-        },
-      ),
+      _enqueuePositionWrite(uid, posMs).catchError((
+        Object error,
+        StackTrace stack,
+      ) {
+        debugPrint(
+          '[AudiobookPlayerController] periodic position write failed: '
+          '$error\n$stack',
+        );
+      }),
     );
   }
 
@@ -956,8 +956,10 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 快进 / 快退（秒）。
   Future<void> seekRelative(int deltaSeconds) async {
-    final int newMs = (position.inMilliseconds + deltaSeconds * 1000)
-        .clamp(0, duration.inMilliseconds);
+    final int newMs = (position.inMilliseconds + deltaSeconds * 1000).clamp(
+      0,
+      duration.inMilliseconds,
+    );
     await seekMs(newMs);
   }
 
@@ -1189,12 +1191,12 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 状态变化时 just_audio 自发降频到 maxPeriod）。
     _positionSub = _player
         .createPositionStream(
-      minPeriod: const Duration(milliseconds: 125),
-      maxPeriod: const Duration(milliseconds: 125),
-    )
+          minPeriod: const Duration(milliseconds: 125),
+          maxPeriod: const Duration(milliseconds: 125),
+        )
         .listen((pos) {
-      _updateCurrentCue(pos.inMilliseconds);
-    });
+          _updateCurrentCue(pos.inMilliseconds);
+        });
     // 订阅播放状态流：just_audio 内部状态翻转（包括焦点丢失、播完自动暂停）
     // 都会在这里得到通知，UI 即时刷新播放/暂停图标。
     _playingSub = _player.playingStream.listen((_) {
@@ -1241,10 +1243,12 @@ class AudiobookPlayerController extends ChangeNotifier {
       _returnToPosition = null;
       unawaited(_player.pause());
       if (returnTo != null) {
-        unawaited(_player.seek(
-          Duration(milliseconds: returnTo.positionMs),
-          index: returnTo.audioFileIndex,
-        ));
+        unawaited(
+          _player.seek(
+            Duration(milliseconds: returnTo.positionMs),
+            index: returnTo.audioFileIndex,
+          ),
+        );
       }
       notifyListeners();
       return;
@@ -1322,11 +1326,12 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// Sasayaki 路径一本书只有一个音频"章"（cue 列表扁平），所以 [_chapterCues]
   /// 实际就是全书 cue。这里按 `SasayakiMatchCodec` 解码过滤出目标段，
   /// 不命中 / SMIL/JSON 路径的 cue 自然被跳过。
-  List<AudioCue> sasayakiCuesForSection(int sectionIndex) {
+  List<AudioCue> sentenceAudioCuesForSection(int sectionIndex) {
     final List<AudioCue> out = <AudioCue>[];
     for (final AudioCue cue in _chapterCues) {
-      final SasayakiFragment? frag =
-          SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+        cue.textFragmentId,
+      );
       if (frag == null) continue;
       if (frag.sectionIndex != sectionIndex) continue;
       out.add(cue);
@@ -1349,8 +1354,9 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
     if (cue == null) return;
     if (!bypassPlayGuard && _isManualReaderOverrideCue(cue)) return;
-    final SasayakiFragment? frag =
-        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+      cue.textFragmentId,
+    );
     if (frag == null) return;
     final int cueSec = frag.sectionIndex;
     final int currentSec = getCurrentReaderSection?.call() ?? -1;
@@ -1686,10 +1692,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     required List<AudioCue> allBookCues,
     required AudioCue currentCue,
   }) {
-    return _allBookCueIndex(
-      allBookCues: allBookCues,
-      currentCue: currentCue,
-    );
+    return _allBookCueIndex(allBookCues: allBookCues, currentCue: currentCue);
   }
 
   // ── 生命周期 ───────────────────────────────────────────────────────────────

@@ -468,7 +468,7 @@ void main() {
 
     expect(result.success, isTrue);
     expect(result.sentenceAudioMissing, isTrue);
-    expect(repo.contexts.single.sasayakiAudioPath, isNull);
+    expect(repo.contexts.single.sentenceAudioPath, isNull);
     expect(result.unmappedTokens,
         containsAll(<String>['{sentence}', '{card-image}', '{audio}']));
     expect(result.unmappedTokens, isNot(contains('{sentence-audio}')),

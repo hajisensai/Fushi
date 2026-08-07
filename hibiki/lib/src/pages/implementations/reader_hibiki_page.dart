@@ -268,7 +268,7 @@ DateTime contentReadyTimeoutDeadline({
 typedef ReaderThemeColors = ({
   Color bg,
   Color fg,
-  Color sasayaki,
+  Color sentenceAudioHighlight,
   Color selection,
   Color link,
   bool dark,
@@ -314,7 +314,7 @@ ReaderThemeColors resolveReaderThemeColors({
   return (
     bg: base.bg,
     fg: base.fg,
-    sasayaki: audioHighlightOverride,
+    sentenceAudioHighlight: audioHighlightOverride,
     selection: base.selection,
     link: base.link,
     dark: base.dark,
@@ -340,7 +340,8 @@ ReaderThemeColors _resolveBaseReaderThemeColors({
   return (
     bg: scheme.surface,
     fg: scheme.onSurface,
-    sasayaki: scheme.primary.withValues(alpha: dark ? 0.34 : 0.40),
+    sentenceAudioHighlight:
+        scheme.primary.withValues(alpha: dark ? 0.34 : 0.40),
     // selection 用 tertiary：与 sasayaki(primary) 错开色相，查词高亮 ≠ 跟读高亮。
     selection: scheme.tertiary.withValues(alpha: dark ? 0.35 : 0.40),
     link: scheme.primary,
@@ -2907,7 +2908,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // 真相源）——preset 透传手调专色（与旧 switch 值逐一相等，零变化）、custom 用
       // 用户色、system/light 从真实 ColorScheme 强调色派生（不再落硬编码天蓝/灰/蓝）。
       selectionColor: _colorToCssRgba(rc.selection),
-      sasayakiColor: _colorToCssRgba(rc.sasayaki),
+      sentenceAudioHighlightColor: _colorToCssRgba(rc.sentenceAudioHighlight),
       linkColor: _colorToCssRgba(rc.link),
       // 墨水屏模式：全局单开关叠加在阅读器主题之上（纯黑白+线式高亮+关过渡），
       // 黑白方向跟 app 明暗模式，与全局 E-ink ColorScheme 一致。
@@ -3278,7 +3279,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   }
 
   List<AudioCue>? _cachedAllCues;
-  bool _cachedSasayaki = false;
+  bool _cachedSentenceAudio = false;
 
   // ── Spread (two-page) support ──────────────────────────────────────
 

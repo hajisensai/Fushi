@@ -764,16 +764,16 @@ window.fushiReader = {
   screenMode: C.vnScreenMode,
   sentencesPerScreen: C.vnSentencesPerScreen,
   preserveDialogue: C.vnPreserveDialogue,
-  mergeCrossScreenSasayakiCues: C.vnMergeCrossScreenSasayakiCues,
-  initialSasayakiCues: C.sasayakiCues,
+  mergeCrossScreenSentenceAudioCues: C.vnMergeCrossScreenSentenceAudioCues,
+  initialSentenceAudioCues: C.sentenceAudioCues,
   initialProgress: C.initialProgress,
   initialFragment: C.initialFragment,
   initialHighlights: [],
   nativeSelectionActive: false,
   activeCueId: null,
-  sasayakiCues: [],
-  sasayakiCueMap: new Map(),
-  sasayakiCuesSignature: null,
+  sentenceAudioCues: [],
+  sentenceAudioCueMap: new Map(),
+  sentenceAudioCuesSignature: null,
   cueWrappers: new Map(),
   cueSourceRanges: new Map(),
   cueGeometryRanges: new Map(),
@@ -919,7 +919,7 @@ window.fushiReader = {
         this.ensureStage();
         this.applyImageMaxVars();
         this.buildSourceIndexes();
-        this.setSasayakiCueData(this.initialSasayakiCues);
+        this.setSentenceAudioCueData(this.initialSentenceAudioCues);
         this.buildScreens();
         this.renderInitialScreen();
         this.notifyRestoreComplete();
@@ -1015,7 +1015,7 @@ window.fushiReader = {
     // 至少随相邻文字出现一次。
     baseScreens = this.attachMediaScreensToAdjacentText(baseScreens);
     this.baseScreens = baseScreens;
-    this.screens = this.mergeSasayakiCrossScreenScreens(baseScreens);
+    this.screens = this.mergeSentenceAudioCrossScreenScreens(baseScreens);
     if (!this.screens.length) {
       this.screens.push(this.screenDescriptor({
         startCharCount: 0,
@@ -1221,19 +1221,19 @@ window.fushiReader = {
   progressForScreen: function(screen) {
     return this.screenProgressAnchor(screen);
   },
-  mergeSasayakiCrossScreenScreens: function(screens) {
-    if (!this.mergeCrossScreenSasayakiCues || !Array.isArray(screens) || screens.length < 2) return screens || [];
-    if (!Array.isArray(this.sasayakiCues) || !this.sasayakiCues.length) return screens;
+  mergeSentenceAudioCrossScreenScreens: function(screens) {
+    if (!this.mergeCrossScreenSentenceAudioCues || !Array.isArray(screens) || screens.length < 2) return screens || [];
+    if (!Array.isArray(this.sentenceAudioCues) || !this.sentenceAudioCues.length) return screens;
     var cues = [];
-    for (var cueIndex = 0; cueIndex < this.sasayakiCues.length; cueIndex++) {
-      var cue = this.sasayakiCueForInput(this.sasayakiCues[cueIndex]);
+    for (var cueIndex = 0; cueIndex < this.sentenceAudioCues.length; cueIndex++) {
+      var cue = this.sentenceAudioCueForInput(this.sentenceAudioCues[cueIndex]);
       if (cue) cues.push(cue);
     }
     if (!cues.length) return screens;
     cues.sort((a, b) => {
-      var startDelta = this.sasayakiCueStart(a) - this.sasayakiCueStart(b);
+      var startDelta = this.sentenceAudioCueStart(a) - this.sentenceAudioCueStart(b);
       if (startDelta !== 0) return startDelta;
-      return this.sasayakiCueEnd(a) - this.sasayakiCueEnd(b);
+      return this.sentenceAudioCueEnd(a) - this.sentenceAudioCueEnd(b);
     });
     var intervals = [];
     var searchStart = 0;
@@ -1241,8 +1241,8 @@ window.fushiReader = {
       var cue = cues[i];
       var first = -1;
       var last = -1;
-      var cueStart = this.sasayakiCueStart(cue);
-      var cueEnd = this.sasayakiCueEnd(cue);
+      var cueStart = this.sentenceAudioCueStart(cue);
+      var cueEnd = this.sentenceAudioCueEnd(cue);
       var zeroLengthCue = cueEnd <= cueStart;
       while (searchStart < screens.length) {
         var screenEnd = this.screenEndCharCount(screens[searchStart]);
@@ -1257,7 +1257,7 @@ window.fushiReader = {
         var screen = screens[screenIndex];
         var screenStart = this.screenStartCharCount(screen);
         var screenEnd = this.screenEndCharCount(screen);
-        if (!this.sasayakiCueIntersectsScreen(cue, screen)) {
+        if (!this.sentenceAudioCueIntersectsScreen(cue, screen)) {
           if (zeroLengthCue ? cueStart < screenStart : cueEnd <= screenStart) break;
           continue;
         }
@@ -2435,7 +2435,7 @@ window.fushiReader = {
     var safeIndex = Math.min(Math.max(0, index), this.screens.length - 1);
     this.clearRevealTimer();
     this.currentScreenIndex = safeIndex;
-    this.clearCurrentSasayakiScreenTargets();
+    this.clearCurrentSentenceAudioScreenTargets();
     if (this.screen.replaceChildren) {
       this.screen.replaceChildren();
     } else {
@@ -2453,7 +2453,7 @@ window.fushiReader = {
     this.setupReaderImages(this.screen);
     this.buildNodeOffsets();
     if (this.revealComplete) this.applyCurrentScreenHighlights();
-    if (this.revealComplete) this.refreshSasayakiCuePresentation();
+    if (this.revealComplete) this.refreshSentenceAudioCuePresentation();
   },
   hideCurrentScreenForReveal: function() {
     this.revealSegments = [];
@@ -2556,7 +2556,7 @@ window.fushiReader = {
     this.revealComplete = true;
     this.buildNodeOffsets();
     this.applyCurrentScreenHighlights();
-    this.refreshSasayakiCuePresentation();
+    this.refreshSentenceAudioCuePresentation();
   },
   patchHighlightsForVisualNovel: function() {
     var highlights = window.hoshiHighlights;
@@ -2682,77 +2682,77 @@ window.fushiReader = {
     this.notifyRestoreComplete();
     return true;
   },
-  sasayakiCueSignature: function(cues) {
+  sentenceAudioCueSignature: function(cues) {
     var items = Array.isArray(cues) ? cues : [];
     return JSON.stringify(items.map((cue) => ({
       id: cue && cue.id ? String(cue.id) : '',
-      start: this.sasayakiCueStart(cue),
+      start: this.sentenceAudioCueStart(cue),
       length: Math.max(0, Number(cue && cue.length) || 0)
     })));
   },
-  sasayakiCueDataChanged: function(cues) {
-    return this.sasayakiCueSignature(cues) !== this.sasayakiCuesSignature;
+  sentenceAudioCueDataChanged: function(cues) {
+    return this.sentenceAudioCueSignature(cues) !== this.sentenceAudioCuesSignature;
   },
-  setSasayakiCueData: function(cues) {
-    this.sasayakiCues = Array.isArray(cues) ? cues : [];
-    this.sasayakiCueMap = new Map();
-    for (var i = 0; i < this.sasayakiCues.length; i++) {
-      var cue = this.sasayakiCues[i];
-      if (cue && cue.id) this.sasayakiCueMap.set(cue.id, cue);
+  setSentenceAudioCueData: function(cues) {
+    this.sentenceAudioCues = Array.isArray(cues) ? cues : [];
+    this.sentenceAudioCueMap = new Map();
+    for (var i = 0; i < this.sentenceAudioCues.length; i++) {
+      var cue = this.sentenceAudioCues[i];
+      if (cue && cue.id) this.sentenceAudioCueMap.set(cue.id, cue);
     }
-    this.sasayakiCuesSignature = this.sasayakiCueSignature(this.sasayakiCues);
+    this.sentenceAudioCuesSignature = this.sentenceAudioCueSignature(this.sentenceAudioCues);
   },
-  sasayakiCueForInput: function(cue) {
+  sentenceAudioCueForInput: function(cue) {
     if (!cue) return null;
-    if (typeof cue === 'string') return this.sasayakiCueMap.get(cue) || null;
+    if (typeof cue === 'string') return this.sentenceAudioCueMap.get(cue) || null;
     if (cue.id) {
-      this.sasayakiCueMap.set(cue.id, cue);
+      this.sentenceAudioCueMap.set(cue.id, cue);
     }
     return cue;
   },
-  sasayakiCueStart: function(cue) {
+  sentenceAudioCueStart: function(cue) {
     return Math.max(0, Number(cue && cue.start) || 0);
   },
-  sasayakiCueEnd: function(cue) {
-    var start = this.sasayakiCueStart(cue);
+  sentenceAudioCueEnd: function(cue) {
+    var start = this.sentenceAudioCueStart(cue);
     return start + Math.max(0, Number(cue && cue.length) || 0);
   },
-  sasayakiCueIntersectsScreen: function(cue, screen) {
+  sentenceAudioCueIntersectsScreen: function(cue, screen) {
     if (!cue || !screen) return false;
-    var start = this.sasayakiCueStart(cue);
-    var end = this.sasayakiCueEnd(cue);
+    var start = this.sentenceAudioCueStart(cue);
+    var end = this.sentenceAudioCueEnd(cue);
     return this.screenIntersectsCharRange(screen, start, end);
   },
-  screenIndexForSasayakiCue: function(cue) {
+  screenIndexForSentenceAudioCue: function(cue) {
     if (!cue || !this.screens || !this.screens.length) return -1;
-    var start = this.sasayakiCueStart(cue);
+    var start = this.sentenceAudioCueStart(cue);
     for (var i = 0; i < this.screens.length; i++) {
       if (this.screenContainsCharOffset(this.screens[i], start)) return i;
     }
     for (var j = 0; j < this.screens.length; j++) {
-      if (this.sasayakiCueIntersectsScreen(cue, this.screens[j])) return j;
+      if (this.sentenceAudioCueIntersectsScreen(cue, this.screens[j])) return j;
     }
     return -1;
   },
-  collectSasayakiCueRanges: function(cues) {
+  collectSentenceAudioCueRanges: function(cues) {
     var normalized = [];
     for (var i = 0; i < cues.length; i++) {
-      var cue = this.sasayakiCueForInput(cues[i]);
+      var cue = this.sentenceAudioCueForInput(cues[i]);
       if (!cue || !cue.id) continue;
-      var start = this.sasayakiCueStart(cue);
-      normalized.push({ id: cue.id, start: start, length: this.sasayakiCueEnd(cue) - start });
+      var start = this.sentenceAudioCueStart(cue);
+      normalized.push({ id: cue.id, start: start, length: this.sentenceAudioCueEnd(cue) - start });
     }
     return this.rangeMap.collectMatchableCueRanges(normalized);
   },
-  rememberSasayakiCueSources: function(cueRanges) {
+  rememberSentenceAudioCueSources: function(cueRanges) {
     for (var i = 0; i < cueRanges.length; i++) {
       this.cueSourceRanges.set(cueRanges[i].id, cueRanges[i]);
     }
   },
-  sasayakiInlineTargetsForCue: function(cueId) {
+  sentenceAudioInlineTargetsForCue: function(cueId) {
     return this.cueWrappers.get(cueId) || [];
   },
-  wrapSasayakiCueRanges: function(cueRanges) {
+  wrapSentenceAudioCueRanges: function(cueRanges) {
     var wrapped = new Map();
     var range = document.createRange();
     for (var i = cueRanges.length - 1; i >= 0; i--) {
@@ -2765,7 +2765,7 @@ window.fushiReader = {
         range.setStart(segment.node, segment.start);
         range.setEnd(segment.node, segment.end);
         var wrapper = document.createElement('span');
-        wrapper.className = 'hoshi-sasayaki-cue';
+        wrapper.className = 'hoshi-sentence-audio-cue';
         wrapper.appendChild(range.extractContents());
         range.insertNode(wrapper);
         wrappers.push(wrapper);
@@ -2776,7 +2776,7 @@ window.fushiReader = {
     }
     return wrapped;
   },
-  buildSasayakiGeometryRanges: function(cueRanges) {
+  buildSentenceAudioGeometryRanges: function(cueRanges) {
     var geometryRanges = new Map();
     for (var i = 0; i < cueRanges.length; i++) {
       var id = cueRanges[i].id;
@@ -2794,33 +2794,33 @@ window.fushiReader = {
     }
     return geometryRanges;
   },
-  prepareSasayakiInlineTargets: function(cueRanges) {
+  prepareSentenceAudioInlineTargets: function(cueRanges) {
     if (!this.isEInkMode()) {
-      this.wrapSasayakiCueRanges(cueRanges);
+      this.wrapSentenceAudioCueRanges(cueRanges);
       this.buildNodeOffsets();
     }
   },
-  ensureSasayakiInlineTargetsForCue: function(cueId) {
-    if (this.isEInkMode() || this.sasayakiInlineTargetsForCue(cueId).length) return;
-    var cue = this.sasayakiCueMap.get(cueId);
+  ensureSentenceAudioInlineTargetsForCue: function(cueId) {
+    if (this.isEInkMode() || this.sentenceAudioInlineTargetsForCue(cueId).length) return;
+    var cue = this.sentenceAudioCueMap.get(cueId);
     if (!cue) return;
-    var cueRanges = this.collectSasayakiCueRanges([cue]);
-    this.rememberSasayakiCueSources(cueRanges);
-    this.prepareSasayakiInlineTargets(cueRanges);
+    var cueRanges = this.collectSentenceAudioCueRanges([cue]);
+    this.rememberSentenceAudioCueSources(cueRanges);
+    this.prepareSentenceAudioInlineTargets(cueRanges);
   },
-  ensureSasayakiCueGeometry: function(cue) {
+  ensureSentenceAudioCueGeometry: function(cue) {
     var cueId = typeof cue === 'string' ? cue : cue && cue.id;
     if (!cueId) return;
     var existing = this.cueGeometryRanges.get(cueId);
     if (existing && existing.length) return;
-    var cueObject = this.sasayakiCueForInput(cue) || this.sasayakiCueMap.get(cueId);
+    var cueObject = this.sentenceAudioCueForInput(cue) || this.sentenceAudioCueMap.get(cueId);
     if (!cueObject) return;
-    var cueRanges = this.collectSasayakiCueRanges([cueObject]);
-    this.rememberSasayakiCueSources(cueRanges);
-    var geometryRanges = this.buildSasayakiGeometryRanges(cueRanges).get(cueId) || [];
+    var cueRanges = this.collectSentenceAudioCueRanges([cueObject]);
+    this.rememberSentenceAudioCueSources(cueRanges);
+    var geometryRanges = this.buildSentenceAudioGeometryRanges(cueRanges).get(cueId) || [];
     if (geometryRanges.length) this.cueGeometryRanges.set(cueId, geometryRanges);
   },
-  sasayakiOverlayRects: function(cueId) {
+  sentenceAudioOverlayRects: function(cueId) {
     var ranges = this.cueGeometryRanges.get(cueId) || [];
     var rects = [];
     ranges.forEach(function(range) {
@@ -2834,28 +2834,28 @@ window.fushiReader = {
     });
     return window.hoshiRubyGeometry ? window.hoshiRubyGeometry.mergeInlineRects(rects) : rects;
   },
-  renderSasayakiOverlay: function() {
+  renderSentenceAudioOverlay: function() {
     if (!this.activeCueId || !this.isEInkMode()) {
-      this.clearSasayakiOverlay();
+      this.clearSentenceAudioOverlay();
       return;
     }
-    if (window.fushiReaderPopupHost && window.fushiReaderPopupHost.renderSasayakiHighlight) {
-      window.fushiReaderPopupHost.renderSasayakiHighlight({
-        rects: this.sasayakiOverlayRects(this.activeCueId),
+    if (window.fushiReaderPopupHost && window.fushiReaderPopupHost.renderSentenceAudioHighlight) {
+      window.fushiReaderPopupHost.renderSentenceAudioHighlight({
+        rects: this.sentenceAudioOverlayRects(this.activeCueId),
         eInkMode: true,
         verticalWriting: this.isVertical()
       });
     }
   },
-  clearSasayakiOverlay: function() {
-    if (window.fushiReaderPopupHost && window.fushiReaderPopupHost.clearSasayakiHighlight) {
-      window.fushiReaderPopupHost.clearSasayakiHighlight();
+  clearSentenceAudioOverlay: function() {
+    if (window.fushiReaderPopupHost && window.fushiReaderPopupHost.clearSentenceAudioHighlight) {
+      window.fushiReaderPopupHost.clearSentenceAudioHighlight();
     }
   },
-  clearInlineSasayakiCue: function(cueId) {
+  clearInlineSentenceAudioCue: function(cueId) {
     var clearWrappers = function(wrappers) {
       wrappers.forEach(function(wrapper) {
-        wrapper.classList.remove('hoshi-sasayaki-active');
+        wrapper.classList.remove('hoshi-sentence-audio-active');
       });
     };
     if (cueId) {
@@ -2864,25 +2864,25 @@ window.fushiReader = {
     }
     this.cueWrappers.forEach(clearWrappers);
   },
-  applyInlineSasayakiCue: function(cueId) {
+  applyInlineSentenceAudioCue: function(cueId) {
     var wrappers = this.cueWrappers.get(cueId) || [];
     wrappers.forEach(function(wrapper) {
-      wrapper.classList.add('hoshi-sasayaki-active');
+      wrapper.classList.add('hoshi-sentence-audio-active');
     });
     return wrappers.length > 0;
   },
-  clearSasayakiCuePresentation: function() {
-    this.clearInlineSasayakiCue();
-    this.clearSasayakiOverlay();
+  clearSentenceAudioCuePresentation: function() {
+    this.clearInlineSentenceAudioCue();
+    this.clearSentenceAudioOverlay();
   },
-  clearCurrentSasayakiScreenTargets: function() {
+  clearCurrentSentenceAudioScreenTargets: function() {
     this.cueSourceRanges.clear();
     this.cueGeometryRanges.clear();
     this.cueWrappers.clear();
-    this.clearSasayakiOverlay();
+    this.clearSentenceAudioOverlay();
   },
-  clearSasayakiTargets: function() {
-    this.clearSasayakiCuePresentation();
+  clearSentenceAudioTargets: function() {
+    this.clearSentenceAudioCuePresentation();
     var self = this;
     this.cueWrappers.forEach(function(wrappers) {
       self.unwrap(wrappers);
@@ -2892,78 +2892,78 @@ window.fushiReader = {
     this.cueGeometryRanges.clear();
     this.buildNodeOffsets();
   },
-  applySasayakiCues: function(cues) {
+  applySentenceAudioCues: function(cues) {
     var activeCueId = this.activeCueId;
     var nextCues = Array.isArray(cues) ? cues : [];
-    var shouldRebuildScreens = this.mergeCrossScreenSasayakiCues && this.sasayakiCueDataChanged(nextCues);
+    var shouldRebuildScreens = this.mergeCrossScreenSentenceAudioCues && this.sentenceAudioCueDataChanged(nextCues);
     var progress = shouldRebuildScreens ? this.calculateProgress() : null;
-    this.clearSasayakiTargets();
-    this.setSasayakiCueData(nextCues);
-    this.activeCueId = activeCueId && this.sasayakiCueMap.has(activeCueId) ? activeCueId : null;
+    this.clearSentenceAudioTargets();
+    this.setSentenceAudioCueData(nextCues);
+    this.activeCueId = activeCueId && this.sentenceAudioCueMap.has(activeCueId) ? activeCueId : null;
     if (shouldRebuildScreens) {
       this.buildScreens();
       this.renderScreen(this.screenIndexForProgress(progress), true);
       return;
     }
     this.buildNodeOffsets();
-    if (this.activeCueId) this.refreshSasayakiCuePresentation();
+    if (this.activeCueId) this.refreshSentenceAudioCuePresentation();
   },
-  highlightSasayakiCue: function(cue, reveal) {
-    var cueObject = this.sasayakiCueForInput(cue);
+  highlightSentenceAudioCue: function(cue, reveal) {
+    var cueObject = this.sentenceAudioCueForInput(cue);
     var cueId = typeof cue === 'string' ? cue : cueObject && cueObject.id;
     if (!cueId) return null;
-    this.clearSasayakiCuePresentation();
+    this.clearSentenceAudioCuePresentation();
     this.activeCueId = cueId;
     if (!cueObject) {
-      this.refreshSasayakiCuePresentation();
+      this.refreshSentenceAudioCuePresentation();
       return null;
     }
-    var targetIndex = this.screenIndexForSasayakiCue(cueObject);
+    var targetIndex = this.screenIndexForSentenceAudioCue(cueObject);
     if (targetIndex < 0) {
-      this.refreshSasayakiCuePresentation();
+      this.refreshSentenceAudioCuePresentation();
       return null;
     }
     if (targetIndex !== this.currentScreenIndex) {
       if (!reveal) {
-        this.refreshSasayakiCuePresentation();
+        this.refreshSentenceAudioCuePresentation();
         return null;
       }
       this.renderScreen(targetIndex, true);
-      this.refreshSasayakiCuePresentation();
+      this.refreshSentenceAudioCuePresentation();
       return this.calculateProgress();
     }
     if (!this.revealComplete) this.completeCurrentReveal();
-    this.refreshSasayakiCuePresentation();
+    this.refreshSentenceAudioCuePresentation();
     return null;
   },
-  clearSasayakiCue: function() {
-    this.clearSasayakiCuePresentation();
+  clearSentenceAudioCue: function() {
+    this.clearSentenceAudioCuePresentation();
     this.activeCueId = null;
   },
-  refreshSasayakiCuePresentation: function() {
+  refreshSentenceAudioCuePresentation: function() {
     if (!this.activeCueId) {
-      this.clearSasayakiOverlay();
+      this.clearSentenceAudioOverlay();
       return;
     }
-    this.clearInlineSasayakiCue(this.activeCueId);
-    var cue = this.sasayakiCueMap.get(this.activeCueId);
+    this.clearInlineSentenceAudioCue(this.activeCueId);
+    var cue = this.sentenceAudioCueMap.get(this.activeCueId);
     var screen = this.screens && this.screens[this.currentScreenIndex];
-    if (!cue || !this.sasayakiCueIntersectsScreen(cue, screen) || !this.revealComplete) {
-      this.clearSasayakiOverlay();
+    if (!cue || !this.sentenceAudioCueIntersectsScreen(cue, screen) || !this.revealComplete) {
+      this.clearSentenceAudioOverlay();
       return;
     }
     if (this.isEInkMode()) {
-      this.ensureSasayakiCueGeometry(cue);
-      this.renderSasayakiOverlay();
+      this.ensureSentenceAudioCueGeometry(cue);
+      this.renderSentenceAudioOverlay();
     } else {
-      this.clearSasayakiOverlay();
-      this.ensureSasayakiInlineTargetsForCue(this.activeCueId);
-      this.applyInlineSasayakiCue(this.activeCueId);
+      this.clearSentenceAudioOverlay();
+      this.ensureSentenceAudioInlineTargetsForCue(this.activeCueId);
+      this.applyInlineSentenceAudioCue(this.activeCueId);
     }
   },
-  resetSasayakiCues: function() {
-    this.clearSasayakiTargets();
-    this.setSasayakiCueData([]);
+  resetSentenceAudioCues: function() {
+    this.clearSentenceAudioTargets();
+    this.setSentenceAudioCueData([]);
     this.activeCueId = null;
   },
   unwrap: function(wrappers) {
@@ -2998,7 +2998,7 @@ window.fushiReader = {
       if (!this.screens || !this.screens.length) return;
       var progress = this.calculateProgress();
       this.screens = this.fitScreensToViewport(this.baseScreens
-        ? this.mergeSasayakiCrossScreenScreens(this.baseScreens)
+        ? this.mergeSentenceAudioCrossScreenScreens(this.baseScreens)
         : this.screens);
       this.assignScreenProgressAnchors();
       this.renderScreen(this.screenIndexForProgress(progress), true);

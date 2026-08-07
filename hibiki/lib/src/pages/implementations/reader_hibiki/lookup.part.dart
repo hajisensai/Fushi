@@ -195,7 +195,8 @@ extension _ReaderLookup on _ReaderHibikiPageState {
           final String? fragId = ctx['textFragmentId'] as String?;
           final int? cueIdx = (ctx['cueIndex'] as num?)?.toInt();
           if (fragId != null && fragId.isNotEmpty) {
-            final SasayakiFragment? frag = SasayakiMatchCodec.tryDecode(fragId);
+            final SubtitleRematchFragment? frag =
+                SubtitleRematchCodec.tryDecode(fragId);
             if (frag != null) {
               _cachedSelectionRange = (
                 offset: frag.normCharStart,

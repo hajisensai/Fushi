@@ -50,8 +50,8 @@ class ReaderEngineConfig {
     required this.vnScreenMode,
     required this.vnSentencesPerScreen,
     required this.vnPreserveDialogue,
-    required this.vnMergeCrossScreenSasayakiCues,
-    this.sasayakiCuesJson,
+    required this.vnMergeCrossScreenSentenceAudioCues,
+    this.sentenceAudioCuesJson,
   });
 
   /// Immutable token identifying the document/navigation that owns this
@@ -103,11 +103,11 @@ class ReaderEngineConfig {
   final String vnScreenMode;
   final int vnSentencesPerScreen;
   final bool vnPreserveDialogue;
-  final bool vnMergeCrossScreenSasayakiCues;
+  final bool vnMergeCrossScreenSentenceAudioCues;
 
   /// 有声书 sasayaki cue 列表，**已经是 JSON 文本**（`_prepareSasayakiCuesJson` 的
   /// 产物）。原样嵌进 config 字面量，避免「解码再编码」多走一遍。`null` = 本章无 cue。
-  final String? sasayakiCuesJson;
+  final String? sentenceAudioCuesJson;
 
   /// 除 [sasayakiCuesJson] 外的全部字段（它是已编码的 JSON 片段，见 [toJsLiteral]）。
   Map<String, Object?> toJson() => <String, Object?>{
@@ -141,7 +141,8 @@ class ReaderEngineConfig {
         'vnScreenMode': vnScreenMode,
         'vnSentencesPerScreen': vnSentencesPerScreen,
         'vnPreserveDialogue': vnPreserveDialogue,
-        'vnMergeCrossScreenSasayakiCues': vnMergeCrossScreenSasayakiCues,
+        'vnMergeCrossScreenSentenceAudioCues':
+            vnMergeCrossScreenSentenceAudioCues,
       };
 
   /// 可直接嵌进 JS 的对象字面量。
@@ -152,7 +153,7 @@ class ReaderEngineConfig {
     final String head = jsonEncode(toJson());
     assert(head.startsWith('{') && head.endsWith('}'));
     final String body = head.substring(1, head.length - 1);
-    final String cues = sasayakiCuesJson ?? 'null';
-    return '{$body,"sasayakiCues":$cues}';
+    final String cues = sentenceAudioCuesJson ?? 'null';
+    return '{$body,"sentenceAudioCues":$cues}';
   }
 }

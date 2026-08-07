@@ -352,7 +352,7 @@ class ImmersionMiningEngine {
       cueSentence: req.cueSentence,
       documentTitle: req.documentTitle,
       coverPath: coverPath,
-      sasayakiAudioPath: audioPath,
+      sentenceAudioPath: audioPath,
       source: req.source,
       bookTitleTag: req.bookTitleTag,
       collectionTag: req.collectionTag,

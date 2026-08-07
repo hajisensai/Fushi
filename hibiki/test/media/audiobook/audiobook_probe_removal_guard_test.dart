@@ -18,11 +18,12 @@ void main() {
     return file.readAsStringSync();
   }
 
-  test('audiobook bridge no longer emits [sasayaki-hl] playback probes', () {
+  test('audiobook bridge no longer emits [sentence-audio-hl] playback probes',
+      () {
     final String source =
         readSource('lib/src/media/audiobook/audiobook_bridge.dart');
-    expect(source, isNot(contains('[sasayaki-hl]')),
-        reason: 'BUG-914: 播放期逐句高亮的 [sasayaki-hl] 诊断打点必须移除，'
+    expect(source, isNot(contains('[sentence-audio-hl]')),
+        reason: 'BUG-914: 播放期逐句高亮的 [sentence-audio-hl] 诊断打点必须移除，'
             '避免发布版热路径噪声');
   });
 

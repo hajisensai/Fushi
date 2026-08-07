@@ -288,8 +288,8 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
     double targetProgress = _lastProgressValue;
 
     if (cue != null) {
-      final SasayakiFragment? frag =
-          SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+      final SubtitleRematchFragment? frag =
+          SubtitleRematchCodec.tryDecode(cue.textFragmentId);
       if (frag != null) {
         targetChapter = frag.sectionIndex;
         if (targetChapter >= 0 &&

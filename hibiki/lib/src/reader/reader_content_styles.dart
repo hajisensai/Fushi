@@ -138,7 +138,7 @@ class ReaderContentStyles {
     String? customBg,
     String? customFg,
     String? selectionColor,
-    String? sasayakiColor,
+    String? sentenceAudioHighlightColor,
     String? linkColor,
     String? themeOverride,
     bool einkMode = false,
@@ -151,7 +151,7 @@ class ReaderContentStyles {
       customBg: customBg,
       customFg: customFg,
       selectionColor: selectionColor,
-      sasayakiColor: sasayakiColor,
+      sentenceAudioHighlightColor: sentenceAudioHighlightColor,
       linkColor: linkColor,
       themeOverride: themeOverride,
       einkMode: einkMode,
@@ -166,7 +166,7 @@ class ReaderContentStyles {
     String? customBg,
     String? customFg,
     String? selectionColor,
-    String? sasayakiColor,
+    String? sentenceAudioHighlightColor,
     String? linkColor,
     String? themeOverride,
     // 墨水屏模式：强制纯黑白正文 + 线式高亮 + 关过渡（叠加在任意主题之上，见
@@ -186,7 +186,7 @@ class ReaderContentStyles {
             textColor: einkDark ? '#fff' : '#000',
             backgroundColor: einkDark ? '#000' : '#fff',
             selectionColor: einkDark ? '#fff' : '#000',
-            sasayakiColor: 'transparent',
+            sentenceAudioHighlightColor: 'transparent',
             linkColor: einkDark ? '#fff' : '#000',
             colorScheme: einkDark ? 'dark' : 'light',
           )
@@ -395,8 +395,8 @@ $pageBreakCss
 @media (prefers-color-scheme: light) { :root { --hoshi-system-text-color: #000; } }
 @media (prefers-color-scheme: dark) { :root { --hoshi-system-text-color: #fff; } }
 :root {
-  --hoshi-sasayaki-text-color: ${colors.textColor};
-  --hoshi-sasayaki-background-color: ${sasayakiColor ?? colors.sasayakiColor};
+  --hoshi-sentence-audio-text-color: ${colors.textColor};
+  --hoshi-sentence-audio-background-color: ${sentenceAudioHighlightColor ?? colors.sentenceAudioHighlightColor};
 }
 html {
   /* TODO-1308 (BUG): the legacy WebKit property
@@ -594,7 +594,7 @@ ruby rt, ruby rp {
    色（0.35 低透明 tint，太淡不适合实心抓手）。 */
 :root { --hoshi-sel-handle: ${linkColor ?? colors.linkColor}; }
 /* BUG-125：查词高亮用不透明色（见 selectionOpaque 注释）。JS 侧给该 Highlight 设
-   priority=1，使其叠在音频(sasayaki, 默认 priority=0)之上 → 重叠处只显示这一层。 */
+   priority=1，使其叠在音频(sentenceAudioHighlight, 默认 priority=0)之上 → 重叠处只显示这一层。 */
 ::highlight(hoshi-selection) {
   background-color: $selectionOpaque;
   color: inherit;
@@ -606,7 +606,7 @@ ruby.hoshi-selection-ruby-active {
   color: inherit;
 }
 /* 收藏句高亮同时服务 CSS Highlight、旧 WebView span fallback、以及 ruby 分流 class；
-   三条路径共用背景 + underline，和 sasayaki/current sentence 重叠时仍保留收藏语义。
+   三条路径共用背景 + underline，和 sentenceAudioHighlight/current sentence 重叠时仍保留收藏语义。
    BUG-716：ruby 高亮回到整句填充（不再走 1em 窄 lane），下同。 */
 ::highlight(hoshi-hl-yellow),
 .hoshi-hl-yellow,
@@ -657,35 +657,35 @@ ruby.hoshi-hl-purple-ruby-active {
   background-color: $selectionOpaque !important;
   color: inherit;
 }
-::highlight(hoshi-sasayaki) {
-  color: var(--hoshi-sasayaki-text-color);
-  background-color: var(--hoshi-sasayaki-background-color);
+::highlight(hoshi-sentence-audio) {
+  color: var(--hoshi-sentence-audio-text-color);
+  background-color: var(--hoshi-sentence-audio-background-color);
 }
-/* BUG-110：sasayaki 跟随高亮里 <ruby> 元素用 class（不走 ::highlight，避免竖排双绘）。 */
-ruby.hoshi-sasayaki-ruby-active {
-  color: var(--hoshi-sasayaki-text-color) !important;
-  background-color: var(--hoshi-sasayaki-background-color) !important;
+/* BUG-110：sentenceAudioHighlight 跟随高亮里 <ruby> 元素用 class（不走 ::highlight，避免竖排双绘）。 */
+ruby.hoshi-sentence-audio-ruby-active {
+  color: var(--hoshi-sentence-audio-text-color) !important;
+  background-color: var(--hoshi-sentence-audio-background-color) !important;
 }
 /* BUG-125：同一 <ruby> 同时带查词+音频两个 class 时（元素只渲染一个背景），用双类
    高于单类的特异性让查词不透明色胜出 → 重叠的振假名字也只显示查词层（查词优先）。 */
-ruby.hoshi-selection-ruby-active.hoshi-sasayaki-ruby-active {
+ruby.hoshi-selection-ruby-active.hoshi-sentence-audio-ruby-active {
   background-color: $selectionOpaque !important;
   color: inherit !important;
 }
 ::highlight(hoshi-search) {
   background-color: rgba(255, 200, 0, 0.45);
 }
-.hoshi-sasayaki-cue {
+.hoshi-sentence-audio-cue {
   background-color: transparent;
 }
-/* BUG-716：sasayaki 逐句跟随高亮回到整句 background-color 填充。narrow-lane
+/* BUG-716：sentenceAudioHighlight 逐句跟随高亮回到整句 background-color 填充。narrow-lane
    (旧 _highlightLaneCss 的 1em 窄条 + background-position:left) 在书籍行距≠字号
    或 <ruby> 盒含注音轨时把条画偏（竖排下往基字左侧偏移、有无振假名两种宽度不一），
    用户实机确认有声书与查词的注音高亮都错位。整句填充按元素 class 只刷一遍背景，
    注音轨天然在 ruby 元素背景盒外（BUG-110/643 不回归），横竖排、有无振假名一致。 */
-.hoshi-sasayaki-cue.hoshi-sasayaki-active {
-  color: var(--hoshi-sasayaki-text-color) !important;
-  background-color: var(--hoshi-sasayaki-background-color) !important;
+.hoshi-sentence-audio-cue.hoshi-sentence-audio-active {
+  color: var(--hoshi-sentence-audio-text-color) !important;
+  background-color: var(--hoshi-sentence-audio-background-color) !important;
 }
 a {
   color: ${linkColor ?? colors.linkColor}$readerStylePriority;
@@ -711,8 +711,8 @@ ${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
 :root {
   --hoshi-reader-eink-mode: 1;
   --hoshi-sel-handle: $fg;
-  --hoshi-sasayaki-text-color: inherit;
-  --hoshi-sasayaki-background-color: transparent;
+  --hoshi-sentence-audio-text-color: inherit;
+  --hoshi-sentence-audio-background-color: transparent;
 }
 * {
   transition: none !important;
@@ -742,7 +742,7 @@ ruby.hoshi-selection-ruby-active {
   text-decoration-thickness: 0.14em !important;
   text-underline-offset: 0.18em !important;
 }
-::highlight(hoshi-sasayaki) {
+::highlight(hoshi-sentence-audio) {
   background-color: transparent;
   color: inherit;
   text-decoration-line: underline;
@@ -751,7 +751,7 @@ ruby.hoshi-selection-ruby-active {
   text-decoration-thickness: 0.10em;
   text-underline-offset: 0.18em;
 }
-ruby.hoshi-sasayaki-ruby-active {
+ruby.hoshi-sentence-audio-ruby-active {
   background-color: transparent !important;
   color: inherit !important;
   text-decoration-line: underline !important;
@@ -760,7 +760,7 @@ ruby.hoshi-sasayaki-ruby-active {
   text-decoration-thickness: 0.10em !important;
   text-underline-offset: 0.18em !important;
 }
-.hoshi-sasayaki-cue.hoshi-sasayaki-active {
+.hoshi-sentence-audio-cue.hoshi-sentence-audio-active {
   background-color: transparent !important;
   color: inherit !important;
   text-decoration-line: underline !important;
@@ -770,7 +770,7 @@ ruby.hoshi-sasayaki-ruby-active {
   text-underline-offset: 0.18em !important;
 }
 /* 查词+有声书重叠：查词的粗实线优先（双类特异性高于单类，语义同 BUG-125）。 */
-ruby.hoshi-selection-ruby-active.hoshi-sasayaki-ruby-active {
+ruby.hoshi-selection-ruby-active.hoshi-sentence-audio-ruby-active {
   text-decoration-style: solid !important;
   text-decoration-thickness: 0.14em !important;
 }
@@ -1139,7 +1139,7 @@ rtc > rt {
           textColor: 'rgba(0, 0, 0, 0.87)',
           backgroundColor: '#f7f6eb',
           selectionColor: 'rgba(194, 178, 128, 0.35)',
-          sasayakiColor: 'rgba(168, 198, 140, 0.40)',
+          sentenceAudioHighlightColor: 'rgba(168, 198, 140, 0.40)',
           linkColor: '#7a6232',
         );
       case 'water-theme':
@@ -1147,7 +1147,7 @@ rtc > rt {
           textColor: 'rgba(0, 0, 0, 0.87)',
           backgroundColor: '#dfecf4',
           selectionColor: 'rgba(200, 170, 110, 0.35)',
-          sasayakiColor: 'rgba(100, 180, 220, 0.40)',
+          sentenceAudioHighlightColor: 'rgba(100, 180, 220, 0.40)',
           linkColor: '#3a5fad',
         );
       case 'eyecare-theme':
@@ -1157,7 +1157,7 @@ rtc > rt {
           textColor: 'rgba(0, 0, 0, 0.87)',
           backgroundColor: '#c7edcc',
           selectionColor: 'rgba(136, 181, 131, 0.35)',
-          sasayakiColor: 'rgba(160, 200, 120, 0.40)',
+          sentenceAudioHighlightColor: 'rgba(160, 200, 120, 0.40)',
           linkColor: '#4c7a3e',
         );
       case 'gray-theme':
@@ -1165,7 +1165,7 @@ rtc > rt {
           textColor: 'rgba(255, 255, 255, 0.87)',
           backgroundColor: '#23272a',
           selectionColor: 'rgba(190, 155, 100, 0.35)',
-          sasayakiColor: 'rgba(80, 150, 200, 0.35)',
+          sentenceAudioHighlightColor: 'rgba(80, 150, 200, 0.35)',
           linkColor: '#6fa8dc',
           colorScheme: 'dark',
         );
@@ -1174,7 +1174,7 @@ rtc > rt {
           textColor: 'rgba(255, 255, 255, 0.6)',
           backgroundColor: '#121212',
           selectionColor: 'rgba(180, 145, 90, 0.35)',
-          sasayakiColor: 'rgba(70, 130, 180, 0.35)',
+          sentenceAudioHighlightColor: 'rgba(70, 130, 180, 0.35)',
           linkColor: '#7aacdf',
           colorScheme: 'dark',
         );
@@ -1183,7 +1183,7 @@ rtc > rt {
           textColor: 'rgba(255, 255, 255, 0.87)',
           backgroundColor: '#000',
           selectionColor: 'rgba(170, 135, 80, 0.40)',
-          sasayakiColor: 'rgba(60, 120, 170, 0.40)',
+          sentenceAudioHighlightColor: 'rgba(60, 120, 170, 0.40)',
           linkColor: '#5b9bd5',
           colorScheme: 'dark',
         );
@@ -1308,7 +1308,7 @@ class _ThemeColors {
     this.textColor = 'rgba(0, 0, 0, 0.87)',
     this.backgroundColor = '#fff',
     this.selectionColor = 'rgba(160, 160, 160, 0.40)',
-    this.sasayakiColor = 'rgba(135, 206, 235, 0.40)',
+    this.sentenceAudioHighlightColor = 'rgba(135, 206, 235, 0.40)',
     this.linkColor = '#426cf5',
     this.colorScheme = 'light',
   });
@@ -1316,7 +1316,7 @@ class _ThemeColors {
   final String textColor;
   final String backgroundColor;
   final String selectionColor;
-  final String sasayakiColor;
+  final String sentenceAudioHighlightColor;
   final String linkColor;
 
   /// UA color-scheme bucket ('light' | 'dark') the native (Fluent overlay)

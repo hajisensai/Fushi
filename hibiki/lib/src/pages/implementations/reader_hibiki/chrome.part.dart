@@ -1676,11 +1676,11 @@ extension _ReaderChrome on _ReaderHibikiPageState {
                 }
                 final int section = fav.sectionIndex!;
                 final List<AudioCue> cues =
-                    _audiobookController!.sasayakiCuesForSection(section);
+                    _audiobookController!.sentenceAudioCuesForSection(section);
                 AudioCue? target;
                 for (final AudioCue cue in cues) {
-                  final SasayakiFragment? frag =
-                      SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+                  final SubtitleRematchFragment? frag =
+                      SubtitleRematchCodec.tryDecode(cue.textFragmentId);
                   if (frag == null) continue;
                   if (frag.normCharStart <= fav.normCharOffset! &&
                       frag.normCharEnd > fav.normCharOffset!) {
@@ -1945,7 +1945,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     'ecru-theme': (
       bg: Color(0xFFF7F6EB),
       fg: Color(0xDE000000),
-      sasayaki: Color(0x66A8C68C),
+      sentenceAudioHighlight: Color(0x66A8C68C),
       selection: Color(0x59C2B280),
       link: Color(0xFF7A6232),
       dark: false,
@@ -1953,7 +1953,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     'water-theme': (
       bg: Color(0xFFDFECF4),
       fg: Color(0xDE000000),
-      sasayaki: Color(0x6664B4DC),
+      sentenceAudioHighlight: Color(0x6664B4DC),
       selection: Color(0x59C8AA6E),
       link: Color(0xFF3A5FAD),
       dark: false,
@@ -1963,7 +1963,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     'eyecare-theme': (
       bg: Color(0xFFC7EDCC),
       fg: Color(0xDE000000),
-      sasayaki: Color(0x66A0C878),
+      sentenceAudioHighlight: Color(0x66A0C878),
       selection: Color(0x5988B583),
       link: Color(0xFF4C7A3E),
       dark: false,
@@ -1971,7 +1971,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     'gray-theme': (
       bg: Color(0xFF23272A),
       fg: Color(0xDEFFFFFF),
-      sasayaki: Color(0x595096C8),
+      sentenceAudioHighlight: Color(0x595096C8),
       selection: Color(0x59BE9B64),
       link: Color(0xFF6FA8DC),
       dark: true,
@@ -1979,7 +1979,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     'dark-theme': (
       bg: Color(0xFF121212),
       fg: Color(0x99FFFFFF),
-      sasayaki: Color(0x594682B4),
+      sentenceAudioHighlight: Color(0x594682B4),
       selection: Color(0x59B4915A),
       link: Color(0xFF7AACDF),
       dark: true,
@@ -1987,7 +1987,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     'black-theme': (
       bg: Color(0xFF000000),
       fg: Color(0xDEFFFFFF),
-      sasayaki: Color(0x663C78AA),
+      sentenceAudioHighlight: Color(0x663C78AA),
       selection: Color(0x66AA8750),
       link: Color(0xFF5B9BD5),
       dark: true,
@@ -2002,8 +2002,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       bg: appModel.customThemeBackgroundColor ?? const Color(0xFFFFFFFF),
       fg: appModel.customThemeFontColor ??
           (dark ? const Color(0xDEFFFFFF) : const Color(0xDE000000)),
-      sasayaki:
-          appModel.customThemeSasayakiColor ?? HibikiColor.defaultSasayakiColor,
+      sentenceAudioHighlight: appModel.customThemeSentenceAudioHighlightColor ??
+          HibikiColor.defaultSentenceAudioHighlightColor,
       // 回退值与 ReaderContentStyles `_ThemeColors` 默认一致（灰选区 / 蓝链接）。
       selection: appModel.customThemeSelectionColor ?? const Color(0x66A0A0A0),
       link: appModel.customThemeLinkColor ?? const Color(0xFF426CF5),
@@ -2031,7 +2031,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   Color _themeTextColor() => _readerThemeColors.fg;
 
-  Color _themeSasayakiColor() => _readerThemeColors.sasayaki;
+  Color _themeSentenceAudioHighlightColor() =>
+      _readerThemeColors.sentenceAudioHighlight;
 
   bool get _isReaderThemeDark => _readerThemeColors.dark;
 

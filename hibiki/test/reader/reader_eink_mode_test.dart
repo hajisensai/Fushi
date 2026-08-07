@@ -73,7 +73,7 @@ void main() {
       expect(css, isNot(contains('--hoshi-reader-eink-mode')));
       expect(css, isNot(contains('text-decoration-style: dashed')));
       // sasayaki 仍是色块填充（背景变量非 transparent）。
-      expect(css, contains('--hoshi-sasayaki-background-color: rgba'));
+      expect(css, contains('--hoshi-sentence-audio-background-color: rgba'));
     });
   });
 

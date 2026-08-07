@@ -22,8 +22,8 @@ import 'reader_hibiki_page_source_corpus.dart';
 void main() {
   final String readerSrc = readReaderPageSource();
 
-  final int prepStart =
-      readerSrc.indexOf('Future<String?> _prepareSasayakiCuesJson() async {');
+  final int prepStart = readerSrc
+      .indexOf('Future<String?> _prepareSentenceAudioCuesJson() async {');
   final int injectStart =
       readerSrc.indexOf('Future<void> _injectAudiobookBridge() async {');
 
@@ -38,10 +38,10 @@ void main() {
 
   test('SRT 不再无条件早退（旧 BUG-395 病征字符串已消除）', () {
     expect(
-      prepBody.contains('applySasayakiCues SKIPPED (early return)'),
+      prepBody.contains('applySentenceAudioCues SKIPPED (early return)'),
       isFalse,
       reason: '旧代码 _srtBookUid!=null 即 return null（SKIPPED early return），'
-          'SRT-sasayaki 书永不建 range；修复后两源统一走 buildSasayakiPayload',
+          'SRT-rematch 书永不建 range；修复后两源统一走 buildSentenceAudioPayload',
     );
   });
 
@@ -49,13 +49,16 @@ void main() {
     expect(
       prepBody.contains('_loadHighlightCues('),
       isTrue,
-      reason: 'SRT 与 Audiobook 两源必须先经统一加载，再走同一 sasayaki 判据，'
-          '不得在 _prepareSasayakiCuesJson 里按 _srtBookUid 分叉早退',
+      reason: 'SRT 与 Audiobook 两源必须先经统一加载，再走同一 sentenceAudioHighlight 判据，'
+          '不得在 _prepareSentenceAudioCuesJson 里按 _srtBookUid 分叉早退',
     );
   });
 
-  test('_prepareSasayakiCuesJson 仍复用 buildSasayakiPayload（BUG-300 契约不回退）', () {
-    expect(prepBody.contains('AudiobookBridge.buildSasayakiPayload('), isTrue);
+  test(
+      '_prepareSentenceAudioCuesJson 仍复用 buildSentenceAudioPayload（BUG-300 契约不回退）',
+      () {
+    expect(prepBody.contains('AudiobookBridge.buildSentenceAudioPayload('),
+        isTrue);
   });
 
   test('_loadHighlightCues 同时覆盖 SRT 与 Audiobook 两个 cue 源', () {
@@ -68,27 +71,30 @@ void main() {
         reason: '普通有声书 cue 源');
   });
 
-  group('BUG-395 判据：sasayaki 编码的 cue（无论书源）都产出非空 payload', () {
-    AudioCue sasayakiCue(int section, int ns, int ne, String text) => AudioCue()
-      ..bookKey = ''
-      ..chapterHref = ''
-      ..sentenceIndex = 0
-      ..textFragmentId = SasayakiMatchCodec.encodeHit(
-          sectionIndex: section, normCharStart: ns, normCharEnd: ne)
-      ..text = text
-      ..startMs = 0
-      ..endMs = 0
-      ..audioFileIndex = 0;
+  group('BUG-395 判据：sentenceAudioHighlight 编码的 cue（无论书源）都产出非空 payload', () {
+    AudioCue sentenceAudioCue(int section, int ns, int ne, String text) =>
+        AudioCue()
+          ..bookKey = ''
+          ..chapterHref = ''
+          ..sentenceIndex = 0
+          ..textFragmentId = SubtitleRematchCodec.encodeHit(
+              sectionIndex: section, normCharStart: ns, normCharEnd: ne)
+          ..text = text
+          ..startMs = 0
+          ..endMs = 0
+          ..audioFileIndex = 0;
 
-    test('SRT 书被匹配进真 EPUB 后的 sasayaki cue → buildSasayakiPayload 非空（应建 range）',
+    test(
+        'SRT 书被匹配进真 EPUB 后的 sentenceAudioHighlight cue → buildSentenceAudioPayload 非空（应建 range）',
         () {
       // 这正是用户日志里的 cue：sasayaki://s=26&ns=84&ne=111。
-      final payload = AudiobookBridge.buildSasayakiPayload(
-        <AudioCue>[sasayakiCue(26, 84, 111, 'これは推理小説です')],
+      final payload = AudiobookBridge.buildSentenceAudioPayload(
+        <AudioCue>[sentenceAudioCue(26, 84, 111, 'これは推理小説です')],
         26,
       );
       expect(payload, isNotEmpty,
-          reason: 'cue 是 sasayaki 编码就该建 range —— 与书源（SRT/Audiobook）无关');
+          reason:
+              'cue 是 sentenceAudioHighlight 编码就该建 range —— 与书源（SRT/Audiobook）无关');
       expect(payload.single['text'], 'これは推理小説です');
     });
 
@@ -102,7 +108,8 @@ void main() {
         ..startMs = 0
         ..endMs = 0
         ..audioFileIndex = 0;
-      expect(AudiobookBridge.buildSasayakiPayload(<AudioCue>[dataCueId], 0),
+      expect(
+          AudiobookBridge.buildSentenceAudioPayload(<AudioCue>[dataCueId], 0),
           isEmpty);
     });
   });

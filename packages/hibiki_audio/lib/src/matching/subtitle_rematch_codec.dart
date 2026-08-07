@@ -10,7 +10,9 @@ import 'epub_srt_matcher.dart';
 /// 这样做的好处：不用改 Isar schema / .g.dart，同一份 `AudioCue` 既可服务
 /// cues→epub 合成书（用现有 `[data-cue-id]` 高亮），也可服务 Sasayaki
 /// 风格的原生 EPUB 匹配（用 normChar 偏移定位）。
-class SasayakiMatchCodec {
+class SubtitleRematchCodec {
+  // scheme 字面量 'sasayaki://' 是持久化契约：编码结果写入 Drift DB 的
+  // AudioCue.textFragmentId 列，旧库数据必须继续可解码，冻结不改。
   static const String _scheme = 'sasayaki://';
 
   /// 编码命中结果为 textFragmentId。
@@ -23,7 +25,7 @@ class SasayakiMatchCodec {
   }
 
   /// 若 [raw] 不是 sasayaki:// 形式则返回 null。
-  static SasayakiFragment? tryDecode(String raw) {
+  static SubtitleRematchFragment? tryDecode(String raw) {
     if (!raw.startsWith(_scheme)) {
       return null;
     }
@@ -54,7 +56,7 @@ class SasayakiMatchCodec {
     if (s == null || ns == null || ne == null) {
       return null;
     }
-    return SasayakiFragment(
+    return SubtitleRematchFragment(
       sectionIndex: s,
       normCharStart: ns,
       normCharEnd: ne,
@@ -117,8 +119,8 @@ class SasayakiMatchCodec {
 }
 
 /// 解码后的 Sasayaki fragment。
-class SasayakiFragment {
-  const SasayakiFragment({
+class SubtitleRematchFragment {
+  const SubtitleRematchFragment({
     required this.sectionIndex,
     required this.normCharStart,
     required this.normCharEnd,

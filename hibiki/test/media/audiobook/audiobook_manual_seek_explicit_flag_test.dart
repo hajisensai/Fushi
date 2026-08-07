@@ -35,7 +35,7 @@ void main() {
       // 暂停态点最后一句 → 立起显式 seek 抑制窗，权威 cue 写成 cue2。
       await controller.skipToCue(controller.chapterCuesSnapshot[2]);
       expect(controller.explicitSeekInFlightForTesting, isTrue,
-          reason: 'skipToCue（sasayaki 路径）暂停态应立起抑制窗');
+          reason: 'skipToCue（sentenceAudioHighlight 路径）暂停态应立起抑制窗');
       expect(controller.currentCue?.startMs, 2000);
 
       // 让 skipToCue 那次 seek 吐出的事件落库，`_player.duration` 就绪，

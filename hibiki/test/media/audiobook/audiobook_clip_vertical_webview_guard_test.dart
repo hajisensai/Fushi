@@ -44,7 +44,8 @@ void main() {
     expect(html.contains('__clipFit'), isTrue);
   });
 
-  test('vertical HTML paints the current sentence with the sasayaki highlight',
+  test(
+      'vertical HTML paints the current sentence with the sentenceAudioHighlight highlight',
       () {
     final String html = buildAudiobookClipVerticalHtml(
       segments: const <AudiobookClipTextSegment>[

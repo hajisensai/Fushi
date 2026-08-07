@@ -345,8 +345,8 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       context.coverPath != null
           ? localMediaRef(context.coverPath!)
           : Future<String?>.value(null),
-      context.sasayakiAudioPath != null
-          ? localMediaRef(context.sasayakiAudioPath!)
+      context.sentenceAudioPath != null
+          ? localMediaRef(context.sentenceAudioPath!)
           : Future<String?>.value(null),
       _audioFieldForAnkiMobile(payload.audio, localMediaRef),
       buildDictionaryMediaTags(
@@ -356,7 +356,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     ];
     final mediaResults = await Future.wait(mediaFutures);
     final String? coverUrl = mediaResults[0] as String?;
-    final String? sasayakiUrl = mediaResults[1] as String?;
+    final String? sentenceAudioUrl = mediaResults[1] as String?;
     final _AnkiMobileAudioField audio =
         mediaResults[2] as _AnkiMobileAudioField;
     final Map<String, String> dictionaryMediaTags =
@@ -367,7 +367,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       cueSentence: context.cueSentence,
       documentTitle: context.documentTitle,
       coverPath: coverUrl,
-      sasayakiAudioPath: sasayakiUrl,
+      sentenceAudioPath: sentenceAudioUrl,
       sentenceOffset: context.sentenceOffset,
       source: context.source,
       bookTitleTag: context.bookTitleTag,
