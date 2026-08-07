@@ -27,15 +27,15 @@ class AudiobookBridge {
     final double a = highlightColor.a;
     final double hoverA = (a * 0.4).clamp(0.0, 1.0);
     return '''
-.hoshi-active {
+.fushi-active {
   background: rgba($r, $g, $b, $a);
   border-radius: 2px;
   transition: background 0.15s ease;
 }
-[data-hoshi-sid], [data-cue-id] {
+[data-fushi-sid], [data-cue-id] {
   cursor: pointer;
 }
-[data-hoshi-sid]:hover, [data-cue-id]:hover {
+[data-fushi-sid]:hover, [data-cue-id]:hover {
   background: rgba($r, $g, $b, $hoverA);
   border-radius: 2px;
 }
@@ -205,14 +205,14 @@ window.__fushiImagePauseAdvance = function(el, reveal, pauseEnabled) {
 
 window.__fushiHighlight = function(selector, reveal, pauseEnabled) {
   if (reveal === undefined) reveal = true;
-  document.querySelectorAll('.hoshi-active').forEach(function(e) {
-    e.classList.remove('hoshi-active');
+  document.querySelectorAll('.fushi-active').forEach(function(e) {
+    e.classList.remove('fushi-active');
   });
   if (!selector) { window.__fushiPrevHighlight = null; return; }
   var el = document.querySelector(selector);
   if (!el) return;
   var revealedImage = window.__fushiImagePauseAdvance(el, reveal, pauseEnabled);
-  el.classList.add('hoshi-active');
+  el.classList.add('fushi-active');
   if (reveal && !revealedImage) {
     window.__fushiRevealTarget(el);
   }
@@ -349,7 +349,7 @@ window.__sentenceAudioRequestNav = async function(n) {
 };
 ''';
 
-  /// 自动句子标注函数：按日文句末标点分割文本节点，包裹 data-hoshi-sid span。
+  /// 自动句子标注函数：按日文句末标点分割文本节点，包裹 data-fushi-sid span。
   static const String _annotateFn = '''
 window.__fushiAnnotate = function(chapterHref) {
   if (document.__fushiAnnotated) return;

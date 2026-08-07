@@ -8,7 +8,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
 /// TODO-1339 端到端（live WebView）：图片合并把「前导单图片 run」折进后随文本章后，
-/// 注入的插图（`.hoshi-merged-image` 内）必须保持 **eager**，不能被 `_sharedInitImages`
+/// 注入的插图（`.fushi-merged-image` 内）必须保持 **eager**，不能被 `_sharedInitImages`
 /// 挂 `loading="lazy"`。否则离屏（离首个文本落点较远的**第一张**）永不进入懒加载视口
 /// margin → 永不 load → 保持 0 尺寸 → 被 buildPaginationMetrics 的 firstContentEdge 排除
 /// → 章首落点锚到最近的已加载图（**最后一张**），跳过第一张 =「两张连续图只有最后一张
@@ -29,11 +29,11 @@ void main() {
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
   // 复刻 webview.part.dart _injectMergedChapterImages 的注入形状：每张合并前导图是
-  // `<div class="hoshi-merged-image"><img class="block-img"></div>`，插在正文最前。
+  // `<div class="fushi-merged-image"><img class="block-img"></div>`，插在正文最前。
   const String html = '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
       '<body>'
-      '<div class="hoshi-merged-image"><img id="lead1" class="block-img" src="$tinyPng"/></div>'
-      '<div class="hoshi-merged-image"><img id="lead2" class="block-img" src="$tinyPng"/></div>'
+      '<div class="fushi-merged-image"><img id="lead1" class="block-img" src="$tinyPng"/></div>'
+      '<div class="fushi-merged-image"><img id="lead2" class="block-img" src="$tinyPng"/></div>'
       '<p id="txt">本文のテスト文字列</p>'
       '<img id="normal" class="block-img" src="$tinyPng"/>'
       '<img id="gaijiimg" class="gaiji" src="$tinyPng"/>'

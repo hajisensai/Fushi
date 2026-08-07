@@ -5,7 +5,7 @@
 //
 // VN is the third book view-mode (alongside 'paginated' / 'continuous'): it
 // detaches the chapter into an off-screen source root, splits it into per-Block
-// screens, renders one screen at a time onto a `hoshi-vn-stage`, advances on
+// screens, renders one screen at a time onto a `fushi-vn-stage`, advances on
 // `paginate("forward")`, and restores by char-offset -> screen index.
 //
 // Hibiki adaptations vs hoshi a (see [vnShellScript]):
@@ -793,7 +793,7 @@ window.fushiReader = {
   isVertical: function() {
     var targets = [
       this.screen,
-      document.querySelector('.hoshi-vn-content'),
+      document.querySelector('.fushi-vn-content'),
       this.stage,
       document.body,
       document.documentElement
@@ -804,13 +804,13 @@ window.fushiReader = {
       var writingMode = window.getComputedStyle(target).writingMode || '';
       if (writingMode.indexOf('vertical') === 0) return true;
     }
-    return this.readerCssVariable('--hoshi-reader-vertical-writing') === '1';
+    return this.readerCssVariable('--fushi-reader-vertical-writing') === '1';
   },
   readerCssVariable: function(name) {
     return window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   },
   isEInkMode: function() {
-    return this.readerCssVariable('--hoshi-reader-eink-mode') === '1';
+    return this.readerCssVariable('--fushi-reader-eink-mode') === '1';
   },
   isFurigana: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
@@ -826,7 +826,7 @@ window.fushiReader = {
   },
   isUnrevealed: function(node) {
     var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    return !!(el && el.closest('[data-hoshi-visual-novel-unrevealed]'));
+    return !!(el && el.closest('[data-fushi-visual-novel-unrevealed]'));
   },
   textSemantics: function() {
     if (!window.fushiReaderTextSemantics) {
@@ -963,21 +963,21 @@ window.fushiReader = {
   ensureStage: function() {
     if (this.stage && this.screen) return;
     this.stage = document.createElement('div');
-    this.stage.className = 'hoshi-vn-stage';
+    this.stage.className = 'fushi-vn-stage';
     this.screen = document.createElement('div');
-    this.screen.className = 'hoshi-vn-screen';
+    this.screen.className = 'fushi-vn-screen';
     this.stage.appendChild(this.screen);
     document.body.appendChild(this.stage);
   },
   applyImageMaxVars: function() {
     // TODO-1085 (BUG-513): the shared reader image CSS
     // (reader_content_styles.dart: `img.block-img`, `img:not(.block-img)`, `svg`)
-    // sizes images against `--hoshi-image-max-width` / `--hoshi-image-max-height`.
+    // sizes images against `--fushi-image-max-width` / `--fushi-image-max-height`.
     // The paginated/continuous shell sets those vars in initialize/updatePageSize
     // from its content-box; the VN shell never did, so they stayed at the CSS
     // fallbacks (`95vw` / `calc(--page-height - 22px)`). Combined with a
     // never-promoted `<img>` (see setupReaderImages) that collapses inside the
-    // shrink-to-fit `.hoshi-vn-content` flex item, VN images rendered tiny. Set
+    // shrink-to-fit `.fushi-vn-content` flex item, VN images rendered tiny. Set
     // the vars to the actual VN viewport so a promoted `.block-img` fills the
     // screen the same way it does in paginated mode.
     var root = document.documentElement;
@@ -985,8 +985,8 @@ window.fushiReader = {
     var ratio = $imageWidthRatio;
     var vw = Math.max(1, window.innerWidth || 0);
     var vh = Math.max(1, window.innerHeight || 0);
-    root.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(vw * ratio)) + 'px');
-    root.style.setProperty('--hoshi-image-max-height', vh + 'px');
+    root.style.setProperty('--fushi-image-max-width', Math.max(1, Math.floor(vw * ratio)) + 'px');
+    root.style.setProperty('--fushi-image-max-height', vh + 'px');
   },
   buildSourceIndexes: function() {
     var contentStreamFactory = window.fushiReaderVnContentStream && window.fushiReaderVnContentStream.create;
@@ -1369,7 +1369,7 @@ window.fushiReader = {
   createScreenMeasurement: function() {
     if (!this.stage || !this.screen || !document.createRange) return null;
     var root = document.createElement('div');
-    root.className = 'hoshi-vn-screen';
+    root.className = 'fushi-vn-screen';
     root.setAttribute('aria-hidden', 'true');
     root.style.position = 'fixed';
     root.style.left = '0';
@@ -1380,7 +1380,7 @@ window.fushiReader = {
     root.style.width = 'var(--page-width, 100vw)';
     root.style.height = 'var(--page-height, 100vh)';
     var content = document.createElement('div');
-    content.className = 'hoshi-vn-content';
+    content.className = 'fushi-vn-content';
     root.appendChild(content);
     this.stage.appendChild(root);
     return { root: root, content: content };
@@ -2364,10 +2364,10 @@ window.fushiReader = {
     // VN images never received the `.block-img` class that the shared reader CSS
     // (reader_content_styles.dart) needs to give an image a page-sized centred
     // box. Without it they fell through to `img:not(.block-img){max-width:100%}`,
-    // whose 100% resolves against the shrink-to-fit `.hoshi-vn-content` flex item
+    // whose 100% resolves against the shrink-to-fit `.fushi-vn-content` flex item
     // and collapses to a few px. Promote large standalone images to `.block-img`
     // (+ `.block-img-wrapper` for centering) exactly like the paginated shell's
-    // _sharedInitImages, so `--hoshi-image-max-width/height` (set by
+    // _sharedInitImages, so `--fushi-image-max-width/height` (set by
     // applyImageMaxVars) drive their size. Gaiji glyph images are left inline.
     this.promoteBlockImages(scope);
     return window.fushiReaderMediaSemantics.setupReaderImages(scope, {
@@ -2442,7 +2442,7 @@ window.fushiReader = {
       while (this.screen.firstChild) this.screen.removeChild(this.screen.firstChild);
     }
     var content = document.createElement('div');
-    content.className = 'hoshi-vn-content';
+    content.className = 'fushi-vn-content';
     content.appendChild(this.screens[safeIndex].render());
     this.screen.appendChild(content);
     if (fullyRevealed || this.revealSpeed <= 0) {
@@ -2483,7 +2483,7 @@ window.fushiReader = {
     var rawOffset = this.rangeMap.cloneTextRawOffsetForNode(node);
     var visible = document.createTextNode('');
     var hidden = document.createElement('span');
-    hidden.setAttribute('data-hoshi-visual-novel-unrevealed', '');
+    hidden.setAttribute('data-fushi-visual-novel-unrevealed', '');
     hidden.setAttribute('aria-hidden', 'true');
     hidden.appendChild(document.createTextNode(text));
     parent.insertBefore(visible, node);
@@ -2765,7 +2765,7 @@ window.fushiReader = {
         range.setStart(segment.node, segment.start);
         range.setEnd(segment.node, segment.end);
         var wrapper = document.createElement('span');
-        wrapper.className = 'hoshi-sentence-audio-cue';
+        wrapper.className = 'fushi-sentence-audio-cue';
         wrapper.appendChild(range.extractContents());
         range.insertNode(wrapper);
         wrappers.push(wrapper);
@@ -2855,7 +2855,7 @@ window.fushiReader = {
   clearInlineSentenceAudioCue: function(cueId) {
     var clearWrappers = function(wrappers) {
       wrappers.forEach(function(wrapper) {
-        wrapper.classList.remove('hoshi-sentence-audio-active');
+        wrapper.classList.remove('fushi-sentence-audio-active');
       });
     };
     if (cueId) {
@@ -2867,7 +2867,7 @@ window.fushiReader = {
   applyInlineSentenceAudioCue: function(cueId) {
     var wrappers = this.cueWrappers.get(cueId) || [];
     wrappers.forEach(function(wrapper) {
-      wrapper.classList.add('hoshi-sentence-audio-active');
+      wrapper.classList.add('fushi-sentence-audio-active');
     });
     return wrappers.length > 0;
   },
@@ -3049,7 +3049,7 @@ window.fushiReader = {
 // run AFTER the host-compat shim IIFE above: a charOffset restore calls
 // window.fushiReader.restoreToCharOffset, which only the shim defines. Placed
 // before the shim it threw a synchronous TypeError that aborted the outer
-// reader-setup IIFE before its tail removed #hoshi-cloak, leaving the page
+// reader-setup IIFE before its tail removed #fushi-cloak, leaving the page
 // visibility:hidden (blank) on any restore-by-charOffset VN entry. The
 // try/catch also stops a future restore error from ever stranding the cloak.
 window.addEventListener('load', function() {

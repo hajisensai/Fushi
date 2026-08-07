@@ -8,7 +8,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 ///
 /// 症状：在阅读器（书籍）正文里长按拖选文字时，WebView 引擎把长按拖选翻译成
 /// **原生文本选区**（蓝色 ::selection），与我们自绘的查词选区高亮
-/// （::highlight(hoshi-selection) / .hoshi-dict-highlight）叠成双选区。
+/// （::highlight(fushi-selection) / .fushi-dict-highlight）叠成双选区。
 ///
 /// 根因修复：按指针类型消除这条特殊情况——粗指针（触屏，`@media (pointer: coarse)`）
 /// 禁用原生 user-select，长按拖选只留我们的查词高亮；细指针（鼠标，桌面）不受影响，

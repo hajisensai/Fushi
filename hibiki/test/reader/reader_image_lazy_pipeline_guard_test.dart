@@ -37,7 +37,7 @@ void main() {
       final int endIdx = src.indexOf('String? _chapterFilePath(', injectIdx);
       expect(endIdx, greaterThan(injectIdx));
       final String body = stripLineComments(src.substring(injectIdx, endIdx));
-      expect(body.contains('class="hoshi-merged-image"'), isTrue,
+      expect(body.contains('class="fushi-merged-image"'), isTrue,
           reason: 'JS 侧靠这个 marker 放行，两端接线必须一致');
       expect(body.contains('loading="eager"'), isTrue,
           reason: '注入的前导插图必须显式 eager —— 否则 eager 只由调用顺序保证，'
@@ -45,7 +45,7 @@ void main() {
     });
 
     test('markImagesLazy 跳过显式 loading="eager"（顺序无关的另一半）', () {
-      const String merged = '<body><div class="hoshi-merged-image">'
+      const String merged = '<body><div class="fushi-merged-image">'
           '<img src="hoshi://a.png" class="block-img" loading="eager"/>'
           '</div><p>本文</p><img src="b.png"/></body>';
       final String out = ReaderResourceSanitizer.markImagesLazy(merged);

@@ -1496,7 +1496,7 @@ class PreferencesRepository extends ChangeNotifier {
   // ── audio sources ────────────────────────────────────────────────────
 
   static const List<String> defaultAudioSources = [
-    'https://hoshi-reader.manhhaoo-do.workers.dev/?term={term}&reading={reading}',
+    'https://fushi-reader.manhhaoo-do.workers.dev/?term={term}&reading={reading}',
   ];
 
   /// Anki 本地音频服务器（local-audio-yomichan，默认端口 5050）的内置预设 URL。
@@ -1528,7 +1528,7 @@ class PreferencesRepository extends ChangeNotifier {
       if (configs.isNotEmpty) return _withDefaultAudioSources(configs);
     }
     // 纯新装（typed config 与 legacy audio_sources 两个 pref 都未写过）下，内置的
-    // 远端音频源（hoshi-reader.manhhaoo worker）默认**关闭**：第三方私有远端服务不
+    // 远端音频源（fushi-reader.manhhaoo worker）默认**关闭**：第三方私有远端服务不
     // 应未经用户同意就默认参与查词发音。一旦用户存过任一 pref（老用户/已配置过），
     // 走下面的 legacy 装配，按其保存值原样还原（fromLegacyUrls 默认 enabled，保留
     // 老用户已启用的 URL，向后兼容）。

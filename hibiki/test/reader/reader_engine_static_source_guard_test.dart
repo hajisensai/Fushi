@@ -294,7 +294,7 @@ void main() {
         markTestSkipped('node 不可用，跳过真解析');
         return;
       }
-      final Directory tmp = Directory.systemTemp.createTempSync('hoshi-engine');
+      final Directory tmp = Directory.systemTemp.createTempSync('fushi-engine');
       try {
         for (final MapEntry<String, String> entry in <String, String>{
           'paged': readerHibikiEngineSource(),

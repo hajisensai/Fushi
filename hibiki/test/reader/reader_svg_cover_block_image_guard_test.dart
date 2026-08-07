@@ -54,8 +54,8 @@ void main() {
       final String rule = _functionSource(css, 'svg.block-img {', '}');
       // Definite box from the per-page image vars so the inner <image> meet-fits
       // and centres, rather than collapsing to the SVG default 300x150.
-      expect(rule, contains('width: var(--hoshi-image-max-width'));
-      expect(rule, contains('height: var(--hoshi-image-max-height'));
+      expect(rule, contains('width: var(--fushi-image-max-width'));
+      expect(rule, contains('height: var(--fushi-image-max-height'));
       expect(rule, contains('margin: auto'));
       // Tap-to-zoom affordance, matching img.block-img.
       expect(rule, contains('cursor: pointer'));

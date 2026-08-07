@@ -126,7 +126,7 @@ void main() {
   });
 
   group('ReaderResourceSanitizer.injectImagesAfterBodyOpen (TODO-1174)', () {
-    const String img = '<div class="hoshi-merged-image">'
+    const String img = '<div class="fushi-merged-image">'
         '<img src="a.png" class="block-img"/></div>';
 
     test(
@@ -137,7 +137,7 @@ void main() {
           ReaderResourceSanitizer.injectImagesAfterBodyOpen(html, img);
 
       final int bodyOpenEnd = out.indexOf('<body>') + '<body>'.length;
-      final int imgAt = out.indexOf('hoshi-merged-image');
+      final int imgAt = out.indexOf('fushi-merged-image');
       final int paraAt = out.indexOf('<p>本文</p>');
       // The image lands at the very top of the flow: after <body>, before the
       // original first content — i.e. merged illustrations open the chapter.
@@ -155,7 +155,7 @@ void main() {
       expect(out, contains('<body class="c" dir="rtl">'));
       final int openEnd = out.indexOf('<body class="c" dir="rtl">') +
           '<body class="c" dir="rtl">'.length;
-      expect(out.indexOf('hoshi-merged-image'), greaterThanOrEqualTo(openEnd));
+      expect(out.indexOf('fushi-merged-image'), greaterThanOrEqualTo(openEnd));
     });
 
     test('empty images string is a verbatim no-op', () {
@@ -169,7 +169,7 @@ void main() {
       final String out =
           ReaderResourceSanitizer.injectImagesAfterBodyOpen(html, img);
       expect(
-          out.indexOf('hoshi-merged-image'), lessThan(out.indexOf('<p>x</p>')));
+          out.indexOf('fushi-merged-image'), lessThan(out.indexOf('<p>x</p>')));
     });
   });
 }

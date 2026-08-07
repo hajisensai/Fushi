@@ -153,7 +153,7 @@ function loadFushiSelection(document) {
   const windowObj = { scanNonJapaneseText: true };
   const sandbox = { window: windowObj, document, Node, NodeFilter, Math, console };
   vm.createContext(sandbox);
-  vm.runInContext(jsSource, sandbox, { filename: 'hoshi-selection.js' });
+  vm.runInContext(jsSource, sandbox, { filename: 'fushi-selection.js' });
   assert.ok(windowObj.fushiSelection, 'window.fushiSelection must be defined');
   return windowObj.fushiSelection;
 }

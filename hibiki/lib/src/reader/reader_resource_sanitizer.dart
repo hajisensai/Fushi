@@ -86,7 +86,7 @@ class ReaderResourceSanitizer {
   /// - `class` 含 `gaiji` 的内联小图参与文字排版几何，必须同步解码 → 跳过。
   /// - 已显式写了 `loading=` 的标签 → 尊重原书，跳过。
   ///
-  /// 合并注入的前导插图（`.hoshi-merged-image`）不经过这里——调用点在
+  /// 合并注入的前导插图（`.fushi-merged-image`）不经过这里——调用点在
   /// `_injectMergedChapterImages` **之前**，那些图天然保持 eager（TODO-1339）。
   static String markImagesLazy(String html, {bool eagerAll = false}) {
     if (eagerAll) return html;

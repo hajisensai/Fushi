@@ -99,7 +99,7 @@ void main() {
     test('does not flag a real remote host or empty/null', () {
       expect(
         AudioSourceConfig.isLoopbackAudioUrl(
-            'https://hoshi-reader.example.workers.dev/?term={term}'),
+            'https://fushi-reader.example.workers.dev/?term={term}'),
         isFalse,
       );
       expect(AudioSourceConfig.isLoopbackAudioUrl(''), isFalse);

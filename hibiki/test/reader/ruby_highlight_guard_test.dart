@@ -11,8 +11,8 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 修复（移植 Hoshi-Reader-Android）：cue / 选区里位于 `<ruby>` 内的节点**不放进
 /// `::highlight` range**，改把 `<ruby>` 元素本身收集起来、高亮时加 class
-/// （`hoshi-sasayaki-ruby-active` / `hoshi-selection-ruby-active`），背景画在元素上
-/// 只画一遍；sasayaki 普通文字包 `.hoshi-sasayaki-cue` span 画同宽窄条。清除时
+/// （`fushi-sasayaki-ruby-active` / `fushi-selection-ruby-active`），背景画在元素上
+/// 只画一遍；sasayaki 普通文字包 `.fushi-sasayaki-cue` span 画同宽窄条。清除时
 /// 移除 class / active，reset 时 unwrap。
 ///
 /// 谁把 ruby 节点放回 `::highlight` range（删掉 rubyForNode 分流 / ruby class），
@@ -35,30 +35,30 @@ void main() {
               'sentenceAudioHighlight 须用 cueRubyElements 单独存 <ruby> 元素，不混进 ::highlight range');
       expect(pagination, contains('rubyForNode'),
           reason: '须用 rubyForNode 判定节点是否在 <ruby> 内以分流');
-      expect(pagination, contains('hoshi-sentence-audio-ruby-active'),
+      expect(pagination, contains('fushi-sentence-audio-ruby-active'),
           reason:
-              'sentenceAudioHighlight 的 ruby 元素须用 class hoshi-sentence-audio-ruby-active 高亮（单次绘背景）');
+              'sentenceAudioHighlight 的 ruby 元素须用 class fushi-sentence-audio-ruby-active 高亮（单次绘背景）');
     });
 
     test('selection：ruby 节点分流出 ::highlight，改加 ruby class', () {
       expect(selection, contains('rubyForNode'),
           reason: '查词高亮须用 rubyForNode 分流 <ruby> 内节点');
-      expect(selection, contains('hoshi-selection-ruby-active'),
-          reason: '查词的 ruby 元素须用 class hoshi-selection-ruby-active 高亮');
+      expect(selection, contains('fushi-selection-ruby-active'),
+          reason: '查词的 ruby 元素须用 class fushi-selection-ruby-active 高亮');
       expect(selection, contains('clearSelectionRubyHighlights'),
           reason: '清除选区时须移除 ruby class，避免残留');
     });
 
     test('CSS：两个 ruby-active class 都有背景规则', () {
-      expect(styles, contains('ruby.hoshi-sentence-audio-ruby-active'),
-          reason: 'reader CSS 须给 ruby.hoshi-sentence-audio-ruby-active 设背景');
-      expect(styles, contains('ruby.hoshi-selection-ruby-active'),
-          reason: 'reader CSS 须给 ruby.hoshi-selection-ruby-active 设背景');
+      expect(styles, contains('ruby.fushi-sentence-audio-ruby-active'),
+          reason: 'reader CSS 须给 ruby.fushi-sentence-audio-ruby-active 设背景');
+      expect(styles, contains('ruby.fushi-selection-ruby-active'),
+          reason: 'reader CSS 须给 ruby.fushi-selection-ruby-active 设背景');
     });
 
     test('sentenceAudioHighlight：普通正文也不用 ::highlight，改由 cue span 画窄条', () {
       expect(
-        pagination.contains("CSS.highlights.set('hoshi-sentence-audio'"),
+        pagination.contains("CSS.highlights.set('fushi-sentence-audio'"),
         isFalse,
         reason: 'sentenceAudioHighlight 普通正文不能再走 CSS Highlight；竖排下它会按行盒刷宽背景',
       );
@@ -71,7 +71,7 @@ void main() {
       final String applyBody = pagination.substring(applyStart, applyEnd);
       expect(
         applyBody,
-        contains("wrapper.className = 'hoshi-sentence-audio-cue'"),
+        contains("wrapper.className = 'fushi-sentence-audio-cue'"),
         reason: 'CSS Highlight 支持时普通正文也要包 cue span，才能用 CSS 画 1em 窄条',
       );
       expect(
@@ -90,12 +90,12 @@ void main() {
   group('BUG-125 查词高亮不抹字 + 与音频重叠不双重高亮', () {
     test('CSS：删掉旧的 <rt>/<rp> 不透明遮罩（会抹基字右缘）', () {
       expect(
-        styles.contains('ruby.hoshi-selection-ruby-active > rt'),
+        styles.contains('ruby.fushi-selection-ruby-active > rt'),
         isFalse,
         reason: 'rt 遮罩会抹掉基字右缘，必须删除（BUG-125）',
       );
       expect(
-        styles.contains('ruby.hoshi-selection-ruby-active > rp'),
+        styles.contains('ruby.fushi-selection-ruby-active > rp'),
         isFalse,
         reason: 'rp 遮罩同样删除',
       );
@@ -106,14 +106,14 @@ void main() {
           reason: '查词高亮须用合成到背景色的不透明色，重叠区才能覆盖音频层');
       expect(styles, contains('selectionOpaque'),
           reason: 'css() 须算出 selectionOpaque 并用于查词高亮各处');
-      // ::highlight(hoshi-selection) 的背景用 selectionOpaque（不是半透明 selectionColor）。
-      final int selIdx = styles.indexOf('::highlight(hoshi-selection)');
+      // ::highlight(fushi-selection) 的背景用 selectionOpaque（不是半透明 selectionColor）。
+      final int selIdx = styles.indexOf('::highlight(fushi-selection)');
       final int bgIdx = styles.indexOf('background-color', selIdx);
       final int lineEnd = styles.indexOf(';', bgIdx);
       expect(
         styles.substring(bgIdx, lineEnd).contains('selectionOpaque'),
         isTrue,
-        reason: '::highlight(hoshi-selection) 背景须用 selectionOpaque',
+        reason: '::highlight(fushi-selection) 背景须用 selectionOpaque',
       );
     });
 
@@ -121,7 +121,7 @@ void main() {
       expect(
         styles,
         contains(
-            'ruby.hoshi-selection-ruby-active.hoshi-sentence-audio-ruby-active'),
+            'ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active'),
         reason: '同一 ruby 带两 class 时须有双类规则让查词不透明色胜出（查词优先）',
       );
     });

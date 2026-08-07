@@ -2726,7 +2726,7 @@ class AppModel with ChangeNotifier {
       '--background-color': vars['--background-color']!,
       // BUG-736：查到词的高亮色。漏发时 popup.css 回落到灰 rgba(160,160,160,0.4)，与 app
       // 内的主题主色高亮不一致（这是「扩展弹窗和 app 不一样」最扎眼的一处）。
-      '--hoshi-primary-highlight': vars['--hoshi-primary-highlight']!,
+      '--fushi-primary-highlight': vars['--fushi-primary-highlight']!,
       // BUG-736：卡片底色 alpha 合成用的 RGB 三元组（配 popup.css 的 --hibiki-card-bg-alpha）。
       // 漏发时回落到纯白 255,255,255。
       '--hibiki-card-bg-rgb': vars['--hibiki-card-bg-rgb']!,

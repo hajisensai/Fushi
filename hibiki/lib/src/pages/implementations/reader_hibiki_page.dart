@@ -2918,7 +2918,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   }
 
   String _computeStyleTag() {
-    return '<style id="hoshi-reader-style">\n${_currentReaderCss()}\n</style>';
+    return '<style id="fushi-reader-style">\n${_currentReaderCss()}\n</style>';
   }
 
   void _invalidateStyleCache() {
@@ -2987,10 +2987,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       await _controller!.evaluateJavascript(
         source: '''
 (function(){
-  var el = document.getElementById('hoshi-reader-style');
+  var el = document.getElementById('fushi-reader-style');
   if (!el) {
     el = document.createElement('style');
-    el.id = 'hoshi-reader-style';
+    el.id = 'fushi-reader-style';
     document.head.appendChild(el);
   }
   // 重锚不会跑（无 fushiReader / 内容未就绪 / 重排在飞）时就地换 CSS，并失效分页 metrics
@@ -3068,7 +3068,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         chapterFavs.where((s) => s.normCharOffset != null).length;
     final int total =
         _favoriteSentencesForBookCache?.length ?? chapterFavs.length;
-    debugPrint('[hoshi-hl] chapter=$_currentChapter '
+    debugPrint('[fushi-hl] chapter=$_currentChapter '
         'total=$total chapterFavs=${chapterFavs.length} '
         'withOffsets=$withOffsets');
     if (chapterFavs.isNotEmpty) {

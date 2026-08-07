@@ -44,7 +44,7 @@ Map<String, String> buildPopupThemeCssVars({
   required int dictionaryColumns,
 }) {
   return <String, String>{
-    '--hoshi-primary-highlight': cssRgba035(scheme.primary),
+    '--fushi-primary-highlight': cssRgba035(scheme.primary),
     '--text-color': cssRgb(scheme.onSurface),
     '--background-color': cssRgb(backgroundColor),
     '--hibiki-card-bg-rgb': cssRgbTriplet(backgroundColor),

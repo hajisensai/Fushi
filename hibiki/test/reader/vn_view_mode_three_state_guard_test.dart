@@ -128,10 +128,10 @@ void main() {
           reason: 'isVnMode must be checked before isContinuousMode',
         );
         for (final String cls in <String>[
-          '.hoshi-vn-stage',
-          '.hoshi-vn-screen',
-          '.hoshi-vn-content',
-          '[data-hoshi-visual-novel-unrevealed]',
+          '.fushi-vn-stage',
+          '.fushi-vn-screen',
+          '.fushi-vn-content',
+          '[data-fushi-visual-novel-unrevealed]',
         ]) {
           expect(
             styles.contains(cls),
@@ -155,12 +155,12 @@ void main() {
           reason: '_vnLayoutCss must reference isVertical for axis-aware '
               'centering, not ignore it',
         );
-        // The .hoshi-vn-content block must no longer force a physical full
+        // The .fushi-vn-content block must no longer force a physical full
         // width — that filled the main axis and defeated justify-content:center
         // (台词贴最右). It must constrain with max-width instead. (Note:
-        // .hoshi-vn-screen legitimately keeps width: 100%, so scope the check
+        // .fushi-vn-screen legitimately keeps width: 100%, so scope the check
         // to the vn-content block only.)
-        final String contentBlock = _extractCssBlock(body, '.hoshi-vn-content');
+        final String contentBlock = _extractCssBlock(body, '.fushi-vn-content');
         // Match a *declaration line* of plain `width: 100%` (not `max-width`,
         // and not the explanatory comment text), so the guard is robust against
         // the substring overlap with `max-width: 100% !important;`.

@@ -301,7 +301,7 @@ void main() {
           isTrue);
       expect(src.contains('[sentence-audio-hl] diag cssHighlightsSupported='),
           isTrue);
-      expect(src.contains('--hoshi-sentence-audio-background-color'), isTrue,
+      expect(src.contains('--fushi-sentence-audio-background-color'), isTrue,
           reason: '一次性诊断须读 sentenceAudioHighlight 背景色变量（透明/缺失也是「看不见」原因）');
     });
 

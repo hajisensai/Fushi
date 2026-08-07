@@ -2330,7 +2330,7 @@ function showAudioError(button) {
 // 拉伸的逻辑坐标」定位，与纹理真正合成的位置（弹窗卡片）错位，于是提示「飞」到窗口角落。
 // 同型的原生右键菜单错位已由 dictionary_popup_webview.dart 换 Flutter showMenu 规避，但 title
 // 无法拦截/重定位。这里给内联动作按钮改用 DOM 内自绘提示（随纹理正确合成），并去掉原生
-// title。复用 .audio-hint 的视觉（popup.css 里 .hoshi-btn-tip 与其共用规则）。
+// title。复用 .audio-hint 的视觉（popup.css 里 .fushi-btn-tip 与其共用规则）。
 let __fushiBtnTipEl = null;
 let __fushiBtnTipHideTimer = 0;
 function __fushiShowButtonTip(button) {
@@ -2341,7 +2341,7 @@ function __fushiShowButtonTip(button) {
         __fushiBtnTipHideTimer = 0;
     }
     if (!__fushiBtnTipEl || !__fushiBtnTipEl.isConnected) {
-        __fushiBtnTipEl = el('div', { className: 'hoshi-btn-tip' });
+        __fushiBtnTipEl = el('div', { className: 'fushi-btn-tip' });
         __hibikiOverlayParent().appendChild(__fushiBtnTipEl);
     }
     __fushiBtnTipEl.textContent = text;
@@ -2989,7 +2989,7 @@ window.fushiPopupMineEntryByIndex = function(idx) {
 
 // TODO-1325 #5 part1：多词条焦点导航（上/下一条词条跳转）。一次查询可能返回多个词条
 // (.entry)，每条自成一栏（读音 + 词典释义）。这里提供纯 JS + CSS 的「当前词条」焦点指示：
-// 给每条打 data-hoshi-entry-index，给当前条加 .entry-current（popup.css 用
+// 给每条打 data-fushi-entry-index，给当前条加 .entry-current（popup.css 用
 // .entry-current .entry-header::before 画 #1a73e8 蓝三角，零字体依赖，与折叠三角同法），并
 // scrollIntoView 进视口。Dart 焦点驱动（阅读器 caret 管线 → DictionaryPopupWebViewState.
 // focusEntryMove → 这里）按 next/prev 调用。与逐字光标 fushiCaret 正交：只移动词条级指示与
@@ -3006,12 +3006,12 @@ window.fushiPopupMineEntryByIndex = function(idx) {
             container.querySelectorAll(':scope > .entry'));
     }
 
-    // 给每条打 data-hoshi-entry-index（0-based，DOM 顺序），返回词条数组。每次导航前重建，
+    // 给每条打 data-fushi-entry-index（0-based，DOM 顺序），返回词条数组。每次导航前重建，
     // 兼容增量渲染后词条集合变化。
     function indexEntries() {
         const entries = listEntries();
         for (let i = 0; i < entries.length; i++) {
-            entries[i].setAttribute('data-hoshi-entry-index', String(i));
+            entries[i].setAttribute('data-fushi-entry-index', String(i));
         }
         return entries;
     }
@@ -3067,7 +3067,7 @@ window.fushiPopupMineEntryByIndex = function(idx) {
         return 'moved';
     }
 
-    // 清除当前词条焦点（保留 data-hoshi-entry-index），返回词条数。
+    // 清除当前词条焦点（保留 data-fushi-entry-index），返回词条数。
     function resetEntry() {
         const entries = indexEntries();
         for (let i = 0; i < entries.length; i++) {
@@ -3421,10 +3421,10 @@ function postProcessRuby(container) {
 }
 
 function applyCustomCSS() {
-    __hibikiOverlayParent().querySelectorAll('style.hoshi-custom-css').forEach(el => el.remove());
+    __hibikiOverlayParent().querySelectorAll('style.fushi-custom-css').forEach(el => el.remove());
     if (window.globalDictCSS) {
         const style = document.createElement('style');
-        style.className = 'hoshi-custom-css';
+        style.className = 'fushi-custom-css';
         style.textContent = window.globalDictCSS;
         __hibikiOverlayParent().appendChild(style);
     }
@@ -3432,7 +3432,7 @@ function applyCustomCSS() {
         for (const [dictName, css] of Object.entries(window.customDictCSS)) {
             if (!css) continue;
             const style = document.createElement('style');
-            style.className = 'hoshi-custom-css';
+            style.className = 'fushi-custom-css';
             style.textContent = constructDictCss(css, dictName);
             __hibikiOverlayParent().appendChild(style);
         }

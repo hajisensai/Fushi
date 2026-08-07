@@ -67,7 +67,7 @@ void main() {
     expect(src.contains('DictionaryFontCss.build('), isTrue);
     expect(src.contains('settings.dictionaryFonts'), isTrue);
     // The injected style element id is the contract popup.css/JS keys off.
-    expect(src.contains("'hoshi-dict-font'"), isTrue);
+    expect(src.contains("'fushi-dict-font'"), isTrue);
     // The in-app WebView path must feed through the shared builder (not a
     // re-introduced local copy that could drift from the app-outside window).
     // BUG-712 ③ split buildPopupSettingsJs into the shared static-settings half

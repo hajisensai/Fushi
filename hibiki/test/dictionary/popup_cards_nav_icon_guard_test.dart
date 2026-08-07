@@ -114,7 +114,7 @@ void main() {
       setUpAll(() => js = read(relPath));
 
       test(
-          '#5 暴露 fushiFocusDictionaryEntry/Move/Reset + data-hoshi-entry-index',
+          '#5 暴露 fushiFocusDictionaryEntry/Move/Reset + data-fushi-entry-index',
           () {
         expect(js.contains('window.fushiFocusDictionaryEntry ='), isTrue,
             reason: '聚焦指定下标词条 API');
@@ -122,7 +122,7 @@ void main() {
             reason: '相对上/下一条词条 API（Dart 焦点驱动调用点）');
         expect(js.contains('window.fushiFocusDictionaryEntryReset ='), isTrue,
             reason: '清除当前词条焦点 API');
-        expect(js.contains('data-hoshi-entry-index'), isTrue,
+        expect(js.contains('data-fushi-entry-index'), isTrue,
             reason: '词条打索引属性，DOM 可观测');
       });
 

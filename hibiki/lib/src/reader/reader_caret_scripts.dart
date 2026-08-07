@@ -149,8 +149,8 @@ class ReaderCaretScripts {
   // 运行时无共享对象，且两侧 source() 都是不可插值的 r"""...""" 原始串，无法经 Dart 常量收敛。
   // 下列辅助与 reader_lyrics_caret 对应方法**逐字节相同**，改任一侧必须同步另一侧：_charLen /
   // _charRect / _applyRingStyle / _rectJson / _prevIndex / _hideRing。故意分叉（各自特化，勿强行
-  // 同步）：_isStop（本文件含弹窗标点/scope/clickable 门控）、_ensureRing（ring id hoshi-caret-ring
-  // vs hoshi-lyrics-caret-ring）、_drawRing（本文件做视口 clamp）、_walker（本文件走 document.body
+  // 同步）：_isStop（本文件含弹窗标点/scope/clickable 门控）、_ensureRing（ring id fushi-caret-ring
+  // vs fushi-lyrics-caret-ring）、_drawRing（本文件做视口 clamp）、_walker（本文件走 document.body
   // 全文）。
   static String source() => r"""
 window.fushiCaret = {
@@ -236,10 +236,10 @@ window.fushiCaret = {
       // atomic stop (the ring covers the whole control, e.g. a ▶ Grammar collapse
       // toggle) so A clicks the control instead of looking up a glyph inside it.
       // Passive term/POS tags (.glossary-tag, e.g. "name") are labels, not lookup
-      // targets, so they are not reachable at all. data-hoshi-clk is refreshed by
+      // targets, so they are not reachable at all. data-fushi-clk is refreshed by
       // _markClickables at every entry point before this runs.
       var ie = node.parentElement;
-      if (ie && (ie.closest('[data-hoshi-clk]') || ie.closest('.glossary-tag'))) {
+      if (ie && (ie.closest('[data-fushi-clk]') || ie.closest('.glossary-tag'))) {
         return false;
       }
     }
@@ -331,14 +331,14 @@ window.fushiCaret = {
   // branch, not from this selector.
   _interactiveSelector:
       'a[href], button, summary, [role="button"], [role="link"], img',
-  // Tag every clickable element (popup-only) with data-hoshi-clk, so text-stop
+  // Tag every clickable element (popup-only) with data-fushi-clk, so text-stop
   // rejection (_isStop) and element-stop collection (_interactiveEls) share ONE
   // definition of "clickable": an explicit control, an onclick handler, or a
   // pointer cursor. Wiktionary collapsibles (▶ Grammar/Etymology) and icon-only
   // controls bound via addEventListener carry no semantic tag/role, so the
   // pointer-cursor probe is what catches them. Cheap for the small popup DOM;
   // returns early in the reader (whose only element stops are block images,
-  // collected by _interactiveEls directly — no data-hoshi-clk tagging needed).
+  // collected by _interactiveEls directly — no data-fushi-clk tagging needed).
   // Called from every public entry point (move/enter/reanchor/refresh/activate)
   // so tags are always fresh.
   _markClickables: function() {
@@ -365,8 +365,8 @@ window.fushiCaret = {
           }
         } catch (x) {}
       }
-      if (clk) { if (!e.hasAttribute('data-hoshi-clk')) e.setAttribute('data-hoshi-clk', ''); }
-      else if (e.hasAttribute('data-hoshi-clk')) e.removeAttribute('data-hoshi-clk');
+      if (clk) { if (!e.hasAttribute('data-fushi-clk')) e.setAttribute('data-fushi-clk', ''); }
+      else if (e.hasAttribute('data-fushi-clk')) e.removeAttribute('data-fushi-clk');
     }
   },
   _interactiveEls: function() {
@@ -382,7 +382,7 @@ window.fushiCaret = {
       return Array.prototype.slice.call(
         document.body.querySelectorAll('img.block-img'));
     }
-    var marked = document.body.querySelectorAll('[data-hoshi-clk]');
+    var marked = document.body.querySelectorAll('[data-fushi-clk]');
     var out = [];
     for (var i = 0; i < marked.length; i++) {
       var e = marked[i];
@@ -399,7 +399,7 @@ window.fushiCaret = {
       // a container — descend so the ring lands on the real icon/button — unless
       // it is an atomic disclosure/control we always want whole (summary/role).
       if (!e.matches('summary, [role="button"], [role="link"]') &&
-          e.querySelector('[data-hoshi-clk]')) {
+          e.querySelector('[data-fushi-clk]')) {
         continue;
       }
       out.push(e);
@@ -715,10 +715,10 @@ window.fushiCaret = {
   // ── Ring ───────────────────────────────────────────────────────────
   _ensureRing: function() {
     if (this._ring && this._ring.isConnected) return this._ring;
-    var r = document.getElementById('hoshi-caret-ring');
+    var r = document.getElementById('fushi-caret-ring');
     if (!r) {
       r = document.createElement('div');
-      r.id = 'hoshi-caret-ring';
+      r.id = 'fushi-caret-ring';
       r.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483646;' +
         'box-sizing:border-box;border-radius:3px;display:none;';
       document.documentElement.appendChild(r);
@@ -1035,7 +1035,7 @@ window.fushiCaret = {
     var link = el && el.closest('a[href]');
     if (link) { link.click(); return 'link'; }
     // Any clickable ancestor (control, onclick, or pointer-cursor collapsible).
-    var control = el && el.closest('[data-hoshi-clk]');
+    var control = el && el.closest('[data-fushi-clk]');
     if (control) { control.click(); return 'activated'; }
     return this.lookup() ? 'lookup' : 'none';
   },

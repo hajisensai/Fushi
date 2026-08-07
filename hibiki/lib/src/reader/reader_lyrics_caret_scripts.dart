@@ -69,7 +69,7 @@ class ReaderLyricsCaretScripts {
   // source() 都是不可插值的 r"""...""" 原始串，无法经 Dart 常量收敛。下列辅助与 reader_caret 对应
   // 方法**逐字节相同**，改任一侧必须同步另一侧：_charLen / _charRect / _applyRingStyle / _rectJson
   // / _prevIndex / _hideRing。故意分叉（各自特化，勿强行同步）：_isStop（本文件仅剥空白，无弹窗
-  // 标点/scope 门控）、_ensureRing（ring id hoshi-lyrics-caret-ring vs hoshi-caret-ring）、
+  // 标点/scope 门控）、_ensureRing（ring id fushi-lyrics-caret-ring vs fushi-caret-ring）、
   // _drawRing（本文件不做视口 clamp）、_walker（本文件按 cue 子树取 root 参数）。
   static String source() => r"""
 window.fushiLyricsCaret = {
@@ -186,10 +186,10 @@ window.fushiLyricsCaret = {
   },
   _ensureRing: function() {
     if (this._ring && this._ring.isConnected) return this._ring;
-    var r = document.getElementById('hoshi-lyrics-caret-ring');
+    var r = document.getElementById('fushi-lyrics-caret-ring');
     if (!r) {
       r = document.createElement('div');
-      r.id = 'hoshi-lyrics-caret-ring';
+      r.id = 'fushi-lyrics-caret-ring';
       r.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483646;' +
         'box-sizing:border-box;border-radius:3px;display:none;';
       document.documentElement.appendChild(r);

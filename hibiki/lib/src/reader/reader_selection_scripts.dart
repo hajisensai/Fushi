@@ -51,7 +51,7 @@ class ReaderSelectionScripts {
 
   /// TODO-1317: 移动端「长按拖选」手势 IIFE（注入进阅读器 setup script）。触屏在正文
   /// 长按 [delayMs] 毫秒进入拖选态，拖动经 `window.fushiSelection.updateRangeSelection`
-  /// 扩展 app 自绘选区（CSS Custom Highlight `hoshi-selection`，绝不建立原生选区，
+  /// 扩展 app 自绘选区（CSS Custom Highlight `fushi-selection`，绝不建立原生选区，
   /// 保住 TODO-1279 触屏无双选区），松手经 `endRangeSelection` 弹选区菜单（复制 / 查词，
   /// 走 `onSelectionMenu`）—— 选区间(可复制)与查词/制卡共存，不再被强制查词；原地未拖动
   /// 退回单击查词（`selectText`，保住慢速点词）。移动 > [slop]px
@@ -88,7 +88,7 @@ class ReaderSelectionScripts {
   function lpsAllowed(target, x, y) {
     var el = target || document.elementFromPoint(x, y);
     if (el && el.closest &&
-        el.closest('a[href], img, .block-img-wrapper, input, textarea, select, button, [contenteditable="true"], [data-hoshi-clk], #hoshi-caret-ring, [data-hoshi-sel-handle]')) {
+        el.closest('a[href], img, .block-img-wrapper, input, textarea, select, button, [contenteditable="true"], [data-fushi-clk], #fushi-caret-ring, [data-fushi-sel-handle]')) {
       return false;
     }
     return !!(window.fushiSelection && window.fushiSelection.getCharacterAtPoint &&
@@ -408,7 +408,7 @@ window.fushiSelection = {
   clearSelectionRubyHighlights: function() {
     if (!this.selectionRubyElements || !this.selectionRubyElements.length) return;
     this.selectionRubyElements.forEach(function(ruby) {
-      ruby.classList.remove('hoshi-selection-ruby-active');
+      ruby.classList.remove('fushi-selection-ruby-active');
     });
     this.selectionRubyElements = [];
   },
@@ -1176,7 +1176,7 @@ window.fushiSelection = {
   // TODO-1317: mobile long-press *drag*-select ends here instead of firing
   // lookup directly. Dart shows a selection menu (Copy / Lookup) so a plain-text
   // range selection (copy) and lookup/mining coexist -- the user is no longer
-  // forced into an immediate lookup. this.selection (and its hoshi-selection
+  // forced into an immediate lookup. this.selection (and its fushi-selection
   // highlight) is kept so the menu overlays the live selection; Dart clears it on
   // copy/dismiss, or converges it to the match on lookup.
   fireSelectionMenu: function(x, y) {
@@ -1189,7 +1189,7 @@ window.fushiSelection = {
   // Direction B: keep TODO-1279's `@media (pointer: coarse) user-select:none`
   // (touch never builds a native blue selection -> no double selection) and
   // instead drive the *app-drawn* selection (this.selection + CSS Custom
-  // Highlight `hoshi-selection`) from a long-press drag. These never call
+  // Highlight `fushi-selection`) from a long-press drag. These never call
   // window.getSelection()/addRange, so no native selection is ever created. On
   // release a real drag hands Dart a selection menu (fireSelectionMenu ->
   // onSelectionMenu) offering Copy / Lookup so plain-text selection (copy) and
@@ -1363,15 +1363,15 @@ window.fushiSelection = {
     }
     var self = this;
     var make = function(which) {
-      var el = document.getElementById('hoshi-sel-handle-' + which);
+      var el = document.getElementById('fushi-sel-handle-' + which);
       if (!el) {
         el = document.createElement('div');
-        el.id = 'hoshi-sel-handle-' + which;
-        el.setAttribute('data-hoshi-sel-handle', which);
+        el.id = 'fushi-sel-handle-' + which;
+        el.setAttribute('data-fushi-sel-handle', which);
         // BUG-765 续：外层是 32×32 透明触控盒（比旧 24px 大，改善抓取；不取更大是因为
         // 1~2 字 CJK 短选区两端相距仅约一个字宽，触控盒过大会几乎完全重叠、反而遮住起
         // 手柄）。命中区大、视觉小；pointer-events:auto + touch-action:none 让它吃掉浏览器
-        // 滚动手势并可拖。视觉抓手是内层 18px 实心圆钮，用主题色 var(--hoshi-sel-handle)
+        // 滚动手势并可拖。视觉抓手是内层 18px 实心圆钮，用主题色 var(--fushi-sel-handle)
         // （reader CSS 从 linkColor 下发，随主题变）+ 白描边（任意背景都可见）+ 单柔和阴
         // 影，去掉旧的刺眼橙色 + 双重发光 box-shadow（用户投诉「难看」）。
         el.style.cssText = 'position:fixed;z-index:2147483645;width:32px;height:32px;' +
@@ -1379,10 +1379,10 @@ window.fushiSelection = {
           'background:transparent;border:0;' +
           'pointer-events:auto;touch-action:none;display:none;';
         var ball = document.createElement('div');
-        ball.setAttribute('data-hoshi-sel-ball', which);
+        ball.setAttribute('data-fushi-sel-ball', which);
         ball.style.cssText = 'position:absolute;left:50%;top:50%;width:18px;height:18px;' +
           'margin-left:-9px;margin-top:-9px;border-radius:50%;box-sizing:border-box;' +
-          'background:var(--hoshi-sel-handle, #3a5fad);' +
+          'background:var(--fushi-sel-handle, #3a5fad);' +
           'border:2px solid rgba(255,255,255,0.95);' +
           'box-shadow:0 1px 4px rgba(0,0,0,0.35);pointer-events:none;';
         el.appendChild(ball);
@@ -1569,7 +1569,7 @@ window.fushiSelection = {
         var ruby = this.rubyForNode(seg.node);
         if (ruby) {
           if (this.selectionRubyElements.indexOf(ruby) < 0) {
-            ruby.classList.add('hoshi-selection-ruby-active');
+            ruby.classList.add('fushi-selection-ruby-active');
             this.selectionRubyElements.push(ruby);
           }
           continue;
@@ -1583,7 +1583,7 @@ window.fushiSelection = {
       // BUG-125：查词高亮 priority=1，叠在音频(sasayaki, 默认 priority=0)之上；
       // 配合 CSS 里查词用的不透明色，重叠处只显示查词单层（查词优先），无双重高亮。
       selHl.priority = 1;
-      CSS.highlights.set('hoshi-selection', selHl);
+      CSS.highlights.set('fushi-selection', selHl);
     } else {
       this.clearHighlightWrappers();
       var range = document.createRange();
@@ -1592,7 +1592,7 @@ window.fushiSelection = {
         range.setStart(seg.node, seg.start);
         range.setEnd(seg.node, seg.end);
         var wrapper = document.createElement('span');
-        wrapper.className = 'hoshi-dict-highlight';
+        wrapper.className = 'fushi-dict-highlight';
         wrapper.appendChild(range.extractContents());
         range.insertNode(wrapper);
         this.highlightWrappers.push(wrapper);
@@ -1656,7 +1656,7 @@ window.fushiSelection = {
   clearSelection: function() {
     window.getSelection()?.removeAllRanges();
     if (window.__fushiCssHighlightsSupported) {
-      CSS.highlights.delete('hoshi-selection');
+      CSS.highlights.delete('fushi-selection');
       this.clearSelectionRubyHighlights();
     } else {
       this.clearHighlightWrappers();

@@ -367,7 +367,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     html = _injectMergedChapterImages(html, chapterIndex);
     final String styleTag = _buildStyleTag();
     const String hideUntilReady =
-        '<style id="hoshi-cloak">body{visibility:hidden!important}</style>';
+        '<style id="fushi-cloak">body{visibility:hidden!important}</style>';
     // Cloak goes early (right after <head>) to hide FOUC. Reader style goes last
     // (before </head>) so it wins over EPUB CSS in !important specificity ties.
     final RegExp headOpenPattern = RegExp('<head[^>]*>', caseSensitive: false);
@@ -422,12 +422,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
                 p.posix.normalize(p.posix.join(chapterDir, src)));
         // TODO-1339 / BUG-1140 第二轮：显式 `loading="eager"`。这些前导插图是章首
         // **结构性**内容（firstContentEdge 只计入非零尺寸媒体，挂 lazy 会让章首锚跳过
-        // 第一张）。JS 侧靠 `.hoshi-merged-image` 放行，Dart 侧原本只靠「markImagesLazy
+        // 第一张）。JS 侧靠 `.fushi-merged-image` 放行，Dart 侧原本只靠「markImagesLazy
         // 排在本方法之前」这一条**调用顺序**——谁把两行调个个儿，守卫全绿而 bug 复活。
         // 写成显式 loading 属性后 [ReaderResourceSanitizer.markImagesLazy] 的
         // 「已有 loading= 就尊重原书」分支会跳过它们，顺序不再是正确性的承重墙。
         figures.write(
-          '<div class="hoshi-merged-image">'
+          '<div class="fushi-merged-image">'
           '<img src="${htmlEscape.convert(absoluteUrl)}" class="block-img" '
           'loading="eager"/>'
           '</div>',
@@ -750,7 +750,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     return '''
 window.__fushiEngine = {
 install: function(C) {
-  // BUG-1017: guarantee the `#hoshi-cloak` FOUC guard is always removed, even if
+  // BUG-1017: guarantee the `#fushi-cloak` FOUC guard is always removed, even if
   // any synchronous statement in this setup IIFE throws before the tail reaches
   // its removal (below). Without this a single unhandled sync error anywhere in
   // setup (init / caret / furigana) left `body{visibility:hidden}` stranded =
@@ -758,7 +758,7 @@ install: function(C) {
   // completed or threw; the tail removal stays as the fast synchronous path, and
   // this reveal is idempotent (a second remove() on an absent node is a no-op).
   Promise.resolve().then(function() {
-    try { var c = document.getElementById('hoshi-cloak'); if (c) c.remove(); } catch (_ignored) {}
+    try { var c = document.getElementById('fushi-cloak'); if (c) c.remove(); } catch (_ignored) {}
   });
   window.scanNonJapaneseText = C.scanNonJapaneseText;
   $selectionJs
@@ -816,7 +816,7 @@ install: function(C) {
   // a word (blank -> paginate forward; word -> onTap lookup).
   // BUG-748: caretPositionFromPoint/caretRangeFromPoint CLAMP to the nearest
   // character even when the tap is in the margin. VN centers one short block in a
-  // shrink-to-fit .hoshi-vn-content, so the whole viewport outside that small box
+  // shrink-to-fit .fushi-vn-content, so the whole viewport outside that small box
   // is margin — yet every tap clamps to a text node, so "text node found" alone
   // judged EVERY tap (incl. margins) as a word -> blank-tap advance never fired
   // (a 289-point scan found 0 blank points in centred vertical layout). Fix:
@@ -896,15 +896,15 @@ install: function(C) {
   }
   function _fushiReaderPointerNoSelect(enabled) {
     try {
-      var id = 'hoshi-reader-pointer-drag-style';
+      var id = 'fushi-reader-pointer-drag-style';
       var style = document.getElementById(id);
       if (!style) {
         style = document.createElement('style');
         style.id = id;
-        style.textContent = '.hoshi-reader-pointer-dragging, .hoshi-reader-pointer-dragging *{-webkit-user-select:none!important;user-select:none!important;}';
+        style.textContent = '.fushi-reader-pointer-dragging, .fushi-reader-pointer-dragging *{-webkit-user-select:none!important;user-select:none!important;}';
         document.head.appendChild(style);
       }
-      document.documentElement.classList.toggle('hoshi-reader-pointer-dragging', !!enabled);
+      document.documentElement.classList.toggle('fushi-reader-pointer-dragging', !!enabled);
     } catch (err) {}
   }
   function _fushiReaderMouseDragStartAllowed(e) {
@@ -912,7 +912,7 @@ install: function(C) {
     var target = e.target || document.elementFromPoint(e.clientX, e.clientY);
     if (target && target.closest) {
       if (target.closest('a[href], ruby, rt, rp')) return false;
-      if (target.closest('input, textarea, select, button, [contenteditable="true"], [data-hoshi-clk], #hoshi-caret-ring')) return false;
+      if (target.closest('input, textarea, select, button, [contenteditable="true"], [data-fushi-clk], #fushi-caret-ring')) return false;
     }
     var selected = window.getSelection && window.getSelection();
     if (selected && !selected.isCollapsed) return false;
@@ -1585,7 +1585,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     document.addEventListener('scroll', _onReaderScrollEvent, { passive: true, capture: true });
   })();
   $longPressDragJs
-  var cloak = document.getElementById('hoshi-cloak');
+  var cloak = document.getElementById('fushi-cloak');
   if (cloak) cloak.remove();
 }
 };

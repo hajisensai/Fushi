@@ -60,7 +60,7 @@ Future<void> _waitFor(
 const String _measureJs = r'''
 (function () {
   var cs = getComputedStyle(document.body);
-  var styleEl = document.getElementById('hoshi-reader-style');
+  var styleEl = document.getElementById('fushi-reader-style');
   return JSON.stringify({
     innerHeight: window.innerHeight,
     innerWidth: window.innerWidth,
@@ -232,7 +232,7 @@ void main() {
           //    CSS was never swapped = the reported "must reopen" bug (BUG-849:
           //    paginated shell lacked beginStyleReanchor entirely).
           expect(styleHasMt, isTrue,
-              reason: 'live CSS swap missing: #hoshi-reader-style textContent '
+              reason: 'live CSS swap missing: #fushi-reader-style textContent '
                   'does not carry ${targetMt}vh after setReaderMarginTop');
 
           // 2) Computed body padding-top/bottom must grow by the new margins

@@ -320,12 +320,12 @@ void main() {
     test('D1 — the dictionary font is injected by the shared builder', () {
       // app-outside used to lack the user dictionary font entirely; it now flows
       // through the shared font helper, so both paths apply the same font.
-      expect(inject.contains("id = 'hoshi-dict-font'"), isTrue,
+      expect(inject.contains("id = 'fushi-dict-font'"), isTrue,
           reason: 'the shared builder must inject the dictionary font style');
       expect(inject.contains('DictionaryFontCss.build('), isTrue,
           reason: 'the font CSS must be built from the user dictionary fonts');
       // The app-outside file must NOT carry its own second font injection.
-      expect(render.contains('hoshi-dict-font'), isFalse,
+      expect(render.contains('fushi-dict-font'), isFalse,
           reason: 'app-outside must not re-implement the font injection');
     });
 

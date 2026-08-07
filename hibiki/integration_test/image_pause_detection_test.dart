@@ -23,11 +23,11 @@ void main() {
 
   const String html = '''
 <!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
-  <p><span data-hoshi-sid="s1">画像の前の文。</span></p>
+  <p><span data-fushi-sid="s1">画像の前の文。</span></p>
   <svg id="pic" xmlns="http://www.w3.org/2000/svg" width="120" height="90">
     <rect width="120" height="90" fill="#ccc"></rect>
   </svg>
-  <p><span data-hoshi-sid="s2">画像の後の文。</span></p>
+  <p><span data-fushi-sid="s2">画像の後の文。</span></p>
 </body></html>
 ''';
 
@@ -55,11 +55,11 @@ void main() {
             await AudiobookBridge.inject(controller);
             // 先高亮图片前一句（建立 __fushiPrevHighlight 锚点）。
             await controller.evaluateJavascript(
-              source: "window.__fushiHighlight('[data-hoshi-sid=s1]', false);",
+              source: "window.__fushiHighlight('[data-fushi-sid=s1]', false);",
             );
             // 再推进到图片后一句 —— 中间隔着 svg，应触发检测。
             await controller.evaluateJavascript(
-              source: "window.__fushiHighlight('[data-hoshi-sid=s2]', false);",
+              source: "window.__fushiHighlight('[data-fushi-sid=s2]', false);",
             );
             if (!driven.isCompleted) driven.complete();
           },
@@ -106,10 +106,10 @@ void main() {
             await AudiobookBridge.inject(controller);
             await controller.evaluateJavascript(
                 source:
-                    "window.__fushiHighlight('[data-hoshi-sid=s1]', true);");
+                    "window.__fushiHighlight('[data-fushi-sid=s1]', true);");
             await controller.evaluateJavascript(
                 source:
-                    "window.__fushiHighlight('[data-hoshi-sid=s2]', true);");
+                    "window.__fushiHighlight('[data-fushi-sid=s2]', true);");
             if (!driven.isCompleted) driven.complete();
           },
         ),
@@ -166,8 +166,8 @@ void main() {
               (function(){
                 function rng(sel){ var el=document.querySelector(sel);
                   var r=document.createRange(); r.selectNodeContents(el.firstChild); return r; }
-                window.fushiReader.cueRangesMap.set('c1', [rng('[data-hoshi-sid=s1]')]);
-                window.fushiReader.cueRangesMap.set('c2', [rng('[data-hoshi-sid=s2]')]);
+                window.fushiReader.cueRangesMap.set('c1', [rng('[data-fushi-sid=s1]')]);
+                window.fushiReader.cueRangesMap.set('c2', [rng('[data-fushi-sid=s2]')]);
               })();
             ''');
             await AudiobookBridge.inject(controller);

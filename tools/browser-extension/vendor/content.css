@@ -467,13 +467,13 @@
     cursor: default;
 }
 
-/* BUG-842：.hoshi-btn-tip 是内联动作按钮（调整上下文 / 清空已加句子 等）的 DOM 悬停/
+/* BUG-842：.fushi-btn-tip 是内联动作按钮（调整上下文 / 清空已加句子 等）的 DOM 悬停/
    聚焦提示，取代会在离屏 WebView2（DComp visual→WGC→texture）上飞到窗口角落的原生
    title。与 .audio-hint 共用视觉；由 popup.js setInlineButtonTip / __fushiShowButtonTip
    按屏幕坐标定位。 */
 .audio-hint,
 .inline-hint,
-.hoshi-btn-tip {
+.fushi-btn-tip {
     position: fixed;
     z-index: 10000;
     max-width: 220px;
@@ -493,7 +493,7 @@
 
 .audio-hint.visible,
 .inline-hint.visible,
-.hoshi-btn-tip.visible {
+.fushi-btn-tip.visible {
     opacity: 1;
 }
 
@@ -1217,18 +1217,18 @@
     margin-right: 1px;
 }
 
-::highlight(hoshi-selection) {
-    background-color: var(--hoshi-primary-highlight, rgba(160, 160, 160, 0.4));
+::highlight(fushi-selection) {
+    background-color: var(--fushi-primary-highlight, rgba(160, 160, 160, 0.4));
     color: inherit;
 }
 
-.hoshi-dict-highlight {
-    background-color: var(--hoshi-primary-highlight, rgba(160, 160, 160, 0.4)) !important;
+.fushi-dict-highlight {
+    background-color: var(--fushi-primary-highlight, rgba(160, 160, 160, 0.4)) !important;
     color: inherit;
 }
 
 :where(#entries-container) ::selection {
-    background-color: var(--hoshi-primary-highlight, rgba(100, 140, 230, 0.35));
+    background-color: var(--fushi-primary-highlight, rgba(100, 140, 230, 0.35));
     color: inherit;
 }
 
@@ -1431,13 +1431,13 @@
    面板选词区是连续正常文本：不按字画格子，点击后由引擎分词结果整词高亮
    （真机第 4 轮「不应该按照字来划分，应该按照正常的来断」）。 */
 .global-lookup-sentence:not(.global-lookup-sentence-panel) .global-lookup-sentence-char:hover {
-    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
     border-radius: 2px;
 }
 
 /* 引擎匹配到的词（bestLength）在面板选词区的整词高亮——与查词高亮同色变量。 */
 .global-lookup-sentence-hit {
-    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
     border-radius: 2px;
 }
 
@@ -1450,7 +1450,7 @@
    BUG：上面 .ctx-adjust-button 规则原缺闭合 }，CSS 错误恢复把本条整规则当无效
    声明吞掉（ext-hit 高亮从未生效）；补上闭合后本条恢复。 */
 .global-lookup-ext-hit {
-    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
     border-radius: 2px;
 }
 
@@ -1611,7 +1611,7 @@
     /* 杀掉亚克力/半透明卡片底（Win11 backdrop 在 e-ink 上只是脏灰）。 */
     --hibiki-card-bg-alpha: 1;
     /* 查词命中不再用半透明色块（消费端见下方 underline 覆盖）。 */
-    --hoshi-primary-highlight: transparent;
+    --fushi-primary-highlight: transparent;
     /* tags：色块 → 透明底 + 描边（描边规则见下）。 */
     --expr-tag-color: transparent;
 }
@@ -1686,7 +1686,7 @@
 }
 
 /* 查词/嵌套查词命中：半透明色块 → 下划线（贴文字的一条线，刷新面积最小）。 */
-:where(#entries-container).eink ::highlight(hoshi-selection) {
+:where(#entries-container).eink ::highlight(fushi-selection) {
     background-color: transparent;
     text-decoration-line: underline;
     text-decoration-color: currentColor;
@@ -1694,7 +1694,7 @@
     text-underline-offset: 0.15em;
 }
 
-:where(#entries-container).eink .hoshi-dict-highlight {
+:where(#entries-container).eink .fushi-dict-highlight {
     background-color: transparent !important;
     text-decoration-line: underline;
     text-decoration-color: currentColor;

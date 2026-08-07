@@ -769,7 +769,7 @@ class ReaderPaginationScripts {
       '(window.fushiReader && '
       "typeof window.fushiReader.beginStyleReanchor === 'function') "
       '? window.fushiReader.beginStyleReanchor('
-      "document.getElementById('hoshi-reader-style'), $jsonCss) : -1";
+      "document.getElementById('fushi-reader-style'), $jsonCss) : -1";
 
   /// TODO-736 B-1：第二阶段——过渡帧 settle 后把暂存锚滚回视口首边并清 `_reanchorPending`。
   /// 仅当第一阶段成功暂存了有效锚时才生效，否则 no-op（绝不误清别处的重锚旗）。
@@ -1449,16 +1449,16 @@ window.__fushiInstallShell = function(C) {
       if (!this.__sentenceAudioDiagLogged) {
         this.__sentenceAudioDiagLogged = true;
         var bg = '';
-        try { bg = getComputedStyle(document.documentElement).getPropertyValue('--hoshi-sentence-audio-background-color'); } catch (e) {}
+        try { bg = getComputedStyle(document.documentElement).getPropertyValue('--fushi-sentence-audio-background-color'); } catch (e) {}
         console.log('[sentence-audio-hl] diag cssHighlightsSupported=' + (!!window.__fushiCssHighlightsSupported) +
           ' sentenceAudioBg="' + (bg || '').trim() + '"');
       }
       console.log('[sentence-audio-hl] applySentenceAudioCues payloadCues=' + n);
     } catch (e) {}
     var cueSegments = this.collectSentenceAudioCueRanges(cues);
-    // BUG-643：普通正文也不能再走 ::highlight(hoshi-sasayaki)。竖排 WebKit 会按
+    // BUG-643：普通正文也不能再走 ::highlight(fushi-sasayaki)。竖排 WebKit 会按
     // line-height 行盒刷背景，导致无振假名的「の顔色が変わった」比 ruby 基字更宽。
-    // 改为：ruby 节点继续收集到 cueRubyElements；普通文本包 hoshi-sasayaki-cue span，
+    // 改为：ruby 节点继续收集到 cueRubyElements；普通文本包 fushi-sasayaki-cue span，
     // active 时由 CSS 画同一条 1em 正文 lane。倒序包裹，避免先拆前文导致后续 offset 漂移。
     var range = document.createRange();
     for (var i = cueSegments.length - 1; i >= 0; i--) {
@@ -1477,7 +1477,7 @@ window.__fushiInstallShell = function(C) {
           range.setStart(segments[j].node, segments[j].start);
           range.setEnd(segments[j].node, segments[j].end);
           var wrapper = document.createElement('span');
-          wrapper.className = 'hoshi-sentence-audio-cue';
+          wrapper.className = 'fushi-sentence-audio-cue';
           wrapper.appendChild(range.extractContents());
           range.insertNode(wrapper);
           wrappers.push(wrapper);
@@ -1496,7 +1496,7 @@ window.__fushiInstallShell = function(C) {
   },
   highlightSentenceAudioCue: function(cueId, reveal) {
     this.clearSentenceAudioCue();
-    if (window.__fushiCssHighlightsSupported) CSS.highlights.delete('hoshi-sentence-audio');
+    if (window.__fushiCssHighlightsSupported) CSS.highlights.delete('fushi-sentence-audio');
     var wrappers = this.cueWrappers.get(cueId) || [];
     var rubyElements = this.cueRubyElements.get(cueId) || [];
     // TODO-630/BUG-366 observability：本 cue 拿到几个文本 span/ruby；0+0 → 直接 return null（不高亮）。
@@ -1504,9 +1504,9 @@ window.__fushiInstallShell = function(C) {
       (!wrappers.length && !rubyElements.length ? ' RETURN_NULL_no_segments' : '')); } catch (e) {}
     if (!wrappers.length && !rubyElements.length) return null;
     this.activeCueId = cueId;
-    wrappers.forEach(function(wrapper) { wrapper.classList.add('hoshi-sentence-audio-active'); });
+    wrappers.forEach(function(wrapper) { wrapper.classList.add('fushi-sentence-audio-active'); });
     // ruby 元素用 class 高亮（背景画在元素上，避免 ::highlight 对 ruby 双绘，BUG-110）
-    rubyElements.forEach(function(ruby) { ruby.classList.add('hoshi-sentence-audio-ruby-active'); });
+    rubyElements.forEach(function(ruby) { ruby.classList.add('fushi-sentence-audio-ruby-active'); });
     if (reveal) {
       var target = wrappers.length ? wrappers[0] : rubyElements[0];
       if (target && this.revealElement && this.revealElement(target)) {
@@ -1565,18 +1565,18 @@ window.__fushiInstallShell = function(C) {
   },
   clearSentenceAudioCue: function() {
     if (!this.activeCueId) return;
-    if (window.__fushiCssHighlightsSupported) CSS.highlights.delete('hoshi-sentence-audio');
+    if (window.__fushiCssHighlightsSupported) CSS.highlights.delete('fushi-sentence-audio');
     var rubyElements = this.cueRubyElements.get(this.activeCueId) || [];
-    rubyElements.forEach(function(ruby) { ruby.classList.remove('hoshi-sentence-audio-ruby-active'); });
+    rubyElements.forEach(function(ruby) { ruby.classList.remove('fushi-sentence-audio-ruby-active'); });
     var wrappers = this.cueWrappers.get(this.activeCueId) || [];
-    wrappers.forEach(function(wrapper) { wrapper.classList.remove('hoshi-sentence-audio-active'); });
+    wrappers.forEach(function(wrapper) { wrapper.classList.remove('fushi-sentence-audio-active'); });
     this.activeCueId = null;
   },
   resetSentenceAudioCues: function() {
     if (window.fushiSelection) window.fushiSelection.clearSelection();
-    if (window.__fushiCssHighlightsSupported) CSS.highlights.delete('hoshi-sentence-audio');
+    if (window.__fushiCssHighlightsSupported) CSS.highlights.delete('fushi-sentence-audio');
     this.cueRubyElements.forEach(function(rubyElements) {
-      rubyElements.forEach(function(ruby) { ruby.classList.remove('hoshi-sentence-audio-ruby-active'); });
+      rubyElements.forEach(function(ruby) { ruby.classList.remove('fushi-sentence-audio-ruby-active'); });
     });
     this.cueRubyElements.clear();
     this.cueRangesMap.clear();
@@ -1645,7 +1645,7 @@ window.__fushiInstallShell = function(C) {
     range.setStart(startNode, startOffset);
     range.setEnd(endNode, endOffset);
     if (window.__fushiCssHighlightsSupported) {
-      CSS.highlights.set('hoshi-search', new Highlight(range));
+      CSS.highlights.set('fushi-search', new Highlight(range));
     }
     if (this.scrollToRange) {
       this.scrollToRange(range);
@@ -1663,7 +1663,7 @@ window.__fushiInstallShell = function(C) {
   },
   clearSearchHighlight: function() {
     if (window.__fushiCssHighlightsSupported) {
-      CSS.highlights.delete('hoshi-search');
+      CSS.highlights.delete('fushi-search');
     }
   },
 ''';
@@ -1719,7 +1719,7 @@ window.__fushiInstallShell = function(C) {
   /// 揭开（移除 `blurred`）连同「吞掉本次放大」由 webview.part.dart 的点击派发处统一
   /// 处理（见 `_fushiRevealBlurredImage`），这里只负责加类 + 标记可揭开。
   /// TODO-1339 测试钩子：暴露共享图片初始化脚本，让 live-WebView 集成测试能证明
-  /// 图片合并注入的前导插图（`.hoshi-merged-image`）保持 eager（不被挂 lazy），
+  /// 图片合并注入的前导插图（`.fushi-merged-image`）保持 eager（不被挂 lazy），
   /// 从而 firstContentEdge 计入全部前导图、章首锚不跳过第一张。
   @visibleForTesting
   static String initImagesScriptForTesting() => _sharedInitImages();
@@ -1859,7 +1859,7 @@ $blurFn
       !window.fushiReader.ttuRegex.test(document.body.textContent || '');
   Array.from(document.querySelectorAll('img')).forEach(function(img) {
     var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
-    // TODO-1339：图片合并（前导插图折进后随文本章）注入的插图（`.hoshi-merged-image`
+    // TODO-1339：图片合并（前导插图折进后随文本章）注入的插图（`.fushi-merged-image`
     // 内，webview.part.dart _injectMergedChapterImages）是章首**结构性**内容——章首落点
     // (restoreProgress/restoreToCharOffset <=0 走 minScroll) 依赖 buildPaginationMetrics
     // 的 firstContentEdge，而 firstContentEdge 只计入**有非零尺寸**的媒体（0 尺寸被跳过）。
@@ -1868,7 +1868,7 @@ $blurFn
     // 最近的已加载图（**最后一张**）跳过第一张 =「两张连续图只有最后一张合并进章节」。
     // 故与 gaiji 同理保持 eager：无条件 load、真实撑开尺寸，firstContentEdge 计入全部前导图，
     // 章首锚落到第一张。仅影响合并书的少量前导插图，不回退 TODO-1074 普通图懒加载。
-    var isMergedLeadImg = img.closest && img.closest('.hoshi-merged-image');
+    var isMergedLeadImg = img.closest && img.closest('.fushi-merged-image');
     // gaiji 内联小图参与文字几何：保持 eager 同步解码，不加 lazy。
     // TODO-1349：纯图片章的图同理 eager（见上 __fushiImageOnlyChapter 长注释）。
     if (!isGaiji && !isMergedLeadImg && !__fushiImageOnlyChapter) {
@@ -1901,7 +1901,7 @@ $blurFn
   }
 
   // BUG-1017: `initialize()` runs synchronously inside the outer reader-setup
-  // IIFE (webview.part.dart), whose tail removes the `#hoshi-cloak`
+  // IIFE (webview.part.dart), whose tail removes the `#fushi-cloak`
   // `body{visibility:hidden}` FOUC guard. A synchronous throw in initialize()
   // (e.g. on a fixed-layout SVG vertical cover page with zero text nodes)
   // aborted the IIFE before its tail, stranding the cloak -> the whole book
@@ -2625,8 +2625,8 @@ $_sharedJs
   // 连续 shell 的对应版本另用 _readContinuousScroll（内容轴 raw scroll），各自 this 解析。
   _resetImageMaxVars: function() {
     var box = this._imageMaxBox();
-    document.documentElement.style.setProperty('--hoshi-image-max-width', box.w + 'px');
-    document.documentElement.style.setProperty('--hoshi-image-max-height', box.h + 'px');
+    document.documentElement.style.setProperty('--fushi-image-max-width', box.w + 'px');
+    document.documentElement.style.setProperty('--fushi-image-max-height', box.h + 'px');
   },
   beginStyleReanchor: function(styleEl, css) {
     if (!this.didInitialize) { if (styleEl) styleEl.textContent = css; return -1; }
@@ -2686,8 +2686,8 @@ $_sharedInitViewport
   document.documentElement.style.setProperty('--reader-viewport-height', viewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', pageWidth + 'px');
   var __imgBox = this._imageMaxBox();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
+  document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--fushi-image-max-height', __imgBox.h + 'px');
   window.fushiReader.pageHeight = pageHeight;
   window.fushiReader.viewportHeight = viewportHeight;
   window.fushiReader.pageWidth = pageWidth;
@@ -2732,8 +2732,8 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   document.documentElement.style.setProperty('--reader-viewport-height', newViewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
   var __imgBox = this._imageMaxBox();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
+  document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--fushi-image-max-height', __imgBox.h + 'px');
   this.pageHeight = newHeight;
   this.viewportHeight = newViewportHeight;
   this.pageWidth = newWidth;
@@ -2847,11 +2847,11 @@ $_sharedJs
     var rect = this.getRect(target);
     var margin = 0.15;
     var wm = window.getComputedStyle(document.body).writingMode;
-    // 墨水屏模式（--hoshi-reader-eink-mode: 1，由 ReaderContentStyles 的 eink 覆盖块
+    // 墨水屏模式（--fushi-reader-eink-mode: 1，由 ReaderContentStyles 的 eink 覆盖块
     // 注入）：跟随滚动退化为瞬时跳——慢刷新屏上 smooth 补间是一整段残影。普通模式
     // 保持 TODO-825 的 smooth（用户点名要动画，settle 窗治闪屏），零行为变化。
     var behavior = (window.getComputedStyle(document.documentElement)
-      .getPropertyValue('--hoshi-reader-eink-mode').trim() === '1') ? 'auto' : 'smooth';
+      .getPropertyValue('--fushi-reader-eink-mode').trim() === '1') ? 'auto' : 'smooth';
     if (wm.startsWith('vertical')) {
       var vw = window.innerWidth;
       var safe = vw * margin;
@@ -3243,8 +3243,8 @@ $_sharedJs
   // initialize 把比值存到 this._imageWidthRatio，本 helper 读它，begin/reanchor 共用。
   _resetImageMaxVars: function() {
     var box = this._imageMaxBox();
-    document.documentElement.style.setProperty('--hoshi-image-max-width', box.w + 'px');
-    document.documentElement.style.setProperty('--hoshi-image-max-height', box.h + 'px');
+    document.documentElement.style.setProperty('--fushi-image-max-width', box.w + 'px');
+    document.documentElement.style.setProperty('--fushi-image-max-height', box.h + 'px');
   },
   // TODO-736 B-1（必补点2）：样式变更专用两阶段重锚的**第一阶段**，由 Dart 在换样式那一
   // 刻调用。与 beginUiScaleReanchor 区别：那对只采锚滚回**不换 CSS**（缩放重建用），改字号
@@ -3305,10 +3305,10 @@ $_sharedInitViewport
   this._imageWidthRatio = $imageWidthRatio;
   var dartH = C.dartPageHeight;
   var contHeight = dartH || window.innerHeight;
-  document.documentElement.style.setProperty('--hoshi-continuous-height', contHeight + 'px');
+  document.documentElement.style.setProperty('--fushi-continuous-height', contHeight + 'px');
   var __imgBox = this._imageMaxBox();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
+  document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--fushi-image-max-height', __imgBox.h + 'px');
 $initImages
   this.perfMark('initSyncDone');
   Promise.all(imagePromises).then(function() {
@@ -3338,10 +3338,10 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   // rAF is in flight, only update the layout and let it restore position.
   var inFlight = this._reanchorPending === true;
   var progress = (changed && !inFlight) ? this.calculateProgress() : 0;
-  document.documentElement.style.setProperty('--hoshi-continuous-height', newHeight + 'px');
+  document.documentElement.style.setProperty('--fushi-continuous-height', newHeight + 'px');
   var __imgBox = this._imageMaxBox();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
+  document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');
+  document.documentElement.style.setProperty('--fushi-image-max-height', __imgBox.h + 'px');
   if (inFlight || progress <= 0) return;
   this._setReanchorPending(true);
   var self = this;

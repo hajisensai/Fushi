@@ -64,11 +64,11 @@ void main() {
       expect(css, contains('#fff'));
     });
 
-    test('BUG-765 续：下发选区手柄主题色变量 --hoshi-sel-handle', () {
-      // 移动端自绘选区起/止手柄用 var(--hoshi-sel-handle) 上色，须由本 CSS 从主题
+    test('BUG-765 续：下发选区手柄主题色变量 --fushi-sel-handle', () {
+      // 移动端自绘选区起/止手柄用 var(--fushi-sel-handle) 上色，须由本 CSS 从主题
       // linkColor 下发，主题切换重注入时手柄自动跟随。
-      expect(css, contains('--hoshi-sel-handle:'),
-          reason: '注入 CSS 必须定义 --hoshi-sel-handle 供手柄引用');
+      expect(css, contains('--fushi-sel-handle:'),
+          reason: '注入 CSS 必须定义 --fushi-sel-handle 供手柄引用');
     });
   });
 
@@ -126,7 +126,7 @@ void main() {
         customFg: '#ECEFF4',
       );
       // 断言精确到正文 <body> 背景 selector（`background: <bg> !important;`），而不是
-      // 宽泛 contains('#fff')——CSS 里另有无关的 `--hoshi-system-text-color: #fff`
+      // 宽泛 contains('#fff')——CSS 里另有无关的 `--fushi-system-text-color: #fff`
       // dark 媒体查询变量，与正文背景无关，不能误伤。
       expect(css, contains('background: #1E2A38 !important'),
           reason: 'system-theme 正文背景应吃派生的 ColorScheme 背景色');
@@ -334,10 +334,10 @@ void main() {
         final ReaderSettings settings = await _defaultSettings();
         await settings.setWritingMode(mode);
         final String css = ReaderContentStyles.css(settings: settings);
-        expect(css, isNot(contains('--hoshi-highlight-lane-color')),
+        expect(css, isNot(contains('--fushi-highlight-lane-color')),
             reason: '[$mode] BUG-716：高亮不再落到 lane 变量');
         expect(css,
-            isNot(contains('linear-gradient(var(--hoshi-highlight-lane-color')),
+            isNot(contains('linear-gradient(var(--fushi-highlight-lane-color')),
             reason: '[$mode] BUG-716：不再用窄条渐变绘制高亮');
         expect(css, isNot(contains('background-size: 1em 100%')),
             reason: '[$mode] BUG-716：竖排不再有 1em 窄条');
@@ -355,7 +355,7 @@ void main() {
       final String css = ReaderContentStyles.css(settings: settings);
 
       final int sentenceAudioStart =
-          css.indexOf('ruby.hoshi-sentence-audio-ruby-active {');
+          css.indexOf('ruby.fushi-sentence-audio-ruby-active {');
       expect(sentenceAudioStart, isNonNegative);
       final String sentenceAudioBlock = css.substring(
         sentenceAudioStart,
@@ -364,7 +364,7 @@ void main() {
       expect(
         sentenceAudioBlock,
         contains(
-            'background-color: var(--hoshi-sentence-audio-background-color) !important'),
+            'background-color: var(--fushi-sentence-audio-background-color) !important'),
         reason: 'BUG-716：ruby 有声书高亮整句填充；注音轨在 ruby 背景盒外，'
             '有无振假名宽度一致',
       );
@@ -380,12 +380,12 @@ void main() {
 
       expect(
         css,
-        contains('.hoshi-sentence-audio-cue.hoshi-sentence-audio-active'),
+        contains('.fushi-sentence-audio-cue.fushi-sentence-audio-active'),
         reason: '普通正文 cue 也必须有 active span 样式，不能只靠 CSS Highlight',
       );
 
       final int activeStart = css
-          .indexOf('.hoshi-sentence-audio-cue.hoshi-sentence-audio-active {');
+          .indexOf('.fushi-sentence-audio-cue.fushi-sentence-audio-active {');
       expect(activeStart, isNonNegative);
       final String activeBlock = css.substring(
         activeStart,
@@ -394,7 +394,7 @@ void main() {
       expect(
         activeBlock,
         contains(
-            'background-color: var(--hoshi-sentence-audio-background-color) !important'),
+            'background-color: var(--fushi-sentence-audio-background-color) !important'),
         reason: 'BUG-716：普通正文 sentenceAudioHighlight 整句 background-color 填充',
       );
       expect(
@@ -415,12 +415,12 @@ void main() {
 
       final String css = ReaderContentStyles.css(settings: settings);
 
-      final int start = css.indexOf('ruby.hoshi-selection-ruby-active {');
+      final int start = css.indexOf('ruby.fushi-selection-ruby-active {');
       expect(start, isNonNegative);
       final String block = css.substring(start, css.indexOf('}', start));
       expect(block, contains('background-color:'),
           reason: 'BUG-716：查词 ruby 高亮回到整句填充');
-      expect(block, isNot(contains('--hoshi-highlight-lane-color')),
+      expect(block, isNot(contains('--fushi-highlight-lane-color')),
           reason: 'BUG-716：查词 ruby 不再走窄 lane');
     });
 
@@ -459,7 +459,7 @@ void main() {
           final String selector = block.group(1)!;
           final bool isToggleHighlight = selector.contains('-active') ||
               selector.contains('::highlight(') ||
-              selector.contains('.hoshi-dict-highlight');
+              selector.contains('.fushi-dict-highlight');
           if (!isToggleHighlight) continue;
           enforcedBlocks++;
           for (final String line in block.group(2)!.split('\n')) {
@@ -490,13 +490,13 @@ void main() {
 
       final String css = ReaderContentStyles.css(settings: settings);
 
-      final int start = css.indexOf('ruby.hoshi-sentence-audio-ruby-active {');
+      final int start = css.indexOf('ruby.fushi-sentence-audio-ruby-active {');
       expect(start, isNonNegative);
       final String block = css.substring(start, css.indexOf('}', start));
       expect(
         block,
         contains(
-            'background-color: var(--hoshi-sentence-audio-background-color) !important'),
+            'background-color: var(--fushi-sentence-audio-background-color) !important'),
         reason: 'BUG-716：横排 ruby 有声书高亮同样整句填充，rt 注音轨在上方、'
             '在 ruby 元素背景盒外',
       );

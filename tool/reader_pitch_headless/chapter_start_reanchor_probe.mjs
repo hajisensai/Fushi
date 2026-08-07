@@ -28,12 +28,12 @@ const W = 1000, H = 800;
 // block-img-wrapper 用满页高（扉页插图占整页），text 落到下一页/滚动位。
 const cssPaginated = `html,body{margin:0;padding:0;}html{overflow:hidden;}
  body{width:${W}px;height:${H}px;padding:0 20px;box-sizing:border-box;column-width:${W-40}px;column-gap:22px;column-fill:auto;font-size:22px;line-height:1.8;overflow:hidden;writing-mode:horizontal-tb;}
- img.block-img{display:block;max-width:var(--hoshi-image-max-width,${W-40}px);max-height:var(--hoshi-image-max-height,${H}px);width:auto;height:auto;break-inside:avoid;}
+ img.block-img{display:block;max-width:var(--fushi-image-max-width,${W-40}px);max-height:var(--fushi-image-max-height,${H}px);width:auto;height:auto;break-inside:avoid;}
  .block-img-wrapper{display:flex;align-items:center;justify-content:center;width:${W-40}px;height:${H}px;break-inside:avoid;} p{margin:0 0 1em 0;}`;
 // 连续模式：纵向滚动，前导插图占满一屏，文字接在其后。
 const cssContinuous = `html,body{margin:0;padding:0;}
  body{width:${W}px;padding:0 20px;box-sizing:border-box;font-size:22px;line-height:1.8;writing-mode:horizontal-tb;}
- img.block-img{display:block;max-width:var(--hoshi-image-max-width,${W-40}px);max-height:var(--hoshi-image-max-height,${H}px);width:auto;height:auto;}
+ img.block-img{display:block;max-width:var(--fushi-image-max-width,${W-40}px);max-height:var(--fushi-image-max-height,${H}px);width:auto;height:auto;}
  .block-img-wrapper{display:flex;align-items:center;justify-content:center;width:${W-40}px;height:${H}px;} p{margin:0 0 1em 0;}`;
 const paras = Array.from({length: 60}, (_, i) => `<p>P${i} これはテスト本文です。ページ分割の幾何を検証するための十分な長さのダミーテキストを並べています。文章文章文章文章文章文章文章文章。</p>`).join('\n');
 // 前导几何：single=1 张满页图（≈1 页前导，旧 ±1 hint 恰好兜住）；multi=2 张满页图

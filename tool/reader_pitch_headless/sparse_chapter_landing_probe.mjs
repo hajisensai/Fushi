@@ -18,10 +18,10 @@
 import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os'; import zlib from 'node:zlib'; import puppeteer from 'puppeteer-core';
 const CHROME=process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const W=1000,H=800;
-const imgCss=`:root{--hoshi-image-max-width:${W-40}px;--hoshi-image-max-height:${H}px;}
- img.block-img{max-width:var(--hoshi-image-max-width,${W-40}px);max-height:var(--hoshi-image-max-height,${H}px);width:auto;height:auto;display:block;margin:auto;break-inside:avoid;object-fit:contain;}
+const imgCss=`:root{--fushi-image-max-width:${W-40}px;--fushi-image-max-height:${H}px;}
+ img.block-img{max-width:var(--fushi-image-max-width,${W-40}px);max-height:var(--fushi-image-max-height,${H}px);width:auto;height:auto;display:block;margin:auto;break-inside:avoid;object-fit:contain;}
  .block-img-wrapper{display:flex;justify-content:center;align-items:center;break-inside:avoid;}
- img:not(.block-img){max-width:100%;max-height:var(--hoshi-image-max-height,${H}px);object-fit:contain;} p{margin:0 0 1em 0;}`;
+ img:not(.block-img){max-width:100%;max-height:var(--fushi-image-max-height,${H}px);object-fit:contain;} p{margin:0 0 1em 0;}`;
 const cssPaginated=`html,body{margin:0;padding:0;}html{overflow:hidden;} body{width:${W}px;height:${H}px;padding:0 20px;box-sizing:border-box;column-width:${W-40}px;column-gap:22px;column-fill:auto;font-size:22px;line-height:1.8;overflow:hidden;writing-mode:horizontal-tb;}${imgCss}`;
 const cssContinuous=`html,body{margin:0;padding:0;} body{width:${W}px;padding:0 20px;box-sizing:border-box;font-size:22px;line-height:1.8;writing-mode:horizontal-tb;}${imgCss}`;
 const img=(n)=>`<img loading="lazy" src="https://fushi.local/img${n}.png" alt="">`;
@@ -49,7 +49,7 @@ async function run(mode){
    return q.continue();});
   await pg.goto('https://fushi.local/chapter',{waitUntil:'domcontentloaded',timeout:8000}).catch(()=>{});
   await new Promise(r=>setTimeout(r,500));
-  await pg.evaluate((mh,mw)=>{document.documentElement.style.setProperty('--hoshi-image-max-height',mh+'px');document.documentElement.style.setProperty('--hoshi-image-max-width',mw+'px');if(window.fushiReader)window.fushiReader.paginationMetrics=null;},H-40,W-40);
+  await pg.evaluate((mh,mw)=>{document.documentElement.style.setProperty('--fushi-image-max-height',mh+'px');document.documentElement.style.setProperty('--fushi-image-max-width',mw+'px');if(window.fushiReader)window.fushiReader.paginationMetrics=null;},H-40,W-40);
   await new Promise(r=>setTimeout(r,150));
   await pg.evaluate(()=>window.fushiReader.restoreProgress(0));
   await new Promise(r=>setTimeout(r,120));

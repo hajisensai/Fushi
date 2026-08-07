@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 根因：扩展弹窗不吃 Flutter 直接注入，而是靠查词响应 `theme` 字段
 /// （[AppModel.browserExtensionThemeColors]）下发，content.js 只把该 map 里**有的** key
 /// `setProperty` 到 `#entries-container`。app 内两个注入器（popup_settings_injection /
-/// dictionary_popup_webview）设了 `--hoshi-primary-highlight` / `--md-on-primary` /
+/// dictionary_popup_webview）设了 `--fushi-primary-highlight` / `--md-on-primary` /
 /// `--hibiki-radius-card` / `--hibiki-card-bg-rgb`，但服务器 map 漏发 → 扩展退化成灰高亮 /
 /// 白字 / 直角 / 纯白底，肉眼「和 app 不一样」。
 ///
@@ -67,7 +67,7 @@ void main() {
   test('the four BUG-736 vars are explicitly present (regression pin)', () {
     final Set<String> server = serverThemeVars();
     for (final String v in const <String>[
-      '--hoshi-primary-highlight',
+      '--fushi-primary-highlight',
       '--md-on-primary',
       '--hibiki-radius-card',
       '--hibiki-card-bg-rgb',

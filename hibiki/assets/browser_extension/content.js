@@ -6,10 +6,10 @@ console.log('[Fushi] content script v46 loaded (BUG-688: popup Shadow DOM isolat
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
 try { document.documentElement.setAttribute('data-fushi-cs', 'v46'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
-// （CSS.highlights.set('hoshi-selection', …) + content.css 的 ::highlight(hoshi-selection)）。
+// （CSS.highlights.set('fushi-selection', …) + content.css 的 ::highlight(fushi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
 // （用户报「浏览器还是没高亮」的根因——1150 只补了调用，没绕开这条平台限制）。故在扩展里
-// 强制 selection.js 回落到 **DOM 包裹**路径（<span class="hoshi-dict-highlight"> 直接改共享 DOM，
+// 强制 selection.js 回落到 **DOM 包裹**路径（<span class="fushi-dict-highlight"> 直接改共享 DOM，
 // 页面渲染引擎必然绘制，与世界隔离无关；关窗时 clearSelection→clearHighlightWrappers 还原）。
 // selection.js 先于本脚本加载，这里覆盖它探测出的 true。app 内查词 selection.js 跑在主世界，
 // 不加载 content.js，CSS 高亮照常，互不影响。
@@ -1449,11 +1449,11 @@ function fushiDrawHighlightOverlay(rects) {
   layer.style.cssText =
     'position:fixed;left:0;top:0;width:0;height:0;margin:0;padding:0;border:0;' +
     'z-index:2147483646;pointer-events:none;';
-  // 高亮色跟随弹窗主题（--hoshi-primary-highlight 落在 #entries-container 上）；取不到用 content.css 同款兜底。
+  // 高亮色跟随弹窗主题（--fushi-primary-highlight 落在 #entries-container 上）；取不到用 content.css 同款兜底。
   let color = 'rgba(160, 160, 160, 0.4)';
   try {
     if (fushiContainer) {
-      const v = getComputedStyle(fushiContainer).getPropertyValue('--hoshi-primary-highlight').trim();
+      const v = getComputedStyle(fushiContainer).getPropertyValue('--fushi-primary-highlight').trim();
       if (v) color = v;
     }
   } catch (_) { /* getComputedStyle 不可用：用兜底色 */ }
@@ -2000,7 +2000,7 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
   // 故连尺寸盒一并套上（applyBox=true）；嵌套查词走 fushiRenderNested，不碰尺寸盒。
   fushiApplyTheme(c, theme, true);
   // TODO-1272：被查词高亮改为「扩展自绘覆盖层」，取词的视口 rects 也一并作弹窗锚点（不再贴鼠标坐标）。
-  // 旧实现走 selection.js highlightSelection 的 DOM 包裹路径（<span class="hoshi-dict-highlight">
+  // 旧实现走 selection.js highlightSelection 的 DOM 包裹路径（<span class="fushi-dict-highlight">
   // 直接改宿主页文本节点）：动态站点（React/Vue/视频字幕逐帧重渲染）框架 diff / MutationObserver
   // 会在下一帧把这个凭空多出的 span revert 掉 → 高亮闪一下就没（用户报「非常容易消失」）。改画
   // 扩展自有的顶层 fixed 覆盖层：宿主页重绘/事件都碰不到它，保持到弹窗关闭。高亮前 termLen 个字。

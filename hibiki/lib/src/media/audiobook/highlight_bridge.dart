@@ -31,11 +31,11 @@ class HighlightBridge {
     purple: [126,0,190]
   };
   var MARK_VAR_NAMES = {
-    yellow: '--hoshi-hl-yellow-mark',
-    green:  '--hoshi-hl-green-mark',
-    blue:   '--hoshi-hl-blue-mark',
-    pink:   '--hoshi-hl-pink-mark',
-    purple: '--hoshi-hl-purple-mark'
+    yellow: '--fushi-hl-yellow-mark',
+    green:  '--fushi-hl-green-mark',
+    blue:   '--fushi-hl-blue-mark',
+    pink:   '--fushi-hl-pink-mark',
+    purple: '--fushi-hl-purple-mark'
   };
   // G14：背景深/浅由 Dart 侧单一真相（ReaderContentStyles.isDarkBackground，
   // Rec.601/0.5）算好经 applyHighlights 注入；JS 不再自带亮度公式（此前的
@@ -80,7 +80,7 @@ class HighlightBridge {
     var root = document.documentElement;
     for (var ci = 0; ci < ALL_COLORS.length; ci++) {
       var cn = ALL_COLORS[ci];
-      root.style.setProperty('--hoshi-hl-' + cn, _hlColor(cn));
+      root.style.setProperty('--fushi-hl-' + cn, _hlColor(cn));
       root.style.setProperty(MARK_VAR_NAMES[cn], _hlMarkColor(cn));
     }
   }
@@ -93,14 +93,14 @@ class HighlightBridge {
   function _removeFavoriteRubyClasses(ruby) {
     if (!ruby || !ruby.classList) return;
     for (var i = 0; i < ALL_COLORS.length; i++) {
-      ruby.classList.remove('hoshi-hl-' + ALL_COLORS[i] + '-ruby-active');
+      ruby.classList.remove('fushi-hl-' + ALL_COLORS[i] + '-ruby-active');
     }
   }
 
   function _addRubyHighlightClass(ruby, color, bucket) {
     if (!ruby || !ruby.classList) return;
     color = color || 'yellow';
-    ruby.classList.add('hoshi-hl-' + color + '-ruby-active');
+    ruby.classList.add('fushi-hl-' + color + '-ruby-active');
     if (bucket && bucket.indexOf(ruby) < 0) bucket.push(ruby);
   }
 
@@ -239,7 +239,7 @@ class HighlightBridge {
     }
     for (var ci = 0; ci < ALL_COLORS.length; ci++) {
       var c = ALL_COLORS[ci];
-      var hlName = 'hoshi-hl-' + c;
+      var hlName = 'fushi-hl-' + c;
       var ranges = colorGroups[c];
       if (ranges && ranges.length) {
         var highlight = new Highlight(...ranges);
@@ -310,7 +310,7 @@ class HighlightBridge {
       _clearCssRubyHighlights();
       if (!highlightsJson || highlightsJson.length === 0) {
         for (var i = 0; i < ALL_COLORS.length; i++) {
-          CSS.highlights.delete('hoshi-hl-' + ALL_COLORS[i]);
+          CSS.highlights.delete('fushi-hl-' + ALL_COLORS[i]);
         }
         return;
       }
@@ -332,7 +332,7 @@ class HighlightBridge {
             r.setStart(groups[g].node, groups[g].start);
             r.setEnd(groups[g].node, groups[g].end);
             ranges.push(r);
-          } catch (e) { console.warn('[hoshi-hl] range error:', e); }
+          } catch (e) { console.warn('[fushi-hl] range error:', e); }
         }
         if (ranges.length || rubyElements.length) {
           window.__hibikiHighlightRangeMap[hl.id] = {
@@ -377,7 +377,7 @@ class HighlightBridge {
             r.setEnd(groups[g].node, groups[g].end);
             var span = document.createElement('span');
             span.setAttribute('data-highlight-id', hl.id);
-            span.className = 'hoshi-hl hoshi-hl-' + color;
+            span.className = 'fushi-hl fushi-hl-' + color;
             span.style.backgroundColor = highlightColor;
             span.style.borderRadius = '2px';
             span.style.textDecorationLine = 'underline';
@@ -385,7 +385,7 @@ class HighlightBridge {
             span.style.textDecorationThickness = '0.12em';
             span.style.textUnderlineOffset = '0.18em';
             r.surroundContents(span);
-          } catch (e) { console.warn('[hoshi-hl] wrap error:', e); }
+          } catch (e) { console.warn('[fushi-hl] wrap error:', e); }
         }
         if (rubyElements.length) {
           window.__hibikiFallbackHighlightRubyMap[hl.id] = {
@@ -528,7 +528,7 @@ class HighlightBridge {
     }
     if (backfillCount > 0) {
       debugPrint(
-          '[hoshi-hl] backfilled $backfillCount favorites via text search');
+          '[fushi-hl] backfilled $backfillCount favorites via text search');
     }
     final String json = jsonEncode(payload);
     // G14：深/浅判定在 Dart 侧用与原生滚动条同一个单一真相

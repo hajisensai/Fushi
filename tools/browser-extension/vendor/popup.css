@@ -504,13 +504,13 @@ html.global-lookup .mine-button:not(:disabled) {
     cursor: default;
 }
 
-/* BUG-842：.hoshi-btn-tip 是内联动作按钮（调整上下文 / 清空已加句子 等）的 DOM 悬停/
+/* BUG-842：.fushi-btn-tip 是内联动作按钮（调整上下文 / 清空已加句子 等）的 DOM 悬停/
    聚焦提示，取代会在离屏 WebView2（DComp visual→WGC→texture）上飞到窗口角落的原生
    title。与 .audio-hint 共用视觉；由 popup.js setInlineButtonTip / __fushiShowButtonTip
    按屏幕坐标定位。 */
 .audio-hint,
 .inline-hint,
-.hoshi-btn-tip {
+.fushi-btn-tip {
     position: fixed;
     z-index: 10000;
     max-width: 220px;
@@ -530,7 +530,7 @@ html.global-lookup .mine-button:not(:disabled) {
 
 .audio-hint.visible,
 .inline-hint.visible,
-.hoshi-btn-tip.visible {
+.fushi-btn-tip.visible {
     opacity: 1;
 }
 
@@ -1254,18 +1254,18 @@ html[data-theme="dark"] :where(.glossary-group, .glossary-content) [class^="glos
     margin-right: 1px;
 }
 
-::highlight(hoshi-selection) {
-    background-color: var(--hoshi-primary-highlight, rgba(160, 160, 160, 0.4));
+::highlight(fushi-selection) {
+    background-color: var(--fushi-primary-highlight, rgba(160, 160, 160, 0.4));
     color: inherit;
 }
 
-.hoshi-dict-highlight {
-    background-color: var(--hoshi-primary-highlight, rgba(160, 160, 160, 0.4)) !important;
+.fushi-dict-highlight {
+    background-color: var(--fushi-primary-highlight, rgba(160, 160, 160, 0.4)) !important;
     color: inherit;
 }
 
 ::selection {
-    background-color: var(--hoshi-primary-highlight, rgba(100, 140, 230, 0.35));
+    background-color: var(--fushi-primary-highlight, rgba(100, 140, 230, 0.35));
     color: inherit;
 }
 
@@ -1411,7 +1411,7 @@ html[data-theme="dark"] {
  * in-app — zero regression to the in-app popup or to the tested --dict-columns
  * grid — and only style the bare WebView2 lookup window.
  *
- * Card chrome ports hoshi's reader-popup-host.js `.hoshi-reader-popup-shell`
+ * Card chrome ports hoshi's reader-popup-host.js `.fushi-reader-popup-shell`
  * (border 1px rgba(120,120,128,0.36) / radius 10px). The opaque, NON-layered
  * WebView2 window (see global_lookup_window.cpp: "No WS_EX_LAYERED") cannot
  * carry a real drop-shadow inside CSS — that is a platform limitation, not an
@@ -1514,13 +1514,13 @@ html.global-lookup[data-theme="dark"] body {
    （真机第 4 轮「不应该按照字来划分，应该按照正常的来断」）。 */
 .global-lookup-sentence:not(.global-lookup-sentence-panel)
     .global-lookup-sentence-char:hover {
-    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
     border-radius: 2px;
 }
 
 /* 引擎匹配到的词（bestLength）在面板选词区的整词高亮——与查词高亮同色变量。 */
 .global-lookup-sentence-hit {
-    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
     border-radius: 2px;
 }
 
@@ -1533,7 +1533,7 @@ html.global-lookup[data-theme="dark"] body {
    BUG：上面 .ctx-adjust-button 规则原缺闭合 }，CSS 错误恢复把本条整规则当无效
    声明吞掉（ext-hit 高亮从未生效）；补上闭合后本条恢复。 */
 .global-lookup-ext-hit {
-    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
     border-radius: 2px;
 }
 
@@ -1694,7 +1694,7 @@ html.eink {
     /* 杀掉亚克力/半透明卡片底（Win11 backdrop 在 e-ink 上只是脏灰）。 */
     --hibiki-card-bg-alpha: 1;
     /* 查词命中不再用半透明色块（消费端见下方 underline 覆盖）。 */
-    --hoshi-primary-highlight: transparent;
+    --fushi-primary-highlight: transparent;
     /* tags：色块 → 透明底 + 描边（描边规则见下）。 */
     --expr-tag-color: transparent;
 }
@@ -1769,7 +1769,7 @@ html.eink .mine-button.latest {
 }
 
 /* 查词/嵌套查词命中：半透明色块 → 下划线（贴文字的一条线，刷新面积最小）。 */
-html.eink ::highlight(hoshi-selection) {
+html.eink ::highlight(fushi-selection) {
     background-color: transparent;
     text-decoration-line: underline;
     text-decoration-color: currentColor;
@@ -1777,7 +1777,7 @@ html.eink ::highlight(hoshi-selection) {
     text-underline-offset: 0.15em;
 }
 
-html.eink .hoshi-dict-highlight {
+html.eink .fushi-dict-highlight {
     background-color: transparent !important;
     text-decoration-line: underline;
     text-decoration-color: currentColor;

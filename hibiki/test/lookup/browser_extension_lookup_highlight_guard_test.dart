@@ -90,7 +90,7 @@ void main() {
         });
 
         test('TODO-1272 被查词高亮走扩展自绘覆盖层（不改宿主页 DOM，保持到关窗）', () {
-          // 根因：旧实现走 selection.js DOM 包裹路径（<span class="hoshi-dict-highlight"> 直接裹
+          // 根因：旧实现走 selection.js DOM 包裹路径（<span class="fushi-dict-highlight"> 直接裹
           // 宿主页文本节点），动态站点框架 diff / MutationObserver 会在下一帧把它 revert 掉 →
           // 高亮闪一下就没（用户报「非常容易消失」）。改画扩展自有的顶层 fixed 覆盖层。
           final String src = content.readAsStringSync();

@@ -153,7 +153,7 @@ function resolveAnchorId(cssHighlights, rangeMapEntries) {
     };
   `;
   return runInDom(
-    `<span id="w" class="hoshi-sentence-audio-cue">句</span>`,
+    `<span id="w" class="fushi-sentence-audio-cue">句</span>`,
     anchorElSrc + setup,
     `var a = window.__fushiSentenceAudioAnchorEl('K');
      document.body.setAttribute('data-result', a ? (a.id || a.nodeName) : 'null');`,

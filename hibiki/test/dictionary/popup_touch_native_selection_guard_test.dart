@@ -26,7 +26,7 @@ void main() {
   test('弹窗注入体不得再全量禁掉触屏原生选区（否则释义无法复制）', () {
     final String src = injectionSrc();
     // 旧 BUG-762 的三个碾平特征——任一复活都会再次掐死触屏复制。
-    expect(src.contains('hoshi-popup-touch-noselect'), isFalse,
+    expect(src.contains('fushi-popup-touch-noselect'), isFalse,
         reason: 'BUG-762 的全量触屏禁选 <style> 不得复活（会掐死释义复制，BUG-926）');
     expect(src.contains('body *{'), isFalse,
         reason: '不得对 body * 全量 user-select:none —— 会碾平 popup.css 的正文可选分区');

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// TODO-1339 回归守卫（源码扫描，CI 可跑）：图片合并（前导单图片 run 折进后随文本章，
-/// TODO-1128/1174）注入的插图（`<div class="hoshi-merged-image"><img ...></div>`，
+/// TODO-1128/1174）注入的插图（`<div class="fushi-merged-image"><img ...></div>`，
 /// webview.part.dart `_injectMergedChapterImages`）必须在 `_sharedInitImages` 里保持
 /// **eager**，不得被无条件挂 `loading="lazy"`。
 ///
@@ -21,7 +21,7 @@ void main() {
   );
 
   group('TODO-1339 merge-injected leading illustrations stay eager', () {
-    test('_sharedInitImages exempts .hoshi-merged-image from loading=lazy', () {
+    test('_sharedInitImages exempts .fushi-merged-image from loading=lazy', () {
       final String src = paginationFile.readAsStringSync();
       expect(src.contains('_sharedInitImages'), isTrue,
           reason: '共享图片初始化 helper 必须存在');
@@ -34,28 +34,28 @@ void main() {
       // 取 lazy 语句前一段（同一 forEach 内的守卫），必须同时排除 gaiji 与合并前导图。
       final int windowStart = (lazyIdx - 600).clamp(0, src.length);
       final String guardWindow = src.substring(windowStart, lazyIdx);
-      expect(guardWindow.contains('hoshi-merged-image'), isTrue,
+      expect(guardWindow.contains('fushi-merged-image'), isTrue,
           reason:
-              '设置 loading=lazy 前必须判定并放行 .hoshi-merged-image 合并前导插图（保持 eager）');
+              '设置 loading=lazy 前必须判定并放行 .fushi-merged-image 合并前导插图（保持 eager）');
       // 放行必须体现在 lazy 的门控条件上（存在一个基于 merged-lead 的否定判定）。
       expect(
         guardWindow.contains('isMergedLeadImg') ||
-            guardWindow.contains("closest('.hoshi-merged-image')"),
+            guardWindow.contains("closest('.fushi-merged-image')"),
         isTrue,
         reason:
-            'lazy 门控必须引用合并前导图判定（isMergedLeadImg / closest(.hoshi-merged-image)）',
+            'lazy 门控必须引用合并前导图判定（isMergedLeadImg / closest(.fushi-merged-image)）',
       );
     });
 
-    test('the injection still marks merged images with .hoshi-merged-image',
+    test('the injection still marks merged images with .fushi-merged-image',
         () {
       // 守卫两端接线一致：注入端类名与初始化端放行判定用同一个 marker。
       final File webviewFile = File(
         'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
       );
       final String src = webviewFile.readAsStringSync();
-      expect(src.contains('class="hoshi-merged-image"'), isTrue,
-          reason: '_injectMergedChapterImages 必须用 hoshi-merged-image 包裹每张前导插图');
+      expect(src.contains('class="fushi-merged-image"'), isTrue,
+          reason: '_injectMergedChapterImages 必须用 fushi-merged-image 包裹每张前导插图');
     });
   });
 }

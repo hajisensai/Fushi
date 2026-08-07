@@ -59,7 +59,7 @@ class AudiobookClipTextLayout {
   final Color foreground;
 
   /// 逐句高亮跟随色（阅读主题 sasayaki——有声书当前句跟读高亮的背景衬色）。
-  /// 与阅读器正文里 `::highlight(hoshi-sasayaki)` 同一真相源（`ReaderThemeColors.sasayaki`），
+  /// 与阅读器正文里 `::highlight(fushi-sasayaki)` 同一真相源（`ReaderThemeColors.sasayaki`），
   /// 导出卡片把它当整句背景衬底涂在 fg 文字之下，复刻「逐句高亮跟随」观感（TODO-1013）。
   final Color highlight;
 }

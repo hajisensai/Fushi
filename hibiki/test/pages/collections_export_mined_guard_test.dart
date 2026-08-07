@@ -50,12 +50,12 @@ void main() {
     // BUG-123→BUG-125 的现行修复是「ruby 元素 class 分流 + 预合成不透明色」，rt/rp
     // 不透明遮罩已被 BUG-125 删除（会抹基字右缘）。复活 popup.js 的 ☆ 收藏按钮只动
     // 弹窗资产，与这套竖排选区高亮渲染零耦合，故分流机制必须仍在：
-    expect(css, contains('ruby.hoshi-selection-ruby-active'),
+    expect(css, contains('ruby.fushi-selection-ruby-active'),
         reason: '竖排选区 ruby class 分流（BUG-123/125 修复核心）必须仍在');
     expect(css, contains('composeOpaqueColor'),
         reason: 'BUG-125 预合成不透明色机制必须仍在');
     // 反向：不得复活已删除的 rt/rp 遮罩（与 ruby_highlight_guard 一致）。
-    expect(css.contains('ruby.hoshi-selection-ruby-active > rt'), isFalse,
+    expect(css.contains('ruby.fushi-selection-ruby-active > rt'), isFalse,
         reason: 'BUG-125 已删除会抹基字的 rt 遮罩，不得复活');
   });
 

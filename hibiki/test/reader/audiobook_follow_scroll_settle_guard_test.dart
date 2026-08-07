@@ -56,14 +56,14 @@ void main() {
   group('TODO-825 跟随滚动恢复平滑动画（不得退化 instant）', () {
     // 墨水屏模式（eink）更新：三条 scrollBy 的 behavior 收敛为一个共享变量——
     // 默认仍是 'smooth'（TODO-825 契约不变），仅当 CSS 变量
-    // --hoshi-reader-eink-mode === '1'（用户显式开墨水屏模式）才取 'auto' 瞬时。
+    // --fushi-reader-eink-mode === '1'（用户显式开墨水屏模式）才取 'auto' 瞬时。
     // 守卫从「三处 smooth 字面量」改为锁这个变量化后的等价不变式：
     //   ① behavior 变量的 smooth 默认 + eink 门控必须存在；
     //   ② 三条 scrollBy 都必须走该变量（不得偷偷写死 instant/auto）。
     test('scrollToTarget：behavior 默认 smooth、仅 eink 降 auto', () {
       final String body = scrollToTargetBody();
       expect(
-        RegExp(r'--hoshi-reader-eink-mode').hasMatch(body),
+        RegExp(r'--fushi-reader-eink-mode').hasMatch(body),
         isTrue,
         reason: 'behavior 的瞬时分支必须由墨水屏模式 CSS 变量门控（用户显式 opt-in），'
             '不得无条件砍动画',

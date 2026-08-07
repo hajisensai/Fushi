@@ -61,14 +61,14 @@ void main() {
   test('popup.css 定义 .audio-hint 与 .audio-button.audio-unavailable', () {
     final String css = read('assets/popup/popup.css');
     // 断言选择器已定义样式，但对「分组选择器」健壮：BUG-842 起 .audio-hint 与
-    // .hoshi-btn-tip 共用同一套视觉，CSS 写成 `.audio-hint,\n.hoshi-btn-tip {`，
+    // .fushi-btn-tip 共用同一套视觉，CSS 写成 `.audio-hint,\n.fushi-btn-tip {`，
     // 旧的裸子串 `.audio-hint {` 不再匹配却仍然生效。这里改为匹配「选择器后紧跟
     // `,`（分组）或 `{`（独立块），允许中间有空白」，既守住样式在位又不锁死写法。
     bool definesSelector(String selector) => RegExp(
           '${RegExp.escape(selector)}\\s*[,{]',
         ).hasMatch(css);
     expect(definesSelector('.audio-hint'), isTrue,
-        reason: '.audio-hint 必须作为选择器出现（可与 .hoshi-btn-tip 分组）');
+        reason: '.audio-hint 必须作为选择器出现（可与 .fushi-btn-tip 分组）');
     expect(definesSelector('.audio-hint.visible'), isTrue,
         reason: '.audio-hint.visible 必须定义可见态（可分组）');
     expect(definesSelector('.audio-button.audio-unavailable'), isTrue,

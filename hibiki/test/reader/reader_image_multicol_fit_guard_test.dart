@@ -49,10 +49,10 @@ void main() {
   });
 
   test('all image-max setProperty sites route through _imageMaxBox', () {
-    // 每个 --hoshi-image-max-width / -height 赋值都必须取自 _imageMaxBox() 的返回
+    // 每个 --fushi-image-max-width / -height 赋值都必须取自 _imageMaxBox() 的返回
     // （__imgBox.w/.h 或 box.w/.h），不得留裸的整 content-box `cs.w * ratio` / `cs.h`。
     final RegExp widthSet =
-        RegExp(r"setProperty\('--hoshi-image-max-width', ([^)]+)\)");
+        RegExp(r"setProperty\('--fushi-image-max-width', ([^)]+)\)");
     final Iterable<RegExpMatch> widthMatches = widthSet.allMatches(source);
     expect(widthMatches.length, greaterThanOrEqualTo(4),
         reason: '分页/连续 initialize+updatePageSize 至少 4 处设置图片 max-width');
@@ -66,7 +66,7 @@ void main() {
     }
 
     final RegExp heightSet =
-        RegExp(r"setProperty\('--hoshi-image-max-height', ([^)]+)\)");
+        RegExp(r"setProperty\('--fushi-image-max-height', ([^)]+)\)");
     for (final RegExpMatch m in heightSet.allMatches(source)) {
       final String value = m.group(1)!;
       expect(
@@ -82,7 +82,7 @@ void main() {
       () {
     expect(
       source.contains(
-          "setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w"),
+          "setProperty('--fushi-image-max-width', Math.max(1, Math.floor(cs.w"),
       isFalse,
       reason: '旧的整 content-box `cs.w * ratio` 直接喂图片 max-width 会在多列越界，必须移除',
     );

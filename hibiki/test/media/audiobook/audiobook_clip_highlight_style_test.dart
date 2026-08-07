@@ -7,7 +7,7 @@ import 'package:fushi/src/media/audiobook/audiobook_clip_text_render.dart';
 
 /// TODO-1013 守卫：收藏句/选区「导出片段」的文本卡片必须复刻有声书「逐句高亮跟随」
 /// 样式——把 `AudiobookClipTextLayout.highlight`（= `ReaderThemeColors.sasayaki`，与
-/// 阅读器正文 `::highlight(hoshi-sasayaki)` 同一真相源）当整句背景衬底涂在文字之下。
+/// 阅读器正文 `::highlight(fushi-sasayaki)` 同一真相源）当整句背景衬底涂在文字之下。
 ///
 /// 这是行为测试（真跑离屏渲染管线 → 取 PNG 像素），不是字符串静态断言：断言渲染出的
 /// 图里确实出现高亮衬底色的像素，且换高亮色时图会跟着变（证明 highlight 真穿到渲染）。

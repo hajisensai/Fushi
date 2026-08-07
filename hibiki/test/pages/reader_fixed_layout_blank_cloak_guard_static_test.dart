@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// BUG-1017 源码守卫：固定版式 SVG 竖排 EPUB 打开一片空白。
 ///
-/// 根因 = 每章 HTML 注入的 `#hoshi-cloak`（`body{visibility:hidden}` 防 FOUC）唯一的摘除点
+/// 根因 = 每章 HTML 注入的 `#fushi-cloak`（`body{visibility:hidden}` 防 FOUC）唯一的摘除点
 /// 在 reader-setup IIFE（webview.part.dart）尾部。分页/连续外壳的 boot（reader_pagination_scripts
 /// 的 `_sharedInitBoot`）在 `readyState==='complete'`（onLoadStop 恒真）下**同步**跑
 /// `initialize()`，且**无 try/catch**。固定版式 SVG 竖排零文本封面页上 `initialize()` 抛同步异常
@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 修复两层：
 /// ① `_sharedInitBoot` 经 `_fushiBootInitialize` 用 try/catch 包 `initialize()` 并 console.error
 ///    暴露真错——异常被就地含住，IIFE 继续跑到尾部摘 cloak。分页/连续外壳共享此 boot，一改两覆盖。
-/// ② webview.part.dart 的 setup IIFE 顶部排一个幂等 microtask 无条件摘 `hoshi-cloak`，兜底任意抛点
+/// ② webview.part.dart 的 setup IIFE 顶部排一个幂等 microtask 无条件摘 `fushi-cloak`，兜底任意抛点
 ///    （caret/furigana 等），彻底消除「cloak 依赖整段 IIFE 不抛」这个脆弱契约。
 ///
 /// 守卫落在最强可靠可落地的源码语料层（ReaderHibikiPage 过重无法在 widget test 拉起跑该 boot，
@@ -53,11 +53,11 @@ void main() {
         reason: 'load 事件与 readyState==="complete" 两处都必须走受保护的 boot');
   });
 
-  test('reader-setup IIFE 必须无条件兜底摘 hoshi-cloak（BUG-1017 ②）', () {
+  test('reader-setup IIFE 必须无条件兜底摘 fushi-cloak（BUG-1017 ②）', () {
     final String src =
         read('lib/src/pages/implementations/reader_hibiki/webview.part.dart');
 
-    // 顶部幂等 microtask 兜底摘 cloak：Promise.resolve().then 里 getElementById('hoshi-cloak').remove()。
+    // 顶部幂等 microtask 兜底摘 cloak：Promise.resolve().then 里 getElementById('fushi-cloak').remove()。
     // BUG-1140 第二阶段①：整段 setup 由 IIFE 变成 `window.__fushiEngine.install(C)`
     // 的函数体（外链静态引擎，执行时刻不变）。按 install 签名定位，不绑定外层写法
     // ——本守卫钉的是函数体内容，与是否包了压缩器 / 是不是 IIFE 无关。
@@ -67,8 +67,8 @@ void main() {
     expect(iife.contains('Promise.resolve().then(function() {'), isTrue,
         reason: 'IIFE 顶部必须排 microtask 兜底（任意抛点后仍摘 cloak）');
     expect(
-        RegExp(r"getElementById\('hoshi-cloak'\)").allMatches(iife).length >= 2,
+        RegExp(r"getElementById\('fushi-cloak'\)").allMatches(iife).length >= 2,
         isTrue,
-        reason: '兜底 microtask 与尾部快路径两处都要摘 hoshi-cloak');
+        reason: '兜底 microtask 与尾部快路径两处都要摘 fushi-cloak');
   });
 }

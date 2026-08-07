@@ -44,7 +44,7 @@ void main() {
       var frag = document.createDocumentFragment();
       for (var i = 0; i < 5000; i++) {
         var s = document.createElement('span');
-        s.className = 'hoshi-probe';
+        s.className = 'fushi-probe';
         s.textContent = 'あ';
         frag.appendChild(s);
       }
@@ -64,10 +64,10 @@ void main() {
     final String css = ReaderContentStyles.css(settings: settings);
     await controller.evaluateJavascript(source: '''
       (function() {
-        var vars = document.getElementById('hoshi-test-vars');
+        var vars = document.getElementById('fushi-test-vars');
         if (!vars) {
           vars = document.createElement('style');
-          vars.id = 'hoshi-test-vars';
+          vars.id = 'fushi-test-vars';
           document.head.appendChild(vars);
         }
         vars.textContent = ':root{'
@@ -75,10 +75,10 @@ void main() {
           + '--page-height:' + window.innerHeight + 'px;'
           + '--reader-viewport-height:' + window.innerHeight + 'px;'
           + '--chrome-top-inset:0px;--chrome-bottom-inset:0px;}';
-        var s = document.getElementById('hoshi-reader-style');
+        var s = document.getElementById('fushi-reader-style');
         if (!s) {
           s = document.createElement('style');
-          s.id = 'hoshi-reader-style';
+          s.id = 'fushi-reader-style';
           document.head.appendChild(s);
         }
         s.textContent = ${jsonEncode(css)};
@@ -105,7 +105,7 @@ void main() {
       var contentEnd = vertical ? (bodyRect.bottom - pb) : (bodyRect.right - pr);
       var contentBox = contentEnd - contentStart;
 
-      var probes = document.querySelectorAll('.hoshi-probe');
+      var probes = document.querySelectorAll('.fushi-probe');
       var seen = {};
       for (var i = 0; i < probes.length; i++) {
         var r = probes[i].getBoundingClientRect();
@@ -315,7 +315,7 @@ void main() {
         body.appendChild(img);
         for (var i = 0; i < 400; i++) {
           var s = document.createElement('span');
-          s.className = 'hoshi-probe';
+          s.className = 'fushi-probe';
           s.textContent = 'あ';
           body.appendChild(s);
         }
@@ -339,12 +339,12 @@ void main() {
         parse(await controller.evaluateJavascript(source: imgProbe));
     debugPrint('[img-dom] no-clamp => ${jsonEncode(noClamp)}');
 
-    // Replicate fushiReader._imageMaxBox: set --hoshi-image-max-width to the used
+    // Replicate fushiReader._imageMaxBox: set --fushi-image-max-width to the used
     // sub-column width (getComputedStyle(body).columnWidth).
     await controller.evaluateJavascript(source: r'''
       (function() {
         var used = parseFloat(getComputedStyle(document.body).columnWidth);
-        document.documentElement.style.setProperty('--hoshi-image-max-width', used + 'px');
+        document.documentElement.style.setProperty('--fushi-image-max-width', used + 'px');
       })();
     ''');
     await tester.pump(const Duration(milliseconds: 300));
@@ -363,7 +363,7 @@ void main() {
             'is load-bearing');
     expect(imgClamped, lessThanOrEqualTo(subCol + 2),
         reason:
-            'with --hoshi-image-max-width = used sub-column, the image must '
+            'with --fushi-image-max-width = used sub-column, the image must '
             'be clamped to <= ${subCol}px (imgWidth=$imgClamped)');
   });
 }

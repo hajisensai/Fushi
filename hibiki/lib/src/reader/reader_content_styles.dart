@@ -353,7 +353,7 @@ svg.block-img.blurred {
 
     // TODO-909: three-state layout. VN gets its own stage layout (NOT the
     // paginated column geometry — a VN screen is one detached Block rendered on
-    // `hoshi-vn-stage`, so reusing column-width/gap geometry would fight the
+    // `fushi-vn-stage`, so reusing column-width/gap geometry would fight the
     // stage). Falling through to the paginated `else` would silently give VN the
     // column model, so VN must be selected explicitly here.
     // 三布局生成器共享的公共参数（单一真相源，见 _LayoutCssArgs）。一次构建，按 view-mode 分发。
@@ -392,11 +392,11 @@ svg.block-img.blurred {
     return '''
 $resolvedFontFaces
 $pageBreakCss
-@media (prefers-color-scheme: light) { :root { --hoshi-system-text-color: #000; } }
-@media (prefers-color-scheme: dark) { :root { --hoshi-system-text-color: #fff; } }
+@media (prefers-color-scheme: light) { :root { --fushi-system-text-color: #000; } }
+@media (prefers-color-scheme: dark) { :root { --fushi-system-text-color: #fff; } }
 :root {
-  --hoshi-sentence-audio-text-color: ${colors.textColor};
-  --hoshi-sentence-audio-background-color: ${sentenceAudioHighlightColor ?? colors.sentenceAudioHighlightColor};
+  --fushi-sentence-audio-text-color: ${colors.textColor};
+  --fushi-sentence-audio-background-color: ${sentenceAudioHighlightColor ?? colors.sentenceAudioHighlightColor};
 }
 html {
   /* TODO-1308 (BUG): the legacy WebKit property
@@ -453,8 +453,8 @@ html {
 $layoutCss
 $paragraphSpacingCss
 img.block-img {
-  max-width: var(--hoshi-image-max-width, $imageMaxWidth)$readerStylePriority;
-  max-height: var(--hoshi-image-max-height, $imageMaxHeight)$readerStylePriority;
+  max-width: var(--fushi-image-max-width, $imageMaxWidth)$readerStylePriority;
+  max-height: var(--fushi-image-max-height, $imageMaxHeight)$readerStylePriority;
   width: auto$readerStylePriority;
   height: auto$readerStylePriority;
   display: block$readerStylePriority;
@@ -473,7 +473,7 @@ img.block-img {
 }
 img:not(.block-img) {
   max-width: 100%$readerStylePriority;
-  max-height: var(--hoshi-image-max-height, $imageMaxHeight)$readerStylePriority;
+  max-height: var(--fushi-image-max-height, $imageMaxHeight)$readerStylePriority;
   object-fit: contain$readerStylePriority;
 }
 p > img:only-child, div > img:only-child, section > img:only-child, figure > img:only-child {
@@ -482,8 +482,8 @@ p > img:only-child, div > img:only-child, section > img:only-child, figure > img
   margin-right: auto;
 }
 svg {
-  max-width: var(--hoshi-image-max-width, $imageMaxWidth)$readerStylePriority;
-  max-height: var(--hoshi-image-max-height, $imageMaxHeight)$readerStylePriority;
+  max-width: var(--fushi-image-max-width, $imageMaxWidth)$readerStylePriority;
+  max-height: var(--fushi-image-max-height, $imageMaxHeight)$readerStylePriority;
   width: 100%$readerStylePriority;
   height: 100%$readerStylePriority;
   display: block$readerStylePriority;
@@ -497,8 +497,8 @@ svg.block-img {
      meet-fits + centres (the generic svg width/height:100% above can't resolve
      against an indefinite reflow column, leaving the cover stuck at the edge).
      The .block-img-wrapper then centres the box; cursor matches img.block-img. */
-  width: var(--hoshi-image-max-width, $imageMaxWidth)$readerStylePriority;
-  height: var(--hoshi-image-max-height, $imageMaxHeight)$readerStylePriority;
+  width: var(--fushi-image-max-width, $imageMaxWidth)$readerStylePriority;
+  height: var(--fushi-image-max-height, $imageMaxHeight)$readerStylePriority;
   margin: auto$readerStylePriority;
   cursor: pointer;
 }
@@ -568,8 +568,8 @@ ruby rt, ruby rp {
   user-select: none;
 }
 /* TODO-1279：书籍里长按拖选正文时，WebView 引擎会把长按拖选翻译成**原生文本选区**
-   （蓝色 ::selection），与我们自绘的查词选区高亮（::highlight(hoshi-selection) /
-   .hoshi-dict-highlight）叠成「双选区并存」。查词命中不依赖原生选区——它走
+   （蓝色 ::selection），与我们自绘的查词选区高亮（::highlight(fushi-selection) /
+   .fushi-dict-highlight）叠成「双选区并存」。查词命中不依赖原生选区——它走
    getCharacterAtPoint → caretPositionFromPoint + Range + CSS Highlights API，与
    user-select 无关（user-select 只管用户能否拖选、不影响程序化 Range/caret 与
    ::highlight 绘制）。原生选区在触屏上唯一「消费者」并不存在：Ctrl+C 复制
@@ -589,93 +589,93 @@ ruby rt, ruby rp {
   }
 }
 /* BUG-765 续：移动端选区起止手柄的强调色跟随主题。reader_selection_scripts.dart 里
-   自绘的起/止手柄用 var(--hoshi-sel-handle) 引用本变量；主题切换重注入本 CSS 时手柄
+   自绘的起/止手柄用 var(--fushi-sel-handle) 引用本变量；主题切换重注入本 CSS 时手柄
    颜色自动更新，无需 JS 感知主题。用主题 linkColor（各主题的饱和强调色）而非查词高亮
    色（0.35 低透明 tint，太淡不适合实心抓手）。 */
-:root { --hoshi-sel-handle: ${linkColor ?? colors.linkColor}; }
+:root { --fushi-sel-handle: ${linkColor ?? colors.linkColor}; }
 /* BUG-125：查词高亮用不透明色（见 selectionOpaque 注释）。JS 侧给该 Highlight 设
    priority=1，使其叠在音频(sentenceAudioHighlight, 默认 priority=0)之上 → 重叠处只显示这一层。 */
-::highlight(hoshi-selection) {
+::highlight(fushi-selection) {
   background-color: $selectionOpaque;
   color: inherit;
 }
 /* BUG-110：<ruby> 内的字不走 ::highlight（竖排下会双绘成深色带），改给 ruby 元素
    加 class，背景画在元素上只画一遍。移植自 Hoshi-Reader-Android。 */
-ruby.hoshi-selection-ruby-active {
+ruby.fushi-selection-ruby-active {
   background-color: $selectionOpaque !important;
   color: inherit;
 }
 /* 收藏句高亮同时服务 CSS Highlight、旧 WebView span fallback、以及 ruby 分流 class；
    三条路径共用背景 + underline，和 sentenceAudioHighlight/current sentence 重叠时仍保留收藏语义。
    BUG-716：ruby 高亮回到整句填充（不再走 1em 窄 lane），下同。 */
-::highlight(hoshi-hl-yellow),
-.hoshi-hl-yellow,
-ruby.hoshi-hl-yellow-ruby-active {
-  background-color: var(--hoshi-hl-yellow, rgba(255,220,0,0.35));
+::highlight(fushi-hl-yellow),
+.fushi-hl-yellow,
+ruby.fushi-hl-yellow-ruby-active {
+  background-color: var(--fushi-hl-yellow, rgba(255,220,0,0.35));
   text-decoration-line: underline;
-  text-decoration-color: var(--hoshi-hl-yellow-mark, rgb(184, 132, 0));
+  text-decoration-color: var(--fushi-hl-yellow-mark, rgb(184, 132, 0));
   text-decoration-thickness: 0.12em;
   text-underline-offset: 0.18em;
 }
-::highlight(hoshi-hl-green),
-.hoshi-hl-green,
-ruby.hoshi-hl-green-ruby-active {
-  background-color: var(--hoshi-hl-green, rgba(0,200,83,0.30));
+::highlight(fushi-hl-green),
+.fushi-hl-green,
+ruby.fushi-hl-green-ruby-active {
+  background-color: var(--fushi-hl-green, rgba(0,200,83,0.30));
   text-decoration-line: underline;
-  text-decoration-color: var(--hoshi-hl-green-mark, rgb(0, 126, 54));
+  text-decoration-color: var(--fushi-hl-green-mark, rgb(0, 126, 54));
   text-decoration-thickness: 0.12em;
   text-underline-offset: 0.18em;
 }
-::highlight(hoshi-hl-blue),
-.hoshi-hl-blue,
-ruby.hoshi-hl-blue-ruby-active {
-  background-color: var(--hoshi-hl-blue, rgba(68,138,255,0.30));
+::highlight(fushi-hl-blue),
+.fushi-hl-blue,
+ruby.fushi-hl-blue-ruby-active {
+  background-color: var(--fushi-hl-blue, rgba(68,138,255,0.30));
   text-decoration-line: underline;
-  text-decoration-color: var(--hoshi-hl-blue-mark, rgb(36, 92, 190));
+  text-decoration-color: var(--fushi-hl-blue-mark, rgb(36, 92, 190));
   text-decoration-thickness: 0.12em;
   text-underline-offset: 0.18em;
 }
-::highlight(hoshi-hl-pink),
-.hoshi-hl-pink,
-ruby.hoshi-hl-pink-ruby-active {
-  background-color: var(--hoshi-hl-pink, rgba(255,64,129,0.30));
+::highlight(fushi-hl-pink),
+.fushi-hl-pink,
+ruby.fushi-hl-pink-ruby-active {
+  background-color: var(--fushi-hl-pink, rgba(255,64,129,0.30));
   text-decoration-line: underline;
-  text-decoration-color: var(--hoshi-hl-pink-mark, rgb(196, 38, 92));
+  text-decoration-color: var(--fushi-hl-pink-mark, rgb(196, 38, 92));
   text-decoration-thickness: 0.12em;
   text-underline-offset: 0.18em;
 }
-::highlight(hoshi-hl-purple),
-.hoshi-hl-purple,
-ruby.hoshi-hl-purple-ruby-active {
-  background-color: var(--hoshi-hl-purple, rgba(170,0,255,0.25));
+::highlight(fushi-hl-purple),
+.fushi-hl-purple,
+ruby.fushi-hl-purple-ruby-active {
+  background-color: var(--fushi-hl-purple, rgba(170,0,255,0.25));
   text-decoration-line: underline;
-  text-decoration-color: var(--hoshi-hl-purple-mark, rgb(126, 0, 190));
+  text-decoration-color: var(--fushi-hl-purple-mark, rgb(126, 0, 190));
   text-decoration-thickness: 0.12em;
   text-underline-offset: 0.18em;
 }
-.hoshi-dict-highlight {
+.fushi-dict-highlight {
   background-color: $selectionOpaque !important;
   color: inherit;
 }
-::highlight(hoshi-sentence-audio) {
-  color: var(--hoshi-sentence-audio-text-color);
-  background-color: var(--hoshi-sentence-audio-background-color);
+::highlight(fushi-sentence-audio) {
+  color: var(--fushi-sentence-audio-text-color);
+  background-color: var(--fushi-sentence-audio-background-color);
 }
 /* BUG-110：sentenceAudioHighlight 跟随高亮里 <ruby> 元素用 class（不走 ::highlight，避免竖排双绘）。 */
-ruby.hoshi-sentence-audio-ruby-active {
-  color: var(--hoshi-sentence-audio-text-color) !important;
-  background-color: var(--hoshi-sentence-audio-background-color) !important;
+ruby.fushi-sentence-audio-ruby-active {
+  color: var(--fushi-sentence-audio-text-color) !important;
+  background-color: var(--fushi-sentence-audio-background-color) !important;
 }
 /* BUG-125：同一 <ruby> 同时带查词+音频两个 class 时（元素只渲染一个背景），用双类
    高于单类的特异性让查词不透明色胜出 → 重叠的振假名字也只显示查词层（查词优先）。 */
-ruby.hoshi-selection-ruby-active.hoshi-sentence-audio-ruby-active {
+ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
   background-color: $selectionOpaque !important;
   color: inherit !important;
 }
-::highlight(hoshi-search) {
+::highlight(fushi-search) {
   background-color: rgba(255, 200, 0, 0.45);
 }
-.hoshi-sentence-audio-cue {
+.fushi-sentence-audio-cue {
   background-color: transparent;
 }
 /* BUG-716：sentenceAudioHighlight 逐句跟随高亮回到整句 background-color 填充。narrow-lane
@@ -683,9 +683,9 @@ ruby.hoshi-selection-ruby-active.hoshi-sentence-audio-ruby-active {
    或 <ruby> 盒含注音轨时把条画偏（竖排下往基字左侧偏移、有无振假名两种宽度不一），
    用户实机确认有声书与查词的注音高亮都错位。整句填充按元素 class 只刷一遍背景，
    注音轨天然在 ruby 元素背景盒外（BUG-110/643 不回归），横竖排、有无振假名一致。 */
-.hoshi-sentence-audio-cue.hoshi-sentence-audio-active {
-  color: var(--hoshi-sentence-audio-text-color) !important;
-  background-color: var(--hoshi-sentence-audio-background-color) !important;
+.fushi-sentence-audio-cue.fushi-sentence-audio-active {
+  color: var(--fushi-sentence-audio-text-color) !important;
+  background-color: var(--fushi-sentence-audio-background-color) !important;
 }
 a {
   color: ${linkColor ?? colors.linkColor}$readerStylePriority;
@@ -701,7 +701,7 @@ ${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
   ///   抖动灰阶，且每次高亮移动都触发大面积刷新；下划线只刷新贴近文字的一条线。
   ///   查词选区=粗实线、有声书跟随=虚线、搜索命中=双线、收藏句=保留原下划线但
   ///   去掉色块（五色在灰阶屏上不可分，线本身就是收藏语义）。
-  /// - `--hoshi-reader-eink-mode: 1` 点亮 JS 侧既有的 isEInkMode() 分支
+  /// - `--fushi-reader-eink-mode: 1` 点亮 JS 侧既有的 isEInkMode() 分支
   ///   （reader_visual_novel_scripts / 连续模式滚动缓动短路）。
   /// - 关掉书籍自带的 transition/animation，慢刷新屏上任何补间都是残影。
   static String _einkOverrideCss({required bool einkDark}) {
@@ -709,16 +709,16 @@ ${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
     return '''
 /* ── E-ink 墨水屏模式覆盖（必须保持在生成 CSS 的最末尾） ── */
 :root {
-  --hoshi-reader-eink-mode: 1;
-  --hoshi-sel-handle: $fg;
-  --hoshi-sentence-audio-text-color: inherit;
-  --hoshi-sentence-audio-background-color: transparent;
+  --fushi-reader-eink-mode: 1;
+  --fushi-sel-handle: $fg;
+  --fushi-sentence-audio-text-color: inherit;
+  --fushi-sentence-audio-background-color: transparent;
 }
 * {
   transition: none !important;
   animation: none !important;
 }
-::highlight(hoshi-selection) {
+::highlight(fushi-selection) {
   background-color: transparent;
   color: inherit;
   text-decoration-line: underline;
@@ -726,7 +726,7 @@ ${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
   text-decoration-thickness: 0.14em;
   text-underline-offset: 0.18em;
 }
-ruby.hoshi-selection-ruby-active {
+ruby.fushi-selection-ruby-active {
   background-color: transparent !important;
   color: inherit !important;
   text-decoration-line: underline !important;
@@ -734,7 +734,7 @@ ruby.hoshi-selection-ruby-active {
   text-decoration-thickness: 0.14em !important;
   text-underline-offset: 0.18em !important;
 }
-.hoshi-dict-highlight {
+.fushi-dict-highlight {
   background-color: transparent !important;
   color: inherit !important;
   text-decoration-line: underline !important;
@@ -742,7 +742,7 @@ ruby.hoshi-selection-ruby-active {
   text-decoration-thickness: 0.14em !important;
   text-underline-offset: 0.18em !important;
 }
-::highlight(hoshi-sentence-audio) {
+::highlight(fushi-sentence-audio) {
   background-color: transparent;
   color: inherit;
   text-decoration-line: underline;
@@ -751,7 +751,7 @@ ruby.hoshi-selection-ruby-active {
   text-decoration-thickness: 0.10em;
   text-underline-offset: 0.18em;
 }
-ruby.hoshi-sentence-audio-ruby-active {
+ruby.fushi-sentence-audio-ruby-active {
   background-color: transparent !important;
   color: inherit !important;
   text-decoration-line: underline !important;
@@ -760,7 +760,7 @@ ruby.hoshi-sentence-audio-ruby-active {
   text-decoration-thickness: 0.10em !important;
   text-underline-offset: 0.18em !important;
 }
-.hoshi-sentence-audio-cue.hoshi-sentence-audio-active {
+.fushi-sentence-audio-cue.fushi-sentence-audio-active {
   background-color: transparent !important;
   color: inherit !important;
   text-decoration-line: underline !important;
@@ -770,21 +770,21 @@ ruby.hoshi-sentence-audio-ruby-active {
   text-underline-offset: 0.18em !important;
 }
 /* 查词+有声书重叠：查词的粗实线优先（双类特异性高于单类，语义同 BUG-125）。 */
-ruby.hoshi-selection-ruby-active.hoshi-sentence-audio-ruby-active {
+ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
   text-decoration-style: solid !important;
   text-decoration-thickness: 0.14em !important;
 }
-::highlight(hoshi-search) {
+::highlight(fushi-search) {
   background-color: transparent;
   text-decoration-line: underline;
   text-decoration-style: double;
   text-decoration-color: $fg;
 }
-::highlight(hoshi-hl-yellow), .hoshi-hl-yellow, ruby.hoshi-hl-yellow-ruby-active,
-::highlight(hoshi-hl-green), .hoshi-hl-green, ruby.hoshi-hl-green-ruby-active,
-::highlight(hoshi-hl-blue), .hoshi-hl-blue, ruby.hoshi-hl-blue-ruby-active,
-::highlight(hoshi-hl-pink), .hoshi-hl-pink, ruby.hoshi-hl-pink-ruby-active,
-::highlight(hoshi-hl-purple), .hoshi-hl-purple, ruby.hoshi-hl-purple-ruby-active {
+::highlight(fushi-hl-yellow), .fushi-hl-yellow, ruby.fushi-hl-yellow-ruby-active,
+::highlight(fushi-hl-green), .fushi-hl-green, ruby.fushi-hl-green-ruby-active,
+::highlight(fushi-hl-blue), .fushi-hl-blue, ruby.fushi-hl-blue-ruby-active,
+::highlight(fushi-hl-pink), .fushi-hl-pink, ruby.fushi-hl-pink-ruby-active,
+::highlight(fushi-hl-purple), .fushi-hl-purple, ruby.fushi-hl-purple-ruby-active {
   background-color: transparent;
   text-decoration-color: $fg;
 }
@@ -848,7 +848,7 @@ body {
      815、相邻列顶差 = 真实列周期 837 > 名义 pageStep 815 → ① 页间翻页累积漂移 ② 页内 column-fill
      在溢出列上沿 inline(竖直)轴逐列下移 = 整体往下/斜的平行四边形。容器高对齐纯 V 后列不再拉伸、
      used 高回 793、realPitch 回 815 = 名义 pageStep，两症同消(故同时 revert getScrollContext 的
-     pageStep+=O)。图片用独立 --hoshi-image-max-height(跟 body content-box 走)不受影响、不切图。 */
+     pageStep+=O)。图片用独立 --fushi-image-max-height(跟 body content-box 走)不受影响、不切图。 */
   height: var(--reader-viewport-height, 100vh) !important;
   column-width: $columnWidthCss !important;
   column-gap: $columnGapCss !important;
@@ -909,8 +909,8 @@ html::before {
   }
 
   /// TODO-909: VN (Visual-Novel) stage layout. The chapter is detached by the
-  /// VN JS and one Block/sentence screen is rendered onto `hoshi-vn-stage` >
-  /// `hoshi-vn-screen` > `hoshi-vn-content`. The stage fills the viewport; the
+  /// VN JS and one Block/sentence screen is rendered onto `fushi-vn-stage` >
+  /// `fushi-vn-screen` > `fushi-vn-content`. The stage fills the viewport; the
   /// screen reserves the reader chrome insets (top/bottom) and centres its
   /// content. No multicol columns — text flows naturally within one screen, so
   /// this does NOT reuse the paginated column geometry.
@@ -929,7 +929,7 @@ html::before {
     final String textOrientCss = a.textOrientCss;
     final double clampedMarginTop = a.clampedMarginTop;
     final double clampedMarginBottom = a.clampedMarginBottom;
-    // TODO-958：VN 居中需区分主轴。flex 容器 `.hoshi-vn-screen` 的物理主轴恒为水平
+    // TODO-958：VN 居中需区分主轴。flex 容器 `.fushi-vn-screen` 的物理主轴恒为水平
     // （flex-direction:row），但「沿主轴居中」的语义在两种写排下不同：竖排
     // vertical-rl 文字列沿水平主轴展开，水平居中即左右居中；横排文字行沿垂直交叉轴
     // 堆叠，主轴是水平的单行宽度。两轴都给 content 上界由 flex 居中即可对齐；此处用
@@ -961,7 +961,7 @@ body {
   $vertKerningCss
   $vpalCss
 }
-.hoshi-vn-stage {
+.fushi-vn-stage {
   position: fixed !important;
   inset: 0 !important;
   box-sizing: border-box !important;
@@ -970,7 +970,7 @@ body {
   padding-top: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
   padding-bottom: calc(${clampedMarginBottom}vh + var(--chrome-bottom-inset, 0px)) !important;
 }
-.hoshi-vn-screen {
+.fushi-vn-screen {
   box-sizing: border-box !important;
   width: 100% !important;
   height: 100% !important;
@@ -980,9 +980,9 @@ body {
   justify-content: center !important;
   overflow: hidden !important;
 }
-.hoshi-vn-content {
+.fushi-vn-content {
   $vnAxisComment
-  /* TODO-958：内容沿两轴**有上界但不强制占满**，再交给 `.hoshi-vn-screen` 的
+  /* TODO-958：内容沿两轴**有上界但不强制占满**，再交给 `.fushi-vn-screen` 的
      flex 居中（align-items + justify-content 都是 center）把单句台词放到屏幕正
      中。旧代码硬写 `width: 100%`（物理宽度）：竖排 vertical-rl 下文字列从右边缘
      向左排却占满全宽 → 主轴被填满 → justify-content:center 失效 → 台词贴最右。
@@ -993,7 +993,7 @@ body {
   max-height: 100% !important;
 }
 /* The reveal (M1) hides not-yet-typed text by collapsing the trailing span. */
-[data-hoshi-visual-novel-unrevealed] {
+[data-fushi-visual-novel-unrevealed] {
   visibility: hidden !important;
 }
 ''';
@@ -1032,7 +1032,7 @@ body {
     final String overflowRule =
         'html {\n  $hiddenOverflowAxis: hidden !important;\n}';
     final String viewportConstraintCss = isVertical
-        ? 'height: var(--hoshi-continuous-height, 100vh) !important;'
+        ? 'height: var(--fushi-continuous-height, 100vh) !important;'
         : '''
 width: 100vw !important;
   min-height: 100vh !important;''';

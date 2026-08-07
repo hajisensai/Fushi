@@ -43,7 +43,7 @@ void main() {
       );
       expect(
         TtsChannel.classifyAudioRef(
-            'https://hoshi-reader.example.workers.dev/?term=%E6%97%A5'),
+            'https://fushi-reader.example.workers.dev/?term=%E6%97%A5'),
         ResolvedAudioPlayback.url,
       );
     });

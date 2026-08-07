@@ -16,7 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 与 column-width 基准同量纲 → 列不再被拉伸、used 高回 793、realPitch 回 815 == 名义 pageStep。
 /// 故 getScrollContext **不再** pageStep+=O 补偿（容器对齐后 contentBox+gap 已等于真实列周期，
 /// 加 O 反过冲）。列宽 CSS 不动（防漏字不回退）；html 仍 V+O（滚动/图片虚高）；图片用独立
-/// --hoshi-image-max-height 跟 body content-box 走，容器改纯 V 不切图。
+/// --fushi-image-max-height 跟 body content-box 走，容器改纯 V 不切图。
 ///
 /// headless 测不出真实 multicol 渲染，故守源码结构：撤掉容器高度对齐 / 复活 pageStep+=O → 转红。
 void main() {
@@ -65,8 +65,8 @@ void main() {
     );
   });
 
-  test('图片高度用独立 --hoshi-image-max-height（与 body 容器高度解耦，改容器不切图）', () {
-    expect(css.contains('var(--hoshi-image-max-height'), isTrue,
+  test('图片高度用独立 --fushi-image-max-height（与 body 容器高度解耦，改容器不切图）', () {
+    expect(css.contains('var(--fushi-image-max-height'), isTrue,
         reason: '图片 max-height 走独立变量，跟 body content-box，容器改纯 V 不切图');
   });
 }

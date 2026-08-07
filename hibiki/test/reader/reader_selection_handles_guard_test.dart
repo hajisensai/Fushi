@@ -87,11 +87,11 @@ void main() {
       }
     });
 
-    test('两个手柄元素带 data-hoshi-sel-handle 标识（起/止）', () {
+    test('两个手柄元素带 data-fushi-sel-handle 标识（起/止）', () {
       final String body = _between(
           js, 'ensureSelectionHandles: function', '_wireHandle: function');
-      expect(body, contains("'hoshi-sel-handle-'"));
-      expect(body, contains("'data-hoshi-sel-handle'"));
+      expect(body, contains("'fushi-sel-handle-'"));
+      expect(body, contains("'data-fushi-sel-handle'"));
       expect(body, contains("make('start')"));
       expect(body, contains("make('end')"));
       // 手柄可触（pointer-events:auto）且吃掉浏览器滚动手势（touch-action:none）。
@@ -176,7 +176,7 @@ void main() {
     test('lpsAllowed 排除手柄元素（触手柄不 arm 新长按）', () {
       final String gestureJs =
           ReaderSelectionScripts.longPressDragGestureScript();
-      expect(gestureJs, contains('[data-hoshi-sel-handle]'),
+      expect(gestureJs, contains('[data-fushi-sel-handle]'),
           reason: '长按 arm 白名单必须排除起止手柄元素');
     });
   });
@@ -203,13 +203,13 @@ void main() {
   });
 
   group('BUG-765 续修：手柄外观（主题色 + 触控盒 + 内层圆钮，去刺眼橙）', () {
-    test('手柄用主题变量 var(--hoshi-sel-handle) 上色，不再硬编码刺眼橙 + 发光', () {
+    test('手柄用主题变量 var(--fushi-sel-handle) 上色，不再硬编码刺眼橙 + 发光', () {
       final String body = _between(
           js, 'ensureSelectionHandles: function', '_wireHandle: function');
-      expect(body, contains('var(--hoshi-sel-handle'),
+      expect(body, contains('var(--fushi-sel-handle'),
           reason: '圆钮颜色须走主题变量（reader CSS 从 linkColor 下发，随主题变）');
       // 内层实心圆钮存在（外层是透明触控盒）。
-      expect(body, contains("'data-hoshi-sel-ball'"), reason: '须有内层视觉圆钮元素');
+      expect(body, contains("'data-fushi-sel-ball'"), reason: '须有内层视觉圆钮元素');
       // 旧刺眼橙 + 双重发光 box-shadow 必须移除。
       expect(body, isNot(contains('rgba(255,138,0,0.98)')),
           reason: '旧刺眼橙背景必须移除');

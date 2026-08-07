@@ -105,10 +105,10 @@ void main() {
           reason: '竖排必须 ruby-position:over(振假名在右、留在基字高亮盒外)');
       expect(
           css.contains(
-              'background-color: var(--hoshi-sentence-audio-background-color) !important'),
+              'background-color: var(--fushi-sentence-audio-background-color) !important'),
           isTrue,
           reason: 'BUG-716：ruby 有声书高亮整句 background-color 填充');
-      expect(css.contains('--hoshi-highlight-lane-color'), isFalse,
+      expect(css.contains('--fushi-highlight-lane-color'), isFalse,
           reason: 'BUG-716：不再有 narrow-lane 窄条(避免 left 落点在宽盒/含注音轨时偏移)');
     });
 

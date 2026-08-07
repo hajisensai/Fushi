@@ -5,7 +5,7 @@
 // 可见像素再经 FushiAppUiScale 的 FittedBox 拉伸。原生 `title` 工具提示是 WebView2 生成的
 // 独立 top-level OS 窗口，按「父 HWND 原点 + WebView 内部未拉伸逻辑坐标」定位，与纹理真正
 // 合成的位置乖离 → 提示「飞」到窗口角落（截图：视频上查词弹窗 tune 按钮提示跑到画面右上角）。
-// 修复：改用 DOM 内自绘 `.hoshi-btn-tip`（随纹理正确合成），并移除原生 title。
+// 修复：改用 DOM 内自绘 `.fushi-btn-tip`（随纹理正确合成），并移除原生 title。
 //
 // 弹窗跑在 WebView 里没有 headless 渲染、原生 OS 提示窗更难自动复现，故用源码文本扫描锁住
 // 这些约束防回退。三镜像/content.css 完整性由 test/build/browser_extension_popup_parity_
@@ -34,20 +34,20 @@ void main() {
   }
 
   group('BUG-842 内联动作按钮不再依赖原生 title 提示', () {
-    test('存在 DOM 提示助手 setInlineButtonTip，且会移除 title 并挂 .hoshi-btn-tip', () {
+    test('存在 DOM 提示助手 setInlineButtonTip，且会移除 title 并挂 .fushi-btn-tip', () {
       expect(js, contains('function setInlineButtonTip('),
           reason: '需要 DOM 提示助手替代原生 title');
       expect(js, contains('function __fushiShowButtonTip('),
-          reason: '需要按屏幕坐标定位 .hoshi-btn-tip 的展示函数');
+          reason: '需要按屏幕坐标定位 .fushi-btn-tip 的展示函数');
       // 关键：助手必须显式去掉原生 title（否则离屏 WebView2 上仍会飞）。
       expect(
           RegExp(r"function setInlineButtonTip\([\s\S]*?removeAttribute\('title'\)")
               .hasMatch(js),
           isTrue,
           reason: 'setInlineButtonTip 必须 removeAttribute(title)');
-      // 提示元素用 .hoshi-btn-tip（DOM 内，随纹理合成）。
-      expect(js, contains("className: 'hoshi-btn-tip'"),
-          reason: 'DOM 提示元素类名为 hoshi-btn-tip');
+      // 提示元素用 .fushi-btn-tip（DOM 内，随纹理合成）。
+      expect(js, contains("className: 'fushi-btn-tip'"),
+          reason: 'DOM 提示元素类名为 fushi-btn-tip');
       // 监听只挂一次（refresh 反复调用不叠加）。
       expect(js, contains('dataset.fushiTipBound'),
           reason: '用 dataset 标志保证监听只挂一次');
@@ -80,24 +80,24 @@ void main() {
           reason: '保留 aria-label 以维持可访问性');
     });
 
-    test('popup.css 定义 .hoshi-btn-tip（与 .audio-hint 共用视觉）', () {
-      expect(css, contains('.hoshi-btn-tip'),
-          reason: 'popup.css 需定义 .hoshi-btn-tip 提示样式');
+    test('popup.css 定义 .fushi-btn-tip（与 .audio-hint 共用视觉）', () {
+      expect(css, contains('.fushi-btn-tip'),
+          reason: 'popup.css 需定义 .fushi-btn-tip 提示样式');
       // 与 .audio-hint 同一规则块（position:fixed + 主题化背景/边框），共用视觉。
       // BUG-1064 又给这条规则接了第三个共享者 `.inline-hint`（app 外页内提示气泡），
       // 故允许两者之间再插入其它选择器——守的是「共用同一条基础规则」这个意图，
       // 不是选择器列表的具体长度。
       expect(
-          RegExp(r'\.audio-hint,\s*\n(?:\s*\.[\w-]+,\s*\n)*\s*\.hoshi-btn-tip\s*\{')
+          RegExp(r'\.audio-hint,\s*\n(?:\s*\.[\w-]+,\s*\n)*\s*\.fushi-btn-tip\s*\{')
               .hasMatch(css),
           isTrue,
-          reason: '.hoshi-btn-tip 与 .audio-hint 共用基础规则');
+          reason: '.fushi-btn-tip 与 .audio-hint 共用基础规则');
       expect(
           RegExp(r'\.audio-hint\.visible,\s*\n(?:\s*\.[\w-]+\.visible,\s*\n)*'
-                  r'\s*\.hoshi-btn-tip\.visible')
+                  r'\s*\.fushi-btn-tip\.visible')
               .hasMatch(css),
           isTrue,
-          reason: '.hoshi-btn-tip.visible 与 .audio-hint.visible 共用淡入');
+          reason: '.fushi-btn-tip.visible 与 .audio-hint.visible 共用淡入');
     });
   });
 }

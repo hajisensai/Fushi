@@ -20,7 +20,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 ///
 /// 方向 B 根因修复（同时满足 1279 无双选区 + 1317 能选中）：**保留** user-select:none，
 /// 改把移动端长按拖选手势绑到 app 自绘选区机器 —— 长按 -> beginRangeSelection 定锚，
-/// 拖动 -> updateRangeSelection 扩展 CSS Custom Highlight `hoshi-selection`（绝不碰
+/// 拖动 -> updateRangeSelection 扩展 CSS Custom Highlight `fushi-selection`（绝不碰
 /// window.getSelection -> 永不产生原生双选区），松手 -> endRangeSelection ->
 /// fireTextSelected -> 复用现成 onTextSelected 查词/制卡管道。原地未拖动退回单击查词。
 ///

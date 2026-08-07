@@ -151,16 +151,16 @@ body.lyrics-blur .cue:hover,
 body.lyrics-blur .cue.revealed {
   filter: blur(0);
 }
-::highlight(hoshi-selection) {
+::highlight(fushi-selection) {
   background-color: $accentColor;
   color: $backgroundColor;
 }
-.hoshi-dict-highlight {
+.fushi-dict-highlight {
   background-color: $accentColor !important;
   color: inherit;
   border-radius: 2px;
 }
-.cue.current .hoshi-dict-highlight {
+.cue.current .fushi-dict-highlight {
   color: $backgroundColor;
 }
 .cue.favorited::before {
@@ -499,11 +499,11 @@ window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize,
       r.style.backgroundColor = textColor;
     } else if (r.selectorText === '.cue.current') {
       r.style.color = accentColor;
-    } else if (r.type === CSSRule.STYLE_RULE && r.selectorText === '.cue.current .hoshi-dict-highlight') {
+    } else if (r.type === CSSRule.STYLE_RULE && r.selectorText === '.cue.current .fushi-dict-highlight') {
       r.style.color = bgColor;
-    } else if (r.selectorText === '.hoshi-dict-highlight') {
+    } else if (r.selectorText === '.fushi-dict-highlight') {
       r.style.setProperty('background-color', accentColor, 'important');
-    } else if (r.selectorText === '::highlight(hoshi-selection)') {
+    } else if (r.selectorText === '::highlight(fushi-selection)') {
       r.style.setProperty('background-color', accentColor);
       r.style.color = bgColor;
     } else if (r.selectorText === '.lyrics-container') {

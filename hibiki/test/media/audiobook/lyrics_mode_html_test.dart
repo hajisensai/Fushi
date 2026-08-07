@@ -15,8 +15,8 @@ void main() {
         fontSize: 20,
       );
 
-      expect(html, contains('::highlight(hoshi-selection)'));
-      expect(html, contains('.hoshi-dict-highlight'));
+      expect(html, contains('::highlight(fushi-selection)'));
+      expect(html, contains('.fushi-dict-highlight'));
     });
 
     test('current cue tap uses selection without disabling native selection',

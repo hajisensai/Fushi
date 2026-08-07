@@ -638,7 +638,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     }
   }
 
-  // Clear the reader's app-drawn selection (hoshi-selection CSS Custom Highlight)
+  // Clear the reader's app-drawn selection (fushi-selection CSS Custom Highlight)
   // *and* the native selection with it: ReaderSelectionScripts.clearInvocation()
   // runs fushiSelection.clearSelection(), whose first statement is
   // `window.getSelection()?.removeAllRanges()` (reader_selection_scripts.dart
@@ -2135,7 +2135,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
                 length: _cachedSelectionRange!.length
               )
             : null);
-    debugPrint('[hoshi-hl] toggleFavorite: '
+    debugPrint('[fushi-hl] toggleFavorite: '
         'sentenceRange=${sentenceRange != null ? "(${sentenceRange.offset},${sentenceRange.length})" : "null"} '
         'cachedSentence=${_cachedSentenceRange != null} '
         'cachedSelection=${_cachedSelectionRange != null}');

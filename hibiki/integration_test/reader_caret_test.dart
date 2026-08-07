@@ -127,7 +127,7 @@ void main() {
       }
 
       Future<String> ringDisplay() async => (await eval(
-            "(function(){var r=document.getElementById('hoshi-caret-ring');"
+            "(function(){var r=document.getElementById('fushi-caret-ring');"
             "return r?(r.style.display||'block'):'none';})()",
           ))
               .toString();

@@ -244,7 +244,7 @@ void main() {
       // text falls back to the lookup pipeline.
       expect(js, contains("closest('a[href]')"));
       expect(js, contains('link.click()'));
-      expect(js, contains("closest('[data-hoshi-clk]')"));
+      expect(js, contains("closest('[data-fushi-clk]')"));
       expect(js, contains('control.click()'));
     });
 
@@ -256,17 +256,17 @@ void main() {
     });
 
     test('popup clickable detection is unified (control/onclick/pointer)', () {
-      // _markClickables tags every clickable element with data-hoshi-clk so
+      // _markClickables tags every clickable element with data-fushi-clk so
       // _isStop (text rejection) and _interactiveEls (element stops) agree on
       // what is a control — covering pointer-cursor collapsibles with no role.
       expect(js, contains('_markClickables:'));
-      expect(js, contains('data-hoshi-clk'));
+      expect(js, contains('data-fushi-clk'));
       expect(js, contains("cursor === 'pointer'"));
     });
 
     test('popup caret excludes disabled controls from element stops', () {
       // A disabled mine/action button is visible but not actionable. It must not
-      // receive data-hoshi-clk, otherwise the gamepad ring can land on a dead
+      // receive data-fushi-clk, otherwise the gamepad ring can land on a dead
       // control and A becomes a no-op.
       expect(js, contains(':disabled, [aria-disabled="true"]'));
     });
@@ -300,7 +300,7 @@ void main() {
     });
 
     test('draws a fixed focus ring without mutating the text DOM', () {
-      expect(js, contains('hoshi-caret-ring'));
+      expect(js, contains('fushi-caret-ring'));
       expect(js, contains('position:fixed'));
     });
 

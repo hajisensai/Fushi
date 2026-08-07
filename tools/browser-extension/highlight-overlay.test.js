@@ -5,12 +5,12 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 // TODO-1272 行为守卫：浏览器扩展「Shift 悬停查词」时被查词的高亮**非常容易消失**。
-// 根因：旧实现走 selection.js 的 DOM 包裹路径（把宿主页文本节点裹进 <span class="hoshi-dict-highlight">），
+// 根因：旧实现走 selection.js 的 DOM 包裹路径（把宿主页文本节点裹进 <span class="fushi-dict-highlight">），
 // 动态站点（React/Vue/视频字幕逐帧重渲染）的框架 diff / MutationObserver 会在下一帧把这个凭空多出的
 // span revert 掉，高亮闪一下就没。修复：content.js 改画「扩展自有的顶层 fixed 覆盖层」（不改宿主页 DOM），
 // 保持到弹窗关闭。本测试在受控 vm 里真加载 content.js，断言：
 //   1) Shift 悬停查词后，宿主页 body 上出现扩展的覆盖层高亮（#fushi-highlight-overlay），且**不**把
-//      宿主页文本节点裹进 hoshi-dict-highlight 包裹 span（宿主页 DOM 未被改动）。
+//      宿主页文本节点裹进 fushi-dict-highlight 包裹 span（宿主页 DOM 未被改动）。
 //   2) 宿主页事件（无 Shift 的 mousemove）不会撤掉高亮——高亮保持到弹窗关闭。
 //   3) 关闭弹窗（点弹窗外 mousedown）时覆盖层高亮被撤掉（跟随弹窗生命周期）。
 
@@ -160,8 +160,8 @@ test('Shift 悬停查词后画出扩展覆盖层高亮，且不改宿主页 DOM�
   assert.match(overlay.style.cssText, /pointer-events:none/, '覆盖层未穿透点击');
   assert.strictEqual(sandbox.__wrapperUsed, false,
     '仍走了 selection.js 的 DOM 包裹高亮路径（会被宿主页重绘冲掉）');
-  assert.strictEqual(findByClass(body, 'hoshi-dict-highlight'), null,
-    '宿主页文本被裹进 hoshi-dict-highlight span（动态站点会 revert 掉 → 高亮易消失）');
+  assert.strictEqual(findByClass(body, 'fushi-dict-highlight'), null,
+    '宿主页文本被裹进 fushi-dict-highlight span（动态站点会 revert 掉 → 高亮易消失）');
 });
 
 test('宿主页事件（无 Shift 的 mousemove）不撤高亮——高亮保持到弹窗关闭', () => {

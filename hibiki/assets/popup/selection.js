@@ -399,7 +399,7 @@ window.fushiSelection = {
                 range.setEnd(seg.node, seg.end);
                 return range;
             });
-            CSS.highlights.set('hoshi-selection', new Highlight(...highlights));
+            CSS.highlights.set('fushi-selection', new Highlight(...highlights));
         } else {
             this.clearHighlightWrappers();
             const range = document.createRange();
@@ -408,7 +408,7 @@ window.fushiSelection = {
                 range.setStart(seg.node, seg.start);
                 range.setEnd(seg.node, seg.end);
                 const wrapper = document.createElement('span');
-                wrapper.className = 'hoshi-dict-highlight';
+                wrapper.className = 'fushi-dict-highlight';
                 wrapper.appendChild(range.extractContents());
                 range.insertNode(wrapper);
                 this.highlightWrappers.push(wrapper);
@@ -435,7 +435,7 @@ window.fushiSelection = {
     clearSelection() {
         window.getSelection()?.removeAllRanges();
         if (window.__fushiCssHighlightsSupported) {
-            CSS.highlights.delete('hoshi-selection');
+            CSS.highlights.delete('fushi-selection');
         } else {
             this.clearHighlightWrappers();
         }

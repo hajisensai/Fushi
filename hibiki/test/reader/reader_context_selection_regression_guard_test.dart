@@ -68,12 +68,12 @@ void main() {
       '_wireHandle: function',
     );
     expect(body, contains('width:32px;height:32px'));
-    expect(body, contains("'data-hoshi-sel-ball'"));
-    expect(body, contains('var(--hoshi-sel-handle'));
+    expect(body, contains("'data-fushi-sel-ball'"));
+    expect(body, contains('var(--fushi-sel-handle'));
     expect(body, isNot(contains('rgba(255,138,0,0.98)')));
     final String cssSource = File(
       'lib/src/reader/reader_content_styles.dart',
     ).readAsStringSync();
-    expect(cssSource, contains('--hoshi-sel-handle:'));
+    expect(cssSource, contains('--fushi-sel-handle:'));
   });
 }

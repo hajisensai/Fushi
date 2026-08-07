@@ -207,26 +207,26 @@ void main() {
   });
 
   // TODO-1085 / BUG-513 症状②：VN 模式图片极小。共享 reader 图片 CSS
-  // (reader_content_styles.dart) 用 --hoshi-image-max-width/height 给 .block-img 一个
+  // (reader_content_styles.dart) 用 --fushi-image-max-width/height 给 .block-img 一个
   // 页面尺寸的居中盒；分页 shell 在 initialize/updatePageSize 设这些变量并把大图
   // 提升为 .block-img，VN shell 原来两件都没做 —— 变量落回 CSS 回退、img 又没
   // .block-img，只能命中 img:not(.block-img){max-width:100%}，100% 对着 shrink-to-fit
-  // 的 .hoshi-vn-content flex item 解析 -> 坍成几像素。根因修复：VN initialize 里
+  // 的 .fushi-vn-content flex item 解析 -> 坍成几像素。根因修复：VN initialize 里
   // applyImageMaxVars 设变量 + setupReaderImages 把大图提升为 .block-img。
   test(
-      'BUG-513②: VN shell sets --hoshi-image-max vars and promotes large '
+      'BUG-513②: VN shell sets --fushi-image-max vars and promotes large '
       'images to .block-img so they are not tiny', () {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
     // The image viewport vars are set (single source of truth ratio 0.95).
     expect(
-      shell.contains("setProperty('--hoshi-image-max-width'"),
+      shell.contains("setProperty('--fushi-image-max-width'"),
       isTrue,
-      reason: 'VN must set --hoshi-image-max-width so images size to viewport',
+      reason: 'VN must set --fushi-image-max-width so images size to viewport',
     );
     expect(
-      shell.contains("setProperty('--hoshi-image-max-height'"),
+      shell.contains("setProperty('--fushi-image-max-height'"),
       isTrue,
-      reason: 'VN must set --hoshi-image-max-height so images size to viewport',
+      reason: 'VN must set --fushi-image-max-height so images size to viewport',
     );
     expect(
       shell.contains('var ratio = 0.95;'),
@@ -314,7 +314,7 @@ void main() {
   // restoreToCharOffset 只由 boot 块之后的 host-compat shim IIFE 挂上，而 boot 的
   // `if (document.readyState==='complete')` 分支在 setup 脚本注入时同步调用
   // `window.fushiReader.restoreToCharOffset(<offset>)`。shim 尚未定义 → TypeError →
-  // 中断整个外层 setup IIFE → 尾部的 `#hoshi-cloak` 移除永不执行 → body 保持
+  // 中断整个外层 setup IIFE → 尾部的 `#fushi-cloak` 移除永不执行 → body 保持
   // visibility:hidden → 空白。根因修复：boot 块必须排在 shim IIFE 之后（restore*
   // 方法先定义再被调用），且 boot restore 套 try/catch，任何 restore 错误都不再
   // 连累 cloak 移除。headless WebView 跑不到真实 cloak 时序，这里钉死源码顺序契约。
@@ -336,7 +336,7 @@ void main() {
         reason:
             'restoreToCharOffset shim must be defined BEFORE the boot block '
             'calls it — otherwise a synchronous TypeError aborts the setup IIFE '
-            'and #hoshi-cloak is never removed (BUG-718 blank screen)');
+            'and #fushi-cloak is never removed (BUG-718 blank screen)');
     // boot restore must be wrapped so a future restore error cannot strand the
     // cloak / caret / gesture setup that follows it in the outer IIFE.
     final int loadListener =

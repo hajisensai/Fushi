@@ -104,7 +104,7 @@ String _themeVariablesJs({
       "document.documentElement.classList.toggle('eink', $eink);\n";
   return '''
       $classLine      $einkLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
-      document.documentElement.style.setProperty('--hoshi-primary-highlight', '${vars['--hoshi-primary-highlight']}');
+      document.documentElement.style.setProperty('--fushi-primary-highlight', '${vars['--fushi-primary-highlight']}');
       document.documentElement.style.setProperty('--text-color', '${vars['--text-color']}');
       document.documentElement.style.setProperty('--background-color', '${vars['--background-color']}');
       document.documentElement.style.setProperty('--hibiki-card-bg-rgb', '${vars['--hibiki-card-bg-rgb']}');
@@ -120,7 +120,7 @@ String _themeVariablesJs({
 }
 
 /// TODO-049 / TODO-895 D1: builds the JS that injects the user's DICTIONARY font
-/// as a `<style id="hoshi-dict-font">` element (system family names + inlined
+/// as a `<style id="fushi-dict-font">` element (system family names + inlined
 /// `data:` URL `@font-face` for imported files). Returns an empty string when no
 /// dictionary font is configured. Shared so the app-outside window applies the
 /// SAME font the in-app popup does.
@@ -181,10 +181,10 @@ String _fontStyleJsMemoValue = '';
     final String styleJson = jsonEncode(styleCss);
     js = '''
       (function(){
-        var el = document.getElementById('hoshi-dict-font');
+        var el = document.getElementById('fushi-dict-font');
         if (!el) {
           el = document.createElement('style');
-          el.id = 'hoshi-dict-font';
+          el.id = 'fushi-dict-font';
           document.head.appendChild(el);
         }
         el.textContent = $styleJson;

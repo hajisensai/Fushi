@@ -41,8 +41,8 @@ function imageSetupScript(legacy) {
       else { maxW=Math.max(1,Math.floor((multicol?usedColW:w)*${RATIO})); maxH=Math.max(1,h); }
     }
     var root=document.documentElement;
-    root.style.setProperty('--hoshi-image-max-width', maxW+'px');
-    root.style.setProperty('--hoshi-image-max-height', maxH+'px');
+    root.style.setProperty('--fushi-image-max-width', maxW+'px');
+    root.style.setProperty('--fushi-image-max-height', maxH+'px');
   })();`;
 }
 
@@ -59,7 +59,7 @@ html{width:${VW}px;height:${VH}px;overflow:hidden;}
 body{box-sizing:border-box;font-size:${FONT}px;line-height:1.8;width:${VW}px;height:${VH}px;writing-mode:${mode} !important;
   column-width:${colWCss} !important;${columnsCss}column-fill:auto !important;column-gap:${GAP}px !important;
   padding-top:${MT}px !important;padding-right:${MR}px !important;padding-bottom:${MB + FONT}px !important;padding-left:${ML}px !important;overflow:hidden;}
-img.block-img{max-width:var(--hoshi-image-max-width) !important;max-height:var(--hoshi-image-max-height) !important;
+img.block-img{max-width:var(--fushi-image-max-width) !important;max-height:var(--fushi-image-max-height) !important;
   width:auto !important;height:auto !important;display:block !important;margin:auto !important;
   break-inside:avoid !important;object-fit:contain !important;}
 .block-img-wrapper{display:flex !important;justify-content:center !important;align-items:center !important;break-inside:avoid !important;}

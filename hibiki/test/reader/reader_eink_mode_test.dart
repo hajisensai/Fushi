@@ -9,7 +9,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 
 /// 墨水屏模式（eink_mode）守卫：
 ///  1. 阅读器 CSS 生成器的 eink 分支——纯黑白正文、线式高亮、关过渡、
-///     `--hoshi-reader-eink-mode: 1`（JS 侧 isEInkMode() 与连续模式跟随滚动
+///     `--fushi-reader-eink-mode: 1`（JS 侧 isEInkMode() 与连续模式跟随滚动
 ///     瞬时化都读它）；关掉时逐项不出现（零行为变化）。
 ///  2. buildEinkColorScheme——纯黑白 ColorScheme（手工构造，不走 fromSeed），
 ///     surfaceTint/shadow 透明（e-ink 不能有 elevation 灰阶）。
@@ -30,7 +30,7 @@ void main() {
         settings: settings,
         einkMode: true,
       );
-      expect(css, contains('--hoshi-reader-eink-mode: 1'));
+      expect(css, contains('--fushi-reader-eink-mode: 1'));
       expect(css, contains('background: #fff !important'));
       expect(css, contains('color: #000 !important'));
       // 关过渡：书籍自带动画一并压掉。
@@ -51,7 +51,7 @@ void main() {
       );
       expect(css, contains('background: #000 !important'));
       expect(css, contains('color: #fff !important'));
-      expect(css, contains('--hoshi-reader-eink-mode: 1'));
+      expect(css, contains('--fushi-reader-eink-mode: 1'));
     });
 
     test('einkMode=true overrides themed colors even for preset themes',
@@ -70,10 +70,10 @@ void main() {
     test('einkMode=false (default) leaves normal output untouched', () async {
       final ReaderSettings settings = await _defaultSettings();
       final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, isNot(contains('--hoshi-reader-eink-mode')));
+      expect(css, isNot(contains('--fushi-reader-eink-mode')));
       expect(css, isNot(contains('text-decoration-style: dashed')));
       // sasayaki 仍是色块填充（背景变量非 transparent）。
-      expect(css, contains('--hoshi-sentence-audio-background-color: rgba'));
+      expect(css, contains('--fushi-sentence-audio-background-color: rgba'));
     });
   });
 
