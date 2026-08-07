@@ -148,7 +148,7 @@ void main() {
     expect(launched, hasLength(1));
     expect(launched.single.queryParameters['fldExpression'], '猫');
     expect(launched.single.queryParameters['fldSentence'], '黒い猫です。');
-    expect(launched.single.queryParameters['tags'], 'custom hibiki book');
+    expect(launched.single.queryParameters['tags'], 'custom fushi book');
     expect(launched.single.queryParameters, isNot(contains('dupes')));
   });
 
