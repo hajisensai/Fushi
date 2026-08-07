@@ -15,7 +15,7 @@ void main() {
       'engine': readerHibikiEngineSourceUncompacted(),
     });
     final Directory temp = Directory.systemTemp.createTempSync(
-      'hibiki-reader-production-js-',
+      'fushi-reader-production-js-',
     );
     final File payloadFile = File('${temp.path}/payload.json')
       ..writeAsStringSync(payload);

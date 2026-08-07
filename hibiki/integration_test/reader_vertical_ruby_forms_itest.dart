@@ -234,7 +234,7 @@ void main() {
     // (reader style LAST in <head>). No book CSS: these DOM forms ship in real
     // books with no or harmless styles, so a broken form here is a reader bug.
     final String readerCss = ReaderContentStyles.css(settings: settings);
-    await injectStyle('hibiki-reader-style', readerCss);
+    await injectStyle('fushi-reader-style', readerCss);
     final Map<String, dynamic> current = await probe('READER CSS (current)');
 
     // Phase 2: book CSS present + reader CSS last (real cascade order),
@@ -247,7 +247,7 @@ void main() {
     // Re-append reader style so it stays last (mirrors production order).
     await controller.evaluateJavascript(source: '''
       (function () {
-        var s = document.getElementById('hibiki-reader-style');
+        var s = document.getElementById('fushi-reader-style');
         if (s) document.head.appendChild(s);
       })();
     ''');

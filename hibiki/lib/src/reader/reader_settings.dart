@@ -891,7 +891,7 @@ class ReaderSettings {
 
 class ReaderCustomFontCss {
   static const String kReaderResourceHost = 'fushi.local';
-  static const String kReaderResourceScheme = 'hibiki-reader';
+  static const String kReaderResourceScheme = 'fushi-reader';
 
   static ({String fontFamily, String fontFaces}) build(
     Iterable<Map<String, dynamic>> fonts, {

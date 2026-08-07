@@ -143,8 +143,8 @@ void main() {
         String css, bool vertical) async {
       await controller.evaluateJavascript(source: '''
         (function(){
-          var s=document.getElementById('hibiki-reader-style');
-          if(!s){s=document.createElement('style');s.id='hibiki-reader-style';
+          var s=document.getElementById('fushi-reader-style');
+          if(!s){s=document.createElement('style');s.id='fushi-reader-style';
             document.head.appendChild(s);}
           s.textContent = ${jsonEncode(css)};
           var de=document.documentElement.style;
