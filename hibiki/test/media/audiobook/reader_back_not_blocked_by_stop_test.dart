@@ -111,7 +111,7 @@ void main() {
           bookKey: 'b1',
           audiobook: ab('b1'),
           title: 'Book b1',
-          mediaIdentifier: 'hoshi://book/b1',
+          mediaIdentifier: 'fushi://book/b1',
         ),
         audioFiles: <File>[makeFile('hibiki-back-stop-b1.mp3')],
         prefs: const SessionPrefs(

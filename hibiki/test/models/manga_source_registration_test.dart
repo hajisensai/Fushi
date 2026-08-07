@@ -59,7 +59,7 @@ void main() {
     appModel.populateMediaSources();
 
     final MediaItem mangaItem = MediaItem(
-      // 身份统一 hoshi://book/<bookKey>（无 manga:// 特例）。
+      // 身份统一 fushi://book/<bookKey>（无 manga:// 特例）。
       mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor('テスト漫画'),
       title: 'テスト漫画',
       mediaTypeIdentifier: ReaderMediaType.instance.uniqueKey,

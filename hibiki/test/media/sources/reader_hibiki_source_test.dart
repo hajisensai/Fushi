@@ -87,7 +87,7 @@ void main() {
     });
 
     test('非外部 scheme / 无法解析 → 不外开', () {
-      expect(ReaderHibikiSource.isExternalUrl('hoshi://book/foo'), isFalse);
+      expect(ReaderHibikiSource.isExternalUrl('fushi://book/foo'), isFalse);
       expect(ReaderHibikiSource.isExternalUrl('about:blank'), isFalse);
       expect(ReaderHibikiSource.isExternalUrl('://broken'), isFalse);
     });
@@ -864,9 +864,9 @@ void main() {
       expect(ReaderHibikiSource.parseBookKey('srt_abc'), isNull);
       expect(ReaderHibikiSource.parseBookKey('about:blank'), isNull);
       expect(ReaderHibikiSource.parseBookKey(''), isNull);
-      expect(ReaderHibikiSource.parseBookKey('hoshi://book/'), isNull,
+      expect(ReaderHibikiSource.parseBookKey('fushi://book/'), isNull,
           reason: 'empty remainder is not a valid key');
-      expect(ReaderHibikiSource.parseBookKey('hoshi://video/x'), isNull);
+      expect(ReaderHibikiSource.parseBookKey('fushi://video/x'), isNull);
     });
 
     test(

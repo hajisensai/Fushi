@@ -44,10 +44,23 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   ),
   _ForbiddenPattern(
     // W3：阅读器虚拟拦截域已是 fushi.local（纯运行时符号，每次页面加载现拼，
-    // 无持久化形态；`hoshi://book/` mediaIdentifier 是另一符号、DB 持久化契约，
-    // 刻意不在此模式内）。
+    // 无持久化形态）。
     name: 'hoshi.local',
     regex: RegExp(r'hoshi\.local', caseSensitive: false),
+  ),
+  _ForbiddenPattern(
+    // W2-3：mediaIdentifier scheme 已是 fushi://book/ / fushi://srtbook/，
+    // 存量行由 v73 迁移改写、override 封面 hash 文件名由启动清扫归位。
+    name: 'hoshi://',
+    regex: RegExp('hoshi://'),
+    allowed: <String, String>{
+      'packages/fushi_core/lib/src/database/database.dart':
+          'v16 阶梯（legacy uid / identifier 重键）与 v73 前缀改写步的旧值'
+              '输入：读旧库做一次性改写的迁移代码。',
+      'lib/src/media/override_thumbnail_migration.dart':
+          '按新 identifier 反推旧形态 hash 文件名的清扫输入（hoshi:// 前缀'
+              '换回构造旧 key）。',
+    },
   ),
   _ForbiddenPattern(
     // P6-3：setTtu*/getTtu* 访问器已换 setReader*/getReader*。
@@ -63,6 +76,9 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
       'packages/fushi_core/lib/src/database/database.dart':
           'v16 阶梯 _kLegacyUidPrefix（reader_ttu/hoshi://book/）与 v70 改写步的'
               '旧前缀输入：读旧库做一次性改写的迁移代码，旧字面量是必要输入。',
+      'lib/src/media/override_thumbnail_migration.dart':
+          'BUG-1317 前 legacy 封面文件名烧入的历史源键（reader_ttu 当年的'
+              '字面量永远不变），清扫反推旧 hash 名的必要输入。',
     },
   ),
   _ForbiddenPattern(
@@ -158,17 +174,10 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   _ForbiddenPattern(
     // W5：JS 运行时 camel 符号族已是 fushi*/Fushi*（window.fushiSelection、
     // fushiCaret、__fushi* 内部符号、[FushiVN]/[FushiInit] log tag、陈旧
-    // HoshiDicts/HoshiLookupResult 引擎类引用等）。解析冻结持久化格式
-    // `hoshi://book/<key>` 的 Dart 私有名命名跟随格式本名，见白名单。
+    // HoshiDicts/HoshiLookupResult 引擎类引用等）。W2-3 后 hoshi://book/
+    // 解析器（_fushiBookKeyPattern / _parseFushiBookKey）也已随格式改名。
     name: 'hoshi*-camel 运行时符号族',
     regex: RegExp('[Hh]oshi[A-Z]'),
-    allowed: <String, String>{
-      'lib/src/sync/app_model_library_host_service.dart':
-          '_hoshiBookKeyPattern：解析冻结 mediaIdentifier 格式 hoshi://book/'
-              '<key>（DB 持久化契约，行改写归 W2），命名跟随格式本名。',
-      'lib/src/utils/misc/shelf_ordering.dart':
-          '_parseHoshiBookKey：同上，解析冻结 hoshi://book/ 键格式。',
-    },
   ),
   _ForbiddenPattern(
     // W5：注入 CSS 变量/类/data-属性/Highlight registry 名已是

@@ -93,11 +93,11 @@ void main() {
       await seed('reading');
       await seed('untouched');
       await db.upsertMediaItem(MediaItemsCompanion.insert(
-        mediaIdentifier: 'hoshi://book/reading',
+        mediaIdentifier: 'fushi://book/reading',
         title: 'reading',
         mediaTypeIdentifier: 'reader',
         mediaSourceIdentifier: 'hibiki',
-        uniqueKey: 'reader/hibiki/hoshi://book/reading',
+        uniqueKey: 'reader/hibiki/fushi://book/reading',
         position: 760,
         duration: 1000,
         canDelete: true,

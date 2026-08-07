@@ -75,13 +75,13 @@ void main() {
       expect(
         ProfileKeys.isExcludedPref(
             'src:reader_fushi:override_title://reader_fushi/'
-            'reader_fushi/hoshi://book/我的书'),
+            'reader_fushi/fushi://book/我的书'),
         isTrue,
       );
       expect(
         ProfileKeys.isExcludedPref(
             'src:reader_fushi:override_title://reader_fushi/'
-            'reader_fushi/hoshi://srtbook/srtbook_123'),
+            'reader_fushi/fushi://srtbook/srtbook_123'),
         isTrue,
       );
     });

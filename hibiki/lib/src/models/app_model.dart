@@ -23,6 +23,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/export_directory.dart';
@@ -2203,6 +2204,21 @@ class AppModel with ChangeNotifier {
           }(),
         ]),
       );
+
+      // W2-3：override 封面文件名的 hoshi://→fushi:// 前缀换代一次性清扫
+      // （文件名是 identifier 的 hashCode，v73 改写库内 identifier 后旧文件
+      // 不再命中）。pref 门控幂等；清扫不干净（rename 失败）不落标记，下次
+      // 启动重试。放在 thumbnails 目录建好、DB 迁移已跑完之后。
+      if (!prefsRepo.containsKey(kOverrideThumbnailPrefixMigratedPrefKey)) {
+        final bool clean = await migrateOverrideThumbnailPrefixes(
+          db: _database,
+          thumbnailsDirectory: thumbnailsDirectory,
+        );
+        if (clean) {
+          await prefsRepo.setPref(
+              kOverrideThumbnailPrefixMigratedPrefKey, true);
+        }
+      }
 
       // TODO-1260：内部对每本词典的资源目录做 exists() 探测（数据根派生），同样叠超时。
       ErrorLogService.instance

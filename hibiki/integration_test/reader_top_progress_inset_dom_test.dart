@@ -91,7 +91,7 @@ void main() {
       final String bookKey = await _seedTestBook(tester);
       await _openBooksTab(tester, driver);
 
-      // 书架条目按 media identifier（hoshi://book/<id>）取键，不是裸 row id。
+      // 书架条目按 media identifier（fushi://book/<id>）取键，不是裸 row id。
       final String seededKey =
           'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
       final Finder seededEntry = find.byKey(ValueKey<String>(seededKey));

@@ -164,7 +164,7 @@ void main() {
     expect(
       find.widgetWithText(FilledButton, t.dialog_read),
       findsOneWidget,
-      reason: 'audiobook 句的打开目的地是 reader（bookKey 共享 hoshi://book/ 身份）',
+      reason: 'audiobook 句的打开目的地是 reader（bookKey 共享 fushi://book/ 身份）',
     );
     // 点击 barrier 关弹窗（showAppDialog 默认 barrierDismissible）。
     await tester.tapAt(const Offset(5, 5));

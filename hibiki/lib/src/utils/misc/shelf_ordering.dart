@@ -64,7 +64,7 @@ ShelfEntryRef? shelfSelectionToEntry(
         if (uid.isEmpty) return null;
         return ShelfEntryRef(mediaType: MediaKind.srt, entryKey: uid);
       }
-      final String? bookKey = _parseHoshiBookKey(selectionKey);
+      final String? bookKey = _parseFushiBookKey(selectionKey);
       if (bookKey == null || bookKey.isEmpty) return null;
       return ShelfEntryRef(mediaType: MediaKind.epub, entryKey: bookKey);
   }
@@ -152,8 +152,8 @@ String _longestCommonPrefix(List<String> items) {
 /// `Uri.pathSegments` 解析会把这些反解码（`%3F`→`?`），得到的键与存库主键不符，
 /// 导致这类书排序错位、且与 ReaderHibikiSource.parseBookKey 的行为分叉。裸切片对含
 /// `%` 与不含 `%` 的键都无损，且与旧结果对不含 `%` 的键完全一致。
-String? _parseHoshiBookKey(String identifier) {
-  const String prefix = 'hoshi://book/';
+String? _parseFushiBookKey(String identifier) {
+  const String prefix = 'fushi://book/';
   if (!identifier.startsWith(prefix)) return null;
   final String bookKey = identifier.substring(prefix.length);
   if (bookKey.isEmpty) return null;

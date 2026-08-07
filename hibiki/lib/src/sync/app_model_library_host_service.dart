@@ -383,7 +383,7 @@ class AppModelLibraryHostService
     }).toList();
   }
 
-  static final RegExp _hoshiBookKeyPattern = RegExp(r'^hoshi://book/(.+)$');
+  static final RegExp _fushiBookKeyPattern = RegExp(r'^fushi://book/(.+)$');
 
   /// 批查全库书籍阅读进度「bookKey → (percent 0..100, 最近阅读毫秒戳)」。
   ///
@@ -400,7 +400,7 @@ class AppModelLibraryHostService
         <String, ({int percent, int updatedAtMs})>{};
     for (final MediaItemRow m in await _db.getAllMediaItems()) {
       final RegExpMatch? match =
-          _hoshiBookKeyPattern.firstMatch(m.mediaIdentifier);
+          _fushiBookKeyPattern.firstMatch(m.mediaIdentifier);
       if (match == null) continue;
       final String bookKey = match.group(1)!;
       if (m.duration <= 0 || m.position <= 0) continue;

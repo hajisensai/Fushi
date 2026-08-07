@@ -247,7 +247,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   ///
   /// BUG-658 / TODO-1344: extract the RAW remainder after the fixed prefix —
   /// this must be the exact inverse of [mediaIdentifierFor], which embeds the
-  /// key with plain string interpolation (`'hoshi://book/$bookKey'`, no
+  /// key with plain string interpolation (`'fushi://book/$bookKey'`, no
   /// encoding). A sanitized bookKey can itself contain literal percent-escapes:
   /// [sanitizeTtuFilename] maps every `/?<>\\:|%"*` in the title to its `%XX`
   /// form, so a title like `Do Androids Dream of Electric Sheep?` or
@@ -262,7 +262,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// that contain no `%` (the common case), so nothing that worked before
   /// changes. Mirrors the HBK-AUDIT-127 encode/decode-symmetry fix for
   /// [epubUrl]/[fontUrl].
-  static const String _bookIdentifierPrefix = 'hoshi://book/';
+  static const String _bookIdentifierPrefix = 'fushi://book/';
 
   static String? parseBookKey(String identifier) {
     if (!identifier.startsWith(_bookIdentifierPrefix)) return null;
@@ -278,7 +278,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// save silently no-opped (parseBookKey returned null). Their identity is
   /// the stable `SrtBook.uid` under a distinct prefix that can never collide
   /// with a sanitized EPUB bookKey identifier.
-  static const String _srtBookIdentifierPrefix = 'hoshi://srtbook/';
+  static const String _srtBookIdentifierPrefix = 'fushi://srtbook/';
 
   static String mediaIdentifierForSrtUid(String uid) =>
       '$_srtBookIdentifierPrefix$uid';

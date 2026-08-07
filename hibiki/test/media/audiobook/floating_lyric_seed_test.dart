@@ -151,7 +151,7 @@ void main() {
         bookKey: 'a',
         audiobook: ab('a'),
         title: 'Book a',
-        mediaIdentifier: 'hoshi://book/a',
+        mediaIdentifier: 'fushi://book/a',
       ),
       audioFiles: <File>[makeFile(audioName)],
       prefs: SessionPrefs(

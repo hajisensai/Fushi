@@ -390,9 +390,13 @@ void main() {
           "ORDER BY id",
         )
         .get();
+    // v16 重键出 hoshi://book/<key>，v73 再把 media_identifier 前缀改写成
+    // fushi://book/<key> —— 断言的是阶梯终值。
     expect(mi.map((r) => r.read<String>('media_identifier')).toSet(),
-        <String>{'hoshi://book/Book A', 'hoshi://book/Book A (2)'});
-    expect(mi.first.read<String>('unique_key'), 'hoshi://book/Book A');
+        <String>{'fushi://book/Book A', 'fushi://book/Book A (2)'});
+    // v16 写的是**裸** unique_key（无源键段）；v73 对复合形态用带 `/` 左锚的
+    // REPLACE、对裸形态用前缀锚定改写，两条互补——终值两列一致同为新前缀。
+    expect(mi.first.read<String>('unique_key'), 'fushi://book/Book A');
 
     // ── reading_statistics title aligned to sanitized key + merged ────
     // 'Solo*Book' → 'Solo~ttu-star~Book' (untouched). The two 2026-01-02 rows

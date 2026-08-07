@@ -147,21 +147,21 @@ void main() {
         reason: '① 命名空间 + shortKey 双段改写');
     expect(prefs['src:reader_fushi:font_catalog'], '{"version":1}',
         reason: '② 只换命名空间');
-    expect(prefs['src:reader_fushi:override_title://hoshi://book/我的书'], 's:新名',
-        reason: '③ 规范 override 键只换命名空间段（hoshi:// 段归后续迁移步）');
+    expect(prefs['src:reader_fushi:override_title://fushi://book/我的书'], 's:新名',
+        reason: '③ 规范 override 键：v70 只换命名空间段，hoshi:// 段由 v73 接力改写');
     expect(
         prefs[
-            'src:reader_fushi:override_title://reader_fushi/reader_fushi/hoshi://book/我的书'],
+            'src:reader_fushi:override_title://reader_fushi/reader_fushi/fushi://book/我的书'],
         's:旧名',
-        reason: '④ legacy override 键内嵌双源键段一并改写');
+        reason: '④ legacy override 键内嵌双源键段一并改写（URI 段是 v73 终值）');
     expect(prefs['src:reader_fushi:view_mode'], 's:paginated',
         reason: '⑤ 新旧并存时 OR REPLACE 保留改写结果（旧行值胜出）');
     expect(prefs.keys.where((k) => k.contains('view_mode')).length, 1,
         reason: '⑤ 冲突行只留一条');
-    // 无关行逐字节不动。
+    // v70 无关行不动（命名空间段/源键段保留）；URI 段由 v73 接力改写。
     expect(
         prefs[
-            'src:reader_pdf:override_title://reader_pdf/reader_pdf/hoshi://book/x'],
+            'src:reader_pdf:override_title://reader_pdf/reader_pdf/fushi://book/x'],
         's:pdf名');
     expect(prefs['src:reader_manga:some_key'], 's:v');
     expect(prefs['audiobook_pos_MyBook'], '1000');
@@ -206,10 +206,10 @@ void main() {
             'unique_key FROM media_items ORDER BY id')
         .get();
     expect(mi[0].read<String>('media_source_identifier'), 'reader_fushi');
-    expect(mi[0].read<String>('unique_key'), 'reader_fushi/hoshi://book/A');
-    expect(mi[0].read<String>('media_identifier'), 'hoshi://book/A',
-        reason: 'mediaIdentifier 的 hoshi:// 段归后续迁移步，本步不动');
+    expect(mi[0].read<String>('unique_key'), 'reader_fushi/fushi://book/A');
+    expect(mi[0].read<String>('media_identifier'), 'fushi://book/A',
+        reason: 'v70 只换源键段；hoshi:// 段由 v73 接力改写为 fushi://');
     expect(mi[1].read<String>('media_source_identifier'), 'reader_pdf');
-    expect(mi[1].read<String>('unique_key'), 'reader_pdf/hoshi://book/B');
+    expect(mi[1].read<String>('unique_key'), 'reader_pdf/fushi://book/B');
   });
 }

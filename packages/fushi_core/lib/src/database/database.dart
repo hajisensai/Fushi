@@ -458,7 +458,7 @@ class FushiDatabase extends _$FushiDatabase {
   FushiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 72;
+  int get schemaVersion => 73;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1624,6 +1624,61 @@ class FushiDatabase extends _$FushiDatabase {
               if (!await _tableExists(table)) continue;
               await customStatement('DELETE FROM $table '
                   "WHERE key = 'google_drive_hoshi_compat'");
+            }
+          }
+          if (from < 73) {
+            // v73（Fushi 终局清算 W2-3）：mediaIdentifier scheme 前缀
+            // `hoshi://book/` / `hoshi://srtbook/` → `fushi://book/` /
+            // `fushi://srtbook/` 的存量行改写。落库位（W2 盘点，tables.dart
+            // 全表核对）：
+            //  1. media_items.media_identifier —— 裸前缀形态；
+            //  2. media_items.unique_key —— `<源键>/<mediaId>` 复合形态：只换
+            //     URI 段（REPLACE 带 `/` 左锚），**保留源键段**（v16 的
+            //     audiobook uid 迁移丢过源前缀，别抄那个骨架）；
+            //  3. preferences / profile_settings 的 override_title 键——规范
+            //     `override_title://<mediaId>` 与 BUG-1317 前的 legacy
+            //     `override_title://<src>/<src>/<mediaId>` 两形态，URI 段一并
+            //     改写（UPDATE OR REPLACE 防半合成库新旧并存撞主键）。
+            // 其余表存裸 bookKey / SrtBook.uid，无 scheme 前缀，刻意不动。
+            // override 封面的 hashCode 派生**文件名**在磁盘不在库，由 app 启动
+            // 期 override_thumbnail_migration.dart 一次性清扫。
+            if (await _tableExists('media_items')) {
+              for (final List<String> pair in <List<String>>[
+                <String>['hoshi://book/', 'fushi://book/'],
+                <String>['hoshi://srtbook/', 'fushi://srtbook/'],
+              ]) {
+                await _rewriteTextPrefix(
+                    table: 'media_items',
+                    column: 'media_identifier',
+                    from: pair[0],
+                    to: pair[1]);
+                await customStatement('UPDATE OR REPLACE media_items '
+                    "SET unique_key = REPLACE(unique_key, '/${pair[0]}', "
+                    "'/${pair[1]}') "
+                    "WHERE unique_key LIKE '%/${pair[0]}%'");
+                // v16 阶梯给 v15 时代旧库写出的 unique_key 是**裸**
+                // `hoshi://book/<key>`（无源键段）——上面带 `/` 左锚的 REPLACE
+                // 够不着它，会留下 media_identifier 已新、unique_key 还旧的
+                // 两列不一致。前缀锚定改写补齐（复合形态左起是源键、不会被
+                // 此前缀命中，两条互不重叠）。
+                await _rewriteTextPrefix(
+                    table: 'media_items',
+                    column: 'unique_key',
+                    from: pair[0],
+                    to: pair[1]);
+              }
+            }
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await customStatement('UPDATE OR REPLACE $table SET key = '
+                  "REPLACE(REPLACE(key, 'hoshi://book/', 'fushi://book/'), "
+                  "'hoshi://srtbook/', 'fushi://srtbook/') "
+                  "WHERE key LIKE '%override\\_title://%' ESCAPE '\\' "
+                  "AND (key LIKE '%hoshi://book/%' "
+                  "OR key LIKE '%hoshi://srtbook/%')");
             }
           }
         },
