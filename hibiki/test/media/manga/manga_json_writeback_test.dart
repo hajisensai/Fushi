@@ -276,7 +276,7 @@ void main() {
   // 调用点必须靠源码扫描抓——这条守卫与文件头的调用点清单是同一份真相。
   group('锁覆盖守卫：书根 manga.json 的每个写/删都在锁内', () {
     const List<String> consumers = <String>[
-      'lib/src/media/manga/reader/manga_hibiki_page.dart',
+      'lib/src/media/manga/reader/manga_fushi_page.dart',
       'lib/src/media/manga/manga_ocr_wizard_dialog.dart',
     ];
 
@@ -300,7 +300,7 @@ void main() {
 
     test('在线章节失效时删 manga.json 也在锁内', () {
       final String body =
-          File('lib/src/media/manga/reader/manga_hibiki_page.dart')
+          File('lib/src/media/manga/reader/manga_fushi_page.dart')
               .readAsStringSync();
       final int start =
           body.indexOf('Future<void> _invalidateOnlineChapterPayload(');
@@ -319,7 +319,7 @@ void main() {
       // 合法的 mangaPayloadToJson——写的是 `manga_ocr_out/` 里的 OCR 中间产物，
       // 与书根 manga.json 不同路径，不在这把锁的语义范围内。
       final String body =
-          File('lib/src/media/manga/reader/manga_hibiki_page.dart')
+          File('lib/src/media/manga/reader/manga_fushi_page.dart')
               .readAsStringSync();
       expect(
         body,

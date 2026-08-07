@@ -9,7 +9,7 @@ import 'package:fushi_core/fushi_core.dart';
 ///
 /// 漫画作为「第三种书」复用 EpubBooks/书架/进度/删除管线，正确性依赖数处接线不能被
 /// 后续重构悄悄改断——一旦断掉，漫画行会带 EPUB 源标识被打开、进 EPUB 阅读器的解压/
-/// 解析路径 → 崩溃或白屏。MangaHibikiPage 过重无法在纯 widget test 拉起完整链路
+/// 解析路径 → 崩溃或白屏。MangaFushiPage 过重无法在纯 widget test 拉起完整链路
 /// （WebView + 词典引擎），故守卫落在最强可落地的源码语料层。
 void main() {
   String read(String relativePath) {
@@ -18,21 +18,21 @@ void main() {
     return file.readAsStringSync();
   }
 
-  test('MangaHibikiSource.kUniqueKey 是独立键 reader_manga，与 EPUB/PDF 源互异', () {
-    expect(MangaHibikiSource.kUniqueKey, 'reader_manga');
-    expect(MangaHibikiSource.instance.uniqueKey, 'reader_manga');
-    expect(MangaHibikiSource.instance.uniqueKey,
+  test('MangaFushiSource.kUniqueKey 是独立键 reader_manga，与 EPUB/PDF 源互异', () {
+    expect(MangaFushiSource.kUniqueKey, 'reader_manga');
+    expect(MangaFushiSource.instance.uniqueKey, 'reader_manga');
+    expect(MangaFushiSource.instance.uniqueKey,
         isNot(ReaderFushiSource.instance.uniqueKey));
-    expect(MangaHibikiSource.instance.uniqueKey,
+    expect(MangaFushiSource.instance.uniqueKey,
         isNot(ReaderPdfSource.instance.uniqueKey));
   });
 
-  test('书架列书按 format 路由：format==manga 的行带 MangaHibikiSource 源标识', () {
+  test('书架列书按 format 路由：format==manga 的行带 MangaFushiSource 源标识', () {
     // BUG-1316：路由派生已收敛成公开的具名函数，故判据从「源码里有那串三元」升级
     // 成**直接调它**——行为断言比语料锚点强，也不会被等价改写绕过。
     expect(ReaderFushiSource.mediaSourceKeyFor(BookFormat.manga),
-        MangaHibikiSource.kUniqueKey,
-        reason: '漫画行 mediaSourceIdentifier 应取 MangaHibikiSource.kUniqueKey');
+        MangaFushiSource.kUniqueKey,
+        reason: '漫画行 mediaSourceIdentifier 应取 MangaFushiSource.kUniqueKey');
     // PDF 分流不能被漫画分流破坏（向后兼容守卫）。
     expect(ReaderFushiSource.mediaSourceKeyFor(BookFormat.pdf),
         ReaderPdfSource.kUniqueKey);
@@ -48,25 +48,25 @@ void main() {
             '两条各写各的，漫画/PDF 就会在其中一条上永远用错阅读器');
   });
 
-  test('AppModel 注册 MangaHibikiSource.instance（否则打开漫画崩于 map 空断言）', () {
+  test('AppModel 注册 MangaFushiSource.instance（否则打开漫画崩于 map 空断言）', () {
     final String src = read('lib/src/models/app_model.dart');
-    expect(src.contains('MangaHibikiSource.instance'), isTrue,
-        reason: 'populateMediaSources 必须注册 MangaHibikiSource，'
+    expect(src.contains('MangaFushiSource.instance'), isTrue,
+        reason: 'populateMediaSources 必须注册 MangaFushiSource，'
             'item.getMediaSource 才能解析到它');
   });
 
-  test('media.dart 导出 manga_hibiki_source（书架/路由处可见）', () {
+  test('media.dart 导出 manga_fushi_source（书架/路由处可见）', () {
     final String src = read('lib/media.dart');
-    expect(src.contains('manga_hibiki_source.dart'), isTrue);
+    expect(src.contains('manga_fushi_source.dart'), isTrue);
   });
 
   // ── 身份：fushi://book/<bookKey>，无 manga:// 特例 ──────────────────
 
   test('漫画身份统一 fushi://book/<bookKey>，源与页面都不引入 manga:// 标识', () {
     final String source =
-        read('lib/src/media/sources/manga_hibiki_source.dart');
+        read('lib/src/media/sources/manga_fushi_source.dart');
     final String page =
-        read('lib/src/media/manga/reader/manga_hibiki_page.dart');
+        read('lib/src/media/manga/reader/manga_fushi_page.dart');
     // 打开时从 fushi://book/ 标识解析 bookKey（与 PDF 完全同构），关书自动同步
     // （triggerAutoSyncAfterClose 的 fushi://book/ 前缀识别）天然工作。
     expect(source.contains('ReaderFushiSource.parseBookKey'), isTrue,
@@ -79,7 +79,7 @@ void main() {
 
   test('页码进度落 ReaderPositions.sectionIndex，且显式传 charOffset', () {
     final String src =
-        read('lib/src/media/manga/reader/manga_hibiki_page.dart');
+        read('lib/src/media/manga/reader/manga_fushi_page.dart');
     expect(src.contains('ReaderPositionRepository('), isTrue);
     expect(src.contains('sectionIndex: page'), isTrue,
         reason: '漫画用 sectionIndex 存 0-based 页码');
@@ -101,7 +101,7 @@ void main() {
 
   test('漫画阅读统计：字数走 OCR 记账、页数走独立列，两个量纲不交叉', () {
     final String src =
-        read('lib/src/media/manga/reader/manga_hibiki_page.dart');
+        read('lib/src/media/manga/reader/manga_fushi_page.dart');
     // 旧守卫钉的是字面量 `charsRead: 0`，理由写「漫画无字数」+「页数塞进 charsRead
     // 会污染字数口径」。前半句在 schema v60 起**不再成立**：统计口径已按产品决策纳入
     // 漫画，漫画的字来自 mokuro / 内置 OCR 的实义字符（口径与 EPUB 同源的
@@ -134,7 +134,7 @@ void main() {
 
   test('阅读模式读写 EpubBooks.mangaReadingMode（null=自动判定）', () {
     final String src =
-        read('lib/src/media/manga/reader/manga_hibiki_page.dart');
+        read('lib/src/media/manga/reader/manga_fushi_page.dart');
     expect(src.contains('mangaReadingMode'), isTrue, reason: '打开时读列值、切换时写列值');
     expect(src.contains('detectReadingMode'), isTrue,
         reason: 'null 覆盖必须回落自动判定');
@@ -144,10 +144,10 @@ void main() {
 
   test('漫画页接在共享查词链路上（BaseSourcePage + buildDictionary + 弹窗入口）', () {
     final String src =
-        read('lib/src/media/manga/reader/manga_hibiki_page.dart');
-    expect(src.contains('class MangaHibikiPage extends BaseSourcePage'), isTrue,
+        read('lib/src/media/manga/reader/manga_fushi_page.dart');
+    expect(src.contains('class MangaFushiPage extends BaseSourcePage'), isTrue,
         reason: '漫画页必须是 BaseSourcePage 才能复用查词弹窗链路');
-    expect(src.contains('BaseSourcePageState<MangaHibikiPage>'), isTrue);
+    expect(src.contains('BaseSourcePageState<MangaFushiPage>'), isTrue);
     expect(src.contains('buildDictionary()'), isTrue,
         reason: '弹窗层必须在 widget 树里，否则查词结果不渲染');
     expect(src.contains('searchDictionaryResult('), isTrue);
@@ -157,7 +157,7 @@ void main() {
 
   test('制卡走 onMineFromPopup + AnkiMiningContext，卡图=当前页图文件路径', () {
     final String src =
-        read('lib/src/media/manga/reader/manga_hibiki_page.dart');
+        read('lib/src/media/manga/reader/manga_fushi_page.dart');
     expect(src.contains('onMineFromPopup'), isTrue, reason: '制卡入口');
     expect(src.contains('AnkiMiningContext('), isTrue);
     expect(src.contains('coverPath'), isTrue,
@@ -170,7 +170,7 @@ void main() {
 
   test('卡图更新在全部推进路径被调用（加载/翻页/滚动/切模式）', () {
     final String src =
-        read('lib/src/media/manga/reader/manga_hibiki_page.dart');
+        read('lib/src/media/manga/reader/manga_fushi_page.dart');
     // 至少 4 处调用点：_loadInitialWindow、_onMangaTurn（窗口内分支）、
     // _onMangaScroll（spread 变化）、_toggleReadingMode。
     final int calls = '_updateCurrentPageImagePath()'.allMatches(src).length;

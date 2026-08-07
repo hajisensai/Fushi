@@ -524,27 +524,27 @@ void main() {
       expect(row!.author, '夏目漱石');
     });
 
-    test('MangaHibikiSource 也支持作者编辑并委托写入 epubBooks.author（BUG-1083）', () async {
+    test('MangaFushiSource 也支持作者编辑并委托写入 epubBooks.author（BUG-1083）', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
       // 漫画是 format=='manga' 的 EpubBooks 行；作者列与 EPUB 共用。
       await db.insertEpubBook(bookWithAuthor('MangaVol1'));
 
-      // 补齐的缺口：此前 MangaHibikiSource 沿用基类默认 false，漫画编辑无作者字段。
-      expect(MangaHibikiSource.instance.supportsAuthorEdit, isTrue);
+      // 补齐的缺口：此前 MangaFushiSource 沿用基类默认 false，漫画编辑无作者字段。
+      expect(MangaFushiSource.instance.supportsAuthorEdit, isTrue);
 
       final item = MediaItem(
         mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('MangaVol1'),
         title: 'MangaVol1',
-        mediaTypeIdentifier: MangaHibikiSource.instance.mediaType.uniqueKey,
-        mediaSourceIdentifier: MangaHibikiSource.instance.uniqueKey,
+        mediaTypeIdentifier: MangaFushiSource.instance.mediaType.uniqueKey,
+        mediaSourceIdentifier: MangaFushiSource.instance.uniqueKey,
         position: 0,
         duration: 1,
         canDelete: false,
         canEdit: true,
       );
-      await MangaHibikiSource.instance
+      await MangaFushiSource.instance
           .setAuthorFromMediaItem(item: item, author: '藤本タツキ');
 
       final row = await db.getEpubBook('MangaVol1');

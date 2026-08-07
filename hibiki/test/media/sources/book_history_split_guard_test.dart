@@ -50,7 +50,7 @@ void main() {
         '书的「最近阅读」现算自 ReaderPositions，从不需要 media_items。';
     expect(ReaderFushiSource.instance.implementsHistory, isFalse, reason: why);
     expect(ReaderPdfSource.instance.implementsHistory, isFalse, reason: why);
-    expect(MangaHibikiSource.instance.implementsHistory, isFalse, reason: why);
+    expect(MangaFushiSource.instance.implementsHistory, isFalse, reason: why);
   });
 
   test('分裂机制是真的：同一本书三种 format 派生出三个互异的 MediaItem.uniqueKey', () {
@@ -102,7 +102,7 @@ void main() {
     }
     expect(
       found,
-      <String>{'ReaderFushiSource', 'ReaderPdfSource', 'MangaHibikiSource'},
+      <String>{'ReaderFushiSource', 'ReaderPdfSource', 'MangaFushiSource'},
       reason: '发现了未登记的书族媒体源：${found.toList()..sort()}。'
           '书族源共用同一个 EpubBooks 身份、且会被「书 ↔ 漫画」转化在它们之间'
           '切换，所以每一个都必须 implementsHistory:false 并在本文件第一条断言里'

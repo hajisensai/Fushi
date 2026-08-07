@@ -114,7 +114,7 @@ List<MediaItem> filterShelfEntriesByMangaSplit(
 }) =>
     books
         .where((MediaItem item) =>
-            (item.mediaSourceIdentifier == MangaHibikiSource.kUniqueKey) ==
+            (item.mediaSourceIdentifier == MangaFushiSource.kUniqueKey) ==
             mangaOnly)
         .toList();
 
@@ -653,7 +653,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // 漫画库和书架是同一页面的两种壳，但导入的是两种载体，故按钮指向两个不同
       // 的对话框——不再是「同一个框换个 label」。
       if (_mangaOnly)
-        MangaHibikiSource.instance.buildMangaImportButton(
+        MangaFushiSource.instance.buildMangaImportButton(
           context: context,
           ref: ref,
           appModel: appModel,
@@ -2346,7 +2346,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// `EpubBooks.format` 经 `ReaderFushiSource.mediaSourceKeyFor` 派生，卡上已有，
   /// 不必为了画一行菜单再去读一次库。
   bool _isMangaItem(MediaItem item) =>
-      item.mediaSourceIdentifier == MangaHibikiSource.kUniqueKey;
+      item.mediaSourceIdentifier == MangaFushiSource.kUniqueKey;
 
   /// 单卡「书 ↔ 漫画」转化：重建目标格式的磁盘产物，再把 `EpubBooks` 行指过去。
   ///

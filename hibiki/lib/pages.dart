@@ -21,7 +21,7 @@ export 'src/pages/implementations/text_segmentation_dialog_page.dart';
 export 'src/pages/implementations/reader_fushi_page.dart';
 export 'src/pages/implementations/reader_fushi_history_page.dart';
 export 'src/pages/implementations/reader_pdf_page.dart';
-export 'src/media/manga/reader/manga_hibiki_page.dart';
+export 'src/media/manga/reader/manga_fushi_page.dart';
 export 'src/media/manga/manga_library_page.dart';
 export 'src/pages/implementations/hibiki_settings_page.dart';
 export 'src/pages/implementations/custom_theme_page.dart';

@@ -1401,7 +1401,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // **纯时长行**——页面 dispose 时最后一段若无新字数，这段时长直接蒸发；歌词/听书
     // 模式全程不计字（`_refreshProgress` 在 lyricsMode 早退）⇒ 时长 100% 丢，统计页
     // 呈现「2213 字 / 0 分钟 / 1619597 字·时⁻¹」。PDF（reader_pdf_page.dart）与漫画
-    // （manga_hibiki_page.dart）本就允许 `charsRead: 0` 的纯时长行，只有 EPUB 口径
+    // （manga_fushi_page.dart）本就允许 `charsRead: 0` 的纯时长行，只有 EPUB 口径
     // 分叉——这里对齐：无书才拒；无新字数时只要有已确认时长（>=1s，与 PDF 同口径的
     // 生命周期抖动阈值；不足保留累计器留到下次 flush，不丢时长）也落库。
     // 挂机膨胀不由「必须有字数」间接挡：时长增量在 [_readingTimeTracker]（BUG-892

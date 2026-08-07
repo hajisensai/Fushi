@@ -96,7 +96,7 @@ enum MangaReaderInputAction {
 
   /// 「返回上一级」在本页没有更内层可退时的落点：退出漫画（走 maybePop，页面自己的
   /// [PopScope] 闸门照跑）。与 [dismissDictionary] 是同一个键（默认 Esc）的两级——
-  /// 弹窗可见先关弹窗，没弹窗才退出，判据在 [MangaHibikiPage.inputActionForShortcut]。
+  /// 弹窗可见先关弹窗，没弹窗才退出，判据在 [MangaFushiPage.inputActionForShortcut]。
   backOrExit,
 }
 
@@ -298,8 +298,8 @@ Future<int?> showMangaPageJumpDialog(
 /// `onTextSelected` Dart handler；全工程唯一的 pointerup 选词监听内嵌在
 /// [mangaWindowDocument]（调 `fushiSelection.selectFromPosition(node, 0, 40, x, y)`，
 /// 第三参 maxLength 漏传会让扫描 gate 恒假、查词全程哑火），本页绝不再注册第二个。
-class MangaHibikiPage extends BaseSourcePage {
-  const MangaHibikiPage({
+class MangaFushiPage extends BaseSourcePage {
+  const MangaFushiPage({
     super.key,
     required super.item,
     required this.bookKey,
@@ -576,10 +576,10 @@ class MangaHibikiPage extends BaseSourcePage {
   }
 
   @override
-  BaseSourcePageState<MangaHibikiPage> createState() => _MangaHibikiPageState();
+  BaseSourcePageState<MangaFushiPage> createState() => _MangaFushiPageState();
 }
 
-class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
+class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     with WidgetsBindingObserver {
   InAppWebViewController? _controller;
   EpubBookRow? _bookRow;
@@ -742,7 +742,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     if (!mounted) return false;
     switch (cause) {
       // 与阅读器**相反**：阅读器在词典弹窗可见时让位（弹窗自持焦点，BUG-136），
-      // 漫画不能让——[MangaHibikiPage.keyInputAction] 规定弹窗可见时左右键仍要
+      // 漫画不能让——[MangaFushiPage.keyInputAction] 规定弹窗可见时左右键仍要
       // 「关弹窗并翻页」、Escape 要关弹窗，这些键必须抵达 [_handleReaderKey]。
       // 词典弹窗是纯原生 WebView、没有 Flutter 焦点节点，不主动收回就全部落空。
       // 这也正是本页覆写 [capturesDictionaryPopupNavigationKeys] 的同一诉求。
@@ -872,12 +872,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   /// 落一次进度（sectionIndex 仍是 spread 首页页码，语义不变）。
   Future<void> _rebuildSpreadsPreservingPage(MokuroPayload payload) async {
     final int currentPage =
-        MangaHibikiPage.firstPageOfSpread(_spreads, _currentSpread);
+        MangaFushiPage.firstPageOfSpread(_spreads, _currentSpread);
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, _mode);
     setState(() {
       _spreads = spreads;
-      _currentSpread = MangaHibikiPage.spreadIndexForPage(spreads, currentPage);
-      _currentPage = MangaHibikiPage.firstPageOfSpread(spreads, _currentSpread);
+      _currentSpread = MangaFushiPage.spreadIndexForPage(spreads, currentPage);
+      _currentPage = MangaFushiPage.firstPageOfSpread(spreads, _currentSpread);
     });
     _pageNotifier.value = _currentPage;
     await _loadInitialWindow();
@@ -939,7 +939,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
 
     final String jsonStr = await jsonFile.readAsString();
     final MokuroPayload payload =
-        await MangaHibikiPage.parseMangaJsonOffUi(jsonStr);
+        await MangaFushiPage.parseMangaJsonOffUi(jsonStr);
     if (!mounted) return;
 
     _spreadPreference = MangaSpreadPreferenceKey.fromKey(
@@ -956,13 +956,13 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
 
     // 阅读模式：用户覆盖优先，null 走自动判定（页图长宽比中位数）。
     final MangaReadingMode mode =
-        MangaHibikiPage.modeOverrideFromDb(row.mangaReadingMode) ??
+        MangaFushiPage.modeOverrideFromDb(row.mangaReadingMode) ??
             detectReadingMode(payload);
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, mode);
     final List<String> relativePagePaths = payload.images
         .map(
           (MokuroImage image) =>
-              MangaHibikiPage.mangaImageRelativePath(image.url),
+              MangaFushiPage.mangaImageRelativePath(image.url),
         )
         .toList(growable: false);
     final MangaReaderSession localPageSession = await LocalMangaPageProvider(
@@ -982,7 +982,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     try {
       saved = await ReaderPositionRepository(db).findByBookKey(widget.bookKey);
     } catch (e, stack) {
-      ErrorLogService.instance.log('MangaHibikiPage.restore', e, stack);
+      ErrorLogService.instance.log('MangaFushiPage.restore', e, stack);
     }
     if (!mounted) return;
     if (saved != null &&
@@ -991,7 +991,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       restoredPage = saved.sectionIndex;
       if (mode == MangaReadingMode.webtoon) {
         restoredFraction =
-            MangaHibikiPage.charOffsetToWebtoonFraction(saved.charOffset);
+            MangaFushiPage.charOffsetToWebtoonFraction(saved.charOffset);
       }
     }
 
@@ -1000,7 +1000,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     _sessionStartTime = DateTime.now();
 
     final int restoredSpread =
-        MangaHibikiPage.restoreSpreadFromProgress(spreads, restoredPage);
+        MangaFushiPage.restoreSpreadFromProgress(spreads, restoredPage);
     final MangaReaderSession? previousLocalPageSession = _pageSession;
     _pageSession = localPageSession;
     _localPageIndices = <String, int>{
@@ -1017,7 +1017,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       _mode = mode;
       _spreads = spreads;
       _currentSpread = restoredSpread;
-      _currentPage = MangaHibikiPage.firstPageOfSpread(spreads, restoredSpread);
+      _currentPage = MangaFushiPage.firstPageOfSpread(spreads, restoredSpread);
       _currentFraction = restoredFraction;
       _lastSavedPage = saved != null ? restoredPage : -1;
       _lastSavedFraction = saved != null ? restoredFraction : -1;
@@ -1088,7 +1088,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       );
     } on Object catch (error, stack) {
       ErrorLogService.instance
-          .log('MangaHibikiPage.loadOnlineShelf', error, stack);
+          .log('MangaFushiPage.loadOnlineShelf', error, stack);
       if (mounted) {
         setState(() {
           _bookRow = row;
@@ -1128,7 +1128,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     bool rewriteMangaJson = !await mangaJson.exists();
     if (await mangaJson.exists()) {
       try {
-        final MokuroPayload stored = await MangaHibikiPage.parseMangaJsonOffUi(
+        final MokuroPayload stored = await MangaFushiPage.parseMangaJsonOffUi(
           await mangaJson.readAsString(),
         );
         if (stored.images.length == input.pages.length) {
@@ -1210,7 +1210,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
             format: 'manga',
           );
     final MangaReadingMode mode =
-        MangaHibikiPage.modeOverrideFromDb(row.mangaReadingMode) ??
+        MangaFushiPage.modeOverrideFromDb(row.mangaReadingMode) ??
             detectReadingMode(payload);
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, mode);
 
@@ -1223,14 +1223,14 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
             .findByBookKey(widget.bookKey);
       } on Object catch (error, stack) {
         ErrorLogService.instance
-            .log('MangaHibikiPage.restoreOnline', error, stack);
+            .log('MangaFushiPage.restoreOnline', error, stack);
       }
       if (saved != null &&
           saved.sectionIndex >= 0 &&
           saved.sectionIndex < payload.images.length) {
         restoredPage = saved.sectionIndex;
         if (mode == MangaReadingMode.webtoon) {
-          restoredFraction = MangaHibikiPage.charOffsetToWebtoonFraction(
+          restoredFraction = MangaFushiPage.charOffsetToWebtoonFraction(
             saved.charOffset,
           );
         }
@@ -1254,7 +1254,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     if (previousSession != null) unawaited(previousSession.close());
 
     final int restoredSpread =
-        MangaHibikiPage.restoreSpreadFromProgress(spreads, restoredPage);
+        MangaFushiPage.restoreSpreadFromProgress(spreads, restoredPage);
     setState(() {
       _bookRow = row;
       _imagesDir = imagesDirectory.path;
@@ -1262,7 +1262,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       _mode = mode;
       _spreads = spreads;
       _currentSpread = restoredSpread;
-      _currentPage = MangaHibikiPage.firstPageOfSpread(spreads, restoredSpread);
+      _currentPage = MangaFushiPage.firstPageOfSpread(spreads, restoredSpread);
       _currentFraction = restoredFraction;
       _lastSavedPage = saved != null ? restoredPage : -1;
       _lastSavedFraction = saved != null ? restoredFraction : -1;
@@ -1350,7 +1350,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       await session.prefetchAround(pageIndex);
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
-        'MangaHibikiPage.onlinePrefetch',
+        'MangaFushiPage.onlinePrefetch',
         error,
         stack,
       );
@@ -1425,7 +1425,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       });
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
-        'MangaHibikiPage.persistOnlineGeometry',
+        'MangaFushiPage.persistOnlineGeometry',
         error,
         stack,
       );
@@ -1480,7 +1480,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       }
     } catch (error, stack) {
       ErrorLogService.instance.log(
-        'MangaHibikiPage.recoverIncrementalOcrCache',
+        'MangaFushiPage.recoverIncrementalOcrCache',
         error,
         stack,
       );
@@ -1547,7 +1547,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   }
 
   Future<WebResourceResponse?> _interceptRequest(WebUri url) async {
-    if (url.host != MangaHibikiPage.kMangaHost) return null;
+    if (url.host != MangaFushiPage.kMangaHost) return null;
     final String path = url.path;
     if (!path.startsWith('/img/')) return _notFound('unknown path: $path');
     final String relative = path.substring('/img/'.length);
@@ -1572,7 +1572,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         );
       } on MihonRuntimeException catch (error, stackTrace) {
         ErrorLogService.instance.log(
-          'MangaHibikiPage.page',
+          'MangaFushiPage.page',
           error,
           stackTrace,
         );
@@ -1589,7 +1589,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       return _notFound('imagesDir not ready: ${url.path}');
     }
     final String? filePath =
-        MangaHibikiPage.resolveMangaResource(imagesDir, relative);
+        MangaFushiPage.resolveMangaResource(imagesDir, relative);
     if (filePath == null) {
       // 区分穿越（403）与缺文件（404）：规范化 join 后越界即穿越企图。
       final String canonicalRoot = p.canonicalize(imagesDir);
@@ -1646,7 +1646,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     final MokuroPayload payload = _payload!;
     final bool isWebtoon = _mode == MangaReadingMode.webtoon;
 
-    final List<int> keptSpreads = MangaHibikiPage.mangaWindowRange(
+    final List<int> keptSpreads = MangaFushiPage.mangaWindowRange(
       spreadCount: _spreads.length,
       current: _currentSpread,
       // Continuous mode keeps the immediately adjacent pages queryable while
@@ -1666,9 +1666,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       if (page < 0 || page >= payload.images.length) continue;
       final MokuroImage image = payload.images[page];
       pages.add(image);
-      imgSrcs.add(MangaHibikiPage.mangaImageUrl(image.url));
+      imgSrcs.add(MangaFushiPage.mangaImageUrl(image.url));
       final int spreadIndex =
-          MangaHibikiPage.spreadIndexForPage(_spreads, page);
+          MangaFushiPage.spreadIndexForPage(_spreads, page);
       pageSpreadIndices.add(spreadIndex);
       pagesPerSpread.add(spreadIndex >= 0 && spreadIndex < _spreads.length
           ? _spreads[spreadIndex].pageIndices.length
@@ -1711,7 +1711,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       );
       await _controller!.loadData(
         data: doc,
-        baseUrl: WebUri('https://${MangaHibikiPage.kMangaHost}/'),
+        baseUrl: WebUri('https://${MangaFushiPage.kMangaHost}/'),
         mimeType: 'text/html',
         encoding: 'utf-8',
       );
@@ -1796,7 +1796,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         spreadIndex >= _spreads.length) {
       return;
     }
-    final Set<int> spreadIndices = MangaHibikiPage.mangaWindowRange(
+    final Set<int> spreadIndices = MangaFushiPage.mangaWindowRange(
       spreadCount: _spreads.length,
       current: spreadIndex,
       radius: _mode == MangaReadingMode.webtoon ? 1 : _kWindowRadius,
@@ -2024,7 +2024,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           boundAction: bound,
         ) ??
         bound;
-    return MangaHibikiPage.inputActionForShortcut(
+    return MangaFushiPage.inputActionForShortcut(
       action: corrected,
       horizontalArrow: key == LogicalKeyboardKey.arrowLeft ||
           key == LogicalKeyboardKey.arrowRight,
@@ -2059,7 +2059,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   void onDismissBarrierPointerSignal(PointerSignalEvent event) {
     if (event is! PointerScrollEvent) return;
     final MangaReaderInputAction? action =
-        MangaHibikiPage.wheelInputAction(event.scrollDelta);
+        MangaFushiPage.wheelInputAction(event.scrollDelta);
     if (action == null) return;
     clearDictionaryResult();
     final String turn = action == MangaReaderInputAction.next ? 'next' : 'prev';
@@ -2104,14 +2104,14 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       return;
     }
     final int page =
-        MangaHibikiPage.firstPageOfSpread(_spreads, _currentSpread);
+        MangaFushiPage.firstPageOfSpread(_spreads, _currentSpread);
     if (page < 0 || page >= payload.images.length) {
       _currentPageImagePath = null;
       return;
     }
-    _currentPageImagePath = MangaHibikiPage.resolveMangaResource(
+    _currentPageImagePath = MangaFushiPage.resolveMangaResource(
       imagesDir,
-      MangaHibikiPage.mangaImageRelativePath(payload.images[page].url),
+      MangaFushiPage.mangaImageRelativePath(payload.images[page].url),
     );
     if (_currentPageImagePath == null && _onlineChapter != null) {
       unawaited(_resolveOnlineCurrentPageFile(page));
@@ -2125,7 +2125,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       final File? file = await session.localFile(page);
       if (!mounted ||
           page !=
-              MangaHibikiPage.firstPageOfSpread(
+              MangaFushiPage.firstPageOfSpread(
                 _spreads,
                 _currentSpread,
               )) {
@@ -2134,7 +2134,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       _currentPageImagePath = file?.path;
     } on Object catch (error, stack) {
       ErrorLogService.instance
-          .log('MangaHibikiPage.onlineCardImage', error, stack);
+          .log('MangaFushiPage.onlineCardImage', error, stack);
     }
   }
 
@@ -2188,7 +2188,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         (_) {},
         onError: (Object error, StackTrace stack) {
           ErrorLogService.instance.log(
-            'MangaHibikiPage.wholeVolumeOcr',
+            'MangaFushiPage.wholeVolumeOcr',
             error,
             stack,
           );
@@ -2208,7 +2208,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       );
     } catch (error, stack) {
       ErrorLogService.instance.log(
-        'MangaHibikiPage.wholeVolumeOcr',
+        'MangaFushiPage.wholeVolumeOcr',
         error,
         stack,
       );
@@ -2357,7 +2357,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       setState(() => _rescanModelReady = status.recognizerReady);
     } on Object catch (error, stack) {
       ErrorLogService.instance
-          .log('MangaHibikiPage.rescanStatus', error, stack);
+          .log('MangaFushiPage.rescanStatus', error, stack);
     }
   }
 
@@ -2430,9 +2430,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     );
     // JS 侧已按视口 8px 过滤；这里按页图像素二次防御（畸形 payload）。
     if (box.width < 8 || box.height < 8) return;
-    final String? imagePath = MangaHibikiPage.resolveMangaResource(
+    final String? imagePath = MangaFushiPage.resolveMangaResource(
       imagesDir,
-      MangaHibikiPage.mangaImageRelativePath(payload.images[pageIndex].url),
+      MangaFushiPage.mangaImageRelativePath(payload.images[pageIndex].url),
     );
     if (imagePath == null) {
       FushiToast.show(
@@ -2459,7 +2459,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         vertical: result.vertical,
       );
     } on Object catch (error, stack) {
-      ErrorLogService.instance.log('MangaHibikiPage.rescan', error, stack);
+      ErrorLogService.instance.log('MangaFushiPage.rescan', error, stack);
       if (mounted) {
         FushiToast.show(
           msg: t.manga_rescan_failed,
@@ -2560,7 +2560,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         severity: ToastSeverity.success,
       );
     } on Object catch (error, stack) {
-      ErrorLogService.instance.log('MangaHibikiPage.rescanWrite', error, stack);
+      ErrorLogService.instance.log('MangaFushiPage.rescanWrite', error, stack);
       if (mounted) {
         FushiToast.show(
           msg: t.manga_rescan_writeback_failed,
@@ -2591,7 +2591,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           }
           await processMangaSelection(data);
         } catch (e, stack) {
-          ErrorLogService.instance.log('MangaHibiki.onTextSelected', e, stack);
+          ErrorLogService.instance.log('MangaFushi.onTextSelected', e, stack);
           debugPrint('[MangaFushi] onTextSelected error: $e');
         }
       },
@@ -2617,7 +2617,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       return;
     }
 
-    final String? local = MangaHibikiPage.resolveMangaPageImage(
+    final String? local = MangaFushiPage.resolveMangaPageImage(
       payload,
       imagesDir,
       pageIndex,
@@ -2636,7 +2636,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           file != null && await file.exists() ? file.path : null;
     } on Object catch (error, stack) {
       ErrorLogService.instance
-          .log('MangaHibikiPage.selectedCardImage', error, stack);
+          .log('MangaFushiPage.selectedCardImage', error, stack);
     }
   }
 
@@ -2729,7 +2729,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       }
       return const MinePopupResult();
     } catch (e, stack) {
-      ErrorLogService.instance.log('MangaHibikiPage.onMineFromPopup', e, stack);
+      ErrorLogService.instance.log('MangaFushiPage.onMineFromPopup', e, stack);
       return const MinePopupResult();
     }
   }
@@ -2741,7 +2741,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         dateKey: statDateKey(DateTime.now()),
       );
     } catch (e, stack) {
-      ErrorLogService.instance.log('MangaHibikiPage.recordMined', e, stack);
+      ErrorLogService.instance.log('MangaFushiPage.recordMined', e, stack);
     }
   }
 
@@ -2752,25 +2752,25 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   Future<void> _toggleReadingMode() async {
     final MokuroPayload? payload = _payload;
     if (_bookRow == null || payload == null) return;
-    final MangaReadingMode next = MangaHibikiPage.toggleMangaMode(_mode);
+    final MangaReadingMode next = MangaFushiPage.toggleMangaMode(_mode);
     final int currentPage =
-        MangaHibikiPage.firstPageOfSpread(_spreads, _currentSpread);
+        MangaFushiPage.firstPageOfSpread(_spreads, _currentSpread);
     final FushiDatabase db = appModel.database;
     try {
       await (db.update(db.epubBooks)
             ..where(($EpubBooksTable t) => t.bookKey.equals(widget.bookKey)))
           .write(EpubBooksCompanion(
-        mangaReadingMode: Value<String?>(MangaHibikiPage.modeToDbString(next)),
+        mangaReadingMode: Value<String?>(MangaFushiPage.modeToDbString(next)),
       ));
     } catch (e, stack) {
-      ErrorLogService.instance.log('MangaHibikiPage.toggleMode', e, stack);
+      ErrorLogService.instance.log('MangaFushiPage.toggleMode', e, stack);
     }
     if (!mounted) return;
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, next);
     setState(() {
       _mode = next;
       _spreads = spreads;
-      _currentSpread = MangaHibikiPage.spreadIndexForPage(spreads, currentPage);
+      _currentSpread = MangaFushiPage.spreadIndexForPage(spreads, currentPage);
       _currentPage = currentPage;
       _currentFraction = 0;
     });
@@ -2793,7 +2793,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     // 回调必须在这里被挡掉，否则 ValueNotifier used after being disposed，并留下
     // dispose 之后才触发的泄漏定时器（BUG-1171）。
     if (!mounted) return;
-    final (int page, double fraction) = MangaHibikiPage.mangaProgressForSpread(
+    final (int page, double fraction) = MangaFushiPage.mangaProgressForSpread(
       _spreads,
       _currentSpread,
       webtoonFraction: _currentFraction,
@@ -2845,12 +2845,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         // section 精确锚失效」启发式）：spread 恒 0；webtoon 复用 charOffset 存
         // 页内滚动千分比（0..1000），恢复时换算回 fraction。
         charOffset: isWebtoon
-            ? MangaHibikiPage.webtoonFractionToCharOffset(fraction)
+            ? MangaFushiPage.webtoonFractionToCharOffset(fraction)
             : 0,
       );
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('MangaHibikiPage._persistPosition', e, stack);
+          .log('MangaFushiPage._persistPosition', e, stack);
     }
     // 翻到最后一页 → 幂等写「已读完」（判据用总页数）。
     final int pageCount = _payload?.images.length ?? 0;
@@ -2858,7 +2858,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       try {
         await db.markEpubBookCompletedIfUnset(widget.bookKey, DateTime.now());
       } catch (e, stack) {
-        ErrorLogService.instance.log('MangaHibikiPage.markCompleted', e, stack);
+        ErrorLogService.instance.log('MangaFushiPage.markCompleted', e, stack);
       }
     }
   }
@@ -2920,7 +2920,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       );
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('MangaHibikiPage._flushReadingStats', e, stack);
+          .log('MangaFushiPage._flushReadingStats', e, stack);
     }
   }
 
@@ -2958,7 +2958,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     final MokuroPayload? payload = _payload;
     if (payload == null || payload.images.isEmpty) return;
     final int page = (oneBasedPage - 1).clamp(0, payload.images.length - 1);
-    final int target = MangaHibikiPage.spreadIndexForPage(_spreads, page);
+    final int target = MangaFushiPage.spreadIndexForPage(_spreads, page);
     _currentSpread = target;
     _currentFraction = 0;
     if (_mode == MangaReadingMode.webtoon) {
@@ -3003,7 +3003,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     final double y = (decoded['y'] as num?)?.toDouble() ?? 0;
     // BUG-1438（与 BUG-129/261/381/781 同族）：JS 报的 clientX/clientY 是 **真实屏幕
     // 坐标**——漫画页整棵子树被 FushiAppUiScaleNeutralizer 中和回净缩放=1（见
-    // manga_hibiki_source.dart），WebView 全出血铺满真实视口。但 showMenu 的
+    // manga_fushi_source.dart），WebView 全出血铺满真实视口。但 showMenu 的
     // RelativeRect 落在根 Navigator 的 Overlay 坐标系，而该 Overlay 在全局
     // FushiAppUiScale 的 FittedBox 之内（**缩放画布**空间，尺寸 = 真实视口 / scale）。
     //
@@ -3150,7 +3150,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
             if (pageCount <= 0) return const SizedBox.shrink();
             // 双页 spread 显示页码区间（如 3-4 / 40）；单页保持原样。
             final int spreadIndex =
-                MangaHibikiPage.spreadIndexForPage(_spreads, page);
+                MangaFushiPage.spreadIndexForPage(_spreads, page);
             final MangaSpreadEntry? entry =
                 (spreadIndex >= 0 && spreadIndex < _spreads.length)
                     ? _spreads[spreadIndex]
@@ -3466,7 +3466,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         // Windows WebView2 对未解析虚拟域的主帧导航报错，即使 shouldInterceptRequest
         // 已提供文档。视作加载完成（镜像 reader_fushi 的同款处理）。
         if (Platform.isWindows &&
-            request.url.host == MangaHibikiPage.kMangaHost) {
+            request.url.host == MangaFushiPage.kMangaHost) {
           unawaited(_markWindowReady(controller));
         }
       },
@@ -3510,7 +3510,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       return;
     }
     await controller.evaluateJavascript(
-      source: MangaHibikiPage.navigationKeyBridgeScript,
+      source: MangaFushiPage.navigationKeyBridgeScript,
     );
     if (!mounted || !_windowGate.owns(ticket)) {
       return;

@@ -42,7 +42,7 @@ void main() {
           title: 't',
           format: BookFormat.manga,
         ).mediaSourceIdentifier,
-        MangaHibikiSource.kUniqueKey,
+        MangaFushiSource.kUniqueKey,
       );
       expect(
         buildCollectionReaderMediaItem(

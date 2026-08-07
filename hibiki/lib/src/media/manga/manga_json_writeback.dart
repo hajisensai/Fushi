@@ -16,9 +16,9 @@
 ///    全仓写/删 manga.json 的调用点（改动这张表时同步改
 ///    `manga_json_writeback_test.dart` 的锁覆盖守卫）：
 ///    - `appendMangaBlockToMangaJson`（框选回写，本文件，自带锁）
-///    - `manga_hibiki_page.dart` 的 `_finishWholeVolumeOcr`（整卷 OCR 落盘）
-///    - `manga_hibiki_page.dart` 的 `_persistOnlinePayloadGeometry`（在线几何回填）
-///    - `manga_hibiki_page.dart` 的在线章节引导重写与 `_invalidateOnlineChapterPayload`
+///    - `manga_fushi_page.dart` 的 `_finishWholeVolumeOcr`（整卷 OCR 落盘）
+///    - `manga_fushi_page.dart` 的 `_persistOnlinePayloadGeometry`（在线几何回填）
+///    - `manga_fushi_page.dart` 的在线章节引导重写与 `_invalidateOnlineChapterPayload`
 ///    - `manga_ocr_wizard_dialog.dart` 的 `_writeManagedMangaJson`（向导对已入库书落盘）
 ///
 ///    其中向导那条是**整份覆写**：不进锁就会整段吞掉用户刚框选回写的块。

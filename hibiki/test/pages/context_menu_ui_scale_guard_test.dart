@@ -216,7 +216,7 @@ void main() {
 
     test('漫画阅读器右键菜单：锚点经 Overlay 换算，边界用 overlay.size', () {
       final String source =
-          read('lib/src/media/manga/reader/manga_hibiki_page.dart');
+          read('lib/src/media/manga/reader/manga_fushi_page.dart');
       final String fn = slice(
         source,
         'Future<void> _showReaderContextMenu(String payloadJson)',

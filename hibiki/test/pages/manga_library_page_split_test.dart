@@ -8,7 +8,7 @@ import 'package:fushi/src/media/manga/manga_browse_page.dart';
 import 'package:fushi/src/media/manga/manga_library_page.dart';
 import 'package:fushi/src/media/manga/manga_sources_page.dart';
 import 'package:fushi/src/media/media_item.dart';
-import 'package:fushi/src/media/sources/manga_hibiki_source.dart';
+import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
@@ -38,8 +38,8 @@ MediaItem _item(String identifier, String sourceKey) => MediaItem(
     );
 
 void main() {
-  final MediaItem manga1 = _item('m1', MangaHibikiSource.kUniqueKey);
-  final MediaItem manga2 = _item('m2', MangaHibikiSource.kUniqueKey);
+  final MediaItem manga1 = _item('m1', MangaFushiSource.kUniqueKey);
+  final MediaItem manga2 = _item('m2', MangaFushiSource.kUniqueKey);
   final MediaItem novel = _item('n1', ReaderFushiSource.instance.uniqueKey);
   final MediaItem other = _item('o1', 'some_other_source');
   final List<MediaItem> corpus = <MediaItem>[manga1, novel, manga2, other];

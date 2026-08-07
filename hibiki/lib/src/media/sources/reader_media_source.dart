@@ -32,7 +32,7 @@ abstract class ReaderMediaSource extends MediaSource {
   @override
   List<MediaSource> get legacyOverrideStores => <MediaSource>[
         ReaderFushiSource.instance,
-        MangaHibikiSource.instance,
+        MangaFushiSource.instance,
         ReaderPdfSource.instance,
       ];
 

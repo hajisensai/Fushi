@@ -17,7 +17,7 @@ import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
-import 'package:fushi/src/pages/implementations/manga_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -117,7 +117,7 @@ Widget _harness(AppModel appModel, MediaItem item, String bookKey,
       child: MaterialApp(
         builder: (BuildContext context, Widget? child) =>
             child ?? const SizedBox.shrink(),
-        home: MangaHibikiPage(item: item, bookKey: bookKey),
+        home: MangaFushiPage(item: item, bookKey: bookKey),
       ),
     ),
   );
@@ -172,7 +172,7 @@ void main() {
     await tester.pump();
 
     // 页面挂载（build 无异常）。
-    expect(find.byType(MangaHibikiPage), findsOneWidget);
+    expect(find.byType(MangaFushiPage), findsOneWidget);
     // 词典弹窗层已接进树（buildDictionary 在空栈时收缩，但宿主 key 必须在）。
     expect(find.byKey(const ValueKey<String>('manga_dictionary_host')),
         findsOneWidget);
@@ -434,13 +434,13 @@ void main() {
       bookKey: bookKey,
       sectionIndex: 3,
       normCharOffset: 0,
-      charOffset: MangaHibikiPage.webtoonFractionToCharOffset(0.75),
+      charOffset: MangaFushiPage.webtoonFractionToCharOffset(0.75),
     );
     final ReaderPosition? restored = await repo.findByBookKey(bookKey);
     expect(restored, isNotNull);
     expect(restored!.sectionIndex, 3);
     expect(
-        MangaHibikiPage.charOffsetToWebtoonFraction(restored.charOffset), 0.75,
+        MangaFushiPage.charOffsetToWebtoonFraction(restored.charOffset), 0.75,
         reason: 'webtoon 页内滚动位置必须经 charOffset 千分比写穿并无损恢复');
   });
 
@@ -450,7 +450,7 @@ void main() {
     // 当前上下文该不该执行」这层——它承载了本页与阅读器最关键的行为差异。
     test('查词弹窗显示时左右方向键仍翻页（关弹窗并翻页）', () {
       expect(
-        MangaHibikiPage.inputActionForShortcut(
+        MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaPageForward,
           horizontalArrow: true,
           dictionaryShown: true,
@@ -463,7 +463,7 @@ void main() {
 
     test('Escape（mangaDismissDict）仅在弹窗可见时消费', () {
       expect(
-        MangaHibikiPage.inputActionForShortcut(
+        MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaDismissDict,
           horizontalArrow: false,
           dictionaryShown: true,
@@ -472,7 +472,7 @@ void main() {
         MangaReaderInputAction.dismissDictionary,
       );
       expect(
-        MangaHibikiPage.inputActionForShortcut(
+        MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaDismissDict,
           horizontalArrow: false,
           dictionaryShown: false,
@@ -485,7 +485,7 @@ void main() {
 
     test('弹窗可见时非方向键（空格等）让位给词典', () {
       expect(
-        MangaHibikiPage.inputActionForShortcut(
+        MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaPageForward,
           horizontalArrow: false,
           dictionaryShown: true,
@@ -498,7 +498,7 @@ void main() {
 
     test('webtoon 模式：纵向键交原生竖滚，左右方向键仍翻页', () {
       expect(
-        MangaHibikiPage.inputActionForShortcut(
+        MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaPageForward,
           horizontalArrow: false,
           dictionaryShown: false,
@@ -508,7 +508,7 @@ void main() {
         reason: 'webtoon 每页 width:100vw，纵向键属 WebView 原生滚动',
       );
       expect(
-        MangaHibikiPage.inputActionForShortcut(
+        MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaPageForward,
           horizontalArrow: true,
           dictionaryShown: false,
@@ -521,7 +521,7 @@ void main() {
 
     test('未绑定动作 / 非本 scope 动作不产生输入', () {
       expect(
-        MangaHibikiPage.inputActionForShortcut(
+        MangaFushiPage.inputActionForShortcut(
           action: null,
           horizontalArrow: true,
           dictionaryShown: false,
@@ -530,7 +530,7 @@ void main() {
         isNull,
       );
       expect(
-        MangaHibikiPage.inputActionForShortcut(
+        MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.readerPageForward,
           horizontalArrow: false,
           dictionaryShown: false,
@@ -544,15 +544,15 @@ void main() {
 
   test('查词弹窗外的滚轮按主轴解析前后翻页', () {
     expect(
-      MangaHibikiPage.wheelInputAction(const Offset(0, 120)),
+      MangaFushiPage.wheelInputAction(const Offset(0, 120)),
       MangaReaderInputAction.next,
     );
     expect(
-      MangaHibikiPage.wheelInputAction(const Offset(-120, 1)),
+      MangaFushiPage.wheelInputAction(const Offset(-120, 1)),
       MangaReaderInputAction.previous,
     );
     expect(
-      MangaHibikiPage.wheelInputAction(const Offset(0, 1)),
+      MangaFushiPage.wheelInputAction(const Offset(0, 1)),
       isNull,
       reason: '过滤触控板噪声',
     );
@@ -563,7 +563,7 @@ void main() {
     // IME 组字 / 输入框」三条判据，会吞 Ctrl+方向键和词典搜索框里的方向键）。
     // JS 本身的通用不变式由 test/focus/webview_key_bridge_test.dart 守，这里只钉
     // 本页特有的接线：键表、幂等、独占、不转发长按。
-    final String script = MangaHibikiPage.navigationKeyBridgeScript;
+    final String script = MangaFushiPage.navigationKeyBridgeScript;
     expect(script, contains('__fushiKeyBridgeInstalled_onMangaNavigationKey'),
         reason: '每次换加载窗口都会重新注入，必须幂等，否则 listener 叠加导致一次按键翻两页');
     expect(script, contains("'ArrowLeft'"));

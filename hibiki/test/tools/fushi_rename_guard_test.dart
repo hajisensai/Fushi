@@ -239,7 +239,7 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   _ForbiddenPattern(
     // 类名族清算：Hibiki* → Fushi*（HibikiDatabase/HibikiToast/_HibikiCardState
     // 等词首形态，含 _$Hibiki* 生成类）。词中内嵌形态不属类名族、刻意不匹配：
-    // MangaHibikiPage 等含 hibiki 文件名的类（W4 才 git mv，半径控制）。
+    // MangaFushiPage 等含 hibiki 文件名的类（W4 才 git mv，半径控制）。
     name: 'Hibiki*-类名族',
     regex: RegExp(r'(?<![A-Za-z0-9])Hibiki[A-Z]'),
   ),

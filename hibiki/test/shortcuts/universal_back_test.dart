@@ -384,7 +384,7 @@ void main() {
     });
 
     test('漫画：globalBack 有弹窗关弹窗、无弹窗退出（此前 Esc 是死键）', () {
-      const String path = 'lib/src/media/manga/reader/manga_hibiki_page.dart';
+      const String path = 'lib/src/media/manga/reader/manga_fushi_page.dart';
       final String code = maskComments(File(path).readAsStringSync());
       expect(code.contains('MangaReaderInputAction.backOrExit'), isTrue,
           reason: '漫画必须有「退出」这个落点动作');

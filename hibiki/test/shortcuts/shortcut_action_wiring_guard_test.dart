@@ -49,7 +49,7 @@ void main() {
       'lib/src/shortcuts/reader_space_override.dart',
       // 漫画阅读器：inputActionForShortcut 把注册表解析出的动作落成翻页/关词典，
       // 键盘与 WebView 键桥两条路径共用（见 _resolveMangaKeyAction）。
-      'lib/src/media/manga/reader/manga_hibiki_page.dart',
+      'lib/src/media/manga/reader/manga_fushi_page.dart',
       // 漫画左右方向键的跨页方向校正（与 reader_space_override 同类）。
       'lib/src/shortcuts/manga_arrow_override.dart',
       // TODO-1066: the app-external global lookup hotkey's executor. It reads

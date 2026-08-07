@@ -17,7 +17,7 @@ import 'package:fushi/utils.dart';
 ///   仍走 [ReaderFushiSource.getBooksFromDb]（列全部行，format-agnostic）；漫画行靠
 ///   `EpubBooks.format=='manga'` 在 [ReaderFushiSource] 的 `_bookToMediaItem` 里被打上
 ///   `mediaSourceIdentifier: `[kUniqueKey]，从而在**打开时**被路由到本源、进
-///   [MangaHibikiPage]，而不是 EPUB 的 [ReaderFushiPage]。
+///   [MangaFushiPage]，而不是 EPUB 的 [ReaderFushiPage]。
 /// - 漫画复用 EPUB 的媒体标识方案（`hoshi://book/<bookKey>`，bookKey 是 `EpubBooks`
 ///   主键，与 format 无关）——**没有漫画专属 scheme 特例**：路由只认
 ///   `mediaSourceIdentifier`，而关书自动同步（`triggerAutoSyncAfterClose` 的
@@ -27,8 +27,8 @@ import 'package:fushi/utils.dart';
 /// 本源只在打开一本漫画时被 `item.getMediaSource` 解析并短暂成为 `_currentMediaSource`；
 /// 书架页头/搜索/源切换 UI 恒用默认的 [ReaderFushiSource]，故本源的
 /// [getActions]/[buildHistoryPage] 极少被触达，实现取与 PDF 源一致的安全回退。
-class MangaHibikiSource extends ReaderMediaSource {
-  MangaHibikiSource._()
+class MangaFushiSource extends ReaderMediaSource {
+  MangaFushiSource._()
       : super(
           uniqueKey: kUniqueKey,
           sourceName: t.source_name_bookshelf,
@@ -42,8 +42,8 @@ class MangaHibikiSource extends ReaderMediaSource {
   /// [ReaderFushiSource] 的 `_bookToMediaItem` 用它把 `format=='manga'` 的行路由到本源。
   static const String kUniqueKey = 'reader_manga';
 
-  static MangaHibikiSource get instance => _instance;
-  static final MangaHibikiSource _instance = MangaHibikiSource._();
+  static MangaFushiSource get instance => _instance;
+  static final MangaFushiSource _instance = MangaFushiSource._();
 
   @override
   Future<void> prepareResources() async {}
@@ -75,7 +75,7 @@ class MangaHibikiSource extends ReaderMediaSource {
     // 漫画在 WebView 里按原生密度渲染；与阅读器一致包 UI-scale 中和层，
     // 保证弹窗坐标契约（JS getClientRects 视口坐标 → 屏幕坐标恒等映射）。
     return FushiAppUiScaleNeutralizer(
-      child: MangaHibikiPage(item: item, bookKey: bookKey),
+      child: MangaFushiPage(item: item, bookKey: bookKey),
     );
   }
 
@@ -129,7 +129,7 @@ class MangaHibikiSource extends ReaderMediaSource {
   }
 
   /// 漫画是 `EpubBooks`（`format=='manga'`）的行，和 EPUB 共用可编辑的 `author` 列，
-  /// 因此同样开放作者编辑。此前 `MangaHibikiSource extends ReaderMediaSource` 未覆盖，
+  /// 因此同样开放作者编辑。此前 `MangaFushiSource extends ReaderMediaSource` 未覆盖，
   /// 沿用基类默认 `false`，导致漫画长按编辑里缺作者字段（EPUB 有）——补齐这条缺口。
   @override
   bool get supportsAuthorEdit => true;

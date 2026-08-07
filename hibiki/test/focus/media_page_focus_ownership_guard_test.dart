@@ -31,7 +31,7 @@ void main() {
     'lib/src/pages/implementations/video_fushi',
     'lib/src/pages/implementations/reader_fushi_page.dart',
     'lib/src/pages/implementations/reader_fushi',
-    // 漫画阅读器（pages/implementations/manga_hibiki_page.dart 只是 3 行兼容
+    // 漫画阅读器（pages/implementations/manga_fushi_page.dart 只是 3 行兼容
     // export，真实现在这里）。它曾是三个媒体页里唯一零焦点回收的那个。
     'lib/src/media/manga/reader',
   ];
@@ -83,7 +83,7 @@ void main() {
     for (final String page in <String>[
       'lib/src/pages/implementations/video_fushi_page.dart',
       'lib/src/pages/implementations/reader_fushi_page.dart',
-      'lib/src/media/manga/reader/manga_hibiki_page.dart',
+      'lib/src/media/manga/reader/manga_fushi_page.dart',
     ]) {
       final String source = File(page).readAsStringSync();
       expect(source, contains('PageFocusOwnership'),

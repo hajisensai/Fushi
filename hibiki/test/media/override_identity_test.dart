@@ -220,7 +220,7 @@ void main() {
 
     List<MediaSource> bookSources() => <MediaSource>[
           ReaderFushiSource.instance,
-          MangaHibikiSource.instance,
+          MangaFushiSource.instance,
           ReaderPdfSource.instance,
         ];
 
@@ -265,8 +265,8 @@ void main() {
       addTearDown(() => purge(kMediaId));
       final String epubKey = ReaderFushiSource.instance
           .getOverrideTitleKey(bookItem(ReaderFushiSource.instance));
-      final String mangaKey = MangaHibikiSource.instance
-          .getOverrideTitleKey(bookItem(MangaHibikiSource.instance));
+      final String mangaKey = MangaFushiSource.instance
+          .getOverrideTitleKey(bookItem(MangaFushiSource.instance));
       final String pdfKey = ReaderPdfSource.instance
           .getOverrideTitleKey(bookItem(ReaderPdfSource.instance));
 
@@ -281,9 +281,9 @@ void main() {
 
     test('新键写入读出：三种 format 下互相可见', () async {
       addTearDown(() => purge(kMediaId));
-      // 用户在漫画身份下改名（编辑弹窗按真实 format 解析出 MangaHibikiSource）。
-      await MangaHibikiSource.instance.setOverrideTitleFromMediaItem(
-        item: bookItem(MangaHibikiSource.instance),
+      // 用户在漫画身份下改名（编辑弹窗按真实 format 解析出 MangaFushiSource）。
+      await MangaFushiSource.instance.setOverrideTitleFromMediaItem(
+        item: bookItem(MangaFushiSource.instance),
         title: '用户改的名',
       );
 
@@ -337,14 +337,14 @@ void main() {
 
       // 转成漫画：源键变 reader_manga。
       expect(
-        MangaHibikiSource.instance.getOverrideTitleFromMediaItem(
-          bookItem(MangaHibikiSource.instance, mediaIdentifier: mediaId),
+        MangaFushiSource.instance.getOverrideTitleFromMediaItem(
+          bookItem(MangaFushiSource.instance, mediaIdentifier: mediaId),
         ),
         '我的书',
       );
       // 在漫画身份下再改一次名。
-      await MangaHibikiSource.instance.setOverrideTitleFromMediaItem(
-        item: bookItem(MangaHibikiSource.instance, mediaIdentifier: mediaId),
+      await MangaFushiSource.instance.setOverrideTitleFromMediaItem(
+        item: bookItem(MangaFushiSource.instance, mediaIdentifier: mediaId),
         title: '我的漫画',
       );
       // 转回 EPUB：仍是最新的名字，没有被旧值复活。
@@ -381,11 +381,11 @@ void main() {
       final String mediaId = ReaderFushiSource.mediaIdentifierFor(bookKey);
       addTearDown(() => purge(mediaId));
       // 存量场景：书是漫画，用户在旧版本改过名（写进 reader_manga 命名空间）。
-      await writeLegacyTitle(MangaHibikiSource.instance, mediaId, '四处一致');
+      await writeLegacyTitle(MangaFushiSource.instance, mediaId, '四处一致');
 
       // 书架：卡片持有 _bookToMediaItem 产出的真实源 item，走 item 通道。
       final String shelf = displayTitleForBook(
-        item: bookItem(MangaHibikiSource.instance, mediaIdentifier: mediaId),
+        item: bookItem(MangaFushiSource.instance, mediaIdentifier: mediaId),
         rawTitle: '原始书名',
       );
       // 首页「继续阅读」/ 活动流：只有 bookKey。
@@ -449,7 +449,7 @@ void main() {
       final Set<String> names = <String>{
         for (final MediaSource source in <MediaSource>[
           ReaderFushiSource.instance,
-          MangaHibikiSource.instance,
+          MangaFushiSource.instance,
           ReaderPdfSource.instance,
         ])
           source.getOverrideThumbnailFilename(
@@ -472,7 +472,7 @@ void main() {
     test('旧封面文件名三源各一，都能被回退读到并就地 rename 成规范名', () {
       for (final MediaSource legacy in <MediaSource>[
         ReaderFushiSource.instance,
-        MangaHibikiSource.instance,
+        MangaFushiSource.instance,
         ReaderPdfSource.instance,
       ]) {
         final String bookKey = 'cover_legacy_${legacy.uniqueKey}';
@@ -518,9 +518,9 @@ void main() {
 
       // 书转成漫画后由漫画源读。
       final File? resolved =
-          MangaHibikiSource.instance.resolveOverrideThumbnailFile(
+          MangaFushiSource.instance.resolveOverrideThumbnailFile(
         appModel: appModel,
-        item: coverItem(MangaHibikiSource.instance, bookKey),
+        item: coverItem(MangaFushiSource.instance, bookKey),
       );
       expect(resolved, isNotNull);
       expect(resolved!.lengthSync(), 2);
@@ -528,17 +528,17 @@ void main() {
 
     test('清除封面后旧文件名不会把封面复活', () async {
       const String bookKey = 'cover_clear';
-      final MediaItem item = coverItem(MangaHibikiSource.instance, bookKey);
+      final MediaItem item = coverItem(MangaFushiSource.instance, bookKey);
       final String legacyPath =
-          MangaHibikiSource.instance.legacyOverrideThumbnailFilename(
+          MangaFushiSource.instance.legacyOverrideThumbnailFilename(
         appModel: appModel,
         item: item,
-        sourceId: MangaHibikiSource.instance.uniqueKey,
+        sourceId: MangaFushiSource.instance.uniqueKey,
       );
       File(legacyPath).parent.createSync(recursive: true);
       File(legacyPath).writeAsBytesSync(<int>[5]);
 
-      await MangaHibikiSource.instance.setOverrideThumbnailFromMediaItem(
+      await MangaFushiSource.instance.setOverrideThumbnailFromMediaItem(
         appModel: appModel,
         item: item,
         file: null,

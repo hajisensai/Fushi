@@ -199,7 +199,7 @@ class ReaderFushiSource extends ReaderMediaSource {
       case BookFormat.pdf:
         return ReaderPdfSource.kUniqueKey;
       case BookFormat.manga:
-        return MangaHibikiSource.kUniqueKey;
+        return MangaFushiSource.kUniqueKey;
       case BookFormat.epub:
         return instance.uniqueKey;
     }
@@ -533,7 +533,7 @@ class ReaderFushiSource extends ReaderMediaSource {
 
     // 书架列书 format-agnostic（本方法列全部 EpubBooks 行），但打开路由按 `format`
     // 三态分流 mediaSourceIdentifier：`'pdf'` → [ReaderPdfSource]（进 ReaderPdfPage）、
-    // `'manga'` → [MangaHibikiSource]（进 MangaHibikiPage）、其余 → 本源（EPUB 阅读器）。
+    // `'manga'` → [MangaFushiSource]（进 MangaFushiPage）、其余 → 本源（EPUB 阅读器）。
     // 缺这条分流，PDF/漫画行会用 EPUB 阅读器打开并在解压/解析路径崩溃。媒体标识前缀
     // 共用 `hoshi://book/<bookKey>`（bookKey 是主键、与 format 无关），路由只认
     // mediaSourceIdentifier。

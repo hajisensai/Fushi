@@ -214,7 +214,7 @@ void main() {
     expect(
       ReaderFushiSource.mediaSourceKeyFor(
           BookFormat.parseOrEpub(asManga.format)),
-      MangaHibikiSource.kUniqueKey,
+      MangaFushiSource.kUniqueKey,
     );
     // 合集成员没断。
     expect(

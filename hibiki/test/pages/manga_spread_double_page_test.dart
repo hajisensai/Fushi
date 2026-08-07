@@ -9,7 +9,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/media/manga/manga_spread_model.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/media_item.dart';
-import 'package:fushi/src/pages/implementations/manga_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:drift/drift.dart' show Value;
@@ -18,7 +18,7 @@ import 'package:path/path.dart' as p;
 
 import '../helpers/test_platform_services.dart';
 
-/// 与 manga_hibiki_page_test 同款测试 AppModel（内存库 + 弹窗布局 getter）。
+/// 与 manga_fushi_page_test 同款测试 AppModel（内存库 + 弹窗布局 getter）。
 class _MangaTestAppModel extends AppModel {
   _MangaTestAppModel(this._db) : super(testPlatformServices());
 
@@ -45,7 +45,7 @@ class _MangaTestAppModel extends AppModel {
   // PR#474 把跨页偏好/阅读方向/缩放从运行时常量改成 AppModel 持久化偏好，
   // 这三个 getter 会走 `prefsRepo`；测试 AppModel 从不跑 initialise()，不覆写
   // 会在 `_loadBook` 里抛 null-check 并让页面卡在加载态。姊妹测试
-  // manga_hibiki_page_test.dart 已补，这里当时漏了（BUG-1164）。
+  // manga_fushi_page_test.dart 已补，这里当时漏了（BUG-1164）。
   // 取值与实现字段默认值一致，守卫语义与 PR#474 前等价。
   @override
   String get mangaSpreadPreference => 'auto';
@@ -81,7 +81,7 @@ Widget _harness(AppModel appModel, String bookKey) {
       child: MaterialApp(
         builder: (BuildContext context, Widget? child) =>
             child ?? const SizedBox.shrink(),
-        home: MangaHibikiPage(
+        home: MangaFushiPage(
           item: MediaItem(
             mediaIdentifier: 'fushi://book/$bookKey',
             mediaSourceIdentifier: 'reader_manga',
