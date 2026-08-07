@@ -936,7 +936,7 @@ class GalHookSessionController extends ChangeNotifier {
       final String directory = File(Platform.resolvedExecutable).parent.path;
       final String arch = is32Bit ? 'x86' : 'x64';
       final String path =
-          '$directory\\voice_hook\\$arch\\hibiki_voice_injector.exe';
+          '$directory\\voice_hook\\$arch\\fushi_voice_injector.exe';
       return File(path).existsSync() ? path : null;
     } catch (_) {
       return null;

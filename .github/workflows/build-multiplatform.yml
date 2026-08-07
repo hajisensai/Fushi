@@ -936,7 +936,7 @@ jobs:
         shell: pwsh
         working-directory: packages/hibiki_torrent
         env:
-          HIBIKI_TORRENT_LIB: ${{ github.workspace }}\native\hibiki_torrent\prebuilt\windows-x64\hibiki_torrent_ffi.dll
+          HIBIKI_TORRENT_LIB: ${{ github.workspace }}\native\hibiki_torrent\prebuilt\windows-x64\fushi_torrent_ffi.dll
         run: |
           if (-not (Test-Path -LiteralPath $env:HIBIKI_TORRENT_LIB)) {
             throw "DLL not found at $env:HIBIKI_TORRENT_LIB — the build step above should have produced it"

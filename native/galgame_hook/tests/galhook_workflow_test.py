@@ -67,7 +67,7 @@ class GalhookWorkflowTest(unittest.TestCase):
             )
             self.assertTrue((root / "profiles" / "sample_engine.json").is_file())
             self.assertTrue((root / "hook" / "adapters" / "sample_engine_adapter.inc").is_file())
-            self.assertIn("hibiki_sample_engine_adapter_test", (root / "CMakeLists.txt").read_text())
+            self.assertIn("fushi_sample_engine_adapter_test", (root / "CMakeLists.txt").read_text())
             self.assertIn(
                 "sample_engine_profile.h",
                 (root / "hook" / "generated" / "profile_includes.inc").read_text(),

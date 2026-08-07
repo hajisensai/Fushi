@@ -71,18 +71,47 @@ class EmbeddedTorrentEngine {
     }
   }
 
-  static DynamicLibrary _openByPlatformDefault() {
-    if (Platform.isWindows)
-      return DynamicLibrary.open('hibiki_torrent_ffi.dll');
+  /// 平台默认库名候选，**新名在前、旧名兜底**。
+  ///
+  /// 旧名不是防御性编程，是真实的存量部署形态：改名前发布的包里躺着的是
+  /// `hibiki_torrent_ffi`，而按名加载走的是「exe 同目录」——只认新名会让这些
+  /// 用户的内置引擎从"能用"变成静默回退外接 qb。两个名字是同一份 C ABI 的
+  /// 同一个产物，先试哪个都对。iOS 静态链进主二进制，不参与按名查找。
+  static List<String> defaultLibraryNames() {
+    if (Platform.isWindows) {
+      return const <String>['fushi_torrent_ffi.dll', 'hibiki_torrent_ffi.dll'];
+    }
     if (Platform.isMacOS) {
-      return DynamicLibrary.open('libhibiki_torrent_ffi.dylib');
+      return const <String>[
+        'libfushi_torrent_ffi.dylib',
+        'libhibiki_torrent_ffi.dylib'
+      ];
     }
     if (Platform.isLinux || Platform.isAndroid) {
-      return DynamicLibrary.open('libhibiki_torrent_ffi.so');
+      return const <String>[
+        'libfushi_torrent_ffi.so',
+        'libhibiki_torrent_ffi.so'
+      ];
     }
+    return const <String>[];
+  }
+
+  static DynamicLibrary _openByPlatformDefault() {
     if (Platform.isIOS) return DynamicLibrary.process();
-    throw UnsupportedError(
-        'hibiki_torrent: unsupported platform ${Platform.operatingSystem}');
+    final List<String> names = defaultLibraryNames();
+    if (names.isEmpty) {
+      throw UnsupportedError(
+          'fushi_torrent: unsupported platform ${Platform.operatingSystem}');
+    }
+    ArgumentError? lastError;
+    for (final String name in names) {
+      try {
+        return DynamicLibrary.open(name);
+      } on ArgumentError catch (e) {
+        lastError = e; // 该候选名不存在/加载失败，退到下一个名字。
+      }
+    }
+    throw lastError!;
   }
 
   /// libtorrent 运行时版本串（如 "2.0.11.0"）。

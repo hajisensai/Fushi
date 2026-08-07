@@ -112,7 +112,7 @@ install(TARGETS hoshidicts_ffi RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
 set(HIBIKI_TORRENT_PREBUILT_DIR
   "${CMAKE_CURRENT_SOURCE_DIR}/../../native/hibiki_torrent/prebuilt/windows-x64")
 set(HIBIKI_TORRENT_DLLS
-  "hibiki_torrent_ffi.dll"
+  "fushi_torrent_ffi.dll"
   "torrent-rasterbar.dll"
   "libssl-3-x64.dll"
   "libcrypto-3-x64.dll")

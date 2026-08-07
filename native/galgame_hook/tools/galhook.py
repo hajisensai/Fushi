@@ -316,9 +316,9 @@ int main() {{ return hibiki_voice_hook::Matches{class_name}Profile(nullptr) ? 1 
     _append_unique(generated / "adapter_fields.inc", f"  {class_name}Adapter {engine_id}_;")
     _append_unique(
         root / "CMakeLists.txt",
-        f'''add_executable(hibiki_{engine_id}_adapter_test "tests/{engine_id}_adapter_test.cpp")
-target_include_directories(hibiki_{engine_id}_adapter_test PRIVATE "hook")
-add_test(NAME hibiki_{engine_id}_adapter_test COMMAND hibiki_{engine_id}_adapter_test)''',
+        f'''add_executable(fushi_{engine_id}_adapter_test "tests/{engine_id}_adapter_test.cpp")
+target_include_directories(fushi_{engine_id}_adapter_test PRIVATE "hook")
+add_test(NAME fushi_{engine_id}_adapter_test COMMAND fushi_{engine_id}_adapter_test)''',
     )
 
     if args.hibiki_root:

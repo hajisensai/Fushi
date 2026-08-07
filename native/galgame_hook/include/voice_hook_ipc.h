@@ -644,10 +644,10 @@ static_assert(sizeof(LoopbackMarker) % 8 == 0, "LoopbackMarker must stay 8-align
 // injector 创建、hook DLL 打开：共享内存 + 「就绪」事件（DLL 装好后 SetEvent，injector 据此
 // 确认注入成功并读回格式）。
 inline std::wstring SharedMemoryName(DWORD target_pid) {
-  return L"Local\\HibikiVoiceHook_" + std::to_wstring(target_pid);
+  return L"Local\\FushiVoiceHook_" + std::to_wstring(target_pid);
 }
 inline std::wstring ReadyEventName(DWORD target_pid) {
-  return L"Local\\HibikiVoiceHookReady_" + std::to_wstring(target_pid);
+  return L"Local\\FushiVoiceHookReady_" + std::to_wstring(target_pid);
 }
 
 }  // namespace hibiki_voice_hook

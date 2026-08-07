@@ -2,7 +2,7 @@ using System.Diagnostics;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 
-namespace Hibiki.UnityAudioExtract;
+namespace Fushi.UnityAudioExtract;
 
 internal static class Program
 {

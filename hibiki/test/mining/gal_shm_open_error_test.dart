@@ -90,9 +90,9 @@ void main() {
       expect(
         galHookOpenFailureDetail(<Object?, Object?>{
           'error': 'access_denied',
-          'detail': r'name=Local\HibikiVoiceHook_1234 win32=5',
+          'detail': r'name=Local\FushiVoiceHook_1234 win32=5',
         }),
-        r'voice_hook open access_denied name=Local\HibikiVoiceHook_1234 win32=5',
+        r'voice_hook open access_denied name=Local\FushiVoiceHook_1234 win32=5',
       );
       expect(
         galHookOpenFailureDetail(<Object?, Object?>{
@@ -188,7 +188,7 @@ void main() {
       final GalHookInjectorDiagnostics diagnostics =
           await runOpenFailure(<Object?, Object?>{
         'error': 'access_denied',
-        'detail': r'name=Local\HibikiVoiceHook_4321 win32=5',
+        'detail': r'name=Local\FushiVoiceHook_4321 win32=5',
         'win32': 5,
       });
       expect(diagnostics.failure, GalHookInjectorFailure.accessDenied);
@@ -215,7 +215,7 @@ void main() {
       final GalHookInjectorDiagnostics diagnostics =
           await runOpenFailure(<Object?, Object?>{
         'error': 'mapping_not_found',
-        'detail': r'name=Local\HibikiVoiceHook_4321 win32=2',
+        'detail': r'name=Local\FushiVoiceHook_4321 win32=2',
         'win32': 2,
       });
       expect(
@@ -231,7 +231,7 @@ void main() {
       final GalHookInjectorDiagnostics diagnostics = await runOpenFailure(
         <Object?, Object?>{
           'error': 'mapping_not_found',
-          'detail': r'name=Local\HibikiVoiceHook_4321 win32=2',
+          'detail': r'name=Local\FushiVoiceHook_4321 win32=2',
           'win32': 2,
         },
         injectorStdout: 'hook DLL not found\n',

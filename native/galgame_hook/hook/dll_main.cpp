@@ -262,7 +262,7 @@ void WriteMarkerFile(DWORD pid) {
     return;
   }
   std::wstring path =
-      std::wstring(temp) + L"hibiki_voice_hook_" + std::to_wstring(pid) +
+      std::wstring(temp) + L"fushi_voice_hook_" + std::to_wstring(pid) +
       L".marker";
   HANDLE f = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
                          CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);

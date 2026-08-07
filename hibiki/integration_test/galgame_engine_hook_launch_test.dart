@@ -19,7 +19,7 @@ import 'package:hibiki/src/mining/galgame_audio_source.dart';
 ///
 /// 需要**环境变量**指到本机素材（缺任一则 skip、不误报失败，故 CI/无游戏机器上自动跳过）：
 ///   - `GALTEST_GAME_EXE`：目标游戏 exe（如 32 位 KiriKiriZ `otomeki.exe`）。
-///   - `GALTEST_INJECTOR`：与游戏位数匹配的 `hibiki_voice_injector.exe`
+///   - `GALTEST_INJECTOR`：与游戏位数匹配的 `fushi_voice_injector.exe`
 ///     （helper 已迁至独立仓库 hibiki-hook，本机构建落 `build/<arch>/Release/`；
 ///     或 app 按需下载后落在 `<app>/voice_hook/<arch>/`）。
 ///

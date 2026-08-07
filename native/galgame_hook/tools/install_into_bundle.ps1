@@ -53,8 +53,8 @@ Set-StrictMode -Version Latest
 # file and fails if the two lists ever diverge.
 $RequiredFiles = @{
   'x86' = @(
-    'hibiki_voice_injector.exe',
-    'hibiki_voice_hook.dll',
+    'fushi_voice_injector.exe',
+    'fushi_voice_hook.dll',
     'LunaHook32.dll',
     'LunaHost32.dll',
     'LoaderDll.dll',
@@ -62,11 +62,11 @@ $RequiredFiles = @{
     'LocaleEmulator-LGPL-3.0.txt'
   )
   'x64' = @(
-    'hibiki_voice_injector.exe',
-    'hibiki_voice_hook.dll',
+    'fushi_voice_injector.exe',
+    'fushi_voice_hook.dll',
     'LunaHook64.dll',
     'LunaHost64.dll',
-    'unity_audio_runtime/hibiki_unity_audio_extract.exe',
+    'unity_audio_runtime/fushi_unity_audio_extract.exe',
     'unity_audio_runtime/classdata.tpk',
     'unity_audio_runtime/vgmstream-cli.exe',
     'unity_audio_runtime/avcodec-vgmstream-59.dll',

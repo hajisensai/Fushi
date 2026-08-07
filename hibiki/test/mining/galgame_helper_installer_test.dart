@@ -83,8 +83,8 @@ void main() {
       expect(
         galgameHelperRequiredFiles('x86'),
         containsAll(<String>[
-          'hibiki_voice_injector.exe',
-          'hibiki_voice_hook.dll',
+          'fushi_voice_injector.exe',
+          'fushi_voice_hook.dll',
           'LunaHook32.dll',
           'LunaHost32.dll',
           'LoaderDll.dll',
@@ -100,11 +100,11 @@ void main() {
       expect(
           required,
           containsAll(<String>[
-            'hibiki_voice_injector.exe',
-            'hibiki_voice_hook.dll',
+            'fushi_voice_injector.exe',
+            'fushi_voice_hook.dll',
             'LunaHook64.dll',
             'LunaHost64.dll',
-            'unity_audio_runtime/hibiki_unity_audio_extract.exe',
+            'unity_audio_runtime/fushi_unity_audio_extract.exe',
             'unity_audio_runtime/classdata.tpk',
             'unity_audio_runtime/vgmstream-cli.exe',
           ]));
@@ -318,10 +318,10 @@ void main() {
           p.join(
             installRoot.path,
             'x86',
-            'hibiki_voice_injector.exe',
+            'fushi_voice_injector.exe',
           ),
         ).readAsStringSync(),
-        'fixture:x86:hibiki_voice_injector.exe',
+        'fixture:x86:fushi_voice_injector.exe',
         reason: '摘要校验与解压必须消费同一只读快照',
       );
     });
@@ -335,7 +335,7 @@ void main() {
         p.join(
           installRoot.path,
           'x64',
-          'hibiki_voice_injector.exe',
+          'fushi_voice_injector.exe',
         ),
       );
       final File marker = File(
@@ -371,7 +371,7 @@ void main() {
       expect(zipReads, 1, reason: 'fast path 仍须核当前随包 zip 摘要');
       expect(
         injector.readAsStringSync(),
-        'old:x64:hibiki_voice_injector.exe',
+        'old:x64:fushi_voice_injector.exe',
       );
       expect(injector.lastModifiedSync(), injectorMtimeBefore);
       expect(marker.lastModifiedSync(), markerMtimeBefore);
@@ -391,9 +391,9 @@ void main() {
 
       final Directory installed = Directory(p.join(installRoot.path, 'x86'));
       expect(
-        File(p.join(installed.path, 'hibiki_voice_injector.exe'))
+        File(p.join(installed.path, 'fushi_voice_injector.exe'))
             .readAsStringSync(),
-        'fixture:x86:hibiki_voice_injector.exe',
+        'fixture:x86:fushi_voice_injector.exe',
       );
       final File zip = File(p.join(bundle.path, galgameHelperZipName('x86')));
       expect(
@@ -423,10 +423,10 @@ void main() {
             p.join(
               installRoot.path,
               'x86',
-              'hibiki_voice_injector.exe',
+              'fushi_voice_injector.exe',
             ),
           ).readAsStringSync(),
-          'fixture:x86:hibiki_voice_injector.exe',
+          'fixture:x86:fushi_voice_injector.exe',
         );
         expect(
           File(
@@ -454,10 +454,10 @@ void main() {
           p.join(
             installRoot.path,
             'x64',
-            'hibiki_voice_injector.exe',
+            'fushi_voice_injector.exe',
           ),
         ).readAsStringSync(),
-        'old:x64:hibiki_voice_injector.exe',
+        'old:x64:fushi_voice_injector.exe',
       );
       expect(
         File(
@@ -476,7 +476,7 @@ void main() {
         p.join(
           installRoot.path,
           'x86',
-          'hibiki_voice_injector.exe',
+          'fushi_voice_injector.exe',
         ),
       );
       injector.parent.createSync(recursive: true);
@@ -490,7 +490,7 @@ void main() {
       expect(
         galgameHelperMissingFiles(
           'x86',
-          <String>['hibiki_voice_injector.exe'],
+          <String>['fushi_voice_injector.exe'],
         ),
         isNotEmpty,
       );
@@ -524,10 +524,10 @@ void main() {
             p.join(
               installRoot.path,
               'x86',
-              'hibiki_voice_injector.exe',
+              'fushi_voice_injector.exe',
             ),
           ).readAsStringSync(),
-          'old:x86:hibiki_voice_injector.exe',
+          'old:x86:fushi_voice_injector.exe',
         );
         expect(
           File(
@@ -568,10 +568,10 @@ void main() {
           p.join(
             installRoot.path,
             'x86',
-            'hibiki_voice_injector.exe',
+            'fushi_voice_injector.exe',
           ),
         ).readAsStringSync(),
-        'old:x86:hibiki_voice_injector.exe',
+        'old:x86:fushi_voice_injector.exe',
       );
       expect(
         File(
@@ -605,10 +605,10 @@ void main() {
           p.join(
             installRoot.path,
             'x86',
-            'hibiki_voice_injector.exe',
+            'fushi_voice_injector.exe',
           ),
         ).readAsStringSync(),
-        'old:x86:hibiki_voice_injector.exe',
+        'old:x86:fushi_voice_injector.exe',
       );
       expect(
         File(
@@ -627,7 +627,7 @@ void main() {
       await writeInstalled('x64', marker: oldMarker);
       await writeBundle(
         'x64',
-        omittedFiles: <String>{'hibiki_voice_hook.dll'},
+        omittedFiles: <String>{'fushi_voice_hook.dll'},
       );
 
       await expectLater(
@@ -645,10 +645,10 @@ void main() {
           p.join(
             installRoot.path,
             'x64',
-            'hibiki_voice_injector.exe',
+            'fushi_voice_injector.exe',
           ),
         ).readAsStringSync(),
-        'old:x64:hibiki_voice_injector.exe',
+        'old:x64:fushi_voice_injector.exe',
       );
       expect(
         File(

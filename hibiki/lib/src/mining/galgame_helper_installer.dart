@@ -35,8 +35,8 @@ List<String> galgameHelperRequiredFiles(String arch) {
   switch (arch) {
     case 'x86':
       return const <String>[
-        'hibiki_voice_injector.exe',
-        'hibiki_voice_hook.dll',
+        'fushi_voice_injector.exe',
+        'fushi_voice_hook.dll',
         'LunaHook32.dll',
         'LunaHost32.dll',
         'LoaderDll.dll',
@@ -45,11 +45,11 @@ List<String> galgameHelperRequiredFiles(String arch) {
       ];
     case 'x64':
       return const <String>[
-        'hibiki_voice_injector.exe',
-        'hibiki_voice_hook.dll',
+        'fushi_voice_injector.exe',
+        'fushi_voice_hook.dll',
         'LunaHook64.dll',
         'LunaHost64.dll',
-        'unity_audio_runtime/hibiki_unity_audio_extract.exe',
+        'unity_audio_runtime/fushi_unity_audio_extract.exe',
         'unity_audio_runtime/classdata.tpk',
         'unity_audio_runtime/vgmstream-cli.exe',
         'unity_audio_runtime/avcodec-vgmstream-59.dll',
@@ -535,7 +535,7 @@ class GalgameHelperInstaller {
     // 解压到 staging 临时目录（保留 x64 unity_audio_runtime/ 子目录结构），先在
     //    staging 里验完清单再换入——坏包/缺文件在触碰安装目录之前就被拒。
     final Directory staging =
-        await Directory.systemTemp.createTemp('hibiki_voice_hook_staging_');
+        await Directory.systemTemp.createTemp('fushi_voice_hook_staging_');
     try {
       final Set<String> extractedFiles =
           await _extractVerifiedBytes(verifiedBytes, staging);
