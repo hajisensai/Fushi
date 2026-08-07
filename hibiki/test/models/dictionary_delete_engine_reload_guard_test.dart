@@ -7,7 +7,7 @@
 //
 // Two concrete control-flow holes existed:
 //   A) `_rebuildDictPathsCache` / `_rebuildDictPathsCacheAsync` only called
-//      `HoshiDicts.initializeTyped(...)` when at least one path bucket was
+//      `FushiDicts.initializeTyped(...)` when at least one path bucket was
 //      non-empty. Deleting the LAST dictionary left all buckets empty, so the
 //      rebuild was skipped and the stale engine survived.
 //   B) `deleteDictionaries()` (delete-all) never touched the engine at all — it

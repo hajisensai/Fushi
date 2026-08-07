@@ -9,7 +9,7 @@ import 'package:fushi/src/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/hibiki_remote_mining_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 
-/// 加载一条词典媒体（外字/内嵌图）的字节。默认走 `HoshiDicts.getMediaFile`。
+/// 加载一条词典媒体（外字/内嵌图）的字节。默认走 `FushiDicts.getMediaFile`。
 typedef DictMediaByteLoader = Uint8List? Function(
     String dictionary, String path);
 
@@ -33,7 +33,7 @@ typedef RemoteMiningAuthReporter = void Function(String message);
 /// 媒体的四个来源在客户端就地读成字节再随请求发出（服务端未必装同款词典/无法访问本机文件）：
 /// 封面 ← `context.coverPath`；句子音频 ← `context.sasayakiAudioPath`；单词音频 ←
 /// `fields['audio']`（仅本地文件搬字节，`http` URL 留给服务端下载）；词典外字 ←
-/// `HoshiDicts.getMediaFile`。
+/// `FushiDicts.getMediaFile`。
 class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   RemoteMiningAnkiRepository({
     required BaseAnkiRepository local,

@@ -419,7 +419,7 @@ int estimateDictionarySearchResultBytes(DictionarySearchResult result) {
   return chars * 2 + overhead;
 }
 
-/// 粗估一次 FFI lookup 结果列表（[HoshiLookupResult]，已 marshal 成 Dart
+/// 粗估一次 FFI lookup 结果列表（[FushiLookupResult]，已 marshal 成 Dart
 /// 对象）的常驻字节数：把所有可得字符串长度按 UTF-16 累加 + 对象开销。
 int estimateFushiLookupResultsBytes(List<FushiLookupResult> results) {
   int chars = 0;

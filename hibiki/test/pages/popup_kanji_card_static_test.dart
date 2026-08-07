@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 //   1. dictionary_popup_webview.dart serializes widget.result.kanjiResults onto
 //      window.kanjiResults next to window.lookupEntries.
 //   2. popup.js builds a kanji card from window.kanjiResults and renders it in
-//      renderPopup, using the real HoshiKanjiResult field names.
+//      renderPopup, using the real FushiKanjiResult field names.
 //
 // END-TO-END NOTE: on-device, queryKanji is still empty until the hoshidicts
 // native libs are rebuilt with the S3 kanji exports across all 5 platforms, so
@@ -35,7 +35,7 @@ void main() {
       // Two substrings so `dart format` line-wrapping the chained `.map(...)`
       // in the injector source cannot break the guard, while still proving both
       // halves: data comes from the SAME DictionarySearchResult (no parallel
-      // channel) and is serialized via the typed HoshiKanjiResult.toMap.
+      // channel) and is serialized via the typed FushiKanjiResult.toMap.
       expect(
         injector,
         contains('result.kanjiResults'),
@@ -85,7 +85,7 @@ void main() {
     });
 
     test('renders every real FushiKanjiResult field', () {
-      // The field names here must match HoshiKanjiResult.toMap (Dart).
+      // The field names here must match FushiKanjiResult.toMap (Dart).
       for (final field in <String>[
         'character',
         'onyomi',

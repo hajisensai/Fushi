@@ -276,7 +276,7 @@ double assBlurValueToSigma(double blurValue, double assFontScale) {
 ///
 /// 字幕逐字符可点击：点击第 [int] 个 grapheme 时回调
 /// `(sentence, graphemeIndex, charRect)`，调用方据此从该位置起取词查词（最长匹配
-/// 交给 HoshiDicts），并用 [charRect]（被点字符的全局屏幕矩形）把查词浮层定位到
+/// 交给 FushiDicts），并用 [charRect]（被点字符的全局屏幕矩形）把查词浮层定位到
 /// 字符附近。非字符区域不拦截指针，让底层 media_kit 控制（点击显隐控制条）正常工作。
 ///
 /// [blurEnabled] 为听力沉浸模式：字幕默认打码（[ImageFiltered] 高斯模糊），桌面悬停

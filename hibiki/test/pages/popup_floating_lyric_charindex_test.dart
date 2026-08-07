@@ -6,14 +6,14 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 /// from the sentence head.
 ///
 /// popup_main._extractWord delegates the actual segmentation to
-/// [JapaneseLanguage.wordFromIndex]. The C++ FFI segmenter (HoshiDicts) is not
+/// [JapaneseLanguage.wordFromIndex]. The C++ FFI segmenter (FushiDicts) is not
 /// available on the Dart test host, so wordFromIndex runs in its documented
 /// degraded mode where it returns the single tapped character. That degraded
 /// path is exactly what proves the regression contract: the *index* is the
 /// anchor that decides where the word is cut.
 ///
 /// Before the fix the Android native popup discarded charIndex entirely and
-/// fed HoshiDicts the whole sentence, so its longest-match always started at
+/// fed FushiDicts the whole sentence, so its longest-match always started at
 /// offset 0 ("点哪都查句首"). These assertions pin that wordFromIndex actually
 /// consumes the index — different indices yield different anchors, and the
 /// out-of-range / negative sentinel falls back to "no per-character word"

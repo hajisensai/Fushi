@@ -176,5 +176,5 @@ void _prepareEntriesYomichanStub({
   required PrepareDictionaryParams params,
   required dynamic database,
 }) {
-  // No-op: hoshidicts C++ handles import directly via HoshiDicts.importDictionary
+  // No-op: hoshidicts C++ handles import directly via FushiDicts.importDictionary
 }

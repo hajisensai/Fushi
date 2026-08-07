@@ -338,7 +338,7 @@ String buildSearchCacheKey({
   return '${term.length}:$term/$maxTerms/$maxResults';
 }
 
-/// 引擎原始结果（`HoshiDicts.lookup`）缓存键的单一真相。格式：
+/// 引擎原始结果（`FushiDicts.lookup`）缓存键的单一真相。格式：
 /// `<term.length>:<term>/<maxResults>`。
 ///
 /// 🔴 **键必须带 [maxResults]**：引擎按该上限 `partial_sort` + `resize` 截断，

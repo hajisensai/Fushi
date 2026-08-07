@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 与显示路径（`rewriteDictionaryMediaPath`）同款。
 ///
 /// 病根：`getMediaFilename` 曾用**生 path** 登记，`writeDictionaryMediaCache` 再拿生
-/// path 引 `HoshiDicts.getMediaFile` → path 带开头 `./`/`/` 的词典命中失败 → 字节不落盘
+/// path 引 `FushiDicts.getMediaFile` → path 带开头 `./`/`/` 的词典命中失败 → 字节不落盘
 /// → AnkiConnect/AnkiDroid/AnkiMobile 三个 repo 读不到缓存 → 卡片里
 /// `<img src="hoshi_dict_N.ext">` 占位符不被替换成真实文件名，留成坏图。显示路径早已
 /// 归一化，故弹窗里图看得见、只制卡掉图（外字/内容图混排时脏 path 的词典排在后面就末尾掉图）。

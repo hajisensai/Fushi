@@ -937,7 +937,7 @@ window.fushiReader = {
         // permanent black cover).
         try {
           if (window.console && console.error) {
-            console.error('[HoshiVN] initialize failed', error);
+            console.error('[FushiVN] initialize failed', error);
           }
         } catch (_ignored) {}
         this.notifyRestoreComplete();
@@ -3057,7 +3057,7 @@ window.addEventListener('load', function() {
     window.fushiReader.initialize();
     $initialRestoreScript
   } catch (e) {
-    try { if (window.console && console.error) console.error('[HoshiVN] boot restore failed', e); } catch (_ignored) {}
+    try { if (window.console && console.error) console.error('[FushiVN] boot restore failed', e); } catch (_ignored) {}
   }
 });
 if (document.readyState === 'complete') {
@@ -3065,7 +3065,7 @@ if (document.readyState === 'complete') {
     window.fushiReader.initialize();
     $initialRestoreScript
   } catch (e) {
-    try { if (window.console && console.error) console.error('[HoshiVN] boot restore failed', e); } catch (_ignored) {}
+    try { if (window.console && console.error) console.error('[FushiVN] boot restore failed', e); } catch (_ignored) {}
   }
 }
 };

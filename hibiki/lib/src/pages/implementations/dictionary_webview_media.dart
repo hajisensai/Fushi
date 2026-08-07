@@ -23,9 +23,9 @@ const List<String> dictionaryMediaCustomSchemes = <String>[
 /// storeMediaFile + 把字段里的 `hoshi_dict_N.ext` 替换成真实媒体引用。**但此前没有
 /// 任何地方写这个缓存**（`image://` 服务只把字节喂给页面显示、不落盘），故媒体永远
 /// 读不到、外字退化成 alt 文本（明鏡义项序号显示成烂 alt「3分の2」）。本函数补上写缓存
-/// 这一环：用 [HoshiDicts.getMediaFile] 取字节、按与 repo 共用的命名写盘。
+/// 这一环：用 [FushiDicts.getMediaFile] 取字节、按与 repo 共用的命名写盘。
 ///
-/// 幂等：已存在的缓存文件跳过。HoshiDicts 未初始化 / 字节取不到 / 写盘失败均跳过
+/// 幂等：已存在的缓存文件跳过。FushiDicts 未初始化 / 字节取不到 / 写盘失败均跳过
 /// （该条媒体退回 alt 文本，不阻断制卡）。
 ///
 /// BUG-1265：跳过**必须留痕**。这三条跳过路径以前只有一句不含原因的 debugPrint

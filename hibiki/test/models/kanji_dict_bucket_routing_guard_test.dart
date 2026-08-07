@@ -7,7 +7,7 @@
 //
 //   1. `_rebuildDictPathsCache` / `_rebuildDictPathsCacheAsync` must collect
 //      `DictionaryType.kanji` paths into a SEPARATE `kanjiPaths` list and pass
-//      them to `HoshiDicts.initializeTyped(..., kanjiPaths: ...)` -- NOT fold
+//      them to `FushiDicts.initializeTyped(..., kanjiPaths: ...)` -- NOT fold
 //      them into `termPaths` (the pre-S4 behaviour that made kanji dictionaries
 //      resolve through the term index).
 //   2. `searchDictionary` must query the kanji bucket for a single-kanji lookup

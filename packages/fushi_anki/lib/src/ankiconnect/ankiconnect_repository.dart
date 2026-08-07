@@ -1856,7 +1856,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// BUG-1265：返回 `null` 表示「这条词典媒体嵌不进去」，**不是**整次制卡失败。
   ///
   /// 词典媒体（gaiji 外字、义项内嵌图）是**装饰性**的，写入方
-  /// `writeDictionaryMediaCache` 按设计就是尽力而为：HoshiDicts 未初始化、
+  /// `writeDictionaryMediaCache` 按设计就是尽力而为：FushiDicts 未初始化、
   /// `getMediaFile` 取不到字节（分卷 MDD 未挂载、词典里本就没这个资源）、写盘失败，
   /// 三种情况都跳过不写盘，契约是「该条退回 alt 文本，不阻断制卡」。共享的
   /// [BaseAnkiRepository.buildDictionaryMediaTags] 也据此收 `Future<String?>`：

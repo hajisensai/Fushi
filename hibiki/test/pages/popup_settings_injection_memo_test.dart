@@ -362,7 +362,7 @@ void main() {
   });
 
   /// 审查修复：memo 对词典样式用的是 `identical(cached.stylesJson, stylesJson)`——
-  /// 它成立的前提是 [HoshiDicts] 的 `_stylesCache` **永远整体重赋值、从不就地
+  /// 它成立的前提是 [FushiDicts] 的 `_stylesCache` **永远整体重赋值、从不就地
   /// mutate**（一旦有人改成 `_stylesCache[name] = css` 之类的就地修改，map 身份
   /// 不变 → `dictionaryStylesJson()` 不重编码 → memo 恒命中 → 用户导入/删词典后
   /// 弹窗永远用旧样式，且全链静默）。这个前提之前零覆盖。

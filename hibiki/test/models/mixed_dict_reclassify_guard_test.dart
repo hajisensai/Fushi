@@ -9,7 +9,7 @@
 //   1. _migrateDictionaryTypes self-heals already-imported dictionaries:
 //      a stored type=='kanji' dictionary whose on-disk blobs actually contain
 //      term records (probed via the native single source of truth
-//      HoshiDicts.probeDictContent) is demoted back to 'term' and tagged
+//      FushiDicts.probeDictContent) is demoted back to 'term' and tagged
 //      metadata['hasKanji']='true'.
 //   2. _rebuildDictPathsCache / _rebuildDictPathsCacheAsync read
 //      metadata['hasKanji'] into the DictPathEntry so the bucket router can

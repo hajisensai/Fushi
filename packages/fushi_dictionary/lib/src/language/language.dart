@@ -518,7 +518,7 @@ String buildPopupJsonFromLookup({
           r.matched != r.term.expression) {
         // Unlike the fallback path (buildLookupEntriesJson), the last
         // qualifying deinflection wins here. This is intentional: matched
-        // and trace stay consistent on the same HoshiLookupResult.
+        // and trace stay consistent on the same FushiLookupResult.
         groupMatched[key] = r.matched;
         groupDeinflected[key] = r.deinflected;
       }

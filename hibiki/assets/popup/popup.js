@@ -629,7 +629,7 @@ function applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackgroun
 
 function getMediaFilename(dictionary, path) {
     // BUG-902：制卡登记的 path 必须与显示路径一样先归一化（trim / \\→/ / 去开头
-    // ./ 或 /）。否则 writeDictionaryMediaCache 用生 path 引 HoshiDicts.getMediaFile
+    // ./ 或 /）。否则 writeDictionaryMediaCache 用生 path 引 FushiDicts.getMediaFile
     // 会 miss（path 带开头 ./ 或 / 的词典），字节不落盘 → 两个 Anki repo 读不到缓存
     // → 卡片里 <img src="hoshi_dict_N.ext"> 占位符不被替换成真实文件名，留成坏图。
     // 显示路径（rewriteDictionaryMediaPath）早已归一化，故弹窗里图仍看得见，只有制卡
@@ -3445,7 +3445,7 @@ function applyCustomCSS() {
 // dictionary_popup_webview.dart. Rendered as its own card ABOVE the term
 // entries so the reading/meaning of the character itself is visible even when
 // the same character is also a term headword. Field names mirror
-// HoshiKanjiResult.toMap (Dart). Empty / missing -> nothing rendered, so
+// FushiKanjiResult.toMap (Dart). Empty / missing -> nothing rendered, so
 // multi-char / kana / latin lookups are unaffected.
 function createKanjiReadingRow(label, value) {
     if (!value) {

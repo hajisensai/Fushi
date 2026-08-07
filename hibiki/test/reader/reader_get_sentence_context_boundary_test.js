@@ -149,7 +149,7 @@ function buildDocument(container) {
   };
 }
 
-function loadHoshiSelection(document) {
+function loadFushiSelection(document) {
   const windowObj = { scanNonJapaneseText: true };
   const sandbox = { window: windowObj, document, Node, NodeFilter, Math, console };
   vm.createContext(sandbox);
@@ -171,7 +171,7 @@ let passed = 0;
   const div = makeElement('div');
   makeText('これはテスト', div);
   const document = buildDocument(div);
-  const sel = loadHoshiSelection(document);
+  const sel = loadFushiSelection(document);
   const ctx = sel.getSentenceContext(div.childNodes[0], 2);
   record('case1_no_p_no_delim', {
     sentence: ctx.sentence,
@@ -193,7 +193,7 @@ let passed = 0;
   const p = makeElement('p');
   makeText('吾輩は猫である', p);
   const document = buildDocument(p);
-  const sel = loadHoshiSelection(document);
+  const sel = loadFushiSelection(document);
   const ctx = sel.getSentenceContext(p.childNodes[0], 3);
   record('case2_p_no_delim', {
     sentence: ctx.sentence,
@@ -213,7 +213,7 @@ let passed = 0;
   makeText('前半', p);
   makeText('後半。', p);
   const document = buildDocument(p);
-  const sel = loadHoshiSelection(document);
+  const sel = loadFushiSelection(document);
   const ctx = sel.getSentenceContext(p.childNodes[1], 1);
   record('case3_cross_node', {
     sentence: ctx.sentence,
@@ -232,7 +232,7 @@ let passed = 0;
   const p = makeElement('p');
   makeText('   ', p);
   const document = buildDocument(p);
-  const sel = loadHoshiSelection(document);
+  const sel = loadFushiSelection(document);
   const ctx = sel.getSentenceContext(p.childNodes[0], 1);
   record('case4_whitespace_only', {
     sentence: ctx.sentence,
@@ -270,7 +270,7 @@ let passed = 0;
   const heading = makeText('見出し', h2);
 
   const document = buildDocument(body);
-  const sel = loadHoshiSelection(document);
+  const sel = loadFushiSelection(document);
   const ctx = sel.getSentenceContext(heading, 1);
   record('case5_h2', { sentence: ctx.sentence, offset: ctx.sentenceOffset });
   assert.strictEqual(
@@ -298,7 +298,7 @@ let passed = 0;
   makeText('二つ目の項目', li2);
 
   const document = buildDocument(ul);
-  const sel = loadHoshiSelection(document);
+  const sel = loadFushiSelection(document);
   const ctx = sel.getSentenceContext(item, 1);
   record('case6_li', { sentence: ctx.sentence, offset: ctx.sentenceOffset });
   assert.strictEqual(
@@ -325,7 +325,7 @@ let passed = 0;
   const word = makeText('走れメロス。', block);
 
   const document = buildDocument(body);
-  const sel = loadHoshiSelection(document);
+  const sel = loadFushiSelection(document);
   const ctx = sel.getSentenceContext(word, 0);
   record('case7_div_ws', { sentence: ctx.sentence, offset: ctx.sentenceOffset });
   assert.ok(
@@ -347,7 +347,7 @@ let passed = 0;
   const p = makeElement('p');
   const text = makeText('前の文。これが対象の文。次の文。', p);
   const document = buildDocument(p);
-  const sel = loadHoshiSelection(document);
+  const sel = loadFushiSelection(document);
   const ctx = sel.getSentenceContext(text, 7);
   record('case8_multi_p', { sentence: ctx.sentence, offset: ctx.sentenceOffset });
   assert.strictEqual(
@@ -370,7 +370,7 @@ let passed = 0;
   const word = makeText('本文です。', div); // the real visible word/sentence
 
   const document = buildDocument(div);
-  const sel = loadHoshiSelection(document);
+  const sel = loadFushiSelection(document);
 
   // Direct contract: firstTextNode(<div>) must skip the whitespace node.
   const first = sel.firstTextNode(div);
@@ -408,7 +408,7 @@ let passed = 0;
   const head = makeText('文。', div);
   makeText('   ', div); // whitespace-only trailing node
   const document = buildDocument(div);
-  const sel = loadHoshiSelection(document);
+  const sel = loadFushiSelection(document);
   const ctx = sel.getSentenceContext(head, 2);
   record('case10_empty_trim', { sentence: ctx.sentence, offset: ctx.sentenceOffset });
   assert.ok(

@@ -464,7 +464,7 @@ String popupKeyBindingsJson(
 /// in-app / mobile-external / global-lookup 三类调用方互不冲刷）。命中判据是
 /// 产物的**全部输入**的廉价投影：小串直接 ==（Dart == 先走 identical 短路）、
 /// 词典样式 JSON 用 identical（[DictionaryPopupWebViewState.dictionaryStylesJson]
-/// 以 HoshiDicts.dictionaryStyles 的 map 实例身份缓存，内容变 ⇒ 新实例）、MB 级
+/// 以 FushiDicts.dictionaryStyles 的 map 实例身份缓存，内容变 ⇒ 新实例）、MB 级
 /// 字体串用其指纹键。任一输入变化 ⇒ 重建 + 新 revision（宁可失效过度）：
 ///   - 换字体：fontCacheKey（(name,path,mtime,size) 指纹）；
 ///   - 改主题（明暗/取色/eink/词典列数/覆盖底色）：themeVarsJs 小串；

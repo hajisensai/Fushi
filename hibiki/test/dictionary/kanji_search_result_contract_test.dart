@@ -1,7 +1,7 @@
 // TODO-094 S4 kanji data-contract + single-kanji logic tests.
 //
 // These exercise REAL Dart logic (no native FFI, no mocking of a kanji query):
-//   - `HoshiKanjiResult.toMap` / `fromMap` round-trip every field, including the
+//   - `FushiKanjiResult.toMap` / `fromMap` round-trip every field, including the
 //     surrogate-pair / empty-field degradation a serialized popup payload may
 //     carry across the process boundary.
 //   - `DictionarySearchResult` carries `kanjiResults` through `toJson` /

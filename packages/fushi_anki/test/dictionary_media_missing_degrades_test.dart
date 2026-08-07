@@ -15,7 +15,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 /// 卡片一张都建不出来。
 ///
 /// 根因两层：
-/// 1. 写入方 `writeDictionaryMediaCache`（主 app）**按设计就是尽力而为**：HoshiDicts
+/// 1. 写入方 `writeDictionaryMediaCache`（主 app）**按设计就是尽力而为**：FushiDicts
 ///    未初始化 / `getMediaFile` 取不到字节（分卷 MDD 未挂载、词典里本就没这个资源、
 ///    词典删除重导）/ 写盘失败，三种情况都跳过不落盘，契约是「该条退回 alt 文本，
 ///    不阻断制卡」。

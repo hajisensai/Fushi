@@ -1,6 +1,6 @@
 // TODO-617 global lookup overlay — Dart side of the bare WebView2 window.
 //
-// The main Dart engine owns the dictionary (HoshiDicts FFI + AppModel). This
+// The main Dart engine owns the dictionary (FushiDicts FFI + AppModel). This
 // channel pushes a self-contained popupJson to the native overlay for rendering
 // and answers the overlay's reverse calls: image:// gaiji bytes (getMedia) and
 // JS bridge messages (jsMessage — dismiss/audio in later phases).

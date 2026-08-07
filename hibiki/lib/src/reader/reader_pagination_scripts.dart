@@ -2679,7 +2679,7 @@ $_sharedInitViewport
   // 成对只用 V，杜绝列底边漏出 (O−F) 进底栏。
   var viewportHeight = dartH || window.innerHeight;
   var pageHeight = viewportHeight + $bottomOverlapPx;
-  console.log('[HoshiInit] dartW=' + dartW + ' dartH=' + dartH
+  console.log('[FushiInit] dartW=' + dartW + ' dartH=' + dartH
     + ' innerW=' + window.innerWidth + ' innerH=' + window.innerHeight
     + ' usedW=' + pageWidth + ' usedH=' + pageHeight + ' viewportH=' + viewportHeight);
   document.documentElement.style.setProperty('--page-height', pageHeight + 'px');

@@ -14,7 +14,7 @@ import 'dart:typed_data';
 /// * [sentenceAudioBase64] ← `context.sasayakiAudioPath`（有声书裁句 / 视频音频临时文件）
 /// * [wordAudioBase64]  ← `fields['audio']` 为**本地文件**时的单词发音（`http(s)` URL 时
 ///   不搬字节，原样留在 [rawPayloadJson] 由服务端下载）
-/// * [dictionaryMedia]  ← 每条 `DictionaryMedia{dictionary,path}` 经 `HoshiDicts.getMediaFile`
+/// * [dictionaryMedia]  ← 每条 `DictionaryMedia{dictionary,path}` 经 `FushiDicts.getMediaFile`
 ///   取到的外字/词典内嵌图字节（服务端未必装同款词典，必须由客户端搬字节）
 ///
 /// 所有字节字段可空：缺失即降级（服务端少一样媒体，卡仍建），绝不因单个媒体坏掉整卡。

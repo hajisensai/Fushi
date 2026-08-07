@@ -203,7 +203,7 @@ class DictionaryImportManager {
       // 把整个目录读进内存再 zip 压缩是纯文件操作但很重（大词典目录可达数百
       // MB），若在主 isolate 同步跑会卡死 UI（TODO-082）。参数都是 String 路径，
       // 可安全丢进后台 isolate，让 UI 在打包期保持响应。native FFI 导入本就在
-      // 自己的 isolate（HoshiDicts.importDictionary）。
+      // 自己的 isolate（FushiDicts.importDictionary）。
       await Isolate.run(() => packDirectoryToZip(directory.path, tempZipPath));
 
       try {

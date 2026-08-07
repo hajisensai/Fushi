@@ -191,7 +191,7 @@ class FushiSyncServer {
   final MangaOcrHostJobManager? _mangaOcrJobs;
 
   /// TODO-1215: dictionary media (gaiji/accent SVG, etc.) byte provider.
-  /// Injected rather than depending on the HoshiDicts singleton directly, so
+  /// Injected rather than depending on the FushiDicts singleton directly, so
   /// the server has no compile-time coupling to the dictionary engine and
   /// stays unit-testable. Returns null -> the media endpoint answers 404.
   final Uint8List? Function(String dictionary, String path)?
@@ -1084,7 +1084,7 @@ class FushiSyncServer {
   /// extension popup rewrites a term's <img src> from the in-app image:// URL
   /// to this endpoint (a real browser has no image:// handler). Bytes are
   /// resolved by the injected [_dictionaryMediaProvider] (bridged to
-  /// HoshiDicts.getMediaFile in-app); the MIME reuses the same
+  /// FushiDicts.getMediaFile in-app); the MIME reuses the same
   /// [dictionaryMediaMimeType] as the app scheme handler.
   shelf.Response _handleDictionaryMedia(shelf.Request request, bool headOnly) {
     final Uint8List? Function(String, String)? provider =
