@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,9 +25,9 @@ void main() {
         'dictionaryResources/JMdict/index.bin',
         'dictionaryResources/JMdict/tag.json',
         'dictionaryResources/Daijirin/y.bin',
-        'hoshi_books/BookA/original.epub',
-        'hoshi_books/BookA/chapters/1.html',
-        'hoshi_books/BookB/original.epub',
+        'fushi_books/BookA/original.epub',
+        'fushi_books/BookA/chapters/1.html',
+        'fushi_books/BookB/original.epub',
         r'audiobooks\hashA\a.mp3',
         'custom_fonts/F1.ttf',
         'custom_fonts/F2.otf',
@@ -83,6 +85,38 @@ void main() {
     });
   });
 
+  group('archiveBooksPrefix (legacy hoshi_books archive fallback)', () {
+    ArchiveFile file(String name) {
+      final List<int> bytes = utf8.encode('x');
+      return ArchiveFile(name, bytes.length, bytes);
+    }
+
+    test(
+        'archive written by old Hibiki (hoshi_books/) falls back to old '
+        'prefix', () {
+      // W2-7 写侧已切 fushi_books；旧 Hibiki 导出的备份/迁移归档里书树仍在
+      // hoshi_books/ 下，读侧必须回退旧前缀（Never break userspace）。
+      final Archive archive = Archive()
+        ..addFile(file('hibiki.db'))
+        ..addFile(file('hoshi_books/BookA/f.html'));
+      expect(BackupService.archiveBooksPrefix(archive), 'hoshi_books');
+    });
+
+    test('archive with fushi_books/ entries uses the new prefix', () {
+      final Archive archive = Archive()
+        ..addFile(file('hibiki.db'))
+        ..addFile(file('fushi_books/BookA/f.html'));
+      expect(BackupService.archiveBooksPrefix(archive), 'fushi_books');
+    });
+
+    test(
+        'archive without any books tree defaults to the legacy prefix '
+        '(harmless: nothing to restore under either)', () {
+      final Archive archive = Archive()..addFile(file('hibiki.db'));
+      expect(BackupService.archiveBooksPrefix(archive), 'hoshi_books');
+    });
+  });
+
   group('restoreBackup per-category gating', () {
     late Directory src;
     late Directory dst;
@@ -105,7 +139,7 @@ void main() {
     test('unticking videos + audiobooks skips those trees; books still restore',
         () async {
       final String dbDir = p.join(src.path, 'db');
-      final String books = p.join(src.path, 'hoshi_books');
+      final String books = p.join(src.path, 'fushi_books');
       final String audio = p.join(src.path, 'audiobooks');
       final String videos = p.join(src.path, 'ext_videos');
       Directory(dbDir).createSync(recursive: true);
@@ -148,7 +182,7 @@ void main() {
       await db.close();
 
       final String dstDbDir = p.join(dst.path, 'db');
-      final String dstBooks = p.join(dst.path, 'hoshi_books');
+      final String dstBooks = p.join(dst.path, 'fushi_books');
       final String dstAudio = p.join(dst.path, 'audiobooks');
       final String dstVideos = p.join(dst.path, 'videos');
       Directory(dstDbDir).createSync(recursive: true);

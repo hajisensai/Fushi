@@ -178,11 +178,48 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   ),
   _ForbiddenPattern(
     // W5：snake 运行时名（JS handler/ValueKey/DOM id/词典媒体缓存文件前缀）
-    // 已是 fushi_*。白名单法逐段列举——冻结的 hoshi_books / hoshi_anki_settings /
-    // google_drive_hoshi_compat 等磁盘目录/偏好键刻意不在此模式内。
+    // 已是 fushi_*。白名单法逐段列举（hoshi_books / hoshi_anki_settings /
+    // google_drive_hoshi_compat 在下面各有独立禁模式与迁移白名单）。
     name: 'hoshi_* snake 运行时名',
     regex: RegExp(r'hoshi_(?:content_ready|lyrics_ready|progress|play_bar'
         r'|webview|lyrics_mode_toggle|shell_|dict_|audio_css)'),
+  ),
+  _ForbiddenPattern(
+    // W2-7：书库目录已是 fushi_books（books_directory.dart 启动就地改名 +
+    // fushi_core v72 库内路径改写 + 备份归档前缀写侧切新）。
+    name: 'hoshi_books',
+    regex: RegExp('hoshi_books'),
+    allowed: <String, String>{
+      'lib/src/storage/books_directory.dart':
+          'kLegacyBooksDirectoryName：启动就地改名迁移的旧目录名输入。',
+      'lib/src/storage/app_paths.dart': '数据根搬迁白名单的双名条目：改名失败留在旧名的存量目录仍须随迁移'
+          '搬走（同 hibikiExport 条目）。',
+      'lib/src/sync/backup_service.dart':
+          '_legacyBooksPrefix：旧 Hibiki 归档书树前缀的读侧回退'
+              '（archiveBooksPrefix），跨版本归档契约。',
+      'packages/fushi_core/lib/src/database/database.dart':
+          'v72 迁移步的旧目录段输入（extract_dir / image_url REPLACE）。',
+    },
+  ),
+  _ForbiddenPattern(
+    // W2-7：Hoshi 共享空间功能已删，残留偏好行由 v72 迁移清掉。
+    name: 'google_drive_hoshi_compat',
+    regex: RegExp('google_drive_hoshi_compat'),
+    allowed: <String, String>{
+      'packages/fushi_core/lib/src/database/database.dart':
+          'v72 迁移步的清行输入（DELETE WHERE key = ...）。',
+    },
+  ),
+  _ForbiddenPattern(
+    // W2-7：Anki 设置 SharedPreferences 键已是 fushi_anki_settings，存量由
+    // BaseAnkiRepository.readSettingsJson 载入期搬键。
+    name: 'hoshi_anki_settings',
+    regex: RegExp('hoshi_anki_settings'),
+    allowed: <String, String>{
+      'packages/fushi_anki/lib/src/base_anki_repository.dart':
+          '_legacySettingsKey：载入期搬键迁移的旧键输入'
+              '（SharedPreferences 无版本阶梯，载入期搬移即迁移通道）。',
+    },
   ),
   _ForbiddenPattern(
     // W5：Apple 端阅读器资源 scheme 已是 fushi-reader（纯运行时 URL scheme，

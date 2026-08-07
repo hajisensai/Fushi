@@ -9,7 +9,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'temp_dir_cleanup.dart';
 
-/// Full-data backup: export packs the hoshi_books + audiobooks trees and the
+/// Full-data backup: export packs the fushi_books + audiobooks trees and the
 /// db; import (on a DIFFERENT set of roots) restores the files AND rebases the
 /// stored absolute paths so the books resolve on the new device. (Task 4 + 5.)
 void main() {
@@ -36,7 +36,7 @@ void main() {
       () async {
     // ── SOURCE device layout ───────────────────────────────────────────────
     final String srcDbDir = p.join(src.path, 'db');
-    final String srcBooks = p.join(src.path, 'hoshi_books');
+    final String srcBooks = p.join(src.path, 'fushi_books');
     final String srcAudio = p.join(src.path, 'audiobooks');
     Directory(srcDbDir).createSync(recursive: true);
 
@@ -86,15 +86,15 @@ void main() {
     expect(meta.audiobooksRoot, srcAudio);
     final input = InputFileStream(zipPath);
     final archive = ZipDecoder().decodeBuffer(input);
-    expect(archive.findFile('hoshi_books/Bk/original.epub'), isNotNull);
-    expect(archive.findFile('hoshi_books/Bk/cover.jpg'), isNotNull);
+    expect(archive.findFile('fushi_books/Bk/original.epub'), isNotNull);
+    expect(archive.findFile('fushi_books/Bk/cover.jpg'), isNotNull);
     expect(archive.findFile('audiobooks/h/a.mp3'), isNotNull);
     expect(archive.findFile('audiobooks/h/align.srt'), isNotNull);
     await input.close();
 
     // ── Import onto the DESTINATION device (different roots, fresh install) ──
     final String dstDbDir = p.join(dst.path, 'db');
-    final String dstBooks = p.join(dst.path, 'hoshi_books');
+    final String dstBooks = p.join(dst.path, 'fushi_books');
     final String dstAudio = p.join(dst.path, 'audiobooks');
     Directory(dstDbDir).createSync(recursive: true);
 
@@ -148,7 +148,7 @@ void main() {
     await srcDb.close();
 
     final String dstDbDir = p.join(dst.path, 'db');
-    final String dstBooks = p.join(dst.path, 'hoshi_books');
+    final String dstBooks = p.join(dst.path, 'fushi_books');
     Directory(dstDbDir).createSync(recursive: true);
     await writeFile(p.join(dstBooks, 'Existing', 'keep.epub'), 'KEEP');
 
@@ -167,7 +167,7 @@ void main() {
       'crashed import (W1)', () async {
     // Make a real full backup with one book.
     final String srcDbDir = p.join(src.path, 'db');
-    final String srcBooks = p.join(src.path, 'hoshi_books');
+    final String srcBooks = p.join(src.path, 'fushi_books');
     Directory(srcDbDir).createSync(recursive: true);
     await writeFile(p.join(srcBooks, 'Bk', 'original.epub'), 'EPUB');
     final srcDb = FushiDatabase(srcDbDir);
@@ -191,7 +191,7 @@ void main() {
 
     // Destination has stale leftovers from a previously-crashed import.
     final String dstDbDir = p.join(dst.path, 'db');
-    final String dstBooks = p.join(dst.path, 'hoshi_books');
+    final String dstBooks = p.join(dst.path, 'fushi_books');
     Directory(dstDbDir).createSync(recursive: true);
     await writeFile(
         '$dstBooks.import-old${Platform.pathSeparator}junk.txt', 'x');

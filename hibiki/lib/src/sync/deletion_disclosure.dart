@@ -45,7 +45,7 @@ DeletionDisclosure buildDeletionDisclosure({
       //      书架行/标签映射；
       //   2) AudiobookStorage.deletePersistDir(bookKey) 与 (srt.uid) 递归删
       //      `<documents>/audiobooks/<hash>`；
-      //   3) EpubStorage.deleteBookDir(extractDir) 递归删 `<documents>/hoshi_books/<key>`。
+      //   3) EpubStorage.deleteBookDir(extractDir) 递归删 `<documents>/fushi_books/<key>`。
       // 不删：epub_books.epubPath 只存文件名，删除路径从不据它删用户原始文件；
       //       reading_statistics / reading_hourly_logs 无人清理，确实留着。
       return DeletionDisclosure(

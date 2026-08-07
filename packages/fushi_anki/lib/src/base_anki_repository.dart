@@ -64,7 +64,11 @@ class RenderedMinedFields {
 
 abstract class BaseAnkiRepository {
   @protected
-  static const settingsKey = 'hoshi_anki_settings';
+  static const settingsKey = 'fushi_anki_settings';
+
+  /// 存量 SharedPreferences 键（W2-7 迁移输入）：[readSettingsJson] 载入期把
+  /// 值搬到 [settingsKey] 后删除旧键。旧字面量只允许活在这一处迁移代码里。
+  static const String _legacySettingsKey = 'hoshi_anki_settings';
 
   /// 载入期一次性迁移（W2-2）：把存量用户卡模板里的音频旧别名
   /// `{sasayaki-audio}` 就地改写为 `{sentence-audio}`（两者从来渲染同一个值，
@@ -73,14 +77,31 @@ abstract class BaseAnkiRepository {
   /// 清理条件：无（SharedPreferences 无版本阶梯，载入期改写即是它的迁移通道）。
   static const String _legacySentenceAudioAlias = '{sasayaki-audio}';
 
-  Future<AnkiSettings> loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
+  /// 读原始设置 JSON 的**唯一通道**：两个载入期迁移（W2-7 键搬移 + W2-2 别名
+  /// 改写）都收敛在这里。子类若覆写 [loadSettings]（AnkiDroid 的 legacy deck
+  /// 迁移）也必须经由本方法取原始串，否则迁移被绕过。返回 null = 从未存过。
+  @protected
+  Future<String?> readSettingsJson(SharedPreferences prefs) async {
     String? raw = prefs.getString(settingsKey);
-    if (raw == null) return const AnkiSettings();
-    if (raw.contains(_legacySentenceAudioAlias)) {
+    if (raw == null) {
+      final String? legacy = prefs.getString(_legacySettingsKey);
+      if (legacy != null) {
+        await prefs.setString(settingsKey, legacy);
+        await prefs.remove(_legacySettingsKey);
+        raw = legacy;
+      }
+    }
+    if (raw != null && raw.contains(_legacySentenceAudioAlias)) {
       raw = raw.replaceAll(_legacySentenceAudioAlias, '{sentence-audio}');
       await prefs.setString(settingsKey, raw);
     }
+    return raw;
+  }
+
+  Future<AnkiSettings> loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? raw = await readSettingsJson(prefs);
+    if (raw == null) return const AnkiSettings();
     try {
       return AnkiSettings.fromJson(jsonDecode(raw) as Map<String, dynamic>);
     } catch (e, stack) {

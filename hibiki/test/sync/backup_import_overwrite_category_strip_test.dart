@@ -29,7 +29,7 @@ void main() {
 
   Future<String> buildBackup() async {
     final String dbDir = p.join(srcRoot.path, 'support');
-    final String books = p.join(srcRoot.path, 'documents', 'hoshi_books');
+    final String books = p.join(srcRoot.path, 'documents', 'fushi_books');
     Directory(dbDir).createSync(recursive: true);
     File(p.join(books, 'B1', 'text', 'ch0.html'))
       ..createSync(recursive: true)
@@ -77,7 +77,7 @@ void main() {
       zipPath: zip,
       importSettings: true,
       categories: cats,
-      booksRootDirectory: p.join(curRoot.path, 'documents', 'hoshi_books'),
+      booksRootDirectory: p.join(curRoot.path, 'documents', 'fushi_books'),
     );
     return FushiDatabase(curDbDir);
   }
@@ -95,7 +95,7 @@ void main() {
     // statistics unaffected (still ticked).
     expect(await countRows(cur, 'reading_statistics'), 1);
     expect(
-      File(p.join(curRoot.path, 'documents', 'hoshi_books', 'B1', 'text',
+      File(p.join(curRoot.path, 'documents', 'fushi_books', 'B1', 'text',
               'ch0.html'))
           .existsSync(),
       isFalse,

@@ -450,7 +450,10 @@ class AppPaths {
   ///
   ///  - `audiobooks` —— [audiobooksDirectory]；`AppModel` 各处
   ///    `join(appDirectory, 'audiobooks')`；`AudiobookStorage.ensurePersistDir`。
-  ///  - `hoshi_books` —— [epubBooksDirectory]；`EpubStorage`；backup restore。
+  ///  - `fushi_books` —— [epubBooksDirectory]；`EpubStorage`；backup restore。
+  ///  - `hoshi_books` —— 上一条的存量旧名。启动就地改名 `fushi_books`
+  ///    （W2-7，`books_directory.dart`），改名失败留在旧名时数据根搬迁必须
+  ///    继续认它。无派生点是有意的（同 `hibikiExport` 条目）。
   ///  - `video_covers` —— [videoCoversDirectory]；`VideoStorage.coversDirName`。
   ///  - `game_covers` —— [gameCoversDirectory]；游戏库封面（手选 + 自动获取）。
   ///  - `video_subtitles` —— [videoSubtitlesDirectory]；`VideoStorage.subtitlesDirName`。
@@ -478,6 +481,7 @@ class AppPaths {
   /// 新增 `<documents>/<child>` 派生而漏加这里会红。
   static const Set<String> fushiOwnedDocumentsEntries = <String>{
     'audiobooks',
+    'fushi_books',
     'hoshi_books',
     'video_covers',
     'game_covers',
@@ -547,9 +551,9 @@ class AppPaths {
   static Future<Directory> audiobooksDirectory() =>
       documentsSubdirectory('audiobooks');
 
-  /// EPUB 解压正文根 `<documents>/hoshi_books`。
+  /// EPUB 解压正文根 `<documents>/fushi_books`。
   static Future<Directory> epubBooksDirectory() =>
-      documentsSubdirectory('hoshi_books');
+      documentsSubdirectory('fushi_books');
 
   /// 视频封面目录 `<documents>/video_covers`。
   static Future<Directory> videoCoversDirectory() =>

@@ -83,7 +83,7 @@ void main() {
       expect((await AppPaths.audiobooksDirectory()).path,
           equals(p.join(nested(), 'audiobooks')));
       expect((await AppPaths.epubBooksDirectory()).path,
-          isNot(equals(p.join(platformDocuments.path, 'hoshi_books'))));
+          isNot(equals(p.join(platformDocuments.path, 'fushi_books'))));
     });
 
     test('老安装（support 下有 hibiki.db）→ 保持扁平布局，一个字节都不搬', () async {
@@ -96,7 +96,7 @@ void main() {
       expect((await AppPaths.audiobooksDirectory()).path,
           equals(p.join(platformDocuments.path, 'audiobooks')));
       expect((await AppPaths.epubBooksDirectory()).path,
-          equals(p.join(platformDocuments.path, 'hoshi_books')));
+          equals(p.join(platformDocuments.path, 'fushi_books')));
     });
 
     test('判定结果固化进 prefs（新装写 nested）', () async {
@@ -237,7 +237,7 @@ void main() {
         AppPaths.isSafeNestedTargetInSharedDocuments(
           sharedDocumentsRoot: platformDocuments.path,
           newDataRoot: p.join(platformDocuments.path, 'audiobooks'),
-          ownedEntries: const <String>{'hoshi_books'},
+          ownedEntries: const <String>{'fushi_books'},
         ),
         isTrue,
       );

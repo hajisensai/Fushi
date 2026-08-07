@@ -47,7 +47,7 @@ void main() {
   Future<({BackupService service, FushiDatabase db, String dictRoot})>
       buildFullSource() async {
     final String dbDir = p.join(src.path, 'db');
-    final String books = p.join(src.path, 'hoshi_books');
+    final String books = p.join(src.path, 'fushi_books');
     final String audio = p.join(src.path, 'audiobooks');
     final String fonts = p.join(src.path, 'custom_fonts');
     final String dict = p.join(src.path, 'dictionaryResources');
@@ -201,7 +201,7 @@ void main() {
     await built.db.close();
 
     final archive = await readZip(zip);
-    expect(archive.findFile('hoshi_books/Bk/original.epub'), isNotNull);
+    expect(archive.findFile('fushi_books/Bk/original.epub'), isNotNull);
     expect(archive.findFile('audiobooks/h/a.mp3'), isNotNull);
     expect(archive.findFile('custom_fonts/MyFont.ttf'), isNotNull);
     expect(archive.findFile('dictionaryResources/JMdict/index.bin'), isNotNull);
@@ -230,7 +230,7 @@ void main() {
     final archive = await readZip(zip);
     expect(archive.findFile('fushi.db'), isNotNull,
         reason: 'db is always packed');
-    expect(archive.findFile('hoshi_books/Bk/original.epub'), isNotNull);
+    expect(archive.findFile('fushi_books/Bk/original.epub'), isNotNull);
     // Unselected trees are absent.
     expect(archive.findFile('audiobooks/h/a.mp3'), isNull);
     expect(archive.findFile('custom_fonts/MyFont.ttf'), isNull);
@@ -253,7 +253,7 @@ void main() {
 
     final archive = await readZip(zip);
     expect(archive.findFile('fushi.db'), isNotNull);
-    expect(archive.findFile('hoshi_books/Bk/original.epub'), isNull);
+    expect(archive.findFile('fushi_books/Bk/original.epub'), isNull);
     expect(archive.findFile('audiobooks/h/a.mp3'), isNull);
     expect(archive.findFile('custom_fonts/MyFont.ttf'), isNull);
     expect(archive.findFile('dictionaryResources/JMdict/index.bin'), isNull);
@@ -281,7 +281,7 @@ void main() {
     );
     expect(String.fromCharCodes(videoEntry.content as List<int>), 'MP4');
     expect(String.fromCharCodes(playlistEntry.content as List<int>), 'EP1');
-    expect(archive.findFile('hoshi_books/Bk/original.epub'), isNull);
+    expect(archive.findFile('fushi_books/Bk/original.epub'), isNull);
     expect(archive.findFile('audiobooks/h/a.mp3'), isNull);
 
     final String dstDbDir = p.join(dst.path, 'db');
@@ -323,7 +323,7 @@ void main() {
     // Destination already has an audiobook tree that must survive a books-only
     // restore (the partial backup carries no audio prefix).
     final String dstDbDir = p.join(dst.path, 'db');
-    final String dstBooks = p.join(dst.path, 'hoshi_books');
+    final String dstBooks = p.join(dst.path, 'fushi_books');
     final String dstAudio = p.join(dst.path, 'audiobooks');
     Directory(dstDbDir).createSync(recursive: true);
     await writeFile(p.join(dstAudio, 'keep', 'kept.mp3'), 'KEEP');
@@ -507,7 +507,7 @@ void main() {
     // Destination already has a local-audio DB + matching pref that must
     // survive the books-only restore.
     final String dstDbDir = p.join(dst.path, 'db');
-    final String dstBooks = p.join(dst.path, 'hoshi_books');
+    final String dstBooks = p.join(dst.path, 'fushi_books');
     Directory(dstDbDir).createSync(recursive: true);
     await writeFile(p.join(dstDbDir, 'local_audio_999.db'), 'KEEPLA');
 
@@ -579,7 +579,7 @@ void main() {
       'per-book export packs only the selected books (records + content); '
       'unselected books travel in neither the tree nor the DB blob', () async {
     final String dbDir = p.join(src.path, 'db');
-    final String books = p.join(src.path, 'hoshi_books');
+    final String books = p.join(src.path, 'fushi_books');
     Directory(dbDir).createSync(recursive: true);
     await writeFile(p.join(books, 'Keep', 'k.epub'), 'KEEP');
     await writeFile(p.join(books, 'Keep', 'text', 'c1.html'), 'HK');
@@ -622,10 +622,10 @@ void main() {
     expect(meta.bookCount, 1, reason: 'only the selected book is counted');
     final Archive archive = await readZip(zip);
     // Selected book's content packed (subtree + epub).
-    expect(archive.findFile('hoshi_books/Keep/k.epub'), isNotNull);
-    expect(archive.findFile('hoshi_books/Keep/text/c1.html'), isNotNull);
+    expect(archive.findFile('fushi_books/Keep/k.epub'), isNotNull);
+    expect(archive.findFile('fushi_books/Keep/text/c1.html'), isNotNull);
     // Unselected book's content is absent from the archive.
-    expect(archive.findFile('hoshi_books/Drop/d.epub'), isNull);
+    expect(archive.findFile('fushi_books/Drop/d.epub'), isNull);
     // And its record is stripped from the DB blob (no ghost).
     final FushiDatabase restored = await openBackupDb(zip, dst);
     try {
@@ -650,7 +650,7 @@ void main() {
 
     expect(meta.bookCount, 1);
     final Archive archive = await readZip(zip);
-    expect(archive.findFile('hoshi_books/Bk/original.epub'), isNotNull);
+    expect(archive.findFile('fushi_books/Bk/original.epub'), isNotNull);
     final FushiDatabase restored = await openBackupDb(zip, dst);
     try {
       final Set<String> keys =

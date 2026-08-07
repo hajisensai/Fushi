@@ -22,10 +22,10 @@ class MangaImportException implements Exception {
 /// 管理 mokuro 漫画的磁盘产物。
 ///
 /// 漫画 = `EpubBooks` 里 `format=='manga'` 的行（第三种「书」），与 PDF 共用同一数据根
-/// 惯例（`<documents>/hoshi_books/<bookKey>/`）。故书目录规划直接复用 [EpubStorage]，不另
+/// 惯例（`<documents>/fushi_books/<bookKey>/`）。故书目录规划直接复用 [EpubStorage]，不另
 /// 建 `hoshi_manga` 平行根——书架/进度/删除全部零改动复用 EPUB 管线。
 ///
-/// 布局：`<hoshi_books>/<bookKey>/`
+/// 布局：`<fushi_books>/<bookKey>/`
 ///   - `images/<保留 img_path 相对子目录结构>`（防跨子目录同名页互相覆盖）
 ///   - `manga.json`（序列化后的页/框结构，`EpubBooks.epubPath` 列指向此文件名）
 ///

@@ -14,7 +14,7 @@ import 'package:fushi/src/sync/backup_service.dart';
 void main() {
   FileSystemException winError(int code) => FileSystemException(
         'Rename failed',
-        r'D:\APP\FUSHI_date\documents\hoshi_books.import-tmp',
+        r'D:\APP\FUSHI_date\documents\fushi_books.import-tmp',
         OSError('拒绝访问。', code),
       );
 

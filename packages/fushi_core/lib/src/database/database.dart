@@ -458,7 +458,7 @@ class FushiDatabase extends _$FushiDatabase {
   FushiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 71;
+  int get schemaVersion => 72;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1587,6 +1587,43 @@ class FushiDatabase extends _$FushiDatabase {
               await customStatement('UPDATE OR REPLACE $table '
                   "SET key = 'custom_theme_sentence_audio_color' "
                   "WHERE key = 'custom_theme_sasayaki_color'");
+            }
+          }
+          if (from < 72) {
+            // v72（Fushi 终局清算 W2-7）：书库目录名 hoshi_books → fushi_books
+            // 的库内路径改写 + 已删功能残留偏好清理。磁盘目录本体由 app 启动期
+            // 在**开库前**就地改名（books_directory.dart），本步与之同一启动内
+            // 生效。REPLACE 是逐字面替换；WHERE LIKE 只是过滤优化（`_` 通配符
+            // 带来的伪命中行会被 REPLACE no-op，无害，刻意不 ESCAPE）。
+            //  1. epub_books.extract_dir —— `<documents>/hoshi_books/<bookKey>`
+            //     绝对路径（epub/manga/pdf 三种书共用一列）；Windows 反斜杠与
+            //     POSIX 正斜杠两种分隔符形态都改。
+            //  2. media_items.image_url —— 本地书封面 file:// URI（恒正斜杠，
+            //     目录名是纯 ASCII 不会被百分号编码）。
+            //  3. google_drive_hoshi_compat —— Hoshi 共享空间功能已删（云同步
+            //     改名批），键已无任何读写方，残留行直接清掉（preferences +
+            //     profile_settings 快照），不搬空值。
+            if (await _tableExists('epub_books')) {
+              await customStatement('UPDATE epub_books SET extract_dir = '
+                  "REPLACE(extract_dir, '/hoshi_books/', '/fushi_books/') "
+                  "WHERE extract_dir LIKE '%/hoshi_books/%'");
+              await customStatement('UPDATE epub_books SET extract_dir = '
+                  "REPLACE(extract_dir, '\\hoshi_books\\', '\\fushi_books\\') "
+                  "WHERE extract_dir LIKE '%\\hoshi_books\\%'");
+            }
+            if (await _tableExists('media_items')) {
+              await customStatement('UPDATE media_items SET image_url = '
+                  "REPLACE(image_url, '/hoshi_books/', '/fushi_books/') "
+                  'WHERE image_url IS NOT NULL '
+                  "AND image_url LIKE '%/hoshi_books/%'");
+            }
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await customStatement('DELETE FROM $table '
+                  "WHERE key = 'google_drive_hoshi_compat'");
             }
           }
         },

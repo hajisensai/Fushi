@@ -24,6 +24,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/export_directory.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
@@ -2105,6 +2106,17 @@ class AppModel with ChangeNotifier {
       ErrorLogService.instance
           .markInitStep('resolve-data-roots（AppPaths.resolve / 数据根 stat）');
       await _guardInitIo('resolve-data-roots', _prepareRuntimeDirectories());
+
+      // W2-7：存量书库目录 hoshi_books → fushi_books 就地改名。必须在 DB 打开
+      // **之前**跑：v72 迁移在首次打开时把 extract_dir / image_url 里的目录段
+      // 改写成新名，先改磁盘再开库，同一次启动内两侧一致。改名失败不阻塞
+      // （上报错误日志，下次启动重试自愈；旧目录原地保留，数据零丢失）。
+      migrateLegacyBooksDirectoryAt(
+        _appDirectory.path,
+        onMigrationError: (Object e, StackTrace stack) => ErrorLogService
+            .instance
+            .log('AppModel.migrateLegacyBooksDirectory', e, stack),
+      );
 
       debugPrint('[Fushi] init: Drift database');
       ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');

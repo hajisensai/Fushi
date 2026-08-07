@@ -77,7 +77,7 @@ void main() {
       p.join('game_covers', 'g1.jpg'),
       p.join('video_covers', 'v1.jpg'),
       p.join('video_subtitles', 'ep01.ass'),
-      p.join('hoshi_books', 'Bk', 'cover.jpg'),
+      p.join('fushi_books', 'Bk', 'cover.jpg'),
       p.join('anime_downloads', 'content', '.keep'),
       p.join('custom_fonts', 'a.ttf'),
     ]) {
@@ -116,7 +116,7 @@ void main() {
         mediaSourceIdentifier: 'reader_hibiki',
         uniqueKey: 'reader/Bk',
         imageUrl: Value(
-            Uri.file(docs(<String>['hoshi_books', 'Bk', 'cover.jpg']))
+            Uri.file(docs(<String>['fushi_books', 'Bk', 'cover.jpg']))
                 .toString()),
         position: 0,
         duration: 0,
@@ -246,7 +246,7 @@ void main() {
         reason: '用户原位外部视频不该被改写');
     expect(
         snap['media.reader/Bk.image'],
-        equals(Uri.file(at(<String>['hoshi_books', 'Bk', 'cover.jpg']))
+        equals(Uri.file(at(<String>['fushi_books', 'Bk', 'cover.jpg']))
             .toString()));
     expect(snap['media.reader/Remote.image'],
         equals('https://example.com/cover.jpg'),

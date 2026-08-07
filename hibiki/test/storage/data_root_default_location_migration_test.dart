@@ -60,7 +60,7 @@ void main() {
     required Directory supportRoot,
     bool withPrefsFile = true,
   }) async {
-    File(p.join(documentsRoot.path, 'hoshi_books', 'Bk', 'a.html'))
+    File(p.join(documentsRoot.path, 'fushi_books', 'Bk', 'a.html'))
       ..createSync(recursive: true)
       ..writeAsStringSync('hello');
     File(p.join(documentsRoot.path, 'audiobooks', 'Bk', 'a.mp3'))
@@ -83,13 +83,13 @@ void main() {
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'Bk',
         title: 'Bk',
-        epubPath: p.join(documentsRoot.path, 'hoshi_books', 'Bk', 'o.epub'),
-        extractDir: p.join(documentsRoot.path, 'hoshi_books', 'Bk'),
+        epubPath: p.join(documentsRoot.path, 'fushi_books', 'Bk', 'o.epub'),
+        extractDir: p.join(documentsRoot.path, 'fushi_books', 'Bk'),
         chapterCount: 1,
         chaptersJson: '["c"]',
         importedAt: 0,
         coverPath:
-            Value(p.join(documentsRoot.path, 'hoshi_books', 'Bk', 'c.jpg')),
+            Value(p.join(documentsRoot.path, 'fushi_books', 'Bk', 'c.jpg')),
       ));
       await db.upsertVideoBook(VideoBooksCompanion.insert(
         bookUid: 'video/Bk',
@@ -216,7 +216,7 @@ void main() {
       expect(File(p.join(newDocs.path, 'fushi.db')).existsSync(), isFalse);
       // 内容真的搬过去了，用户自己的文件与 prefs 一字未动。
       expect(
-          File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+          File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
               .existsSync(),
           isTrue);
       expect(
@@ -329,7 +329,7 @@ void main() {
       expect(committed?.isDefaultLocation, isTrue);
       // 内容与 DB 都到位，旧的 documents/support 两个目录消失。
       expect(
-          File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+          File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
               .existsSync(),
           isTrue);
       expect(
@@ -390,7 +390,7 @@ void main() {
       // 数据搬回旧根，平台落点里不留本次搬进去的东西。
       expect(File(p.join(oldSupport.path, 'fushi.db')).existsSync(), isTrue);
       expect(
-          File(p.join(oldDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+          File(p.join(oldDocs.path, 'fushi_books', 'Bk', 'a.html'))
               .existsSync(),
           isTrue);
       expect(

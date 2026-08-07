@@ -154,7 +154,7 @@ void main() {
     expect(await db.getAllEpubBooks(), isEmpty);
     // 无残留书目录。
     final Directory booksRoot =
-        Directory(p.join(appDocDir.path, 'hoshi_books'));
+        Directory(p.join(appDocDir.path, 'fushi_books'));
     final bool hasResidual = booksRoot.existsSync() &&
         booksRoot.listSync().whereType<Directory>().isNotEmpty;
     expect(hasResidual, isFalse,

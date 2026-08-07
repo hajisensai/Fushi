@@ -1,7 +1,7 @@
 /// 「书 ↔ 漫画」互相转化的**可行性判定**（纯函数层）。
 ///
 /// 背景：`EpubBooks` 用 `format` 列区分三种书——`'epub'`（文字书/小说）、`'pdf'`、
-/// `'manga'`（漫画 OCR）。三者共用同一个书目录 `<hoshi_books>/<bookKey>/`，`format`
+/// `'manga'`（漫画 OCR）。三者共用同一个书目录 `<fushi_books>/<bookKey>/`，`format`
 /// 之外的身份（`bookKey` = 合集/标签/进度/统计/Profile 的 entryKey）完全不变。
 ///
 /// **为什么需要转化**：查词能力只挂在 `format='manga'` 上，且不是「识别图像」——

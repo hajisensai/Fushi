@@ -51,7 +51,7 @@ void main() {
 
   test('Android restores the persisted AnkiConnect choice on init', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{
-      'hoshi_anki_settings': jsonEncode(
+      'fushi_anki_settings': jsonEncode(
         const AnkiSettings(
           useAnkiConnectOnAndroid: true,
           ankiConnectApiKey: 'secret',
@@ -73,7 +73,7 @@ void main() {
   test('Android fails closed when persisted remote backend has no API key',
       () async {
     SharedPreferences.setMockInitialValues(<String, Object>{
-      'hoshi_anki_settings': jsonEncode(
+      'fushi_anki_settings': jsonEncode(
         const AnkiSettings(useAnkiConnectOnAndroid: true).toJson(),
       ),
     });

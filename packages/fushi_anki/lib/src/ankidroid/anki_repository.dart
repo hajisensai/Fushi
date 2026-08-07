@@ -18,7 +18,9 @@ class AnkiRepository extends BaseAnkiRepository {
   @override
   Future<AnkiSettings> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(BaseAnkiRepository.settingsKey);
+    // 原始串必须经基类 readSettingsJson 取（W2-7 键搬移 + W2-2 别名改写的唯一
+    // 通道）；直接 prefs.getString 会绕过两个载入期迁移。
+    final String? raw = await readSettingsJson(prefs);
     if (raw == null) {
       await _migrateFromLegacy(prefs);
       final migrated = prefs.getString(BaseAnkiRepository.settingsKey);
@@ -159,8 +161,7 @@ class AnkiRepository extends BaseAnkiRepository {
   }) async {
     final settings = await loadSettings();
 
-    final deck =
-        settings.availableDecks.firstWhereOrNull(
+    final deck = settings.availableDecks.firstWhereOrNull(
           (d) => d.id == settings.selectedDeckId,
         ) ??
         (settings.selectedDeckName != null
@@ -170,8 +171,7 @@ class AnkiRepository extends BaseAnkiRepository {
             : null);
     if (deck == null) return const MineOutcome.notConfigured();
 
-    final noteType =
-        settings.availableNoteTypes.firstWhereOrNull(
+    final noteType = settings.availableNoteTypes.firstWhereOrNull(
           (t) => t.id == settings.selectedNoteTypeId,
         ) ??
         (settings.selectedNoteTypeName != null
@@ -485,9 +485,8 @@ class AnkiRepository extends BaseAnkiRepository {
       for (final item in raw) {
         if (item is! Map) continue;
         final rawId = item['noteId'];
-        final int? id = rawId is int
-            ? rawId
-            : int.tryParse(rawId?.toString() ?? '');
+        final int? id =
+            rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
         if (id == null) continue;
         result.add(
           MinedNoteRef(

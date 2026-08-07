@@ -44,7 +44,7 @@ void main() {
   /// 与一个 local_audio_*.db，并在 DB 里写各类绝对路径行。返回 (newDataRoot, prefWrites)。
   Future<void> seedDb() async {
     // 文件树。
-    File(p.join(oldDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+    File(p.join(oldDocs.path, 'fushi_books', 'Bk', 'a.html'))
       ..createSync(recursive: true)
       ..writeAsStringSync('hello');
     File(p.join(oldDocs.path, 'audiobooks', 'Bk', 'a.mp3'))
@@ -69,12 +69,12 @@ void main() {
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'Bk',
         title: 'Bk',
-        epubPath: p.join(oldDocsPath, 'hoshi_books', 'Bk', 'original.epub'),
-        extractDir: p.join(oldDocsPath, 'hoshi_books', 'Bk'),
+        epubPath: p.join(oldDocsPath, 'fushi_books', 'Bk', 'original.epub'),
+        extractDir: p.join(oldDocsPath, 'fushi_books', 'Bk'),
         chapterCount: 1,
         chaptersJson: '["c"]',
         importedAt: 0,
-        coverPath: Value(p.join(oldDocsPath, 'hoshi_books', 'Bk', 'cover.jpg')),
+        coverPath: Value(p.join(oldDocsPath, 'fushi_books', 'Bk', 'cover.jpg')),
       ));
       await db.upsertAudiobook(AudiobooksCompanion.insert(
         bookKey: 'Bk',
@@ -162,7 +162,7 @@ void main() {
       expect(closed, isTrue);
       // 新根文件齐全。
       expect(
-          File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+          File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
               .existsSync(),
           isTrue);
       expect(
@@ -252,7 +252,7 @@ void main() {
 
       // 旧根完整保留（数据没丢）。
       expect(
-          File(p.join(oldDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+          File(p.join(oldDocs.path, 'fushi_books', 'Bk', 'a.html'))
               .existsSync(),
           isTrue);
       expect(File(p.join(oldSupport.path, 'fushi.db')).existsSync(), isTrue);
@@ -292,7 +292,7 @@ void main() {
       expect(Directory(p.join(newDataRoot, 'support')).existsSync(), isFalse);
       expect(_hasAnyFileUnder(newDataRoot), isFalse);
       expect(
-          File(p.join(oldDocsPath, 'hoshi_books', 'Bk', 'a.html')).existsSync(),
+          File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
           isTrue);
       expect(File(p.join(oldSupportPath, 'fushi.db')).existsSync(), isTrue);
 
@@ -421,7 +421,7 @@ void main() {
           isFalse);
       // (c) documents 数据到了新根。
       expect(
-          File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+          File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
               .existsSync(),
           isTrue);
       expect(
@@ -478,7 +478,7 @@ void main() {
       expect(File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
           isTrue);
       expect(
-          File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+          File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
               .existsSync(),
           isTrue);
       // 无 prefs 需保 → 旧根整目录删除（原行为）。
@@ -560,7 +560,7 @@ void main() {
         commitLocation: (DataRootMigrationTarget t) async =>
             wrote = t.dataRootPrefValue,
         documentsTopLevelIncludeNames: const <String>{
-          'hoshi_books',
+          'fushi_books',
           'audiobooks',
           'custom_fonts',
         },
@@ -568,7 +568,7 @@ void main() {
 
       // 白名单项已到新根。
       expect(
-          File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+          File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
               .existsSync(),
           isTrue);
       expect(
@@ -578,7 +578,7 @@ void main() {
           isTrue);
       // 白名单项已离开源根（搬移即移除，不靠删整目录）。
       expect(
-          Directory(p.join(oldDocsPath, 'hoshi_books')).existsSync(), isFalse);
+          Directory(p.join(oldDocsPath, 'fushi_books')).existsSync(), isFalse);
       expect(
           Directory(p.join(oldDocsPath, 'audiobooks')).existsSync(), isFalse);
       // Documents 本体 + 用户文件 + junction 原样保留（P0：绝不删用户 Documents）。
@@ -623,7 +623,7 @@ void main() {
         commitLocation: (DataRootMigrationTarget t) async =>
             wrote = t.dataRootPrefValue,
         documentsTopLevelIncludeNames: const <String>{
-          'hoshi_books',
+          'fushi_books',
           'audiobooks',
           'video_covers',
         },
@@ -632,7 +632,7 @@ void main() {
       // 新根就在旧共享根内部，数据齐全。
       expect(p.isWithin(oldDocsPath, newDocs.path), isTrue);
       expect(
-          File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+          File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
               .existsSync(),
           isTrue);
       expect(
@@ -640,7 +640,7 @@ void main() {
           isTrue);
       // 白名单项已离开共享根顶层——文档根不再摊着 Hibiki 的目录。
       expect(
-          Directory(p.join(oldDocsPath, 'hoshi_books')).existsSync(), isFalse);
+          Directory(p.join(oldDocsPath, 'fushi_books')).existsSync(), isFalse);
       expect(
           Directory(p.join(oldDocsPath, 'audiobooks')).existsSync(), isFalse);
       expect(
@@ -670,7 +670,7 @@ void main() {
           closeResources: () async {},
           commitLocation: (DataRootMigrationTarget t) async {},
           documentsTopLevelIncludeNames: const <String>{
-            'hoshi_books',
+            'fushi_books',
             'audiobooks',
           },
         )),
@@ -698,7 +698,7 @@ void main() {
         throwsA(isA<DataRootMigrationException>()),
       );
       expect(
-          File(p.join(oldDocsPath, 'hoshi_books', 'Bk', 'a.html')).existsSync(),
+          File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
           isTrue);
     });
 
@@ -717,7 +717,7 @@ void main() {
           commitLocation: (DataRootMigrationTarget t) async =>
               throw StateError('prefs unavailable'),
           documentsTopLevelIncludeNames: const <String>{
-            'hoshi_books',
+            'fushi_books',
             'audiobooks',
           },
         )),
@@ -726,7 +726,7 @@ void main() {
 
       // 白名单项已合并搬回 Documents，用户文件毫发无损。
       expect(
-          File(p.join(oldDocsPath, 'hoshi_books', 'Bk', 'a.html')).existsSync(),
+          File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
           isTrue);
       expect(
           File(p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
@@ -849,7 +849,7 @@ void main() {
       ));
       expect(File(p.join(newSupport.path, 'fushi.db')).existsSync(), isTrue);
       expect(
-          File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+          File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
               .existsSync(),
           isTrue);
       expect(wrote, equals(newDataRoot));
@@ -888,7 +888,7 @@ void main() {
       // 旧根完整、数据回滚保留。
       expect(File(p.join(oldSupportPath, 'fushi.db')).existsSync(), isTrue);
       expect(
-          File(p.join(oldDocsPath, 'hoshi_books', 'Bk', 'a.html')).existsSync(),
+          File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
           isTrue);
     });
 
@@ -985,7 +985,7 @@ void main() {
 
       // 旧根**逐字节完整**：所有源文件仍在（跨盘 copy 阶段绝不删源）。
       expect(
-          File(p.join(oldDocsPath, 'hoshi_books', 'Bk', 'a.html')).existsSync(),
+          File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
           isTrue);
       expect(
           File(p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
@@ -1025,7 +1025,7 @@ void main() {
         ));
         // 新根齐全。
         expect(
-            File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+            File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
                 .existsSync(),
             isTrue);
         expect(File(p.join(newSupport.path, 'fushi.db')).existsSync(), isTrue);

@@ -101,7 +101,7 @@ class _MigrationPageState extends State<MigrationPage> {
         dbDirectory: appModel.databaseDirectory.path,
         dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
         appVersion: appModel.packageInfo.version,
-        booksRootDirectory: p.join(appModel.appDirectory.path, 'hoshi_books'),
+        booksRootDirectory: p.join(appModel.appDirectory.path, 'fushi_books'),
         audiobooksRootDirectory:
             p.join(appModel.appDirectory.path, 'audiobooks'),
         fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),

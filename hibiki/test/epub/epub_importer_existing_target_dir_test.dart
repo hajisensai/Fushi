@@ -315,7 +315,7 @@ void main() {
 
       // The reported failure path: the key-named dir exists non-empty on disk
       // (previous copy's leftover) while no DB row owns the key.
-      final String realDir = p.join(pp.path, 'hoshi_books', title);
+      final String realDir = p.join(pp.path, 'fushi_books', title);
       _seedDir(realDir, 'stale.txt');
 
       // Real isolate (compute) -> drive inside runAsync.
@@ -348,7 +348,7 @@ void main() {
 
       // A live row whose extract_dir (the truth column) points at the new
       // book's key-named dir while having a different title/key.
-      final String realDir = p.join(pp.path, 'hoshi_books', title);
+      final String realDir = p.join(pp.path, 'fushi_books', title);
       _seedDir(realDir, 'owned.txt');
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'SomeOtherKey',

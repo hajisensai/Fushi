@@ -153,8 +153,8 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       appVersion: appModel.packageInfo.version,
       // Full-data backup: pack the book + audiobook content trees too. Roots
       // are derived the same way the app lays them out under the documents
-      // dir (hoshi_books / audiobooks).
-      booksRootDirectory: p.join(appModel.appDirectory.path, 'hoshi_books'),
+      // dir (fushi_books / audiobooks).
+      booksRootDirectory: p.join(appModel.appDirectory.path, 'fushi_books'),
       audiobooksRootDirectory: p.join(appModel.appDirectory.path, 'audiobooks'),
       // BUG-183: pack the imported custom fonts so they travel with their
       // config; otherwise the restored config points at files that never
@@ -816,7 +816,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       return;
     }
 
-    final String booksRoot = p.join(appModel.appDirectory.path, 'hoshi_books');
+    final String booksRoot = p.join(appModel.appDirectory.path, 'fushi_books');
     final String audiobooksRoot =
         p.join(appModel.appDirectory.path, 'audiobooks');
     final String fontsRoot = p.join(appModel.appDirectory.path, 'custom_fonts');
