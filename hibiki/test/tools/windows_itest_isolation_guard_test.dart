@@ -119,11 +119,11 @@ void main() {
 
     test('runs with isolated test root, app data, logs, and WebView2 profile',
         () {
-      expect(script, contains('HIBIKI_TEST_ROOT'));
-      expect(script, contains('HIBIKI_TEST_RUN_ID'));
-      expect(script, contains('HIBIKI_WEBVIEW2_USER_DATA_FOLDER'));
-      expect(script, contains('--dart-define=HIBIKI_TEST_ROOT='));
-      expect(script, contains('--dart-define=HIBIKI_TEST_RUN_ID='));
+      expect(script, contains('FUSHI_TEST_ROOT'));
+      expect(script, contains('FUSHI_TEST_RUN_ID'));
+      expect(script, contains('FUSHI_WEBVIEW2_USER_DATA_FOLDER'));
+      expect(script, contains('--dart-define=FUSHI_TEST_ROOT='));
+      expect(script, contains('--dart-define=FUSHI_TEST_RUN_ID='));
       expect(script, contains('APPDATA'));
       expect(script, contains('LOCALAPPDATA'));
       expect(script, contains('TEMP'));
@@ -166,10 +166,10 @@ void main() {
         '../packages/flutter_inappwebview_windows/windows/webview_environment/webview_environment.cpp',
       ).readAsStringSync();
 
-      expect(crashDump, contains('HIBIKI_TEST_ROOT'));
-      expect(wgcLog, contains('HIBIKI_TEST_ROOT'));
-      expect(inAppWebView, contains('HIBIKI_WEBVIEW2_USER_DATA_FOLDER'));
-      expect(webViewEnvironment, contains('HIBIKI_WEBVIEW2_USER_DATA_FOLDER'));
+      expect(crashDump, contains('FUSHI_TEST_ROOT'));
+      expect(wgcLog, contains('FUSHI_TEST_ROOT'));
+      expect(inAppWebView, contains('FUSHI_WEBVIEW2_USER_DATA_FOLDER'));
+      expect(webViewEnvironment, contains('FUSHI_WEBVIEW2_USER_DATA_FOLDER'));
     });
   });
 }

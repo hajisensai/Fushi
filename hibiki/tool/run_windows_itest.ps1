@@ -1,7 +1,7 @@
 # Runs a Hibiki Windows integration test in an isolated background runner.
 #
 # The script never touches user-owned Hibiki instances (e.g.
-# D:\APP\Hibiki\hibiki.exe) or IDE dart/flutter processes: those are only recorded
+# D:\APP\Hibiki\fushi.exe) or IDE dart/flutter processes: those are only recorded
 # as evidence. It DOES reap stale TEST-RUNNER processes from a previous crashed run
 # of this same runner, scoped strictly to this worktree's build\windows\x64\runner
 # path (a stuck prior runner locks the build/debug port -> "Unable to start the
@@ -27,7 +27,7 @@
 #   default   -> window stays OFF-SCREEN; captured via PrintWindow (grabs the
 #                window's own composited content even off-screen/occluded). Fully
 #                invisible. Try this first.
-#   -Visible  -> same non-activating window placed ON-SCREEN (HIBIKI_TEST_ONSCREEN)
+#   -Visible  -> same non-activating window placed ON-SCREEN (FUSHI_TEST_ONSCREEN)
 #                so DWM composes it for a faithful capture if the off-screen
 #                PrintWindow grab comes back blank for the WGC WebView region. It
 #                shows in a corner but does NOT take focus — keep using other apps.
@@ -151,7 +151,7 @@ function Get-HibikiProcessSnapshot {
   }
 
   $cimProcesses = @(
-    Get-CimInstance Win32_Process -Filter "Name = 'hibiki.exe'" `
+    Get-CimInstance Win32_Process -Filter "Name = 'fushi.exe'" `
       -ErrorAction SilentlyContinue
   )
   $snapshot = foreach ($cim in $cimProcesses) {
@@ -310,7 +310,7 @@ $Paths = [ordered]@{
   nativeLogs = Join-Path $IsolatedRoot "logs\native"
   webView2Profile = Join-Path $IsolatedRoot "webview2-profile"
   screenshotDir = Join-Path $EvidenceDir "screenshots"
-  expectedRunnerPath = Join-Path $AppRoot "build\windows\x64\runner\Debug\hibiki.exe"
+  expectedRunnerPath = Join-Path $AppRoot "build\windows\x64\runner\Debug\fushi.exe"
 }
 
 foreach ($path in @(
@@ -349,8 +349,8 @@ $flutterArgs = @(
   "-d",
   "windows",
   "--no-pub",
-  "--dart-define=HIBIKI_TEST_ROOT=$($Paths.isolatedRoot)",
-  "--dart-define=HIBIKI_TEST_RUN_ID=$RunId"
+  "--dart-define=FUSHI_TEST_ROOT=$($Paths.isolatedRoot)",
+  "--dart-define=FUSHI_TEST_RUN_ID=$RunId"
 )
 $commandLine = "$FlutterExe $((@($flutterArgs) | ForEach-Object { ConvertTo-CommandArgument $_ }) -join ' ')"
 $commandLog = Join-Path $EvidenceDir "command.log"
@@ -371,7 +371,7 @@ $runnerInfoPath = Join-Path $EvidenceDir "runner-info.json"
 # Reap stale TEST-RUNNER processes left by a PREVIOUS crashed run of THIS runner.
 # Scope is strictly this worktree's build\windows\x64\runner path (isTestRunner is
 # set by exact path-prefix match in Get-HibikiProcessSnapshot), so this NEVER kills
-# the user's installed Hibiki (e.g. D:\APP\Hibiki\hibiki.exe) or IDE dart/flutter
+# the user's installed Hibiki (e.g. D:\APP\Hibiki\fushi.exe) or IDE dart/flutter
 # processes. A stuck prior test-runner locks the build output / debug port and is a
 # known cause of "Unable to start the app on the device". Never hand-kill by name.
 if (-not $DryRun) {
@@ -403,11 +403,11 @@ $exitCode = 0
 if ($DryRun) {
   Add-Content -LiteralPath $commandLog -Value "[itest] dry run: runner not started"
 } else {
-  $oldHidden = $env:HIBIKI_TEST_HIDDEN
-  $oldOnscreen = $env:HIBIKI_TEST_ONSCREEN
-  $oldRoot = $env:HIBIKI_TEST_ROOT
-  $oldRunId = $env:HIBIKI_TEST_RUN_ID
-  $oldWebView2 = $env:HIBIKI_WEBVIEW2_USER_DATA_FOLDER
+  $oldHidden = $env:FUSHI_TEST_HIDDEN
+  $oldOnscreen = $env:FUSHI_TEST_ONSCREEN
+  $oldRoot = $env:FUSHI_TEST_ROOT
+  $oldRunId = $env:FUSHI_TEST_RUN_ID
+  $oldWebView2 = $env:FUSHI_WEBVIEW2_USER_DATA_FOLDER
   $oldAppData = $env:APPDATA
   $oldLocalAppData = $env:LOCALAPPDATA
   $oldTemp = $env:TEMP
@@ -417,21 +417,21 @@ if ($DryRun) {
   $oldHttpsProxy = $env:HTTPS_PROXY
   $oldHttpProxy = $env:HTTP_PROXY
   try {
-    # Always keep HIBIKI_TEST_HIDDEN set: it makes the window non-activating
+    # Always keep FUSHI_TEST_HIDDEN set: it makes the window non-activating
     # (WS_EX_NOACTIVATE), so the app NEVER steals the user's foreground/keyboard
-    # focus in either mode. -Visible additionally sets HIBIKI_TEST_ONSCREEN to
+    # focus in either mode. -Visible additionally sets FUSHI_TEST_ONSCREEN to
     # place that same non-activating window on-screen (composed for a faithful
     # screenshot); the default leaves it off-screen (fully invisible). Both are
     # non-blocking — the user keeps using other apps the whole time.
-    $env:HIBIKI_TEST_HIDDEN = "1"
+    $env:FUSHI_TEST_HIDDEN = "1"
     if ($Visible) {
-      $env:HIBIKI_TEST_ONSCREEN = "1"
+      $env:FUSHI_TEST_ONSCREEN = "1"
     } else {
-      Remove-Item Env:\HIBIKI_TEST_ONSCREEN -ErrorAction SilentlyContinue
+      Remove-Item Env:\FUSHI_TEST_ONSCREEN -ErrorAction SilentlyContinue
     }
-    $env:HIBIKI_TEST_ROOT = $Paths.isolatedRoot
-    $env:HIBIKI_TEST_RUN_ID = $RunId
-    $env:HIBIKI_WEBVIEW2_USER_DATA_FOLDER = $Paths.webView2Profile
+    $env:FUSHI_TEST_ROOT = $Paths.isolatedRoot
+    $env:FUSHI_TEST_RUN_ID = $RunId
+    $env:FUSHI_WEBVIEW2_USER_DATA_FOLDER = $Paths.webView2Profile
     $env:APPDATA = $Paths.appData
     $env:LOCALAPPDATA = $Paths.localAppData
     $env:TEMP = $Paths.temp
@@ -456,15 +456,15 @@ if ($DryRun) {
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.CreateNoWindow = $true
-    $psi.EnvironmentVariables["HIBIKI_TEST_HIDDEN"] = "1"
+    $psi.EnvironmentVariables["FUSHI_TEST_HIDDEN"] = "1"
     if ($Visible) {
-      $psi.EnvironmentVariables["HIBIKI_TEST_ONSCREEN"] = "1"
-    } elseif ($psi.EnvironmentVariables.ContainsKey("HIBIKI_TEST_ONSCREEN")) {
-      [void]$psi.EnvironmentVariables.Remove("HIBIKI_TEST_ONSCREEN")
+      $psi.EnvironmentVariables["FUSHI_TEST_ONSCREEN"] = "1"
+    } elseif ($psi.EnvironmentVariables.ContainsKey("FUSHI_TEST_ONSCREEN")) {
+      [void]$psi.EnvironmentVariables.Remove("FUSHI_TEST_ONSCREEN")
     }
-    $psi.EnvironmentVariables["HIBIKI_TEST_ROOT"] = $Paths.isolatedRoot
-    $psi.EnvironmentVariables["HIBIKI_TEST_RUN_ID"] = $RunId
-    $psi.EnvironmentVariables["HIBIKI_WEBVIEW2_USER_DATA_FOLDER"] =
+    $psi.EnvironmentVariables["FUSHI_TEST_ROOT"] = $Paths.isolatedRoot
+    $psi.EnvironmentVariables["FUSHI_TEST_RUN_ID"] = $RunId
+    $psi.EnvironmentVariables["FUSHI_WEBVIEW2_USER_DATA_FOLDER"] =
       $Paths.webView2Profile
     $psi.EnvironmentVariables["APPDATA"] = $Paths.appData
     $psi.EnvironmentVariables["LOCALAPPDATA"] = $Paths.localAppData
@@ -538,11 +538,11 @@ if ($DryRun) {
     $exitCode = 1
     Add-Content -LiteralPath $commandLog -Value "`n[script-error]`n$($_ | Out-String)"
   } finally {
-    $env:HIBIKI_TEST_HIDDEN = $oldHidden
-    $env:HIBIKI_TEST_ONSCREEN = $oldOnscreen
-    $env:HIBIKI_TEST_ROOT = $oldRoot
-    $env:HIBIKI_TEST_RUN_ID = $oldRunId
-    $env:HIBIKI_WEBVIEW2_USER_DATA_FOLDER = $oldWebView2
+    $env:FUSHI_TEST_HIDDEN = $oldHidden
+    $env:FUSHI_TEST_ONSCREEN = $oldOnscreen
+    $env:FUSHI_TEST_ROOT = $oldRoot
+    $env:FUSHI_TEST_RUN_ID = $oldRunId
+    $env:FUSHI_WEBVIEW2_USER_DATA_FOLDER = $oldWebView2
     $env:APPDATA = $oldAppData
     $env:LOCALAPPDATA = $oldLocalAppData
     $env:TEMP = $oldTemp

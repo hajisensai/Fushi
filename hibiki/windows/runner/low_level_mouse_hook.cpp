@@ -5,7 +5,7 @@
 #include <mutex>
 #include <thread>
 
-namespace hibiki {
+namespace fushi {
 
 namespace {
 
@@ -287,4 +287,4 @@ void DisarmLowLevelMouseHook() {
   }
 }
 
-}  // namespace hibiki
+}  // namespace fushi

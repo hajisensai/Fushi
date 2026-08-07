@@ -10,7 +10,7 @@
 // TODO-1162 外部窗口挖矿 M0（仅 Windows）：枚举可见顶层窗口 + 对选定窗口用
 // Windows.Graphics.Capture 抓一帧静态截图（转 PNG）。纯 WRL/ABI 实现（runner 以
 // _HAS_EXCEPTIONS=0 编译，故不用 C++/WinRT 投影类型，全程 HRESULT 校验、不抛异常）。
-namespace hibiki {
+namespace fushi {
 
 // 一个可捕获的外部顶层窗口：native 句柄 + UTF-8 标题 + 所属进程 PID。
 struct ExternalWindow {
@@ -53,6 +53,6 @@ std::vector<ExternalWindow> EnumerateTopLevelWindows(HWND self);
 // 非 UI 线程调用（会阻塞等首帧，最长约 1.5s）。绝不抛异常。
 WindowCaptureResult CaptureWindowPng(HWND hwnd);
 
-}  // namespace hibiki
+}  // namespace fushi
 
 #endif  // RUNNER_WINDOW_CAPTURE_H_

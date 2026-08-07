@@ -43,7 +43,7 @@ $startInfo.UseShellExecute = $false
 $startInfo.CreateNoWindow = $true
 $startInfo.RedirectStandardOutput = $true
 $startInfo.RedirectStandardError = $true
-$startInfo.Environment["HIBIKI_MIHON_TOKEN"] = $token
+$startInfo.Environment["FUSHI_MIHON_TOKEN"] = $token
 $startInfo.ArgumentList.Add("-Xmx768m")
 $startInfo.ArgumentList.Add("-Djava.awt.headless=true")
 $startInfo.ArgumentList.Add(

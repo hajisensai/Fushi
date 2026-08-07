@@ -27,7 +27,7 @@ import 'test_helpers.dart';
 const String _kBookUid = 'video/itest-chapter-first-load';
 
 Future<File> _generateChapteredMkv() async {
-  const String testRoot = String.fromEnvironment('HIBIKI_TEST_ROOT');
+  const String testRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
   final Directory root = testRoot.isEmpty
       ? await Directory.systemTemp.createTemp('hibiki-chapter-itest-')
       : Directory('$testRoot${Platform.pathSeparator}fixtures');

@@ -405,7 +405,7 @@ List<String> windowsInstallerArgs(
       '/LOG=${logPath ?? windowsInstallerLogPath(installerPath)}',
     ];
 
-const String kWindowsUpdateLauncherExecutable = 'hibiki_update_launcher.exe';
+const String kWindowsUpdateLauncherExecutable = 'fushi_update_launcher.exe';
 
 String windowsUpdateLauncherPath({String? currentExecutablePath}) {
   final String executablePath =
@@ -734,7 +734,10 @@ class WindowsInstaller {
   /// `msedgewebview2.exe` 是安装器托管得到的。其余 image 名视为安装器杀不掉的真外部锁。
   static bool _installerCanClose(WindowsProcessInfo process) {
     final String name = _windowsImageName(process);
-    return name == 'hibiki.exe' || name == 'msedgewebview2.exe';
+    // 过渡期两个 exe 名都认（安装器 fushi.iss 会同时结束两者）。
+    return name == 'fushi.exe' ||
+        name == 'hibiki.exe' ||
+        name == 'msedgewebview2.exe';
   }
 
   /// 取进程的 Windows image 名（小写）：优先 [WindowsProcessInfo.name]，缺失时退回
@@ -769,6 +772,7 @@ class WindowsInstaller {
     }
     for (final WindowsProcessInfo process in diagnostics.libmpvModuleHolders) {
       if (_processIsInTargetInstallDir(process, targetInstallDir) ||
+          (process.name ?? '').toLowerCase() == 'fushi.exe' ||
           (process.name ?? '').toLowerCase() == 'hibiki.exe') {
         blockers[process.pid] = process;
       }
@@ -957,7 +961,7 @@ String? windowsInstallPathMismatchWarning({
 Future<List<WindowsProcessInfo>> queryWindowsHibikiProcesses() async {
   if (!Platform.isWindows) return const <WindowsProcessInfo>[];
   const String command =
-      "Get-CimInstance Win32_Process -Filter \"Name = 'hibiki.exe'\" | "
+      "Get-CimInstance Win32_Process -Filter \"Name = 'fushi.exe' OR Name = 'hibiki.exe'\" | "
       'Select-Object ProcessId,Name,ExecutablePath | ConvertTo-Json -Compress';
   try {
     final ProcessResult result = await Process.run(

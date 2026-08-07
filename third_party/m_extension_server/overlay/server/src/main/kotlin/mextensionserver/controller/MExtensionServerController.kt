@@ -56,13 +56,13 @@ class MExtensionServerController {
 
     companion object {
         /** Host-facing readiness contract; see [announceReady]. */
-        const val READY_LINE_PREFIX = "HIBIKI_MIHON_READY port="
+        const val READY_LINE_PREFIX = "FUSHI_MIHON_READY port="
     }
 
     private inner class WebServer(port: Int) : NanoHTTPD("127.0.0.1", port) {
-        private val bearer = System.getenv("HIBIKI_MIHON_TOKEN")
+        private val bearer = System.getenv("FUSHI_MIHON_TOKEN")
             ?.takeIf(String::isNotBlank)
-            ?: throw IllegalStateException("HIBIKI_MIHON_TOKEN is required")
+            ?: throw IllegalStateException("FUSHI_MIHON_TOKEN is required")
 
         override fun serve(session: IHTTPSession): Response {
             if (!authorized(session)) {

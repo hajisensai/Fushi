@@ -43,31 +43,31 @@ void EnableFullDpiSupportIfAvailable(HWND hwnd) {
 // producing frames — it is simply never on screen).
 constexpr int kOffscreenOrigin = -32000;
 
-// True when HIBIKI_TEST_HIDDEN is set (to anything non-empty). In that mode the
+// True when FUSHI_TEST_HIDDEN is set (to anything non-empty). In that mode the
 // runner creates its window off-screen and non-activating so automated
 // integration tests can drive the real desktop app — focus moves, settings
 // changes, WebView DOM probes — without it appearing on screen or stealing
 // keyboard/foreground focus from whatever the user is doing. GetEnvironmentVariable
 // with a null buffer returns the required size (>0) when the variable exists.
 bool IsTestHiddenMode() {
-  return GetEnvironmentVariableW(L"HIBIKI_TEST_HIDDEN", nullptr, 0) > 0;
+  return GetEnvironmentVariableW(L"FUSHI_TEST_HIDDEN", nullptr, 0) > 0;
 }
 
-// True when HIBIKI_TEST_ONSCREEN is set (to anything non-empty). Only meaningful
+// True when FUSHI_TEST_ONSCREEN is set (to anything non-empty). Only meaningful
 // together with test-hidden mode: the window keeps WS_EX_NOACTIVATE (it still
 // never steals the user's foreground/keyboard focus) but is placed at a real
 // on-screen origin instead of off-screen, so DWM composes it for Windows
 // Graphics Capture / OS screen-grab screenshots. Lets a non-blocking visible
 // capture exist without hijacking what the user is doing.
 bool IsTestOnscreenMode() {
-  return GetEnvironmentVariableW(L"HIBIKI_TEST_ONSCREEN", nullptr, 0) > 0;
+  return GetEnvironmentVariableW(L"FUSHI_TEST_ONSCREEN", nullptr, 0) > 0;
 }
 
 // TODO-959: 数据迁移成功后的自动重启（DesktopLifecycleService.restartApp）会以
 // detached 模式拉起带这个标志的新进程。必须与 main.cpp 的 kRestartMarkerArg 和
 // Dart 侧 DesktopLifecycleService.restartMarkerArg 逐字符一致。见到它说明本次启动
 // 是「旧进程刚迁完数据、主动拉起的新进程」，而非用户二次点击图标。
-constexpr const wchar_t kRestartMarkerArg[] = L"--hibiki-restarted";
+constexpr const wchar_t kRestartMarkerArg[] = L"--fushi-restarted";
 
 // TODO-959: splash 背景画刷色。旧进程 exit(0) 杀掉自己到新进程 Flutter 画出首帧
 // 之间，runner 窗口已 WS_VISIBLE 上屏但还没有任何内容；窗口类原本 hbrBackground=0
@@ -203,7 +203,7 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
   // TODO-959 (方向 2)：迁移重启拉起的新进程先以隐藏状态建窗（不带
   // WS_VISIBLE），等 Dart 首帧后由 main.dart 重启分支 windowManager.show()+focus()
   // 再显示。这样旧进程 exit(0) 到新进程首帧的交接期不会出现空白/黑色
-  // 的错误窗。普通启动（无 --hibiki-restarted）仍带 WS_VISIBLE、立即上屏，
+  // 的错误窗。普通启动（无 --fushi-restarted）仍带 WS_VISIBLE、立即上屏，
   // 靠上面的背景画刷兜底首帧前不黑，不会永久不显窗。测试隐藏模式
   // （hidden）不受影响：它靠 WS_VISIBLE+移出屏外保证引擎持续渲染，不能去掉
   // WS_VISIBLE。只有「非测试 + 重启新进程」走隐藏建窗。
@@ -290,7 +290,7 @@ Win32Window::MessageHandler(HWND hwnd,
     // the switch outright (C2360, initialization skipped by a later case label).
     case WM_ACTIVATE: {
       // WM_ACTIVATE is sent for both sides of an activation hand-off. When an
-      // activatable Hibiki auxiliary window (for example the clipboard lookup
+      // activatable Fushi auxiliary window (for example the clipboard lookup
       // panel) starts its native move/size loop, the main window receives
       // WA_INACTIVE. Restoring focus from that deactivation notification pulls
       // the main window back above the panel and the user's foreground app.

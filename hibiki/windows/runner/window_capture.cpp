@@ -25,7 +25,7 @@
 #include <cstdio>
 #include <cwchar>
 
-namespace hibiki {
+namespace fushi {
 
 namespace {
 
@@ -526,4 +526,4 @@ WindowCaptureResult CaptureWindowPng(HWND hwnd) {
   return out;
 }
 
-}  // namespace hibiki
+}  // namespace fushi

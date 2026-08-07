@@ -323,7 +323,7 @@ void main() {
 
     test('Windows 盘符路径（含 : 与反斜杠）作为独立参数原样传入，绝不拼分隔符', () {
       const String winPath =
-          r'D:\APP\HIBIKI_date\support\mpv_shaders\Anime4K_Clamp_Highlights.glsl';
+          r'D:\APP\FUSHI_date\support\mpv_shaders\Anime4K_Clamp_Highlights.glsl';
       final List<List<String>> cmds =
           buildShaderChangeListCommands(<String>[winPath]);
       // append 命令的第 4 个参数必须是原始路径（未被任何分隔符切分/转义）。

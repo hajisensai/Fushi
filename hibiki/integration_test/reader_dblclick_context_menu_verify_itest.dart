@@ -34,7 +34,7 @@ import 'test_helpers.dart';
 ///   的最终目视需可见窗，标 BLOCKED。
 ///
 /// Run (PowerShell, from hibiki/)：
-///   $env:HIBIKI_TEST_HIDDEN = "1"
+///   $env:FUSHI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/reader_dblclick_context_menu_verify_itest.dart -d windows
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =

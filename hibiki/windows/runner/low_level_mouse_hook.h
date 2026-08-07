@@ -27,7 +27,7 @@
 
 #include <windows.h>
 
-namespace hibiki {
+namespace fushi {
 
 // 钩子命中时 PostMessage 给目标窗口的消息（WM_APP 段，进程内私有）：
 //   wparam = 打包的屏幕物理坐标 ((uint32)x << 32) | (uint32)y
@@ -80,6 +80,6 @@ void ArmLowLevelMouseHook(HWND target);
 // 宽限期（见 .cpp 的 kDisarmGraceMs），期间再次 Arm 则取消卸载。未装时是 no-op。
 void DisarmLowLevelMouseHook();
 
-}  // namespace hibiki
+}  // namespace fushi
 
 #endif  // RUNNER_LOW_LEVEL_MOUSE_HOOK_H_

@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 
-/// TODO-1045：ffprobe 可执行解析优先级镜像 ffmpeg——HIBIKI_FFPROBE 覆盖 >
+/// TODO-1045：ffprobe 可执行解析优先级镜像 ffmpeg——FUSHI_FFPROBE 覆盖 >
 /// 程序旁捆绑 ffprobe > 系统 PATH；以及 bundled 跑不起来回退 PATH 的 CLI 逻辑。
 void main() {
   group('resolveFfprobeExecutableFrom 优先级', () {
-    test('HIBIKI_FFPROBE 覆盖最高优先', () {
+    test('FUSHI_FFPROBE 覆盖最高优先', () {
       expect(
         resolveFfprobeExecutableFrom(
             override: '/opt/ff/ffprobe', bundledPath: '/app/ffprobe'),
@@ -87,7 +87,7 @@ void main() {
       expect(calls, <String>['/app/ffprobe'], reason: 'bundled 成功不该再调 PATH');
     });
 
-    test('explicit HIBIKI_FFPROBE launch failure propagates (no silent PATH)',
+    test('explicit FUSHI_FFPROBE launch failure propagates (no silent PATH)',
         () async {
       await expectLater(
         runCliFfprobeForTesting(

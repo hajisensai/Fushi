@@ -40,7 +40,7 @@ String? _findWoff2() {
   final File vendored = File(kVendoredWoff2Fixture);
   if (vendored.existsSync()) return vendored.path;
 
-  final String? override = Platform.environment['HIBIKI_WOFF2_FIXTURE'];
+  final String? override = Platform.environment['FUSHI_WOFF2_FIXTURE'];
   if (override != null && File(override).existsSync()) return override;
 
   final List<Directory> caches = <Directory>[];
@@ -77,7 +77,7 @@ String _requireWoff2() {
   if (fixture != null) return fixture;
   fail('no .woff2 fixture found. The committed one is $kVendoredWoff2Fixture — '
       'restore it (git checkout) rather than skipping this test. An explicit '
-      'HIBIKI_WOFF2_FIXTURE override is honoured when running outside the repo '
+      'FUSHI_WOFF2_FIXTURE override is honoured when running outside the repo '
       'tree. TODO-2715: this used to markTestSkipped, which turned "the '
       'fixture is gone" into a silently green run.');
 }

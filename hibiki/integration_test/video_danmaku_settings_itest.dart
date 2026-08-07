@@ -5,7 +5,7 @@
 // ④ 手动搜索 / 选集侧栏可开（手动匹配入口可达，DanmakuManualMatchPanel 渲染）。
 //
 // 运行：hibiki/ 下 `.\tool\run_windows_itest.ps1 integration_test\video_danmaku_settings_itest.dart`
-// （HIBIKI_TEST_HIDDEN 离屏）。需真机 media_kit native + 测试视频
+// （FUSHI_TEST_HIDDEN 离屏）。需真机 media_kit native + 测试视频
 // D:\hibiki_video_test\sample.mp4（本机已置）。
 //
 // 真实弹幕匹配（弹弹play 网络搜索 / 拉评论）不在此测——需真视频指纹 + 外网，是真机门。

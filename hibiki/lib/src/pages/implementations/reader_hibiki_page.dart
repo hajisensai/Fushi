@@ -130,7 +130,7 @@ part 'reader_hibiki/webview.part.dart';
 /// `flutter_inappwebview_windows` 的 `kInAppWebViewCreationFailedSentinel` 字面量
 /// 一致）。reader 凭此区分「实例创建失败」与普通页面加载错误，只对前者走可见恢复。
 const String kReaderWebViewCreationFailedSentinel =
-    'HIBIKI_INAPPWEBVIEW_CREATION_FAILED';
+    'FUSHI_INAPPWEBVIEW_CREATION_FAILED';
 
 /// What the reader-surface caret move resolves to in Dart, given the physical
 /// key direction and the `status` hoshiCaret.move returned.

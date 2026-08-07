@@ -717,9 +717,9 @@ int _arrowBodyEnd(String structural, int from) {
 /// 审计钩子：置位后 [methodBody] 每次调用都往 stdout 打一行
 /// `#MBAUDIT|<form>|<signature>`，用来**反向枚举**全仓有多少守卫锚在箭头函数上。
 ///
-/// 只在专门的审计跑里开（`HIBIKI_METHOD_BODY_AUDIT=1`），常规跑零开销、零输出。
+/// 只在专门的审计跑里开（`FUSHI_METHOD_BODY_AUDIT=1`），常规跑零开销、零输出。
 final bool _methodBodyAudit =
-    Platform.environment['HIBIKI_METHOD_BODY_AUDIT'] == '1';
+    Platform.environment['FUSHI_METHOD_BODY_AUDIT'] == '1';
 
 String methodBody(
   String src,

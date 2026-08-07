@@ -12,7 +12,7 @@
 #include <thread>
 
 // galgame 一键制卡 A 阶段的 WASAPI loopback 采集实现。见 audio_loopback_capture.h。
-namespace hibiki {
+namespace fushi {
 
 namespace {
 
@@ -304,4 +304,4 @@ LoopbackFormat AudioLoopbackCapture::GrabRecent(int back_ms,
   return fmt;
 }
 
-}  // namespace hibiki
+}  // namespace fushi

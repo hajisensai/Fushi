@@ -39,7 +39,7 @@ void main() {
 
   // 证据落盘目录：优先环境变量（runner 会给隔离 run 目录），否则用固定临时目录。
   final String evidenceDir = () {
-    final String? env = Platform.environment['HIBIKI_LEAK_EVIDENCE_DIR'];
+    final String? env = Platform.environment['FUSHI_LEAK_EVIDENCE_DIR'];
     final String base = (env != null && env.trim().isNotEmpty)
         ? env.trim()
         : '${Directory.systemTemp.path}/hibiki-leak-evidence';

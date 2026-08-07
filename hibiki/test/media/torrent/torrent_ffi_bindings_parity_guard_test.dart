@@ -9,7 +9,7 @@
 //   不是异常。
 //
 // 而这两件事在 CI 里原本**无人可挡**：`packages/hibiki_torrent` 的测试要
-// `HIBIKI_TORRENT_LIB` 指向已构建的 DLL，Linux CI 没有 DLL → 整组 skip；
+// `FUSHI_TORRENT_LIB` 指向已构建的 DLL，Linux CI 没有 DLL → 整组 skip；
 // 而 main.yml / release.yml 的包测试清单本就没收录这个包。
 //
 // 本守卫是**纯文本扫描**，不需要 DLL、不需要 native 工具链，因此能跟着主 app 测试

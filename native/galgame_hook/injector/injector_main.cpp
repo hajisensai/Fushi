@@ -808,14 +808,14 @@ bool LunaShouldWriteLine(uint64_t thread_id, bool is_artifact,
 
 // ── Luna_Start 的回调实现（__cdecl 默认约定）─────────────────────────────────
 // Output：全引擎精确台词入口。过滤 + 写文本环。v10.16.1.2 ABI 返回 void。
-// LunaHook 逐行诊断（env `HIBIKI_LUNA_DIAG=1` 打开）：把**每一行**（含随后被 filter/伪影/线程
+// LunaHook 逐行诊断（env `FUSHI_LUNA_DIAG=1` 打开）：把**每一行**（含随后被 filter/伪影/线程
 // 选择丢弃的）连同其 hook 上下文（hookname / hookcode 签名 / addr / ctx / ctx2）打到 stderr。用于
 // 实证「系统菜单标题（读/存档确认）是否与对话走不同 hook」——若不同则可在 hook 层白名单精确排除，
 // 若同 hook 则只能回落文本层启发式。默认关（零开销）；不改任何写入路径，纯观测。
 bool LunaDiagEnabled() {
   static const bool enabled = []() {
     char buf[8] = {0};
-    const DWORD n = GetEnvironmentVariableA("HIBIKI_LUNA_DIAG", buf, sizeof(buf));
+    const DWORD n = GetEnvironmentVariableA("FUSHI_LUNA_DIAG", buf, sizeof(buf));
     return n > 0 && buf[0] != '0';
   }();
   return enabled;

@@ -38,7 +38,7 @@
 #include <string>
 #include <vector>
 
-// BUG-1166 — 滚轮载荷类型（hibiki::MouseHookWheel）来自钩子线程的消息契约。
+// BUG-1166 — 滚轮载荷类型（fushi::MouseHookWheel）来自钩子线程的消息契约。
 #include "low_level_mouse_hook.h"
 
 class GlobalLookupWindow {
@@ -222,14 +222,14 @@ class GlobalLookupWindow {
   // 吞掉，见 low_level_mouse_hook.h）。这里把它还原成一条真 WM_MOUSEWHEEL 交给
   // WebView2：composition 实例经 SendMouseInput，windowed 实例投给光标压着的
   // WebView2 子窗——两条路都是各自模式下 WebView 本来就在收输入的那条路。
-  void HandleGlobalWheel(POINT screen_pt, const hibiki::MouseHookWheel& wheel);
+  void HandleGlobalWheel(POINT screen_pt, const fushi::MouseHookWheel& wheel);
   // BUG-1166 — 带 Ctrl/Alt 的滚轮的落地点。修饰键过不了「合成 WM_MOUSEWHEEL」那道
   // 边界（Chromium 读 GetKeyState，合成消息不更新键状态表），所以把修饰键当数据交给
   // host JS 合成一条带显式 flag 的 WheelEvent，交由既有的 JS 监听按**用户绑定**判定
   // （Ctrl→缩放走 popupZoomFontStep 回 Dart；Alt→换词条留在 popup.js）。
   // C++ 只做传输，不复制任何绑定语义。
   void ForwardGlobalWheelToHost(POINT screen_pt,
-                                const hibiki::MouseHookWheel& wheel);
+                                const fushi::MouseHookWheel& wheel);
   LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
   int OffscreenX() const;
   // TODO-867 P2: round the window corners to match popup.css's card radius.
@@ -333,7 +333,7 @@ class GlobalLookupWindow {
   // 面板永不因透明改造而黑屏/崩溃（graceful degrade，只是不透明）。窗口样式、
   // controller 分支、WM_SIZE 都以 composition_active_（而非 _mode_）为准。
   bool composition_active_ = false;
-  std::wstring window_title_ = L"Hibiki Lookup";
+  std::wstring window_title_ = L"Fushi Lookup";
   std::wstring user_data_leaf_ = L"GlobalLookupWebView2";
   std::wstring popup_assets_dir_;
   std::string pending_json_;

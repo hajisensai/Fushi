@@ -9,7 +9,7 @@ import 'package:path/path.dart' as p;
 /// 目录做整卷 OCR，产出 `.mokuro` 文件后交给既有 [MangaImporter.importFromMokuroPath]
 /// 落库。
 ///
-/// 探测顺序（[resolveExecutable]）：**设置指定路径 → `HIBIKI_MOKURO` 环境变量 →
+/// 探测顺序（[resolveExecutable]）：**设置指定路径 → `FUSHI_MOKURO` 环境变量 →
 /// PATH（`where`/`which mokuro`）**。子进程经可注入的 [MokuroProcessRunner] 抽象跑，
 /// 单测注 fake、绝不真 spawn。
 class ExternalMokuroRunner {
@@ -28,13 +28,14 @@ class ExternalMokuroRunner {
 
   /// 按优先级解析出要执行的 mokuro 命令（绝对路径或命令名）；三源皆无返回 null。
   ///
-  /// 设置指定路径与 `HIBIKI_MOKURO` 原样返回（可能是绝对路径，也可能是 PATH 上的命令
+  /// 设置指定路径与 `FUSHI_MOKURO` 原样返回（可能是绝对路径，也可能是 PATH 上的命令
   /// 名），交给 [Process.start] 解析；找不到时启动阶段抛错、由 [probe]/[run] 兜成可读
   /// 失败。第三源用 `where`/`which` 探 PATH，取首个命中行。
   Future<String?> resolveExecutable() async {
     final String? cfg = _configuredPath?.trim();
     if (cfg != null && cfg.isNotEmpty) return cfg;
-    final String? env = _environment['HIBIKI_MOKURO']?.trim();
+    // 新名优先，旧名回退：HIBIKI_MOKURO 是改名前对用户公开的环境变量，不设即断。
+    final String? env = (_environment['FUSHI_MOKURO'] ?? _environment['HIBIKI_MOKURO'])?.trim();
     if (env != null && env.isNotEmpty) return env;
     return _whichMokuro();
   }

@@ -23,7 +23,7 @@ typedef GalWindowAnimatedCapture = ({
 
 /// galgame 一键制卡「画面」动图（抓角色口型/眨眼）：连续对绑定窗口抓多帧静态截图，
 /// 再用**复用的桌面 ffmpeg 后端**（`resolveFfmpegBackend()`，与 `desktop_audio_clipper.dart`
-/// 里 `extractClipGifViaFfmpeg` 走的是同一后端解析——覆盖 `HIBIKI_FFMPEG` > 程序旁捆绑
+/// 里 `extractClipGifViaFfmpeg` 走的是同一后端解析——覆盖 `FUSHI_FFMPEG` > 程序旁捆绑
 /// > PATH）按 [format] 编码（默认格式由用户偏好给出，见 [MiningAnimatedFormat]）。
 ///
 /// 纯 Dart + ffmpeg，**不碰 native**（帧捕获仍走既有 [WindowCaptureChannel.captureWindow]，

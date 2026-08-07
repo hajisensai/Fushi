@@ -17,7 +17,7 @@
 // A standalone always-on-top "QQ Music style" desktop lyric strip.
 //
 // This is a self-owned Win32 layered top-level window — NOT a Flutter view and
-// NOT a child of the main Hibiki window. It mirrors the Android
+// NOT a child of the main Fushi window. It mirrors the Android
 // FloatingLyricService: the Dart side feeds it text / style / playback state
 // over the floating_lyric MethodChannel, and it reports control taps (previous
 // / play-pause / next / close) and word-lookup taps back through callbacks.
@@ -380,7 +380,7 @@ class FloatingLyricWindow {
   std::vector<RubySpan> ruby_spans_;
   std::string context_id_;
   // Taskbar / Alt+Tab label; seeds CreateWindowExW and retitles the live window.
-  std::wstring window_title_ = L"Hibiki Lyric";
+  std::wstring window_title_ = L"Fushi Lyric";
   int highlight_start_ = -1;
   int highlight_length_ = 0;
   // TODO-708 P4: 块内当前行区间（UTF-16）。-1/0 = 无行标记（不 dim）。

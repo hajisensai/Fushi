@@ -1046,7 +1046,7 @@ class ComputerUseEvidence {
     if (directory != null) {
       debugPrint('[CU] evidence dir: ${directory!.path}');
     } else {
-      debugPrint('[CU] evidence dir disabled: HIBIKI_TEST_ROOT is not set');
+      debugPrint('[CU] evidence dir disabled: FUSHI_TEST_ROOT is not set');
     }
   }
 

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
-project(hibiki LANGUAGES C CXX)
+project(fushi LANGUAGES C CXX)
 
-set(BINARY_NAME "hibiki")
+set(BINARY_NAME "fushi")
 
 cmake_policy(SET CMP0063 NEW)
 
@@ -84,7 +84,7 @@ endif()
 set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
 
-install(TARGETS ${BINARY_NAME} hibiki_update_launcher
+install(TARGETS ${BINARY_NAME} fushi_update_launcher
   RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"

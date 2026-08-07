@@ -140,10 +140,20 @@ class AppPaths {
   /// 目录**（`DesktopDirectoryService.getHibikiExportDirectory` /
   /// `IosDirectoryService`，卡片导出物落点，刻意不随数据根走）。数据根取它下面的
   /// `data/`，用户文档根下只多出一个 `Hibiki/` 伞，内部数据与导出物各占一层、互不淹没。
-  static const List<String> defaultDocumentsChildSegments = <String>[
-    'Hibiki',
+  /// Fushi 改名（Phase 3）：新装容器名 `Fushi`；存量 nested 安装的目录还叫
+  /// `Hibiki`，由 [documentsContainerPrefKey] 锚点冻结（同 flat/nested 锚点
+  /// 哲学：存量布局一经判定永不漂移，改名不搬书库——DB 里的绝对路径都指着它）。
+  static List<String> get defaultDocumentsChildSegments => <String>[
+    _documentsContainerName ?? 'Fushi',
     'data',
   ];
+
+  /// nested 容器名锚点（SharedPreferences，与布局锚点同通道）。值 `Hibiki`
+  /// （存量安装）或 `Fushi`（新装/已迁移）。
+  static const String documentsContainerPrefKey = 'documents_container';
+
+  /// 本进程已判定的容器名；[_ensureDocumentsLayoutDecided] 启动期写一次。
+  static String? _documentsContainerName;
 
   /// 本进程已判定的默认布局（true=扁平老布局）。由 [_ensureDocumentsLayoutDecided] 在
   /// 启动期写一次，之后所有解析共用——布局在一次运行里必须恒定。
@@ -152,8 +162,16 @@ class AppPaths {
   /// 仅供测试：清掉进程内布局判定，让同一测试文件里的多个用例能各自注入不同的
   /// prefs / 老安装痕迹（生产永不调用——布局在一次运行里恒定）。
   @visibleForTesting
-  static void debugResetDocumentsLayoutCache() =>
-      _legacyFlatDocumentsRoot = null;
+  static void debugResetDocumentsLayoutCache() {
+    _legacyFlatDocumentsRoot = null;
+    _documentsContainerName = null;
+  }
+
+  /// 仅供测试：直接注入 nested 容器名锚点（模拟存量 `Hibiki` 安装 / 新装
+  /// `Fushi`），跳过 [_ensureDocumentsContainerDecided] 的文件系统探测。
+  @visibleForTesting
+  static void debugSetDocumentsContainer(String? name) =>
+      _documentsContainerName = name;
 
   /// 测试注入钩子：覆盖「读 SharedPreferences 的 data_root」这一步，使 [AppPaths] 的
   /// dataRoot 派生在纯 Dart 单测里可断言（无需平台 SharedPreferences 通道）。返回 null
@@ -309,6 +327,7 @@ class AppPaths {
   static Future<void> _ensureDocumentsLayoutDecided() async {
     if (_legacyFlatDocumentsRoot != null) return;
     final SharedPreferences? prefs = await _prefsOrNull();
+    await _ensureDocumentsContainerDecided(prefs);
     final String? stored = prefs?.getString(documentsLayoutPrefKey);
     if (stored == documentsLayoutFlat || stored == documentsLayoutNested) {
       _legacyFlatDocumentsRoot = stored == documentsLayoutFlat;
@@ -323,6 +342,43 @@ class AppPaths {
           flat ? documentsLayoutFlat : documentsLayoutNested);
     } catch (e) {
       debugPrint('AppPaths: 固化 documents 布局失败（下次启动重新判定）: $e');
+    }
+  }
+
+  /// Fushi 改名（Phase 3）：判定 + 固化 nested 容器名。锚点已有直接用；没有则
+  /// 探测一次：老容器 `<Documents>/Hibiki/data` 存在而新容器不存在 → 存量安装，
+  /// 锚 `Hibiki`（目录与 DB 内绝对路径都不动）；否则锚 `Fushi`（新装）。
+  /// 探测失败按存量处理（保守——误锚 Fushi 会让存量书库集体消失，反向只是新装
+  /// 目录名旧了点）。
+  static Future<void> _ensureDocumentsContainerDecided(
+      SharedPreferences? prefs) async {
+    if (_documentsContainerName != null) return;
+    final String? stored = prefs?.getString(documentsContainerPrefKey);
+    if (stored == 'Hibiki' || stored == 'Fushi') {
+      _documentsContainerName = stored;
+      return;
+    }
+    String decided;
+    try {
+      final Directory platformDocuments =
+          await getApplicationDocumentsDirectory();
+      final bool legacyExists =
+          await Directory(p.join(platformDocuments.path, 'Hibiki', 'data'))
+              .exists()
+              .timeout(const Duration(seconds: 2), onTimeout: () => true);
+      final bool newExists =
+          await Directory(p.join(platformDocuments.path, 'Fushi', 'data'))
+              .exists()
+              .timeout(const Duration(seconds: 2), onTimeout: () => false);
+      decided = (legacyExists && !newExists) ? 'Hibiki' : 'Fushi';
+    } catch (_) {
+      decided = 'Hibiki';
+    }
+    _documentsContainerName = decided;
+    try {
+      await prefs?.setString(documentsContainerPrefKey, decided);
+    } catch (e) {
+      debugPrint('AppPaths: 固化 documents 容器名失败（下次启动重新判定）: $e');
     }
   }
 

@@ -12,7 +12,7 @@ import 'package:macos_ui/macos_ui.dart'
 
 import 'package:hibiki/main.dart' as app;
 
-/// TODO-1375 macOS native shell acceptance (offscreen HIBIKI_TEST_HIDDEN).
+/// TODO-1375 macOS native shell acceptance (offscreen FUSHI_TEST_HIDDEN).
 ///
 /// Verifies the two shell symptoms an offscreen run can prove at their root:
 ///   (1) the sidebar visibility follows the reliable mediaOpenNotifier and is

@@ -358,7 +358,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         '0',
         dataDirectory.path,
       ],
-      environment: <String, String>{'HIBIKI_MIHON_TOKEN': token},
+      environment: <String, String>{'FUSHI_MIHON_TOKEN': token},
       mode: ProcessStartMode.normal,
     );
     if (_disposed) {
@@ -466,7 +466,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
 
   /// Readiness contract with the sidecar; mirrors
   /// `MExtensionServerController.READY_LINE_PREFIX`.
-  static const String _readyLinePrefix = 'HIBIKI_MIHON_READY port=';
+  static const String _readyLinePrefix = 'FUSHI_MIHON_READY port=';
 
   /// Extracts the announced port from one stdout line, or `null` if the line
   /// is ordinary log output.

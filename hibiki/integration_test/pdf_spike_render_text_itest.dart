@@ -39,7 +39,7 @@ const String _kPdfPath = String.fromEnvironment(
 );
 
 /// 取证目录 `<evidenceDir>/screenshots/`，与 observe_capture 同约定：
-/// run_windows_itest.ps1 传 HIBIKI_TEST_ROOT=<evidenceDir>/isolated-root。
+/// run_windows_itest.ps1 传 FUSHI_TEST_ROOT=<evidenceDir>/isolated-root。
 Directory _screenshotDir() {
   final String? root = hibikiTestRootPath();
   Directory base;

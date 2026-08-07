@@ -16,7 +16,7 @@
 
 namespace {
 
-constexpr wchar_t kWindowClassName[] = L"HibikiFloatingLyricWindow";
+constexpr wchar_t kWindowClassName[] = L"FushiFloatingLyricWindow";
 
 // Logical (96-DPI) strip metrics; scaled per-monitor in Render(). The width /
 // height defaults seed the initial window; the live size lives in
@@ -318,7 +318,7 @@ bool FloatingLyricWindow::Show(HWND owner) {
     hwnd_ = CreateWindowExW(
         WS_EX_LAYERED | WS_EX_TOPMOST | taskbar_ex | WS_EX_NOACTIVATE,
         kWindowClassName,
-        hook_text_mode_ ? L"Hibiki Hook Text" : window_title_.c_str(),
+        hook_text_mode_ ? L"Fushi Hook Text" : window_title_.c_str(),
         WS_POPUP, x, y, width, height,
         nullptr, nullptr, GetModuleHandle(nullptr), this);
     if (hwnd_ == nullptr) {

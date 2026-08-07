@@ -136,7 +136,7 @@ void main() {
           // 接线不被重构悄悄拆断。行为层实证见 tools/browser-extension/shift-hover.test.js。
           final String src = content.readAsStringSync();
           // 修饰键必须是 Shift，且 mousemove 顶层注册（不能被塞进只在某站点调用的函数里）。
-          expect(src.contains("const HIBIKI_MOD = 'shiftKey'"), isTrue,
+          expect(src.contains("const FUSHI_MOD = 'shiftKey'"), isTrue,
               reason: '${content.path} 查词修饰键不再是 Shift');
           expect(
               RegExp(r"^document\.addEventListener\('mousemove'",
@@ -145,7 +145,7 @@ void main() {
               isTrue,
               reason: '${content.path} mousemove 监听器不在顶层，Shift 悬停可能永不触发');
           // mousemove 分支必须以 Shift 为门（松开即复位）。
-          expect(src.contains('if (!e[HIBIKI_MOD])'), isTrue,
+          expect(src.contains('if (!e[FUSHI_MOD])'), isTrue,
               reason: '${content.path} mousemove 未以 Shift 为门');
           // 取词后必须真的发出 lookup 查词消息（接线终点）。
           expect(

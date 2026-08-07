@@ -259,7 +259,7 @@ void main() {
         'lookup response carries extensionBuild from provider and omits it '
         'when absent (BUG-726)', () async {
       // BUG-726：扩展自更新信号。app 把内置扩展内容指纹随查词响应下发（extensionBuild），
-      // 扩展 background 与自身 HIBIKI_DEFAULTS.build 比对，不一致即 runtime.reload 拉新。
+      // 扩展 background 与自身 FUSHI_DEFAULTS.build 比对，不一致即 runtime.reload 拉新。
       await startServer(apiKey: 'k123', extensionBuildProvider: () => 'abc123');
       final HttpClientResponse resp = await _post(
         server.port,

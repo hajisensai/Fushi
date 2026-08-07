@@ -33,7 +33,7 @@ import 'test_helpers.dart';
 ///      证明「点弹窗外的新词，一次就换查」，不是「只关栈、要点两次」。
 ///
 /// Run (PowerShell, from hibiki/)：
-///   $env:HIBIKI_TEST_HIDDEN = "1"
+///   $env:FUSHI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/reader_continuous_lookup_barrier_verify_itest.dart -d windows
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =

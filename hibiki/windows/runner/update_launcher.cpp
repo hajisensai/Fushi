@@ -12,12 +12,12 @@ namespace {
 constexpr DWORD kParentExitTimeoutMs = 120000;
 // After the parent PID exits we still poll the single-instance mutex until
 // it is truly released. WaitForSingleObject on the parent handle returns as
-// soon as that one PID dies, but a second hibiki.exe (or a lingering
-// WebView2 child) can keep HibikiSingleInstanceMutex held; launching Inno
+// soon as that one PID dies, but a second fushi.exe (or a lingering
+// WebView2 child) can keep FushiSingleInstanceMutex held; launching Inno
 // then still trips the AppMutex "is currently running" abort. This closes
 // the "only waited on the parent PID" blind spot. The .iss [Code]
 // InitializeSetup layer is the primary guard; this is belt-and-suspenders.
-constexpr wchar_t kHibikiSingleInstanceMutex[] = L"HibikiSingleInstanceMutex";
+constexpr wchar_t kFushiSingleInstanceMutex[] = L"FushiSingleInstanceMutex";
 constexpr DWORD kMutexReleaseTimeoutMs = 10000;
 constexpr DWORD kMutexPollIntervalMs = 250;
 
@@ -311,7 +311,7 @@ void MarkLaunchFailed(const std::wstring& marker_path,
 // parent PID returns nullptr.
 //
 // OpenProcess(SYNCHRONIZE) here exists ONLY to obtain a wait handle so we can
-// block on the old hibiki.exe exiting before launching Inno. A failure to open
+// block on the old fushi.exe exiting before launching Inno. A failure to open
 // that handle is never proof that the old process is still running, and this
 // launcher is a detached process whose exit code nobody reads -- so abandoning
 // the install on such a failure silently strands an already-downloaded update
@@ -333,7 +333,7 @@ ParentOpenFailureOutcome ClassifyParentOpenFailure(DWORD error) {
       /*parent_exit_proven=*/error == ERROR_INVALID_PARAMETER};
 }
 
-// Waits (bounded) for the old hibiki.exe parent to exit, recording the outcome
+// Waits (bounded) for the old fushi.exe parent to exit, recording the outcome
 // in the marker. This step is best-effort and NEVER abandons the install: see
 // ClassifyParentOpenFailure for why an OpenProcess failure is not a fatal error.
 // On a genuine wait timeout we still proceed -- the downstream mutex-release
@@ -378,11 +378,11 @@ void WaitForParentExit(const ParsedArgs& args) {
          {"parentExitTimedOutAt", JsonString(NowIsoUtc())},
          {"parentExitTimedOutError",
           JsonString(
-              "Timed out waiting for the Hibiki parent process to exit")}});
+              "Timed out waiting for the Fushi parent process to exit")}});
   }
 }
 
-// Returns true once HibikiSingleInstanceMutex is no longer present, or false
+// Returns true once FushiSingleInstanceMutex is no longer present, or false
 // if it is still held after kMutexReleaseTimeoutMs. OpenMutexW succeeds (and
 // must then be closed) only while some process still holds the named mutex;
 // ERROR_FILE_NOT_FOUND means it is gone. We never create the mutex here, so
@@ -390,7 +390,7 @@ void WaitForParentExit(const ParsedArgs& args) {
 bool WaitForMutexReleased() {
   const DWORD deadline = ::GetTickCount() + kMutexReleaseTimeoutMs;
   for (;;) {
-    HANDLE mutex = ::OpenMutexW(SYNCHRONIZE, FALSE, kHibikiSingleInstanceMutex);
+    HANDLE mutex = ::OpenMutexW(SYNCHRONIZE, FALSE, kFushiSingleInstanceMutex);
     if (mutex == nullptr) {
       return true;  // Mutex released (or never existed): safe to launch Inno.
     }
@@ -448,7 +448,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, wchar_t*, int) {
   // because the launcher is detached and the installer is AppMutex-guarded.
   WaitForParentExit(args);
 
-  // Close the "only waited on the parent PID" blind spot: a second hibiki.exe
+  // Close the "only waited on the parent PID" blind spot: a second fushi.exe
   // or a leftover WebView2 child can still hold the mutex after the parent
   // dies. Wait (bounded) for it to be released before launching Inno.
   const bool mutex_released = WaitForMutexReleased();

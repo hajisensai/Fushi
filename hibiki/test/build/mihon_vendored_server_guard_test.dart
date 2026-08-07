@@ -377,7 +377,7 @@ void main() {
     );
     expect(
       controller,
-      contains('HIBIKI_MIHON_TOKEN'),
+      contains('FUSHI_MIHON_TOKEN'),
       reason: 'Bearer token 必须来自宿主按进程下发的环境变量',
     );
     expect(
@@ -584,7 +584,7 @@ const List<String> _codeExecutionPrimitives = <String>[
 ];
 
 /// 宿主与 sidecar 之间的就绪行契约（两端必须共用同一个字面量）。
-const String _readyLinePrefix = 'HIBIKI_MIHON_READY port=';
+const String _readyLinePrefix = 'FUSHI_MIHON_READY port=';
 
 /// 取 [source] 里以 [anchor] 开头的 Kotlin 函数体（含外层花括号）。
 ///

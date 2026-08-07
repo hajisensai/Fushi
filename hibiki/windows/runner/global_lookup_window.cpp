@@ -33,7 +33,7 @@ using Microsoft::WRL::Make;
 
 namespace {
 
-constexpr wchar_t kClassName[] = L"HibikiGlobalLookupWindow";
+constexpr wchar_t kClassName[] = L"FushiGlobalLookupWindow";
 
 std::wstring Utf8ToWide(const std::string& value) {
   if (value.empty()) {
@@ -166,7 +166,7 @@ std::wstring OverlayUserDataFolder(const std::wstring& leaf) {
   if (base.empty()) {
     return std::wstring();
   }
-  return base + L"\\Hibiki\\" + leaf;
+  return base + L"\\Fushi\\" + leaf;
 }
 
 }  // namespace
@@ -209,7 +209,7 @@ void GlobalLookupWindow::HandleGlobalClick(POINT screen_pt,
 // **子 HWND** 上，本窗的 WndProc 对 WM_MOUSEWHEEL 只会走 DefWindowProc（顶层窗
 // 的 DefWindowProc 不往下传），卡片一样滚不动。所以按模式各走各的既有输入路。
 void GlobalLookupWindow::HandleGlobalWheel(POINT screen_pt,
-                                           const hibiki::MouseHookWheel& wheel) {
+                                           const fushi::MouseHookWheel& wheel) {
   if (!IsShowing() || hwnd_ == nullptr || wheel.delta == 0) return;
   const UINT message = wheel.horizontal ? WM_MOUSEHWHEEL : WM_MOUSEWHEEL;
   // 与真滚轮消息同构：wparam 高字 = delta / 低字 = MK_* 修饰键；
@@ -258,7 +258,7 @@ void GlobalLookupWindow::HandleGlobalWheel(POINT screen_pt,
 // 与 ForwardGlobalClickToHost 同一条既有边界约定（屏幕物理 px → 窗口内 CSS px），
 // 复用同一套 dpr 换算：host 侧的几何真值全程是 CSS px。
 void GlobalLookupWindow::ForwardGlobalWheelToHost(
-    POINT screen_pt, const hibiki::MouseHookWheel& wheel) {
+    POINT screen_pt, const fushi::MouseHookWheel& wheel) {
   if (webview_ == nullptr || hwnd_ == nullptr || wheel.delta == 0) {
     return;
   }
@@ -295,7 +295,7 @@ GlobalLookupWindow::~GlobalLookupWindow() {
     foreground_hook_ = nullptr;
   }
   if (mouse_hook_armed_) {
-    hibiki::DisarmLowLevelMouseHook();
+    fushi::DisarmLowLevelMouseHook();
     mouse_hook_armed_ = false;
   }
   // Only clear the hook owner if it is ours (two instances share the static;
@@ -528,7 +528,7 @@ void GlobalLookupWindow::Reveal(int width, int height) {
     }
     // BUG-1048 — 钩子跑在专用线程上（见 low_level_mouse_hook.h）：装在 platform 线程
     // 时，全系统每个鼠标事件都要排在 Flutter 的帧后面，游戏里鼠标一动就卡。
-    hibiki::ArmLowLevelMouseHook(hwnd_);
+    fushi::ArmLowLevelMouseHook(hwnd_);
     mouse_hook_armed_ = true;
   }
 }
@@ -608,7 +608,7 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
     }
     // BUG-1048 — 钩子跑在专用线程上（见 low_level_mouse_hook.h）：装在 platform 线程
     // 时，全系统每个鼠标事件都要排在 Flutter 的帧后面，游戏里鼠标一动就卡。
-    hibiki::ArmLowLevelMouseHook(hwnd_);
+    fushi::ArmLowLevelMouseHook(hwnd_);
     mouse_hook_armed_ = true;
   }
 }
@@ -826,7 +826,7 @@ void GlobalLookupWindow::Hide(bool notify) {
     foreground_hook_ = nullptr;
   }
   if (mouse_hook_armed_) {
-    hibiki::DisarmLowLevelMouseHook();
+    fushi::DisarmLowLevelMouseHook();
     mouse_hook_armed_ = false;
   }
   // spec 2026-07-10 — only clear the hook owner if it is OURS: the persistent
@@ -1952,17 +1952,17 @@ void GlobalLookupWindow::ForwardGlobalClickToHost(int screen_x, int screen_y) {
 LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
                                           LPARAM lparam) {
   switch (message) {
-    case hibiki::kLowLevelMouseClickMessage:
+    case fushi::kLowLevelMouseClickMessage:
       // BUG-1048 — 钩子线程投递的全局点击（wparam 打包屏幕物理坐标，lparam=是否
       // 落在本窗口 rect 内）。真正的决策（关闭 / 转发给 host）在这里做，钩子线程
       // 只搬坐标：那条线程必须随时能返回，否则整个系统的鼠标输入都跟着它排队。
-      HandleGlobalClick(hibiki::UnpackMouseHookPoint(wparam), lparam != 0);
+      HandleGlobalClick(fushi::UnpackMouseHookPoint(wparam), lparam != 0);
       return 0;
-    case hibiki::kLowLevelMouseWheelMessage:
+    case fushi::kLowLevelMouseWheelMessage:
       // BUG-1166 — 钩子线程已把这一格滚轮从输入流里吞掉（游戏收不到了），这里负责
       // 让卡片照常滚。同样是钩子线程只搬数据、窗口线程做事。
-      HandleGlobalWheel(hibiki::UnpackMouseHookPoint(wparam),
-                        hibiki::UnpackMouseHookWheel(lparam));
+      HandleGlobalWheel(fushi::UnpackMouseHookPoint(wparam),
+                        fushi::UnpackMouseHookWheel(lparam));
       return 0;
     case WM_SIZE:
       if (controller_) {

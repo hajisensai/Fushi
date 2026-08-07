@@ -36,7 +36,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   // 时不带该字段（向后兼容）。
   final List<String>? audioSources = audioSourcesProvider?.call();
   // BUG-726：app 内置扩展的内容指纹随查词响应下发。扩展 background 对比自身
-  // HIBIKI_DEFAULTS.build，不一致即 chrome.runtime.reload() 从磁盘拉新（磁盘副本由
+  // FUSHI_DEFAULTS.build，不一致即 chrome.runtime.reload() 从磁盘拉新（磁盘副本由
   // app 启动时刷新）。null（未注入 / 指纹尚未算好）时不带该字段（向后兼容）。
   final String? extensionBuild = extensionBuildProvider?.call();
   final String term = body['term']?.toString() ?? '';

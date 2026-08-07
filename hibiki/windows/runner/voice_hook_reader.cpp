@@ -10,7 +10,7 @@
 // 🔴 IPC 契约**只有一份真相源**：`native/galgame_hook/include/voice_hook_ipc.h`。
 // 这里曾经放一份 host 端手抄副本（`runner/voice_hook_ipc.h`），注释还写着「真相源在独立仓库
 // hibiki-hook，须同步」——那个仓库早已合进本仓，人工同步这一步就成了纯粹的漂移源：本体
-// hibiki.exe 编副本、内置 helper 编真相源，两边一旦不同步，读侧就会拿旧契约去判新 helper。
+// fushi.exe 编副本、内置 helper 编真相源，两边一旦不同步，读侧就会拿旧契约去判新 helper。
 // 实际已经漂开过：副本里的 `HasReadyGameResourceAudio` 漏了 Tyrano/BGI/Artemis/CatSystem2/
 // Malie 五个引擎的 ready 位，这些引擎资源 hook 装好了本体也判 `raw_voice_ready=false`，
 // 直接退回整机混音。副本已删除，改为直接 include 真相源——两侧编同一组常量与同一份结构布局，
@@ -19,7 +19,7 @@
 
 // galgame 一键制卡 C 阶段 —— 引擎-hook 共享内存读侧实现。见 voice_hook_reader.h。
 // 纯 Win32 文件映射，无 COM、无异常（runner 以 _HAS_EXCEPTIONS=0 编译，全程句柄/契约校验）。
-namespace hibiki {
+namespace fushi {
 
 namespace {
 
@@ -280,8 +280,8 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
   if (mapping == nullptr) {
     // 这里必须分两种：ERROR_FILE_NOT_FOUND = helper 没建会话（重开游戏）；
     // ERROR_ACCESS_DENIED = 目标进程完整性级别更高，映射的 ACL 挡住了中完整性的
-    // hibiki.exe（多为游戏以管理员身份运行，须以管理员运行 Hibiki）。两者都被旧实现
-    // 说成同一句「重启 Hibiki」，而重启对二者**都没用**。
+    // fushi.exe（多为游戏以管理员身份运行，须以管理员运行 Fushi）。两者都被旧实现
+    // 说成同一句「重启 Fushi」，而重启对二者**都没用**。
     const DWORD code = GetLastError();
     out.win32_error = static_cast<uint32_t>(code);
     out.error = (code == ERROR_FILE_NOT_FOUND)
@@ -798,4 +798,4 @@ void VoiceHookReader::Close() {
   CloseLocked(st);
 }
 
-}  // namespace hibiki
+}  // namespace fushi

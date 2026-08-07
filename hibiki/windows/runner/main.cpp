@@ -13,7 +13,7 @@
 namespace {
 
 // 从本进程 argv 里挑出第一个「文件」参数（跳过以 `-` 开头的 flag / 调试器注入参数）。
-// 这是「用 Hibiki 打开视频」时资源管理器 / 命令行传进来的 `"%1"`。只做字符串级判定，
+// 这是「用 Fushi 打开视频」时资源管理器 / 命令行传进来的 `"%1"`。只做字符串级判定，
 // 真正的视频扩展名白名单 + 存在性校验仍由首实例 Dart 侧（firstExternalVideoArg +
 // File.existsSync）负责——这里转交的是「候选路径」，首实例自行决定是否打开。
 std::wstring FirstFileArgFromCommandLine() {
@@ -41,7 +41,7 @@ std::wstring FirstFileArgFromCommandLine() {
 // TODO-935 BUG: 数据迁移成功后的自动重启（DesktopLifecycleService.restartApp）
 // 带的重启标志。必须与 Dart 侧 DesktopLifecycleService.restartMarkerArg 逐字符一致。
 // 见到它说明本次启动是「旧进程刚迁完数据、主动拉起的新进程」，而非用户二次点击图标。
-constexpr wchar_t kRestartMarkerArg[] = L"--hibiki-restarted";
+constexpr wchar_t kRestartMarkerArg[] = L"--fushi-restarted";
 
 // 本进程 argv 是否带 [kRestartMarkerArg]（自动重启拉起的新进程）。
 bool HasRestartMarker() {
@@ -80,16 +80,16 @@ bool WaitForSingleInstanceMutex(HANDLE mutex, DWORD timeout_ms) {
 }
 
 // TODO-1003: 本进程是否为自动化集成测试 runner。itest harness（tool/run_windows_itest.ps1）
-// 在离屏/置屏两模式下都恒设 HIBIKI_TEST_HIDDEN（同 win32_window.cpp 的 IsTestHiddenMode）。
+// 在离屏/置屏两模式下都恒设 FUSHI_TEST_HIDDEN（同 win32_window.cpp 的 IsTestHiddenMode）。
 // 测试模式下**必须跳过**下面的单实例守卫：测试 runner 本就该以首实例语义启动，哪怕用户
-// 自己的 Hibiki 正开着；否则守卫会看到用户实例持有 HibikiSingleInstanceMutex，走
+// 自己的 Fushi 正开着；否则守卫会看到用户实例持有 FushiSingleInstanceMutex，走
 // FindWindow→前置→return EXIT_SUCCESS 分支，在 Flutter engine 初始化**之前**就退出 →
 // flutter_tool 永远拿不到 VM service URI（报 "log reader stopped unexpectedly"，整套
 // Windows itest 无法 attach）。跳过是安全的：守卫唯一目的是防两进程共享默认 WebView2
-// userDataFolder（BUG-437），而 harness 已用 HIBIKI_WEBVIEW2_USER_DATA_FOLDER 把测试
+// userDataFolder（BUG-437），而 harness 已用 FUSHI_WEBVIEW2_USER_DATA_FOLDER 把测试
 // runner 的 WebView2 profile 隔离开，冲突不存在。生产从不设该变量，行为字节不变。
 bool IsTestRunnerMode() {
-  return ::GetEnvironmentVariableW(L"HIBIKI_TEST_HIDDEN", nullptr, 0) > 0;
+  return ::GetEnvironmentVariableW(L"FUSHI_TEST_HIDDEN", nullptr, 0) > 0;
 }
 
 }  // namespace
@@ -97,12 +97,12 @@ bool IsTestRunnerMode() {
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
   // Inno Setup 静默更新靠这个命名互斥量检测并关闭运行中的实例（见 hibiki.iss AppMutex）。
-  // TODO-904 / BUG-437: 真单实例守卫。第二个 hibiki.exe 与首实例共享同一 WebView2
+  // TODO-904 / BUG-437: 真单实例守卫。第二个 fushi.exe 与首实例共享同一 WebView2
   // 默认 userDataFolder（基于 exe 名），而 WebView2 契约不允许多进程并发同一
   // userDataFolder → 第二实例 env 创建锁冲突失败 → `Cannot create the InAppWebView
   // instance!`。原本只 CreateMutexW 不查 ERROR_ALREADY_EXISTS = 没有真单实例。
   // 此处检测已有实例则把首实例窗口前置并退出本进程，消除双实例锁冲突放大器。
-  // 集成测试 runner（HIBIKI_TEST_HIDDEN 非空）跳过整套单实例守卫——见 IsTestRunnerMode
+  // 集成测试 runner（FUSHI_TEST_HIDDEN 非空）跳过整套单实例守卫——见 IsTestRunnerMode
   // 注释：否则撞用户实例的互斥量会在引擎初始化前退出，itest 无法 attach。
   const bool test_runner = IsTestRunnerMode();
   HANDLE single_instance_mutex = nullptr;
@@ -110,7 +110,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   if (!test_runner) {
     ::SetLastError(ERROR_SUCCESS);
     single_instance_mutex =
-        ::CreateMutexW(nullptr, FALSE, L"HibikiSingleInstanceMutex");
+        ::CreateMutexW(nullptr, FALSE, L"FushiSingleInstanceMutex");
     another_instance = single_instance_mutex != nullptr &&
                        ::GetLastError() == ERROR_ALREADY_EXISTS;
   }
@@ -128,17 +128,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
   if (another_instance) {
     // 已有实例在跑：找到首实例主窗口。
-    HWND existing = ::FindWindowW(nullptr, L"Hibiki");
+    HWND existing = ::FindWindowW(nullptr, L"Fushi");
     if (existing != nullptr) {
       // TODO-904 P0 回归修复：本次启动若带视频文件参数（文件关联 / 拖到 exe /
-      // CLI `hibiki.exe "%1"`），必须把路径**转交**首实例，否则第二实例只前置窗口
+      // CLI `fushi.exe "%1"`），必须把路径**转交**首实例，否则第二实例只前置窗口
       // 就退出 → 视频路径整个丢掉、首实例从不知情 →「点了没反应」。用 WM_COPYDATA
       // 把 UTF-8 路径字节跨进程发给首实例的窗口过程（见 flutter_window.cpp 的
       // WM_COPYDATA 处理 → app.fushi/external_video MethodChannel →
       // _openExternalVideo）。无文件参数（纯第二次启动）则只前置 + 退出。
       const std::wstring file_arg = FirstFileArgFromCommandLine();
       if (!file_arg.empty()) {
-        ::hibiki::SendExternalVideoPath(existing, file_arg);
+        ::fushi::SendExternalVideoPath(existing, file_arg);
       }
       if (::IsIconic(existing)) {
         ::ShowWindow(existing, SW_RESTORE);
@@ -151,9 +151,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
 
   // BUG-209 / TODO-398：在 Flutter engine / COM 初始化之前安装进程级 minidump
-  // 写出（写进 %LOCALAPPDATA%\Hibiki\crashdumps\，链回引擎既有 filter），让
+  // 写出（写进 %LOCALAPPDATA%\Fushi\crashdumps\，链回引擎既有 filter），让
   // GraphicsCapture 延迟 UAF 崩溃必留可被 cdb 分析的 dump，不再赌系统 WER。
-  ::hibiki::InstallCrashDumpHandler();
+  ::fushi::InstallCrashDumpHandler();
 
   // Attach to console when present (e.g., 'flutter run') or create a
   // new console when running with a debugger.
@@ -175,7 +175,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.CreateAndShow(L"Hibiki", origin, size)) {
+  if (!window.CreateAndShow(L"Fushi", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

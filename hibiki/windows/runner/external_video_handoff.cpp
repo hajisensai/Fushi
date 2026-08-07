@@ -2,7 +2,7 @@
 
 #include <vector>
 
-namespace hibiki {
+namespace fushi {
 
 namespace {
 
@@ -60,4 +60,4 @@ std::string DecodeExternalVideoPath(const COPYDATASTRUCT* data) {
                      static_cast<size_t>(data->cbData));
 }
 
-}  // namespace hibiki
+}  // namespace fushi

@@ -19,7 +19,7 @@ import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 ///   3. gaiji 内联小图仍是 eager（既有行为不变）。
 ///
 /// Run (PowerShell, from hibiki/)：
-///   $env:HIBIKI_TEST_HIDDEN = "1"
+///   $env:FUSHI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/merged_image_eager_load_test.dart -d windows
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

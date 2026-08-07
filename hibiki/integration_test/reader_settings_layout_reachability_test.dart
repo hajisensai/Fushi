@@ -46,7 +46,7 @@ import 'test_helpers.dart';
 /// DoNothingIntent，Flutter 原生遍历直接可用，无需先开实验焦点导航开关。
 ///
 /// Run (PowerShell, from hibiki/):
-///   $env:HIBIKI_TEST_HIDDEN = "1"
+///   $env:FUSHI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/reader_settings_layout_reachability_test.dart -d windows
 
 class _FakeInAppWebViewController implements InAppWebViewController {

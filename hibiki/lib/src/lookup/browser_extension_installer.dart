@@ -55,7 +55,7 @@ const String _kDefaultsFileName = 'hibiki-defaults.js';
 ///
 /// BUG-726：[build] 是本次解压的扩展内容指纹（[computeBrowserExtensionFingerprint]）。
 /// server 随查词响应下发同一指纹（`extensionBuild`），扩展 background 对比自身
-/// `HIBIKI_DEFAULTS.build`，不一致即 `chrome.runtime.reload()` 从磁盘拉新——app 升级
+/// `FUSHI_DEFAULTS.build`，不一致即 `chrome.runtime.reload()` 从磁盘拉新——app 升级
 /// 后弹窗自动跟上，无需用户重装/手动 reload。null（占位/旧调用）时不写该键。
 String buildBrowserExtensionDefaultsJs(
   BrowserExtensionServerConfig config, {
@@ -66,7 +66,7 @@ String buildBrowserExtensionDefaultsJs(
   final StringBuffer b = StringBuffer();
   b.writeln('// TODO-1087: written by Hibiki install helper on extract.');
   b.writeln('// Priority: chrome.storage.local (manual override) > this file.');
-  b.writeln('self.HIBIKI_DEFAULTS = {');
+  b.writeln('self.FUSHI_DEFAULTS = {');
   b.writeln('  host: $host,');
   b.writeln('  port: ${config.port},');
   b.writeln('  token: $token,');

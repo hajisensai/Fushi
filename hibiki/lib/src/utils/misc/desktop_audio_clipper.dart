@@ -433,7 +433,7 @@ void _reportFfmpegUnexpectedException(
 /// `TtsChannelHandler` (MediaExtractor + AacAdtsCueAudioRewriter). There is no
 /// native handler off Android, so desktop builds fall back to ffmpeg here.
 ///
-/// ffmpeg is resolved from the `HIBIKI_FFMPEG` env var (absolute path), else
+/// ffmpeg is resolved from the `FUSHI_FFMPEG` env var (absolute path), else
 /// `ffmpeg` on PATH. If ffmpeg is absent the call returns null — the same
 /// no-audio outcome as before, never a crash.
 

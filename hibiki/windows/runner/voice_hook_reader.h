@@ -7,17 +7,17 @@
 #include <string>
 #include <vector>
 
-// galgame 一键制卡 C 阶段（docs/specs/galgame-mining）—— hibiki.exe **读侧** native。
+// galgame 一键制卡 C 阶段（docs/specs/galgame-mining）—— fushi.exe **读侧** native。
 //
 // 隔离红线：注入进游戏、装 XAudio2/DirectSound hook 的代码全在独立组件
-// 独立仓库 hibiki-hook（injector + hook DLL），会被杀软报毒，**绝不进 hibiki.exe**。
+// 独立仓库 hibiki-hook（injector + hook DLL），会被杀软报毒，**绝不进 fushi.exe**。
 // 本 reader 只做一件被杀软视为无害的事：按名 [OpenFileMappingW] 打开那个组件建好的**共享内存**，
 // 读环形缓冲里 hook 抓到的干净语音 PCM。它是 A 阶段 [AudioLoopbackCapture] 的引擎-hook 版对偶：
 // 同样「开一路 → 需要时取最近 N 毫秒」，只是数据源从本进程 WASAPI 换成跨进程共享内存。
 //
 // 单读者、无锁：hook DLL 是唯一写者（单写 write_pos/total_written），host 只读，读到的量至多
 // 滞后一个音频包，对「抓最近一句语音」无害（契约见 voice_hook_ipc.h）。
-namespace hibiki {
+namespace fushi {
 
 // 从共享内存 header 读出的语音格式 + 状态。[ok] 仅当映射有效、契约匹配、hook 已填格式时为 true。
 struct VoiceHookStatus {
@@ -45,9 +45,9 @@ struct VoiceHookStatus {
 //
 // 这四条出口（pid 非法 / OpenFileMapping 失败 / MapViewOfFile 失败 / 契约不匹配）旧实现
 // 一律 `return VoiceHookStatus{}` 全零，上层只拿得到「打不开」一个比特，于是 UI 只能说
-// 「捕获通道无法打开，请重启 Hibiki」——而这几种原因的处置**完全不同**：
+// 「捕获通道无法打开，请重启 Fushi」——而这几种原因的处置**完全不同**：
 //   - 映射不存在：helper 没建好会话，重启 app 无用，要重开游戏；
-//   - 拒绝访问：游戏跑在更高完整性级别（多为管理员权限启动），要以管理员运行 Hibiki；
+//   - 拒绝访问：游戏跑在更高完整性级别（多为管理员权限启动），要以管理员运行 Fushi；
 //   - 契约不匹配：helper 与本体版本不一致，重启多少次都不会好，必须更新/重装 helper。
 // 原因是在 `return` 那一刻丢掉的，任何下游文案层补丁都救不回来（同 BUG-1142 的教训）。
 enum class VoiceHookOpenError {
@@ -202,6 +202,6 @@ class VoiceHookReader {
   VoiceHookReader& operator=(const VoiceHookReader&) = delete;
 };
 
-}  // namespace hibiki
+}  // namespace fushi
 
 #endif  // RUNNER_VOICE_HOOK_READER_H_

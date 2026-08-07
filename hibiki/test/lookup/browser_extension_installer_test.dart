@@ -50,9 +50,9 @@ void main() {
   });
 
   // TODO-1087：自动配置注入函数。buildBrowserExtensionDefaultsJs 把 server 真值写成
-  // 扩展的 hibiki-defaults.js（self.HIBIKI_DEFAULTS）。测注入结果字面正确 + 转义安全。
+  // 扩展的 hibiki-defaults.js（self.FUSHI_DEFAULTS）。测注入结果字面正确 + 转义安全。
   group('buildBrowserExtensionDefaultsJs', () {
-    test('emits host/port/token into self.HIBIKI_DEFAULTS', () {
+    test('emits host/port/token into self.FUSHI_DEFAULTS', () {
       final String js = buildBrowserExtensionDefaultsJs(
         const BrowserExtensionServerConfig(
           host: '127.0.0.1',
@@ -60,7 +60,7 @@ void main() {
           token: 'abc123',
         ),
       );
-      expect(js, contains('self.HIBIKI_DEFAULTS'));
+      expect(js, contains('self.FUSHI_DEFAULTS'));
       expect(js, contains('host: "127.0.0.1"'));
       expect(js, contains('port: 19633'));
       expect(js, contains('token: "abc123"'));
@@ -152,20 +152,20 @@ void main() {
       expect(defaults.existsSync(), isTrue,
           reason: 'missing bundled hibiki-defaults.js');
       final String src = defaults.readAsStringSync();
-      expect(src, contains('self.HIBIKI_DEFAULTS'));
+      expect(src, contains('self.FUSHI_DEFAULTS'));
       expect(src, contains("host: '127.0.0.1'"));
       expect(src, contains('port: 19633'));
     });
 
-    test('background.js falls back to HIBIKI_DEFAULTS (not port 0)', () {
+    test('background.js falls back to FUSHI_DEFAULTS (not port 0)', () {
       final File bg = File('assets/browser_extension/background.js');
       final String src = bg.readAsStringSync();
-      // 必须 importScripts 默认文件 + cfg() 引用 HIBIKI_DEFAULTS 作回落。
+      // 必须 importScripts 默认文件 + cfg() 引用 FUSHI_DEFAULTS 作回落。
       // 不匹配闭合括号：TODO-1087 诊断特性后 importScripts 追加了
       // 'connection-diagnostics.js'（同一 importScripts 调用多参），
       // hibiki-defaults.js 仍被导入，守卫只认「该文件被 importScripts」这个契约。
       expect(src, contains("importScripts('hibiki-defaults.js'"));
-      expect(src, contains('HIBIKI_DEFAULTS'));
+      expect(src, contains('FUSHI_DEFAULTS'));
       // 不再无条件默认 port=0（那会导致默认连不上）。
       expect(src, isNot(contains('port = 0')));
     });

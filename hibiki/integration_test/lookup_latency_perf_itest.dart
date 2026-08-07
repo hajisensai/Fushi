@@ -21,7 +21,7 @@ import 'test_helpers.dart';
 /// BUG-712 查词时延实测 itest —— 只产出计时数据，不做性能断言（避免机器差异假红）。
 ///
 /// 数据源两级：
-///   - 真实词典：`$HIBIKI_TEST_ROOT/fixtures/perf-dicts/*.zip`（term+freq+pitch 组合，
+///   - 真实词典：`$FUSHI_TEST_ROOT/fixtures/perf-dicts/*.zip`（term+freq+pitch 组合，
 ///     ASCII 文件名）逐个经真实 [AppModel.importDictionary] FFI 导入；同一 RunId 复跑
 ///     时已装词典直接复用（导入成本只付一次）。
 ///   - 没有该目录时退回 [seedDictionary] 的 2 词条生成词典（数字标注 tiny-dict）。
@@ -207,13 +207,13 @@ void main() {
   );
 }
 
-/// 从 `$HIBIKI_TEST_ROOT/fixtures/perf-dicts/` 逐个导入真实词典 zip。
+/// 从 `$FUSHI_TEST_ROOT/fixtures/perf-dicts/` 逐个导入真实词典 zip。
 /// 已装同名词典跳过（同一 RunId 复跑不重复导入）。返回是否装上了至少一部。
 Future<bool> _importPerfDictionaries(
   AppModel appModel,
   WidgetTester tester,
 ) async {
-  const String testRoot = String.fromEnvironment('HIBIKI_TEST_ROOT');
+  const String testRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
   if (testRoot.isEmpty) return appModel.dictionaries.length > 1;
   final Directory dir = Directory('$testRoot/fixtures/perf-dicts');
   if (!dir.existsSync()) return appModel.dictionaries.length > 1;

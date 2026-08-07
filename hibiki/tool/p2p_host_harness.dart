@@ -7,7 +7,7 @@
 //   dart run tool/p2p_host_harness.dart [port]
 //
 // Prints a single machine-readable line once the server is listening:
-//   HIBIKI_P2P_READY port=<port> token=<token>
+//   FUSHI_P2P_READY port=<port> token=<token>
 // then serves until killed (5-minute safety cap).
 import 'dart:io';
 
@@ -34,7 +34,7 @@ Future<void> main(List<String> args) async {
     allowLan: true, // bind 0.0.0.0 so the emulator reaches it via 10.0.2.2
   );
   await server.start();
-  stdout.writeln('HIBIKI_P2P_READY port=${server.port} token=$token');
+  stdout.writeln('FUSHI_P2P_READY port=${server.port} token=$token');
 
   await Future<void>.delayed(const Duration(minutes: 5));
   await server.stop();

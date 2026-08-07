@@ -110,7 +110,7 @@ void main() {
 
   test('hidden Windows runner is toolwindow/noactivate and off-screen', () {
     final String runner = read('windows/runner/win32_window.cpp');
-    expect(runner.contains('HIBIKI_TEST_HIDDEN'), isTrue);
+    expect(runner.contains('FUSHI_TEST_HIDDEN'), isTrue);
     expect(runner.contains('WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE'), isTrue);
     expect(runner.contains('kOffscreenOrigin'), isTrue);
     expect(

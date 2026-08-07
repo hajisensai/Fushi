@@ -63,7 +63,7 @@ void main() {
       expect(selfUpdate,
           contains('if (recording) return { action: actions.none };'));
       expect(selfUpdate, contains('if (reloadedFor === remote)'));
-      expect(src, contains('HIBIKI_SELF_UPDATE'),
+      expect(src, contains('FUSHI_SELF_UPDATE'),
           reason: 'background.js 必须消费 self-update 状态机的决策');
       expect(src, contains('hibikiReloadedForBuild'));
       final int fn = src.indexOf('async function maybeSelfReload');

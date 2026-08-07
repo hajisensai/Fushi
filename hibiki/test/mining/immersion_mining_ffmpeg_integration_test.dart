@@ -12,7 +12,7 @@ import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 
 /// 真跑系统 ffmpeg 的集成验证（TODO-1000）：确认「GIF 制卡」媒体链路端到端可产出真 GIF +
-/// 音频 + 静图，而不只是引擎的假抽取器逻辑。无 ffmpeg（HIBIKI_FFMPEG 或 PATH 都没有）时整组
+/// 音频 + 静图，而不只是引擎的假抽取器逻辑。无 ffmpeg（FUSHI_FFMPEG 或 PATH 都没有）时整组
 /// 跳过（CI 不带 ffmpeg 不误红）。桌面走系统 ffmpeg（`ffmpeg_backend` resolveFfmpegBackend）。
 class _FakeRepo implements BaseAnkiRepository {
   AnkiMiningContext? minedContext;
@@ -29,7 +29,7 @@ class _FakeRepo implements BaseAnkiRepository {
 }
 
 String? _ffmpegExe() {
-  final String? override = Platform.environment['HIBIKI_FFMPEG'];
+  final String? override = Platform.environment['FUSHI_FFMPEG'];
   if (override != null && override.isNotEmpty) return override;
   try {
     final ProcessResult r = Process.runSync('ffmpeg', <String>['-version']);

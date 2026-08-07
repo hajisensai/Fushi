@@ -70,7 +70,7 @@ void main() {
       expect(js, contains('hibikiInstallSwipeClose(hibikiHost)'),
           reason: '手势必须挂到弹窗宿主 hibikiHost 上');
       // 水平主导判据 + 过阈才关（避免竖向滚动/选区误触）。
-      expect(js, contains('HIBIKI_SWIPE_CLOSE_THRESHOLD'),
+      expect(js, contains('FUSHI_SWIPE_CLOSE_THRESHOLD'),
           reason: '必须有水平拖关阈值常量');
       expect(js, contains('hibikiRemoveContainer()'),
           reason: '过阈后必须调 hibikiRemoveContainer() 真正关窗');

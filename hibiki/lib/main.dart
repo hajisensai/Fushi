@@ -72,6 +72,7 @@ import 'package:hibiki_core/hibiki_core.dart'
     show VideoBooksCompanion, VideoBookRow;
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
+import 'package:hibiki/src/storage/windows_appdata_migration.dart';
 
 Color? _savedSplashColor;
 
@@ -137,6 +138,11 @@ void main([List<String> args = const <String>[]]) {
     /// Necessary to initialise Flutter when running native code before
     /// starting the application.
     final binding = WidgetsFlutterBinding.ensureInitialized();
+    // Fushi 改名（Phase 3）：%APPDATA%\Hibiki\Hibiki → %APPDATA%\Fushi\Fushi
+    // 一次性搬迁。必须先于进程内**第一次** SharedPreferences 读取（下面的
+    // applyInitialPlacement 就会读）——插件会在新路径缓存空 prefs，数据根配置
+    // 与 documents 布局锚点全在里面，晚了就等于丢配置。
+    await migrateWindowsLegacySupportDir();
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       await windowManager.ensureInitialized();
       await DesktopWindowPlacement.applyInitialPlacement();

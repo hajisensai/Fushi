@@ -9,7 +9,7 @@ import 'package:hibiki/src/storage/app_paths.dart';
 /// TODO-935 E0 守卫：钉死「应用数据根目录唯一入口 [AppPaths]」的收敛不被回退。
 ///
 /// 两类断言：
-///  1. **行为等价**（运行时）：在 `HIBIKI_TEST_ROOT` 注入下，[AppPaths] 解析出的三个根
+///  1. **行为等价**（运行时）：在 `FUSHI_TEST_ROOT` 注入下，[AppPaths] 解析出的三个根
 ///     与旧的 `hibikiTestDirectory('app-documents'|'app-support'|'temp')` 逐字节一致，
 ///     且各子目录 getter 在其下逐字节派生——证明重构没有改变任何模块拿到的绝对路径。
 ///  2. **单一入口**（源码扫描）：被收敛的核心数据存储模块不再直连
@@ -31,7 +31,7 @@ void main() {
 
     test('三个根与 hibikiTestDirectory 逐字节一致', () async {
       final Map<String, String> env = <String, String>{
-        'HIBIKI_TEST_ROOT': root.path,
+        'FUSHI_TEST_ROOT': root.path,
       };
       // 旧解析（各模块原先各自调用的等价物）。
       final Directory expectedDocs =

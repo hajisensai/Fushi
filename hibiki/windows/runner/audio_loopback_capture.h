@@ -13,7 +13,7 @@
 // 纯 WASAPI + WRL ComPtr（runner 以 _HAS_EXCEPTIONS=0 编译，全程 HRESULT 校验、不抛异常）。
 // 环形缓冲内存有界（容量 = byteRate * kRingSeconds），采集在专用线程，Dart 只按需拉取，
 // 不做持续 IPC。
-namespace hibiki {
+namespace fushi {
 
 // loopback PCM 格式（GetMixFormat 得来，共享模式常见 48k 立体声 float32 或 16-bit）。
 // [ok] 仅当采集已成功启动、字段有效时为 true。
@@ -49,6 +49,6 @@ class AudioLoopbackCapture {
   AudioLoopbackCapture& operator=(const AudioLoopbackCapture&) = delete;
 };
 
-}  // namespace hibiki
+}  // namespace fushi
 
 #endif  // RUNNER_AUDIO_LOOPBACK_CAPTURE_H_

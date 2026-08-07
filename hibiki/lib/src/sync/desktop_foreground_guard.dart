@@ -22,7 +22,7 @@ abstract final class DesktopForegroundGuard {
     final bool? override = debugHiddenWindowsRunner;
     if (override != null) return override;
     if (!Platform.isWindows) return false;
-    return Platform.environment.containsKey('HIBIKI_TEST_HIDDEN');
+    return Platform.environment.containsKey('FUSHI_TEST_HIDDEN');
   }
 
   static bool isForegroundOwnedByCurrentProcess() {

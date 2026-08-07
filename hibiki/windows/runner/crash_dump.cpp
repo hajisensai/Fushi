@@ -5,7 +5,7 @@
 #include <shlobj.h>
 #include <cwchar>
 
-namespace hibiki
+namespace fushi
 {
   namespace
   {
@@ -51,7 +51,7 @@ namespace hibiki
     {
       wchar_t root[MAX_PATH];
       const DWORD len =
-        GetEnvironmentVariableW(L"HIBIKI_TEST_ROOT", root, MAX_PATH);
+        GetEnvironmentVariableW(L"FUSHI_TEST_ROOT", root, MAX_PATH);
       if (len == 0 || len >= MAX_PATH) {
         return false;
       }
@@ -82,7 +82,7 @@ namespace hibiki
       }
       size_t p = AppendW(dir, local_app_data);
       CoTaskMemFree(local_app_data);
-      if (!AppendSegmentW(dir, &p, L"\\Hibiki")) return false;
+      if (!AppendSegmentW(dir, &p, L"\\Fushi")) return false;
       CreateDirectoryW(dir, nullptr);
       if (!AppendSegmentW(dir, &p, L"\\crashdumps")) return false;
       CreateDirectoryW(dir, nullptr);
@@ -91,7 +91,7 @@ namespace hibiki
 
     LONG WINAPI WriteDumpFilter(EXCEPTION_POINTERS* exception_pointers)
     {
-      // 解析 %LOCALAPPDATA%\Hibiki\crashdumps\ 并确保存在（与 wgc_capture.log 同根，
+      // 解析 %LOCALAPPDATA%\Fushi\crashdumps\ 并确保存在（与 wgc_capture.log 同根，
       // 便于用户一次性打包上传）。SHGetKnownFolderPath 内部分配一小块 COM 内存，
       // 在 0xc0000005（读 null）这类异常下进程堆通常仍可用；若失败则放弃写 dump。
       wchar_t dir[MAX_PATH];

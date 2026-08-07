@@ -47,7 +47,7 @@ void main() {
     expect(b.contains('Platform.isAndroid || Platform.isIOS'), isTrue,
         reason: '移动端必须分流到自编后端');
     expect(b.contains('KitFfmpegBackend()'), isTrue);
-    expect(b.contains('HIBIKI_FFMPEG'), isTrue);
+    expect(b.contains('FUSHI_FFMPEG'), isTrue);
     expect(b.contains('CliFfmpegBackend()'), isTrue);
   });
 

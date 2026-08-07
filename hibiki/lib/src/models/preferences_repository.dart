@@ -1838,7 +1838,7 @@ class PreferencesRepository extends ChangeNotifier {
 
   /// 外部 mokuro CLI 可执行路径（漫画 OCR 后备；空串=未设）。内置 ONNX 引擎在本平台不可用
   /// 或用户偏好外部工具时，OCR 导入向导据此调用系统 mokuro（见 [ExternalMokuroRunner]）。
-  /// 空串=未指定，运行时退回 `HIBIKI_MOKURO` 环境变量 / PATH 探测。
+  /// 空串=未指定，运行时退回 `FUSHI_MOKURO` 环境变量 / PATH 探测。
   String get mangaExternalMokuroPath =>
       getPref('manga_external_mokuro_path', defaultValue: '') as String;
 

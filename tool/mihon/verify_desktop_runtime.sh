@@ -48,7 +48,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-HIBIKI_MIHON_TOKEN="$token" "$java" -Xmx256m -Djava.awt.headless=true \
+FUSHI_MIHON_TOKEN="$token" "$java" -Xmx256m -Djava.awt.headless=true \
   -Djava.util.prefs.userRoot="$data_directory/preferences" \
   -jar "$server" "$port" "$data_directory" >"$stdout_log" 2>"$stderr_log" &
 pid="$!"

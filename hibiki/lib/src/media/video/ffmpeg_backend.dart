@@ -226,12 +226,14 @@ abstract class FfmpegBackend {
 }
 
 /// 解析 ffmpeg 可执行文件（桌面 [CliFfmpegBackend] 用）。优先级：
-/// 1. `HIBIKI_FFMPEG`（绝对路径，显式覆盖，开发/特殊部署）；
+/// 1. `FUSHI_FFMPEG`（绝对路径，显式覆盖，开发/特殊部署）；
 /// 2. **app 程序旁捆绑的 `ffmpeg(.exe)`**（打包时塞进各桌面产物 → 开箱即用，不依赖
 ///    用户自己装 ffmpeg；否则没装 ffmpeg 的电脑会丢内封字幕/cue 动图/制卡音频）；
 /// 3. 回退系统 PATH 上的 `ffmpeg`。
 String resolveFfmpegExecutable() => resolveFfmpegExecutableFrom(
-      override: Platform.environment['HIBIKI_FFMPEG'],
+      // 新名优先，旧名回退（改名前公开的用户环境变量）。
+      override: Platform.environment['FUSHI_FFMPEG'] ??
+          Platform.environment['HIBIKI_FFMPEG'],
       bundledPath: _bundledFfmpegPath(),
     );
 
@@ -255,10 +257,11 @@ String resolveFfmpegExecutableFrom({
 String? _bundledFfmpegPath() => _bundledExecutablePath('ffmpeg');
 
 /// 解析 ffprobe 可执行文件（TODO-1045 元数据探测用）。与 [resolveFfmpegExecutable]
-/// 同款优先级：`HIBIKI_FFPROBE` 覆盖 > 程序旁捆绑 `ffprobe(.exe)`（打包时与 ffmpeg
+/// 同款优先级：`FUSHI_FFPROBE` 覆盖 > 程序旁捆绑 `ffprobe(.exe)`（打包时与 ffmpeg
 /// 并排塞进各桌面产物）> 系统 PATH 上的 `ffprobe`。
 String resolveFfprobeExecutable() => resolveFfprobeExecutableFrom(
-      override: Platform.environment['HIBIKI_FFPROBE'],
+      override: Platform.environment['FUSHI_FFPROBE'] ??
+          Platform.environment['HIBIKI_FFPROBE'],
       bundledPath: _bundledFfprobePath(),
     );
 
@@ -466,7 +469,7 @@ Future<FfmpegRunResult> _runCliFfmpeg({
       // ERROR_EXE_MACHINE_TYPE_MISMATCH(216) 等）。既然 bundled 这个文件确实存在
       // 却跑不起来，唯一正确处置就是回退到 PATH 上的 ffmpeg（app 拥有的安全网），
       // 而不是死盯单一错误码——否则字幕枚举 / 制卡音频会把真失败吞成「无字幕」。
-      // 显式 HIBIKI_FFMPEG 覆盖走上面的分支、不进这里，旧契约不变（如实报错）。
+      // 显式 FUSHI_FFMPEG 覆盖走上面的分支、不进这里，旧契约不变（如实报错）。
       fallbackReason = 'bundled ffmpeg launch failed '
           '(errorCode=${e.errorCode}, message=${e.message})';
       debugPrint(
@@ -587,7 +590,9 @@ class CliFfmpegBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) =>
       _runCliFfmpeg(
-        override: Platform.environment['HIBIKI_FFMPEG'],
+        // 新名优先，旧名回退（改名前公开的用户环境变量）。
+      override: Platform.environment['FUSHI_FFMPEG'] ??
+          Platform.environment['HIBIKI_FFMPEG'],
         bundledPath: _bundledFfmpegPath(),
         isWindows: Platform.isWindows,
         args: args,
@@ -598,7 +603,8 @@ class CliFfmpegBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
       _runCliFfprobe(
-        override: Platform.environment['HIBIKI_FFPROBE'],
+        override: Platform.environment['FUSHI_FFPROBE'] ??
+          Platform.environment['HIBIKI_FFPROBE'],
         bundledPath: _bundledFfprobePath(),
         args: args,
         timeout: timeout,
@@ -700,7 +706,7 @@ FfmpegBackend? _cachedBackend;
 
 /// 进程级单例 ffmpeg 后端选择。
 ///
-/// - `HIBIKI_FFMPEG` 覆盖（绝对路径）→ 系统 CLI（开发/特殊部署，优先）。
+/// - `FUSHI_FFMPEG` 覆盖（绝对路径）→ 系统 CLI（开发/特殊部署，优先）。
 /// - Android / iOS → [KitFfmpegBackend]（进程内自编 ffmpeg-kit；移动端无系统 ffmpeg
 ///   且 iOS 禁 exec 子进程）。
 /// - 桌面（Windows/macOS/Linux）→ 系统 CLI（打包/用户提供 ffmpeg）。
@@ -712,7 +718,7 @@ void setFfmpegBackendForTesting(FfmpegBackend? backend) {
 }
 
 FfmpegBackend _selectBackend() {
-  final String? override = Platform.environment['HIBIKI_FFMPEG']?.trim();
+  final String? override = Platform.environment['FUSHI_FFMPEG']?.trim();
   if (override != null && override.isNotEmpty) return const CliFfmpegBackend();
   if (Platform.isAndroid || Platform.isIOS) return const KitFfmpegBackend();
   return const CliFfmpegBackend();

@@ -2,8 +2,8 @@
 // 会设的同款制卡源（miningVideoUrl 抽 GIF、audioStreamUrl 抽音频）跑真 ImmersionMiningEngine，
 // 断言产出的 AnkiMiningContext 带真实 GIF 封面 + 真实音频 + 字幕句子。
 //
-// 依赖真网络（直连 YouTube）+ 本机 ffmpeg，故**默认 skip**，仅 HIBIKI_YT_LIVE_ITEST=1 时跑：
-//   $env:HIBIKI_YT_LIVE_ITEST=1
+// 依赖真网络（直连 YouTube）+ 本机 ffmpeg，故**默认 skip**，仅 FUSHI_YT_LIVE_ITEST=1 时跑：
+//   $env:FUSHI_YT_LIVE_ITEST=1
 //   flutter test test/mining/youtube_immersion_live_engine_test.dart
 // 纯 host VM（无 libmpv / 无设备 / 不碰用户 DB）——播放器侧证据见
 // integration_test/youtube_stream_playback_itest.dart。
@@ -20,7 +20,7 @@ import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
 
 const String _kUrl = 'https://youtu.be/fKMEsvCtlZA';
 
-bool get _live => Platform.environment['HIBIKI_YT_LIVE_ITEST'] == '1';
+bool get _live => Platform.environment['FUSHI_YT_LIVE_ITEST'] == '1';
 
 /// 只捕获制卡 context 的假 Anki repo（不连真 Anki——验的是「从直播流抽出的媒体」）。
 class _CaptureRepo implements BaseAnkiRepository {

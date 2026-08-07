@@ -25,7 +25,7 @@ import 'test_helpers.dart';
 /// On Windows this exercises the forked flutter_inappwebview_windows engine.
 ///
 /// Run (PowerShell, from hibiki/):
-///   $env:HIBIKI_TEST_HIDDEN = "1"
+///   $env:FUSHI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/desktop_reader_css_dom_test.dart -d windows
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =

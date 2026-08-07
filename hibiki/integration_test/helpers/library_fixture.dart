@@ -214,7 +214,7 @@ Future<File> writeGeneratedDictionary(File file) async {
 Future<File?> _findExternalDictionaryFixture() async {
   final List<File> candidates = <File>[];
 
-  const String testRoot = String.fromEnvironment('HIBIKI_TEST_ROOT');
+  const String testRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
   if (testRoot.isNotEmpty) {
     candidates.add(File(
         '$testRoot${Platform.pathSeparator}fixtures${Platform.pathSeparator}test_dict.zip'));
@@ -249,12 +249,12 @@ ArchiveFile _jsonFile(String name, Object json) {
   return ArchiveFile(name, bytes.length, bytes);
 }
 
-/// 落盘目录：`HIBIKI_TEST_ROOT/fixtures`（隔离测试根），未设时回退系统临时目录。
+/// 落盘目录：`FUSHI_TEST_ROOT/fixtures`（隔离测试根），未设时回退系统临时目录。
 ///
 /// 与 `video_chapter_first_load_test.dart` 同款约定，保证音视频素材落进 e2e
 /// 隔离根、可被 runner 取证 / 清理。
 Future<Directory> _fixturesDir() async {
-  const String testRoot = String.fromEnvironment('HIBIKI_TEST_ROOT');
+  const String testRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
   final Directory dir = testRoot.isEmpty
       ? await Directory.systemTemp.createTemp('hibiki_fixtures_')
       : Directory('$testRoot${Platform.pathSeparator}fixtures');

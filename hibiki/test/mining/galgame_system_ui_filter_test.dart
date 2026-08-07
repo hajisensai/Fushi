@@ -5,7 +5,7 @@ import 'package:hibiki/src/mining/galgame_system_ui_filter.dart';
 
 /// galgame 文本 hook「系统 UI 文字 vs 台词」过滤守卫（[isGalgameSystemUiLine]）。
 ///
-/// 正样本取自真机实证（KiriKiri / Otomeki，`HIBIKI_LUNA_DIAG` lunadiag 采样）里从读/存档界面
+/// 正样本取自真机实证（KiriKiri / Otomeki，`FUSHI_LUNA_DIAG` lunadiag 采样）里从读/存档界面
 /// 漏进来的系统串；负样本取自同一采样里的真台词。根契约：系统串被剔除、真台词一律放行。
 void main() {
   group('系统 UI 文字（实测串）被判定为系统，不进查词面板', () {

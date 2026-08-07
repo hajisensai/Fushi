@@ -88,7 +88,7 @@ void main() {
       final ExternalMokuroRunner ext = ExternalMokuroRunner(
         configuredPath: '/opt/mokuro',
         processRunner: runner,
-        environment: const <String, String>{'HIBIKI_MOKURO': '/env/mokuro'},
+        environment: const <String, String>{'FUSHI_MOKURO': '/env/mokuro'},
       );
       expect(await ext.resolveExecutable(), '/opt/mokuro');
       // 命中配置路径时不该去跑 where/which。
@@ -99,7 +99,7 @@ void main() {
       final _FakeRunner runner = _FakeRunner();
       final ExternalMokuroRunner ext = ExternalMokuroRunner(
         processRunner: runner,
-        environment: const <String, String>{'HIBIKI_MOKURO': '/env/mokuro'},
+        environment: const <String, String>{'FUSHI_MOKURO': '/env/mokuro'},
       );
       expect(await ext.resolveExecutable(), '/env/mokuro');
       expect(runner.completionCalls, isEmpty);

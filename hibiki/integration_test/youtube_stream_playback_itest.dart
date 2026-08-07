@@ -5,8 +5,8 @@
 // 能解码 androidVr 签发的 ≤1080p video-only 流 + 外挂 audio-only 音轨，非黑屏）。并断言
 // controller 的**制卡源**被正确设成低分辨率视频（miningVideoUrl）+ audio-only 音频源。
 //
-// 依赖真实网络（直连 YouTube），故**默认 skip**，仅在设 HIBIKI_YT_LIVE_ITEST=1 时跑：
-//   $env:HIBIKI_YT_LIVE_ITEST=1; .\tool\run_windows_itest.ps1 -Visible `
+// 依赖真实网络（直连 YouTube），故**默认 skip**，仅在设 FUSHI_YT_LIVE_ITEST=1 时跑：
+//   $env:FUSHI_YT_LIVE_ITEST=1; .\tool\run_windows_itest.ps1 -Visible `
 //     integration_test\youtube_stream_playback_itest.dart
 // 必须 -Visible（media_kit 需 DWM 合成实窗）。制卡媒体抽取的端到端证据见
 // test/mining/youtube_immersion_live_engine_test.dart（纯 host VM，真网络+真 ffmpeg）。
@@ -32,8 +32,8 @@ import 'test_helpers.dart';
 
 const String _kUrl = 'https://youtu.be/fKMEsvCtlZA'; // 用户 TODO-1000 原报障 URL
 
-/// 仅在进程环境 HIBIKI_YT_LIVE_ITEST=1 时跑（依赖真网络，默认 skip 不进 CI）。
-bool get _live => Platform.environment['HIBIKI_YT_LIVE_ITEST'] == '1';
+/// 仅在进程环境 FUSHI_YT_LIVE_ITEST=1 时跑（依赖真网络，默认 skip 不进 CI）。
+bool get _live => Platform.environment['FUSHI_YT_LIVE_ITEST'] == '1';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

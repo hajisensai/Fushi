@@ -5547,7 +5547,7 @@ class AppModel with ChangeNotifier {
       // （点击 → /api/lookup/audio 解析 → HTML5 Audio 播放）。
       audioSourcesProvider: () => enabledAudioSources,
       // BUG-726：内置扩展内容指纹随查词响应下发（`extensionBuild`），扩展 background
-      // 与自身 HIBIKI_DEFAULTS.build 比对，不一致即 chrome.runtime.reload() 从磁盘拉新。
+      // 与自身 FUSHI_DEFAULTS.build 比对，不一致即 chrome.runtime.reload() 从磁盘拉新。
       // 指纹由 refreshBrowserExtensionCopy 在启动时算好缓存；算好前返回 null（字段省略）。
       extensionBuildProvider: () => _browserExtensionBuild,
       // 弹窗尺寸精细化 Phase D：扩展弹窗被拖角调整尺寸后经 bridge 回写的 sink——clamp + 拖即

@@ -14,7 +14,7 @@ import 'package:hibiki_torrent/testing.dart';
 import 'package:path/path.dart' as p;
 
 String? _resolveLibPath() {
-  final String? env = Platform.environment['HIBIKI_TORRENT_LIB'];
+  final String? env = Platform.environment['FUSHI_TORRENT_LIB'];
   if (env != null && env.isNotEmpty) {
     return File(env).existsSync() ? env : null;
   }

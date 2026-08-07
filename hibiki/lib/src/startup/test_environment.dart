@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-const String _dartDefineTestRoot = String.fromEnvironment('HIBIKI_TEST_ROOT');
+const String _dartDefineTestRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
 const String _dartDefineTestRunId =
-    String.fromEnvironment('HIBIKI_TEST_RUN_ID');
+    String.fromEnvironment('FUSHI_TEST_RUN_ID');
 
 String? hibikiTestRootPath({
   Map<String, String>? environment,
@@ -12,7 +12,7 @@ String? hibikiTestRootPath({
 }) {
   final String raw = dartDefineRoot.trim().isNotEmpty
       ? dartDefineRoot
-      : (environment ?? Platform.environment)['HIBIKI_TEST_ROOT'] ?? '';
+      : (environment ?? Platform.environment)['FUSHI_TEST_ROOT'] ?? '';
   if (raw.trim().isEmpty) {
     return null;
   }
@@ -25,7 +25,7 @@ String? hibikiTestRunId({
 }) {
   final String raw = dartDefineRunId.trim().isNotEmpty
       ? dartDefineRunId
-      : (environment ?? Platform.environment)['HIBIKI_TEST_RUN_ID'] ?? '';
+      : (environment ?? Platform.environment)['FUSHI_TEST_RUN_ID'] ?? '';
   return raw.trim().isEmpty ? null : raw.trim();
 }
 

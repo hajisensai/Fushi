@@ -327,7 +327,7 @@ jobs:
       # run 30729229450 就死在其中一个：automake-1.17.tar.gz 三个 GNU 镜像同时
       # `curl error 35 (SSL connect error)`，而 vcpkg 把 SSL connect error 判成
       # 「Not a transient network error, won't retry」直接 BUILD_FAILED，桌面发布链整条
-      # 红（publish 那句 `No files matched hibiki-*-windows-setup.exe` 只是级联）。
+      # 红（publish 那句 `No files matched fushi-*-windows-setup.exe` 只是级联）。
       # 所以根因不是「vcpkg 的重试判定写错了」——那是外部缺陷、我们改不了——而是
       # 这条路径本来就不该下载任何东西：key 带上 ImageVersion 后两种镜像各占一个
       # 条目，都走 `Restored 72` 的零下载路径，取件抖动面归零、顺带每次省 ~18 min。
@@ -623,7 +623,7 @@ jobs:
           & "$iscc" "/DAppVersion=${{ steps.channel.outputs.build_version_name }}" `
             "/DSourceDir=$PWD\hibiki\build\windows\x64\runner\Release" `
             "/DOutputDir=$PWD\hibiki\build\installer" `
-            "hibiki\windows\installer\hibiki.iss"
+            "hibiki\windows\installer\fushi.iss"
       - name: Check signing availability
         id: signcheck
         shell: bash
@@ -640,7 +640,7 @@ jobs:
         run: |
           [IO.File]::WriteAllBytes("$PWD\cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
           $st = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
-          & "$st" sign /fd SHA256 /f "$PWD\cert.pfx" /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 "$PWD\hibiki\build\installer\hibiki-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe"
+          & "$st" sign /fd SHA256 /f "$PWD\cert.pfx" /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 "$PWD\hibiki\build\installer\fushi-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe"
       - name: Prepare Windows installer release asset
         shell: bash
         env:
@@ -648,7 +648,7 @@ jobs:
           BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
         run: |
           set -euo pipefail
-          installer="hibiki/build/installer/hibiki-${BUILD_VERSION_NAME}-windows-setup.exe"
+          installer="hibiki/build/installer/fushi-${BUILD_VERSION_NAME}-windows-setup.exe"
           asset_name="$(basename "$installer")"
           if [ ! -f "$installer" ]; then
             echo "::error title=Windows installer missing::Expected $installer"
@@ -664,7 +664,7 @@ jobs:
             esac
           fi
           mkdir -p hibiki/build/release-artifacts
-          rm -f hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
+          rm -f hibiki/build/release-artifacts/fushi-*-windows-setup.exe
           cp "$installer" "hibiki/build/release-artifacts/$asset_name"
       # TODO-866: same fragility as the Android release workflow -- the prepared
       # Windows installer is otherwise only uploaded as a GitHub Release asset
@@ -679,7 +679,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: desktop-artifacts-windows
-          path: hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
+          path: hibiki/build/release-artifacts/fushi-*-windows-setup.exe
           if-no-files-found: ignore
           retention-days: 14
 
@@ -1837,7 +1837,7 @@ jobs:
         with:
           tag_name: ${{ steps.channel.outputs.tag }}
           files: |
-            hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
+            hibiki/build/release-artifacts/fushi-*-windows-setup.exe
             hibiki/build/release-artifacts/fushi-*-macos.zip
             hibiki/build/release-artifacts/fushi-*-ios.ipa
       # TODO-1049 / TODO-1123 / TODO-1129: same rolling-release asset GC as
@@ -1961,7 +1961,7 @@ jobs:
           prerelease: ${{ steps.channel.outputs.prerelease }}
           make_latest: ${{ steps.channel.outputs.make_latest }}
           files: |
-            hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
+            hibiki/build/release-artifacts/fushi-*-windows-setup.exe
             hibiki/build/release-artifacts/fushi-*-macos.zip
             hibiki/build/release-artifacts/fushi-*-ios.ipa
       # TODO-705: publish a mirror update manifest so beta/debug in-China update
@@ -1992,7 +1992,7 @@ jobs:
           VERSION: ${{ steps.channel.outputs.build_version_name }}
           RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
           ARTIFACTS_DIR: hibiki/build/release-artifacts
-          ASSET_GLOB: hibiki-*-windows-setup.exe
+          ASSET_GLOB: fushi-*-windows-setup.exe
           PLATFORM_LABEL: desktop
         run: bash tool/publish_update_manifest.sh
       - name: Publish mirror update manifest (Apple assets)

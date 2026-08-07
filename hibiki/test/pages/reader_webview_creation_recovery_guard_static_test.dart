@@ -20,7 +20,7 @@ import '../helpers/source_guard.dart';
 ///
 /// 守卫断言修复结构在位（仿 reader_init_hang_recovery_guard_static_test）。删任一即红。
 void main() {
-  const String sentinel = 'HIBIKI_INAPPWEBVIEW_CREATION_FAILED';
+  const String sentinel = 'FUSHI_INAPPWEBVIEW_CREATION_FAILED';
 
   String read(String rel) {
     final File f = File(rel);

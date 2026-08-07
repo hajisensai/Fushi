@@ -11,7 +11,7 @@
 
 namespace {
 
-constexpr wchar_t kWindowClassName[] = L"HibikiHookToolbarWindow";
+constexpr wchar_t kWindowClassName[] = L"FushiHookToolbarWindow";
 
 // A press must travel this far (physical px at 96 DPI, scaled by the owner via
 // Layout::button_px staying proportional) before it becomes an owner drag
@@ -190,7 +190,7 @@ bool HookToolbarWindow::Show(const hook_toolbar::Layout& layout,
     // stay out of the taskbar / Alt+Tab.
     hwnd_ = CreateWindowExW(
         WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
-        kWindowClassName, L"Hibiki Hook Toolbar", WS_POPUP, layout.rect.left,
+        kWindowClassName, L"Fushi Hook Toolbar", WS_POPUP, layout.rect.left,
         layout.rect.top, width, height, nullptr, nullptr,
         GetModuleHandle(nullptr), this);
     if (hwnd_ == nullptr) {

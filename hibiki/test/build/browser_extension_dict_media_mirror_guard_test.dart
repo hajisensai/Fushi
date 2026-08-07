@@ -427,7 +427,7 @@ void main() {
         expect(src.contains('function hibikiHarvestTextTracks'), isTrue,
             reason: '$root content.js must harvest HTML5 video.textTracks '
                 '(generic full-track provider, TODO-1363)');
-        expect(src.contains('HIBIKI_LIVE_LANG'), isTrue,
+        expect(src.contains('FUSHI_LIVE_LANG'), isTrue,
             reason:
                 '$root content.js must promote DOM-sampled cues into a live '
                 'track (YouTube/self-drawn captions, TODO-1363)');

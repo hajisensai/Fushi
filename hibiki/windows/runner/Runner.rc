@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "Hibiki" "\0"
-            VALUE "FileDescription", "Hibiki" "\0"
+            VALUE "CompanyName", "Fushi" "\0"
+            VALUE "FileDescription", "Fushi" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "hibiki" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2024 Hibiki. All rights reserved." "\0"
-            VALUE "OriginalFilename", "hibiki.exe" "\0"
-            VALUE "ProductName", "Hibiki" "\0"
+            VALUE "InternalName", "fushi" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Fushi. All rights reserved." "\0"
+            VALUE "OriginalFilename", "fushi.exe" "\0"
+            VALUE "ProductName", "Fushi" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

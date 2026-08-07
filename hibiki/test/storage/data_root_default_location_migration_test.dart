@@ -32,6 +32,9 @@ void main() {
     platformSupport =
         Directory(p.join(tmp.path, 'AppData', 'Roaming', 'app.fushi.reader'))
           ..createSync(recursive: true);
+    // 本文件全部用例模拟**存量 Hibiki 安装**（BUG-1188 归一化路径），容器锚
+    // 固定 Hibiki（生产由 _ensureDocumentsContainerDecided 启动期判定）。
+    AppPaths.debugSetDocumentsContainer('Hibiki');
     defaultDocsRoot = p.joinAll(<String>[
       platformDocuments.path,
       ...AppPaths.defaultDocumentsChildSegments,
@@ -39,6 +42,7 @@ void main() {
   });
 
   tearDown(() {
+    AppPaths.debugSetDocumentsContainer(null);
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 

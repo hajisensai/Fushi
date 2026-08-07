@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 
-/// 桌面 ffmpeg 可执行解析优先级：HIBIKI_FFMPEG 覆盖 > 程序旁捆绑 ffmpeg > 系统 PATH。
+/// 桌面 ffmpeg 可执行解析优先级：FUSHI_FFMPEG 覆盖 > 程序旁捆绑 ffmpeg > 系统 PATH。
 /// 让没装 ffmpeg 的电脑也能用捆绑的（开箱即用），同时保留显式覆盖与 PATH 回退。
 void main() {
   group('resolveFfmpegExecutableFrom 优先级', () {
-    test('HIBIKI_FFMPEG 覆盖最高优先', () {
+    test('FUSHI_FFMPEG 覆盖最高优先', () {
       expect(
         resolveFfmpegExecutableFrom(
             override: '/opt/ff/ffmpeg', bundledPath: '/app/ffmpeg'),
@@ -112,7 +112,7 @@ void main() {
       expect(calls, <String>[r'C:\App\Hibiki\ffmpeg.exe', 'ffmpeg']);
     });
 
-    test('explicit HIBIKI_FFMPEG invalid image does not fall back', () async {
+    test('explicit FUSHI_FFMPEG invalid image does not fall back', () async {
       final List<String> calls = <String>[];
 
       final FfmpegRunResult result = await runCliFfmpegForTesting(
@@ -197,7 +197,7 @@ void main() {
       expect(calls, <String>['/app/Hibiki/ffmpeg', 'ffmpeg']);
     });
 
-    test('explicit HIBIKI_FFMPEG launch ProcessException still propagates',
+    test('explicit FUSHI_FFMPEG launch ProcessException still propagates',
         () async {
       // 显式覆盖保持旧契约：用户指定的路径跑不起来就如实报错，不悄悄换 PATH。
       await expectLater(
