@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 cmake_policy(SET CMP0077 NEW)
 
-project(hibiki_torrent_ffi LANGUAGES CXX)
+project(fushi_torrent_ffi LANGUAGES CXX)
 
 # libtorrent 2.x 要求 C++17（或更高）。
 set(CMAKE_CXX_STANDARD 17)
@@ -21,29 +21,29 @@ endif()
 # 与 triplet（x64-windows）。见本目录 README/harness。
 find_package(LibtorrentRasterbar CONFIG REQUIRED)
 
-add_library(hibiki_torrent_ffi SHARED
+add_library(fushi_torrent_ffi SHARED
     hibiki_torrent_ffi.cpp
 )
 
-target_include_directories(hibiki_torrent_ffi PRIVATE
+target_include_directories(fushi_torrent_ffi PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hibiki_torrent_include
 )
 
-target_link_libraries(hibiki_torrent_ffi PRIVATE
+target_link_libraries(fushi_torrent_ffi PRIVATE
     LibtorrentRasterbar::torrent-rasterbar
 )
 
-# Windows：去掉 'lib' 前缀，DLL 名固定为 hibiki_torrent_ffi.dll（Dart 侧按此
+# Windows：去掉 'lib' 前缀，DLL 名固定为 fushi_torrent_ffi.dll（Dart 侧按此
 # DynamicLibrary.open）。
 if(WIN32)
-  set_target_properties(hibiki_torrent_ffi PROPERTIES
+  set_target_properties(fushi_torrent_ffi PROPERTIES
       PREFIX ""
-      OUTPUT_NAME "hibiki_torrent_ffi"
+      OUTPUT_NAME "fushi_torrent_ffi"
   )
 endif()
 
 if(APPLE)
-  set_target_properties(hibiki_torrent_ffi PROPERTIES
+  set_target_properties(fushi_torrent_ffi PROPERTIES
       INSTALL_NAME_DIR "@rpath"
       BUILD_WITH_INSTALL_NAME_DIR TRUE
   )

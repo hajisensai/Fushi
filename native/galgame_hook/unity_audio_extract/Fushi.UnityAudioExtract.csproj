@@ -4,8 +4,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>hibiki_unity_audio_extract</AssemblyName>
-    <RootNamespace>Hibiki.UnityAudioExtract</RootNamespace>
+    <AssemblyName>fushi_unity_audio_extract</AssemblyName>
+    <RootNamespace>Fushi.UnityAudioExtract</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="AssetsTools.NET" Version="3.0.4" />

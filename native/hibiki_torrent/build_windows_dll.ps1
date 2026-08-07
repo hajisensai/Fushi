@@ -45,7 +45,7 @@ $releaseDir = Join-Path $buildDir $Config
 # bridge DLL + vcpkg applocal 部署的运行时依赖（torrent-rasterbar / ssl /
 # crypto）都在 Release 目录里；全量收拢，缺一不可（DynamicLibrary 预载靠它们）。
 $required = @(
-    "hibiki_torrent_ffi.dll",
+    "fushi_torrent_ffi.dll",
     "torrent-rasterbar.dll",
     "libssl-3-x64.dll",
     "libcrypto-3-x64.dll"

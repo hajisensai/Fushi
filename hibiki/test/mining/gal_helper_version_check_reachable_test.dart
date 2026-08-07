@@ -9,12 +9,12 @@ import '../helpers/source_guard.dart';
 /// 用户现场（本体 `1.3.1+1171`，2026-08-02）：
 /// - `galgame_helper/voice_hook_x86.zip.sha256` = `3a1c4192…`（随包，8/2）
 /// - `voice_hook/x86/installed.sha256`          = `b72b437a…`（已装，7/28）
-/// - 两者不符，且 `hibiki_voice_hook.dll` / `hibiki_voice_injector.exe` 与随包版本
+/// - 两者不符，且 `fushi_voice_hook.dll` / `fushi_voice_injector.exe` 与随包版本
 ///   逐字节不同（LunaHook/LunaHost 相同——正是 IPC v13 只改自编两件的指纹）
 ///
 /// 版本对账逻辑（`_ensureBundledVersion`，BUG-1246）本身是对的，但三个启动入口都写着
 /// `if (defaultInjectorResolver(...) == null) { ensureInjector(...) }`，而该 resolver
-/// 只判断 `hibiki_voice_injector.exe` 是否存在（`gal_hook_session_controller.dart:940`）。
+/// 只判断 `fushi_voice_injector.exe` 是否存在（`gal_hook_session_controller.dart:940`）。
 /// 文件在 ⇒ 整个分支跳过 ⇒ 对账从不执行 ⇒ 旧 hook DLL 建出旧契约共享内存段 ⇒
 /// 本体 `ProtocolMatches` 判否 ⇒ `protocol_mismatch` + 降级 loopback。
 ///

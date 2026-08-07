@@ -115,7 +115,7 @@ std::wstring DefaultDllPath() {
   wchar_t exe[MAX_PATH] = {0};
   const DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
   if (n == 0 || n >= MAX_PATH) {
-    return L"hibiki_voice_hook.dll";
+    return L"fushi_voice_hook.dll";
   }
   std::wstring path(exe, n);
   const size_t slash = path.find_last_of(L"\\/");
@@ -124,7 +124,7 @@ std::wstring DefaultDllPath() {
   } else {
     path.clear();
   }
-  return path + L"hibiki_voice_hook.dll";
+  return path + L"fushi_voice_hook.dll";
 }
 
 // 经 CreateRemoteThread(LoadLibraryW) 把 [dll_path] 注入 [target]。成功返回 true。
@@ -281,7 +281,7 @@ bool RegularFileExists(const std::wstring& path) {
 UnityExtractorRuntime FindUnityExtractorRuntime() {
   const std::wstring base = InjectorDir() + L"unity_audio_runtime\\";
   UnityExtractorRuntime runtime;
-  runtime.executable = base + L"hibiki_unity_audio_extract.exe";
+  runtime.executable = base + L"fushi_unity_audio_extract.exe";
   runtime.classdata = base + L"classdata.tpk";
   runtime.decoder = base + L"vgmstream-cli.exe";
   runtime.ready = RegularFileExists(runtime.executable) &&
@@ -2523,9 +2523,9 @@ int main() {
   if ((pid == 0) == launch_exe.empty()) {
     // 两个都没给 或 两个都给了。
     return Fail(
-        "usage: hibiki_voice_injector --pid <PID> [--dll <hook.dll>] "
+        "usage: fushi_voice_injector --pid <PID> [--dll <hook.dll>] "
         "[--wait-ms N] [--hold]\n"
-        "   or: hibiki_voice_injector --launch <exe> [--workdir <dir>] "
+        "   or: fushi_voice_injector --launch <exe> [--workdir <dir>] "
         "[--japanese-locale] "
         "[--arg <a>]... [--dll <hook.dll>] [--wait-ms N] [--hold] "
         "[--follow-child-processes] [--force-direct-launch]\n"

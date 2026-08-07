@@ -18,7 +18,7 @@
 // 振幅从 silent 变 SOUND。**只读**，不注入、不写共享内存，故不需与目标同位数：命名文件映射
 // （Local\HibikiVoiceHook_<pid>）跨 32/64 位可读，x64 reader 能读 32 位游戏里 hook 填的缓冲。
 //
-// 用法：hibiki_voice_ring_probe <pid> [轮数=30] [间隔ms=500]
+// 用法：fushi_voice_ring_probe <pid> [轮数=30] [间隔ms=500]
 //   <pid>    injector 建共享内存时用的目标进程 pid（injector 打印的 pid=）
 //   轮数     采样轮数（缺省 30）
 //   间隔ms   每轮间隔毫秒（缺省 500）
@@ -704,7 +704,7 @@ void ListClips(const SharedHeader* h) {
 int main(int argc, char** argv) {
   if (argc < 2) {
     fprintf(stderr,
-            "usage: hibiki_voice_ring_probe <pid> [轮数=30] [间隔ms=500]\n"
+            "usage: fushi_voice_ring_probe <pid> [轮数=30] [间隔ms=500]\n"
             "  或导出: <pid> --dump-text | --dump-text-events | --list-clips\n"
             "         <pid> --select-text-thread <thread_id|0>\n"
             "         <pid> --dump-wav|--dump-utterance <ts_ms> <out.wav>\n"

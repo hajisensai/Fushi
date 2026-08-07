@@ -7,7 +7,7 @@
 注入用的 `CreateRemoteThread` / `WriteProcessMemory` 只存在于 helper 二进制。因此这套组件：
 
 - **单独构建，绝不链接进 `hibiki.exe` 本体**。`tools/build_distribution.ps1` 输出的 x64/x86 校验 zip 随 Windows 主包进入 `galgame_helper/`，也发布到固定 prerelease 供旧包与后台更新。
-- Hibiki 主进程把 `hibiki_voice_injector.exe` 当**子进程**拉起，通过共享内存（[`include/voice_hook_ipc.h`](include/voice_hook_ipc.h)）消费干净语音——被标记的注入代码只待在这个隔离二进制里。
+- Hibiki 主进程把 `fushi_voice_injector.exe` 当**子进程**拉起，通过共享内存（[`include/voice_hook_ipc.h`](include/voice_hook_ipc.h)）消费干净语音——被标记的注入代码只待在这个隔离二进制里。
 - 许可：Hibiki 与本组件均 **GPLv3**（与 LunaTranslator/LunaHook 同）。
 - 杀软证据：Windows Defender（签名 1.455.357.0）实扫全部文件与 zip 零检出，同轮 EICAR 阳性对照正常报出；国产杀软仍未验证。
 
@@ -15,8 +15,8 @@
 
 | 产物 | 作用 |
 |---|---|
-| `hibiki_voice_hook.dll` | 注入进游戏进程的 hook DLL：混音前截语音写共享内存环形缓冲 |
-| `hibiki_voice_injector.exe` | 注入器：把 DLL 注入目标游戏，建共享内存 + 就绪事件，读回语音格式 |
+| `fushi_voice_hook.dll` | 注入进游戏进程的 hook DLL：混音前截语音写共享内存环形缓冲 |
+| `fushi_voice_injector.exe` | 注入器：把 DLL 注入目标游戏，建共享内存 + 就绪事件，读回语音格式 |
 
 ## 引擎支持矩阵
 
@@ -88,8 +88,8 @@ cmake -S . -B build/x86 -A Win32 && cmake --build build/x86 --config Release
 ## 用法
 
 ```sh
-hibiki_voice_injector.exe --pid <目标游戏PID> [--dll <hook.dll>] [--wait-ms 5000] [--hold] [--luna-pchooks]
-hibiki_voice_injector.exe --launch <游戏exe> [--workdir <目录>] [--arg <参数>]... [--japanese-locale] [--dll <hook.dll>] [--wait-ms 5000] [--hold] [--luna-pchooks]
+fushi_voice_injector.exe --pid <目标游戏PID> [--dll <hook.dll>] [--wait-ms 5000] [--hold] [--luna-pchooks]
+fushi_voice_injector.exe --launch <游戏exe> [--workdir <目录>] [--arg <参数>]... [--japanese-locale] [--dll <hook.dll>] [--wait-ms 5000] [--hold] [--luna-pchooks]
 ```
 
 `--launch` 对普通游戏使用挂起创建、注入后放行；Steam 库内游戏会先通过
@@ -99,7 +99,7 @@ hibiki_voice_injector.exe --launch <游戏exe> [--workdir <目录>] [--arg <参�
 - `--pid`：附着模式的目标进程 ID；与 `--launch` 二选一。
 - `--launch`：由 injector 启动游戏并注入；普通引擎用 CREATE_SUSPENDED 早注入，Steam 游戏由客户端启动后自动识别真实进程，`SiglusEngine.exe` 会自动改为 Enigma-safe 延迟附着。
 - `--japanese-locale`：x86 helper 使用同目录随包提供的 Locale Emulator 2.5.0.1 运行库，以日语 CP932 创建同一个挂起游戏进程，再完成早注入；不修改 Windows 全局区域设置。Siglus/子进程启动器会先恢复主线程再做延迟发现；Steam 协议启动无法保留该创建边界，会明确告警并沿用 Steam 原始启动。
-- `--dll`：hook DLL 路径（默认取同目录 arch 匹配的 `hibiki_voice_hook.dll`）。
+- `--dll`：hook DLL 路径（默认取同目录 arch 匹配的 `fushi_voice_hook.dll`）。
 - `--wait-ms`：等「就绪」事件超时（默认 5000）。
 - `--hold`：注入确认后常驻（host 模式，维持共享内存存活供消费）；缺省=probe 模式，确认后退出。
 - `--luna-pchooks`：LunaHook 连接后补装通用 PC hooks。Unity/Mono/IL2CPP 自绘文本常需要；`manosaba.exe` 与带 `UnityPlayer.dll` + `GameAssembly.dll` / `*_Data/il2cpp_data` / Mono 目录的目标在 `--launch` 和 `--pid` attach 下都会自动启用。

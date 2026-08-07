@@ -95,7 +95,7 @@ cmake -B build -S . -A x64 \
   -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake \
   -DVCPKG_TARGET_TRIPLET=x64-windows
 cmake --build build --config Release
-# 产物：build/Release/hibiki_torrent_ffi.dll（+ vcpkg applocal 部署的
+# 产物：build/Release/fushi_torrent_ffi.dll（+ vcpkg applocal 部署的
 # torrent-rasterbar/boost/openssl 依赖 DLL）
 ```
 
@@ -104,7 +104,7 @@ cmake --build build --config Release
 ```bash
 cd packages/hibiki_torrent && dart pub get
 # 端到端管线（本地 rig 做种，零外网、确定性；缺 DLL 整组 skip）：
-HIBIKI_TORRENT_LIB=<绝对路径>/hibiki_torrent_ffi.dll dart test
+HIBIKI_TORRENT_LIB=<绝对路径>/fushi_torrent_ffi.dll dart test
 # app 侧 TorrentBackend 契约（在 hibiki/ 下）：
 HIBIKI_TORRENT_LIB=... flutter test test/media/torrent/embedded_torrent_backend_test.dart
 # 真实网络手动冒烟（真机验收）：
@@ -166,7 +166,7 @@ dart run ffigen --config ffigen.yaml
 flutter windows 构建也不便注入 vcpkg 工具链文件。故：
 
 1. **产出**：`native/hibiki_torrent/build_windows_dll.ps1 -VcpkgRoot <vcpkg>`
-   编 bridge 并把 4 个运行时 DLL（`hibiki_torrent_ffi` + `torrent-rasterbar`
+   编 bridge 并把 4 个运行时 DLL（`fushi_torrent_ffi` + `torrent-rasterbar`
    + `libssl-3-x64` + `libcrypto-3-x64`，共 ~11MB）收拢到
    `prebuilt/windows-x64/`（git 忽略，不入库——repo 不放二进制，构建/发布
    流程各自现产或从 release 拉取）。
@@ -176,7 +176,7 @@ flutter windows 构建也不便注入 vcpkg 工具链文件。故：
    vcpkg/libtorrent**：没跑过产出脚本的机器照常构建，只是 app 运行期
    `EmbeddedTorrentHost.open` 因 DLL 缺失返回 null → 自动回退外接 qb。
 3. **加载**：`EmbeddedTorrentEngine._openByPlatformDefault` 用
-   `DynamicLibrary.open('hibiki_torrent_ffi.dll')`，DLL 与 exe 同目录即命中；
+   `DynamicLibrary.open('fushi_torrent_ffi.dll')`，DLL 与 exe 同目录即命中；
    运行时依赖（torrent-rasterbar/ssl/crypto）也在同目录，被隐式加载。
 
 发布流程接入：CI/release workflow 在打 Windows 包前跑一次
