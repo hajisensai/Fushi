@@ -67,7 +67,7 @@ add_subdirectory("runner")
 include(flutter/generated_plugins.cmake)
 
 # === hoshidicts native dictionary engine ===
-set(FUSHIDICTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/hoshidicts")
+set(FUSHIDICTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushidicts")
 add_subdirectory("${FUSHIDICTS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/hoshidicts")
 
 # === Installation ===
@@ -106,11 +106,11 @@ install(TARGETS fushidicts_ffi RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
 # === 内置 libtorrent 引擎（可选，vendored 预编译）===
 # hibiki_torrent 依赖 libtorrent+boost+openssl（vcpkg 首次源码编译约 40min），
 # 不能强制每台构建机装 vcpkg。故采用 vendored 预编译：由
-# native/hibiki_torrent/build_windows_dll.ps1 事先产出 4 个 DLL 到
+# native/fushi_torrent/build_windows_dll.ps1 事先产出 4 个 DLL 到
 # prebuilt/windows-x64/，这里「有则拷、无则跳」——目录不存在时 flutter build
 # windows 照常成功，app 运行期 DLL 缺失自动回退外接 qb（见 EmbeddedTorrentHost）。
 set(HIBIKI_TORRENT_PREBUILT_DIR
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/hibiki_torrent/prebuilt/windows-x64")
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_torrent/prebuilt/windows-x64")
 set(HIBIKI_TORRENT_DLLS
   "fushi_torrent_ffi.dll"
   "torrent-rasterbar.dll"

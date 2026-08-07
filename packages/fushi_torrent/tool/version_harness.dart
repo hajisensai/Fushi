@@ -1,9 +1,9 @@
 // 端到端工具链证明 harness（阶段1a）。
 //
-// 用法：dart run tool/version_harness.dart <hibiki_torrent_ffi.dll 绝对路径>
+// 用法：dart run tool/version_harness.dart <fushi_torrent_ffi.dll 绝对路径>
 // 缺省参数时按平台默认名从系统搜索路径加载。
 //
-// 经 DynamicLibrary 加载 native/hibiki_torrent 构建出的库 → 调
+// 经 DynamicLibrary 加载 native/fushi_torrent 构建出的库 → 调
 // ht_libtorrent_version() 打印 libtorrent 真实版本号 → 建/销毁一个空壳
 // session。全部成功即证明 libtorrent 构建 → C ABI → Dart FFI 链路打通。
 

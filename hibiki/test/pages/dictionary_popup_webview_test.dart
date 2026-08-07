@@ -514,7 +514,7 @@ void main() {
     test(
         'deinflectionTrace: single "matched → deinflected" step, '
         'only when they differ and deinflected is non-empty', () {
-      // 与 C++ build_popup_json（native/hoshidicts/hoshidicts_src/popup_json.cpp）
+      // 与 C++ build_popup_json（native/fushidicts/fushidicts_src/popup_json.cpp）
       // 语义对齐：仅在 matched != deinflected 且 deinflected 非空时生成**单条**
       // {"name":"matched → deinflected","description":""}，否则为空数组。
       FushiLookupResult make({

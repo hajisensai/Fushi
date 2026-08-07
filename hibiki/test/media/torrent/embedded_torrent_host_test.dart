@@ -24,7 +24,7 @@ String? _resolveLibPath() {
 void main() {
   final String? libPath = _resolveLibPath();
   final String? skip =
-      libPath == null ? 'hibiki_torrent_ffi native lib not built' : null;
+      libPath == null ? 'fushi_torrent_ffi native lib not built' : null;
 
   late Directory tempDir;
 

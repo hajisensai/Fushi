@@ -3,7 +3,7 @@
 """Offline generator: kanji-processor full_list.json -> kanji_standardization_data.{h,cpp}
 
 One-shot vendoring tool. NOT part of the CMake build — the generated .h/.cpp are
-checked into native/hoshidicts/hoshidicts_src/text_processor/ as ordinary sources
+checked into native/fushidicts/fushidicts_src/text_processor/ as ordinary sources
 and compiled like any other file. Re-run only when bumping the upstream pin.
 
 Source data: yomidevs/kanji-processor (MIT), pin 452cc2db, file src/full_list.json.

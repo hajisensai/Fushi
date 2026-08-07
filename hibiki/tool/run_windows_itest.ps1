@@ -16,7 +16,7 @@
 #   .\tool\run_windows_itest.ps1 -Proxy "" integration_test\app_smoke_test.dart
 #
 # FFI / native-assets: `flutter test -d windows` runs native build hooks
-# (sqlite3 / hoshidicts). The runner isolates the app-under-test's runtime data
+# (sqlite3 / fushidicts). The runner isolates the app-under-test's runtime data
 # by redirecting APPDATA/LOCALAPPDATA/TEMP/USERPROFILE, but it pins PUB_CACHE to
 # the real cache so the build toolchain keeps resolving packages, and routes
 # downloads through -Proxy (default http://127.0.0.1:34151, applied only when
@@ -45,7 +45,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Resolve the real pub cache location BEFORE we redirect LOCALAPPDATA below.
-# `flutter test -d windows` runs native-assets build hooks (sqlite3 / hoshidicts
+# `flutter test -d windows` runs native-assets build hooks (sqlite3 / fushidicts
 # FFI) that must resolve packages from the populated pub cache. Dart resolves the
 # cache via PUB_CACHE, falling back to %LOCALAPPDATA%\Pub\Cache on Windows. Since
 # the runner redirects LOCALAPPDATA to an empty isolated dir (to isolate the

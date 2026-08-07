@@ -71,5 +71,5 @@ void _prepareEntriesAbbyyLingvoStub({
   required PrepareDictionaryParams params,
   required dynamic database,
 }) {
-  // Import handled by hoshidicts C++ importer (auto-detects DSL format)
+  // Import handled by fushidicts C++ importer (auto-detects DSL format)
 }

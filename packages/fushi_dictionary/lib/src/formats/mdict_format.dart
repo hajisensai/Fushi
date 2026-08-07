@@ -55,8 +55,8 @@ Future<void> prepareDirectoryMdictFormat(PrepareDirectoryParams params) async {
   }
 
   // MDict reading via dict_reader has been removed; will be replaced by
-  // hoshidicts. Throw so callers know this format is not yet functional.
-  // MDict format is not supported by hoshidicts; no-op
+  // fushidicts. Throw so callers know this format is not yet functional.
+  // MDict format is not supported by fushidicts; no-op
 }
 
 Future<String> prepareNameMdictFormat(PrepareDirectoryParams params) async {
@@ -71,5 +71,5 @@ void _prepareEntriesMdictStub({
   required PrepareDictionaryParams params,
   required dynamic database,
 }) {
-  // Import handled by hoshidicts C++ importer (auto-detects MDX format)
+  // Import handled by fushidicts C++ importer (auto-detects MDX format)
 }

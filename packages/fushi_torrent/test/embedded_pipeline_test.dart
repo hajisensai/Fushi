@@ -4,7 +4,7 @@
 // 纯 btih 磁力 + connect_peer 从它下载 —— 零外网、零 DHT/tracker，不 flaky。
 // 顺序性证据 = leecher 的 piece_finished 事件序（不依赖限速时序）。
 //
-// 库路径解析同冒烟测试：HIBIKI_TORRENT_LIB 指向 DLL；缺库整组 skip。
+// 库路径解析同冒烟测试：FUSHI_TORRENT_LIB 指向 DLL；缺库整组 skip。
 
 import 'dart:io';
 import 'dart:typed_data';
@@ -14,7 +14,7 @@ import 'package:fushi_torrent/testing.dart';
 import 'package:test/test.dart';
 
 String? _resolveLibPath() {
-  final String? env = Platform.environment['HIBIKI_TORRENT_LIB'];
+  final String? env = Platform.environment['FUSHI_TORRENT_LIB'];
   if (env != null && env.isNotEmpty) {
     return File(env).existsSync() ? env : null;
   }
@@ -48,7 +48,7 @@ void main() {
 
   final EmbeddedTorrentEngine? engine = tryOpen();
   final String? skip =
-      engine == null ? 'hibiki_torrent_ffi native lib not built' : null;
+      engine == null ? 'fushi_torrent_ffi native lib not built' : null;
 
   late Directory tempDir;
 

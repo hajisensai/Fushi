@@ -474,7 +474,7 @@ class FushiDicts {
         final rPtr = calloc<FfiImportResult>();
         rPtr.ref = r;
         try {
-          // Error/early-return branches in native hoshidicts_import can leave
+          // Error/early-return branches in native fushidicts_import can leave
           // detected_type/title/error NULL; guard every conversion so a failed
           // import reports cleanly instead of crashing on null deref
           // (HBK-AUDIT-032).
@@ -654,7 +654,7 @@ class FushiDicts {
           // collapsing both into the same silent null. The contract stays
           // `Uint8List?` so the unguarded WebView callers keep degrading to a
           // 404 rather than crashing; the true fix (size=0 / error flag on
-          // alloc failure) belongs in hoshidicts_ffi.cpp.
+          // alloc failure) belongs in fushidicts_ffi.cpp.
           debugPrint(
             '[fushidicts] getMediaFile: native allocation failed for '
             '"$dictName/$mediaPath" (size=${r.size}, data=null); reporting '

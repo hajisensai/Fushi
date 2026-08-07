@@ -160,7 +160,7 @@ android {
 
     externalNativeBuild {
         cmake {
-            path "../../../native/hoshidicts/CMakeLists.txt"
+            path "../../../native/fushidicts/CMakeLists.txt"
             version "3.22.1"
         }
     }

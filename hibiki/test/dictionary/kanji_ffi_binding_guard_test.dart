@@ -7,7 +7,7 @@
 // runtime on a real device. flutter_test cannot link the native lib, so the
 // strongest *landable* guard is a source-scan that asserts every layer still
 // declares the kanji exports symmetrically. A verified end-to-end FFI round-trip
-// also exists (host: load hoshidicts_ffi.dll -> add_kanji_dict -> query_kanji).
+// also exists (host: load fushidicts_ffi.dll -> add_kanji_dict -> query_kanji).
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -21,7 +21,7 @@ void main() {
   }
 
   test('native FFI exports the kanji C symbols', () {
-    final String ffi = read('../native/hoshidicts/fushidicts_ffi.cpp');
+    final String ffi = read('../native/fushidicts/fushidicts_ffi.cpp');
     for (final String sym in <String>[
       'fushidicts_add_kanji_dict',
       'fushidicts_query_kanji',
@@ -75,7 +75,7 @@ void main() {
   });
 
   test('Android JNI mirrors the kanji bindings symmetrically', () {
-    final String jni = read('../native/hoshidicts/fushidicts_jni.cpp');
+    final String jni = read('../native/fushidicts/fushidicts_jni.cpp');
     expect(jni.contains('nativeAddKanjiDict'), isTrue);
     expect(jni.contains('nativeQueryKanjiJson'), isTrue);
     final String bridge = read(

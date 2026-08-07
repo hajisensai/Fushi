@@ -10,7 +10,7 @@
 //   ③ 种子仍然完整（每个 piece 都在）且仍处于做种态 —— 即上传能力没断。
 // ③ 是关键：如果引擎丢了数据，libtorrent 会掉出 seeding 并把 piece 标成缺失。
 //
-// 库路径解析同其它 native 测试：HIBIKI_TORRENT_LIB 指向 DLL；缺库整组 skip。
+// 库路径解析同其它 native 测试：FUSHI_TORRENT_LIB 指向 DLL；缺库整组 skip。
 
 import 'dart:io';
 
@@ -19,7 +19,7 @@ import 'package:fushi_torrent/testing.dart';
 import 'package:test/test.dart';
 
 String? _resolveLibPath() {
-  final String? env = Platform.environment['HIBIKI_TORRENT_LIB'];
+  final String? env = Platform.environment['FUSHI_TORRENT_LIB'];
   if (env != null && env.isNotEmpty) {
     return File(env).existsSync() ? env : null;
   }
@@ -53,7 +53,7 @@ void main() {
 
   final EmbeddedTorrentEngine? engine = tryOpen();
   final String? skip =
-      engine == null ? 'hibiki_torrent_ffi native lib not built' : null;
+      engine == null ? 'fushi_torrent_ffi native lib not built' : null;
 
   late Directory tempDir;
 

@@ -15,7 +15,7 @@ const int _maximumArchiveExpandedBytes = 2 * 1024 * 1024 * 1024;
 
 /// Yomitan/Yomichan 词典包的**结构**标记：包根下的数据库文件名前缀。
 ///
-/// 与 C++ 导入器 `native/hoshidicts/hoshidicts_src/importer.cpp` 的
+/// 与 C++ 导入器 `native/fushidicts/fushidicts_src/importer.cpp` 的
 /// `get_files()` 用同一组前缀（`term_bank_` / `kanji_bank_` /
 /// `term_meta_bank_` / `kanji_meta_bank_` / `tag_bank_`）——判据只有一处真相，
 /// 这里不自创第二套。

@@ -1,4 +1,4 @@
-# hibiki_torrent — 内置 libtorrent 引擎 C ABI bridge（阶段1b）
+# fushi_torrent — 内置 libtorrent 引擎 C ABI bridge（阶段1b）
 
 番剧下载「内置 libtorrent 引擎」epic 的 native 层。阶段1a 证明了
 `libtorrent 2.x 构建 → 自写 C ABI → ffigen/Dart FFI` 在 Windows 端到端打通；
@@ -7,17 +7,17 @@
 本地做种/测试支撑（`make_torrent` / `connect_peer`）。
 
 选型（已定）：libtorrent 2.x（BSD-3）+ 自写 C ABI（不被 GPL/非 BSD 依赖传染）
-+ Dart FFI + ffigen，照本仓库 `native/hoshidicts` 那套 C++ FFI 范式。
++ Dart FFI + ffigen，照本仓库 `native/fushidicts` 那套 C++ FFI 范式。
 
 ## 结构
 
 ```
-native/hibiki_torrent/
+native/fushi_torrent/
   CMakeLists.txt                       # find_package(LibtorrentRasterbar) + SHARED lib
   hibiki_torrent_ffi.cpp               # C ABI 实现（无自有状态；JSON 出参）
   hibiki_torrent_include/
     hibiki_torrent.h                   # C ABI 头（ffigen 入口；各函数契约见注释）
-packages/hibiki_torrent/               # Dart 侧
+packages/fushi_torrent/               # Dart 侧
   ffigen.yaml                          # 从上面头文件生成绑定
   lib/src/ffi/hibiki_torrent_bindings.dart   # 绑定
   lib/src/embedded_torrent_engine.dart        # EmbeddedTorrentEngine + EmbeddedTorrentSession
@@ -90,7 +90,7 @@ git clone https://github.com/microsoft/vcpkg <vcpkg>
 <vcpkg>/vcpkg install libtorrent:x64-windows
 
 # 2) 配置 + 构建 bridge DLL
-cd native/hibiki_torrent
+cd native/fushi_torrent
 cmake -B build -S . -A x64 \
   -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake \
   -DVCPKG_TARGET_TRIPLET=x64-windows
@@ -102,25 +102,25 @@ cmake --build build --config Release
 ## 测试
 
 ```bash
-cd packages/hibiki_torrent && dart pub get
+cd packages/fushi_torrent && dart pub get
 # 端到端管线（本地 rig 做种，零外网、确定性；缺 DLL 整组 skip）：
-HIBIKI_TORRENT_LIB=<绝对路径>/fushi_torrent_ffi.dll dart test
+FUSHI_TORRENT_LIB=<绝对路径>/fushi_torrent_ffi.dll dart test
 # app 侧 TorrentBackend 契约（在 hibiki/ 下）：
-HIBIKI_TORRENT_LIB=... flutter test test/media/torrent/embedded_torrent_backend_test.dart
+FUSHI_TORRENT_LIB=... flutter test test/media/torrent/embedded_torrent_backend_test.dart
 # 真实网络手动冒烟（真机验收）：
 dart run tool/download_harness.dart <dll> "<magnet>" <saveDir>
 ```
 
 ### CI 覆盖缺口（已知，未解决）
 
-所有需要真 DLL 的用例（`packages/hibiki_torrent/test/*`、`hibiki` 侧的
+所有需要真 DLL 的用例（`packages/fushi_torrent/test/*`、`hibiki` 侧的
 `embedded_torrent_backend_test.dart` / `embedded_torrent_host_test.dart`）在 CI
 上**一次都没跑过**，原因有两层，都不是「加个环境变量」能解决的：
 
-1. `HIBIKI_TORRENT_LIB` 在任何 workflow 里都不存在 → 这些用例整组 skip。
+1. `FUSHI_TORRENT_LIB` 在任何 workflow 里都不存在 → 这些用例整组 skip。
 2. 真单测门（`release.yml` 的 *Run unit tests*）跑在 `ubuntu-latest`，而随包的
    预编译产物是 Windows DLL；`Run package tests` 的包列表里也**没有**
-   `packages/hibiki_torrent`。
+   `packages/fushi_torrent`。
 
 要真正补上，得在 CI 上构建 Linux 版 libtorrent 2.x + 本 bridge（`.so`），是独立
 任务，不该混进功能 PR。在那之前，**任何必须守住的不变量都不能只靠要 DLL 的
@@ -134,7 +134,7 @@ resume_prune_guard_test.dart`，无 DLL 也跑）。
 生成。本机需装 LLVM/libclang：
 
 ```bash
-cd packages/hibiki_torrent
+cd packages/fushi_torrent
 dart run ffigen --config ffigen.yaml
 ```
 
@@ -165,12 +165,12 @@ dart run ffigen --config ffigen.yaml
 （boost+openssl+libtorrent），不能强制每台构建机 / CI 都装 vcpkg 并现编；
 flutter windows 构建也不便注入 vcpkg 工具链文件。故：
 
-1. **产出**：`native/hibiki_torrent/build_windows_dll.ps1 -VcpkgRoot <vcpkg>`
+1. **产出**：`native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot <vcpkg>`
    编 bridge 并把 4 个运行时 DLL（`fushi_torrent_ffi` + `torrent-rasterbar`
    + `libssl-3-x64` + `libcrypto-3-x64`，共 ~11MB）收拢到
    `prebuilt/windows-x64/`（git 忽略，不入库——repo 不放二进制，构建/发布
    流程各自现产或从 release 拉取）。
-2. **随包**：`hibiki/windows/CMakeLists.txt` 在 hoshidicts 之后加了
+2. **随包**：`hibiki/windows/CMakeLists.txt` 在 fushidicts 之后加了
    **copy-if-present** 块——`prebuilt/windows-x64/*.dll` 存在则 `install` 到
    `hibiki.exe` 旁，不存在则跳过。因此 `flutter build windows` **不依赖
    vcpkg/libtorrent**：没跑过产出脚本的机器照常构建，只是 app 运行期

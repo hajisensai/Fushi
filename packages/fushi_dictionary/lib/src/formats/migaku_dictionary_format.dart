@@ -54,5 +54,5 @@ void _prepareEntriesMigakuStub({
   required PrepareDictionaryParams params,
   required dynamic database,
 }) {
-  // No-op: hoshidicts only supports Yomitan format
+  // No-op: fushidicts only supports Yomitan format
 }

@@ -17,7 +17,7 @@ class EmbeddedTorrentEngine {
   /// 直接用一组已有的 [FushiTorrentBindings] 构造引擎，跳过动态库加载。
   ///
   /// 存在的理由：随包的 native 库是 Windows 预编译产物，CI 的绝大多数测试环境
-  /// 里根本没有它（要 `HIBIKI_TORRENT_LIB`），于是"限速开关有没有真的传到
+  /// 里根本没有它（要 `FUSHI_TORRENT_LIB`），于是"限速开关有没有真的传到
   /// native"这类不变量就没有任何**必跑**的用例守着。配合
   /// [FushiTorrentBindings.fromLookup] + `Pointer.fromFunction`，可以在纯 Dart
   /// 里把整条 Dart 侧链路（session → bindings → C 入参）跑通并断言，不依赖 DLL。

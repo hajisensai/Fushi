@@ -1,8 +1,8 @@
 // 「限速也作用于局域网」开关的 Dart 侧链路守卫 —— **不需要 native DLL**。
 //
 // 为什么不用 embedded_pipeline_test 那种真 DLL 用例：那些用例要
-// `HIBIKI_TORRENT_LIB`，在绝大多数 CI 环境里整组 skip（见
-// native/hibiki_torrent/README.md 的「CI 覆盖缺口」）。而"用户打开开关后，
+// `FUSHI_TORRENT_LIB`，在绝大多数 CI 环境里整组 skip（见
+// native/fushi_torrent/README.md 的「CI 覆盖缺口」）。而"用户打开开关后，
 // limit_local_peers 这个 1 到底有没有真的传进 C ABI"是本功能唯一的命脉，
 // 必须由一条**任何环境都会跑**的用例守住。
 //

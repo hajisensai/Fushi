@@ -2,7 +2,7 @@
 //
 // Root cause: a frequency / pitch dictionary that the user "disabled" in the
 // dictionary manager (the visibility Switch toggles `Dictionary.hiddenLanguages`
-// via `toggleDictionaryHidden`) was STILL loaded into the native hoshidicts FFI
+// via `toggleDictionaryHidden`) was STILL loaded into the native fushidicts FFI
 // engine, so its frequency/pitch data kept appearing in the lookup popup. Unlike
 // term glossaries (filtered at render time by `dictionaryNamesByHidden`, or never
 // loaded for a hidden dict), frequency/pitch values come straight from

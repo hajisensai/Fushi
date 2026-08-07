@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-578 fast (source-scan) gate of the native hoshidicts test layer.
+/// TODO-578 fast (source-scan) gate of the native fushidicts test layer.
 ///
 /// The deep gate is the native ctest suite itself (only runnable where a C++23
 /// toolchain is present). This Dart test runs in `flutter test` everywhere and
@@ -22,11 +22,11 @@ void main() {
   }
 
   test('tests/CMakeLists.txt aggregates the native suite into ctest', () {
-    final String cmake = read('../native/hoshidicts/tests/CMakeLists.txt');
+    final String cmake = read('../native/fushidicts/tests/CMakeLists.txt');
 
     // Reuses the real engine static lib (production link path).
     expect(
-        cmake, contains('add_subdirectory(\${HOSHI_ROOT} hoshidicts_build)'));
+        cmake, contains('add_subdirectory(\${FUSHI_ROOT} fushidicts_build)'));
     expect(cmake, contains('enable_testing()'));
     expect(cmake, contains('add_test(NAME \${name} COMMAND \${name})'));
     // Every test we expect ctest to drive must be registered.
@@ -39,7 +39,7 @@ void main() {
       'media_import_query_test',
       'freq_pitch_import_query_test',
     ]) {
-      expect(cmake, contains('add_hoshi_test($testName'),
+      expect(cmake, contains('add_fushi_test($testName'),
           reason: '$testName must be registered as a ctest case');
     }
     // MSVC needs /utf-8 so UTF-8 fixture bytes survive code page 936 on Windows.
@@ -54,7 +54,7 @@ void main() {
       'freq_pitch_import_query_test.cpp',
       'kanji_import_query_test.cpp',
     ]) {
-      final File file = File('../native/hoshidicts/tests/$src');
+      final File file = File('../native/fushidicts/tests/$src');
       expect(file.existsSync(), isTrue,
           reason: 'expected native test source at ${file.absolute.path}');
     }
@@ -64,15 +64,15 @@ void main() {
     final String workflow =
         read('../.github/workflows/build-multiplatform.yml');
 
-    expect(workflow, contains('Run hoshidicts native tests (ctest)'));
-    expect(workflow, contains('cmake -S native/hoshidicts/tests'));
-    expect(workflow, contains(r'ctest --test-dir "$RUNNER_TEMP/hoshi-tests"'));
+    expect(workflow, contains('Run fushidicts native tests (ctest)'));
+    expect(workflow, contains('cmake -S native/fushidicts/tests'));
+    expect(workflow, contains(r'ctest --test-dir "$RUNNER_TEMP/fushi-tests"'));
 
     // The native ctest step must live inside the Linux job (which installs
     // g++-14 + cmake + ninja) and run before the Flutter Linux build so a
     // native break fails fast.
     final int ctestIdx =
-        workflow.indexOf('Run hoshidicts native tests (ctest)');
+        workflow.indexOf('Run fushidicts native tests (ctest)');
     final int verifyIdx = workflow.indexOf('Verify Linux C++23 compiler');
     final int flutterBuildIdx = workflow.indexOf('Build Linux (debug)');
     expect(verifyIdx, greaterThan(0));
@@ -89,7 +89,7 @@ void main() {
     final String workflow =
         read('../.github/workflows/build-multiplatform.yml');
 
-    expect(workflow, contains('Verify macOS hoshidicts dylib bundle'));
+    expect(workflow, contains('Verify macOS fushidicts dylib bundle'));
     expect(workflow, contains('ctypes.CDLL'));
     expect(workflow, contains('fushidicts_create'));
     expect(workflow, contains('fushidicts_destroy'));

@@ -15,8 +15,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../helpers/test_platform_services.dart';
 
 /// BUG-1207：移动端不存在内置 torrent 引擎的原生产物——
-/// `native/hibiki_torrent/CMakeLists.txt` 只有 WIN32 / APPLE 分支，
-/// `hibiki/android/app/build.gradle` 的 externalNativeBuild 只构建 hoshidicts，
+/// `native/fushi_torrent/CMakeLists.txt` 只有 WIN32 / APPLE 分支，
+/// `hibiki/android/app/build.gradle` 的 externalNativeBuild 只构建 fushidicts，
 /// 全仓也没有任何 `libhibiki_torrent_ffi.so`。可下载设置页照样把「内置引擎」
 /// 画出来让用户选中，选中后还暴露一个**只有内置引擎才读**的下载目录。
 /// 实际运行时 `EmbeddedTorrentHost.open` 吞掉 `ArgumentError` 返回 null，

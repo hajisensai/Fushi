@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 //   2. popup.js builds a kanji card from window.kanjiResults and renders it in
 //      renderPopup, using the real FushiKanjiResult field names.
 //
-// END-TO-END NOTE: on-device, queryKanji is still empty until the hoshidicts
+// END-TO-END NOTE: on-device, queryKanji is still empty until the fushidicts
 // native libs are rebuilt with the S3 kanji exports across all 5 platforms, so
 // the card will not appear on a real lookup until that rebuild + device verify.
 // This static guard + the node behavior tests

@@ -2,7 +2,7 @@
 // test/embedded_pipeline_test.dart 的本地 rig，不连外网）。
 //
 // 用法：
-//   dart run tool/download_harness.dart <hibiki_torrent_ffi.dll 路径> \
+//   dart run tool/download_harness.dart <fushi_torrent_ffi.dll 路径> \
 //       "<magnet 链接>" <保存目录>
 //
 // 开 DHT + 监听 0.0.0.0:6881，顺序下载 + 元数据就绪后首尾 piece 提优，

@@ -1,7 +1,7 @@
 // TODO-2482：详情批次 C ABI 的真实 DLL 验证（trackers / 文件优先级读写 /
 // 会话状态 / 快照新字段 / peer flags 字段形状）。
 //
-// 库路径解析同冒烟测试：HIBIKI_TORRENT_LIB 指向 DLL；缺库整组 skip
+// 库路径解析同冒烟测试：FUSHI_TORRENT_LIB 指向 DLL；缺库整组 skip
 // （能力探测跳过而非假绿）。数据面全本地确定性（LocalSeedRig），零外网。
 
 import 'dart:io';
@@ -11,7 +11,7 @@ import 'package:fushi_torrent/testing.dart';
 import 'package:test/test.dart';
 
 String? _resolveLibPath() {
-  final String? env = Platform.environment['HIBIKI_TORRENT_LIB'];
+  final String? env = Platform.environment['FUSHI_TORRENT_LIB'];
   if (env != null && env.isNotEmpty) {
     return File(env).existsSync() ? env : null;
   }
@@ -45,7 +45,7 @@ void main() {
 
   final EmbeddedTorrentEngine? engine = tryOpen();
   final String? skip =
-      engine == null ? 'hibiki_torrent_ffi native lib not built' : null;
+      engine == null ? 'fushi_torrent_ffi native lib not built' : null;
 
   late Directory tempDir;
 

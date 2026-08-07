@@ -11,7 +11,7 @@ void main() {
   }
 
   String readFushidictsCmake() {
-    final File file = File('../native/hoshidicts/CMakeLists.txt');
+    final File file = File('../native/fushidicts/CMakeLists.txt');
     expect(file.existsSync(), isTrue,
         reason: 'expected hoshidicts CMake at ${file.absolute.path}');
     return file.readAsStringSync();
@@ -87,7 +87,7 @@ void main() {
     final int picSetting =
         cmake.indexOf('set(CMAKE_POSITION_INDEPENDENT_CODE ON)');
     final int bundledDepsStart =
-        cmake.indexOf('add_subdirectory(hoshidicts_external/glaze');
+        cmake.indexOf('add_subdirectory(fushidicts_external/glaze');
     final int staticTargetStart =
         cmake.indexOf('add_library(hoshidicts STATIC');
     final int sharedTargetStart =

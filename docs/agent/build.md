@@ -146,7 +146,7 @@ Flutter 3.44.0 下部分上游依赖未适配，两种补法并存（对个别�
 
 galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendored LunaHook/Host DLL）含
 `CreateRemoteThread`/`WriteProcessMemory`。**源码在本仓 `native/galgame_hook/`**（与
-`native/hoshidicts/`、`native/hibiki_torrent/` 同级）。helper 绝不链接进 `Hibiki.exe`，运行时仍是
+`native/fushidicts/`、`native/fushi_torrent/` 同级）。helper 绝不链接进 `Hibiki.exe`，运行时仍是
 隔离子进程/DLL；但两架构的校验 zip 随 Windows 主包进入 `galgame_helper/`，从而离线首装可用。
 
 > 历史：这套组件曾整体迁到独立仓库 `hajisensai/hibiki-hook`。迁出的真正根因是 CI——主仓库那份

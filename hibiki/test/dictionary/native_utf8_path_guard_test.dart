@@ -12,7 +12,7 @@ import 'package:path/path.dart' as p;
 void main() {
   final String root = _repoRoot();
   final String nativeSrc =
-      p.join(root, 'native', 'hoshidicts', 'hoshidicts_src');
+      p.join(root, 'native', 'fushidicts', 'fushidicts_src');
 
   test('fs_utf8 boundary helper exists', () {
     final File helper = File(p.join(nativeSrc, 'util', 'fs_utf8.hpp'));

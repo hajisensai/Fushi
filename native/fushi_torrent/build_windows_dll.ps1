@@ -8,8 +8,8 @@
 # 构建只做「有则拷、无则跳」，不依赖 vcpkg（阶段4 决策：vendored 预编译）。
 #
 # 用法（需先 vcpkg install libtorrent:x64-windows）：
-#   pwsh -File native/hibiki_torrent/build_windows_dll.ps1 -VcpkgRoot D:\APP\vcpkg
-# 产物：native/hibiki_torrent/prebuilt/windows-x64/*.dll（git 忽略，不入库）
+#   pwsh -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot D:\APP\vcpkg
+# 产物：native/fushi_torrent/prebuilt/windows-x64/*.dll（git 忽略，不入库）
 
 [CmdletBinding()]
 param(

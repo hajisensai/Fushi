@@ -10,7 +10,7 @@
 // 文件与磁盘上已有的数据，不可能是重下的。这正是 TODO-1961-a 要证明的东西
 // （在此之前，重启 app = 所有种子蒸发，做种和续传都断）。
 //
-// 库路径解析同其它 native 测试：HIBIKI_TORRENT_LIB 指向 DLL；缺库整组 skip。
+// 库路径解析同其它 native 测试：FUSHI_TORRENT_LIB 指向 DLL；缺库整组 skip。
 
 import 'dart:io';
 
@@ -19,7 +19,7 @@ import 'package:fushi_torrent/testing.dart';
 import 'package:test/test.dart';
 
 String? _resolveLibPath() {
-  final String? env = Platform.environment['HIBIKI_TORRENT_LIB'];
+  final String? env = Platform.environment['FUSHI_TORRENT_LIB'];
   if (env != null && env.isNotEmpty) {
     return File(env).existsSync() ? env : null;
   }
@@ -53,7 +53,7 @@ void main() {
 
   final EmbeddedTorrentEngine? engine = tryOpen();
   final String? skip =
-      engine == null ? 'hibiki_torrent_ffi native lib not built' : null;
+      engine == null ? 'fushi_torrent_ffi native lib not built' : null;
 
   late Directory tempDir;
 

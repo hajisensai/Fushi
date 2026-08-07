@@ -1,7 +1,7 @@
 // BUG-171 source-scan guard.
 //
 // Root cause: deleting a dictionary only updated the Dart-side caches but did
-// NOT always rebuild the native hoshidicts FFI engine instance, so the deleted
+// NOT always rebuild the native fushidicts FFI engine instance, so the deleted
 // dictionary's in-memory index stayed loaded and queries kept hitting it until
 // the app was restarted (TODO-095 user report).
 //

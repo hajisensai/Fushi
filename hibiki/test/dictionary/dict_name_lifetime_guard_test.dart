@@ -16,14 +16,14 @@
 // Layer rationale: the fix lives in native C++ that flutter_test cannot link,
 // so the strongest *landable* automated guard is a source-scan over the C++ —
 // same approach the repo uses for other invariants. A manual end-to-end check
-// also exists at native/hoshidicts/tests/dict_name_lifetime_test.cpp.
+// also exists at native/fushidicts/tests/dict_name_lifetime_test.cpp.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('add_dict copies index.title while index_buf is still in scope', () {
-    final File src = File('../native/hoshidicts/hoshidicts_src/query.cpp');
+    final File src = File('../native/fushidicts/fushidicts_src/query.cpp');
     expect(src.existsSync(), isTrue,
         reason: 'query.cpp not found at ${src.absolute.path}');
     final String code = src.readAsStringSync();

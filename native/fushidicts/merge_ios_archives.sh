@@ -16,9 +16,9 @@ out="$2"
 deps=(
   "$binary_dir/libfushidicts_ffi.a"
   "$binary_dir/libhoshidicts.a"
-  "$binary_dir/hoshidicts_external/zstd/build/cmake/lib/libzstd.a"
-  "$binary_dir/hoshidicts_external/libdeflate/libdeflate.a"
-  "$binary_dir/hoshidicts_external/utf8proc/libutf8proc.a"
+  "$binary_dir/fushidicts_external/zstd/build/cmake/lib/libzstd.a"
+  "$binary_dir/fushidicts_external/libdeflate/libdeflate.a"
+  "$binary_dir/fushidicts_external/utf8proc/libutf8proc.a"
 )
 
 for a in "${deps[@]}"; do

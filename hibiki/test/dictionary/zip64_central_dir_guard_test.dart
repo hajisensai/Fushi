@@ -16,9 +16,9 @@ import 'package:path/path.dart' as p;
 void main() {
   final String root = _repoRoot();
   final String zipCpp =
-      p.join(root, 'native', 'hoshidicts', 'hoshidicts_src', 'zip', 'zip.cpp');
+      p.join(root, 'native', 'fushidicts', 'fushidicts_src', 'zip', 'zip.cpp');
   final String zipHpp =
-      p.join(root, 'native', 'hoshidicts', 'hoshidicts_src', 'zip', 'zip.hpp');
+      p.join(root, 'native', 'fushidicts', 'fushidicts_src', 'zip', 'zip.hpp');
 
   test('parse_central_directory resolves per-entry ZIP64 extra (0x0001)', () {
     final String src = File(zipCpp).readAsStringSync();

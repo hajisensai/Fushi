@@ -7,7 +7,7 @@ project(fushi_torrent_ffi LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Linux/桌面共享库里链接静态依赖时用 PIC（与 hoshidicts 一致的姿态）。
+# Linux/桌面共享库里链接静态依赖时用 PIC（与 fushidicts 一致的姿态）。
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(MSVC)

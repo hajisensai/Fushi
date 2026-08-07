@@ -15,6 +15,6 @@ PRODUCT_COPYRIGHT = Copyright © 2026 Fushi. All rights reserved.
 
 // Native hoshidicts FFI library, built by the macOS Runner target and copied
 // into Contents/Frameworks so DynamicLibrary.open can resolve it from the app.
-FUSHIDICTS_SOURCE_DIR = $(PROJECT_DIR)/../../native/hoshidicts
+FUSHIDICTS_SOURCE_DIR = $(PROJECT_DIR)/../../native/fushidicts
 FUSHIDICTS_BUILD_DIR = $(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)
 FUSHIDICTS_DYLIB_NAME = libfushidicts_ffi.dylib

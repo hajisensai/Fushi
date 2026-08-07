@@ -3,7 +3,7 @@
  * convert-yomitan-transforms.mjs
  *
  * Reads Yomitan language transform descriptor files and outputs minified JSON
- * for each language. The JSON is consumed by the hoshidicts C++ deinflector.
+ * for each language. The JSON is consumed by the fushidicts C++ deinflector.
  *
  * Usage:  node convert-yomitan-transforms.mjs
  *

@@ -1,15 +1,15 @@
 // GENERATED / hand-mirrored — do not edit by hand except to re-run ffigen.
 //
-// 本文件是 `ffigen.yaml` 对 native/hibiki_torrent/.../hibiki_torrent.h 的产物。
+// 本文件是 `ffigen.yaml` 对 native/fushi_torrent/.../hibiki_torrent.h 的产物。
 // 本机装有 LLVM/libclang 时可 `dart run ffigen --config ffigen.yaml` 覆盖重生；
 // 内容与 ffigen 对该 C ABI 的输出等价（单一 DynamicLibrary 构造 +
-// lookup 惰性字段），与仓库既有 hoshidicts FFI 手写范式一致。
+// lookup 惰性字段），与仓库既有 fushidicts FFI 手写范式一致。
 //
 // ignore_for_file: always_specify_types, camel_case_types, non_constant_identifier_names
 
 import 'dart:ffi' as ffi;
 
-/// Dart FFI bindings for the hibiki_torrent C ABI bridge over libtorrent.
+/// Dart FFI bindings for the fushi_torrent C ABI bridge over libtorrent.
 class FushiTorrentBindings {
   /// Holds the symbol lookup function.
   final ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
@@ -133,8 +133,8 @@ class FushiTorrentBindings {
 
   /// 已加载的库里是否有 [ht_apply_limits_ex]。
   ///
-  /// 这不是防御性编程，是真实的部署形态：`hibiki_torrent_ffi.dll` 由
-  /// `native/hibiki_torrent/build_windows_dll.ps1` 单独产出、以 vendored 预编译
+  /// 这不是防御性编程，是真实的部署形态：`fushi_torrent_ffi.dll` 由
+  /// `native/fushi_torrent/build_windows_dll.ps1` 单独产出、以 vendored 预编译
   /// 二进制随包（`prebuilt/windows-x64/`，不入库），所以 Dart 侧更新了、DLL 没
   /// 重编的组合是会真实发生的。符号缺失时按老 DLL 的能力降级，绝不让 app 崩。
   late final bool hasApplyLimitsEx = _probeApplyLimitsEx();

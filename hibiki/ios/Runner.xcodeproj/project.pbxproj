@@ -406,7 +406,7 @@
 				ENABLE_BITCODE = NO;
 				FUSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
 				FUSHIDICTS_MERGED_ARCHIVE = "$(FUSHIDICTS_BUILD_DIR)/libfushidicts_ffi_merged.a";
-				FUSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
+				FUSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/fushidicts";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -543,7 +543,7 @@
 				ENABLE_BITCODE = NO;
 				FUSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
 				FUSHIDICTS_MERGED_ARCHIVE = "$(FUSHIDICTS_BUILD_DIR)/libfushidicts_ffi_merged.a";
-				FUSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
+				FUSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/fushidicts";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -574,7 +574,7 @@
 				ENABLE_BITCODE = NO;
 				FUSHIDICTS_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)-$(PLATFORM_NAME)";
 				FUSHIDICTS_MERGED_ARCHIVE = "$(FUSHIDICTS_BUILD_DIR)/libfushidicts_ffi_merged.a";
-				FUSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/hoshidicts";
+				FUSHIDICTS_SOURCE_DIR = "$(PROJECT_DIR)/../../native/fushidicts";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

@@ -1,13 +1,13 @@
 #pragma once
 
-// hibiki_torrent — C ABI bridge over libtorrent 2.x.
+// fushi_torrent — C ABI bridge over libtorrent 2.x.
 //
 // 阶段1b：真实下载管线（磁力 → 元数据 → 顺序下载 → 进度 → 完成）+ 本地
 // 做种/测试支撑（make_torrent / connect_peer）+ 边下边播原语
 // （sequential + set_piece_deadline + 首尾 piece 提优）。
 // 阶段3：反吸血支撑（torrent_peers 导出 peer_info、apply_ip_filter 执行封禁）。
 // C ABI 手写（不被 libtorrent 的 BSD 之外任何依赖传染），Dart 侧用 ffigen
-// 从本头文件生成绑定，与 hoshidicts 同一 FFI 范式。
+// 从本头文件生成绑定，与 fushidicts 同一 FFI 范式。
 //
 // 约定：
 // - 返回 `char*` 的函数一律返回 malloc 分配的 UTF-8 JSON 串，调用方用完
@@ -17,7 +17,7 @@
 //   sha256 的 40 字符，与 libtorrent get_best() 一致）。
 // - 路径一律 UTF-8。
 
-// ── Symbol export（与 hoshidicts platform.hpp 一致的做法）────────────
+// ── Symbol export（与 fushidicts platform.hpp 一致的做法）────────────
 #ifdef _WIN32
 #define HT_EXPORT __declspec(dllexport)
 #else

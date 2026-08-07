@@ -2335,7 +2335,7 @@ JSON.stringify((function(){
         seenPitches: seenPitches[key]!,
       );
 
-      // entry.meaning from hoshidicts FFI is valid JSON (structured content).
+      // entry.meaning from fushidicts FFI is valid JSON (structured content).
       // Embed raw to skip the jsonDecode + jsonEncode roundtrip.
       final String m = entry.meaning;
       final String contentJson =

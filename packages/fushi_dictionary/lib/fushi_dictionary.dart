@@ -7,7 +7,7 @@ export 'src/engine/fushidicts.dart';
 // hold Pointer<Utf8> fields owned by native malloc/free and are only valid
 // between an FFI call and its matching free. Exposing them as package public
 // API would let consumers hold pointers past the free boundary (use-after-free
-// the type system presents as valid). hoshidicts.dart imports the bindings via
+// the type system presents as valid). fushidicts.dart imports the bindings via
 // a relative path; only the safe FushiDicts wrapper + Hoshi* data classes are public.
 export 'src/formats/dictionary_format.dart';
 export 'src/formats/dictionary_downloader.dart';

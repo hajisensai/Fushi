@@ -6,11 +6,11 @@
 // stops any future decompression site from reintroducing the same UB.
 //
 // The scan is intentionally NOT pinned to specific files: it walks the whole
-// hoshidicts_src/ tree (skipping the vendored libdeflate's own sources/tests),
+// fushidicts_src/ tree (skipping the vendored libdeflate's own sources/tests),
 // so it covers zip.cpp's new checks, mdx/stardict's existing checks, and any
 // decompression site added later.
 //
-// Usage: decompressor_null_guard_test <hoshidicts_src_dir>
+// Usage: decompressor_null_guard_test <fushidicts_src_dir>
 //   (the test build passes HOSHI_SRC via argv; falls back to a relative guess.)
 #include <cstdio>
 #include <filesystem>
@@ -56,7 +56,7 @@ int main(int argc, char** argv) {
   if (argc > 1) {
     src_root = argv[1];
   } else {
-    src_root = fs::path(__FILE__).parent_path().parent_path() / "hoshidicts_src";
+    src_root = fs::path(__FILE__).parent_path().parent_path() / "fushidicts_src";
   }
   if (!fs::exists(src_root)) {
     std::fprintf(stderr, "FAIL: source root not found: %s\n",

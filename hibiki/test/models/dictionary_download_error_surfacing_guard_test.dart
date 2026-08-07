@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// BUG-447 source guards: the online "download recommended dictionaries" loop
 /// must not swallow per-dictionary failures silently. TODO-892 regression had
 /// two layers; the native zip.cpp ratio→absolute guard is verified by the C++
-/// test (native/hoshidicts/tests/zip_high_ratio_bank_test.cpp). These Dart
+/// test (native/fushidicts/tests/zip_high_ratio_bank_test.cpp). These Dart
 /// guards pin the second layer: a failed download/import must be logged to
 /// ErrorLogService (full diagnostic) AND surfaced to the user via a persistent
 /// failure-summary toast — not stored as a string that disappears with the 2s

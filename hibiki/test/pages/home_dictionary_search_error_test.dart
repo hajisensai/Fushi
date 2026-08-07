@@ -14,7 +14,7 @@ import '../helpers/test_platform_services.dart';
 ///
 /// 根因（commit 9427a386c 拆 `_search` / `_searchWithGeneration` 时丢了 try/finally）：
 /// `_searchWithGeneration` 里 `await appModel.searchDictionary(...)` 之后才有唯一一处
-/// `_isSearching = false`。一旦 searchDictionary 抛异常（远程网络查询 + hoshidicts
+/// `_isSearching = false`。一旦 searchDictionary 抛异常（远程网络查询 + fushidicts
 /// C++ FFI 都可能抛），复位行不可达 → `_isSearching` 永久 true →
 /// `_buildQueryBody` 永久显示转圈、`_loadMore` 第一句 `if (_isSearching) return`
 /// 永久阻塞。

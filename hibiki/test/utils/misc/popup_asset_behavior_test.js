@@ -1763,7 +1763,7 @@ async function testOverwriteScopeLatestKeepsEarlierCardOrdinary() {
 //
 // SCOPE NOTE: these tests exercise ONLY the render logic for a GIVEN kanji
 // payload — they do NOT assert the FFI actually returns kanji. On-device,
-// queryKanji is still empty until the hoshidicts native libs are rebuilt with
+// queryKanji is still empty until the fushidicts native libs are rebuilt with
 // the S3 kanji exports across all 5 platforms; until then this card never
 // appears on a real lookup. End-to-end is therefore pending that rebuild +
 // device verification; this S5 work makes the render pipeline ready + testable.

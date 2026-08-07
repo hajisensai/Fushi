@@ -1,6 +1,6 @@
 # hoshidicts 上游同步基线（UPSTREAM baseline）
 
-> 本文件是 `native/hoshidicts/` C++ 引擎相对上游的**唯一基线真相源**。
+> 本文件是 `native/fushidicts/` C++ 引擎相对上游的**唯一基线真相源**。
 > 每次从上游同步代码后更新「同步基线」与「已直抄/已合并的上游 commit」两节，
 > 避免下次同步又对着几百行盲 diff。
 
@@ -24,9 +24,9 @@
 
 | 上游 commit | 标题 | 落到 Hibiki 的文件 | 风险 |
 |---|---|---|---|
-| `3448d6d` | Accept numeric Yomitan term scores (#14) | `hoshidicts_src/json/yomitan_parser.hpp`（`Term::score` `int`→`double`；`Tag::score` 不动） | 零盘格式风险（写盘不含 score） |
-| `4975788` | consider all freq values when sorting within dict | `hoshidicts_src/lookup.cpp`（`get_freq_value_for_dict`→`get_freq_values_for_dict` 返 `vector<int>` + 调用点） | 纯查询期排序，不碰 importer/写盘 |
-| `1a34a59` | fix swift compilation on c++23 | `hoshidicts_include/hoshidicts/query.hpp` + `hoshidicts_src/query.cpp`（`Dictionary` pimpl 5 个特殊成员声明+定义） | 仅编译期，5 平台受益 |
+| `3448d6d` | Accept numeric Yomitan term scores (#14) | `fushidicts_src/json/yomitan_parser.hpp`（`Term::score` `int`→`double`；`Tag::score` 不动） | 零盘格式风险（写盘不含 score） |
+| `4975788` | consider all freq values when sorting within dict | `fushidicts_src/lookup.cpp`（`get_freq_value_for_dict`→`get_freq_values_for_dict` 返 `vector<int>` + 调用点） | 纯查询期排序，不碰 importer/写盘 |
+| `1a34a59` | fix swift compilation on c++23 | `fushidicts_include/hoshidicts/query.hpp` + `fushidicts_src/query.cpp`（`Dictionary` pimpl 5 个特殊成员声明+定义） | 仅编译期，5 平台受益 |
 
 > 上述三处 apply 前已逐字节确认 Hibiki 仍是上游旧版（OLD），diff 与上游对应 commit 一致（除 Hibiki 本地上下文如 `hoshi::fs_path`）。
 
@@ -34,7 +34,7 @@
 
 | 上游 commit | 标题 | 为什么不在批1 | 后续条件 |
 |---|---|---|---|
-| `2d4f2a2` | add normalization processors（NFKC 全角归一化） | 需 vendor `utf8proc` 进 `hoshidicts_external/` + 改 `CMakeLists.txt` + 把处理器追加到 Hibiki 自研处理链链尾（与 P1/P2/P3 共存，非替换） | 批2 |
+| `2d4f2a2` | add normalization processors（NFKC 全角归一化） | 需 vendor `utf8proc` 进 `fushidicts_external/` + 改 `CMakeLists.txt` + 把处理器追加到 Hibiki 自研处理链链尾（与 P1/P2/P3 共存，非替换） | 批2 |
 | `e7dfdea` | add kanji standardization（异体字标准化） | **不能照搬**：上游用 C++23 `#embed` 嵌入数据表，Windows MSVC / Apple Clang 不支持，需改 CMake 生成 C 数组头。逻辑本身无害、与 Hibiki 自研 kanji 导入（`importer.cpp`）零冲突（落在 `text_processor.cpp`，非 importer/S0 二进制 contract） | 批3（慎，需 CMake 改写） |
 | `1198201` | fix swift build | 仅 SwiftPM，Hibiki 不用 SwiftPM 构建 | skip |
 
@@ -54,18 +54,18 @@
 
 ## Hibiki 本地改动清单（上游没有 / 已分叉）
 
-- **自研多语言文本处理器**（`hoshidicts_src/text_processor/text_processor.cpp`）：P1 Unicode 小写（`to_lower`）/ P2 阿拉伯语 harakat + 组合记号删除（`harakat`/`combining`）/ P3 预合成拉丁去变音（`precompos`）。上游 `text_processor` 此前为空（仅日英归一化骨架）。
-- **自研 kanji 导入**：`hoshidicts_src/importer.cpp` 上游 541 行 → Hibiki **1367 行**（+826），新增 kanji bank 写盘（`write_kanji`）+ `query_kanji` + `add_kanji_dict`。
-- **多格式导入**（上游主线没有）：`hoshidicts_src/mdx/`（MDX）、`hoshidicts_src/stardict/`（StarDict）、`hoshidicts_src/popup_json.cpp`（弹窗 JSON）、`hoshidicts_src/scan/`（词边界感知扫描，对齐 Yomitan searchResolution）、`hoshidicts_src/util/`。
+- **自研多语言文本处理器**（`fushidicts_src/text_processor/text_processor.cpp`）：P1 Unicode 小写（`to_lower`）/ P2 阿拉伯语 harakat + 组合记号删除（`harakat`/`combining`）/ P3 预合成拉丁去变音（`precompos`）。上游 `text_processor` 此前为空（仅日英归一化骨架）。
+- **自研 kanji 导入**：`fushidicts_src/importer.cpp` 上游 541 行 → Hibiki **1367 行**（+826），新增 kanji bank 写盘（`write_kanji`）+ `query_kanji` + `add_kanji_dict`。
+- **多格式导入**（上游主线没有）：`fushidicts_src/mdx/`（MDX）、`fushidicts_src/stardict/`（StarDict）、`fushidicts_src/popup_json.cpp`（弹窗 JSON）、`fushidicts_src/scan/`（词边界感知扫描，对齐 Yomitan searchResolution）、`fushidicts_src/util/`。
 - **安全上限**：导入/查询期的资源/尺寸上限加固。
-- **FFI / JNI 桥**：`hoshidicts_ffi.cpp`（Dart FFI）+ `hoshidicts_jni.cpp`（Android JNI）。**不用上游 `c-bindings` 分支**。
+- **FFI / JNI 桥**：`fushidicts_ffi.cpp`（Dart FFI）+ `fushidicts_jni.cpp`（Android JNI）。**不用上游 `c-bindings` 分支**。
   - 注意：`score` / `get_freq_value(s)_for_dict` / `Dictionary` 均为引擎内部符号，FFI/JNI 桥与 Dart binding 均未暴露——本批三处改动**不影响 FFI 签名**。
 - **额外吸收的 sibling commit**：`feb48f5`（`ImportResult.detected_type`，自动词典类型检测），非 origin/main 主线。
 
 ## 依赖差异
 
 - **上游**：`external/` 用 git submodule（utfcpp / glaze / zstd / unordered_dense / xxHash / libdeflate）。
-- **Hibiki**：vendored 子目录 `native/hoshidicts/hoshidicts_external/`（glaze / libdeflate / unordered_dense / utfcpp / xxHash / zstd 实拷贝，不走 submodule）。批2 若引入 `utf8proc` 也照此 vendor 进 `hoshidicts_external/`。
+- **Hibiki**：vendored 子目录 `native/fushidicts/fushidicts_external/`（glaze / libdeflate / unordered_dense / utfcpp / xxHash / zstd 实拷贝，不走 submodule）。批2 若引入 `utf8proc` 也照此 vendor 进 `fushidicts_external/`。
 
 ## 验证
 
@@ -74,7 +74,7 @@
 
 ## 2026-08 Hibiki→Fushi 改名映射（P6-2）
 
-产品改名 Fushi 后，本引擎**对外符号面**同步改为 `fushidicts`；**目录名、内部静态库 target `hoshidicts`、`hoshidicts_src/`、`hoshidicts_include/`、`hoshidicts_external/`、内部命名空间/宏（`HOSHI_EXPORT`、`hoshi::`、`HoshiThread`）保持不变**，与上游 diff 的对照面最小化。对照表：
+产品改名 Fushi 后，本引擎**对外符号面**同步改为 `fushidicts`。终局清算 W6（2026-08-07）又把**目录名**一并改掉：`native/hoshidicts/` → `native/fushidicts/`，内层 `hoshidicts_src/`→`fushidicts_src/`、`hoshidicts_include/`→`fushidicts_include/`、`hoshidicts_external/`→`fushidicts_external/`（vendored 第三方只改目录名，pristine 文件内容不动）。**仍保持不变**的是与上游 diff 对照面直接相关的部分：内部静态库 target `hoshidicts`、公共头子目录 `fushidicts_include/hoshidicts/`（源码 `#include "hoshidicts/*.hpp"` 原样）、内部命名空间/宏（`HOSHI_EXPORT`、`hoshi::`、`HoshiThread`）、磁盘分片名 `.hoshidicts_1`（持久化契约）。对照表：
 
 | 旧名 | 新名 | 说明 |
 |---|---|---|
@@ -85,4 +85,5 @@
 | JNI 注册 `Java_app_hibiki_reader_HoshiBridge_*` | `Java_app_fushi_reader_FushiBridge_*` | Kotlin 侧为 `app.fushi.reader.FushiBridge`（P2-1 已改） |
 | 桥源文件 `hoshidicts_ffi.cpp` / `hoshidicts_jni.cpp` | `fushidicts_ffi.cpp` / `fushidicts_jni.cpp` | 仅这两个桥文件改名 |
 | 构建变量 `HOSHIDICTS_*`（CMake/xcconfig/脚本环境契约） | `FUSHIDICTS_*` | `AppInfo.xcconfig` / 两个 pbxproj / `build_fushidicts_ffi.sh` |
-| Dart 封装 `HoshiDicts` 及 `Hoshi*` 结果类 | `FushiDicts` / `Fushi*` | `packages/hibiki_dictionary/lib/src/engine/fushidicts.dart` |
+| Dart 封装 `HoshiDicts` 及 `Hoshi*` 结果类 | `FushiDicts` / `Fushi*` | `packages/fushi_dictionary/lib/src/engine/fushidicts.dart` |
+| 目录 `native/hoshidicts/`（含 `hoshidicts_{src,include,external}/`） | `native/fushidicts/`（`fushidicts_{src,include,external}/`） | W6；测试 harness 变量 `HOSHI_ROOT`→`FUSHI_ROOT`、ctest 函数 `add_hoshi_test`→`add_fushi_test`、CI 构建目录 `hoshi-tests`→`fushi-tests` 同批 |

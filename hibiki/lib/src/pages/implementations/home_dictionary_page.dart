@@ -707,7 +707,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     required int searchGeneration,
   }) async {
     // 用 try/finally 守卫整条失败路径：searchDictionary 走远程网络查询 +
-    // hoshidicts C++ FFI，任一环节抛异常都不能让 _isSearching 永久为 true
+    // fushidicts C++ FFI，任一环节抛异常都不能让 _isSearching 永久为 true
     // （否则 _buildQueryBody 永久转圈、_loadMore 永久阻塞）。finally 始终复位，
     // 但只对仍是当前 generation 的请求 setState，避免污染已被新请求覆盖的状态。
     try {

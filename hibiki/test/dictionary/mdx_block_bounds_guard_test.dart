@@ -19,7 +19,7 @@ import 'package:path/path.dart' as p;
 void main() {
   final String root = _repoRoot();
   final String mdxCpp = p.join(
-      root, 'native', 'hoshidicts', 'hoshidicts_src', 'mdx', 'mdx_reader.cpp');
+      root, 'native', 'fushidicts', 'fushidicts_src', 'mdx', 'mdx_reader.cpp');
 
   test('mdx_reader bounds both uncompressed-block copies by decompressed_size',
       () {

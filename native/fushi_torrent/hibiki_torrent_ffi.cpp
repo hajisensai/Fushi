@@ -1,4 +1,4 @@
-// hibiki_torrent C ABI bridge implementation（阶段1b：真实下载管线）。
+// fushi_torrent C ABI bridge implementation（阶段1b：真实下载管线）。
 //
 // 设计原则：
 // - C 层不存**种子**状态：种子按 infohash 每次现查（get_torrents() 线性扫，

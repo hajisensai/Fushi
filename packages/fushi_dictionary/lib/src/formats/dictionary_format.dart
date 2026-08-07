@@ -27,7 +27,7 @@ abstract class DictionaryFormat {
 
   /// Prepare dictionary entries for import.
   ///
-  /// Previously took an Isar instance; will be replaced by hoshidicts (C++ FFI).
+  /// Previously took an Isar instance; will be replaced by fushidicts (C++ FFI).
   /// The [database] parameter is a dynamic placeholder for the future backend.
   void Function({
     required PrepareDictionaryParams params,

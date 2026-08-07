@@ -1,4 +1,4 @@
-// 守卫：`native/hibiki_torrent` 的 C ABI 头文件与手写镜像的 Dart FFI 绑定必须
+// 守卫：`native/fushi_torrent` 的 C ABI 头文件与手写镜像的 Dart FFI 绑定必须
 // 逐符号、逐参数对齐。
 //
 // 为什么需要它：`packages/fushi_torrent/lib/src/ffi/hibiki_torrent_bindings.dart`
@@ -90,7 +90,7 @@ Set<String> _parseLookedUpSymbols(String source) {
 void main() {
   // 测试的工作目录是 `hibiki/`，native 与 packages 在它的上一级。
   final File headerFile =
-      File('../native/hibiki_torrent/hibiki_torrent_include/hibiki_torrent.h');
+      File('../native/fushi_torrent/hibiki_torrent_include/hibiki_torrent.h');
   final File bindingsFile = File(
       '../packages/fushi_torrent/lib/src/ffi/hibiki_torrent_bindings.dart');
 

@@ -276,7 +276,7 @@ TODO-2707（PR#756）已把这条补完：**35 条现在条条有扫描规模哨
 | `tools/browser-extension` | 49 | 2 |
 | `packages/flutter_inappwebview_windows` | 20 | **0** |
 | `.github/workflows` | 20 | 3 |
-| `native/hoshidicts` / `native/galgame_hook` | 12 / 9 | 1（半覆盖） |
+| `native/fushidicts` / `native/galgame_hook` | 12 / 9 | 1（半覆盖） |
 | `hibiki/macos` / `hibiki/ios` / `hibiki/linux` | 9 / 7 / 2 | **0** |
 | `packages/gamepads_windows` / `third_party/desktop_drop` | 4 / 3 | **0** |
 

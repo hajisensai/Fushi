@@ -1,13 +1,13 @@
-# ffigen 配置：从 native/hibiki_torrent 的 C ABI 头文件生成 Dart FFI 绑定。
+# ffigen 配置：从 native/fushi_torrent 的 C ABI 头文件生成 Dart FFI 绑定。
 # 生成命令（在本包目录下）：dart run ffigen --config ffigen.yaml
 # 需要本机装有 LLVM/libclang；若缺，绑定文件与本配置产物等价的手写版已入库
 # （lib/src/ffi/hibiki_torrent_bindings.dart 顶部有说明）。
 name: FushiTorrentBindings
-description: Dart FFI bindings for the hibiki_torrent C ABI bridge over libtorrent.
+description: Dart FFI bindings for the fushi_torrent C ABI bridge over libtorrent.
 output: "lib/src/ffi/hibiki_torrent_bindings.dart"
 headers:
   entry-points:
-    - "../../native/hibiki_torrent/hibiki_torrent_include/hibiki_torrent.h"
+    - "../../native/fushi_torrent/hibiki_torrent_include/hibiki_torrent.h"
   include-directives:
     - "**/hibiki_torrent.h"
 functions:

@@ -2,7 +2,7 @@
 // 端到端验证：分类目录语义、magnet 添加、按分类过滤、快照/文件映射、
 // isComplete 判定。下载源是 LocalSeedRig（127.0.0.1 本地做种，零外网）。
 //
-// 库路径解析：FUSHI_TORRENT_LIB 指向 hibiki_torrent_ffi.dll；缺库整组 skip
+// 库路径解析：FUSHI_TORRENT_LIB 指向 fushi_torrent_ffi.dll；缺库整组 skip
 // —— CI/未构建环境不因缺 DLL 而红。
 
 import 'dart:io';
@@ -49,7 +49,7 @@ void main() {
 
   final EmbeddedTorrentEngine? engine = tryOpen();
   final String? skip =
-      engine == null ? 'hibiki_torrent_ffi native lib not built' : null;
+      engine == null ? 'fushi_torrent_ffi native lib not built' : null;
 
   late Directory tempDir;
 

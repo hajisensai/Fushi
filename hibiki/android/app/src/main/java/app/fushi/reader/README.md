@@ -40,7 +40,7 @@ Shared constants are centralized here:
   Flutter engine).
 - `PopupDbReader.kt` — Read-only SQLite access to the Drift DB from `:popup`.
   Mirrors the Drift schema; guarded by `EXPECTED_SCHEMA_VERSION`.
-- `HoshiBridge.kt` — JNI bridge to the hoshidicts C++ library.
+- `HoshiBridge.kt` — JNI bridge to the fushidicts C++ library.
 - `TtsChannelHandler.java` — TTS + audio extraction channel.
 - `AnkiChannelHandler.java` + `AnkiDroidHelper.java` — AnkiDroid API bridge.
 - `FushiFileProvider.java` — FileProvider for sharing exported files.

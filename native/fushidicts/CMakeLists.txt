@@ -4,7 +4,7 @@ cmake_policy(SET CMP0077 NEW)
 project(fushidicts_ffi LANGUAGES C CXX)
 
 # Linux links the hoshidicts static archive and its bundled static deps into
-# libhoshidicts_ffi.so. Build those objects as PIC so GNU ld can embed them.
+# libfushidicts_ffi.so. Build those objects as PIC so GNU ld can embed them.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
@@ -65,28 +65,28 @@ set(LIBDEFLATE_BUILD_GZIP OFF CACHE BOOL "")
 # itself, so consumers link against the static archive without DLL import attrs.
 set(UTF8PROC_INSTALL OFF CACHE BOOL "")
 
-add_subdirectory(hoshidicts_external/glaze EXCLUDE_FROM_ALL)
-add_subdirectory(hoshidicts_external/zstd EXCLUDE_FROM_ALL)
-add_subdirectory(hoshidicts_external/unordered_dense EXCLUDE_FROM_ALL)
-add_subdirectory(hoshidicts_external/libdeflate EXCLUDE_FROM_ALL)
-add_subdirectory(hoshidicts_external/utf8proc EXCLUDE_FROM_ALL)
+add_subdirectory(fushidicts_external/glaze EXCLUDE_FROM_ALL)
+add_subdirectory(fushidicts_external/zstd EXCLUDE_FROM_ALL)
+add_subdirectory(fushidicts_external/unordered_dense EXCLUDE_FROM_ALL)
+add_subdirectory(fushidicts_external/libdeflate EXCLUDE_FROM_ALL)
+add_subdirectory(fushidicts_external/utf8proc EXCLUDE_FROM_ALL)
 
 add_library(hoshidicts STATIC
-    hoshidicts_src/hash/hash.cpp
-    hoshidicts_src/hash/bloom.cpp
-    hoshidicts_src/importer.cpp
-    hoshidicts_src/memory/memory.cpp
-    hoshidicts_src/zip/zip.cpp
-    hoshidicts_src/json/yomitan_parser.cpp
-    hoshidicts_src/mdx/mdx_reader.cpp
-    hoshidicts_src/stardict/stardict_reader.cpp
-    hoshidicts_src/text_processor/text_processor.cpp
-    hoshidicts_src/text_processor/kanji_standardization_data.cpp
-    hoshidicts_src/scan/word_scan.cpp
-    hoshidicts_src/deinflector.cpp
-    hoshidicts_src/query.cpp
-    hoshidicts_src/lookup.cpp
-    hoshidicts_src/popup_json.cpp
+    fushidicts_src/hash/hash.cpp
+    fushidicts_src/hash/bloom.cpp
+    fushidicts_src/importer.cpp
+    fushidicts_src/memory/memory.cpp
+    fushidicts_src/zip/zip.cpp
+    fushidicts_src/json/yomitan_parser.cpp
+    fushidicts_src/mdx/mdx_reader.cpp
+    fushidicts_src/stardict/stardict_reader.cpp
+    fushidicts_src/text_processor/text_processor.cpp
+    fushidicts_src/text_processor/kanji_standardization_data.cpp
+    fushidicts_src/scan/word_scan.cpp
+    fushidicts_src/deinflector.cpp
+    fushidicts_src/query.cpp
+    fushidicts_src/lookup.cpp
+    fushidicts_src/popup_json.cpp
 )
 
 target_compile_features(hoshidicts PUBLIC
@@ -94,9 +94,9 @@ target_compile_features(hoshidicts PUBLIC
 )
 
 target_include_directories(hoshidicts PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/hoshidicts_include
-    ${CMAKE_CURRENT_SOURCE_DIR}/hoshidicts_external/utfcpp/source
-    ${CMAKE_CURRENT_SOURCE_DIR}/hoshidicts_external/xxHash
+    ${CMAKE_CURRENT_SOURCE_DIR}/fushidicts_include
+    ${CMAKE_CURRENT_SOURCE_DIR}/fushidicts_external/utfcpp/source
+    ${CMAKE_CURRENT_SOURCE_DIR}/fushidicts_external/xxHash
 )
 
 # Platform-conditional linking
@@ -131,7 +131,7 @@ target_compile_features(fushidicts_ffi PRIVATE
 )
 
 target_include_directories(fushidicts_ffi PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/hoshidicts_include
+    ${CMAKE_CURRENT_SOURCE_DIR}/fushidicts_include
 )
 
 target_link_libraries(fushidicts_ffi PRIVATE
@@ -147,7 +147,7 @@ if(APPLE AND NOT FUSHIDICTS_IOS)
 endif()
 
 # iOS: merge the FFI static archive and every static dependency it links into a
-# single self-contained archive (libhoshidicts_ffi_merged.a) so the Xcode build
+# single self-contained archive (libfushidicts_ffi_merged.a) so the Xcode build
 # phase can force_load exactly one file into Runner. libtool -static resolves the
 # recursive INTERFACE link deps for us via generator expressions.
 if(FUSHIDICTS_IOS)
@@ -187,7 +187,7 @@ if(ANDROID)
   )
 
   target_include_directories(fushidicts_jni PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}/hoshidicts_include
+      ${CMAKE_CURRENT_SOURCE_DIR}/fushidicts_include
   )
 
   target_link_libraries(fushidicts_jni PRIVATE

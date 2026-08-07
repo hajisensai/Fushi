@@ -265,23 +265,23 @@ jobs:
           }
           CPP
           "$CXX" -std=c++23 /tmp/fushidicts_expected.cpp -o /tmp/fushidicts_expected
-      # Native engine e2e/guard suite (TODO-578): build the real hoshidicts
+      # Native engine e2e/guard suite (TODO-578): build the real fushidicts
       # static lib via the unified CMake/ctest harness and run every native test
       # (UAF dict-name, kanji round-trip, media import/query, freq+pitch, plus
       # the pure-memory zip64/word-scan/text-processor guards). Self-contained
       # in-memory zip fixtures, no emulator/external assets. Runs before the
       # Flutter build so a native break fails fast and stays independent of Dart.
-      - name: Run hoshidicts native tests (ctest)
+      - name: Run fushidicts native tests (ctest)
         shell: bash
         run: |
           set -euo pipefail
-          cmake -S native/hoshidicts/tests -B "$RUNNER_TEMP/hoshi-tests" -G Ninja \
+          cmake -S native/fushidicts/tests -B "$RUNNER_TEMP/fushi-tests" -G Ninja \
             -DCMAKE_BUILD_TYPE=Release
-          cmake --build "$RUNNER_TEMP/hoshi-tests" --config Release
+          cmake --build "$RUNNER_TEMP/fushi-tests" --config Release
           # --no-tests=error：ctest 在「一个测试都没注册」时默认返回 0，于是一次
           # CMake 回归让 tests/CMakeLists.txt 的 add_test 列表变空就会读成通过。
           # 与 BUG-1157 同族的「零测试执行伪装成绿」。对齐 native-hoshidicts-gate.yml。
-          ctest --test-dir "$RUNNER_TEMP/hoshi-tests" --output-on-failure -C Release --no-tests=error
+          ctest --test-dir "$RUNNER_TEMP/fushi-tests" --output-on-failure -C Release --no-tests=error
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
@@ -595,7 +595,7 @@ jobs:
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
-      - name: Verify macOS hoshidicts dylib bundle
+      - name: Verify macOS fushidicts dylib bundle
         working-directory: hibiki
         run: |
           set -euo pipefail
@@ -618,7 +618,7 @@ jobs:
           if not handle:
               raise SystemExit("fushidicts_create returned null")
           lib.fushidicts_destroy(handle)
-          print("hoshidicts dylib smoke ok")
+          print("fushidicts dylib smoke ok")
           PY
       - name: Run macOS comprehensive automation contract
         run: bash ci/comprehensive-test.sh --platform=macos --only=appSmoke
@@ -871,7 +871,7 @@ jobs:
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
       # 内置 libtorrent 引擎的 Windows DLL：vcpkg 编 libtorrent + bridge，产物落
-      # native/hibiki_torrent/prebuilt/windows-x64/，供下面 flutter build windows
+      # native/fushi_torrent/prebuilt/windows-x64/，供下面 flutter build windows
       # 的 copy-if-present 随包（缺则跳，运行期回退 qb）。
       #
       # TODO-2668｜缓存 key 必须带 runner 镜像版本，两条 Windows workflow 同一处病灶。
@@ -922,9 +922,9 @@ jobs:
         run: |
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libtorrent:x64-windows
           if ($LASTEXITCODE -ne 0) { throw "vcpkg install libtorrent failed" }
-          powershell -ExecutionPolicy Bypass -File native/hibiki_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
+          powershell -ExecutionPolicy Bypass -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
       # `packages/fushi_torrent` 的测试是**唯一**会真正 dlopen 这个 bridge、
-      # 把 Dart FFI 绑定按真实 ABI 调一遍的地方；它们要 HIBIKI_TORRENT_LIB 指向
+      # 把 Dart FFI 绑定按真实 ABI 调一遍的地方；它们要 FUSHI_TORRENT_LIB 指向
       # 已构建的 DLL，所以在 Linux 上永远整组 skip，main.yml / release.yml 的
       # 包测试清单里也没收录这个包 —— 换句话说，改 C ABI 在 CI 里原本无人可挡。
       #
@@ -936,10 +936,10 @@ jobs:
         shell: pwsh
         working-directory: packages/fushi_torrent
         env:
-          HIBIKI_TORRENT_LIB: ${{ github.workspace }}\native\hibiki_torrent\prebuilt\windows-x64\fushi_torrent_ffi.dll
+          FUSHI_TORRENT_LIB: ${{ github.workspace }}\native\fushi_torrent\prebuilt\windows-x64\fushi_torrent_ffi.dll
         run: |
-          if (-not (Test-Path -LiteralPath $env:HIBIKI_TORRENT_LIB)) {
-            throw "DLL not found at $env:HIBIKI_TORRENT_LIB — the build step above should have produced it"
+          if (-not (Test-Path -LiteralPath $env:FUSHI_TORRENT_LIB)) {
+            throw "DLL not found at $env:FUSHI_TORRENT_LIB — the build step above should have produced it"
           }
           # 两条都是 native 命令，所以 `dart pub get` 的退出码会被紧随其后的
           # `dart test` 覆盖，末尾那句断言只管得到 `dart test`。pub get 挂掉时

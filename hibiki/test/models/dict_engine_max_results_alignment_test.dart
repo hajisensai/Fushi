@@ -8,7 +8,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 /// BUG-1307 守卫：交给 C++ 引擎的结果上限必须**等于**本次真正要消费的词头预算
 /// （`effectiveMaxTerms`），不得再是硬编码常量。
 ///
-/// 为什么这是性能根因：`native/hoshidicts/hoshidicts_src/lookup.cpp` 里
+/// 为什么这是性能根因：`native/fushidicts/fushidicts_src/lookup.cpp` 里
 /// `partial_sort` + `resize(max_results)` **之后**才对存活结果逐条
 /// `materialize()`（zstd 解压 glossary，每条落在 `blobs.bin` 的一个随机偏移上，
 /// 冷页下 180-234us/条）。传 200 而只消费 10，等于在整条链路最贵的按需分页段上

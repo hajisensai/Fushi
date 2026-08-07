@@ -11,7 +11,7 @@ void main() {
   }
 
   test('native CMake gives the macOS dylib an @rpath install name', () {
-    final String cmake = read('../native/hoshidicts/CMakeLists.txt');
+    final String cmake = read('../native/fushidicts/CMakeLists.txt');
 
     expect(cmake, contains('add_library(fushidicts_ffi SHARED'));
     expect(cmake, contains('if(APPLE AND NOT FUSHIDICTS_IOS)'),
@@ -22,7 +22,7 @@ void main() {
   });
 
   test('native CMake requires C++23 std::expected for hoshidicts targets', () {
-    final String cmake = read('../native/hoshidicts/CMakeLists.txt');
+    final String cmake = read('../native/fushidicts/CMakeLists.txt');
 
     expect(cmake, contains('include(CheckCXXSourceCompiles)'));
     expect(cmake, contains('__cpp_lib_expected'));
@@ -40,7 +40,7 @@ void main() {
     final String config = read('macos/Runner/Configs/AppInfo.xcconfig');
 
     expect(config, contains('FUSHIDICTS_SOURCE_DIR'));
-    expect(config, contains('../../native/hoshidicts'));
+    expect(config, contains('../../native/fushidicts'));
     expect(config, contains('FUSHIDICTS_DYLIB_NAME = libfushidicts_ffi.dylib'));
 
     expect(project, contains('Build FushiDicts FFI'));
