@@ -212,7 +212,7 @@ void main() {
         reason: 'TODO-1650 图片/GIF 清晰度滑块标题应露出');
     expect(find.textContaining('Audio quality'), findsOneWidget,
         reason: 'TODO-1650 音频质量滑块标题应露出');
-    expect(find.widgetWithText(AdaptiveSettingsSwitchRow, 'Add "hibiki" tag'),
+    expect(find.widgetWithText(AdaptiveSettingsSwitchRow, 'Add "fushi" tag'),
         findsOneWidget,
         reason: 'hibiki 标签开关应无条件显示');
     expect(

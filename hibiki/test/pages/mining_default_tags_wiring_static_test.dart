@@ -44,8 +44,9 @@ void main() {
     expect(src, contains("static const String videoTag = 'video';"));
     expect(src, contains("static const String gameTag = 'game';"),
         reason: 'BUG-1137：gal Hook 来源必须有自己的 game 分类标签');
-    expect(src, contains("static const String hibikiTag = 'hibiki';"),
-        reason: 'hibiki 固定标签不得丢（TODO-062）');
+    expect(src, contains("static const String fushiTag = 'fushi';"),
+        reason: 'fushi 固定标签不得丢（TODO-062；W7 起新卡默认 tag 为 fushi，'
+            '存量卡上的字面 hibiki tag 属用户 Anki 库外部数据不迁移）');
   });
 
   test('两后端 mineEntry 都把 context.source 传给 buildNoteTags', () {

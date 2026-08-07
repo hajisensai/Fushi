@@ -317,9 +317,10 @@ abstract class BaseAnkiRepository {
 
   // ── note tags：两 backend 共用（杜绝两份漂移） ──────────────────
 
-  /// 标记每张经 Hibiki 制出的卡片的固定 tag。所有 Hibiki 制卡都会带上它，
-  /// 便于用户在 Anki 里按来源筛选/统计。
-  static const String hibikiTag = 'hibiki';
+  /// 标记每张经 Fushi 制出的卡片的固定 tag。所有 Fushi 制卡都会带上它，
+  /// 便于用户在 Anki 里按来源筛选/统计。改名前的旧卡带的是字面 tag `hibiki`
+  /// ——那是用户 Anki 库里的外部数据，只决定新卡默认值、不迁移不重写（W7）。
+  static const String fushiTag = 'fushi';
 
   /// 书籍来源（EPUB 阅读、独立查词、有声书）的分类标签。
   static const String bookTag = 'book';
@@ -347,12 +348,12 @@ abstract class BaseAnkiRepository {
   }
 
   /// 解析用户配置的 [userTags]（空白分隔，即用户自定义 DIY 标签），按开关
-  /// **追加** [hibikiTag] 与 [source] 对应的分类标签后去重（保序）。
+  /// **追加** [fushiTag] 与 [source] 对应的分类标签后去重（保序）。
   ///
-  /// - 追加而非覆盖：用户已配置的 tag 全部保留，只是按开关额外多 `hibiki` + 分类标签。
-  /// - 顺序：用户 tag → `hibiki` → 分类标签（`book`/`video`/`game`）。
-  /// - 去重：用户若已手动配置了 `hibiki`/`book`/`video`/`game`，不会出现两个。
-  /// - [includeHibiki]（TODO-117 开关）为 `false` 时不追加 `hibiki`。
+  /// - 追加而非覆盖：用户已配置的 tag 全部保留，只是按开关额外多 `fushi` + 分类标签。
+  /// - 顺序：用户 tag → `fushi` → 分类标签（`book`/`video`/`game`）。
+  /// - 去重：用户若已手动配置了 `fushi`/`book`/`video`/`game`，不会出现两个。
+  /// - [includeHibiki]（TODO-117 开关）为 `false` 时不追加 `fushi`。
   /// - [includeCategory]（TODO-117 开关）为 `false` 时不追加分类标签；为 `true` 但
   ///   [source] 为 `null`（未指定来源，如独立查词/悬浮窗）时本就没有分类标签可加。
   /// - 两个开关默认 `true`，等价 TODO-115/062 的固定行为（Never break userspace）。
@@ -377,7 +378,7 @@ abstract class BaseAnkiRepository {
       if (tag.isEmpty || !seen.add(tag)) continue;
       result.add(tag);
     }
-    if (includeHibiki && seen.add(hibikiTag)) result.add(hibikiTag);
+    if (includeHibiki && seen.add(fushiTag)) result.add(fushiTag);
     if (includeCategory) {
       final categoryTag = _categoryTagForSource(source);
       if (categoryTag != null && seen.add(categoryTag)) result.add(categoryTag);

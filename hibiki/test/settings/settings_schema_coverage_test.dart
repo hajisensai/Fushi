@@ -172,7 +172,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // focus-driven 现能驱动到它们；但它们写的是 AnkiSettings（经 SharedPreferences，
   // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 hibiki_anki 真制卡
   // 测试咬住（tagIncludeHibiki/tagIncludeCategory 开/关各分支）。
-  'cardCreation/Add "hibiki" tag':
+  'cardCreation/Add "fushi" tag':
       'packages/fushi_anki/test/mining_tag_and_parallel_test.dart',
   'cardCreation/Add source category tag':
       'packages/fushi_anki/test/mining_tag_and_parallel_test.dart',

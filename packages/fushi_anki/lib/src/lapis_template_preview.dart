@@ -48,7 +48,7 @@ const Map<String, String> kLapisPreviewFieldSamples = <String, String>{
   'Frequency': '1320',
   'FreqSort': '1320',
   'MiscInfo': 'サンプル出典',
-  'Tags': 'hibiki',
+  'Tags': 'fushi',
   'IsWordAndSentenceCard': 'x',
 };
 

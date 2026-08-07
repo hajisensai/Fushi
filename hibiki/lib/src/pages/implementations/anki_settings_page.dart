@@ -327,8 +327,8 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             // 无条件显示（未连 Anki 也露出，与同区两 tag 开关一致，取舍见上方注释）。
             _buildTagsInput(settings, vm),
             AdaptiveSettingsSwitchRow(
-              title: t.anki_tag_include_hibiki,
-              subtitle: t.anki_tag_include_hibiki_hint,
+              title: t.anki_tag_include_fushi,
+              subtitle: t.anki_tag_include_fushi_hint,
               value: settings.tagIncludeHibiki,
               onChanged: vm.updateTagIncludeHibiki,
             ),

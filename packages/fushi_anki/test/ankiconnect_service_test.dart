@@ -279,7 +279,7 @@ void main() {
           deckName: 'Mining',
           modelName: 'Lapis',
           fields: <String, String>{'Expression': '勉強', 'Reading': 'べんきょう'},
-          tags: <String>['hibiki', 'mined'],
+          tags: <String>['fushi', 'mined'],
           allowDuplicate: true,
         ),
         sink: issued,
@@ -294,7 +294,7 @@ void main() {
       expect(note['modelName'], 'Lapis');
       expect(note['fields'],
           <String, dynamic>{'Expression': '勉強', 'Reading': 'べんきょう'});
-      expect(note['tags'], <String>['hibiki', 'mined']);
+      expect(note['tags'], <String>['fushi', 'mined']);
       expect(note['options'], <String, dynamic>{
         'allowDuplicate': true,
         'duplicateScope': 'deck',

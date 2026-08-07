@@ -90,7 +90,7 @@ SettingsDestination buildCardCreationDestination() {
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.tag_include_hibiki',
-        title: t.anki_tag_include_hibiki,
+        title: t.anki_tag_include_fushi,
         subtitle: t.anki_tag_default_section,
       ),
       SettingsBodySearchEntry(

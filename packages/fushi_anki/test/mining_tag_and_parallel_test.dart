@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 // TODO-062 / BUG-166:
-//  (1) Every Hibiki-mined card must carry the `hibiki` tag, appended to the
+//  (1) Every Hibiki-mined card must carry the `fushi` tag, appended to the
 //      user's configured tags (de-duped, order preserved); both backends behave
 //      identically.
 //  (2) The 6s slowness root cause was several independent media uploads chained
@@ -85,7 +85,7 @@ AnkiSettings _settingsWithTags(String tags) => AnkiSettings(
 const String _payload = '{"expression":"勉強","reading":"べんきょう"}';
 
 void main() {
-  group('buildNoteTags appends the hibiki tag (append, de-dupe, order)', () {
+  group('buildNoteTags appends the fushi tag (append, de-dupe, order)', () {
     Future<List<String>> tagsForConnect(
       String configured, {
       AnkiMiningSource? source,
@@ -104,15 +104,15 @@ void main() {
       return service.addedTags.single;
     }
 
-    test('empty user tags -> only [hibiki]', () async {
-      expect(await tagsForConnect(''), <String>['hibiki']);
+    test('empty user tags -> only [fushi]', () async {
+      expect(await tagsForConnect(''), <String>['fushi']);
     });
 
-    test('user tags are preserved and hibiki appended at the end', () async {
+    test('user tags are preserved and fushi appended at the end', () async {
       expect(await tagsForConnect('jp::vocab mined'), <String>[
         'jp::vocab',
         'mined',
-        'hibiki',
+        'fushi',
       ]);
     });
 
@@ -120,15 +120,15 @@ void main() {
       expect(await tagsForConnect('  alpha   beta  '), <String>[
         'alpha',
         'beta',
-        'hibiki',
+        'fushi',
       ]);
     });
 
-    test('a user-configured hibiki tag is not duplicated', () async {
-      expect(await tagsForConnect('hibiki extra'), <String>['hibiki', 'extra']);
+    test('a user-configured fushi tag is not duplicated', () async {
+      expect(await tagsForConnect('fushi extra'), <String>['fushi', 'extra']);
     });
 
-    test('AnkiDroid backend appends hibiki identically', () async {
+    test('AnkiDroid backend appends fushi identically', () async {
       TestWidgetsFlutterBinding.ensureInitialized();
       const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
       final List<List<String>> addedTags = <List<String>>[];
@@ -156,7 +156,7 @@ void main() {
         context: const AnkiMiningContext(sentence: ''),
       );
       expect(outcome.result, MineResult.success);
-      expect(addedTags.single, <String>['foo', 'bar', 'hibiki']);
+      expect(addedTags.single, <String>['foo', 'bar', 'fushi']);
     });
   });
 
@@ -215,49 +215,49 @@ void main() {
       }
 
       test(
-        'book source -> appends both hibiki and book (AnkiConnect)',
+        'book source -> appends both fushi and book (AnkiConnect)',
         () async {
           expect(
             await tagsForConnect('', source: AnkiMiningSource.book),
-            <String>['hibiki', 'book'],
+            <String>['fushi', 'book'],
           );
         },
       );
 
       test(
-        'video source -> appends both hibiki and video (AnkiConnect)',
+        'video source -> appends both fushi and video (AnkiConnect)',
         () async {
           expect(
             await tagsForConnect('', source: AnkiMiningSource.video),
-            <String>['hibiki', 'video'],
+            <String>['fushi', 'video'],
           );
         },
       );
 
       // BUG-1137：gal Hook 制卡曾因来源枚举缺 game + 请求默认 video 被误标成视频。
       test(
-        'game source -> appends both hibiki and game (AnkiConnect)',
+        'game source -> appends both fushi and game (AnkiConnect)',
         () async {
           expect(
             await tagsForConnect('', source: AnkiMiningSource.game),
-            <String>['hibiki', 'game'],
+            <String>['fushi', 'game'],
           );
         },
       );
 
       test(
-        'null source -> only hibiki, no category tag (AnkiConnect)',
+        'null source -> only fushi, no category tag (AnkiConnect)',
         () async {
-          expect(await tagsForConnect('', source: null), <String>['hibiki']);
+          expect(await tagsForConnect('', source: null), <String>['fushi']);
         },
       );
 
       test(
-        'user tags preserved, then hibiki, then category (AnkiConnect)',
+        'user tags preserved, then fushi, then category (AnkiConnect)',
         () async {
           expect(
             await tagsForConnect('jp::vocab', source: AnkiMiningSource.video),
-            <String>['jp::vocab', 'hibiki', 'video'],
+            <String>['jp::vocab', 'fushi', 'video'],
           );
         },
       );
@@ -267,34 +267,34 @@ void main() {
         () async {
           expect(
             await tagsForConnect('book', source: AnkiMiningSource.book),
-            <String>['book', 'hibiki'],
+            <String>['book', 'fushi'],
           );
         },
       );
 
       test('AnkiDroid backend maps source to the same category tags', () async {
         expect(await tagsForDroid('', source: AnkiMiningSource.book), <String>[
-          'hibiki',
+          'fushi',
           'book',
         ]);
         expect(await tagsForDroid('', source: AnkiMiningSource.video), <String>[
-          'hibiki',
+          'fushi',
           'video',
         ]);
         expect(await tagsForDroid('', source: AnkiMiningSource.game), <String>[
-          'hibiki',
+          'fushi',
           'game',
         ]);
         expect(await tagsForDroid('foo', source: null), <String>[
           'foo',
-          'hibiki',
+          'fushi',
         ]);
       });
     },
   );
 
   group(
-    'TODO-117: default tags are togglable (hibiki / category), both backends',
+    'TODO-117: default tags are togglable (fushi / category), both backends',
     () {
       // 经完整 mineEntry 路径断言开关真透传到 buildNoteTags（守卫透传链，不只是纯函数）。
       Future<List<String>> tagsForConnect(
@@ -362,19 +362,19 @@ void main() {
       test(
         'defaults all on == TODO-115 behaviour (backward compatible)',
         () async {
-          // hibiki + category 都默认 true：等价 TODO-115 现状。
+          // fushi + category 都默认 true：等价 TODO-115 现状。
           expect(
             await tagsForConnect('jp', source: AnkiMiningSource.book),
-            <String>['jp', 'hibiki', 'book'],
+            <String>['jp', 'fushi', 'book'],
           );
           expect(
             await tagsForDroid('jp', source: AnkiMiningSource.video),
-            <String>['jp', 'hibiki', 'video'],
+            <String>['jp', 'fushi', 'video'],
           );
         },
       );
 
-      test('hibiki switch off -> hibiki tag dropped, category kept', () async {
+      test('fushi switch off -> fushi tag dropped, category kept', () async {
         expect(
           await tagsForConnect(
             'jp',
@@ -394,7 +394,7 @@ void main() {
       });
 
       test(
-        'category switch off -> category tag dropped, hibiki kept',
+        'category switch off -> category tag dropped, fushi kept',
         () async {
           expect(
             await tagsForConnect(
@@ -402,7 +402,7 @@ void main() {
               source: AnkiMiningSource.book,
               includeCategory: false,
             ),
-            <String>['jp', 'hibiki'],
+            <String>['jp', 'fushi'],
           );
           expect(
             await tagsForDroid(
@@ -410,7 +410,7 @@ void main() {
               source: AnkiMiningSource.video,
               includeCategory: false,
             ),
-            <String>['jp', 'hibiki'],
+            <String>['jp', 'fushi'],
           );
         },
       );
@@ -439,13 +439,13 @@ void main() {
       test(
         'custom DIY tags are appended (and de-duped) regardless of switches',
         () async {
-          // 自定义标签即 settings.tags：保序追加，与默认 hibiki 去重。
+          // 自定义标签即 settings.tags：保序追加，与默认 fushi 去重。
           expect(
             await tagsForConnect(
-              'mydeck hibiki extra',
+              'mydeck fushi extra',
               source: AnkiMiningSource.book,
             ),
-            <String>['mydeck', 'hibiki', 'extra', 'book'],
+            <String>['mydeck', 'fushi', 'extra', 'book'],
           );
         },
       );
@@ -525,7 +525,7 @@ void main() {
               source: AnkiMiningSource.video,
               bookTitleTag: 'My_Anime',
             ),
-            <String>['hibiki', 'video', 'My_Anime'],
+            <String>['fushi', 'video', 'My_Anime'],
           );
           expect(
             await tagsForDroid(
@@ -533,7 +533,7 @@ void main() {
               source: AnkiMiningSource.video,
               bookTitleTag: 'My_Anime',
             ),
-            <String>['hibiki', 'video', 'My_Anime'],
+            <String>['fushi', 'video', 'My_Anime'],
           );
         },
       );
@@ -547,7 +547,7 @@ void main() {
               source: AnkiMiningSource.book,
               bookTitleTag: 'My_Book',
             ),
-            <String>['jp', 'hibiki', 'book', 'My_Book'],
+            <String>['jp', 'fushi', 'book', 'My_Book'],
           );
         },
       );
@@ -557,7 +557,7 @@ void main() {
         () async {
           expect(
             await tagsForConnect('jp', source: AnkiMiningSource.video),
-            <String>['jp', 'hibiki', 'video'],
+            <String>['jp', 'fushi', 'video'],
           );
           expect(
             await tagsForConnect(
@@ -565,7 +565,7 @@ void main() {
               source: AnkiMiningSource.video,
               bookTitleTag: '',
             ),
-            <String>['jp', 'hibiki', 'video'],
+            <String>['jp', 'fushi', 'video'],
           );
         },
       );
@@ -578,7 +578,7 @@ void main() {
             source: AnkiMiningSource.book,
             bookTitleTag: 'My_Book',
           ),
-          <String>['My_Book', 'hibiki', 'book'],
+          <String>['My_Book', 'fushi', 'book'],
         );
       });
 
@@ -600,7 +600,7 @@ void main() {
               source: AnkiMiningSource.video,
               bookTitleTag: 'Title With Spaces',
             ),
-            <String>['hibiki', 'video', 'Title_With_Spaces'],
+            <String>['fushi', 'video', 'Title_With_Spaces'],
           );
         },
       );
@@ -646,7 +646,7 @@ void main() {
               bookTitleTag: 'S1E01',
               collectionTag: 'Attack_on_Titan',
             ),
-            <String>['hibiki', 'video', 'S1E01', 'Attack_on_Titan'],
+            <String>['fushi', 'video', 'S1E01', 'Attack_on_Titan'],
           );
         },
       );
@@ -658,7 +658,7 @@ void main() {
             source: AnkiMiningSource.book,
             collectionTag: 'My_Series',
           ),
-          <String>['jp', 'hibiki', 'book', 'My_Series'],
+          <String>['jp', 'fushi', 'book', 'My_Series'],
         );
       });
 
@@ -673,7 +673,7 @@ void main() {
               bookTitleTag: 'Same',
               collectionTag: 'Same',
             ),
-            <String>['hibiki', 'video', 'Same'],
+            <String>['fushi', 'video', 'Same'],
           );
         },
       );
@@ -685,7 +685,7 @@ void main() {
             source: AnkiMiningSource.video,
             collectionTag: 'video',
           ),
-          <String>['video', 'hibiki'],
+          <String>['video', 'fushi'],
         );
       });
 
@@ -698,7 +698,7 @@ void main() {
               source: AnkiMiningSource.video,
               bookTitleTag: 'Ep',
             ),
-            <String>['jp', 'hibiki', 'video', 'Ep'],
+            <String>['jp', 'fushi', 'video', 'Ep'],
           );
           expect(
             await tagsForConnect(
@@ -707,7 +707,7 @@ void main() {
               bookTitleTag: 'Ep',
               collectionTag: '',
             ),
-            <String>['jp', 'hibiki', 'video', 'Ep'],
+            <String>['jp', 'fushi', 'video', 'Ep'],
           );
         },
       );
@@ -721,7 +721,7 @@ void main() {
               source: AnkiMiningSource.book,
               collectionTag: 'My Big Series',
             ),
-            <String>['hibiki', 'book', 'My_Big_Series'],
+            <String>['fushi', 'book', 'My_Big_Series'],
           );
         },
       );
