@@ -207,7 +207,7 @@ void main() {
 
     test('video registers its exit flush in initState and unregisters', () {
       final String video =
-          File('lib/src/pages/implementations/video_hibiki_page.dart')
+          File('lib/src/pages/implementations/video_fushi_page.dart')
               .readAsStringSync();
       expect(hasExitFlushRegistration(video), isTrue,
           reason: '视频活跃时必须登记退出 flush（播放位置 + 观看统计）');

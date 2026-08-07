@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch12).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch12).
+part of '../video_fushi_page.dart';
 
 /// Playback-speed domain methods extracted via part-of (TODO-590 batch12);
 /// shared private scope. Behaviour-preserving: bodies are verbatim except the
@@ -7,7 +7,7 @@ part of '../video_hibiki_page.dart';
 /// through the main shell's `_rebuild(...)` forwarder (the established part
 /// paradigm — an extension cannot call the @protected `State.setState`
 /// directly). Everything else is moved character-for-character; the one static
-/// reference [VideoHibikiPage.longPressDragSpeedFor] is already fully qualified
+/// reference [VideoFushiPage.longPressDragSpeedFor] is already fully qualified
 /// via the public widget class, so no extra qualification was needed (unlike
 /// batch11's host-class statics).
 ///
@@ -26,7 +26,7 @@ part of '../video_hibiki_page.dart';
 /// [_speedMenuPresets], [_buildSpeedSidePanel]) intentionally stays in the main
 /// shell — those are interleaved with side-panel/popover concerns, not part of
 /// this self-contained core block.
-extension _VideoSpeed on _VideoHibikiPageState {
+extension _VideoSpeed on _VideoFushiPageState {
   /// 设置播放倍速：先乐观刷新 UI，再下发 controller；只有持久化走 trailing debounce。
   ///
   /// [rebuild]（BUG-965）：是否为倍速变化触发全页 `setState`。默认 true（菜单/键盘步进
@@ -93,7 +93,7 @@ extension _VideoSpeed on _VideoHibikiPageState {
     final double? base = _longPressDragBaseSpeed;
     if (base == null) return;
     // 0.1x 步进（避免每像素抖动；_setSpeed 内另有 0.001 去重）。
-    final double snapped = VideoHibikiPage.longPressDragSpeedFor(
+    final double snapped = VideoFushiPage.longPressDragSpeedFor(
       base,
       details.localOffsetFromOrigin.dx,
     );

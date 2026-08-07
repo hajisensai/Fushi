@@ -1,18 +1,18 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch6).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch6).
+part of '../video_fushi_page.dart';
 
 /// controls-popover (音量 / 倍速轻浮层：锚定几何 + show/hide + 内容卡片) domain
 /// methods extracted via part-of (TODO-590 batch6); shared private scope.
 /// Behaviour-preserving: bodies are verbatim copies of the main-shell originals.
 /// 唯一归一化：本域引用主壳 `static const _videoControlPopoverGapBase`，搬出后改为
-/// 全限定 `_VideoHibikiPageState._videoControlPopoverGapBase`（批3 已确立的 static
+/// 全限定 `_VideoFushiPageState._videoControlPopoverGapBase`（批3 已确立的 static
 /// 全限定范式）。本域无 `setState(`（直接驱动 `_videoControlPopover` 等 notifier /
 /// 字段），故无 `_rebuild(` 转发。顶层类型 `_VideoControlPopoverKind` /
 /// `_VideoControlPopoverPlacement` 与顶层函数 `videoControlPopoverDirectionForSlot` /
 /// `resolveVideoControlPopoverPlacement` 不是 host-class static，保持裸引用。浮层状态
 /// 字段（`_videoControlPopover` / `_activeControlPopover*` / `_controlPopover*` 命名空间
 /// 的 link / key / timer / hovered / pinned）留在主壳，经共享私有作用域被本域读写。
-extension _VideoControlsPopover on _VideoHibikiPageState {
+extension _VideoControlsPopover on _VideoFushiPageState {
   Widget _controlPopoverAnchor({
     required _VideoControlPopoverKind kind,
     required LayerLink link,
@@ -374,7 +374,7 @@ extension _VideoControlsPopover on _VideoHibikiPageState {
                   _activeControlPopoverPlacement ??
                       _controlPopoverPlacementFor(kind, null);
               final double gap =
-                  _VideoHibikiPageState._videoControlPopoverGapBase *
+                  _VideoFushiPageState._videoControlPopoverGapBase *
                       _videoUiScale;
               final Rect? targetRect = _activeControlPopoverTargetRect(context);
               final VideoControlSlot? sourceSlot =

@@ -1,7 +1,7 @@
 // 真机集成测试：播放列表逐集进度「退出→再进续播」全链路（问题 1 根因验证）。
 //
 // 在真实 libmpv 窗口上跑完整失败路径：用本机龙女仆素材（D:\video\...）seed 一个
-// 播放列表书 → 打开 [VideoHibikiPage] → 真实播放数秒 → 经页面 `PopScope` 的
+// 播放列表书 → 打开 [VideoFushiPage] → 真实播放数秒 → 经页面 `PopScope` 的
 // pop 处理器退出（这正是修复点：退出前 await `controller.flushPosition()` 落库）→
 // 重新打开 → 断言 controller seek 到上次位置（DB 读回 + 续播后位置 >1s 为证）。
 //
@@ -23,7 +23,7 @@ import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'test_helpers.dart';
@@ -83,16 +83,16 @@ void main() {
 
         // ── ① 打开 → 真实播放数秒 → 经 PopScope pop 处理器退出 ──────────────
         unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => VideoHibikiPage(bookUid: _kBookUid, repo: repo),
+          builder: (_) => VideoFushiPage(bookUid: _kBookUid, repo: repo),
         )));
 
         // 等 load() 实例化原生 player（控制器就绪 = debugPositionMs 非 null）。桌面
         // media_kit 控制条 hover 才显图标，故用 controller 状态判就绪，不依赖图标。
-        VideoHibikiTestHooks? readHooks() {
-          final Iterable<Element> els = find.byType(VideoHibikiPage).evaluate();
+        VideoFushiTestHooks? readHooks() {
+          final Iterable<Element> els = find.byType(VideoFushiPage).evaluate();
           if (els.isEmpty) return null;
-          return tester.state<State<VideoHibikiPage>>(
-              find.byType(VideoHibikiPage)) as VideoHibikiTestHooks;
+          return tester.state<State<VideoFushiPage>>(
+              find.byType(VideoFushiPage)) as VideoFushiTestHooks;
         }
 
         bool ready = false;
@@ -107,7 +107,7 @@ void main() {
 
         // 真实播放约 4 秒（位置自然前进，跨过整秒边界，让周期保存与退出 flush 都有料）。
         // 直接驱动 controller.play()：本测验进度持久化链路，非焦点交互。
-        final VideoHibikiTestHooks hooks = readHooks()!;
+        final VideoFushiTestHooks hooks = readHooks()!;
         await hooks.debugPlay();
         for (int i = 0; i < 32; i++) {
           await tester.pump(const Duration(milliseconds: 125));
@@ -121,9 +121,9 @@ void main() {
         // 让 onPopInvokedWithResult 的 await flush + pop 跑完。
         for (int i = 0; i < 20; i++) {
           await tester.pump(const Duration(milliseconds: 100));
-          if (find.byType(VideoHibikiPage).evaluate().isEmpty) break;
+          if (find.byType(VideoFushiPage).evaluate().isEmpty) break;
         }
-        expect(find.byType(VideoHibikiPage), findsNothing,
+        expect(find.byType(VideoFushiPage), findsNothing,
             reason: '退出后视频页应已 pop');
 
         // 退出后 DB 应记下刚才播放到的位置（容许整秒节流与 flush 之间的 ~1s 容差）。
@@ -138,7 +138,7 @@ void main() {
 
         // ── ② 重新打开 → 断言 seek 到上次位置（续播，不从头）──────────────────
         unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => VideoHibikiPage(bookUid: _kBookUid, repo: repo),
+          builder: (_) => VideoFushiPage(bookUid: _kBookUid, repo: repo),
         )));
         bool ready2 = false;
         for (int i = 0; i < 60; i++) {
@@ -168,7 +168,7 @@ void main() {
         await navigator.maybePop();
         for (int i = 0; i < 20; i++) {
           await tester.pump(const Duration(milliseconds: 100));
-          if (find.byType(VideoHibikiPage).evaluate().isEmpty) break;
+          if (find.byType(VideoFushiPage).evaluate().isEmpty) break;
         }
         debugPrint('[video-itest] non-fatal framework errors=${caught.length}');
       } finally {

@@ -12,7 +12,7 @@ import 'package:path/path.dart' as p;
 ///     的封面。文件名由 bookUid 派生（见 [video_import_dialog] `videoCoverFileName`），
 ///     与 DB `coverPath` **1:1 对应**。app 拥有，删除视频后回收。
 ///   - `video_subtitles/<basename>` —— 用户手动导入 / 拖入 / Jimaku 下载的外挂字幕
-///     （见 [video_hibiki_page] `_importExternalSubtitleInner` / `_openJimakuDialog`）。
+///     （见 [video_fushi_page] `_importExternalSubtitleInner` / `_openJimakuDialog`）。
 ///     **扁平副本池**：单视频/播放列表换集每选一集字幕就拷一份进来，但 DB 只在
 ///     `VideoBooks.subtitleSource` **单列**记最后选中那一集的路径——播放列表其余各集
 ///     的副本路径 **DB 完全不知道**（playlistJson 只存 `[{title,path}]`，不含字幕）。

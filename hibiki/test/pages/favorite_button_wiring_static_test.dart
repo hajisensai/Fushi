@@ -84,7 +84,7 @@ void main() {
 
   test('视频页把来源覆写为 video（收藏/制卡落视频统计）', () {
     final String src =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
+        File('lib/src/pages/implementations/video_fushi_page.dart')
             .readAsStringSync();
     expect(
         src, contains('String get dictionarySourceType => kStatSourceVideo'));

@@ -7,7 +7,7 @@ import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
-import '../../pages/video_hibiki_page_source_corpus.dart';
+import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// 主字幕与副字幕的垂直位置**各自独立**（用户诉求：「主字幕和副字幕能支持分开高度调节」）。
 ///
@@ -197,7 +197,7 @@ void main() {
       final File schema = File('lib/src/settings/settings_schema_video.dart');
       expect(schema.existsSync(), isTrue, reason: '视频设置 schema 源文件应存在');
       schemaSrc = schema.readAsStringSync().replaceAll('\r\n', '\n');
-      pageSrc = readVideoHibikiSource();
+      pageSrc = readVideoFushiSource();
     });
 
     test('设置页有独立的副字幕位置滑杆，且写的是 secondaryBottomPadding', () {

@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 // Root cause is a boundary-contract defect: the `mineEntry` / `updateEntry`
 // addJavaScriptHandler callbacks in dictionary_popup_webview.dart are the single
 // Dart->native JS-handler bridge for ALL mining surfaces (reader / video /
-// dictionary / audiobook). An override (e.g. VideoHibikiPage._mineVideoCard) or
+// dictionary / audiobook). An override (e.g. VideoFushiPage._mineVideoCard) or
 // writeDictionaryMediaCache can THROW during the re-mine media-capture path
 // (ffmpeg / window screenshot / WebView2 frame). If the callback lets that
 // exception escape, it crosses the native inappwebview JS-handler boundary and

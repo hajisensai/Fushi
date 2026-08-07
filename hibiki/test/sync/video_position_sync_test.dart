@@ -103,7 +103,7 @@ void main() {
   });
 
   group('video position prefs key 单一真相源', () {
-    test('位置 key 与 video_hibiki_page _remotePositionPrefKey 同公式', () {
+    test('位置 key 与 video_fushi_page _remotePositionPrefKey 同公式', () {
       expect(
         videoRemotePositionPrefKey('video/sample'),
         'video_remote_position_video/sample',

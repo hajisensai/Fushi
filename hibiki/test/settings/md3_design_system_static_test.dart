@@ -891,7 +891,7 @@ void main() {
               'timed video content typography, the same reviewed exception '
               'class as the video_danmaku_overlay entry it was extracted from '
               'and the user-configurable subtitle caption font size in '
-              'video_hibiki/layout.part.dart. Routing it through a shared MD3 '
+              'video_fushi/layout.part.dart. Routing it through a shared MD3 '
               'type role would break the contract the file documents '
               '(inherit: false, so the host DefaultTextStyle cannot desync '
               'measurement from render) and reintroduce the measure-18px / '
@@ -946,63 +946,63 @@ void main() {
               'parity with the in-player sheet (TODO-286); it is caption content, '
               'not page chrome — same rationale as video_quick_settings_sheet. '
               'TODO-586：随 video destination 拆到 settings_schema_video.dart。',
-      'lib/src/pages/implementations/video_hibiki_page.dart':
+      'lib/src/pages/implementations/video_fushi_page.dart':
           'Video player page chrome (track-switch menu, media controls) '
               'follows media-page rules like reader/audiobook.',
-      // TODO-590: video_hibiki_page.dart 拆成主壳 + video_hibiki/*.part.dart；
+      // TODO-590: video_fushi_page.dart 拆成主壳 + video_fushi/*.part.dart；
       // 同一份 video player page chrome 豁免随搬运延伸到含 chrome token 的 part 文件
       // （零行为变化，逐字符抽出）。
-      'lib/src/pages/implementations/video_hibiki/episode.part.dart':
+      'lib/src/pages/implementations/video_fushi/episode.part.dart':
           'Episode push-aside sidebar + auto-advance countdown overlay '
-              'chrome extracted verbatim from video_hibiki_page.dart '
+              'chrome extracted verbatim from video_fushi_page.dart '
               '(TODO-590 batch4); same media-page rationale as the parent '
               'video player page allowlist entry.',
-      'lib/src/pages/implementations/video_hibiki/subtitle.part.dart':
+      'lib/src/pages/implementations/video_fushi/subtitle.part.dart':
           'Subtitle source menu / import / loading-overlay / subtitle jump-list '
-              'side panel chrome extracted verbatim from video_hibiki_page.dart '
+              'side panel chrome extracted verbatim from video_fushi_page.dart '
               '(TODO-590 batch5); the fontSize:/ListTile chrome (jump panel + '
               'source side panel rows, caption font scales with appUiScale) is '
               'the same reviewed media-page exception class as the parent '
               'video player page allowlist entry.',
-      'lib/src/pages/implementations/video_hibiki/flicker_notice.part.dart':
+      'lib/src/pages/implementations/video_fushi/flicker_notice.part.dart':
           'Black-flicker warning banner chrome (errorContainer '
               'BorderRadius.circular(12) frame + fontSize title/body '
               'labels) added by TODO-1119/BUG-545 as an errorContainer-'
               'semantic notice bar over the video controls; same reviewed '
               'media-page exception class as the parent video player page '
               'allowlist entry.',
-      'lib/src/pages/implementations/video_hibiki/controls_popover.part.dart':
+      'lib/src/pages/implementations/video_fushi/controls_popover.part.dart':
           'Volume / playback-speed compact control popover chrome '
               '(BorderRadius/surfaceContainerHighest frame, fontSize speed '
               'label, VideoVolumePopoverCard) extracted verbatim from '
-              'video_hibiki_page.dart (TODO-590 batch6); the popover frame + '
+              'video_fushi_page.dart (TODO-590 batch6); the popover frame + '
               'speed-label typography scales with appUiScale and is the same '
               'reviewed media-page exception class as the parent video player '
               'page allowlist entry.',
-      'lib/src/pages/implementations/video_hibiki/controls_theme.part.dart':
+      'lib/src/pages/implementations/video_fushi/controls_theme.part.dart':
           'Mobile/desktop media-controls theme + horizontal-seek absolute-time '
               'HUD indicator chrome (BorderRadius.circular frame, fontSize '
               'target/delta time labels in _buildSeekIndicator) extracted from '
-              'video_hibiki_page.dart (TODO-590) and extended by TODO-916; the '
+              'video_fushi_page.dart (TODO-590) and extended by TODO-916; the '
               'seek HUD typography scales with appUiScale and is the same '
               'reviewed media-page exception class as the parent video player '
               'page allowlist entry and the sibling control popover/OSD entries.',
-      'lib/src/pages/implementations/video_hibiki/volume_osd.part.dart':
+      'lib/src/pages/implementations/video_fushi/volume_osd.part.dart':
           'Volume + OSD / level-HUD / brightness overlay chrome '
               '(left-top OSD notification card with BorderRadius/fontSize, '
               'volume & brightness level HUD indicators) extracted verbatim '
-              'from video_hibiki_page.dart (TODO-590 batch7); these are '
+              'from video_fushi_page.dart (TODO-590 batch7); these are '
               'video-subsystem transient overlays whose size/color/typography '
               'scale with appUiScale, the same reviewed media-page exception '
               'class as the parent video player page allowlist entry and the '
               'sibling video_volume_overlays.dart HUD entry.',
-      'lib/src/pages/implementations/video_hibiki/audio_track.part.dart':
+      'lib/src/pages/implementations/video_fushi/audio_track.part.dart':
           'Audio-track side panel chrome (track-list ListTile rows) extracted '
-              'verbatim from video_hibiki_page.dart (TODO-590 batch9); the '
+              'verbatim from video_fushi_page.dart (TODO-590 batch9); the '
               'ListTile track rows are the same reviewed media-page exception '
               'class as the parent video player page allowlist entry and the '
               'sibling subtitle/chapter side panels.',
-      'lib/src/pages/implementations/video_hibiki/quality.part.dart':
+      'lib/src/pages/implementations/video_fushi/quality.part.dart':
           'HLS quality side panel chrome (variant-list ListTile rows, TODO-1158) '
               'is the same reviewed media-page exception class as the sibling '
               'audio_track.part.dart / subtitle side panels — a translucent video '
@@ -1013,9 +1013,9 @@ void main() {
               'as the sibling audio_track.part.dart / quality.part.dart video '
               'side panels — a translucent video side-panel list of searched '
               'anime episodes to bind danmaku, not ordinary page chrome.',
-      'lib/src/pages/implementations/video_hibiki/layout.part.dart':
+      'lib/src/pages/implementations/video_fushi/layout.part.dart':
           'Subtitle caption render tree (fontSize: _subtitleStyle.fontSize) '
-              'extracted verbatim from video_hibiki_page.dart (TODO-590 '
+              'extracted verbatim from video_fushi_page.dart (TODO-590 '
               'batch16); the user-configurable subtitle caption font size is '
               'content, not page chrome — the same reviewed media-page '
               'exception class as the parent video player page allowlist entry '
@@ -1333,37 +1333,37 @@ void main() {
         'BorderRadius.circular(',
         'surfaceContainerHighest'
       },
-      'lib/src/pages/implementations/video_hibiki/audio_track.part.dart':
+      'lib/src/pages/implementations/video_fushi/audio_track.part.dart':
           <String>{'ListTile('},
-      'lib/src/pages/implementations/video_hibiki/controls_popover.part.dart':
+      'lib/src/pages/implementations/video_fushi/controls_popover.part.dart':
           <String>{'surfaceContainerHighest', 'fontSize:'},
-      'lib/src/pages/implementations/video_hibiki/controls_theme.part.dart':
+      'lib/src/pages/implementations/video_fushi/controls_theme.part.dart':
           <String>{'BorderRadius.circular(', 'fontSize:'},
-      'lib/src/pages/implementations/video_hibiki/episode.part.dart': <String>{
+      'lib/src/pages/implementations/video_fushi/episode.part.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
         'fontSize:'
       },
-      'lib/src/pages/implementations/video_hibiki/flicker_notice.part.dart':
+      'lib/src/pages/implementations/video_fushi/flicker_notice.part.dart':
           <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
         'fontSize:'
       },
-      'lib/src/pages/implementations/video_hibiki/layout.part.dart': <String>{
+      'lib/src/pages/implementations/video_fushi/layout.part.dart': <String>{
         'fontSize:'
       },
-      'lib/src/pages/implementations/video_hibiki/quality.part.dart': <String>{
+      'lib/src/pages/implementations/video_fushi/quality.part.dart': <String>{
         'ListTile('
       },
-      'lib/src/pages/implementations/video_hibiki/subtitle.part.dart': <String>{
+      'lib/src/pages/implementations/video_fushi/subtitle.part.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
         'ListTile('
       },
-      'lib/src/pages/implementations/video_hibiki/volume_osd.part.dart':
+      'lib/src/pages/implementations/video_fushi/volume_osd.part.dart':
           <String>{'BorderRadius.circular(', 'fontSize:'},
-      'lib/src/pages/implementations/video_hibiki_page.dart': <String>{
+      'lib/src/pages/implementations/video_fushi_page.dart': <String>{
         'fontSize:',
         'ListTile('
       },

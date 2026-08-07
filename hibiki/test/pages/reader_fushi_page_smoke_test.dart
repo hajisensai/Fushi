@@ -20,7 +20,7 @@ import '../helpers/test_platform_services.dart';
 ///
 /// 背景：13000+ 行的阅读器页此前**零运行时覆盖**——全部依赖源码字符串守卫，
 /// 对「代码被搬走/重写但行为变了」几乎无效。本文件对齐
-/// video_hibiki_page_smoke_test.dart 的骨架，把「页面挂载编排彻底坏掉」这类
+/// video_fushi_page_smoke_test.dart 的骨架，把「页面挂载编排彻底坏掉」这类
 /// 灾难从真机提前到 CI。
 ///
 /// 锁定 BUG-437 的恢复契约：init 链上任何一步失败（这里用「书不存在」这个最

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// TODO-1052 (parent TODO-716 phase 2): the desktop "horizontal swipe over the
 /// dismiss barrier closes one popup layer" gesture — first shipped on
@@ -62,7 +62,7 @@ void main() {
     test(
         'video routes barrier drag through the shared tracker, closes one '
         'layer', () {
-      final String src = readVideoHibikiSource();
+      final String src = readVideoFushiSource();
       _assertBarrierSwipeWiring('video', src);
       // Over-threshold drag closes ONE layer (top visible index), never clears
       // the whole stack (clearing stays the onTapUp path).

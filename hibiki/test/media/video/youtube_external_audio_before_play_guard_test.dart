@@ -78,7 +78,7 @@ void main() {
 
   group('页面按新契约透传音轨 URL、不再 load 后外挂 (TODO-1280)', () {
     final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+        read('lib/src/pages/implementations/video_fushi_page.dart');
 
     test('远端 YouTube load 把 audioStreamUrl 透传给 externalAudioTrackUrl', () {
       expect(

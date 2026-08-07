@@ -1060,7 +1060,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   }) {
     // TODO-108：查词弹窗位置计算的单一收口点（reader/有声书/独立查词页家族共用），
     // 底部固定模式忽略选区放屏幕底部全宽面板。video 家族在 dictionary_page_mixin
-    // 用同一个 [resolvePopupRect] 收口（不碰 video_hibiki_page）。reserve/padding/
+    // 用同一个 [resolvePopupRect] 收口（不碰 video_fushi_page）。reserve/padding/
     // verticalWriting 走本类 getter（子类可 override，如 reader 预留底栏）。
     final Rect anchored = resolvePopupRect(
       selectionRect: sel,

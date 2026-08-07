@@ -1,4 +1,4 @@
-part of '../video_hibiki_page.dart';
+part of '../video_fushi_page.dart';
 
 /// 字级选词光标（videoEnterCaret）：视频页的手柄/键盘查词入口。
 ///
@@ -7,12 +7,12 @@ part of '../video_hibiki_page.dart';
 ///
 /// * 状态机复用 [DictionaryCaretController]（TODO-387 预留的跨页面复用点）：
 ///   `CaretSurface.video` = 光标在字幕主面（一个 overlay 登记表下标，
-///   [_VideoHibikiPageState._subtitleCaretEntry]）；查词后光标 transfer 进顶层
+///   [_VideoFushiPageState._subtitleCaretEntry]）；查词后光标 transfer 进顶层
 ///   弹窗（`CaretSurface.popup`），A 深查 / 移到 ＋ 按钮上 A 制卡 / B 逐层退回，
 ///   与阅读器共用 [DictionaryPopupWebViewState] 的整套 caret API。
 /// * 输入路由复用 [ReaderCaretRouter]（D-pad/方向键=移动、A/Enter=查词或激活、
 ///   B/Esc=退出、LT/RT=跳词典段、,/.=切词条），手柄在
-///   [_VideoHibikiPageState._handleVideoGamepadButton] 顶部**先于注册表**截获
+///   [_VideoFushiPageState._handleVideoGamepadButton] 顶部**先于注册表**截获
 ///   （阅读器 caret.part 同款 contextual 路由）；键盘经
 ///   [guardVideoShortcutsWithSubtitleCaret]（注册表已绑键）+ 页面最外层
 ///   Focus.onKeyEvent（未绑键）两层接管。
@@ -22,12 +22,12 @@ part of '../video_hibiki_page.dart';
 ///   `_lookupAt` 既有全链路，零第二条查词路径。
 ///
 /// 暂停契约：进入光标即暂停（activeCues 随播放每帧重算，不暂停光标必失锚），
-/// 复用查词的 [_VideoHibikiPageState._pausedForLookup] 单一恢复真相源——浮层
-/// 全关时光标仍激活则继续持有暂停（[VideoHibikiPage.shouldResumeAfterLookupDismiss]
+/// 复用查词的 [_VideoFushiPageState._pausedForLookup] 单一恢复真相源——浮层
+/// 全关时光标仍激活则继续持有暂停（[VideoFushiPage.shouldResumeAfterLookupDismiss]
 /// 的 caretHoldsPause），退出光标才恢复播放。外部恢复播放（触屏点画面 / 空格 /
 /// 自动连播）时光标自动退出（[_onCaretControllerTick] 看到「先暂停后再播放」的
 /// 迁移即退），绝不出现「光标环钉在旧字幕上、cue 已换」的僵尸态。
-extension _VideoSubtitleCaret on _VideoHibikiPageState {
+extension _VideoSubtitleCaret on _VideoFushiPageState {
   bool get _videoCaretActive => _videoCaret.active;
 
   bool get _caretOnSubtitleSurface => _videoCaret.surface == CaretSurface.video;

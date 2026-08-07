@@ -10,7 +10,7 @@ import 'dart:io';
 /// 手写 part 清单正好在持续制造这种真空：新增 / 改名一个 part 要靠人记得回来补清单，
 /// 漏了没有任何反馈。**这不是假想威胁**——本文件落地时，磁盘上已经有 3 个 part 不在
 /// 任何清单里：`sync_settings_schema/data_root.part.dart`、
-/// `video_hibiki/flicker_notice.part.dart`、`video_hibiki/quality.part.dart`。
+/// `video_fushi/flicker_notice.part.dart`、`video_fushi/quality.part.dart`。
 ///
 /// 所以清单一律**从磁盘枚举**（排序保证跨机器/跨次运行顺序确定），新 part 自动进语料，
 /// 负向断言不可能因为漏登记而假绿。

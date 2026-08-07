@@ -27,7 +27,7 @@ import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/pages/implementations/video_shader_dialog.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -76,19 +76,19 @@ void main() {
         final NavigatorState navigator =
             tester.state<NavigatorState>(find.byType(Navigator).first);
         unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => VideoHibikiPage(bookUid: _kVideoBookUid, repo: repo),
+          builder: (_) => VideoFushiPage(bookUid: _kVideoBookUid, repo: repo),
         )));
 
         // 等播放器就绪：media_kit 桌面控制条要 hover 才显示（离屏无鼠标 → 图标不
         // 渲染），故不靠图标判就绪，改用页面 test hook 的 debugPositionMs 可读
         // （controller 已 load）。
-        VideoHibikiTestHooks hooks() =>
-            tester.state<State<VideoHibikiPage>>(find.byType(VideoHibikiPage))
-                as VideoHibikiTestHooks;
+        VideoFushiTestHooks hooks() =>
+            tester.state<State<VideoFushiPage>>(find.byType(VideoFushiPage))
+                as VideoFushiTestHooks;
         bool ready = false;
         for (int i = 0; i < 24; i++) {
           await tester.pump(const Duration(milliseconds: 250));
-          if (find.byType(VideoHibikiPage).evaluate().isNotEmpty &&
+          if (find.byType(VideoFushiPage).evaluate().isNotEmpty &&
               hooks().debugPositionMs != null) {
             ready = true;
             break;
@@ -141,7 +141,7 @@ void main() {
         // 这里用 showDialog 把同一个内嵌视图临时弹成浮层，复现「焦点被夺走的浮层
         // 打开 → 关闭」场景：关闭后 Video 的 _videoFocusNode 应能重新接管键盘焦点。
         unawaited(showDialog<void>(
-          context: tester.element(find.byType(VideoHibikiPage)),
+          context: tester.element(find.byType(VideoFushiPage)),
           builder: (_) => Dialog(
             child: VideoShaderManagerView(
               initialEnabled: const <String>[],

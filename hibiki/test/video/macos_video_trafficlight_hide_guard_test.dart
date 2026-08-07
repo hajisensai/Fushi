@@ -56,7 +56,7 @@ void main() {
       'video page hides traffic lights on enter and restores on exit '
       '(BUG-973)', () {
     final String source =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
+        File('lib/src/pages/implementations/video_fushi_page.dart')
             .readAsStringSync();
 
     final int initState = source.indexOf('void initState()');
@@ -89,7 +89,7 @@ void main() {
   test('exiting native fullscreen re-asserts the traffic-light hide (BUG-973)',
       () {
     final String source = File(
-      'lib/src/pages/implementations/video_hibiki/fullscreen.part.dart',
+      'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',
     ).readAsStringSync();
 
     final int exitFs = source.indexOf('_exitVideoNativeFullscreen()');

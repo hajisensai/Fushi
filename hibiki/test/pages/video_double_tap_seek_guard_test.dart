@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫 (TODO-172/BUG-230 + TODO-173/BUG-231)。
 ///
@@ -27,9 +27,9 @@ void main() {
   late String schemaSrc;
 
   setUpAll(() {
-    pageSrc = File('lib/src/pages/implementations/video_hibiki_page.dart')
+    pageSrc = File('lib/src/pages/implementations/video_fushi_page.dart')
         .readAsStringSync();
-    pageCorpus = readVideoHibikiSource();
+    pageCorpus = readVideoFushiSource();
     schemaSrc =
         File('lib/src/settings/settings_schema_video.dart').readAsStringSync();
   });
@@ -83,13 +83,13 @@ void main() {
       final String body = methodBodyByName(
           pageCorpus, 'MaterialVideoControlsThemeData _mobileControlsTheme(');
       // TODO-590 batch11：搬进 controls_theme.part 后，static const 引用全限定为
-      // `_VideoHibikiPageState._videoVerticalGestureSensitivity`（extension 不能裸名解析
+      // `_VideoFushiPageState._videoVerticalGestureSensitivity`（extension 不能裸名解析
       // host class 的 static 成员）；全限定后超 80 列被 dart format 折成两行，故分段断言
       // `verticalGestureSensitivity:` 命名参数 + 其取值是该全限定 static const。
       expect(
         body.contains('verticalGestureSensitivity:') &&
             body.contains(
-                '_VideoHibikiPageState._videoVerticalGestureSensitivity,'),
+                '_VideoFushiPageState._videoVerticalGestureSensitivity,'),
         isTrue,
         reason: '移动控制条主题必须设 verticalGestureSensitivity（TODO-172）',
       );

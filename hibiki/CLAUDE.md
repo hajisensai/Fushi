@@ -116,9 +116,9 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - `collections_page.dart` / `tag_*` 系列 -- 集合与标签。
 - `reading_statistics_page.dart` -- 阅读统计。
 
-### 9. 视频播放 (`video_hibiki_page.dart` + `lib/src/media/video/`)
+### 9. 视频播放 (`video_fushi_page.dart` + `lib/src/media/video/`)
 
-- `lib/src/pages/implementations/video_hibiki_page.dart`（6358 行主体）+ `video_hibiki/` 下 18 个 part（共 6966 行，最大 `subtitle.part.dart` 1375 行）-- 视频播放页：字幕查词/制卡、倍速、沉浸模式。
+- `lib/src/pages/implementations/video_fushi_page.dart`（6358 行主体）+ `video_fushi/` 下 18 个 part（共 6966 行，最大 `subtitle.part.dart` 1375 行）-- 视频播放页：字幕查词/制卡、倍速、沉浸模式。
 - `home_video_page.dart`（3080 行）-- 视频首页（书架/合集/继续观看）。
 - `lib/src/media/video/` -- 视频导入与管理（含 `video_import_dialog.dart`）。
 - 播放栈 media_kit（`third_party/` vendored，Windows 构建需下载 mpv/ANGLE，见 `CLAUDE.local.md` 代理说明）。

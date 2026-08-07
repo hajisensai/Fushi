@@ -48,7 +48,7 @@ void main() {
   test('video subtitle overlay binds to subtitleFontFamily, not appFontFamily',
       () {
     final String src =
-        read('lib/src/pages/implementations/video_hibiki/layout.part.dart');
+        read('lib/src/pages/implementations/video_fushi/layout.part.dart');
     // The overlay font source must be the subtitle target (TODO-864); a future
     // refactor pointing it back at appFontFamily silently re-couples them.
     expect(src.contains('fontFamily: appModel.subtitleFontFamily'), isTrue);

@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 void main() {
-  final String pageSource = readVideoHibikiSource();
+  final String pageSource = readVideoFushiSource();
 
   test('_applyLoad binds completed callback before controller.load', () {
     final String fn = _functionSource(

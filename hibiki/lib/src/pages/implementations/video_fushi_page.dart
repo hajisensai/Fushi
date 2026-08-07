@@ -150,25 +150,25 @@ import 'package:fushi/src/utils/components/fading_chrome_gate.dart';
 import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 import 'package:fushi/src/utils/components/hibiki_icon_button.dart';
 
-part 'video_hibiki/danmaku.part.dart';
-part 'video_hibiki/clip_export.part.dart';
-part 'video_hibiki/controls_visibility.part.dart';
-part 'video_hibiki/episode.part.dart';
-part 'video_hibiki/flicker_notice.part.dart';
-part 'video_hibiki/subtitle.part.dart';
-part 'video_hibiki/controls_popover.part.dart';
-part 'video_hibiki/volume_osd.part.dart';
-part 'video_hibiki/chapter.part.dart';
-part 'video_hibiki/audio_track.part.dart';
-part 'video_hibiki/quality.part.dart';
-part 'video_hibiki/side_panel.part.dart';
-part 'video_hibiki/controls_theme.part.dart';
-part 'video_hibiki/speed.part.dart';
-part 'video_hibiki/lookup_favorite.part.dart';
-part 'video_hibiki/lookup_mining.part.dart';
-part 'video_hibiki/subtitle_caret.part.dart';
-part 'video_hibiki/fullscreen.part.dart';
-part 'video_hibiki/layout.part.dart';
+part 'video_fushi/danmaku.part.dart';
+part 'video_fushi/clip_export.part.dart';
+part 'video_fushi/controls_visibility.part.dart';
+part 'video_fushi/episode.part.dart';
+part 'video_fushi/flicker_notice.part.dart';
+part 'video_fushi/subtitle.part.dart';
+part 'video_fushi/controls_popover.part.dart';
+part 'video_fushi/volume_osd.part.dart';
+part 'video_fushi/chapter.part.dart';
+part 'video_fushi/audio_track.part.dart';
+part 'video_fushi/quality.part.dart';
+part 'video_fushi/side_panel.part.dart';
+part 'video_fushi/controls_theme.part.dart';
+part 'video_fushi/speed.part.dart';
+part 'video_fushi/lookup_favorite.part.dart';
+part 'video_fushi/lookup_mining.part.dart';
+part 'video_fushi/subtitle_caret.part.dart';
+part 'video_fushi/fullscreen.part.dart';
+part 'video_fushi/layout.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -200,7 +200,7 @@ part 'video_hibiki/layout.part.dart';
 /// 缩放下定位都不偏。
 ///
 /// 制卡取 cue 的纯函数：按播放位置 [positionMs] 解析「用户正在学的那条字幕句」，
-/// 供 [VideoHibikiPage] 制卡裁真实句子音频段用（TODO-104b / BUG-188）。
+/// 供 [VideoFushiPage] 制卡裁真实句子音频段用（TODO-104b / BUG-188）。
 ///
 /// **为什么不直接复用 [VideoPlayerController.currentCue]**：`currentCue` 被字幕显示
 /// 语义独占——句间静音 gap / 末句之后必须清成 null（真实字幕在时间窗结束后就该消失，
@@ -362,7 +362,7 @@ String videoFavoriteCacheKey({
 enum _MissingResourceChoice { reimport, delete, cancel }
 
 /// TODO-1213：视频（尤其网络流）加载阶段。裸转圈无反馈会让用户以为卡死，
-/// [_VideoHibikiPageState._buildLoadingBody] 据此显示对应阶段文案：连接流 → 下载
+/// [_VideoFushiPageState._buildLoadingBody] 据此显示对应阶段文案：连接流 → 下载
 /// 字幕 → 缓冲 → 准备。纯 UI 状态，不影响 controller.load 时序。
 enum _VideoLoadPhase { connecting, downloadingSubtitle, buffering, preparing }
 
@@ -409,8 +409,8 @@ class _PlaylistEpisodeRef {
   final bool started;
 }
 
-class VideoHibikiPage extends ConsumerStatefulWidget {
-  const VideoHibikiPage({
+class VideoFushiPage extends ConsumerStatefulWidget {
+  const VideoFushiPage({
     required this.bookUid,
     required this.repo,
     this.playlistCollectionId,
@@ -423,7 +423,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
         remoteClient = null,
         remoteCollectionMembers = null;
 
-  VideoHibikiPage.remote({
+  VideoFushiPage.remote({
     required RemoteVideoInfo info,
     required this.repo,
     required RemoteVideoClient client,
@@ -480,7 +480,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     bool initialFullscreen = false,
   }) =>
       FushiAppUiScaleNeutralizer(
-        child: VideoHibikiPage(
+        child: VideoFushiPage(
           bookUid: bookUid,
           repo: repo,
           playlistCollectionId: playlistCollectionId,
@@ -501,7 +501,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     List<RemoteVideoInfo>? remoteCollectionMembers,
   }) =>
       FushiAppUiScaleNeutralizer(
-        child: VideoHibikiPage.remote(
+        child: VideoFushiPage.remote(
           info: info,
           repo: repo,
           client: client,
@@ -518,7 +518,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   /// [caretHoldsPause]（videoEnterCaret）：字级选词光标仍激活时**不**恢复——用户关掉
   /// 浮层后往往还要移动光标继续查下一个词，恢复播放会让 cue 换掉、光标失锚；暂停由
   /// 光标会话接管，退出光标时按同一 [pausedForLookup] 标记恢复（单一恢复真相源）。
-  /// 纯函数：与 [_VideoHibikiPageState._popNestedPopupAt] 共用，供单测直接验证（BUG-072）。
+  /// 纯函数：与 [_VideoFushiPageState._popNestedPopupAt] 共用，供单测直接验证（BUG-072）。
   @visibleForTesting
   static bool shouldResumeAfterLookupDismiss({
     required bool stackEmpty,
@@ -571,7 +571,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   }
 
   @override
-  ConsumerState<VideoHibikiPage> createState() => _VideoHibikiPageState();
+  ConsumerState<VideoFushiPage> createState() => _VideoFushiPageState();
 }
 
 /// TODO-1059：驱动 media_kit 移动控制条**重启自动隐藏计时**的单发信号。
@@ -621,11 +621,11 @@ class _VideoLevelHudState {
   final double value;
 }
 
-/// 集成测试钩子（仅测试用）：对当前 [VideoHibikiPage] 的 [State] 读播放位置 /
+/// 集成测试钩子（仅测试用）：对当前 [VideoFushiPage] 的 [State] 读播放位置 /
 /// 驱动真实播放，验证「退出→再进续播」链路而不暴露页面私有字段。State 以
-/// [VideoHibikiTestHooks] 形式按接口暴露，测试经 `tester.state` 拿到后 `as` 转型。
+/// [VideoFushiTestHooks] 形式按接口暴露，测试经 `tester.state` 拿到后 `as` 转型。
 @visibleForTesting
-abstract class VideoHibikiTestHooks {
+abstract class VideoFushiTestHooks {
   /// 当前播放位置（毫秒）；未就绪为 null。
   int? get debugPositionMs;
 
@@ -696,9 +696,9 @@ class _VideoControlPopoverPlacement {
   final Offset gapDirection;
 }
 
-class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
+class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     with DictionaryPageMixin, WidgetsBindingObserver
-    implements VideoHibikiTestHooks, DictionaryCaretHost {
+    implements VideoFushiTestHooks, DictionaryCaretHost {
   // 控制条尺寸基线（界面缩放 ×1.0 时的值）。视频页整页被
   // [FushiAppUiScaleNeutralizer] 中和回 scale=1.0（保证 WebView 查词坐标一致），
   // 故 media_kit 控制条不会自动吃全局「界面大小」——这些基线再乘 [_videoUiScale]
@@ -1412,7 +1412,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final SubtitleCharHit? hit =
         _subtitleHitTester.hitTest(_lastGlobalPointerPos);
     if (hit != null) {
-      if (VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+      if (VideoFushiPage.shouldSwitchWordOnBarrierTap(
         topVisibleIndex: _topVisiblePopupIndex,
         hitSubtitle: true,
       )) {
@@ -1495,7 +1495,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [DictionaryCaretController]（TODO-387 预留的跨页面复用点）。主面 =
   /// [CaretSurface.video]（字幕 overlay 登记表下标 [_subtitleCaretEntry]），查词后
   /// transfer 进顶层弹窗（[CaretSurface.popup]），与阅读器共用弹窗 caret 全套。
-  /// 域方法见 video_hibiki/subtitle_caret.part.dart。
+  /// 域方法见 video_fushi/subtitle_caret.part.dart。
   late final DictionaryCaretController _videoCaret =
       DictionaryCaretController(this);
 
@@ -1572,7 +1572,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// TODO-1204：查词 / 制卡计数归属本视频——[title] 用 [_title]（剧集标题，与
   /// 视频统计 tile 的 [addVideoWatchStatistic] title 聚合键对齐），[bookKey] 存
-  /// [VideoHibikiPage.bookUid]。远端视频无观看统计 tile，其计数仍进「查词」汇总。
+  /// [VideoFushiPage.bookUid]。远端视频无观看统计 tile，其计数仍进「查词」汇总。
   @override
   ({String? bookKey, String? title})? get lookupBookIdentity =>
       (bookKey: widget.bookUid, title: _title ?? '');
@@ -2033,7 +2033,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _resolvedStreamInfo = launch.info;
         _resolvedStreamClient = launch.client;
       } catch (e) {
-        debugPrint('[VideoHibikiPage] stream book launch build failed: $e');
+        debugPrint('[VideoFushiPage] stream book launch build failed: $e');
         if (mounted) {
           setState(() {
             _failed = true;
@@ -2341,7 +2341,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       }
     } catch (e, stack) {
       debugPrint(
-        '[VideoHibikiPage] remote episode $index load failed: $e\n$stack',
+        '[VideoFushiPage] remote episode $index load failed: $e\n$stack',
       );
       if (mounted) {
         setState(() {
@@ -2497,7 +2497,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         episodeIndex: episodeIndex,
       );
     } catch (e) {
-      debugPrint('[VideoHibikiPage] remote position upload failed: $e');
+      debugPrint('[VideoFushiPage] remote position upload failed: $e');
     }
   }
 
@@ -2628,7 +2628,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         subtitleSource: relocatedSubtitle,
       );
       debugPrint(
-        '[VideoHibikiPage] relocated app-owned media path(s): '
+        '[VideoFushiPage] relocated app-owned media path(s): '
         'video=${relocatedVideo != null} subtitle=${relocatedSubtitle != null}',
       );
     }
@@ -2790,7 +2790,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (cues.isEmpty) return null;
       return (path: sidecarPath, cues: cues);
     } catch (e) {
-      debugPrint('[VideoHibikiPage] sidecar parse failed: $e');
+      debugPrint('[VideoFushiPage] sidecar parse failed: $e');
       return null;
     }
   }
@@ -2809,7 +2809,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         bookUid: bookUid,
       );
     } catch (e) {
-      debugPrint('[VideoHibikiPage] external subtitle parse failed: $e');
+      debugPrint('[VideoFushiPage] external subtitle parse failed: $e');
       return const <AudioCue>[];
     }
   }
@@ -2847,7 +2847,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 缺失则不 load，置缺失态（[_buildScaffold] 在转圈判据前短路）+ 弹中性对话框。
     // 远端 / 流（videoPath==null 或 http(s) URL）天然豁免（见 video_resource_check）。
     if (await isLocalVideoResourceMissing(videoPath)) {
-      debugPrint('[VideoHibikiPage] local video resource missing: $videoPath');
+      debugPrint('[VideoFushiPage] local video resource missing: $videoPath');
       if (!mounted) return;
       setState(() {
         _failed = false;
@@ -2910,8 +2910,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         onEmbeddedSubtitleAutoLoad: _handleEmbeddedSubtitleAutoLoad,
       );
     } catch (e, stack) {
-      debugPrint('[VideoHibikiPage] video load failed: $e\n$stack');
-      ErrorLogService.instance.log('VideoHibiki.load', e, stack);
+      debugPrint('[VideoFushiPage] video load failed: $e\n$stack');
+      ErrorLogService.instance.log('VideoFushi.load', e, stack);
       if (_controller == null) controller.dispose();
       _pendingController = null; // BUG-772：在途结束（失败），清标记
       if (mounted) {
@@ -3797,8 +3797,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final double dy = event.position.dy - _barrierHoverLastPos.dy;
     if (_barrierHoverLastPos != Offset.zero &&
         dx * dx + dy * dy <
-            VideoHibikiPage.barrierHoverThresholdPx *
-                VideoHibikiPage.barrierHoverThresholdPx) {
+            VideoFushiPage.barrierHoverThresholdPx *
+                VideoFushiPage.barrierHoverThresholdPx) {
       return;
     }
     _barrierHoverLastPos = event.position;
@@ -3808,7 +3808,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 非嵌套（仅顶层可见）且命中画面字幕字符才换词——与点 barrier 换词的
     // [shouldSwitchWordOnBarrierTap] 同门控（嵌套态换词会误把整栈 replaceStack 替换掉）。
     if (hit != null &&
-        VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+        VideoFushiPage.shouldSwitchWordOnBarrierTap(
           topVisibleIndex: _topVisiblePopupIndex,
           hitSubtitle: true,
         )) {
@@ -3872,7 +3872,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 时若点到同句另一个字幕字符则**切换查词**（对该字符走 [_lookupAt]：已暂停故不重复暂停、
   /// 不清 [_pausedForLookup]，`replaceStack` 替换可见浮层）→ 保持暂停、弹窗切到新词；否则
   /// （命中空白/控件区，或处于嵌套态）[_popNestedPopupAt] 逐层关并据 [_pausedForLookup]
-  /// 恢复播放。门控判据见 [VideoHibikiPage.shouldSwitchWordOnBarrierTap]。
+  /// 恢复播放。门控判据见 [VideoFushiPage.shouldSwitchWordOnBarrierTap]。
   ///
   /// 根因 1（BUG-???，用户报）：barrier 全屏盖在字幕之上、抢走点击 → 单层查词点同句第二个
   /// 词只会关栈+恢复播放。barrier 先反查字幕字符命中即可「点词换词、保持暂停」。
@@ -3893,7 +3893,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 纯空白正常」），点在字上仍切词。悬停换词 / Shift 查词是查词意图，仍用宽容差（不改）。
     final SubtitleCharHit? hit =
         _subtitleHitTester.hitTest(globalPos, exactOnly: true);
-    if (VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+    if (VideoFushiPage.shouldSwitchWordOnBarrierTap(
       topVisibleIndex: _topVisiblePopupIndex,
       hitSubtitle: hit != null,
     )) {
@@ -3962,7 +3962,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _videoCaret.setSurface(CaretSurface.video);
       }
     }
-    if (VideoHibikiPage.shouldResumeAfterLookupDismiss(
+    if (VideoFushiPage.shouldResumeAfterLookupDismiss(
       // "Effectively empty" = no visible popup; the hidden warm slot doesn't
       // block resume.
       stackEmpty: stackEmpty,
@@ -5863,7 +5863,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     try {
       await windowManager.setAspectRatio(0);
     } catch (e, stack) {
-      ErrorLogService.instance.log('VideoHibiki.windowAspect.clear', e, stack);
+      ErrorLogService.instance.log('VideoFushi.windowAspect.clear', e, stack);
     }
   }
 
@@ -5893,7 +5893,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     try {
       await windowManager.setAspectRatio(aspectRatio);
     } catch (e, stack) {
-      ErrorLogService.instance.log('VideoHibiki.windowAspect.set', e, stack);
+      ErrorLogService.instance.log('VideoFushi.windowAspect.set', e, stack);
     }
   }
 
@@ -6865,7 +6865,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 仅 full 模式允许打开；shortcutAndLookup / lookupOnly / unlockOnly 均不能绕过四段 gate。
   ///
   /// 界面缩放坐标对齐（BUG-260）：视频页整页被 [FushiAppUiScaleNeutralizer] 中和回
-  /// 净缩放=1 的**真实视口空间**（见 [VideoHibikiPage.neutralized]），故
+  /// 净缩放=1 的**真实视口空间**（见 [VideoFushiPage.neutralized]），故
   /// [_videoControlsContext] 的 RenderBox 在真实屏幕坐标系；而 [showMenu] 把
   /// [RelativeRect] 解读为路由 **Overlay** 的坐标系——该 Overlay 在全局
   /// [FushiAppUiScale] 的 `FittedBox(BoxFit.fill)` 之内＝缩放后的画布空间。两套坐标差

@@ -6,7 +6,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 
-import '../../pages/video_hibiki_page_source_corpus.dart';
+import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// Source guard: video keyboard interaction + autoplay both need a real libmpv
 /// player (the host has none; load()/Player construction throws), so structure
@@ -17,7 +17,7 @@ import '../../pages/video_hibiki_page_source_corpus.dart';
 /// remappable registry. The DEFAULT bindings now live in shortcut_defaults.dart
 /// (ShortcutDefaults.forPlatform); the action->callback WIRING is
 /// videoActionCallbacks in video_player_shortcuts.dart; the callback BEHAVIOUR
-/// still lives in video_hibiki_page.dart. Assertions that used to scan the
+/// still lives in video_fushi_page.dart. Assertions that used to scan the
 /// shortcuts source for LogicalKeyboardKey.xxx strings now assert the registry
 /// defaults (using the real enum / InputBinding, stronger than string scans);
 /// the page behaviour assertions are unchanged.
@@ -47,7 +47,7 @@ void main() {
   }
 
   group('video page Escape overrides media_kit default', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     test('desktop controls theme overrides keyboardShortcuts', () {
       expect(
@@ -111,7 +111,7 @@ void main() {
   });
 
   group('asbplayer-style playback shortcuts', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
     final String shortcuts =
         read('lib/src/media/video/video_player_shortcuts.dart');
 
@@ -435,7 +435,7 @@ void main() {
   });
 
   group('lookup popup re-tap on same sentence: switch word, keep paused', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     test('dismiss barrier uses onTapUp -> _onDismissBarrierTap (coord check)',
         () {
@@ -493,7 +493,7 @@ void main() {
   group('autoplay on enter page / episode switch', () {
     final String controller =
         read('lib/src/media/video/video_player_controller.dart');
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     test('load supports the autoPlay parameter', () {
       expect(controller.contains('bool autoPlay = false'), isTrue,

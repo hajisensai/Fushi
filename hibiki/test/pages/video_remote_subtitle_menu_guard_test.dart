@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫（#2）：远端视频的字幕源菜单不能再被 [_currentVideoPath]==null 卡死。
 ///
@@ -7,7 +7,7 @@ import 'video_hibiki_page_source_corpus.dart';
 /// （headless 不可用），但「修复的不变式」可在源码层稳定守住——
 /// [_showSubtitleSourceMenu] 在 `_isRemote` 时分流到独立的远端菜单，远端菜单提供
 /// 关闭/host 字幕/本地导入，且远端应用路径不依赖同目录枚举与本地 DB 持久化。
-String _readVideoPage() => readVideoHibikiSource();
+String _readVideoPage() => readVideoFushiSource();
 
 void main() {
   late String src;

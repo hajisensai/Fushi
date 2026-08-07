@@ -12,7 +12,7 @@ import '../helpers/source_guard.dart';
 void main() {
   final String src = maskComments(
     File(
-      'lib/src/pages/implementations/video_hibiki/lookup_mining.part.dart',
+      'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart',
     ).readAsStringSync(),
   );
 

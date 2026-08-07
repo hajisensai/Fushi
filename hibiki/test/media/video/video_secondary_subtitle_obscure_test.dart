@@ -130,7 +130,7 @@ void main() {
 
     test('layout 把副字幕遮蔽映射成 overlay 两正交标志', () {
       final String src = readSrc(
-          'lib/src/pages/implementations/video_hibiki/layout.part.dart');
+          'lib/src/pages/implementations/video_fushi/layout.part.dart');
       expect(src, contains('secondaryBlurEnabled:'));
       expect(src, contains('secondaryHidden:'));
       expect(src, contains('appModel.videoSecondarySubtitleObscureMode'));

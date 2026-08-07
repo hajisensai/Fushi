@@ -61,7 +61,7 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
       '书文件与封面：导入时拷进 app 存储，与原路径脱钩（EPUB 一条 TODO：安卓白拷一份，可迁 pickRealFilePath）',
   'lib/src/media/video/video_import_dialog.dart':
       'm3u8 播放列表：选中即解析成 playlist，不长期引用',
-  'lib/src/pages/implementations/video_hibiki/subtitle.part.dart':
+  'lib/src/pages/implementations/video_fushi/subtitle.part.dart':
       '字幕：选中即解析成 cue（与 pickSystemFilePath 同语义，board 1360）',
   'lib/src/pages/implementations/dictionary_dialog_page.dart':
       '词典包：选中即经 FFI 导入，导完与原路径脱钩',

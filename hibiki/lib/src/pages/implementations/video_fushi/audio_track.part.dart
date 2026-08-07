@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch9).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch9).
+part of '../video_fushi_page.dart';
 
 /// Audio-track domain methods extracted via part-of (TODO-590 batch9); shared
 /// private scope. Behaviour-preserving: bodies are verbatim except the lone
@@ -21,7 +21,7 @@ part of '../video_hibiki_page.dart';
 /// `_showVideoSidePanel`, `_showOsd`, the `widget.repo` audio-track persistence,
 /// the controller's `audioTracks` / `selectAudioTrack`) stay in the main shell;
 /// the extension reads/calls instance members through the shared private scope.
-extension _VideoAudioTrack on _VideoHibikiPageState {
+extension _VideoAudioTrack on _VideoFushiPageState {
   /// 若有持久化音轨偏好 [_currentAudioTrackId]，在 [controller] 的 audioTracks 里
   /// 按 id 匹配并切换，恢复用户上次选的音轨（退出重进 / 换集复用）。
   ///

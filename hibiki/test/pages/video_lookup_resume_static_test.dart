@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 视频查词暂停后「关浮层不自动续播」修复（BUG-072）的守卫。
 ///
-/// **根因**：[VideoHibikiPage] 用 [DictionaryPageMixin]（不像阅读器有
+/// **根因**：[VideoFushiPage] 用 [DictionaryPageMixin]（不像阅读器有
 /// `onAllPopupsDismissed` 钩子）。`_lookupAt` 打开查词浮层时暂停了视频，但**没有任何
 /// 代码**在浮层栈关闭后恢复播放——阅读器靠 `onAllPopupsDismissed`→`_clearLookupState`
 /// →`play()`，视频页缺这一环，于是关掉查词窗后视频停在那里，必须手动续播。
@@ -16,7 +16,7 @@ import 'video_hibiki_page_source_corpus.dart';
 ///
 /// media_kit/libmpv 在测试宿主不可用（[VideoPlayerController] 延迟构造 Player），无法纯
 /// 单测真实播放，故守两层：
-/// 1. 纯函数 [VideoHibikiPage.shouldResumeAfterLookupDismiss] 的两条件与门逻辑；
+/// 1. 纯函数 [VideoFushiPage.shouldResumeAfterLookupDismiss] 的两条件与门逻辑；
 /// 2. 源码守卫：`_lookupAt` 只在 `isPlaying` 时暂停并置位、`_popNestedPopupAt` 关栈后据
 ///    该纯函数恢复播放并清标记（防回归把恢复环删掉 / 把暂停改回无条件）。
 ///
@@ -28,7 +28,7 @@ void main() {
   group('shouldResumeAfterLookupDismiss — 两条件与门', () {
     test('栈空 + 因查词暂停 → 恢复', () {
       expect(
-        VideoHibikiPage.shouldResumeAfterLookupDismiss(
+        VideoFushiPage.shouldResumeAfterLookupDismiss(
           stackEmpty: true,
           pausedForLookup: true,
         ),
@@ -38,7 +38,7 @@ void main() {
 
     test('栈非空（关掉递归子层但父层仍在）→ 不恢复', () {
       expect(
-        VideoHibikiPage.shouldResumeAfterLookupDismiss(
+        VideoFushiPage.shouldResumeAfterLookupDismiss(
           stackEmpty: false,
           pausedForLookup: true,
         ),
@@ -48,7 +48,7 @@ void main() {
 
     test('查词前本就暂停（未置位）→ 不恢复', () {
       expect(
-        VideoHibikiPage.shouldResumeAfterLookupDismiss(
+        VideoFushiPage.shouldResumeAfterLookupDismiss(
           stackEmpty: true,
           pausedForLookup: false,
         ),
@@ -62,7 +62,7 @@ void main() {
     // （单一恢复真相源）。默认 false ⇒ 上面三条既有用例的真值表逐字不变。
     test('前两条件成立但光标仍激活 → 不恢复（暂停交给光标会话）', () {
       expect(
-        VideoHibikiPage.shouldResumeAfterLookupDismiss(
+        VideoFushiPage.shouldResumeAfterLookupDismiss(
           stackEmpty: true,
           pausedForLookup: true,
           caretHoldsPause: true,
@@ -73,7 +73,7 @@ void main() {
 
     test('光标已退出（caretHoldsPause=false）→ 与旧行为一致，恢复', () {
       expect(
-        VideoHibikiPage.shouldResumeAfterLookupDismiss(
+        VideoFushiPage.shouldResumeAfterLookupDismiss(
           stackEmpty: true,
           pausedForLookup: true,
           caretHoldsPause: false,
@@ -84,7 +84,7 @@ void main() {
 
     test('caretHoldsPause 默认 false：旧调用点（两参）行为不变', () {
       expect(
-        VideoHibikiPage.shouldResumeAfterLookupDismiss(
+        VideoFushiPage.shouldResumeAfterLookupDismiss(
           stackEmpty: true,
           pausedForLookup: true,
         ),
@@ -95,7 +95,7 @@ void main() {
 
     test('光标激活但栈非空 / 未置位 → 仍不恢复（与门，不是或门）', () {
       expect(
-        VideoHibikiPage.shouldResumeAfterLookupDismiss(
+        VideoFushiPage.shouldResumeAfterLookupDismiss(
           stackEmpty: false,
           pausedForLookup: true,
           caretHoldsPause: true,
@@ -103,7 +103,7 @@ void main() {
         isFalse,
       );
       expect(
-        VideoHibikiPage.shouldResumeAfterLookupDismiss(
+        VideoFushiPage.shouldResumeAfterLookupDismiss(
           stackEmpty: true,
           pausedForLookup: false,
           caretHoldsPause: true,
@@ -118,7 +118,7 @@ void main() {
     // 其 end marker 由留主壳的 `_popNestedPopupAt` 改成同被搬走、在 part 里紧跟
     // `_lookupAt` 的 `_refreshVideoSentenceFavorite`（合并语料把 part 拼在末尾，旧
     // end marker 在 start 前会切片失败）。`_popNestedPopupAt` 仍在主壳，test2 不变。
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     test('_lookupAt 仅在 isPlaying 时暂停并置位 _pausedForLookup', () {
       final String lookup = _functionSource(
@@ -160,7 +160,7 @@ void main() {
         'void _popNestedPopupAt(',
         'Widget _buildNestedPopupLayer(',
       );
-      expect(pop.contains('VideoHibikiPage.shouldResumeAfterLookupDismiss('),
+      expect(pop.contains('VideoFushiPage.shouldResumeAfterLookupDismiss('),
           isTrue);
       // BUG-094：常驻隐藏热槽使 `_popupStack` 永不为空，故「整栈已空」判定改为
       // 「无可见弹窗」(!_hasVisiblePopup)——否则关浮层后热槽仍在、恢复永不触发。
@@ -180,10 +180,10 @@ void main() {
     });
   });
 
-  /// BUG-094 source guard（源自 video_warm_popup_guard_test.dart）: VideoHibikiPage
+  /// BUG-094 source guard（源自 video_warm_popup_guard_test.dart）: VideoFushiPage
   /// seeds one persistent hidden warm popup slot and reuses it for every lookup,
   /// so the popup WebView is never cold-loaded per lookup (the white flash that
-  /// lasted "until the auto-read audio finished"). VideoHibikiPage drives
+  /// lasted "until the auto-read audio finished"). VideoFushiPage drives
   /// media_kit, so its lookup/pause/resume/overlay behaviour can't be
   /// widget-tested headlessly; these guards lock the wiring instead.
   ///
@@ -195,7 +195,7 @@ void main() {
     // TODO-590 batch13: `_lookupAt`（含 `reuseWarmSlot: true`）已搬进
     // lookup_favorite.part.dart，改读合并语料。
     test('video seeds and reuses a persistent warm popup slot', () {
-      final String src = readVideoHibikiSource();
+      final String src = readVideoFushiSource();
 
       // A persistent hidden warm slot is seeded once the video loads successfully
       // via the shared controller (skipped in low memory inside the controller).
@@ -218,7 +218,7 @@ void main() {
     test(
         'closing hides-and-keeps the warm slot; resume/back key off visibility',
         () {
-      final String src = readVideoHibikiSource();
+      final String src = readVideoFushiSource();
 
       // Close delegates to the controller, which hides-and-keeps the warm slot
       // (rather than clearing it). The video also clears the warm WebView's text

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：剧集列表走视频底部的非模态横向轨道，而非
 /// `showModalBottomSheet` 或会挤窄画面的右侧栏。
@@ -12,7 +12,7 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   late String src;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   test('剧集列表不再用 showModalBottomSheet（已改底部横向轨道）', () {

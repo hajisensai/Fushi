@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// BUG-861：视频「按住 Shift 连续切换查词」在首弹后失效的修复守卫。
 ///
@@ -16,14 +16,14 @@ import 'video_hibiki_page_source_corpus.dart';
 /// 入口）→ `_handleSubtitleLookupTap`（`replaceStack` 换词）。
 ///
 /// 浮层需真实平台视图，无法纯单测真实 hover→换词，故守两层：
-/// 1. 纯函数 [VideoHibikiPage.shouldSwitchWordOnBarrierTap] 门控（悬停切词复用同一判据）；
+/// 1. 纯函数 [VideoFushiPage.shouldSwitchWordOnBarrierTap] 门控（悬停切词复用同一判据）；
 /// 2. 源码接线守卫：barrier 挂 Listener.onPointerHover、`_onDismissBarrierHover` 门控/节流/去重
 ///    入口、`onCharHover` 走去重入口、关栈复位去重键（防回归把这些环删掉 / 改回无 hover 转发）。
 void main() {
   group('shouldSwitchWordOnBarrierTap — 悬停切词复用的非嵌套+命中门控', () {
     test('非嵌套（仅顶层）+ 命中字幕字符 → 换词', () {
       expect(
-        VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+        VideoFushiPage.shouldSwitchWordOnBarrierTap(
           topVisibleIndex: 0,
           hitSubtitle: true,
         ),
@@ -33,7 +33,7 @@ void main() {
 
     test('仅剩隐藏热槽（topVisibleIndex == -1）+ 命中 → 换词', () {
       expect(
-        VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+        VideoFushiPage.shouldSwitchWordOnBarrierTap(
           topVisibleIndex: -1,
           hitSubtitle: true,
         ),
@@ -43,7 +43,7 @@ void main() {
 
     test('嵌套态（存在父层）→ 不换词（否则误替整栈）', () {
       expect(
-        VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+        VideoFushiPage.shouldSwitchWordOnBarrierTap(
           topVisibleIndex: 1,
           hitSubtitle: true,
         ),
@@ -53,7 +53,7 @@ void main() {
 
     test('未命中字幕字符 → 不换词', () {
       expect(
-        VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+        VideoFushiPage.shouldSwitchWordOnBarrierTap(
           topVisibleIndex: 0,
           hitSubtitle: false,
         ),
@@ -64,12 +64,12 @@ void main() {
 
   group('barrierHoverThresholdPx — 与字幕盒 8px 阈值同构', () {
     test('阈值为 8px', () {
-      expect(VideoHibikiPage.barrierHoverThresholdPx, 8);
+      expect(VideoFushiPage.barrierHoverThresholdPx, 8);
     });
   });
 
   group('源码接线守卫', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     test('dismiss barrier 外层挂 Listener 转发 hover 给 _onDismissBarrierHover', () {
       final String overlay = _functionSource(
@@ -115,7 +115,7 @@ void main() {
           hover.contains('_subtitleHitTester.hitTest(event.position)'), isTrue);
       // 非嵌套 + 命中门控复用纯函数。
       expect(
-        hover.contains('VideoHibikiPage.shouldSwitchWordOnBarrierTap('),
+        hover.contains('VideoFushiPage.shouldSwitchWordOnBarrierTap('),
         isTrue,
       );
       // 换词经统一去重入口。

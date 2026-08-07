@@ -66,7 +66,7 @@ import 'package:fushi/src/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart'
     show VideoBooksCompanion, VideoBookRow;
@@ -997,11 +997,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   }
 
   /// 处理「从 app 外用 Hibiki 打开视频」：建/取一条外部视频 VideoBook（videoPath
-  /// 存外部绝对路径，不复制文件），然后用全局 navigator push [VideoHibikiPage]
+  /// 存外部绝对路径，不复制文件），然后用全局 navigator push [VideoFushiPage]
   /// 播放。bookUid 用 [externalVideoBookUid]（全路径 sha1）派生，幂等——同一文件
   /// 重复打开复用同条记录、保留上次进度。入库后书架视频分区自动出现该条目。
   ///
-  /// 字幕无需在此预解析：[VideoHibikiPage] 加载时若 [VideoBookRow.subtitleSource]
+  /// 字幕无需在此预解析：[VideoFushiPage] 加载时若 [VideoBookRow.subtitleSource]
   /// 为空会自动探测同名 sidecar 字幕（见 `findSidecarSubtitle`）。
   Future<void> _openExternalVideo(String videoPath) async {
     final NavigatorState? navigator = appModel.navigatorKey.currentState;
@@ -1056,7 +1056,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     await navigator.push(
       MaterialPageRoute<void>(
         builder: (_) =>
-            VideoHibikiPage.neutralized(bookUid: bookUid, repo: repo),
+            VideoFushiPage.neutralized(bookUid: bookUid, repo: repo),
       ),
     );
   }

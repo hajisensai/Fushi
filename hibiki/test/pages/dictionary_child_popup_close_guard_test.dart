@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 
 /// TODO-501 guard: when swipe-to-close is disabled, nested dictionary popups
 /// still need a visible, focusable X that pops only the current layer.
@@ -137,7 +137,7 @@ void main() {
 
   test('video barrier clears the whole stack (descendants + parents)', () {
     final String video =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+        read('lib/src/pages/implementations/video_fushi_page.dart');
 
     // 点所有弹窗外清整栈（保留热槽 + 会话收尾恢复播放/清草稿/收回焦点）。
     // 取 _onDismissBarrierTap 方法体（到下一个方法 _handleSubtitleLookupTap 之前），
@@ -156,7 +156,7 @@ void main() {
         reason: 'barrier 不再逐层关一层（改清整栈）');
     // TODO-758 / BUG-410 字幕反查门控仍在（点字幕换词只在非嵌套态）。
     expect(
-        barrierBody, contains('VideoHibikiPage.shouldSwitchWordOnBarrierTap('),
+        barrierBody, contains('VideoFushiPage.shouldSwitchWordOnBarrierTap('),
         reason: '字幕反查门控保持不变');
     // 红线：back/Esc 逐层退回（_handleBackOrExit）保持不变，仍逐层关一层。
     expect(video, contains('Future<void> _handleBackOrExit()'),
@@ -206,7 +206,7 @@ void main() {
         () {
       // index 0 父词 + index 1 子词，点外落在字幕上：必须逐层关，不换词。
       expect(
-        VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+        VideoFushiPage.shouldSwitchWordOnBarrierTap(
           topVisibleIndex: 1,
           hitSubtitle: true,
         ),
@@ -214,7 +214,7 @@ void main() {
         reason: '嵌套态点字幕也不换词（否则整栈被 replaceStack）',
       );
       expect(
-        VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+        VideoFushiPage.shouldSwitchWordOnBarrierTap(
           topVisibleIndex: 2,
           hitSubtitle: true,
         ),
@@ -225,7 +225,7 @@ void main() {
     test('single visible layer keeps tap-subtitle-to-switch-word', () {
       // 单层查词点同句另一个字符切换查词是合理交互，保留。
       expect(
-        VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+        VideoFushiPage.shouldSwitchWordOnBarrierTap(
           topVisibleIndex: 0,
           hitSubtitle: true,
         ),
@@ -237,7 +237,7 @@ void main() {
     test('hitting blank (no subtitle char) never switches word', () {
       for (final int top in <int>[-1, 0, 1, 2]) {
         expect(
-          VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+          VideoFushiPage.shouldSwitchWordOnBarrierTap(
             topVisibleIndex: top,
             hitSubtitle: false,
           ),
@@ -252,7 +252,7 @@ void main() {
       // 仅剩隐藏热槽（lastVisibleIndex == -1）= 无可见弹窗：点字幕字符是「首次查词」
       // 入口，与旧行为一致换词（无害）。不是嵌套，故 `<=0` 门控正确放行。
       expect(
-        VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+        VideoFushiPage.shouldSwitchWordOnBarrierTap(
           topVisibleIndex: -1,
           hitSubtitle: true,
         ),
@@ -264,12 +264,12 @@ void main() {
 
   test('video barrier tap-subtitle branch is gated by non-nested check', () {
     final String video =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+        read('lib/src/pages/implementations/video_fushi_page.dart');
 
     // 反查字幕命中分支必须经纯函数门控，不再无条件 `if (hit != null)` 直接换词。
     expect(
       video,
-      contains('VideoHibikiPage.shouldSwitchWordOnBarrierTap('),
+      contains('VideoFushiPage.shouldSwitchWordOnBarrierTap('),
       reason: '点字幕换词必须门控在非嵌套态',
     );
     expect(
@@ -287,7 +287,7 @@ void main() {
 
   test('shouldSwitchWordOnBarrierTap is the documented non-nested gate', () {
     final String video =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+        read('lib/src/pages/implementations/video_fushi_page.dart');
 
     expect(
       video,

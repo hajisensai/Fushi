@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/shortcuts/global_navigation.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 回归守卫（TODO-755，回归 c152fcd91）：视频按空格无反应。
 ///
@@ -19,7 +19,7 @@ import 'video_hibiki_page_source_corpus.dart';
 /// `playOrPause()`，位于全局 [DoNothingIntent] 之下、离视频更近。只要焦点落在
 /// 视频页子树内**任意**节点，空格都先被这层消费、永不下沉到全局中和层。
 ///
-/// [VideoHibikiPage] 驱动 media_kit、无法离屏整页 widget 测试，故本测试用与真实
+/// [VideoFushiPage] 驱动 media_kit、无法离屏整页 widget 测试，故本测试用与真实
 /// 拓扑同构的最小 widget 树（global 中和层 → 页内局部 CallbackShortcuts → 普通
 /// 可聚焦子节点）验证关键不变式：**焦点不精确落在视频节点上（这里是一个普通
 /// FocusNode，且不调任何特殊内层节点的 requestFocus）时，裸空格仍触发
@@ -98,7 +98,7 @@ void main() {
   );
 
   test('视频页 body 在 drop target 外层套页内局部裸空格覆盖（源码守卫）', () {
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
 
     // 覆盖 helper 存在，且绑裸空格 → 经沉浸锁门控的 playOrPause（与注册表
     // togglePlayPause 同语义，不引入特例分支）。

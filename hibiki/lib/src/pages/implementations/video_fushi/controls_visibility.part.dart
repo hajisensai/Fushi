@@ -1,17 +1,17 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch3).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch3).
+part of '../video_fushi_page.dart';
 
 /// controls-visibility / hover / poke / autohide domain methods extracted via
 /// part-of (TODO-590 batch3); shared private scope. Behaviour-preserving:
 /// bodies are verbatim except references to the main shell's `static` members
 /// (`_syntheticHoverDevice` / `_videoControlsHoverDuration`) are fully qualified
-/// through `_VideoHibikiPageState.` — an extension cannot resolve a host class's
+/// through `_VideoFushiPageState.` — an extension cannot resolve a host class's
 /// private static by bare name, so the qualification is mandatory and otherwise
 /// byte-exact. No `setState(` lives in this domain, so no `_rebuild(` forwarding
 /// is needed (unlike batch1/batch2). The `static` definitions themselves and the
 /// `_videoControlsTransitionDuration` / `_hasVideoOverlay` /
 /// `_videoSideActionRailStronglySuppressed` getters stay in the main shell.
-extension _VideoControlsVisibility on _VideoHibikiPageState {
+extension _VideoControlsVisibility on _VideoFushiPageState {
   /// 把 media_kit 控制条「唤醒」并重置其自动隐藏计时（BUG-175 ②）。
   ///
   /// 根因：media_kit 的 [MaterialDesktopVideoControls] / [MaterialVideoControls]
@@ -60,7 +60,7 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
     _pendingPokeHover = PointerHoverEvent(
       position: pokePosition,
       // 复用一个稳定的合成设备 id，避免与真实鼠标/触控设备冲突。
-      device: _VideoHibikiPageState._syntheticHoverDevice,
+      device: _VideoFushiPageState._syntheticHoverDevice,
       kind: PointerDeviceKind.mouse,
     );
     // BUG-425：合成 hover 的**派发**恒延迟到 [scheduleMicrotask]，绝不在本调用栈内同步
@@ -160,7 +160,7 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
   }
 
   bool _isSyntheticControlsHover(PointerEvent event) =>
-      event.device == _VideoHibikiPageState._syntheticHoverDevice;
+      event.device == _VideoFushiPageState._syntheticHoverDevice;
 
   void _handleVideoControlsHover(PointerEvent event) {
     if (!_isSyntheticControlsHover(event)) {
@@ -318,7 +318,7 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
     _lockButtonVisible.value = true;
     _lockButtonHideTimer?.cancel();
     _lockButtonHideTimer =
-        Timer(_VideoHibikiPageState._videoControlsHoverDuration, () {
+        Timer(_VideoFushiPageState._videoControlsHoverDuration, () {
       if (!mounted) return;
       _lockButtonVisible.value = false;
       // BUG-923：静止超时补上缺失的「空闲重隐」路径。沉浸态下 media_kit 控制条被

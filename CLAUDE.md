@@ -25,7 +25,7 @@
 
 - 仓库根：`D:\APP\vs_claude_code\hibiki`（Melos workspace，名 `fushi_workspace`）。Flutter app：`hibiki/`；Android 工程：`hibiki/android/`。
 - 阅读器页面：`hibiki/lib/src/pages/implementations/reader_fushi_page.dart`（`ReaderFushiPage`，3242 行主体 + `reader_fushi/` 下 8 个域 part 共 9583 行：WebView 拦截 + JS 分页 + 有声书同步）。
-- 视频页面：`hibiki/lib/src/pages/implementations/video_hibiki_page.dart`（6358 行主体 + `video_hibiki/` 下 18 个 part 共 6966 行）；视频首页 `home_video_page.dart`（3080 行）。
+- 视频页面：`hibiki/lib/src/pages/implementations/video_fushi_page.dart`（6358 行主体 + `video_fushi/` 下 18 个 part 共 6966 行）；视频首页 `home_video_page.dart`（3080 行）。
 - 书架页面：`hibiki/lib/src/pages/implementations/reader_fushi_history_page.dart`；首页 dashboard：`pages/implementations/home_dashboard_page.dart`。
 - reader source：`hibiki/lib/src/media/sources/reader_fushi_source.dart`（`ReaderFushiSource`）。
 - 阅读器 JS/CSS：`hibiki/lib/src/reader/`（17 个 JS/CSS 注入封装，`reader_pagination_scripts.dart` 等）；JS 桥接全局是 `window.fushiReader`（2026-08 终局清算已改名；`hoshiCaret`/`__hoshi*` 等其余 hoshi 前缀运行时符号待后续批次）。

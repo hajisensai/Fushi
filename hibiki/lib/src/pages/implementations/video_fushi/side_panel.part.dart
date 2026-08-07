@@ -1,12 +1,12 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch10).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch10).
+part of '../video_fushi_page.dart';
 
 /// Side-panel domain methods extracted via part-of (TODO-590 batch10); shared
 /// private scope. Behaviour-preserving: every body is moved
 /// character-for-character. None of these methods call `State.setState` — the
 /// open/close lifecycle is driven entirely through the `_videoSidePanel`
 /// [ValueNotifier], so there is no `setState→_rebuild` normalisation here (and
-/// none of the moved members is `static`, so no `_VideoHibikiPageState.`
+/// none of the moved members is `static`, so no `_VideoFushiPageState.`
 /// qualification is needed either).
 ///
 /// Covers the slot-aware alignment helper ([_sidePanelAlignmentForSlot]), the
@@ -24,7 +24,7 @@ part of '../video_hibiki_page.dart';
 /// `_focusOwnership`, `_clearSelectedMiningCues`), the `_subtitleListVisible` /
 /// `_episodeListVisible` notifiers and `_videoUiScale` all stay in the main
 /// shell; the extension reads/calls them through the shared private scope.
-extension _VideoSidePanel on _VideoHibikiPageState {
+extension _VideoSidePanel on _VideoFushiPageState {
   Alignment _sidePanelAlignmentForSlot(VideoControlSlot? sourceSlot) {
     switch (sourceSlot) {
       case VideoControlSlot.topLeft:

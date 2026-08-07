@@ -207,7 +207,7 @@ void main() {
       expect(videoCard, findsOneWidget, reason: '播种的视频卡应出现在视频页');
 
       // 焦点卡片 + Enter（FushiCard 把 ActivateIntent 映射到 onTap=_open）打开
-      // VideoHibikiPage，禁坐标点击。
+      // VideoFushiPage，禁坐标点击。
       final bool focusedCard = await driver.focusWidget(videoCard);
       expect(focusedCard, isTrue, reason: '视频卡应可被焦点到达（否则离屏打不开视频）');
       await driver.activate();

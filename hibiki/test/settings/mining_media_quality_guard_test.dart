@@ -130,7 +130,7 @@ void main() {
   group('调用点源码守卫', () {
     test('视频 mining 据两档 resolve 并把档喂进引擎（TODO-1000 收口）', () {
       final String src = File(
-        'lib/src/pages/implementations/video_hibiki/lookup_mining.part.dart',
+        'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart',
       ).readAsStringSync();
       expect(
         src.contains('MiningMediaCompression.resolve') &&
@@ -243,7 +243,7 @@ void main() {
     test('每个制卡入口都显式透传动图格式偏好（漏传只会静默退回 GIF）', () {
       // 入口源码 -> (该入口该用的 AppModel 偏好 getter, 该入口持有 AppModel 的变量名)
       const Map<String, (String, String)> entries = <String, (String, String)>{
-        'lib/src/pages/implementations/video_hibiki/lookup_mining.part.dart': (
+        'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart': (
           'videoMiningAnimatedFormat',
           'appModel',
         ),

@@ -221,7 +221,7 @@ void main() {
       // 并吞掉按键」，其前提是「视频 scope 没有任何作用于浮层本身的快捷键」。而制卡恰恰
       // 只在浮层可见时才有意义——若把它放进被守卫的表里，按下去只会关掉浮层。
       final String dart =
-          File('lib/src/pages/implementations/video_hibiki_page.dart')
+          File('lib/src/pages/implementations/video_fushi_page.dart')
               .readAsStringSync();
       final int guardAt = dart.indexOf('guardVideoShortcutsWithPopupDismiss(');
       final int mineAt = dart.indexOf('ShortcutAction.popupMineEntry');

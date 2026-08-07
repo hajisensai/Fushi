@@ -38,7 +38,7 @@ import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
 import 'package:fushi/src/pages/implementations/collection_relations_section.dart';
 import 'package:fushi/src/pages/implementations/collection_split_dialog.dart';
 import 'package:fushi/src/pages/implementations/jimaku_batch_dialog.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/components/hibiki_reorderable_grid.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -685,7 +685,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               context,
               adaptivePageRoute<void>(
                 context: context,
-                builder: (_) => VideoHibikiPage.neutralized(
+                builder: (_) => VideoFushiPage.neutralized(
                   bookUid: episode.bookUid,
                   repo: repo,
                   playlistCollectionId: target.id,

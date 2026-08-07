@@ -1,5 +1,5 @@
 // TODO-1158：HLS 画质（多码率 variant）选择域方法，part-of 抽出、共享私有作用域。
-part of '../video_hibiki_page.dart';
+part of '../video_fushi_page.dart';
 
 /// HLS 画质选择域（TODO-1158）：当前视频若是 HLS **master** playlist（m3u8 直链，含
 /// 多档码率 variant），给播放器一个「画质」入口，列出各档（1080p/720p/… 按
@@ -13,7 +13,7 @@ part of '../video_hibiki_page.dart';
 /// 探测（[_detectHlsVariantsForLoad]）在常规载入后异步 fetch master 内容判定；仅网络
 /// `.m3u8`/`.m3u` 直链才 fetch（避开 YouTube/googlevideo 单次 token URL），best-effort：
 /// 失败/超时/非 master 都静默降级为「无画质菜单」，绝不影响播放。
-extension _VideoQuality on _VideoHibikiPageState {
+extension _VideoQuality on _VideoFushiPageState {
   /// 载入后探测当前流是否为 HLS master（多档画质），填充画质菜单状态。
   ///
   /// 先复位画质态（新片默认无菜单），再仅对网络 `.m3u8`/`.m3u` 直链 fetch 内容：是

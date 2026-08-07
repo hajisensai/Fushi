@@ -1,12 +1,12 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch5).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch5).
+part of '../video_fushi_page.dart';
 
 /// subtitle (字幕源菜单/选择/导入/远端字幕/overlay loading/字幕跳转列表侧栏) domain
 /// methods extracted via part-of (TODO-590 batch5); shared private scope.
 /// Behaviour-preserving: bodies are verbatim copies except `setState(` is forwarded
 /// through the main shell's `_rebuild(` helper (extensions cannot call the
 /// @protected `State.setState`), identical to batch1/batch2. No
-/// `_VideoHibikiPageState` `static` member is referenced by bare name in this
+/// `_VideoFushiPageState` `static` member is referenced by bare name in this
 /// domain (the only host-class static consts live in non-subtitle methods), so no
 /// full-qualification rewrite is needed (unlike batch3). All subtitle-related
 /// fields (`_subtitleMenuSources` / `_subtitleMenuLoading` / `_subtitleLoadingShown`
@@ -31,7 +31,7 @@ part of '../video_hibiki_page.dart';
 /// _currentSubtitleSource 留 null → 菜单无行 + 关闭高亮 → 选不到 YouTube 字幕）。
 const String _kYoutubeCaptionsSource = 'youtube:captions';
 
-extension _VideoSubtitle on _VideoHibikiPageState {
+extension _VideoSubtitle on _VideoFushiPageState {
   /// 翻转字幕跳转列表面板可见性（TODO-069/TODO-314；裸 L 键 / 控制条入口按钮）。
   ///
   /// asbplayer 式 transcript 面板：右侧出现当前视频的所有字幕句子，点某句 → seek 到该

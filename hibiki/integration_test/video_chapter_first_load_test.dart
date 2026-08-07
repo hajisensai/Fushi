@@ -2,7 +2,7 @@
 //
 // The test is hermetic: it generates a short MKV with Matroska chapters via
 // ffmpeg in the isolated test root, seeds it into the video repository, opens
-// VideoHibikiPage once, and asserts chapters + seek-bar markers are available
+// VideoFushiPage once, and asserts chapters + seek-bar markers are available
 // on that first load. No external video fixture is required.
 import 'dart:async';
 import 'dart:io';
@@ -19,7 +19,7 @@ import 'package:fushi/src/media/video/ffmpeg_backend.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_chapter_markers.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'test_helpers.dart';
@@ -97,10 +97,10 @@ title=Credits
   return video;
 }
 
-VideoHibikiTestHooks? _readHooks(WidgetTester tester) {
-  final Finder page = find.byType(VideoHibikiPage);
+VideoFushiTestHooks? _readHooks(WidgetTester tester) {
+  final Finder page = find.byType(VideoFushiPage);
   if (page.evaluate().isEmpty) return null;
-  return tester.state<State<VideoHibikiPage>>(page) as VideoHibikiTestHooks;
+  return tester.state<State<VideoFushiPage>>(page) as VideoFushiTestHooks;
 }
 
 void main() {
@@ -138,13 +138,13 @@ void main() {
       final NavigatorState navigator =
           tester.state<NavigatorState>(find.byType(Navigator).first);
       unawaited(navigator.push<void>(MaterialPageRoute<void>(
-        builder: (_) => VideoHibikiPage(bookUid: _kBookUid, repo: repo),
+        builder: (_) => VideoFushiPage(bookUid: _kBookUid, repo: repo),
       )));
 
       bool ready = false;
       for (int i = 0; i < 80; i++) {
         await tester.pump(const Duration(milliseconds: 250));
-        final VideoHibikiTestHooks? hooks = _readHooks(tester);
+        final VideoFushiTestHooks? hooks = _readHooks(tester);
         if (hooks?.debugPositionMs != null &&
             (hooks?.debugDurationMs ?? 0) > 0) {
           ready = true;
@@ -185,7 +185,7 @@ void main() {
       await navigator.maybePop();
       for (int i = 0; i < 20; i++) {
         await tester.pump(const Duration(milliseconds: 100));
-        if (find.byType(VideoHibikiPage).evaluate().isEmpty) break;
+        if (find.byType(VideoFushiPage).evaluate().isEmpty) break;
       }
 
       debugPrint(

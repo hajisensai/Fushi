@@ -13,9 +13,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 撤任一接线即转红。
 void main() {
   final File videoPage =
-      File('lib/src/pages/implementations/video_hibiki_page.dart');
+      File('lib/src/pages/implementations/video_fushi_page.dart');
   final File episodePart =
-      File('lib/src/pages/implementations/video_hibiki/episode.part.dart');
+      File('lib/src/pages/implementations/video_fushi/episode.part.dart');
   final File homeVideo =
       File('lib/src/pages/implementations/home_video_page.dart');
 

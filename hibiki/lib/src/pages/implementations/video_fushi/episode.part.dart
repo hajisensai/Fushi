@@ -1,11 +1,11 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch4).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch4).
+part of '../video_fushi_page.dart';
 
 /// episode (剧集底部横向轨道 + 自动连播倒计时) domain methods extracted via
 /// part-of (TODO-590 batch4); shared private scope. Behaviour-preserving: bodies
 /// are verbatim copies — this domain references no `setState(` (so no `_rebuild(`
 /// forwarding). UI 巡检 PR-4 后 [_buildAutoAdvanceOverlay] 引用了一个 host
-/// `static`（`_VideoHibikiPageState._videoBottomChromeBaseline`，倒计时卡几何
+/// `static`（`_VideoFushiPageState._videoBottomChromeBaseline`，倒计时卡几何
 /// 推导），按 batch3 惯例全限定。`kAutoPlayNextCountdownSeconds` is a
 /// top-level const in `video_episode_start_policy.dart` (already imported by the
 /// main shell), not a host-class static, so it stays a bare reference. The
@@ -14,7 +14,7 @@ part of '../video_hibiki_page.dart';
 /// the main shell; the build-subtree parent `_videoWithSubtitlePanel` (subtitle
 /// domain) keeps calling the extracted `_episodeOverlayPanel` through shared private
 /// scope.
-extension _VideoEpisode on _VideoHibikiPageState {
+extension _VideoEpisode on _VideoFushiPageState {
   void _handlePlaybackCompleted() {
     if (!mounted) return;
     // 有下一集才连播（单集 / 末集 / 越界不推进，停在本集结束）。
@@ -81,7 +81,7 @@ extension _VideoEpisode on _VideoHibikiPageState {
           intent: EpisodeStartIntent.autoAdvance,
         );
       } catch (e, stack) {
-        debugPrint('[VideoHibikiPage] auto-advance failed: $e\n$stack');
+        debugPrint('[VideoFushiPage] auto-advance failed: $e\n$stack');
       } finally {
         _autoAdvanceInFlight = false;
       }
@@ -148,7 +148,7 @@ extension _VideoEpisode on _VideoHibikiPageState {
     await navigator.pushReplacement<void, void>(
       adaptivePageRoute<void>(
         context: context,
-        builder: (_) => VideoHibikiPage.neutralized(
+        builder: (_) => VideoFushiPage.neutralized(
           bookUid: targetUid,
           repo: widget.repo,
           playlistCollectionId: widget.playlistCollectionId,
@@ -330,7 +330,7 @@ extension _VideoEpisode on _VideoHibikiPageState {
       seekBarButtonGap: _videoSeekBarButtonGap,
       seekBarContainerHeight: _videoSeekBarContainerHeight,
       seekBarTrackHeight: _videoSeekBarTrackHeight,
-      bottomChromeBaseline: _VideoHibikiPageState._videoBottomChromeBaseline,
+      bottomChromeBaseline: _VideoFushiPageState._videoBottomChromeBaseline,
       bottomSystemInset: _videoBottomSystemInset(),
       tickHeight: _videoSeekBarTrackHeight,
     );

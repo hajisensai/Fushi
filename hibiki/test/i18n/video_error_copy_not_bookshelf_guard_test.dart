@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// BUG-1123 文案守卫：视频加载失败文案不得把用户指向「书架」。
 ///
-/// `video_load_failed_not_found` 在 `video_hibiki_page.dart` 的 `_init()` 中
+/// `video_load_failed_not_found` 在 `video_fushi_page.dart` 的 `_init()` 中
 /// `repo.getByBookUid` 返回 null（视频条目不在媒体库）时展示。zh-CN 曾写成
 /// 「在书架中找不到该条目」——书架是书侧概念，视频侧统一叫「媒体库」
 /// （对齐 `section_video_library` = 媒体库）。

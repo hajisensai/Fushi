@@ -653,7 +653,7 @@ const PositionPrefKeys audiobookPositionPrefKeys =
     PositionPrefKeys('audiobook_pos_');
 
 /// 视频远端断点位置 prefs key（TODO-559/653）——单一真相源，host service 与
-/// video_hibiki_page `_remotePositionPrefKey` 共用同一公式。
+/// video_fushi_page `_remotePositionPrefKey` 共用同一公式。
 ///
 /// 在线远端视频在 client/host 本地都按稳定 bookUid（= `RemoteVideoInfo.id`）落
 /// Drift `preferences` 表。host 自己播放该视频时也用同一 key，故 host 上的这条 prefs
@@ -667,7 +667,7 @@ String videoRemotePositionAtPrefKey(String bookUid) =>
     videoRemotePositionPrefKeys.atKey(bookUid);
 
 /// 远端**播放列表按集**断点位置 prefs key（TODO-885）——单一真相源，host service 与
-/// video_hibiki_page 共用同一公式。
+/// video_fushi_page 共用同一公式。
 ///
 /// 设计：[episodeIndex] == 0 时回退到整书 [videoRemotePositionPrefKey]（与单视频 /
 /// 旧 TODO-559 prefs 完全同键，无迁移、向后兼容）；index>0 才用带 `#ep<index>` 后缀的
@@ -936,7 +936,7 @@ class RemoteVideoInfo {
   ///
   /// 视频远端是 host/client 模型——client 不存视频、只从 host 流式播放——故进度的
   /// 唯一真相源是 host，落 host 自己的 `video_remote_position_<bookUid>` prefs（与
-  /// host 本地播放该视频时同一键空间，见 video_hibiki_page `_remotePositionPrefKey`）。
+  /// host 本地播放该视频时同一键空间，见 video_fushi_page `_remotePositionPrefKey`）。
   /// 0 表示无记录（从头）。
   final int positionMs;
 

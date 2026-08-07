@@ -66,7 +66,7 @@ void main() {
   group('source guard: 播放器 chrome 不再直接用 cs.primary / cs.onSurface', () {
     test('controls_theme.part.dart 的控制条前景走 _videoChromeAccent', () {
       final String src = File(
-        'lib/src/pages/implementations/video_hibiki/controls_theme.part.dart',
+        'lib/src/pages/implementations/video_fushi/controls_theme.part.dart',
       ).readAsStringSync();
       expect(src, isNot(contains('seekBarPositionColor: cs.primary')),
           reason: '进度条前景必须走 chrome 固定亮色 helper');
@@ -78,10 +78,10 @@ void main() {
     test('浮层 alpha 收敛两档（无游离字面 alpha）', () {
       const Map<String, String> files = <String, String>{
         'controls_popover':
-            'lib/src/pages/implementations/video_hibiki/controls_popover.part.dart',
+            'lib/src/pages/implementations/video_fushi/controls_popover.part.dart',
         'side_panel': 'lib/src/media/video/video_side_panel.dart',
         'episode_panel': 'lib/src/media/video/video_episode_panel.dart',
-        'layout': 'lib/src/pages/implementations/video_hibiki/layout.part.dart',
+        'layout': 'lib/src/pages/implementations/video_fushi/layout.part.dart',
       };
       for (final MapEntry<String, String> entry in files.entries) {
         final String src = File(entry.value).readAsStringSync();

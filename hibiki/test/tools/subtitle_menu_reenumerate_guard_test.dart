@@ -21,14 +21,14 @@ import 'package:flutter_test/flutter_test.dart';
 /// memoized by video path (`_subtitleMenuSourcesPath`), and reduces
 /// `_showSubtitleSourceMenu` to purely opening the settings panel. A source-level
 /// guard is the strongest landing layer: the enumeration lives on private methods
-/// of the ~7300-line `_VideoHibikiPageState`, which cannot be stood up in a widget
+/// of the ~7300-line `_VideoFushiPageState`, which cannot be stood up in a widget
 /// test without a controller + ffprobe + DB.
 void main() {
   final String subtitleSrc =
-      File('lib/src/pages/implementations/video_hibiki/subtitle.part.dart')
+      File('lib/src/pages/implementations/video_fushi/subtitle.part.dart')
           .readAsStringSync();
   final String pageSrc =
-      File('lib/src/pages/implementations/video_hibiki_page.dart')
+      File('lib/src/pages/implementations/video_fushi_page.dart')
           .readAsStringSync();
 
   String methodBody(String source, String signatureNeedle) {

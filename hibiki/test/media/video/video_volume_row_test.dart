@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../helpers/source_guard.dart';
-import '../../pages/video_hibiki_page_source_corpus.dart';
+import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// 源码守卫（TODO-438）：视频底栏音量控件是「图标锚点 + 上方紧凑浮层」，且布局尺寸
 /// 与 hover / tap 状态无关（零位移）。media_kit 控制条 headless 渲染不全，无法用纯 widget
@@ -17,7 +17,7 @@ import '../../pages/video_hibiki_page_source_corpus.dart';
 void main() {
   String read(String relPath) => File(relPath).readAsStringSync();
 
-  final String page = readVideoHibikiSource();
+  final String page = readVideoFushiSource();
   final String volumeOverlays =
       read('lib/src/media/video/video_volume_overlays.dart');
 

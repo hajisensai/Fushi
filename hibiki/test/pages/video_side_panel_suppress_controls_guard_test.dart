@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：视频**真 overlay 侧栏**（设置 / 音轨 / 倍速 / 收藏句 / 字幕源，经
 /// `_videoSidePanel`）打开时，背景的 media_kit 控制条与右侧操作 rail 不再冒出来盖在面板
@@ -21,7 +21,7 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   late String src;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   /// 截取从 [signature] 起到下一个顶层方法 / 闭合为止的方法体（粗粒度，足够锚定门控）。

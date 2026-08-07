@@ -4,7 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// BUG-425：视频页合成 hover 在 `MouseTracker` 遍历期重入致
 /// `Concurrent modification during iteration: _Map len:2` 崩溃。
@@ -62,7 +62,7 @@ void main() {
   group('源码守卫：_pokeControlsVisible 延迟派发', () {
     late String src;
     setUpAll(() {
-      src = readVideoHibikiSource();
+      src = readVideoFushiSource();
     });
 
     test('_pokeControlsVisible 不再同步派发，改 scheduleMicrotask 延迟', () {

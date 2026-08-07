@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：沉浸/锁屏 + 控制条淡出时 OS 光标在所有 chrome 上统一隐藏（TODO-318 / BUG-258）。
 ///
@@ -15,7 +15,7 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   late String src;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   test('存在 OS 光标隐藏单一真相源 _cursorHidden（ValueNotifier）', () {

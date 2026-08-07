@@ -21,7 +21,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/media/video/video_book_repository.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -69,7 +69,7 @@ void main() {
       final NavigatorState navigator =
           tester.state<NavigatorState>(find.byType(Navigator).first);
       unawaited(navigator.push<void>(MaterialPageRoute<void>(
-        builder: (_) => VideoHibikiPage(bookUid: _kVideoBookUid, repo: repo),
+        builder: (_) => VideoFushiPage(bookUid: _kVideoBookUid, repo: repo),
       )));
 
       // Allow load() to instantiate the native player; the play bar appears

@@ -1,6 +1,6 @@
 /// 应用内短时通知的**语义**与配色，供两套互不相干的通知系统共用：
 /// 底部 [FushiToast]（`hibiki_toast.dart`）与视频页左上角 OSD
-/// （`video_hibiki/volume_osd.part.dart`）。
+/// （`video_fushi/volume_osd.part.dart`）。
 ///
 /// 独立成文件而不是塞进 `hibiki_toast.dart`：视频页有一条守卫测试禁止它出现
 /// `FushiToast.show`（BUG-931，两套通知必须各归各位），若语义枚举住在 toast 文件

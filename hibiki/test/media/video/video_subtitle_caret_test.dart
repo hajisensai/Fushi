@@ -9,7 +9,7 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
-import '../../pages/video_hibiki_page_source_corpus.dart';
+import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// videoEnterCaret：视频页手柄/键盘字级选词查词（用户诉求「视频支持手柄查词」——
 /// 此前唯一非鼠标查词入口是 Shift+指针位置，纯手柄下完全无法查词）。
@@ -280,7 +280,7 @@ void main() {
   /// 可落地的 widget 层，故守在源码接线层；断言全部落在**切出来的方法体**内，
   /// 不做全文件模糊 contains）。
   group('⑥ 光标会话收尾 / 扳机放行 源码接线守卫', () {
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
 
     test('_exitSubtitleCaret 与「surface 被悄悄清空」共用同一个收尾出口', () {
       final String exit = _sliceSource(

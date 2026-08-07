@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_seek_indicator_label.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// TODO-916 症状①：视频横滑改进度（横拖 seek + 居中绝对时间 HUD）。
 ///
@@ -88,8 +88,8 @@ void main() {
     late String shellSrc;
 
     setUpAll(() {
-      corpus = readVideoHibikiSource();
-      shellSrc = File('lib/src/pages/implementations/video_hibiki_page.dart')
+      corpus = readVideoFushiSource();
+      shellSrc = File('lib/src/pages/implementations/video_fushi_page.dart')
           .readAsStringSync()
           .replaceAll('\r\n', '\n');
     });
@@ -130,7 +130,7 @@ void main() {
       expect(
         body.contains('horizontalGestureSensitivity:') &&
             body.contains(
-              '_VideoHibikiPageState._videoHorizontalGestureSensitivity',
+              '_VideoFushiPageState._videoHorizontalGestureSensitivity',
             ),
         isTrue,
         reason: '移动控制条必须把横滑灵敏度常量传给 media_kit',

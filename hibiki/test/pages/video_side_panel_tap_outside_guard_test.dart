@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：视频侧栏面板的关闭模型（BUG-254 / TODO-303 / TODO-637）。
 ///
@@ -17,7 +17,7 @@ import 'video_hibiki_page_source_corpus.dart';
 /// X；字幕列表有 X）。
 void main() {
   final File page = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
+    'lib/src/pages/implementations/video_fushi_page.dart',
   );
   final File sidePanel = File('lib/src/media/video/video_side_panel.dart');
   final File jumpPanel =
@@ -26,9 +26,9 @@ void main() {
   test('① _buildVideoSidePanelOverlay 含点外关闭的全屏 barrier', () {
     expect(page.existsSync(), isTrue);
     // TODO-590 batch10：_buildVideoSidePanelOverlay / _buildVideoSidePanelContent 已抽到
-    // video_hibiki/side_panel.part.dart，改读合并语料才能命中（两者在 part 内仍紧邻保序，
+    // video_fushi/side_panel.part.dart，改读合并语料才能命中（两者在 part 内仍紧邻保序，
     // overlay→content 切片不变）。
-    final String src = readVideoHibikiSource();
+    final String src = readVideoFushiSource();
     final int start = src.indexOf('Widget _buildVideoSidePanelOverlay(');
     expect(start, greaterThanOrEqualTo(0),
         reason: '需有 _buildVideoSidePanelOverlay');

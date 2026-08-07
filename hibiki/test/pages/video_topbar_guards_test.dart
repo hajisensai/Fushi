@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// video_topbar 组合并守卫（守卫审计合并产物；断言零丢弃）：
 /// - 单顶栏：原 video_single_top_bar_guard_test.dart 并入；
@@ -34,7 +34,7 @@ void main() {
     // （主壳在前 + 全部 part 追加，端点保序）；顶栏 slot/title 的调用现落在 part 末段。
     late String src;
     setUpAll(() {
-      src = readVideoHibikiSource();
+      src = readVideoFushiSource();
     });
 
     test('Scaffold 不再配 AppBar（删掉外层顶栏）', () {
@@ -167,7 +167,7 @@ void main() {
       // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，读「合并语料」
       // （主壳 + 全部 part）；下方针对主题体 / _topBarSlotGroup→_clipExportTooltip 的切片相对
       // 顺序在合并语料里仍保持（主题对在 part、helper 与 tooltip 同在主壳）。
-      final String page = readVideoHibikiSource();
+      final String page = readVideoFushiSource();
       // 顶部两槽经 _topBarSlotGroup 注入 topButtonBar（不再是浮动竖条）。
       expect(
         page.contains('Widget _topBarSlotGroup('),
@@ -199,7 +199,7 @@ void main() {
     });
 
     test('顶栏右侧按钮来自 topRight slot 的同一横排，不再硬编码第二套', () {
-      final String page = readVideoHibikiSource();
+      final String page = readVideoFushiSource();
       final int desktopStart = page.indexOf(
           'MaterialDesktopVideoControlsThemeData _desktopControlsTheme');
       final int desktopEnd =
@@ -232,7 +232,7 @@ void main() {
     });
 
     test('topRight 作为整体右侧按钮组对齐，不让按钮逐个参与顶栏 flex 分配', () {
-      final String page = readVideoHibikiSource();
+      final String page = readVideoFushiSource();
       final int desktopStart = page.indexOf(
           'MaterialDesktopVideoControlsThemeData _desktopControlsTheme');
       final int desktopEnd =

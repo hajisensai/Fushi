@@ -5,7 +5,7 @@
 // 记录的「seek 落不了地」是同一根因的两种表现（那次只补了守护宽限，没修 seek 本身）。
 //
 // 本测试跑真实 libmpv：造一段 90s 视频 → seed `lastPositionMs=45000` 的 VideoBook →
-// 打开 [VideoHibikiPage] → 密集采样 8s 位置序列 → 断言
+// 打开 [VideoFushiPage] → 密集采样 8s 位置序列 → 断言
 //   ① 恢复 seek 至少落地过一次（出现过 >=40s 的位置）；
 //   ② 落地之后位置**不得**回落到开头（<5s）。
 // ② 正是用户症状：seek 落地后被 media_kit `open()` 尾部的 `playlist-pos` 重载踢回 0。
@@ -33,7 +33,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'helpers/media_fixtures.dart';
@@ -112,13 +112,13 @@ void main() {
         final NavigatorState navigator =
             tester.state<NavigatorState>(find.byType(Navigator).first);
         unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => VideoHibikiPage(bookUid: bookUid, repo: repo),
+          builder: (_) => VideoFushiPage(bookUid: bookUid, repo: repo),
         )));
 
-        VideoHibikiTestHooks? readHooks() {
-          if (find.byType(VideoHibikiPage).evaluate().isEmpty) return null;
-          return tester.state<State<VideoHibikiPage>>(
-              find.byType(VideoHibikiPage)) as VideoHibikiTestHooks;
+        VideoFushiTestHooks? readHooks() {
+          if (find.byType(VideoFushiPage).evaluate().isEmpty) return null;
+          return tester.state<State<VideoFushiPage>>(
+              find.byType(VideoFushiPage)) as VideoFushiTestHooks;
         }
 
         bool ready = false;
@@ -157,7 +157,7 @@ void main() {
         await navigator.maybePop();
         for (int i = 0; i < 20; i++) {
           await tester.pump(const Duration(milliseconds: 100));
-          if (find.byType(VideoHibikiPage).evaluate().isEmpty) break;
+          if (find.byType(VideoFushiPage).evaluate().isEmpty) break;
         }
         debugPrint('[resume-seek] non-fatal framework errors=${caught.length}');
       } finally {

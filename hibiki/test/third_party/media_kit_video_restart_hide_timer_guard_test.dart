@@ -118,11 +118,11 @@ void main() {
     setUpAll(() {
       String read(String p) =>
           File(p).readAsStringSync().replaceAll('\r\n', '\n');
-      shellSrc = read('lib/src/pages/implementations/video_hibiki_page.dart');
+      shellSrc = read('lib/src/pages/implementations/video_fushi_page.dart');
       visibilitySrc = read(
-          'lib/src/pages/implementations/video_hibiki/controls_visibility.part.dart');
+          'lib/src/pages/implementations/video_fushi/controls_visibility.part.dart');
       themeSrc = read(
-          'lib/src/pages/implementations/video_hibiki/controls_theme.part.dart');
+          'lib/src/pages/implementations/video_fushi/controls_theme.part.dart');
     });
 
     test('_RestartHideTimerSignal define + field dispose', () {

@@ -23,7 +23,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 /// _wrapVideoGamepadControls（见 fullscreen.part.dart，接线由
 /// video_fullscreen_gamepad_wiring_static_test.dart 源码守卫锁定）。
 ///
-/// 真实 VideoHibikiPage 无法 headless 加载（media_kit 测试宿主无 libmpv），本文件
+/// 真实 VideoFushiPage 无法 headless 加载（media_kit 测试宿主无 libmpv），本文件
 /// 沿 video_fullscreen_focus_gate_test.dart 的既定范式，在与页面逐行同构的 harness 上
 /// 验证机制本身——所有关键件都用真实实现：真实 [FushiShortcutRegistry]（Windows
 /// 默认表）、真实 [videoActionCallbacks] / [VideoPlayerShortcutActions]、真实

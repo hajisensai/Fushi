@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 删除序列。纯字符串静态守卫，不跑 libmpv。
 void main() {
   const String pagePath =
-      'lib/src/pages/implementations/video_hibiki_page.dart';
+      'lib/src/pages/implementations/video_fushi_page.dart';
   late String source;
 
   setUpAll(() {

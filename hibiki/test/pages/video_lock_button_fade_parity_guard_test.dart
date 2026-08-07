@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 String _section(String src, String startToken, String endToken) {
   final int start = src.indexOf(startToken);
@@ -26,7 +26,7 @@ String _section(String src, String startToken, String endToken) {
 void main() {
   late String src;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   test('存在派生 getter _videoControlsTransitionDuration（桌面 150ms / 移动 300ms）', () {

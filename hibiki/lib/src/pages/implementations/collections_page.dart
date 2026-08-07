@@ -16,7 +16,7 @@ import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 
@@ -43,7 +43,7 @@ enum _CollectionType { sentence, mined, word }
 
 /// 从一条**视频来源**收藏句解析出「该截哪个文件的哪段音频」。纯函数（无 IO），可单测。
 ///
-/// 视频收藏句保存时（[VideoHibikiPage] `_toggleFavoriteSentenceForVideo` /
+/// 视频收藏句保存时（[VideoFushiPage] `_toggleFavoriteSentenceForVideo` /
 /// `_toggleFavoriteCueForVideo`）把 cue 时间窗直接编进收藏字段：
 /// - [favoriteSectionIndex] = 集索引（`_currentEpisode`，单视频恒 0）；
 /// - [favoriteStartMs] = cue 起点毫秒（存进 `normCharOffset`，**非字符偏移**）；
@@ -154,7 +154,7 @@ class _CollectionItem {
 
   /// 收藏句子来源（[kFavoriteSentenceSourceBook]/`Video`/`Audiobook`/`Lyrics`）。书签恒
   /// 默认书籍；句子按 [FavoriteSentence.source] 透传。视频来源句子的 [bookKey] 是视频
-  /// bookUid，点击时走 [VideoHibikiPage] 并按 [normCharOffset] 的 startMs seek。
+  /// bookUid，点击时走 [VideoFushiPage] 并按 [normCharOffset] 的 startMs seek。
   final String source;
 
   /// [source] 的枚举视图（BUG-1120）：UI 分支按四值穷尽 switch，未知/旧值回退
@@ -501,7 +501,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       favoriteStartMs: startMs,
     );
     // BUG-1067：本集若属于某 playlist 合集，必须带上主合集 id 进播放器——否则
-    // 视频初始化时系列级音轨/字幕调轴记忆分支（video_hibiki_page 1884-1894，
+    // 视频初始化时系列级音轨/字幕调轴记忆分支（video_fushi_page 1884-1894，
     // schema v52）被整段跳过，退回读本集 per-book 默认值（音轨 null / 调轴 0），
     // 表现为「从收藏跳转后音轨与调好的字幕轴又被重置」。解析口径与书架/首页
     // dashboard 续播一致（getPrimaryCollectionIdByEntry，key='video|<bookUid>'）。
@@ -512,7 +512,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       context,
       adaptivePageRoute<void>(
         context: context,
-        builder: (_) => VideoHibikiPage.neutralized(
+        builder: (_) => VideoFushiPage.neutralized(
           bookUid: row.bookUid,
           repo: repo,
           playlistCollectionId: playlistCollectionId,

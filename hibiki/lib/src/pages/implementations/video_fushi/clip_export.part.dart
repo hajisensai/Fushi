@@ -1,12 +1,12 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch2).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch2).
+part of '../video_fushi_page.dart';
 
 /// clip-export (ffmpeg trim) + screenshot domain methods extracted via
 /// part-of (TODO-590 batch2); shared private scope. Behaviour-preserving:
 /// bodies are verbatim except `setState(` forwarded through the main shell
 /// `_rebuild(` helper (extensions cannot call the @protected State.setState
 /// directly).
-extension _VideoClipExport on _VideoHibikiPageState {
+extension _VideoClipExport on _VideoFushiPageState {
   Future<void> _toggleClipExport() async {
     if (_clipExporting) {
       _showOsd(t.video_clip_exporting, severity: ToastSeverity.info);
@@ -341,7 +341,7 @@ extension _VideoClipExport on _VideoHibikiPageState {
         );
       }
     } catch (e, stack) {
-      debugPrint('[VideoHibikiPage] screenshot save failed: $e\n$stack');
+      debugPrint('[VideoFushiPage] screenshot save failed: $e\n$stack');
       _showScreenshotFailure(e);
     } finally {
       // 桌面端清理临时文件；移动端分享需保留供系统面板异步读取。

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：确保视频页修复「导入着色器后空格失灵」的接线不被回退。
 ///
@@ -17,7 +17,7 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   late String src;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   test('State 持有专用 FocusNode 并在 dispose 释放', () {

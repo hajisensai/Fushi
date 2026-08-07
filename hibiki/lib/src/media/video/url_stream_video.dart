@@ -211,7 +211,7 @@ StreamImportCoverStrategy streamImportCoverStrategy(String url) =>
 
 /// 单 URL 流的 [RemoteVideoClient]（TODO-850 阶段①）：把「用户粘贴的一条流 URL +
 /// 可选外挂字幕 URL + 可选防盗链 header」喂进既有远端播放链
-/// （`VideoHibikiPage._initRemote → _loadRemoteEpisode`），**播放内核零改**。
+/// （`VideoFushiPage._initRemote → _loadRemoteEpisode`），**播放内核零改**。
 ///
 /// 单 URL 流不是远端 host/client 模型：
 /// - 不走列举（[listRemoteVideos] 返回空），手动粘贴即播；

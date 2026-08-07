@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_popover_placement.dart';
 import 'package:fushi/src/media/video/video_volume_overlays.dart';
-import '../../pages/video_hibiki_page_source_corpus.dart';
+import '../../pages/video_fushi_page_source_corpus.dart';
 
 void main() {
   group('volume popover placement', () {
@@ -68,7 +68,7 @@ void main() {
     });
 
     test('video page render path uses measured target geometry helper', () {
-      final String page = readVideoHibikiSource();
+      final String page = readVideoFushiSource();
 
       expect(page, contains('resolveVideoControlPopoverPlacement('));
       expect(page, contains('_activeControlPopoverTargetRect('));
@@ -201,7 +201,7 @@ void main() {
     test(
         'speed popover render path is slot-adaptive: threads sourceSlot and '
         'uses gapDirection', () {
-      final String page = readVideoHibikiSource();
+      final String page = readVideoFushiSource();
 
       // The placement helper must derive direction from the slot for BOTH kinds
       // (no hardcoded "speed always pops up" branch).

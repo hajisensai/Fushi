@@ -1595,7 +1595,7 @@ JSON.stringify((function(){
             // BUG-293: the mine/update bridge handlers MUST always return a
             // MinePopupResult JSON and never let an exception escape into the
             // native inappwebview JS-handler bridge. An override
-            // (e.g. VideoHibikiPage._mineVideoCard) or writeDictionaryMediaCache
+            // (e.g. VideoFushiPage._mineVideoCard) or writeDictionaryMediaCache
             // can throw during the re-mine media-capture path (ffmpeg / window
             // screenshot / WebView2 frame); an unhandled exception crossing the
             // Dart->native JS-handler boundary takes the whole process down

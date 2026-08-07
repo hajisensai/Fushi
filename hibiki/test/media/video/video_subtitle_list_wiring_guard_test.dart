@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../../pages/video_hibiki_page_source_corpus.dart';
+import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// Source guard for the video subtitle-list panel wiring (TODO-278 / TODO-301 /
 /// TODO-309, BUG-266 / BUG-267 / BUG-268). The page-level wiring lives in the
-/// 5500-line [VideoHibikiPage] which cannot be driven under headless libmpv, so
+/// 5500-line [VideoFushiPage] which cannot be driven under headless libmpv, so
 /// these invariants are guarded by source scan (the widget behaviour itself is
 /// covered by video_subtitle_jump_panel_test.dart / video_subtitle_overlay_test.dart):
 ///
@@ -15,7 +15,7 @@ import '../../pages/video_hibiki_page_source_corpus.dart';
 /// 3. The favorite cache refresh is wired right after the warm-popup seed on the
 ///    successful open path.
 void main() {
-  final String src = readVideoHibikiSource();
+  final String src = readVideoFushiSource();
 
   group('TODO-278/BUG-266 list-row word lookup wiring', () {
     test('VideoSubtitleJumpPanel is given onLookupCue', () {

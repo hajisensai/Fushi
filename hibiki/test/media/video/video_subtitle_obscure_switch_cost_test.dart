@@ -144,7 +144,7 @@ void main() {
 
     test('视频页：先 setState 再 await 落盘（两个遮蔽入口都是）', () {
       final String src =
-          readSrc('lib/src/pages/implementations/video_hibiki_page.dart');
+          readSrc('lib/src/pages/implementations/video_fushi_page.dart');
       for (final String setter in <String>[
         'appModel.setVideoSubtitleObscureMode(mode)',
         'appModel.setVideoSecondarySubtitleObscureMode(mode)',

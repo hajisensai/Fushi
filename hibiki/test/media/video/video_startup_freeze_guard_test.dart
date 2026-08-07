@@ -8,14 +8,14 @@ import 'package:flutter_test/flutter_test.dart';
 /// Flutter 引擎 raster/present 管线楔死（Dart isolate 其实活着）。引擎级根治在
 /// Windows native，非 app Dart；本层做的是「减少制造 churn 的机会」+「退出干净收尾」。
 ///
-/// 无法纯 widget 测（VideoHibikiPage ~5800 行 + 需真 libmpv/GPU），故与既有
+/// 无法纯 widget 测（VideoFushiPage ~5800 行 + 需真 libmpv/GPU），故与既有
 /// `video_lifecycle_static_test.dart` 一致，在源码层钉死结构不变式，防回归删除。
 void main() {
   String read(String rel) => File(rel).readAsStringSync();
 
   group('BUG-772 首开在途 controller 主动取消 (Task 1)', () {
     final String src =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+        read('lib/src/pages/implementations/video_fushi_page.dart');
 
     test('声明 _pendingController 字段', () {
       expect(src.contains('VideoPlayerController? _pendingController'), isTrue,

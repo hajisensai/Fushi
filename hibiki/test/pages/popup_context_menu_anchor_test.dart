@@ -56,7 +56,7 @@ class _HostPageState extends State<_HostPage> {
   @override
   void initState() {
     super.initState();
-    // 镜像 video_hibiki_page._ensurePopupOverlay：插到**根** Overlay，跨路由生存。
+    // 镜像 video_fushi_page._ensurePopupOverlay：插到**根** Overlay，跨路由生存。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _entry != null) return;
       final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
@@ -67,7 +67,7 @@ class _HostPageState extends State<_HostPage> {
     });
   }
 
-  // 镜像 video_hibiki_page._buildPopupOverlay：整棵浮层子树中和回真实视口。
+  // 镜像 video_fushi_page._buildPopupOverlay：整棵浮层子树中和回真实视口。
   Widget _buildPopupOverlay(BuildContext overlayContext) {
     return FushiAppUiScaleNeutralizer(
       child: LayoutBuilder(

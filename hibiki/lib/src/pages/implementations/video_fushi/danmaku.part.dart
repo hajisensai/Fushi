@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch1).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch1).
+part of '../video_fushi_page.dart';
 
 /// danmaku (local sidecar + Dandanplay online) domain methods extracted via
 /// part-of (TODO-590 batch1); shared private scope. Behaviour-preserving:
@@ -9,7 +9,7 @@ part of '../video_hibiki_page.dart';
 ///
 /// TODO-1376 增强：手动搜索/选集匹配、样式即改即生效、屏蔽词/正则过滤。原始弹幕全集
 /// 落 [_danmakuItems]，屏蔽过滤后的可见集落 [_danmakuVisibleItems]（overlay 消费）。
-extension _VideoDanmaku on _VideoHibikiPageState {
+extension _VideoDanmaku on _VideoFushiPageState {
   /// 设置弹幕原始全集并同步屏蔽过滤后的可见集（数据拥有者唯一入口，消除两份不同步）。
   void _applyDanmakuItems(List<VideoDanmakuItem> items) {
     _danmakuItems = items;

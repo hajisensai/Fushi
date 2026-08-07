@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../../pages/video_hibiki_page_source_corpus.dart';
+import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：视频播放器 chrome 必须吃主题色——无法用纯单测覆盖（控制条由 media_kit
 /// 在真实 libmpv player 上渲染），故在源码层钉死：
@@ -13,7 +13,7 @@ import '../../pages/video_hibiki_page_source_corpus.dart';
 void main() {
   // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，读「合并语料」
   // （主壳 + 全部 part）才能数到两处 buttonBarButtonColor: _videoChromeAccent(cs)。
-  final String page = readVideoHibikiSource();
+  final String page = readVideoFushiSource();
 
   group('视频控制条按钮吃 chrome 固定亮色强调色', () {
     test('两套控制条主题都用 _videoChromeAccent(cs) 作为 buttonBarButtonColor', () {

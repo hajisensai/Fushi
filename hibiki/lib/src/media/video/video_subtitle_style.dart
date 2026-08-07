@@ -84,7 +84,7 @@ const double kVideoControlsTopReserve = _kButtonBarHeight;
 /// 预览却照常出现，因为 hover 走 non-opaque MouseRegion 不被吸收，「看得见能点、点下去
 /// 却是查词」）。故桌面分支与移动分支同一口径：让出**热区上缘** + 呼吸间距。
 ///
-/// 几何项均来自 `video_hibiki_page.dart` 的同名控制条 getter（已 ×uiScale）；本函数不再
+/// 几何项均来自 `video_fushi_page.dart` 的同名控制条 getter（已 ×uiScale）；本函数不再
 /// 二次乘 uiScale，由调用方传入已缩放值，避免双重缩放。[bottomChromeBaseline] 是不随
 /// 缩放的离底基线常量（与页面 `_videoBottomChromeBaseline` 一致），故在此显式加上而非
 /// 乘缩放。[seekBarContainerHeight] / [seekBarBottomButtonBarOverlap] 必须传**当前平台

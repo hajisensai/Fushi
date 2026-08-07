@@ -16,9 +16,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 的回归（按钮被误删、handler 接错）源码扫描即可咬死。
 void main() {
   final File page =
-      File('lib/src/pages/implementations/video_hibiki_page.dart');
+      File('lib/src/pages/implementations/video_fushi_page.dart');
   final File part = File(
-    'lib/src/pages/implementations/video_hibiki/lookup_favorite.part.dart',
+    'lib/src/pages/implementations/video_fushi/lookup_favorite.part.dart',
   );
 
   late String pageSrc;

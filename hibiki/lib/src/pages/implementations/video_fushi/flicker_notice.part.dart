@@ -1,5 +1,5 @@
 // GENERATED-NOTE: TODO-1119 Windows 黑闪运行时提示条（detect + prominent banner）。
-part of '../video_hibiki_page.dart';
+part of '../video_fushi_page.dart';
 
 /// TODO-1119 / BUG-545：Windows「高显卡占用黑屏闪烁」运行时提示条的方法域（part-of，
 /// 共享私有作用域）。字段（[_blackFlickerNoticeNotifier] / [_blackFlickerNoticeShown]）
@@ -9,7 +9,7 @@ part of '../video_hibiki_page.dart';
 /// 提示条与纯展示的 OSD（[_buildOsdOverlay]，套 [IgnorePointer]）区分：它带可点按钮，
 /// 故**不**套 [IgnorePointer]；非显示态渲染零尺寸不拦手势。窗口 / 全屏复用（挂在同一
 /// controls Stack，与 OSD 同源，BUG-120）。判据在 [VideoBlackFlickerDetector]（控制器侧）。
-extension _VideoFlickerNotice on _VideoHibikiPageState {
+extension _VideoFlickerNotice on _VideoFushiPageState {
   /// 控制器判定「疑似黑闪」时回调（仅 Windows 挂）。会话内只弹一次（[_blackFlickerNoticeShown]
   /// 门控），用户已选「不再提示」（偏好）则永不弹。满足条件则把提示条 notifier 置 true。
   void _handleSuspectedBlackFlicker() {

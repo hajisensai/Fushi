@@ -13,7 +13,7 @@ import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
@@ -174,7 +174,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(t.remote_video_info), findsOneWidget);
-    expect(find.byType(VideoHibikiPage), findsNothing,
+    expect(find.byType(VideoFushiPage), findsNothing,
         reason: 'long-press must open the dialog, not the remote player');
   });
 

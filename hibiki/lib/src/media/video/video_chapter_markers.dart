@@ -48,7 +48,7 @@ List<double> chapterMarkerFractions({
 
 /// seek bar 章节刻度层（TODO-432）：在自己的盒子里把每个章节起点画成一条竖线。
 ///
-/// 本 widget 不负责定位——父级（[VideoHibikiPage] 的 controls Stack）用一个 [Positioned]
+/// 本 widget 不负责定位——父级（[VideoFushiPage] 的 controls Stack）用一个 [Positioned]
 /// 把它放到与 seek bar 轨道重合的水平段与竖直带上（左右各内缩 16px 对齐 `seekBarMargin`）。
 /// 本 widget 只把传入的 `[0,1)` 比例（[chapterMarkerFractions]）映射到自身宽度画竖线。
 ///

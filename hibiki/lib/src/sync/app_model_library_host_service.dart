@@ -1027,7 +1027,7 @@ class AppModelLibraryHostService
         // 重跑），大库（如 511 个视频）轻易超过 client 的 15s listTimeout → 远端视频
         // 判空 → 手机整页空。内嵌轨是**播放时**才需要的信息，已由 `/streamurl` 端点
         // (`fushi_sync_server.dart` `_embeddedSubtitleTracksForRequest`) 在拉流时按需
-        // 探测并下发（client 唯一消费者 video_hibiki_page 读的是 streamurl 响应，列表
+        // 探测并下发（client 唯一消费者 video_fushi_page 读的是 streamurl 响应，列表
         // 的 embeddedSubtitleTracks 零消费）。故此处保持 embeddedSubtitleTracks 为空、
         // hasSubtitle 只反映廉价的外挂 sidecar——列表变纯 DB/stat 读，与 listBooks 对称、
         // 毫秒返回。
@@ -1204,7 +1204,7 @@ class AppModelLibraryHostService
   /// 读 host 端 [id] 视频的播放断点（TODO-653 / TODO-816 断点②）。
   ///
   /// 真相源是 `video_remote_position_<bookUid>` + `video_remote_position_at_<bookUid>`
-  /// prefs（host 本机播放与远端 resume 路径统一写此键空间，见 video_hibiki_page
+  /// prefs（host 本机播放与远端 resume 路径统一写此键空间，见 video_fushi_page
   /// `_persistPosition` / `_persistRemotePosition`）。
   ///
   /// 向后兼容：TODO-816 之前 host 本机播放只写 `VideoBooks.lastPositionMs`、不写 prefs，

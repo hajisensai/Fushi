@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import '../../pages/video_hibiki_page_source_corpus.dart';
+import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// TODO-274 / TODO-312 phase 2: the control bar renderer + persistence are fully
 /// on the 9-slot [VideoControlLayout]. This guard pins that the page renders from
@@ -21,14 +21,14 @@ void main() {
   group('page wires the slot renderer (data-driven, not legacy buttonsFor)',
       () {
     final File page = File(
-      'lib/src/pages/implementations/video_hibiki_page.dart',
+      'lib/src/pages/implementations/video_fushi_page.dart',
     );
     late String src;
     setUpAll(() {
       expect(page.existsSync(), isTrue);
       // TODO-590 batch11：_topBarSlotGroup(VideoControlSlot.topLeft/topRight 的调用随两套
       // controls 主题搬到 controls_theme.part.dart，读「合并语料」（主壳 + 全部 part）才能命中。
-      src = readVideoHibikiSource();
+      src = readVideoFushiSource();
     });
 
     test('control bar reads the persisted VideoControlLayout (phase 2)', () {

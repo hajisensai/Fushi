@@ -14,7 +14,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 的信号接线：`miningVideoHasAudio` 沿 UrlStreamVideoClient → RemoteVideoStreamUrls 不再
 /// 被丢，且应用内选择公式与批量守卫**逐字一致**。
 
-/// 与 youtube_clip_miner.dart:67 / video_hibiki_page.dart 的制卡音频源选择**同一公式**：
+/// 与 youtube_clip_miner.dart:67 / video_fushi_page.dart 的制卡音频源选择**同一公式**：
 /// muxed 挖矿流自带音轨 → null（引擎回落 miningSource 抽音频）；纯分离流 → audio-only URL。
 String? _miningAudioSourceFor(RemoteVideoStreamUrls urls) =>
     urls.miningVideoHasAudio ? null : urls.audioStreamUrl;
@@ -123,10 +123,10 @@ void main() {
     });
   });
 
-  group('video_hibiki_page 制卡音频源接线守卫 (TODO-1301 回归)', () {
+  group('video_fushi_page 制卡音频源接线守卫 (TODO-1301 回归)', () {
     late String src;
     setUpAll(() {
-      src = File('lib/src/pages/implementations/video_hibiki_page.dart')
+      src = File('lib/src/pages/implementations/video_fushi_page.dart')
           .readAsStringSync();
     });
 

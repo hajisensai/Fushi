@@ -6,7 +6,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// video_shader 组合并守卫（守卫审计合并产物）：
 /// - 着色器对比原画：原 video_shader_compare_guard_test.dart 并入，断言逐字搬运；
@@ -64,7 +64,7 @@ void main() {
     // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，读「合并语料」
     // （主壳 + 全部 part）才能命中它们；整页级断言命中的 _toggleShaderCompare / 右键菜单 /
     // 快捷键接线仍在主壳，合并语料仍覆盖。
-    final String pageSrc = readVideoHibikiSource();
+    final String pageSrc = readVideoFushiSource();
     final String shortcutsSrc =
         File('lib/src/media/video/video_player_shortcuts.dart')
             .readAsStringSync();

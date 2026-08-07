@@ -425,7 +425,7 @@ void main() {
       await tester.tap(find.text('My Episode'));
       // 不能 pumpAndSettle：移动端 _open 不弹模态提示（desktop 用例靠 modal 暂停
       // _open 才停在对话框），android 路径会继续 Navigator.push 真正的视频播放页
-      // （VideoHibikiPage，media_kit 播放器在无头测试里永不 settle）。本用例只验
+      // （VideoFushiPage，media_kit 播放器在无头测试里永不 settle）。本用例只验
       // 「无提示 + 无副作用」，把同步的 _showAnime4kFirstUsePromptIfNeeded（android
       // 立即 early-return，无 async 对话框）跑完即可，用有界 pump 取代 pumpAndSettle。
       await tester.pump();

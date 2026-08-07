@@ -5,27 +5,27 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/part_corpus.dart';
 import '../helpers/source_guard.dart';
 
-/// TODO-590: `video_hibiki_page.dart` 正被分批拆成主壳 + `video_hibiki/*.part.dart`
+/// TODO-590: `video_fushi_page.dart` 正被分批拆成主壳 + `video_fushi/*.part.dart`
 /// 一组 part 文件（零行为重构，照搬 TODO-589 reader_fushi 范式）。原来逐文件硬编码
 /// 读单文件的静态守卫，凡断言落在已搬出主壳的方法体里，必须改读这份「合并语料」：
 /// 主壳 + 全部 part 文件按固定顺序拼接（主壳在前，保 build 域内 widget 相对顺序断言）。
 ///
-/// part 文件里的方法仍是 2 空格缩进的 `extension on _VideoHibikiPageState` 成员，主壳
+/// part 文件里的方法仍是 2 空格缩进的 `extension on _VideoFushiPageState` 成员，主壳
 /// 顶层 class / 常量 / 其它方法照搬不动，所以基于方法签名 / 字符串切片的守卫逻辑零改写，
 /// 只把数据源从「单文件」换成「合并语料」。
 ///
 /// **part 清单从磁盘枚举，不是手写常量**（TODO-2707）：这份清单**实测已经漏过两个**——
 /// `flicker_notice.part.dart` 与 `quality.part.dart` 落地后没人回来补清单，落在它们里面
 /// 的负向（`isNot`）断言一直真空通过。枚举 + 排序让新 part 自动进语料；契约由
-/// `video_hibiki_page_source_corpus_test.dart` 锁住。
-const String _videoHibikiShell =
-    'lib/src/pages/implementations/video_hibiki_page.dart';
-const String kVideoHibikiPartDir = 'lib/src/pages/implementations/video_hibiki';
+/// `video_fushi_page_source_corpus_test.dart` 锁住。
+const String _videoFushiShell =
+    'lib/src/pages/implementations/video_fushi_page.dart';
+const String kVideoFushiPartDir = 'lib/src/pages/implementations/video_fushi';
 
 /// 主壳 + 磁盘上全部 `*.part.dart`（按路径排序，保证跨机器/跨次运行顺序确定）。
-List<String> videoHibikiPageFiles() => partCorpusFiles(
-      shell: _videoHibikiShell,
-      partDir: kVideoHibikiPartDir,
+List<String> videoFushiPageFiles() => partCorpusFiles(
+      shell: _videoFushiShell,
+      partDir: kVideoFushiPartDir,
     );
 
 /// TODO-1000: the media-degradation ladder (GIF -> cue-time still frame ->
@@ -44,7 +44,7 @@ const List<String> _immersionMiningEngineFiles = <String>[
 
 /// 读「视频页合并语料」：主壳 + 全部 part 文件拼成单个字符串，供静态守卫切片/断言。
 /// 统一把 CRLF 归一成 LF，与逐文件守卫此前的隐式假设一致。
-String readVideoHibikiSource() => readPartCorpus(videoHibikiPageFiles());
+String readVideoFushiSource() => readPartCorpus(videoFushiPageFiles());
 
 /// TODO-1000: read the ImmersionMiningEngine + request source (LF-normalised),
 /// where the media-degradation ladder / no-audio abort / AnkiMiningContext

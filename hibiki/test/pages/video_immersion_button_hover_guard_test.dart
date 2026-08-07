@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫（TODO-388 / BUG-295）：视频侧边锁 / 解锁（沉浸）按钮在鼠标 hover 时不消失。
 ///
@@ -15,7 +15,7 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   late String src;
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   test('存在 _lockButtonHovered 单一真相源（ValueNotifier）并在 dispose 释放', () {

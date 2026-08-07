@@ -307,7 +307,7 @@ enum ShortcutAction {
   // （asbplayer 配置 longPressSpeed），松开恢复原速、不落盘。键盘按住需要 keyup
   // 边沿，SingleActivator 表达不了，故它**不进** CallbackShortcuts activator 表，
   // 由视频页最外层 Focus.onKeyEvent 读本 action 的绑定自行判定按下/松开（见
-  // video_hibiki_page 的 _handleHoldSpeedKey）；手柄通道退化成按一下开/再按恢复
+  // video_fushi_page 的 _handleHoldSpeedKey）；手柄通道退化成按一下开/再按恢复
   // 的翻转语义（videoActionCallbacks → toggleHoldSpeed）。
   videoHoldSpeed(ShortcutScope.video, 'video_hold_speed'),
 
@@ -346,7 +346,7 @@ enum ShortcutAction {
   // 手柄/键盘字级选词查词（对齐阅读器 readerEnterCaret）：进入后光标停在当前字幕
   // 首个可见字符，D-pad/方向键逐字移动、A/Enter 对光标字符查词（浮层内继续用手柄
   // 翻词条/跳词典/制卡）、B/Esc 退出。激活期的方向/确认/退出键在页面侧**先于**注册
-  // 表截获（reader caret 同款contextual 路由），见 video_hibiki/subtitle_caret.part.dart。
+  // 表截获（reader caret 同款contextual 路由），见 video_fushi/subtitle_caret.part.dart。
   videoEnterCaret(ShortcutScope.video, 'video_enter_caret'),
 
   // 字幕对轴/匹配快捷键（用户请求）：把埋在快速设置面板深处的「字幕调轴」直接搬到
@@ -429,7 +429,7 @@ enum ShortcutAction {
   // 执行分工（按**键盘焦点归属**切开，三条路径互斥、绝不双触发 = 绝不重复制卡）：
   //   · app 内（焦点在 Flutter 页）：Dart 侧派发。阅读器沿用既有的
   //     readerCreateCardFromPopup（Never break userspace，默认键与本动作一致）；视频页读
-  //     本动作的键盘绑定（见 video_hibiki_page 的 _buildVideoShortcuts）。
+  //     本动作的键盘绑定（见 video_fushi_page 的 _buildVideoShortcuts）。
   //   · app 外（焦点在裸 WebView2 表面）：绑定经 popup_settings_injection 注入成
   //     window.__fushiPopupKeyBindings，由 popup.js 自己判定。
   //   · 浏览器扩展：没有注入通道，吃 popup.js 里的同款内置默认值。

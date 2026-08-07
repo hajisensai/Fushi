@@ -52,7 +52,7 @@ void main() {
 
   group('页面首开单圈门控 (TODO-1276)', () {
     final String src =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+        read('lib/src/pages/implementations/video_fushi_page.dart');
 
     test('转圈判据并入 !_videoReadyToShow（首帧就绪前保持页级加载态）', () {
       expect(src.contains('!_videoReadyToShow'), isTrue,

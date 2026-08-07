@@ -30,8 +30,8 @@ import 'package:fushi/src/media/video/video_book_repository.dart'
 import 'package:fushi/src/media/video/video_volume_overlays.dart'
     show videoVolumeHudProgressKey;
 import 'package:fushi/src/models/app_model.dart' show AppModel;
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart'
-    show VideoHibikiPage, VideoHibikiTestHooks;
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
+    show VideoFushiPage, VideoFushiTestHooks;
 
 import 'helpers/library_fixture.dart';
 import 'helpers/observe_capture.dart';
@@ -55,7 +55,7 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
 
       // ── 1) seed 视频 + 直接 push 打开播放页 ───────────────────────────────
-      // 用 Navigator.push(VideoHibikiPage) 直达（与 video_shader_focus_test 同范式）：
+      // 用 Navigator.push(VideoFushiPage) 直达（与 video_shader_focus_test 同范式）：
       // 离屏 IndexedStack 下焦点卡激活偶发不触发书卡 onTap（observe_media 亦见此
       // seed-not-visible warning），push 是确定性入口，避开 flaky 卡激活。开视频不是
       // 本测目标（滚轮调音量才是），故这里不强求焦点驱动。
@@ -65,18 +65,18 @@ void main() {
       final NavigatorState navigator =
           tester.state<NavigatorState>(find.byType(Navigator).first);
       unawaited(navigator.push<void>(MaterialPageRoute<void>(
-        builder: (_) => VideoHibikiPage(bookUid: uid, repo: repo),
+        builder: (_) => VideoFushiPage(bookUid: uid, repo: repo),
       )));
 
       // 等 controller load（debugPositionMs 可读即 controller 就绪；桌面控制条要
       // hover 才显示图标，不靠图标判就绪，与 video_shader_focus_test 一致）。
-      VideoHibikiTestHooks hooks() =>
-          tester.state<State<VideoHibikiPage>>(find.byType(VideoHibikiPage))
-              as VideoHibikiTestHooks;
+      VideoFushiTestHooks hooks() =>
+          tester.state<State<VideoFushiPage>>(find.byType(VideoFushiPage))
+              as VideoFushiTestHooks;
       bool ready = false;
       for (int i = 0; i < 60; i++) {
         await tester.pump(const Duration(milliseconds: 250));
-        if (find.byType(VideoHibikiPage).evaluate().isNotEmpty &&
+        if (find.byType(VideoFushiPage).evaluate().isNotEmpty &&
             hooks().debugPositionMs != null) {
           ready = true;
           break;
@@ -90,7 +90,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 600));
 
       // ── 2) 定位视频页几何：中心=画面区、底部=控制条 chrome 区 ────────────
-      final Finder pageFinder = find.byType(VideoHibikiPage);
+      final Finder pageFinder = find.byType(VideoFushiPage);
       final RenderBox pageBox =
           tester.renderObject<RenderBox>(pageFinder.first);
       final Offset topLeft = pageBox.localToGlobal(Offset.zero);

@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch16).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch16).
+part of '../video_fushi_page.dart';
 
 /// Video-layout / render-tree domain methods extracted via part-of (TODO-590
 /// batch16); shared private scope. Behaviour-preserving: every body is moved
@@ -7,7 +7,7 @@ part of '../video_hibiki_page.dart';
 /// this block (only a doc comment in [_buildSideLockButton] mentions setState),
 /// so no `_rebuild(...)` forwarder is needed; no `@override` member is moved, so
 /// no forwarder is needed; no host `static` member is referenced, so no
-/// `_VideoHibikiPageState.`-qualification is required (unlike batch11/12). Every
+/// `_VideoFushiPageState.`-qualification is required (unlike batch11/12). Every
 /// symbol the bodies touch is an instance getter/field/method resolved through
 /// the shared private scope.
 ///
@@ -31,7 +31,7 @@ part of '../video_hibiki_page.dart';
 /// also stay in the main shell: they sit between `build` and [_buildVideoBody] and
 /// are not part of this contiguous render-tree run (cutting them would require
 /// splitting a non-contiguous subset).
-extension _VideoLayout on _VideoHibikiPageState {
+extension _VideoLayout on _VideoFushiPageState {
   /// 视频本体：media_kit [Video] + 可点字幕 overlay。查词浮层栈不在这里渲染——它走
   /// 根 Overlay（[_syncPopupOverlay] / [_buildPopupOverlay]），以便全屏时浮在全屏
   /// 路由之上。每次 build 在 post-frame 同步根 Overlay 与当前栈。

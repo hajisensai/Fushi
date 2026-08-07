@@ -74,7 +74,7 @@ import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
-import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/pages/implementations/video_statistics_page.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
@@ -99,7 +99,7 @@ import 'package:fushi/src/utils/misc/shelf_ordering.dart';
 import 'package:path/path.dart' as p;
 
 /// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
-/// dashboard 继续卡/活动条同一条路径），统一经 [VideoHibikiPage.neutralized]
+/// dashboard 继续卡/活动条同一条路径），统一经 [VideoFushiPage.neutralized]
 /// 在路由层中和全局缩放（video_render_fixes_guard 守卫的接线）。
 /// [playlistCollectionId] 非空 = 作为合集一集打开（剧集面板/上下集/连播），
 /// null = 散卡单视频。返回的 Future 在播放页关闭后完成（调用方据此刷新）。
@@ -113,7 +113,7 @@ Future<void> openLocalVideoBook({
     context,
     adaptivePageRoute<void>(
       context: context,
-      builder: (_) => VideoHibikiPage.neutralized(
+      builder: (_) => VideoFushiPage.neutralized(
         bookUid: bookUid,
         repo: repo,
         playlistCollectionId: playlistCollectionId,
@@ -126,7 +126,7 @@ Future<void> openLocalVideoBook({
 ///
 /// 仅在实验性视频开关开启时由 [HomePage] 装配进底栏（见 home_page.dart 的
 /// [HomeTab.video]）。列出 [VideoBookRepository.listAll] 的视频卡片，点开进
-/// [VideoHibikiPage] 播放/查词/制卡；顶栏导入按钮（同样受实验开关门控）打开
+/// [VideoFushiPage] 播放/查词/制卡；顶栏导入按钮（同样受实验开关门控）打开
 /// [VideoImportDialog] 新建导入，与书架的视频导入入口共用同一对话框与仓库。
 ///
 /// 标签：视频书与书架（EPUB/SRT）**共用同一套标签系统**（共享 `BookTags` 标签池
@@ -1373,7 +1373,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       context,
       adaptivePageRoute<void>(
         context: context,
-        builder: (_) => VideoHibikiPage.neutralizedRemote(
+        builder: (_) => VideoFushiPage.neutralizedRemote(
           info: video,
           repo: widget.repo,
           client: client,

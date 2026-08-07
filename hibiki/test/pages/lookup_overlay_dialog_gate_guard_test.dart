@@ -55,7 +55,7 @@ const List<String> _kKnownHosts = <String>[
   'lib/src/pages/implementations/home_dictionary_page.dart',
   'lib/src/pages/implementations/popup_dictionary_page.dart',
   'lib/src/pages/implementations/texthooker_page.dart',
-  'lib/src/pages/implementations/video_hibiki_page.dart',
+  'lib/src/pages/implementations/video_fushi_page.dart',
 ];
 
 const String _kMixinPath =
@@ -101,7 +101,7 @@ List<String> _discoverHosts() {
 /// 名字 → 方法体（原文切片）。同名取首个声明。
 ///
 /// 不用 `methodBody`：那个 helper 每次调用都要把整份源码重新词法掩码一遍，而
-/// `video_hibiki_page.dart` 一个文件就有几十个 `Widget` 方法（250KB × 几十次）。
+/// `video_fushi_page.dart` 一个文件就有几十个 `Widget` 方法（250KB × 几十次）。
 /// 这里把掩码结果复用，配对逻辑与 `methodBody` 一致（先配平参数表圆括号，再配花括号），
 /// 另外多认一种 `methodBody` 不支持的形态：箭头体 `=> …;`。
 Map<String, String> _widgetMethodBodies(String src, String structural) {

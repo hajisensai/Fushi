@@ -2,13 +2,13 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 void main() {
   test('video page locks desktop window aspect ratio from decoded video size',
       () {
     final String source =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
+        File('lib/src/pages/implementations/video_fushi_page.dart')
             .readAsStringSync();
 
     expect(
@@ -54,7 +54,7 @@ void main() {
     // TODO-590 batch15：全屏路由侧 Video（含 fit: videoFitModeToBoxFit(_videoFitMode)）
     // 随 fullscreen 域搬到 fullscreen.part.dart，故改读合并语料；窗口侧 _buildVideoBody
     // 仍在主壳（语料最前段），其内的窗口侧 fit 锚点不受影响。
-    final String source = readVideoHibikiSource();
+    final String source = readVideoFushiSource();
 
     // 窗口模式本体 Video 经偏好换算 fit——锚到 _buildVideoBody 方法之后。
     final int bodyIdx = source.indexOf('Widget _buildVideoBody(');

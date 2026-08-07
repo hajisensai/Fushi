@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 String _section(String src, String startToken, String endToken) {
   final int start = src.indexOf(startToken);
@@ -18,7 +18,7 @@ String _section(String src, String startToken, String endToken) {
 /// TODO-101 锁定 / 沉浸模式的源码守卫。
 ///
 /// media_kit 跑不了 headless，全屏路由 + 控制条 hover / 点击都无法在 widget 测试里真实
-/// 驱动，故把锁定态的不变量钉在 `video_hibiki_page.dart` / `video_player_shortcuts.dart`
+/// 驱动，故把锁定态的不变量钉在 `video_fushi_page.dart` / `video_player_shortcuts.dart`
 /// 的接线点（参照 TODO-069 字幕跳转列表守卫范式）。锁定态四条核心不变量：
 /// ① 可见性用 ValueNotifier（全屏路由也响应，不靠裸 setState）；
 /// ② 锁定态控制条不弹（gate `AdaptiveVideoControls` 的指针 + poke 在锁定时早返回）；
@@ -29,7 +29,7 @@ void main() {
   late String shortcuts;
 
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
     shortcuts = File('lib/src/media/video/video_player_shortcuts.dart')
         .readAsStringSync();
   });

@@ -104,10 +104,10 @@ void main() {
     // !visible) 挡指针、不挡焦点」的旧写法。chapter.part.dart 的常驻 IgnorePointer
     // 是纯展示层（无可聚焦子孙、永不拦指针），不在此列。
     final String episode = File(
-      'lib/src/pages/implementations/video_hibiki/episode.part.dart',
+      'lib/src/pages/implementations/video_fushi/episode.part.dart',
     ).readAsStringSync();
     final String layout = File(
-      'lib/src/pages/implementations/video_hibiki/layout.part.dart',
+      'lib/src/pages/implementations/video_fushi/layout.part.dart',
     ).readAsStringSync();
 
     expect(RegExp(r'FadingChromeGate\(').allMatches(episode).length,

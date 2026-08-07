@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch14).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch14).
+part of '../video_fushi_page.dart';
 
 /// Dictionary-lookup mining (制卡) domain extracted via part-of (TODO-590
 /// batch14); shared private scope. Behaviour-preserving: every method body is
@@ -35,7 +35,7 @@ part of '../video_hibiki_page.dart';
 /// resolver ([_resolveVideoMiningRange]), the mine/update entry bodies
 /// ([_onMineEntryImpl], [_onUpdateEntryImpl]), the card landing path
 /// ([_mineVideoCard]) and the mined-sentence history row ([_recordMinedSentenceForVideo]).
-extension _VideoLookupMining on _VideoHibikiPageState {
+extension _VideoLookupMining on _VideoFushiPageState {
   /// 把一条 cue 的画面/音频时间窗转成草稿可合并的区间。视频所有 cue 同属一个视频文件，
   /// [audioFileIndex] 统一用 0（合并恒成功，取 min start / max end）。null cue → null
   /// 区间（草稿据此退化为只合文本，不静默拼坏区间）。

@@ -16,7 +16,7 @@ void main() {
           'src:reader_fushi:font_catalog');
       expect(dbSourcePrefKey('reader_fushi', ''), 'src:reader_fushi:');
       expect(dbSourcePrefKey('reader_fushi', 'x'), 'src:reader_fushi:x');
-      expect(dbSourcePrefKey('video_hibiki', 'k'), 'src:video_hibiki:k');
+      expect(dbSourcePrefKey('video_fushi', 'k'), 'src:video_fushi:k');
     });
 
     test('backup_service 的冻结 reader_fushi const key 与编码器输出一致（防漂移）', () {

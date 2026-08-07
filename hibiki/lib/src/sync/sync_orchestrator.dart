@@ -1645,7 +1645,7 @@ class SyncOrchestrator {
   ///
   /// 此前只遍历本地 `VideoBooks`，对每条比对 host 进度。但 client 流式看的远端视频
   /// 在本地**没有 VideoBooks 行**（[home_video_page._openRemote] 只 push 不 upsert，
-  /// 进度只落 `video_remote_position_<uid>` prefs，见 video_hibiki_page._persistRemotePosition）
+  /// 进度只落 `video_remote_position_<uid>` prefs，见 video_fushi_page._persistRemotePosition）
   /// → 旧 sweep 永远扫不到，流式视频进度无法纳入全量双向同步（TODO-816 子问题1 断点①）。
   ///
   /// 修复：同步基底统一为 uid 集合 = 「本地 VideoBooks 行 uid」∪「本地有

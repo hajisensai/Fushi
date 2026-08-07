@@ -128,7 +128,7 @@ void main() {
     final String reader = readReaderPageSource();
     expect(reader, contains('Future<int> onClearSentenceDraftToDraft() async'));
     final String video =
-        readSource('lib/src/pages/implementations/video_hibiki_page.dart');
+        readSource('lib/src/pages/implementations/video_fushi_page.dart');
     expect(video,
         contains('Future<int> Function()? get onClearSentenceDraftToDraft'));
     final String mixin =

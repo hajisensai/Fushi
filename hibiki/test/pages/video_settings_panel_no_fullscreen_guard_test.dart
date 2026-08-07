@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// media_kit controls + 全屏路由跑不了 headless，故锁源码结构不变量。
 void main() {
   final File page = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
+    'lib/src/pages/implementations/video_fushi_page.dart',
   );
 
   late String src;

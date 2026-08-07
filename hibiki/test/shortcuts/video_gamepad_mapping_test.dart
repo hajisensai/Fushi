@@ -10,7 +10,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 /// TODO-1342：视频播放器手柄映射守卫。
 ///
 /// 视频页现在把手柄按键解析成 [ShortcutScope.video] 的动作
-/// （见 `video_hibiki_page._handleVideoGamepadButton`）。本测试锁定默认映射、
+/// （见 `video_fushi_page._handleVideoGamepadButton`）。本测试锁定默认映射、
 /// video 作用域内的「无遮蔽」不变式，以及老快照升级到当前 schema 时手柄默认被补回。
 void main() {
   /// 视频作用域期望的默认手柄映射（按钮 → 动作），单一真相源。

@@ -42,7 +42,7 @@ void main() {
     'lib/src/pages/implementations/dictionary_page_mixin.dart':
         'app 内词典页 mixin：searchPopup(autoRead:) 决定是否调 autoReadWord。'
             '五个消费方（home_dictionary / popup_dictionary / texthooker / '
-            'floating_lyric_lookup_host / video_hibiki_page）均传 autoRead: true。',
+            'floating_lyric_lookup_host / video_fushi_page）均传 autoRead: true。',
   };
 
   /// 豁免的查词调用点：路径 → **具体**理由。

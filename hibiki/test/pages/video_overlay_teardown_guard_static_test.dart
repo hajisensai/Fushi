@@ -10,7 +10,7 @@ void main() {
   // layout），LayoutBuilder builder 起始据此空渲染。deactivate↔layout 同帧时序 headless
   // 难稳定复现，用源码守卫锁住生命周期拦截。
   final String pageSource = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
+    'lib/src/pages/implementations/video_fushi_page.dart',
   ).readAsStringSync();
 
   test('_overlayInert flag is set on deactivate and cleared on activate', () {

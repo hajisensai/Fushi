@@ -1,10 +1,10 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch7).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch7).
+part of '../video_fushi_page.dart';
 
 /// Volume + OSD / level-HUD / brightness domain methods extracted via part-of
 /// (TODO-590 batch7); shared private scope. Behaviour-preserving: bodies are
 /// verbatim except (a) the bare `static const _volumeStep` reference inside
-/// [_onVolumeWheel] is fully qualified through `_VideoHibikiPageState.` — an
+/// [_onVolumeWheel] is fully qualified through `_VideoFushiPageState.` — an
 /// extension cannot resolve a host class's private static by bare name, so the
 /// qualification is mandatory and otherwise byte-exact; and (b) the lone
 /// `setState(() {})` rebuild inside [_ensureEnterBrightness] is routed through
@@ -20,7 +20,7 @@ part of '../video_hibiki_page.dart';
 /// (`_videoChromeColorScheme` / `_osdSurfaceColor` / `_osdTextColor` /
 /// `_videoUiScale`) stay in the main shell; the extension reads/calls them
 /// through the shared private scope.
-extension _VideoVolumeOsd on _VideoHibikiPageState {
+extension _VideoVolumeOsd on _VideoFushiPageState {
   /// 在视频左上角短暂显示一条 OSD 通知（约 2.6s 后自动消失）。mounted-safe，可在
   /// `await` 之后直接调（取代各处 `ScaffoldMessenger.showSnackBar`）。
   void _showOsd(
@@ -58,8 +58,8 @@ extension _VideoVolumeOsd on _VideoHibikiPageState {
   /// 的 [scrollDelta] 向下为正，故取负号让「上滚 = 增大」符合直觉。
   void _onVolumeWheel(VideoPlayerController controller, double scrollDeltaY) {
     final double delta = scrollDeltaY > 0
-        ? -_VideoHibikiPageState._volumeStep
-        : _VideoHibikiPageState._volumeStep;
+        ? -_VideoFushiPageState._volumeStep
+        : _VideoFushiPageState._volumeStep;
     unawaited(_adjustVolume(delta));
   }
 

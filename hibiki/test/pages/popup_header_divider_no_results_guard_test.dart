@@ -92,7 +92,7 @@ void main() {
       () {
     for (final String path in <String>[
       'lib/src/pages/implementations/reader_fushi_page.dart',
-      'lib/src/pages/implementations/video_hibiki_page.dart',
+      'lib/src/pages/implementations/video_fushi_page.dart',
     ]) {
       final String src = File(path).readAsStringSync();
       final int headerIdx = path.contains('reader_fushi_page')

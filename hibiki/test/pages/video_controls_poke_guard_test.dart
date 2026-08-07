@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫（BUG-176 ②）：控制条自动隐藏计时只在 media_kit 的鼠标 hover/进度条
 /// 拖动时重置，键盘快进/跳句与底部按钮 tap 都不触发重置 → 控制条只活 2 秒就消失，
@@ -16,7 +16,7 @@ void main() {
   late String src;
 
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   group('BUG-176② 入口接线', () {

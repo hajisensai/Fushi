@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 
 import '../helpers/source_guard.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 守卫（TODO-162）：视频页（HomeVideoPage）顶栏三个动作按钮的排列顺序，必须与
 /// 书架（ReaderFushiHistoryPage）顶栏三个动作按钮的相对顺序完全一致——以书架为基准。
@@ -107,7 +107,7 @@ void main() {
   test('播放器顶栏片段导出按钮紧挨截图按钮', () {
     // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，改读合并语料
     // （+端点 `\n}`）；topRight slot 渲染的两处调用现落在 part 末段，须读主壳+全部 part。
-    final String text = readVideoHibikiSource();
+    final String text = readVideoFushiSource();
     final List<VideoControlItem> topRightItems =
         VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
     final int screenshot = topRightItems.indexOf(VideoControlItem.screenshot);

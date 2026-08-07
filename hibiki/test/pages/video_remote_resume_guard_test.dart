@@ -26,7 +26,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 FushiDatabase _testDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
-/// 远端位置 prefs key（与 video_hibiki_page.dart 的同一公式，单一真相）。
+/// 远端位置 prefs key（与 video_fushi_page.dart 的同一公式，单一真相）。
 String remotePositionPrefKey(String bookUid) =>
     'video_remote_position_$bookUid';
 
@@ -92,7 +92,7 @@ void main() {
 
   group('TODO-559 remote video resume — source guards', () {
     final File page =
-        File('lib/src/pages/implementations/video_hibiki_page.dart');
+        File('lib/src/pages/implementations/video_fushi_page.dart');
     late String src;
 
     setUpAll(() {

@@ -19,7 +19,7 @@ void main() {
 
   test('播放器 _initRemote 合集模式用成员列表建 _episodes', () {
     final String src =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+        read('lib/src/pages/implementations/video_fushi_page.dart');
     expect(src.contains('bool get _isRemoteCollection'), true,
         reason: '应有合集连播模式判据 _isRemoteCollection');
     expect(
@@ -37,7 +37,7 @@ void main() {
 
   test('播放器 _loadRemoteEpisode 合集模式换成员 id + 切当前成员指针', () {
     final String src =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+        read('lib/src/pages/implementations/video_fushi_page.dart');
     expect(src.contains('_activeRemoteMember = info'), true,
         reason: '换集时应把当前成员指针切到目标成员');
     expect(src.contains('streamEpisodeIndex'), true,

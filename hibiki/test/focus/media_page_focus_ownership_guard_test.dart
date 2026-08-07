@@ -27,8 +27,8 @@ void main() {
   };
 
   const List<String> mediaPageRoots = <String>[
-    'lib/src/pages/implementations/video_hibiki_page.dart',
-    'lib/src/pages/implementations/video_hibiki',
+    'lib/src/pages/implementations/video_fushi_page.dart',
+    'lib/src/pages/implementations/video_fushi',
     'lib/src/pages/implementations/reader_fushi_page.dart',
     'lib/src/pages/implementations/reader_fushi',
     // 漫画阅读器（pages/implementations/manga_hibiki_page.dart 只是 3 行兼容
@@ -81,7 +81,7 @@ void main() {
 
   test('三个媒体页都接入了 PageFocusOwnership', () {
     for (final String page in <String>[
-      'lib/src/pages/implementations/video_hibiki_page.dart',
+      'lib/src/pages/implementations/video_fushi_page.dart',
       'lib/src/pages/implementations/reader_fushi_page.dart',
       'lib/src/media/manga/reader/manga_hibiki_page.dart',
     ]) {

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 import '../helpers/source_guard.dart';
 
 /// TODO-1254：视频制卡成功提示（`card_exported` / `card_overwritten`，走
@@ -26,7 +26,7 @@ void main() {
   late String src;
 
   setUpAll(() {
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   test('制卡成功 OSD 触发保留：_showOsd(described.message, prominent: true)', () {

@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// TODO-127 视频控制条清理源码守卫（随 TODO-274 控制条数据化重构刷新）。
 ///
 /// media_kit 跑不了 headless，桌面/移动 controls 主题与菜单都难在 widget 测试里真实
-/// 驱动，故把不变量锁在 `video_hibiki_page.dart` 的源码结构上：
+/// 驱动，故把不变量锁在 `video_fushi_page.dart` 的源码结构上：
 /// ① 控制条不再放着色器对比按钮（C 快捷键 + 右键菜单 + `_toggleShaderCompare` 保留）。
 /// ② 音轨 / 字幕源菜单可滚动——TODO-274 后这些菜单从 bottom sheet 迁到右侧
 ///    push-aside **side panel**（`_VideoSidePanelKind`），面板内容用可滚动
@@ -17,7 +17,7 @@ import 'video_hibiki_page_source_corpus.dart';
 /// （`VideoControlButton` 数据模型 + `_activateVideoControlButton`）承载，topButtonBar
 /// 不再硬编码这两枚按钮，故该结构断言已删（详见 video_mobile_controls_static_test）。
 void main() {
-  final String src = readVideoHibikiSource();
+  final String src = readVideoFushiSource();
 
   /// 桌面 + 移动两套 controls 主题方法体。TODO-590 batch11：两套主题已搬到
   /// controls_theme.part.dart（合并语料末段，_desktopControlsTheme 紧接 _mobileControlsTheme）。

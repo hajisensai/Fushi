@@ -18,7 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///     否则重开视频副字幕丢失。
 void main() {
   final File source = File(
-    'lib/src/pages/implementations/video_hibiki/subtitle.part.dart',
+    'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
   );
 
   /// 抽取以 [signature] 起头的方法体（到下一个方法的文档注释 `\n  /// ` 之前）。

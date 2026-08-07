@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch11).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch11).
+part of '../video_fushi_page.dart';
 
 /// media_kit controls-theme domain methods extracted via part-of (TODO-590
 /// batch11); shared private scope. Behaviour-preserving: every body is moved
@@ -8,10 +8,10 @@ part of '../video_hibiki_page.dart';
 /// there is no `setState→_rebuild` normalisation here.
 ///
 /// Two `static const` host fields read by these builders are fully qualified
-/// through `_VideoHibikiPageState.` — an extension cannot resolve a host
-/// class's `static` member by bare name: [_VideoHibikiPageState._videoBottomChromeBaseline]
+/// through `_VideoFushiPageState.` — an extension cannot resolve a host
+/// class's `static` member by bare name: [_VideoFushiPageState._videoBottomChromeBaseline]
 /// (mobile bottom-chrome baseline) and
-/// [_VideoHibikiPageState._videoVerticalGestureSensitivity] (mobile vertical
+/// [_VideoFushiPageState._videoVerticalGestureSensitivity] (mobile vertical
 /// gesture sensitivity). Every other symbol the builders touch is an instance
 /// getter/field/method (`_videoControlsTransitionDuration`,
 /// `_videoButtonBarHeight`, `_videoControlIconSize`, `_videoSeekBar*`,
@@ -26,7 +26,7 @@ part of '../video_hibiki_page.dart';
 /// ([_mobileControlsTheme]) `media_kit` controls themes; the
 /// [VideoControlsThemePair] wiring, the per-kind builders, the slot/chip
 /// renderers and every collaborator above stay in the main shell.
-extension _VideoControlsTheme on _VideoHibikiPageState {
+extension _VideoControlsTheme on _VideoFushiPageState {
   MaterialDesktopVideoControlsThemeData _desktopControlsTheme(
     VideoPlayerController controller,
     VideoControlLayout layout,
@@ -91,9 +91,9 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
       // 读同一份常量：此前避让只让出一个按钮行高，而热区上缘其实还高出 36−16=20px，字幕
       // 恰好压住那条带 → 点进度条上缘被字幕 glyph 命中层吸走成查词（seek 收不到指针）。
       seekBarContainerHeight:
-          _VideoHibikiPageState._videoDesktopSeekBarContainerHeight,
+          _VideoFushiPageState._videoDesktopSeekBarContainerHeight,
       seekBarBottomButtonBarOverlap:
-          _VideoHibikiPageState._videoDesktopSeekBarButtonBarOverlap,
+          _VideoFushiPageState._videoDesktopSeekBarButtonBarOverlap,
       keyboardShortcuts: _videoKeyboardShortcuts(controller),
       primaryButtonBar: const <Widget>[],
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮和标题均从用户布局
@@ -141,7 +141,7 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
     // 让进度条回到「底部按钮条同一基线、抬离屏幕物理最底」的控制条惯例位置，而不是
     // 用 media_kit 构造器默认的 `bottom: 0` 贴在屏幕最下面。
     final double bottomChromeInset =
-        _VideoHibikiPageState._videoBottomChromeBaseline +
+        _VideoFushiPageState._videoBottomChromeBaseline +
             _videoBottomSystemInset();
     // 进度条抬到底部按钮条上方（TODO-156/BUG-217）：media_kit 把进度条与按钮条放同一
     // 个 bottomCenter Stack、都按 bottom 对齐，进度条 bottom 必须 = 按钮条底部基线 +
@@ -189,7 +189,7 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
       // 竖滑灵敏度降到约 1/3（TODO-172/BUG-230）：media_kit 默认 100 太敏感，轻划即
       // 拉满亮度/音量。值越大越不敏感（见 [_videoVerticalGestureSensitivity]）。
       verticalGestureSensitivity:
-          _VideoHibikiPageState._videoVerticalGestureSensitivity,
+          _VideoFushiPageState._videoVerticalGestureSensitivity,
       // TODO-916 症状①：启用 fork 内置横滑 seek（third_party/media_kit_video 的
       // MaterialVideoControls.onHorizontalDragUpdate/End）：按 [position + diff *
       // duration / horizontalGestureSensitivity] 换算目标、松手 player.seek，拖回
@@ -197,7 +197,7 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
       // [_desktopControlsTheme] 不含此字段（鼠标拖进度条 + 键盘 seek 键，诚实降级）。
       seekGesture: true,
       horizontalGestureSensitivity:
-          _VideoHibikiPageState._videoHorizontalGestureSensitivity,
+          _VideoFushiPageState._videoHorizontalGestureSensitivity,
       // 居中 HUD：fork 默认只显增量，这里替换成「目标绝对时间 + 增量」两行（主流
       // 播放器手感）。builder 每帧随拖动重建，读 controller 实时 position + 增量算
       // 目标时间（clamp [0,duration]）。delta 为 fork 回传的有符号 swipeDuration。

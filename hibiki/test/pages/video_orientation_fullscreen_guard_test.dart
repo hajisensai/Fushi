@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫 (TODO-149 / BUG-221): 删除视频竖屏模式 + 双击暂停 + 返回手势直接退出。
 ///
@@ -27,7 +27,7 @@ void main() {
     // fullscreen.part.dart，仍在合并语料内（part 段）；_handleVideoPointerUp /
     // _handleBackOrExit 仍在主壳（语料最前段）。methodBody 大括号配对与字符串断言
     // 用方法签名定位，均不受搬迁影响。
-    src = readVideoHibikiSource();
+    src = readVideoFushiSource();
   });
 
   /// 取一个方法体 (含起始签名行到匹配的收尾大括号), 用大括号配对避免误截嵌套闭包。

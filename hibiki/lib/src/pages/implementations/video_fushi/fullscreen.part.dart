@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch15).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch15).
+part of '../video_fushi_page.dart';
 
 /// Fullscreen domain methods extracted via part-of (TODO-590 batch15); shared
 /// private scope. Behaviour-preserving: every body is moved character-for-
@@ -9,7 +9,7 @@ part of '../video_hibiki_page.dart';
 /// routed through the main shell's `_rebuild(...)` forwarder — the established
 /// part paradigm, since an extension cannot call the @protected `State.setState`
 /// directly. No `@override` member is moved, so no forwarder is needed; no host
-/// `static` member is referenced, so no `_VideoHibikiPageState.`-qualification is
+/// `static` member is referenced, so no `_VideoFushiPageState.`-qualification is
 /// required (unlike batch11/12). Every symbol the bodies touch is an instance
 /// getter/field/method resolved through the shared private scope (`isFullscreen`,
 /// `exitFullscreen`, `isMobilePlatform`, `_videoFullscreenTransitioning`,
@@ -33,7 +33,7 @@ part of '../video_hibiki_page.dart';
 /// desktop controls theme, whose method `_desktopControlsTheme` left for
 /// controls_theme.part.dart in batch11) is left untouched in the main shell — it
 /// is a batch11 leftover, not part of this fullscreen block, so it is not moved.
-extension _VideoFullscreen on _VideoHibikiPageState {
+extension _VideoFullscreen on _VideoFushiPageState {
   Future<void> _toggleVideoFullscreen(BuildContext context) {
     // BUG-221: 移动端永不进 media_kit 全屏路由（横屏沉浸态即唯一形态）。统一在此单一收口
     // no-op，杜绝任何入口（双击 / 全屏按钮 / 快捷键 / 右键菜单）把移动端推进全屏路由——
@@ -45,7 +45,7 @@ extension _VideoFullscreen on _VideoHibikiPageState {
         : _pushNeutralizedVideoFullscreen(context);
   }
 
-  /// BUG-839：从全屏页连播/换集而来的新页（[VideoHibikiPage.initialFullscreen]）在首帧
+  /// BUG-839：从全屏页连播/换集而来的新页（[VideoFushiPage.initialFullscreen]）在首帧
   /// 就绪后自动重进全屏路由，保持连播全屏沉浸不被换集打断。
   ///
   /// 换集本地分支（[_VideoEpisode._switchEpisode]）先退旧页全屏路由再 `pushReplacement`

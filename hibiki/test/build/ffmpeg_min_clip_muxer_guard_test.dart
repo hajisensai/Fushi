@@ -87,7 +87,7 @@ void main() {
     // Source-scan guard: the clip export path must build a .mp4 filename and
     // must not derive the extension from the input path (BUG-917 regression).
     final String clip = libFile(
-      'lib/src/pages/implementations/video_hibiki/clip_export.part.dart',
+      'lib/src/pages/implementations/video_fushi/clip_export.part.dart',
     );
     expect(clip.contains(".mp4'"), isTrue,
         reason: 'clip export must write .mp4 (ffmpeg-min muxable + universal). '

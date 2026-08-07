@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/part_corpus_disk_guard.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 /// 视频页「合并语料」自身的守卫（TODO-2707）。
 ///
@@ -15,16 +15,16 @@ void main() {
   group('视频页合并语料覆盖磁盘上的全部 part', () {
     test('主壳 + 每个 part 都在清单里、顺序确定（漏登记 = 负向断言真空通过）', () {
       expectPartManifestMatchesDisk(
-        manifest: videoHibikiPageFiles(),
-        shellPath: 'lib/src/pages/implementations/video_hibiki_page.dart',
-        partDirPath: 'lib/src/pages/implementations/video_hibiki',
+        manifest: videoFushiPageFiles(),
+        shellPath: 'lib/src/pages/implementations/video_fushi_page.dart',
+        partDirPath: 'lib/src/pages/implementations/video_fushi',
       );
     });
 
     test('每个 part 的内容真的进了语料（不只是路径进了清单）', () {
       expectPartContentsInCorpus(
-        manifest: videoHibikiPageFiles(),
-        corpus: readVideoHibikiSource(),
+        manifest: videoFushiPageFiles(),
+        corpus: readVideoFushiSource(),
       );
     });
   });

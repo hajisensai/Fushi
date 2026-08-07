@@ -12,7 +12,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 /// ＝缩放后的小画布 `view/s`）。浮层的词典 WebView 在小画布尺寸栅格化、再被外层
 /// `FittedBox` 拉大 → 字糊（与 BUG-039 阅读器同源）。
 ///
-/// **修法**：[VideoHibikiPage._buildPopupOverlay] 把整棵浮层子树用
+/// **修法**：[VideoFushiPage._buildPopupOverlay] 把整棵浮层子树用
 /// [FushiAppUiScaleNeutralizer] 中和回**真实视口尺寸、净缩放=1**，WebView 按原生像素
 /// 密度渲染＝清晰；坐标随之统一到真实屏幕空间，故 `_lookupAt` **直接**用 `localToGlobal`
 /// 的字符屏幕 rect 定位（不再经 `scaledRectToCanvas` ÷s 换算到画布）。
@@ -176,7 +176,7 @@ void main() {
       '_buildPopupOverlay wraps the popup in FushiAppUiScaleNeutralizer and '
       'the manual scaledRectToCanvas conversion is gone', () {
     final String page = File(
-      'lib/src/pages/implementations/video_hibiki_page.dart',
+      'lib/src/pages/implementations/video_fushi_page.dart',
     ).readAsStringSync();
     expect(page.contains('FushiAppUiScaleNeutralizer('), isTrue,
         reason: 'video popup overlay must be neutralized for native density');
@@ -198,7 +198,7 @@ void main() {
     // 修法：在 initState 期间一次性 `late final AppModel _appModel = ...`，
     // getter 返回缓存实例（appProvider 为单例，实例不变）。
     final String page = File(
-      'lib/src/pages/implementations/video_hibiki_page.dart',
+      'lib/src/pages/implementations/video_fushi_page.dart',
     ).readAsStringSync();
     expect(page.contains('late final AppModel _appModel'), isTrue,
         reason: 'appModel 必须在 initState 缓存，失活后访问才安全');

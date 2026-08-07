@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch8).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch8).
+part of '../video_fushi_page.dart';
 
 /// Chapter domain methods extracted via part-of (TODO-590 batch8); shared
 /// private scope. Behaviour-preserving: bodies are verbatim except the lone
@@ -10,7 +10,7 @@ part of '../video_hibiki_page.dart';
 /// references to the host's private `static const` chrome metrics
 /// (`_videoBottomChromeBaseline` / `_videoChromeFadeDuration`) inside
 /// [_buildChapterMarkersOverlay] are fully qualified through
-/// `_VideoHibikiPageState.` — an extension cannot resolve a host class's
+/// `_VideoFushiPageState.` — an extension cannot resolve a host class's
 /// private static by bare name, so the qualification is mandatory and
 /// otherwise byte-exact. Everything else is moved character-for-character.
 ///
@@ -28,8 +28,8 @@ part of '../video_hibiki_page.dart';
 /// the top-level `videoSeekBarTrackBand`) and the two `static const` chrome
 /// metrics above stay in the main shell; the extension reads/calls instance
 /// members through the shared private scope and the statics via the qualified
-/// `_VideoHibikiPageState.` prefix.
-extension _VideoChapter on _VideoHibikiPageState {
+/// `_VideoFushiPageState.` prefix.
+extension _VideoChapter on _VideoFushiPageState {
   void _attachControllerChapterListener(VideoPlayerController controller) {
     if (_chapterListenerController == controller && _chapterListener != null) {
       return;
@@ -90,7 +90,7 @@ extension _VideoChapter on _VideoHibikiPageState {
       seekBarButtonGap: _videoSeekBarButtonGap,
       seekBarContainerHeight: _videoSeekBarContainerHeight,
       seekBarTrackHeight: _videoSeekBarTrackHeight,
-      bottomChromeBaseline: _VideoHibikiPageState._videoBottomChromeBaseline,
+      bottomChromeBaseline: _VideoFushiPageState._videoBottomChromeBaseline,
       bottomSystemInset: _videoBottomSystemInset(),
       tickHeight: tickHeight,
     );
@@ -106,7 +106,7 @@ extension _VideoChapter on _VideoHibikiPageState {
                 // eink 下归零（墨水屏残影，UI 巡检 PR-4）。
                 duration: einkSafeDuration(
                   context,
-                  _VideoHibikiPageState._videoChromeFadeDuration,
+                  _VideoFushiPageState._videoChromeFadeDuration,
                 ),
                 child: Padding(
                   // 水平内缩 16px 对齐 seekBarMargin；竖直由 band 锚定到 seek bar 轨道。
@@ -125,7 +125,7 @@ extension _VideoChapter on _VideoHibikiPageState {
                         // 高对比刻度色：进度条用 chrome 强调色，刻度用 chrome 中性
                         // 前景（固定近白，UI 巡检 PR-4——onSurface 在浅色 / eink 主题
                         // 下是深色，压深色 scrim 上不可见），两者恒不同色不被吞。
-                        color: _VideoHibikiPageState._videoChromeNeutralFg
+                        color: _VideoFushiPageState._videoChromeNeutralFg
                             .withValues(alpha: 0.7),
                         thickness: 2.0 * _videoUiScale,
                       ),
@@ -159,7 +159,7 @@ extension _VideoChapter on _VideoHibikiPageState {
       seekBarButtonGap: _videoSeekBarButtonGap,
       seekBarContainerHeight: _videoSeekBarContainerHeight,
       seekBarTrackHeight: _videoSeekBarTrackHeight,
-      bottomChromeBaseline: _VideoHibikiPageState._videoBottomChromeBaseline,
+      bottomChromeBaseline: _VideoFushiPageState._videoBottomChromeBaseline,
       bottomSystemInset: _videoBottomSystemInset(),
       tickHeight: tickHeight,
     );

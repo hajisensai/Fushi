@@ -1,5 +1,5 @@
-// GENERATED-NOTE: extracted from video_hibiki_page.dart (TODO-590 batch13).
-part of '../video_hibiki_page.dart';
+// GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch13).
+part of '../video_fushi_page.dart';
 
 /// Subtitle lookup + sentence-favourite domain methods extracted via part-of
 /// (TODO-590 batch13); shared private scope. Behaviour-preserving: the method
@@ -19,7 +19,7 @@ part of '../video_hibiki_page.dart';
 /// [_toggleFavoriteCueForVideo], [_refreshFavoritedCueCache],
 /// [_videoFavoriteCacheKey], [_matchingVideoFavorites]). The popup-stack
 /// infrastructure and the @override mining hooks stay in the main shell.
-extension _VideoLookupFavorite on _VideoHibikiPageState {
+extension _VideoLookupFavorite on _VideoFushiPageState {
   /// 点字幕第 [graphemeIndex] 个字符：暂停 → 从该位置起取词 → 推入与阅读器/词典页
   /// 同款的 [DictionaryPopupLayer] 浮层（定位到被点字符的屏幕 [charRect] 附近）。
   ///

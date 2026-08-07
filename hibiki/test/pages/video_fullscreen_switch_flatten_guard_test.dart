@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// ① `_switchEpisode` 本地分支在 `pushReplacement` **之前**先 `_exitVideoFullscreen`
 ///    退全屏路由，让剧集页回到栈顶，pushReplacement 正确替换本集（栈恒平、ESC 一次退出）；
 ///    并把换集前是否全屏（`wasFullscreen`）透传给新页 `initialFullscreen`。
-/// ② `VideoHibikiPage` / `neutralized` 承载 `initialFullscreen` 字段；新页首帧就绪后经
+/// ② `VideoFushiPage` / `neutralized` 承载 `initialFullscreen` 字段；新页首帧就绪后经
 ///    `_scheduleInitialFullscreenIfNeeded` 重进全屏（快/慢两条就绪路径都触发），保持连播
 ///    全屏沉浸。
 ///
@@ -22,11 +22,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// 即转红。行为级复现需 media_kit + 全屏路由 + 真 navigator 栈，故守在最强可落地的源码层。
 void main() {
   final File episodePart =
-      File('lib/src/pages/implementations/video_hibiki/episode.part.dart');
+      File('lib/src/pages/implementations/video_fushi/episode.part.dart');
   final File fullscreenPart =
-      File('lib/src/pages/implementations/video_hibiki/fullscreen.part.dart');
+      File('lib/src/pages/implementations/video_fushi/fullscreen.part.dart');
   final File pageFile =
-      File('lib/src/pages/implementations/video_hibiki_page.dart');
+      File('lib/src/pages/implementations/video_fushi_page.dart');
 
   late String switchBody;
   late String fullscreenSrc;
@@ -75,16 +75,16 @@ void main() {
         reason: '新页 neutralized 必须收到 initialFullscreen: wasFullscreen，才能重进全屏');
   });
 
-  test('VideoHibikiPage / neutralized 承载 initialFullscreen 字段并透传', () {
+  test('VideoFushiPage / neutralized 承载 initialFullscreen 字段并透传', () {
     expect(pageSrc.contains('final bool initialFullscreen;'), isTrue,
-        reason: 'VideoHibikiPage 应有 initialFullscreen 字段');
+        reason: 'VideoFushiPage 应有 initialFullscreen 字段');
     expect(pageSrc.contains('this.initialFullscreen = false'), isTrue,
         reason: '默认构造器应默认 initialFullscreen=false（首开不自动全屏）');
     // neutralized 工厂必须把入参透传给构造器，否则换集标志到不了新页 State。
     expect(pageSrc.contains('bool initialFullscreen = false'), isTrue,
         reason: 'neutralized 工厂应有 initialFullscreen 形参');
     expect(pageSrc.contains('initialFullscreen: initialFullscreen'), isTrue,
-        reason: 'neutralized 必须把 initialFullscreen 透传给 VideoHibikiPage');
+        reason: 'neutralized 必须把 initialFullscreen 透传给 VideoFushiPage');
   });
 
   test('新页首帧就绪的两条路径都触发重进全屏', () {

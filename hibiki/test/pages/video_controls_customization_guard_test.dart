@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'video_hibiki_page_source_corpus.dart';
+import 'video_fushi_page_source_corpus.dart';
 
 void main() {
   String read(String rel) => File(rel).readAsStringSync();
@@ -10,7 +10,7 @@ void main() {
   // VideoControlCustomization to the 9-slot VideoControlLayout. The legacy pref
   // key is reused (auto-migrating old v1 blobs), so old configs upgrade losslessly.
   test('video page wires the persisted 9-slot control layout', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
     final String appModel = read('lib/src/models/app_model.dart');
     final String prefs = read('lib/src/models/preferences_repository.dart');
 
@@ -74,7 +74,7 @@ void main() {
 
   test('saved on-video layout notifies the active controls builder immediately',
       () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
     final int setStart = page.indexOf('Future<void> _setVideoControlLayout');
     expect(setStart, greaterThanOrEqualTo(0));
     // 阶段B：死代码 _showVideoControlEditOverlay 已删（旧面板从未渲染其入口），
@@ -178,7 +178,7 @@ void main() {
 
   test('player chrome includes right rail, bottom custom buttons and fallbacks',
       () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     expect(page, contains('_buildVideoSideActionRail(controller)'));
     expect(page, contains('Alignment.centerRight'));
@@ -191,7 +191,7 @@ void main() {
   });
 
   test('translucent side panel replaces blocking modal player menus', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     expect(page, contains('video_side_panel.dart'));
     expect(page, contains('VideoTranslucentSidePanel'));
@@ -216,7 +216,7 @@ void main() {
       'Future<void> _showSubtitleSourceMenu',
       'Future<void> _openJimakuDialog',
     );
-    // TODO-590 batch9：_showAudioTrackMenu 已抽到 video_hibiki/audio_track.part.dart。
+    // TODO-590 batch9：_showAudioTrackMenu 已抽到 video_fushi/audio_track.part.dart。
     // TODO-1351：其紧邻后继改为 _buildAudioTrackSettingsSection（设置面板「音频」分类的
     // 音轨切换区），改用它作终点。
     final String audioMenu = body(
@@ -235,7 +235,7 @@ void main() {
   });
 
   test('TODO-476 side panel launchers preserve the source slot side', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     String body(String start, String end) {
       final int startIndex = page.indexOf(start);
@@ -311,7 +311,7 @@ void main() {
     expect(sideRail, contains('sourceSlot: slot'),
         reason: 'screenLeft/screenRight rail buttons must preserve side');
 
-    // TODO-590 batch10：_buildVideoSidePanelContent 已抽到 video_hibiki/side_panel.part.dart
+    // TODO-590 batch10：_buildVideoSidePanelContent 已抽到 video_fushi/side_panel.part.dart
     // 并是该 part 的末方法；旧的 _handlePlaybackDrop 终点失效（它在主壳前段，排在搬出后的
     // content 之前）。改用 part 顶格 extension 闭合 `\n}` 作终点（content 体内无顶格 `}`）。
     final String content = body(
@@ -331,7 +331,7 @@ void main() {
     // page renders every action via `action.label`, so labels-file coverage is
     // what proves the tile can render these actions.
     final String settings = read('lib/src/shortcuts/shortcut_labels.dart');
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     for (final String action in <String>[
       'videoToggleFavoriteSentence',
@@ -364,7 +364,7 @@ void main() {
       () {
     final String panel =
         read('lib/src/media/video/video_subtitle_jump_panel.dart');
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     expect(panel, contains('enum VideoSubtitleListFilter'));
     expect(panel, contains('VideoSubtitleListFilter.all'));
@@ -380,7 +380,7 @@ void main() {
   });
 
   test('TODO-258 selected subtitles only override next card media context', () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     expect(page, contains('_selectedMiningCueStarts'));
     expect(page, contains('_selectedMiningCueForCard'));
@@ -413,7 +413,7 @@ void main() {
       () {
     final String panel =
         read('lib/src/media/video/video_subtitle_jump_panel.dart');
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
 
     expect(panel, contains('SegmentedButton<VideoSubtitleListFilter>'));
     expect(panel, contains('VideoSubtitleListFilter.all'));
@@ -443,7 +443,7 @@ void main() {
   test(
       'TODO-266 playback preview and auto-read do not gate Anki sentence audio',
       () {
-    final String page = readVideoHibikiSource();
+    final String page = readVideoFushiSource();
     final int mineStart =
         page.indexOf('Future<MinePopupResult> _mineVideoCard');
     // TODO-590 batch14：_mineVideoCard 已随制卡域抽到 lookup_mining.part.dart（合并语料

@@ -52,7 +52,7 @@ void main() {
 
   test('video 弹窗 Overlay Stack 用 Clip.none', () {
     final String src =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+        read('lib/src/pages/implementations/video_fushi_page.dart');
     expect(src.contains('clipBehavior: Clip.none'), isTrue,
         reason: '视频根 Overlay 弹窗 Stack 用 Clip.none，屏外热槽保持预热');
   });

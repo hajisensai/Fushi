@@ -11,7 +11,7 @@ import '../helpers/source_guard.dart';
 /// 隐藏（`SystemChrome.setEnabledSystemUIMode`）。
 ///
 /// 根因：视频沉浸原先只在 [AppModel.openMedia] 打开媒体时一次性设
-/// `immersiveSticky`（书 / 视频共用入口），`VideoHibikiPage` 全文 0 处自设系统栏模式，
+/// `immersiveSticky`（书 / 视频共用入口），`VideoFushiPage` 全文 0 处自设系统栏模式，
 /// 也从不重申 → 后台返回 / 通知栏交互 / 多任务切回后系统栏残留显示。
 ///
 /// 修复：把视频沉浸所有权移到本页，且**持续重申**——
@@ -29,7 +29,7 @@ void main() {
   late String appModelSrc;
 
   setUpAll(() {
-    src = File('lib/src/pages/implementations/video_hibiki_page.dart')
+    src = File('lib/src/pages/implementations/video_fushi_page.dart')
         .readAsStringSync();
     appModelSrc = File('lib/src/models/app_model.dart').readAsStringSync();
   });

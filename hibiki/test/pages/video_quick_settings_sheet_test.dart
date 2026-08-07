@@ -2529,13 +2529,13 @@ void main() {
 
     test('源码守卫：外面浮的音轨/字幕轨侧栏已删，按钮改开设置面板对应 tab（TODO-1351）', () {
       final String sidePanel = File(
-        'lib/src/pages/implementations/video_hibiki/side_panel.part.dart',
+        'lib/src/pages/implementations/video_fushi/side_panel.part.dart',
       ).readAsStringSync();
       final String audioTrack = File(
-        'lib/src/pages/implementations/video_hibiki/audio_track.part.dart',
+        'lib/src/pages/implementations/video_fushi/audio_track.part.dart',
       ).readAsStringSync();
       final String subtitle = File(
-        'lib/src/pages/implementations/video_hibiki/subtitle.part.dart',
+        'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
       ).readAsStringSync();
       // 浮动轨切换器（audioTracks / subtitleSources 两个 side-panel kind + builder）已删。
       expect(sidePanel, isNot(contains('_VideoSidePanelKind.audioTracks')),
@@ -2560,13 +2560,13 @@ void main() {
 
     test('BUG-672 源码守卫：副字幕改内联可展开区，不再跳独立浮层窗口', () {
       final String sidePanel = File(
-        'lib/src/pages/implementations/video_hibiki/side_panel.part.dart',
+        'lib/src/pages/implementations/video_fushi/side_panel.part.dart',
       ).readAsStringSync();
       final String subtitle = File(
-        'lib/src/pages/implementations/video_hibiki/subtitle.part.dart',
+        'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
       ).readAsStringSync();
       final String page = File(
-        'lib/src/pages/implementations/video_hibiki_page.dart',
+        'lib/src/pages/implementations/video_fushi_page.dart',
       ).readAsStringSync();
       // 副字幕浮层 kind 已删（连同 title/width/child 三个 switch 分支）。
       expect(page, isNot(contains('  secondarySubtitleSources,')),
@@ -2589,10 +2589,10 @@ void main() {
 
     test('BUG-672 源码守卫：字幕分类被打开时驱动字幕源枚举（字幕轨即时加载）', () {
       final String subtitle = File(
-        'lib/src/pages/implementations/video_hibiki/subtitle.part.dart',
+        'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
       ).readAsStringSync();
       final String page = File(
-        'lib/src/pages/implementations/video_hibiki_page.dart',
+        'lib/src/pages/implementations/video_fushi_page.dart',
       ).readAsStringSync();
       final String sheet = File(
         'lib/src/media/video/video_quick_settings_sheet.dart',

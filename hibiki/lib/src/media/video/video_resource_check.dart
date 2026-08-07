@@ -6,7 +6,7 @@ import 'package:path/path.dart' as p;
 
 /// 纯函数（TODO-897）：判断 [videoPath] 是否需要做「本地文件存在性校验」。
 ///
-/// 视频打开链路只有两类源（[VideoHibikiPage._applyLoad]）：本地文件路径
+/// 视频打开链路只有两类源（[VideoFushiPage._applyLoad]）：本地文件路径
 /// （`videoPath != null`）与网络流（`mediaUri != null` / `videoPath == null`）。
 /// 远端 / 流不碰文件系统、由播放内核网络直传，所以**只有本地非空、非流 URL 的
 /// 路径**才需要存在性校验：
