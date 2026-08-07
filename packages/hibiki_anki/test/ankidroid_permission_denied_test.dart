@@ -166,7 +166,7 @@ void main() {
     // case still routes through `requirePermission` — regressing this (dropping
     // the guard on addNote again) is exactly what produced the raw-toast bug.
     final File handler = File(
-      '../../hibiki/android/app/src/main/java/app/hibiki/reader/'
+      '../../hibiki/android/app/src/main/java/app/fushi/reader/'
       'AnkiChannelHandler.java',
     );
 
