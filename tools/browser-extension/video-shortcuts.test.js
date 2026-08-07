@@ -36,9 +36,9 @@ function createRuntime(initialSettings = {}, { hasTrack = true } = {}) {
   const actions = [];
   const video = { playbackRate: 1 };
   const fakeWindow = {
-    hibikiEpisodeCues: hasTrack ? { 'episode|ja': [{ start: 0, end: 1, text: '字幕' }] } : {},
-    hibikiVideoKey: () => 'episode',
-    hibikiSubtitleShortcut(action) {
+    fushiEpisodeCues: hasTrack ? { 'episode|ja': [{ start: 0, end: 1, text: '字幕' }] } : {},
+    fushiVideoKey: () => 'episode',
+    fushiSubtitleShortcut(action) {
       actions.push(action);
       return true;
     },
@@ -282,7 +282,7 @@ test('←/→/↑：无字幕轨一律放行（站点自己的 5s 快进/音量�
   assert.strictEqual(decide(ev({ key: 'ArrowUp' }), noTrack), null);
 });
 
-test('Shift+S：仅有 Hibiki 字幕轨时切换面板；旧 Shift+P/O/F 不再接管', () => {
+test('Shift+S：仅有 Fushi 字幕轨时切换面板；旧 Shift+P/O/F 不再接管', () => {
   const noTrack = { enabled: true, hasVideo: true, hasTrack: false };
   assert.strictEqual(decide(ev({ shift: true, code: 'KeyP' }), noTrack), null);
   assert.strictEqual(decide(ev({ shift: true, code: 'KeyO' }), noTrack), null);
@@ -446,7 +446,7 @@ test('runtime 实际 keydown 只接管已开启动作；Shift+H 无扩展轨仍�
     assert.deepStrictEqual(
       runtime.key({ key: code.slice(-1), code, shiftKey: true }),
       { prevented: false, stopped: false },
-      `${code} must remain available to the site without a Hibiki track`,
+      `${code} must remain available to the site without a Fushi track`,
     );
   }
   assert.deepStrictEqual(

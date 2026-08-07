@@ -19,7 +19,7 @@ void main() {
     // ① BUG-674：隐藏网飞剧末「下一集」按钮（options 开关门控，缺省隐藏）。
     test('[$name] hides Netflix next-episode button gated by a setting', () {
       final String content = File('$root/content.js').readAsStringSync();
-      expect(content.contains('hibiki-nf-hide-next'), isTrue,
+      expect(content.contains('fushi-nf-hide-next'), isTrue,
           reason: '$root content.js missing next-episode hide style id');
       expect(
           content.contains('[data-uia="next-episode-seamless-button"]'), isTrue,

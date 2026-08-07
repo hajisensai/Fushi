@@ -2693,8 +2693,8 @@ class AppModel with ChangeNotifier {
   /// BUG-530：当前 app 主题（MD3 ColorScheme）的关键色 + 查词弹窗尺寸/列数/字号配置，作为
   /// CSS 变量喂给浏览器扩展的查词弹窗（经查词响应的 `theme` 字段下发，改主题/配置即生效，无需
   /// 重装扩展）。内容 content.js 把每一项 `setProperty` 到 `#entries-container` 上，popup.css
-  /// 用 `var(...)` 消费：`--md-*` 上色、`--hibiki-popup-max-width/height` 定弹窗盒、
-  /// `--hibiki-popup-zoom` 缩放内容字号、`--dict-columns` 决定词典多列布局。与 in-app 弹窗
+  /// 用 `var(...)` 消费：`--md-*` 上色、`--fushi-popup-max-width/height` 定弹窗盒、
+  /// `--fushi-popup-zoom` 缩放内容字号、`--dict-columns` 决定词典多列布局。与 in-app 弹窗
   /// 注入的 md 变量 / --dict-columns / zoom 同源（dictionary_popup_webview / popup_settings_injection 一致）。
   Map<String, String> browserExtensionThemeColors() {
     final ColorScheme s = themeNotifier.buildColorScheme(
@@ -2732,7 +2732,7 @@ class AppModel with ChangeNotifier {
       '--hibiki-card-bg-rgb': vars['--hibiki-card-bg-rgb']!,
       // BUG-688：app 当前明暗，content.js 据此把 #entries-container 的 data-theme 对齐 app
       // （而非宿主网页 prefers-color-scheme），根除「data-theme 跟宿主页 / --md-* 跟 app」的分裂。
-      '--hibiki-color-scheme': themeNotifier.isDarkMode ? 'dark' : 'light',
+      '--fushi-color-scheme': themeNotifier.isDarkMode ? 'dark' : 'light',
       '--md-surface-container-high': vars['--md-surface-container-high']!,
       '--md-surface-container': vars['--md-surface-container']!,
       '--md-on-surface': vars['--md-on-surface']!,
@@ -2746,20 +2746,20 @@ class AppModel with ChangeNotifier {
       '--hibiki-radius-card': vars['--hibiki-radius-card']!,
       // 弹窗尺寸精细化：扩展弹窗默认跟随 app 内 popupMaxWidth/Height，用户显式
       // 解锁「浏览器扩展独立尺寸」后改用扩展自己的键（extensionPopupEffectiveSize）。
-      '--hibiki-popup-max-width':
+      '--fushi-popup-max-width':
           '${extensionPopupEffectiveSize.width.round()}px',
-      '--hibiki-popup-max-height':
+      '--fushi-popup-max-height':
           '${extensionPopupEffectiveSize.height.round()}px',
-      '--hibiki-popup-zoom': zoom.toStringAsFixed(4),
+      '--fushi-popup-zoom': zoom.toStringAsFixed(4),
       '--dict-columns': '$popupDictionaryColumns',
       // 「滑动关闭查词弹窗」偏好（enableSwipeToClose）下发给扩展 content.js：非 CSS 变量、
       // 仅 JS 消费（content.js 据此决定是否给浮动弹窗启用水平拖关手势）。走 theme 传输通道
-      // 与 --hibiki-color-scheme 同法（那个也被当 data-theme 而非 CSS 值消费）。值 '1'/'0'。
-      '--hibiki-swipe-close':
+      // 与 --fushi-color-scheme 同法（那个也被当 data-theme 而非 CSS 值消费）。值 '1'/'0'。
+      '--fushi-swipe-close':
           ReaderHibikiSource.instance.enableSwipeToClose ? '1' : '0',
       // BUG-1026：查词弹窗滚轮速度倍率下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。
-      // content.js hibikiRender 读它设 window.__hoshiPopupWheelSpeed（与 in-app 注入同名
-      // 全局），popup.js 的 wheel factor 乘它。走 theme 通道与 --hibiki-swipe-close 同法。
+      // content.js fushiRender 读它设 window.__hoshiPopupWheelSpeed（与 in-app 注入同名
+      // 全局），popup.js 的 wheel factor 乘它。走 theme 通道与 --fushi-swipe-close 同法。
       '--hibiki-wheel-speed': popupWheelSpeed.toStringAsFixed(3),
     };
   }
@@ -4889,7 +4889,7 @@ class AppModel with ChangeNotifier {
       );
 
   /// 浏览器扩展弹窗的「有效最大宽高」（跟随 app 内 / 解锁后独立）。
-  /// [browserExtensionThemeColors] 下发的 `--hibiki-popup-max-*` 读它。
+  /// [browserExtensionThemeColors] 下发的 `--fushi-popup-max-*` 读它。
   LookupSize get extensionPopupEffectiveSize => effectiveLookupSize(
         independent: extensionPopupIndependentSize,
         sceneWidth: extensionPopupMaxWidth,

@@ -143,7 +143,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 弹窗尺寸精细化（spec 2026-07-13 §3）：app 外覆盖窗 / 浏览器扩展的「独立尺寸」开关
   // （PR#83 新增）。焦点遍历切到 switch 并写穿 DB（changed=true），但生效点在
   // effectiveLookupSize 解析——决定弹窗宽高取自身场景键还是回退 app 内共享值（overlay
-  // 走原生窗尺寸测算、extension 经 theme 下发 --hibiki-popup-max-*），无适用的
+  // 走原生窗尺寸测算、extension 经 theme 下发 --fushi-popup-max-*），无适用的
   // reader/appearance 探针；由专项纯函数 + AppModel 接线测试咬住（解锁切源 / 场景隔离 /
   // 关闭仍跟随共享值）。解锁后才可见的宽/高滑杆随开关一并被这两组测试覆盖。
   'lookup/Separate size for pop-out lookup':

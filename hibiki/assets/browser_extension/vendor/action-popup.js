@@ -1,12 +1,12 @@
 // TODO-1184：browser-action popup（图标菜单）。展示制卡队列、逐项删除、开始生成/录制。
 // 设了 default_popup 后 chrome.action.onClicked 永不触发，「开始生成/录制」这个原本靠点图标
 // （activeTab 手势）驱动的入口迁到这里的按钮：按钮点击是用户手势 → chrome.tabs.query 拿当前 tab
-// → 发消息给 background 跑原 hibikiIconClick（Netflix 就地录 / YouTube 队列生成）。
+// → 发消息给 background 跑原 fushiIconClick（Netflix 就地录 / YouTube 队列生成）。
 // 本文件在扩展页上下文运行（有 chrome API），不注入宿主页，故不复用 content.js 的内存镜像，
-// 直接读写 chrome.storage.local 的 hibikiQueue（跨 content/popup/background 的单一真相源）。
+// 直接读写 chrome.storage.local 的 fushiQueue（跨 content/popup/background 的单一真相源）。
 
 // 纯函数：从队列里剔除指定 id（读-改-写的核心）。抽出来供 node 测试，无 chrome 依赖。
-function hibikiFilterQueue(queue, removeId) {
+function fushiFilterQueue(queue, removeId) {
   const list = Array.isArray(queue) ? queue : [];
   return list.filter((q) => q && q.id !== removeId);
 }
@@ -14,8 +14,8 @@ function hibikiFilterQueue(queue, removeId) {
 // 队列项主标签：优先「词」(制卡的主体)，无词才回落到句子。
 // TODO-1270：原实现优先句子——同一字幕行里查多个词各点「制卡」会入队多条，去重键是「词+句」
 // 所以它们是不同卡片，但标签只显示句子 → 队列里多行「句子一模一样」无法区分。改为主标签显词、
-// 句子降为下方暗色上下文行(hibikiQueueItemContext)，让同句不同词的卡片一眼可辨。
-function hibikiQueueItemLabel(q) {
+// 句子降为下方暗色上下文行(fushiQueueItemContext)，让同句不同词的卡片一眼可辨。
+function fushiQueueItemLabel(q) {
   const word = (q && q.fields && (q.fields.expression || q.fields.word || q.fields.term)) || '';
   const raw = String(word).trim() || String((q && q.sentence) || '').trim();
   if (raw) return raw.length > 40 ? raw.slice(0, 40) + '…' : raw;
@@ -24,7 +24,7 @@ function hibikiQueueItemLabel(q) {
 
 // 队列项的上下文句子（主标签下方暗色次要行）。仅当主标签是「词」时才返回句子；无词时主标签已是
 // 句子本身，返回 '' 避免重复回显。
-function hibikiQueueItemContext(q) {
+function fushiQueueItemContext(q) {
   const word = (q && q.fields && (q.fields.expression || q.fields.word || q.fields.term)) || '';
   if (!String(word).trim()) return '';
   const sent = String((q && q.sentence) || '').trim();
@@ -34,13 +34,13 @@ function hibikiQueueItemContext(q) {
 
 // TODO-1219：网飞字幕列表面板开关的读值纯函数（默认关 + 只认 boolean true）。抽出来供 node 测试，
 // 与 subtitle-panel.js 的 enabled:false 默认、options.js 的 === true 判据一致，防回归成默认打开。
-function hibikiReadPanelEnabled(stored) {
+function fushiReadPanelEnabled(stored) {
   return !!(stored && stored.netflixSubtitlePanel === true);
 }
 
 // TODO-1881：队列项能跳回的视频页 URL（Netflix 生成必须在 netflix.com 页面、YouTube 生成要有
 // content script——用户在队列里看到卡片却回不去对应页面是流程断点）。无可跳站点返回 ''。
-function hibikiQueueItemUrl(q) {
+function fushiQueueItemUrl(q) {
   if (q && q.site === 'netflix' && q.netflixId) {
     return 'https://www.netflix.com/watch/' + encodeURIComponent(String(q.netflixId));
   }
@@ -50,9 +50,9 @@ function hibikiQueueItemUrl(q) {
   return '';
 }
 
-// TODO-1881：从 tab URL 推断站点。与 content.js hibikiSite() 同判据（hostname 后缀），只是输入
+// TODO-1881：从 tab URL 推断站点。与 content.js fushiSite() 同判据（hostname 后缀），只是输入
 // 从 location 换成 URL 字符串（popup 上下文没有宿主页 location）。
-function hibikiTabSite(url) {
+function fushiTabSite(url) {
   try {
     const h = new URL(String(url || '')).hostname;
     if (h === 'netflix.com' || h.endsWith('.netflix.com')) return 'netflix';
@@ -64,10 +64,10 @@ function hibikiTabSite(url) {
 // TODO-1881：「开始生成/录制」按钮状态机（纯函数，供 node 测试）。
 // 旧实现是隐形三态：同一个按钮承担「取消卡住的生成 / 开始生成 / 静默无操作」，队列空或站点不对时
 // 点击毫无反馈直接关 popup。改为显式状态：
-// - cancel：hibikiNfBatch.active（生成中/卡住残留）→ 可点，取消并清理（逃生口保留，队列空也可点）。
+// - cancel：fushiNfBatch.active（生成中/卡住残留）→ 可点，取消并清理（逃生口保留，队列空也可点）。
 // - generate：当前 tab 站点与队列中可生成项匹配 → 可点，标签带数量；跨站点剩余量进 hint。
 // - empty / unsupported / wrongSite：不可点 + hint 说明原因与下一步（wrongSite 引导点队列条目跳转）。
-function hibikiGenButtonState(queue, batchActive, tabSite) {
+function fushiGenButtonState(queue, batchActive, tabSite) {
   if (batchActive) {
     return { mode: 'cancel', label: '取消生成', enabled: true, hint: '正在生成中，点击取消并清理录制状态' };
   }
@@ -105,9 +105,9 @@ function hibikiGenButtonState(queue, batchActive, tabSite) {
 }
 
 // BUG-1079：自更新失效提示文案（纯函数供 node 测试）。stale = background 写入
-// chrome.storage.local.hibikiUpdateStale 的 {remote, local}（remote=app 内置最新指纹，
+// chrome.storage.local.fushiUpdateStale 的 {remote, local}（remote=app 内置最新指纹，
 // local=浏览器中实际加载副本的指纹）。无 stale（或缺 remote）返回 null（隐藏提示行）。
-function hibikiUpdateNotice(stale) {
+function fushiUpdateNotice(stale) {
   if (!stale || !stale.remote) return null;
   const short = (s) => String(s || '').slice(0, 8);
   return {
@@ -120,8 +120,8 @@ function hibikiUpdateNotice(stale) {
 // node 单测导出（浏览器里 module 未定义，直接跳过）。
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    hibikiFilterQueue, hibikiQueueItemLabel, hibikiQueueItemContext, hibikiReadPanelEnabled,
-    hibikiQueueItemUrl, hibikiTabSite, hibikiGenButtonState, hibikiUpdateNotice,
+    fushiFilterQueue, fushiQueueItemLabel, fushiQueueItemContext, fushiReadPanelEnabled,
+    fushiQueueItemUrl, fushiTabSite, fushiGenButtonState, fushiUpdateNotice,
   };
 }
 
@@ -136,11 +136,11 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   const connTitleEl = document.getElementById('hp-connection-title');
   const connDetailEl = document.getElementById('hp-connection-detail');
   // BUG-1036：popup 生命周期很短，每次打开都要新探测；否则会把上次瞬时离线缓存继续显示成
-  // “Hibiki API 未开启”，直到用户进完整设置手动重检。
+  // “Fushi API 未开启”，直到用户进完整设置手动重检。
   // TODO-1881：探测抽成函数——连接状态行本身可点，点击即强制重检（原来重试只能进 options 页）。
   function refreshConnection() {
     if (connEl) connEl.dataset.tone = 'loading';
-    if (connTitleEl) connTitleEl.textContent = '正在检测 Hibiki…';
+    if (connTitleEl) connTitleEl.textContent = '正在检测 Fushi…';
     if (connDetailEl) connDetailEl.textContent = '查词与字幕服务';
     try {
       chrome.runtime.sendMessage({ type: 'connectionStatus', force: true }, (resp) => {
@@ -158,28 +158,28 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   if (connEl) connEl.addEventListener('click', () => refreshConnection());
 
   // BUG-1079：自更新失效提示行。background 检测到「已 reload 过仍与 app 内置指纹不一致」
-  // 时写 hibikiUpdateStale；这里渲染「需到 chrome://extensions 手动重新加载」并随 storage
+  // 时写 fushiUpdateStale；这里渲染「需到 chrome://extensions 手动重新加载」并随 storage
   // 变化实时显隐（恢复一致时 background 清除该键 → 提示消失）。
   const updateEl = document.getElementById('hp-update');
   const updateTitleEl = document.getElementById('hp-update-title');
   const updateDetailEl = document.getElementById('hp-update-detail');
   function renderUpdateNotice(stale) {
     if (!updateEl) return;
-    const notice = hibikiUpdateNotice(stale);
+    const notice = fushiUpdateNotice(stale);
     updateEl.hidden = !notice;
     if (!notice) return;
     if (updateTitleEl) updateTitleEl.textContent = notice.title;
     if (updateDetailEl) updateDetailEl.textContent = notice.detail;
   }
   try {
-    chrome.storage.local.get(['hibikiUpdateStale'], (r) => {
-      renderUpdateNotice(r && r.hibikiUpdateStale);
+    chrome.storage.local.get(['fushiUpdateStale'], (r) => {
+      renderUpdateNotice(r && r.fushiUpdateStale);
     });
   } catch (_) {}
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.hibikiUpdateStale) {
-        renderUpdateNotice(changes.hibikiUpdateStale.newValue);
+      if (area === 'local' && changes.fushiUpdateStale) {
+        renderUpdateNotice(changes.fushiUpdateStale.newValue);
       }
     });
   } catch (_) {}
@@ -193,25 +193,25 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   function readQueue() {
     return new Promise((resolve) => {
       try {
-        chrome.storage.local.get(['hibikiQueue'], (r) => {
-          resolve(Array.isArray(r && r.hibikiQueue) ? r.hibikiQueue : []);
+        chrome.storage.local.get(['fushiQueue'], (r) => {
+          resolve(Array.isArray(r && r.fushiQueue) ? r.fushiQueue : []);
         });
       } catch (_) { resolve([]); }
     });
   }
 
-  // 逐项删除：storage 读-改-写（不覆盖并发入队），与 content.js hibikiRemoveQueued 一致的安全模型。
+  // 逐项删除：storage 读-改-写（不覆盖并发入队），与 content.js fushiRemoveQueued 一致的安全模型。
   async function removeItem(id) {
     const fresh = await readQueue();
-    const remaining = hibikiFilterQueue(fresh, id);
-    try { await chrome.storage.local.set({ hibikiQueue: remaining }); } catch (_) {}
+    const remaining = fushiFilterQueue(fresh, id);
+    try { await chrome.storage.local.set({ fushiQueue: remaining }); } catch (_) {}
     render(remaining);
   }
 
   // TODO-1881：清空队列（原来 N 条要点 N 次 ×）。二次确认：首点变「确认清空？」，3 秒内再点才清。
   let clearConfirmTimer = null;
   async function clearQueue() {
-    try { await chrome.storage.local.set({ hibikiQueue: [] }); } catch (_) {}
+    try { await chrome.storage.local.set({ fushiQueue: [] }); } catch (_) {}
     render([]);
   }
 
@@ -221,7 +221,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   let genTab = null; // {id,url}；query 回来前按 other 站点渲染（按钮先禁用，回来后立即修正）
   function updateGenButton(queue, batch) {
     if (!genEl) return;
-    const state = hibikiGenButtonState(queue, !!(batch && batch.active), hibikiTabSite(genTab && genTab.url));
+    const state = fushiGenButtonState(queue, !!(batch && batch.active), fushiTabSite(genTab && genTab.url));
     genEl.textContent = state.label;
     genEl.disabled = !state.enabled;
     genEl.dataset.mode = state.mode;
@@ -232,8 +232,8 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   }
   function refreshGenButton(queue) {
     try {
-      chrome.storage.local.get(['hibikiNfBatch'], (r) => {
-        updateGenButton(queue, r && r.hibikiNfBatch);
+      chrome.storage.local.get(['fushiNfBatch'], (r) => {
+        updateGenButton(queue, r && r.fushiNfBatch);
       });
     } catch (_) { updateGenButton(queue, null); }
   }
@@ -292,10 +292,10 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
       main.className = 'hp-row-main';
       const text = document.createElement('span');
       text.className = 'hp-row-text';
-      const label = hibikiQueueItemLabel(q);
+      const label = fushiQueueItemLabel(q);
       text.textContent = label;
       main.appendChild(text);
-      const context = hibikiQueueItemContext(q);
+      const context = fushiQueueItemContext(q);
       if (context) {
         const sub = document.createElement('span');
         sub.className = 'hp-row-sub';
@@ -303,7 +303,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
         main.appendChild(sub);
       }
       // TODO-1881：条目可点击跳回对应视频页（Netflix 生成必须在其页面；wrongSite hint 引导到这里）。
-      const jumpUrl = hibikiQueueItemUrl(q);
+      const jumpUrl = fushiQueueItemUrl(q);
       if (jumpUrl) {
         main.dataset.url = jumpUrl;
         main.title = (context ? (label + ' — ' + context) : label) + '\n点击打开视频页';
@@ -326,7 +326,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
     }
   }
 
-  // 「开始生成/录制」：按钮点击=用户手势 → 拿当前 tab → 让 background 跑 hibikiIconClick。
+  // 「开始生成/录制」：按钮点击=用户手势 → 拿当前 tab → 让 background 跑 fushiIconClick。
   // Netflix：background 就地起录屏（复用本次 action 授予的 activeTab）；YouTube：跑队列服务端裁剪。
   if (genEl) {
     genEl.addEventListener('click', () => {
@@ -336,7 +336,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
           if (!tab || tab.id == null) { window.close(); return; }
           try {
             chrome.runtime.sendMessage(
-              { type: 'hibikiIconAction', tab: { id: tab.id, url: tab.url || '' } },
+              { type: 'fushiIconAction', tab: { id: tab.id, url: tab.url || '' } },
               () => { try { void chrome.runtime.lastError; } catch (_) {} });
           } catch (_) {}
           window.close(); // 关闭 popup，让 content 就地跑（Netflix 就地录需当前页可见）
@@ -352,7 +352,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   if (nfToggle) {
     try {
       chrome.storage.local.get(['netflixSubtitlePanel'], (r) => {
-        nfToggle.checked = hibikiReadPanelEnabled(r);
+        nfToggle.checked = fushiReadPanelEnabled(r);
       });
     } catch (_) {}
     nfToggle.addEventListener('change', () => {
@@ -369,14 +369,14 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   }
 
   // 队列在别处（content 入队 / 生成出队 / 别的标签）变化时，popup 若还开着就实时刷新。
-  // TODO-1881：hibikiNfBatch 变化（生成开始/结束/取消）也要刷新按钮状态（取消↔生成切换）。
+  // TODO-1881：fushiNfBatch 变化（生成开始/结束/取消）也要刷新按钮状态（取消↔生成切换）。
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
-      if (changes.hibikiQueue) {
-        render(Array.isArray(changes.hibikiQueue.newValue) ? changes.hibikiQueue.newValue : []);
-      } else if (changes.hibikiNfBatch) {
-        readQueue().then((q) => updateGenButton(q, changes.hibikiNfBatch.newValue));
+      if (changes.fushiQueue) {
+        render(Array.isArray(changes.fushiQueue.newValue) ? changes.fushiQueue.newValue : []);
+      } else if (changes.fushiNfBatch) {
+        readQueue().then((q) => updateGenButton(q, changes.fushiNfBatch.newValue));
       }
     });
   } catch (_) {}

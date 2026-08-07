@@ -133,13 +133,13 @@ function loadContent(storedHidden) {
   return { sandbox, head, stored, changeListeners, windowListeners };
 }
 
-const STYLE_ID = 'hibiki-hide-subs';
+const STYLE_ID = 'fushi-hide-subs';
 
 test('隐藏字幕：注入的样式用 visibility 而非 display:none（否则制卡取词会一起废掉）', () => {
   const { sandbox, head } = loadContent(false);
   assert.strictEqual(findById(head, STYLE_ID), null, '默认不隐藏，不该有样式');
 
-  assert.strictEqual(sandbox.window.hibikiToggleSubtitleHiding(), true);
+  assert.strictEqual(sandbox.window.fushiToggleSubtitleHiding(), true);
   const style = findById(head, STYLE_ID);
   assert.ok(style, '翻开后应注入 <style>');
   const css = style.textContent;
@@ -150,22 +150,22 @@ test('隐藏字幕：注入的样式用 visibility 而非 display:none（否则�
 
 test('隐藏字幕：站点原生字幕与扩展覆盖层都要被藏（只藏一半等于没藏）', () => {
   const { sandbox, head } = loadContent(false);
-  sandbox.window.hibikiToggleSubtitleHiding();
+  sandbox.window.fushiToggleSubtitleHiding();
   const css = findById(head, STYLE_ID).textContent;
   assert.ok(css.includes('.player-timedtext'), 'Netflix 原生字幕');
   assert.ok(css.includes('.ytp-caption-window-container'), 'YouTube 原生字幕');
-  assert.ok(css.includes('#hibiki-subtitle-overlay'), '扩展自绘覆盖层');
+  assert.ok(css.includes('#fushi-subtitle-overlay'), '扩展自绘覆盖层');
   // 原生 <track> 字幕：::cue 只接受受限属性，必须单独成一条规则，否则整条规则可能失效。
   assert.match(css, /video::cue\s*\{/);
 });
 
 test('隐藏字幕：再按一次真的移除样式，且状态落 storage', () => {
   const { sandbox, head, stored } = loadContent(false);
-  sandbox.window.hibikiToggleSubtitleHiding();
+  sandbox.window.fushiToggleSubtitleHiding();
   assert.ok(findById(head, STYLE_ID));
   assert.strictEqual(stored.subtitleHidden, true);
 
-  sandbox.window.hibikiToggleSubtitleHiding();
+  sandbox.window.fushiToggleSubtitleHiding();
   assert.strictEqual(findById(head, STYLE_ID), null, '关掉后样式必须真被移除');
   assert.strictEqual(stored.subtitleHidden, false);
 });
@@ -198,8 +198,8 @@ test('Shift+H 真链：keydown 经 subtitle-panel 转发到 content 并持久化
     clipboard: { writeText: () => Promise.resolve() },
   };
   h.sandbox.self = h.sandbox.window;
-  h.sandbox.window.hibikiEpisodeCues = {};
-  h.sandbox.window.hibikiVideoKey = () => 'episode';
+  h.sandbox.window.fushiEpisodeCues = {};
+  h.sandbox.window.fushiVideoKey = () => 'episode';
 
   vm.runInContext(
     fs.readFileSync(PANEL, 'utf8'),

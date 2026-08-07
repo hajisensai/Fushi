@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// - Bug A：卡里字幕重复两次。根因 = `extractNetflixCueText` 把 Netflix「外层定位 span >
 ///   内层样式 span」嵌套里的**每一层** span 的 textContent 都拼进来，父子重复。修复只取叶子
 ///   span（无后代 span）。
-/// - Bug B：制卡录进的 GIF 混入了 Hibiki 自己的「生成中」浮层(#hibiki-toast) + Netflix 顶部
+/// - Bug B：制卡录进的 GIF 混入了 Hibiki 自己的「生成中」浮层(#fushi-toast) + Netflix 顶部
 ///   返回按钮/举报旗帜。修复把它们一并加进批量隐藏样式。
 /// - Bug C：GIF/音频少了一点开头。根因 = seek 到 cueStart-200 后用固定 warmup sleep 播掉这段
 ///   头部提前量才 beginClip。修复改成一旦确认在播立刻开录。
@@ -31,10 +31,10 @@ void main() {
             reason: '$root subtitle-adapters.js 缺 leaves 叶子过滤');
       });
 
-      test('[$root] Bug B：批量隐藏样式含 #hibiki-toast + Netflix 返回/举报', () {
+      test('[$root] Bug B：批量隐藏样式含 #fushi-toast + Netflix 返回/举报', () {
         final String src = File('$root/content.js').readAsStringSync();
         expect(
-            src.contains('#hibiki-toast{visibility:hidden!important}'), isTrue,
+            src.contains('#fushi-toast{visibility:hidden!important}'), isTrue,
             reason: '$root content.js hideStyle 未隐藏 Hibiki 自己的生成中浮层（Bug B）');
         expect(src.contains('.watch-video--back-container'), isTrue,
             reason: '$root content.js hideStyle 未隐藏 Netflix 返回按钮（Bug B）');
@@ -44,15 +44,15 @@ void main() {
 
       test('[$root] Bug C：确认在播即刻 beginClip，不用固定 warmup 吃掉头部提前量', () {
         final String src = File('$root/content.js').readAsStringSync();
-        // TODO-1361（BUG-685）后「确认在播」由 hibikiWaitForPlaying 承担：以 currentTime
+        // TODO-1361（BUG-685）后「确认在播」由 fushiWaitForPlaying 承担：以 currentTime
         // 真正前进为唯一判据，条件满足即返回 → 即刻 beginClip，仍无固定 warmup。
         expect(
             src.contains(
-                'const advancing = await hibikiWaitForPlaying(v, 4000);'),
+                'const advancing = await fushiWaitForPlaying(v, 4000);'),
             isTrue,
             reason: '$root content.js 缺确认在播（currentTime 前进）门（Bug C）');
         final int playIdx =
-            src.indexOf('const advancing = await hibikiWaitForPlaying');
+            src.indexOf('const advancing = await fushiWaitForPlaying');
         final int beginIdx = src.indexOf("type: 'beginClip'");
         expect(playIdx >= 0 && beginIdx > playIdx, isTrue,
             reason: '$root content.js beginClip 顺序异常');

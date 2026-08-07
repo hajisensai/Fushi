@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// TODO-1132 追加（V16 主修遗留、无守卫的两处真实缺口）：
 /// - #5 offscreen.endClip() 的 recorder.stop() 异常路径也解绑 onstop/ondataavailable 并
 ///   清 recorder/chunks（原来只 resolve → 孤儿 recorder + 陈旧 chunks 滞留）。
-/// - #6 content.hibikiMaybeResumeNetflixBatch 外层 finally 兜底发 nfStopCapture（原来只在
+/// - #6 content.fushiMaybeResumeNetflixBatch 外层 finally 兜底发 nfStopCapture（原来只在
 ///   正常路径停录；批量抛错时 tabCapture 流不释放 → M7375 + 流泄漏）。
 void main() {
   // flutter test 的 cwd 是 hibiki 包根。两份镜像分别在 assets/ 与 ../tools/。
@@ -37,14 +37,14 @@ void main() {
         test('#1 查词暂停由 subtitlePauseOnLookup 门控', () {
           final String src = content.readAsStringSync();
           expect(
-            src.contains('if (hibikiPauseOnLookup) {\n'
+            src.contains('if (fushiPauseOnLookup) {\n'
                 "    try { const _v = document.querySelector('video'); if (_v && !_v.paused) _v.pause(); } catch (_) {}\n"
                 '  }'),
             isTrue,
             reason: '${content.path} 查词暂停未受用户设置门控',
           );
           expect(
-            src.contains("hibikiSite() === 'netflix'"),
+            src.contains("fushiSite() === 'netflix'"),
             isFalse,
             reason: '${content.path} 不应再保留 Netflix 无设置强制暂停',
           );
@@ -88,11 +88,11 @@ void main() {
 
         test('#6 批量外层 finally 兜底 nfStopCapture（异常路径也释放 tabCapture 流）', () {
           final String src = content.readAsStringSync();
-          // 外层 finally（复位 hibikiNfBatchRunning 处）内必须发 nfStopCapture：
-          // hibikiRunNetflixBatch 抛错时也释放 tabCapture 流，避开 M7375 + 流泄漏。
+          // 外层 finally（复位 fushiNfBatchRunning 处）内必须发 nfStopCapture：
+          // fushiRunNetflixBatch 抛错时也释放 tabCapture 流，避开 M7375 + 流泄漏。
           final int finallyIdx = src.lastIndexOf('} finally {');
           final int resetIdx =
-              src.indexOf('hibikiNfBatchRunning = false;', finallyIdx);
+              src.indexOf('fushiNfBatchRunning = false;', finallyIdx);
           expect(finallyIdx, greaterThanOrEqualTo(0),
               reason: '${content.path} 缺外层 finally');
           expect(resetIdx, greaterThan(finallyIdx));
@@ -184,36 +184,36 @@ void main() {
 
   // TODO-1170 → TODO-1221：网飞制卡提示走「中间下方短暂 toast」；页面右下角常驻队列 chip 已
   // 整体删除（队列 UI 迁到工具栏图标 popup）。守卫收敛为：content.js 绝无页面浮层常驻 chip
-  // （hibikiChip/hibikiRenderQueueList 符号不复活），且 toast 仍是中下短暂定位。源码扫描守卫
+  // （fushiChip/fushiRenderQueueList 符号不复活），且 toast 仍是中下短暂定位。源码扫描守卫
   // （不依赖真机/真浏览器），两份镜像都守。
   group('TODO-1170/1221 网飞制卡提示：中下短暂 toast、无右下常驻 chip', () {
     for (final File content in <File>[assetsContent, toolsContent]) {
       group('content.js ${content.path}', () {
-        test('绝无页面浮层常驻 chip（hibikiChip 已删，队列 UI 迁到 action-popup）', () {
+        test('绝无页面浮层常驻 chip（fushiChip 已删，队列 UI 迁到 action-popup）', () {
           final String src = content.readAsStringSync();
           // TODO-1221：右下角常驻 chip 及其渲染彻底删除，绝不复活（否则又落右下角常驻控件）。
-          expect(src.contains('hibikiChip'), isFalse,
-              reason: '${content.path} 复活了页面浮层常驻 chip（hibikiChip）');
-          expect(src.contains('hibikiRenderQueueList'), isFalse,
+          expect(src.contains('fushiChip'), isFalse,
+              reason: '${content.path} 复活了页面浮层常驻 chip（fushiChip）');
+          expect(src.contains('fushiRenderQueueList'), isFalse,
               reason: '${content.path} 复活了页面内队列列表渲染（应在 action-popup.js）');
           expect(src.contains('document.createElement'), isTrue,
               reason: '${content.path} sanity: 应仍有 DOM 创建（toast 等）');
         });
 
-        test('hibikiToast 定位为中间下方、非 sticky 时 5s 自动淡出（短暂）', () {
+        test('fushiToast 定位为中间下方、非 sticky 时 5s 自动淡出（短暂）', () {
           final String src = content.readAsStringSync();
           // 中间下方：left:50% + translateX(-50%) + bottom（不是右下角固定）。
           expect(
               src.contains(
                   'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);'),
               isTrue,
-              reason: '${content.path} hibikiToast 不是中间下方定位');
+              reason: '${content.path} fushiToast 不是中间下方定位');
           // 非 sticky：5000ms 后自动淡出（短暂、不常驻）。
           expect(
               src.contains(
-                  "if (!sticky) hibikiToastTimer = setTimeout(() => { if (t) t.style.opacity = '0'; }, 5000);"),
+                  "if (!sticky) fushiToastTimer = setTimeout(() => { if (t) t.style.opacity = '0'; }, 5000);"),
               isTrue,
-              reason: '${content.path} hibikiToast 非 sticky 时未自动淡出');
+              reason: '${content.path} fushiToast 非 sticky 时未自动淡出');
         });
       });
     }
@@ -267,7 +267,7 @@ void main() {
 
         test('内容脚本版本标记 bump 到 v46（用户可确认新版）', () {
           final String src = content.readAsStringSync();
-          expect(src.contains("'data-hibiki-cs', 'v46'"), isTrue,
+          expect(src.contains("'data-fushi-cs', 'v46'"), isTrue,
               reason: '${content.path} 版本标记未 bump 到 v46');
           expect(src.contains('content script v46 loaded'), isTrue,
               reason: '${content.path} 加载日志版本未 bump 到 v46');
@@ -284,25 +284,25 @@ void main() {
   group('TODO-1335 网飞录制 seek 后等缓冲就绪再开录', () {
     for (final File content in <File>[assetsContent, toolsContent]) {
       group('content.js ${content.path}', () {
-        test('有 hibikiWaitForBuffered 缓冲门（readyState>=HAVE_FUTURE_DATA=3）', () {
+        test('有 fushiWaitForBuffered 缓冲门（readyState>=HAVE_FUTURE_DATA=3）', () {
           final String src = content.readAsStringSync();
           expect(
-              src.contains('function hibikiWaitForBuffered(v, maxMs)'), isTrue,
-              reason: '${content.path} 缺 hibikiWaitForBuffered 缓冲就绪门');
+              src.contains('function fushiWaitForBuffered(v, maxMs)'), isTrue,
+              reason: '${content.path} 缺 fushiWaitForBuffered 缓冲就绪门');
           expect(src.contains('v.readyState >= 3'), isTrue,
               reason: '${content.path} 缓冲门未用 HAVE_FUTURE_DATA(3) 阈值');
         });
 
         test('beginClip 前先暂停 + 等 seek 落定 + 等缓冲就绪（不吃头部提前量）', () {
           final String src = content.readAsStringSync();
-          // seek 后暂停态依次等待：v.pause() → hibikiWaitForSeekSettled →
-          // hibikiWaitForBuffered → beginClip（暂停不推进 currentTime → 保留 200ms
+          // seek 后暂停态依次等待：v.pause() → fushiWaitForSeekSettled →
+          // fushiWaitForBuffered → beginClip（暂停不推进 currentTime → 保留 200ms
           // 头部提前量）。TODO-1361（BUG-685）在暂停与缓冲门之间加了 seek 落定门。
           final int pauseIdx = src.indexOf('try { v.pause(); } catch (_) {}');
           final int settledIdx = src
-              .indexOf('await hibikiWaitForSeekSettled(v, targetSec, 4000);');
+              .indexOf('await fushiWaitForSeekSettled(v, targetSec, 4000);');
           final int bufIdx =
-              src.indexOf('await hibikiWaitForBuffered(v, 3000);');
+              src.indexOf('await fushiWaitForBuffered(v, 3000);');
           final int beginIdx = src.indexOf("type: 'beginClip'");
           expect(pauseIdx, greaterThanOrEqualTo(0),
               reason: '${content.path} seek 后未暂停（保留头部提前量）');

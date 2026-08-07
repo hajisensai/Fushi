@@ -10,11 +10,11 @@ function rewriteDictionaryMediaPath(rawPath, dictName) {
     const normalized = normalizeDictMediaPath(rawPath);
     // TODO-1215: a real browser has no image:// scheme handler, so gaiji /
     // pitch-accent SVG images would break (ERR_UNKNOWN_URL_SCHEME). In the
-    // extension, bridge-shim.js pre-fills window.__hibikiDictMedia with the
+    // extension, bridge-shim.js pre-fills window.__fushiDictMedia with the
     // running server's base URL + token (from background cfg()); when present,
     // rewrite to the server's http media endpoint. In-app that global is unset
     // -> the original image:// path is kept (the app WebView resolves it).
-    const media = (typeof window !== 'undefined') ? window.__hibikiDictMedia : null;
+    const media = (typeof window !== 'undefined') ? window.__fushiDictMedia : null;
     if (media && media.base && media.token) {
         return `${media.base}/api/media/dictionary` +
             `?dictionary=${encodeURIComponent(dictName)}` +
@@ -33,14 +33,14 @@ function rewriteDictLinks(html, dictName) {
         if (rewritten === null) {
             return match;
         }
-        // TODO-1215 安全：扩展环境（window.__hibikiDictMedia 已设）下，这段 HTML 会经 innerHTML
+        // TODO-1215 安全：扩展环境（window.__fushiDictMedia 已设）下，这段 HTML 会经 innerHTML
         // 直落宿主页 DOM——绝不能把带原始 sync token 的媒体 URL 写进 <img src>（哪怕只存在一帧也会被
         // MutationObserver 截获）。改成无 token 的占位 data-* 属性（去掉 src），popup.js 在 innerHTML
         // 之后据此 fetch→blob 补 src（token 只在 fetch 调用里）。app 内（该全局未设）保持原样。
-        const media = (typeof window !== 'undefined') ? window.__hibikiDictMedia : null;
+        const media = (typeof window !== 'undefined') ? window.__fushiDictMedia : null;
         if (media && media.base && media.token) {
             return match.replace(/src=(['"])([^'"]+)\1/i,
-                `data-hibiki-media-dict="${encodeURIComponent(dictName)}" data-hibiki-media-path="${encodeURIComponent(src)}"`);
+                `data-fushi-media-dict="${encodeURIComponent(dictName)}" data-fushi-media-path="${encodeURIComponent(src)}"`);
         }
         return match.replace(/src=(['"])([^'"]+)\1/i, `src=${quote}${rewritten}${quote}`);
     });

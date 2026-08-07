@@ -9,7 +9,7 @@
 //      app 浅色 + 宿主页深色时，dark 块黑底叠 app 浅色米白 surface = 崩坏（黑底 + 米卡 + 灰字）。
 //
 // 修复让弹窗主题**单一来源于 app**：provider 补齐 --text-color / --background-color /
-// --hibiki-color-scheme，content.js 用 --hibiki-color-scheme 把 data-theme 对齐 app。
+// --fushi-color-scheme，content.js 用 --fushi-color-scheme 把 data-theme 对齐 app。
 // 本测在源码层守住这两端契约，防止任一端被回退后重新分裂。
 import 'dart:io';
 
@@ -32,17 +32,17 @@ void main() {
       expect(body, contains("'--background-color'"),
           reason: 'provider 必须下发 --background-color，否则弹窗底色透明露宿主页');
       // app 明暗名，供 content.js 把 data-theme 对齐 app（而非宿主页）。
-      expect(body, contains("'--hibiki-color-scheme'"),
+      expect(body, contains("'--fushi-color-scheme'"),
           reason:
-              'provider 必须下发 --hibiki-color-scheme 供 content.js 对齐 data-theme');
+              'provider 必须下发 --fushi-color-scheme 供 content.js 对齐 data-theme');
     });
 
-    test('content.js 用 --hibiki-color-scheme 把 data-theme 对齐 app 主题', () {
+    test('content.js 用 --fushi-color-scheme 把 data-theme 对齐 app 主题', () {
       final String js =
           File('assets/browser_extension/content.js').readAsStringSync();
       // 读 app 下发的主题名并设到弹窗根的 data-theme（覆盖宿主页 prefers-color-scheme 初值）。
-      expect(js, contains("theme['--hibiki-color-scheme']"),
-          reason: 'content.js 应读取 app 下发的 --hibiki-color-scheme');
+      expect(js, contains("theme['--fushi-color-scheme']"),
+          reason: 'content.js 应读取 app 下发的 --fushi-color-scheme');
       expect(js, contains("setAttribute('data-theme', cs)"),
           reason: 'content.js 应用 app 主题名设 data-theme，根除主题分裂');
     });

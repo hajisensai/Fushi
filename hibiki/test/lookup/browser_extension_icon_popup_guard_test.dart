@@ -40,45 +40,45 @@ void main() {
       });
 
       test(
-          '1184 action-popup.js 有队列渲染 + 逐项删除 + 开始生成（tabs.query→hibikiIconAction）',
+          '1184 action-popup.js 有队列渲染 + 逐项删除 + 开始生成（tabs.query→fushiIconAction）',
           () {
         final String src = actionJs.readAsStringSync();
-        expect(src.contains('hibikiFilterQueue'), isTrue,
+        expect(src.contains('fushiFilterQueue'), isTrue,
             reason: '$root action-popup.js 缺队列剔除纯函数');
         expect(src.contains('chrome.storage.local'), isTrue,
             reason: '$root action-popup.js 未以 storage 为队列真相源');
         expect(src.contains('chrome.tabs.query'), isTrue,
             reason: '$root action-popup.js 开始生成未 query 当前 tab');
-        expect(src.contains("type: 'hibikiIconAction'"), isTrue,
-            reason: '$root action-popup.js 未发 hibikiIconAction 手势消息');
+        expect(src.contains("type: 'fushiIconAction'"), isTrue,
+            reason: '$root action-popup.js 未发 fushiIconAction 手势消息');
       });
 
-      test('1184 background.js onClicked 已迁走（改 hibikiIconAction 消息驱动）', () {
+      test('1184 background.js onClicked 已迁走（改 fushiIconAction 消息驱动）', () {
         final String src = background.readAsStringSync();
         // default_popup 设了后 onClicked 永不触发：不得再注册它（否则误导）。
         expect(src.contains('chrome.action.onClicked.addListener'), isFalse,
             reason: '$root background.js 仍注册 onClicked（default_popup 下它永不触发）');
-        expect(src.contains("msg.type === 'hibikiIconAction'"), isTrue,
-            reason: '$root background.js 缺 hibikiIconAction 消息分支');
-        // hibikiIconClick 逻辑本身保留（只换触发口）。
-        expect(src.contains('function hibikiIconClick'), isTrue,
-            reason: '$root background.js 丢了 hibikiIconClick 逻辑');
+        expect(src.contains("msg.type === 'fushiIconAction'"), isTrue,
+            reason: '$root background.js 缺 fushiIconAction 消息分支');
+        // fushiIconClick 逻辑本身保留（只换触发口）。
+        expect(src.contains('function fushiIconClick'), isTrue,
+            reason: '$root background.js 丢了 fushiIconClick 逻辑');
       });
 
       // TODO-1185：字号 zoom 消费 + 多列 columns 消费 + 嵌套查词。
-      test('1185 content.css 消费 --hibiki-popup-zoom + --dict-columns', () {
+      test('1185 content.css 消费 --fushi-popup-zoom + --dict-columns', () {
         final String src = contentCss.readAsStringSync();
-        expect(src.contains('zoom: var(--hibiki-popup-zoom'), isTrue,
-            reason: '$root content.css 未消费 --hibiki-popup-zoom');
+        expect(src.contains('zoom: var(--fushi-popup-zoom'), isTrue,
+            reason: '$root content.css 未消费 --fushi-popup-zoom');
         expect(src.contains('repeat(var(--dict-columns'), isTrue,
             reason: '$root content.css 未消费 --dict-columns 多列布局');
       });
 
       // TODO-1267 起 vendor/popup.css 改为 app 内弹窗渲染器 assets/popup/popup.css 的字节
       // 镜像（parity，见 browser_extension_popup_parity_guard_test）。多列布局变量
-      // --dict-columns 与 app 一致仍在 popup.css；而 CSS `zoom: var(--hibiki-popup-zoom)` 是
+      // --dict-columns 与 app 一致仍在 popup.css；而 CSS `zoom: var(--fushi-popup-zoom)` 是
       // 扩展专属机制（app 弹窗走 WebView 侧缩放、不用 CSS zoom），只在生成的 content.css
-      // overlay 出现——由上面「content.css 消费 --hibiki-popup-zoom」用例守护，不再要求
+      // overlay 出现——由上面「content.css 消费 --fushi-popup-zoom」用例守护，不再要求
       // 死文件 popup.css 携带它（否则与 parity 守卫互斥）。
       test(
           '1185 popup.css 消费 --dict-columns（app 弹窗镜像；zoom 归 content.css overlay）',
@@ -88,16 +88,16 @@ void main() {
             reason: '$root popup.css 未消费 --dict-columns 多列布局');
       });
 
-      test('1185 content.js 定义 __hibikiOnLinkClick（嵌套查词重发 lookup）', () {
+      test('1185 content.js 定义 __fushiOnLinkClick（嵌套查词重发 lookup）', () {
         final String src = content.readAsStringSync();
-        expect(src.contains('window.__hibikiOnLinkClick = function'), isTrue,
-            reason: '$root content.js 未定义 __hibikiOnLinkClick（点释义里的词无反应）');
+        expect(src.contains('window.__fushiOnLinkClick = function'), isTrue,
+            reason: '$root content.js 未定义 __fushiOnLinkClick（点释义里的词无反应）');
         // place() 按 zoom 除算 fixed 定位坐标，避免 CSS zoom 放大偏移。
         expect(
             src.contains('(pos.left / zoom)') &&
                 src.contains('(pos.top / zoom)'),
             isTrue,
-            reason: '$root content.js place() 未按 --hibiki-popup-zoom 补偿定位');
+            reason: '$root content.js place() 未按 --fushi-popup-zoom 补偿定位');
       });
 
       // TODO-1190：网页源文高亮——强制 DOM 包裹路径（隔离世界的 CSS Custom Highlight 不绘制）。
@@ -118,18 +118,18 @@ void main() {
       test('1270 action-popup.js 队列标签优先词、句子降为暗色上下文行（不再句子一模一样）', () {
         final String src = actionJs.readAsStringSync();
         // 主标签取词字段(expression/word/term)在前、句子回落在后。
-        final int labelIdx = src.indexOf('function hibikiQueueItemLabel');
+        final int labelIdx = src.indexOf('function fushiQueueItemLabel');
         expect(labelIdx >= 0, isTrue,
-            reason: '$root action-popup.js 缺 hibikiQueueItemLabel');
+            reason: '$root action-popup.js 缺 fushiQueueItemLabel');
         final int labelEnd = src.indexOf('}', labelIdx);
         final String labelBody = src.substring(labelIdx, labelEnd);
         final int wordPos = labelBody.indexOf('q.fields');
         final int sentPos = labelBody.indexOf('q.sentence');
         expect(wordPos >= 0 && (sentPos < 0 || wordPos < sentPos), isTrue,
-            reason: '$root hibikiQueueItemLabel 未优先词字段（回退到句子优先=队列句子一模一样回归）');
+            reason: '$root fushiQueueItemLabel 未优先词字段（回退到句子优先=队列句子一模一样回归）');
         // 上下文行 helper 存在，且渲染时挂出暗色 .hp-row-sub。
-        expect(src.contains('function hibikiQueueItemContext'), isTrue,
-            reason: '$root action-popup.js 缺 hibikiQueueItemContext（句子上下文行）');
+        expect(src.contains('function fushiQueueItemContext'), isTrue,
+            reason: '$root action-popup.js 缺 fushiQueueItemContext（句子上下文行）');
         expect(src.contains("'hp-row-sub'"), isTrue,
             reason: '$root action-popup.js 未渲染 hp-row-sub 上下文行');
       });
@@ -144,16 +144,16 @@ void main() {
       // 隐形三态）+ 清空队列（二次确认）+ 队列条目跳回视频页 + 连接状态行点击重检。
       test('1881 action-popup.js 生成按钮状态机 + 清空 + 条目跳转 + 连接重检', () {
         final String src = actionJs.readAsStringSync();
-        expect(src.contains('function hibikiGenButtonState'), isTrue,
+        expect(src.contains('function fushiGenButtonState'), isTrue,
             reason:
-                '$root action-popup.js 缺 hibikiGenButtonState 状态机（回归成隐形三态按钮）');
-        expect(src.contains('function hibikiTabSite'), isTrue,
-            reason: '$root action-popup.js 缺 hibikiTabSite 站点判定');
-        expect(src.contains('function hibikiQueueItemUrl'), isTrue,
-            reason: '$root action-popup.js 缺 hibikiQueueItemUrl（队列条目跳回视频页）');
+                '$root action-popup.js 缺 fushiGenButtonState 状态机（回归成隐形三态按钮）');
+        expect(src.contains('function fushiTabSite'), isTrue,
+            reason: '$root action-popup.js 缺 fushiTabSite 站点判定');
+        expect(src.contains('function fushiQueueItemUrl'), isTrue,
+            reason: '$root action-popup.js 缺 fushiQueueItemUrl（队列条目跳回视频页）');
         // 取消逃生口必须保留：batch active 时按钮可点（cancel 态）。
         expect(src.contains("mode: 'cancel'"), isTrue,
-            reason: '$root hibikiGenButtonState 丢了 cancel 逃生口');
+            reason: '$root fushiGenButtonState 丢了 cancel 逃生口');
         // 清空队列（二次确认）。
         expect(src.contains("'hp-clear'"), isTrue,
             reason: '$root action-popup.js 缺清空队列按钮');

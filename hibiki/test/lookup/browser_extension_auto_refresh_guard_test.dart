@@ -65,7 +65,7 @@ void main() {
       expect(selfUpdate, contains('if (reloadedFor === remote)'));
       expect(src, contains('FUSHI_SELF_UPDATE'),
           reason: 'background.js 必须消费 self-update 状态机的决策');
-      expect(src, contains('hibikiReloadedForBuild'));
+      expect(src, contains('fushiReloadedForBuild'));
       final int fn = src.indexOf('async function maybeSelfReload');
       expect(fn, greaterThanOrEqualTo(0));
       final int reload = src.indexOf('chrome.runtime.reload()', fn);

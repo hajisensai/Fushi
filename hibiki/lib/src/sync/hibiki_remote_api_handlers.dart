@@ -19,7 +19,7 @@ import 'package:fushi/src/sync/immersion_mine_payload.dart';
 /// term 为空 → 返回空结果（与既有契约一致，不算错误）。
 ///
 /// BUG-530：可选 [themeColorsProvider] 返回当前 app 主题的 CSS 变量 Map（`--md-*` /
-/// `--hibiki-popup-*` / `--dict-columns`），随响应放进 `theme` 字段下发。浏览器扩展
+/// `--fushi-popup-*` / `--dict-columns`），随响应放进 `theme` 字段下发。浏览器扩展
 /// content.js 读 `resp.data.theme` 并 `setProperty` 到弹窗容器 → 弹窗实时跟随用户主题
 /// （改主题下次查词即变），无需重装扩展。null（未注入）时不带 `theme` 字段（向后兼容）。
 Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(

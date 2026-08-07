@@ -37,11 +37,11 @@ void main() {
               'v.paused skip (BUG-685 seek-in-then-out root cause)');
 
       // Seek must be confirmed settled at the <video> element level.
-      expect(content.contains('function hibikiWaitForSeekSettled'), isTrue,
-          reason: '$root content.js missing hibikiWaitForSeekSettled helper');
+      expect(content.contains('function fushiWaitForSeekSettled'), isTrue,
+          reason: '$root content.js missing fushiWaitForSeekSettled helper');
       expect(
           content
-              .contains('await hibikiWaitForSeekSettled(v, targetSec, 4000)'),
+              .contains('await fushiWaitForSeekSettled(v, targetSec, 4000)'),
           isTrue,
           reason: '$root content.js must await seek-settle before recording');
       // Settle judged by "not seeking AND currentTime near target".
@@ -50,9 +50,9 @@ void main() {
               '$root content.js seek-settle must wait for v.seeking to clear');
 
       // Recording must wait for the video to genuinely advance.
-      expect(content.contains('function hibikiWaitForPlaying'), isTrue,
-          reason: '$root content.js missing hibikiWaitForPlaying helper');
-      expect(content.contains('const advancing = await hibikiWaitForPlaying'),
+      expect(content.contains('function fushiWaitForPlaying'), isTrue,
+          reason: '$root content.js missing fushiWaitForPlaying helper');
+      expect(content.contains('const advancing = await fushiWaitForPlaying'),
           isTrue,
           reason: '$root content.js must gate the clip on the video advancing');
       // The advancing judge must be "currentTime moved past a baseline",
@@ -63,7 +63,7 @@ void main() {
               'not just v.paused');
 
       // Ordering: the advancing gate runs BEFORE beginClip (record start).
-      final int advancingIdx = content.indexOf('hibikiWaitForPlaying(v, 4000)');
+      final int advancingIdx = content.indexOf('fushiWaitForPlaying(v, 4000)');
       final int beginClipIdx = content.indexOf("type: 'beginClip'");
       expect(advancingIdx, greaterThan(0),
           reason: '$root content.js missing advancing gate call');
@@ -80,7 +80,7 @@ void main() {
 
       // Content-script version marker bumped so a stale cached extension is
       // visibly distinguishable.
-      expect(content.contains("data-hibiki-cs', 'v46'"), isTrue,
+      expect(content.contains("data-fushi-cs', 'v46'"), isTrue,
           reason: '$root content.js version marker must be bumped to v46 '
               '(v44=seek gate, v45=BUG-688 shadow-DOM popup + TODO-1219/1363 subtitle list replay/universal providers, v46=TODO-1391 hide Netflix maturity-rating overlay)');
 

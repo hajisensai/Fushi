@@ -6,11 +6,11 @@ const vm = require('node:vm');
 
 // BUG-1279 回归守卫：浏览器扩展里的「嵌套查词」（在查词弹窗内点释义里的词 / 词典交叉引用
 // a[href] → popup.js handleGlossaryAnchorClick → callHandler('onLinkClick') → bridge-shim →
-// content.js __hibikiOnLinkClick → 重发 lookup → 原地重渲染同一个弹窗）。
+// content.js __fushiOnLinkClick → 重发 lookup → 原地重渲染同一个弹窗）。
 //
-// 根因（修复前）：__hibikiOnLinkClick 调 hibikiRender(json, termLen, theme) 时**不传 anchorRect**，
-// 而 hibikiRender 是「首次查词」的完整渲染路径——它每次都会
-//   ① 用**新词长度** termLen 去截**宿主页原文的旧选区**（hibikiSelectionRects），把原文高亮
+// 根因（修复前）：__fushiOnLinkClick 调 fushiRender(json, termLen, theme) 时**不传 anchorRect**，
+// 而 fushiRender 是「首次查词」的完整渲染路径——它每次都会
+//   ① 用**新词长度** termLen 去截**宿主页原文的旧选区**（fushiSelectionRects），把原文高亮
 //      覆盖层重画成一段与原文词无关的错误范围；
 //   ② 拿这段错误几何当锚点重新 place 弹窗，把弹窗从用户眼下的位置搬回原文旁边；
 //   ③ 把 host.opacity 压 0 再淡入。
@@ -21,7 +21,7 @@ const vm = require('node:vm');
 // 原文里被查的词根本没变，没有任何理由重算它的几何。
 //
 // 本测试在受控 vm 里按 manifest 顺序真加载 vendor/popup.js + content.js，用带 shadow /
-// composedPath / closest 语义的 DOM shim 驱动真实的 hibikiSendLookup / __hibikiOnLinkClick /
+// composedPath / closest 语义的 DOM shim 驱动真实的 fushiSendLookup / __fushiOnLinkClick /
 // popup.js document click 派发，断言上述契约。
 
 const POPUP = path.join(__dirname, 'vendor', 'popup.js');
@@ -45,7 +45,7 @@ function makeEl(tag, doc) {
     id: '',
     textContent: '',
     // CSSStyleDeclaration 的真语义子集：setProperty 写的自定义属性要能被 getPropertyValue
-    // 读回（hibikiDrawHighlightOverlay 就靠 getComputedStyle(...).getPropertyValue 取高亮色）。
+    // 读回（fushiDrawHighlightOverlay 就靠 getComputedStyle(...).getPropertyValue 取高亮色）。
     // 外面再包一层 Proxy 记录**每一次**样式写入——判据是「有没有被重写」，比「值等不等」强：
     // 重新 place 出同一个坐标值也是重新定位，不能算没动过。
     style: new Proxy({
@@ -283,7 +283,7 @@ function makeSourceTextNode(text, base) {
 }
 
 // 装一个 hoshiSelection 桩：selection.ranges 指向宿主页原文节点（与真实 selectFromPosition 的
-// 产物同形），供 hibikiSelectionRects 只读取几何。
+// 产物同形），供 fushiSelectionRects 只读取几何。
 function installSelection(windowObj, node, start, end) {
   windowObj.hoshiSelection = {
     __node: node,
@@ -300,9 +300,9 @@ function installSelection(windowObj, node, start, end) {
 }
 
 const THEME = {
-  '--hibiki-popup-max-width': '400px',
-  '--hibiki-popup-max-height': '360px',
-  '--hibiki-popup-zoom': '1',
+  '--fushi-popup-max-width': '400px',
+  '--fushi-popup-max-height': '360px',
+  '--fushi-popup-zoom': '1',
 };
 
 function lookupResponder(entriesByTerm) {
@@ -322,7 +322,7 @@ function lookupResponder(entriesByTerm) {
 }
 
 // 在原文上 Shift 悬停查词。走**真实的** document mousemove 路径（而不是直接调
-// hibikiSendLookup），否则同词去重状态 hibikiLastTerm 根本不会被写，相关守卫会假绿。
+// fushiSendLookup），否则同词去重状态 fushiLastTerm 根本不会被写，相关守卫会假绿。
 function shiftHover(world, term, node, x, y) {
   const { windowObj, docListeners } = world;
   windowObj.hoshiSelection.getCharacterAtPoint = () => ({ node, offset: 0 });
@@ -343,7 +343,7 @@ function openPopup(world, term, node) {
     host,
     left: host.style.left,
     top: host.style.top,
-    overlay: body.children.find((c) => c.id === 'hibiki-highlight-overlay'),
+    overlay: body.children.find((c) => c.id === 'fushi-highlight-overlay'),
   };
 }
 
@@ -352,13 +352,13 @@ const ENTRIES = {
   '言語': { entries: [{ expression: '言語' }], bestLength: 2 },
 };
 
-test('嵌套查词不得关掉弹窗：__hibikiOnLinkClick 后 host 仍在文档里', () => {
+test('嵌套查词不得关掉弹窗：__fushiOnLinkClick 后 host 仍在文档里', () => {
   const world = loadWorld({ respond: lookupResponder(ENTRIES) });
   const src = makeSourceTextNode('日本語を勉強する', { left: 300, top: 400 });
   const before = openPopup(world, '日本語', src);
 
   world.resetWrites();
-  world.windowObj.__hibikiOnLinkClick('言語');
+  world.windowObj.__fushiOnLinkClick('言語');
   world.flushRaf();
 
   assert.strictEqual(before.host.removed, undefined,
@@ -385,7 +385,7 @@ test('嵌套查词必须原地：弹窗落点不得被重算搬回原文旁边',
 
   // 用户把弹窗读到一半，点了释义里的「言語」。原文里被查的词一个字都没变。
   world.resetWrites();
-  world.windowObj.__hibikiOnLinkClick('言語');
+  world.windowObj.__fushiOnLinkClick('言語');
   world.flushRaf();
 
   // 判据是「有没有被重新定位」而不是「坐标值等不等」：重新 place 恰好算回同一个值也是
@@ -405,10 +405,10 @@ test('嵌套查词不得重画原文高亮：原文词没变，高亮范围就�
   assert.ok(before.overlay, '首查词必须画出原文高亮覆盖层');
   const beforeBoxes = before.overlay.children.length;
 
-  world.windowObj.__hibikiOnLinkClick('言語'); // 子词 2 字，父词 3 字
+  world.windowObj.__fushiOnLinkClick('言語'); // 子词 2 字，父词 3 字
   world.flushRaf();
 
-  const after = world.body.children.find((c) => c.id === 'hibiki-highlight-overlay');
+  const after = world.body.children.find((c) => c.id === 'fushi-highlight-overlay');
   assert.strictEqual(after, before.overlay,
       '嵌套查词不得撤掉/重建原文高亮覆盖层');
   assert.strictEqual(after.children.length, beforeBoxes,
@@ -420,11 +420,11 @@ test('嵌套查词后 hover 回父词仍能重查：去重状态跟着弹窗内�
   const src = makeSourceTextNode('日本語を勉強する', { left: 300, top: 400 });
   openPopup(world, '日本語', src);
 
-  world.windowObj.__hibikiOnLinkClick('言語');
+  world.windowObj.__fushiOnLinkClick('言語');
   world.flushRaf();
 
   // 走**真实的** Shift 悬停路径（document mousemove handler），同词去重判定就在那里；
-  // 直接调 hibikiSendLookup 会绕过去重、把这条守卫变成假绿（已变异实测确认）。
+  // 直接调 fushiSendLookup 会绕过去重、把这条守卫变成假绿（已变异实测确认）。
   // 换个坐标，避开 mousemove 自己的「几乎没动就跳过」位移阈值。
   world.sent.length = 0;
   shiftHover(world, '日本語', src, 420, 410);
@@ -447,8 +447,8 @@ test('请求在途时用户关掉了弹窗：嵌套结果丢弃，不得凭空�
   const src = makeSourceTextNode('日本語を勉強する', { left: 300, top: 400 });
   const before = openPopup(world, '日本語', src);
 
-  world.windowObj.__hibikiOnLinkClick('言語');
-  world.sandbox.hibikiRemoveContainer();   // 用户关窗
+  world.windowObj.__fushiOnLinkClick('言語');
+  world.sandbox.fushiRemoveContainer();   // 用户关窗
   deliver();                                // 迟到的嵌套响应
   world.flushRaf();
 
@@ -474,8 +474,8 @@ test('点释义里的交叉引用 a[href]：popup.js 必须走 onLinkClick，不
   gloss.appendChild(anchor); entry.appendChild(gloss); container.appendChild(entry);
 
   let tapOutside = false;
-  const realHandler = world.windowObj.__hibikiOnTapOutside;
-  world.windowObj.__hibikiOnTapOutside = () => { tapOutside = true; if (realHandler) realHandler(); };
+  const realHandler = world.windowObj.__fushiOnTapOutside;
+  world.windowObj.__fushiOnTapOutside = () => { tapOutside = true; if (realHandler) realHandler(); };
 
   let defaultPrevented = false;
   const evt = {
