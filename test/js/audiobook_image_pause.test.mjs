@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { readFileSync } from "node:fs";
 
-// 相对本测试文件读当前分支的真实 bridge（test/js/ → 仓库根 → hibiki/...）。
+// 相对本测试文件读当前分支的真实 bridge（test/js/ → 仓库根 → fushi/...）。
 const BRIDGE_URL = new URL(
   "../../fushi/lib/src/media/audiobook/audiobook_bridge.dart",
   import.meta.url,
