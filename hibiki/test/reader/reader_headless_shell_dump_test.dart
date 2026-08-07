@@ -12,18 +12,18 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 ///   flutter test test/reader/reader_headless_shell_dump_test.dart   # 生成 shell 到 temp
 ///   node tool/reader_pitch_headless/chapter_start_reanchor_probe.mjs # 复现/验证
 ///
-/// 产物文件（systemTemp）：hoshi_shell_paginated.html / hoshi_shell_continuous.html
-/// （另写 hoshi_shell_fwd.html / hoshi_shell_bwd.html 兼容既有 matrix_probe.mjs）。
+/// 产物文件（systemTemp）：fushi_shell_paginated.html / fushi_shell_continuous.html
+/// （另写 fushi_shell_fwd.html / fushi_shell_bwd.html 兼容既有 matrix_probe.mjs）。
 /// 本测试永远 pass——它只是把真 shell 落盘，不断言渲染行为（那由 headless probe 断言）。
 void main() {
   test('dump paginated + continuous horizontal shell to systemTemp', () {
     final String paginated = ReaderPaginationScripts.paginatedShellSource();
     final String continuous = ReaderPaginationScripts.continuousShellSource();
     final String tmp = Directory.systemTemp.path;
-    File('$tmp/hoshi_shell_paginated.html').writeAsStringSync(paginated);
-    File('$tmp/hoshi_shell_continuous.html').writeAsStringSync(continuous);
-    File('$tmp/hoshi_shell_fwd.html').writeAsStringSync(paginated);
-    File('$tmp/hoshi_shell_bwd.html').writeAsStringSync(paginated);
+    File('$tmp/fushi_shell_paginated.html').writeAsStringSync(paginated);
+    File('$tmp/fushi_shell_continuous.html').writeAsStringSync(continuous);
+    File('$tmp/fushi_shell_fwd.html').writeAsStringSync(paginated);
+    File('$tmp/fushi_shell_bwd.html').writeAsStringSync(paginated);
     expect(paginated.contains('window.fushiReader'), isTrue);
     expect(continuous.contains('window.fushiReader'), isTrue);
   });

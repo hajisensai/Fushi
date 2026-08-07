@@ -223,7 +223,7 @@ Future<Future<dynamic> Function(String source)> _waitForReaderReady(
   IntegrationTestWidgetsFlutterBinding binding,
   ComputerUseEvidence evidence,
 ) async {
-  const Key webViewKey = ValueKey<String>('hoshi_webview');
+  const Key webViewKey = ValueKey<String>('fushi_webview');
   for (int i = 0; i < 80 && find.byKey(webViewKey).evaluate().isEmpty; i++) {
     await tester.pump(const Duration(milliseconds: 500));
   }
@@ -240,7 +240,7 @@ Future<Future<dynamic> Function(String source)> _waitForReaderReady(
     },
   );
 
-  const Key contentReadyKey = ValueKey<String>('hoshi_content_ready');
+  const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
   for (int i = 0;
       i < 140 && find.byKey(contentReadyKey).evaluate().isEmpty;
       i++) {
@@ -269,7 +269,7 @@ Future<Future<dynamic> Function(String source)> _waitForReaderReady(
 }
 
 void _focusReaderSurface(WidgetTester tester) {
-  final Finder webView = find.byKey(const ValueKey<String>('hoshi_webview'));
+  final Finder webView = find.byKey(const ValueKey<String>('fushi_webview'));
   final Iterable<Element> matches = webView.evaluate();
   expect(matches, isNotEmpty, reason: 'Reader WebView must be mounted');
   bool focused = false;

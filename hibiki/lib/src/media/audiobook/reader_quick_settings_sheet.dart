@@ -1577,7 +1577,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               identifier: 'hibiki.reader.quick_settings.lyrics_toggle',
               child: _actionBtn(
                 context,
-                key: const ValueKey<String>('hoshi_lyrics_mode_toggle'),
+                key: const ValueKey<String>('fushi_lyrics_mode_toggle'),
                 icon: widget.lyricsMode
                     ? Icons.auto_stories_outlined
                     : Icons.lyrics_outlined,

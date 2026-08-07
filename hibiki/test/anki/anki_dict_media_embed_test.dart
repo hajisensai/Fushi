@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 /// 制卡词典媒体（gaiji 外字）嵌入守卫：导出的义项 HTML 已经是
-/// `<img class="gloss-image" src="hoshi_dict_N.ext">`，制卡时必须把占位符
-/// `hoshi_dict_N.ext` 替换成**裸文件名**。若替换值是完整 `<img src="real.svg">`
+/// `<img class="gloss-image" src="fushi_dict_N.ext">`，制卡时必须把占位符
+/// `fushi_dict_N.ext` 替换成**裸文件名**。若替换值是完整 `<img src="real.svg">`
 /// 标签，会嵌进 `src="..."` 成 `<img src="<img src="real.svg">">` 的嵌套坏图，
 /// Anki 卡片上外字不显示。
 ///
@@ -57,11 +57,11 @@ class _TestRepo extends BaseAnkiRepository {
 const DictionaryMedia _gaijiMedia = DictionaryMedia(
   dictionary: '明鏡',
   path: 'gaiji/bs一.svg',
-  filename: 'hoshi_dict_0.svg', // popup.js getMediaFilename 注入的占位符
+  filename: 'fushi_dict_0.svg', // popup.js getMediaFilename 注入的占位符
 );
 
 // 导出义项 HTML：占位符在已有 <img> 的 src 属性里（见 popup.js createDefinitionImage）。
-const String _glossaryHtml = '<img class="gloss-image" src="hoshi_dict_0.svg">';
+const String _glossaryHtml = '<img class="gloss-image" src="fushi_dict_0.svg">';
 
 void main() {
   final _TestRepo repo = _TestRepo();
@@ -86,7 +86,7 @@ void main() {
       final String back = fields['Back'] ?? '';
       expect(back, contains('src="real_stored.svg"'));
       expect(back, isNot(contains('src="<img'))); // 不嵌套
-      expect(back, isNot(contains('hoshi_dict_0.svg'))); // 占位符已替换
+      expect(back, isNot(contains('fushi_dict_0.svg'))); // 占位符已替换
     });
 
     test('full <img> tag ref nests (reproduces the AnkiConnect BUG)', () async {

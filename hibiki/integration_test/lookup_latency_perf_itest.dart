@@ -97,7 +97,7 @@ void main() {
       )));
       await tester.pump(const Duration(seconds: 3));
 
-      const Key webViewKey = ValueKey<String>('hoshi_webview');
+      const Key webViewKey = ValueKey<String>('fushi_webview');
       for (int i = 0;
           i < 80 && find.byKey(webViewKey).evaluate().isEmpty;
           i++) {
@@ -105,7 +105,7 @@ void main() {
       }
       expect(find.byKey(webViewKey), findsOneWidget);
 
-      const Key contentReadyKey = ValueKey<String>('hoshi_content_ready');
+      const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
       bool contentReady = false;
       for (int i = 0; i < 140; i++) {
         await tester.pump(const Duration(milliseconds: 500));

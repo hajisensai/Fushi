@@ -631,7 +631,7 @@ function getMediaFilename(dictionary, path) {
     // BUG-902：制卡登记的 path 必须与显示路径一样先归一化（trim / \\→/ / 去开头
     // ./ 或 /）。否则 writeDictionaryMediaCache 用生 path 引 FushiDicts.getMediaFile
     // 会 miss（path 带开头 ./ 或 / 的词典），字节不落盘 → 两个 Anki repo 读不到缓存
-    // → 卡片里 <img src="hoshi_dict_N.ext"> 占位符不被替换成真实文件名，留成坏图。
+    // → 卡片里 <img src="fushi_dict_N.ext"> 占位符不被替换成真实文件名，留成坏图。
     // 显示路径（rewriteDictionaryMediaPath）早已归一化，故弹窗里图仍看得见，只有制卡
     // 掉图——这正是 BUG-902 的病症（外字/内容图混排时，脏 path 的词典排在后面就末尾掉图）。
     // 归一化后 payload.path 干净，writer 与三个 Anki repo（AnkiConnect/AnkiDroid/
@@ -643,7 +643,7 @@ function getMediaFilename(dictionary, path) {
         currentDictionaryMedia.set(key, {
             dictionary,
             path: normalizedPath,
-            filename: `hoshi_dict_${currentDictionaryMedia.size}.${extension}`,
+            filename: `fushi_dict_${currentDictionaryMedia.size}.${extension}`,
         });
     }
     return currentDictionaryMedia.get(key).filename;

@@ -33,10 +33,10 @@ import 'test_helpers.dart';
 ///       integration_test/reader_margin_live_apply_itest.dart
 
 bool _webViewShown() =>
-    find.byKey(const ValueKey<String>('hoshi_webview')).evaluate().isNotEmpty;
+    find.byKey(const ValueKey<String>('fushi_webview')).evaluate().isNotEmpty;
 
 bool _contentReady() => find
-    .byKey(const ValueKey<String>('hoshi_content_ready'))
+    .byKey(const ValueKey<String>('fushi_content_ready'))
     .evaluate()
     .isNotEmpty;
 

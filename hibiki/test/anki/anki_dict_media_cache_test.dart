@@ -4,7 +4,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 /// A-字形 守卫：制卡词典媒体（gaiji 外字）缓存命名必须 writer（主 app 的
 /// writeDictionaryMediaCache）与 reader（AnkiMobile / AnkiDroid / AnkiConnect）
 /// 共用同一稳定规则，否则文件名对不上→repo 读不到→卡片留下未替换的
-/// `hoshi_dict_N.ext` 坏图。
+/// `fushi_dict_N.ext` 坏图。
 ///
 /// BUG-904：哈希输入是 `<dict> <path>`（词典名 + NUL 分隔 + 相对路径），只对
 /// path 求哈希会让两本词典同一相对路径的外字串味。

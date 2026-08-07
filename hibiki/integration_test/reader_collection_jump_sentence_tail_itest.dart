@@ -35,7 +35,7 @@ import 'test_helpers.dart';
 ///
 /// 本测试在真实 app 离屏壳里端到端证明该修复的**几何效果**（产品代码已落地，本文件
 /// 只加测试，不改产品代码）：
-///   1. 播种标准日文 EPUB（含长段落），焦点驱动打开它，等 `hoshi_content_ready`。
+///   1. 播种标准日文 EPUB（含长段落），焦点驱动打开它，等 `fushi_content_ready`。
 ///   2. 强制横排（`setReaderWritingMode('horizontal-tb')`，BUG-461 句尾对齐只在横排
 ///      生效）+「连续滚动」模式（`setReaderViewMode('continuous')`，报告里的精确场景），
 ///      经 onLayoutReloadLive 整章重排（产品改结构性布局键的同一路径）。
@@ -65,11 +65,11 @@ import 'test_helpers.dart';
 
 /// reader WebView 是否挂载。
 bool _webViewShown() =>
-    find.byKey(const ValueKey<String>('hoshi_webview')).evaluate().isNotEmpty;
+    find.byKey(const ValueKey<String>('fushi_webview')).evaluate().isNotEmpty;
 
 /// 内容就绪标记（fushiReader 已注入、首章已铺好）。
 bool _contentReady() => find
-    .byKey(const ValueKey<String>('hoshi_content_ready'))
+    .byKey(const ValueKey<String>('fushi_content_ready'))
     .evaluate()
     .isNotEmpty;
 

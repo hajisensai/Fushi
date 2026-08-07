@@ -1451,7 +1451,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       listenable: ctrl,
       builder: (context, _) {
         return _wrapBottomChromeBar(
-          key: const ValueKey<String>('hoshi_play_bar'),
+          key: const ValueKey<String>('fushi_play_bar'),
           bar: AudiobookPlayBar(
             controller: ctrl,
             skipActionSeconds: ReaderHibikiSource.instance.skipActionSeconds,
@@ -1874,7 +1874,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     final Text label = Text(
       '$_progressCurrentChars / $_progressTotalChars'
       '  ${(ratio * 100).toStringAsFixed(2)}%',
-      key: const ValueKey<String>('hoshi_progress'),
+      key: const ValueKey<String>('fushi_progress'),
       style: TextStyle(
           fontSize: _ReaderHibikiPageState._infoFontSize, color: infoColor),
       textAlign: readerTopProgressTextAlign(position),

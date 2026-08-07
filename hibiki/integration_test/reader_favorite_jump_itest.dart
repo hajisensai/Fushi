@@ -28,10 +28,10 @@ import 'test_helpers.dart';
 /// Run (from hibiki/):
 ///   tool\run_windows_itest.ps1 integration_test\reader_favorite_jump_itest.dart
 bool _webViewShown() =>
-    find.byKey(const ValueKey<String>('hoshi_webview')).evaluate().isNotEmpty;
+    find.byKey(const ValueKey<String>('fushi_webview')).evaluate().isNotEmpty;
 
 bool _contentReady() => find
-    .byKey(const ValueKey<String>('hoshi_content_ready'))
+    .byKey(const ValueKey<String>('fushi_content_ready'))
     .evaluate()
     .isNotEmpty;
 

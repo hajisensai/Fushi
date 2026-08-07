@@ -37,7 +37,7 @@ import 'test_helpers.dart';
 ///     drops --chrome-bottom-inset from (bar height ~56px) to system inset only;
 ///     onTapEmpty reveal keeps --chrome-bottom-inset unchanged.
 ///  4. auto-hide timing (best-effort): after reveal, pump the configured
-///     duration; the floating bottom bar (hoshi_play_bar) auto-hides.
+///     duration; the floating bottom bar (fushi_play_bar) auto-hides.
 ///
 /// Triggering: prefs via ReaderHibikiSource.instance.toggleXxx() (fire-and-forget
 /// async, pump to land); reader re-anchor via the same settings-UI notify entry
@@ -121,7 +121,7 @@ void main() {
         expect(find.byType(ReaderHibikiPage), findsOneWidget,
             reason: 'ReaderHibikiPage must mount after openMedia.');
 
-        const Key webViewKey = ValueKey<String>('hoshi_webview');
+        const Key webViewKey = ValueKey<String>('fushi_webview');
         bool webViewPresent = false;
         for (int i = 0; i < 180; i++) {
           await tester.pump(const Duration(milliseconds: 500));
@@ -133,7 +133,7 @@ void main() {
         }
         expect(webViewPresent, isTrue, reason: 'WebView present');
 
-        const Key contentReadyKey = ValueKey<String>('hoshi_content_ready');
+        const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
         bool contentReady = false;
         for (int i = 0; i < 120; i++) {
           await tester.pump(const Duration(milliseconds: 500));
@@ -325,12 +325,12 @@ void main() {
           "'onTapEmpty');},0)",
         );
         // Witness the reveal on TWO surfaces:
-        //  * top progress strip (hoshi_progress) - floating, gated only on
+        //  * top progress strip (fushi_progress) - floating, gated only on
         //    _chromeTransientVisible (_topProgressShouldPaint), so it is the
         //    _showChrome-independent proof the shared reveal flag flipped.
         //  * bottom bar - this seeded book has NO audiobook, so the bottom
         //    chrome is the settings bar (_buildSettingsBar, no ValueKey), not
-        //    the audiobook play bar (hoshi_play_bar). Its unique headphones
+        //    the audiobook play bar (fushi_play_bar). Its unique headphones
         //    (audio-import) IconButton is the direct bottom-bar witness.
         final Finder bottomBarWitness =
             find.widgetWithIcon(IconButton, Icons.headphones_outlined);
@@ -339,7 +339,7 @@ void main() {
         for (int i = 0; i < 40; i++) {
           await tester.pump(const Duration(milliseconds: 200));
           progressRevealed = find
-              .byKey(const ValueKey<String>('hoshi_progress'))
+              .byKey(const ValueKey<String>('fushi_progress'))
               .evaluate()
               .isNotEmpty;
           bottomBarRevealed = bottomBarWitness.evaluate().isNotEmpty;
@@ -384,7 +384,7 @@ void main() {
         // (floating) is the _showChrome-independent witness; fall back to the
         // bottom bar if that was the one that appeared.
         // Both revealed floating surfaces must auto-hide once the timer fires:
-        // the top progress strip (hoshi_progress) and the bottom settings bar
+        // the top progress strip (fushi_progress) and the bottom settings bar
         // (its audio-import icon). _armChromeAutoHide uses a real Timer (not
         // the tester fake clock), so advance wall-clock time then pump for the
         // auto-hide setState to land.
@@ -393,7 +393,7 @@ void main() {
         for (int i = 0; i < 25; i++) {
           await tester.pump(const Duration(milliseconds: 200));
           final bool progressGone = find
-              .byKey(const ValueKey<String>('hoshi_progress'))
+              .byKey(const ValueKey<String>('fushi_progress'))
               .evaluate()
               .isEmpty;
           final bool bottomGone = bottomBarWitness.evaluate().isEmpty;

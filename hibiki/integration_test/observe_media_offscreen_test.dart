@@ -78,7 +78,7 @@ void main() {
       }
       await tester.pump(const Duration(seconds: 3));
 
-      // 有声书（EPUB+音频）可能以歌词模式打开（与章节阅读器不同页，无 hoshi_webview
+      // 有声书（EPUB+音频）可能以歌词模式打开（与章节阅读器不同页，无 fushi_webview
       // key），故不强求该 key；改等阅读器 WebView 创建钩子就绪（onWebViewCreated 注册，
       // 任何模式都触发），这是跨模式可靠信号。
       bool readerReady = false;
@@ -103,7 +103,7 @@ void main() {
       for (int i = 0; i < 20; i++) {
         await tester.pump(const Duration(milliseconds: 500));
         if (find
-            .byKey(const ValueKey<String>('hoshi_content_ready'))
+            .byKey(const ValueKey<String>('fushi_content_ready'))
             .evaluate()
             .isNotEmpty) {
           break;

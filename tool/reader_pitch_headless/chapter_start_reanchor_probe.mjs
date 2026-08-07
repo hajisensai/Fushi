@@ -60,7 +60,7 @@ async function measure(pg, mode){
 
 // 打开一章（前导图 leadHtml + 正文），等图片 decode + 初始 restore(progress0) 落地。
 async function openChapter(mode, leadHtml){
-  const shellFile = mode === 'paginated' ? 'hoshi_shell_paginated.html' : 'hoshi_shell_continuous.html';
+  const shellFile = mode === 'paginated' ? 'fushi_shell_paginated.html' : 'fushi_shell_continuous.html';
   const shell = fs.readFileSync(path.join(os.tmpdir(), shellFile), 'utf8');
   const css = mode === 'paginated' ? cssPaginated : cssContinuous;
   const full = `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>${leadHtml}\n${paras}\n${shell}</body></html>`;

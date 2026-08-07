@@ -788,12 +788,12 @@ void main() {
             {
               'dictionary': 'd',
               'path': dictPathA,
-              'filename': 'hoshi_dict_0.svg',
+              'filename': 'fushi_dict_0.svg',
             },
             {
               'dictionary': 'd',
               'path': dictPathB,
-              'filename': 'hoshi_dict_1.svg',
+              'filename': 'fushi_dict_1.svg',
             },
           ],
         });

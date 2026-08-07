@@ -8,7 +8,7 @@ const paras=Array.from({length:60},(_,i)=>`<p>P${i} これはテスト本文で�
 function png(w,h){const raw=Buffer.alloc((w*3+1)*h);for(let y=0;y<h;y++){raw[y*(w*3+1)]=0;for(let x=0;x<w;x++){const o=y*(w*3+1)+1+x*3;raw[o]=136;raw[o+1]=136;raw[o+2]=136;}}const d=zlib.deflateSync(raw);const sig=Buffer.from([137,80,78,71,13,10,26,10]);const ih=Buffer.alloc(13);ih.writeUInt32BE(w,0);ih.writeUInt32BE(h,4);ih[8]=8;ih[9]=2;const crc=b=>{let c=~0;for(let i=0;i<b.length;i++){c^=b[i];for(let k=0;k<8;k++)c=(c>>>1)^(0xEDB88320&-(c&1));}return ~c;};const ch=(t,dd)=>{const l=Buffer.alloc(4);l.writeUInt32BE(dd.length,0);const tt=Buffer.from(t);const cc=Buffer.alloc(4);cc.writeUInt32BE(crc(Buffer.concat([tt,dd]))>>>0,0);return Buffer.concat([l,tt,dd,cc]);};return Buffer.concat([sig,ch('IHDR',ih),ch('IDAT',d),ch('IEND',Buffer.alloc(0))]);}
 const bigPng=png(300,520);
 async function run(kind, dir, action){
-  const shell=fs.readFileSync(path.join(os.tmpdir(),`hoshi_shell_${dir}.html`),'utf8');
+  const shell=fs.readFileSync(path.join(os.tmpdir(),`fushi_shell_${dir}.html`),'utf8');
   const lead = kind==='image' ? `<img id="lead" loading="lazy" src="https://fushi.local/lead.png" alt="">` : '';
   const full=`<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>${lead}\n${paras}\n${shell}</body></html>`;
   const b=await puppeteer.launch({executablePath:CHROME,headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:W,height:H});

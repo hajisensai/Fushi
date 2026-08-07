@@ -16,7 +16,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 2. ReaderHibikiSource 双路径（readerSettings 优先 / getPreference 回退）；
 /// 3. schema 项落在 behavior（阅读操作）组、order≥12（不撞 TODO-725 的 0..11）；
 /// 4. 源码：reader 页 `_showTopProgress` 与门并入 showTopProgressBar，
-///    且顶栏构建仍以 `_showTopProgress` 为唯一门控（关后顶栏 'hoshi_progress' 不渲染）。
+///    且顶栏构建仍以 `_showTopProgress` 为唯一门控（关后顶栏 'fushi_progress' 不渲染）。
 
 FushiDatabase _testDb() {
   return FushiDatabase.forTesting(
@@ -136,8 +136,8 @@ void main() {
     final String chrome = File(
       'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
     ).readAsStringSync();
-    expect(chrome.contains("ValueKey<String>('hoshi_progress')"), isTrue,
-        reason: '顶栏文本 key 仍为 hoshi_progress');
+    expect(chrome.contains("ValueKey<String>('fushi_progress')"), isTrue,
+        reason: '顶栏文本 key 仍为 fushi_progress');
     // TODO-975：顶栏门控收敛进 _topProgressShouldPaint（挤压恒随 _showTopProgress、
     // 悬浮再加 transient 旗），关进度仍隐藏（topProgressVisible 在 showTopProgress=false
     // 返 false）；不变式不退回。

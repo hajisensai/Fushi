@@ -32,9 +32,9 @@ import 'package:fushi_anki/fushi_anki.dart';
 void main() {
   const String dictName = '明鏡国語辞典 第三版';
   const String gaijiPath = 'gaiji/hibiki_bug1264.svg';
-  const String placeholder = 'hoshi_dict_0.svg';
+  const String placeholder = 'fushi_dict_0.svg';
   const String secondGaijiPath = 'gaiji/hibiki_bug1264_second.svg';
-  const String secondPlaceholder = 'hoshi_dict_1.svg';
+  const String secondPlaceholder = 'fushi_dict_1.svg';
 
   final String cacheDir = ankiDictionaryMediaCacheDirPath();
   final String cachedName =
@@ -45,7 +45,7 @@ void main() {
   late Directory tempDir;
   late File gif;
 
-  /// 制卡负载：义项 HTML 里带一个未替换的占位符 `<img src="hoshi_dict_0.svg">`，
+  /// 制卡负载：义项 HTML 里带一个未替换的占位符 `<img src="fushi_dict_0.svg">`，
   /// 并在 dictionaryMedia 登记它——与 popup.js 真实产出的形状一致。
   String payloadWith(List<({String path, String filename})> media) {
     final String glossaryImgs = media

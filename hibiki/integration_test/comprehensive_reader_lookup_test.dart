@@ -40,7 +40,7 @@ void main() {
       expect(findBookEntries(), findsWidgets,
           reason: 'seeded book card must appear on the books shelf');
 
-      const Key webViewKey = ValueKey<String>('hoshi_webview');
+      const Key webViewKey = ValueKey<String>('fushi_webview');
       // 书卡的 Enter→activate 未挂在 FushiFocusRoot 下（TODO-783），且已入库
       // fixture 可能被书架排序排到视口外——走生产同一调用 openMedia 打开
       // （openBookViaProductionPath，同 abe553a5c 的解耦理由）。
@@ -48,7 +48,7 @@ void main() {
       await _waitFor(tester, find.byKey(webViewKey), 'Hoshi WebView');
       await _waitFor(
         tester,
-        find.byKey(const ValueKey<String>('hoshi_content_ready')),
+        find.byKey(const ValueKey<String>('fushi_content_ready')),
         'Hoshi content ready',
       );
 

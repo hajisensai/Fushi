@@ -2762,7 +2762,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                       ),
                     if (_readerContentReady)
                       const SizedBox.shrink(
-                          key: ValueKey<String>('hoshi_content_ready')),
+                          key: ValueKey<String>('fushi_content_ready')),
                     if (!kReleaseMode && _lyricsMode && _lyricsPageReady)
                       Positioned(
                         left: 0,
@@ -2775,7 +2775,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                             identifier: 'hibiki.reader.lyrics.ready',
                             label: 'lyrics ready',
                             child: const SizedBox(
-                              key: ValueKey<String>('hoshi_lyrics_ready'),
+                              key: ValueKey<String>('fushi_lyrics_ready'),
                               width: 1,
                               height: 1,
                             ),

@@ -55,7 +55,7 @@ import 'test_helpers.dart';
 
 /// reader WebView 是否挂载（书已打开的标志）。
 bool _webViewShown() =>
-    find.byKey(const ValueKey<String>('hoshi_webview')).evaluate().isNotEmpty;
+    find.byKey(const ValueKey<String>('fushi_webview')).evaluate().isNotEmpty;
 
 /// 轮询取得 attach 到 session 的有声书控制器（且本章已有 cue），否则返回 null。
 Future<AudiobookPlayerController?> _waitForActiveAudiobook(

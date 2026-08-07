@@ -78,7 +78,7 @@ void main() {
       for (int i = 0; i < 30; i++) {
         await tester.pump(const Duration(milliseconds: 500));
         if (find
-            .byKey(const ValueKey<String>('hoshi_content_ready'))
+            .byKey(const ValueKey<String>('fushi_content_ready'))
             .evaluate()
             .isNotEmpty) {
           break;

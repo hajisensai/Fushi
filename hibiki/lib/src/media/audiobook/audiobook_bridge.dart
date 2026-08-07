@@ -414,10 +414,10 @@ window.__fushiAnnotate = function(chapterHref) {
     final String cssJsonStr = jsonEncode(css);
     await controller.evaluateJavascript(source: '''
 (function() {
-  var existing = document.getElementById('__hoshi_audio_css');
+  var existing = document.getElementById('__fushi_audio_css');
   if (existing) existing.remove();
   var s = document.createElement('style');
-  s.id = '__hoshi_audio_css';
+  s.id = '__fushi_audio_css';
   s.textContent = $cssJsonStr;
   var parent = document.head || document.documentElement || document.body;
   if (parent) {

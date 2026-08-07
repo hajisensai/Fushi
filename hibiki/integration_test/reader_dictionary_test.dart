@@ -81,7 +81,7 @@ void main() {
 
       // ── Phase 2: Verify Hoshi WebView loads ──
 
-      const Key webViewKey = ValueKey<String>('hoshi_webview');
+      const Key webViewKey = ValueKey<String>('fushi_webview');
       bool webViewFound = false;
       for (int i = 0; i < 60; i++) {
         await tester.pump(const Duration(milliseconds: 500));
@@ -95,7 +95,7 @@ void main() {
 
       // ── Phase 3: Wait for content ready ──
 
-      const Key contentReadyKey = ValueKey<String>('hoshi_content_ready');
+      const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
       bool contentReady = false;
       for (int i = 0; i < 120; i++) {
         await tester.pump(const Duration(milliseconds: 500));
@@ -114,7 +114,7 @@ void main() {
 
       // Verify progress indicator.
       final Finder progressText =
-          find.byKey(const ValueKey<String>('hoshi_progress'));
+          find.byKey(const ValueKey<String>('fushi_progress'));
       if (progressText.evaluate().isNotEmpty) {
         final Text textWidget = tester.widget(progressText) as Text;
         debugPrint('[reader] Progress text: ${textWidget.data}');
@@ -125,7 +125,7 @@ void main() {
       // ── Phase 4: Check play bar bounds (HBK-REG-001) ──
 
       final Finder playBar =
-          find.byKey(const ValueKey<String>('hoshi_play_bar'));
+          find.byKey(const ValueKey<String>('fushi_play_bar'));
       if (playBar.evaluate().isNotEmpty) {
         final RenderBox playBarBox = tester.renderObject(playBar) as RenderBox;
         final Offset playBarTopLeft = playBarBox.localToGlobal(Offset.zero);

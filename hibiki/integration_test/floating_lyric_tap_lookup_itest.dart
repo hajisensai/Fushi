@@ -195,7 +195,7 @@ Future<AudiobookPlayerController?> _waitForActiveAudiobook(
 }
 
 bool _webViewShown() =>
-    find.byKey(const ValueKey<String>('hoshi_webview')).evaluate().isNotEmpty;
+    find.byKey(const ValueKey<String>('fushi_webview')).evaluate().isNotEmpty;
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

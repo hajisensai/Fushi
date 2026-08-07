@@ -234,12 +234,12 @@ void main() {
       rawPayloadJson: jsonEncode(<String, Object?>{
         'expression': '猫',
         'audio': wordAudio.path,
-        'glossary': '<img class="gloss-image" src="hoshi_dict_0.svg">',
+        'glossary': '<img class="gloss-image" src="fushi_dict_0.svg">',
         'dictionaryMedia': <Object>[
           <String, String>{
             'dictionary': '明鏡国語辞典 第三版',
             'path': dictMediaPath,
-            'filename': 'hoshi_dict_0.svg',
+            'filename': 'fushi_dict_0.svg',
           },
         ],
       }),
@@ -271,7 +271,7 @@ void main() {
     ]) {
       expect(value, isNot(contains('data:')));
       expect(value, isNot(contains(temp.path)));
-      expect(value, isNot(contains('hoshi_dict_0.svg')));
+      expect(value, isNot(contains('fushi_dict_0.svg')));
     }
     await backgroundTaskEnded.future;
     expect(events, <String>[

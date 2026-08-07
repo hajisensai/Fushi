@@ -63,13 +63,13 @@ void main() {
     await openBookViaProductionPath(tester, bookKey);
     await tester.pump(const Duration(seconds: 3));
 
-    const Key webViewKey = ValueKey<String>('hoshi_webview');
+    const Key webViewKey = ValueKey<String>('fushi_webview');
     for (int i = 0; i < 60 && find.byKey(webViewKey).evaluate().isEmpty; i++) {
       await tester.pump(const Duration(milliseconds: 500));
     }
     expect(find.byKey(webViewKey), findsOneWidget, reason: 'reader WebView');
 
-    const Key contentReadyKey = ValueKey<String>('hoshi_content_ready');
+    const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
     for (int i = 0;
         i < 120 && find.byKey(contentReadyKey).evaluate().isEmpty;
         i++) {

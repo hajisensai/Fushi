@@ -66,7 +66,7 @@ void main() {
                       onTap: () => toggles++,
                       child: const Text(
                         '0 / 100  0.00%',
-                        key: ValueKey<String>('hoshi_progress'),
+                        key: ValueKey<String>('fushi_progress'),
                         textAlign: TextAlign.left,
                       ),
                     ),
@@ -79,7 +79,7 @@ void main() {
       );
 
       // 1) Tap the text -> toggles, no passthrough.
-      await tester.tap(find.byKey(const ValueKey<String>('hoshi_progress')));
+      await tester.tap(find.byKey(const ValueKey<String>('fushi_progress')));
       await tester.pump();
       expect(toggles, 1);
       expect(passthrough, 0);
@@ -88,7 +88,7 @@ void main() {
       // (left-aligned) text box -> must fall through to the WebView stand-in,
       // NOT toggle.
       final Rect textRect =
-          tester.getRect(find.byKey(const ValueKey<String>('hoshi_progress')));
+          tester.getRect(find.byKey(const ValueKey<String>('fushi_progress')));
       final Size size = tester.getSize(find.byType(MaterialApp));
       final Offset emptyStripPoint =
           Offset(size.width - 24, textRect.center.dy);

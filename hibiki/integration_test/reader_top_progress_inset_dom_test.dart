@@ -122,7 +122,7 @@ void main() {
       // Cold WebView2 init on a freshly isolated profile (the Windows harness
       // creates an empty webview2-profile per run) can take a while; poll
       // generously and log progress to diagnose a missing WebView.
-      const Key webViewKey = ValueKey<String>('hoshi_webview');
+      const Key webViewKey = ValueKey<String>('fushi_webview');
       bool webViewPresent = false;
       for (int i = 0; i < 180; i++) {
         await tester.pump(const Duration(milliseconds: 500));
@@ -134,7 +134,7 @@ void main() {
       }
       expect(webViewPresent, isTrue, reason: 'WebView present');
 
-      const Key contentReadyKey = ValueKey<String>('hoshi_content_ready');
+      const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
       bool contentReady = false;
       for (int i = 0; i < 120; i++) {
         await tester.pump(const Duration(milliseconds: 500));

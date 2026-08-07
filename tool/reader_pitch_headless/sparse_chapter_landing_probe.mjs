@@ -33,7 +33,7 @@ function png(w,h){const raw=Buffer.alloc((w*3+1)*h);for(let y=0;y<h;y++){raw[y*(
 const bigPng=png(300,760);
 async function measure(pg,mode){return await pg.evaluate((mode)=>{const r=window.fushiReader;if(mode==='paginated'){const c=r.getScrollContext();const m=r.buildPaginationMetrics();return {pos:r.getPagePosition(c),unit:c.pageSize,metricsMax:m.maxScroll};}const el=document.scrollingElement||document.documentElement;return {pos:el.scrollTop,unit:window.innerHeight,metricsMax: el.scrollHeight-el.clientHeight};},mode);}
 async function run(mode){
-  const shell=fs.readFileSync(path.join(os.tmpdir(),mode==='paginated'?'hoshi_shell_paginated.html':'hoshi_shell_continuous.html'),'utf8');
+  const shell=fs.readFileSync(path.join(os.tmpdir(),mode==='paginated'?'fushi_shell_paginated.html':'fushi_shell_continuous.html'),'utf8');
   const css=mode==='paginated'?cssPaginated:cssContinuous;
   const full=`<!doctype html><html><head><meta charset="utf-8"><style>${css}</style>${shell}</head><body>${body}</body></html>`;
   const held=[];

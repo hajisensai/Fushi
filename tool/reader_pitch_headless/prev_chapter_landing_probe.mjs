@@ -43,7 +43,7 @@ async function measure(pg, mode){
 }
 
 async function openChapter(mode, bodyHtml){
-  const shellFile = mode === 'paginated' ? 'hoshi_shell_paginated.html' : 'hoshi_shell_continuous.html';
+  const shellFile = mode === 'paginated' ? 'fushi_shell_paginated.html' : 'fushi_shell_continuous.html';
   const shell = fs.readFileSync(path.join(os.tmpdir(), shellFile), 'utf8');
   const css = mode === 'paginated' ? cssPaginated : cssContinuous;
   // shell 放 <head>：真实 reader 用 _stripScriptTags 剥离后单独注入 JS，createWalker(body)

@@ -1895,7 +1895,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       filename: filename,
     );
     // 返回**裸文件名**（与 AnkiDroid 经 ankiInlineMediaReference 对称）。义项 HTML
-    // 已是 <img src="hoshi_dict_N.ext">，buildMinedFields 用 replaceAll 把 src 里的占位符
+    // 已是 <img src="fushi_dict_N.ext">，buildMinedFields 用 replaceAll 把 src 里的占位符
     // 替换成真实文件名；这里若返回完整 <img>/[sound:] 标签会嵌进 src 成
     // <img src="<img src=...>"> 嵌套坏图（外字不显示）。两端共用 ankiInlineMediaReference
     // 这一裸化单一真相，杜绝再次漂移回完整标签。

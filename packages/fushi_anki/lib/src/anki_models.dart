@@ -965,7 +965,7 @@ String mimeTypeForPath(String path) {
 /// （`FushiDicts.getMediaFile`）写到这个目录；两个 Anki repo（AnkiConnect /
 /// AnkiDroid）再从这里 **按同一命名** 读出并 storeMediaFile。writer 与 reader
 /// 必须共用 [ankiDictionaryMediaCacheDirPath] + [ankiDictionaryMediaCacheFilename]，
-/// 否则文件名对不上 → repo 读不到 → 卡片留下未替换的 `hoshi_dict_N.ext` 坏图。
+/// 否则文件名对不上 → repo 读不到 → 卡片留下未替换的 `fushi_dict_N.ext` 坏图。
 String ankiDictionaryMediaCacheDirPath() =>
     '${Directory.systemTemp.path}/anki-media';
 

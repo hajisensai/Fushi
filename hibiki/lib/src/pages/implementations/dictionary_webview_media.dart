@@ -17,10 +17,10 @@ const List<String> dictionaryMediaCustomSchemes = <String>[
 /// 供 [BaseAnkiRepository] 的 storeMediaFile 读取嵌进卡片。
 ///
 /// 背景：popup.js 在 `window.embedMedia` 为真时把外字渲染成
-/// `<img src="hoshi_dict_N.ext">` 并在负载 `dictionaryMedia`
+/// `<img src="fushi_dict_N.ext">` 并在负载 `dictionaryMedia`
 /// （`[{dictionary, path, filename}]` 的 JSON 串）里登记。两个 Anki repo 从
 /// [ankiDictionaryMediaCacheDirPath]/[ankiDictionaryMediaCacheFilename] 读字节再
-/// storeMediaFile + 把字段里的 `hoshi_dict_N.ext` 替换成真实媒体引用。**但此前没有
+/// storeMediaFile + 把字段里的 `fushi_dict_N.ext` 替换成真实媒体引用。**但此前没有
 /// 任何地方写这个缓存**（`image://` 服务只把字节喂给页面显示、不落盘），故媒体永远
 /// 读不到、外字退化成 alt 文本（明鏡义项序号显示成烂 alt「3分の2」）。本函数补上写缓存
 /// 这一环：用 [FushiDicts.getMediaFile] 取字节、按与 repo 共用的命名写盘。

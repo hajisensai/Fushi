@@ -89,7 +89,7 @@ void main() {
           <String, String>{
             'dictionary': 'D',
             'path': 'g/1.svg',
-            'filename': 'hoshi_dict_0.svg',
+            'filename': 'fushi_dict_0.svg',
           },
         ]),
       });

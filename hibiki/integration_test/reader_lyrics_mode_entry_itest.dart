@@ -16,15 +16,15 @@ import 'support/itest_startup_guard.dart';
 import 'test_helpers.dart';
 
 bool _webViewShown() =>
-    find.byKey(const ValueKey<String>('hoshi_webview')).evaluate().isNotEmpty;
+    find.byKey(const ValueKey<String>('fushi_webview')).evaluate().isNotEmpty;
 
 bool _readerContentReady() => find
-    .byKey(const ValueKey<String>('hoshi_content_ready'))
+    .byKey(const ValueKey<String>('fushi_content_ready'))
     .evaluate()
     .isNotEmpty;
 
 bool _lyricsReady() => find
-    .byKey(const ValueKey<String>('hoshi_lyrics_ready'))
+    .byKey(const ValueKey<String>('fushi_lyrics_ready'))
     .evaluate()
     .isNotEmpty;
 
@@ -125,7 +125,7 @@ void main() {
           await tester.pump(const Duration(seconds: 1));
 
           final Finder lyricsToggle =
-              find.byKey(const ValueKey<String>('hoshi_lyrics_mode_toggle'));
+              find.byKey(const ValueKey<String>('fushi_lyrics_mode_toggle'));
           expect(lyricsToggle, findsOneWidget,
               reason: 'quick settings must expose the lyrics-mode action');
           expect(await driver.focusWidget(lyricsToggle), isTrue,

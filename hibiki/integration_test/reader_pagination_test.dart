@@ -122,7 +122,7 @@ void main() {
       debugPrint('[M1] ReaderHibikiPage mounted');
 
       // === Wait for WebView ===
-      const Key webViewKey = ValueKey<String>('hoshi_webview');
+      const Key webViewKey = ValueKey<String>('fushi_webview');
       for (int i = 0; i < 60; i++) {
         await tester.pump(const Duration(milliseconds: 500));
         if (find.byKey(webViewKey).evaluate().isNotEmpty) {
@@ -133,7 +133,7 @@ void main() {
           reason: 'WebView must be present');
 
       // === Wait for content ready ===
-      const Key contentReadyKey = ValueKey<String>('hoshi_content_ready');
+      const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
       bool contentReady = false;
       for (int i = 0; i < 120; i++) {
         await tester.pump(const Duration(milliseconds: 500));

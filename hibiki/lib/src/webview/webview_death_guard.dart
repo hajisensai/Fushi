@@ -105,7 +105,7 @@ class WebViewDeathGuard {
 
   /// 挂在 WebView **之上**（而不是 WebView 自己）的重建 key。
   ///
-  /// 挂在上面而非 WebView 自己身上，是为了不动 `ValueKey('hoshi_webview')` /
+  /// 挂在上面而非 WebView 自己身上，是为了不动 `ValueKey('fushi_webview')` /
   /// `ValueKey('manga_webview')` 这类被大量集成测试 finder 依赖的锚点。
   Key get rebuildKey => ValueKey<String>('${surface}_webview_gen_$_epoch');
 

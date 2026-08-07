@@ -28,7 +28,7 @@ void main() {
 
   Future<String?> readProgress(WidgetTester tester) async {
     final Finder progress =
-        find.byKey(const ValueKey<String>('hoshi_progress'));
+        find.byKey(const ValueKey<String>('fushi_progress'));
     if (progress.evaluate().isEmpty) return null;
     final Text widget = tester.widget(progress) as Text;
     return widget.data;
@@ -70,7 +70,7 @@ void main() {
     await driver.activate();
     await tester.pump(const Duration(seconds: 3));
 
-    const Key webViewKey = ValueKey<String>('hoshi_webview');
+    const Key webViewKey = ValueKey<String>('fushi_webview');
     bool webViewFound = false;
     for (int i = 0; i < 60; i++) {
       await tester.pump(const Duration(milliseconds: 500));
@@ -81,7 +81,7 @@ void main() {
     }
     expect(webViewFound, isTrue, reason: 'WebView must appear');
 
-    const Key contentReadyKey = ValueKey<String>('hoshi_content_ready');
+    const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
     bool ready = false;
     for (int i = 0; i < 120; i++) {
       await tester.pump(const Duration(milliseconds: 500));

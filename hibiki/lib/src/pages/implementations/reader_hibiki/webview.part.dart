@@ -1651,9 +1651,9 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     // KeyedSubtree carries [_webViewKey] (a GlobalKey) on the InAppWebView's own
     // render subtree so [onDismissBarrierHover] can read the WebView's RenderBox
     // for global→local coordinate mapping (TODO-806), while the ValueKey stays on
-    // the InAppWebView itself for the integration-test finders (hoshi_webview).
+    // the InAppWebView itself for the integration-test finders (fushi_webview).
     final Widget webView = InAppWebView(
-      key: const ValueKey<String>('hoshi_webview'),
+      key: const ValueKey<String>('fushi_webview'),
       // TODO-954：Windows 的文字选区右键改用 Flutter 菜单（`_showReaderTextContextMenu`，
       // 经 GestureDetector.onSecondaryTapDown 触发），它在 FushiAppUiScale 内能跟随界面
       // 大小缩放；故 Windows 下禁掉平台原生 WebView2 菜单（它不在 Flutter 树里、永远不
@@ -2518,7 +2518,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     // KeyedSubtree carries [_webViewKey] (a GlobalKey) on the InAppWebView's own
     // render subtree so [onDismissBarrierHover] can read the WebView's RenderBox
     // for global→local coordinate mapping (TODO-806), while the ValueKey stays on
-    // the InAppWebView itself for the integration-test finders (hoshi_webview).
+    // the InAppWebView itself for the integration-test finders (fushi_webview).
     final Widget keyed = KeyedSubtree(key: _webViewKey, child: webView);
     // TODO-954：Windows 文字选区右键。`HitTestBehavior.translucent` 让左键框选 / 滚动 /
     // 查词点击照常落进 WebView（与 dictionary_popup_webview 的 BUG-261 范式同），只额外

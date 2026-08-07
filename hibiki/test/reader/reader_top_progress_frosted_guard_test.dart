@@ -55,8 +55,8 @@ void main() {
     // 文字仍在语料内、pill 仍带内边距（可读性）。
     expect(
       body,
-      contains("ValueKey<String>('hoshi_progress')"),
-      reason: 'the progress Text (hoshi_progress) must remain inside the pill',
+      contains("ValueKey<String>('fushi_progress')"),
+      reason: 'the progress Text (fushi_progress) must remain inside the pill',
     );
     expect(
       body,
