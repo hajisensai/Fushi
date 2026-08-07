@@ -11,7 +11,7 @@ import { JSDOM } from "jsdom";
 import { readFileSync } from "node:fs";
 
 const SELECTION_URL = new URL(
-  "../../hibiki/assets/popup/selection.js",
+  "../../fushi/assets/popup/selection.js",
   import.meta.url,
 );
 const selectionSrc = readFileSync(SELECTION_URL, "utf8");

@@ -18,16 +18,16 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { readFileSync } from "node:fs";
 
-// test/js/ → 仓库根 → hibiki/assets/popup/popup.js（当前分支真值）。
+// test/js/ → 仓库根 → fushi/assets/popup/popup.js（当前分支真值）。
 const POPUP_URL = new URL(
-  "../../hibiki/assets/popup/popup.js",
+  "../../fushi/assets/popup/popup.js",
   import.meta.url,
 );
 const src = readFileSync(POPUP_URL, "utf8");
 // BUG-1261：sound:// 播放走真实 rewriteDictionaryMediaPath（dict-media.js，app 变体），
 // 整段注入以验到最终 image:// URL 的构造，而不是桩出一个假 URL。
 const DICT_MEDIA_URL = new URL(
-  "../../hibiki/assets/popup/dict-media.js",
+  "../../fushi/assets/popup/dict-media.js",
   import.meta.url,
 );
 const dictMediaSrc = readFileSync(DICT_MEDIA_URL, "utf8");

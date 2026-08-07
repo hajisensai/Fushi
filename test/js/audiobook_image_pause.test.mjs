@@ -1,6 +1,6 @@
 // 有声书图片暂停 / 去遮罩「锚点间插图检测」行为测试（jsdom 真实 DOM）。
 //
-// 为什么需要行为测试：hibiki/test/media/audiobook/image_pause_detection_test.dart
+// 为什么需要行为测试：fushi/test/media/audiobook/image_pause_detection_test.dart
 // 是纯源码字符串扫描（断言 bridge 里出现 compareDocumentPosition / querySelectorAll
 // 等字符串），只能防「检测机制被整体替换/删除」，无法执行判据、测不出 BUG-724 这类
 // compareDocumentPosition 位语义逻辑 bug（当前句 cue 锚点是包含插图的容器时，关系是
@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 
 // 相对本测试文件读当前分支的真实 bridge（test/js/ → 仓库根 → hibiki/...）。
 const BRIDGE_URL = new URL(
-  "../../hibiki/lib/src/media/audiobook/audiobook_bridge.dart",
+  "../../fushi/lib/src/media/audiobook/audiobook_bridge.dart",
   import.meta.url,
 );
 const src = readFileSync(BRIDGE_URL, "utf8");
