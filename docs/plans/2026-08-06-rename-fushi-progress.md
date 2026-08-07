@@ -90,11 +90,11 @@
 - [x] W1 DB 层：`fushi_paired_peers` 表改名（**实际 v68→v69**，任务书 v62 系过期口径）+ `fushi.db` 开库前改名（sidecar 先主文件后、老归档回退）+ fushi_core 清扫；3 提交（`a34881aac`/`335804844`/`992b7db2d`），254+45 定向绿
 - [x] W2 存量值改写（7 子项 7 提交，分支 worktree-agent-a9054727d290f1e5b，Drift v70..v73）：W2-1 reader_ttu 族 `ff8e7bd09`（v70：src:reader_ttu: 命名空间+ttu_ shortKey 剥前缀+media_items 源键+current_source 值，两处 profile_settings 形态都改）/ W2-2 sasayaki 族 `54aa41ea0`（v71：sasayaki://→fushi-cue:、sasayakiColor JSON 键、custom_theme 偏好键；{sasayaki-audio} 别名 loadSettings 载入期改写后删枚举，i18n key 删除）/ W2-4 hibikiExport `7ab188959`（启动就地改名+死代码链 getHibikiExportDirectory 删除+白名单双名）/ W2-5 Magpie `102018e99`（'Hibiki: '→'Fushi: '，对账合成序先改名再清孤儿）/ W2-6 wire 键 `264e36ca2`（写侧只写 runningFushiProcesses、读侧旧键回退锚清理条件）/ W2-7 hoshi_books+双键 `9e5df0f85`（v72：extract_dir/image_url 路径段+google_drive_hoshi_compat 清行；目录开库前就地改名；备份归档前缀写新读兼容；hoshi_anki_settings 载入期搬键并修复 AnkiDroid 绕过基类迁移的 W2-2 真洞）/ W2-3 hoshi:// 前缀 `5e5676894`（v73：media_identifier+unique_key 复合/裸双形态+override_title 键双形态；override 封面 hash 文件名启动清扫含 BUG-1317 legacy 形态）。守卫累计新增 10 禁模式全部变异实测；各批定向绿+全量 analyze 零告警；既有环境红仅 update_manifest_publish_race_test（拉不起 bash，未触碰）
 - [x] W2 存量值改写（fable 子代理，7 子项 8 提交 ff8e7bd09..5e5676894+93d8f2bf8，Drift v70→v73 + 3 个启动迁移，守卫 +10 禁模式全变异实测；中途 API 断连一次 SendMessage 续跑）。**留人裁决 4 项**：sanitizeTtuFilename/~ttu-star~ 哨兵（bookKey 编码本体，建议永久冻结）、同步 wire ttuCharOffset/TtuProgress（ッツ第三方契约）、hibiki-theme: 分享码前缀（用户间 wire）、用户卡字面 tag 'hibiki'（W7 只改新卡默认值不动存量）
-- [ ] W4 文件名 git mv（已派）：`reader_hibiki_*`/`video_hibiki_page`/`hibiki_text_selection` 等含旧词文件与类名词中形态（MangaHibikiPage 族）
-- [ ] W6 native 目录改名（已派，与 W2 树不相交并行）：`native/hibiki_torrent`→`fushi_torrent`、`native/hoshidicts`→`fushidicts`（含 external/include/src 内层与 HOSHI_ROOT/hoshi-tests 构建标识；vendored pristine 内容不动）
-- [ ] W7 Anki 新卡默认 tag `hibiki`→`fushi`（老卡 tag 是用户 Anki 库外部数据不动；等 W2 落地后做,避 i18n 冲突）——2026-08-07 用户拍板
-- [ ] W8 `hibiki/` 应用目录改名（用户拍板要改；必须排在 W2/W4 合并后、终局门前,避免与在飞分支的 mega 冲突;牵 melos/CI/docs/Mac 同步脚本全套路径）
-- [ ] 终局门 + 守卫白名单清空核查 + push develop
+- [x] W4 文件名 git mv（fable 子代理 7 提交 f9034e59d..90f1c74c4）：188 文件（sync 60/reader 21/video 23/manga 5/UI·utils 76/packages 3）+ 词中类名清算；定向 10718 绿；保留 3 个外部契约文件名（Hoshi-Reader 互通、__hibikiRoot 真符号守卫）
+- [x] W6 native 目录改名（fable 子代理 4 提交 3d9471891..ba35210ed）：4003 文件纯 mv + 290 处引用/CI/构建标识修正；原生 ctest 19/19 绿；顺修 HIBIKI_TORRENT_LIB 两侧劈叉真 bug
+- [x] W7 Anki 新卡默认 tag `fushi`（主代理直做）：fushiTag 常量+Lapis 预览+i18n key `anki_tag_include_fushi` 17 语言（i18n_sync --rename）+登记表/静态守卫/ankimobile 钉值随改；`tagIncludeHibiki` 持久化 JSON 键族冻结；fushi_anki 391 绿
+- [x] W8 `hibiki/`→`fushi/` 应用目录改名（fable 子代理 13 提交，tip 11a2dfd17）：mv + workspace/CI/tool/ci/文档/守卫扫描根全套路径；合并时 skip-worktree 密钥文件需先还原占位再 merge；收尾修 2 真红（node 采集脚本旧路径、镜像清单三方对齐排除 README）
+- [x] 终局门 PASSED：**17646 tests ran, all tests passed**（fushi-mega 收官态；上一轮 17646-1 的唯一红为 W7 牵动钉值已修）
 - 用户侧新增拍板：GitHub 仓库改名（hajisensai/hibiki→fushi + hibiki-hook→fushi-hook）用户未表态；TMDB/ASC 网页操作用户自办
 
 ## Phase 5 更新桥发布（2026-08-07/08 实施）
