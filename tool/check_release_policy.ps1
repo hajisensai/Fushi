@@ -57,7 +57,7 @@ foreach ($relativePath in $workflowPaths) {
   $content = Read-RepoFile $relativePath
 
   Require-Text $relativePath $content 'concurrency:' 'release publishers must share a cross-workflow lock'
-  Require-Text $relativePath $content 'group: hibiki-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}' 'same tag/commit publishes serialize instead of racing separate releases'
+  Require-Text $relativePath $content 'group: fushi-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}' 'same tag/commit publishes serialize instead of racing separate releases'
   Require-Text $relativePath $content 'cancel-in-progress: false' 'Android and desktop publishers both need to complete'
   Require-Text $relativePath $content 'fetch-depth: 0' 'release sequence uses full git history'
   Require-Text $relativePath $content 'RELEASE_SEQUENCE=$(git rev-list --count HEAD)' 'release sequence must be shared by Android and desktop workflows'
@@ -134,9 +134,9 @@ Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '--build-n
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'flutter build windows --release' 'desktop workflow must still publish Windows'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'flutter build macos --release' 'desktop workflow must publish macOS app zips'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'flutter build ios --release --no-codesign' 'desktop workflow must publish unsigned iOS IPA artifacts without requiring Apple signing'
-Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-windows-setup.exe' 'desktop workflow must upload Windows installer assets'
-Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-macos.zip' 'desktop workflow must upload macOS zip assets'
-Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-ios.ipa' 'desktop workflow must upload iOS IPA assets'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-windows-setup.exe' 'desktop workflow must upload Windows installer assets'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-macos.zip' 'desktop workflow must upload macOS zip assets'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-ios.ipa' 'desktop workflow must upload iOS IPA assets'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Publish mirror update manifest (Apple assets)' 'Apple release assets must merge into the update manifest'
 # Apple 签名链路：细粒度不变式由 hibiki/test/tools/apple_signing_workflow_guard_test.dart
 # 守（每个 PR 都跑）。这里只锁发布策略层面的那一条 —— TestFlight 上传绝不能挂到 push

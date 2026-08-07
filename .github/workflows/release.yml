@@ -46,7 +46,7 @@ on:
         type: boolean
 
 concurrency:
-  group: hibiki-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
+  group: fushi-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
   cancel-in-progress: false
 
 jobs:

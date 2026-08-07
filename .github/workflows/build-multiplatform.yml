@@ -607,7 +607,7 @@ jobs:
           otool -D "$dylib"
           test "$(otool -D "$dylib" | tail -n +2)" = "@rpath/libfushidicts_ffi.dylib"
           otool -L "$dylib"
-          otool -l "$app_dir/Contents/MacOS/hibiki" | grep -A2 LC_RPATH | grep -F '@executable_path/../Frameworks'
+          otool -l "$app_dir/Contents/MacOS/fushi" | grep -A2 LC_RPATH | grep -F '@executable_path/../Frameworks'
           DYLIB_PATH="$dylib" python3 - <<'PY'
           import ctypes
           import os
