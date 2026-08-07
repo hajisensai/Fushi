@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/misc/crash_dump_locator.dart';
 
 /// TODO-607 P0-3/④：CrashDumpLocator 纯函数单测（host 可跑——不碰 native，只验
-/// 「定位 %LOCALAPPDATA%\Hibiki\crashdumps + 列 .dmp 按 mtime 降序」）。
+/// 「定位 %LOCALAPPDATA%\Fushi\crashdumps + 列 .dmp 按 mtime 降序」）。
 void main() {
   group('CrashDumpLocator.resolveDumpDirectory', () {
     test('非 Windows 返回 null（minidump 仅 Windows runner 写）', () {
@@ -30,13 +30,13 @@ void main() {
       );
     });
 
-    test(r'Windows 下拼出 Hibiki\crashdumps（与 native crash_dump.cpp 同确定路径）', () {
+    test(r'Windows 下拼出 Fushi\crashdumps（与 native crash_dump.cpp 同确定路径）', () {
       final Directory? dir = CrashDumpLocator.resolveDumpDirectory(
         isWindows: true,
         localAppData: r'C:\Users\x\AppData\Local',
       );
       expect(dir, isNotNull);
-      expect(dir!.path, r'C:\Users\x\AppData\Local\Hibiki\crashdumps');
+      expect(dir!.path, r'C:\Users\x\AppData\Local\Fushi\crashdumps');
     });
   });
 

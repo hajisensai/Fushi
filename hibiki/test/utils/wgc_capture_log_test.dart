@@ -22,11 +22,11 @@ void main() {
           isNull);
     });
 
-    test('Windows 下拼出 Hibiki/wgc_capture.log（与 native 同一确定路径）', () {
+    test('Windows 下拼出 Fushi/wgc_capture.log（与 native 同一确定路径）', () {
       final File? f = WgcCaptureLog.resolveLogFile(
           isWindows: true, localAppData: r'C:\Users\x\AppData\Local');
       expect(f, isNotNull);
-      expect(f!.path, r'C:\Users\x\AppData\Local\Hibiki\wgc_capture.log');
+      expect(f!.path, r'C:\Users\x\AppData\Local\Fushi\wgc_capture.log');
     });
   });
 
