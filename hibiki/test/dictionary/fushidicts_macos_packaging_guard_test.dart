@@ -70,11 +70,11 @@ void main() {
             'Debug/Profile/Release must all keep the app Frameworks rpath.');
   });
 
-  test('CI verifies the bundled macOS hoshidicts dylib', () {
+  test('CI verifies the bundled macOS fushidicts dylib', () {
     final String workflow =
         read('../.github/workflows/build-multiplatform.yml');
 
-    expect(workflow, contains('Verify macOS hoshidicts dylib bundle'));
+    expect(workflow, contains('Verify macOS fushidicts dylib bundle'));
     expect(workflow, contains(r'find "$app_dir/Contents/Frameworks"'));
     expect(workflow, contains('libfushidicts_ffi.dylib'));
     expect(workflow, contains(r'otool -D "$dylib"'));
@@ -84,12 +84,12 @@ void main() {
     expect(workflow, contains('fushidicts_create'));
 
     expect(
-      workflow.indexOf('Verify macOS hoshidicts dylib bundle'),
+      workflow.indexOf('Verify macOS fushidicts dylib bundle'),
       greaterThan(workflow.indexOf('Build macOS (debug)')),
       reason: 'the dylib check must inspect the app produced by flutter build.',
     );
     expect(
-      workflow.indexOf('Verify macOS hoshidicts dylib bundle'),
+      workflow.indexOf('Verify macOS fushidicts dylib bundle'),
       lessThan(workflow.indexOf('Run macOS comprehensive automation contract')),
       reason: 'fail the packaging check before the broader smoke contract.',
     );

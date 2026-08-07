@@ -54,7 +54,7 @@ void main() {
 
 String _repoRoot() {
   Directory dir = Directory.current;
-  while (!File(p.join(dir.path, 'native', 'hoshidicts', 'CMakeLists.txt'))
+  while (!File(p.join(dir.path, 'native', 'fushidicts', 'CMakeLists.txt'))
       .existsSync()) {
     final Directory parent = dir.parent;
     if (parent.path == dir.path) {

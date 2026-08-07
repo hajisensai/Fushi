@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
-// BUG-045: native hoshidicts must never reintroduce ANSI/narrow-codepage
+// BUG-045: native fushidicts must never reintroduce ANSI/narrow-codepage
 // filesystem access on Windows. memory.cpp must use CreateFileW (not
 // CreateFileA), and all other UTF-8 path access (importer/query/stardict)
 // must route through hoshi::fs_path / hoshi::fs_to_utf8 instead of building a
@@ -57,7 +57,7 @@ void main() {
 
 String _repoRoot() {
   Directory dir = Directory.current;
-  while (!File(p.join(dir.path, 'native', 'hoshidicts', 'CMakeLists.txt'))
+  while (!File(p.join(dir.path, 'native', 'fushidicts', 'CMakeLists.txt'))
       .existsSync()) {
     final Directory parent = dir.parent;
     if (parent.path == dir.path) {
