@@ -3,7 +3,7 @@
 - 计划：`docs/plans/2026-08-06-rename-fushi-migration.md`
 - 工作区：`.claude/worktrees/rename-fushi-plan-v2`；每项开工从最新 `origin/develop` 拉分支
 - 纪律：每项独立提交 → analyze 全量 + 定向测试 → 合并前 `dart run tool/flutter_test_failures.dart --no-pub` → push develop → **完成后才**勾掉本项并填真实提交哈希
-- 保活 cron：`db6ae32b`（每小时 :43，7 天过期；全部完成后 CronDelete）
+- 保活 cron：已按用户指示关闭（2026-08-07）；改用 fable 子代理并行推进
 - ⚠️ 台账只准记已验证的事实；勾选必须带真实 develop 提交哈希
 
 ## 执行顺序与状态
@@ -13,7 +13,7 @@
 - [x] P6-1 `window.hoshiReader` → `window.fushiReader`（82 文件；分支提交 45865b679，阅读器/有声书/macos 定向 2242 绿）
 - [x] P6-3 ttu 清算（develop ee0655c88）：31 个 i18n key →`reader_*`；`setTtu*`→`setReader*`；`'reader_ttu'` 收口 `kReaderSourcePersistedKey`。**白名单**：`ttu_models.dart`/`ttu_filename.dart`（ッツ第三方 wire 契约，文件头注明禁单方改）、`reader_settings.dart` 内 `ttu_*` 现役持久化键值（冻结，P2-2 新包换新键时迁移）
 - [x] P6-4a `Ht*`→`Ft*`（11 类；develop 20f50fc10，torrent 定向 147 绿）
-- [ ] P6-4b `Sasayaki*` 改描述性名——**实测面 ~500 处远超预估**，且含两个 userspace 契约需先定策略：① Anki handlebars 模板变量（`handlebar_sasayaki_audio` 对应的用户模板变量，乱改破用户现有卡模板）；② `sasayakiColor` 疑似入库的主题自定义色键（custom_theme 持久化待查）。纯内部符号（SasayakiCue/AutoNav/JS 桥）可机械换，两个契约点需映射或冻结
+- [~] P6-4b `Sasayaki*`→描述性名：fable 子代理进行中。契约已定：`{sasayaki-audio}` handlebars 变量与 `custom_themes` JSON 键 `sasayakiColor` **冻结**（持久化），其余全改——**实测面 ~500 处远超预估**，且含两个 userspace 契约需先定策略：① Anki handlebars 模板变量（`handlebar_sasayaki_audio` 对应的用户模板变量，乱改破用户现有卡模板）；② `sasayakiColor` 疑似入库的主题自定义色键（custom_theme 持久化待查）。纯内部符号（SasayakiCue/AutoNav/JS 桥）可机械换，两个契约点需映射或冻结
 - [ ] P6-4c 代码字符串残留 hibiki 清扫 + 白名单收口（与 P2-1 通道前缀联动，随 Phase 2 做）
 - [x] P1-1 `MigrationExporter` 核心（`lib/src/migration/migration_exporter.dart`：分批调 createBackup、断点 state.json、幂等跳过；**尚缺**：Android 中转目录取路径接线 + 从设置页触发——归 P1-3 一起做）
 - [x] P1-2 `MigrationManifest` v1（`migration_manifest.dart`：归档 sha256+size + 14 表行数 + schema 版本；8 单测绿；对计划的偏差已记回计划 §P1-2）
@@ -24,10 +24,10 @@
 - [x] P2-1 Android 身份替换（develop 15fd787e0…64386eaf4）：applicationId/namespace/taskAffinity/Java·Kotlin 包目录/label/图标 alias/URL scheme fushi://和 Bonjour _fushi-sync/MethodChannel 前缀五端同 PR；FushiFileProvider/FushiBridge/资源改名；新包名 release APK 构建绿（335.1MB）；全量门 17619 绿
 - [x] P2-2 `MigrationImporter`（同批落地）：scan/归档校验/mergeRestore 逐批合并/行数聚合校验/失败保留（4 单测）+ MigrationImportPage + dashboard 检测 banner + 设置入口按运行包名切方向
 - [x] P2-3 卸载引导（同批落地）：dashboard 卸载 banner（ACTION_DELETE + resumed 生命周期复查，绝不乐观标成功）
-- [ ] Phase 3 Windows：`fushi.exe`/安装器 AppName/`FushiSingleInstanceMutex` 三处同步/`Fushi.Video` ProgID 迁移+旧键清理/`%APPDATA%\Hibiki`→`Fushi` 搬迁
-- [ ] Phase 5 更新桥：Windows `synthesizeStableAssetNames` 行随 Phase 3 切 fushi（Android 无更新桥需求：跨包名不能就地更新，迁移链即通道）
-- [ ] P6-2 `hoshidicts`→`fushidicts`（C ABI/DLL/JNI/CMake/FFI/UPSTREAM.md；五平台构建门）
-- [ ] P6-6 native 产物：gal helper 三件套 `fushi_voice_*` + IPC 对象名两侧同 PR + `hibiki_torrent_ffi`→`fushi_torrent_ffi`
+- [~] Phase 3 Windows（主线已提交 7e674a6f1，构建验证中）：`fushi.exe`/安装器 AppName/`FushiSingleInstanceMutex` 三处同步/`Fushi.Video` ProgID 迁移+旧键清理/`%APPDATA%\Hibiki`→`Fushi` 搬迁
+- [x] Phase 5 更新桥（cdffe37c0）：Windows `synthesizeStableAssetNames` 行随 Phase 3 切 fushi（Android 无更新桥需求：跨包名不能就地更新，迁移链即通道）
+- [~] P6-2 `hoshidicts`→`fushidicts`：fable 子代理独立 worktree 进行中（构建门由主代理合并后统一跑）
+- [~] P6-6 native 产物：fable 子代理独立 worktree 进行中（IPC 两侧同批、DLL 旧名回退）
 - [ ] P6-5 pub 包名体系：`hibiki`→`fushi` app 包 + 6 内部包 + workspace + 全仓 import（最后做，单独 PR，不与他人并行）
 - [ ] 收尾：源码扫描守卫（旧代号零残留 + 白名单收口）+ 变异实测
 - [x] Phase 4 外部注册台账（agent 无法代办，清单见下）
