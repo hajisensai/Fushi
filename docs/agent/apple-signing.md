@@ -167,7 +167,7 @@ Xcode 的优先级是「命令行 > target 设置 > **target 的 xcconfig** > pr
 验证方式（不需要完整构建）：
 
 ```bash
-cd hibiki/ios
+cd fushi/ios
 xcodebuild -project Runner.xcodeproj -target Runner -configuration Release \
   -sdk iphoneos -showBuildSettings \
   | grep -E "CODE_SIGN_IDENTITY|CODE_SIGN_STYLE|DEVELOPMENT_TEAM|PROVISIONING_PROFILE_SPECIFIER"

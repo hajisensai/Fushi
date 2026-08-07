@@ -11,7 +11,7 @@
    `CommandLineToArgvW` 取 argv（去掉 binary 名）转 UTF-8；`main.cpp` 经
    `project.set_dart_entrypoint_arguments(...)` 把它喂给 Dart entrypoint。
    **C++ 侧无需改动**——Flutter Windows 标准模板已具备该传递。
-2. **Dart `main(List<String> args)`**（`hibiki/lib/main.dart`）：仅桌面平台，用
+2. **Dart `main(List<String> args)`**（`fushi/lib/main.dart`）：仅桌面平台，用
    `firstExternalVideoArg(args)`（`lib/src/media/video/external_video.dart`）挑出
    第一个受支持的视频路径，存在性校验（`File.existsSync`）后暂存到顶层
    `_pendingExternalVideoPath`。
@@ -45,7 +45,7 @@
 
 ## Windows 文件关联
 
-安装包 `windows/installer/hibiki.iss` 含可选 `[Tasks] videoassoc`（默认勾选），
+安装包 `windows/installer/fushi.iss` 含可选 `[Tasks] videoassoc`（默认勾选），
 注册到 **HKCU**（`PrivilegesRequired=lowest`，无需管理员）：
 
 - ProgId `Hibiki.Video` → `shell\open\command = "hibiki.exe" "%1"`。
@@ -72,7 +72,7 @@ runner 用 `CreateMutexW(L"HibikiSingleInstanceMutex")` 做**真单实例**（�
 给首实例后退出。链路：
 
 1. 第二实例 `main.cpp`：`FirstFileArgFromCommandLine()` 从 argv 取第一个文件参数 →
-   `::hibiki::SendExternalVideoPath(existing, file_arg)`（`external_video_handoff.*`）
+   `::fushi::SendExternalVideoPath(existing, file_arg)`（`external_video_handoff.*`）
    用 `WM_COPYDATA`（dwData magic `kExternalVideoCopyDataMagic`，lpData 为 UTF-8
    路径字节）发给首实例窗口 → 前置窗口 → `return EXIT_SUCCESS`。**无文件参数**（纯
    第二次启动）则只前置 + 退出，不发消息。

@@ -175,8 +175,8 @@ flutter build windows --release
 <summary><b>Proje Yapısı</b></summary>
 
 ```
-hibiki/                      # Depo kök dizini (Melos çalışma alanı: hibiki_workspace)
-├── hibiki/                  # Flutter uygulamasının ana dizini
+hibiki/                      # Depo kök dizini (Melos çalışma alanı: fushi_workspace)
+├── fushi/                  # Flutter uygulamasının ana dizini
 │   ├── lib/
 │   │   ├── i18n/            # Uluslararasılaştırma (17 dil, Slang)
 │   │   ├── src/

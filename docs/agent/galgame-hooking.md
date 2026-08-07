@@ -129,7 +129,7 @@ cmake --build build-x86 --config Release
 ctest --test-dir build-x86 -C Release --output-on-failure
 ```
 
-若改动 Hibiki 的 Dart/Flutter 消费端，则在 `hibiki/` 下按根规则执行 `dart format .`、相关定向测试，再执行完整 `flutter test` 与 `flutter analyze`。工具自身崩溃要原样记录，不能当作代码通过；可补充 `dart analyze` 的有效结果，但不能伪装成完整 analyze。
+若改动 Hibiki 的 Dart/Flutter 消费端，则在 `fushi/` 下按根规则执行 `dart format .`、相关定向测试，再执行完整 `flutter test` 与 `flutter analyze`。工具自身崩溃要原样记录，不能当作代码通过；可补充 `dart analyze` 的有效结果，但不能伪装成完整 analyze。
 
 任何必需命令、双架构构建、replay、定向测试或完整测试被跳过、崩溃或因环境阻塞时，逐项记录命令和原因；该能力只能停在 `implemented_unverified`。Loopback 通过只证明降级链可用，不能替代引擎 Hook、逐句配对或纯人声验证。
 

@@ -53,7 +53,7 @@
 # 模拟器（Android，gameButtonA 可合成）
 flutter test integration_test/<t>_test.dart -d emulator-<port>     # 或 ci/integration-test.sh
 # Windows 离屏后台（PowerShell，仓库根）
-.\hibiki\tool\run_windows_itest.ps1 integration_test/<t>_test.dart
+.\fushi\tool\run_windows_itest.ps1 integration_test/<t>_test.dart
 # Mac 跨机（Windows 当总指挥，sync→Mac ff→跑）
 .\tool\run_mac_itest.ps1 integration_test/<t>_test.dart
 ```
@@ -145,6 +145,6 @@ SELECT name FROM profiles;              -- Profile 列表
   - 测试数据来源路径，以及推送到设备后的路径和大小。
   - 关键截图（`.codex-test/<case>.png`）、UI hierarchy（`.codex-test/<case>.xml`）、logcat 证据路径。
 - 对遮挡/布局类问题，除截图外还要记录边界数据：WebView bounds、正文节点 bounds、遮挡控件 bounds。
-- 对导入类问题，logcat 至少筛 `hibiki-import`、`BookImportDialog`、`EpubImporter`、`ReaderHibiki`、`Renderer process`、`AndroidRuntime`、`Exception`、`Error`。
+- 对导入类问题，logcat 至少筛 `fushi-import`、`BookImportDialog`、`EpubImporter`、`ReaderFushi`、`Renderer process`、`AndroidRuntime`、`Exception`、`Error`。
 - 真机锁屏、权限弹窗、DocumentsUI 不可达、文件未显示等都当作测试阻塞明确说出来；不要把未测到的路径说成通过。
 - 不要把「导入成功」和「阅读器渲染正确」混为一个结论；导入、打开、播放、布局验证要分开说。

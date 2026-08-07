@@ -190,8 +190,8 @@ flutter build windows --release
 <summary><b>项目结构</b></summary>
 
 ```
-hibiki/                      # 仓库根（Melos workspace: hibiki_workspace）
-├── hibiki/                  # Flutter 应用主目录
+hibiki/                      # 仓库根（Melos workspace: fushi_workspace）
+├── fushi/                  # Flutter 应用主目录
 │   ├── lib/
 │   │   ├── i18n/            # 国际化（17 种语言，Slang）
 │   │   ├── src/

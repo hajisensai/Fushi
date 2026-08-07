@@ -65,7 +65,7 @@ bash ci/integration-test.sh --only=reader_computer_use_flow,reader_pagination,re
 Windows 离屏补充：
 
 ```powershell
-.\hibiki\tool\run_windows_itest.ps1 integration_test/reader_computer_use_flow_test.dart
+.\fushi\tool\run_windows_itest.ps1 integration_test/reader_computer_use_flow_test.dart
 ```
 
 Android 编排日志固定落在 `.codex-test/itest-logs/reader_computer_use_flow.log`。Windows runner 会为每次运行创建 `.codex-test/windows-itest/<run-id>/`，其中固定包含：

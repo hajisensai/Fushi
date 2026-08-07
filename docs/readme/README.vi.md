@@ -175,8 +175,8 @@ flutter build windows --release
 <summary><b>Cấu trúc dự án</b></summary>
 
 ```
-hibiki/                      # Gốc kho (Melos workspace: hibiki_workspace)
-├── hibiki/                  # Thư mục chính ứng dụng Flutter
+hibiki/                      # Gốc kho (Melos workspace: fushi_workspace)
+├── fushi/                  # Thư mục chính ứng dụng Flutter
 │   ├── lib/
 │   │   ├── i18n/            # Quốc tế hóa (17 ngôn ngữ, Slang)
 │   │   ├── src/

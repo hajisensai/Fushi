@@ -175,8 +175,8 @@ flutter build windows --release
 <summary><b>Projectstructuur</b></summary>
 
 ```
-hibiki/                      # Hoofdmap van de repository (Melos-workspace: hibiki_workspace)
-├── hibiki/                  # Hoofdmap van de Flutter-app
+hibiki/                      # Hoofdmap van de repository (Melos-workspace: fushi_workspace)
+├── fushi/                  # Hoofdmap van de Flutter-app
 │   ├── lib/
 │   │   ├── i18n/            # Internationalisatie (17 talen, Slang)
 │   │   ├── src/

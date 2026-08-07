@@ -4,9 +4,9 @@
 
 ## 当前阅读器构成
 
-- 页面：`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`，类 `ReaderHibikiPage`（3242 行主体 + `reader_hibiki/` 下 8 个域 part 文件 `audiobook` / `caret` / `chrome` / `lookup` / `lyrics` / `mining` / `navigation` / `webview`，共 9583 行：WebView 拦截 + JS 分页引擎 + 有声书同步）。
-- source：`hibiki/lib/src/media/sources/reader_hibiki_source.dart`，类 `ReaderHibikiSource`。
-- JS / CSS：`hibiki/lib/src/reader/` 下 `reader_pagination_scripts.dart`、`reader_content_styles.dart`、`reader_selection_scripts.dart`、`reader_caret_scripts.dart`。
+- 页面：`fushi/lib/src/pages/implementations/reader_hibiki_page.dart`，类 `ReaderHibikiPage`（3242 行主体 + `reader_hibiki/` 下 8 个域 part 文件 `audiobook` / `caret` / `chrome` / `lookup` / `lyrics` / `mining` / `navigation` / `webview`，共 9583 行：WebView 拦截 + JS 分页引擎 + 有声书同步）。
+- source：`fushi/lib/src/media/sources/reader_hibiki_source.dart`，类 `ReaderHibikiSource`。
+- JS / CSS：`fushi/lib/src/reader/` 下 `reader_pagination_scripts.dart`、`reader_content_styles.dart`、`reader_selection_scripts.dart`、`reader_caret_scripts.dart`。
 - **JS 桥接全局叫 `window.fushiReader`**（2026-08 已从旧名 hoshiReader 改名；`window.hoshiCaret` 等其余 hoshi 前缀运行时符号待后续批次）；字级焦点用 `window.hoshiCaret` + Dart `ReaderCaretRouter`。
 - 当前阅读器问题**不要**去上游 ttu fork 仓库改。
 
