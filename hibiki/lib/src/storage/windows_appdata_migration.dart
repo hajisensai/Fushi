@@ -57,14 +57,6 @@ void _copyTreeSync(Directory from, Directory to) {
   }
 }
 
-/// 搬迁后修复 Drift `preferences` 表里指向旧 support 目录的绝对路径
-/// （`local_audio_dbs` 等）。开 DB 后由 AppModel 调一次；[oldPrefix] /
-/// [newPrefix] 为 support 根新旧绝对路径。返回改写后的值，无命中返回 null。
-String? rebaseSupportPathValue(
-  String value, {
-  required String oldPrefix,
-  required String newPrefix,
-}) {
-  if (!value.contains(oldPrefix)) return null;
-  return value.replaceAll(oldPrefix, newPrefix);
-}
+// 注：local_audio_dbs 等 support 内绝对路径无需搬迁后 rebase——
+// LocalAudioManager.resolveInternalPath 对内部副本按文件名归一到当前库目录
+// （跨机/跨目录安全），外部用户路径不在 %APPDATA% 下，不受影响。
